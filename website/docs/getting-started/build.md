@@ -47,7 +47,7 @@ dotnet run -c Release -f net8.0
 ```
 
 :::tip
-By default, Garnet listens to TCP port 3278, make sure to adjust your firewall settings when you need to access the server from remote machines.
+By default, Garnet listens to TCP port 6379, make sure to adjust your firewall settings when you need to access the server from remote machines.
 :::
 
 To see the configurable options and their defaults, run the below command. You can configure index size, memory size, page size, data file paths and checkpoint paths, IP address to bind to, port number to run on, etc.
@@ -70,4 +70,4 @@ Garnet uses the RESP protocol, so you can use any Redis client in your favorite 
 On Windows, you can either install **redis-cli** on WSL (Linux), <a href="https://github.com/RedisInsight/RedisInsight" target="_blank">RedisInsight</a> which has a  graphical interface, or install 
 <a href="https://www.memurai.com/" target="_blank">Memurai</a> (which offers Redis on Windows) and use their **memurai-cli** command line tool.
 
-With any of these clients, just make sure to use the correct port (e.g., 3278) when connecting to a Garnet server.
+With any of these clients, just make sure to use the correct port (e.g., 6379) when connecting to a Garnet server.

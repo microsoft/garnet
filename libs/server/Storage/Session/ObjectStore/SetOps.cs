@@ -38,12 +38,11 @@ namespace Garnet.server
             rmwInput->header.type = GarnetObjectType.Set;
             rmwInput->header.flags = 0;
             rmwInput->header.SetOp = SetOperation.SADD;
-            rmwInput->count = 1;
-            rmwInput->done = 0;
+            rmwInput->arg1 = 1;
 
             var status = RMWObjectStoreOperation(key.ToArray(), input, out var output, ref objectStoreContext);
 
-            saddCount = output.opsDone;
+            saddCount = output.result1;
             return status;
         }
 
@@ -71,8 +70,7 @@ namespace Garnet.server
             rmwInput->header.type = GarnetObjectType.Set;
             rmwInput->header.flags = 0;
             rmwInput->header.SetOp = SetOperation.SADD;
-            rmwInput->count = members.Length;
-            rmwInput->done = 0;
+            rmwInput->arg1 = members.Length;
 
             // Iterate through all inputs and add them to the scratch buffer in RESP format
             int inputLength = sizeof(ObjectInputHeader);
@@ -85,7 +83,7 @@ namespace Garnet.server
             var input = scratchBufferManager.GetSliceFromTail(inputLength);
 
             var status = RMWObjectStoreOperation(key.ToArray(), input, out var output, ref objectStoreContext);
-            saddCount = output.opsDone;
+            saddCount = output.result1;
 
             return status;
         }
@@ -112,11 +110,10 @@ namespace Garnet.server
             rmwInput->header.type = GarnetObjectType.Set;
             rmwInput->header.flags = 0;
             rmwInput->header.SetOp = SetOperation.SREM;
-            rmwInput->count = 1;
-            rmwInput->done = 0;
+            rmwInput->arg1 = 1;
 
             var status = RMWObjectStoreOperation(key.ToArray(), input, out var output, ref objectStoreContext);
-            sremCount = output.opsDone;
+            sremCount = output.result1;
 
             return status;
         }
@@ -146,8 +143,7 @@ namespace Garnet.server
             rmwInput->header.type = GarnetObjectType.Set;
             rmwInput->header.flags = 0;
             rmwInput->header.SetOp = SetOperation.SREM;
-            rmwInput->count = members.Length;
-            rmwInput->done = 0;
+            rmwInput->arg1 = members.Length;
 
             var inputLength = sizeof(ObjectInputHeader);
             foreach (var member in members)
@@ -160,7 +156,7 @@ namespace Garnet.server
 
             var status = RMWObjectStoreOperation(key.ToArray(), input, out var output, ref objectStoreContext);
 
-            sremCount = output.countDone;
+            sremCount = output.result1;
             return status;
         }
 
@@ -186,12 +182,11 @@ namespace Garnet.server
             rmwInput->header.type = GarnetObjectType.Set;
             rmwInput->header.flags = 0;
             rmwInput->header.SetOp = SetOperation.SCARD;
-            rmwInput->count = 1;
-            rmwInput->done = 0;
+            rmwInput->arg1 = 1;
 
             var status = ReadObjectStoreOperation(key.ToArray(), input, out var output, ref objectStoreContext);
 
-            count = output.countDone;
+            count = output.result1;
             return status;
         }
 
@@ -217,8 +212,7 @@ namespace Garnet.server
             rmwInput->header.type = GarnetObjectType.Set;
             rmwInput->header.flags = 0;
             rmwInput->header.SetOp = SetOperation.SMEMBERS;
-            rmwInput->count = 1;
-            rmwInput->done = 0;
+            rmwInput->arg1 = 1;
 
             var outputFooter = new GarnetObjectStoreOutput { spanByteAndMemory = new SpanByteAndMemory(null) };
 
@@ -274,8 +268,7 @@ namespace Garnet.server
             rmwInput->header.type = GarnetObjectType.Set;
             rmwInput->header.flags = 0;
             rmwInput->header.SetOp = SetOperation.SPOP;
-            rmwInput->count = count;
-            rmwInput->done = 0;
+            rmwInput->arg1 = count;
 
             var outputFooter = new GarnetObjectStoreOutput { spanByteAndMemory = new SpanByteAndMemory(null) };
 
@@ -319,8 +312,8 @@ namespace Garnet.server
             ((ObjectInputHeader*)rmwInput)->header.SetOp = SetOperation.SSCAN;
 
             // Number of tokens in the input after the header (match, value, count, value)
-            ((ObjectInputHeader*)rmwInput)->count = 4;
-            ((ObjectInputHeader*)rmwInput)->done = (int)cursor;
+            ((ObjectInputHeader*)rmwInput)->arg1 = 4;
+            ((ObjectInputHeader*)rmwInput)->arg2 = (int)cursor;
             rmwInput += ObjectInputHeader.Size;
 
             // Object Input Limit
@@ -429,6 +422,12 @@ namespace Garnet.server
 
                 srcSetObject.UpdateSize(arrMember, false);
 
+                if (srcSetObject.Set.Count == 0)
+                {
+                    _ = EXPIRE(sourceKey, TimeSpan.Zero, out _, StoreType.Object, ExpireOption.None,
+                        ref lockableContext, ref objectLockableContext);
+                }
+
                 dstSetObject.Set.Add(arrMember);
                 dstSetObject.UpdateSize(arrMember);
 
@@ -532,13 +531,23 @@ namespace Garnet.server
 
                 if (status == GarnetStatus.OK)
                 {
-                    var newSetObject = new SetObject();
-                    foreach (var item in members)
+                    if (members.Count > 0)
                     {
-                        _ = newSetObject.Set.Add(item);
-                        newSetObject.UpdateSize(item);
+                        var newSetObject = new SetObject();
+                        foreach (var item in members)
+                        {
+                            _ = newSetObject.Set.Add(item);
+                            newSetObject.UpdateSize(item);
+                        }
+
+                        _ = SET(key, newSetObject, ref setObjectStoreLockableContext);
                     }
-                    _ = SET(key, newSetObject, ref setObjectStoreLockableContext);
+                    else
+                    {
+                        _ = EXPIRE(destination, TimeSpan.Zero, out _, StoreType.Object, ExpireOption.None,
+                            ref lockableContext, ref setObjectStoreLockableContext);
+                    }
+
                     count = members.Count;
                 }
 
@@ -686,13 +695,23 @@ namespace Garnet.server
 
                 if (status == GarnetStatus.OK)
                 {
-                    var newSetObject = new SetObject();
-                    foreach (var item in members)
+                    if (members.Count > 0)
                     {
-                        _ = newSetObject.Set.Add(item);
-                        newSetObject.UpdateSize(item);
+                        var newSetObject = new SetObject();
+                        foreach (var item in members)
+                        {
+                            _ = newSetObject.Set.Add(item);
+                            newSetObject.UpdateSize(item);
+                        }
+
+                        _ = SET(key, newSetObject, ref setObjectStoreLockableContext);
                     }
-                    _ = SET(key, newSetObject, ref setObjectStoreLockableContext);
+                    else
+                    {
+                        _ = EXPIRE(destination, TimeSpan.Zero, out _, StoreType.Object, ExpireOption.None,
+                            ref lockableContext, ref setObjectStoreLockableContext);
+                    }
+
                     count = members.Count;
                 }
 
@@ -906,13 +925,22 @@ namespace Garnet.server
 
                 if (status == GarnetStatus.OK)
                 {
-                    var newSetObject = new SetObject();
-                    foreach (var item in diffSet)
+                    if (diffSet.Count > 0)
                     {
-                        _ = newSetObject.Set.Add(item);
-                        newSetObject.UpdateSize(item);
+                        var newSetObject = new SetObject();
+                        foreach (var item in diffSet)
+                        {
+                            _ = newSetObject.Set.Add(item);
+                            newSetObject.UpdateSize(item);
+                        }
+                        _ = SET(key, newSetObject, ref setObjectStoreLockableContext);
                     }
-                    _ = SET(key, newSetObject, ref setObjectStoreLockableContext);
+                    else
+                    {
+                        _ = EXPIRE(destination, TimeSpan.Zero, out _, StoreType.Object, ExpireOption.None,
+                            ref lockableContext, ref setObjectStoreLockableContext);
+                    }
+
                     count = diffSet.Count;
                 }
 

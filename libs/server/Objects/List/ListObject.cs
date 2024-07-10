@@ -32,12 +32,14 @@ namespace Garnet.server
         RPOPLPUSH,
         LMOVE,
         LSET,
+        BRPOP,
+        BLPOP,
     }
 
     /// <summary>
     /// Direction for the List operations
     /// </summary>
-    public enum OperationDirection
+    public enum OperationDirection : byte
     {
         /// <summary>
         /// Left or head
@@ -50,7 +52,6 @@ namespace Garnet.server
         Right,
         Unknown,
     }
-
 
     /// <summary>
     /// List

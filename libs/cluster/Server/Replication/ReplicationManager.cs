@@ -137,8 +137,32 @@ namespace Garnet.cluster
             storeWrapper.EnqueueCommit(isMainStore, newVersion);
         }
 
-        public bool StartRecovery() => recoverLock.TryWriteLock();
-        public void SuspendRecovery() => recoverLock.WriteUnlock();
+        /// <summary>
+        /// Acquire recovery and checkpoint locks to prevent checkpoints and parallel recovery tasks
+        /// </summary>
+        public bool StartRecovery()
+        {
+            if (!clusterProvider.storeWrapper.TryPauseCheckpoints())
+                return false;
+
+            if (!recoverLock.TryWriteLock())
+            {
+                // If failed to acquire recoverLock re-enable checkpoint taking
+                clusterProvider.storeWrapper.ResumeCheckpoints();
+                return false;
+            }
+
+            return true;
+        }
+
+        /// <summary>
+        /// Release recovery and checkpoint locks
+        /// </summary>
+        public void SuspendRecovery()
+        {
+            recoverLock.WriteUnlock();
+            clusterProvider.storeWrapper.ResumeCheckpoints();
+        }
 
         public void Dispose()
         {
@@ -246,7 +270,7 @@ namespace Garnet.cluster
                     if (clusterProvider.replicationManager.TryAddReplicationTask(replicaId, 0, out var aofSyncTaskInfo))
                     {
                         if (!TryConnectToReplica(replicaId, 0, aofSyncTaskInfo, out var errorMessage))
-                            logger?.LogError(Encoding.ASCII.GetString(errorMessage));
+                            logger?.LogError($"{{errorMessage}}", Encoding.ASCII.GetString(errorMessage));
                     }
                 }
             }

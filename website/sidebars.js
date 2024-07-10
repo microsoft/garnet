@@ -18,7 +18,7 @@ const sidebars = {
 
 	garnetDocSidebar: [
 		{type: 'category', label: 'Welcome', collapsed: false, items: ["welcome/intro", "welcome/news", "welcome/features", "welcome/releases", "welcome/compatibility", "welcome/roadmap", "welcome/faq", "welcome/about-us"]},
-		{type: 'category', label: 'Getting Started', items: ["getting-started/build", "getting-started/configuration", "getting-started/memory", "getting-started/security"]},
+		{type: 'category', label: 'Getting Started', items: ["getting-started/build", "getting-started/configuration", "getting-started/memory", "getting-started/security", "getting-started/compaction"]},
 		{type: 'category', label: 'Benchmarking', items: ["benchmarking/overview", "benchmarking/results-resp-bench", "benchmarking/resp-bench"]},
 		{type: 'category', label: 'Commands', items: ["commands/overview", "commands/api-compatibility", "commands/raw-string", "commands/generic-commands", "commands/analytics-commands", "commands/data-structures", "commands/server-commands", "commands/checkpoint-commands", "commands/transactions-commands", "commands/cluster", "commands/acl-commands"]},
 		{type: 'category', label: 'Server Extensions', items: ["extensions/transactions", "extensions/raw-strings", "extensions/objects"]},
@@ -27,6 +27,7 @@ const sidebars = {
 		  {type: 'category', label: 'Tsavorite - Storage Layer', collapsed: true, items: ["dev/tsavorite/intro", "dev/tsavorite/reviv", "dev/tsavorite/locking"]},
 		  "dev/transactions",
 		  "dev/custom-commands",
+		  "dev/collection-broker",
 		  {type: 'category', label: 'Cluster', collapsed: true, items: ["dev/cluster/overview","dev/cluster/sharding", "dev/cluster/slot-migration"]},
 		  "dev/contributing"]},
 		/*

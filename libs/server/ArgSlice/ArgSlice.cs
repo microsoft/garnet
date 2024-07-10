@@ -86,5 +86,12 @@ namespace Garnet.server
         {
             return new ArgSlice((byte*)Unsafe.AsPointer(ref MemoryMarshal.GetReference(span)), span.Length);
         }
+
+        /// <summary>
+        /// Check for equality to the provided argSlice
+        /// </summary>
+        /// <param name="argSlice"></param>
+        /// <returns></returns>
+        public readonly bool Equals(ArgSlice argSlice) => argSlice.Span.SequenceEqual(Span);
     }
 }

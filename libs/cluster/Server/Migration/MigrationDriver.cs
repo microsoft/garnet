@@ -17,7 +17,7 @@ namespace Garnet.cluster
         public bool TryStartMigrationTask(out ReadOnlySpan<byte> errorMessage)
         {
             errorMessage = default;
-            if (_keysWithSize != null)
+            if (transferOption == TransferOption.KEYS)
             {
                 try
                 {
@@ -29,14 +29,12 @@ namespace Garnet.cluster
                         return false;
                     }
 
-                    // Delete keys locally if  _copyOption is set to false.
-                    if (!_copyOption)
-                        DeleteKeys(_keysWithSize);
                     Status = MigrateState.SUCCESS;
                 }
                 finally
                 {
-                    clusterProvider.migrationManager.TryRemoveMigrationTask(this);
+                    if (!clusterProvider.migrationManager.TryRemoveMigrationTask(this))
+                        logger?.LogError("Could not remove MIGRATE KEYS session");
                 }
             }
             else
@@ -75,12 +73,12 @@ namespace Garnet.cluster
                     return;
                 }
 
-                if (!clusterProvider.WaitForConfigTransition()) return;
+                if (!clusterProvider.BumpAndWaitForEpochTransition()) return;
                 #endregion
 
                 #region migrateData
                 //3. Migrate actual data
-                if (!MigrateSlotsDataDriver())
+                if (!MigrateSlotsDriver())
                 {
                     logger?.LogError($"MigrateSlotsDriver failed");
                     TryRecoverFromFailure();
@@ -109,10 +107,7 @@ namespace Garnet.cluster
                 }
                 #endregion
 
-                //7. Delete keys in slot and remove migrate task from set of active migration tasks.            
-                DeleteKeysInSlot();
-
-                //8. Enqueue success log
+                //7. Enqueue success log
                 Status = MigrateState.SUCCESS;
             }
             catch (Exception ex)

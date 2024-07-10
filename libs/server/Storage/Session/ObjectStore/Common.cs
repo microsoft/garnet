@@ -36,6 +36,9 @@ namespace Garnet.server
         unsafe GarnetStatus RMWObjectStoreOperation<TObjectContext>(byte[] key, ArgSlice input, out ObjectOutputHeader output, ref TObjectContext objectStoreContext)
             where TObjectContext : ITsavoriteContext<byte[], IGarnetObject, ObjectInput, GarnetObjectStoreOutput, long, ObjectStoreFunctions>
         {
+            if (objectStoreContext.Session is null)
+                StorageSession.ThrowObjectStoreUninitializedException();
+
             ref var _input = ref Unsafe.AsRef<ObjectInput>(input.ptr);
 
             output = new();
@@ -68,6 +71,9 @@ namespace Garnet.server
         unsafe GarnetStatus RMWObjectStoreOperationWithOutput<TObjectContext>(byte[] key, ArgSlice input, ref TObjectContext objectStoreContext, ref GarnetObjectStoreOutput outputFooter)
             where TObjectContext : ITsavoriteContext<byte[], IGarnetObject, ObjectInput, GarnetObjectStoreOutput, long, ObjectStoreFunctions>
         {
+            if (objectStoreContext.Session is null)
+                StorageSession.ThrowObjectStoreUninitializedException();
+
             ref var _input = ref Unsafe.AsRef<ObjectInput>(input.ptr);
 
             // Perform RMW on object store
@@ -95,6 +101,9 @@ namespace Garnet.server
         unsafe GarnetStatus ReadObjectStoreOperationWithOutput<TObjectContext>(byte[] key, ArgSlice input, ref TObjectContext objectStoreContext, ref GarnetObjectStoreOutput outputFooter)
             where TObjectContext : ITsavoriteContext<byte[], IGarnetObject, ObjectInput, GarnetObjectStoreOutput, long, ObjectStoreFunctions>
         {
+            if (objectStoreContext.Session is null)
+                StorageSession.ThrowObjectStoreUninitializedException();
+
             ref var _input = ref Unsafe.AsRef<ObjectInput>(input.ptr);
 
             // Perform read on object store
@@ -198,6 +207,40 @@ namespace Garnet.server
         }
 
         /// <summary>
+        /// Converts a single token in RESP format to ArgSlice type
+        /// </summary>
+        /// <param name="outputFooter">The RESP format output object</param>
+        /// <returns></returns>
+        unsafe ArgSlice ProcessRespSingleTokenOutput(GarnetObjectStoreOutput outputFooter)
+        {
+            byte* element = null;
+            var len = 0;
+            ArgSlice result;
+
+            var outputSpan = outputFooter.spanByteAndMemory.IsSpanByte ?
+                             outputFooter.spanByteAndMemory.SpanByte.AsReadOnlySpan() : outputFooter.spanByteAndMemory.AsMemoryReadOnlySpan();
+            try
+            {
+                fixed (byte* outputPtr = outputSpan)
+                {
+                    var refPtr = outputPtr;
+
+                    if (!RespReadUtils.ReadPtrWithLengthHeader(ref element, ref len, ref refPtr,
+                            outputPtr + outputSpan.Length))
+                        return default;
+                    result = new ArgSlice(element, len);
+                }
+            }
+            finally
+            {
+                if (!outputFooter.spanByteAndMemory.IsSpanByte)
+                    outputFooter.spanByteAndMemory.Memory.Dispose();
+            }
+
+            return result;
+        }
+
+        /// <summary>
         /// Gets the value of the key store in the Object Store
         /// </summary>
         /// <typeparam name="TObjectContext"></typeparam>
@@ -209,6 +252,9 @@ namespace Garnet.server
         unsafe GarnetStatus ReadObjectStoreOperation<TObjectContext>(byte[] key, ArgSlice input, out ObjectOutputHeader output, ref TObjectContext objectStoreContext)
         where TObjectContext : ITsavoriteContext<byte[], IGarnetObject, ObjectInput, GarnetObjectStoreOutput, long, ObjectStoreFunctions>
         {
+            if (objectStoreContext.Session is null)
+                StorageSession.ThrowObjectStoreUninitializedException();
+
             ref var _input = ref Unsafe.AsRef<ObjectInput>(input.ptr);
 
             output = new();
@@ -241,6 +287,10 @@ namespace Garnet.server
         public GarnetStatus ObjectScan<TObjectContext>(byte[] key, ArgSlice input, ref GarnetObjectStoreOutput outputFooter, ref TObjectContext objectStoreContext)
             where TObjectContext : ITsavoriteContext<byte[], IGarnetObject, ObjectInput, GarnetObjectStoreOutput, long, ObjectStoreFunctions>
           => ReadObjectStoreOperationWithOutput(key, input, ref objectStoreContext, ref outputFooter);
+
+        [MethodImpl(MethodImplOptions.NoInlining)]
+        static void ThrowObjectStoreUninitializedException()
+            => throw new GarnetException("Object store is disabled");
 
         #endregion
     }

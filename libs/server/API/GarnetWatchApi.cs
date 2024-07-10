@@ -299,10 +299,10 @@ namespace Garnet.server
         }
 
         /// <inheritdoc />
-        public GarnetStatus HashGet(ArgSlice key, ArgSlice[] fields, out ArgSlice[] values)
+        public GarnetStatus HashGetMultiple(ArgSlice key, ArgSlice[] fields, out ArgSlice[] values)
         {
             garnetApi.WATCH(key, StoreType.Object);
-            return garnetApi.HashGet(key, fields, out values);
+            return garnetApi.HashGetMultiple(key, fields, out values);
         }
 
         /// <inheritdoc />
@@ -352,6 +352,18 @@ namespace Garnet.server
         {
             garnetApi.WATCH(key, StoreType.Object);
             return garnetApi.HashGet(key, input, ref outputFooter);
+        }
+
+        public GarnetStatus HashGetAll(byte[] key, ArgSlice input, ref GarnetObjectStoreOutput outputFooter)
+        {
+            garnetApi.WATCH(key, StoreType.Object);
+            return garnetApi.HashGetAll(key, input, ref outputFooter);
+        }
+
+        public GarnetStatus HashGetMultiple(byte[] key, ArgSlice input, ref GarnetObjectStoreOutput outputFooter)
+        {
+            garnetApi.WATCH(key, StoreType.Object);
+            return garnetApi.HashGetMultiple(key, input, ref outputFooter);
         }
 
         /// <inheritdoc />
@@ -447,7 +459,7 @@ namespace Garnet.server
         #region HLL Methods
 
         /// <inheritdoc />
-        public GarnetStatus HyperLogLogLength(ArgSlice[] keys, ref SpanByte input, out long count, out bool error)
+        public GarnetStatus HyperLogLogLength(Span<ArgSlice> keys, ref SpanByte input, out long count, out bool error)
         {
             foreach (var key in keys)
             {
@@ -457,7 +469,7 @@ namespace Garnet.server
         }
 
         /// <inheritdoc />
-        public GarnetStatus HyperLogLogLength(ArgSlice[] keys, out long count)
+        public GarnetStatus HyperLogLogLength(Span<ArgSlice> keys, out long count)
         {
             foreach (var key in keys)
             {

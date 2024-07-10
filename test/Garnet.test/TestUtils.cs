@@ -269,7 +269,7 @@ namespace Garnet.test
             {
                 var loggerFactory = LoggerFactory.Create(builder =>
                 {
-                    builder.AddProvider(new NUnitLoggerProvider(TestContext.Progress, "GarnetServer", null, false, false, LogLevel.Trace));
+                    builder.AddProvider(new NUnitLoggerProvider(TestContext.Progress, TestContext.CurrentContext.Test.MethodName, null, false, false, LogLevel.Trace));
                     builder.SetMinimumLevel(LogLevel.Trace);
                 });
 
@@ -555,7 +555,7 @@ namespace Garnet.test
             {
                 EndPoints = defaultEndPoints,
                 CommandMap = CommandMap.Create(cmds),
-                ConnectTimeout = (int)TimeSpan.FromSeconds(2).TotalMilliseconds,
+                ConnectTimeout = (int)TimeSpan.FromSeconds(Debugger.IsAttached ? 100 : 2).TotalMilliseconds,
                 SyncTimeout = (int)TimeSpan.FromSeconds(30).TotalMilliseconds,
                 AsyncTimeout = (int)TimeSpan.FromSeconds(30).TotalMilliseconds,
                 AllowAdmin = allowAdmin,
@@ -565,6 +565,7 @@ namespace Garnet.test
                 AbortOnConnectFail = true,
                 Password = authPassword,
                 User = authUsername,
+                ClientName = TestContext.CurrentContext.Test.MethodName,
             };
 
             if (Debugger.IsAttached)
@@ -792,7 +793,7 @@ namespace Garnet.test
             try
             {
                 var result = compilation.Emit(dstFilePath);
-                Assert.IsTrue(result.Success);
+                Assert.IsTrue(result.Success, string.Join(Environment.NewLine, result.Diagnostics.Select(d => d.ToString())));
             }
             catch (Exception ex)
             {

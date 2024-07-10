@@ -5,6 +5,7 @@ using System;
 using System.Collections.Generic;
 using System.IO;
 using System.Linq;
+using System.Net;
 using System.Text;
 using System.Threading;
 using System.Threading.Tasks;
@@ -142,7 +143,7 @@ namespace Garnet.test.cluster
         {
             var replica_count = 1;// Per primary
             var primary_count = 1;
-            var nodes_count = primary_count + primary_count * replica_count;
+            var nodes_count = primary_count + (primary_count * replica_count);
             Assert.IsTrue(primary_count > 0);
             context.CreateInstances(nodes_count, disableObjects: disableObjects, enableAOF: true, useTLS: useTLS);
             context.CreateConnection(useTLS: useTLS);
@@ -208,7 +209,7 @@ namespace Garnet.test.cluster
         {
             var replica_count = 1;// Per primary
             var primary_count = 1;
-            var nodes_count = primary_count + primary_count * replica_count;
+            var nodes_count = primary_count + (primary_count * replica_count);
             Assert.IsTrue(primary_count > 0);
             context.CreateInstances(nodes_count, disableObjects: disableObjects, enableAOF: true, useTLS: useTLS);
             context.CreateConnection(useTLS: useTLS);
@@ -400,7 +401,7 @@ namespace Garnet.test.cluster
             var kvpairCount = keyCount;
             var addCount = 5;
             context.kvPairs = [];
-            context.kvPairsObj = new Dictionary<string, List<int>>();
+            context.kvPairsObj = [];
 
             // Populate Primary
             if (disableObjects)
@@ -436,7 +437,7 @@ namespace Garnet.test.cluster
         {
             var replica_count = 1;// Per primary
             var primary_count = 1;
-            var nodes_count = primary_count + primary_count * replica_count;
+            var nodes_count = primary_count + (primary_count * replica_count);
             Assert.IsTrue(primary_count > 0);
             context.CreateInstances(nodes_count, tryRecover: true, disableObjects: disableObjects, enableAOF: true, useTLS: useTLS);
             context.CreateConnection(useTLS: useTLS);
@@ -502,7 +503,7 @@ namespace Garnet.test.cluster
         {
             var replica_count = 1;// Per primary
             var primary_count = 1;
-            var nodes_count = primary_count + primary_count * replica_count;
+            var nodes_count = primary_count + (primary_count * replica_count);
             Assert.IsTrue(primary_count > 0);
             context.CreateInstances(nodes_count, enableAOF: true, useTLS: useTLS);
             context.CreateConnection(useTLS: useTLS);
@@ -566,7 +567,7 @@ namespace Garnet.test.cluster
         {
             var replica_count = 1;// Per primary
             var primary_count = 1;
-            var nodes_count = primary_count + primary_count * replica_count;
+            var nodes_count = primary_count + (primary_count * replica_count);
             Assert.IsTrue(primary_count > 0);
             context.CreateInstances(nodes_count, disableObjects: true, enableAOF: true, useTLS: useTLS);
             context.CreateConnection(useTLS: useTLS);
@@ -635,7 +636,7 @@ namespace Garnet.test.cluster
         {
             var replica_count = 2; // Per primary
             var primary_count = 1;
-            var nodes_count = primary_count + primary_count * replica_count;
+            var nodes_count = primary_count + (primary_count * replica_count);
             Assert.IsTrue(primary_count > 0);
             context.CreateInstances(nodes_count, disableObjects: true, EnableIncrementalSnapshots: enableIncrementalSnapshots, enableAOF: true, useTLS: useTLS);
             context.CreateConnection(useTLS: useTLS);
@@ -748,7 +749,7 @@ namespace Garnet.test.cluster
         {
             var replica_count = 2; // Per primary
             var primary_count = 1;
-            var nodes_count = primary_count + primary_count * replica_count;
+            var nodes_count = primary_count + (primary_count * replica_count);
             Assert.IsTrue(primary_count > 0);
             context.CreateInstances(nodes_count, disableObjects: true, MainMemoryReplication: true, OnDemandCheckpoint: true, CommitFrequencyMs: -1, enableAOF: true, useTLS: useTLS);
             context.CreateConnection(useTLS: useTLS);
@@ -792,7 +793,7 @@ namespace Garnet.test.cluster
         {
             var replica_count = 1;// Per primary
             var primary_count = 1;
-            var nodes_count = primary_count + primary_count * replica_count;
+            var nodes_count = primary_count + (primary_count * replica_count);
             Assert.IsTrue(primary_count > 0);
             context.CreateInstances(nodes_count, disableObjects: true, MainMemoryReplication: MainMemoryReplication, OnDemandCheckpoint: onDemandCheckpoint, CommitFrequencyMs: -1, enableAOF: true, useTLS: useTLS);
             context.CreateConnection(useTLS: useTLS);
@@ -891,7 +892,7 @@ namespace Garnet.test.cluster
             var set = false;
             var replica_count = 2;// Per primary
             var primary_count = 1;
-            var nodes_count = primary_count + primary_count * replica_count;
+            var nodes_count = primary_count + (primary_count * replica_count);
             Assert.IsTrue(primary_count > 0);
             context.CreateInstances(nodes_count, disableObjects: disableObjects, MainMemoryReplication: mainMemoryReplication, CommitFrequencyMs: mainMemoryReplication ? -1 : 0, OnDemandCheckpoint: mainMemoryReplication, FastCommit: fastCommit, enableAOF: true, useTLS: useTLS);
             context.CreateConnection(useTLS: useTLS);
@@ -1004,6 +1005,41 @@ namespace Garnet.test.cluster
                 context.ValidateKVCollectionAgainstReplica(ref context.kvPairs, replicaIndex: replicaIndex, primaryIndex: newPrimaryIndex);
             else
                 context.ValidateNodeObjects(ref context.kvPairsObj, nodeIndex: newPrimaryIndex, set: set);
+        }
+
+        [Test, Order(21)]
+        [Category("REPLICATION")]
+        public void ClusterReplicateFails()
+        {
+            const string UserName = "temp-user";
+            const string Password = "temp-password";
+
+            const string ClusterUserName = "cluster-user";
+            const string ClusterPassword = "cluster-password";
+
+            // Setup a cluster (mimicking the style in which this bug was first found)
+            ServerCredential clusterCreds = new(ClusterUserName, ClusterPassword, IsAdmin: true, UsedForClusterAuth: true, IsClearText: true);
+            ServerCredential userCreds = new(UserName, Password, IsAdmin: true, UsedForClusterAuth: false, IsClearText: true);
+
+            context.GenerateCredentials([userCreds, clusterCreds]);
+            context.CreateInstances(2, disableObjects: true, disablePubSub: true, enableAOF: true, clusterCreds: clusterCreds, useAcl: true, MainMemoryReplication: true, CommitFrequencyMs: -1);
+            var primaryEndpoint = (IPEndPoint)context.endpoints.First();
+            var replicaEndpoint = (IPEndPoint)context.endpoints.Last();
+
+            Assert.AreNotEqual(primaryEndpoint, replicaEndpoint, "Should have different endpoints for nodes");
+
+            using var primaryConnection = ConnectionMultiplexer.Connect($"{primaryEndpoint.Address}:{primaryEndpoint.Port},user={UserName},password={Password}");
+            var primaryServer = primaryConnection.GetServer(primaryEndpoint);
+
+            Assert.AreEqual("OK", (string)primaryServer.Execute("CLUSTER", ["ADDSLOTSRANGE", "0", "16383"], flags: CommandFlags.NoRedirect));
+            Assert.AreEqual("OK", (string)primaryServer.Execute("CLUSTER", ["MEET", replicaEndpoint.Address.ToString(), replicaEndpoint.Port.ToString()], flags: CommandFlags.NoRedirect));
+
+            using var replicaConnection = ConnectionMultiplexer.Connect($"{replicaEndpoint.Address}:{replicaEndpoint.Port},user={UserName},password={Password}");
+            var replicaServer = replicaConnection.GetServer(replicaEndpoint);
+
+            // Try to replicate from a server that doesn't exist
+            var exc = Assert.Throws<RedisServerException>(() => replicaServer.Execute("CLUSTER", ["REPLICATE", Guid.NewGuid().ToString()], flags: CommandFlags.NoRedirect));
+            Assert.IsTrue(exc.Message.StartsWith("ERR I don't know about node "));
         }
     }
 }

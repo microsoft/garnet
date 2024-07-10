@@ -274,19 +274,21 @@ namespace Garnet.cluster
         /// Wait for config transition
         /// </summary>
         /// <returns></returns>
-        internal bool WaitForConfigTransition()
+        internal bool BumpAndWaitForEpochTransition()
         {
             var server = storeWrapper.GetServer();
             BumpCurrentEpoch();
             while (true)
             {
             retry:
-                var currentEpoch = GarnetCurrentEpoch;
                 Thread.Yield();
+                // Acquire latest bumped epoch
+                var currentEpoch = GarnetCurrentEpoch;
                 var sessions = server.ActiveClusterSessions();
                 foreach (var s in sessions)
                 {
                     var entryEpoch = s.LocalCurrentEpoch;
+                    // Retry if at least one session has not yet caught up to the current epoch.
                     if (entryEpoch != 0 && entryEpoch < currentEpoch)
                         goto retry;
                 }

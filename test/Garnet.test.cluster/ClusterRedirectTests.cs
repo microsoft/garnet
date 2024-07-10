@@ -503,7 +503,7 @@ ClusterRedirectTests.TestFlags testFlags)
 
             var result = connections[otherNodeIndex].SendCommand(cmd);
             var status = ClusterTestUtils.ParseResponseState(result, out var _slot, out var _address, out var _port, out var _value, out var _values);
-            Assert.AreEqual(status, ResponseState.MOVED);
+            Assert.AreEqual(status, ResponseState.MOVED, cmd);
             Assert.AreEqual(_slot, slot);
             Assert.AreEqual(_address, connections[nodeIndex].Address);
             Assert.AreEqual(_port, connections[nodeIndex].Port);
@@ -608,13 +608,13 @@ ClusterRedirectTests.TestFlags testFlags)
             var respMigratingStable = ClusterTestUtils.SetSlot(ref connections[sourceNodeIndex], migrateSlot, "STABLE", "");
             Assert.AreEqual(respMigratingStable, "OK");
 
-            if (CheckFlag(command.testFlags, (TestFlags.KEY_EXISTS | TestFlags.READONLY)))
+            if (CheckFlag(command.testFlags, TestFlags.KEY_EXISTS | TestFlags.READONLY))
             {
                 Assert.AreEqual(status, ResponseState.OK, command.cmdTag);
             }
             else if (CheckFlag(command.testFlags, (TestFlags.KEY_EXISTS)))
             {
-                Assert.AreEqual(status, ResponseState.MIGRATING, command.cmdTag);
+                Assert.AreEqual(status, ResponseState.OK, command.cmdTag);
             }
             else
             {
@@ -758,7 +758,7 @@ ClusterRedirectTests.TestFlags testFlags)
                 if (testCmd != null)
                 {
                     var (status, value, values) = SendToNodeFromSlot(ref connections, testCmd, slots.Last(), command.cmdTag, false);
-                    Assert.AreEqual(ResponseState.CROSSSLOT, status);
+                    Assert.AreEqual(ResponseState.CROSSSLOT, status, testCmd);
                 }
             }
 

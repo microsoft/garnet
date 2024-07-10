@@ -38,5 +38,4 @@ USER $APP_UID
 # For inter-container communication.
 EXPOSE 6379
 
-# Run GarnetServer with an index size of 128MB
-ENTRYPOINT ["./GarnetServer", "-i", "128m", "--port", "6379"]
+ENTRYPOINT ["/app/GarnetServer"]

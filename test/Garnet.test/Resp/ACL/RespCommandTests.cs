@@ -6,11 +6,12 @@ using System.Collections.Generic;
 using System.Linq;
 using System.Numerics;
 using System.Reflection;
+using System.Threading.Tasks;
+using Garnet.client;
 using Garnet.server;
 using Garnet.server.ACL;
 using Microsoft.CodeAnalysis;
 using NUnit.Framework;
-using StackExchange.Redis;
 
 namespace Garnet.test.Resp.ACL
 {
@@ -62,9 +63,17 @@ namespace Garnet.test.Resp.ACL
                     continue;
                 }
 
-                Assert.IsTrue(test.Name.EndsWith("ACLs"), $"Expected all tests in {nameof(RespCommandTests)} except {nameof(AllCommandsCovered)} to be per-command and end with ACLs, unexpected test: {test.Name}");
+                Assert.IsTrue(test.Name.EndsWith("ACLs") || test.Name.EndsWith("ACLsAsync"), $"Expected all tests in {nameof(RespCommandTests)} except {nameof(AllCommandsCovered)} to be per-command and end with ACLs, unexpected test: {test.Name}");
 
-                string command = test.Name[..^"ALCs".Length];
+                string command;
+                if (test.Name.EndsWith("ACLs"))
+                {
+                    command = test.Name[..^"ALCs".Length];
+                }
+                else
+                {
+                    command = test.Name[..^"ACLsAsync".Length];
+                }
 
                 covered.Add(command);
             }
@@ -72,7 +81,8 @@ namespace Garnet.test.Resp.ACL
             Assert.IsTrue(RespCommandsInfo.TryGetRespCommandsInfo(out IReadOnlyDictionary<string, RespCommandsInfo> allInfo), "Couldn't load all command details");
             Assert.IsTrue(RespCommandsInfo.TryGetRespCommandNames(out IReadOnlySet<string> advertisedCommands), "Couldn't get advertised RESP commands");
 
-            IEnumerable<string> withOnlySubCommands = allInfo.Where(static x => (x.Value.SubCommands?.Length ?? 0) != 0 && x.Value.Flags == RespCommandFlags.None).Select(static x => x.Key);
+            // TODO: See if these commands could be identified programmatically
+            IEnumerable<string> withOnlySubCommands = ["ACL", "CLUSTER", "CONFIG", "LATENCY", "MEMORY", "MODULE"];
             IEnumerable<string> notCoveredByACLs = allInfo.Where(static x => x.Value.Flags.HasFlag(RespCommandFlags.NoAuth)).Select(static kv => kv.Key);
 
             // Check tests against RespCommandsInfo
@@ -100,23 +110,23 @@ namespace Garnet.test.Resp.ACL
         }
 
         [Test]
-        public void AsyncACLs()
+        public async Task AsyncACLsAsync()
         {
             // ASYNC is only support in Resp3, so we use exceptions for control flow here
 
-            CheckCommands(
+            await CheckCommandsAsync(
                 "ASYNC",
-                [DoAsync]
+                [DoAsyncAsync]
             );
 
-            static void DoAsync(IServer server)
+            static async Task DoAsyncAsync(GarnetClient server)
             {
                 try
                 {
-                    RedisResult val = server.Execute("ASYNC", "BARRIER");
+                    await server.ExecuteForStringResultAsync("ASYNC", ["BARRIER"]);
                     Assert.Fail("Should be unreachable, ASYNC shouldn't work in Resp2");
                 }
-                catch (RedisException e)
+                catch (Exception e)
                 {
                     if (e.Message == "ERR command not supported in RESP2")
                     {
@@ -129,73 +139,73 @@ namespace Garnet.test.Resp.ACL
         }
 
         [Test]
-        public void AclCatACLs()
+        public async Task AclCatACLsAsync()
         {
-            CheckCommands(
+            await CheckCommandsAsync(
                 "ACL CAT",
-                [DoAclCat]
+                [DoAclCatAsync]
             );
 
-            static void DoAclCat(IServer server)
+            static async Task DoAclCatAsync(GarnetClient server)
             {
-                RedisResult val = server.Execute("ACL", "CAT");
-                Assert.AreEqual(ResultType.Array, val.Resp2Type);
+                string[] res = await server.ExecuteForStringArrayResultAsync("ACL", ["CAT"]);
+                Assert.IsNotNull(res);
             }
         }
 
         [Test]
-        public void AclDelUserACLs()
+        public async Task AclDelUserACLsAsync()
         {
-            CheckCommands(
+            await CheckCommandsAsync(
                 "ACL DELUSER",
-                [DoAclDelUser, DoAclDelUserMulti]
+                [DoAclDelUserAsync, DoAclDelUserMultiAsync]
             );
 
-            static void DoAclDelUser(IServer server)
+            static async Task DoAclDelUserAsync(GarnetClient client)
             {
-                RedisResult val = server.Execute("ACL", "DELUSER", "does-not-exist");
-                Assert.AreEqual(0, (int)val);
+                long val = await client.ExecuteForLongResultAsync("ACL", ["DELUSER", "does-not-exist"]);
+                Assert.AreEqual(0, val);
             }
 
-            void DoAclDelUserMulti(IServer server)
+            async Task DoAclDelUserMultiAsync(GarnetClient client)
             {
-                RedisResult val = server.Execute("ACL", "DELUSER", "does-not-exist-1", "does-not-exist-2");
-                Assert.AreEqual(0, (int)val);
+                long val = await client.ExecuteForLongResultAsync("ACL", ["DELUSER", "does-not-exist-1", "does-not-exist-2"]);
+                Assert.AreEqual(0, val);
             }
         }
 
         [Test]
-        public void AclListACLs()
+        public async Task AclListACLsAsync()
         {
-            CheckCommands(
+            await CheckCommandsAsync(
                 "ACL LIST",
-                [DoAclList]
+                [DoAclListAsync]
             );
 
-            static void DoAclList(IServer server)
+            static async Task DoAclListAsync(GarnetClient client)
             {
-                RedisResult val = server.Execute("ACL", "LIST");
-                Assert.AreEqual(ResultType.Array, val.Resp2Type);
+                string[] val = await client.ExecuteForStringArrayResultAsync("ACL", ["LIST"]);
+                Assert.IsNotNull(val);
             }
         }
 
         [Test]
-        public void AclLoadACLs()
+        public async Task AclLoadACLsAsync()
         {
-            CheckCommands(
+            await CheckCommandsAsync(
                 "ACL LOAD",
-                [DoAclLoad]
+                [DoAclLoadAsync]
             );
 
-            static void DoAclLoad(IServer server)
+            static async Task DoAclLoadAsync(GarnetClient client)
             {
                 try
                 {
-                    RedisResult val = server.Execute("ACL", "LOAD");
+                    await client.ExecuteForStringResultAsync("ACL", ["LOAD"]);
 
                     Assert.Fail("No ACL file, so this should have failed");
                 }
-                catch (RedisException e)
+                catch (Exception e)
                 {
                     if (e.Message != "ERR Cannot find ACL configuration file ''")
                     {
@@ -206,22 +216,22 @@ namespace Garnet.test.Resp.ACL
         }
 
         [Test]
-        public void AclSaveACLs()
+        public async Task AclSaveACLsAsync()
         {
-            CheckCommands(
+            await CheckCommandsAsync(
                 "ACL SAVE",
-                [DoAclSave]
+                [DoAclSaveAsync]
             );
 
-            static void DoAclSave(IServer server)
+            static async Task DoAclSaveAsync(GarnetClient client)
             {
                 try
                 {
-                    RedisResult val = server.Execute("ACL", "SAVE");
+                    await client.ExecuteForStringResultAsync("ACL", ["SAVE"]);
 
                     Assert.Fail("No ACL file, so this should have failed");
                 }
-                catch (RedisException e)
+                catch (Exception e)
                 {
                     if (e.Message != "ERR ACL configuration file not set.")
                     {
@@ -232,75 +242,75 @@ namespace Garnet.test.Resp.ACL
         }
 
         [Test]
-        public void AclSetUserACLs()
+        public async Task AclSetUserACLsAsync()
         {
-            CheckCommands(
+            await CheckCommandsAsync(
                 "ACL SETUSER",
-                [DoAclSetUserOn, DoAclSetUserCategory, DoAclSetUserOnCategory]
+                [DoAclSetUserOnAsync, DoAclSetUserCategoryAsync, DoAclSetUserOnCategoryAsync]
             );
 
-            static void DoAclSetUserOn(IServer server)
+            static async Task DoAclSetUserOnAsync(GarnetClient client)
             {
-                RedisResult res = server.Execute("ACL", "SETUSER", "foo", "on");
-                Assert.AreEqual("OK", (string)res);
+                string res = await client.ExecuteForStringResultAsync("ACL", ["SETUSER", "foo", "on"]);
+                Assert.AreEqual("OK", res);
             }
 
-            static void DoAclSetUserCategory(IServer server)
+            static async Task DoAclSetUserCategoryAsync(GarnetClient client)
             {
-                RedisResult res = server.Execute("ACL", "SETUSER", "foo", "+@read");
-                Assert.AreEqual("OK", (string)res);
+                string res = await client.ExecuteForStringResultAsync("ACL", ["SETUSER", "foo", "+@read"]);
+                Assert.AreEqual("OK", res);
             }
 
-            static void DoAclSetUserOnCategory(IServer server)
+            static async Task DoAclSetUserOnCategoryAsync(GarnetClient client)
             {
-                RedisResult res = server.Execute("ACL", "SETUSER", "foo", "on", "+@read");
-                Assert.AreEqual("OK", (string)res);
+                string res = await client.ExecuteForStringResultAsync("ACL", ["SETUSER", "foo", "on", "+@read"]);
+                Assert.AreEqual("OK", res);
             }
         }
 
         [Test]
-        public void AclUsersACLs()
+        public async Task AclUsersACLsAsync()
         {
-            CheckCommands(
+            await CheckCommandsAsync(
                 "ACL USERS",
-                [DoAclUsers]
+                [DoAclUsersAsync]
             );
 
-            static void DoAclUsers(IServer server)
+            static async Task DoAclUsersAsync(GarnetClient client)
             {
-                RedisResult val = server.Execute("ACL", "USERS");
-                Assert.AreEqual(ResultType.Array, val.Resp2Type);
+                string[] val = await client.ExecuteForStringArrayResultAsync("ACL", ["USERS"]);
+                Assert.IsNotNull(val);
             }
         }
 
         [Test]
-        public void AclWhoAmIACLs()
+        public async Task AclWhoAmIACLsAsync()
         {
-            CheckCommands(
+            await CheckCommandsAsync(
                 "ACL WHOAMI",
-                [DoAclWhoAmI]
+                [DoAclWhoAmIAsync]
             );
 
-            static void DoAclWhoAmI(IServer server)
+            static async Task DoAclWhoAmIAsync(GarnetClient client)
             {
-                RedisResult val = server.Execute("ACL", "WHOAMI");
+                string val = await client.ExecuteForStringResultAsync("ACL", ["WHOAMI"]);
                 Assert.AreNotEqual("", (string)val);
             }
         }
 
         [Test]
-        public void AppendACLs()
+        public async Task AppendACLsAsync()
         {
             int count = 0;
 
-            CheckCommands(
+            await CheckCommandsAsync(
                 "APPEND",
-                [DoAppend]
+                [DoAppendAsync]
             );
 
-            void DoAppend(IServer server)
+            async Task DoAppendAsync(GarnetClient client)
             {
-                RedisResult val = server.Execute("APPEND", $"key-{count}", "foo");
+                long val = await client.ExecuteForLongResultAsync("APPEND", [$"key-{count}", "foo"]);
                 count++;
 
                 Assert.AreEqual(3, (int)val);
@@ -308,39 +318,37 @@ namespace Garnet.test.Resp.ACL
         }
 
         [Test]
-        public void AskingACLs()
+        public async Task AskingACLsAsync()
         {
-            CheckCommands(
+            await CheckCommandsAsync(
                 "ASKING",
-                [DoAsking]
+                [DoAskingAsync]
             );
 
-            void DoAsking(IServer server)
+            async Task DoAskingAsync(GarnetClient client)
             {
-                RedisResult val = server.Execute("ASKING");
+                string val = await client.ExecuteForStringResultAsync("ASKING");
                 Assert.AreEqual("OK", (string)val);
             }
         }
 
         [Test]
-        public void BGSaveACLs()
+        public async Task BGSaveACLsAsync()
         {
-            CheckCommands(
+            await CheckCommandsAsync(
                 "BGSAVE",
-                [DoBGSave, DoBGSaveSchedule]
+                [DoBGSaveAsync, DoBGSaveScheduleAsync]
             );
 
-
-
-            static void DoBGSave(IServer server)
+            static async Task DoBGSaveAsync(GarnetClient client)
             {
                 try
                 {
-                    RedisResult res = server.Execute("BGSAVE");
+                    string res = await client.ExecuteForStringResultAsync("BGSAVE");
 
-                    Assert.IsTrue("Background saving started" == (string)res || "Background saving scheduled" == (string)res);
+                    Assert.IsTrue("Background saving started" == res || "Background saving scheduled" == res);
                 }
-                catch (RedisException e)
+                catch (Exception e)
                 {
                     if (e.Message != "ERR checkpoint already in progress")
                     {
@@ -349,14 +357,15 @@ namespace Garnet.test.Resp.ACL
                 }
             }
 
-            static void DoBGSaveSchedule(IServer server)
+            static async Task DoBGSaveScheduleAsync(GarnetClient client)
             {
                 try
                 {
-                    RedisResult res = server.Execute("BGSAVE", "SCHEDULE");
-                    Assert.IsTrue("Background saving started" == (string)res || "Background saving scheduled" == (string)res);
+                    string res = await client.ExecuteForStringResultAsync("BGSAVE", ["SCHEDULE"]);
+
+                    Assert.IsTrue("Background saving started" == res || "Background saving scheduled" == res);
                 }
-                catch (RedisException e)
+                catch (Exception e)
                 {
                     if (e.Message != "ERR checkpoint already in progress")
                     {
@@ -367,306 +376,302 @@ namespace Garnet.test.Resp.ACL
         }
 
         [Test]
-        public void BitcountACLs()
+        public async Task BitcountACLsAsync()
         {
-            CheckCommands(
+            await CheckCommandsAsync(
                 "BITCOUNT",
-                [DoBitCount, DoBitCountStartEnd, DoBitCountStartEndBit, DoBitCountStartEndByte]
+                [DoBitCountAsync, DoBitCountStartEndAsync, DoBitCountStartEndBitAsync, DoBitCountStartEndByteAsync]
             );
 
-            static void DoBitCount(IServer server)
+            static async Task DoBitCountAsync(GarnetClient client)
             {
-                RedisResult val = server.Execute("BITCOUNT", "empty-key");
-                Assert.AreEqual(0, (int)val);
+                long val = await client.ExecuteForLongResultAsync("BITCOUNT", ["empty-key"]);
+                Assert.AreEqual(0, val);
             }
 
-            static void DoBitCountStartEnd(IServer server)
+            static async Task DoBitCountStartEndAsync(GarnetClient client)
             {
-                RedisResult val = server.Execute("BITCOUNT", "empty-key", "1", "1");
-                Assert.AreEqual(0, (int)val);
+                long val = await client.ExecuteForLongResultAsync("BITCOUNT", ["empty-key", "1", "1"]);
+                Assert.AreEqual(0, val);
             }
 
-            static void DoBitCountStartEndByte(IServer server)
+            static async Task DoBitCountStartEndByteAsync(GarnetClient client)
             {
-                RedisResult val = server.Execute("BITCOUNT", "empty-key", "1", "1", "BYTE");
-                Assert.AreEqual(0, (int)val);
+                long val = await client.ExecuteForLongResultAsync("BITCOUNT", ["empty-key", "1", "1", "BYTE"]);
+                Assert.AreEqual(0, val);
             }
 
-            static void DoBitCountStartEndBit(IServer server)
+            static async Task DoBitCountStartEndBitAsync(GarnetClient client)
             {
-                RedisResult val = server.Execute("BITCOUNT", "empty-key", "1", "1", "BIT");
-                Assert.AreEqual(0, (int)val);
+                long val = await client.ExecuteForLongResultAsync("BITCOUNT", ["empty-key", "1", "1", "BIT"]);
+                Assert.AreEqual(0, val);
             }
         }
 
         [Test]
-        public void BitfieldACLs()
+        public async Task BitfieldACLsAsync()
         {
             int count = 0;
 
-            CheckCommands(
+            await CheckCommandsAsync(
                 "BITFIELD",
-                [DoBitFieldGet, DoBitFieldGetWrap, DoBitFieldGetSat, DoBitFieldGetFail, DoBitFieldSet, DoBitFieldSetWrap, DoBitFieldSetSat, DoBitFieldSetFail, DoBitFieldIncrBy, DoBitFieldIncrByWrap, DoBitFieldIncrBySat, DoBitFieldIncrByFail, DoBitFieldMulti]
+                [DoBitFieldGetAsync, DoBitFieldGetWrapAsync, DoBitFieldGetSatAsync, DoBitFieldGetFailAsync, DoBitFieldSetAsync, DoBitFieldSetWrapAsync, DoBitFieldSetSatAsync, DoBitFieldSetFailAsync, DoBitFieldIncrByAsync, DoBitFieldIncrByWrapAsync, DoBitFieldIncrBySatAsync, DoBitFieldIncrByFailAsync, DoBitFieldMultiAsync]
             );
 
-            void DoBitFieldGet(IServer server)
+            async Task DoBitFieldGetAsync(GarnetClient client)
             {
-                RedisResult val = server.Execute("BITFIELD", $"empty-{count}", "GET", "u4", "0");
+                string[] val = await client.ExecuteForStringArrayResultAsync("BITFIELD", [$"empty-{count}", "GET", "u4", "0"]);
                 count++;
-                Assert.AreEqual(0, (int)val);
+                Assert.AreEqual(0, long.Parse(val[0]));
             }
 
-            void DoBitFieldGetWrap(IServer server)
+            async Task DoBitFieldGetWrapAsync(GarnetClient client)
             {
-                RedisResult val = server.Execute("BITFIELD", $"empty-{count}", "GET", "u4", "0", "OVERFLOW", "WRAP");
+                string[] val = await client.ExecuteForStringArrayResultAsync("BITFIELD", [$"empty-{count}", "GET", "u4", "0", "OVERFLOW", "WRAP"]);
                 count++;
-                Assert.AreEqual(0, (int)val);
+                Assert.AreEqual(0, long.Parse(val[0]));
             }
 
-            void DoBitFieldGetSat(IServer server)
+            async Task DoBitFieldGetSatAsync(GarnetClient client)
             {
-                RedisResult val = server.Execute("BITFIELD", $"empty-{count}", "GET", "u4", "0", "OVERFLOW", "SAT");
+                string[] val = await client.ExecuteForStringArrayResultAsync("BITFIELD", [$"empty-{count}", "GET", "u4", "0", "OVERFLOW", "SAT"]);
                 count++;
-                Assert.AreEqual(0, (int)val);
+                Assert.AreEqual(0, long.Parse(val[0]));
             }
 
-            void DoBitFieldGetFail(IServer server)
+            async Task DoBitFieldGetFailAsync(GarnetClient client)
             {
-                RedisResult val = server.Execute("BITFIELD", $"empty-{count}", "GET", "u4", "0", "OVERFLOW", "FAIL");
+                string[] val = await client.ExecuteForStringArrayResultAsync("BITFIELD", [$"empty-{count}", "GET", "u4", "0", "OVERFLOW", "FAIL"]);
                 count++;
-                Assert.AreEqual(0, (int)val);
+                Assert.AreEqual(0, long.Parse(val[0]));
             }
 
-            void DoBitFieldSet(IServer server)
+            async Task DoBitFieldSetAsync(GarnetClient client)
             {
-                RedisResult val = server.Execute("BITFIELD", $"empty-{count}", "SET", "u4", "0", "1");
+                string[] val = await client.ExecuteForStringArrayResultAsync("BITFIELD", [$"empty-{count}", "SET", "u4", "0", "1"]);
                 count++;
-                Assert.AreEqual(0, (int)val);
+                Assert.AreEqual(0, long.Parse(val[0]));
             }
 
-            void DoBitFieldSetWrap(IServer server)
+            async Task DoBitFieldSetWrapAsync(GarnetClient client)
             {
-                RedisResult val = server.Execute("BITFIELD", $"empty-{count}", "SET", "u4", "0", "1", "OVERFLOW", "WRAP");
+                string[] val = await client.ExecuteForStringArrayResultAsync("BITFIELD", [$"empty-{count}", "SET", "u4", "0", "1", "OVERFLOW", "WRAP"]);
                 count++;
-                Assert.AreEqual(0, (int)val);
+                Assert.AreEqual(0, long.Parse(val[0]));
             }
 
-            void DoBitFieldSetSat(IServer server)
+            async Task DoBitFieldSetSatAsync(GarnetClient client)
             {
-                RedisResult val = server.Execute("BITFIELD", $"empty-{count}", "SET", "u4", "0", "1", "OVERFLOW", "SAT");
+                string[] val = await client.ExecuteForStringArrayResultAsync("BITFIELD", [$"empty-{count}", "SET", "u4", "0", "1", "OVERFLOW", "SAT"]);
                 count++;
-                Assert.AreEqual(0, (int)val);
+                Assert.AreEqual(0, long.Parse(val[0]));
             }
 
-            void DoBitFieldSetFail(IServer server)
+            async Task DoBitFieldSetFailAsync(GarnetClient client)
             {
-                RedisResult val = server.Execute("BITFIELD", $"empty-{count}", "SET", "u4", "0", "1", "OVERFLOW", "FAIL");
+                string[] val = await client.ExecuteForStringArrayResultAsync("BITFIELD", [$"empty-{count}", "SET", "u4", "0", "1", "OVERFLOW", "FAIL"]);
                 count++;
-                Assert.AreEqual(0, (int)val);
+                Assert.AreEqual(0, long.Parse(val[0]));
             }
 
-            void DoBitFieldIncrBy(IServer server)
+            async Task DoBitFieldIncrByAsync(GarnetClient client)
             {
-                RedisResult val = server.Execute("BITFIELD", $"empty-{count}", "INCRBY", "u4", "0", "4");
+                string[] val = await client.ExecuteForStringArrayResultAsync("BITFIELD", [$"empty-{count}", "INCRBY", "u4", "0", "4"]);
                 count++;
-                Assert.AreEqual(4, (int)val);
+                Assert.AreEqual(4, long.Parse(val[0]));
             }
 
-            void DoBitFieldIncrByWrap(IServer server)
+            async Task DoBitFieldIncrByWrapAsync(GarnetClient client)
             {
-                RedisResult val = server.Execute("BITFIELD", $"empty-{count}", "INCRBY", "u4", "0", "4", "OVERFLOW", "WRAP");
+                string[] val = await client.ExecuteForStringArrayResultAsync("BITFIELD", [$"empty-{count}", "INCRBY", "u4", "0", "4", "OVERFLOW", "WRAP"]);
                 count++;
-                Assert.AreEqual(4, (int)val);
+                Assert.AreEqual(4, long.Parse(val[0]));
             }
 
-            void DoBitFieldIncrBySat(IServer server)
+            async Task DoBitFieldIncrBySatAsync(GarnetClient client)
             {
-                RedisResult val = server.Execute("BITFIELD", $"empty-{count}", "INCRBY", "u4", "0", "4", "OVERFLOW", "SAT");
+                string[] val = await client.ExecuteForStringArrayResultAsync("BITFIELD", [$"empty-{count}", "INCRBY", "u4", "0", "4", "OVERFLOW", "SAT"]);
                 count++;
-                Assert.AreEqual(4, (int)val);
+                Assert.AreEqual(4, long.Parse(val[0]));
             }
 
-            void DoBitFieldIncrByFail(IServer server)
+            async Task DoBitFieldIncrByFailAsync(GarnetClient client)
             {
-                RedisResult val = server.Execute("BITFIELD", $"empty-{count}", "INCRBY", "u4", "0", "4", "OVERFLOW", "FAIL");
+                string[] val = await client.ExecuteForStringArrayResultAsync("BITFIELD", [$"empty-{count}", "INCRBY", "u4", "0", "4", "OVERFLOW", "FAIL"]);
                 count++;
-                Assert.AreEqual(4, (int)val);
+                Assert.AreEqual(4, long.Parse(val[0]));
             }
 
-            void DoBitFieldMulti(IServer server)
+            async Task DoBitFieldMultiAsync(GarnetClient client)
             {
-                RedisResult val = server.Execute("BITFIELD", $"empty-{count}", "OVERFLOW", "WRAP", "GET", "u4", "1", "SET", "u4", "2", "1", "OVERFLOW", "FAIL", "INCRBY", "u4", "6", "2");
+                string[] val = await client.ExecuteForStringArrayResultAsync("BITFIELD", [$"empty-{count}", "OVERFLOW", "WRAP", "GET", "u4", "1", "SET", "u4", "2", "1", "OVERFLOW", "FAIL", "INCRBY", "u4", "6", "2"]);
                 count++;
 
-                RedisValue[] arr = (RedisValue[])val;
+                Assert.AreEqual(3, val.Length);
 
-                Assert.AreEqual(3, arr.Length);
+                string v0 = val[0];
+                string v1 = val[1];
+                string v2 = val[2];
 
-                RedisValue v0 = arr[0];
-                RedisValue v1 = arr[1];
-                RedisValue v2 = arr[2];
-
-                Assert.AreEqual(0, (int)v0);
-                Assert.AreEqual(0, (int)v1);
-                Assert.AreEqual(2, (int)v2);
+                Assert.AreEqual("0", v0);
+                Assert.AreEqual("0", v1);
+                Assert.AreEqual("2", v2);
             }
         }
 
         [Test]
-        public void BitfieldROACLs()
+        public async Task BitfieldROACLsAsync()
         {
-            CheckCommands(
+            await CheckCommandsAsync(
                 "BITFIELD_RO",
-                [DoBitFieldROGet, DoBitFieldROMulti]
+                [DoBitFieldROGetAsync, DoBitFieldROMultiAsync]
             );
 
-            static void DoBitFieldROGet(IServer server)
+            static async Task DoBitFieldROGetAsync(GarnetClient client)
             {
-                RedisResult val = server.Execute("BITFIELD_RO", "empty-a", "GET", "u4", "0");
-                Assert.AreEqual(0, (int)val);
+                string[] val = await client.ExecuteForStringArrayResultAsync("BITFIELD_RO", ["empty-a", "GET", "u4", "0"]);
+                Assert.AreEqual(0, long.Parse(val[0]));
             }
 
-            static void DoBitFieldROMulti(IServer server)
+            static async Task DoBitFieldROMultiAsync(GarnetClient client)
             {
-                RedisResult val = server.Execute("BITFIELD_RO", "empty-b", "GET", "u4", "0", "GET", "u4", "3");
+                string[] val = await client.ExecuteForStringArrayResultAsync("BITFIELD_RO", ["empty-b", "GET", "u4", "0", "GET", "u4", "3"]);
 
-                RedisValue[] arr = (RedisValue[])val;
+                Assert.AreEqual(2, val.Length);
 
-                Assert.AreEqual(2, arr.Length);
+                string v0 = val[0];
+                string v1 = val[1];
 
-                RedisValue v0 = arr[0];
-                RedisValue v1 = arr[1];
-
-                Assert.AreEqual(0, (int)v0);
-                Assert.AreEqual(0, (int)v1);
+                Assert.AreEqual("0", v0);
+                Assert.AreEqual("0", v1);
             }
         }
 
         [Test]
-        public void BitOpACLs()
+        public async Task BitOpACLsAsync()
         {
-            CheckCommands(
+            await CheckCommandsAsync(
                 "BITOP",
-                [DoBitOpAnd, DoBitOpAndMulti, DoBitOpOr, DoBitOpOrMulti, DoBitOpXor, DoBitOpXorMulti, DoBitOpNot]
+                [DoBitOpAndAsync, DoBitOpAndMultiAsync, DoBitOpOrAsync, DoBitOpOrMultiAsync, DoBitOpXorAsync, DoBitOpXorMultiAsync, DoBitOpNotAsync]
             );
 
-            static void DoBitOpAnd(IServer server)
+            static async Task DoBitOpAndAsync(GarnetClient client)
             {
-                RedisResult val = server.Execute("BITOP", "AND", "zero", "zero");
-                Assert.AreEqual(0, (int)val);
+                long val = await client.ExecuteForLongResultAsync("BITOP", ["AND", "zero", "zero"]);
+                Assert.AreEqual(0, val);
             }
 
-            static void DoBitOpAndMulti(IServer server)
+            static async Task DoBitOpAndMultiAsync(GarnetClient client)
             {
-                RedisResult val = server.Execute("BITOP", "AND", "zero", "zero", "one", "zero");
-                Assert.AreEqual(0, (int)val);
+                long val = await client.ExecuteForLongResultAsync("BITOP", ["AND", "zero", "zero", "one", "zero"]);
+                Assert.AreEqual(0, val);
             }
 
-            static void DoBitOpOr(IServer server)
+            static async Task DoBitOpOrAsync(GarnetClient client)
             {
-                RedisResult val = server.Execute("BITOP", "OR", "one", "one");
-                Assert.AreEqual(0, (int)val);
+                long val = await client.ExecuteForLongResultAsync("BITOP", ["OR", "one", "one"]);
+                Assert.AreEqual(0, val);
             }
 
-            static void DoBitOpOrMulti(IServer server)
+            static async Task DoBitOpOrMultiAsync(GarnetClient client)
             {
-                RedisResult val = server.Execute("BITOP", "OR", "one", "one", "one", "one");
-                Assert.AreEqual(0, (int)val);
+                long val = await client.ExecuteForLongResultAsync("BITOP", ["OR", "one", "one", "one", "one"]);
+                Assert.AreEqual(0, val);
             }
 
-            static void DoBitOpXor(IServer server)
+            static async Task DoBitOpXorAsync(GarnetClient client)
             {
-                RedisResult val = server.Execute("BITOP", "XOR", "one", "zero");
-                Assert.AreEqual(0, (int)val);
+                long val = await client.ExecuteForLongResultAsync("BITOP", ["XOR", "one", "zero"]);
+                Assert.AreEqual(0, val);
             }
 
-            static void DoBitOpXorMulti(IServer server)
+            static async Task DoBitOpXorMultiAsync(GarnetClient client)
             {
-                RedisResult val = server.Execute("BITOP", "XOR", "one", "one", "one", "zero");
-                Assert.AreEqual(0, (int)val);
+                long val = await client.ExecuteForLongResultAsync("BITOP", ["XOR", "one", "one", "one", "zero"]);
+                Assert.AreEqual(0, val);
             }
 
-            static void DoBitOpNot(IServer server)
+            static async Task DoBitOpNotAsync(GarnetClient client)
             {
-                RedisResult val = server.Execute("BITOP", "NOT", "one", "zero");
-                Assert.AreEqual(0, (int)val);
+                long val = await client.ExecuteForLongResultAsync("BITOP", ["NOT", "one", "zero"]);
+                Assert.AreEqual(0, val);
             }
         }
 
         [Test]
-        public void BitPosACLs()
+        public async Task BitPosACLsAsync()
         {
-            CheckCommands(
+            await CheckCommandsAsync(
                 "BITPOS",
-                [DoBitPos, DoBitPosStart, DoBitPosStartEnd, DoBitPosStartEndBit, DoBitPosStartEndByte]
+                [DoBitPosAsync, DoBitPosStartAsync, DoBitPosStartEndAsync, DoBitPosStartEndBitAsync, DoBitPosStartEndByteAsync]
             );
 
-            static void DoBitPos(IServer server)
+            static async Task DoBitPosAsync(GarnetClient client)
             {
-                RedisResult val = server.Execute("BITPOS", "empty", "1");
-                Assert.AreEqual(-1, (int)val);
+                long val = await client.ExecuteForLongResultAsync("BITPOS", ["empty", "1"]);
+                Assert.AreEqual(-1, val);
             }
 
-            static void DoBitPosStart(IServer server)
+            static async Task DoBitPosStartAsync(GarnetClient client)
             {
-                RedisResult val = server.Execute("BITPOS", "empty", "1", "5");
-                Assert.AreEqual(-1, (int)val);
+                long val = await client.ExecuteForLongResultAsync("BITPOS", ["empty", "1", "5"]);
+                Assert.AreEqual(-1, val);
             }
 
-            static void DoBitPosStartEnd(IServer server)
+            static async Task DoBitPosStartEndAsync(GarnetClient client)
             {
-                RedisResult val = server.Execute("BITPOS", "empty", "1", "5", "7");
-                Assert.AreEqual(-1, (int)val);
+                long val = await client.ExecuteForLongResultAsync("BITPOS", ["empty", "1", "5", "7"]);
+                Assert.AreEqual(-1, val);
             }
 
-            static void DoBitPosStartEndBit(IServer server)
+            static async Task DoBitPosStartEndBitAsync(GarnetClient client)
             {
-                RedisResult val = server.Execute("BITPOS", "empty", "1", "5", "7", "BIT");
-                Assert.AreEqual(-1, (int)val);
+                long val = await client.ExecuteForLongResultAsync("BITPOS", ["empty", "1", "5", "7", "BIT"]);
+                Assert.AreEqual(-1, val);
             }
 
-            static void DoBitPosStartEndByte(IServer server)
+            static async Task DoBitPosStartEndByteAsync(GarnetClient client)
             {
-                RedisResult val = server.Execute("BITPOS", "empty", "1", "5", "7", "BYTE");
-                Assert.AreEqual(-1, (int)val);
+                long val = await client.ExecuteForLongResultAsync("BITPOS", ["empty", "1", "5", "7", "BYTE"]);
+                Assert.AreEqual(-1, val);
             }
         }
 
         [Test]
-        public void ClientACLs()
+        public async Task ClientACLsAsync()
         {
             // TODO: client isn't really implemented looks like, so this is mostly a placeholder in case it gets implemented correctly
 
-            CheckCommands(
+            await CheckCommandsAsync(
                 "CLIENT",
-                [DoClient]
+                [DoClientAsync]
             );
 
-            static void DoClient(IServer server)
+            static async Task DoClientAsync(GarnetClient client)
             {
-                RedisResult val = server.Execute("CLIENT");
-                Assert.AreEqual("OK", (string)val);
+                string val = await client.ExecuteForStringResultAsync("CLIENT");
+                Assert.AreEqual("OK", val);
             }
         }
 
         [Test]
-        public void ClusterAddSlotsACLs()
+        public async Task ClusterAddSlotsACLsAsync()
         {
             // All cluster command "success" is a thrown exception, because clustering is disabled
 
-            CheckCommands(
+            await CheckCommandsAsync(
                 "CLUSTER ADDSLOTS",
-                [DoClusterAddSlots, DoClusterAddSlotsMulti]
+                [DoClusterAddSlotsAsync, DoClusterAddSlotsMultiAsync]
             );
 
-            static void DoClusterAddSlots(IServer server)
+            static async Task DoClusterAddSlotsAsync(GarnetClient client)
             {
                 try
                 {
-                    server.Execute("CLUSTER", "ADDSLOTS", "1");
+                    await client.ExecuteForStringResultAsync("CLUSTER", ["ADDSLOTS", "1"]);
                     Assert.Fail("Shouldn't be reachable, cluster isn't enabled");
                 }
-                catch (RedisException e)
+                catch (Exception e)
                 {
                     if (e.Message == "ERR This instance has cluster support disabled")
                     {
@@ -677,14 +682,14 @@ namespace Garnet.test.Resp.ACL
                 }
             }
 
-            static void DoClusterAddSlotsMulti(IServer server)
+            static async Task DoClusterAddSlotsMultiAsync(GarnetClient client)
             {
                 try
                 {
-                    server.Execute("CLUSTER", "ADDSLOTS", "1", "2");
+                    await client.ExecuteForStringResultAsync("CLUSTER", ["ADDSLOTS", "1", "2"]);
                     Assert.Fail("Shouldn't be reachable, cluster isn't enabled");
                 }
-                catch (RedisException e)
+                catch (Exception e)
                 {
                     if (e.Message == "ERR This instance has cluster support disabled")
                     {
@@ -697,23 +702,23 @@ namespace Garnet.test.Resp.ACL
         }
 
         [Test]
-        public void ClusterAddSlotsRangeACLs()
+        public async Task ClusterAddSlotsRangeACLsAsync()
         {
             // All cluster command "success" is a thrown exception, because clustering is disabled
 
-            CheckCommands(
+            await CheckCommandsAsync(
                 "CLUSTER ADDSLOTSRANGE",
-                [DoClusterAddSlotsRange, DoClusterAddSlotsRangeMulti]
+                [DoClusterAddSlotsRangeAsync, DoClusterAddSlotsRangeMultiAsync]
             );
 
-            static void DoClusterAddSlotsRange(IServer server)
+            static async Task DoClusterAddSlotsRangeAsync(GarnetClient client)
             {
                 try
                 {
-                    server.Execute("CLUSTER", "ADDSLOTSRANGE", "1", "3");
+                    await client.ExecuteForStringResultAsync("CLUSTER", ["ADDSLOTSRANGE", "1", "3"]);
                     Assert.Fail("Shouldn't be reachable, cluster isn't enabled");
                 }
-                catch (RedisException e)
+                catch (Exception e)
                 {
                     if (e.Message == "ERR This instance has cluster support disabled")
                     {
@@ -724,14 +729,14 @@ namespace Garnet.test.Resp.ACL
                 }
             }
 
-            static void DoClusterAddSlotsRangeMulti(IServer server)
+            static async Task DoClusterAddSlotsRangeMultiAsync(GarnetClient client)
             {
                 try
                 {
-                    server.Execute("CLUSTER", "ADDSLOTSRANGE", "1", "3", "7", "9");
+                    await client.ExecuteForStringResultAsync("CLUSTER", ["ADDSLOTSRANGE", "1", "3", "7", "9"]);
                     Assert.Fail("Shouldn't be reachable, cluster isn't enabled");
                 }
-                catch (RedisException e)
+                catch (Exception e)
                 {
                     if (e.Message == "ERR This instance has cluster support disabled")
                     {
@@ -744,23 +749,23 @@ namespace Garnet.test.Resp.ACL
         }
 
         [Test]
-        public void ClusterAofSyncACLs()
+        public async Task ClusterAofSyncACLsAsync()
         {
             // All cluster command "success" is a thrown exception, because clustering is disabled
 
-            CheckCommands(
+            await CheckCommandsAsync(
                 "CLUSTER AOFSYNC",
-                [DoClusterAofSync]
+                [DoClusterAofSyncAsync]
             );
 
-            static void DoClusterAofSync(IServer server)
+            static async Task DoClusterAofSyncAsync(GarnetClient client)
             {
                 try
                 {
-                    server.Execute("CLUSTER", "AOFSYNC", "abc", "def");
+                    await client.ExecuteForStringResultAsync("CLUSTER", ["AOFSYNC", "abc", "def"]);
                     Assert.Fail("Shouldn't be reachable, cluster isn't enabled");
                 }
-                catch (RedisException e)
+                catch (Exception e)
                 {
                     if (e.Message == "ERR This instance has cluster support disabled")
                     {
@@ -773,23 +778,23 @@ namespace Garnet.test.Resp.ACL
         }
 
         [Test]
-        public void ClusterAppendLogACLs()
+        public async Task ClusterAppendLogACLsAsync()
         {
             // All cluster command "success" is a thrown exception, because clustering is disabled
 
-            CheckCommands(
+            await CheckCommandsAsync(
                 "CLUSTER APPENDLOG",
-                [DoClusterAppendLog]
+                [DoClusterAppendLogAsync]
             );
 
-            static void DoClusterAppendLog(IServer server)
+            static async Task DoClusterAppendLogAsync(GarnetClient client)
             {
                 try
                 {
-                    server.Execute("CLUSTER", "APPENDLOG", "a", "b", "c", "d", "e");
+                    await client.ExecuteForStringResultAsync("CLUSTER", ["APPENDLOG", "a", "b", "c", "d", "e"]);
                     Assert.Fail("Shouldn't be reachable, cluster isn't enabled");
                 }
-                catch (RedisException e)
+                catch (Exception e)
                 {
                     if (e.Message == "ERR This instance has cluster support disabled")
                     {
@@ -802,23 +807,23 @@ namespace Garnet.test.Resp.ACL
         }
 
         [Test]
-        public void ClusterBanListACLs()
+        public async Task ClusterBanListACLsAsync()
         {
             // All cluster command "success" is a thrown exception, because clustering is disabled
 
-            CheckCommands(
+            await CheckCommandsAsync(
                 "CLUSTER BANLIST",
-                [DoClusterBanList]
+                [DoClusterBanListAsync]
             );
 
-            static void DoClusterBanList(IServer server)
+            static async Task DoClusterBanListAsync(GarnetClient client)
             {
                 try
                 {
-                    server.Execute("CLUSTER", "BANLIST");
+                    await client.ExecuteForStringResultAsync("CLUSTER", ["BANLIST"]);
                     Assert.Fail("Shouldn't be reachable, cluster isn't enabled");
                 }
-                catch (RedisException e)
+                catch (Exception e)
                 {
                     if (e.Message == "ERR This instance has cluster support disabled")
                     {
@@ -831,23 +836,23 @@ namespace Garnet.test.Resp.ACL
         }
 
         [Test]
-        public void ClusterBeginReplicaRecoverACLs()
+        public async Task ClusterBeginReplicaRecoverACLsAsync()
         {
             // All cluster command "success" is a thrown exception, because clustering is disabled
 
-            CheckCommands(
+            await CheckCommandsAsync(
                 "CLUSTER BEGIN_REPLICA_RECOVER",
-                [DoClusterBeginReplicaFailover]
+                [DoClusterBeginReplicaFailoverAsync]
             );
 
-            static void DoClusterBeginReplicaFailover(IServer server)
+            static async Task DoClusterBeginReplicaFailoverAsync(GarnetClient client)
             {
                 try
                 {
-                    server.Execute("CLUSTER", "BEGIN_REPLICA_RECOVER", "1", "2", "3", "4", "5", "6", "7");
+                    await client.ExecuteForStringResultAsync("CLUSTER", ["BEGIN_REPLICA_RECOVER", "1", "2", "3", "4", "5", "6", "7"]);
                     Assert.Fail("Shouldn't be reachable, cluster isn't enabled");
                 }
-                catch (RedisException e)
+                catch (Exception e)
                 {
                     if (e.Message == "ERR This instance has cluster support disabled")
                     {
@@ -860,23 +865,23 @@ namespace Garnet.test.Resp.ACL
         }
 
         [Test]
-        public void ClusterBumpEpochACLs()
+        public async Task ClusterBumpEpochACLsAsync()
         {
             // All cluster command "success" is a thrown exception, because clustering is disabled
 
-            CheckCommands(
+            await CheckCommandsAsync(
                 "CLUSTER BUMPEPOCH",
-                [DoClusterBumpEpoch]
+                [DoClusterBumpEpochAsync]
             );
 
-            static void DoClusterBumpEpoch(IServer server)
+            static async Task DoClusterBumpEpochAsync(GarnetClient client)
             {
                 try
                 {
-                    server.Execute("CLUSTER", "BUMPEPOCH");
+                    await client.ExecuteForStringResultAsync("CLUSTER", ["BUMPEPOCH"]);
                     Assert.Fail("Shouldn't be reachable, cluster isn't enabled");
                 }
-                catch (RedisException e)
+                catch (Exception e)
                 {
                     if (e.Message == "ERR This instance has cluster support disabled")
                     {
@@ -889,23 +894,23 @@ namespace Garnet.test.Resp.ACL
         }
 
         [Test]
-        public void ClusterCountKeysInSlotACLs()
+        public async Task ClusterCountKeysInSlotACLsAsync()
         {
             // All cluster command "success" is a thrown exception, because clustering is disabled
 
-            CheckCommands(
+            await CheckCommandsAsync(
                 "CLUSTER COUNTKEYSINSLOT",
-                [DoClusterBumpEpoch]
+                [DoClusterBumpEpochAsync]
             );
 
-            static void DoClusterBumpEpoch(IServer server)
+            static async Task DoClusterBumpEpochAsync(GarnetClient client)
             {
                 try
                 {
-                    server.Execute("CLUSTER", "COUNTKEYSINSLOT", "1");
+                    await client.ExecuteForStringResultAsync("CLUSTER", ["COUNTKEYSINSLOT", "1"]);
                     Assert.Fail("Shouldn't be reachable, cluster isn't enabled");
                 }
-                catch (RedisException e)
+                catch (Exception e)
                 {
                     if (e.Message == "ERR This instance has cluster support disabled")
                     {
@@ -918,23 +923,23 @@ namespace Garnet.test.Resp.ACL
         }
 
         [Test]
-        public void ClusterDelKeysInSlotACLs()
+        public async Task ClusterDelKeysInSlotACLsAsync()
         {
             // All cluster command "success" is a thrown exception, because clustering is disabled
 
-            CheckCommands(
+            await CheckCommandsAsync(
                 "CLUSTER DELKEYSINSLOT",
-                [DoClusterDelKeysInSlot]
+                [DoClusterDelKeysInSlotAsync]
             );
 
-            static void DoClusterDelKeysInSlot(IServer server)
+            static async Task DoClusterDelKeysInSlotAsync(GarnetClient client)
             {
                 try
                 {
-                    server.Execute("CLUSTER", "DELKEYSINSLOT", "1");
+                    await client.ExecuteForStringResultAsync("CLUSTER", ["DELKEYSINSLOT", "1"]);
                     Assert.Fail("Shouldn't be reachable, cluster isn't enabled");
                 }
-                catch (RedisException e)
+                catch (Exception e)
                 {
                     if (e.Message == "ERR This instance has cluster support disabled")
                     {
@@ -947,23 +952,23 @@ namespace Garnet.test.Resp.ACL
         }
 
         [Test]
-        public void ClusterDelKeysInSlotRangeACLs()
+        public async Task ClusterDelKeysInSlotRangeACLsAsync()
         {
             // All cluster command "success" is a thrown exception, because clustering is disabled
 
-            CheckCommands(
+            await CheckCommandsAsync(
                 "CLUSTER DELKEYSINSLOTRANGE",
-                [DoClusterDelKeysInSlotRange, DoClusterDelKeysInSlotRangeMulti]
+                [DoClusterDelKeysInSlotRangeAsync, DoClusterDelKeysInSlotRangeMultiAsync]
             );
 
-            static void DoClusterDelKeysInSlotRange(IServer server)
+            static async Task DoClusterDelKeysInSlotRangeAsync(GarnetClient client)
             {
                 try
                 {
-                    server.Execute("CLUSTER", "DELKEYSINSLOTRANGE", "1", "3");
+                    await client.ExecuteForStringResultAsync("CLUSTER", ["DELKEYSINSLOTRANGE", "1", "3"]);
                     Assert.Fail("Shouldn't be reachable, cluster isn't enabled");
                 }
-                catch (RedisException e)
+                catch (Exception e)
                 {
                     if (e.Message == "ERR This instance has cluster support disabled")
                     {
@@ -974,14 +979,14 @@ namespace Garnet.test.Resp.ACL
                 }
             }
 
-            static void DoClusterDelKeysInSlotRangeMulti(IServer server)
+            static async Task DoClusterDelKeysInSlotRangeMultiAsync(GarnetClient client)
             {
                 try
                 {
-                    server.Execute("CLUSTER", "DELKEYSINSLOTRANGE", "1", "3", "5", "9");
+                    await client.ExecuteForStringResultAsync("CLUSTER", ["DELKEYSINSLOTRANGE", "1", "3", "5", "9"]);
                     Assert.Fail("Shouldn't be reachable, cluster isn't enabled");
                 }
-                catch (RedisException e)
+                catch (Exception e)
                 {
                     if (e.Message == "ERR This instance has cluster support disabled")
                     {
@@ -994,23 +999,23 @@ namespace Garnet.test.Resp.ACL
         }
 
         [Test]
-        public void ClusterDelSlotsACLs()
+        public async Task ClusterDelSlotsACLsAsync()
         {
             // All cluster command "success" is a thrown exception, because clustering is disabled
 
-            CheckCommands(
+            await CheckCommandsAsync(
                 "CLUSTER DELSLOTS",
-                [DoClusterDelSlots, DoClusterDelSlotsMulti]
+                [DoClusterDelSlotsAsync, DoClusterDelSlotsMultiAsync]
             );
 
-            static void DoClusterDelSlots(IServer server)
+            static async Task DoClusterDelSlotsAsync(GarnetClient client)
             {
                 try
                 {
-                    server.Execute("CLUSTER", "DELSLOTS", "1");
+                    await client.ExecuteForStringResultAsync("CLUSTER", ["DELSLOTS", "1"]);
                     Assert.Fail("Shouldn't be reachable, cluster isn't enabled");
                 }
-                catch (RedisException e)
+                catch (Exception e)
                 {
                     if (e.Message == "ERR This instance has cluster support disabled")
                     {
@@ -1021,14 +1026,14 @@ namespace Garnet.test.Resp.ACL
                 }
             }
 
-            static void DoClusterDelSlotsMulti(IServer server)
+            static async Task DoClusterDelSlotsMultiAsync(GarnetClient client)
             {
                 try
                 {
-                    server.Execute("CLUSTER", "DELSLOTS", "1", "2");
+                    await client.ExecuteForStringResultAsync("CLUSTER", ["DELSLOTS", "1", "2"]);
                     Assert.Fail("Shouldn't be reachable, cluster isn't enabled");
                 }
-                catch (RedisException e)
+                catch (Exception e)
                 {
                     if (e.Message == "ERR This instance has cluster support disabled")
                     {
@@ -1041,23 +1046,23 @@ namespace Garnet.test.Resp.ACL
         }
 
         [Test]
-        public void ClusterDelSlotsRangeACLs()
+        public async Task ClusterDelSlotsRangeACLsAsync()
         {
             // All cluster command "success" is a thrown exception, because clustering is disabled
 
-            CheckCommands(
+            await CheckCommandsAsync(
                 "CLUSTER DELSLOTSRANGE",
-                [DoClusterDelSlotsRange, DoClusterDelSlotsRangeMulti]
+                [DoClusterDelSlotsRangeAsync, DoClusterDelSlotsRangeMultiAsync]
             );
 
-            static void DoClusterDelSlotsRange(IServer server)
+            static async Task DoClusterDelSlotsRangeAsync(GarnetClient client)
             {
                 try
                 {
-                    server.Execute("CLUSTER", "DELSLOTSRANGE", "1", "3");
+                    await client.ExecuteForStringResultAsync("CLUSTER", ["DELSLOTSRANGE", "1", "3"]);
                     Assert.Fail("Shouldn't be reachable, cluster isn't enabled");
                 }
-                catch (RedisException e)
+                catch (Exception e)
                 {
                     if (e.Message == "ERR This instance has cluster support disabled")
                     {
@@ -1068,14 +1073,14 @@ namespace Garnet.test.Resp.ACL
                 }
             }
 
-            static void DoClusterDelSlotsRangeMulti(IServer server)
+            static async Task DoClusterDelSlotsRangeMultiAsync(GarnetClient client)
             {
                 try
                 {
-                    server.Execute("CLUSTER", "DELSLOTSRANGE", "1", "3", "9", "11");
+                    await client.ExecuteForStringResultAsync("CLUSTER", ["DELSLOTSRANGE", "1", "3", "9", "11"]);
                     Assert.Fail("Shouldn't be reachable, cluster isn't enabled");
                 }
-                catch (RedisException e)
+                catch (Exception e)
                 {
                     if (e.Message == "ERR This instance has cluster support disabled")
                     {
@@ -1088,23 +1093,23 @@ namespace Garnet.test.Resp.ACL
         }
 
         [Test]
-        public void ClusterEndpointACLs()
+        public async Task ClusterEndpointACLsAsync()
         {
             // All cluster command "success" is a thrown exception, because clustering is disabled
 
-            CheckCommands(
+            await CheckCommandsAsync(
                 "CLUSTER ENDPOINT",
-                [DoClusterEndpoint]
+                [DoClusterEndpointAsync]
             );
 
-            static void DoClusterEndpoint(IServer server)
+            static async Task DoClusterEndpointAsync(GarnetClient client)
             {
                 try
                 {
-                    server.Execute("CLUSTER", "ENDPOINT", "abcd");
+                    await client.ExecuteForStringResultAsync("CLUSTER", ["ENDPOINT", "abcd"]);
                     Assert.Fail("Shouldn't be reachable, cluster isn't enabled");
                 }
-                catch (RedisException e)
+                catch (Exception e)
                 {
                     if (e.Message == "ERR This instance has cluster support disabled")
                     {
@@ -1117,23 +1122,23 @@ namespace Garnet.test.Resp.ACL
         }
 
         [Test]
-        public void ClusterFailoverACLs()
+        public async Task ClusterFailoverACLsAsync()
         {
             // All cluster command "success" is a thrown exception, because clustering is disabled
 
-            CheckCommands(
+            await CheckCommandsAsync(
                 "CLUSTER FAILOVER",
-                [DoClusterFailover, DoClusterFailoverForce]
+                [DoClusterFailoverAsync, DoClusterFailoverForceAsync]
             );
 
-            static void DoClusterFailover(IServer server)
+            static async Task DoClusterFailoverAsync(GarnetClient client)
             {
                 try
                 {
-                    server.Execute("CLUSTER", "FAILOVER");
+                    await client.ExecuteForStringResultAsync("CLUSTER", ["FAILOVER"]);
                     Assert.Fail("Shouldn't be reachable, cluster isn't enabled");
                 }
-                catch (RedisException e)
+                catch (Exception e)
                 {
                     if (e.Message == "ERR This instance has cluster support disabled")
                     {
@@ -1144,14 +1149,14 @@ namespace Garnet.test.Resp.ACL
                 }
             }
 
-            static void DoClusterFailoverForce(IServer server)
+            static async Task DoClusterFailoverForceAsync(GarnetClient client)
             {
                 try
                 {
-                    server.Execute("CLUSTER", "FAILOVER", "FORCE");
+                    await client.ExecuteForStringResultAsync("CLUSTER", ["FAILOVER", "FORCE"]);
                     Assert.Fail("Shouldn't be reachable, cluster isn't enabled");
                 }
-                catch (RedisException e)
+                catch (Exception e)
                 {
                     if (e.Message == "ERR This instance has cluster support disabled")
                     {
@@ -1164,23 +1169,23 @@ namespace Garnet.test.Resp.ACL
         }
 
         [Test]
-        public void ClusterFailStopWritesACLs()
+        public async Task ClusterFailStopWritesACLsAsync()
         {
             // All cluster command "success" is a thrown exception, because clustering is disabled
 
-            CheckCommands(
+            await CheckCommandsAsync(
                 "CLUSTER FAILSTOPWRITES",
-                [DoClusterFailStopWrites]
+                [DoClusterFailStopWritesAsync]
             );
 
-            static void DoClusterFailStopWrites(IServer server)
+            static async Task DoClusterFailStopWritesAsync(GarnetClient client)
             {
                 try
                 {
-                    server.Execute("CLUSTER", "FAILSTOPWRITES", "foo");
+                    await client.ExecuteForStringResultAsync("CLUSTER", ["FAILSTOPWRITES", "foo"]);
                     Assert.Fail("Shouldn't be reachable, cluster isn't enabled");
                 }
-                catch (RedisException e)
+                catch (Exception e)
                 {
                     if (e.Message == "ERR This instance has cluster support disabled")
                     {
@@ -1193,23 +1198,23 @@ namespace Garnet.test.Resp.ACL
         }
 
         [Test]
-        public void ClusterFailReplicationOffsetACLs()
+        public async Task ClusterFailReplicationOffsetACLsAsync()
         {
             // All cluster command "success" is a thrown exception, because clustering is disabled
 
-            CheckCommands(
+            await CheckCommandsAsync(
                 "CLUSTER FAILREPLICATIONOFFSET",
-                [DoClusterFailStopWrites]
+                [DoClusterFailStopWritesAsync]
             );
 
-            static void DoClusterFailStopWrites(IServer server)
+            static async Task DoClusterFailStopWritesAsync(GarnetClient client)
             {
                 try
                 {
-                    server.Execute("CLUSTER", "FAILREPLICATIONOFFSET", "foo");
+                    await client.ExecuteForStringResultAsync("CLUSTER", ["FAILREPLICATIONOFFSET", "foo"]);
                     Assert.Fail("Shouldn't be reachable, cluster isn't enabled");
                 }
-                catch (RedisException e)
+                catch (Exception e)
                 {
                     if (e.Message == "ERR This instance has cluster support disabled")
                     {
@@ -1222,23 +1227,23 @@ namespace Garnet.test.Resp.ACL
         }
 
         [Test]
-        public void ClusterForgetACLs()
+        public async Task ClusterForgetACLsAsync()
         {
             // All cluster command "success" is a thrown exception, because clustering is disabled
 
-            CheckCommands(
+            await CheckCommandsAsync(
                 "CLUSTER FORGET",
-                [DoClusterForget]
+                [DoClusterForgetAsync]
             );
 
-            static void DoClusterForget(IServer server)
+            static async Task DoClusterForgetAsync(GarnetClient client)
             {
                 try
                 {
-                    server.Execute("CLUSTER", "FORGET", "foo");
+                    await client.ExecuteForStringResultAsync("CLUSTER", ["FORGET", "foo"]);
                     Assert.Fail("Shouldn't be reachable, cluster isn't enabled");
                 }
-                catch (RedisException e)
+                catch (Exception e)
                 {
                     if (e.Message == "ERR This instance has cluster support disabled")
                     {
@@ -1251,23 +1256,23 @@ namespace Garnet.test.Resp.ACL
         }
 
         [Test]
-        public void ClusterGetKeysInSlotACLs()
+        public async Task ClusterGetKeysInSlotACLsAsync()
         {
             // All cluster command "success" is a thrown exception, because clustering is disabled
 
-            CheckCommands(
+            await CheckCommandsAsync(
                 "CLUSTER GETKEYSINSLOT",
-                [DoClusterGetKeysInSlot]
+                [DoClusterGetKeysInSlotAsync]
             );
 
-            static void DoClusterGetKeysInSlot(IServer server)
+            static async Task DoClusterGetKeysInSlotAsync(GarnetClient client)
             {
                 try
                 {
-                    server.Execute("CLUSTER", "GETKEYSINSLOT", "foo", "3");
+                    await client.ExecuteForStringResultAsync("CLUSTER", ["GETKEYSINSLOT", "foo", "3"]);
                     Assert.Fail("Shouldn't be reachable, cluster isn't enabled");
                 }
-                catch (RedisException e)
+                catch (Exception e)
                 {
                     if (e.Message == "ERR This instance has cluster support disabled")
                     {
@@ -1280,23 +1285,23 @@ namespace Garnet.test.Resp.ACL
         }
 
         [Test]
-        public void ClusterGossipACLs()
+        public async Task ClusterGossipACLsAsync()
         {
             // All cluster command "success" is a thrown exception, because clustering is disabled
 
-            CheckCommands(
+            await CheckCommandsAsync(
                 "CLUSTER GOSSIP",
-                [DoClusterGossip]
+                [DoClusterGossipAsync]
             );
 
-            static void DoClusterGossip(IServer server)
+            static async Task DoClusterGossipAsync(GarnetClient client)
             {
                 try
                 {
-                    server.Execute("CLUSTER", "GOSSIP", "foo", "3");
+                    await client.ExecuteForStringResultAsync("CLUSTER", ["GOSSIP", "foo", "3"]);
                     Assert.Fail("Shouldn't be reachable, cluster isn't enabled");
                 }
-                catch (RedisException e)
+                catch (Exception e)
                 {
                     if (e.Message == "ERR This instance has cluster support disabled")
                     {
@@ -1309,23 +1314,23 @@ namespace Garnet.test.Resp.ACL
         }
 
         [Test]
-        public void ClusterHelpACLs()
+        public async Task ClusterHelpACLsAsync()
         {
             // All cluster command "success" is a thrown exception, because clustering is disabled
 
-            CheckCommands(
+            await CheckCommandsAsync(
                 "CLUSTER HELP",
-                [DoClusterHelp]
+                [DoClusterHelpAsync]
             );
 
-            static void DoClusterHelp(IServer server)
+            static async Task DoClusterHelpAsync(GarnetClient client)
             {
                 try
                 {
-                    server.Execute("CLUSTER", "HELP");
+                    await client.ExecuteForStringResultAsync("CLUSTER", ["HELP"]);
                     Assert.Fail("Shouldn't be reachable, cluster isn't enabled");
                 }
-                catch (RedisException e)
+                catch (Exception e)
                 {
                     if (e.Message == "ERR This instance has cluster support disabled")
                     {
@@ -1338,23 +1343,23 @@ namespace Garnet.test.Resp.ACL
         }
 
         [Test]
-        public void ClusterInfoACLs()
+        public async Task ClusterInfoACLsAsync()
         {
             // All cluster command "success" is a thrown exception, because clustering is disabled
 
-            CheckCommands(
+            await CheckCommandsAsync(
                 "CLUSTER INFO",
-                [DoClusterInfo]
+                [DoClusterInfoAsync]
             );
 
-            static void DoClusterInfo(IServer server)
+            static async Task DoClusterInfoAsync(GarnetClient client)
             {
                 try
                 {
-                    server.Execute("CLUSTER", "INFO");
+                    await client.ExecuteForStringResultAsync("CLUSTER", ["INFO"]);
                     Assert.Fail("Shouldn't be reachable, cluster isn't enabled");
                 }
-                catch (RedisException e)
+                catch (Exception e)
                 {
                     if (e.Message == "ERR This instance has cluster support disabled")
                     {
@@ -1367,23 +1372,23 @@ namespace Garnet.test.Resp.ACL
         }
 
         [Test]
-        public void ClusterInitiateReplicaSyncACLs()
+        public async Task ClusterInitiateReplicaSyncACLsAsync()
         {
             // All cluster command "success" is a thrown exception, because clustering is disabled
 
-            CheckCommands(
+            await CheckCommandsAsync(
                 "CLUSTER INITIATE_REPLICA_SYNC",
-                [DoClusterInfo]
+                [DoClusterInfoAsync]
             );
 
-            static void DoClusterInfo(IServer server)
+            static async Task DoClusterInfoAsync(GarnetClient client)
             {
                 try
                 {
-                    server.Execute("CLUSTER", "INITIATE_REPLICA_SYNC", "1", "2", "3", "4", "5");
+                    await client.ExecuteForStringResultAsync("CLUSTER", ["INITIATE_REPLICA_SYNC", "1", "2", "3", "4", "5"]);
                     Assert.Fail("Shouldn't be reachable, cluster isn't enabled");
                 }
-                catch (RedisException e)
+                catch (Exception e)
                 {
                     if (e.Message == "ERR This instance has cluster support disabled")
                     {
@@ -1396,23 +1401,23 @@ namespace Garnet.test.Resp.ACL
         }
 
         [Test]
-        public void ClusterKeySlotACLs()
+        public async Task ClusterKeySlotACLsAsync()
         {
             // All cluster command "success" is a thrown exception, because clustering is disabled
 
-            CheckCommands(
+            await CheckCommandsAsync(
                 "CLUSTER KEYSLOT",
-                [DoClusterKeySlot]
+                [DoClusterKeySlotAsync]
             );
 
-            static void DoClusterKeySlot(IServer server)
+            static async Task DoClusterKeySlotAsync(GarnetClient client)
             {
                 try
                 {
-                    server.Execute("CLUSTER", "KEYSLOT", "foo");
+                    await client.ExecuteForStringResultAsync("CLUSTER", ["KEYSLOT", "foo"]);
                     Assert.Fail("Shouldn't be reachable, cluster isn't enabled");
                 }
-                catch (RedisException e)
+                catch (Exception e)
                 {
                     if (e.Message == "ERR This instance has cluster support disabled")
                     {
@@ -1425,23 +1430,23 @@ namespace Garnet.test.Resp.ACL
         }
 
         [Test]
-        public void ClusterMeetACLs()
+        public async Task ClusterMeetACLsAsync()
         {
             // All cluster command "success" is a thrown exception, because clustering is disabled
 
-            CheckCommands(
+            await CheckCommandsAsync(
                 "CLUSTER MEET",
-                [DoClusterMeet, DoClusterMeetPort]
+                [DoClusterMeetAsync, DoClusterMeetPortAsync]
             );
 
-            static void DoClusterMeet(IServer server)
+            static async Task DoClusterMeetAsync(GarnetClient client)
             {
                 try
                 {
-                    server.Execute("CLUSTER", "MEET", "127.0.0.1", "1234");
+                    await client.ExecuteForStringResultAsync("CLUSTER", ["MEET", "127.0.0.1", "1234"]);
                     Assert.Fail("Shouldn't be reachable, cluster isn't enabled");
                 }
-                catch (RedisException e)
+                catch (Exception e)
                 {
                     if (e.Message == "ERR This instance has cluster support disabled")
                     {
@@ -1452,14 +1457,14 @@ namespace Garnet.test.Resp.ACL
                 }
             }
 
-            static void DoClusterMeetPort(IServer server)
+            static async Task DoClusterMeetPortAsync(GarnetClient client)
             {
                 try
                 {
-                    server.Execute("CLUSTER", "MEET", "127.0.0.1", "1234", "6789");
+                    await client.ExecuteForStringResultAsync("CLUSTER", ["MEET", "127.0.0.1", "1234", "6789"]);
                     Assert.Fail("Shouldn't be reachable, cluster isn't enabled");
                 }
-                catch (RedisException e)
+                catch (Exception e)
                 {
                     if (e.Message == "ERR This instance has cluster support disabled")
                     {
@@ -1472,23 +1477,23 @@ namespace Garnet.test.Resp.ACL
         }
 
         [Test]
-        public void ClusterMigrateACLs()
+        public async Task ClusterMigrateACLsAsync()
         {
             // All cluster command "success" is a thrown exception, because clustering is disabled
 
-            CheckCommands(
+            await CheckCommandsAsync(
                 "CLUSTER MIGRATE",
-                [DoClusterMigrate]
+                [DoClusterMigrateAsync]
             );
 
-            static void DoClusterMigrate(IServer server)
+            static async Task DoClusterMigrateAsync(GarnetClient client)
             {
                 try
                 {
-                    server.Execute("CLUSTER", "MIGRATE", "a", "b", "c");
+                    await client.ExecuteForStringResultAsync("CLUSTER", ["MIGRATE", "a", "b", "c"]);
                     Assert.Fail("Shouldn't be reachable, cluster isn't enabled");
                 }
-                catch (RedisException e)
+                catch (Exception e)
                 {
                     if (e.Message == "ERR This instance has cluster support disabled")
                     {
@@ -1501,23 +1506,23 @@ namespace Garnet.test.Resp.ACL
         }
 
         [Test]
-        public void ClusterMTasksACLs()
+        public async Task ClusterMTasksACLsAsync()
         {
             // All cluster command "success" is a thrown exception, because clustering is disabled
 
-            CheckCommands(
+            await CheckCommandsAsync(
                 "CLUSTER MTASKS",
-                [DoClusterMTasks]
+                [DoClusterMTasksAsync]
             );
 
-            static void DoClusterMTasks(IServer server)
+            static async Task DoClusterMTasksAsync(GarnetClient client)
             {
                 try
                 {
-                    server.Execute("CLUSTER", "MTASKS");
+                    await client.ExecuteForStringResultAsync("CLUSTER", ["MTASKS"]);
                     Assert.Fail("Shouldn't be reachable, cluster isn't enabled");
                 }
-                catch (RedisException e)
+                catch (Exception e)
                 {
                     if (e.Message == "ERR This instance has cluster support disabled")
                     {
@@ -1530,23 +1535,23 @@ namespace Garnet.test.Resp.ACL
         }
 
         [Test]
-        public void ClusterMyIdACLs()
+        public async Task ClusterMyIdACLsAsync()
         {
             // All cluster command "success" is a thrown exception, because clustering is disabled
 
-            CheckCommands(
+            await CheckCommandsAsync(
                 "CLUSTER MYID",
-                [DoClusterMyId]
+                [DoClusterMyIdAsync]
             );
 
-            static void DoClusterMyId(IServer server)
+            static async Task DoClusterMyIdAsync(GarnetClient client)
             {
                 try
                 {
-                    server.Execute("CLUSTER", "MYID");
+                    await client.ExecuteForStringResultAsync("CLUSTER", ["MYID"]);
                     Assert.Fail("Shouldn't be reachable, cluster isn't enabled");
                 }
-                catch (RedisException e)
+                catch (Exception e)
                 {
                     if (e.Message == "ERR This instance has cluster support disabled")
                     {
@@ -1559,23 +1564,23 @@ namespace Garnet.test.Resp.ACL
         }
 
         [Test]
-        public void ClusterMyParentIdACLs()
+        public async Task ClusterMyParentIdACLsAsync()
         {
             // All cluster command "success" is a thrown exception, because clustering is disabled
 
-            CheckCommands(
+            await CheckCommandsAsync(
                 "CLUSTER MYPARENTID",
-                [DoClusterMyParentId]
+                [DoClusterMyParentIdAsync]
             );
 
-            static void DoClusterMyParentId(IServer server)
+            static async Task DoClusterMyParentIdAsync(GarnetClient client)
             {
                 try
                 {
-                    server.Execute("CLUSTER", "MYPARENTID");
+                    await client.ExecuteForStringResultAsync("CLUSTER", ["MYPARENTID"]);
                     Assert.Fail("Shouldn't be reachable, cluster isn't enabled");
                 }
-                catch (RedisException e)
+                catch (Exception e)
                 {
                     if (e.Message == "ERR This instance has cluster support disabled")
                     {
@@ -1588,23 +1593,23 @@ namespace Garnet.test.Resp.ACL
         }
 
         [Test]
-        public void ClusterNodesACLs()
+        public async Task ClusterNodesACLsAsync()
         {
             // All cluster command "success" is a thrown exception, because clustering is disabled
 
-            CheckCommands(
+            await CheckCommandsAsync(
                 "CLUSTER NODES",
-                [DoClusterNodes]
+                [DoClusterNodesAsync]
             );
 
-            static void DoClusterNodes(IServer server)
+            static async Task DoClusterNodesAsync(GarnetClient client)
             {
                 try
                 {
-                    server.Execute("CLUSTER", "NODES");
+                    await client.ExecuteForStringResultAsync("CLUSTER", ["NODES"]);
                     Assert.Fail("Shouldn't be reachable, cluster isn't enabled");
                 }
-                catch (RedisException e)
+                catch (Exception e)
                 {
                     if (e.Message == "ERR This instance has cluster support disabled")
                     {
@@ -1617,23 +1622,23 @@ namespace Garnet.test.Resp.ACL
         }
 
         [Test]
-        public void ClusterReplicasACLs()
+        public async Task ClusterReplicasACLsAsync()
         {
             // All cluster command "success" is a thrown exception, because clustering is disabled
 
-            CheckCommands(
+            await CheckCommandsAsync(
                 "CLUSTER REPLICAS",
-                [DoClusterReplicas]
+                [DoClusterReplicasAsync]
             );
 
-            static void DoClusterReplicas(IServer server)
+            static async Task DoClusterReplicasAsync(GarnetClient client)
             {
                 try
                 {
-                    server.Execute("CLUSTER", "REPLICAS", "foo");
+                    await client.ExecuteForStringResultAsync("CLUSTER", ["REPLICAS", "foo"]);
                     Assert.Fail("Shouldn't be reachable, cluster isn't enabled");
                 }
-                catch (RedisException e)
+                catch (Exception e)
                 {
                     if (e.Message == "ERR This instance has cluster support disabled")
                     {
@@ -1646,23 +1651,23 @@ namespace Garnet.test.Resp.ACL
         }
 
         [Test]
-        public void ClusterReplicateACLs()
+        public async Task ClusterReplicateACLsAsync()
         {
             // All cluster command "success" is a thrown exception, because clustering is disabled
 
-            CheckCommands(
+            await CheckCommandsAsync(
                 "CLUSTER REPLICATE",
-                [DoClusterReplicate]
+                [DoClusterReplicateAsync]
             );
 
-            static void DoClusterReplicate(IServer server)
+            static async Task DoClusterReplicateAsync(GarnetClient client)
             {
                 try
                 {
-                    server.Execute("CLUSTER", "REPLICATE", "foo");
+                    await client.ExecuteForStringResultAsync("CLUSTER", ["REPLICATE", "foo"]);
                     Assert.Fail("Shouldn't be reachable, cluster isn't enabled");
                 }
-                catch (RedisException e)
+                catch (Exception e)
                 {
                     if (e.Message == "ERR This instance has cluster support disabled")
                     {
@@ -1675,23 +1680,23 @@ namespace Garnet.test.Resp.ACL
         }
 
         [Test]
-        public void ClusterResetACLs()
+        public async Task ClusterResetACLsAsync()
         {
             // All cluster command "success" is a thrown exception, because clustering is disabled
 
-            CheckCommands(
+            await CheckCommandsAsync(
                 "CLUSTER RESET",
-                [DoClusterReset, DoClusteResetHard]
+                [DoClusterResetAsync, DoClusteResetHardAsync]
             );
 
-            static void DoClusterReset(IServer server)
+            static async Task DoClusterResetAsync(GarnetClient client)
             {
                 try
                 {
-                    server.Execute("CLUSTER", "RESET");
+                    await client.ExecuteForStringResultAsync("CLUSTER", ["RESET"]);
                     Assert.Fail("Shouldn't be reachable, cluster isn't enabled");
                 }
-                catch (RedisException e)
+                catch (Exception e)
                 {
                     if (e.Message == "ERR This instance has cluster support disabled")
                     {
@@ -1702,14 +1707,14 @@ namespace Garnet.test.Resp.ACL
                 }
             }
 
-            static void DoClusteResetHard(IServer server)
+            static async Task DoClusteResetHardAsync(GarnetClient client)
             {
                 try
                 {
-                    server.Execute("CLUSTER", "RESET", "HARD");
+                    await client.ExecuteForStringResultAsync("CLUSTER", ["RESET", "HARD"]);
                     Assert.Fail("Shouldn't be reachable, cluster isn't enabled");
                 }
-                catch (RedisException e)
+                catch (Exception e)
                 {
                     if (e.Message == "ERR This instance has cluster support disabled")
                     {
@@ -1722,23 +1727,23 @@ namespace Garnet.test.Resp.ACL
         }
 
         [Test]
-        public void ClusterSendCkptFileSegmentACLs()
+        public async Task ClusterSendCkptFileSegmentACLsAsync()
         {
             // All cluster command "success" is a thrown exception, because clustering is disabled
 
-            CheckCommands(
+            await CheckCommandsAsync(
                 "CLUSTER SEND_CKPT_FILE_SEGMENT",
-                [DoClusterSendCkptFileSegment]
+                [DoClusterSendCkptFileSegmentAsync]
             );
 
-            static void DoClusterSendCkptFileSegment(IServer server)
+            static async Task DoClusterSendCkptFileSegmentAsync(GarnetClient client)
             {
                 try
                 {
-                    server.Execute("CLUSTER", "SEND_CKPT_FILE_SEGMENT", "1", "2", "3", "4", "5");
+                    await client.ExecuteForStringResultAsync("CLUSTER", ["SEND_CKPT_FILE_SEGMENT", "1", "2", "3", "4", "5"]);
                     Assert.Fail("Shouldn't be reachable, cluster isn't enabled");
                 }
-                catch (RedisException e)
+                catch (Exception e)
                 {
                     if (e.Message == "ERR This instance has cluster support disabled")
                     {
@@ -1751,23 +1756,23 @@ namespace Garnet.test.Resp.ACL
         }
 
         [Test]
-        public void ClusterSendCkptMetadataACLs()
+        public async Task ClusterSendCkptMetadataACLsAsync()
         {
             // All cluster command "success" is a thrown exception, because clustering is disabled
 
-            CheckCommands(
+            await CheckCommandsAsync(
                 "CLUSTER SEND_CKPT_METADATA",
-                [DoClusterSendCkptMetadata]
+                [DoClusterSendCkptMetadataAsync]
             );
 
-            static void DoClusterSendCkptMetadata(IServer server)
+            static async Task DoClusterSendCkptMetadataAsync(GarnetClient client)
             {
                 try
                 {
-                    server.Execute("CLUSTER", "SEND_CKPT_METADATA", "1", "2", "3", "4", "5");
+                    await client.ExecuteForStringResultAsync("CLUSTER", ["SEND_CKPT_METADATA", "1", "2", "3", "4", "5"]);
                     Assert.Fail("Shouldn't be reachable, cluster isn't enabled");
                 }
-                catch (RedisException e)
+                catch (Exception e)
                 {
                     if (e.Message == "ERR This instance has cluster support disabled")
                     {
@@ -1780,23 +1785,23 @@ namespace Garnet.test.Resp.ACL
         }
 
         [Test]
-        public void ClusterSetConfigEpochACLs()
+        public async Task ClusterSetConfigEpochACLsAsync()
         {
             // All cluster command "success" is a thrown exception, because clustering is disabled
 
-            CheckCommands(
+            await CheckCommandsAsync(
                 "CLUSTER SET-CONFIG-EPOCH",
-                [DoClusterSetConfigEpoch]
+                [DoClusterSetConfigEpochAsync]
             );
 
-            static void DoClusterSetConfigEpoch(IServer server)
+            static async Task DoClusterSetConfigEpochAsync(GarnetClient client)
             {
                 try
                 {
-                    server.Execute("CLUSTER", "SET-CONFIG-EPOCH", "foo");
+                    await client.ExecuteForStringResultAsync("CLUSTER", ["SET-CONFIG-EPOCH", "foo"]);
                     Assert.Fail("Shouldn't be reachable, cluster isn't enabled");
                 }
-                catch (RedisException e)
+                catch (Exception e)
                 {
                     if (e.Message == "ERR This instance has cluster support disabled")
                     {
@@ -1809,23 +1814,23 @@ namespace Garnet.test.Resp.ACL
         }
 
         [Test]
-        public void ClusterSetSlotACLs()
+        public async Task ClusterSetSlotACLsAsync()
         {
             // All cluster command "success" is a thrown exception, because clustering is disabled
 
-            CheckCommands(
+            await CheckCommandsAsync(
                 "CLUSTER SETSLOT",
-                [DoClusterSetSlot, DoClusterSetSlotStable, DoClusterSetSlotImporting]
+                [DoClusterSetSlotAsync, DoClusterSetSlotStableAsync, DoClusterSetSlotImportingAsync]
             );
 
-            static void DoClusterSetSlot(IServer server)
+            static async Task DoClusterSetSlotAsync(GarnetClient client)
             {
                 try
                 {
-                    server.Execute("CLUSTER", "SETSLOT", "1");
+                    await client.ExecuteForStringResultAsync("CLUSTER", ["SETSLOT", "1"]);
                     Assert.Fail("Shouldn't be reachable, cluster isn't enabled");
                 }
-                catch (RedisException e)
+                catch (Exception e)
                 {
                     if (e.Message == "ERR This instance has cluster support disabled")
                     {
@@ -1836,14 +1841,14 @@ namespace Garnet.test.Resp.ACL
                 }
             }
 
-            static void DoClusterSetSlotStable(IServer server)
+            static async Task DoClusterSetSlotStableAsync(GarnetClient client)
             {
                 try
                 {
-                    server.Execute("CLUSTER", "SETSLOT", "1", "STABLE");
+                    await client.ExecuteForStringResultAsync("CLUSTER", ["SETSLOT", "1", "STABLE"]);
                     Assert.Fail("Shouldn't be reachable, cluster isn't enabled");
                 }
-                catch (RedisException e)
+                catch (Exception e)
                 {
                     if (e.Message == "ERR This instance has cluster support disabled")
                     {
@@ -1854,14 +1859,14 @@ namespace Garnet.test.Resp.ACL
                 }
             }
 
-            static void DoClusterSetSlotImporting(IServer server)
+            static async Task DoClusterSetSlotImportingAsync(GarnetClient client)
             {
                 try
                 {
-                    server.Execute("CLUSTER", "SETSLOT", "1", "IMPORTING", "foo");
+                    await client.ExecuteForStringResultAsync("CLUSTER", ["SETSLOT", "1", "IMPORTING", "foo"]);
                     Assert.Fail("Shouldn't be reachable, cluster isn't enabled");
                 }
-                catch (RedisException e)
+                catch (Exception e)
                 {
                     if (e.Message == "ERR This instance has cluster support disabled")
                     {
@@ -1874,23 +1879,23 @@ namespace Garnet.test.Resp.ACL
         }
 
         [Test]
-        public void ClusterSetSlotsRangeACLs()
+        public async Task ClusterSetSlotsRangeACLsAsync()
         {
             // All cluster command "success" is a thrown exception, because clustering is disabled
 
-            CheckCommands(
+            await CheckCommandsAsync(
                 "CLUSTER SETSLOTSRANGE",
-                [DoClusterSetSlotsRangeStable, DoClusterSetSlotsRangeStableMulti, DoClusterSetSlotsRangeImporting, DoClusterSetSlotsRangeImportingMulti]
+                [DoClusterSetSlotsRangeStableAsync, DoClusterSetSlotsRangeStableMultiAsync, DoClusterSetSlotsRangeImportingAsync, DoClusterSetSlotsRangeImportingMultiAsync]
             );
 
-            static void DoClusterSetSlotsRangeStable(IServer server)
+            static async Task DoClusterSetSlotsRangeStableAsync(GarnetClient client)
             {
                 try
                 {
-                    server.Execute("CLUSTER", "SETSLOTSRANGE", "STABLE", "1", "5");
+                    await client.ExecuteForStringResultAsync("CLUSTER", ["SETSLOTSRANGE", "STABLE", "1", "5"]);
                     Assert.Fail("Shouldn't be reachable, cluster isn't enabled");
                 }
-                catch (RedisException e)
+                catch (Exception e)
                 {
                     if (e.Message == "ERR This instance has cluster support disabled")
                     {
@@ -1901,14 +1906,14 @@ namespace Garnet.test.Resp.ACL
                 }
             }
 
-            static void DoClusterSetSlotsRangeStableMulti(IServer server)
+            static async Task DoClusterSetSlotsRangeStableMultiAsync(GarnetClient client)
             {
                 try
                 {
-                    server.Execute("CLUSTER", "SETSLOTSRANGE", "STABLE", "1", "5", "10", "15");
+                    await client.ExecuteForStringResultAsync("CLUSTER", ["SETSLOTSRANGE", "STABLE", "1", "5", "10", "15"]);
                     Assert.Fail("Shouldn't be reachable, cluster isn't enabled");
                 }
-                catch (RedisException e)
+                catch (Exception e)
                 {
                     if (e.Message == "ERR This instance has cluster support disabled")
                     {
@@ -1919,14 +1924,14 @@ namespace Garnet.test.Resp.ACL
                 }
             }
 
-            static void DoClusterSetSlotsRangeImporting(IServer server)
+            static async Task DoClusterSetSlotsRangeImportingAsync(GarnetClient client)
             {
                 try
                 {
-                    server.Execute("CLUSTER", "SETSLOTSRANGE", "IMPORTING", "foo", "1", "5");
+                    await client.ExecuteForStringResultAsync("CLUSTER", ["SETSLOTSRANGE", "IMPORTING", "foo", "1", "5"]);
                     Assert.Fail("Shouldn't be reachable, cluster isn't enabled");
                 }
-                catch (RedisException e)
+                catch (Exception e)
                 {
                     if (e.Message == "ERR This instance has cluster support disabled")
                     {
@@ -1937,14 +1942,14 @@ namespace Garnet.test.Resp.ACL
                 }
             }
 
-            static void DoClusterSetSlotsRangeImportingMulti(IServer server)
+            static async Task DoClusterSetSlotsRangeImportingMultiAsync(GarnetClient client)
             {
                 try
                 {
-                    server.Execute("CLUSTER", "SETSLOTSRANGE", "IMPORTING", "foo", "1", "5", "10", "15");
+                    await client.ExecuteForStringResultAsync("CLUSTER", ["SETSLOTSRANGE", "IMPORTING", "foo", "1", "5", "10", "15"]);
                     Assert.Fail("Shouldn't be reachable, cluster isn't enabled");
                 }
-                catch (RedisException e)
+                catch (Exception e)
                 {
                     if (e.Message == "ERR This instance has cluster support disabled")
                     {
@@ -1957,23 +1962,23 @@ namespace Garnet.test.Resp.ACL
         }
 
         [Test]
-        public void ClusterShardsACLs()
+        public async Task ClusterShardsACLsAsync()
         {
             // All cluster command "success" is a thrown exception, because clustering is disabled
 
-            CheckCommands(
+            await CheckCommandsAsync(
                 "CLUSTER SHARDS",
-                [DoClusterShards]
+                [DoClusterShardsAsync]
             );
 
-            static void DoClusterShards(IServer server)
+            static async Task DoClusterShardsAsync(GarnetClient client)
             {
                 try
                 {
-                    server.Execute("CLUSTER", "SHARDS");
+                    await client.ExecuteForStringResultAsync("CLUSTER", ["SHARDS"]);
                     Assert.Fail("Shouldn't be reachable, cluster isn't enabled");
                 }
-                catch (RedisException e)
+                catch (Exception e)
                 {
                     if (e.Message == "ERR This instance has cluster support disabled")
                     {
@@ -1986,23 +1991,23 @@ namespace Garnet.test.Resp.ACL
         }
 
         [Test]
-        public void ClusterSlotsACLs()
+        public async Task ClusterSlotsACLsAsync()
         {
             // All cluster command "success" is a thrown exception, because clustering is disabled
 
-            CheckCommands(
+            await CheckCommandsAsync(
                 "CLUSTER SLOTS",
-                [DoClusterSlots]
+                [DoClusterSlotsAsync]
             );
 
-            static void DoClusterSlots(IServer server)
+            static async Task DoClusterSlotsAsync(GarnetClient client)
             {
                 try
                 {
-                    server.Execute("CLUSTER", "SLOTS");
+                    await client.ExecuteForStringResultAsync("CLUSTER", ["SLOTS"]);
                     Assert.Fail("Shouldn't be reachable, cluster isn't enabled");
                 }
-                catch (RedisException e)
+                catch (Exception e)
                 {
                     if (e.Message == "ERR This instance has cluster support disabled")
                     {
@@ -2015,23 +2020,23 @@ namespace Garnet.test.Resp.ACL
         }
 
         [Test]
-        public void ClusterSlotStateACLs()
+        public async Task ClusterSlotStateACLsAsync()
         {
             // All cluster command "success" is a thrown exception, because clustering is disabled
 
-            CheckCommands(
+            await CheckCommandsAsync(
                 "CLUSTER SLOTSTATE",
-                [DoClusterSlotState]
+                [DoClusterSlotStateAsync]
             );
 
-            static void DoClusterSlotState(IServer server)
+            static async Task DoClusterSlotStateAsync(GarnetClient client)
             {
                 try
                 {
-                    server.Execute("CLUSTER", "SLOTSTATE");
+                    await client.ExecuteForStringResultAsync("CLUSTER", ["SLOTSTATE"]);
                     Assert.Fail("Shouldn't be reachable, cluster isn't enabled");
                 }
-                catch (RedisException e)
+                catch (Exception e)
                 {
                     if (e.Message == "ERR This instance has cluster support disabled")
                     {
@@ -2044,158 +2049,132 @@ namespace Garnet.test.Resp.ACL
         }
 
         [Test]
-        public void CommandACLs()
+        public async Task CommandACLsAsync()
         {
-            CheckCommands(
+            await CheckCommandsAsync(
                 "COMMAND",
-                [DoCommand]
+                [DoCommandAsync],
+                skipPermitted: true
             );
 
-            static void DoCommand(IServer server)
+            static async Task DoCommandAsync(GarnetClient client)
             {
-                RedisResult val = server.Execute("COMMAND");
-                Assert.AreEqual(ResultType.Array, val.Resp2Type);
+                // COMMAND returns an array of arrays, which GarnetClient doesn't deal with
+                await client.ExecuteForStringResultAsync("COMMAND");
             }
         }
 
         [Test]
-        public void CommandCountACLs()
+        public async Task CommandCountACLsAsync()
         {
-            CheckCommands(
+            await CheckCommandsAsync(
                 "COMMAND COUNT",
-                [DoCommandCount]
+                [DoCommandCountAsync]
             );
 
-            static void DoCommandCount(IServer server)
+            static async Task DoCommandCountAsync(GarnetClient client)
             {
-                RedisResult val = server.Execute("COMMAND", "COUNT");
-                Assert.IsTrue((int)val > 0);
+                long val = await client.ExecuteForLongResultAsync("COMMAND", ["COUNT"]);
+                Assert.IsTrue(val > 0);
             }
         }
 
         [Test]
-        public void CommandDocsACLs()
+        public async Task CommandInfoACLsAsync()
         {
-            CheckCommands(
-                "COMMAND DOCS",
-                [DoCommandDocs, DoCommandDocsOne, DoCommandDocsMulti]
-            );
-
-            static void DoCommandDocs(IServer server)
-            {
-                RedisResult val = server.Execute("COMMAND", "DOCS");
-                Assert.AreEqual(ResultType.Array, val.Resp2Type);
-            }
-
-            static void DoCommandDocsOne(IServer server)
-            {
-                RedisResult val = server.Execute("COMMAND", "DOCS", "GET");
-                Assert.AreEqual(ResultType.Array, val.Resp2Type);
-            }
-
-            static void DoCommandDocsMulti(IServer server)
-            {
-                RedisResult val = server.Execute("COMMAND", "DOCS", "GET", "SET", "APPEND");
-                Assert.AreEqual(ResultType.Array, val.Resp2Type);
-            }
-        }
-
-        [Test]
-        public void CommandInfoACLs()
-        {
-            CheckCommands(
+            await CheckCommandsAsync(
                 "COMMAND INFO",
-                [DoCommandInfo, DoCommandInfoOne, DoCommandInfoMulti]
+                [DoCommandInfoAsync, DoCommandInfoOneAsync, DoCommandInfoMultiAsync],
+                skipPermitted: true
             );
 
-            static void DoCommandInfo(IServer server)
+            static async Task DoCommandInfoAsync(GarnetClient client)
             {
-                RedisResult val = server.Execute("COMMAND", "INFO");
-                Assert.AreEqual(ResultType.Array, val.Resp2Type);
+                // COMMAND|INFO returns an array of arrays, which GarnetClient doesn't deal with
+                await client.ExecuteForStringResultAsync("COMMAND", ["INFO"]);
             }
 
-            static void DoCommandInfoOne(IServer server)
+            static async Task DoCommandInfoOneAsync(GarnetClient client)
             {
-                RedisResult val = server.Execute("COMMAND", "INFO", "GET");
-                Assert.AreEqual(ResultType.Array, val.Resp2Type);
+                // COMMAND|INFO returns an array of arrays, which GarnetClient doesn't deal with
+                await client.ExecuteForStringResultAsync("COMMAND", ["INFO", "GET"]);
             }
 
-            static void DoCommandInfoMulti(IServer server)
+            static async Task DoCommandInfoMultiAsync(GarnetClient client)
             {
-                RedisResult val = server.Execute("COMMAND", "INFO", "GET", "SET", "APPEND");
-                Assert.AreEqual(ResultType.Array, val.Resp2Type);
+                // COMMAND|INFO returns an array of arrays, which GarnetClient doesn't deal with
+                await client.ExecuteForStringResultAsync("COMMAND", ["INFO", "GET", "SET", "APPEND"]);
             }
         }
 
         [Test]
-        public void CommitAOFACLs()
+        public async Task CommitAOFACLsAsync()
         {
-            CheckCommands(
+            await CheckCommandsAsync(
                 "COMMITAOF",
-                [DoCommitAOF]
+                [DoCommitAOFAsync]
             );
 
-            static void DoCommitAOF(IServer server)
+            static async Task DoCommitAOFAsync(GarnetClient client)
             {
-                RedisResult val = server.Execute("COMMITAOF");
-                Assert.AreEqual("AOF file committed", (string)val);
+                string val = await client.ExecuteForStringResultAsync("COMMITAOF");
+                Assert.AreEqual("AOF file committed", val);
             }
         }
 
         [Test]
-        public void ConfigGetACLs()
+        public async Task ConfigGetACLsAsync()
         {
             // TODO: CONFIG GET doesn't implement multiple parameters, so that is untested
 
-            CheckCommands(
+            await CheckCommandsAsync(
                 "CONFIG GET",
-                [DoConfigGetOne]
+                [DoConfigGetOneAsync]
             );
 
-            static void DoConfigGetOne(IServer server)
+            static async Task DoConfigGetOneAsync(GarnetClient client)
             {
-                RedisResult res = server.Execute("CONFIG", "GET", "timeout");
-                RedisValue[] resArr = (RedisValue[])res;
+                string[] res = await client.ExecuteForStringArrayResultAsync("CONFIG", ["GET", "timeout"]);
 
-                Assert.AreEqual(2, resArr.Length);
-                Assert.AreEqual("timeout", (string)resArr[0]);
-                Assert.IsTrue((int)resArr[1] >= 0);
+                Assert.AreEqual(2, res.Length);
+                Assert.AreEqual("timeout", (string)res[0]);
+                Assert.IsTrue(int.Parse(res[1]) >= 0);
             }
         }
 
         [Test]
-        public void ConfigRewriteACLs()
+        public async Task ConfigRewriteACLsAsync()
         {
-            CheckCommands(
+            await CheckCommandsAsync(
                 "CONFIG REWRITE",
-                [DoConfigRewrite]
+                [DoConfigRewriteAsync]
             );
 
-            static void DoConfigRewrite(IServer server)
+            static async Task DoConfigRewriteAsync(GarnetClient client)
             {
-                RedisResult res = server.Execute("CONFIG", "REWRITE");
-                Assert.AreEqual("OK", (string)res);
+                string res = await client.ExecuteForStringResultAsync("CONFIG", ["REWRITE"]);
+                Assert.AreEqual("OK", res);
             }
         }
 
         [Test]
-        public void ConfigSetACLs()
+        public async Task ConfigSetACLsAsync()
         {
             // CONFIG SET parameters are pretty limitted, so this uses error responses for "got past the ACL" validation - that's not great
 
-            CheckCommands(
+            await CheckCommandsAsync(
                 "CONFIG SET",
-                [DoConfigSetOne, DoConfigSetMulti]
+                [DoConfigSetOneAsync, DoConfigSetMultiAsync]
             );
 
-            static void DoConfigSetOne(IServer server)
+            static async Task DoConfigSetOneAsync(GarnetClient client)
             {
                 try
                 {
-                    RedisResult res = server.Execute("CONFIG", "SET", "foo", "bar");
+                    await client.ExecuteForStringResultAsync("CONFIG", ["SET", "foo", "bar"]);
                     Assert.Fail("Should have raised unknow config error");
                 }
-                catch (RedisException e)
+                catch (Exception e)
                 {
                     if (e.Message == "ERR Unknown option or number of arguments for CONFIG SET - 'foo'")
                     {
@@ -2206,14 +2185,14 @@ namespace Garnet.test.Resp.ACL
                 }
             }
 
-            static void DoConfigSetMulti(IServer server)
+            static async Task DoConfigSetMultiAsync(GarnetClient client)
             {
                 try
                 {
-                    RedisResult res = server.Execute("CONFIG", "SET", "foo", "bar", "fizz", "buzz");
+                    await client.ExecuteForStringResultAsync("CONFIG", ["SET", "foo", "bar", "fizz", "buzz"]);
                     Assert.Fail("Should have raised unknow config error");
                 }
-                catch (RedisException e)
+                catch (Exception e)
                 {
                     if (e.Message == "ERR Unknown option or number of arguments for CONFIG SET - 'foo'")
                     {
@@ -2226,39 +2205,39 @@ namespace Garnet.test.Resp.ACL
         }
 
         [Test]
-        public void COScanACLs()
+        public async Task COScanACLsAsync()
         {
             // TODO: COSCAN parameters are unclear... add more cases later
 
-            CheckCommands(
+            await CheckCommandsAsync(
                 "COSCAN",
-                [DoCOScan]
+                [DoCOScanAsync],
+                skipPermitted: true
             );
 
-            static void DoCOScan(IServer server)
+            static async Task DoCOScanAsync(GarnetClient client)
             {
-                RedisResult val = server.Execute("CUSTOMOBJECTSCAN", "foo", "0");
-                RedisResult[] valArr = (RedisResult[])val;
-                Assert.AreEqual(2, valArr.Length);
+                // COSCAN returns an array of arrays, which GarnetClient doesn't deal with
+                await client.ExecuteForStringResultAsync("CUSTOMOBJECTSCAN", ["foo", "0"]);
             }
         }
 
         [Test]
-        public void CustomCmdACLs()
+        public async Task CustomCmdACLsAsync()
         {
             // TODO: it probably makes sense to expose ACLs for registered commands, but for now just a blanket ACL for all custom commands is all we have
 
             int count = 0;
 
-            CheckCommands(
+            await CheckCommandsAsync(
                 "CUSTOMCMD",
-                [DoSetWpIfPgt],
+                [DoSetWpIfPgtAsync],
                 knownCategories: ["garnet", "custom", "dangerous"]
             );
 
-            void DoSetWpIfPgt(IServer server)
+            async Task DoSetWpIfPgtAsync(GarnetClient client)
             {
-                RedisResult res = server.Execute("SETWPIFPGT", $"foo-{count}", "bar", BitConverter.GetBytes((long)0));
+                string res = await client.ExecuteForStringResultAsync("SETWPIFPGT", [$"foo-{count}", "bar", "\0\0\0\0\0\0\0\0"]);
                 count++;
 
                 Assert.AreEqual("OK", (string)res);
@@ -2266,131 +2245,131 @@ namespace Garnet.test.Resp.ACL
         }
 
         [Test]
-        public void CustomObjCmdACLs()
+        public async Task CustomObjCmdACLsAsync()
         {
             // TODO: it probably makes sense to expose ACLs for registered commands, but for now just a blanket ACL for all custom commands is all we have
 
-            CheckCommands(
+            await CheckCommandsAsync(
                 "CUSTOMOBJCMD",
-                [DoMyDictGet],
+                [DoMyDictGetAsync],
                 knownCategories: ["garnet", "custom", "dangerous"]
             );
 
-            static void DoMyDictGet(IServer server)
+            static async Task DoMyDictGetAsync(GarnetClient client)
             {
-                RedisResult res = server.Execute("MYDICTGET", "foo", "bar");
-                Assert.IsTrue(res.IsNull);
+                string res = await client.ExecuteForStringResultAsync("MYDICTGET", ["foo", "bar"]);
+                Assert.IsNull(res);
             }
         }
 
         [Test]
-        public void CustomTxnACLs()
+        public async Task CustomTxnACLsAsync()
         {
             // TODO: it probably makes sense to expose ACLs for registered commands, but for now just a blanket ACL for all custom commands is all we have
 
-            CheckCommands(
+            await CheckCommandsAsync(
                 "CustomTxn",
-                [DoReadWriteTx],
+                [DoReadWriteTxAsync],
                 knownCategories: ["garnet", "custom", "dangerous"]
             );
 
-            static void DoReadWriteTx(IServer server)
+            static async Task DoReadWriteTxAsync(GarnetClient client)
             {
-                RedisResult res = server.Execute("READWRITETX", "foo", "bar", "fizz");
-                Assert.AreEqual("SUCCESS", (string)res);
+                string res = await client.ExecuteForStringResultAsync("READWRITETX", ["foo", "bar", "fizz"]);
+                Assert.AreEqual("SUCCESS", res);
             }
         }
 
         [Test]
-        public void DBSizeACLs()
+        public async Task DBSizeACLsAsync()
         {
-            CheckCommands(
+            await CheckCommandsAsync(
                 "DBSIZE",
-                [DoDbSize]
+                [DoDbSizeAsync]
             );
 
-            static void DoDbSize(IServer server)
+            static async Task DoDbSizeAsync(GarnetClient client)
             {
-                RedisResult val = server.Execute("DBSIZE");
-                Assert.AreEqual(0, (int)val);
+                long val = await client.ExecuteForLongResultAsync("DBSIZE");
+                Assert.AreEqual(0, val);
             }
         }
 
         [Test]
-        public void DecrACLs()
+        public async Task DecrACLsAsync()
         {
             int count = 0;
 
-            CheckCommands(
+            await CheckCommandsAsync(
                 "DECR",
-                [DoDecr]
+                [DoDecrAsync]
             );
 
-            void DoDecr(IServer server)
+            async Task DoDecrAsync(GarnetClient client)
             {
-                RedisResult val = server.Execute("DECR", $"foo-{count}");
+                long val = await client.ExecuteForLongResultAsync("DECR", [$"foo-{count}"]);
                 count++;
-                Assert.AreEqual(-1, (int)val);
+                Assert.AreEqual(-1, val);
             }
         }
 
         [Test]
-        public void DecrByACLs()
+        public async Task DecrByACLsAsync()
         {
             int count = 0;
 
-            CheckCommands(
+            await CheckCommandsAsync(
                 "DECRBY",
-                [DoDecrBy]
+                [DoDecrByAsync]
             );
 
-            void DoDecrBy(IServer server)
+            async Task DoDecrByAsync(GarnetClient client)
             {
-                RedisResult val = server.Execute("DECRBY", $"foo-{count}", "2");
+                long val = await client.ExecuteForLongResultAsync("DECRBY", [$"foo-{count}", "2"]);
                 count++;
-                Assert.AreEqual(-2, (int)val);
+                Assert.AreEqual(-2, val);
             }
         }
 
         [Test]
-        public void DelACLs()
+        public async Task DelACLsAsync()
         {
-            CheckCommands(
+            await CheckCommandsAsync(
                 "DEL",
-                [DoDel, DoDelMulti]
+                [DoDelAsync, DoDelMultiAsync]
             );
 
-            static void DoDel(IServer server)
+            static async Task DoDelAsync(GarnetClient client)
             {
-                RedisResult val = server.Execute("DEL", "foo");
-                Assert.AreEqual(0, (int)val);
+                long val = await client.ExecuteForLongResultAsync("DEL", ["foo"]);
+                Assert.AreEqual(0, val);
             }
 
-            static void DoDelMulti(IServer server)
+            static async Task DoDelMultiAsync(GarnetClient client)
             {
-                RedisResult val = server.Execute("DEL", "foo", "bar");
-                Assert.AreEqual(0, (int)val);
+                long val = await client.ExecuteForLongResultAsync("DEL", ["foo", "bar"]);
+                Assert.AreEqual(0, val);
             }
         }
 
         [Test]
-        public void DiscardACLs()
+        public async Task DiscardACLsAsync()
         {
             // Discard is a little weird, so we're using exceptions for control flow here - don't love it
 
-            CheckCommands(
+            await CheckCommandsAsync(
                 "DISCARD",
-                [DoDiscard]
+                [DoDiscardAsync]
             );
 
-            static void DoDiscard(IServer server)
+            static async Task DoDiscardAsync(GarnetClient client)
             {
                 try
                 {
-                    RedisResult val = server.Execute("DISCARD");
+                    await client.ExecuteForStringResultAsync("DISCARD");
                     Assert.Fail("Shouldn't have reached this point, outside of a MULTI");
                 }
-                catch (RedisException e)
+                catch (Exception e)
                 {
                     if (e.Message == "ERR DISCARD without MULTI")
                     {
@@ -2403,38 +2382,38 @@ namespace Garnet.test.Resp.ACL
         }
 
         [Test]
-        public void EchoACLs()
+        public async Task EchoACLsAsync()
         {
-            CheckCommands(
+            await CheckCommandsAsync(
                 "ECHO",
-                [DoEcho]
+                [DoEchoAsync]
             );
 
-            static void DoEcho(IServer server)
+            static async Task DoEchoAsync(GarnetClient client)
             {
-                RedisResult val = server.Execute("ECHO", "hello world");
-                Assert.AreEqual("hello world", (string)val);
+                string val = await client.ExecuteForStringResultAsync("ECHO", ["hello world"]);
+                Assert.AreEqual("hello world", val);
             }
         }
 
         [Test]
-        public void ExecACLs()
+        public async Task ExecACLsAsync()
         {
             // EXEC is a little weird, so we're using exceptions for control flow here - don't love it
 
-            CheckCommands(
+            await CheckCommandsAsync(
                 "EXEC",
-                [DoExec]
+                [DoExecAsync]
             );
 
-            static void DoExec(IServer server)
+            static async Task DoExecAsync(GarnetClient client)
             {
                 try
                 {
-                    RedisResult val = server.Execute("EXEC");
+                    await client.ExecuteForStringResultAsync("EXEC");
                     Assert.Fail("Shouldn't have reached this point, outside of a MULTI");
                 }
-                catch (RedisException e)
+                catch (Exception e)
                 {
                     if (e.Message == "ERR EXEC without MULTI")
                     {
@@ -2447,133 +2426,95 @@ namespace Garnet.test.Resp.ACL
         }
 
         [Test]
-        public void ExistsACLs()
+        public async Task ExistsACLsAsync()
         {
-            CheckCommands(
+            await CheckCommandsAsync(
                 "EXISTS",
-                [DoExists, DoExistsMulti]
+                [DoExistsAsync, DoExistsMultiAsync]
             );
 
-            static void DoExists(IServer server)
+            static async Task DoExistsAsync(GarnetClient client)
             {
-                RedisResult val = server.Execute("EXISTS", "foo");
-                Assert.AreEqual(0, (int)val);
+                long val = await client.ExecuteForLongResultAsync("EXISTS", ["foo"]);
+                Assert.AreEqual(0, val);
             }
 
-            static void DoExistsMulti(IServer server)
+            static async Task DoExistsMultiAsync(GarnetClient client)
             {
-                RedisResult val = server.Execute("EXISTS", "foo", "bar");
-                Assert.AreEqual(0, (int)val);
+                long val = await client.ExecuteForLongResultAsync("EXISTS", ["foo", "bar"]);
+                Assert.AreEqual(0, val);
             }
         }
 
         [Test]
-        public void ExpireACLs()
+        public async Task ExpireACLsAsync()
         {
             // TODO: expire doesn't support combinations of flags (XX GT, XX LT are legal) so those will need to be tested when implemented
 
-            CheckCommands(
+            await CheckCommandsAsync(
                 "EXPIRE",
-                [DoExpire, DoExpireNX, DoExpireXX, DoExpireGT, DoExpireLT]
+                [DoExpireAsync, DoExpireNXAsync, DoExpireXXAsync, DoExpireGTAsync, DoExpireLTAsync]
             );
 
-            static void DoExpire(IServer server)
+            static async Task DoExpireAsync(GarnetClient client)
             {
-                RedisResult val = server.Execute("EXPIRE", "foo", "10");
-                Assert.AreEqual(0, (int)val);
+                long val = await client.ExecuteForLongResultAsync("EXPIRE", ["foo", "10"]);
+                Assert.AreEqual(0, val);
             }
 
-            static void DoExpireNX(IServer server)
+            static async Task DoExpireNXAsync(GarnetClient client)
             {
-                RedisResult val = server.Execute("EXPIRE", "foo", "10", "NX");
-                Assert.AreEqual(0, (int)val);
+                long val = await client.ExecuteForLongResultAsync("EXPIRE", ["foo", "10", "NX"]);
+                Assert.AreEqual(0, val);
             }
 
-            static void DoExpireXX(IServer server)
+            static async Task DoExpireXXAsync(GarnetClient client)
             {
-                RedisResult val = server.Execute("EXPIRE", "foo", "10", "XX");
-                Assert.AreEqual(0, (int)val);
+                long val = await client.ExecuteForLongResultAsync("EXPIRE", ["foo", "10", "XX"]);
+                Assert.AreEqual(0, val);
             }
 
-            static void DoExpireGT(IServer server)
+            static async Task DoExpireGTAsync(GarnetClient client)
             {
-                RedisResult val = server.Execute("EXPIRE", "foo", "10", "GT");
-                Assert.AreEqual(0, (int)val);
+                long val = await client.ExecuteForLongResultAsync("EXPIRE", ["foo", "10", "GT"]);
+                Assert.AreEqual(0, val);
             }
 
-            static void DoExpireLT(IServer server)
+            static async Task DoExpireLTAsync(GarnetClient client)
             {
-                RedisResult val = server.Execute("EXPIRE", "foo", "10", "LT");
-                Assert.AreEqual(0, (int)val);
+                long val = await client.ExecuteForLongResultAsync("EXPIRE", ["foo", "10", "LT"]);
+                Assert.AreEqual(0, val);
             }
         }
 
         [Test]
-        public void FailoverACLs()
+        public async Task FailoverACLsAsync()
         {
-            const string TestUser = "failover-user";
-            const string TestPassword = "foo";
+            // FAILOVER is sufficiently weird that we don't want to test "success"
+            //
+            // Instead, we only test that we can successful forbid it
+            await CheckCommandsAsync(
+                "FAILOVER",
+                [
+                    DoFailoverAsync,
+                    DoFailoverToAsync,
+                    DoFailoverAbortAsync,
+                    DoFailoverToForceAsync,
+                    DoFailoverToAbortAsync,
+                    DoFailoverToForceAbortAsync,
+                    DoFailoverToForceAbortTimeoutAsync,
+                ],
+                skipPermitted: true
+            );
 
-            // Failover is strange, so this more complicated that typical
-
-            Action<IServer>[] cmds = [
-                DoFailover,
-                DoFailoverTo,
-                DoFailoverAbort,
-                DoFailoverToForce,
-                DoFailoverToAbort,
-                DoFailoverToForceAbort,
-                DoFailoverToForceAbortTimeout,
-            ];
-
-            // Check denied with -failover
-            foreach (Action<IServer> cmd in cmds)
-            {
-                Run(false, (defaultServer, testServer) => SetUser(defaultServer, TestUser, $"-failover"), cmd);
-            }
-
-            string[] acls = ["admin", "slow", "dangerous"];
-
-            foreach (Action<IServer> cmd in cmds)
-            {
-                // Check works with +@all
-                Run(true, (defaultServer, testServer) => { }, cmd);
-
-                // Check denied with -@whatever
-                foreach (string acl in acls)
-                {
-                    Run(false, (defaultServer, testServer) => SetUser(defaultServer, TestUser, $"-@{acl}"), cmd);
-                }
-            }
-
-            void Run(bool expectSuccess, Action<IServer, IServer> before, Action<IServer> cmd)
-            {
-                // Refresh Garnet instance
-                TearDown();
-                Setup();
-
-                using ConnectionMultiplexer defaultRedis = ConnectionMultiplexer.Connect(TestUtils.GetConfig(allowAdmin: true, authUsername: DefaultUser, authPassword: DefaultPassword));
-                IServer defaultServer = defaultRedis.GetServers().Single();
-
-                InitUser(defaultServer, "failover-user", "foo");
-
-                using ConnectionMultiplexer failoverRedis = ConnectionMultiplexer.Connect(TestUtils.GetConfig(allowAdmin: true, authUsername: TestUser, authPassword: TestPassword));
-
-                IServer failoverServer = failoverRedis.GetServers().Single();
-
-                before(defaultServer, failoverServer);
-
-                Assert.AreEqual(expectSuccess, CheckAuthFailure(() => cmd(failoverServer)));
-            }
-
-            static void DoFailover(IServer server)
+            static async Task DoFailoverAsync(GarnetClient client)
             {
                 try
                 {
-                    RedisResult val = server.Execute("FAILOVER");
+                    await client.ExecuteForStringResultAsync("FAILOVER");
                     Assert.Fail("Shouldn't be reachable, cluster not enabled");
                 }
-                catch (RedisException e)
+                catch (Exception e)
                 {
                     if (e.Message == "ERR This instance has cluster support disabled")
                     {
@@ -2584,14 +2525,14 @@ namespace Garnet.test.Resp.ACL
                 }
             }
 
-            static void DoFailoverTo(IServer server)
+            static async Task DoFailoverToAsync(GarnetClient client)
             {
                 try
                 {
-                    RedisResult val = server.Execute("FAILOVER", "TO", "127.0.0.1", "9999");
+                    await client.ExecuteForStringResultAsync("FAILOVER", ["TO", "127.0.0.1", "9999"]);
                     Assert.Fail("Shouldn't be reachable, cluster not enabled");
                 }
-                catch (RedisException e)
+                catch (Exception e)
                 {
                     if (e.Message == "ERR This instance has cluster support disabled")
                     {
@@ -2602,14 +2543,14 @@ namespace Garnet.test.Resp.ACL
                 }
             }
 
-            static void DoFailoverAbort(IServer server)
+            static async Task DoFailoverAbortAsync(GarnetClient client)
             {
                 try
                 {
-                    RedisResult val = server.Execute("FAILOVER", "ABORT");
+                    await client.ExecuteForStringResultAsync("FAILOVER", ["ABORT"]);
                     Assert.Fail("Shouldn't be reachable, cluster not enabled");
                 }
-                catch (RedisException e)
+                catch (Exception e)
                 {
                     if (e.Message == "ERR This instance has cluster support disabled")
                     {
@@ -2620,14 +2561,14 @@ namespace Garnet.test.Resp.ACL
                 }
             }
 
-            static void DoFailoverToForce(IServer server)
+            static async Task DoFailoverToForceAsync(GarnetClient client)
             {
                 try
                 {
-                    RedisResult val = server.Execute("FAILOVER", "TO", "127.0.0.1", "9999", "FORCE");
+                    await client.ExecuteForStringResultAsync("FAILOVER", ["TO", "127.0.0.1", "9999", "FORCE"]);
                     Assert.Fail("Shouldn't be reachable, cluster not enabled");
                 }
-                catch (RedisException e)
+                catch (Exception e)
                 {
                     if (e.Message == "ERR This instance has cluster support disabled")
                     {
@@ -2638,14 +2579,14 @@ namespace Garnet.test.Resp.ACL
                 }
             }
 
-            static void DoFailoverToAbort(IServer server)
+            static async Task DoFailoverToAbortAsync(GarnetClient client)
             {
                 try
                 {
-                    RedisResult val = server.Execute("FAILOVER", "TO", "127.0.0.1", "9999", "ABORT");
+                    await client.ExecuteForStringResultAsync("FAILOVER", ["TO", "127.0.0.1", "9999", "ABORT"]);
                     Assert.Fail("Shouldn't be reachable, cluster not enabled");
                 }
-                catch (RedisException e)
+                catch (Exception e)
                 {
                     if (e.Message == "ERR This instance has cluster support disabled")
                     {
@@ -2656,14 +2597,14 @@ namespace Garnet.test.Resp.ACL
                 }
             }
 
-            static void DoFailoverToForceAbort(IServer server)
+            static async Task DoFailoverToForceAbortAsync(GarnetClient client)
             {
                 try
                 {
-                    RedisResult val = server.Execute("FAILOVER", "TO", "127.0.0.1", "9999", "FORCE", "ABORT");
+                    await client.ExecuteForStringResultAsync("FAILOVER", ["TO", "127.0.0.1", "9999", "FORCE", "ABORT"]);
                     Assert.Fail("Shouldn't be reachable, cluster not enabled");
                 }
-                catch (RedisException e)
+                catch (Exception e)
                 {
                     if (e.Message == "ERR This instance has cluster support disabled")
                     {
@@ -2674,14 +2615,14 @@ namespace Garnet.test.Resp.ACL
                 }
             }
 
-            static void DoFailoverToForceAbortTimeout(IServer server)
+            static async Task DoFailoverToForceAbortTimeoutAsync(GarnetClient client)
             {
                 try
                 {
-                    RedisResult val = server.Execute("FAILOVER", "TO", "127.0.0.1", "9999", "FORCE", "ABORT", "TIMEOUT", "1");
+                    await client.ExecuteForStringResultAsync("FAILOVER", ["TO", "127.0.0.1", "9999", "FORCE", "ABORT", "TIMEOUT", "1"]);
                     Assert.Fail("Shouldn't be reachable, cluster not enabled");
                 }
-                catch (RedisException e)
+                catch (Exception e)
                 {
                     if (e.Message == "ERR This instance has cluster support disabled")
                     {
@@ -2694,1005 +2635,1031 @@ namespace Garnet.test.Resp.ACL
         }
 
         [Test]
-        public void FlushDBACLs()
+        public async Task FlushDBACLsAsync()
         {
-            CheckCommands(
+            await CheckCommandsAsync(
                 "FLUSHDB",
-                [DoFlushDB, DoFlushDBAsync]
+                [DoFlushDBAsync, DoFlushDBAsyncAsync]
             );
 
-            static void DoFlushDB(IServer server)
+            static async Task DoFlushDBAsync(GarnetClient client)
             {
-                RedisResult val = server.Execute("FLUSHDB");
-                Assert.AreEqual("OK", (string)val);
+                string val = await client.ExecuteForStringResultAsync("FLUSHDB");
+                Assert.AreEqual("OK", val);
             }
 
-            static void DoFlushDBAsync(IServer server)
+            static async Task DoFlushDBAsyncAsync(GarnetClient client)
             {
-                RedisResult val = server.Execute("FLUSHDB", "ASYNC");
-                Assert.AreEqual("OK", (string)val);
+                string val = await client.ExecuteForStringResultAsync("FLUSHDB", ["ASYNC"]);
+                Assert.AreEqual("OK", val);
             }
         }
 
         [Test]
-        public void ForceGCACLs()
+        public async Task ForceGCACLsAsync()
         {
-            CheckCommands(
+            await CheckCommandsAsync(
                 "FORCEGC",
-                [DoForceGC, DoForceGCGen]
+                [DoForceGCAsync, DoForceGCGenAsync]
             );
 
-            static void DoForceGC(IServer server)
+            static async Task DoForceGCAsync(GarnetClient client)
             {
-                RedisResult val = server.Execute("FORCEGC");
-                Assert.AreEqual("GC completed", (string)val);
+                string val = await client.ExecuteForStringResultAsync("FORCEGC");
+                Assert.AreEqual("GC completed", val);
             }
 
-            static void DoForceGCGen(IServer server)
+            static async Task DoForceGCGenAsync(GarnetClient client)
             {
-                RedisResult val = server.Execute("FORCEGC", "1");
-                Assert.AreEqual("GC completed", (string)val);
+                string val = await client.ExecuteForStringResultAsync("FORCEGC", ["1"]);
+                Assert.AreEqual("GC completed", val);
             }
         }
 
         [Test]
-        public void GetACLs()
+        public async Task GetACLsAsync()
         {
-            CheckCommands(
+            await CheckCommandsAsync(
                 "GET",
-                [DoGet]
+                [DoGetAsync]
             );
 
-            static void DoGet(IServer server)
+            static async Task DoGetAsync(GarnetClient client)
             {
-                RedisResult val = server.Execute("GET", "foo");
-                Assert.IsNull((string)val);
+                string val = await client.ExecuteForStringResultAsync("GET", ["foo"]);
+                Assert.IsNull(val);
             }
         }
 
         [Test]
-        public void GetBitACLs()
+        public async Task GetBitACLsAsync()
         {
-            CheckCommands(
+            await CheckCommandsAsync(
                 "GETBIT",
-                [DoGetBit]
+                [DoGetBitAsync]
             );
 
-            static void DoGetBit(IServer server)
+            static async Task DoGetBitAsync(GarnetClient client)
             {
-                RedisResult val = server.Execute("GETBIT", "foo", "4");
-                Assert.AreEqual(0, (int)val);
+                long val = await client.ExecuteForLongResultAsync("GETBIT", ["foo", "4"]);
+                Assert.AreEqual(0, val);
             }
         }
 
         [Test]
-        public void GetDelACLs()
+        public async Task GetDelACLsAsync()
         {
-            CheckCommands(
+            await CheckCommandsAsync(
                 "GETDEL",
-                [DoGetDel]
+                [DoGetDelAsync]
             );
 
-            static void DoGetDel(IServer server)
+            static async Task DoGetDelAsync(GarnetClient client)
             {
-                RedisResult val = server.Execute("GETDEL", "foo");
-                Assert.IsNull((string)val);
+                string val = await client.ExecuteForStringResultAsync("GETDEL", ["foo"]);
+                Assert.IsNull(val);
             }
         }
 
         [Test]
-        public void GetRangeACLs()
+        public async Task GetRangeACLsAsync()
         {
-            CheckCommands(
+            await CheckCommandsAsync(
                 "GETRANGE",
-                [DoGetRange]
+                [DoGetRangeAsync]
             );
 
-            static void DoGetRange(IServer server)
+            static async Task DoGetRangeAsync(GarnetClient client)
             {
-                RedisResult val = server.Execute("GETRANGE", "foo", "10", "15");
-                Assert.AreEqual("", (string)val);
+                string val = await client.ExecuteForStringResultAsync("GETRANGE", ["foo", "10", "15"]);
+                Assert.AreEqual("", val);
             }
         }
 
         [Test]
-        public void HDelACLs()
+        public async Task HDelACLsAsync()
         {
-            CheckCommands(
+            await CheckCommandsAsync(
                 "HDEL",
-                [DoHDel, DoHDelMulti]
+                [DoHDelAsync, DoHDelMultiAsync]
             );
 
-            static void DoHDel(IServer server)
+            static async Task DoHDelAsync(GarnetClient client)
             {
-                RedisResult val = server.Execute("HDEL", "foo", "bar");
-                Assert.AreEqual(0, (int)val);
+                long val = await client.ExecuteForLongResultAsync("HDEL", ["foo", "bar"]);
+                Assert.AreEqual(0, val);
             }
 
-            static void DoHDelMulti(IServer server)
+            static async Task DoHDelMultiAsync(GarnetClient client)
             {
-                RedisResult val = server.Execute("HDEL", "foo", "bar", "fizz");
-                Assert.AreEqual(0, (int)val);
+                long val = await client.ExecuteForLongResultAsync("HDEL", ["foo", "bar", "fizz"]);
+                Assert.AreEqual(0, val);
             }
         }
 
         [Test]
-        public void HExistsACLs()
+        public async Task HExistsACLsAsync()
         {
-            CheckCommands(
+            await CheckCommandsAsync(
                 "HEXISTS",
-                [DoHDel]
+                [DoHDelAsync]
             );
 
-            static void DoHDel(IServer server)
+            static async Task DoHDelAsync(GarnetClient client)
             {
-                RedisResult val = server.Execute("HEXISTS", "foo", "bar");
-                Assert.IsFalse((bool)val);
+                long val = await client.ExecuteForLongResultAsync("HEXISTS", ["foo", "bar"]);
+                Assert.AreEqual(0, val);
             }
         }
 
         [Test]
-        public void HGetACLs()
+        public async Task HGetACLsAsync()
         {
-            CheckCommands(
+            await CheckCommandsAsync(
                 "HGET",
-                [DoHDel]
+                [DoHDelAsync]
             );
 
-            static void DoHDel(IServer server)
+            static async Task DoHDelAsync(GarnetClient client)
             {
-                RedisResult val = server.Execute("HGET", "foo", "bar");
-                Assert.IsNull((string)val);
+                string val = await client.ExecuteForStringResultAsync("HGET", ["foo", "bar"]);
+                Assert.IsNull(val);
             }
         }
 
         [Test]
-        public void HGetAllACLs()
+        public async Task HGetAllACLsAsync()
         {
-            CheckCommands(
+            await CheckCommandsAsync(
                 "HGETALL",
-                [DoHDel]
+                [DoHDelAsync]
             );
 
-            static void DoHDel(IServer server)
+            static async Task DoHDelAsync(GarnetClient client)
             {
-                RedisResult val = server.Execute("HGETALL", "foo");
-                RedisValue[] valArr = (RedisValue[])val;
+                string[] val = await client.ExecuteForStringArrayResultAsync("HGETALL", ["foo"]);
 
-                Assert.AreEqual(0, valArr.Length);
+                Assert.AreEqual(0, val.Length);
             }
         }
 
         [Test]
-        public void HIncrByACLs()
+        public async Task HIncrByACLsAsync()
         {
             int cur = 0;
 
-            CheckCommands(
+            await CheckCommandsAsync(
                 "HINCRBY",
-                [DoHIncrBy]
+                [DoHIncrByAsync]
             );
 
-            void DoHIncrBy(IServer server)
+            async Task DoHIncrByAsync(GarnetClient client)
             {
-                RedisResult val = server.Execute("HINCRBY", "foo", "bar", "2");
+                long val = await client.ExecuteForLongResultAsync("HINCRBY", ["foo", "bar", "2"]);
                 cur += 2;
-                Assert.AreEqual(cur, (int)val);
+                Assert.AreEqual(cur, val);
             }
         }
 
         [Test]
-        public void HIncrByFloatACLs()
+        public async Task HIncrByFloatACLsAsync()
         {
             double cur = 0;
 
-            CheckCommands(
+            await CheckCommandsAsync(
                 "HINCRBYFLOAT",
-                [DoHIncrByFloat]
+                [DoHIncrByFloatAsync]
             );
 
-            void DoHIncrByFloat(IServer server)
+            async Task DoHIncrByFloatAsync(GarnetClient client)
             {
-                RedisResult val = server.Execute("HINCRBYFLOAT", "foo", "bar", "1.0");
+                string val = await client.ExecuteForStringResultAsync("HINCRBYFLOAT", ["foo", "bar", "1.0"]);
                 cur += 1.0;
-                Assert.AreEqual(cur, (double)val);
+                Assert.AreEqual(cur, double.Parse(val));
             }
         }
 
         [Test]
-        public void HKeysACLs()
+        public async Task HKeysACLsAsync()
         {
-            CheckCommands(
+            await CheckCommandsAsync(
                 "HKEYS",
-                [DoHKeys]
+                [DoHKeysAsync]
             );
 
-            static void DoHKeys(IServer server)
+            static async Task DoHKeysAsync(GarnetClient client)
             {
-                RedisResult val = server.Execute("HKEYS", "foo");
-                RedisValue[] valArr = (RedisValue[])val;
-                Assert.AreEqual(0, valArr.Length);
+                string[] val = await client.ExecuteForStringArrayResultAsync("HKEYS", ["foo"]);
+                Assert.AreEqual(0, val.Length);
             }
         }
 
         [Test]
-        public void HLenACLs()
+        public async Task HLenACLsAsync()
         {
-            CheckCommands(
+            await CheckCommandsAsync(
                 "HLEN",
-                [DoHLen]
+                [DoHLenAsync]
             );
 
-            static void DoHLen(IServer server)
+            static async Task DoHLenAsync(GarnetClient client)
             {
-                RedisResult val = server.Execute("HLEN", "foo");
-                Assert.AreEqual(0, (int)val);
+                long val = await client.ExecuteForLongResultAsync("HLEN", ["foo"]);
+                Assert.AreEqual(0, val);
             }
         }
 
         [Test]
-        public void HMGetACLs()
+        public async Task HMGetACLsAsync()
         {
-            CheckCommands(
+            await CheckCommandsAsync(
                 "HMGET",
-                [DoHMGet, DoHMGetMulti]
+                [DoHMGetAsync, DoHMGetMultiAsync]
             );
 
-            static void DoHMGet(IServer server)
+            static async Task DoHMGetAsync(GarnetClient client)
             {
-                RedisResult val = server.Execute("HMGET", "foo", "bar");
-                RedisValue[] valArr = (RedisValue[])val;
-                Assert.AreEqual(1, valArr.Length);
-                Assert.IsNull((string)valArr[0]);
+                string[] val = await client.ExecuteForStringArrayResultAsync("HMGET", ["foo", "bar"]);
+                Assert.AreEqual(1, val.Length);
+                Assert.IsNull(val[0]);
             }
 
-            static void DoHMGetMulti(IServer server)
+            static async Task DoHMGetMultiAsync(GarnetClient client)
             {
-                RedisResult val = server.Execute("HMGET", "foo", "bar", "fizz");
-                RedisValue[] valArr = (RedisValue[])val;
-                Assert.AreEqual(2, valArr.Length);
-                Assert.IsNull((string)valArr[0]);
-                Assert.IsNull((string)valArr[1]);
+                string[] val = await client.ExecuteForStringArrayResultAsync("HMGET", ["foo", "bar", "fizz"]);
+                Assert.AreEqual(2, val.Length);
+                Assert.IsNull(val[0]);
+                Assert.IsNull(val[1]);
             }
         }
 
         [Test]
-        public void HMSetACLs()
+        public async Task HMSetACLsAsync()
         {
-            CheckCommands(
+            await CheckCommandsAsync(
                 "HMSET",
-                [DoHMSet, DoHMSetMulti]
+                [DoHMSetAsync, DoHMSetMultiAsync]
             );
 
-            static void DoHMSet(IServer server)
+            static async Task DoHMSetAsync(GarnetClient client)
             {
-                RedisResult val = server.Execute("HMSET", "foo", "bar", "fizz");
-                Assert.AreEqual("OK", (string)val);
+                string val = await client.ExecuteForStringResultAsync("HMSET", ["foo", "bar", "fizz"]);
+                Assert.AreEqual("OK", val);
             }
 
-            static void DoHMSetMulti(IServer server)
+            static async Task DoHMSetMultiAsync(GarnetClient client)
             {
-                RedisResult val = server.Execute("HMSET", "foo", "bar", "fizz", "hello", "world");
-                Assert.AreEqual("OK", (string)val);
+                string val = await client.ExecuteForStringResultAsync("HMSET", ["foo", "bar", "fizz", "hello", "world"]);
+                Assert.AreEqual("OK", val);
             }
         }
 
         [Test]
-        public void HRandFieldACLs()
+        public async Task HRandFieldACLsAsync()
         {
-            CheckCommands(
+            await CheckCommandsAsync(
                 "HRANDFIELD",
-                [DoHRandField, DoHRandFieldCount, DoHRandFieldCountWithValues]
+                [DoHRandFieldAsync, DoHRandFieldCountAsync, DoHRandFieldCountWithValuesAsync]
             );
 
-            static void DoHRandField(IServer server)
+            static async Task DoHRandFieldAsync(GarnetClient client)
             {
-                RedisResult val = server.Execute("HRANDFIELD", "foo");
-                Assert.IsNull((string)val);
+                string val = await client.ExecuteForStringResultAsync("HRANDFIELD", ["foo"]);
+                Assert.IsNull(val);
             }
 
-            static void DoHRandFieldCount(IServer server)
+            static async Task DoHRandFieldCountAsync(GarnetClient client)
             {
-                RedisResult val = server.Execute("HRANDFIELD", "foo", "1");
-                RedisResult[] valArr = (RedisResult[])val;
-                Assert.AreEqual(0, valArr.Length);
+                string[] val = await client.ExecuteForStringArrayResultAsync("HRANDFIELD", ["foo", "1"]);
+                Assert.AreEqual(0, val.Length);
             }
 
-            static void DoHRandFieldCountWithValues(IServer server)
+            static async Task DoHRandFieldCountWithValuesAsync(GarnetClient client)
             {
-                RedisResult val = server.Execute("HRANDFIELD", "foo", "1", "WITHVALUES");
-                RedisResult[] valArr = (RedisResult[])val;
-                Assert.AreEqual(0, valArr.Length);
+                string[] val = await client.ExecuteForStringArrayResultAsync("HRANDFIELD", ["foo", "1", "WITHVALUES"]);
+                Assert.AreEqual(0, val.Length);
             }
         }
 
         [Test]
-        public void HScanACLs()
+        public async Task HScanACLsAsync()
         {
-            CheckCommands(
+
+            await CheckCommandsAsync(
                 "HSCAN",
-                [DoHScan, DoHScanMatch, DoHScanCount, DoHScanNoValues, DoHScanMatchCount, DoHScanMatchNoValues, DoHScanCountNoValues, DoHScanMatchCountNoValues]
+                [DoHScanAsync, DoHScanMatchAsync, DoHScanCountAsync, DoHScanNoValuesAsync, DoHScanMatchCountAsync, DoHScanMatchNoValuesAsync, DoHScanCountNoValuesAsync, DoHScanMatchCountNoValuesAsync],
+                skipPermitted: true
             );
 
-            static void DoHScan(IServer server)
+            static async Task DoHScanAsync(GarnetClient client)
             {
-                RedisResult val = server.Execute("HSCAN", "foo", "0");
-                RedisResult[] valArr = (RedisResult[])val;
-                Assert.AreEqual(2, valArr.Length);
+                // HSCAN returns an array of arrays, which GarnetClient doesn't deal with
+                await client.ExecuteForStringResultAsync("HSCAN", ["foo", "0"]);
             }
 
-            static void DoHScanMatch(IServer server)
+            static async Task DoHScanMatchAsync(GarnetClient client)
             {
-                RedisResult val = server.Execute("HSCAN", "foo", "0", "MATCH", "*");
-                RedisResult[] valArr = (RedisResult[])val;
-                Assert.AreEqual(2, valArr.Length);
+                // HSCAN returns an array of arrays, which GarnetClient doesn't deal with
+                await client.ExecuteForStringResultAsync("HSCAN", ["foo", "0", "MATCH", "*"]);
             }
 
-            static void DoHScanCount(IServer server)
+            static async Task DoHScanCountAsync(GarnetClient client)
             {
-                RedisResult val = server.Execute("HSCAN", "foo", "0", "COUNT", "2");
-                RedisResult[] valArr = (RedisResult[])val;
-                Assert.AreEqual(2, valArr.Length);
+                // HSCAN returns an array of arrays, which GarnetClient doesn't deal with
+                await client.ExecuteForStringResultAsync("HSCAN", ["foo", "0", "COUNT", "2"]);
             }
 
-            static void DoHScanNoValues(IServer server)
+            static async Task DoHScanNoValuesAsync(GarnetClient client)
             {
-                RedisResult val = server.Execute("HSCAN", "foo", "0", "NOVALUES");
-                RedisResult[] valArr = (RedisResult[])val;
-                Assert.AreEqual(2, valArr.Length);
+                // HSCAN returns an array of arrays, which GarnetClient doesn't deal with
+                await client.ExecuteForStringResultAsync("HSCAN", ["foo", "0", "NOVALUES"]);
             }
 
-            static void DoHScanMatchCount(IServer server)
+            static async Task DoHScanMatchCountAsync(GarnetClient client)
             {
-                RedisResult val = server.Execute("HSCAN", "foo", "0", "MATCH", "*", "COUNT", "2");
-                RedisResult[] valArr = (RedisResult[])val;
-                Assert.AreEqual(2, valArr.Length);
+                // HSCAN returns an array of arrays, which GarnetClient doesn't deal with
+                await client.ExecuteForStringResultAsync("HSCAN", ["foo", "0", "MATCH", "*", "COUNT", "2"]);
             }
 
-            static void DoHScanMatchNoValues(IServer server)
+            static async Task DoHScanMatchNoValuesAsync(GarnetClient client)
             {
-                RedisResult val = server.Execute("HSCAN", "foo", "0", "MATCH", "*", "NOVALUES");
-                RedisResult[] valArr = (RedisResult[])val;
-                Assert.AreEqual(2, valArr.Length);
+                // HSCAN returns an array of arrays, which GarnetClient doesn't deal with
+                await client.ExecuteForStringResultAsync("HSCAN", ["foo", "0", "MATCH", "*", "NOVALUES"]);
             }
 
-            static void DoHScanCountNoValues(IServer server)
+            static async Task DoHScanCountNoValuesAsync(GarnetClient client)
             {
-                RedisResult val = server.Execute("HSCAN", "foo", "0", "COUNT", "0", "NOVALUES");
-                RedisResult[] valArr = (RedisResult[])val;
-                Assert.AreEqual(2, valArr.Length);
+                // HSCAN returns an array of arrays, which GarnetClient doesn't deal with
+                await client.ExecuteForStringResultAsync("HSCAN", ["foo", "0", "COUNT", "0", "NOVALUES"]);
             }
 
-            static void DoHScanMatchCountNoValues(IServer server)
+            static async Task DoHScanMatchCountNoValuesAsync(GarnetClient client)
             {
-                RedisResult val = server.Execute("HSCAN", "foo", "0", "MATCH", "*", "COUNT", "0", "NOVALUES");
-                RedisResult[] valArr = (RedisResult[])val;
-                Assert.AreEqual(2, valArr.Length);
+                // HSCAN returns an array of arrays, which GarnetClient doesn't deal with
+                await client.ExecuteForStringResultAsync("HSCAN", ["foo", "0", "MATCH", "*", "COUNT", "0", "NOVALUES"]);
             }
         }
 
         [Test]
-        public void HSetACLs()
+        public async Task HSetACLsAsync()
         {
             int keyIx = 0;
 
-            CheckCommands(
+            await CheckCommandsAsync(
                 "HSET",
-                [DoHSet, DoHSetMulti]
+                [DoHSetAsync, DoHSetMultiAsync]
             );
 
-            void DoHSet(IServer server)
+            async Task DoHSetAsync(GarnetClient client)
             {
-                RedisResult val = server.Execute("HSET", $"foo-{keyIx}", "bar", "fizz");
+                long val = await client.ExecuteForLongResultAsync("HSET", [$"foo-{keyIx}", "bar", "fizz"]);
                 keyIx++;
 
-                Assert.AreEqual(1, (int)val);
+                Assert.AreEqual(1, val);
             }
 
-            void DoHSetMulti(IServer server)
+            async Task DoHSetMultiAsync(GarnetClient client)
             {
-                RedisResult val = server.Execute("HSET", $"foo-{keyIx}", "bar", "fizz", "hello", "world");
+                long val = await client.ExecuteForLongResultAsync("HSET", [$"foo-{keyIx}", "bar", "fizz", "hello", "world"]);
                 keyIx++;
 
-                Assert.AreEqual(2, (int)val);
+                Assert.AreEqual(2, val);
             }
         }
 
         [Test]
-        public void HSetNXACLs()
+        public async Task HSetNXACLsAsync()
         {
             int keyIx = 0;
 
-            CheckCommands(
+            await CheckCommandsAsync(
                 "HSETNX",
-                [DoHSetNX]
+                [DoHSetNXAsync]
             );
 
-            void DoHSetNX(IServer server)
+            async Task DoHSetNXAsync(GarnetClient client)
             {
-                RedisResult val = server.Execute("HSETNX", $"foo-{keyIx}", "bar", "fizz");
+                long val = await client.ExecuteForLongResultAsync("HSETNX", [$"foo-{keyIx}", "bar", "fizz"]);
                 keyIx++;
 
-                Assert.AreEqual(1, (int)val);
+                Assert.AreEqual(1, val);
             }
         }
 
         [Test]
-        public void HStrLenACLs()
+        public async Task HStrLenACLsAsync()
         {
-            CheckCommands(
+            await CheckCommandsAsync(
                 "HSTRLEN",
-                [DoHStrLen]
+                [DoHStrLenAsync]
             );
 
-            static void DoHStrLen(IServer server)
+            static async Task DoHStrLenAsync(GarnetClient client)
             {
-                RedisResult val = server.Execute("HSTRLEN", "foo", "bar");
-                Assert.AreEqual(0, (int)val);
+                long val = await client.ExecuteForLongResultAsync("HSTRLEN", ["foo", "bar"]);
+                Assert.AreEqual(0, val);
             }
         }
 
         [Test]
-        public void HValsACLs()
+        public async Task HValsACLsAsync()
         {
-            CheckCommands(
+            await CheckCommandsAsync(
                 "HVALS",
-                [DoHVals]
+                [DoHValsAsync]
             );
 
-            static void DoHVals(IServer server)
+            static async Task DoHValsAsync(GarnetClient client)
             {
-                RedisResult val = server.Execute("HVALS", "foo");
-                RedisValue[] valArr = (RedisValue[])val;
-                Assert.AreEqual(0, valArr.Length);
+                string[] val = await client.ExecuteForStringArrayResultAsync("HVALS", ["foo"]);
+                Assert.AreEqual(0, val.Length);
             }
         }
 
         [Test]
-        public void IncrACLs()
+        public async Task IncrACLsAsync()
         {
             int count = 0;
 
-            CheckCommands(
+            await CheckCommandsAsync(
                 "INCR",
-                [DoIncr]
+                [DoIncrAsync]
             );
 
-            void DoIncr(IServer server)
+            async Task DoIncrAsync(GarnetClient client)
             {
-                RedisResult val = server.Execute("INCR", $"foo-{count}");
+                long val = await client.ExecuteForLongResultAsync("INCR", [$"foo-{count}"]);
                 count++;
-                Assert.AreEqual(1, (int)val);
+                Assert.AreEqual(1, val);
             }
         }
 
         [Test]
-        public void IncrByACLs()
+        public async Task IncrByACLsAsync()
         {
             int count = 0;
 
-            CheckCommands(
+            await CheckCommandsAsync(
                 "INCRBY",
-                [DoIncrBy]
+                [DoIncrByAsync]
             );
 
-            void DoIncrBy(IServer server)
+            async Task DoIncrByAsync(GarnetClient client)
             {
-                RedisResult val = server.Execute("INCRBY", $"foo-{count}", "2");
+                long val = await client.ExecuteForLongResultAsync("INCRBY", [$"foo-{count}", "2"]);
                 count++;
-                Assert.AreEqual(2, (int)val);
+                Assert.AreEqual(2, val);
             }
         }
 
         [Test]
-        public void InfoACLs()
+        public async Task InfoACLsAsync()
         {
-            CheckCommands(
+            await CheckCommandsAsync(
                "INFO",
-               [DoInfo, DoInfoSingle, DoInfoMulti]
+               [DoInfoAsync, DoInfoSingleAsync, DoInfoMultiAsync]
             );
 
-            static void DoInfo(IServer server)
+            static async Task DoInfoAsync(GarnetClient client)
             {
-                RedisResult val = server.Execute("INFO");
-                Assert.IsNotEmpty((string)val);
+                string val = await client.ExecuteForStringResultAsync("INFO");
+                Assert.IsNotEmpty(val);
             }
 
-            static void DoInfoSingle(IServer server)
+            static async Task DoInfoSingleAsync(GarnetClient client)
             {
-                RedisResult val = server.Execute("INFO", "SERVER");
-                Assert.IsNotEmpty((string)val);
+                string val = await client.ExecuteForStringResultAsync("INFO", ["SERVER"]);
+                Assert.IsNotEmpty(val);
             }
 
-            static void DoInfoMulti(IServer server)
+            static async Task DoInfoMultiAsync(GarnetClient client)
             {
-                RedisResult val = server.Execute("INFO", "SERVER", "MEMORY");
-                Assert.IsNotEmpty((string)val);
+                string val = await client.ExecuteForStringResultAsync("INFO", ["SERVER", "MEMORY"]);
+                Assert.IsNotEmpty(val);
             }
         }
 
         [Test]
-        public void KeysACLs()
+        public async Task KeysACLsAsync()
         {
-            CheckCommands(
+            await CheckCommandsAsync(
                "KEYS",
-               [DoKeys]
+               [DoKeysAsync]
             );
 
-            static void DoKeys(IServer server)
+            static async Task DoKeysAsync(GarnetClient client)
             {
-                RedisResult val = server.Execute("KEYS", "*");
-                RedisResult[] valArr = (RedisResult[])val;
-                Assert.AreEqual(0, valArr.Length);
+                string[] val = await client.ExecuteForStringArrayResultAsync("KEYS", ["*"]);
+                Assert.AreEqual(0, val.Length);
             }
         }
 
         [Test]
-        public void LastSaveACLs()
+        public async Task LastSaveACLsAsync()
         {
-            CheckCommands(
+            await CheckCommandsAsync(
                "LASTSAVE",
-               [DoLastSave]
+               [DoLastSaveAsync]
             );
 
-            static void DoLastSave(IServer server)
+            static async Task DoLastSaveAsync(GarnetClient client)
             {
-                RedisResult val = server.Execute("LASTSAVE");
-                Assert.AreEqual(0, (long)val);
+                long val = await client.ExecuteForLongResultAsync("LASTSAVE");
+                Assert.AreEqual(0, val);
             }
         }
 
         [Test]
-        public void LatencyHelpACLs()
+        public async Task LatencyHelpACLsAsync()
         {
-            CheckCommands(
+            await CheckCommandsAsync(
                "LATENCY HELP",
-               [DoLatencyHelp]
+               [DoLatencyHelpAsync]
             );
 
-            static void DoLatencyHelp(IServer server)
+            static async Task DoLatencyHelpAsync(GarnetClient client)
             {
-                RedisResult val = server.Execute("LATENCY", "HELP");
-                Assert.AreEqual(ResultType.Array, val.Resp2Type);
+                string[] val = await client.ExecuteForStringArrayResultAsync("LATENCY", ["HELP"]);
+                Assert.IsNotNull(val);
             }
         }
 
         [Test]
-        public void LatencyHistogramACLs()
+        public async Task LatencyHistogramACLsAsync()
         {
-            CheckCommands(
+            await CheckCommandsAsync(
                "LATENCY HISTOGRAM",
-               [DoLatencyHistogram, DoLatencyHistogramSingle, DoLatencyHistogramMulti]
+               [DoLatencyHistogramAsync, DoLatencyHistogramSingleAsync, DoLatencyHistogramMultiAsync]
             );
 
-            static void DoLatencyHistogram(IServer server)
+            static async Task DoLatencyHistogramAsync(GarnetClient client)
             {
-                RedisResult val = server.Execute("LATENCY", "HISTOGRAM");
-                RedisResult[] valArr = (RedisResult[])val;
-                Assert.AreEqual(0, valArr.Length);
+                string[] val = await client.ExecuteForStringArrayResultAsync("LATENCY", ["HISTOGRAM"]);
+                Assert.AreEqual(0, val.Length);
             }
 
-            static void DoLatencyHistogramSingle(IServer server)
+            static async Task DoLatencyHistogramSingleAsync(GarnetClient client)
             {
-                RedisResult val = server.Execute("LATENCY", "HISTOGRAM", "NET_RS_LAT");
-                RedisResult[] valArr = (RedisResult[])val;
-                Assert.AreEqual(0, valArr.Length);
+                string[] val = await client.ExecuteForStringArrayResultAsync("LATENCY", ["HISTOGRAM", "NET_RS_LAT"]);
+                Assert.AreEqual(0, val.Length);
             }
 
-            static void DoLatencyHistogramMulti(IServer server)
+            static async Task DoLatencyHistogramMultiAsync(GarnetClient client)
             {
-                RedisResult val = server.Execute("LATENCY", "HISTOGRAM", "NET_RS_LAT", "NET_RS_LAT_ADMIN");
-                RedisResult[] valArr = (RedisResult[])val;
-                Assert.AreEqual(0, valArr.Length);
+                string[] val = await client.ExecuteForStringArrayResultAsync("LATENCY", ["HISTOGRAM", "NET_RS_LAT", "NET_RS_LAT_ADMIN"]);
+                Assert.AreEqual(0, val.Length);
             }
         }
 
         [Test]
-        public void LatencyResetACLs()
+        public async Task LatencyResetACLsAsync()
         {
-            CheckCommands(
+            await CheckCommandsAsync(
                "LATENCY RESET",
-               [DoLatencyReset, DoLatencyResetSingle, DoLatencyResetMulti]
+               [DoLatencyResetAsync, DoLatencyResetSingleAsync, DoLatencyResetMultiAsync]
             );
 
-            static void DoLatencyReset(IServer server)
+            static async Task DoLatencyResetAsync(GarnetClient client)
             {
-                RedisResult val = server.Execute("LATENCY", "RESET");
-                Assert.AreEqual(6, (int)val);
+                long val = await client.ExecuteForLongResultAsync("LATENCY", ["RESET"]);
+                Assert.AreEqual(6, val);
             }
 
-            static void DoLatencyResetSingle(IServer server)
+            static async Task DoLatencyResetSingleAsync(GarnetClient client)
             {
-                RedisResult val = server.Execute("LATENCY", "RESET", "NET_RS_LAT");
-                Assert.AreEqual(1, (int)val);
+                long val = await client.ExecuteForLongResultAsync("LATENCY", ["RESET", "NET_RS_LAT"]);
+                Assert.AreEqual(1, val);
             }
 
-            static void DoLatencyResetMulti(IServer server)
+            static async Task DoLatencyResetMultiAsync(GarnetClient client)
             {
-                RedisResult val = server.Execute("LATENCY", "RESET", "NET_RS_LAT", "NET_RS_LAT_ADMIN");
-                Assert.AreEqual(2, (int)val);
+                long val = await client.ExecuteForLongResultAsync("LATENCY", ["RESET", "NET_RS_LAT", "NET_RS_LAT_ADMIN"]);
+                Assert.AreEqual(2, val);
             }
         }
 
         [Test]
-        public void LPopACLs()
+        public async Task BLMoveACLsAsync()
         {
-            CheckCommands(
+            await CheckCommandsAsync(
+                "BLMOVE",
+                [DoBLMoveAsync]
+            );
+
+            static async Task DoBLMoveAsync(GarnetClient client)
+            {
+                string val = await client.ExecuteForStringResultAsync("BLMOVE", ["foo", "bar", "RIGHT", "LEFT", "1"]);
+                Assert.IsNull(val);
+            }
+        }
+
+        [Test]
+        public async Task BLPopACLsAsync()
+        {
+            await CheckCommandsAsync(
+                "BLPOP",
+                [DoBLPopAsync]
+            );
+
+            static async Task DoBLPopAsync(GarnetClient client)
+            {
+                string[] val = await client.ExecuteForStringArrayResultAsync("BLPOP", ["foo", "1"]);
+                Assert.IsNull(val);
+            }
+        }
+
+        [Test]
+        public async Task BRPopACLsAsync()
+        {
+            await CheckCommandsAsync(
+                "BRPOP",
+                [DoBRPopAsync]
+            );
+
+            static async Task DoBRPopAsync(GarnetClient client)
+            {
+                string[] val = await client.ExecuteForStringArrayResultAsync("BRPOP", ["foo", "1"]);
+                Assert.IsNull(val);
+            }
+        }
+
+        [Test]
+        public async Task LPopACLsAsync()
+        {
+            await CheckCommandsAsync(
                 "LPOP",
-                [DoLPop, DoLPopCount]
+                [DoLPopAsync, DoLPopCountAsync]
             );
 
-            static void DoLPop(IServer server)
+            static async Task DoLPopAsync(GarnetClient client)
             {
-                RedisResult val = server.Execute("LPOP", "foo");
-                Assert.IsTrue(val.IsNull);
+                string val = await client.ExecuteForStringResultAsync("LPOP", ["foo"]);
+                Assert.IsNull(val);
             }
 
-            static void DoLPopCount(IServer server)
+            static async Task DoLPopCountAsync(GarnetClient client)
             {
-                RedisResult val = server.Execute("LPOP", "foo", "4");
-                Assert.IsTrue(val.IsNull);
+                string val = await client.ExecuteForStringResultAsync("LPOP", ["foo", "4"]);
+                Assert.IsNull(val);
             }
         }
 
         [Test]
-        public void LPushACLs()
+        public async Task LPushACLsAsync()
         {
             int count = 0;
 
-            CheckCommands(
+            await CheckCommandsAsync(
                 "LPUSH",
-                [DoLPush, DoLPushMulti]
+                [DoLPushAsync, DoLPushMultiAsync]
             );
 
-            void DoLPush(IServer server)
+            async Task DoLPushAsync(GarnetClient client)
             {
-                RedisResult val = server.Execute("LPUSH", "foo", "bar");
+                long val = await client.ExecuteForLongResultAsync("LPUSH", ["foo", "bar"]);
                 count++;
 
-                Assert.AreEqual(count, (int)val);
+                Assert.AreEqual(count, val);
             }
 
-            void DoLPushMulti(IServer server)
+            async Task DoLPushMultiAsync(GarnetClient client)
             {
-                RedisResult val = server.Execute("LPUSH", "foo", "bar", "buzz");
+                long val = await client.ExecuteForLongResultAsync("LPUSH", ["foo", "bar", "buzz"]);
                 count += 2;
 
-                Assert.AreEqual(count, (int)val);
+                Assert.AreEqual(count, val);
             }
         }
 
         [Test]
-        public void LPushXACLs()
+        public async Task LPushXACLsAsync()
         {
-            CheckCommands(
+            await CheckCommandsAsync(
                 "LPUSHX",
-                [DoLPushX, DoLPushXMulti]
+                [DoLPushXAsync, DoLPushXMultiAsync]
             );
 
-            static void DoLPushX(IServer server)
+            static async Task DoLPushXAsync(GarnetClient client)
             {
-                RedisResult val = server.Execute("LPUSHX", "foo", "bar");
-                Assert.AreEqual(0, (int)val);
+                long val = await client.ExecuteForLongResultAsync("LPUSHX", ["foo", "bar"]);
+                Assert.AreEqual(0, val);
             }
 
-            void DoLPushXMulti(IServer server)
+            async Task DoLPushXMultiAsync(GarnetClient client)
             {
-                RedisResult val = server.Execute("LPUSHX", "foo", "bar", "buzz");
-                Assert.AreEqual(0, (int)val);
+                long val = await client.ExecuteForLongResultAsync("LPUSHX", ["foo", "bar", "buzz"]);
+                Assert.AreEqual(0, val);
             }
         }
 
         [Test]
-        public void RPopACLs()
+        public async Task RPopACLsAsync()
         {
-            CheckCommands(
+            await CheckCommandsAsync(
                 "RPOP",
-                [DoRPop, DoRPopCount]
+                [DoRPopAsync, DoRPopCountAsync]
             );
 
-            static void DoRPop(IServer server)
+            static async Task DoRPopAsync(GarnetClient client)
             {
-                RedisResult val = server.Execute("RPOP", "foo");
-                Assert.IsTrue(val.IsNull);
+                string val = await client.ExecuteForStringResultAsync("RPOP", ["foo"]);
+                Assert.IsNull(val);
             }
 
-            static void DoRPopCount(IServer server)
+            static async Task DoRPopCountAsync(GarnetClient client)
             {
-                RedisResult val = server.Execute("RPOP", "foo", "4");
-                Assert.IsTrue(val.IsNull);
+                string val = await client.ExecuteForStringResultAsync("RPOP", ["foo", "4"]);
+                Assert.IsNull(val);
             }
         }
 
         [Test]
-        public void LRushACLs()
+        public async Task LRushACLsAsync()
         {
             int count = 0;
 
-            CheckCommands(
+            await CheckCommandsAsync(
                 "RPUSH",
-                [DoRPush, DoRPushMulti]
+                [DoRPushAsync, DoRPushMultiAsync]
             );
 
-            void DoRPush(IServer server)
+            async Task DoRPushAsync(GarnetClient client)
             {
-                RedisResult val = server.Execute("RPUSH", "foo", "bar");
+                long val = await client.ExecuteForLongResultAsync("RPUSH", ["foo", "bar"]);
                 count++;
 
-                Assert.AreEqual(count, (int)val);
+                Assert.AreEqual(count, val);
             }
 
-            void DoRPushMulti(IServer server)
+            async Task DoRPushMultiAsync(GarnetClient client)
             {
-                RedisResult val = server.Execute("RPUSH", "foo", "bar", "buzz");
+                long val = await client.ExecuteForLongResultAsync("RPUSH", ["foo", "bar", "buzz"]);
                 count += 2;
 
-                Assert.AreEqual(count, (int)val);
+                Assert.AreEqual(count, val);
             }
         }
 
         [Test]
-        public void RPushACLs()
+        public async Task RPushACLsAsync()
         {
             int count = 0;
 
-            CheckCommands(
+            await CheckCommandsAsync(
                 "RPUSH",
-                [DoRPushX, DoRPushXMulti]
+                [DoRPushXAsync, DoRPushXMultiAsync]
             );
 
-            void DoRPushX(IServer server)
+            async Task DoRPushXAsync(GarnetClient client)
             {
-                RedisResult val = server.Execute("RPUSH", $"foo-{count}", "bar");
+                long val = await client.ExecuteForLongResultAsync("RPUSH", [$"foo-{count}", "bar"]);
                 count++;
-                Assert.AreEqual(1, (int)val);
+                Assert.AreEqual(1, val);
             }
 
-            void DoRPushXMulti(IServer server)
+            async Task DoRPushXMultiAsync(GarnetClient client)
             {
-                RedisResult val = server.Execute("RPUSH", $"foo-{count}", "bar", "buzz");
+                long val = await client.ExecuteForLongResultAsync("RPUSH", [$"foo-{count}", "bar", "buzz"]);
                 count++;
-                Assert.AreEqual(2, (int)val);
+                Assert.AreEqual(2, val);
             }
         }
 
         [Test]
-        public void RPushXACLs()
+        public async Task RPushXACLsAsync()
         {
-            CheckCommands(
+            await CheckCommandsAsync(
                 "RPUSHX",
-                [DoRPushX, DoRPushXMulti]
+                [DoRPushXAsync, DoRPushXMultiAsync]
             );
 
-            static void DoRPushX(IServer server)
+            static async Task DoRPushXAsync(GarnetClient client)
             {
-                RedisResult val = server.Execute("RPUSHX", "foo", "bar");
-                Assert.AreEqual(0, (int)val);
+                long val = await client.ExecuteForLongResultAsync("RPUSHX", ["foo", "bar"]);
+                Assert.AreEqual(0, val);
             }
 
-            static void DoRPushXMulti(IServer server)
+            static async Task DoRPushXMultiAsync(GarnetClient client)
             {
-                RedisResult val = server.Execute("RPUSHX", "foo", "bar", "buzz");
-                Assert.AreEqual(0, (int)val);
+                long val = await client.ExecuteForLongResultAsync("RPUSHX", ["foo", "bar", "buzz"]);
+                Assert.AreEqual(0, val);
             }
         }
 
         [Test]
-        public void LLenACLs()
+        public async Task LLenACLsAsync()
         {
-            CheckCommands(
+            await CheckCommandsAsync(
                 "LLEN",
-                [DoLLen]
+                [DoLLenAsync]
             );
 
-            static void DoLLen(IServer server)
+            static async Task DoLLenAsync(GarnetClient client)
             {
-                RedisResult val = server.Execute("LLEN", "foo");
-                Assert.AreEqual(0, (int)val);
+                long val = await client.ExecuteForLongResultAsync("LLEN", ["foo"]);
+                Assert.AreEqual(0, val);
             }
         }
 
         [Test]
-        public void LTrimACLs()
+        public async Task LTrimACLsAsync()
         {
-            CheckCommands(
+            await CheckCommandsAsync(
                 "LTRIM",
-                [DoLTrim]
+                [DoLTrimAsync]
             );
 
-            static void DoLTrim(IServer server)
+            static async Task DoLTrimAsync(GarnetClient client)
             {
-                RedisResult val = server.Execute("LTRIM", "foo", "4", "10");
-                Assert.AreEqual("OK", (string)val);
+                string val = await client.ExecuteForStringResultAsync("LTRIM", ["foo", "4", "10"]);
+                Assert.AreEqual("OK", val);
             }
         }
 
         [Test]
-        public void LRangeACLs()
+        public async Task LRangeACLsAsync()
         {
-            CheckCommands(
+            await CheckCommandsAsync(
                 "LRANGE",
-                [DoLRange]
+                [DoLRangeAsync]
             );
 
-            static void DoLRange(IServer server)
+            static async Task DoLRangeAsync(GarnetClient client)
             {
-                RedisResult val = server.Execute("LRANGE", "foo", "4", "10");
-                RedisResult[] valArr = (RedisResult[])val;
-                Assert.AreEqual(0, valArr.Length);
+                string[] val = await client.ExecuteForStringArrayResultAsync("LRANGE", ["foo", "4", "10"]);
+                Assert.AreEqual(0, val.Length);
             }
         }
 
         [Test]
-        public void LIndexACLs()
+        public async Task LIndexACLsAsync()
         {
-            CheckCommands(
+            await CheckCommandsAsync(
                 "LINDEX",
-                [DoLIndex]
+                [DoLIndexAsync]
             );
 
-            static void DoLIndex(IServer server)
+            static async Task DoLIndexAsync(GarnetClient client)
             {
-                RedisResult val = server.Execute("LINDEX", "foo", "4");
-                Assert.IsTrue(val.IsNull);
+                string val = await client.ExecuteForStringResultAsync("LINDEX", ["foo", "4"]);
+                Assert.IsNull(val);
             }
         }
 
         [Test]
-        public void LInsertACLs()
+        public async Task LInsertACLsAsync()
         {
-            CheckCommands(
+            await CheckCommandsAsync(
                 "LINSERT",
-                [DoLInsertBefore, DoLInsertAfter]
+                [DoLInsertBeforeAsync, DoLInsertAfterAsync]
             );
 
-            static void DoLInsertBefore(IServer server)
+            static async Task DoLInsertBeforeAsync(GarnetClient client)
             {
-                RedisResult val = server.Execute("LINSERT", "foo", "BEFORE", "hello", "world");
-                Assert.AreEqual(0, (int)val);
+                long val = await client.ExecuteForLongResultAsync("LINSERT", ["foo", "BEFORE", "hello", "world"]);
+                Assert.AreEqual(0, val);
             }
 
-            static void DoLInsertAfter(IServer server)
+            static async Task DoLInsertAfterAsync(GarnetClient client)
             {
-                RedisResult val = server.Execute("LINSERT", "foo", "AFTER", "hello", "world");
-                Assert.AreEqual(0, (int)val);
+                long val = await client.ExecuteForLongResultAsync("LINSERT", ["foo", "AFTER", "hello", "world"]);
+                Assert.AreEqual(0, val);
             }
         }
 
         [Test]
-        public void LRemACLs()
+        public async Task LRemACLsAsync()
         {
-            CheckCommands(
+            await CheckCommandsAsync(
                 "LREM",
-                [DoLRem]
+                [DoLRemAsync]
             );
 
-            static void DoLRem(IServer server)
+            static async Task DoLRemAsync(GarnetClient client)
             {
-                RedisResult val = server.Execute("LREM", "foo", "0", "hello");
-                Assert.AreEqual(0, (int)val);
+                long val = await client.ExecuteForLongResultAsync("LREM", ["foo", "0", "hello"]);
+                Assert.AreEqual(0, val);
             }
         }
 
         [Test]
-        public void RPopLPushACLs()
+        public async Task RPopLPushACLsAsync()
         {
-            CheckCommands(
+            await CheckCommandsAsync(
                 "RPOPLPUSH",
-                [DoLRem]
+                [DoLRemAsync]
             );
 
-            static void DoLRem(IServer server)
+            static async Task DoLRemAsync(GarnetClient client)
             {
-                RedisResult val = server.Execute("RPOPLPUSH", "foo", "bar");
-                Assert.IsTrue(val.IsNull);
+                string val = await client.ExecuteForStringResultAsync("RPOPLPUSH", ["foo", "bar"]);
+                Assert.IsNull(val);
             }
         }
 
         [Test]
-        public void LMoveACLs()
+        public async Task LMoveACLsAsync()
         {
-            CheckCommands(
+            await CheckCommandsAsync(
                 "LMOVE",
-                [DoLMove]
+                [DoLMoveAsync]
             );
 
-            static void DoLMove(IServer server)
+            static async Task DoLMoveAsync(GarnetClient client)
             {
-                RedisResult val = server.Execute("LMOVE", "foo", "bar", "LEFT", "RIGHT");
-                Assert.IsTrue(val.IsNull);
+                string val = await client.ExecuteForStringResultAsync("LMOVE", ["foo", "bar", "LEFT", "RIGHT"]);
+                Assert.IsNull(val);
             }
         }
 
         [Test]
-        public void LSetACLs()
+        public async Task LSetACLsAsync()
         {
-            // TODO: LSET with an empty key appears broken; clean up when fixed
-
-            using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig(allowAdmin: true, authUsername: "default", authPassword: DefaultPassword));
-
-            IServer server = redis.GetServers().Single();
-            IDatabase db = redis.GetDatabase();
-
-            db.ListLeftPush("foo", "fizz");
-
-            CheckCommands(
+            await CheckCommandsAsync(
                 "LSET",
-                [DoLMove]
+                [DoLMoveAsync]
             );
 
-            static void DoLMove(IServer server)
-            {
-                RedisResult val = server.Execute("LSET", "foo", "0", "bar");
-                Assert.AreEqual("OK", (string)val);
-            }
-        }
-
-        [Test]
-        public void MemoryUsageACLs()
-        {
-            CheckCommands(
-                "MEMORY USAGE",
-                [DoMemoryUsage, DoMemoryUsageSamples]
-            );
-
-            static void DoMemoryUsage(IServer server)
-            {
-                RedisResult val = server.Execute("MEMORY", "USAGE", "foo");
-                Assert.AreEqual(0, (int)val);
-            }
-
-            static void DoMemoryUsageSamples(IServer server)
-            {
-                RedisResult val = server.Execute("MEMORY", "USAGE", "foo", "SAMPLES", "10");
-                Assert.AreEqual(0, (int)val);
-            }
-        }
-
-        [Test]
-        public void MGetACLs()
-        {
-            CheckCommands(
-                "MGET",
-                [DoMemorySingle, DoMemoryMulti]
-            );
-
-            static void DoMemorySingle(IServer server)
-            {
-                RedisResult val = server.Execute("MGET", "foo");
-                RedisResult[] valArr = (RedisResult[])val;
-                Assert.AreEqual(1, valArr.Length);
-                Assert.IsTrue(valArr[0].IsNull);
-            }
-
-            static void DoMemoryMulti(IServer server)
-            {
-                RedisResult val = server.Execute("MGET", "foo", "bar");
-                RedisResult[] valArr = (RedisResult[])val;
-                Assert.AreEqual(2, valArr.Length);
-                Assert.IsTrue(valArr[0].IsNull);
-                Assert.IsTrue(valArr[1].IsNull);
-            }
-        }
-
-        [Test]
-        public void MigrateACLs()
-        {
-            // Uses exceptions for control flow, as we're not setting up replicas here
-
-            CheckCommands(
-                "MIGRATE",
-                [DoMigrate]
-            );
-
-            static void DoMigrate(IServer server)
+            static async Task DoLMoveAsync(GarnetClient client)
             {
                 try
                 {
-                    server.Execute("MIGRATE", "127.0.0.1", "9999", "KEY", "0", "1000");
+                    await client.ExecuteForStringResultAsync("LSET", ["foo", "0", "bar"]);
+                    Assert.Fail("Should not be reachable, key does not exist");
+                }
+                catch (Exception e)
+                {
+                    if (e.Message != "ERR no such key")
+                    {
+                        throw;
+                    }
+                }
+            }
+        }
+
+        [Test]
+        public async Task MemoryUsageACLsAsync()
+        {
+            await CheckCommandsAsync(
+                "MEMORY USAGE",
+                [DoMemoryUsageAsync, DoMemoryUsageSamplesAsync]
+            );
+
+            static async Task DoMemoryUsageAsync(GarnetClient client)
+            {
+                string val = await client.ExecuteForStringResultAsync("MEMORY", ["USAGE", "foo"]);
+                Assert.IsNull(val);
+            }
+
+            static async Task DoMemoryUsageSamplesAsync(GarnetClient client)
+            {
+                string val = await client.ExecuteForStringResultAsync("MEMORY", ["USAGE", "foo", "SAMPLES", "10"]);
+                Assert.IsNull(val);
+            }
+        }
+
+        [Test]
+        public async Task MGetACLsAsync()
+        {
+            await CheckCommandsAsync(
+                "MGET",
+                [DoMemorySingleAsync, DoMemoryMultiAsync]
+            );
+
+            static async Task DoMemorySingleAsync(GarnetClient client)
+            {
+                string[] val = await client.ExecuteForStringArrayResultAsync("MGET", ["foo"]);
+                Assert.AreEqual(1, val.Length);
+                Assert.IsNull(val[0]);
+            }
+
+            static async Task DoMemoryMultiAsync(GarnetClient client)
+            {
+                string[] val = await client.ExecuteForStringArrayResultAsync("MGET", ["foo", "bar"]);
+                Assert.AreEqual(2, val.Length);
+                Assert.IsNull(val[0]);
+                Assert.IsNull(val[1]);
+            }
+        }
+
+        [Test]
+        public async Task MigrateACLsAsync()
+        {
+            // Uses exceptions for control flow, as we're not setting up replicas here
+
+            await CheckCommandsAsync(
+                "MIGRATE",
+                [DoMigrateAsync]
+            );
+
+            static async Task DoMigrateAsync(GarnetClient client)
+            {
+                try
+                {
+                    await client.ExecuteForStringResultAsync("MIGRATE", ["127.0.0.1", "9999", "KEY", "0", "1000"]);
                     Assert.Fail("Shouldn't succeed, no replicas are attached");
                 }
-                catch (RedisException e)
+                catch (Exception e)
                 {
                     if (e.Message == "ERR This instance has cluster support disabled")
                     {
@@ -3705,26 +3672,25 @@ namespace Garnet.test.Resp.ACL
         }
 
         [Test]
-        public void ModuleACLs()
+        public async Task ModuleLoadCSACLsAsync()
         {
             // MODULE isn't a proper redis command, but this is the placeholder today... so validate it for completeness
 
-            CheckCommands(
+            await CheckCommandsAsync(
                 "MODULE",
-                [DoModuleList]
+                [DoModuleLoadAsync]
             );
 
-            static void DoModuleList(IServer server)
+            static async Task DoModuleLoadAsync(GarnetClient client)
             {
                 try
                 {
-                    server.Execute("MODULE", "LIST");
-
-                    Assert.Fail("Shouldn't be reachable, MODULE is only parsed - not implemented");
+                    await client.ExecuteForStringResultAsync("MODULE", ["LOADCS", "nonexisting.dll"]);
+                    Assert.Fail("Shouldn't succeed using a non-existing binary");
                 }
-                catch (RedisException e)
+                catch (Exception e)
                 {
-                    if (e.Message == "ERR unknown command")
+                    if (e.Message == "ERR unable to access one or more binary files.")
                     {
                         return;
                     }
@@ -3735,116 +3701,87 @@ namespace Garnet.test.Resp.ACL
         }
 
         [Test]
-        public void MonitorACLs()
+        public async Task MonitorACLsAsync()
         {
-            const string TestUser = "monitor-user";
-            const string TestPassword = "fizz";
+            // MONITOR is weird, so just check that we can forbid it
+            await CheckCommandsAsync(
+                "MONITOR",
+                [DoMonitorAsync],
+                skipPermitted: true
+            );
 
-            // MONITOR isn't actually implemented, and doesn't fit nicely into SE.Redis anyway, so we only check the DENY cases here
-
-            // test just the command
+            static async Task DoMonitorAsync(GarnetClient client)
             {
-                using ConnectionMultiplexer defaultRedis = ConnectionMultiplexer.Connect(TestUtils.GetConfig(allowAdmin: true, authUsername: "default", authPassword: DefaultPassword));
-                IServer defaultServer = defaultRedis.GetServers().Single();
-
-                InitUser(defaultServer, TestUser, TestPassword);
-                SetUser(defaultServer, TestUser, [$"-monitor"]);
-
-                using ConnectionMultiplexer testRedis = ConnectionMultiplexer.Connect(TestUtils.GetConfig(allowAdmin: true, authUsername: TestUser, authPassword: TestPassword));
-                IServer testServer = testRedis.GetServers().Single();
-
-                Assert.False(CheckAuthFailure(() => DoMonitor(testServer)), "Permitted when should have been denied");
-            }
-
-            // test is a bit more involved since @admin is present
-            string[] categories = ["admin", "slow", "dangerous"];
-
-            foreach (string category in categories)
-            {
-                using ConnectionMultiplexer defaultRedis = ConnectionMultiplexer.Connect(TestUtils.GetConfig(allowAdmin: true, authUsername: "default", authPassword: DefaultPassword));
-                IServer defaultServer = defaultRedis.GetServers().Single();
-
-                InitUser(defaultServer, TestUser, TestPassword);
-                SetUser(defaultServer, TestUser, [$"-@{category}"]);
-
-                using ConnectionMultiplexer testRedis = ConnectionMultiplexer.Connect(TestUtils.GetConfig(allowAdmin: true, authUsername: TestUser, authPassword: TestPassword));
-                IServer testServer = testRedis.GetServers().Single();
-
-                Assert.False(CheckAuthFailure(() => DoMonitor(testServer)), "Permitted when should have been denied");
-            }
-
-            static void DoMonitor(IServer server)
-            {
-                server.Execute("MONITOR");
+                await client.ExecuteForStringResultAsync("MONITOR");
                 Assert.Fail("Should never reach this point");
             }
         }
 
         [Test]
-        public void MSetACLs()
+        public async Task MSetACLsAsync()
         {
-            CheckCommands(
+            await CheckCommandsAsync(
                 "MSET",
-                [DoMSetSingle, DoMSetMulti]
+                [DoMSetSingleAsync, DoMSetMultiAsync]
             );
 
-            static void DoMSetSingle(IServer server)
+            static async Task DoMSetSingleAsync(GarnetClient client)
             {
-                RedisResult val = server.Execute("MSET", "foo", "bar");
-                Assert.AreEqual("OK", (string)val);
+                string val = await client.ExecuteForStringResultAsync("MSET", ["foo", "bar"]);
+                Assert.AreEqual("OK", val);
             }
 
-            static void DoMSetMulti(IServer server)
+            static async Task DoMSetMultiAsync(GarnetClient client)
             {
-                RedisResult val = server.Execute("MSET", "foo", "bar", "fizz", "buzz");
-                Assert.AreEqual("OK", (string)val);
+                string val = await client.ExecuteForStringResultAsync("MSET", ["foo", "bar", "fizz", "buzz"]);
+                Assert.AreEqual("OK", val);
             }
         }
 
         [Test]
-        public void MSetNXACLs()
+        public async Task MSetNXACLsAsync()
         {
             int count = 0;
 
-            CheckCommands(
+            await CheckCommandsAsync(
                 "MSETNX",
-                [DoMSetNXSingle, DoMSetNXMulti]
+                [DoMSetNXSingleAsync, DoMSetNXMultiAsync]
             );
 
-            void DoMSetNXSingle(IServer server)
+            async Task DoMSetNXSingleAsync(GarnetClient client)
             {
-                RedisResult val = server.Execute("MSETNX", $"foo-{count}", "bar");
+                long val = await client.ExecuteForLongResultAsync("MSETNX", [$"foo-{count}", "bar"]);
                 count++;
 
-                Assert.AreEqual(1, (int)val);
+                Assert.AreEqual(1, val);
             }
 
-            void DoMSetNXMulti(IServer server)
+            async Task DoMSetNXMultiAsync(GarnetClient client)
             {
-                RedisResult val = server.Execute("MSETNX", $"foo-{count}", "bar", $"fizz-{count}", "buzz");
+                long val = await client.ExecuteForLongResultAsync("MSETNX", [$"foo-{count}", "bar", $"fizz-{count}", "buzz"]);
                 count++;
 
-                Assert.AreEqual(1, (int)val);
+                Assert.AreEqual(1, val);
             }
         }
 
         [Test]
-        public void MultiACLs()
+        public async Task MultiACLsAsync()
         {
-            CheckCommands(
+            await CheckCommandsAsync(
                 "MULTI",
-                [DoMulti],
+                [DoMultiAsync],
                 skipPing: true
             );
 
-            static void DoMulti(IServer server)
+            static async Task DoMultiAsync(GarnetClient client)
             {
                 try
                 {
-                    RedisResult val = server.Execute("MULTI");
-                    Assert.AreEqual("OK", (string)val);
+                    string val = await client.ExecuteForStringResultAsync("MULTI");
+                    Assert.AreEqual("OK", val);
                 }
-                catch (RedisException e)
+                catch (Exception e)
                 {
                     // The "nested MULTI" error response is also legal, if we're ACL'd for MULTI
                     if (e.Message == "ERR MULTI calls can not be nested")
@@ -3858,283 +3795,276 @@ namespace Garnet.test.Resp.ACL
         }
 
         [Test]
-        public void PersistACLs()
+        public async Task PersistACLsAsync()
         {
-            CheckCommands(
+            await CheckCommandsAsync(
                 "PERSIST",
-                [DoPersist]
+                [DoPersistAsync]
             );
 
-            static void DoPersist(IServer server)
+            static async Task DoPersistAsync(GarnetClient client)
             {
-                RedisResult val = server.Execute("PERSIST", "foo");
-                Assert.AreEqual(0, (int)val);
+                long val = await client.ExecuteForLongResultAsync("PERSIST", ["foo"]);
+                Assert.AreEqual(0, val);
             }
         }
 
         [Test]
-        public void PExpireACLs()
+        public async Task PExpireACLsAsync()
         {
             // TODO: pexpire doesn't support combinations of flags (XX GT, XX LT are legal) so those will need to be tested when implemented
 
-            CheckCommands(
+            await CheckCommandsAsync(
                 "PEXPIRE",
-                [DoPExpire, DoPExpireNX, DoPExpireXX, DoPExpireGT, DoPExpireLT]
+                [DoPExpireAsync, DoPExpireNXAsync, DoPExpireXXAsync, DoPExpireGTAsync, DoPExpireLTAsync]
             );
 
-            static void DoPExpire(IServer server)
+            static async Task DoPExpireAsync(GarnetClient client)
             {
-                RedisResult val = server.Execute("PEXPIRE", "foo", "10");
-                Assert.AreEqual(0, (int)val);
+                long val = await client.ExecuteForLongResultAsync("PEXPIRE", ["foo", "10"]);
+                Assert.AreEqual(0, val);
             }
 
-            static void DoPExpireNX(IServer server)
+            static async Task DoPExpireNXAsync(GarnetClient client)
             {
-                RedisResult val = server.Execute("PEXPIRE", "foo", "10", "NX");
-                Assert.AreEqual(0, (int)val);
+                long val = await client.ExecuteForLongResultAsync("PEXPIRE", ["foo", "10", "NX"]);
+                Assert.AreEqual(0, val);
             }
 
-            static void DoPExpireXX(IServer server)
+            static async Task DoPExpireXXAsync(GarnetClient client)
             {
-                RedisResult val = server.Execute("PEXPIRE", "foo", "10", "XX");
-                Assert.AreEqual(0, (int)val);
+                long val = await client.ExecuteForLongResultAsync("PEXPIRE", ["foo", "10", "XX"]);
+                Assert.AreEqual(0, val);
             }
 
-            static void DoPExpireGT(IServer server)
+            static async Task DoPExpireGTAsync(GarnetClient client)
             {
-                RedisResult val = server.Execute("PEXPIRE", "foo", "10", "GT");
-                Assert.AreEqual(0, (int)val);
+                long val = await client.ExecuteForLongResultAsync("PEXPIRE", ["foo", "10", "GT"]);
+                Assert.AreEqual(0, val);
             }
 
-            static void DoPExpireLT(IServer server)
+            static async Task DoPExpireLTAsync(GarnetClient client)
             {
-                RedisResult val = server.Execute("PEXPIRE", "foo", "10", "LT");
-                Assert.AreEqual(0, (int)val);
+                long val = await client.ExecuteForLongResultAsync("PEXPIRE", ["foo", "10", "LT"]);
+                Assert.AreEqual(0, val);
             }
         }
 
         [Test]
-        public void PFAddACLs()
+        public async Task PFAddACLsAsync()
         {
             int count = 0;
 
-            CheckCommands(
+            await CheckCommandsAsync(
                 "PFADD",
-                [DoPFAddSingle, DoPFAddMulti]
+                [DoPFAddSingleAsync, DoPFAddMultiAsync]
             );
 
-            void DoPFAddSingle(IServer server)
+            async Task DoPFAddSingleAsync(GarnetClient client)
             {
-                RedisResult val = server.Execute("PFADD", $"foo-{count}", "bar");
+                long val = await client.ExecuteForLongResultAsync("PFADD", [$"foo-{count}", "bar"]);
                 count++;
 
-                Assert.AreEqual(1, (int)val);
+                Assert.AreEqual(1, val);
             }
 
-            void DoPFAddMulti(IServer server)
+            async Task DoPFAddMultiAsync(GarnetClient client)
             {
-                RedisResult val = server.Execute("PFADD", $"foo-{count}", "bar", "fizz");
+                long val = await client.ExecuteForLongResultAsync("PFADD", [$"foo-{count}", "bar", "fizz"]);
                 count++;
 
-                Assert.AreEqual(1, (int)val);
+                Assert.AreEqual(1, val);
             }
         }
 
         [Test]
-        public void PFCountACLs()
+        public async Task PFCountACLsAsync()
         {
-            CheckCommands(
+            await CheckCommandsAsync(
                 "PFCOUNT",
-                [DoPFCountSingle, DoPFCountMulti]
+                [DoPFCountSingleAsync, DoPFCountMultiAsync]
             );
 
-            static void DoPFCountSingle(IServer server)
+            static async Task DoPFCountSingleAsync(GarnetClient client)
             {
-                RedisResult val = server.Execute("PFCOUNT", "foo");
-                Assert.AreEqual(0, (int)val);
+                long val = await client.ExecuteForLongResultAsync("PFCOUNT", ["foo"]);
+                Assert.AreEqual(0, val);
             }
 
-            static void DoPFCountMulti(IServer server)
+            static async Task DoPFCountMultiAsync(GarnetClient client)
             {
-                RedisResult val = server.Execute("PFCOUNT", "foo", "bar");
-                Assert.AreEqual(0, (int)val);
+                long val = await client.ExecuteForLongResultAsync("PFCOUNT", ["foo", "bar"]);
+                Assert.AreEqual(0, val);
             }
         }
 
         [Test]
-        public void PFMergeACLs()
+        public async Task PFMergeACLsAsync()
         {
-            CheckCommands(
+            await CheckCommandsAsync(
                 "PFMERGE",
-                [DoPFMergeSingle, DoPFMergeMulti]
+                [DoPFMergeSingleAsync, DoPFMergeMultiAsync]
             );
 
-            static void DoPFMergeSingle(IServer server)
+            static async Task DoPFMergeSingleAsync(GarnetClient client)
             {
-                RedisResult val = server.Execute("PFMERGE", "foo");
-                Assert.AreEqual("OK", (string)val);
+                string val = await client.ExecuteForStringResultAsync("PFMERGE", ["foo"]);
+                Assert.AreEqual("OK", val);
             }
 
-            static void DoPFMergeMulti(IServer server)
+            static async Task DoPFMergeMultiAsync(GarnetClient client)
             {
-                RedisResult val = server.Execute("PFMERGE", "foo", "bar");
-                Assert.AreEqual("OK", (string)val);
+                string val = await client.ExecuteForStringResultAsync("PFMERGE", ["foo", "bar"]);
+                Assert.AreEqual("OK", val);
             }
         }
 
         [Test]
-        public void PingACLs()
+        public async Task PingACLsAsync()
         {
-            CheckCommands(
+            await CheckCommandsAsync(
                 "PING",
-                [DoPing, DoPingMessage]
+                [DoPingAsync, DoPingMessageAsync]
             );
 
-            static void DoPing(IServer server)
+            static async Task DoPingAsync(GarnetClient client)
             {
-                RedisResult val = server.Execute("PING");
-                Assert.AreEqual("PONG", (string)val);
+                string val = await client.ExecuteForStringResultAsync("PING");
+                Assert.AreEqual("PONG", val);
             }
 
-            static void DoPingMessage(IServer server)
+            static async Task DoPingMessageAsync(GarnetClient client)
             {
-                RedisResult val = server.Execute("PING", "hello");
-                Assert.AreEqual("hello", (string)val);
+                string val = await client.ExecuteForStringResultAsync("PING", ["hello"]);
+                Assert.AreEqual("hello", val);
             }
         }
 
         [Test]
-        public void PSetEXACLs()
+        public async Task PSetEXACLsAsync()
         {
-            CheckCommands(
+            await CheckCommandsAsync(
                 "PSETEX",
-                [DoPSetEX]
+                [DoPSetEXAsync]
             );
 
-            static void DoPSetEX(IServer server)
+            static async Task DoPSetEXAsync(GarnetClient client)
             {
-                RedisResult val = server.Execute("PSETEX", "foo", "10", "bar");
-                Assert.AreEqual("OK", (string)val);
+                string val = await client.ExecuteForStringResultAsync("PSETEX", ["foo", "10", "bar"]);
+                Assert.AreEqual("OK", val);
             }
         }
 
         [Test]
-        public void PSubscribeACLs()
+        public async Task PSubscribeACLsAsync()
         {
-            // TODO: not testing the multiple pattern version
-
-            int count = 0;
-
-            CheckCommands(
+            // PSUBSCRIBE is sufficient weird that all we care to test is forbidding it
+            await CheckCommandsAsync(
                 "PSUBSCRIBE",
-                [DoPSubscribePattern]
+                [DoPSubscribePatternAsync],
+                skipPermitted: true
             );
 
-            void DoPSubscribePattern(IServer server)
+            static async Task DoPSubscribePatternAsync(GarnetClient client)
             {
-                ISubscriber sub = server.Multiplexer.GetSubscriber();
-
-                // have to do the (bad) async version to make sure we actually get the error
-                sub.SubscribeAsync(new RedisChannel($"channel-{count}", RedisChannel.PatternMode.Pattern)).GetAwaiter().GetResult();
-                count++;
+                await client.ExecuteForStringResultAsync("PSUBSCRIBE", ["channel"]);
+                Assert.Fail("Should not reach this point");
             }
         }
 
         [Test]
-        public void PUnsubscribeACLs()
+        public async Task PUnsubscribeACLsAsync()
         {
-            CheckCommands(
+            await CheckCommandsAsync(
                 "PUNSUBSCRIBE",
-                [DoPUnsubscribePattern]
+                [DoPUnsubscribePatternAsync]
             );
 
-            static void DoPUnsubscribePattern(IServer server)
+            static async Task DoPUnsubscribePatternAsync(GarnetClient client)
             {
-                RedisResult res = server.Execute("PUNSUBSCRIBE", "foo");
-                Assert.AreEqual(ResultType.Array, res.Resp2Type);
+                string[] res = await client.ExecuteForStringArrayResultAsync("PUNSUBSCRIBE", ["foo"]);
+                Assert.IsNotNull(res);
             }
         }
 
         [Test]
-        public void PTTLACLs()
+        public async Task PTTLACLsAsync()
         {
-            CheckCommands(
+            await CheckCommandsAsync(
                 "PTTL",
-                [DoPTTL]
+                [DoPTTLAsync]
             );
 
-            static void DoPTTL(IServer server)
+            static async Task DoPTTLAsync(GarnetClient client)
             {
-                RedisResult val = server.Execute("PTTL", "foo");
-                Assert.AreEqual(-2, (int)val);
+                long val = await client.ExecuteForLongResultAsync("PTTL", ["foo"]);
+                Assert.AreEqual(-2, val);
             }
         }
 
         [Test]
-        public void PublishACLs()
+        public async Task PublishACLsAsync()
         {
-            CheckCommands(
+            await CheckCommandsAsync(
                 "PUBLISH",
-                [DoPublish]
+                [DoPublishAsync]
             );
 
-            static void DoPublish(IServer server)
+            static async Task DoPublishAsync(GarnetClient client)
             {
-                ISubscriber sub = server.Multiplexer.GetSubscriber();
-
-                long count = sub.Publish(new RedisChannel("foo", RedisChannel.PatternMode.Literal), "bar");
+                long count = await client.ExecuteForLongResultAsync("PUBLISH", ["foo", "bar"]);
                 Assert.AreEqual(0, count);
             }
         }
 
         [Test]
-        public void ReadOnlyACLs()
+        public async Task ReadOnlyACLsAsync()
         {
-            CheckCommands(
+            await CheckCommandsAsync(
                 "READONLY",
-                [DoReadOnly]
+                [DoReadOnlyAsync]
             );
 
-            static void DoReadOnly(IServer server)
+            static async Task DoReadOnlyAsync(GarnetClient client)
             {
-                RedisResult val = server.Execute("READONLY");
-                Assert.AreEqual("OK", (string)val);
+                string val = await client.ExecuteForStringResultAsync("READONLY");
+                Assert.AreEqual("OK", val);
             }
         }
 
         [Test]
-        public void ReadWriteACLs()
+        public async Task ReadWriteACLsAsync()
         {
-            CheckCommands(
+            await CheckCommandsAsync(
                 "READWRITE",
-                [DoReadWrite]
+                [DoReadWriteAsync]
             );
 
-            static void DoReadWrite(IServer server)
+            static async Task DoReadWriteAsync(GarnetClient client)
             {
-                RedisResult val = server.Execute("READWRITE");
-                Assert.AreEqual("OK", (string)val);
+                string val = await client.ExecuteForStringResultAsync("READWRITE");
+                Assert.AreEqual("OK", val);
             }
         }
 
         [Test]
-        public void RegisterCSACLs()
+        public async Task RegisterCSACLsAsync()
         {
             // TODO: REGISTERCS has a complicated syntax, test proper commands later
 
-            CheckCommands(
+            await CheckCommandsAsync(
                 "REGISTERCS",
-                [DoRegisterCS]
+                [DoRegisterCSAsync]
             );
 
-            static void DoRegisterCS(IServer server)
+            static async Task DoRegisterCSAsync(GarnetClient client)
             {
                 try
                 {
-                    server.Execute("REGISTERCS");
+                    await client.ExecuteForStringResultAsync("REGISTERCS");
                     Assert.Fail("Should be unreachable, command is malfoemd");
                 }
-                catch (RedisException e)
+                catch (Exception e)
                 {
                     if (e.Message == "ERR malformed REGISTERCS command.")
                     {
@@ -4147,21 +4077,21 @@ namespace Garnet.test.Resp.ACL
         }
 
         [Test]
-        public void RenameACLs()
+        public async Task RenameACLsAsync()
         {
-            CheckCommands(
+            await CheckCommandsAsync(
                 "RENAME",
-                [DoPTTL]
+                [DoPTTLAsync]
             );
 
-            static void DoPTTL(IServer server)
+            static async Task DoPTTLAsync(GarnetClient client)
             {
                 try
                 {
-                    RedisResult val = server.Execute("RENAME", "foo", "bar");
+                    await client.ExecuteForStringResultAsync("RENAME", ["foo", "bar"]);
                     Assert.Fail("Shouldn't succeed, key doesn't exist");
                 }
-                catch (RedisException e)
+                catch (Exception e)
                 {
                     if (e.Message == "ERR no such key")
                     {
@@ -4174,23 +4104,23 @@ namespace Garnet.test.Resp.ACL
         }
 
         [Test]
-        public void ReplicaOfACLs()
+        public async Task ReplicaOfACLsAsync()
         {
             // Uses exceptions as control flow, since clustering is disabled in these tests
 
-            CheckCommands(
+            await CheckCommandsAsync(
                 "REPLICAOF",
-                [DoReplicaOf, DoReplicaOfNoOne]
+                [DoReplicaOfAsync, DoReplicaOfNoOneAsync]
             );
 
-            static void DoReplicaOf(IServer server)
+            static async Task DoReplicaOfAsync(GarnetClient client)
             {
                 try
                 {
-                    server.Execute("REPLICAOF", "127.0.0.1", "9999");
+                    await client.ExecuteForStringResultAsync("REPLICAOF", ["127.0.0.1", "9999"]);
                     Assert.Fail("Should be unreachable, cluster is disabled");
                 }
-                catch (RedisException e)
+                catch (Exception e)
                 {
                     if (e.Message == "ERR This instance has cluster support disabled")
                     {
@@ -4201,14 +4131,14 @@ namespace Garnet.test.Resp.ACL
                 }
             }
 
-            static void DoReplicaOfNoOne(IServer server)
+            static async Task DoReplicaOfNoOneAsync(GarnetClient client)
             {
                 try
                 {
-                    server.Execute("REPLICAOF", "NO", "ONE");
+                    await client.ExecuteForStringResultAsync("REPLICAOF", ["NO", "ONE"]);
                     Assert.Fail("Should be unreachable, cluster is disabled");
                 }
-                catch (RedisException e)
+                catch (Exception e)
                 {
                     if (e.Message == "ERR This instance has cluster support disabled")
                     {
@@ -4221,72 +4151,25 @@ namespace Garnet.test.Resp.ACL
         }
 
         [Test]
-        public void RunTxpACLs()
+        public async Task RunTxpACLsAsync()
         {
             // TODO: RUNTXP semantics are a bit unclear... expand test later
 
-            // TODO: RUNTXP breaks the stream when command is malformed, rework this when that is fixed
+            // TODO: RUNTXP appears to break the command stream when malformed, so only test that we can forbid it
+            await CheckCommandsAsync(
+                "RUNTXP",
+                [DoRunTxpAsync],
+                skipPermitted: true
+            );
 
-            // Test denying just the command
-            {
-                {
-                    using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig(allowAdmin: true, authUsername: "default", authPassword: DefaultPassword));
-
-                    IServer server = redis.GetServers().Single();
-                    IDatabase db = redis.GetDatabase();
-
-                    SetUser(server, "default", ["-runtxp"]);
-                    Assert.False(CheckAuthFailure(() => DoRunTxp(db)), "Permitted when should have been denied");
-                }
-            }
-
-            string[] categories = ["transaction", "garnet"];
-
-            foreach (string cat in categories)
-            {
-                // Spin up a temp admin
-                {
-                    using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig(allowAdmin: true, authUsername: "default", authPassword: DefaultPassword));
-
-                    IServer server = redis.GetServers().Single();
-                    IDatabase db = redis.GetDatabase();
-
-                    RedisResult setupAdmin = db.Execute("ACL", "SETUSER", "temp-admin", "on", ">foo", "+@all");
-                    Assert.AreEqual("OK", (string)setupAdmin);
-                }
-
-                // Permitted
-                {
-                    using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig(allowAdmin: true, authUsername: "temp-admin", authPassword: "foo"));
-
-                    IServer server = redis.GetServers().Single();
-                    IDatabase db = redis.GetDatabase();
-
-                    Assert.True(CheckAuthFailure(() => DoRunTxp(db)), "Denied when should have been permitted");
-                }
-
-                // Denied
-                {
-                    using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig(allowAdmin: true, authUsername: "temp-admin", authPassword: "foo"));
-
-                    IServer server = redis.GetServers().Single();
-                    IDatabase db = redis.GetDatabase();
-
-                    SetUser(server, "temp-admin", $"-@{cat}");
-
-                    Assert.False(CheckAuthFailure(() => DoRunTxp(db)), "Permitted when should have been denied");
-                }
-            }
-
-            static void DoRunTxp(IDatabase db)
+            static async Task DoRunTxpAsync(GarnetClient client)
             {
                 try
                 {
-                    db.Execute("RUNTXP", "4");
-
+                    await client.ExecuteForStringResultAsync("RUNTXP", ["4"]);
                     Assert.Fail("Should be reachable, command is malformed");
                 }
-                catch (RedisException e)
+                catch (Exception e)
                 {
                     if (e.Message == "ERR Could not get transaction procedure")
                     {
@@ -4299,95 +4182,96 @@ namespace Garnet.test.Resp.ACL
         }
 
         [Test]
-        public void SaveACLs()
+        public async Task SaveACLsAsync()
         {
-            CheckCommands(
+            await CheckCommandsAsync(
                "SAVE",
-               [DoSave]
+               [DoSaveAsync]
            );
 
-            static void DoSave(IServer server)
+            static async Task DoSaveAsync(GarnetClient client)
             {
-                RedisResult val = server.Execute("SAVE");
-                Assert.AreEqual("OK", (string)val);
+                string val = await client.ExecuteForStringResultAsync("SAVE");
+                Assert.AreEqual("OK", val);
             }
         }
 
         [Test]
-        public void ScanACLs()
+        public async Task ScanACLsAsync()
         {
-            CheckCommands(
+            await CheckCommandsAsync(
                 "SCAN",
-                [DoScan, DoScanMatch, DoScanCount, DoScanType, DoScanMatchCount, DoScanMatchType, DoScanCountType, DoScanMatchCountType]
+                [DoScanAsync, DoScanMatchAsync, DoScanCountAsync, DoScanTypeAsync, DoScanMatchCountAsync, DoScanMatchTypeAsync, DoScanCountTypeAsync, DoScanMatchCountTypeAsync],
+                skipPermitted: true
             );
 
-            static void DoScan(IServer server)
+            static async Task DoScanAsync(GarnetClient client)
             {
-                RedisResult val = server.Execute("SCAN", "0");
-                Assert.IsFalse(val.IsNull);
+                // SCAN returns an array of arrays, which GarnetClient doesn't deal with
+                await client.ExecuteForStringResultAsync("SCAN", ["0"]);
             }
 
-            static void DoScanMatch(IServer server)
+            static async Task DoScanMatchAsync(GarnetClient client)
             {
-                RedisResult val = server.Execute("SCAN", "0", "MATCH", "*");
-                Assert.IsFalse(val.IsNull);
+                // SCAN returns an array of arrays, which GarnetClient doesn't deal with
+                await client.ExecuteForStringResultAsync("SCAN", ["0", "MATCH", "*"]);
             }
 
-            static void DoScanCount(IServer server)
+            static async Task DoScanCountAsync(GarnetClient client)
             {
-                RedisResult val = server.Execute("SCAN", "0", "COUNT", "5");
-                Assert.IsFalse(val.IsNull);
+                // SCAN returns an array of arrays, which GarnetClient doesn't deal with
+                await client.ExecuteForStringResultAsync("SCAN", ["0", "COUNT", "5"]);
             }
 
-            static void DoScanType(IServer server)
+            static async Task DoScanTypeAsync(GarnetClient client)
             {
-                RedisResult val = server.Execute("SCAN", "0", "TYPE", "zset");
-                Assert.IsFalse(val.IsNull);
+                // SCAN returns an array of arrays, which GarnetClient doesn't deal with
+                await client.ExecuteForStringResultAsync("SCAN", ["0", "TYPE", "zset"]);
             }
 
-            static void DoScanMatchCount(IServer server)
+            static async Task DoScanMatchCountAsync(GarnetClient client)
             {
-                RedisResult val = server.Execute("SCAN", "0", "MATCH", "*", "COUNT", "5");
-                Assert.IsFalse(val.IsNull);
+                // SCAN returns an array of arrays, which GarnetClient doesn't deal with
+                await client.ExecuteForStringResultAsync("SCAN", ["0", "MATCH", "*", "COUNT", "5"]);
             }
 
-            static void DoScanMatchType(IServer server)
+            static async Task DoScanMatchTypeAsync(GarnetClient client)
             {
-                RedisResult val = server.Execute("SCAN", "0", "MATCH", "*", "TYPE", "zset");
-                Assert.IsFalse(val.IsNull);
+                // SCAN returns an array of arrays, which GarnetClient doesn't deal with
+                await client.ExecuteForStringResultAsync("SCAN", ["0", "MATCH", "*", "TYPE", "zset"]);
             }
 
-            static void DoScanCountType(IServer server)
+            static async Task DoScanCountTypeAsync(GarnetClient client)
             {
-                RedisResult val = server.Execute("SCAN", "0", "COUNT", "5", "TYPE", "zset");
-                Assert.IsFalse(val.IsNull);
+                // SCAN returns an array of arrays, which GarnetClient doesn't deal with
+                await client.ExecuteForStringResultAsync("SCAN", ["0", "COUNT", "5", "TYPE", "zset"]);
             }
 
-            static void DoScanMatchCountType(IServer server)
+            static async Task DoScanMatchCountTypeAsync(GarnetClient client)
             {
-                RedisResult val = server.Execute("SCAN", "0", "MATCH", "*", "COUNT", "5", "TYPE", "zset");
-                Assert.IsFalse(val.IsNull);
+                // SCAN returns an array of arrays, which GarnetClient doesn't deal with
+                await client.ExecuteForStringResultAsync("SCAN", ["0", "MATCH", "*", "COUNT", "5", "TYPE", "zset"]);
             }
         }
 
         [Test]
-        public void SecondaryOfACLs()
+        public async Task SecondaryOfACLsAsync()
         {
             // Uses exceptions as control flow, since clustering is disabled in these tests
 
-            CheckCommands(
+            await CheckCommandsAsync(
                 "SECONDARYOF",
-                [DoSecondaryOf, DoSecondaryOfNoOne]
+                [DoSecondaryOfAsync, DoSecondaryOfNoOneAsync]
             );
 
-            static void DoSecondaryOf(IServer server)
+            static async Task DoSecondaryOfAsync(GarnetClient client)
             {
                 try
                 {
-                    server.Execute("SECONDARYOF", "127.0.0.1", "9999");
+                    await client.ExecuteForStringResultAsync("SECONDARYOF", ["127.0.0.1", "9999"]);
                     Assert.Fail("Should be unreachable, cluster is disabled");
                 }
-                catch (RedisException e)
+                catch (Exception e)
                 {
                     if (e.Message == "ERR This instance has cluster support disabled")
                     {
@@ -4398,14 +4282,14 @@ namespace Garnet.test.Resp.ACL
                 }
             }
 
-            static void DoSecondaryOfNoOne(IServer server)
+            static async Task DoSecondaryOfNoOneAsync(GarnetClient client)
             {
                 try
                 {
-                    server.Execute("SECONDARYOF", "NO", "ONE");
+                    await client.ExecuteForStringResultAsync("SECONDARYOF", ["NO", "ONE"]);
                     Assert.Fail("Should be unreachable, cluster is disabled");
                 }
-                catch (RedisException e)
+                catch (Exception e)
                 {
                     if (e.Message == "ERR This instance has cluster support disabled")
                     {
@@ -4418,275 +4302,275 @@ namespace Garnet.test.Resp.ACL
         }
 
         [Test]
-        public void SelectACLs()
+        public async Task SelectACLsAsync()
         {
-            CheckCommands(
+            await CheckCommandsAsync(
                 "SELECT",
-                [DoSelect]
+                [DoSelectAsync]
             );
 
-            static void DoSelect(IServer server)
+            static async Task DoSelectAsync(GarnetClient client)
             {
-                RedisResult val = server.Execute("SELECT", "0");
-                Assert.AreEqual("OK", (string)val);
+                string val = await client.ExecuteForStringResultAsync("SELECT", ["0"]);
+                Assert.AreEqual("OK", val);
             }
         }
 
         [Test]
-        public void SetACLs()
+        public async Task SetACLsAsync()
         {
             // SET doesn't support most extra commands, so this is just key value
 
-            CheckCommands(
+            await CheckCommandsAsync(
                 "SET",
-                [DoSet, DoSetExNx, DoSetXxNx, DoSetKeepTtl, DoSetKeepTtlXx]
+                [DoSetAsync, DoSetExNxAsync, DoSetXxNxAsync, DoSetKeepTtlAsync, DoSetKeepTtlXxAsync]
             );
 
-            static void DoSet(IServer server)
+            static async Task DoSetAsync(GarnetClient client)
             {
-                RedisResult val = server.Execute("SET", "foo", "bar");
-                Assert.AreEqual("OK", (string)val);
+                string val = await client.ExecuteForStringResultAsync("SET", ["foo", "bar"]);
+                Assert.AreEqual("OK", val);
             }
 
-            static void DoSetExNx(IServer server)
+            static async Task DoSetExNxAsync(GarnetClient client)
             {
-                RedisResult val = server.Execute("SET", "foo", "bar", "NX", "EX", "100");
-                Assert.IsTrue(val.IsNull);
+                string val = await client.ExecuteForStringResultAsync("SET", ["foo", "bar", "NX", "EX", "100"]);
+                Assert.IsNull(val);
             }
 
-            static void DoSetXxNx(IServer server)
+            static async Task DoSetXxNxAsync(GarnetClient client)
             {
-                RedisResult val = server.Execute("SET", "foo", "bar", "XX", "EX", "100");
-                Assert.AreEqual("OK", (string)val);
+                string val = await client.ExecuteForStringResultAsync("SET", ["foo", "bar", "XX", "EX", "100"]);
+                Assert.AreEqual("OK", val);
             }
 
-            static void DoSetKeepTtl(IServer server)
+            static async Task DoSetKeepTtlAsync(GarnetClient client)
             {
-                RedisResult val = server.Execute("SET", "foo", "bar", "KEEPTTL");
-                Assert.AreEqual("OK", (string)val);
+                string val = await client.ExecuteForStringResultAsync("SET", ["foo", "bar", "KEEPTTL"]);
+                Assert.AreEqual("OK", val);
             }
 
-            static void DoSetKeepTtlXx(IServer server)
+            static async Task DoSetKeepTtlXxAsync(GarnetClient client)
             {
-                RedisResult val = server.Execute("SET", "foo", "bar", "XX", "KEEPTTL");
-                Assert.AreEqual("OK", (string)val);
+                string val = await client.ExecuteForStringResultAsync("SET", ["foo", "bar", "XX", "KEEPTTL"]);
+                Assert.AreEqual("OK", val);
             }
         }
 
         [Test]
-        public void SetBitACLs()
+        public async Task SetBitACLsAsync()
         {
             int count = 0;
 
-            CheckCommands(
+            await CheckCommandsAsync(
                 "SETBIT",
-                [DoSetBit]
+                [DoSetBitAsync]
             );
 
-            void DoSetBit(IServer server)
+            async Task DoSetBitAsync(GarnetClient client)
             {
-                RedisResult val = server.Execute("SETBIT", $"foo-{count}", "10", "1");
+                long val = await client.ExecuteForLongResultAsync("SETBIT", [$"foo-{count}", "10", "1"]);
                 count++;
-                Assert.AreEqual(0, (int)val);
+                Assert.AreEqual(0, val);
             }
         }
 
         [Test]
-        public void SetEXACLs()
+        public async Task SetEXACLsAsync()
         {
-            CheckCommands(
+            await CheckCommandsAsync(
                 "SETEX",
-                [DoSetEX]
+                [DoSetEXAsync]
             );
 
-            static void DoSetEX(IServer server)
+            static async Task DoSetEXAsync(GarnetClient client)
             {
-                RedisResult val = server.Execute("SETEX", "foo", "10", "bar");
-                Assert.AreEqual("OK", (string)val);
+                string val = await client.ExecuteForStringResultAsync("SETEX", ["foo", "10", "bar"]);
+                Assert.AreEqual("OK", val);
             }
         }
 
         [Test]
-        public void SetRangeACLs()
+        public async Task SetRangeACLsAsync()
         {
-            CheckCommands(
+            await CheckCommandsAsync(
                 "SETRANGE",
-                [DoSetRange]
+                [DoSetRangeAsync]
             );
 
-            static void DoSetRange(IServer server)
+            static async Task DoSetRangeAsync(GarnetClient client)
             {
-                RedisResult val = server.Execute("SETRANGE", "foo", "10", "bar");
-                Assert.AreEqual(13, (int)val);
+                long val = await client.ExecuteForLongResultAsync("SETRANGE", ["foo", "10", "bar"]);
+                Assert.AreEqual(13, val);
             }
         }
 
         [Test]
-        public void StrLenACLs()
+        public async Task StrLenACLsAsync()
         {
-            CheckCommands(
+            await CheckCommandsAsync(
                 "STRLEN",
-                [DoStrLen]
+                [DoStrLenAsync]
             );
 
-            static void DoStrLen(IServer server)
+            static async Task DoStrLenAsync(GarnetClient client)
             {
-                RedisResult val = server.Execute("STRLEN", "foo");
-                Assert.AreEqual(0, (int)val);
+                long val = await client.ExecuteForLongResultAsync("STRLEN", ["foo"]);
+                Assert.AreEqual(0, val);
             }
         }
 
         [Test]
-        public void SAddACLs()
+        public async Task SAddACLsAsync()
         {
             int count = 0;
 
-            CheckCommands(
+            await CheckCommandsAsync(
                 "SADD",
-                [DoSAdd, DoSAddMulti]
+                [DoSAddAsync, DoSAddMultiAsync]
             );
 
-            void DoSAdd(IServer server)
+            async Task DoSAddAsync(GarnetClient client)
             {
-                RedisResult val = server.Execute("SADD", $"foo-{count}", "bar");
+                long val = await client.ExecuteForLongResultAsync("SADD", [$"foo-{count}", "bar"]);
                 count++;
 
-                Assert.AreEqual(1, (int)val);
+                Assert.AreEqual(1, val);
             }
 
-            void DoSAddMulti(IServer server)
+            async Task DoSAddMultiAsync(GarnetClient client)
             {
-                RedisResult val = server.Execute("SADD", $"foo-{count}", "bar", "fizz");
+                long val = await client.ExecuteForLongResultAsync("SADD", [$"foo-{count}", "bar", "fizz"]);
                 count++;
 
-                Assert.AreEqual(2, (int)val);
+                Assert.AreEqual(2, val);
             }
         }
 
         [Test]
-        public void SRemACLs()
+        public async Task SRemACLsAsync()
         {
-            CheckCommands(
+            await CheckCommandsAsync(
                 "SREM",
-                [DoSRem, DoSRemMulti]
+                [DoSRemAsync, DoSRemMultiAsync]
             );
 
-            static void DoSRem(IServer server)
+            static async Task DoSRemAsync(GarnetClient client)
             {
-                RedisResult val = server.Execute("SREM", "foo", "bar");
-                Assert.AreEqual(0, (int)val);
+                long val = await client.ExecuteForLongResultAsync("SREM", ["foo", "bar"]);
+                Assert.AreEqual(0, val);
             }
 
-            static void DoSRemMulti(IServer server)
+            static async Task DoSRemMultiAsync(GarnetClient client)
             {
-                RedisResult val = server.Execute("SREM", "foo", "bar", "fizz");
-                Assert.AreEqual(0, (int)val);
+                long val = await client.ExecuteForLongResultAsync("SREM", ["foo", "bar", "fizz"]);
+                Assert.AreEqual(0, val);
             }
         }
 
         [Test]
-        public void SPopACLs()
+        public async Task SPopACLsAsync()
         {
-            CheckCommands(
+            await CheckCommandsAsync(
                 "SPOP",
-                [DoSPop, DoSPopCount]
+                [DoSPopAsync, DoSPopCountAsync]
             );
 
-            static void DoSPop(IServer server)
+            static async Task DoSPopAsync(GarnetClient client)
             {
-                RedisResult val = server.Execute("SPOP", "foo");
-                Assert.IsTrue(val.IsNull);
+                string val = await client.ExecuteForStringResultAsync("SPOP", ["foo"]);
+                Assert.IsNull(val);
             }
 
-            static void DoSPopCount(IServer server)
+            static async Task DoSPopCountAsync(GarnetClient client)
             {
-                RedisResult val = server.Execute("SPOP", "foo", "11");
-                Assert.IsTrue(val.IsNull);
+                string val = await client.ExecuteForStringResultAsync("SPOP", ["foo", "11"]);
+                Assert.IsNull(val);
             }
         }
 
         [Test]
-        public void SMembersACLs()
+        public async Task SMembersACLsAsync()
         {
-            CheckCommands(
+            await CheckCommandsAsync(
                 "SMEMBERS",
-                [DoSMembers]
+                [DoSMembersAsync]
             );
 
-            static void DoSMembers(IServer server)
+            static async Task DoSMembersAsync(GarnetClient client)
             {
-                RedisResult val = server.Execute("SMEMBERS", "foo");
-                RedisResult[] valArr = (RedisResult[])val;
-                Assert.AreEqual(0, valArr.Length);
+                string[] val = await client.ExecuteForStringArrayResultAsync("SMEMBERS", ["foo"]);
+                Assert.AreEqual(0, val.Length);
             }
         }
 
         [Test]
-        public void SCardACLs()
+        public async Task SCardACLsAsync()
         {
-            CheckCommands(
+            await CheckCommandsAsync(
                 "SCARD",
-                [DoSCard]
+                [DoSCardAsync]
             );
 
-            static void DoSCard(IServer server)
+            static async Task DoSCardAsync(GarnetClient client)
             {
-                RedisResult val = server.Execute("SCARD", "foo");
-                Assert.AreEqual(0, (int)val);
+                long val = await client.ExecuteForLongResultAsync("SCARD", ["foo"]);
+                Assert.AreEqual(0, val);
             }
         }
 
         [Test]
-        public void SScanACLs()
+        public async Task SScanACLsAsync()
         {
-            CheckCommands(
+            await CheckCommandsAsync(
                 "SSCAN",
-                [DoSScan, DoSScanMatch, DoSScanCount, DoSScanMatchCount]
+                [DoSScanAsync, DoSScanMatchAsync, DoSScanCountAsync, DoSScanMatchCountAsync],
+                skipPermitted: true
             );
 
-            static void DoSScan(IServer server)
+            static async Task DoSScanAsync(GarnetClient client)
             {
-                RedisResult val = server.Execute("SSCAN", "foo", "0");
-                Assert.IsFalse(val.IsNull);
+                // SSCAN returns an array of arrays, which GarnetClient doesn't deal with
+                await client.ExecuteForStringResultAsync("SSCAN", ["foo", "0"]);
             }
 
-            static void DoSScanMatch(IServer server)
+            static async Task DoSScanMatchAsync(GarnetClient client)
             {
-                RedisResult val = server.Execute("SSCAN", "foo", "0", "MATCH", "*");
-                Assert.IsFalse(val.IsNull);
+                // SSCAN returns an array of arrays, which GarnetClient doesn't deal with
+                await client.ExecuteForStringResultAsync("SSCAN", ["foo", "0", "MATCH", "*"]);
             }
 
-            static void DoSScanCount(IServer server)
+            static async Task DoSScanCountAsync(GarnetClient client)
             {
-                RedisResult val = server.Execute("SSCAN", "foo", "0", "COUNT", "5");
-                Assert.IsFalse(val.IsNull);
+                // SSCAN returns an array of arrays, which GarnetClient doesn't deal with
+                await client.ExecuteForStringResultAsync("SSCAN", ["foo", "0", "COUNT", "5"]);
             }
 
-            static void DoSScanMatchCount(IServer server)
+            static async Task DoSScanMatchCountAsync(GarnetClient client)
             {
-                RedisResult val = server.Execute("SSCAN", "foo", "0", "MATCH", "*", "COUNT", "5");
-                Assert.IsFalse(val.IsNull);
+                // SSCAN returns an array of arrays, which GarnetClient doesn't deal with
+                await client.ExecuteForStringResultAsync("SSCAN", ["foo", "0", "MATCH", "*", "COUNT", "5"]);
             }
         }
 
         [Test]
-        public void SlaveOfACLs()
+        public async Task SlaveOfACLsAsync()
         {
             // Uses exceptions as control flow, since clustering is disabled in these tests
 
-            CheckCommands(
+            await CheckCommandsAsync(
                 "SLAVEOF",
-                [DoSlaveOf, DoSlaveOfNoOne]
+                [DoSlaveOfAsync, DoSlaveOfNoOneAsync]
             );
 
-            static void DoSlaveOf(IServer server)
+            static async Task DoSlaveOfAsync(GarnetClient client)
             {
                 try
                 {
-                    server.Execute("SLAVEOF", "127.0.0.1", "9999");
+                    await client.ExecuteForStringResultAsync("SLAVEOF", ["127.0.0.1", "9999"]);
                     Assert.Fail("Should be unreachable, cluster is disabled");
                 }
-                catch (RedisException e)
+                catch (Exception e)
                 {
                     if (e.Message == "ERR This instance has cluster support disabled")
                     {
@@ -4697,14 +4581,14 @@ namespace Garnet.test.Resp.ACL
                 }
             }
 
-            static void DoSlaveOfNoOne(IServer server)
+            static async Task DoSlaveOfNoOneAsync(GarnetClient client)
             {
                 try
                 {
-                    server.Execute("SLAVEOF", "NO", "ONE");
+                    await client.ExecuteForStringResultAsync("SLAVEOF", ["NO", "ONE"]);
                     Assert.Fail("Should be unreachable, cluster is disabled");
                 }
-                catch (RedisException e)
+                catch (Exception e)
                 {
                     if (e.Message == "ERR This instance has cluster support disabled")
                     {
@@ -4717,1065 +4601,948 @@ namespace Garnet.test.Resp.ACL
         }
 
         [Test]
-        public void SMoveACLs()
+        public async Task SMoveACLsAsync()
         {
-            CheckCommands(
+            await CheckCommandsAsync(
                 "SMOVE",
-                [DoSMove]
+                [DoSMoveAsync]
             );
 
-            static void DoSMove(IServer server)
+            static async Task DoSMoveAsync(GarnetClient client)
             {
-                RedisResult val = server.Execute("SMOVE", "foo", "bar", "fizz");
-                Assert.AreEqual(0, (int)val);
+                long val = await client.ExecuteForLongResultAsync("SMOVE", ["foo", "bar", "fizz"]);
+                Assert.AreEqual(0, val);
             }
         }
 
         [Test]
-        public void SRandMemberACLs()
+        public async Task SRandMemberACLsAsync()
         {
-            CheckCommands(
+            await CheckCommandsAsync(
                 "SRANDMEMBER",
-                [DoSRandMember, DoSRandMemberCount]
+                [DoSRandMemberAsync, DoSRandMemberCountAsync]
             );
 
-            static void DoSRandMember(IServer server)
+            static async Task DoSRandMemberAsync(GarnetClient client)
             {
-                RedisResult val = server.Execute("SRANDMEMBER", "foo");
-                Assert.IsTrue(val.IsNull);
+                string val = await client.ExecuteForStringResultAsync("SRANDMEMBER", ["foo"]);
+                Assert.IsNull(val);
             }
 
-            static void DoSRandMemberCount(IServer server)
+            static async Task DoSRandMemberCountAsync(GarnetClient client)
             {
-                RedisResult val = server.Execute("SRANDMEMBER", "foo", "5");
-                Assert.AreEqual(ResultType.Array, val.Resp2Type);
+                string[] val = await client.ExecuteForStringArrayResultAsync("SRANDMEMBER", ["foo", "5"]);
+                Assert.IsNotNull(val);
             }
         }
 
         [Test]
-        public void SIsMemberACLs()
+        public async Task SIsMemberACLsAsync()
         {
-            CheckCommands(
+            await CheckCommandsAsync(
                 "SISMEMBER",
-                [DoSIsMember]
+                [DoSIsMemberAsync]
             );
 
-            static void DoSIsMember(IServer server)
+            static async Task DoSIsMemberAsync(GarnetClient client)
             {
-                RedisResult val = server.Execute("SISMEMBER", "foo", "bar");
-                Assert.AreEqual(0, (int)val);
+                long val = await client.ExecuteForLongResultAsync("SISMEMBER", ["foo", "bar"]);
+                Assert.AreEqual(0, val);
             }
         }
 
         [Test]
-        public void SubscribeACLs()
+        public async Task SubscribeACLsAsync()
         {
-            // TODO: not testing the multiple channel version
-
-            int count = 0;
-
-            CheckCommands(
+            // SUBSCRIBE is sufficient weird that all we care to test is forbidding it
+            await CheckCommandsAsync(
                 "SUBSCRIBE",
-                [DoSubscribe]
+                [DoSubscribeAsync],
+                skipPermitted: true
             );
 
-            void DoSubscribe(IServer server)
+            static async Task DoSubscribeAsync(GarnetClient client)
             {
-                ISubscriber sub = server.Multiplexer.GetSubscriber();
-
-                // have to do the (bad) async version to make sure we actually get the error
-                sub.SubscribeAsync(new RedisChannel($"channel-{count}", RedisChannel.PatternMode.Literal)).GetAwaiter().GetResult();
-                count++;
+                await client.ExecuteForStringResultAsync("SUBSCRIBE", ["channel"]);
+                Assert.Fail("Shouldn't reach this point");
             }
         }
 
         [Test]
-        public void SUnionACLs()
+        public async Task SUnionACLsAsync()
         {
-            CheckCommands(
+            await CheckCommandsAsync(
                 "SUNION",
-                [DoSUnion, DoSUnionMulti]
+                [DoSUnionAsync, DoSUnionMultiAsync]
             );
 
-            static void DoSUnion(IServer server)
+            static async Task DoSUnionAsync(GarnetClient client)
             {
-                RedisResult val = server.Execute("SUNION", "foo");
-                RedisResult[] valArr = (RedisResult[])val;
-                Assert.AreEqual(0, valArr.Length);
+                string[] val = await client.ExecuteForStringArrayResultAsync("SUNION", ["foo"]);
+                Assert.AreEqual(0, val.Length);
             }
 
-            static void DoSUnionMulti(IServer server)
+            static async Task DoSUnionMultiAsync(GarnetClient client)
             {
-                RedisResult val = server.Execute("SUNION", "foo", "bar");
-                RedisResult[] valArr = (RedisResult[])val;
-                Assert.AreEqual(0, valArr.Length);
+                string[] val = await client.ExecuteForStringArrayResultAsync("SUNION", ["foo", "bar"]);
+                Assert.AreEqual(0, val.Length);
             }
         }
 
         [Test]
-        public void SUnionStoreACLs()
+        public async Task SUnionStoreACLsAsync()
         {
-            CheckCommands(
+            await CheckCommandsAsync(
                 "SUNIONSTORE",
-                [DoSUnionStore, DoSUnionStoreMulti]
+                [DoSUnionStoreAsync, DoSUnionStoreMultiAsync]
             );
 
-            static void DoSUnionStore(IServer server)
+            static async Task DoSUnionStoreAsync(GarnetClient client)
             {
-                RedisResult val = server.Execute("SUNIONSTORE", "dest", "foo");
-                Assert.AreEqual(0, (int)val);
+                long val = await client.ExecuteForLongResultAsync("SUNIONSTORE", ["dest", "foo"]);
+                Assert.AreEqual(0, val);
             }
 
-            static void DoSUnionStoreMulti(IServer server)
+            static async Task DoSUnionStoreMultiAsync(GarnetClient client)
             {
-                RedisResult val = server.Execute("SUNIONSTORE", "dest", "foo", "bar");
-                Assert.AreEqual(0, (int)val);
+                long val = await client.ExecuteForLongResultAsync("SUNIONSTORE", ["dest", "foo", "bar"]);
+                Assert.AreEqual(0, val);
             }
         }
 
         [Test]
-        public void SDiffACLs()
+        public async Task SDiffACLsAsync()
         {
-            CheckCommands(
+            await CheckCommandsAsync(
                 "SDIFF",
-                [DoSDiff, DoSDiffMulti]
+                [DoSDiffAsync, DoSDiffMultiAsync]
             );
 
-            static void DoSDiff(IServer server)
+            static async Task DoSDiffAsync(GarnetClient client)
             {
-                RedisResult val = server.Execute("SDIFF", "foo");
-                RedisResult[] valArr = (RedisResult[])val;
-                Assert.AreEqual(0, valArr.Length);
+                string[] val = await client.ExecuteForStringArrayResultAsync("SDIFF", ["foo"]);
+                Assert.AreEqual(0, val.Length);
             }
 
-            static void DoSDiffMulti(IServer server)
+            static async Task DoSDiffMultiAsync(GarnetClient client)
             {
-                RedisResult val = server.Execute("SDIFF", "foo", "bar");
-                RedisResult[] valArr = (RedisResult[])val;
-                Assert.AreEqual(0, valArr.Length);
+                string[] val = await client.ExecuteForStringArrayResultAsync("SDIFF", ["foo", "bar"]);
+                Assert.AreEqual(0, val.Length);
             }
         }
 
         [Test]
-        public void SDiffStoreACLs()
+        public async Task SDiffStoreACLsAsync()
         {
-            CheckCommands(
+            await CheckCommandsAsync(
                 "SDIFFSTORE",
-                [DoSDiffStore, DoSDiffStoreMulti]
+                [DoSDiffStoreAsync, DoSDiffStoreMultiAsync]
             );
 
-            static void DoSDiffStore(IServer server)
+            static async Task DoSDiffStoreAsync(GarnetClient client)
             {
-                RedisResult val = server.Execute("SDIFFSTORE", "dest", "foo");
-                Assert.AreEqual(0, (int)val);
+                long val = await client.ExecuteForLongResultAsync("SDIFFSTORE", ["dest", "foo"]);
+                Assert.AreEqual(0, val);
             }
 
-            static void DoSDiffStoreMulti(IServer server)
+            static async Task DoSDiffStoreMultiAsync(GarnetClient client)
             {
-                RedisResult val = server.Execute("SDIFFSTORE", "dest", "foo", "bar");
-                Assert.AreEqual(0, (int)val);
+                long val = await client.ExecuteForLongResultAsync("SDIFFSTORE", ["dest", "foo", "bar"]);
+                Assert.AreEqual(0, val);
             }
         }
 
         [Test]
-        public void SInterACLs()
+        public async Task SInterACLsAsync()
         {
-            CheckCommands(
+            await CheckCommandsAsync(
                 "SINTER",
-                [DoSDiff, DoSDiffMulti]
+                [DoSDiffAsync, DoSDiffMultiAsync]
             );
 
-            static void DoSDiff(IServer server)
+            static async Task DoSDiffAsync(GarnetClient client)
             {
-                RedisResult val = server.Execute("SINTER", "foo");
-                RedisResult[] valArr = (RedisResult[])val;
-                Assert.AreEqual(0, valArr.Length);
+                string[] val = await client.ExecuteForStringArrayResultAsync("SINTER", ["foo"]);
+                Assert.AreEqual(0, val.Length);
             }
 
-            static void DoSDiffMulti(IServer server)
+            static async Task DoSDiffMultiAsync(GarnetClient client)
             {
-                RedisResult val = server.Execute("SINTER", "foo", "bar");
-                RedisResult[] valArr = (RedisResult[])val;
-                Assert.AreEqual(0, valArr.Length);
+                string[] val = await client.ExecuteForStringArrayResultAsync("SINTER", ["foo", "bar"]);
+                Assert.AreEqual(0, val.Length);
             }
         }
 
         [Test]
-        public void SInterStoreACLs()
+        public async Task SInterStoreACLsAsync()
         {
-            CheckCommands(
+            await CheckCommandsAsync(
                 "SINTERSTORE",
-                [DoSDiffStore, DoSDiffStoreMulti]
+                [DoSDiffStoreAsync, DoSDiffStoreMultiAsync]
             );
 
-            static void DoSDiffStore(IServer server)
+            static async Task DoSDiffStoreAsync(GarnetClient client)
             {
-                RedisResult val = server.Execute("SINTERSTORE", "dest", "foo");
-                Assert.AreEqual(0, (int)val);
+                long val = await client.ExecuteForLongResultAsync("SINTERSTORE", ["dest", "foo"]);
+                Assert.AreEqual(0, val);
             }
 
-            static void DoSDiffStoreMulti(IServer server)
+            static async Task DoSDiffStoreMultiAsync(GarnetClient client)
             {
-                RedisResult val = server.Execute("SINTERSTORE", "dest", "foo", "bar");
-                Assert.AreEqual(0, (int)val);
+                long val = await client.ExecuteForLongResultAsync("SINTERSTORE", ["dest", "foo", "bar"]);
+                Assert.AreEqual(0, val);
             }
         }
 
         [Test]
-        public void GeoAddACLs()
+        public async Task GeoAddACLsAsync()
         {
             int count = 0;
 
-            CheckCommands(
+            await CheckCommandsAsync(
                 "GEOADD",
-                [DoGeoAdd, DoGeoAddNX, DoGeoAddNXCH, DoGeoAddMulti, DoGeoAddNXMulti, DoGeoAddNXCHMulti]
+                [DoGeoAddAsync, DoGeoAddNXAsync, DoGeoAddNXCHAsync, DoGeoAddMultiAsync, DoGeoAddNXMultiAsync, DoGeoAddNXCHMultiAsync]
             );
 
-            void DoGeoAdd(IServer server)
+            async Task DoGeoAddAsync(GarnetClient client)
             {
-                RedisResult val = server.Execute("GEOADD", $"foo-{count}", "90", "90", "bar");
+                long val = await client.ExecuteForLongResultAsync("GEOADD", [$"foo-{count}", "90", "90", "bar"]);
                 count++;
 
-                Assert.AreEqual(1, (int)val);
+                Assert.AreEqual(1, val);
             }
 
-            void DoGeoAddNX(IServer server)
+            async Task DoGeoAddNXAsync(GarnetClient client)
             {
-                RedisResult val = server.Execute("GEOADD", $"foo-{count}", "NX", "90", "90", "bar");
+                long val = await client.ExecuteForLongResultAsync("GEOADD", [$"foo-{count}", "NX", "90", "90", "bar"]);
                 count++;
 
-                Assert.AreEqual(1, (int)val);
+                Assert.AreEqual(1, val);
             }
 
-            void DoGeoAddNXCH(IServer server)
+            async Task DoGeoAddNXCHAsync(GarnetClient client)
             {
-                RedisResult val = server.Execute("GEOADD", $"foo-{count}", "NX", "CH", "90", "90", "bar");
+                long val = await client.ExecuteForLongResultAsync("GEOADD", [$"foo-{count}", "NX", "CH", "90", "90", "bar"]);
                 count++;
 
-                Assert.AreEqual(1, (int)val);
+                Assert.AreEqual(1, val);
             }
 
-            void DoGeoAddMulti(IServer server)
+            async Task DoGeoAddMultiAsync(GarnetClient client)
             {
-                RedisResult val = server.Execute("GEOADD", $"foo-{count}", "90", "90", "bar", "45", "45", "fizz");
+                long val = await client.ExecuteForLongResultAsync("GEOADD", [$"foo-{count}", "90", "90", "bar", "45", "45", "fizz"]);
                 count++;
 
-                Assert.AreEqual(2, (int)val);
+                Assert.AreEqual(2, val);
             }
 
-            void DoGeoAddNXMulti(IServer server)
+            async Task DoGeoAddNXMultiAsync(GarnetClient client)
             {
-                RedisResult val = server.Execute("GEOADD", $"foo-{count}", "NX", "90", "90", "bar", "45", "45", "fizz");
+                long val = await client.ExecuteForLongResultAsync("GEOADD", [$"foo-{count}", "NX", "90", "90", "bar", "45", "45", "fizz"]);
                 count++;
 
-                Assert.AreEqual(2, (int)val);
+                Assert.AreEqual(2, val);
             }
 
-            void DoGeoAddNXCHMulti(IServer server)
+            async Task DoGeoAddNXCHMultiAsync(GarnetClient client)
             {
-                RedisResult val = server.Execute("GEOADD", $"foo-{count}", "NX", "CH", "90", "90", "bar", "45", "45", "fizz");
+                long val = await client.ExecuteForLongResultAsync("GEOADD", [$"foo-{count}", "NX", "CH", "90", "90", "bar", "45", "45", "fizz"]);
                 count++;
 
-                Assert.AreEqual(2, (int)val);
+                Assert.AreEqual(2, val);
             }
         }
 
         [Test]
-        public void GeoHashACLs()
+        public async Task GeoHashACLsAsync()
         {
-            using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig(allowAdmin: true, authUsername: "default", authPassword: DefaultPassword));
+            // TODO: GEOHASH responses do not match Redis when keys are missing.
+            // So create some keys to make testing ACLs easier.
+            using var outerClient = await CreateGarnetClientAsync(DefaultUser, DefaultPassword);
+            Assert.AreEqual(1, await outerClient.ExecuteForLongResultAsync("GEOADD", ["foo", "10", "10", "bar"]));
+            Assert.AreEqual(1, await outerClient.ExecuteForLongResultAsync("GEOADD", ["foo", "20", "20", "fizz"]));
 
-            IDatabase db = redis.GetDatabase();
-
-            // TODO: GEOHASH doesn't deal with empty keys appropriately - correct when that's fixed
-            Assert.AreEqual(1, (int)db.Execute("GEOADD", "foo", "10", "10", "bar"));
-            Assert.AreEqual(1, (int)db.Execute("GEOADD", "foo", "20", "20", "fizz"));
-
-            CheckCommands(
+            await CheckCommandsAsync(
                 "GEOHASH",
-                [DoGeoHash, DoGeoHashSingle, DoGeoHashMulti]
+                [DoGeoHashAsync, DoGeoHashSingleAsync, DoGeoHashMultiAsync]
             );
 
-            static void DoGeoHash(IServer server)
+            static async Task DoGeoHashAsync(GarnetClient client)
             {
-                RedisResult val = server.Execute("GEOHASH", "foo");
-                RedisValue[] valArr = (RedisValue[])val;
-                Assert.AreEqual(0, valArr.Length);
+                string[] val = await client.ExecuteForStringArrayResultAsync("GEOHASH", ["foo"]);
+                Assert.AreEqual(0, val.Length);
             }
 
-            static void DoGeoHashSingle(IServer server)
+            static async Task DoGeoHashSingleAsync(GarnetClient client)
             {
-                RedisResult val = server.Execute("GEOHASH", "foo", "bar");
-                RedisValue[] valArr = (RedisValue[])val;
-                Assert.AreEqual(1, valArr.Length);
-                Assert.IsFalse(valArr[0].IsNull);
+                string[] val = await client.ExecuteForStringArrayResultAsync("GEOHASH", ["foo", "bar"]);
+                Assert.AreEqual(1, val.Length);
+                Assert.IsNotNull(val[0]);
             }
 
-            static void DoGeoHashMulti(IServer server)
+            static async Task DoGeoHashMultiAsync(GarnetClient client)
             {
-                RedisResult val = server.Execute("GEOHASH", "foo", "bar", "fizz");
-                RedisValue[] valArr = (RedisValue[])val;
-                Assert.AreEqual(2, valArr.Length);
-                Assert.IsFalse(valArr[0].IsNull);
-                Assert.IsFalse(valArr[1].IsNull);
+                string[] val = await client.ExecuteForStringArrayResultAsync("GEOHASH", ["foo", "bar", "fizz"]);
+                Assert.AreEqual(2, val.Length);
+                Assert.IsNotNull(val[0]);
+                Assert.IsNotNull(val[1]);
             }
         }
 
         [Test]
-        public void GeoDistACLs()
+        public async Task GeoDistACLsAsync()
         {
-            using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig(allowAdmin: true, authUsername: "default", authPassword: DefaultPassword));
-
-            IDatabase db = redis.GetDatabase();
-
-            // TODO: GEODIST fails on missing keys, which is incorrect, so putting values in to get ACL test passing
-            Assert.AreEqual(1, (int)db.Execute("GEOADD", "foo", "10", "10", "bar"));
-            Assert.AreEqual(1, (int)db.Execute("GEOADD", "foo", "20", "20", "fizz"));
-
-            CheckCommands(
+            await CheckCommandsAsync(
                 "GEODIST",
-                [DoGetDist, DoGetDistM]
+                [DoGetDistAsync, DoGetDistMAsync]
             );
 
-            static void DoGetDist(IServer server)
+            static async Task DoGetDistAsync(GarnetClient client)
             {
-                RedisResult val = server.Execute("GEODIST", "foo", "bar", "fizz");
-                Assert.IsTrue((double)val > 0);
+                string val = await client.ExecuteForStringResultAsync("GEODIST", ["foo", "bar", "fizz"]);
+                Assert.IsNull(val);
             }
 
-            static void DoGetDistM(IServer server)
+            static async Task DoGetDistMAsync(GarnetClient client)
             {
-                RedisResult val = server.Execute("GEODIST", "foo", "bar", "fizz", "M");
-                Assert.IsTrue((double)val > 0);
+                string val = await client.ExecuteForStringResultAsync("GEODIST", ["foo", "bar", "fizz", "M"]);
+                Assert.IsNull(val);
             }
         }
 
         [Test]
-        public void GeoPosACLs()
+        public async Task GeoPosACLsAsync()
         {
-            lock (this)
+            await CheckCommandsAsync(
+                "GEOPOS",
+                [DoGeoPosAsync, DoGeoPosMultiAsync],
+                skipPermitted: true
+            );
+
+            static async Task DoGeoPosAsync(GarnetClient client)
             {
-                using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig(allowAdmin: true, authUsername: "default", authPassword: DefaultPassword));
+                // GEOPOS replies with an array of arrays, which GarnetClient doesn't deal with
+                await client.ExecuteForStringResultAsync("GEOPOS", ["foo"]);
+            }
 
-                IDatabase db = redis.GetDatabase();
-
-                // TODO: GEOPOS gets desynced if key doesn't exist, remove after that's fixed
-                Assert.AreEqual(1, (int)db.Execute("GEOADD", "foo", "10", "10", "bar"));
-                Assert.AreEqual(1, (int)db.Execute("GEOADD", "foo", "20", "20", "fizz"));
-
-                CheckCommands(
-                    "GEOPOS",
-                    [DoGeoPos, DoGeoPosMulti]
-                );
-
-                static void DoGeoPos(IServer server)
-                {
-                    RedisResult val = server.Execute("GEOPOS", "foo");
-                    RedisResult[] valArr = (RedisResult[])val;
-                    Assert.AreEqual(0, valArr.Length);
-                }
-
-                static void DoGeoPosMulti(IServer server)
-                {
-                    RedisResult val = server.Execute("GEOPOS", "foo", "bar");
-                    RedisResult[] valArr = (RedisResult[])val;
-                    Assert.AreEqual(1, valArr.Length);
-                }
+            static async Task DoGeoPosMultiAsync(GarnetClient client)
+            {
+                // GEOPOS replies with an array of arrays, which GarnetClient doesn't deal with
+                await client.ExecuteForStringResultAsync("GEOPOS", ["foo", "bar"]);
             }
         }
 
         [Test]
-        public void GeoSearchACLs()
+        public async Task GeoSearchACLsAsync()
         {
-            const string TestUser = "geosearch-user";
-            const string TestPassword = "bar";
+            await CheckCommandsAsync(
+                "GEOSEARCH",
+                [DoGeoSearchAsync],
+                skipPermitted: true
+            );
 
-            // TODO: there are a LOT of GeoSearch variants (not all of them implemented), come back and cover all the lengths appropriately
-
-            // TODO: GEOSEARCH appears to be very broken, so this structured oddly - can be simplified once fixed
-
-            string[] categories = ["geo", "read", "slow"];
-
-            foreach (string category in categories)
+            static async Task DoGeoSearchAsync(GarnetClient client)
             {
-                // fresh Garnet for the allow version
-                TearDown();
-                Setup();
-
-                {
-                    // fresh connection, as GEOSEARCH seems to break connections pretty easily
-                    using ConnectionMultiplexer redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig(allowAdmin: true, authUsername: "default", authPassword: DefaultPassword));
-
-                    IServer server = redis.GetServers().Single();
-
-                    Assert.True(CheckAuthFailure(() => DoGeoSearch(server)), "Denied when should have been permitted");
-                }
-
-                // fresh Garnet for the reject version
-                TearDown();
-                Setup();
-
-                {
-                    // fresh connection, as GEOSEARCH seems to break connections pretty easily
-                    using ConnectionMultiplexer defaultRedis = ConnectionMultiplexer.Connect(TestUtils.GetConfig(allowAdmin: true, authUsername: "default", authPassword: DefaultPassword));
-                    IServer defaultServer = defaultRedis.GetServers().Single();
-
-                    InitUser(defaultServer, TestUser, TestPassword);
-                    SetUser(defaultServer, TestUser, $"-@{category}");
-
-                    using ConnectionMultiplexer testRedis = ConnectionMultiplexer.Connect(TestUtils.GetConfig(allowAdmin: true, authUsername: TestUser, authPassword: TestPassword));
-                    IServer testServer = testRedis.GetServers().Single();
-
-                    Assert.False(CheckAuthFailure(() => DoGeoSearch(testServer)), "Permitted when should have been denied");
-                }
-
-                static void DoGeoSearch(IServer db)
-                {
-                    RedisResult val = db.Execute("GEOSEARCH", "foo", "FROMMEMBER", "bar", "BYBOX", "2", "2", "M");
-                    RedisResult[] valArr = (RedisResult[])val;
-                    Assert.IsNotNull(valArr);
-                }
+                // GEOSEARCH replies with an array of arrays, which GarnetClient doesn't deal with
+                await client.ExecuteForStringResultAsync("GEOSEARCH", ["foo", "FROMMEMBER", "bar", "BYBOX", "2", "2", "M"]);
             }
         }
 
         [Test]
-        public void ZAddACLs()
+        public async Task ZAddACLsAsync()
         {
             // TODO: ZADD doesn't implement NX XX GT LT CH INCR; expand to cover all lengths when implemented
 
             int count = 0;
 
-            CheckCommands(
+            await CheckCommandsAsync(
                 "ZADD",
-                [DoZAdd, DoZAddMulti]
+                [DoZAddAsync, DoZAddMultiAsync]
             );
 
-            void DoZAdd(IServer server)
+            async Task DoZAddAsync(GarnetClient client)
             {
-                RedisResult val = server.Execute("ZADD", $"foo-{count}", "10", "bar");
+                long val = await client.ExecuteForLongResultAsync("ZADD", [$"foo-{count}", "10", "bar"]);
                 count++;
-                Assert.AreEqual(1, (int)val);
+                Assert.AreEqual(1, val);
             }
 
-            void DoZAddMulti(IServer server)
+            async Task DoZAddMultiAsync(GarnetClient client)
             {
-                RedisResult val = server.Execute("ZADD", $"foo-{count}", "10", "bar", "20", "fizz");
+                long val = await client.ExecuteForLongResultAsync("ZADD", [$"foo-{count}", "10", "bar", "20", "fizz"]);
                 count++;
-                Assert.AreEqual(2, (int)val);
+                Assert.AreEqual(2, val);
             }
         }
 
         [Test]
-        public void ZCardACLs()
+        public async Task ZCardACLsAsync()
         {
-            CheckCommands(
+            await CheckCommandsAsync(
                 "ZCARD",
-                [DoZCard]
+                [DoZCardAsync]
             );
 
-            static void DoZCard(IServer server)
+            static async Task DoZCardAsync(GarnetClient client)
             {
-                RedisResult val = server.Execute("ZCARD", "foo");
-                Assert.AreEqual(0, (int)val);
+                long val = await client.ExecuteForLongResultAsync("ZCARD", ["foo"]);
+                Assert.AreEqual(0, val);
             }
         }
 
         [Test]
-        public void ZPopMaxACLs()
+        public async Task ZPopMaxACLsAsync()
         {
-            CheckCommands(
+            await CheckCommandsAsync(
                 "ZPOPMAX",
-                [DoZPopMax, DoZPopMaxCount]
+                [DoZPopMaxAsync, DoZPopMaxCountAsync]
             );
 
-            static void DoZPopMax(IServer server)
+            static async Task DoZPopMaxAsync(GarnetClient client)
             {
-                RedisResult val = server.Execute("ZPOPMAX", "foo");
-                RedisValue[] valArr = (RedisValue[])val;
-                Assert.AreEqual(0, valArr.Length);
+                string[] val = await client.ExecuteForStringArrayResultAsync("ZPOPMAX", ["foo"]);
+                Assert.AreEqual(0, val.Length);
             }
 
-            static void DoZPopMaxCount(IServer server)
+            static async Task DoZPopMaxCountAsync(GarnetClient client)
             {
-                RedisResult val = server.Execute("ZPOPMAX", "foo", "10");
-                RedisValue[] valArr = (RedisValue[])val;
-                Assert.AreEqual(0, valArr.Length);
+                string[] val = await client.ExecuteForStringArrayResultAsync("ZPOPMAX", ["foo", "10"]);
+                Assert.AreEqual(0, val.Length);
             }
         }
 
         [Test]
-        public void ZScoreACLs()
+        public async Task ZScoreACLsAsync()
         {
-            CheckCommands(
+            await CheckCommandsAsync(
                 "ZSCORE",
-                [DoZScore]
+                [DoZScoreAsync]
             );
 
-            static void DoZScore(IServer server)
+            static async Task DoZScoreAsync(GarnetClient client)
             {
-                RedisResult val = server.Execute("ZSCORE", "foo", "bar");
-                Assert.IsTrue(val.IsNull);
+                string val = await client.ExecuteForStringResultAsync("ZSCORE", ["foo", "bar"]);
+                Assert.IsNull(val);
             }
         }
 
         [Test]
-        public void ZRemACLs()
+        public async Task ZRemACLsAsync()
         {
-            CheckCommands(
+            await CheckCommandsAsync(
                 "ZREM",
-                [DoZRem, DoZRemMulti]
+                [DoZRemAsync, DoZRemMultiAsync]
             );
 
-            static void DoZRem(IServer server)
+            static async Task DoZRemAsync(GarnetClient client)
             {
-                RedisResult val = server.Execute("ZREM", "foo", "bar");
-                Assert.AreEqual(0, (int)val);
+                long val = await client.ExecuteForLongResultAsync("ZREM", ["foo", "bar"]);
+                Assert.AreEqual(0, val);
             }
 
-            static void DoZRemMulti(IServer server)
+            static async Task DoZRemMultiAsync(GarnetClient client)
             {
-                RedisResult val = server.Execute("ZREM", "foo", "bar", "fizz");
-                Assert.AreEqual(0, (int)val);
+                long val = await client.ExecuteForLongResultAsync("ZREM", ["foo", "bar", "fizz"]);
+                Assert.AreEqual(0, val);
             }
         }
 
         [Test]
-        public void ZCountACLs()
+        public async Task ZCountACLsAsync()
         {
-            CheckCommands(
+            await CheckCommandsAsync(
                 "ZCOUNT",
-                [DoZCount]
+                [DoZCountAsync]
             );
 
-            static void DoZCount(IServer server)
+            static async Task DoZCountAsync(GarnetClient client)
             {
-                RedisResult val = server.Execute("ZCOUNT", "foo", "10", "20");
-                Assert.AreEqual(0, (int)val);
+                long val = await client.ExecuteForLongResultAsync("ZCOUNT", ["foo", "10", "20"]);
+                Assert.AreEqual(0, val);
             }
         }
 
         [Test]
-        public void ZIncrByACLs()
+        public async Task ZIncrByACLsAsync()
         {
             int count = 0;
 
-            CheckCommands(
+            await CheckCommandsAsync(
                 "ZINCRBY",
-                [DoZIncrBy]
+                [DoZIncrByAsync]
             );
 
-            void DoZIncrBy(IServer server)
+            async Task DoZIncrByAsync(GarnetClient client)
             {
-                RedisResult val = server.Execute("ZINCRBY", $"foo-{count}", "10", "bar");
+                string val = await client.ExecuteForStringResultAsync("ZINCRBY", [$"foo-{count}", "10", "bar"]);
                 count++;
-                Assert.AreEqual(10, (double)val);
+                Assert.AreEqual(10, double.Parse(val));
             }
         }
 
         [Test]
-        public void ZRankACLs()
+        public async Task ZRankACLsAsync()
         {
-            // TODO: ZRANK doesn't implement WITHSCORE (removed code that half did) - come back and add when fixed
-
-            using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig(allowAdmin: true, authUsername: "default", authPassword: DefaultPassword));
-
-            IDatabase db = redis.GetDatabase();
-
-            // TODO: ZRANK errors if key does not exist, which is incorrect - creating key for this test
-            Assert.AreEqual(1, (int)db.Execute("ZADD", "foo", "10", "bar"));
-
-            CheckCommands(
+            await CheckCommandsAsync(
                 "ZRANK",
-                [DoZRank]
+                [DoZRankAsync]
             );
 
-            static void DoZRank(IServer server)
+            static async Task DoZRankAsync(GarnetClient client)
             {
-                RedisResult val = server.Execute("ZRANK", "foo", "bar");
-                Assert.AreEqual(0, (int)val);
+                string val = await client.ExecuteForStringResultAsync("ZRANK", ["foo", "bar"]);
+                Assert.IsNull(val);
             }
         }
 
         [Test]
-        public void ZRangeACLs()
+        public async Task ZRangeACLsAsync()
         {
             // TODO: ZRange has loads of options, come back and test all the different lengths
 
-            CheckCommands(
+            await CheckCommandsAsync(
                 "ZRANGE",
-                [DoZRange]
+                [DoZRangeAsync]
             );
 
-            static void DoZRange(IServer server)
+            static async Task DoZRangeAsync(GarnetClient client)
             {
-                RedisResult val = server.Execute("ZRANGE", "key", "10", "20");
-                RedisValue[] valArr = (RedisValue[])val;
-                Assert.AreEqual(0, valArr.Length);
+                string[] val = await client.ExecuteForStringArrayResultAsync("ZRANGE", ["key", "10", "20"]);
+                Assert.AreEqual(0, val.Length);
             }
         }
 
         [Test]
-        public void ZRangeByScoreACLs()
+        public async Task ZRangeByScoreACLsAsync()
         {
-            CheckCommands(
+            await CheckCommandsAsync(
                 "ZRANGEBYSCORE",
-                [DoZRangeByScore, DoZRangeByScoreWithScores, DoZRangeByScoreLimit, DoZRangeByScoreWithScoresLimit]
+                [DoZRangeByScoreAsync, DoZRangeByScoreWithScoresAsync, DoZRangeByScoreLimitAsync, DoZRangeByScoreWithScoresLimitAsync]
             );
 
-            static void DoZRangeByScore(IServer server)
+            static async Task DoZRangeByScoreAsync(GarnetClient client)
             {
-                RedisResult val = server.Execute("ZRANGEBYSCORE", "key", "10", "20");
-                RedisValue[] valArr = (RedisValue[])val;
-                Assert.AreEqual(0, valArr.Length);
+                string[] val = await client.ExecuteForStringArrayResultAsync("ZRANGEBYSCORE", ["key", "10", "20"]);
+                Assert.AreEqual(0, val.Length);
             }
 
-            static void DoZRangeByScoreWithScores(IServer server)
+            static async Task DoZRangeByScoreWithScoresAsync(GarnetClient client)
             {
-                RedisResult val = server.Execute("ZRANGEBYSCORE", "key", "10", "20", "WITHSCORES");
-                RedisValue[] valArr = (RedisValue[])val;
-                Assert.AreEqual(0, valArr.Length);
+                string[] val = await client.ExecuteForStringArrayResultAsync("ZRANGEBYSCORE", ["key", "10", "20", "WITHSCORES"]);
+                Assert.AreEqual(0, val.Length);
             }
 
-            static void DoZRangeByScoreLimit(IServer server)
+            static async Task DoZRangeByScoreLimitAsync(GarnetClient client)
             {
-                RedisResult val = server.Execute("ZRANGEBYSCORE", "key", "10", "20", "LIMIT", "2", "3");
-                RedisValue[] valArr = (RedisValue[])val;
-                Assert.AreEqual(0, valArr.Length);
+                string[] val = await client.ExecuteForStringArrayResultAsync("ZRANGEBYSCORE", ["key", "10", "20", "LIMIT", "2", "3"]);
+                Assert.AreEqual(0, val.Length);
             }
 
-            static void DoZRangeByScoreWithScoresLimit(IServer server)
+            static async Task DoZRangeByScoreWithScoresLimitAsync(GarnetClient client)
             {
-                RedisResult val = server.Execute("ZRANGEBYSCORE", "key", "10", "20", "WITHSCORES", "LIMIT", "2", "3");
-                RedisValue[] valArr = (RedisValue[])val;
-                Assert.AreEqual(0, valArr.Length);
+                string[] val = await client.ExecuteForStringArrayResultAsync("ZRANGEBYSCORE", ["key", "10", "20", "WITHSCORES", "LIMIT", "2", "3"]);
+                Assert.AreEqual(0, val.Length);
             }
         }
 
         [Test]
-        public void ZRevRangeACLs()
+        public async Task ZRevRangeACLsAsync()
         {
-            CheckCommands(
+            await CheckCommandsAsync(
                 "ZREVRANGE",
-                [DoZRevRange, DoZRevRangeWithScores]
+                [DoZRevRangeAsync, DoZRevRangeWithScoresAsync]
             );
 
-            static void DoZRevRange(IServer server)
+            static async Task DoZRevRangeAsync(GarnetClient client)
             {
-                RedisResult val = server.Execute("ZREVRANGE", "key", "10", "20");
-                RedisValue[] valArr = (RedisValue[])val;
-                Assert.AreEqual(0, valArr.Length);
+                string[] val = await client.ExecuteForStringArrayResultAsync("ZREVRANGE", ["key", "10", "20"]);
+                Assert.AreEqual(0, val.Length);
             }
 
-            static void DoZRevRangeWithScores(IServer server)
+            static async Task DoZRevRangeWithScoresAsync(GarnetClient client)
             {
-                RedisResult val = server.Execute("ZREVRANGE", "key", "10", "20", "WITHSCORES");
-                RedisValue[] valArr = (RedisValue[])val;
-                Assert.AreEqual(0, valArr.Length);
+                string[] val = await client.ExecuteForStringArrayResultAsync("ZREVRANGE", ["key", "10", "20", "WITHSCORES"]);
+                Assert.AreEqual(0, val.Length);
             }
         }
 
         [Test]
-        public void ZRevRankACLs()
+        public async Task ZRevRankACLsAsync()
         {
-            // TODO: ZREVRANK doesn't implement WITHSCORE (removed code that half did) - come back and add when fixed
-
-            using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig(allowAdmin: true, authUsername: "default", authPassword: DefaultPassword));
-
-            IDatabase db = redis.GetDatabase();
-
-            // TODO: ZREVRANK errors if key does not exist, which is incorrect - creating key for this test
-            Assert.AreEqual(1, (int)db.Execute("ZADD", "foo", "10", "bar"));
-
-            CheckCommands(
+            await CheckCommandsAsync(
                 "ZREVRANK",
-                [DoZRevRank]
+                [DoZRevRankAsync]
             );
 
-            static void DoZRevRank(IServer server)
+            static async Task DoZRevRankAsync(GarnetClient client)
             {
-                RedisResult val = server.Execute("ZREVRANK", "foo", "bar");
-                Assert.AreEqual(0, (int)val);
+                string val = await client.ExecuteForStringResultAsync("ZREVRANK", ["foo", "bar"]);
+                Assert.IsNull(val);
             }
         }
 
         [Test]
-        public void ZRemRangeByLexACLs()
+        public async Task ZRemRangeByLexACLsAsync()
         {
-            CheckCommands(
+            await CheckCommandsAsync(
                 "ZREMRANGEBYLEX",
-                [DoZRemRangeByLex]
+                [DoZRemRangeByLexAsync]
             );
 
-            static void DoZRemRangeByLex(IServer server)
+            static async Task DoZRemRangeByLexAsync(GarnetClient client)
             {
-                RedisResult val = server.Execute("ZREMRANGEBYLEX", "foo", "abc", "def");
-                Assert.AreEqual(0, (int)val);
+                long val = await client.ExecuteForLongResultAsync("ZREMRANGEBYLEX", ["foo", "abc", "def"]);
+                Assert.AreEqual(0, val);
             }
         }
 
         [Test]
-        public void ZRemRangeByRankACLs()
+        public async Task ZRemRangeByRankACLsAsync()
         {
-            CheckCommands(
+            await CheckCommandsAsync(
                 "ZREMRANGEBYRANK",
-                [DoZRemRangeByRank]
+                [DoZRemRangeByRankAsync]
             );
 
-            static void DoZRemRangeByRank(IServer server)
+            static async Task DoZRemRangeByRankAsync(GarnetClient client)
             {
-                RedisResult val = server.Execute("ZREMRANGEBYRANK", "foo", "10", "20");
-                Assert.AreEqual(0, (int)val);
+                long val = await client.ExecuteForLongResultAsync("ZREMRANGEBYRANK", ["foo", "10", "20"]);
+                Assert.AreEqual(0, val);
             }
         }
 
         [Test]
-        public void ZRemRangeByScoreACLs()
+        public async Task ZRemRangeByScoreACLsAsync()
         {
-            CheckCommands(
+            await CheckCommandsAsync(
                 "ZREMRANGEBYSCORE",
-                [DoZRemRangeByRank]
+                [DoZRemRangeByRankAsync]
             );
 
-            static void DoZRemRangeByRank(IServer server)
+            static async Task DoZRemRangeByRankAsync(GarnetClient client)
             {
-                RedisResult val = server.Execute("ZREMRANGEBYSCORE", "foo", "10", "20");
-                Assert.AreEqual(0, (int)val);
+                long val = await client.ExecuteForLongResultAsync("ZREMRANGEBYSCORE", ["foo", "10", "20"]);
+                Assert.AreEqual(0, val);
             }
         }
 
         [Test]
-        public void ZLexCountACLs()
+        public async Task ZLexCountACLsAsync()
         {
-            CheckCommands(
+            await CheckCommandsAsync(
                 "ZLEXCOUNT",
-                [DoZLexCount]
+                [DoZLexCountAsync]
             );
 
-            static void DoZLexCount(IServer server)
+            static async Task DoZLexCountAsync(GarnetClient client)
             {
-                RedisResult val = server.Execute("ZLEXCOUNT", "foo", "abc", "def");
-                Assert.AreEqual(0, (int)val);
+                long val = await client.ExecuteForLongResultAsync("ZLEXCOUNT", ["foo", "abc", "def"]);
+                Assert.AreEqual(0, val);
             }
         }
 
         [Test]
-        public void ZPopMinACLs()
+        public async Task ZPopMinACLsAsync()
         {
-            CheckCommands(
+            await CheckCommandsAsync(
                 "ZPOPMIN",
-                [DoZPopMin, DoZPopMinCount]
+                [DoZPopMinAsync, DoZPopMinCountAsync]
             );
 
-            static void DoZPopMin(IServer server)
+            static async Task DoZPopMinAsync(GarnetClient client)
             {
-                RedisResult val = server.Execute("ZPOPMIN", "foo");
-                RedisValue[] valArr = (RedisValue[])val;
-                Assert.AreEqual(0, valArr.Length);
+                string[] val = await client.ExecuteForStringArrayResultAsync("ZPOPMIN", ["foo"]);
+                Assert.AreEqual(0, val.Length);
             }
 
-            static void DoZPopMinCount(IServer server)
+            static async Task DoZPopMinCountAsync(GarnetClient client)
             {
-                RedisResult val = server.Execute("ZPOPMIN", "foo", "10");
-                RedisValue[] valArr = (RedisValue[])val;
-                Assert.AreEqual(0, valArr.Length);
+                string[] val = await client.ExecuteForStringArrayResultAsync("ZPOPMIN", ["foo", "10"]);
+                Assert.AreEqual(0, val.Length);
             }
         }
 
         [Test]
-        public void ZRandMemberACLs()
+        public async Task ZRandMemberACLsAsync()
         {
-            CheckCommands(
+            await CheckCommandsAsync(
                 "ZRANDMEMBER",
-                [DoZRandMember, DoZRandMemberCount, DoZRandMemberCountWithScores]
+                [DoZRandMemberAsync, DoZRandMemberCountAsync, DoZRandMemberCountWithScoresAsync]
             );
 
-            static void DoZRandMember(IServer server)
+            static async Task DoZRandMemberAsync(GarnetClient client)
             {
-                RedisResult val = server.Execute("ZRANDMEMBER", "foo");
-                Assert.IsTrue(val.IsNull);
+                string val = await client.ExecuteForStringResultAsync("ZRANDMEMBER", ["foo"]);
+                Assert.IsNull(val);
             }
 
-            static void DoZRandMemberCount(IServer server)
+            static async Task DoZRandMemberCountAsync(GarnetClient client)
             {
-                RedisResult val = server.Execute("ZRANDMEMBER", "foo", "10");
-                RedisValue[] valArr = (RedisValue[])val;
-                Assert.AreEqual(0, valArr.Length);
+                string[] val = await client.ExecuteForStringArrayResultAsync("ZRANDMEMBER", ["foo", "10"]);
+                Assert.AreEqual(0, val.Length);
             }
 
-            static void DoZRandMemberCountWithScores(IServer server)
+            static async Task DoZRandMemberCountWithScoresAsync(GarnetClient client)
             {
-                RedisResult val = server.Execute("ZRANDMEMBER", "foo", "10", "WITHSCORES");
-                RedisValue[] valArr = (RedisValue[])val;
-                Assert.AreEqual(0, valArr.Length);
+                string[] val = await client.ExecuteForStringArrayResultAsync("ZRANDMEMBER", ["foo", "10", "WITHSCORES"]);
+                Assert.AreEqual(0, val.Length);
             }
         }
 
         [Test]
-        public void ZDiffACLs()
+        public async Task ZDiffACLsAsync()
         {
             // TODO: ZDIFF doesn't implement WITHSCORES correctly right now - come back and cover when fixed
 
-            CheckCommands(
+            await CheckCommandsAsync(
                 "ZDIFF",
-                [DoZDiff, DoZDiffMulti]
+                [DoZDiffAsync, DoZDiffMultiAsync]
             );
 
-            static void DoZDiff(IServer server)
+            static async Task DoZDiffAsync(GarnetClient client)
             {
-                RedisResult val = server.Execute("ZDIFF", "1", "foo");
-                RedisValue[] valArr = (RedisValue[])val;
-                Assert.AreEqual(0, valArr.Length);
+                string[] val = await client.ExecuteForStringArrayResultAsync("ZDIFF", ["1", "foo"]);
+                Assert.AreEqual(0, val.Length);
             }
 
-            static void DoZDiffMulti(IServer server)
+            static async Task DoZDiffMultiAsync(GarnetClient client)
             {
-                RedisResult val = server.Execute("ZDIFF", "2", "foo", "bar");
-                RedisValue[] valArr = (RedisValue[])val;
-                Assert.AreEqual(0, valArr.Length);
+                string[] val = await client.ExecuteForStringArrayResultAsync("ZDIFF", ["2", "foo", "bar"]);
+                Assert.AreEqual(0, val.Length);
             }
         }
 
         [Test]
-        public void ZScanACLs()
+        public async Task ZScanACLsAsync()
         {
-            CheckCommands(
+            await CheckCommandsAsync(
                 "ZSCAN",
-                [DoZScan, DoZScanMatch, DoZScanCount, DoZScanNoValues, DoZScanMatchCount, DoZScanMatchNoValues, DoZScanCountNoValues, DoZScanMatchCountNoValues]
+                [DoZScanAsync, DoZScanMatchAsync, DoZScanCountAsync, DoZScanNoValuesAsync, DoZScanMatchCountAsync, DoZScanMatchNoValuesAsync, DoZScanCountNoValuesAsync, DoZScanMatchCountNoValuesAsync],
+                skipPermitted: true
             );
 
-            static void DoZScan(IServer server)
+            static async Task DoZScanAsync(GarnetClient client)
             {
-                RedisResult val = server.Execute("ZSCAN", "foo", "0");
-                RedisResult[] valArr = (RedisResult[])val;
-                Assert.AreEqual(2, valArr.Length);
+                // ZSCAN returns an array of arrays, which GarnetClient doesn't deal with
+                await client.ExecuteForStringResultAsync("ZSCAN", ["foo", "0"]);
             }
 
-            static void DoZScanMatch(IServer server)
+            static async Task DoZScanMatchAsync(GarnetClient client)
             {
-                RedisResult val = server.Execute("ZSCAN", "foo", "0", "MATCH", "*");
-                RedisResult[] valArr = (RedisResult[])val;
-                Assert.AreEqual(2, valArr.Length);
+                // ZSCAN returns an array of arrays, which GarnetClient doesn't deal with
+                await client.ExecuteForStringResultAsync("ZSCAN", ["foo", "0", "MATCH", "*"]);
             }
 
-            static void DoZScanCount(IServer server)
+            static async Task DoZScanCountAsync(GarnetClient client)
             {
-                RedisResult val = server.Execute("ZSCAN", "foo", "0", "COUNT", "2");
-                RedisResult[] valArr = (RedisResult[])val;
-                Assert.AreEqual(2, valArr.Length);
+                // ZSCAN returns an array of arrays, which GarnetClient doesn't deal with
+                await client.ExecuteForStringResultAsync("ZSCAN", ["foo", "0", "COUNT", "2"]);
             }
 
-            static void DoZScanNoValues(IServer server)
+            static async Task DoZScanNoValuesAsync(GarnetClient client)
             {
-                RedisResult val = server.Execute("ZSCAN", "foo", "0", "NOVALUES");
-                RedisResult[] valArr = (RedisResult[])val;
-                Assert.AreEqual(2, valArr.Length);
+                // ZSCAN returns an array of arrays, which GarnetClient doesn't deal with
+                await client.ExecuteForStringResultAsync("ZSCAN", ["foo", "0", "NOVALUES"]);
             }
 
-            static void DoZScanMatchCount(IServer server)
+            static async Task DoZScanMatchCountAsync(GarnetClient client)
             {
-                RedisResult val = server.Execute("ZSCAN", "foo", "0", "MATCH", "*", "COUNT", "2");
-                RedisResult[] valArr = (RedisResult[])val;
-                Assert.AreEqual(2, valArr.Length);
+                // ZSCAN returns an array of arrays, which GarnetClient doesn't deal with
+                await client.ExecuteForStringResultAsync("ZSCAN", ["foo", "0", "MATCH", "*", "COUNT", "2"]);
             }
 
-            static void DoZScanMatchNoValues(IServer server)
+            static async Task DoZScanMatchNoValuesAsync(GarnetClient client)
             {
-                RedisResult val = server.Execute("ZSCAN", "foo", "0", "MATCH", "*", "NOVALUES");
-                RedisResult[] valArr = (RedisResult[])val;
-                Assert.AreEqual(2, valArr.Length);
+                // ZSCAN returns an array of arrays, which GarnetClient doesn't deal with
+                await client.ExecuteForStringResultAsync("ZSCAN", ["foo", "0", "MATCH", "*", "NOVALUES"]);
             }
 
-            static void DoZScanCountNoValues(IServer server)
+            static async Task DoZScanCountNoValuesAsync(GarnetClient client)
             {
-                RedisResult val = server.Execute("ZSCAN", "foo", "0", "COUNT", "0", "NOVALUES");
-                RedisResult[] valArr = (RedisResult[])val;
-                Assert.AreEqual(2, valArr.Length);
+                // ZSCAN returns an array of arrays, which GarnetClient doesn't deal with
+                await client.ExecuteForStringResultAsync("ZSCAN", ["foo", "0", "COUNT", "0", "NOVALUES"]);
             }
 
-            static void DoZScanMatchCountNoValues(IServer server)
+            static async Task DoZScanMatchCountNoValuesAsync(GarnetClient client)
             {
-                RedisResult val = server.Execute("ZSCAN", "foo", "0", "MATCH", "*", "COUNT", "0", "NOVALUES");
-                RedisResult[] valArr = (RedisResult[])val;
-                Assert.AreEqual(2, valArr.Length);
+                // ZSCAN returns an array of arrays, which GarnetClient doesn't deal with
+                await client.ExecuteForStringResultAsync("ZSCAN", ["foo", "0", "MATCH", "*", "COUNT", "0", "NOVALUES"]);
             }
         }
 
         [Test]
-        public void ZMScoreACLs()
+        public async Task ZMScoreACLsAsync()
         {
-            CheckCommands(
+            await CheckCommandsAsync(
                 "ZMSCORE",
-                [DoZDiff, DoZDiffMulti]
+                [DoZDiffAsync, DoZDiffMultiAsync]
             );
 
-            static void DoZDiff(IServer server)
+            static async Task DoZDiffAsync(GarnetClient client)
             {
-                RedisResult val = server.Execute("ZMSCORE", "foo", "bar");
-                RedisValue[] valArr = (RedisValue[])val;
-                Assert.AreEqual(1, valArr.Length);
-                Assert.IsTrue(valArr[0].IsNull);
+                string[] val = await client.ExecuteForStringArrayResultAsync("ZMSCORE", ["foo", "bar"]);
+                Assert.AreEqual(1, val.Length);
+                Assert.IsNull(val[0]);
             }
 
-            static void DoZDiffMulti(IServer server)
+            static async Task DoZDiffMultiAsync(GarnetClient client)
             {
-                RedisResult val = server.Execute("ZMSCORE", "foo", "bar", "fizz");
-                RedisValue[] valArr = (RedisValue[])val;
-                Assert.AreEqual(2, valArr.Length);
-                Assert.IsTrue(valArr[0].IsNull);
-                Assert.IsTrue(valArr[1].IsNull);
+                string[] val = await client.ExecuteForStringArrayResultAsync("ZMSCORE", ["foo", "bar", "fizz"]);
+                Assert.AreEqual(2, val.Length);
+                Assert.IsNull(val[0]);
+                Assert.IsNull(val[1]);
             }
         }
 
         [Test]
-        public void TimeACLs()
+        public async Task TimeACLsAsync()
         {
-            CheckCommands(
+            await CheckCommandsAsync(
                 "TIME",
-                [DoTime]
+                [DoTimeAsync]
             );
 
-            static void DoTime(IServer server)
+            static async Task DoTimeAsync(GarnetClient client)
             {
-                RedisResult val = server.Execute("TIME");
-                RedisResult[] valArr = (RedisResult[])val;
-                Assert.AreEqual(2, valArr.Length);
-                Assert.IsTrue((long)valArr[0] > 0);
-                Assert.IsTrue((long)valArr[1] >= 0);
+                string[] val = await client.ExecuteForStringArrayResultAsync("TIME");
+                Assert.AreEqual(2, val.Length);
+                Assert.IsTrue(long.Parse(val[0]) > 0);
+                Assert.IsTrue(long.Parse(val[1]) >= 0);
             }
         }
 
         [Test]
-        public void TTLACLs()
+        public async Task TTLACLsAsync()
         {
-            CheckCommands(
+            await CheckCommandsAsync(
                 "TTL",
-                [DoTTL]
+                [DoTTLAsync]
             );
 
-            static void DoTTL(IServer server)
+            static async Task DoTTLAsync(GarnetClient client)
             {
-                RedisResult val = server.Execute("TTL", "foo");
-                Assert.AreEqual(-2, (int)val);
+                long val = await client.ExecuteForLongResultAsync("TTL", ["foo"]);
+                Assert.AreEqual(-2, val);
             }
         }
 
         [Test]
-        public void TypeACLs()
+        public async Task TypeACLsAsync()
         {
-            CheckCommands(
+            await CheckCommandsAsync(
                 "TYPE",
-                [DoType]
+                [DoTypeAsync]
             );
 
-            static void DoType(IServer server)
+            static async Task DoTypeAsync(GarnetClient client)
             {
-                RedisResult val = server.Execute("TYPE", "foo");
-                Assert.AreEqual("none", (string)val);
+                string val = await client.ExecuteForStringResultAsync("TYPE", ["foo"]);
+                Assert.AreEqual("none", val);
             }
         }
 
         [Test]
-        public void UnlinkACLs()
+        public async Task UnlinkACLsAsync()
         {
-            CheckCommands(
+            await CheckCommandsAsync(
                 "UNLINK",
-                [DoUnlink, DoUnlinkMulti]
+                [DoUnlinkAsync, DoUnlinkMultiAsync]
             );
 
-            static void DoUnlink(IServer server)
+            static async Task DoUnlinkAsync(GarnetClient client)
             {
-                RedisResult val = server.Execute("UNLINK", "foo");
-                Assert.AreEqual(0, (int)val);
+                long val = await client.ExecuteForLongResultAsync("UNLINK", ["foo"]);
+                Assert.AreEqual(0, val);
             }
 
-            static void DoUnlinkMulti(IServer server)
+            static async Task DoUnlinkMultiAsync(GarnetClient client)
             {
-                RedisResult val = server.Execute("UNLINK", "foo", "bar");
-                Assert.AreEqual(0, (int)val);
+                long val = await client.ExecuteForLongResultAsync("UNLINK", ["foo", "bar"]);
+                Assert.AreEqual(0, val);
             }
         }
 
         [Test]
-        public void UnsubscribeACLs()
+        public async Task UnsubscribeACLsAsync()
         {
-            CheckCommands(
+            await CheckCommandsAsync(
                 "UNSUBSCRIBE",
-                [DoUnsubscribePattern]
+                [DoUnsubscribePatternAsync]
             );
 
-            static void DoUnsubscribePattern(IServer server)
+            static async Task DoUnsubscribePatternAsync(GarnetClient client)
             {
-                RedisResult res = server.Execute("UNSUBSCRIBE", "foo");
-                Assert.AreEqual(ResultType.Array, res.Resp2Type);
+                string[] res = await client.ExecuteForStringArrayResultAsync("UNSUBSCRIBE", ["foo"]);
+                Assert.IsNotNull(res);
             }
         }
 
         [Test]
-        public void WatchACLs()
+        public async Task WatchACLsAsync()
         {
             // TODO: should watch fail outside of a transaction?
             // TODO: multi key WATCH isn't implemented correctly, add once fixed
 
-            CheckCommands(
+            await CheckCommandsAsync(
                 "WATCH",
-                [DoWatch]
+                [DoWatchAsync]
             );
 
-            static void DoWatch(IServer server)
+            static async Task DoWatchAsync(GarnetClient client)
             {
-                RedisResult val = server.Execute("WATCH", "foo");
-                Assert.AreEqual("OK", (string)val);
+                string val = await client.ExecuteForStringResultAsync("WATCH", ["foo"]);
+                Assert.AreEqual("OK", val);
             }
         }
 
         [Test]
-        public void WatchMSACLs()
+        public async Task WatchMSACLsAsync()
         {
             // TODO: should watch fail outside of a transaction?
 
-            CheckCommands(
+            await CheckCommandsAsync(
                 "WATCH MS",
-                [DoWatchMS]
+                [DoWatchMSAsync]
             );
 
-            static void DoWatchMS(IServer server)
+            static async Task DoWatchMSAsync(GarnetClient client)
             {
-                RedisResult val = server.Execute("WATCH", "MS", "foo");
-                Assert.AreEqual("OK", (string)val);
+                string val = await client.ExecuteForStringResultAsync("WATCH", ["MS", "foo"]);
+                Assert.AreEqual("OK", val);
             }
         }
 
         [Test]
-        public void WatchOSACLs()
+        public async Task WatchOSACLsAsync()
         {
             // TODO: should watch fail outside of a transaction?
 
-            CheckCommands(
+            await CheckCommandsAsync(
                 "WATCH OS",
-                [DoWatchOS]
+                [DoWatchOSAsync]
             );
 
-            static void DoWatchOS(IServer server)
+            static async Task DoWatchOSAsync(GarnetClient client)
             {
-                RedisResult val = server.Execute("WATCH", "OS", "foo");
-                Assert.AreEqual("OK", (string)val);
+                string val = await client.ExecuteForStringResultAsync("WATCH", ["OS", "foo"]);
+                Assert.AreEqual("OK", val);
             }
         }
 
         [Test]
-        public void UnwatchACLs()
+        public async Task UnwatchACLsAsync()
         {
             // TODO: should watch fail outside of a transaction?
 
-            CheckCommands(
+            await CheckCommandsAsync(
                 "UNWATCH",
-                [DoUnwatch]
+                [DoUnwatchAsync]
             );
 
-            static void DoUnwatch(IServer server)
+            static async Task DoUnwatchAsync(GarnetClient client)
             {
-                RedisResult val = server.Execute("UNWATCH");
-                Assert.AreEqual("OK", (string)val);
+                string val = await client.ExecuteForStringResultAsync("UNWATCH");
+                Assert.AreEqual("OK", val);
             }
         }
 
@@ -5783,11 +5550,12 @@ namespace Garnet.test.Resp.ACL
         /// Take a command (or subcommand, with a space) and check that adding and removing
         /// command, subcommand, and categories ACLs behaves as expected.
         /// </summary>
-        private static void CheckCommands(
+        private static async Task CheckCommandsAsync(
             string command,
-            Action<IServer>[] commands,
+            Func<GarnetClient, Task>[] commands,
             List<string> knownCategories = null,
-            bool skipPing = false
+            bool skipPing = false,
+            bool skipPermitted = false
         )
         {
             const string UserWithAll = "temp-all";
@@ -5831,44 +5599,45 @@ namespace Garnet.test.Resp.ACL
             Assert.IsNotEmpty(categories, $"[{command}]: should have some ACL categories");
 
             // Spin up one connection to use for all commands from the (admin) default user
-            using (ConnectionMultiplexer defaultUserConnection = ConnectionMultiplexer.Connect(TestUtils.GetConfig(allowAdmin: true, authUsername: DefaultUser, authPassword: DefaultPassword)))
+            using (GarnetClient defaultUserClient = await CreateGarnetClientAsync(DefaultUser, DefaultPassword))
             {
-                IServer defaultUserServer = defaultUserConnection.GetServers()[0];
-
                 // Spin up test users, with all permissions so we can spin up connections without issue
-                InitUser(defaultUserServer, UserWithAll, TestPassword);
-                InitUser(defaultUserServer, UserWithNone, TestPassword);
+                await InitUserAsync(defaultUserClient, UserWithAll, TestPassword);
+                await InitUserAsync(defaultUserClient, UserWithNone, TestPassword);
 
                 // Spin up two connections for users that we'll use as starting points for different ACL changes
-                using (ConnectionMultiplexer allUserConnection = ConnectionMultiplexer.Connect(TestUtils.GetConfig(allowAdmin: true, authUsername: UserWithAll, authPassword: TestPassword)))
-                using (ConnectionMultiplexer noneUserConnection = ConnectionMultiplexer.Connect(TestUtils.GetConfig(allowAdmin: true, authUsername: UserWithNone, authPassword: TestPassword)))
+                using (GarnetClient allUserClient = await CreateGarnetClientAsync(UserWithAll, TestPassword))
+                using (GarnetClient noneUserClient = await CreateGarnetClientAsync(UserWithNone, TestPassword))
                 {
-                    IServer allUserServer = allUserConnection.GetServers()[0];
-                    IServer nonUserServer = noneUserConnection.GetServers()[0];
-
                     // Check categories
                     foreach (string category in categories)
                     {
                         // Check removing category works
                         {
-                            ResetUserWithAll(defaultUserServer);
+                            await ResetUserWithAllAsync(defaultUserClient);
 
-                            AssertAllPermitted(defaultUserServer, UserWithAll, allUserServer, commands, $"[{command}]: Denied when should have been permitted (user had +@all)", skipPing);
+                            if (!skipPermitted)
+                            {
+                                await AssertAllPermittedAsync(defaultUserClient, UserWithAll, allUserClient, commands, $"[{command}]: Denied when should have been permitted (user had +@all)", skipPing);
+                            }
 
-                            SetUser(defaultUserServer, UserWithAll, [$"-@{category}"]);
+                            await SetUserAsync(defaultUserClient, UserWithAll, [$"-@{category}"]);
 
-                            AssertAllDenied(defaultUserServer, UserWithAll, allUserServer, commands, $"[{command}]: Permitted when should have been denied (user had -@{category})", skipPing);
+                            await AssertAllDeniedAsync(defaultUserClient, UserWithAll, allUserClient, commands, $"[{command}]: Permitted when should have been denied (user had -@{category})", skipPing);
                         }
 
                         // Check adding category works
                         {
-                            ResetUserWithNone(defaultUserServer);
+                            await ResetUserWithNoneAsync(defaultUserClient);
 
-                            AssertAllDenied(defaultUserServer, UserWithNone, nonUserServer, commands, $"[{command}]: Permitted when should have been denied (user had -@all)", skipPing);
+                            await AssertAllDeniedAsync(defaultUserClient, UserWithNone, noneUserClient, commands, $"[{command}]: Permitted when should have been denied (user had -@all)", skipPing);
 
-                            SetACLOnUser(defaultUserServer, UserWithNone, [$"+@{category}"]);
+                            await SetACLOnUserAsync(defaultUserClient, UserWithNone, [$"+@{category}"]);
 
-                            AssertAllPermitted(defaultUserServer, UserWithNone, nonUserServer, commands, $"[{command}]: Denied when should have been permitted (user had +@{category})", skipPing);
+                            if (!skipPermitted)
+                            {
+                                await AssertAllPermittedAsync(defaultUserClient, UserWithNone, noneUserClient, commands, $"[{command}]: Denied when should have been permitted (user had +@{category})", skipPing);
+                            }
                         }
                     }
 
@@ -5882,20 +5651,23 @@ namespace Garnet.test.Resp.ACL
 
                         // Check removing command works
                         {
-                            ResetUserWithAll(defaultUserServer);
+                            await ResetUserWithAllAsync(defaultUserClient);
 
-                            SetACLOnUser(defaultUserServer, UserWithAll, [$"-{commandAcl}"]);
+                            await SetACLOnUserAsync(defaultUserClient, UserWithAll, [$"-{commandAcl}"]);
 
-                            AssertAllDenied(defaultUserServer, UserWithAll, allUserServer, commands, $"[{command}]: Permitted when should have been denied (user had -{commandAcl})", skipPing);
+                            await AssertAllDeniedAsync(defaultUserClient, UserWithAll, allUserClient, commands, $"[{command}]: Permitted when should have been denied (user had -{commandAcl})", skipPing);
                         }
 
                         // Check adding command works
                         {
-                            ResetUserWithNone(defaultUserServer);
+                            await ResetUserWithNoneAsync(defaultUserClient);
 
-                            SetACLOnUser(defaultUserServer, UserWithNone, [$"+{commandAcl}"]);
+                            await SetACLOnUserAsync(defaultUserClient, UserWithNone, [$"+{commandAcl}"]);
 
-                            AssertAllPermitted(defaultUserServer, UserWithNone, nonUserServer, commands, $"[{command}]: Denied when should have been permitted (user had +{commandAcl})", skipPing);
+                            if (!skipPermitted)
+                            {
+                                await AssertAllPermittedAsync(defaultUserClient, UserWithNone, noneUserClient, commands, $"[{command}]: Denied when should have been permitted (user had +{commandAcl})", skipPing);
+                            }
                         }
                     }
 
@@ -5907,131 +5679,150 @@ namespace Garnet.test.Resp.ACL
 
                         // Check removing subcommand works
                         {
-                            ResetUserWithAll(defaultUserServer);
+                            await ResetUserWithAllAsync(defaultUserClient);
 
-                            SetACLOnUser(defaultUserServer, UserWithAll, [$"-{subCommandAcl}"]);
+                            await SetACLOnUserAsync(defaultUserClient, UserWithAll, [$"-{subCommandAcl}"]);
 
-                            AssertAllDenied(defaultUserServer, UserWithAll, allUserServer, commands, $"[{command}]: Permitted when should have been denied (user had -{subCommandAcl})", skipPing);
+                            await AssertAllDeniedAsync(defaultUserClient, UserWithAll, allUserClient, commands, $"[{command}]: Permitted when should have been denied (user had -{subCommandAcl})", skipPing);
                         }
 
                         // Check adding subcommand works
                         {
-                            ResetUserWithNone(defaultUserServer);
+                            await ResetUserWithNoneAsync(defaultUserClient);
 
-                            SetACLOnUser(defaultUserServer, UserWithNone, [$"+{subCommandAcl}"]);
+                            await SetACLOnUserAsync(defaultUserClient, UserWithNone, [$"+{subCommandAcl}"]);
 
-                            AssertAllPermitted(defaultUserServer, UserWithNone, nonUserServer, commands, $"[{command}]: Denied when should have been permitted (user had +{subCommandAcl})", skipPing);
+                            if (!skipPermitted)
+                            {
+                                await AssertAllPermittedAsync(defaultUserClient, UserWithNone, noneUserClient, commands, $"[{command}]: Denied when should have been permitted (user had +{subCommandAcl})", skipPing);
+                            }
                         }
 
                         // Checking adding command but removing subcommand works
                         {
-                            ResetUserWithNone(defaultUserServer);
+                            await ResetUserWithNoneAsync(defaultUserClient);
 
-                            SetACLOnUser(defaultUserServer, UserWithNone, [$"+{commandAcl}", $"-{subCommandAcl}"]);
+                            await SetACLOnUserAsync(defaultUserClient, UserWithNone, [$"+{commandAcl}", $"-{subCommandAcl}"]);
 
-                            AssertAllDenied(defaultUserServer, UserWithNone, nonUserServer, commands, $"[{command}]: Permitted when should have been denied (user had +{commandAcl} -{subCommandAcl})", skipPing);
+                            await AssertAllDeniedAsync(defaultUserClient, UserWithNone, noneUserClient, commands, $"[{command}]: Permitted when should have been denied (user had +{commandAcl} -{subCommandAcl})", skipPing);
                         }
 
                         // Checking removing command but adding subcommand works
                         {
-                            ResetUserWithAll(defaultUserServer);
+                            await ResetUserWithAllAsync(defaultUserClient);
 
-                            SetACLOnUser(defaultUserServer, UserWithAll, [$"-{commandAcl}", $"+{subCommandAcl}"]);
+                            await SetACLOnUserAsync(defaultUserClient, UserWithAll, [$"-{commandAcl}", $"+{subCommandAcl}"]);
 
-                            AssertAllPermitted(defaultUserServer, UserWithAll, allUserServer, commands, $"[{command}]: Denied when should have been permitted (user had -{commandAcl} +{subCommandAcl})", skipPing);
+                            if (!skipPermitted)
+                            {
+                                await AssertAllPermittedAsync(defaultUserClient, UserWithAll, allUserClient, commands, $"[{command}]: Denied when should have been permitted (user had -{commandAcl} +{subCommandAcl})", skipPing);
+                            }
                         }
                     }
                 }
             }
 
             // Use default user to update ACL on given user
-            static void SetACLOnUser(IServer defaultUserServer, string user, string[] aclPatterns)
+            static async Task SetACLOnUserAsync(GarnetClient defaultUserClient, string user, string[] aclPatterns)
             {
-                RedisResult res = defaultUserServer.Execute("ACL", ["SETUSER", user, .. aclPatterns]);
-
-                Assert.AreEqual("OK", (string)res, $"Updating user ({user}) failed");
+                string aclRes = await defaultUserClient.ExecuteForStringResultAsync("ACL", ["SETUSER", user, .. aclPatterns]);
+                Assert.AreEqual("OK", aclRes);
             }
 
-            static void ResetUserWithAll(IServer defaultUserServer)
+            static async Task ResetUserWithAllAsync(GarnetClient defaultUserClient)
             {
                 // Create or reset user, with all permissions
-                RedisResult withAllRes = defaultUserServer.Execute("ACL", "SETUSER", UserWithAll, "on", $">{TestPassword}", "+@all");
-                Assert.AreEqual("OK", (string)withAllRes);
+                string aclRes = await defaultUserClient.ExecuteForStringResultAsync("ACL", ["SETUSER", UserWithAll, "on", $">{TestPassword}", "+@all"]);
+                Assert.AreEqual("OK", aclRes);
             }
 
             // Get user that was initialized with -@all
-            static void ResetUserWithNone(IServer defaultUserServer)
+            static async Task ResetUserWithNoneAsync(GarnetClient defaultUserClient)
             {
                 // Create or reset user, with no permissions
-                RedisResult withNoneRes = defaultUserServer.Execute("ACL", "SETUSER", UserWithNone, "on", $">{TestPassword}", "-@all");
-                Assert.AreEqual("OK", (string)withNoneRes);
+                string aclRes = await defaultUserClient.ExecuteForStringResultAsync("ACL", ["SETUSER", UserWithNone, "on", $">{TestPassword}", "-@all"]);
+                Assert.AreEqual("OK", aclRes);
             }
 
             // Check that all commands succeed
-            static void AssertAllPermitted(IServer defaultUserServer, string currentUserName, IServer currentUserServer, Action<IServer>[] commands, string message, bool skipPing)
+            static async Task AssertAllPermittedAsync(GarnetClient defaultUserClient, string currentUserName, GarnetClient currentUserClient, Func<GarnetClient, Task>[] commands, string message, bool skipPing)
             {
-                foreach (Action<IServer> cmd in commands)
+                foreach (Func<GarnetClient, Task> cmd in commands)
                 {
-                    Assert.True(CheckAuthFailure(() => cmd(currentUserServer)), message);
+                    Assert.True(await CheckAuthFailureAsync(() => cmd(currentUserClient)), message);
                 }
 
                 if (!skipPing)
                 {
                     // Check we haven't desynced
-                    Ping(defaultUserServer, currentUserName, currentUserServer);
+                    await PingAsync(defaultUserClient, currentUserName, currentUserClient);
                 }
             }
 
             // Check that all commands fail with NOAUTH
-            static void AssertAllDenied(IServer defaultUserServer, string currentUserName, IServer currentUserServer, Action<IServer>[] commands, string message, bool skipPing)
+            static async Task AssertAllDeniedAsync(GarnetClient defaultUserClient, string currentUserName, GarnetClient currentUserClient, Func<GarnetClient, Task>[] commands, string message, bool skipPing)
             {
-                foreach (Action<IServer> cmd in commands)
+                foreach (Func<GarnetClient, Task> cmd in commands)
                 {
-                    Assert.False(CheckAuthFailure(() => cmd(currentUserServer)), message);
+                    Assert.False(await CheckAuthFailureAsync(() => cmd(currentUserClient)), message);
                 }
 
                 if (!skipPing)
                 {
                     // Check we haven't desynced
-                    Ping(defaultUserServer, currentUserName, currentUserServer);
+                    await PingAsync(defaultUserClient, currentUserName, currentUserClient);
                 }
             }
 
             // Enable PING on user and issue PING on connection
-            static void Ping(IServer defaultUserServer, string currentUserName, IServer currentUserServer)
+            static async Task PingAsync(GarnetClient defaultUserClient, string currentUserName, GarnetClient currentUserClient)
             {
                 // Have to add PING because it'll be denied by reset of test in many cases
                 // since we do this towards the end of our asserts, it shouldn't invalidate
                 // the rest of the test.
-                RedisResult addPingRes = defaultUserServer.Execute("ACL", "SETUSER", currentUserName, "on", "+ping");
-                Assert.AreEqual("OK", (string)addPingRes);
+                string addPingRes = await defaultUserClient.ExecuteForStringResultAsync("ACL", ["SETUSER", currentUserName, "on", "+ping"]);
+                Assert.AreEqual("OK", addPingRes);
 
                 // Actually execute the PING
-                RedisResult pingRes = currentUserServer.Execute("PING");
-                Assert.AreEqual("PONG", (string)pingRes);
+                string pingRes = await currentUserClient.ExecuteForStringResultAsync("PING");
+                Assert.AreEqual("PONG", pingRes);
             }
+        }
+
+        /// <summary>
+        /// Create a GarnetClient authed as the given user.
+        /// </summary>
+        private static async Task<GarnetClient> CreateGarnetClientAsync(string username, string password)
+        {
+            GarnetClient ret = TestUtils.GetGarnetClient();
+            await ret.ConnectAsync();
+
+            string authRes = await ret.ExecuteForStringResultAsync("AUTH", [username, password]);
+            Assert.AreEqual("OK", authRes);
+
+            return ret;
         }
 
         /// <summary>
         /// Create a user with +@all permissions.
         /// </summary>
-        private static void InitUser(IServer defaultUserServer, string username, string password)
+        private static async Task InitUserAsync(GarnetClient defaultUserClient, string username, string password)
         {
-            RedisResult res = defaultUserServer.Execute("ACL", "SETUSER", username, "on", $">{password}", "+@all");
-            Assert.AreEqual("OK", (string)res);
+            string res = await defaultUserClient.ExecuteForStringResultAsync("ACL", ["SETUSER", username, "on", $">{password}", "+@all"]);
+            Assert.AreEqual("OK", res);
         }
 
         /// <summary>
         /// Runs ACL SETUSER default [aclPatterns] and checks that they are reflected in ACL LIST.
         /// </summary>
-        private static void SetUser(IServer server, string user, params string[] aclPatterns)
+        private static async Task SetUserAsync(GarnetClient client, string user, params string[] aclPatterns)
         {
-            string aclLinePreSet = GetUser(server, user);
+            string aclLinePreSet = await GetUserAsync(client, user);
 
-            RedisResult setRes = server.Execute("ACL", ["SETUSER", user, .. aclPatterns]);
-            Assert.AreEqual("OK", (string)setRes, $"Updating user ({user}) failed");
+            string setRes = await client.ExecuteForStringResultAsync("ACL", ["SETUSER", user, .. aclPatterns]);
+            Assert.AreEqual("OK", setRes, $"Updating user ({user}) failed");
 
-            string aclLinePostSet = GetUser(server, user);
+            string aclLinePostSet = await GetUserAsync(client, user);
 
             string expectedAclLine = $"{aclLinePreSet} {string.Join(" ", aclPatterns)}";
 
@@ -6041,13 +5832,13 @@ namespace Garnet.test.Resp.ACL
             Assert.IsTrue(expectedUserPerms.IsEquivalentTo(actualUserPerms), $"User permissions were not equivalent after running SETUSER with {string.Join(" ", aclPatterns)}");
 
             // TODO: if and when ACL GETUSER is implemented, just use that
-            static string GetUser(IServer server, string user)
+            static async Task<string> GetUserAsync(GarnetClient client, string user)
             {
                 string ret = null;
-                RedisResult[] resArr = (RedisResult[])server.Execute("ACL", "LIST");
-                foreach (RedisResult res in resArr)
+                string[] resArr = await client.ExecuteForStringArrayResultAsync("ACL", ["LIST"]);
+                foreach (string res in resArr)
                 {
-                    ret = (string)res;
+                    ret = res;
                     if (ret.StartsWith($"user {user} on "))
                     {
                         break;
@@ -6066,23 +5857,14 @@ namespace Garnet.test.Resp.ACL
         /// 
         /// Throws if anything else.
         /// </summary>
-        private static bool CheckAuthFailure(Action act)
+        private static async Task<bool> CheckAuthFailureAsync(Func<Task> act)
         {
             try
             {
-                act();
+                await act();
                 return true;
             }
-            catch (RedisConnectionException e)
-            {
-                if (e.FailureType != ConnectionFailureType.AuthenticationFailure)
-                {
-                    throw;
-                }
-
-                return false;
-            }
-            catch (RedisException e)
+            catch (Exception e)
             {
                 if (e.Message != "NOAUTH Authentication required.")
                 {

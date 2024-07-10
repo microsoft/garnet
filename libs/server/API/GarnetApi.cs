@@ -276,7 +276,7 @@ namespace Garnet.server
              => storageSession.StringBitCount(key, start, end, useBitInterval, out result, ref context);
 
         /// <inheritdoc />
-        public GarnetStatus StringBitOperation(ArgSlice[] keys, BitmapOperation bitop, out long result)
+        public GarnetStatus StringBitOperation(Span<ArgSlice> keys, BitmapOperation bitop, out long result)
             => storageSession.StringBitOperation(keys, bitop, out result);
 
         /// <inheritdoc />
@@ -311,15 +311,15 @@ namespace Garnet.server
             => storageSession.HyperLogLogAdd(key, elements, out updated, ref context);
 
         /// <inheritdoc />
-        public GarnetStatus HyperLogLogLength(ArgSlice[] keys, ref SpanByte input, out long count, out bool error)
+        public GarnetStatus HyperLogLogLength(Span<ArgSlice> keys, ref SpanByte input, out long count, out bool error)
             => storageSession.HyperLogLogLength(keys, ref input, out count, out error, ref context);
 
         /// <inheritdoc />
-        public GarnetStatus HyperLogLogLength(ArgSlice[] keys, out long count)
+        public GarnetStatus HyperLogLogLength(Span<ArgSlice> keys, out long count)
             => storageSession.HyperLogLogLength(keys, out count, ref context);
 
         /// <inheritdoc />
-        public GarnetStatus HyperLogLogMerge(ArgSlice[] keys, out bool error)
+        public GarnetStatus HyperLogLogMerge(Span<ArgSlice> keys, out bool error)
             => storageSession.HyperLogLogMerge(keys, out error);
         #endregion
 

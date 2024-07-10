@@ -237,7 +237,7 @@ namespace Garnet.cluster
                     return false;
                 }
 
-                if (current.IsLocal((ushort)slot, readCommand: false))
+                if (current.IsLocal((ushort)slot, readWriteSession: false))
                 {
                     errorMessage = Encoding.ASCII.GetBytes($"ERR This is a local hash slot {slot} and is already imported");
                     return false;
@@ -298,7 +298,7 @@ namespace Garnet.cluster
                 foreach (var slot in slots)
                 {
                     // Can only import remote slots
-                    if (current.IsLocal((ushort)slot, readCommand: false))
+                    if (current.IsLocal((ushort)slot, readWriteSession: false))
                     {
                         errorMessage = Encoding.ASCII.GetBytes($"ERR This is a local hash slot {slot} and is already imported");
                         return false;
@@ -431,7 +431,7 @@ namespace Garnet.cluster
                 {
                     current = currentConfig;
                     slotState = current.GetState((ushort)slot);
-                    var workerId = slotState == SlotState.MIGRATING ? 1 : currentConfig.GetWorkerIdFromSlot((ushort)slot);
+                    var workerId = slotState == SlotState.MIGRATING ? 1 : current.GetWorkerIdFromSlot((ushort)slot);
                     var newConfig = currentConfig.UpdateSlotState(slot, workerId, SlotState.STABLE);
                     if (Interlocked.CompareExchange(ref currentConfig, newConfig, current) == current)
                         break;

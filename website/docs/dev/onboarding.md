@@ -180,6 +180,6 @@ As a sanity check, you can run the Garnet test suite. The command to run tests i
 
 Note that Tsavorite has its own solution file and test suite in the folder `<root>`/Garnet/libs/storage/Tsavorite.
 
-**Tip:** By default, Garnet listens to TCP port 3278, you can use this information to adjust your firewall settings if you need to access Garnet from remote machines.
+**Tip:** By default, Garnet listens to TCP port 6379, you can use this information to adjust your firewall settings if you need to access Garnet from remote machines.
 
 

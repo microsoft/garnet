@@ -6,6 +6,7 @@ using System.Buffers;
 using System.Diagnostics;
 using System.Runtime.CompilerServices;
 using System.Runtime.InteropServices;
+using System.Security.Cryptography;
 using System.Text;
 using Garnet.common;
 using Garnet.common.Parsing;
@@ -55,6 +56,7 @@ namespace Garnet.server
         readonly ScratchBufferManager scratchBufferManager;
 
         SessionParseState parseState;
+        ClusterSlotVerificationInput csvi;
         GCHandle recvHandle;
 
         /// <summary>
@@ -80,6 +82,7 @@ namespace Garnet.server
         public readonly StorageSession storageSession;
         internal BasicGarnetApi basicGarnetApi;
         internal LockableGarnetApi lockableGarnetApi;
+        internal CollectionItemBroker itemBroker;
 
         readonly IGarnetAuthenticator _authenticator;
 
@@ -130,10 +133,16 @@ namespace Garnet.server
         /// </summary>
         string clientName = null;
 
+        /// <summary>
+        /// Random number generator for operations, using a cryptographic generator as the base seed
+        /// </summary>
+        private static readonly Random RandomGen = new(RandomNumberGenerator.GetInt32(int.MaxValue));
+
         public RespServerSession(
             INetworkSender networkSender,
             StoreWrapper storeWrapper,
-            SubscribeBroker<SpanByte, SpanByte, IKeySerializer<SpanByte>> subscribeBroker)
+            SubscribeBroker<SpanByte, SpanByte, IKeySerializer<SpanByte>> subscribeBroker,
+            CollectionItemBroker itemBroker)
             : base(networkSender)
         {
             this.customCommandManagerSession = new CustomCommandManagerSession(storeWrapper.customCommandManager);
@@ -147,13 +156,14 @@ namespace Garnet.server
             this.scratchBufferManager = new ScratchBufferManager();
 
             // Create storage session and API
-            this.storageSession = new StorageSession(storeWrapper, scratchBufferManager, sessionMetrics, LatencyMetrics, logger);
+            this.storageSession = new StorageSession(storeWrapper, scratchBufferManager, sessionMetrics, LatencyMetrics, itemBroker, logger);
 
             this.basicGarnetApi = new BasicGarnetApi(storageSession, storageSession.basicContext, storageSession.objectStoreBasicContext);
             this.lockableGarnetApi = new LockableGarnetApi(storageSession, storageSession.lockableContext, storageSession.objectStoreLockableContext);
 
             this.storeWrapper = storeWrapper;
             this.subscribeBroker = subscribeBroker;
+            this.itemBroker = itemBroker;
             this._authenticator = storeWrapper.serverOptions.AuthSettings?.CreateAuthenticator(this.storeWrapper) ?? new GarnetNoAuthAuthenticator();
 
             // Associate new session with default user and automatically authenticate, if possible
@@ -191,6 +201,7 @@ namespace Garnet.server
                 storeWrapper.monitor.AddMetricsHistory(sessionMetrics, latencyMetrics);
 
             subscribeBroker?.RemoveSubscription(this);
+            itemBroker?.HandleSessionDisposed(this);
 
             // Cancel the async processor, if any
             asyncWaiterCancel?.Cancel();
@@ -259,14 +270,25 @@ namespace Garnet.server
                 // Send message and dispose the network sender to end the session
                 if (dcurr > networkSender.GetResponseObjectHead())
                     Send(networkSender.GetResponseObjectHead());
-                networkSender.Dispose();
+
+                // The session is no longer usable, dispose it
+                networkSender.DisposeNetworkSender(true);
             }
             catch (GarnetException ex)
             {
                 sessionMetrics?.incr_total_number_resp_server_session_exceptions(1);
                 logger?.Log(ex.LogLevel, ex, "ProcessMessages threw a GarnetException:");
+
+                // Forward Garnet error as RESP error
+                while (!RespWriteUtils.WriteError($"ERR Garnet Exception: {ex.Message}", ref dcurr, dend))
+                    SendAndReset();
+
+                // Send message and dispose the network sender to end the session
+                if (dcurr > networkSender.GetResponseObjectHead())
+                    Send(networkSender.GetResponseObjectHead());
+
                 // The session is no longer usable, dispose it
-                networkSender.Dispose();
+                networkSender.DisposeNetworkSender(true);
             }
             catch (Exception ex)
             {
@@ -342,6 +364,7 @@ namespace Garnet.server
                             RespCommand.EXEC => NetworkEXEC(),
                             RespCommand.MULTI => NetworkMULTI(),
                             RespCommand.DISCARD => NetworkDISCARD(),
+                            RespCommand.QUIT => NetworkQUIT(),
                             _ => NetworkSKIP(cmd),
                         };
                     }
@@ -444,7 +467,6 @@ namespace Garnet.server
                 RespCommand.READWRITE => NetworkREADWRITE(),
                 RespCommand.COMMAND => NetworkCOMMAND(ptr, parseState.count),
                 RespCommand.COMMAND_COUNT => NetworkCOMMAND_COUNT(ptr, parseState.count),
-                RespCommand.COMMAND_DOCS => NetworkCOMMAND_DOCS(ptr, parseState.count),
                 RespCommand.COMMAND_INFO => NetworkCOMMAND_INFO(ptr, parseState.count),
 
                 _ => ProcessArrayCommands(cmd, ref storageApi)
@@ -472,7 +494,6 @@ namespace Garnet.server
                 RespCommand.WATCH_MS => NetworkWATCH_MS(count),
                 RespCommand.WATCH_OS => NetworkWATCH_OS(count),
                 RespCommand.STRLEN => NetworkSTRLEN(ptr, ref storageApi),
-                RespCommand.MODULE => NetworkMODULE(count, ptr, ref storageApi),
                 //General key commands
                 RespCommand.DBSIZE => NetworkDBSIZE(ptr, ref storageApi),
                 RespCommand.KEYS => NetworkKEYS(ptr, ref storageApi),
@@ -540,12 +561,15 @@ namespace Garnet.server
                 RespCommand.RPOPLPUSH => ListRightPopLeftPush(count, ptr, ref storageApi),
                 RespCommand.LMOVE => ListMove(count, ptr, ref storageApi),
                 RespCommand.LSET => ListSet(count, ptr, ref storageApi),
+                RespCommand.BLPOP => ListBlockingPop(cmd, count, ptr, ref storageApi),
+                RespCommand.BRPOP => ListBlockingPop(cmd, count, ptr, ref storageApi),
+                RespCommand.BLMOVE => ListBlockingMove(cmd, count, ptr, ref storageApi),
                 // Hash Commands
                 RespCommand.HSET => HashSet(cmd, count, ptr, ref storageApi),
                 RespCommand.HMSET => HashSet(cmd, count, ptr, ref storageApi),
                 RespCommand.HGET => HashGet(cmd, count, ptr, ref storageApi),
-                RespCommand.HMGET => HashGet(cmd, count, ptr, ref storageApi),
-                RespCommand.HGETALL => HashGet(cmd, count, ptr, ref storageApi),
+                RespCommand.HMGET => HashGetMultiple(cmd, count, ptr, ref storageApi),
+                RespCommand.HGETALL => HashGetAll(cmd, count, ptr, ref storageApi),
                 RespCommand.HDEL => HashDelete(count, ptr, ref storageApi),
                 RespCommand.HLEN => HashLength(count, ptr, ref storageApi),
                 RespCommand.HSTRLEN => HashStrLength(count, ptr, ref storageApi),
@@ -555,7 +579,7 @@ namespace Garnet.server
                 RespCommand.HINCRBY => HashIncrement(cmd, count, ptr, ref storageApi),
                 RespCommand.HINCRBYFLOAT => HashIncrement(cmd, count, ptr, ref storageApi),
                 RespCommand.HSETNX => HashSet(cmd, count, ptr, ref storageApi),
-                RespCommand.HRANDFIELD => HashGet(cmd, count, ptr, ref storageApi),
+                RespCommand.HRANDFIELD => HashRandomField(cmd, count, ptr, ref storageApi),
                 RespCommand.HSCAN => ObjectScan(count, ptr, GarnetObjectType.Hash, ref storageApi),
                 // Set Commands
                 RespCommand.SADD => SetAdd(count, ptr, ref storageApi),
@@ -617,7 +641,7 @@ namespace Garnet.server
             }
             else if (command == RespCommand.CustomCmd)
             {
-                if (count != currentCustomCommand.NumKeys + currentCustomCommand.NumParams)
+                if (currentCustomCommand.NumParams < int.MaxValue && count != currentCustomCommand.NumKeys + currentCustomCommand.NumParams)
                 {
                     while (!RespWriteUtils.WriteError($"ERR Invalid number of parameters, expected {currentCustomCommand.NumKeys + currentCustomCommand.NumParams}, actual {count}", ref dcurr, dend))
                         SendAndReset();
@@ -936,81 +960,5 @@ namespace Garnet.server
 
             return header;
         }
-
-        /// <summary>
-        /// This method is used to verify slot ownership for provided key.
-        /// On error this method writes to response buffer but does not drain recv buffer (caller is responsible for draining).
-        /// </summary>
-        /// <param name="key">Key bytes</param>
-        /// <param name="readOnly">Whether caller is going to perform a readonly or read/write operation.</param>
-        /// <returns>True when ownership is verified, false otherwise</returns>
-        bool NetworkSingleKeySlotVerify(ReadOnlySpan<byte> key, bool readOnly)
-            => clusterSession != null && clusterSession.NetworkSingleKeySlotVerify(key, readOnly, SessionAsking, ref dcurr, ref dend);
-
-        /// <summary>
-        /// This method is used to verify slot ownership for provided key.
-        /// On error this method writes to response buffer but does not drain recv buffer (caller is responsible for draining).
-        /// </summary>
-        /// <param name="key">Key bytes</param>
-        /// <param name="readOnly">Whether caller is going to perform a readonly or read/write operation.</param>
-        /// <returns>True when ownership is verified, false otherwise</returns>
-        bool NetworkSingleKeySlotVerify(ref SpanByte key, bool readOnly)
-            => clusterSession != null && clusterSession.NetworkSingleKeySlotVerify(new ArgSlice(ref key), readOnly, SessionAsking, ref dcurr, ref dend);
-
-        /// <summary>
-        /// This method is used to verify slot ownership for provided key sequence.
-        /// On error this method writes to response buffer but does not drain recv buffer (caller is responsible for draining).
-        /// </summary>
-        /// <param name="keyPtr">Pointer to key bytes</param>
-        /// <param name="readOnly">Whether caller is going to perform a readonly or read/write operation</param>
-        /// <returns>True when ownership is verified, false otherwise</returns>
-        bool NetworkSingleKeySlotVerify(byte* keyPtr, int ksize, bool readOnly)
-            => clusterSession != null && clusterSession.NetworkSingleKeySlotVerify(new ArgSlice(keyPtr, ksize), readOnly, SessionAsking, ref dcurr, ref dend);
-
-        /// <summary>
-        /// This method is used to verify slot ownership for provided sequence of keys.
-        /// On error this method writes to response buffer and drains recv buffer.
-        /// </summary>
-        /// <param name="keyCount">Number of keys</param>
-        /// <param name="ptr">Starting position of RESP formatted key sequence</param>
-        /// <param name="interleavedKeys">Whether the sequence of keys are interleaved (e.g. MSET [key1] [value1] [key2] [value2]...) or non-interleaved (e.g. MGET [key1] [key2] [key3])</param>
-        /// <param name="readOnly">Whether caller is going to perform a readonly or read/write operation</param>
-        /// <param name="retVal">Used to indicate if parsing succeeded or failed due to lack of expected data</param>
-        /// <returns>True when ownership is verified, false otherwise</returns>
-        bool NetworkArraySlotVerify(int keyCount, byte* ptr, bool interleavedKeys, bool readOnly, out bool retVal)
-        {
-            retVal = false;
-            if (clusterSession != null && clusterSession.NetworkArraySlotVerify(keyCount, ref ptr, recvBufferPtr + bytesRead, interleavedKeys, readOnly, SessionAsking, ref dcurr, ref dend, out retVal))
-            {
-                readHead = (int)(ptr - recvBufferPtr);
-                return true;
-            }
-            return false;
-        }
-
-        /// <summary>
-        /// This method is used to verify slot ownership for provided sequence of keys.
-        /// On error this method writes to response buffer and drains recv buffer.
-        /// </summary>
-        bool NetworkArraySlotVerify(bool interleavedKeys, bool readOnly)
-        {
-            if (clusterSession == null) return false;
-            var ptr = recvBufferPtr + readHead;
-            return clusterSession.NetworkArraySlotVerify(
-                interleavedKeys ? parseState.count / 2 : parseState.count,
-                ref ptr, recvBufferPtr + bytesRead, interleavedKeys,
-                readOnly, SessionAsking, ref dcurr, ref dend, out _);
-        }
-
-
-        /// <summary>
-        /// This method is used to verify slot ownership for provided array of key argslices.
-        /// </summary>
-        /// <param name="keys">Array of key ArgSlice</param>
-        /// <param name="readOnly">Whether caller is going to perform a readonly or read/write operation</param>
-        /// <param name="count">Key count if different than keys array length</param>
-        /// <returns>True when ownership is verified, false otherwise</returns>
-        bool NetworkKeyArraySlotVerify(ref ArgSlice[] keys, bool readOnly, int count = -1)
-            => clusterSession != null && clusterSession.NetworkKeyArraySlotVerify(ref keys, readOnly, SessionAsking, ref dcurr, ref dend, count);
     }
 }

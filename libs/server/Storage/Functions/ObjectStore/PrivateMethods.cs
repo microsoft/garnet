@@ -125,28 +125,28 @@ namespace Garnet.server
                 switch (optionType)
                 {
                     case ExpireOption.NX:
-                        o->countDone = 0;
+                        o->result1 = 0;
                         break;
                     case ExpireOption.XX:
                     case ExpireOption.None:
                         value.Expiration = input.ExtraMetadata;
-                        o->countDone = 1;
+                        o->result1 = 1;
                         break;
                     case ExpireOption.GT:
                         bool replace = input.ExtraMetadata < value.Expiration;
                         value.Expiration = replace ? value.Expiration : input.ExtraMetadata;
                         if (replace)
-                            o->countDone = 0;
+                            o->result1 = 0;
                         else
-                            o->countDone = 1;
+                            o->result1 = 1;
                         break;
                     case ExpireOption.LT:
                         replace = input.ExtraMetadata > value.Expiration;
                         value.Expiration = replace ? value.Expiration : input.ExtraMetadata;
                         if (replace)
-                            o->countDone = 0;
+                            o->result1 = 0;
                         else
-                            o->countDone = 1;
+                            o->result1 = 1;
                         break;
                     default:
                         throw new GarnetException($"EvaluateObjectExpireInPlace exception expiryExists:{expiryExists}, optionType{optionType}");
@@ -159,12 +159,12 @@ namespace Garnet.server
                     case ExpireOption.NX:
                     case ExpireOption.None:
                         value.Expiration = input.ExtraMetadata;
-                        o->countDone = 1;
+                        o->result1 = 1;
                         break;
                     case ExpireOption.XX:
                     case ExpireOption.GT:
                     case ExpireOption.LT:
-                        o->countDone = 0;
+                        o->result1 = 0;
                         break;
                     default:
                         throw new GarnetException($"EvaluateObjectExpireInPlace exception expiryExists:{expiryExists}, optionType{optionType}");
