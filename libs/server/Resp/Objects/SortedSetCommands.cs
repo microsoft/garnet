@@ -45,7 +45,7 @@ namespace Garnet.server
                 return true;
             }
 
-            ObjectInput input = new ObjectInput
+            var input = new ObjectInput
             {
                 header = new RespInputHeader
                 {
@@ -53,7 +53,7 @@ namespace Garnet.server
                     SortedSetOp = SortedSetOperation.ZADD,
                 },
                 count = (count - 1) / 2,
-                done = zaddDoneCount,
+                done = 0,
                 payload = new ArgSlice(ptr, (int)(recvBufferPtr + bytesRead - ptr)),
             };
 
@@ -89,54 +89,44 @@ namespace Garnet.server
             {
                 return AbortWithWrongNumberOfArguments("ZREM", count);
             }
-            else
+
+            // Get the key for SortedSet
+            if (!RespReadUtils.ReadByteArrayWithLengthHeader(out var key, ref ptr, recvBufferPtr + bytesRead))
+                return false;
+
+            if (NetworkSingleKeySlotVerify(key, false))
             {
-                // Get the key for SortedSet
-                if (!RespReadUtils.ReadByteArrayWithLengthHeader(out var key, ref ptr, recvBufferPtr + bytesRead))
-                    return false;
+                return true;
+            }
 
-                if (NetworkSingleKeySlotVerify(key, false))
+            var input = new ObjectInput
+            {
+                header = new RespInputHeader
                 {
-                    return true;
-                }
+                    type = GarnetObjectType.SortedSet,
+                    SortedSetOp = SortedSetOperation.ZREM,
+                },
+                count = count - 1,
+                done = 0,
+                payload = new ArgSlice(ptr, (int)(recvBufferPtr + bytesRead - ptr)),
+            };
 
-                ObjectInput input = new ObjectInput
-                {
-                    header = new RespInputHeader
-                    {
-                        type = GarnetObjectType.SortedSet,
-                        SortedSetOp = SortedSetOperation.ZREM,
-                    },
-                    count = count - 1,
-                    done = zaddDoneCount,
-                    payload = new ArgSlice(ptr, (int)(recvBufferPtr + bytesRead - ptr)),
-                };
+            var status = storageApi.SortedSetRemove(key, ref input, out var rmwOutput);
 
-                var status = storageApi.SortedSetRemove(key, ref input, out ObjectOutputHeader rmwOutput);
-
-                if (status != GarnetStatus.OK)
-                {
-                    // This checks if we get the whole request,
-                    // Otherwise it needs to return false
-                    if (ReadLeftToken(count - 1, ref ptr) < count - 1)
-                        return false;
-                }
-
-                switch (status)
-                {
-                    case GarnetStatus.OK:
-                        while (!RespWriteUtils.WriteInteger(rmwOutput.result1, ref dcurr, dend))
-                            SendAndReset();
-                        break;
-                    case GarnetStatus.NOTFOUND:
-                        while (!RespWriteUtils.WriteDirect(CmdStrings.RESP_RETURN_VAL_0, ref dcurr, dend))
-                            SendAndReset();
-                        break;
-                    case GarnetStatus.WRONGTYPE:
-                        while (!RespWriteUtils.WriteError(CmdStrings.RESP_ERR_WRONG_TYPE, ref dcurr, dend))
-                            SendAndReset();
-                        break;
-                }
+            switch (status)
+            {
+                case GarnetStatus.OK:
+                    while (!RespWriteUtils.WriteInteger(rmwOutput.result1, ref dcurr, dend))
+                        SendAndReset();
+                    break;
+                case GarnetStatus.NOTFOUND:
+                    while (!RespWriteUtils.WriteDirect(CmdStrings.RESP_RETURN_VAL_0, ref dcurr, dend))
+                        SendAndReset();
+                    break;
+                case GarnetStatus.WRONGTYPE:
+                    while (!RespWriteUtils.WriteError(CmdStrings.RESP_ERR_WRONG_TYPE, ref dcurr, dend))
+                        SendAndReset();
+                    break;
             }
             return true;
         }

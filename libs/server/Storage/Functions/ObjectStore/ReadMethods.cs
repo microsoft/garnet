@@ -41,7 +41,7 @@ namespace Garnet.server
         }
 
         /// <inheritdoc />
-        public bool ConcurrentReader(ref byte[] key, ref SpanByte input, ref IGarnetObject value, ref GarnetObjectStoreOutput dst, ref ReadInfo readInfo, ref RecordInfo recordInfo)
+        public bool ConcurrentReader(ref byte[] key, ref ObjectInput input, ref IGarnetObject value, ref GarnetObjectStoreOutput dst, ref ReadInfo readInfo, ref RecordInfo recordInfo)
             => SingleReader(ref key, ref input, ref value, ref dst, ref readInfo);
     }
 }
