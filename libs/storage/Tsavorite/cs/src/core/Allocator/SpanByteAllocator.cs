@@ -4,7 +4,7 @@
 namespace Tsavorite.core
 {
     // Allocator for SpanByte Keys and Values.
-    internal struct SpanByteAllocator<TStoreFunctions>(AllocatorSettings settings, TStoreFunctions storeFunctions)
+    public struct SpanByteAllocator<TStoreFunctions>(AllocatorSettings settings, TStoreFunctions storeFunctions)
         : IAllocator<SpanByte, SpanByte, TStoreFunctions>
         where TStoreFunctions : IStoreFunctions<SpanByte, SpanByte>
     {

@@ -8,28 +8,20 @@ using Tsavorite.core;
 namespace Tsavorite.benchmark
 {
     [StructLayout(LayoutKind.Explicit, Size = 8)]
-    public struct Key : IKeyComparer<Key>
+    public struct Key
     {
         [FieldOffset(0)]
         public long value;
 
+        public override string ToString() => "{ " + value + " }";
 
-        public override string ToString()
+        public struct Comparer : IKeyComparer<Key>
         {
-            return "{ " + value + " }";
-        }
+            [MethodImpl(MethodImplOptions.AggressiveInlining)]
+            public readonly long GetHashCode64(ref Key key) => Utility.GetHashCode(key.value);
 
-        [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public long GetHashCode64(ref Key k)
-        {
-            return Utility.GetHashCode(k.value);
+            [MethodImpl(MethodImplOptions.AggressiveInlining)]
+            public bool Equals(ref Key key1, ref Key key2) => key1.value == key2.value;
         }
-
-        [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public bool Equals(ref Key k1, ref Key k2)
-        {
-            return k1.value == k2.value;
-        }
-
     }
 }

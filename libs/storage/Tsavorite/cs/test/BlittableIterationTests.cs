@@ -11,6 +11,7 @@ using static Tsavorite.test.TestUtils;
 
 namespace Tsavorite.test
 {
+#pragma warning disable IDE0065 // Misplaced using directive
     using StructStoreFunctions = StoreFunctions<KeyStruct, ValueStruct, KeyStruct.Comparer, NoSerializer<KeyStruct>, NoSerializer<ValueStruct>, DefaultRecordDisposer<KeyStruct, ValueStruct>>;
 
     [TestFixture]
@@ -52,9 +53,9 @@ namespace Tsavorite.test
 
             public bool ConcurrentReader(ref KeyStruct key, ref ValueStruct value, RecordMetadata recordMetadata, long numberOfRecords, out CursorRecordResult cursorRecordResult)
                 => SingleReader(ref key, ref value, recordMetadata, numberOfRecords, out cursorRecordResult);
-            public bool OnStart(long beginAddress, long endAddress) => true;
-            public void OnException(Exception exception, long numberOfRecords) { }
-            public void OnStop(bool completed, long numberOfRecords) { }
+            public readonly bool OnStart(long beginAddress, long endAddress) => true;
+            public readonly void OnException(Exception exception, long numberOfRecords) { }
+            public readonly void OnStop(bool completed, long numberOfRecords) { }
         }
 
         [Test]
@@ -92,7 +93,7 @@ namespace Tsavorite.test
                 {
                     using var iter = session.Iterate();
                     while (iter.GetNext(out var recordInfo))
-                        scanIteratorFunctions.SingleReader(ref iter.GetKey(), ref iter.GetValue(), default, default, out _);
+                        _ = scanIteratorFunctions.SingleReader(ref iter.GetKey(), ref iter.GetValue(), default, default, out _);
                 }
                 else
                     Assert.IsTrue(session.Iterate(ref scanIteratorFunctions), $"Failed to complete push iteration; numRecords = {scanIteratorFunctions.numRecords}");
@@ -101,50 +102,50 @@ namespace Tsavorite.test
             }
 
             // Initial population
-            for (int i = 0; i < totalRecords; i++)
+            for (var i = 0; i < totalRecords; i++)
             {
                 var key1 = new KeyStruct { kfield1 = i, kfield2 = i + 1 };
                 var value = new ValueStruct { vfield1 = i, vfield2 = i + 1 };
-                bContext.Upsert(ref key1, ref value);
+                _ = bContext.Upsert(ref key1, ref value);
             }
             iterateAndVerify(1, totalRecords);
 
-            for (int i = 0; i < totalRecords; i++)
+            for (var i = 0; i < totalRecords; i++)
             {
                 var key1 = new KeyStruct { kfield1 = i, kfield2 = i + 1 };
                 var value = new ValueStruct { vfield1 = 2 * i, vfield2 = i + 1 };
-                bContext.Upsert(ref key1, ref value);
+                _ = bContext.Upsert(ref key1, ref value);
             }
             iterateAndVerify(2, totalRecords);
 
-            for (int i = totalRecords / 2; i < totalRecords; i++)
+            for (var i = totalRecords / 2; i < totalRecords; i++)
             {
                 var key1 = new KeyStruct { kfield1 = i, kfield2 = i + 1 };
                 var value = new ValueStruct { vfield1 = i, vfield2 = i + 1 };
-                bContext.Upsert(ref key1, ref value);
+                _ = bContext.Upsert(ref key1, ref value);
             }
             iterateAndVerify(0, totalRecords);
 
-            for (int i = 0; i < totalRecords; i += 2)
+            for (var i = 0; i < totalRecords; i += 2)
             {
                 var key1 = new KeyStruct { kfield1 = i, kfield2 = i + 1 };
                 var value = new ValueStruct { vfield1 = i, vfield2 = i + 1 };
-                bContext.Upsert(ref key1, ref value);
+                _ = bContext.Upsert(ref key1, ref value);
             }
             iterateAndVerify(0, totalRecords);
 
-            for (int i = 0; i < totalRecords; i += 2)
+            for (var i = 0; i < totalRecords; i += 2)
             {
                 var key1 = new KeyStruct { kfield1 = i, kfield2 = i + 1 };
-                bContext.Delete(ref key1);
+                _ = bContext.Delete(ref key1);
             }
             iterateAndVerify(0, totalRecords / 2);
 
-            for (int i = 0; i < totalRecords; i++)
+            for (var i = 0; i < totalRecords; i++)
             {
                 var key1 = new KeyStruct { kfield1 = i, kfield2 = i + 1 };
                 var value = new ValueStruct { vfield1 = 3 * i, vfield2 = i + 1 };
-                bContext.Upsert(ref key1, ref value);
+                _ = bContext.Upsert(ref key1, ref value);
             }
             iterateAndVerify(3, totalRecords);
 
@@ -190,11 +191,11 @@ namespace Tsavorite.test
             }
 
             // Initial population
-            for (int i = 0; i < totalRecords; i++)
+            for (var i = 0; i < totalRecords; i++)
             {
                 var key1 = new KeyStruct { kfield1 = i, kfield2 = i + 1 };
                 var value = new ValueStruct { vfield1 = i, vfield2 = i + 1 };
-                bContext.Upsert(ref key1, ref value);
+                _ = bContext.Upsert(ref key1, ref value);
             }
 
             scanAndVerify(42, useScan: true);
@@ -241,11 +242,11 @@ namespace Tsavorite.test
                 var bContext = session.BasicContext;
                 for (var iteration = 0; iteration < 2; ++iteration)
                 {
-                    for (int i = 0; i < totalRecords; i++)
+                    for (var i = 0; i < totalRecords; i++)
                     {
                         var key1 = new KeyStruct { kfield1 = i, kfield2 = i + 1 };
                         var value = new ValueStruct { vfield1 = (tid + 1) * i, vfield2 = i + 1 };
-                        bContext.Upsert(ref key1, ref value, 0);
+                        _ = bContext.Upsert(ref key1, ref value, 0);
                     }
                 }
             }
@@ -253,17 +254,17 @@ namespace Tsavorite.test
             { // Initial population
                 using var session = store.NewSession<InputStruct, OutputStruct, int, FunctionsCompaction>(new FunctionsCompaction());
                 var bContext = session.BasicContext;
-                for (int i = 0; i < totalRecords; i++)
+                for (var i = 0; i < totalRecords; i++)
                 {
                     var key1 = new KeyStruct { kfield1 = i, kfield2 = i + 1 };
                     var value = new ValueStruct { vfield1 = i, vfield2 = i + 1 };
-                    bContext.Upsert(ref key1, ref value);
+                    _ = bContext.Upsert(ref key1, ref value);
                 }
             }
 
-            List<Task> tasks = new();   // Task rather than Thread for propagation of exception.
+            List<Task> tasks = [];   // Task rather than Thread for propagation of exception.
             var numThreads = scanThreads + updateThreads;
-            for (int t = 0; t < numThreads; t++)
+            for (var t = 0; t < numThreads; t++)
             {
                 var tid = t;
                 if (t < scanThreads)
@@ -271,7 +272,7 @@ namespace Tsavorite.test
                 else
                     tasks.Add(Task.Factory.StartNew(() => LocalUpdate(tid)));
             }
-            Task.WaitAll(tasks.ToArray());
+            Task.WaitAll([.. tasks]);
         }
     }
 }

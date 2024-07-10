@@ -7,8 +7,13 @@ using System.Runtime.InteropServices;
 using System.Threading;
 using Tsavorite.core;
 
+#pragma warning disable IDE0007 // Use implicit type
+
 namespace Tsavorite.benchmark
 {
+#pragma warning disable IDE0065 // Misplaced using directive
+    using StructStoreFunctions = StoreFunctions<Key, Value, Key.Comparer, NoSerializer<Key>, NoSerializer<Value>, DefaultRecordDisposer<Key, Value>>;
+
     internal class Tsavorite_YcsbBenchmark
     {
         // Ensure sizes are aligned to chunk sizes
@@ -26,7 +31,7 @@ namespace Tsavorite.benchmark
         readonly Key[] txn_keys_;
 
         readonly IDevice device;
-        readonly TsavoriteKV<Key, Value> store;
+        readonly TsavoriteKV<Key, Value, StructStoreFunctions, BlittableAllocator<Key, Value, StructStoreFunctions>> store;
 
         long idx_ = 0;
         long total_ops_done = 0;
@@ -76,14 +81,25 @@ namespace Tsavorite.benchmark
             if (testLoader.Options.ThreadCount >= 16)
                 device.ThrottleLimit = testLoader.Options.ThreadCount * 12;
 
+            var kvSettings = new TsavoriteKVSettings<Key, Value>()
+            {
+                IndexSize = testLoader.GetHashTableSize(),
+                LogDevice = device,
+                PreallocateLog = true,
+                RevivificationSettings = revivificationSettings,
+                CheckpointDir = testLoader.BackupPath
+            };
+
             if (testLoader.Options.UseSmallMemoryLog)
-                store = new TsavoriteKV<Key, Value>
-                    (testLoader.GetHashTableSize(), new LogSettings { LogDevice = device, PreallocateLog = true, PageSizeBits = 25, SegmentSizeBits = 30, MemorySizeBits = 28 },
-                    new CheckpointSettings { CheckpointDir = testLoader.BackupPath }, revivificationSettings: revivificationSettings);
-            else
-                store = new TsavoriteKV<Key, Value>
-                    (testLoader.GetHashTableSize(), new LogSettings { LogDevice = device, PreallocateLog = true },
-                    new CheckpointSettings { CheckpointDir = testLoader.BackupPath }, revivificationSettings: revivificationSettings);
+            {
+                kvSettings.PageSize = 1 << 25;
+                kvSettings.SegmentSize = 1 << 30;
+                kvSettings.MemorySize = 1 << 28;
+            }
+
+            store = new(kvSettings
+                , StoreFunctions<Key, Value>.Create(new Key.Comparer())
+                , (allocatorSettings, storeFunctions) => new BlittableAllocator<Key, Value, StructStoreFunctions>());
         }
 
         internal void Dispose()
@@ -136,34 +152,34 @@ namespace Tsavorite.benchmark
                         if (idx % 512 == 0)
                         {
                             uContext.Refresh();
-                            uContext.CompletePending(false);
+                            _ = uContext.CompletePending(false);
                         }
 
                         int r = (int)rng.Generate(100);     // rng.Next() is not inclusive of the upper bound so this will be <= 99
                         if (r < readPercent)
                         {
-                            uContext.Read(ref txn_keys_[idx], ref input, ref output, Empty.Default);
+                            _ = uContext.Read(ref txn_keys_[idx], ref input, ref output, Empty.Default);
                             ++reads_done;
                             continue;
                         }
                         if (r < upsertPercent)
                         {
-                            uContext.Upsert(ref txn_keys_[idx], ref value, Empty.Default);
+                            _ = uContext.Upsert(ref txn_keys_[idx], ref value, Empty.Default);
                             ++writes_done;
                             continue;
                         }
                         if (r < rmwPercent)
                         {
-                            uContext.RMW(ref txn_keys_[idx], ref input_[idx & 0x7], Empty.Default);
+                            _ = uContext.RMW(ref txn_keys_[idx], ref input_[idx & 0x7], Empty.Default);
                             ++writes_done;
                             continue;
                         }
-                        uContext.Delete(ref txn_keys_[idx], Empty.Default);
+                        _ = uContext.Delete(ref txn_keys_[idx], Empty.Default);
                         ++deletes_done;
                     }
                 }
 
-                uContext.CompletePending(true);
+                _ = uContext.CompletePending(true);
             }
             finally
             {
@@ -173,7 +189,7 @@ namespace Tsavorite.benchmark
             sw.Stop();
 
             Console.WriteLine($"Thread {thread_idx} done; {reads_done} reads, {writes_done} writes, {deletes_done} deletes in {sw.ElapsedMilliseconds} ms.");
-            Interlocked.Add(ref total_ops_done, reads_done + writes_done + deletes_done);
+            _ = Interlocked.Add(ref total_ops_done, reads_done + writes_done + deletes_done);
         }
 
         private void RunYcsbSafeContext(int thread_idx)
@@ -215,38 +231,38 @@ namespace Tsavorite.benchmark
                 for (long idx = chunk_idx; idx < chunk_idx + YcsbConstants.kChunkSize && !done; ++idx)
                 {
                     if (idx % 512 == 0)
-                        bContext.CompletePending(false);
+                        _ = bContext.CompletePending(false);
 
                     int r = (int)rng.Generate(100);     // rng.Next() is not inclusive of the upper bound so this will be <= 99
                     if (r < readPercent)
                     {
-                        bContext.Read(ref txn_keys_[idx], ref input, ref output, Empty.Default);
+                        _ = bContext.Read(ref txn_keys_[idx], ref input, ref output, Empty.Default);
                         ++reads_done;
                         continue;
                     }
                     if (r < upsertPercent)
                     {
-                        bContext.Upsert(ref txn_keys_[idx], ref value, Empty.Default);
+                        _ = bContext.Upsert(ref txn_keys_[idx], ref value, Empty.Default);
                         ++writes_done;
                         continue;
                     }
                     if (r < rmwPercent)
                     {
-                        bContext.RMW(ref txn_keys_[idx], ref input_[idx & 0x7], Empty.Default);
+                        _ = bContext.RMW(ref txn_keys_[idx], ref input_[idx & 0x7], Empty.Default);
                         ++writes_done;
                         continue;
                     }
-                    bContext.Delete(ref txn_keys_[idx], Empty.Default);
+                    _ = bContext.Delete(ref txn_keys_[idx], Empty.Default);
                     ++deletes_done;
                 }
             }
 
-            bContext.CompletePending(true);
+            _ = bContext.CompletePending(true);
 
             sw.Stop();
 
             Console.WriteLine($"Thread {thread_idx} done; {reads_done} reads, {writes_done} writes, {deletes_done} deletes in {sw.ElapsedMilliseconds} ms.");
-            Interlocked.Add(ref total_ops_done, reads_done + writes_done);
+            _ = Interlocked.Add(ref total_ops_done, reads_done + writes_done);
         }
 
         internal unsafe (double insPerSec, double opsPerSec, long tailAddress) Run(TestLoader testLoader)
@@ -388,17 +404,14 @@ namespace Tsavorite.benchmark
                         if (idx % 256 == 0)
                         {
                             uContext.Refresh();
-
                             if (idx % 65536 == 0)
-                            {
-                                uContext.CompletePending(false);
-                            }
+                                _ = uContext.CompletePending(false);
                         }
 
-                        uContext.Upsert(ref init_keys_[idx], ref value, Empty.Default);
+                        _ = uContext.Upsert(ref init_keys_[idx], ref value, Empty.Default);
                     }
                 }
-                uContext.CompletePending(true);
+                _ = uContext.CompletePending(true);
             }
             finally
             {
@@ -432,18 +445,15 @@ namespace Tsavorite.benchmark
                     if (idx % 256 == 0)
                     {
                         bContext.Refresh();
-
                         if (idx % 65536 == 0)
-                        {
-                            bContext.CompletePending(false);
-                        }
+                            _ = bContext.CompletePending(false);
                     }
 
-                    bContext.Upsert(ref init_keys_[idx], ref value, Empty.Default);
+                    _ = bContext.Upsert(ref init_keys_[idx], ref value, Empty.Default);
                 }
             }
 
-            bContext.CompletePending(true);
+            _ = bContext.CompletePending(true);
         }
 
         #region Load Data

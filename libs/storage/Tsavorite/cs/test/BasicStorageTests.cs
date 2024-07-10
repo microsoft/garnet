@@ -8,11 +8,12 @@ using Tsavorite.devices;
 
 namespace Tsavorite.test
 {
+#pragma warning disable IDE0065 // Misplaced using directive
+    using StructStoreFunctions = StoreFunctions<KeyStruct, ValueStruct, KeyStruct.Comparer, NoSerializer<KeyStruct>, NoSerializer<ValueStruct>, DefaultRecordDisposer<KeyStruct, ValueStruct>>;
+
     [TestFixture]
     internal class BasicStorageTests
     {
-        private TsavoriteKV<KeyStruct, ValueStruct> store;
-
         [Test]
         [Category("TsavoriteKV")]
         public void LocalStorageWriteRead()
@@ -94,8 +95,16 @@ namespace Tsavorite.test
 
         void TestDeviceWriteRead(IDevice log)
         {
-            store = new TsavoriteKV<KeyStruct, ValueStruct>
-                       (1L << 20, new LogSettings { LogDevice = log, MemorySizeBits = 15, PageSizeBits = 10 });
+            var store = new TsavoriteKV<KeyStruct, ValueStruct, StructStoreFunctions, BlittableAllocator<KeyStruct, ValueStruct, StructStoreFunctions>>(
+                new TsavoriteKVSettings<KeyStruct, ValueStruct>()
+                {
+                    IndexSize = 1L << 26,
+                    LogDevice = log,
+                    MemorySize = 1 << 15,
+                    PageSize = 1 << 10,
+                }, StoreFunctions<KeyStruct, ValueStruct>.Create(KeyStruct.Comparer.Instance)
+                , (allocatorSettings, storeFunctions) => new BlittableAllocator<KeyStruct, ValueStruct, StructStoreFunctions>()
+            );
 
             var session = store.NewSession<InputStruct, OutputStruct, Empty, Functions>(new Functions());
             var bContext = session.BasicContext;

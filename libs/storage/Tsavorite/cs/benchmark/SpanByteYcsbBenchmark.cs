@@ -7,8 +7,13 @@ using System.Runtime.InteropServices;
 using System.Threading;
 using Tsavorite.core;
 
+#pragma warning disable IDE0007 // Use implicit type
+
 namespace Tsavorite.benchmark
 {
+#pragma warning disable IDE0065 // Misplaced using directive
+    using SpanByteStoreFunctions = StoreFunctions<SpanByte, SpanByte, SpanByteComparer, NoSerializer<SpanByte>, NoSerializer<SpanByte>, SpanByteRecordDisposer>;
+
     internal class SpanByteYcsbBenchmark
     {
         // Ensure sizes are aligned to chunk sizes
@@ -26,7 +31,7 @@ namespace Tsavorite.benchmark
         readonly KeySpanByte[] txn_keys_;
 
         readonly IDevice device;
-        readonly TsavoriteKV<SpanByte, SpanByte> store;
+        readonly TsavoriteKV<SpanByte, SpanByte, SpanByteStoreFunctions, SpanByteAllocator<SpanByteStoreFunctions>> store;
 
         long idx_ = 0;
         long total_ops_done = 0;
@@ -85,14 +90,26 @@ namespace Tsavorite.benchmark
 
             device = Devices.CreateLogDevice(TestLoader.DevicePath, preallocateFile: true, deleteOnClose: !testLoader.RecoverMode, useIoCompletionPort: true);
 
+            var kvSettings = new TsavoriteKVSettings<SpanByte, SpanByte>()
+            {
+                IndexSize = testLoader.GetHashTableSize(),
+                LogDevice = device,
+                PreallocateLog = true,
+                MemorySize = 1 << 35,
+                RevivificationSettings = revivificationSettings,
+                CheckpointDir = testLoader.BackupPath
+            };
+
             if (testLoader.Options.UseSmallMemoryLog)
-                store = new TsavoriteKV<SpanByte, SpanByte>
-                    (testLoader.GetHashTableSize(), new LogSettings { LogDevice = device, PreallocateLog = true, PageSizeBits = 22, SegmentSizeBits = 26, MemorySizeBits = 26 },
-                    new CheckpointSettings { CheckpointDir = testLoader.BackupPath }, revivificationSettings: revivificationSettings);
-            else
-                store = new TsavoriteKV<SpanByte, SpanByte>
-                    (testLoader.GetHashTableSize(), new LogSettings { LogDevice = device, PreallocateLog = true, MemorySizeBits = 35 },
-                    new CheckpointSettings { CheckpointDir = testLoader.BackupPath }, revivificationSettings: revivificationSettings);
+            {
+                kvSettings.PageSize = 1 << 22;
+                kvSettings.SegmentSize = 1 << 26;
+                kvSettings.MemorySize = 1 << 26;
+            }
+
+            store = new(kvSettings
+                , StoreFunctions<SpanByte, SpanByte>.Create()
+                , (allocatorSettings, storeFunctions) => new SpanByteAllocator<SpanByteStoreFunctions>());
         }
 
         internal void Dispose()

@@ -38,8 +38,8 @@ namespace Tsavorite.core
         #endregion Fields
 
         #region Key Comparer
-        [MethodImpl(MethodImplOptions.AggressiveInlining)]
         /// <inheritdoc/>
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public readonly long GetKeyHashCode64(ref TKey key) => keyComparer.GetHashCode64(ref key);
 
         /// <inheritdoc/>
@@ -130,7 +130,7 @@ namespace Tsavorite.core
         /// <summary>
         /// Store functions for <see cref="SpanByte"/> Key and Value
         /// </summary>
-        StoreFunctions<SpanByte, SpanByte, SpanByteComparer, NoSerializer<SpanByte>, NoSerializer<SpanByte>, SpanByteRecordDisposer> Create()
+        public static StoreFunctions<SpanByte, SpanByte, SpanByteComparer, NoSerializer<SpanByte>, NoSerializer<SpanByte>, SpanByteRecordDisposer> Create()
             => new(SpanByteComparer.Instance, NoSerializer<SpanByte>.Instance, NoSerializer<SpanByte>.Instance, SpanByteRecordDisposer.Instance);
     }
 }
