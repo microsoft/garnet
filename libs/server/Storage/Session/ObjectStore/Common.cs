@@ -102,7 +102,7 @@ namespace Garnet.server
         }
 
         /// <summary>
-        /// Converts an array of elements in RESP format to ArgSlice[] type
+        /// Converts an array of result in RESP format to ArgSlice[] type
         /// </summary>
         /// <param name="outputFooter">The RESP format output object</param>
         /// <param name="error">A description of the error, if there is any</param>
@@ -113,7 +113,7 @@ namespace Garnet.server
             ArgSlice[] elements = default;
             error = default;
 
-            // For reading the elements in the outputFooter
+            // For reading the result in the outputFooter
             byte* element = null;
             int len = 0;
 
@@ -135,7 +135,7 @@ namespace Garnet.server
                     {
                         if (isScanOutput)
                         {
-                            // Read the first two elements
+                            // Read the first two result
                             if (!RespReadUtils.ReadUnsignedArrayLength(out var outerArraySize, ref refPtr, outputPtr + outputSpan.Length))
                                 return default;
 
@@ -146,7 +146,7 @@ namespace Garnet.server
                                 return default;
                         }
 
-                        // Get the number of elements
+                        // Get the number of result
                         if (!RespReadUtils.ReadUnsignedArrayLength(out var arraySize, ref refPtr, outputPtr + outputSpan.Length))
                             return default;
 
@@ -184,6 +184,63 @@ namespace Garnet.server
             }
 
             return elements;
+        }
+
+        /// <summary>
+        /// Processes RESP output as pairs of score and member. 
+        /// </summary>
+        unsafe (ArgSlice score, ArgSlice member)[] ProcessRespArrayOutputAsPairs(GarnetObjectStoreOutput outputFooter, out string error)
+        {
+            (ArgSlice score, ArgSlice member)[] result = default;
+            error = default;
+            byte* element = null;
+            var len = 0;
+            var outputSpan = outputFooter.spanByteAndMemory.IsSpanByte ?
+                             outputFooter.spanByteAndMemory.SpanByte.AsReadOnlySpan() : outputFooter.spanByteAndMemory.AsMemoryReadOnlySpan();
+
+            try
+            {
+                fixed (byte* outputPtr = outputSpan)
+                {
+                    var refPtr = outputPtr;
+
+                    if (*refPtr == '-')
+                    {
+                        if (!RespReadUtils.ReadErrorAsString(out error, ref refPtr, outputPtr + outputSpan.Length))
+                            return default;
+                    }
+                    else if (*refPtr == '*')
+                    {
+                        // Get the number of result elements
+                        if (!RespReadUtils.ReadUnsignedArrayLength(out var arraySize, ref refPtr, outputPtr + outputSpan.Length))
+                            return default;
+
+                        Debug.Assert(arraySize % 2 == 0, "Array elements are expected to be in pairs");
+                        arraySize /= 2; // Halve the array size to hold items as pairs
+                        result = new (ArgSlice score, ArgSlice member)[arraySize];
+
+                        for (var i = 0; i < result.Length; i++)
+                        {
+                            if (!RespReadUtils.ReadPtrWithLengthHeader(ref element, ref len, ref refPtr, outputPtr + outputSpan.Length))
+                                return default;
+
+                            result[i].score = new ArgSlice(element, len);
+
+                            if (!RespReadUtils.ReadPtrWithLengthHeader(ref element, ref len, ref refPtr, outputPtr + outputSpan.Length))
+                                return default;
+
+                            result[i].member = new ArgSlice(element, len);
+                        }
+                    }
+                }
+            }
+            finally
+            {
+                if (!outputFooter.spanByteAndMemory.IsSpanByte)
+                    outputFooter.spanByteAndMemory.Memory.Dispose();
+            }
+
+            return result;
         }
 
         /// <summary>

@@ -6,14 +6,17 @@ using System.Collections.Generic;
 using System.Linq;
 using System.Text;
 using System.Threading.Tasks;
+using Embedded.perftest;
 using Garnet.common;
 using Garnet.server;
 using NUnit.Framework;
 using StackExchange.Redis;
+using Tsavorite.core;
 using SetOperation = StackExchange.Redis.SetOperation;
 
 namespace Garnet.test
 {
+    using TestBasicGarnetApi = GarnetApi<BasicContext<SpanByte, SpanByte, SpanByte, SpanByteAndMemory, long, MainStoreFunctions>, BasicContext<byte[], IGarnetObject, SpanByte, GarnetObjectStoreOutput, long, ObjectStoreFunctions>>;
 
     [TestFixture]
     public class RespSortedSetTests
@@ -80,6 +83,30 @@ namespace Garnet.test
         }
 
         #region SETests
+        [Test]
+        public unsafe void SortedSetPopTest()
+        {
+            using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
+            var db = redis.GetDatabase(0);
+            db.SortedSetAdd("key1", "a", 1);
+            db.SortedSetAdd("key1", "b", 2);
+
+            var session = new RespServerSession(new DummyNetworkSender(), server.Provider.StoreWrapper, null, null);
+            var api = new TestBasicGarnetApi(session.storageSession, session.storageSession.basicContext, session.storageSession.objectStoreBasicContext);
+            var key = Encoding.ASCII.GetBytes("key1");
+            fixed (byte* keyPtr = key)
+            {
+                var result = api.SortedSetPop(new ArgSlice(keyPtr, key.Length), out (ArgSlice score, ArgSlice member)[] items);
+                Assert.AreEqual(1, items.Length);
+                Assert.AreEqual("a", Encoding.ASCII.GetString(items[0].score.ReadOnlySpan));
+                Assert.AreEqual("1", Encoding.ASCII.GetString(items[0].member.ReadOnlySpan));
+
+                result = api.SortedSetPop(new ArgSlice(keyPtr, key.Length), out items);
+                Assert.AreEqual(1, items.Length);
+                Assert.AreEqual("b", Encoding.ASCII.GetString(items[0].score.ReadOnlySpan));
+                Assert.AreEqual("2", Encoding.ASCII.GetString(items[0].member.ReadOnlySpan));
+            }
+        }
 
         [Test]
         public void AddAndLength()
