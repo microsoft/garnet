@@ -1,7 +1,6 @@
 ﻿// Copyright (c) Microsoft Corporation.
 // Licensed under the MIT license.
 
-using System;
 using System.Collections.Generic;
 using System.IO;
 using System.Linq;
@@ -29,7 +28,7 @@ namespace Garnet.test
         {
             TestUtils.DeleteDirectory(TestUtils.MethodTestDir, wait: true);
             extTestDir = Path.Combine(TestUtils.MethodTestDir, "test");
-            Assert.IsTrue(RespCommandsInfo.TryGetRespCommandsInfo(out respCommandsInfo));
+            Assert.IsTrue(RespCommandsInfo.TryGetRespCommandsInfo(out respCommandsInfo, externalOnly: true));
             Assert.IsTrue(TestUtils.TryGetCustomCommandsInfo(out respCustomCommandsInfo));
             Assert.IsNotNull(respCommandsInfo);
             Assert.IsNotNull(respCustomCommandsInfo);

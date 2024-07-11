@@ -1212,7 +1212,7 @@
   {
     "Command": "CustomRawStringCmd",
     "Name": "CustomRawStringCmd",
-    "IsInternal": false,
+    "IsInternal": true,
     "Arity": 1,
     "Flags": "None",
     "FirstKey": 0,
@@ -1226,7 +1226,7 @@
   {
     "Command": "CustomObjCmd",
     "Name": "CustomObjCmd",
-    "IsInternal": false,
+    "IsInternal": true,
     "Arity": 1,
     "Flags": "None",
     "FirstKey": 0,
@@ -1240,7 +1240,7 @@
   {
     "Command": "CustomTxn",
     "Name": "CustomTxn",
-    "IsInternal": false,
+    "IsInternal": true,
     "Arity": 1,
     "Flags": "None",
     "FirstKey": 0,
