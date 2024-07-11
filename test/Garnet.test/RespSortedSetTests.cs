@@ -992,19 +992,19 @@ namespace Garnet.test
             lightClientRequest.SendCommand("ZADD board 3 three");
 
             // 5 < score <= 1
-            response = lightClientRequest.SendCommandChunks("ZRANGEBYSCORE board 2 5 REV", bytesSent, 1);
+            response = lightClientRequest.SendCommandChunks("ZRANGE board 2 5 BYSCORE REV", bytesSent, 1);
             var expectedResponse = "*0\r\n";
             var actualValue = Encoding.ASCII.GetString(response).Substring(0, expectedResponse.Length);
             Assert.AreEqual(expectedResponse, actualValue);
 
             // 1 < score <= 5
-            response = lightClientRequest.SendCommandChunks("ZRANGEBYSCORE board 5 2 REV", bytesSent, 3);
+            response = lightClientRequest.SendCommandChunks("ZRANGE board 5 2 BYSCORE REV", bytesSent, 3);
             expectedResponse = "*2\r\n$5\r\nthree\r\n$3\r\ntwo\r\n";
             actualValue = Encoding.ASCII.GetString(response).Substring(0, expectedResponse.Length);
             Assert.AreEqual(expectedResponse, actualValue);
 
             // 1 < score <= 5
-            response = lightClientRequest.SendCommands("ZRANGEBYSCORE board 5 2 REV", "PING", 3, 1);
+            response = lightClientRequest.SendCommands("ZRANGE board 5 2 BYSCORE REV", "PING", 3, 1);
             expectedResponse = "*2\r\n$5\r\nthree\r\n$3\r\ntwo\r\n+PONG\r\n";
             actualValue = Encoding.ASCII.GetString(response).Substring(0, expectedResponse.Length);
             Assert.AreEqual(expectedResponse, actualValue);
