@@ -1,6 +1,4 @@
 ﻿// Copyright (c) Microsoft Corporation.
-// // Copyright (c) Microsoft Corporation.
-// // Copyright (c) Microsoft Corporation.
 // Licensed under the MIT license.
 
 using System;
@@ -1090,6 +1088,20 @@ namespace Garnet.test
             // This should commit
             res = lightClientRequest.SendCommand("EXEC", 2);
             expectedResponse = "*1\r\n:1\r\n";
+            Assert.AreEqual(res.AsSpan().Slice(0, expectedResponse.Length).ToArray(), expectedResponse);
+
+            // HMSET within MULTI/EXEC
+            res = lightClientRequest.SendCommand("MULTI");
+            expectedResponse = "+OK\r\n";
+            Assert.AreEqual(res.AsSpan().Slice(0, expectedResponse.Length).ToArray(), expectedResponse);
+
+            res = lightClientRequest.SendCommand($"HMSET {key} field4 4");
+            expectedResponse = "+QUEUED\r\n";
+            Assert.AreEqual(res.AsSpan().Slice(0, expectedResponse.Length).ToArray(), expectedResponse);
+
+            // This should commit
+            res = lightClientRequest.SendCommand("EXEC", 2);
+            expectedResponse = "*1\r\n+OK\r\n";
             Assert.AreEqual(res.AsSpan().Slice(0, expectedResponse.Length).ToArray(), expectedResponse);
         }
 

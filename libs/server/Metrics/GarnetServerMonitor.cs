@@ -194,10 +194,10 @@ namespace Garnet.server
                 garnetServer.reset_conn_recv();
                 garnetServer.reset_conn_disp();
 
-                storeWrapper.clusterProvider.ResetGossipStats();
+                storeWrapper.clusterProvider?.ResetGossipStats();
 
                 storeWrapper.store.ResetRevivificationStats();
-                storeWrapper.objectStore.ResetRevivificationStats();
+                storeWrapper.objectStore?.ResetRevivificationStats();
 
                 resetEventFlags[InfoMetricsType.STATS] = false;
             }
