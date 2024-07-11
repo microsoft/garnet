@@ -146,6 +146,49 @@ namespace Garnet.server
         }
 
         /// <summary>
+        /// Removes the count elements from the head(left) or tail(right) of the first non-empty list key from the list of provided key names.
+        /// If the list contains less than count elements, removes and returns the number of elements in the list.
+        /// </summary>
+        /// <typeparam name="TContext"></typeparam>
+        /// <typeparam name="TObjectContext"></typeparam>
+        /// <param name="keys"></param>
+        /// <param name="direction"></param>
+        /// <param name="count"></param>
+        /// <param name="context"></param>
+        /// <param name="objectContext"></param>
+        /// <param name="key"></param>
+        /// <param name="elements"></param>
+        /// <returns>The count elements popped from the list</returns>
+        public unsafe GarnetStatus ListManyPop<TContext, TObjectContext>(ArgSlice[] keys, OperationDirection direction, int count, ref TContext context, ref TObjectContext objectContext, out ArgSlice key, out ArgSlice[] elements)
+            where TContext : ITsavoriteContext<SpanByte, SpanByte, SpanByte, SpanByteAndMemory, long, MainStoreFunctions>
+            where TObjectContext : ITsavoriteContext<byte[], IGarnetObject, SpanByte, GarnetObjectStoreOutput, long, ObjectStoreFunctions>
+        {
+            foreach (var k in keys )
+            {
+                if (EXISTS(k, StoreType.All, ref context, ref objectContext) != GarnetStatus.OK) continue;
+
+                key = k;
+
+                GarnetStatus statusOp;
+
+                if (direction == OperationDirection.Left)
+                {
+                    statusOp = ListPop(key, count, ListOperation.LPOP, ref objectContext, out elements);
+                } else
+                {
+                    statusOp = ListPop(key, count, ListOperation.RPOP, ref objectContext, out elements);
+                }
+
+                return statusOp;
+
+            }
+
+            key = default;
+            elements = default;
+            return GarnetStatus.NOTFOUND;
+        }
+
+        /// <summary>
         /// Gets the current count of elements in the List at Key
         /// </summary>
         /// <typeparam name="TObjectContext"></typeparam>

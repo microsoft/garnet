@@ -560,6 +560,7 @@ namespace Garnet.server
                 RespCommand.LREM => ListRemove(count, ptr, ref storageApi),
                 RespCommand.RPOPLPUSH => ListRightPopLeftPush(count, ptr, ref storageApi),
                 RespCommand.LMOVE => ListMove(count, ptr, ref storageApi),
+                RespCommand.LMPOP => ListManyPop(count, ptr, ref storageApi),
                 RespCommand.LSET => ListSet(count, ptr, ref storageApi),
                 RespCommand.BLPOP => ListBlockingPop(cmd, count, ptr, ref storageApi),
                 RespCommand.BRPOP => ListBlockingPop(cmd, count, ptr, ref storageApi),
