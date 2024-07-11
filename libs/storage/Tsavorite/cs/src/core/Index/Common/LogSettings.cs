@@ -1,12 +1,14 @@
 ﻿// Copyright (c) Microsoft Corporation.
 // Licensed under the MIT license.
 
+#pragma warning disable IDE1006 // Naming Styles
+
 namespace Tsavorite.core
 {
     /// <summary>
     /// Configuration settings for hybrid log
     /// </summary>
-    public class LogSettings
+    internal class LogSettings
     {
         /// <summary>Minimum number of bits for a page size</summary>
         public const int kMinPageSizeBits = 6;
@@ -78,7 +80,7 @@ namespace Tsavorite.core
     /// <summary>
     /// Configuration settings for hybrid log
     /// </summary>
-    public class ReadCacheSettings
+    internal class ReadCacheSettings
     {
         /// <summary>
         /// Size of a segment (group of pages), in bits

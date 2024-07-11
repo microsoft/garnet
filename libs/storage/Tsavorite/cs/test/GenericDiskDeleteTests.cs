@@ -8,12 +8,15 @@ using static Tsavorite.test.TestUtils;
 
 namespace Tsavorite.test
 {
+    using ClassStoreFunctions = StoreFunctions<MyKey, MyValue, MyKey.Comparer, MyKeySerializer, MyValueSerializer, DefaultRecordDisposer<MyKey, MyValue>>;
+    using ClassAllocator = GenericAllocator<MyKey, MyValue, StoreFunctions<MyKey, MyValue, MyKey.Comparer, MyKeySerializer, MyValueSerializer, DefaultRecordDisposer<MyKey, MyValue>>>;
+
     [TestFixture]
     internal class GenericDiskDeleteTests
     {
-        private TsavoriteKV<MyKey, MyValue> store;
-        private ClientSession<MyKey, MyValue, MyInput, MyOutput, int, MyFunctionsDelete> session;
-        private BasicContext<MyKey, MyValue, MyInput, MyOutput, int, MyFunctionsDelete> bContext;
+        private TsavoriteKV<MyKey, MyValue, ClassStoreFunctions, ClassAllocator> store;
+        private ClientSession<MyKey, MyValue, MyInput, MyOutput, int, MyFunctionsDelete, ClassStoreFunctions, ClassAllocator> session;
+        private BasicContext<MyKey, MyValue, MyInput, MyOutput, int, MyFunctionsDelete, ClassStoreFunctions, ClassAllocator> bContext;
         private IDevice log, objlog;
 
         [SetUp]
@@ -23,10 +26,14 @@ namespace Tsavorite.test
             log = Devices.CreateLogDevice(Path.Join(MethodTestDir, "GenericDiskDeleteTests.log"), deleteOnClose: true);
             objlog = Devices.CreateLogDevice(Path.Join(MethodTestDir, "GenericDiskDeleteTests.obj.log"), deleteOnClose: true);
 
-            store = new TsavoriteKV<MyKey, MyValue>
-                (128,
-                logSettings: new LogSettings { LogDevice = log, ObjectLogDevice = objlog, MutableFraction = 0.1, MemorySizeBits = 14, PageSizeBits = 9 },
-                serializerSettings: new SerializerSettings<MyKey, MyValue> { keySerializer = () => new MyKeySerializer(), valueSerializer = () => new MyValueSerializer() });
+            store = new (new TsavoriteKVSettings<MyKey, MyValue>()
+                {
+                    IndexSize = 1 << 13,
+                    LogDevice = log, ObjectLogDevice = objlog,
+                    MutableFraction = 0.1, MemorySize = 1 << 14, PageSize = 1 << 9
+                }, StoreFunctions<MyKey, MyValue>.Create(new MyKey.Comparer(), new MyKeySerializer(), new MyValueSerializer(), DefaultRecordDisposer<MyKey, MyValue>.Instance)
+                , (allocatorSettings, storeFunctions) => new(allocatorSettings, storeFunctions)
+            );
             session = store.NewSession<MyInput, MyOutput, int, MyFunctionsDelete>(new MyFunctionsDelete());
             bContext = session.BasicContext;
         }
@@ -58,7 +65,7 @@ namespace Tsavorite.test
             {
                 var _key = new MyKey { key = i };
                 var _value = new MyValue { value = i };
-                bContext.Upsert(ref _key, ref _value, 0);
+                _ = bContext.Upsert(ref _key, ref _value, 0);
             }
 
             for (int i = 0; i < totalRecords; i++)
@@ -69,19 +76,15 @@ namespace Tsavorite.test
                 var value = new MyValue { value = i };
 
                 if (bContext.Read(ref key1, ref input, ref output, 0).IsPending)
-                {
-                    bContext.CompletePending(true);
-                }
+                    _ = bContext.CompletePending(true);
                 else
-                {
                     Assert.AreEqual(value.value, output.value.value);
-                }
             }
 
             for (int i = 0; i < totalRecords; i++)
             {
                 var key1 = new MyKey { key = i };
-                bContext.Delete(ref key1);
+                _ = bContext.Delete(ref key1);
             }
 
             for (int i = 0; i < totalRecords; i++)
@@ -94,7 +97,7 @@ namespace Tsavorite.test
 
                 if (status.IsPending)
                 {
-                    bContext.CompletePendingWithOutputs(out var outputs, wait: true);
+                    _ = bContext.CompletePendingWithOutputs(out var outputs, wait: true);
                     (status, _) = GetSinglePendingResult(outputs);
                 }
                 Assert.IsFalse(status.Found);
@@ -121,14 +124,14 @@ namespace Tsavorite.test
             {
                 var _key = new MyKey { key = i };
                 var _value = new MyValue { value = i };
-                bContext.Upsert(ref _key, ref _value, 0);
+                _ = bContext.Upsert(ref _key, ref _value, 0);
             }
 
             var key100 = new MyKey { key = 100 };
             var value100 = new MyValue { value = 100 };
             var key200 = new MyKey { key = 200 };
 
-            bContext.Delete(ref key100);
+            _ = bContext.Delete(ref key100);
 
             var input = new MyInput { value = 1000 };
             var output = new MyOutput();
@@ -142,8 +145,8 @@ namespace Tsavorite.test
             Assert.IsTrue(status.Found, status.ToString());
             Assert.AreEqual(value100.value, output.value.value);
 
-            bContext.Delete(ref key100);
-            bContext.Delete(ref key200);
+            _ = bContext.Delete(ref key100);
+            _ = bContext.Delete(ref key200);
 
             // This RMW should create new initial value, since item is deleted
             status = bContext.RMW(ref key200, ref input, 1);
@@ -154,23 +157,23 @@ namespace Tsavorite.test
             Assert.AreEqual(input.value, output.value.value);
 
             // Delete key 200 again
-            bContext.Delete(ref key200);
+            _ = bContext.Delete(ref key200);
 
             // Eliminate all records from memory
             for (int i = 201; i < 2000; i++)
             {
                 var _key = new MyKey { key = i };
                 var _value = new MyValue { value = i };
-                bContext.Upsert(ref _key, ref _value, 0);
+                _ = bContext.Upsert(ref _key, ref _value, 0);
             }
             status = bContext.Read(ref key100, ref input, ref output, 1);
             Assert.IsTrue(status.IsPending);
-            bContext.CompletePending(true);
+            _ = bContext.CompletePending(true);
 
             // This RMW should create new initial value, since item is deleted
             status = bContext.RMW(ref key200, ref input, 1);
             Assert.IsTrue(status.IsPending);
-            bContext.CompletePending(true);
+            _ = bContext.CompletePending(true);
 
             status = bContext.Read(ref key200, ref input, ref output, 0);
             Assert.IsTrue(status.Found, status.ToString());

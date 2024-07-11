@@ -12,9 +12,10 @@ using static Tsavorite.test.TestUtils;
 
 namespace Tsavorite.test
 {
-#pragma warning disable IDE0065 // Misplaced using directive
     using StructStoreFunctions = StoreFunctions<KeyStruct, ValueStruct, KeyStruct.Comparer, NoSerializer<KeyStruct>, NoSerializer<ValueStruct>, DefaultRecordDisposer<KeyStruct, ValueStruct>>;
+    using StructAllocator = BlittableAllocator<KeyStruct, ValueStruct, StoreFunctions<KeyStruct, ValueStruct, KeyStruct.Comparer, NoSerializer<KeyStruct>, NoSerializer<ValueStruct>, DefaultRecordDisposer<KeyStruct, ValueStruct>>>;
     using LongStoreFunctions = StoreFunctions<long, long, LongKeyComparer, NoSerializer<long>, NoSerializer<long>, DefaultRecordDisposer<long, long>>;
+    using LongAllocator = BlittableAllocator<long, long, StoreFunctions<long, long, LongKeyComparer, NoSerializer<long>, NoSerializer<long>, DefaultRecordDisposer<long, long>>>;
 
     //** NOTE - more detailed / in depth Read tests in ReadAddressTests.cs 
     //** These tests ensure the basics are fully covered
@@ -22,9 +23,9 @@ namespace Tsavorite.test
     [TestFixture]
     internal class BasicTests
     {
-        private TsavoriteKV<KeyStruct, ValueStruct, StructStoreFunctions, BlittableAllocator<KeyStruct, ValueStruct, StructStoreFunctions>> store;
-        private ClientSession<KeyStruct, ValueStruct, InputStruct, OutputStruct, Empty, Functions, StructStoreFunctions, BlittableAllocator<KeyStruct, ValueStruct, StructStoreFunctions>> session;
-        private BasicContext<KeyStruct, ValueStruct, InputStruct, OutputStruct, Empty, Functions, StructStoreFunctions, BlittableAllocator<KeyStruct, ValueStruct, StructStoreFunctions>> bContext;
+        private TsavoriteKV<KeyStruct, ValueStruct, StructStoreFunctions, StructAllocator> store;
+        private ClientSession<KeyStruct, ValueStruct, InputStruct, OutputStruct, Empty, Functions, StructStoreFunctions, StructAllocator> session;
+        private BasicContext<KeyStruct, ValueStruct, InputStruct, OutputStruct, Empty, Functions, StructStoreFunctions, StructAllocator> bContext;
         private IDevice log;
         DeviceType deviceType;
 
@@ -48,11 +49,9 @@ namespace Tsavorite.test
                 {
                     IndexSize = 1L << 13,
                     LogDevice = log,
-                    MemorySize = 1 << 15,
-                    PageSize = 1 << 9,
-                    SegmentSize = 1 << 22
+                    MemorySize = 1 << 15, PageSize = 1 << 9, SegmentSize = 1 << 22
                 }, StoreFunctions<KeyStruct, ValueStruct>.Create(KeyStruct.Comparer.Instance)
-                , (allocatorSettings, storeFunctions) => new BlittableAllocator<KeyStruct, ValueStruct, StructStoreFunctions>()
+                , (allocatorSettings, storeFunctions) => new(allocatorSettings, storeFunctions)
             );
 
             session = store.NewSession<InputStruct, OutputStruct, Empty, Functions>(new Functions());
@@ -728,13 +727,13 @@ namespace Tsavorite.test
         {
             using var log = Devices.CreateLogDevice(Path.Join(MethodTestDir, "hlog.log"), deleteOnClose: false);
             
-            using var store = new TsavoriteKV<long, long, LongStoreFunctions, BlittableAllocator<long, long, LongStoreFunctions>>(
+            using var store = new TsavoriteKV<long, long, LongStoreFunctions, LongAllocator>(
                 new TsavoriteKVSettings<long, long>()
                 {
                     IndexSize = 1L << 26,
                     LogDevice = log,
                 }, StoreFunctions<long, long>.Create(LongKeyComparer.Instance)
-                , (allocatorSettings, storeFunctions) => new BlittableAllocator<long, long, LongStoreFunctions>()
+                , (allocatorSettings, storeFunctions) => new(allocatorSettings, storeFunctions)
             );
 
             using var s = store.NewSession<long, long, Empty, SimpleSimpleFunctions<long, long>>(new SimpleSimpleFunctions<long, long>());
@@ -768,13 +767,13 @@ namespace Tsavorite.test
         {
             using var log = Devices.CreateLogDevice(Path.Join(MethodTestDir, "hlog.log"), deleteOnClose: false);
 
-            using var store = new TsavoriteKV<long, long, LongStoreFunctions, BlittableAllocator<long, long, LongStoreFunctions>>(
+            using var store = new TsavoriteKV<long, long, LongStoreFunctions, LongAllocator>(
                 new TsavoriteKVSettings<long, long>()
                 {
                     IndexSize = 1L << 26,
                     LogDevice = log,
                 }, StoreFunctions<long, long>.Create(LongKeyComparer.Instance)
-                , (allocatorSettings, storeFunctions) => new BlittableAllocator<long, long, LongStoreFunctions>()
+                , (allocatorSettings, storeFunctions) => new(allocatorSettings, storeFunctions)
             );
 
             using var session = store.NewSession<long, long, Empty, SimpleSimpleFunctions<long, long>>(new SimpleSimpleFunctions<long, long>());
@@ -871,13 +870,13 @@ namespace Tsavorite.test
         {
             using var log = Devices.CreateLogDevice(Path.Join(MethodTestDir, "hlog.log"), deleteOnClose: false);
 
-            using var store = new TsavoriteKV<long, long, LongStoreFunctions, BlittableAllocator<long, long, LongStoreFunctions>>(
+            using var store = new TsavoriteKV<long, long, LongStoreFunctions, LongAllocator>(
                 new TsavoriteKVSettings<long, long>()
                 {
                     IndexSize = 1L << 26,
                     LogDevice = log,
                 }, StoreFunctions<long, long>.Create(LongKeyComparer.Instance)
-                , (allocatorSettings, storeFunctions) => new BlittableAllocator<long, long, LongStoreFunctions>()
+                , (allocatorSettings, storeFunctions) => new(allocatorSettings, storeFunctions)
             );
 
             using var session = store.NewSession<long, long, Empty, SimpleSimpleFunctions<long, long>>(new SimpleSimpleFunctions<long, long>());

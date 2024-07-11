@@ -26,7 +26,6 @@ namespace Tsavorite.test.LockTests
 
 namespace Tsavorite.test.LockTests
 {
-#pragma warning disable IDE0065 // Misplaced using directive
     using StructStoreFunctions = StoreFunctions<int, int, LocalIntKeyComparer, NoSerializer<int>, NoSerializer<int>, DefaultRecordDisposer<int, int>>;
 
     [TestFixture]
@@ -98,7 +97,7 @@ namespace Tsavorite.test.LockTests
                     IndexSize = 1L << 26,
                     LogDevice = log
                 }, StoreFunctions<int, int>.Create(keyComparer)
-                , (allocatorSettings, storeFunctions) => new BlittableAllocator<int, int, StructStoreFunctions>()
+                , (allocatorSettings, storeFunctions) => new (allocatorSettings, storeFunctions)
             );
             session = store.NewSession<int, int, Empty, Functions>(new Functions());
             bContext = session.BasicContext;

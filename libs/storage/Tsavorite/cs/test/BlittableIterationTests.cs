@@ -11,7 +11,6 @@ using static Tsavorite.test.TestUtils;
 
 namespace Tsavorite.test
 {
-#pragma warning disable IDE0065 // Misplaced using directive
     using StructStoreFunctions = StoreFunctions<KeyStruct, ValueStruct, KeyStruct.Comparer, NoSerializer<KeyStruct>, NoSerializer<ValueStruct>, DefaultRecordDisposer<KeyStruct, ValueStruct>>;
 
     [TestFixture]
@@ -74,7 +73,7 @@ namespace Tsavorite.test
                     PageSize = 1 << 9,
                     SegmentSize = 1 << 22
                 }, StoreFunctions<KeyStruct, ValueStruct>.Create(KeyStruct.Comparer.Instance)
-                , (allocatorSettings, storeFunctions) => new BlittableAllocator<KeyStruct, ValueStruct, StructStoreFunctions>()
+                , (allocatorSettings, storeFunctions) => new(allocatorSettings, storeFunctions)
             );
 
             using var session = store.NewSession<InputStruct, OutputStruct, int, FunctionsCompaction>(new FunctionsCompaction());
@@ -169,7 +168,7 @@ namespace Tsavorite.test
                     PageSize = 1 << 9,
                     SegmentSize = 1 << 22
                 }, StoreFunctions<KeyStruct, ValueStruct>.Create(KeyStruct.Comparer.Instance)
-                , (allocatorSettings, storeFunctions) => new BlittableAllocator<KeyStruct, ValueStruct, StructStoreFunctions>()
+                , (allocatorSettings, storeFunctions) => new(allocatorSettings, storeFunctions)
             );
 
             using var session = store.NewSession<InputStruct, OutputStruct, int, FunctionsCompaction>(new FunctionsCompaction());
@@ -219,7 +218,7 @@ namespace Tsavorite.test
                     PageSize = 1 << 20,
                     SegmentSize = 1 << 22
                 }, StoreFunctions<KeyStruct, ValueStruct>.Create(KeyStruct.Comparer.Instance)
-                , (allocatorSettings, storeFunctions) => new BlittableAllocator<KeyStruct, ValueStruct, StructStoreFunctions>()
+                , (allocatorSettings, storeFunctions) => new(allocatorSettings, storeFunctions)
             );
 
             const int totalRecords = 2000;

@@ -9,13 +9,15 @@ using Tsavorite.core;
 
 namespace Tsavorite.test
 {
+    using ClassStoreFunctions = StoreFunctions<byte[], byte[], ByteArrayEC, ByteArrayBinaryObjectSerializer, ByteArrayBinaryObjectSerializer, DefaultRecordDisposer<byte[], byte[]>>;
+    using ClassAllocator = GenericAllocator<byte[], byte[], StoreFunctions<byte[], byte[], ByteArrayEC, ByteArrayBinaryObjectSerializer, ByteArrayBinaryObjectSerializer, DefaultRecordDisposer<byte[], byte[]>>>;
 
     [TestFixture]
     internal class GenericByteArrayTests
     {
-        private TsavoriteKV<byte[], byte[]> store;
-        private ClientSession<byte[], byte[], byte[], byte[], Empty, MyByteArrayFuncs> session;
-        private BasicContext<byte[], byte[], byte[], byte[], Empty, MyByteArrayFuncs> bContext;
+        private TsavoriteKV<byte[], byte[], ClassStoreFunctions, ClassAllocator> store;
+        private ClientSession<byte[], byte[], byte[], byte[], Empty, MyByteArrayFuncs, ClassStoreFunctions, ClassAllocator> session;
+        private BasicContext<byte[], byte[], byte[], byte[], Empty, MyByteArrayFuncs, ClassStoreFunctions, ClassAllocator> bContext;
         private IDevice log, objlog;
 
         [SetUp]
@@ -25,11 +27,14 @@ namespace Tsavorite.test
             log = Devices.CreateLogDevice(Path.Join(TestUtils.MethodTestDir, "GenericStringTests.log"), deleteOnClose: true);
             objlog = Devices.CreateLogDevice(Path.Join(TestUtils.MethodTestDir, "GenericStringTests.obj.log"), deleteOnClose: true);
 
-            store = new TsavoriteKV<byte[], byte[]>(
-                    1L << 20, // size of hash table in #cache lines; 64 bytes per cache line
-                    new LogSettings { LogDevice = log, ObjectLogDevice = objlog, MutableFraction = 0.1, MemorySizeBits = 14, PageSizeBits = 9 }, // log device
-                    comparer: new ByteArrayEC()
-                    );
+            store = new (new TsavoriteKVSettings<byte[], byte[]>()
+                { 
+                    IndexSize = 1L << 26,
+                    LogDevice = log, ObjectLogDevice = objlog,
+                    MutableFraction = 0.1, MemorySize = 1 << 14, PageSize = 1 << 9
+                }, StoreFunctions<byte[], byte[]>.Create(new ByteArrayEC(), new ByteArrayBinaryObjectSerializer(), new ByteArrayBinaryObjectSerializer())
+                , (allocatorSettings, storeFunctions) => new(allocatorSettings, storeFunctions)
+            );
 
             session = store.NewSession<byte[], byte[], Empty, MyByteArrayFuncs>(new MyByteArrayFuncs());
             bContext = session.BasicContext;
@@ -65,9 +70,9 @@ namespace Tsavorite.test
             {
                 var _key = GetByteArray(i);
                 var _value = GetByteArray(i);
-                bContext.Upsert(ref _key, ref _value, Empty.Default);
+                _ = bContext.Upsert(ref _key, ref _value, Empty.Default);
             }
-            bContext.CompletePending(true);
+            _ = bContext.CompletePending(true);
 
             for (int i = 0; i < totalRecords; i++)
             {
@@ -77,13 +82,9 @@ namespace Tsavorite.test
                 var value = GetByteArray(i);
 
                 if (bContext.Read(ref key, ref input, ref output, Empty.Default).IsPending)
-                {
-                    bContext.CompletePending(true);
-                }
+                    _ = bContext.CompletePending(true);
                 else
-                {
                     Assert.IsTrue(output.SequenceEqual(value));
-                }
             }
         }
 

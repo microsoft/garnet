@@ -9,10 +9,16 @@ using static Tsavorite.test.TestUtils;
 
 namespace Tsavorite.test
 {
+    using ClassStoreFunctions = StoreFunctions<int, MyValue, IntKeyComparer, NoSerializer<int>, MyValueSerializer, DefaultRecordDisposer<int, MyValue>>;
+    using ClassAllocator = GenericAllocator<int, MyValue, StoreFunctions<int, MyValue, IntKeyComparer, NoSerializer<int>, MyValueSerializer, DefaultRecordDisposer<int, MyValue>>>;
+
+    using StructStoreFunctions = StoreFunctions<KeyStruct, ValueStruct, KeyStruct.Comparer, NoSerializer<KeyStruct>, NoSerializer<ValueStruct>, DefaultRecordDisposer<KeyStruct, ValueStruct>>;
+    using StructAllocator = BlittableAllocator<KeyStruct, ValueStruct, StoreFunctions<KeyStruct, ValueStruct, KeyStruct.Comparer, NoSerializer<KeyStruct>, NoSerializer<ValueStruct>, DefaultRecordDisposer<KeyStruct, ValueStruct>>>;
+
     [TestFixture]
     internal class MiscTests
     {
-        private TsavoriteKV<int, MyValue> store;
+        private TsavoriteKV<int, MyValue, ClassStoreFunctions, ClassAllocator> store;
         private IDevice log, objlog;
 
         [SetUp]
@@ -22,11 +28,17 @@ namespace Tsavorite.test
             log = Devices.CreateLogDevice(Path.Join(MethodTestDir, "MiscTests.log"), deleteOnClose: true);
             objlog = Devices.CreateLogDevice(Path.Join(MethodTestDir, "MiscTests.obj.log"), deleteOnClose: true);
 
-            store = new TsavoriteKV<int, MyValue>
-                (128,
-                logSettings: new LogSettings { LogDevice = log, ObjectLogDevice = objlog, MutableFraction = 0.1, MemorySizeBits = 15, PageSizeBits = 10 },
-                serializerSettings: new SerializerSettings<int, MyValue> { valueSerializer = () => new MyValueSerializer() }
-                );
+            store = new (new TsavoriteKVSettings<int, MyValue>()
+                {
+                    IndexSize = 1 << 13,
+                    LogDevice = log,
+                    ObjectLogDevice = objlog,
+                    MutableFraction = 0.1,
+                    MemorySize = 1 << 15,
+                    PageSize = 1 << 10
+                }, StoreFunctions<int, MyValue>.Create(IntKeyComparer.Instance, NoSerializer<int>.Instance, new MyValueSerializer())
+                , (allocatorSettings, storeFunctions) => new (allocatorSettings, storeFunctions)
+            );
         }
 
         [TearDown]
@@ -53,16 +65,16 @@ namespace Tsavorite.test
             var input1 = new MyInput { value = 23 };
             MyOutput output = new();
 
-            bContext.RMW(ref key, ref input1, Empty.Default);
+            _ = bContext.RMW(ref key, ref input1, Empty.Default);
 
             int key2 = 8999999;
             var input2 = new MyInput { value = 24 };
-            bContext.RMW(ref key2, ref input2, Empty.Default);
+            _ = bContext.RMW(ref key2, ref input2, Empty.Default);
 
-            bContext.Read(ref key, ref input1, ref output, Empty.Default);
+            _ = bContext.Read(ref key, ref input1, ref output, Empty.Default);
             Assert.AreEqual(input1.value, output.value.value);
 
-            bContext.Read(ref key2, ref input2, ref output, Empty.Default);
+            _ = bContext.Read(ref key2, ref input2, ref output, Empty.Default);
             Assert.AreEqual(input2.value, output.value.value);
         }
 
@@ -76,7 +88,7 @@ namespace Tsavorite.test
             for (int i = 0; i < 2000; i++)
             {
                 var value = new MyValue { value = i };
-                bContext.Upsert(ref i, ref value, Empty.Default);
+                _ = bContext.Upsert(ref i, ref value, Empty.Default);
             }
 
             var key2 = 23;
@@ -86,7 +98,7 @@ namespace Tsavorite.test
 
             if (status.IsPending)
             {
-                bContext.CompletePendingWithOutputs(out var outputs, wait: true);
+                _ = bContext.CompletePendingWithOutputs(out var outputs, wait: true);
                 (status, _) = GetSinglePendingResult(outputs);
             }
             Assert.IsTrue(status.Found);
@@ -98,7 +110,7 @@ namespace Tsavorite.test
 
             if (status.IsPending)
             {
-                bContext.CompletePendingWithOutputs(out var outputs, wait: true);
+                _ = bContext.CompletePendingWithOutputs(out var outputs, wait: true);
                 (status, _) = GetSinglePendingResult(outputs);
             }
             Assert.IsFalse(status.Found);
@@ -112,16 +124,22 @@ namespace Tsavorite.test
 
             // FunctionsCopyOnWrite
             var log = default(IDevice);
-            TsavoriteKV<KeyStruct, ValueStruct> store = default;
-            ClientSession<KeyStruct, ValueStruct, InputStruct, OutputStruct, Empty, FunctionsCopyOnWrite> session = default;
+            TsavoriteKV<KeyStruct, ValueStruct, StructStoreFunctions, StructAllocator> store = default;
+            ClientSession<KeyStruct, ValueStruct, InputStruct, OutputStruct, Empty, FunctionsCopyOnWrite, StructStoreFunctions, StructAllocator> session = default;
 
             try
             {
                 var checkpointDir = Path.Join(MethodTestDir, "checkpoints");
                 log = Devices.CreateLogDevice(Path.Join(MethodTestDir, "hlog1.log"), deleteOnClose: true);
-                store = new TsavoriteKV<KeyStruct, ValueStruct>
-                    (128, new LogSettings { LogDevice = log, MemorySizeBits = 29 },
-                    checkpointSettings: new CheckpointSettings { CheckpointDir = checkpointDir });
+                store = new (new TsavoriteKVSettings<KeyStruct, ValueStruct>()
+                    {
+                        IndexSize = 1 << 13,
+                        LogDevice = log,
+                        MemorySize = 1 << 29,
+                        CheckpointDir = checkpointDir
+                    }, StoreFunctions<KeyStruct, ValueStruct>.Create(KeyStruct.Comparer.Instance)
+                    , (allocatorSettings, storeFunctions) => new (allocatorSettings, storeFunctions)
+                );
 
                 session = store.NewSession<InputStruct, OutputStruct, Empty, FunctionsCopyOnWrite>(copyOnWrite);
                 var bContext = session.BasicContext;
@@ -162,17 +180,23 @@ namespace Tsavorite.test
                 status = bContext.Read(ref key, ref output);
                 Assert.IsTrue(status.Found, status.ToString());
 
-                store.TryInitiateFullCheckpoint(out Guid token, CheckpointType.Snapshot);
+                _ = store.TryInitiateFullCheckpoint(out Guid token, CheckpointType.Snapshot);
                 store.CompleteCheckpointAsync().AsTask().GetAwaiter().GetResult();
 
                 session.Dispose();
                 store.Dispose();
 
-                store = new TsavoriteKV<KeyStruct, ValueStruct>
-                    (128, new LogSettings { LogDevice = log, MemorySizeBits = 29 },
-                    checkpointSettings: new CheckpointSettings { CheckpointDir = checkpointDir });
+                store = new(new TsavoriteKVSettings<KeyStruct, ValueStruct>()
+                {
+                    IndexSize = 1 << 13,
+                    LogDevice = log,
+                    MemorySize = 1 << 29,
+                    CheckpointDir = checkpointDir
+                }, StoreFunctions<KeyStruct, ValueStruct>.Create(KeyStruct.Comparer.Instance)
+                    , (allocatorSettings, storeFunctions) => new (allocatorSettings, storeFunctions)
+                );
 
-                store.Recover(token);
+                _ = store.Recover(token);
                 session = store.NewSession<InputStruct, OutputStruct, Empty, FunctionsCopyOnWrite>(copyOnWrite);
 
                 using (var iterator = store.Log.Scan(store.Log.BeginAddress, store.Log.TailAddress))

@@ -7,11 +7,8 @@ using NUnit.Framework;
 using Tsavorite.core;
 using Tsavorite.test.recovery.sumstore;
 
-#pragma warning disable IDE0007 // Use implicit type
-
 namespace Tsavorite.test.statemachine
 {
-#pragma warning disable IDE0065 // Misplaced using directive
     using StructStoreFunctions = StoreFunctions<AdId, NumClicks, AdId.Comparer, NoSerializer<AdId>, NoSerializer<NumClicks>, DefaultRecordDisposer<AdId, NumClicks>>;
     using StructAllocator = BlittableAllocator<AdId, NumClicks, StoreFunctions<AdId, NumClicks, AdId.Comparer, NoSerializer<AdId>, NoSerializer<NumClicks>, DefaultRecordDisposer<AdId, NumClicks>>>;
 
@@ -43,7 +40,7 @@ namespace Tsavorite.test.statemachine
                     MemorySize = 1 << 13,
                     CheckpointDir = checkpointDir
                 }, StoreFunctions<AdId, NumClicks>.Create(new AdId.Comparer())
-                , (allocatorSettings, storeFunctions) => new(allocatorSettings, storeFunctions)
+                , (allocatorSettings, storeFunctions) => new (allocatorSettings, storeFunctions)
             );
         }
 

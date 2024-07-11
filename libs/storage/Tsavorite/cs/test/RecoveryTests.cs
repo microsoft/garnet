@@ -9,11 +9,8 @@ using NUnit.Framework;
 using Tsavorite.core;
 using static Tsavorite.test.TestUtils;
 
-#pragma warning disable IDE0007 // Use implicit type
-
 namespace Tsavorite.test.recovery.sumstore
 {
-#pragma warning disable IDE0065 // Misplaced using directive
     using StructStoreFunctions = StoreFunctions<AdId, NumClicks, AdId.Comparer, NoSerializer<AdId>, NoSerializer<NumClicks>, DefaultRecordDisposer<AdId, NumClicks>>;
     using StructAllocator = BlittableAllocator<AdId, NumClicks, StoreFunctions<AdId, NumClicks, AdId.Comparer, NoSerializer<AdId>, NoSerializer<NumClicks>, DefaultRecordDisposer<AdId, NumClicks>>>;
 
@@ -310,30 +307,23 @@ namespace Tsavorite.test.recovery.sumstore
 
         private async ValueTask TestDriver(AllocatorType allocatorType, [Values] bool isAsync)
         {
-            ValueTask task;
-            switch (allocatorType)
+            var task = allocatorType switch
             {
-                case AllocatorType.FixedBlittable:
-                    task = RunTest<long, LongStoreFunctions, LongAllocator>(allocatorType, 
-                        () => StoreFunctions<long, long>.Create(LongKeyComparer.Instance), 
-                        (allocatorSettings, storeFunctions) => new LongAllocator(allocatorSettings, storeFunctions),
-                        Populate, Read, Recover, isAsync);
-                    break;
-                case AllocatorType.SpanByte:
-                    task = RunTest<SpanByte, SpanByteStoreFunctions, SpanByteAllocator<SpanByteStoreFunctions>>(allocatorType,
-                        () => StoreFunctions<SpanByte, SpanByte>.Create(),
-                        (allocatorSettings, storeFunctions) => new SpanByteAllocator<SpanByteStoreFunctions>(allocatorSettings, storeFunctions),
-                        Populate, Read, Recover, isAsync);
-                    break;
-                case AllocatorType.Generic:
-                    task = RunTest<MyValue, MyValueStoreFunctions, MyValueAllocator>(allocatorType,
-                        () => StoreFunctions<MyValue, MyValue>.Create(new MyValue.Comparer(), new MyValueSerializer(), new MyValueSerializer(), DefaultRecordDisposer<MyValue, MyValue>.Instance),
-                        (allocatorSettings, storeFunctions) => new MyValueAllocator(allocatorSettings, storeFunctions),
-                        Populate, Read, Recover, isAsync);
-                    break;
-                default:
-                    throw new ApplicationException("Unknown allocator type");
+                AllocatorType.FixedBlittable => RunTest<long, LongStoreFunctions, LongAllocator>(allocatorType,
+                                                () => StoreFunctions<long, long>.Create(LongKeyComparer.Instance),
+                                                (allocatorSettings, storeFunctions) => new(allocatorSettings, storeFunctions),
+                                                Populate, Read, Recover, isAsync),
+                AllocatorType.SpanByte => RunTest<SpanByte, SpanByteStoreFunctions, SpanByteAllocator<SpanByteStoreFunctions>>(allocatorType,
+                                                StoreFunctions<SpanByte, SpanByte>.Create,
+                                                (allocatorSettings, storeFunctions) => new(allocatorSettings, storeFunctions),
+                                                Populate, Read, Recover, isAsync),
+                AllocatorType.Generic => RunTest<MyValue, MyValueStoreFunctions, MyValueAllocator>(allocatorType,
+                                                () => StoreFunctions<MyValue, MyValue>.Create(new MyValue.Comparer(), new MyValueSerializer(), new MyValueSerializer(), DefaultRecordDisposer<MyValue, MyValue>.Instance),
+                                                (allocatorSettings, storeFunctions) => new(allocatorSettings, storeFunctions),
+                                                Populate, Read, Recover, isAsync),
+                _ => throw new ApplicationException("Unknown allocator type"),
             };
+            ;
             await task;
         }
 
@@ -372,8 +362,8 @@ namespace Tsavorite.test.recovery.sumstore
             var bContext = session.BasicContext;
 
             for (int i = 0; i < DeviceTypeRecoveryTests.NumOps; i++)
-                bContext.Upsert(i % DeviceTypeRecoveryTests.NumUniqueKeys, i);
-            bContext.CompletePending(true);
+                _ = bContext.Upsert(i % DeviceTypeRecoveryTests.NumUniqueKeys, i);
+            _ = bContext.CompletePending(true);
         }
 
         static int GetRandomLength(Random r) => r.Next(StackAllocMax) + 1;  // +1 to remain in range 1..StackAllocMax
@@ -404,9 +394,9 @@ namespace Tsavorite.test.recovery.sumstore
                     valueSpan[j] = i;
                 var valueSpanByte = valueSpan.Slice(0, len).AsSpanByte();
 
-                bContext.Upsert(ref keySpanByte, ref valueSpanByte, Empty.Default);
+                _ = bContext.Upsert(ref keySpanByte, ref valueSpanByte, Empty.Default);
             }
-            bContext.CompletePending(true);
+            _ = bContext.CompletePending(true);
         }
 
         private unsafe void Populate(TsavoriteKV<MyValue, MyValue, MyValueStoreFunctions, MyValueAllocator> store)
@@ -418,9 +408,9 @@ namespace Tsavorite.test.recovery.sumstore
             {
                 var key = new MyValue { value = i % (int)DeviceTypeRecoveryTests.NumUniqueKeys };
                 var value = new MyValue { value = i };
-                bContext.Upsert(key, value);
+                _ = bContext.Upsert(key, value);
             }
-            bContext.CompletePending(true);
+            _ = bContext.CompletePending(true);
         }
 
         private async ValueTask Checkpoint<TData, TStoreFunctions, TAllocator>(TsavoriteKV<TData, TData, TStoreFunctions, TAllocator> store, bool isAsync)
@@ -516,9 +506,9 @@ namespace Tsavorite.test.recovery.sumstore
             where TAllocator : IAllocator<TData, TData, TStoreFunctions>
         {
             if (isAsync)
-                await store.RecoverAsync(indexToken, logToken);
+                _ = await store.RecoverAsync(indexToken, logToken);
             else
-                store.Recover(indexToken, logToken);
+                _ = store.Recover(indexToken, logToken);
         }
     }
 }

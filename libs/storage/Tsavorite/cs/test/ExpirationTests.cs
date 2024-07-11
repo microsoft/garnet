@@ -5,10 +5,13 @@ using System;
 using System.IO;
 using NUnit.Framework;
 using Tsavorite.core;
+using Tsavorite.test.Revivification;
 using static Tsavorite.test.TestUtils;
 
 namespace Tsavorite.test.Expiration
 {
+    using SpanByteStoreFunctions = StoreFunctions<SpanByte, SpanByte, SpanByteComparer, NoSerializer<SpanByte>, NoSerializer<SpanByte>, SpanByteRecordDisposer>;
+
     [TestFixture]
     internal class ExpirationTests
     {
@@ -513,9 +516,9 @@ namespace Tsavorite.test.Expiration
 
         IDevice log;
         ExpirationFunctions functions;
-        TsavoriteKV<SpanByte, SpanByte> store;
-        ClientSession<SpanByte, SpanByte, ExpirationInput, ExpirationOutput, Empty, ExpirationFunctions> session;
-        BasicContext<SpanByte, SpanByte, ExpirationInput, ExpirationOutput, Empty, ExpirationFunctions> bContext;
+        TsavoriteKV<SpanByte, SpanByte, SpanByteStoreFunctions, SpanByteAllocator<SpanByteStoreFunctions>> store;
+        ClientSession<SpanByte, SpanByte, ExpirationInput, ExpirationOutput, Empty, ExpirationFunctions, SpanByteStoreFunctions, SpanByteAllocator<SpanByteStoreFunctions>> session;
+        BasicContext<SpanByte, SpanByte, ExpirationInput, ExpirationOutput, Empty, ExpirationFunctions, SpanByteStoreFunctions, SpanByteAllocator<SpanByteStoreFunctions>> bContext;
 
         [SetUp]
         public void Setup()
@@ -523,10 +526,14 @@ namespace Tsavorite.test.Expiration
             DeleteDirectory(MethodTestDir, wait: true);
 
             log = Devices.CreateLogDevice(Path.Join(MethodTestDir, "hlog.log"), deleteOnClose: true);
-            store = new TsavoriteKV<SpanByte, SpanByte>
-                (128,
-                new LogSettings { LogDevice = log, MemorySizeBits = 19, PageSizeBits = 14 },
-                null, null, null);
+            store = new (new TsavoriteKVSettings<SpanByte, SpanByte>()
+                {
+                    IndexSize = 1 << 13,
+                    LogDevice = log,
+                    MemorySize = 1 << 19, PageSize = 1 << 14
+                }, StoreFunctions<SpanByte, SpanByte>.Create()
+                , (allocatorSettings, storeFunctions) => new(allocatorSettings, storeFunctions)
+            );
 
             functions = new ExpirationFunctions();
             session = store.NewSession<ExpirationInput, ExpirationOutput, Empty, ExpirationFunctions>(functions);

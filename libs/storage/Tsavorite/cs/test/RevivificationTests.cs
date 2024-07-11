@@ -13,8 +13,6 @@ using Tsavorite.core;
 using static Tsavorite.core.Utility;
 using static Tsavorite.test.TestUtils;
 
-#pragma warning disable IDE0007 // Use implicit type
-
 namespace Tsavorite.test.Revivification
 {
     // Must be in a separate block so the "using StructStoreFunctions" is the first line in its namespace declaration.
@@ -38,9 +36,12 @@ namespace Tsavorite.test.Revivification
 
 namespace Tsavorite.test.Revivification
 {
-#pragma warning disable IDE0065 // Misplaced using directive
     using IntStoreFunctions = StoreFunctions<int, int, IntKeyComparer, NoSerializer<int>, NoSerializer<int>, DefaultRecordDisposer<int, int>>;
+    using IntAllocator = BlittableAllocator<int, int, StoreFunctions<int, int, IntKeyComparer, NoSerializer<int>, NoSerializer<int>, DefaultRecordDisposer<int, int>>>;
+
     using ClassStoreFunctions = StoreFunctions<MyKey, MyValue, MyKey.Comparer, MyKeySerializer, MyValueSerializer, DefaultRecordDisposer<MyKey, MyValue>>;
+    using ClassAllocator = GenericAllocator<MyKey, MyValue, StoreFunctions<MyKey, MyValue, MyKey.Comparer, MyKeySerializer, MyValueSerializer, DefaultRecordDisposer<MyKey, MyValue>>>;
+
     using SpanByteStoreFunctions = StoreFunctions<SpanByte, SpanByte, RevivificationSpanByteComparer, NoSerializer<SpanByte>, NoSerializer<SpanByte>, SpanByteRecordDisposer>;
 
     public enum DeleteDest { FreeList, InChain }
@@ -240,9 +241,9 @@ namespace Tsavorite.test.Revivification
 
         RevivificationFixedLenFunctions functions;
 
-        private TsavoriteKV<int, int, IntStoreFunctions, BlittableAllocator<int, int, IntStoreFunctions>> store;
-        private ClientSession<int, int, int, int, Empty, RevivificationFixedLenFunctions, IntStoreFunctions, BlittableAllocator<int, int, IntStoreFunctions>> session;
-        private BasicContext<int, int, int, int, Empty, RevivificationFixedLenFunctions, IntStoreFunctions, BlittableAllocator<int, int, IntStoreFunctions>> bContext;
+        private TsavoriteKV<int, int, IntStoreFunctions, IntAllocator> store;
+        private ClientSession<int, int, int, int, Empty, RevivificationFixedLenFunctions, IntStoreFunctions, IntAllocator> session;
+        private BasicContext<int, int, int, int, Empty, RevivificationFixedLenFunctions, IntStoreFunctions, IntAllocator> bContext;
         private IDevice log;
 
         [SetUp]
@@ -280,7 +281,7 @@ namespace Tsavorite.test.Revivification
                     MemorySize = 1 << 20,
                     RevivificationSettings = revivificationSettings
                 }, StoreFunctions<int, int>.Create(IntKeyComparer.Instance)
-                , (allocatorSettings, storeFunctions) => new(allocatorSettings, storeFunctions));
+                , (allocatorSettings, storeFunctions) => new (allocatorSettings, storeFunctions));
             functions = new RevivificationFixedLenFunctions();
             session = store.NewSession<int, int, Empty, RevivificationFixedLenFunctions>(functions);
             bContext = session.BasicContext;
@@ -701,7 +702,7 @@ namespace Tsavorite.test.Revivification
             comparer = new RevivificationSpanByteComparer(collisionRange);
             store = new(kvSettings
                 , StoreFunctions<SpanByte, SpanByte>.Create(comparer, NoSerializer<SpanByte>.Instance, NoSerializer<SpanByte>.Instance, SpanByteRecordDisposer.Instance)
-                , (allocatorSettings, storeFunctions) => new SpanByteAllocator<SpanByteStoreFunctions>(allocatorSettings, storeFunctions)
+                , (allocatorSettings, storeFunctions) => new (allocatorSettings, storeFunctions)
             );
 
             functions = new RevivificationSpanByteFunctions(store);
@@ -1640,9 +1641,9 @@ namespace Tsavorite.test.Revivification
         internal const int ValueMult = 1_000_000;
 
         private MyFunctions functions;
-        private TsavoriteKV<MyKey, MyValue, ClassStoreFunctions, GenericAllocator<MyKey, MyValue, ClassStoreFunctions>> store;
-        private ClientSession<MyKey, MyValue, MyInput, MyOutput, Empty, MyFunctions, ClassStoreFunctions, GenericAllocator<MyKey, MyValue, ClassStoreFunctions>> session;
-        private BasicContext<MyKey, MyValue, MyInput, MyOutput, Empty, MyFunctions, ClassStoreFunctions, GenericAllocator<MyKey, MyValue, ClassStoreFunctions>> bContext;
+        private TsavoriteKV<MyKey, MyValue, ClassStoreFunctions, ClassAllocator> store;
+        private ClientSession<MyKey, MyValue, MyInput, MyOutput, Empty, MyFunctions, ClassStoreFunctions, ClassAllocator> session;
+        private BasicContext<MyKey, MyValue, MyInput, MyOutput, Empty, MyFunctions, ClassStoreFunctions, ClassAllocator> bContext;
         private IDevice log;
         private IDevice objlog;
 
@@ -1663,7 +1664,7 @@ namespace Tsavorite.test.Revivification
                     PageSize = 1 << 12,
                     RevivificationSettings = RevivificationSettings.DefaultFixedLength
                 }, StoreFunctions<MyKey, MyValue>.Create(new MyKey.Comparer(), new MyKeySerializer(), new MyValueSerializer(), DefaultRecordDisposer<MyKey, MyValue>.Instance)
-                , (allocatorSettings, storeFunctions) => new(allocatorSettings, storeFunctions)
+                , (allocatorSettings, storeFunctions) => new (allocatorSettings, storeFunctions)
             );
 
             functions = new MyFunctions();
@@ -1838,7 +1839,7 @@ namespace Tsavorite.test.Revivification
                     MemorySize = 1 << 20,
                     RevivificationSettings = RevivificationSettings.PowerOf2Bins
                 }, StoreFunctions<SpanByte, SpanByte>.Create(comparer, NoSerializer<SpanByte>.Instance, NoSerializer<SpanByte>.Instance, SpanByteRecordDisposer.Instance)
-                , (allocatorSettings, storeFunctions) => new SpanByteAllocator<SpanByteStoreFunctions>(allocatorSettings, storeFunctions)
+                , (allocatorSettings, storeFunctions) => new (allocatorSettings, storeFunctions)
             );
 
             functions = new RevivificationStressFunctions(keyComparer: null);

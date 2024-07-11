@@ -12,7 +12,6 @@ using static Tsavorite.test.TestUtils;
 
 namespace Tsavorite.test.LockTable
 {
-#pragma warning disable IDE0065 // Misplaced using directive
     using LongStoreFunctions = StoreFunctions<long, long, LongKeyComparer, NoSerializer<long>, NoSerializer<long>, DefaultRecordDisposer<long, long>>;
 
     internal class SingleBucketComparer : IKeyComparer<long>
@@ -59,7 +58,8 @@ namespace Tsavorite.test.LockTable
                     PageSize = 1 << 12,
                     MemorySize = 1 << 22
                 }, StoreFunctions<long, long>.Create(LongKeyComparer.Instance)
-                , (allocatorSettings, storeFunctions) => new BlittableAllocator<long, long, LongStoreFunctions>());
+                , (allocatorSettings, storeFunctions) => new (allocatorSettings, storeFunctions)
+            );
         }
 
         [TearDown]
@@ -157,7 +157,9 @@ namespace Tsavorite.test.LockTable
         internal unsafe void AssertTotalLockCounts(long expectedX, long expectedS)
             => AssertTotalLockCounts(store, expectedX, expectedS);
 
-        internal static unsafe void AssertTotalLockCounts(TsavoriteKV<long, long, LongStoreFunctions, BlittableAllocator<long, long, LongStoreFunctions>> store, long expectedX, long expectedS)
+        internal static unsafe void AssertTotalLockCounts<TStoreFunctions, TAllocator>(TsavoriteKV<long, long, TStoreFunctions, TAllocator> store, long expectedX, long expectedS)
+            where TStoreFunctions: IStoreFunctions<long, long>
+            where TAllocator : IAllocator<long, long, TStoreFunctions>
         {
             HashBucket* buckets = store.state[store.resizeInfo.version].tableAligned;
             var count = store.LockTable.NumBuckets;
@@ -174,7 +176,9 @@ namespace Tsavorite.test.LockTable
 
         internal void AssertBucketLockCount(ref FixedLengthLockableKeyStruct<long> key, long expectedX, long expectedS) => AssertBucketLockCount(store, ref key, expectedX, expectedS);
 
-        internal static unsafe void AssertBucketLockCount(TsavoriteKV<long, long, LongStoreFunctions, BlittableAllocator<long, long, LongStoreFunctions>> store, ref FixedLengthLockableKeyStruct<long> key, long expectedX, long expectedS)
+        internal static unsafe void AssertBucketLockCount<TStoreFunctions, TAllocator>(TsavoriteKV<long, long, TStoreFunctions, TAllocator> store, ref FixedLengthLockableKeyStruct<long> key, long expectedX, long expectedS)
+            where TStoreFunctions : IStoreFunctions<long, long>
+            where TAllocator : IAllocator<long, long, TStoreFunctions>
         {
             var bucketIndex = store.LockTable.GetBucketIndex(key.KeyHash);
             var bucket = store.state[store.resizeInfo.version].tableAligned + bucketIndex;
@@ -258,21 +262,21 @@ namespace Tsavorite.test.LockTable
         [Category(LockTestCategory), Category(LockTableTestCategory), Category(SmokeTestCategory)]
         public void ThreadedLockStressTest1Thread()
         {
-            List<Task> tasks = new();
+            List<Task> tasks = [];
             var lastTid = 0;
             AddThreads(tasks, ref lastTid, numThreads: 1, maxNumKeys: 5, lowKey: 1, highKey: 5, LockType.Exclusive);
-            Task.WaitAll(tasks.ToArray());
+            Task.WaitAll([.. tasks]);
         }
 
         [Test]
         [Category(LockTestCategory), Category(LockTableTestCategory), Category(SmokeTestCategory)]
         public void ThreadedLockStressTestMultiThreadsNoContention([Values(3, 8)] int numThreads)
         {
-            List<Task> tasks = new();
+            List<Task> tasks = [];
             var lastTid = 0;
             for (var ii = 0; ii < numThreads; ++ii)
                 AddThreads(tasks, ref lastTid, numThreads: 1, maxNumKeys: 5, lowKey: 1 + 10 * ii, highKey: 5 + 10 * ii, LockType.Exclusive);
-            Task.WaitAll(tasks.ToArray());
+            Task.WaitAll([.. tasks]);
             AssertTotalLockCounts(0, 0);
         }
 
@@ -280,10 +284,10 @@ namespace Tsavorite.test.LockTable
         [Category(LockTestCategory), Category(LockTableTestCategory), Category(SmokeTestCategory)]
         public void ThreadedLockStressTestMultiThreadsFullContention([Values(3, 8)] int numThreads, [Values] LockType lockType)
         {
-            List<Task> tasks = new();
+            List<Task> tasks = [];
             var lastTid = 0;
             AddThreads(tasks, ref lastTid, numThreads: numThreads, maxNumKeys: 5, lowKey: 1, highKey: 5, lockType);
-            Task.WaitAll(tasks.ToArray());
+            Task.WaitAll([.. tasks]);
             AssertTotalLockCounts(0, 0);
         }
 
@@ -291,10 +295,10 @@ namespace Tsavorite.test.LockTable
         [Category(LockTestCategory), Category(LockTableTestCategory), Category(SmokeTestCategory)]
         public void ThreadedLockStressTestMultiThreadsRandomContention([Values(3, 8)] int numThreads, [Values] LockType lockType)
         {
-            List<Task> tasks = new();
+            List<Task> tasks = [];
             var lastTid = 0;
             AddThreads(tasks, ref lastTid, numThreads: numThreads, maxNumKeys: 5, lowKey: 1, highKey: 10 * (numThreads / 2), lockType);
-            Task.WaitAll(tasks.ToArray());
+            Task.WaitAll([.. tasks]);
             AssertTotalLockCounts(0, 0);
         }
 
@@ -381,7 +385,7 @@ namespace Tsavorite.test.LockTable
         }
 
         const int NumTestIterations = 15;
-        const int maxSleepMs = 5;
+        const int MaxSleepMs = 5;
 
         private void AddThreads(List<Task> tasks, ref int lastTid, int numThreads, int maxNumKeys, int lowKey, int highKey, LockType lockType)
         {
@@ -391,7 +395,7 @@ namespace Tsavorite.test.LockTable
 
                 // maxNumKeys < 0 means use random number of keys
                 int numKeys = maxNumKeys < 0 ? rng.Next(1, -maxNumKeys) : maxNumKeys;
-                FixedLengthLockableKeyStruct<long>[] threadStructs = new FixedLengthLockableKeyStruct<long>[numKeys];
+                var threadStructs = new FixedLengthLockableKeyStruct<long>[numKeys];
 
                 long getNextKey()
                 {
@@ -432,7 +436,7 @@ namespace Tsavorite.test.LockTable
                     }
 
                     // Pretend to do work
-                    Thread.Sleep(rng.Next(maxSleepMs));
+                    Thread.Sleep(rng.Next(MaxSleepMs));
 
                     // Unlock
                     for (var ii = 0; ii < numKeys; ++ii)

@@ -120,6 +120,16 @@ namespace Tsavorite.core
             => new(keyComparer, keySerializer, valueSerializer, recordDisposer);
 
         /// <summary>
+        /// Construct a StoreFunctions instance with all types specified and contained instances passed, e.g. for custom objects.
+        /// </summary>
+        public static StoreFunctions<TKey, TValue, TKeyComparer, TKeySerializer, TValueSerializer, DefaultRecordDisposer<TKey, TValue>> Create<TKeyComparer, TKeySerializer, TValueSerializer>
+                (TKeyComparer keyComparer, TKeySerializer keySerializer, TValueSerializer valueSerializer)
+            where TKeyComparer : IKeyComparer<TKey>
+            where TKeySerializer : IObjectSerializer<TKey>
+            where TValueSerializer : IObjectSerializer<TValue>
+            => new(keyComparer, keySerializer, valueSerializer, new DefaultRecordDisposer<TKey, TValue>());
+
+        /// <summary>
         /// Store functions for <typeparamref name="TKey"/> and <typeparamref name="TValue"/> that take only the <paramref name="keyComparer"/>
         /// </summary>
         public static StoreFunctions<TKey, TValue, TKeyComparer, NoSerializer<TKey>, NoSerializer<TValue>, DefaultRecordDisposer<TKey, TValue>> Create<TKeyComparer>

@@ -8,6 +8,47 @@ using static Tsavorite.test.TestUtils;
 
 namespace Tsavorite.test.SingleWriter
 {
+    // Must be in a separate block so the "using StructStoreFunctions" is the first line in its namespace declaration.
+    public struct StructWithString(int intValue, string prefix)
+    {
+        public int intField = intValue;
+        public string stringField = prefix + intValue.ToString();
+
+        public override readonly string ToString() => stringField;
+
+        public class Comparer : IKeyComparer<StructWithString>
+        {
+            public long GetHashCode64(ref StructWithString k) => Utility.GetHashCode(k.intField);
+
+            public bool Equals(ref StructWithString k1, ref StructWithString k2) => k1.intField == k2.intField && k1.stringField == k2.stringField;
+        }
+
+        public class Serializer : BinaryObjectSerializer<StructWithString>
+        {
+            public override void Deserialize(out StructWithString obj)
+            {
+                var intField = reader.ReadInt32();
+                var stringField = reader.ReadString();
+                obj = new() { intField = intField, stringField = stringField };
+            }
+
+            public override void Serialize(ref StructWithString obj)
+            {
+                writer.Write(obj.intField);
+                writer.Write(obj.stringField);
+            }
+        }
+    }
+}
+
+namespace Tsavorite.test.SingleWriter
+{
+    using IntStoreFunctions = StoreFunctions<int, int, IntKeyComparer, NoSerializer<int>, NoSerializer<int>, DefaultRecordDisposer<int, int>>;
+    using IntAllocator = BlittableAllocator<int, int, StoreFunctions<int, int, IntKeyComparer, NoSerializer<int>, NoSerializer<int>, DefaultRecordDisposer<int, int>>>;
+
+    using StructStoreFunctions = StoreFunctions<StructWithString, StructWithString, StructWithString.Comparer, StructWithString.Serializer, StructWithString.Serializer, DefaultRecordDisposer<StructWithString, StructWithString>>;
+    using StructAllocator = BlittableAllocator<StructWithString, StructWithString, StoreFunctions<StructWithString, StructWithString, StructWithString.Comparer, StructWithString.Serializer, StructWithString.Serializer, DefaultRecordDisposer<StructWithString, StructWithString>>>;
+
     internal class SingleWriterTestFunctions : SimpleSimpleFunctions<int, int>
     {
         internal WriteReason actualReason;
@@ -28,15 +69,15 @@ namespace Tsavorite.test.SingleWriter
 
     class SingleWriterTests
     {
-        const int numRecords = 1000;
-        const int valueMult = 1_000_000;
-        const WriteReason NoReason = (WriteReason)(255);
+        const int NumRecords = 1000;
+        const int ValueMult = 1_000_000;
+        const WriteReason NoReason = (WriteReason)255;
 
         SingleWriterTestFunctions functions;
 
-        private TsavoriteKV<int, int> store;
-        private ClientSession<int, int, int, int, Empty, SingleWriterTestFunctions> session;
-        private BasicContext<int, int, int, int, Empty, SingleWriterTestFunctions> bContext;
+        private TsavoriteKV<int, int, IntStoreFunctions, IntAllocator> store;
+        private ClientSession<int, int, int, int, Empty, SingleWriterTestFunctions, IntStoreFunctions, IntAllocator> session;
+        private BasicContext<int, int, int, int, Empty, SingleWriterTestFunctions, IntStoreFunctions, IntAllocator> bContext;
         private IDevice log;
 
         [SetUp]
@@ -46,21 +87,34 @@ namespace Tsavorite.test.SingleWriter
             log = Devices.CreateLogDevice(Path.Combine(MethodTestDir, "test.log"), deleteOnClose: false);
 
             functions = new SingleWriterTestFunctions();
-            LogSettings logSettings = new LogSettings { LogDevice = log, ObjectLogDevice = null, PageSizeBits = 12, MemorySizeBits = 22, ReadCopyOptions = new(ReadCopyFrom.Device, ReadCopyTo.MainLog) };
+            TsavoriteKVSettings<int, int> kvSettings = new()
+                {
+                    IndexSize = 1 << 26,
+                    LogDevice = log,
+                    PageSize = 1 << 12,
+                    MemorySize = 1 << 22,
+                    ReadCopyOptions = new(ReadCopyFrom.Device, ReadCopyTo.MainLog),
+                    CheckpointDir = MethodTestDir
+                };
             foreach (var arg in TestContext.CurrentContext.Test.Arguments)
             {
                 if (arg is ReadCopyDestination dest)
                 {
                     if (dest == ReadCopyDestination.ReadCache)
                     {
-                        logSettings.ReadCacheSettings = new() { PageSizeBits = 12, MemorySizeBits = 22 };
-                        logSettings.ReadCopyOptions = default;
+                        kvSettings.ReadCachePageSize = 1 << 12;
+                        kvSettings.ReadCacheMemorySize = 1 << 22;
+                        kvSettings.ReadCacheEnabled = true;
+                        kvSettings.ReadCopyOptions = default;
                     }
                     break;
                 }
             }
 
-            store = new TsavoriteKV<int, int>(1L << 20, logSettings, new CheckpointSettings { CheckpointDir = MethodTestDir });
+            store = new (kvSettings
+                , StoreFunctions<int, int>.Create(IntKeyComparer.Instance)
+                , (allocatorSettings, storeFunctions) => new(allocatorSettings, storeFunctions)
+            );
             session = store.NewSession<int, int, Empty, SingleWriterTestFunctions>(functions);
             bContext = session.BasicContext;
         }
@@ -81,8 +135,8 @@ namespace Tsavorite.test.SingleWriter
         {
             int input = (int)WriteReason.Upsert;
             int output = 0;
-            for (int key = 0; key < numRecords; key++)
-                Assert.False(bContext.Upsert(key, input, key * valueMult, ref output).IsPending);
+            for (int key = 0; key < NumRecords; key++)
+                Assert.False(bContext.Upsert(key, input, key * ValueMult, ref output).IsPending);
         }
 
         [Test]
@@ -102,7 +156,7 @@ namespace Tsavorite.test.SingleWriter
             int input = (int)expectedReason;
             var status = bContext.Read(key, input, out int output);
             Assert.IsTrue(status.IsPending);
-            bContext.CompletePending(wait: true);
+            _ = bContext.CompletePending(wait: true);
             Assert.AreEqual(expectedReason, functions.actualReason);
 
             functions.actualReason = NoReason;
@@ -112,7 +166,7 @@ namespace Tsavorite.test.SingleWriter
             ReadOptions readOptions = new() { CopyOptions = new(ReadCopyFrom.AllImmutable, ReadCopyTo.MainLog) };
             status = bContext.Read(ref key, ref input, ref output, ref readOptions, out _);
             Assert.IsTrue(status.IsPending && !status.IsCompleted);
-            bContext.CompletePendingWithOutputs(out var outputs, wait: true);
+            _ = bContext.CompletePendingWithOutputs(out var outputs, wait: true);
             (status, output) = GetSinglePendingResult(outputs);
             Assert.IsTrue(!status.IsPending && status.IsCompleted && status.IsCompletedSuccessfully);
             Assert.IsTrue(status.Found && !status.NotFound && status.Record.Copied);
@@ -121,7 +175,7 @@ namespace Tsavorite.test.SingleWriter
             functions.actualReason = NoReason;
             expectedReason = WriteReason.Compaction;
             input = (int)expectedReason;
-            store.Log.Compact<int, int, Empty, SingleWriterTestFunctions>(functions, ref input, ref output, store.Log.SafeReadOnlyAddress, CompactionType.Scan);
+            _ = store.Log.Compact<int, int, Empty, SingleWriterTestFunctions>(functions, ref input, ref output, store.Log.SafeReadOnlyAddress, CompactionType.Scan);
             Assert.AreEqual(expectedReason, functions.actualReason);
         }
     }
@@ -129,57 +183,19 @@ namespace Tsavorite.test.SingleWriter
     [TestFixture]
     public class StructWithStringTests
     {
-        public struct StructWithString
-        {
-            public int intField;
-            public string stringField;
-
-            public StructWithString(int intValue, string prefix)
-            {
-                intField = intValue;
-                stringField = prefix + intValue.ToString();
-            }
-
-            public override string ToString() => stringField;
-
-            public class Comparer : IKeyComparer<StructWithString>
-            {
-                public long GetHashCode64(ref StructWithString k) => Utility.GetHashCode(k.intField);
-
-                public bool Equals(ref StructWithString k1, ref StructWithString k2)
-                    => k1.intField == k2.intField && k1.stringField == k2.stringField;
-            }
-
-            public class Serializer : BinaryObjectSerializer<StructWithString>
-            {
-                public override void Deserialize(out StructWithString obj)
-                {
-                    var intField = reader.ReadInt32();
-                    var stringField = reader.ReadString();
-                    obj = new() { intField = intField, stringField = stringField };
-                }
-
-                public override void Serialize(ref StructWithString obj)
-                {
-                    writer.Write(obj.intField);
-                    writer.Write(obj.stringField);
-                }
-            }
-        }
-
         internal class StructWithStringTestFunctions : SimpleSimpleFunctions<StructWithString, StructWithString>
         {
         }
 
-        const int numRecords = 1_000;
-        const string keyPrefix = "key_";
+        const int NumRecords = 1_000;
+        const string KeyPrefix = "key_";
         string valuePrefix = "value_";
 
         StructWithStringTestFunctions functions;
 
-        private TsavoriteKV<StructWithString, StructWithString> store;
-        private ClientSession<StructWithString, StructWithString, StructWithString, StructWithString, Empty, StructWithStringTestFunctions> session;
-        private BasicContext<StructWithString, StructWithString, StructWithString, StructWithString, Empty, StructWithStringTestFunctions> bContext;
+        private TsavoriteKV<StructWithString, StructWithString, StructStoreFunctions, StructAllocator> store;
+        private ClientSession<StructWithString, StructWithString, StructWithString, StructWithString, Empty, StructWithStringTestFunctions, StructStoreFunctions, StructAllocator> session;
+        private BasicContext<StructWithString, StructWithString, StructWithString, StructWithString, Empty, StructWithStringTestFunctions, StructStoreFunctions, StructAllocator> bContext;
         private IDevice log, objlog;
 
         [SetUp]
@@ -191,15 +207,16 @@ namespace Tsavorite.test.SingleWriter
             DeleteDirectory(MethodTestDir, wait: true);
             log = Devices.CreateLogDevice(Path.Combine(MethodTestDir, "test.log"), deleteOnClose: false);
             objlog = Devices.CreateLogDevice(Path.Combine(MethodTestDir, "test.obj.log"), deleteOnClose: false);
-            SerializerSettings<StructWithString, StructWithString> serializerSettings = new()
-            {
-                keySerializer = () => new StructWithString.Serializer(),
-                valueSerializer = () => new StructWithString.Serializer()
-            };
-            store = new TsavoriteKV<StructWithString, StructWithString>(1L << 20,
-                new LogSettings { LogDevice = log, ObjectLogDevice = objlog, PageSizeBits = 10, MemorySizeBits = 22, SegmentSizeBits = 16 },
-                new CheckpointSettings { CheckpointDir = MethodTestDir },
-                serializerSettings: serializerSettings, comparer: new StructWithString.Comparer());
+
+            store = new (new TsavoriteKVSettings<StructWithString, StructWithString>()
+                {
+                    IndexSize = 1L << 26,
+                    LogDevice = log, ObjectLogDevice = objlog, 
+                    PageSize = 1 << 10, MemorySize = 1 << 22, SegmentSize = 1 << 16,
+                    CheckpointDir = MethodTestDir
+                }, StoreFunctions<StructWithString, StructWithString>.Create(new StructWithString.Comparer(), new StructWithString.Serializer(), new StructWithString.Serializer())
+                , (allocatorSettings, storeFunctions) => new(allocatorSettings, storeFunctions)
+            );
 
             functions = new();
             session = store.NewSession<StructWithString, StructWithString, Empty, StructWithStringTestFunctions>(functions);
@@ -222,9 +239,9 @@ namespace Tsavorite.test.SingleWriter
 
         void Populate()
         {
-            for (int ii = 0; ii < numRecords; ii++)
+            for (int ii = 0; ii < NumRecords; ii++)
             {
-                StructWithString key = new(ii, keyPrefix);
+                StructWithString key = new(ii, KeyPrefix);
                 StructWithString value = new(ii, valuePrefix);
                 bContext.Upsert(ref key, ref value);
                 if (ii % 3_000 == 0)
@@ -242,7 +259,7 @@ namespace Tsavorite.test.SingleWriter
         {
             void readKey(int keyInt)
             {
-                StructWithString key = new(keyInt, keyPrefix);
+                StructWithString key = new(keyInt, KeyPrefix);
                 var (status, output) = bContext.Read(key);
                 if (status.IsPending)
                 {
@@ -267,7 +284,7 @@ namespace Tsavorite.test.SingleWriter
             {
                 count++;
             }
-            Assert.AreEqual(count, numRecords);
+            Assert.AreEqual(count, NumRecords);
 
             store.Log.Compact<StructWithString, StructWithString, Empty, StructWithStringTestFunctions>(functions, store.Log.SafeReadOnlyAddress, compactionType);
             readKey(48);

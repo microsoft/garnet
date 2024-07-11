@@ -8,7 +8,6 @@ using Tsavorite.devices;
 
 namespace Tsavorite.test
 {
-#pragma warning disable IDE0065 // Misplaced using directive
     using StructStoreFunctions = StoreFunctions<KeyStruct, ValueStruct, KeyStruct.Comparer, NoSerializer<KeyStruct>, NoSerializer<ValueStruct>, DefaultRecordDisposer<KeyStruct, ValueStruct>>;
 
     [TestFixture]
@@ -103,7 +102,7 @@ namespace Tsavorite.test
                     MemorySize = 1 << 15,
                     PageSize = 1 << 10,
                 }, StoreFunctions<KeyStruct, ValueStruct>.Create(KeyStruct.Comparer.Instance)
-                , (allocatorSettings, storeFunctions) => new BlittableAllocator<KeyStruct, ValueStruct, StructStoreFunctions>()
+                , (allocatorSettings, storeFunctions) => new (allocatorSettings, storeFunctions)
             );
 
             var session = store.NewSession<InputStruct, OutputStruct, Empty, Functions>(new Functions());

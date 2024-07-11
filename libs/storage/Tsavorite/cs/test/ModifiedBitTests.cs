@@ -10,25 +10,31 @@ using static Tsavorite.test.TestUtils;
 
 namespace Tsavorite.test.ModifiedBit
 {
-    internal class ModifiedBitTestComparer : IKeyComparer<int>
+    // Must be in a separate block so the "using StructStoreFunctions" is the first line in its namespace declaration.
+    internal struct ModifiedBitTestComparer : IKeyComparer<int>
     {
-        public bool Equals(ref int k1, ref int k2) => k1 == k2;
+        public readonly bool Equals(ref int k1, ref int k2) => k1 == k2;
 
-        public long GetHashCode64(ref int k) => Utility.GetHashCode(k);
+        public readonly long GetHashCode64(ref int k) => Utility.GetHashCode(k);
     }
+}
+
+namespace Tsavorite.test.ModifiedBit
+{
+    using IntStoreFunctions = StoreFunctions<int, int, ModifiedBitTestComparer, NoSerializer<int>, NoSerializer<int>, DefaultRecordDisposer<int, int>>;
+    using IntAllocator = BlittableAllocator<int, int, StoreFunctions<int, int, ModifiedBitTestComparer, NoSerializer<int>, NoSerializer<int>, DefaultRecordDisposer<int, int>>>;
 
     [TestFixture]
     class ModifiedBitTests
     {
-        const int numRecords = 1000;
-        const int valueMult = 1_000_000;
-
+        const int NumRecords = 1000;
+        const int ValueMult = 1_000_000;
 
         ModifiedBitTestComparer comparer;
 
-        private TsavoriteKV<int, int> store;
-        private ClientSession<int, int, int, int, Empty, SimpleSimpleFunctions<int, int>> session;
-        private BasicContext<int, int, int, int, Empty, SimpleSimpleFunctions<int, int>> bContext;
+        private TsavoriteKV<int, int, IntStoreFunctions, IntAllocator> store;
+        private ClientSession<int, int, int, int, Empty, SimpleSimpleFunctions<int, int>, IntStoreFunctions, IntAllocator> session;
+        private BasicContext<int, int, int, int, Empty, SimpleSimpleFunctions<int, int>, IntStoreFunctions, IntAllocator> bContext;
         private IDevice log;
 
         [SetUp]
@@ -36,7 +42,15 @@ namespace Tsavorite.test.ModifiedBit
         {
             log = Devices.CreateLogDevice(Path.Combine(MethodTestDir, "test.log"), deleteOnClose: false);
             comparer = new ModifiedBitTestComparer();
-            store = new TsavoriteKV<int, int>(1L << 20, new LogSettings { LogDevice = log, ObjectLogDevice = null, PageSizeBits = 12, MemorySizeBits = 22 }, comparer: comparer);
+            store = new(new TsavoriteKVSettings<int, int>()
+                {
+                    IndexSize = 1L << 26,
+                    LogDevice = log,
+                    PageSize = 1 << 12,
+                    MemorySize = 1 << 22
+                }, StoreFunctions<int, int>.Create(comparer)
+                , (allocatorSettings, storeFunctions) => new(allocatorSettings, storeFunctions)
+            );
             session = store.NewSession<int, int, Empty, SimpleSimpleFunctions<int, int>>(new SimpleSimpleFunctions<int, int>());
             bContext = session.BasicContext;
         }
@@ -54,25 +68,25 @@ namespace Tsavorite.test.ModifiedBit
 
         void Populate()
         {
-            for (int key = 0; key < numRecords; key++)
-                Assert.IsFalse(bContext.Upsert(key, key * valueMult).IsPending);
+            for (int key = 0; key < NumRecords; key++)
+                Assert.IsFalse(bContext.Upsert(key, key * ValueMult).IsPending);
         }
 
-        void AssertLockandModified(LockableUnsafeContext<int, int, int, int, Empty, SimpleSimpleFunctions<int, int>> luContext, int key, bool xlock, bool slock, bool modified = false)
+        void AssertLockandModified(LockableUnsafeContext<int, int, int, int, Empty, SimpleSimpleFunctions<int, int>, IntStoreFunctions, IntAllocator> luContext, int key, bool xlock, bool slock, bool modified = false)
         {
             OverflowBucketLockTableTests.AssertLockCounts(store, ref key, xlock, slock);
             var isM = luContext.IsModified(key);
             Assert.AreEqual(modified, isM, "modified mismatch");
         }
 
-        void AssertLockandModified(LockableContext<int, int, int, int, Empty, SimpleSimpleFunctions<int, int>> luContext, int key, bool xlock, bool slock, bool modified = false)
+        void AssertLockandModified(LockableContext<int, int, int, int, Empty, SimpleSimpleFunctions<int, int>, IntStoreFunctions, IntAllocator> luContext, int key, bool xlock, bool slock, bool modified = false)
         {
             OverflowBucketLockTableTests.AssertLockCounts(store, ref key, xlock, slock);
             var isM = luContext.IsModified(key);
             Assert.AreEqual(modified, isM, "modified mismatch");
         }
 
-        void AssertLockandModified(ClientSession<int, int, int, int, Empty, SimpleSimpleFunctions<int, int>> session, int key, bool xlock, bool slock, bool modified = false)
+        void AssertLockandModified(ClientSession<int, int, int, int, Empty, SimpleSimpleFunctions<int, int>, IntStoreFunctions, IntAllocator> session, int key, bool xlock, bool slock, bool modified = false)
         {
             var luContext = session.LockableUnsafeContext;
             luContext.BeginUnsafe();
@@ -90,7 +104,7 @@ namespace Tsavorite.test.ModifiedBit
         {
             Populate();
             Random r = new(100);
-            int key = r.Next(numRecords);
+            int key = r.Next(NumRecords);
             bContext.ResetModified(key);
 
             var lContext = session.LockableContext;
@@ -120,7 +134,7 @@ namespace Tsavorite.test.ModifiedBit
         public void ResetModifyForNonExistingKey()
         {
             Populate();
-            int key = numRecords + 100;
+            int key = NumRecords + 100;
             bContext.ResetModified(key);
             AssertLockandModified(session, key, xlock: false, slock: false, modified: false);
         }
@@ -131,7 +145,7 @@ namespace Tsavorite.test.ModifiedBit
         {
             Populate();
 
-            int key = numRecords - 500;
+            int key = NumRecords - 500;
             int value = 14;
             bContext.ResetModified(key);
             AssertLockandModified(session, key, xlock: false, slock: false, modified: false);
@@ -160,13 +174,13 @@ namespace Tsavorite.test.ModifiedBit
                 {
                     case UpdateOp.RMW:
                         Assert.IsTrue(status.IsPending, status.ToString());
-                        bContext.CompletePending(wait: true);
+                        _ = bContext.CompletePending(wait: true);
                         break;
                     default:
                         Assert.IsTrue(status.NotFound);
                         break;
                 }
-                (status, var _) = bContext.Read(key);
+                (status, _) = bContext.Read(key);
                 Assert.IsTrue(status.Found || updateOp == UpdateOp.Delete);
             }
 
@@ -182,7 +196,7 @@ namespace Tsavorite.test.ModifiedBit
         {
             Populate();
 
-            int key = numRecords - 500;
+            int key = NumRecords - 500;
             int value = 14;
             bContext.ResetModified(key);
             var luContext = session.LockableUnsafeContext;
@@ -225,7 +239,7 @@ namespace Tsavorite.test.ModifiedBit
                 {
                     case UpdateOp.RMW:
                         Assert.IsTrue(status.IsPending, status.ToString());
-                        luContext.CompletePending(wait: true);
+                        _ = luContext.CompletePending(wait: true);
                         break;
                     default:
                         Assert.IsTrue(status.NotFound);
@@ -239,7 +253,7 @@ namespace Tsavorite.test.ModifiedBit
             {
                 keyVec[0].LockType = LockType.Shared;
                 luContext.Lock(keyVec);
-                (status, var _) = luContext.Read(key);
+                (status, _) = luContext.Read(key);
                 Assert.AreEqual(updateOp != UpdateOp.Delete, status.Found, status.ToString());
                 luContext.Unlock(keyVec);
             }
@@ -256,7 +270,7 @@ namespace Tsavorite.test.ModifiedBit
         {
             Populate();
 
-            int key = numRecords - 500;
+            int key = NumRecords - 500;
             int value = 14;
             bContext.ResetModified(key);
             AssertLockandModified(session, key, xlock: false, slock: false, modified: false);
@@ -288,13 +302,13 @@ namespace Tsavorite.test.ModifiedBit
                 {
                     case UpdateOp.RMW:
                         Assert.IsTrue(status.IsPending, status.ToString());
-                        unsafeContext.CompletePending(wait: true);
+                        _ = unsafeContext.CompletePending(wait: true);
                         break;
                     default:
                         Assert.IsTrue(status.NotFound);
                         break;
                 }
-                (status, var _) = unsafeContext.Read(key);
+                (status, _) = unsafeContext.Read(key);
                 Assert.IsTrue(status.Found || updateOp == UpdateOp.Delete);
             }
             unsafeContext.EndUnsafe();
@@ -308,7 +322,7 @@ namespace Tsavorite.test.ModifiedBit
         {
             Populate();
 
-            int key = numRecords - 500;
+            int key = NumRecords - 500;
             int value = 14;
             bContext.ResetModified(key);
             var lContext = session.LockableContext;
@@ -345,7 +359,7 @@ namespace Tsavorite.test.ModifiedBit
                 {
                     case UpdateOp.RMW:
                         Assert.IsTrue(status.IsPending, status.ToString());
-                        lContext.CompletePending(wait: true);
+                        _ = lContext.CompletePending(wait: true);
                         break;
                     default:
                         Assert.IsTrue(status.NotFound);
@@ -359,7 +373,7 @@ namespace Tsavorite.test.ModifiedBit
             {
                 keyVec[0].LockType = LockType.Shared;
                 lContext.Lock(keyVec);
-                (status, var _) = lContext.Read(key);
+                (status, _) = lContext.Read(key);
                 Assert.AreEqual(updateOp != UpdateOp.Delete, status.Found, status.ToString());
                 lContext.Unlock(keyVec);
             }
@@ -392,7 +406,7 @@ namespace Tsavorite.test.ModifiedBit
             // Check Read Copy to Tail resets the modified
             var status = luContext.Read(ref key, ref input, ref output, ref readOptions, out _);
             Assert.IsTrue(status.IsPending, status.ToString());
-            luContext.CompletePending(wait: true);
+            _ = luContext.CompletePending(wait: true);
 
             luContext.Unlock(keyVec);
             AssertLockandModified(luContext, key, xlock: false, slock: false, modified: true);
@@ -403,7 +417,7 @@ namespace Tsavorite.test.ModifiedBit
             luContext.Lock(keyVec);
             status = luContext.Read(ref key, ref input, ref output, ref readOptions, out _);
             Assert.IsTrue(status.IsPending, status.ToString());
-            luContext.CompletePending(wait: true);
+            _ = luContext.CompletePending(wait: true);
             AssertLockandModified(luContext, key, xlock: true, slock: false, modified: true);
             luContext.Unlock(keyVec);
             AssertLockandModified(luContext, key, xlock: false, slock: false, modified: true);
