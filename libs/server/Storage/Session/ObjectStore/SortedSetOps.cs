@@ -323,8 +323,8 @@ namespace Garnet.server
             var status = RMWObjectStoreOperationWithOutput(key.ToArray(), input, ref objectStoreContext, ref outputFooter);
 
             //process output
-            //if (status == GarnetStatus.OK)
-            ProcessRespArrayOutput(outputFooter, out _);
+            if (status == GarnetStatus.OK)
+                pairs = ProcessRespArrayOutputAsPairs(outputFooter, out _);
 
             return status;
         }

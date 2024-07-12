@@ -187,6 +187,63 @@ namespace Garnet.server
         }
 
         /// <summary>
+        /// Processes RESP output as pairs of score and member. 
+        /// </summary>
+        unsafe (ArgSlice score, ArgSlice member)[] ProcessRespArrayOutputAsPairs(GarnetObjectStoreOutput outputFooter, out string error)
+        {
+            (ArgSlice score, ArgSlice member)[] result = default;
+            error = default;
+            byte* element = null;
+            var len = 0;
+            var outputSpan = outputFooter.spanByteAndMemory.IsSpanByte ?
+                             outputFooter.spanByteAndMemory.SpanByte.AsReadOnlySpan() : outputFooter.spanByteAndMemory.AsMemoryReadOnlySpan();
+
+            try
+            {
+                fixed (byte* outputPtr = outputSpan)
+                {
+                    var refPtr = outputPtr;
+
+                    if (*refPtr == '-')
+                    {
+                        if (!RespReadUtils.ReadErrorAsString(out error, ref refPtr, outputPtr + outputSpan.Length))
+                            return default;
+                    }
+                    else if (*refPtr == '*')
+                    {
+                        // Get the number of result elements
+                        if (!RespReadUtils.ReadUnsignedArrayLength(out var arraySize, ref refPtr, outputPtr + outputSpan.Length))
+                            return default;
+
+                        Debug.Assert(arraySize % 2 == 0, "Array elements are expected to be in pairs");
+                        arraySize /= 2; // Halve the array size to hold items as pairs
+                        result = new (ArgSlice score, ArgSlice member)[arraySize];
+
+                        for (var i = 0; i < result.Length; i++)
+                        {
+                            if (!RespReadUtils.ReadPtrWithLengthHeader(ref element, ref len, ref refPtr, outputPtr + outputSpan.Length))
+                                return default;
+
+                            result[i].score = new ArgSlice(element, len);
+
+                            if (!RespReadUtils.ReadPtrWithLengthHeader(ref element, ref len, ref refPtr, outputPtr + outputSpan.Length))
+                                return default;
+
+                            result[i].member = new ArgSlice(element, len);
+                        }
+                    }
+                }
+            }
+            finally
+            {
+                if (!outputFooter.spanByteAndMemory.IsSpanByte)
+                    outputFooter.spanByteAndMemory.Memory.Dispose();
+            }
+
+            return result;
+        }
+
+        /// <summary>
         /// Converts a single token in RESP format to ArgSlice type
         /// </summary>
         /// <param name="outputFooter">The RESP format output object</param>
