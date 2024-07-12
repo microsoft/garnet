@@ -1099,7 +1099,7 @@ namespace Garnet.test
             expectedResponse = "*2\r\n$1\r\nc\r\n$1\r\nb\r\n";
             actualValue = Encoding.ASCII.GetString(response).Substring(0, expectedResponse.Length);
             Assert.AreEqual(expectedResponse, actualValue);
-            
+
             //by lex with different range
             response = lightClientRequest.SendCommand("ZRANGE board [g (aaa BYLEX REV", 6);
             expectedResponse = "*5\r\n$1\r\nf\r\n$1\r\ne\r\n$1\r\nd\r\n$1\r\nc\r\n$1\r\nb\r\n";
