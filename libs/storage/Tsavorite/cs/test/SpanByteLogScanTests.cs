@@ -7,39 +7,46 @@ using System.Runtime.InteropServices;
 using System.Threading.Tasks;
 using NUnit.Framework;
 using Tsavorite.core;
+using Tsavorite.test.Revivification;
 using static Tsavorite.core.Utility;
 using static Tsavorite.test.TestUtils;
 
-namespace Tsavorite.test
+namespace Tsavorite.test.spanbyte
 {
+    // Must be in a separate block so the "using SpanByteStoreFunctions" is the first line in its namespace declaration.
+    struct SpanByteComparerModulo : IKeyComparer<SpanByte>
+    {
+        readonly long mod;
+
+        internal SpanByteComparerModulo(long mod) => this.mod = mod;
+
+        public bool Equals(ref SpanByte k1, ref SpanByte k2) => SpanByteComparer.StaticEquals(ref k1, ref k2);
+
+        // Force collisions to create a chain
+        public long GetHashCode64(ref SpanByte k)
+        {
+            long hash = SpanByteComparer.StaticGetHashCode64(ref k);
+            return mod > 0 ? hash % mod : hash;
+        }
+    }
+}
+
+namespace Tsavorite.test.spanbyte
+{
+    using SpanByteStoreFunctions = StoreFunctions<SpanByte, SpanByte, SpanByteComparerModulo, NoSerializer<SpanByte>, NoSerializer<SpanByte>, SpanByteRecordDisposer>;
+
     [TestFixture]
     internal class SpanByteLogScanTests
     {
-        private TsavoriteKV<SpanByte, SpanByte> store;
+        private TsavoriteKV<SpanByte, SpanByte, SpanByteStoreFunctions, SpanByteAllocator<SpanByteStoreFunctions>> store;
         private IDevice log;
-        const int totalRecords = 2000;
+        const int TotalRecords = 2000;
         const int PageSizeBits = 15;
-
-        struct SpanByteComparerModulo : IKeyComparer<SpanByte>
-        {
-            readonly long mod;
-
-            internal SpanByteComparerModulo(long mod) => this.mod = mod;
-
-            public bool Equals(ref SpanByte k1, ref SpanByte k2) => SpanByteComparer.StaticEquals(ref k1, ref k2);
-
-            // Force collisions to create a chain
-            public long GetHashCode64(ref SpanByte k)
-            {
-                long hash = SpanByteComparer.StaticGetHashCode64(ref k);
-                return mod > 0 ? hash % mod : hash;
-            }
-        }
 
         [SetUp]
         public void Setup()
         {
-            IKeyComparer<SpanByte> comparer = null;
+            SpanByteComparerModulo comparer = new(0);
             foreach (var arg in TestContext.CurrentContext.Test.Arguments)
             {
                 if (arg is HashModulo mod && mod == HashModulo.Hundred)
@@ -51,8 +58,14 @@ namespace Tsavorite.test
 
             DeleteDirectory(MethodTestDir, wait: true);
             log = Devices.CreateLogDevice(Path.Join(MethodTestDir, "test.log"), deleteOnClose: true);
-            store = new TsavoriteKV<SpanByte, SpanByte>
-                (1L << 20, new LogSettings { LogDevice = log, MemorySizeBits = 25, PageSizeBits = PageSizeBits }, comparer: comparer);
+            store = new (new TsavoriteKVSettings<SpanByte, SpanByte>()
+                {
+                    IndexSize = 1L << 26,
+                    LogDevice = log,
+                    MemorySize = 1 << 25, PageSize = 1 << PageSizeBits
+                }, StoreFunctions<SpanByte, SpanByte>.Create(comparer, NoSerializer<SpanByte>.Instance, NoSerializer<SpanByte>.Instance, SpanByteRecordDisposer.Instance)
+                , (allocatorSettings, storeFunctions) => new(allocatorSettings, storeFunctions)
+            );
         }
 
         [TearDown]
@@ -89,7 +102,7 @@ namespace Tsavorite.test
 
             Random rng = new(101);
 
-            for (int i = 0; i < totalRecords; i++)
+            for (int i = 0; i < TotalRecords; i++)
             {
                 var valueFill = new string('x', rng.Next(120));  // Make the record lengths random
                 var key = MemoryMarshal.Cast<char, byte>($"key_{i}".AsSpan());
@@ -98,7 +111,7 @@ namespace Tsavorite.test
                 fixed (byte* keyPtr = key)
                 fixed (byte* valuePtr = value)
                 {
-                    bContext.Upsert(SpanByte.FromPinnedPointer(keyPtr, key.Length), SpanByte.FromPinnedPointer(valuePtr, value.Length));
+                    _ = bContext.Upsert(SpanByte.FromPinnedPointer(keyPtr, key.Length), SpanByte.FromPinnedPointer(valuePtr, value.Length));
                 }
             }
 
@@ -116,7 +129,7 @@ namespace Tsavorite.test
                     scanCursorFuncs.Initialize(verifyKeys: true);
                     while (session.ScanCursor(ref cursor, counts[iCount], scanCursorFuncs, endAddresses[iAddr]))
                         ;
-                    Assert.AreEqual(totalRecords, scanCursorFuncs.numRecords, $"count: {counts[iCount]}, endAddress {endAddresses[iAddr]}");
+                    Assert.AreEqual(TotalRecords, scanCursorFuncs.numRecords, $"count: {counts[iCount]}, endAddress {endAddresses[iAddr]}");
                     Assert.AreEqual(0, cursor, "Expected cursor to be 0, pt 1");
                 }
             }
@@ -129,31 +142,31 @@ namespace Tsavorite.test
             // Scan and verify we see them all
             scanCursorFuncs.Initialize(verifyKeys);
             Assert.IsFalse(session.ScanCursor(ref cursor, long.MaxValue, scanCursorFuncs, long.MaxValue), "Expected scan to finish and return false, pt 1");
-            Assert.AreEqual(totalRecords, scanCursorFuncs.numRecords, "Unexpected count for all on-disk");
+            Assert.AreEqual(TotalRecords, scanCursorFuncs.numRecords, "Unexpected count for all on-disk");
             Assert.AreEqual(0, cursor, "Expected cursor to be 0, pt 2");
 
             // Add another totalRecords, with keys incremented by totalRecords to remain distinct, and verify we see all keys.
-            for (int i = 0; i < totalRecords; i++)
+            for (int i = 0; i < TotalRecords; i++)
             {
                 var valueFill = new string('x', rng.Next(120));  // Make the record lengths random
-                var key = MemoryMarshal.Cast<char, byte>($"key_{i + totalRecords}".AsSpan());
-                var value = MemoryMarshal.Cast<char, byte>($"v{valueFill}_{i + totalRecords}".AsSpan());
+                var key = MemoryMarshal.Cast<char, byte>($"key_{i + TotalRecords}".AsSpan());
+                var value = MemoryMarshal.Cast<char, byte>($"v{valueFill}_{i + TotalRecords}".AsSpan());
 
                 fixed (byte* keyPtr = key)
                 fixed (byte* valuePtr = value)
                 {
-                    bContext.Upsert(SpanByte.FromPinnedPointer(keyPtr, key.Length), SpanByte.FromPinnedPointer(valuePtr, value.Length));
+                    _ = bContext.Upsert(SpanByte.FromPinnedPointer(keyPtr, key.Length), SpanByte.FromPinnedPointer(valuePtr, value.Length));
                 }
             }
             scanCursorFuncs.Initialize(verifyKeys);
             Assert.IsFalse(session.ScanCursor(ref cursor, long.MaxValue, scanCursorFuncs, long.MaxValue), "Expected scan to finish and return false, pt 2");
-            Assert.AreEqual(totalRecords * 2, scanCursorFuncs.numRecords, "Unexpected count for on-disk + in-mem");
+            Assert.AreEqual(TotalRecords * 2, scanCursorFuncs.numRecords, "Unexpected count for on-disk + in-mem");
             Assert.AreEqual(0, cursor, "Expected cursor to be 0, pt 3");
 
             // Try an invalid cursor (not a multiple of 8) on-disk and verify we get one correct record. Use 3x page size to make sure page boundaries are tested.
-            Assert.Greater(store.hlog.GetTailAddress(), PageSize * 10, "Need enough space to exercise this");
+            Assert.Greater(store.hlogBase.GetTailAddress(), PageSize * 10, "Need enough space to exercise this");
             scanCursorFuncs.Initialize(verifyKeys);
-            cursor = store.hlog.BeginAddress - 1;
+            cursor = store.hlogBase.BeginAddress - 1;
             do
             {
                 Assert.IsTrue(session.ScanCursor(ref cursor, 1, scanCursorFuncs, long.MaxValue, validateCursor: true), "Expected scan to finish and return false, pt 1");
@@ -164,7 +177,7 @@ namespace Tsavorite.test
             SpanByte input = default;
             SpanByteAndMemory output = default;
             ReadOptions readOptions = default;
-            var readStatus = bContext.ReadAtAddress(store.hlog.HeadAddress, ref input, ref output, ref readOptions, out _);
+            var readStatus = bContext.ReadAtAddress(store.hlogBase.HeadAddress, ref input, ref output, ref readOptions, out _);
             Assert.IsTrue(readStatus.Found, $"Could not read at HeadAddress; {readStatus}");
             var keyString = new string(MemoryMarshal.Cast<byte, char>(output.AsReadOnlySpan()));
             var keyOrdinal = int.Parse(keyString.Substring(keyString.IndexOf('_') + 1));
@@ -177,7 +190,7 @@ namespace Tsavorite.test
             {
                 Assert.IsTrue(session.ScanCursor(ref cursor, 1, scanCursorFuncs, long.MaxValue, validateCursor: true), "Expected scan to finish and return false, pt 1");
                 cursor = scanCursorFuncs.lastAddress + scanCursorFuncs.lastRecordSize + 1;
-            } while (cursor < store.hlog.HeadAddress + PageSize * 3);
+            } while (cursor < store.hlogBase.HeadAddress + PageSize * 3);
         }
 
         [Test]
@@ -190,7 +203,7 @@ namespace Tsavorite.test
 
             Random rng = new(101);
 
-            for (int i = 0; i < totalRecords; i++)
+            for (int i = 0; i < TotalRecords; i++)
             {
                 var valueFill = new string('x', rng.Next(120));  // Make the record lengths random
                 var key = MemoryMarshal.Cast<char, byte>($"key_{i}".AsSpan());
@@ -199,7 +212,7 @@ namespace Tsavorite.test
                 fixed (byte* keyPtr = key)
                 fixed (byte* valuePtr = value)
                 {
-                    bContext.Upsert(SpanByte.FromPinnedPointer(keyPtr, key.Length), SpanByte.FromPinnedPointer(valuePtr, value.Length));
+                    _ = bContext.Upsert(SpanByte.FromPinnedPointer(keyPtr, key.Length), SpanByte.FromPinnedPointer(valuePtr, value.Length));
                 }
             }
 
@@ -231,7 +244,7 @@ namespace Tsavorite.test
 
             Random rng = new(101);
 
-            for (int i = 0; i < totalRecords; i++)
+            for (int i = 0; i < TotalRecords; i++)
             {
                 var valueFill = new string('x', rng.Next(120));  // Make the record lengths random
                 var key = MemoryMarshal.Cast<char, byte>($"key_{i}".AsSpan());
@@ -240,14 +253,14 @@ namespace Tsavorite.test
                 fixed (byte* keyPtr = key)
                 fixed (byte* valuePtr = value)
                 {
-                    bContext.Upsert(SpanByte.FromPinnedPointer(keyPtr, key.Length), SpanByte.FromPinnedPointer(valuePtr, value.Length));
+                    _ = bContext.Upsert(SpanByte.FromPinnedPointer(keyPtr, key.Length), SpanByte.FromPinnedPointer(valuePtr, value.Length));
                 }
             }
 
             var scanCursorFuncs = new ScanCursorFuncs(store)
             {
                 rcuLocation = rcuLocation,
-                rcuRecord = totalRecords - 10
+                rcuRecord = TotalRecords - 10
             };
 
             long cursor = 0;
@@ -256,20 +269,20 @@ namespace Tsavorite.test
             {
                 // RCU before we hit the record - verify we see it once; the original record is Sealed, and we see the one at the Tail.
                 Assert.IsFalse(session.ScanCursor(ref cursor, long.MaxValue, scanCursorFuncs, long.MaxValue), "Expected scan to finish and return false, pt 1");
-                Assert.AreEqual(totalRecords, scanCursorFuncs.numRecords, "Unexpected count for RCU before we hit the scan value");
+                Assert.AreEqual(TotalRecords, scanCursorFuncs.numRecords, "Unexpected count for RCU before we hit the scan value");
             }
             else
             {
                 // RCU after we hit the record - verify we see it twice; once before we update, of course, then once again after it's added at the Tail.
                 Assert.IsFalse(session.ScanCursor(ref cursor, long.MaxValue, scanCursorFuncs, long.MaxValue), "Expected scan to finish and return false, pt 1");
-                Assert.AreEqual(totalRecords + 1, scanCursorFuncs.numRecords, "Unexpected count for RCU after we hit the scan value");
+                Assert.AreEqual(TotalRecords + 1, scanCursorFuncs.numRecords, "Unexpected count for RCU after we hit the scan value");
             }
             Assert.IsTrue(scanCursorFuncs.rcuDone, "RCU was not done");
         }
 
         internal sealed class ScanCursorFuncs : IScanIteratorFunctions<SpanByte, SpanByte>
         {
-            readonly TsavoriteKV<SpanByte, SpanByte> store;
+            readonly TsavoriteKV<SpanByte, SpanByte, SpanByteStoreFunctions, SpanByteAllocator<SpanByteStoreFunctions>> store;
 
             internal int numRecords;
             internal long lastAddress;
@@ -279,7 +292,7 @@ namespace Tsavorite.test
             internal bool rcuDone, verifyKeys;
             internal Func<int, bool> filter;
 
-            internal ScanCursorFuncs(TsavoriteKV<SpanByte, SpanByte> store)
+            internal ScanCursorFuncs(TsavoriteKV<SpanByte, SpanByte, SpanByteStoreFunctions, SpanByteAllocator<SpanByteStoreFunctions>> store)
             {
                 this.store = store;
                 Initialize(verifyKeys: true);
@@ -316,7 +329,7 @@ namespace Tsavorite.test
                         fixed (byte* keyPtr = key)
                         fixed (byte* valuePtr = value)
                         {
-                            bContext.Upsert(SpanByte.FromPinnedPointer(keyPtr, key.Length), SpanByte.FromPinnedPointer(valuePtr, value.Length));
+                            _ = bContext.Upsert(SpanByte.FromPinnedPointer(keyPtr, key.Length), SpanByte.FromPinnedPointer(valuePtr, value.Length));
                         }
                     }).Wait();
 
@@ -338,7 +351,7 @@ namespace Tsavorite.test
 
                 if (verifyKeys)
                 {
-                    if (rcuLocation != RCULocation.RCUNone && numRecords == totalRecords - rcuOffset)
+                    if (rcuLocation != RCULocation.RCUNone && numRecords == TotalRecords - rcuOffset)
                         Assert.AreEqual(rcuRecord, kfield1, "Expected to find the rcuRecord value at end of RCU-testing enumeration");
                     else
                         Assert.AreEqual(numRecords + rcuOffset, kfield1, "Mismatched key field on Scan");
@@ -372,8 +385,16 @@ namespace Tsavorite.test
         {
             DeleteDirectory(MethodTestDir, wait: true);
             using var log = Devices.CreateLogDevice(Path.Join(MethodTestDir, "test.log"), deleteOnClose: true);
-            using var store = new TsavoriteKV<SpanByte, SpanByte>
-                (1L << 20, new LogSettings { LogDevice = log, MemorySizeBits = 20, PageSizeBits = 15 });
+
+            store = new(new TsavoriteKVSettings<SpanByte, SpanByte>()
+                {
+                    IndexSize = 1L << 26,
+                    LogDevice = log,
+                    MemorySize = 1 << 20, PageSize = 1 << PageSizeBits
+                }, StoreFunctions<SpanByte, SpanByte>.Create(new SpanByteComparerModulo(0), NoSerializer<SpanByte>.Instance, NoSerializer<SpanByte>.Instance, SpanByteRecordDisposer.Instance)
+                , (allocatorSettings, storeFunctions) => new(allocatorSettings, storeFunctions)
+            );
+
             using var session = store.NewSession<SpanByte, SpanByteAndMemory, Empty, SpanByteFunctions<Empty>>(new SpanByteFunctions<Empty>());
             var bContext = session.BasicContext;
 
@@ -395,7 +416,7 @@ namespace Tsavorite.test
                 fixed (byte* keyPtr = key)
                 fixed (byte* valuePtr = value)
                 {
-                    bContext.Upsert(SpanByte.FromPinnedPointer(keyPtr, key.Length), SpanByte.FromPinnedPointer(valuePtr, value.Length));
+                    _ = bContext.Upsert(SpanByte.FromPinnedPointer(keyPtr, key.Length), SpanByte.FromPinnedPointer(valuePtr, value.Length));
                 }
             }
 

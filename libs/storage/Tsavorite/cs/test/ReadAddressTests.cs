@@ -10,55 +10,58 @@ using static Tsavorite.test.TestUtils;
 
 namespace Tsavorite.test.readaddress
 {
+    // Must be in a separate block so the "using StructStoreFunctions" is the first line in its namespace declaration.
+    public struct KeyStruct(long first)
+    {
+        public long key = first;
+
+        public override readonly string ToString() => key.ToString();
+
+        internal struct Comparer : IKeyComparer<KeyStruct>
+        {
+            public readonly long GetHashCode64(ref KeyStruct key) => Utility.GetHashCode(key.key);
+
+            public readonly bool Equals(ref KeyStruct k1, ref KeyStruct k2) => k1.key == k2.key;
+        }
+    }
+
+    public struct ValueStruct(long value)
+    {
+        public long value = value;
+
+        public override readonly string ToString() => value.ToString();
+    }
+}
+
+namespace Tsavorite.test.readaddress
+{
+    using StructStoreFunctions = StoreFunctions<KeyStruct, ValueStruct, KeyStruct.Comparer, NoSerializer<KeyStruct>, NoSerializer<ValueStruct>, DefaultRecordDisposer<KeyStruct, ValueStruct>>;
+    using StructAllocator = BlittableAllocator<KeyStruct, ValueStruct, StoreFunctions<KeyStruct, ValueStruct, KeyStruct.Comparer, NoSerializer<KeyStruct>, NoSerializer<ValueStruct>, DefaultRecordDisposer<KeyStruct, ValueStruct>>>;
+
     [TestFixture]
     internal class ReadAddressTests
     {
-        const int numKeys = 1000;
-        const int keyMod = 100;
-        const int maxLap = numKeys / keyMod;
-        const int deleteLap = maxLap / 2;
-        const int defaultKeyToScan = 42;
+        const int NumKeys = 1000;
+        const int KeyMod = 100;
+        const int MaxLap = NumKeys / KeyMod;
+        const int DeleteLap = MaxLap / 2;
+        const int DefaultKeyToScan = 42;
 
-        private static int LapOffset(int lap) => lap * numKeys * 100;
-
-        public struct Key
-        {
-            public long key;
-
-            public Key(long first) => key = first;
-
-            public override string ToString() => key.ToString();
-
-            internal class Comparer : IKeyComparer<Key>
-            {
-                public long GetHashCode64(ref Key key) => Utility.GetHashCode(key.key);
-
-                public bool Equals(ref Key k1, ref Key k2) => k1.key == k2.key;
-            }
-        }
-
-        public struct Value
-        {
-            public long value;
-
-            public Value(long value) => this.value = value;
-
-            public override string ToString() => value.ToString();
-        }
+        private static int LapOffset(int lap) => lap * NumKeys * 100;
 
         public struct Output
         {
             public long value;
             public long address;
 
-            public override string ToString() => $"val {value}; addr {address}";
+            public override readonly string ToString() => $"val {value}; addr {address}";
         }
 
         private static long SetReadOutput(long key, long value) => (key << 32) | value;
 
         public enum UseReadCache { NoReadCache, ReadCache }
 
-        internal class Functions : SessionFunctionsBase<Key, Value, Value, Output, Empty>
+        internal class Functions : SessionFunctionsBase<KeyStruct, ValueStruct, ValueStruct, Output, Empty>
         {
             internal long lastWriteAddress = Constants.kInvalidAddress;
             readonly bool useReadCache;
@@ -78,14 +81,14 @@ namespace Tsavorite.test.readaddress
                 }
             }
 
-            public override bool ConcurrentReader(ref Key key, ref Value input, ref Value value, ref Output output, ref ReadInfo readInfo, ref RecordInfo recordInfo)
+            public override bool ConcurrentReader(ref KeyStruct key, ref ValueStruct input, ref ValueStruct value, ref Output output, ref ReadInfo readInfo, ref RecordInfo recordInfo)
             {
                 output.value = SetReadOutput(key.key, value.value);
                 output.address = readInfo.Address;
                 return true;
             }
 
-            public override bool SingleReader(ref Key key, ref Value input, ref Value value, ref Output output, ref ReadInfo readInfo)
+            public override bool SingleReader(ref KeyStruct key, ref ValueStruct input, ref ValueStruct value, ref Output output, ref ReadInfo readInfo)
             {
                 output.value = SetReadOutput(key.key, value.value);
                 output.address = readInfo.Address;
@@ -93,12 +96,12 @@ namespace Tsavorite.test.readaddress
             }
 
             // Return false to force a chain of values.
-            public override bool ConcurrentWriter(ref Key key, ref Value input, ref Value src, ref Value dst, ref Output output, ref UpsertInfo upsertInfo, ref RecordInfo recordInfo) => false;
+            public override bool ConcurrentWriter(ref KeyStruct key, ref ValueStruct input, ref ValueStruct src, ref ValueStruct dst, ref Output output, ref UpsertInfo upsertInfo, ref RecordInfo recordInfo) => false;
 
-            public override bool InPlaceUpdater(ref Key key, ref Value input, ref Value value, ref Output output, ref RMWInfo rmwInfo, ref RecordInfo recordInfo) => false;
+            public override bool InPlaceUpdater(ref KeyStruct key, ref ValueStruct input, ref ValueStruct value, ref Output output, ref RMWInfo rmwInfo, ref RecordInfo recordInfo) => false;
 
             // Record addresses
-            public override bool SingleWriter(ref Key key, ref Value input, ref Value src, ref Value dst, ref Output output, ref UpsertInfo upsertInfo, WriteReason reason, ref RecordInfo recordInfo)
+            public override bool SingleWriter(ref KeyStruct key, ref ValueStruct input, ref ValueStruct src, ref ValueStruct dst, ref Output output, ref UpsertInfo upsertInfo, WriteReason reason, ref RecordInfo recordInfo)
             {
                 dst = src;
                 output.address = upsertInfo.Address;
@@ -106,7 +109,7 @@ namespace Tsavorite.test.readaddress
                 return true;
             }
 
-            public override bool InitialUpdater(ref Key key, ref Value input, ref Value value, ref Output output, ref RMWInfo rmwInfo, ref RecordInfo recordInfo)
+            public override bool InitialUpdater(ref KeyStruct key, ref ValueStruct input, ref ValueStruct value, ref Output output, ref RMWInfo rmwInfo, ref RecordInfo recordInfo)
             {
                 lastWriteAddress = rmwInfo.Address;
                 output.address = rmwInfo.Address;
@@ -114,7 +117,7 @@ namespace Tsavorite.test.readaddress
                 return true;
             }
 
-            public override bool CopyUpdater(ref Key key, ref Value input, ref Value oldValue, ref Value newValue, ref Output output, ref RMWInfo rmwInfo, ref RecordInfo recordInfo)
+            public override bool CopyUpdater(ref KeyStruct key, ref ValueStruct input, ref ValueStruct oldValue, ref ValueStruct newValue, ref Output output, ref RMWInfo rmwInfo, ref RecordInfo recordInfo)
             {
                 lastWriteAddress = rmwInfo.Address;
                 output.address = rmwInfo.Address;
@@ -123,7 +126,7 @@ namespace Tsavorite.test.readaddress
                 return true;
             }
 
-            public override void ReadCompletionCallback(ref Key key, ref Value input, ref Output output, Empty ctx, Status status, RecordMetadata recordMetadata)
+            public override void ReadCompletionCallback(ref KeyStruct key, ref ValueStruct input, ref Output output, Empty ctx, Status status, RecordMetadata recordMetadata)
             {
                 if (status.Found)
                 {
@@ -134,7 +137,7 @@ namespace Tsavorite.test.readaddress
                 }
             }
 
-            public override void RMWCompletionCallback(ref Key key, ref Value input, ref Output output, Empty ctx, Status status, RecordMetadata recordMetadata)
+            public override void RMWCompletionCallback(ref KeyStruct key, ref ValueStruct input, ref Output output, Empty ctx, Status status, RecordMetadata recordMetadata)
             {
                 if (status.Found)
                     Assert.AreEqual(output.address, recordMetadata.Address);
@@ -143,11 +146,11 @@ namespace Tsavorite.test.readaddress
 
         private class TestStore : IDisposable
         {
-            internal TsavoriteKV<Key, Value> store;
+            internal TsavoriteKV<KeyStruct, ValueStruct, StructStoreFunctions, StructAllocator> store;
             internal IDevice logDevice;
             private readonly bool flush;
 
-            internal long[] InsertAddresses = new long[numKeys];
+            internal long[] insertAddresses = new long[NumKeys];
 
             internal TestStore(bool useReadCache, ReadCopyOptions readCopyOptions, bool flush)
             {
@@ -155,24 +158,20 @@ namespace Tsavorite.test.readaddress
                 logDevice = Devices.CreateLogDevice(Path.Join(MethodTestDir, "hlog.log"));
                 this.flush = flush;
 
-                var logSettings = new LogSettings
-                {
-                    LogDevice = logDevice,
-                    ObjectLogDevice = new NullDevice(),
-                    ReadCacheSettings = useReadCache ? new ReadCacheSettings() : null,
-                    ReadCopyOptions = readCopyOptions,
-                    // Use small-footprint values
-                    PageSizeBits = 12, // (4K pages)
-                    MemorySizeBits = 20 // (1M memory for main log)
-                };
+                store = new (new()
+                    {
+                        IndexSize = 1L << 26,
+                        LogDevice = logDevice,
+                        ReadCacheEnabled = useReadCache,
+                        ReadCopyOptions = readCopyOptions,
+                        // Use small-footprint values
+                        PageSize = 1 << 12, // (4K pages)
+                        MemorySize = 1 << 20, // (1M memory for main log)
 
-                store = new TsavoriteKV<Key, Value>(
-                    size: 1L << 20,
-                    logSettings: logSettings,
-                    checkpointSettings: new CheckpointSettings { CheckpointDir = Path.Join(MethodTestDir, "chkpt") },
-                    serializerSettings: null,
-                    comparer: new Key.Comparer()
-                    );
+                        CheckpointDir = Path.Join(MethodTestDir, "chkpt")
+                    }, StoreFunctions<KeyStruct, ValueStruct>.Create(new KeyStruct.Comparer())
+                    , (allocatorSettings, storeFunctions) => new(allocatorSettings, storeFunctions)
+                );
             }
 
             internal async ValueTask Flush()
@@ -180,7 +179,7 @@ namespace Tsavorite.test.readaddress
                 if (flush)
                 {
                     if (!store.UseReadCache)
-                        await store.TakeFullCheckpointAsync(CheckpointType.FoldOver);
+                        _ = await store.TakeFullCheckpointAsync(CheckpointType.FoldOver);
                     store.Log.FlushAndEvict(wait: true);
                 }
             }
@@ -188,14 +187,14 @@ namespace Tsavorite.test.readaddress
             internal async Task Populate(bool useRMW, bool preserveCopyUpdaterSource = false)
             {
                 var functions = new Functions(preserveCopyUpdaterSource);
-                using var session = store.NewSession<Value, Output, Empty, Functions>(functions);
+                using var session = store.NewSession<ValueStruct, Output, Empty, Functions>(functions);
                 var bContext = session.BasicContext;
 
                 var prevLap = 0;
-                for (int ii = 0; ii < numKeys; ii++)
+                for (int ii = 0; ii < NumKeys; ii++)
                 {
                     // lap is used to illustrate the changing values
-                    var lap = ii / keyMod;
+                    var lap = ii / KeyMod;
 
                     if (lap != prevLap)
                     {
@@ -203,8 +202,8 @@ namespace Tsavorite.test.readaddress
                         prevLap = lap;
                     }
 
-                    var key = new Key(ii % keyMod);
-                    var value = new Value(key.key + LapOffset(lap));
+                    var key = new KeyStruct(ii % KeyMod);
+                    var value = new ValueStruct(key.key + LapOffset(lap));
 
                     var status = useRMW
                         ? bContext.RMW(ref key, ref value)
@@ -213,12 +212,12 @@ namespace Tsavorite.test.readaddress
                     if (status.IsPending)
                         await bContext.CompletePendingAsync();
 
-                    InsertAddresses[ii] = functions.lastWriteAddress;
+                    insertAddresses[ii] = functions.lastWriteAddress;
                     //Assert.IsTrue(session.ctx.HasNoPendingRequests);
 
                     // Illustrate that deleted records can be shown as well (unless overwritten by in-place operations, which are not done here)
-                    if (lap == deleteLap)
-                        bContext.Delete(ref key);
+                    if (lap == DeleteLap)
+                        _ = bContext.Delete(ref key);
                 }
 
                 await Flush();
@@ -228,9 +227,9 @@ namespace Tsavorite.test.readaddress
             {
                 var recordInfo = recordMetadata.RecordInfo;
                 Assert.GreaterOrEqual(lap, 0);
-                long expectedValue = SetReadOutput(defaultKeyToScan, LapOffset(lap) + defaultKeyToScan);
+                long expectedValue = SetReadOutput(DefaultKeyToScan, LapOffset(lap) + DefaultKeyToScan);
 
-                Assert.AreEqual(lap == deleteLap, recordInfo.Tombstone, $"lap({lap}) == deleteLap({deleteLap}) != Tombstone ({recordInfo.Tombstone})");
+                Assert.AreEqual(lap == DeleteLap, recordInfo.Tombstone, $"lap({lap}) == deleteLap({DeleteLap}) != Tombstone ({recordInfo.Tombstone})");
                 if (!recordInfo.Tombstone)
                     Assert.AreEqual(expectedValue, actualOutput.value, $"lap({lap})");
 
@@ -242,8 +241,8 @@ namespace Tsavorite.test.readaddress
             {
                 if (status.Found)
                 {
-                    var keyToScan = keyOrdinal % keyMod;
-                    var lap = keyOrdinal / keyMod;
+                    var keyToScan = keyOrdinal % KeyMod;
+                    var lap = keyOrdinal / KeyMod;
                     long expectedValue = SetReadOutput(keyToScan, LapOffset(lap) + keyToScan);
                     if (!recordInfo.Tombstone)
                         Assert.AreEqual(expectedValue, actualOutput.value, $"keyToScan {keyToScan}, lap({lap})");
@@ -274,20 +273,20 @@ namespace Tsavorite.test.readaddress
             var readCopyOptions = new ReadCopyOptions(readCopyFrom, readCopyTo);
             using var testStore = new TestStore(useReadCache, readCopyOptions, flushMode == FlushMode.OnDisk);
             testStore.Populate(updateOp == UpdateOp.RMW).GetAwaiter().GetResult();
-            using var session = testStore.store.NewSession<Value, Output, Empty, Functions>(new Functions());
+            using var session = testStore.store.NewSession<ValueStruct, Output, Empty, Functions>(new Functions());
             var bContext = session.BasicContext;
 
             // Two iterations to ensure no issues due to read-caching or copying to tail.
             for (int iteration = 0; iteration < 2; ++iteration)
             {
                 var output = default(Output);
-                var input = default(Value);
-                var key = new Key(defaultKeyToScan);
+                var input = default(ValueStruct);
+                var key = new KeyStruct(DefaultKeyToScan);
                 RecordMetadata recordMetadata = default;
                 ReadOptions readOptions = new() { CopyOptions = session.functions.readCopyOptions };
                 long readAtAddress = 0;
 
-                for (int lap = maxLap - 1; /* tested in loop */; --lap)
+                for (int lap = MaxLap - 1; /* tested in loop */; --lap)
                 {
                     // We need a non-AtAddress read to start the loop of returning the previous address to read at.
                     var status = readAtAddress == 0
@@ -297,7 +296,7 @@ namespace Tsavorite.test.readaddress
                     if (status.IsPending)
                     {
                         // This will wait for each retrieved record; not recommended for performance-critical code or when retrieving multiple records unless necessary.
-                        bContext.CompletePendingWithOutputs(out var completedOutputs, wait: true);
+                        _ = bContext.CompletePendingWithOutputs(out var completedOutputs, wait: true);
                         (status, output) = GetSinglePendingResult(completedOutputs, out recordMetadata);
                     }
                     if (!testStore.ProcessChainRecord(status, recordMetadata, lap, ref output))
@@ -307,7 +306,7 @@ namespace Tsavorite.test.readaddress
             }
         }
 
-        struct IterateKeyTestScanIteratorFunctions : IScanIteratorFunctions<Key, Value>
+        struct IterateKeyTestScanIteratorFunctions : IScanIteratorFunctions<KeyStruct, ValueStruct>
         {
             readonly TestStore testStore;
             internal int numRecords;
@@ -315,24 +314,24 @@ namespace Tsavorite.test.readaddress
 
             internal IterateKeyTestScanIteratorFunctions(TestStore ts) => testStore = ts;
 
-            public bool OnStart(long beginAddress, long endAddress) => true;
+            public readonly bool OnStart(long beginAddress, long endAddress) => true;
 
-            public bool ConcurrentReader(ref Key key, ref Value value, RecordMetadata recordMetadata, long numberOfRecords, out CursorRecordResult cursorRecordResult)
+            public bool ConcurrentReader(ref KeyStruct key, ref ValueStruct value, RecordMetadata recordMetadata, long numberOfRecords, out CursorRecordResult cursorRecordResult)
                 => SingleReader(ref key, ref value, recordMetadata, numberOfRecords, out cursorRecordResult);
 
-            public bool SingleReader(ref Key key, ref Value value, RecordMetadata recordMetadata, long numberOfRecords, out CursorRecordResult cursorRecordResult)
+            public bool SingleReader(ref KeyStruct key, ref ValueStruct value, RecordMetadata recordMetadata, long numberOfRecords, out CursorRecordResult cursorRecordResult)
             {
                 cursorRecordResult = CursorRecordResult.Accept; // default; not used here
                 Output output = new() { address = recordMetadata.Address, value = SetReadOutput(key.key, value.value) };
-                int lap = maxLap - ++numRecords;
+                int lap = MaxLap - ++numRecords;
                 Assert.AreEqual(lap != 0, testStore.ProcessChainRecord(new(StatusCode.Found), recordMetadata, lap, ref output), $"lap ({lap}) == 0 != ProcessChainRecord(...)");
                 Assert.AreEqual(numRecords, numberOfRecords, "mismatched record count");
                 return stopAt != numRecords;
             }
 
-            public void OnException(Exception exception, long numberOfRecords) { }
+            public readonly void OnException(Exception exception, long numberOfRecords) { }
 
-            public void OnStop(bool completed, long numberOfRecords) { }
+            public readonly void OnStop(bool completed, long numberOfRecords) { }
         }
 
         [Test, Category(TsavoriteKVTestCategory), Category(ReadTestCategory)]
@@ -347,10 +346,10 @@ namespace Tsavorite.test.readaddress
 
             for (int iteration = 0; iteration < 2; ++iteration)
             {
-                var key = new Key(defaultKeyToScan);
+                var key = new KeyStruct(DefaultKeyToScan);
                 IterateKeyTestScanIteratorFunctions scanFunctions = new(testStore);
                 Assert.IsTrue(testStore.store.Log.IterateKeyVersions(ref scanFunctions, ref key));
-                Assert.AreEqual(maxLap, scanFunctions.numRecords);
+                Assert.AreEqual(MaxLap, scanFunctions.numRecords);
             }
         }
 
@@ -366,7 +365,7 @@ namespace Tsavorite.test.readaddress
 
             for (int iteration = 0; iteration < 2; ++iteration)
             {
-                var key = new Key(defaultKeyToScan);
+                var key = new KeyStruct(DefaultKeyToScan);
                 IterateKeyTestScanIteratorFunctions scanFunctions = new(testStore) { stopAt = 4 };
                 Assert.IsFalse(testStore.store.Log.IterateKeyVersions(ref scanFunctions, ref key));
                 Assert.AreEqual(scanFunctions.stopAt, scanFunctions.numRecords);
@@ -387,20 +386,20 @@ namespace Tsavorite.test.readaddress
             var readCopyOptions = new ReadCopyOptions(readCopyFrom, readCopyTo);
             using var testStore = new TestStore(useReadCache, readCopyOptions, flushMode == FlushMode.OnDisk);
             testStore.Populate(updateOp == UpdateOp.RMW).GetAwaiter().GetResult();
-            using var session = testStore.store.NewSession<Value, Output, Empty, Functions>(new Functions());
+            using var session = testStore.store.NewSession<ValueStruct, Output, Empty, Functions>(new Functions());
             var bContext = session.BasicContext;
 
             // Two iterations to ensure no issues due to read-caching or copying to tail.
             for (int iteration = 0; iteration < 2; ++iteration)
             {
                 var output = default(Output);
-                var input = default(Value);
-                var key = new Key(defaultKeyToScan);
+                var input = default(ValueStruct);
+                var key = new KeyStruct(DefaultKeyToScan);
                 RecordMetadata recordMetadata = default;
                 ReadOptions readOptions = new() { CopyOptions = session.functions.readCopyOptions };
                 long readAtAddress = 0;
 
-                for (int lap = maxLap - 1; /* tested in loop */; --lap)
+                for (int lap = MaxLap - 1; /* tested in loop */; --lap)
                 {
                     var status = readAtAddress == 0
                         ? bContext.Read(ref key, ref input, ref output, ref readOptions, out recordMetadata)
@@ -408,7 +407,7 @@ namespace Tsavorite.test.readaddress
                     if (status.IsPending)
                     {
                         // This will wait for each retrieved record; not recommended for performance-critical code or when retrieving multiple records unless necessary.
-                        bContext.CompletePendingWithOutputs(out var completedOutputs, wait: true);
+                        _ = bContext.CompletePendingWithOutputs(out var completedOutputs, wait: true);
                         (status, output) = GetSinglePendingResult(completedOutputs, out recordMetadata);
                     }
 
@@ -433,19 +432,19 @@ namespace Tsavorite.test.readaddress
             var readCopyOptions = new ReadCopyOptions(readCopyFrom, readCopyTo);
             using var testStore = new TestStore(useReadCache, readCopyOptions, flushMode == FlushMode.OnDisk);
             await testStore.Populate(updateOp == UpdateOp.RMW);
-            using var session = testStore.store.NewSession<Value, Output, Empty, Functions>(new Functions());
+            using var session = testStore.store.NewSession<ValueStruct, Output, Empty, Functions>(new Functions());
             var bContext = session.BasicContext;
 
             // Two iterations to ensure no issues due to read-caching or copying to tail.
             for (int iteration = 0; iteration < 2; ++iteration)
             {
-                var input = default(Value);
-                var key = new Key(defaultKeyToScan);
+                var input = default(ValueStruct);
+                var key = new KeyStruct(DefaultKeyToScan);
                 RecordMetadata recordMetadata = default;
                 ReadOptions readOptions = new() { CopyOptions = session.functions.readCopyOptions };
                 long readAtAddress = 0;
 
-                for (int lap = maxLap - 1; /* tested in loop */; --lap)
+                for (int lap = MaxLap - 1; /* tested in loop */; --lap)
                 {
                     Output output = new();
                     Status status = readAtAddress == 0
@@ -475,7 +474,7 @@ namespace Tsavorite.test.readaddress
             var readCopyOptions = new ReadCopyOptions(readCopyFrom, readCopyTo);
             using var testStore = new TestStore(useReadCache, readCopyOptions, flushMode == FlushMode.OnDisk);
             await testStore.Populate(updateOp == UpdateOp.RMW);
-            using var session = testStore.store.NewSession<Value, Output, Empty, Functions>(new Functions());
+            using var session = testStore.store.NewSession<ValueStruct, Output, Empty, Functions>(new Functions());
             var bContext = session.BasicContext;
 
             // Two iterations to ensure no issues due to read-caching or copying to tail.
@@ -483,21 +482,21 @@ namespace Tsavorite.test.readaddress
             {
                 var rng = new Random(101);
                 var output = default(Output);
-                var input = default(Value);
+                var input = default(ValueStruct);
 
-                for (int ii = 0; ii < numKeys; ++ii)
+                for (int ii = 0; ii < NumKeys; ++ii)
                 {
-                    var keyOrdinal = rng.Next(numKeys);
+                    var keyOrdinal = rng.Next(NumKeys);
 
                     ReadOptions readOptions = new()
                     {
                         CopyOptions = session.functions.readCopyOptions
                     };
-                    var status = bContext.ReadAtAddress(testStore.InsertAddresses[keyOrdinal], ref input, ref output, ref readOptions, out RecordMetadata recordMetadata);
+                    var status = bContext.ReadAtAddress(testStore.insertAddresses[keyOrdinal], ref input, ref output, ref readOptions, out RecordMetadata recordMetadata);
                     if (status.IsPending)
                     {
                         // This will wait for each retrieved record; not recommended for performance-critical code or when retrieving multiple records unless necessary.
-                        bContext.CompletePendingWithOutputs(out var completedOutputs, wait: true);
+                        _ = bContext.CompletePendingWithOutputs(out var completedOutputs, wait: true);
                         (status, output) = GetSinglePendingResult(completedOutputs);
                     }
 

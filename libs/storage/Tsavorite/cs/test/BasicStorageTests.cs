@@ -9,6 +9,7 @@ using Tsavorite.devices;
 namespace Tsavorite.test
 {
     using StructStoreFunctions = StoreFunctions<KeyStruct, ValueStruct, KeyStruct.Comparer, NoSerializer<KeyStruct>, NoSerializer<ValueStruct>, DefaultRecordDisposer<KeyStruct, ValueStruct>>;
+    using StructAllocator = BlittableAllocator<KeyStruct, ValueStruct, StoreFunctions<KeyStruct, ValueStruct, KeyStruct.Comparer, NoSerializer<KeyStruct>, NoSerializer<ValueStruct>, DefaultRecordDisposer<KeyStruct, ValueStruct>>>;
 
     [TestFixture]
     internal class BasicStorageTests
@@ -92,9 +93,9 @@ namespace Tsavorite.test
             }
         }
 
-        void TestDeviceWriteRead(IDevice log)
+        static void TestDeviceWriteRead(IDevice log)
         {
-            var store = new TsavoriteKV<KeyStruct, ValueStruct, StructStoreFunctions, BlittableAllocator<KeyStruct, ValueStruct, StructStoreFunctions>>(
+            var store = new TsavoriteKV<KeyStruct, ValueStruct, StructStoreFunctions, StructAllocator>(
                 new TsavoriteKVSettings<KeyStruct, ValueStruct>()
                 {
                     IndexSize = 1L << 26,
@@ -114,9 +115,9 @@ namespace Tsavorite.test
             {
                 var key1 = new KeyStruct { kfield1 = i, kfield2 = i + 1 };
                 var value = new ValueStruct { vfield1 = i, vfield2 = i + 1 };
-                bContext.Upsert(ref key1, ref value, Empty.Default);
+                _ = bContext.Upsert(ref key1, ref value, Empty.Default);
             }
-            bContext.CompletePending(true);
+            _ = bContext.CompletePending(true);
 
             // Update first 100 using RMW from storage
             for (int i = 0; i < 100; i++)
@@ -125,7 +126,7 @@ namespace Tsavorite.test
                 input = new InputStruct { ifield1 = 1, ifield2 = 1 };
                 var status = bContext.RMW(ref key1, ref input, Empty.Default);
                 if (status.IsPending)
-                    bContext.CompletePending(true);
+                    _ = bContext.CompletePending(true);
             }
 
 
@@ -137,7 +138,7 @@ namespace Tsavorite.test
 
                 if (bContext.Read(ref key1, ref input, ref output, Empty.Default).IsPending)
                 {
-                    bContext.CompletePending(true);
+                    _ = bContext.CompletePending(true);
                 }
                 else
                 {

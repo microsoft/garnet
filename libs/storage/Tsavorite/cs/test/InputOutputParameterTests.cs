@@ -2,12 +2,14 @@
 // Licensed under the MIT license.
 
 using System.IO;
-using System.Threading.Tasks;
 using NUnit.Framework;
 using Tsavorite.core;
 
 namespace Tsavorite.test.InputOutputParameterTests
 {
+    using IntStoreFunctions = StoreFunctions<int, int, IntKeyComparer, NoSerializer<int>, NoSerializer<int>, DefaultRecordDisposer<int, int>>;
+    using IntAllocator = BlittableAllocator<int, int, StoreFunctions<int, int, IntKeyComparer, NoSerializer<int>, NoSerializer<int>, DefaultRecordDisposer<int, int>>>;
+
     [TestFixture]
     class InputOutputParameterTests
     {
@@ -15,9 +17,9 @@ namespace Tsavorite.test.InputOutputParameterTests
         const int MultValue = 100;
         const int NumRecs = 10;
 
-        private TsavoriteKV<int, int> store;
-        private ClientSession<int, int, int, int, Empty, UpsertInputFunctions> session;
-        private BasicContext<int, int, int, int, Empty, UpsertInputFunctions> bContext;
+        private TsavoriteKV<int, int, IntStoreFunctions, IntAllocator> store;
+        private ClientSession<int, int, int, int, Empty, UpsertInputFunctions, IntStoreFunctions, IntAllocator> session;
+        private BasicContext<int, int, int, int, Empty, UpsertInputFunctions, IntStoreFunctions, IntAllocator> bContext;
         private IDevice log;
 
         internal class UpsertInputFunctions : SessionFunctionsBase<int, int, int, int, Empty>
@@ -82,8 +84,13 @@ namespace Tsavorite.test.InputOutputParameterTests
             TestUtils.DeleteDirectory(TestUtils.MethodTestDir, wait: true);
 
             log = TestUtils.CreateTestDevice(TestUtils.DeviceType.LocalMemory, Path.Combine(TestUtils.MethodTestDir, "Device.log"));
-            store = new TsavoriteKV<int, int>
-                (128, new LogSettings { LogDevice = log, MemorySizeBits = 22, SegmentSizeBits = 22, PageSizeBits = 10 });
+            store = new (new TsavoriteKVSettings<int, int>()
+                {
+                    IndexSize = 1 << 13,
+                    LogDevice = log, MemorySize = 1 << 22, SegmentSize = 1 << 22, PageSize = 1 << 10
+                }, StoreFunctions<int, int>.Create(IntKeyComparer.Instance)
+                , (allocatorSettings, storeFunctions) => new(allocatorSettings, storeFunctions)
+            );
             session = store.NewSession<int, int, Empty, UpsertInputFunctions>(new UpsertInputFunctions());
             bContext = session.BasicContext;
         }
@@ -116,9 +123,8 @@ namespace Tsavorite.test.InputOutputParameterTests
                 for (int key = 0; key < NumRecs; ++key)
                 {
                     var tailAddress = store.Log.TailAddress;
-                    RecordMetadata recordMetadata;
                     status = useRMW
-                        ? bContext.RMW(ref key, ref input, ref output, out recordMetadata)
+                        ? bContext.RMW(ref key, ref input, ref output, out var recordMetadata)
                         : bContext.Upsert(ref key, ref input, ref key, ref output, out recordMetadata);
                     if (loading)
                     {
@@ -140,7 +146,7 @@ namespace Tsavorite.test.InputOutputParameterTests
             {
                 for (int key = 0; key < NumRecs; ++key)
                 {
-                    bContext.Read(ref key, ref input, ref output);
+                    _ = bContext.Read(ref key, ref input, ref output);
                     Assert.AreEqual(key * input + AddValue, output);
                 }
             }

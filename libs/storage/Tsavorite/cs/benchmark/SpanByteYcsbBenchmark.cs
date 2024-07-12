@@ -109,7 +109,8 @@ namespace Tsavorite.benchmark
 
             store = new(kvSettings
                 , StoreFunctions<SpanByte, SpanByte>.Create()
-                , (allocatorSettings, storeFunctions) => new SpanByteAllocator<SpanByteStoreFunctions>());
+                , (allocatorSettings, storeFunctions) => new (allocatorSettings, storeFunctions)
+            );
         }
 
         internal void Dispose()

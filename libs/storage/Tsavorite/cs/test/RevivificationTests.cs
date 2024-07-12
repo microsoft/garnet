@@ -1663,7 +1663,7 @@ namespace Tsavorite.test.Revivification
                     MemorySize = 1 << 22,
                     PageSize = 1 << 12,
                     RevivificationSettings = RevivificationSettings.DefaultFixedLength
-                }, StoreFunctions<MyKey, MyValue>.Create(new MyKey.Comparer(), new MyKeySerializer(), new MyValueSerializer(), DefaultRecordDisposer<MyKey, MyValue>.Instance)
+                }, StoreFunctions<MyKey, MyValue>.Create(new MyKey.Comparer(), new MyKeySerializer(), new MyValueSerializer())
                 , (allocatorSettings, storeFunctions) => new (allocatorSettings, storeFunctions)
             );
 

@@ -2,17 +2,19 @@
 // Licensed under the MIT license.
 
 using System.IO;
-using System.Threading.Tasks;
 using NUnit.Framework;
 using Tsavorite.core;
 using static Tsavorite.test.TestUtils;
 
 namespace Tsavorite.test
 {
+    using ClassStoreFunctions = StoreFunctions<MyKey, MyValue, MyKey.Comparer, MyKeySerializer, MyValueSerializer, DefaultRecordDisposer<MyKey, MyValue>>;
+    using ClassAllocator = GenericAllocator<MyKey, MyValue, StoreFunctions<MyKey, MyValue, MyKey.Comparer, MyKeySerializer, MyValueSerializer, DefaultRecordDisposer<MyKey, MyValue>>>;
+
     [TestFixture]
     internal class ObjectTests
     {
-        private TsavoriteKV<MyKey, MyValue> store;
+        private TsavoriteKV<MyKey, MyValue, ClassStoreFunctions, ClassAllocator> store;
         private IDevice log, objlog;
 
         [SetUp]
@@ -22,11 +24,14 @@ namespace Tsavorite.test
             log = Devices.CreateLogDevice(Path.Join(MethodTestDir, "ObjectTests.log"), deleteOnClose: true);
             objlog = Devices.CreateLogDevice(Path.Join(MethodTestDir, "ObjectTests.obj.log"), deleteOnClose: true);
 
-            store = new TsavoriteKV<MyKey, MyValue>
-                (128,
-                logSettings: new LogSettings { LogDevice = log, ObjectLogDevice = objlog, MutableFraction = 0.1, MemorySizeBits = 15, PageSizeBits = 10 },
-                serializerSettings: new SerializerSettings<MyKey, MyValue> { keySerializer = () => new MyKeySerializer(), valueSerializer = () => new MyValueSerializer() }
-                );
+            store = new (new()
+                {
+                    IndexSize = 1 << 13,
+                    LogDevice = log, ObjectLogDevice = objlog,
+                    MutableFraction = 0.1, MemorySize = 1 << 15, PageSize = 1 << 10
+                }, StoreFunctions<MyKey, MyValue>.Create(new MyKey.Comparer(), new MyKeySerializer(), new MyValueSerializer(), DefaultRecordDisposer<MyKey, MyValue>.Instance)
+                , (allocatorSettings, storeFunctions) => new(allocatorSettings, storeFunctions)
+            );
         }
 
         [TearDown]
@@ -55,8 +60,8 @@ namespace Tsavorite.test
             MyInput input = null;
             MyOutput output = new();
 
-            bContext.Upsert(ref key1, ref value, Empty.Default);
-            bContext.Read(ref key1, ref input, ref output, Empty.Default);
+            _ = bContext.Upsert(ref key1, ref value, Empty.Default);
+            _ = bContext.Read(ref key1, ref input, ref output, Empty.Default);
             Assert.AreEqual(value.value, output.value.value);
         }
 
@@ -71,17 +76,17 @@ namespace Tsavorite.test
             MyInput input1 = new() { value = 23 };
             MyOutput output = new();
 
-            bContext.RMW(ref key1, ref input1, Empty.Default);
+            _ = bContext.RMW(ref key1, ref input1, Empty.Default);
 
             MyKey key2 = new() { key = 8999999 };
             MyInput input2 = new() { value = 24 };
-            bContext.RMW(ref key2, ref input2, Empty.Default);
+            _ = bContext.RMW(ref key2, ref input2, Empty.Default);
 
-            bContext.Read(ref key1, ref input1, ref output, Empty.Default);
+            _ = bContext.Read(ref key1, ref input1, ref output, Empty.Default);
 
             Assert.AreEqual(input1.value, output.value.value);
 
-            bContext.Read(ref key2, ref input2, ref output, Empty.Default);
+            _ = bContext.Read(ref key2, ref input2, ref output, Empty.Default);
             Assert.AreEqual(input2.value, output.value.value);
 
         }
@@ -99,7 +104,7 @@ namespace Tsavorite.test
             {
                 var key = new MyKey { key = i };
                 var value = new MyValue { value = i };
-                bContext.Upsert(ref key, ref value, Empty.Default);
+                _ = bContext.Upsert(ref key, ref value, Empty.Default);
                 // store.ShiftReadOnlyAddress(store.LogTailAddress);
             }
 
@@ -110,7 +115,7 @@ namespace Tsavorite.test
 
             if (status.IsPending)
             {
-                bContext.CompletePendingWithOutputs(out var outputs, wait: true);
+                _ = bContext.CompletePendingWithOutputs(out var outputs, wait: true);
                 (status, g1) = GetSinglePendingResult(outputs);
             }
 
@@ -140,7 +145,7 @@ namespace Tsavorite.test
                 input = new MyInput { value = 1 };
                 status = bContext.RMW(ref key1, ref input, Empty.Default);
                 if (status.IsPending)
-                    bContext.CompletePending(true);
+                    _ = bContext.CompletePending(true);
             }
 
             for (int i = 0; i < 2000; i++)

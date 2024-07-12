@@ -3,17 +3,23 @@
 
 using System.IO;
 using System.Threading;
-using System.Threading.Tasks;
 using NUnit.Framework;
 using Tsavorite.core;
 
 namespace Tsavorite.test
 {
+    // Must be in a separate block so the "using StructStoreFunctions" is the first line in its namespace declaration.
     public struct RefCountedValue
     {
         public int ReferenceCount;
         public long Value;
     }
+}
+
+namespace Tsavorite.test
+{
+    using StructStoreFunctions = StoreFunctions<int, RefCountedValue, IntKeyComparer, NoSerializer<int>, NoSerializer<RefCountedValue>, DefaultRecordDisposer<int, RefCountedValue>>;
+    using StructAllocator = BlittableAllocator<int, RefCountedValue, StoreFunctions<int, RefCountedValue, IntKeyComparer, NoSerializer<int>, NoSerializer<RefCountedValue>, DefaultRecordDisposer<int, RefCountedValue>>>;
 
     public class RefCountedAdder : SessionFunctionsBase<int, RefCountedValue, long, Empty, Empty>
     {
@@ -23,7 +29,7 @@ namespace Tsavorite.test
 
         public override bool InitialUpdater(ref int key, ref long input, ref RefCountedValue value, ref Empty output, ref RMWInfo rmwInfo, ref RecordInfo recordInfo)
         {
-            Interlocked.Increment(ref InitialCount);
+            _ = Interlocked.Increment(ref InitialCount);
 
             value.Value = input;
             value.ReferenceCount = 1;
@@ -32,7 +38,7 @@ namespace Tsavorite.test
 
         public override bool InPlaceUpdater(ref int key, ref long input, ref RefCountedValue value, ref Empty output, ref RMWInfo rmwInfo, ref RecordInfo recordInfo)
         {
-            Interlocked.Increment(ref InPlaceCount);
+            _ = Interlocked.Increment(ref InPlaceCount);
 
             value.Value = input;
             value.ReferenceCount++;
@@ -41,7 +47,7 @@ namespace Tsavorite.test
 
         public override bool CopyUpdater(ref int key, ref long input, ref RefCountedValue oldValue, ref RefCountedValue newValue, ref Empty output, ref RMWInfo rmwInfo, ref RecordInfo recordInfo)
         {
-            Interlocked.Increment(ref CopyCount);
+            _ = Interlocked.Increment(ref CopyCount);
 
             newValue.Value = input;
             newValue.ReferenceCount = oldValue.ReferenceCount + 1;
@@ -57,7 +63,7 @@ namespace Tsavorite.test
 
         public override bool InitialUpdater(ref int key, ref Empty input, ref RefCountedValue value, ref Empty output, ref RMWInfo rmwInfo, ref RecordInfo recordInfo)
         {
-            Interlocked.Increment(ref InitialCount);
+            _ = Interlocked.Increment(ref InitialCount);
 
             value.Value = 0;
             value.ReferenceCount = 0;
@@ -66,7 +72,7 @@ namespace Tsavorite.test
 
         public override bool InPlaceUpdater(ref int key, ref Empty input, ref RefCountedValue value, ref Empty output, ref RMWInfo rmwInfo, ref RecordInfo recordInfo)
         {
-            Interlocked.Increment(ref InPlaceCount);
+            _ = Interlocked.Increment(ref InPlaceCount);
 
             if (value.ReferenceCount > 0)
                 value.ReferenceCount--;
@@ -76,7 +82,7 @@ namespace Tsavorite.test
 
         public override bool CopyUpdater(ref int key, ref Empty input, ref RefCountedValue oldValue, ref RefCountedValue newValue, ref Empty output, ref RMWInfo rmwInfo, ref RecordInfo recordInfo)
         {
-            Interlocked.Increment(ref CopyCount);
+            _ = Interlocked.Increment(ref CopyCount);
 
             newValue.ReferenceCount = oldValue.ReferenceCount;
             if (newValue.ReferenceCount > 0)
@@ -105,7 +111,7 @@ namespace Tsavorite.test
     public class FunctionPerSessionTests
     {
         private IDevice _log;
-        private TsavoriteKV<int, RefCountedValue> _tsavorite;
+        private TsavoriteKV<int, RefCountedValue, StructStoreFunctions, StructAllocator> store;
         private RefCountedAdder _adder;
         private RefCountedRemover _remover;
         private RefCountedReader _reader;
@@ -116,10 +122,13 @@ namespace Tsavorite.test
             TestUtils.DeleteDirectory(TestUtils.MethodTestDir, wait: true);
             _log = Devices.CreateLogDevice(Path.Join(TestUtils.MethodTestDir, "FunctionPerSessionTests1.log"), deleteOnClose: true);
 
-            _tsavorite = new TsavoriteKV<int, RefCountedValue>(128, new LogSettings()
-            {
-                LogDevice = _log,
-            });
+            store = new (new()
+                {
+                    IndexSize = 1 << 13,
+                    LogDevice = _log,
+                }, StoreFunctions<int, RefCountedValue>.Create(IntKeyComparer.Instance)
+                , (allocatorSettings, storeFunctions) => new(allocatorSettings, storeFunctions)
+            );
 
             _adder = new RefCountedAdder();
             _remover = new RefCountedRemover();
@@ -129,8 +138,8 @@ namespace Tsavorite.test
         [TearDown]
         public void TearDown()
         {
-            _tsavorite?.Dispose();
-            _tsavorite = null;
+            store?.Dispose();
+            store = null;
             _log?.Dispose();
             _log = null;
             TestUtils.DeleteDirectory(TestUtils.MethodTestDir);
@@ -140,35 +149,35 @@ namespace Tsavorite.test
         [Category("TsavoriteKV")]
         public void Should_create_multiple_sessions_with_different_callbacks()
         {
-            using var adderSession = _tsavorite.NewSession<long, Empty, Empty, RefCountedAdder>(_adder);
-            using var removerSession = _tsavorite.NewSession<Empty, Empty, Empty, RefCountedRemover>(_remover);
-            using var readerSession = _tsavorite.NewSession<Empty, RefCountedValue, Empty, RefCountedReader>(_reader);
+            using var adderSession = store.NewSession<long, Empty, Empty, RefCountedAdder>(_adder);
+            using var removerSession = store.NewSession<Empty, Empty, Empty, RefCountedRemover>(_remover);
+            using var readerSession = store.NewSession<Empty, RefCountedValue, Empty, RefCountedReader>(_reader);
             var key = 101;
             var input = 1000L;
 
-            adderSession.BasicContext.RMW(ref key, ref input);
-            adderSession.BasicContext.RMW(ref key, ref input);
-            adderSession.BasicContext.RMW(ref key, ref input);
+            _ = adderSession.BasicContext.RMW(ref key, ref input);
+            _ = adderSession.BasicContext.RMW(ref key, ref input);
+            _ = adderSession.BasicContext.RMW(ref key, ref input);
 
             Assert.AreEqual(1, _adder.InitialCount);
             Assert.AreEqual(2, _adder.InPlaceCount);
 
             var empty = default(Empty);
-            removerSession.BasicContext.RMW(ref key, ref empty);
+            _ = removerSession.BasicContext.RMW(ref key, ref empty);
 
             Assert.AreEqual(1, _remover.InPlaceCount);
 
             RefCountedValue output = new();
-            readerSession.BasicContext.Read(ref key, ref output);
+            _ = readerSession.BasicContext.Read(ref key, ref output);
 
             Assert.AreEqual(2, output.ReferenceCount);
             Assert.AreEqual(1000L, output.Value);
 
-            _tsavorite.Log.FlushAndEvict(true);
+            store.Log.FlushAndEvict(true);
 
-            removerSession.BasicContext.RMW(ref key, ref empty);
-            removerSession.BasicContext.CompletePending(wait: true);
-            readerSession.BasicContext.Read(ref key, ref empty, ref output);
+            _ = removerSession.BasicContext.RMW(ref key, ref empty);
+            _ = removerSession.BasicContext.CompletePending(wait: true);
+            _ = readerSession.BasicContext.Read(ref key, ref empty, ref output);
 
             Assert.AreEqual(1, output.ReferenceCount);
             Assert.AreEqual(1000L, output.Value);

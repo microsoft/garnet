@@ -8,11 +8,14 @@ using static Tsavorite.test.TestUtils;
 
 namespace Tsavorite.test
 {
+    using StringStoreFunctions = StoreFunctions<string, string, StringKeyComparer, StringBinaryObjectSerializer, StringBinaryObjectSerializer, DefaultRecordDisposer<string, string>>;
+    using StringAllocator = BlittableAllocator<string, string, StoreFunctions<string, string, StringKeyComparer, StringBinaryObjectSerializer, StringBinaryObjectSerializer, DefaultRecordDisposer<string, string>>>;
+
     [TestFixture]
     internal class GenericStringTests
     {
-        private TsavoriteKV<string, string> store;
-        private ClientSession<string, string, string, string, Empty, MyFuncs> session;
+        private TsavoriteKV<string, string, StringStoreFunctions, StringAllocator> store;
+        private ClientSession<string, string, string, string, Empty, MyFuncs, StringStoreFunctions, StringAllocator> session;
         private IDevice log, objlog;
 
         [SetUp]
@@ -48,10 +51,14 @@ namespace Tsavorite.test
             log = CreateTestDevice(deviceType, logfilename);
             objlog = CreateTestDevice(deviceType, objlogfilename);
 
-            store = new TsavoriteKV<string, string>(
-                    1L << 20, // size of hash table in #cache lines; 64 bytes per cache line
-                    new LogSettings { LogDevice = log, ObjectLogDevice = objlog, MutableFraction = 0.1, MemorySizeBits = 14, PageSizeBits = 9, SegmentSizeBits = 22 } // log device
-                    );
+            store = new (new ()
+                    {
+                        IndexSize = 1L << 26,
+                        LogDevice = log, ObjectLogDevice = objlog, 
+                        MutableFraction = 0.1, MemorySize = 1 << 14, PageSize = 1 << 9, SegmentSize = 1 << 22
+                    }, StoreFunctions<string, string>.Create(StringKeyComparer.Instance, new StringBinaryObjectSerializer(), new StringBinaryObjectSerializer())
+                , (allocatorSettings, storeFunctions) => new(allocatorSettings, storeFunctions)
+            );
 
             session = store.NewSession<string, string, Empty, MyFuncs>(new MyFuncs());
             var bContext = session.BasicContext;
@@ -61,9 +68,9 @@ namespace Tsavorite.test
             {
                 var _key = $"{i}";
                 var _value = $"{i}"; ;
-                bContext.Upsert(ref _key, ref _value, Empty.Default);
+                _ = bContext.Upsert(ref _key, ref _value, Empty.Default);
             }
-            bContext.CompletePending(true);
+            _ = bContext.CompletePending(true);
             Assert.AreEqual(totalRecords, store.EntryCount);
 
             for (int i = 0; i < totalRecords; i++)
@@ -76,7 +83,7 @@ namespace Tsavorite.test
                 var status = bContext.Read(ref key, ref input, ref output, Empty.Default);
                 if (status.IsPending)
                 {
-                    bContext.CompletePendingWithOutputs(out var outputs, wait: true);
+                    _ = bContext.CompletePendingWithOutputs(out var outputs, wait: true);
                     (status, output) = GetSinglePendingResult(outputs);
                 }
                 Assert.IsTrue(status.Found);

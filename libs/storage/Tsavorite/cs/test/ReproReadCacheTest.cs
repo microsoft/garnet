@@ -14,6 +14,8 @@ using static Tsavorite.test.TestUtils;
 
 namespace Tsavorite.test.ReadCacheTests
 {
+    using SpanByteStoreFunctions = StoreFunctions<SpanByte, SpanByte, SpanByteComparer, NoSerializer<SpanByte>, NoSerializer<SpanByte>, SpanByteRecordDisposer>;
+
     [TestFixture]
     internal class RandomReadCacheTests
     {
@@ -49,46 +51,47 @@ namespace Tsavorite.test.ReadCacheTests
         }
 
         IDevice log = default;
-        TsavoriteKV<SpanByte, SpanByte> store = default;
+        TsavoriteKV<SpanByte, SpanByte, SpanByteStoreFunctions, SpanByteAllocator<SpanByteStoreFunctions>> store = default;
 
         [SetUp]
         public void Setup()
         {
             DeleteDirectory(MethodTestDir, wait: true);
 
-            ReadCacheSettings readCacheSettings = default;
             string filename = Path.Join(MethodTestDir, "BasicTests.log");
+
+            var kvSettings = new TsavoriteKVSettings<SpanByte, SpanByte>()
+            {
+                IndexSize = 1L << 26,
+                MemorySize = 1 << 15,
+                PageSize = 1 << 12,
+            };
 
             foreach (var arg in TestContext.CurrentContext.Test.Arguments)
             {
                 if (arg is ReadCacheMode rcm)
                 {
                     if (rcm == ReadCacheMode.UseReadCache)
-                        readCacheSettings = new()
-                        {
-                            MemorySizeBits = 15,
-                            PageSizeBits = 12,
-                            SecondChanceFraction = 0.1,
-                        };
+                    {
+                        kvSettings.ReadCacheMemorySize = 1 << 15;
+                        kvSettings.ReadCachePageSize = 1 << 12;
+                        kvSettings.ReadCacheSecondChanceFraction = 0.1;
+                        kvSettings.ReadCacheEnabled = true;
+                    };
                     continue;
                 }
                 if (arg is DeviceType deviceType)
                 {
-                    log = CreateTestDevice(deviceType, filename, deleteOnClose: true);
+                    kvSettings.LogDevice = CreateTestDevice(deviceType, filename, deleteOnClose: true);
                     continue;
                 }
             }
-            log ??= Devices.CreateLogDevice(filename, deleteOnClose: true);
+            kvSettings.LogDevice ??= Devices.CreateLogDevice(filename, deleteOnClose: true);
 
-            store = new TsavoriteKV<SpanByte, SpanByte>(
-                size: 1L << 20,
-                new LogSettings
-                {
-                    LogDevice = log,
-                    MemorySizeBits = 15,
-                    PageSizeBits = 12,
-                    ReadCacheSettings = readCacheSettings,
-                });
+            store = new (kvSettings
+                , StoreFunctions<SpanByte, SpanByte>.Create()
+                , (allocatorSettings, storeFunctions) => new (allocatorSettings, storeFunctions)
+            );
         }
 
         [TearDown]
@@ -117,7 +120,7 @@ namespace Tsavorite.test.ReadCacheTests
 
             const int PendingMod = 16;
 
-            void LocalRead(BasicContext<SpanByte, SpanByte, SpanByte, SpanByteAndMemory, Empty, Functions> sessionContext, int i, ref int numPending, bool isLast)
+            void LocalRead(BasicContext<SpanByte, SpanByte, SpanByte, SpanByteAndMemory, Empty, Functions, SpanByteStoreFunctions, SpanByteAllocator<SpanByteStoreFunctions>> sessionContext, int i, ref int numPending, bool isLast)
             {
                 var keyString = $"{i}";
                 var inputString = $"{i * 2}";
@@ -147,7 +150,7 @@ namespace Tsavorite.test.ReadCacheTests
 
                 if (numPending > 0 && ((numPending % PendingMod) == 0 || isLast))
                 {
-                    sessionContext.CompletePendingWithOutputs(out var completedOutputs, wait: true);
+                    _ = sessionContext.CompletePendingWithOutputs(out var completedOutputs, wait: true);
                     using (completedOutputs)
                     {
                         while (completedOutputs.Next())
@@ -213,7 +216,7 @@ namespace Tsavorite.test.ReadCacheTests
 
             var numKeysPerThread = MaxKeys / numThreads;
 
-            List<Task> tasks = new();   // Task rather than Thread for propagation of exception.
+            List<Task> tasks = [];   // Task rather than Thread for propagation of exception.
             for (int t = 0; t < numThreads; t++)
             {
                 var tid = t;
@@ -222,7 +225,7 @@ namespace Tsavorite.test.ReadCacheTests
                 else
                     tasks.Add(Task.Factory.StartNew(() => LocalRun(numKeysPerThread * tid, numKeysPerThread * (tid + 1))));
             }
-            Task.WaitAll(tasks.ToArray());
+            Task.WaitAll([.. tasks]);
         }
     }
 }

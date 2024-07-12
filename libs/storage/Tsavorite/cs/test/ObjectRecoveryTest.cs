@@ -9,6 +9,9 @@ using Tsavorite.core;
 
 namespace Tsavorite.test.recovery.objects
 {
+    using StructStoreFunctions = StoreFunctions<AdIdObj, NumClicksObj, AdIdObj.Comparer, AdIdObj.Serializer, NumClicksObj.Serializer, DefaultRecordDisposer<AdIdObj, NumClicksObj>>;
+    using StructAllocator = BlittableAllocator<AdIdObj, NumClicksObj, StoreFunctions<AdIdObj, NumClicksObj, AdIdObj.Comparer, AdIdObj.Serializer, NumClicksObj.Serializer, DefaultRecordDisposer<AdIdObj, NumClicksObj>>>;
+
     internal struct StructTuple<T1, T2>
     {
         public T1 Item1;
@@ -18,12 +21,12 @@ namespace Tsavorite.test.recovery.objects
     [TestFixture]
     internal class ObjectRecoveryTests
     {
-        const long numUniqueKeys = (1 << 14);
-        const long keySpace = (1L << 14);
-        const long numOps = (1L << 19);
-        const long completePendingInterval = (1L << 10);
-        const long checkpointInterval = (1L << 16);
-        private TsavoriteKV<AdId, NumClicks> store;
+        const long NumUniqueKeys = 1 << 14;
+        const long KeySpace = 1L << 14;
+        const long NumOps = 1L << 19;
+        const long CompletePendingInterval = 1L << 10;
+        const long CheckpointInterval = 1L << 16;
+        private TsavoriteKV<AdIdObj, NumClicksObj, StructStoreFunctions, StructAllocator> store;
         private Guid token;
         private IDevice log, objlog;
 
@@ -38,13 +41,14 @@ namespace Tsavorite.test.recovery.objects
             log = Devices.CreateLogDevice(Path.Join(TestUtils.MethodTestDir, "ObjectRecoveryTests.log"), false);
             objlog = Devices.CreateLogDevice(Path.Join(TestUtils.MethodTestDir, "ObjectRecoveryTests.obj.log"), false);
 
-            store = new TsavoriteKV<AdId, NumClicks>
-                (
-                    keySpace,
-                    new LogSettings { LogDevice = log, ObjectLogDevice = objlog },
-                    new CheckpointSettings { CheckpointDir = TestUtils.MethodTestDir },
-                    new SerializerSettings<AdId, NumClicks> { keySerializer = () => new AdIdSerializer(), valueSerializer = () => new NumClicksSerializer() }
-                    );
+            store = new (new TsavoriteKVSettings<AdIdObj, NumClicksObj>()
+            {
+                IndexSize = KeySpace,
+                LogDevice = log, ObjectLogDevice = objlog,
+                CheckpointDir = TestUtils.MethodTestDir
+            }, StoreFunctions<AdIdObj, NumClicksObj>.Create(new AdIdObj.Comparer(), new AdIdObj.Serializer(), new NumClicksObj.Serializer())
+                , (allocatorSettings, storeFunctions) => new(allocatorSettings, storeFunctions)
+            );
         }
 
         [TearDown]
@@ -77,9 +81,9 @@ namespace Tsavorite.test.recovery.objects
             PrepareToRecover();
 
             if (isAsync)
-                await store.RecoverAsync(token, token);
+                _ = await store.RecoverAsync(token, token);
             else
-                store.Recover(token, token);
+                _ = store.Recover(token, token);
 
             Verify(token, token);
         }
@@ -87,13 +91,13 @@ namespace Tsavorite.test.recovery.objects
         public unsafe void Populate()
         {
             // Prepare the dataset
-            var inputArray = new StructTuple<AdId, Input>[numOps];
-            for (int i = 0; i < numOps; i++)
+            var inputArray = new StructTuple<AdIdObj, Input>[NumOps];
+            for (int i = 0; i < NumOps; i++)
             {
-                inputArray[i] = new StructTuple<AdId, Input>
+                inputArray[i] = new StructTuple<AdIdObj, Input>
                 {
-                    Item1 = new AdId { adId = i % numUniqueKeys },
-                    Item2 = new Input { numClicks = new NumClicks { numClicks = 1 } }
+                    Item1 = new AdIdObj { adId = i % NumUniqueKeys },
+                    Item2 = new Input { numClicks = new NumClicksObj { numClicks = 1 } }
                 };
             }
 
@@ -103,11 +107,11 @@ namespace Tsavorite.test.recovery.objects
 
             // Process the batch of input data
             bool first = true;
-            for (int i = 0; i < numOps; i++)
+            for (int i = 0; i < NumOps; i++)
             {
-                bContext.RMW(ref inputArray[i].Item1, ref inputArray[i].Item2, Empty.Default);
+                _ = bContext.RMW(ref inputArray[i].Item1, ref inputArray[i].Item2, Empty.Default);
 
-                if ((i + 1) % checkpointInterval == 0)
+                if ((i + 1) % CheckpointInterval == 0)
                 {
                     if (first)
                         while (!store.TryInitiateFullCheckpoint(out token, CheckpointType.Snapshot)) ;
@@ -119,28 +123,28 @@ namespace Tsavorite.test.recovery.objects
                     first = false;
                 }
 
-                if (i % completePendingInterval == 0)
+                if (i % CompletePendingInterval == 0)
                 {
-                    bContext.CompletePending(false, false);
+                    _ = bContext.CompletePending(false, false);
                 }
             }
 
 
             // Make sure operations are completed
-            bContext.CompletePending(true);
+            _ = bContext.CompletePending(true);
             session.Dispose();
         }
 
         public unsafe void Verify(Guid cprVersion, Guid indexVersion)
         {
             // Create array for reading
-            var inputArray = new StructTuple<AdId, Input>[numUniqueKeys];
-            for (int i = 0; i < numUniqueKeys; i++)
+            var inputArray = new StructTuple<AdIdObj, Input>[NumUniqueKeys];
+            for (int i = 0; i < NumUniqueKeys; i++)
             {
-                inputArray[i] = new StructTuple<AdId, Input>
+                inputArray[i] = new StructTuple<AdIdObj, Input>
                 {
-                    Item1 = new AdId { adId = i },
-                    Item2 = new Input { numClicks = new NumClicks { numClicks = 0 } }
+                    Item1 = new AdIdObj { adId = i },
+                    Item2 = new Input { numClicks = new NumClicksObj { numClicks = 0 } }
                 };
             }
 
@@ -149,14 +153,14 @@ namespace Tsavorite.test.recovery.objects
 
             Input input = default;
             // Issue read requests
-            for (var i = 0; i < numUniqueKeys; i++)
+            for (var i = 0; i < NumUniqueKeys; i++)
             {
                 Output output = new();
-                bContext.Read(ref inputArray[i].Item1, ref input, ref output, Empty.Default);
+                _ = bContext.Read(ref inputArray[i].Item1, ref input, ref output, Empty.Default);
             }
 
             // Complete all pending requests
-            bContext.CompletePending(true);
+            _ = bContext.CompletePending(true);
 
             // Release
             session.Dispose();

@@ -8,12 +8,15 @@ using static Tsavorite.test.TestUtils;
 
 namespace Tsavorite.test
 {
+    using ClassStoreFunctions = StoreFunctions<MyKey, MyValue, MyKey.Comparer, MyKeySerializer, MyValueSerializer, DefaultRecordDisposer<MyKey, MyValue>>;
+    using ClassAllocator = GenericAllocator<MyKey, MyValue, StoreFunctions<MyKey, MyValue, MyKey.Comparer, MyKeySerializer, MyValueSerializer, DefaultRecordDisposer<MyKey, MyValue>>>;
+
     [TestFixture]
     internal class GenericLogCompactionTests
     {
-        private TsavoriteKV<MyKey, MyValue> store;
-        private ClientSession<MyKey, MyValue, MyInput, MyOutput, int, MyFunctionsDelete> session;
-        private BasicContext<MyKey, MyValue, MyInput, MyOutput, int, MyFunctionsDelete> bContext;
+        private TsavoriteKV<MyKey, MyValue, ClassStoreFunctions, ClassAllocator> store;
+        private ClientSession<MyKey, MyValue, MyInput, MyOutput, int, MyFunctionsDelete, ClassStoreFunctions, ClassAllocator> session;
+        private BasicContext<MyKey, MyValue, MyInput, MyOutput, int, MyFunctionsDelete, ClassStoreFunctions, ClassAllocator> bContext;
         private IDevice log, objlog;
 
         [SetUp]
@@ -22,17 +25,19 @@ namespace Tsavorite.test
             // Clean up log files from previous test runs in case they weren't cleaned up
             DeleteDirectory(MethodTestDir, wait: true);
 
+            var kvSettings = new TsavoriteKVSettings<MyKey, MyValue>()
+            {
+                IndexSize = 1 << 13,
+                MutableFraction = 0.1,
+                MemorySize = 1 << 14,
+                PageSize = 1 << 9
+            };
+
             if (TestContext.CurrentContext.Test.Arguments.Length == 0)
             {
                 // Default log creation
                 log = Devices.CreateLogDevice(Path.Join(MethodTestDir, "GenericLogCompactionTests.log"), deleteOnClose: true);
                 objlog = Devices.CreateLogDevice(Path.Join(MethodTestDir, "GenericLogCompactionTests.obj.log"), deleteOnClose: true);
-
-                store = new TsavoriteKV<MyKey, MyValue>
-                    (128,
-                    logSettings: new LogSettings { LogDevice = log, ObjectLogDevice = objlog, MutableFraction = 0.1, MemorySizeBits = 14, PageSizeBits = 9 },
-                    serializerSettings: new SerializerSettings<MyKey, MyValue> { keySerializer = () => new MyKeySerializer(), valueSerializer = () => new MyValueSerializer() }
-                    );
             }
             else
             {
@@ -43,12 +48,17 @@ namespace Tsavorite.test
                 log = CreateTestDevice(deviceType, Path.Join(MethodTestDir, $"LogCompactBasicTest_{deviceType}.log"));
                 objlog = CreateTestDevice(deviceType, Path.Join(MethodTestDir, $"LogCompactBasicTest_{deviceType}.obj.log"));
 
-                store = new TsavoriteKV<MyKey, MyValue>
-                    (128,
-                    logSettings: new LogSettings { LogDevice = log, ObjectLogDevice = objlog, MutableFraction = 0.1, MemorySizeBits = 14, PageSizeBits = 9, SegmentSizeBits = 22 },
-                    serializerSettings: new SerializerSettings<MyKey, MyValue> { keySerializer = () => new MyKeySerializer(), valueSerializer = () => new MyValueSerializer() }
-                    );
+                kvSettings.SegmentSize = 1 << 22;
             }
+
+            kvSettings.LogDevice = log;
+            kvSettings.ObjectLogDevice = objlog;
+
+            store = new (kvSettings
+                , StoreFunctions<MyKey, MyValue>.Create(new MyKey.Comparer(), new MyKeySerializer(), new MyValueSerializer(), DefaultRecordDisposer<MyKey, MyValue>.Instance)
+                , (allocatorSettings, storeFunctions) => new(allocatorSettings, storeFunctions)
+            );
+
             session = store.NewSession<MyInput, MyOutput, int, MyFunctionsDelete>(new MyFunctionsDelete());
             bContext = session.BasicContext;
         }
@@ -86,7 +96,7 @@ namespace Tsavorite.test
 
                 var key1 = new MyKey { key = i };
                 var value = new MyValue { value = i };
-                bContext.Upsert(ref key1, ref value, 0);
+                _ = bContext.Upsert(ref key1, ref value, 0);
             }
 
             compactUntil = session.Compact(compactUntil, compactionType);
@@ -104,7 +114,7 @@ namespace Tsavorite.test
                 var status = bContext.Read(ref key1, ref input, ref output, 0);
                 if (status.IsPending)
                 {
-                    bContext.CompletePendingWithOutputs(out var completedOutputs, wait: true);
+                    _ = bContext.CompletePendingWithOutputs(out var completedOutputs, wait: true);
                     Assert.IsTrue(completedOutputs.Next());
                     Assert.IsTrue(completedOutputs.Current.Status.Found);
                     output = completedOutputs.Current.Output;
@@ -133,7 +143,7 @@ namespace Tsavorite.test
 
                 var key1 = new MyKey { key = i };
                 var value = new MyValue { value = i };
-                bContext.Upsert(ref key1, ref value, 0);
+                _ = bContext.Upsert(ref key1, ref value, 0);
             }
 
             // Put fresh entries for 1000 records
@@ -141,7 +151,7 @@ namespace Tsavorite.test
             {
                 var key1 = new MyKey { key = i };
                 var value = new MyValue { value = i };
-                bContext.Upsert(ref key1, ref value, 0);
+                _ = bContext.Upsert(ref key1, ref value, 0);
             }
 
             store.Log.Flush(true);
@@ -161,7 +171,7 @@ namespace Tsavorite.test
 
                 var status = bContext.Read(ref key1, ref input, ref output, 0);
                 if (status.IsPending)
-                    bContext.CompletePending(true);
+                    _ = bContext.CompletePending(true);
                 else
                 {
                     Assert.IsTrue(status.Found);
@@ -188,13 +198,13 @@ namespace Tsavorite.test
 
                 var key1 = new MyKey { key = i };
                 var value = new MyValue { value = i };
-                bContext.Upsert(ref key1, ref value, 0);
+                _ = bContext.Upsert(ref key1, ref value, 0);
 
                 if (i % 8 == 0)
                 {
                     int j = i / 4;
                     key1 = new MyKey { key = j };
-                    bContext.Delete(ref key1);
+                    _ = bContext.Delete(ref key1);
                 }
             }
 
@@ -213,7 +223,7 @@ namespace Tsavorite.test
 
                 var status = bContext.Read(ref key1, ref input, ref output, ctx);
                 if (status.IsPending)
-                    bContext.CompletePending(true);
+                    _ = bContext.CompletePending(true);
                 else
                 {
                     if (ctx == 0)
@@ -247,7 +257,7 @@ namespace Tsavorite.test
 
                 var key1 = new MyKey { key = i };
                 var value = new MyValue { value = i };
-                bContext.Upsert(ref key1, ref value, 0);
+                _ = bContext.Upsert(ref key1, ref value, 0);
             }
 
             compactUntil = session.Compact(compactUntil, compactionType, default(EvenCompactionFunctions));
@@ -266,7 +276,7 @@ namespace Tsavorite.test
                 var status = bContext.Read(ref key1, ref input, ref output, ctx);
                 if (status.IsPending)
                 {
-                    bContext.CompletePending(true);
+                    _ = bContext.CompletePending(true);
                 }
                 else
                 {
@@ -297,12 +307,12 @@ namespace Tsavorite.test
             var key = new MyKey { key = 100 };
             var value = new MyValue { value = 20 };
 
-            bContext.Upsert(ref key, ref value, 0);
+            _ = bContext.Upsert(ref key, ref value, 0);
 
             store.Log.Flush(true);
 
             value = new MyValue { value = 21 };
-            bContext.Upsert(ref key, ref value, 0);
+            _ = bContext.Upsert(ref key, ref value, 0);
 
             store.Log.Flush(true);
 
@@ -315,7 +325,7 @@ namespace Tsavorite.test
             var status = bContext.Read(ref key, ref input, ref output);
             if (status.IsPending)
             {
-                bContext.CompletePendingWithOutputs(out var outputs, wait: true);
+                Assert.IsTrue(bContext.CompletePendingWithOutputs(out var outputs, wait: true));
                 (status, output) = GetSinglePendingResult(outputs);
             }
             Assert.IsTrue(status.Found);
@@ -329,8 +339,7 @@ namespace Tsavorite.test
 
         private struct EvenCompactionFunctions : ICompactionFunctions<MyKey, MyValue>
         {
-            public bool IsDeleted(ref MyKey key, ref MyValue value) => value.value % 2 != 0;
+            public readonly bool IsDeleted(ref MyKey key, ref MyValue value) => value.value % 2 != 0;
         }
-
     }
 }

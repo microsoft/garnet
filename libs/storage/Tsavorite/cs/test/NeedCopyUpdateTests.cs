@@ -4,14 +4,21 @@
 using System.IO;
 using NUnit.Framework;
 using Tsavorite.core;
+using static Tsavorite.test.NeedCopyUpdateTests;
 using static Tsavorite.test.TestUtils;
 
 namespace Tsavorite.test
 {
+    using RMWValueStoreFunctions = StoreFunctions<int, RMWValue, IntKeyComparer, NoSerializer<int>, RMWValueSerializer, DefaultRecordDisposer<int, RMWValue>>;
+    using RMWValueAllocator = BlittableAllocator<int, RMWValue, StoreFunctions<int, RMWValue, IntKeyComparer, NoSerializer<int>, RMWValueSerializer, DefaultRecordDisposer<int, RMWValue>>>;
+
+    using LongStoreFunctions = StoreFunctions<long, long, LongKeyComparer, NoSerializer<long>, NoSerializer<long>, DefaultRecordDisposer<long, long>>;
+    using LongAllocator = BlittableAllocator<long, long, StoreFunctions<long, long, LongKeyComparer, NoSerializer<long>, NoSerializer<long>, DefaultRecordDisposer<long, long>>>;
+
     [TestFixture]
     internal class NeedCopyUpdateTests
     {
-        private TsavoriteKV<int, RMWValue> store;
+        private TsavoriteKV<int, RMWValue, RMWValueStoreFunctions, RMWValueAllocator> store;
         private IDevice log, objlog;
 
         [SetUp]
@@ -21,11 +28,14 @@ namespace Tsavorite.test
             log = Devices.CreateLogDevice(Path.Join(MethodTestDir, "tests.log"), deleteOnClose: true);
             objlog = Devices.CreateLogDevice(Path.Join(MethodTestDir, "tests.obj.log"), deleteOnClose: true);
 
-            store = new TsavoriteKV<int, RMWValue>
-                (128,
-                logSettings: new LogSettings { LogDevice = log, ObjectLogDevice = objlog, MutableFraction = 0.1, MemorySizeBits = 15, PageSizeBits = 10 },
-                serializerSettings: new SerializerSettings<int, RMWValue> { valueSerializer = () => new RMWValueSerializer() }
-                );
+            store = new (new ()
+                {   
+                    IndexSize = 1 << 13,
+                    LogDevice = log, ObjectLogDevice = objlog,
+                    MutableFraction = 0.1, MemorySize = 1 << 15, PageSize = 1 << 10
+                }, StoreFunctions<int, RMWValue>.Create(IntKeyComparer.Instance, NoSerializer<int>.Instance, new RMWValueSerializer())
+                , (allocatorSettings, storeFunctions) => new(allocatorSettings, storeFunctions)
+            );
         }
 
         [TearDown]
@@ -74,7 +84,7 @@ namespace Tsavorite.test
             store.Log.FlushAndEvict(true);
             status = bContext.RMW(ref key, ref value2, new(StatusCode.Found)); // PENDING + NeedCopyUpdate + Found
             Assert.IsTrue(status.IsPending, status.ToString());
-            bContext.CompletePendingWithOutputs(out var outputs, true);
+            _ = bContext.CompletePendingWithOutputs(out var outputs, true);
 
             var output = new RMWValue();
             (status, output) = GetSinglePendingResult(outputs);
@@ -83,15 +93,15 @@ namespace Tsavorite.test
             // Test stored value. Should be value1
             status = bContext.Read(ref key, ref value1, ref output, new(StatusCode.Found));
             Assert.IsTrue(status.IsPending, status.ToString());
-            bContext.CompletePending(true);
+            _ = bContext.CompletePending(true);
 
             status = bContext.Delete(ref key);
             Assert.IsTrue(!status.Found && status.Record.Created, status.ToString());
-            bContext.CompletePending(true);
+            _ = bContext.CompletePending(true);
             store.Log.FlushAndEvict(true);
             status = bContext.RMW(ref key, ref value2, new(StatusCode.NotFound | StatusCode.CreatedRecord)); // PENDING + InitialUpdater + NOTFOUND
             Assert.IsTrue(status.IsPending, status.ToString());
-            bContext.CompletePending(true);
+            _ = bContext.CompletePending(true);
         }
 
         internal class RMWValue
@@ -128,7 +138,7 @@ namespace Tsavorite.test
             public override bool InitialUpdater(ref int key, ref RMWValue input, ref RMWValue value, ref RMWValue output, ref RMWInfo rmwInfo, ref RecordInfo recordInfo)
             {
                 input.flag = true;
-                base.InitialUpdater(ref key, ref input, ref value, ref output, ref rmwInfo, ref recordInfo);
+                _ = base.InitialUpdater(ref key, ref input, ref value, ref output, ref rmwInfo, ref recordInfo);
                 return true;
             }
 
@@ -156,11 +166,11 @@ namespace Tsavorite.test
     [TestFixture]
     internal class NeedCopyUpdateTestsSinglePage
     {
-        private TsavoriteKV<long, long> store;
+        private TsavoriteKV<long, long, LongStoreFunctions, LongAllocator> store;
         private IDevice log;
 
-        const int pageSizeBits = 16;
-        const int recsPerPage = (1 << pageSizeBits) / 24;   // 24 bits in RecordInfo, key, value
+        const int PageSizeBits = 16;
+        const int RecsPerPage = (1 << PageSizeBits) / 24;   // 24 bits in RecordInfo, key, value
 
         [SetUp]
         public void Setup()
@@ -168,8 +178,14 @@ namespace Tsavorite.test
             DeleteDirectory(MethodTestDir, wait: true);
             log = Devices.CreateLogDevice(Path.Join(MethodTestDir, "test.log"), deleteOnClose: true);
 
-            store = new TsavoriteKV<long, long>(128,
-                logSettings: new LogSettings { LogDevice = log, MutableFraction = 0.1, MemorySizeBits = pageSizeBits, PageSizeBits = pageSizeBits });
+            store = new (new ()
+                {
+                    IndexSize = 1 << 13,
+                    LogDevice = log,
+                    MutableFraction = 0.1, MemorySize = 1 << PageSizeBits, PageSize = 1 << PageSizeBits
+                }, StoreFunctions<long, long>.Create(LongKeyComparer.Instance)
+                , (allocatorSettings, storeFunctions) => new(allocatorSettings, storeFunctions)
+            );
         }
 
         [TearDown]
@@ -196,7 +212,7 @@ namespace Tsavorite.test
             // caused the HeadAddress to be moved above logicalAddress in CreateNewRecordRMW.
             const int padding = 2;
 
-            for (int key = 0; key < recsPerPage - padding; key++)
+            for (int key = 0; key < RecsPerPage - padding; key++)
             {
                 var status = bContext.RMW(key, key << 32 + key);
                 Assert.IsTrue(status.IsCompletedSuccessfully, status.ToString());
@@ -205,11 +221,11 @@ namespace Tsavorite.test
             store.Log.ShiftReadOnlyAddress(store.Log.TailAddress, wait: true);
 
             // This should trigger CopyUpdater, after flushing the oldest page (closest to HeadAddress).
-            for (int key = 0; key < recsPerPage - padding; key++)
+            for (int key = 0; key < RecsPerPage - padding; key++)
             {
                 var status = bContext.RMW(key, key << 32 + key);
                 if (status.IsPending)
-                    bContext.CompletePending(wait: true);
+                    _ = bContext.CompletePending(wait: true);
             }
         }
 

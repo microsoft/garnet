@@ -99,7 +99,8 @@ namespace Tsavorite.benchmark
 
             store = new(kvSettings
                 , StoreFunctions<Key, Value>.Create(new Key.Comparer())
-                , (allocatorSettings, storeFunctions) => new BlittableAllocator<Key, Value, StructStoreFunctions>());
+                , (allocatorSettings, storeFunctions) => new (allocatorSettings, storeFunctions)
+            );
         }
 
         internal void Dispose()
