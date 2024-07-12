@@ -21,6 +21,7 @@
     <Compile Include="..\..\main\GarnetServer\Extensions\SampleDeleteTxn.cs" Link="SampleDeleteTxn.cs" />
     <Compile Include="..\..\main\GarnetServer\Extensions\SetIfPM.cs" Link="SetIfPM.cs" />
     <Compile Include="..\..\main\GarnetServer\Extensions\SetWPIfPGT.cs" Link="SetWPIFPGT.cs" />
+    <Compile Include="..\..\playground\Embedded.perftest\DummyNetworkSender.cs" Link="DummyNetworkSender.cs" />
   </ItemGroup>
 
 	<ItemGroup>
