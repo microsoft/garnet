@@ -300,6 +300,7 @@ namespace Garnet.test
             using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
             var db = redis.GetDatabase(0);
             var result = db.Execute("SCAN", "0");
+            Assert.AreEqual(ResultType.BulkString, result[0].Resp2Type);
             _ = int.TryParse(((RedisValue[])((RedisResult[])result!)[0])[0], out var cursor);
             RedisValue[] keysMatch = ((RedisValue[])((RedisResult[])result!)[1]);
             Assert.IsTrue(cursor == 0);
@@ -315,7 +316,8 @@ namespace Garnet.test
             db.StringSet(new RedisKey("hello"), new RedisValue("keyvalueone"));
             db.StringSet(new RedisKey("foo"), new RedisValue("keyvaluetwo"));
             var result = db.Execute("SCAN", "0", "MATCH", "*o*", "COUNT", "1000");
-            RedisValue[] keysMatch = ((RedisValue[])((RedisResult[])result!)[1]);
+            Assert.AreEqual(ResultType.BulkString, result[0].Resp2Type);
+            RedisValue[] keysMatch = (RedisValue[])((RedisResult[])result!)[1];
             Assert.True(keysMatch.Contains("foo") && keysMatch.Contains("hello"));
         }
 
@@ -336,6 +338,7 @@ namespace Garnet.test
             do
             {
                 var result = db.Execute("SCAN", cursor.ToString());
+                Assert.AreEqual(ResultType.BulkString, result[0].Resp2Type);
                 _ = int.TryParse(((RedisValue[])((RedisResult[])result!)[0])[0], out cursor);
                 RedisValue[] keysMatch = ((RedisValue[])((RedisResult[])result!)[1]);
                 recordsReturned += keysMatch.Length;
