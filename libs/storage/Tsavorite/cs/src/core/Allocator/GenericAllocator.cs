@@ -6,11 +6,23 @@ namespace Tsavorite.core
     /// <summary>
     /// Struct wrapper (for inlining) around the fixed-length Blittable allocator.
     /// </summary>
-    public struct GenericAllocator<Key, Value, TStoreFunctions>(AllocatorSettings settings, TStoreFunctions storeFunctions) : IAllocator<Key, Value, TStoreFunctions>
+    public struct GenericAllocator<Key, Value, TStoreFunctions> : IAllocator<Key, Value, TStoreFunctions>
         where TStoreFunctions : IStoreFunctions<Key, Value>
     {
         /// <summary>The wrapped class containing all data and most actual functionality. This must be the ONLY field in this structure so its size is sizeof(IntPtr).</summary>
-        private readonly GenericAllocatorImpl<Key, Value, TStoreFunctions, GenericAllocator<Key, Value, TStoreFunctions>> _this = new(settings, storeFunctions);
+        private readonly GenericAllocatorImpl<Key, Value, TStoreFunctions, GenericAllocator<Key, Value, TStoreFunctions>> _this;
+
+        public GenericAllocator(AllocatorSettings settings, TStoreFunctions storeFunctions)
+        {
+            // Called by TsavoriteKV via allocatorCreator; must pass a wrapperCreator to AllocatorBase
+            _this = new(settings, storeFunctions, @this => new GenericAllocator<Key, Value, TStoreFunctions>(@this));
+        }
+
+        public GenericAllocator(object @this)
+        {
+            // Called by AllocatorBase via primary ctor wrapperCreator
+            _this = (GenericAllocatorImpl<Key, Value, TStoreFunctions, GenericAllocator<Key, Value, TStoreFunctions>>)@this;
+        }
 
         /// <inheritdoc/>
         public readonly AllocatorBase<Key, Value, TStoreFunctions, TAllocator> GetBase<TAllocator>()

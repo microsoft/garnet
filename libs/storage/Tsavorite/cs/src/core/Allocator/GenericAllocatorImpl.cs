@@ -34,12 +34,12 @@ namespace Tsavorite.core
 
         private bool keyHasObjects, valueHasObjects;
 
-        public GenericAllocatorImpl(AllocatorSettings settings, TStoreFunctions storeFunctions)
-            : base(settings.logSettings, storeFunctions, settings.evictCallback, settings.epoch, settings.flushCallback, settings.logger)
+        public GenericAllocatorImpl(AllocatorSettings settings, TStoreFunctions storeFunctions, Func<object, TAllocator> wrapperCreator)
+            : base(settings.LogSettings, storeFunctions, wrapperCreator, settings.evictCallback, settings.epoch, settings.flushCallback, settings.logger)
         {
             overflowPagePool = new OverflowPool<AllocatorRecord<Key, Value>[]>(4);
 
-            if (settings.logSettings.ObjectLogDevice == null)
+            if (settings.LogSettings.ObjectLogDevice == null)
                 throw new TsavoriteException("LogSettings.ObjectLogDevice needs to be specified (e.g., use Devices.CreateLogDevice, AzureStorageDevice, or NullDevice)");
 
             if (typeof(Key) == typeof(SpanByte))
@@ -50,9 +50,9 @@ namespace Tsavorite.core
             values = new AllocatorRecord<Key, Value>[BufferSize][];
             segmentOffsets = new long[SegmentBufferSize];
 
-            objectLogDevice = settings.logSettings.ObjectLogDevice;
+            objectLogDevice = settings.LogSettings.ObjectLogDevice;
 
-            if ((settings.logSettings.LogDevice as NullDevice) == null && (KeyHasObjects() || ValueHasObjects()))
+            if ((settings.LogSettings.LogDevice as NullDevice) == null && (KeyHasObjects() || ValueHasObjects()))
             {
                 if (objectLogDevice == null)
                     throw new TsavoriteException("Objects in key/value, but object log not provided during creation of Tsavorite instance");

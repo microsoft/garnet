@@ -9,6 +9,8 @@ using static Tsavorite.test.TestUtils;
 
 namespace Tsavorite.test.spanbyte
 {
+    using SpanByteStoreFunctions = StoreFunctions<SpanByte, SpanByte, SpanByteComparer, NoSerializer<SpanByte>, NoSerializer<SpanByte>, SpanByteRecordDisposer>;
+
     [TestFixture]
     internal class SpanByteVLVectorTests
     {
@@ -24,10 +26,13 @@ namespace Tsavorite.test.spanbyte
             DeleteDirectory(MethodTestDir, wait: true);
 
             var log = Devices.CreateLogDevice(Path.Join(MethodTestDir, "hlog1.log"), deleteOnClose: true);
-            var store = new TsavoriteKV<SpanByte, SpanByte>
-                (128,
-                new LogSettings { LogDevice = log, MemorySizeBits = 17, PageSizeBits = 12 },
-                null, null, null);
+            var store = new TsavoriteKV<SpanByte, SpanByte, SpanByteStoreFunctions, SpanByteAllocator<SpanByteStoreFunctions>>(
+                new () {
+                    IndexSize = 1 << 13,
+                    LogDevice = log, MemorySize = 1 << 17, PageSize = 1 << 12
+                }, StoreFunctions<SpanByte, SpanByte>.Create()
+                    , (allocatorSettings, storeFunctions) => new(allocatorSettings, storeFunctions)
+                );
             var session = store.NewSession<SpanByte, int[], Empty, VLVectorFunctions>(new VLVectorFunctions());
             var bContext = session.BasicContext;
 
@@ -46,7 +51,7 @@ namespace Tsavorite.test.spanbyte
                     valueSpan[j] = len;
                 var valueSpanByte = valueSpan.Slice(0, len).AsSpanByte();
 
-                bContext.Upsert(ref keySpanByte, ref valueSpanByte, Empty.Default);
+                _ = bContext.Upsert(ref keySpanByte, ref valueSpanByte, Empty.Default);
             }
 
             // Reset rng to get the same sequence of value lengths
@@ -62,7 +67,7 @@ namespace Tsavorite.test.spanbyte
 
                 if (status.IsPending)
                 {
-                    bContext.CompletePendingWithOutputs(out var outputs, wait: true);
+                    _ = bContext.CompletePendingWithOutputs(out var outputs, wait: true);
                     (status, output) = GetSinglePendingResult(outputs);
                 }
 
@@ -85,10 +90,14 @@ namespace Tsavorite.test.spanbyte
             DeleteDirectory(MethodTestDir, wait: true);
 
             var log = Devices.CreateLogDevice(Path.Join(MethodTestDir, "hlog1.log"), deleteOnClose: true);
-            var store = new TsavoriteKV<SpanByte, SpanByte>
-                (128,
-                new LogSettings { LogDevice = log, MemorySizeBits = 17, PageSizeBits = 12 },
-                null, null, null);
+            var store = new TsavoriteKV<SpanByte, SpanByte, SpanByteStoreFunctions, SpanByteAllocator<SpanByteStoreFunctions>>(
+                new () {
+                    IndexSize = 1 << 13,
+                    LogDevice = log,
+                    MemorySize = 1 << 17, PageSize = 1 << 12
+                }, StoreFunctions<SpanByte, SpanByte>.Create()
+                , (allocatorSettings, storeFunctions) => new(allocatorSettings, storeFunctions)
+            );
             var session = store.NewSession<SpanByte, int[], Empty, VLVectorFunctions>(new VLVectorFunctions());
             var bContext = session.BasicContext;
 
@@ -109,7 +118,7 @@ namespace Tsavorite.test.spanbyte
                     valueSpan[j] = valueLen;
                 var valueSpanByte = valueSpan.Slice(0, valueLen).AsSpanByte();
 
-                bContext.Upsert(ref keySpanByte, ref valueSpanByte, Empty.Default);
+                _ = bContext.Upsert(ref keySpanByte, ref valueSpanByte, Empty.Default);
             }
 
             // Reset rng to get the same sequence of key and value lengths
@@ -127,7 +136,7 @@ namespace Tsavorite.test.spanbyte
 
                 if (status.IsPending)
                 {
-                    bContext.CompletePendingWithOutputs(out var outputs, wait: true);
+                    _ = bContext.CompletePendingWithOutputs(out var outputs, wait: true);
                     (status, output) = GetSinglePendingResult(outputs);
                 }
 

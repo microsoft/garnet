@@ -22,7 +22,7 @@ namespace Tsavorite.core
         internal readonly TAllocator hlog;
         internal readonly AllocatorBase<Key, Value, TStoreFunctions, TAllocator> hlogBase;
         internal readonly TAllocator readcache;
-        internal readonly AllocatorBase<Key, Value, TStoreFunctions, TAllocator> readcacheBase;
+        internal readonly AllocatorBase<Key, Value, TStoreFunctions, TAllocator> readCacheBase;
 
         internal readonly TStoreFunctions storeFunctions;
 
@@ -84,19 +84,19 @@ namespace Tsavorite.core
         /// <summary>
         /// Create TsavoriteKV instance
         /// </summary>
-        /// <param name="settings">Config settings</param>
+        /// <param name="kvSettings">Config settings</param>
         /// <param name="storeFunctions">Store-level user function implementations</param>
         /// <param name="allocatorFactory">Func to call to create the allocator(s, if doing readcache)</param>
-        public TsavoriteKV(TsavoriteKVSettings<Key, Value> settings, TStoreFunctions storeFunctions, Func<AllocatorSettings, TStoreFunctions, TAllocator> allocatorFactory)
-            : base(settings.logger ?? settings.loggerFactory?.CreateLogger("TsavoriteKV Index Overflow buckets"))
+        public TsavoriteKV(TsavoriteKVSettings<Key, Value> kvSettings, TStoreFunctions storeFunctions, Func<AllocatorSettings, TStoreFunctions, TAllocator> allocatorFactory)
+            : base(kvSettings.logger ?? kvSettings.loggerFactory?.CreateLogger("TsavoriteKV Index Overflow buckets"))
         {
             this.allocatorFactory = allocatorFactory;
-            loggerFactory = settings.loggerFactory;
-            logger = settings.logger ?? settings.loggerFactory?.CreateLogger("TsavoriteKV");
+            loggerFactory = kvSettings.loggerFactory;
+            logger = kvSettings.logger ?? kvSettings.loggerFactory?.CreateLogger("TsavoriteKV");
 
             this.storeFunctions = storeFunctions;
 
-            var checkpointSettings = settings.GetCheckpointSettings() ?? new CheckpointSettings();
+            var checkpointSettings = kvSettings.GetCheckpointSettings() ?? new CheckpointSettings();
 
             CheckpointVersionSwitchBarrier = checkpointSettings.CheckpointVersionSwitchBarrier;
             ThrottleCheckpointFlushDelayMs = checkpointSettings.ThrottleCheckpointFlushDelayMs;
@@ -113,9 +113,9 @@ namespace Tsavorite.core
             if (checkpointSettings.CheckpointManager is null)
                 disposeCheckpointManager = true;
 
-            var logSettings = settings.GetLogSettings();
+            var logSettings = kvSettings.GetLogSettings();
 
-            UseReadCache = logSettings.ReadCacheSettings is not null;
+            UseReadCache = kvSettings.ReadCacheEnabled;
 
             ReadCopyOptions = logSettings.ReadCopyOptions;
             if (ReadCopyOptions.CopyTo == ReadCopyTo.Inherit)
@@ -129,12 +129,15 @@ namespace Tsavorite.core
             bool isFixedLenReviv = hlog.IsFixedLength;
 
             // Create the allocator
-            var allocatorSettings = new AllocatorSettings(logSettings, epoch, settings.logger ?? settings.loggerFactory?.CreateLogger(typeof(TAllocator).Name));
+            var allocatorSettings = new AllocatorSettings(logSettings, epoch, kvSettings.logger ?? kvSettings.loggerFactory?.CreateLogger(typeof(TAllocator).Name));
             hlog = allocatorFactory(allocatorSettings, storeFunctions);
+            hlogBase = hlog.GetBase<TAllocator>();
+            hlogBase.Initialize();
             Log = new(this, hlog);
+
             if (UseReadCache)
             {
-                allocatorSettings.logSettings = new()
+                allocatorSettings.LogSettings = new()
                 {
                     LogDevice = new NullDevice(),
                     ObjectLogDevice = hlog.HasObjectLog ? new NullDevice() : null,
@@ -143,21 +146,23 @@ namespace Tsavorite.core
                     SegmentSizeBits = logSettings.ReadCacheSettings.MemorySizeBits,
                     MutableFraction = 1 - logSettings.ReadCacheSettings.SecondChanceFraction
                 };
-                allocatorSettings.logger = settings.logger ?? settings.loggerFactory?.CreateLogger($"{typeof(TAllocator).Name} ReadCache");
+                allocatorSettings.logger = kvSettings.logger ?? kvSettings.loggerFactory?.CreateLogger($"{typeof(TAllocator).Name} ReadCache");
                 allocatorSettings.evictCallback = ReadCacheEvict;
+                readcache = allocatorFactory(allocatorSettings, storeFunctions);
                 ReadCache = new(this, readcache);
+                readCacheBase = readcache.GetBase<TAllocator>();
+                readCacheBase.Initialize();
             }
-            hlogBase.Initialize();
 
             sectorSize = (int)logSettings.LogDevice.SectorSize;
-            Initialize(settings.GetIndexSizeCacheLines(), sectorSize);
+            Initialize(kvSettings.GetIndexSizeCacheLines(), sectorSize);
 
             LockTable = new OverflowBucketLockTable<Key, Value, TStoreFunctions, TAllocator>(this);
-            RevivificationManager = new(this, isFixedLenReviv, settings.RevivificationSettings, logSettings);
+            RevivificationManager = new(this, isFixedLenReviv, kvSettings.RevivificationSettings, logSettings);
 
             systemState = SystemState.Make(Phase.REST, 1);
 
-            if (settings.TryRecoverLatest)
+            if (kvSettings.TryRecoverLatest)
             {
                 try
                 {
@@ -630,7 +635,7 @@ namespace Tsavorite.core
         {
             Free();
             hlogBase.Dispose();
-            readcacheBase?.Dispose();
+            readCacheBase?.Dispose();
             LockTable.Dispose();
             _lastSnapshotCheckpoint.Dispose();
             if (disposeCheckpointManager)
@@ -684,7 +689,7 @@ namespace Tsavorite.core
                     {
                         var x = default(HashBucketEntry);
                         x.word = b.bucket_entries[bucket_entry];
-                        if (((!x.ReadCache) && (x.Address >= beginAddress)) || (x.ReadCache && (x.AbsoluteAddress >= readcacheBase.HeadAddress)))
+                        if (((!x.ReadCache) && (x.Address >= beginAddress)) || (x.ReadCache && (x.AbsoluteAddress >= readCacheBase.HeadAddress)))
                         {
                             if (tags.Contains(x.Tag) && !x.Tentative)
                                 throw new TsavoriteException("Duplicate tag found in index");

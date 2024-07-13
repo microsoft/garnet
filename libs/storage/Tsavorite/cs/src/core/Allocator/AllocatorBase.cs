@@ -507,8 +507,10 @@ namespace Tsavorite.core
         protected readonly ILogger logger;
 
         /// <summary>Instantiate base allocator implementation</summary>
-        private protected AllocatorBase(LogSettings settings, TStoreFunctions storeFunctions, Action<long, long> evictCallback, LightEpoch epoch, Action<CommitInfo> flushCallback, ILogger logger = null)
+        private protected AllocatorBase(LogSettings settings, TStoreFunctions storeFunctions, Func<object, TAllocator> wrapperCreator, Action<long, long> evictCallback, LightEpoch epoch, Action<CommitInfo> flushCallback, ILogger logger = null)
         {
+            _wrapper = wrapperCreator(this);
+
             // Validation
             if (settings.PageSizeBits < LogSettings.kMinPageSizeBits || settings.PageSizeBits > LogSettings.kMaxPageSizeBits)
                 throw new TsavoriteException($"{nameof(settings.PageSizeBits)} must be between {LogSettings.kMinPageSizeBits} and {LogSettings.kMaxPageSizeBits}");

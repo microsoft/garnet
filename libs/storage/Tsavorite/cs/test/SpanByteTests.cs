@@ -12,6 +12,8 @@ using static Tsavorite.core.Utility;
 
 namespace Tsavorite.test.spanbyte
 {
+    using SpanByteStoreFunctions = StoreFunctions<SpanByte, SpanByte, SpanByteComparer, NoSerializer<SpanByte>, NoSerializer<SpanByte>, SpanByteRecordDisposer>;
+
     [TestFixture]
     internal class SpanByteTests
     {
@@ -27,8 +29,13 @@ namespace Tsavorite.test.spanbyte
             try
             {
                 using var log = Devices.CreateLogDevice(Path.Join(TestUtils.MethodTestDir, "hlog1.log"), deleteOnClose: true);
-                using var store = new TsavoriteKV<SpanByte, SpanByte>
-                    (128, new LogSettings { LogDevice = log, MemorySizeBits = 17, PageSizeBits = 12 });
+                using var store = new TsavoriteKV<SpanByte, SpanByte, SpanByteStoreFunctions, SpanByteAllocator<SpanByteStoreFunctions>>(
+                    new () {
+                        IndexSize = 1 << 13,
+                        LogDevice = log, MemorySize = 1 << 17, PageSize = 1 << 12 
+                    } , StoreFunctions<SpanByte, SpanByte>.Create()
+                    , (allocatorSettings, storeFunctions) => new(allocatorSettings, storeFunctions)
+                );
                 using var session = store.NewSession<SpanByte, SpanByteAndMemory, Empty, SpanByteFunctions<Empty>>(new SpanByteFunctions<Empty>());
                 var bContext = session.BasicContext;
 
@@ -42,8 +49,8 @@ namespace Tsavorite.test.spanbyte
                     var key1SpanByte = SpanByte.FromPinnedPointer(key1Ptr, key1.Length);
                     var value1SpanByte = SpanByte.FromPinnedPointer(value1Ptr, value1.Length);
 
-                    bContext.Upsert(key1SpanByte, value1SpanByte);
-                    bContext.Read(ref key1SpanByte, ref input, ref output1);
+                    _ = bContext.Upsert(key1SpanByte, value1SpanByte);
+                    _ = bContext.Read(ref key1SpanByte, ref input, ref output1);
                 }
 
                 Assert.IsTrue(output1.IsSpanByte);
@@ -59,8 +66,8 @@ namespace Tsavorite.test.spanbyte
                     var key2SpanByte = SpanByte.FromPinnedPointer(key2Ptr, key2.Length);
                     var value2SpanByte = SpanByte.FromPinnedPointer(value2Ptr, value2.Length);
 
-                    bContext.Upsert(key2SpanByte, value2SpanByte);
-                    bContext.Read(ref key2SpanByte, ref input, ref output2);
+                    _ = bContext.Upsert(key2SpanByte, value2SpanByte);
+                    _ = bContext.Read(ref key2SpanByte, ref input, ref output2);
                 }
 
                 Assert.IsTrue(!output2.IsSpanByte);
@@ -83,9 +90,14 @@ namespace Tsavorite.test.spanbyte
             try
             {
                 using var log = Devices.CreateLogDevice(Path.Join(TestUtils.MethodTestDir, "test.log"), deleteOnClose: true);
-                using var store = new TsavoriteKV<SpanByte, SpanByte>(
-                    size: 1L << 10,
-                    new LogSettings { LogDevice = log, MemorySizeBits = 15, PageSizeBits = 12 });
+                using var store = new TsavoriteKV<SpanByte, SpanByte, SpanByteStoreFunctions, SpanByteAllocator<SpanByteStoreFunctions>>(
+                    new () {
+                        IndexSize = 1L << 16,
+                        LogDevice = log,
+                        MemorySize = 1 << 15, PageSize = 1 << 12
+                    }, StoreFunctions<SpanByte, SpanByte>.Create()
+                    , (allocatorSettings, storeFunctions) => new(allocatorSettings, storeFunctions)
+                );
                 using var session = store.NewSession<SpanByte, SpanByteAndMemory, Empty, SpanByteFunctions<Empty>>(new SpanByteFunctions<Empty>());
                 var bContext = session.BasicContext;
 
@@ -94,7 +106,7 @@ namespace Tsavorite.test.spanbyte
                     var key = MemoryMarshal.Cast<char, byte>($"{i}".AsSpan());
                     var value = MemoryMarshal.Cast<char, byte>($"{i + 1000}".AsSpan());
                     fixed (byte* k = key, v = value)
-                        bContext.Upsert(SpanByte.FromPinnedSpan(key), SpanByte.FromPinnedSpan(value));
+                        _ = bContext.Upsert(SpanByte.FromPinnedSpan(key), SpanByte.FromPinnedSpan(value));
                 }
 
                 // Read, evict all records to disk, read again
@@ -199,9 +211,16 @@ namespace Tsavorite.test.spanbyte
             TestUtils.DeleteDirectory(TestUtils.MethodTestDir, wait: true);
 
             using var log = Devices.CreateLogDevice(Path.Join(TestUtils.MethodTestDir, "vl-iter.log"), deleteOnClose: true);
-            using var store = new TsavoriteKV<SpanByte, SpanByte>
-                (128,
-                new LogSettings { LogDevice = log, MemorySizeBits = 17, PageSizeBits = 10 }); // 1KB page
+            using var store = new TsavoriteKV<SpanByte, SpanByte, SpanByteStoreFunctions, SpanByteAllocator<SpanByteStoreFunctions>>(
+                new()
+                {
+                    IndexSize = 1 << 13,
+                    LogDevice = log,
+                    MemorySize = 1 << 17,
+                    PageSize = 1 << 10    // 1KB page
+                }, StoreFunctions<SpanByte, SpanByte>.Create()
+                , (allocatorSettings, storeFunctions) => new(allocatorSettings, storeFunctions)
+            );
             using var session = store.NewSession<SpanByte, int[], Empty, VLVectorFunctions>(new VLVectorFunctions());
             var bContext = session.BasicContext;
 
@@ -219,8 +238,8 @@ namespace Tsavorite.test.spanbyte
             // the value space for the first record, and the length header for the second record. This is the space available for the second record's value.
             var p2value2len = PageSize
                                 - 2 * RecordInfo.GetLength()
-                                - 2 * RoundUp(key.TotalSize, SpanByteAllocator.kRecordAlignment)
-                                - RoundUp(value.TotalSize, SpanByteAllocator.kRecordAlignment)
+                                - 2 * RoundUp(key.TotalSize, Constants.kRecordAlignment)
+                                - RoundUp(value.TotalSize, Constants.kRecordAlignment)
                                 - sizeof(int);
             Set(ref keySpan, 3L, ref valueSpan, p2value2len, 3);        // Inserted on page#1
             Assert.AreEqual(PageSize * 2, store.Log.TailAddress, "TailAddress should be at the end of page#2");
@@ -253,7 +272,7 @@ namespace Tsavorite.test.spanbyte
                 keySpan[0] = keyValue;
                 value.Length = valueLength;
                 valueSpan[0] = tag;
-                bContext.Upsert(ref key, ref value, Empty.Default);
+                _ = bContext.Upsert(ref key, ref value, Empty.Default);
             }
         }
     }

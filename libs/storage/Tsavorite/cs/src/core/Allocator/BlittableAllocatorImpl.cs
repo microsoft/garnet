@@ -23,8 +23,8 @@ namespace Tsavorite.core
 
         private readonly OverflowPool<PageUnit> overflowPagePool;
 
-        public BlittableAllocatorImpl(AllocatorSettings settings, TStoreFunctions storeFunctions)
-            : base(settings.logSettings, storeFunctions, settings.evictCallback, settings.epoch, settings.flushCallback, settings.logger)
+        public BlittableAllocatorImpl(AllocatorSettings settings, TStoreFunctions storeFunctions, Func<object, TAllocator> wrapperCreator)
+            : base(settings.LogSettings, storeFunctions, wrapperCreator, settings.evictCallback, settings.epoch, settings.flushCallback, settings.logger)
         {
             overflowPagePool = new OverflowPool<PageUnit>(4, p => { });
 

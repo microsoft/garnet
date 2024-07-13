@@ -193,7 +193,8 @@ namespace Tsavorite.core
             commitQueue = new WorkQueueLIFO<CommitInfo>(SerialCommitCallbackWorker);
             allocator = new(
                 new AllocatorSettings(logSettings.GetLogSettings(), epoch, logger) { flushCallback = CommitCallback },
-                new EmptyStoreFunctions(EmptyKeyComparer.Instance, NoSerializer<Empty>.Instance, NoSerializer<byte>.Instance, DefaultRecordDisposer<Empty, byte>.Instance));
+                new EmptyStoreFunctions(EmptyKeyComparer.Instance, NoSerializer<Empty>.Instance, NoSerializer<byte>.Instance, DefaultRecordDisposer<Empty, byte>.Instance),
+                @this => new BlittableAllocator<Empty, Byte, EmptyStoreFunctions>(@this));
             allocator.Initialize();
             beginAddress = allocator.BeginAddress;
 

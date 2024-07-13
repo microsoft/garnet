@@ -4,12 +4,23 @@
 namespace Tsavorite.core
 {
     // Allocator for SpanByte Keys and Values.
-    public struct SpanByteAllocator<TStoreFunctions>(AllocatorSettings settings, TStoreFunctions storeFunctions)
-        : IAllocator<SpanByte, SpanByte, TStoreFunctions>
+    public struct SpanByteAllocator<TStoreFunctions> : IAllocator<SpanByte, SpanByte, TStoreFunctions>
         where TStoreFunctions : IStoreFunctions<SpanByte, SpanByte>
     {
         /// <summary>The wrapped class containing all data and most actual functionality. This must be the ONLY field in this structure so its size is sizeof(IntPtr).</summary>
-        private readonly SpanByteAllocatorImpl<TStoreFunctions, SpanByteAllocator<TStoreFunctions>> _this = new(settings, storeFunctions);
+        private readonly SpanByteAllocatorImpl<TStoreFunctions, SpanByteAllocator<TStoreFunctions>> _this;
+
+        public SpanByteAllocator(AllocatorSettings settings, TStoreFunctions storeFunctions)
+        {
+            // Called by TsavoriteKV via allocatorCreator; must pass a wrapperCreator to AllocatorBase
+            _this = new(settings, storeFunctions, @this => new SpanByteAllocator<TStoreFunctions>(@this));
+        }
+
+        public SpanByteAllocator(object @this)
+        {
+            // Called by AllocatorBase via primary ctor wrapperCreator
+            _this = (SpanByteAllocatorImpl<TStoreFunctions, SpanByteAllocator<TStoreFunctions>>)@this;
+        }
 
         /// <inheritdoc/>
         public readonly AllocatorBase<SpanByte, SpanByte, TStoreFunctions, TAllocator> GetBase<TAllocator>()

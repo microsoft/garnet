@@ -14,6 +14,7 @@ namespace Tsavorite.test
 {
     using StructStoreFunctions = StoreFunctions<KeyStruct, ValueStruct, KeyStruct.Comparer, NoSerializer<KeyStruct>, NoSerializer<ValueStruct>, DefaultRecordDisposer<KeyStruct, ValueStruct>>;
     using StructAllocator = BlittableAllocator<KeyStruct, ValueStruct, StoreFunctions<KeyStruct, ValueStruct, KeyStruct.Comparer, NoSerializer<KeyStruct>, NoSerializer<ValueStruct>, DefaultRecordDisposer<KeyStruct, ValueStruct>>>;
+
     using LongStoreFunctions = StoreFunctions<long, long, LongKeyComparer, NoSerializer<long>, NoSerializer<long>, DefaultRecordDisposer<long, long>>;
     using LongAllocator = BlittableAllocator<long, long, StoreFunctions<long, long, LongKeyComparer, NoSerializer<long>, NoSerializer<long>, DefaultRecordDisposer<long, long>>>;
 
@@ -44,13 +45,8 @@ namespace Tsavorite.test
             log = CreateTestDevice(deviceType, filename, latencyMs: latencyMs);
             kvSettings.LogDevice = log;
 
-            store = new(
-                new TsavoriteKVSettings<KeyStruct, ValueStruct>()
-                {
-                    IndexSize = 1L << 13,
-                    LogDevice = log,
-                    MemorySize = 1 << 15, PageSize = 1 << 9, SegmentSize = 1 << 22
-                }, StoreFunctions<KeyStruct, ValueStruct>.Create(KeyStruct.Comparer.Instance)
+            store = new(kvSettings
+                , StoreFunctions<KeyStruct, ValueStruct>.Create(KeyStruct.Comparer.Instance)
                 , (allocatorSettings, storeFunctions) => new(allocatorSettings, storeFunctions)
             );
 

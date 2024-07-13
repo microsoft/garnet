@@ -101,7 +101,7 @@ namespace Tsavorite.core
                         var logicalAddress = entry.Address;
                         long physicalAddress = 0;
 
-                        if (entry.ReadCache && entry.AbsoluteAddress >= readcacheBase.HeadAddress)
+                        if (entry.ReadCache && entry.AbsoluteAddress >= readCacheBase.HeadAddress)
                             physicalAddress = readcache.GetPhysicalAddress(entry.AbsoluteAddress);
                         else if (logicalAddress >= hlogBase.HeadAddress)
                             physicalAddress = hlog.GetPhysicalAddress(logicalAddress);
@@ -222,7 +222,7 @@ namespace Tsavorite.core
                 entry.Address = logicalAddress;
                 if (entry.ReadCache)
                 {
-                    if (logicalAddress < readcacheBase.HeadAddress)
+                    if (logicalAddress < readCacheBase.HeadAddress)
                         break;
                     var physicalAddress = readcache.GetPhysicalAddress(logicalAddress);
                     var hash = storeFunctions.GetKeyHashCode64(ref readcache.GetKey(physicalAddress));

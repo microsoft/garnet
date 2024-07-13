@@ -10,6 +10,9 @@ using static Tsavorite.test.TestUtils;
 
 namespace Tsavorite.test.largeobjects
 {
+    using ClassStoreFunctions = StoreFunctions<MyKey, MyLargeValue, MyKey.Comparer, MyKeySerializer, MyLargeValueSerializer, DefaultRecordDisposer<MyKey, MyLargeValue>>;
+    using ClassAllocator = GenericAllocator<MyKey, MyLargeValue, StoreFunctions<MyKey, MyLargeValue, MyKey.Comparer, MyKeySerializer, MyLargeValueSerializer, DefaultRecordDisposer<MyKey, MyLargeValue>>>;
+
     [TestFixture]
     internal class LargeObjectTests
     {
@@ -30,12 +33,17 @@ namespace Tsavorite.test.largeobjects
             MyLargeOutput output = new MyLargeOutput();
             Guid token = default;
 
+            // Step 1: Create and populate store.
             using (var log = Devices.CreateLogDevice(Path.Join(MethodTestDir, "LargeObjectTest.log")))
             using (var objlog = Devices.CreateLogDevice(Path.Join(MethodTestDir, "LargeObjectTest.obj.log")))
-            using (var store = new TsavoriteKV<MyKey, MyLargeValue>(128,
-                new LogSettings { LogDevice = log, ObjectLogDevice = objlog, MutableFraction = 0.1, PageSizeBits = 21, MemorySizeBits = 26 },
-                new CheckpointSettings { CheckpointDir = MethodTestDir },
-                new SerializerSettings<MyKey, MyLargeValue> { keySerializer = () => new MyKeySerializer(), valueSerializer = () => new MyLargeValueSerializer() }))
+            using (var store = new TsavoriteKV<MyKey, MyLargeValue, ClassStoreFunctions, ClassAllocator>(
+                new () {
+                    IndexSize = 1 << 13,
+                    LogDevice = log, ObjectLogDevice = objlog, 
+                    MutableFraction = 0.1, PageSize = 1 << 21, MemorySize = 1 << 26,
+                    CheckpointDir = MethodTestDir
+                }, StoreFunctions<MyKey, MyLargeValue>.Create(new MyKey.Comparer(), new MyKeySerializer(), new MyLargeValueSerializer())
+                , (allocatorSettings, storeFunctions) => new(allocatorSettings, storeFunctions)))
             using (var session = store.NewSession<MyInput, MyLargeOutput, Empty, MyLargeFunctions>(new MyLargeFunctions()))
             {
                 var bContext = session.BasicContext;
@@ -45,21 +53,26 @@ namespace Tsavorite.test.largeobjects
                 {
                     var mykey = new MyKey { key = key };
                     var value = new MyLargeValue(1 + r.Next(maxSize));
-                    bContext.Upsert(ref mykey, ref value, Empty.Default);
+                    _ = bContext.Upsert(ref mykey, ref value, Empty.Default);
                 }
 
-                store.TryInitiateFullCheckpoint(out token, checkpointType);
+                _ = store.TryInitiateFullCheckpoint(out token, checkpointType);
                 await store.CompleteCheckpointAsync();
             }
 
+            // Step 1: Create and recover store.
             using (var log = Devices.CreateLogDevice(Path.Join(MethodTestDir, "LargeObjectTest.log")))
             using (var objlog = Devices.CreateLogDevice(Path.Join(MethodTestDir, "LargeObjectTest.obj.log")))
-            using (var store = new TsavoriteKV<MyKey, MyLargeValue>(128,
-                    new LogSettings { LogDevice = log, ObjectLogDevice = objlog, MutableFraction = 0.1, PageSizeBits = 21, MemorySizeBits = 26 },
-                    new CheckpointSettings { CheckpointDir = MethodTestDir },
-                    new SerializerSettings<MyKey, MyLargeValue> { keySerializer = () => new MyKeySerializer(), valueSerializer = () => new MyLargeValueSerializer() }))
+            using (var store = new TsavoriteKV<MyKey, MyLargeValue, ClassStoreFunctions, ClassAllocator>(
+                    new () {
+                        IndexSize = 1 << 13,
+                        LogDevice = log, ObjectLogDevice = objlog,
+                        MutableFraction = 0.1, PageSize = 1 << 21, MemorySize = 1 << 26,
+                        CheckpointDir = MethodTestDir
+                    }, StoreFunctions<MyKey, MyLargeValue>.Create(new MyKey.Comparer(), new MyKeySerializer(), new MyLargeValueSerializer())
+                , (allocatorSettings, storeFunctions) => new(allocatorSettings, storeFunctions)))
             {
-                store.Recover(token);
+                _ = store.Recover(token);
 
                 using (var session = store.NewSession<MyInput, MyLargeOutput, Empty, MyLargeFunctions>(new MyLargeFunctions()))
                 {

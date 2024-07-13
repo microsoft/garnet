@@ -12,7 +12,7 @@ namespace Tsavorite.core
     public struct AllocatorSettings
     {
         /// <summary>The Log settings, usually from <see cref="TsavoriteKVSettings{Key, Value}"/></summary>
-        internal LogSettings logSettings;
+        internal LogSettings LogSettings;
 
         /// <summary>The epoch created for the <see cref="TsavoriteKV{TKey, TValue, TStoreFunctions, TAllocator}"/></summary>
         internal LightEpoch epoch;
@@ -28,7 +28,7 @@ namespace Tsavorite.core
 
         internal AllocatorSettings(LogSettings logSettings, LightEpoch epoch, ILogger logger)
         {
-            this.logSettings = logSettings;
+            this.LogSettings = logSettings;
             this.epoch = epoch;
             this.logger = logger;
         }

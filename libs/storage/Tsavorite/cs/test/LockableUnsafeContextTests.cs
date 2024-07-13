@@ -476,7 +476,7 @@ namespace Tsavorite.test.LockableUnsafeContext
             Populate();
             PrepareRecordLocation(flushMode);
 
-            // SetUp also reads this to determine whether to supply ReadCacheSettings. If ReadCache is specified it wins over CopyToTail.
+            // SetUp also reads this to determine whether to supply ReadCache settings. If ReadCache is specified it wins over CopyToTail.
             var useRMW = updateOp == UpdateOp.RMW;
             const int readKey24 = 24, readKey51 = 51;
             long resultKey = resultLockTarget == ResultLockTarget.LockTable ? NumRecords + 1 : readKey24 + readKey51;
@@ -749,7 +749,7 @@ namespace Tsavorite.test.LockableUnsafeContext
 
             BucketLockTracker blt = new();
 
-            // SetUp also reads this to determine whether to supply ReadCacheSettings. If ReadCache is specified it wins over CopyToTail.
+            // SetUp also reads this to determine whether to supply ReadCache settings. If ReadCache is specified it wins over CopyToTail.
             long resultKey = resultLockTarget == ResultLockTarget.LockTable ? NumRecords + 1 : 75;
             Status status;
 
