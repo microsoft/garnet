@@ -12,7 +12,7 @@ using static Tsavorite.test.TestUtils;
 
 namespace Tsavorite.test.LockTable
 {
-    using LongStoreFunctions = StoreFunctions<long, long, LongKeyComparer, NoSerializer<long>, NoSerializer<long>, DefaultRecordDisposer<long, long>>;
+    using LongStoreFunctions = StoreFunctions<long, long, LongKeyComparer, DefaultRecordDisposer<long, long>>;
 
     internal class SingleBucketComparer : IKeyComparer<long>
     {

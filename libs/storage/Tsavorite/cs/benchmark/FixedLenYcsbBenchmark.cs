@@ -12,7 +12,7 @@ using Tsavorite.core;
 namespace Tsavorite.benchmark
 {
 #pragma warning disable IDE0065 // Misplaced using directive
-    using StructStoreFunctions = StoreFunctions<Key, Value, Key.Comparer, NoSerializer<Key>, NoSerializer<Value>, DefaultRecordDisposer<Key, Value>>;
+    using StructStoreFunctions = StoreFunctions<Key, Value, Key.Comparer, DefaultRecordDisposer<Key, Value>>;
 
     internal class Tsavorite_YcsbBenchmark
     {

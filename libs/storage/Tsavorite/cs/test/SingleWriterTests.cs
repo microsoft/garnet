@@ -43,11 +43,11 @@ namespace Tsavorite.test.SingleWriter
 
 namespace Tsavorite.test.SingleWriter
 {
-    using IntStoreFunctions = StoreFunctions<int, int, IntKeyComparer, NoSerializer<int>, NoSerializer<int>, DefaultRecordDisposer<int, int>>;
-    using IntAllocator = BlittableAllocator<int, int, StoreFunctions<int, int, IntKeyComparer, NoSerializer<int>, NoSerializer<int>, DefaultRecordDisposer<int, int>>>;
+    using IntStoreFunctions = StoreFunctions<int, int, IntKeyComparer, DefaultRecordDisposer<int, int>>;
+    using IntAllocator = BlittableAllocator<int, int, StoreFunctions<int, int, IntKeyComparer, DefaultRecordDisposer<int, int>>>;
 
-    using StructStoreFunctions = StoreFunctions<StructWithString, StructWithString, StructWithString.Comparer, StructWithString.Serializer, StructWithString.Serializer, DefaultRecordDisposer<StructWithString, StructWithString>>;
-    using StructAllocator = BlittableAllocator<StructWithString, StructWithString, StoreFunctions<StructWithString, StructWithString, StructWithString.Comparer, StructWithString.Serializer, StructWithString.Serializer, DefaultRecordDisposer<StructWithString, StructWithString>>>;
+    using StructStoreFunctions = StoreFunctions<StructWithString, StructWithString, StructWithString.Comparer, DefaultRecordDisposer<StructWithString, StructWithString>>;
+    using StructAllocator = BlittableAllocator<StructWithString, StructWithString, StoreFunctions<StructWithString, StructWithString, StructWithString.Comparer, DefaultRecordDisposer<StructWithString, StructWithString>>>;
 
     internal class SingleWriterTestFunctions : SimpleSimpleFunctions<int, int>
     {
@@ -214,7 +214,7 @@ namespace Tsavorite.test.SingleWriter
                     LogDevice = log, ObjectLogDevice = objlog, 
                     PageSize = 1 << 10, MemorySize = 1 << 22, SegmentSize = 1 << 16,
                     CheckpointDir = MethodTestDir
-                }, StoreFunctions<StructWithString, StructWithString>.Create(new StructWithString.Comparer(), new StructWithString.Serializer(), new StructWithString.Serializer())
+                }, StoreFunctions<StructWithString, StructWithString>.Create(new StructWithString.Comparer(), () => new StructWithString.Serializer(), () => new StructWithString.Serializer())
                 , (allocatorSettings, storeFunctions) => new(allocatorSettings, storeFunctions)
             );
 

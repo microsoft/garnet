@@ -31,8 +31,8 @@ namespace Tsavorite.test
 
 namespace Tsavorite.test
 {
-    using StructStoreFunctions = StoreFunctions<KeyStruct, ValueStruct, HashModuloKeyStructComparer, NoSerializer<KeyStruct>, NoSerializer<ValueStruct>, DefaultRecordDisposer<KeyStruct, ValueStruct>>;
-    using StructAllocator = BlittableAllocator<KeyStruct, ValueStruct, StoreFunctions<KeyStruct, ValueStruct, HashModuloKeyStructComparer, NoSerializer<KeyStruct>, NoSerializer<ValueStruct>, DefaultRecordDisposer<KeyStruct, ValueStruct>>>;
+    using StructStoreFunctions = StoreFunctions<KeyStruct, ValueStruct, HashModuloKeyStructComparer, DefaultRecordDisposer<KeyStruct, ValueStruct>>;
+    using StructAllocator = BlittableAllocator<KeyStruct, ValueStruct, StoreFunctions<KeyStruct, ValueStruct, HashModuloKeyStructComparer, DefaultRecordDisposer<KeyStruct, ValueStruct>>>;
 
     [TestFixture]
     public class BlittableLogCompactionTests

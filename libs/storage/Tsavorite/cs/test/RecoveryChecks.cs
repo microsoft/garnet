@@ -11,8 +11,8 @@ using Tsavorite.test.recovery.sumstore;
 
 namespace Tsavorite.test.recovery
 {
-    using LongStoreFunctions = StoreFunctions<long, long, LongKeyComparer, NoSerializer<long>, NoSerializer<long>, DefaultRecordDisposer<long, long>>;
-    using LongAllocator = BlittableAllocator<long, long, StoreFunctions<long, long, LongKeyComparer, NoSerializer<long>, NoSerializer<long>, DefaultRecordDisposer<long, long>>>;
+    using LongStoreFunctions = StoreFunctions<long, long, LongKeyComparer, DefaultRecordDisposer<long, long>>;
+    using LongAllocator = BlittableAllocator<long, long, StoreFunctions<long, long, LongKeyComparer, DefaultRecordDisposer<long, long>>>;
 
     public enum DeviceMode
     {

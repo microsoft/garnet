@@ -8,8 +8,8 @@ using static Tsavorite.test.TestUtils;
 
 namespace Tsavorite.test
 {
-    using StringStoreFunctions = StoreFunctions<string, string, StringKeyComparer, StringBinaryObjectSerializer, StringBinaryObjectSerializer, DefaultRecordDisposer<string, string>>;
-    using StringAllocator = BlittableAllocator<string, string, StoreFunctions<string, string, StringKeyComparer, StringBinaryObjectSerializer, StringBinaryObjectSerializer, DefaultRecordDisposer<string, string>>>;
+    using StringStoreFunctions = StoreFunctions<string, string, StringKeyComparer, DefaultRecordDisposer<string, string>>;
+    using StringAllocator = BlittableAllocator<string, string, StoreFunctions<string, string, StringKeyComparer, DefaultRecordDisposer<string, string>>>;
 
     [TestFixture]
     internal class GenericStringTests
@@ -56,7 +56,7 @@ namespace Tsavorite.test
                         IndexSize = 1L << 26,
                         LogDevice = log, ObjectLogDevice = objlog, 
                         MutableFraction = 0.1, MemorySize = 1 << 14, PageSize = 1 << 9, SegmentSize = 1 << 22
-                    }, StoreFunctions<string, string>.Create(StringKeyComparer.Instance, new StringBinaryObjectSerializer(), new StringBinaryObjectSerializer())
+                    }, StoreFunctions<string, string>.Create(StringKeyComparer.Instance, () => new StringBinaryObjectSerializer(), () => new StringBinaryObjectSerializer())
                 , (allocatorSettings, storeFunctions) => new(allocatorSettings, storeFunctions)
             );
 

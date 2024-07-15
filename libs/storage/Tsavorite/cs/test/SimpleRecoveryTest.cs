@@ -13,8 +13,8 @@ using static Tsavorite.test.TestUtils;
 
 namespace Tsavorite.test.recovery.sumstore
 {
-    using StructStoreFunctions = StoreFunctions<AdId, NumClicks, AdId.Comparer, NoSerializer<AdId>, NoSerializer<NumClicks>, DefaultRecordDisposer<AdId, NumClicks>>;
-    using StructAllocator = BlittableAllocator<AdId, NumClicks, StoreFunctions<AdId, NumClicks, AdId.Comparer, NoSerializer<AdId>, NoSerializer<NumClicks>, DefaultRecordDisposer<AdId, NumClicks>>>;
+    using StructStoreFunctions = StoreFunctions<AdId, NumClicks, AdId.Comparer, DefaultRecordDisposer<AdId, NumClicks>>;
+    using StructAllocator = BlittableAllocator<AdId, NumClicks, StoreFunctions<AdId, NumClicks, AdId.Comparer, DefaultRecordDisposer<AdId, NumClicks>>>;
 
     [TestFixture]
     class RecoveryTests

@@ -32,8 +32,6 @@ namespace Tsavorite.core
 
         private readonly OverflowPool<AllocatorRecord<Key, Value>[]> overflowPagePool;
 
-        private bool keyHasObjects, valueHasObjects;
-
         public GenericAllocatorImpl(AllocatorSettings settings, TStoreFunctions storeFunctions, Func<object, TAllocator> wrapperCreator)
             : base(settings.LogSettings, storeFunctions, wrapperCreator, settings.evictCallback, settings.epoch, settings.flushCallback, settings.logger)
         {
@@ -59,9 +57,6 @@ namespace Tsavorite.core
                 if (objectLogDevice.SegmentSize != -1)
                     throw new TsavoriteException("Object log device should not have fixed segment size. Set preallocateFile to false when calling CreateLogDevice for object log");
             }
-
-            keyHasObjects = _storeFunctions.HasKeySerializer;
-            valueHasObjects = _storeFunctions.HasValueSerializer;
         }
 
         internal int OverflowPageCount => overflowPagePool.Count;
@@ -386,10 +381,8 @@ namespace Tsavorite.core
 
                 // Object keys and values are serialized into this MemoryStream.
                 MemoryStream ms = new();
-                if (KeyHasObjects())
-                    _storeFunctions.BeginSerializeKey(ms);
-                if (ValueHasObjects())
-                    _storeFunctions.BeginSerializeValue(ms);
+                var keySerializer = KeyHasObjects() ? _storeFunctions.BeginSerializeKey(ms) : null;
+                var valueSerializer = ValueHasObjects() ? _storeFunctions.BeginSerializeValue(ms) : null;
 
                 // Track the size to be written to the object log.
                 long endPosition = 0;
@@ -426,7 +419,7 @@ namespace Tsavorite.core
                             if (KeyHasObjects())
                             {
                                 long pos = ms.Position;
-                                _storeFunctions.SerializeKey(ref src[i].key);
+                                keySerializer.Serialize(ref src[i].key);
 
                                 // Store the key address into the 'buffer' AddressInfo image as an offset into 'ms'.
                                 key_address->Address = pos;
@@ -438,7 +431,7 @@ namespace Tsavorite.core
                             if (ValueHasObjects() && !record.info.Tombstone)
                             {
                                 long pos = ms.Position;
-                                _storeFunctions.SerializeValue(ref src[i].value);
+                                valueSerializer.Serialize(ref src[i].value);
 
                                 // Store the value address into the 'buffer' AddressInfo image as an offset into 'ms'.
                                 value_address->Address = pos;
@@ -462,9 +455,9 @@ namespace Tsavorite.core
                         endPosition = 0;
 
                         if (KeyHasObjects())
-                            _storeFunctions.EndSerializeKey();
+                            keySerializer.EndSerialize();
                         if (ValueHasObjects())
-                            _storeFunctions.EndSerializeValue();
+                            valueSerializer.EndSerialize();
                         ms.Close();
 
                         // Get the total serialized length rounded up to sectorSize
@@ -493,9 +486,9 @@ namespace Tsavorite.core
                             // Create a new MemoryStream for the next chunk of records to be written.
                             ms = new MemoryStream();
                             if (KeyHasObjects())
-                                _storeFunctions.BeginSerializeKey(ms);
+                                keySerializer.BeginSerialize(ms);
                             if (ValueHasObjects())
-                                _storeFunctions.BeginSerializeValue(ms);
+                                valueSerializer.BeginSerialize(ms);
 
                             // Reset address list for the next chunk of records to be written.
                             addr = new List<long>();
@@ -783,10 +776,8 @@ namespace Tsavorite.core
             long start_addr = -1;
             int start_offset = -1, end_offset = -1;
 
-            if (KeyHasObjects())
-                _storeFunctions.BeginDeserializeKey(stream);
-            if (ValueHasObjects())
-                _storeFunctions.BeginDeserializeValue(stream);
+            var keySerializer = KeyHasObjects() ? _storeFunctions.BeginDeserializeKey(stream) : null;
+            var valueSerializer = ValueHasObjects() ? _storeFunctions.BeginDeserializeValue(stream) : null;
 
             while (ptr < untilptr)
             {
@@ -806,7 +797,7 @@ namespace Tsavorite.core
                         if (stream.Position != streamStartPos + key_addr->Address - start_addr)
                             _ = stream.Seek(streamStartPos + key_addr->Address - start_addr, SeekOrigin.Begin);
 
-                        _storeFunctions.DeserializeKey(out src[ptr / RecordSize].key);
+                        keySerializer.Deserialize(out src[ptr / RecordSize].key);
                     }
                     else
                         src[ptr / RecordSize].key = record.key;
@@ -820,7 +811,7 @@ namespace Tsavorite.core
                             if (stream.Position != streamStartPos + value_addr->Address - start_addr)
                                 stream.Seek(streamStartPos + value_addr->Address - start_addr, SeekOrigin.Begin);
 
-                            _storeFunctions.DeserializeValue(out src[ptr / RecordSize].value);
+                            valueSerializer.Deserialize(out src[ptr / RecordSize].value);
                         }
                         else
                             src[ptr / RecordSize].value = record.value;
@@ -829,9 +820,9 @@ namespace Tsavorite.core
                 ptr += GetRecordSize(ptr).Item2;
             }
             if (KeyHasObjects())
-                _storeFunctions.EndDeserializeKey();
+                keySerializer.EndDeserialize();
             if (ValueHasObjects())
-                _storeFunctions.EndDeserializeValue();
+                valueSerializer.EndDeserialize();
 
             if (OnDeserializationObserver != null && start_offset != -1 && end_offset != -1)
             {
@@ -958,16 +949,16 @@ namespace Tsavorite.core
 
             if (KeyHasObjects())
             {
-                _storeFunctions.BeginDeserializeKey(ms);
-                _storeFunctions.DeserializeKey(out ctx.key);
-                _storeFunctions.EndDeserializeKey();
+                var keySerializer = _storeFunctions.BeginDeserializeKey(ms);
+                keySerializer.Deserialize(out ctx.key);
+                keySerializer.EndDeserialize();
             }
 
             if (ValueHasObjects() && !GetInfoFromBytePointer(record).Tombstone)
             {
-                _storeFunctions.BeginDeserializeValue(ms);
-                _storeFunctions.DeserializeValue(out ctx.value);
-                _storeFunctions.EndDeserializeValue();
+                var valueSerializer = _storeFunctions.BeginDeserializeValue(ms);
+                valueSerializer.Deserialize(out ctx.value);
+                valueSerializer.EndDeserialize();
             }
 
             ctx.objBuffer.Return();
@@ -975,10 +966,10 @@ namespace Tsavorite.core
         }
 
         /// <summary>Whether KVS has keys to serialize/deserialize</summary>
-        internal bool KeyHasObjects() => keyHasObjects;
+        internal bool KeyHasObjects() => _storeFunctions.HasKeySerializer;
 
         /// <summary>Whether KVS has values to serialize/deserialize</summary>
-        internal bool ValueHasObjects() => valueHasObjects;
+        internal bool ValueHasObjects() => _storeFunctions.HasValueSerializer;
         #endregion
 
         public long[] GetSegmentOffsets() => segmentOffsets;

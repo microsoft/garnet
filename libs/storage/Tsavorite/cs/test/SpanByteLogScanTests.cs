@@ -33,7 +33,7 @@ namespace Tsavorite.test.spanbyte
 
 namespace Tsavorite.test.spanbyte
 {
-    using SpanByteStoreFunctions = StoreFunctions<SpanByte, SpanByte, SpanByteComparerModulo, NoSerializer<SpanByte>, NoSerializer<SpanByte>, SpanByteRecordDisposer>;
+    using SpanByteStoreFunctions = StoreFunctions<SpanByte, SpanByte, SpanByteComparerModulo, SpanByteRecordDisposer>;
 
     [TestFixture]
     internal class SpanByteLogScanTests
@@ -63,7 +63,7 @@ namespace Tsavorite.test.spanbyte
                     IndexSize = 1L << 26,
                     LogDevice = log,
                     MemorySize = 1 << 25, PageSize = 1 << PageSizeBits
-                }, StoreFunctions<SpanByte, SpanByte>.Create(comparer, NoSerializer<SpanByte>.Instance, NoSerializer<SpanByte>.Instance, SpanByteRecordDisposer.Instance)
+                }, StoreFunctions<SpanByte, SpanByte>.Create(comparer, SpanByteRecordDisposer.Instance)
                 , (allocatorSettings, storeFunctions) => new(allocatorSettings, storeFunctions)
             );
         }
@@ -391,7 +391,7 @@ namespace Tsavorite.test.spanbyte
                     IndexSize = 1L << 26,
                     LogDevice = log,
                     MemorySize = 1 << 20, PageSize = 1 << PageSizeBits
-                }, StoreFunctions<SpanByte, SpanByte>.Create(new SpanByteComparerModulo(0), NoSerializer<SpanByte>.Instance, NoSerializer<SpanByte>.Instance, SpanByteRecordDisposer.Instance)
+                }, StoreFunctions<SpanByte, SpanByte>.Create(new SpanByteComparerModulo(0), SpanByteRecordDisposer.Instance)
                 , (allocatorSettings, storeFunctions) => new(allocatorSettings, storeFunctions)
             );
 

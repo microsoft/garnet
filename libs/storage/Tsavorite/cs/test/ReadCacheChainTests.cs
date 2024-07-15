@@ -48,10 +48,10 @@ namespace Tsavorite.test.ReadCacheTests
 
 namespace Tsavorite.test.ReadCacheTests
 {
-    using LongStoreFunctions = StoreFunctions<long, long, LongComparerModulo, NoSerializer<long>, NoSerializer<long>, DefaultRecordDisposer<long, long>>;
-    using LongAllocator = BlittableAllocator<long, long, StoreFunctions<long, long, LongComparerModulo, NoSerializer<long>, NoSerializer<long>, DefaultRecordDisposer<long, long>>>;
+    using LongStoreFunctions = StoreFunctions<long, long, LongComparerModulo, DefaultRecordDisposer<long, long>>;
+    using LongAllocator = BlittableAllocator<long, long, StoreFunctions<long, long, LongComparerModulo, DefaultRecordDisposer<long, long>>>;
 
-    using SpanByteStoreFunctions = StoreFunctions<SpanByte, SpanByte, SpanByteComparerModulo, NoSerializer<SpanByte>, NoSerializer<SpanByte>, DefaultRecordDisposer<SpanByte, SpanByte>>;
+    using SpanByteStoreFunctions = StoreFunctions<SpanByte, SpanByte, SpanByteComparerModulo, DefaultRecordDisposer<SpanByte, SpanByte>>;
 
     internal static class RcTestGlobals
     {

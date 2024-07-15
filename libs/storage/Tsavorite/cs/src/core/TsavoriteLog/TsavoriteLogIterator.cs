@@ -12,7 +12,7 @@ using Microsoft.Extensions.Logging;
 
 namespace Tsavorite.core
 {
-    using EmptyStoreFunctions = StoreFunctions<Empty, byte, EmptyKeyComparer, NoSerializer<Empty>, NoSerializer<byte>, DefaultRecordDisposer<Empty, byte>>;
+    using EmptyStoreFunctions = StoreFunctions<Empty, byte, EmptyKeyComparer, DefaultRecordDisposer<Empty, byte>>;
 
     /// <summary>
     /// Scan iterator for hybrid log

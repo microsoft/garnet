@@ -34,8 +34,8 @@ namespace Tsavorite.test.LockableUnsafeContext
 }
 namespace Tsavorite.test.LockableUnsafeContext
 {
-    using LongStoreFunctions = StoreFunctions<long, long, LockableUnsafeComparer, NoSerializer<long>, NoSerializer<long>, DefaultRecordDisposer<long, long>>;
-    using LongAllocator = BlittableAllocator<long, long, StoreFunctions<long, long, LockableUnsafeComparer, NoSerializer<long>, NoSerializer<long>, DefaultRecordDisposer<long, long>>>;
+    using LongStoreFunctions = StoreFunctions<long, long, LockableUnsafeComparer, DefaultRecordDisposer<long, long>>;
+    using LongAllocator = BlittableAllocator<long, long, StoreFunctions<long, long, LockableUnsafeComparer, DefaultRecordDisposer<long, long>>>;
 
     // Functions for the "Simple lock transaction" case, e.g.:
     //  - Lock key1, key2, key3, keyResult

@@ -15,7 +15,7 @@ using Microsoft.Extensions.Logging;
 
 namespace Tsavorite.core
 {
-    using EmptyStoreFunctions = StoreFunctions<Empty, byte, EmptyKeyComparer, NoSerializer<Empty>, NoSerializer<byte>, DefaultRecordDisposer<Empty, byte>>;
+    using EmptyStoreFunctions = StoreFunctions<Empty, byte, EmptyKeyComparer, DefaultRecordDisposer<Empty, byte>>;
 
     /// <summary>
     /// Tsavorite log
@@ -193,7 +193,7 @@ namespace Tsavorite.core
             commitQueue = new WorkQueueLIFO<CommitInfo>(SerialCommitCallbackWorker);
             allocator = new(
                 new AllocatorSettings(logSettings.GetLogSettings(), epoch, logger) { flushCallback = CommitCallback },
-                new EmptyStoreFunctions(EmptyKeyComparer.Instance, NoSerializer<Empty>.Instance, NoSerializer<byte>.Instance, DefaultRecordDisposer<Empty, byte>.Instance),
+                StoreFunctions<Empty, byte>.Create(EmptyKeyComparer.Instance),
                 @this => new BlittableAllocator<Empty, Byte, EmptyStoreFunctions>(@this));
             allocator.Initialize();
             beginAddress = allocator.BeginAddress;

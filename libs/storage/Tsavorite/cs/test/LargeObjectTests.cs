@@ -10,8 +10,8 @@ using static Tsavorite.test.TestUtils;
 
 namespace Tsavorite.test.largeobjects
 {
-    using ClassStoreFunctions = StoreFunctions<MyKey, MyLargeValue, MyKey.Comparer, MyKeySerializer, MyLargeValueSerializer, DefaultRecordDisposer<MyKey, MyLargeValue>>;
-    using ClassAllocator = GenericAllocator<MyKey, MyLargeValue, StoreFunctions<MyKey, MyLargeValue, MyKey.Comparer, MyKeySerializer, MyLargeValueSerializer, DefaultRecordDisposer<MyKey, MyLargeValue>>>;
+    using ClassStoreFunctions = StoreFunctions<MyKey, MyLargeValue, MyKey.Comparer, DefaultRecordDisposer<MyKey, MyLargeValue>>;
+    using ClassAllocator = GenericAllocator<MyKey, MyLargeValue, StoreFunctions<MyKey, MyLargeValue, MyKey.Comparer, DefaultRecordDisposer<MyKey, MyLargeValue>>>;
 
     [TestFixture]
     internal class LargeObjectTests
@@ -42,7 +42,7 @@ namespace Tsavorite.test.largeobjects
                     LogDevice = log, ObjectLogDevice = objlog, 
                     MutableFraction = 0.1, PageSize = 1 << 21, MemorySize = 1 << 26,
                     CheckpointDir = MethodTestDir
-                }, StoreFunctions<MyKey, MyLargeValue>.Create(new MyKey.Comparer(), new MyKeySerializer(), new MyLargeValueSerializer())
+                }, StoreFunctions<MyKey, MyLargeValue>.Create(new MyKey.Comparer(), () => new MyKeySerializer(), () => new MyLargeValueSerializer())
                 , (allocatorSettings, storeFunctions) => new(allocatorSettings, storeFunctions)))
             using (var session = store.NewSession<MyInput, MyLargeOutput, Empty, MyLargeFunctions>(new MyLargeFunctions()))
             {
@@ -69,7 +69,7 @@ namespace Tsavorite.test.largeobjects
                         LogDevice = log, ObjectLogDevice = objlog,
                         MutableFraction = 0.1, PageSize = 1 << 21, MemorySize = 1 << 26,
                         CheckpointDir = MethodTestDir
-                    }, StoreFunctions<MyKey, MyLargeValue>.Create(new MyKey.Comparer(), new MyKeySerializer(), new MyLargeValueSerializer())
+                    }, StoreFunctions<MyKey, MyLargeValue>.Create(new MyKey.Comparer(), () => new MyKeySerializer(), () => new MyLargeValueSerializer())
                 , (allocatorSettings, storeFunctions) => new(allocatorSettings, storeFunctions)))
             {
                 _ = store.Recover(token);

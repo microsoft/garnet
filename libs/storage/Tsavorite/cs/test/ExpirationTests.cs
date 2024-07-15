@@ -5,12 +5,11 @@ using System;
 using System.IO;
 using NUnit.Framework;
 using Tsavorite.core;
-using Tsavorite.test.Revivification;
 using static Tsavorite.test.TestUtils;
 
 namespace Tsavorite.test.Expiration
 {
-    using SpanByteStoreFunctions = StoreFunctions<SpanByte, SpanByte, SpanByteComparer, NoSerializer<SpanByte>, NoSerializer<SpanByte>, SpanByteRecordDisposer>;
+    using SpanByteStoreFunctions = StoreFunctions<SpanByte, SpanByte, SpanByteComparer, SpanByteRecordDisposer>;
 
     [TestFixture]
     internal class ExpirationTests

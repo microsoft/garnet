@@ -9,8 +9,8 @@ using Tsavorite.core;
 
 namespace Tsavorite.test.recovery.objects
 {
-    using ClassStoreFunctions = StoreFunctions<MyKey, MyValue, MyKey.Comparer, MyKeySerializer, MyValueSerializer, DefaultRecordDisposer<MyKey, MyValue>>;
-    using ClassAllocator = GenericAllocator<MyKey, MyValue, StoreFunctions<MyKey, MyValue, MyKey.Comparer, MyKeySerializer, MyValueSerializer, DefaultRecordDisposer<MyKey, MyValue>>>;
+    using ClassStoreFunctions = StoreFunctions<MyKey, MyValue, MyKey.Comparer, DefaultRecordDisposer<MyKey, MyValue>>;
+    using ClassAllocator = GenericAllocator<MyKey, MyValue, StoreFunctions<MyKey, MyValue, MyKey.Comparer, DefaultRecordDisposer<MyKey, MyValue>>>;
 
     [TestFixture]
     public class ObjectRecoveryTests2
@@ -76,7 +76,7 @@ namespace Tsavorite.test.recovery.objects
                     LogDevice = log, ObjectLogDevice = objlog,
                     SegmentSize = 1L << 12, MemorySize = 1L << 12, PageSize = 1L << 9,
                     CheckpointDir = Path.Combine(TestUtils.MethodTestDir, "check-points")
-                }, StoreFunctions<MyKey, MyValue>.Create(new MyKey.Comparer(), new MyKeySerializer(), new MyValueSerializer())
+                }, StoreFunctions<MyKey, MyValue>.Create(new MyKey.Comparer(), () => new MyKeySerializer(), () => new MyValueSerializer())
                 , (allocatorSettings, storeFunctions) => new (allocatorSettings, storeFunctions)
              );
             context = new MyContext();

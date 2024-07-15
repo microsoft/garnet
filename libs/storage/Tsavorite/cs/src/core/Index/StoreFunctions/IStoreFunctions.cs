@@ -23,22 +23,10 @@ namespace Tsavorite.core
         bool HasKeySerializer { get; }
 
         /// <summary>Begin Key serialization to given stream</summary>
-        void BeginSerializeKey(Stream stream);
-
-        /// <summary>Serialize Key to stream</summary>
-        void SerializeKey(ref TKey key);
-
-        /// <summary>End Key serialization to stream</summary>
-        void EndSerializeKey();
+        IObjectSerializer<TKey> BeginSerializeKey(Stream stream);
 
         /// <summary>Begin Key deserialization from stream</summary>
-        void BeginDeserializeKey(Stream stream);
-
-        /// <summary>Deserialize Key from stream</summary>
-        void DeserializeKey(out TKey key);
-
-        /// <summary>End Key deserialization from stream</summary>
-        void EndDeserializeKey();
+        IObjectSerializer<TKey> BeginDeserializeKey(Stream stream);
         #endregion Key Serializer
 
         #region Value Serializer
@@ -46,22 +34,10 @@ namespace Tsavorite.core
         bool HasValueSerializer { get; }
 
         /// <summary>Begin Value serialization to given stream</summary>
-        void BeginSerializeValue(Stream stream);
-
-        /// <summary>Serialize Value to stream</summary>
-        void SerializeValue(ref TValue value);
-
-        /// <summary>End Value serialization to stream</summary>
-        void EndSerializeValue();
+        IObjectSerializer<TValue> BeginSerializeValue(Stream stream);
 
         /// <summary>Begin Value deserialization from stream</summary>
-        void BeginDeserializeValue(Stream stream);
-
-        /// <summary>Deserialize Value from stream</summary>
-        void DeserializeValue(out TValue value);
-
-        /// <summary>End Value deserialization from stream</summary>
-        void EndDeserializeValue();
+        IObjectSerializer<TValue> BeginDeserializeValue(Stream stream);
         #endregion Value Serializer
 
         #region Record Disposer

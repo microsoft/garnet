@@ -18,8 +18,8 @@ namespace Tsavorite.test
 
 namespace Tsavorite.test
 {
-    using StructStoreFunctions = StoreFunctions<int, RefCountedValue, IntKeyComparer, NoSerializer<int>, NoSerializer<RefCountedValue>, DefaultRecordDisposer<int, RefCountedValue>>;
-    using StructAllocator = BlittableAllocator<int, RefCountedValue, StoreFunctions<int, RefCountedValue, IntKeyComparer, NoSerializer<int>, NoSerializer<RefCountedValue>, DefaultRecordDisposer<int, RefCountedValue>>>;
+    using StructStoreFunctions = StoreFunctions<int, RefCountedValue, IntKeyComparer, DefaultRecordDisposer<int, RefCountedValue>>;
+    using StructAllocator = BlittableAllocator<int, RefCountedValue, StoreFunctions<int, RefCountedValue, IntKeyComparer, DefaultRecordDisposer<int, RefCountedValue>>>;
 
     public class RefCountedAdder : SessionFunctionsBase<int, RefCountedValue, long, Empty, Empty>
     {

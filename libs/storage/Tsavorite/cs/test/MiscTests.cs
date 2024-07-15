@@ -9,11 +9,11 @@ using static Tsavorite.test.TestUtils;
 
 namespace Tsavorite.test
 {
-    using ClassStoreFunctions = StoreFunctions<int, MyValue, IntKeyComparer, NoSerializer<int>, MyValueSerializer, DefaultRecordDisposer<int, MyValue>>;
-    using ClassAllocator = GenericAllocator<int, MyValue, StoreFunctions<int, MyValue, IntKeyComparer, NoSerializer<int>, MyValueSerializer, DefaultRecordDisposer<int, MyValue>>>;
+    using ClassStoreFunctions = StoreFunctions<int, MyValue, IntKeyComparer, DefaultRecordDisposer<int, MyValue>>;
+    using ClassAllocator = GenericAllocator<int, MyValue, StoreFunctions<int, MyValue, IntKeyComparer, DefaultRecordDisposer<int, MyValue>>>;
 
-    using StructStoreFunctions = StoreFunctions<KeyStruct, ValueStruct, KeyStruct.Comparer, NoSerializer<KeyStruct>, NoSerializer<ValueStruct>, DefaultRecordDisposer<KeyStruct, ValueStruct>>;
-    using StructAllocator = BlittableAllocator<KeyStruct, ValueStruct, StoreFunctions<KeyStruct, ValueStruct, KeyStruct.Comparer, NoSerializer<KeyStruct>, NoSerializer<ValueStruct>, DefaultRecordDisposer<KeyStruct, ValueStruct>>>;
+    using StructStoreFunctions = StoreFunctions<KeyStruct, ValueStruct, KeyStruct.Comparer, DefaultRecordDisposer<KeyStruct, ValueStruct>>;
+    using StructAllocator = BlittableAllocator<KeyStruct, ValueStruct, StoreFunctions<KeyStruct, ValueStruct, KeyStruct.Comparer, DefaultRecordDisposer<KeyStruct, ValueStruct>>>;
 
     [TestFixture]
     internal class MiscTests
@@ -36,7 +36,7 @@ namespace Tsavorite.test
                     MutableFraction = 0.1,
                     MemorySize = 1 << 15,
                     PageSize = 1 << 10
-                }, StoreFunctions<int, MyValue>.Create(IntKeyComparer.Instance, NoSerializer<int>.Instance, new MyValueSerializer())
+                }, StoreFunctions<int, MyValue>.Create(IntKeyComparer.Instance, null, () => new MyValueSerializer())
                 , (allocatorSettings, storeFunctions) => new (allocatorSettings, storeFunctions)
             );
         }

@@ -286,7 +286,7 @@ namespace Tsavorite.core
             }
 
             if (errorCode == 0)
-                _ = (result.handle?.Signal());
+                _ = result.handle?.Signal();
 
             Interlocked.MemoryBarrier();
         }

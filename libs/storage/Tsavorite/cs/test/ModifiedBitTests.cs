@@ -21,8 +21,8 @@ namespace Tsavorite.test.ModifiedBit
 
 namespace Tsavorite.test.ModifiedBit
 {
-    using IntStoreFunctions = StoreFunctions<int, int, ModifiedBitTestComparer, NoSerializer<int>, NoSerializer<int>, DefaultRecordDisposer<int, int>>;
-    using IntAllocator = BlittableAllocator<int, int, StoreFunctions<int, int, ModifiedBitTestComparer, NoSerializer<int>, NoSerializer<int>, DefaultRecordDisposer<int, int>>>;
+    using IntStoreFunctions = StoreFunctions<int, int, ModifiedBitTestComparer, DefaultRecordDisposer<int, int>>;
+    using IntAllocator = BlittableAllocator<int, int, StoreFunctions<int, int, ModifiedBitTestComparer, DefaultRecordDisposer<int, int>>>;
 
     [TestFixture]
     class ModifiedBitTests

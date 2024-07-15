@@ -36,13 +36,13 @@ namespace Tsavorite.test.Revivification
 
 namespace Tsavorite.test.Revivification
 {
-    using IntStoreFunctions = StoreFunctions<int, int, IntKeyComparer, NoSerializer<int>, NoSerializer<int>, DefaultRecordDisposer<int, int>>;
-    using IntAllocator = BlittableAllocator<int, int, StoreFunctions<int, int, IntKeyComparer, NoSerializer<int>, NoSerializer<int>, DefaultRecordDisposer<int, int>>>;
+    using IntStoreFunctions = StoreFunctions<int, int, IntKeyComparer, DefaultRecordDisposer<int, int>>;
+    using IntAllocator = BlittableAllocator<int, int, StoreFunctions<int, int, IntKeyComparer, DefaultRecordDisposer<int, int>>>;
 
-    using ClassStoreFunctions = StoreFunctions<MyKey, MyValue, MyKey.Comparer, MyKeySerializer, MyValueSerializer, DefaultRecordDisposer<MyKey, MyValue>>;
-    using ClassAllocator = GenericAllocator<MyKey, MyValue, StoreFunctions<MyKey, MyValue, MyKey.Comparer, MyKeySerializer, MyValueSerializer, DefaultRecordDisposer<MyKey, MyValue>>>;
+    using ClassStoreFunctions = StoreFunctions<MyKey, MyValue, MyKey.Comparer, DefaultRecordDisposer<MyKey, MyValue>>;
+    using ClassAllocator = GenericAllocator<MyKey, MyValue, StoreFunctions<MyKey, MyValue, MyKey.Comparer, DefaultRecordDisposer<MyKey, MyValue>>>;
 
-    using SpanByteStoreFunctions = StoreFunctions<SpanByte, SpanByte, RevivificationSpanByteComparer, NoSerializer<SpanByte>, NoSerializer<SpanByte>, SpanByteRecordDisposer>;
+    using SpanByteStoreFunctions = StoreFunctions<SpanByte, SpanByte, RevivificationSpanByteComparer, SpanByteRecordDisposer>;
 
     public enum DeleteDest { FreeList, InChain }
 
@@ -701,7 +701,7 @@ namespace Tsavorite.test.Revivification
 
             comparer = new RevivificationSpanByteComparer(collisionRange);
             store = new(kvSettings
-                , StoreFunctions<SpanByte, SpanByte>.Create(comparer, NoSerializer<SpanByte>.Instance, NoSerializer<SpanByte>.Instance, SpanByteRecordDisposer.Instance)
+                , StoreFunctions<SpanByte, SpanByte>.Create(comparer, SpanByteRecordDisposer.Instance)
                 , (allocatorSettings, storeFunctions) => new (allocatorSettings, storeFunctions)
             );
 
@@ -1663,7 +1663,7 @@ namespace Tsavorite.test.Revivification
                     MemorySize = 1 << 22,
                     PageSize = 1 << 12,
                     RevivificationSettings = RevivificationSettings.DefaultFixedLength
-                }, StoreFunctions<MyKey, MyValue>.Create(new MyKey.Comparer(), new MyKeySerializer(), new MyValueSerializer())
+                }, StoreFunctions<MyKey, MyValue>.Create(new MyKey.Comparer(), () => new MyKeySerializer(), () => new MyValueSerializer())
                 , (allocatorSettings, storeFunctions) => new (allocatorSettings, storeFunctions)
             );
 
@@ -1838,7 +1838,7 @@ namespace Tsavorite.test.Revivification
                     PageSize = 1 << 17,
                     MemorySize = 1 << 20,
                     RevivificationSettings = RevivificationSettings.PowerOf2Bins
-                }, StoreFunctions<SpanByte, SpanByte>.Create(comparer, NoSerializer<SpanByte>.Instance, NoSerializer<SpanByte>.Instance, SpanByteRecordDisposer.Instance)
+                }, StoreFunctions<SpanByte, SpanByte>.Create(comparer, SpanByteRecordDisposer.Instance)
                 , (allocatorSettings, storeFunctions) => new (allocatorSettings, storeFunctions)
             );
 

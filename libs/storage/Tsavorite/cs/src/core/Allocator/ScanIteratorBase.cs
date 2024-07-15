@@ -213,7 +213,8 @@ namespace Tsavorite.core
 
         private bool WaitForFrameLoad(long currentAddress, long currentFrame)
         {
-            if (loaded[currentFrame].IsSet) return false;
+            if (loaded[currentFrame].IsSet)
+                return false;
 
             try
             {

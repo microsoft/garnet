@@ -509,6 +509,7 @@ namespace Tsavorite.core
         /// <summary>Instantiate base allocator implementation</summary>
         private protected AllocatorBase(LogSettings settings, TStoreFunctions storeFunctions, Func<object, TAllocator> wrapperCreator, Action<long, long> evictCallback, LightEpoch epoch, Action<CommitInfo> flushCallback, ILogger logger = null)
         {
+            _storeFunctions = storeFunctions;
             _wrapper = wrapperCreator(this);
 
             // Validation
@@ -544,7 +545,6 @@ namespace Tsavorite.core
 
             IsNullDevice = settings.LogDevice is NullDevice;
 
-            _storeFunctions = storeFunctions;
             if (epoch == null)
             {
                 this.epoch = new LightEpoch();

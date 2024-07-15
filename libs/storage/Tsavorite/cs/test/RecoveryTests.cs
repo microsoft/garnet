@@ -11,16 +11,16 @@ using static Tsavorite.test.TestUtils;
 
 namespace Tsavorite.test.recovery.sumstore
 {
-    using StructStoreFunctions = StoreFunctions<AdId, NumClicks, AdId.Comparer, NoSerializer<AdId>, NoSerializer<NumClicks>, DefaultRecordDisposer<AdId, NumClicks>>;
-    using StructAllocator = BlittableAllocator<AdId, NumClicks, StoreFunctions<AdId, NumClicks, AdId.Comparer, NoSerializer<AdId>, NoSerializer<NumClicks>, DefaultRecordDisposer<AdId, NumClicks>>>;
+    using StructStoreFunctions = StoreFunctions<AdId, NumClicks, AdId.Comparer, DefaultRecordDisposer<AdId, NumClicks>>;
+    using StructAllocator = BlittableAllocator<AdId, NumClicks, StoreFunctions<AdId, NumClicks, AdId.Comparer, DefaultRecordDisposer<AdId, NumClicks>>>;
 
-    using LongStoreFunctions = StoreFunctions<long, long, LongKeyComparer, NoSerializer<long>, NoSerializer<long>, DefaultRecordDisposer<long, long>>;
-    using LongAllocator = BlittableAllocator<long, long, StoreFunctions<long, long, LongKeyComparer, NoSerializer<long>, NoSerializer<long>, DefaultRecordDisposer<long, long>>>;
+    using LongStoreFunctions = StoreFunctions<long, long, LongKeyComparer, DefaultRecordDisposer<long, long>>;
+    using LongAllocator = BlittableAllocator<long, long, StoreFunctions<long, long, LongKeyComparer, DefaultRecordDisposer<long, long>>>;
 
-    using MyValueStoreFunctions = StoreFunctions<MyValue, MyValue, MyValue.Comparer, MyValueSerializer, MyValueSerializer, DefaultRecordDisposer<MyValue, MyValue>>;
-    using MyValueAllocator = GenericAllocator<MyValue, MyValue, StoreFunctions<MyValue, MyValue, MyValue.Comparer, MyValueSerializer, MyValueSerializer, DefaultRecordDisposer<MyValue, MyValue>>>;
+    using MyValueStoreFunctions = StoreFunctions<MyValue, MyValue, MyValue.Comparer, DefaultRecordDisposer<MyValue, MyValue>>;
+    using MyValueAllocator = GenericAllocator<MyValue, MyValue, StoreFunctions<MyValue, MyValue, MyValue.Comparer, DefaultRecordDisposer<MyValue, MyValue>>>;
 
-    using SpanByteStoreFunctions = StoreFunctions<SpanByte, SpanByte, SpanByteComparer, NoSerializer<SpanByte>, NoSerializer<SpanByte>, SpanByteRecordDisposer>;
+    using SpanByteStoreFunctions = StoreFunctions<SpanByte, SpanByte, SpanByteComparer, SpanByteRecordDisposer>;
 
     [TestFixture]
     internal class DeviceTypeRecoveryTests
@@ -318,7 +318,7 @@ namespace Tsavorite.test.recovery.sumstore
                                                 (allocatorSettings, storeFunctions) => new(allocatorSettings, storeFunctions),
                                                 Populate, Read, Recover, isAsync),
                 AllocatorType.Generic => RunTest<MyValue, MyValueStoreFunctions, MyValueAllocator>(allocatorType,
-                                                () => StoreFunctions<MyValue, MyValue>.Create(new MyValue.Comparer(), new MyValueSerializer(), new MyValueSerializer(), DefaultRecordDisposer<MyValue, MyValue>.Instance),
+                                                () => StoreFunctions<MyValue, MyValue>.Create(new MyValue.Comparer(), () => new MyValueSerializer(), () => new MyValueSerializer(), DefaultRecordDisposer<MyValue, MyValue>.Instance),
                                                 (allocatorSettings, storeFunctions) => new(allocatorSettings, storeFunctions),
                                                 Populate, Read, Recover, isAsync),
                 _ => throw new ApplicationException("Unknown allocator type"),

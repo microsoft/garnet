@@ -9,8 +9,8 @@ using Tsavorite.core;
 
 namespace Tsavorite.test
 {
-    using ClassStoreFunctions = StoreFunctions<byte[], byte[], ByteArrayEC, ByteArrayBinaryObjectSerializer, ByteArrayBinaryObjectSerializer, DefaultRecordDisposer<byte[], byte[]>>;
-    using ClassAllocator = GenericAllocator<byte[], byte[], StoreFunctions<byte[], byte[], ByteArrayEC, ByteArrayBinaryObjectSerializer, ByteArrayBinaryObjectSerializer, DefaultRecordDisposer<byte[], byte[]>>>;
+    using ClassStoreFunctions = StoreFunctions<byte[], byte[], ByteArrayEC, DefaultRecordDisposer<byte[], byte[]>>;
+    using ClassAllocator = GenericAllocator<byte[], byte[], StoreFunctions<byte[], byte[], ByteArrayEC, DefaultRecordDisposer<byte[], byte[]>>>;
 
     [TestFixture]
     internal class GenericByteArrayTests
@@ -32,7 +32,7 @@ namespace Tsavorite.test
                     IndexSize = 1L << 26,
                     LogDevice = log, ObjectLogDevice = objlog,
                     MutableFraction = 0.1, MemorySize = 1 << 14, PageSize = 1 << 9
-                }, StoreFunctions<byte[], byte[]>.Create(new ByteArrayEC(), new ByteArrayBinaryObjectSerializer(), new ByteArrayBinaryObjectSerializer())
+                }, StoreFunctions<byte[], byte[]>.Create(new ByteArrayEC(), () => new ByteArrayBinaryObjectSerializer(), () => new ByteArrayBinaryObjectSerializer())
                 , (allocatorSettings, storeFunctions) => new(allocatorSettings, storeFunctions)
             );
 

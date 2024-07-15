@@ -8,8 +8,8 @@ using static Tsavorite.test.TestUtils;
 
 namespace Tsavorite.test
 {
-    using IntStoreFunctions = StoreFunctions<int, int, IntKeyComparer, NoSerializer<int>, NoSerializer<int>, DefaultRecordDisposer<int, int>>;
-    using IntAllocator = BlittableAllocator<int, int, StoreFunctions<int, int, IntKeyComparer, NoSerializer<int>, NoSerializer<int>, DefaultRecordDisposer<int, int>>>;
+    using IntStoreFunctions = StoreFunctions<int, int, IntKeyComparer, DefaultRecordDisposer<int, int>>;
+    using IntAllocator = BlittableAllocator<int, int, StoreFunctions<int, int, IntKeyComparer, DefaultRecordDisposer<int, int>>>;
 
     [TestFixture]
     internal class PostOperationsTests

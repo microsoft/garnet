@@ -9,11 +9,11 @@ using static Tsavorite.test.TestUtils;
 
 namespace Tsavorite.test
 {
-    using RMWValueStoreFunctions = StoreFunctions<int, RMWValue, IntKeyComparer, NoSerializer<int>, RMWValueSerializer, DefaultRecordDisposer<int, RMWValue>>;
-    using RMWValueAllocator = BlittableAllocator<int, RMWValue, StoreFunctions<int, RMWValue, IntKeyComparer, NoSerializer<int>, RMWValueSerializer, DefaultRecordDisposer<int, RMWValue>>>;
+    using RMWValueStoreFunctions = StoreFunctions<int, RMWValue, IntKeyComparer, DefaultRecordDisposer<int, RMWValue>>;
+    using RMWValueAllocator = BlittableAllocator<int, RMWValue, StoreFunctions<int, RMWValue, IntKeyComparer, DefaultRecordDisposer<int, RMWValue>>>;
 
-    using LongStoreFunctions = StoreFunctions<long, long, LongKeyComparer, NoSerializer<long>, NoSerializer<long>, DefaultRecordDisposer<long, long>>;
-    using LongAllocator = BlittableAllocator<long, long, StoreFunctions<long, long, LongKeyComparer, NoSerializer<long>, NoSerializer<long>, DefaultRecordDisposer<long, long>>>;
+    using LongStoreFunctions = StoreFunctions<long, long, LongKeyComparer, DefaultRecordDisposer<long, long>>;
+    using LongAllocator = BlittableAllocator<long, long, StoreFunctions<long, long, LongKeyComparer, DefaultRecordDisposer<long, long>>>;
 
     [TestFixture]
     internal class NeedCopyUpdateTests
@@ -33,7 +33,7 @@ namespace Tsavorite.test
                     IndexSize = 1 << 13,
                     LogDevice = log, ObjectLogDevice = objlog,
                     MutableFraction = 0.1, MemorySize = 1 << 15, PageSize = 1 << 10
-                }, StoreFunctions<int, RMWValue>.Create(IntKeyComparer.Instance, NoSerializer<int>.Instance, new RMWValueSerializer())
+                }, StoreFunctions<int, RMWValue>.Create(IntKeyComparer.Instance, keySerializerCreator: null, () => new RMWValueSerializer())
                 , (allocatorSettings, storeFunctions) => new(allocatorSettings, storeFunctions)
             );
         }

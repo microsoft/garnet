@@ -9,8 +9,8 @@ using Tsavorite.core;
 
 namespace Tsavorite.test.recovery.objects
 {
-    using StructStoreFunctions = StoreFunctions<AdIdObj, NumClicksObj, AdIdObj.Comparer, AdIdObj.Serializer, NumClicksObj.Serializer, DefaultRecordDisposer<AdIdObj, NumClicksObj>>;
-    using StructAllocator = BlittableAllocator<AdIdObj, NumClicksObj, StoreFunctions<AdIdObj, NumClicksObj, AdIdObj.Comparer, AdIdObj.Serializer, NumClicksObj.Serializer, DefaultRecordDisposer<AdIdObj, NumClicksObj>>>;
+    using StructStoreFunctions = StoreFunctions<AdIdObj, NumClicksObj, AdIdObj.Comparer, DefaultRecordDisposer<AdIdObj, NumClicksObj>>;
+    using StructAllocator = BlittableAllocator<AdIdObj, NumClicksObj, StoreFunctions<AdIdObj, NumClicksObj, AdIdObj.Comparer, DefaultRecordDisposer<AdIdObj, NumClicksObj>>>;
 
     internal struct StructTuple<T1, T2>
     {
@@ -46,7 +46,7 @@ namespace Tsavorite.test.recovery.objects
                 IndexSize = KeySpace,
                 LogDevice = log, ObjectLogDevice = objlog,
                 CheckpointDir = TestUtils.MethodTestDir
-            }, StoreFunctions<AdIdObj, NumClicksObj>.Create(new AdIdObj.Comparer(), new AdIdObj.Serializer(), new NumClicksObj.Serializer())
+            }, StoreFunctions<AdIdObj, NumClicksObj>.Create(new AdIdObj.Comparer(), () => new AdIdObj.Serializer(), () => new NumClicksObj.Serializer())
                 , (allocatorSettings, storeFunctions) => new(allocatorSettings, storeFunctions)
             );
         }

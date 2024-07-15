@@ -26,7 +26,7 @@ namespace Tsavorite.test.LockTests
 
 namespace Tsavorite.test.LockTests
 {
-    using StructStoreFunctions = StoreFunctions<int, int, LocalIntKeyComparer, NoSerializer<int>, NoSerializer<int>, DefaultRecordDisposer<int, int>>;
+    using StructStoreFunctions = StoreFunctions<int, int, LocalIntKeyComparer, DefaultRecordDisposer<int, int>>;
 
     [TestFixture]
     public class BasicLockTests
