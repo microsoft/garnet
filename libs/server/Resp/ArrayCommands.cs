@@ -414,7 +414,7 @@ namespace Garnet.server
                     SendAndReset();
 
                 // Number of keys "0"
-                while (!RespWriteUtils.WriteLongAsSimpleString(0, ref dcurr, dend))
+                while (!RespWriteUtils.WriteIntegerAsBulkString(0, ref dcurr, dend))
                     SendAndReset();
 
                 // Empty array
@@ -469,22 +469,9 @@ namespace Garnet.server
         private void WriteOutputForScan(long cursorValue, List<byte[]> keys, ref byte* curr, byte* end)
         {
             // The output is an array of two elements: cursor value and an array of keys
-            // Note the cursor value should be formatted as a simple string ('+')
-            while (!RespWriteUtils.WriteLongAsSimpleString(cursorValue, ref curr, end))
+            // Note the cursor value should be formatted as bulk string ('$')
+            while (!RespWriteUtils.WriteIntegerAsBulkString(cursorValue, ref curr, end, out _))
                 SendAndReset();
-
-            if (keys.Count == 0)
-            {
-                // Cursor value
-                while (!RespWriteUtils.WriteLongAsSimpleString(0, ref curr, end))
-                    SendAndReset();
-
-                // Empty array
-                while (!RespWriteUtils.WriteEmptyArray(ref curr, end))
-                    SendAndReset();
-
-                return;
-            }
 
             // Write size of the array
             while (!RespWriteUtils.WriteArrayLength(keys.Count, ref curr, end))

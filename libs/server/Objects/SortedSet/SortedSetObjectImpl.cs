@@ -876,6 +876,13 @@ namespace Garnet.server
 
             try
             {
+                if (doReverse)
+                {
+                    var tmpMinValueChars = minValueChars;
+                    minValueChars = maxValueChars;
+                    maxValueChars = tmpMinValueChars;
+                }
+
                 var iterator = sortedSet.GetViewBetween((sortedSet.Min.Item1, minValueChars.ToArray()), sortedSet.Max);
 
                 // using ToList method so we avoid the Invalid operation ex. when removing
@@ -938,6 +945,11 @@ namespace Garnet.server
         /// <returns></returns>
         private List<(double, byte[])> GetElementsInRangeByScore(double minValue, double maxValue, bool minExclusive, bool maxExclusive, bool withScore, bool doReverse, bool validLimit, bool rem, (int, int) limit = default)
         {
+            if (doReverse)
+            {
+                (minValue, maxValue) = (maxValue, minValue);
+            }
+
             List<(double, byte[])> scoredElements = new();
             if (sortedSet.Max.Item1 < minValue)
             {

@@ -109,6 +109,7 @@ namespace Garnet.server
                 RespCommand.HKEYS => HashObjectKeys((byte)HashOperation.HKEYS),
                 RespCommand.HLEN => HashObjectKeys((byte)HashOperation.HLEN),
                 RespCommand.HMGET => HashObjectKeys((byte)HashOperation.HMGET),
+                RespCommand.HMSET => HashObjectKeys((byte)HashOperation.HMSET),
                 RespCommand.HRANDFIELD => HashObjectKeys((byte)HashOperation.HRANDFIELD),
                 RespCommand.HSCAN => HashObjectKeys((byte)HashOperation.HSCAN),
                 RespCommand.HSET => HashObjectKeys((byte)HashOperation.HSET),
