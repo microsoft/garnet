@@ -39,7 +39,7 @@ namespace Tsavorite.test
         private IDevice log, objlog;
         const int TotalRecords = 250;
 
-        MyObjectComparerModulo comparer = new(0);
+        MyObjectComparerModulo comparer;
 
         [SetUp]
         public void Setup()
@@ -47,6 +47,7 @@ namespace Tsavorite.test
             // Clean up log files from previous test runs in case they weren't cleaned up
             DeleteDirectory(MethodTestDir, wait: true);
 
+            comparer = null;
             foreach (var arg in TestContext.CurrentContext.Test.Arguments)
             {
                 if (arg is HashModulo mod && mod == HashModulo.Hundred)
@@ -55,6 +56,7 @@ namespace Tsavorite.test
                     continue;
                 }
             }
+            comparer ??= new(0);
         }
 
         [TearDown]
@@ -361,7 +363,6 @@ namespace Tsavorite.test
                 }, StoreFunctions<MyKey, MyValue>.Create(comparer, () => new MyKeySerializer(), () => new MyValueSerializer())
                 , (allocatorSettings, storeFunctions) => new(allocatorSettings, storeFunctions)
             );
-
 
             using var session = store.NewSession<MyInput, MyOutput, Empty, ScanFunctions>(new ScanFunctions());
             var bContext = session.BasicContext;

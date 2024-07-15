@@ -149,9 +149,9 @@ namespace Tsavorite.core
                 allocatorSettings.logger = kvSettings.logger ?? kvSettings.loggerFactory?.CreateLogger($"{typeof(TAllocator).Name} ReadCache");
                 allocatorSettings.evictCallback = ReadCacheEvict;
                 readcache = allocatorFactory(allocatorSettings, storeFunctions);
-                ReadCache = new(this, readcache);
                 readCacheBase = readcache.GetBase<TAllocator>();
                 readCacheBase.Initialize();
+                ReadCache = new(this, readcache);
             }
 
             sectorSize = (int)logSettings.LogDevice.SectorSize;

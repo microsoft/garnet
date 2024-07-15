@@ -49,7 +49,12 @@ namespace Tsavorite.core
         /// <summary>
         /// If <see cref="HasInMemorySrc"/>, this is the allocator (hlog or readcache) that <see cref="LogicalAddress"/> is in.
         /// </summary>
-        internal AllocatorBase<Key, Value, TStoreFunctions, TAllocator> Log;
+        internal TAllocator Allocator { get; private set; }
+
+        /// <summary>
+        /// If <see cref="HasInMemorySrc"/>, this is the allocator base (hlog or readcache) that <see cref="LogicalAddress"/> is in.
+        /// </summary>
+        internal AllocatorBase<Key, Value, TStoreFunctions, TAllocator> AllocatorBase { get; private set; }
 
         struct InternalStates
         {
@@ -131,13 +136,13 @@ namespace Tsavorite.core
         internal void ClearHasReadCacheSrc() => internalState &= ~InternalStates.ReadCacheSrc;
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        internal long SetPhysicalAddress() => PhysicalAddress = Log._wrapper.GetPhysicalAddress(LogicalAddress);
+        internal long SetPhysicalAddress() => PhysicalAddress = Allocator.GetPhysicalAddress(LogicalAddress);
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        internal readonly ref RecordInfo GetInfo() => ref Log._wrapper.GetInfo(PhysicalAddress);
+        internal readonly ref RecordInfo GetInfo() => ref Allocator.GetInfo(PhysicalAddress);
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        internal readonly ref Key GetKey() => ref Log._wrapper.GetKey(PhysicalAddress);
+        internal readonly ref Key GetKey() => ref Allocator.GetKey(PhysicalAddress);
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        internal readonly ref Value GetValue() => ref Log._wrapper.GetValue(PhysicalAddress);
+        internal readonly ref Value GetValue() => ref Allocator.GetValue(PhysicalAddress);
 
         internal readonly bool HasInMemorySrc => (internalState & (InternalStates.MainLogSrc | InternalStates.ReadCacheSrc)) != 0;
 
@@ -145,7 +150,7 @@ namespace Tsavorite.core
         /// Initialize to the latest logical address from the caller.
         /// </summary>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        internal void Set(long latestLogicalAddress, AllocatorBase<Key, Value, TStoreFunctions, TAllocator> srcLog)
+        internal void Set(long latestLogicalAddress, AllocatorBase<Key, Value, TStoreFunctions, TAllocator> srcAllocatorBase)
         {
             PhysicalAddress = default;
             LowestReadCacheLogicalAddress = default;
@@ -156,7 +161,13 @@ namespace Tsavorite.core
             // HasTransientLock = ...;   Do not clear this; it is in the LockTable and must be preserved until unlocked
 
             LatestLogicalAddress = LogicalAddress = AbsoluteAddress(latestLogicalAddress);
-            Log = srcLog;
+            SetAllocator(srcAllocatorBase);
+        }
+
+        internal void SetAllocator(AllocatorBase<Key, Value, TStoreFunctions, TAllocator> srcAllocatorBase)
+        {
+            this.AllocatorBase = srcAllocatorBase;
+            this.Allocator = AllocatorBase._wrapper;
         }
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]

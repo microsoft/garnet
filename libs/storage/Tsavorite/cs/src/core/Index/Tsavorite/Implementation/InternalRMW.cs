@@ -400,7 +400,7 @@ namespace Tsavorite.core
 
             // Allocate and initialize the new record
             var (actualSize, allocatedSize, keySize) = doingCU ?
-                stackCtx.recSrc.Log._wrapper.GetRMWCopyDestinationRecordSize(ref key, ref input, ref value, ref srcRecordInfo, sessionFunctions) :
+                stackCtx.recSrc.AllocatorBase._wrapper.GetRMWCopyDestinationRecordSize(ref key, ref input, ref value, ref srcRecordInfo, sessionFunctions) :
                 hlog.GetRMWInitialRecordSize(ref key, ref input, sessionFunctions);
 
             AllocateOptions allocOptions = new()

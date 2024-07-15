@@ -22,10 +22,12 @@ namespace Tsavorite.core
         /// <summary>Indicates whether the Key Serializer is to be used</summary>
         bool HasKeySerializer { get; }
 
-        /// <summary>Begin Key serialization to given stream</summary>
+        /// <summary>Instatiate a KeySerializer and begin Key serialization to the given stream.</summary>
+        /// <remarks>This must instantiate a new serializer as multiple threads may be serializing or deserializing.</remarks>
         IObjectSerializer<TKey> BeginSerializeKey(Stream stream);
 
-        /// <summary>Begin Key deserialization from stream</summary>
+        /// <summary>Instatiate a KeySerializer and begin Key deserialization from the given stream.</summary>
+        /// <remarks>This must instantiate a new serializer as multiple threads may be serializing or deserializing.</remarks>
         IObjectSerializer<TKey> BeginDeserializeKey(Stream stream);
         #endregion Key Serializer
 
@@ -33,10 +35,12 @@ namespace Tsavorite.core
         /// <summary>Indicates whether the Value Serializer is to be used</summary>
         bool HasValueSerializer { get; }
 
-        /// <summary>Begin Value serialization to given stream</summary>
+        /// <summary>Instatiate a ValueSerializer and begin Value serialization to the given stream.</summary>
+        /// <remarks>This must instantiate a new serializer as multiple threads may be serializing or deserializing.</remarks>
         IObjectSerializer<TValue> BeginSerializeValue(Stream stream);
 
-        /// <summary>Begin Value deserialization from stream</summary>
+        /// <summary>Instatiate a ValueSerializer and begin Value deserialization from the given stream.</summary>
+        /// <remarks>This must instantiate a new serializer as multiple threads may be serializing or deserializing.</remarks>
         IObjectSerializer<TValue> BeginDeserializeValue(Stream stream);
         #endregion Value Serializer
 

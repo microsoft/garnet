@@ -58,7 +58,7 @@ namespace Tsavorite.core
         public readonly ref SpanByte GetValue(long physicalAddress) => ref _this.GetValue(physicalAddress);
 
         /// <inheritdoc/>
-        public readonly ref SpanByte GetAndInitializeValue(long physicalAddress, long endPhysicalAddress) => ref GetValue(physicalAddress);
+        public readonly ref SpanByte GetAndInitializeValue(long physicalAddress, long endPhysicalAddress) => ref _this.GetAndInitializeValue(physicalAddress, endPhysicalAddress);
 
         /// <inheritdoc/>
         public readonly (int actualSize, int allocatedSize) GetRecordSize(long physicalAddress) => _this.GetRecordSize(physicalAddress);
@@ -69,7 +69,7 @@ namespace Tsavorite.core
              => _this.GetRMWCopyDestinationRecordSize(ref key, ref input, ref value, ref recordInfo, varlenInput);
 
         /// <inheritdoc/>
-        public readonly int GetRequiredRecordSize(long physicalAddress, int availableBytes) => GetAverageRecordSize();
+        public readonly int GetRequiredRecordSize(long physicalAddress, int availableBytes) => _this.GetRequiredRecordSize(physicalAddress, availableBytes);
 
         /// <inheritdoc/>
         public readonly int GetAverageRecordSize() => _this.GetAverageRecordSize();
@@ -115,10 +115,11 @@ namespace Tsavorite.core
         public readonly void FreePage(long pageIndex) => _this.FreePage(pageIndex);
 
         /// <inheritdoc/>
-        public readonly ref SpanByte GetContextRecordKey(ref AsyncIOContext<SpanByte, SpanByte> ctx) => ref ctx.key;
+        public readonly ref SpanByte GetContextRecordKey(ref AsyncIOContext<SpanByte, SpanByte> ctx) 
+            => ref SpanByteAllocatorImpl<TStoreFunctions, SpanByteAllocator<TStoreFunctions>>.GetContextRecordKey(ref ctx);
 
         /// <inheritdoc/>
-        public readonly ref SpanByte GetContextRecordValue(ref AsyncIOContext<SpanByte, SpanByte> ctx) => ref ctx.value;
+        public readonly ref SpanByte GetContextRecordValue(ref AsyncIOContext<SpanByte, SpanByte> ctx) => ref _this.GetContextRecordValue(ref ctx);
 
         /// <inheritdoc/>
         public readonly IHeapContainer<SpanByte> GetKeyContainer(ref SpanByte key) => _this.GetKeyContainer(ref key);

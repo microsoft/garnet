@@ -97,7 +97,7 @@ namespace Tsavorite.core
         /// <summary>
         /// Whether Tsavorite should remove outdated checkpoints automatically
         /// </summary>
-        public bool RemoveOutdatedCheckpoints = true;
+        public bool RemoveOutdatedCheckpoints = false;
 
         /// <summary>
         /// Try to recover from latest checkpoint, if available

@@ -54,7 +54,7 @@ namespace Tsavorite.core
                     stackCtx.recSrc.LogicalAddress = stackCtx.recSrc.LowestReadCacheLogicalAddress;
                     stackCtx.recSrc.PhysicalAddress = stackCtx.recSrc.LowestReadCachePhysicalAddress;
                     stackCtx.recSrc.SetHasReadCacheSrc();
-                    stackCtx.recSrc.Log = readCacheBase;
+                    stackCtx.recSrc.SetAllocator(readCacheBase);
 
                     // Read() does not need to continue past the found record; updaters need to continue to find latestLogicalAddress and lowestReadCache*Address.
                     if (!alwaysFindLatestLA)
@@ -72,7 +72,7 @@ namespace Tsavorite.core
                 return true;
 
             // We did not find the record in the readcache, so set these to the start of the main log entries, and the caller will call TracebackForKeyMatch
-            Debug.Assert(ReferenceEquals(stackCtx.recSrc.Log, hlog), "Expected Log == hlog");
+            Debug.Assert(ReferenceEquals(stackCtx.recSrc.AllocatorBase, hlogBase), "Expected recSrc.AllocatorBase == hlogBase");
             Debug.Assert(stackCtx.recSrc.LatestLogicalAddress > Constants.kTempInvalidAddress, "Must have a main-log address after readcache");
             stackCtx.recSrc.LogicalAddress = stackCtx.recSrc.LatestLogicalAddress;
             stackCtx.recSrc.PhysicalAddress = 0; // do *not* call hlog.GetPhysicalAddress(); LogicalAddress may be below hlog.HeadAddress. Let the caller decide when to do this.

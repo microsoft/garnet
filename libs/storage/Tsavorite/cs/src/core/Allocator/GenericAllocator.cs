@@ -33,7 +33,7 @@ namespace Tsavorite.core
         public readonly bool IsFixedLength => true;
 
         /// <inheritdoc/>
-        public readonly bool HasObjectLog => false;
+        public readonly bool HasObjectLog => true;
 
         /// <inheritdoc/>
         public readonly long GetStartLogicalAddress(long page) => _this.GetStartLogicalAddress(page);

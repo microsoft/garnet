@@ -194,7 +194,7 @@ namespace Tsavorite.core
         private bool VerifyInMemoryAddresses(ref OperationStackContext<Key, Value, TStoreFunctions, TAllocator> stackCtx)
         {
             // If we have an in-memory source that fell below HeadAddress, return false and the caller will RETRY_LATER.
-            if (stackCtx.recSrc.HasInMemorySrc && stackCtx.recSrc.LogicalAddress < stackCtx.recSrc.Log.HeadAddress)
+            if (stackCtx.recSrc.HasInMemorySrc && stackCtx.recSrc.LogicalAddress < stackCtx.recSrc.AllocatorBase.HeadAddress)
                 return false;
 
             // If we're not using readcache or we don't have a splice point or it is still above readcache.HeadAddress, we're good.
