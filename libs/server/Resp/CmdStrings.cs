@@ -83,6 +83,7 @@ namespace Garnet.server
         public static ReadOnlySpan<byte> BARRIER => "BARRIER"u8;
         public static ReadOnlySpan<byte> barrier => "barrier"u8;
         public static ReadOnlySpan<byte> MODULE => "MODULE"u8;
+        public static ReadOnlySpan<byte> WITHSCORE => "WITHSCORE"u8;
         public static ReadOnlySpan<byte> WITHSCORES => "WITHSCORES"u8;
         public static ReadOnlySpan<byte> WITHVALUES => "WITHVALUES"u8;
         public static ReadOnlySpan<byte> EX => "EX"u8;
@@ -145,6 +146,7 @@ namespace Garnet.server
         public static ReadOnlySpan<byte> RESP_ERR_GENERIC_INSTANTIATING_CLASS => "ERR unable to instantiate one or more classes from given assemblies."u8;
         public static ReadOnlySpan<byte> RESP_ERR_GENERIC_REGISTERCS_UNSUPPORTED_CLASS => "ERR unable to register one or more unsupported classes."u8;
         public static ReadOnlySpan<byte> RESP_ERR_GENERIC_VALUE_IS_NOT_INTEGER => "ERR value is not an integer or out of range."u8;
+        public static ReadOnlySpan<byte> RESP_ERR_GENERIC_VALUE_IS_OUT_OF_RANGE => "ERR value is out of range, must be positive."u8;
         public static ReadOnlySpan<byte> RESP_ERR_PROTOCOL_VALUE_IS_NOT_INTEGER => "ERR Protocol version is not an integer or out of range."u8;
         public static ReadOnlySpan<byte> RESP_ERR_GENERIC_UKNOWN_SUBCOMMAND => "ERR Unknown subcommand. Try LATENCY HELP."u8;
         public static ReadOnlySpan<byte> RESP_ERR_GENERIC_INDEX_OUT_RANGE => "ERR index out of range"u8;
@@ -157,6 +159,7 @@ namespace Garnet.server
         public static ReadOnlySpan<byte> RESP_ERR_NOT_VALID_FLOAT => "ERR value is not a valid float"u8;
         public static ReadOnlySpan<byte> RESP_ERR_MIN_MAX_NOT_VALID_FLOAT => "ERR min or max is not a float"u8;
         public static ReadOnlySpan<byte> RESP_ERR_MIN_MAX_NOT_VALID_STRING => "ERR min or max not valid string range item"u8;
+        public static ReadOnlySpan<byte> RESP_ERR_TIMEOUT_NOT_VALID_FLOAT => "ERR timeout is not a float or out of range"u8;
         public static ReadOnlySpan<byte> RESP_WRONGPASS_INVALID_PASSWORD => "WRONGPASS Invalid password"u8;
         public static ReadOnlySpan<byte> RESP_WRONGPASS_INVALID_USERNAME_PASSWORD => "WRONGPASS Invalid username/password combination"u8;
         public static ReadOnlySpan<byte> RESP_SYNTAX_ERROR => "ERR syntax error"u8;
