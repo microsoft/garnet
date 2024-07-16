@@ -1,0 +1,13 @@
+apiVersion: v1
+kind: Pod
+metadata:
+  name: cmd
+  namespace: garnet
+  labels:
+    app: cmd
+spec:
+  containers:
+  - name: cmd
+    image: redis:latest
+    command: ["/bin/sh"]
+    args: ["-c", "sleep 3600"]

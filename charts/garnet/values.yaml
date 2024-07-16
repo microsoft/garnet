@@ -99,16 +99,16 @@ podAnnotations: {}
 
 # -- Pod Security Context
 podSecurityContext: {}
-  # fsGroup: 2000
+# fsGroup: 2000
 
 # -- Security Context
 securityContext: {}
-  # capabilities:
-  #   drop:
-  #   - ALL
-  # readOnlyRootFilesystem: true
-  # runAsNonRoot: true
-  # runAsUser: 1000
+# capabilities:
+#   drop:
+#   - ALL
+# readOnlyRootFilesystem: true
+# runAsNonRoot: true
+# runAsUser: 1000
 
 service:
   # -- Service annotations
@@ -120,12 +120,12 @@ service:
 
 # -- Resources
 resources: {}
-  # limits:
-  #   cpu: 200m
-  #   memory: 64Mi
-  # requests:
-  #   cpu: 10m
-  #   memory: 16Mi
+# limits:
+#   cpu: 200m
+#   memory: 64Mi
+# requests:
+#   cpu: 10m
+#   memory: 16Mi
 
 # -- Extra Volume Mounts
 extraVolumeMounts: []
