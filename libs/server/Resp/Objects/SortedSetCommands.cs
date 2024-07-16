@@ -93,6 +93,8 @@ namespace Garnet.server
             var sbKey = parseState.GetArgSliceByRef(0).SpanByte;
             var keyBytes = sbKey.ToByteArray();
 
+            var ptr = sbKey.ToPointer() + sbKey.Length + 2;
+
             if (NetworkSingleKeySlotVerify(keyBytes, false))
             {
                 return true;
