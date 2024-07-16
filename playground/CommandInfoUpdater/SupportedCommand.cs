@@ -247,6 +247,7 @@ namespace CommandInfoUpdater
             new ("ZREMRANGEBYRANK", RespCommand.ZREMRANGEBYRANK),
             new ("ZREMRANGEBYSCORE", RespCommand.ZREMRANGEBYSCORE),
             new ("ZREVRANGE", RespCommand.ZREVRANGE),
+            new ("ZREVRANGEBYSCORE", RespCommand.ZREVRANGEBYSCORE),
             new ("ZREVRANK", RespCommand.ZREVRANK),
             new ("ZSCAN", RespCommand.ZSCAN),
             new ("ZSCORE", RespCommand.ZSCORE),
