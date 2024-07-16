@@ -181,8 +181,8 @@ namespace Tsavorite.test.LockableUnsafeContext
                 {
                     if (dest == ReadCopyDestination.ReadCache)
                     {
-                        kvSettings.ReadCachePageSize = 1 << 12;
-                        kvSettings.ReadCacheMemorySize = 1 << 22;
+                        kvSettings.ReadCachePageSize = 1L << 12;
+                        kvSettings.ReadCacheMemorySize = 1L << 22;
                         kvSettings.ReadCacheEnabled = true;
                     }
                     break;

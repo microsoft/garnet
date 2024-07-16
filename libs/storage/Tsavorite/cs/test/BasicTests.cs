@@ -39,7 +39,7 @@ namespace Tsavorite.test
 
         private void Setup(TsavoriteKVSettings<KeyStruct, ValueStruct> kvSettings, DeviceType deviceType, int latencyMs = DefaultLocalMemoryDeviceLatencyMs)
         {
-            kvSettings.IndexSize = 1 << 13;
+            kvSettings.IndexSize = 1L << 13;
 
             string filename = Path.Join(MethodTestDir, TestContext.CurrentContext.Test.Name + deviceType.ToString() + ".log");
             log = CreateTestDevice(deviceType, filename, latencyMs: latencyMs);
@@ -84,7 +84,7 @@ namespace Tsavorite.test
         [Category("Smoke")]
         public void NativeInMemWriteRead([Values] DeviceType deviceType)
         {
-            Setup(new () { PageSize = 1 << 10, MemorySize = 1 << 12, SegmentSize = 1 << 22 }, deviceType);
+            Setup(new () { PageSize = 1L << 10, MemorySize = 1L << 12, SegmentSize = 1L << 22 }, deviceType);
 
             InputStruct input = default;
             OutputStruct output = default;
@@ -105,7 +105,7 @@ namespace Tsavorite.test
         [Category("Smoke")]
         public void NativeInMemWriteReadDelete([Values] DeviceType deviceType)
         {
-            Setup(new () { PageSize = 1 << 10, MemorySize = 1 << 12, SegmentSize = 1 << 22 }, deviceType);
+            Setup(new () { PageSize = 1L << 10, MemorySize = 1L << 12, SegmentSize = 1L << 22 }, deviceType);
 
             InputStruct input = default;
             OutputStruct output = default;
@@ -144,7 +144,7 @@ namespace Tsavorite.test
 
             const int count = 10;
 
-            Setup(new() { MemorySize = 1 << 29 }, deviceType);
+            Setup(new() { MemorySize = 1L << 29 }, deviceType);
 
             InputStruct input = default;
             OutputStruct output = default;
@@ -192,7 +192,7 @@ namespace Tsavorite.test
 
             const int count = 200;
 
-            Setup(new() { MemorySize = 1 << 29 }, deviceType);
+            Setup(new() { MemorySize = 1L << 29 }, deviceType);
             session = store.NewSession<InputStruct, OutputStruct, Empty, Functions>(new Functions());
 
             InputStruct input = default;
@@ -251,7 +251,7 @@ namespace Tsavorite.test
             var sw = Stopwatch.StartNew();
 
             var latencyMs = batchMode == BatchMode.NoBatch ? 0 : DefaultLocalMemoryDeviceLatencyMs;
-            Setup(new() { MemorySize = 1 << 22, SegmentSize = 1 << 22, PageSize = 1 << 10 }, deviceType, latencyMs: latencyMs);
+            Setup(new() { MemorySize = 1L << 22, SegmentSize = 1L << 22, PageSize = 1L << 10 }, deviceType, latencyMs: latencyMs);
 
             for (var c = 0; c < NumRecs; c++)
             {
@@ -327,7 +327,7 @@ namespace Tsavorite.test
             InputStruct input = default;
             OutputStruct output = default;
 
-            Setup(new(){ MemorySize = 1 << 22, SegmentSize = 1 << 22, PageSize = 1 << 10 }, deviceType);
+            Setup(new(){ MemorySize = 1L << 22, SegmentSize = 1L << 22, PageSize = 1L << 10 }, deviceType);
 
             var nums = Enumerable.Range(0, 1000).ToArray();
             var rnd = new Random(11);
@@ -389,7 +389,7 @@ namespace Tsavorite.test
         {
             InputStruct input = default;
 
-            Setup(new() { MemorySize = 1 << 22, SegmentSize = 1 << 22, PageSize = 1 << 10 }, deviceType);
+            Setup(new() { MemorySize = 1L << 22, SegmentSize = 1L << 22, PageSize = 1L << 10 }, deviceType);
 
             var nums = Enumerable.Range(0, 1000).ToArray();
             var rnd = new Random(11);
@@ -448,7 +448,7 @@ namespace Tsavorite.test
         {
             InputStruct input = default;
 
-            Setup(new() { MemorySize = 1 << 22, SegmentSize = 1 << 22, PageSize = 1 << 10 }, deviceType);
+            Setup(new() { MemorySize = 1L << 22, SegmentSize = 1L << 22, PageSize = 1L << 10 }, deviceType);
 
             var key1 = new KeyStruct { kfield1 = 13, kfield2 = 14 };
             var value = new ValueStruct { vfield1 = 23, vfield2 = 24 };
@@ -469,7 +469,7 @@ namespace Tsavorite.test
         [Category("TsavoriteKV")]
         public void ReadNoRefKey([Values] DeviceType deviceType)
         {
-            Setup(new() { MemorySize = 1 << 22, SegmentSize = 1 << 22, PageSize = 1 << 10 }, deviceType);
+            Setup(new() { MemorySize = 1L << 22, SegmentSize = 1L << 22, PageSize = 1L << 10 }, deviceType);
 
             var key1 = new KeyStruct { kfield1 = 13, kfield2 = 14 };
             var value = new ValueStruct { vfield1 = 23, vfield2 = 24 };
@@ -492,7 +492,7 @@ namespace Tsavorite.test
         [Category("Smoke")]
         public void ReadWithoutInput([Values] DeviceType deviceType)
         {
-            Setup(new() { MemorySize = 1 << 22, SegmentSize = 1 << 22, PageSize = 1 << 10 }, deviceType);
+            Setup(new() { MemorySize = 1L << 22, SegmentSize = 1L << 22, PageSize = 1L << 10 }, deviceType);
 
             OutputStruct output = default;
 
@@ -516,7 +516,7 @@ namespace Tsavorite.test
         [Category("Smoke")]
         public void ReadBareMinParams([Values] DeviceType deviceType)
         {
-            Setup(new() { MemorySize = 1 << 22, SegmentSize = 1 << 22, PageSize = 1 << 10 }, deviceType);
+            Setup(new() { MemorySize = 1L << 22, SegmentSize = 1L << 22, PageSize = 1L << 10 }, deviceType);
 
             var key1 = new KeyStruct { kfield1 = 13, kfield2 = 14 };
             var value = new ValueStruct { vfield1 = 23, vfield2 = 24 };
@@ -540,7 +540,7 @@ namespace Tsavorite.test
             // Just functional test of ReadFlag so one device is enough
             deviceType = DeviceType.MLSD;
 
-            Setup(new() { MemorySize = 1 << 29 }, deviceType);
+            Setup(new() { MemorySize = 1L << 29 }, deviceType);
 
             InputStruct input = default;
             OutputStruct output = default;
@@ -595,7 +595,7 @@ namespace Tsavorite.test
             // Another ReadFlag functional test so one device is enough
             deviceType = DeviceType.MLSD;
 
-            Setup(new() { MemorySize = 1 << 29, ReadCacheEnabled = true }, deviceType);
+            Setup(new() { MemorySize = 1L << 29, ReadCacheEnabled = true }, deviceType);
 
             SkipReadCacheFunctions functions = new();
             using var skipReadCacheSession = store.NewSession<InputStruct, OutputStruct, Empty, SkipReadCacheFunctions>(functions);
@@ -670,7 +670,7 @@ namespace Tsavorite.test
         [Category("Smoke")]
         public void UpsertDefaultsTest([Values] DeviceType deviceType)
         {
-            Setup(new() { MemorySize = 1 << 22, SegmentSize = 1 << 22, PageSize = 1 << 10 }, deviceType);
+            Setup(new() { MemorySize = 1L << 22, SegmentSize = 1L << 22, PageSize = 1L << 10 }, deviceType);
 
             InputStruct input = default;
             OutputStruct output = default;
@@ -698,7 +698,7 @@ namespace Tsavorite.test
             // Just checking more parameter values so one device is enough
             deviceType = DeviceType.MLSD;
 
-            Setup(new() { MemorySize = 1 << 29 }, deviceType);
+            Setup(new() { MemorySize = 1L << 29 }, deviceType);
 
             InputStruct input = default;
             OutputStruct output = default;

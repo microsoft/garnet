@@ -46,7 +46,7 @@ namespace Tsavorite.test
         {
             TestUtils.DeleteDirectory(TestUtils.MethodTestDir);
             IDevice tested;
-            IDevice localDevice = Devices.CreateLogDevice(Path.Join(TestUtils.MethodTestDir, "BasicDiskTests.log"), deleteOnClose: true, capacity: 1 << 30);
+            IDevice localDevice = Devices.CreateLogDevice(Path.Join(TestUtils.MethodTestDir, "BasicDiskTests.log"), deleteOnClose: true, capacity: 1L << 30);
             if (TestUtils.IsRunningAzureTests)
             {
                 IDevice cloudDevice = new AzureStorageDevice(TestUtils.AzureEmulatedStorageString, TestUtils.AzureTestContainer, TestUtils.AzureTestDirectory, "BasicDiskTests", logger: TestUtils.TestLoggerFactory.CreateLogger("asd"));
@@ -55,7 +55,7 @@ namespace Tsavorite.test
             else
             {
                 // If no Azure is enabled, just use another disk
-                IDevice localDevice2 = Devices.CreateLogDevice(Path.Join(TestUtils.MethodTestDir, "BasicDiskTests2.log"), deleteOnClose: true, capacity: 1 << 30);
+                IDevice localDevice2 = Devices.CreateLogDevice(Path.Join(TestUtils.MethodTestDir, "BasicDiskTests2.log"), deleteOnClose: true, capacity: 1L << 30);
                 tested = new TieredStorageDevice(1, localDevice, localDevice2);
 
             }
@@ -67,8 +67,8 @@ namespace Tsavorite.test
         [Category("Smoke")]
         public void ShardedWriteRead()
         {
-            IDevice localDevice1 = Devices.CreateLogDevice(Path.Join(TestUtils.MethodTestDir, "BasicDiskTests1.log"), deleteOnClose: true, capacity: 1 << 30);
-            IDevice localDevice2 = Devices.CreateLogDevice(Path.Join(TestUtils.MethodTestDir, "BasicDiskTests2.log"), deleteOnClose: true, capacity: 1 << 30);
+            IDevice localDevice1 = Devices.CreateLogDevice(Path.Join(TestUtils.MethodTestDir, "BasicDiskTests1.log"), deleteOnClose: true, capacity: 1L << 30);
+            IDevice localDevice2 = Devices.CreateLogDevice(Path.Join(TestUtils.MethodTestDir, "BasicDiskTests2.log"), deleteOnClose: true, capacity: 1L << 30);
             var device = new ShardedStorageDevice(new UniformPartitionScheme(512, localDevice1, localDevice2));
             TestDeviceWriteRead(device);
         }
@@ -100,8 +100,7 @@ namespace Tsavorite.test
                 {
                     IndexSize = 1L << 26,
                     LogDevice = log,
-                    MemorySize = 1 << 15,
-                    PageSize = 1 << 10,
+                    MemorySize = 1L << 15, PageSize = 1L << 10,
                 }, StoreFunctions<KeyStruct, ValueStruct>.Create(KeyStruct.Comparer.Instance)
                 , (allocatorSettings, storeFunctions) => new (allocatorSettings, storeFunctions)
             );

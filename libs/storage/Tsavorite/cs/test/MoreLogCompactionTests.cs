@@ -24,7 +24,7 @@ namespace Tsavorite.test
             store = new (new()
             {
                 IndexSize = 1L << 26,
-                LogDevice = log, MemorySize = 1 << 15, PageSize = 1 << 9
+                LogDevice = log, MemorySize = 1L << 15, PageSize = 1L << 9
             }, StoreFunctions<long, long>.Create(LongKeyComparer.Instance)
                 , (allocatorSettings, storeFunctions) => new(allocatorSettings, storeFunctions)
             );

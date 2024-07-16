@@ -60,7 +60,7 @@ namespace Tsavorite.test
                 {
                     IndexSize = 1L << 26, 
                     LogDevice = log,
-                    MemorySize = 1 << 15, PageSize = 1 << 9
+                    MemorySize = 1L << 15, PageSize = 1L << 9
                 }, StoreFunctions<KeyStruct, ValueStruct>.Create(new HashModuloKeyStructComparer(hashMod))
                 , (allocatorSettings, storeFunctions) => new(allocatorSettings, storeFunctions)
             );

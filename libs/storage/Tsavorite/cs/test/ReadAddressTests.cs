@@ -165,8 +165,8 @@ namespace Tsavorite.test.readaddress
                         ReadCacheEnabled = useReadCache,
                         ReadCopyOptions = readCopyOptions,
                         // Use small-footprint values
-                        PageSize = 1 << 12, // (4K pages)
-                        MemorySize = 1 << 20, // (1M memory for main log)
+                        PageSize = 1L << 12, // (4K pages)
+                        MemorySize = 1L << 20, // (1M memory for main log)
 
                         CheckpointDir = Path.Join(MethodTestDir, "chkpt")
                     }, StoreFunctions<KeyStruct, ValueStruct>.Create(new KeyStruct.Comparer())

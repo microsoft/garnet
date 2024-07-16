@@ -62,7 +62,7 @@ namespace Tsavorite.test.spanbyte
                 {
                     IndexSize = 1L << 26,
                     LogDevice = log,
-                    MemorySize = 1 << 25, PageSize = 1 << PageSizeBits
+                    MemorySize = 1L << 25, PageSize = 1L << PageSizeBits
                 }, StoreFunctions<SpanByte, SpanByte>.Create(comparer, SpanByteRecordDisposer.Instance)
                 , (allocatorSettings, storeFunctions) => new(allocatorSettings, storeFunctions)
             );
@@ -390,7 +390,7 @@ namespace Tsavorite.test.spanbyte
                 {
                     IndexSize = 1L << 26,
                     LogDevice = log,
-                    MemorySize = 1 << 20, PageSize = 1 << PageSizeBits
+                    MemorySize = 1L << 20, PageSize = 1L << PageSizeBits
                 }, StoreFunctions<SpanByte, SpanByte>.Create(new SpanByteComparerModulo(0), SpanByteRecordDisposer.Instance)
                 , (allocatorSettings, storeFunctions) => new(allocatorSettings, storeFunctions)
             );

@@ -98,7 +98,7 @@ namespace Tsavorite.test.recovery
 
             seed = 123;
             size = 1 << 16;
-            numAdds = 1 << 18;
+            numAdds = 1L << 18;
             ht_device = Devices.CreateLogDevice(Path.Join(TestUtils.MethodTestDir, "TestFuzzyIndexRecoveryht.dat"), deleteOnClose: true);
             ofb_device = Devices.CreateLogDevice(Path.Join(TestUtils.MethodTestDir, "TestFuzzyIndexRecoveryofb.dat"), deleteOnClose: true);
             hash_table1 = new TsavoriteBase();

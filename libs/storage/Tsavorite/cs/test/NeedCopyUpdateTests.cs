@@ -30,9 +30,9 @@ namespace Tsavorite.test
 
             store = new (new ()
                 {   
-                    IndexSize = 1 << 13,
+                    IndexSize = 1L << 13,
                     LogDevice = log, ObjectLogDevice = objlog,
-                    MutableFraction = 0.1, MemorySize = 1 << 15, PageSize = 1 << 10
+                    MutableFraction = 0.1, MemorySize = 1L << 15, PageSize = 1L << 10
                 }, StoreFunctions<int, RMWValue>.Create(IntKeyComparer.Instance, keySerializerCreator: null, () => new RMWValueSerializer())
                 , (allocatorSettings, storeFunctions) => new(allocatorSettings, storeFunctions)
             );
@@ -180,9 +180,9 @@ namespace Tsavorite.test
 
             store = new (new ()
                 {
-                    IndexSize = 1 << 13,
+                    IndexSize = 1L << 13,
                     LogDevice = log,
-                    MutableFraction = 0.1, MemorySize = 1 << PageSizeBits, PageSize = 1 << PageSizeBits
+                    MutableFraction = 0.1, MemorySize = 1L << PageSizeBits, PageSize = 1L << PageSizeBits
                 }, StoreFunctions<long, long>.Create(LongKeyComparer.Instance)
                 , (allocatorSettings, storeFunctions) => new(allocatorSettings, storeFunctions)
             );

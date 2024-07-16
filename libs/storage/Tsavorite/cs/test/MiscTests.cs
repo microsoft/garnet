@@ -30,12 +30,11 @@ namespace Tsavorite.test
 
             store = new (new TsavoriteKVSettings<int, MyValue>()
                 {
-                    IndexSize = 1 << 13,
+                    IndexSize = 1L << 13,
                     LogDevice = log,
                     ObjectLogDevice = objlog,
                     MutableFraction = 0.1,
-                    MemorySize = 1 << 15,
-                    PageSize = 1 << 10
+                    MemorySize = 1L << 15, PageSize = 1L << 10
                 }, StoreFunctions<int, MyValue>.Create(IntKeyComparer.Instance, null, () => new MyValueSerializer())
                 , (allocatorSettings, storeFunctions) => new (allocatorSettings, storeFunctions)
             );
@@ -133,9 +132,9 @@ namespace Tsavorite.test
                 log = Devices.CreateLogDevice(Path.Join(MethodTestDir, "hlog1.log"), deleteOnClose: true);
                 store = new (new TsavoriteKVSettings<KeyStruct, ValueStruct>()
                     {
-                        IndexSize = 1 << 13,
+                        IndexSize = 1L << 13,
                         LogDevice = log,
-                        MemorySize = 1 << 29,
+                        MemorySize = 1L << 29,
                         CheckpointDir = checkpointDir
                     }, StoreFunctions<KeyStruct, ValueStruct>.Create(KeyStruct.Comparer.Instance)
                     , (allocatorSettings, storeFunctions) => new (allocatorSettings, storeFunctions)
@@ -188,9 +187,9 @@ namespace Tsavorite.test
 
                 store = new(new TsavoriteKVSettings<KeyStruct, ValueStruct>()
                 {
-                    IndexSize = 1 << 13,
+                    IndexSize = 1L << 13,
                     LogDevice = log,
-                    MemorySize = 1 << 29,
+                    MemorySize = 1L << 29,
                     CheckpointDir = checkpointDir
                 }, StoreFunctions<KeyStruct, ValueStruct>.Create(KeyStruct.Comparer.Instance)
                     , (allocatorSettings, storeFunctions) => new (allocatorSettings, storeFunctions)

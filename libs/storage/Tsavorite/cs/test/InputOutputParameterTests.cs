@@ -86,8 +86,8 @@ namespace Tsavorite.test.InputOutputParameterTests
             log = TestUtils.CreateTestDevice(TestUtils.DeviceType.LocalMemory, Path.Combine(TestUtils.MethodTestDir, "Device.log"));
             store = new (new TsavoriteKVSettings<int, int>()
                 {
-                    IndexSize = 1 << 13,
-                    LogDevice = log, MemorySize = 1 << 22, SegmentSize = 1 << 22, PageSize = 1 << 10
+                    IndexSize = 1L << 13,
+                    LogDevice = log, MemorySize = 1L << 22, SegmentSize = 1L << 22, PageSize = 1L << 10
                 }, StoreFunctions<int, int>.Create(IntKeyComparer.Instance)
                 , (allocatorSettings, storeFunctions) => new(allocatorSettings, storeFunctions)
             );

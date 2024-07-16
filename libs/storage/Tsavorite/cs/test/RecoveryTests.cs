@@ -25,7 +25,7 @@ namespace Tsavorite.test.recovery.sumstore
     [TestFixture]
     internal class DeviceTypeRecoveryTests
     {
-        internal const long NumUniqueKeys = 1 << 12;
+        internal const long NumUniqueKeys = 1L << 12;
         internal const long KeySpace = 1L << 20;
         internal const long NumOps = 1L << 17;
         internal const long CompletePendingInterval = 1L << 10;
@@ -52,7 +52,7 @@ namespace Tsavorite.test.recovery.sumstore
                 {
                     IndexSize = KeySpace,
                     LogDevice = log,
-                    SegmentSize = 1 << 25, //MemorySize = 1 << 14, PageSize = 1 << 9,  // locks ups at session.RMW line in Populate() for Local Memory
+                    SegmentSize = 1L << 25, //MemorySize = 1L << 14, PageSize = 1L << 9,  // locks ups at session.RMW line in Populate() for Local Memory
                     CheckpointDir = MethodTestDir
                 }, StoreFunctions<AdId, NumClicks>.Create(new AdId.Comparer())
                 , (allocatorSettings, storeFunctions) => new (allocatorSettings, storeFunctions)
@@ -252,7 +252,7 @@ namespace Tsavorite.test.recovery.sumstore
                     IndexSize = DeviceTypeRecoveryTests.KeySpace,
                     LogDevice = log,
                     ObjectLogDevice = objlog,
-                    SegmentSize = 1 << 25,
+                    SegmentSize = 1L << 25,
                     CheckpointDir = MethodTestDir
                 }, storeFunctionsCreator()
                 , allocatorCreator

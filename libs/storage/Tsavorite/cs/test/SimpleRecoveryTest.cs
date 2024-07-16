@@ -104,7 +104,9 @@ namespace Tsavorite.test.recovery.sumstore
 
             store1 = new (new TsavoriteKVSettings<AdId, NumClicks>()
                 {
-                    IndexSize = 1 << 13, LogDevice = log, MutableFraction = 0.1, MemorySize = 1 << 29,
+                    IndexSize = 1L << 13,
+                    LogDevice = log,
+                    MutableFraction = 0.1, MemorySize = 1L << 29,
                     CheckpointDir = checkpointDir, CheckpointManager = checkpointManager
                 }, StoreFunctions<AdId, NumClicks>.Create(new AdId.Comparer())
                 , (allocatorSettings, storeFunctions) => new(allocatorSettings, storeFunctions)
@@ -112,7 +114,9 @@ namespace Tsavorite.test.recovery.sumstore
 
             store2 = new(new TsavoriteKVSettings<AdId, NumClicks>()
             {
-                IndexSize = 1 << 13, LogDevice = log, MutableFraction = 0.1, MemorySize = 1 << 29,
+                IndexSize = 1L << 13,
+                LogDevice = log,
+                MutableFraction = 0.1, MemorySize = 1L << 29,
                 CheckpointDir = checkpointDir, CheckpointManager = checkpointManager
             }, StoreFunctions<AdId, NumClicks>.Create(new AdId.Comparer())
                 , (allocatorSettings, storeFunctions) => new(allocatorSettings, storeFunctions)
@@ -182,7 +186,9 @@ namespace Tsavorite.test.recovery.sumstore
 
             store1 = new (new TsavoriteKVSettings<AdId, NumClicks>()
                 {
-                    IndexSize = 1 << 13, LogDevice = log, MutableFraction = 0.1, MemorySize = 1 << 29,
+                    IndexSize = 1L << 13,
+                    LogDevice = log,
+                    MutableFraction = 0.1, MemorySize = 1L << 29,
                     CheckpointManager = checkpointManager
                 }, StoreFunctions<AdId, NumClicks>.Create(new AdId.Comparer())
                 , (allocatorSettings, storeFunctions) => new(allocatorSettings, storeFunctions)
@@ -190,7 +196,9 @@ namespace Tsavorite.test.recovery.sumstore
 
             store2 = new (new TsavoriteKVSettings<AdId, NumClicks>()
                 {
-                    IndexSize = 1 << 13, LogDevice = log, MutableFraction = 0.1, MemorySize = 1 << 29,
+                    IndexSize = 1L << 13,
+                    LogDevice = log,
+                    MutableFraction = 0.1, MemorySize = 1L << 29,
                     CheckpointManager = checkpointManager
                 }, StoreFunctions<AdId, NumClicks>.Create(new AdId.Comparer())
                 , (allocatorSettings, storeFunctions) => new(allocatorSettings, storeFunctions)
@@ -241,7 +249,9 @@ namespace Tsavorite.test.recovery.sumstore
 
             store1 = new (new TsavoriteKVSettings<AdId, NumClicks>()
                 {
-                    IndexSize = 1 << 13, LogDevice = log, MutableFraction = 0.1, MemorySize = 1 << 29,
+                    IndexSize = 1L << 13,
+                    LogDevice = log,
+                    MutableFraction = 0.1, MemorySize = 1L << 29,
                     CheckpointDir = checkpointDir
                 }, StoreFunctions<AdId, NumClicks>.Create(new AdId.Comparer())
                 , (allocatorSettings, storeFunctions) => new(allocatorSettings, storeFunctions)
@@ -249,7 +259,9 @@ namespace Tsavorite.test.recovery.sumstore
 
             store2 = new (new TsavoriteKVSettings<AdId, NumClicks>()
                 {
-                    IndexSize = 1 << 13, LogDevice = log, MutableFraction = 0.1, MemorySize = 1 << 29,
+                    IndexSize = 1L << 13,
+                    LogDevice = log,
+                    MutableFraction = 0.1, MemorySize = 1L << 29,
                     CheckpointDir = checkpointDir
                 }, StoreFunctions<AdId, NumClicks>.Create(new AdId.Comparer())
                 , (allocatorSettings, storeFunctions) => new(allocatorSettings, storeFunctions)
@@ -296,7 +308,9 @@ namespace Tsavorite.test.recovery.sumstore
 
             store1 = new (new TsavoriteKVSettings<AdId, NumClicks>()
                 {
-                    IndexSize = 1 << 13, LogDevice = log, MutableFraction = 0.1, MemorySize = 1 << 29,
+                    IndexSize = 1L << 13,
+                    LogDevice = log,
+                    MutableFraction = 0.1, MemorySize = 1L << 29,
                     CheckpointManager = checkpointManager
                 }, StoreFunctions<AdId, NumClicks>.Create(new AdId.Comparer())
                 , (allocatorSettings, storeFunctions) => new(allocatorSettings, storeFunctions)
@@ -304,7 +318,9 @@ namespace Tsavorite.test.recovery.sumstore
 
             store2 = new (new TsavoriteKVSettings<AdId, NumClicks>()
                 {
-                    IndexSize = 1 << 13, LogDevice = log, MutableFraction = 0.1, MemorySize = 1 << 29,
+                    IndexSize = 1L << 13,
+                    LogDevice = log,
+                    MutableFraction = 0.1, MemorySize = 1L << 29,
                     CheckpointManager = checkpointManager
                 }, StoreFunctions<AdId, NumClicks>.Create(new AdId.Comparer())
                 , (allocatorSettings, storeFunctions) => new(allocatorSettings, storeFunctions)

@@ -75,7 +75,7 @@ namespace Tsavorite.test
                 {
                     IndexSize = 1L << 26,
                     LogDevice = log,
-                    MemorySize = 1 << 15, PageSize = 1 << 9, SegmentSize = 1 << 22
+                    MemorySize = 1L << 15, PageSize = 1L << 9, SegmentSize = 1L << 22
                 }, StoreFunctions<SpanByte, SpanByte>.Create()
                 , (allocatorSettings, storeFunctions) => new(allocatorSettings, storeFunctions)
             );
@@ -172,7 +172,7 @@ namespace Tsavorite.test
                 {
                     IndexSize = 1L << 26,
                     LogDevice = log,
-                    MemorySize = 1 << 15, PageSize = 1 << 9, SegmentSize = 1 << 22
+                    MemorySize = 1L << 15, PageSize = 1L << 9, SegmentSize = 1L << 22
                 }, StoreFunctions<SpanByte, SpanByte>.Create()
                 , (allocatorSettings, storeFunctions) => new(allocatorSettings, storeFunctions)
             );
@@ -225,7 +225,7 @@ namespace Tsavorite.test
                 {
                     IndexSize = 1L << 26,
                     LogDevice = log,
-                    MemorySize = 1 << 25, PageSize = 1 << 19, SegmentSize = 1 << 22
+                    MemorySize = 1L << 25, PageSize = 1L << 19, SegmentSize = 1L << 22
                 }, StoreFunctions<SpanByte, SpanByte>.Create()
                 , (allocatorSettings, storeFunctions) => new(allocatorSettings, storeFunctions)
             );

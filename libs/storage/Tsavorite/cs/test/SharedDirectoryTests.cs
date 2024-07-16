@@ -20,7 +20,7 @@ namespace Tsavorite.test.recovery.sumstore
     [TestFixture]
     internal class SharedDirectoryTests
     {
-        const long NumUniqueKeys = 1 << 5;
+        const long NumUniqueKeys = 1L << 5;
         const long KeySpace = 1L << 11;
         const long NumOps = 1L << 10;
         const long CompletePendingInterval = 1L << 10;

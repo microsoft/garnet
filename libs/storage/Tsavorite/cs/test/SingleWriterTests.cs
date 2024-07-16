@@ -89,10 +89,9 @@ namespace Tsavorite.test.SingleWriter
             functions = new SingleWriterTestFunctions();
             TsavoriteKVSettings<int, int> kvSettings = new()
                 {
-                    IndexSize = 1 << 26,
+                    IndexSize = 1L << 26,
                     LogDevice = log,
-                    PageSize = 1 << 12,
-                    MemorySize = 1 << 22,
+                    PageSize = 1L << 12, MemorySize = 1L << 22,
                     ReadCopyOptions = new(ReadCopyFrom.Device, ReadCopyTo.MainLog),
                     CheckpointDir = MethodTestDir
                 };
@@ -102,8 +101,8 @@ namespace Tsavorite.test.SingleWriter
                 {
                     if (dest == ReadCopyDestination.ReadCache)
                     {
-                        kvSettings.ReadCachePageSize = 1 << 12;
-                        kvSettings.ReadCacheMemorySize = 1 << 22;
+                        kvSettings.ReadCachePageSize = 1L << 12;
+                        kvSettings.ReadCacheMemorySize = 1L << 22;
                         kvSettings.ReadCacheEnabled = true;
                         kvSettings.ReadCopyOptions = default;
                     }
@@ -212,7 +211,7 @@ namespace Tsavorite.test.SingleWriter
                 {
                     IndexSize = 1L << 26,
                     LogDevice = log, ObjectLogDevice = objlog, 
-                    PageSize = 1 << 10, MemorySize = 1 << 22, SegmentSize = 1 << 16,
+                    PageSize = 1L << 10, MemorySize = 1L << 22, SegmentSize = 1L << 16,
                     CheckpointDir = MethodTestDir
                 }, StoreFunctions<StructWithString, StructWithString>.Create(new StructWithString.Comparer(), () => new StructWithString.Serializer(), () => new StructWithString.Serializer())
                 , (allocatorSettings, storeFunctions) => new(allocatorSettings, storeFunctions)

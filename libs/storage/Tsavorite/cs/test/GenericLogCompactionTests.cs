@@ -27,10 +27,9 @@ namespace Tsavorite.test
 
             var kvSettings = new TsavoriteKVSettings<MyKey, MyValue>()
             {
-                IndexSize = 1 << 13,
+                IndexSize = 1L << 13,
                 MutableFraction = 0.1,
-                MemorySize = 1 << 14,
-                PageSize = 1 << 9
+                MemorySize = 1L << 14, PageSize = 1L << 9
             };
 
             if (TestContext.CurrentContext.Test.Arguments.Length == 0)
@@ -48,7 +47,7 @@ namespace Tsavorite.test
                 log = CreateTestDevice(deviceType, Path.Join(MethodTestDir, $"LogCompactBasicTest_{deviceType}.log"));
                 objlog = CreateTestDevice(deviceType, Path.Join(MethodTestDir, $"LogCompactBasicTest_{deviceType}.obj.log"));
 
-                kvSettings.SegmentSize = 1 << 22;
+                kvSettings.SegmentSize = 1L << 22;
             }
 
             kvSettings.LogDevice = log;

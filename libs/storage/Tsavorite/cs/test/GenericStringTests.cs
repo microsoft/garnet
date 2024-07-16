@@ -55,7 +55,7 @@ namespace Tsavorite.test
                     {
                         IndexSize = 1L << 26,
                         LogDevice = log, ObjectLogDevice = objlog, 
-                        MutableFraction = 0.1, MemorySize = 1 << 14, PageSize = 1 << 9, SegmentSize = 1 << 22
+                        MutableFraction = 0.1, MemorySize = 1L << 14, PageSize = 1L << 9, SegmentSize = 1L << 22
                     }, StoreFunctions<string, string>.Create(StringKeyComparer.Instance, () => new StringBinaryObjectSerializer(), () => new StringBinaryObjectSerializer())
                 , (allocatorSettings, storeFunctions) => new(allocatorSettings, storeFunctions)
             );

@@ -277,8 +277,7 @@ namespace Tsavorite.test.Revivification
                 {
                     IndexSize = 1L << 24,
                     LogDevice = log,
-                    PageSize = 1 << 12,
-                    MemorySize = 1 << 20,
+                    PageSize = 1L << 12, MemorySize = 1L << 20,
                     RevivificationSettings = revivificationSettings
                 }, StoreFunctions<int, int>.Create(IntKeyComparer.Instance)
                 , (allocatorSettings, storeFunctions) => new (allocatorSettings, storeFunctions));
@@ -674,8 +673,7 @@ namespace Tsavorite.test.Revivification
             {
                 IndexSize = 1L << 24,
                 LogDevice = log,
-                PageSize = 1 << 17,
-                MemorySize = 1 << 20,
+                PageSize = 1L << 17, MemorySize = 1L << 20,
                 RevivificationSettings = RevivificationSettings.PowerOf2Bins
             };
 
@@ -1656,12 +1654,11 @@ namespace Tsavorite.test.Revivification
 
             store = new (new TsavoriteKVSettings<MyKey, MyValue>()
                 {
-                    IndexSize = 1 << 13,
+                    IndexSize = 1L << 13,
                     LogDevice = log,
                     ObjectLogDevice = objlog,
                     MutableFraction = 0.1,
-                    MemorySize = 1 << 22,
-                    PageSize = 1 << 12,
+                    MemorySize = 1L << 22, PageSize = 1L << 12,
                     RevivificationSettings = RevivificationSettings.DefaultFixedLength
                 }, StoreFunctions<MyKey, MyValue>.Create(new MyKey.Comparer(), () => new MyKeySerializer(), () => new MyValueSerializer())
                 , (allocatorSettings, storeFunctions) => new (allocatorSettings, storeFunctions)
@@ -1835,8 +1832,7 @@ namespace Tsavorite.test.Revivification
                 {
                     IndexSize = 1L << 24,
                     LogDevice = log,
-                    PageSize = 1 << 17,
-                    MemorySize = 1 << 20,
+                    PageSize = 1L << 17, MemorySize = 1L << 20,
                     RevivificationSettings = RevivificationSettings.PowerOf2Bins
                 }, StoreFunctions<SpanByte, SpanByte>.Create(comparer, SpanByteRecordDisposer.Instance)
                 , (allocatorSettings, storeFunctions) => new (allocatorSettings, storeFunctions)

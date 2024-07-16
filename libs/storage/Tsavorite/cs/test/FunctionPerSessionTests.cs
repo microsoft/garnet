@@ -124,7 +124,7 @@ namespace Tsavorite.test
 
             store = new (new()
                 {
-                    IndexSize = 1 << 13,
+                    IndexSize = 1L << 13,
                     LogDevice = _log,
                 }, StoreFunctions<int, RefCountedValue>.Create(IntKeyComparer.Instance)
                 , (allocatorSettings, storeFunctions) => new(allocatorSettings, storeFunctions)

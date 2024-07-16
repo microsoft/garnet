@@ -73,8 +73,8 @@ namespace Tsavorite.test
             log = Devices.CreateLogDevice(Path.Join(MethodTestDir, "PostOperations.log"), deleteOnClose: true);
             store = new (new TsavoriteKVSettings<int, int>()
                 {
-                    IndexSize = 1 << 26,
-                    LogDevice = log, MemorySize = 1 << 15, PageSize = 1 << 10
+                    IndexSize = 1L << 26,
+                    LogDevice = log, MemorySize = 1L << 15, PageSize = 1L << 10
                 }, StoreFunctions<int, int>.Create(IntKeyComparer.Instance)
                 , (allocatorSettings, storeFunctions) => new(allocatorSettings, storeFunctions)
             );

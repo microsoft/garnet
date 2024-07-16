@@ -95,16 +95,16 @@ namespace Tsavorite.benchmark
                 IndexSize = testLoader.GetHashTableSize(),
                 LogDevice = device,
                 PreallocateLog = true,
-                MemorySize = 1 << 35,
+                MemorySize = 1L << 35,
                 RevivificationSettings = revivificationSettings,
                 CheckpointDir = testLoader.BackupPath
             };
 
             if (testLoader.Options.UseSmallMemoryLog)
             {
-                kvSettings.PageSize = 1 << 22;
-                kvSettings.SegmentSize = 1 << 26;
-                kvSettings.MemorySize = 1 << 26;
+                kvSettings.PageSize = 1L << 22;
+                kvSettings.SegmentSize = 1L << 26;
+                kvSettings.MemorySize = 1L << 26;
             }
 
             store = new(kvSettings

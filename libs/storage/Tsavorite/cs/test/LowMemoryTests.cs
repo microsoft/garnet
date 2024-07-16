@@ -27,7 +27,7 @@ namespace Tsavorite.test.LowMemory
                 {
                     IndexSize = 1L << 16,
                     LogDevice = log, 
-                    MutableFraction = 1, PageSize = 1 << 10, MemorySize = 1 << 12, SegmentSize = 1 << 26,
+                    MutableFraction = 1, PageSize = 1L << 10, MemorySize = 1L << 12, SegmentSize = 1L << 26,
                     CheckpointDir = TestUtils.MethodTestDir
                 }, StoreFunctions<long, long>.Create(LongKeyComparer.Instance)
                 , (allocatorSettings, storeFunctions) => new(allocatorSettings, storeFunctions)

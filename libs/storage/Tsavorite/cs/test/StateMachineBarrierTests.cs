@@ -32,7 +32,9 @@ namespace Tsavorite.test.statemachine
 
             store = new (new TsavoriteKVSettings<AdId, NumClicks>()
                 {
-                    IndexSize = 1 << 13, LogDevice = log, MutableFraction = 0.1, PageSize = 1 << 10, MemorySize = 1 << 13,
+                    IndexSize = 1L << 13,
+                    LogDevice = log,
+                    MutableFraction = 0.1, PageSize = 1L << 10, MemorySize = 1L << 13,
                     CheckpointDir = checkpointDir, CheckpointVersionSwitchBarrier = true
             }, StoreFunctions<AdId, NumClicks>.Create(new AdId.Comparer())
                 , (allocatorSettings, storeFunctions) => new(allocatorSettings, storeFunctions)

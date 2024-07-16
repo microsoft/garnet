@@ -46,9 +46,9 @@ namespace Tsavorite.test
 
                 using var store = new TsavoriteKV<long, long, LongStoreFunctions, LongAllocator>(
                     new () {
-                        IndexSize = 1 << 16,
+                        IndexSize = 1L << 16,
                         LogDevice = log,
-                        MutableFraction = 1, PageSize = 1 << 10, MemorySize = 1 << 20,
+                        MutableFraction = 1, PageSize = 1L << 10, MemorySize = 1L << 20,
                         CheckpointManager = checkpointManager
                     }, StoreFunctions<long, long>.Create(LongKeyComparer.Instance)
                     , (allocatorSettings, storeFunctions) => new(allocatorSettings, storeFunctions)

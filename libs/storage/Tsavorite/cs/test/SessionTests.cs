@@ -27,7 +27,7 @@ namespace Tsavorite.test.Session
             {
                 IndexSize = 1L << 13,
                 LogDevice = log,
-                MemorySize = 1 << 29,
+                MemorySize = 1L << 29,
             }, StoreFunctions<KeyStruct, ValueStruct>.Create(new KeyStruct.Comparer())
                 , (allocatorSettings, storeFunctions) => new(allocatorSettings, storeFunctions)
             );

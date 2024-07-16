@@ -105,9 +105,9 @@ namespace Tsavorite.test
             objlog = CreateTestDevice(deviceType, Path.Join(MethodTestDir, $"DiskWriteScanBasicTest_{deviceType}.obj.log"));
             store = new(new()
                 {
-                    IndexSize = 1 << 13,
+                    IndexSize = 1L << 13,
                     LogDevice = log, ObjectLogDevice = objlog,
-                    MutableFraction = 0.1, MemorySize = 1 << 15, PageSize = 1 << 9, SegmentSize = 1 << 22
+                    MutableFraction = 0.1, MemorySize = 1L << 15, PageSize = 1L << 9, SegmentSize = 1L << 22
                 }, StoreFunctions<MyKey, MyValue>.Create(comparer, () => new MyKeySerializer(), () => new MyValueSerializer())
                 , (allocatorSettings, storeFunctions) => new(allocatorSettings, storeFunctions)
             );
@@ -184,9 +184,9 @@ namespace Tsavorite.test
             objlog = Devices.CreateLogDevice(Path.Join(MethodTestDir, "test.obj.log"));
             store = new(new()
                 {
-                    IndexSize = 1 << 13,
+                    IndexSize = 1L << 13,
                     LogDevice = log, ObjectLogDevice = objlog,
-                    MutableFraction = 0.1, MemorySize = 1 << 20, PageSize = 1 << 15, SegmentSize = 1 << 18
+                    MutableFraction = 0.1, MemorySize = 1L << 20, PageSize = 1L << 15, SegmentSize = 1L << 18
                 }, StoreFunctions<MyKey, MyValue>.Create(comparer, () => new MyKeySerializer(), () => new MyValueSerializer())
                 , (allocatorSettings, storeFunctions) => new(allocatorSettings, storeFunctions)
             );
@@ -259,9 +259,9 @@ namespace Tsavorite.test
 
             store = new(new()
                 {
-                    IndexSize = 1 << 13,
+                    IndexSize = 1L << 13,
                     LogDevice = log, ObjectLogDevice = objlog,
-                    MutableFraction = 0.1, MemorySize = 1 << 20, PageSize = 1 << 15, SegmentSize = 1 << 18
+                    MutableFraction = 0.1, MemorySize = 1L << 20, PageSize = 1L << 15, SegmentSize = 1L << 18
                 }, StoreFunctions<MyKey, MyValue>.Create(comparer, () => new MyKeySerializer(), () => new MyValueSerializer())
                 , (allocatorSettings, storeFunctions) => new(allocatorSettings, storeFunctions)
             );
@@ -357,9 +357,9 @@ namespace Tsavorite.test
 
             store = new(new()
                 {
-                    IndexSize = 1 << 13,
+                    IndexSize = 1L << 13,
                     LogDevice = log, ObjectLogDevice = objlog,
-                    MutableFraction = 0.1, MemorySize = 1 << 20, PageSize = 1 << 15, SegmentSize = 1 << 18
+                    MutableFraction = 0.1, MemorySize = 1L << 20, PageSize = 1L << 15, SegmentSize = 1L << 18
                 }, StoreFunctions<MyKey, MyValue>.Create(comparer, () => new MyKeySerializer(), () => new MyValueSerializer())
                 , (allocatorSettings, storeFunctions) => new(allocatorSettings, storeFunctions)
             );

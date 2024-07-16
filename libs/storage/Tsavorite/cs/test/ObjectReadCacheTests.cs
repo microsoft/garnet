@@ -25,12 +25,10 @@ namespace Tsavorite.test.ReadCacheTests
 
             store = new (new()
                 {
-                    IndexSize = 1 << 13,
+                    IndexSize = 1L << 13,
                     LogDevice = log, ObjectLogDevice = objlog,
-                    MemorySize = 1 << 15, PageSize = 1 << 10,
-                    ReadCacheMemorySize = 1 << 15,
-                    ReadCachePageSize = 1 << 10,
-                    ReadCacheEnabled = true
+                    MemorySize = 1L << 15, PageSize = 1L << 10,
+                    ReadCacheMemorySize = 1L << 15, ReadCachePageSize = 1L << 10, ReadCacheEnabled = true
                 }, StoreFunctions<MyKey, MyValue>.Create(new MyKey.Comparer(), () => new MyKeySerializer(), () => new MyValueSerializer(), DefaultRecordDisposer<MyKey, MyValue>.Instance)
                 , (allocatorSettings, storeFunctions) => new(allocatorSettings, storeFunctions)
             );

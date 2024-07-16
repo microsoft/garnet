@@ -135,9 +135,9 @@ namespace Tsavorite.test.Cancellation
             log = Devices.CreateLogDevice(Path.Join(MethodTestDir, "hlog.log"), deleteOnClose: true);
             store = new (new TsavoriteKVSettings<int, int>()
                 {
-                    IndexSize = 1 << 13,
+                    IndexSize = 1L << 13,
                     LogDevice = log,
-                    MemorySize = 1 << 17, PageSize = 1 << 12
+                    MemorySize = 1L << 17, PageSize = 1L << 12
                 }, StoreFunctions<int, int>.Create(IntKeyComparer.Instance)
                 , (allocatorSettings, storeFunctions) => new(allocatorSettings, storeFunctions)
             );

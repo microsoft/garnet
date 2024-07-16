@@ -37,9 +37,9 @@ namespace Tsavorite.test
 
             store = new (new TsavoriteKVSettings<MyKey, MyValue>()
                 { 
-                    IndexSize = 1 << 13,
+                    IndexSize = 1L << 13,
                     LogDevice = log, ObjectLogDevice = objlog,
-                    MutableFraction = 0.1, MemorySize = 1 << (largeMemory ? 25 : 14), PageSize = 1 << (largeMemory ? 20 : 9)
+                    MutableFraction = 0.1, MemorySize = 1L << (largeMemory ? 25 : 14), PageSize = 1L << (largeMemory ? 20 : 9)
                 }, StoreFunctions<MyKey, MyValue>.Create(new MyKey.Comparer(), () => new MyKeySerializer(), () => new MyValueSerializer(), DefaultRecordDisposer<MyKey, MyValue>.Instance)
                 , (allocatorSettings, storeFunctions) => new(allocatorSettings, storeFunctions)
             );

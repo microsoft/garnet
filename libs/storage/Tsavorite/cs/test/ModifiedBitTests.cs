@@ -46,8 +46,7 @@ namespace Tsavorite.test.ModifiedBit
                 {
                     IndexSize = 1L << 26,
                     LogDevice = log,
-                    PageSize = 1 << 12,
-                    MemorySize = 1 << 22
+                    PageSize = 1L << 12, MemorySize = 1L << 22
                 }, StoreFunctions<int, int>.Create(comparer)
                 , (allocatorSettings, storeFunctions) => new(allocatorSettings, storeFunctions)
             );

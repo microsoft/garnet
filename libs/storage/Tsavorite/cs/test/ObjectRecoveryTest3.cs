@@ -76,7 +76,7 @@ namespace Tsavorite.test.recovery.objects
                 {
                     IndexSize = 1L << 26,
                     LogDevice = log, ObjectLogDevice = objlog,
-                    SegmentSize = 1 << 12, MemorySize = 1 << 12, PageSize = 1 << 9,
+                    SegmentSize = 1L << 12, MemorySize = 1L << 12, PageSize = 1L << 9,
                     CheckpointDir = Path.Combine(TestUtils.MethodTestDir, "check-points")
                 }, StoreFunctions<MyKey, MyValue>.Create(new MyKey.Comparer(), () => new MyKeySerializer(), () => new MyValueSerializer())
                 , (allocatorSettings, storeFunctions) => new(allocatorSettings, storeFunctions)

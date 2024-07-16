@@ -63,8 +63,8 @@ namespace Tsavorite.test.ReadCacheTests
             var kvSettings = new TsavoriteKVSettings<SpanByte, SpanByte>()
             {
                 IndexSize = 1L << 26,
-                MemorySize = 1 << 15,
-                PageSize = 1 << 12,
+                MemorySize = 1L << 15,
+                PageSize = 1L << 12,
             };
 
             foreach (var arg in TestContext.CurrentContext.Test.Arguments)
@@ -73,8 +73,8 @@ namespace Tsavorite.test.ReadCacheTests
                 {
                     if (rcm == ReadCacheMode.UseReadCache)
                     {
-                        kvSettings.ReadCacheMemorySize = 1 << 15;
-                        kvSettings.ReadCachePageSize = 1 << 12;
+                        kvSettings.ReadCacheMemorySize = 1L << 15;
+                        kvSettings.ReadCachePageSize = 1L << 12;
                         kvSettings.ReadCacheSecondChanceFraction = 0.1;
                         kvSettings.ReadCacheEnabled = true;
                     };

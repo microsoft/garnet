@@ -60,7 +60,7 @@ namespace Tsavorite.test
                 {
                     IndexSize = 1L << 26,
                     LogDevice = log, 
-                    MemorySize = 1 << 24, PageSize = 1 << PageSizeBits
+                    MemorySize = 1L << 24, PageSize = 1L << PageSizeBits
                 }, StoreFunctions<KeyStruct, ValueStruct>.Create(comparer)
                 , (allocatorSettings, storeFunctions) => new(allocatorSettings, storeFunctions)
             );

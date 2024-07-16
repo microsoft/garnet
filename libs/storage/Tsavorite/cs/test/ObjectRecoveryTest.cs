@@ -22,7 +22,7 @@ namespace Tsavorite.test.recovery.objects
     [TestFixture]
     internal class ObjectRecoveryTests
     {
-        const long NumUniqueKeys = 1 << 14;
+        const long NumUniqueKeys = 1L << 14;
         const long KeySpace = 1L << 14;
         const long NumOps = 1L << 19;
         const long CompletePendingInterval = 1L << 10;

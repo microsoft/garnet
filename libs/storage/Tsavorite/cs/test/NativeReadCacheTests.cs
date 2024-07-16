@@ -25,11 +25,8 @@ namespace Tsavorite.test.ReadCacheTests
                 {
                     IndexSize = 1L << 26,
                     LogDevice = log,
-                    MemorySize = 1 << 15,
-                    PageSize = 1 << 10,
-                    ReadCacheMemorySize = 1 << 15,
-                    ReadCachePageSize = 1 << 10,
-                    ReadCacheEnabled = true
+                    MemorySize = 1L << 15, PageSize = 1L << 10, 
+                    ReadCacheMemorySize = 1L << 15, ReadCachePageSize = 1L << 10, ReadCacheEnabled = true
             }, StoreFunctions<KeyStruct, ValueStruct>.Create(new KeyStruct.Comparer())
                 , (allocatorSettings, storeFunctions) => new(allocatorSettings, storeFunctions)
             );

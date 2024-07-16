@@ -44,9 +44,9 @@ namespace Tsavorite.test
             log = Devices.CreateLogDevice(Path.Join(MethodTestDir, "CompletePendingTests.log"), preallocateFile: true, deleteOnClose: true);
             store = new (new()
                 {
-                    IndexSize = 1 << 13,
+                    IndexSize = 1L << 13,
                     LogDevice = log,
-                    MemorySize = 1 << 29
+                    MemorySize = 1L << 29
                 }, StoreFunctions<KeyStruct, ValueStruct>.Create(comparer)
                 , (allocatorSettings, storeFunctions) => new(allocatorSettings, storeFunctions)
                 );
