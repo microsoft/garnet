@@ -777,6 +777,7 @@ namespace Tsavorite.core
         public long GetSegmentSize() => SegmentSize;
 
         /// <summary>Get tail address</summary>
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public long GetTailAddress()
         {
             var local = TailPageOffset;
