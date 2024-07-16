@@ -2,6 +2,7 @@
 // Licensed under the MIT license.
 
 using System;
+using System.Diagnostics;
 using System.IO;
 using System.Threading.Tasks;
 using NUnit.Framework;
@@ -9,8 +10,8 @@ using Tsavorite.core;
 
 namespace Tsavorite.test.recovery.objects
 {
-    using StructStoreFunctions = StoreFunctions<AdIdObj, NumClicksObj, AdIdObj.Comparer, DefaultRecordDisposer<AdIdObj, NumClicksObj>>;
-    using StructAllocator = BlittableAllocator<AdIdObj, NumClicksObj, StoreFunctions<AdIdObj, NumClicksObj, AdIdObj.Comparer, DefaultRecordDisposer<AdIdObj, NumClicksObj>>>;
+    using ClassStoreFunctions = StoreFunctions<AdIdObj, NumClicksObj, AdIdObj.Comparer, DefaultRecordDisposer<AdIdObj, NumClicksObj>>;
+    using ClassAllocator = GenericAllocator<AdIdObj, NumClicksObj, StoreFunctions<AdIdObj, NumClicksObj, AdIdObj.Comparer, DefaultRecordDisposer<AdIdObj, NumClicksObj>>>;
 
     internal struct StructTuple<T1, T2>
     {
@@ -26,7 +27,7 @@ namespace Tsavorite.test.recovery.objects
         const long NumOps = 1L << 19;
         const long CompletePendingInterval = 1L << 10;
         const long CheckpointInterval = 1L << 16;
-        private TsavoriteKV<AdIdObj, NumClicksObj, StructStoreFunctions, StructAllocator> store;
+        private TsavoriteKV<AdIdObj, NumClicksObj, ClassStoreFunctions, ClassAllocator> store;
         private Guid token;
         private IDevice log, objlog;
 
