@@ -6,6 +6,7 @@ using System.Collections.Generic;
 using System.Linq;
 using System.Text;
 using Garnet.common;
+using Microsoft.Extensions.Logging;
 
 namespace Garnet.server
 {
@@ -38,14 +39,11 @@ namespace Garnet.server
 
     internal sealed unsafe partial class RespServerSession : ServerSessionBase
     {
-        private bool NetworkConfigGet(int count)
+        private bool NetworkCONFIG_GET(int count)
         {
             if (count == 0)
             {
-                while (!RespWriteUtils.WriteError($"ERR wrong number of arguments for 'config|get' command", ref dcurr, dend))
-                    SendAndReset();
-
-                return true;
+                return AbortWithWrongNumberOfArguments($"{nameof(RespCommand.CONFIG)}|{nameof(CmdStrings.GET)}", count);
             }
 
             // Extract requested parameters
@@ -53,8 +51,7 @@ namespace Garnet.server
             var returnAll = false;
             for (var i = 0; i < count; i++)
             {
-                var parameter = GetCommand(out bool success2);
-                if (!success2) return false;
+                var parameter = parseState.GetArgSliceByRef(i).Span;
                 var serverConfigType = ServerConfig.GetConfig(parameter);
 
                 if (returnAll) continue;
@@ -97,6 +94,107 @@ namespace Garnet.server
             else
             {
                 while (!RespWriteUtils.WriteDirect(CmdStrings.RESP_EMPTYLIST, ref dcurr, dend))
+                    SendAndReset();
+            }
+
+            return true;
+        }
+
+        private bool NetworkCONFIG_REWRITE(int count)
+        {
+            if (count != 0)
+            {
+                return AbortWithWrongNumberOfArguments($"{nameof(RespCommand.CONFIG)}|{nameof(CmdStrings.REWRITE)}", count);
+            }
+
+            storeWrapper.clusterProvider?.FlushConfig();
+            while (!RespWriteUtils.WriteDirect(CmdStrings.RESP_OK, ref dcurr, dend))
+                SendAndReset();
+
+            return true;
+        }
+
+        private bool NetworkCONFIG_SET(int count)
+        {
+            if (count == 0 || count % 2 != 0)
+            {
+                return AbortWithWrongNumberOfArguments($"{nameof(RespCommand.CONFIG)}|{nameof(CmdStrings.SET)}", count);
+            }
+
+            string certFileName = null;
+            string certPassword = null;
+            string clusterUsername = null;
+            string clusterPassword = null;
+            var unknownOption = false;
+            var unknownKey = "";
+
+            for (var c = 0; c < count / 2; c++)
+            {
+                var key = parseState.GetArgSliceByRef(c).ReadOnlySpan;
+                var value = parseState.GetArgSliceByRef(c + 1).ReadOnlySpan;
+
+                if (key.SequenceEqual(CmdStrings.CertFileName))
+                    certFileName = Encoding.ASCII.GetString(value);
+                else if (key.SequenceEqual(CmdStrings.CertPassword))
+                    certPassword = Encoding.ASCII.GetString(value);
+                else if (key.SequenceEqual(CmdStrings.ClusterUsername))
+                    clusterUsername = Encoding.ASCII.GetString(value);
+                else if (key.SequenceEqual(CmdStrings.ClusterPassword))
+                    clusterPassword = Encoding.ASCII.GetString(value);
+                else
+                {
+                    if (!unknownOption)
+                    {
+                        unknownOption = true;
+                        unknownKey = Encoding.ASCII.GetString(key);
+                    }
+                }
+            }
+
+            string errorMsg = null;
+            if (unknownOption)
+            {
+                errorMsg = string.Format(CmdStrings.GenericErrUnknownOptionConfigSet, unknownKey);
+            }
+            else
+            {
+                if (clusterUsername != null || clusterPassword != null)
+                {
+                    if (clusterUsername == null)
+                        logger?.LogWarning("Cluster username is not provided, will use new password with existing username");
+                    if (storeWrapper.clusterProvider != null)
+                        storeWrapper.clusterProvider?.UpdateClusterAuth(clusterUsername, clusterPassword);
+                    else
+                    {
+                        errorMsg = "ERR Cluster is disabled.";
+                    }
+                }
+                if (certFileName != null || certPassword != null)
+                {
+                    if (storeWrapper.serverOptions.TlsOptions != null)
+                    {
+                        if (!storeWrapper.serverOptions.TlsOptions.UpdateCertFile(certFileName, certPassword, out var certErrorMessage))
+                        {
+                            if (errorMsg == null) errorMsg = "ERR " + certErrorMessage;
+                            else errorMsg += " " + certErrorMessage;
+                        }
+                    }
+                    else
+                    {
+                        if (errorMsg == null) errorMsg = "ERR TLS is disabled.";
+                        else errorMsg += " TLS is disabled.";
+                    }
+                }
+            }
+
+            if (errorMsg == null)
+            {
+                while (!RespWriteUtils.WriteDirect(CmdStrings.RESP_OK, ref dcurr, dend))
+                    SendAndReset();
+            }
+            else
+            {
+                while (!RespWriteUtils.WriteError(errorMsg, ref dcurr, dend))
                     SendAndReset();
             }
 

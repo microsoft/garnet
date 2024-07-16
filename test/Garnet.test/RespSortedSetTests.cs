@@ -6,14 +6,17 @@ using System.Collections.Generic;
 using System.Linq;
 using System.Text;
 using System.Threading.Tasks;
+using Embedded.perftest;
 using Garnet.common;
 using Garnet.server;
 using NUnit.Framework;
 using StackExchange.Redis;
+using Tsavorite.core;
 using SetOperation = StackExchange.Redis.SetOperation;
 
 namespace Garnet.test
 {
+    using TestBasicGarnetApi = GarnetApi<BasicContext<SpanByte, SpanByte, SpanByte, SpanByteAndMemory, long, MainStoreFunctions>, BasicContext<byte[], IGarnetObject, SpanByte, GarnetObjectStoreOutput, long, ObjectStoreFunctions>>;
 
     [TestFixture]
     public class RespSortedSetTests
@@ -80,6 +83,30 @@ namespace Garnet.test
         }
 
         #region SETests
+        [Test]
+        public unsafe void SortedSetPopTest()
+        {
+            using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
+            var db = redis.GetDatabase(0);
+            db.SortedSetAdd("key1", "a", 1);
+            db.SortedSetAdd("key1", "b", 2);
+
+            var session = new RespServerSession(new DummyNetworkSender(), server.Provider.StoreWrapper, null, null);
+            var api = new TestBasicGarnetApi(session.storageSession, session.storageSession.basicContext, session.storageSession.objectStoreBasicContext);
+            var key = Encoding.ASCII.GetBytes("key1");
+            fixed (byte* keyPtr = key)
+            {
+                var result = api.SortedSetPop(new ArgSlice(keyPtr, key.Length), out (ArgSlice score, ArgSlice member)[] items);
+                Assert.AreEqual(1, items.Length);
+                Assert.AreEqual("a", Encoding.ASCII.GetString(items[0].score.ReadOnlySpan));
+                Assert.AreEqual("1", Encoding.ASCII.GetString(items[0].member.ReadOnlySpan));
+
+                result = api.SortedSetPop(new ArgSlice(keyPtr, key.Length), out items);
+                Assert.AreEqual(1, items.Length);
+                Assert.AreEqual("b", Encoding.ASCII.GetString(items[0].score.ReadOnlySpan));
+                Assert.AreEqual("2", Encoding.ASCII.GetString(items[0].member.ReadOnlySpan));
+            }
+        }
 
         [Test]
         public void AddAndLength()
@@ -980,6 +1007,37 @@ namespace Garnet.test
         }
 
         [Test]
+        [TestCase(10)]
+        [TestCase(50)]
+        [TestCase(100)]
+        public void CanDoZRangeByScoreReverseLC(int bytesSent)
+        {
+            //ZRANGEBYSCORE key min max REV [WITHSCORES] [LIMIT offset count]
+            using var lightClientRequest = TestUtils.CreateRequest();
+            var response = lightClientRequest.SendCommand("ZADD board 1 one");
+            lightClientRequest.SendCommand("ZADD board 2 two");
+            lightClientRequest.SendCommand("ZADD board 3 three");
+
+            // 5 < score <= 1
+            response = lightClientRequest.SendCommandChunks("ZRANGE board 2 5 BYSCORE REV", bytesSent, 1);
+            var expectedResponse = "*0\r\n";
+            var actualValue = Encoding.ASCII.GetString(response).Substring(0, expectedResponse.Length);
+            Assert.AreEqual(expectedResponse, actualValue);
+
+            // 1 < score <= 5
+            response = lightClientRequest.SendCommandChunks("ZRANGE board 5 2 BYSCORE REV", bytesSent, 3);
+            expectedResponse = "*2\r\n$5\r\nthree\r\n$3\r\ntwo\r\n";
+            actualValue = Encoding.ASCII.GetString(response).Substring(0, expectedResponse.Length);
+            Assert.AreEqual(expectedResponse, actualValue);
+
+            // 1 < score <= 5
+            response = lightClientRequest.SendCommands("ZRANGE board 5 2 BYSCORE REV", "PING", 3, 1);
+            expectedResponse = "*2\r\n$5\r\nthree\r\n$3\r\ntwo\r\n+PONG\r\n";
+            actualValue = Encoding.ASCII.GetString(response).Substring(0, expectedResponse.Length);
+            Assert.AreEqual(expectedResponse, actualValue);
+        }
+
+        [Test]
         [TestCase(2)]
         [TestCase(10)]
         [TestCase(50)]
@@ -1040,6 +1098,44 @@ namespace Garnet.test
             //by lex with different range
             response = lightClientRequest.SendCommand("ZRANGE board - [c BYLEX", 4);
             expectedResponse = "*3\r\n$1\r\na\r\n$1\r\nb\r\n$1\r\nc\r\n";
+            actualValue = Encoding.ASCII.GetString(response).Substring(0, expectedResponse.Length);
+            Assert.AreEqual(expectedResponse, actualValue);
+        }
+
+        [Test]
+        public void CanDoZRangeByLexReverse()
+        {
+            //ZRANGE key min max BYLEX REV [WITHSCORES]
+            using var lightClientRequest = TestUtils.CreateRequest();
+            var response = lightClientRequest.SendCommand("ZADD board 0 a");
+            lightClientRequest.SendCommand("ZADD board 0 b");
+            lightClientRequest.SendCommand("ZADD board 0 c");
+            lightClientRequest.SendCommand("ZADD board 0 d");
+            lightClientRequest.SendCommand("ZADD board 0 e");
+            lightClientRequest.SendCommand("ZADD board 0 f");
+            lightClientRequest.SendCommand("ZADD board 0 g");
+
+            // get a range by lex order
+            response = lightClientRequest.SendCommand("ZRANGE board (a (d BYLEX REV", 1);
+            var expectedResponse = "*0\r\n";
+            var actualValue = Encoding.ASCII.GetString(response).Substring(0, expectedResponse.Length);
+            Assert.AreEqual(expectedResponse, actualValue);
+
+            // get a range by lex order
+            response = lightClientRequest.SendCommand("ZRANGE board (d (a BYLEX REV", 3);
+            expectedResponse = "*2\r\n$1\r\nc\r\n$1\r\nb\r\n";
+            actualValue = Encoding.ASCII.GetString(response).Substring(0, expectedResponse.Length);
+            Assert.AreEqual(expectedResponse, actualValue);
+
+            //by lex with different range
+            response = lightClientRequest.SendCommand("ZRANGE board [g (aaa BYLEX REV", 6);
+            expectedResponse = "*5\r\n$1\r\nf\r\n$1\r\ne\r\n$1\r\nd\r\n$1\r\nc\r\n$1\r\nb\r\n";
+            actualValue = Encoding.ASCII.GetString(response).Substring(0, expectedResponse.Length);
+            Assert.AreEqual(expectedResponse, actualValue);
+
+            //by lex with different range
+            response = lightClientRequest.SendCommand("ZRANGE board [c - BYLEX REV", 4);
+            expectedResponse = "*3\r\n$1\r\nc\r\n$1\r\nb\r\n$1\r\na\r\n";
             actualValue = Encoding.ASCII.GetString(response).Substring(0, expectedResponse.Length);
             Assert.AreEqual(expectedResponse, actualValue);
         }

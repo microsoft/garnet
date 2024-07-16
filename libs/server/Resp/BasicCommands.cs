@@ -5,7 +5,9 @@ using System;
 using System.Diagnostics;
 using System.Runtime.CompilerServices;
 using System.Text;
+using System.Threading.Tasks;
 using Garnet.common;
+using Microsoft.Extensions.Logging;
 using Tsavorite.core;
 
 namespace Garnet.server
@@ -280,32 +282,21 @@ namespace Garnet.server
         /// <summary>
         /// SETRANGE
         /// </summary>
-        private bool NetworkSetRange<TGarnetApi>(byte* ptr, ref TGarnetApi storageApi)
+        private bool NetworkSetRange<TGarnetApi>(ref TGarnetApi storageApi)
             where TGarnetApi : IGarnetApi
         {
-            byte* keyPtr = null;
-            int ksize = 0;
-
-            if (!RespReadUtils.ReadPtrWithLengthHeader(ref keyPtr, ref ksize, ref ptr, recvBufferPtr + bytesRead))
-                return false;
-
-            byte* offsetPtr = null;
-            int offsetSize = 0;
-            if (!RespReadUtils.ReadPtrWithLengthHeader(ref offsetPtr, ref offsetSize, ref ptr,
-                    recvBufferPtr + bytesRead))
-                return false;
-
-            byte* valPtr = null;
-            int vsize = 0;
-            if (!RespReadUtils.ReadPtrWithLengthHeader(ref valPtr, ref vsize, ref ptr, recvBufferPtr + bytesRead))
-                return false;
-
-            readHead = (int)(ptr - recvBufferPtr);
+            var key = parseState.GetArgSliceByRef(0);
 
             if (NetworkMultiKeySlotVerify(readOnly: false, firstKey: 0, lastKey: 0))
                 return true;
 
-            int offset = NumUtils.BytesToInt(offsetSize, offsetPtr);
+            if (!parseState.TryGetInt(1, out var offset))
+            {
+                while (!RespWriteUtils.WriteError(CmdStrings.RESP_ERR_GENERIC_VALUE_IS_NOT_INTEGER, ref dcurr, dend))
+                    SendAndReset();
+                return true;
+            }
+
             if (offset < 0)
             {
                 while (!RespWriteUtils.WriteError(CmdStrings.RESP_ERR_GENERIC_OFFSETOUTOFRANGE, ref dcurr, dend))
@@ -313,13 +304,12 @@ namespace Garnet.server
                 return true;
             }
 
-            var key = new ArgSlice(keyPtr, ksize);
-            var value = new ArgSlice(valPtr, vsize);
+            var value = parseState.GetArgSliceByRef(2);
 
             Span<byte> outputBuffer = stackalloc byte[NumUtils.MaximumFormatInt64Length];
             var output = ArgSlice.FromPinnedSpan(outputBuffer);
 
-            var status = storageApi.SETRANGE(key, value, offset, ref output);
+            storageApi.SETRANGE(key, value, offset, ref output);
 
             while (!RespWriteUtils.WriteIntegerFromBytes(outputBuffer.Slice(0, output.Length), ref dcurr, dend))
                 SendAndReset();
@@ -327,34 +317,24 @@ namespace Garnet.server
             return true;
         }
 
-        private bool NetworkGetRange<TGarnetApi>(byte* ptr, ref TGarnetApi storageApi)
+        private bool NetworkGetRange<TGarnetApi>(ref TGarnetApi storageApi)
             where TGarnetApi : IGarnetApi
         {
-            byte* keyPtr = null;
-            int ksize = 0;
-
-            if (!RespReadUtils.ReadPtrWithLengthHeader(ref keyPtr, ref ksize, ref ptr, recvBufferPtr + bytesRead))
-                return false;
-
-            byte* startPtr = null;
-            int startSize = 0;
-            if (!RespReadUtils.ReadPtrWithLengthHeader(ref startPtr, ref startSize, ref ptr, recvBufferPtr + bytesRead))
-                return false;
-
-            byte* endPtr = null;
-            int endSize = 0;
-            if (!RespReadUtils.ReadPtrWithLengthHeader(ref endPtr, ref endSize, ref ptr, recvBufferPtr + bytesRead))
-                return false;
-
-            readHead = (int)(ptr - recvBufferPtr);
+            var key = parseState.GetArgSliceByRef(0);
+            var sbKey = key.SpanByte;
 
             if (NetworkMultiKeySlotVerify(readOnly: true, firstKey: 0, lastKey: 0))
                 return true;
-            keyPtr -= sizeof(int); // length header
-            *(int*)keyPtr = ksize;
 
-            int sliceStart = NumUtils.BytesToInt(startSize, startPtr);
-            int sliceLength = NumUtils.BytesToInt(endSize, endPtr);
+            if (!parseState.TryGetInt(1, out var sliceStart) || !parseState.TryGetInt(2, out var sliceLength))
+            {
+                while (!RespWriteUtils.WriteError(CmdStrings.RESP_ERR_GENERIC_VALUE_IS_NOT_INTEGER, ref dcurr, dend))
+                    SendAndReset();
+                return true;
+            }
+
+            var keyPtr = sbKey.ToPointer() - sizeof(int); // length header
+            *(int*)keyPtr = sbKey.Length;
 
             var o = new SpanByteAndMemory(dcurr, (int)(dend - dcurr));
 
@@ -386,21 +366,34 @@ namespace Garnet.server
             where TGarnetApi : IGarnetApi
         {
             var key = parseState.GetArgSliceByRef(0).SpanByte;
-            // TODO: return error for 0 expiry time
-            var expiry = parseState.GetInt(1);
-            var val = parseState.GetArgSliceByRef(2).SpanByte;
 
             if (NetworkMultiKeySlotVerify(readOnly: false, firstKey: 0, lastKey: 1))
                 return true;
 
+            if (!parseState.TryGetInt(1, out var expiry))
+            {
+                while (!RespWriteUtils.WriteError(CmdStrings.RESP_ERR_GENERIC_VALUE_IS_NOT_INTEGER, ref dcurr, dend))
+                    SendAndReset();
+                return true;
+            }
+
+            if (expiry <= 0)
+            {
+                while (!RespWriteUtils.WriteError(CmdStrings.RESP_ERR_GENERIC_INVALIDEXP_IN_SET, ref dcurr, dend))
+                    SendAndReset();
+                return true;
+            }
+
+            var val = parseState.GetArgSliceByRef(2).SpanByte;
+
             var valPtr = val.ToPointer() - (sizeof(int) + sizeof(long));
-            var vsize = val.Length;
+            var vSize = val.Length;
 
             // Save prior state on network buffer
             var save1 = *(int*)valPtr;
             var save2 = *(long*)(valPtr + sizeof(int));
 
-            *(int*)valPtr = vsize + sizeof(long); // expiry info
+            *(int*)valPtr = vSize + sizeof(long); // expiry info
             SpanByte.Reinterpret(valPtr).ExtraMetadata = DateTimeOffset.UtcNow.Ticks +
                                                          (highPrecision
                                                              ? TimeSpan.FromMilliseconds(expiry).Ticks
@@ -438,144 +431,125 @@ namespace Garnet.server
         /// <summary>
         /// SET EX NX
         /// </summary>
-        private bool NetworkSETEXNX<TGarnetApi>(int count, byte* ptr, ref TGarnetApi storageApi)
+        private bool NetworkSETEXNX<TGarnetApi>(int count, ref TGarnetApi storageApi)
             where TGarnetApi : IGarnetApi
         {
-            var _ptr = ptr;
+            var key = parseState.GetArgSliceByRef(0);
+            var sbKey = key.SpanByte;
 
-            byte* keyPtr = null, valPtr = null;
-            int ksize = 0, vsize = 0;
+            var val = parseState.GetArgSliceByRef(1);
+            var sbVal = val.SpanByte;
 
-            if (!RespReadUtils.ReadPtrWithLengthHeader(ref keyPtr, ref ksize, ref ptr, recvBufferPtr + bytesRead))
-                return false;
-
-            if (!RespReadUtils.ReadPtrWithLengthHeader(ref valPtr, ref vsize, ref ptr, recvBufferPtr + bytesRead))
-                return false;
-
-            count -= 2;
-
-            int expiry = 0;
-            bool error = false;
+            var expiry = 0;
             ReadOnlySpan<byte> errorMessage = default;
-            ExistOptions existOptions = ExistOptions.None;
-            ExpirationOption expOption = ExpirationOption.None;
-            bool getValue = false;
+            var existOptions = ExistOptions.None;
+            var expOption = ExpirationOption.None;
+            var getValue = false;
 
-            while (count > 0)
+            var tokenIdx = 2;
+            Span<byte> nextOpt = default;
+            var optUpperCased = false;
+            while (tokenIdx < count)
             {
-                if (error)
+                if (!optUpperCased)
                 {
-                    if (!RespReadUtils.TrySliceWithLengthHeader(out _, ref ptr, recvBufferPtr + bytesRead))
-                        return false;
-                    count--;
-                    continue;
+                    nextOpt = parseState.GetArgSliceByRef(tokenIdx++).Span;
                 }
 
-                if (*(long*)ptr == 724332168621142564) // [EX]
+                if (nextOpt.EqualsUpperCaseSpanIgnoringCase(CmdStrings.EX))
                 {
-                    ptr += 8;
-                    count--;
-
-                    if (!RespReadUtils.ReadIntWithLengthHeader(out expiry, ref ptr, recvBufferPtr + bytesRead))
-                        return false;
-                    count--;
+                    if (!parseState.TryGetInt(tokenIdx++, out expiry))
+                    {
+                        errorMessage = CmdStrings.RESP_ERR_GENERIC_VALUE_IS_NOT_INTEGER;
+                        break;
+                    }
 
                     if (expOption != ExpirationOption.None)
                     {
                         errorMessage = CmdStrings.RESP_ERR_GENERIC_SYNTAX_ERROR;
-                        error = true;
-                        continue;
+                        break;
                     }
 
                     expOption = ExpirationOption.EX;
                     if (expiry <= 0)
                     {
                         errorMessage = CmdStrings.RESP_ERR_GENERIC_INVALIDEXP_IN_SET;
-                        error = true;
-                        continue;
+                        break;
                     }
                 }
-                else if (*(long*)ptr == 724332215865782820) // [PX]
+                else if (nextOpt.EqualsUpperCaseSpanIgnoringCase(CmdStrings.PX))
                 {
-                    ptr += 8;
-                    count--;
-
-                    if (!RespReadUtils.ReadIntWithLengthHeader(out expiry, ref ptr, recvBufferPtr + bytesRead))
-                        return false;
-                    count--;
+                    if (!parseState.TryGetInt(tokenIdx++, out expiry))
+                    {
+                        errorMessage = CmdStrings.RESP_ERR_GENERIC_VALUE_IS_NOT_INTEGER;
+                        break;
+                    }
 
                     if (expOption != ExpirationOption.None)
                     {
                         errorMessage = CmdStrings.RESP_ERR_GENERIC_SYNTAX_ERROR;
-                        error = true;
-                        continue;
+                        break;
                     }
 
                     expOption = ExpirationOption.PX;
                     if (expiry <= 0)
                     {
                         errorMessage = CmdStrings.RESP_ERR_GENERIC_INVALIDEXP_IN_SET;
-                        error = true;
-                        continue;
+                        break;
                     }
                 }
-                else if (*(long*)ptr == 5784105485020772132 && *(int*)(ptr + 8) == 223106132 &&
-                         *(ptr + 12) == 10) // [KEEPTTL]
+                else if (nextOpt.EqualsUpperCaseSpanIgnoringCase(CmdStrings.KEEPTTL))
                 {
-                    ptr += 13;
-                    count--;
                     if (expOption != ExpirationOption.None)
                     {
                         errorMessage = CmdStrings.RESP_ERR_GENERIC_SYNTAX_ERROR;
-                        error = true;
-                        continue;
+                        break;
                     }
 
                     expOption = ExpirationOption.KEEPTTL;
                 }
-                else if (*(long*)ptr == 724332207275848228) // [NX]
+                else if (nextOpt.EqualsUpperCaseSpanIgnoringCase(CmdStrings.NX))
                 {
-                    ptr += 8;
-                    count--;
                     if (existOptions != ExistOptions.None)
                     {
                         errorMessage = CmdStrings.RESP_ERR_GENERIC_SYNTAX_ERROR;
-                        error = true;
-                        continue;
+                        break;
                     }
 
                     existOptions = ExistOptions.NX;
                 }
-                else if (*(long*)ptr == 724332250225521188) // [XX]
+                else if (nextOpt.EqualsUpperCaseSpanIgnoringCase(CmdStrings.XX))
                 {
-                    ptr += 8;
-                    count--;
                     if (existOptions != ExistOptions.None)
                     {
                         errorMessage = CmdStrings.RESP_ERR_GENERIC_SYNTAX_ERROR;
-                        error = true;
-                        continue;
+                        break;
                     }
 
                     existOptions = ExistOptions.XX;
                 }
-                else if (*(long*)ptr == 960468791950390052 && *(ptr + 8) == 10) // [GET]
+                else if (nextOpt.EqualsUpperCaseSpanIgnoringCase(CmdStrings.GET))
                 {
-                    ptr += 9;
-                    count--;
+                    tokenIdx++;
                     getValue = true;
                 }
-                else if (!MakeUpperCase(ptr))
+                else
                 {
+                    if (!optUpperCased)
+                    {
+                        AsciiUtils.ToUpperInPlace(nextOpt);
+                        optUpperCased = true;
+                        continue;
+                    }
+
                     errorMessage = CmdStrings.RESP_ERR_GENERIC_UNK_CMD;
-                    error = true;
-                    continue;
+                    break;
                 }
+
+                optUpperCased = false;
             }
 
-            readHead = (int)(ptr - recvBufferPtr);
-
-            if (error)
+            if (errorMessage != default)
             {
                 while (!RespWriteUtils.WriteError(errorMessage, ref dcurr, dend))
                     SendAndReset();
@@ -588,13 +562,14 @@ namespace Garnet.server
             }
 
             // Make space for key header
-            keyPtr -= sizeof(int);
+            var keyPtr = sbKey.ToPointer() - sizeof(int);
 
             // Set key length
-            *(int*)keyPtr = ksize;
+            *(int*)keyPtr = sbKey.Length;
 
             // Make space for value header
-            valPtr -= sizeof(int);
+            var valPtr = sbVal.ToPointer() - sizeof(int);
+            var vSize = sbVal.Length;
 
             switch (expOption)
             {
@@ -604,15 +579,15 @@ namespace Garnet.server
                     {
                         case ExistOptions.None:
                             return getValue
-                                ? NetworkSET_Conditional(RespCommand.SET, ptr, expiry, keyPtr, valPtr, vsize, getValue,
+                                ? NetworkSET_Conditional(RespCommand.SET, expiry, keyPtr, valPtr, vSize, true,
                                     false, ref storageApi)
-                                : NetworkSET_EX(RespCommand.SET, ptr, expiry, keyPtr, valPtr, vsize, false,
+                                : NetworkSET_EX(RespCommand.SET, expiry, keyPtr, valPtr, vSize, false,
                                     ref storageApi); // Can perform a blind update
                         case ExistOptions.XX:
-                            return NetworkSET_Conditional(RespCommand.SETEXXX, ptr, expiry, keyPtr, valPtr, vsize,
+                            return NetworkSET_Conditional(RespCommand.SETEXXX, expiry, keyPtr, valPtr, vSize,
                                 getValue, false, ref storageApi);
                         case ExistOptions.NX:
-                            return NetworkSET_Conditional(RespCommand.SETEXNX, ptr, expiry, keyPtr, valPtr, vsize,
+                            return NetworkSET_Conditional(RespCommand.SETEXNX, expiry, keyPtr, valPtr, vSize,
                                 getValue, false, ref storageApi);
                     }
 
@@ -622,15 +597,15 @@ namespace Garnet.server
                     {
                         case ExistOptions.None:
                             return getValue
-                                ? NetworkSET_Conditional(RespCommand.SET, ptr, expiry, keyPtr, valPtr, vsize, getValue,
+                                ? NetworkSET_Conditional(RespCommand.SET, expiry, keyPtr, valPtr, vSize, true,
                                     true, ref storageApi)
-                                : NetworkSET_EX(RespCommand.SET, ptr, expiry, keyPtr, valPtr, vsize, true,
+                                : NetworkSET_EX(RespCommand.SET, expiry, keyPtr, valPtr, vSize, true,
                                     ref storageApi); // Can perform a blind update
                         case ExistOptions.XX:
-                            return NetworkSET_Conditional(RespCommand.SETEXXX, ptr, expiry, keyPtr, valPtr, vsize,
+                            return NetworkSET_Conditional(RespCommand.SETEXXX, expiry, keyPtr, valPtr, vSize,
                                 getValue, true, ref storageApi);
                         case ExistOptions.NX:
-                            return NetworkSET_Conditional(RespCommand.SETEXNX, ptr, expiry, keyPtr, valPtr, vsize,
+                            return NetworkSET_Conditional(RespCommand.SETEXNX, expiry, keyPtr, valPtr, vSize,
                                 getValue, true, ref storageApi);
                     }
 
@@ -642,13 +617,13 @@ namespace Garnet.server
                     {
                         case ExistOptions.None:
                             // We can never perform a blind update due to KEEPTTL
-                            return NetworkSET_Conditional(RespCommand.SETKEEPTTL, ptr, expiry, keyPtr, valPtr, vsize,
+                            return NetworkSET_Conditional(RespCommand.SETKEEPTTL, expiry, keyPtr, valPtr, vSize,
                                 getValue, false, ref storageApi);
                         case ExistOptions.XX:
-                            return NetworkSET_Conditional(RespCommand.SETKEEPTTLXX, ptr, expiry, keyPtr, valPtr, vsize,
+                            return NetworkSET_Conditional(RespCommand.SETKEEPTTLXX, expiry, keyPtr, valPtr, vSize,
                                 getValue, false, ref storageApi);
                         case ExistOptions.NX:
-                            return NetworkSET_Conditional(RespCommand.SETEXNX, ptr, expiry, keyPtr, valPtr, vsize,
+                            return NetworkSET_Conditional(RespCommand.SETEXNX, expiry, keyPtr, valPtr, vSize,
                                 getValue, false, ref storageApi);
                     }
 
@@ -660,7 +635,7 @@ namespace Garnet.server
             return true;
         }
 
-        private bool NetworkSET_EX<TGarnetApi>(RespCommand cmd, byte* ptr, int expiry, byte* keyPtr, byte* valPtr,
+        private bool NetworkSET_EX<TGarnetApi>(RespCommand cmd, int expiry, byte* keyPtr, byte* valPtr,
             int vsize, bool highPrecision, ref TGarnetApi storageApi)
             where TGarnetApi : IGarnetApi
         {
@@ -684,12 +659,10 @@ namespace Garnet.server
             storageApi.SET(ref Unsafe.AsRef<SpanByte>(keyPtr), ref Unsafe.AsRef<SpanByte>(valPtr));
             while (!RespWriteUtils.WriteDirect(CmdStrings.RESP_OK, ref dcurr, dend))
                 SendAndReset();
-
-            readHead = (int)(ptr - recvBufferPtr);
             return true;
         }
 
-        private bool NetworkSET_Conditional<TGarnetApi>(RespCommand cmd, byte* ptr, int expiry, byte* keyPtr,
+        private bool NetworkSET_Conditional<TGarnetApi>(RespCommand cmd, int expiry, byte* keyPtr,
             byte* inputPtr, int isize, bool getValue, bool highPrecision, ref TGarnetApi storageApi)
             where TGarnetApi : IGarnetApi
         {
@@ -765,72 +738,59 @@ namespace Garnet.server
                 }
             }
 
-            readHead = (int)(ptr - recvBufferPtr);
             return true;
         }
 
         /// <summary>
         /// Increment (INCRBY, DECRBY, INCR, DECR)
         /// </summary>
-        private bool NetworkIncrement<TGarnetApi>(byte* ptr, RespCommand cmd, ref TGarnetApi storageApi)
+        private bool NetworkIncrement<TGarnetApi>(RespCommand cmd, ref TGarnetApi storageApi)
             where TGarnetApi : IGarnetApi
         {
             Debug.Assert(cmd == RespCommand.INCRBY || cmd == RespCommand.DECRBY || cmd == RespCommand.INCR ||
                          cmd == RespCommand.DECR);
 
-            // Parse key argument
-            byte* keyPtr = null;
-            int ksize = 0;
-
-            if (!RespReadUtils.ReadPtrWithLengthHeader(ref keyPtr, ref ksize, ref ptr, recvBufferPtr + bytesRead))
-                return false;
+            var key = parseState.GetArgSliceByRef(0);
+            var sbKey = key.SpanByte;
 
             ArgSlice input = default;
             if (cmd == RespCommand.INCRBY || cmd == RespCommand.DECRBY)
             {
                 // Parse value argument
                 // NOTE: Parse empty strings for better error messages through storageApi.Increment
-                byte* valPtr = null;
-                int vsize = 0;
-                if (!RespReadUtils.ReadPtrWithLengthHeader(ref valPtr, ref vsize, ref ptr, recvBufferPtr + bytesRead))
-                    return false;
-                valPtr -= RespInputHeader.Size;
-                vsize += RespInputHeader.Size;
+                var sbVal = parseState.GetArgSliceByRef(1).SpanByte;
+                var valPtr = sbVal.ToPointer() - RespInputHeader.Size;
+                var vSize = sbVal.Length + RespInputHeader.Size;
                 ((RespInputHeader*)valPtr)->cmd = cmd;
                 ((RespInputHeader*)valPtr)->flags = 0;
-                input = new ArgSlice(valPtr, vsize);
+                input = new ArgSlice(valPtr, vSize);
             }
             else if (cmd == RespCommand.INCR)
             {
-                var vsize = RespInputHeader.Size + 1;
-                var valPtr = stackalloc byte[vsize];
+                var vSize = RespInputHeader.Size + 1;
+                var valPtr = stackalloc byte[vSize];
                 ((RespInputHeader*)valPtr)->cmd = cmd;
                 ((RespInputHeader*)valPtr)->flags = 0;
                 *(valPtr + RespInputHeader.Size) = (byte)'1';
-                input = new ArgSlice(valPtr, vsize);
+                input = new ArgSlice(valPtr, vSize);
             }
             else if (cmd == RespCommand.DECR)
             {
-                var vsize = RespInputHeader.Size + 2;
-                var valPtr = stackalloc byte[vsize];
+                var vSize = RespInputHeader.Size + 2;
+                var valPtr = stackalloc byte[vSize];
                 ((RespInputHeader*)valPtr)->cmd = cmd;
                 ((RespInputHeader*)valPtr)->flags = 0;
                 *(valPtr + RespInputHeader.Size) = (byte)'-';
                 *(valPtr + RespInputHeader.Size + 1) = (byte)'1';
-                input = new ArgSlice(valPtr, vsize);
+                input = new ArgSlice(valPtr, vSize);
             }
-
-            readHead = (int)(ptr - recvBufferPtr);
 
             if (NetworkMultiKeySlotVerify(readOnly: false, firstKey: 0, lastKey: 0))
                 return true;
-
-            var key = new ArgSlice(keyPtr, ksize);
-
             Span<byte> outputBuffer = stackalloc byte[NumUtils.MaximumFormatInt64Length + 1];
             var output = ArgSlice.FromPinnedSpan(outputBuffer);
 
-            var status = storageApi.Increment(key, input, ref output);
+            storageApi.Increment(key, input, ref output);
             var errorFlag = output.Length == NumUtils.MaximumFormatInt64Length + 1
                 ? (OperationError)output.Span[0]
                 : OperationError.SUCCESS;
@@ -856,32 +816,25 @@ namespace Garnet.server
         /// <summary>
         /// APPEND command - appends value at the end of existing string
         /// </summary>
-        private bool NetworkAppend<TGarnetApi>(byte* ptr, ref TGarnetApi storageApi)
+        private bool NetworkAppend<TGarnetApi>(ref TGarnetApi storageApi)
             where TGarnetApi : IGarnetApi
         {
-            byte* keyPtr = null, valPtr = null;
-            int ksize = 0, vsize = 0;
-
-            if (!RespReadUtils.ReadPtrWithLengthHeader(ref keyPtr, ref ksize, ref ptr, recvBufferPtr + bytesRead))
-                return false;
-
-            if (!RespReadUtils.ReadPtrWithLengthHeader(ref valPtr, ref vsize, ref ptr, recvBufferPtr + bytesRead))
-                return false;
-
-            readHead = (int)(ptr - recvBufferPtr);
+            var sbKey = parseState.GetArgSliceByRef(0).SpanByte;
 
             if (NetworkMultiKeySlotVerify(readOnly: false, firstKey: 0, lastKey: 0))
                 return true;
 
-            keyPtr -= sizeof(int);
-            valPtr -= sizeof(int);
-            *(int*)keyPtr = ksize;
-            *(int*)valPtr = vsize;
+            var sbVal = parseState.GetArgSliceByRef(1).SpanByte;
+
+            var keyPtr = sbKey.ToPointer() - sizeof(int);
+            var valPtr = sbVal.ToPointer() - sizeof(int);
+            *(int*)keyPtr = sbKey.Length;
+            *(int*)valPtr = sbVal.Length;
 
             Span<byte> outputBuffer = stackalloc byte[NumUtils.MaximumFormatInt64Length];
             var output = SpanByteAndMemory.FromPinnedSpan(outputBuffer);
 
-            var status = storageApi.APPEND(ref Unsafe.AsRef<SpanByte>(keyPtr), ref Unsafe.AsRef<SpanByte>(valPtr),
+            storageApi.APPEND(ref Unsafe.AsRef<SpanByte>(keyPtr), ref Unsafe.AsRef<SpanByte>(valPtr),
                 ref output);
 
             while (!RespWriteUtils.WriteIntegerFromBytes(outputBuffer.Slice(0, output.Length), ref dcurr, dend))
@@ -933,6 +886,81 @@ namespace Garnet.server
         }
 
         /// <summary>
+        /// FLUSHDB [ASYNC|SYNC] [UNSAFETRUNCATELOG]
+        /// </summary>
+        private bool NetworkFLUSHDB(int count)
+        {
+            if (count > 2)
+            {
+                return AbortWithWrongNumberOfArguments(nameof(RespCommand.FLUSHDB), count);
+            }
+
+            var unsafeTruncateLog = false;
+            var async = false;
+            var sync = false;
+            var syntaxError = false;
+
+            for (var i = 0; i < count; i++)
+            {
+                var nextToken = parseState.GetArgSliceByRef(i).ReadOnlySpan;
+
+                if (nextToken.EqualsUpperCaseSpanIgnoringCase(CmdStrings.UNSAFETRUNCATELOG))
+                {
+                    if (unsafeTruncateLog)
+                    {
+                        syntaxError = true;
+                        break;
+                    }
+
+                    unsafeTruncateLog = true;
+                }
+                else if (nextToken.EqualsUpperCaseSpanIgnoringCase(CmdStrings.ASYNC))
+                {
+                    if (sync || async)
+                    {
+                        syntaxError = true;
+                        break;
+                    }
+
+                    async = true;
+                }
+                else if (nextToken.EqualsUpperCaseSpanIgnoringCase(CmdStrings.SYNC))
+                {
+                    if (sync || async)
+                    {
+                        syntaxError = true;
+                        break;
+                    }
+
+                    sync = true;
+                }
+                else
+                {
+                    syntaxError = true;
+                    break;
+                }
+            }
+
+            if (syntaxError)
+            {
+                while (!RespWriteUtils.WriteError(CmdStrings.RESP_SYNTAX_ERROR, ref dcurr, dend))
+                    SendAndReset();
+                return true;
+            }
+
+            if (async)
+                Task.Run(() => FlushDB(unsafeTruncateLog)).ConfigureAwait(false);
+            else
+                FlushDB(unsafeTruncateLog);
+
+            logger?.LogInformation("Running flushDB " + (async ? "async" : "sync") + (unsafeTruncateLog ? " with unsafetruncatelog." : ""));
+            while (!RespWriteUtils.WriteDirect(CmdStrings.RESP_OK, ref dcurr, dend))
+                SendAndReset();
+
+            return true;
+        }
+
+        /// <summary>
         /// Mark this session as readonly session
         /// </summary>
         /// <returns></returns>
@@ -962,25 +990,18 @@ namespace Garnet.server
         /// Returns the length of the string value stored at key. An -1 is returned when key is not found
         /// </summary>
         /// <typeparam name="TGarnetApi"></typeparam>
-        /// <param name="ptr"></param>
         /// <param name="storageApi"></param>
         /// <returns></returns>
-        private bool NetworkSTRLEN<TGarnetApi>(byte* ptr, ref TGarnetApi storageApi)
+        private bool NetworkSTRLEN<TGarnetApi>(ref TGarnetApi storageApi)
             where TGarnetApi : IGarnetApi
         {
-            byte* keyPtr = null;
-            int ksize = 0;
-
             //STRLEN key
-            if (!RespReadUtils.ReadPtrWithLengthHeader(ref keyPtr, ref ksize, ref ptr, recvBufferPtr + bytesRead))
-                return false;
+            var key = parseState.GetArgSliceByRef(0);
 
             if (NetworkMultiKeySlotVerify(readOnly: true, firstKey: 0, lastKey: 0))
                 return true;
 
-            var keyArgSlice = new ArgSlice(keyPtr, ksize);
-
-            var status = storageApi.GET(keyArgSlice, out ArgSlice value);
+            var status = storageApi.GET(key, out var value);
 
             switch (status)
             {
@@ -994,7 +1015,6 @@ namespace Garnet.server
                     break;
             }
 
-            readHead = (int)(ptr - recvBufferPtr);
             return true;
         }
 
@@ -1030,15 +1050,15 @@ namespace Garnet.server
         /// <summary>
         /// Processes COMMAND command.
         /// </summary>
-        /// <param name="ptr">Pointer to start of arguments in command buffer</param>
         /// <param name="count">The number of arguments remaining in command buffer</param>
         /// <returns>true if parsing succeeded correctly, false if not all tokens could be consumed and further processing is necessary.</returns>
-        private bool NetworkCOMMAND(byte* ptr, int count)
+        private bool NetworkCOMMAND(int count)
         {
             // No additional args allowed
             if (count != 0)
             {
-                string errorMsg = string.Format(CmdStrings.GenericErrUnknownSubCommand, "COMMAND");
+                var subCommand = parseState.GetString(0);
+                var errorMsg = string.Format(CmdStrings.GenericErrUnknownSubCommand, subCommand, nameof(RespCommand.COMMAND));
                 while (!RespWriteUtils.WriteError(errorMsg, ref dcurr, dend))
                     SendAndReset();
             }
@@ -1053,15 +1073,14 @@ namespace Garnet.server
         /// <summary>
         /// Processes COMMAND COUNT subcommand.
         /// </summary>
-        /// <param name="ptr">Pointer to start of arguments in command buffer</param>
         /// <param name="count">The number of arguments remaining in command buffer</param>
         /// <returns>true if parsing succeeded correctly, false if not all tokens could be consumed and further processing is necessary.</returns>
-        private bool NetworkCOMMAND_COUNT(byte* ptr, int count)
+        private bool NetworkCOMMAND_COUNT(int count)
         {
             // No additional args allowed
             if (count != 0)
             {
-                string errorMsg = string.Format(CmdStrings.GenericErrWrongNumArgs, "COMMAND COUNT");
+                var errorMsg = string.Format(CmdStrings.GenericErrWrongNumArgs, "COMMAND COUNT");
                 while (!RespWriteUtils.WriteError(errorMsg, ref dcurr, dend))
                     SendAndReset();
             }
@@ -1084,10 +1103,9 @@ namespace Garnet.server
         /// <summary>
         /// Processes COMMAND INFO subcommand.
         /// </summary>
-        /// <param name="ptr">Pointer to start of arguments in command buffer</param>
         /// <param name="count">The number of arguments remaining in command buffer</param>
         /// <returns>true if parsing succeeded correctly, false if not all tokens could be consumed and further processing is necessary.</returns>
-        private bool NetworkCOMMAND_INFO(byte* ptr, int count)
+        private bool NetworkCOMMAND_INFO(int count)
         {
             if (count == 0)
             {
@@ -1101,11 +1119,7 @@ namespace Garnet.server
 
                 for (var i = 0; i < count; i++)
                 {
-                    var cmdNameSpan = GetCommand(out var success);
-                    if (!success)
-                        return false;
-
-                    var cmdName = Encoding.ASCII.GetString(cmdNameSpan);
+                    var cmdName = parseState.GetString(i);
 
                     if (RespCommandsInfo.TryGetRespCommandInfo(cmdName, out var cmdInfo, logger) ||
                         storeWrapper.customCommandManager.TryGetCustomCommandInfo(cmdName, out cmdInfo))
@@ -1122,6 +1136,354 @@ namespace Garnet.server
             }
 
             return true;
+        }
+
+        private bool NetworkECHO(int count)
+        {
+            if (count != 1)
+            {
+                return AbortWithWrongNumberOfArguments(nameof(RespCommand.ECHO), count);
+            }
+
+            WriteDirectLarge(new ReadOnlySpan<byte>(recvBufferPtr + readHead, endReadHead - readHead));
+            return true;
+        }
+
+        // HELLO [protover [AUTH username password] [SETNAME clientname]]
+        private bool NetworkHELLO(int count)
+        {
+            if (count > 6)
+            {
+                return AbortWithWrongNumberOfArguments(nameof(RespCommand.HELLO), count);
+            }
+
+            byte? tmpRespProtocolVersion = null;
+            ReadOnlySpan<byte> authUsername = default, authPassword = default;
+            string tmpClientName = null;
+            string errorMsg = default;
+
+            if (count > 0)
+            {
+                var tokenIdx = 0;
+                if (!parseState.TryGetInt(tokenIdx++, out var localRespProtocolVersion))
+                {
+                    while (!RespWriteUtils.WriteError(CmdStrings.RESP_ERR_PROTOCOL_VALUE_IS_NOT_INTEGER, ref dcurr, dend))
+                        SendAndReset();
+
+                    return true;
+                }
+
+                tmpRespProtocolVersion = (byte)localRespProtocolVersion;
+
+                while (tokenIdx < count)
+                {
+                    var param = parseState.GetArgSliceByRef(tokenIdx++).ReadOnlySpan;
+
+                    if (param.EqualsUpperCaseSpanIgnoringCase(CmdStrings.AUTH))
+                    {
+                        if (count - tokenIdx < 2)
+                        {
+                            errorMsg = string.Format(CmdStrings.GenericSyntaxErrorOption, nameof(RespCommand.HELLO),
+                                nameof(CmdStrings.AUTH));
+                            break;
+                        }
+
+                        authUsername = parseState.GetArgSliceByRef(tokenIdx++).ReadOnlySpan;
+                        authPassword = parseState.GetArgSliceByRef(tokenIdx++).ReadOnlySpan;
+                    }
+                    else if (param.EqualsUpperCaseSpanIgnoringCase(CmdStrings.SETNAME))
+                    {
+                        if (count - tokenIdx < 1)
+                        {
+                            errorMsg = string.Format(CmdStrings.GenericSyntaxErrorOption, nameof(RespCommand.HELLO),
+                                nameof(CmdStrings.SETNAME));
+                            break;
+                        }
+
+                        tmpClientName = parseState.GetString(tokenIdx++);
+                    }
+                    else
+                    {
+                        errorMsg = string.Format(CmdStrings.GenericSyntaxErrorOption, nameof(RespCommand.HELLO),
+                            Encoding.ASCII.GetString(param));
+                        break;
+                    }
+                }
+            }
+
+            if (errorMsg != default)
+            {
+                while (!RespWriteUtils.WriteError(errorMsg, ref dcurr, dend))
+                    SendAndReset();
+
+                return true;
+            }
+
+            ProcessHelloCommand(tmpRespProtocolVersion, authUsername, authPassword, tmpClientName);
+            return true;
+        }
+
+        private bool NetworkTIME(int count)
+        {
+            if (count != 0)
+            {
+                return AbortWithWrongNumberOfArguments(nameof(RespCommand.TIME), count);
+            }
+
+            var utcTime = DateTimeOffset.UtcNow;
+            var seconds = utcTime.ToUnixTimeSeconds();
+            var uSeconds = utcTime.ToString("ffffff");
+            var response = $"*2\r\n${seconds.ToString().Length}\r\n{seconds}\r\n${uSeconds.Length}\r\n{uSeconds}\r\n";
+
+            while (!RespWriteUtils.WriteAsciiDirect(response, ref dcurr, dend))
+                SendAndReset();
+
+            return true;
+        }
+
+        private bool NetworkAUTH(int count)
+        {
+            // AUTH [<username>] <password>
+            if (count < 1 || count > 2)
+            {
+                return AbortWithWrongNumberOfArguments(nameof(RespCommand.AUTH), count);
+            }
+
+            ReadOnlySpan<byte> username = default;
+
+            // Optional Argument: <username>
+            var passwordTokenIdx = 0;
+            if (count == 2)
+            {
+                username = parseState.GetArgSliceByRef(0).ReadOnlySpan;
+                passwordTokenIdx = 1;
+            }
+
+            // Mandatory Argument: <password>
+            var password = parseState.GetArgSliceByRef(passwordTokenIdx).ReadOnlySpan;
+
+            // NOTE: Some authenticators cannot accept username/password pairs
+            if (!_authenticator.CanAuthenticate)
+            {
+                while (!RespWriteUtils.WriteError("ERR Client sent AUTH, but configured authenticator does not accept passwords"u8, ref dcurr, dend))
+                    SendAndReset();
+                return true;
+            }
+
+            // XXX: There should be high-level AuthenticatorException
+            if (this.AuthenticateUser(username, password))
+            {
+                while (!RespWriteUtils.WriteDirect(CmdStrings.RESP_OK, ref dcurr, dend))
+                    SendAndReset();
+            }
+            else
+            {
+                if (username.IsEmpty)
+                {
+                    while (!RespWriteUtils.WriteError(CmdStrings.RESP_WRONGPASS_INVALID_PASSWORD, ref dcurr, dend))
+                        SendAndReset();
+                }
+                else
+                {
+                    while (!RespWriteUtils.WriteError(CmdStrings.RESP_WRONGPASS_INVALID_USERNAME_PASSWORD, ref dcurr, dend))
+                        SendAndReset();
+                }
+            }
+            return true;
+        }
+
+        //MEMORY USAGE key [SAMPLES count]
+        private bool NetworkMemoryUsage<TGarnetApi>(int count, ref TGarnetApi storageApi)
+            where TGarnetApi : IGarnetApi
+        {
+            if (count != 1 && count != 3)
+            {
+                return AbortWithWrongNumberOfArguments(
+                    $"{nameof(RespCommand.MEMORY)}|{Encoding.ASCII.GetString(CmdStrings.USAGE)}", count);
+            }
+
+            var key = parseState.GetArgSliceByRef(0);
+
+            if (count == 3)
+            {
+                // Calculations for nested types do not apply to garnet, but we are checking syntax for API compatibility
+                if (!parseState.GetArgSliceByRef(1).ReadOnlySpan.EqualsUpperCaseSpanIgnoringCase(CmdStrings.SAMPLES))
+                {
+                    while (!RespWriteUtils.WriteError(CmdStrings.RESP_SYNTAX_ERROR, ref dcurr, dend))
+                        SendAndReset();
+                    return true;
+                }
+
+                if (!parseState.TryGetInt(2, out _))
+                {
+                    while (!RespWriteUtils.WriteError(CmdStrings.RESP_ERR_GENERIC_VALUE_IS_NOT_INTEGER, ref dcurr, dend))
+                        SendAndReset();
+                    return true;
+                }
+            }
+
+            var status = storageApi.MemoryUsageForKey(key, out var memoryUsage);
+
+            if (status == GarnetStatus.OK)
+            {
+                while (!RespWriteUtils.WriteInteger((int)memoryUsage, ref dcurr, dend))
+                    SendAndReset();
+            }
+            else
+            {
+                while (!RespWriteUtils.WriteDirect(CmdStrings.RESP_ERRNOTFOUND, ref dcurr, dend))
+                    SendAndReset();
+            }
+
+            return true;
+        }
+
+        /// <summary>
+        /// ASYNC [ON|OFF|BARRIER]
+        /// </summary>
+        private bool NetworkASYNC(int count)
+        {
+            if (respProtocolVersion <= 2)
+            {
+                while (!RespWriteUtils.WriteError(CmdStrings.RESP_ERR_NOT_SUPPORTED_RESP2, ref dcurr, dend))
+                    SendAndReset();
+
+                return true;
+            }
+
+            if (count != 1)
+            {
+                return AbortWithWrongNumberOfArguments(nameof(RespCommand.ASYNC), count);
+            }
+
+            var param = parseState.GetArgSliceByRef(0).ReadOnlySpan;
+            if (param.EqualsUpperCaseSpanIgnoringCase(CmdStrings.ON))
+            {
+                useAsync = true;
+            }
+            else if (param.EqualsUpperCaseSpanIgnoringCase(CmdStrings.OFF))
+            {
+                useAsync = false;
+            }
+            else if (param.EqualsUpperCaseSpanIgnoringCase(CmdStrings.BARRIER))
+            {
+                if (asyncCompleted < asyncStarted)
+                {
+                    asyncDone = new(0);
+                    if (dcurr > networkSender.GetResponseObjectHead())
+                        Send(networkSender.GetResponseObjectHead());
+                    try
+                    {
+                        networkSender.ExitAndReturnResponseObject();
+                        while (asyncCompleted < asyncStarted) asyncDone.Wait();
+                        asyncDone.Dispose();
+                        asyncDone = null;
+                    }
+                    finally
+                    {
+                        networkSender.EnterAndGetResponseObject(out dcurr, out dend);
+                    }
+                }
+            }
+            else
+            {
+                while (!RespWriteUtils.WriteError(CmdStrings.RESP_SYNTAX_ERROR, ref dcurr, dend))
+                    SendAndReset();
+
+                return true;
+            }
+
+            while (!RespWriteUtils.WriteDirect(CmdStrings.RESP_OK, ref dcurr, dend))
+                SendAndReset();
+
+            return true;
+        }
+
+        /// <summary>
+        /// Process the HELLO command
+        /// </summary>
+        void ProcessHelloCommand(byte? respProtocolVersion, ReadOnlySpan<byte> username, ReadOnlySpan<byte> password, string clientName)
+        {
+            if (respProtocolVersion != null)
+            {
+                if (respProtocolVersion.Value is < 2 or > 3)
+                {
+                    while (!RespWriteUtils.WriteError(CmdStrings.RESP_ERR_UNSUPPORTED_PROTOCOL_VERSION, ref dcurr, dend))
+                        SendAndReset();
+                    return;
+                }
+
+                if (respProtocolVersion.Value != this.respProtocolVersion && asyncCompleted < asyncStarted)
+                {
+                    while (!RespWriteUtils.WriteError(CmdStrings.RESP_ERR_ASYNC_PROTOCOL_CHANGE, ref dcurr, dend))
+                        SendAndReset();
+                    return;
+                }
+
+                this.respProtocolVersion = respProtocolVersion.Value;
+            }
+
+            if (username != default)
+            {
+                if (!this.AuthenticateUser(username, password))
+                {
+                    if (username.IsEmpty)
+                    {
+                        while (!RespWriteUtils.WriteError(CmdStrings.RESP_WRONGPASS_INVALID_PASSWORD, ref dcurr, dend))
+                            SendAndReset();
+                    }
+                    else
+                    {
+                        while (!RespWriteUtils.WriteError(CmdStrings.RESP_WRONGPASS_INVALID_USERNAME_PASSWORD, ref dcurr, dend))
+                            SendAndReset();
+                    }
+                    return;
+                }
+            }
+
+            if (clientName != null)
+            {
+                this.clientName = clientName;
+            }
+
+            (string, string)[] helloResult =
+                [
+                    ("server", "redis"),
+                    ("version", storeWrapper.redisProtocolVersion),
+                    ("garnet_version", storeWrapper.version),
+                    ("proto", $"{this.respProtocolVersion}"),
+                    ("id", "63"),
+                    ("mode", storeWrapper.serverOptions.EnableCluster ? "cluster" : "standalone"),
+                    ("role", storeWrapper.serverOptions.EnableCluster && storeWrapper.clusterProvider.IsReplica() ? "replica" : "master"),
+                ];
+
+            if (this.respProtocolVersion == 2)
+            {
+                while (!RespWriteUtils.WriteArrayLength(helloResult.Length * 2 + 2, ref dcurr, dend))
+                    SendAndReset();
+            }
+            else
+            {
+                while (!RespWriteUtils.WriteMapLength(helloResult.Length + 1, ref dcurr, dend))
+                    SendAndReset();
+            }
+            for (int i = 0; i < helloResult.Length; i++)
+            {
+                while (!RespWriteUtils.WriteAsciiBulkString(helloResult[i].Item1, ref dcurr, dend))
+                    SendAndReset();
+                while (!RespWriteUtils.WriteAsciiBulkString(helloResult[i].Item2, ref dcurr, dend))
+                    SendAndReset();
+            }
+            while (!RespWriteUtils.WriteAsciiBulkString("modules", ref dcurr, dend))
+                SendAndReset();
+            while (!RespWriteUtils.WriteArrayLength(0, ref dcurr, dend))
+                SendAndReset();
+        }
+
+        void FlushDB(bool unsafeTruncateLog)
+        {
+            storeWrapper.store.Log.ShiftBeginAddress(storeWrapper.store.Log.TailAddress, truncateLog: unsafeTruncateLog);
+            storeWrapper.objectStore?.Log.ShiftBeginAddress(storeWrapper.objectStore.Log.TailAddress, truncateLog: unsafeTruncateLog);
         }
     }
 }
