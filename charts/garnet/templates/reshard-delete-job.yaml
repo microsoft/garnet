@@ -101,8 +101,8 @@ spec:
                       sleep 5
                       number_nodes_remainder=$((number_nodes_remainder - 1))
                       /usr/local/bin/redis-cli --cluster check $garnet_host:$garnet_port
-
                     done
+                    /usr/local/bin/redis-cli --cluster del-node $garnet_host:$garnet_port $node_id
                   fi
                 else
                   echo "Node $node is not reachable, skipping."
