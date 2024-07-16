@@ -249,6 +249,7 @@ namespace Tsavorite.core
         public long PreviousAddress
         {
             readonly get => word & kPreviousAddressMaskInWord;
+            [MethodImpl(MethodImplOptions.AggressiveInlining)]
             set
             {
                 word &= ~kPreviousAddressMaskInWord;

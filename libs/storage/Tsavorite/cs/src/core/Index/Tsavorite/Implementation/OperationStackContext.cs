@@ -14,6 +14,7 @@ namespace Tsavorite.core
         internal HashEntryInfo hei;
         internal RecordSource<Key, Value, TStoreFunctions, TAllocator> recSrc;
 
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
         internal OperationStackContext(long keyHash) => hei = new(keyHash);
 
         /// <summary>

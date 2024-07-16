@@ -180,10 +180,13 @@ namespace Tsavorite.core
         #endregion Transient locking
 
         #region Internal utilities
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public int GetRMWInitialValueLength(ref Input input) => _clientSession.functions.GetRMWInitialValueLength(ref input);
 
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public int GetRMWModifiedValueLength(ref Value t, ref Input input) => _clientSession.functions.GetRMWModifiedValueLength(ref t, ref input);
 
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public IHeapContainer<Input> GetHeapContainer(ref Input input)
         {
             if (typeof(Input) == typeof(SpanByte))
@@ -191,10 +194,13 @@ namespace Tsavorite.core
             return new StandardHeapContainer<Input>(ref input);
         }
 
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public void UnsafeResumeThread() => _clientSession.UnsafeResumeThread(this);
 
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public void UnsafeSuspendThread() => _clientSession.UnsafeSuspendThread();
 
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public bool CompletePendingWithOutputs(out CompletedOutputIterator<Key, Value, Input, Output, Context> completedOutputs, bool wait = false, bool spinWaitForCommit = false)
             => _clientSession.CompletePendingWithOutputs(this, out completedOutputs, wait, spinWaitForCommit);
 

@@ -2,6 +2,7 @@
 // Licensed under the MIT license.
 
 using System.Diagnostics;
+using System.Runtime.CompilerServices;
 
 namespace Tsavorite.core
 {
@@ -33,6 +34,7 @@ namespace Tsavorite.core
     {
         public bool IsManualLocking => false;
 
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public bool TryLockTransientExclusive(TsavoriteKV<TKey, TValue, TStoreFunctions, TAllocator> store, ref OperationStackContext<TKey, TValue, TStoreFunctions, TAllocator> stackCtx)
         {
             if (!store.LockTable.TryLockExclusive(ref stackCtx.hei))
@@ -41,6 +43,7 @@ namespace Tsavorite.core
             return true;
         }
 
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public bool TryLockTransientShared(TsavoriteKV<TKey, TValue, TStoreFunctions, TAllocator> store, ref OperationStackContext<TKey, TValue, TStoreFunctions, TAllocator> stackCtx)
         {
             if (!store.LockTable.TryLockShared(ref stackCtx.hei))
@@ -49,12 +52,14 @@ namespace Tsavorite.core
             return true;
         }
 
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public void UnlockTransientExclusive(TsavoriteKV<TKey, TValue, TStoreFunctions, TAllocator> store, ref OperationStackContext<TKey, TValue, TStoreFunctions, TAllocator> stackCtx)
         {
             store.LockTable.UnlockExclusive(ref stackCtx.hei);
             stackCtx.recSrc.ClearHasTransientXLock();
         }
 
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public void UnlockTransientShared(TsavoriteKV<TKey, TValue, TStoreFunctions, TAllocator> store, ref OperationStackContext<TKey, TValue, TStoreFunctions, TAllocator> stackCtx)
         {
             store.LockTable.UnlockShared(ref stackCtx.hei);
@@ -71,6 +76,7 @@ namespace Tsavorite.core
     {
         public bool IsManualLocking => true;
 
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public bool TryLockTransientExclusive(TsavoriteKV<TKey, TValue, TStoreFunctions, TAllocator> store, ref OperationStackContext<TKey, TValue, TStoreFunctions, TAllocator> stackCtx)
         {
             Debug.Assert(store.LockTable.IsLockedExclusive(ref stackCtx.hei),
@@ -80,9 +86,7 @@ namespace Tsavorite.core
             return true;
         }
 
-        public bool TryLockTransientExclusive(TsavoriteKV<TKey, TValue, TStoreFunctions, TAllocator> store, ref TKey key, ref OperationStackContext<TKey, TValue, TStoreFunctions, TAllocator> stackCtx) 
-            => throw new System.NotImplementedException();
-
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public bool TryLockTransientShared(TsavoriteKV<TKey, TValue, TStoreFunctions, TAllocator> store, ref OperationStackContext<TKey, TValue, TStoreFunctions, TAllocator> stackCtx)
         {
             Debug.Assert(store.LockTable.IsLocked(ref stackCtx.hei),
@@ -92,9 +96,7 @@ namespace Tsavorite.core
             return true;
         }
 
-        public bool TryLockTransientShared(TsavoriteKV<TKey, TValue, TStoreFunctions, TAllocator> store, ref TKey key, ref OperationStackContext<TKey, TValue, TStoreFunctions, TAllocator> stackCtx) 
-            => throw new System.NotImplementedException();
-
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public void UnlockTransientExclusive(TsavoriteKV<TKey, TValue, TStoreFunctions, TAllocator> store, ref OperationStackContext<TKey, TValue, TStoreFunctions, TAllocator> stackCtx)
         {
             Debug.Assert(store.LockTable.IsLockedExclusive(ref stackCtx.hei),
@@ -103,9 +105,7 @@ namespace Tsavorite.core
                         + $" Slocked {store.LockTable.IsLockedShared(ref stackCtx.hei)}");
         }
 
-        public void UnlockTransientExclusive(TsavoriteKV<TKey, TValue, TStoreFunctions, TAllocator> store, ref TKey key, ref OperationStackContext<TKey, TValue, TStoreFunctions, TAllocator> stackCtx) 
-            => throw new System.NotImplementedException();
-
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public void UnlockTransientShared(TsavoriteKV<TKey, TValue, TStoreFunctions, TAllocator> store, ref OperationStackContext<TKey, TValue, TStoreFunctions, TAllocator> stackCtx)
         {
             Debug.Assert(store.LockTable.IsLockedShared(ref stackCtx.hei),
@@ -113,8 +113,5 @@ namespace Tsavorite.core
                         + $" XLocked {store.LockTable.IsLockedExclusive(ref stackCtx.hei)},"
                         + $" Slocked {store.LockTable.IsLockedShared(ref stackCtx.hei)}");
         }
-
-        public void UnlockTransientShared(TsavoriteKV<TKey, TValue, TStoreFunctions, TAllocator> store, ref TKey key, ref OperationStackContext<TKey, TValue, TStoreFunctions, TAllocator> stackCtx) 
-            => throw new System.NotImplementedException();
     }
 }

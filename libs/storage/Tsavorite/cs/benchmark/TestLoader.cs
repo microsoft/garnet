@@ -90,7 +90,7 @@ namespace Tsavorite.benchmark
             error = false;
         }
 
-        internal long GetHashTableSize() => (long)(MaxKey / Options.HashPacking);
+        internal long GetHashTableSize() => (long)(MaxKey / Options.HashPacking) << 6;  // << 6 for consistency with pre-StoreFunctions (because it will be converted to cache lines)
 
         internal void LoadData()
         {
