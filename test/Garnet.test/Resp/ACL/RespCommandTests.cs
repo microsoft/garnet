@@ -1,4 +1,4 @@
-// Copyright (c) Microsoft Corporation.
+﻿// Copyright (c) Microsoft Corporation.
 // Licensed under the MIT license.
 
 using System;
@@ -3568,6 +3568,27 @@ namespace Garnet.test.Resp.ACL
             static async Task DoLMoveAsync(GarnetClient client)
             {
                 string val = await client.ExecuteForStringResultAsync("LMOVE", ["foo", "bar", "LEFT", "RIGHT"]);
+                Assert.IsNull(val);
+            }
+        }
+
+        [Test]
+        public async Task LMPopACLsAsync()
+        {
+            await CheckCommandsAsync(
+                "LMPOP",
+                [DoLMPopAsync, DoLMPopCountAsync]
+            );
+
+            static async Task DoLMPopAsync(GarnetClient client)
+            {
+                string val = await client.ExecuteForStringResultAsync("LMPOP", ["1", "foo", "LEFT"]);
+                Assert.IsNull(val);
+            }
+
+            static async Task DoLMPopCountAsync(GarnetClient client)
+            {
+                string val = await client.ExecuteForStringResultAsync("LMPOP", ["1", "foo", "LEFT", "COUNT", "1"]);
                 Assert.IsNull(val);
             }
         }
