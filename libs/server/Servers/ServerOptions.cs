@@ -173,42 +173,40 @@ namespace Garnet.server
         }
 
         /// <summary>
-        /// Get log settings
+        /// Get TsavoriteKVSettings
         /// </summary>
-        /// <param name="logSettings"></param>
-        /// <param name="checkpointSettings"></param>
-        /// <param name="indexSize"></param>
-        public void GetSettings(out LogSettings logSettings, out CheckpointSettings checkpointSettings, out int indexSize)
+        public void GetSettings<TKey, TValue>()
         {
-            logSettings = new LogSettings
+            var indexCacheLines = IndexSizeCachelines("hash index size", IndexSize);
+            var kvSettings = new TsavoriteKVSettings<TKey, TValue>()
             {
+                IndexSize = indexCacheLines * 64L,
                 PreallocateLog = false,
-                PageSizeBits = PageSizeBits()
+                PageSize = 1L << PageSizeBits()
             };
-            logger?.LogInformation($"[Store] Using page size of {PrettySize((long)Math.Pow(2, logSettings.PageSizeBits))}");
+            logger?.LogInformation($"[Store] Using page size of {PrettySize(kvSettings.PageSize)}");
 
-            logSettings.MemorySizeBits = MemorySizeBits();
-            logger?.LogInformation($"[Store] Using log memory size of {PrettySize((long)Math.Pow(2, logSettings.MemorySizeBits))}");
+            kvSettings.MemorySize = 1L << MemorySizeBits();
+            logger?.LogInformation($"[Store] Using log memory size of {PrettySize(kvSettings.MemorySize)}");
 
-            logger?.LogInformation($"[Store] There are {PrettySize(1 << (logSettings.MemorySizeBits - logSettings.PageSizeBits))} log pages in memory");
+            logger?.LogInformation($"[Store] There are {PrettySize(kvSettings.MemorySize / kvSettings.PageSize)} log pages in memory");
 
-            logSettings.SegmentSizeBits = SegmentSizeBits();
-            logger?.LogInformation($"[Store] Using disk segment size of {PrettySize((long)Math.Pow(2, logSettings.SegmentSizeBits))}");
+            kvSettings.SegmentSize = 1L << SegmentSizeBits();
+            logger?.LogInformation($"[Store] Using disk segment size of {PrettySize(kvSettings.SegmentSize)}");
 
-            indexSize = IndexSizeCachelines("hash index size", IndexSize);
-            logger?.LogInformation($"[Store] Using hash index size of {PrettySize(indexSize * 64L)} ({PrettySize(indexSize)} cache lines)");
+            logger?.LogInformation($"[Store] Using hash index size of {PrettySize(kvSettings.IndexSize)} ({PrettySize(indexCacheLines)} cache lines)");
 
             if (EnableStorageTier)
             {
                 if (LogDir is null or "")
                     LogDir = Directory.GetCurrentDirectory();
-                logSettings.LogDevice = Devices.CreateLogDevice(LogDir + "/Store/hlog", logger: logger);
+                kvSettings.LogDevice = Devices.CreateLogDevice(LogDir + "/Store/hlog", logger: logger);
             }
             else
             {
                 if (LogDir != null)
                     throw new Exception("LogDir specified without enabling tiered storage (UseStorage)");
-                logSettings.LogDevice = new NullDevice();
+                kvSettings.LogDevice = new NullDevice();
             }
 
             if (CheckpointDir == null) CheckpointDir = LogDir;
@@ -216,11 +214,8 @@ namespace Garnet.server
             if (CheckpointDir is null or "")
                 CheckpointDir = Directory.GetCurrentDirectory();
 
-            checkpointSettings = new CheckpointSettings
-            {
-                CheckpointDir = CheckpointDir + "/Store/checkpoints",
-                RemoveOutdated = true,
-            };
+            kvSettings.CheckpointDir = CheckpointDir + "/Store/checkpoints";
+            kvSettings.RemoveOutdatedCheckpoints = true;
         }
 
         /// <summary>

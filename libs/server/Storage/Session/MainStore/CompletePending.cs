@@ -6,6 +6,8 @@ using Tsavorite.core;
 
 namespace Garnet.server
 {
+    using MainStoreFunctions = StoreFunctions<SpanByte, SpanByte, SpanByteComparer, SpanByteRecordDisposer>;
+
     sealed partial class StorageSession
     {
         /// <summary>
@@ -15,7 +17,7 @@ namespace Garnet.server
         /// <param name="output"></param>
         /// <param name="context"></param>
         static void CompletePendingForSession<TContext>(ref Status status, ref SpanByteAndMemory output, ref TContext context)
-            where TContext : ITsavoriteContext<SpanByte, SpanByte, SpanByte, SpanByteAndMemory, long, MainStoreFunctions>
+            where TContext : ITsavoriteContext<SpanByte, SpanByte, SpanByte, SpanByteAndMemory, long, MainSessionFunctions, MainStoreFunctions, SpanByteAllocator<MainStoreFunctions>>
         {
             context.CompletePendingWithOutputs(out var completedOutputs, wait: true);
             var more = completedOutputs.Next();

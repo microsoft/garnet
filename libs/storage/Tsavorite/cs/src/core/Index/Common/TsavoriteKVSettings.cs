@@ -47,6 +47,11 @@ namespace Tsavorite.core
         public long MemorySize = 1L << 34;
 
         /// <summary>
+        /// Controls how many pages should be empty to account for non-power-of-two-sized log
+        /// </summary>
+        public int MinEmptyPageCount = 0;
+
+        /// <summary>
         /// Fraction of log marked as mutable (in-place updates). Rounds down to power of 2.
         /// </summary>
         public double MutableFraction = 0.9;
@@ -184,8 +189,8 @@ namespace Tsavorite.core
         internal long GetIndexSizeCacheLines()
         {
             long adjustedSize = Utility.PreviousPowerOf2(IndexSize);
-            if (adjustedSize < 512)
-                throw new TsavoriteException($"{nameof(IndexSize)} should be at least of size 8 cache line (512 bytes)");
+            if (adjustedSize < 64)
+                throw new TsavoriteException($"{nameof(IndexSize)} should be at least of size 1 cache line (64 bytes)");
             if (IndexSize != adjustedSize)  // Don't use string interpolation when logging messages because it makes it impossible to group by the message template.
                 logger?.LogInformation("Warning: using lower value {0} instead of specified {1} for {2}", adjustedSize, IndexSize, nameof(IndexSize));
             return adjustedSize / 64;
@@ -205,6 +210,7 @@ namespace Tsavorite.core
                 PageSizeBits = Utility.NumBitsPreviousPowerOf2(PageSize),
                 SegmentSizeBits = Utility.NumBitsPreviousPowerOf2(SegmentSize),
                 MutableFraction = MutableFraction,
+                MinEmptyPageCount = MinEmptyPageCount,
                 PreallocateLog = PreallocateLog,
                 ReadCacheSettings = GetReadCacheSettings()
             };
