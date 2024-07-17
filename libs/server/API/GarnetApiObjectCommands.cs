@@ -78,16 +78,16 @@ namespace Garnet.server
             => storageSession.SortedSetPop(key, count, lowScoresFirst, out pairs, ref objectContext);
 
         /// <inheritdoc />
-        public GarnetStatus SortedSetCount(byte[] key, ArgSlice input, out ObjectOutputHeader output)
-            => storageSession.SortedSetCount(key, input, out output, ref objectContext);
+        public GarnetStatus SortedSetCount(byte[] key, ref ObjectInput input, out ObjectOutputHeader output)
+            => storageSession.SortedSetCount(key, ref input, out output, ref objectContext);
 
         /// <inheritdoc />
-        public GarnetStatus SortedSetLengthByValue(byte[] key, ArgSlice input, out ObjectOutputHeader output)
-            => storageSession.SortedSetLengthByValue(key, input, out output, ref objectContext);
+        public GarnetStatus SortedSetLengthByValue(byte[] key, ref ObjectInput input, out ObjectOutputHeader output)
+            => storageSession.SortedSetLengthByValue(key, ref input, out output, ref objectContext);
 
         /// <inheritdoc />
-        public GarnetStatus SortedSetRemoveRangeByLex(byte[] key, ArgSlice input, out ObjectOutputHeader output)
-            => storageSession.SortedSetRemoveRangeByLex(key, input, out output, ref objectContext);
+        public GarnetStatus SortedSetRemoveRangeByLex(byte[] key, ref ObjectInput input, out ObjectOutputHeader output)
+            => storageSession.SortedSetRemoveRangeByLex(key, ref input, out output, ref objectContext);
 
         /// <inheritdoc />
         public GarnetStatus SortedSetRemoveRangeByLex(ArgSlice key, string min, string max, out int countRemoved)
@@ -102,28 +102,28 @@ namespace Garnet.server
             => storageSession.SortedSetRemoveRangeByRank(key, start, stop, out countRemoved, ref objectContext);
 
         /// <inheritdoc />
-        public GarnetStatus SortedSetIncrement(byte[] key, ArgSlice input, ref GarnetObjectStoreOutput outputFooter)
-            => storageSession.SortedSetIncrement(key, input, ref outputFooter, ref objectContext);
+        public GarnetStatus SortedSetIncrement(byte[] key, ref ObjectInput input, ref GarnetObjectStoreOutput outputFooter)
+            => storageSession.SortedSetIncrement(key, ref input, ref outputFooter, ref objectContext);
 
         /// <inheritdoc />
         public GarnetStatus SortedSetIncrement(ArgSlice key, double increment, ArgSlice member, out double newScore)
             => storageSession.SortedSetIncrement(key, increment, member, out newScore, ref objectContext);
 
         /// <inheritdoc />
-        public GarnetStatus SortedSetRemoveRange(byte[] key, ArgSlice input, out ObjectOutputHeader output)
-            => storageSession.SortedSetRemoveRange(key, input, out output, ref objectContext);
+        public GarnetStatus SortedSetRemoveRange(byte[] key, ref ObjectInput input, out ObjectOutputHeader output)
+            => storageSession.SortedSetRemoveRange(key, ref input, out output, ref objectContext);
 
         /// <inheritdoc />
-        public GarnetStatus SortedSetRank(byte[] key, ArgSlice input, ref GarnetObjectStoreOutput outputFooter)
-            => storageSession.SortedSetRank(key, input, ref outputFooter, ref objectContext);
+        public GarnetStatus SortedSetRank(byte[] key, ref ObjectInput input, ref GarnetObjectStoreOutput outputFooter)
+            => storageSession.SortedSetRank(key, ref input, ref outputFooter, ref objectContext);
 
         /// <inheritdoc />
         public GarnetStatus SortedSetRank(ArgSlice key, ArgSlice member, bool reverse, out long? rank)
             => storageSession.SortedSetRank(key, member, reverse, out rank, ref objectContext);
 
         /// <inheritdoc />
-        public GarnetStatus SortedSetRandomMember(byte[] key, ArgSlice input, ref GarnetObjectStoreOutput outputFooter)
-            => storageSession.SortedSetRandomMember(key, input, ref outputFooter, ref objectContext);
+        public GarnetStatus SortedSetRandomMember(byte[] key, ref ObjectInput input, ref GarnetObjectStoreOutput outputFooter)
+            => storageSession.SortedSetRandomMember(key, ref input, ref outputFooter, ref objectContext);
 
         /// <inheritdoc />
         public GarnetStatus SortedSetRange(ArgSlice key, ArgSlice min, ArgSlice max, SortedSetOrderOperation sortedSetOrderOperation, out ArgSlice[] elements, out string error, bool withScores = false, bool reverse = false, (string, int) limit = default)

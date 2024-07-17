@@ -350,7 +350,7 @@ namespace Garnet.server
         /// <param name="input"></param>
         /// <param name="output"></param>
         /// <returns></returns>
-        GarnetStatus SortedSetRemoveRangeByLex(byte[] key, ArgSlice input, out ObjectOutputHeader output);
+        GarnetStatus SortedSetRemoveRangeByLex(byte[] key, ref ObjectInput input, out ObjectOutputHeader output);
 
         /// <summary>
         /// Removes and returns the first element from the sorted set stored at key,
@@ -380,7 +380,7 @@ namespace Garnet.server
         /// <param name="input"></param>
         /// <param name="outputFooter"></param>
         /// <returns></returns>
-        GarnetStatus SortedSetIncrement(byte[] key, ArgSlice input, ref GarnetObjectStoreOutput outputFooter);
+        GarnetStatus SortedSetIncrement(byte[] key, ref ObjectInput input, ref GarnetObjectStoreOutput outputFooter);
 
         /// <summary>
         /// Increments the score of member in the sorted set stored at key by increment.
@@ -403,7 +403,7 @@ namespace Garnet.server
         /// <param name="input"></param>
         /// <param name="output"></param>
         /// <returns></returns>
-        GarnetStatus SortedSetRemoveRange(byte[] key, ArgSlice input, out ObjectOutputHeader output);
+        GarnetStatus SortedSetRemoveRange(byte[] key, ref ObjectInput input, out ObjectOutputHeader output);
 
         /// <summary>
         /// Removes all elements in the range specified by min and max, having the same score.
@@ -1085,7 +1085,7 @@ namespace Garnet.server
         /// <param name="input"></param>
         /// <param name="output"></param>
         /// <returns></returns>
-        GarnetStatus SortedSetCount(byte[] key, ArgSlice input, out ObjectOutputHeader output);
+        GarnetStatus SortedSetCount(byte[] key, ref ObjectInput input, out ObjectOutputHeader output);
 
         /// <summary>
         /// Returns the number of elements in the sorted set with a value between min and max.
@@ -1096,7 +1096,7 @@ namespace Garnet.server
         /// <param name="input"></param>
         /// <param name="output"></param>
         /// <returns></returns>
-        GarnetStatus SortedSetLengthByValue(byte[] key, ArgSlice input, out ObjectOutputHeader output);
+        GarnetStatus SortedSetLengthByValue(byte[] key, ref ObjectInput input, out ObjectOutputHeader output);
 
         /// <summary>
         /// ZRANK: Returns the rank of member in the sorted set, the scores in the sorted set are ordered from low to high
@@ -1106,7 +1106,7 @@ namespace Garnet.server
         /// <param name="input"></param>
         /// <param name="outputFooter"></param>
         /// <returns></returns>
-        GarnetStatus SortedSetRank(byte[] key, ArgSlice input, ref GarnetObjectStoreOutput outputFooter);
+        GarnetStatus SortedSetRank(byte[] key, ref ObjectInput input, ref GarnetObjectStoreOutput outputFooter);
 
         /// <summary>
         /// ZRANK: Returns the rank of member in the sorted set, the scores in the sorted set are ordered from low to high
@@ -1126,7 +1126,7 @@ namespace Garnet.server
         /// <param name="input"></param>
         /// <param name="outputFooter"></param>
         /// <returns></returns>
-        GarnetStatus SortedSetRandomMember(byte[] key, ArgSlice input, ref GarnetObjectStoreOutput outputFooter);
+        GarnetStatus SortedSetRandomMember(byte[] key, ref ObjectInput input, ref GarnetObjectStoreOutput outputFooter);
 
         /// <summary>
         /// Returns the specified range of elements in the sorted set stored at key, using byscore, bylex and rev modifiers.
@@ -1619,7 +1619,7 @@ namespace Garnet.server
         /// <param name="key">The key of the sorted set</param>
         /// <param name="input"></param>
         /// <param name="outputFooter"></param>
-        GarnetStatus ObjectScan(byte[] key, ArgSlice input, ref GarnetObjectStoreOutput outputFooter);
+        GarnetStatus ObjectScan(byte[] key, ref ObjectInput input, ref GarnetObjectStoreOutput outputFooter);
 
         #endregion
 

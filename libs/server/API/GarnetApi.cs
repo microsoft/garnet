@@ -360,8 +360,8 @@ namespace Garnet.server
         #region Common Methods
 
         /// <inheritdoc />
-        public GarnetStatus ObjectScan(byte[] key, ArgSlice input, ref GarnetObjectStoreOutput outputFooter)
-         => storageSession.ObjectScan(key, input, ref outputFooter, ref objectContext);
+        public GarnetStatus ObjectScan(byte[] key, ref ObjectInput input, ref GarnetObjectStoreOutput outputFooter)
+         => storageSession.ObjectScan(key, ref input, ref outputFooter, ref objectContext);
 
         #endregion
     }

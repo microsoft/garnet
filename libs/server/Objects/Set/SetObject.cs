@@ -144,7 +144,7 @@ namespace Garnet.server
                         SetRandomMember(_input, ref output);
                         break;
                     case SetOperation.SSCAN:
-                        if (ObjectUtils.ReadScanInput(_input, input.Length, ref output, out var cursorInput, out var pattern, out var patternLength, out int limitCount, out int bytesDone))
+                        if (ObjectUtils.ReadScanInput(ref input, ref output, out var cursorInput, out var pattern, out var patternLength, out int limitCount, out int bytesDone))
                         {
                             Scan(cursorInput, out var items, out var cursorOutput, count: limitCount, pattern: pattern, patternLength: patternLength);
                             ObjectUtils.WriteScanOutput(items, cursorOutput, ref output, bytesDone);

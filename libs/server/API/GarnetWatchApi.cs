@@ -94,24 +94,24 @@ namespace Garnet.server
         }
 
         /// <inheritdoc />
-        public GarnetStatus SortedSetCount(byte[] key, ArgSlice input, out ObjectOutputHeader output)
+        public GarnetStatus SortedSetCount(byte[] key, ref ObjectInput input, out ObjectOutputHeader output)
         {
             garnetApi.WATCH(key, StoreType.Object);
-            return garnetApi.SortedSetCount(key, input, out output);
+            return garnetApi.SortedSetCount(key, ref input, out output);
         }
 
         /// <inheritdoc />
-        public GarnetStatus SortedSetLengthByValue(byte[] key, ArgSlice input, out ObjectOutputHeader output)
+        public GarnetStatus SortedSetLengthByValue(byte[] key, ref ObjectInput input, out ObjectOutputHeader output)
         {
             garnetApi.WATCH(key, StoreType.Object);
-            return garnetApi.SortedSetLengthByValue(key, input, out output);
+            return garnetApi.SortedSetLengthByValue(key, ref input, out output);
         }
 
         /// <inheritdoc />
-        public GarnetStatus SortedSetRandomMember(byte[] key, ArgSlice input, ref GarnetObjectStoreOutput outputFooter)
+        public GarnetStatus SortedSetRandomMember(byte[] key, ref ObjectInput input, ref GarnetObjectStoreOutput outputFooter)
         {
             garnetApi.WATCH(key, StoreType.Object);
-            return garnetApi.SortedSetRandomMember(key, input, ref outputFooter);
+            return garnetApi.SortedSetRandomMember(key, ref input, ref outputFooter);
         }
 
         /// <inheritdoc />
@@ -136,10 +136,10 @@ namespace Garnet.server
         }
 
         /// <inheritdoc />
-        public GarnetStatus SortedSetRank(byte[] key, ArgSlice input, ref GarnetObjectStoreOutput outputFooter)
+        public GarnetStatus SortedSetRank(byte[] key, ref ObjectInput input, ref GarnetObjectStoreOutput outputFooter)
         {
             garnetApi.WATCH(key, StoreType.Object);
-            return garnetApi.SortedSetRank(key, input, ref outputFooter);
+            return garnetApi.SortedSetRank(key, ref input, ref outputFooter);
         }
 
         /// <inheritdoc />
@@ -522,10 +522,10 @@ namespace Garnet.server
 
         #region Common Methods
 
-        public GarnetStatus ObjectScan(byte[] key, ArgSlice input, ref GarnetObjectStoreOutput outputFooter)
+        public GarnetStatus ObjectScan(byte[] key, ref ObjectInput input, ref GarnetObjectStoreOutput outputFooter)
         {
             garnetApi.WATCH(key, StoreType.All);
-            return garnetApi.ObjectScan(key, input, ref outputFooter);
+            return garnetApi.ObjectScan(key, ref input, ref outputFooter);
         }
 
         #endregion

@@ -200,12 +200,11 @@ namespace Garnet.server
             {
                 // Scan Command
                 case RespCommand.COSCAN:
-                    fixed (byte* _input = input.AsSpan())
-                        if (ObjectUtils.ReadScanInput(_input, input.Length, ref output, out var cursorInput, out var pattern, out var patternLength, out int limitCount, out int bytesDone))
-                        {
-                            Scan(cursorInput, out var items, out var cursorOutput, count: limitCount, pattern: pattern, patternLength: patternLength);
-                            ObjectUtils.WriteScanOutput(items, cursorOutput, ref output, bytesDone);
-                        }
+                    if (ObjectUtils.ReadScanInput(ref input, ref output, out var cursorInput, out var pattern, out var patternLength, out int limitCount, out int bytesDone))
+                    {
+                        Scan(cursorInput, out var items, out var cursorOutput, count: limitCount, pattern: pattern, patternLength: patternLength);
+                        ObjectUtils.WriteScanOutput(items, cursorOutput, ref output, bytesDone);
+                    }
                     break;
                 default:
                     if ((byte)header->type != this.type)

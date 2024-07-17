@@ -49,21 +49,21 @@ namespace Garnet.server
         /// <param name="countInInput"></param>
         /// <param name="bytesDone"></param>
         /// <returns></returns>
-        public static unsafe bool ReadScanInput(byte* input, int length, ref SpanByteAndMemory output, out int cursorInput, out byte* pattern, out int patternLength, out int countInInput, out int bytesDone)
+        public static unsafe bool ReadScanInput(ref ObjectInput input, ref SpanByteAndMemory output, out int cursorInput, out byte* pattern, out int patternLength, out int countInInput, out int bytesDone)
         {
-            var _input = (ObjectInputHeader*)input;
-
-            // HeaderSize + Integer for limitCountInOutput
-            byte* input_startptr = input + ObjectInputHeader.Size + sizeof(int);
-            byte* input_currptr = input_startptr;
-
-            int leftTokens = _input->arg1;
+            var input_startptr = input.payload.ptr;
 
             // Largest number of items to print 
-            int limitCountInOutput = *(int*)(input + ObjectInputHeader.Size);
+            var limitCountInOutput = *(int*)input_startptr;
+
+            var input_currptr = input_startptr += sizeof(int);
+            var length = input.payload.length - sizeof(int);
+            var input_endptr = input_startptr + length;
+
+            var leftTokens = input.count;
 
             // Cursor
-            cursorInput = _input->arg2;
+            cursorInput = input.done;
 
             patternLength = 0;
             pattern = default;
@@ -71,27 +71,24 @@ namespace Garnet.server
             // Default of items in output
             countInInput = 10;
 
-            ObjectOutputHeader _output = default;
-
             // This value is used to indicate partial command execution
-            _output.result1 = int.MinValue;
             bytesDone = 0;
 
             while (leftTokens > 0)
             {
-                if (!RespReadUtils.TrySliceWithLengthHeader(out var parameterSB, ref input_currptr, input + length))
+                if (!RespReadUtils.TrySliceWithLengthHeader(out var sbParam, ref input_currptr, input_endptr))
                     return false;
 
-                if (parameterSB.SequenceEqual(CmdStrings.MATCH) || parameterSB.SequenceEqual(CmdStrings.match))
+                if (sbParam.SequenceEqual(CmdStrings.MATCH) || sbParam.SequenceEqual(CmdStrings.match))
                 {
                     // Read pattern for keys filter
-                    if (!RespReadUtils.ReadPtrWithLengthHeader(ref pattern, ref patternLength, ref input_currptr, input + length))
+                    if (!RespReadUtils.ReadPtrWithLengthHeader(ref pattern, ref patternLength, ref input_currptr, input_endptr))
                         return false;
                     leftTokens--;
                 }
-                else if (parameterSB.SequenceEqual(CmdStrings.COUNT) || parameterSB.SequenceEqual(CmdStrings.count))
+                else if (sbParam.SequenceEqual(CmdStrings.COUNT) || sbParam.SequenceEqual(CmdStrings.count))
                 {
-                    if (!RespReadUtils.ReadIntWithLengthHeader(out countInInput, ref input_currptr, input + length))
+                    if (!RespReadUtils.ReadIntWithLengthHeader(out countInInput, ref input_currptr, input_endptr))
                     {
                         return false;
                     }
