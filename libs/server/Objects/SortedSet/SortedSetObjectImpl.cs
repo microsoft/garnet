@@ -320,6 +320,7 @@ namespace Garnet.server
         {
             //ZRANGE key min max [BYSCORE|BYLEX] [REV] [LIMIT offset count] [WITHSCORES]
             //ZRANGEBYSCORE key min max [WITHSCORES] [LIMIT offset count]
+            //ZREVRANGEBYSCORE key max min [WITHSCORES] [LIMIT offset count]
             var _input = (ObjectInputHeader*)input;
             int count = _input->arg1;
             int respProtocolVersion = _input->arg2;
@@ -351,6 +352,11 @@ namespace Garnet.server
                 ZRangeOptions options = new();
                 if (_input->header.SortedSetOp == SortedSetOperation.ZRANGEBYSCORE) options.ByScore = true;
                 if (_input->header.SortedSetOp == SortedSetOperation.ZREVRANGE) options.Reverse = true;
+                if (_input->header.SortedSetOp == SortedSetOperation.ZREVRANGEBYSCORE)
+                {
+                    options.Reverse = true;
+                    options.ByScore = true;
+                }
 
                 if (count > 2)
                 {
