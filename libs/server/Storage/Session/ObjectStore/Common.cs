@@ -89,6 +89,34 @@ namespace Garnet.server
         }
 
         /// <summary>
+        /// Perform RMW operation in object store 
+        /// use this method in commands that return an array
+        /// </summary>
+        /// <typeparam name="TObjectContext"></typeparam>
+        /// <param name="key"></param>
+        /// <param name="input"></param>
+        /// <param name="objectStoreContext"></param>
+        /// <param name="outputFooter"></param>
+        /// <returns></returns>
+        unsafe GarnetStatus RMWObjectStoreOperationWithOutput<TObjectContext>(byte[] key, ref ObjectInput input, ref TObjectContext objectStoreContext, ref GarnetObjectStoreOutput outputFooter)
+            where TObjectContext : ITsavoriteContext<byte[], IGarnetObject, ObjectInput, GarnetObjectStoreOutput, long, ObjectStoreFunctions>
+        {
+            if (objectStoreContext.Session is null)
+                StorageSession.ThrowObjectStoreUninitializedException();
+
+            // Perform RMW on object store
+            var status = objectStoreContext.RMW(ref key, ref input, ref outputFooter);
+
+            if (status.IsPending)
+                CompletePendingForObjectStoreSession(ref status, ref outputFooter, ref objectStoreContext);
+
+            if (outputFooter.spanByteAndMemory.Length == 0)
+                return GarnetStatus.WRONGTYPE;
+
+            return status.Found || status.Record.Created ? GarnetStatus.OK : GarnetStatus.NOTFOUND;
+        }
+
+        /// <summary>
         /// Perform Read operation in object store 
         /// use this method in commands that return an array
         /// </summary>
@@ -108,6 +136,37 @@ namespace Garnet.server
 
             // Perform read on object store
             var status = objectStoreContext.Read(ref key, ref _input, ref outputFooter);
+
+            if (status.IsPending)
+                CompletePendingForObjectStoreSession(ref status, ref outputFooter, ref objectStoreContext);
+
+            if (outputFooter.spanByteAndMemory.Length == 0)
+                return GarnetStatus.WRONGTYPE;
+
+            if (status.NotFound)
+                return GarnetStatus.NOTFOUND;
+
+            return GarnetStatus.OK;
+        }
+
+        /// <summary>
+        /// Perform Read operation in object store 
+        /// use this method in commands that return an array
+        /// </summary>
+        /// <typeparam name="TObjectContext"></typeparam>
+        /// <param name="key"></param>
+        /// <param name="input"></param>
+        /// <param name="objectStoreContext"></param>
+        /// <param name="outputFooter"></param>
+        /// <returns></returns>
+        unsafe GarnetStatus ReadObjectStoreOperationWithOutput<TObjectContext>(byte[] key, ref ObjectInput input, ref TObjectContext objectStoreContext, ref GarnetObjectStoreOutput outputFooter)
+            where TObjectContext : ITsavoriteContext<byte[], IGarnetObject, ObjectInput, GarnetObjectStoreOutput, long, ObjectStoreFunctions>
+        {
+            if (objectStoreContext.Session is null)
+                StorageSession.ThrowObjectStoreUninitializedException();
+
+            // Perform read on object store
+            var status = objectStoreContext.Read(ref key, ref input, ref outputFooter);
 
             if (status.IsPending)
                 CompletePendingForObjectStoreSession(ref status, ref outputFooter, ref objectStoreContext);
@@ -319,6 +378,40 @@ namespace Garnet.server
 
             // Perform Read on object store
             var status = objectStoreContext.Read(ref key, ref _input, ref _output);
+
+            if (status.IsPending)
+                CompletePendingForObjectStoreSession(ref status, ref _output, ref objectStoreContext);
+
+            if (_output.spanByteAndMemory.Length == 0)
+                return GarnetStatus.WRONGTYPE;
+            Debug.Assert(_output.spanByteAndMemory.IsSpanByte);
+
+            if (status.Found && (!status.Record.Created && !status.Record.CopyUpdated && !status.Record.InPlaceUpdated))
+                return GarnetStatus.OK;
+
+            return GarnetStatus.NOTFOUND;
+        }
+
+        /// <summary>
+        /// Gets the value of the key store in the Object Store
+        /// </summary>
+        /// <typeparam name="TObjectContext"></typeparam>
+        /// <param name="key"></param>
+        /// <param name="input"></param>
+        /// <param name="output"></param>
+        /// <param name="objectStoreContext"></param>
+        /// <returns></returns>
+        unsafe GarnetStatus ReadObjectStoreOperation<TObjectContext>(byte[] key, ref ObjectInput input, out ObjectOutputHeader output, ref TObjectContext objectStoreContext)
+            where TObjectContext : ITsavoriteContext<byte[], IGarnetObject, ObjectInput, GarnetObjectStoreOutput, long, ObjectStoreFunctions>
+        {
+            if (objectStoreContext.Session is null)
+                StorageSession.ThrowObjectStoreUninitializedException();
+
+            output = new();
+            var _output = new GarnetObjectStoreOutput { spanByteAndMemory = new(SpanByte.FromPinnedPointer((byte*)Unsafe.AsPointer(ref output), ObjectOutputHeader.Size)) };
+
+            // Perform Read on object store
+            var status = objectStoreContext.Read(ref key, ref input, ref _output);
 
             if (status.IsPending)
                 CompletePendingForObjectStoreSession(ref status, ref _output, ref objectStoreContext);

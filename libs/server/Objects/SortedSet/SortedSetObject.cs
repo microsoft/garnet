@@ -181,7 +181,7 @@ namespace Garnet.server
         {
             byte* _input = null;
 
-            fixed (byte* _output = output.SpanByte.AsSpan())
+            fixed (byte* outputSpan = output.SpanByte.AsSpan())
             {
                 var header = input.header;
                 if (header.type != GarnetObjectType.SortedSet)
@@ -197,25 +197,25 @@ namespace Garnet.server
                 switch (header.SortedSetOp)
                 {
                     case SortedSetOperation.ZADD:
-                        SortedSetAdd(ref input, _output);
+                        SortedSetAdd(ref input, outputSpan);
                         break;
                     case SortedSetOperation.ZREM:
-                        SortedSetRemove(ref input, _output);
+                        SortedSetRemove(ref input, outputSpan);
                         break;
                     case SortedSetOperation.ZCARD:
-                        SortedSetLength(_output);
+                        SortedSetLength(outputSpan);
                         break;
                     case SortedSetOperation.ZPOPMAX:
-                        SortedSetPop(_input, ref output);
+                        SortedSetPop(ref input, ref output);
                         break;
                     case SortedSetOperation.ZSCORE:
-                        SortedSetScore(_input, ref output);
+                        SortedSetScore(ref input, ref output);
                         break;
                     case SortedSetOperation.ZMSCORE:
-                        SortedSetScores(_input, input.Length, ref output);
+                        SortedSetScores(ref input, ref output);
                         break;
                     case SortedSetOperation.ZCOUNT:
-                        SortedSetCount(_input, input.Length, _output);
+                        SortedSetCount(_input, input.Length, outputSpan);
                         break;
                     case SortedSetOperation.ZINCRBY:
                         SortedSetIncrement(_input, input.Length, ref output);
@@ -224,13 +224,13 @@ namespace Garnet.server
                         SortedSetRank(_input, input.Length, ref output);
                         break;
                     case SortedSetOperation.ZRANGE:
-                        SortedSetRange(_input, input.Length, ref output);
+                        SortedSetRange(ref input, ref output);
                         break;
                     case SortedSetOperation.ZRANGEBYSCORE:
-                        SortedSetRangeByScore(_input, input.Length, ref output);
+                        SortedSetRangeByScore(ref input, ref output);
                         break;
                     case SortedSetOperation.GEOADD:
-                        GeoAdd(_input, input.Length, _output);
+                        GeoAdd(_input, input.Length, outputSpan);
                         break;
                     case SortedSetOperation.GEOHASH:
                         GeoHash(_input, input.Length, ref output);
@@ -245,25 +245,25 @@ namespace Garnet.server
                         GeoSearch(_input, input.Length, ref output);
                         break;
                     case SortedSetOperation.ZREVRANGE:
-                        SortedSetReverseRange(_input, input.Length, ref output);
+                        SortedSetReverseRange(ref input, ref output);
                         break;
                     case SortedSetOperation.ZREVRANK:
                         SortedSetReverseRank(_input, input.Length, ref output);
                         break;
                     case SortedSetOperation.ZREMRANGEBYLEX:
-                        SortedSetRemoveRangeByLex(_input, input.Length, _output);
+                        SortedSetRemoveRangeByLex(_input, input.Length, outputSpan);
                         break;
                     case SortedSetOperation.ZREMRANGEBYRANK:
-                        SortedSetRemoveRangeByRank(_input, input.Length, _output);
+                        SortedSetRemoveRangeByRank(_input, input.Length, outputSpan);
                         break;
                     case SortedSetOperation.ZREMRANGEBYSCORE:
-                        SortedSetRemoveRangeByScore(_input, input.Length, _output);
+                        SortedSetRemoveRangeByScore(_input, input.Length, outputSpan);
                         break;
                     case SortedSetOperation.ZLEXCOUNT:
-                        SortedSetCountByLex(_input, input.Length, _output);
+                        SortedSetCountByLex(_input, input.Length, outputSpan);
                         break;
                     case SortedSetOperation.ZPOPMIN:
-                        SortedSetPopMin(_input, ref output);
+                        SortedSetPopMin(ref input, ref output);
                         break;
                     case SortedSetOperation.ZRANDMEMBER:
                         SortedSetRandomMember(_input, ref output);

@@ -360,7 +360,7 @@ namespace Garnet.server
         /// <param name="input"></param>
         /// <param name="outputFooter"></param>
         /// <returns></returns>
-        GarnetStatus SortedSetPop(byte[] key, ArgSlice input, ref GarnetObjectStoreOutput outputFooter);
+        GarnetStatus SortedSetPop(byte[] key, ref ObjectInput input, ref GarnetObjectStoreOutput outputFooter);
 
         /// <summary>
         /// Removes and returns up to count members with the highest or lowest scores in the sorted set stored at key.
@@ -1045,7 +1045,7 @@ namespace Garnet.server
         /// <param name="input"></param>
         /// <param name="output"></param>
         /// <returns></returns>
-        GarnetStatus SortedSetLength(byte[] key, ArgSlice input, out ObjectOutputHeader output);
+        GarnetStatus SortedSetLength(byte[] key, ref ObjectInput input, out ObjectOutputHeader output);
 
         /// <summary>
         /// Returns the specified range of elements in the sorted set stored at key.
@@ -1056,7 +1056,7 @@ namespace Garnet.server
         /// <param name="input"></param>
         /// <param name="outputFooter"></param>
         /// <returns></returns>
-        GarnetStatus SortedSetRange(byte[] key, ArgSlice input, ref GarnetObjectStoreOutput outputFooter);
+        GarnetStatus SortedSetRange(byte[] key, ref ObjectInput input, ref GarnetObjectStoreOutput outputFooter);
 
         /// <summary>
         /// Returns the score of member in the sorted set at key.
@@ -1066,7 +1066,7 @@ namespace Garnet.server
         /// <param name="input"></param>
         /// <param name="outputFooter"></param>
         /// <returns></returns>
-        GarnetStatus SortedSetScore(byte[] key, ArgSlice input, ref GarnetObjectStoreOutput outputFooter);
+        GarnetStatus SortedSetScore(byte[] key, ref ObjectInput input, ref GarnetObjectStoreOutput outputFooter);
 
         /// <summary>
         /// Returns the scores associated with the specified members in the sorted set stored at key.
@@ -1076,7 +1076,7 @@ namespace Garnet.server
         /// <param name="input"></param>
         /// <param name="outputFooter"></param>
         /// <returns></returns>
-        GarnetStatus SortedSetScores(byte[] key, ArgSlice input, ref GarnetObjectStoreOutput outputFooter);
+        GarnetStatus SortedSetScores(byte[] key, ref ObjectInput input, ref GarnetObjectStoreOutput outputFooter);
 
         /// <summary>
         /// Returns the number of elements in the sorted set at key with a score between min and max.

@@ -2,6 +2,7 @@
 // Licensed under the MIT license.
 
 using System.Collections.Generic;
+using System.Text.Json.Serialization.Metadata;
 using Tsavorite.core;
 
 namespace Garnet.server
@@ -53,24 +54,24 @@ namespace Garnet.server
             => storageSession.SortedSetLength(key, out len, ref objectContext);
 
         /// <inheritdoc />
-        public GarnetStatus SortedSetLength(byte[] key, ArgSlice input, out ObjectOutputHeader output)
-            => storageSession.SortedSetLength(key, input, out output, ref objectContext);
+        public GarnetStatus SortedSetLength(byte[] key, ref ObjectInput input, out ObjectOutputHeader output)
+            => storageSession.SortedSetLength(key, ref input, out output, ref objectContext);
 
         /// <inheritdoc />
-        public GarnetStatus SortedSetRange(byte[] key, ArgSlice input, ref GarnetObjectStoreOutput outputFooter)
-            => storageSession.SortedSetRange(key, input, ref outputFooter, ref objectContext);
+        public GarnetStatus SortedSetRange(byte[] key, ref ObjectInput input, ref GarnetObjectStoreOutput outputFooter)
+            => storageSession.SortedSetRange(key, ref input, ref outputFooter, ref objectContext);
 
         /// <inheritdoc />
-        public GarnetStatus SortedSetScore(byte[] key, ArgSlice input, ref GarnetObjectStoreOutput outputFooter)
-            => storageSession.SortedSetScore(key, input, ref outputFooter, ref objectContext);
+        public GarnetStatus SortedSetScore(byte[] key, ref ObjectInput input, ref GarnetObjectStoreOutput outputFooter)
+            => storageSession.SortedSetScore(key, ref input, ref outputFooter, ref objectContext);
 
         /// <inheritdoc />
-        public GarnetStatus SortedSetScores(byte[] key, ArgSlice input, ref GarnetObjectStoreOutput outputFooter)
-            => storageSession.SortedSetScores(key, input, ref outputFooter, ref objectContext);
+        public GarnetStatus SortedSetScores(byte[] key, ref ObjectInput input, ref GarnetObjectStoreOutput outputFooter)
+            => storageSession.SortedSetScores(key, ref input, ref outputFooter, ref objectContext);
 
         /// <inheritdoc />
-        public GarnetStatus SortedSetPop(byte[] key, ArgSlice input, ref GarnetObjectStoreOutput outputFooter)
-            => storageSession.SortedSetPop(key, input, ref outputFooter, ref objectContext);
+        public GarnetStatus SortedSetPop(byte[] key, ref ObjectInput input, ref GarnetObjectStoreOutput outputFooter)
+            => storageSession.SortedSetPop(key, ref input, ref outputFooter, ref objectContext);
 
         /// <inheritdoc />
         public GarnetStatus SortedSetPop(ArgSlice key, out (ArgSlice score, ArgSlice member)[] pairs, int count = 1, bool lowScoresFirst = true)

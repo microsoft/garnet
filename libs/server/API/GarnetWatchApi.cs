@@ -87,10 +87,10 @@ namespace Garnet.server
         }
 
         /// <inheritdoc />
-        public GarnetStatus SortedSetLength(byte[] key, ArgSlice input, out ObjectOutputHeader output)
+        public GarnetStatus SortedSetLength(byte[] key, ref ObjectInput input, out ObjectOutputHeader output)
         {
             garnetApi.WATCH(key, StoreType.Object);
-            return garnetApi.SortedSetLength(key, input, out output);
+            return garnetApi.SortedSetLength(key, ref input, out output);
         }
 
         /// <inheritdoc />
@@ -115,24 +115,24 @@ namespace Garnet.server
         }
 
         /// <inheritdoc />
-        public GarnetStatus SortedSetRange(byte[] key, ArgSlice input, ref GarnetObjectStoreOutput outputFooter)
+        public GarnetStatus SortedSetRange(byte[] key, ref ObjectInput input, ref GarnetObjectStoreOutput outputFooter)
         {
             garnetApi.WATCH(key, StoreType.Object);
-            return garnetApi.SortedSetRange(key, input, ref outputFooter);
+            return garnetApi.SortedSetRange(key, ref input, ref outputFooter);
         }
 
         /// <inheritdoc />
-        public GarnetStatus SortedSetScore(byte[] key, ArgSlice input, ref GarnetObjectStoreOutput outputFooter)
+        public GarnetStatus SortedSetScore(byte[] key, ref ObjectInput input, ref GarnetObjectStoreOutput outputFooter)
         {
             garnetApi.WATCH(key, StoreType.Object);
-            return garnetApi.SortedSetScore(key, input, ref outputFooter);
+            return garnetApi.SortedSetScore(key, ref input, ref outputFooter);
         }
 
         /// <inheritdoc />
-        public GarnetStatus SortedSetScores(byte[] key, ArgSlice input, ref GarnetObjectStoreOutput outputFooter)
+        public GarnetStatus SortedSetScores(byte[] key, ref ObjectInput input, ref GarnetObjectStoreOutput outputFooter)
         {
             garnetApi.WATCH(key, StoreType.Object);
-            return garnetApi.SortedSetScores(key, input, ref outputFooter);
+            return garnetApi.SortedSetScores(key, ref input, ref outputFooter);
         }
 
         /// <inheritdoc />
