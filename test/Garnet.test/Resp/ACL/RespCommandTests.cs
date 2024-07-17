@@ -1,4 +1,4 @@
-﻿// Copyright (c) Microsoft Corporation.
+// Copyright (c) Microsoft Corporation.
 // Licensed under the MIT license.
 
 using System;
@@ -3577,10 +3577,10 @@ namespace Garnet.test.Resp.ACL
         {
             await CheckCommandsAsync(
                 "LSET",
-                [DoLMoveAsync]
+                [DoLSetAsync]
             );
 
-            static async Task DoLMoveAsync(GarnetClient client)
+            static async Task DoLSetAsync(GarnetClient client)
             {
                 try
                 {
