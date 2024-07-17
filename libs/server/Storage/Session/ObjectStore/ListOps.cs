@@ -159,28 +159,26 @@ namespace Garnet.server
         /// <param name="key"></param>
         /// <param name="elements"></param>
         /// <returns>The count elements popped from the list</returns>
-        public unsafe GarnetStatus ListManyPop<TContext, TObjectContext>(ArgSlice[] keys, OperationDirection direction, int count, ref TContext context, ref TObjectContext objectContext, out ArgSlice key, out ArgSlice[] elements)
-            where TContext : ITsavoriteContext<SpanByte, SpanByte, SpanByte, SpanByteAndMemory, long, MainStoreFunctions>
+        public unsafe GarnetStatus ListPopMultiple<TObjectContext>(ArgSlice[] keys, OperationDirection direction, int count, ref TObjectContext objectContext, out ArgSlice key, out ArgSlice[] elements)
             where TObjectContext : ITsavoriteContext<byte[], IGarnetObject, SpanByte, GarnetObjectStoreOutput, long, ObjectStoreFunctions>
         {
-            foreach (var k in keys )
+            foreach (var k in keys)
             {
-                if (EXISTS(k, StoreType.All, ref context, ref objectContext) != GarnetStatus.OK) continue;
-
-                key = k;
-
                 GarnetStatus statusOp;
 
                 if (direction == OperationDirection.Left)
                 {
-                    statusOp = ListPop(key, count, ListOperation.LPOP, ref objectContext, out elements);
-                } else
+                    statusOp = ListPop(k, count, ListOperation.LPOP, ref objectContext, out elements);
+                }
+                else
                 {
-                    statusOp = ListPop(key, count, ListOperation.RPOP, ref objectContext, out elements);
+                    statusOp = ListPop(k, count, ListOperation.RPOP, ref objectContext, out elements);
                 }
 
-                return statusOp;
+                if (statusOp == GarnetStatus.NOTFOUND) continue;
 
+                key = k;
+                return statusOp;
             }
 
             key = default;

@@ -191,7 +191,7 @@ namespace Garnet.server
         /// <param name="ptr"></param>
         /// <param name="storageApi"></param>
         /// <returns></returns>
-        private unsafe bool ListManyPop<TGarnetApi>(int count, byte* ptr, ref TGarnetApi storageApi)
+        private unsafe bool ListPopMultiple<TGarnetApi>(int count, byte* ptr, ref TGarnetApi storageApi)
                             where TGarnetApi : IGarnetApi
         {
             if (count < 3)
@@ -199,11 +199,14 @@ namespace Garnet.server
                 return AbortWithWrongNumberOfArguments("LMPOP", count);
             }
 
-            int numKeys = 1;
-
             // Read count of keys
-            if (!RespReadUtils.ReadIntWithLengthHeader(out numKeys, ref ptr, recvBufferPtr + bytesRead))
+            if (!RespReadUtils.ReadIntWithLengthHeader(out var numKeys, ref ptr, recvBufferPtr + bytesRead))
                 return false;
+
+            if (count != numKeys + 2 && count != numKeys + 4)
+            {
+                return AbortWithErrorMessage(count, CmdStrings.RESP_ERR_GENERIC_SYNTAX_ERROR);
+            }
 
             // Get the keys for Lists
             var keys = new ArgSlice[numKeys];
@@ -215,7 +218,7 @@ namespace Garnet.server
                     return false;
             }
 
-            if (NetworkMultiKeySlotVerify(readOnly: false, firstKey: 0, lastKey: -2))
+            if (NetworkMultiKeySlotVerify(readOnly: false, firstKey: 1, lastKey: numKeys + 1))
                 return true;
 
             ArgSlice dir = default;
@@ -225,17 +228,25 @@ namespace Garnet.server
 
             var popDirection = GetOperationDirection(dir);
 
+            if (popDirection == OperationDirection.Unknown)
+            {
+                return AbortWithErrorMessage(count, CmdStrings.RESP_ERR_GENERIC_SYNTAX_ERROR);
+            }
+
             int popCount = 1;
 
-            ArgSlice countArg = default;
-
-            if (!RespReadUtils.ReadPtrWithLengthHeader(ref countArg.ptr, ref countArg.length, ref ptr, recvBufferPtr + bytesRead))
-                return false;
-
-            var hasCount = countArg.ReadOnlySpan.SequenceEqual("COUNT"u8);
-
-            if (hasCount)
+            if (count == numKeys + 4)
             {
+                ArgSlice countArg = default;
+
+                if (!RespReadUtils.ReadPtrWithLengthHeader(ref countArg.ptr, ref countArg.length, ref ptr, recvBufferPtr + bytesRead))
+                    return false;
+
+                if (!countArg.ReadOnlySpan.SequenceEqual("COUNT"u8))
+                {
+                    return AbortWithErrorMessage(count, CmdStrings.RESP_ERR_GENERIC_SYNTAX_ERROR);
+                }
+
                 // Read count
                 if (!RespReadUtils.ReadIntWithLengthHeader(out popCount, ref ptr, recvBufferPtr + bytesRead)) return false;
             }
