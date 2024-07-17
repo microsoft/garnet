@@ -89,6 +89,7 @@ namespace Garnet.server
                 RespCommand.LINSERT => ListObjectKeys((byte)ListOperation.LINSERT),
                 RespCommand.LLEN => ListObjectKeys((byte)ListOperation.LLEN),
                 RespCommand.LMOVE => ListObjectKeys((byte)ListOperation.LMOVE),
+                RespCommand.LMPOP => LMPOPKeys(inputCount, true, LockType.Exclusive),
                 RespCommand.LPOP => ListObjectKeys((byte)ListOperation.LPOP),
                 RespCommand.LPUSH => ListObjectKeys((byte)ListOperation.LPUSH),
                 RespCommand.LPUSHX => ListObjectKeys((byte)ListOperation.LPUSHX),
@@ -294,6 +295,26 @@ namespace Garnet.server
                 SaveKeyArgSlice(key);
             }
             return inputCount;
+        }
+
+        /// <summary>
+        /// Returns a list of keys for LMPOP command
+        /// </summary>
+        private int LMPOPKeys(int inputCount, bool isObject, LockType type)
+        {
+            var numKeysArg = respSession.GetCommandAsArgSlice(out bool success);
+            if (!success) return -2;
+
+            var numKeys = Convert.ToInt32(numKeysArg.ToString());
+
+            for (int i = 0; i < numKeys; i++)
+            {
+                var key = respSession.GetCommandAsArgSlice(out success);
+                if (!success) return -2;
+                SaveKeyEntryToLock(key, isObject, type);
+                SaveKeyArgSlice(key);
+            }
+            return numKeys;
         }
 
         /// <summary>
