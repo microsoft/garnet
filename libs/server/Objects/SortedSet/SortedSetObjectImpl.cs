@@ -335,6 +335,7 @@ namespace Garnet.server
         {
             //ZRANGE key min max [BYSCORE|BYLEX] [REV] [LIMIT offset count] [WITHSCORES]
             //ZRANGEBYSCORE key min max [WITHSCORES] [LIMIT offset count]
+            //ZREVRANGEBYSCORE key max min [WITHSCORES] [LIMIT offset count]
             var count = input.count;
             var respProtocolVersion = input.done;
 
@@ -366,6 +367,11 @@ namespace Garnet.server
                 ZRangeOptions options = new();
                 if (input.header.SortedSetOp == SortedSetOperation.ZRANGEBYSCORE) options.ByScore = true;
                 if (input.header.SortedSetOp == SortedSetOperation.ZREVRANGE) options.Reverse = true;
+                if (input.header.SortedSetOp == SortedSetOperation.ZREVRANGEBYSCORE)
+                {
+                    options.Reverse = true;
+                    options.ByScore = true;
+                }
 
                 if (count > 2)
                 {
@@ -776,7 +782,6 @@ namespace Garnet.server
         /// in ascending or descending order
         /// </summary>
         /// <param name="input"></param>
-        /// <param name="length"></param>
         /// <param name="output"></param>
         /// <param name="ascending"></param>
         private void GetRank(ref ObjectInput input, ref SpanByteAndMemory output, bool ascending = true)

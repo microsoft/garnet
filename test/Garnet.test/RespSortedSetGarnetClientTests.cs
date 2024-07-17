@@ -78,7 +78,6 @@ namespace Garnet.test
 
             await db.ExecuteForMemoryResultAsync("ZADD", parameters);
 
-            /*
             Memory<byte> ZCARD = Encoding.ASCII.GetBytes("$5\r\nZCARD\r\n");
 
             // 10 entries are added
@@ -88,7 +87,6 @@ namespace Garnet.test
 
             // disposing MR
             result.Dispose();
-            */
         }
 
         [Test]
@@ -435,11 +433,9 @@ namespace Garnet.test
             var removed = await db.SortedSetRemoveAsync("leaderboard", pairs);
             Assert.IsTrue(removed == 10);
 
-            /*
             //length should be 0
             var len = await db.SortedSetLengthAsync("leaderboard");
             Assert.IsTrue(len == 0);
-            */
         }
 
         [Test]

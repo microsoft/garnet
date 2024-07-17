@@ -41,7 +41,6 @@ namespace Garnet.server
         /// Reads and parses scan parameters from RESP format
         /// </summary>
         /// <param name="input"></param>
-        /// <param name="length"></param>
         /// <param name="output"></param>
         /// <param name="cursorInput"></param>
         /// <param name="pattern"></param>

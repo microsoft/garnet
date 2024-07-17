@@ -5167,6 +5167,39 @@ namespace Garnet.test.Resp.ACL
         }
 
         [Test]
+        public async Task ZRevRangeByScoreACLsAsync()
+        {
+            await CheckCommandsAsync(
+                "ZREVRANGEBYSCORE",
+                [DoZRevRangeByScoreAsync, DoZRevRangeByScoreWithScoresAsync, DoZRevRangeByScoreLimitAsync, DoZRevRangeByScoreWithScoresLimitAsync]
+            );
+
+            static async Task DoZRevRangeByScoreAsync(GarnetClient client)
+            {
+                string[] val = await client.ExecuteForStringArrayResultAsync("ZREVRANGEBYSCORE", ["key", "10", "20"]);
+                Assert.AreEqual(0, val.Length);
+            }
+
+            static async Task DoZRevRangeByScoreWithScoresAsync(GarnetClient client)
+            {
+                string[] val = await client.ExecuteForStringArrayResultAsync("ZREVRANGEBYSCORE", ["key", "10", "20", "WITHSCORES"]);
+                Assert.AreEqual(0, val.Length);
+            }
+
+            static async Task DoZRevRangeByScoreLimitAsync(GarnetClient client)
+            {
+                string[] val = await client.ExecuteForStringArrayResultAsync("ZREVRANGEBYSCORE", ["key", "10", "20", "LIMIT", "2", "3"]);
+                Assert.AreEqual(0, val.Length);
+            }
+
+            static async Task DoZRevRangeByScoreWithScoresLimitAsync(GarnetClient client)
+            {
+                string[] val = await client.ExecuteForStringArrayResultAsync("ZREVRANGEBYSCORE", ["key", "10", "20", "WITHSCORES", "LIMIT", "2", "3"]);
+                Assert.AreEqual(0, val.Length);
+            }
+        }
+
+        [Test]
         public async Task ZRevRankACLsAsync()
         {
             await CheckCommandsAsync(
