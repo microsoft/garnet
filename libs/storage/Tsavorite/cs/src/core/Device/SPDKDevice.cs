@@ -1,6 +1,5 @@
 ﻿using System;
 using System.Collections.Concurrent;
-using System.Collections.ObjectModel;
 using System.Diagnostics;
 using System.IO;
 using System.Reflection;
@@ -10,95 +9,13 @@ using Microsoft.Extensions.Logging;
 
 namespace Tsavorite.core
 {
+
     public class SPDKDevice : StorageDeviceBase
     {
-        private const int nsid = 1;
-        private const uint sector_size = 4096;
-        readonly ILogger logger;
-
-        private int num_pending = 0;
-
-        private long elapsed_ticks = 0;
-        private uint io_num = 0;
-        private ulong io_size = 0;
-        private long nanosec_per_tick =
-                       (1000L * 1000L * 1000L) / Stopwatch.Frequency;
-
+        #region native_lib
         private const string spdk_library_name = "spdk_device";
         private const string spdk_library_path =
                                "runtimes/linux-x64/native/libspdk_device.so";
-        public delegate void AsyncIOCallback(IntPtr context, int result,
-                                             ulong bytesTransferred);
-        private ConcurrentQueue<IntPtr> spdk_device_queue =
-                                          new ConcurrentQueue<IntPtr>();
-        private AsyncIOCallback _callback_delegate;
-
-        class ManagedCallback
-        {
-            public readonly IntPtr spdk_device;
-            private DeviceIOCompletionCallback callback;
-            private object context;
-            public readonly Stopwatch stop_watch;
-
-            public ManagedCallback(IntPtr spdk_device,
-                                   DeviceIOCompletionCallback callback,
-                                   object context)
-            {
-                this.spdk_device = spdk_device;
-                this.callback = callback;
-                this.context = context;
-                this.stop_watch = new Stopwatch();
-                this.stop_watch.Start();
-            }
-
-            public void call(uint error_code, uint num_bytes)
-            {
-                this.callback(error_code, num_bytes, context);
-            }
-        }
-
-        void _callback(IntPtr context, int error_code, ulong num_bytes)
-        {
-            Interlocked.Decrement(ref this.num_pending);
-            if (error_code < 0)
-            {
-                error_code = -error_code;
-            }
-            GCHandle handle = GCHandle.FromIntPtr(context);
-            ManagedCallback managed_callback =
-                                (handle.Target as ManagedCallback);
-            managed_callback.stop_watch.Stop();
-            Interlocked.Add(ref this.io_num, 1);
-            Interlocked.Add(
-                ref this.elapsed_ticks,
-                managed_callback.stop_watch.ElapsedTicks
-            );
-            Interlocked.Add(ref this.io_size, num_bytes);
-
-            this.spdk_device_queue.Enqueue(managed_callback.spdk_device);
-            managed_callback.call((uint)error_code, (uint)num_bytes);
-            handle.Free();
-        }
-
-        public SPDKDevice(string filename, uint sectorSize, long capacity)
-                 : base(filename, sectorSize, capacity)
-        {
-            NativeLibrary.SetDllImportResolver(typeof(SPDKDevice).Assembly,
-                                               import_resolver);
-        }
-
-        static IntPtr import_resolver(string library_name, Assembly assembley,
-                                      DllImportSearchPath? search_path)
-        {
-            if (library_name == spdk_library_name)
-            {
-                return NativeLibrary.Load(spdk_library_path);
-            }
-            else
-            {
-                return IntPtr.Zero;
-            }
-        }
 
         [DllImport(spdk_library_name, EntryPoint = "spdk_device_init",
                    CallingConvention = CallingConvention.Cdecl)]
@@ -130,26 +47,108 @@ namespace Tsavorite.core
                    CallingConvention = CallingConvention.Cdecl)]
         static extern int spdk_device_poll(uint timeout);
 
+        static IntPtr import_resolver(string library_name, Assembly assembley,
+                                      DllImportSearchPath? search_path)
+        {
+            if (library_name == spdk_library_name)
+            {
+                return NativeLibrary.Load(spdk_library_path);
+            }
+            else
+            {
+                return IntPtr.Zero;
+            }
+        }
+
+        static SPDKDevice()
+        {
+            NativeLibrary.SetDllImportResolver(typeof(SPDKDevice).Assembly,
+                                               import_resolver);
+            spdk_device_init();
+            begin_poller();
+        }
+        #endregion
+
+
+        private const int nsid = 1;
+        private const uint sector_size = 4096;
+        readonly ILogger logger;
+
+        private int num_pending = 0;
+
+        private ConcurrentQueue<SPDKIOContext> context_queue =
+                                           new ConcurrentQueue<SPDKIOContext>();
+
+        private delegate void AsyncIOCallback(IntPtr context, int result,
+                                              ulong bytesTransferred);
+        private AsyncIOCallback _callback_delegate;
+
+        class SPDKIOContext
+        {
+            public readonly IntPtr native_spdk_device;
+            private readonly GCHandle handle;
+            public IntPtr spdk_context_ptr { get; private set; }
+            public DeviceIOCompletionCallback tsavorite_callback
+            {
+                get; private set;
+            }
+            public object tsavorite_callback_context { get; private set; }
+
+            public SPDKIOContext(IntPtr native_spdk_device)
+            {
+                this.native_spdk_device = native_spdk_device;
+                this.handle = GCHandle.Alloc(this, GCHandleType.Normal);
+                this.spdk_context_ptr = GCHandle.ToIntPtr(this.handle);
+            }
+
+            public void init_io(DeviceIOCompletionCallback tsavorite_callback,
+                                object tsavorite_callback_context)
+            {
+                this.tsavorite_callback = tsavorite_callback;
+                this.tsavorite_callback_context = tsavorite_callback_context;
+            }
+
+            public void finish_io()
+            {
+                this.tsavorite_callback = null;
+                this.tsavorite_callback_context = null;
+            }
+        }
+
+        void _callback(IntPtr context, int error_code, ulong num_bytes)
+        {
+            if (error_code < 0)
+            {
+                error_code = -error_code;
+            }
+            GCHandle handle = GCHandle.FromIntPtr(context);
+            SPDKIOContext io_context = handle.Target as SPDKIOContext;
+            io_context.tsavorite_callback(
+                (uint)error_code,
+                (uint)num_bytes,
+                io_context.tsavorite_callback_context
+            );
+            Interlocked.Decrement(ref this.num_pending);
+            io_context.finish_io();
+            this.context_queue.Enqueue(io_context);
+        }
+
         public SPDKDevice(string filename,
                           bool delete_on_close = true,
                           bool disable_file_buffering = true,
                           long capacity = Devices.CAPACITY_UNSPECIFIED,
                           ILogger logger = null)
-                : this(filename, sector_size, capacity)
+                : base(filename, sector_size, capacity)
         {
             this._callback_delegate = this._callback;
-            this.ThrottleLimit = 1024;
 
-            spdk_device_init();
+            this.ThrottleLimit = 1024;
 
             for (int i = 0; i < 2; i++)
             {
-                this.spdk_device_queue.Enqueue(
-                    spdk_device_create(SPDKDevice.nsid)
-                );
+                IntPtr spdk_device = spdk_device_create(SPDKDevice.nsid);
+                this.context_queue.Enqueue(new SPDKIOContext(spdk_device));
             }
-
-            begin_poller();
         }
 
         public override bool Throttle() => this.num_pending > ThrottleLimit;
@@ -158,6 +157,7 @@ namespace Tsavorite.core
         {
             return ((ulong)segment_id << this.segmentSizeBits) | offset;
         }
+
         public override void ReadAsync(int segment_id, ulong source_address,
                                        IntPtr destination_address,
                                        uint read_length,
@@ -171,22 +171,19 @@ namespace Tsavorite.core
 
             try
             {
-                IntPtr spdk_device;
-                while (!this.spdk_device_queue.TryDequeue(out spdk_device))
+                SPDKIOContext spdk_io_context;
+                while (!this.context_queue.TryDequeue(out spdk_io_context))
                 {
                     Debug.WriteLine("Can't get spdk_device when reading");
                 }
-                GCHandle handle = GCHandle.Alloc(new ManagedCallback(spdk_device,
-                                                                     callback,
-                                                                     context),
-                                                GCHandleType.Normal);
+                spdk_io_context.init_io(callback, context);
                 int _result = spdk_device_read_async(
-                    spdk_device,
+                    spdk_io_context.native_spdk_device,
                     this.get_address(segment_id, source_address),
                     destination_address,
                     read_length,
                     this._callback_delegate,
-                    GCHandle.ToIntPtr(handle)
+                    spdk_io_context.spdk_context_ptr
                 );
                 if (_result != 0)
                 {
@@ -219,22 +216,19 @@ namespace Tsavorite.core
 
             try
             {
-                IntPtr spdk_device;
-                while (!this.spdk_device_queue.TryDequeue(out spdk_device))
+                SPDKIOContext spdk_io_context;
+                while (!this.context_queue.TryDequeue(out spdk_io_context))
                 {
-                    Debug.WriteLine("Can't get spdk_device when writing");
+                    Debug.WriteLine("Can't get spdk_device when reading");
                 }
-                GCHandle handle = GCHandle.Alloc(
-                    new ManagedCallback(spdk_device, callback, context),
-                    GCHandleType.Normal
-                );
+                spdk_io_context.init_io(callback, context);
                 int _result = spdk_device_write_async(
-                    spdk_device,
+                    spdk_io_context.native_spdk_device,
                     source_address,
                     this.get_address(segment_id, destination_address),
                     write_length,
                     this._callback_delegate,
-                    GCHandle.ToIntPtr(handle)
+                    spdk_io_context.spdk_context_ptr
                 );
                 if (_result != 0)
                 {

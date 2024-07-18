@@ -169,13 +169,14 @@ struct spdk_device *spdk_device_create(int nsid)
     }
 
     pthread_mutex_lock(&device_init_lock);
-    device = &g_spdk_device_list[device_num++];
+    device = &g_spdk_device_list[device_num];
     device->ns_entry = ns_entry;
     device->qpair = spdk_nvme_ctrlr_alloc_io_qpair(ns_entry->ctrlr, NULL, 0);
     if (device->qpair == NULL) {
         fprintf(stderr, "ERROR: spdk_nvme_ctrlr_alloc_io_qpair() failed\n");
         device = NULL;
-        device_num--;
+    } else {
+        device_num++;
     }
     pthread_mutex_unlock(&device_init_lock);
 
@@ -361,6 +362,10 @@ int32_t spdk_device_poll(uint32_t timeout)
     // start = clock();
 
     while (true) {
+        // printf("device_num: %d\n", device_num);
+        if (device_num == 0) {
+            continue;
+        }
         device = &g_spdk_device_list[qp_pointer];
         int complete_io_num =
             spdk_nvme_qpair_process_completions(device->qpair, IO_BATCH_NUM);

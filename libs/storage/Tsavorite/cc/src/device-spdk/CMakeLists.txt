@@ -29,9 +29,10 @@ if (UNIX)
       COMMAND cp "$<TARGET_FILE:spdk_device>" "${CMAKE_CURRENT_SOURCE_DIR}/../../../cs/src/core/Device/runtimes/linux-x64/native/"
     )
 
+    find_package(Threads REQUIRED)
     add_executable(spdk_device_test_main test_main.c)
     add_dependencies(spdk_device_test_main spdk_device)
     set_target_properties(spdk_device_test_main PROPERTIES LINKER_LANGUAGE C)
     set_property(TARGET spdk_device_test_main PROPERTY C_STANDARD 11)
-    target_link_libraries(spdk_device_test_main spdk_device)
+    target_link_libraries(spdk_device_test_main spdk_device Threads::Threads)
 endif()

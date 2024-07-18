@@ -10,9 +10,12 @@ char g_data_read[SIZE_4K];
 
 int32_t g_io_error = 0;
 
+sem_t mutex;
+
 void io_callback(void *context, int32_t result, uint32_t bytes_transferred)
 {
     g_io_error = result;
+    sem_post(&mutex);
 }
 
 int main()
@@ -20,7 +23,10 @@ int main()
     int rc = 0;
     struct spdk_device *device = NULL;
 
+    sem_init(&mutex, 0, 0);
+
     rc = spdk_device_init();
+    begin_poller();
     if (rc != 0) {
         fprintf(stderr, "spdk_device_init failed with: %d \n", rc);
         goto exit;
@@ -40,12 +46,7 @@ int main()
         fprintf(stderr, "I/O write error %d.\n", rc);
         goto exit;
     }
-    while (true) {
-        int io_complete_num = spdk_device_poll(5000);
-        if (io_complete_num >= 1) {
-            break;
-        }
-    }
+    sem_wait(&mutex);
     if (g_io_error != 0) {
         fprintf(stderr, "I/O write error %d.\n", g_io_error);
         rc = g_io_error;
@@ -58,12 +59,7 @@ int main()
         fprintf(stderr, "I/O read error %d.\n", rc);
         goto exit;
     }
-    while (true) {
-        int io_complete_num = spdk_device_poll(5000);
-        if (io_complete_num >= 1) {
-            break;
-        }
-    }
+    sem_wait(&mutex);
     if (g_io_error != 0) {
         fprintf(stderr, "I/O read error %d.\n", g_io_error);
         rc = g_io_error;

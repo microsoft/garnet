@@ -22,6 +22,7 @@ struct spdk_ns_entry {
 struct spdk_device {
     struct spdk_ns_entry *ns_entry;
     struct spdk_nvme_qpair *qpair;
+    void *buffer;
 };
 
 EXPORTED_SYMBOL int32_t spdk_device_init();
