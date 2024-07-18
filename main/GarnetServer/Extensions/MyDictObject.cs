@@ -2,9 +2,9 @@
 // Licensed under the MIT license.
 
 using System;
-using System.Buffers;
 using System.Collections.Generic;
 using System.Diagnostics;
+using System.Diagnostics.CodeAnalysis;
 using System.IO;
 using Garnet.server;
 using Tsavorite.core;
@@ -64,38 +64,6 @@ namespace Garnet
                 writer.Write(kvp.Value.Length);
                 writer.Write(kvp.Value);
             }
-        }
-
-        public override void Operate(byte subCommand, ReadOnlySpan<byte> input, ref (IMemoryOwner<byte>, int) output, out bool removeKey)
-        {
-            switch (subCommand)
-            {
-                case 0: // MYDICTSET
-                    {
-                        int offset = 0;
-                        var key = CustomCommandUtils.GetNextArg(input, ref offset).ToArray();
-                        var value = CustomCommandUtils.GetNextArg(input, ref offset).ToArray();
-
-                        dict[key] = value;
-                        UpdateSize(key, value);
-                        CustomCommandUtils.WriteSimpleString(ref output, "OK");
-                        break;
-                    }
-                case 1: // MYDICTGET
-                    {
-                        var key = CustomCommandUtils.GetFirstArg(input);
-                        if (dict.TryGetValue(key.ToArray(), out var result))
-                            CustomCommandUtils.WriteBulkString(ref output, result);
-                        else
-                            CustomCommandUtils.WriteNullBulkString(ref output);
-                        break;
-                    }
-                default:
-                    CustomCommandUtils.WriteError(ref output, "Unexpected command");
-                    break;
-            }
-
-            removeKey = dict.Count == 0;
         }
 
         public override void Dispose() { }
@@ -164,15 +132,16 @@ namespace Garnet
                 cursor = 0;
         }
 
-        public bool TryAdd(byte[] key, byte[] value)
+        public bool Set(byte[] key, byte[] value)
         {
-            if (dict.TryAdd(key, value))
+            if (dict.TryGetValue(key, out var oldValue))
             {
-                UpdateSize(key, value);
-                return true;
+                UpdateSize(key, oldValue, false);
             }
 
-            return false;
+            dict[key] = value;
+            UpdateSize(key, value);
+            return true;
         }
 
         private void UpdateSize(byte[] key, byte[] value, bool add = true)
@@ -183,7 +152,7 @@ namespace Garnet
             Debug.Assert(this.Size >= MemoryUtils.DictionaryOverhead);
         }
 
-        public bool TryGetValue(byte[] key, out byte[] value)
+        public bool TryGetValue(byte[] key, [MaybeNullWhen(false)] out byte[] value)
         {
             return dict.TryGetValue(key, out value);
         }

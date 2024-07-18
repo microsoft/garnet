@@ -138,7 +138,7 @@ namespace Garnet.server
 
                         (IMemoryOwner<byte> Memory, int Length) outp = (output.spanByteAndMemory.Memory, 0);
                         var customObjectCommand = GetCustomObjectCommand(ref input, header->type);
-                        var result = customObjectCommand.InPlaceUpdater(key, input.AsReadOnlySpan()[RespInputHeader.Size..], value, ref outp, ref rmwInfo);
+                        var result = customObjectCommand.Updater(key, input.AsReadOnlySpan()[RespInputHeader.Size..], value, ref outp, ref rmwInfo);
                         output.spanByteAndMemory.Memory = outp.Memory;
                         output.spanByteAndMemory.Length = outp.Length;
                         return result;
@@ -211,7 +211,7 @@ namespace Garnet.server
 
                         (IMemoryOwner<byte> Memory, int Length) outp = (output.spanByteAndMemory.Memory, 0);
                         var customObjectCommand = GetCustomObjectCommand(ref input, header->type);
-                        var result = customObjectCommand.CopyUpdater(key, input.AsReadOnlySpan()[RespInputHeader.Size..], oldValue, value, ref outp, ref rmwInfo);
+                        var result = customObjectCommand.Updater(key, input.AsReadOnlySpan()[RespInputHeader.Size..], value, ref outp, ref rmwInfo);
                         output.spanByteAndMemory.Memory = outp.Memory;
                         output.spanByteAndMemory.Length = outp.Length;
                         return result;

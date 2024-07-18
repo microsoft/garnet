@@ -1,8 +1,5 @@
 ﻿// Copyright (c) Microsoft Corporation.
 // Licensed under the MIT license.
-
-using System;
-using System.Buffers;
 using System.IO;
 using Tsavorite.core;
 
@@ -71,9 +68,6 @@ namespace Garnet.server
         public abstract override void Dispose();
 
         /// <inheritdoc />
-        public abstract void Operate(byte subCommand, ReadOnlySpan<byte> input, ref (IMemoryOwner<byte>, int) output, out bool removeKey);
-
-        /// <inheritdoc />
         public sealed override unsafe bool Operate(ref SpanByte input, ref SpanByteAndMemory output, out long sizeChange, out bool removeKey)
         {
             var header = (RespInputHeader*)input.ToPointer();
@@ -98,10 +92,6 @@ namespace Garnet.server
                         output.Length = 0;
                         return true;
                     }
-                    (IMemoryOwner<byte> Memory, int Length) outp = (output.Memory, 0);
-                    Operate(header->SubId, input.AsReadOnlySpan().Slice(RespInputHeader.Size), ref outp, out removeKey);
-                    output.Memory = outp.Memory;
-                    output.Length = outp.Length;
                     break;
             }
 

@@ -1032,7 +1032,7 @@ namespace Garnet.server
                 else
                 {
                     // Check optional parameters for previous sub-command
-                    if (optionalParamsRead == 0 && args is RegisterCmdArgs cmdArgs)
+                    if (optionalParamsRead < 2 && args is RegisterCmdArgs cmdArgs)
                     {
                         if (NumUtils.TryBytesToLong(tokenSpan, out var expTicks))
                         {
@@ -1042,7 +1042,6 @@ namespace Garnet.server
                         }
                         else // Treat the argument as custom object command name
                         {
-
                             cmdArgs.ObjectCommandName = Encoding.ASCII.GetString(tokenSpan);
                             optionalParamsRead++;
                             continue;

@@ -92,6 +92,9 @@ namespace BDN.benchmark.Resp
             myDictSetGetRequestBufferPointer = (byte*)Unsafe.AsPointer(ref myDictSetGetRequestBuffer[0]);
             for (int i = 0; i < batchSize; i++)
                 MYDICTSETGET.CopyTo(new Span<byte>(myDictSetGetRequestBuffer).Slice(i * MYDICTSETGET.Length));
+
+            // Pre-populate custom object
+            SlowConsumeMessage("*4\r\n$9\r\nMYDICTSET\r\n$2\r\nck\r\n$1\r\nf\r\n$1\r\nv\r\n"u8);
         }
 
         [GlobalCleanup]

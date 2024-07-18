@@ -6,6 +6,7 @@ using System.Linq;
 using System.Text;
 using System.Threading;
 using System.Threading.Tasks;
+using Garnet.server;
 using NUnit.Framework;
 using StackExchange.Redis;
 
@@ -217,6 +218,46 @@ namespace Garnet.test
                 Assert.AreEqual(ldata, returnedData);
             }
         }
+
+        [Test]
+        public void SeSaveRecoverCustomObjectTest()
+        {
+            string key = "key";
+            string field = "field1";
+            string value = "foovalue1";
+
+            // Register sample custom command on object
+            var factory = new MyDictFactory();
+            server.Register.NewCommand("MYDICTSET", 2, CommandType.ReadModifyWrite, factory, new MyDictSet());
+            server.Register.NewCommand("MYDICTGET", 1, CommandType.Read, factory, new MyDictGet());
+
+            using (var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig(allowAdmin: true)))
+            {
+                var db = redis.GetDatabase(0);
+                db.Execute("MYDICTSET", key, field, value);
+                var retValue = db.Execute("MYDICTGET", key, field);
+                Assert.AreEqual(value, (string)retValue);
+
+                // Issue and wait for DB save
+                var server = redis.GetServer($"{TestUtils.Address}:{TestUtils.Port}");
+                server.Save(SaveType.BackgroundSave);
+                while (server.LastSave().Ticks == DateTimeOffset.FromUnixTimeSeconds(0).Ticks) Thread.Sleep(10);
+            }
+
+            server.Dispose(false);
+            server = TestUtils.CreateGarnetServer(TestUtils.MethodTestDir, tryRecover: true);
+            server.Register.NewCommand("MYDICTSET", 2, CommandType.ReadModifyWrite, factory, new MyDictSet());
+            server.Register.NewCommand("MYDICTGET", 1, CommandType.Read, factory, new MyDictGet());
+            server.Start();
+
+            using (var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig(allowAdmin: true)))
+            {
+                var db = redis.GetDatabase(0);
+                var retValue = db.Execute("MYDICTGET", key, field);
+                Assert.AreEqual(value, (string)retValue);
+            }
+        }
+
         [Test]
         [TestCase(63, 15, 1)]
         [TestCase(63, 1, 1)]
