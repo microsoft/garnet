@@ -1,143 +1,84 @@
-# Default values for garnet.
+cluster:
+  enabled: false
+  initJob:
+    enabled: true
+    annotations: {}
+    backoffLimit: 6
+    ttlSecondsAfterFinished: 600
+    image:
+      registry: docker.io
+      repository: redis
+      pullPolicy: IfNotPresent
+      tag: ""
+  statefulSet:
+    replicas: 1
+  containers:
+    args: ["--cluster", "--port", "6379", "-m", "128m", "-i", "128m"]
 
-initJob:
-  # -- Init Job enabled
+standalone:
   enabled: true
-  # -- Init Job annotations
-  annotations: {}
-  # -- Init Job backoffLimit
-  backoffLimit: 6
-  # -- Init Job ttlSecondsAfterFinished
-  ttlSecondsAfterFinished: 600
-  # -- Init Job image
-  image:
-    # -- Init Job image registry
-    registry: docker.io
-    # -- Init Job image repository
-    repository: redis
-    # -- Init Job image pull policy
-    pullPolicy: IfNotPresent
-    # -- Overrides the image tag whose default is "latest".
-    tag: ""
+  statefulSet:
+    replicas: 1
+  containers:
+    args: ["--port", "6379", "-m", "128m", "-i", "128m"]
 
-
-statefulSet:
-  # -- StatefulSet annotations
-  annotations: {}
-  # -- StatefulSet replicas
-  replicas: 3
-  # -- StatefulSet revisionHistoryLimit
-  revisionHistoryLimit: 1
-  updateStrategy:
-    # -- StatefulSet updateStrategy type
-    type: RollingUpdate
-
+# Common configurations
 image:
-  # -- Image registry
   registry: ghcr.io
-  # -- Image repository
   repository: microsoft/garnet
-  # -- Image pull policy
   pullPolicy: IfNotPresent
-  # -- Overrides the image tag whose default is the chart appVersion.
   tag: ""
 
-# -- Image pull secrets
 imagePullSecrets: []
-# -- Chart name override
 nameOverride: ""
-# -- Chart full name override
 fullnameOverride: ""
 
 serviceAccount:
-  # -- Specifies whether a service account should be created
   create: false
-  # -- Annotations to add to the service account
   annotations: {}
-  # -- The name of the service account to use.
-  # If not set and create is true, a name is generated using the fullname template
   name: ""
-  # -- Creates the token object
   token: false
 
-containers:
-  # -- Containers args
-  args: ["--cluster", "--port", "6379", "-m", "128m", "-i", "128m"]
-  # -- Containers port
-  port: 6379
-  # -- Containers livenessProbe
-  livenessProbe: {}
-  # -- Containers livenessProbe
-  readinessProbe: {}
-
-# -- Init containers
 initContainers: []
 
-# -- DNS config
 dnsConfig: {}
-# dnsConfig:
-#   options:
-#   - name: ndots
-#     value: "1"
-#   - name: edns0
-
-# -- DNS policy
 dnsPolicy: ClusterFirst
 
+podAnnotations: {}
+
+podSecurityContext: {}
+
+securityContext: {}
+
+service:
+  annotations: {}
+  type: ClusterIP
+  port: 6379
+
+resources: {}
+
+extraVolumeMounts: []
+extraVolumes: []
+
+nodeSelector: {}
+tolerations: []
+affinity: {}
+
+# Default values
+statefulSet:
+  annotations: {}
+  revisionHistoryLimit: 1
+  updateStrategy:
+    type: RollingUpdate
+
+containers:
+  port: 6379
+  livenessProbe: {}
+  readinessProbe: {}
+
 persistence:
-  # -- persistence enabled
   enabled: false
 
 volumeClaimTemplates:
-  # -- Volume Claim Templates Storage Class Name
   storageClassName: local-storage
-  # -- Volume Claim Templates Requests Storage
   requestsStorage: 1Gi
-
-# -- Pod annotations
-podAnnotations: {}
-
-# -- Pod Security Context
-podSecurityContext: {}
-# fsGroup: 2000
-
-# -- Security Context
-securityContext: {}
-# capabilities:
-#   drop:
-#   - ALL
-# readOnlyRootFilesystem: true
-# runAsNonRoot: true
-# runAsUser: 1000
-
-service:
-  # -- Service annotations
-  annotations: {}
-  # -- Service type
-  type: ClusterIP
-  # -- Service port
-  port: 6379
-
-# -- Resources
-resources: {}
-# limits:
-#   cpu: 200m
-#   memory: 64Mi
-# requests:
-#   cpu: 10m
-#   memory: 16Mi
-
-# -- Extra Volume Mounts
-extraVolumeMounts: []
-
-# -- Extra Volumes
-extraVolumes: []
-
-# -- Node Selector labels
-nodeSelector: {}
-
-# -- Tolerations
-tolerations: []
-
-# -- Affinity
-affinity: {}

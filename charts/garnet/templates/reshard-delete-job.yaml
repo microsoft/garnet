@@ -8,13 +8,13 @@ metadata:
     "helm.sh/hook": pre-upgrade
     "helm.sh/hook-weight": "0"
 spec:
-  backoffLimit: {{ .Values.initJob.backoffLimit }}
-  ttlSecondsAfterFinished: {{ .Values.initJob.ttlSecondsAfterFinished }}
+  backoffLimit: {{ .Values.cluster.initJob.backoffLimit }}
+  ttlSecondsAfterFinished: {{ .Values.cluster.initJob.ttlSecondsAfterFinished }}
   template:
     spec:
       containers:
         - name: reshard
-          image: "{{ .Values.initJob.image.registry }}/{{ .Values.initJob.image.repository }}:{{ .Values.initJob.image.tag | default "latest" }}"
+          image: "{{ .Values.cluster.initJob.image.registry }}/{{ .Values.cluster.initJob.image.repository }}:{{ .Values.cluster.initJob.image.tag | default "latest" }}"
           command: ["/bin/sh", "-c"]
           args:
             - |
@@ -30,7 +30,7 @@ spec:
               }
 
               current_nodes=$(get_current_nodes)
-              desired_nodes=$(for i in $(seq 0 $(({{ .Values.statefulSet.replicas }} - 1))); do printf "%s-%d.%s-headless.%s.svc.cluster.local " "{{ include "garnet.fullname" . }}" "$i" "{{ include "garnet.fullname" . }}" "{{ .Release.Namespace }}"; done)
+              desired_nodes=$(for i in $(seq 0 $(({{ .Values.cluster.statefulSet.replicas }} - 1))); do printf "%s-%d.%s-headless.%s.svc.cluster.local " "{{ include "garnet.fullname" . }}" "$i" "{{ include "garnet.fullname" . }}" "{{ .Release.Namespace }}"; done)
               echo "Desired nodes: $desired_nodes" | tee -a $LOG_FILE
 
               nodes_to_remove=""
@@ -41,7 +41,7 @@ spec:
               done
               echo "Nodes to remove: $nodes_to_remove" | tee -a $LOG_FILE
 
-              total_nodes_to_share_to="{{ .Values.statefulSet.replicas }}"
+              total_nodes_to_share_to="{{ .Values.cluster.statefulSet.replicas }}"
 
               for node in $nodes_to_remove; do
                 node_id=$(/usr/local/bin/redis-cli -h "$node" -p "$garnet_port" CLUSTER NODES | grep myself | awk '{print $1}')
@@ -89,4 +89,3 @@ spec:
               echo "Resharding process completed." | tee -a $LOG_FILE
       restartPolicy: Never
   backoffLimit: 1
-
