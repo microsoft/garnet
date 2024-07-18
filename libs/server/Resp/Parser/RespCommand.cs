@@ -72,6 +72,7 @@ namespace Garnet.server
         ZRANGEBYSCORE,
         ZRANK,
         ZREVRANGE,
+        ZREVRANGEBYSCORE,
         ZREVRANK,
         ZSCAN,
         ZSCORE, // Note: Update OneIfRead if adding new read commands after this
@@ -1233,6 +1234,10 @@ namespace Garnet.server
                                 else if (*(ulong*)(ptr + 3) == MemoryMarshal.Read<ulong>("\r\nZREMRA"u8) && *(ulong*)(ptr + 11) == MemoryMarshal.Read<ulong>("NGEBYSCO"u8) && *(ushort*)(ptr + 19) == MemoryMarshal.Read<ushort>("RE\r\n"u8))
                                 {
                                     return RespCommand.ZREMRANGEBYSCORE;
+                                }
+                                else if (*(ulong*)(ptr + 3) == MemoryMarshal.Read<ulong>("\r\nZREVRA"u8) && *(ulong*)(ptr + 11) == MemoryMarshal.Read<ulong>("NGEBYSCO"u8) && *(ushort*)(ptr + 19) == MemoryMarshal.Read<ushort>("RE\r\n"u8))
+                                {
+                                    return RespCommand.ZREVRANGEBYSCORE;
                                 }
                                 break;
                         }

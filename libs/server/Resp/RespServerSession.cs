@@ -527,6 +527,7 @@ namespace Garnet.server
                 RespCommand.ZRANDMEMBER => SortedSetRandomMember(count, ptr, ref storageApi),
                 RespCommand.ZDIFF => SortedSetDifference(count, ptr, ref storageApi),
                 RespCommand.ZREVRANGE => SortedSetRange(cmd, count, ptr, ref storageApi),
+                RespCommand.ZREVRANGEBYSCORE => SortedSetRange(cmd, count, ptr, ref storageApi),
                 RespCommand.ZSCAN => ObjectScan(count, ptr, GarnetObjectType.SortedSet, ref storageApi),
                 //SortedSet for Geo Commands
                 RespCommand.GEOADD => GeoAdd(count, ptr, ref storageApi),
