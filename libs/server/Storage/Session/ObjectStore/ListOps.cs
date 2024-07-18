@@ -149,12 +149,10 @@ namespace Garnet.server
         /// Removes the count elements from the head(left) or tail(right) of the first non-empty list key from the list of provided key names.
         /// If the list contains less than count elements, removes and returns the number of elements in the list.
         /// </summary>
-        /// <typeparam name="TContext"></typeparam>
         /// <typeparam name="TObjectContext"></typeparam>
         /// <param name="keys"></param>
         /// <param name="direction"></param>
         /// <param name="count"></param>
-        /// <param name="context"></param>
         /// <param name="objectContext"></param>
         /// <param name="key"></param>
         /// <param name="elements"></param>
