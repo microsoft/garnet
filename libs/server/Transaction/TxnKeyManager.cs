@@ -2,6 +2,7 @@
 // Licensed under the MIT license.
 
 using System;
+using Garnet.common;
 using Tsavorite.core;
 
 namespace Garnet.server
@@ -89,7 +90,7 @@ namespace Garnet.server
                 RespCommand.LINSERT => ListObjectKeys((byte)ListOperation.LINSERT),
                 RespCommand.LLEN => ListObjectKeys((byte)ListOperation.LLEN),
                 RespCommand.LMOVE => ListObjectKeys((byte)ListOperation.LMOVE),
-                RespCommand.LMPOP => LMPOPKeys(inputCount, true, LockType.Exclusive),
+                RespCommand.LMPOP => ListKeys(true, LockType.Exclusive),
                 RespCommand.LPOP => ListObjectKeys((byte)ListOperation.LPOP),
                 RespCommand.LPUSH => ListObjectKeys((byte)ListOperation.LPUSH),
                 RespCommand.LPUSHX => ListObjectKeys((byte)ListOperation.LPUSHX),
@@ -300,12 +301,12 @@ namespace Garnet.server
         /// <summary>
         /// Returns a list of keys for LMPOP command
         /// </summary>
-        private int LMPOPKeys(int inputCount, bool isObject, LockType type)
+        private int ListKeys(bool isObject, LockType type)
         {
             var numKeysArg = respSession.GetCommandAsArgSlice(out bool success);
             if (!success) return -2;
 
-            var numKeys = Convert.ToInt32(numKeysArg.ToString());
+            if (!NumUtils.TryParse(numKeysArg.ReadOnlySpan, out int numKeys)) return -2;
 
             for (int i = 0; i < numKeys; i++)
             {
