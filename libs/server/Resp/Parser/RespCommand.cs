@@ -97,6 +97,7 @@ namespace Garnet.server
         INCRBY,
         LINSERT,
         LMOVE,
+        LMPOP,
         LPOP,
         LPUSH,
         LPUSHX,
@@ -789,6 +790,10 @@ namespace Garnet.server
                                         else if (*(ulong*)(ptr + 3) == MemoryMarshal.Read<ulong>("\nLMOVE\r\n"u8))
                                         {
                                             return RespCommand.LMOVE;
+                                        }
+                                        else if (*(ulong*)(ptr + 3) == MemoryMarshal.Read<ulong>("\nLMPOP\r\n"u8))
+                                        {
+                                            return RespCommand.LMPOP;
                                         }
                                         break;
 
