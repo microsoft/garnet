@@ -18,96 +18,66 @@ spec:
           command: ["/bin/sh", "-c"]
           args:
             - |
-              garnet_host={{ include "garnet.fullname" . }}-0.{{ include "garnet.fullname" . }}-headless.{{ .Release.Namespace }}.svc.cluster.local
-              garnet_port={{ .Values.containers.port }}
+              garnet_host="{{ include "garnet.fullname" . }}-0.{{ include "garnet.fullname" . }}-headless.{{ .Release.Namespace }}.svc.cluster.local"
+              garnet_port="{{ .Values.containers.port }}"
 
+              LOG_FILE="/tmp/reshard.log"
+
+              echo "Starting resharding process..." | tee -a $LOG_FILE
+              
               get_current_nodes() {
-                /usr/local/bin/redis-cli -h {{ include "garnet.fullname" . }}-0.{{ include "garnet.fullname" . }}-headless.{{ .Release.Namespace }}.svc.cluster.local -p {{ .Values.containers.port }} CLUSTER NODES | grep master | awk -F ',' '{print $2}' | awk '{print $1}'
+                /usr/local/bin/redis-cli -h "$garnet_host" -p "$garnet_port" CLUSTER NODES | grep master | awk -F ',' '{print $2}' | awk '{print $1}'
               }
 
-              desired_nodes=$(for i in $(seq 0 $(({{ .Values.statefulSet.replicas }} - 1))); do printf "%s-%d.%s-headless.%s.svc.cluster.local " "{{ include "garnet.fullname" $ }}" "$i" "{{ include "garnet.fullname" $ }}" "{{ .Release.Namespace }}"; done)
-              echo "Desired nodes: $desired_nodes"
-
-              # Sort nodes in reverse order
-              sorted_desired_nodes=$(echo $desired_nodes | tr ' ' '\n' | sort -r | tr '\n' ' ')
-
-              echo "Sorted desired nodes: $sorted_desired_nodes"
-
-              total_number_slots=16384
-
               current_nodes=$(get_current_nodes)
-              sorted_current_nodes=$(echo $current_nodes | tr ' ' '\n' | sort -r | tr '\n' ' ')
-              echo "Sorted current nodes: $sorted_current_nodes"
+              desired_nodes=$(for i in $(seq 0 $(({{ .Values.statefulSet.replicas }} - 1))); do printf "%s-%d.%s-headless.%s.svc.cluster.local " "{{ include "garnet.fullname" . }}" "$i" "{{ include "garnet.fullname" . }}" "{{ .Release.Namespace }}"; done)
+              echo "Desired nodes: $desired_nodes" | tee -a $LOG_FILE
 
-              for node in $sorted_current_nodes; do
-                echo "Checking connectivity to node $node"
-                if /usr/local/bin/redis-cli -h $node -p {{ .Values.containers.port }} ping | grep -q "PONG"; then
-                  echo "Node $node is reachable, proceeding with resharding."
-
-                  if ! echo $sorted_desired_nodes | grep -q $node; then
-                    echo "Resharding data from node $node"
-                    node_id=$(/usr/local/bin/redis-cli -h $node -p {{ .Values.containers.port }} CLUSTER NODES | grep myself | awk '{print $1}')
-                    current_nodes=$(get_current_nodes)
-                    sorted_current_nodes=$(echo $current_nodes | tr ' ' '\n' | sort -r | tr '\n' ' ')
-                    
-                    total_nodes=$(echo $sorted_current_nodes | tr ' ' '\n' | wc -l)
-                    slots_per_node=$((total_number_slots / total_nodes))
-                    total_nodes_remainder=$((total_number_slots % total_nodes))
-                    number_nodes_to_reshard=$((slots_per_node / {{ .Values.statefulSet.replicas }}))
-                    number_nodes_remainder=$((slots_per_node % {{ .Values.statefulSet.replicas }}))
-
-                    echo "Total nodes: $total_nodes"
-                    echo "Slots per node: $slots_per_node"
-                    echo "Total nodes remainder: $total_nodes_remainder"
-                    echo "Number of nodes to reshard: $number_nodes_to_reshard"
-                    echo "Number nodes remainder: $number_nodes_remainder"
-
-                    for target_node in $sorted_desired_nodes; do
-                      echo "Checking connectivity to target node $target_node"
-                      if /usr/local/bin/redis-cli -h $target_node -p {{ .Values.containers.port }} ping | grep -q "PONG"; then
-                        target_node_id=$(/usr/local/bin/redis-cli -h $target_node -p {{ .Values.containers.port }} CLUSTER NODES | grep myself | awk '{print $1}')
-                        if [ $number_nodes_to_reshard -gt 0 ]; then
-                          echo "/usr/local/bin/redis-cli --cluster reshard $garnet_host:$garnet_port --cluster-from $node_id --cluster-to $target_node_id --cluster-slots $number_nodes_to_reshard --cluster-yes"
-                          /usr/local/bin/redis-cli --cluster reshard $garnet_host:$garnet_port --cluster-from $node_id --cluster-to $target_node_id --cluster-slots $number_nodes_to_reshard --cluster-yes
-                          sleep 5
-                          /usr/local/bin/redis-cli --cluster check $garnet_host:$garnet_port
-                        fi
-                      else
-                        echo "Target node $target_node is not reachable, skipping."
-                      fi
-                    done
-                    
-                    while [ $total_nodes_remainder -gt 0 ]; do
-                      echo "Total nodes remainder: $total_nodes_remainder"
-                      for target_node in $sorted_desired_nodes; do
-                        if /usr/local/bin/redis-cli -h $target_node -p {{ .Values.containers.port }} ping | grep -q "PONG"; then
-                          target_node_id=$(/usr/local/bin/redis-cli -h $target_node -p {{ .Values.containers.port }} CLUSTER NODES | grep myself | awk '{print $1}')
-                          echo "/usr/local/bin/redis-cli --cluster reshard $garnet_host:$garnet_port --cluster-from $node_id --cluster-to $target_node_id --cluster-slots 1 --cluster-yes"
-                          /usr/local/bin/redis-cli --cluster reshard $garnet_host:$garnet_port --cluster-from $node_id --cluster-to $target_node_id --cluster-slots 1 --cluster-yes
-                          sleep 5
-                          total_nodes_remainder=$((total_nodes_remainder - 1))
-                          /usr/local/bin/redis-cli --cluster check $garnet_host:$garnet_port
-
-                        else
-                          echo "Target node $target_node is not reachable, skipping."
-                        fi
-                      done
-                    done
-
-                    while [ $number_nodes_remainder -gt 0 ]; do
-                      echo "/usr/local/bin/redis-cli --cluster reshard $garnet_host:$garnet_port --cluster-from $node_id --cluster-to $target_node_id --cluster-slots 1 --cluster-yes"
-                      /usr/local/bin/redis-cli --cluster reshard $garnet_host:$garnet_port --cluster-from $node_id --cluster-to $target_node_id --cluster-slots 1 --cluster-yes
-                      echo "number_nodes_remainder: $number_nodes_remainder"
-                      sleep 5
-                      number_nodes_remainder=$((number_nodes_remainder - 1))
-                      /usr/local/bin/redis-cli --cluster check $garnet_host:$garnet_port
-                    done
-                    /usr/local/bin/redis-cli --cluster del-node $garnet_host:$garnet_port $node_id
-                  fi
-                else
-                  echo "Node $node is not reachable, skipping."
+              nodes_to_remove=""
+              for node in $current_nodes; do
+                if ! echo "$desired_nodes" | grep -q "$node"; then
+                  nodes_to_remove="$nodes_to_remove $node"
                 fi
               done
+              echo "Nodes to remove: $nodes_to_remove" | tee -a $LOG_FILE
 
+              total_nodes_to_share_to="{{ .Values.statefulSet.replicas }}"
+
+              for node in $nodes_to_remove; do
+                node_id=$(/usr/local/bin/redis-cli -h "$node" -p "$garnet_port" CLUSTER NODES | grep myself | awk '{print $1}')
+                slots=$(/usr/local/bin/redis-cli -h "$node" -p "$garnet_port" CLUSTER NODES | grep "$node_id" | awk '{print $9}')
+                echo "Slots: $slots" | tee -a $LOG_FILE
+                start_slot=$(echo "$slots" | cut -d'-' -f1)
+                end_slot=$(echo "$slots" | cut -d'-' -f2)
+                num_slots=$((end_slot - start_slot + 1))
+                echo "Node $node_id has slots from $start_slot to $end_slot" | tee -a $LOG_FILE
+                echo "Node $node_id manages $num_slots slots" | tee -a $LOG_FILE
+
+                slots_to_be_distributed=$((num_slots / total_nodes_to_share_to))
+                remainder=$((num_slots % total_nodes_to_share_to))
+
+                for target_node in $desired_nodes; do
+                  target_node_id=$(/usr/local/bin/redis-cli -h "$target_node" -p "$garnet_port" CLUSTER NODES | grep myself | awk '{print $1}')
+                  echo "Resharding $slots_to_be_distributed slots from $node_id to $target_node_id" | tee -a $LOG_FILE
+                  /usr/local/bin/redis-cli --cluster reshard "$garnet_host:$garnet_port" --cluster-from "$node_id" --cluster-to "$target_node_id" --cluster-slots "$slots_to_be_distributed" --cluster-yes >> $LOG_FILE 2>&1
+                  sleep 5
+                done
+
+                while [ $remainder -ne 0 ]; do
+                  for target_node in $desired_nodes; do
+                    if [ $remainder -eq 0 ]; then
+                      break
+                    fi
+                    target_node_id=$(/usr/local/bin/redis-cli -h "$target_node" -p "$garnet_port" CLUSTER NODES | grep myself | awk '{print $1}')
+                    echo "Resharding 1 slot from $node_id to $target_node_id" | tee -a $LOG_FILE
+                    /usr/local/bin/redis-cli --cluster reshard "$garnet_host:$garnet_port" --cluster-from "$node_id" --cluster-to "$target_node_id" --cluster-slots 1 --cluster-yes >> $LOG_FILE 2>&1
+                    sleep 5
+                    remainder=$((remainder - 1))
+                  done
+                done
+              done
+
+              echo "Resharding process completed." | tee -a $LOG_FILE
       restartPolicy: Never
   backoffLimit: 1
+
