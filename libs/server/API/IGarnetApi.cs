@@ -688,6 +688,16 @@ namespace Garnet.server
         GarnetStatus ListLeftPop(ArgSlice key, int count, out ArgSlice[] elements);
 
         /// <summary>
+        /// ListLeftPop ArgSlice version for multiple keys and values
+        /// </summary>
+        /// <param name="keys"></param>
+        /// <param name="count"></param>
+        /// <param name="key"></param>
+        /// <param name="elements"></param>
+        /// <returns>GarnetStatus</returns>
+        GarnetStatus ListLeftPop(ArgSlice[] keys, int count, out ArgSlice key, out ArgSlice[] elements);
+
+        /// <summary>
         /// ListRightPop ArgSlice version, with GarnetObjectStoreOutput
         /// </summary>
         /// <param name="key"></param>
@@ -712,6 +722,17 @@ namespace Garnet.server
         /// <param name="count"></param>
         /// <returns></returns>
         GarnetStatus ListRightPop(ArgSlice key, int count, out ArgSlice[] elements);
+
+
+        /// <summary>
+        /// ListRightPop ArgSlice version for multiple keys and values
+        /// </summary>
+        /// <param name="keys"></param>
+        /// <param name="count"></param>
+        /// <param name="key"></param>
+        /// <param name="elements"></param>
+        /// <returns>GarnetStatus</returns>
+        GarnetStatus ListRightPop(ArgSlice[] keys, int count, out ArgSlice key, out ArgSlice[] elements);
 
         #endregion
 

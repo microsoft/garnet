@@ -183,6 +183,119 @@ namespace Garnet.server
             return true;
         }
 
+
+        /// <summary>
+        /// LMPOP numkeys key [key ...] LEFT | RIGHT [COUNT count]
+        /// </summary>
+        /// <param name="count"></param>
+        /// <param name="ptr"></param>
+        /// <param name="storageApi"></param>
+        /// <returns></returns>
+        private unsafe bool ListPopMultiple<TGarnetApi>(int count, byte* ptr, ref TGarnetApi storageApi)
+                            where TGarnetApi : IGarnetApi
+        {
+            if (count < 3)
+            {
+                return AbortWithWrongNumberOfArguments("LMPOP", count);
+            }
+
+            // Read count of keys
+            if (!RespReadUtils.ReadIntWithLengthHeader(out var numKeys, ref ptr, recvBufferPtr + bytesRead))
+                return false;
+
+            if (count != numKeys + 2 && count != numKeys + 4)
+            {
+                return AbortWithErrorMessage(count, CmdStrings.RESP_ERR_GENERIC_SYNTAX_ERROR);
+            }
+
+            // Get the keys for Lists
+            var keys = new ArgSlice[numKeys];
+
+            for (var i = 0; i < keys.Length; i++)
+            {
+                keys[i] = default;
+                if (!RespReadUtils.ReadPtrWithLengthHeader(ref keys[i].ptr, ref keys[i].length, ref ptr, recvBufferPtr + bytesRead))
+                    return false;
+            }
+
+            if (NetworkMultiKeySlotVerify(readOnly: false, firstKey: 1, lastKey: numKeys + 1))
+                return true;
+
+            ArgSlice dir = default;
+
+            if (!RespReadUtils.ReadPtrWithLengthHeader(ref dir.ptr, ref dir.length, ref ptr, recvBufferPtr + bytesRead))
+                return false;
+
+            var popDirection = GetOperationDirection(dir);
+
+            if (popDirection == OperationDirection.Unknown)
+            {
+                return AbortWithErrorMessage(count, CmdStrings.RESP_ERR_GENERIC_SYNTAX_ERROR);
+            }
+
+            int popCount = 1;
+
+            if (count == numKeys + 4)
+            {
+                ArgSlice countArg = default;
+
+                if (!RespReadUtils.ReadPtrWithLengthHeader(ref countArg.ptr, ref countArg.length, ref ptr, recvBufferPtr + bytesRead))
+                    return false;
+
+                if (!countArg.ReadOnlySpan.EqualsUpperCaseSpanIgnoringCase(CmdStrings.COUNT))
+                {
+                    return AbortWithErrorMessage(count, CmdStrings.RESP_ERR_GENERIC_SYNTAX_ERROR);
+                }
+
+                // Read count
+                if (!RespReadUtils.ReadIntWithLengthHeader(out popCount, ref ptr, recvBufferPtr + bytesRead)) return false;
+            }
+
+            GarnetStatus statusOp; ArgSlice key; ArgSlice[] elements;
+
+            if (popDirection == OperationDirection.Left)
+            {
+                statusOp = storageApi.ListLeftPop(keys, popCount, out key, out elements);
+            }
+            else
+            {
+                statusOp = storageApi.ListRightPop(keys, popCount, out key, out elements);
+            }
+
+            switch (statusOp)
+            {
+                case GarnetStatus.OK:
+                    while (!RespWriteUtils.WriteArrayLength(2, ref dcurr, dend))
+                        SendAndReset();
+
+                    while (!RespWriteUtils.WriteBulkString(key.Span, ref dcurr, dend))
+                        SendAndReset();
+
+                    while (!RespWriteUtils.WriteArrayLength(elements.Length, ref dcurr, dend))
+                        SendAndReset();
+
+                    foreach (var element in elements)
+                    {
+                        while (!RespWriteUtils.WriteBulkString(element.Span, ref dcurr, dend))
+                            SendAndReset();
+                    }
+
+                    break;
+                case GarnetStatus.NOTFOUND:
+                    while (!RespWriteUtils.WriteNullArray(ref dcurr, dend))
+                        SendAndReset();
+                    break;
+                case GarnetStatus.WRONGTYPE:
+                    while (!RespWriteUtils.WriteError(CmdStrings.RESP_ERR_WRONG_TYPE, ref dcurr, dend))
+                        SendAndReset();
+                    break;
+            }
+
+            readHead = (int)(ptr - recvBufferPtr);
+
+            return true;
+        }
+
         private bool ListBlockingPop<TGarnetApi>(RespCommand command, int count, byte* ptr, ref TGarnetApi storageApi)
             where TGarnetApi : IGarnetApi
         {

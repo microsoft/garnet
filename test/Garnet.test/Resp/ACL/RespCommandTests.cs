@@ -3573,14 +3573,35 @@ namespace Garnet.test.Resp.ACL
         }
 
         [Test]
+        public async Task LMPopACLsAsync()
+        {
+            await CheckCommandsAsync(
+                "LMPOP",
+                [DoLMPopAsync, DoLMPopCountAsync]
+            );
+
+            static async Task DoLMPopAsync(GarnetClient client)
+            {
+                string val = await client.ExecuteForStringResultAsync("LMPOP", ["1", "foo", "LEFT"]);
+                Assert.IsNull(val);
+            }
+
+            static async Task DoLMPopCountAsync(GarnetClient client)
+            {
+                string val = await client.ExecuteForStringResultAsync("LMPOP", ["1", "foo", "LEFT", "COUNT", "1"]);
+                Assert.IsNull(val);
+            }
+        }
+
+        [Test]
         public async Task LSetACLsAsync()
         {
             await CheckCommandsAsync(
                 "LSET",
-                [DoLMoveAsync]
+                [DoLSetAsync]
             );
 
-            static async Task DoLMoveAsync(GarnetClient client)
+            static async Task DoLSetAsync(GarnetClient client)
             {
                 try
                 {
