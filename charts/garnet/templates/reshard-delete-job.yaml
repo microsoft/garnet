@@ -45,12 +45,19 @@ spec:
 
               for node in $nodes_to_remove; do
                 node_id=$(/usr/local/bin/redis-cli -h "$node" -p "$garnet_port" CLUSTER NODES | grep myself | awk '{print $1}')
-                slots=$(/usr/local/bin/redis-cli -h "$node" -p "$garnet_port" CLUSTER NODES | grep "$node_id" | awk '{print $9}')
+                slots=$(/usr/local/bin/redis-cli -h "$node" -p "$garnet_port" CLUSTER NODES | grep "$node_id" | awk '{for(i=9;i<=NF;i++) print $i}')
                 echo "Slots: $slots" | tee -a $LOG_FILE
-                start_slot=$(echo "$slots" | cut -d'-' -f1)
-                end_slot=$(echo "$slots" | cut -d'-' -f2)
-                num_slots=$((end_slot - start_slot + 1))
-                echo "Node $node_id has slots from $start_slot to $end_slot" | tee -a $LOG_FILE
+                
+                num_slots=0
+                for range in $slots; do
+                  start_slot=$(echo $range | cut -d'-' -f1)
+                  end_slot=$(echo $range | cut -d'-' -f2)
+                  if [ -z "$end_slot" ]; then
+                    end_slot=$start_slot
+                  fi
+                  num_slots=$((num_slots + end_slot - start_slot + 1))
+                  echo "Range: $range, Start Slot: $start_slot, End Slot: $end_slot, Accumulated Slots: $num_slots" | tee -a $LOG_FILE
+                done
                 echo "Node $node_id manages $num_slots slots" | tee -a $LOG_FILE
 
                 slots_to_be_distributed=$((num_slots / total_nodes_to_share_to))
@@ -75,6 +82,8 @@ spec:
                     remainder=$((remainder - 1))
                   done
                 done
+                echo "Deleting node $node_id" | tee -a $LOG_FILE
+                /usr/local/bin/redis-cli --cluster del-node "$garnet_host:$garnet_port" "$node_id" >> $LOG_FILE 2>&1
               done
 
               echo "Resharding process completed." | tee -a $LOG_FILE
