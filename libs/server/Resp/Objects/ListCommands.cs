@@ -242,7 +242,7 @@ namespace Garnet.server
                 if (!RespReadUtils.ReadPtrWithLengthHeader(ref countArg.ptr, ref countArg.length, ref ptr, recvBufferPtr + bytesRead))
                     return false;
 
-                if (!countArg.ReadOnlySpan.SequenceEqual("COUNT"u8))
+                if (!countArg.ReadOnlySpan.EqualsUpperCaseSpanIgnoringCase(CmdStrings.COUNT))
                 {
                     return AbortWithErrorMessage(count, CmdStrings.RESP_ERR_GENERIC_SYNTAX_ERROR);
                 }
