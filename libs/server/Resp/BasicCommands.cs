@@ -455,7 +455,7 @@ namespace Garnet.server
                 {
                     nextOpt = parseState.GetArgSliceByRef(tokenIdx++).Span;
                 }
-                
+
                 if (nextOpt.SequenceEqual(CmdStrings.EX))
                 {
                     if (!parseState.TryGetInt(tokenIdx++, out expiry))
