@@ -537,6 +537,7 @@ namespace Garnet.server
                 RespCommand.ZRANDMEMBER => SortedSetRandomMember(count, ptr, ref storageApi),
                 RespCommand.ZDIFF => SortedSetDifference(count, ptr, ref storageApi),
                 RespCommand.ZREVRANGE => SortedSetRange(cmd, count, ptr, ref storageApi),
+                RespCommand.ZREVRANGEBYSCORE => SortedSetRange(cmd, count, ptr, ref storageApi),
                 RespCommand.ZSCAN => ObjectScan(count, ptr, GarnetObjectType.SortedSet, ref storageApi),
                 //SortedSet for Geo Commands
                 RespCommand.GEOADD => GeoAdd(count, ptr, ref storageApi),
@@ -570,6 +571,7 @@ namespace Garnet.server
                 RespCommand.LREM => ListRemove(count, ptr, ref storageApi),
                 RespCommand.RPOPLPUSH => ListRightPopLeftPush(count, ptr, ref storageApi),
                 RespCommand.LMOVE => ListMove(count, ptr, ref storageApi),
+                RespCommand.LMPOP => ListPopMultiple(count, ptr, ref storageApi),
                 RespCommand.LSET => ListSet(count, ptr, ref storageApi),
                 RespCommand.BLPOP => ListBlockingPop(cmd, count, ptr, ref storageApi),
                 RespCommand.BRPOP => ListBlockingPop(cmd, count, ptr, ref storageApi),

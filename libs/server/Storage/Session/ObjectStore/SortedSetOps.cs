@@ -443,7 +443,7 @@ namespace Garnet.server
             if (min.Length == 0 || max.Length == 0)
             {
                 //error in arguments
-                error = "Missins required min and max parameters";
+                error = "Missing required min and max parameters";
                 return GarnetStatus.NOTFOUND;
             }
 

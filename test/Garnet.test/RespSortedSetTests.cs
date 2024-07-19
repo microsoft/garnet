@@ -1400,7 +1400,6 @@ namespace Garnet.test
             Assert.AreEqual(expectedResponse, actualValue);
         }
 
-
         [Test]
         public void CanUseZRevRange()
         {
@@ -1428,6 +1427,41 @@ namespace Garnet.test
 
             response = lightClientRequest.SendCommand("ZREVRANGE board 0 1", 3);
             expectedResponse = "*2\r\n$1\r\nf\r\n$1\r\ne\r\n";
+            actualValue = Encoding.ASCII.GetString(response).Substring(0, expectedResponse.Length);
+            Assert.AreEqual(expectedResponse, actualValue);
+        }
+
+        [Test]
+        public void CanUseZRevRangeByScore()
+        {
+            //ZREVRANGESCORE key start stop [WITHSCORES] [LIMIT offset count]
+            using var lightClientRequest = TestUtils.CreateRequest();
+            var response = lightClientRequest.SendCommand("ZADD board 10 a");
+            lightClientRequest.SendCommand("ZADD board 20 b");
+            lightClientRequest.SendCommand("ZADD board 30 c");
+            lightClientRequest.SendCommand("ZADD board 40 d");
+            lightClientRequest.SendCommand("ZADD board 50 e");
+            lightClientRequest.SendCommand("ZADD board 60 f");
+
+            // get a reverse range by score order
+            response = lightClientRequest.SendCommand("ZREVRANGEBYSCORE board 70 0", 7);
+            var expectedResponse = "*6\r\n$1\r\nf\r\n$1\r\ne\r\n$1\r\nd\r\n$1\r\nc\r\n$1\r\nb\r\n$1\r\na\r\n";
+            var actualValue = Encoding.ASCII.GetString(response).Substring(0, expectedResponse.Length);
+            Assert.AreEqual(expectedResponse, actualValue);
+
+            // including scores
+            response = lightClientRequest.SendCommand("ZREVRANGEBYSCORE board 60 10 WITHSCORES", 13);
+            expectedResponse = "*12\r\n$1\r\nf\r\n$2\r\n60\r\n$1\r\ne\r\n$2\r\n50\r\n$1\r\nd\r\n$2\r\n40\r\n$1\r\nc\r\n$2\r\n30\r\n$1\r\nb\r\n$2\r\n20\r\n$1\r\na\r\n$2\r\n10\r\n";
+            actualValue = Encoding.ASCII.GetString(response).Substring(0, expectedResponse.Length);
+            Assert.AreEqual(expectedResponse, actualValue);
+
+            response = lightClientRequest.SendCommand("ZREVRANGEBYSCORE board +inf 45", 3);
+            expectedResponse = "*2\r\n$1\r\nf\r\n$1\r\ne\r\n";
+            actualValue = Encoding.ASCII.GetString(response).Substring(0, expectedResponse.Length);
+            Assert.AreEqual(expectedResponse, actualValue);
+
+            response = lightClientRequest.SendCommand("ZREVRANGEBYSCORE board 70 45 LIMIT 0 1", 2);
+            expectedResponse = "*1\r\n$1\r\nf\r\n";
             actualValue = Encoding.ASCII.GetString(response).Substring(0, expectedResponse.Length);
             Assert.AreEqual(expectedResponse, actualValue);
         }
@@ -2230,6 +2264,12 @@ namespace Garnet.test
 
             // ZREMRANGEBYLEX
             response = lightClientRequest.SendCommand($"ZREMRANGEBYLEX {keys[0]} {values[1][0]} {values[1][1]}");
+            expectedResponse = $"-{Encoding.ASCII.GetString(CmdStrings.RESP_ERR_WRONG_TYPE)}\r\n";
+            actualValue = Encoding.ASCII.GetString(response).Substring(0, expectedResponse.Length);
+            Assert.AreEqual(expectedResponse, actualValue);
+
+            // ZREVRANGEBYSCORE
+            response = lightClientRequest.SendCommand($"ZREVRANGEBYSCORE {keys[0]} 0 -1");
             expectedResponse = $"-{Encoding.ASCII.GetString(CmdStrings.RESP_ERR_WRONG_TYPE)}\r\n";
             actualValue = Encoding.ASCII.GetString(response).Substring(0, expectedResponse.Length);
             Assert.AreEqual(expectedResponse, actualValue);

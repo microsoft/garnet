@@ -2,6 +2,7 @@
 // Licensed under the MIT license.
 
 using System;
+using Garnet.common;
 using Tsavorite.core;
 
 namespace Garnet.server
@@ -85,10 +86,12 @@ namespace Garnet.server
                 RespCommand.GEOPOS => SortedSetObjectKeys(SortedSetOperation.GEOPOS, inputCount),
                 RespCommand.GEOSEARCH => SortedSetObjectKeys(SortedSetOperation.GEOSEARCH, inputCount),
                 RespCommand.ZREVRANGE => SortedSetObjectKeys(SortedSetOperation.ZREVRANGE, inputCount),
+                RespCommand.ZREVRANGEBYSCORE => SortedSetObjectKeys(SortedSetOperation.ZREVRANGEBYSCORE, inputCount),
                 RespCommand.LINDEX => ListObjectKeys((byte)ListOperation.LINDEX),
                 RespCommand.LINSERT => ListObjectKeys((byte)ListOperation.LINSERT),
                 RespCommand.LLEN => ListObjectKeys((byte)ListOperation.LLEN),
                 RespCommand.LMOVE => ListObjectKeys((byte)ListOperation.LMOVE),
+                RespCommand.LMPOP => ListKeys(true, LockType.Exclusive),
                 RespCommand.LPOP => ListObjectKeys((byte)ListOperation.LPOP),
                 RespCommand.LPUSH => ListObjectKeys((byte)ListOperation.LPUSH),
                 RespCommand.LPUSHX => ListObjectKeys((byte)ListOperation.LPUSHX),
@@ -195,6 +198,7 @@ namespace Garnet.server
                 SortedSetOperation.GEOPOS => SingleKey(1, true, LockType.Shared),
                 SortedSetOperation.GEOSEARCH => SingleKey(1, true, LockType.Shared),
                 SortedSetOperation.ZREVRANGE => SingleKey(1, true, LockType.Shared),
+                SortedSetOperation.ZREVRANGEBYSCORE => SingleKey(1, true, LockType.Shared),
                 _ => -1
             };
         }
@@ -294,6 +298,26 @@ namespace Garnet.server
                 SaveKeyArgSlice(key);
             }
             return inputCount;
+        }
+
+        /// <summary>
+        /// Returns a list of keys for LMPOP command
+        /// </summary>
+        private int ListKeys(bool isObject, LockType type)
+        {
+            var numKeysArg = respSession.GetCommandAsArgSlice(out bool success);
+            if (!success) return -2;
+
+            if (!NumUtils.TryParse(numKeysArg.ReadOnlySpan, out int numKeys)) return -2;
+
+            for (int i = 0; i < numKeys; i++)
+            {
+                var key = respSession.GetCommandAsArgSlice(out success);
+                if (!success) return -2;
+                SaveKeyEntryToLock(key, isObject, type);
+                SaveKeyArgSlice(key);
+            }
+            return numKeys;
         }
 
         /// <summary>

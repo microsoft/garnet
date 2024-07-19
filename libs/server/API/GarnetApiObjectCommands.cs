@@ -195,6 +195,10 @@ namespace Garnet.server
              => storageSession.ListPop(key, count, ListOperation.LPOP, ref objectContext, out poppedElements);
 
         /// <inheritdoc />
+        public GarnetStatus ListLeftPop(ArgSlice[] keys, int count, out ArgSlice poppedKey, out ArgSlice[] poppedElements)
+            => storageSession.ListPopMultiple(keys, OperationDirection.Left, count, ref objectContext, out poppedKey, out poppedElements);
+
+        /// <inheritdoc />
         public GarnetStatus ListRightPop(byte[] key, ArgSlice input, ref GarnetObjectStoreOutput outputFooter)
             => storageSession.ListPop(key, input, ref outputFooter, ref objectContext);
 
@@ -205,6 +209,10 @@ namespace Garnet.server
         /// <inheritdoc />
         public GarnetStatus ListRightPop(ArgSlice key, int count, out ArgSlice[] poppedElements)
             => storageSession.ListPop(key, count, ListOperation.RPOP, ref objectContext, out poppedElements);
+
+        /// <inheritdoc />
+        public GarnetStatus ListRightPop(ArgSlice[] keys, int count, out ArgSlice poppedKey, out ArgSlice[] poppedElements)
+            => storageSession.ListPopMultiple(keys, OperationDirection.Right, count, ref objectContext, out poppedKey, out poppedElements);
 
         #endregion
 
