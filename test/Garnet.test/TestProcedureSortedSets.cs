@@ -2,6 +2,7 @@
 // Licensed under the MIT license.
 
 using System;
+using System.Linq;
 using System.Text;
 using Garnet.common;
 using Garnet.server;
@@ -87,38 +88,89 @@ namespace Garnet
             }
 
             // Exercise SortedSetRemove
-            api.SortedSetRemove(ssA, ssMembers[0], out count);
-            if (count == 0)
+            var status = api.SortedSetRemove(ssA, ssMembers[0], out count);
+            if (status != GarnetStatus.OK || count != 1)
             {
                 result = false;
                 goto returnToMain;
             }
 
-            var status = api.SortedSetRange(ssA, minRange, maxRange, sortedSetOrderOperation: SortedSetOrderOperation.ByScore, out var elements, out string error, false, false, limit: ("1", 5));
-            if (status == GarnetStatus.OK && error == default)
+            // Exercise SortedSetRank
+            status = api.SortedSetRank(ssA, ssMembers[1], true, out var rank);
+            if (status != GarnetStatus.OK || rank != 8)
             {
-                if (!elements[0].ReadOnlySpan.SequenceEqual(ssItems[2].member.ReadOnlySpan))
-                    result = false;
-                else
-                {
-                    status = api.SortedSetIncrement(ssA, 12345, ssMembers[0], out double newScore);
-                    if (newScore != 12345)
-                        result = false;
-                    else
-                    {
-                        status = api.SortedSetRemoveRangeByScore(ssA, "12345", "12345", out int countRemoved);
-                        if (countRemoved != 1)
-                            result = false;
-                        else
-                        {
-                            api.SortedSetRemove(ssA, ssMembers[0..5], out count);
-                            if (count != 4)
-                                result = false;
-                        }
-                    }
-                }
+                result = false;
+                goto returnToMain;
             }
-        returnToMain:
+
+            // Exercise SortedSetPop
+            status = api.SortedSetPop(ssA, out var pairs, 1, false);
+            if (status != GarnetStatus.OK || pairs.Length != 1 || !pairs[0].member.ReadOnlySpan.SequenceEqual(ssMembers[9].ReadOnlySpan))
+            {
+                result = false;
+                goto returnToMain;
+            }
+
+            // Exercise SortedSetRange
+            status = api.SortedSetRange(ssA, minRange, maxRange,
+                sortedSetOrderOperation: SortedSetOrderOperation.ByScore, out var elements, out var error, false, false,
+                limit: ("1", 5));
+            if (status != GarnetStatus.OK || error != default || elements.Length != 5 || !elements.Zip(ssItems.Skip(2).Take(5),
+                    (e, i) => e.ReadOnlySpan.SequenceEqual(i.member.ReadOnlySpan)).All(t => t))
+            {
+                result = false;
+                goto returnToMain;
+            }
+
+            // Exercise SortedSetIncrement
+            status = api.SortedSetIncrement(ssA, 12345, ssMembers[0], out var newScore);
+            if (status != GarnetStatus.OK || newScore != 12345)
+            {
+                result = false;
+                goto returnToMain;
+            }
+
+            // Exercise SortedSetRemoveRangeByScore
+            status = api.SortedSetRemoveRangeByScore(ssA, "12345", "12345", out var countRemoved);
+            if (status != GarnetStatus.OK || countRemoved != 1)
+            {
+                result = false;
+                goto returnToMain;
+            }
+
+            // Exercise SortedSetRemoveRangeByLex
+            status = api.SortedSetRemoveRangeByLex(ssA, "(item7", "[item9", out countRemoved);
+            if (status != GarnetStatus.OK || countRemoved != 2)
+            {
+                result = false;
+                goto returnToMain;
+            }
+
+            // Exercise SortedSetRemoveRangeByRank
+            status = api.SortedSetRemoveRangeByRank(ssA, 1, 3, out countRemoved);
+            if (status != GarnetStatus.OK || countRemoved != 3)
+            {
+                result = false;
+                goto returnToMain;
+            }
+
+            // Exercise SortedSetRemove
+            status = api.SortedSetRemove(ssA, ssMembers[..6], out count);
+            if (status != GarnetStatus.OK || count != 2)
+            {
+                result = false;
+                goto returnToMain;
+            }
+
+            // Exercise SortedSetLength 
+            status = api.SortedSetLength(ssA, out var length);
+            if (status != GarnetStatus.OK || length != 1)
+            {
+                result = false;
+                goto returnToMain;
+            }
+
+            returnToMain:
             WriteSimpleString(ref output, result ? "SUCCESS" : "ERROR");
         }
     }

@@ -370,7 +370,7 @@ namespace Garnet.server
         /// <param name="count"></param>
         /// <param name="lowScoresFirst">When true, return the members with the lowest scores, otherwise return the highest scores.</param>
         /// <returns></returns>
-        GarnetStatus SortedSetPop(ArgSlice key, out (ArgSlice score, ArgSlice member)[] pairs, int count = 1, bool lowScoresFirst = true);
+        GarnetStatus SortedSetPop(ArgSlice key, out (ArgSlice member, ArgSlice score)[] pairs, int count = 1, bool lowScoresFirst = true);
 
         /// <summary>
         /// Increments the score of member in the sorted set stored at key by increment.

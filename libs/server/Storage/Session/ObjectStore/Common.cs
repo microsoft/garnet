@@ -268,9 +268,9 @@ namespace Garnet.server
         /// <summary>
         /// Processes RESP output as pairs of score and member. 
         /// </summary>
-        unsafe (ArgSlice score, ArgSlice member)[] ProcessRespArrayOutputAsPairs(GarnetObjectStoreOutput outputFooter, out string error)
+        unsafe (ArgSlice member, ArgSlice score)[] ProcessRespArrayOutputAsPairs(GarnetObjectStoreOutput outputFooter, out string error)
         {
-            (ArgSlice score, ArgSlice member)[] result = default;
+            (ArgSlice member, ArgSlice score)[] result = default;
             error = default;
             byte* element = null;
             var len = 0;
@@ -296,19 +296,19 @@ namespace Garnet.server
 
                         Debug.Assert(arraySize % 2 == 0, "Array elements are expected to be in pairs");
                         arraySize /= 2; // Halve the array size to hold items as pairs
-                        result = new (ArgSlice score, ArgSlice member)[arraySize];
+                        result = new (ArgSlice member, ArgSlice score)[arraySize];
 
                         for (var i = 0; i < result.Length; i++)
                         {
                             if (!RespReadUtils.ReadPtrWithLengthHeader(ref element, ref len, ref refPtr, outputPtr + outputSpan.Length))
                                 return default;
 
-                            result[i].score = new ArgSlice(element, len);
+                            result[i].member = new ArgSlice(element, len);
 
                             if (!RespReadUtils.ReadPtrWithLengthHeader(ref element, ref len, ref refPtr, outputPtr + outputSpan.Length))
                                 return default;
 
-                            result[i].member = new ArgSlice(element, len);
+                            result[i].score = new ArgSlice(element, len);
                         }
                     }
                 }
