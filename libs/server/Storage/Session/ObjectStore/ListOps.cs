@@ -158,7 +158,7 @@ namespace Garnet.server
         /// <param name="elements"></param>
         /// <returns>The count elements popped from the list</returns>
         public unsafe GarnetStatus ListPopMultiple<TObjectContext>(ArgSlice[] keys, OperationDirection direction, int count, ref TObjectContext objectContext, out ArgSlice key, out ArgSlice[] elements)
-            where TObjectContext : ITsavoriteContext<byte[], IGarnetObject, SpanByte, GarnetObjectStoreOutput, long, ObjectStoreFunctions>
+            where TObjectContext : ITsavoriteContext<byte[], IGarnetObject, ObjectInput, GarnetObjectStoreOutput, long, ObjectStoreFunctions>
         {
             foreach (var k in keys)
             {
