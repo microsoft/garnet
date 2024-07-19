@@ -128,7 +128,7 @@ namespace Garnet.server
             var unknownOption = false;
             var unknownKey = "";
 
-            for (var c = 0; c < count / 2; c++)
+            for (var c = 0; c < count; c+=2)
             {
                 var key = parseState.GetArgSliceByRef(c).ReadOnlySpan;
                 var value = parseState.GetArgSliceByRef(c + 1).ReadOnlySpan;
