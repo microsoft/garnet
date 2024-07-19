@@ -230,7 +230,7 @@ namespace Garnet.server
                 return true;
 
             // Get the direction
-            var dir = parseState.GetArgSliceByRef(count - 1);
+            var dir = parseState.GetArgSliceByRef(currTokenId++);
             var popDirection = GetOperationDirection(dir);
 
             if (popDirection == OperationDirection.Unknown)
