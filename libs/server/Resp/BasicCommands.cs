@@ -449,14 +449,14 @@ namespace Garnet.server
             var tokenIdx = 2;
             Span<byte> nextOpt = default;
             var optUpperCased = false;
-            while (tokenIdx < count)
+            while (tokenIdx < count || optUpperCased)
             {
                 if (!optUpperCased)
                 {
                     nextOpt = parseState.GetArgSliceByRef(tokenIdx++).Span;
                 }
 
-                if (nextOpt.EqualsUpperCaseSpanIgnoringCase(CmdStrings.EX))
+                if (nextOpt.SequenceEqual(CmdStrings.EX))
                 {
                     if (!parseState.TryGetInt(tokenIdx++, out expiry))
                     {
@@ -477,7 +477,7 @@ namespace Garnet.server
                         break;
                     }
                 }
-                else if (nextOpt.EqualsUpperCaseSpanIgnoringCase(CmdStrings.PX))
+                else if (nextOpt.SequenceEqual(CmdStrings.PX))
                 {
                     if (!parseState.TryGetInt(tokenIdx++, out expiry))
                     {
@@ -498,7 +498,7 @@ namespace Garnet.server
                         break;
                     }
                 }
-                else if (nextOpt.EqualsUpperCaseSpanIgnoringCase(CmdStrings.KEEPTTL))
+                else if (nextOpt.SequenceEqual(CmdStrings.KEEPTTL))
                 {
                     if (expOption != ExpirationOption.None)
                     {
@@ -508,7 +508,7 @@ namespace Garnet.server
 
                     expOption = ExpirationOption.KEEPTTL;
                 }
-                else if (nextOpt.EqualsUpperCaseSpanIgnoringCase(CmdStrings.NX))
+                else if (nextOpt.SequenceEqual(CmdStrings.NX))
                 {
                     if (existOptions != ExistOptions.None)
                     {
@@ -518,7 +518,7 @@ namespace Garnet.server
 
                     existOptions = ExistOptions.NX;
                 }
-                else if (nextOpt.EqualsUpperCaseSpanIgnoringCase(CmdStrings.XX))
+                else if (nextOpt.SequenceEqual(CmdStrings.XX))
                 {
                     if (existOptions != ExistOptions.None)
                     {
@@ -528,7 +528,7 @@ namespace Garnet.server
 
                     existOptions = ExistOptions.XX;
                 }
-                else if (nextOpt.EqualsUpperCaseSpanIgnoringCase(CmdStrings.GET))
+                else if (nextOpt.SequenceEqual(CmdStrings.GET))
                 {
                     tokenIdx++;
                     getValue = true;
@@ -995,6 +995,11 @@ namespace Garnet.server
         private bool NetworkSTRLEN<TGarnetApi>(ref TGarnetApi storageApi)
             where TGarnetApi : IGarnetApi
         {
+            if (parseState.count != 1)
+            {
+                return AbortWithWrongNumberOfArguments(nameof(RespCommand.STRLEN), parseState.count);
+            }
+
             //STRLEN key
             var key = parseState.GetArgSliceByRef(0);
 

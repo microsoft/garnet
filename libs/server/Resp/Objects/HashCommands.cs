@@ -492,7 +492,6 @@ namespace Garnet.server
 
             var ptr = sbKey.ToPointer() + sbKey.Length + 2;
 
-
             if (NetworkSingleKeySlotVerify(keyBytes, true))
             {
                 return true;

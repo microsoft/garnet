@@ -63,9 +63,9 @@ namespace Garnet.server
         private bool TryCustomCommand<TGarnetApi>(byte* ptr, byte* end, RespCommand cmd, long expirationTicks, CommandType type, ref TGarnetApi storageApi)
             where TGarnetApi : IGarnetAdvancedApi
         {
-            var key = parseState.GetArgSliceByRef(0).SpanByte;
-            var keyPtr = key.ToPointer();
-            var kSize = key.Length;
+            var sbKey = parseState.GetArgSliceByRef(0).SpanByte;
+            var keyPtr = sbKey.ToPointer();
+            var kSize = sbKey.Length;
 
             ptr = keyPtr + kSize + 2;
 
@@ -142,10 +142,10 @@ namespace Garnet.server
         private bool TryCustomObjectCommand<TGarnetApi>(byte* ptr, byte* end, RespCommand cmd, byte subid, CommandType type, ref TGarnetApi storageApi)
             where TGarnetApi : IGarnetAdvancedApi
         {
-            var key = parseState.GetArgSliceByRef(0).SpanByte;
-            var keyBytes = key.ToByteArray();
+            var sbKey = parseState.GetArgSliceByRef(0).SpanByte;
+            var keyBytes = sbKey.ToByteArray();
 
-            ptr = key.ToPointer() + key.Length + 2;
+            ptr = sbKey.ToPointer() + sbKey.Length + 2;
 
             var inputPtr = ptr;
             var iSize = (int)(end - ptr);

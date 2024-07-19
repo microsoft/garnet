@@ -2,6 +2,7 @@
 // Licensed under the MIT license.
 
 using System;
+using System.Diagnostics;
 using System.Runtime.CompilerServices;
 using System.Runtime.InteropServices;
 using Garnet.common;
@@ -71,6 +72,7 @@ namespace Garnet.server
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public bool Read(int i, ref byte* ptr, byte* end)
         {
+            Debug.Assert(i < count);
             ref var slice = ref Unsafe.AsRef<ArgSlice>(bufferPtr + i);
 
             // Parse RESP string header
@@ -101,7 +103,10 @@ namespace Garnet.server
         /// </summary>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public ref ArgSlice GetArgSliceByRef(int i)
-            => ref Unsafe.AsRef<ArgSlice>(bufferPtr + i);
+        {
+            Debug.Assert(i < count);
+            return ref Unsafe.AsRef<ArgSlice>(bufferPtr + i);
+        }
 
         /// <summary>
         /// Get int argument at the given index
@@ -109,7 +114,10 @@ namespace Garnet.server
         /// <returns></returns>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public int GetInt(int i)
-            => ParseUtils.ReadInt(ref Unsafe.AsRef<ArgSlice>(bufferPtr + i));
+        {
+            Debug.Assert(i < count);
+            return ParseUtils.ReadInt(ref Unsafe.AsRef<ArgSlice>(bufferPtr + i));
+        }
 
         /// <summary>
         /// Try to get int argument at the given index
@@ -117,7 +125,10 @@ namespace Garnet.server
         /// <returns>True if integer parsed successfully</returns>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public bool TryGetInt(int i, out int value)
-            => ParseUtils.TryReadInt(ref Unsafe.AsRef<ArgSlice>(bufferPtr + i), out value);
+        {
+            Debug.Assert(i < count);
+            return ParseUtils.TryReadInt(ref Unsafe.AsRef<ArgSlice>(bufferPtr + i), out value);
+        }
 
         /// <summary>
         /// Get long argument at the given index
@@ -125,7 +136,10 @@ namespace Garnet.server
         /// <returns></returns>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public long GetLong(int i)
-            => ParseUtils.ReadLong(ref Unsafe.AsRef<ArgSlice>(bufferPtr + i));
+        {
+            Debug.Assert(i < count);
+            return ParseUtils.ReadLong(ref Unsafe.AsRef<ArgSlice>(bufferPtr + i));
+        }
 
         /// <summary>
         /// Try to get long argument at the given index
@@ -133,7 +147,10 @@ namespace Garnet.server
         /// <returns>True if long parsed successfully</returns>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public bool TryGetLong(int i, out long value)
-            => ParseUtils.TryReadLong(ref Unsafe.AsRef<ArgSlice>(bufferPtr + i), out value);
+        {
+            Debug.Assert(i < count);
+            return ParseUtils.TryReadLong(ref Unsafe.AsRef<ArgSlice>(bufferPtr + i), out value);
+        }
 
         /// <summary>
         /// Get ASCII string argument at the given index
@@ -141,6 +158,9 @@ namespace Garnet.server
         /// <returns></returns>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public string GetString(int i)
-            => ParseUtils.ReadString(ref Unsafe.AsRef<ArgSlice>(bufferPtr + i));
+        {
+            Debug.Assert(i < count);
+            return ParseUtils.ReadString(ref Unsafe.AsRef<ArgSlice>(bufferPtr + i));
+        }
     }
 }

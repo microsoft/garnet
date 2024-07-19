@@ -82,7 +82,7 @@ namespace Garnet.server
             if (status.IsPending)
                 CompletePendingForObjectStoreSession(ref status, ref outputFooter, ref objectStoreContext);
 
-            if (outputFooter.spanByteAndMemory.Length == 0)
+            if (!status.NotFound && outputFooter.spanByteAndMemory.Length == 0)
                 return GarnetStatus.WRONGTYPE;
 
             return status.Found || status.Record.Created ? GarnetStatus.OK : GarnetStatus.NOTFOUND;
