@@ -449,7 +449,7 @@ namespace Garnet.server
             var tokenIdx = 2;
             Span<byte> nextOpt = default;
             var optUpperCased = false;
-            while (tokenIdx < count)
+            while (tokenIdx < count || optUpperCased)
             {
                 if (!optUpperCased)
                 {
