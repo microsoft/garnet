@@ -1300,7 +1300,8 @@ namespace Garnet.server
             {
                 if (count == 0)
                 {
-                    specificErrorMsg = CmdStrings.RESP_ERR_WRONG_NUMBER_OF_ARGUMENTS_CONFIG;
+                    specificErrorMsg = Encoding.ASCII.GetBytes(string.Format(CmdStrings.GenericErrWrongNumArgs,
+                        nameof(RespCommand.CONFIG)));
                 }
                 else if (count >= 1)
                 {

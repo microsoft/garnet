@@ -15,11 +15,10 @@ namespace Garnet.server
         /// </summary>
         /// <typeparam name="TGarnetApi"></typeparam>
         /// <param name="count">Number of tokens in the buffer, including the name of the command</param>
-        /// <param name="ptr">Pointer to the inpu buffer</param>
         /// <param name="objectType">SortedSet, Hash or Set type</param>
         /// <param name="storageApi">The storageAPI object</param>
         /// <returns></returns>
-        private unsafe bool ObjectScan<TGarnetApi>(int count, byte* ptr, GarnetObjectType objectType, ref TGarnetApi storageApi)
+        private unsafe bool ObjectScan<TGarnetApi>(int count, GarnetObjectType objectType, ref TGarnetApi storageApi)
              where TGarnetApi : IGarnetApi
         {
             // Check number of required parameters
@@ -38,24 +37,26 @@ namespace Garnet.server
             }
 
             // Read key for the scan
-            if (!RespReadUtils.ReadByteArrayWithLengthHeader(out var key, ref ptr, recvBufferPtr + bytesRead))
-                return false;
+            var sbKey = parseState.GetArgSliceByRef(0).SpanByte;
+            var keyBytes = sbKey.ToByteArray();
 
             // Get cursor value
-            if (!RespReadUtils.TrySliceWithLengthHeader(out var cursorBytes, ref ptr, recvBufferPtr + bytesRead))
-                return false;
+            var cursorSlice = parseState.GetArgSliceByRef(1);
+            var sbCursor = cursorSlice.SpanByte;
 
-            if (!NumUtils.TryParse(cursorBytes, out int cursorValue) || cursorValue < 0)
+            if (!NumUtils.TryParse(cursorSlice.ReadOnlySpan, out int cursorValue) || cursorValue < 0)
             {
                 while (!RespWriteUtils.WriteError(CmdStrings.RESP_ERR_GENERIC_CURSORVALUE, ref dcurr, dend))
                     SendAndReset();
                 return true;
             }
 
-            if (NetworkSingleKeySlotVerify(key, false))
+            if (NetworkSingleKeySlotVerify(keyBytes, false))
             {
                 return true;
             }
+
+            var ptr = sbCursor.ToPointer() + sbCursor.Length + 2;
 
             // Prepare input
             // Header + size of int for the limitCountInOutput
@@ -105,7 +106,7 @@ namespace Garnet.server
 
             // Prepare GarnetObjectStore output
             var outputFooter = new GarnetObjectStoreOutput { spanByteAndMemory = new SpanByteAndMemory(dcurr, (int)(dend - dcurr)) };
-            var status = storageApi.ObjectScan(key, new ArgSlice((byte*)inputPtr, inputLength), ref outputFooter);
+            var status = storageApi.ObjectScan(keyBytes, new ArgSlice((byte*)inputPtr, inputLength), ref outputFooter);
 
             // Restore input buffer
             *inputPtr = save;
@@ -132,8 +133,6 @@ namespace Garnet.server
                     break;
             }
 
-            // Update read pointer
-            readHead = (int)(ptr - recvBufferPtr);
             return true;
         }
     }

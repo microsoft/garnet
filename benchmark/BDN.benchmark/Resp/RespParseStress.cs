@@ -38,6 +38,18 @@ namespace BDN.benchmark.Resp
         byte[] zAddRemRequestBuffer;
         byte* zAddRemRequestBufferPointer;
 
+        static ReadOnlySpan<byte> LPUSHPOP => "*3\r\n$5\r\nLPUSH\r\n$1\r\nd\r\n$1\r\ne\r\n*2\r\n$4\r\nLPOP\r\n$1\r\nd\r\n"u8;
+        byte[] lPushPopRequestBuffer;
+        byte* lPushPopRequestBufferPointer;
+
+        static ReadOnlySpan<byte> SADDREM => "*3\r\n$4\r\nSADD\r\n$1\r\ne\r\n$1\r\na\r\n*3\r\n$4\r\nSREM\r\n$1\r\ne\r\n$1\r\na\r\n"u8;
+        byte[] sAddRemRequestBuffer;
+        byte* sAddRemRequestBufferPointer;
+
+        static ReadOnlySpan<byte> HSETDEL => "*4\r\n$4\r\nHSET\r\n$1\r\nf\r\n$1\r\na\r\n$1\r\na\r\n*3\r\n$4\r\nHDEL\r\n$1\r\nf\r\n$1\r\na\r\n"u8;
+        byte[] hSetDelRequestBuffer;
+        byte* hSetDelRequestBufferPointer;
+
         [GlobalSetup]
         public void GlobalSetup()
         {
@@ -74,8 +86,32 @@ namespace BDN.benchmark.Resp
             for (int i = 0; i < batchSize; i++)
                 ZADDREM.CopyTo(new Span<byte>(zAddRemRequestBuffer).Slice(i * ZADDREM.Length));
 
+            lPushPopRequestBuffer = GC.AllocateArray<byte>(LPUSHPOP.Length * batchSize, pinned: true);
+            lPushPopRequestBufferPointer = (byte*)Unsafe.AsPointer(ref lPushPopRequestBuffer[0]);
+            for (int i = 0; i < batchSize; i++)
+                LPUSHPOP.CopyTo(new Span<byte>(lPushPopRequestBuffer).Slice(i * LPUSHPOP.Length));
+
+            sAddRemRequestBuffer = GC.AllocateArray<byte>(SADDREM.Length * batchSize, pinned: true);
+            sAddRemRequestBufferPointer = (byte*)Unsafe.AsPointer(ref sAddRemRequestBuffer[0]);
+            for (int i = 0; i < batchSize; i++)
+                SADDREM.CopyTo(new Span<byte>(sAddRemRequestBuffer).Slice(i * SADDREM.Length));
+
+            hSetDelRequestBuffer = GC.AllocateArray<byte>(HSETDEL.Length * batchSize, pinned: true);
+            hSetDelRequestBufferPointer = (byte*)Unsafe.AsPointer(ref hSetDelRequestBuffer[0]);
+            for (int i = 0; i < batchSize; i++)
+                HSETDEL.CopyTo(new Span<byte>(hSetDelRequestBuffer).Slice(i * HSETDEL.Length));
+
             // Pre-populate sorted set with a single element to avoid repeatedly emptying it during the benchmark
             SlowConsumeMessage("*4\r\n$4\r\nZADD\r\n$1\r\nc\r\n$1\r\n1\r\n$1\r\nd\r\n"u8);
+
+            // Pre-populate list with a single element to avoid repeatedly emptying it during the benchmark
+            SlowConsumeMessage("*3\r\n$4\r\nLPUSH\r\n$1\r\nd\r\n$1\r\nf\r\n"u8);
+
+            // Pre-populate set with a single element to avoid repeatedly emptying it during the benchmark
+            SlowConsumeMessage("*3\r\n$4\r\nSADD\r\n$1\r\ne\r\n$1\r\nb\r\n"u8);
+
+            // Pre-populate hash with a single element to avoid repeatedly emptying it during the benchmark
+            SlowConsumeMessage("*3\r\n$4\r\nHSET\r\n$1\r\nf\r\n$1\r\nb\r\n$1\r\nb\r\n"u8);
         }
 
         [GlobalCleanup]
@@ -113,6 +149,24 @@ namespace BDN.benchmark.Resp
         public void ZAddRem()
         {
             _ = session.TryConsumeMessages(zAddRemRequestBufferPointer, zAddRemRequestBuffer.Length);
+        }
+
+        [Benchmark]
+        public void LPushPop()
+        {
+            _ = session.TryConsumeMessages(lPushPopRequestBufferPointer, lPushPopRequestBuffer.Length);
+        }
+
+        [Benchmark]
+        public void SAddRem()
+        {
+            _ = session.TryConsumeMessages(sAddRemRequestBufferPointer, sAddRemRequestBuffer.Length);
+        }
+
+        [Benchmark]
+        public void HSetDel()
+        {
+            _ = session.TryConsumeMessages(hSetDelRequestBufferPointer, hSetDelRequestBuffer.Length);
         }
 
         private void SlowConsumeMessage(ReadOnlySpan<byte> message)
