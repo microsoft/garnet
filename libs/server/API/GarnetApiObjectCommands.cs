@@ -266,8 +266,8 @@ namespace Garnet.server
             => storageSession.SetAdd(key, members, out saddCount, ref objectContext);
 
         /// <inheritdoc />
-        public GarnetStatus SetAdd(byte[] key, ArgSlice input, out ObjectOutputHeader output)
-            => storageSession.SetAdd(key, input, out output, ref objectContext);
+        public GarnetStatus SetAdd(byte[] key, ref ObjectInput input, out ObjectOutputHeader output)
+            => storageSession.SetAdd(key, ref input, out output, ref objectContext);
 
         /// <inheritdoc />
         public GarnetStatus SetRemove(ArgSlice key, ArgSlice member, out int sremCount)
@@ -278,28 +278,28 @@ namespace Garnet.server
             => storageSession.SetRemove(key, members, out sremCount, ref objectContext);
 
         /// <inheritdoc />
-        public GarnetStatus SetRemove(byte[] key, ArgSlice input, out ObjectOutputHeader output)
-            => storageSession.SetRemove(key, input, out output, ref objectContext);
+        public GarnetStatus SetRemove(byte[] key, ref ObjectInput input, out ObjectOutputHeader output)
+            => storageSession.SetRemove(key, ref input, out output, ref objectContext);
 
         /// <inheritdoc />
         public GarnetStatus SetLength(ArgSlice key, out int count)
             => storageSession.SetLength(key, out count, ref objectContext);
 
         /// <inheritdoc />
-        public GarnetStatus SetLength(byte[] key, ArgSlice input, out ObjectOutputHeader output)
-            => storageSession.SetLength(key, input, out output, ref objectContext);
+        public GarnetStatus SetLength(byte[] key, ref ObjectInput input, out ObjectOutputHeader output)
+            => storageSession.SetLength(key, ref input, out output, ref objectContext);
 
         /// <inheritdoc />
         public GarnetStatus SetMembers(ArgSlice key, out ArgSlice[] members)
             => storageSession.SetMembers(key, out members, ref objectContext);
 
         /// <inheritdoc />
-        public GarnetStatus SetMembers(byte[] key, ArgSlice input, ref GarnetObjectStoreOutput outputFooter)
-            => storageSession.SetMembers(key, input, ref outputFooter, ref objectContext);
+        public GarnetStatus SetMembers(byte[] key, ref ObjectInput input, ref GarnetObjectStoreOutput outputFooter)
+            => storageSession.SetMembers(key, ref input, ref outputFooter, ref objectContext);
 
         /// <inheritdoc />
-        public GarnetStatus SetIsMember(byte[] key, ArgSlice input, ref GarnetObjectStoreOutput outputFooter)
-            => storageSession.SetIsMember(key, input, ref outputFooter, ref objectContext);
+        public GarnetStatus SetIsMember(byte[] key, ref ObjectInput input, ref GarnetObjectStoreOutput outputFooter)
+            => storageSession.SetIsMember(key, ref input, ref outputFooter, ref objectContext);
 
         /// <inheritdoc />
         public GarnetStatus SetPop(ArgSlice key, out ArgSlice member)
@@ -310,12 +310,12 @@ namespace Garnet.server
             => storageSession.SetPop(key, count, out members, ref objectContext);
 
         /// <inheritdoc />
-        public GarnetStatus SetPop(byte[] key, ArgSlice input, ref GarnetObjectStoreOutput outputFooter)
-            => storageSession.SetPop(key, input, ref outputFooter, ref objectContext);
+        public GarnetStatus SetPop(byte[] key, ref ObjectInput input, ref GarnetObjectStoreOutput outputFooter)
+            => storageSession.SetPop(key, ref input, ref outputFooter, ref objectContext);
 
         /// <inheritdoc />
-        public GarnetStatus SetRandomMember(byte[] key, ArgSlice input, ref GarnetObjectStoreOutput outputFooter)
-            => storageSession.SetRandomMember(key, input, ref outputFooter, ref objectContext);
+        public GarnetStatus SetRandomMember(byte[] key, ref ObjectInput input, ref GarnetObjectStoreOutput outputFooter)
+            => storageSession.SetRandomMember(key, ref input, ref outputFooter, ref objectContext);
 
         /// <inheritdoc />
         public GarnetStatus SetScan(ArgSlice key, long cursor, string match, int count, out ArgSlice[] items)

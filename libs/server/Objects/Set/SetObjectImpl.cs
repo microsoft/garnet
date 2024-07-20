@@ -15,22 +15,21 @@ namespace Garnet.server
     /// </summary>
     public unsafe partial class SetObject : IGarnetObject
     {
-        private void SetAdd(byte* input, int length, byte* output)
+        private void SetAdd(ref ObjectInput input, byte* output)
         {
-            var _input = (ObjectInputHeader*)input;
             var _output = (ObjectOutputHeader*)output;
-
             *_output = default;
-            int count = _input->arg1;
 
-            byte* startptr = input + sizeof(ObjectInputHeader);
-            byte* ptr = startptr;
-            byte* end = input + length;
+            var count = input.count;
 
+            var input_startptr = input.payload.ptr;
+            var input_currptr = input_startptr;
+            var length = input.payload.length;
+            var input_endptr = input_startptr + length;
 
-            for (int c = 0; c < count; c++)
+            for (var c = 0; c < count; c++)
             {
-                if (!RespReadUtils.ReadByteArrayWithLengthHeader(out var member, ref ptr, end))
+                if (!RespReadUtils.ReadByteArrayWithLengthHeader(out var member, ref input_currptr, input_endptr))
                     return;
 
                 if (set.Add(member))
@@ -41,16 +40,11 @@ namespace Garnet.server
             }
         }
 
-        private void SetMembers(byte* input, int length, ref SpanByteAndMemory output)
+        private void SetMembers(ref SpanByteAndMemory output)
         {
-            var _input = (ObjectInputHeader*)input;
-
-            byte* input_startptr = input + sizeof(ObjectInputHeader);
-            byte* input_currptr = input_startptr;
-
-            bool isMemory = false;
+            var isMemory = false;
             MemoryHandle ptrHandle = default;
-            byte* ptr = output.SpanByte.ToPointer();
+            var ptr = output.SpanByte.ToPointer();
 
             var curr = ptr;
             var end = curr + output.Length;
@@ -78,14 +72,16 @@ namespace Garnet.server
             }
         }
 
-        private void SetIsMember(byte* input, int length, ref SpanByteAndMemory output)
+        private void SetIsMember(ref ObjectInput input, ref SpanByteAndMemory output)
         {
-            byte* input_startptr = input + sizeof(ObjectInputHeader);
-            byte* input_currptr = input_startptr;
+            var input_startptr = input.payload.ptr;
+            var input_currptr = input_startptr;
+            var length = input.payload.length;
+            var input_endptr = input_startptr + length;
 
-            bool isMemory = false;
+            var isMemory = false;
             MemoryHandle ptrHandle = default;
-            byte* ptr = output.SpanByte.ToPointer();
+            var ptr = output.SpanByte.ToPointer();
 
             var curr = ptr;
             var end = curr + output.Length;
@@ -93,10 +89,10 @@ namespace Garnet.server
             ObjectOutputHeader _output = default;
             try
             {
-                if (!RespReadUtils.ReadByteArrayWithLengthHeader(out var member, ref input_currptr, input + length))
+                if (!RespReadUtils.ReadByteArrayWithLengthHeader(out var member, ref input_currptr, input_endptr))
                     return;
 
-                bool isMember = set.Contains(member);
+                var isMember = set.Contains(member);
 
                 while (!RespWriteUtils.WriteInteger(isMember ? 1 : 0, ref curr, end))
                     ObjectUtils.ReallocateOutput(ref output, ref isMemory, ref ptr, ref ptrHandle, ref curr, ref end);
@@ -112,20 +108,21 @@ namespace Garnet.server
             }
         }
 
-        private void SetRemove(byte* input, int length, byte* output)
+        private void SetRemove(ref ObjectInput input, byte* output)
         {
-            var _input = (ObjectInputHeader*)input;
             var _output = (ObjectOutputHeader*)output;
-
-            int count = _input->arg1;
             *_output = default;
-            byte* startptr = input + sizeof(ObjectInputHeader);
-            byte* ptr = startptr;
-            byte* end = input + length;
+
+            var count = input.count;
+
+            var input_startptr = input.payload.ptr;
+            var input_currptr = input_startptr;
+            var length = input.payload.length;
+            var input_endptr = input_startptr + length;
 
             while (count > 0)
             {
-                if (!RespReadUtils.TrySliceWithLengthHeader(out var field, ref ptr, end))
+                if (!RespReadUtils.TrySliceWithLengthHeader(out var field, ref input_currptr, input_endptr))
                     break;
 
                 if (set.Remove(field.ToArray()))
@@ -133,30 +130,27 @@ namespace Garnet.server
                     _output->result1++;
                     this.UpdateSize(field, false);
                 }
+
                 count--;
             }
         }
 
-        private void SetLength(byte* input, int length, byte* output)
+        private void SetLength(byte* output)
         {
             // SCARD key
             var _output = (ObjectOutputHeader*)output;
             _output->result1 = set.Count;
         }
 
-        private void SetPop(byte* input, int length, ref SpanByteAndMemory output)
+        private void SetPop(ref ObjectInput input, ref SpanByteAndMemory output)
         {
-            // SPOP key[count]
-            var _input = (ObjectInputHeader*)input;
-            int count = _input->arg1;
+            // SPOP key [count]
+            var count = input.count;
+            var countDone = 0;
 
-            byte* input_startptr = input + sizeof(ObjectInputHeader);
-            byte* input_currptr = input_startptr;
-            int countDone = 0;
-
-            bool isMemory = false;
+            var isMemory = false;
             MemoryHandle ptrHandle = default;
-            byte* ptr = output.SpanByte.ToPointer();
+            var ptr = output.SpanByte.ToPointer();
 
             var curr = ptr;
             var end = curr + output.Length;
@@ -193,7 +187,7 @@ namespace Garnet.server
                     // Write a bulk string value of a random field from the hash value stored at key.
                     if (set.Count > 0)
                     {
-                        int index = RandomNumberGenerator.GetInt32(0, set.Count);
+                        var index = RandomNumberGenerator.GetInt32(0, set.Count);
                         var item = set.ElementAt(index);
                         set.Remove(item);
                         this.UpdateSize(item, false);
@@ -220,11 +214,10 @@ namespace Garnet.server
             }
         }
 
-        private void SetRandomMember(byte* input, ref SpanByteAndMemory output)
+        private void SetRandomMember(ref ObjectInput input, ref SpanByteAndMemory output)
         {
-            var _input = (ObjectInputHeader*)input;
-            var count = _input->arg1;
-            var seed = _input->arg2;
+            var count = input.count;
+            var seed = input.done;
 
             var countDone = 0;
             var isMemory = false;
