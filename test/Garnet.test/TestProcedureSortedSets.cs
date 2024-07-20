@@ -170,7 +170,7 @@ namespace Garnet
                 goto returnToMain;
             }
 
-            returnToMain:
+        returnToMain:
             WriteSimpleString(ref output, result ? "SUCCESS" : "ERROR");
         }
     }
