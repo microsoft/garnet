@@ -142,12 +142,12 @@ namespace Garnet.server
         #region Geospatial commands
 
         /// <inheritdoc />
-        public GarnetStatus GeoAdd(byte[] key, ArgSlice input, out ObjectOutputHeader output)
-            => storageSession.GeoAdd(key, input, out output, ref objectContext);
+        public GarnetStatus GeoAdd(byte[] key, ref ObjectInput input, out ObjectOutputHeader output)
+            => storageSession.GeoAdd(key, ref input, out output, ref objectContext);
 
         /// <inheritdoc />
-        public GarnetStatus GeoCommands(byte[] key, ArgSlice input, ref GarnetObjectStoreOutput outputFooter)
-            => storageSession.GeoCommands(key, input, ref outputFooter, ref objectContext);
+        public GarnetStatus GeoCommands(byte[] key, ref ObjectInput input, ref GarnetObjectStoreOutput outputFooter)
+            => storageSession.GeoCommands(key, ref input, ref outputFooter, ref objectContext);
 
         #endregion
 

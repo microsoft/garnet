@@ -37,27 +37,21 @@ namespace Garnet.server
                 return true;
             }
 
-            // Prepare input
-            var inputPtr = (ObjectInputHeader*)(ptr - sizeof(ObjectInputHeader));
-
-            // Save old values on buffer for possible revert
-            var save = *inputPtr;
-
             var inputCount = count - 1;
 
-            // Prepare length of header in input buffer
-            var inputLength = (int)(recvBufferPtr + bytesRead - (byte*)inputPtr);
+            // Prepare input
+            var input = new ObjectInput
+            {
+                header = new RespInputHeader
+                {
+                    type = GarnetObjectType.SortedSet,
+                    SortedSetOp = SortedSetOperation.GEOADD,
+                },
+                count = inputCount,
+                payload = new ArgSlice(ptr, (int)(recvBufferPtr + bytesRead - ptr)),
+            };
 
-            // Prepare header in input buffer
-            inputPtr->header.type = GarnetObjectType.SortedSet;
-            inputPtr->header.flags = 0;
-            inputPtr->header.SortedSetOp = SortedSetOperation.GEOADD;
-            inputPtr->arg1 = inputCount;
-
-            var status = storageApi.GeoAdd(keyBytes, new ArgSlice((byte*)inputPtr, inputLength), out ObjectOutputHeader output);
-
-            // Restore input buffer
-            *inputPtr = save;
+            var status = storageApi.GeoAdd(keyBytes, ref input, out var output);
 
             switch (status)
             {
@@ -124,16 +118,7 @@ namespace Garnet.server
                 return true;
             }
 
-            // Prepare input
-            var inputPtr = (ObjectInputHeader*)(ptr - sizeof(ObjectInputHeader));
-
-            // Save input buffer
-            var save = *inputPtr;
-
             var inputCount = count - 1;
-
-            // Prepare length of header in input buffer
-            var inputLength = (int)(recvBufferPtr + bytesRead - (byte*)inputPtr);
 
             var op =
                 command switch
@@ -145,18 +130,21 @@ namespace Garnet.server
                     _ => throw new Exception($"Unexpected {nameof(SortedSetOperation)}: {command}")
                 };
 
-            // Prepare header in input buffer
-            inputPtr->header.type = GarnetObjectType.SortedSet;
-            inputPtr->header.flags = 0;
-            inputPtr->header.SortedSetOp = op;
-            inputPtr->arg1 = inputCount;
+            // Prepare input
+            var input = new ObjectInput
+            {
+                header = new RespInputHeader
+                {
+                    type = GarnetObjectType.SortedSet,
+                    SortedSetOp = op,
+                },
+                count = inputCount,
+                payload = new ArgSlice(ptr, (int)(recvBufferPtr + bytesRead - ptr)),
+            };
 
             var outputFooter = new GarnetObjectStoreOutput { spanByteAndMemory = new SpanByteAndMemory(dcurr, (int)(dend - dcurr)) };
 
-            var status = storageApi.GeoCommands(keyBytes, new ArgSlice((byte*)inputPtr, inputLength), ref outputFooter);
-
-            // Restore input buffer
-            *inputPtr = save;
+            var status = storageApi.GeoCommands(keyBytes, ref input, ref outputFooter);
 
             switch (status)
             {

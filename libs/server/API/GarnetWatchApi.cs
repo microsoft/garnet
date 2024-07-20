@@ -167,10 +167,10 @@ namespace Garnet.server
         }
 
         /// <inheritdoc />
-        public GarnetStatus GeoCommands(byte[] key, ArgSlice input, ref GarnetObjectStoreOutput outputFooter)
+        public GarnetStatus GeoCommands(byte[] key, ref ObjectInput input, ref GarnetObjectStoreOutput outputFooter)
         {
             garnetApi.WATCH(key, StoreType.Object);
-            return garnetApi.GeoCommands(key, input, ref outputFooter);
+            return garnetApi.GeoCommands(key, ref input, ref outputFooter);
         }
 
         /// <inheritdoc />

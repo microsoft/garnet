@@ -442,7 +442,7 @@ namespace Garnet.server
         /// <param name="input"></param>
         /// <param name="output"></param>
         /// <returns></returns>
-        GarnetStatus GeoAdd(byte[] key, ArgSlice input, out ObjectOutputHeader output);
+        GarnetStatus GeoAdd(byte[] key, ref ObjectInput input, out ObjectOutputHeader output);
 
         #endregion
 
@@ -1200,7 +1200,7 @@ namespace Garnet.server
         /// <param name="input"></param>
         /// <param name="outputFooter"></param>
         /// <returns></returns>
-        GarnetStatus GeoCommands(byte[] key, ArgSlice input, ref GarnetObjectStoreOutput outputFooter);
+        GarnetStatus GeoCommands(byte[] key, ref ObjectInput input, ref GarnetObjectStoreOutput outputFooter);
 
         #endregion
 
