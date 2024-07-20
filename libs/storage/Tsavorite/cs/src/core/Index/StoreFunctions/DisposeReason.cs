@@ -4,7 +4,7 @@
 namespace Tsavorite.core
 {
     /// <summary>
-    /// The reason for a call to <see cref="IRecordDisposer{Key, Value}.DisposeRecord(ref Key, ref Value, DisposeReason)"/>
+    /// The reason for a call to <see cref="IRecordDisposer{Key, Value}.DisposeRecord(ref Key, ref Value, DisposeReason, int)"/>
     /// </summary>
     public enum DisposeReason
     {
@@ -37,6 +37,11 @@ namespace Tsavorite.core
         /// A record was deserialized from the disk for a pending Read or RMW operation.
         /// </summary>
         DeserializedFromDisk,
+
+        /// <summary>
+        /// A record was retrieved from the revivification freelist, and thus the key space may have to be adjusted as well.
+        /// </summary>
+        RevivificationFreeList,
 
         /// <summary>
         /// A page was evicted from the in-memory portion of the main log, or from the readcache.

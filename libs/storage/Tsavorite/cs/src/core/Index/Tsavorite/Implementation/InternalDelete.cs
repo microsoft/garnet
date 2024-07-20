@@ -316,7 +316,7 @@ namespace Tsavorite.core
             stackCtx.SetNewRecordInvalid(ref newRecordInfo);
             ref Value insertedValue = ref hlog.GetValue(newPhysicalAddress);
             ref Key insertedKey = ref hlog.GetKey(newPhysicalAddress);
-            sessionFunctions.DisposeSingleDeleter(ref insertedKey, ref insertedValue, ref deleteInfo);
+            storeFunctions.DisposeRecord(ref insertedKey, ref insertedValue, DisposeReason.SingleDeleterCASFailed);
 
             SaveAllocationForRetry(ref pendingContext, newLogicalAddress, newPhysicalAddress, allocatedSize);
             return OperationStatus.RETRY_NOW;   // CAS failure does not require epoch refresh

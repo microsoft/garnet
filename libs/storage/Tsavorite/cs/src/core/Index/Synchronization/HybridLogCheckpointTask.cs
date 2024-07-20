@@ -116,7 +116,7 @@ namespace Tsavorite.core
             store.epoch.Mark(EpochPhaseIdx.CheckpointCompletionCallback, current.Version);
             if (store.epoch.CheckIsComplete(EpochPhaseIdx.CheckpointCompletionCallback, current.Version))
             {
-                // TODO: store.CheckpointCompletionCallback();
+                store.storeFunctions.OnCheckpointCompleted();
                 store.GlobalStateMachineStep(current);
             }
         }

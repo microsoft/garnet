@@ -139,21 +139,6 @@ namespace Tsavorite.core
         }
         #endregion Deletes
 
-        #region Dispose
-        public void DisposeSingleWriter(ref Key key, ref Input input, ref Value src, ref Value dst, ref Output output, ref UpsertInfo upsertInfo, WriteReason reason)
-            => _clientSession.functions.DisposeSingleWriter(ref key, ref input, ref src, ref dst, ref output, ref upsertInfo, reason);
-        public void DisposeCopyUpdater(ref Key key, ref Input input, ref Value oldValue, ref Value newValue, ref Output output, ref RMWInfo rmwInfo)
-            => _clientSession.functions.DisposeCopyUpdater(ref key, ref input, ref oldValue, ref newValue, ref output, ref rmwInfo);
-        public void DisposeInitialUpdater(ref Key key, ref Input input, ref Value value, ref Output output, ref RMWInfo rmwInfo)
-            => _clientSession.functions.DisposeInitialUpdater(ref key, ref input, ref value, ref output, ref rmwInfo);
-        public void DisposeSingleDeleter(ref Key key, ref Value value, ref DeleteInfo deleteInfo)
-            => _clientSession.functions.DisposeSingleDeleter(ref key, ref value, ref deleteInfo);
-        public void DisposeDeserializedFromDisk(ref Key key, ref Value value, ref RecordInfo recordInfo)
-            => _clientSession.functions.DisposeDeserializedFromDisk(ref key, ref value);
-        public void DisposeForRevivification(ref Key key, ref Value value, int newKeySize, ref RecordInfo recordInfo)
-            => _clientSession.functions.DisposeForRevivification(ref key, ref value, newKeySize);
-        #endregion Dispose
-
         #region Utilities
         /// <inheritdoc/>
         public void ConvertOutputToHeap(ref Input input, ref Output output) => _clientSession.functions.ConvertOutputToHeap(ref input, ref output);

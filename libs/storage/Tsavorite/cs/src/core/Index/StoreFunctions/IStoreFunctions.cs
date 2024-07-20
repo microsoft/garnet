@@ -1,6 +1,7 @@
 ﻿// Copyright (c) Microsoft Corporation. All rights reserved.
 // Licensed under the MIT license.
 
+using System;
 using System.IO;
 
 namespace Tsavorite.core
@@ -46,14 +47,26 @@ namespace Tsavorite.core
 
         #region Record Disposer
         /// <summary>
-        /// If true, <see cref="DisposeRecord(ref TKey, ref TValue, DisposeReason)"/> with <see cref="DisposeReason.PageEviction"/> 
+        /// If true, <see cref="DisposeRecord(ref TKey, ref TValue, DisposeReason, int)"/> with <see cref="DisposeReason.PageEviction"/> 
         /// is called on page evictions from both readcache and main log. Otherwise, the user can register an Observer and
         /// do any needed disposal there.
         /// </summary>
         bool DisposeOnPageEviction { get; }
 
         /// <summary>Dispose the Key and Value of a record, if necessary.</summary>
-        void DisposeRecord(ref TKey key, ref TValue value, DisposeReason reason);
+        /// <param name="key">The key for the record</param>
+        /// <param name="value">The value for the record</param>
+        /// <param name="newKeySize">For <see cref="DisposeReason.RevivificationFreeList"/> only, this is a record from the freelist and we may be disposing the key as well as value
+        ///     (it is -1 when revivifying a record in the hash chain or when doing a RETRY; for these the key does not change)</param>
+        void DisposeRecord(ref TKey key, ref TValue value, DisposeReason reason, int newKeySize = -1);
         #endregion Record Disposer
+
+        #region Checkpoint Completion
+        /// <summary>Set the parameterless checkpoint completion callback.</summary>
+        void SetCheckpointCompletedCallback(Action callback);
+
+        /// <summary>Called when a checkpoint has completed.</summary>
+        void OnCheckpointCompleted();
+        #endregion Checkpoint Completion
     }
 }

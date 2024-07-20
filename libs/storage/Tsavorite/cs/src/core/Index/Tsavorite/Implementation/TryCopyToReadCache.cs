@@ -86,8 +86,7 @@ namespace Tsavorite.core
             stackCtx.SetNewRecordInvalid(ref newRecordInfo);
             if (!casSuccess)
             {
-                sessionFunctions.DisposeSingleWriter(ref readcache.GetKey(newPhysicalAddress), ref input, ref recordValue, ref readcache.GetValue(newPhysicalAddress),
-                                                  ref output, ref upsertInfo, WriteReason.CopyToReadCache);
+                storeFunctions.DisposeRecord(ref readcache.GetKey(newPhysicalAddress), ref readcache.GetValue(newPhysicalAddress), DisposeReason.SingleWriterCASFailed);
                 newRecordInfo.PreviousAddress = Constants.kTempInvalidAddress;     // Necessary for ReadCacheEvict, but cannot be kInvalidAddress or we have recordInfo.IsNull
             }
             return false;

@@ -171,7 +171,7 @@ namespace Tsavorite.core
 
                     // Clear any no-longer-needed space, then call DisposeForRevivification again with newKeySize so SpanByte can be efficient about zeroinit.
                     ClearExtraValueSpace(ref recordInfo, ref recordValue, minValueLength, fullValueLength);
-                    sessionFunctions.DisposeForRevivification(ref hlog.GetKey(physicalAddress), ref recordValue, newKeySize, ref recordInfo);
+                    storeFunctions.DisposeRecord(ref hlog.GetKey(physicalAddress), ref recordValue, DisposeReason.RevivificationFreeList, newKeySize);
 
                     Debug.Assert(fullRecordLength >= allocatedSize, $"TryTakeFreeRecord: fullRecordLength {fullRecordLength} should be >= allocatedSize {allocatedSize}");
                     allocatedSize = fullRecordLength;
@@ -220,7 +220,7 @@ namespace Tsavorite.core
             var minValueLength = requiredValueLength < recordLengths.usedValueLength ? requiredValueLength : recordLengths.usedValueLength;
 
             ClearExtraValueSpace(ref srcRecordInfo, ref recordValue, minValueLength, recordLengths.fullValueLength);
-            sessionFunctions.DisposeForRevivification(ref key, ref recordValue, newKeySize: -1, ref srcRecordInfo);
+            storeFunctions.DisposeRecord(ref key, ref recordValue, DisposeReason.RevivificationFreeList);
 
             srcRecordInfo.Tombstone = false;
 

@@ -351,13 +351,6 @@ namespace Tsavorite.core
             public int GetRMWModifiedValueLength(ref Value value, ref Input input) => 0;
             public int GetRMWInitialValueLength(ref Input input) => 0;
 
-            public void DisposeSingleWriter(ref Key key, ref Input input, ref Value src, ref Value dst, ref Output output, ref UpsertInfo upsertInfo, WriteReason reason) { }
-            public void DisposeCopyUpdater(ref Key key, ref Input input, ref Value oldValue, ref Value newValue, ref Output output, ref RMWInfo rmwInfo) { }
-            public void DisposeInitialUpdater(ref Key key, ref Input input, ref Value value, ref Output output, ref RMWInfo rmwInfo) { }
-            public void DisposeSingleDeleter(ref Key key, ref Value value, ref DeleteInfo deleteInfo) { }
-            public void DisposeDeserializedFromDisk(ref Key key, ref Value value) { }
-            public void DisposeForRevivification(ref Key key, ref Value value, int keySize) { }
-
             public void ConvertOutputToHeap(ref Input input, ref Output output) { }
         }
 

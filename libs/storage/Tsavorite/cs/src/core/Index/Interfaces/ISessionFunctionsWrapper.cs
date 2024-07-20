@@ -52,15 +52,6 @@ namespace Tsavorite.core
         bool ConcurrentDeleter(long physicalAddress, ref Key key, ref Value value, ref DeleteInfo deleteInfo, ref RecordInfo recordInfo, out int fullRecordLength);
         #endregion Deletes
 
-        #region Disposal
-        void DisposeSingleWriter(ref Key key, ref Input input, ref Value src, ref Value dst, ref Output output, ref UpsertInfo upsertInfo, WriteReason reason);
-        void DisposeCopyUpdater(ref Key key, ref Input input, ref Value oldValue, ref Value newValue, ref Output output, ref RMWInfo rmwInfo);
-        void DisposeInitialUpdater(ref Key key, ref Input input, ref Value value, ref Output output, ref RMWInfo rmwInfo);
-        void DisposeSingleDeleter(ref Key key, ref Value value, ref DeleteInfo deleteInfo);
-        void DisposeDeserializedFromDisk(ref Key key, ref Value value, ref RecordInfo recordInfo);
-        void DisposeForRevivification(ref Key key, ref Value value, int newKeySize, ref RecordInfo recordInfo);
-        #endregion Disposal
-
         #region Utilities
         /// <inheritdoc/>
         void ConvertOutputToHeap(ref Input input, ref Output output);

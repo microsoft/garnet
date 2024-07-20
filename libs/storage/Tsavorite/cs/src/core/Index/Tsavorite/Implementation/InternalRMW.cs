@@ -556,10 +556,7 @@ namespace Tsavorite.core
             stackCtx.SetNewRecordInvalid(ref newRecordInfo);
             ref Value insertedValue = ref hlog.GetValue(newPhysicalAddress);
             ref Key insertedKey = ref hlog.GetKey(newPhysicalAddress);
-            if (!doingCU)
-                sessionFunctions.DisposeInitialUpdater(ref insertedKey, ref input, ref insertedValue, ref output, ref rmwInfo);
-            else
-                sessionFunctions.DisposeCopyUpdater(ref insertedKey, ref input, ref value, ref insertedValue, ref output, ref rmwInfo);
+            storeFunctions.DisposeRecord(ref insertedKey, ref insertedValue, doingCU ? DisposeReason.CopyUpdaterCASFailed : DisposeReason.InitialUpdaterCASFailed);
 
             SetExtraValueLength(ref newRecordValue, ref newRecordInfo, rmwInfo.UsedValueLength, rmwInfo.FullValueLength);
             SaveAllocationForRetry(ref pendingContext, newLogicalAddress, newPhysicalAddress, allocatedSize);

@@ -171,7 +171,7 @@ namespace Tsavorite.core
 
             if (newLogicalAddress < hlogBase.HeadAddress)
             {
-                // The record dropped below headAddress. If it needs DisposeForRevivification, it will be done on eviction.
+                // The record dropped below headAddress. If it needs DisposeRecord, it will be done on eviction.
                 newPhysicalAddress = 0;
                 return false;
             }
@@ -184,7 +184,7 @@ namespace Tsavorite.core
 
             // Dispose the record for either reuse or abandonment.
             ClearExtraValueSpace(ref recordInfo, ref recordValue, usedValueLength, fullValueLength);
-            sessionFunctions.DisposeForRevivification(ref hlog.GetKey(newPhysicalAddress), ref recordValue, newKeySize, ref recordInfo);
+            storeFunctions.DisposeRecord(ref hlog.GetKey(newPhysicalAddress), ref recordValue, DisposeReason.RevivificationFreeList, newKeySize);
 
             if (newLogicalAddress <= minAddress || fullRecordLength < allocatedSize)
             {

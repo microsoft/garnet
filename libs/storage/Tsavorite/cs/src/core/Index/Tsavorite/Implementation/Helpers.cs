@@ -127,7 +127,7 @@ namespace Tsavorite.core
             // usedValueLength is zero'd for log-scan correctness.
             ref Value recordValue = ref stackCtx.recSrc.GetValue();
             ClearExtraValueSpace(ref srcRecordInfo, ref recordValue, recordLengths.usedValueLength, recordLengths.fullValueLength);
-            sessionFunctions.DisposeForRevivification(ref stackCtx.recSrc.GetKey(), ref recordValue, newKeySize: -1, ref srcRecordInfo);
+            storeFunctions.DisposeRecord(ref stackCtx.recSrc.GetKey(), ref recordValue, DisposeReason.RevivificationFreeList);
 
             // Now that we've Disposed the record, see if its address is revivifiable. If not, just leave it orphaned and invalid.
             if (stackCtx.recSrc.LogicalAddress < GetMinRevivifiableAddress())

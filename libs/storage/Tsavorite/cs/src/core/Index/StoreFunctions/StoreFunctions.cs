@@ -34,6 +34,9 @@ namespace Tsavorite.core
 
         /// <summary>Dispose a record</summary>
         readonly TRecordDisposer recordDisposer = recordDisposer;
+
+        /// <summary>Optional checkpoint completion callback, set separately from ctor.</summary>
+        Action checkpointCompletionCallback = () => {};
         #endregion Fields
 
         #region Key Comparer
@@ -94,8 +97,16 @@ namespace Tsavorite.core
 
         /// <inheritdoc/>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public readonly void DisposeRecord(ref TKey key, ref TValue value, DisposeReason reason) => recordDisposer.DisposeRecord(ref key, ref value, reason);
+        public readonly void DisposeRecord(ref TKey key, ref TValue value, DisposeReason reason, int newKeySize) => recordDisposer.DisposeRecord(ref key, ref value, reason, newKeySize);
         #endregion Record Disposer
+
+        #region Checkpoint Completion
+        /// <inheritdoc/>
+        public void SetCheckpointCompletedCallback(Action callback) => checkpointCompletionCallback = callback;
+
+        /// <inheritdoc/>
+        public readonly void OnCheckpointCompleted() => checkpointCompletionCallback();
+        #endregion Checkpoint Completion
     }
 
     /// <summary>

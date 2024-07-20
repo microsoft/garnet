@@ -49,19 +49,6 @@ namespace Tsavorite.core
         public virtual void PostSingleDeleter(ref Key key, ref DeleteInfo deleteInfo) { }
         public virtual bool ConcurrentDeleter(ref Key key, ref Value value, ref DeleteInfo deleteInfo, ref RecordInfo recordInfo) => true;
 
-        /// <inheritdoc/>
-        public virtual void DisposeSingleWriter(ref Key key, ref Input input, ref Value src, ref Value dst, ref Output output, ref UpsertInfo upsertInfo, WriteReason reason) { }
-        /// <inheritdoc/>
-        public virtual void DisposeCopyUpdater(ref Key key, ref Input input, ref Value oldValue, ref Value newValue, ref Output output, ref RMWInfo rmwInfo) { }
-        /// <inheritdoc/>
-        public virtual void DisposeInitialUpdater(ref Key key, ref Input input, ref Value value, ref Output output, ref RMWInfo rmwInfo) { }
-        /// <inheritdoc/>
-        public virtual void DisposeSingleDeleter(ref Key key, ref Value value, ref DeleteInfo deleteInfo) { }
-        /// <inheritdoc/>
-        public virtual void DisposeDeserializedFromDisk(ref Key key, ref Value value) { }
-        /// <inheritdoc/>
-        public virtual void DisposeForRevivification(ref Key key, ref Value value, int newKeySize) { }
-        /// <inheritdoc/>
         public virtual void ReadCompletionCallback(ref Key key, ref Input input, ref Output output, Context ctx, Status status, RecordMetadata recordMetadata) { }
         /// <inheritdoc/>
         public virtual void RMWCompletionCallback(ref Key key, ref Input input, ref Output output, Context ctx, Status status, RecordMetadata recordMetadata) { }

@@ -51,7 +51,7 @@ namespace Tsavorite.test.ReadCacheTests
     using LongStoreFunctions = StoreFunctions<long, long, LongComparerModulo, DefaultRecordDisposer<long, long>>;
     using LongAllocator = BlittableAllocator<long, long, StoreFunctions<long, long, LongComparerModulo, DefaultRecordDisposer<long, long>>>;
 
-    using SpanByteStoreFunctions = StoreFunctions<SpanByte, SpanByte, SpanByteComparerModulo, DefaultRecordDisposer<SpanByte, SpanByte>>;
+    using SpanByteStoreFunctions = StoreFunctions<SpanByte, SpanByte, SpanByteComparerModulo, SpanByteRecordDisposer>;
 
     internal static class RcTestGlobals
     {
@@ -955,7 +955,7 @@ namespace Tsavorite.test.ReadCacheTests
                 LogDevice = log,
                 MemorySize = 1L << 15, PageSize = 1L << 10,
                 ReadCacheMemorySize = 1L << 15, ReadCachePageSize = 1L << 9, ReadCacheEnabled = true
-            }, StoreFunctions<SpanByte, SpanByte>.Create(comparer)
+            }, StoreFunctions<SpanByte, SpanByte>.Create(comparer, SpanByteRecordDisposer.Instance)
             , (allocatorSettings, storeFunctions) => new (allocatorSettings, storeFunctions)
             );
         }
