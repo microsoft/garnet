@@ -1,26 +1,39 @@
 cluster:
-  enabled: false
+  enabled: true
   initJob:
     enabled: true
     annotations: {}
     backoffLimit: 6
-    ttlSecondsAfterFinished: 600
+    ttlSecondsAfterFinished: 0
     image:
       registry: docker.io
       repository: redis
       pullPolicy: IfNotPresent
       tag: ""
   statefulSet:
-    replicas: 1
+    replicas: 5
   containers:
     args: ["--cluster", "--port", "6379", "-m", "128m", "-i", "128m"]
+    resources:
+      requests:
+        memory: "1Gi"
+        cpu: "500m"
+      limits:
+        memory: "2Gi"
+        cpu: "1000m"
 
 standalone:
-  enabled: true
   statefulSet:
     replicas: 1
   containers:
     args: ["--port", "6379", "-m", "128m", "-i", "128m"]
+    resources:
+      requests:
+        memory: "1Gi"
+        cpu: "500m"
+      limits:
+        memory: "2Gi"
+        cpu: "1000m"
 
 # Common configurations
 image:

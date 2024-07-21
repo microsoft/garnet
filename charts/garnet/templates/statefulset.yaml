@@ -123,7 +123,7 @@ spec:
   {{- end }}
 {{- end }}
 
-{{- if .Values.standalone.enabled }}
+{{- if not .Values.cluster.enabled }}
 apiVersion: apps/v1
 kind: StatefulSet
 metadata:
@@ -187,7 +187,7 @@ spec:
             {{- toYaml . | nindent 12 }}
           {{- end }}
           resources:
-            {{- toYaml .Values.resources | nindent 12 }}
+            {{- toYaml (.Values.standalone.containers.resources | default dict) | nindent 12 }}
           volumeMounts:
           - name: data
             mountPath: /data
