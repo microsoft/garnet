@@ -31,7 +31,7 @@ namespace Garnet.server
 
             if (count % 2 != 1)
             {
-                return AbortWithErrorMessage(count, CmdStrings.RESP_ERR_GENERIC_SYNTAX_ERROR);
+                return AbortWithErrorMessage(CmdStrings.RESP_ERR_GENERIC_SYNTAX_ERROR);
             }
 
             // Get the key for SortedSet

@@ -231,19 +231,19 @@ namespace Garnet.server
                         SortedSetRangeByScore(ref input, ref output);
                         break;
                     case SortedSetOperation.GEOADD:
-                        GeoAdd(_input, input.Length, outputSpan);
+                        GeoAdd(ref input, outputSpan);
                         break;
                     case SortedSetOperation.GEOHASH:
-                        GeoHash(_input, input.Length, ref output);
+                        GeoHash(ref input, ref output);
                         break;
                     case SortedSetOperation.GEODIST:
-                        GeoDistance(_input, input.Length, ref output);
+                        GeoDistance(ref input, ref output);
                         break;
                     case SortedSetOperation.GEOPOS:
-                        GeoPosition(_input, input.Length, ref output);
+                        GeoPosition(ref input, ref output);
                         break;
                     case SortedSetOperation.GEOSEARCH:
-                        GeoSearch(_input, input.Length, ref output);
+                        GeoSearch(ref input, ref output);
                         break;
                     case SortedSetOperation.ZREVRANGE:
                         SortedSetReverseRange(ref input, ref output);

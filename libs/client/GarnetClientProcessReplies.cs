@@ -54,7 +54,7 @@ namespace Garnet.client
                     if (!RespReadResponseUtils.ReadStringArrayWithLengthHeader(out var resultArray, ref ptr, end))
                         return false;
                     // Return first element of array
-                    result = resultArray[0];
+                    if (resultArray != null) result = resultArray[0];
                     break;
 
                 default:

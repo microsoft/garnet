@@ -67,7 +67,7 @@ namespace Garnet.server
             {
                 header = new RespInputHeader
                 {
-                    type = GarnetObjectType.SortedSet,
+                    type = objectType,
                 },
                 count = count - 2,
                 done = cursorValue,

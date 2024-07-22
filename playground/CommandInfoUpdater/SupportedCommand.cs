@@ -149,6 +149,7 @@ namespace CommandInfoUpdater
             new("LINSERT", RespCommand.LINSERT),
             new("LLEN", RespCommand.LLEN),
             new("LMOVE", RespCommand.LMOVE),
+            new("LMPOP", RespCommand.LMPOP),
             new("LPOP", RespCommand.LPOP),
             new("LPUSH", RespCommand.LPUSH),
             new("LPUSHX", RespCommand.LPUSHX),

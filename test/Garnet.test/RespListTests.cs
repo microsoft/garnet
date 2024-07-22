@@ -1302,6 +1302,95 @@ namespace Garnet.test
         }
 
         [Test]
+        public void CanDoBasicLMPOP()
+        {
+            using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
+            var db = redis.GetDatabase(0);
+
+            var key1 = new RedisKey("mykey1");
+            var key1Values = new[] { new RedisValue("myval1"), new RedisValue("myval2"), new RedisValue("myval3") };
+
+            var key2 = new RedisKey("mykey2");
+            var key2Values = new[] { new RedisValue("myval4") };
+
+            var pushed = db.ListRightPush(key1, key1Values);
+            Assert.AreEqual(3, pushed);
+            pushed = db.ListRightPush(key2, key2Values);
+            Assert.AreEqual(1, pushed);
+
+            var result = db.ListLeftPop(new[] { new RedisKey("test") }, 3);
+            Assert.True(result.IsNull);
+
+            result = db.ListRightPop(new[] { new RedisKey("test") }, 3);
+            Assert.True(result.IsNull);
+
+            result = db.ListLeftPop(new[] { key1, key2 }, 3);
+            Assert.AreEqual(key1, result.Key);
+            Assert.AreEqual(key1Values, result.Values);
+
+            result = db.ListRightPop(new[] { new RedisKey("test"), key2 }, 2);
+            Assert.AreEqual(key2, result.Key);
+            Assert.AreEqual(key2Values.Reverse(), result.Values);
+        }
+
+        [Test]
+        public void CanDoLMPOPLeftWithoutCount()
+        {
+            using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
+            var db = redis.GetDatabase(0);
+
+            var key1 = new RedisKey("mykey1");
+            var key1Values = new[] { new RedisValue("myval1"), new RedisValue("myval2"), new RedisValue("myval3") };
+            var pushed = db.ListRightPush(key1, key1Values);
+            Assert.AreEqual(3, pushed);
+
+            var response = db.Execute("LMPOP", "1", key1.ToString(), "LEFT");
+
+            var result = response.Resp2Type == ResultType.Array ? (string[])response : Array.Empty<string>();
+            Assert.AreEqual(new string[] { key1.ToString(), key1Values[0].ToString() }, result);
+        }
+
+        [Test]
+        public void CanDoLMPOPRightMultipleTimes()
+        {
+            using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
+            var db = redis.GetDatabase(0);
+
+            var key1 = new RedisKey("mykey1");
+            var key1Values = new[] { new RedisValue("myval1"), new RedisValue("myval2"), new RedisValue("myval3") };
+            var pushed = db.ListLeftPush(key1, key1Values);
+            Assert.AreEqual(3, pushed);
+
+            ListPopResult result;
+
+            for (var i = 0; i < key1Values.Length; i++)
+            {
+                result = db.ListRightPop(new[] { key1 }, 1);
+                Assert.AreEqual(key1, result.Key);
+                Assert.AreEqual(key1Values[i], result.Values.FirstOrDefault());
+            }
+
+            result = db.ListRightPop(new[] { key1 }, 1);
+            Assert.True(result.IsNull);
+        }
+
+        [Test]
+        public void CanDoRejectBadLMPOPCommand()
+        {
+            using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
+            var db = redis.GetDatabase(0);
+
+            var exception = Assert.Throws<RedisServerException>(() => db.Execute("LMPOP", "2", "one", "LEFT"));
+            Assert.AreEqual("ERR syntax error", exception.Message);
+
+            exception = Assert.Throws<RedisServerException>(() => db.Execute("LMPOP", "2", "one", "two"));
+            Assert.AreEqual("ERR syntax error", exception.Message);
+
+            exception = Assert.Throws<RedisServerException>(() => db.Execute("LMPOP", "1", "one", "LEFT", "COUNT"));
+            Assert.AreEqual("ERR syntax error", exception.Message);
+        }
+
+        [Test]
         public void CheckListOperationsOnWrongTypeObjectSE()
         {
             using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
@@ -1345,6 +1434,10 @@ namespace Garnet.test
             RespTestsUtils.CheckCommandOnWrongTypeObjectSE(() => db.ListMove(keys[0], keys[1], ListSide.Left, ListSide.Right));
             // LSET
             RespTestsUtils.CheckCommandOnWrongTypeObjectSE(() => db.ListSetByIndex(keys[0], 2, values[0][1]));
+            // LMPOP LEFT
+            RespTestsUtils.CheckCommandOnWrongTypeObjectSE(() => db.ListLeftPop(keys, 2));
+            // LMPOP RIGHT
+            RespTestsUtils.CheckCommandOnWrongTypeObjectSE(() => db.ListRightPop(keys, 3));
         }
     }
 }

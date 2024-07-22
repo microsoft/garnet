@@ -41,25 +41,20 @@ namespace Garnet.server
             }
 
             var inputCount = count - 1;
+
             // Prepare input
-            var inputPtr = (ObjectInputHeader*)(ptr - sizeof(ObjectInputHeader));
+            var input = new ObjectInput
+            {
+                header = new RespInputHeader
+                {
+                    type = GarnetObjectType.Set,
+                    SetOp = SetOperation.SADD,
+                },
+                count = inputCount,
+                payload = new ArgSlice(ptr, (int)(recvBufferPtr + bytesRead - ptr)),
+            };
 
-            // Save old values on buffer for possible revert
-            var save = *inputPtr;
-
-            // Prepare length of header in input buffer
-            var inputLength = (int)(recvBufferPtr + bytesRead - (byte*)inputPtr);
-
-            // Prepare header in input buffer
-            inputPtr->header.type = GarnetObjectType.Set;
-            inputPtr->header.flags = 0;
-            inputPtr->header.SetOp = SetOperation.SADD;
-            inputPtr->arg1 = inputCount;
-
-            var status = storageApi.SetAdd(keyBytes, new ArgSlice((byte*)inputPtr, inputLength), out var output);
-
-            // Restore input buffer
-            *inputPtr = save;
+            var status = storageApi.SetAdd(keyBytes, ref input, out var output);
 
             switch (status)
             {
@@ -312,24 +307,18 @@ namespace Garnet.server
             var inputCount = count - 1; // only identifiers
 
             // Prepare input
-            var inputPtr = (ObjectInputHeader*)(ptr - sizeof(ObjectInputHeader));
+            var input = new ObjectInput
+            {
+                header = new RespInputHeader
+                {
+                    type = GarnetObjectType.Set,
+                    SetOp = SetOperation.SREM,
+                },
+                count = inputCount,
+                payload = new ArgSlice(ptr, (int)(recvBufferPtr + bytesRead - ptr)),
+            };
 
-            // Save old values on buffer for possible revert
-            var save = *inputPtr;
-
-            // Prepare length of header in input buffer
-            var inputLength = (int)(recvBufferPtr + bytesRead - (byte*)inputPtr);
-
-            // Prepare header in input buffer
-            inputPtr->header.type = GarnetObjectType.Set;
-            inputPtr->header.flags = 0;
-            inputPtr->header.SetOp = SetOperation.SREM;
-            inputPtr->arg1 = inputCount;
-
-            var status = storageApi.SetRemove(keyBytes, new ArgSlice((byte*)inputPtr, inputLength), out var output);
-
-            // Restore input buffer
-            *inputPtr = save;
+            var status = storageApi.SetRemove(keyBytes, ref input, out var output);
 
             switch (status)
             {
@@ -378,24 +367,17 @@ namespace Garnet.server
             }
 
             // Prepare input
-            var inputPtr = (ObjectInputHeader*)(ptr - sizeof(ObjectInputHeader));
+            var input = new ObjectInput
+            {
+                header = new RespInputHeader
+                {
+                    type = GarnetObjectType.Set,
+                    SetOp = SetOperation.SCARD,
+                },
+                payload = new ArgSlice(ptr, (int)(recvBufferPtr + bytesRead - ptr)),
+            };
 
-            // Save old values on buffer for possible revert
-            var save = *inputPtr;
-
-            // Prepare length of header in input buffer
-            var inputLength = sizeof(ObjectInputHeader);
-
-            // Prepare header in input buffer
-            inputPtr->header.type = GarnetObjectType.Set;
-            inputPtr->header.flags = 0;
-            inputPtr->header.SetOp = SetOperation.SCARD;
-            inputPtr->arg1 = 1;
-
-            var status = storageApi.SetLength(keyBytes, new ArgSlice((byte*)inputPtr, inputLength), out var output);
-
-            // Restore input buffer
-            *inputPtr = save;
+            var status = storageApi.SetLength(keyBytes, ref input, out var output);
 
             switch (status)
             {
@@ -444,27 +426,20 @@ namespace Garnet.server
             }
 
             // Prepare input
-            var inputPtr = (ObjectInputHeader*)(ptr - sizeof(ObjectInputHeader));
-
-            // Save old values
-            var save = *inputPtr;
-
-            // Prepare length of header in input buffer
-            var inputLength = (int)(recvBufferPtr + bytesRead - (byte*)inputPtr);
-
-            // Prepare header in input buffer
-            inputPtr->header.type = GarnetObjectType.Set;
-            inputPtr->header.flags = 0;
-            inputPtr->header.SetOp = SetOperation.SMEMBERS;
-            inputPtr->arg1 = count;
+            var input = new ObjectInput
+            {
+                header = new RespInputHeader
+                {
+                    type = GarnetObjectType.Set,
+                    SetOp = SetOperation.SMEMBERS,
+                },
+                payload = new ArgSlice(ptr, (int)(recvBufferPtr + bytesRead - ptr)),
+            };
 
             // Prepare GarnetObjectStore output
             var outputFooter = new GarnetObjectStoreOutput { spanByteAndMemory = new SpanByteAndMemory(dcurr, (int)(dend - dcurr)) };
 
-            var status = storageApi.SetMembers(keyBytes, new ArgSlice((byte*)inputPtr, inputLength), ref outputFooter);
-
-            // Restore input buffer
-            *inputPtr = save;
+            var status = storageApi.SetMembers(keyBytes, ref input, ref outputFooter);
 
             switch (status)
             {
@@ -505,27 +480,20 @@ namespace Garnet.server
             }
 
             // Prepare input
-            var inputPtr = (ObjectInputHeader*)(ptr - sizeof(ObjectInputHeader));
-
-            // Save old values
-            var save = *inputPtr;
-
-            // Prepare length of header in input buffer
-            var inputLength = (int)(recvBufferPtr + bytesRead - (byte*)inputPtr);
-
-            // Prepare header in input buffer
-            inputPtr->header.type = GarnetObjectType.Set;
-            inputPtr->header.flags = 0;
-            inputPtr->header.SetOp = SetOperation.SISMEMBER;
-            inputPtr->arg1 = count - 2;
+            var input = new ObjectInput
+            {
+                header = new RespInputHeader
+                {
+                    type = GarnetObjectType.Set,
+                    SetOp = SetOperation.SISMEMBER,
+                },
+                payload = new ArgSlice(ptr, (int)(recvBufferPtr + bytesRead - ptr)),
+            };
 
             // Prepare GarnetObjectStore output
             var outputFooter = new GarnetObjectStoreOutput { spanByteAndMemory = new SpanByteAndMemory(dcurr, (int)(dend - dcurr)) };
 
-            var status = storageApi.SetIsMember(keyBytes, new ArgSlice((byte*)inputPtr, inputLength), ref outputFooter);
-
-            // Restore input buffer
-            *inputPtr = save;
+            var status = storageApi.SetIsMember(keyBytes, ref input, ref outputFooter);
 
             switch (status)
             {
@@ -600,27 +568,21 @@ namespace Garnet.server
             }
 
             // Prepare input
-            var inputPtr = (ObjectInputHeader*)(ptr - sizeof(ObjectInputHeader));
-
-            // Save old values on buffer for possible revert
-            var save = *inputPtr;
-
-            // Prepare length of header in input buffer
-            var inputLength = (int)(recvBufferPtr + bytesRead - (byte*)inputPtr);
-
-            // Prepare header in input buffer
-            inputPtr->header.type = GarnetObjectType.Set;
-            inputPtr->header.flags = 0;
-            inputPtr->header.SetOp = SetOperation.SPOP;
-            inputPtr->arg1 = countParameter;
+            var input = new ObjectInput
+            {
+                header = new RespInputHeader
+                {
+                    type = GarnetObjectType.Set,
+                    SetOp = SetOperation.SPOP,
+                },
+                count = countParameter,
+                payload = new ArgSlice(ptr, (int)(recvBufferPtr + bytesRead - ptr)),
+            };
 
             // Prepare GarnetObjectStore output
             var outputFooter = new GarnetObjectStoreOutput { spanByteAndMemory = new SpanByteAndMemory(dcurr, (int)(dend - dcurr)) };
 
-            var status = storageApi.SetPop(keyBytes, new ArgSlice((byte*)inputPtr, inputLength), ref outputFooter);
-
-            // Reset input buffer
-            *inputPtr = save;
+            var status = storageApi.SetPop(keyBytes, ref input, ref outputFooter);
 
             switch (status)
             {
@@ -748,32 +710,26 @@ namespace Garnet.server
                 ptr = sbCount.ToPointer() + sbCount.Length + 2;
             }
 
-            // Prepare input
-            var inputPtr = (ObjectInputHeader*)(ptr - sizeof(ObjectInputHeader));
-
-            // Save old values on buffer for possible revert
-            var save = *inputPtr;
-
-            // Prepare length of header in input buffer
-            var inputLength = sizeof(ObjectInputHeader);
-
             // Create a random seed
             var seed = RandomGen.Next();
 
-            // Prepare header in input buffer
-            inputPtr->header.type = GarnetObjectType.Set;
-            inputPtr->header.flags = 0;
-            inputPtr->header.SetOp = SetOperation.SRANDMEMBER;
-            inputPtr->arg1 = countParameter;
-            inputPtr->arg2 = seed;
+            // Prepare input
+            var input = new ObjectInput
+            {
+                header = new RespInputHeader
+                {
+                    type = GarnetObjectType.Set,
+                    SetOp = SetOperation.SRANDMEMBER,
+                },
+                count = countParameter,
+                done = seed,
+                payload = new ArgSlice(ptr, (int)(recvBufferPtr + bytesRead - ptr)),
+            };
 
             // Prepare GarnetObjectStore output
             var outputFooter = new GarnetObjectStoreOutput { spanByteAndMemory = new SpanByteAndMemory(dcurr, (int)(dend - dcurr)) };
 
-            var status = storageApi.SetRandomMember(keyBytes, new ArgSlice((byte*)inputPtr, inputLength), ref outputFooter);
-
-            // Reset input buffer
-            *inputPtr = save;
+            var status = storageApi.SetRandomMember(keyBytes, ref input, ref outputFooter);
 
             switch (status)
             {

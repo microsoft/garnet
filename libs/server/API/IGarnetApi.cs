@@ -370,7 +370,7 @@ namespace Garnet.server
         /// <param name="count"></param>
         /// <param name="lowScoresFirst">When true, return the members with the lowest scores, otherwise return the highest scores.</param>
         /// <returns></returns>
-        GarnetStatus SortedSetPop(ArgSlice key, out (ArgSlice score, ArgSlice member)[] pairs, int count = 1, bool lowScoresFirst = true);
+        GarnetStatus SortedSetPop(ArgSlice key, out (ArgSlice member, ArgSlice score)[] pairs, int count = 1, bool lowScoresFirst = true);
 
         /// <summary>
         /// Increments the score of member in the sorted set stored at key by increment.
@@ -442,7 +442,7 @@ namespace Garnet.server
         /// <param name="input"></param>
         /// <param name="output"></param>
         /// <returns></returns>
-        GarnetStatus GeoAdd(byte[] key, ArgSlice input, out ObjectOutputHeader output);
+        GarnetStatus GeoAdd(byte[] key, ref ObjectInput input, out ObjectOutputHeader output);
 
         #endregion
 
@@ -478,7 +478,7 @@ namespace Garnet.server
         /// <param name="input"></param>
         /// <param name="output"></param>
         /// <returns></returns>
-        GarnetStatus SetAdd(byte[] key, ArgSlice input, out ObjectOutputHeader output);
+        GarnetStatus SetAdd(byte[] key, ref ObjectInput input, out ObjectOutputHeader output);
 
         /// <summary>
         /// Removes the specified member from the set.
@@ -511,7 +511,7 @@ namespace Garnet.server
         /// <param name="input"></param>
         /// <param name="output"></param>
         /// <returns></returns>
-        GarnetStatus SetRemove(byte[] key, ArgSlice input, out ObjectOutputHeader output);
+        GarnetStatus SetRemove(byte[] key, ref ObjectInput input, out ObjectOutputHeader output);
 
         /// <summary>
         /// Removes and returns one random member from the set at key.
@@ -537,7 +537,7 @@ namespace Garnet.server
         /// <param name="input"></param>
         /// <param name="outputFooter"></param>
         /// <returns></returns>
-        GarnetStatus SetPop(byte[] key, ArgSlice input, ref GarnetObjectStoreOutput outputFooter);
+        GarnetStatus SetPop(byte[] key, ref ObjectInput input, ref GarnetObjectStoreOutput outputFooter);
 
         /// <summary>
         /// Moves a member from a source set to a destination set.
@@ -562,7 +562,7 @@ namespace Garnet.server
         /// <param name="input"></param>
         /// <param name="outputFooter"></param>
         /// <returns></returns>
-        GarnetStatus SetRandomMember(byte[] key, ArgSlice input, ref GarnetObjectStoreOutput outputFooter);
+        GarnetStatus SetRandomMember(byte[] key, ref ObjectInput input, ref GarnetObjectStoreOutput outputFooter);
 
         /// <summary>
         /// This command is equal to SUNION, but instead of returning the resulting set, it is stored in destination.
@@ -688,6 +688,16 @@ namespace Garnet.server
         GarnetStatus ListLeftPop(ArgSlice key, int count, out ArgSlice[] elements);
 
         /// <summary>
+        /// ListLeftPop ArgSlice version for multiple keys and values
+        /// </summary>
+        /// <param name="keys"></param>
+        /// <param name="count"></param>
+        /// <param name="key"></param>
+        /// <param name="elements"></param>
+        /// <returns>GarnetStatus</returns>
+        GarnetStatus ListLeftPop(ArgSlice[] keys, int count, out ArgSlice key, out ArgSlice[] elements);
+
+        /// <summary>
         /// ListRightPop ArgSlice version, with GarnetObjectStoreOutput
         /// </summary>
         /// <param name="key"></param>
@@ -712,6 +722,17 @@ namespace Garnet.server
         /// <param name="count"></param>
         /// <returns></returns>
         GarnetStatus ListRightPop(ArgSlice key, int count, out ArgSlice[] elements);
+
+
+        /// <summary>
+        /// ListRightPop ArgSlice version for multiple keys and values
+        /// </summary>
+        /// <param name="keys"></param>
+        /// <param name="count"></param>
+        /// <param name="key"></param>
+        /// <param name="elements"></param>
+        /// <returns>GarnetStatus</returns>
+        GarnetStatus ListRightPop(ArgSlice[] keys, int count, out ArgSlice key, out ArgSlice[] elements);
 
         #endregion
 
@@ -1179,7 +1200,7 @@ namespace Garnet.server
         /// <param name="input"></param>
         /// <param name="outputFooter"></param>
         /// <returns></returns>
-        GarnetStatus GeoCommands(byte[] key, ArgSlice input, ref GarnetObjectStoreOutput outputFooter);
+        GarnetStatus GeoCommands(byte[] key, ref ObjectInput input, ref GarnetObjectStoreOutput outputFooter);
 
         #endregion
 
@@ -1239,7 +1260,7 @@ namespace Garnet.server
         /// <param name="input"></param>
         /// <param name="output"></param>
         /// <returns></returns>
-        GarnetStatus SetLength(byte[] key, ArgSlice input, out ObjectOutputHeader output);
+        GarnetStatus SetLength(byte[] key, ref ObjectInput input, out ObjectOutputHeader output);
 
         /// <summary>
         /// SMEMBERS key
@@ -1256,7 +1277,7 @@ namespace Garnet.server
         /// <param name="input"></param>
         /// <param name="outputFooter"></param>
         /// <returns></returns>
-        GarnetStatus SetMembers(byte[] key, ArgSlice input, ref GarnetObjectStoreOutput outputFooter);
+        GarnetStatus SetMembers(byte[] key, ref ObjectInput input, ref GarnetObjectStoreOutput outputFooter);
 
         /// <summary>
         /// Returns if member is a member of the set stored at key.
@@ -1265,7 +1286,7 @@ namespace Garnet.server
         /// <param name="input"></param>
         /// <param name="outputFooter"></param>
         /// <returns></returns>
-        GarnetStatus SetIsMember(byte[] key, ArgSlice input, ref GarnetObjectStoreOutput outputFooter);
+        GarnetStatus SetIsMember(byte[] key, ref ObjectInput input, ref GarnetObjectStoreOutput outputFooter);
 
         /// <summary>
         /// Iterates over the members of the Set with the given key using a cursor,

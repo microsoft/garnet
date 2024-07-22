@@ -178,6 +178,7 @@ namespace Garnet.server
         public const string GenericErrWrongNumArgsTxn =
             "ERR Invalid number of parameters to stored proc {0}, expected {1}, actual {2}";
         public const string GenericSyntaxErrorOption = "ERR Syntax error in {0} option '{1}'";
+        public const string GenericParamShouldBeGreaterThanZero = "ERR {0} should be greater than 0";
 
         /// <summary>
         /// Object types

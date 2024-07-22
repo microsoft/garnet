@@ -3,6 +3,7 @@
 
 using System;
 using System.Reflection;
+using System.Text;
 using Garnet.common;
 using Tsavorite.core;
 
@@ -169,6 +170,111 @@ namespace Garnet.server
             return true;
         }
 
+
+        /// <summary>
+        /// LMPOP numkeys key [key ...] LEFT | RIGHT [COUNT count]
+        /// </summary>
+        /// <param name="count"></param>
+        /// <param name="storageApi"></param>
+        /// <returns></returns>
+        private unsafe bool ListPopMultiple<TGarnetApi>(int count, ref TGarnetApi storageApi)
+                            where TGarnetApi : IGarnetApi
+        {
+            if (count < 3)
+            {
+                return AbortWithWrongNumberOfArguments("LMPOP", count);
+            }
+
+            var currTokenId = 0;
+
+            // Read count of keys
+            if (!parseState.TryGetInt(currTokenId++, out var numKeys))
+            {
+                var err = string.Format(CmdStrings.GenericParamShouldBeGreaterThanZero, "numkeys");
+                return AbortWithErrorMessage(Encoding.ASCII.GetBytes(err));
+            }
+
+            if (count != numKeys + 2 && count != numKeys + 4)
+            {
+                return AbortWithErrorMessage(CmdStrings.RESP_ERR_GENERIC_SYNTAX_ERROR);
+            }
+
+            // Get the keys for Lists
+            var keys = new ArgSlice[numKeys];
+
+            for (var i = 0; i < keys.Length; i++)
+            {
+                keys[i] = parseState.GetArgSliceByRef(currTokenId++);
+            }
+
+            if (NetworkMultiKeySlotVerify(readOnly: false, firstKey: 1, lastKey: numKeys + 1))
+                return true;
+
+            // Get the direction
+            var dir = parseState.GetArgSliceByRef(currTokenId++);
+            var popDirection = GetOperationDirection(dir);
+
+            if (popDirection == OperationDirection.Unknown)
+            {
+                return AbortWithErrorMessage(CmdStrings.RESP_ERR_GENERIC_SYNTAX_ERROR);
+            }
+
+            var popCount = 1;
+
+            // Get the COUNT keyword & parameter value, if specified
+            if (count == numKeys + 4)
+            {
+                var countKeyword = parseState.GetArgSliceByRef(currTokenId++);
+
+                if (!countKeyword.ReadOnlySpan.EqualsUpperCaseSpanIgnoringCase(CmdStrings.COUNT))
+                {
+                    return AbortWithErrorMessage(CmdStrings.RESP_ERR_GENERIC_SYNTAX_ERROR);
+                }
+
+                // Read count
+                if (!parseState.TryGetInt(currTokenId, out popCount))
+                {
+                    var err = string.Format(CmdStrings.GenericParamShouldBeGreaterThanZero, "count");
+                    return AbortWithErrorMessage(Encoding.ASCII.GetBytes(err));
+                }
+            }
+
+            var statusOp = popDirection == OperationDirection.Left
+                ? storageApi.ListLeftPop(keys, popCount, out var key, out var elements)
+                : storageApi.ListRightPop(keys, popCount, out key, out elements);
+
+            switch (statusOp)
+            {
+                case GarnetStatus.OK:
+                    while (!RespWriteUtils.WriteArrayLength(2, ref dcurr, dend))
+                        SendAndReset();
+
+                    while (!RespWriteUtils.WriteBulkString(key.Span, ref dcurr, dend))
+                        SendAndReset();
+
+                    while (!RespWriteUtils.WriteArrayLength(elements.Length, ref dcurr, dend))
+                        SendAndReset();
+
+                    foreach (var element in elements)
+                    {
+                        while (!RespWriteUtils.WriteBulkString(element.Span, ref dcurr, dend))
+                            SendAndReset();
+                    }
+
+                    break;
+                case GarnetStatus.NOTFOUND:
+                    while (!RespWriteUtils.WriteNullArray(ref dcurr, dend))
+                        SendAndReset();
+                    break;
+                case GarnetStatus.WRONGTYPE:
+                    while (!RespWriteUtils.WriteError(CmdStrings.RESP_ERR_WRONG_TYPE, ref dcurr, dend))
+                        SendAndReset();
+                    break;
+            }
+
+            return true;
+        }
+
         private bool ListBlockingPop(RespCommand command, int count)
         {
             if (count < 2)
@@ -248,7 +354,7 @@ namespace Garnet.server
 
             if (sourceDirection == OperationDirection.Unknown || destinationDirection == OperationDirection.Unknown)
             {
-                return AbortWithErrorMessage(count, CmdStrings.RESP_ERR_GENERIC_SYNTAX_ERROR);
+                return AbortWithErrorMessage(CmdStrings.RESP_ERR_GENERIC_SYNTAX_ERROR);
             }
 
             var pSrcDir = (byte*)&sourceDirection;
@@ -741,7 +847,7 @@ namespace Garnet.server
 
             if (sourceDirection == OperationDirection.Unknown || destinationDirection == OperationDirection.Unknown)
             {
-                return AbortWithErrorMessage(count, CmdStrings.RESP_ERR_GENERIC_SYNTAX_ERROR);
+                return AbortWithErrorMessage(CmdStrings.RESP_ERR_GENERIC_SYNTAX_ERROR);
             }
 
             if (!ListMove(srcKey, dstKey, sourceDirection, destinationDirection, out var node,
