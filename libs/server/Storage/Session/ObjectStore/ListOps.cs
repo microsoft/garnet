@@ -334,10 +334,10 @@ namespace Garnet.server
         /// <param name="output"></param>
         /// <param name="objectStoreContext"></param>
         /// <returns></returns>
-        public GarnetStatus ListPush<TObjectContext>(byte[] key, ArgSlice input, out ObjectOutputHeader output, ref TObjectContext objectStoreContext)
+        public GarnetStatus ListPush<TObjectContext>(byte[] key, ref ObjectInput input, out ObjectOutputHeader output, ref TObjectContext objectStoreContext)
             where TObjectContext : ITsavoriteContext<byte[], IGarnetObject, ObjectInput, GarnetObjectStoreOutput, long, ObjectStoreFunctions>
         {
-            var status = RMWObjectStoreOperation(key, input, out output, ref objectStoreContext);
+            var status = RMWObjectStoreOperation(key, ref input, out output, ref objectStoreContext);
             itemBroker.HandleCollectionUpdate(key);
             return status;
         }
@@ -350,9 +350,9 @@ namespace Garnet.server
         /// <param name="input"></param>
         /// <param name="objectStoreContext"></param>
         /// <returns></returns>
-        public GarnetStatus ListTrim<TObjectContext>(byte[] key, ArgSlice input, ref TObjectContext objectStoreContext)
+        public GarnetStatus ListTrim<TObjectContext>(byte[] key, ref ObjectInput input, ref TObjectContext objectStoreContext)
             where TObjectContext : ITsavoriteContext<byte[], IGarnetObject, ObjectInput, GarnetObjectStoreOutput, long, ObjectStoreFunctions>
-            => RMWObjectStoreOperation(key, input, out _, ref objectStoreContext);
+            => RMWObjectStoreOperation(key, ref input, out _, ref objectStoreContext);
 
         /// <summary>
         /// Gets the specified elements of the list stored at key.
@@ -363,9 +363,9 @@ namespace Garnet.server
         /// <param name="outputFooter"></param>
         /// <param name="objectStoreContext"></param>
         /// <returns></returns>
-        public GarnetStatus ListRange<TObjectContext>(byte[] key, ArgSlice input, ref GarnetObjectStoreOutput outputFooter, ref TObjectContext objectStoreContext)
+        public GarnetStatus ListRange<TObjectContext>(byte[] key, ref ObjectInput input, ref GarnetObjectStoreOutput outputFooter, ref TObjectContext objectStoreContext)
             where TObjectContext : ITsavoriteContext<byte[], IGarnetObject, ObjectInput, GarnetObjectStoreOutput, long, ObjectStoreFunctions>
-            => RMWObjectStoreOperationWithOutput(key, input, ref objectStoreContext, ref outputFooter);
+            => RMWObjectStoreOperationWithOutput(key, ref input, ref objectStoreContext, ref outputFooter);
 
         /// <summary>
         /// Inserts a new element in the list stored at key either before or after a value pivot
@@ -376,10 +376,10 @@ namespace Garnet.server
         /// <param name="output"></param>
         /// <param name="objectStoreContext"></param>
         /// <returns></returns>
-        public GarnetStatus ListInsert<TObjectContext>(byte[] key, ArgSlice input, out ObjectOutputHeader output, ref TObjectContext objectStoreContext)
+        public GarnetStatus ListInsert<TObjectContext>(byte[] key, ref ObjectInput input, out ObjectOutputHeader output, ref TObjectContext objectStoreContext)
             where TObjectContext : ITsavoriteContext<byte[], IGarnetObject, ObjectInput, GarnetObjectStoreOutput, long, ObjectStoreFunctions>
         {
-            var status = RMWObjectStoreOperation(key, input, out output, ref objectStoreContext);
+            var status = RMWObjectStoreOperation(key, ref input, out output, ref objectStoreContext);
             itemBroker.HandleCollectionUpdate(key);
             return status;
         }
@@ -393,9 +393,9 @@ namespace Garnet.server
         /// <param name="outputFooter"></param>
         /// <param name="objectStoreContext"></param>
         /// <returns></returns>
-        public GarnetStatus ListIndex<TObjectContext>(byte[] key, ArgSlice input, ref GarnetObjectStoreOutput outputFooter, ref TObjectContext objectStoreContext)
+        public GarnetStatus ListIndex<TObjectContext>(byte[] key, ref ObjectInput input, ref GarnetObjectStoreOutput outputFooter, ref TObjectContext objectStoreContext)
             where TObjectContext : ITsavoriteContext<byte[], IGarnetObject, ObjectInput, GarnetObjectStoreOutput, long, ObjectStoreFunctions>
-            => ReadObjectStoreOperationWithOutput(key, input, ref objectStoreContext, ref outputFooter);
+            => ReadObjectStoreOperationWithOutput(key, ref input, ref objectStoreContext, ref outputFooter);
 
         /// <summary>
         /// Removes the first count occurrences of elements equal to element from the list.
@@ -407,9 +407,9 @@ namespace Garnet.server
         /// <param name="output"></param>
         /// <param name="objectStoreContext"></param>
         /// <returns></returns>
-        public GarnetStatus ListRemove<TObjectContext>(byte[] key, ArgSlice input, out ObjectOutputHeader output, ref TObjectContext objectStoreContext)
+        public GarnetStatus ListRemove<TObjectContext>(byte[] key, ref ObjectInput input, out ObjectOutputHeader output, ref TObjectContext objectStoreContext)
             where TObjectContext : ITsavoriteContext<byte[], IGarnetObject, ObjectInput, GarnetObjectStoreOutput, long, ObjectStoreFunctions>
-            => RMWObjectStoreOperation(key, input, out output, ref objectStoreContext);
+            => RMWObjectStoreOperation(key, ref input, out output, ref objectStoreContext);
 
         /// <summary>
         /// Removes the count elements from the head(left) or tail(right) of the list stored at key.
@@ -421,9 +421,9 @@ namespace Garnet.server
         /// <param name="outputFooter"></param>
         /// <param name="objectStoreContext"></param>
         /// <returns></returns>
-        public unsafe GarnetStatus ListPop<TObjectContext>(byte[] key, ArgSlice input, ref GarnetObjectStoreOutput outputFooter, ref TObjectContext objectStoreContext)
+        public unsafe GarnetStatus ListPop<TObjectContext>(byte[] key, ref ObjectInput input, ref GarnetObjectStoreOutput outputFooter, ref TObjectContext objectStoreContext)
             where TObjectContext : ITsavoriteContext<byte[], IGarnetObject, ObjectInput, GarnetObjectStoreOutput, long, ObjectStoreFunctions>
-            => RMWObjectStoreOperationWithOutput(key, input, ref objectStoreContext, ref outputFooter);
+            => RMWObjectStoreOperationWithOutput(key, ref input, ref objectStoreContext, ref outputFooter);
 
         /// <summary>
         /// Removes the count elements from the head(left) or tail(right) of the list stored at key.
@@ -435,9 +435,9 @@ namespace Garnet.server
         /// <param name="output"></param>
         /// <param name="objectStoreContext"></param>
         /// <returns></returns>
-        public unsafe GarnetStatus ListLength<TObjectContext>(byte[] key, ArgSlice input, out ObjectOutputHeader output, ref TObjectContext objectStoreContext)
+        public unsafe GarnetStatus ListLength<TObjectContext>(byte[] key, ref ObjectInput input, out ObjectOutputHeader output, ref TObjectContext objectStoreContext)
              where TObjectContext : ITsavoriteContext<byte[], IGarnetObject, ObjectInput, GarnetObjectStoreOutput, long, ObjectStoreFunctions>
-             => ReadObjectStoreOperation(key, input, out output, ref objectStoreContext);
+             => ReadObjectStoreOperation(key, ref input, out output, ref objectStoreContext);
 
         /// <summary>
         /// Sets the list element at index to element.
@@ -448,8 +448,8 @@ namespace Garnet.server
         /// <param name="outputFooter"></param>
         /// <param name="objectStoreContext"></param>
         /// <returns></returns>
-        public unsafe GarnetStatus ListSet<TObjectContext>(byte[] key, ArgSlice input, ref GarnetObjectStoreOutput outputFooter, ref TObjectContext objectStoreContext)
+        public unsafe GarnetStatus ListSet<TObjectContext>(byte[] key, ref ObjectInput input, ref GarnetObjectStoreOutput outputFooter, ref TObjectContext objectStoreContext)
             where TObjectContext : ITsavoriteContext<byte[], IGarnetObject, ObjectInput, GarnetObjectStoreOutput, long, ObjectStoreFunctions>
-            => RMWObjectStoreOperationWithOutput(key, input, ref objectStoreContext, ref outputFooter);
+            => RMWObjectStoreOperationWithOutput(key, ref input, ref objectStoreContext, ref outputFooter);
     }
 }

@@ -606,7 +606,7 @@ namespace Garnet.server
         /// <param name="input"></param>
         /// <param name="output"></param>
         /// <returns></returns>
-        GarnetStatus ListLeftPush(byte[] key, ArgSlice input, out ObjectOutputHeader output);
+        GarnetStatus ListLeftPush(byte[] key, ref ObjectInput input, out ObjectOutputHeader output);
 
         /// <summary>
         /// ListLeftPush ArgSlice version, one element
@@ -635,7 +635,7 @@ namespace Garnet.server
         /// <param name="input"></param>
         /// <param name="output"></param>
         /// <returns></returns>
-        public GarnetStatus ListRightPush(byte[] key, ArgSlice input, out ObjectOutputHeader output);
+        public GarnetStatus ListRightPush(byte[] key, ref ObjectInput input, out ObjectOutputHeader output);
 
         /// <summary>
         /// ListRightPush ArgSlice version, one element
@@ -668,7 +668,7 @@ namespace Garnet.server
         /// <param name="input"></param>
         /// <param name="outputFooter"></param>
         /// <returns></returns>
-        GarnetStatus ListLeftPop(byte[] key, ArgSlice input, ref GarnetObjectStoreOutput outputFooter);
+        GarnetStatus ListLeftPop(byte[] key, ref ObjectInput input, ref GarnetObjectStoreOutput outputFooter);
 
         /// <summary>
         /// ListLeftPop ArgSlice version, one element
@@ -694,7 +694,7 @@ namespace Garnet.server
         /// <param name="input"></param>
         /// <param name="outputFooter"></param>
         /// <returns></returns>
-        GarnetStatus ListRightPop(byte[] key, ArgSlice input, ref GarnetObjectStoreOutput outputFooter);
+        GarnetStatus ListRightPop(byte[] key, ref ObjectInput input, ref GarnetObjectStoreOutput outputFooter);
 
         /// <summary>
         /// ListRightPop ArgSlice version, one element
@@ -742,7 +742,7 @@ namespace Garnet.server
         /// <param name="key"></param>
         /// <param name="input"></param>
         /// <returns></returns>
-        GarnetStatus ListTrim(byte[] key, ArgSlice input);
+        GarnetStatus ListTrim(byte[] key, ref ObjectInput input);
 
         /// <summary>
         /// Inserts a new element in the list stored at key either before or after a value pivot
@@ -751,7 +751,7 @@ namespace Garnet.server
         /// <param name="input"></param>
         /// <param name="output"></param>
         /// <returns></returns>
-        GarnetStatus ListInsert(byte[] key, ArgSlice input, out ObjectOutputHeader output);
+        GarnetStatus ListInsert(byte[] key, ref ObjectInput input, out ObjectOutputHeader output);
 
         /// <summary>
         /// Removes the first count occurrences of elements equal to element from the list.
@@ -760,7 +760,7 @@ namespace Garnet.server
         /// <param name="input"></param>
         /// <param name="output"></param>
         /// <returns></returns>
-        GarnetStatus ListRemove(byte[] key, ArgSlice input, out ObjectOutputHeader output);
+        GarnetStatus ListRemove(byte[] key, ref ObjectInput input, out ObjectOutputHeader output);
 
         /// <summary>
         /// Sets the list element at index to element.
@@ -769,7 +769,7 @@ namespace Garnet.server
         /// <param name="input"></param>
         /// <param name="output"></param>
         /// <returns></returns>
-        GarnetStatus ListSet(byte[] key, ArgSlice input, ref GarnetObjectStoreOutput output);
+        GarnetStatus ListSet(byte[] key, ref ObjectInput input, ref GarnetObjectStoreOutput output);
 
         #endregion
 
@@ -1200,7 +1200,7 @@ namespace Garnet.server
         /// <param name="input"></param>
         /// <param name="output"></param>
         /// <returns></returns>
-        GarnetStatus ListLength(byte[] key, ArgSlice input, out ObjectOutputHeader output);
+        GarnetStatus ListLength(byte[] key, ref ObjectInput input, out ObjectOutputHeader output);
 
         /// <summary>
         /// Gets the specified elements of the list stored at key.
@@ -1209,7 +1209,7 @@ namespace Garnet.server
         /// <param name="input"></param>
         /// <param name="outputFooter"></param>
         /// <returns></returns>
-        GarnetStatus ListRange(byte[] key, ArgSlice input, ref GarnetObjectStoreOutput outputFooter);
+        GarnetStatus ListRange(byte[] key, ref ObjectInput input, ref GarnetObjectStoreOutput outputFooter);
 
         /// <summary>
         /// Returns the element at index.
@@ -1218,7 +1218,7 @@ namespace Garnet.server
         /// <param name="input"></param>
         /// <param name="outputFooter"></param>
         /// <returns></returns>
-        GarnetStatus ListIndex(byte[] key, ArgSlice input, ref GarnetObjectStoreOutput outputFooter);
+        GarnetStatus ListIndex(byte[] key, ref ObjectInput input, ref GarnetObjectStoreOutput outputFooter);
 
         #endregion
 

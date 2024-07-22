@@ -192,24 +192,24 @@ namespace Garnet.server
         }
 
         /// <inheritdoc />
-        public GarnetStatus ListLength(byte[] key, ArgSlice input, out ObjectOutputHeader output)
+        public GarnetStatus ListLength(byte[] key, ref ObjectInput input, out ObjectOutputHeader output)
         {
             garnetApi.WATCH(key, StoreType.Object);
-            return garnetApi.ListLength(key, input, out output);
+            return garnetApi.ListLength(key, ref input, out output);
         }
 
         /// <inheritdoc />
-        public GarnetStatus ListRange(byte[] key, ArgSlice input, ref GarnetObjectStoreOutput outputFooter)
+        public GarnetStatus ListRange(byte[] key, ref ObjectInput input, ref GarnetObjectStoreOutput outputFooter)
         {
             garnetApi.WATCH(key, StoreType.Object);
-            return garnetApi.ListRange(key, input, ref outputFooter);
+            return garnetApi.ListRange(key, ref input, ref outputFooter);
         }
 
         /// <inheritdoc />
-        public GarnetStatus ListIndex(byte[] key, ArgSlice input, ref GarnetObjectStoreOutput outputFooter)
+        public GarnetStatus ListIndex(byte[] key, ref ObjectInput input, ref GarnetObjectStoreOutput outputFooter)
         {
             garnetApi.WATCH(key, StoreType.Object);
-            return garnetApi.ListIndex(key, input, ref outputFooter);
+            return garnetApi.ListIndex(key, ref input, ref outputFooter);
         }
 
         #endregion

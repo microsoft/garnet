@@ -164,8 +164,8 @@ namespace Garnet.server
             => storageSession.ListPush(key, elements, whenExists ? ListOperation.RPUSHX : ListOperation.RPUSH, out itemsCount, ref objectContext);
 
         /// <inheritdoc />
-        public GarnetStatus ListRightPush(byte[] key, ArgSlice input, out ObjectOutputHeader output)
-             => storageSession.ListPush(key, input, out output, ref objectContext);
+        public GarnetStatus ListRightPush(byte[] key, ref ObjectInput input, out ObjectOutputHeader output)
+             => storageSession.ListPush(key, ref input, out output, ref objectContext);
 
         /// <inheritdoc />
         public GarnetStatus ListLeftPush(ArgSlice key, ArgSlice[] elements, out int itemsCount, bool onlyWhenExists = false)
@@ -176,12 +176,12 @@ namespace Garnet.server
             => storageSession.ListPush(key, element, onlyWhenExists ? ListOperation.LPUSHX : ListOperation.LPUSH, out count, ref objectContext);
 
         /// <inheritdoc />
-        public GarnetStatus ListLeftPush(byte[] key, ArgSlice input, out ObjectOutputHeader output)
-            => storageSession.ListPush(key, input, out output, ref objectContext);
+        public GarnetStatus ListLeftPush(byte[] key, ref ObjectInput input, out ObjectOutputHeader output)
+            => storageSession.ListPush(key, ref input, out output, ref objectContext);
 
         /// <inheritdoc />
-        public GarnetStatus ListLeftPop(byte[] key, ArgSlice input, ref GarnetObjectStoreOutput outputFooter)
-            => storageSession.ListPop(key, input, ref outputFooter, ref objectContext);
+        public GarnetStatus ListLeftPop(byte[] key, ref ObjectInput input, ref GarnetObjectStoreOutput outputFooter)
+            => storageSession.ListPop(key, ref input, ref outputFooter, ref objectContext);
 
         /// <inheritdoc />
         public unsafe GarnetStatus ListLeftPop(ArgSlice key, out ArgSlice element)
@@ -192,8 +192,8 @@ namespace Garnet.server
              => storageSession.ListPop(key, count, ListOperation.LPOP, ref objectContext, out poppedElements);
 
         /// <inheritdoc />
-        public GarnetStatus ListRightPop(byte[] key, ArgSlice input, ref GarnetObjectStoreOutput outputFooter)
-            => storageSession.ListPop(key, input, ref outputFooter, ref objectContext);
+        public GarnetStatus ListRightPop(byte[] key, ref ObjectInput input, ref GarnetObjectStoreOutput outputFooter)
+            => storageSession.ListPop(key, ref input, ref outputFooter, ref objectContext);
 
         /// <inheritdoc />
         public unsafe GarnetStatus ListRightPop(ArgSlice key, out ArgSlice element)
@@ -210,8 +210,8 @@ namespace Garnet.server
             => storageSession.ListLength(key, ref objectContext, out count);
 
         /// <inheritdoc />
-        public GarnetStatus ListLength(byte[] key, ArgSlice input, out ObjectOutputHeader output)
-            => storageSession.ListLength(key, input, out output, ref objectContext);
+        public GarnetStatus ListLength(byte[] key, ref ObjectInput input, out ObjectOutputHeader output)
+            => storageSession.ListLength(key, ref input, out output, ref objectContext);
 
         /// <inheritdoc />
         public GarnetStatus ListMove(ArgSlice source, ArgSlice destination, OperationDirection sourceDirection, OperationDirection destinationDirection, out byte[] element)
@@ -222,28 +222,28 @@ namespace Garnet.server
             => storageSession.ListTrim(key, start, stop, ref objectContext);
 
         /// <inheritdoc />
-        public GarnetStatus ListTrim(byte[] key, ArgSlice input)
-            => storageSession.ListTrim(key, input, ref objectContext);
+        public GarnetStatus ListTrim(byte[] key, ref ObjectInput input)
+            => storageSession.ListTrim(key, ref input, ref objectContext);
 
         /// <inheritdoc />
-        public GarnetStatus ListRange(byte[] key, ArgSlice input, ref GarnetObjectStoreOutput outputFooter)
-            => storageSession.ListRange(key, input, ref outputFooter, ref objectContext);
+        public GarnetStatus ListRange(byte[] key, ref ObjectInput input, ref GarnetObjectStoreOutput outputFooter)
+            => storageSession.ListRange(key, ref input, ref outputFooter, ref objectContext);
 
         /// <inheritdoc />
-        public GarnetStatus ListInsert(byte[] key, ArgSlice input, out ObjectOutputHeader output)
-            => storageSession.ListInsert(key, input, out output, ref objectContext);
+        public GarnetStatus ListInsert(byte[] key, ref ObjectInput input, out ObjectOutputHeader output)
+            => storageSession.ListInsert(key, ref input, out output, ref objectContext);
 
         /// <inheritdoc />
-        public GarnetStatus ListIndex(byte[] key, ArgSlice input, ref GarnetObjectStoreOutput outputFooter)
-             => storageSession.ListIndex(key, input, ref outputFooter, ref objectContext);
+        public GarnetStatus ListIndex(byte[] key, ref ObjectInput input, ref GarnetObjectStoreOutput outputFooter)
+             => storageSession.ListIndex(key, ref input, ref outputFooter, ref objectContext);
 
         /// <inheritdoc />
-        public GarnetStatus ListRemove(byte[] key, ArgSlice input, out ObjectOutputHeader output)
-            => storageSession.ListRemove(key, input, out output, ref objectContext);
+        public GarnetStatus ListRemove(byte[] key, ref ObjectInput input, out ObjectOutputHeader output)
+            => storageSession.ListRemove(key, ref input, out output, ref objectContext);
 
         /// <inheritdoc />
-        public GarnetStatus ListSet(byte[] key, ArgSlice input, ref GarnetObjectStoreOutput outputFooter)
-            => storageSession.ListSet(key, input, ref outputFooter, ref objectContext);
+        public GarnetStatus ListSet(byte[] key, ref ObjectInput input, ref GarnetObjectStoreOutput outputFooter)
+            => storageSession.ListSet(key, ref input, ref outputFooter, ref objectContext);
 
         #endregion
 

@@ -129,13 +129,11 @@ namespace Garnet.server
         /// <inheritdoc />
         public override unsafe bool Operate(ref ObjectInput input, ref SpanByteAndMemory output, out long sizeChange, out bool removeKey)
         {
-            fixed (byte* _input = input.AsSpan())
             fixed (byte* _output = output.SpanByte.AsSpan())
             {
                 removeKey = false;
 
-                var header = (RespInputHeader*)_input;
-                if (header->type != GarnetObjectType.List)
+                if (input.header.type != GarnetObjectType.List)
                 {
                     // Indicates an incorrect type of key
                     output.Length = 0;
@@ -144,46 +142,46 @@ namespace Garnet.server
                 }
 
                 var previousSize = this.Size;
-                switch (header->ListOp)
+                switch (input.header.ListOp)
                 {
                     case ListOperation.LPUSH:
                     case ListOperation.LPUSHX:
-                        ListPush(_input, input.Length, _output, true);
+                        ListPush(ref input, _output, true);
                         break;
                     case ListOperation.LPOP:
-                        ListPop(_input, ref output, true);
+                        ListPop(ref input, ref output, true);
                         break;
                     case ListOperation.RPUSH:
                     case ListOperation.RPUSHX:
-                        ListPush(_input, input.Length, _output, false);
+                        ListPush(ref input, _output, false);
                         break;
                     case ListOperation.RPOP:
-                        ListPop(_input, ref output, false);
+                        ListPop(ref input, ref output, false);
                         break;
                     case ListOperation.LLEN:
-                        ListLength(_input, _output);
+                        ListLength(_output);
                         break;
                     case ListOperation.LTRIM:
-                        ListTrim(_input, _output);
+                        ListTrim(ref input, _output);
                         break;
                     case ListOperation.LRANGE:
-                        ListRange(_input, ref output);
+                        ListRange(ref input, ref output);
                         break;
                     case ListOperation.LINDEX:
-                        ListIndex(_input, ref output);
+                        ListIndex(ref input, ref output);
                         break;
                     case ListOperation.LINSERT:
-                        ListInsert(_input, input.Length, _output);
+                        ListInsert(ref input, _output);
                         break;
                     case ListOperation.LREM:
-                        ListRemove(_input, input.Length, _output);
+                        ListRemove(ref input, _output);
                         break;
                     case ListOperation.LSET:
-                        ListSet(_input, input.Length, ref output);
+                        ListSet(ref input, ref output);
                         break;
 
                     default:
-                        throw new GarnetException($"Unsupported operation {(ListOperation)_input[0]} in ListObject.Operate");
+                        throw new GarnetException($"Unsupported operation {input.header.ListOp} in ListObject.Operate");
                 }
 
                 sizeChange = this.Size - previousSize;

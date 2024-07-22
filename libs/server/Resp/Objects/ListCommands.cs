@@ -2,6 +2,7 @@
 // Licensed under the MIT license.
 
 using System;
+using System.Reflection;
 using Garnet.common;
 using Tsavorite.core;
 
@@ -14,6 +15,7 @@ namespace Garnet.server
         /// RPUSH key element [element ...]
         /// </summary>
         /// <typeparam name="TGarnetApi"></typeparam>
+        /// <param name="command"></param>
         /// <param name="count"></param>
         /// <param name="storageApi"></param>
         /// <returns></returns>
@@ -35,17 +37,9 @@ namespace Garnet.server
                 return true;
             }
 
-            // Prepare input
-            var inputPtr = (ObjectInputHeader*)(ptr - sizeof(ObjectInputHeader));
-
-            // Save old values on buffer for possible revert
-            var save = *inputPtr;
-
             var inputCount = count - 1;
-            // Prepare length of header in input buffer
-            var inputLength = (int)(recvBufferPtr + bytesRead - (byte*)inputPtr);
 
-            ListOperation lop =
+            var lop =
                 command switch
                 {
                     RespCommand.LPUSH => ListOperation.LPUSH,
@@ -55,25 +49,21 @@ namespace Garnet.server
                     _ => throw new Exception($"Unexpected {nameof(ListOperation)}: {command}")
                 };
 
-            // Prepare header in input buffer
-            inputPtr->header.type = GarnetObjectType.List;
-            inputPtr->header.flags = 0;
-            inputPtr->header.ListOp = lop;
-            inputPtr->arg1 = inputCount;
+            // Prepare input
+            var input = new ObjectInput
+            {
+                header = new RespInputHeader
+                {
+                    type = GarnetObjectType.List,
+                    ListOp = lop,
+                },
+                count = inputCount,
+                payload = new ArgSlice(ptr, (int)(recvBufferPtr + bytesRead - ptr)),
+            };
 
-            var input = new ArgSlice((byte*)inputPtr, inputLength);
-
-            ObjectOutputHeader output;
-
-            GarnetStatus status;
-
-            if (command == RespCommand.LPUSH || command == RespCommand.LPUSHX)
-                status = storageApi.ListLeftPush(keyBytes, input, out output);
-            else
-                status = storageApi.ListRightPush(keyBytes, input, out output);
-
-            // Restore input buffer
-            *inputPtr = save;
+            var status = command == RespCommand.LPUSH || command == RespCommand.LPUSHX
+                ? storageApi.ListLeftPush(keyBytes, ref input, out var output)
+                : storageApi.ListRightPush(keyBytes, ref input, out output);
 
             if (status == GarnetStatus.WRONGTYPE)
             {
@@ -133,19 +123,7 @@ namespace Garnet.server
                 return true;
             }
 
-            // Prepare input
-            var inputPtr = (ObjectInputHeader*)(ptr - sizeof(ObjectInputHeader));
-
-            // Save old values on buffer for possible revert
-            var save = *inputPtr;
-
-            // Prepare GarnetObjectStore output
-            var outputFooter = new GarnetObjectStoreOutput { spanByteAndMemory = new SpanByteAndMemory(dcurr, (int)(dend - dcurr)) };
-
-            // Prepare length of header in input buffer
-            var inputLength = (int)(recvBufferPtr + bytesRead - (byte*)inputPtr);
-
-            ListOperation lop =
+            var lop =
                 command switch
                 {
                     RespCommand.LPOP => ListOperation.LPOP,
@@ -153,27 +131,30 @@ namespace Garnet.server
                     _ => throw new Exception($"Unexpected {nameof(ListOperation)}: {command}")
                 };
 
-            // Prepare header in input buffer
-            inputPtr->header.type = GarnetObjectType.List;
-            inputPtr->header.flags = 0;
-            inputPtr->header.ListOp = lop;
-            inputPtr->arg1 = popCount;
+            // Prepare input
+            var input = new ObjectInput
+            {
+                header = new RespInputHeader
+                {
+                    type = GarnetObjectType.List,
+                    ListOp = lop,
+                },
+                count = popCount,
+                payload = new ArgSlice(ptr, (int)(recvBufferPtr + bytesRead - ptr)),
+            };
 
-            GarnetStatus statusOp;
+            // Prepare GarnetObjectStore output
+            var outputFooter = new GarnetObjectStoreOutput { spanByteAndMemory = new SpanByteAndMemory(dcurr, (int)(dend - dcurr)) };
 
-            if (command == RespCommand.LPOP)
-                statusOp = storageApi.ListLeftPop(keyBytes, new ArgSlice((byte*)inputPtr, inputLength), ref outputFooter);
-            else
-                statusOp = storageApi.ListRightPop(keyBytes, new ArgSlice((byte*)inputPtr, inputLength), ref outputFooter);
-
-            // Reset input buffer
-            *inputPtr = save;
+            var statusOp = command == RespCommand.LPOP
+                ? storageApi.ListLeftPop(keyBytes, ref input, ref outputFooter)
+                : storageApi.ListRightPop(keyBytes, ref input, ref outputFooter);
 
             switch (statusOp)
             {
                 case GarnetStatus.OK:
                     //process output
-                    var objOutputHeader = ProcessOutputWithHeader(outputFooter.spanByteAndMemory);
+                    ProcessOutputWithHeader(outputFooter.spanByteAndMemory);
                     break;
                 case GarnetStatus.NOTFOUND:
                     while (!RespWriteUtils.WriteDirect(CmdStrings.RESP_ERRNOTFOUND, ref dcurr, dend))
@@ -188,8 +169,7 @@ namespace Garnet.server
             return true;
         }
 
-        private bool ListBlockingPop<TGarnetApi>(RespCommand command, int count)
-            where TGarnetApi : IGarnetApi
+        private bool ListBlockingPop(RespCommand command, int count)
         {
             if (count < 2)
             {
@@ -236,8 +216,7 @@ namespace Garnet.server
             return true;
         }
 
-        private unsafe bool ListBlockingMove<TGarnetApi>(RespCommand command, int count)
-            where TGarnetApi : IGarnetApi
+        private unsafe bool ListBlockingMove(RespCommand command, int count)
         {
             if (count != 5)
             {
@@ -329,24 +308,18 @@ namespace Garnet.server
             }
 
             // Prepare input
-            var inputPtr = (ObjectInputHeader*)(ptr - sizeof(ObjectInputHeader));
+            var input = new ObjectInput
+            {
+                header = new RespInputHeader
+                {
+                    type = GarnetObjectType.List,
+                    ListOp = ListOperation.LLEN,
+                },
+                count = count,
+                payload = new ArgSlice(ptr, (int)(recvBufferPtr + bytesRead - ptr)),
+            };
 
-            // save old values
-            var save = *inputPtr;
-
-            // Prepare length of header in input buffer
-            var inputLength = (int)(recvBufferPtr + bytesRead - ptr) + sizeof(ObjectInputHeader);
-
-            // Prepare header in input buffer
-            inputPtr->header.type = GarnetObjectType.List;
-            inputPtr->header.flags = 0;
-            inputPtr->header.ListOp = ListOperation.LLEN;
-            inputPtr->arg1 = count;
-
-            var status = storageApi.ListLength(keyBytes, new ArgSlice((byte*)inputPtr, inputLength), out var output);
-
-            // Restore input buffer
-            *inputPtr = save;
+            var status = storageApi.ListLength(keyBytes, ref input, out var output);
 
             switch (status)
             {
@@ -409,25 +382,19 @@ namespace Garnet.server
             }
 
             // Prepare input
-            var inputPtr = (ObjectInputHeader*)(ptr - sizeof(ObjectInputHeader));
+            var input = new ObjectInput
+            {
+                header = new RespInputHeader
+                {
+                    type = GarnetObjectType.List,
+                    ListOp = ListOperation.LTRIM,
+                },
+                count = start,
+                done = stop,
+                payload = new ArgSlice(ptr, (int)(recvBufferPtr + bytesRead - ptr)),
+            };
 
-            // Save old values on buffer for possible revert
-            var save = *inputPtr;
-
-            // Prepare length of header in input buffer
-            var inputLength = (int)(recvBufferPtr + bytesRead - (byte*)inputPtr);
-
-            // Prepare header in input buffer
-            inputPtr->header.type = GarnetObjectType.List;
-            inputPtr->header.flags = 0;
-            inputPtr->header.ListOp = ListOperation.LTRIM;
-            inputPtr->arg1 = start;
-            inputPtr->arg2 = stop;
-
-            var status = storageApi.ListTrim(keyBytes, new ArgSlice((byte*)inputPtr, inputLength));
-
-            // Restore input buffer
-            *inputPtr = save;
+            var status = storageApi.ListTrim(keyBytes, ref input);
 
             switch (status)
             {
@@ -487,27 +454,22 @@ namespace Garnet.server
             }
 
             // Prepare input
-            var inputPtr = (ObjectInputHeader*)(ptr - sizeof(ObjectInputHeader));
-
-            // Save old values on buffer for possible revert
-            var save = *inputPtr;
+            var input = new ObjectInput
+            {
+                header = new RespInputHeader
+                {
+                    type = GarnetObjectType.List,
+                    ListOp = ListOperation.LRANGE,
+                },
+                count = start,
+                done = end,
+                payload = new ArgSlice(ptr, (int)(recvBufferPtr + bytesRead - ptr)),
+            };
 
             // Prepare GarnetObjectStore output
             var outputFooter = new GarnetObjectStoreOutput { spanByteAndMemory = new SpanByteAndMemory(dcurr, (int)(dend - dcurr)) };
 
-            // Prepare length of header in input buffer
-            var inputLength = (int)(recvBufferPtr + bytesRead - (byte*)inputPtr);
-
-            inputPtr->header.type = GarnetObjectType.List;
-            inputPtr->header.flags = 0;
-            inputPtr->header.ListOp = ListOperation.LRANGE;
-            inputPtr->arg1 = start;
-            inputPtr->arg2 = end;
-
-            var statusOp = storageApi.ListRange(keyBytes, new ArgSlice((byte*)inputPtr, inputLength), ref outputFooter);
-
-            // Reset input buffer
-            *inputPtr = save;
+            var statusOp = storageApi.ListRange(keyBytes, ref input, ref outputFooter);
 
             switch (statusOp)
             {
@@ -565,26 +527,21 @@ namespace Garnet.server
             }
 
             // Prepare input
-            var inputPtr = (ObjectInputHeader*)(ptr - sizeof(ObjectInputHeader));
-
-            // Save input buffer
-            var save = *inputPtr;
+            var input = new ObjectInput
+            {
+                header = new RespInputHeader
+                {
+                    type = GarnetObjectType.List,
+                    ListOp = ListOperation.LINDEX,
+                },
+                count = index,
+                payload = new ArgSlice(ptr, (int)(recvBufferPtr + bytesRead - ptr)),
+            };
 
             // Prepare GarnetObjectStore output
             var outputFooter = new GarnetObjectStoreOutput { spanByteAndMemory = new SpanByteAndMemory(dcurr, (int)(dend - dcurr)) };
 
-            var inputLength = (int)(recvBufferPtr + bytesRead - (byte*)inputPtr);
-
-            // Prepare header in input buffer
-            inputPtr->header.type = GarnetObjectType.List;
-            inputPtr->header.flags = 0;
-            inputPtr->header.ListOp = ListOperation.LINDEX;
-            inputPtr->arg1 = index;
-
-            var statusOp = storageApi.ListIndex(keyBytes, new ArgSlice((byte*)inputPtr, inputLength), ref outputFooter);
-
-            //restore input
-            *inputPtr = save;
+            var statusOp = storageApi.ListIndex(keyBytes, ref input, ref outputFooter);
 
             ReadOnlySpan<byte> error = default;
 
@@ -642,24 +599,17 @@ namespace Garnet.server
             }
 
             // Prepare input
-            var inputPtr = (ObjectInputHeader*)(ptr - sizeof(ObjectInputHeader));
+            var input = new ObjectInput
+            {
+                header = new RespInputHeader
+                {
+                    type = GarnetObjectType.List,
+                    ListOp = ListOperation.LINSERT,
+                },
+                payload = new ArgSlice(ptr, (int)(recvBufferPtr + bytesRead - ptr)),
+            };
 
-            // Save old values
-            var save = *inputPtr;
-
-            // Prepare length of header in input buffer
-            var inputLength = (int)(recvBufferPtr + bytesRead - (byte*)inputPtr);
-
-            // Prepare header in input buffer
-            inputPtr->header.type = GarnetObjectType.List;
-            inputPtr->header.flags = 0;
-            inputPtr->header.ListOp = ListOperation.LINSERT;
-            inputPtr->arg1 = 0;
-
-            var statusOp = storageApi.ListInsert(keyBytes, new ArgSlice((byte*)inputPtr, inputLength), out var output);
-
-            // Restore input buffer
-            *inputPtr = save;
+            var statusOp = storageApi.ListInsert(keyBytes, ref input, out var output);
 
             switch (statusOp)
             {
@@ -722,23 +672,18 @@ namespace Garnet.server
             }
 
             // Prepare input
-            var inputPtr = (ObjectInputHeader*)(ptr - sizeof(ObjectInputHeader));
+            var input = new ObjectInput
+            {
+                header = new RespInputHeader
+                {
+                    type = GarnetObjectType.List,
+                    ListOp = ListOperation.LREM,
+                },
+                count = nCount,
+                payload = new ArgSlice(ptr, (int)(recvBufferPtr + bytesRead - ptr)),
+            };
 
-            // Save old values
-            var save = *inputPtr;
-
-            // Prepare length of header in input buffer
-            var inputLength = (int)(recvBufferPtr + bytesRead - (byte*)inputPtr);
-
-            // Prepare header in input buffer
-            inputPtr->header.type = GarnetObjectType.List;
-            inputPtr->header.flags = 0;
-            inputPtr->header.ListOp = ListOperation.LREM;
-            inputPtr->arg1 = nCount;
-
-            var statusOp = storageApi.ListRemove(keyBytes, new ArgSlice((byte*)inputPtr, inputLength), out var output);
-            // Restore input buffer
-            *inputPtr = save;
+            var statusOp = storageApi.ListRemove(keyBytes, ref input, out var output);
 
             switch (statusOp)
             {
@@ -935,26 +880,20 @@ namespace Garnet.server
             }
 
             // Prepare input
-            var inputPtr = (ObjectInputHeader*)(ptr - sizeof(ObjectInputHeader));
-
-            // Save input buffer
-            var save = *inputPtr;
-
-            var inputLength = (int)(recvBufferPtr + bytesRead - (byte*)inputPtr);
-
-            // Prepare header in input buffer
-            inputPtr->header.type = GarnetObjectType.List;
-            inputPtr->header.flags = 0;
-            inputPtr->header.ListOp = ListOperation.LSET;
-            inputPtr->arg1 = 0;
+            var input = new ObjectInput
+            {
+                header = new RespInputHeader
+                {
+                    type = GarnetObjectType.List,
+                    ListOp = ListOperation.LSET,
+                },
+                payload = new ArgSlice(ptr, (int)(recvBufferPtr + bytesRead - ptr)),
+            };
 
             // Prepare GarnetObjectStore output
             var outputFooter = new GarnetObjectStoreOutput { spanByteAndMemory = new SpanByteAndMemory(dcurr, (int)(dend - dcurr)) };
 
-            var statusOp = storageApi.ListSet(keyBytes, new ArgSlice((byte*)inputPtr, inputLength), ref outputFooter);
-
-            //restore input
-            *inputPtr = save;
+            var statusOp = storageApi.ListSet(keyBytes, ref input, ref outputFooter);
 
             switch (statusOp)
             {
