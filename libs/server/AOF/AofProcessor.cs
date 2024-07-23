@@ -296,8 +296,14 @@ namespace Garnet.server
         {
             ref var key = ref Unsafe.AsRef<SpanByte>(ptr + sizeof(AofHeader));
             var keyB = key.ToByteArray();
-            ref var input = ref Unsafe.AsRef<SpanByte>(ptr + sizeof(AofHeader) + key.TotalSize);
-            ref var value = ref Unsafe.AsRef<SpanByte>(ptr + sizeof(AofHeader) + key.TotalSize + input.TotalSize);
+
+            ref var sbInput = ref Unsafe.AsRef<SpanByte>(ptr + sizeof(AofHeader) + key.TotalSize);
+            ref var input = ref Unsafe.AsRef<ObjectInput>(sbInput.ToPointer());
+
+            ref var sbPayload = ref Unsafe.AsRef<SpanByte>(ptr + sizeof(AofHeader) + key.TotalSize + sbInput.TotalSize);
+            input.payload = new ArgSlice(ref sbPayload);
+
+            ref var value = ref Unsafe.AsRef<SpanByte>(ptr + sizeof(AofHeader) + key.TotalSize + sbInput.TotalSize + sbPayload.TotalSize);
 
             var valB = garnetObjectSerializer.Deserialize(value.ToByteArray());
 
@@ -312,7 +318,12 @@ namespace Garnet.server
             ref var key = ref Unsafe.AsRef<SpanByte>(ptr + sizeof(AofHeader));
             var keyB = key.ToByteArray();
 
-            ref var input = ref Unsafe.AsRef<ObjectInput>(ptr + sizeof(AofHeader) + key.TotalSize);
+            ref var sbInput = ref Unsafe.AsRef<SpanByte>(ptr + sizeof(AofHeader) + key.TotalSize);
+            ref var input = ref Unsafe.AsRef<ObjectInput>(sbInput.ToPointer());
+
+            ref var inputPayload = ref Unsafe.AsRef<SpanByte>(ptr + sizeof(AofHeader) + key.TotalSize + sbInput.TotalSize);
+            input.payload = new ArgSlice(ref inputPayload);
+
             var output = new GarnetObjectStoreOutput { spanByteAndMemory = new(outputPtr, outputLength) };
             if (basicContext.RMW(ref keyB, ref input, ref output).IsPending)
                 basicContext.CompletePending(true);

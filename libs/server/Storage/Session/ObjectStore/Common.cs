@@ -82,7 +82,7 @@ namespace Garnet.server
             if (status.IsPending)
                 CompletePendingForObjectStoreSession(ref status, ref outputFooter, ref objectStoreContext);
 
-            if (!status.NotFound && outputFooter.spanByteAndMemory.Length == 0)
+            if (status.Found && outputFooter.spanByteAndMemory.Length == 0)
                 return GarnetStatus.WRONGTYPE;
 
             return status.Found || status.Record.Created ? GarnetStatus.OK : GarnetStatus.NOTFOUND;
@@ -110,7 +110,7 @@ namespace Garnet.server
             if (status.IsPending)
                 CompletePendingForObjectStoreSession(ref status, ref outputFooter, ref objectStoreContext);
 
-            if (outputFooter.spanByteAndMemory.Length == 0)
+            if (status.Found && outputFooter.spanByteAndMemory.Length == 0)
                 return GarnetStatus.WRONGTYPE;
 
             return status.Found || status.Record.Created ? GarnetStatus.OK : GarnetStatus.NOTFOUND;
@@ -140,11 +140,11 @@ namespace Garnet.server
             if (status.IsPending)
                 CompletePendingForObjectStoreSession(ref status, ref outputFooter, ref objectStoreContext);
 
-            if (outputFooter.spanByteAndMemory.Length == 0)
-                return GarnetStatus.WRONGTYPE;
-
             if (status.NotFound)
                 return GarnetStatus.NOTFOUND;
+
+            if (outputFooter.spanByteAndMemory.Length == 0)
+                return GarnetStatus.WRONGTYPE;
 
             return GarnetStatus.OK;
         }
@@ -171,11 +171,11 @@ namespace Garnet.server
             if (status.IsPending)
                 CompletePendingForObjectStoreSession(ref status, ref outputFooter, ref objectStoreContext);
 
-            if (outputFooter.spanByteAndMemory.Length == 0)
-                return GarnetStatus.WRONGTYPE;
-
             if (status.NotFound)
                 return GarnetStatus.NOTFOUND;
+
+            if (outputFooter.spanByteAndMemory.Length == 0)
+                return GarnetStatus.WRONGTYPE;
 
             return GarnetStatus.OK;
         }

@@ -22,8 +22,8 @@ namespace Garnet.server
         void WriteLogUpsert(ref byte[] key, ref ObjectInput input, ref IGarnetObject value, long version, int sessionID)
         {
             if (functionsState.StoredProcMode) return;
-            var header = (RespInputHeader*)input.ToPointer();
-            header->flags |= RespInputFlags.Deterministic;
+            input.header.flags |= RespInputFlags.Deterministic;
+
             var valueBytes = GarnetObjectSerializer.Serialize(value);
             fixed (byte* ptr = key)
             {
@@ -31,9 +31,13 @@ namespace Garnet.server
                 {
                     var keySB = SpanByte.FromPinnedPointer(ptr, key.Length);
                     var valSB = SpanByte.FromPinnedPointer(valPtr, valueBytes.Length);
-                    // TODO: enhance AOF to handle ObjectInput correctly
-                    // i.e., write the actual struct followed by the serialized payload
-                    // functionsState.appendOnlyFile.Enqueue(new AofHeader { opType = AofEntryType.ObjectStoreUpsert, version = version, sessionID = sessionID }, ref keySB, ref input, ref valSB, out _);
+
+                    var sbInput = new ArgSlice(input.ToPointer(), sizeof(ObjectInput)).SpanByte;
+                    var sbInputPayload = input.payload.SpanByte;
+
+                    functionsState.appendOnlyFile.Enqueue(
+                        new AofHeader { opType = AofEntryType.ObjectStoreUpsert, version = version, sessionID = sessionID }, 
+                        ref keySB, ref sbInput, ref sbInputPayload, ref valSB, out _);
                 }
             }
         }
@@ -44,18 +48,18 @@ namespace Garnet.server
         /// b. InPlaceUpdater
         /// c. PostCopyUpdater
         /// </summary>
-        void WriteLogRMW(ref byte[] key, ref ObjectInput input, ref IGarnetObject value, long version, int sessionID)
+        void WriteLogRMW(ref byte[] key, ref ObjectInput input, long version, int sessionID)
         {
             if (functionsState.StoredProcMode) return;
-            var header = (RespInputHeader*)input.ToPointer();
-            header->flags |= RespInputFlags.Deterministic;
+            input.header.flags |= RespInputFlags.Deterministic;
 
             fixed (byte* ptr = key)
             {
-                var keySB = SpanByte.FromPinnedPointer(ptr, key.Length);
-                // TODO: enhance AOF to handle ObjectInput correctly
-                // i.e., write the actual struct followed by the serialized payload
-                // functionsState.appendOnlyFile.Enqueue(new AofHeader { opType = AofEntryType.ObjectStoreRMW, version = version, sessionID = sessionID }, ref keySB, ref input, out _);
+                var sbKey = SpanByte.FromPinnedPointer(ptr, key.Length);
+                var sbInput = new ArgSlice(input.ToPointer(), sizeof(ObjectInput)).SpanByte;
+                var sbInputPayload = input.payload.SpanByte;
+                functionsState.appendOnlyFile.Enqueue(new AofHeader { opType = AofEntryType.ObjectStoreRMW, version = version, sessionID = sessionID },
+                    ref sbKey, ref sbInput, ref sbInputPayload, out _);
             }
         }
 
@@ -71,6 +75,7 @@ namespace Garnet.server
             {
                 var keySB = SpanByte.FromPinnedPointer(ptr, key.Length);
                 SpanByte valSB = default;
+
                 functionsState.appendOnlyFile.Enqueue(new AofHeader { opType = AofEntryType.ObjectStoreDelete, version = version, sessionID = sessionID }, ref keySB, ref valSB, out _);
             }
         }

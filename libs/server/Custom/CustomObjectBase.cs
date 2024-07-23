@@ -192,11 +192,10 @@ namespace Garnet.server
         /// <inheritdoc />
         public sealed override unsafe bool Operate(ref ObjectInput input, ref SpanByteAndMemory output, out long sizeChange, out bool removeKey)
         {
-            var header = (RespInputHeader*)input.ToPointer();
             sizeChange = 0;
             removeKey = false;
 
-            switch (header->cmd)
+            switch (input.header.cmd)
             {
                 // Scan Command
                 case RespCommand.COSCAN:
@@ -207,14 +206,14 @@ namespace Garnet.server
                     }
                     break;
                 default:
-                    if ((byte)header->type != this.type)
+                    if ((byte)input.header.type != this.type)
                     {
                         // Indicates an incorrect type of key
                         output.Length = 0;
                         return true;
                     }
                     (IMemoryOwner<byte> Memory, int Length) outp = (output.Memory, 0);
-                    Operate(header->SubId, input.AsReadOnlySpan().Slice(RespInputHeader.Size), ref outp, out removeKey);
+                    Operate(input.header.SubId, input.payload.ReadOnlySpan, ref outp, out removeKey);
                     output.Memory = outp.Memory;
                     output.Length = outp.Length;
                     break;

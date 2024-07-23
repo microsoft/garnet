@@ -19,12 +19,12 @@ namespace Garnet.server
         /// <inheritdoc />
         public bool InitialUpdater(ref byte[] key, ref ObjectInput input, ref IGarnetObject value, ref GarnetObjectStoreOutput output, ref RMWInfo rmwInfo, ref RecordInfo recordInfo)
         {
-            var type = ((RespInputHeader*)input.ToPointer())->type;
+            var type = input.header.type;
             if ((byte)type < CustomCommandManager.StartOffset)
                 value = GarnetObject.Create(type);
             else
             {
-                byte objectId = (byte)((byte)type - CustomCommandManager.StartOffset);
+                var objectId = (byte)((byte)type - CustomCommandManager.StartOffset);
                 value = functionsState.customObjectCommands[objectId].factory.Create((byte)type);
             }
             value.Operate(ref input, ref output.spanByteAndMemory, out _, out _);
@@ -39,7 +39,7 @@ namespace Garnet.server
             {
                 var header = (RespInputHeader*)input.ToPointer();
                 header->SetExpiredFlag();
-                WriteLogRMW(ref key, ref input, ref value, rmwInfo.Version, rmwInfo.SessionID);
+                WriteLogRMW(ref key, ref input, rmwInfo.Version, rmwInfo.SessionID);
             }
 
             functionsState.objectStoreSizeTracker?.AddTrackedSize(MemoryUtils.CalculateKeyValueSize(key, value));
@@ -52,7 +52,7 @@ namespace Garnet.server
             {
                 if (!rmwInfo.RecordInfo.Modified)
                     functionsState.watchVersionMap.IncrementVersion(rmwInfo.KeyHash);
-                if (functionsState.appendOnlyFile != null) WriteLogRMW(ref key, ref input, ref value, rmwInfo.Version, rmwInfo.SessionID);
+                if (functionsState.appendOnlyFile != null) WriteLogRMW(ref key, ref input, rmwInfo.Version, rmwInfo.SessionID);
                 functionsState.objectStoreSizeTracker?.AddTrackedSize(sizeChange);
                 return true;
             }
@@ -157,7 +157,7 @@ namespace Garnet.server
             functionsState.objectStoreSizeTracker?.AddTrackedSize(MemoryUtils.CalculateKeyValueSize(key, value));
 
             if (functionsState.appendOnlyFile != null)
-                WriteLogRMW(ref key, ref input, ref oldValue, rmwInfo.Version, rmwInfo.SessionID);
+                WriteLogRMW(ref key, ref input, rmwInfo.Version, rmwInfo.SessionID);
             return true;
         }
     }

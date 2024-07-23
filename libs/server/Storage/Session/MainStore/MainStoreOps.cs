@@ -273,11 +273,21 @@ namespace Garnet.server
 
             if ((storeType == StoreType.Object || storeType == StoreType.All) && !objectStoreBasicContext.IsNull)
             {
-                (*(RespInputHeader*)pcurr).type = milliseconds ? GarnetObjectType.PTtl : GarnetObjectType.Ttl;
+                var inputPayload = scratchBufferManager.CreateArgSlice(0);
+
+                var objInput = new ObjectInput
+                {
+                    header = new RespInputHeader
+                    {
+                        cmd = milliseconds ? RespCommand.PTTL : RespCommand.TTL,
+                        type = milliseconds ? GarnetObjectType.PTtl : GarnetObjectType.Ttl,
+                    },
+                    payload = inputPayload,
+                };
 
                 var keyBA = key.ToByteArray();
                 var objO = new GarnetObjectStoreOutput { spanByteAndMemory = output };
-                var status = objectContext.Read(ref keyBA, ref Unsafe.AsRef<ObjectInput>(pbCmdInput), ref objO);
+                var status = objectContext.Read(ref keyBA, ref objInput, ref objO);
 
                 if (status.IsPending)
                     CompletePendingForObjectStoreSession(ref status, ref objO, ref objectContext);
