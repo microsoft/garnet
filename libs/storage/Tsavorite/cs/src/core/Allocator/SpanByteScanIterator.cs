@@ -12,12 +12,11 @@ namespace Tsavorite.core
     /// <summary>
     /// Scan iterator for hybrid log
     /// </summary>
-    public sealed class SpanByteScanIterator<TStoreFunctions, TAllocator> : ScanIteratorBase, ITsavoriteScanIterator<SpanByte, SpanByte>, IPushScanIterator<SpanByte>
+    public sealed class SpanByteScanIterator<TStoreFunctions> : ScanIteratorBase, ITsavoriteScanIterator<SpanByte, SpanByte>, IPushScanIterator<SpanByte>
         where TStoreFunctions : IStoreFunctions<SpanByte, SpanByte>
-        where TAllocator : IAllocator<SpanByte, SpanByte, TStoreFunctions>
     {
-        private readonly TsavoriteKV<SpanByte, SpanByte, TStoreFunctions, TAllocator> store;
-        private readonly SpanByteAllocatorImpl<TStoreFunctions, TAllocator> hlog;
+        private readonly TsavoriteKV<SpanByte, SpanByte, TStoreFunctions, SpanByteAllocator<TStoreFunctions>> store;
+        private readonly SpanByteAllocatorImpl<TStoreFunctions> hlog;
         private readonly BlittableFrame frame;
 
         private SectorAlignedMemory memory;
@@ -37,7 +36,7 @@ namespace Tsavorite.core
         /// <param name="epoch">Epoch to use for protection; may be null if <paramref name="forceInMemory"/> is true.</param>
         /// <param name="forceInMemory">Provided address range is known by caller to be in memory, even if less than HeadAddress</param>
         /// <param name="logger"></param>
-        internal SpanByteScanIterator(TsavoriteKV<SpanByte, SpanByte, TStoreFunctions, TAllocator> store, SpanByteAllocatorImpl<TStoreFunctions, TAllocator> hlog,
+        internal SpanByteScanIterator(TsavoriteKV<SpanByte, SpanByte, TStoreFunctions, SpanByteAllocator<TStoreFunctions>> store, SpanByteAllocatorImpl<TStoreFunctions> hlog,
                 long beginAddress, long endAddress, ScanBufferingMode scanBufferingMode, bool includeSealedRecords, LightEpoch epoch, bool forceInMemory = false, ILogger logger = null)
             : base(beginAddress == 0 ? hlog.GetFirstValidLogicalAddress(0) : beginAddress, endAddress, scanBufferingMode, includeSealedRecords, epoch, hlog.LogPageSizeBits, logger: logger)
         {
@@ -51,7 +50,7 @@ namespace Tsavorite.core
         /// <summary>
         /// Constructor for use with tail-to-head push iteration of the passed key's record versions
         /// </summary>
-        internal SpanByteScanIterator(TsavoriteKV<SpanByte, SpanByte, TStoreFunctions, TAllocator> store, SpanByteAllocatorImpl<TStoreFunctions, TAllocator> hlog,
+        internal SpanByteScanIterator(TsavoriteKV<SpanByte, SpanByte, TStoreFunctions, SpanByteAllocator<TStoreFunctions>> store, SpanByteAllocatorImpl<TStoreFunctions> hlog,
                 long beginAddress, LightEpoch epoch, ILogger logger = null)
             : base(beginAddress == 0 ? hlog.GetFirstValidLogicalAddress(0) : beginAddress, hlog.GetTailAddress(), ScanBufferingMode.SinglePageBuffering, false, epoch, hlog.LogPageSizeBits, logger: logger)
         {
@@ -187,7 +186,7 @@ namespace Tsavorite.core
                 memory = null;
                 if (currentAddress >= headAddress || forceInMemory)
                 {
-                    OperationStackContext<SpanByte, SpanByte, TStoreFunctions, TAllocator> stackCtx = default;
+                    OperationStackContext<SpanByte, SpanByte, TStoreFunctions, SpanByteAllocator<TStoreFunctions>> stackCtx = default;
                     try
                     {
                         // GetKey() should work but for safety and consistency with other allocators use physicalAddress.

@@ -21,7 +21,7 @@ namespace Tsavorite.core
     {
         private readonly string name;
         private readonly TsavoriteLog tsavoriteLog;
-        private readonly BlittableAllocatorImpl<Empty, byte, EmptyStoreFunctions, BlittableAllocator<Empty, byte, EmptyStoreFunctions>> allocator;
+        private readonly BlittableAllocatorImpl<Empty, byte, EmptyStoreFunctions> allocator;
         private readonly BlittableFrame frame;
         private readonly GetMemory getMemory;
         private readonly int headerSize;
@@ -54,7 +54,8 @@ namespace Tsavorite.core
         /// <param name="getMemory"></param>
         /// <param name="scanUncommitted"></param>
         /// <param name="logger"></param>
-        internal unsafe TsavoriteLogScanIterator(TsavoriteLog tsavoriteLog, BlittableAllocatorImpl<Empty, byte, EmptyStoreFunctions, BlittableAllocator<Empty, byte, EmptyStoreFunctions>> hlog, long beginAddress, long endAddress, GetMemory getMemory, ScanBufferingMode scanBufferingMode, LightEpoch epoch, int headerSize, string name, bool scanUncommitted = false, ILogger logger = null)
+        internal unsafe TsavoriteLogScanIterator(TsavoriteLog tsavoriteLog, BlittableAllocatorImpl<Empty, byte, EmptyStoreFunctions> hlog, long beginAddress, long endAddress,
+                GetMemory getMemory, ScanBufferingMode scanBufferingMode, LightEpoch epoch, int headerSize, string name, bool scanUncommitted = false, ILogger logger = null)
             : base(beginAddress == 0 ? hlog.GetFirstValidLogicalAddress(0) : beginAddress, endAddress, scanBufferingMode, false, epoch, hlog.LogPageSizeBits, logger: logger)
         {
             this.tsavoriteLog = tsavoriteLog;

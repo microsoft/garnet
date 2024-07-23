@@ -10,7 +10,7 @@ namespace Tsavorite.core
         where TStoreFunctions : IStoreFunctions<SpanByte, SpanByte>
     {
         /// <summary>The wrapped class containing all data and most actual functionality. This must be the ONLY field in this structure so its size is sizeof(IntPtr).</summary>
-        private readonly SpanByteAllocatorImpl<TStoreFunctions, SpanByteAllocator<TStoreFunctions>> _this;
+        private readonly SpanByteAllocatorImpl<TStoreFunctions> _this;
 
         public SpanByteAllocator(AllocatorSettings settings, TStoreFunctions storeFunctions)
         {
@@ -21,7 +21,7 @@ namespace Tsavorite.core
         public SpanByteAllocator(object @this)
         {
             // Called by AllocatorBase via primary ctor wrapperCreator
-            _this = (SpanByteAllocatorImpl<TStoreFunctions, SpanByteAllocator<TStoreFunctions>>)@this;
+            _this = (SpanByteAllocatorImpl<TStoreFunctions>)@this;
         }
 
         /// <inheritdoc/>
@@ -50,17 +50,17 @@ namespace Tsavorite.core
         /// <inheritdoc/>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public readonly ref RecordInfo GetInfo(long physicalAddress) 
-            => ref SpanByteAllocatorImpl<TStoreFunctions, SpanByteAllocator<TStoreFunctions>>.GetInfo(physicalAddress);
+            => ref SpanByteAllocatorImpl<TStoreFunctions>.GetInfo(physicalAddress);
 
         /// <inheritdoc/>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public readonly unsafe ref RecordInfo GetInfoFromBytePointer(byte* ptr) 
-            => ref SpanByteAllocatorImpl<TStoreFunctions, SpanByteAllocator<TStoreFunctions>>.GetInfoFromBytePointer(ptr);
+            => ref SpanByteAllocatorImpl<TStoreFunctions>.GetInfoFromBytePointer(ptr);
 
         /// <inheritdoc/>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public readonly ref SpanByte GetKey(long physicalAddress) 
-            => ref SpanByteAllocatorImpl<TStoreFunctions, SpanByteAllocator<TStoreFunctions>>.GetKey(physicalAddress);
+            => ref SpanByteAllocatorImpl<TStoreFunctions>.GetKey(physicalAddress);
 
         /// <inheritdoc/>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
@@ -105,12 +105,12 @@ namespace Tsavorite.core
         /// <inheritdoc/>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public readonly int GetValueLength(ref SpanByte value) 
-            => SpanByteAllocatorImpl<TStoreFunctions, SpanByteAllocator<TStoreFunctions>>.GetValueLength(ref value);
+            => SpanByteAllocatorImpl<TStoreFunctions>.GetValueLength(ref value);
 
         /// <inheritdoc/>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public readonly unsafe bool RetrievedFullRecord(byte* record, ref AsyncIOContext<SpanByte, SpanByte> ctx) 
-            => SpanByteAllocatorImpl<TStoreFunctions, SpanByteAllocator<TStoreFunctions>>.RetrievedFullRecord(record, ref ctx);
+            => SpanByteAllocatorImpl<TStoreFunctions>.RetrievedFullRecord(record, ref ctx);
 
         /// <inheritdoc/>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
@@ -143,7 +143,7 @@ namespace Tsavorite.core
         /// <inheritdoc/>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public readonly ref SpanByte GetContextRecordKey(ref AsyncIOContext<SpanByte, SpanByte> ctx) 
-            => ref SpanByteAllocatorImpl<TStoreFunctions, SpanByteAllocator<TStoreFunctions>>.GetContextRecordKey(ref ctx);
+            => ref SpanByteAllocatorImpl<TStoreFunctions>.GetContextRecordKey(ref ctx);
 
         /// <inheritdoc/>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
@@ -160,7 +160,7 @@ namespace Tsavorite.core
         /// <inheritdoc/>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public readonly long[] GetSegmentOffsets() 
-            => SpanByteAllocatorImpl<TStoreFunctions, SpanByteAllocator<TStoreFunctions>>.GetSegmentOffsets();
+            => SpanByteAllocatorImpl<TStoreFunctions>.GetSegmentOffsets();
 
         /// <inheritdoc/>
         public readonly int OverflowPageCount => _this.OverflowPageCount;
@@ -168,6 +168,6 @@ namespace Tsavorite.core
         /// <inheritdoc/>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public readonly void SerializeKey(ref SpanByte key, long physicalAddress) 
-            => SpanByteAllocatorImpl<TStoreFunctions, SpanByteAllocator<TStoreFunctions>>.SerializeKey(ref key, physicalAddress);
+            => SpanByteAllocatorImpl<TStoreFunctions>.SerializeKey(ref key, physicalAddress);
     }
 }

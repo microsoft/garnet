@@ -24,7 +24,7 @@ namespace Tsavorite.core
     {
         private Exception cannedException = null;
 
-        readonly BlittableAllocatorImpl<Empty, byte, EmptyStoreFunctions, BlittableAllocator<Empty, byte, EmptyStoreFunctions>> allocator;
+        readonly BlittableAllocatorImpl<Empty, byte, EmptyStoreFunctions> allocator;
         readonly LightEpoch epoch;
         readonly ILogCommitManager logCommitManager;
         readonly bool disposeLogCommitManager;

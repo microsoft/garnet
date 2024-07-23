@@ -12,7 +12,7 @@ namespace Tsavorite.core
         where TStoreFunctions : IStoreFunctions<Key, Value>
     {
         /// <summary>The wrapped class containing all data and most actual functionality. This must be the ONLY field in this structure so its size is sizeof(IntPtr).</summary>
-        private readonly GenericAllocatorImpl<Key, Value, TStoreFunctions, GenericAllocator<Key, Value, TStoreFunctions>> _this;
+        private readonly GenericAllocatorImpl<Key, Value, TStoreFunctions> _this;
 
         public GenericAllocator(AllocatorSettings settings, TStoreFunctions storeFunctions)
         {
@@ -23,7 +23,7 @@ namespace Tsavorite.core
         public GenericAllocator(object @this)
         {
             // Called by AllocatorBase via primary ctor wrapperCreator
-            _this = (GenericAllocatorImpl<Key, Value, TStoreFunctions, GenericAllocator<Key, Value, TStoreFunctions>>)@this;
+            _this = (GenericAllocatorImpl<Key, Value, TStoreFunctions>)@this;
         }
 
         /// <inheritdoc/>

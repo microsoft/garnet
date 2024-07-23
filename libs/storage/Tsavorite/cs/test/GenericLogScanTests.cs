@@ -252,7 +252,7 @@ namespace Tsavorite.test
         {
             const int PageSizeBits = 9;
             const long PageSize = 1L << PageSizeBits;
-            var recordSize = GenericAllocatorImpl<MyKey, MyValue, ClassStoreFunctions, ClassAllocator>.RecordSize;
+            var recordSize = GenericAllocatorImpl<MyKey, MyValue, ClassStoreFunctions>.RecordSize;
 
             log = Devices.CreateLogDevice(Path.Join(MethodTestDir, "test.log"));
             objlog = Devices.CreateLogDevice(Path.Join(MethodTestDir, "test.obj.log"));

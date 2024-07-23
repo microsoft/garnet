@@ -209,7 +209,7 @@ namespace Tsavorite.test
         public void BlittableScanCursorTest([Values(HashModulo.NoMod, HashModulo.Hundred)] HashModulo hashMod)
         {
             const long PageSize = 1L << PageSizeBits;
-            var recordSize = BlittableAllocatorImpl<KeyStruct, ValueStruct, StructStoreFunctions, StructAllocator>.RecordSize;
+            var recordSize = BlittableAllocatorImpl<KeyStruct, ValueStruct, StructStoreFunctions>.RecordSize;
 
             using var session = store.NewSession<InputStruct, OutputStruct, Empty, ScanFunctions>(new ScanFunctions());
             var bContext = session.BasicContext;
@@ -296,7 +296,7 @@ namespace Tsavorite.test
 
         public void BlittableScanCursorFilterTest([Values(HashModulo.NoMod, HashModulo.Hundred)] HashModulo hashMod)
         {
-            var recordSize = BlittableAllocatorImpl<KeyStruct, ValueStruct, StructStoreFunctions, StructAllocator>.RecordSize;
+            var recordSize = BlittableAllocatorImpl<KeyStruct, ValueStruct, StructStoreFunctions>.RecordSize;
 
             using var session = store.NewSession<InputStruct, OutputStruct, Empty, ScanFunctions>(new ScanFunctions());
             var bContext = session.BasicContext;

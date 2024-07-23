@@ -54,6 +54,7 @@ namespace Tsavorite.core
         // an in-memory address (or even know if the key will be found in-memory).
         internal static RecordInfo InitialValid = new() { Valid = true, PreviousAddress = Constants.kTempInvalidAddress };
 
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public void WriteInfo(bool inNewVersion, bool tombstone, long previousAddress)
         {
             // For Recovery reasons, we need to have the record both Sealed and Invalid: 

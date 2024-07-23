@@ -72,7 +72,7 @@ namespace Tsavorite.core
         /// Set members to the current entry (which may have been updated (via CAS) in the bucket after FindTag, etc.)
         /// </summary>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        internal void SetToCurrent() => entry = new HashBucketEntry() { word = bucket->bucket_entries[slot] };
+        internal void SetToCurrent() => entry = new () { word = bucket->bucket_entries[slot] };
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         internal bool TryCAS(long newLogicalAddress)

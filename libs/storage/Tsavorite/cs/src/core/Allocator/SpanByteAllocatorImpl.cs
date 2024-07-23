@@ -10,9 +10,8 @@ using static Tsavorite.core.Utility;
 namespace Tsavorite.core
 {
     // Allocator for SpanByte, possibly with a Blittable Key or Value.
-    internal sealed unsafe class SpanByteAllocatorImpl<TStoreFunctions, TAllocator> : AllocatorBase<SpanByte, SpanByte, TStoreFunctions, TAllocator>
+    internal sealed unsafe class SpanByteAllocatorImpl<TStoreFunctions> : AllocatorBase<SpanByte, SpanByte, TStoreFunctions, SpanByteAllocator<TStoreFunctions>>
         where TStoreFunctions : IStoreFunctions<SpanByte, SpanByte>
-        where TAllocator : IAllocator<SpanByte, SpanByte, TStoreFunctions>
     {
         // Circular buffer definition
         private readonly byte[][] values;
@@ -21,7 +20,7 @@ namespace Tsavorite.core
 
         private readonly OverflowPool<PageUnit> overflowPagePool;
 
-        public SpanByteAllocatorImpl(AllocatorSettings settings, TStoreFunctions storeFunctions, Func<object, TAllocator> wrapperCreator)
+        public SpanByteAllocatorImpl(AllocatorSettings settings, TStoreFunctions storeFunctions, Func<object, SpanByteAllocator<TStoreFunctions>> wrapperCreator)
             : base(settings.LogSettings, storeFunctions, wrapperCreator, settings.evictCallback, settings.epoch, settings.flushCallback, settings.logger)
         {
             overflowPagePool = new OverflowPool<PageUnit>(4, p => { });
@@ -65,12 +64,16 @@ namespace Tsavorite.core
 
         public override void Initialize() => Initialize(Constants.kFirstValidAddress);
 
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public static ref RecordInfo GetInfo(long physicalAddress) => ref Unsafe.AsRef<RecordInfo>((void*)physicalAddress);
 
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public static ref RecordInfo GetInfoFromBytePointer(byte* ptr) => ref Unsafe.AsRef<RecordInfo>(ptr);
 
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public static ref SpanByte GetKey(long physicalAddress) => ref Unsafe.AsRef<SpanByte>((byte*)physicalAddress + RecordInfo.GetLength());
 
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public ref SpanByte GetValue(long physicalAddress) => ref Unsafe.AsRef<SpanByte>((byte*)ValueOffset(physicalAddress));
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
@@ -98,6 +101,7 @@ namespace Tsavorite.core
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         private int ValueSize(long physicalAddress) => (*(SpanByte*)ValueOffset(physicalAddress)).TotalSize;
 
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public static int GetValueLength(ref SpanByte value) => value.TotalSize;
 
         const int FieldInitialLength = sizeof(int);     // The .Length field of a SpanByte is the initial length
@@ -180,6 +184,7 @@ namespace Tsavorite.core
             return (actualSize, RoundUp(actualSize, Constants.kRecordAlignment), keySize);
         }
 
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public static void SerializeKey(ref SpanByte src, long physicalAddress) => src.CopyTo((byte*)KeyOffset(physicalAddress));
 
         /// <summary>
@@ -329,40 +334,44 @@ namespace Tsavorite.core
         /// <summary>
         /// Iterator interface for pull-scanning Tsavorite log
         /// </summary>
-        public override ITsavoriteScanIterator<SpanByte, SpanByte> Scan(TsavoriteKV<SpanByte, SpanByte, TStoreFunctions, TAllocator> store, long beginAddress, long endAddress, ScanBufferingMode scanBufferingMode, bool includeSealedRecords)
-            => new SpanByteScanIterator<TStoreFunctions, TAllocator>(store, this, beginAddress, endAddress, scanBufferingMode, includeSealedRecords, epoch, logger: logger);
+        public override ITsavoriteScanIterator<SpanByte, SpanByte> Scan(TsavoriteKV<SpanByte, SpanByte, TStoreFunctions, SpanByteAllocator<TStoreFunctions>> store,
+                long beginAddress, long endAddress, ScanBufferingMode scanBufferingMode, bool includeSealedRecords)
+            => new SpanByteScanIterator<TStoreFunctions>(store, this, beginAddress, endAddress, scanBufferingMode, includeSealedRecords, epoch, logger: logger);
 
         /// <summary>
         /// Implementation for push-scanning Tsavorite log, called from LogAccessor
         /// </summary>
-        internal override bool Scan<TScanFunctions>(TsavoriteKV<SpanByte, SpanByte, TStoreFunctions, TAllocator> store, long beginAddress, long endAddress, ref TScanFunctions scanFunctions, ScanBufferingMode scanBufferingMode)
+        internal override bool Scan<TScanFunctions>(TsavoriteKV<SpanByte, SpanByte, TStoreFunctions, SpanByteAllocator<TStoreFunctions>> store,
+                long beginAddress, long endAddress, ref TScanFunctions scanFunctions, ScanBufferingMode scanBufferingMode)
         {
-            using SpanByteScanIterator<TStoreFunctions, TAllocator> iter = new(store, this, beginAddress, endAddress, scanBufferingMode, false, epoch, logger: logger);
+            using SpanByteScanIterator<TStoreFunctions> iter = new(store, this, beginAddress, endAddress, scanBufferingMode, false, epoch, logger: logger);
             return PushScanImpl(beginAddress, endAddress, ref scanFunctions, iter);
         }
 
         /// <summary>
         /// Implementation for push-scanning Tsavorite log with a cursor, called from LogAccessor
         /// </summary>
-        internal override bool ScanCursor<TScanFunctions>(TsavoriteKV<SpanByte, SpanByte, TStoreFunctions, TAllocator> store, ScanCursorState<SpanByte, SpanByte> scanCursorState, ref long cursor, long count, TScanFunctions scanFunctions, long endAddress, bool validateCursor)
+        internal override bool ScanCursor<TScanFunctions>(TsavoriteKV<SpanByte, SpanByte, TStoreFunctions, SpanByteAllocator<TStoreFunctions>> store,
+                ScanCursorState<SpanByte, SpanByte> scanCursorState, ref long cursor, long count, TScanFunctions scanFunctions, long endAddress, bool validateCursor)
         {
-            using SpanByteScanIterator<TStoreFunctions, TAllocator> iter = new(store, this, cursor, endAddress, ScanBufferingMode.SinglePageBuffering, false, epoch, logger: logger);
-            return ScanLookup<SpanByte, SpanByteAndMemory, TScanFunctions, SpanByteScanIterator<TStoreFunctions, TAllocator>>(store, scanCursorState, ref cursor, count, scanFunctions, iter, validateCursor);
+            using SpanByteScanIterator<TStoreFunctions> iter = new(store, this, cursor, endAddress, ScanBufferingMode.SinglePageBuffering, false, epoch, logger: logger);
+            return ScanLookup<SpanByte, SpanByteAndMemory, TScanFunctions, SpanByteScanIterator<TStoreFunctions>>(store, scanCursorState, ref cursor, count, scanFunctions, iter, validateCursor);
         }
 
         /// <summary>
         /// Implementation for push-iterating key versions, called from LogAccessor
         /// </summary>
-        internal override bool IterateKeyVersions<TScanFunctions>(TsavoriteKV<SpanByte, SpanByte, TStoreFunctions, TAllocator> store, ref SpanByte key, long beginAddress, ref TScanFunctions scanFunctions)
+        internal override bool IterateKeyVersions<TScanFunctions>(TsavoriteKV<SpanByte, SpanByte, TStoreFunctions, SpanByteAllocator<TStoreFunctions>> store,
+                ref SpanByte key, long beginAddress, ref TScanFunctions scanFunctions)
         {
-            using SpanByteScanIterator<TStoreFunctions, TAllocator> iter = new(store, this, beginAddress, epoch, logger: logger);
+            using SpanByteScanIterator<TStoreFunctions> iter = new(store, this, beginAddress, epoch, logger: logger);
             return IterateKeyVersionsImpl(store, ref key, beginAddress, ref scanFunctions, iter);
         }
 
         /// <inheritdoc />
         internal override void MemoryPageScan(long beginAddress, long endAddress, IObserver<ITsavoriteScanIterator<SpanByte, SpanByte>> observer)
         {
-            using var iter = new SpanByteScanIterator<TStoreFunctions, TAllocator>(store: null, this, beginAddress, endAddress, ScanBufferingMode.NoBuffering, false, epoch, true, logger: logger);
+            using var iter = new SpanByteScanIterator<TStoreFunctions>(store: null, this, beginAddress, endAddress, ScanBufferingMode.NoBuffering, false, epoch, true, logger: logger);
             observer?.OnNext(iter);
         }
 

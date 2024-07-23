@@ -110,6 +110,7 @@ namespace Tsavorite.core
         /// </summary>
         public long ExtraMetadata
         {
+            [MethodImpl(MethodImplOptions.AggressiveInlining)]
             get
             {
                 if (Serialized)
@@ -117,6 +118,8 @@ namespace Tsavorite.core
                 else
                     return MetadataSize > 0 ? *(long*)payload : 0;
             }
+
+            [MethodImpl(MethodImplOptions.AggressiveInlining)]
             set
             {
                 if (value > 0)
@@ -145,17 +148,17 @@ namespace Tsavorite.core
         /// Unmark <see cref="SpanByte"/> as having 8-byte metadata in header of payload
         /// </summary>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public void UnmarkExtraMetadata()
-        {
-            length &= ~ExtraMetadataBitMask;
-        }
+        public void UnmarkExtraMetadata() => length &= ~ExtraMetadataBitMask;
 
         /// <summary>
         /// Check or set struct as invalid
         /// </summary>
         public bool Invalid
         {
+            [MethodImpl(MethodImplOptions.AggressiveInlining)]
             readonly get => ((length & UnserializedBitMask) != 0) && payload == IntPtr.Zero;
+
+            [MethodImpl(MethodImplOptions.AggressiveInlining)]
             set
             {
                 Debug.Assert(value, "Cannot restore an Invalid SpanByte to Valid; must reassign the SpanByte as a full value");
@@ -459,6 +462,7 @@ namespace Tsavorite.core
         /// <summary>
         /// Copy serialized version to specified memory location
         /// </summary>
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public void CopyTo(byte* destination)
         {
             if (Serialized)

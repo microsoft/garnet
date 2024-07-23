@@ -72,6 +72,7 @@ namespace Tsavorite.core
             ReadInfo readInfo = new()
             {
                 Version = sessionFunctions.Ctx.version,
+                Address = stackCtx.recSrc.LogicalAddress,
                 IsFromPending = pendingContext.type != OperationType.NONE,
             };
 
@@ -96,6 +97,7 @@ namespace Tsavorite.core
                             return OperationStatus.SUCCESS;
                         return readInfo.Action == ReadAction.CancelOperation ? OperationStatus.CANCELED : OperationStatus.NOTFOUND;
                     }
+                    readInfo.Address = stackCtx.recSrc.LogicalAddress;
                 }
 
                 // recSrc.LogicalAddress is set and is not in the readcache. Traceback for key match.
@@ -106,8 +108,6 @@ namespace Tsavorite.core
                 pendingContext.InitialEntryAddress = stackCtx.hei.Address;
                 pendingContext.InitialLatestLogicalAddress = stackCtx.recSrc.LatestLogicalAddress;
                 pendingContext.logicalAddress = stackCtx.recSrc.LogicalAddress;
-
-                readInfo.Address = stackCtx.recSrc.LogicalAddress;
 
                 // V threads cannot access V+1 records. Use the latest logical address rather than the traced address (logicalAddress) per comments in AcquireCPRLatchRMW.
                 if (sessionFunctions.Ctx.phase == Phase.PREPARE && IsEntryVersionNew(ref stackCtx.hei.entry))

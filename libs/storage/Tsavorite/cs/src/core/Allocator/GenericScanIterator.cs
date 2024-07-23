@@ -10,12 +10,11 @@ namespace Tsavorite.core
     /// <summary>
     /// Scan iterator for hybrid log
     /// </summary>
-    internal sealed class GenericScanIterator<Key, Value, TStoreFunctions, TAllocator> : ScanIteratorBase, ITsavoriteScanIterator<Key, Value>, IPushScanIterator<Key>
+    internal sealed class GenericScanIterator<Key, Value, TStoreFunctions> : ScanIteratorBase, ITsavoriteScanIterator<Key, Value>, IPushScanIterator<Key>
         where TStoreFunctions : IStoreFunctions<Key, Value>
-        where TAllocator : IAllocator<Key, Value, TStoreFunctions>
     {
-        private readonly TsavoriteKV<Key, Value, TStoreFunctions, TAllocator> store;
-        private readonly GenericAllocatorImpl<Key, Value, TStoreFunctions, TAllocator> hlog;
+        private readonly TsavoriteKV<Key, Value, TStoreFunctions, GenericAllocator<Key, Value, TStoreFunctions>> store;
+        private readonly GenericAllocatorImpl<Key, Value, TStoreFunctions> hlog;
         private readonly GenericFrame<Key, Value> frame;
         private readonly int recordSize;
 
@@ -27,7 +26,7 @@ namespace Tsavorite.core
         /// <summary>
         /// Constructor
         /// </summary>
-        public GenericScanIterator(TsavoriteKV<Key, Value, TStoreFunctions, TAllocator> store, GenericAllocatorImpl<Key, Value, TStoreFunctions, TAllocator> hlog,
+        public GenericScanIterator(TsavoriteKV<Key, Value, TStoreFunctions, GenericAllocator<Key, Value, TStoreFunctions>> store, GenericAllocatorImpl<Key, Value, TStoreFunctions> hlog,
                 long beginAddress, long endAddress, ScanBufferingMode scanBufferingMode, bool includeSealedRecords, LightEpoch epoch, ILogger logger = null)
             : base(beginAddress == 0 ? hlog.GetFirstValidLogicalAddress(0) : beginAddress, endAddress, scanBufferingMode, includeSealedRecords, epoch, hlog.LogPageSizeBits, logger: logger)
         {
@@ -41,7 +40,7 @@ namespace Tsavorite.core
         /// <summary>
         /// Constructor for use with tail-to-head push iteration of the passed key's record versions
         /// </summary>
-        public GenericScanIterator(TsavoriteKV<Key, Value, TStoreFunctions, TAllocator> store, GenericAllocatorImpl<Key, Value, TStoreFunctions, TAllocator> hlog,
+        public GenericScanIterator(TsavoriteKV<Key, Value, TStoreFunctions, GenericAllocator<Key, Value, TStoreFunctions>> store, GenericAllocatorImpl<Key, Value, TStoreFunctions> hlog,
                 long beginAddress, LightEpoch epoch, ILogger logger = null)
             : base(beginAddress == 0 ? hlog.GetFirstValidLogicalAddress(0) : beginAddress, hlog.GetTailAddress(), ScanBufferingMode.SinglePageBuffering, false, epoch, hlog.LogPageSizeBits, logger: logger)
         {
@@ -68,7 +67,7 @@ namespace Tsavorite.core
         public bool SnapCursorToLogicalAddress(ref long cursor)
         {
             Debug.Assert(currentAddress == -1, "SnapCursorToLogicalAddress must be called before GetNext()");
-            beginAddress = nextAddress = hlog.SnapToFixedLengthLogicalAddressBoundary(ref cursor, GenericAllocatorImpl<Key, Value, TStoreFunctions, TAllocator>.RecordSize);
+            beginAddress = nextAddress = hlog.SnapToFixedLengthLogicalAddressBoundary(ref cursor, GenericAllocatorImpl<Key, Value, TStoreFunctions>.RecordSize);
             return true;
         }
 
@@ -135,7 +134,7 @@ namespace Tsavorite.core
 
                     // Copy the object values from cached page memory to data members; we have no ref into the log after the epoch.Suspend().
                     // These are pointer-sized shallow copies but we need to lock to ensure no value tearing inside the object while copying to temp storage.
-                    OperationStackContext<Key, Value, TStoreFunctions, TAllocator> stackCtx = default;
+                    OperationStackContext<Key, Value, TStoreFunctions, GenericAllocator<Key, Value, TStoreFunctions>> stackCtx = default;
                     try
                     {
                         // We cannot use GetKey() because it has not yet been set.
