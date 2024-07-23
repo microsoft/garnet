@@ -14,8 +14,10 @@ namespace Tsavorite.core
     {
         #region native_lib
         private const string spdk_library_name = "spdk_device";
+        // private const string spdk_library_path =
+        //                        "runtimes/linux-x64/native/libspdk_device.so";
         private const string spdk_library_path =
-                               "runtimes/linux-x64/native/libspdk_device.so";
+                                "/root/source/repos/garnet/main/GarnetServer/bin/Release/net8.0/runtimes/linux-x64/native/libspdk_device.so";
 
         [DllImport(spdk_library_name, EntryPoint = "spdk_device_init",
                    CallingConvention = CallingConvention.Cdecl)]
@@ -123,14 +125,17 @@ namespace Tsavorite.core
             }
             GCHandle handle = GCHandle.FromIntPtr(context);
             SPDKIOContext io_context = handle.Target as SPDKIOContext;
-            io_context.tsavorite_callback(
+            DeviceIOCompletionCallback t_callback =
+                                         io_context.tsavorite_callback;
+            object t_context = io_context.tsavorite_callback_context;
+            io_context.finish_io();
+            Interlocked.Decrement(ref this.num_pending);
+            this.context_queue.Enqueue(io_context);
+            t_callback(
                 (uint)error_code,
                 (uint)num_bytes,
-                io_context.tsavorite_callback_context
+                t_context
             );
-            Interlocked.Decrement(ref this.num_pending);
-            io_context.finish_io();
-            this.context_queue.Enqueue(io_context);
         }
 
         public SPDKDevice(string filename,
@@ -219,7 +224,7 @@ namespace Tsavorite.core
                 SPDKIOContext spdk_io_context;
                 while (!this.context_queue.TryDequeue(out spdk_io_context))
                 {
-                    Debug.WriteLine("Can't get spdk_device when reading");
+                    Debug.WriteLine("Can't get spdk_device when writing");
                 }
                 spdk_io_context.init_io(callback, context);
                 int _result = spdk_device_write_async(

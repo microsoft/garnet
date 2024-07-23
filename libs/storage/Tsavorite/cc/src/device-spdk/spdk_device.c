@@ -137,9 +137,6 @@ int spdk_device_init()
         goto exit;
     }
     initted = true;
-    // tmp
-    spdk_malloc(4 * 1024 * 1024, SIZE_4K, NULL, SPDK_ENV_SOCKET_ID_ANY,
-                SPDK_MALLOC_DMA);
 exit:
     if (rc == 0) {
         initted = true;
@@ -175,8 +172,6 @@ struct spdk_device *spdk_device_create(int nsid)
     device = &g_spdk_device_list[device_num];
     device->ns_entry = ns_entry;
     device->qpair = spdk_nvme_ctrlr_alloc_io_qpair(ns_entry->ctrlr, NULL, 0);
-    device->buffer = spdk_malloc(4 * 1024 * 1024, SIZE_4K, NULL,
-                                 SPDK_ENV_SOCKET_ID_ANY, SPDK_MALLOC_DMA);
     if (device->qpair == NULL) {
         fprintf(stderr, "ERROR: spdk_nvme_ctrlr_alloc_io_qpair() failed\n");
         device = NULL;
@@ -205,7 +200,7 @@ static void io_complete(void *arg, const struct spdk_nvme_cpl *completion)
         rc = completion->status_raw;
     } else {
         if (io_context->read_dest != NULL) {
-            memcpy(io_context->read_dest, io_context->device->buffer,
+            memcpy(io_context->read_dest, io_context->buffer,
                    io_context->io_length);
         }
         bytes_transferred = io_context->io_length;
@@ -267,7 +262,7 @@ int32_t spdk_device_read_async(struct spdk_device *device, uint64_t source,
     }
 
     rc = spdk_nvme_ns_cmd_read(device->ns_entry->ns, device->qpair,
-                               device->buffer, source / SECTOR_SIZE,
+                               io_context->buffer, source / SECTOR_SIZE,
                                length / SECTOR_SIZE, io_complete,
                                (void *)io_context, 0);
     if (rc != 0) {
@@ -307,11 +302,12 @@ int32_t spdk_device_write_async(struct spdk_device *device, const void *source,
         rc = ENOMEM;
         goto exit;
     }
-    memcpy(device->buffer, source, length);
+    memcpy(io_context->buffer, source, length);
 
-    rc = spdk_nvme_ns_cmd_write(
-        device->ns_entry->ns, device->qpair, device->buffer, dest / SECTOR_SIZE,
-        length / SECTOR_SIZE, io_complete, (void *)io_context, 0);
+    rc = spdk_nvme_ns_cmd_write(device->ns_entry->ns, device->qpair,
+                                io_context->buffer, dest / SECTOR_SIZE,
+                                length / SECTOR_SIZE, io_complete,
+                                (void *)io_context, 0);
     if (rc != 0) {
         fprintf(stderr, "ERROR: starting write I/O failed with %d.\n", rc);
     }
