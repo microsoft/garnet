@@ -97,6 +97,8 @@ namespace Tsavorite.core
                             return OperationStatus.SUCCESS;
                         return readInfo.Action == ReadAction.CancelOperation ? OperationStatus.CANCELED : OperationStatus.NOTFOUND;
                     }
+
+                    // FindInReadCache updated recSrc so update the readInfo accordingly.
                     readInfo.Address = stackCtx.recSrc.LogicalAddress;
                 }
 
