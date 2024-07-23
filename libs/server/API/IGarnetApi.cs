@@ -826,7 +826,7 @@ namespace Garnet.server
         /// <param name="input"></param>
         /// <param name="output"></param>
         /// <returns></returns>
-        GarnetStatus HashSet(byte[] key, ArgSlice input, out ObjectOutputHeader output);
+        GarnetStatus HashSet(byte[] key, ref ObjectInput input, out ObjectOutputHeader output);
 
         /// <summary>
         /// Set only if field does not yet exist. If key does not exist, a new key holding a hash is created.
@@ -865,7 +865,7 @@ namespace Garnet.server
         /// <param name="input"></param>
         /// <param name="output"></param>
         /// <returns></returns>
-        GarnetStatus HashDelete(byte[] key, ArgSlice input, out ObjectOutputHeader output);
+        GarnetStatus HashDelete(byte[] key, ref ObjectInput input, out ObjectOutputHeader output);
 
         /// <summary>
         /// Increments the number stored at field in the hash key by increment parameter.
@@ -884,7 +884,7 @@ namespace Garnet.server
         /// <param name="input"></param>
         /// <param name="outputFooter"></param>
         /// <returns></returns>
-        GarnetStatus HashIncrement(byte[] key, ArgSlice input, ref GarnetObjectStoreOutput outputFooter);
+        GarnetStatus HashIncrement(byte[] key, ref ObjectInput input, ref GarnetObjectStoreOutput outputFooter);
 
         #endregion
 
@@ -1354,7 +1354,7 @@ namespace Garnet.server
         /// <param name="input">The metadata input for the operation</param>
         /// <param name="outputFooter"></param>
         /// <returns></returns>
-        GarnetStatus HashGet(byte[] key, ArgSlice input, ref GarnetObjectStoreOutput outputFooter);
+        GarnetStatus HashGet(byte[] key, ref ObjectInput input, ref GarnetObjectStoreOutput outputFooter);
 
         /// <summary>
         /// Returns all fields and values of the hash stored at key.
@@ -1363,7 +1363,7 @@ namespace Garnet.server
         /// <param name="input">The metadata input for the operation</param>
         /// <param name="outputFooter"></param>
         /// <returns></returns>
-        GarnetStatus HashGetAll(byte[] key, ArgSlice input, ref GarnetObjectStoreOutput outputFooter);
+        GarnetStatus HashGetAll(byte[] key, ref ObjectInput input, ref GarnetObjectStoreOutput outputFooter);
 
         /// <summary>
         /// Returns the values associated with the specified fields in the hash stored at key.
@@ -1372,7 +1372,7 @@ namespace Garnet.server
         /// <param name="input">The metadata input for the operation</param>
         /// <param name="outputFooter"></param>
         /// <returns></returns>
-        GarnetStatus HashGetMultiple(byte[] key, ArgSlice input, ref GarnetObjectStoreOutput outputFooter);
+        GarnetStatus HashGetMultiple(byte[] key, ref ObjectInput input, ref GarnetObjectStoreOutput outputFooter);
 
         /// <summary>
         /// Returns ALL the values in the hash stored at key.
@@ -1397,7 +1397,7 @@ namespace Garnet.server
         /// <param name="input"></param>
         /// <param name="output"></param>
         /// <returns></returns>
-        GarnetStatus HashStrLength(byte[] key, ArgSlice input, out ObjectOutputHeader output);
+        GarnetStatus HashStrLength(byte[] key, ref ObjectInput input, out ObjectOutputHeader output);
 
         /// <summary>
         /// Returns the number of fields contained in the hash Key.
@@ -1406,7 +1406,7 @@ namespace Garnet.server
         /// <param name="input"></param>
         /// <param name="output"></param>
         /// <returns></returns>
-        GarnetStatus HashLength(byte[] key, ArgSlice input, out ObjectOutputHeader output);
+        GarnetStatus HashLength(byte[] key, ref ObjectInput input, out ObjectOutputHeader output);
 
         /// <summary>
         /// Returns if field is an existing field in the hash stored at key.
@@ -1424,7 +1424,7 @@ namespace Garnet.server
         /// <param name="input"></param>
         /// <param name="output"></param>
         /// <returns></returns>
-        GarnetStatus HashExists(byte[] key, ArgSlice input, out ObjectOutputHeader output);
+        GarnetStatus HashExists(byte[] key, ref ObjectInput input, out ObjectOutputHeader output);
 
         /// <summary>
         /// Returns count random fields from the hash value.
@@ -1451,7 +1451,7 @@ namespace Garnet.server
         /// <param name="input"></param>
         /// <param name="outputFooter"></param>
         /// <returns></returns>
-        GarnetStatus HashRandomField(byte[] key, ArgSlice input, ref GarnetObjectStoreOutput outputFooter);
+        GarnetStatus HashRandomField(byte[] key, ref ObjectInput input, ref GarnetObjectStoreOutput outputFooter);
 
         /// <summary>
         /// Returns all field names in the hash key.
@@ -1460,7 +1460,7 @@ namespace Garnet.server
         /// <param name="input"></param>
         /// <param name="outputFooter"></param>
         /// <returns></returns>
-        GarnetStatus HashKeys(byte[] key, ArgSlice input, ref GarnetObjectStoreOutput outputFooter);
+        GarnetStatus HashKeys(byte[] key, ref ObjectInput input, ref GarnetObjectStoreOutput outputFooter);
 
         /// <summary>
         /// Returns all values in the hash key.
@@ -1469,7 +1469,7 @@ namespace Garnet.server
         /// <param name="input"></param>
         /// <param name="outputFooter"></param>
         /// <returns></returns>
-        GarnetStatus HashVals(byte[] key, ArgSlice input, ref GarnetObjectStoreOutput outputFooter);
+        GarnetStatus HashVals(byte[] key, ref ObjectInput input, ref GarnetObjectStoreOutput outputFooter);
 
         /// <summary>
         /// Iterates fields of Hash key and their associated values using a cursor,

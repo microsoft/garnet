@@ -2,6 +2,7 @@
 // Licensed under the MIT license.
 
 using System;
+using System.Runtime.Intrinsics.X86;
 using Garnet.common;
 using Tsavorite.core;
 
@@ -42,15 +43,6 @@ namespace Garnet.server
                 return true;
             }
 
-            // Prepare input
-            var inputPtr = (ObjectInputHeader*)(ptr - sizeof(ObjectInputHeader));
-
-            // Save old values on buffer for possible revert
-            var save = *inputPtr;
-
-            // Prepare length of header in input buffer
-            var inputLength = (int)(recvBufferPtr + bytesRead - ptr) + sizeof(ObjectInputHeader);
-
             var inputCount = (count - 1) / 2;
 
             var hop =
@@ -62,15 +54,19 @@ namespace Garnet.server
                     _ => throw new Exception($"Unexpected {nameof(HashOperation)}: {command}")
                 };
 
-            // Prepare header in input buffer
-            inputPtr->header.type = GarnetObjectType.Hash;
-            inputPtr->header.flags = 0;
-            inputPtr->header.HashOp = hop;
-            inputPtr->arg1 = inputCount;
-
-            var status = storageApi.HashSet(keyBytes, new ArgSlice((byte*)inputPtr, inputLength), out var output);
-
-            *inputPtr = save; // reset input buffer
+            // Prepare input
+            var input = new ObjectInput
+            {
+                header = new RespInputHeader
+                {
+                    type = GarnetObjectType.Hash,
+                    HashOp = hop,
+                },
+                count = inputCount,
+                payload = new ArgSlice(ptr, (int)(recvBufferPtr + bytesRead - ptr)),
+            };
+            
+            var status = storageApi.HashSet(keyBytes, ref input, out var output);
 
             switch (status)
             {
@@ -120,26 +116,20 @@ namespace Garnet.server
             }
 
             // Prepare input
-            var inputPtr = (ObjectInputHeader*)(ptr - sizeof(ObjectInputHeader));
-
-            // Save old values on buffer for possible revert
-            var save = *inputPtr;
-
-            // Prepare length of header in input buffer
-            var inputLength = (int)(recvBufferPtr + bytesRead - (byte*)inputPtr);
-
-            // Prepare header in input buffer
-            inputPtr->header.type = GarnetObjectType.Hash;
-            inputPtr->header.flags = 0;
-            inputPtr->header.HashOp = HashOperation.HGET;
+            var input = new ObjectInput
+            {
+                header = new RespInputHeader
+                {
+                    type = GarnetObjectType.Hash,
+                    HashOp = HashOperation.HGET,
+                },
+                payload = new ArgSlice(ptr, (int)(recvBufferPtr + bytesRead - ptr)),
+            };
 
             // Prepare GarnetObjectStore output
             var outputFooter = new GarnetObjectStoreOutput { spanByteAndMemory = new SpanByteAndMemory(dcurr, (int)(dend - dcurr)) };
 
-            var status = storageApi.HashGet(keyBytes, new ArgSlice((byte*)inputPtr, inputLength), ref outputFooter);
-
-            // Reset input buffer
-            *inputPtr = save;
+            var status = storageApi.HashGet(keyBytes, ref input, ref outputFooter);
 
             switch (status)
             {
@@ -185,27 +175,21 @@ namespace Garnet.server
             }
 
             // Prepare input
-            var inputPtr = (ObjectInputHeader*)(ptr - sizeof(ObjectInputHeader));
-
-            // Save old values on buffer for possible revert
-            var save = *inputPtr;
-
-            // Prepare length of header in input buffer
-            var inputLength = (int)(recvBufferPtr + bytesRead - (byte*)inputPtr);
-
-            // Prepare header in input buffer
-            inputPtr->header.type = GarnetObjectType.Hash;
-            inputPtr->header.flags = 0;
-            inputPtr->header.HashOp = HashOperation.HGETALL;
-            inputPtr->arg1 = respProtocolVersion;
+            var input = new ObjectInput
+            {
+                header = new RespInputHeader
+                {
+                    type = GarnetObjectType.Hash,
+                    HashOp = HashOperation.HGETALL,
+                },
+                count = respProtocolVersion,
+                payload = new ArgSlice(ptr, (int)(recvBufferPtr + bytesRead - ptr)),
+            };
 
             // Prepare GarnetObjectStore output
             var outputFooter = new GarnetObjectStoreOutput { spanByteAndMemory = new SpanByteAndMemory(dcurr, (int)(dend - dcurr)) };
 
-            var status = storageApi.HashGetAll(keyBytes, new ArgSlice((byte*)inputPtr, inputLength), ref outputFooter);
-
-            // Reset input buffer
-            *inputPtr = save;
+            var status = storageApi.HashGetAll(keyBytes, ref input, ref outputFooter);
 
             switch (status)
             {
@@ -250,27 +234,21 @@ namespace Garnet.server
             }
 
             // Prepare input
-            var inputPtr = (ObjectInputHeader*)(ptr - sizeof(ObjectInputHeader));
-
-            // Save old values on buffer for possible revert
-            var save = *inputPtr;
-
-            // Prepare length of header in input buffer
-            var inputLength = (int)(recvBufferPtr + bytesRead - (byte*)inputPtr);
-
-            // Prepare header in input buffer
-            inputPtr->header.type = GarnetObjectType.Hash;
-            inputPtr->header.flags = 0;
-            inputPtr->header.HashOp = HashOperation.HMGET;
-            inputPtr->arg1 = count - 1;
+            var input = new ObjectInput
+            {
+                header = new RespInputHeader
+                {
+                    type = GarnetObjectType.Hash,
+                    HashOp = HashOperation.HMGET,
+                },
+                count = count - 1,
+                payload = new ArgSlice(ptr, (int)(recvBufferPtr + bytesRead - ptr)),
+            };
 
             // Prepare GarnetObjectStore output
             var outputFooter = new GarnetObjectStoreOutput { spanByteAndMemory = new SpanByteAndMemory(dcurr, (int)(dend - dcurr)) };
 
-            var status = storageApi.HashGetMultiple(keyBytes, new ArgSlice((byte*)inputPtr, inputLength), ref outputFooter);
-
-            // Reset input buffer
-            *inputPtr = save;
+            var status = storageApi.HashGetMultiple(keyBytes, ref input, ref outputFooter);
 
             switch (status)
             {
@@ -352,24 +330,23 @@ namespace Garnet.server
                 }
             }
 
-            // Prepare input
-            var inputPtr = (ObjectInputHeader*)(ptr - sizeof(ObjectInputHeader));
-
-            // Save old values on buffer for possible revert
-            var save = *inputPtr;
-
-            // Prepare length of header in input buffer
-            var inputLength = (int)(recvBufferPtr + bytesRead - (byte*)inputPtr);
+            var countWithMetadata = (((paramCount << 1) | (includedCount ? 1 : 0)) << 1) | (withValues ? 1 : 0);
 
             // Create a random seed
             var seed = RandomGen.Next();
 
-            // Prepare header in input buffer
-            inputPtr->header.type = GarnetObjectType.Hash;
-            inputPtr->header.flags = 0;
-            inputPtr->header.HashOp = HashOperation.HRANDFIELD;
-            inputPtr->arg1 = (((paramCount << 1) | (includedCount ? 1 : 0)) << 1) | (withValues ? 1 : 0);
-            inputPtr->arg2 = seed;
+            // Prepare input
+            var input = new ObjectInput
+            {
+                header = new RespInputHeader
+                {
+                    type = GarnetObjectType.Hash,
+                    HashOp = HashOperation.HRANDFIELD,
+                },
+                count = countWithMetadata,
+                done = seed,
+                payload = new ArgSlice(ptr, (int)(recvBufferPtr + bytesRead - ptr)),
+            };
 
             // Prepare GarnetObjectStore output
             var outputFooter = new GarnetObjectStoreOutput { spanByteAndMemory = new SpanByteAndMemory(dcurr, (int)(dend - dcurr)) };
@@ -381,11 +358,8 @@ namespace Garnet.server
             {
                 // Prepare GarnetObjectStore output
                 outputFooter = new GarnetObjectStoreOutput { spanByteAndMemory = new SpanByteAndMemory(dcurr, (int)(dend - dcurr)) };
-                status = storageApi.HashRandomField(keyBytes, new ArgSlice((byte*)inputPtr, inputLength), ref outputFooter);
+                status = storageApi.HashRandomField(keyBytes, ref input, ref outputFooter);
             }
-
-            // Reset input buffer
-            *inputPtr = save;
 
             switch (status)
             {
@@ -433,24 +407,17 @@ namespace Garnet.server
             }
 
             // Prepare input
-            var inputPtr = (ObjectInputHeader*)(ptr - sizeof(ObjectInputHeader));
+            var input = new ObjectInput
+            {
+                header = new RespInputHeader
+                {
+                    type = GarnetObjectType.Hash,
+                    HashOp = HashOperation.HLEN,
+                },
+                payload = new ArgSlice(ptr, (int)(recvBufferPtr + bytesRead - ptr)),
+            };
 
-            // Save old values on buffer for possible revert
-            var save = *inputPtr;
-
-            // Prepare length of header in input buffer
-            var inputLength = sizeof(ObjectInputHeader);
-
-            // Prepare header in input buffer
-            inputPtr->header.type = GarnetObjectType.Hash;
-            inputPtr->header.flags = 0;
-            inputPtr->header.HashOp = HashOperation.HLEN;
-            inputPtr->arg1 = 1;
-
-            var status = storageApi.HashLength(keyBytes, new ArgSlice((byte*)inputPtr, inputLength), out ObjectOutputHeader output);
-
-            // Restore input buffer
-            *inputPtr = save;
+            var status = storageApi.HashLength(keyBytes, ref input, out var output);
 
             switch (status)
             {
@@ -498,24 +465,17 @@ namespace Garnet.server
             }
 
             // Prepare input
-            var inputPtr = (ObjectInputHeader*)(ptr - sizeof(ObjectInputHeader));
+            var input = new ObjectInput
+            {
+                header = new RespInputHeader
+                {
+                    type = GarnetObjectType.Hash,
+                    HashOp = HashOperation.HSTRLEN,
+                },
+                payload = new ArgSlice(ptr, (int)(recvBufferPtr + bytesRead - ptr)),
+            };
 
-            // Save old values on buffer for possible revert
-            var save = *inputPtr;
-
-            // Prepare length of header in input buffer
-            var inputLength = (int)(recvBufferPtr + bytesRead - (byte*)inputPtr);
-
-            // Prepare header in input buffer
-            inputPtr->header.type = GarnetObjectType.Hash;
-            inputPtr->header.flags = 0;
-            inputPtr->header.HashOp = HashOperation.HSTRLEN;
-            inputPtr->arg1 = 1;
-
-            var status = storageApi.HashStrLength(keyBytes, new ArgSlice((byte*)inputPtr, inputLength), out ObjectOutputHeader output);
-
-            // Restore input buffer
-            *inputPtr = save;
+            var status = storageApi.HashStrLength(keyBytes, ref input, out var output);
 
             switch (status)
             {
@@ -565,24 +525,18 @@ namespace Garnet.server
             var inputCount = count - 1;
 
             // Prepare input
-            var inputPtr = (ObjectInputHeader*)(ptr - sizeof(ObjectInputHeader));
+            var input = new ObjectInput
+            {
+                header = new RespInputHeader
+                {
+                    type = GarnetObjectType.Hash,
+                    HashOp = HashOperation.HDEL,
+                },
+                count = inputCount,
+                payload = new ArgSlice(ptr, (int)(recvBufferPtr + bytesRead - ptr)),
+            };
 
-            // Save old values on buffer for possible revert
-            var save = *inputPtr;
-
-            // Prepare length of header in input buffer
-            var inputLength = (int)(recvBufferPtr + bytesRead - (byte*)inputPtr);
-
-            // Prepare header in input buffer
-            inputPtr->header.type = GarnetObjectType.Hash;
-            inputPtr->header.flags = 0;
-            inputPtr->header.HashOp = HashOperation.HDEL;
-            inputPtr->arg1 = inputCount;
-
-            var status = storageApi.HashDelete(keyBytes, new ArgSlice((byte*)inputPtr, inputLength), out var output);
-
-            // Restore input buffer
-            *inputPtr = save;
+            var status = storageApi.HashDelete(keyBytes, ref input, out var output);
 
             switch (status)
             {
@@ -622,31 +576,23 @@ namespace Garnet.server
 
             var ptr = sbKey.ToPointer() + sbKey.Length + 2;
 
-
             if (NetworkSingleKeySlotVerify(keyBytes, true))
             {
                 return true;
             }
 
             // Prepare input
-            var inputPtr = (ObjectInputHeader*)(ptr - sizeof(ObjectInputHeader));
+            var input = new ObjectInput
+            {
+                header = new RespInputHeader
+                {
+                    type = GarnetObjectType.Hash,
+                    HashOp = HashOperation.HEXISTS,
+                },
+                payload = new ArgSlice(ptr, (int)(recvBufferPtr + bytesRead - ptr)),
+            };
 
-            // Save old values on buffer for possible revert
-            var save = *inputPtr;
-
-            // Prepare length of header in input buffer
-            var inputLength = (int)(recvBufferPtr + bytesRead - (byte*)inputPtr);
-
-            // Prepare header in input buffer
-            inputPtr->header.type = GarnetObjectType.Hash;
-            inputPtr->header.flags = 0;
-            inputPtr->header.HashOp = HashOperation.HEXISTS;
-            inputPtr->arg1 = 1;
-
-            var status = storageApi.HashExists(keyBytes, new ArgSlice((byte*)inputPtr, inputLength), out var output);
-
-            // Restore input buffer
-            *inputPtr = save;
+            var status = storageApi.HashExists(keyBytes, ref input, out var output);
 
             switch (status)
             {
@@ -671,6 +617,7 @@ namespace Garnet.server
         /// HashVals: Returns all values in the hash key.
         /// </summary>
         /// <typeparam name="TGarnetApi"></typeparam>
+        /// <param name="command"></param>
         /// <param name="count"></param>
         /// <param name="storageApi"></param>
         /// <returns></returns>
@@ -693,16 +640,7 @@ namespace Garnet.server
                 return true;
             }
 
-            // Prepare input
-            var inputPtr = (ObjectInputHeader*)(ptr - sizeof(ObjectInputHeader));
-
-            // Save old values on buffer for possible revert
-            var save = *inputPtr;
-
-            // Prepare length of header in input buffer
-            var inputLength = (int)(recvBufferPtr + bytesRead - (byte*)inputPtr);
-
-            HashOperation op =
+            var op =
                 command switch
                 {
                     RespCommand.HKEYS => HashOperation.HKEYS,
@@ -710,24 +648,24 @@ namespace Garnet.server
                     _ => throw new Exception($"Unexpected {nameof(HashOperation)}: {command}")
                 };
 
-            // Prepare header in input buffer
-            inputPtr->header.type = GarnetObjectType.Hash;
-            inputPtr->header.flags = 0;
-            inputPtr->header.HashOp = op;
-            inputPtr->arg1 = count - 1;
+            // Prepare input
+            var input = new ObjectInput
+            {
+                header = new RespInputHeader
+                {
+                    type = GarnetObjectType.Hash,
+                    HashOp = op,
+                },
+                count = count - 1,
+                payload = new ArgSlice(ptr, (int)(recvBufferPtr + bytesRead - ptr)),
+            };
 
             // Prepare GarnetObjectStore output
             var outputFooter = new GarnetObjectStoreOutput { spanByteAndMemory = new SpanByteAndMemory(dcurr, (int)(dend - dcurr)) };
 
-            GarnetStatus status = GarnetStatus.NOTFOUND;
-
-            if (command == RespCommand.HKEYS)
-                status = storageApi.HashKeys(keyBytes, new ArgSlice((byte*)inputPtr, inputLength), ref outputFooter);
-            else
-                status = storageApi.HashVals(keyBytes, new ArgSlice((byte*)inputPtr, inputLength), ref outputFooter);
-
-            // Restore input buffer
-            *inputPtr = save;
+            var status = command == RespCommand.HKEYS
+                ? storageApi.HashKeys(keyBytes, ref input, ref outputFooter)
+                : storageApi.HashVals(keyBytes, ref input, ref outputFooter);
 
             switch (status)
             {
@@ -776,16 +714,7 @@ namespace Garnet.server
                 return true;
             }
 
-            // Prepare input
-            var inputPtr = (ObjectInputHeader*)(ptr - sizeof(ObjectInputHeader));
-
-            // Save input buffer
-            var save = *inputPtr;
-
-            // Prepare length of header in input buffer
-            var inputLength = (int)(recvBufferPtr + bytesRead - (byte*)inputPtr);
-
-            HashOperation op =
+            var op =
                 command switch
                 {
                     RespCommand.HINCRBY => HashOperation.HINCRBY,
@@ -793,19 +722,22 @@ namespace Garnet.server
                     _ => throw new Exception($"Unexpected {nameof(HashOperation)}: {command}")
                 };
 
-            // Prepare header in input buffer
-            inputPtr->header.type = GarnetObjectType.Hash;
-            inputPtr->header.flags = 0;
-            inputPtr->header.HashOp = op;
-            inputPtr->arg1 = count + 1;
+            // Prepare input
+            var input = new ObjectInput
+            {
+                header = new RespInputHeader
+                {
+                    type = GarnetObjectType.Hash,
+                    HashOp = op,
+                },
+                count = count + 1,
+                payload = new ArgSlice(ptr, (int)(recvBufferPtr + bytesRead - ptr)),
+            };
 
             // Prepare GarnetObjectStore output
             var outputFooter = new GarnetObjectStoreOutput { spanByteAndMemory = new SpanByteAndMemory(dcurr, (int)(dend - dcurr)) };
 
-            var status = storageApi.HashIncrement(keyBytes, new ArgSlice((byte*)inputPtr, inputLength), ref outputFooter);
-
-            // Restore input
-            *inputPtr = save;
+            var status = storageApi.HashIncrement(keyBytes, ref input, ref outputFooter);
 
             switch (status)
             {

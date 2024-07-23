@@ -510,9 +510,9 @@ namespace Garnet.server
         /// <param name="output"></param>
         /// <param name="objectStoreContext"></param>
         /// <returns></returns>
-        public GarnetStatus HashSet<TObjectContext>(byte[] key, ArgSlice input, out ObjectOutputHeader output, ref TObjectContext objectStoreContext)
+        public GarnetStatus HashSet<TObjectContext>(byte[] key, ref ObjectInput input, out ObjectOutputHeader output, ref TObjectContext objectStoreContext)
             where TObjectContext : ITsavoriteContext<byte[], IGarnetObject, ObjectInput, GarnetObjectStoreOutput, long, ObjectStoreFunctions>
-            => RMWObjectStoreOperation(key, input, out output, ref objectStoreContext);
+            => RMWObjectStoreOperation(key, ref input, out output, ref objectStoreContext);
 
         /// <summary>
         /// HashGet: Returns the value associated with field in the hash stored at key.
@@ -526,9 +526,9 @@ namespace Garnet.server
         /// <param name="outputFooter"></param>
         /// <param name="objectStoreContext"></param>
         /// <returns></returns>
-        public GarnetStatus HashGet<TObjectContext>(byte[] key, ArgSlice input, ref GarnetObjectStoreOutput outputFooter, ref TObjectContext objectStoreContext)
+        public GarnetStatus HashGet<TObjectContext>(byte[] key, ref ObjectInput input, ref GarnetObjectStoreOutput outputFooter, ref TObjectContext objectStoreContext)
           where TObjectContext : ITsavoriteContext<byte[], IGarnetObject, ObjectInput, GarnetObjectStoreOutput, long, ObjectStoreFunctions>
-            => ReadObjectStoreOperationWithOutput(key, input, ref objectStoreContext, ref outputFooter);
+            => ReadObjectStoreOperationWithOutput(key, ref input, ref objectStoreContext, ref outputFooter);
 
         /// <summary>
         /// Returns all fields and values of the hash stored at key.
@@ -539,9 +539,9 @@ namespace Garnet.server
         /// <param name="outputFooter"></param>
         /// <param name="objectStoreContext"></param>
         /// <returns></returns>
-        public GarnetStatus HashGetAll<TObjectContext>(byte[] key, ArgSlice input, ref GarnetObjectStoreOutput outputFooter, ref TObjectContext objectStoreContext)
+        public GarnetStatus HashGetAll<TObjectContext>(byte[] key, ref ObjectInput input, ref GarnetObjectStoreOutput outputFooter, ref TObjectContext objectStoreContext)
             where TObjectContext : ITsavoriteContext<byte[], IGarnetObject, ObjectInput, GarnetObjectStoreOutput, long, ObjectStoreFunctions>
-            => ReadObjectStoreOperationWithOutput(key, input, ref objectStoreContext, ref outputFooter);
+            => ReadObjectStoreOperationWithOutput(key, ref input, ref objectStoreContext, ref outputFooter);
 
         /// <summary>
         /// Returns the values associated with the specified fields in the hash stored at key.
@@ -552,9 +552,9 @@ namespace Garnet.server
         /// <param name="outputFooter"></param>
         /// <param name="objectStoreContext"></param>
         /// <returns></returns>
-        public GarnetStatus HashGetMultiple<TObjectContext>(byte[] key, ArgSlice input, ref GarnetObjectStoreOutput outputFooter, ref TObjectContext objectStoreContext)
+        public GarnetStatus HashGetMultiple<TObjectContext>(byte[] key, ref ObjectInput input, ref GarnetObjectStoreOutput outputFooter, ref TObjectContext objectStoreContext)
             where TObjectContext : ITsavoriteContext<byte[], IGarnetObject, ObjectInput, GarnetObjectStoreOutput, long, ObjectStoreFunctions>
-            => ReadObjectStoreOperationWithOutput(key, input, ref objectStoreContext, ref outputFooter);
+            => ReadObjectStoreOperationWithOutput(key, ref input, ref objectStoreContext, ref outputFooter);
 
         /// <summary>
         /// Returns a random field from the hash value stored at key.
@@ -565,9 +565,9 @@ namespace Garnet.server
         /// <param name="outputFooter"></param>
         /// <param name="objectStoreContext"></param>
         /// <returns></returns>
-        public GarnetStatus HashRandomField<TObjectContext>(byte[] key, ArgSlice input, ref GarnetObjectStoreOutput outputFooter, ref TObjectContext objectStoreContext)
+        public GarnetStatus HashRandomField<TObjectContext>(byte[] key, ref ObjectInput input, ref GarnetObjectStoreOutput outputFooter, ref TObjectContext objectStoreContext)
             where TObjectContext : ITsavoriteContext<byte[], IGarnetObject, ObjectInput, GarnetObjectStoreOutput, long, ObjectStoreFunctions>
-            => ReadObjectStoreOperationWithOutput(key, input, ref objectStoreContext, ref outputFooter);
+            => ReadObjectStoreOperationWithOutput(key, ref input, ref objectStoreContext, ref outputFooter);
 
         /// <summary>
         /// Returns the number of fields contained in the hash key.
@@ -578,9 +578,9 @@ namespace Garnet.server
         /// <param name="output"></param>
         /// <param name="objectStoreContext"></param>
         /// <returns></returns>
-        public GarnetStatus HashLength<TObjectContext>(byte[] key, ArgSlice input, out ObjectOutputHeader output, ref TObjectContext objectStoreContext)
+        public GarnetStatus HashLength<TObjectContext>(byte[] key, ref ObjectInput input, out ObjectOutputHeader output, ref TObjectContext objectStoreContext)
             where TObjectContext : ITsavoriteContext<byte[], IGarnetObject, ObjectInput, GarnetObjectStoreOutput, long, ObjectStoreFunctions>
-            => ReadObjectStoreOperation(key, input, out output, ref objectStoreContext);
+            => ReadObjectStoreOperation(key, ref input, out output, ref objectStoreContext);
 
         /// <summary>
         /// Returns the string length of the value associated with field in the hash stored at key. If the key or the field do not exist, 0 is returned.
@@ -591,9 +591,9 @@ namespace Garnet.server
         /// <param name="objectStoreContext"></param>
         /// <typeparam name="TObjectContext"></typeparam>
         /// <returns></returns>
-        public GarnetStatus HashStrLength<TObjectContext>(byte[] key, ArgSlice input, out ObjectOutputHeader output, ref TObjectContext objectStoreContext)
+        public GarnetStatus HashStrLength<TObjectContext>(byte[] key, ref ObjectInput input, out ObjectOutputHeader output, ref TObjectContext objectStoreContext)
             where TObjectContext : ITsavoriteContext<byte[], IGarnetObject, ObjectInput, GarnetObjectStoreOutput, long, ObjectStoreFunctions>
-            => ReadObjectStoreOperation(key, input, out output, ref objectStoreContext);
+            => ReadObjectStoreOperation(key, ref input, out output, ref objectStoreContext);
 
         /// <summary>
         /// Removes the specified fields from the hash key.
@@ -604,9 +604,9 @@ namespace Garnet.server
         /// <param name="output"></param>
         /// <param name="objectStoreContext"></param>
         /// <returns></returns>
-        public GarnetStatus HashDelete<TObjectContext>(byte[] key, ArgSlice input, out ObjectOutputHeader output, ref TObjectContext objectStoreContext)
+        public GarnetStatus HashDelete<TObjectContext>(byte[] key, ref ObjectInput input, out ObjectOutputHeader output, ref TObjectContext objectStoreContext)
           where TObjectContext : ITsavoriteContext<byte[], IGarnetObject, ObjectInput, GarnetObjectStoreOutput, long, ObjectStoreFunctions>
-            => RMWObjectStoreOperation(key, input, out output, ref objectStoreContext);
+            => RMWObjectStoreOperation(key, ref input, out output, ref objectStoreContext);
 
         /// <summary>
         /// Returns if field exists in the hash stored at key.
@@ -617,9 +617,9 @@ namespace Garnet.server
         /// <param name="output"></param>
         /// <param name="objectStoreContext"></param>
         /// <returns></returns>
-        public GarnetStatus HashExists<TObjectContext>(byte[] key, ArgSlice input, out ObjectOutputHeader output, ref TObjectContext objectStoreContext)
+        public GarnetStatus HashExists<TObjectContext>(byte[] key, ref ObjectInput input, out ObjectOutputHeader output, ref TObjectContext objectStoreContext)
          where TObjectContext : ITsavoriteContext<byte[], IGarnetObject, ObjectInput, GarnetObjectStoreOutput, long, ObjectStoreFunctions>
-            => ReadObjectStoreOperation(key, input, out output, ref objectStoreContext);
+            => ReadObjectStoreOperation(key, ref input, out output, ref objectStoreContext);
 
         /// <summary>
         /// Returns all field names in the hash key.
@@ -630,9 +630,9 @@ namespace Garnet.server
         /// <param name="outputFooter"></param>
         /// <param name="objectContext"></param>
         /// <returns></returns>
-        public GarnetStatus HashKeys<TObjectContext>(byte[] key, ArgSlice input, ref GarnetObjectStoreOutput outputFooter, ref TObjectContext objectContext)
+        public GarnetStatus HashKeys<TObjectContext>(byte[] key, ref ObjectInput input, ref GarnetObjectStoreOutput outputFooter, ref TObjectContext objectContext)
           where TObjectContext : ITsavoriteContext<byte[], IGarnetObject, ObjectInput, GarnetObjectStoreOutput, long, ObjectStoreFunctions>
-            => ReadObjectStoreOperationWithOutput(key, input, ref objectContext, ref outputFooter);
+            => ReadObjectStoreOperationWithOutput(key, ref input, ref objectContext, ref outputFooter);
 
         /// <summary>
         /// Returns all values in the hash key.
@@ -643,9 +643,9 @@ namespace Garnet.server
         /// <param name="outputFooter"></param>
         /// <param name="objectContext"></param>
         /// <returns></returns>
-        public GarnetStatus HashVals<TObjectContext>(byte[] key, ArgSlice input, ref GarnetObjectStoreOutput outputFooter, ref TObjectContext objectContext)
+        public GarnetStatus HashVals<TObjectContext>(byte[] key, ref ObjectInput input, ref GarnetObjectStoreOutput outputFooter, ref TObjectContext objectContext)
           where TObjectContext : ITsavoriteContext<byte[], IGarnetObject, ObjectInput, GarnetObjectStoreOutput, long, ObjectStoreFunctions>
-            => ReadObjectStoreOperationWithOutput(key, input, ref objectContext, ref outputFooter);
+            => ReadObjectStoreOperationWithOutput(key, ref input, ref objectContext, ref outputFooter);
 
         /// <summary>
         /// Increments the number stored at field in the hash stored at key by increment.
@@ -670,8 +670,8 @@ namespace Garnet.server
         /// <param name="outputFooter"></param>
         /// <param name="objectContext"></param>
         /// <returns></returns>
-        public GarnetStatus HashIncrement<TObjectContext>(byte[] key, ArgSlice input, ref GarnetObjectStoreOutput outputFooter, ref TObjectContext objectContext)
+        public GarnetStatus HashIncrement<TObjectContext>(byte[] key, ref ObjectInput input, ref GarnetObjectStoreOutput outputFooter, ref TObjectContext objectContext)
             where TObjectContext : ITsavoriteContext<byte[], IGarnetObject, ObjectInput, GarnetObjectStoreOutput, long, ObjectStoreFunctions>
-            => RMWObjectStoreOperationWithOutput(key, input, ref objectContext, ref outputFooter);
+            => RMWObjectStoreOperationWithOutput(key, ref input, ref objectContext, ref outputFooter);
     }
 }

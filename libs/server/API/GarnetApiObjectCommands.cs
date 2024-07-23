@@ -365,8 +365,8 @@ namespace Garnet.server
          => storageSession.HashSet(key, elements, out count, ref objectContext);
 
         /// <inheritdoc />
-        public GarnetStatus HashSet(byte[] key, ArgSlice input, out ObjectOutputHeader output)
-            => storageSession.HashSet(key, input, out output, ref objectContext);
+        public GarnetStatus HashSet(byte[] key, ref ObjectInput input, out ObjectOutputHeader output)
+            => storageSession.HashSet(key, ref input, out output, ref objectContext);
 
         /// <inheritdoc />
         public GarnetStatus HashDelete(ArgSlice key, ArgSlice field, out int count)
@@ -385,16 +385,16 @@ namespace Garnet.server
         => storageSession.HashGetAll(key, out values, ref objectContext);
 
         /// <inheritdoc />
-        public GarnetStatus HashGet(byte[] key, ArgSlice input, ref GarnetObjectStoreOutput outputFooter)
-        => storageSession.HashGet(key, input, ref outputFooter, ref objectContext);
+        public GarnetStatus HashGet(byte[] key, ref ObjectInput input, ref GarnetObjectStoreOutput outputFooter)
+        => storageSession.HashGet(key, ref input, ref outputFooter, ref objectContext);
 
         /// <inheritdoc />
-        public GarnetStatus HashGetAll(byte[] key, ArgSlice input, ref GarnetObjectStoreOutput outputFooter)
-            => storageSession.HashGetAll(key, input, ref outputFooter, ref objectContext);
+        public GarnetStatus HashGetAll(byte[] key, ref ObjectInput input, ref GarnetObjectStoreOutput outputFooter)
+            => storageSession.HashGetAll(key, ref input, ref outputFooter, ref objectContext);
 
         /// <inheritdoc />
-        public GarnetStatus HashGetMultiple(byte[] key, ArgSlice input, ref GarnetObjectStoreOutput outputFooter)
-            => storageSession.HashGetMultiple(key, input, ref outputFooter, ref objectContext);
+        public GarnetStatus HashGetMultiple(byte[] key, ref ObjectInput input, ref GarnetObjectStoreOutput outputFooter)
+            => storageSession.HashGetMultiple(key, ref input, ref outputFooter, ref objectContext);
 
         /// <inheritdoc />
         public GarnetStatus HashGetMultiple(ArgSlice key, ArgSlice[] fields, out ArgSlice[] values)
@@ -405,20 +405,20 @@ namespace Garnet.server
         => storageSession.HashLength(key, out count, ref objectContext);
 
         /// <inheritdoc />
-        public GarnetStatus HashLength(byte[] key, ArgSlice input, out ObjectOutputHeader output)
-            => storageSession.HashLength(key, input, out output, ref objectContext);
+        public GarnetStatus HashLength(byte[] key, ref ObjectInput input, out ObjectOutputHeader output)
+            => storageSession.HashLength(key, ref input, out output, ref objectContext);
 
         /// <inheritdoc />
-        public GarnetStatus HashStrLength(byte[] key, ArgSlice input, out ObjectOutputHeader output)
-            => storageSession.HashStrLength(key, input, out output, ref objectContext);
+        public GarnetStatus HashStrLength(byte[] key, ref ObjectInput input, out ObjectOutputHeader output)
+            => storageSession.HashStrLength(key, ref input, out output, ref objectContext);
 
         /// <inheritdoc />
         public GarnetStatus HashExists(ArgSlice key, ArgSlice field, out bool exists)
             => storageSession.HashExists(key, field, out exists, ref objectContext);
 
         /// <inheritdoc />
-        public GarnetStatus HashExists(byte[] key, ArgSlice input, out ObjectOutputHeader output)
-            => storageSession.HashExists(key, input, out output, ref objectContext);
+        public GarnetStatus HashExists(byte[] key, ref ObjectInput input, out ObjectOutputHeader output)
+            => storageSession.HashExists(key, ref input, out output, ref objectContext);
 
         /// <inheritdoc />
         public GarnetStatus HashRandomField(ArgSlice key, out ArgSlice field)
@@ -429,28 +429,28 @@ namespace Garnet.server
         => storageSession.HashRandomField(key, count, withValues, out fields, ref objectContext);
 
         /// <inheritdoc />
-        public GarnetStatus HashRandomField(byte[] key, ArgSlice input, ref GarnetObjectStoreOutput outputFooter)
-            => storageSession.HashRandomField(key, input, ref outputFooter, ref objectContext);
+        public GarnetStatus HashRandomField(byte[] key, ref ObjectInput input, ref GarnetObjectStoreOutput outputFooter)
+            => storageSession.HashRandomField(key, ref input, ref outputFooter, ref objectContext);
 
         /// <inheritdoc />
-        public GarnetStatus HashDelete(byte[] key, ArgSlice input, out ObjectOutputHeader output)
-            => storageSession.HashDelete(key, input, out output, ref objectContext);
+        public GarnetStatus HashDelete(byte[] key, ref ObjectInput input, out ObjectOutputHeader output)
+            => storageSession.HashDelete(key, ref input, out output, ref objectContext);
 
         /// <inheritdoc />
-        public GarnetStatus HashKeys(byte[] key, ArgSlice input, ref GarnetObjectStoreOutput outputFooter)
-            => storageSession.HashKeys(key, input, ref outputFooter, ref objectContext);
+        public GarnetStatus HashKeys(byte[] key, ref ObjectInput input, ref GarnetObjectStoreOutput outputFooter)
+            => storageSession.HashKeys(key, ref input, ref outputFooter, ref objectContext);
 
         /// <inheritdoc />
-        public GarnetStatus HashVals(byte[] key, ArgSlice input, ref GarnetObjectStoreOutput outputFooter)
-            => storageSession.HashVals(key, input, ref outputFooter, ref objectContext);
+        public GarnetStatus HashVals(byte[] key, ref ObjectInput input, ref GarnetObjectStoreOutput outputFooter)
+            => storageSession.HashVals(key, ref input, ref outputFooter, ref objectContext);
 
         /// <inheritdoc />
         public GarnetStatus HashIncrement(byte[] key, ArgSlice input, out ObjectOutputHeader output)
             => storageSession.HashIncrement(key, input, out output, ref objectContext);
 
         /// <inheritdoc />
-        public GarnetStatus HashIncrement(byte[] key, ArgSlice input, ref GarnetObjectStoreOutput outputFooter)
-            => storageSession.HashIncrement(key, input, ref outputFooter, ref objectContext);
+        public GarnetStatus HashIncrement(byte[] key, ref ObjectInput input, ref GarnetObjectStoreOutput outputFooter)
+            => storageSession.HashIncrement(key, ref input, ref outputFooter, ref objectContext);
 
         /// <inheritdoc />
         public GarnetStatus HashScan(ArgSlice key, long cursor, string match, long count, out ArgSlice[] items)

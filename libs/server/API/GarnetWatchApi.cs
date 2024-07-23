@@ -341,64 +341,64 @@ namespace Garnet.server
         }
 
         /// <inheritdoc />
-        public GarnetStatus HashRandomField(byte[] key, ArgSlice input, ref GarnetObjectStoreOutput outputFooter)
+        public GarnetStatus HashRandomField(byte[] key, ref ObjectInput input, ref GarnetObjectStoreOutput outputFooter)
         {
             garnetApi.WATCH(key, StoreType.Object);
-            return garnetApi.HashRandomField(key, input, ref outputFooter);
+            return garnetApi.HashRandomField(key, ref input, ref outputFooter);
         }
 
         /// <inheritdoc />
-        public GarnetStatus HashGet(byte[] key, ArgSlice input, ref GarnetObjectStoreOutput outputFooter)
+        public GarnetStatus HashGet(byte[] key, ref ObjectInput input, ref GarnetObjectStoreOutput outputFooter)
         {
             garnetApi.WATCH(key, StoreType.Object);
-            return garnetApi.HashGet(key, input, ref outputFooter);
+            return garnetApi.HashGet(key, ref input, ref outputFooter);
         }
 
-        public GarnetStatus HashGetAll(byte[] key, ArgSlice input, ref GarnetObjectStoreOutput outputFooter)
+        public GarnetStatus HashGetAll(byte[] key, ref ObjectInput input, ref GarnetObjectStoreOutput outputFooter)
         {
             garnetApi.WATCH(key, StoreType.Object);
-            return garnetApi.HashGetAll(key, input, ref outputFooter);
+            return garnetApi.HashGetAll(key, ref input, ref outputFooter);
         }
 
-        public GarnetStatus HashGetMultiple(byte[] key, ArgSlice input, ref GarnetObjectStoreOutput outputFooter)
+        public GarnetStatus HashGetMultiple(byte[] key, ref ObjectInput input, ref GarnetObjectStoreOutput outputFooter)
         {
             garnetApi.WATCH(key, StoreType.Object);
-            return garnetApi.HashGetMultiple(key, input, ref outputFooter);
-        }
-
-        /// <inheritdoc />
-        public GarnetStatus HashStrLength(byte[] key, ArgSlice input, out ObjectOutputHeader output)
-        {
-            garnetApi.WATCH(key, StoreType.Object);
-            return garnetApi.HashStrLength(key, input, out output);
+            return garnetApi.HashGetMultiple(key, ref input, ref outputFooter);
         }
 
         /// <inheritdoc />
-        public GarnetStatus HashExists(byte[] key, ArgSlice input, out ObjectOutputHeader output)
+        public GarnetStatus HashStrLength(byte[] key, ref ObjectInput input, out ObjectOutputHeader output)
         {
             garnetApi.WATCH(key, StoreType.Object);
-            return garnetApi.HashExists(key, input, out output);
+            return garnetApi.HashStrLength(key, ref input, out output);
         }
 
         /// <inheritdoc />
-        public GarnetStatus HashKeys(byte[] key, ArgSlice input, ref GarnetObjectStoreOutput outputFooter)
+        public GarnetStatus HashExists(byte[] key, ref ObjectInput input, out ObjectOutputHeader output)
         {
             garnetApi.WATCH(key, StoreType.Object);
-            return garnetApi.HashKeys(key, input, ref outputFooter);
+            return garnetApi.HashExists(key, ref input, out output);
         }
 
         /// <inheritdoc />
-        public GarnetStatus HashVals(byte[] key, ArgSlice input, ref GarnetObjectStoreOutput outputFooter)
+        public GarnetStatus HashKeys(byte[] key, ref ObjectInput input, ref GarnetObjectStoreOutput outputFooter)
         {
             garnetApi.WATCH(key, StoreType.Object);
-            return garnetApi.HashVals(key, input, ref outputFooter);
+            return garnetApi.HashKeys(key, ref input, ref outputFooter);
         }
 
         /// <inheritdoc />
-        public GarnetStatus HashLength(byte[] key, ArgSlice input, out ObjectOutputHeader output)
+        public GarnetStatus HashVals(byte[] key, ref ObjectInput input, ref GarnetObjectStoreOutput outputFooter)
         {
             garnetApi.WATCH(key, StoreType.Object);
-            return garnetApi.HashLength(key, input, out output);
+            return garnetApi.HashVals(key, ref input, ref outputFooter);
+        }
+
+        /// <inheritdoc />
+        public GarnetStatus HashLength(byte[] key, ref ObjectInput input, out ObjectOutputHeader output)
+        {
+            garnetApi.WATCH(key, StoreType.Object);
+            return garnetApi.HashLength(key, ref input, out output);
         }
 
         /// <inheritdoc />

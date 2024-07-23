@@ -2,8 +2,12 @@
 // Licensed under the MIT license.
 
 using System;
+using System.Diagnostics.Metrics;
+using System.Drawing;
 using System.Linq;
+using System.Xml.Linq;
 using Tsavorite.core;
+using static System.Formats.Asn1.AsnWriter;
 
 namespace Garnet.server
 {
@@ -30,24 +34,30 @@ namespace Garnet.server
             if (key.Length == 0 || elements.Length == 0)
                 return GarnetStatus.OK;
 
-            // Prepare header in buffer
-            var rmwInput = (ObjectInputHeader*)scratchBufferManager.CreateArgSlice(ObjectInputHeader.Size).ptr;
-            rmwInput->header.type = GarnetObjectType.List;
-            rmwInput->header.flags = 0;
-            rmwInput->header.ListOp = lop;
-            rmwInput->arg1 = elements.Length;
-
-            //Iterate through all inputs and add them to the scratch buffer in RESP format
-            int inputLength = sizeof(ObjectInputHeader);
+            // Prepare the payload
+            var inputLength = 0;
             foreach (var item in elements)
             {
                 var tmp = scratchBufferManager.FormatScratchAsResp(0, item);
                 inputLength += tmp.Length;
             }
 
-            var input = scratchBufferManager.GetSliceFromTail(inputLength);
+            var inputPayload = scratchBufferManager.GetSliceFromTail(inputLength);
+
+            // Prepare the input
+            var input = new ObjectInput
+            {
+                header = new RespInputHeader
+                {
+                    type = GarnetObjectType.List,
+                    ListOp = lop,
+                },
+                count = elements.Length,
+                payload = inputPayload,
+            };
+            
             var arrKey = key.ToArray();
-            var status = RMWObjectStoreOperation(arrKey, input, out var output, ref objectStoreContext);
+            var status = RMWObjectStoreOperation(arrKey, ref input, out var output, ref objectStoreContext);
 
             itemsDoneCount = output.result1;
             itemBroker.HandleCollectionUpdate(arrKey);
@@ -72,16 +82,21 @@ namespace Garnet.server
         {
             itemsDoneCount = 0;
 
-            var input = scratchBufferManager.FormatScratchAsResp(ObjectInputHeader.Size, element);
+            // Prepare the payload
+            var inputPayload = scratchBufferManager.FormatScratchAsResp(0, element);
 
-            // Prepare header in input buffer
-            var rmwInput = (ObjectInputHeader*)input.ptr;
-            rmwInput->header.type = GarnetObjectType.List;
-            rmwInput->header.flags = 0;
-            rmwInput->header.ListOp = lop;
-            rmwInput->arg1 = 1;
+            // Prepare the input
+            var input = new ObjectInput
+            {
+                header = new RespInputHeader
+                {
+                    type = GarnetObjectType.List,
+                    ListOp = lop,
+                },
+                payload = inputPayload,
+            };
 
-            var status = RMWObjectStoreOperation(key.ToArray(), element, out var output, ref objectStoreContext);
+            var status = RMWObjectStoreOperation(key.ToArray(), ref input, out var output, ref objectStoreContext);
             itemsDoneCount = output.result1;
 
             itemBroker.HandleCollectionUpdate(key.Span.ToArray());
@@ -120,22 +135,24 @@ namespace Garnet.server
         public unsafe GarnetStatus ListPop<TObjectContext>(ArgSlice key, int count, ListOperation lop, ref TObjectContext objectStoreContext, out ArgSlice[] elements)
                  where TObjectContext : ITsavoriteContext<byte[], IGarnetObject, ObjectInput, GarnetObjectStoreOutput, long, ObjectStoreFunctions>
         {
-            var _key = key.ToArray();
-            SpanByte _keyAsSpan = key.SpanByte;
+            // Prepare the payload
+            var inputPayload = scratchBufferManager.CreateArgSlice(0);
 
-            // Construct input for operation
-            var input = scratchBufferManager.CreateArgSlice(ObjectInputHeader.Size);
-
-            // Prepare header in input buffer
-            var rmwInput = (ObjectInputHeader*)input.ptr;
-            rmwInput->header.type = GarnetObjectType.List;
-            rmwInput->header.flags = 0;
-            rmwInput->header.ListOp = lop;
-            rmwInput->arg1 = count;
+            // Prepare the input
+            var input = new ObjectInput
+            {
+                header = new RespInputHeader
+                {
+                    type = GarnetObjectType.List,
+                    ListOp = lop,
+                },
+                count = count,
+                payload = inputPayload,
+            };
 
             var outputFooter = new GarnetObjectStoreOutput { spanByteAndMemory = new SpanByteAndMemory(null) };
 
-            var status = RMWObjectStoreOperationWithOutput(key.ToArray(), input, ref objectStoreContext, ref outputFooter);
+            var status = RMWObjectStoreOperationWithOutput(key.ToArray(), ref input, ref objectStoreContext, ref outputFooter);
 
             //process output
             elements = default;
@@ -200,16 +217,22 @@ namespace Garnet.server
             if (key.Length == 0)
                 return GarnetStatus.OK;
 
-            var input = scratchBufferManager.FormatScratchAsResp(ObjectInputHeader.Size, key);
+            // Prepare the payload
+            var inputPayload = scratchBufferManager.FormatScratchAsResp(0, key);
 
-            // Prepare header in input buffer
-            var rmwInput = (ObjectInputHeader*)input.ptr;
-            rmwInput->header.type = GarnetObjectType.List;
-            rmwInput->header.flags = 0;
-            rmwInput->header.ListOp = ListOperation.LLEN;
-            rmwInput->arg1 = count;
+            // Prepare the input
+            var input = new ObjectInput
+            {
+                header = new RespInputHeader
+                {
+                    type = GarnetObjectType.List,
+                    ListOp = ListOperation.LLEN,
+                },
+                count = count,
+                payload = inputPayload,
+            };
 
-            var status = ReadObjectStoreOperation(key.ToArray(), input, out var output, ref objectStoreContext);
+            var status = ReadObjectStoreOperation(key.ToArray(), ref input, out var output, ref objectStoreContext);
 
             count = output.result1;
             return status;
@@ -349,17 +372,23 @@ namespace Garnet.server
         public unsafe bool ListTrim<TObjectContext>(ArgSlice key, int start, int stop, ref TObjectContext objectStoreContext)
             where TObjectContext : ITsavoriteContext<byte[], IGarnetObject, ObjectInput, GarnetObjectStoreOutput, long, ObjectStoreFunctions>
         {
-            var input = scratchBufferManager.FormatScratchAsResp(ObjectInputHeader.Size, key);
+            // Prepare the payload
+            var inputPayload = scratchBufferManager.FormatScratchAsResp(0, key);
 
-            // Prepare header in input buffer
-            var rmwInput = (ObjectInputHeader*)input.ptr;
-            rmwInput->header.type = GarnetObjectType.List;
-            rmwInput->header.flags = 0;
-            rmwInput->header.ListOp = ListOperation.LTRIM;
-            rmwInput->arg1 = start;
-            rmwInput->arg2 = stop;
+            // Prepare the input
+            var input = new ObjectInput
+            {
+                header = new RespInputHeader
+                {
+                    type = GarnetObjectType.List,
+                    ListOp = ListOperation.LTRIM,
+                },
+                count = start,
+                done = stop,
+                payload = inputPayload,
+            };
 
-            var status = RMWObjectStoreOperation(key.ToArray(), input, out var output, ref objectStoreContext);
+            var status = RMWObjectStoreOperation(key.ToArray(), ref input, out _, ref objectStoreContext);
 
             return status == GarnetStatus.OK;
         }

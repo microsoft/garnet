@@ -112,11 +112,9 @@ namespace Garnet.server
         {
             removeKey = false;
 
-            fixed (byte* _input = input.AsSpan())
             fixed (byte* _output = output.SpanByte.AsSpan())
             {
-                var header = (ObjectInputHeader*)_input;
-                if (header->header.type != GarnetObjectType.Hash)
+                if (input.header.type != GarnetObjectType.Hash)
                 {
                     //Indicates when there is an incorrect type 
                     output.Length = 0;
@@ -125,52 +123,52 @@ namespace Garnet.server
                 }
 
                 var previousSize = this.Size;
-                switch (header->header.HashOp)
+                switch (input.header.HashOp)
                 {
                     case HashOperation.HSET:
-                        HashSet(_input, input.Length, _output);
+                        HashSet(ref input, _output);
                         break;
                     case HashOperation.HMSET:
-                        HashSet(_input, input.Length, _output);
+                        HashSet(ref input, _output);
                         break;
                     case HashOperation.HGET:
-                        HashGet(_input, input.Length, ref output);
+                        HashGet(ref input, ref output);
                         break;
                     case HashOperation.HMGET:
-                        HashMultipleGet(_input, input.Length, ref output);
+                        HashMultipleGet(ref input, ref output);
                         break;
                     case HashOperation.HGETALL:
-                        HashGetAll(respProtocolVersion: header->arg1, ref output);
+                        HashGetAll(ref input, ref output);
                         break;
                     case HashOperation.HDEL:
-                        HashDelete(_input, input.Length, _output);
+                        HashDelete(ref input, _output);
                         break;
                     case HashOperation.HLEN:
                         HashLength(_output);
                         break;
                     case HashOperation.HSTRLEN:
-                        HashStrLength(_input, input.Length, _output);
+                        HashStrLength(ref input, _output);
                         break;
                     case HashOperation.HEXISTS:
-                        HashExists(_input, input.Length, _output);
+                        HashExists(ref input, _output);
                         break;
                     case HashOperation.HKEYS:
-                        HashKeys(_input, input.Length, ref output);
+                        HashKeys(ref input, ref output);
                         break;
                     case HashOperation.HVALS:
-                        HashVals(_input, input.Length, ref output);
+                        HashVals(ref input, ref output);
                         break;
                     case HashOperation.HINCRBY:
-                        HashIncrement(_input, input.Length, ref output);
+                        HashIncrement(ref input, ref output);
                         break;
                     case HashOperation.HINCRBYFLOAT:
-                        HashIncrementByFloat(_input, input.Length, ref output);
+                        HashIncrementByFloat(ref input, ref output);
                         break;
                     case HashOperation.HSETNX:
-                        HashSetWhenNotExists(_input, input.Length, _output);
+                        HashSetWhenNotExists(ref input, _output);
                         break;
                     case HashOperation.HRANDFIELD:
-                        HashRandomField(_input, ref output);
+                        HashRandomField(ref input, ref output);
                         break;
                     case HashOperation.HSCAN:
                         if (ObjectUtils.ReadScanInput(ref input, ref output, out var cursorInput, out var pattern, out var patternLength, out int limitCount, out int bytesDone))
@@ -180,7 +178,7 @@ namespace Garnet.server
                         }
                         break;
                     default:
-                        throw new GarnetException($"Unsupported operation {(HashOperation)_input[0]} in HashObject.Operate");
+                        throw new GarnetException($"Unsupported operation {input.header.HashOp} in HashObject.Operate");
                 }
 
                 sizeChange = this.Size - previousSize;
