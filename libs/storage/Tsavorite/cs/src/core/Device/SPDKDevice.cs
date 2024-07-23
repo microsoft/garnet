@@ -14,10 +14,8 @@ namespace Tsavorite.core
     {
         #region native_lib
         private const string spdk_library_name = "spdk_device";
-        // private const string spdk_library_path =
-        //                        "runtimes/linux-x64/native/libspdk_device.so";
         private const string spdk_library_path =
-                                "/root/source/repos/garnet/main/GarnetServer/bin/Release/net8.0/runtimes/linux-x64/native/libspdk_device.so";
+                               "runtimes/linux-x64/native/libspdk_device.so";
 
         [DllImport(spdk_library_name, EntryPoint = "spdk_device_init",
                    CallingConvention = CallingConvention.Cdecl)]
