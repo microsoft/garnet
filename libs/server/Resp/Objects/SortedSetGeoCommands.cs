@@ -47,7 +47,7 @@ namespace Garnet.server
                     type = GarnetObjectType.SortedSet,
                     SortedSetOp = SortedSetOperation.GEOADD,
                 },
-                count = inputCount,
+                arg1 = inputCount,
                 payload = new ArgSlice(ptr, (int)(recvBufferPtr + bytesRead - ptr)),
             };
 
@@ -138,7 +138,7 @@ namespace Garnet.server
                     type = GarnetObjectType.SortedSet,
                     SortedSetOp = op,
                 },
-                count = inputCount,
+                arg1 = inputCount,
                 payload = new ArgSlice(ptr, (int)(recvBufferPtr + bytesRead - ptr)),
             };
 

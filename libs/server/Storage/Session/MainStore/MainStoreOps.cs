@@ -3,9 +3,11 @@
 
 using System;
 using System.Diagnostics;
+using System.Diagnostics.Metrics;
 using System.Runtime.CompilerServices;
 using Garnet.common;
 using Tsavorite.core;
+using static System.Formats.Asn1.AsnWriter;
 
 namespace Garnet.server
 {
@@ -706,10 +708,21 @@ namespace Garnet.server
 
             if (!found && (storeType == StoreType.Object || storeType == StoreType.All) && !objectStoreBasicContext.IsNull)
             {
-                // Retry on object store
-                ref var objInput = ref Unsafe.AsRef<ObjectInput>(input.ToPointer());
-                objInput.header.type = GarnetObjectType.Expire;
+                var inputPayload = scratchBufferManager.CreateArgSlice(1 + sizeof(long));
+                *inputPayload.ptr = (byte)expireOption;
+                *(long*)(inputPayload.ptr + 1) = input.ExtraMetadata;
 
+                var objInput = new ObjectInput
+                {
+                    header = new RespInputHeader
+                    {
+                        cmd = milliseconds ? RespCommand.PEXPIRE : RespCommand.EXPIRE,
+                        type = GarnetObjectType.Expire,
+                    },
+                    payload = inputPayload,
+                };
+
+                // Retry on object store
                 var objO = new GarnetObjectStoreOutput { spanByteAndMemory = output };
                 var keyBA = key.ToArray();
                 var status = objectStoreContext.RMW(ref keyBA, ref objInput, ref objO);

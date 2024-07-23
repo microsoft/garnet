@@ -42,7 +42,7 @@ namespace Garnet.server
                     type = GarnetObjectType.Set,
                     SetOp = SetOperation.SADD,
                 },
-                count = 1,
+                arg1 = 1,
                 payload = inputPayload,
             };
 
@@ -89,7 +89,7 @@ namespace Garnet.server
                     type = GarnetObjectType.Set,
                     SetOp = SetOperation.SADD,
                 },
-                count = members.Length,
+                arg1 = members.Length,
                 payload = inputPayload,
             };
 
@@ -128,7 +128,7 @@ namespace Garnet.server
                     type = GarnetObjectType.Set,
                     SetOp = SetOperation.SREM,
                 },
-                count = 1,
+                arg1 = 1,
                 payload = inputPayload,
             };
 
@@ -176,7 +176,7 @@ namespace Garnet.server
                     type = GarnetObjectType.Set,
                     SetOp = SetOperation.SREM,
                 },
-                count = members.Length,
+                arg1 = members.Length,
                 payload = inputPayload,
             };
 
@@ -309,7 +309,7 @@ namespace Garnet.server
                     type = GarnetObjectType.Set,
                     SetOp = SetOperation.SPOP,
                 },
-                count = count,
+                arg1 = count,
                 payload = inputPayload,
             };
 
@@ -387,8 +387,8 @@ namespace Garnet.server
                     type = GarnetObjectType.Set,
                     SetOp = SetOperation.SSCAN,
                 },
-                count = 4,
-                done = (int)cursor,
+                arg1 = 4,
+                arg2 = (int)cursor,
                 payload = inputPayload,
             };
 

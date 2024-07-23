@@ -42,7 +42,7 @@ namespace Garnet.server
                     type = GarnetObjectType.SortedSet,
                     SortedSetOp = SortedSetOperation.ZADD,
                 },
-                count = 1,
+                arg1 = 1,
                 payload = inputPayload,
             };
 
@@ -87,7 +87,7 @@ namespace Garnet.server
                     type = GarnetObjectType.SortedSet,
                     SortedSetOp = SortedSetOperation.ZADD,
                 },
-                count = inputs.Length,
+                arg1 = inputs.Length,
                 payload = inputPayload,
             };
 
@@ -126,7 +126,7 @@ namespace Garnet.server
                     type = GarnetObjectType.SortedSet,
                     SortedSetOp = SortedSetOperation.ZREM,
                 },
-                count = 1,
+                arg1 = 1,
                 payload = inputPayload,
             };
 
@@ -171,7 +171,7 @@ namespace Garnet.server
                     type = GarnetObjectType.SortedSet,
                     SortedSetOp = SortedSetOperation.ZREM,
                 },
-                count = members.Length,
+                arg1 = members.Length,
                 payload = inputPayload,
             };
 
@@ -359,7 +359,7 @@ namespace Garnet.server
                     type = GarnetObjectType.SortedSet,
                     SortedSetOp = lowScoresFirst ? SortedSetOperation.ZPOPMIN : SortedSetOperation.ZPOPMAX,
                 },
-                count = count,
+                arg1 = count,
                 payload = inputPayload,
             };
 
@@ -594,8 +594,8 @@ namespace Garnet.server
                     type = GarnetObjectType.SortedSet,
                     SortedSetOp = sortedOperation,
                 },
-                count = paramCount,
-                done = 2, // Default RESP server protocol version
+                arg1 = paramCount,
+                arg2 = 2, // Default RESP server protocol version
                 payload = inputPayload,
             };
 
@@ -734,8 +734,8 @@ namespace Garnet.server
                     type = GarnetObjectType.SortedSet,
                     SortedSetOp = SortedSetOperation.ZSCAN,
                 },
-                count = 4,
-                done = (int)cursor,
+                arg1 = 4,
+                arg2 = (int)cursor,
                 payload = inputPayload,
             };
 

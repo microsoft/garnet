@@ -49,7 +49,7 @@ namespace Garnet.server
             var _output = (ObjectOutputHeader*)output;
             *_output = default;
 
-            var count = input.count;
+            var count = input.arg1;
 
             var input_startptr = input.payload.ptr;
             var input_currptr = input_startptr;
@@ -124,7 +124,7 @@ namespace Garnet.server
 
         private void GeoHash(ref ObjectInput input, ref SpanByteAndMemory output)
         {
-            var count = input.count;
+            var count = input.arg1;
             var countDone = 0;
 
             var input_startptr = input.payload.ptr;
@@ -188,7 +188,7 @@ namespace Garnet.server
 
         private void GeoDistance(ref ObjectInput input, ref SpanByteAndMemory output)
         {
-            var count = input.count;
+            var count = input.arg1;
 
             var input_startptr = input.payload.ptr;
             var input_currptr = input_startptr;
@@ -260,7 +260,7 @@ namespace Garnet.server
 
         private void GeoPosition(ref ObjectInput input, ref SpanByteAndMemory output)
         {
-            var count = input.count;
+            var count = input.arg1;
             var countDone = 0;
 
             var input_startptr = input.payload.ptr;
@@ -333,7 +333,7 @@ namespace Garnet.server
 
         private void GeoSearch(ref ObjectInput input, ref SpanByteAndMemory output)
         {
-            var count = input.count;
+            var count = input.arg1;
 
             var input_startptr = input.payload.ptr;
             var input_currptr = input_startptr;
@@ -502,7 +502,7 @@ namespace Garnet.server
                     while (!RespWriteUtils.WriteError(CmdStrings.RESP_ERR_GENERIC_UNK_CMD, ref curr, end))
                         ObjectUtils.ReallocateOutput(ref output, ref isMemory, ref ptr, ref ptrHandle, ref curr, ref end);
                 }
-                _output.result1 = input.count - count;
+                _output.result1 = input.arg1 - count;
             }
             finally
             {

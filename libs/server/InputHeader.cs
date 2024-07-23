@@ -41,6 +41,7 @@ namespace Garnet.server
 
         [FieldOffset(0)]
         internal RespCommand cmd;
+
         [FieldOffset(0)]
         internal GarnetObjectType type;
 
@@ -135,10 +136,13 @@ namespace Garnet.server
 
         [FieldOffset(0)]
         public RespInputHeader header;
+
         [FieldOffset(RespInputHeader.Size)]
-        public int count;
+        public int arg1;
+
         [FieldOffset(RespInputHeader.Size + sizeof(int))]
-        public int done;
+        public int arg2;
+
         [FieldOffset(RespInputHeader.Size + sizeof(int) + sizeof(int))]
         public ArgSlice payload;
 

@@ -116,10 +116,10 @@ namespace Garnet.server
             resp.CopyTo(dst.Memory.Memory.Span);
         }
 
-        static bool EvaluateObjectExpireInPlace(ExpireOption optionType, bool expiryExists, ref ObjectInput input, ref IGarnetObject value, ref GarnetObjectStoreOutput output)
+        static bool EvaluateObjectExpireInPlace(ExpireOption optionType, bool expiryExists, long expiration, ref IGarnetObject value, ref GarnetObjectStoreOutput output)
         {
             Debug.Assert(output.spanByteAndMemory.IsSpanByte, "This code assumes it is called in-place and did not go pending");
-            ObjectOutputHeader* o = (ObjectOutputHeader*)output.spanByteAndMemory.SpanByte.ToPointer();
+            var o = (ObjectOutputHeader*)output.spanByteAndMemory.SpanByte.ToPointer();
             if (expiryExists)
             {
                 switch (optionType)
@@ -129,20 +129,20 @@ namespace Garnet.server
                         break;
                     case ExpireOption.XX:
                     case ExpireOption.None:
-                        value.Expiration = input.ExtraMetadata;
+                        value.Expiration = expiration;
                         o->result1 = 1;
                         break;
                     case ExpireOption.GT:
-                        bool replace = input.ExtraMetadata < value.Expiration;
-                        value.Expiration = replace ? value.Expiration : input.ExtraMetadata;
+                        bool replace = expiration < value.Expiration;
+                        value.Expiration = replace ? value.Expiration : expiration;
                         if (replace)
                             o->result1 = 0;
                         else
                             o->result1 = 1;
                         break;
                     case ExpireOption.LT:
-                        replace = input.ExtraMetadata > value.Expiration;
-                        value.Expiration = replace ? value.Expiration : input.ExtraMetadata;
+                        replace = expiration > value.Expiration;
+                        value.Expiration = replace ? value.Expiration : expiration;
                         if (replace)
                             o->result1 = 0;
                         else
@@ -158,7 +158,7 @@ namespace Garnet.server
                 {
                     case ExpireOption.NX:
                     case ExpireOption.None:
-                        value.Expiration = input.ExtraMetadata;
+                        value.Expiration = expiration;
                         o->result1 = 1;
                         break;
                     case ExpireOption.XX:

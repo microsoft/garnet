@@ -59,10 +59,10 @@ namespace Garnet.server
             var length = input.payload.length - sizeof(int);
             var input_endptr = input_startptr + length;
 
-            var leftTokens = input.count;
+            var leftTokens = input.arg1;
 
             // Cursor
-            cursorInput = input.done;
+            cursorInput = input.arg2;
 
             patternLength = 0;
             pattern = default;

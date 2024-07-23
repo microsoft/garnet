@@ -18,7 +18,7 @@ namespace Garnet.server
 
         private void ListRemove(ref ObjectInput input, byte* output)
         {
-            var count = input.count;
+            var count = input.arg1;
 
             var input_startptr = input.payload.ptr;
             var input_currptr = input_startptr;
@@ -132,7 +132,7 @@ namespace Garnet.server
 
         private void ListIndex(ref ObjectInput input, ref SpanByteAndMemory output)
         {
-            var index = input.count;
+            var index = input.arg1;
 
             var isMemory = false;
             MemoryHandle ptrHandle = default;
@@ -167,8 +167,8 @@ namespace Garnet.server
 
         private void ListRange(ref ObjectInput input, ref SpanByteAndMemory output)
         {
-            var start = input.count;
-            var stop = input.done;
+            var start = input.arg1;
+            var stop = input.arg2;
 
             var isMemory = false;
             MemoryHandle ptrHandle = default;
@@ -233,8 +233,8 @@ namespace Garnet.server
 
         private void ListTrim(ref ObjectInput input, byte* output)
         {
-            var start = input.count;
-            var end = input.done;
+            var start = input.arg1;
+            var end = input.arg2;
 
             var outputHeader = (ObjectOutputHeader*)output;
 
@@ -290,7 +290,7 @@ namespace Garnet.server
 
         private void ListPush(ref ObjectInput input, byte* output, bool fAddAtHead)
         {
-            var count = input.count;
+            var count = input.arg1;
 
             var input_startptr = input.payload.ptr;
             var input_currptr = input_startptr;
@@ -319,7 +319,7 @@ namespace Garnet.server
 
         private void ListPop(ref ObjectInput input, ref SpanByteAndMemory output, bool fDelAtHead)
         {
-            var count = input.count;
+            var count = input.arg1;
 
             if (list.Count < count)
                 count = list.Count;

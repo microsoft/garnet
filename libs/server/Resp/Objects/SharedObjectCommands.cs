@@ -69,8 +69,8 @@ namespace Garnet.server
                 {
                     type = objectType,
                 },
-                count = count - 2,
-                done = cursorValue,
+                arg1 = count - 2,
+                arg2 = cursorValue,
                 payload = new ArgSlice(ptr, (int)(recvBufferPtr + bytesRead - ptr)),
             };
 

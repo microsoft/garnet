@@ -50,7 +50,7 @@ namespace Garnet.server
                     type = GarnetObjectType.Hash,
                     HashOp = nx ? HashOperation.HSETNX : HashOperation.HSET,
                 },
-                count = 1,
+                arg1 = 1,
                 payload = inputPayload,
             };
 
@@ -97,7 +97,7 @@ namespace Garnet.server
                     type = GarnetObjectType.Hash,
                     HashOp = HashOperation.HSET,
                 },
-                count = elements.Length,
+                arg1 = elements.Length,
                 payload = inputPayload,
             };
 
@@ -156,7 +156,7 @@ namespace Garnet.server
                     type = GarnetObjectType.Hash,
                     HashOp = HashOperation.HDEL,
                 },
-                count = fields.Length,
+                arg1 = fields.Length,
                 payload = inputPayload,
             };
 
@@ -249,7 +249,7 @@ namespace Garnet.server
                     type = GarnetObjectType.Hash,
                     HashOp = HashOperation.HMGET,
                 },
-                count = fields.Length,
+                arg1 = fields.Length,
                 payload = inputPayload,
             };
 
@@ -413,8 +413,8 @@ namespace Garnet.server
                     type = GarnetObjectType.Hash,
                     HashOp = HashOperation.HRANDFIELD,
                 },
-                count = 1 << 2,
-                done = seed,
+                arg1 = 1 << 2,
+                arg2 = seed,
                 payload = inputPayload,
             };
 
@@ -465,8 +465,8 @@ namespace Garnet.server
                     type = GarnetObjectType.Hash,
                     HashOp = HashOperation.HRANDFIELD,
                 },
-                count = (((count << 1) | 1) << 1) | (withValues ? 1 : 0),
-                done = seed,
+                arg1 = (((count << 1) | 1) << 1) | (withValues ? 1 : 0),
+                arg2 = seed,
                 payload = inputPayload,
             };
 
@@ -537,8 +537,8 @@ namespace Garnet.server
                     type = GarnetObjectType.Hash,
                     HashOp = HashOperation.HSCAN,
                 },
-                count = 4,
-                done = (int)cursor,
+                arg1 = 4,
+                arg2 = (int)cursor,
                 payload = inputPayload,
             };
 

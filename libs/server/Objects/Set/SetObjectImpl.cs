@@ -20,7 +20,7 @@ namespace Garnet.server
             var _output = (ObjectOutputHeader*)output;
             *_output = default;
 
-            var count = input.count;
+            var count = input.arg1;
 
             var input_startptr = input.payload.ptr;
             var input_currptr = input_startptr;
@@ -113,7 +113,7 @@ namespace Garnet.server
             var _output = (ObjectOutputHeader*)output;
             *_output = default;
 
-            var count = input.count;
+            var count = input.arg1;
 
             var input_startptr = input.payload.ptr;
             var input_currptr = input_startptr;
@@ -145,7 +145,7 @@ namespace Garnet.server
         private void SetPop(ref ObjectInput input, ref SpanByteAndMemory output)
         {
             // SPOP key [count]
-            var count = input.count;
+            var count = input.arg1;
             var countDone = 0;
 
             var isMemory = false;
@@ -216,8 +216,8 @@ namespace Garnet.server
 
         private void SetRandomMember(ref ObjectInput input, ref SpanByteAndMemory output)
         {
-            var count = input.count;
-            var seed = input.done;
+            var count = input.arg1;
+            var seed = input.arg2;
 
             var countDone = 0;
             var isMemory = false;

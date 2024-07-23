@@ -58,7 +58,7 @@ namespace Garnet.server
                     type = GarnetObjectType.List,
                     ListOp = lop,
                 },
-                count = inputCount,
+                arg1 = inputCount,
                 payload = new ArgSlice(ptr, (int)(recvBufferPtr + bytesRead - ptr)),
             };
 
@@ -140,7 +140,7 @@ namespace Garnet.server
                     type = GarnetObjectType.List,
                     ListOp = lop,
                 },
-                count = popCount,
+                arg1 = popCount,
                 payload = new ArgSlice(ptr, (int)(recvBufferPtr + bytesRead - ptr)),
             };
 
@@ -421,7 +421,7 @@ namespace Garnet.server
                     type = GarnetObjectType.List,
                     ListOp = ListOperation.LLEN,
                 },
-                count = count,
+                arg1 = count,
                 payload = new ArgSlice(ptr, (int)(recvBufferPtr + bytesRead - ptr)),
             };
 
@@ -495,8 +495,8 @@ namespace Garnet.server
                     type = GarnetObjectType.List,
                     ListOp = ListOperation.LTRIM,
                 },
-                count = start,
-                done = stop,
+                arg1 = start,
+                arg2 = stop,
                 payload = new ArgSlice(ptr, (int)(recvBufferPtr + bytesRead - ptr)),
             };
 
@@ -567,8 +567,8 @@ namespace Garnet.server
                     type = GarnetObjectType.List,
                     ListOp = ListOperation.LRANGE,
                 },
-                count = start,
-                done = end,
+                arg1 = start,
+                arg2 = end,
                 payload = new ArgSlice(ptr, (int)(recvBufferPtr + bytesRead - ptr)),
             };
 
@@ -640,7 +640,7 @@ namespace Garnet.server
                     type = GarnetObjectType.List,
                     ListOp = ListOperation.LINDEX,
                 },
-                count = index,
+                arg1 = index,
                 payload = new ArgSlice(ptr, (int)(recvBufferPtr + bytesRead - ptr)),
             };
 
@@ -785,7 +785,7 @@ namespace Garnet.server
                     type = GarnetObjectType.List,
                     ListOp = ListOperation.LREM,
                 },
-                count = nCount,
+                arg1 = nCount,
                 payload = new ArgSlice(ptr, (int)(recvBufferPtr + bytesRead - ptr)),
             };
 

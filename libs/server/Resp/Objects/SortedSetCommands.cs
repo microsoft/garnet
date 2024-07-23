@@ -52,8 +52,8 @@ namespace Garnet.server
                     type = GarnetObjectType.SortedSet,
                     SortedSetOp = SortedSetOperation.ZADD,
                 },
-                count = (count - 1) / 2,
-                done = 0,
+                arg1 = (count - 1) / 2,
+                arg2 = 0,
                 payload = new ArgSlice(ptr, (int)(recvBufferPtr + bytesRead - ptr)),
             };
 
@@ -108,8 +108,8 @@ namespace Garnet.server
                     type = GarnetObjectType.SortedSet,
                     SortedSetOp = SortedSetOperation.ZREM,
                 },
-                count = count - 1,
-                done = 0,
+                arg1 = count - 1,
+                arg2 = 0,
                 payload = new ArgSlice(ptr, (int)(recvBufferPtr + bytesRead - ptr)),
             };
 
@@ -237,8 +237,8 @@ namespace Garnet.server
                     type = GarnetObjectType.SortedSet,
                     SortedSetOp = op,
                 },
-                count = count - 1,
-                done = respProtocolVersion,
+                arg1 = count - 1,
+                arg2 = respProtocolVersion,
                 payload = new ArgSlice(ptr, (int)(recvBufferPtr + bytesRead - ptr)),
             };
 
@@ -364,7 +364,7 @@ namespace Garnet.server
                     type = GarnetObjectType.SortedSet,
                     SortedSetOp = SortedSetOperation.ZMSCORE,
                 },
-                count = inputCount,
+                arg1 = inputCount,
                 payload = new ArgSlice(ptr, (int)(recvBufferPtr + bytesRead - ptr)),
             };
 
@@ -454,7 +454,7 @@ namespace Garnet.server
                     type = GarnetObjectType.SortedSet,
                     SortedSetOp = op,
                 },
-                count = popCount,
+                arg1 = popCount,
                 payload = new ArgSlice(ptr, (int)(recvBufferPtr + bytesRead - ptr)),
             };
 
@@ -666,7 +666,7 @@ namespace Garnet.server
                     type = GarnetObjectType.SortedSet,
                     SortedSetOp = SortedSetOperation.ZINCRBY,
                 },
-                count = count - 1,
+                arg1 = count - 1,
                 payload = new ArgSlice(ptr, (int)(recvBufferPtr + bytesRead - ptr)),
             };
 
@@ -764,8 +764,8 @@ namespace Garnet.server
                     type = GarnetObjectType.SortedSet,
                     SortedSetOp = op,
                 },
-                count = count,
-                done = includeWithScore ? 1 : 0,
+                arg1 = count,
+                arg2 = includeWithScore ? 1 : 0,
                 payload = new ArgSlice(ptr, (int)(recvBufferPtr + bytesRead - ptr)),
             };
 
@@ -954,8 +954,8 @@ namespace Garnet.server
                     type = GarnetObjectType.SortedSet,
                     SortedSetOp = SortedSetOperation.ZRANDMEMBER,
                 },
-                count = (((paramCount << 1) | (includedCount ? 1 : 0)) << 1) | (includeWithScores ? 1 : 0),
-                done = seed,
+                arg1 = (((paramCount << 1) | (includedCount ? 1 : 0)) << 1) | (includeWithScores ? 1 : 0),
+                arg2 = seed,
                 payload = new ArgSlice(ptr, (int)(recvBufferPtr + bytesRead - ptr)),
             };
 

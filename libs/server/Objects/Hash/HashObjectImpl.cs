@@ -74,7 +74,7 @@ namespace Garnet.server
 
         private void HashMultipleGet(ref ObjectInput input, ref SpanByteAndMemory output)
         {
-            var count = input.count; // for multiples fields
+            var count = input.arg1; // for multiples fields
 
             var input_startptr = input.payload.ptr;
             var input_currptr = input_startptr;
@@ -126,7 +126,7 @@ namespace Garnet.server
 
         private void HashGetAll(ref ObjectInput input, ref SpanByteAndMemory output)
         {
-            var respProtocolVersion = input.count;
+            var respProtocolVersion = input.arg1;
 
             var isMemory = false;
             MemoryHandle ptrHandle = default;
@@ -172,7 +172,7 @@ namespace Garnet.server
             var _output = (ObjectOutputHeader*)output;
             *_output = default;
 
-            var count = input.count;
+            var count = input.arg1;
 
             var input_startptr = input.payload.ptr;
             var input_currptr = input_startptr;
@@ -251,10 +251,10 @@ namespace Garnet.server
         private void HashRandomField(ref ObjectInput input, ref SpanByteAndMemory output)
         {
             // HRANDFIELD key [count [WITHVALUES]]
-            var countParameter = input.count >> 2;
-            var withValues = (input.count & 1) == 1;
-            var includedCount = ((input.count >> 1) & 1) == 1;
-            var seed = input.done;
+            var countParameter = input.arg1 >> 2;
+            var withValues = (input.arg1 & 1) == 1;
+            var includedCount = ((input.arg1 >> 1) & 1) == 1;
+            var seed = input.arg2;
 
             var countDone = 0;
 
@@ -324,7 +324,7 @@ namespace Garnet.server
             var _output = (ObjectOutputHeader*)output;
             *_output = default;
             
-            var count = input.count;
+            var count = input.arg1;
             var hop = input.header.HashOp;
 
             var input_startptr = input.payload.ptr;
@@ -359,7 +359,7 @@ namespace Garnet.server
 
         private void IncrementIntegerOrFloat(ref ObjectInput input, ref SpanByteAndMemory output)
         {
-            var count = input.count;
+            var count = input.arg1;
             var op = input.header.HashOp;
 
             var input_startptr = input.payload.ptr;

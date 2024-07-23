@@ -73,9 +73,10 @@ namespace Garnet.server
             switch (input.header.type)
             {
                 case GarnetObjectType.Expire:
-                    var optionType = (ExpireOption)(*(input.ToPointer() + RespInputHeader.Size));
-                    bool expiryExists = (value.Expiration > 0);
-                    return EvaluateObjectExpireInPlace(optionType, expiryExists, ref input, ref value, ref output);
+                    var optionType = (ExpireOption)(*input.payload.ptr);
+                    var expiryExists = (value.Expiration > 0);
+                    var expiration = *(long*)(input.payload.ptr + 1);
+                    return EvaluateObjectExpireInPlace(optionType, expiryExists, expiration, ref value, ref output);
                 case GarnetObjectType.Persist:
                     if (value.Expiration > 0)
                     {
@@ -129,9 +130,10 @@ namespace Garnet.server
             switch (header->type)
             {
                 case GarnetObjectType.Expire:
-                    var expireOption = (ExpireOption)(*(input.ToPointer() + RespInputHeader.Size));
+                    var expireOption = (ExpireOption)(*input.payload.ptr);
                     var expiryExists = (value.Expiration > 0);
-                    EvaluateObjectExpireInPlace(expireOption, expiryExists, ref input, ref value, ref output);
+                    var expiration = *(long*)(input.payload.ptr + 1);
+                    EvaluateObjectExpireInPlace(expireOption, expiryExists, expiration, ref value, ref output);
                     break;
                 case GarnetObjectType.Persist:
                     if (value.Expiration > 0)

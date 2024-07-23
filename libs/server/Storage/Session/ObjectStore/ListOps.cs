@@ -52,7 +52,7 @@ namespace Garnet.server
                     type = GarnetObjectType.List,
                     ListOp = lop,
                 },
-                count = elements.Length,
+                arg1 = elements.Length,
                 payload = inputPayload,
             };
             
@@ -146,7 +146,7 @@ namespace Garnet.server
                     type = GarnetObjectType.List,
                     ListOp = lop,
                 },
-                count = count,
+                arg1 = count,
                 payload = inputPayload,
             };
 
@@ -228,7 +228,7 @@ namespace Garnet.server
                     type = GarnetObjectType.List,
                     ListOp = ListOperation.LLEN,
                 },
-                count = count,
+                arg1 = count,
                 payload = inputPayload,
             };
 
@@ -383,8 +383,8 @@ namespace Garnet.server
                     type = GarnetObjectType.List,
                     ListOp = ListOperation.LTRIM,
                 },
-                count = start,
-                done = stop,
+                arg1 = start,
+                arg2 = stop,
                 payload = inputPayload,
             };
 

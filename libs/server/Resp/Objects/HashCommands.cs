@@ -62,7 +62,7 @@ namespace Garnet.server
                     type = GarnetObjectType.Hash,
                     HashOp = hop,
                 },
-                count = inputCount,
+                arg1 = inputCount,
                 payload = new ArgSlice(ptr, (int)(recvBufferPtr + bytesRead - ptr)),
             };
             
@@ -182,7 +182,7 @@ namespace Garnet.server
                     type = GarnetObjectType.Hash,
                     HashOp = HashOperation.HGETALL,
                 },
-                count = respProtocolVersion,
+                arg1 = respProtocolVersion,
                 payload = new ArgSlice(ptr, (int)(recvBufferPtr + bytesRead - ptr)),
             };
 
@@ -241,7 +241,7 @@ namespace Garnet.server
                     type = GarnetObjectType.Hash,
                     HashOp = HashOperation.HMGET,
                 },
-                count = count - 1,
+                arg1 = count - 1,
                 payload = new ArgSlice(ptr, (int)(recvBufferPtr + bytesRead - ptr)),
             };
 
@@ -343,8 +343,8 @@ namespace Garnet.server
                     type = GarnetObjectType.Hash,
                     HashOp = HashOperation.HRANDFIELD,
                 },
-                count = countWithMetadata,
-                done = seed,
+                arg1 = countWithMetadata,
+                arg2 = seed,
                 payload = new ArgSlice(ptr, (int)(recvBufferPtr + bytesRead - ptr)),
             };
 
@@ -532,7 +532,7 @@ namespace Garnet.server
                     type = GarnetObjectType.Hash,
                     HashOp = HashOperation.HDEL,
                 },
-                count = inputCount,
+                arg1 = inputCount,
                 payload = new ArgSlice(ptr, (int)(recvBufferPtr + bytesRead - ptr)),
             };
 
@@ -656,7 +656,7 @@ namespace Garnet.server
                     type = GarnetObjectType.Hash,
                     HashOp = op,
                 },
-                count = count - 1,
+                arg1 = count - 1,
                 payload = new ArgSlice(ptr, (int)(recvBufferPtr + bytesRead - ptr)),
             };
 
@@ -730,7 +730,7 @@ namespace Garnet.server
                     type = GarnetObjectType.Hash,
                     HashOp = op,
                 },
-                count = count + 1,
+                arg1 = count + 1,
                 payload = new ArgSlice(ptr, (int)(recvBufferPtr + bytesRead - ptr)),
             };
 
