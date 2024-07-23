@@ -14,14 +14,14 @@
 #define IO_BATCH_NUM 8
 #define POLL_TIME 64
 
-static bool initted = false;
+volatile static bool initted = false;
 static pthread_mutex_t module_init_lock = PTHREAD_MUTEX_INITIALIZER;
-static bool attach_error = 0;
+volatile static bool attach_error = 0;
 
-static int32_t ns_num = 0;
+volatile static int32_t ns_num = 0;
 static struct spdk_ns_entry g_spdk_ns_list[NS_MAX_NUM];
 
-static int32_t device_num = 0;
+volatile static int32_t device_num = 0;
 static struct spdk_device g_spdk_device_list[DEVICE_MAX_NUM];
 static pthread_mutex_t device_init_lock = PTHREAD_MUTEX_INITIALIZER;
 
@@ -137,6 +137,9 @@ int spdk_device_init()
         goto exit;
     }
     initted = true;
+    // tmp
+    spdk_malloc(4 * 1024 * 1024, SIZE_4K, NULL, SPDK_ENV_SOCKET_ID_ANY,
+                SPDK_MALLOC_DMA);
 exit:
     if (rc == 0) {
         initted = true;
@@ -172,10 +175,13 @@ struct spdk_device *spdk_device_create(int nsid)
     device = &g_spdk_device_list[device_num];
     device->ns_entry = ns_entry;
     device->qpair = spdk_nvme_ctrlr_alloc_io_qpair(ns_entry->ctrlr, NULL, 0);
+    device->buffer = spdk_malloc(4 * 1024 * 1024, SIZE_4K, NULL,
+                                 SPDK_ENV_SOCKET_ID_ANY, SPDK_MALLOC_DMA);
     if (device->qpair == NULL) {
         fprintf(stderr, "ERROR: spdk_nvme_ctrlr_alloc_io_qpair() failed\n");
         device = NULL;
     } else {
+        __sync_synchronize();
         device_num++;
     }
     pthread_mutex_unlock(&device_init_lock);
@@ -199,7 +205,7 @@ static void io_complete(void *arg, const struct spdk_nvme_cpl *completion)
         rc = completion->status_raw;
     } else {
         if (io_context->read_dest != NULL) {
-            memcpy(io_context->read_dest, io_context->buffer,
+            memcpy(io_context->read_dest, io_context->device->buffer,
                    io_context->io_length);
         }
         bytes_transferred = io_context->io_length;
@@ -261,7 +267,7 @@ int32_t spdk_device_read_async(struct spdk_device *device, uint64_t source,
     }
 
     rc = spdk_nvme_ns_cmd_read(device->ns_entry->ns, device->qpair,
-                               io_context->buffer, source / SECTOR_SIZE,
+                               device->buffer, source / SECTOR_SIZE,
                                length / SECTOR_SIZE, io_complete,
                                (void *)io_context, 0);
     if (rc != 0) {
@@ -301,12 +307,11 @@ int32_t spdk_device_write_async(struct spdk_device *device, const void *source,
         rc = ENOMEM;
         goto exit;
     }
-    memcpy(io_context->buffer, source, length);
+    memcpy(device->buffer, source, length);
 
-    rc = spdk_nvme_ns_cmd_write(device->ns_entry->ns, device->qpair,
-                                io_context->buffer, dest / SECTOR_SIZE,
-                                length / SECTOR_SIZE, io_complete,
-                                (void *)io_context, 0);
+    rc = spdk_nvme_ns_cmd_write(
+        device->ns_entry->ns, device->qpair, device->buffer, dest / SECTOR_SIZE,
+        length / SECTOR_SIZE, io_complete, (void *)io_context, 0);
     if (rc != 0) {
         fprintf(stderr, "ERROR: starting write I/O failed with %d.\n", rc);
     }
@@ -363,7 +368,8 @@ int32_t spdk_device_poll(uint32_t timeout)
 
     while (true) {
         // printf("device_num: %d\n", device_num);
-        if (device_num == 0) {
+        int l_device_num = device_num;
+        if (l_device_num == 0) {
             continue;
         }
         device = &g_spdk_device_list[qp_pointer];
@@ -375,7 +381,7 @@ int32_t spdk_device_poll(uint32_t timeout)
         }
 
         qp_pointer += 1;
-        qp_pointer %= device_num;
+        qp_pointer %= l_device_num;
 
         // diff = clock() - start;
         // if (diff * 1000 / CLOCKS_PER_SEC >= timeout) {
