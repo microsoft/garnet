@@ -8,7 +8,6 @@ using System.Text;
 using System.Threading;
 using System.Threading.Tasks;
 using Garnet.server;
-using Newtonsoft.Json.Linq;
 using NUnit.Framework;
 using StackExchange.Redis;
 

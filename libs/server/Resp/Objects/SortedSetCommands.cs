@@ -12,18 +12,15 @@ namespace Garnet.server
     /// </summary>
     internal sealed unsafe partial class RespServerSession : ServerSessionBase
     {
-        static ReadOnlySpan<byte> withscores => "WITHSCORES"u8;
-
         /// <summary>
         /// Adds all the specified members with the specified scores to the sorted set stored at key.
         /// Current members get the score updated and reordered.
         /// </summary>
         /// <typeparam name="TGarnetApi"></typeparam>
         /// <param name="count"></param>
-        /// <param name="ptr"></param>
         /// <param name="storageApi"></param>
         /// <returns></returns>
-        private unsafe bool SortedSetAdd<TGarnetApi>(int count, byte* ptr, ref TGarnetApi storageApi)
+        private unsafe bool SortedSetAdd<TGarnetApi>(int count, ref TGarnetApi storageApi)
             where TGarnetApi : IGarnetApi
         {
             if (count < 3)
@@ -33,14 +30,16 @@ namespace Garnet.server
 
             if (count % 2 != 1)
             {
-                return AbortWithErrorMessage(count, CmdStrings.RESP_ERR_GENERIC_SYNTAX_ERROR);
+                return AbortWithErrorMessage(CmdStrings.RESP_ERR_GENERIC_SYNTAX_ERROR);
             }
 
             // Get the key for SortedSet
-            if (!RespReadUtils.ReadByteArrayWithLengthHeader(out var key, ref ptr, recvBufferPtr + bytesRead))
-                return false;
+            var sbKey = parseState.GetArgSliceByRef(0).SpanByte;
+            var keyBytes = sbKey.ToByteArray();
 
-            if (NetworkSingleKeySlotVerify(key, false))
+            var ptr = sbKey.ToPointer() + sbKey.Length + 2;
+
+            if (NetworkSingleKeySlotVerify(keyBytes, false))
             {
                 return true;
             }
@@ -62,7 +61,7 @@ namespace Garnet.server
             inputPtr->header.SortedSetOp = SortedSetOperation.ZADD;
             inputPtr->arg1 = inputCount;
 
-            var status = storageApi.SortedSetAdd(key, new ArgSlice((byte*)inputPtr, inputLength), out ObjectOutputHeader output);
+            var status = storageApi.SortedSetAdd(keyBytes, new ArgSlice((byte*)inputPtr, inputLength), out ObjectOutputHeader output);
 
             // Reset input buffer
             *inputPtr = save;
@@ -78,6 +77,7 @@ namespace Garnet.server
                         SendAndReset();
                     break;
             }
+
             return true;
         }
 
@@ -87,65 +87,65 @@ namespace Garnet.server
         /// </summary>
         /// <typeparam name="TGarnetApi"></typeparam>
         /// <param name="count"></param>
-        /// <param name="ptr"></param>
         /// <param name="storageApi"></param>
         /// <returns></returns>
-        private unsafe bool SortedSetRemove<TGarnetApi>(int count, byte* ptr, ref TGarnetApi storageApi)
+        private unsafe bool SortedSetRemove<TGarnetApi>(int count, ref TGarnetApi storageApi)
             where TGarnetApi : IGarnetApi
         {
             if (count < 2)
             {
                 return AbortWithWrongNumberOfArguments("ZREM", count);
             }
-            else
+
+            // Get the key for SortedSet
+            var sbKey = parseState.GetArgSliceByRef(0).SpanByte;
+            var keyBytes = sbKey.ToByteArray();
+
+            var ptr = sbKey.ToPointer() + sbKey.Length + 2;
+
+            if (NetworkSingleKeySlotVerify(keyBytes, false))
             {
-                // Get the key for SortedSet
-                if (!RespReadUtils.ReadByteArrayWithLengthHeader(out var key, ref ptr, recvBufferPtr + bytesRead))
-                    return false;
-
-                if (NetworkSingleKeySlotVerify(key, false))
-                {
-                    return true;
-                }
-
-                int inputCount = count - 1;
-
-                // Prepare input
-                var rmwInput = (ObjectInputHeader*)(ptr - sizeof(ObjectInputHeader));
-
-                // Save old values on buffer for possible revert
-                var save = *rmwInput;
-
-                // Prepare length of header in input buffer
-                var inputLength = (int)(recvBufferPtr + bytesRead - (byte*)rmwInput);
-
-                // Prepare header in input buffer
-                rmwInput->header.type = GarnetObjectType.SortedSet;
-                rmwInput->header.flags = 0;
-                rmwInput->header.SortedSetOp = SortedSetOperation.ZREM;
-                rmwInput->arg1 = inputCount;
-
-                var status = storageApi.SortedSetRemove(key, new ArgSlice((byte*)rmwInput, inputLength), out ObjectOutputHeader rmwOutput);
-
-                // Reset input buffer
-                *rmwInput = save;
-
-                switch (status)
-                {
-                    case GarnetStatus.OK:
-                        while (!RespWriteUtils.WriteInteger(rmwOutput.result1, ref dcurr, dend))
-                            SendAndReset();
-                        break;
-                    case GarnetStatus.NOTFOUND:
-                        while (!RespWriteUtils.WriteDirect(CmdStrings.RESP_RETURN_VAL_0, ref dcurr, dend))
-                            SendAndReset();
-                        break;
-                    case GarnetStatus.WRONGTYPE:
-                        while (!RespWriteUtils.WriteError(CmdStrings.RESP_ERR_WRONG_TYPE, ref dcurr, dend))
-                            SendAndReset();
-                        break;
-                }
+                return true;
             }
+
+            int inputCount = count - 1;
+
+            // Prepare input
+            var rmwInput = (ObjectInputHeader*)(ptr - sizeof(ObjectInputHeader));
+
+            // Save old values on buffer for possible revert
+            var save = *rmwInput;
+
+            // Prepare length of header in input buffer
+            var inputLength = (int)(recvBufferPtr + bytesRead - (byte*)rmwInput);
+
+            // Prepare header in input buffer
+            rmwInput->header.type = GarnetObjectType.SortedSet;
+            rmwInput->header.flags = 0;
+            rmwInput->header.SortedSetOp = SortedSetOperation.ZREM;
+            rmwInput->arg1 = inputCount;
+
+            var status = storageApi.SortedSetRemove(keyBytes, new ArgSlice((byte*)rmwInput, inputLength), out ObjectOutputHeader rmwOutput);
+
+            // Reset input buffer
+            *rmwInput = save;
+
+            switch (status)
+            {
+                case GarnetStatus.OK:
+                    while (!RespWriteUtils.WriteInteger(rmwOutput.result1, ref dcurr, dend))
+                        SendAndReset();
+                    break;
+                case GarnetStatus.NOTFOUND:
+                    while (!RespWriteUtils.WriteDirect(CmdStrings.RESP_RETURN_VAL_0, ref dcurr, dend))
+                        SendAndReset();
+                    break;
+                case GarnetStatus.WRONGTYPE:
+                    while (!RespWriteUtils.WriteError(CmdStrings.RESP_ERR_WRONG_TYPE, ref dcurr, dend))
+                        SendAndReset();
+                    break;
+            }
+
             return true;
         }
 
@@ -154,64 +154,64 @@ namespace Garnet.server
         /// </summary>
         /// <typeparam name="TGarnetApi"></typeparam>
         /// <param name="count"></param>
-        /// <param name="ptr"></param>
         /// <param name="storageApi"></param>
         /// <returns></returns>
-        private unsafe bool SortedSetLength<TGarnetApi>(int count, byte* ptr, ref TGarnetApi storageApi)
+        private unsafe bool SortedSetLength<TGarnetApi>(int count, ref TGarnetApi storageApi)
             where TGarnetApi : IGarnetApi
         {
             if (count != 1)
             {
                 return AbortWithWrongNumberOfArguments("ZCARD", count);
             }
-            else
+
+            // Get the key for SortedSet
+            var sbKey = parseState.GetArgSliceByRef(0).SpanByte;
+            var keyBytes = sbKey.ToByteArray();
+
+            var ptr = sbKey.ToPointer() + sbKey.Length + 2;
+
+            if (NetworkSingleKeySlotVerify(keyBytes, true))
             {
-                // Get the key for SortedSet
-                if (!RespReadUtils.ReadByteArrayWithLengthHeader(out var key, ref ptr, recvBufferPtr + bytesRead))
-                    return false;
-
-                if (NetworkSingleKeySlotVerify(key, true))
-                {
-                    return true;
-                }
-
-                // Prepare input
-                var inputPtr = (ObjectInputHeader*)(ptr - sizeof(ObjectInputHeader));
-
-                // Save old values on buffer for possible revert
-                var save = *inputPtr;
-
-                // Prepare length of header in input buffer
-                var inputLength = (int)(recvBufferPtr + bytesRead - (byte*)inputPtr);
-
-                // Prepare header in input buffer
-                inputPtr->header.type = GarnetObjectType.SortedSet;
-                inputPtr->header.flags = 0;
-                inputPtr->header.SortedSetOp = SortedSetOperation.ZCARD;
-                inputPtr->arg1 = 1;
-
-                var status = storageApi.SortedSetLength(key, new ArgSlice((byte*)inputPtr, inputLength), out var output);
-
-                // Reset input buffer
-                *inputPtr = save;
-
-                switch (status)
-                {
-                    case GarnetStatus.OK:
-                        // Process output
-                        while (!RespWriteUtils.WriteInteger(output.result1, ref dcurr, dend))
-                            SendAndReset();
-                        break;
-                    case GarnetStatus.NOTFOUND:
-                        while (!RespWriteUtils.WriteDirect(CmdStrings.RESP_RETURN_VAL_0, ref dcurr, dend))
-                            SendAndReset();
-                        break;
-                    case GarnetStatus.WRONGTYPE:
-                        while (!RespWriteUtils.WriteError(CmdStrings.RESP_ERR_WRONG_TYPE, ref dcurr, dend))
-                            SendAndReset();
-                        break;
-                }
+                return true;
             }
+
+            // Prepare input
+            var inputPtr = (ObjectInputHeader*)(ptr - sizeof(ObjectInputHeader));
+
+            // Save old values on buffer for possible revert
+            var save = *inputPtr;
+
+            // Prepare length of header in input buffer
+            var inputLength = (int)(recvBufferPtr + bytesRead - (byte*)inputPtr);
+
+            // Prepare header in input buffer
+            inputPtr->header.type = GarnetObjectType.SortedSet;
+            inputPtr->header.flags = 0;
+            inputPtr->header.SortedSetOp = SortedSetOperation.ZCARD;
+            inputPtr->arg1 = 1;
+
+            var status = storageApi.SortedSetLength(keyBytes, new ArgSlice((byte*)inputPtr, inputLength), out var output);
+
+            // Reset input buffer
+            *inputPtr = save;
+
+            switch (status)
+            {
+                case GarnetStatus.OK:
+                    // Process output
+                    while (!RespWriteUtils.WriteInteger(output.result1, ref dcurr, dend))
+                        SendAndReset();
+                    break;
+                case GarnetStatus.NOTFOUND:
+                    while (!RespWriteUtils.WriteDirect(CmdStrings.RESP_RETURN_VAL_0, ref dcurr, dend))
+                        SendAndReset();
+                    break;
+                case GarnetStatus.WRONGTYPE:
+                    while (!RespWriteUtils.WriteError(CmdStrings.RESP_ERR_WRONG_TYPE, ref dcurr, dend))
+                        SendAndReset();
+                    break;
+            }
+
             return true;
         }
 
@@ -221,11 +221,11 @@ namespace Garnet.server
         /// There can also be negative numbers indicating offsets from the end of the sorted set, with -1 being the last element of the sorted set, -2 the penultimate element and so on.
         /// </summary>
         /// <typeparam name="TGarnetApi"></typeparam>
+        /// <param name="command"></param>
         /// <param name="count"></param>
-        /// <param name="ptr"></param>
         /// <param name="storageApi"></param>
         /// <returns></returns>
-        private unsafe bool SortedSetRange<TGarnetApi>(RespCommand command, int count, byte* ptr, ref TGarnetApi storageApi)
+        private unsafe bool SortedSetRange<TGarnetApi>(RespCommand command, int count, ref TGarnetApi storageApi)
             where TGarnetApi : IGarnetApi
         {
             // ZRANGE key min max [BYSCORE|BYLEX] [REV] [LIMIT offset count] [WITHSCORES]
@@ -234,12 +234,12 @@ namespace Garnet.server
                 return AbortWithWrongNumberOfArguments(nameof(RespCommand.ZRANGE), count);
             }
 
-            // Get the key for the Sorted Set
-            if (!RespReadUtils.ReadByteArrayWithLengthHeader(out var key,
-                ref ptr, recvBufferPtr + bytesRead))
-                return false;
+            var sbKey = parseState.GetArgSliceByRef(0).SpanByte;
+            var keyBytes = sbKey.ToByteArray();
 
-            if (NetworkSingleKeySlotVerify(key, true))
+            var ptr = sbKey.ToPointer() + sbKey.Length + 2;
+
+            if (NetworkSingleKeySlotVerify(keyBytes, true))
             {
                 return true;
             }
@@ -272,7 +272,7 @@ namespace Garnet.server
 
             var outputFooter = new GarnetObjectStoreOutput { spanByteAndMemory = new SpanByteAndMemory(dcurr, (int)(dend - dcurr)) };
 
-            var status = storageApi.SortedSetRange(key, new ArgSlice((byte*)inputPtr, inputLength), ref outputFooter);
+            var status = storageApi.SortedSetRange(keyBytes, new ArgSlice((byte*)inputPtr, inputLength), ref outputFooter);
 
             // Reset input buffer
             *inputPtr = save;
@@ -291,6 +291,7 @@ namespace Garnet.server
                         SendAndReset();
                     break;
             }
+
             return true;
         }
 
@@ -300,10 +301,9 @@ namespace Garnet.server
         /// </summary>
         /// <typeparam name="TGarnetApi"></typeparam>
         /// <param name="count"></param>
-        /// <param name="ptr"></param>
         /// <param name="storageApi"></param>
         /// <returns></returns>
-        private unsafe bool SortedSetScore<TGarnetApi>(int count, byte* ptr, ref TGarnetApi storageApi)
+        private unsafe bool SortedSetScore<TGarnetApi>(int count, ref TGarnetApi storageApi)
             where TGarnetApi : IGarnetApi
         {
             //validation if minimum args
@@ -311,61 +311,59 @@ namespace Garnet.server
             {
                 return AbortWithWrongNumberOfArguments("ZSCORE", count);
             }
-            else
+
+            // Get the key for SortedSet
+            var sbKey = parseState.GetArgSliceByRef(0).SpanByte;
+            var keyBytes = sbKey.ToByteArray();
+
+            if (NetworkSingleKeySlotVerify(keyBytes, true))
             {
-                // Get the key for SortedSet
-                if (!RespReadUtils.ReadByteArrayWithLengthHeader(out var key, ref ptr, recvBufferPtr + bytesRead))
-                    return false;
-
-                if (NetworkSingleKeySlotVerify(key, true))
-                {
-                    return true;
-                }
-
-                // Read score key
-                byte* scoreKeyPtr = null;
-                int scoreKeySize = 0;
-                if (!RespReadUtils.ReadPtrWithLengthHeader(ref scoreKeyPtr, ref scoreKeySize, ref ptr, recvBufferPtr + bytesRead))
-                    return false;
-
-                // Prepare input
-                var inputPtr = (ObjectInputHeader*)(scoreKeyPtr - sizeof(ObjectInputHeader));
-
-                // Save values
-                var save = *inputPtr;
-
-                // Prepare length of header in input buffer
-                var inputLength = (int)(recvBufferPtr + bytesRead - (byte*)inputPtr);
-
-                // Prepare header in input buffer
-                inputPtr->header.type = GarnetObjectType.SortedSet;
-                inputPtr->header.flags = 0;
-                inputPtr->header.SortedSetOp = SortedSetOperation.ZSCORE;
-                inputPtr->arg1 = scoreKeySize;
-
-                // Prepare GarnetObjectStore output
-                var outputFooter = new GarnetObjectStoreOutput { spanByteAndMemory = new SpanByteAndMemory(dcurr, (int)(dend - dcurr)) };
-
-                var status = storageApi.SortedSetScore(key, new ArgSlice((byte*)inputPtr, inputLength), ref outputFooter);
-
-                // Restore input
-                *inputPtr = save;
-
-                switch (status)
-                {
-                    case GarnetStatus.OK:
-                        ProcessOutputWithHeader(outputFooter.spanByteAndMemory);
-                        break;
-                    case GarnetStatus.NOTFOUND:
-                        while (!RespWriteUtils.WriteDirect(CmdStrings.RESP_ERRNOTFOUND, ref dcurr, dend))
-                            SendAndReset();
-                        break;
-                    case GarnetStatus.WRONGTYPE:
-                        while (!RespWriteUtils.WriteError(CmdStrings.RESP_ERR_WRONG_TYPE, ref dcurr, dend))
-                            SendAndReset();
-                        break;
-                }
+                return true;
             }
+
+            // Read score key
+            var sbScoreKey = parseState.GetArgSliceByRef(1).SpanByte;
+            var scoreKeyPtr = sbScoreKey.ToPointer();
+            var scoreKeySize = sbScoreKey.Length;
+
+            // Prepare input
+            var inputPtr = (ObjectInputHeader*)(scoreKeyPtr - sizeof(ObjectInputHeader));
+
+            // Save values
+            var save = *inputPtr;
+
+            // Prepare length of header in input buffer
+            var inputLength = (int)(recvBufferPtr + bytesRead - (byte*)inputPtr);
+
+            // Prepare header in input buffer
+            inputPtr->header.type = GarnetObjectType.SortedSet;
+            inputPtr->header.flags = 0;
+            inputPtr->header.SortedSetOp = SortedSetOperation.ZSCORE;
+            inputPtr->arg1 = scoreKeySize;
+
+            // Prepare GarnetObjectStore output
+            var outputFooter = new GarnetObjectStoreOutput { spanByteAndMemory = new SpanByteAndMemory(dcurr, (int)(dend - dcurr)) };
+
+            var status = storageApi.SortedSetScore(keyBytes, new ArgSlice((byte*)inputPtr, inputLength), ref outputFooter);
+
+            // Restore input
+            *inputPtr = save;
+
+            switch (status)
+            {
+                case GarnetStatus.OK:
+                    ProcessOutputWithHeader(outputFooter.spanByteAndMemory);
+                    break;
+                case GarnetStatus.NOTFOUND:
+                    while (!RespWriteUtils.WriteDirect(CmdStrings.RESP_ERRNOTFOUND, ref dcurr, dend))
+                        SendAndReset();
+                    break;
+                case GarnetStatus.WRONGTYPE:
+                    while (!RespWriteUtils.WriteError(CmdStrings.RESP_ERR_WRONG_TYPE, ref dcurr, dend))
+                        SendAndReset();
+                    break;
+            }
+
             return true;
         }
 
@@ -375,10 +373,9 @@ namespace Garnet.server
         /// </summary>
         /// <typeparam name="TGarnetApi"></typeparam>
         /// <param name="count"></param>
-        /// <param name="ptr"></param>
         /// <param name="storageApi"></param>
         /// <returns></returns>
-        private unsafe bool SortedSetScores<TGarnetApi>(int count, byte* ptr, ref TGarnetApi storageApi)
+        private unsafe bool SortedSetScores<TGarnetApi>(int count, ref TGarnetApi storageApi)
             where TGarnetApi : IGarnetApi
         {
             //validation if minimum args
@@ -386,56 +383,57 @@ namespace Garnet.server
             {
                 return AbortWithWrongNumberOfArguments("ZMSCORE", count);
             }
-            else
+
+            // Get the key for SortedSet
+            var sbKey = parseState.GetArgSliceByRef(0).SpanByte;
+            var keyBytes = sbKey.ToByteArray();
+
+            var ptr = sbKey.ToPointer() + sbKey.Length + 2;
+
+            if (NetworkSingleKeySlotVerify(keyBytes, true))
             {
-                // Get the key for SortedSet
-                if (!RespReadUtils.ReadByteArrayWithLengthHeader(out var key, ref ptr, recvBufferPtr + bytesRead))
-                    return false;
-
-                if (NetworkSingleKeySlotVerify(key, true))
-                {
-                    return true;
-                }
-
-                // Prepare input
-                var inputPtr = (ObjectInputHeader*)(ptr - sizeof(ObjectInputHeader));
-
-                //save values
-                var save = *inputPtr;
-
-                // Prepare length of header in input buffer
-                var inputLength = (int)(recvBufferPtr + bytesRead - (byte*)inputPtr);
-                int inputCount = count - 1;
-
-                // Prepare header in input buffer
-                inputPtr->header.type = GarnetObjectType.SortedSet;
-                inputPtr->header.flags = 0;
-                inputPtr->header.SortedSetOp = SortedSetOperation.ZMSCORE;
-                inputPtr->arg1 = inputCount;
-
-                // Prepare GarnetObjectStore output
-                var outputFooter = new GarnetObjectStoreOutput { spanByteAndMemory = new SpanByteAndMemory(dcurr, (int)(dend - dcurr)) };
-
-                var status = storageApi.SortedSetScores(key, new ArgSlice((byte*)inputPtr, inputLength), ref outputFooter);
-
-                //restore input
-                *inputPtr = save;
-
-                switch (status)
-                {
-                    case GarnetStatus.OK:
-                        ProcessOutputWithHeader(outputFooter.spanByteAndMemory);
-                        break;
-                    case GarnetStatus.NOTFOUND:
-                        while (!RespWriteUtils.WriteArrayWithNullElements(inputCount, ref dcurr, dend))
-                            SendAndReset();
-                        break;
-                    case GarnetStatus.WRONGTYPE:
-                        while (!RespWriteUtils.WriteError(CmdStrings.RESP_ERR_WRONG_TYPE, ref dcurr, dend))
-                            SendAndReset();
-                        break;
-                }
+                return true;
             }
+
+            // Prepare input
+            var inputPtr = (ObjectInputHeader*)(ptr - sizeof(ObjectInputHeader));
+
+            //save values
+            var save = *inputPtr;
+
+            // Prepare length of header in input buffer
+            var inputLength = (int)(recvBufferPtr + bytesRead - (byte*)inputPtr);
+            int inputCount = count - 1;
+
+            // Prepare header in input buffer
+            inputPtr->header.type = GarnetObjectType.SortedSet;
+            inputPtr->header.flags = 0;
+            inputPtr->header.SortedSetOp = SortedSetOperation.ZMSCORE;
+            inputPtr->arg1 = inputCount;
+
+            // Prepare GarnetObjectStore output
+            var outputFooter = new GarnetObjectStoreOutput { spanByteAndMemory = new SpanByteAndMemory(dcurr, (int)(dend - dcurr)) };
+
+            var status = storageApi.SortedSetScores(keyBytes, new ArgSlice((byte*)inputPtr, inputLength), ref outputFooter);
+
+            //restore input
+            *inputPtr = save;
+
+            switch (status)
+            {
+                case GarnetStatus.OK:
+                    ProcessOutputWithHeader(outputFooter.spanByteAndMemory);
+                    break;
+                case GarnetStatus.NOTFOUND:
+                    while (!RespWriteUtils.WriteArrayWithNullElements(inputCount, ref dcurr, dend))
+                        SendAndReset();
+                    break;
+                case GarnetStatus.WRONGTYPE:
+                    while (!RespWriteUtils.WriteError(CmdStrings.RESP_ERR_WRONG_TYPE, ref dcurr, dend))
+                        SendAndReset();
+                    break;
+            }
+
             return true;
         }
 
@@ -444,11 +442,11 @@ namespace Garnet.server
         /// with the scores ordered from low to high (min) or high to low (max).
         /// </summary>
         /// <typeparam name="TGarnetApi"></typeparam>
+        /// <param name="command"></param>
         /// <param name="count"></param>
-        /// <param name="ptr"></param>
         /// <param name="storageApi"></param>
         /// <returns></returns>
-        private unsafe bool SortedSetPop<TGarnetApi>(RespCommand command, int count, byte* ptr, ref TGarnetApi storageApi)
+        private unsafe bool SortedSetPop<TGarnetApi>(RespCommand command, int count, ref TGarnetApi storageApi)
              where TGarnetApi : IGarnetApi
         {
             if (count < 1 || count > 2)
@@ -458,10 +456,12 @@ namespace Garnet.server
             else
             {
                 // Get the key for SortedSet
-                if (!RespReadUtils.ReadByteArrayWithLengthHeader(out var key, ref ptr, recvBufferPtr + bytesRead))
-                    return false;
+                var sbKey = parseState.GetArgSliceByRef(0).SpanByte;
+                var keyBytes = sbKey.ToByteArray();
 
-                if (NetworkSingleKeySlotVerify(key, false))
+                var ptr = sbKey.ToPointer() + sbKey.Length + 2;
+
+                if (NetworkSingleKeySlotVerify(keyBytes, false))
                 {
                     return true;
                 }
@@ -471,8 +471,18 @@ namespace Garnet.server
                 if (count == 2)
                 {
                     // Read count
-                    if (!RespReadUtils.ReadIntWithLengthHeader(out popCount, ref ptr, recvBufferPtr + bytesRead))
-                        return false;
+                    var popCountSlice = parseState.GetArgSliceByRef(1);
+
+                    if (!NumUtils.TryParse(popCountSlice.ReadOnlySpan, out popCount))
+                    {
+                        while (!RespWriteUtils.WriteError(CmdStrings.RESP_ERR_GENERIC_VALUE_IS_OUT_OF_RANGE, ref dcurr, dend))
+                            SendAndReset();
+
+                        return true;
+                    }
+
+                    var sbPopCount = popCountSlice.SpanByte;
+                    ptr = sbPopCount.ToPointer() + sbPopCount.Length + 2;
                 }
 
                 // Prepare input
@@ -484,7 +494,7 @@ namespace Garnet.server
                 // Prepare length of header in input buffer
                 var inputLength = (int)(recvBufferPtr + bytesRead - (byte*)inputPtr);
 
-                SortedSetOperation op =
+                var op =
                     command switch
                     {
                         RespCommand.ZPOPMIN => SortedSetOperation.ZPOPMIN,
@@ -501,7 +511,7 @@ namespace Garnet.server
                 // Prepare output
                 var outputFooter = new GarnetObjectStoreOutput { spanByteAndMemory = new SpanByteAndMemory(SpanByte.FromPinnedPointer(dcurr, (int)(dend - dcurr))) };
 
-                var status = storageApi.SortedSetPop(key, new ArgSlice((byte*)inputPtr, inputLength), ref outputFooter);
+                var status = storageApi.SortedSetPop(keyBytes, new ArgSlice((byte*)inputPtr, inputLength), ref outputFooter);
 
                 // Restore input buffer
                 *inputPtr = save;
@@ -521,6 +531,7 @@ namespace Garnet.server
                         break;
                 }
             }
+
             return true;
         }
 
@@ -529,71 +540,71 @@ namespace Garnet.server
         /// </summary>
         /// <typeparam name="TGarnetApi"></typeparam>
         /// <param name="count"></param>
-        /// <param name="ptr"></param>
         /// <param name="storageApi"></param>
         /// <returns></returns>
-        private unsafe bool SortedSetCount<TGarnetApi>(int count, byte* ptr, ref TGarnetApi storageApi)
+        private unsafe bool SortedSetCount<TGarnetApi>(int count, ref TGarnetApi storageApi)
              where TGarnetApi : IGarnetApi
         {
             if (count != 3)
             {
                 return AbortWithWrongNumberOfArguments("ZCOUNT", count);
             }
-            else
+
+            // Get the key for the Sorted Set
+            var sbKey = parseState.GetArgSliceByRef(0).SpanByte;
+            var keyBytes = sbKey.ToByteArray();
+
+            var ptr = sbKey.ToPointer() + sbKey.Length + 2;
+
+            if (NetworkSingleKeySlotVerify(keyBytes, true))
             {
-                // Get the key for the Sorted Set
-                if (!RespReadUtils.ReadByteArrayWithLengthHeader(out var key, ref ptr, recvBufferPtr + bytesRead))
-                    return false;
-
-                if (NetworkSingleKeySlotVerify(key, true))
-                {
-                    return true;
-                }
-
-                // Prepare input
-                var inputPtr = (ObjectInputHeader*)(ptr - sizeof(ObjectInputHeader));
-
-                // Save input buffer
-                var save = *inputPtr;
-
-                // Prepare length of header in input buffer
-                var inputLength = (int)(recvBufferPtr + bytesRead - (byte*)inputPtr);
-
-                // Prepare header in input buffer
-                inputPtr->header.type = GarnetObjectType.SortedSet;
-                inputPtr->header.flags = 0;
-                inputPtr->header.SortedSetOp = SortedSetOperation.ZCOUNT;
-                inputPtr->arg1 = 0;
-
-                var status = storageApi.SortedSetCount(key, new ArgSlice((byte*)inputPtr, inputLength), out ObjectOutputHeader output);
-
-                // Restore input buffer
-                *inputPtr = save;
-
-                switch (status)
-                {
-                    case GarnetStatus.OK:
-                        // Process response
-                        if (output.result1 == int.MaxValue)
-                        {
-                            // Error in arguments
-                            while (!RespWriteUtils.WriteError(CmdStrings.RESP_ERR_MIN_MAX_NOT_VALID_FLOAT, ref dcurr, dend))
-                                SendAndReset();
-                        }
-                        else
-                            while (!RespWriteUtils.WriteInteger(output.result1, ref dcurr, dend))
-                                SendAndReset();
-                        break;
-                    case GarnetStatus.NOTFOUND:
-                        while (!RespWriteUtils.WriteDirect(CmdStrings.RESP_RETURN_VAL_0, ref dcurr, dend))
-                            SendAndReset();
-                        break;
-                    case GarnetStatus.WRONGTYPE:
-                        while (!RespWriteUtils.WriteError(CmdStrings.RESP_ERR_WRONG_TYPE, ref dcurr, dend))
-                            SendAndReset();
-                        break;
-                }
+                return true;
             }
+
+            // Prepare input
+            var inputPtr = (ObjectInputHeader*)(ptr - sizeof(ObjectInputHeader));
+
+            // Save input buffer
+            var save = *inputPtr;
+
+            // Prepare length of header in input buffer
+            var inputLength = (int)(recvBufferPtr + bytesRead - (byte*)inputPtr);
+
+            // Prepare header in input buffer
+            inputPtr->header.type = GarnetObjectType.SortedSet;
+            inputPtr->header.flags = 0;
+            inputPtr->header.SortedSetOp = SortedSetOperation.ZCOUNT;
+            inputPtr->arg1 = 0;
+
+            var status = storageApi.SortedSetCount(keyBytes, new ArgSlice((byte*)inputPtr, inputLength), out var output);
+
+            // Restore input buffer
+            *inputPtr = save;
+
+            switch (status)
+            {
+                case GarnetStatus.OK:
+                    // Process response
+                    if (output.result1 == int.MaxValue)
+                    {
+                        // Error in arguments
+                        while (!RespWriteUtils.WriteError(CmdStrings.RESP_ERR_MIN_MAX_NOT_VALID_FLOAT, ref dcurr, dend))
+                            SendAndReset();
+                    }
+                    else
+                        while (!RespWriteUtils.WriteInteger(output.result1, ref dcurr, dend))
+                            SendAndReset();
+                    break;
+                case GarnetStatus.NOTFOUND:
+                    while (!RespWriteUtils.WriteDirect(CmdStrings.RESP_RETURN_VAL_0, ref dcurr, dend))
+                        SendAndReset();
+                    break;
+                case GarnetStatus.WRONGTYPE:
+                    while (!RespWriteUtils.WriteError(CmdStrings.RESP_ERR_WRONG_TYPE, ref dcurr, dend))
+                        SendAndReset();
+                    break;
+            }
+
             return true;
         }
 
@@ -605,84 +616,85 @@ namespace Garnet.server
         /// lexicographical range specified by min and max.
         /// </summary>
         /// <typeparam name="TGarnetApi"></typeparam>
+        /// <param name="command"></param>
         /// <param name="count"></param>
-        /// <param name="ptr"></param>
         /// <param name="storageApi"></param>
         /// <returns></returns>
-        private unsafe bool SortedSetLengthByValue<TGarnetApi>(RespCommand command, int count, byte* ptr, ref TGarnetApi storageApi)
+        private unsafe bool SortedSetLengthByValue<TGarnetApi>(RespCommand command, int count, ref TGarnetApi storageApi)
              where TGarnetApi : IGarnetApi
         {
             if (count != 3)
             {
                 return AbortWithWrongNumberOfArguments(command.ToString(), count);
             }
-            else
+
+            // Get the key
+            var sbKey = parseState.GetArgSliceByRef(0).SpanByte;
+            var keyBytes = sbKey.ToByteArray();
+
+            var ptr = sbKey.ToPointer() + sbKey.Length + 2;
+
+            if (NetworkSingleKeySlotVerify(keyBytes, command != RespCommand.ZREMRANGEBYLEX))
             {
-                // Get the key
-                if (!RespReadUtils.ReadByteArrayWithLengthHeader(out var key, ref ptr, recvBufferPtr + bytesRead))
-                    return false;
-
-                if (NetworkSingleKeySlotVerify(key, command != RespCommand.ZREMRANGEBYLEX))
-                {
-                    return true;
-                }
-
-                // Prepare input
-                var inputPtr = (ObjectInputHeader*)(ptr - sizeof(ObjectInputHeader));
-
-                // Save input buffer
-                var save = *inputPtr;
-
-                // Prepare length of header in input buffer
-                var inputLength = (int)(recvBufferPtr + bytesRead - (byte*)inputPtr);
-
-                SortedSetOperation op =
-                    command switch
-                    {
-                        RespCommand.ZREMRANGEBYLEX => SortedSetOperation.ZREMRANGEBYLEX,
-                        RespCommand.ZLEXCOUNT => SortedSetOperation.ZLEXCOUNT,
-                        _ => throw new Exception($"Unexpected {nameof(SortedSetOperation)}: {command}")
-                    };
-
-                // Prepare header in input buffer
-                inputPtr->header.type = GarnetObjectType.SortedSet;
-                inputPtr->header.flags = 0;
-                inputPtr->header.SortedSetOp = op;
-                inputPtr->arg1 = 0;
-
-                var status = op == SortedSetOperation.ZREMRANGEBYLEX ?
-                             storageApi.SortedSetRemoveRangeByLex(key, new ArgSlice((byte*)inputPtr, inputLength), out var output) :
-                             storageApi.SortedSetLengthByValue(key, new ArgSlice((byte*)inputPtr, inputLength), out output);
-
-                // Restore input buffer
-                *inputPtr = save;
-
-                switch (status)
-                {
-                    case GarnetStatus.OK:
-                        // Process response
-                        if (output.result1 == int.MaxValue)
-                        {
-                            // Error in arguments
-                            while (!RespWriteUtils.WriteError(CmdStrings.RESP_ERR_MIN_MAX_NOT_VALID_STRING, ref dcurr, dend))
-                                SendAndReset();
-                        }
-                        else if (output.result1 == int.MinValue)  // command partially executed
-                            return false;
-                        else
-                            while (!RespWriteUtils.WriteInteger(output.result1, ref dcurr, dend))
-                                SendAndReset();
-                        break;
-                    case GarnetStatus.NOTFOUND:
-                        while (!RespWriteUtils.WriteDirect(CmdStrings.RESP_RETURN_VAL_0, ref dcurr, dend))
-                            SendAndReset();
-                        break;
-                    case GarnetStatus.WRONGTYPE:
-                        while (!RespWriteUtils.WriteError(CmdStrings.RESP_ERR_WRONG_TYPE, ref dcurr, dend))
-                            SendAndReset();
-                        break;
-                }
+                return true;
             }
+
+            // Prepare input
+            var inputPtr = (ObjectInputHeader*)(ptr - sizeof(ObjectInputHeader));
+
+            // Save input buffer
+            var save = *inputPtr;
+
+            // Prepare length of header in input buffer
+            var inputLength = (int)(recvBufferPtr + bytesRead - (byte*)inputPtr);
+
+            var op =
+                command switch
+                {
+                    RespCommand.ZREMRANGEBYLEX => SortedSetOperation.ZREMRANGEBYLEX,
+                    RespCommand.ZLEXCOUNT => SortedSetOperation.ZLEXCOUNT,
+                    _ => throw new Exception($"Unexpected {nameof(SortedSetOperation)}: {command}")
+                };
+
+            // Prepare header in input buffer
+            inputPtr->header.type = GarnetObjectType.SortedSet;
+            inputPtr->header.flags = 0;
+            inputPtr->header.SortedSetOp = op;
+            inputPtr->arg1 = 0;
+
+            var status = op == SortedSetOperation.ZREMRANGEBYLEX ?
+                storageApi.SortedSetRemoveRangeByLex(keyBytes, new ArgSlice((byte*)inputPtr, inputLength), out var output) :
+                storageApi.SortedSetLengthByValue(keyBytes, new ArgSlice((byte*)inputPtr, inputLength), out output);
+
+            // Restore input buffer
+            *inputPtr = save;
+
+            switch (status)
+            {
+                case GarnetStatus.OK:
+                    // Process response
+                    if (output.result1 == int.MaxValue)
+                    {
+                        // Error in arguments
+                        while (!RespWriteUtils.WriteError(CmdStrings.RESP_ERR_MIN_MAX_NOT_VALID_STRING, ref dcurr, dend))
+                            SendAndReset();
+                    }
+                    else if (output.result1 == int.MinValue)  // command partially executed
+                        return false;
+                    else
+                        while (!RespWriteUtils.WriteInteger(output.result1, ref dcurr, dend))
+                            SendAndReset();
+                    break;
+                case GarnetStatus.NOTFOUND:
+                    while (!RespWriteUtils.WriteDirect(CmdStrings.RESP_RETURN_VAL_0, ref dcurr, dend))
+                        SendAndReset();
+                    break;
+                case GarnetStatus.WRONGTYPE:
+                    while (!RespWriteUtils.WriteError(CmdStrings.RESP_ERR_WRONG_TYPE, ref dcurr, dend))
+                        SendAndReset();
+                    break;
+            }
+
             return true;
         }
 
@@ -692,10 +704,9 @@ namespace Garnet.server
         /// </summary>
         /// <typeparam name="TGarnetApi"></typeparam>
         /// <param name="count"></param>
-        /// <param name="ptr"></param>
         /// <param name="storageApi"></param>
         /// <returns></returns>
-        private unsafe bool SortedSetIncrement<TGarnetApi>(int count, byte* ptr, ref TGarnetApi storageApi)
+        private unsafe bool SortedSetIncrement<TGarnetApi>(int count, ref TGarnetApi storageApi)
              where TGarnetApi : IGarnetApi
         {
             //validation of required args
@@ -703,63 +714,64 @@ namespace Garnet.server
             {
                 return AbortWithWrongNumberOfArguments("ZINCRBY", count);
             }
-            else
+
+            // Get the key for the Sorted Set
+            var sbKey = parseState.GetArgSliceByRef(0).SpanByte;
+            var keyBytes = sbKey.ToByteArray();
+
+            var ptr = sbKey.ToPointer() + sbKey.Length + 2;
+
+            if (NetworkSingleKeySlotVerify(keyBytes, false))
             {
-                // Get the key for the Sorted Set
-                if (!RespReadUtils.ReadByteArrayWithLengthHeader(out var key, ref ptr, recvBufferPtr + bytesRead))
-                    return false;
-
-                if (NetworkSingleKeySlotVerify(key, false))
-                {
-                    return true;
-                }
-
-                // Prepare input
-                var inputPtr = (ObjectInputHeader*)(ptr - sizeof(ObjectInputHeader));
-
-                // Save input
-                var save = *inputPtr;
-
-                var inputLength = (int)(recvBufferPtr + bytesRead - (byte*)inputPtr);
-
-                // Prepare header in input buffer
-                inputPtr->header.type = GarnetObjectType.SortedSet;
-                inputPtr->header.flags = 0;
-                inputPtr->header.SortedSetOp = SortedSetOperation.ZINCRBY;
-                inputPtr->arg1 = count - 1;
-
-                // Prepare GarnetObjectStore output
-                var outputFooter = new GarnetObjectStoreOutput { spanByteAndMemory = new SpanByteAndMemory(dcurr, (int)(dend - dcurr)) };
-
-                var status = storageApi.SortedSetIncrement(key, new ArgSlice((byte*)inputPtr, inputLength), ref outputFooter);
-
-                // Restore input
-                *inputPtr = save;
-
-                ReadOnlySpan<byte> errorMessage = default;
-                switch (status)
-                {
-                    case GarnetStatus.NOTFOUND:
-                    case GarnetStatus.OK:
-                        //process output
-                        var objOutputHeader = ProcessOutputWithHeader(outputFooter.spanByteAndMemory);
-                        //check for partial execution
-                        if (objOutputHeader.result1 == int.MinValue)
-                            return false;
-                        else if (objOutputHeader.result1 == int.MaxValue)
-                            errorMessage = CmdStrings.RESP_ERR_NOT_VALID_FLOAT;
-                        break;
-                    case GarnetStatus.WRONGTYPE:
-                        errorMessage = CmdStrings.RESP_ERR_WRONG_TYPE;
-                        break;
-                }
-
-                if (errorMessage != default)
-                {
-                    while (!RespWriteUtils.WriteError(errorMessage, ref dcurr, dend))
-                        SendAndReset();
-                }
+                return true;
             }
+
+            // Prepare input
+            var inputPtr = (ObjectInputHeader*)(ptr - sizeof(ObjectInputHeader));
+
+            // Save input
+            var save = *inputPtr;
+
+            var inputLength = (int)(recvBufferPtr + bytesRead - (byte*)inputPtr);
+
+            // Prepare header in input buffer
+            inputPtr->header.type = GarnetObjectType.SortedSet;
+            inputPtr->header.flags = 0;
+            inputPtr->header.SortedSetOp = SortedSetOperation.ZINCRBY;
+            inputPtr->arg1 = count - 1;
+
+            // Prepare GarnetObjectStore output
+            var outputFooter = new GarnetObjectStoreOutput { spanByteAndMemory = new SpanByteAndMemory(dcurr, (int)(dend - dcurr)) };
+
+            var status = storageApi.SortedSetIncrement(keyBytes, new ArgSlice((byte*)inputPtr, inputLength), ref outputFooter);
+
+            // Restore input
+            *inputPtr = save;
+
+            ReadOnlySpan<byte> errorMessage = default;
+            switch (status)
+            {
+                case GarnetStatus.NOTFOUND:
+                case GarnetStatus.OK:
+                    //process output
+                    var objOutputHeader = ProcessOutputWithHeader(outputFooter.spanByteAndMemory);
+                    //check for partial execution
+                    if (objOutputHeader.result1 == int.MinValue)
+                        return false;
+                    if (objOutputHeader.result1 == int.MaxValue)
+                        errorMessage = CmdStrings.RESP_ERR_NOT_VALID_FLOAT;
+                    break;
+                case GarnetStatus.WRONGTYPE:
+                    errorMessage = CmdStrings.RESP_ERR_WRONG_TYPE;
+                    break;
+            }
+
+            if (errorMessage != default)
+            {
+                while (!RespWriteUtils.WriteError(errorMessage, ref dcurr, dend))
+                    SendAndReset();
+            }
+
             return true;
         }
 
@@ -768,75 +780,94 @@ namespace Garnet.server
         /// ZREVRANK: Returns the rank of member in the sorted set, with the scores ordered from high to low
         /// </summary>
         /// <typeparam name="TGarnetApi"></typeparam>
+        /// <param name="command"></param>
         /// <param name="count"></param>
-        /// <param name="ptr"></param>
         /// <param name="storageApi"></param>
         /// <returns></returns>
-        private unsafe bool SortedSetRank<TGarnetApi>(RespCommand command, int count, byte* ptr, ref TGarnetApi storageApi)
+        private unsafe bool SortedSetRank<TGarnetApi>(RespCommand command, int count, ref TGarnetApi storageApi)
              where TGarnetApi : IGarnetApi
         {
-            // TODO: WITHSCORE
             if (count < 2)
             {
                 return AbortWithWrongNumberOfArguments(command.ToString(), count);
             }
-            else
-            {
-                // Get the key for SortedSet
-                if (!RespReadUtils.ReadByteArrayWithLengthHeader(out var key, ref ptr, recvBufferPtr + bytesRead))
-                    return false;
 
-                if (NetworkSingleKeySlotVerify(key, true))
+            // Get the key for SortedSet
+            var sbKey = parseState.GetArgSliceByRef(0).SpanByte;
+            var keyBytes = sbKey.ToByteArray();
+
+            var ptr = sbKey.ToPointer() + sbKey.Length + 2;
+
+            if (NetworkSingleKeySlotVerify(keyBytes, true))
+            {
+                return true;
+            }
+
+            var includeWithScore = false;
+
+            // Read WITHSCORE
+            if (count == 3)
+            {
+                var withScoreSlice = parseState.GetArgSliceByRef(2);
+
+                if (!withScoreSlice.ReadOnlySpan.EqualsUpperCaseSpanIgnoringCase(CmdStrings.WITHSCORE))
                 {
+                    while (!RespWriteUtils.WriteError(CmdStrings.RESP_SYNTAX_ERROR, ref dcurr, dend))
+                        SendAndReset();
+
                     return true;
                 }
 
-                // Prepare input
-                var inputPtr = (ObjectInputHeader*)(ptr - sizeof(ObjectInputHeader));
-
-                // Save input buffer
-                var save = *inputPtr;
-
-                // Prepare length of header in input buffer
-                var inputLength = (int)(recvBufferPtr + bytesRead - (byte*)inputPtr);
-
-                SortedSetOperation op =
-                    command switch
-                    {
-                        RespCommand.ZRANK => SortedSetOperation.ZRANK,
-                        RespCommand.ZREVRANK => SortedSetOperation.ZREVRANK,
-                        _ => throw new Exception($"Unexpected {nameof(SortedSetOperation)}: {command}")
-                    };
-
-                // Prepare header in input buffer
-                inputPtr->header.type = GarnetObjectType.SortedSet;
-                inputPtr->header.flags = 0;
-                inputPtr->header.SortedSetOp = op;
-                inputPtr->arg1 = count;
-
-                // Prepare GarnetObjectStore output
-                var outputFooter = new GarnetObjectStoreOutput { spanByteAndMemory = new SpanByteAndMemory(dcurr, (int)(dend - dcurr)) };
-
-                var status = storageApi.SortedSetRank(key, new ArgSlice((byte*)inputPtr, inputLength), ref outputFooter);
-
-                // Reset input buffer
-                *inputPtr = save;
-                switch (status)
-                {
-                    case GarnetStatus.OK:
-                        ProcessOutputWithHeader(outputFooter.spanByteAndMemory);
-                        break;
-
-                    case GarnetStatus.NOTFOUND:
-                        while (!RespWriteUtils.WriteDirect(CmdStrings.RESP_ERRNOTFOUND, ref dcurr, dend))
-                            SendAndReset();
-                        break;
-                    case GarnetStatus.WRONGTYPE:
-                        while (!RespWriteUtils.WriteError(CmdStrings.RESP_ERR_WRONG_TYPE, ref dcurr, dend))
-                            SendAndReset();
-                        break;
-                }
+                includeWithScore = true;
             }
+
+            // Prepare input
+            var inputPtr = (ObjectInputHeader*)(ptr - sizeof(ObjectInputHeader));
+
+            // Save input buffer
+            var save = *inputPtr;
+
+            // Prepare length of header in input buffer
+            var inputLength = (int)(recvBufferPtr + bytesRead - (byte*)inputPtr);
+
+            var op =
+                command switch
+                {
+                    RespCommand.ZRANK => SortedSetOperation.ZRANK,
+                    RespCommand.ZREVRANK => SortedSetOperation.ZREVRANK,
+                    _ => throw new Exception($"Unexpected {nameof(SortedSetOperation)}: {command}")
+                };
+
+            // Prepare header in input buffer
+            inputPtr->header.type = GarnetObjectType.SortedSet;
+            inputPtr->header.flags = 0;
+            inputPtr->header.SortedSetOp = op;
+            inputPtr->arg1 = count;
+            inputPtr->arg2 = includeWithScore ? 1 : 0;
+
+            // Prepare GarnetObjectStore output
+            var outputFooter = new GarnetObjectStoreOutput { spanByteAndMemory = new SpanByteAndMemory(dcurr, (int)(dend - dcurr)) };
+
+            var status = storageApi.SortedSetRank(keyBytes, new ArgSlice((byte*)inputPtr, inputLength), ref outputFooter);
+
+            // Reset input buffer
+            *inputPtr = save;
+            switch (status)
+            {
+                case GarnetStatus.OK:
+                    ProcessOutputWithHeader(outputFooter.spanByteAndMemory);
+                    break;
+
+                case GarnetStatus.NOTFOUND:
+                    while (!RespWriteUtils.WriteDirect(CmdStrings.RESP_ERRNOTFOUND, ref dcurr, dend))
+                        SendAndReset();
+                    break;
+                case GarnetStatus.WRONGTYPE:
+                    while (!RespWriteUtils.WriteError(CmdStrings.RESP_ERR_WRONG_TYPE, ref dcurr, dend))
+                        SendAndReset();
+                    break;
+            }
+
             return true;
         }
 
@@ -846,84 +877,84 @@ namespace Garnet.server
         /// ZREMRANGEBYSCORE: Removes all elements in the sorted set stored at key with a score between min and max (inclusive by default).
         /// </summary>
         /// <typeparam name="TGarnetApi"></typeparam>
+        /// <param name="command"></param>
         /// <param name="count"></param>
-        /// <param name="ptr"></param>
         /// <param name="storageApi"></param>
         /// <returns></returns>
-        private unsafe bool SortedSetRemoveRange<TGarnetApi>(RespCommand command, int count, byte* ptr, ref TGarnetApi storageApi)
+        private unsafe bool SortedSetRemoveRange<TGarnetApi>(RespCommand command, int count, ref TGarnetApi storageApi)
              where TGarnetApi : IGarnetApi
         {
             if (count != 3)
             {
                 return AbortWithWrongNumberOfArguments(command.ToString(), count);
             }
-            else
+
+            // Get the key
+            var sbKey = parseState.GetArgSliceByRef(0).SpanByte;
+            var keyBytes = sbKey.ToByteArray();
+
+            var ptr = sbKey.ToPointer() + sbKey.Length + 2;
+
+            if (NetworkSingleKeySlotVerify(keyBytes, false))
             {
-                // Get the key
-                if (!RespReadUtils.ReadByteArrayWithLengthHeader(out var key, ref ptr, recvBufferPtr + bytesRead))
-                    return false;
+                return true;
+            }
 
-                if (NetworkSingleKeySlotVerify(key, false))
+            // Prepare input
+            var inputPtr = (ObjectInputHeader*)(ptr - sizeof(ObjectInputHeader));
+
+            // Save input buffer
+            var save = *inputPtr;
+
+            // Prepare length of header in input buffer
+            var inputLength = (int)(recvBufferPtr + bytesRead - (byte*)inputPtr);
+
+            var op =
+                command switch
                 {
-                    return true;
-                }
+                    RespCommand.ZREMRANGEBYRANK => SortedSetOperation.ZREMRANGEBYRANK,
+                    RespCommand.ZREMRANGEBYSCORE => SortedSetOperation.ZREMRANGEBYSCORE,
+                    _ => throw new Exception($"Unexpected {nameof(SortedSetOperation)}: {command}")
+                };
 
-                // Prepare input
-                var inputPtr = (ObjectInputHeader*)(ptr - sizeof(ObjectInputHeader));
+            // Prepare header in input buffer
+            inputPtr->header.type = GarnetObjectType.SortedSet;
+            inputPtr->header.flags = 0;
+            inputPtr->header.SortedSetOp = op;
+            inputPtr->arg1 = 0;
 
-                // Save input buffer
-                var save = *inputPtr;
+            var status = storageApi.SortedSetRemoveRange(keyBytes, new ArgSlice((byte*)inputPtr, inputLength), out ObjectOutputHeader output);
 
-                // Prepare length of header in input buffer
-                var inputLength = (int)(recvBufferPtr + bytesRead - (byte*)inputPtr);
+            // Restore input buffer
+            *inputPtr = save;
 
-                SortedSetOperation op =
-                    command switch
+            switch (status)
+            {
+                case GarnetStatus.OK:
+                    if (output.result1 == int.MaxValue)
                     {
-                        RespCommand.ZREMRANGEBYRANK => SortedSetOperation.ZREMRANGEBYRANK,
-                        RespCommand.ZREMRANGEBYSCORE => SortedSetOperation.ZREMRANGEBYSCORE,
-                        _ => throw new Exception($"Unexpected {nameof(SortedSetOperation)}: {command}")
-                    };
+                        var errorMessage = command == RespCommand.ZREMRANGEBYRANK ?
+                            CmdStrings.RESP_ERR_GENERIC_VALUE_IS_NOT_INTEGER :
+                            CmdStrings.RESP_ERR_MIN_MAX_NOT_VALID_FLOAT;
 
-                // Prepare header in input buffer
-                inputPtr->header.type = GarnetObjectType.SortedSet;
-                inputPtr->header.flags = 0;
-                inputPtr->header.SortedSetOp = op;
-                inputPtr->arg1 = 0;
-
-                var status = storageApi.SortedSetRemoveRange(key, new ArgSlice((byte*)inputPtr, inputLength), out ObjectOutputHeader output);
-
-                // Restore input buffer
-                *inputPtr = save;
-
-                switch (status)
-                {
-                    case GarnetStatus.OK:
-                        if (output.result1 == int.MaxValue)
-                        {
-                            var errorMessage = command == RespCommand.ZREMRANGEBYRANK ?
-                                CmdStrings.RESP_ERR_GENERIC_VALUE_IS_NOT_INTEGER :
-                                CmdStrings.RESP_ERR_MIN_MAX_NOT_VALID_FLOAT;
-
-                            // Error in arguments
-                            while (!RespWriteUtils.WriteError(errorMessage, ref dcurr, dend))
-                                SendAndReset();
-                        }
-                        else if (output.result1 == int.MinValue)  // command partially executed
-                            return false;
-                        else
-                            while (!RespWriteUtils.WriteInteger(output.result1, ref dcurr, dend))
-                                SendAndReset();
-                        break;
-                    case GarnetStatus.NOTFOUND:
-                        while (!RespWriteUtils.WriteDirect(CmdStrings.RESP_RETURN_VAL_0, ref dcurr, dend))
+                        // Error in arguments
+                        while (!RespWriteUtils.WriteError(errorMessage, ref dcurr, dend))
                             SendAndReset();
-                        break;
-                    case GarnetStatus.WRONGTYPE:
-                        while (!RespWriteUtils.WriteError(CmdStrings.RESP_ERR_WRONG_TYPE, ref dcurr, dend))
+                    }
+                    else if (output.result1 == int.MinValue)  // command partially executed
+                        return false;
+                    else
+                        while (!RespWriteUtils.WriteInteger(output.result1, ref dcurr, dend))
                             SendAndReset();
-                        break;
-                }
+                    break;
+                case GarnetStatus.NOTFOUND:
+                    while (!RespWriteUtils.WriteDirect(CmdStrings.RESP_RETURN_VAL_0, ref dcurr, dend))
+                        SendAndReset();
+                    break;
+                case GarnetStatus.WRONGTYPE:
+                    while (!RespWriteUtils.WriteError(CmdStrings.RESP_ERR_WRONG_TYPE, ref dcurr, dend))
+                        SendAndReset();
+                    break;
             }
             return true;
         }
@@ -933,10 +964,9 @@ namespace Garnet.server
         /// </summary>
         /// <typeparam name="TGarnetApi"></typeparam>
         /// <param name="count"></param>
-        /// <param name="ptr"></param>
         /// <param name="storageApi"></param>
         /// <returns></returns>
-        private unsafe bool SortedSetRandomMember<TGarnetApi>(int count, byte* ptr, ref TGarnetApi storageApi)
+        private unsafe bool SortedSetRandomMember<TGarnetApi>(int count, ref TGarnetApi storageApi)
              where TGarnetApi : IGarnetApi
         {
             if (count < 1 || count > 3)
@@ -945,10 +975,12 @@ namespace Garnet.server
             }
 
             // Get the key for the Sorted Set
-            if (!RespReadUtils.ReadByteArrayWithLengthHeader(out var key, ref ptr, recvBufferPtr + bytesRead))
-                return false;
+            var sbKey = parseState.GetArgSliceByRef(0).SpanByte;
+            var keyBytes = sbKey.ToByteArray();
 
-            if (NetworkSingleKeySlotVerify(key, true))
+            var ptr = sbKey.ToPointer() + sbKey.Length + 2;
+
+            if (NetworkSingleKeySlotVerify(keyBytes, true))
             {
                 return true;
             }
@@ -960,30 +992,36 @@ namespace Garnet.server
             if (count >= 2)
             {
                 // Read count
-                if (!RespReadUtils.TrySliceWithLengthHeader(out var countBytes, ref ptr, recvBufferPtr + bytesRead))
-                    return false;
+                var countSlice = parseState.GetArgSliceByRef(1);
 
-                if (!NumUtils.TryParse(countBytes, out paramCount))
+                if (!NumUtils.TryParse(countSlice.ReadOnlySpan, out paramCount))
                 {
                     while (!RespWriteUtils.WriteError(CmdStrings.RESP_ERR_GENERIC_VALUE_IS_NOT_INTEGER, ref dcurr, dend))
                         SendAndReset();
+
                     return true;
                 }
+
+                var sbCount = countSlice.SpanByte;
+                ptr = sbCount.ToPointer() + sbCount.Length + 2;
 
                 includedCount = true;
 
                 // Read withscores
                 if (count == 3)
                 {
-                    if (!RespReadUtils.TrySliceWithLengthHeader(out var withScoreBytes, ref ptr, recvBufferPtr + bytesRead))
-                        return false;
+                    var withScoresSlice = parseState.GetArgSliceByRef(2);
 
-                    if (!withScoreBytes.EqualsUpperCaseSpanIgnoringCase(CmdStrings.WITHSCORES))
+                    if (!withScoresSlice.ReadOnlySpan.EqualsUpperCaseSpanIgnoringCase(CmdStrings.WITHSCORES))
                     {
                         while (!RespWriteUtils.WriteError(CmdStrings.RESP_SYNTAX_ERROR, ref dcurr, dend))
                             SendAndReset();
+
                         return true;
                     }
+
+                    var sbWithScores = withScoresSlice.SpanByte;
+                    ptr = sbWithScores.ToPointer() + sbWithScores.Length + 2;
 
                     includeWithScores = true;
                 }
@@ -1016,7 +1054,7 @@ namespace Garnet.server
             {
                 // Prepare GarnetObjectStore output
                 outputFooter = new GarnetObjectStoreOutput { spanByteAndMemory = new SpanByteAndMemory(dcurr, (int)(dend - dcurr)) };
-                status = storageApi.SortedSetRandomMember(key, new ArgSlice((byte*)inputPtr, inputLength), ref outputFooter);
+                status = storageApi.SortedSetRandomMember(keyBytes, new ArgSlice((byte*)inputPtr, inputLength), ref outputFooter);
             }
 
             // Restore input buffer
@@ -1046,97 +1084,104 @@ namespace Garnet.server
         ///  The total number of input keys is specified.
         /// </summary>
         /// <param name="count"></param>
-        /// <param name="ptr"></param>
         /// <param name="storageApi"></param>
         /// <returns></returns>
         /// <exception cref="GarnetException"></exception>
-        private unsafe bool SortedSetDifference<TGarnetApi>(int count, byte* ptr, ref TGarnetApi storageApi)
+        private unsafe bool SortedSetDifference<TGarnetApi>(int count, ref TGarnetApi storageApi)
              where TGarnetApi : IGarnetApi
         {
             if (count < 2)
             {
                 return AbortWithWrongNumberOfArguments("ZDIFF", count);
             }
-            else
+
+            //number of keys
+            var sbNumKeys = parseState.GetArgSliceByRef(0).ReadOnlySpan;
+
+            if (!NumUtils.TryParse(sbNumKeys, out int nKeys))
             {
-                //number of keys
-                if (!RespReadUtils.ReadIntWithLengthHeader(out var nKeys, ref ptr, recvBufferPtr + bytesRead))
-                    return false;
+                while (!RespWriteUtils.WriteError(CmdStrings.RESP_ERR_GENERIC_VALUE_IS_NOT_INTEGER, ref dcurr, dend))
+                    SendAndReset();
 
-                ArgSlice key = default;
-
-                // Read first key
-                if (!RespReadUtils.ReadPtrWithLengthHeader(ref key.ptr, ref key.length, ref ptr, recvBufferPtr + bytesRead))
-                    return false;
-
-                bool withscoresInclude = false;
-
-                // Read all the keys
-                if (count <= 2)
-                {
-                    //return empty array
-                    while (!RespWriteUtils.WriteArrayLength(0, ref dcurr, dend))
-                        SendAndReset();
-                }
-                else
-                {
-                    ArgSlice[] keys = new ArgSlice[nKeys];
-                    keys[0] = key;
-
-                    var i = nKeys - 1;
-                    do
-                    {
-                        keys[i] = default;
-                        if (!RespReadUtils.ReadPtrWithLengthHeader(ref keys[i].ptr, ref keys[i].length, ref ptr, recvBufferPtr + bytesRead))
-                            return false;
-                        --i;
-                    } while (i > 0);
-
-                    if (count - 1 > nKeys)
-                    {
-                        ArgSlice withscore = default;
-                        if (!RespReadUtils.ReadPtrWithLengthHeader(ref withscore.ptr, ref withscore.length, ref ptr, recvBufferPtr + bytesRead))
-                            return false;
-
-                        if (withscore.ReadOnlySpan.SequenceEqual(withscores))
-                            withscoresInclude = true;
-                    }
-
-                    if (NetworkMultiKeySlotVerify(readOnly: true, firstKey: 1, lastKey: 1 + parseState.GetInt(0)))
-                        return true;
-
-                    var status = storageApi.SortedSetDifference(keys, out var result);
-
-                    switch (status)
-                    {
-                        case GarnetStatus.WRONGTYPE:
-                            while (!RespWriteUtils.WriteError(CmdStrings.RESP_ERR_WRONG_TYPE, ref dcurr, dend))
-                                SendAndReset();
-                            break;
-                        default:
-                            // write the size of the array reply
-                            int resultCount = result == null ? 0 : result.Count;
-                            while (!RespWriteUtils.WriteArrayLength(withscoresInclude ? resultCount * 2 : resultCount, ref dcurr, dend))
-                                SendAndReset();
-
-                            if (result != null)
-                            {
-                                foreach (var (element, score) in result)
-                                {
-                                    while (!RespWriteUtils.WriteBulkString(element, ref dcurr, dend))
-                                        SendAndReset();
-
-                                    if (withscoresInclude)
-                                    {
-                                        while (!RespWriteUtils.TryWriteDoubleBulkString(score, ref dcurr, dend))
-                                            SendAndReset();
-                                    }
-                                }
-                            }
-                            break;
-                    }
-                }
+                return true;
             }
+
+            if (count - 1 != nKeys && count - 1 != nKeys + 1)
+            {
+                while (!RespWriteUtils.WriteError(CmdStrings.RESP_SYNTAX_ERROR, ref dcurr, dend))
+                    SendAndReset();
+
+                return true;
+            }
+
+            var includeWithScores = false;
+
+            // Read all the keys
+            if (count <= 2)
+            {
+                //return empty array
+                while (!RespWriteUtils.WriteArrayLength(0, ref dcurr, dend))
+                    SendAndReset();
+
+                return true;
+            }
+
+            var keys = new ArgSlice[nKeys];
+
+            for (var i = 1; i < nKeys + 1; i++)
+            {
+                keys[i - 1] = parseState.GetArgSliceByRef(i);
+            }
+
+            if (count - 1 > nKeys)
+            {
+                var withScores = parseState.GetArgSliceByRef(count - 1).ReadOnlySpan;
+
+                if (!withScores.SequenceEqual(CmdStrings.WITHSCORES))
+                {
+                    while (!RespWriteUtils.WriteError(CmdStrings.RESP_SYNTAX_ERROR, ref dcurr, dend))
+                        SendAndReset();
+
+                    return true;
+                }
+
+                includeWithScores = true;
+            }
+
+            if (NetworkMultiKeySlotVerify(readOnly: true, firstKey: 1, lastKey: 1 + nKeys))
+                return true;
+
+            var status = storageApi.SortedSetDifference(keys, out var result);
+
+            switch (status)
+            {
+                case GarnetStatus.WRONGTYPE:
+                    while (!RespWriteUtils.WriteError(CmdStrings.RESP_ERR_WRONG_TYPE, ref dcurr, dend))
+                        SendAndReset();
+                    break;
+                default:
+                    // write the size of the array reply
+                    var resultCount = result?.Count ?? 0;
+                    while (!RespWriteUtils.WriteArrayLength(includeWithScores ? resultCount * 2 : resultCount, ref dcurr, dend))
+                        SendAndReset();
+
+                    if (result != null)
+                    {
+                        foreach (var (element, score) in result)
+                        {
+                            while (!RespWriteUtils.WriteBulkString(element, ref dcurr, dend))
+                                SendAndReset();
+
+                            if (includeWithScores)
+                            {
+                                while (!RespWriteUtils.TryWriteDoubleBulkString(score, ref dcurr, dend))
+                                    SendAndReset();
+                            }
+                        }
+                    }
+                    break;
+            }
+
             return true;
         }
     }
