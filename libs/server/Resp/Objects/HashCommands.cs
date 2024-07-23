@@ -65,7 +65,7 @@ namespace Garnet.server
                 arg1 = inputCount,
                 payload = new ArgSlice(ptr, (int)(recvBufferPtr + bytesRead - ptr)),
             };
-            
+
             var status = storageApi.HashSet(keyBytes, ref input, out var output);
 
             switch (status)

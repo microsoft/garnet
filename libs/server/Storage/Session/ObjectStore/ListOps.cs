@@ -55,7 +55,7 @@ namespace Garnet.server
                 arg1 = elements.Length,
                 payload = inputPayload,
             };
-            
+
             var arrKey = key.ToArray();
             var status = RMWObjectStoreOperation(arrKey, ref input, out var output, ref objectStoreContext);
 

@@ -36,7 +36,7 @@ namespace Garnet.server
                     var sbInputPayload = input.payload.SpanByte;
 
                     functionsState.appendOnlyFile.Enqueue(
-                        new AofHeader { opType = AofEntryType.ObjectStoreUpsert, version = version, sessionID = sessionID }, 
+                        new AofHeader { opType = AofEntryType.ObjectStoreUpsert, version = version, sessionID = sessionID },
                         ref keySB, ref sbInput, ref sbInputPayload, ref valSB, out _);
                 }
             }

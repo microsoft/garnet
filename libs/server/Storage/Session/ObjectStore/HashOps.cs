@@ -398,7 +398,7 @@ namespace Garnet.server
                 return GarnetStatus.OK;
 
             var inputLength = 0;
-            
+
             // Prepare the input payload
             var inputPayload = scratchBufferManager.GetSliceFromTail(inputLength);
 

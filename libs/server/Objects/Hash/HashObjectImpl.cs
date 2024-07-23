@@ -323,7 +323,7 @@ namespace Garnet.server
         {
             var _output = (ObjectOutputHeader*)output;
             *_output = default;
-            
+
             var count = input.arg1;
             var hop = input.header.HashOp;
 
@@ -352,7 +352,7 @@ namespace Garnet.server
                     hash[key] = value;
                     // Skip overhead as existing item is getting replaced.
                     this.Size += Utility.RoundUp(value.Length, IntPtr.Size) -
-                                 Utility.RoundUp(hashValue.Length, IntPtr.Size); 
+                                 Utility.RoundUp(hashValue.Length, IntPtr.Size);
                 }
             }
         }
