@@ -198,7 +198,7 @@ namespace Garnet.server
             }
 
             if (storeWrapper.serverOptions.MetricsSamplingFrequency > 0 || storeWrapper.serverOptions.LatencyMonitor)
-                storeWrapper.monitor.AddMetricsHistory(sessionMetrics, latencyMetrics);
+                storeWrapper.monitor.AddMetricsHistorySessionDispose(sessionMetrics, latencyMetrics);
 
             subscribeBroker?.RemoveSubscription(this);
             itemBroker?.HandleSessionDisposed(this);

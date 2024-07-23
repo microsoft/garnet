@@ -54,7 +54,7 @@ namespace Garnet.server
             logger?.LogDebug("Disposing LocalServerSession");
 
             if (storeWrapper.serverOptions.MetricsSamplingFrequency > 0 || storeWrapper.serverOptions.LatencyMonitor)
-                storeWrapper.monitor.AddMetricsHistory(sessionMetrics, LatencyMetrics);
+                storeWrapper.monitor.AddMetricsHistorySessionDispose(sessionMetrics, LatencyMetrics);
 
             storageSession.Dispose();
         }
