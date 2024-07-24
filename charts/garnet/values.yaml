@@ -49,6 +49,18 @@ containers:
   # -- Containers livenessProbe
   readinessProbe: {}
 
+# -- Garnet
+garnet:
+  # -- Garnet secret (if you want to use an existing secret)
+  existingSecret: ""
+  # -- Garnet config
+  config: ""
+  # config: |
+  #   {
+  #     "AuthenticationMode": "Password",
+  #     "Password": ""
+  #   }
+
 # -- Init containers
 initContainers: []
 

@@ -42,10 +42,14 @@ spec:
           image: "{{ .Values.image.registry }}/{{ .Values.image.repository }}:{{ .Values.image.tag | default .Chart.AppVersion }}"
           imagePullPolicy: {{ .Values.image.pullPolicy }}
           command: ["./GarnetServer"]
-          {{- if .Values.containers.args }}
+          {{- if or .Values.containers.args .Values.garnet.config .Values.garnet.existingSecret }}
           args:
           {{- range .Values.containers.args }}
           - {{ . | quote }}
+          {{- end }}
+          {{- if or .Values.garnet.existingSecret .Values.garnet.config }}
+          - "--config-import-path"
+          - "/config"
           {{- end }}
           {{- end }}
           ports:
@@ -65,6 +69,11 @@ spec:
           volumeMounts:
           - name: data
             mountPath: /data
+          {{- if or .Values.garnet.existingSecret .Values.garnet.config }}
+          - name: config-volume
+            mountPath: /config
+            subPath: garnet.conf
+          {{- end }}
           {{- with .Values.extraVolumeMounts }}
           {{- toYaml . | nindent 10}}
           {{- end }}
@@ -94,6 +103,11 @@ spec:
       {{- if (eq .Values.persistence.enabled false) }}
         - emptyDir: {}
           name: data
+      {{- end }}
+      {{- if or .Values.garnet.existingSecret .Values.garnet.config }}
+        - name: config-volume
+          secret: 
+            secretName: {{ if .Values.garnet.existingSecret }}{{ .Values.garnet.existingSecret }}{{ else }}{{ include "garnet.fullname" . }}-config{{ end }}
       {{- end }}
       {{- with .Values.extraVolumes }}
       {{- toYaml . | nindent 6}}
