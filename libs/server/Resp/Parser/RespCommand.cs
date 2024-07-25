@@ -72,6 +72,7 @@ namespace Garnet.server
         ZRANGEBYSCORE,
         ZRANK,
         ZREVRANGE,
+        ZREVRANGEBYSCORE,
         ZREVRANK,
         ZSCAN,
         ZSCORE, // Note: Update OneIfRead if adding new read commands after this
@@ -96,6 +97,7 @@ namespace Garnet.server
         INCRBY,
         LINSERT,
         LMOVE,
+        LMPOP,
         LPOP,
         LPUSH,
         LPUSHX,
@@ -789,6 +791,10 @@ namespace Garnet.server
                                         {
                                             return RespCommand.LMOVE;
                                         }
+                                        else if (*(ulong*)(ptr + 3) == MemoryMarshal.Read<ulong>("\nLMPOP\r\n"u8))
+                                        {
+                                            return RespCommand.LMPOP;
+                                        }
                                         break;
 
                                     case 'P':
@@ -1229,6 +1235,10 @@ namespace Garnet.server
                                 {
                                     return RespCommand.ZREMRANGEBYSCORE;
                                 }
+                                else if (*(ulong*)(ptr + 3) == MemoryMarshal.Read<ulong>("\r\nZREVRA"u8) && *(ulong*)(ptr + 11) == MemoryMarshal.Read<ulong>("NGEBYSCO"u8) && *(ushort*)(ptr + 19) == MemoryMarshal.Read<ushort>("RE\r\n"u8))
+                                {
+                                    return RespCommand.ZREVRANGEBYSCORE;
+                                }
                                 break;
                         }
 
@@ -1290,7 +1300,8 @@ namespace Garnet.server
             {
                 if (count == 0)
                 {
-                    specificErrorMsg = CmdStrings.RESP_ERR_WRONG_NUMBER_OF_ARGUMENTS_CONFIG;
+                    specificErrorMsg = Encoding.ASCII.GetBytes(string.Format(CmdStrings.GenericErrWrongNumArgs,
+                        nameof(RespCommand.CONFIG)));
                 }
                 else if (count >= 1)
                 {

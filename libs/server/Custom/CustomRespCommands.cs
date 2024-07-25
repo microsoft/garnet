@@ -63,33 +63,33 @@ namespace Garnet.server
         private bool TryCustomCommand<TGarnetApi>(byte* ptr, byte* end, RespCommand cmd, long expirationTicks, CommandType type, ref TGarnetApi storageApi)
             where TGarnetApi : IGarnetAdvancedApi
         {
-            byte* keyPtr = null, inputPtr = null;
-            int ksize = 0, isize = 0;
+            var sbKey = parseState.GetArgSliceByRef(0).SpanByte;
+            var keyPtr = sbKey.ToPointer();
+            var kSize = sbKey.Length;
 
-            if (!RespReadUtils.ReadPtrWithLengthHeader(ref keyPtr, ref ksize, ref ptr, recvBufferPtr + bytesRead))
-                return false;
+            ptr = keyPtr + kSize + 2;
 
-            int metadataSize = 8;
+            var metadataSize = 8;
             if (expirationTicks == 0) metadataSize = 0;
 
             // Move key back if needed
             if (metadataSize > 0)
             {
-                Buffer.MemoryCopy(keyPtr, keyPtr - metadataSize, ksize, ksize);
+                Buffer.MemoryCopy(keyPtr, keyPtr - metadataSize, kSize, kSize);
                 keyPtr -= metadataSize;
             }
 
             // write key header size
             keyPtr -= sizeof(int);
-            *(int*)keyPtr = ksize;
+            *(int*)keyPtr = kSize;
 
-            inputPtr = ptr;
-            isize = (int)(end - ptr);
+            var inputPtr = ptr;
+            var iSize = (int)(end - ptr);
 
             inputPtr -= RespInputHeader.Size; // input header
             inputPtr -= metadataSize; // metadata header
 
-            var input = new SpanByte(metadataSize + RespInputHeader.Size + isize, (nint)inputPtr);
+            var input = new SpanByte(metadataSize + RespInputHeader.Size + iSize, (nint)inputPtr);
 
             ((RespInputHeader*)(inputPtr + metadataSize))->cmd = cmd;
             ((RespInputHeader*)(inputPtr + metadataSize))->flags = 0;
@@ -99,7 +99,7 @@ namespace Garnet.server
             else if (expirationTicks > 0)
                 input.ExtraMetadata = DateTimeOffset.UtcNow.Ticks + expirationTicks;
 
-            SpanByteAndMemory output = new SpanByteAndMemory(null);
+            var output = new SpanByteAndMemory(null);
             GarnetStatus status;
             if (type == CommandType.ReadModifyWrite)
             {
@@ -142,19 +142,16 @@ namespace Garnet.server
         private bool TryCustomObjectCommand<TGarnetApi>(byte* ptr, byte* end, RespCommand cmd, byte subid, CommandType type, ref TGarnetApi storageApi)
             where TGarnetApi : IGarnetAdvancedApi
         {
-            byte* keyPtr = null, inputPtr = null;
-            int ksize = 0, isize = 0;
+            var sbKey = parseState.GetArgSliceByRef(0).SpanByte;
+            var keyBytes = sbKey.ToByteArray();
 
-            if (!RespReadUtils.ReadPtrWithLengthHeader(ref keyPtr, ref ksize, ref ptr, recvBufferPtr + bytesRead))
-                return false;
+            ptr = sbKey.ToPointer() + sbKey.Length + 2;
 
-            byte[] key = new Span<byte>(keyPtr, ksize).ToArray();
-
-            inputPtr = ptr;
-            isize = (int)(end - ptr);
+            var inputPtr = ptr;
+            var iSize = (int)(end - ptr);
             inputPtr -= sizeof(int);
             inputPtr -= RespInputHeader.Size;
-            *(int*)inputPtr = RespInputHeader.Size + isize;
+            *(int*)inputPtr = RespInputHeader.Size + iSize;
             ((RespInputHeader*)(inputPtr + sizeof(int)))->cmd = cmd;
             ((RespInputHeader*)(inputPtr + sizeof(int)))->SubId = subid;
 
@@ -162,7 +159,7 @@ namespace Garnet.server
             GarnetStatus status;
             if (type == CommandType.ReadModifyWrite)
             {
-                status = storageApi.RMW_ObjectStore(ref key, ref Unsafe.AsRef<SpanByte>(inputPtr), ref output);
+                status = storageApi.RMW_ObjectStore(ref keyBytes, ref Unsafe.AsRef<SpanByte>(inputPtr), ref output);
                 Debug.Assert(!output.spanByteAndMemory.IsSpanByte);
 
                 switch (status)
@@ -182,7 +179,7 @@ namespace Garnet.server
             }
             else
             {
-                status = storageApi.Read_ObjectStore(ref key, ref Unsafe.AsRef<SpanByte>(inputPtr), ref output);
+                status = storageApi.Read_ObjectStore(ref keyBytes, ref Unsafe.AsRef<SpanByte>(inputPtr), ref output);
                 Debug.Assert(!output.spanByteAndMemory.IsSpanByte);
 
                 switch (status)

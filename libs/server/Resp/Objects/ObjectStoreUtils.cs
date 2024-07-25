@@ -23,16 +23,15 @@ namespace Garnet.server
         {
             var errorMessage = Encoding.ASCII.GetBytes(string.Format(CmdStrings.GenericErrWrongNumArgs, cmdName));
 
-            return AbortWithErrorMessage(count, errorMessage);
+            return AbortWithErrorMessage(errorMessage);
         }
 
         /// <summary>
         /// Aborts the execution of the current object store command and outputs a given error message
         /// </summary>
-        /// <param name="count">Number of remaining tokens belonging to this command on the receive buffer.</param>
         /// <param name="errorMessage">Error message to print to result stream</param>
         /// <returns>true if the command was completely consumed, false if the input on the receive buffer was incomplete.</returns>
-        private bool AbortWithErrorMessage(int count, ReadOnlySpan<byte> errorMessage)
+        private bool AbortWithErrorMessage(ReadOnlySpan<byte> errorMessage)
         {
             // Print error message to result stream
             while (!RespWriteUtils.WriteError(errorMessage, ref dcurr, dend))

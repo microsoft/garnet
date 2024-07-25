@@ -2559,6 +2559,49 @@
     "SubCommands": null
   },
   {
+    "Command": "LMPOP",
+    "Name": "LMPOP",
+    "IsInternal": false,
+    "Arity": 5,
+    "Flags": "DenyOom, Write",
+    "FirstKey": 1,
+    "LastKey": 2,
+    "Step": 1,
+    "AclCategories": "List, Slow, Write",
+    "Tips": null,
+    "KeySpecifications": [
+      {
+        "BeginSearch": {
+          "TypeDiscriminator": "BeginSearchIndex",
+          "Index": 1
+        },
+        "FindKeys": {
+          "TypeDiscriminator": "FindKeysRange",
+          "LastKey": 0,
+          "KeyStep": 1,
+          "Limit": 0
+        },
+        "Notes": null,
+        "Flags": "RW, Access, Delete"
+      },
+      {
+        "BeginSearch": {
+          "TypeDiscriminator": "BeginSearchIndex",
+          "Index": 2
+        },
+        "FindKeys": {
+          "TypeDiscriminator": "FindKeysRange",
+          "LastKey": 0,
+          "KeyStep": 1,
+          "Limit": 0
+        },
+        "Notes": null,
+        "Flags": "RW, Insert"
+      }
+    ],
+    "SubCommands": null
+  },
+  {
     "Command": "LPOP",
     "Name": "LPOP",
     "IsInternal": false,
@@ -4967,6 +5010,35 @@
   {
     "Command": "ZREVRANGE",
     "Name": "ZREVRANGE",
+    "IsInternal": false,
+    "Arity": -4,
+    "Flags": "ReadOnly",
+    "FirstKey": 1,
+    "LastKey": 1,
+    "Step": 1,
+    "AclCategories": "Read, SortedSet, Slow",
+    "Tips": null,
+    "KeySpecifications": [
+      {
+        "BeginSearch": {
+          "TypeDiscriminator": "BeginSearchIndex",
+          "Index": 1
+        },
+        "FindKeys": {
+          "TypeDiscriminator": "FindKeysRange",
+          "LastKey": 0,
+          "KeyStep": 1,
+          "Limit": 0
+        },
+        "Notes": null,
+        "Flags": "RO, Access"
+      }
+    ],
+    "SubCommands": null
+  },
+  {
+    "Command": "ZREVRANGEBYSCORE",
+    "Name": "ZREVRANGEBYSCORE",
     "IsInternal": false,
     "Arity": -4,
     "Flags": "ReadOnly",
