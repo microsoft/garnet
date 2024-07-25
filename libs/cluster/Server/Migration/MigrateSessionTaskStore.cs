@@ -129,23 +129,51 @@ namespace Garnet.cluster
             return success;
         }
 
+        public bool TryRemove(MigrateSession mSession)
+        {
+            try
+            {
+                _lock.WriteLock();
+                if (_disposed) return false;
+                for (var i = 0; i < sessions.Length; i++)
+                {
+                    var s = sessions[i];
+                    if (s != null && s == mSession)
+                        sessions[i] = null;
+                }
+                mSession.Dispose();
+                return true;
+            }
+            catch (Exception ex)
+            {
+                logger?.LogError(ex, "Error at TryRemove");
+                return false;
+            }
+            finally
+            {
+                _lock.WriteUnlock();
+            }
+        }
+
         public bool TryRemove(string targetNodeId)
         {
             try
             {
                 _lock.WriteLock();
                 if (_disposed) return false;
-                MigrateSession mSession = null;
+                HashSet<MigrateSession> mSessions = [];
                 for (var i = 0; i < sessions.Length; i++)
                 {
                     var s = sessions[i];
                     if (s != null && s.GetTargetNodeId.Equals(targetNodeId, StringComparison.Ordinal))
                     {
                         sessions[i] = null;
-                        mSession = s;
+                        _ = mSessions.Add(s);
                     }
                 }
-                mSession?.Dispose();
+
+                foreach (var session in mSessions)
+                    session.Dispose();
                 return true;
             }
             catch (Exception ex)
