@@ -789,7 +789,6 @@ namespace Garnet.server
             byte* ptr = output.SpanByte.ToPointer();
             var curr = ptr;
             var end = curr + output.Length;
-            var error = false;
 
             ObjectOutputHeader _output = default;
             try
@@ -797,59 +796,44 @@ namespace Garnet.server
                 if (!RespReadUtils.ReadByteArrayWithLengthHeader(out var member, ref input_currptr, input + length))
                     return;
 
-                if (_input->arg1 == 3) // ZRANK key member WITHSCORE
+                if (_input->arg2 == 1) // ZRANK key member WITHSCORE
                 {
-                    if (!RespReadUtils.TrySliceWithLengthHeader(out var token, ref input_currptr, input + length))
-                        return;
-
-                    if (token.EqualsUpperCaseSpanIgnoringCase("WITHSCORE"u8))
-                    {
-                        withScore = true;
-                    }
-                    else
-                    {
-                        while (!RespWriteUtils.WriteError(CmdStrings.RESP_ERR_GENERIC_SYNTAX_ERROR, ref curr, end))
-                            ObjectUtils.ReallocateOutput(ref output, ref isMemory, ref ptr, ref ptrHandle, ref curr, ref end);
-                        error = true;
-                    }
+                    withScore = true;
                 }
 
-                if (!error)
+                if (!sortedSetDict.TryGetValue(member, out var score))
                 {
-                    if (!sortedSetDict.TryGetValue(member, out var score))
+                    while (!RespWriteUtils.WriteNull(ref curr, end))
+                        ObjectUtils.ReallocateOutput(ref output, ref isMemory, ref ptr, ref ptrHandle, ref curr, ref end);
+                }
+                else
+                {
+                    var rank = 0;
+                    foreach (var item in sortedSet)
                     {
-                        while (!RespWriteUtils.WriteNull(ref curr, end))
+                        if (item.Item2.SequenceEqual(member))
+                            break;
+                        rank++;
+                    }
+
+                    if (!ascending)
+                        rank = sortedSet.Count - rank - 1;
+
+                    if (withScore)
+                    {
+                        while (!RespWriteUtils.WriteArrayLength(2, ref curr, end)) // rank and score
+                            ObjectUtils.ReallocateOutput(ref output, ref isMemory, ref ptr, ref ptrHandle, ref curr, ref end);
+
+                        while (!RespWriteUtils.WriteInteger(rank, ref curr, end))
+                            ObjectUtils.ReallocateOutput(ref output, ref isMemory, ref ptr, ref ptrHandle, ref curr, ref end);
+
+                        while (!RespWriteUtils.TryWriteDoubleBulkString(score, ref curr, end))
                             ObjectUtils.ReallocateOutput(ref output, ref isMemory, ref ptr, ref ptrHandle, ref curr, ref end);
                     }
                     else
                     {
-                        var rank = 0;
-                        foreach (var item in sortedSet)
-                        {
-                            if (item.Item2.SequenceEqual(member))
-                                break;
-                            rank++;
-                        }
-
-                        if (!ascending)
-                            rank = sortedSet.Count - rank - 1;
-
-                        if (withScore)
-                        {
-                            while (!RespWriteUtils.WriteArrayLength(2, ref curr, end)) // rank and score
-                                ObjectUtils.ReallocateOutput(ref output, ref isMemory, ref ptr, ref ptrHandle, ref curr, ref end);
-
-                            while (!RespWriteUtils.WriteInteger(rank, ref curr, end))
-                                ObjectUtils.ReallocateOutput(ref output, ref isMemory, ref ptr, ref ptrHandle, ref curr, ref end);
-
-                            while (!RespWriteUtils.TryWriteDoubleBulkString(score, ref curr, end))
-                                ObjectUtils.ReallocateOutput(ref output, ref isMemory, ref ptr, ref ptrHandle, ref curr, ref end);
-                        }
-                        else
-                        {
-                            while (!RespWriteUtils.WriteInteger(rank, ref curr, end))
-                                ObjectUtils.ReallocateOutput(ref output, ref isMemory, ref ptr, ref ptrHandle, ref curr, ref end);
-                        }
+                        while (!RespWriteUtils.WriteInteger(rank, ref curr, end))
+                            ObjectUtils.ReallocateOutput(ref output, ref isMemory, ref ptr, ref ptrHandle, ref curr, ref end);
                     }
                 }
 

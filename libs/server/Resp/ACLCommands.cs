@@ -122,18 +122,14 @@ namespace Garnet.server
             }
             else
             {
-                GarnetACLAuthenticator aclAuthenticator = (GarnetACLAuthenticator)_authenticator;
+                var aclAuthenticator = (GarnetACLAuthenticator)_authenticator;
 
                 // REQUIRED: username
-                var usernameSpan = GetCommand(out bool success);
-                if (!success) return false;
+                var username = parseState.GetString(0);
 
                 // Modify or create the user with the given username
-                // FIXME: This step should be atomic in the future. This will prevent partial execution of faulty ACL strings.
-                var username = Encoding.ASCII.GetString(usernameSpan);
                 var user = aclAuthenticator.GetAccessControlList().GetUser(username);
 
-                var opsParsed = 0;
                 try
                 {
                     if (user == null)
@@ -143,12 +139,10 @@ namespace Garnet.server
                     }
 
                     // Remaining parameters are ACL operations
-                    for (; opsParsed < count - 1; opsParsed++)
+                    for (var i = 1; i < count; i++)
                     {
-                        var op = GetCommand(out bool successOp);
-                        Debug.Assert(successOp);
-
-                        ACLParser.ApplyACLOpToUser(ref user, Encoding.ASCII.GetString(op));
+                        var op = parseState.GetString(i);
+                        ACLParser.ApplyACLOpToUser(ref user, op);
                     }
                 }
                 catch (ACLException exception)
@@ -184,20 +178,18 @@ namespace Garnet.server
             }
             else
             {
-                GarnetACLAuthenticator aclAuthenticator = (GarnetACLAuthenticator)_authenticator;
+                var aclAuthenticator = (GarnetACLAuthenticator)_authenticator;
 
-                var attemptedDeletes = 0;
                 var successfulDeletes = 0;
 
                 try
                 {
                     // Attempt to delete the users with the given names
-                    for (; attemptedDeletes < count; attemptedDeletes++)
+                    for (var i = 0; i < count; i++)
                     {
-                        var username = GetCommand(out bool success);
-                        if (!success) return false;
+                        var username = parseState.GetString(i);
 
-                        if (aclAuthenticator.GetAccessControlList().DeleteUser(Encoding.ASCII.GetString(username)))
+                        if (aclAuthenticator.GetAccessControlList().DeleteUser(username))
                         {
                             successfulDeletes += 1;
                         }

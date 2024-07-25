@@ -12,6 +12,8 @@ It then calls the instance method **GetServerOptions()** which returns an instan
 
 ```mermaid
 flowchart LR
+    accTitle: Configuration Flow
+    accDescr: Garnet's configuration flow
     def[\Defaults File\]
     cmd[\Command Line Args\]
     conf[\Configuration File\]
@@ -44,6 +46,8 @@ This is done by calling the following factory methods:
 
 ```mermaid
 flowchart LR
+    accTitle: Configuration File Parsing Flow
+    accDescr: Garnet's configuration file parsing flow
     getsp[[StreamProviderFactory.GetStreamProvider]]
     getcp[[ConfigProviderFactory.GetConfigProvider]]
     spb[\StreamProviderBase\]
