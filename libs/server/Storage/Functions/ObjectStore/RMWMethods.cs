@@ -124,10 +124,9 @@ namespace Garnet.server
             // the record was CASed into the hash chain before it gets modified
             oldValue.CopyUpdate(ref oldValue, ref value, rmwInfo.RecordInfo.IsInNewVersion);
 
-            var header = (RespInputHeader*)input.ToPointer();
             functionsState.watchVersionMap.IncrementVersion(rmwInfo.KeyHash);
 
-            switch (header->type)
+            switch (input.header.type)
             {
                 case GarnetObjectType.Expire:
                     var expireOption = (ExpireOption)(*input.payload.ptr);
