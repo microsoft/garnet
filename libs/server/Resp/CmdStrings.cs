@@ -181,6 +181,12 @@ namespace Garnet.server
         public const string GenericParamShouldBeGreaterThanZero = "ERR {0} should be greater than 0";
 
         /// <summary>
+        /// Response errors while scripting
+        /// </summary>
+        public static ReadOnlySpan<byte> RESP_ERR => "ERR server while running script"u8;
+        public static ReadOnlySpan<byte> RESP_SERVER_BUSY => "ERR Error server busy"u8;
+
+        /// <summary>
         /// Object types
         /// </summary>
         public static ReadOnlySpan<byte> ZSET => "ZSET"u8;

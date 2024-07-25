@@ -5153,5 +5153,50 @@
       }
     ],
     "SubCommands": null
+  },
+  {
+    "Command": "EVAL",
+    "ArrayCommand": 100,
+    "Name": "EVAL",
+    "IsInternal": false,
+    "Arity": 3,
+    "Flags": "ReadOnly",
+    "FirstKey": 1,
+    "LastKey": 1,
+    "Step": 1,
+    "AclCategories": "Read, Slow",
+    "Tips": null,
+    "KeySpecifications": null,
+    "SubCommands": null
+  },
+  {
+    "Command": "SCRIPT",
+    "ArrayCommand": 101,
+    "Name": "SCRIPT",
+    "IsInternal": false,
+    "Arity": 3,
+    "Flags": "ReadOnly",
+    "FirstKey": 1,
+    "LastKey": 1,
+    "Step": 1,
+    "AclCategories": "Read, Slow",
+    "Tips": null,
+    "KeySpecifications": null,
+    "SubCommands": null
+  },
+  {
+    "Command": "EVALSHA",
+    "ArrayCommand": 102,
+    "Name": "EVALSHA",
+    "IsInternal": false,
+    "Arity": 3,
+    "Flags": "ReadOnly",
+    "FirstKey": 1,
+    "LastKey": 1,
+    "Step": 1,
+    "AclCategories": "Read, Slow",
+    "Tips": null,
+    "KeySpecifications": null,
+    "SubCommands": null
   }
 ]

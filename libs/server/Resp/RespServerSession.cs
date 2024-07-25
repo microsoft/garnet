@@ -13,6 +13,7 @@ using Garnet.common.Parsing;
 using Garnet.networking;
 using Garnet.server.ACL;
 using Garnet.server.Auth;
+using Garnet.server.Scripting;
 using Microsoft.Extensions.Logging;
 using Tsavorite.core;
 
@@ -138,6 +139,11 @@ namespace Garnet.server
         /// </summary>
         private static readonly Random RandomGen = new(RandomNumberGenerator.GetInt32(int.MaxValue));
 
+        /// <summary>
+        /// A per-session cache for storing lua scripts
+        /// </summary>
+        internal ScriptMemoryManager sessionScriptCache;
+
         public RespServerSession(
             INetworkSender networkSender,
             StoreWrapper storeWrapper,
@@ -165,6 +171,9 @@ namespace Garnet.server
             this.subscribeBroker = subscribeBroker;
             this.itemBroker = itemBroker;
             this._authenticator = storeWrapper.serverOptions.AuthSettings?.CreateAuthenticator(this.storeWrapper) ?? new GarnetNoAuthAuthenticator();
+
+            // Instantiates a ScriptMemoryManager for storing lua scripts
+            this.sessionScriptCache = new();
 
             // Associate new session with default user and automatically authenticate, if possible
             this.AuthenticateUser(Encoding.ASCII.GetBytes(this.storeWrapper.accessControlList.GetDefaultUser().Name));
@@ -611,6 +620,10 @@ namespace Garnet.server
                 RespCommand.SUNIONSTORE => SetUnionStore(count, ref storageApi),
                 RespCommand.SDIFF => SetDiff(count, ref storageApi),
                 RespCommand.SDIFFSTORE => SetDiffStore(count, ref storageApi),
+                // Script Commands
+                RespCommand.SCRIPT => TryScript(count, ptr),
+                RespCommand.EVAL => TryEval(count, ptr),
+                RespCommand.EVALSHA => TryEvalSha(count, ptr),
                 _ => ProcessOtherCommands(cmd, count, ref storageApi)
             };
             return success;

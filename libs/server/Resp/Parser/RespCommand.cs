@@ -197,6 +197,11 @@ namespace Garnet.server
         CustomCmd,
         CustomObjCmd,
 
+        // Scripting commands
+        EVAL,
+        EVALSHA,
+        SCRIPT,
+
         ACL,
         ACL_CAT,
         ACL_DELUSER,
@@ -589,6 +594,13 @@ namespace Garnet.server
                             case 4:
                                 switch ((ushort)ptr[4])
                                 {
+                                    case 'E':
+                                        if (*(ulong*)(ptr + 2) == MemoryMarshal.Read<ulong>("\r\nEVAL\r\n"u8))
+                                        {
+                                            return RespCommand.EVAL;
+                                        }
+                                        break;
+
                                     case 'H':
                                         if (*(ulong*)(ptr + 2) == MemoryMarshal.Read<ulong>("\r\nHSET\r\n"u8))
                                         {
@@ -981,6 +993,10 @@ namespace Garnet.server
                                         {
                                             return RespCommand.SINTER;
                                         }
+                                        else if (*(ulong*)(ptr + 4) == MemoryMarshal.Read<ulong>("SCRIPT\r\n"u8))
+                                        {
+                                            return RespCommand.SCRIPT;
+                                        }
                                         break;
 
                                     case 'U':
@@ -1010,6 +1026,13 @@ namespace Garnet.server
                             case 7:
                                 switch ((ushort)ptr[4])
                                 {
+                                    case 'E':
+                                        if (*(ulong*)(ptr + 2) == MemoryMarshal.Read<ulong>("\r\nEVALSHA\r\n"u8))
+                                        {
+                                            return RespCommand.EVALSHA;
+                                        }
+                                        break;
+
                                     case 'G':
                                         if (*(ulong*)(ptr + 4) == MemoryMarshal.Read<ulong>("GEOHASH\r"u8) && *(byte*)(ptr + 12) == '\n')
                                         {
