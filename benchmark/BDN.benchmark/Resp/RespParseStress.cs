@@ -188,6 +188,7 @@ namespace BDN.benchmark.Resp
             _ = session.TryConsumeMessages(hSetDelRequestBufferPointer, hSetDelRequestBuffer.Length);
         }
 
+        [Benchmark]
         public void MyDictSetGet()
         {
             _ = session.TryConsumeMessages(myDictSetGetRequestBufferPointer, myDictSetGetRequestBuffer.Length);

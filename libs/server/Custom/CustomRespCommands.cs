@@ -147,16 +147,14 @@ namespace Garnet.server
 
             ptr = sbKey.ToPointer() + sbKey.Length + 2;
 
-            byte[] key = new Span<byte>(keyPtr, ksize).ToArray();
-
-            inputPtr = ptr;
-            isize = (int)(end - ptr);
+            var inputPtr = ptr;
+            var iSize = (int)(end - ptr);
 
             inputPtr -= sizeof(int);
             inputPtr -= RespInputHeader.Size;
 
             var savedData1 = *(int*)inputPtr;
-            *(int*)inputPtr = RespInputHeader.Size + isize;
+            *(int*)inputPtr = RespInputHeader.Size + iSize;
 
             var savedData2 = *(RespInputHeader*)(inputPtr + sizeof(int));
             ((RespInputHeader*)(inputPtr + sizeof(int)))->cmd = cmd;
