@@ -4,6 +4,7 @@
 using System.Runtime.CompilerServices;
 using BenchmarkDotNet.Attributes;
 using Embedded.perftest;
+using Garnet;
 using Garnet.server;
 using Garnet.server.Auth.Settings;
 
@@ -50,6 +51,10 @@ namespace BDN.benchmark.Resp
         byte[] hSetDelRequestBuffer;
         byte* hSetDelRequestBufferPointer;
 
+        static ReadOnlySpan<byte> MYDICTSETGET => "*4\r\n$9\r\nMYDICTSET\r\n$2\r\nck\r\n$1\r\nf\r\n$1\r\nv\r\n*3\r\n$9\r\nMYDICTGET\r\n$2\r\nck\r\n$1\r\nf\r\n"u8;
+        byte[] myDictSetGetRequestBuffer;
+        byte* myDictSetGetRequestBufferPointer;
+
         [GlobalSetup]
         public void GlobalSetup()
         {
@@ -59,6 +64,12 @@ namespace BDN.benchmark.Resp
                 AuthSettings = authSettings,
             };
             server = new EmbeddedRespServer(opt);
+
+            var factory = new MyDictFactory();
+            server.Register.NewType(factory);
+            server.Register.NewCommand("MYDICTSET", 2, CommandType.ReadModifyWrite, factory, new MyDictSet());
+            server.Register.NewCommand("MYDICTGET", 1, CommandType.Read, factory, new MyDictGet());
+
             session = server.GetRespSession();
 
             pingRequestBuffer = GC.AllocateArray<byte>(INLINE_PING.Length * batchSize, pinned: true);
@@ -112,6 +123,14 @@ namespace BDN.benchmark.Resp
 
             // Pre-populate hash with a single element to avoid repeatedly emptying it during the benchmark
             SlowConsumeMessage("*3\r\n$4\r\nHSET\r\n$1\r\nf\r\n$1\r\nb\r\n$1\r\nb\r\n"u8);
+
+            myDictSetGetRequestBuffer = GC.AllocateArray<byte>(MYDICTSETGET.Length * batchSize, pinned: true);
+            myDictSetGetRequestBufferPointer = (byte*)Unsafe.AsPointer(ref myDictSetGetRequestBuffer[0]);
+            for (int i = 0; i < batchSize; i++)
+                MYDICTSETGET.CopyTo(new Span<byte>(myDictSetGetRequestBuffer).Slice(i * MYDICTSETGET.Length));
+
+            // Pre-populate custom object
+            SlowConsumeMessage("*4\r\n$9\r\nMYDICTSET\r\n$2\r\nck\r\n$1\r\nf\r\n$1\r\nv\r\n"u8);
         }
 
         [GlobalCleanup]
@@ -167,6 +186,12 @@ namespace BDN.benchmark.Resp
         public void HSetDel()
         {
             _ = session.TryConsumeMessages(hSetDelRequestBufferPointer, hSetDelRequestBuffer.Length);
+        }
+
+        [Benchmark]
+        public void MyDictSetGet()
+        {
+            _ = session.TryConsumeMessages(myDictSetGetRequestBufferPointer, myDictSetGetRequestBuffer.Length);
         }
 
         private void SlowConsumeMessage(ReadOnlySpan<byte> message)
