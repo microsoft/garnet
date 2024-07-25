@@ -133,6 +133,34 @@ namespace Garnet.server
             return (objectTypeId, subCommand);
         }
 
+        internal (int objectTypeId, int subCommand) Register(string name, int numParams, CommandType commandType, CustomObjectFactory factory, CustomObjectFunctions customObjectFunctions, RespCommandsInfo commandInfo)
+        {
+            var objectTypeId = -1;
+            for (var i = 0; i < ObjectTypeId; i++)
+            {
+                if (objectCommandMap[i].factory == factory) { objectTypeId = i; break; }
+            }
+
+            if (objectTypeId == -1)
+            {
+                objectTypeId = Interlocked.Increment(ref ObjectTypeId) - 1;
+                if (objectTypeId >= MaxRegistrations)
+                    throw new Exception("Out of registration space");
+                objectCommandMap[objectTypeId] = new CustomObjectCommandWrapper((byte)objectTypeId, factory);
+            }
+
+            var wrapper = objectCommandMap[objectTypeId];
+
+            int subCommand = Interlocked.Increment(ref wrapper.CommandId) - 1;
+            if (subCommand >= byte.MaxValue)
+                throw new Exception("Out of registration space");
+            wrapper.commandMap[subCommand] = new CustomObjectCommand(name, (byte)objectTypeId, (byte)subCommand, 1, numParams, commandType, wrapper.factory, customObjectFunctions);
+
+            if (commandInfo != null) customCommandsInfo.Add(name, commandInfo);
+
+            return (objectTypeId, subCommand);
+        }
+
         internal bool Match(ReadOnlySpan<byte> command, out CustomCommand cmd)
         {
             for (int i = 0; i < CommandId; i++)

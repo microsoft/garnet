@@ -2,6 +2,7 @@
 // Licensed under the MIT license.
 
 using System;
+using System.Buffers;
 using Garnet.common;
 using Tsavorite.core;
 
@@ -33,7 +34,20 @@ namespace Garnet.server
                     CopyRespNumber(ttlValue, ref dst.spanByteAndMemory);
                     return true;
                 }
-                return value.Operate(ref input, ref dst.spanByteAndMemory, out _, out _);
+                else if ((byte)header->type < CustomCommandManager.StartOffset)
+                    return value.Operate(ref input, ref dst.spanByteAndMemory, out _, out _);
+                else
+                {
+                    if (IncorrectObjectType(ref input, value, ref dst.spanByteAndMemory))
+                        return true;
+
+                    (IMemoryOwner<byte> Memory, int Length) outp = (dst.spanByteAndMemory.Memory, 0);
+                    var customObjectCommand = GetCustomObjectCommand(ref input, header->type);
+                    var result = customObjectCommand.Reader(key, input.AsReadOnlySpan()[RespInputHeader.Size..], value, ref outp, ref readInfo);
+                    dst.spanByteAndMemory.Memory = outp.Memory;
+                    dst.spanByteAndMemory.Length = outp.Length;
+                    return result;
+                }
             }
 
             dst.garnetObject = value;

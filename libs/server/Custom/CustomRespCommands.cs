@@ -1,4 +1,4 @@
-﻿// Copyright (c) Microsoft Corporation.
+// Copyright (c) Microsoft Corporation.
 // Licensed under the MIT license.
 
 using System;
@@ -149,9 +149,14 @@ namespace Garnet.server
 
             var inputPtr = ptr;
             var iSize = (int)(end - ptr);
+
             inputPtr -= sizeof(int);
             inputPtr -= RespInputHeader.Size;
+
+            var savedData1 = *(int*)inputPtr;
             *(int*)inputPtr = RespInputHeader.Size + iSize;
+
+            var savedData2 = *(RespInputHeader*)(inputPtr + sizeof(int));
             ((RespInputHeader*)(inputPtr + sizeof(int)))->cmd = cmd;
             ((RespInputHeader*)(inputPtr + sizeof(int)))->SubId = subid;
 
@@ -202,6 +207,9 @@ namespace Garnet.server
                         break;
                 }
             }
+
+            *(int*)inputPtr = savedData1;
+            *(RespInputHeader*)(inputPtr + sizeof(int)) = savedData2;
 
             return true;
         }
