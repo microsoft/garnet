@@ -34,26 +34,25 @@ namespace Garnet.server
         {
             var _output = (ObjectOutputHeader*)output;
 
-            int count = input.arg1;
+            var count = input.arg1;
             *_output = default;
 
-            byte* startptr = input.payload.ptr;
-            byte* ptr = startptr;
-            byte* end = startptr + input.payload.length;
-            for (int c = 0; c < count; c++)
-            {
-                if (!RespReadUtils.ReadDoubleWithLengthHeader(out var score, out var parsed, ref ptr, end))
-                    return;
-                if (!RespReadUtils.TrySliceWithLengthHeader(out var member, ref ptr, end))
-                    return;
+            var input_startptr = input.payload.ptr;
+            var input_currptr = input_startptr;
+            var length = input.payload.length;
+            var input_endptr = input_startptr + length;
 
-                if (c < input.arg2)
-                    continue;
+            for (var c = 0; c < count; c++)
+            {
+                if (!RespReadUtils.ReadDoubleWithLengthHeader(out var score, out var parsed, ref input_currptr, input_endptr))
+                    return;
+                if (!RespReadUtils.TrySliceWithLengthHeader(out var member, ref input_currptr, input_endptr))
+                    return;
 
                 if (parsed)
                 {
                     var memberArray = member.ToArray();
-                    if (!sortedSetDict.TryGetValue(memberArray, out var _scoreStored))
+                    if (!sortedSetDict.TryGetValue(memberArray, out var scoreStored))
                     {
                         sortedSetDict.Add(memberArray, score);
                         if (sortedSet.Add((score, memberArray)))
@@ -63,10 +62,10 @@ namespace Garnet.server
 
                         this.UpdateSize(member);
                     }
-                    else if (_scoreStored != score)
+                    else if (scoreStored != score)
                     {
                         sortedSetDict[memberArray] = score;
-                        var success = sortedSet.Remove((_scoreStored, memberArray));
+                        var success = sortedSet.Remove((scoreStored, memberArray));
                         Debug.Assert(success);
                         success = sortedSet.Add((score, memberArray));
                         Debug.Assert(success);
@@ -79,27 +78,25 @@ namespace Garnet.server
         {
             var _output = (ObjectOutputHeader*)output;
 
-            int count = input.arg1;
+            var count = input.arg1;
             *_output = default;
 
-            byte* startptr = input.payload.ptr;
-            byte* ptr = startptr;
-            byte* end = startptr + input.payload.length;
+            var input_startptr = input.payload.ptr;
+            var input_currptr = input_startptr;
+            var length = input.payload.length;
+            var input_endptr = input_startptr + length;
 
-            for (int c = 0; c < count; c++)
+            for (var c = 0; c < count; c++)
             {
-                if (!RespReadUtils.TrySliceWithLengthHeader(out var value, ref ptr, end))
+                if (!RespReadUtils.TrySliceWithLengthHeader(out var value, ref input_currptr, input_endptr))
                     return;
 
-                if (c < input.arg2)
-                    continue;
-
                 var valueArray = value.ToArray();
-                if (sortedSetDict.TryGetValue(valueArray, out var _key))
+                if (sortedSetDict.TryGetValue(valueArray, out var key))
                 {
                     _output->result1++;
                     sortedSetDict.Remove(valueArray);
-                    sortedSet.Remove((_key, valueArray));
+                    sortedSet.Remove((key, valueArray));
 
                     this.UpdateSize(value, false);
                 }
@@ -124,6 +121,7 @@ namespace Garnet.server
             var input_startptr = input.payload.ptr;
             var input_currptr = input_startptr;
             var length = input.payload.length;
+            var input_endptr = input_startptr + length;
 
             var isMemory = false;
             MemoryHandle ptrHandle = default;
@@ -134,7 +132,7 @@ namespace Garnet.server
 
             byte* scorePtr = default;
             var scoreLength = 0;
-            if (!RespReadUtils.ReadPtrWithLengthHeader(ref scorePtr, ref scoreLength, ref input_currptr, input_startptr + length))
+            if (!RespReadUtils.ReadPtrWithLengthHeader(ref scorePtr, ref scoreLength, ref input_currptr, input_endptr))
                 return;
 
             var scoreKey = new Span<byte>(scorePtr, scoreLength).ToArray();
@@ -258,8 +256,6 @@ namespace Garnet.server
         private void SortedSetIncrement(ref ObjectInput input, ref SpanByteAndMemory output)
         {
             // ZINCRBY key increment member
-            var count = input.arg1;
-
             var input_startptr = input.payload.ptr;
             var input_currptr = input_startptr;
             var length = input.payload.length;
@@ -271,8 +267,6 @@ namespace Garnet.server
 
             var curr = ptr;
             var end = curr + output.Length;
-
-            var countDone = input.arg1;
 
             ObjectOutputHeader _output = default;
 
@@ -289,6 +283,7 @@ namespace Garnet.server
                     return;
 
                 //check if increment value is valid
+                int countDone;
                 if (!NumUtils.TryParse(incrementBytes, out double incrValue))
                 {
                     countDone = int.MaxValue;
@@ -342,6 +337,7 @@ namespace Garnet.server
             var input_startptr = input.payload.ptr;
             var input_currptr = input_startptr;
             var length = input.payload.length;
+            var input_endptr = input_startptr + length;
 
             var isMemory = false;
             MemoryHandle ptrHandle = default;
@@ -354,11 +350,11 @@ namespace Garnet.server
             try
             {
                 // read min
-                if (!RespReadUtils.ReadByteArrayWithLengthHeader(out var minParamByteArray, ref input_currptr, input_startptr + length))
+                if (!RespReadUtils.ReadByteArrayWithLengthHeader(out var minParamByteArray, ref input_currptr, input_endptr))
                     return;
 
                 // read max
-                if (!RespReadUtils.ReadByteArrayWithLengthHeader(out var maxParamByteArray, ref input_currptr, input_startptr + length))
+                if (!RespReadUtils.ReadByteArrayWithLengthHeader(out var maxParamByteArray, ref input_currptr, input_endptr))
                     return;
 
                 var countDone = 2;

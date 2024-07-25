@@ -40,7 +40,6 @@ namespace Garnet
         {
             var offset = 0;
             var elements = new ArgSlice[10];
-            var result = true;
 
             var setA = GetNextArg(input, ref offset);
 

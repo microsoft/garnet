@@ -2,7 +2,6 @@
 // Licensed under the MIT license.
 
 using System;
-using System.Reflection;
 using System.Text;
 using Garnet.common;
 using Tsavorite.core;
@@ -421,7 +420,6 @@ namespace Garnet.server
                     type = GarnetObjectType.List,
                     ListOp = ListOperation.LLEN,
                 },
-                arg1 = count,
                 payload = new ArgSlice(ptr, (int)(recvBufferPtr + bytesRead - ptr)),
             };
 

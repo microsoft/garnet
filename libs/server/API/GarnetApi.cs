@@ -251,8 +251,6 @@ namespace Garnet.server
 
         #region Bitmap Methods
 
-        public GarnetStatus ListLeftPush(ArgSlice key, ref ObjectInput element, out int count, bool whenExists = false) => throw new NotImplementedException();
-
         /// <inheritdoc />
         public GarnetStatus StringSetBit(ArgSlice key, ArgSlice offset, bool bit, out bool previous)
            => storageSession.StringSetBit(key, offset, bit, out previous, ref context);

@@ -2,7 +2,6 @@
 // Licensed under the MIT license.
 
 using System;
-using System.Runtime.Intrinsics.X86;
 using Garnet.common;
 using Tsavorite.core;
 
@@ -689,6 +688,7 @@ namespace Garnet.server
         /// HashIncrementByFloat: Increment the specified field of a hash stored at key, and representing a floating point number, by the specified increment. 
         /// </summary>
         /// <typeparam name="TGarnetApi"></typeparam>
+        /// <param name="command"></param>
         /// <param name="count"></param>
         /// <param name="storageApi"></param>
         /// <returns></returns>
@@ -707,7 +707,6 @@ namespace Garnet.server
             var keyBytes = sbKey.ToByteArray();
 
             var ptr = sbKey.ToPointer() + sbKey.Length + 2;
-
 
             if (NetworkSingleKeySlotVerify(keyBytes, false))
             {
@@ -730,7 +729,6 @@ namespace Garnet.server
                     type = GarnetObjectType.Hash,
                     HashOp = op,
                 },
-                arg1 = count + 1,
                 payload = new ArgSlice(ptr, (int)(recvBufferPtr + bytesRead - ptr)),
             };
 

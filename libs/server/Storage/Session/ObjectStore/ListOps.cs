@@ -2,12 +2,8 @@
 // Licensed under the MIT license.
 
 using System;
-using System.Diagnostics.Metrics;
-using System.Drawing;
 using System.Linq;
-using System.Xml.Linq;
 using Tsavorite.core;
-using static System.Formats.Asn1.AsnWriter;
 
 namespace Garnet.server
 {
@@ -218,7 +214,8 @@ namespace Garnet.server
                 return GarnetStatus.OK;
 
             // Prepare the payload
-            var inputPayload = scratchBufferManager.FormatScratchAsResp(0, key);
+            var inputLength = 0;
+            var inputPayload = scratchBufferManager.GetSliceFromTail(inputLength);
 
             // Prepare the input
             var input = new ObjectInput
@@ -228,7 +225,6 @@ namespace Garnet.server
                     type = GarnetObjectType.List,
                     ListOp = ListOperation.LLEN,
                 },
-                arg1 = count,
                 payload = inputPayload,
             };
 
@@ -373,7 +369,8 @@ namespace Garnet.server
             where TObjectContext : ITsavoriteContext<byte[], IGarnetObject, ObjectInput, GarnetObjectStoreOutput, long, ObjectStoreFunctions>
         {
             // Prepare the payload
-            var inputPayload = scratchBufferManager.FormatScratchAsResp(0, key);
+            var inputLength = 0;
+            var inputPayload = scratchBufferManager.GetSliceFromTail(inputLength);
 
             // Prepare the input
             var input = new ObjectInput

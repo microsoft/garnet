@@ -2,7 +2,6 @@
 // Licensed under the MIT license.
 
 using System;
-using System.Runtime.Intrinsics.X86;
 using Garnet.common;
 using Tsavorite.core;
 
@@ -53,7 +52,6 @@ namespace Garnet.server
                     SortedSetOp = SortedSetOperation.ZADD,
                 },
                 arg1 = (count - 1) / 2,
-                arg2 = 0,
                 payload = new ArgSlice(ptr, (int)(recvBufferPtr + bytesRead - ptr)),
             };
 
@@ -109,7 +107,6 @@ namespace Garnet.server
                     SortedSetOp = SortedSetOperation.ZREM,
                 },
                 arg1 = count - 1,
-                arg2 = 0,
                 payload = new ArgSlice(ptr, (int)(recvBufferPtr + bytesRead - ptr)),
             };
 

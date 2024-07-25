@@ -2,7 +2,6 @@
 // Licensed under the MIT license.
 
 using System.Collections.Generic;
-using System.Text.Json.Serialization.Metadata;
 using Tsavorite.core;
 
 namespace Garnet.server

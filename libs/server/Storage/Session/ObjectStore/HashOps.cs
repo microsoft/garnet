@@ -2,11 +2,7 @@
 // Licensed under the MIT license.
 
 using System;
-using System.Linq;
 using System.Text;
-using System.Xml.Linq;
-using Garnet.client;
-using Garnet.common;
 using Tsavorite.core;
 
 namespace Garnet.server
@@ -324,7 +320,8 @@ namespace Garnet.server
                 return GarnetStatus.OK;
 
             // Prepare the input payload
-            var inputPayload = scratchBufferManager.FormatScratchAsResp(0, key);
+            var inputLength = 0;
+            var inputPayload = scratchBufferManager.GetSliceFromTail(inputLength);
 
             // Prepare the input
             var input = new ObjectInput

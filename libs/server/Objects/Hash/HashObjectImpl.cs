@@ -359,7 +359,6 @@ namespace Garnet.server
 
         private void IncrementIntegerOrFloat(ref ObjectInput input, ref SpanByteAndMemory output)
         {
-            var count = input.arg1;
             var op = input.header.HashOp;
 
             var input_startptr = input.payload.ptr;

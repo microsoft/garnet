@@ -203,7 +203,8 @@ namespace Garnet.server
                 return GarnetStatus.OK;
 
             // Prepare the input payload
-            var inputPayload = scratchBufferManager.FormatScratchAsResp(0, key);
+            var inputLength = 0;
+            var inputPayload = scratchBufferManager.GetSliceFromTail(inputLength);
 
             // Prepare the input
             var input = new ObjectInput
@@ -239,7 +240,8 @@ namespace Garnet.server
                 return GarnetStatus.OK;
 
             // Prepare the input payload
-            var inputPayload = scratchBufferManager.FormatScratchAsResp(0, key);
+            var inputLength = 0;
+            var inputPayload = scratchBufferManager.GetSliceFromTail(inputLength);
 
             // Prepare the input
             var input = new ObjectInput
