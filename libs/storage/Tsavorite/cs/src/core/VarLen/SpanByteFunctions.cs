@@ -61,6 +61,7 @@ namespace Tsavorite.core
         /// <summary>
         /// Utility function for <see cref="SpanByte"/> copying, Upsert version.
         /// </summary>
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public static bool DoSafeCopy(ref SpanByte src, ref SpanByte dst, ref UpsertInfo upsertInfo, ref RecordInfo recordInfo)
         {
             // First get the full record length and clear it from the extra value space (if there is any). 
@@ -82,6 +83,7 @@ namespace Tsavorite.core
         /// <summary>
         /// Utility function for <see cref="SpanByte"/> copying, RMW version.
         /// </summary>
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public static bool DoSafeCopy(ref SpanByte src, ref SpanByte dst, ref RMWInfo rmwInfo, ref RecordInfo recordInfo)
         {
             // See comments in upsertInfo overload of this function.

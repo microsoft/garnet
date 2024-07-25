@@ -90,8 +90,17 @@ namespace Tsavorite.core
             return false;
         }
 
-        public readonly bool IsClosed => IsClosedWord(word);
-        public readonly bool IsSealed => (word & kSealedBitMask) != 0;
+        public readonly bool IsClosed
+        {
+            [MethodImpl(MethodImplOptions.AggressiveInlining)]
+            get { return IsClosedWord(word); }
+        }
+
+        public readonly bool IsSealed
+        {
+            [MethodImpl(MethodImplOptions.AggressiveInlining)]
+            get { return (word & kSealedBitMask) != 0; }
+        }
 
         /// <summary>
         /// Seal this record (currently only called to prepare it for inline revivification).
@@ -197,7 +206,9 @@ namespace Tsavorite.core
 
         public bool Filler
         {
+            [MethodImpl(MethodImplOptions.AggressiveInlining)]
             readonly get => (word & kFillerBitMask) > 0;
+
             set
             {
                 if (value) word |= kFillerBitMask;
@@ -207,7 +218,9 @@ namespace Tsavorite.core
 
         public bool IsInNewVersion
         {
+            [MethodImpl(MethodImplOptions.AggressiveInlining)]
             readonly get => (word & kInNewVersionBitMask) > 0;
+
             set
             {
                 if (value) word |= kInNewVersionBitMask;
@@ -243,13 +256,19 @@ namespace Tsavorite.core
             }
         }
 
-        public readonly bool Invalid => (word & kValidBitMask) == 0;
+        public readonly bool Invalid
+        {
+            [MethodImpl(MethodImplOptions.AggressiveInlining)]
+            get { return (word & kValidBitMask) == 0; }
+        }
 
         public readonly bool SkipOnScan => IsClosedWord(word);
 
         public long PreviousAddress
         {
-            readonly get => word & kPreviousAddressMaskInWord;
+            [MethodImpl(MethodImplOptions.AggressiveInlining)]
+            readonly get { return word & kPreviousAddressMaskInWord; }
+
             [MethodImpl(MethodImplOptions.AggressiveInlining)]
             set
             {

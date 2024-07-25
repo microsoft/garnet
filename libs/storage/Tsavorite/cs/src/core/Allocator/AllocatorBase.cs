@@ -925,12 +925,14 @@ namespace Tsavorite.core
         /// completed the wait on flushEvent for the necessary pages to be flushed, and are waiting for
         /// OnPagesClosed to be completed.
         /// </summary>
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
         private bool CannotAllocate(int page) => page >= BufferSize + (ClosedUntilAddress >> LogPageSizeBits);
 
         /// <summary>
         /// If the page we are trying to allocate is past the last page with an unflushed address region, 
         /// we have to wait for the flushEvent.
         /// </summary>
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
         private bool NeedToWait(int page) => page >= BufferSize + (FlushedUntilAddress >> LogPageSizeBits);
 
         /// <summary>Used by applications to make the current state of the database immutable quickly</summary>
@@ -1156,6 +1158,7 @@ namespace Tsavorite.core
         /// Tries to shift head address based on the head offset lag size.
         /// </summary>
         /// <param name="currentTailAddress"></param>
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
         private void PageAlignedShiftHeadAddress(long currentTailAddress)
             => ShiftHeadAddress((currentTailAddress & ~PageSizeMask) - HeadOffsetLagAddress);
 

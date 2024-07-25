@@ -106,6 +106,7 @@ namespace Tsavorite.core
 
         const int FieldInitialLength = sizeof(int);     // The .Length field of a SpanByte is the initial length
 
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public (int actualSize, int allocatedSize) GetRecordSize(long physicalAddress)
         {
             ref var recordInfo = ref GetInfo(physicalAddress);
@@ -123,6 +124,7 @@ namespace Tsavorite.core
             return (size, RoundUp(size, Constants.kRecordAlignment));
         }
 
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public (int actualSize, int allocatedSize, int keySize) GetRMWCopyDestinationRecordSize<Input, TVariableLengthInput>(ref SpanByte key, ref Input input, ref SpanByte value, ref RecordInfo recordInfo, TVariableLengthInput varlenInput)
             where TVariableLengthInput : IVariableLengthInput<SpanByte, Input>
         {

@@ -1,6 +1,7 @@
 ﻿// Copyright (c) Microsoft Corporation.
 // Licensed under the MIT license.
 
+using System.Runtime.CompilerServices;
 using System.Runtime.InteropServices;
 
 namespace Tsavorite.core
@@ -14,7 +15,9 @@ namespace Tsavorite.core
         public long word;
         public long Address
         {
+            [MethodImpl(MethodImplOptions.AggressiveInlining)]
             readonly get => word & Constants.kAddressMask;
+
             set
             {
                 word &= ~Constants.kAddressMask;
@@ -26,7 +29,9 @@ namespace Tsavorite.core
 
         public ushort Tag
         {
+            [MethodImpl(MethodImplOptions.AggressiveInlining)]
             readonly get => (ushort)((word & Constants.kTagPositionMask) >> Constants.kTagShift);
+
             set
             {
                 word &= ~Constants.kTagPositionMask;
@@ -36,7 +41,9 @@ namespace Tsavorite.core
 
         public bool Tentative
         {
+            [MethodImpl(MethodImplOptions.AggressiveInlining)]
             readonly get => (word & Constants.kTentativeBitMask) != 0;
+
             set
             {
                 if (value)
@@ -48,7 +55,9 @@ namespace Tsavorite.core
 
         public bool ReadCache
         {
+            [MethodImpl(MethodImplOptions.AggressiveInlining)]
             readonly get => (word & Constants.kReadCacheBitMask) != 0;
+
             set
             {
                 if (value)

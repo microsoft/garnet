@@ -35,14 +35,22 @@ namespace Tsavorite.core
 
             public int SyncIoPendingCount => ioPendingRequests.Count - asyncPendingCount;
 
-            public bool IsInV1 => phase switch
+            public bool IsInV1
             {
-                Phase.IN_PROGRESS => true,
-                Phase.WAIT_INDEX_CHECKPOINT => true,
-                Phase.WAIT_FLUSH => true,
-                _ => false,
-            };
+                [MethodImpl(MethodImplOptions.AggressiveInlining)]
+                get
+                {
+                    return phase switch
+                    {
+                        Phase.IN_PROGRESS => true,
+                        Phase.WAIT_INDEX_CHECKPOINT => true,
+                        Phase.WAIT_FLUSH => true,
+                        _ => false,
+                    };
+                }
+            }
 
+            [MethodImpl(MethodImplOptions.AggressiveInlining)]
             internal void MergeReadCopyOptions(ReadCopyOptions storeCopyOptions, ReadCopyOptions copyOptions)
                 => ReadCopyOptions = ReadCopyOptions.Merge(storeCopyOptions, copyOptions);
 

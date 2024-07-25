@@ -68,6 +68,7 @@ namespace Tsavorite.core
         /// this adjusts the key (and if necessary value) space as needed to preserve log zero-init correctness.
         /// Otherwise the key and value have no need of disposal, and this does nothing.
         /// </summary>
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public unsafe void DisposeRecord(ref SpanByte key, ref SpanByte value, DisposeReason reason, int newKeySize)
         {
             // We don't have to do anything with the Value unless the new key size requires adjusting the key length.
@@ -76,9 +77,6 @@ namespace Tsavorite.core
                 return;
 
             var oldKeySize = Utility.RoundUp(key.TotalSize, Constants.kRecordAlignment);
-
-            if (newKeySize < 0)
-                return;
 
             // We are changing the key size (e.g. revivification from the freelist with a new key).
             // Our math here uses record alignment of keys as in the allocator, and assumes this will always be at least int alignment.

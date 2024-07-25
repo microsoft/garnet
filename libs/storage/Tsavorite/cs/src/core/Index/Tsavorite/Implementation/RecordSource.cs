@@ -164,6 +164,7 @@ namespace Tsavorite.core
             SetAllocator(srcAllocatorBase);
         }
 
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
         internal void SetAllocator(AllocatorBase<Key, Value, TStoreFunctions, TAllocator> srcAllocatorBase)
         {
             this.AllocatorBase = srcAllocatorBase;

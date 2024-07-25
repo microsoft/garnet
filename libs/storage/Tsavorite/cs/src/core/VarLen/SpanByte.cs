@@ -70,7 +70,9 @@ namespace Tsavorite.core
         /// </summary>
         public int Length
         {
+            [MethodImpl(MethodImplOptions.AggressiveInlining)]
             readonly get => length & ~HeaderMask;
+            [MethodImpl(MethodImplOptions.AggressiveInlining)]
             set { length = (length & HeaderMask) | value; }
         }
 
@@ -373,7 +375,6 @@ namespace Tsavorite.core
             {
                 // dst length is equal or longer than src. We can adjust the length header on the serialized log, if we wish (here, we do).
                 // This method will also zero out the extra space to retain log scan correctness.
-                dst.UnmarkExtraMetadata();
                 dst.ShrinkSerializedLength(Length);
                 CopyTo(ref dst);
                 dst.Length = Length;
@@ -388,17 +389,14 @@ namespace Tsavorite.core
         /// </summary>
         /// <param name="newLength">New length of payload (including metadata)</param>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public bool ShrinkSerializedLength(int newLength)
+        public void ShrinkSerializedLength(int newLength)
         {
-            if (newLength > Length) return false;
-
             // Zero-fill extra space - needed so log scan does not see spurious data - *before* setting length to 0.
             if (newLength < Length)
             {
-                AsSpanWithMetadata().Slice(newLength).Clear();
+                Unsafe.InitBlockUnaligned(ToPointer() + newLength, 0, (uint)(Length - newLength));
                 Length = newLength;
             }
-            return true;
         }
 
         /// <summary>
