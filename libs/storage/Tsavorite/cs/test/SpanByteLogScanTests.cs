@@ -58,7 +58,7 @@ namespace Tsavorite.test.spanbyte
 
             DeleteDirectory(MethodTestDir, wait: true);
             log = Devices.CreateLogDevice(Path.Join(MethodTestDir, "test.log"), deleteOnClose: true);
-            store = new (new TsavoriteKVSettings<SpanByte, SpanByte>()
+            store = new (new ()
                 {
                     IndexSize = 1L << 26,
                     LogDevice = log,
@@ -386,7 +386,7 @@ namespace Tsavorite.test.spanbyte
             DeleteDirectory(MethodTestDir, wait: true);
             using var log = Devices.CreateLogDevice(Path.Join(MethodTestDir, "test.log"), deleteOnClose: true);
 
-            store = new(new TsavoriteKVSettings<SpanByte, SpanByte>()
+            store = new(new ()
                 {
                     IndexSize = 1L << 26,
                     LogDevice = log,

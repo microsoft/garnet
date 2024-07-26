@@ -71,7 +71,7 @@ namespace Tsavorite.test
             DeleteDirectory(MethodTestDir, wait: true);
 
             log = Devices.CreateLogDevice(Path.Join(MethodTestDir, "PostOperations.log"), deleteOnClose: true);
-            store = new (new TsavoriteKVSettings<int, int>()
+            store = new (new ()
                 {
                     IndexSize = 1L << 26,
                     LogDevice = log, MemorySize = 1L << 15, PageSize = 1L << 10

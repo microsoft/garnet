@@ -42,7 +42,7 @@ namespace Tsavorite.test.ModifiedBit
         {
             log = Devices.CreateLogDevice(Path.Combine(MethodTestDir, "test.log"), deleteOnClose: false);
             comparer = new ModifiedBitTestComparer();
-            store = new(new TsavoriteKVSettings<int, int>()
+            store = new(new ()
                 {
                     IndexSize = 1L << 26,
                     LogDevice = log,

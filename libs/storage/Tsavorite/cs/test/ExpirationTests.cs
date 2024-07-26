@@ -525,7 +525,7 @@ namespace Tsavorite.test.Expiration
             DeleteDirectory(MethodTestDir, wait: true);
 
             log = Devices.CreateLogDevice(Path.Join(MethodTestDir, "hlog.log"), deleteOnClose: true);
-            store = new (new TsavoriteKVSettings<SpanByte, SpanByte>()
+            store = new (new ()
                 {
                     IndexSize = 1L << 13,
                     LogDevice = log,

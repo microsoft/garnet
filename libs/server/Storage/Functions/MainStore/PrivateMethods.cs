@@ -359,7 +359,7 @@ namespace Garnet.server
                 return false;
 
             rmwInfo.ClearExtraValueLength(ref recordInfo, ref value, value.TotalSize);
-            _ = value.ShrinkSerializedLength(ndigits + value.MetadataSize);
+            value.ShrinkSerializedLength(ndigits + value.MetadataSize);
             _ = NumUtils.LongToSpanByte(val, value.AsSpan());
             rmwInfo.SetUsedValueLength(ref recordInfo, ref value, value.TotalSize);
 

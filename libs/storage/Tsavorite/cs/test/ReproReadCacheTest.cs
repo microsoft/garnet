@@ -60,7 +60,7 @@ namespace Tsavorite.test.ReadCacheTests
 
             string filename = Path.Join(MethodTestDir, "BasicTests.log");
 
-            var kvSettings = new TsavoriteKVSettings<SpanByte, SpanByte>()
+            var kvSettings = new KVSettings<SpanByte, SpanByte>()
             {
                 IndexSize = 1L << 26,
                 MemorySize = 1L << 15,

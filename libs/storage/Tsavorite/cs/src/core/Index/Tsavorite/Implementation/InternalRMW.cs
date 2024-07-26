@@ -253,7 +253,7 @@ namespace Tsavorite.core
             {
                 if (srcRecordInfo.Tombstone)
                 {
-                    srcRecordInfo.Tombstone = false;
+                    srcRecordInfo.ClearTombstone();
 
                     if (RevivificationManager.IsFixedLength)
                         rmwInfo.UsedValueLength = rmwInfo.FullValueLength = RevivificationManager<Key, Value, TStoreFunctions, TAllocator>.FixedValueLength;
@@ -279,7 +279,7 @@ namespace Tsavorite.core
                     }
 
                     // Did not revivify; restore the tombstone and leave the deleted record there.
-                    srcRecordInfo.Tombstone = true;
+                    srcRecordInfo.SetTombstone();
                 }
             }
             finally
@@ -415,7 +415,7 @@ namespace Tsavorite.core
                     out long newLogicalAddress, out long newPhysicalAddress, out OperationStatus status))
                 return status;
 
-            ref RecordInfo newRecordInfo = ref WriteNewRecordInfo(ref key, hlogBase, newPhysicalAddress, inNewVersion: sessionFunctions.Ctx.InNewVersion, tombstone: false, stackCtx.recSrc.LatestLogicalAddress);
+            ref RecordInfo newRecordInfo = ref WriteNewRecordInfo(ref key, hlogBase, newPhysicalAddress, inNewVersion: sessionFunctions.Ctx.InNewVersion, stackCtx.recSrc.LatestLogicalAddress);
             if (allocOptions.IgnoreHeiAddress)
                 newRecordInfo.PreviousAddress = srcRecordInfo.PreviousAddress;
             stackCtx.SetNewRecord(newLogicalAddress);
@@ -469,7 +469,7 @@ namespace Tsavorite.core
                 }
                 if (rmwInfo.Action == RMWAction.ExpireAndStop)
                 {
-                    newRecordInfo.Tombstone = true;
+                    newRecordInfo.SetTombstone();
                     status = OperationStatusUtils.AdvancedOpCode(OperationStatus.SUCCESS, StatusCode.CreatedRecord | StatusCode.Expired);
                     goto DoCAS;
                 }
@@ -519,7 +519,7 @@ namespace Tsavorite.core
                     {
                         if (rmwInfo.Action == RMWAction.ExpireAndStop)
                         {
-                            newRecordInfo.Tombstone = true;
+                            newRecordInfo.SetTombstone();
                             status = OperationStatusUtils.AdvancedOpCode(OperationStatus.SUCCESS, StatusCode.CopyUpdatedRecord | StatusCode.Expired);
                         }
                         else
@@ -579,7 +579,7 @@ namespace Tsavorite.core
                 }
 
                 // Expiration with no insertion.
-                recordInfo.Tombstone = true;
+                recordInfo.SetTombstone();
                 status = OperationStatusUtils.AdvancedOpCode(OperationStatus.NOTFOUND, advancedStatusCode);
                 return true;
             }
@@ -609,7 +609,7 @@ namespace Tsavorite.core
                     else
                     {
                         // Expiration with no insertion.
-                        recordInfo.Tombstone = true;
+                        recordInfo.SetTombstone();
                         status = OperationStatusUtils.AdvancedOpCode(OperationStatus.NOTFOUND, advancedStatusCode);
                         return true;
                     }

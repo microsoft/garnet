@@ -84,7 +84,7 @@ namespace Tsavorite.test.InputOutputParameterTests
             TestUtils.DeleteDirectory(TestUtils.MethodTestDir, wait: true);
 
             log = TestUtils.CreateTestDevice(TestUtils.DeviceType.LocalMemory, Path.Combine(TestUtils.MethodTestDir, "Device.log"));
-            store = new (new TsavoriteKVSettings<int, int>()
+            store = new (new ()
                 {
                     IndexSize = 1L << 13,
                     LogDevice = log, MemorySize = 1L << 22, SegmentSize = 1L << 22, PageSize = 1L << 10

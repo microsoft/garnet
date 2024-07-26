@@ -102,7 +102,7 @@ namespace Tsavorite.test.recovery.sumstore
 
             log = Devices.CreateLogDevice(Path.Join(MethodTestDir, "SimpleRecoveryTest1.log"), deleteOnClose: true);
 
-            store1 = new (new TsavoriteKVSettings<AdId, NumClicks>()
+            store1 = new (new ()
                 {
                     IndexSize = 1L << 13,
                     LogDevice = log,
@@ -112,7 +112,7 @@ namespace Tsavorite.test.recovery.sumstore
                 , (allocatorSettings, storeFunctions) => new(allocatorSettings, storeFunctions)
             );
 
-            store2 = new(new TsavoriteKVSettings<AdId, NumClicks>()
+            store2 = new(new ()
             {
                 IndexSize = 1L << 13,
                 LogDevice = log,
@@ -184,7 +184,7 @@ namespace Tsavorite.test.recovery.sumstore
             checkpointManager = new DeviceLogCommitCheckpointManager(new LocalStorageNamedDeviceFactory(), new DefaultCheckpointNamingScheme(Path.Join(MethodTestDir, "checkpoints4")), false);
             log = Devices.CreateLogDevice(Path.Join(MethodTestDir, "SimpleRecoveryTest2.log"), deleteOnClose: true);
 
-            store1 = new (new TsavoriteKVSettings<AdId, NumClicks>()
+            store1 = new (new ()
                 {
                     IndexSize = 1L << 13,
                     LogDevice = log,
@@ -194,7 +194,7 @@ namespace Tsavorite.test.recovery.sumstore
                 , (allocatorSettings, storeFunctions) => new(allocatorSettings, storeFunctions)
             );
 
-            store2 = new (new TsavoriteKVSettings<AdId, NumClicks>()
+            store2 = new (new ()
                 {
                     IndexSize = 1L << 13,
                     LogDevice = log,
@@ -247,7 +247,7 @@ namespace Tsavorite.test.recovery.sumstore
             log = Devices.CreateLogDevice(Path.Join(MethodTestDir, "SimpleRecoveryTest2.log"), deleteOnClose: true);
             checkpointDir = Path.Join(MethodTestDir, "checkpoints6");
 
-            store1 = new (new TsavoriteKVSettings<AdId, NumClicks>()
+            store1 = new (new ()
                 {
                     IndexSize = 1L << 13,
                     LogDevice = log,
@@ -257,7 +257,7 @@ namespace Tsavorite.test.recovery.sumstore
                 , (allocatorSettings, storeFunctions) => new(allocatorSettings, storeFunctions)
             );
 
-            store2 = new (new TsavoriteKVSettings<AdId, NumClicks>()
+            store2 = new (new ()
                 {
                     IndexSize = 1L << 13,
                     LogDevice = log,
@@ -306,7 +306,7 @@ namespace Tsavorite.test.recovery.sumstore
             checkpointManager = new DeviceLogCommitCheckpointManager(new LocalStorageNamedDeviceFactory(), new DefaultCheckpointNamingScheme(Path.Join(MethodTestDir, "checkpoints")), false);
             log = Devices.CreateLogDevice(Path.Join(MethodTestDir, "SimpleReadAndUpdateInfoTest.log"), deleteOnClose: true);
 
-            store1 = new (new TsavoriteKVSettings<AdId, NumClicks>()
+            store1 = new (new ()
                 {
                     IndexSize = 1L << 13,
                     LogDevice = log,
@@ -316,7 +316,7 @@ namespace Tsavorite.test.recovery.sumstore
                 , (allocatorSettings, storeFunctions) => new(allocatorSettings, storeFunctions)
             );
 
-            store2 = new (new TsavoriteKVSettings<AdId, NumClicks>()
+            store2 = new (new ()
                 {
                     IndexSize = 1L << 13,
                     LogDevice = log,

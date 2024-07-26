@@ -102,11 +102,37 @@ namespace Tsavorite.core
         public bool InPlaceUpdater(long physicalAddress, ref Key key, ref Input input, ref Value value, ref Output output, ref RMWInfo rmwInfo, out OperationStatus status, ref RecordInfo recordInfo)
         {
             (rmwInfo.UsedValueLength, rmwInfo.FullValueLength, _) = _clientSession.store.GetRecordLengths(physicalAddress, ref value, ref recordInfo);
-            if (!_clientSession.InPlaceUpdater(this, ref key, ref input, ref value, ref output, ref recordInfo, ref rmwInfo, out status))
-                return false;
-            _clientSession.store.SetExtraValueLength(ref value, ref recordInfo, rmwInfo.UsedValueLength, rmwInfo.FullValueLength);
-            recordInfo.SetDirtyAndModified();
-            return true;
+
+            if (_clientSession.functions.InPlaceUpdater(ref key, ref input, ref value, ref output, ref rmwInfo, ref recordInfo))
+            {
+                rmwInfo.Action = RMWAction.Default;
+                _clientSession.store.SetExtraValueLength(ref value, ref recordInfo, rmwInfo.UsedValueLength, rmwInfo.FullValueLength);
+                recordInfo.SetDirtyAndModified();
+
+                // MarkPage is done in InternalRMW
+                status = OperationStatusUtils.AdvancedOpCode(OperationStatus.SUCCESS, StatusCode.InPlaceUpdatedRecord);
+                return true;
+            }
+
+            if (rmwInfo.Action == RMWAction.ExpireAndResume)
+            {
+                // This inserts the tombstone if appropriate
+                return _clientSession.store.ReinitializeExpiredRecord<Input, Output, Context, SessionFunctionsWrapper<Key, Value, Input, Output, Context, Functions, TSessionLocker, TStoreFunctions, TAllocator>>(
+                                                    ref key, ref input, ref value, ref output, ref recordInfo, ref rmwInfo, rmwInfo.Address, this, isIpu: true, out status);
+            }
+
+            if (rmwInfo.Action == RMWAction.CancelOperation)
+            {
+                status = OperationStatus.CANCELED;
+            }
+            else if (rmwInfo.Action == RMWAction.ExpireAndStop)
+            {
+                recordInfo.SetTombstone();
+                status = OperationStatusUtils.AdvancedOpCode(OperationStatus.SUCCESS, StatusCode.InPlaceUpdatedRecord | StatusCode.Expired);
+            }
+            else
+                status = OperationStatus.SUCCESS;
+            return false;
         }
         #endregion InPlaceUpdater
 

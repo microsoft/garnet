@@ -70,7 +70,7 @@ namespace Tsavorite.test.recovery.objects
         {
             log = Devices.CreateLogDevice(Path.Combine(TestUtils.MethodTestDir, "RecoverTests.log"));
             objlog = Devices.CreateLogDevice(Path.Combine(TestUtils.MethodTestDir, "RecoverTests_HEAP.log"));
-            store = new (new TsavoriteKVSettings<MyKey, MyValue>()
+            store = new (new ()
                 {
                     IndexSize = 1L << 26,
                     LogDevice = log, ObjectLogDevice = objlog,

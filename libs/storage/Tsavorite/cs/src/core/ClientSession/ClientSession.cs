@@ -539,39 +539,5 @@ namespace Tsavorite.core
         }
 
         #endregion Other Operations
-
-        [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        internal bool InPlaceUpdater<TSessionFunctionsWrapper>(TSessionFunctionsWrapper sessionFunctions, ref Key key, ref Input input, ref Value value, ref Output output, ref RecordInfo recordInfo, ref RMWInfo rmwInfo, out OperationStatus status)
-            where TSessionFunctionsWrapper : ISessionFunctionsWrapper<Key, Value, Input, Output, Context, TStoreFunctions, TAllocator>
-        {
-            // Note: KeyIndexes do not need notification of in-place updates because the key does not change.
-            if (functions.InPlaceUpdater(ref key, ref input, ref value, ref output, ref rmwInfo, ref recordInfo))
-            {
-                rmwInfo.Action = RMWAction.Default;
-                // MarkPage is done in InternalRMW
-                status = OperationStatusUtils.AdvancedOpCode(OperationStatus.SUCCESS, StatusCode.InPlaceUpdatedRecord);
-                return true;
-            }
-            if (rmwInfo.Action == RMWAction.CancelOperation)
-            {
-                status = OperationStatus.CANCELED;
-                return false;
-            }
-            if (rmwInfo.Action == RMWAction.ExpireAndResume)
-            {
-                // This inserts the tombstone if appropriate
-                return store.ReinitializeExpiredRecord<Input, Output, Context, TSessionFunctionsWrapper>(ref key, ref input, ref value, ref output, ref recordInfo,
-                                                    ref rmwInfo, rmwInfo.Address, sessionFunctions, isIpu: true, out status);
-            }
-            if (rmwInfo.Action == RMWAction.ExpireAndStop)
-            {
-                recordInfo.Tombstone = true;
-                status = OperationStatusUtils.AdvancedOpCode(OperationStatus.SUCCESS, StatusCode.InPlaceUpdatedRecord | StatusCode.Expired);
-                return false;
-            }
-
-            status = OperationStatus.SUCCESS;
-            return false;
-        }
     }
 }

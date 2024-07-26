@@ -42,7 +42,7 @@ namespace Tsavorite.test.recovery.objects
             log = Devices.CreateLogDevice(Path.Join(TestUtils.MethodTestDir, "ObjectRecoveryTests.log"), false);
             objlog = Devices.CreateLogDevice(Path.Join(TestUtils.MethodTestDir, "ObjectRecoveryTests.obj.log"), false);
 
-            store = new (new TsavoriteKVSettings<AdIdObj, NumClicksObj>()
+            store = new (new ()
             {
                 IndexSize = KeySpace,
                 LogDevice = log, ObjectLogDevice = objlog,

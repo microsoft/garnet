@@ -65,7 +65,7 @@ namespace Tsavorite.test
             log = CreateTestDevice(deviceType, Path.Join(MethodTestDir, $"{deviceType}.log"));
 
             store = new(
-                new TsavoriteKVSettings<KeyStruct, ValueStruct>()
+                new ()
                 {
                     IndexSize = 1L << 26,
                     LogDevice = log, 
@@ -158,7 +158,7 @@ namespace Tsavorite.test
             log = Devices.CreateLogDevice(Path.Join(MethodTestDir, "stop_test.log"));
 
             store = new(
-                new TsavoriteKVSettings<KeyStruct, ValueStruct>()
+                new ()
                 {
                     IndexSize = 1L << 26,
                     LogDevice = log,
@@ -206,7 +206,7 @@ namespace Tsavorite.test
 
             // Must be large enough to contain all records in memory to exercise locking
             store = new(
-                new TsavoriteKVSettings<KeyStruct, ValueStruct>()
+                new ()
                 {
                     IndexSize = 1L << 26,
                     LogDevice = log,

@@ -91,8 +91,7 @@ namespace Tsavorite.test.LockTests
         {
             DeleteDirectory(MethodTestDir, wait: true);
             log = Devices.CreateLogDevice(Path.Join(MethodTestDir, "GenericStringTests.log"), deleteOnClose: true);
-            store = new(
-                new TsavoriteKVSettings<int, int>()
+            store = new(new ()
                 {
                     IndexSize = 1L << 26,
                     LogDevice = log

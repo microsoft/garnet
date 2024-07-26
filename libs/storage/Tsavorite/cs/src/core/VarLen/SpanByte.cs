@@ -394,7 +394,7 @@ namespace Tsavorite.core
             // Zero-fill extra space - needed so log scan does not see spurious data - *before* setting length to 0.
             if (newLength < Length)
             {
-                Unsafe.InitBlockUnaligned(ToPointer() + newLength, 0, (uint)(Length - newLength));
+                Unsafe.InitBlockUnaligned(ToPointerWithMetadata() + newLength, 0, (uint)(Length - newLength));
                 Length = newLength;
             }
         }

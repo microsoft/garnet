@@ -37,7 +37,7 @@ namespace Tsavorite.test
             DeleteDirectory(MethodTestDir, wait: true);
         }
 
-        private void Setup(TsavoriteKVSettings<KeyStruct, ValueStruct> kvSettings, DeviceType deviceType, int latencyMs = DefaultLocalMemoryDeviceLatencyMs)
+        private void Setup(KVSettings<KeyStruct, ValueStruct> kvSettings, DeviceType deviceType, int latencyMs = DefaultLocalMemoryDeviceLatencyMs)
         {
             kvSettings.IndexSize = 1L << 13;
 
@@ -724,7 +724,7 @@ namespace Tsavorite.test
             using var log = Devices.CreateLogDevice(Path.Join(MethodTestDir, "hlog.log"), deleteOnClose: false);
             
             using var store = new TsavoriteKV<long, long, LongStoreFunctions, LongAllocator>(
-                new TsavoriteKVSettings<long, long>()
+                new ()
                 {
                     IndexSize = 1L << 26,
                     LogDevice = log,
@@ -764,7 +764,7 @@ namespace Tsavorite.test
             using var log = Devices.CreateLogDevice(Path.Join(MethodTestDir, "hlog.log"), deleteOnClose: false);
 
             using var store = new TsavoriteKV<long, long, LongStoreFunctions, LongAllocator>(
-                new TsavoriteKVSettings<long, long>()
+                new ()
                 {
                     IndexSize = 1L << 26,
                     LogDevice = log,
@@ -867,7 +867,7 @@ namespace Tsavorite.test
             using var log = Devices.CreateLogDevice(Path.Join(MethodTestDir, "hlog.log"), deleteOnClose: false);
 
             using var store = new TsavoriteKV<long, long, LongStoreFunctions, LongAllocator>(
-                new TsavoriteKVSettings<long, long>()
+                new ()
                 {
                     IndexSize = 1L << 26,
                     LogDevice = log,

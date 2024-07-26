@@ -167,7 +167,7 @@ namespace Tsavorite.test.LockableUnsafeContext
             }
             log = Devices.CreateLogDevice(Path.Combine(MethodTestDir, "test.log"), deleteOnClose: false, recoverDevice: forRecovery);
 
-            var kvSettings = new TsavoriteKVSettings<long, long>()
+            var kvSettings = new KVSettings<long, long>()
             {
                 IndexSize = 1L << 26,
                 LogDevice = log,

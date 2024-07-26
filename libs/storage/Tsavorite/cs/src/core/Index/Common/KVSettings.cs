@@ -10,7 +10,7 @@ namespace Tsavorite.core
     /// <summary>
     /// Configuration settings for hybrid log. Use Utility.ParseSize to specify sizes in familiar string notation (e.g., "4k" and "4 MB").
     /// </summary>
-    public sealed class TsavoriteKVSettings<Key, Value> : IDisposable
+    public sealed class KVSettings<Key, Value> : IDisposable
     {
         readonly bool disposeDevices = false;
         readonly bool deleteDirOnDispose = false;
@@ -130,7 +130,7 @@ namespace Tsavorite.core
         /// Use Utility.ParseSize to specify sizes in familiar string notation (e.g., "4k" and "4 MB").
         /// Default index size is 64MB.
         /// </summary>
-        public TsavoriteKVSettings() { }
+        public KVSettings() { }
 
         internal readonly ILoggerFactory loggerFactory;
         internal readonly ILogger logger;
@@ -143,7 +143,7 @@ namespace Tsavorite.core
         /// <param name="baseDir">Base directory (without trailing path separator)</param>
         /// <param name="deleteDirOnDispose">Whether to delete base directory on dispose. This option prevents later recovery.</param>
         /// <param name="logger"></param>
-        public TsavoriteKVSettings(string baseDir, bool deleteDirOnDispose = false, ILoggerFactory loggerFactory = null, ILogger logger = null)
+        public KVSettings(string baseDir, bool deleteDirOnDispose = false, ILoggerFactory loggerFactory = null, ILogger logger = null)
         {
             this.loggerFactory = loggerFactory;
             this.logger = logger;

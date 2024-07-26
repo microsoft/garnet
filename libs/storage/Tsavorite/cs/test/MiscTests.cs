@@ -28,7 +28,7 @@ namespace Tsavorite.test
             log = Devices.CreateLogDevice(Path.Join(MethodTestDir, "MiscTests.log"), deleteOnClose: true);
             objlog = Devices.CreateLogDevice(Path.Join(MethodTestDir, "MiscTests.obj.log"), deleteOnClose: true);
 
-            store = new (new TsavoriteKVSettings<int, MyValue>()
+            store = new (new ()
                 {
                     IndexSize = 1L << 13,
                     LogDevice = log,
@@ -130,7 +130,7 @@ namespace Tsavorite.test
             {
                 var checkpointDir = Path.Join(MethodTestDir, "checkpoints");
                 log = Devices.CreateLogDevice(Path.Join(MethodTestDir, "hlog1.log"), deleteOnClose: true);
-                store = new (new TsavoriteKVSettings<KeyStruct, ValueStruct>()
+                store = new (new ()
                     {
                         IndexSize = 1L << 13,
                         LogDevice = log,
@@ -185,7 +185,7 @@ namespace Tsavorite.test
                 session.Dispose();
                 store.Dispose();
 
-                store = new(new TsavoriteKVSettings<KeyStruct, ValueStruct>()
+                store = new(new ()
                 {
                     IndexSize = 1L << 13,
                     LogDevice = log,

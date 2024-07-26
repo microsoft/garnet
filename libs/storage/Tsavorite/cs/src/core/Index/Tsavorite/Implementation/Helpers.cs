@@ -19,10 +19,10 @@ namespace Tsavorite.core
         }
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        static ref RecordInfo WriteNewRecordInfo(ref Key key, AllocatorBase<Key, Value, TStoreFunctions, TAllocator> log, long newPhysicalAddress, bool inNewVersion, bool tombstone, long previousAddress)
+        static ref RecordInfo WriteNewRecordInfo(ref Key key, AllocatorBase<Key, Value, TStoreFunctions, TAllocator> log, long newPhysicalAddress, bool inNewVersion, long previousAddress)
         {
             ref RecordInfo recordInfo = ref log._wrapper.GetInfo(newPhysicalAddress);
-            recordInfo.WriteInfo(inNewVersion, tombstone, previousAddress);
+            recordInfo.WriteInfo(inNewVersion, previousAddress);
             log._wrapper.SerializeKey(ref key, newPhysicalAddress);
             return ref recordInfo;
         }

@@ -3,6 +3,7 @@
 
 #pragma warning disable CS1591 // Missing XML comment for publicly visible type or member
 
+using System.Diagnostics;
 using System.Runtime.CompilerServices;
 using System.Runtime.InteropServices;
 using System.Threading;
@@ -55,7 +56,7 @@ namespace Tsavorite.core
         internal static RecordInfo InitialValid = new() { Valid = true, PreviousAddress = Constants.kTempInvalidAddress };
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public void WriteInfo(bool inNewVersion, bool tombstone, long previousAddress)
+        public void WriteInfo(bool inNewVersion, long previousAddress)
         {
             // For Recovery reasons, we need to have the record both Sealed and Invalid: 
             // - Recovery removes the Sealed bit, so we need Invalid to survive from this point on to successful CAS.
@@ -63,9 +64,9 @@ namespace Tsavorite.core
             // - Revivification sets Sealed; we need to preserve it here.
             // We'll clear both on successful CAS.
             InitializeToSealedAndInvalid();
-            Tombstone = tombstone;
             PreviousAddress = previousAddress;
-            IsInNewVersion = inNewVersion;
+            if (inNewVersion)
+                SetIsInNewVersion();
         }
 
         // We ignore temp bits from disk images
@@ -154,21 +155,25 @@ namespace Tsavorite.core
 
         public readonly bool IsNull() => word == 0;
 
-        public bool Tombstone
+        public readonly bool Tombstone
         {
-            readonly get => (word & kTombstoneBitMask) > 0;
-            set
-            {
-                if (value) word |= kTombstoneBitMask;
-                else word &= ~kTombstoneBitMask;
-            }
+            [MethodImpl(MethodImplOptions.AggressiveInlining)]
+            get => (word & kTombstoneBitMask) > 0;
         }
+
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        public void SetTombstone() => word |= kTombstoneBitMask;
+
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        public void ClearTombstone() => word &= ~kTombstoneBitMask;
 
         public bool Valid
         {
             readonly get => (word & kValidBitMask) > 0;
+
             set
             {
+                // This is only called for initialization of static .InitialValid
                 if (value) word |= kValidBitMask;
                 else word &= ~kValidBitMask;
             }
@@ -184,14 +189,9 @@ namespace Tsavorite.core
             }
         }
 
-        public bool Dirty
+        public readonly bool Dirty
         {
-            readonly get => (word & kDirtyBitMask) > 0;
-            set
-            {
-                if (value) word |= kDirtyBitMask;
-                else word &= ~kDirtyBitMask;
-            }
+            get => (word & kDirtyBitMask) > 0;
         }
 
         public bool Modified
@@ -204,36 +204,31 @@ namespace Tsavorite.core
             }
         }
 
-        public bool Filler
+        public readonly bool HasFiller
         {
             [MethodImpl(MethodImplOptions.AggressiveInlining)]
-            readonly get => (word & kFillerBitMask) > 0;
-
-            set
-            {
-                if (value) word |= kFillerBitMask;
-                else word &= ~kFillerBitMask;
-            }
+            get => (word & kFillerBitMask) > 0;
         }
 
-        public bool IsInNewVersion
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        public void SetHasFiller() => word |= kFillerBitMask;
+
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        public void ClearHasFiller() => word &= ~kFillerBitMask;
+
+        public readonly bool IsInNewVersion
         {
             [MethodImpl(MethodImplOptions.AggressiveInlining)]
-            readonly get => (word & kInNewVersionBitMask) > 0;
-
-            set
-            {
-                if (value) word |= kInNewVersionBitMask;
-                else word &= ~kInNewVersionBitMask;
-            }
+            get => (word & kInNewVersionBitMask) > 0;
         }
+
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        public void SetIsInNewVersion() => word &= ~kInNewVersionBitMask;
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public void SetDirtyAndModified() => word |= kDirtyBitMask | kModifiedBitMask;
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public void SetDirty() => word |= kDirtyBitMask;
-        [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public void SetTombstone() => word |= kTombstoneBitMask;
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public void SetInvalid() => word &= ~kValidBitMask;
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
@@ -270,11 +265,7 @@ namespace Tsavorite.core
             readonly get { return word & kPreviousAddressMaskInWord; }
 
             [MethodImpl(MethodImplOptions.AggressiveInlining)]
-            set
-            {
-                word &= ~kPreviousAddressMaskInWord;
-                word |= value & kPreviousAddressMaskInWord;
-            }
+            set { word = (word & ~kPreviousAddressMaskInWord) | (value & kPreviousAddressMaskInWord); }
         }
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
@@ -297,7 +288,7 @@ namespace Tsavorite.core
             var paRC = IsReadCache(PreviousAddress) ? "(rc)" : string.Empty;
             static string bstr(bool value) => value ? "T" : "F";
             return $"prev {AbsoluteAddress(PreviousAddress)}{paRC}, valid {bstr(Valid)}, tomb {bstr(Tombstone)}, seal {bstr(IsSealed)},"
-                 + $" mod {bstr(Modified)}, dirty {bstr(Dirty)}, fill {bstr(Filler)}, Un1 {bstr(Unused1)}, Un2 {bstr(Unused2)}";
+                 + $" mod {bstr(Modified)}, dirty {bstr(Dirty)}, fill {bstr(HasFiller)}, Un1 {bstr(Unused1)}, Un2 {bstr(Unused2)}";
         }
     }
 }

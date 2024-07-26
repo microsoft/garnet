@@ -30,7 +30,7 @@ namespace Tsavorite.core
         internal unsafe void SetExtraValueLength(ref Value recordValue, ref RecordInfo recordInfo, int usedValueLength, int fullValueLength)
         {
             if (RevivificationManager.IsFixedLength)
-                recordInfo.Filler = false;
+                recordInfo.ClearHasFiller();
             else
                 SetVarLenExtraValueLength(ref recordValue, ref recordInfo, usedValueLength, fullValueLength);
         }
@@ -49,10 +49,10 @@ namespace Tsavorite.core
                 // We always store the "extra" as the difference between the aligned usedValueLength and the fullValueLength.
                 // However, the UpdateInfo structures use the unaligned usedValueLength; aligned usedValueLength is not visible to the user.
                 *extraValueLengthPtr = extraValueLength;
-                recordInfo.Filler = true;
+                recordInfo.SetHasFiller();
                 return;
             }
-            recordInfo.Filler = false;
+            recordInfo.ClearHasFiller();
         }
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
@@ -63,7 +63,7 @@ namespace Tsavorite.core
                 return (RevivificationManager<Key, Value, TStoreFunctions, TAllocator>.FixedValueLength, RevivificationManager<Key, Value, TStoreFunctions, TAllocator>.FixedValueLength, hlog.GetAverageRecordSize());
 
             int usedValueLength, fullValueLength, allocatedSize, valueOffset = GetValueOffset(physicalAddress, ref recordValue);
-            if (recordInfo.Filler)
+            if (recordInfo.HasFiller)
             {
                 usedValueLength = hlog.GetValueLength(ref recordValue);
                 var alignedUsedValueLength = RoundUp(usedValueLength, sizeof(int));
@@ -111,7 +111,7 @@ namespace Tsavorite.core
             // Skip the valuelength calls if we are not VarLen.
             if (RevivificationManager.IsFixedLength)
             {
-                recordInfo.Filler = false;
+                recordInfo.ClearHasFiller();
                 return;
             }
 
@@ -141,7 +141,7 @@ namespace Tsavorite.core
                 // Even though this says "SpanByte" it is just a utility function to zero space; no actual SpanByte instance is assumed
                 SpanByte.Clear((byte*)Unsafe.AsPointer(ref recordValue) + usedValueLength, extraValueLength);
             }
-            recordInfo.Filler = false;
+            recordInfo.ClearHasFiller();
         }
 
         // Do not try to inline this; it causes TryAllocateRecord to bloat and slow
@@ -195,10 +195,10 @@ namespace Tsavorite.core
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         internal void SetTombstoneAndExtraValueLength(ref Value recordValue, ref RecordInfo recordInfo, int usedValueLength, int fullValueLength)
         {
-            recordInfo.Tombstone = true;
+            recordInfo.SetTombstone();
             if (RevivificationManager.IsFixedLength)
             {
-                recordInfo.Filler = false;
+                recordInfo.ClearHasFiller();
                 return;
             }
 
@@ -222,7 +222,7 @@ namespace Tsavorite.core
             ClearExtraValueSpace(ref srcRecordInfo, ref recordValue, minValueLength, recordLengths.fullValueLength);
             storeFunctions.DisposeRecord(ref key, ref recordValue, DisposeReason.RevivificationFreeList);
 
-            srcRecordInfo.Tombstone = false;
+            srcRecordInfo.ClearTombstone();
 
             SetExtraValueLength(ref recordValue, ref srcRecordInfo, recordLengths.usedValueLength, recordLengths.fullValueLength);
             return (true, hlog.GetValueLength(ref recordValue));

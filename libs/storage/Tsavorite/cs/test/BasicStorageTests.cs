@@ -96,7 +96,7 @@ namespace Tsavorite.test
         static void TestDeviceWriteRead(IDevice log)
         {
             var store = new TsavoriteKV<KeyStruct, ValueStruct, StructStoreFunctions, StructAllocator>(
-                new TsavoriteKVSettings<KeyStruct, ValueStruct>()
+                new ()
                 {
                     IndexSize = 1L << 26,
                     LogDevice = log,

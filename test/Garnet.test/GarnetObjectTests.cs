@@ -151,7 +151,7 @@ namespace Garnet.test
             logDevice ??= Devices.CreateLogDevice(TestUtils.MethodTestDir + "/hlog.log");
             objectLogDevice ??= Devices.CreateLogDevice(TestUtils.MethodTestDir + "/hlog.obj.log");
 
-            var kvSettings = new TsavoriteKVSettings<byte[], IGarnetObject>
+            var kvSettings = new KVSettings<byte[], IGarnetObject>
             {
                 IndexSize = 1L << 13,
                 LogDevice = logDevice,

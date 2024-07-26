@@ -30,7 +30,7 @@ namespace Tsavorite.test.statemachine
             string checkpointDir = Path.Join(TestUtils.MethodTestDir, "statemachinetest");
             _ = Directory.CreateDirectory(checkpointDir);
 
-            store = new (new TsavoriteKVSettings<AdId, NumClicks>()
+            store = new (new ()
                 {
                     IndexSize = 1L << 13,
                     LogDevice = log,

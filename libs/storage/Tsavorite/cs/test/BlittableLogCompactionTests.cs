@@ -56,7 +56,7 @@ namespace Tsavorite.test
                 }
             }
 
-            store = new (new TsavoriteKVSettings<KeyStruct, ValueStruct>()
+            store = new (new ()
                 {
                     IndexSize = 1L << 26, 
                     LogDevice = log,

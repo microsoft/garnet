@@ -111,13 +111,10 @@ namespace Tsavorite.core
         {
             ref var recordInfo = ref GetInfo(physicalAddress);
             if (recordInfo.IsNull())
-            {
-                var l = RecordInfo.GetLength();
-                return (l, l);
-            }
+                return (RecordInfo.GetLength(), RecordInfo.GetLength());
 
             var valueLen = ValueSize(physicalAddress);
-            if (recordInfo.Filler)  // Get the extraValueLength
+            if (recordInfo.HasFiller)  // Get the extraValueLength
                 valueLen += *(int*)(ValueOffset(physicalAddress) + RoundUp(valueLen, sizeof(int)));
 
             var size = RecordInfo.GetLength() + AlignedKeySize(physicalAddress) + valueLen;
@@ -149,7 +146,7 @@ namespace Tsavorite.core
             // We need at least [RecordInfo size] + [actual key size] + [actual value size]
             var recordInfo = GetInfo(physicalAddress);
             var valueLen = ValueSize(physicalAddress);
-            if (recordInfo.Filler)
+            if (recordInfo.HasFiller)
             {
                 // We have a filler, so the valueLen we have now is the usedValueLength; we need to offset to where the extraValueLength is and read that int
                 var alignedUsedValueLength = RoundUp(valueLen, sizeof(int));

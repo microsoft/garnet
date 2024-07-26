@@ -173,12 +173,12 @@ namespace Garnet.server
         }
 
         /// <summary>
-        /// Get TsavoriteKVSettings
+        /// Get KVSettings
         /// </summary>
         public void GetSettings<TKey, TValue>()
         {
             var indexCacheLines = IndexSizeCachelines("hash index size", IndexSize);
-            var kvSettings = new TsavoriteKVSettings<TKey, TValue>()
+            var kvSettings = new KVSettings<TKey, TValue>()
             {
                 IndexSize = indexCacheLines * 64L,
                 PreallocateLog = false,

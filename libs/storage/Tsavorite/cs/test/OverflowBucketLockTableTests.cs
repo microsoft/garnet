@@ -51,7 +51,7 @@ namespace Tsavorite.test.LockTable
             }
             comparer ??= new LongKeyComparer();
 
-            store = new (new TsavoriteKVSettings<long, long>()
+            store = new (new ()
                 {
                     IndexSize = 1L << 26,
                     LogDevice = log,

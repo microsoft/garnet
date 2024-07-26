@@ -356,14 +356,14 @@ namespace Garnet.server
         }
 
         /// <summary>
-        /// Get TsavoriteKVSettings for the main store log
+        /// Get KVSettings for the main store log
         /// </summary>
-        public TsavoriteKVSettings<SpanByte, SpanByte> GetSettings(ILogger logger, out INamedDeviceFactory logFactory)
+        public KVSettings<SpanByte, SpanByte> GetSettings(ILogger logger, out INamedDeviceFactory logFactory)
         {
             if (MutablePercent is < 10 or > 95)
                 throw new Exception("MutablePercent must be between 10 and 95");
 
-            TsavoriteKVSettings<SpanByte, SpanByte> kvSettings = new(baseDir: null, logger: logger);
+            KVSettings<SpanByte, SpanByte> kvSettings = new(baseDir: null, logger: logger);
 
             var indexCacheLines = IndexSizeCachelines("hash index size", IndexSize);
             kvSettings = new ()
@@ -494,14 +494,14 @@ namespace Garnet.server
         }
 
         /// <summary>
-        /// Get TsavoriteKVSettings for the object store log
+        /// Get KVSettings for the object store log
         /// </summary>
-        public TsavoriteKVSettings<byte[], IGarnetObject> GetObjectStoreSettings(ILogger logger, out long objTotalMemorySize)
+        public KVSettings<byte[], IGarnetObject> GetObjectStoreSettings(ILogger logger, out long objTotalMemorySize)
         {
             if (ObjectStoreMutablePercent is < 10 or > 95)
                 throw new Exception("ObjectStoreMutablePercent must be between 10 and 95");
 
-            TsavoriteKVSettings<byte[], IGarnetObject> kvSettings = new(baseDir: null, logger: logger);
+            KVSettings<byte[], IGarnetObject> kvSettings = new(baseDir: null, logger: logger);
 
             var indexCacheLines = IndexSizeCachelines("object store hash index size", ObjectStoreIndexSize);
             kvSettings = new ()

@@ -81,7 +81,7 @@ namespace Tsavorite.benchmark
             if (testLoader.Options.ThreadCount >= 16)
                 device.ThrottleLimit = testLoader.Options.ThreadCount * 12;
 
-            var kvSettings = new TsavoriteKVSettings<Key, Value>()
+            var kvSettings = new KVSettings<Key, Value>()
             {
                 IndexSize = testLoader.GetHashTableSize(),
                 LogDevice = device,

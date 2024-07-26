@@ -48,7 +48,7 @@ namespace Tsavorite.test.recovery.sumstore
         private void Setup(DeviceType deviceType)
         {
             log = CreateTestDevice(deviceType, Path.Join(MethodTestDir, "Test.log"));
-            store = new (new TsavoriteKVSettings<AdId, NumClicks>()
+            store = new (new ()
                 {
                     IndexSize = KeySpace,
                     LogDevice = log,
@@ -247,7 +247,7 @@ namespace Tsavorite.test.recovery.sumstore
                 ? new LocalMemoryDevice(1L << 26, 1L << 22, 2, fileName: Path.Join(MethodTestDir, $"{typeof(TData).Name}.obj.log"))
                 : null;
 
-            var result = new TsavoriteKV<TData, TData, TStoreFunctions, TAllocator>(new TsavoriteKVSettings<TData, TData>()
+            var result = new TsavoriteKV<TData, TData, TStoreFunctions, TAllocator>(new ()
                 {
                     IndexSize = DeviceTypeRecoveryTests.KeySpace,
                     LogDevice = log,

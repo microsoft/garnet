@@ -212,7 +212,7 @@ namespace Tsavorite.core
             {
                 if (srcRecordInfo.Tombstone)
                 {
-                    srcRecordInfo.Tombstone = false;
+                    srcRecordInfo.ClearTombstone();
 
                     if (RevivificationManager.IsFixedLength)
                         upsertInfo.UsedValueLength = upsertInfo.FullValueLength = RevivificationManager<Key, Value, TStoreFunctions, TAllocator>.FixedValueLength;
@@ -238,7 +238,7 @@ namespace Tsavorite.core
                     }
 
                     // Did not revivify; restore the tombstone and leave the deleted record there.
-                    srcRecordInfo.Tombstone = true;
+                    srcRecordInfo.SetTombstone();
                 }
             }
             finally
@@ -312,7 +312,7 @@ namespace Tsavorite.core
                     out long newLogicalAddress, out long newPhysicalAddress, out OperationStatus status))
                 return status;
 
-            ref RecordInfo newRecordInfo = ref WriteNewRecordInfo(ref key, hlogBase, newPhysicalAddress, inNewVersion: sessionFunctions.Ctx.InNewVersion, tombstone: false, stackCtx.recSrc.LatestLogicalAddress);
+            ref RecordInfo newRecordInfo = ref WriteNewRecordInfo(ref key, hlogBase, newPhysicalAddress, inNewVersion: sessionFunctions.Ctx.InNewVersion, stackCtx.recSrc.LatestLogicalAddress);
             if (allocOptions.IgnoreHeiAddress)
                 newRecordInfo.PreviousAddress = srcRecordInfo.PreviousAddress;
             stackCtx.SetNewRecord(newLogicalAddress);

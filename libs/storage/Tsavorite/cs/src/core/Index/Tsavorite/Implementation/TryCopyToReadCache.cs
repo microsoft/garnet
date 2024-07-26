@@ -27,7 +27,7 @@ namespace Tsavorite.core
 
             if (!TryAllocateRecordReadCache(ref pendingContext, ref stackCtx, allocatedSize, out long newLogicalAddress, out long newPhysicalAddress, out _))
                 return false;
-            ref var newRecordInfo = ref WriteNewRecordInfo(ref key, readCacheBase, newPhysicalAddress, inNewVersion: false, tombstone: false, stackCtx.hei.Address);
+            ref var newRecordInfo = ref WriteNewRecordInfo(ref key, readCacheBase, newPhysicalAddress, inNewVersion: false, stackCtx.hei.Address);
             stackCtx.SetNewRecord(newLogicalAddress | Constants.kReadCacheBitMask);
 
             UpsertInfo upsertInfo = new()

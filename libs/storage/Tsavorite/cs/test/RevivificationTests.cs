@@ -273,7 +273,7 @@ namespace Tsavorite.test.Revivification
                 revivificationSettings.RevivifiableFraction = revivifiableFraction.Value;
             if (recordElision.HasValue)
                 revivificationSettings.RestoreDeletedRecordsIfBinIsFull = recordElision.Value == RecordElision.NoElide;
-            store = new (new TsavoriteKVSettings<int, int>()
+            store = new (new ()
                 {
                     IndexSize = 1L << 24,
                     LogDevice = log,
@@ -669,7 +669,7 @@ namespace Tsavorite.test.Revivification
 
             CollisionRange collisionRange = CollisionRange.None;
 
-            var kvSettings = new TsavoriteKVSettings<SpanByte, SpanByte>()
+            var kvSettings = new KVSettings<SpanByte, SpanByte>()
             {
                 IndexSize = 1L << 24,
                 LogDevice = log,
@@ -1652,7 +1652,7 @@ namespace Tsavorite.test.Revivification
             log = Devices.CreateLogDevice(Path.Combine(MethodTestDir, "test.log"), deleteOnClose: true);
             objlog = Devices.CreateLogDevice(Path.Combine(MethodTestDir, "test.obj.log"), deleteOnClose: true);
 
-            store = new (new TsavoriteKVSettings<MyKey, MyValue>()
+            store = new (new ()
                 {
                     IndexSize = 1L << 13,
                     LogDevice = log,
@@ -1828,7 +1828,7 @@ namespace Tsavorite.test.Revivification
             }
 
             comparer = new RevivificationSpanByteComparer(collisionRange);
-            store = new(new TsavoriteKVSettings<SpanByte, SpanByte>()
+            store = new(new ()
                 {
                     IndexSize = 1L << 24,
                     LogDevice = log,

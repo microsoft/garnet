@@ -56,7 +56,7 @@ namespace Garnet.server
         /// <param name="logSettings">Hybrid log settings</param>
         /// <param name="targetSize">Total memory size target</param>
         /// <param name="loggerFactory"></param>
-        public CacheSizeTracker(TsavoriteKV<byte[], IGarnetObject, ObjectStoreFunctions, ObjectStoreAllocator> store, TsavoriteKVSettings<byte[], IGarnetObject> logSettings,
+        public CacheSizeTracker(TsavoriteKV<byte[], IGarnetObject, ObjectStoreFunctions, ObjectStoreAllocator> store, KVSettings<byte[], IGarnetObject> logSettings,
                 long targetSize, ILoggerFactory loggerFactory = null)
         {
             Debug.Assert(store != null);

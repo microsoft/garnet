@@ -27,7 +27,7 @@ namespace Tsavorite.test
             log = Devices.CreateLogDevice(Path.Join(TestUtils.MethodTestDir, "GenericStringTests.log"), deleteOnClose: true);
             objlog = Devices.CreateLogDevice(Path.Join(TestUtils.MethodTestDir, "GenericStringTests.obj.log"), deleteOnClose: true);
 
-            store = new (new TsavoriteKVSettings<byte[], byte[]>()
+            store = new (new ()
                 { 
                     IndexSize = 1L << 26,
                     LogDevice = log, ObjectLogDevice = objlog,

@@ -53,18 +53,10 @@ namespace Tsavorite.core
             }
         }
 
-        public bool ReadCache
+        public readonly bool ReadCache
         {
             [MethodImpl(MethodImplOptions.AggressiveInlining)]
-            readonly get => (word & Constants.kReadCacheBitMask) != 0;
-
-            set
-            {
-                if (value)
-                    word |= Constants.kReadCacheBitMask;
-                else
-                    word &= ~Constants.kReadCacheBitMask;
-            }
+            get => (word & Constants.kReadCacheBitMask) != 0;
         }
 
         public override readonly string ToString()

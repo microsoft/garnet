@@ -90,7 +90,7 @@ namespace Tsavorite.test.ReadCacheTests
             log = Devices.CreateLogDevice(Path.Join(MethodTestDir, "NativeReadCacheTests.log"), deleteOnClose: true);
 
             comparer = new LongComparerModulo(HashMod);
-            store = new (new TsavoriteKVSettings<long, long>()
+            store = new (new ()
                 {
                     IndexSize = 1L << 26,
                     LogDevice = log,
@@ -707,7 +707,7 @@ namespace Tsavorite.test.ReadCacheTests
             comparer = new LongComparerModulo((long)modRange);
 
             // Make the main log small enough that we force the readcache
-            store = new (new TsavoriteKVSettings<long, long>()
+            store = new (new ()
                 {
                     IndexSize = 1L << 26,
                     LogDevice = log,
@@ -949,7 +949,7 @@ namespace Tsavorite.test.ReadCacheTests
             comparer = new SpanByteComparerModulo(modRange);
 
             // Make the main log small enough that we force the readcache
-            store = new(new TsavoriteKVSettings<SpanByte, SpanByte>()
+            store = new(new ()
             {
                 IndexSize = 1L << 20,
                 LogDevice = log,

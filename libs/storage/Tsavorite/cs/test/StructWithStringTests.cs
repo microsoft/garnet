@@ -74,7 +74,7 @@ namespace Tsavorite.test.StructWithString
             log = Devices.CreateLogDevice(Path.Combine(MethodTestDir, "test.log"), deleteOnClose: false);
             objlog = Devices.CreateLogDevice(Path.Combine(MethodTestDir, "test.obj.log"), deleteOnClose: false);
 
-            store = new (new TsavoriteKVSettings<StructWithString, StructWithString>()
+            store = new (new ()
                 {
                     IndexSize = 1L << 26,
                     LogDevice = log, ObjectLogDevice = objlog, 

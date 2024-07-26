@@ -11,13 +11,13 @@ namespace Tsavorite.core
     /// </summary>
     public struct AllocatorSettings
     {
-        /// <summary>The Log settings, usually from <see cref="TsavoriteKVSettings{Key, Value}"/></summary>
+        /// <summary>The Log settings, usually from <see cref="KVSettings{Key, Value}"/></summary>
         internal LogSettings LogSettings;
 
         /// <summary>The epoch created for the <see cref="TsavoriteKV{TKey, TValue, TStoreFunctions, TAllocator}"/></summary>
         internal LightEpoch epoch;
 
-        /// <summary>The logger to use, either from <see cref="TsavoriteKVSettings{K, V}"/> or created by <see cref="TsavoriteKV{TKey, TValue, TStoreFunctions, TAllocator}"/></summary>
+        /// <summary>The logger to use, either from <see cref="KVSettings{K, V}"/> or created by <see cref="TsavoriteKV{TKey, TValue, TStoreFunctions, TAllocator}"/></summary>
         internal ILogger logger;
 
         /// <summary>The action to call on page eviction; used only for readcache</summary>

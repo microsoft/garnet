@@ -34,8 +34,8 @@ namespace Garnet
         private TsavoriteLog appendOnlyFile;
         private SubscribeBroker<SpanByte, SpanByte, IKeySerializer<SpanByte>> subscribeBroker;
         private CollectionItemBroker itemBroker;
-        private TsavoriteKVSettings<SpanByte, SpanByte> kvSettings;
-        private TsavoriteKVSettings<byte[], IGarnetObject> objKvSettings;
+        private KVSettings<SpanByte, SpanByte> kvSettings;
+        private KVSettings<byte[], IGarnetObject> objKvSettings;
         private INamedDeviceFactory logFactory;
         private MemoryLogger initLogger;
         private ILogger logger;

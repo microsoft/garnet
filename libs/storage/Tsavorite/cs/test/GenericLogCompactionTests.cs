@@ -25,7 +25,7 @@ namespace Tsavorite.test
             // Clean up log files from previous test runs in case they weren't cleaned up
             DeleteDirectory(MethodTestDir, wait: true);
 
-            var kvSettings = new TsavoriteKVSettings<MyKey, MyValue>()
+            var kvSettings = new KVSettings<MyKey, MyValue>()
             {
                 IndexSize = 1L << 13,
                 MutableFraction = 0.1,
