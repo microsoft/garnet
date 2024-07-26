@@ -357,10 +357,11 @@ namespace Garnet.server
 
             var _origReadHead = readHead;
 
-            // Each message assumes the default behavior of committing the AOF log, given that AOF is enabled on the session
-            aofCommitCurrentCommand = true;
             while (bytesRead - readHead >= 4)
             {
+                // Each command assumes the default behavior of committing the AOF log (given that AOF is enabled on the session)
+                aofCommitCurrentCommand = true;
+
                 // First, parse the command, making sure we have the entire command available
                 // We use endReadHead to track the end of the current command
                 // On success, readHead is left at the start of the command payload for legacy operators
@@ -376,6 +377,9 @@ namespace Garnet.server
                 // Check ACL permissions for the command
                 if (cmd != RespCommand.INVALID && CheckACLPermissions(cmd))
                 {
+                    // if the command being processed is a not aof independent, then let session proceed without blocking for AOF flusing later
+                    aofCommitCurrentCommand = !cmd.AofIndependent();
+
                     if (txnManager.state != TxnState.None)
                     {
                         if (txnManager.state == TxnState.Running)
@@ -393,9 +397,6 @@ namespace Garnet.server
                     }
                     else
                     {
-                        // Commands outside the context of a user initiated transaction will not change state
-                        // of database and hence should not be blocked on AOF to be comitted.
-                        aofCommitCurrentCommand = !cmd.IsNonDbStateMutatingCommand(currentCustomCommand, currentCustomObjectCommand);
                         _ = ProcessBasicCommands(cmd, ref basicGarnetApi);
                     }
                 }
