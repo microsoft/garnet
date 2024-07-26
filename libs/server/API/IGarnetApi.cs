@@ -278,16 +278,6 @@ namespace Garnet.server
         #region SortedSet Methods
 
         /// <summary>
-        /// Adds all the specified members with the specified scores to the sorted set stored at key.
-        /// Current members get the score updated and reordered.
-        /// </summary>
-        /// <param name="key">Key</param>
-        /// <param name="input">Formatted input arguments with header [ObjectInputHeader][RESP score][RESP member]...</param>
-        /// <param name="zaddCount">Number of adds performed</param>
-        /// <returns></returns>
-        GarnetStatus SortedSetAdd(byte[] key, ref ObjectInput input, out int zaddCount);
-
-        /// <summary>
         /// Adds the specified member with the specified score to the sorted set stored at key.
         /// </summary>
         /// <param name="key">Key</param>
@@ -315,7 +305,7 @@ namespace Garnet.server
         /// <param name="input"></param>
         /// <param name="output"></param>
         /// <returns></returns>
-        GarnetStatus SortedSetAdd(byte[] key, ref ObjectInput input, out ObjectOutputHeader output);
+        GarnetStatus SortedSetAdd(byte[] key, ref ObjectInput input, ref GarnetObjectStoreOutput output);
 
         /// <summary>
         /// Removes the specified member from the sorted set stored at key.

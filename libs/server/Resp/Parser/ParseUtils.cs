@@ -1,6 +1,7 @@
 ﻿// Copyright (c) Microsoft Corporation.
 // Licensed under the MIT license.
 
+using System.Buffers.Text;
 using System.Runtime.CompilerServices;
 using System.Text;
 using Garnet.common;
@@ -71,6 +72,36 @@ namespace Garnet.server
             var ptr = slice.ptr;
             return RespReadUtils.TryReadLong(ref ptr, slice.ptr + slice.length, out number, out var bytesRead)
                    || ((int)bytesRead != slice.length);
+        }
+
+        /// <summary>
+        /// Read a signed 64-bit double from a given ArgSlice.
+        /// </summary>
+        /// <returns>
+        /// Parsed double
+        /// </returns>
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        public static double ReadDouble(ref ArgSlice slice)
+        {
+            if (!TryReadDouble(ref slice, out var number))
+            {
+                RespParsingException.ThrowNotANumber(slice.ptr, slice.length);
+            }
+            return number;
+        }
+
+        /// <summary>
+        /// Try to read a signed 64-bit double from a given ArgSlice.
+        /// </summary>
+        /// <returns>
+        /// True if double parsed successfully
+        /// </returns>
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        public static bool TryReadDouble(ref ArgSlice slice, out double number)
+        {
+            var sbNumber = slice.ReadOnlySpan;
+            return Utf8Parser.TryParse(sbNumber, out number, out var bytesConsumed) &&
+                            bytesConsumed == sbNumber.Length; ;
         }
 
         /// <summary>

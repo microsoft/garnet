@@ -180,8 +180,6 @@ namespace Garnet.server
         /// <inheritdoc />
         public override unsafe bool Operate(ref ObjectInput input, ref SpanByteAndMemory output, out long sizeChange, out bool removeKey)
         {
-            byte* _input = null;
-
             fixed (byte* outputSpan = output.SpanByte.AsSpan())
             {
                 var header = input.header;
@@ -198,7 +196,7 @@ namespace Garnet.server
                 switch (header.SortedSetOp)
                 {
                     case SortedSetOperation.ZADD:
-                        SortedSetAdd(ref input, outputSpan);
+                        SortedSetAdd(ref input, ref output);
                         break;
                     case SortedSetOperation.ZREM:
                         SortedSetRemove(ref input, outputSpan);

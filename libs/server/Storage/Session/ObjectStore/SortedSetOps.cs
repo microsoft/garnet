@@ -812,9 +812,9 @@ namespace Garnet.server
         /// <param name="output"></param>
         /// <param name="objectStoreContext"></param>
         /// <returns></returns>
-        public GarnetStatus SortedSetAdd<TObjectContext>(byte[] key, ref ObjectInput input, out ObjectOutputHeader output, ref TObjectContext objectStoreContext)
+        public GarnetStatus SortedSetAdd<TObjectContext>(byte[] key, ref ObjectInput input, ref GarnetObjectStoreOutput output, ref TObjectContext objectStoreContext)
         where TObjectContext : ITsavoriteContext<byte[], IGarnetObject, ObjectInput, GarnetObjectStoreOutput, long, ObjectStoreFunctions>
-        => RMWObjectStoreOperation(key, ref input, out output, ref objectStoreContext);
+        => RMWObjectStoreOperationWithOutput(key, ref input, ref objectStoreContext, ref output);
 
         /// <summary>
         /// Removes the specified members from the sorted set stored at key.

@@ -127,24 +127,24 @@ namespace Garnet.server
         /// </summary>
         internal unsafe bool CheckSetGetFlag()
             => (flags & RespInputFlags.SetGet) != 0;
+
+        public unsafe byte* ToPointer()
+            => (byte*)Unsafe.AsPointer(ref cmd);
     }
 
-    [StructLayout(LayoutKind.Explicit, Size = Size)]
     public struct ObjectInput
     {
         public const int Size = RespInputHeader.Size + 2 * sizeof(int) + ArgSlice.Size;
 
-        [FieldOffset(0)]
         public RespInputHeader header;
 
-        [FieldOffset(RespInputHeader.Size)]
         public int arg1;
 
-        [FieldOffset(RespInputHeader.Size + sizeof(int))]
         public int arg2;
 
-        [FieldOffset(RespInputHeader.Size + sizeof(int) + sizeof(int))]
         public ArgSlice payload;
+
+        public SessionParseState parseState;
 
         public unsafe byte* ToPointer()
             => (byte*)Unsafe.AsPointer(ref header);

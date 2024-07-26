@@ -318,12 +318,46 @@ namespace Garnet.server
             ref var key = ref Unsafe.AsRef<SpanByte>(ptr + sizeof(AofHeader));
             var keyB = key.ToByteArray();
 
-            ref var sbInput = ref Unsafe.AsRef<SpanByte>(ptr + sizeof(AofHeader) + key.TotalSize);
-            ref var input = ref Unsafe.AsRef<ObjectInput>(sbInput.ToPointer());
+            // Reconstructing ObjectInput
 
-            ref var inputPayload = ref Unsafe.AsRef<SpanByte>(ptr + sizeof(AofHeader) + key.TotalSize + sbInput.TotalSize);
-            input.payload = new ArgSlice(ref inputPayload);
+            // header
+            ref var sbRespHeader = ref Unsafe.AsRef<SpanByte>(ptr + sizeof(AofHeader) + key.TotalSize);
+            ref var respHeader = ref Unsafe.AsRef<RespInputHeader>(sbRespHeader.ToPointer());
 
+            // arg1, arg2, parseState.count
+            ref var sbIntParams = ref Unsafe.AsRef<SpanByte>(ptr + sizeof(AofHeader) + key.TotalSize + sbRespHeader.TotalSize);
+            var intParamsPtr = (int*)sbIntParams.ToPointer();
+            var arg1 = *intParamsPtr;
+            var arg2 = *(intParamsPtr + 1);
+            var parseStateCount = *(intParamsPtr + 2);
+
+            // payload
+            ref var inputPayload = ref Unsafe.AsRef<SpanByte>(ptr + sizeof(AofHeader) + key.TotalSize + sbRespHeader.TotalSize + sbIntParams.TotalSize);
+            var payload = new ArgSlice(ref inputPayload);
+
+            // Reconstructing parseState
+            var payloadStartPtr = payload.ptr;
+            var payloadCurrPtr = payloadStartPtr;
+            var payloadEndPtr = payloadStartPtr + payload.length;
+
+            var parseState = new SessionParseState();
+            parseState.Initialize(parseStateCount);
+            for (var i = 0; i < parseStateCount; i++)
+            {
+                parseState.Read(i, ref payloadCurrPtr, payloadEndPtr);
+            }
+
+            // Create the reconstructed ObjectInput
+            var input = new ObjectInput
+            {
+                header = respHeader,
+                arg1 = arg1,
+                arg2 = arg2,
+                payload = payload,
+                parseState = parseState
+            };
+
+            // Call RMW with the reconstructed key & ObjectInput
             var output = new GarnetObjectStoreOutput { spanByteAndMemory = new(outputPtr, outputLength) };
             if (basicContext.RMW(ref keyB, ref input, ref output).IsPending)
                 basicContext.CompletePending(true);

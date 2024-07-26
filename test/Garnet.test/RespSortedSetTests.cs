@@ -2204,27 +2204,14 @@ namespace Garnet.test
 
 
         [Test]
-        public void CanContinueOnInvalidInput()
+        public void CanDoZaddWithInvalidInput()
         {
             using var lightClientRequest = TestUtils.CreateRequest();
             var key = "zset1";
             var response = lightClientRequest.SendCommand($"ZADD {key} 1 uno 2 due 3 tre 4 quattro 5 cinque foo bar");
-            var expectedResponse = ":5\r\n";
+            var expectedResponse = $"-{Encoding.ASCII.GetString(CmdStrings.RESP_ERR_NOT_VALID_FLOAT)}\r\n";
             var actualValue = Encoding.ASCII.GetString(response).Substring(0, expectedResponse.Length);
             Assert.AreEqual(expectedResponse, actualValue);
-
-            key = "zset2";
-            response = lightClientRequest.SendCommand($"ZADD {key} 1 uno 2 due 3 tre foo bar 4 quattro 5 cinque");
-            expectedResponse = ":5\r\n";
-            actualValue = Encoding.ASCII.GetString(response).Substring(0, expectedResponse.Length);
-            Assert.AreEqual(expectedResponse, actualValue);
-
-            key = "zset3";
-            response = lightClientRequest.SendCommand($"ZADD {key} foo bar 1 uno 2 due 3 tre 4 quattro 5 cinque");
-            expectedResponse = ":5\r\n";
-            actualValue = Encoding.ASCII.GetString(response).Substring(0, expectedResponse.Length);
-            Assert.AreEqual(expectedResponse, actualValue);
-
         }
 
         [Test]

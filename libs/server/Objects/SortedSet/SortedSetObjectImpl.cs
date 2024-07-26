@@ -30,37 +30,41 @@ namespace Garnet.server
             public bool WithScores { get; set; }
         };
 
-        private void SortedSetAdd(ref ObjectInput input, byte* output)
+        private void SortedSetAdd(ref ObjectInput input, ref SpanByteAndMemory output)
         {
-            var _output = (ObjectOutputHeader*)output;
+            var isMemory = false;
+            MemoryHandle ptrHandle = default;
+            var ptr = output.SpanByte.ToPointer();
 
-            var count = input.arg1;
-            *_output = default;
+            var curr = ptr;
+            var end = curr + output.Length;
 
-            var input_startptr = input.payload.ptr;
-            var input_currptr = input_startptr;
-            var length = input.payload.length;
-            var input_endptr = input_startptr + length;
-
-            for (var c = 0; c < count; c++)
+            ObjectOutputHeader outputHeader = default;
+            var added = 0;
+            try
             {
-                if (!RespReadUtils.ReadDoubleWithLengthHeader(out var score, out var parsed, ref input_currptr, input_endptr))
-                    return;
-                if (!RespReadUtils.TrySliceWithLengthHeader(out var member, ref input_currptr, input_endptr))
-                    return;
-
-                if (parsed)
+                for (var c = 1; c < input.parseState.count; c += 2)
                 {
-                    var memberArray = member.ToArray();
+                    if (!input.parseState.TryGetDouble(c, out var score))
+                    {
+                        while (!RespWriteUtils.WriteError(CmdStrings.RESP_ERR_NOT_VALID_FLOAT, ref curr, end))
+                            ObjectUtils.ReallocateOutput(ref output, ref isMemory, ref ptr, ref ptrHandle, ref curr,
+                                ref end);
+                        return;
+                    }
+
+                    var memberSpan = input.parseState.GetArgSliceByRef(c + 1).ReadOnlySpan;
+
+                    var memberArray = memberSpan.ToArray();
                     if (!sortedSetDict.TryGetValue(memberArray, out var scoreStored))
                     {
                         sortedSetDict.Add(memberArray, score);
                         if (sortedSet.Add((score, memberArray)))
                         {
-                            _output->result1++;
+                            added++;
                         }
 
-                        this.UpdateSize(member);
+                        this.UpdateSize(memberSpan);
                     }
                     else if (scoreStored != score)
                     {
@@ -71,6 +75,17 @@ namespace Garnet.server
                         Debug.Assert(success);
                     }
                 }
+
+                while (!RespWriteUtils.WriteInteger(added, ref curr, end))
+                    ObjectUtils.ReallocateOutput(ref output, ref isMemory, ref ptr, ref ptrHandle, ref curr, ref end);
+            }
+            finally
+            {
+                while (!RespWriteUtils.WriteDirect(ref outputHeader, ref curr, end))
+                    ObjectUtils.ReallocateOutput(ref output, ref isMemory, ref ptr, ref ptrHandle, ref curr, ref end);
+
+                if (isMemory) ptrHandle.Dispose();
+                output.Length = (int)(curr - ptr);
             }
         }
 
@@ -186,7 +201,7 @@ namespace Garnet.server
                 while (!RespWriteUtils.WriteArrayLength(count, ref curr, end))
                     ObjectUtils.ReallocateOutput(ref output, ref isMemory, ref ptr, ref ptrHandle, ref curr, ref end);
 
-                for (int c = 0; c < count; c++)
+                for (var c = 0; c < count; c++)
                 {
                     if (!RespReadUtils.ReadByteArrayWithLengthHeader(out var scoreKey, ref input_currptr, input_endptr))
                         return;

@@ -59,7 +59,7 @@ namespace Garnet.server
         {
             this.count = count;
 
-            if (count <= MinParams || count <= buffer.Length)
+            if (count <= MinParams || (buffer != null && count <= buffer.Length))
                 return;
 
             buffer = GC.AllocateArray<ArgSlice>(count, true);
@@ -150,6 +150,28 @@ namespace Garnet.server
         {
             Debug.Assert(i < count);
             return ParseUtils.TryReadLong(ref Unsafe.AsRef<ArgSlice>(bufferPtr + i), out value);
+        }
+
+        /// <summary>
+        /// Get double argument at the given index
+        /// </summary>
+        /// <returns></returns>
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        public double GetDouble(int i)
+        {
+            Debug.Assert(i < count);
+            return ParseUtils.ReadDouble(ref Unsafe.AsRef<ArgSlice>(bufferPtr + i));
+        }
+
+        /// <summary>
+        /// Try to get double argument at the given index
+        /// </summary>
+        /// <returns>True if double parsed successfully</returns>
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        public bool TryGetDouble(int i, out double value)
+        {
+            Debug.Assert(i < count);
+            return ParseUtils.TryReadDouble(ref Unsafe.AsRef<ArgSlice>(bufferPtr + i), out value);
         }
 
         /// <summary>
