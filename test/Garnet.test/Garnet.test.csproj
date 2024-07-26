@@ -15,14 +15,17 @@
     <Compile Include="..\..\main\GarnetServer\Extensions\MGetIfPM.cs" Link="MGetIfPM.cs" />
     <Compile Include="..\..\main\GarnetServer\Extensions\MSetPx.cs" Link="MSetPx.cs" />
     <Compile Include="..\..\main\GarnetServer\Extensions\MyDictObject.cs" Link="MyDictObject.cs" />
+    <Compile Include="..\..\main\GarnetServer\Extensions\MyDictSet.cs" Link="MyDictSet.cs" />
+    <Compile Include="..\..\main\GarnetServer\Extensions\MyDictGet.cs" Link="MyDictGet.cs" />
     <Compile Include="..\..\main\GarnetServer\Extensions\GetTwoKeysNoTxn.cs" Link="GetTwoKeysNoTxn.cs" />
     <Compile Include="..\..\main\GarnetServer\Extensions\ReadWriteTxn.cs" Link="ReadWriteTxn.cs" />
     <Compile Include="..\..\main\GarnetServer\Extensions\SampleUpdateTxn.cs" Link="SampleUpdateTxn.cs" />
     <Compile Include="..\..\main\GarnetServer\Extensions\SampleDeleteTxn.cs" Link="SampleDeleteTxn.cs" />
     <Compile Include="..\..\main\GarnetServer\Extensions\SetIfPM.cs" Link="SetIfPM.cs" />
     <Compile Include="..\..\main\GarnetServer\Extensions\SetWPIfPGT.cs" Link="SetWPIFPGT.cs" />
-    <Compile Include="..\..\main\GarnetServer\Extensions\Sum.cs" Link="Sum.cs" />
-	</ItemGroup>
+    <Compile Include="..\..\playground\Embedded.perftest\DummyNetworkSender.cs" Link="DummyNetworkSender.cs" />
+    <Compile Include="..\..\main\GarnetServer\Extensions\Sum.cs" Link="Sum.cs" />	  
+  </ItemGroup>
 
 	<ItemGroup>
 	  <EmbeddedResource Include="CustomRespCommandsInfo.json" Link="CustomRespCommandsInfo.json">

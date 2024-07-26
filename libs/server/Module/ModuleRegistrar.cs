@@ -124,6 +124,39 @@ namespace Garnet.server.Module
             return ModuleActionStatus.Success;
         }
 
+        /// <summary>Registers a custom type</summary>
+        /// <param name="factory">Factory to generate new instances of type</param>
+        /// <returns>Registration status</returns>
+        public ModuleActionStatus RegisterType(CustomObjectFactory factory)
+        {
+            if (factory == null)
+                return ModuleActionStatus.InvalidRegistrationInfo;
+
+            customCommandManager.RegisterType(factory);
+
+            return ModuleActionStatus.Success;
+        }
+
+        /// <summary>
+        /// Registers a custom object command
+        /// </summary>
+        /// <param name="name">Command name</param>
+        /// <param name="factory">Type factory</param>
+        /// <param name="command">Custom object function implementation</param>
+        /// <param name="type">Command type</param>
+        /// <param name="numParams">Number of parameters</param>
+        /// <param name="commandInfo">Command info</param>
+        /// <returns></returns>
+        public ModuleActionStatus RegisterCommand(string name, CustomObjectFactory factory, CustomObjectFunctions command, CommandType type = CommandType.ReadModifyWrite, int numParams = int.MaxValue, RespCommandsInfo commandInfo = null)
+        {
+            if (string.IsNullOrEmpty(name) || factory == null || command == null)
+                return ModuleActionStatus.InvalidRegistrationInfo;
+
+            customCommandManager.Register(name, numParams, type, factory, command, commandInfo);
+
+            return ModuleActionStatus.Success;
+        }
+
         public ModuleActionStatus RegisterCommand(string name, CustomCommandProc customCommandProc, RespCommandsInfo commandInfo = null)
         {
             if (string.IsNullOrEmpty(name) || customCommandProc == null)

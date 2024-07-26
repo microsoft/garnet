@@ -2,6 +2,7 @@
 // Licensed under the MIT license.
 
 using System;
+using Garnet.common;
 using Tsavorite.core;
 
 namespace Garnet.server
@@ -85,10 +86,12 @@ namespace Garnet.server
                 RespCommand.GEOPOS => SortedSetObjectKeys(SortedSetOperation.GEOPOS, inputCount),
                 RespCommand.GEOSEARCH => SortedSetObjectKeys(SortedSetOperation.GEOSEARCH, inputCount),
                 RespCommand.ZREVRANGE => SortedSetObjectKeys(SortedSetOperation.ZREVRANGE, inputCount),
+                RespCommand.ZREVRANGEBYSCORE => SortedSetObjectKeys(SortedSetOperation.ZREVRANGEBYSCORE, inputCount),
                 RespCommand.LINDEX => ListObjectKeys((byte)ListOperation.LINDEX),
                 RespCommand.LINSERT => ListObjectKeys((byte)ListOperation.LINSERT),
                 RespCommand.LLEN => ListObjectKeys((byte)ListOperation.LLEN),
                 RespCommand.LMOVE => ListObjectKeys((byte)ListOperation.LMOVE),
+                RespCommand.LMPOP => ListKeys(true, LockType.Exclusive),
                 RespCommand.LPOP => ListObjectKeys((byte)ListOperation.LPOP),
                 RespCommand.LPUSH => ListObjectKeys((byte)ListOperation.LPUSH),
                 RespCommand.LPUSHX => ListObjectKeys((byte)ListOperation.LPUSHX),
@@ -109,6 +112,7 @@ namespace Garnet.server
                 RespCommand.HKEYS => HashObjectKeys((byte)HashOperation.HKEYS),
                 RespCommand.HLEN => HashObjectKeys((byte)HashOperation.HLEN),
                 RespCommand.HMGET => HashObjectKeys((byte)HashOperation.HMGET),
+                RespCommand.HMSET => HashObjectKeys((byte)HashOperation.HMSET),
                 RespCommand.HRANDFIELD => HashObjectKeys((byte)HashOperation.HRANDFIELD),
                 RespCommand.HSCAN => HashObjectKeys((byte)HashOperation.HSCAN),
                 RespCommand.HSET => HashObjectKeys((byte)HashOperation.HSET),
@@ -194,6 +198,7 @@ namespace Garnet.server
                 SortedSetOperation.GEOPOS => SingleKey(1, true, LockType.Shared),
                 SortedSetOperation.GEOSEARCH => SingleKey(1, true, LockType.Shared),
                 SortedSetOperation.ZREVRANGE => SingleKey(1, true, LockType.Shared),
+                SortedSetOperation.ZREVRANGEBYSCORE => SingleKey(1, true, LockType.Shared),
                 _ => -1
             };
         }
@@ -267,14 +272,7 @@ namespace Garnet.server
         /// </summary>
         private int SingleKey(int arg, bool isObject, LockType type)
         {
-            bool success;
-            for (int i = 1; i < arg; i++)
-            {
-                respSession.GetCommandAsArgSlice(out success);
-                if (!success) return -2;
-            }
-            var key = respSession.GetCommandAsArgSlice(out success);
-            if (!success) return -2;
+            var key = respSession.parseState.GetArgSliceByRef(arg - 1);
             SaveKeyEntryToLock(key, isObject, type);
             SaveKeyArgSlice(key);
             return arg;
@@ -285,10 +283,9 @@ namespace Garnet.server
         /// </summary>
         private int ListKeys(int inputCount, bool isObject, LockType type)
         {
-            for (int i = 0; i < inputCount; i++)
+            for (var i = 0; i < inputCount; i++)
             {
-                var key = respSession.GetCommandAsArgSlice(out bool success);
-                if (!success) return -2;
+                var key = respSession.parseState.GetArgSliceByRef(i);
                 SaveKeyEntryToLock(key, isObject, type);
                 SaveKeyArgSlice(key);
             }
@@ -296,16 +293,33 @@ namespace Garnet.server
         }
 
         /// <summary>
+        /// Returns a list of keys for LMPOP command
+        /// </summary>
+        private int ListKeys(bool isObject, LockType type)
+        {
+            var numKeysArg = respSession.GetCommandAsArgSlice(out bool success);
+            if (!success) return -2;
+
+            if (!NumUtils.TryParse(numKeysArg.ReadOnlySpan, out int numKeys)) return -2;
+
+            for (int i = 0; i < numKeys; i++)
+            {
+                var key = respSession.GetCommandAsArgSlice(out success);
+                if (!success) return -2;
+                SaveKeyEntryToLock(key, isObject, type);
+                SaveKeyArgSlice(key);
+            }
+            return numKeys;
+        }
+
+        /// <summary>
         /// Returns a list of keys for MSET commands
         /// </summary>
         private int MSETKeys(int inputCount, bool isObject, LockType type)
         {
-            for (int i = 0; i < inputCount; i += 2)
+            for (var i = 0; i < inputCount; i += 2)
             {
-                var key = respSession.GetCommandAsArgSlice(out bool success);
-                if (!success) return -2;
-                var val = respSession.GetCommandAsArgSlice(out success);
-                if (!success) return -2;
+                var key = respSession.parseState.GetArgSliceByRef(i);
                 SaveKeyEntryToLock(key, isObject, type);
                 SaveKeyArgSlice(key);
             }
@@ -320,16 +334,14 @@ namespace Garnet.server
         {
             if (inputCount > 0)
             {
-                var key = respSession.GetCommandAsArgSlice(out var success);
-                if (!success) return -2;
+                var key = respSession.parseState.GetArgSliceByRef(0);
                 SaveKeyEntryToLock(key, isObject, LockType.Exclusive);
                 SaveKeyArgSlice(key);
             }
 
             for (var i = 1; i < inputCount; i++)
             {
-                var key = respSession.GetCommandAsArgSlice(out var success);
-                if (!success) return -2;
+                var key = respSession.parseState.GetArgSliceByRef(i);
                 SaveKeyEntryToLock(key, isObject, LockType.Shared);
                 SaveKeyArgSlice(key);
             }

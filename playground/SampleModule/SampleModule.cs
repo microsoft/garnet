@@ -2,6 +2,7 @@
 // Licensed under the MIT license.
 
 using Garnet;
+using Garnet.server;
 using Garnet.server.Module;
 using Microsoft.Extensions.Logging;
 
@@ -21,6 +22,12 @@ namespace SampleModule
             context.RegisterCommand("SampleModule.SETIFPM", new SetIfPMCustomCommand());
 
             context.RegisterTransaction("SampleModule.READWRITETX", () => new ReadWriteTxn());
+
+            var factory = new MyDictFactory();
+            context.RegisterType(factory);
+
+            context.RegisterCommand("SampleModule.MYDICTSET", factory, new MyDictSet());
+            context.RegisterCommand("SampleModule.MYDICTGET", factory, new MyDictGet(), CommandType.Read);
 
             context.RegisterCommand("SampleModule.SUM", new Sum());
         }

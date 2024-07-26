@@ -6,6 +6,7 @@ using System.Linq;
 using System.Text;
 using System.Threading;
 using System.Threading.Tasks;
+using Garnet.server;
 using NUnit.Framework;
 using StackExchange.Redis;
 
@@ -57,7 +58,7 @@ namespace Garnet.test
         public void PingErrorMessageTest()
         {
             using var lightClientRequest = TestUtils.CreateRequest();
-            var expectedResponse = "-ERR wrong number of arguments for 'ping' command\r\n";
+            var expectedResponse = $"-{string.Format(CmdStrings.GenericErrWrongNumArgs, $"{nameof(RespCommand.PING)}")}\r\n";
             var response = lightClientRequest.SendCommand("PING HELLO WORLD", 1);
             var actualValue = Encoding.ASCII.GetString(response).Substring(0, expectedResponse.Length);
             Assert.AreEqual(expectedResponse, actualValue);
@@ -67,7 +68,7 @@ namespace Garnet.test
         public void EchoWithNoMessageReturnErrorTest()
         {
             using var lightClientRequest = TestUtils.CreateRequest();
-            var expectedResponse = "-ERR wrong number of arguments for 'echo' command\r\n";
+            var expectedResponse = $"-{string.Format(CmdStrings.GenericErrWrongNumArgs, $"{nameof(RespCommand.ECHO)}")}\r\n";
             var response = lightClientRequest.SendCommand("ECHO", 1);
             var actualValue = Encoding.ASCII.GetString(response).Substring(0, expectedResponse.Length);
             Assert.AreEqual(expectedResponse, actualValue);
@@ -78,7 +79,7 @@ namespace Garnet.test
         public void EchoWithMessagesReturnErrorTest()
         {
             using var lightClientRequest = TestUtils.CreateRequest();
-            var expectedResponse = "-ERR wrong number of arguments for 'echo' command\r\n";
+            var expectedResponse = $"-{string.Format(CmdStrings.GenericErrWrongNumArgs, $"{nameof(RespCommand.ECHO)}")}\r\n";
             var response = lightClientRequest.SendCommand("ECHO HELLO WORLD", 1);
             var actualValue = Encoding.ASCII.GetString(response).Substring(0, expectedResponse.Length);
             Assert.AreEqual(expectedResponse, actualValue);
@@ -101,7 +102,8 @@ namespace Garnet.test
         public void EchoTwoCommandsTest()
         {
             using var lightClientRequest = TestUtils.CreateRequest();
-            var expectedResponse = "-ERR wrong number of arguments for 'echo' command\r\n$5\r\nHELLO\r\n";
+            var wrongNumMessage = string.Format(CmdStrings.GenericErrWrongNumArgs, $"{nameof(RespCommand.ECHO)}");
+            var expectedResponse = $"-{wrongNumMessage}\r\n$5\r\nHELLO\r\n";
             var response = lightClientRequest.SendCommands("ECHO HELLO WORLD WORLD2", "ECHO HELLO", 1, 1);
             var actualValue = Encoding.ASCII.GetString(response).Substring(0, expectedResponse.Length);
             Assert.AreEqual(expectedResponse, actualValue);
@@ -124,7 +126,7 @@ namespace Garnet.test
         public void TimeWithReturnErrorTest()
         {
             using var lightClientRequest = TestUtils.CreateRequest();
-            var expectedResponse = "-ERR wrong number of arguments for 'time' command\r\n";
+            var expectedResponse = $"-{string.Format(CmdStrings.GenericErrWrongNumArgs, nameof(RespCommand.TIME))}\r\n";
             var response = lightClientRequest.SendCommand("TIME HELLO");
             var actualValue = Encoding.ASCII.GetString(response).Substring(0, expectedResponse.Length);
             Assert.AreEqual(expectedResponse, actualValue);
@@ -217,6 +219,46 @@ namespace Garnet.test
                 Assert.AreEqual(ldata, returnedData);
             }
         }
+
+        [Test]
+        public void SeSaveRecoverCustomObjectTest()
+        {
+            string key = "key";
+            string field = "field1";
+            string value = "foovalue1";
+
+            // Register sample custom command on object
+            var factory = new MyDictFactory();
+            server.Register.NewCommand("MYDICTSET", 2, CommandType.ReadModifyWrite, factory, new MyDictSet());
+            server.Register.NewCommand("MYDICTGET", 1, CommandType.Read, factory, new MyDictGet());
+
+            using (var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig(allowAdmin: true)))
+            {
+                var db = redis.GetDatabase(0);
+                db.Execute("MYDICTSET", key, field, value);
+                var retValue = db.Execute("MYDICTGET", key, field);
+                Assert.AreEqual(value, (string)retValue);
+
+                // Issue and wait for DB save
+                var server = redis.GetServer($"{TestUtils.Address}:{TestUtils.Port}");
+                server.Save(SaveType.BackgroundSave);
+                while (server.LastSave().Ticks == DateTimeOffset.FromUnixTimeSeconds(0).Ticks) Thread.Sleep(10);
+            }
+
+            server.Dispose(false);
+            server = TestUtils.CreateGarnetServer(TestUtils.MethodTestDir, tryRecover: true);
+            server.Register.NewCommand("MYDICTSET", 2, CommandType.ReadModifyWrite, factory, new MyDictSet());
+            server.Register.NewCommand("MYDICTGET", 1, CommandType.Read, factory, new MyDictGet());
+            server.Start();
+
+            using (var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig(allowAdmin: true)))
+            {
+                var db = redis.GetDatabase(0);
+                var retValue = db.Execute("MYDICTGET", key, field);
+                Assert.AreEqual(value, (string)retValue);
+            }
+        }
+
         [Test]
         [TestCase(63, 15, 1)]
         [TestCase(63, 1, 1)]
@@ -518,7 +560,9 @@ namespace Garnet.test
             }
             catch (Exception ex)
             {
-                Assert.AreEqual("ERR wrong number of arguments for 'config' command", ex.Message);
+                var expectedMessage = string.Format(CmdStrings.GenericErrWrongNumArgs,
+                    $"{nameof(RespCommand.CONFIG)}");
+                Assert.AreEqual(expectedMessage, ex.Message);
             }
         }
 
@@ -534,7 +578,9 @@ namespace Garnet.test
             }
             catch (Exception ex)
             {
-                Assert.AreEqual("ERR wrong number of arguments for 'config|get' command", ex.Message);
+                var expectedMessage = Encoding.ASCII.GetBytes(string.Format(CmdStrings.GenericErrWrongNumArgs,
+                    $"{nameof(RespCommand.CONFIG)}|{nameof(CmdStrings.GET)}"));
+                Assert.AreEqual(expectedMessage, ex.Message);
             }
         }
         #endregion

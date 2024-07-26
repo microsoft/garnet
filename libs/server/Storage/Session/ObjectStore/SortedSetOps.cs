@@ -323,8 +323,8 @@ namespace Garnet.server
             var status = RMWObjectStoreOperationWithOutput(key.ToArray(), input, ref objectStoreContext, ref outputFooter);
 
             //process output
-            //if (status == GarnetStatus.OK)
-            ProcessRespArrayOutput(outputFooter, out _);
+            if (status == GarnetStatus.OK)
+                pairs = ProcessRespArrayOutputAsPairs(outputFooter, out _);
 
             return status;
         }
@@ -440,7 +440,7 @@ namespace Garnet.server
             if (min.Length == 0 || max.Length == 0)
             {
                 //error in arguments
-                error = "Missins required min and max parameters";
+                error = "Missing required min and max parameters";
                 return GarnetStatus.NOTFOUND;
             }
 

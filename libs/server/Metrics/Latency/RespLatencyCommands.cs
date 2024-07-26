@@ -24,8 +24,6 @@ namespace Garnet.server
                     SendAndReset();
             }
 
-            var ptr = recvBufferPtr + readHead;
-            readHead = (int)(ptr - recvBufferPtr);
             List<string> latencyCommands = RespLatencyHelp.GetLatencyCommands();
             while (!RespWriteUtils.WriteArrayLength(latencyCommands.Count, ref dcurr, dend))
                 SendAndReset();
@@ -46,7 +44,6 @@ namespace Garnet.server
         /// <returns>true if parsing succeeded correctly, false if not all tokens could be consumed and further processing is necessary.</returns>
         private bool NetworkLatencyHistogram(int count)
         {
-            var ptr = recvBufferPtr + readHead;
             HashSet<LatencyMetricsType> events = null;
             bool invalid = false;
             string invalidEvent = null;
@@ -55,8 +52,7 @@ namespace Garnet.server
                 events = new();
                 for (int i = 0; i < count; i++)
                 {
-                    if (!RespReadUtils.ReadStringWithLengthHeader(out var eventStr, ref ptr, recvBufferPtr + bytesRead))
-                        return false;
+                    var eventStr = parseState.GetString(i);
 
                     if (Enum.TryParse(eventStr, ignoreCase: true, out LatencyMetricsType eventType))
                     {
@@ -87,8 +83,6 @@ namespace Garnet.server
                     SendAndReset();
             }
 
-            readHead = (int)(ptr - recvBufferPtr);
-
             return true;
         }
 
@@ -100,7 +94,6 @@ namespace Garnet.server
         private bool NetworkLatencyReset(int count)
         {
             HashSet<LatencyMetricsType> events = null;
-            var ptr = recvBufferPtr + readHead;
             bool invalid = false;
             string invalidEvent = null;
             if (count > 0)
@@ -108,8 +101,7 @@ namespace Garnet.server
                 events = new();
                 for (int i = 0; i < count; i++)
                 {
-                    if (!RespReadUtils.ReadStringWithLengthHeader(out var eventStr, ref ptr, recvBufferPtr + bytesRead))
-                        return false;
+                    var eventStr = parseState.GetString(i);
 
                     if (Enum.TryParse(eventStr, ignoreCase: true, out LatencyMetricsType eventType))
                     {
@@ -143,8 +135,6 @@ namespace Garnet.server
                 while (!RespWriteUtils.WriteInteger(events.Count, ref dcurr, dend))
                     SendAndReset();
             }
-
-            readHead = (int)(ptr - recvBufferPtr);
 
             return true;
         }
