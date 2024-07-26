@@ -287,13 +287,6 @@ namespace Garnet.server
     {
         private static readonly RespCommand[] ExpandedSET = [RespCommand.SETEXNX, RespCommand.SETEXXX, RespCommand.SETKEEPTTL, RespCommand.SETKEEPTTLXX];
         private static readonly RespCommand[] ExpandedBITOP = [RespCommand.BITOP_AND, RespCommand.BITOP_NOT, RespCommand.BITOP_OR, RespCommand.BITOP_XOR];
-        private static readonly RespCommand[] NonStateMutatingMiscCommands = [
-            RespCommand.PING, RespCommand.ECHO, RespCommand.INFO, RespCommand.TIME, RespCommand.LASTSAVE,
-            RespCommand.ACL_CAT, RespCommand.ACL_LIST, RespCommand.ACL_USERS, RespCommand.ACL_WHOAMI,
-            RespCommand.COMMAND, RespCommand.COMMAND_COUNT, RespCommand.COMMAND_INFO,
-            RespCommand.CONFIG_GET,
-            RespCommand.LATENCY_HELP, RespCommand.LATENCY_HISTOGRAM,
-        ];
 
         // Commands that are either returning static data or commands that cannot have issues from concurrent AOF interaction in another session
         private static readonly RespCommand[] AofIndependentCommands = [
@@ -427,16 +420,46 @@ namespace Garnet.server
         }
 
         /// <summary>
-        /// Returns True if <paramref name="cmd"/> does not change state of database
+        /// Returns True if <paramref name="cmd"/> does not have any interaction with AOF in it's read path or it's write counterpart path.
         /// </summary>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        internal static bool IsNonDbStateMutatingCommand(this RespCommand cmd, CustomCommand customCommand, CustomObjectCommand customObjectCommand)
+        internal static bool AofIndependent(this RespCommand cmd)
         {
-            return (cmd == RespCommand.CustomCmd && customCommand?.type == CommandType.Read) || (cmd == RespCommand.CustomObjCmd && customObjectCommand?.type == CommandType.Read) ||
-                cmd <= RespCommand.ZSCORE || // command is from read section
-                Array.IndexOf(NonStateMutatingMiscCommands, cmd) != -1; // command is explicitly listed as non-state mutating
+            // Commands that are either returning static data or commands that cannot have issues from concurrent AOF interaction in another session
+            return cmd == RespCommand.ASYNC ||
+                cmd == RespCommand.PING || 
+                cmd == RespCommand.SELECT ||
+                cmd == RespCommand.ECHO ||
+                cmd == RespCommand.CLIENT ||
+                cmd == RespCommand.MONITOR ||
+                cmd == RespCommand.MODULE_LOADCS ||
+                cmd == RespCommand.REGISTERCS ||
+                cmd == RespCommand.INFO ||
+                cmd == RespCommand.TIME ||
+                cmd == RespCommand.LASTSAVE ||
+                // ACL
+                cmd == RespCommand.ACL_CAT ||
+                cmd == RespCommand.ACL_DELUSER ||
+                cmd == RespCommand.ACL_LIST ||
+                cmd == RespCommand.ACL_LOAD ||
+                cmd == RespCommand.ACL_SAVE ||
+                cmd == RespCommand.ACL_SETUSER ||
+                cmd == RespCommand.ACL_USERS ||
+                cmd == RespCommand.ACL_WHOAMI ||
+                // Command
+                cmd == RespCommand.COMMAND ||
+                cmd == RespCommand.COMMAND_COUNT ||
+                cmd == RespCommand.COMMAND_INFO ||
+                cmd == RespCommand.MEMORY ||
+                // Config
+                cmd == RespCommand.CONFIG_GET ||
+                cmd == RespCommand.CONFIG_REWRITE ||
+                cmd == RespCommand.CONFIG_SET ||
+                // Latency
+                cmd == RespCommand.LATENCY_HELP ||
+                cmd == RespCommand.LATENCY_HISTOGRAM ||
+                cmd == RespCommand.LATENCY_RESET;
         }
-
         /// <summary>
         /// Returns true if <paramref name="cmd"/> can be run even if the user is not authenticated.
         /// </summary>
