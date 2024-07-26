@@ -21,7 +21,7 @@ Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "devices", "devices", "{A6B1
 EndProject
 Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "Tsavorite.devices.AzureStorageDevice", "src\devices\AzureStorageDevice\Tsavorite.devices.AzureStorageDevice.csproj", "{E571E686-01A0-44D5-BFF5-B7678284258B}"
 EndProject
-Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "BDN.benchmark", "benchmark\BDN.Benchmark\BDN.benchmark.csproj", "{1C3591CE-7521-4BE4-8B24-626AD92F7B19}"
+Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "BDN-Tsavorite.benchmark", "benchmark\BDN-Tsavorite.Benchmark\BDN-Tsavorite.benchmark.csproj", "{1C3591CE-7521-4BE4-8B24-626AD92F7B19}"
 EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
