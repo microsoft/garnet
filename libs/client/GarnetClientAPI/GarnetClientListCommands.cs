@@ -24,6 +24,10 @@ namespace Garnet.client
         /// <param name="context">An optional context to correlate request to callback.</param>
         public void ListLeftPush(string key, string element, Action<long, long, string> callback, long context = 0)
         {
+            ArgumentNullException.ThrowIfNull(key);
+            ArgumentNullException.ThrowIfNull(element);
+            ArgumentNullException.ThrowIfNull(callback);
+
             ListLeftPush(key, new[] { element }, callback, context);
         }
 

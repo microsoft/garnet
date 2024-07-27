@@ -29,7 +29,12 @@ namespace Garnet.client
         /// </summary>
         /// <returns></returns>
         public void Quit(Action<long, string> callback, long context = 0)
-            => ExecuteForStringResult(callback, context, QUIT, default(string));
+        {
+            ArgumentNullException.ThrowIfNull(callback);
+
+            ExecuteForStringResult(callback, context, QUIT, default(string));
+        }
+
         #endregion
 
         #region pingCMD
@@ -50,7 +55,12 @@ namespace Garnet.client
         /// </summary>
         /// <returns></returns>
         public void Ping(Action<long, string> callback, long context = 0)
-            => ExecuteForStringResult(callback, context, PING, default(string));
+        {
+            ArgumentNullException.ThrowIfNull(callback);
+
+            ExecuteForStringResult(callback, context, PING, default(string));
+        }
+
         #endregion
 
         #region getCMD
@@ -59,7 +69,12 @@ namespace Garnet.client
         /// </summary>
         /// <param name="key">Key</param>
         /// <returns></returns>
-        public Task<string> StringGetAsync(string key) => ExecuteForStringResultAsync(GET, key);
+        public Task<string> StringGetAsync(string key)
+        {
+            ArgumentNullException.ThrowIfNull(key);
+
+            return ExecuteForStringResultAsync(GET, key);
+        }
 
         /// <summary>
         /// Get value for given key
@@ -67,14 +82,24 @@ namespace Garnet.client
         /// <param name="key"></param>
         /// <param name="token"></param>
         /// <returns></returns>
-        public Task<string> StringGetAsync(string key, CancellationToken token) => ExecuteForStringResultWithCancellationAsync(GET, key, null, token);
+        public Task<string> StringGetAsync(string key, CancellationToken token)
+        {
+            ArgumentNullException.ThrowIfNull(key);
+
+            return ExecuteForStringResultWithCancellationAsync(GET, key, null, token);
+        }
 
         /// <summary>
         /// Get value for given key
         /// </summary>
         /// <param name="key">Key</param>
         /// <returns></returns>
-        public Task<MemoryResult<byte>> StringGetAsMemoryAsync(string key) => ExecuteForMemoryResultAsync(GET, key);
+        public Task<MemoryResult<byte>> StringGetAsMemoryAsync(string key)
+        {
+            ArgumentNullException.ThrowIfNull(key);
+
+            return ExecuteForMemoryResultAsync(GET, key);
+        }
 
         /// <summary>
         /// Get value for given key
@@ -82,14 +107,20 @@ namespace Garnet.client
         /// <param name="key">Key</param>
         /// <param name="token"></param>
         /// <returns></returns>
-        public Task<MemoryResult<byte>> StringGetAsMemoryAsync(string key, CancellationToken token) => ExecuteForMemoryResultWithCancellationAsync(GET, key, null, token);
+        public Task<MemoryResult<byte>> StringGetAsMemoryAsync(string key, CancellationToken token)
+        {
+            ArgumentNullException.ThrowIfNull(key);
+
+            return ExecuteForMemoryResultWithCancellationAsync(GET, key, null, token);
+        }
 
         /// <summary>
         /// Get value for given key
         /// </summary>
         /// <param name="key">Key</param>
         /// <returns></returns>
-        public Task<MemoryResult<byte>> StringGetAsMemoryAsync(Memory<byte> key) => ExecuteForMemoryResultAsync(GET, key);
+        public Task<MemoryResult<byte>> StringGetAsMemoryAsync(Memory<byte> key)
+            => ExecuteForMemoryResultAsync(GET, key);
 
         /// <summary>
         /// Get value for given key
@@ -97,7 +128,8 @@ namespace Garnet.client
         /// <param name="key">Key</param>
         /// <param name="token"></param>
         /// <returns></returns>
-        public Task<MemoryResult<byte>> StringGetAsMemoryAsync(Memory<byte> key, CancellationToken token) => ExecuteForMemoryResultWithCancellationAsync(GET, key, null, token);
+        public Task<MemoryResult<byte>> StringGetAsMemoryAsync(Memory<byte> key, CancellationToken token)
+            => ExecuteForMemoryResultWithCancellationAsync(GET, key, null, token);
 
         /// <summary>
         /// Get value for given key
@@ -107,7 +139,12 @@ namespace Garnet.client
         /// <param name="context">Optional context to correlate request to callback</param>
         /// <returns></returns>
         public void StringGet(string key, Action<long, string> callback, long context = 0)
-            => ExecuteForStringResult(callback, context, GET, key);
+        {
+            ArgumentNullException.ThrowIfNull(key);
+            ArgumentNullException.ThrowIfNull(callback);
+
+            ExecuteForStringResult(callback, context, GET, key);
+        }
 
         /// <summary>
         /// Get value for given key
@@ -129,7 +166,12 @@ namespace Garnet.client
         /// <param name="callback"></param>
         /// <param name="context"></param>
         public void StringGet(string[] keys, Action<long, string[], string> callback, long context = 0)
-            => ExecuteForStringArrayResult(callback, context, "MGET", keys);
+        {
+            ArgumentNullException.ThrowIfNull(keys);
+            ArgumentNullException.ThrowIfNull(callback);
+
+            ExecuteForStringArrayResult(callback, context, "MGET", keys);
+        }
 
         /// <summary>
         /// Get for multiple keys with Memory array type

@@ -53,6 +53,8 @@ namespace Garnet.client
         /// <returns></returns>
         public Task<string> ExecuteForStringResultAsync(string op, ICollection<string> args = null)
         {
+            ArgumentNullException.ThrowIfNull(op);
+
             var tcs = new TcsWrapper { taskType = TaskType.StringAsync, stringTcs = new TaskCompletionSource<string>(TaskCreationOptions.RunContinuationsAsynchronously) };
             var _ = InternalExecuteAsync(tcs, op, args);
             return tcs.stringTcs.Task;

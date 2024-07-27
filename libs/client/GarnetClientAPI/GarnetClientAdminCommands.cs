@@ -30,7 +30,11 @@ namespace Garnet.client
         /// <param name="callback"></param>
         /// <param name="context"></param>
         public void Save(Action<long, string> callback, long context = 0)
-            => ExecuteForStringResult(callback, context, SAVE, default(string));
+        {
+            ArgumentNullException.ThrowIfNull(callback);
+
+            ExecuteForStringResult(callback, context, SAVE, default(string));
+        }
 
         /// <summary>
         /// Return information and statistics of the server from the corresponding section
@@ -50,6 +54,8 @@ namespace Garnet.client
         /// <returns></returns>
         public async Task<string> ReplicaOf(string address, int port, CancellationToken cancellationToken = default)
         {
+            ArgumentNullException.ThrowIfNull(address);
+
             List<Memory<byte>> args = new List<Memory<byte>>()
             {
                 Encoding.ASCII.GetBytes(address),

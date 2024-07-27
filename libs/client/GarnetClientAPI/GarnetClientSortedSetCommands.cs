@@ -26,6 +26,10 @@ namespace Garnet.client
         /// <param name="context"></param>
         public void SortedSetAdd(string key, string member, double score, Action<long, long, string> callback, long context = 0)
         {
+            ArgumentNullException.ThrowIfNull(key);
+            ArgumentNullException.ThrowIfNull(member);
+            ArgumentNullException.ThrowIfNull(callback);
+
             var parameters = new List<Memory<byte>>
             {
                 Encoding.ASCII.GetBytes(key),

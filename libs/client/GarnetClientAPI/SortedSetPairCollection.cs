@@ -29,6 +29,8 @@ namespace Garnet.client.GarnetClientAPI
         /// <param name="score"></param>
         public void AddSortedSetEntry(byte[] member, double score)
         {
+            ArgumentNullException.ThrowIfNull(member);
+
             elements.Add(Encoding.ASCII.GetBytes(score.ToString()));
             elements.Add((Memory<byte>)member);
         }
