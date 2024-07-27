@@ -82,7 +82,10 @@ namespace Garnet.test
             var filesToCompile = new[] {
                 testFilePath,
                 Path.GetFullPath(@"../main/GarnetServer/Extensions/SetIfPM.cs", TestUtils.RootTestsProjectPath),
-                Path.GetFullPath(@"../main/GarnetServer/Extensions/ReadWriteTxn.cs", TestUtils.RootTestsProjectPath)};
+                Path.GetFullPath(@"../main/GarnetServer/Extensions/ReadWriteTxn.cs", TestUtils.RootTestsProjectPath),
+                Path.GetFullPath(@"../main/GarnetServer/Extensions/MyDictObject.cs", TestUtils.RootTestsProjectPath),
+                Path.GetFullPath(@"../main/GarnetServer/Extensions/MyDictSet.cs", TestUtils.RootTestsProjectPath),
+                Path.GetFullPath(@"../main/GarnetServer/Extensions/MyDictGet.cs", TestUtils.RootTestsProjectPath)};
             TestUtils.CreateTestLibrary(null, referenceFiles, filesToCompile, modulePath);
             return modulePath;
         }
@@ -99,7 +102,18 @@ namespace Garnet.test
                     
                     context.RegisterTransaction(""TestModule.READWRITETX"", () => new ReadWriteTxn(), 3,
                     new RespCommandsInfo { Name = ""TestModule.READWRITETX"", Arity = 4, FirstKey = 1, LastKey = 3, Step = 1,
-                    Flags = RespCommandFlags.DenyOom | RespCommandFlags.Write, AclCategories = RespAclCategories.Write });";
+                    Flags = RespCommandFlags.DenyOom | RespCommandFlags.Write, AclCategories = RespAclCategories.Write });
+
+                    var factory = new MyDictFactory();
+                    context.RegisterType(factory);
+
+                    context.RegisterCommand(""TestModule.MYDICTSET"", factory, new MyDictSet(), CommandType.ReadModifyWrite, 2,
+                    new RespCommandsInfo { Name = ""TestModule.MYDICTSET"", Arity = 4, FirstKey = 1, LastKey = 1, Step = 1, 
+                    Flags = RespCommandFlags.DenyOom | RespCommandFlags.Write, AclCategories = RespAclCategories.Write });
+
+                    context.RegisterCommand(""TestModule.MYDICTGET"", factory, new MyDictGet(), CommandType.Read, 1,
+                    new RespCommandsInfo { Name = ""TestModule.MYDICTGET"", Arity = 3, FirstKey = 1, LastKey = 1, Step = 1,
+                    Flags = RespCommandFlags.ReadOnly, AclCategories = RespAclCategories.Read }); ";
 
             var modulePath = CreateTestModule(onLoad);
 
@@ -136,6 +150,15 @@ namespace Garnet.test
             retValue = db.StringGet(writekey2);
             Assert.AreEqual(newValue, retValue.ToString());
 
+            // Test MYDICTSET
+            var dictKey = "dictkey";
+            var dictField = "dictfield";
+            var dictValue = "dictvalue";
+            resp = db.Execute("TestModule.MYDICTSET", dictKey, dictField, dictValue);
+            Assert.AreEqual("OK", (string)resp);
+
+            var dictRetValue = db.Execute("TestModule.MYDICTGET", dictKey, dictField);
+            Assert.AreEqual(dictValue, (string)dictRetValue);
         }
 
         [Test]

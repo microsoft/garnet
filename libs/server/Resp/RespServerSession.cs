@@ -684,7 +684,7 @@ namespace Garnet.server
             }
             else if (command == RespCommand.CustomObjCmd)
             {
-                if (count != currentCustomObjectCommand.NumKeys + currentCustomObjectCommand.NumParams)
+                if (currentCustomObjectCommand.NumParams < int.MaxValue && count != currentCustomObjectCommand.NumKeys + currentCustomObjectCommand.NumParams)
                 {
                     while (!RespWriteUtils.WriteError($"ERR Invalid number of parameters, expected {currentCustomObjectCommand.NumKeys + currentCustomObjectCommand.NumParams}, actual {count}", ref dcurr, dend))
                         SendAndReset();
