@@ -9,7 +9,7 @@ using static Tsavorite.test.TestUtils;
 namespace Tsavorite.test
 {
     using StringStoreFunctions = StoreFunctions<string, string, StringKeyComparer, DefaultRecordDisposer<string, string>>;
-    using StringAllocator = BlittableAllocator<string, string, StoreFunctions<string, string, StringKeyComparer, DefaultRecordDisposer<string, string>>>;
+    using StringAllocator = GenericAllocator<string, string, StoreFunctions<string, string, StringKeyComparer, DefaultRecordDisposer<string, string>>>;
 
     [TestFixture]
     internal class GenericStringTests

@@ -9,7 +9,7 @@ using Tsavorite.core;
 namespace Tsavorite.test
 {
     // Must be in a separate block so the "using StructStoreFunctions" is the first line in its namespace declaration.
-    public struct RefCountedValue
+    public struct RefCountedValueStruct
     {
         public int ReferenceCount;
         public long Value;
@@ -18,16 +18,16 @@ namespace Tsavorite.test
 
 namespace Tsavorite.test
 {
-    using StructStoreFunctions = StoreFunctions<int, RefCountedValue, IntKeyComparer, DefaultRecordDisposer<int, RefCountedValue>>;
-    using StructAllocator = BlittableAllocator<int, RefCountedValue, StoreFunctions<int, RefCountedValue, IntKeyComparer, DefaultRecordDisposer<int, RefCountedValue>>>;
+    using StructStoreFunctions = StoreFunctions<int, RefCountedValueStruct, IntKeyComparer, DefaultRecordDisposer<int, RefCountedValueStruct>>;
+    using StructAllocator = BlittableAllocator<int, RefCountedValueStruct, StoreFunctions<int, RefCountedValueStruct, IntKeyComparer, DefaultRecordDisposer<int, RefCountedValueStruct>>>;
 
-    public class RefCountedAdder : SessionFunctionsBase<int, RefCountedValue, long, Empty, Empty>
+    public class RefCountedAdder : SessionFunctionsBase<int, RefCountedValueStruct, long, Empty, Empty>
     {
         public int InitialCount;
         public int InPlaceCount;
         public int CopyCount;
 
-        public override bool InitialUpdater(ref int key, ref long input, ref RefCountedValue value, ref Empty output, ref RMWInfo rmwInfo, ref RecordInfo recordInfo)
+        public override bool InitialUpdater(ref int key, ref long input, ref RefCountedValueStruct value, ref Empty output, ref RMWInfo rmwInfo, ref RecordInfo recordInfo)
         {
             _ = Interlocked.Increment(ref InitialCount);
 
@@ -36,7 +36,7 @@ namespace Tsavorite.test
             return true;
         }
 
-        public override bool InPlaceUpdater(ref int key, ref long input, ref RefCountedValue value, ref Empty output, ref RMWInfo rmwInfo, ref RecordInfo recordInfo)
+        public override bool InPlaceUpdater(ref int key, ref long input, ref RefCountedValueStruct value, ref Empty output, ref RMWInfo rmwInfo, ref RecordInfo recordInfo)
         {
             _ = Interlocked.Increment(ref InPlaceCount);
 
@@ -45,7 +45,7 @@ namespace Tsavorite.test
             return true;
         }
 
-        public override bool CopyUpdater(ref int key, ref long input, ref RefCountedValue oldValue, ref RefCountedValue newValue, ref Empty output, ref RMWInfo rmwInfo, ref RecordInfo recordInfo)
+        public override bool CopyUpdater(ref int key, ref long input, ref RefCountedValueStruct oldValue, ref RefCountedValueStruct newValue, ref Empty output, ref RMWInfo rmwInfo, ref RecordInfo recordInfo)
         {
             _ = Interlocked.Increment(ref CopyCount);
 
@@ -55,13 +55,13 @@ namespace Tsavorite.test
         }
     }
 
-    public class RefCountedRemover : SessionFunctionsBase<int, RefCountedValue, Empty, Empty, Empty>
+    public class RefCountedRemover : SessionFunctionsBase<int, RefCountedValueStruct, Empty, Empty, Empty>
     {
         public int InitialCount;
         public int InPlaceCount;
         public int CopyCount;
 
-        public override bool InitialUpdater(ref int key, ref Empty input, ref RefCountedValue value, ref Empty output, ref RMWInfo rmwInfo, ref RecordInfo recordInfo)
+        public override bool InitialUpdater(ref int key, ref Empty input, ref RefCountedValueStruct value, ref Empty output, ref RMWInfo rmwInfo, ref RecordInfo recordInfo)
         {
             _ = Interlocked.Increment(ref InitialCount);
 
@@ -70,7 +70,7 @@ namespace Tsavorite.test
             return true;
         }
 
-        public override bool InPlaceUpdater(ref int key, ref Empty input, ref RefCountedValue value, ref Empty output, ref RMWInfo rmwInfo, ref RecordInfo recordInfo)
+        public override bool InPlaceUpdater(ref int key, ref Empty input, ref RefCountedValueStruct value, ref Empty output, ref RMWInfo rmwInfo, ref RecordInfo recordInfo)
         {
             _ = Interlocked.Increment(ref InPlaceCount);
 
@@ -80,7 +80,7 @@ namespace Tsavorite.test
             return true;
         }
 
-        public override bool CopyUpdater(ref int key, ref Empty input, ref RefCountedValue oldValue, ref RefCountedValue newValue, ref Empty output, ref RMWInfo rmwInfo, ref RecordInfo recordInfo)
+        public override bool CopyUpdater(ref int key, ref Empty input, ref RefCountedValueStruct oldValue, ref RefCountedValueStruct newValue, ref Empty output, ref RMWInfo rmwInfo, ref RecordInfo recordInfo)
         {
             _ = Interlocked.Increment(ref CopyCount);
 
@@ -92,15 +92,15 @@ namespace Tsavorite.test
         }
     }
 
-    public class RefCountedReader : SessionFunctionsBase<int, RefCountedValue, Empty, RefCountedValue, Empty>
+    public class RefCountedReader : SessionFunctionsBase<int, RefCountedValueStruct, Empty, RefCountedValueStruct, Empty>
     {
-        public override bool SingleReader(ref int key, ref Empty input, ref RefCountedValue value, ref RefCountedValue dst, ref ReadInfo readInfo)
+        public override bool SingleReader(ref int key, ref Empty input, ref RefCountedValueStruct value, ref RefCountedValueStruct dst, ref ReadInfo readInfo)
         {
             dst = value;
             return true;
         }
 
-        public override bool ConcurrentReader(ref int key, ref Empty input, ref RefCountedValue value, ref RefCountedValue dst, ref ReadInfo readInfo, ref RecordInfo recordInfo)
+        public override bool ConcurrentReader(ref int key, ref Empty input, ref RefCountedValueStruct value, ref RefCountedValueStruct dst, ref ReadInfo readInfo, ref RecordInfo recordInfo)
         {
             dst = value;
             return true;
@@ -111,7 +111,7 @@ namespace Tsavorite.test
     public class FunctionPerSessionTests
     {
         private IDevice _log;
-        private TsavoriteKV<int, RefCountedValue, StructStoreFunctions, StructAllocator> store;
+        private TsavoriteKV<int, RefCountedValueStruct, StructStoreFunctions, StructAllocator> store;
         private RefCountedAdder _adder;
         private RefCountedRemover _remover;
         private RefCountedReader _reader;
@@ -126,7 +126,7 @@ namespace Tsavorite.test
                 {
                     IndexSize = 1L << 13,
                     LogDevice = _log,
-                }, StoreFunctions<int, RefCountedValue>.Create(IntKeyComparer.Instance)
+                }, StoreFunctions<int, RefCountedValueStruct>.Create(IntKeyComparer.Instance)
                 , (allocatorSettings, storeFunctions) => new(allocatorSettings, storeFunctions)
             );
 
@@ -151,7 +151,7 @@ namespace Tsavorite.test
         {
             using var adderSession = store.NewSession<long, Empty, Empty, RefCountedAdder>(_adder);
             using var removerSession = store.NewSession<Empty, Empty, Empty, RefCountedRemover>(_remover);
-            using var readerSession = store.NewSession<Empty, RefCountedValue, Empty, RefCountedReader>(_reader);
+            using var readerSession = store.NewSession<Empty, RefCountedValueStruct, Empty, RefCountedReader>(_reader);
             var key = 101;
             var input = 1000L;
 
@@ -167,7 +167,7 @@ namespace Tsavorite.test
 
             Assert.AreEqual(1, _remover.InPlaceCount);
 
-            RefCountedValue output = new();
+            RefCountedValueStruct output = new();
             _ = readerSession.BasicContext.Read(ref key, ref output);
 
             Assert.AreEqual(2, output.ReferenceCount);

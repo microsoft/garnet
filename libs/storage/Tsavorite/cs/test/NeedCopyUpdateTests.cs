@@ -9,8 +9,8 @@ using static Tsavorite.test.TestUtils;
 
 namespace Tsavorite.test
 {
-    using RMWValueStoreFunctions = StoreFunctions<int, RMWValue, IntKeyComparer, DefaultRecordDisposer<int, RMWValue>>;
-    using RMWValueAllocator = BlittableAllocator<int, RMWValue, StoreFunctions<int, RMWValue, IntKeyComparer, DefaultRecordDisposer<int, RMWValue>>>;
+    using RMWValueStoreFunctions = StoreFunctions<int, RMWValueObj, IntKeyComparer, DefaultRecordDisposer<int, RMWValueObj>>;
+    using RMWValueAllocator = GenericAllocator<int, RMWValueObj, StoreFunctions<int, RMWValueObj, IntKeyComparer, DefaultRecordDisposer<int, RMWValueObj>>>;
 
     using LongStoreFunctions = StoreFunctions<long, long, LongKeyComparer, DefaultRecordDisposer<long, long>>;
     using LongAllocator = BlittableAllocator<long, long, StoreFunctions<long, long, LongKeyComparer, DefaultRecordDisposer<long, long>>>;
@@ -18,7 +18,7 @@ namespace Tsavorite.test
     [TestFixture]
     internal class NeedCopyUpdateTests
     {
-        private TsavoriteKV<int, RMWValue, RMWValueStoreFunctions, RMWValueAllocator> store;
+        private TsavoriteKV<int, RMWValueObj, RMWValueStoreFunctions, RMWValueAllocator> store;
         private IDevice log, objlog;
 
         [SetUp]
@@ -33,7 +33,7 @@ namespace Tsavorite.test
                     IndexSize = 1L << 13,
                     LogDevice = log, ObjectLogDevice = objlog,
                     MutableFraction = 0.1, MemorySize = 1L << 15, PageSize = 1L << 10
-                }, StoreFunctions<int, RMWValue>.Create(IntKeyComparer.Instance, keySerializerCreator: null, () => new RMWValueSerializer())
+                }, StoreFunctions<int, RMWValueObj>.Create(IntKeyComparer.Instance, keySerializerCreator: null, () => new RMWValueSerializer())
                 , (allocatorSettings, storeFunctions) => new(allocatorSettings, storeFunctions)
             );
         }
@@ -56,13 +56,13 @@ namespace Tsavorite.test
         public void TryAddTest()
         {
             TryAddTestFunctions functions = new();
-            using var session = store.NewSession<RMWValue, RMWValue, Status, TryAddTestFunctions>(functions);
+            using var session = store.NewSession<RMWValueObj, RMWValueObj, Status, TryAddTestFunctions>(functions);
             var bContext = session.BasicContext;
 
             Status status;
             var key = 1;
-            var value1 = new RMWValue { value = 1 };
-            var value2 = new RMWValue { value = 2 };
+            var value1 = new RMWValueObj { value = 1 };
+            var value2 = new RMWValueObj { value = 2 };
 
             functions.noNeedInitialUpdater = true;
             status = bContext.RMW(ref key, ref value1); // needInitialUpdater false + NOTFOUND
@@ -86,7 +86,7 @@ namespace Tsavorite.test
             Assert.IsTrue(status.IsPending, status.ToString());
             _ = bContext.CompletePendingWithOutputs(out var outputs, true);
 
-            var output = new RMWValue();
+            var output = new RMWValueObj();
             (status, output) = GetSinglePendingResult(outputs);
             Assert.IsTrue(status.Found, status.ToString()); // NeedCopyUpdate returns false, so RMW returns simply Found
 
@@ -104,51 +104,51 @@ namespace Tsavorite.test
             _ = bContext.CompletePending(true);
         }
 
-        internal class RMWValue
+        internal class RMWValueObj
         {
             public int value;
             public bool flag;
         }
 
-        internal class RMWValueSerializer : BinaryObjectSerializer<RMWValue>
+        internal class RMWValueSerializer : BinaryObjectSerializer<RMWValueObj>
         {
-            public override void Serialize(ref RMWValue value)
+            public override void Serialize(ref RMWValueObj value)
             {
                 writer.Write(value.value);
             }
 
-            public override void Deserialize(out RMWValue value)
+            public override void Deserialize(out RMWValueObj value)
             {
-                value = new RMWValue
+                value = new RMWValueObj
                 {
                     value = reader.ReadInt32()
                 };
             }
         }
 
-        internal class TryAddTestFunctions : TryAddFunctions<int, RMWValue, Status>
+        internal class TryAddTestFunctions : TryAddFunctions<int, RMWValueObj, Status>
         {
             internal bool noNeedInitialUpdater;
 
-            public override bool NeedInitialUpdate(ref int key, ref RMWValue input, ref RMWValue output, ref RMWInfo rmwInfo)
+            public override bool NeedInitialUpdate(ref int key, ref RMWValueObj input, ref RMWValueObj output, ref RMWInfo rmwInfo)
             {
                 return !noNeedInitialUpdater && base.NeedInitialUpdate(ref key, ref input, ref output, ref rmwInfo);
             }
 
-            public override bool InitialUpdater(ref int key, ref RMWValue input, ref RMWValue value, ref RMWValue output, ref RMWInfo rmwInfo, ref RecordInfo recordInfo)
+            public override bool InitialUpdater(ref int key, ref RMWValueObj input, ref RMWValueObj value, ref RMWValueObj output, ref RMWInfo rmwInfo, ref RecordInfo recordInfo)
             {
                 input.flag = true;
                 _ = base.InitialUpdater(ref key, ref input, ref value, ref output, ref rmwInfo, ref recordInfo);
                 return true;
             }
 
-            public override bool CopyUpdater(ref int key, ref RMWValue input, ref RMWValue oldValue, ref RMWValue newValue, ref RMWValue output, ref RMWInfo rmwInfo, ref RecordInfo recordInfo)
+            public override bool CopyUpdater(ref int key, ref RMWValueObj input, ref RMWValueObj oldValue, ref RMWValueObj newValue, ref RMWValueObj output, ref RMWInfo rmwInfo, ref RecordInfo recordInfo)
             {
                 Assert.Fail("CopyUpdater");
                 return false;
             }
 
-            public override void RMWCompletionCallback(ref int key, ref RMWValue input, ref RMWValue output, Status ctx, Status status, RecordMetadata recordMetadata)
+            public override void RMWCompletionCallback(ref int key, ref RMWValueObj input, ref RMWValueObj output, Status ctx, Status status, RecordMetadata recordMetadata)
             {
                 Assert.AreEqual(ctx, status);
 
@@ -156,7 +156,7 @@ namespace Tsavorite.test
                     Assert.IsTrue(input.flag); // InitialUpdater is called.
             }
 
-            public override void ReadCompletionCallback(ref int key, ref RMWValue input, ref RMWValue output, Status ctx, Status status, RecordMetadata recordMetadata)
+            public override void ReadCompletionCallback(ref int key, ref RMWValueObj input, ref RMWValueObj output, Status ctx, Status status, RecordMetadata recordMetadata)
             {
                 Assert.AreEqual(output.value, input.value);
             }

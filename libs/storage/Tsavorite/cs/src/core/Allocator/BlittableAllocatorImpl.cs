@@ -25,6 +25,9 @@ namespace Tsavorite.core
         public BlittableAllocatorImpl(AllocatorSettings settings, TStoreFunctions storeFunctions, Func<object, BlittableAllocator<Key, Value, TStoreFunctions>> wrapperCreator)
             : base(settings.LogSettings, storeFunctions, wrapperCreator, settings.evictCallback, settings.epoch, settings.flushCallback, settings.logger)
         {
+            if (!Utility.IsBlittable<Key>() || !Utility.IsBlittable<Value>())
+                throw new TsavoriteException($"BlittableAllocator requires blittlable Key ({typeof(Key)}) and Value ({typeof(Value)})");
+
             overflowPagePool = new OverflowPool<PageUnit>(4, p => { });
 
             if (BufferSize > 0)
