@@ -3,8 +3,6 @@
 
 using System;
 using System.Diagnostics;
-using System.Diagnostics.Metrics;
-using System.Runtime.CompilerServices;
 using Garnet.common;
 using Tsavorite.core;
 
@@ -19,6 +17,7 @@ namespace Garnet.server
         private bool NetworkRENAME<TGarnetApi>(ref TGarnetApi storageApi)
             where TGarnetApi : IGarnetApi
         {
+            waitForAofBlocking = true;
             if (parseState.count != 2)
             {
                 return AbortWithWrongNumberOfArguments(nameof(RespCommand.RENAME), parseState.count);
@@ -55,6 +54,7 @@ namespace Garnet.server
         private bool NetworkGETDEL<TGarnetApi>(ref TGarnetApi garnetApi)
             where TGarnetApi : IGarnetApi
         {
+            waitForAofBlocking = true;
             if (parseState.count != 1)
             {
                 return AbortWithWrongNumberOfArguments(nameof(RespCommand.PERSIST), parseState.count);
@@ -95,6 +95,7 @@ namespace Garnet.server
         private bool NetworkEXISTS<TGarnetApi>(int count, ref TGarnetApi storageApi)
             where TGarnetApi : IGarnetApi
         {
+            waitForAofBlocking = true;
             if (count < 1)
             {
                 return AbortWithWrongNumberOfArguments(nameof(RespCommand.EXISTS), count);
@@ -130,6 +131,7 @@ namespace Garnet.server
         private bool NetworkEXPIRE<TGarnetApi>(int count, RespCommand command, ref TGarnetApi storageApi)
             where TGarnetApi : IGarnetApi
         {
+            waitForAofBlocking = true;
             if (count < 2 || count > 3)
             {
                 return AbortWithWrongNumberOfArguments(nameof(RespCommand.EXPIRE), count);
@@ -198,6 +200,7 @@ namespace Garnet.server
         private bool NetworkPERSIST<TGarnetApi>(ref TGarnetApi storageApi)
             where TGarnetApi : IGarnetApi
         {
+            waitForAofBlocking = true;
             if (parseState.count != 1)
             {
                 return AbortWithWrongNumberOfArguments(nameof(RespCommand.PERSIST), parseState.count);
@@ -233,6 +236,7 @@ namespace Garnet.server
         private bool NetworkTTL<TGarnetApi>(RespCommand command, ref TGarnetApi storageApi)
             where TGarnetApi : IGarnetApi
         {
+            waitForAofBlocking = true;
             if (parseState.count != 1)
             {
                 return AbortWithWrongNumberOfArguments(nameof(RespCommand.PERSIST), parseState.count);

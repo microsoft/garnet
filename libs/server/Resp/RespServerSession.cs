@@ -149,10 +149,10 @@ namespace Garnet.server
         string clientName = null;
 
         /// <summary>
-        /// Flag to indicate if the current command requires AOF commit.
-        /// Only gets used for control flow in sending response when AOF is enabled on the session.
+        /// Flag indicating whether any of the commands in one message
+        /// requires us to block on AOF before sending response over the network
         /// </summary>
-        bool aofCommitCurrentCommand = true;
+        bool waitForAofBlocking = false;
 
         /// <summary>
         /// Random number generator for operations, using a cryptographic generator as the base seed
@@ -320,6 +320,9 @@ namespace Garnet.server
             }
             finally
             {
+                // reset the session's flag for AOF blocking to default value after processing all commands
+                waitForAofBlocking = false;
+
                 networkSender.ExitAndReturnResponseObject();
                 clusterSession?.ReleaseCurrentEpoch();
             }
@@ -359,9 +362,6 @@ namespace Garnet.server
 
             while (bytesRead - readHead >= 4)
             {
-                // Each command assumes the default behavior of committing the AOF log (given that AOF is enabled on the session)
-                aofCommitCurrentCommand = true;
-
                 // First, parse the command, making sure we have the entire command available
                 // We use endReadHead to track the end of the current command
                 // On success, readHead is left at the start of the command payload for legacy operators
@@ -377,9 +377,6 @@ namespace Garnet.server
                 // Check ACL permissions for the command
                 if (cmd != RespCommand.INVALID && CheckACLPermissions(cmd))
                 {
-                    // if the command being processed is a not aof independent, then let session proceed without blocking for AOF flusing later
-                    aofCommitCurrentCommand = !cmd.AofIndependent();
-
                     if (txnManager.state != TxnState.None)
                     {
                         if (txnManager.state == TxnState.Running)
@@ -654,16 +651,19 @@ namespace Garnet.server
             }
             else if (command == RespCommand.SUBSCRIBE)
             {
+                waitForAofBlocking = true;
                 while (!RespWriteUtils.WriteInteger(1, ref dcurr, dend))
                     SendAndReset();
             }
             else if (command == RespCommand.RUNTXP)
             {
+                waitForAofBlocking = true;
                 byte* ptr = recvBufferPtr + readHead;
                 return NetworkRUNTXP(count);
             }
             else if (command == RespCommand.CustomTxn)
             {
+                waitForAofBlocking = true;
                 if (currentCustomTransaction.NumParams < int.MaxValue && count != currentCustomTransaction.NumParams)
                 {
                     while (!RespWriteUtils.WriteError($"ERR Invalid number of parameters to stored proc {currentCustomTransaction.nameStr}, expected {currentCustomTransaction.NumParams}, actual {count}", ref dcurr, dend))
@@ -702,6 +702,7 @@ namespace Garnet.server
             }
             else if (command == RespCommand.CustomObjCmd)
             {
+                waitForAofBlocking = true;
                 if (currentCustomObjectCommand.NumParams < int.MaxValue && count != currentCustomObjectCommand.NumKeys + currentCustomObjectCommand.NumParams)
                 {
                     while (!RespWriteUtils.WriteError($"ERR Invalid number of parameters, expected {currentCustomObjectCommand.NumKeys + currentCustomObjectCommand.NumParams}, actual {count}", ref dcurr, dend))
@@ -928,6 +929,9 @@ namespace Garnet.server
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         private void Send(byte* d)
         {
+            // Note: This SEND method maybe called for responding to multiple commands in a single message (pipelining),
+            // or multiple times in a single command for sending data larger than fitting in buffer at once.
+
             // #if DEBUG
             // logger?.LogTrace("SEND: [{send}]", Encoding.UTF8.GetString(new Span<byte>(d, (int)(dcurr - d))).Replace("\n", "|").Replace("\r", ""));
             // Debug.WriteLine($"SEND: [{Encoding.UTF8.GetString(new Span<byte>(d, (int)(dcurr - d))).Replace("\n", "|").Replace("\r", "")}]");
@@ -936,7 +940,9 @@ namespace Garnet.server
             if ((int)(dcurr - d) > 0)
             {
                 // Debug.WriteLine("SEND: [" + Encoding.UTF8.GetString(new Span<byte>(d, (int)(dcurr - d))).Replace("\n", "|").Replace("\r", "!") + "]");
-                if (storeWrapper.appendOnlyFile != null && storeWrapper.serverOptions.WaitForCommit && aofCommitCurrentCommand)
+                if (storeWrapper.appendOnlyFile != null &&
+                    storeWrapper.serverOptions.WaitForCommit &&
+                    waitForAofBlocking)
                 {
                     var task = storeWrapper.appendOnlyFile.WaitForCommitAsync();
                     if (!task.IsCompleted) task.AsTask().GetAwaiter().GetResult();

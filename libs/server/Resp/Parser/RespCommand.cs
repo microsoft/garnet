@@ -348,47 +348,6 @@ namespace Garnet.server
         }
 
         /// <summary>
-        /// Returns True if <paramref name="cmd"/> does not have any interaction with AOF in it's read path or it's write counterpart path.
-        /// </summary>
-        [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        internal static bool AofIndependent(this RespCommand cmd)
-        {
-            // Commands that are either returning static data or commands that cannot have issues from concurrent AOF interaction in another session
-            return cmd == RespCommand.ASYNC ||
-                cmd == RespCommand.PING || 
-                cmd == RespCommand.SELECT ||
-                cmd == RespCommand.ECHO ||
-                cmd == RespCommand.CLIENT ||
-                cmd == RespCommand.MONITOR ||
-                cmd == RespCommand.MODULE_LOADCS ||
-                cmd == RespCommand.REGISTERCS ||
-                cmd == RespCommand.INFO ||
-                cmd == RespCommand.TIME ||
-                cmd == RespCommand.LASTSAVE ||
-                // ACL
-                cmd == RespCommand.ACL_CAT ||
-                cmd == RespCommand.ACL_DELUSER ||
-                cmd == RespCommand.ACL_LIST ||
-                cmd == RespCommand.ACL_LOAD ||
-                cmd == RespCommand.ACL_SAVE ||
-                cmd == RespCommand.ACL_SETUSER ||
-                cmd == RespCommand.ACL_USERS ||
-                cmd == RespCommand.ACL_WHOAMI ||
-                // Command
-                cmd == RespCommand.COMMAND ||
-                cmd == RespCommand.COMMAND_COUNT ||
-                cmd == RespCommand.COMMAND_INFO ||
-                cmd == RespCommand.MEMORY ||
-                // Config
-                cmd == RespCommand.CONFIG_GET ||
-                cmd == RespCommand.CONFIG_REWRITE ||
-                cmd == RespCommand.CONFIG_SET ||
-                // Latency
-                cmd == RespCommand.LATENCY_HELP ||
-                cmd == RespCommand.LATENCY_HISTOGRAM ||
-                cmd == RespCommand.LATENCY_RESET;
-        }
-        /// <summary>
         /// Returns true if <paramref name="cmd"/> can be run even if the user is not authenticated.
         /// </summary>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]

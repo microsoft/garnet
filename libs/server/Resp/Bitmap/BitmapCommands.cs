@@ -116,6 +116,7 @@ namespace Garnet.server
         private bool NetworkStringSetBit<TGarnetApi>(ref TGarnetApi storageApi)
             where TGarnetApi : IGarnetApi
         {
+            waitForAofBlocking = true;
             if (parseState.count != 3)
             {
                 return AbortWithWrongNumberOfArguments(nameof(RespCommand.SETBIT), parseState.count);
@@ -180,6 +181,7 @@ namespace Garnet.server
         private bool NetworkStringGetBit<TGarnetApi>(ref TGarnetApi storageApi)
             where TGarnetApi : IGarnetApi
         {
+            waitForAofBlocking = true;
             if (parseState.count != 2)
             {
                 return AbortWithWrongNumberOfArguments(nameof(RespCommand.GETBIT), parseState.count);
@@ -238,6 +240,7 @@ namespace Garnet.server
         private bool NetworkStringBitCount<TGarnetApi>(int count, ref TGarnetApi storageApi)
             where TGarnetApi : IGarnetApi
         {
+            waitForAofBlocking = true;
             if (count < 1 || count > 4)
             {
                 return AbortWithWrongNumberOfArguments(nameof(RespCommand.BITCOUNT), parseState.count);
@@ -320,6 +323,7 @@ namespace Garnet.server
         private bool NetworkStringBitPosition<TGarnetApi>(int count, ref TGarnetApi storageApi)
             where TGarnetApi : IGarnetApi
         {
+            waitForAofBlocking = true;
             if (count < 2 || count > 5)
             {
                 return AbortWithWrongNumberOfArguments(nameof(RespCommand.BITPOS), parseState.count);
@@ -411,6 +415,7 @@ namespace Garnet.server
         private bool NetworkStringBitOperation<TGarnetApi>(BitmapOperation bitop, ref TGarnetApi storageApi)
             where TGarnetApi : IGarnetApi
         {
+            waitForAofBlocking = true;
             // Too few keys
             if (parseState.count < 2)
             {
@@ -443,6 +448,7 @@ namespace Garnet.server
         private bool StringBitField<TGarnetApi>(int count, ref TGarnetApi storageApi)
             where TGarnetApi : IGarnetApi
         {
+            waitForAofBlocking = true;
             if (count < 1)
             {
                 return AbortWithWrongNumberOfArguments(nameof(RespCommand.BITFIELD), count);
@@ -611,6 +617,7 @@ namespace Garnet.server
         private bool StringBitFieldReadOnly<TGarnetApi>(int count, ref TGarnetApi storageApi)
             where TGarnetApi : IGarnetApi
         {
+            waitForAofBlocking = true;
             //BITFIELD key [GET encoding offset] [SET encoding offset value] [INCRBY encoding offset increment] [OVERFLOW WRAP| SAT | FAIL]
             //Extract Key//
             //Extract key to process for bitfield

@@ -25,6 +25,7 @@ namespace Garnet.server
         private unsafe bool HashSet<TGarnetApi>(RespCommand command, int count, ref TGarnetApi storageApi)
             where TGarnetApi : IGarnetApi
         {
+            waitForAofBlocking = true;
             if (((command == RespCommand.HSET || command == RespCommand.HMSET)
                   && (count == 1 || count % 2 != 1)) ||
                 (command == RespCommand.HSETNX && count != 3))
@@ -101,6 +102,7 @@ namespace Garnet.server
         private bool HashGet<TGarnetApi>(RespCommand command, int count, ref TGarnetApi storageApi)
             where TGarnetApi : IGarnetApi
         {
+            waitForAofBlocking = true;
             if (count != 2)
                 return AbortWithWrongNumberOfArguments(command.ToString(), count);
 
@@ -159,6 +161,7 @@ namespace Garnet.server
         private bool HashGetAll<TGarnetApi>(RespCommand command, int count, ref TGarnetApi storageApi)
             where TGarnetApi : IGarnetApi
         {
+            waitForAofBlocking = true;
             if (count != 1)
                 return AbortWithWrongNumberOfArguments(command.ToString(), count);
 
@@ -219,6 +222,7 @@ namespace Garnet.server
         private bool HashGetMultiple<TGarnetApi>(RespCommand command, int count, ref TGarnetApi storageApi)
             where TGarnetApi : IGarnetApi
         {
+            waitForAofBlocking = true;
             if (count < 2)
                 return AbortWithWrongNumberOfArguments(command.ToString(), count);
 
@@ -279,6 +283,7 @@ namespace Garnet.server
         private bool HashRandomField<TGarnetApi>(RespCommand command, int count, ref TGarnetApi storageApi)
             where TGarnetApi : IGarnetApi
         {
+            waitForAofBlocking = true;
             if (count < 1 || count > 3)
                 return AbortWithWrongNumberOfArguments(command.ToString(), count);
 
@@ -389,6 +394,7 @@ namespace Garnet.server
         private unsafe bool HashLength<TGarnetApi>(int count, ref TGarnetApi storageApi)
             where TGarnetApi : IGarnetApi
         {
+            waitForAofBlocking = true;
             if (count != 1)
             {
                 return AbortWithWrongNumberOfArguments("HLEN", count);
@@ -448,6 +454,7 @@ namespace Garnet.server
         private unsafe bool HashStrLength<TGarnetApi>(int count, ref TGarnetApi storageApi)
             where TGarnetApi : IGarnetApi
         {
+            waitForAofBlocking = true;
             if (count != 2)
             {
                 return AbortWithWrongNumberOfArguments("HSTRLEN", count);
@@ -505,6 +512,7 @@ namespace Garnet.server
         private unsafe bool HashDelete<TGarnetApi>(int count, ref TGarnetApi storageApi)
             where TGarnetApi : IGarnetApi
         {
+            waitForAofBlocking = true;
             if (count < 1)
             {
                 return AbortWithWrongNumberOfArguments("HDEL", count);
@@ -565,6 +573,7 @@ namespace Garnet.server
         private unsafe bool HashExists<TGarnetApi>(int count, ref TGarnetApi storageApi)
            where TGarnetApi : IGarnetApi
         {
+            waitForAofBlocking = true;
             if (count != 2)
             {
                 return AbortWithWrongNumberOfArguments("HEXISTS", count);
@@ -623,6 +632,7 @@ namespace Garnet.server
         private unsafe bool HashKeys<TGarnetApi>(RespCommand command, int count, ref TGarnetApi storageApi)
           where TGarnetApi : IGarnetApi
         {
+            waitForAofBlocking = true;
             if (count != 1)
             {
                 return AbortWithWrongNumberOfArguments(command.ToString(), count);
@@ -695,6 +705,7 @@ namespace Garnet.server
         private unsafe bool HashIncrement<TGarnetApi>(RespCommand command, int count, ref TGarnetApi storageApi)
             where TGarnetApi : IGarnetApi
         {
+            waitForAofBlocking = true;
             // Check if parameters number is right
             if (count != 3)
             {

@@ -24,6 +24,7 @@ namespace Garnet.server
         private unsafe bool SetAdd<TGarnetApi>(int count, ref TGarnetApi storageApi)
             where TGarnetApi : IGarnetApi
         {
+            waitForAofBlocking = true;
             if (count < 2)
             {
                 return AbortWithWrongNumberOfArguments("SADD", count);
@@ -83,6 +84,7 @@ namespace Garnet.server
         private bool SetIntersect<TGarnetApi>(int count, ref TGarnetApi storageApi)
             where TGarnetApi : IGarnetApi
         {
+            waitForAofBlocking = true;
             if (count < 1)
             {
                 return AbortWithWrongNumberOfArguments("SINTER", count);
@@ -144,6 +146,7 @@ namespace Garnet.server
         private bool SetIntersectStore<TGarnetApi>(int count, ref TGarnetApi storageApi)
             where TGarnetApi : IGarnetApi
         {
+            waitForAofBlocking = true;
             if (count < 2)
             {
                 return AbortWithWrongNumberOfArguments("SINTERSTORE", count);
@@ -190,6 +193,7 @@ namespace Garnet.server
         private bool SetUnion<TGarnetApi>(int count, ref TGarnetApi storageApi)
             where TGarnetApi : IGarnetApi
         {
+            waitForAofBlocking = true;
             if (count < 1)
             {
                 return AbortWithWrongNumberOfArguments("SUNION", count);
@@ -242,6 +246,7 @@ namespace Garnet.server
         private bool SetUnionStore<TGarnetApi>(int count, ref TGarnetApi storageApi)
             where TGarnetApi : IGarnetApi
         {
+            waitForAofBlocking = true;
             if (count < 2)
             {
                 return AbortWithWrongNumberOfArguments("SUNIONSTORE", count);
@@ -288,6 +293,7 @@ namespace Garnet.server
         private unsafe bool SetRemove<TGarnetApi>(int count, ref TGarnetApi storageApi)
             where TGarnetApi : IGarnetApi
         {
+            waitForAofBlocking = true;
             if (count < 2)
             {
                 return AbortWithWrongNumberOfArguments("SREM", count);
@@ -350,6 +356,7 @@ namespace Garnet.server
         private unsafe bool SetLength<TGarnetApi>(int count, ref TGarnetApi storageApi)
             where TGarnetApi : IGarnetApi
         {
+            waitForAofBlocking = true;
             if (count != 1)
             {
                 return AbortWithWrongNumberOfArguments("SCARD", count);
@@ -409,6 +416,7 @@ namespace Garnet.server
         private unsafe bool SetMembers<TGarnetApi>(int count, ref TGarnetApi storageApi)
             where TGarnetApi : IGarnetApi
         {
+            waitForAofBlocking = true;
             if (count != 1)
             {
                 return AbortWithWrongNumberOfArguments("SMEMBERS", count);
@@ -463,6 +471,7 @@ namespace Garnet.server
         private unsafe bool SetIsMember<TGarnetApi>(int count, ref TGarnetApi storageApi)
             where TGarnetApi : IGarnetApi
         {
+            waitForAofBlocking = true;
             if (count != 2)
             {
                 return AbortWithWrongNumberOfArguments("SISMEMBER", count);
@@ -524,6 +533,7 @@ namespace Garnet.server
         private unsafe bool SetPop<TGarnetApi>(int count, ref TGarnetApi storageApi)
             where TGarnetApi : IGarnetApi
         {
+            waitForAofBlocking = true;
             if (count < 1 || count > 2)
             {
                 return AbortWithWrongNumberOfArguments("SPOP", count);
@@ -615,6 +625,7 @@ namespace Garnet.server
         private unsafe bool SetMove<TGarnetApi>(int count, ref TGarnetApi storageApi)
             where TGarnetApi : IGarnetApi
         {
+            waitForAofBlocking = true;
             if (count != 3)
             {
                 return AbortWithWrongNumberOfArguments("SMOVE", count);
@@ -667,6 +678,7 @@ namespace Garnet.server
         private unsafe bool SetRandomMember<TGarnetApi>(int count, ref TGarnetApi storageApi)
             where TGarnetApi : IGarnetApi
         {
+            waitForAofBlocking = true;
             if (count < 1 || count > 2)
             {
                 return AbortWithWrongNumberOfArguments("SRANDMEMBER", count);
@@ -768,6 +780,7 @@ namespace Garnet.server
         private bool SetDiff<TGarnetApi>(int count, ref TGarnetApi storageApi)
             where TGarnetApi : IGarnetApi
         {
+            waitForAofBlocking = true;
             if (count < 1)
             {
                 return AbortWithWrongNumberOfArguments("SDIFF", count);
@@ -815,6 +828,7 @@ namespace Garnet.server
         private bool SetDiffStore<TGarnetApi>(int count, ref TGarnetApi storageApi)
             where TGarnetApi : IGarnetApi
         {
+            waitForAofBlocking = true;
             if (count < 2)
             {
                 return AbortWithWrongNumberOfArguments("SDIFFSTORE", count);

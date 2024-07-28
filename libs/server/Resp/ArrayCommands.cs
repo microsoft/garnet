@@ -22,6 +22,7 @@ namespace Garnet.server
         private bool NetworkMGET<TGarnetApi>(ref TGarnetApi storageApi)
             where TGarnetApi : IGarnetApi
         {
+            waitForAofBlocking = true;
             if (storeWrapper.serverOptions.EnableScatterGatherGet)
                 return NetworkMGET_SG(ref storageApi);
 
@@ -168,6 +169,7 @@ namespace Garnet.server
         private bool NetworkMSET<TGarnetApi>(ref TGarnetApi storageApi)
             where TGarnetApi : IGarnetApi
         {
+            waitForAofBlocking = true;
             Debug.Assert(parseState.count % 2 == 0);
 
             if (NetworkMultiKeySlotVerify(readOnly: false, step: 2))
@@ -192,6 +194,7 @@ namespace Garnet.server
         private bool NetworkMSETNX<TGarnetApi>(ref TGarnetApi storageApi)
             where TGarnetApi : IGarnetApi
         {
+            waitForAofBlocking = true;
             if (NetworkMultiKeySlotVerify(readOnly: false))
             {
                 return true;
@@ -245,6 +248,7 @@ namespace Garnet.server
         private bool NetworkDEL<TGarnetApi>(ref TGarnetApi storageApi)
             where TGarnetApi : IGarnetApi
         {
+            waitForAofBlocking = true;
             if (NetworkMultiKeySlotVerify(readOnly: false))
             {
                 return true;
@@ -272,6 +276,7 @@ namespace Garnet.server
         /// <returns></returns>
         private bool NetworkSELECT()
         {
+            waitForAofBlocking = true;
             if (parseState.count != 1)
             {
                 return AbortWithWrongNumberOfArguments(nameof(RespCommand.SELECT), parseState.count);
@@ -310,6 +315,7 @@ namespace Garnet.server
         private bool NetworkDBSIZE<TGarnetApi>(ref TGarnetApi storageApi)
             where TGarnetApi : IGarnetApi
         {
+            waitForAofBlocking = true;
             if (parseState.count != 0)
             {
                 return AbortWithWrongNumberOfArguments(nameof(RespCommand.DBSIZE), parseState.count);
@@ -324,6 +330,7 @@ namespace Garnet.server
         private bool NetworkKEYS<TGarnetApi>(ref TGarnetApi storageApi)
              where TGarnetApi : IGarnetApi
         {
+            waitForAofBlocking = true;
             if (parseState.count != 1)
             {
                 return AbortWithWrongNumberOfArguments(nameof(RespCommand.KEYS), parseState.count);
@@ -359,6 +366,7 @@ namespace Garnet.server
         private bool NetworkSCAN<TGarnetApi>(int count, ref TGarnetApi storageApi)
               where TGarnetApi : IGarnetApi
         {
+            waitForAofBlocking = true;
             if (count < 1)
                 return AbortWithWrongNumberOfArguments("SCAN", count);
 
@@ -437,6 +445,7 @@ namespace Garnet.server
         private bool NetworkTYPE<TGarnetApi>(int count, ref TGarnetApi storageApi)
               where TGarnetApi : IGarnetApi
         {
+            waitForAofBlocking = true;
             if (count != 1)
                 return AbortWithWrongNumberOfArguments("TYPE", count);
 
@@ -487,6 +496,7 @@ namespace Garnet.server
 
         private bool NetworkArrayPING(int count)
         {
+            waitForAofBlocking = true;
             if (count > 1)
             {
                 return AbortWithWrongNumberOfArguments(nameof(RespCommand.PING), count);
