@@ -20,6 +20,7 @@ namespace Garnet.server
         private unsafe bool GeoAdd<TGarnetApi>(int count, ref TGarnetApi storageApi)
             where TGarnetApi : IGarnetApi
         {
+            waitForAofBlocking = true;
             // validate the number of parameters
             if (count < 4)
             {
@@ -83,6 +84,7 @@ namespace Garnet.server
         private unsafe bool GeoCommands<TGarnetApi>(RespCommand command, int count, ref TGarnetApi storageApi)
             where TGarnetApi : IGarnetApi
         {
+            waitForAofBlocking = true;
             var paramsRequiredInCommand = 0;
             var cmd = nameof(command);
 

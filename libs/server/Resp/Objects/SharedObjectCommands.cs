@@ -21,6 +21,7 @@ namespace Garnet.server
         private unsafe bool ObjectScan<TGarnetApi>(int count, GarnetObjectType objectType, ref TGarnetApi storageApi)
              where TGarnetApi : IGarnetApi
         {
+            waitForAofBlocking = true;
             // Check number of required parameters
             if (count < 2)
             {

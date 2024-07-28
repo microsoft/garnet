@@ -369,9 +369,6 @@ namespace Garnet.server
 
             while (bytesRead - readHead >= 4)
             {
-                // Each command assumes the default behavior of committing the AOF log (given that AOF is enabled on the session)
-                aofCommitCurrentCommand = true;
-
                 // First, parse the command, making sure we have the entire command available
                 // We use endReadHead to track the end of the current command
                 // On success, readHead is left at the start of the command payload for legacy operators
@@ -684,16 +681,19 @@ namespace Garnet.server
             }
             else if (command == RespCommand.SUBSCRIBE)
             {
+                waitForAofBlocking = true;
                 while (!RespWriteUtils.WriteInteger(1, ref dcurr, dend))
                     SendAndReset();
             }
             else if (command == RespCommand.RUNTXP)
             {
+                waitForAofBlocking = true;
                 byte* ptr = recvBufferPtr + readHead;
                 return NetworkRUNTXP(count);
             }
             else if (command == RespCommand.CustomTxn)
             {
+                waitForAofBlocking = true;
                 if (currentCustomTransaction.NumParams < int.MaxValue && count != currentCustomTransaction.NumParams)
                 {
                     while (!RespWriteUtils.WriteError($"ERR Invalid number of parameters to stored proc {currentCustomTransaction.nameStr}, expected {currentCustomTransaction.NumParams}, actual {count}", ref dcurr, dend))
@@ -732,6 +732,7 @@ namespace Garnet.server
             }
             else if (command == RespCommand.CustomObjCmd)
             {
+                waitForAofBlocking = true;
                 if (currentCustomObjectCommand.NumParams < int.MaxValue && count != currentCustomObjectCommand.NumKeys + currentCustomObjectCommand.NumParams)
                 {
                     while (!RespWriteUtils.WriteError($"ERR Invalid number of parameters, expected {currentCustomObjectCommand.NumKeys + currentCustomObjectCommand.NumParams}, actual {count}", ref dcurr, dend))

@@ -23,6 +23,7 @@ namespace Garnet.server
         private unsafe bool SortedSetAdd<TGarnetApi>(int count, ref TGarnetApi storageApi)
             where TGarnetApi : IGarnetApi
         {
+            waitForAofBlocking = true;
             if (count < 3)
             {
                 return AbortWithWrongNumberOfArguments("ZADD", count);
@@ -83,6 +84,7 @@ namespace Garnet.server
         private unsafe bool SortedSetRemove<TGarnetApi>(int count, ref TGarnetApi storageApi)
             where TGarnetApi : IGarnetApi
         {
+            waitForAofBlocking = true;
             if (count < 2)
             {
                 return AbortWithWrongNumberOfArguments("ZREM", count);
@@ -140,6 +142,7 @@ namespace Garnet.server
         private unsafe bool SortedSetLength<TGarnetApi>(int count, ref TGarnetApi storageApi)
             where TGarnetApi : IGarnetApi
         {
+            waitForAofBlocking = true;
             if (count != 1)
             {
                 return AbortWithWrongNumberOfArguments("ZCARD", count);
@@ -201,6 +204,7 @@ namespace Garnet.server
         private unsafe bool SortedSetRange<TGarnetApi>(RespCommand command, int count, ref TGarnetApi storageApi)
             where TGarnetApi : IGarnetApi
         {
+            waitForAofBlocking = true;
             // ZRANGE key min max [BYSCORE|BYLEX] [REV] [LIMIT offset count] [WITHSCORES]
             if (count < 3)
             {
@@ -272,6 +276,7 @@ namespace Garnet.server
         private unsafe bool SortedSetScore<TGarnetApi>(int count, ref TGarnetApi storageApi)
             where TGarnetApi : IGarnetApi
         {
+            waitForAofBlocking = true;
             //validation if minimum args
             if (count != 2)
             {
@@ -334,6 +339,7 @@ namespace Garnet.server
         private unsafe bool SortedSetScores<TGarnetApi>(int count, ref TGarnetApi storageApi)
             where TGarnetApi : IGarnetApi
         {
+            waitForAofBlocking = true;
             //validation if minimum args
             if (count < 2)
             {
@@ -400,6 +406,7 @@ namespace Garnet.server
         private unsafe bool SortedSetPop<TGarnetApi>(RespCommand command, int count, ref TGarnetApi storageApi)
              where TGarnetApi : IGarnetApi
         {
+            waitForAofBlocking = true;
             if (count < 1 || count > 2)
             {
                 return AbortWithWrongNumberOfArguments(command.ToString(), count);
@@ -488,6 +495,7 @@ namespace Garnet.server
         private unsafe bool SortedSetCount<TGarnetApi>(int count, ref TGarnetApi storageApi)
              where TGarnetApi : IGarnetApi
         {
+            waitForAofBlocking = true;
             if (count != 3)
             {
                 return AbortWithWrongNumberOfArguments("ZCOUNT", count);
@@ -559,6 +567,7 @@ namespace Garnet.server
         private unsafe bool SortedSetLengthByValue<TGarnetApi>(RespCommand command, int count, ref TGarnetApi storageApi)
              where TGarnetApi : IGarnetApi
         {
+            waitForAofBlocking = true;
             if (count != 3)
             {
                 return AbortWithWrongNumberOfArguments(command.ToString(), count);
@@ -638,6 +647,7 @@ namespace Garnet.server
         private unsafe bool SortedSetIncrement<TGarnetApi>(int count, ref TGarnetApi storageApi)
              where TGarnetApi : IGarnetApi
         {
+            waitForAofBlocking = true;
             //validation of required args
             if (count != 3)
             {
@@ -711,6 +721,7 @@ namespace Garnet.server
         private unsafe bool SortedSetRank<TGarnetApi>(RespCommand command, int count, ref TGarnetApi storageApi)
              where TGarnetApi : IGarnetApi
         {
+            waitForAofBlocking = true;
             if (count < 2)
             {
                 return AbortWithWrongNumberOfArguments(command.ToString(), count);
@@ -803,6 +814,7 @@ namespace Garnet.server
         private unsafe bool SortedSetRemoveRange<TGarnetApi>(RespCommand command, int count, ref TGarnetApi storageApi)
              where TGarnetApi : IGarnetApi
         {
+            waitForAofBlocking = true;
             if (count != 3)
             {
                 return AbortWithWrongNumberOfArguments(command.ToString(), count);
@@ -882,6 +894,7 @@ namespace Garnet.server
         private unsafe bool SortedSetRandomMember<TGarnetApi>(int count, ref TGarnetApi storageApi)
              where TGarnetApi : IGarnetApi
         {
+            waitForAofBlocking = true;
             if (count < 1 || count > 3)
             {
                 return AbortWithWrongNumberOfArguments("ZRANDMEMBER", count);
@@ -997,6 +1010,7 @@ namespace Garnet.server
         private unsafe bool SortedSetDifference<TGarnetApi>(int count, ref TGarnetApi storageApi)
              where TGarnetApi : IGarnetApi
         {
+            waitForAofBlocking = true;
             if (count < 2)
             {
                 return AbortWithWrongNumberOfArguments("ZDIFF", count);

@@ -23,6 +23,8 @@ namespace Garnet.server
         bool NetworkGET<TGarnetApi>(ref TGarnetApi storageApi)
             where TGarnetApi : IGarnetApi
         {
+            waitForAofBlocking = true;
+
             if (storeWrapper.serverOptions.EnableScatterGatherGet)
                 return NetworkGET_SG(ref storageApi);
 
@@ -264,6 +266,7 @@ namespace Garnet.server
         private bool NetworkSET<TGarnetApi>(ref TGarnetApi storageApi)
             where TGarnetApi : IGarnetApi
         {
+            waitForAofBlocking = true;
             Debug.Assert(parseState.count == 2);
             var key = parseState.GetArgSliceByRef(0).SpanByte;
             var value = parseState.GetArgSliceByRef(1).SpanByte;
@@ -285,6 +288,7 @@ namespace Garnet.server
         private bool NetworkSetRange<TGarnetApi>(ref TGarnetApi storageApi)
             where TGarnetApi : IGarnetApi
         {
+            waitForAofBlocking = true;
             var key = parseState.GetArgSliceByRef(0);
 
             if (NetworkMultiKeySlotVerify(readOnly: false, firstKey: 0, lastKey: 0))
@@ -320,6 +324,7 @@ namespace Garnet.server
         private bool NetworkGetRange<TGarnetApi>(ref TGarnetApi storageApi)
             where TGarnetApi : IGarnetApi
         {
+            waitForAofBlocking = true;
             var key = parseState.GetArgSliceByRef(0);
             var sbKey = key.SpanByte;
 
@@ -365,6 +370,7 @@ namespace Garnet.server
         private bool NetworkSETEX<TGarnetApi>(bool highPrecision, ref TGarnetApi storageApi)
             where TGarnetApi : IGarnetApi
         {
+            waitForAofBlocking = true;
             var key = parseState.GetArgSliceByRef(0).SpanByte;
 
             if (NetworkMultiKeySlotVerify(readOnly: false, firstKey: 0, lastKey: 1))
@@ -434,6 +440,7 @@ namespace Garnet.server
         private bool NetworkSETEXNX<TGarnetApi>(int count, ref TGarnetApi storageApi)
             where TGarnetApi : IGarnetApi
         {
+            waitForAofBlocking = true;
             var key = parseState.GetArgSliceByRef(0);
             var sbKey = key.SpanByte;
 
@@ -747,6 +754,7 @@ namespace Garnet.server
         private bool NetworkIncrement<TGarnetApi>(RespCommand cmd, ref TGarnetApi storageApi)
             where TGarnetApi : IGarnetApi
         {
+            waitForAofBlocking = true;
             Debug.Assert(cmd == RespCommand.INCRBY || cmd == RespCommand.DECRBY || cmd == RespCommand.INCR ||
                          cmd == RespCommand.DECR);
 
@@ -819,6 +827,7 @@ namespace Garnet.server
         private bool NetworkAppend<TGarnetApi>(ref TGarnetApi storageApi)
             where TGarnetApi : IGarnetApi
         {
+            waitForAofBlocking = true;
             var sbKey = parseState.GetArgSliceByRef(0).SpanByte;
 
             if (NetworkMultiKeySlotVerify(readOnly: false, firstKey: 0, lastKey: 0))
@@ -866,6 +875,7 @@ namespace Garnet.server
         /// </summary>
         private bool NetworkASKING()
         {
+            waitForAofBlocking = true;
             //*1\r\n$6\r\n ASKING\r\n = 16
             if (storeWrapper.serverOptions.EnableCluster)
                 SessionAsking = 2;
@@ -879,6 +889,7 @@ namespace Garnet.server
         /// </summary>
         private bool NetworkQUIT()
         {
+            waitForAofBlocking = true;
             while (!RespWriteUtils.WriteDirect(CmdStrings.RESP_OK, ref dcurr, dend))
                 SendAndReset();
             toDispose = true;
@@ -923,6 +934,7 @@ namespace Garnet.server
         /// <returns></returns>
         private bool NetworkREADONLY()
         {
+            waitForAofBlocking = true;
             //*1\r\n$8\r\nREADONLY\r\n
             clusterSession?.SetReadOnlySession();
             while (!RespWriteUtils.WriteDirect(CmdStrings.RESP_OK, ref dcurr, dend))
@@ -936,6 +948,7 @@ namespace Garnet.server
         /// <returns></returns>
         private bool NetworkREADWRITE()
         {
+            waitForAofBlocking = true;
             //*1\r\n$9\r\nREADWRITE\r\n
             clusterSession?.SetReadWriteSession();
             while (!RespWriteUtils.WriteDirect(CmdStrings.RESP_OK, ref dcurr, dend))
@@ -952,6 +965,7 @@ namespace Garnet.server
         private bool NetworkSTRLEN<TGarnetApi>(ref TGarnetApi storageApi)
             where TGarnetApi : IGarnetApi
         {
+            waitForAofBlocking = true;
             if (parseState.count != 1)
             {
                 return AbortWithWrongNumberOfArguments(nameof(RespCommand.STRLEN), parseState.count);
