@@ -129,37 +129,47 @@ namespace Garnet.server
             => (flags & RespInputFlags.SetGet) != 0;
     }
 
+    /// <summary>
+    /// Header for Garnet Object Store inputs
+    /// </summary>
     [StructLayout(LayoutKind.Explicit, Size = Size)]
     public struct ObjectInput
     {
-        public const int Size = RespInputHeader.Size + 2 * sizeof(int) + ArgSlice.Size;
+        /// <summary>
+        /// Size of header
+        /// </summary>
+        public const int Size = RespInputHeader.Size + (2 * sizeof(int)) + ArgSlice.Size;
 
+        /// <summary>
+        /// Common input header for Garnet
+        /// </summary>
         [FieldOffset(0)]
         public RespInputHeader header;
 
+        /// <summary>
+        /// Argument for generic usage by command implementation
+        /// </summary>
         [FieldOffset(RespInputHeader.Size)]
         public int arg1;
 
+        /// <summary>
+        /// Argument for generic usage by command implementation
+        /// </summary>
         [FieldOffset(RespInputHeader.Size + sizeof(int))]
         public int arg2;
 
+        /// <summary>
+        /// RESP-formatted payload
+        /// </summary>
         [FieldOffset(RespInputHeader.Size + sizeof(int) + sizeof(int))]
         public ArgSlice payload;
 
+        /// <summary>
+        /// Gets a pointer to the top of the header
+        /// </summary>
+        /// <returns>Pointer</returns>
         public unsafe byte* ToPointer()
             => (byte*)Unsafe.AsPointer(ref header);
-
-        public long ExtraMetadata
-            => payload.SpanByte.ExtraMetadata;
-
-        public unsafe Span<byte> AsSpan()
-            => new Span<byte>(ToPointer(), Size);
-
-        public unsafe ReadOnlySpan<byte> AsReadOnlySpan()
-            => new ReadOnlySpan<byte>(ToPointer(), Size);
-
-        public int Length
-            => AsSpan().Length;
     }
 
     /// <summary>
