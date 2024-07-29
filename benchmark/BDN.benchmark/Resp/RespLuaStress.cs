@@ -10,49 +10,48 @@ namespace BDN.benchmark.Resp
     public unsafe class RespLuaStress
     {
         Lua state;
-        LuaFunction function2;
+        LuaFunction function;
 
-        public long callback(long arg1, long arg2) => arg1 + arg2;
+        public string garnet_call(string arg1) => arg1;
 
         [GlobalSetup]
         public void GlobalSetup()
         {
+            const string source = "return KEYS[1]";
             state = new Lua();
 
-            state.RegisterFunction("callback", this, this.GetType().GetMethod("callback"));
+            state.RegisterFunction("garnet_call", this, this.GetType().GetMethod("garnet_call"));
+
+            state["KEYS"] = new string[] { "key1", "key2" };
+            state["ARGV"] = new string[] { "arg1", "arg2" };
 
             state.DoString(@"
                 import = function () end
                 redis = {}
-                function redis.call(a,b)
-                    return callback(a,b)
+                function redis.call(a)
+                    return garnet_call(a)
                 end
                 function load_sandboxed(source)
                     if (not source) then return nil end
                     return load(source)
                 end
-                function execute_fc(sb_code)
-                    return pcall(sb_code);
-                end
             ");
 
-            using var func = (LuaFunction)state["load_sandboxed"];
-            var res = func?.Call("return redis.call");
-            using var function = res[0] as LuaFunction;
-            function2 = function.Call()[0] as LuaFunction;
+            using var loader = (LuaFunction)state["load_sandboxed"];
+            function = loader.Call(source)[0] as LuaFunction;
         }
 
         [GlobalCleanup]
         public void GlobalCleanup()
         {
-            function2.Dispose();
+            function.Dispose();
             state.Dispose();
         }
 
         [Benchmark]
         public void BasicLua()
         {
-            var res = function2.Call(1, 4);
+            var res = function.Call();
         }
     }
 }
