@@ -135,12 +135,13 @@ namespace Garnet.cluster
             {
                 _lock.WriteLock();
                 if (_disposed) return false;
-                for (var i = 0; i < sessions.Length; i++)
+
+                foreach (var slot in mSession.GetSlots)
                 {
-                    var s = sessions[i];
-                    if (s != null && s == mSession)
-                        sessions[i] = null;
+                    Debug.Assert(sessions[slot] == mSession, "MigrateSession not found in slot");
+                    sessions[slot] = null;
                 }
+
                 mSession.Dispose();
                 return true;
             }
@@ -161,16 +162,20 @@ namespace Garnet.cluster
             {
                 _lock.WriteLock();
                 if (_disposed) return false;
-                HashSet<MigrateSession> mSessions = [];
+                HashSet<MigrateSession> mSessions = null;
                 for (var i = 0; i < sessions.Length; i++)
                 {
                     var s = sessions[i];
                     if (s != null && s.GetTargetNodeId.Equals(targetNodeId, StringComparison.Ordinal))
                     {
                         sessions[i] = null;
+                        mSessions ??= [];
                         _ = mSessions.Add(s);
                     }
                 }
+
+                if (mSessions == null)
+                    return false;
 
                 foreach (var session in mSessions)
                     session.Dispose();
