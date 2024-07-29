@@ -142,7 +142,7 @@ namespace Garnet.server
         /// <summary>
         /// A per-session cache for storing lua scripts
         /// </summary>
-        internal ScriptMemoryManager sessionScriptCache;
+        internal SessionScriptCache sessionScriptCache;
 
         public RespServerSession(
             INetworkSender networkSender,

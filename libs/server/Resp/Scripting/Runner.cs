@@ -11,41 +11,43 @@ namespace Garnet.server
     /// <summary>
     /// Creates the instance to run Lua scripts
     /// </summary>
-    public class Runner
+    internal class Runner : IDisposable
     {
-        readonly ScriptApi _garnetApi;
         readonly Lua _luaBox;
         LuaFunction _luaFunction;
-        private string _source;
+        readonly byte[] source;
+        readonly RespServerSession respServerSession;
+        readonly bool lockableContext;
 
         /// <summary>
-        /// This constructor avoids the instantiation of the ScriptApi
+        /// Creates a new runner with the source of the script
         /// </summary>
-        public Runner()
+        internal Runner(byte[] source, RespServerSession respServerSession, bool lockableContext)
         {
+            this.source = source;
+            this.respServerSession = respServerSession;
+            this.lockableContext = lockableContext;
             _luaBox = new Lua();
             _luaBox.State.Encoding = Encoding.UTF8;
             _luaBox.LoadCLRPackage();
         }
 
-        /// <summary>
-        /// Full initialization of the ScriptApi and Lua machine
-        /// </summary>
-        /// <param name="api"></param>
-        public Runner(ScriptApi api) : this()
+        public void Dispose()
         {
-            _garnetApi = api;
+            _luaBox?.Dispose();
+            _luaFunction?.Dispose();
         }
 
-
         /// <summary>
-        /// Creates a new runner with the source of the script
+        /// Entry point for garnet.call method calls from LUA scripts
         /// </summary>
-        /// <param name="garnetApi"></param>
-        /// <param name="source"></param>
-        public Runner(ScriptApi garnetApi, byte[] source) : this(garnetApi)
+        /// <param name="cmd">Command to execute</param>
+        /// <param name="key"></param>
+        /// <param name="args">Command parameters</param>
+        /// <returns></returns>
+        object call(string cmd, (ArgSlice, bool) key, params object[] args)
         {
-            _source = Encoding.ASCII.GetString(source);
+            return respServerSession.ProcessCommandFromScripting(cmd, lockableContext, key, args);
         }
 
         /// <summary>
@@ -58,16 +60,14 @@ namespace Garnet.server
         {
             _luaBox["KEYS"] = keys;
             _luaBox["ARGV"] = args;
-            _luaBox["garnetApi"] = _garnetApi;
-            // load (ld [, source [, mode [, env]]])
+            _luaBox.RegisterFunction("garnetCall", this, GetType().GetMethod("call"));
             _luaBox.DoString(@"
                 luanet.load_assembly('Garnet.server');
-                GarnetAPI=luanet.import_type('Garnet.server.Garnet')
                 local GarnetClass = {}
                 GarnetClass.new = function()
                         local self = {}
                         function self.call(cmd, key, ...)
-                            return garnetApi:call(cmd, key, ...)
+                            return garnetCall(cmd, key, ...)
                         end
                     return self
                 end
@@ -78,9 +78,7 @@ namespace Garnet.server
                     print = print;
                     KEYS = KEYS;
                     ARGV = ARGV;
-                    GarnetType = GarnetType;
                     garnet=garnet;
-                    garnetApi=garnetApi;
                     socket=socket;
                 }               
                 function load_sandboxed(source)
@@ -92,7 +90,6 @@ namespace Garnet.server
                     sb_code, result_msg = load(source, nil, nil, sandbox_env)
                     return pcall(sb_code)
                 end
-
                 function execute_fc(sb_code, keys, args)
                     sandbox_env['KEYS'] = keys;
                     sandbox_env['ARGV'] = args;
@@ -165,7 +162,7 @@ namespace Garnet.server
             {
                 //TODO: add the error handlers in lua to customize the error messages
                 using var func = (LuaFunction)_luaBox["run_sandboxed"];
-                var res = func?.Call(_source);
+                var res = func?.Call(source);
 
                 if (res != null)
                 {
@@ -195,30 +192,15 @@ namespace Garnet.server
             return (success, result);
         }
 
-
         /// <summary>
-        /// 
-        /// </summary>
-        /// <param name="source"></param>
-        /// <param name="keys"></param>
-        /// <param name="args"></param>
-        /// <returns></returns>
-        public (bool success, object returnValue) RunScript(string source, (ArgSlice, bool)[] keys, String[] args)
-        {
-            _source = source;
-            return RunScriptWithSource(keys, args);
-        }
-
-
-        /// <summary>
-        /// Runs the precompiled luafunction
+        /// Runs the precompiled Lua function
         /// </summary>
         /// <param name="keys"></param>
         /// <param name="args"></param>
         /// <returns></returns>
         public object RunScript((ArgSlice, bool)[] keys, String[] args)
         {
-            if (_source != default)
+            if (source != default)
             {
                 return RunScriptWithSource(keys, args).returnValue;
             }
