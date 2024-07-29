@@ -4,6 +4,7 @@
 using System;
 using System.Runtime.CompilerServices;
 using System.Runtime.InteropServices;
+using Tsavorite.core;
 
 namespace Garnet.server
 {
@@ -141,7 +142,7 @@ namespace Garnet.server
         /// <summary>
         /// Size of header
         /// </summary>
-        public const int Size = RespInputHeader.Size + (2 * sizeof(int)) + ArgSlice.Size;
+        public const int Size = RespInputHeader.Size + (2 * sizeof(int)) + ArgSlice.Size + SessionParseState.Size;
 
         /// <summary>
         /// Common input header for Garnet
@@ -164,8 +165,14 @@ namespace Garnet.server
         /// <summary>
         /// RESP-formatted payload
         /// </summary>
-        [FieldOffset(RespInputHeader.Size + sizeof(int) + sizeof(int))]
+        [FieldOffset(RespInputHeader.Size + (2 * sizeof(int)))]
         public ArgSlice payload;
+
+        /// <summary>
+        /// Session parse state
+        /// </summary>
+        [FieldOffset(RespInputHeader.Size + (2 * sizeof(int)) + ArgSlice.Size)]
+        public SessionParseState parseState;
 
         /// <summary>
         /// Gets a pointer to the top of the header
@@ -173,6 +180,22 @@ namespace Garnet.server
         /// <returns>Pointer</returns>
         public unsafe byte* ToPointer()
             => (byte*)Unsafe.AsPointer(ref header);
+
+        /// <summary>
+        /// Get header as Span
+        /// </summary>
+        /// <returns></returns>
+        public unsafe Span<byte> AsSpan() => new(ToPointer(), Size);
+
+        /// <summary>
+        /// Get header as SpanByte
+        /// </summary>
+        public unsafe SpanByte SpanByte => new(Length, (nint)ToPointer());
+
+        /// <summary>
+        /// Get header length
+        /// </summary>
+        public int Length => AsSpan().Length;
     }
 
     /// <summary>

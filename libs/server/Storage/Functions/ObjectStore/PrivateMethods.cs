@@ -32,7 +32,7 @@ namespace Garnet.server
                     var keySB = SpanByte.FromPinnedPointer(ptr, key.Length);
                     var valSB = SpanByte.FromPinnedPointer(valPtr, valueBytes.Length);
 
-                    var sbInput = new ArgSlice(input.ToPointer(), input.Length).SpanByte;
+                    var sbInput = input.SpanByte;
                     var sbInputPayload = input.payload.SpanByte;
 
                     functionsState.appendOnlyFile.Enqueue(
@@ -54,22 +54,14 @@ namespace Garnet.server
             input.header.flags |= RespInputFlags.Deterministic;
             
             // Serializing key & ObjectInput to RMW log
-
-            var intParams = new int[] { input.arg1, input.arg2, input.parseState.count };
-
             fixed (byte* keyPtr = key)
-            fixed (int* intParamsPtr = intParams)
             {
                 var sbKey = SpanByte.FromPinnedPointer(keyPtr, key.Length);
-
-                // In order to reconstruct ObjectInput with its parse state, the following fields are enqueued for serialization:
-                // header, arg1, arg2, parseState.count & payload
-                var sbInputRespHeader = new ArgSlice(input.header.ToPointer(), RespInputHeader.Size).SpanByte;
-                var sbIntParams = SpanByte.FromPinnedPointer((byte*)intParamsPtr, intParams.Length * sizeof(int));
+                var sbInput = input.SpanByte;
                 var sbInputPayload = input.payload.SpanByte;
 
                 functionsState.appendOnlyFile.Enqueue(new AofHeader { opType = AofEntryType.ObjectStoreRMW, version = version, sessionID = sessionID },
-                    ref sbKey, ref sbInputRespHeader, ref sbIntParams, ref sbInputPayload, out _);
+                    ref sbKey, ref sbInput, ref sbInputPayload, out _);
             }
         }
 

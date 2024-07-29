@@ -443,9 +443,9 @@ namespace Garnet.server
 
         private bool NetworkModuleLoad(CustomCommandManager customCommandManager)
         {
-            if (parseState.count < 1) // At least module path is required
+            if (parseState.Count < 1) // At least module path is required
             {
-                AbortWithWrongNumberOfArguments($"{RespCommand.MODULE}|{Encoding.ASCII.GetString(CmdStrings.LOADCS)}", parseState.count);
+                AbortWithWrongNumberOfArguments($"{RespCommand.MODULE}|{Encoding.ASCII.GetString(CmdStrings.LOADCS)}", parseState.Count);
                 return true;
             }
 
@@ -453,7 +453,7 @@ namespace Garnet.server
             var modulePath = parseState.GetArgSliceByRef(0).ToString();
 
             // Read module args
-            var moduleArgs = new string[parseState.count - 1];
+            var moduleArgs = new string[parseState.Count - 1];
             for (var i = 0; i < moduleArgs.Length; i++)
                 moduleArgs[i] = parseState.GetArgSliceByRef(i + 1).ToString();
 

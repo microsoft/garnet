@@ -43,7 +43,7 @@ namespace Garnet.server
             var added = 0;
             try
             {
-                for (var c = 1; c < input.parseState.count; c += 2)
+                for (var c = 1; c < input.parseState.Count; c += 2)
                 {
                     if (!input.parseState.TryGetDouble(c, out var score))
                     {

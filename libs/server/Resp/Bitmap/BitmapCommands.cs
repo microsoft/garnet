@@ -116,9 +116,9 @@ namespace Garnet.server
         private bool NetworkStringSetBit<TGarnetApi>(ref TGarnetApi storageApi)
             where TGarnetApi : IGarnetApi
         {
-            if (parseState.count != 3)
+            if (parseState.Count != 3)
             {
-                return AbortWithWrongNumberOfArguments(nameof(RespCommand.SETBIT), parseState.count);
+                return AbortWithWrongNumberOfArguments(nameof(RespCommand.SETBIT), parseState.Count);
             }
 
             var sbKey = parseState.GetArgSliceByRef(0).SpanByte;
@@ -180,9 +180,9 @@ namespace Garnet.server
         private bool NetworkStringGetBit<TGarnetApi>(ref TGarnetApi storageApi)
             where TGarnetApi : IGarnetApi
         {
-            if (parseState.count != 2)
+            if (parseState.Count != 2)
             {
-                return AbortWithWrongNumberOfArguments(nameof(RespCommand.GETBIT), parseState.count);
+                return AbortWithWrongNumberOfArguments(nameof(RespCommand.GETBIT), parseState.Count);
             }
 
             var sbKey = parseState.GetArgSliceByRef(0).SpanByte;
@@ -240,7 +240,7 @@ namespace Garnet.server
         {
             if (count < 1 || count > 4)
             {
-                return AbortWithWrongNumberOfArguments(nameof(RespCommand.BITCOUNT), parseState.count);
+                return AbortWithWrongNumberOfArguments(nameof(RespCommand.BITCOUNT), parseState.Count);
             }
 
             //<[Get Key]>
@@ -322,7 +322,7 @@ namespace Garnet.server
         {
             if (count < 2 || count > 5)
             {
-                return AbortWithWrongNumberOfArguments(nameof(RespCommand.BITPOS), parseState.count);
+                return AbortWithWrongNumberOfArguments(nameof(RespCommand.BITPOS), parseState.Count);
             }
 
             //<[Get Key]>
@@ -412,7 +412,7 @@ namespace Garnet.server
             where TGarnetApi : IGarnetApi
         {
             // Too few keys
-            if (parseState.count < 2)
+            if (parseState.Count < 2)
             {
                 while (!RespWriteUtils.WriteError(CmdStrings.RESP_ERR_WRONG_NUMBER_OF_ARGUMENTS, ref dcurr, dend))
                     SendAndReset();
@@ -420,7 +420,7 @@ namespace Garnet.server
                 return true;
             }
 
-            if (parseState.count > 64)
+            if (parseState.Count > 64)
             {
                 while (!RespWriteUtils.WriteError(CmdStrings.RESP_ERR_BITOP_KEY_LIMIT, ref dcurr, dend))
                     SendAndReset();

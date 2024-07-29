@@ -19,9 +19,9 @@ namespace Garnet.server
         private bool NetworkRENAME<TGarnetApi>(ref TGarnetApi storageApi)
             where TGarnetApi : IGarnetApi
         {
-            if (parseState.count != 2)
+            if (parseState.Count != 2)
             {
-                return AbortWithWrongNumberOfArguments(nameof(RespCommand.RENAME), parseState.count);
+                return AbortWithWrongNumberOfArguments(nameof(RespCommand.RENAME), parseState.Count);
             }
 
             if (NetworkMultiKeySlotVerify(readOnly: false))
@@ -55,9 +55,9 @@ namespace Garnet.server
         private bool NetworkGETDEL<TGarnetApi>(ref TGarnetApi garnetApi)
             where TGarnetApi : IGarnetApi
         {
-            if (parseState.count != 1)
+            if (parseState.Count != 1)
             {
-                return AbortWithWrongNumberOfArguments(nameof(RespCommand.PERSIST), parseState.count);
+                return AbortWithWrongNumberOfArguments(nameof(RespCommand.PERSIST), parseState.Count);
             }
 
             var sbKey = parseState.GetArgSliceByRef(0).SpanByte;
@@ -198,9 +198,9 @@ namespace Garnet.server
         private bool NetworkPERSIST<TGarnetApi>(ref TGarnetApi storageApi)
             where TGarnetApi : IGarnetApi
         {
-            if (parseState.count != 1)
+            if (parseState.Count != 1)
             {
-                return AbortWithWrongNumberOfArguments(nameof(RespCommand.PERSIST), parseState.count);
+                return AbortWithWrongNumberOfArguments(nameof(RespCommand.PERSIST), parseState.Count);
             }
 
             var key = parseState.GetArgSliceByRef(0);
@@ -233,9 +233,9 @@ namespace Garnet.server
         private bool NetworkTTL<TGarnetApi>(RespCommand command, ref TGarnetApi storageApi)
             where TGarnetApi : IGarnetApi
         {
-            if (parseState.count != 1)
+            if (parseState.Count != 1)
             {
-                return AbortWithWrongNumberOfArguments(nameof(RespCommand.PERSIST), parseState.count);
+                return AbortWithWrongNumberOfArguments(nameof(RespCommand.PERSIST), parseState.Count);
             }
 
             var sbKey = parseState.GetArgSliceByRef(0).SpanByte;

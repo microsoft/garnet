@@ -357,6 +357,36 @@ namespace Garnet.server
         }
 
         /// <summary>
+        /// Converts a simple integer in RESP format to integer type
+        /// </summary>
+        /// <param name="outputFooter">The RESP format output object</param>
+        /// <returns>integer</returns>
+        unsafe long ProcessRespSimple64IntOutput(GarnetObjectStoreOutput outputFooter)
+        {
+            long result;
+
+            var outputSpan = outputFooter.spanByteAndMemory.IsSpanByte ?
+                outputFooter.spanByteAndMemory.SpanByte.AsReadOnlySpan() : outputFooter.spanByteAndMemory.AsMemoryReadOnlySpan();
+            try
+            {
+                fixed (byte* outputPtr = outputSpan)
+                {
+                    var refPtr = outputPtr;
+
+                    if (!RespReadUtils.Read64Int(out result, ref refPtr, outputPtr + outputSpan.Length))
+                        return default;
+                }
+            }
+            finally
+            {
+                if (!outputFooter.spanByteAndMemory.IsSpanByte)
+                    outputFooter.spanByteAndMemory.Memory.Dispose();
+            }
+
+            return result;
+        }
+
+        /// <summary>
         /// Gets the value of the key store in the Object Store
         /// </summary>
         /// <typeparam name="TObjectContext"></typeparam>

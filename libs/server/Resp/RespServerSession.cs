@@ -56,6 +56,7 @@ namespace Garnet.server
         readonly ScratchBufferManager scratchBufferManager;
 
         internal SessionParseState parseState;
+        internal ArgSlice[] parseStateBuffer;
         ClusterSlotVerificationInput csvi;
         GCHandle recvHandle;
 
@@ -175,7 +176,7 @@ namespace Garnet.server
             clusterSession = storeWrapper.clusterProvider?.CreateClusterSession(txnManager, this._authenticator, this._user, sessionMetrics, basicGarnetApi, networkSender, logger);
             clusterSession?.SetUser(this._user);
 
-            parseState.Initialize();
+            parseState.Initialize(ref parseStateBuffer);
             readHead = 0;
             toDispose = false;
             SessionAsking = 0;
@@ -433,12 +434,12 @@ namespace Garnet.server
                 RespCommand.SET => NetworkSET(ref storageApi),
                 RespCommand.SETEX => NetworkSETEX(false, ref storageApi),
                 RespCommand.PSETEX => NetworkSETEX(true, ref storageApi),
-                RespCommand.SETEXNX => NetworkSETEXNX(parseState.count, ref storageApi),
+                RespCommand.SETEXNX => NetworkSETEXNX(parseState.Count, ref storageApi),
                 RespCommand.DEL => NetworkDEL(ref storageApi),
                 RespCommand.RENAME => NetworkRENAME(ref storageApi),
-                RespCommand.EXISTS => NetworkEXISTS(parseState.count, ref storageApi),
-                RespCommand.EXPIRE => NetworkEXPIRE(parseState.count, RespCommand.EXPIRE, ref storageApi),
-                RespCommand.PEXPIRE => NetworkEXPIRE(parseState.count, RespCommand.PEXPIRE, ref storageApi),
+                RespCommand.EXISTS => NetworkEXISTS(parseState.Count, ref storageApi),
+                RespCommand.EXPIRE => NetworkEXPIRE(parseState.Count, RespCommand.EXPIRE, ref storageApi),
+                RespCommand.PEXPIRE => NetworkEXPIRE(parseState.Count, RespCommand.PEXPIRE, ref storageApi),
                 RespCommand.PERSIST => NetworkPERSIST(ref storageApi),
                 RespCommand.GETRANGE => NetworkGetRange(ref storageApi),
                 RespCommand.TTL => NetworkTTL(RespCommand.TTL, ref storageApi),
@@ -452,33 +453,33 @@ namespace Garnet.server
                 RespCommand.DECRBY => NetworkIncrement(RespCommand.DECRBY, ref storageApi),
                 RespCommand.SETBIT => NetworkStringSetBit(ref storageApi),
                 RespCommand.GETBIT => NetworkStringGetBit(ref storageApi),
-                RespCommand.BITCOUNT => NetworkStringBitCount(parseState.count, ref storageApi),
-                RespCommand.BITPOS => NetworkStringBitPosition(parseState.count, ref storageApi),
+                RespCommand.BITCOUNT => NetworkStringBitCount(parseState.Count, ref storageApi),
+                RespCommand.BITPOS => NetworkStringBitPosition(parseState.Count, ref storageApi),
                 RespCommand.PUBLISH => NetworkPUBLISH(),
-                RespCommand.PING => parseState.count == 0 ? NetworkPING() : ProcessArrayCommands(cmd, ref storageApi),
+                RespCommand.PING => parseState.Count == 0 ? NetworkPING() : ProcessArrayCommands(cmd, ref storageApi),
                 RespCommand.ASKING => NetworkASKING(),
                 RespCommand.MULTI => NetworkMULTI(),
                 RespCommand.EXEC => NetworkEXEC(),
                 RespCommand.UNWATCH => NetworkUNWATCH(),
                 RespCommand.DISCARD => NetworkDISCARD(),
                 RespCommand.QUIT => NetworkQUIT(),
-                RespCommand.RUNTXP => NetworkRUNTXP(parseState.count),
+                RespCommand.RUNTXP => NetworkRUNTXP(parseState.Count),
                 RespCommand.READONLY => NetworkREADONLY(),
                 RespCommand.READWRITE => NetworkREADWRITE(),
-                RespCommand.COMMAND => NetworkCOMMAND(parseState.count),
-                RespCommand.COMMAND_COUNT => NetworkCOMMAND_COUNT(parseState.count),
-                RespCommand.COMMAND_INFO => NetworkCOMMAND_INFO(parseState.count),
-                RespCommand.ECHO => NetworkECHO(parseState.count),
-                RespCommand.INFO => NetworkINFO(parseState.count),
-                RespCommand.HELLO => NetworkHELLO(parseState.count),
-                RespCommand.TIME => NetworkTIME(parseState.count),
-                RespCommand.FLUSHDB => NetworkFLUSHDB(parseState.count),
-                RespCommand.AUTH => NetworkAUTH(parseState.count),
-                RespCommand.MEMORY_USAGE => NetworkMemoryUsage(parseState.count, ref storageApi),
-                RespCommand.ACL_CAT => NetworkAclCat(parseState.count),
-                RespCommand.ACL_WHOAMI => NetworkAclWhoAmI(parseState.count),
-                RespCommand.ASYNC => NetworkASYNC(parseState.count),
-                RespCommand.MIGRATE => NetworkProcessClusterCommand(cmd, parseState.count),
+                RespCommand.COMMAND => NetworkCOMMAND(parseState.Count),
+                RespCommand.COMMAND_COUNT => NetworkCOMMAND_COUNT(parseState.Count),
+                RespCommand.COMMAND_INFO => NetworkCOMMAND_INFO(parseState.Count),
+                RespCommand.ECHO => NetworkECHO(parseState.Count),
+                RespCommand.INFO => NetworkINFO(parseState.Count),
+                RespCommand.HELLO => NetworkHELLO(parseState.Count),
+                RespCommand.TIME => NetworkTIME(parseState.Count),
+                RespCommand.FLUSHDB => NetworkFLUSHDB(parseState.Count),
+                RespCommand.AUTH => NetworkAUTH(parseState.Count),
+                RespCommand.MEMORY_USAGE => NetworkMemoryUsage(parseState.Count, ref storageApi),
+                RespCommand.ACL_CAT => NetworkAclCat(parseState.Count),
+                RespCommand.ACL_WHOAMI => NetworkAclWhoAmI(parseState.Count),
+                RespCommand.ASYNC => NetworkASYNC(parseState.Count),
+                RespCommand.MIGRATE => NetworkProcessClusterCommand(cmd, parseState.Count),
 
                 _ => ProcessArrayCommands(cmd, ref storageApi)
             };
@@ -489,7 +490,7 @@ namespace Garnet.server
         private bool ProcessArrayCommands<TGarnetApi>(RespCommand cmd, ref TGarnetApi storageApi)
            where TGarnetApi : IGarnetApi
         {
-            int count = parseState.count;
+            int count = parseState.Count;
 
             // Continue reading from the current read head.
             byte* ptr = recvBufferPtr + readHead;

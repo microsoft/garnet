@@ -264,7 +264,7 @@ namespace Garnet.server
         private bool NetworkSET<TGarnetApi>(ref TGarnetApi storageApi)
             where TGarnetApi : IGarnetApi
         {
-            Debug.Assert(parseState.count == 2);
+            Debug.Assert(parseState.Count == 2);
             var key = parseState.GetArgSliceByRef(0).SpanByte;
             var value = parseState.GetArgSliceByRef(1).SpanByte;
 
@@ -995,9 +995,9 @@ namespace Garnet.server
         private bool NetworkSTRLEN<TGarnetApi>(ref TGarnetApi storageApi)
             where TGarnetApi : IGarnetApi
         {
-            if (parseState.count != 1)
+            if (parseState.Count != 1)
             {
-                return AbortWithWrongNumberOfArguments(nameof(RespCommand.STRLEN), parseState.count);
+                return AbortWithWrongNumberOfArguments(nameof(RespCommand.STRLEN), parseState.Count);
             }
 
             //STRLEN key

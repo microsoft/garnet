@@ -320,42 +320,27 @@ namespace Garnet.server
 
             // Reconstructing ObjectInput
 
-            // header
-            ref var sbRespHeader = ref Unsafe.AsRef<SpanByte>(ptr + sizeof(AofHeader) + key.TotalSize);
-            ref var respHeader = ref Unsafe.AsRef<RespInputHeader>(sbRespHeader.ToPointer());
-
-            // arg1, arg2, parseState.count
-            ref var sbIntParams = ref Unsafe.AsRef<SpanByte>(ptr + sizeof(AofHeader) + key.TotalSize + sbRespHeader.TotalSize);
-            var intParamsPtr = (int*)sbIntParams.ToPointer();
-            var arg1 = *intParamsPtr;
-            var arg2 = *(intParamsPtr + 1);
-            var parseStateCount = *(intParamsPtr + 2);
+            // input
+            ref var sbInput = ref Unsafe.AsRef<SpanByte>(ptr + sizeof(AofHeader) + key.TotalSize);
+            ref var input = ref Unsafe.AsRef<ObjectInput>(sbInput.ToPointer());
 
             // payload
-            ref var inputPayload = ref Unsafe.AsRef<SpanByte>(ptr + sizeof(AofHeader) + key.TotalSize + sbRespHeader.TotalSize + sbIntParams.TotalSize);
+            ref var inputPayload = ref Unsafe.AsRef<SpanByte>(ptr + sizeof(AofHeader) + key.TotalSize + sbInput.TotalSize);
             var payload = new ArgSlice(ref inputPayload);
+            input.payload = payload;
 
             // Reconstructing parseState
             var payloadStartPtr = payload.ptr;
             var payloadCurrPtr = payloadStartPtr;
             var payloadEndPtr = payloadStartPtr + payload.length;
 
-            var parseState = new SessionParseState();
-            parseState.Initialize(parseStateCount);
+            var parseStateCount = input.parseState.Count;
+            ArgSlice[] parseStateBuffer = default;
+            input.parseState.Initialize(ref parseStateBuffer, parseStateCount);
             for (var i = 0; i < parseStateCount; i++)
             {
-                parseState.Read(i, ref payloadCurrPtr, payloadEndPtr);
+                input.parseState.Read(i, ref payloadCurrPtr, payloadEndPtr);
             }
-
-            // Create the reconstructed ObjectInput
-            var input = new ObjectInput
-            {
-                header = respHeader,
-                arg1 = arg1,
-                arg2 = arg2,
-                payload = payload,
-                parseState = parseState
-            };
 
             // Call RMW with the reconstructed key & ObjectInput
             var output = new GarnetObjectStoreOutput { spanByteAndMemory = new(outputPtr, outputLength) };

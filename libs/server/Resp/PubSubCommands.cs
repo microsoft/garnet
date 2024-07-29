@@ -89,9 +89,9 @@ namespace Garnet.server
         /// </summary>
         private bool NetworkPUBLISH()
         {
-            if (parseState.count != 2)
+            if (parseState.Count != 2)
             {
-                return AbortWithWrongNumberOfArguments(nameof(RespCommand.PUBLISH), parseState.count);
+                return AbortWithWrongNumberOfArguments(nameof(RespCommand.PUBLISH), parseState.Count);
             }
 
             Debug.Assert(isSubscriptionSession == false);

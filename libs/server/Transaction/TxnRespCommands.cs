@@ -108,7 +108,7 @@ namespace Garnet.server
 
             // Check if input is valid and abort if necessary
             // NOTE: Negative arity means it's an expected minimum of args. Positive means exact.
-            int count = parseState.count;
+            int count = parseState.Count;
             var arity = commandInfo.Arity > 0 ? commandInfo.Arity - 1 : commandInfo.Arity + 1;
             bool invalidNumArgs = arity > 0 ? count != (arity) : count < -arity;
 
