@@ -174,11 +174,12 @@ namespace Garnet.cluster
                     }
                 }
 
-                if (mSessions == null)
-                    return false;
+                if (mSessions != null)
+                {
+                    foreach (var session in mSessions)
+                        session.Dispose();
+                }
 
-                foreach (var session in mSessions)
-                    session.Dispose();
                 return true;
             }
             catch (Exception ex)
