@@ -157,12 +157,12 @@ namespace Garnet.server.Module
             return ModuleActionStatus.Success;
         }
 
-        public ModuleActionStatus RegisterCommand(string name, CustomCommandProc customCommandProc, RespCommandsInfo commandInfo = null)
+        public ModuleActionStatus RegisterScript(string name, CustomScriptProc customScriptProc, RespCommandsInfo commandInfo = null)
         {
-            if (string.IsNullOrEmpty(name) || customCommandProc == null)
+            if (string.IsNullOrEmpty(name) || customScriptProc == null)
                 return ModuleActionStatus.InvalidRegistrationInfo;
 
-            customCommandManager.Register(name, customCommandProc, commandInfo);
+            customCommandManager.Register(name, customScriptProc, commandInfo);
             return ModuleActionStatus.Success;
         }
     }

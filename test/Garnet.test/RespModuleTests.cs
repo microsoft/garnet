@@ -116,7 +116,7 @@ namespace Garnet.test
                     new RespCommandsInfo { Name = ""TestModule.MYDICTGET"", Arity = 3, FirstKey = 1, LastKey = 1, Step = 1,
                     Flags = RespCommandFlags.ReadOnly, AclCategories = RespAclCategories.Read });
 
-                    context.RegisterCommand(""TestModule.SUM"", new Sum());";
+                    context.RegisterScript(""TestModule.SUM"", new Sum());";
 
             var modulePath = CreateTestModule(onLoad);
 

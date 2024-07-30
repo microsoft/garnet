@@ -29,7 +29,7 @@ namespace SampleModule
             context.RegisterCommand("SampleModule.MYDICTSET", factory, new MyDictSet());
             context.RegisterCommand("SampleModule.MYDICTGET", factory, new MyDictGet(), CommandType.Read);
 
-            context.RegisterCommand("SampleModule.SUM", new Sum());
+            context.RegisterScript("SampleModule.SUM", new Sum());
         }
     }
 }

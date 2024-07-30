@@ -18,7 +18,7 @@ namespace Garnet.server
         internal readonly CustomRawStringCommand[] rawStringCommandMap;
         internal readonly CustomObjectCommandWrapper[] objectCommandMap;
         internal readonly CustomTransaction[] transactionProcMap;
-        internal readonly CustomCommand[] customCommandMap;
+        internal readonly CustomScript[] customScriptMap;
         internal int RawStringCommandId = 0;
         internal int ObjectTypeId = 0;
         internal int TransactionProcId = 0;
@@ -37,7 +37,7 @@ namespace Garnet.server
             rawStringCommandMap = new CustomRawStringCommand[MaxRegistrations];
             objectCommandMap = new CustomObjectCommandWrapper[MaxRegistrations];
             transactionProcMap = new CustomTransaction[MaxRegistrations]; // can increase up to byte.MaxValue
-            customCommandMap = new CustomCommand[MaxRegistrations];
+            customScriptMap = new CustomScript[MaxRegistrations];
         }
 
         internal int Register(string name, int numParams, CommandType type, CustomRawStringFunctions customFunctions, RespCommandsInfo commandInfo, long expirationTicks)
@@ -172,13 +172,13 @@ namespace Garnet.server
         /// <param name="commandInfo"></param>
         /// <returns></returns>
         /// <exception cref="Exception"></exception>
-        internal int Register(string name, CustomCommandProc customCommandProc, RespCommandsInfo commandInfo = null)
+        internal int Register(string name, CustomScriptProc customCommandProc, RespCommandsInfo commandInfo = null)
         {
             int id = Interlocked.Increment(ref CustomCommandId) - 1;
             if (id >= MaxRegistrations)
                 throw new Exception("Out of registration space");
 
-            customCommandMap[id] = new CustomCommand(name, (byte)id, customCommandProc);
+            customScriptMap[id] = new CustomScript(name, (byte)id, customCommandProc);
             if (commandInfo != null) customCommandsInfo.Add(name, commandInfo);
             return id;
         }
@@ -227,11 +227,11 @@ namespace Garnet.server
             return false;
         }
 
-        internal bool Match(ReadOnlySpan<byte> command, out CustomCommand cmd)
+        internal bool Match(ReadOnlySpan<byte> command, out CustomScript cmd)
         {
             for (int i = 0; i < CustomCommandId; i++)
             {
-                cmd = customCommandMap[i];
+                cmd = customScriptMap[i];
                 if (cmd != null && command.SequenceEqual(new ReadOnlySpan<byte>(cmd.Name)))
                     return true;
             }

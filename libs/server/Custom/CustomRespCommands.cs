@@ -57,7 +57,7 @@ namespace Garnet.server
 
         }
 
-        private void TryCustomCommand(byte id, byte* ptr, byte* end, CustomCommandProc proc)
+        private void TryCustomScript(byte id, byte* ptr, byte* end, CustomScriptProc proc)
         {
             Debug.Assert(proc != null);
 

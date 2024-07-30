@@ -495,6 +495,47 @@ namespace Garnet.test
         }
 
         [Test]
+        public void AofUpsertCustomScriptRecoverTest()
+        {
+            static void ValidateServerData(IDatabase db, string strKey, string strValue, string listKey, string listValue)
+            {
+                var retValue = db.StringGet(strKey);
+                Assert.AreEqual(strValue, (string)retValue);
+                var retList = db.ListRange(listKey);
+                Assert.AreEqual(1, retList.Length);
+                Assert.AreEqual(listValue, (string)retList[0]);
+            }
+
+            server.Dispose(false);
+            server = TestUtils.CreateGarnetServer(TestUtils.MethodTestDir, enableAOF: true);
+            server.Register.NewScript("SETMAINANDOBJECT", new SetStringAndList());
+            server.Start();
+
+            var strKey = "StrKey";
+            var strValue = "StrValue";
+            var listKey = "ListKey";
+            var listValue = "ListValue";
+
+            using (var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig(allowAdmin: true)))
+            {
+                var db = redis.GetDatabase(0);
+                db.Execute("SETMAINANDOBJECT", strKey, strValue, listKey, listValue);
+                ValidateServerData(db, strKey, strValue, listKey, listValue);
+            }
+
+            server.Store.CommitAOF(true);
+            server.Dispose(false);
+            server = TestUtils.CreateGarnetServer(TestUtils.MethodTestDir, tryRecover: true, enableAOF: true);
+            server.Register.NewScript("SETMAINANDOBJECT", new SetStringAndList());
+            server.Start();
+
+            using (var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig()))
+            {
+                ValidateServerData(redis.GetDatabase(0), strKey, strValue, listKey, listValue);
+            }
+        }
+
+        [Test]
         public void AofMultiRMWStoreCkptRecoverTest()
         {
             long ret = 0;

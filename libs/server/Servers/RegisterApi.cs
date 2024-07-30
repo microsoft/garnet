@@ -104,10 +104,10 @@ namespace Garnet.server
         /// Register custom command with Garnet
         /// </summary>
         /// <param name="name"></param>
-        /// <param name="customCommandProc"></param>
+        /// <param name="customScriptProc"></param>
         /// <param name="commandInfo"></param>
         /// <returns></returns>
-        public int NewCommand(string name, CustomCommandProc customCommandProc, RespCommandsInfo commandInfo = null)
-            => provider.StoreWrapper.customCommandManager.Register(name, customCommandProc, commandInfo);
+        public int NewScript(string name, CustomScriptProc customScriptProc, RespCommandsInfo commandInfo = null)
+            => provider.StoreWrapper.customCommandManager.Register(name, customScriptProc, commandInfo);
     }
 }

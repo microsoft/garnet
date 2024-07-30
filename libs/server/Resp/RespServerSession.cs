@@ -126,7 +126,7 @@ namespace Garnet.server
         /// <summary>
         /// Current custom command to be executed in the session.
         /// </summary>
-        CustomCommand currentCustomCommand = null;
+        CustomScript currentCustomScript = null;
 
         /// <summary>
         /// RESP protocol version (RESP2 is the default)
@@ -696,12 +696,12 @@ namespace Garnet.server
 
                 currentCustomObjectCommand = null;
             }
-            else if (command == RespCommand.CustomCmd)
+            else if (command == RespCommand.CustomScript)
             {
-                TryCustomCommand(currentCustomCommand.Id, recvBufferPtr + readHead, recvBufferPtr + endReadHead,
-                    currentCustomCommand.CustomCommandProc);
+                TryCustomScript(currentCustomScript.Id, recvBufferPtr + readHead, recvBufferPtr + endReadHead,
+                    currentCustomScript.CustomScriptProc);
 
-                currentCustomCommand = null;
+                currentCustomScript = null;
             }
             else
             {

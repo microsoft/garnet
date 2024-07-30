@@ -38,7 +38,7 @@ namespace Garnet.test.Resp.ACL
             server.Register.NewCommand("SETWPIFPGT", 2, CommandType.ReadModifyWrite, new SetWPIFPGTCustomCommand(), respCustomCommandsInfo["SETWPIFPGT"]);
             server.Register.NewCommand("MYDICTGET", 1, CommandType.Read, new MyDictFactory(), new MyDictGet(), respCustomCommandsInfo["MYDICTGET"]);
             server.Register.NewTransactionProc("READWRITETX", 3, () => new ReadWriteTxn());
-            server.Register.NewCommand("SUM", new Sum());
+            server.Register.NewScript("SUM", new Sum());
 
             server.Start();
         }
@@ -2282,10 +2282,10 @@ namespace Garnet.test.Resp.ACL
         }
 
         [Test]
-        public async Task CustomCmdACLsAsync()
+        public async Task CustomScriptACLsAsync()
         {
             await CheckCommandsAsync(
-                "CUSTOMCMD",
+                "CUSTOMSCRIPT",
                 [DoSumAsync],
                 knownCategories: ["garnet", "custom", "dangerous"]
             );

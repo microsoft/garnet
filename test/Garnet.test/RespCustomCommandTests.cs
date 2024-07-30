@@ -532,7 +532,7 @@ namespace Garnet.test
         [Test]
         public void CustomCommandRegistrationTest()
         {
-            server.Register.NewCommand("SUM", new Sum());
+            server.Register.NewScript("SUM", new Sum());
 
             using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
             var db = redis.GetDatabase(0);

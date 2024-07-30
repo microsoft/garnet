@@ -96,7 +96,7 @@ namespace CommandInfoUpdater
             new("CustomRawStringCmd", RespCommand.CustomRawStringCmd),
             new("CustomObjCmd", RespCommand.CustomObjCmd),
             new("CustomTxn", RespCommand.CustomTxn),
-            new("CustomCmd", RespCommand.CustomCmd),
+            new("CustomScript", RespCommand.CustomScript),
             new("DBSIZE", RespCommand.DBSIZE),
             new("DECR", RespCommand.DECR),
             new("DECRBY", RespCommand.DECRBY),
