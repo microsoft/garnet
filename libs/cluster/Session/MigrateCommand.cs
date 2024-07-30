@@ -182,6 +182,8 @@ namespace Garnet.cluster
                         // Add pointer of current parsed key
                         if (!keys.TryAdd(new ArgSlice(keyPtr, ksize), KeyMigrationStatus.QUEUED))
                             logger?.LogWarning($"Failed to add {{key}}", Encoding.ASCII.GetString(keyPtr, ksize));
+                        else
+                            _ = slots.Add(slot);
                     }
                 }
                 else if (option.Equals("SLOTS", StringComparison.OrdinalIgnoreCase))
