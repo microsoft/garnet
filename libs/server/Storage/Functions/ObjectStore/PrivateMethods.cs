@@ -32,12 +32,9 @@ namespace Garnet.server
                     var keySB = SpanByte.FromPinnedPointer(ptr, key.Length);
                     var valSB = SpanByte.FromPinnedPointer(valPtr, valueBytes.Length);
 
-                    var sbInput = input.SpanByte;
-                    var sbInputPayload = input.payload.SpanByte;
-
                     functionsState.appendOnlyFile.Enqueue(
                         new AofHeader { opType = AofEntryType.ObjectStoreUpsert, version = version, sessionID = sessionID },
-                        ref keySB, ref sbInput, ref sbInputPayload, ref valSB, out _);
+                        ref keySB, ref valSB, out _);
                 }
             }
         }
@@ -57,11 +54,19 @@ namespace Garnet.server
             fixed (byte* keyPtr = key)
             {
                 var sbKey = SpanByte.FromPinnedPointer(keyPtr, key.Length);
-                var sbInput = input.SpanByte;
-                var sbInputPayload = input.payload.SpanByte;
 
-                functionsState.appendOnlyFile.Enqueue(new AofHeader { opType = AofEntryType.ObjectStoreRMW, version = version, sessionID = sessionID },
-                    ref sbKey, ref sbInput, ref sbInputPayload, out _);
+                var sbToSerialize = new SpanByte[3 + input.parseState.Count];
+                sbToSerialize[0] = sbKey;
+                sbToSerialize[1] = input.SpanByte;
+                sbToSerialize[2] = input.payload.SpanByte;
+                for (var i = 0; i < input.parseState.Count; i++)
+                {
+                    sbToSerialize[i + 3] = input.parseState.GetArgSliceByRef(i).SpanByte;
+                }
+
+                functionsState.appendOnlyFile.Enqueue(
+                    new AofHeader { opType = AofEntryType.ObjectStoreRMW, version = version, sessionID = sessionID },
+                    ref sbToSerialize, out _);
             }
         }
 

@@ -297,14 +297,7 @@ namespace Garnet.server
             ref var key = ref Unsafe.AsRef<SpanByte>(ptr + sizeof(AofHeader));
             var keyB = key.ToByteArray();
 
-            ref var sbInput = ref Unsafe.AsRef<SpanByte>(ptr + sizeof(AofHeader) + key.TotalSize);
-            ref var input = ref Unsafe.AsRef<ObjectInput>(sbInput.ToPointer());
-
-            ref var sbPayload = ref Unsafe.AsRef<SpanByte>(ptr + sizeof(AofHeader) + key.TotalSize + sbInput.TotalSize);
-            input.payload = new ArgSlice(ref sbPayload);
-
-            ref var value = ref Unsafe.AsRef<SpanByte>(ptr + sizeof(AofHeader) + key.TotalSize + sbInput.TotalSize + sbPayload.TotalSize);
-
+            ref var value = ref Unsafe.AsRef<SpanByte>(ptr + sizeof(AofHeader) + key.TotalSize);
             var valB = garnetObjectSerializer.Deserialize(value.ToByteArray());
 
             var output = new GarnetObjectStoreOutput { spanByteAndMemory = new(outputPtr, outputLength) };
@@ -315,31 +308,35 @@ namespace Garnet.server
 
         static unsafe void ObjectStoreRMW(BasicContext<byte[], IGarnetObject, ObjectInput, GarnetObjectStoreOutput, long, ObjectStoreFunctions> basicContext, byte* ptr, byte* outputPtr, int outputLength)
         {
-            ref var key = ref Unsafe.AsRef<SpanByte>(ptr + sizeof(AofHeader));
+            var curr = ptr + sizeof(AofHeader);
+            ref var key = ref Unsafe.AsRef<SpanByte>(curr);
+            curr += key.TotalSize;
             var keyB = key.ToByteArray();
 
             // Reconstructing ObjectInput
 
             // input
-            ref var sbInput = ref Unsafe.AsRef<SpanByte>(ptr + sizeof(AofHeader) + key.TotalSize);
+            ref var sbInput = ref Unsafe.AsRef<SpanByte>(curr);
             ref var input = ref Unsafe.AsRef<ObjectInput>(sbInput.ToPointer());
+            curr += sbInput.TotalSize;
 
             // payload
-            ref var inputPayload = ref Unsafe.AsRef<SpanByte>(ptr + sizeof(AofHeader) + key.TotalSize + sbInput.TotalSize);
-            var payload = new ArgSlice(ref inputPayload);
+            ref var sbPayload = ref Unsafe.AsRef<SpanByte>(curr);
+            var payload = new ArgSlice(ref sbPayload);
             input.payload = payload;
+            curr += sbPayload.TotalSize;
 
-            // Reconstructing parseState
-            var payloadStartPtr = payload.ptr;
-            var payloadCurrPtr = payloadStartPtr;
-            var payloadEndPtr = payloadStartPtr + payload.length;
-
+            // Reconstructing parse state
             var parseStateCount = input.parseState.Count;
+
             ArgSlice[] parseStateBuffer = default;
             input.parseState.Initialize(ref parseStateBuffer, parseStateCount);
+
             for (var i = 0; i < parseStateCount; i++)
             {
-                input.parseState.Read(i, ref payloadCurrPtr, payloadEndPtr);
+                ref var sbArgument = ref Unsafe.AsRef<SpanByte>(curr);
+                parseStateBuffer[i] = new ArgSlice(ref sbArgument);
+                curr += sbArgument.TotalSize;
             }
 
             // Call RMW with the reconstructed key & ObjectInput
