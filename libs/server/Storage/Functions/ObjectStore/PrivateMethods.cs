@@ -32,12 +32,9 @@ namespace Garnet.server
                     var keySB = SpanByte.FromPinnedPointer(ptr, key.Length);
                     var valSB = SpanByte.FromPinnedPointer(valPtr, valueBytes.Length);
 
-                    var sbInput = new ArgSlice(input.ToPointer(), sizeof(ObjectInput)).SpanByte;
-                    var sbInputPayload = input.payload.SpanByte;
-
                     functionsState.appendOnlyFile.Enqueue(
                         new AofHeader { opType = AofEntryType.ObjectStoreUpsert, version = version, sessionID = sessionID },
-                        ref keySB, ref sbInput, ref sbInputPayload, ref valSB, out _);
+                        ref keySB, ref valSB, out _);
                 }
             }
         }
