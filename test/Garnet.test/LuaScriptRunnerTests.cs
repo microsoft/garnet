@@ -1,9 +1,9 @@
 ﻿// Copyright (c) Microsoft Corporation.
 // Licensed under the MIT license.
 
-using System;
-using System.Text;
+using Garnet.common;
 using Garnet.server;
+using NLua.Exceptions;
 using NUnit.Framework;
 
 namespace Garnet.test
@@ -11,94 +11,95 @@ namespace Garnet.test
     [TestFixture]
     internal class LuaScriptRunnerTests
     {
-        [SetUp]
-        public void Setup()
-        {
-        }
-
-        [TearDown]
-        public void TearDown()
-        {
-            //Nothing to dispose yet
-        }
-
         [Test]
         public void CannotRunUnsafeScript()
         {
-            Runner luarunner = new(null);
-            string source;
+            // Try to load an assembly
+            using (var runner = new LuaRunner("luanet.load_assembly('mscorlib')"))
+            {
+                runner.Compile();
+                var ex = Assert.Throws<LuaScriptException>(() => runner.Run(null, null));
+                Assert.AreEqual("[string \"luanet.load_assembly('mscorlib')\"]:1: attempt to index a nil value (global 'luanet')", ex.Message);
+            }
 
-            //try to load an assembly
-            source = "luanet.load_assembly('mscorlib')";
-            var resultRun = luarunner.RunScript(source, default, default).ToString();
-            Assert.IsTrue(resultRun.Contains("attempt to index a nil value (global 'luanet')", StringComparison.OrdinalIgnoreCase));
+            // Try to call a OS function
+            using (var runner = new LuaRunner("os = require('os'); return os.time();"))
+            {
+                runner.Compile();
+                var ex = Assert.Throws<LuaScriptException>(() => runner.Run(null, null));
+                Assert.AreEqual("[string \"os = require('os'); return os.time();\"]:1: attempt to call a nil value (global 'require')", ex.Message);
+            }
 
-            //try to call a OS function
-            source = "os = require('os'); return os.time();";
-            resultRun = luarunner.RunScript(source, default, default).returnValue.ToString();
-            Assert.IsTrue(resultRun.Contains("attempt to call a nil value (global 'require')", StringComparison.OrdinalIgnoreCase));
+            // Try to execute the input stream
+            using (var runner = new LuaRunner("dofile();"))
+            {
+                runner.Compile();
+                var ex = Assert.Throws<LuaScriptException>(() => runner.Run(null, null));
+                Assert.AreEqual("[string \"dofile();\"]:1: attempt to call a nil value (global 'dofile')", ex.Message);
+            }
 
-            //try to execute the input stream
-            source = "dofile();";
-            resultRun = luarunner.RunScript(source, default, default).returnValue.ToString();
-            Assert.IsTrue(resultRun.Contains("attempt to call a nil value (global 'dofile')", StringComparison.OrdinalIgnoreCase));
+            // Try to call a windows executable
+            using (var runner = new LuaRunner("require \"notepad\""))
+            {
+                runner.Compile();
+                var ex = Assert.Throws<LuaScriptException>(() => runner.Run(null, null));
+                Assert.AreEqual("[string \"require \"notepad\"\"]:1: attempt to call a nil value (global 'require')", ex.Message);
+            }
 
-            //try to call a windows executable
-            source = "require \"notepad\"";
-            resultRun = luarunner.RunScript(source, default, default).returnValue.ToString();
-            Assert.IsTrue(resultRun.Contains("attempt to call a nil value (global 'require')", StringComparison.OrdinalIgnoreCase));
+            // Try to call an OS function
+            using (var runner = new LuaRunner("os.exit();"))
+            {
+                runner.Compile();
+                var ex = Assert.Throws<LuaScriptException>(() => runner.Run(null, null));
+                Assert.AreEqual("[string \"os.exit();\"]:1: attempt to index a nil value (global 'os')", ex.Message);
+            }
 
-            //try to call an os function
-            source = "os.exit();";
-            resultRun = luarunner.RunScript(source, default, default).returnValue.ToString();
-            Assert.IsTrue(resultRun.Contains("attempt to index a nil value (global 'os')", StringComparison.OrdinalIgnoreCase));
-
-            //try to include a new .net library
-            source = "import ('System.Diagnostics');";
-            resultRun = luarunner.RunScript(source, default, default).returnValue.ToString();
-            Assert.IsTrue(resultRun.Contains("attempt to call a nil value (global 'import')", StringComparison.OrdinalIgnoreCase));
+            // Try to include a new .net library
+            using (var runner = new LuaRunner("import ('System.Diagnostics');"))
+            {
+                runner.Compile();
+                var ex = Assert.Throws<LuaScriptException>(() => runner.Run(null, null));
+                Assert.AreEqual("[string \"import ('System.Diagnostics');\"]:1: attempt to call a nil value (global 'import')", ex.Message);
+            }
         }
 
         [Test]
         public void CanLoadScript()
         {
-            Runner luarunner = new(null);
+            // Code with error
+            using (var runner = new LuaRunner("local;"))
+            {
+                var ex = Assert.Throws<GarnetException>(runner.Compile);
+                Assert.AreEqual("Compilation error: [string \"local;\"]:1: <name> expected near ';'", ex.Message);
+            }
 
-            //code with error
-            var source = Encoding.ASCII.GetBytes("local;");
-            var result = luarunner.LoadScript(source, out string error);
-            Assert.AreEqual(1, result);
-            Assert.IsTrue("Compilation error: [string \"local;\"]:1: <name> expected near ';'".Equals(error));
-
-            //code without error
-            source = Encoding.ASCII.GetBytes("local list; list = 1; return list;");
-            result = luarunner.LoadScript(source, out error);
-            Assert.AreEqual(0, result);
-            Assert.IsTrue(error.Equals(""));
+            // Code without error
+            using (var runner = new LuaRunner("local list; list = 1; return list;"))
+            {
+                runner.Compile();
+            }
         }
 
         [Test]
         public void CanRunScript()
         {
-            var valSB = "45";
-            var valSB2 = "other";
+            string[] keys = null;
+            string[] args = ["arg1", "arg2", "arg3"];
 
-            var keys = new (ArgSlice, bool)[1];
-            var args = new string[] { valSB, valSB, valSB2 };
-            var luaRunner = new Runner(null);
-
-            // Run code without errors using args
-            var source = "local list; list = ARGV[1] ; return list;";
-
-            (bool success, object res) t = luaRunner.RunScript(source, keys, args);
-            Assert.AreEqual("45", (string)t.res);
-            Assert.AreEqual(true, t.success);
+            // Run code without errors
+            using (var runner = new LuaRunner("local list; list = ARGV[1] ; return list;"))
+            {
+                runner.Compile();
+                var res = runner.Run(keys, args);
+                Assert.AreEqual("arg2", res);
+            }
 
             // Run code with errors
-            source = "local list; list = ; return list;";
-            t = luaRunner.RunScript(source, keys, args);
-            Assert.AreEqual("Compilation error: attempt to call a nil value", (string)t.res);
-            Assert.AreEqual(false, t.success);
+            using (var runner = new LuaRunner("local list; list = ; return list;"))
+            {
+                var ex = Assert.Throws<GarnetException>(runner.Compile);
+                Assert.AreEqual("Compilation error: [string \"local list; list = ; return list;\"]:1: unexpected symbol near ';'", ex.Message);
+            }
         }
     }
 }

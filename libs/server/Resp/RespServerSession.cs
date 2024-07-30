@@ -173,7 +173,7 @@ namespace Garnet.server
             this._authenticator = storeWrapper.serverOptions.AuthSettings?.CreateAuthenticator(this.storeWrapper) ?? new GarnetNoAuthAuthenticator();
 
             // Instantiates a ScriptMemoryManager for storing lua scripts
-            this.sessionScriptCache = new();
+            this.sessionScriptCache = new(this);
 
             // Associate new session with default user and automatically authenticate, if possible
             this.AuthenticateUser(Encoding.ASCII.GetBytes(this.storeWrapper.accessControlList.GetDefaultUser().Name));
@@ -622,8 +622,8 @@ namespace Garnet.server
                 RespCommand.SDIFFSTORE => SetDiffStore(count, ref storageApi),
                 // Script Commands
                 RespCommand.SCRIPT => TryScript(count, ptr),
-                RespCommand.EVAL => TryEval(count, ptr),
-                RespCommand.EVALSHA => TryEvalSha(count, ptr),
+                RespCommand.EVAL => TryEVAL(count, ptr),
+                RespCommand.EVALSHA => TryEVALSHA(count, ptr),
                 _ => ProcessOtherCommands(cmd, count, ref storageApi)
             };
             return success;
