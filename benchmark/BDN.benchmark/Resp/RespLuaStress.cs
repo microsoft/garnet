@@ -10,18 +10,16 @@ namespace BDN.benchmark.Resp
     public unsafe class RespLuaStress
     {
         Lua state;
-        LuaFunction function;
+        LuaFunction f1, f2, f3, f4;
 
         public string garnet_call(string arg1) => arg1;
 
         [GlobalSetup]
         public void GlobalSetup()
         {
-            const string source = "return KEYS[1]";
             state = new Lua();
 
             state.RegisterFunction("garnet_call", this, this.GetType().GetMethod("garnet_call"));
-
             state["KEYS"] = new string[] { "key1", "key2" };
             state["ARGV"] = new string[] { "arg1", "arg2" };
 
@@ -37,21 +35,42 @@ namespace BDN.benchmark.Resp
                 end
             ");
 
-            using var loader = (LuaFunction)state["load_sandboxed"];
-            function = loader.Call(source)[0] as LuaFunction;
+            f1 = CreateFunction("return");
+            f2 = CreateFunction("return 1 + 1");
+            f3 = CreateFunction("return KEYS[1]");
+            f4 = CreateFunction("return redis.call(KEYS[1])");
         }
 
         [GlobalCleanup]
         public void GlobalCleanup()
         {
-            function.Dispose();
+            f1.Dispose();
+            f2.Dispose();
+            f3.Dispose();
+            f4.Dispose();
             state.Dispose();
         }
 
-        [Benchmark]
-        public void BasicLua()
+        LuaFunction CreateFunction(string source)
         {
-            var res = function.Call();
+            using var loader = (LuaFunction)state["load_sandboxed"];
+            return loader.Call(source)[0] as LuaFunction;
         }
+
+        [Benchmark]
+        public void BasicLua1()
+            => f1.Call();
+
+        [Benchmark]
+        public void BasicLua2()
+            => f2.Call();
+
+        [Benchmark]
+        public void BasicLua3()
+            => f3.Call();
+
+        [Benchmark]
+        public void BasicLua4()
+            => f4.Call();
     }
 }
