@@ -32,6 +32,8 @@ FROM mcr.microsoft.com/dotnet/runtime:8.0-jammy-chiseled AS runtime
 WORKDIR /app
 COPY --from=build /app .
 
+VOLUME /data
+
 # For inter-container communication.
 EXPOSE 6379
 

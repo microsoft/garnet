@@ -4,6 +4,7 @@
 using System;
 using System.Buffers;
 using System.Diagnostics;
+using System.Runtime.CompilerServices;
 using Garnet.common;
 using Tsavorite.core;
 
@@ -173,6 +174,28 @@ namespace Garnet.server
                 }
             }
             return true;
+        }
+
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        private CustomObjectFunctions GetCustomObjectCommand(ref ObjectInput input, GarnetObjectType type)
+        {
+            var objectId = (byte)((byte)type - CustomCommandManager.StartOffset);
+            var cmdId = input.header.SubId;
+            var customObjectCommand = functionsState.customObjectCommands[objectId].commandMap[cmdId].functions;
+            return customObjectCommand;
+        }
+
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        private unsafe bool IncorrectObjectType(ref ObjectInput input, IGarnetObject value, ref SpanByteAndMemory output)
+        {
+            var inputType = (byte)input.header.type;
+            if (inputType != value.Type) // Indicates an incorrect type of key
+            {
+                output.Length = 0;
+                return true;
+            }
+
+            return false;
         }
     }
 }
