@@ -46,7 +46,7 @@ namespace Garnet.server
         /// <summary>
         /// Initialize the parse state at the start of a session
         /// </summary>
-        /// /// <param name="buffer"></param>
+        /// <param name="buffer"></param>
         public void Initialize(ref ArgSlice[] buffer)
         {
             Count = 0;

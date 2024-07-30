@@ -129,6 +129,10 @@ namespace Garnet.server
         internal unsafe bool CheckSetGetFlag()
             => (flags & RespInputFlags.SetGet) != 0;
 
+        /// <summary>
+        /// Gets a pointer to the top of the header
+        /// </summary>
+        /// <returns>Pointer</returns>
         public unsafe byte* ToPointer()
             => (byte*)Unsafe.AsPointer(ref cmd);
     }
@@ -184,7 +188,7 @@ namespace Garnet.server
         /// <summary>
         /// Get header as Span
         /// </summary>
-        /// <returns></returns>
+        /// <returns>Span</returns>
         public unsafe Span<byte> AsSpan() => new(ToPointer(), Size);
 
         /// <summary>

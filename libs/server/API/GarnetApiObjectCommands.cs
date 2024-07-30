@@ -69,8 +69,8 @@ namespace Garnet.server
             => storageSession.SortedSetPop(key, count, lowScoresFirst, out pairs, ref objectContext);
 
         /// <inheritdoc />
-        public GarnetStatus SortedSetCount(byte[] key, ref ObjectInput input, out ObjectOutputHeader output)
-            => storageSession.SortedSetCount(key, ref input, out output, ref objectContext);
+        public GarnetStatus SortedSetCount(byte[] key, ref ObjectInput input, ref GarnetObjectStoreOutput output)
+            => storageSession.SortedSetCount(key, ref input, ref output, ref objectContext);
 
         /// <inheritdoc />
         public GarnetStatus SortedSetLengthByValue(byte[] key, ref ObjectInput input, out ObjectOutputHeader output)

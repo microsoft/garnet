@@ -214,7 +214,7 @@ namespace Garnet.server
                         SortedSetScores(ref input, ref output);
                         break;
                     case SortedSetOperation.ZCOUNT:
-                        SortedSetCount(ref input, outputSpan);
+                        SortedSetCount(ref input, ref output);
                         break;
                     case SortedSetOperation.ZINCRBY:
                         SortedSetIncrement(ref input, ref output);

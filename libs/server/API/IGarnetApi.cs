@@ -1096,7 +1096,7 @@ namespace Garnet.server
         /// <param name="input"></param>
         /// <param name="output"></param>
         /// <returns></returns>
-        GarnetStatus SortedSetCount(byte[] key, ref ObjectInput input, out ObjectOutputHeader output);
+        GarnetStatus SortedSetCount(byte[] key, ref ObjectInput input, ref GarnetObjectStoreOutput output);
 
         /// <summary>
         /// Returns the number of elements in the sorted set with a value between min and max.

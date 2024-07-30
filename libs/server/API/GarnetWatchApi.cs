@@ -94,10 +94,10 @@ namespace Garnet.server
         }
 
         /// <inheritdoc />
-        public GarnetStatus SortedSetCount(byte[] key, ref ObjectInput input, out ObjectOutputHeader output)
+        public GarnetStatus SortedSetCount(byte[] key, ref ObjectInput input, ref GarnetObjectStoreOutput output)
         {
             garnetApi.WATCH(key, StoreType.Object);
-            return garnetApi.SortedSetCount(key, ref input, out output);
+            return garnetApi.SortedSetCount(key, ref input, ref output);
         }
 
         /// <inheritdoc />

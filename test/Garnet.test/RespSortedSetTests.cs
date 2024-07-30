@@ -857,6 +857,12 @@ namespace Garnet.test
             RespTestsUtils.CheckCommandOnWrongTypeObjectSE(() => db.SortedSetScores(keys[1], values[1]));
         }
 
+        [Test]
+        public void CheckAOFRecoveryForSortedSetRMWOperations()
+        {
+
+        }
+
         #endregion
 
         #region LightClientTests
@@ -1655,7 +1661,7 @@ namespace Garnet.test
             lightClientRequest.SendCommand("ZADD board 0 c");
 
             response = lightClientRequest.SendCommandChunks("ZRANGE board 0 -1 LIMIT 1 1", bytesSent);
-            var expectedResponse = "-ERR syntax error, LIMIT is only supported in BYSCORE or BYLEX.\r\n";
+            var expectedResponse = $"-{Encoding.ASCII.GetString(CmdStrings.RESP_ERR_LIMIT_NOT_SUPPORTED)}\r\n";
             var actualValue = Encoding.ASCII.GetString(response).Substring(0, expectedResponse.Length);
             Assert.AreEqual(expectedResponse, actualValue);
         }
