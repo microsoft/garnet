@@ -26,7 +26,7 @@
     <Compile Include="..\..\playground\Embedded.perftest\DummyNetworkSender.cs" Link="DummyNetworkSender.cs" />
     <Compile Include="..\..\main\GarnetServer\Extensions\Sum.cs" Link="Sum.cs" />
     <Compile Include="..\..\main\GarnetServer\Extensions\SetStringAndList.cs" Link="SetStringAndList.cs" />
-	</ItemGroup>
+  </ItemGroup>
 
 	<ItemGroup>
 	  <EmbeddedResource Include="CustomRespCommandsInfo.json" Link="CustomRespCommandsInfo.json">
