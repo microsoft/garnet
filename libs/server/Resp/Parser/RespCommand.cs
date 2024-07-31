@@ -288,6 +288,78 @@ namespace Garnet.server
         private static readonly RespCommand[] ExpandedSET = [RespCommand.SETEXNX, RespCommand.SETEXXX, RespCommand.SETKEEPTTL, RespCommand.SETKEEPTTLXX];
         private static readonly RespCommand[] ExpandedBITOP = [RespCommand.BITOP_AND, RespCommand.BITOP_NOT, RespCommand.BITOP_OR, RespCommand.BITOP_XOR];
 
+        // Commands that are either returning static data or commands that cannot have issues from concurrent AOF interaction in another session
+        private static readonly RespCommand[] AofIndependentCommands = [
+            RespCommand.ASYNC,
+            RespCommand.PING,
+            RespCommand.SELECT,
+            RespCommand.ECHO,
+            RespCommand.CLIENT,
+            RespCommand.MONITOR,
+            RespCommand.MODULE_LOADCS,
+            RespCommand.REGISTERCS,
+            RespCommand.INFO,
+            RespCommand.TIME,
+            RespCommand.LASTSAVE,
+            // ACL
+            RespCommand.ACL_CAT,
+            RespCommand.ACL_DELUSER,
+            RespCommand.ACL_LIST,
+            RespCommand.ACL_LOAD,
+            RespCommand.ACL_SAVE, 
+            RespCommand.ACL_SETUSER,
+            RespCommand.ACL_USERS, 
+            RespCommand.ACL_WHOAMI,
+            // Command
+            RespCommand.COMMAND,
+            RespCommand.COMMAND_COUNT,
+            RespCommand.COMMAND_INFO,
+            RespCommand.MEMORY_USAGE,
+            // Config
+            RespCommand.CONFIG_GET,
+            RespCommand.CONFIG_REWRITE,
+            RespCommand.CONFIG_SET,
+            // Latency
+            RespCommand.LATENCY_HELP,
+            RespCommand.LATENCY_HISTOGRAM,
+            RespCommand.LATENCY_RESET
+        ];
+
+        // long is 64 bits, 5 longs accomodate 320 resp commands which is more than enough to provide a lookup for each resp command
+        private static readonly long[] AofIndepenedentBitLookup = [0, 0, 0, 0];
+
+        private const int sizeOfLong = 64;
+
+        // The static ctor maybe expensive but it is only ever run once, and doesn't interfere with common path
+        static RespCommandExtensions()
+        {
+            foreach (RespCommand cmd in Enum.GetValues(typeof(RespCommand)))
+            {
+                if (Array.IndexOf(AofIndependentCommands, cmd) == -1)
+                    continue;
+
+                // mark the command as an AOF independent command for lookups later by setting the bit in bit vec
+                int bitIdxToUse = (int)cmd / sizeOfLong;
+                // set the respCommand's bit to indicate
+                int bitIdxOffset = (int)cmd % sizeOfLong;
+                long bitmask = 1U << bitIdxOffset;
+                AofIndepenedentBitLookup[bitIdxToUse] |= bitmask ;
+            }
+        }
+
+        /// <summary>
+        /// Returns whether or not a Resp command can have a dirty read or is dependent on AOF or not
+        /// </summary>
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        public static bool IsAofIndependent(this RespCommand cmd)
+        {
+            // check if cmd maps to a bit vec that was set back when static ctor was run
+            int bitIdxToUse = (int)cmd / sizeOfLong;
+            int bitIdxOffset = (int)cmd % sizeOfLong;
+            long bitmask = 1U << bitIdxOffset;
+            return (AofIndepenedentBitLookup[bitIdxToUse] & bitmask) != 0;
+        }
+
         /// <summary>
         /// Turns any not-quite-a-real-command entries in <see cref="RespCommand"/> into the equivalent command
         /// for ACL'ing purposes.

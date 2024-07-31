@@ -22,7 +22,6 @@ namespace Garnet.server
         private unsafe bool ListPush<TGarnetApi>(RespCommand command, int count, ref TGarnetApi storageApi)
                             where TGarnetApi : IGarnetApi
         {
-            waitForAofBlocking = true;
             if (count < 2)
             {
                 return AbortWithWrongNumberOfArguments(command.ToString(), count);
@@ -91,7 +90,6 @@ namespace Garnet.server
         private unsafe bool ListPop<TGarnetApi>(RespCommand command, int count, ref TGarnetApi storageApi)
                             where TGarnetApi : IGarnetApi
         {
-            waitForAofBlocking = true;
             if (count < 1)
             {
                 return AbortWithWrongNumberOfArguments(command.ToString(), count);
@@ -181,7 +179,6 @@ namespace Garnet.server
         private unsafe bool ListPopMultiple<TGarnetApi>(int count, ref TGarnetApi storageApi)
                             where TGarnetApi : IGarnetApi
         {
-            waitForAofBlocking = true;
             if (count < 3)
             {
                 return AbortWithWrongNumberOfArguments("LMPOP", count);
@@ -279,7 +276,6 @@ namespace Garnet.server
 
         private bool ListBlockingPop(RespCommand command, int count)
         {
-            waitForAofBlocking = true;
             if (count < 2)
             {
                 return AbortWithWrongNumberOfArguments(command.ToString(), count);
@@ -327,7 +323,6 @@ namespace Garnet.server
 
         private unsafe bool ListBlockingMove(RespCommand command, int count)
         {
-            waitForAofBlocking = true;
             if (count != 5)
             {
                 return AbortWithWrongNumberOfArguments(command.ToString(), count);
@@ -402,7 +397,6 @@ namespace Garnet.server
         private bool ListLength<TGarnetApi>(int count, ref TGarnetApi storageApi)
                             where TGarnetApi : IGarnetApi
         {
-            waitForAofBlocking = true;
             if (count != 1)
             {
                 return AbortWithWrongNumberOfArguments("LLEN", count);
@@ -462,7 +456,6 @@ namespace Garnet.server
         private bool ListTrim<TGarnetApi>(int count, ref TGarnetApi storageApi)
                             where TGarnetApi : IGarnetApi
         {
-            waitForAofBlocking = true;
             if (count != 3)
             {
                 return AbortWithWrongNumberOfArguments("LTRIM", count);
@@ -535,7 +528,6 @@ namespace Garnet.server
         private bool ListRange<TGarnetApi>(int count, ref TGarnetApi storageApi)
              where TGarnetApi : IGarnetApi
         {
-            waitForAofBlocking = true;
             if (count != 3)
             {
                 return AbortWithWrongNumberOfArguments("LRANGE", count);
@@ -612,7 +604,6 @@ namespace Garnet.server
         private bool ListIndex<TGarnetApi>(int count, ref TGarnetApi storageApi)
              where TGarnetApi : IGarnetApi
         {
-            waitForAofBlocking = true;
             if (count != 2)
             {
                 return AbortWithWrongNumberOfArguments("LINDEX", count);
@@ -695,7 +686,6 @@ namespace Garnet.server
         private bool ListInsert<TGarnetApi>(int count, ref TGarnetApi storageApi)
              where TGarnetApi : IGarnetApi
         {
-            waitForAofBlocking = true;
             if (count != 4)
             {
                 return AbortWithWrongNumberOfArguments("LINSERT", count);
@@ -758,7 +748,6 @@ namespace Garnet.server
         private bool ListRemove<TGarnetApi>(int count, ref TGarnetApi storageApi)
               where TGarnetApi : IGarnetApi
         {
-            waitForAofBlocking = true;
             // if params are missing return error
             if (count != 3)
             {
@@ -834,7 +823,6 @@ namespace Garnet.server
         private bool ListMove<TGarnetApi>(int count, ref TGarnetApi storageApi)
              where TGarnetApi : IGarnetApi
         {
-            waitForAofBlocking = true;
             if (count != 4)
             {
                 return AbortWithWrongNumberOfArguments("LMOVE", count);
@@ -898,7 +886,6 @@ namespace Garnet.server
         private bool ListRightPopLeftPush<TGarnetApi>(int count, byte* ptr, ref TGarnetApi storageApi)
             where TGarnetApi : IGarnetApi
         {
-            waitForAofBlocking = true;
             if (count != 2)
             {
                 return AbortWithWrongNumberOfArguments("RPOPLPUSH", count);
@@ -980,7 +967,6 @@ namespace Garnet.server
         public bool ListSet<TGarnetApi>(int count, ref TGarnetApi storageApi)
             where TGarnetApi : IGarnetApi
         {
-            waitForAofBlocking = true;
             if (count != 3)
             {
                 return AbortWithWrongNumberOfArguments("LSET", count);

@@ -89,7 +89,6 @@ namespace Garnet.server
         /// </summary>
         private bool NetworkPUBLISH()
         {
-            waitForAofBlocking = true;
             if (parseState.count != 2)
             {
                 return AbortWithWrongNumberOfArguments(nameof(RespCommand.PUBLISH), parseState.count);
@@ -125,7 +124,6 @@ namespace Garnet.server
 
         private bool NetworkSUBSCRIBE(int count)
         {
-            waitForAofBlocking = true;
             if (count < 1)
             {
                 return AbortWithWrongNumberOfArguments(nameof(RespCommand.SUBSCRIBE), count);
@@ -171,7 +169,6 @@ namespace Garnet.server
 
         private bool NetworkPSUBSCRIBE(int count)
         {
-            waitForAofBlocking = true;
             if (count < 1)
             {
                 return AbortWithWrongNumberOfArguments(nameof(RespCommand.PSUBSCRIBE), count);
@@ -217,7 +214,6 @@ namespace Garnet.server
 
         private bool NetworkUNSUBSCRIBE(int count)
         {
-            waitForAofBlocking = true;
             // UNSUBSCRIBE channel1 channel2.. ==> [$11\r\nUNSUBSCRIBE\r\n]$8\r\nchannel1\r\n$8\r\nchannel2\r\n => Subscribe to channel1 and channel2
 
             if (count == 0)
@@ -304,7 +300,6 @@ namespace Garnet.server
 
         private bool NetworkPUNSUBSCRIBE(int count)
         {
-            waitForAofBlocking = true;
             // PUNSUBSCRIBE channel1 channel2.. ==> [$11\r\nPUNSUBSCRIBE\r\n]$8\r\nchannel1\r\n$8\r\nchannel2\r\n => Subscribe to channel1 and channel2
 
             if (count == 0)

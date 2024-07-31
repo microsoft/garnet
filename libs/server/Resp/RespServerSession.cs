@@ -155,6 +155,11 @@ namespace Garnet.server
         bool waitForAofBlocking = false;
 
         /// <summary>
+        /// Flag to indicate if server is running in AOF mode along with setting to wait for commits
+        /// </summary>
+        bool runningWithAOFWaitForCommitMode = false;
+
+        /// <summary>
         /// Random number generator for operations, using a cryptographic generator as the base seed
         /// </summary>
         private static readonly Random RandomGen = new(RandomNumberGenerator.GetInt32(int.MaxValue));
@@ -195,6 +200,8 @@ namespace Garnet.server
 
             clusterSession = storeWrapper.clusterProvider?.CreateClusterSession(txnManager, this._authenticator, this._user, sessionMetrics, basicGarnetApi, networkSender, logger);
             clusterSession?.SetUser(this._user);
+
+            this.runningWithAOFWaitForCommitMode = storeWrapper.appendOnlyFile != null && storeWrapper.serverOptions.WaitForCommit;
 
             parseState.Initialize();
             readHead = 0;
@@ -377,6 +384,29 @@ namespace Garnet.server
                 // Check ACL permissions for the command
                 if (cmd != RespCommand.INVALID && CheckACLPermissions(cmd))
                 {
+
+                    if (runningWithAOFWaitForCommitMode)
+                    {
+                        /* 
+                            keeping the expensive call inside the conditional only adds ~4 MSIL instructions in hotpath
+
+                            W.r.t AOF  Blocking
+                            If a previous command marked AOF for blocking we should not change AOF blocking flag.
+                            If no previous command marked AOF for blocking, then we only change AOF flag to block
+                            if the current command is AOF dependent
+
+                            Ordering for Truth Table:
+                            WaitForAofBlocking || !(IsAofIndepenent) => Whether or not it should block AOF
+
+                            Truth Table:
+                            T || !F => T (Block AOF if WaitForAofBlocking was already set)
+                            T || !T => T (Block AOF if WaitForAofBlocking was already set)
+                            F || !T => F, (Don't Block AOF if WaitForAofBlocking was not set and cmd is Aof INDEPENDENT)
+                            F || !F => T, (Block AOF if WaitForAofBlocking was not set and cmd is aof DEPENDENT)
+                        */
+                        waitForAofBlocking = waitForAofBlocking || !cmd.IsAofIndependent();
+                    }
+
                     if (txnManager.state != TxnState.None)
                     {
                         if (txnManager.state == TxnState.Running)
@@ -651,19 +681,16 @@ namespace Garnet.server
             }
             else if (command == RespCommand.SUBSCRIBE)
             {
-                waitForAofBlocking = true;
                 while (!RespWriteUtils.WriteInteger(1, ref dcurr, dend))
                     SendAndReset();
             }
             else if (command == RespCommand.RUNTXP)
             {
-                waitForAofBlocking = true;
                 byte* ptr = recvBufferPtr + readHead;
                 return NetworkRUNTXP(count);
             }
             else if (command == RespCommand.CustomTxn)
             {
-                waitForAofBlocking = true;
                 if (currentCustomTransaction.NumParams < int.MaxValue && count != currentCustomTransaction.NumParams)
                 {
                     while (!RespWriteUtils.WriteError($"ERR Invalid number of parameters to stored proc {currentCustomTransaction.nameStr}, expected {currentCustomTransaction.NumParams}, actual {count}", ref dcurr, dend))
@@ -702,7 +729,6 @@ namespace Garnet.server
             }
             else if (command == RespCommand.CustomObjCmd)
             {
-                waitForAofBlocking = true;
                 if (currentCustomObjectCommand.NumParams < int.MaxValue && count != currentCustomObjectCommand.NumKeys + currentCustomObjectCommand.NumParams)
                 {
                     while (!RespWriteUtils.WriteError($"ERR Invalid number of parameters, expected {currentCustomObjectCommand.NumKeys + currentCustomObjectCommand.NumParams}, actual {count}", ref dcurr, dend))
@@ -929,7 +955,7 @@ namespace Garnet.server
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         private void Send(byte* d)
         {
-            // Note: This SEND method maybe called for responding to multiple commands in a single message (pipelining),
+            // Note: This SEND method may be called for responding to multiple commands in a single message (pipelining),
             // or multiple times in a single command for sending data larger than fitting in buffer at once.
 
             // #if DEBUG
@@ -940,9 +966,7 @@ namespace Garnet.server
             if ((int)(dcurr - d) > 0)
             {
                 // Debug.WriteLine("SEND: [" + Encoding.UTF8.GetString(new Span<byte>(d, (int)(dcurr - d))).Replace("\n", "|").Replace("\r", "!") + "]");
-                if (storeWrapper.appendOnlyFile != null &&
-                    storeWrapper.serverOptions.WaitForCommit &&
-                    waitForAofBlocking)
+                if (runningWithAOFWaitForCommitMode && waitForAofBlocking)
                 {
                     var task = storeWrapper.appendOnlyFile.WaitForCommitAsync();
                     if (!task.IsCompleted) task.AsTask().GetAwaiter().GetResult();
