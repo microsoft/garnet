@@ -788,6 +788,39 @@ namespace Tsavorite.core
         }
 
         /// <summary>
+        /// Append a user-defined blittable struct header and four <see cref="SpanByte"/> entries entries atomically to the log.
+        /// </summary>
+        /// <param name="userHeader"></param>
+        /// <param name="item1"></param>
+        /// <param name="item2"></param>
+        /// <param name="item3"></param>
+        /// <param name="item4"></param>
+        /// <param name="logicalAddress">Logical address of added entry</param>
+        public unsafe void Enqueue<THeader>(THeader userHeader, ref SpanByte item1, ref SpanByte item2, ref SpanByte item3, ref SpanByte item4, out long logicalAddress)
+            where THeader : unmanaged
+        {
+            logicalAddress = 0;
+            var length = sizeof(THeader) + item1.TotalSize + item2.TotalSize + item3.TotalSize + item4.TotalSize;
+            int allocatedLength = headerSize + Align(length);
+            ValidateAllocatedLength(allocatedLength);
+
+            epoch.Resume();
+
+            logicalAddress = AllocateBlock(allocatedLength);
+
+            var physicalAddress = (byte*)allocator.GetPhysicalAddress(logicalAddress);
+            *(THeader*)(physicalAddress + headerSize) = userHeader;
+            item1.CopyTo(physicalAddress + headerSize + sizeof(THeader));
+            item2.CopyTo(physicalAddress + headerSize + sizeof(THeader) + item1.TotalSize);
+            item3.CopyTo(physicalAddress + headerSize + sizeof(THeader) + item1.TotalSize + item2.TotalSize);
+            item4.CopyTo(physicalAddress + headerSize + sizeof(THeader) + item1.TotalSize + item2.TotalSize + item3.TotalSize);
+            SetHeader(length, physicalAddress);
+            if (AutoRefreshSafeTailAddress) DoAutoRefreshSafeTailAddress();
+            epoch.Suspend();
+            if (AutoCommit) Commit();
+        }
+
+        /// <summary>
         /// Append a user-defined header byte and a <see cref="SpanByte"/> entry atomically to the log.
         /// </summary>
         /// <param name="userHeader"></param>

@@ -10,12 +10,12 @@ namespace Garnet.server
     /// <summary>
     /// Object store functions
     /// </summary>
-    public readonly unsafe partial struct ObjectStoreFunctions : ISessionFunctions<byte[], IGarnetObject, SpanByte, GarnetObjectStoreOutput, long>
+    public readonly unsafe partial struct ObjectStoreFunctions : ISessionFunctions<byte[], IGarnetObject, ObjectInput, GarnetObjectStoreOutput, long>
     {
         /// <inheritdoc />
-        public bool NeedInitialUpdate(ref byte[] key, ref SpanByte input, ref GarnetObjectStoreOutput output, ref RMWInfo rmwInfo)
+        public bool NeedInitialUpdate(ref byte[] key, ref ObjectInput input, ref GarnetObjectStoreOutput output, ref RMWInfo rmwInfo)
         {
-            var type = ((RespInputHeader*)input.ToPointer())->type;
+            var type = input.header.type;
 
             switch (type)
             {
@@ -29,7 +29,7 @@ namespace Garnet.server
                     {
                         var customObjectCommand = GetCustomObjectCommand(ref input, type);
                         (IMemoryOwner<byte> Memory, int Length) outp = (output.spanByteAndMemory.Memory, 0);
-                        var ret = customObjectCommand.NeedInitialUpdate(key, input.AsReadOnlySpan()[RespInputHeader.Size..], ref outp);
+                        var ret = customObjectCommand.NeedInitialUpdate(key, input.payload.ReadOnlySpan, ref outp);
                         output.spanByteAndMemory.Memory = outp.Memory;
                         output.spanByteAndMemory.Length = outp.Length;
                         return ret;
@@ -38,9 +38,9 @@ namespace Garnet.server
         }
 
         /// <inheritdoc />
-        public bool InitialUpdater(ref byte[] key, ref SpanByte input, ref IGarnetObject value, ref GarnetObjectStoreOutput output, ref RMWInfo rmwInfo, ref RecordInfo recordInfo)
+        public bool InitialUpdater(ref byte[] key, ref ObjectInput input, ref IGarnetObject value, ref GarnetObjectStoreOutput output, ref RMWInfo rmwInfo, ref RecordInfo recordInfo)
         {
-            var type = ((RespInputHeader*)input.ToPointer())->type;
+            var type = input.header.type;
             if ((byte)type < CustomCommandManager.StartOffset)
             {
                 value = GarnetObject.Create(type);
@@ -56,7 +56,7 @@ namespace Garnet.server
                 value = functionsState.customObjectCommands[objectId].factory.Create((byte)type);
 
                 (IMemoryOwner<byte> Memory, int Length) outp = (output.spanByteAndMemory.Memory, 0);
-                var result = customObjectCommand.InitialUpdater(key, input.AsReadOnlySpan()[RespInputHeader.Size..], value, ref outp, ref rmwInfo);
+                var result = customObjectCommand.InitialUpdater(key, input.payload.ReadOnlySpan, value, ref outp, ref rmwInfo);
                 output.spanByteAndMemory.Memory = outp.Memory;
                 output.spanByteAndMemory.Length = outp.Length;
                 return result;
@@ -64,51 +64,51 @@ namespace Garnet.server
         }
 
         /// <inheritdoc />
-        public void PostInitialUpdater(ref byte[] key, ref SpanByte input, ref IGarnetObject value, ref GarnetObjectStoreOutput output, ref RMWInfo rmwInfo)
+        public void PostInitialUpdater(ref byte[] key, ref ObjectInput input, ref IGarnetObject value, ref GarnetObjectStoreOutput output, ref RMWInfo rmwInfo)
         {
             functionsState.watchVersionMap.IncrementVersion(rmwInfo.KeyHash);
             if (functionsState.appendOnlyFile != null)
             {
                 var header = (RespInputHeader*)input.ToPointer();
                 header->SetExpiredFlag();
-                WriteLogRMW(ref key, ref input, ref value, rmwInfo.Version, rmwInfo.SessionID);
+                WriteLogRMW(ref key, ref input, rmwInfo.Version, rmwInfo.SessionID);
             }
 
             functionsState.objectStoreSizeTracker?.AddTrackedSize(MemoryUtils.CalculateKeyValueSize(key, value));
         }
 
         /// <inheritdoc />
-        public bool InPlaceUpdater(ref byte[] key, ref SpanByte input, ref IGarnetObject value, ref GarnetObjectStoreOutput output, ref RMWInfo rmwInfo, ref RecordInfo recordInfo)
+        public bool InPlaceUpdater(ref byte[] key, ref ObjectInput input, ref IGarnetObject value, ref GarnetObjectStoreOutput output, ref RMWInfo rmwInfo, ref RecordInfo recordInfo)
         {
             if (InPlaceUpdaterWorker(ref key, ref input, ref value, ref output, ref rmwInfo, out long sizeChange))
             {
                 if (!rmwInfo.RecordInfo.Modified)
                     functionsState.watchVersionMap.IncrementVersion(rmwInfo.KeyHash);
-                if (functionsState.appendOnlyFile != null) WriteLogRMW(ref key, ref input, ref value, rmwInfo.Version, rmwInfo.SessionID);
+                if (functionsState.appendOnlyFile != null) WriteLogRMW(ref key, ref input, rmwInfo.Version, rmwInfo.SessionID);
                 functionsState.objectStoreSizeTracker?.AddTrackedSize(sizeChange);
                 return true;
             }
             return false;
         }
 
-        bool InPlaceUpdaterWorker(ref byte[] key, ref SpanByte input, ref IGarnetObject value, ref GarnetObjectStoreOutput output, ref RMWInfo rmwInfo, out long sizeChange)
+        bool InPlaceUpdaterWorker(ref byte[] key, ref ObjectInput input, ref IGarnetObject value, ref GarnetObjectStoreOutput output, ref RMWInfo rmwInfo, out long sizeChange)
         {
-            var header = (RespInputHeader*)input.ToPointer();
             sizeChange = 0;
 
             // Expired data
-            if (value.Expiration > 0 && header->CheckExpiry(value.Expiration))
+            if (value.Expiration > 0 && input.header.CheckExpiry(value.Expiration))
             {
                 rmwInfo.Action = RMWAction.ExpireAndResume;
                 return false;
             }
 
-            switch (header->type)
+            switch (input.header.type)
             {
                 case GarnetObjectType.Expire:
-                    var optionType = (ExpireOption)(*(input.ToPointer() + RespInputHeader.Size));
-                    bool expiryExists = (value.Expiration > 0);
-                    return EvaluateObjectExpireInPlace(optionType, expiryExists, ref input, ref value, ref output);
+                    var optionType = (ExpireOption)(*input.payload.ptr);
+                    var expiryExists = (value.Expiration > 0);
+                    var expiration = *(long*)(input.payload.ptr + 1);
+                    return EvaluateObjectExpireInPlace(optionType, expiryExists, expiration, ref value, ref output);
                 case GarnetObjectType.Persist:
                     if (value.Expiration > 0)
                     {
@@ -119,7 +119,7 @@ namespace Garnet.server
                         CopyDefaultResp(CmdStrings.RESP_RETURN_VAL_0, ref output.spanByteAndMemory);
                     return true;
                 default:
-                    if ((byte)header->type < CustomCommandManager.StartOffset)
+                    if ((byte)input.header.type < CustomCommandManager.StartOffset)
                     {
                         var operateSuccessful = value.Operate(ref input, ref output.spanByteAndMemory, out sizeChange,
                         out var removeKey);
@@ -137,8 +137,8 @@ namespace Garnet.server
                             return true;
 
                         (IMemoryOwner<byte> Memory, int Length) outp = (output.spanByteAndMemory.Memory, 0);
-                        var customObjectCommand = GetCustomObjectCommand(ref input, header->type);
-                        var result = customObjectCommand.Updater(key, input.AsReadOnlySpan()[RespInputHeader.Size..], value, ref outp, ref rmwInfo);
+                        var customObjectCommand = GetCustomObjectCommand(ref input, input.header.type);
+                        var result = customObjectCommand.Updater(key, input.payload.ReadOnlySpan, value, ref outp, ref rmwInfo);
                         output.spanByteAndMemory.Memory = outp.Memory;
                         output.spanByteAndMemory.Length = outp.Length;
                         return result;
@@ -148,11 +148,11 @@ namespace Garnet.server
         }
 
         /// <inheritdoc />
-        public bool NeedCopyUpdate(ref byte[] key, ref SpanByte input, ref IGarnetObject oldValue, ref GarnetObjectStoreOutput output, ref RMWInfo rmwInfo)
+        public bool NeedCopyUpdate(ref byte[] key, ref ObjectInput input, ref IGarnetObject oldValue, ref GarnetObjectStoreOutput output, ref RMWInfo rmwInfo)
             => true;
 
         /// <inheritdoc />
-        public bool CopyUpdater(ref byte[] key, ref SpanByte input, ref IGarnetObject oldValue, ref IGarnetObject newValue, ref GarnetObjectStoreOutput output, ref RMWInfo rmwInfo, ref RecordInfo recordInfo)
+        public bool CopyUpdater(ref byte[] key, ref ObjectInput input, ref IGarnetObject oldValue, ref IGarnetObject newValue, ref GarnetObjectStoreOutput output, ref RMWInfo rmwInfo, ref RecordInfo recordInfo)
         {
             var header = (RespInputHeader*)input.ToPointer();
 
@@ -166,21 +166,21 @@ namespace Garnet.server
         }
 
         /// <inheritdoc />
-        public bool PostCopyUpdater(ref byte[] key, ref SpanByte input, ref IGarnetObject oldValue, ref IGarnetObject value, ref GarnetObjectStoreOutput output, ref RMWInfo rmwInfo)
+        public bool PostCopyUpdater(ref byte[] key, ref ObjectInput input, ref IGarnetObject oldValue, ref IGarnetObject value, ref GarnetObjectStoreOutput output, ref RMWInfo rmwInfo)
         {
             // We're performing the object update here (and not in CopyUpdater) so that we are guaranteed that 
             // the record was CASed into the hash chain before it gets modified
             oldValue.CopyUpdate(ref oldValue, ref value, rmwInfo.RecordInfo.IsInNewVersion);
 
-            var header = (RespInputHeader*)input.ToPointer();
             functionsState.watchVersionMap.IncrementVersion(rmwInfo.KeyHash);
 
-            switch (header->type)
+            switch (input.header.type)
             {
                 case GarnetObjectType.Expire:
-                    var expireOption = (ExpireOption)(*(input.ToPointer() + RespInputHeader.Size));
+                    var expireOption = (ExpireOption)(*input.payload.ptr);
                     var expiryExists = (value.Expiration > 0);
-                    EvaluateObjectExpireInPlace(expireOption, expiryExists, ref input, ref value, ref output);
+                    var expiration = *(long*)(input.payload.ptr + 1);
+                    EvaluateObjectExpireInPlace(expireOption, expiryExists, expiration, ref value, ref output);
                     break;
                 case GarnetObjectType.Persist:
                     if (value.Expiration > 0)
@@ -192,7 +192,7 @@ namespace Garnet.server
                         CopyDefaultResp(CmdStrings.RESP_RETURN_VAL_0, ref output.spanByteAndMemory);
                     break;
                 default:
-                    if ((byte)header->type < CustomCommandManager.StartOffset)
+                    if ((byte)input.header.type < CustomCommandManager.StartOffset)
                     {
                         value.Operate(ref input, ref output.spanByteAndMemory, out _, out var removeKey);
                         if (removeKey)
@@ -210,8 +210,8 @@ namespace Garnet.server
                             return true;
 
                         (IMemoryOwner<byte> Memory, int Length) outp = (output.spanByteAndMemory.Memory, 0);
-                        var customObjectCommand = GetCustomObjectCommand(ref input, header->type);
-                        var result = customObjectCommand.Updater(key, input.AsReadOnlySpan()[RespInputHeader.Size..], value, ref outp, ref rmwInfo);
+                        var customObjectCommand = GetCustomObjectCommand(ref input, input.header.type);
+                        var result = customObjectCommand.Updater(key, input.payload.ReadOnlySpan, value, ref outp, ref rmwInfo);
                         output.spanByteAndMemory.Memory = outp.Memory;
                         output.spanByteAndMemory.Length = outp.Length;
                         return result;
@@ -221,7 +221,7 @@ namespace Garnet.server
             functionsState.objectStoreSizeTracker?.AddTrackedSize(MemoryUtils.CalculateKeyValueSize(key, value));
 
             if (functionsState.appendOnlyFile != null)
-                WriteLogRMW(ref key, ref input, ref oldValue, rmwInfo.Version, rmwInfo.SessionID);
+                WriteLogRMW(ref key, ref input, rmwInfo.Version, rmwInfo.SessionID);
             return true;
         }
     }
