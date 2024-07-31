@@ -1,6 +1,8 @@
 ﻿// Copyright (c) Microsoft Corporation.
 // Licensed under the MIT license.
 
+using System.Buffers;
+using System.Diagnostics;
 using Tsavorite.core;
 
 namespace Garnet.server
@@ -13,7 +15,26 @@ namespace Garnet.server
         /// <inheritdoc />
         public bool NeedInitialUpdate(ref byte[] key, ref ObjectInput input, ref GarnetObjectStoreOutput output, ref RMWInfo rmwInfo)
         {
-            return GarnetObject.NeedToCreate(*(RespInputHeader*)input.ToPointer());
+            var type = input.header.type;
+
+            switch (type)
+            {
+                case GarnetObjectType.Expire:
+                case GarnetObjectType.Persist:
+                    return false;
+                default:
+                    if ((byte)type < CustomCommandManager.StartOffset)
+                        return GarnetObject.NeedToCreate(*(RespInputHeader*)input.ToPointer());
+                    else
+                    {
+                        var customObjectCommand = GetCustomObjectCommand(ref input, type);
+                        (IMemoryOwner<byte> Memory, int Length) outp = (output.spanByteAndMemory.Memory, 0);
+                        var ret = customObjectCommand.NeedInitialUpdate(key, input.payload.ReadOnlySpan, ref outp);
+                        output.spanByteAndMemory.Memory = outp.Memory;
+                        output.spanByteAndMemory.Length = outp.Length;
+                        return ret;
+                    }
+            }
         }
 
         /// <inheritdoc />
@@ -21,14 +42,25 @@ namespace Garnet.server
         {
             var type = input.header.type;
             if ((byte)type < CustomCommandManager.StartOffset)
+            {
                 value = GarnetObject.Create(type);
+                value.Operate(ref input, ref output.spanByteAndMemory, out _, out _);
+                return true;
+            }
             else
             {
+                Debug.Assert(type != GarnetObjectType.Expire && type != GarnetObjectType.Persist, "Expire and Persist commands should have been handled already by NeedInitialUpdate.");
+
+                var customObjectCommand = GetCustomObjectCommand(ref input, type);
                 var objectId = (byte)((byte)type - CustomCommandManager.StartOffset);
                 value = functionsState.customObjectCommands[objectId].factory.Create((byte)type);
+
+                (IMemoryOwner<byte> Memory, int Length) outp = (output.spanByteAndMemory.Memory, 0);
+                var result = customObjectCommand.InitialUpdater(key, input.payload.ReadOnlySpan, value, ref outp, ref rmwInfo);
+                output.spanByteAndMemory.Memory = outp.Memory;
+                output.spanByteAndMemory.Length = outp.Length;
+                return result;
             }
-            value.Operate(ref input, ref output.spanByteAndMemory, out _, out _);
-            return true;
         }
 
         /// <inheritdoc />
@@ -87,15 +119,31 @@ namespace Garnet.server
                         CopyDefaultResp(CmdStrings.RESP_RETURN_VAL_0, ref output.spanByteAndMemory);
                     return true;
                 default:
-                    var operateSuccessful = value.Operate(ref input, ref output.spanByteAndMemory, out sizeChange,
-                        out var removeKey);
-                    if (removeKey)
+                    if ((byte)input.header.type < CustomCommandManager.StartOffset)
                     {
-                        rmwInfo.Action = RMWAction.ExpireAndStop;
-                        return false;
-                    }
+                        var operateSuccessful = value.Operate(ref input, ref output.spanByteAndMemory, out sizeChange,
+                        out var removeKey);
+                        if (removeKey)
+                        {
+                            rmwInfo.Action = RMWAction.ExpireAndStop;
+                            return false;
+                        }
 
-                    return operateSuccessful;
+                        return operateSuccessful;
+                    }
+                    else
+                    {
+                        if (IncorrectObjectType(ref input, value, ref output.spanByteAndMemory))
+                            return true;
+
+                        (IMemoryOwner<byte> Memory, int Length) outp = (output.spanByteAndMemory.Memory, 0);
+                        var customObjectCommand = GetCustomObjectCommand(ref input, input.header.type);
+                        var result = customObjectCommand.Updater(key, input.payload.ReadOnlySpan, value, ref outp, ref rmwInfo);
+                        output.spanByteAndMemory.Memory = outp.Memory;
+                        output.spanByteAndMemory.Length = outp.Length;
+                        return result;
+                        //return customObjectCommand.InPlaceUpdateWorker(key, ref input, value, ref output.spanByteAndMemory, ref rmwInfo);
+                    }
             }
         }
 
@@ -144,13 +192,30 @@ namespace Garnet.server
                         CopyDefaultResp(CmdStrings.RESP_RETURN_VAL_0, ref output.spanByteAndMemory);
                     break;
                 default:
-                    value.Operate(ref input, ref output.spanByteAndMemory, out _, out var removeKey);
-                    if (removeKey)
+                    if ((byte)input.header.type < CustomCommandManager.StartOffset)
                     {
-                        rmwInfo.Action = RMWAction.ExpireAndStop;
-                        return false;
+                        value.Operate(ref input, ref output.spanByteAndMemory, out _, out var removeKey);
+                        if (removeKey)
+                        {
+                            rmwInfo.Action = RMWAction.ExpireAndStop;
+                            return false;
+                        }
+                        break;
                     }
-                    break;
+                    else
+                    {
+                        // TODO: Update to invoke CopyUpdater of custom object command without creating a new object
+                        // using Clone. Currently, expire and persist commands are performed on the new copy of the object.
+                        if (IncorrectObjectType(ref input, value, ref output.spanByteAndMemory))
+                            return true;
+
+                        (IMemoryOwner<byte> Memory, int Length) outp = (output.spanByteAndMemory.Memory, 0);
+                        var customObjectCommand = GetCustomObjectCommand(ref input, input.header.type);
+                        var result = customObjectCommand.Updater(key, input.payload.ReadOnlySpan, value, ref outp, ref rmwInfo);
+                        output.spanByteAndMemory.Memory = outp.Memory;
+                        output.spanByteAndMemory.Length = outp.Length;
+                        return result;
+                    }
             }
 
             functionsState.objectStoreSizeTracker?.AddTrackedSize(MemoryUtils.CalculateKeyValueSize(key, value));

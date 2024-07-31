@@ -32,6 +32,11 @@ FROM mcr.microsoft.com/dotnet/runtime:8.0 AS runtime
 WORKDIR /app
 COPY --from=build /app .
 
+RUN mkdir /data \
+  && chown -R $APP_UID:$APP_UID /data
+
+VOLUME /data
+
 # Run container as a non-root user
 USER $APP_UID
 

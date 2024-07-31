@@ -1,11 +1,6 @@
 ﻿// Copyright (c) Microsoft Corporation.
 // Licensed under the MIT license.
-
-using System;
-using System.Buffers;
-using System.Diagnostics;
 using System.IO;
-using Garnet.common;
 using Tsavorite.core;
 
 namespace Garnet.server
@@ -15,11 +10,6 @@ namespace Garnet.server
     /// </summary>
     public abstract class CustomObjectBase : GarnetObjectBase
     {
-        /// <summary>
-        /// Shared memory pool used by functions
-        /// </summary>
-        protected static MemoryPool<byte> MemoryPool => MemoryPool<byte>.Shared;
-
         /// <summary>
         /// Type of object
         /// </summary>
@@ -52,115 +42,6 @@ namespace Garnet.server
         public override byte Type => type;
 
         /// <summary>
-        /// Create output as simple string, from given string
-        /// </summary>
-        protected static unsafe void WriteSimpleString(ref (IMemoryOwner<byte>, int) output, string simpleString)
-        {
-            var bytes = System.Text.Encoding.ASCII.GetBytes(simpleString);
-            // Get space for simple string
-            var len = 1 + bytes.Length + 2;
-            output.Item1 = MemoryPool.Rent(len);
-            fixed (byte* ptr = output.Item1.Memory.Span)
-            {
-                var curr = ptr;
-                // NOTE: Expected to always have enough space to write into pre-allocated buffer
-                var success = RespWriteUtils.WriteSimpleString(bytes, ref curr, ptr + len);
-                Debug.Assert(success, "Insufficient space in pre-allocated buffer");
-            }
-            output.Item2 = len;
-        }
-
-        /// <summary>
-        /// Create output as bulk string, from given Span
-        /// </summary>
-        protected static unsafe void WriteBulkString(ref (IMemoryOwner<byte>, int) output, Span<byte> bulkString)
-        {
-            // Get space for bulk string
-            var len = RespWriteUtils.GetBulkStringLength(bulkString.Length);
-            output.Item1 = MemoryPool.Rent(len);
-            output.Item2 = len;
-            fixed (byte* ptr = output.Item1.Memory.Span)
-            {
-                var curr = ptr;
-                // NOTE: Expected to always have enough space to write into pre-allocated buffer
-                var success = RespWriteUtils.WriteBulkString(bulkString, ref curr, ptr + len);
-                Debug.Assert(success, "Insufficient space in pre-allocated buffer");
-            }
-        }
-
-        /// <summary>
-        /// Create null output as bulk string
-        /// </summary>
-        protected static unsafe void WriteNullBulkString(ref (IMemoryOwner<byte>, int) output)
-        {
-            // Get space for null bulk string "$-1\r\n"
-            var len = 5;
-            output.Item1 = MemoryPool.Rent(len);
-            output.Item2 = len;
-            fixed (byte* ptr = output.Item1.Memory.Span)
-            {
-                var curr = ptr;
-                // NOTE: Expected to always have enough space to write into pre-allocated buffer
-                var success = RespWriteUtils.WriteNull(ref curr, ptr + len);
-                Debug.Assert(success, "Insufficient space in pre-allocated buffer");
-            }
-        }
-
-        /// <summary>
-        /// Create output as error message, from given string
-        /// </summary>
-        protected static unsafe void WriteError(ref (IMemoryOwner<byte>, int) output, string errorMessage)
-        {
-            var bytes = System.Text.Encoding.ASCII.GetBytes(errorMessage);
-            // Get space for error
-            var len = 1 + bytes.Length + 2;
-            output.Item1 = MemoryPool.Rent(len);
-            fixed (byte* ptr = output.Item1.Memory.Span)
-            {
-                var curr = ptr;
-                // NOTE: Expected to always have enough space to write into pre-allocated buffer
-                var success = RespWriteUtils.WriteError(bytes, ref curr, ptr + len);
-                Debug.Assert(success, "Insufficient space in pre-allocated buffer");
-            }
-            output.Item2 = len;
-        }
-
-        /// <summary>
-        /// Get argument from input, at specified offset (starting from 0)
-        /// </summary>
-        /// <param name="input">Input as ReadOnlySpan of byte</param>
-        /// <param name="offset">Current offset into input</param>
-        /// <returns>Argument as a span</returns>
-        protected static unsafe ReadOnlySpan<byte> GetNextArg(ReadOnlySpan<byte> input, scoped ref int offset)
-        {
-            byte* result = null;
-            var len = 0;
-
-            fixed (byte* inputPtr = input)
-            {
-                var ptr = inputPtr + offset;
-                var end = inputPtr + input.Length;
-                if (ptr < end && RespReadUtils.ReadPtrWithLengthHeader(ref result, ref len, ref ptr, end))
-                {
-                    offset = (int)(ptr - inputPtr);
-                    return new ReadOnlySpan<byte>(result, len);
-                }
-            }
-            return default;
-        }
-
-        /// <summary>
-        /// Get first arg from input
-        /// </summary>
-        /// <param name="input"></param>
-        /// <returns></returns>
-        protected static ReadOnlySpan<byte> GetFirstArg(ReadOnlySpan<byte> input)
-        {
-            int offset = 0;
-            return GetNextArg(input, ref offset);
-        }
-
-        /// <summary>
         /// Serialize to giver writer
         /// </summary>
         public abstract void SerializeObject(BinaryWriter writer);
@@ -187,9 +68,6 @@ namespace Garnet.server
         public abstract override void Dispose();
 
         /// <inheritdoc />
-        public abstract void Operate(byte subCommand, ReadOnlySpan<byte> input, ref (IMemoryOwner<byte>, int) output, out bool removeKey);
-
-        /// <inheritdoc />
         public sealed override unsafe bool Operate(ref ObjectInput input, ref SpanByteAndMemory output, out long sizeChange, out bool removeKey)
         {
             sizeChange = 0;
@@ -212,10 +90,6 @@ namespace Garnet.server
                         output.Length = 0;
                         return true;
                     }
-                    (IMemoryOwner<byte> Memory, int Length) outp = (output.Memory, 0);
-                    Operate(input.header.SubId, input.payload.ReadOnlySpan, ref outp, out removeKey);
-                    output.Memory = outp.Memory;
-                    output.Length = outp.Length;
                     break;
             }
 
