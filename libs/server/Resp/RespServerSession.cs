@@ -196,8 +196,6 @@ namespace Garnet.server
             clusterSession = storeWrapper.clusterProvider?.CreateClusterSession(txnManager, this._authenticator, this._user, sessionMetrics, basicGarnetApi, networkSender, logger);
             clusterSession?.SetUser(this._user);
 
-            this.runningWithAOFWaitForCommitMode = storeWrapper.appendOnlyFile != null && storeWrapper.serverOptions.WaitForCommit;
-
             parseState.Initialize();
             readHead = 0;
             toDispose = false;
@@ -379,29 +377,6 @@ namespace Garnet.server
                 // Check ACL permissions for the command
                 if (cmd != RespCommand.INVALID && CheckACLPermissions(cmd))
                 {
-
-                    if (runningWithAOFWaitForCommitMode)
-                    {
-                        /* 
-                            keeping the expensive call inside the conditional only adds ~4 MSIL instructions in hotpath
-
-                            W.r.t AOF  Blocking
-                            If a previous command marked AOF for blocking we should not change AOF blocking flag.
-                            If no previous command marked AOF for blocking, then we only change AOF flag to block
-                            if the current command is AOF dependent
-
-                            Ordering for Truth Table:
-                            WaitForAofBlocking || !(IsAofIndepenent) => Whether or not it should block AOF
-
-                            Truth Table:
-                            T || !F => T (Block AOF if WaitForAofBlocking was already set)
-                            T || !T => T (Block AOF if WaitForAofBlocking was already set)
-                            F || !T => F, (Don't Block AOF if WaitForAofBlocking was not set and cmd is Aof INDEPENDENT)
-                            F || !F => T, (Block AOF if WaitForAofBlocking was not set and cmd is aof DEPENDENT)
-                        */
-                        waitForAofBlocking = waitForAofBlocking || !cmd.IsAofIndependent();
-                    }
-
                     if (txnManager.state != TxnState.None)
                     {
                         if (txnManager.state == TxnState.Running)
