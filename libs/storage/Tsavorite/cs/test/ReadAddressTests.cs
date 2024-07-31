@@ -35,8 +35,8 @@ namespace Tsavorite.test.readaddress
 
 namespace Tsavorite.test.readaddress
 {
-    using StructStoreFunctions = StoreFunctions<KeyStruct, ValueStruct, KeyStruct.Comparer, DefaultRecordDisposer<KeyStruct, ValueStruct>>;
     using StructAllocator = BlittableAllocator<KeyStruct, ValueStruct, StoreFunctions<KeyStruct, ValueStruct, KeyStruct.Comparer, DefaultRecordDisposer<KeyStruct, ValueStruct>>>;
+    using StructStoreFunctions = StoreFunctions<KeyStruct, ValueStruct, KeyStruct.Comparer, DefaultRecordDisposer<KeyStruct, ValueStruct>>;
 
     [TestFixture]
     internal class ReadAddressTests
@@ -158,18 +158,18 @@ namespace Tsavorite.test.readaddress
                 logDevice = Devices.CreateLogDevice(Path.Join(MethodTestDir, "hlog.log"));
                 this.flush = flush;
 
-                store = new (new()
-                    {
-                        IndexSize = 1L << 26,
-                        LogDevice = logDevice,
-                        ReadCacheEnabled = useReadCache,
-                        ReadCopyOptions = readCopyOptions,
-                        // Use small-footprint values
-                        PageSize = 1L << 12, // (4K pages)
-                        MemorySize = 1L << 20, // (1M memory for main log)
+                store = new(new()
+                {
+                    IndexSize = 1L << 26,
+                    LogDevice = logDevice,
+                    ReadCacheEnabled = useReadCache,
+                    ReadCopyOptions = readCopyOptions,
+                    // Use small-footprint values
+                    PageSize = 1L << 12, // (4K pages)
+                    MemorySize = 1L << 20, // (1M memory for main log)
 
-                        CheckpointDir = Path.Join(MethodTestDir, "chkpt")
-                    }, StoreFunctions<KeyStruct, ValueStruct>.Create(new KeyStruct.Comparer())
+                    CheckpointDir = Path.Join(MethodTestDir, "chkpt")
+                }, StoreFunctions<KeyStruct, ValueStruct>.Create(new KeyStruct.Comparer())
                     , (allocatorSettings, storeFunctions) => new(allocatorSettings, storeFunctions)
                 );
             }

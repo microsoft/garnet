@@ -11,8 +11,8 @@ using Tsavorite.test.recovery.sumstore;
 
 namespace Tsavorite.test.recovery
 {
-    using LongStoreFunctions = StoreFunctions<long, long, LongKeyComparer, DefaultRecordDisposer<long, long>>;
     using LongAllocator = BlittableAllocator<long, long, StoreFunctions<long, long, LongKeyComparer, DefaultRecordDisposer<long, long>>>;
+    using LongStoreFunctions = StoreFunctions<long, long, LongKeyComparer, DefaultRecordDisposer<long, long>>;
 
     public enum DeviceMode
     {
@@ -89,13 +89,15 @@ namespace Tsavorite.test.recovery
         public async ValueTask RecoveryCheck1([Values] CheckpointType checkpointType, [Values] bool isAsync, [Values] bool useReadCache, [Values(1L << 13, 1L << 16)] long indexSize)
         {
             using var store1 = new TsavoriteKV<long, long, LongStoreFunctions, LongAllocator>(new()
-                {
-                    IndexSize = indexSize,
-                    LogDevice = log,
-                    MutableFraction = 1, PageSize = 1L << 10, MemorySize = 1L << 20,
-                    ReadCacheEnabled = useReadCache,
-                    CheckpointDir = TestUtils.MethodTestDir
-                }, StoreFunctions<long, long>.Create(LongKeyComparer.Instance)
+            {
+                IndexSize = indexSize,
+                LogDevice = log,
+                MutableFraction = 1,
+                PageSize = 1L << 10,
+                MemorySize = 1L << 20,
+                ReadCacheEnabled = useReadCache,
+                CheckpointDir = TestUtils.MethodTestDir
+            }, StoreFunctions<long, long>.Create(LongKeyComparer.Instance)
                 , (allocatorSettings, storeFunctions) => new(allocatorSettings, storeFunctions)
             );
 
@@ -130,7 +132,8 @@ namespace Tsavorite.test.recovery
                 IndexSize = indexSize,
                 LogDevice = log,
                 MutableFraction = 1,
-                PageSize = 1L << 10, MemorySize = 1L << 20,
+                PageSize = 1L << 10,
+                MemorySize = 1L << 20,
                 ReadCacheEnabled = useReadCache,
                 CheckpointDir = TestUtils.MethodTestDir
             }, StoreFunctions<long, long>.Create(LongKeyComparer.Instance)
@@ -183,13 +186,15 @@ namespace Tsavorite.test.recovery
         public async ValueTask RecoveryCheck2([Values] CheckpointType checkpointType, [Values] bool isAsync, [Values] bool useReadCache, [Values(1L << 13, 1L << 16)] long indexSize)
         {
             using var store1 = new TsavoriteKV<long, long, LongStoreFunctions, LongAllocator>(new()
-                {
-                    IndexSize = indexSize,
-                    LogDevice = log,
-                    MutableFraction = 1, PageSize = 1L << 10, MemorySize = 1L << 20,
-                    ReadCacheEnabled = useReadCache,
-                    CheckpointDir = TestUtils.MethodTestDir
-                }, StoreFunctions<long, long>.Create(LongKeyComparer.Instance)
+            {
+                IndexSize = indexSize,
+                LogDevice = log,
+                MutableFraction = 1,
+                PageSize = 1L << 10,
+                MemorySize = 1L << 20,
+                ReadCacheEnabled = useReadCache,
+                CheckpointDir = TestUtils.MethodTestDir
+            }, StoreFunctions<long, long>.Create(LongKeyComparer.Instance)
                 , (allocatorSettings, storeFunctions) => new(allocatorSettings, storeFunctions)
             );
 
@@ -197,13 +202,15 @@ namespace Tsavorite.test.recovery
             var bc1 = s1.BasicContext;
 
             using var store2 = new TsavoriteKV<long, long, LongStoreFunctions, LongAllocator>(new()
-                {
-                    IndexSize = indexSize,
-                    LogDevice = log,
-                    MutableFraction = 1, PageSize = 1L << 10, MemorySize = 1L << 20,
-                    ReadCacheEnabled = useReadCache,
-                    CheckpointDir = TestUtils.MethodTestDir
-                }, StoreFunctions<long, long>.Create(LongKeyComparer.Instance)
+            {
+                IndexSize = indexSize,
+                LogDevice = log,
+                MutableFraction = 1,
+                PageSize = 1L << 10,
+                MemorySize = 1L << 20,
+                ReadCacheEnabled = useReadCache,
+                CheckpointDir = TestUtils.MethodTestDir
+            }, StoreFunctions<long, long>.Create(LongKeyComparer.Instance)
                 , (allocatorSettings, storeFunctions) => new(allocatorSettings, storeFunctions)
             );
 
@@ -272,12 +279,14 @@ namespace Tsavorite.test.recovery
             for (int i = 0; i < 6; i++)
             {
                 using var store = new TsavoriteKV<long, long, LongStoreFunctions, LongAllocator>(new()
-                    {
-                        IndexSize = 1L << 13,
-                        LogDevice = log,
-                        MutableFraction = 1, PageSize = 1L << 10, MemorySize = 1L << 20,
-                        CheckpointDir = TestUtils.MethodTestDir
-                    }, StoreFunctions<long, long>.Create(LongKeyComparer.Instance)
+                {
+                    IndexSize = 1L << 13,
+                    LogDevice = log,
+                    MutableFraction = 1,
+                    PageSize = 1L << 10,
+                    MemorySize = 1L << 20,
+                    CheckpointDir = TestUtils.MethodTestDir
+                }, StoreFunctions<long, long>.Create(LongKeyComparer.Instance)
                     , (allocatorSettings, storeFunctions) => new(allocatorSettings, storeFunctions)
                 );
 
@@ -319,12 +328,15 @@ namespace Tsavorite.test.recovery
         public void RecoveryRollback([Values] CheckpointType checkpointType)
         {
             using var store = new TsavoriteKV<long, long, LongStoreFunctions, LongAllocator>(new()
-                {
-                    IndexSize = 1L << 13,
-                    LogDevice = log,
-                    MutableFraction = 1, PageSize = 1L << 10, MemorySize = 1L << 11, SegmentSize = 1L << 11,
-                    CheckpointDir = TestUtils.MethodTestDir
-                }, StoreFunctions<long, long>.Create(LongKeyComparer.Instance)
+            {
+                IndexSize = 1L << 13,
+                LogDevice = log,
+                MutableFraction = 1,
+                PageSize = 1L << 10,
+                MemorySize = 1L << 11,
+                SegmentSize = 1L << 11,
+                CheckpointDir = TestUtils.MethodTestDir
+            }, StoreFunctions<long, long>.Create(LongKeyComparer.Instance)
                 , (allocatorSettings, storeFunctions) => new(allocatorSettings, storeFunctions)
             );
 
@@ -468,13 +480,15 @@ namespace Tsavorite.test.recovery
         public async ValueTask RecoveryCheck3([Values] CheckpointType checkpointType, [Values] bool isAsync, [Values] bool useReadCache, [Values(1L << 13, 1L << 16)] long indexSize)
         {
             using var store1 = new TsavoriteKV<long, long, LongStoreFunctions, LongAllocator>(new()
-                {
-                    IndexSize = indexSize,
-                    LogDevice = log,
-                    MutableFraction = 1, PageSize = 1L << 10, MemorySize = 1L << 20,
-                    ReadCacheEnabled = useReadCache,
-                    CheckpointDir = TestUtils.MethodTestDir
-                }, StoreFunctions<long, long>.Create(LongKeyComparer.Instance)
+            {
+                IndexSize = indexSize,
+                LogDevice = log,
+                MutableFraction = 1,
+                PageSize = 1L << 10,
+                MemorySize = 1L << 20,
+                ReadCacheEnabled = useReadCache,
+                CheckpointDir = TestUtils.MethodTestDir
+            }, StoreFunctions<long, long>.Create(LongKeyComparer.Instance)
                 , (allocatorSettings, storeFunctions) => new(allocatorSettings, storeFunctions)
             );
 
@@ -482,13 +496,15 @@ namespace Tsavorite.test.recovery
             var bc1 = s1.BasicContext;
 
             using var store2 = new TsavoriteKV<long, long, LongStoreFunctions, LongAllocator>(new()
-                {
-                    IndexSize = indexSize,
-                    LogDevice = log,
-                    MutableFraction = 1, PageSize = 1L << 10, MemorySize = 1L << 20,
-                    ReadCacheEnabled = useReadCache,
-                    CheckpointDir = TestUtils.MethodTestDir
-                }, StoreFunctions<long, long>.Create(LongKeyComparer.Instance)
+            {
+                IndexSize = indexSize,
+                LogDevice = log,
+                MutableFraction = 1,
+                PageSize = 1L << 10,
+                MemorySize = 1L << 20,
+                ReadCacheEnabled = useReadCache,
+                CheckpointDir = TestUtils.MethodTestDir
+            }, StoreFunctions<long, long>.Create(LongKeyComparer.Instance)
                 , (allocatorSettings, storeFunctions) => new(allocatorSettings, storeFunctions)
             );
 
@@ -564,13 +580,15 @@ namespace Tsavorite.test.recovery
         public async ValueTask RecoveryCheck4([Values] CheckpointType checkpointType, [Values] bool isAsync, [Values] bool useReadCache, [Values(1L << 13, 1L << 16)] long indexSize)
         {
             using var store1 = new TsavoriteKV<long, long, LongStoreFunctions, LongAllocator>(new()
-                {
-                    IndexSize = indexSize,
-                    LogDevice = log,
-                    MutableFraction = 1, PageSize = 1L << 10, MemorySize = 1L << 20,
-                    ReadCacheEnabled = useReadCache,
-                    CheckpointDir = TestUtils.MethodTestDir
-                }, StoreFunctions<long, long>.Create(LongKeyComparer.Instance)
+            {
+                IndexSize = indexSize,
+                LogDevice = log,
+                MutableFraction = 1,
+                PageSize = 1L << 10,
+                MemorySize = 1L << 20,
+                ReadCacheEnabled = useReadCache,
+                CheckpointDir = TestUtils.MethodTestDir
+            }, StoreFunctions<long, long>.Create(LongKeyComparer.Instance)
                 , (allocatorSettings, storeFunctions) => new(allocatorSettings, storeFunctions)
             );
 
@@ -578,13 +596,15 @@ namespace Tsavorite.test.recovery
             var bc1 = s1.BasicContext;
 
             using var store2 = new TsavoriteKV<long, long, LongStoreFunctions, LongAllocator>(new()
-                {
-                    IndexSize = indexSize,
-                    LogDevice = log,
-                    MutableFraction = 1, PageSize = 1L << 10, MemorySize = 1L << 20,
-                    ReadCacheEnabled = useReadCache,
-                    CheckpointDir = TestUtils.MethodTestDir
-                }, StoreFunctions<long, long>.Create(LongKeyComparer.Instance)
+            {
+                IndexSize = indexSize,
+                LogDevice = log,
+                MutableFraction = 1,
+                PageSize = 1L << 10,
+                MemorySize = 1L << 20,
+                ReadCacheEnabled = useReadCache,
+                CheckpointDir = TestUtils.MethodTestDir
+            }, StoreFunctions<long, long>.Create(LongKeyComparer.Instance)
                 , (allocatorSettings, storeFunctions) => new(allocatorSettings, storeFunctions)
             );
 
@@ -664,13 +684,15 @@ namespace Tsavorite.test.recovery
         public async ValueTask RecoveryCheck5([Values] CheckpointType checkpointType, [Values] bool isAsync, [Values] bool useReadCache, [Values(1L << 13, 1L << 16)] long indexSize)
         {
             using var store1 = new TsavoriteKV<long, long, LongStoreFunctions, LongAllocator>(new()
-                {
-                    IndexSize = indexSize,
-                    LogDevice = log,
-                    MutableFraction = 1, PageSize = 1L << 10, MemorySize = 1L << 20,
-                    ReadCacheEnabled = useReadCache,
-                    CheckpointDir = TestUtils.MethodTestDir
-                }, StoreFunctions<long, long>.Create(LongKeyComparer.Instance)
+            {
+                IndexSize = indexSize,
+                LogDevice = log,
+                MutableFraction = 1,
+                PageSize = 1L << 10,
+                MemorySize = 1L << 20,
+                ReadCacheEnabled = useReadCache,
+                CheckpointDir = TestUtils.MethodTestDir
+            }, StoreFunctions<long, long>.Create(LongKeyComparer.Instance)
                 , (allocatorSettings, storeFunctions) => new(allocatorSettings, storeFunctions)
             );
 
@@ -714,13 +736,15 @@ namespace Tsavorite.test.recovery
             var task = store1.TakeFullCheckpointAsync(checkpointType);
 
             using var store2 = new TsavoriteKV<long, long, LongStoreFunctions, LongAllocator>(new()
-                {
-                    IndexSize = indexSize,
-                    LogDevice = log,
-                    MutableFraction = 1, PageSize = 1L << 10, MemorySize = 1L << 20,
-                    ReadCacheEnabled = useReadCache,
-                    CheckpointDir = TestUtils.MethodTestDir
-                }, StoreFunctions<long, long>.Create(LongKeyComparer.Instance)
+            {
+                IndexSize = indexSize,
+                LogDevice = log,
+                MutableFraction = 1,
+                PageSize = 1L << 10,
+                MemorySize = 1L << 20,
+                ReadCacheEnabled = useReadCache,
+                CheckpointDir = TestUtils.MethodTestDir
+            }, StoreFunctions<long, long>.Create(LongKeyComparer.Instance)
                 , (allocatorSettings, storeFunctions) => new(allocatorSettings, storeFunctions)
             );
 
@@ -794,12 +818,14 @@ namespace Tsavorite.test.recovery
         private async ValueTask IncrSnapshotRecoveryCheck(ICheckpointManager checkpointManager)
         {
             using var store1 = new TsavoriteKV<long, long, LongStoreFunctions, LongAllocator>(new()
-                {
-                    IndexSize = 1L << 16,
-                    LogDevice = log,
-                    MutableFraction = 1, PageSize = 1L << 10, MemorySize = 1L << 20,
-                    CheckpointManager = checkpointManager
-                }, StoreFunctions<long, long>.Create(LongKeyComparer.Instance)
+            {
+                IndexSize = 1L << 16,
+                LogDevice = log,
+                MutableFraction = 1,
+                PageSize = 1L << 10,
+                MemorySize = 1L << 20,
+                CheckpointManager = checkpointManager
+            }, StoreFunctions<long, long>.Create(LongKeyComparer.Instance)
                 , (allocatorSettings, storeFunctions) => new(allocatorSettings, storeFunctions)
             );
 
@@ -833,12 +859,14 @@ namespace Tsavorite.test.recovery
 
             // Test that we can recover to latest version
             using var store2 = new TsavoriteKV<long, long, LongStoreFunctions, LongAllocator>(new()
-                {
-                    IndexSize = 1L << 16,
-                    LogDevice = log,
-                    MutableFraction = 1, PageSize = 1L << 10, MemorySize = 1L << 14,
-                    CheckpointManager = checkpointManager
-                }, StoreFunctions<long, long>.Create(LongKeyComparer.Instance)
+            {
+                IndexSize = 1L << 16,
+                LogDevice = log,
+                MutableFraction = 1,
+                PageSize = 1L << 10,
+                MemorySize = 1L << 14,
+                CheckpointManager = checkpointManager
+            }, StoreFunctions<long, long>.Create(LongKeyComparer.Instance)
                 , (allocatorSettings, storeFunctions) => new(allocatorSettings, storeFunctions)
             );
 
@@ -862,12 +890,14 @@ namespace Tsavorite.test.recovery
 
             // Test that we can recover to earlier version
             using var store3 = new TsavoriteKV<long, long, LongStoreFunctions, LongAllocator>(new()
-                {
-                    IndexSize = 1L << 16,
-                    LogDevice = log,
-                    MutableFraction = 1, PageSize = 1L << 10, MemorySize = 1L << 14,
-                    CheckpointManager = checkpointManager
-                }, StoreFunctions<long, long>.Create(LongKeyComparer.Instance)
+            {
+                IndexSize = 1L << 16,
+                LogDevice = log,
+                MutableFraction = 1,
+                PageSize = 1L << 10,
+                MemorySize = 1L << 14,
+                CheckpointManager = checkpointManager
+            }, StoreFunctions<long, long>.Create(LongKeyComparer.Instance)
                 , (allocatorSettings, storeFunctions) => new(allocatorSettings, storeFunctions)
             );
 

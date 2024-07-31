@@ -12,8 +12,8 @@ using static Tsavorite.test.TestUtils;
 
 namespace Tsavorite.test.UnsafeContext
 {
-    using StructStoreFunctions = StoreFunctions<KeyStruct, ValueStruct, KeyStruct.Comparer, DefaultRecordDisposer<KeyStruct, ValueStruct>>;
     using StructAllocator = BlittableAllocator<KeyStruct, ValueStruct, StoreFunctions<KeyStruct, ValueStruct, KeyStruct.Comparer, DefaultRecordDisposer<KeyStruct, ValueStruct>>>;
+    using StructStoreFunctions = StoreFunctions<KeyStruct, ValueStruct, KeyStruct.Comparer, DefaultRecordDisposer<KeyStruct, ValueStruct>>;
 
     //** These tests ensure the basics are fully covered - taken from BasicTests
 
@@ -40,7 +40,7 @@ namespace Tsavorite.test.UnsafeContext
             kvSettings.LogDevice = log;
             kvSettings.IndexSize = 1L << 13;
 
-            store = new (kvSettings
+            store = new(kvSettings
                 , StoreFunctions<KeyStruct, ValueStruct>.Create(KeyStruct.Comparer.Instance)
                 , (allocatorSettings, storeFunctions) => new(allocatorSettings, storeFunctions)
             );
@@ -79,7 +79,7 @@ namespace Tsavorite.test.UnsafeContext
         [Category("Smoke")]
         public void NativeInMemWriteRead([Values] DeviceType deviceType)
         {
-            Setup(new () { PageSize = 1L << 10, MemorySize = 1L << 12, SegmentSize = 1L << 22 }, deviceType);
+            Setup(new() { PageSize = 1L << 10, MemorySize = 1L << 12, SegmentSize = 1L << 22 }, deviceType);
             uContext.BeginUnsafe();
 
             try
@@ -108,7 +108,7 @@ namespace Tsavorite.test.UnsafeContext
         [Category("Smoke")]
         public void NativeInMemWriteReadDelete([Values] DeviceType deviceType)
         {
-            Setup(new () { PageSize = 1L << 10, MemorySize = 1L << 12, SegmentSize = 1L << 22 }, deviceType);
+            Setup(new() { PageSize = 1L << 10, MemorySize = 1L << 12, SegmentSize = 1L << 22 }, deviceType);
             uContext.BeginUnsafe();
 
             try
@@ -156,7 +156,7 @@ namespace Tsavorite.test.UnsafeContext
             const int count = 10;
 
             // Setup(new () { MemorySize = 1L << 22, SegmentSize = 1L << 22, PageSize = 1L << 10 }, deviceType);
-            Setup(new () { MemorySize = 1L << 29 }, deviceType);
+            Setup(new() { MemorySize = 1L << 29 }, deviceType);
             uContext.BeginUnsafe();
 
             try
@@ -213,7 +213,7 @@ namespace Tsavorite.test.UnsafeContext
             int count = 200;
 
             // Setup(128, new () { MemorySize = 1L << 22, SegmentSize = 1L << 22, PageSize = 1L << 10 }, deviceType);
-            Setup(new () { MemorySize = 1L << 29 }, deviceType);
+            Setup(new() { MemorySize = 1L << 29 }, deviceType);
             uContext.BeginUnsafe();
 
             try
@@ -276,7 +276,7 @@ namespace Tsavorite.test.UnsafeContext
             Random r = new(RandSeed);
             var sw = Stopwatch.StartNew();
 
-            Setup(new () { MemorySize = 1L << 22, SegmentSize = 1L << 22, PageSize = 1L << 10 }, deviceType);
+            Setup(new() { MemorySize = 1L << 22, SegmentSize = 1L << 22, PageSize = 1L << 10 }, deviceType);
             uContext.BeginUnsafe();
 
             try

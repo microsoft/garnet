@@ -10,7 +10,7 @@ namespace Tsavorite.core
     /// <summary>
     /// Basic Tsavorite Context implementation.
     /// </summary>
-    public readonly struct BasicContext<Key, Value, Input, Output, Context, Functions, TStoreFunctions, TAllocator> 
+    public readonly struct BasicContext<Key, Value, Input, Output, Context, Functions, TStoreFunctions, TAllocator>
         : ITsavoriteContext<Key, Value, Input, Output, Context, Functions, TStoreFunctions, TAllocator>
         where Functions : ISessionFunctions<Key, Value, Input, Output, Context>
         where TStoreFunctions : IStoreFunctions<Key, Value>

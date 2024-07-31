@@ -12,7 +12,7 @@ namespace Tsavorite.core
     /// <summary>
     /// Tsavorite Context implementation that allows manual control of record locking and epoch management. For advanced use only.
     /// </summary>
-    public readonly struct LockableUnsafeContext<Key, Value, Input, Output, Context, Functions, TStoreFunctions, TAllocator> 
+    public readonly struct LockableUnsafeContext<Key, Value, Input, Output, Context, Functions, TStoreFunctions, TAllocator>
         : ITsavoriteContext<Key, Value, Input, Output, Context, Functions, TStoreFunctions, TAllocator>, ILockableContext<Key>, IUnsafeContext
         where Functions : ISessionFunctions<Key, Value, Input, Output, Context>
         where TStoreFunctions : IStoreFunctions<Key, Value>

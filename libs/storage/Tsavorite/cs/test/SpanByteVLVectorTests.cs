@@ -27,9 +27,12 @@ namespace Tsavorite.test.spanbyte
 
             var log = Devices.CreateLogDevice(Path.Join(MethodTestDir, "hlog1.log"), deleteOnClose: true);
             var store = new TsavoriteKV<SpanByte, SpanByte, SpanByteStoreFunctions, SpanByteAllocator<SpanByteStoreFunctions>>(
-                new () {
+                new()
+                {
                     IndexSize = 1L << 13,
-                    LogDevice = log, MemorySize = 1L << 17, PageSize = 1L << 12
+                    LogDevice = log,
+                    MemorySize = 1L << 17,
+                    PageSize = 1L << 12
                 }, StoreFunctions<SpanByte, SpanByte>.Create()
                     , (allocatorSettings, storeFunctions) => new(allocatorSettings, storeFunctions)
                 );
@@ -91,10 +94,12 @@ namespace Tsavorite.test.spanbyte
 
             var log = Devices.CreateLogDevice(Path.Join(MethodTestDir, "hlog1.log"), deleteOnClose: true);
             var store = new TsavoriteKV<SpanByte, SpanByte, SpanByteStoreFunctions, SpanByteAllocator<SpanByteStoreFunctions>>(
-                new () {
+                new()
+                {
                     IndexSize = 1L << 13,
                     LogDevice = log,
-                    MemorySize = 1L << 17, PageSize = 1L << 12
+                    MemorySize = 1L << 17,
+                    PageSize = 1L << 12
                 }, StoreFunctions<SpanByte, SpanByte>.Create()
                 , (allocatorSettings, storeFunctions) => new(allocatorSettings, storeFunctions)
             );

@@ -15,7 +15,7 @@ namespace Tsavorite.test.LockTests
     internal sealed class LocalIntKeyComparer : IKeyComparer<int>
     {
         internal int mod;
-        
+
         internal LocalIntKeyComparer(int mod) => this.mod = mod;
 
         public bool Equals(ref int k1, ref int k2) => k1 == k2;
@@ -91,12 +91,12 @@ namespace Tsavorite.test.LockTests
         {
             DeleteDirectory(MethodTestDir, wait: true);
             log = Devices.CreateLogDevice(Path.Join(MethodTestDir, "GenericStringTests.log"), deleteOnClose: true);
-            store = new(new ()
-                {
-                    IndexSize = 1L << 26,
-                    LogDevice = log
-                }, StoreFunctions<int, int>.Create(keyComparer)
-                , (allocatorSettings, storeFunctions) => new (allocatorSettings, storeFunctions)
+            store = new(new()
+            {
+                IndexSize = 1L << 26,
+                LogDevice = log
+            }, StoreFunctions<int, int>.Create(keyComparer)
+                , (allocatorSettings, storeFunctions) => new(allocatorSettings, storeFunctions)
             );
             session = store.NewSession<int, int, Empty, Functions>(new Functions());
             bContext = session.BasicContext;

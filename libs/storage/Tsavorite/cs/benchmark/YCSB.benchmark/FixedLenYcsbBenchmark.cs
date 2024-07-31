@@ -100,7 +100,7 @@ namespace Tsavorite.benchmark
 
             store = new(kvSettings
                 , StoreFunctions<Key, Value>.Create(new Key.Comparer())
-                , (allocatorSettings, storeFunctions) => new (allocatorSettings, storeFunctions)
+                , (allocatorSettings, storeFunctions) => new(allocatorSettings, storeFunctions)
             );
         }
 

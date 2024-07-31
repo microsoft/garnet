@@ -199,7 +199,7 @@ namespace Tsavorite.core
         }
 
         private bool TryRevivifyInChain<Input, Output, Context, TSessionFunctionsWrapper>(ref Key key, ref Input input, ref Value value, ref Output output, ref PendingContext<Input, Output, Context> pendingContext,
-                TSessionFunctionsWrapper sessionFunctions, ref OperationStackContext<Key, Value, TStoreFunctions, TAllocator> stackCtx, ref RecordInfo srcRecordInfo, ref UpsertInfo upsertInfo, 
+                TSessionFunctionsWrapper sessionFunctions, ref OperationStackContext<Key, Value, TStoreFunctions, TAllocator> stackCtx, ref RecordInfo srcRecordInfo, ref UpsertInfo upsertInfo,
                 out OperationStatus status, ref Value recordValue)
             where TSessionFunctionsWrapper : ISessionFunctionsWrapper<Key, Value, Input, Output, Context, TStoreFunctions, TAllocator>
         {

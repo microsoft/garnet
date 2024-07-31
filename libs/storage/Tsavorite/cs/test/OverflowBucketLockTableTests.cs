@@ -51,13 +51,14 @@ namespace Tsavorite.test.LockTable
             }
             comparer ??= new LongKeyComparer();
 
-            store = new (new ()
-                {
-                    IndexSize = 1L << 26,
-                    LogDevice = log,
-                    PageSize = 1L << 12, MemorySize = 1L << 22
-                }, StoreFunctions<long, long>.Create(LongKeyComparer.Instance)
-                , (allocatorSettings, storeFunctions) => new (allocatorSettings, storeFunctions)
+            store = new(new()
+            {
+                IndexSize = 1L << 26,
+                LogDevice = log,
+                PageSize = 1L << 12,
+                MemorySize = 1L << 22
+            }, StoreFunctions<long, long>.Create(LongKeyComparer.Instance)
+                , (allocatorSettings, storeFunctions) => new(allocatorSettings, storeFunctions)
             );
         }
 
@@ -157,7 +158,7 @@ namespace Tsavorite.test.LockTable
             => AssertTotalLockCounts(store, expectedX, expectedS);
 
         internal static unsafe void AssertTotalLockCounts<TStoreFunctions, TAllocator>(TsavoriteKV<long, long, TStoreFunctions, TAllocator> store, long expectedX, long expectedS)
-            where TStoreFunctions: IStoreFunctions<long, long>
+            where TStoreFunctions : IStoreFunctions<long, long>
             where TAllocator : IAllocator<long, long, TStoreFunctions>
         {
             HashBucket* buckets = store.state[store.resizeInfo.version].tableAligned;

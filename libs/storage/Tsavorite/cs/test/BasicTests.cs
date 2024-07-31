@@ -12,11 +12,11 @@ using static Tsavorite.test.TestUtils;
 
 namespace Tsavorite.test
 {
-    using StructStoreFunctions = StoreFunctions<KeyStruct, ValueStruct, KeyStruct.Comparer, DefaultRecordDisposer<KeyStruct, ValueStruct>>;
-    using StructAllocator = BlittableAllocator<KeyStruct, ValueStruct, StoreFunctions<KeyStruct, ValueStruct, KeyStruct.Comparer, DefaultRecordDisposer<KeyStruct, ValueStruct>>>;
-
-    using LongStoreFunctions = StoreFunctions<long, long, LongKeyComparer, DefaultRecordDisposer<long, long>>;
     using LongAllocator = BlittableAllocator<long, long, StoreFunctions<long, long, LongKeyComparer, DefaultRecordDisposer<long, long>>>;
+    using LongStoreFunctions = StoreFunctions<long, long, LongKeyComparer, DefaultRecordDisposer<long, long>>;
+
+    using StructAllocator = BlittableAllocator<KeyStruct, ValueStruct, StoreFunctions<KeyStruct, ValueStruct, KeyStruct.Comparer, DefaultRecordDisposer<KeyStruct, ValueStruct>>>;
+    using StructStoreFunctions = StoreFunctions<KeyStruct, ValueStruct, KeyStruct.Comparer, DefaultRecordDisposer<KeyStruct, ValueStruct>>;
 
     //** NOTE - more detailed / in depth Read tests in ReadAddressTests.cs 
     //** These tests ensure the basics are fully covered
@@ -84,7 +84,7 @@ namespace Tsavorite.test
         [Category("Smoke")]
         public void NativeInMemWriteRead([Values] DeviceType deviceType)
         {
-            Setup(new () { PageSize = 1L << 10, MemorySize = 1L << 12, SegmentSize = 1L << 22 }, deviceType);
+            Setup(new() { PageSize = 1L << 10, MemorySize = 1L << 12, SegmentSize = 1L << 22 }, deviceType);
 
             InputStruct input = default;
             OutputStruct output = default;
@@ -105,7 +105,7 @@ namespace Tsavorite.test
         [Category("Smoke")]
         public void NativeInMemWriteReadDelete([Values] DeviceType deviceType)
         {
-            Setup(new () { PageSize = 1L << 10, MemorySize = 1L << 12, SegmentSize = 1L << 22 }, deviceType);
+            Setup(new() { PageSize = 1L << 10, MemorySize = 1L << 12, SegmentSize = 1L << 22 }, deviceType);
 
             InputStruct input = default;
             OutputStruct output = default;
@@ -327,7 +327,7 @@ namespace Tsavorite.test
             InputStruct input = default;
             OutputStruct output = default;
 
-            Setup(new(){ MemorySize = 1L << 22, SegmentSize = 1L << 22, PageSize = 1L << 10 }, deviceType);
+            Setup(new() { MemorySize = 1L << 22, SegmentSize = 1L << 22, PageSize = 1L << 10 }, deviceType);
 
             var nums = Enumerable.Range(0, 1000).ToArray();
             var rnd = new Random(11);
@@ -722,9 +722,9 @@ namespace Tsavorite.test
         public static void KVBasicsSampleEndToEndInDocs()
         {
             using var log = Devices.CreateLogDevice(Path.Join(MethodTestDir, "hlog.log"), deleteOnClose: false);
-            
+
             using var store = new TsavoriteKV<long, long, LongStoreFunctions, LongAllocator>(
-                new ()
+                new()
                 {
                     IndexSize = 1L << 26,
                     LogDevice = log,
@@ -764,7 +764,7 @@ namespace Tsavorite.test
             using var log = Devices.CreateLogDevice(Path.Join(MethodTestDir, "hlog.log"), deleteOnClose: false);
 
             using var store = new TsavoriteKV<long, long, LongStoreFunctions, LongAllocator>(
-                new ()
+                new()
                 {
                     IndexSize = 1L << 26,
                     LogDevice = log,
@@ -867,7 +867,7 @@ namespace Tsavorite.test
             using var log = Devices.CreateLogDevice(Path.Join(MethodTestDir, "hlog.log"), deleteOnClose: false);
 
             using var store = new TsavoriteKV<long, long, LongStoreFunctions, LongAllocator>(
-                new ()
+                new()
                 {
                     IndexSize = 1L << 26,
                     LogDevice = log,

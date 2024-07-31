@@ -7,8 +7,8 @@ using Tsavorite.core;
 
 namespace Tsavorite.test.InputOutputParameterTests
 {
-    using IntStoreFunctions = StoreFunctions<int, int, IntKeyComparer, DefaultRecordDisposer<int, int>>;
     using IntAllocator = BlittableAllocator<int, int, StoreFunctions<int, int, IntKeyComparer, DefaultRecordDisposer<int, int>>>;
+    using IntStoreFunctions = StoreFunctions<int, int, IntKeyComparer, DefaultRecordDisposer<int, int>>;
 
     [TestFixture]
     class InputOutputParameterTests
@@ -84,11 +84,14 @@ namespace Tsavorite.test.InputOutputParameterTests
             TestUtils.DeleteDirectory(TestUtils.MethodTestDir, wait: true);
 
             log = TestUtils.CreateTestDevice(TestUtils.DeviceType.LocalMemory, Path.Combine(TestUtils.MethodTestDir, "Device.log"));
-            store = new (new ()
-                {
-                    IndexSize = 1L << 13,
-                    LogDevice = log, MemorySize = 1L << 22, SegmentSize = 1L << 22, PageSize = 1L << 10
-                }, StoreFunctions<int, int>.Create(IntKeyComparer.Instance)
+            store = new(new()
+            {
+                IndexSize = 1L << 13,
+                LogDevice = log,
+                MemorySize = 1L << 22,
+                SegmentSize = 1L << 22,
+                PageSize = 1L << 10
+            }, StoreFunctions<int, int>.Create(IntKeyComparer.Instance)
                 , (allocatorSettings, storeFunctions) => new(allocatorSettings, storeFunctions)
             );
             session = store.NewSession<int, int, Empty, UpsertInputFunctions>(new UpsertInputFunctions());

@@ -51,22 +51,22 @@ namespace Tsavorite.core
 
         /// <inheritdoc/>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public readonly ref RecordInfo GetInfo(long physicalAddress) 
+        public readonly ref RecordInfo GetInfo(long physicalAddress)
             => ref BlittableAllocatorImpl<Key, Value, TStoreFunctions>.GetInfo(physicalAddress);
 
         /// <inheritdoc/>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public readonly unsafe ref RecordInfo GetInfoFromBytePointer(byte* ptr) 
+        public readonly unsafe ref RecordInfo GetInfoFromBytePointer(byte* ptr)
             => ref BlittableAllocatorImpl<Key, Value, TStoreFunctions>.GetInfoFromBytePointer(ptr);
 
         /// <inheritdoc/>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public readonly ref Key GetKey(long physicalAddress) 
+        public readonly ref Key GetKey(long physicalAddress)
             => ref BlittableAllocatorImpl<Key, Value, TStoreFunctions>.GetKey(physicalAddress);
 
         /// <inheritdoc/>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public readonly ref Value GetValue(long physicalAddress) 
+        public readonly ref Value GetValue(long physicalAddress)
             => ref BlittableAllocatorImpl<Key, Value, TStoreFunctions>.GetValue(physicalAddress);
 
         /// <inheritdoc/>
@@ -75,7 +75,7 @@ namespace Tsavorite.core
 
         /// <inheritdoc/>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public readonly (int actualSize, int allocatedSize) GetRecordSize(long physicalAddress) 
+        public readonly (int actualSize, int allocatedSize) GetRecordSize(long physicalAddress)
             => BlittableAllocatorImpl<Key, Value, TStoreFunctions>.GetRecordSize(physicalAddress);
 
         /// <inheritdoc/>
@@ -90,12 +90,12 @@ namespace Tsavorite.core
 
         /// <inheritdoc/>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public readonly int GetAverageRecordSize() 
+        public readonly int GetAverageRecordSize()
             => BlittableAllocatorImpl<Key, Value, TStoreFunctions>.GetAverageRecordSize();
 
         /// <inheritdoc/>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public readonly int GetFixedRecordSize() 
+        public readonly int GetFixedRecordSize()
             => BlittableAllocatorImpl<Key, Value, TStoreFunctions>.GetFixedRecordSize();
 
         /// <inheritdoc/>
@@ -106,17 +106,17 @@ namespace Tsavorite.core
 
         /// <inheritdoc/>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public readonly (int actualSize, int allocatedSize, int keySize) GetRecordSize(ref Key key, ref Value value) 
+        public readonly (int actualSize, int allocatedSize, int keySize) GetRecordSize(ref Key key, ref Value value)
             => BlittableAllocatorImpl<Key, Value, TStoreFunctions>.GetRecordSize(ref key, ref value);
 
         /// <inheritdoc/>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public readonly int GetValueLength(ref Value value) 
+        public readonly int GetValueLength(ref Value value)
             => BlittableAllocatorImpl<Key, Value, TStoreFunctions>.GetValueLength(ref value);
 
         /// <inheritdoc/>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public readonly unsafe bool RetrievedFullRecord(byte* record, ref AsyncIOContext<Key, Value> ctx) 
+        public readonly unsafe bool RetrievedFullRecord(byte* record, ref AsyncIOContext<Key, Value> ctx)
             => BlittableAllocatorImpl<Key, Value, TStoreFunctions>.RetrievedFullRecord(record, ref ctx);
 
         /// <inheritdoc/>
@@ -129,7 +129,7 @@ namespace Tsavorite.core
 
         /// <inheritdoc/>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public readonly unsafe void PopulatePage(byte* src, int required_bytes, long destinationPageIndex) 
+        public readonly unsafe void PopulatePage(byte* src, int required_bytes, long destinationPageIndex)
             => BlittableAllocatorImpl<Key, Value, TStoreFunctions>.PopulatePage(src, required_bytes, destinationPageIndex);
 
         /// <inheritdoc/>
@@ -164,7 +164,7 @@ namespace Tsavorite.core
 
         /// <inheritdoc/>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public readonly long[] GetSegmentOffsets() 
+        public readonly long[] GetSegmentOffsets()
             => BlittableAllocatorImpl<Key, Value, TStoreFunctions>.GetSegmentOffsets();
 
         /// <inheritdoc/>
@@ -172,7 +172,7 @@ namespace Tsavorite.core
 
         /// <inheritdoc/>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public readonly void SerializeKey(ref Key key, long physicalAddress) 
+        public readonly void SerializeKey(ref Key key, long physicalAddress)
             => BlittableAllocatorImpl<Key, Value, TStoreFunctions>.SerializeKey(ref key, physicalAddress);
     }
 }

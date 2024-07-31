@@ -43,8 +43,8 @@ namespace Tsavorite.test.StructWithString
 
 namespace Tsavorite.test.StructWithString
 {
-    using ClassStoreFunctions = StoreFunctions<StructWithString, StructWithString, StructWithString.Comparer, DefaultRecordDisposer<StructWithString, StructWithString>>;
     using ClassAllocator = GenericAllocator<StructWithString, StructWithString, StoreFunctions<StructWithString, StructWithString, StructWithString.Comparer, DefaultRecordDisposer<StructWithString, StructWithString>>>;
+    using ClassStoreFunctions = StoreFunctions<StructWithString, StructWithString, StructWithString.Comparer, DefaultRecordDisposer<StructWithString, StructWithString>>;
 
     [TestFixture]
     public class StructWithStringTests
@@ -74,13 +74,16 @@ namespace Tsavorite.test.StructWithString
             log = Devices.CreateLogDevice(Path.Combine(MethodTestDir, "test.log"), deleteOnClose: false);
             objlog = Devices.CreateLogDevice(Path.Combine(MethodTestDir, "test.obj.log"), deleteOnClose: false);
 
-            store = new (new ()
-                {
-                    IndexSize = 1L << 26,
-                    LogDevice = log, ObjectLogDevice = objlog, 
-                    PageSize = 1L << 10, MemorySize = 1L << 22, SegmentSize = 1L << 16,
-                    CheckpointDir = MethodTestDir
-                }, StoreFunctions<StructWithString, StructWithString>.Create(new StructWithString.Comparer(), () => new StructWithString.Serializer(), () => new StructWithString.Serializer())
+            store = new(new()
+            {
+                IndexSize = 1L << 26,
+                LogDevice = log,
+                ObjectLogDevice = objlog,
+                PageSize = 1L << 10,
+                MemorySize = 1L << 22,
+                SegmentSize = 1L << 16,
+                CheckpointDir = MethodTestDir
+            }, StoreFunctions<StructWithString, StructWithString>.Create(new StructWithString.Comparer(), () => new StructWithString.Serializer(), () => new StructWithString.Serializer())
                 , (allocatorSettings, storeFunctions) => new(allocatorSettings, storeFunctions)
             );
 

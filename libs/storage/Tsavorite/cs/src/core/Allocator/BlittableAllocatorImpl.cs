@@ -83,11 +83,11 @@ namespace Tsavorite.core
         public static (int actualSize, int allocatedSize) GetRecordSize(long physicalAddress) => (RecordSize, RecordSize);
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        internal static (int actualSize, int allocatedSize, int keySize) GetRMWCopyDestinationRecordSize<Input, TVariableLengthInput>(ref Key key, ref Input input, ref Value value, ref RecordInfo recordInfo, TVariableLengthInput varlenInput) 
+        internal static (int actualSize, int allocatedSize, int keySize) GetRMWCopyDestinationRecordSize<Input, TVariableLengthInput>(ref Key key, ref Input input, ref Value value, ref RecordInfo recordInfo, TVariableLengthInput varlenInput)
             => (RecordSize, RecordSize, KeySize);
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public static (int actualSize, int allocatedSize, int keySize) GetRMWInitialRecordSize<Input, TSessionFunctionsWrapper>(ref Key key, ref Input input, TSessionFunctionsWrapper sessionFunctions) 
+        public static (int actualSize, int allocatedSize, int keySize) GetRMWInitialRecordSize<Input, TSessionFunctionsWrapper>(ref Key key, ref Input input, TSessionFunctionsWrapper sessionFunctions)
             => (RecordSize, RecordSize, KeySize);
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
@@ -221,7 +221,7 @@ namespace Tsavorite.core
         }
 
         protected override void ReadAsync<TContext>(ulong alignedSourceAddress, int destinationPageIndex, uint aligned_read_length,
-                DeviceIOCompletionCallback callback, PageAsyncReadResult<TContext> asyncResult, IDevice device, IDevice objlogDevice) 
+                DeviceIOCompletionCallback callback, PageAsyncReadResult<TContext> asyncResult, IDevice device, IDevice objlogDevice)
             => device.ReadAsync(alignedSourceAddress, (IntPtr)pointers[destinationPageIndex], aligned_read_length, callback, asyncResult);
 
         /// <summary>
@@ -233,7 +233,7 @@ namespace Tsavorite.core
         /// <param name="callback"></param>
         /// <param name="context"></param>
         /// <param name="result"></param>
-        protected override void AsyncReadRecordObjectsToMemory(long fromLogical, int numBytes, DeviceIOCompletionCallback callback, AsyncIOContext<Key, Value> context, SectorAlignedMemory result = default) 
+        protected override void AsyncReadRecordObjectsToMemory(long fromLogical, int numBytes, DeviceIOCompletionCallback callback, AsyncIOContext<Key, Value> context, SectorAlignedMemory result = default)
             => throw new InvalidOperationException("AsyncReadRecordObjectsToMemory invalid for BlittableAllocator");
 
         internal static bool RetrievedFullRecord(byte* record, ref AsyncIOContext<Key, Value> ctx)
@@ -245,7 +245,7 @@ namespace Tsavorite.core
 
         internal static long[] GetSegmentOffsets() => null;
 
-        internal static void PopulatePage(byte* src, int required_bytes, long destinationPage) 
+        internal static void PopulatePage(byte* src, int required_bytes, long destinationPage)
             => throw new TsavoriteException("BlittableAllocator memory pages are sector aligned - use direct copy");
 
         /// <summary>

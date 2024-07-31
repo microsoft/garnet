@@ -5,7 +5,7 @@ using System.Runtime.CompilerServices;
 
 namespace Tsavorite.core
 {
-    internal readonly struct SessionFunctionsWrapper<Key, Value, Input, Output, Context, Functions, TSessionLocker, TStoreFunctions, TAllocator> 
+    internal readonly struct SessionFunctionsWrapper<Key, Value, Input, Output, Context, Functions, TSessionLocker, TStoreFunctions, TAllocator>
             : ISessionFunctionsWrapper<Key, Value, Input, Output, Context, TStoreFunctions, TAllocator>
         where Functions : ISessionFunctions<Key, Value, Input, Output, Context>
         where TSessionLocker : struct, ISessionLocker<Key, Value, TStoreFunctions, TAllocator>

@@ -48,9 +48,8 @@ namespace Tsavorite.test.ReadCacheTests
 
 namespace Tsavorite.test.ReadCacheTests
 {
-    using LongStoreFunctions = StoreFunctions<long, long, LongComparerModulo, DefaultRecordDisposer<long, long>>;
     using LongAllocator = BlittableAllocator<long, long, StoreFunctions<long, long, LongComparerModulo, DefaultRecordDisposer<long, long>>>;
-
+    using LongStoreFunctions = StoreFunctions<long, long, LongComparerModulo, DefaultRecordDisposer<long, long>>;
     using SpanByteStoreFunctions = StoreFunctions<SpanByte, SpanByte, SpanByteComparerModulo, SpanByteRecordDisposer>;
 
     internal static class RcTestGlobals
@@ -90,15 +89,17 @@ namespace Tsavorite.test.ReadCacheTests
             log = Devices.CreateLogDevice(Path.Join(MethodTestDir, "NativeReadCacheTests.log"), deleteOnClose: true);
 
             comparer = new LongComparerModulo(HashMod);
-            store = new (new ()
-                {
-                    IndexSize = 1L << 26,
-                    LogDevice = log,
-                    MemorySize = 1L << 15,
-                    PageSize = 1L << 10,
-                    ReadCacheMemorySize = 1L << 15, ReadCachePageSize = 1L << 9, ReadCacheEnabled = true
+            store = new(new()
+            {
+                IndexSize = 1L << 26,
+                LogDevice = log,
+                MemorySize = 1L << 15,
+                PageSize = 1L << 10,
+                ReadCacheMemorySize = 1L << 15,
+                ReadCachePageSize = 1L << 9,
+                ReadCacheEnabled = true
             }, StoreFunctions<long, long>.Create(comparer)
-                , (allocatorSettings, storeFunctions) => new (allocatorSettings, storeFunctions)
+                , (allocatorSettings, storeFunctions) => new(allocatorSettings, storeFunctions)
             );
         }
 
@@ -707,14 +708,17 @@ namespace Tsavorite.test.ReadCacheTests
             comparer = new LongComparerModulo((long)modRange);
 
             // Make the main log small enough that we force the readcache
-            store = new (new ()
-                {
-                    IndexSize = 1L << 26,
-                    LogDevice = log,
-                    MemorySize = 1L << 15, PageSize = 1L << 10,
-                    ReadCacheMemorySize = 1L << 15, ReadCachePageSize = 1L << 9, ReadCacheEnabled = true
-                }, StoreFunctions<long, long>.Create(comparer)
-                , (allocatorSettings, storeFunctions) => new (allocatorSettings, storeFunctions)
+            store = new(new()
+            {
+                IndexSize = 1L << 26,
+                LogDevice = log,
+                MemorySize = 1L << 15,
+                PageSize = 1L << 10,
+                ReadCacheMemorySize = 1L << 15,
+                ReadCachePageSize = 1L << 9,
+                ReadCacheEnabled = true
+            }, StoreFunctions<long, long>.Create(comparer)
+                , (allocatorSettings, storeFunctions) => new(allocatorSettings, storeFunctions)
             );
         }
 
@@ -949,14 +953,17 @@ namespace Tsavorite.test.ReadCacheTests
             comparer = new SpanByteComparerModulo(modRange);
 
             // Make the main log small enough that we force the readcache
-            store = new(new ()
+            store = new(new()
             {
                 IndexSize = 1L << 20,
                 LogDevice = log,
-                MemorySize = 1L << 15, PageSize = 1L << 10,
-                ReadCacheMemorySize = 1L << 15, ReadCachePageSize = 1L << 9, ReadCacheEnabled = true
+                MemorySize = 1L << 15,
+                PageSize = 1L << 10,
+                ReadCacheMemorySize = 1L << 15,
+                ReadCachePageSize = 1L << 9,
+                ReadCacheEnabled = true
             }, StoreFunctions<SpanByte, SpanByte>.Create(comparer, SpanByteRecordDisposer.Instance)
-            , (allocatorSettings, storeFunctions) => new (allocatorSettings, storeFunctions)
+            , (allocatorSettings, storeFunctions) => new(allocatorSettings, storeFunctions)
             );
         }
 

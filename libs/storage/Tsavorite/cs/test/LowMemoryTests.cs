@@ -7,8 +7,8 @@ using Tsavorite.core;
 
 namespace Tsavorite.test.LowMemory
 {
-    using LongStoreFunctions = StoreFunctions<long, long, LongKeyComparer, DefaultRecordDisposer<long, long>>;
     using LongAllocator = BlittableAllocator<long, long, StoreFunctions<long, long, LongKeyComparer, DefaultRecordDisposer<long, long>>>;
+    using LongStoreFunctions = StoreFunctions<long, long, LongKeyComparer, DefaultRecordDisposer<long, long>>;
 
     [TestFixture]
     public class LowMemoryTests
@@ -23,13 +23,16 @@ namespace Tsavorite.test.LowMemory
             TestUtils.DeleteDirectory(TestUtils.MethodTestDir, wait: true);
             log = new LocalMemoryDevice(1L << 28, 1L << 25, 1, latencyMs: 20, fileName: Path.Join(TestUtils.MethodTestDir, "test.log"));
             _ = Directory.CreateDirectory(TestUtils.MethodTestDir);
-            store1 = new (new()
-                {
-                    IndexSize = 1L << 16,
-                    LogDevice = log, 
-                    MutableFraction = 1, PageSize = 1L << 10, MemorySize = 1L << 12, SegmentSize = 1L << 26,
-                    CheckpointDir = TestUtils.MethodTestDir
-                }, StoreFunctions<long, long>.Create(LongKeyComparer.Instance)
+            store1 = new(new()
+            {
+                IndexSize = 1L << 16,
+                LogDevice = log,
+                MutableFraction = 1,
+                PageSize = 1L << 10,
+                MemorySize = 1L << 12,
+                SegmentSize = 1L << 26,
+                CheckpointDir = TestUtils.MethodTestDir
+            }, StoreFunctions<long, long>.Create(LongKeyComparer.Instance)
                 , (allocatorSettings, storeFunctions) => new(allocatorSettings, storeFunctions)
             );
         }

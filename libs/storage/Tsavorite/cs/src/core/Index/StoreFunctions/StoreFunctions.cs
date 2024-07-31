@@ -36,7 +36,7 @@ namespace Tsavorite.core
         readonly TRecordDisposer recordDisposer = recordDisposer;
 
         /// <summary>Optional checkpoint completion callback, set separately from ctor.</summary>
-        Action checkpointCompletionCallback = () => {};
+        Action checkpointCompletionCallback = () => { };
         #endregion Fields
 
         #region Key Comparer

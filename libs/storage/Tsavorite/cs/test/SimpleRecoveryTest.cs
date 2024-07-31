@@ -13,8 +13,8 @@ using static Tsavorite.test.TestUtils;
 
 namespace Tsavorite.test.recovery.sumstore
 {
-    using StructStoreFunctions = StoreFunctions<AdId, NumClicks, AdId.Comparer, DefaultRecordDisposer<AdId, NumClicks>>;
     using StructAllocator = BlittableAllocator<AdId, NumClicks, StoreFunctions<AdId, NumClicks, AdId.Comparer, DefaultRecordDisposer<AdId, NumClicks>>>;
+    using StructStoreFunctions = StoreFunctions<AdId, NumClicks, AdId.Comparer, DefaultRecordDisposer<AdId, NumClicks>>;
 
     [TestFixture]
     class RecoveryTests
@@ -102,22 +102,26 @@ namespace Tsavorite.test.recovery.sumstore
 
             log = Devices.CreateLogDevice(Path.Join(MethodTestDir, "SimpleRecoveryTest1.log"), deleteOnClose: true);
 
-            store1 = new (new ()
-                {
-                    IndexSize = 1L << 13,
-                    LogDevice = log,
-                    MutableFraction = 0.1, MemorySize = 1L << 29,
-                    CheckpointDir = checkpointDir, CheckpointManager = checkpointManager
-                }, StoreFunctions<AdId, NumClicks>.Create(new AdId.Comparer())
-                , (allocatorSettings, storeFunctions) => new(allocatorSettings, storeFunctions)
-            );
-
-            store2 = new(new ()
+            store1 = new(new()
             {
                 IndexSize = 1L << 13,
                 LogDevice = log,
-                MutableFraction = 0.1, MemorySize = 1L << 29,
-                CheckpointDir = checkpointDir, CheckpointManager = checkpointManager
+                MutableFraction = 0.1,
+                MemorySize = 1L << 29,
+                CheckpointDir = checkpointDir,
+                CheckpointManager = checkpointManager
+            }, StoreFunctions<AdId, NumClicks>.Create(new AdId.Comparer())
+                , (allocatorSettings, storeFunctions) => new(allocatorSettings, storeFunctions)
+            );
+
+            store2 = new(new()
+            {
+                IndexSize = 1L << 13,
+                LogDevice = log,
+                MutableFraction = 0.1,
+                MemorySize = 1L << 29,
+                CheckpointDir = checkpointDir,
+                CheckpointManager = checkpointManager
             }, StoreFunctions<AdId, NumClicks>.Create(new AdId.Comparer())
                 , (allocatorSettings, storeFunctions) => new(allocatorSettings, storeFunctions)
             );
@@ -184,23 +188,25 @@ namespace Tsavorite.test.recovery.sumstore
             checkpointManager = new DeviceLogCommitCheckpointManager(new LocalStorageNamedDeviceFactory(), new DefaultCheckpointNamingScheme(Path.Join(MethodTestDir, "checkpoints4")), false);
             log = Devices.CreateLogDevice(Path.Join(MethodTestDir, "SimpleRecoveryTest2.log"), deleteOnClose: true);
 
-            store1 = new (new ()
-                {
-                    IndexSize = 1L << 13,
-                    LogDevice = log,
-                    MutableFraction = 0.1, MemorySize = 1L << 29,
-                    CheckpointManager = checkpointManager
-                }, StoreFunctions<AdId, NumClicks>.Create(new AdId.Comparer())
+            store1 = new(new()
+            {
+                IndexSize = 1L << 13,
+                LogDevice = log,
+                MutableFraction = 0.1,
+                MemorySize = 1L << 29,
+                CheckpointManager = checkpointManager
+            }, StoreFunctions<AdId, NumClicks>.Create(new AdId.Comparer())
                 , (allocatorSettings, storeFunctions) => new(allocatorSettings, storeFunctions)
             );
 
-            store2 = new (new ()
-                {
-                    IndexSize = 1L << 13,
-                    LogDevice = log,
-                    MutableFraction = 0.1, MemorySize = 1L << 29,
-                    CheckpointManager = checkpointManager
-                }, StoreFunctions<AdId, NumClicks>.Create(new AdId.Comparer())
+            store2 = new(new()
+            {
+                IndexSize = 1L << 13,
+                LogDevice = log,
+                MutableFraction = 0.1,
+                MemorySize = 1L << 29,
+                CheckpointManager = checkpointManager
+            }, StoreFunctions<AdId, NumClicks>.Create(new AdId.Comparer())
                 , (allocatorSettings, storeFunctions) => new(allocatorSettings, storeFunctions)
             );
 
@@ -247,23 +253,25 @@ namespace Tsavorite.test.recovery.sumstore
             log = Devices.CreateLogDevice(Path.Join(MethodTestDir, "SimpleRecoveryTest2.log"), deleteOnClose: true);
             checkpointDir = Path.Join(MethodTestDir, "checkpoints6");
 
-            store1 = new (new ()
-                {
-                    IndexSize = 1L << 13,
-                    LogDevice = log,
-                    MutableFraction = 0.1, MemorySize = 1L << 29,
-                    CheckpointDir = checkpointDir
-                }, StoreFunctions<AdId, NumClicks>.Create(new AdId.Comparer())
+            store1 = new(new()
+            {
+                IndexSize = 1L << 13,
+                LogDevice = log,
+                MutableFraction = 0.1,
+                MemorySize = 1L << 29,
+                CheckpointDir = checkpointDir
+            }, StoreFunctions<AdId, NumClicks>.Create(new AdId.Comparer())
                 , (allocatorSettings, storeFunctions) => new(allocatorSettings, storeFunctions)
             );
 
-            store2 = new (new ()
-                {
-                    IndexSize = 1L << 13,
-                    LogDevice = log,
-                    MutableFraction = 0.1, MemorySize = 1L << 29,
-                    CheckpointDir = checkpointDir
-                }, StoreFunctions<AdId, NumClicks>.Create(new AdId.Comparer())
+            store2 = new(new()
+            {
+                IndexSize = 1L << 13,
+                LogDevice = log,
+                MutableFraction = 0.1,
+                MemorySize = 1L << 29,
+                CheckpointDir = checkpointDir
+            }, StoreFunctions<AdId, NumClicks>.Create(new AdId.Comparer())
                 , (allocatorSettings, storeFunctions) => new(allocatorSettings, storeFunctions)
             );
 
@@ -306,23 +314,25 @@ namespace Tsavorite.test.recovery.sumstore
             checkpointManager = new DeviceLogCommitCheckpointManager(new LocalStorageNamedDeviceFactory(), new DefaultCheckpointNamingScheme(Path.Join(MethodTestDir, "checkpoints")), false);
             log = Devices.CreateLogDevice(Path.Join(MethodTestDir, "SimpleReadAndUpdateInfoTest.log"), deleteOnClose: true);
 
-            store1 = new (new ()
-                {
-                    IndexSize = 1L << 13,
-                    LogDevice = log,
-                    MutableFraction = 0.1, MemorySize = 1L << 29,
-                    CheckpointManager = checkpointManager
-                }, StoreFunctions<AdId, NumClicks>.Create(new AdId.Comparer())
+            store1 = new(new()
+            {
+                IndexSize = 1L << 13,
+                LogDevice = log,
+                MutableFraction = 0.1,
+                MemorySize = 1L << 29,
+                CheckpointManager = checkpointManager
+            }, StoreFunctions<AdId, NumClicks>.Create(new AdId.Comparer())
                 , (allocatorSettings, storeFunctions) => new(allocatorSettings, storeFunctions)
             );
 
-            store2 = new (new ()
-                {
-                    IndexSize = 1L << 13,
-                    LogDevice = log,
-                    MutableFraction = 0.1, MemorySize = 1L << 29,
-                    CheckpointManager = checkpointManager
-                }, StoreFunctions<AdId, NumClicks>.Create(new AdId.Comparer())
+            store2 = new(new()
+            {
+                IndexSize = 1L << 13,
+                LogDevice = log,
+                MutableFraction = 0.1,
+                MemorySize = 1L << 29,
+                CheckpointManager = checkpointManager
+            }, StoreFunctions<AdId, NumClicks>.Create(new AdId.Comparer())
                 , (allocatorSettings, storeFunctions) => new(allocatorSettings, storeFunctions)
             );
 

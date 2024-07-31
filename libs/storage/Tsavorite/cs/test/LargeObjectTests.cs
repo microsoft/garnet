@@ -10,8 +10,8 @@ using static Tsavorite.test.TestUtils;
 
 namespace Tsavorite.test.largeobjects
 {
-    using ClassStoreFunctions = StoreFunctions<MyKey, MyLargeValue, MyKey.Comparer, DefaultRecordDisposer<MyKey, MyLargeValue>>;
     using ClassAllocator = GenericAllocator<MyKey, MyLargeValue, StoreFunctions<MyKey, MyLargeValue, MyKey.Comparer, DefaultRecordDisposer<MyKey, MyLargeValue>>>;
+    using ClassStoreFunctions = StoreFunctions<MyKey, MyLargeValue, MyKey.Comparer, DefaultRecordDisposer<MyKey, MyLargeValue>>;
 
     [TestFixture]
     internal class LargeObjectTests
@@ -37,10 +37,14 @@ namespace Tsavorite.test.largeobjects
             using (var log = Devices.CreateLogDevice(Path.Join(MethodTestDir, "LargeObjectTest.log")))
             using (var objlog = Devices.CreateLogDevice(Path.Join(MethodTestDir, "LargeObjectTest.obj.log")))
             using (var store = new TsavoriteKV<MyKey, MyLargeValue, ClassStoreFunctions, ClassAllocator>(
-                new () {
+                new()
+                {
                     IndexSize = 1L << 13,
-                    LogDevice = log, ObjectLogDevice = objlog, 
-                    MutableFraction = 0.1, PageSize = 1L << 21, MemorySize = 1L << 26,
+                    LogDevice = log,
+                    ObjectLogDevice = objlog,
+                    MutableFraction = 0.1,
+                    PageSize = 1L << 21,
+                    MemorySize = 1L << 26,
                     CheckpointDir = MethodTestDir
                 }, StoreFunctions<MyKey, MyLargeValue>.Create(new MyKey.Comparer(), () => new MyKeySerializer(), () => new MyLargeValueSerializer())
                 , (allocatorSettings, storeFunctions) => new(allocatorSettings, storeFunctions)))
@@ -64,10 +68,14 @@ namespace Tsavorite.test.largeobjects
             using (var log = Devices.CreateLogDevice(Path.Join(MethodTestDir, "LargeObjectTest.log")))
             using (var objlog = Devices.CreateLogDevice(Path.Join(MethodTestDir, "LargeObjectTest.obj.log")))
             using (var store = new TsavoriteKV<MyKey, MyLargeValue, ClassStoreFunctions, ClassAllocator>(
-                    new () {
+                    new()
+                    {
                         IndexSize = 1L << 13,
-                        LogDevice = log, ObjectLogDevice = objlog,
-                        MutableFraction = 0.1, PageSize = 1L << 21, MemorySize = 1L << 26,
+                        LogDevice = log,
+                        ObjectLogDevice = objlog,
+                        MutableFraction = 0.1,
+                        PageSize = 1L << 21,
+                        MemorySize = 1L << 26,
                         CheckpointDir = MethodTestDir
                     }, StoreFunctions<MyKey, MyLargeValue>.Create(new MyKey.Comparer(), () => new MyKeySerializer(), () => new MyLargeValueSerializer())
                 , (allocatorSettings, storeFunctions) => new(allocatorSettings, storeFunctions)))

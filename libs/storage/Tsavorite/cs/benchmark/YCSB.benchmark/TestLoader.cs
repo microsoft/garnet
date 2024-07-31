@@ -172,7 +172,7 @@ namespace Tsavorite.benchmark
 
                 long txn_count = 0;
                 long offset = 0;
-                RandomGenerator rng = new ((uint)Options.RandomSeed);
+                RandomGenerator rng = new((uint)Options.RandomSeed);
 
                 byte[] chunk = new byte[YcsbConstants.kFileChunkSize];
                 fixed (byte* chunk_ptr = chunk)

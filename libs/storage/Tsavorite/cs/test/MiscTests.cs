@@ -9,11 +9,10 @@ using static Tsavorite.test.TestUtils;
 
 namespace Tsavorite.test
 {
-    using ClassStoreFunctions = StoreFunctions<int, MyValue, IntKeyComparer, DefaultRecordDisposer<int, MyValue>>;
     using ClassAllocator = GenericAllocator<int, MyValue, StoreFunctions<int, MyValue, IntKeyComparer, DefaultRecordDisposer<int, MyValue>>>;
-
-    using StructStoreFunctions = StoreFunctions<KeyStruct, ValueStruct, KeyStruct.Comparer, DefaultRecordDisposer<KeyStruct, ValueStruct>>;
+    using ClassStoreFunctions = StoreFunctions<int, MyValue, IntKeyComparer, DefaultRecordDisposer<int, MyValue>>;
     using StructAllocator = BlittableAllocator<KeyStruct, ValueStruct, StoreFunctions<KeyStruct, ValueStruct, KeyStruct.Comparer, DefaultRecordDisposer<KeyStruct, ValueStruct>>>;
+    using StructStoreFunctions = StoreFunctions<KeyStruct, ValueStruct, KeyStruct.Comparer, DefaultRecordDisposer<KeyStruct, ValueStruct>>;
 
     [TestFixture]
     internal class MiscTests
@@ -28,15 +27,16 @@ namespace Tsavorite.test
             log = Devices.CreateLogDevice(Path.Join(MethodTestDir, "MiscTests.log"), deleteOnClose: true);
             objlog = Devices.CreateLogDevice(Path.Join(MethodTestDir, "MiscTests.obj.log"), deleteOnClose: true);
 
-            store = new (new ()
-                {
-                    IndexSize = 1L << 13,
-                    LogDevice = log,
-                    ObjectLogDevice = objlog,
-                    MutableFraction = 0.1,
-                    MemorySize = 1L << 15, PageSize = 1L << 10
-                }, StoreFunctions<int, MyValue>.Create(IntKeyComparer.Instance, null, () => new MyValueSerializer())
-                , (allocatorSettings, storeFunctions) => new (allocatorSettings, storeFunctions)
+            store = new(new()
+            {
+                IndexSize = 1L << 13,
+                LogDevice = log,
+                ObjectLogDevice = objlog,
+                MutableFraction = 0.1,
+                MemorySize = 1L << 15,
+                PageSize = 1L << 10
+            }, StoreFunctions<int, MyValue>.Create(IntKeyComparer.Instance, null, () => new MyValueSerializer())
+                , (allocatorSettings, storeFunctions) => new(allocatorSettings, storeFunctions)
             );
         }
 
@@ -130,14 +130,14 @@ namespace Tsavorite.test
             {
                 var checkpointDir = Path.Join(MethodTestDir, "checkpoints");
                 log = Devices.CreateLogDevice(Path.Join(MethodTestDir, "hlog1.log"), deleteOnClose: true);
-                store = new (new ()
-                    {
-                        IndexSize = 1L << 13,
-                        LogDevice = log,
-                        MemorySize = 1L << 29,
-                        CheckpointDir = checkpointDir
-                    }, StoreFunctions<KeyStruct, ValueStruct>.Create(KeyStruct.Comparer.Instance)
-                    , (allocatorSettings, storeFunctions) => new (allocatorSettings, storeFunctions)
+                store = new(new()
+                {
+                    IndexSize = 1L << 13,
+                    LogDevice = log,
+                    MemorySize = 1L << 29,
+                    CheckpointDir = checkpointDir
+                }, StoreFunctions<KeyStruct, ValueStruct>.Create(KeyStruct.Comparer.Instance)
+                    , (allocatorSettings, storeFunctions) => new(allocatorSettings, storeFunctions)
                 );
 
                 session = store.NewSession<InputStruct, OutputStruct, Empty, FunctionsCopyOnWrite>(copyOnWrite);
@@ -185,14 +185,14 @@ namespace Tsavorite.test
                 session.Dispose();
                 store.Dispose();
 
-                store = new(new ()
+                store = new(new()
                 {
                     IndexSize = 1L << 13,
                     LogDevice = log,
                     MemorySize = 1L << 29,
                     CheckpointDir = checkpointDir
                 }, StoreFunctions<KeyStruct, ValueStruct>.Create(KeyStruct.Comparer.Instance)
-                    , (allocatorSettings, storeFunctions) => new (allocatorSettings, storeFunctions)
+                    , (allocatorSettings, storeFunctions) => new(allocatorSettings, storeFunctions)
                 );
 
                 _ = store.Recover(token);

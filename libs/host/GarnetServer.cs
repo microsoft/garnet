@@ -16,8 +16,8 @@ namespace Garnet
 {
     using MainStoreFunctions = StoreFunctions<SpanByte, SpanByte, SpanByteComparer, SpanByteRecordDisposer>;
 
-    using ObjectStoreFunctions = StoreFunctions<byte[], IGarnetObject, ByteArrayKeyComparer, DefaultRecordDisposer<byte[], IGarnetObject>>;
     using ObjectStoreAllocator = GenericAllocator<byte[], IGarnetObject, StoreFunctions<byte[], IGarnetObject, ByteArrayKeyComparer, DefaultRecordDisposer<byte[], IGarnetObject>>>;
+    using ObjectStoreFunctions = StoreFunctions<byte[], IGarnetObject, ByteArrayKeyComparer, DefaultRecordDisposer<byte[], IGarnetObject>>;
 
     /// <summary>
     /// Implementation Garnet server
@@ -195,7 +195,7 @@ namespace Garnet
             // Create Garnet TCP server if none was provided.
             this.server ??= new GarnetServerTcp(opts.Address, opts.Port, 0, opts.TlsOptions, opts.NetworkSendThrottleMax, logger);
 
-            storeWrapper = new StoreWrapper(version, redisProtocolVersion, server, store, objectStore, objectStoreSizeTracker, 
+            storeWrapper = new StoreWrapper(version, redisProtocolVersion, server, store, objectStore, objectStoreSizeTracker,
                     customCommandManager, appendOnlyFile, opts, clusterFactory: clusterFactory, loggerFactory: loggerFactory);
 
             // Create session provider for Garnet
@@ -222,7 +222,7 @@ namespace Garnet
             var checkpointFactory = opts.DeviceFactoryCreator();
             if (opts.EnableCluster)
             {
-                kvSettings.CheckpointManager = clusterFactory.CreateCheckpointManager(checkpointFactory, 
+                kvSettings.CheckpointManager = clusterFactory.CreateCheckpointManager(checkpointFactory,
                     new DefaultCheckpointNamingScheme(checkpointDir + "/Store/checkpoints"), isMainStore: true, logger);
             }
             else
@@ -249,7 +249,7 @@ namespace Garnet
                 objKvSettings.CheckpointVersionSwitchBarrier = opts.EnableCluster;
 
                 if (opts.EnableCluster)
-                    objKvSettings.CheckpointManager = clusterFactory.CreateCheckpointManager(opts.DeviceFactoryCreator(), 
+                    objKvSettings.CheckpointManager = clusterFactory.CreateCheckpointManager(opts.DeviceFactoryCreator(),
                         new DefaultCheckpointNamingScheme(CheckpointDir + "/ObjectStore/checkpoints"), isMainStore: false, logger);
                 else
                     objKvSettings.CheckpointManager = new DeviceLogCommitCheckpointManager(opts.DeviceFactoryCreator(),

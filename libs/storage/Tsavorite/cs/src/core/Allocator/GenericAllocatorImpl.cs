@@ -139,14 +139,14 @@ namespace Tsavorite.core
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         internal void SerializeKey(ref Key src, long physicalAddress) => GetKey(physicalAddress) = src;
 
-        internal (int actualSize, int allocatedSize, int keySize) GetRMWCopyDestinationRecordSize<Input, TVariableLengthInput>(ref Key key, ref Input input, ref Value value, ref RecordInfo recordInfo, TVariableLengthInput varlenInput) 
+        internal (int actualSize, int allocatedSize, int keySize) GetRMWCopyDestinationRecordSize<Input, TVariableLengthInput>(ref Key key, ref Input input, ref Value value, ref RecordInfo recordInfo, TVariableLengthInput varlenInput)
             => (RecordSize, RecordSize, KeySize);
 
         internal int GetAverageRecordSize() => RecordSize;
 
         internal int GetFixedRecordSize() => RecordSize;
 
-        internal (int actualSize, int allocatedSize, int keySize) GetRMWInitialRecordSize<Input, TSessionFunctionsWrapper>(ref Key key, ref Input input, TSessionFunctionsWrapper sessionFunctions) 
+        internal (int actualSize, int allocatedSize, int keySize) GetRMWInitialRecordSize<Input, TSessionFunctionsWrapper>(ref Key key, ref Input input, TSessionFunctionsWrapper sessionFunctions)
             => (RecordSize, RecordSize, KeySize);
 
         internal (int actualSize, int allocatedSize, int keySize) GetRecordSize(ref Key key, ref Value value) => (RecordSize, RecordSize, KeySize);
@@ -648,7 +648,7 @@ namespace Tsavorite.core
             Debug.Assert(alignedLength % sectorSize == 0);
 
             if (alignedLength > int.MaxValue)
-               throw new TsavoriteException("Unable to read object page, total size greater than 2GB: " + alignedLength);
+                throw new TsavoriteException("Unable to read object page, total size greater than 2GB: " + alignedLength);
 
             var objBuffer = bufferPool.Get((int)alignedLength);
             result.freeBuffer2 = objBuffer;

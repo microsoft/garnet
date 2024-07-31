@@ -8,8 +8,8 @@ using static Tsavorite.test.TestUtils;
 
 namespace Tsavorite.test.SingleWriter
 {
-    using IntStoreFunctions = StoreFunctions<int, int, IntKeyComparer, DefaultRecordDisposer<int, int>>;
     using IntAllocator = BlittableAllocator<int, int, StoreFunctions<int, int, IntKeyComparer, DefaultRecordDisposer<int, int>>>;
+    using IntStoreFunctions = StoreFunctions<int, int, IntKeyComparer, DefaultRecordDisposer<int, int>>;
 
     internal class SingleWriterTestFunctions : SimpleSimpleFunctions<int, int>
     {
@@ -48,15 +48,16 @@ namespace Tsavorite.test.SingleWriter
             DeleteDirectory(MethodTestDir, wait: true);
             log = Devices.CreateLogDevice(Path.Combine(MethodTestDir, "test.log"), deleteOnClose: false);
 
-            functions = new ();
+            functions = new();
             KVSettings<int, int> kvSettings = new()
-                {
-                    IndexSize = 1L << 26,
-                    LogDevice = log,
-                    PageSize = 1L << 12, MemorySize = 1L << 22,
-                    ReadCopyOptions = new(ReadCopyFrom.Device, ReadCopyTo.MainLog),
-                    CheckpointDir = MethodTestDir
-                };
+            {
+                IndexSize = 1L << 26,
+                LogDevice = log,
+                PageSize = 1L << 12,
+                MemorySize = 1L << 22,
+                ReadCopyOptions = new(ReadCopyFrom.Device, ReadCopyTo.MainLog),
+                CheckpointDir = MethodTestDir
+            };
             foreach (var arg in TestContext.CurrentContext.Test.Arguments)
             {
                 if (arg is ReadCopyDestination dest)
@@ -72,7 +73,7 @@ namespace Tsavorite.test.SingleWriter
                 }
             }
 
-            store = new (kvSettings
+            store = new(kvSettings
                 , StoreFunctions<int, int>.Create(IntKeyComparer.Instance)
                 , (allocatorSettings, storeFunctions) => new(allocatorSettings, storeFunctions)
             );

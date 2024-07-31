@@ -13,8 +13,8 @@ using Tsavorite.test.recovery;
 
 namespace Tsavorite.test
 {
-    using LongStoreFunctions = StoreFunctions<long, long, LongKeyComparer, DefaultRecordDisposer<long, long>>;
     using LongAllocator = BlittableAllocator<long, long, StoreFunctions<long, long, LongKeyComparer, DefaultRecordDisposer<long, long>>>;
+    using LongStoreFunctions = StoreFunctions<long, long, LongKeyComparer, DefaultRecordDisposer<long, long>>;
 
     public class CheckpointManagerTests
     {
@@ -45,10 +45,13 @@ namespace Tsavorite.test
                 TestUtils.RecreateDirectory(TestUtils.MethodTestDir);
 
                 using var store = new TsavoriteKV<long, long, LongStoreFunctions, LongAllocator>(
-                    new () {
+                    new()
+                    {
                         IndexSize = 1L << 16,
                         LogDevice = log,
-                        MutableFraction = 1, PageSize = 1L << 10, MemorySize = 1L << 20,
+                        MutableFraction = 1,
+                        PageSize = 1L << 10,
+                        MemorySize = 1L << 20,
                         CheckpointManager = checkpointManager
                     }, StoreFunctions<long, long>.Create(LongKeyComparer.Instance)
                     , (allocatorSettings, storeFunctions) => new(allocatorSettings, storeFunctions)

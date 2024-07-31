@@ -2,7 +2,6 @@
 // Licensed under the MIT license.
 
 using BenchmarkDotNet.Running;
-using System.IO;
 
 namespace BenchmarkDotNetTests
 {

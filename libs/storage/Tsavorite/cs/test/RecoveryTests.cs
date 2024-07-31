@@ -11,16 +11,15 @@ using static Tsavorite.test.TestUtils;
 
 namespace Tsavorite.test.recovery.sumstore
 {
-    using StructStoreFunctions = StoreFunctions<AdId, NumClicks, AdId.Comparer, DefaultRecordDisposer<AdId, NumClicks>>;
-    using StructAllocator = BlittableAllocator<AdId, NumClicks, StoreFunctions<AdId, NumClicks, AdId.Comparer, DefaultRecordDisposer<AdId, NumClicks>>>;
-
-    using LongStoreFunctions = StoreFunctions<long, long, LongKeyComparer, DefaultRecordDisposer<long, long>>;
     using LongAllocator = BlittableAllocator<long, long, StoreFunctions<long, long, LongKeyComparer, DefaultRecordDisposer<long, long>>>;
-
-    using MyValueStoreFunctions = StoreFunctions<MyValue, MyValue, MyValue.Comparer, DefaultRecordDisposer<MyValue, MyValue>>;
+    using LongStoreFunctions = StoreFunctions<long, long, LongKeyComparer, DefaultRecordDisposer<long, long>>;
     using MyValueAllocator = GenericAllocator<MyValue, MyValue, StoreFunctions<MyValue, MyValue, MyValue.Comparer, DefaultRecordDisposer<MyValue, MyValue>>>;
+    using MyValueStoreFunctions = StoreFunctions<MyValue, MyValue, MyValue.Comparer, DefaultRecordDisposer<MyValue, MyValue>>;
 
     using SpanByteStoreFunctions = StoreFunctions<SpanByte, SpanByte, SpanByteComparer, SpanByteRecordDisposer>;
+
+    using StructAllocator = BlittableAllocator<AdId, NumClicks, StoreFunctions<AdId, NumClicks, AdId.Comparer, DefaultRecordDisposer<AdId, NumClicks>>>;
+    using StructStoreFunctions = StoreFunctions<AdId, NumClicks, AdId.Comparer, DefaultRecordDisposer<AdId, NumClicks>>;
 
     [TestFixture]
     internal class DeviceTypeRecoveryTests
@@ -48,14 +47,14 @@ namespace Tsavorite.test.recovery.sumstore
         private void Setup(DeviceType deviceType)
         {
             log = CreateTestDevice(deviceType, Path.Join(MethodTestDir, "Test.log"));
-            store = new (new ()
-                {
-                    IndexSize = KeySpace,
-                    LogDevice = log,
-                    SegmentSize = 1L << 25, //MemorySize = 1L << 14, PageSize = 1L << 9,  // locks ups at session.RMW line in Populate() for Local Memory
-                    CheckpointDir = MethodTestDir
-                }, StoreFunctions<AdId, NumClicks>.Create(new AdId.Comparer())
-                , (allocatorSettings, storeFunctions) => new (allocatorSettings, storeFunctions)
+            store = new(new()
+            {
+                IndexSize = KeySpace,
+                LogDevice = log,
+                SegmentSize = 1L << 25, //MemorySize = 1L << 14, PageSize = 1L << 9,  // locks ups at session.RMW line in Populate() for Local Memory
+                CheckpointDir = MethodTestDir
+            }, StoreFunctions<AdId, NumClicks>.Create(new AdId.Comparer())
+                , (allocatorSettings, storeFunctions) => new(allocatorSettings, storeFunctions)
             );
         }
 
@@ -247,14 +246,14 @@ namespace Tsavorite.test.recovery.sumstore
                 ? new LocalMemoryDevice(1L << 26, 1L << 22, 2, fileName: Path.Join(MethodTestDir, $"{typeof(TData).Name}.obj.log"))
                 : null;
 
-            var result = new TsavoriteKV<TData, TData, TStoreFunctions, TAllocator>(new ()
-                {
-                    IndexSize = DeviceTypeRecoveryTests.KeySpace,
-                    LogDevice = log,
-                    ObjectLogDevice = objlog,
-                    SegmentSize = 1L << 25,
-                    CheckpointDir = MethodTestDir
-                }, storeFunctionsCreator()
+            var result = new TsavoriteKV<TData, TData, TStoreFunctions, TAllocator>(new()
+            {
+                IndexSize = DeviceTypeRecoveryTests.KeySpace,
+                LogDevice = log,
+                ObjectLogDevice = objlog,
+                SegmentSize = 1L << 25,
+                CheckpointDir = MethodTestDir
+            }, storeFunctionsCreator()
                 , allocatorCreator
             );
 

@@ -366,7 +366,7 @@ namespace Garnet.server
             KVSettings<SpanByte, SpanByte> kvSettings = new(baseDir: null, logger: logger);
 
             var indexCacheLines = IndexSizeCachelines("hash index size", IndexSize);
-            kvSettings = new ()
+            kvSettings = new()
             {
                 IndexSize = indexCacheLines * 64L,
                 PreallocateLog = false,
@@ -504,7 +504,7 @@ namespace Garnet.server
             KVSettings<byte[], IGarnetObject> kvSettings = new(baseDir: null, logger: logger);
 
             var indexCacheLines = IndexSizeCachelines("object store hash index size", ObjectStoreIndexSize);
-            kvSettings = new ()
+            kvSettings = new()
             {
                 IndexSize = indexCacheLines * 64L,
                 PreallocateLog = false,

@@ -14,8 +14,8 @@ using Tsavorite.core;
 
 namespace Tsavorite.test.recovery.sumstore
 {
-    using StructStoreFunctions = StoreFunctions<AdId, NumClicks, AdId.Comparer, DefaultRecordDisposer<AdId, NumClicks>>;
     using StructAllocator = BlittableAllocator<AdId, NumClicks, StoreFunctions<AdId, NumClicks, AdId.Comparer, DefaultRecordDisposer<AdId, NumClicks>>>;
+    using StructStoreFunctions = StoreFunctions<AdId, NumClicks, AdId.Comparer, DefaultRecordDisposer<AdId, NumClicks>>;
 
     [TestFixture]
     internal class SharedDirectoryTests
@@ -143,12 +143,12 @@ namespace Tsavorite.test.recovery.sumstore
                     LogDevice = new LocalStorageDevice(deviceFileName, deleteOnClose: true, disableFileBuffering: false, initialLogFileHandles: initialHandles);
                 }
 
-                Store = new (new ()
-                    {
-                        IndexSize = KeySpace,
-                        LogDevice = LogDevice,
-                        CheckpointDir = CheckpointDirectory
-                    }, StoreFunctions<AdId, NumClicks>.Create(new AdId.Comparer())
+                Store = new(new()
+                {
+                    IndexSize = KeySpace,
+                    LogDevice = LogDevice,
+                    CheckpointDir = CheckpointDirectory
+                }, StoreFunctions<AdId, NumClicks>.Create(new AdId.Comparer())
                     , (allocatorSettings, storeFunctions) => new(allocatorSettings, storeFunctions)
                 );
             }

@@ -8,8 +8,8 @@ using static Tsavorite.test.TestUtils;
 
 namespace Tsavorite.test.Cancellation
 {
-    using IntStoreFunctions = StoreFunctions<int, int, IntKeyComparer, DefaultRecordDisposer<int, int>>;
     using IntAllocator = BlittableAllocator<int, int, StoreFunctions<int, int, IntKeyComparer, DefaultRecordDisposer<int, int>>>;
+    using IntStoreFunctions = StoreFunctions<int, int, IntKeyComparer, DefaultRecordDisposer<int, int>>;
 
     [TestFixture]
     class CancellationTests
@@ -133,12 +133,13 @@ namespace Tsavorite.test.Cancellation
             DeleteDirectory(MethodTestDir, wait: true);
 
             log = Devices.CreateLogDevice(Path.Join(MethodTestDir, "hlog.log"), deleteOnClose: true);
-            store = new (new ()
-                {
-                    IndexSize = 1L << 13,
-                    LogDevice = log,
-                    MemorySize = 1L << 17, PageSize = 1L << 12
-                }, StoreFunctions<int, int>.Create(IntKeyComparer.Instance)
+            store = new(new()
+            {
+                IndexSize = 1L << 13,
+                LogDevice = log,
+                MemorySize = 1L << 17,
+                PageSize = 1L << 12
+            }, StoreFunctions<int, int>.Create(IntKeyComparer.Instance)
                 , (allocatorSettings, storeFunctions) => new(allocatorSettings, storeFunctions)
             );
 

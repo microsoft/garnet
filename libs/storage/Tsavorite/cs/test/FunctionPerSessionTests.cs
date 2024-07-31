@@ -18,8 +18,8 @@ namespace Tsavorite.test
 
 namespace Tsavorite.test
 {
-    using StructStoreFunctions = StoreFunctions<int, RefCountedValueStruct, IntKeyComparer, DefaultRecordDisposer<int, RefCountedValueStruct>>;
     using StructAllocator = BlittableAllocator<int, RefCountedValueStruct, StoreFunctions<int, RefCountedValueStruct, IntKeyComparer, DefaultRecordDisposer<int, RefCountedValueStruct>>>;
+    using StructStoreFunctions = StoreFunctions<int, RefCountedValueStruct, IntKeyComparer, DefaultRecordDisposer<int, RefCountedValueStruct>>;
 
     public class RefCountedAdder : SessionFunctionsBase<int, RefCountedValueStruct, long, Empty, Empty>
     {
@@ -122,11 +122,11 @@ namespace Tsavorite.test
             TestUtils.DeleteDirectory(TestUtils.MethodTestDir, wait: true);
             _log = Devices.CreateLogDevice(Path.Join(TestUtils.MethodTestDir, "FunctionPerSessionTests1.log"), deleteOnClose: true);
 
-            store = new (new()
-                {
-                    IndexSize = 1L << 13,
-                    LogDevice = _log,
-                }, StoreFunctions<int, RefCountedValueStruct>.Create(IntKeyComparer.Instance)
+            store = new(new()
+            {
+                IndexSize = 1L << 13,
+                LogDevice = _log,
+            }, StoreFunctions<int, RefCountedValueStruct>.Create(IntKeyComparer.Instance)
                 , (allocatorSettings, storeFunctions) => new(allocatorSettings, storeFunctions)
             );
 

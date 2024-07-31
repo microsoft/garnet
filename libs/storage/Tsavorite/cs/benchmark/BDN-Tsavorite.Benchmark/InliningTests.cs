@@ -33,11 +33,11 @@ namespace BenchmarkDotNetTests
             var logFilename = Path.Combine(logDirectory, $"{nameof(InliningTests)}_{Guid.NewGuid()}.log");
             logDevice = Devices.CreateLogDevice(logFilename, preallocateFile: true, deleteOnClose: true, useIoCompletionPort: true);
 
-            store = new (new () 
-                {
-                    IndexSize = 1L << 26,
-                    LogDevice = logDevice
-                }, StoreFunctions<SpanByte, SpanByte>.Create()
+            store = new(new()
+            {
+                IndexSize = 1L << 26,
+                LogDevice = logDevice
+            }, StoreFunctions<SpanByte, SpanByte>.Create()
                 , (allocatorSettings, storeFunctions) => new(allocatorSettings, storeFunctions)
             );
         }

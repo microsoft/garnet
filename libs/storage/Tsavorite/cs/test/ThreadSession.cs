@@ -10,8 +10,8 @@ namespace Tsavorite.test.statemachine
     internal static class Extension
     {
         public static ThreadSession<K, V, I, O, C, F, SF, A> CreateThreadSession<K, V, I, O, C, F, SF, A>(this TsavoriteKV<K, V, SF, A> store, F f)
-            where K : new() 
-            where V : new() 
+            where K : new()
+            where V : new()
             where F : ISessionFunctions<K, V, I, O, C>
             where SF : IStoreFunctions<K, V>
             where A : IAllocator<K, V, SF>
@@ -27,8 +27,8 @@ namespace Tsavorite.test.statemachine
     }
 
     internal class ThreadSession<K, V, I, O, C, F, SF, A>
-        where K : new() 
-        where V : new() 
+        where K : new()
+        where V : new()
         where F : ISessionFunctions<K, V, I, O, C>
         where SF : IStoreFunctions<K, V>
         where A : IAllocator<K, V, SF>
@@ -95,7 +95,7 @@ namespace Tsavorite.test.statemachine
         private void OtherSession(string command, bool waitComplete = true)
         {
             q.Enqueue(command);
-            if (waitComplete) 
+            if (waitComplete)
                 _ = ev.WaitOne();
         }
     }

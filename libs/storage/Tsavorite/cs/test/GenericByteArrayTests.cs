@@ -9,8 +9,8 @@ using Tsavorite.core;
 
 namespace Tsavorite.test
 {
-    using ClassStoreFunctions = StoreFunctions<byte[], byte[], ByteArrayEC, DefaultRecordDisposer<byte[], byte[]>>;
     using ClassAllocator = GenericAllocator<byte[], byte[], StoreFunctions<byte[], byte[], ByteArrayEC, DefaultRecordDisposer<byte[], byte[]>>>;
+    using ClassStoreFunctions = StoreFunctions<byte[], byte[], ByteArrayEC, DefaultRecordDisposer<byte[], byte[]>>;
 
     [TestFixture]
     internal class GenericByteArrayTests
@@ -27,12 +27,15 @@ namespace Tsavorite.test
             log = Devices.CreateLogDevice(Path.Join(TestUtils.MethodTestDir, "GenericStringTests.log"), deleteOnClose: true);
             objlog = Devices.CreateLogDevice(Path.Join(TestUtils.MethodTestDir, "GenericStringTests.obj.log"), deleteOnClose: true);
 
-            store = new (new ()
-                { 
-                    IndexSize = 1L << 26,
-                    LogDevice = log, ObjectLogDevice = objlog,
-                    MutableFraction = 0.1, MemorySize = 1L << 14, PageSize = 1L << 9
-                }, StoreFunctions<byte[], byte[]>.Create(new ByteArrayEC(), () => new ByteArrayBinaryObjectSerializer(), () => new ByteArrayBinaryObjectSerializer())
+            store = new(new()
+            {
+                IndexSize = 1L << 26,
+                LogDevice = log,
+                ObjectLogDevice = objlog,
+                MutableFraction = 0.1,
+                MemorySize = 1L << 14,
+                PageSize = 1L << 9
+            }, StoreFunctions<byte[], byte[]>.Create(new ByteArrayEC(), () => new ByteArrayBinaryObjectSerializer(), () => new ByteArrayBinaryObjectSerializer())
                 , (allocatorSettings, storeFunctions) => new(allocatorSettings, storeFunctions)
             );
 

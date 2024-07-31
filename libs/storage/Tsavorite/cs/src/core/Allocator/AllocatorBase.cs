@@ -25,14 +25,14 @@ namespace Tsavorite.core
 
         /// <summary>The store functions for this instance of TsavoriteKV</summary>
         internal readonly TStoreFunctions _storeFunctions;
-        
+
         /// <summary>The fully-derived allocator struct wrapper (so calls on it are inlined rather than virtual) for this log.</summary>
         internal readonly TAllocator _wrapper;
 
         #region Protected size definitions
         /// <summary>Buffer size</summary>
         internal readonly int BufferSize;
-        
+
         /// <summary>Log page size</summary>
         internal readonly int LogPageSizeBits;
 
@@ -44,7 +44,7 @@ namespace Tsavorite.core
 
         /// <summary>Buffer size mask</summary>
         protected readonly int BufferSizeMask;
-        
+
         /// <summary>Aligned page size in bytes</summary>
         protected readonly int AlignedPageSizeBytes;
 
@@ -77,7 +77,7 @@ namespace Tsavorite.core
 
         /// <summary>Log mutable fraction</summary>
         protected readonly double LogMutableFraction;
-        
+
         /// <summary>ReadOnlyOffset lag (from tail)</summary>
         protected long ReadOnlyLagAddress;
 
@@ -131,7 +131,7 @@ namespace Tsavorite.core
         #region Protected device info
         /// <summary>Log Device</summary>
         protected readonly IDevice device;
-        
+
         /// <summary>Sector size</summary>
         protected readonly int sectorSize;
         #endregion
@@ -245,7 +245,7 @@ namespace Tsavorite.core
                     epochTaken = true;
                     epoch.Resume();
                 }
- 
+
                 try
                 {
                     for (long p = startPage; p < endPage; p++)
@@ -1342,7 +1342,7 @@ namespace Tsavorite.core
                                 DeviceIOCompletionCallback callback,
                                 TContext context,
                                 long devicePageOffset = 0,
-                                IDevice logDevice = null, IDevice objectLogDevice = null) 
+                                IDevice logDevice = null, IDevice objectLogDevice = null)
             => AsyncReadPagesFromDevice(readPageStart, numPages, untilAddress, callback, context, out _, devicePageOffset, logDevice, objectLogDevice);
 
         /// <summary>Read pages from specified device</summary>

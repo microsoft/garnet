@@ -29,8 +29,8 @@ namespace Tsavorite.test
 
 namespace Tsavorite.test
 {
-    using StructStoreFunctions = StoreFunctions<KeyStruct, ValueStruct, KeyStructComparerModulo, DefaultRecordDisposer<KeyStruct, ValueStruct>>;
     using StructAllocator = BlittableAllocator<KeyStruct, ValueStruct, StoreFunctions<KeyStruct, ValueStruct, KeyStructComparerModulo, DefaultRecordDisposer<KeyStruct, ValueStruct>>>;
+    using StructStoreFunctions = StoreFunctions<KeyStruct, ValueStruct, KeyStructComparerModulo, DefaultRecordDisposer<KeyStruct, ValueStruct>>;
 
     [TestFixture]
     internal class BlittableLogScanTests
@@ -56,12 +56,13 @@ namespace Tsavorite.test
             }
 
             log = Devices.CreateLogDevice(Path.Join(MethodTestDir, "test.log"), deleteOnClose: true);
-            store = new (new ()
-                {
-                    IndexSize = 1L << 26,
-                    LogDevice = log, 
-                    MemorySize = 1L << 24, PageSize = 1L << PageSizeBits
-                }, StoreFunctions<KeyStruct, ValueStruct>.Create(comparer)
+            store = new(new()
+            {
+                IndexSize = 1L << 26,
+                LogDevice = log,
+                MemorySize = 1L << 24,
+                PageSize = 1L << PageSizeBits
+            }, StoreFunctions<KeyStruct, ValueStruct>.Create(comparer)
                 , (allocatorSettings, storeFunctions) => new(allocatorSettings, storeFunctions)
             );
         }

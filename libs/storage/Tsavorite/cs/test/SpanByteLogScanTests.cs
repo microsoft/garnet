@@ -58,12 +58,13 @@ namespace Tsavorite.test.spanbyte
 
             DeleteDirectory(MethodTestDir, wait: true);
             log = Devices.CreateLogDevice(Path.Join(MethodTestDir, "test.log"), deleteOnClose: true);
-            store = new (new ()
-                {
-                    IndexSize = 1L << 26,
-                    LogDevice = log,
-                    MemorySize = 1L << 25, PageSize = 1L << PageSizeBits
-                }, StoreFunctions<SpanByte, SpanByte>.Create(comparer, SpanByteRecordDisposer.Instance)
+            store = new(new()
+            {
+                IndexSize = 1L << 26,
+                LogDevice = log,
+                MemorySize = 1L << 25,
+                PageSize = 1L << PageSizeBits
+            }, StoreFunctions<SpanByte, SpanByte>.Create(comparer, SpanByteRecordDisposer.Instance)
                 , (allocatorSettings, storeFunctions) => new(allocatorSettings, storeFunctions)
             );
         }
@@ -386,12 +387,13 @@ namespace Tsavorite.test.spanbyte
             DeleteDirectory(MethodTestDir, wait: true);
             using var log = Devices.CreateLogDevice(Path.Join(MethodTestDir, "test.log"), deleteOnClose: true);
 
-            store = new(new ()
-                {
-                    IndexSize = 1L << 26,
-                    LogDevice = log,
-                    MemorySize = 1L << 20, PageSize = 1L << PageSizeBits
-                }, StoreFunctions<SpanByte, SpanByte>.Create(new SpanByteComparerModulo(0), SpanByteRecordDisposer.Instance)
+            store = new(new()
+            {
+                IndexSize = 1L << 26,
+                LogDevice = log,
+                MemorySize = 1L << 20,
+                PageSize = 1L << PageSizeBits
+            }, StoreFunctions<SpanByte, SpanByte>.Create(new SpanByteComparerModulo(0), SpanByteRecordDisposer.Instance)
                 , (allocatorSettings, storeFunctions) => new(allocatorSettings, storeFunctions)
             );
 

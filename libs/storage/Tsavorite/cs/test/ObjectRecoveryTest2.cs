@@ -9,8 +9,8 @@ using Tsavorite.core;
 
 namespace Tsavorite.test.recovery.objects
 {
-    using ClassStoreFunctions = StoreFunctions<MyKey, MyValue, MyKey.Comparer, DefaultRecordDisposer<MyKey, MyValue>>;
     using ClassAllocator = GenericAllocator<MyKey, MyValue, StoreFunctions<MyKey, MyValue, MyKey.Comparer, DefaultRecordDisposer<MyKey, MyValue>>>;
+    using ClassStoreFunctions = StoreFunctions<MyKey, MyValue, MyKey.Comparer, DefaultRecordDisposer<MyKey, MyValue>>;
 
     [TestFixture]
     public class ObjectRecoveryTests2
@@ -70,14 +70,17 @@ namespace Tsavorite.test.recovery.objects
         {
             log = Devices.CreateLogDevice(Path.Combine(TestUtils.MethodTestDir, "RecoverTests.log"));
             objlog = Devices.CreateLogDevice(Path.Combine(TestUtils.MethodTestDir, "RecoverTests_HEAP.log"));
-            store = new (new ()
-                {
-                    IndexSize = 1L << 26,
-                    LogDevice = log, ObjectLogDevice = objlog,
-                    SegmentSize = 1L << 12, MemorySize = 1L << 12, PageSize = 1L << 9,
-                    CheckpointDir = Path.Combine(TestUtils.MethodTestDir, "check-points")
-                }, StoreFunctions<MyKey, MyValue>.Create(new MyKey.Comparer(), () => new MyKeySerializer(), () => new MyValueSerializer())
-                , (allocatorSettings, storeFunctions) => new (allocatorSettings, storeFunctions)
+            store = new(new()
+            {
+                IndexSize = 1L << 26,
+                LogDevice = log,
+                ObjectLogDevice = objlog,
+                SegmentSize = 1L << 12,
+                MemorySize = 1L << 12,
+                PageSize = 1L << 9,
+                CheckpointDir = Path.Combine(TestUtils.MethodTestDir, "check-points")
+            }, StoreFunctions<MyKey, MyValue>.Create(new MyKey.Comparer(), () => new MyKeySerializer(), () => new MyValueSerializer())
+                , (allocatorSettings, storeFunctions) => new(allocatorSettings, storeFunctions)
              );
             context = new MyContext();
         }
@@ -90,7 +93,7 @@ namespace Tsavorite.test.recovery.objects
             objlog.Dispose();
         }
 
-        private void Write(ClientSession<MyKey, MyValue, MyInput, MyOutput, MyContext, MyFunctions, ClassStoreFunctions, ClassAllocator> session, MyContext context, 
+        private void Write(ClientSession<MyKey, MyValue, MyInput, MyOutput, MyContext, MyFunctions, ClassStoreFunctions, ClassAllocator> session, MyContext context,
                 TsavoriteKV<MyKey, MyValue, ClassStoreFunctions, ClassAllocator> store, CheckpointType checkpointType)
         {
             var bContext = session.BasicContext;

@@ -177,7 +177,7 @@ namespace Tsavorite.core
 
         /// <summary>Get the hashcode for a key.</summary>
         public long GetKeyHash(ref Key key) => storeFunctions.GetKeyHashCode64(ref key);
-        
+
         /// <summary>
         /// Initiate full checkpoint
         /// </summary>

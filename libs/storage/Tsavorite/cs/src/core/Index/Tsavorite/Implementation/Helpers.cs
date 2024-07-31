@@ -77,7 +77,7 @@ namespace Tsavorite.core
         // PreviousAddress does not point to a valid record. Otherwise an earlier record for this key could be reachable again.
         // Also, it cannot be elided if it is frozen due to checkpointing.
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        private bool CanElide<Input, Output, Context, TSessionFunctionsWrapper>(TSessionFunctionsWrapper sessionFunctions, 
+        private bool CanElide<Input, Output, Context, TSessionFunctionsWrapper>(TSessionFunctionsWrapper sessionFunctions,
                 ref OperationStackContext<Key, Value, TStoreFunctions, TAllocator> stackCtx, ref RecordInfo srcRecordInfo)
             where TSessionFunctionsWrapper : ISessionFunctionsWrapper<Key, Value, Input, Output, Context, TStoreFunctions, TAllocator>
         {
@@ -89,7 +89,7 @@ namespace Tsavorite.core
         // If the record is in a checkpoint range, it must not be modified. If it is in the fuzzy region, it can only be modified
         // if it is a new record.
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        private bool IsFrozen<Input, Output, Context, TSessionFunctionsWrapper>(TSessionFunctionsWrapper sessionFunctions, 
+        private bool IsFrozen<Input, Output, Context, TSessionFunctionsWrapper>(TSessionFunctionsWrapper sessionFunctions,
                 ref OperationStackContext<Key, Value, TStoreFunctions, TAllocator> stackCtx, ref RecordInfo srcRecordInfo)
             where TSessionFunctionsWrapper : ISessionFunctionsWrapper<Key, Value, Input, Output, Context, TStoreFunctions, TAllocator>
         {
@@ -207,7 +207,7 @@ namespace Tsavorite.core
         }
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        private bool FindOrCreateTagAndTryTransientXLock<Input, Output, Context, TSessionFunctionsWrapper>(TSessionFunctionsWrapper sessionFunctions, ref Key key, 
+        private bool FindOrCreateTagAndTryTransientXLock<Input, Output, Context, TSessionFunctionsWrapper>(TSessionFunctionsWrapper sessionFunctions, ref Key key,
                 ref OperationStackContext<Key, Value, TStoreFunctions, TAllocator> stackCtx, out OperationStatus internalStatus)
             where TSessionFunctionsWrapper : ISessionFunctionsWrapper<Key, Value, Input, Output, Context, TStoreFunctions, TAllocator>
         {
@@ -223,7 +223,7 @@ namespace Tsavorite.core
         }
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        private bool FindTagAndTryTransientXLock<Input, Output, Context, TSessionFunctionsWrapper>(TSessionFunctionsWrapper sessionFunctions, ref Key key, 
+        private bool FindTagAndTryTransientXLock<Input, Output, Context, TSessionFunctionsWrapper>(TSessionFunctionsWrapper sessionFunctions, ref Key key,
                 ref OperationStackContext<Key, Value, TStoreFunctions, TAllocator> stackCtx, out OperationStatus internalStatus)
             where TSessionFunctionsWrapper : ISessionFunctionsWrapper<Key, Value, Input, Output, Context, TStoreFunctions, TAllocator>
         {
@@ -239,7 +239,7 @@ namespace Tsavorite.core
         }
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        private bool FindTagAndTryTransientSLock<Input, Output, Context, TSessionFunctionsWrapper>(TSessionFunctionsWrapper sessionFunctions, ref Key key, 
+        private bool FindTagAndTryTransientSLock<Input, Output, Context, TSessionFunctionsWrapper>(TSessionFunctionsWrapper sessionFunctions, ref Key key,
                 ref OperationStackContext<Key, Value, TStoreFunctions, TAllocator> stackCtx, out OperationStatus internalStatus)
             where TSessionFunctionsWrapper : ISessionFunctionsWrapper<Key, Value, Input, Output, Context, TStoreFunctions, TAllocator>
         {

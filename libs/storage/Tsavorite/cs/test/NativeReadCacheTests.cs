@@ -7,8 +7,8 @@ using Tsavorite.core;
 
 namespace Tsavorite.test.ReadCacheTests
 {
-    using StructStoreFunctions = StoreFunctions<KeyStruct, ValueStruct, KeyStruct.Comparer, DefaultRecordDisposer<KeyStruct, ValueStruct>>;
     using StructAllocator = BlittableAllocator<KeyStruct, ValueStruct, StoreFunctions<KeyStruct, ValueStruct, KeyStruct.Comparer, DefaultRecordDisposer<KeyStruct, ValueStruct>>>;
+    using StructStoreFunctions = StoreFunctions<KeyStruct, ValueStruct, KeyStruct.Comparer, DefaultRecordDisposer<KeyStruct, ValueStruct>>;
 
     [TestFixture]
     public class NativeReadCacheTests
@@ -21,12 +21,15 @@ namespace Tsavorite.test.ReadCacheTests
         {
             TestUtils.DeleteDirectory(TestUtils.MethodTestDir, wait: true);
             log = Devices.CreateLogDevice(Path.Join(TestUtils.MethodTestDir, "NativeReadCacheTests.log"), deleteOnClose: true);
-            store = new (new()
-                {
-                    IndexSize = 1L << 26,
-                    LogDevice = log,
-                    MemorySize = 1L << 15, PageSize = 1L << 10, 
-                    ReadCacheMemorySize = 1L << 15, ReadCachePageSize = 1L << 10, ReadCacheEnabled = true
+            store = new(new()
+            {
+                IndexSize = 1L << 26,
+                LogDevice = log,
+                MemorySize = 1L << 15,
+                PageSize = 1L << 10,
+                ReadCacheMemorySize = 1L << 15,
+                ReadCachePageSize = 1L << 10,
+                ReadCacheEnabled = true
             }, StoreFunctions<KeyStruct, ValueStruct>.Create(new KeyStruct.Comparer())
                 , (allocatorSettings, storeFunctions) => new(allocatorSettings, storeFunctions)
             );

@@ -49,17 +49,17 @@ namespace Tsavorite.core
 
         /// <inheritdoc/>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public readonly ref RecordInfo GetInfo(long physicalAddress) 
+        public readonly ref RecordInfo GetInfo(long physicalAddress)
             => ref SpanByteAllocatorImpl<TStoreFunctions>.GetInfo(physicalAddress);
 
         /// <inheritdoc/>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public readonly unsafe ref RecordInfo GetInfoFromBytePointer(byte* ptr) 
+        public readonly unsafe ref RecordInfo GetInfoFromBytePointer(byte* ptr)
             => ref SpanByteAllocatorImpl<TStoreFunctions>.GetInfoFromBytePointer(ptr);
 
         /// <inheritdoc/>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public readonly ref SpanByte GetKey(long physicalAddress) 
+        public readonly ref SpanByte GetKey(long physicalAddress)
             => ref SpanByteAllocatorImpl<TStoreFunctions>.GetKey(physicalAddress);
 
         /// <inheritdoc/>
@@ -104,12 +104,12 @@ namespace Tsavorite.core
 
         /// <inheritdoc/>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public readonly int GetValueLength(ref SpanByte value) 
+        public readonly int GetValueLength(ref SpanByte value)
             => SpanByteAllocatorImpl<TStoreFunctions>.GetValueLength(ref value);
 
         /// <inheritdoc/>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public readonly unsafe bool RetrievedFullRecord(byte* record, ref AsyncIOContext<SpanByte, SpanByte> ctx) 
+        public readonly unsafe bool RetrievedFullRecord(byte* record, ref AsyncIOContext<SpanByte, SpanByte> ctx)
             => SpanByteAllocatorImpl<TStoreFunctions>.RetrievedFullRecord(record, ref ctx);
 
         /// <inheritdoc/>
@@ -142,7 +142,7 @@ namespace Tsavorite.core
 
         /// <inheritdoc/>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public readonly ref SpanByte GetContextRecordKey(ref AsyncIOContext<SpanByte, SpanByte> ctx) 
+        public readonly ref SpanByte GetContextRecordKey(ref AsyncIOContext<SpanByte, SpanByte> ctx)
             => ref SpanByteAllocatorImpl<TStoreFunctions>.GetContextRecordKey(ref ctx);
 
         /// <inheritdoc/>
@@ -159,7 +159,7 @@ namespace Tsavorite.core
 
         /// <inheritdoc/>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public readonly long[] GetSegmentOffsets() 
+        public readonly long[] GetSegmentOffsets()
             => SpanByteAllocatorImpl<TStoreFunctions>.GetSegmentOffsets();
 
         /// <inheritdoc/>
@@ -167,7 +167,7 @@ namespace Tsavorite.core
 
         /// <inheritdoc/>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public readonly void SerializeKey(ref SpanByte key, long physicalAddress) 
+        public readonly void SerializeKey(ref SpanByte key, long physicalAddress)
             => SpanByteAllocatorImpl<TStoreFunctions>.SerializeKey(ref key, physicalAddress);
     }
 }

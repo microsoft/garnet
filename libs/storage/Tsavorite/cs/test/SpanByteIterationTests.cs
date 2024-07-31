@@ -72,11 +72,13 @@ namespace Tsavorite.test
         {
             log = CreateTestDevice(deviceType, $"{MethodTestDir}{deviceType}.log");
             store = new(new()
-                {
-                    IndexSize = 1L << 26,
-                    LogDevice = log,
-                    MemorySize = 1L << 15, PageSize = 1L << 9, SegmentSize = 1L << 22
-                }, StoreFunctions<SpanByte, SpanByte>.Create()
+            {
+                IndexSize = 1L << 26,
+                LogDevice = log,
+                MemorySize = 1L << 15,
+                PageSize = 1L << 9,
+                SegmentSize = 1L << 22
+            }, StoreFunctions<SpanByte, SpanByte>.Create()
                 , (allocatorSettings, storeFunctions) => new(allocatorSettings, storeFunctions)
             );
 
@@ -169,11 +171,13 @@ namespace Tsavorite.test
         {
             log = CreateTestDevice(deviceType, Path.Join(MethodTestDir, $"{deviceType}.log"));
             store = new(new()
-                {
-                    IndexSize = 1L << 26,
-                    LogDevice = log,
-                    MemorySize = 1L << 15, PageSize = 1L << 9, SegmentSize = 1L << 22
-                }, StoreFunctions<SpanByte, SpanByte>.Create()
+            {
+                IndexSize = 1L << 26,
+                LogDevice = log,
+                MemorySize = 1L << 15,
+                PageSize = 1L << 9,
+                SegmentSize = 1L << 22
+            }, StoreFunctions<SpanByte, SpanByte>.Create()
                 , (allocatorSettings, storeFunctions) => new(allocatorSettings, storeFunctions)
             );
 
@@ -222,11 +226,13 @@ namespace Tsavorite.test
 
             // Must be large enough to contain all records in memory to exercise locking
             store = new(new()
-                {
-                    IndexSize = 1L << 26,
-                    LogDevice = log,
-                    MemorySize = 1L << 25, PageSize = 1L << 19, SegmentSize = 1L << 22
-                }, StoreFunctions<SpanByte, SpanByte>.Create()
+            {
+                IndexSize = 1L << 26,
+                LogDevice = log,
+                MemorySize = 1L << 25,
+                PageSize = 1L << 19,
+                SegmentSize = 1L << 22
+            }, StoreFunctions<SpanByte, SpanByte>.Create()
                 , (allocatorSettings, storeFunctions) => new(allocatorSettings, storeFunctions)
             );
 

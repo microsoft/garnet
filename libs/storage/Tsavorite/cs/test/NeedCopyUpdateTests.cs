@@ -9,11 +9,11 @@ using static Tsavorite.test.TestUtils;
 
 namespace Tsavorite.test
 {
-    using RMWValueStoreFunctions = StoreFunctions<int, RMWValueObj, IntKeyComparer, DefaultRecordDisposer<int, RMWValueObj>>;
-    using RMWValueAllocator = GenericAllocator<int, RMWValueObj, StoreFunctions<int, RMWValueObj, IntKeyComparer, DefaultRecordDisposer<int, RMWValueObj>>>;
-
-    using LongStoreFunctions = StoreFunctions<long, long, LongKeyComparer, DefaultRecordDisposer<long, long>>;
     using LongAllocator = BlittableAllocator<long, long, StoreFunctions<long, long, LongKeyComparer, DefaultRecordDisposer<long, long>>>;
+    using LongStoreFunctions = StoreFunctions<long, long, LongKeyComparer, DefaultRecordDisposer<long, long>>;
+
+    using RMWValueAllocator = GenericAllocator<int, RMWValueObj, StoreFunctions<int, RMWValueObj, IntKeyComparer, DefaultRecordDisposer<int, RMWValueObj>>>;
+    using RMWValueStoreFunctions = StoreFunctions<int, RMWValueObj, IntKeyComparer, DefaultRecordDisposer<int, RMWValueObj>>;
 
     [TestFixture]
     internal class NeedCopyUpdateTests
@@ -28,12 +28,15 @@ namespace Tsavorite.test
             log = Devices.CreateLogDevice(Path.Join(MethodTestDir, "tests.log"), deleteOnClose: true);
             objlog = Devices.CreateLogDevice(Path.Join(MethodTestDir, "tests.obj.log"), deleteOnClose: true);
 
-            store = new (new ()
-                {   
-                    IndexSize = 1L << 13,
-                    LogDevice = log, ObjectLogDevice = objlog,
-                    MutableFraction = 0.1, MemorySize = 1L << 15, PageSize = 1L << 10
-                }, StoreFunctions<int, RMWValueObj>.Create(IntKeyComparer.Instance, keySerializerCreator: null, () => new RMWValueSerializer())
+            store = new(new()
+            {
+                IndexSize = 1L << 13,
+                LogDevice = log,
+                ObjectLogDevice = objlog,
+                MutableFraction = 0.1,
+                MemorySize = 1L << 15,
+                PageSize = 1L << 10
+            }, StoreFunctions<int, RMWValueObj>.Create(IntKeyComparer.Instance, keySerializerCreator: null, () => new RMWValueSerializer())
                 , (allocatorSettings, storeFunctions) => new(allocatorSettings, storeFunctions)
             );
         }
@@ -178,12 +181,14 @@ namespace Tsavorite.test
             DeleteDirectory(MethodTestDir, wait: true);
             log = Devices.CreateLogDevice(Path.Join(MethodTestDir, "test.log"), deleteOnClose: true);
 
-            store = new (new ()
-                {
-                    IndexSize = 1L << 13,
-                    LogDevice = log,
-                    MutableFraction = 0.1, MemorySize = 1L << PageSizeBits, PageSize = 1L << PageSizeBits
-                }, StoreFunctions<long, long>.Create(LongKeyComparer.Instance)
+            store = new(new()
+            {
+                IndexSize = 1L << 13,
+                LogDevice = log,
+                MutableFraction = 0.1,
+                MemorySize = 1L << PageSizeBits,
+                PageSize = 1L << PageSizeBits
+            }, StoreFunctions<long, long>.Create(LongKeyComparer.Instance)
                 , (allocatorSettings, storeFunctions) => new(allocatorSettings, storeFunctions)
             );
         }

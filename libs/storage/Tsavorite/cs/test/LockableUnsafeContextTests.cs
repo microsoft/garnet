@@ -34,8 +34,8 @@ namespace Tsavorite.test.LockableUnsafeContext
 }
 namespace Tsavorite.test.LockableUnsafeContext
 {
-    using LongStoreFunctions = StoreFunctions<long, long, LockableUnsafeComparer, DefaultRecordDisposer<long, long>>;
     using LongAllocator = BlittableAllocator<long, long, StoreFunctions<long, long, LockableUnsafeComparer, DefaultRecordDisposer<long, long>>>;
+    using LongStoreFunctions = StoreFunctions<long, long, LockableUnsafeComparer, DefaultRecordDisposer<long, long>>;
 
     // Functions for the "Simple lock transaction" case, e.g.:
     //  - Lock key1, key2, key3, keyResult
@@ -197,9 +197,9 @@ namespace Tsavorite.test.LockableUnsafeContext
             comparer = new LockableUnsafeComparer();
             functions = new LockableUnsafeFunctions();
 
-            store = new (kvSettings
+            store = new(kvSettings
                 , StoreFunctions<long, long>.Create(comparer)
-                , (allocatorSettings, storeFunctions) => new (allocatorSettings, storeFunctions)
+                , (allocatorSettings, storeFunctions) => new(allocatorSettings, storeFunctions)
             );
 
             session = store.NewSession<long, long, Empty, LockableUnsafeFunctions>(functions);

@@ -25,8 +25,8 @@ namespace Tsavorite.test
 
 namespace Tsavorite.test
 {
-    using StructStoreFunctions = StoreFunctions<KeyStruct, ValueStruct, LocalKeyStructComparer, DefaultRecordDisposer<KeyStruct, ValueStruct>>;
     using StructAllocator = BlittableAllocator<KeyStruct, ValueStruct, StoreFunctions<KeyStruct, ValueStruct, LocalKeyStructComparer, DefaultRecordDisposer<KeyStruct, ValueStruct>>>;
+    using StructStoreFunctions = StoreFunctions<KeyStruct, ValueStruct, LocalKeyStructComparer, DefaultRecordDisposer<KeyStruct, ValueStruct>>;
 
     [TestFixture]
     class CompletePendingTests
@@ -42,12 +42,12 @@ namespace Tsavorite.test
             DeleteDirectory(MethodTestDir, wait: true);
 
             log = Devices.CreateLogDevice(Path.Join(MethodTestDir, "CompletePendingTests.log"), preallocateFile: true, deleteOnClose: true);
-            store = new (new()
-                {
-                    IndexSize = 1L << 13,
-                    LogDevice = log,
-                    MemorySize = 1L << 29
-                }, StoreFunctions<KeyStruct, ValueStruct>.Create(comparer)
+            store = new(new()
+            {
+                IndexSize = 1L << 13,
+                LogDevice = log,
+                MemorySize = 1L << 29
+            }, StoreFunctions<KeyStruct, ValueStruct>.Create(comparer)
                 , (allocatorSettings, storeFunctions) => new(allocatorSettings, storeFunctions)
                 );
         }

@@ -8,8 +8,8 @@ using Tsavorite.core;
 
 namespace Garnet.test
 {
-    using ObjectStoreFunctions = StoreFunctions<byte[], IGarnetObject, ByteArrayKeyComparer, DefaultRecordDisposer<byte[], IGarnetObject>>;
     using ObjectStoreAllocator = GenericAllocator<byte[], IGarnetObject, StoreFunctions<byte[], IGarnetObject, ByteArrayKeyComparer, DefaultRecordDisposer<byte[], IGarnetObject>>>;
+    using ObjectStoreFunctions = StoreFunctions<byte[], IGarnetObject, ByteArrayKeyComparer, DefaultRecordDisposer<byte[], IGarnetObject>>;
 
     [TestFixture]
     public class GarnetObjectTests
@@ -159,7 +159,7 @@ namespace Garnet.test
                 CheckpointDir = TestUtils.MethodTestDir
             };
 
-            store = new (kvSettings
+            store = new(kvSettings
                 , StoreFunctions<byte[], IGarnetObject>.Create(new ByteArrayKeyComparer(), () => new Tsavorite.core.ByteArrayBinaryObjectSerializer(), () => new MyGarnetObjectSerializer())
                 , (allocatorSettings, storeFunctions) => new(allocatorSettings, storeFunctions));
         }

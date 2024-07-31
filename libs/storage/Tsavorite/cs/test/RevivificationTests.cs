@@ -36,11 +36,11 @@ namespace Tsavorite.test.Revivification
 
 namespace Tsavorite.test.Revivification
 {
-    using IntStoreFunctions = StoreFunctions<int, int, IntKeyComparer, DefaultRecordDisposer<int, int>>;
-    using IntAllocator = BlittableAllocator<int, int, StoreFunctions<int, int, IntKeyComparer, DefaultRecordDisposer<int, int>>>;
-
-    using ClassStoreFunctions = StoreFunctions<MyKey, MyValue, MyKey.Comparer, DefaultRecordDisposer<MyKey, MyValue>>;
     using ClassAllocator = GenericAllocator<MyKey, MyValue, StoreFunctions<MyKey, MyValue, MyKey.Comparer, DefaultRecordDisposer<MyKey, MyValue>>>;
+    using ClassStoreFunctions = StoreFunctions<MyKey, MyValue, MyKey.Comparer, DefaultRecordDisposer<MyKey, MyValue>>;
+
+    using IntAllocator = BlittableAllocator<int, int, StoreFunctions<int, int, IntKeyComparer, DefaultRecordDisposer<int, int>>>;
+    using IntStoreFunctions = StoreFunctions<int, int, IntKeyComparer, DefaultRecordDisposer<int, int>>;
 
     using SpanByteStoreFunctions = StoreFunctions<SpanByte, SpanByte, RevivificationSpanByteComparer, SpanByteRecordDisposer>;
 
@@ -146,7 +146,7 @@ namespace Tsavorite.test.Revivification
             where TAllocator : IAllocator<TKey, TValue, TStoreFunctions>
             => pool.bins[binIndex].records[recordIndex].IsSet;
 
-        internal static bool TryTakeFromBin<TKey, TValue, TStoreFunctions, TAllocator>(FreeRecordPool<TKey, TValue, TStoreFunctions, TAllocator> pool, int binIndex, int recordSize, long minAddress, 
+        internal static bool TryTakeFromBin<TKey, TValue, TStoreFunctions, TAllocator>(FreeRecordPool<TKey, TValue, TStoreFunctions, TAllocator> pool, int binIndex, int recordSize, long minAddress,
                 TsavoriteKV<TKey, TValue, TStoreFunctions, TAllocator> store, out long address, ref RevivificationStats revivStats)
             where TStoreFunctions : IStoreFunctions<TKey, TValue>
             where TAllocator : IAllocator<TKey, TValue, TStoreFunctions>
@@ -273,14 +273,15 @@ namespace Tsavorite.test.Revivification
                 revivificationSettings.RevivifiableFraction = revivifiableFraction.Value;
             if (recordElision.HasValue)
                 revivificationSettings.RestoreDeletedRecordsIfBinIsFull = recordElision.Value == RecordElision.NoElide;
-            store = new (new ()
-                {
-                    IndexSize = 1L << 24,
-                    LogDevice = log,
-                    PageSize = 1L << 12, MemorySize = 1L << 20,
-                    RevivificationSettings = revivificationSettings
-                }, StoreFunctions<int, int>.Create(IntKeyComparer.Instance)
-                , (allocatorSettings, storeFunctions) => new (allocatorSettings, storeFunctions));
+            store = new(new()
+            {
+                IndexSize = 1L << 24,
+                LogDevice = log,
+                PageSize = 1L << 12,
+                MemorySize = 1L << 20,
+                RevivificationSettings = revivificationSettings
+            }, StoreFunctions<int, int>.Create(IntKeyComparer.Instance)
+                , (allocatorSettings, storeFunctions) => new(allocatorSettings, storeFunctions));
             functions = new RevivificationFixedLenFunctions();
             session = store.NewSession<int, int, Empty, RevivificationFixedLenFunctions>(functions);
             bContext = session.BasicContext;
@@ -429,7 +430,7 @@ namespace Tsavorite.test.Revivification
             _ = RevivificationTestUtils.SwapFreeRecordPool(store, pool);
 
             var tailAddress = store.Log.TailAddress;
-            _ = updateOp == UpdateOp.Upsert? bContext.Upsert(maxRecord, maxRecord * ValueMult) : bContext.RMW(maxRecord, maxRecord * ValueMult);
+            _ = updateOp == UpdateOp.Upsert ? bContext.Upsert(maxRecord, maxRecord * ValueMult) : bContext.RMW(maxRecord, maxRecord * ValueMult);
 
             Assert.Less(tailAddress, store.Log.TailAddress, "Expected tail address to grow (record was not revivified)");
         }
@@ -673,7 +674,8 @@ namespace Tsavorite.test.Revivification
             {
                 IndexSize = 1L << 24,
                 LogDevice = log,
-                PageSize = 1L << 17, MemorySize = 1L << 20,
+                PageSize = 1L << 17,
+                MemorySize = 1L << 20,
                 RevivificationSettings = RevivificationSettings.PowerOf2Bins
             };
 
@@ -700,7 +702,7 @@ namespace Tsavorite.test.Revivification
             comparer = new RevivificationSpanByteComparer(collisionRange);
             store = new(kvSettings
                 , StoreFunctions<SpanByte, SpanByte>.Create(comparer, SpanByteRecordDisposer.Instance)
-                , (allocatorSettings, storeFunctions) => new (allocatorSettings, storeFunctions)
+                , (allocatorSettings, storeFunctions) => new(allocatorSettings, storeFunctions)
             );
 
             functions = new RevivificationSpanByteFunctions(store);
@@ -1652,16 +1654,17 @@ namespace Tsavorite.test.Revivification
             log = Devices.CreateLogDevice(Path.Combine(MethodTestDir, "test.log"), deleteOnClose: true);
             objlog = Devices.CreateLogDevice(Path.Combine(MethodTestDir, "test.obj.log"), deleteOnClose: true);
 
-            store = new (new ()
-                {
-                    IndexSize = 1L << 13,
-                    LogDevice = log,
-                    ObjectLogDevice = objlog,
-                    MutableFraction = 0.1,
-                    MemorySize = 1L << 22, PageSize = 1L << 12,
-                    RevivificationSettings = RevivificationSettings.DefaultFixedLength
-                }, StoreFunctions<MyKey, MyValue>.Create(new MyKey.Comparer(), () => new MyKeySerializer(), () => new MyValueSerializer())
-                , (allocatorSettings, storeFunctions) => new (allocatorSettings, storeFunctions)
+            store = new(new()
+            {
+                IndexSize = 1L << 13,
+                LogDevice = log,
+                ObjectLogDevice = objlog,
+                MutableFraction = 0.1,
+                MemorySize = 1L << 22,
+                PageSize = 1L << 12,
+                RevivificationSettings = RevivificationSettings.DefaultFixedLength
+            }, StoreFunctions<MyKey, MyValue>.Create(new MyKey.Comparer(), () => new MyKeySerializer(), () => new MyValueSerializer())
+                , (allocatorSettings, storeFunctions) => new(allocatorSettings, storeFunctions)
             );
 
             functions = new MyFunctions();
@@ -1828,14 +1831,15 @@ namespace Tsavorite.test.Revivification
             }
 
             comparer = new RevivificationSpanByteComparer(collisionRange);
-            store = new(new ()
-                {
-                    IndexSize = 1L << 24,
-                    LogDevice = log,
-                    PageSize = 1L << 17, MemorySize = 1L << 20,
-                    RevivificationSettings = RevivificationSettings.PowerOf2Bins
-                }, StoreFunctions<SpanByte, SpanByte>.Create(comparer, SpanByteRecordDisposer.Instance)
-                , (allocatorSettings, storeFunctions) => new (allocatorSettings, storeFunctions)
+            store = new(new()
+            {
+                IndexSize = 1L << 24,
+                LogDevice = log,
+                PageSize = 1L << 17,
+                MemorySize = 1L << 20,
+                RevivificationSettings = RevivificationSettings.PowerOf2Bins
+            }, StoreFunctions<SpanByte, SpanByte>.Create(comparer, SpanByteRecordDisposer.Instance)
+                , (allocatorSettings, storeFunctions) => new(allocatorSettings, storeFunctions)
             );
 
             functions = new RevivificationStressFunctions(keyComparer: null);

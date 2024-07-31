@@ -8,8 +8,8 @@ using static Tsavorite.test.TestUtils;
 
 namespace Tsavorite.test
 {
-    using ClassStoreFunctions = StoreFunctions<MyKey, MyValue, MyKey.Comparer, DefaultRecordDisposer<MyKey, MyValue>>;
     using ClassAllocator = GenericAllocator<MyKey, MyValue, StoreFunctions<MyKey, MyValue, MyKey.Comparer, DefaultRecordDisposer<MyKey, MyValue>>>;
+    using ClassStoreFunctions = StoreFunctions<MyKey, MyValue, MyKey.Comparer, DefaultRecordDisposer<MyKey, MyValue>>;
 
     [TestFixture]
     internal class GenericLogCompactionTests
@@ -29,7 +29,8 @@ namespace Tsavorite.test
             {
                 IndexSize = 1L << 13,
                 MutableFraction = 0.1,
-                MemorySize = 1L << 14, PageSize = 1L << 9
+                MemorySize = 1L << 14,
+                PageSize = 1L << 9
             };
 
             if (TestContext.CurrentContext.Test.Arguments.Length == 0)
@@ -53,7 +54,7 @@ namespace Tsavorite.test
             kvSettings.LogDevice = log;
             kvSettings.ObjectLogDevice = objlog;
 
-            store = new (kvSettings
+            store = new(kvSettings
                 , StoreFunctions<MyKey, MyValue>.Create(new MyKey.Comparer(), () => new MyKeySerializer(), () => new MyValueSerializer(), DefaultRecordDisposer<MyKey, MyValue>.Instance)
                 , (allocatorSettings, storeFunctions) => new(allocatorSettings, storeFunctions)
             );

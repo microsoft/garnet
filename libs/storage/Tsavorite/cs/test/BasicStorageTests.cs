@@ -8,8 +8,8 @@ using Tsavorite.devices;
 
 namespace Tsavorite.test
 {
-    using StructStoreFunctions = StoreFunctions<KeyStruct, ValueStruct, KeyStruct.Comparer, DefaultRecordDisposer<KeyStruct, ValueStruct>>;
     using StructAllocator = BlittableAllocator<KeyStruct, ValueStruct, StoreFunctions<KeyStruct, ValueStruct, KeyStruct.Comparer, DefaultRecordDisposer<KeyStruct, ValueStruct>>>;
+    using StructStoreFunctions = StoreFunctions<KeyStruct, ValueStruct, KeyStruct.Comparer, DefaultRecordDisposer<KeyStruct, ValueStruct>>;
 
     [TestFixture]
     internal class BasicStorageTests
@@ -96,13 +96,14 @@ namespace Tsavorite.test
         static void TestDeviceWriteRead(IDevice log)
         {
             var store = new TsavoriteKV<KeyStruct, ValueStruct, StructStoreFunctions, StructAllocator>(
-                new ()
+                new()
                 {
                     IndexSize = 1L << 26,
                     LogDevice = log,
-                    MemorySize = 1L << 15, PageSize = 1L << 10,
+                    MemorySize = 1L << 15,
+                    PageSize = 1L << 10,
                 }, StoreFunctions<KeyStruct, ValueStruct>.Create(KeyStruct.Comparer.Instance)
-                , (allocatorSettings, storeFunctions) => new (allocatorSettings, storeFunctions)
+                , (allocatorSettings, storeFunctions) => new(allocatorSettings, storeFunctions)
             );
 
             var session = store.NewSession<InputStruct, OutputStruct, Empty, Functions>(new Functions());

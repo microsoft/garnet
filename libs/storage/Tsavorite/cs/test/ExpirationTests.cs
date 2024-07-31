@@ -525,12 +525,13 @@ namespace Tsavorite.test.Expiration
             DeleteDirectory(MethodTestDir, wait: true);
 
             log = Devices.CreateLogDevice(Path.Join(MethodTestDir, "hlog.log"), deleteOnClose: true);
-            store = new (new ()
-                {
-                    IndexSize = 1L << 13,
-                    LogDevice = log,
-                    MemorySize = 1L << 19, PageSize = 1L << 14
-                }, StoreFunctions<SpanByte, SpanByte>.Create()
+            store = new(new()
+            {
+                IndexSize = 1L << 13,
+                LogDevice = log,
+                MemorySize = 1L << 19,
+                PageSize = 1L << 14
+            }, StoreFunctions<SpanByte, SpanByte>.Create()
                 , (allocatorSettings, storeFunctions) => new(allocatorSettings, storeFunctions)
             );
 

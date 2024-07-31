@@ -7,8 +7,8 @@ using Tsavorite.core;
 
 namespace Tsavorite.test.ReadCacheTests
 {
-    using ClassStoreFunctions = StoreFunctions<MyKey, MyValue, MyKey.Comparer, DefaultRecordDisposer<MyKey, MyValue>>;
     using ClassAllocator = GenericAllocator<MyKey, MyValue, StoreFunctions<MyKey, MyValue, MyKey.Comparer, DefaultRecordDisposer<MyKey, MyValue>>>;
+    using ClassStoreFunctions = StoreFunctions<MyKey, MyValue, MyKey.Comparer, DefaultRecordDisposer<MyKey, MyValue>>;
 
     [TestFixture]
     internal class ObjectReadCacheTests
@@ -23,13 +23,17 @@ namespace Tsavorite.test.ReadCacheTests
             log = Devices.CreateLogDevice(Path.Join(TestUtils.MethodTestDir, "ObjectReadCacheTests.log"), deleteOnClose: true);
             objlog = Devices.CreateLogDevice(Path.Join(TestUtils.MethodTestDir, "ObjectReadCacheTests.obj.log"), deleteOnClose: true);
 
-            store = new (new()
-                {
-                    IndexSize = 1L << 13,
-                    LogDevice = log, ObjectLogDevice = objlog,
-                    MemorySize = 1L << 15, PageSize = 1L << 10,
-                    ReadCacheMemorySize = 1L << 15, ReadCachePageSize = 1L << 10, ReadCacheEnabled = true
-                }, StoreFunctions<MyKey, MyValue>.Create(new MyKey.Comparer(), () => new MyKeySerializer(), () => new MyValueSerializer(), DefaultRecordDisposer<MyKey, MyValue>.Instance)
+            store = new(new()
+            {
+                IndexSize = 1L << 13,
+                LogDevice = log,
+                ObjectLogDevice = objlog,
+                MemorySize = 1L << 15,
+                PageSize = 1L << 10,
+                ReadCacheMemorySize = 1L << 15,
+                ReadCachePageSize = 1L << 10,
+                ReadCacheEnabled = true
+            }, StoreFunctions<MyKey, MyValue>.Create(new MyKey.Comparer(), () => new MyKeySerializer(), () => new MyValueSerializer(), DefaultRecordDisposer<MyKey, MyValue>.Instance)
                 , (allocatorSettings, storeFunctions) => new(allocatorSettings, storeFunctions)
             );
         }

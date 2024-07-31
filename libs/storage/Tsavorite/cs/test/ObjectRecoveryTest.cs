@@ -10,8 +10,8 @@ using Tsavorite.core;
 
 namespace Tsavorite.test.recovery.objects
 {
-    using ClassStoreFunctions = StoreFunctions<AdIdObj, NumClicksObj, AdIdObj.Comparer, DefaultRecordDisposer<AdIdObj, NumClicksObj>>;
     using ClassAllocator = GenericAllocator<AdIdObj, NumClicksObj, StoreFunctions<AdIdObj, NumClicksObj, AdIdObj.Comparer, DefaultRecordDisposer<AdIdObj, NumClicksObj>>>;
+    using ClassStoreFunctions = StoreFunctions<AdIdObj, NumClicksObj, AdIdObj.Comparer, DefaultRecordDisposer<AdIdObj, NumClicksObj>>;
 
     internal struct StructTuple<T1, T2>
     {
@@ -42,10 +42,11 @@ namespace Tsavorite.test.recovery.objects
             log = Devices.CreateLogDevice(Path.Join(TestUtils.MethodTestDir, "ObjectRecoveryTests.log"), false);
             objlog = Devices.CreateLogDevice(Path.Join(TestUtils.MethodTestDir, "ObjectRecoveryTests.obj.log"), false);
 
-            store = new (new ()
+            store = new(new()
             {
                 IndexSize = KeySpace,
-                LogDevice = log, ObjectLogDevice = objlog,
+                LogDevice = log,
+                ObjectLogDevice = objlog,
                 CheckpointDir = TestUtils.MethodTestDir
             }, StoreFunctions<AdIdObj, NumClicksObj>.Create(new AdIdObj.Comparer(), () => new AdIdObj.Serializer(), () => new NumClicksObj.Serializer())
                 , (allocatorSettings, storeFunctions) => new(allocatorSettings, storeFunctions)

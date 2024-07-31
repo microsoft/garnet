@@ -7,8 +7,8 @@ using Tsavorite.core;
 
 namespace Tsavorite.test
 {
-    using LongStoreFunctions = StoreFunctions<long, long, LongKeyComparer, DefaultRecordDisposer<long, long>>;
     using LongAllocator = BlittableAllocator<long, long, StoreFunctions<long, long, LongKeyComparer, DefaultRecordDisposer<long, long>>>;
+    using LongStoreFunctions = StoreFunctions<long, long, LongKeyComparer, DefaultRecordDisposer<long, long>>;
 
     [TestFixture]
     internal class MoreLogCompactionTests
@@ -21,10 +21,12 @@ namespace Tsavorite.test
         {
             TestUtils.DeleteDirectory(TestUtils.MethodTestDir, wait: true);
             log = Devices.CreateLogDevice(Path.Join(TestUtils.MethodTestDir, "MoreLogCompactionTests.log"), deleteOnClose: true);
-            store = new (new()
+            store = new(new()
             {
                 IndexSize = 1L << 26,
-                LogDevice = log, MemorySize = 1L << 15, PageSize = 1L << 9
+                LogDevice = log,
+                MemorySize = 1L << 15,
+                PageSize = 1L << 9
             }, StoreFunctions<long, long>.Create(LongKeyComparer.Instance)
                 , (allocatorSettings, storeFunctions) => new(allocatorSettings, storeFunctions)
             );

@@ -29,8 +29,8 @@ namespace Tsavorite.test
 
 namespace Tsavorite.test
 {
-    using ClassStoreFunctions = StoreFunctions<MyKey, MyValue, MyObjectComparerModulo, DefaultRecordDisposer<MyKey, MyValue>>;
     using ClassAllocator = GenericAllocator<MyKey, MyValue, StoreFunctions<MyKey, MyValue, MyObjectComparerModulo, DefaultRecordDisposer<MyKey, MyValue>>>;
+    using ClassStoreFunctions = StoreFunctions<MyKey, MyValue, MyObjectComparerModulo, DefaultRecordDisposer<MyKey, MyValue>>;
 
     [TestFixture]
     internal class GenericLogScanTests
@@ -104,11 +104,15 @@ namespace Tsavorite.test
             log = CreateTestDevice(deviceType, Path.Join(MethodTestDir, $"DiskWriteScanBasicTest_{deviceType}.log"));
             objlog = CreateTestDevice(deviceType, Path.Join(MethodTestDir, $"DiskWriteScanBasicTest_{deviceType}.obj.log"));
             store = new(new()
-                {
-                    IndexSize = 1L << 13,
-                    LogDevice = log, ObjectLogDevice = objlog,
-                    MutableFraction = 0.1, MemorySize = 1L << 15, PageSize = 1L << 9, SegmentSize = 1L << 22
-                }, StoreFunctions<MyKey, MyValue>.Create(comparer, () => new MyKeySerializer(), () => new MyValueSerializer())
+            {
+                IndexSize = 1L << 13,
+                LogDevice = log,
+                ObjectLogDevice = objlog,
+                MutableFraction = 0.1,
+                MemorySize = 1L << 15,
+                PageSize = 1L << 9,
+                SegmentSize = 1L << 22
+            }, StoreFunctions<MyKey, MyValue>.Create(comparer, () => new MyKeySerializer(), () => new MyValueSerializer())
                 , (allocatorSettings, storeFunctions) => new(allocatorSettings, storeFunctions)
             );
 
@@ -183,11 +187,15 @@ namespace Tsavorite.test
             log = Devices.CreateLogDevice(Path.Join(MethodTestDir, "test.log"));
             objlog = Devices.CreateLogDevice(Path.Join(MethodTestDir, "test.obj.log"));
             store = new(new()
-                {
-                    IndexSize = 1L << 13,
-                    LogDevice = log, ObjectLogDevice = objlog,
-                    MutableFraction = 0.1, MemorySize = 1L << 20, PageSize = 1L << 15, SegmentSize = 1L << 18
-                }, StoreFunctions<MyKey, MyValue>.Create(comparer, () => new MyKeySerializer(), () => new MyValueSerializer())
+            {
+                IndexSize = 1L << 13,
+                LogDevice = log,
+                ObjectLogDevice = objlog,
+                MutableFraction = 0.1,
+                MemorySize = 1L << 20,
+                PageSize = 1L << 15,
+                SegmentSize = 1L << 18
+            }, StoreFunctions<MyKey, MyValue>.Create(comparer, () => new MyKeySerializer(), () => new MyValueSerializer())
                 , (allocatorSettings, storeFunctions) => new(allocatorSettings, storeFunctions)
             );
 
@@ -258,11 +266,15 @@ namespace Tsavorite.test
             objlog = Devices.CreateLogDevice(Path.Join(MethodTestDir, "test.obj.log"));
 
             store = new(new()
-                {
-                    IndexSize = 1L << 13,
-                    LogDevice = log, ObjectLogDevice = objlog,
-                    MutableFraction = 0.1, MemorySize = 1L << 20, PageSize = 1L << 15, SegmentSize = 1L << 18
-                }, StoreFunctions<MyKey, MyValue>.Create(comparer, () => new MyKeySerializer(), () => new MyValueSerializer())
+            {
+                IndexSize = 1L << 13,
+                LogDevice = log,
+                ObjectLogDevice = objlog,
+                MutableFraction = 0.1,
+                MemorySize = 1L << 20,
+                PageSize = 1L << 15,
+                SegmentSize = 1L << 18
+            }, StoreFunctions<MyKey, MyValue>.Create(comparer, () => new MyKeySerializer(), () => new MyValueSerializer())
                 , (allocatorSettings, storeFunctions) => new(allocatorSettings, storeFunctions)
             );
 
@@ -356,11 +368,15 @@ namespace Tsavorite.test
             objlog = Devices.CreateLogDevice(Path.Join(MethodTestDir, "test.obj.log"));
 
             store = new(new()
-                {
-                    IndexSize = 1L << 13,
-                    LogDevice = log, ObjectLogDevice = objlog,
-                    MutableFraction = 0.1, MemorySize = 1L << 20, PageSize = 1L << 15, SegmentSize = 1L << 18
-                }, StoreFunctions<MyKey, MyValue>.Create(comparer, () => new MyKeySerializer(), () => new MyValueSerializer())
+            {
+                IndexSize = 1L << 13,
+                LogDevice = log,
+                ObjectLogDevice = objlog,
+                MutableFraction = 0.1,
+                MemorySize = 1L << 20,
+                PageSize = 1L << 15,
+                SegmentSize = 1L << 18
+            }, StoreFunctions<MyKey, MyValue>.Create(comparer, () => new MyKeySerializer(), () => new MyValueSerializer())
                 , (allocatorSettings, storeFunctions) => new(allocatorSettings, storeFunctions)
             );
 

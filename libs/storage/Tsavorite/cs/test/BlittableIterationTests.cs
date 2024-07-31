@@ -65,11 +65,13 @@ namespace Tsavorite.test
             log = CreateTestDevice(deviceType, Path.Join(MethodTestDir, $"{deviceType}.log"));
 
             store = new(
-                new ()
+                new()
                 {
                     IndexSize = 1L << 26,
-                    LogDevice = log, 
-                    MemorySize = 1L << 15, PageSize = 1L << 9, SegmentSize = 1L << 22
+                    LogDevice = log,
+                    MemorySize = 1L << 15,
+                    PageSize = 1L << 9,
+                    SegmentSize = 1L << 22
                 }, StoreFunctions<KeyStruct, ValueStruct>.Create(KeyStruct.Comparer.Instance)
                 , (allocatorSettings, storeFunctions) => new(allocatorSettings, storeFunctions)
             );
@@ -158,11 +160,13 @@ namespace Tsavorite.test
             log = Devices.CreateLogDevice(Path.Join(MethodTestDir, "stop_test.log"));
 
             store = new(
-                new ()
+                new()
                 {
                     IndexSize = 1L << 26,
                     LogDevice = log,
-                    MemorySize = 1L << 15, PageSize = 1L << 9, SegmentSize = 1L << 22
+                    MemorySize = 1L << 15,
+                    PageSize = 1L << 9,
+                    SegmentSize = 1L << 22
                 }, StoreFunctions<KeyStruct, ValueStruct>.Create(KeyStruct.Comparer.Instance)
                 , (allocatorSettings, storeFunctions) => new(allocatorSettings, storeFunctions)
             );
@@ -206,11 +210,13 @@ namespace Tsavorite.test
 
             // Must be large enough to contain all records in memory to exercise locking
             store = new(
-                new ()
+                new()
                 {
                     IndexSize = 1L << 26,
                     LogDevice = log,
-                    MemorySize = 1L << 25, PageSize = 1L << 20, SegmentSize = 1L << 22
+                    MemorySize = 1L << 25,
+                    PageSize = 1L << 20,
+                    SegmentSize = 1L << 22
                 }, StoreFunctions<KeyStruct, ValueStruct>.Create(KeyStruct.Comparer.Instance)
                 , (allocatorSettings, storeFunctions) => new(allocatorSettings, storeFunctions)
             );

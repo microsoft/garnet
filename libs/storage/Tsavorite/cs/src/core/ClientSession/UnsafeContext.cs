@@ -11,7 +11,7 @@ namespace Tsavorite.core
     /// <summary>
     /// Tsavorite Operations implementation that allows manual control of record epoch management. For advanced use only.
     /// </summary>
-    public readonly struct UnsafeContext<Key, Value, Input, Output, Context, Functions, TStoreFunctions, TAllocator> 
+    public readonly struct UnsafeContext<Key, Value, Input, Output, Context, Functions, TStoreFunctions, TAllocator>
         : ITsavoriteContext<Key, Value, Input, Output, Context, Functions, TStoreFunctions, TAllocator>, IUnsafeContext
         where Functions : ISessionFunctions<Key, Value, Input, Output, Context>
         where TStoreFunctions : IStoreFunctions<Key, Value>

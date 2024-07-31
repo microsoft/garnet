@@ -8,8 +8,8 @@ using static Tsavorite.test.TestUtils;
 
 namespace Tsavorite.test
 {
-    using StringStoreFunctions = StoreFunctions<string, string, StringKeyComparer, DefaultRecordDisposer<string, string>>;
     using StringAllocator = GenericAllocator<string, string, StoreFunctions<string, string, StringKeyComparer, DefaultRecordDisposer<string, string>>>;
+    using StringStoreFunctions = StoreFunctions<string, string, StringKeyComparer, DefaultRecordDisposer<string, string>>;
 
     [TestFixture]
     internal class GenericStringTests
@@ -51,12 +51,16 @@ namespace Tsavorite.test
             log = CreateTestDevice(deviceType, logfilename);
             objlog = CreateTestDevice(deviceType, objlogfilename);
 
-            store = new (new ()
-                    {
-                        IndexSize = 1L << 26,
-                        LogDevice = log, ObjectLogDevice = objlog, 
-                        MutableFraction = 0.1, MemorySize = 1L << 14, PageSize = 1L << 9, SegmentSize = 1L << 22
-                    }, StoreFunctions<string, string>.Create(StringKeyComparer.Instance, () => new StringBinaryObjectSerializer(), () => new StringBinaryObjectSerializer())
+            store = new(new()
+            {
+                IndexSize = 1L << 26,
+                LogDevice = log,
+                ObjectLogDevice = objlog,
+                MutableFraction = 0.1,
+                MemorySize = 1L << 14,
+                PageSize = 1L << 9,
+                SegmentSize = 1L << 22
+            }, StoreFunctions<string, string>.Create(StringKeyComparer.Instance, () => new StringBinaryObjectSerializer(), () => new StringBinaryObjectSerializer())
                 , (allocatorSettings, storeFunctions) => new(allocatorSettings, storeFunctions)
             );
 

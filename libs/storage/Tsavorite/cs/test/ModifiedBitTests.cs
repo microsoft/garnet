@@ -21,8 +21,8 @@ namespace Tsavorite.test.ModifiedBit
 
 namespace Tsavorite.test.ModifiedBit
 {
-    using IntStoreFunctions = StoreFunctions<int, int, ModifiedBitTestComparer, DefaultRecordDisposer<int, int>>;
     using IntAllocator = BlittableAllocator<int, int, StoreFunctions<int, int, ModifiedBitTestComparer, DefaultRecordDisposer<int, int>>>;
+    using IntStoreFunctions = StoreFunctions<int, int, ModifiedBitTestComparer, DefaultRecordDisposer<int, int>>;
 
     [TestFixture]
     class ModifiedBitTests
@@ -42,12 +42,13 @@ namespace Tsavorite.test.ModifiedBit
         {
             log = Devices.CreateLogDevice(Path.Combine(MethodTestDir, "test.log"), deleteOnClose: false);
             comparer = new ModifiedBitTestComparer();
-            store = new(new ()
-                {
-                    IndexSize = 1L << 26,
-                    LogDevice = log,
-                    PageSize = 1L << 12, MemorySize = 1L << 22
-                }, StoreFunctions<int, int>.Create(comparer)
+            store = new(new()
+            {
+                IndexSize = 1L << 26,
+                LogDevice = log,
+                PageSize = 1L << 12,
+                MemorySize = 1L << 22
+            }, StoreFunctions<int, int>.Create(comparer)
                 , (allocatorSettings, storeFunctions) => new(allocatorSettings, storeFunctions)
             );
             session = store.NewSession<int, int, Empty, SimpleSimpleFunctions<int, int>>(new SimpleSimpleFunctions<int, int>());

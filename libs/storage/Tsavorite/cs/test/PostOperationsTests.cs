@@ -8,8 +8,8 @@ using static Tsavorite.test.TestUtils;
 
 namespace Tsavorite.test
 {
-    using IntStoreFunctions = StoreFunctions<int, int, IntKeyComparer, DefaultRecordDisposer<int, int>>;
     using IntAllocator = BlittableAllocator<int, int, StoreFunctions<int, int, IntKeyComparer, DefaultRecordDisposer<int, int>>>;
+    using IntStoreFunctions = StoreFunctions<int, int, IntKeyComparer, DefaultRecordDisposer<int, int>>;
 
     [TestFixture]
     internal class PostOperationsTests
@@ -71,11 +71,13 @@ namespace Tsavorite.test
             DeleteDirectory(MethodTestDir, wait: true);
 
             log = Devices.CreateLogDevice(Path.Join(MethodTestDir, "PostOperations.log"), deleteOnClose: true);
-            store = new (new ()
-                {
-                    IndexSize = 1L << 26,
-                    LogDevice = log, MemorySize = 1L << 15, PageSize = 1L << 10
-                }, StoreFunctions<int, int>.Create(IntKeyComparer.Instance)
+            store = new(new()
+            {
+                IndexSize = 1L << 26,
+                LogDevice = log,
+                MemorySize = 1L << 15,
+                PageSize = 1L << 10
+            }, StoreFunctions<int, int>.Create(IntKeyComparer.Instance)
                 , (allocatorSettings, storeFunctions) => new(allocatorSettings, storeFunctions)
             );
             session = store.NewSession<int, int, Empty, PostFunctions>(new PostFunctions());

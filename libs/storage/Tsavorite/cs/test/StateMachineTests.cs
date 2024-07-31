@@ -9,8 +9,8 @@ using Tsavorite.test.recovery.sumstore;
 
 namespace Tsavorite.test.statemachine
 {
-    using StructStoreFunctions = StoreFunctions<AdId, NumClicks, AdId.Comparer, DefaultRecordDisposer<AdId, NumClicks>>;
     using StructAllocator = BlittableAllocator<AdId, NumClicks, StoreFunctions<AdId, NumClicks, AdId.Comparer, DefaultRecordDisposer<AdId, NumClicks>>>;
+    using StructStoreFunctions = StoreFunctions<AdId, NumClicks, AdId.Comparer, DefaultRecordDisposer<AdId, NumClicks>>;
 
     [TestFixture]
     public class StateMachineTests
@@ -31,13 +31,16 @@ namespace Tsavorite.test.statemachine
             string checkpointDir = Path.Join(TestUtils.MethodTestDir, "statemachinetest");
             _ = Directory.CreateDirectory(checkpointDir);
 
-            store = new (new ()
-                {
-                    IndexSize = 1L << 13,
-                    LogDevice = log,
-                    MutableFraction = 0.1, PageSize = 1L << 10, MemorySize = 1L << 13, CheckpointDir = checkpointDir
-                }, StoreFunctions<AdId, NumClicks>.Create(new AdId.Comparer())
-                , (allocatorSettings, storeFunctions) => new (allocatorSettings, storeFunctions)
+            store = new(new()
+            {
+                IndexSize = 1L << 13,
+                LogDevice = log,
+                MutableFraction = 0.1,
+                PageSize = 1L << 10,
+                MemorySize = 1L << 13,
+                CheckpointDir = checkpointDir
+            }, StoreFunctions<AdId, NumClicks>.Create(new AdId.Comparer())
+                , (allocatorSettings, storeFunctions) => new(allocatorSettings, storeFunctions)
             );
         }
 
