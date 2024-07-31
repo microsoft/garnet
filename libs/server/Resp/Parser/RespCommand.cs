@@ -326,7 +326,7 @@ namespace Garnet.server
         ];
 
         // long is 64 bits, 5 longs accomodate 320 resp commands which is more than enough to provide a lookup for each resp command
-        private static readonly long[] AofIndepenedentBitLookup = [0, 0, 0, 0];
+        private static readonly ulong[] AofIndepenedentBitLookup = [0, 0, 0, 0];
 
         private const int sizeOfLong = 64;
 
@@ -342,7 +342,7 @@ namespace Garnet.server
                 int bitIdxToUse = (int)cmd / sizeOfLong;
                 // set the respCommand's bit to indicate
                 int bitIdxOffset = (int)cmd % sizeOfLong;
-                long bitmask = 1U << bitIdxOffset;
+                ulong bitmask = 1UL << bitIdxOffset;
                 AofIndepenedentBitLookup[bitIdxToUse] |= bitmask ;
             }
         }
@@ -356,7 +356,7 @@ namespace Garnet.server
             // check if cmd maps to a bit vec that was set back when static ctor was run
             int bitIdxToUse = (int)cmd / sizeOfLong;
             int bitIdxOffset = (int)cmd % sizeOfLong;
-            long bitmask = 1U << bitIdxOffset;
+            ulong bitmask = 1UL << bitIdxOffset;
             return (AofIndepenedentBitLookup[bitIdxToUse] & bitmask) != 0;
         }
 

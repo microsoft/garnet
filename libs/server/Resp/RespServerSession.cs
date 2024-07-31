@@ -157,7 +157,7 @@ namespace Garnet.server
         /// <summary>
         /// Flag to indicate if server is running in AOF mode along with setting to wait for commits
         /// </summary>
-        bool runningWithAOFWaitForCommitMode = false;
+        readonly bool runningWithAOFWaitForCommitMode = false;
 
         /// <summary>
         /// Random number generator for operations, using a cryptographic generator as the base seed
@@ -966,7 +966,7 @@ namespace Garnet.server
             if ((int)(dcurr - d) > 0)
             {
                 // Debug.WriteLine("SEND: [" + Encoding.UTF8.GetString(new Span<byte>(d, (int)(dcurr - d))).Replace("\n", "|").Replace("\r", "!") + "]");
-                if (runningWithAOFWaitForCommitMode && waitForAofBlocking)
+                if (waitForAofBlocking)
                 {
                     var task = storeWrapper.appendOnlyFile.WaitForCommitAsync();
                     if (!task.IsCompleted) task.AsTask().GetAwaiter().GetResult();
