@@ -35,8 +35,8 @@ namespace Garnet.server
             state.DoString(@"
                 import = function () end
                 redis = {}
-                function redis.call(a)
-                    return garnet_call(a)
+                function redis.call(cmd, ...)
+                    return garnet_call(cmd, ...)
                 end
                 sandbox_env = {
                     tostring = tostring;
@@ -104,9 +104,9 @@ namespace Garnet.server
         /// </summary>
         /// <param name="args">Parameters</param>
         /// <returns></returns>
-        public object garnet_call(params string[] args)
+        public object garnet_call(string cmd, params object[] args)
         {
-            return respServerSession.ProcessCommandFromScripting(args);
+            return respServerSession.ProcessCommandFromScripting(cmd, args);
         }
 
         /// <summary>

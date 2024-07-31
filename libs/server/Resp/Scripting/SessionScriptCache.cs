@@ -20,13 +20,23 @@ namespace Garnet.server.Scripting
         readonly ILogger logger = logger;
         readonly Dictionary<byte[], LuaRunner> scriptCache = new(new ByteArrayComparer());
         readonly byte[] hash = new byte[SHA1Len / 2];
-        readonly byte[] digest = new byte[SHA1Len];
 
         /// <summary>
         /// Try get script runner for given digest
         /// </summary>
-        public bool TryGet(byte[] digest, out LuaRunner scriptRunner)
-            => scriptCache.TryGetValue(digest, out scriptRunner);
+        public bool TryGetFromDigest(ReadOnlySpan<byte> digest, out LuaRunner scriptRunner)
+            => scriptCache.TryGetValue(digest.ToArray(), out scriptRunner);
+
+        /// <summary>
+        /// Try get script runner for given source
+        /// </summary>
+        public bool TryGetFromSource(ReadOnlySpan<byte> source, out byte[] digest, out LuaRunner scriptRunner)
+        {
+            digest = GetScriptDigest(source);
+            if (!scriptCache.TryGetValue(digest, out scriptRunner))
+                return TryLoad(source, digest, out scriptRunner);
+            return true;
+        }
 
         /// <summary>
         /// Load script into the cache
@@ -47,6 +57,8 @@ namespace Garnet.server.Scripting
             try
             {
                 runner = new LuaRunner(source, respServerSession, logger);
+                runner.Compile();
+                scriptCache.TryAdd(digest, runner);
             }
             catch
             {
@@ -69,8 +81,9 @@ namespace Garnet.server.Scripting
 
         static ReadOnlySpan<byte> HEX_CHARS => "0123456789abcdef"u8;
 
-        byte[] GetScriptDigest(ReadOnlySpan<byte> source)
+        public byte[] GetScriptDigest(ReadOnlySpan<byte> source)
         {
+            var digest = new byte[SHA1Len];
             SHA1.HashData(source, new Span<byte>(hash));
             for (int i = 0; i < 20; i++)
             {

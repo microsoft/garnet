@@ -19,27 +19,25 @@ namespace Garnet.server
         /// <returns></returns>
         private unsafe bool TryEVALSHA(int count, byte* ptr)
         {
-            var digest = parseState.GetArgSliceByRef(0).ToArray();
+            var digest = parseState.GetArgSliceByRef(0).ReadOnlySpan;
 
-            // Get runner instance from the cache
             var result = false;
-            LuaRunner scriptRunner = null;
-            if (!sessionScriptCache.TryGet(digest, out scriptRunner))
+            if (!sessionScriptCache.TryGetFromDigest(digest, out var runner))
             {
-                if (storeWrapper.storeScriptCache.TryGetValue(digest, out var source))
+                var d = digest.ToArray();
+                if (storeWrapper.storeScriptCache.TryGetValue(d, out var source))
                 {
-                    sessionScriptCache.TryLoad(source, digest, out scriptRunner);
+                    sessionScriptCache.TryLoad(source, d, out runner);
                 }
-
-                if (scriptRunner == null)
-                {
-                    while (!RespWriteUtils.WriteError(CmdStrings.RESP_ERR_NO_SCRIPT, ref dcurr, dend))
-                        SendAndReset();
-                }
-                else
-                {
-                    result = ExecuteScript(count - 1, scriptRunner);
-                }
+            }
+            if (runner == null)
+            {
+                while (!RespWriteUtils.WriteError(CmdStrings.RESP_ERR_NO_SCRIPT, ref dcurr, dend))
+                    SendAndReset();
+            }
+            else
+            {
+                result = ExecuteScript(count - 1, runner);
             }
             return result;
         }
@@ -54,9 +52,12 @@ namespace Garnet.server
         private unsafe bool TryEVAL(int count, byte* ptr)
         {
             var script = parseState.GetArgSliceByRef(0).ReadOnlySpan;
-            using (var luaRunner = new LuaRunner(script, this, logger))
+            var digest = sessionScriptCache.GetScriptDigest(script);
+
+            using (var runner = new LuaRunner(script, this, logger))
             {
-                var result = ExecuteScript(count - 1, luaRunner);
+                runner.Compile();
+                var result = ExecuteScript(count - 1, runner);
                 return result;
             }
         }
@@ -138,10 +139,10 @@ namespace Garnet.server
             string[] keys = null;
             if (nKeys > 0)
             {
-                keys = new string[nKeys];
+                keys = new string[nKeys + 1];
                 for (int i = 0; i < nKeys; i++)
                 {
-                    keys[i] = parseState.GetString(offset++);
+                    keys[i + 1] = parseState.GetString(offset++);
                 }
                 count -= nKeys;
 
@@ -154,10 +155,10 @@ namespace Garnet.server
             string[] argv = null;
             if (count > 0)
             {
-                argv = new string[count];
+                argv = new string[count + 1];
                 for (int i = 0; i < count; i++)
                 {
-                    argv[i] = parseState.GetString(offset++);
+                    argv[i + 1] = parseState.GetString(offset++);
                 }
             }
 
