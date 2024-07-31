@@ -120,7 +120,14 @@ namespace Garnet.server
 
         private bool NetworkMonitor(int count)
         {
-            // TODO: Not supported yet.
+            if (count != 0)
+            {
+                return AbortWithWrongNumberOfArguments(nameof(RespCommand.MONITOR), count);
+            }
+
+            while (!RespWriteUtils.WriteError(CmdStrings.RESP_ERR_GENERIC_UNK_CMD, ref dcurr, dend))
+                SendAndReset();
+
             return true;
         }
 
