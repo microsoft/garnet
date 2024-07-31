@@ -325,7 +325,7 @@ namespace Garnet.server
             RespCommand.LATENCY_RESET
         ];
 
-        // long is 64 bits, 5 longs accomodate 320 resp commands which is more than enough to provide a lookup for each resp command
+        // long is 64 bits, 4 longs accomodate 256 resp commands which is more than enough to provide a lookup for each resp command
         private static readonly ulong[] AofIndepenedentBitLookup = [0, 0, 0, 0];
 
         private const int sizeOfLong = 64;
