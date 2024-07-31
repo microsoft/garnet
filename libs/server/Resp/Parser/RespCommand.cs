@@ -1887,6 +1887,28 @@ namespace Garnet.server
             }
             endReadHead = (int)(ptr - recvBufferPtr);
 
+            if (storeWrapper.appendOnlyFile != null && storeWrapper.serverOptions.WaitForCommit)
+            {
+                /* 
+                    keeping the expensive call inside the conditional only adds ~4 MSIL instructions in hotpath
+
+                    W.r.t AOF  Blocking
+                    If a previous command marked AOF for blocking we should not change AOF blocking flag.
+                    If no previous command marked AOF for blocking, then we only change AOF flag to block
+                    if the current command is AOF dependent
+
+                    Ordering for Truth Table:
+                    WaitForAofBlocking || !(IsAofIndepenent) => Whether or not it should block AOF
+
+                    Truth Table:
+                    T || !F => T (Block AOF if WaitForAofBlocking was already set)
+                    T || !T => T (Block AOF if WaitForAofBlocking was already set)
+                    F || !T => F, (Don't Block AOF if WaitForAofBlocking was not set and cmd is Aof INDEPENDENT)
+                    F || !F => T, (Block AOF if WaitForAofBlocking was not set and cmd is aof DEPENDENT)
+                */
+                waitForAofBlocking = waitForAofBlocking || !cmd.IsAofIndependent();
+            }
+
             return cmd;
         }
 

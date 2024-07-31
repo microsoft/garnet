@@ -320,9 +320,6 @@ namespace Garnet.server
             }
             finally
             {
-                // reset the session's flag for AOF blocking to default value after processing all commands
-                waitForAofBlocking = false;
-
                 networkSender.ExitAndReturnResponseObject();
                 clusterSession?.ReleaseCurrentEpoch();
             }
@@ -915,7 +912,7 @@ namespace Garnet.server
                 src = src.Slice(destSpace);
 
                 // Send and reset output buffer
-                Send(networkSender.GetResponseObjectHead());
+                Send(networkSender.GetResponseObjectHead(), true);
                 networkSender.GetResponseObject();
                 dcurr = networkSender.GetResponseObjectHead();
                 dend = networkSender.GetResponseObjectTail();
@@ -923,7 +920,7 @@ namespace Garnet.server
         }
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        private void Send(byte* d)
+        private void Send(byte* d, bool isChunked = false)
         {
             // Note: This SEND method may be called for responding to multiple commands in a single message (pipelining),
             // or multiple times in a single command for sending data larger than fitting in buffer at once.
@@ -940,6 +937,8 @@ namespace Garnet.server
                 {
                     var task = storeWrapper.appendOnlyFile.WaitForCommitAsync();
                     if (!task.IsCompleted) task.AsTask().GetAwaiter().GetResult();
+                    // once the set of commands so for has been processed we can safely reset the session flag to not need AOF blocking
+                    if(!isChunked) waitForAofBlocking = false;
                 }
                 int sendBytes = (int)(dcurr - d);
                 networkSender.SendResponse((int)(d - networkSender.GetResponseObjectHead()), sendBytes);
