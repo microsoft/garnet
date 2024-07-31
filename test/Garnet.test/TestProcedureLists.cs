@@ -1,6 +1,8 @@
 ﻿// Copyright (c) Microsoft Corporation.
 // Licensed under the MIT license.
 
+using System;
+using System.Linq;
 using Garnet.common;
 using Garnet.server;
 using Tsavorite.core;
@@ -34,52 +36,63 @@ namespace Garnet
 
         public override void Main<TGarnetApi>(TGarnetApi api, ArgSlice input, ref MemoryResult<byte> output)
         {
-            int offset = 0;
-            var elements = new ArgSlice[10];
-            bool result = true;
+            var result = TestAPI(api, input);
+            WriteSimpleString(ref output, result ? "SUCCESS" : "ERROR");
+        }
 
-            var lstKey = GetNextArg(input, ref offset);
+        private static bool TestAPI<TGarnetApi>(TGarnetApi api, ArgSlice input) where TGarnetApi : IGarnetApi
+        {
+            var offset = 0;
+            var elements = new ArgSlice[10];
+
+            var lstKeyA = GetNextArg(input, ref offset);
             var lstKeyB = GetNextArg(input, ref offset);
 
-            if (lstKey.Length == 0 || lstKeyB.Length == 0)
-                result = false;
+            if (lstKeyA.Length == 0 || lstKeyB.Length == 0)
+                return false;
 
-            if (result)
+            for (var i = 0; i < elements.Length; i++)
             {
-                for (int i = 0; i < elements.Length; i++)
-                {
-                    elements[i] = GetNextArg(input, ref offset);
-                }
-
-                api.ListLeftPush(lstKey, elements, out int count);
-                if (count != 10)
-                    result = false;
-                else
-                {
-                    api.ListLeftPop(lstKey, out ArgSlice elementPopped);
-                    if (elementPopped.Length == 0)
-                        result = false;
-                    else
-                    {
-                        api.ListRightPush(lstKeyB, elements, out count);
-                        if (count != 10)
-                            result = false;
-                        api.ListLeftPop(lstKeyB, 2, out ArgSlice[] _);
-                        //remove right
-                        api.ListRightPop(lstKeyB, out elementPopped);
-                        api.ListLength(lstKeyB, out count);
-                        if (elementPopped.Length == 0 || count != 7)
-                            result = false;
-                        var status = api.ListMove(lstKey, lstKeyB, OperationDirection.Left, OperationDirection.Right, out _);
-                        if (status == GarnetStatus.OK)
-                        {
-                            result = api.ListTrim(lstKeyB, 1, 3);
-                        }
-                    }
-                }
+                elements[i] = GetNextArg(input, ref offset);
             }
 
-            WriteSimpleString(ref output, result ? "SUCCESS" : "ERROR");
+            var status = api.ListLeftPush(lstKeyA, elements, out var count);
+            if (status != GarnetStatus.OK || count != 10)
+                return false;
+
+            status = api.ListLeftPop(lstKeyA, out var elementPopped);
+            if (status != GarnetStatus.OK || !elementPopped.ReadOnlySpan.SequenceEqual(elements[9].ReadOnlySpan))
+                return false;
+
+            status = api.ListRightPush(lstKeyB, elements, out count);
+            if (status != GarnetStatus.OK || count != 10)
+                return false;
+
+            status = api.ListLeftPop(lstKeyB, 2, out var elementsPopped);
+            if (status != GarnetStatus.OK || elementsPopped.Length != 2 || !elementsPopped[0].ReadOnlySpan.SequenceEqual(elements[0].ReadOnlySpan)
+                    || !elementsPopped[1].ReadOnlySpan.SequenceEqual(elements[1].ReadOnlySpan))
+                return false;
+
+            status = api.ListRightPop(lstKeyB, out elementPopped);
+            if (status != GarnetStatus.OK || !elementPopped.ReadOnlySpan.SequenceEqual(elements[9].ReadOnlySpan))
+                return false;
+
+            status = api.ListLength(lstKeyB, out count);
+            if (status != GarnetStatus.OK || count != 7)
+                return false;
+
+            status = api.ListMove(lstKeyA, lstKeyB, OperationDirection.Left, OperationDirection.Right, out var element);
+            if (status != GarnetStatus.OK || !element.SequenceEqual(elements[8].ReadOnlySpan.ToArray()))
+                return false;
+
+            if (!api.ListTrim(lstKeyB, 1, 3))
+                return false;
+
+            status = api.ListLength(lstKeyB, out count);
+            if (status != GarnetStatus.OK || count != 3)
+                return false;
+
+            return true;
         }
     }
 }

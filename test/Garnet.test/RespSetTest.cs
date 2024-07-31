@@ -3,20 +3,18 @@
 
 using System;
 using System.Collections.Generic;
-using System.Diagnostics;
 using System.Linq;
 using System.Text;
 using System.Threading.Tasks;
 using Garnet.server;
 using NUnit.Framework;
-using NUnit.Framework.Interfaces;
 using StackExchange.Redis;
 using SetOperation = StackExchange.Redis.SetOperation;
 
 namespace Garnet.test
 {
     [TestFixture]
-    public class RespSetTests
+    public class RespSetTest
     {
         GarnetServer server;
 
