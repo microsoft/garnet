@@ -173,24 +173,6 @@ namespace Garnet.server
     }
 
     /// <summary>
-    /// Object input header, building on the basic RESP input header
-    /// </summary>
-    [StructLayout(LayoutKind.Explicit, Size = Size)]
-    struct ObjectInputHeader
-    {
-        public const int Size = RespInputHeader.Size + sizeof(int) + sizeof(int);
-
-        [FieldOffset(0)]
-        public RespInputHeader header;
-
-        [FieldOffset(RespInputHeader.Size)]
-        public int arg1;
-
-        [FieldOffset(RespInputHeader.Size + sizeof(int))]
-        public int arg2;
-    }
-
-    /// <summary>
     /// Object output header (sometimes used as footer)
     /// </summary>
     [StructLayout(LayoutKind.Explicit, Size = Size)]
