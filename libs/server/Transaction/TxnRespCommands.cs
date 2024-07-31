@@ -162,7 +162,6 @@ namespace Garnet.server
         /// </summary>
         private bool NetworkDISCARD()
         {
-            waitForAofBlocking = true;
             if (txnManager.state == TxnState.None)
             {
                 while (!RespWriteUtils.WriteError(CmdStrings.RESP_ERR_GENERIC_DISCARD_WO_MULTI, ref dcurr, dend))
@@ -183,7 +182,6 @@ namespace Garnet.server
         /// <returns>true if parsing succeeded correctly, false if not all tokens could be consumed and further processing is necessary.</returns>
         private bool CommonWATCH(int count, StoreType type)
         {
-            waitForAofBlocking = true;
             // Have to provide at least one key
             if (count == 0)
             {
@@ -235,7 +233,6 @@ namespace Garnet.server
         /// </summary>
         private bool NetworkUNWATCH()
         {
-            waitForAofBlocking = true;
             if (txnManager.state == TxnState.None)
             {
                 txnManager.watchContainer.Reset();
@@ -253,7 +250,6 @@ namespace Garnet.server
 
         private bool NetworkRUNTXP(int count)
         {
-            waitForAofBlocking = true;
             if (count < 1)
                 return AbortWithWrongNumberOfArguments(nameof(RespCommand.RUNTXP), count);
 

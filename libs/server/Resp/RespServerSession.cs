@@ -155,11 +155,6 @@ namespace Garnet.server
         bool waitForAofBlocking = false;
 
         /// <summary>
-        /// Flag to indicate if server is running in AOF mode along with setting to wait for commits
-        /// </summary>
-        readonly bool runningWithAOFWaitForCommitMode = false;
-
-        /// <summary>
         /// Random number generator for operations, using a cryptographic generator as the base seed
         /// </summary>
         private static readonly Random RandomGen = new(RandomNumberGenerator.GetInt32(int.MaxValue));
@@ -681,19 +676,16 @@ namespace Garnet.server
             }
             else if (command == RespCommand.SUBSCRIBE)
             {
-                waitForAofBlocking = true;
                 while (!RespWriteUtils.WriteInteger(1, ref dcurr, dend))
                     SendAndReset();
             }
             else if (command == RespCommand.RUNTXP)
             {
-                waitForAofBlocking = true;
                 byte* ptr = recvBufferPtr + readHead;
                 return NetworkRUNTXP(count);
             }
             else if (command == RespCommand.CustomTxn)
             {
-                waitForAofBlocking = true;
                 if (currentCustomTransaction.NumParams < int.MaxValue && count != currentCustomTransaction.NumParams)
                 {
                     while (!RespWriteUtils.WriteError($"ERR Invalid number of parameters to stored proc {currentCustomTransaction.nameStr}, expected {currentCustomTransaction.NumParams}, actual {count}", ref dcurr, dend))
@@ -732,7 +724,6 @@ namespace Garnet.server
             }
             else if (command == RespCommand.CustomObjCmd)
             {
-                waitForAofBlocking = true;
                 if (currentCustomObjectCommand.NumParams < int.MaxValue && count != currentCustomObjectCommand.NumKeys + currentCustomObjectCommand.NumParams)
                 {
                     while (!RespWriteUtils.WriteError($"ERR Invalid number of parameters, expected {currentCustomObjectCommand.NumKeys + currentCustomObjectCommand.NumParams}, actual {count}", ref dcurr, dend))

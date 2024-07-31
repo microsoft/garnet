@@ -511,7 +511,6 @@ namespace Garnet.server
 
         private bool NetworkCOMMITAOF(int count)
         {
-            waitForAofBlocking = true;
             if (count != 0)
             {
                 return AbortWithWrongNumberOfArguments(nameof(RespCommand.COMMITAOF), count);
@@ -526,7 +525,6 @@ namespace Garnet.server
 
         private bool NetworkFORCEGC(int count)
         {
-            waitForAofBlocking = true;
             if (count > 1)
             {
                 return AbortWithWrongNumberOfArguments(nameof(RespCommand.FORCEGC), count);
@@ -552,7 +550,6 @@ namespace Garnet.server
 
         private bool NetworkProcessClusterCommand(RespCommand command, int count)
         {
-            waitForAofBlocking = true;
             if (clusterSession == null)
             {
                 while (!RespWriteUtils.WriteError(CmdStrings.RESP_ERR_GENERIC_CLUSTER_DISABLED, ref dcurr, dend))
@@ -566,7 +563,6 @@ namespace Garnet.server
 
         private bool NetworkSAVE(int count)
         {
-            waitForAofBlocking = true;
             if (count != 0)
             {
                 return AbortWithWrongNumberOfArguments(nameof(RespCommand.SAVE), count);
@@ -602,7 +598,6 @@ namespace Garnet.server
 
         private bool NetworkBGSAVE(int count)
         {
-            waitForAofBlocking = true;
             if (count > 1)
             {
                 return AbortWithWrongNumberOfArguments(nameof(RespCommand.BGSAVE), count);

@@ -21,7 +21,6 @@ namespace Garnet.server
         private bool HyperLogLogAdd<TGarnetApi>(int count, ref TGarnetApi storageApi)
             where TGarnetApi : IGarnetApi
         {
-            waitForAofBlocking = true;
             if (count < 1)
             {
                 return AbortWithWrongNumberOfArguments(nameof(RespCommand.PFADD), count);
@@ -98,7 +97,6 @@ namespace Garnet.server
         private bool HyperLogLogLength<TGarnetApi>(int count, ref TGarnetApi storageApi)
             where TGarnetApi : IGarnetApi
         {
-            waitForAofBlocking = true;
             if (count < 1)
             {
                 return AbortWithWrongNumberOfArguments(nameof(RespCommand.PFCOUNT), count);
@@ -144,7 +142,6 @@ namespace Garnet.server
         private bool HyperLogLogMerge<TGarnetApi>(int count, ref TGarnetApi storageApi)
              where TGarnetApi : IGarnetApi
         {
-            waitForAofBlocking = true;
             if (count < 1)
             {
                 return AbortWithWrongNumberOfArguments(nameof(RespCommand.PFMERGE), count);
