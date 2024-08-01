@@ -82,7 +82,7 @@ namespace Garnet.cluster
         /// <param name="mSession"></param>
         /// <returns></returns>
         public bool TryRemoveMigrationTask(MigrateSession mSession)
-            => migrationTaskStore.TryRemove(mSession.GetTargetNodeId);
+            => migrationTaskStore.TryRemove(mSession);
 
         /// <summary>
         /// Remove migration task associated with provided target nodeId 
