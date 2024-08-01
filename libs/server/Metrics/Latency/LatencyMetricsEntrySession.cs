@@ -25,6 +25,12 @@ namespace Garnet.server
             startTimestamp = 0;
         }
 
+        public void Return()
+        {
+            latency[0].Return();
+            latency[1].Return();
+        }
+
         public void Start()
         {
             startTimestamp = Stopwatch.GetTimestamp();

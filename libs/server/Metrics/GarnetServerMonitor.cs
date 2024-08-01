@@ -74,6 +74,7 @@ namespace Garnet.server
             done.WaitOne();
             cts.Dispose();
             done.Dispose();
+            globalMetrics.Dispose();
         }
 
         public void Start()

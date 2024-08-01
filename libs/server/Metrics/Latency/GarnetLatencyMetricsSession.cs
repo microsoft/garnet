@@ -28,8 +28,7 @@ namespace Garnet.server
         {
             foreach (var cmd in defaultLatencyTypes)
             {
-                metrics[(int)cmd].latency[0].Return();
-                metrics[(int)cmd].latency[1].Return();
+                metrics[(int)cmd].Return();
             }
             metrics = null;
         }
