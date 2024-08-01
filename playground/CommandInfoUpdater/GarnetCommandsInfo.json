@@ -330,8 +330,8 @@
     "SubCommands": null
   },
   {
-    "Command": "CustomScript",
-    "Name": "CustomScript",
+    "Command": "CustomProcedure",
+    "Name": "CustomProcedure",
     "IsInternal": true,
     "Arity": 1,
     "Flags": "None",

@@ -18,11 +18,11 @@ namespace Garnet.server
         internal readonly CustomRawStringCommand[] rawStringCommandMap;
         internal readonly CustomObjectCommandWrapper[] objectCommandMap;
         internal readonly CustomTransaction[] transactionProcMap;
-        internal readonly CustomScript[] customScriptMap;
+        internal readonly CustomProcedureWrapper[] customProcedureMap;
         internal int RawStringCommandId = 0;
         internal int ObjectTypeId = 0;
         internal int TransactionProcId = 0;
-        internal int CustomCommandId = 0;
+        internal int CustomProcedureId = 0;
 
         internal int CustomCommandsInfoCount => this.customCommandsInfo.Count;
         internal IEnumerable<RespCommandsInfo> CustomCommandsInfo => this.customCommandsInfo.Values;
@@ -37,7 +37,7 @@ namespace Garnet.server
             rawStringCommandMap = new CustomRawStringCommand[MaxRegistrations];
             objectCommandMap = new CustomObjectCommandWrapper[MaxRegistrations];
             transactionProcMap = new CustomTransaction[MaxRegistrations]; // can increase up to byte.MaxValue
-            customScriptMap = new CustomScript[MaxRegistrations];
+            customProcedureMap = new CustomProcedureWrapper[MaxRegistrations];
         }
 
         internal int Register(string name, int numParams, CommandType type, CustomRawStringFunctions customFunctions, RespCommandsInfo commandInfo, long expirationTicks)
@@ -168,17 +168,17 @@ namespace Garnet.server
         /// Register custom command
         /// </summary>
         /// <param name="name"></param>
-        /// <param name="customCommandProc"></param>
+        /// <param name="customProcedure"></param>
         /// <param name="commandInfo"></param>
         /// <returns></returns>
         /// <exception cref="Exception"></exception>
-        internal int Register(string name, CustomScriptProc customCommandProc, RespCommandsInfo commandInfo = null)
+        internal int Register(string name, CustomProcedure customProcedure, RespCommandsInfo commandInfo = null)
         {
-            int id = Interlocked.Increment(ref CustomCommandId) - 1;
+            int id = Interlocked.Increment(ref CustomProcedureId) - 1;
             if (id >= MaxRegistrations)
                 throw new Exception("Out of registration space");
 
-            customScriptMap[id] = new CustomScript(name, (byte)id, customCommandProc);
+            customProcedureMap[id] = new CustomProcedureWrapper(name, (byte)id, customProcedure);
             if (commandInfo != null) customCommandsInfo.Add(name, commandInfo);
             return id;
         }
@@ -227,11 +227,11 @@ namespace Garnet.server
             return false;
         }
 
-        internal bool Match(ReadOnlySpan<byte> command, out CustomScript cmd)
+        internal bool Match(ReadOnlySpan<byte> command, out CustomProcedureWrapper cmd)
         {
-            for (int i = 0; i < CustomCommandId; i++)
+            for (int i = 0; i < CustomProcedureId; i++)
             {
-                cmd = customScriptMap[i];
+                cmd = customProcedureMap[i];
                 if (cmd != null && command.SequenceEqual(new ReadOnlySpan<byte>(cmd.Name)))
                     return true;
             }

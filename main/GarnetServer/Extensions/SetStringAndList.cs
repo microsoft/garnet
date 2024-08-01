@@ -6,7 +6,7 @@ using Garnet.server;
 
 namespace Garnet
 {
-    class SetStringAndList : CustomScriptProc
+    class SetStringAndList : CustomProcedure
     {
         public override bool Execute(IGarnetApi garnetApi, ArgSlice input, ref MemoryResult<byte> output)
         {

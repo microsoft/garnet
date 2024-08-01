@@ -9,7 +9,7 @@ namespace Garnet.server
     /// <summary>
     /// Base class for custom command
     /// </summary>
-    public abstract class CustomScriptProc : CustomFunctions
+    public abstract class CustomProcedure : CustomFunctions
     {
         /// <summary>
         /// Custom command implementation
@@ -18,14 +18,14 @@ namespace Garnet.server
         public abstract bool Execute(IGarnetApi garnetApi, ArgSlice input, ref MemoryResult<byte> output);
     }
 
-    class CustomScript
+    class CustomProcedureWrapper
     {
         private readonly string nameStr;
         public readonly byte[] Name;
         public readonly byte Id;
-        public readonly CustomScriptProc CustomScriptProc;
+        public readonly CustomProcedure CustomProcedureImpl;
 
-        internal CustomScript(string name, byte id, CustomScriptProc customScriptProc)
+        internal CustomProcedureWrapper(string name, byte id, CustomProcedure customScriptProc)
         {
             if (string.IsNullOrEmpty(name))
                 throw new ArgumentNullException(nameof(name));
@@ -36,7 +36,7 @@ namespace Garnet.server
             nameStr = name.ToUpperInvariant();
             Name = System.Text.Encoding.ASCII.GetBytes(nameStr);
             Id = id;
-            CustomScriptProc = customScriptProc;
+            CustomProcedureImpl = customScriptProc;
         }
     }
 }

@@ -196,7 +196,7 @@ namespace Garnet.server
         CustomTxn,
         CustomRawStringCmd,
         CustomObjCmd,
-        CustomScript,
+        CustomProcedure,
 
         ACL,
         ACL_CAT,
@@ -1724,7 +1724,7 @@ namespace Garnet.server
                 Debug.Assert(currentCustomTransaction == null);
                 Debug.Assert(currentCustomRawStringCommand == null);
                 Debug.Assert(currentCustomObjectCommand == null);
-                Debug.Assert(currentCustomScript == null);
+                Debug.Assert(currentCustomProcedure == null);
 
                 if (storeWrapper.customCommandManager.Match(command, out currentCustomTransaction))
                 {
@@ -1738,9 +1738,9 @@ namespace Garnet.server
                 {
                     return RespCommand.CustomObjCmd;
                 }
-                else if (storeWrapper.customCommandManager.Match(command, out currentCustomScript))
+                else if (storeWrapper.customCommandManager.Match(command, out currentCustomProcedure))
                 {
-                    return RespCommand.CustomScript;
+                    return RespCommand.CustomProcedure;
                 }
 
             }

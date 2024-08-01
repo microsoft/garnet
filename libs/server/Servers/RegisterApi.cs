@@ -101,13 +101,13 @@ namespace Garnet.server
             => provider.StoreWrapper.customCommandManager.Register(name, numParams, commandType, factory, customObjectFunctions, commandInfo);
 
         /// <summary>
-        /// Register custom command with Garnet
+        /// Register custom procedure with Garnet
         /// </summary>
         /// <param name="name"></param>
-        /// <param name="customScriptProc"></param>
+        /// <param name="customProcedure"></param>
         /// <param name="commandInfo"></param>
         /// <returns></returns>
-        public int NewScript(string name, CustomScriptProc customScriptProc, RespCommandsInfo commandInfo = null)
-            => provider.StoreWrapper.customCommandManager.Register(name, customScriptProc, commandInfo);
+        public int NewProcedure(string name, CustomProcedure customProcedure, RespCommandsInfo commandInfo = null)
+            => provider.StoreWrapper.customCommandManager.Register(name, customProcedure, commandInfo);
     }
 }

@@ -108,9 +108,9 @@ namespace Garnet.server
                 {
                     self.currentCustomTransaction = null;
                 }
-                else if (cmd == RespCommand.CustomScript)
+                else if (cmd == RespCommand.CustomProcedure)
                 {
-                    self.currentCustomScript = null;
+                    self.currentCustomProcedure = null;
                 }
                 while (!RespWriteUtils.WriteError(CmdStrings.RESP_ERR_NOAUTH, ref self.dcurr, self.dend))
                     self.SendAndReset();

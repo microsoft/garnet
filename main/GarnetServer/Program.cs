@@ -92,8 +92,8 @@ namespace Garnet
             server.Register.NewTransactionProc("SAMPLEUPDATETX", 8, () => new SampleUpdateTxn());
             server.Register.NewTransactionProc("SAMPLEDELETETX", 5, () => new SampleDeleteTxn());
 
-            server.Register.NewScript("SUM", new Sum());
-            server.Register.NewScript("SETMAINANDOBJECT", new SetStringAndList());
+            server.Register.NewProcedure("SUM", new Sum());
+            server.Register.NewProcedure("SETMAINANDOBJECT", new SetStringAndList());
         }
     }
 }

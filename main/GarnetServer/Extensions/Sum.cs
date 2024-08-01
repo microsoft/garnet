@@ -6,7 +6,7 @@ using Garnet.server;
 
 namespace Garnet
 {
-    class Sum : CustomScriptProc
+    class Sum : CustomProcedure
     {
         public override bool Execute(IGarnetApi garnetApi, ArgSlice input, ref MemoryResult<byte> output)
         {
