@@ -150,7 +150,7 @@ namespace Resp.benchmark
                 worker.Start();
             int iteration = -reportInterval;
             var histogram = new LongHistogram(1, TimeStamp.Seconds(100), 2);
-            var summary = histogram.Copy();
+            var summary = (LongHistogram)histogram.Copy();
 
             Stopwatch swatch = new();
             waiter.Set();
@@ -227,7 +227,8 @@ namespace Resp.benchmark
             Console.WriteLine($"Total time: {swatch.ElapsedMilliseconds:N2}ms for {total_ops_done:N2} ops");
             Console.WriteLine($"Throughput: {opsPerSecond:N2} ops/sec");
             DumpHistogram(summary);
-
+            summary.Return();
+            histogram.Return();
             total_ops_done = 0;
             waiter.Reset();
         }
