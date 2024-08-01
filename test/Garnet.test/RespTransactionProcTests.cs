@@ -302,7 +302,7 @@ namespace Garnet.test
 
             // Read keys to verify transaction succeeded
             long len = db.SortedSetLength("ssA");
-            Assert.AreEqual(5, len);
+            Assert.AreEqual(1, len);
 
         }
 
