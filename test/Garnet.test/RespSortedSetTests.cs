@@ -857,12 +857,6 @@ namespace Garnet.test
             RespTestsUtils.CheckCommandOnWrongTypeObjectSE(() => db.SortedSetScores(keys[1], values[1]));
         }
 
-        [Test]
-        public void CheckAOFRecoveryForSortedSetRMWOperations()
-        {
-
-        }
-
         #endregion
 
         #region LightClientTests

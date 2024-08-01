@@ -329,14 +329,17 @@ namespace Garnet.server
             // Reconstructing parse state
             var parseStateCount = input.parseState.Count;
 
-            ArgSlice[] parseStateBuffer = default;
-            input.parseState.Initialize(ref parseStateBuffer, parseStateCount);
-
-            for (var i = 0; i < parseStateCount; i++)
+            if (parseStateCount > 0)
             {
-                ref var sbArgument = ref Unsafe.AsRef<SpanByte>(curr);
-                parseStateBuffer[i] = new ArgSlice(ref sbArgument);
-                curr += sbArgument.TotalSize;
+                ArgSlice[] parseStateBuffer = default;
+                input.parseState.Initialize(ref parseStateBuffer, parseStateCount);
+
+                for (var i = 0; i < parseStateCount; i++)
+                {
+                    ref var sbArgument = ref Unsafe.AsRef<SpanByte>(curr);
+                    parseStateBuffer[i] = new ArgSlice(ref sbArgument);
+                    curr += sbArgument.TotalSize;
+                }
             }
 
             // Call RMW with the reconstructed key & ObjectInput

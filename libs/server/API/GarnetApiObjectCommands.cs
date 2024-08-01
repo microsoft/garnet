@@ -101,8 +101,8 @@ namespace Garnet.server
             => storageSession.SortedSetIncrement(key, increment, member, out newScore, ref objectContext);
 
         /// <inheritdoc />
-        public GarnetStatus SortedSetRemoveRange(byte[] key, ref ObjectInput input, out ObjectOutputHeader output)
-            => storageSession.SortedSetRemoveRange(key, ref input, out output, ref objectContext);
+        public GarnetStatus SortedSetRemoveRange(byte[] key, ref ObjectInput input, ref GarnetObjectStoreOutput outputFooter)
+            => storageSession.SortedSetRemoveRange(key, ref input, ref outputFooter, ref objectContext);
 
         /// <inheritdoc />
         public GarnetStatus SortedSetRank(byte[] key, ref ObjectInput input, ref GarnetObjectStoreOutput outputFooter)

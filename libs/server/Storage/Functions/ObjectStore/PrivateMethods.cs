@@ -56,14 +56,19 @@ namespace Garnet.server
             {
                 var sbKey = SpanByte.FromPinnedPointer(keyPtr, key.Length);
 
-                var sbToSerialize = new SpanByte[3 + input.parseState.Count];
+                var parseStateArgCount = input.parseState.Count - input.parseStateStartIdx;
+
+                var sbToSerialize = new SpanByte[3 + parseStateArgCount];
                 sbToSerialize[0] = sbKey;
-                sbToSerialize[1] = input.SpanByte;
                 sbToSerialize[2] = input.payload.SpanByte;
-                for (var i = 0; i < input.parseState.Count; i++)
+                for (var i = 0; i < parseStateArgCount; i++)
                 {
-                    sbToSerialize[i + 3] = input.parseState.GetArgSliceByRef(i).SpanByte;
+                    sbToSerialize[i + 3] = input.parseState.GetArgSliceByRef(input.parseStateStartIdx + i).SpanByte;
                 }
+
+                input.parseStateStartIdx = 0;
+                input.parseState.Count = parseStateArgCount;
+                sbToSerialize[1] = input.SpanByte;
 
                 functionsState.appendOnlyFile.Enqueue(
                     new AofHeader { opType = AofEntryType.ObjectStoreRMW, version = version, sessionID = sessionID },

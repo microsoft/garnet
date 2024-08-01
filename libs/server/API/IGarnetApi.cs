@@ -391,9 +391,9 @@ namespace Garnet.server
         /// </summary>
         /// <param name="key"></param>
         /// <param name="input"></param>
-        /// <param name="output"></param>
+        /// <param name="outputFooter"></param>
         /// <returns></returns>
-        GarnetStatus SortedSetRemoveRange(byte[] key, ref ObjectInput input, out ObjectOutputHeader output);
+        GarnetStatus SortedSetRemoveRange(byte[] key, ref ObjectInput input, ref GarnetObjectStoreOutput outputFooter);
 
         /// <summary>
         /// Removes all elements in the range specified by min and max, having the same score.

@@ -146,7 +146,7 @@ namespace Garnet.server
         /// <summary>
         /// Size of header
         /// </summary>
-        public const int Size = RespInputHeader.Size + (2 * sizeof(int)) + ArgSlice.Size + SessionParseState.Size;
+        public const int Size = RespInputHeader.Size + (3 * sizeof(int)) + ArgSlice.Size + SessionParseState.Size;
 
         /// <summary>
         /// Common input header for Garnet
@@ -173,9 +173,15 @@ namespace Garnet.server
         public ArgSlice payload;
 
         /// <summary>
-        /// Session parse state
+        /// First index to start reading the parse state for command execution
         /// </summary>
         [FieldOffset(RespInputHeader.Size + (2 * sizeof(int)) + ArgSlice.Size)]
+        public int parseStateStartIdx;
+
+        /// <summary>
+        /// Session parse state
+        /// </summary>
+        [FieldOffset(RespInputHeader.Size + (3 * sizeof(int)) + ArgSlice.Size)]
         public SessionParseState parseState;
 
         /// <summary>

@@ -293,11 +293,10 @@ namespace Garnet.server
         /// Converts a simple integer in RESP format to integer type
         /// </summary>
         /// <param name="outputFooter">The RESP format output object</param>
+        /// <param name="value"></param>
         /// <returns>integer</returns>
-        unsafe long ProcessRespSimple64IntOutput(GarnetObjectStoreOutput outputFooter)
+        unsafe bool TryProcessRespSimple64IntOutput(GarnetObjectStoreOutput outputFooter, out long value)
         {
-            long result;
-
             var outputSpan = outputFooter.spanByteAndMemory.IsSpanByte ?
                 outputFooter.spanByteAndMemory.SpanByte.AsReadOnlySpan() : outputFooter.spanByteAndMemory.AsMemoryReadOnlySpan();
             try
@@ -306,8 +305,8 @@ namespace Garnet.server
                 {
                     var refPtr = outputPtr;
 
-                    if (!RespReadUtils.Read64Int(out result, ref refPtr, outputPtr + outputSpan.Length))
-                        return default;
+                    if (!RespReadUtils.TryRead64Int(out value, ref refPtr, outputPtr + outputSpan.Length, out _))
+                        return false;
                 }
             }
             finally
@@ -316,7 +315,7 @@ namespace Garnet.server
                     outputFooter.spanByteAndMemory.Memory.Dispose();
             }
 
-            return result;
+            return true;
         }
 
         /// <summary>

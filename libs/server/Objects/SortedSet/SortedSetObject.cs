@@ -256,10 +256,10 @@ namespace Garnet.server
                         SortedSetRemoveRangeByLex(ref input, outputSpan);
                         break;
                     case SortedSetOperation.ZREMRANGEBYRANK:
-                        SortedSetRemoveRangeByRank(ref input, outputSpan);
+                        SortedSetRemoveRangeByRank(ref input, ref output);
                         break;
                     case SortedSetOperation.ZREMRANGEBYSCORE:
-                        SortedSetRemoveRangeByScore(ref input, outputSpan);
+                        SortedSetRemoveRangeByScore(ref input, ref output);
                         break;
                     case SortedSetOperation.ZLEXCOUNT:
                         SortedSetCountByLex(ref input, outputSpan);
