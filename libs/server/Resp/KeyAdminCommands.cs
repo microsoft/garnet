@@ -79,20 +79,19 @@ namespace Garnet.server
         /// EXISTS multiple keys
         /// </summary>
         /// <typeparam name="TGarnetApi"></typeparam>
-        /// <param name="count"></param>
         /// <param name="storageApi"></param>
         /// <returns></returns>
-        private bool NetworkEXISTS<TGarnetApi>(int count, ref TGarnetApi storageApi)
+        private bool NetworkEXISTS<TGarnetApi>(ref TGarnetApi storageApi)
             where TGarnetApi : IGarnetApi
         {
-            if (count < 1)
+            if (parseState.count < 1)
             {
-                return AbortWithWrongNumberOfArguments(nameof(RespCommand.EXISTS), count);
+                return AbortWithWrongNumberOfArguments(nameof(RespCommand.EXISTS), parseState.count);
             }
 
-            int exists = 0;
+            var exists = 0;
 
-            for (int i = 0; i < count; i++)
+            for (var i = 0; i < parseState.count; i++)
             {
                 var key = parseState.GetArgSliceByRef(i);
                 var status = storageApi.EXISTS(key);
@@ -111,15 +110,14 @@ namespace Garnet.server
         /// </summary>
         /// <typeparam name="TGarnetApi"></typeparam>
         /// <param name="command">Indicates which command to use, expire or pexpire.</param>
-        /// <param name="count">Number of arguments sent with this command.</param>
         /// <param name="storageApi"></param>
         /// <returns></returns>
-        private bool NetworkEXPIRE<TGarnetApi>(int count, RespCommand command, ref TGarnetApi storageApi)
+        private bool NetworkEXPIRE<TGarnetApi>(RespCommand command, ref TGarnetApi storageApi)
             where TGarnetApi : IGarnetApi
         {
-            if (count < 2 || count > 3)
+            if (parseState.count < 2 || parseState.count > 3)
             {
-                return AbortWithWrongNumberOfArguments(nameof(RespCommand.EXPIRE), count);
+                return AbortWithWrongNumberOfArguments(nameof(RespCommand.EXPIRE), parseState.count);
             }
 
             var key = parseState.GetArgSliceByRef(0);
@@ -138,7 +136,7 @@ namespace Garnet.server
             var expireOption = ExpireOption.None;
             var optionStr = "";
 
-            if (count > 2)
+            if (parseState.count > 2)
             {
                 optionStr = parseState.GetString(2);
 

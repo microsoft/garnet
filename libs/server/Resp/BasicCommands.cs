@@ -410,7 +410,7 @@ namespace Garnet.server
         /// <summary>
         /// SET EX NX
         /// </summary>
-        private bool NetworkSETEXNX<TGarnetApi>(int count, ref TGarnetApi storageApi)
+        private bool NetworkSETEXNX<TGarnetApi>(ref TGarnetApi storageApi)
             where TGarnetApi : IGarnetApi
         {
             var key = parseState.GetArgSliceByRef(0);
@@ -428,7 +428,7 @@ namespace Garnet.server
             var tokenIdx = 2;
             Span<byte> nextOpt = default;
             var optUpperCased = false;
-            while (tokenIdx < count || optUpperCased)
+            while (tokenIdx < parseState.count || optUpperCased)
             {
                 if (!optUpperCased)
                 {
