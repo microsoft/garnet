@@ -126,7 +126,7 @@ namespace Garnet.server
 
         /// <inheritdoc />
         public GarnetStatus SortedSetScan(ArgSlice key, long cursor, string match, int count, out ArgSlice[] items)
-            => storageSession.SortedSetScan(key, cursor, match, count, out items, ref objectContext);
+            => storageSession.ObjectScan(GarnetObjectType.SortedSet, key, cursor, match, count, out items, ref objectContext);
 
         #endregion
 
@@ -310,7 +310,7 @@ namespace Garnet.server
 
         /// <inheritdoc />
         public GarnetStatus SetScan(ArgSlice key, long cursor, string match, int count, out ArgSlice[] items)
-            => storageSession.SetScan(key, cursor, match, count, out items, ref objectContext);
+            => storageSession.ObjectScan(GarnetObjectType.Set, key, cursor, match, count, out items, ref objectContext);
 
         /// <inheritdoc />
         public GarnetStatus SetMove(ArgSlice sourceKey, ArgSlice destinationKey, ArgSlice member, out int smoveResult)
@@ -444,8 +444,8 @@ namespace Garnet.server
             => storageSession.HashIncrement(key, ref input, ref outputFooter, ref objectContext);
 
         /// <inheritdoc />
-        public GarnetStatus HashScan(ArgSlice key, long cursor, string match, long count, out ArgSlice[] items)
-            => storageSession.HashScan(key, cursor, match, count, out items, ref objectContext);
+        public GarnetStatus HashScan(ArgSlice key, long cursor, string match, int count, out ArgSlice[] items)
+            => storageSession.ObjectScan(GarnetObjectType.Hash, key, cursor, match, count, out items, ref objectContext);
 
         #endregion
     }

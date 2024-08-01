@@ -402,7 +402,7 @@ namespace Garnet.server
         }
 
         /// <inheritdoc />
-        public GarnetStatus HashScan(ArgSlice key, long cursor, string match, long count, out ArgSlice[] items)
+        public GarnetStatus HashScan(ArgSlice key, long cursor, string match, int count, out ArgSlice[] items)
         {
             garnetApi.WATCH(key, StoreType.Object);
             return garnetApi.HashScan(key, cursor, match, count, out items);

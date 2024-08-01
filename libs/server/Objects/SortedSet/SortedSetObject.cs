@@ -271,10 +271,16 @@ namespace Garnet.server
                         SortedSetRandomMember(ref input, ref output);
                         break;
                     case SortedSetOperation.ZSCAN:
-                        if (ObjectUtils.ReadScanInput(ref input, ref output, out var cursorInput, out var pattern, out var patternLength, out int limitCount, out int bytesDone))
+                        if (ObjectUtils.ReadScanInput(ref input, ref output, out var cursorInput, out var pattern,
+                                out var patternLength, out var limitCount, out var error))
                         {
-                            Scan(cursorInput, out var items, out var cursorOutput, count: limitCount, pattern: pattern, patternLength: patternLength);
-                            ObjectUtils.WriteScanOutput(items, cursorOutput, ref output, bytesDone);
+                            Scan(cursorInput, out var items, out var cursorOutput, count: limitCount, pattern: pattern,
+                                patternLength: patternLength);
+                            ObjectUtils.WriteScanOutput(items, cursorOutput, ref output);
+                        }
+                        else
+                        {
+                            ObjectUtils.WriteScanError(error, ref output);
                         }
                         break;
                     default:

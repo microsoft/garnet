@@ -345,12 +345,18 @@ namespace Garnet.server
 
                 // read the rest of the arguments
                 ZRangeOptions options = new();
-                if (input.header.SortedSetOp == SortedSetOperation.ZRANGEBYSCORE) options.ByScore = true;
-                if (input.header.SortedSetOp == SortedSetOperation.ZREVRANGE) options.Reverse = true;
-                if (input.header.SortedSetOp == SortedSetOperation.ZREVRANGEBYSCORE)
+                switch (input.header.SortedSetOp)
                 {
-                    options.Reverse = true;
-                    options.ByScore = true;
+                    case SortedSetOperation.ZRANGEBYSCORE:
+                        options.ByScore = true;
+                        break;
+                    case SortedSetOperation.ZREVRANGE:
+                        options.Reverse = true;
+                        break;
+                    case SortedSetOperation.ZREVRANGEBYSCORE:
+                        options.ByScore = true;
+                        options.Reverse = true;
+                        break;
                 }
 
                 if (count > 2)
@@ -558,91 +564,106 @@ namespace Garnet.server
         private void SortedSetRemoveRangeByRank(ref ObjectInput input, ref SpanByteAndMemory output)
         {
             // ZREMRANGEBYRANK key start stop
-            var _output = (ObjectOutputHeader*)output;
+            var isMemory = false;
+            MemoryHandle ptrHandle = default;
+            var ptr = output.SpanByte.ToPointer();
 
-            // Using minValue for partial execution detection
-            _output->result1 = int.MinValue;
+            var curr = ptr;
+            var end = curr + output.Length;
 
-            if (!RespReadUtils.TrySliceWithLengthHeader(out var startBytes, ref input_currptr, input_endptr) ||
-                !RespReadUtils.TrySliceWithLengthHeader(out var stopBytes, ref input_currptr, input_endptr))
+            var currIdx = input.parseStateStartIdx;
+
+            ObjectOutputHeader outputHeader = default;
+
+            try
             {
-                return;
-            }
-
-            _output->result1 = int.MaxValue;
-
-            if (!NumUtils.TryParse(startBytes, out int start) ||
-                !NumUtils.TryParse(stopBytes, out int stop))
-            {
-                return;
-            }
-
-            _output->result1 = 0;
-
-            if (start > sortedSetDict.Count - 1)
-            {
-                return;
-            }
-
-            // Shift from the end of the set
-            if (start < 0)
-            {
-                start = sortedSetDict.Count + start;
-            }
-            if (stop < 0)
-            {
-                stop = sortedSetDict.Count + stop;
-            }
-            else if (stop >= sortedSetDict.Count)
-            {
-                stop = sortedSetDict.Count - 1;
-            }
-
-            // Calculate number of elements
-            _output->result1 = stop - start + 1;
-
-            // Using to list to avoid modified enumerator exception
-            foreach (var item in sortedSet.Skip(start).Take(stop - start + 1).ToList())
-            {
-                if (sortedSetDict.Remove(item.Item2, out var key))
+                if (!input.parseState.TryGetInt(currIdx++, out var start) ||
+                    !input.parseState.TryGetInt(currIdx, out var stop))
                 {
-                    sortedSet.Remove((key, item.Item2));
-
-                    this.UpdateSize(item.Item2, false);
+                    while (!RespWriteUtils.WriteError(CmdStrings.RESP_ERR_GENERIC_VALUE_IS_NOT_INTEGER, ref curr, end))
+                        ObjectUtils.ReallocateOutput(ref output, ref isMemory, ref ptr, ref ptrHandle, ref curr, ref end);
+                    return;
                 }
+
+                if (start > sortedSetDict.Count - 1)
+                    return;
+
+                // Shift from the end of the set
+                start = start < 0 ? sortedSetDict.Count + start : start;
+                stop = stop < 0
+                    ? sortedSetDict.Count + stop
+                    : stop >= sortedSetDict.Count ? sortedSetDict.Count - 1 : stop;
+
+                // Calculate number of elements
+                var elementCount = stop - start + 1;
+
+                // Using to list to avoid modified enumerator exception
+                foreach (var item in sortedSet.Skip(start).Take(elementCount).ToList())
+                {
+                    if (sortedSetDict.Remove(item.Item2, out var key))
+                    {
+                        sortedSet.Remove((key, item.Item2));
+
+                        this.UpdateSize(item.Item2, false);
+                    }
+                }
+
+                // Write the number of elements
+                while (!RespWriteUtils.WriteInteger(elementCount, ref curr, end))
+                    ObjectUtils.ReallocateOutput(ref output, ref isMemory, ref ptr, ref ptrHandle, ref curr, ref end);
+            }
+            finally
+            {
+                while (!RespWriteUtils.WriteDirect(ref outputHeader, ref curr, end))
+                    ObjectUtils.ReallocateOutput(ref output, ref isMemory, ref ptr, ref ptrHandle, ref curr, ref end);
+
+                if (isMemory) ptrHandle.Dispose();
+                output.Length = (int)(curr - ptr);
             }
         }
 
         private void SortedSetRemoveRangeByScore(ref ObjectInput input, ref SpanByteAndMemory output)
         {
             // ZREMRANGEBYSCORE key min max
-            var _output = (ObjectOutputHeader*)output;
-            *_output = default;
+            var isMemory = false;
+            MemoryHandle ptrHandle = default;
+            var ptr = output.SpanByte.ToPointer();
 
-            var input_startptr = input.payload.ptr;
-            var input_currptr = input_startptr;
-            var length = input.payload.length;
-            var input_endptr = input_startptr + length;
+            var curr = ptr;
+            var end = curr + output.Length;
 
-            // command could be partially executed
-            _output->result1 = int.MinValue;
+            var currIdx = input.parseStateStartIdx;
 
-            // read min and max
-            if (!RespReadUtils.TrySliceWithLengthHeader(out var minParamBytes, ref input_currptr, input_endptr) ||
-                !RespReadUtils.TrySliceWithLengthHeader(out var maxParamBytes, ref input_currptr, input_endptr))
+            ObjectOutputHeader outputHeader = default;
+
+            try
             {
-                return;
+                // Read min and max
+                var minParamBytes = input.parseState.GetArgSliceByRef(currIdx++).ReadOnlySpan;
+                var maxParamBytes = input.parseState.GetArgSliceByRef(currIdx).ReadOnlySpan;
+
+                if (!TryParseParameter(minParamBytes, out var minValue, out var minExclusive) ||
+                    !TryParseParameter(maxParamBytes, out var maxValue, out var maxExclusive))
+                {
+                    while (!RespWriteUtils.WriteError(CmdStrings.RESP_ERR_MIN_MAX_NOT_VALID_FLOAT, ref curr, end))
+                        ObjectUtils.ReallocateOutput(ref output, ref isMemory, ref ptr, ref ptrHandle, ref curr, ref end);
+                    return;
+                }
+
+                var elementCount = GetElementsInRangeByScore(minValue, maxValue, minExclusive, maxExclusive, false,
+                    false, false, true).Count;
+
+                // Write the number of elements
+                while (!RespWriteUtils.WriteInteger(elementCount, ref curr, end))
+                    ObjectUtils.ReallocateOutput(ref output, ref isMemory, ref ptr, ref ptrHandle, ref curr, ref end);
             }
+            finally
+            {
+                while (!RespWriteUtils.WriteDirect(ref outputHeader, ref curr, end))
+                    ObjectUtils.ReallocateOutput(ref output, ref isMemory, ref ptr, ref ptrHandle, ref curr, ref end);
 
-            if (!TryParseParameter(minParamBytes, out var minValue, out var minExclusive) ||
-                !TryParseParameter(maxParamBytes, out var maxValue, out var maxExclusive))
-            {
-                _output->result1 = int.MaxValue;
-            }
-            else
-            {
-                var rem = GetElementsInRangeByScore(minValue, maxValue, minExclusive, maxExclusive, false, false, false, true);
-                _output->result1 = rem.Count;
+                if (isMemory) ptrHandle.Dispose();
+                output.Length = (int)(curr - ptr);
             }
         }
 

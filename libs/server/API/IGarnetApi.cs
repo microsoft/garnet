@@ -1471,7 +1471,7 @@ namespace Garnet.server
         /// <param name="count"></param>
         /// <param name="items"></param>
         /// <returns></returns>
-        GarnetStatus HashScan(ArgSlice key, long cursor, string match, long count, out ArgSlice[] items);
+        GarnetStatus HashScan(ArgSlice key, long cursor, string match, int count, out ArgSlice[] items);
 
         #endregion
 

@@ -281,10 +281,13 @@ namespace Garnet.server
             {
                 fixed (byte* ptr2 = maxBytes)
                 {
-                    // Prepare the input payload
+                    // Prepare the parse state
                     var minArgSlice = new ArgSlice(ptr, minBytes.Length);
                     var maxArgSlice = new ArgSlice(ptr2, maxBytes.Length);
-                    var inputPayload = scratchBufferManager.FormatScratchAsResp(0, minArgSlice, maxArgSlice);
+
+                    var parseState = new SessionParseState();
+                    ArgSlice[] parseStateBuffer = default;
+                    parseState.InitializeWithArguments(ref parseStateBuffer, minArgSlice, maxArgSlice);
 
                     // Prepare the input
                     var input = new ObjectInput
@@ -294,11 +297,18 @@ namespace Garnet.server
                             type = GarnetObjectType.SortedSet,
                             SortedSetOp = SortedSetOperation.ZREMRANGEBYSCORE,
                         },
-                        payload = inputPayload,
+                        parseState = parseState,
+                        parseStateStartIdx = 0,
                     };
 
-                    status = RMWObjectStoreOperation(key.ToArray(), ref input, out var output, ref objectStoreContext);
-                    countRemoved = output.result1;
+                    var outputFooter = new GarnetObjectStoreOutput { spanByteAndMemory = new SpanByteAndMemory(null) };
+
+                    status = RMWObjectStoreOperationWithOutput(key.ToArray(), ref input, ref objectStoreContext, ref outputFooter);
+
+                    if (status == GarnetStatus.OK)
+                    {
+                        countRemoved = TryProcessRespSimple64IntOutput(outputFooter, out var value) ? (int)value : default;
+                    }
                 }
             }
 
@@ -331,10 +341,13 @@ namespace Garnet.server
             {
                 fixed (byte* ptr2 = stopBytes)
                 {
-                    // Prepare the input payload
+                    // Prepare the parse state
                     var startArgSlice = new ArgSlice(ptr, startBytes.Length);
                     var stopArgSlice = new ArgSlice(ptr2, stopBytes.Length);
-                    var inputPayload = scratchBufferManager.FormatScratchAsResp(0, startArgSlice, stopArgSlice);
+
+                    var parseState = new SessionParseState();
+                    ArgSlice[] parseStateBuffer = default;
+                    parseState.InitializeWithArguments(ref parseStateBuffer, startArgSlice, stopArgSlice);
 
                     // Prepare the input
                     var input = new ObjectInput
@@ -344,11 +357,18 @@ namespace Garnet.server
                             type = GarnetObjectType.SortedSet,
                             SortedSetOp = SortedSetOperation.ZREMRANGEBYRANK,
                         },
-                        payload = inputPayload,
+                        parseState = parseState,
+                        parseStateStartIdx = 0,
                     };
 
-                    status = RMWObjectStoreOperation(key.ToArray(), ref input, out var output, ref objectStoreContext);
-                    countRemoved = output.result1;
+                    var outputFooter = new GarnetObjectStoreOutput { spanByteAndMemory = new SpanByteAndMemory(null) };
+
+                    status = RMWObjectStoreOperationWithOutput(key.ToArray(), ref input, ref objectStoreContext, ref outputFooter);
+
+                    if (status == GarnetStatus.OK)
+                    {
+                        countRemoved = TryProcessRespSimple64IntOutput(outputFooter, out var value) ? (int)value : default;
+                    }
                 }
             }
 
@@ -677,83 +697,6 @@ namespace Garnet.server
             }
 
             return GarnetStatus.OK;
-        }
-
-        /// <summary>
-        /// Iterates members of SortedSet key and their associated scores using a cursor,
-        /// a match pattern and count parameters
-        /// </summary>
-        /// <param name="key">The key of the sorted set</param>
-        /// <param name="cursor">The value of the cursor</param>
-        /// <param name="match">The pattern to match the members</param>
-        /// <param name="count">Limit number for the response</param>
-        /// <param name="items">The list of items for the response</param>
-        /// <param name="objectStoreContext"></param>
-        public unsafe GarnetStatus SortedSetScan<TObjectContext>(ArgSlice key, long cursor, string match, int count, out ArgSlice[] items, ref TObjectContext objectStoreContext)
-             where TObjectContext : ITsavoriteContext<byte[], IGarnetObject, ObjectInput, GarnetObjectStoreOutput, long, ObjectStoreFunctions>
-        {
-            items = default;
-
-            if (key.Length == 0)
-                return GarnetStatus.OK;
-
-            if (string.IsNullOrEmpty(match))
-                match = "*";
-
-            // Prepare the payload
-            var payloadSlice = scratchBufferManager.CreateArgSlice(sizeof(int));
-            *(int*)payloadSlice.ptr = ObjectScanCountLimit;
-
-            var payloadLength = sizeof(int);
-
-            ArgSlice tmp;
-            // Write match
-            var matchPatternValue = Encoding.ASCII.GetBytes(match.Trim());
-            fixed (byte* matchKeywordPtr = CmdStrings.MATCH, matchPatterPtr = matchPatternValue)
-            {
-                tmp = scratchBufferManager.FormatScratchAsResp(0, new ArgSlice(matchKeywordPtr, CmdStrings.MATCH.Length),
-                    new ArgSlice(matchPatterPtr, matchPatternValue.Length));
-            }
-            payloadLength += tmp.Length;
-
-            // Write count
-            var lengthCountNumber = NumUtils.NumDigits(count);
-            var countBytes = new byte[lengthCountNumber];
-
-            fixed (byte* countPtr = CmdStrings.COUNT, countValuePtr = countBytes)
-            {
-                var countValuePtr2 = countValuePtr;
-                NumUtils.IntToBytes(count, lengthCountNumber, ref countValuePtr2);
-
-                tmp = scratchBufferManager.FormatScratchAsResp(0, new ArgSlice(countPtr, CmdStrings.COUNT.Length),
-                    new ArgSlice(countValuePtr, countBytes.Length));
-            }
-            payloadLength += tmp.Length;
-
-            var inputPayload = scratchBufferManager.GetSliceFromTail(payloadLength);
-
-            // Prepare the input
-            var input = new ObjectInput
-            {
-                header = new RespInputHeader
-                {
-                    type = GarnetObjectType.SortedSet,
-                    SortedSetOp = SortedSetOperation.ZSCAN,
-                },
-                arg1 = 4,
-                arg2 = (int)cursor,
-                payload = inputPayload,
-            };
-
-            var outputFooter = new GarnetObjectStoreOutput { spanByteAndMemory = new SpanByteAndMemory(null) };
-            var status = ReadObjectStoreOperationWithOutput(key.ToArray(), ref input, ref objectStoreContext, ref outputFooter);
-
-            items = default;
-            if (status == GarnetStatus.OK)
-                items = ProcessRespArrayOutput(outputFooter, out _, isScanOutput: true);
-
-            return status;
-
         }
 
         /// <summary>

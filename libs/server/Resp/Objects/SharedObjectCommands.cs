@@ -41,10 +41,7 @@ namespace Garnet.server
             var keyBytes = sbKey.ToByteArray();
 
             // Get cursor value
-            var cursorSlice = parseState.GetArgSliceByRef(1);
-            var sbCursor = cursorSlice.SpanByte;
-
-            if (!NumUtils.TryParse(cursorSlice.ReadOnlySpan, out int cursorValue) || cursorValue < 0)
+            if (!parseState.TryGetInt(1, out var cursorValue) || cursorValue < 0)
             {
                 while (!RespWriteUtils.WriteError(CmdStrings.RESP_ERR_GENERIC_CURSORVALUE, ref dcurr, dend))
                     SendAndReset();
@@ -56,22 +53,16 @@ namespace Garnet.server
                 return true;
             }
 
-            var ptr = sbCursor.ToPointer() + sbCursor.Length + 2;
-
-            // Prepare input
-            ptr -= sizeof(int);
-            var save = *(int*)ptr;
-            *(int*)ptr = storeWrapper.serverOptions.ObjectScanCountLimit;
-
             var input = new ObjectInput
             {
                 header = new RespInputHeader
                 {
                     type = objectType,
                 },
-                arg1 = count - 2,
-                arg2 = cursorValue,
-                payload = new ArgSlice(ptr, (int)(recvBufferPtr + bytesRead - ptr)),
+                arg1 = cursorValue,
+                arg2 = storeWrapper.serverOptions.ObjectScanCountLimit,
+                parseState = parseState,
+                parseStateStartIdx = 2,
             };
 
             switch (objectType)
@@ -93,8 +84,6 @@ namespace Garnet.server
             // Prepare GarnetObjectStore output
             var outputFooter = new GarnetObjectStoreOutput { spanByteAndMemory = new SpanByteAndMemory(dcurr, (int)(dend - dcurr)) };
             var status = storageApi.ObjectScan(keyBytes, ref input, ref outputFooter);
-
-            *(int*)ptr = save;
 
             switch (status)
             {

@@ -101,7 +101,7 @@ namespace Garnet.server
         {
             var sbNumber = slice.ReadOnlySpan;
             return Utf8Parser.TryParse(sbNumber, out number, out var bytesConsumed) &&
-                            bytesConsumed == sbNumber.Length; ;
+                            bytesConsumed == sbNumber.Length;
         }
 
         /// <summary>

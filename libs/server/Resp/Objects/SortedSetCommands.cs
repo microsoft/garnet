@@ -800,21 +800,7 @@ namespace Garnet.server
             switch (status)
             {
                 case GarnetStatus.OK:
-                    if (output.result1 == int.MaxValue)
-                    {
-                        var errorMessage = command == RespCommand.ZREMRANGEBYRANK ?
-                            CmdStrings.RESP_ERR_GENERIC_VALUE_IS_NOT_INTEGER :
-                            CmdStrings.RESP_ERR_MIN_MAX_NOT_VALID_FLOAT;
-
-                        // Error in arguments
-                        while (!RespWriteUtils.WriteError(errorMessage, ref dcurr, dend))
-                            SendAndReset();
-                    }
-                    else if (output.result1 == int.MinValue)  // command partially executed
-                        return false;
-                    else
-                        while (!RespWriteUtils.WriteInteger(output.result1, ref dcurr, dend))
-                            SendAndReset();
+                    ProcessOutputWithHeader(outputFooter.spanByteAndMemory);
                     break;
                 case GarnetStatus.NOTFOUND:
                     while (!RespWriteUtils.WriteDirect(CmdStrings.RESP_RETURN_VAL_0, ref dcurr, dend))
@@ -897,7 +883,7 @@ namespace Garnet.server
                     type = GarnetObjectType.SortedSet,
                     SortedSetOp = SortedSetOperation.ZRANDMEMBER,
                 },
-                arg1 = ((includedCount ? 1 : 0) << 1) | (includeWithScores ? 1 : 0),
+                arg1 = (((paramCount << 1) | (includedCount ? 1 : 0)) << 1) | (includeWithScores ? 1 : 0),
                 arg2 = seed,
             };
 
