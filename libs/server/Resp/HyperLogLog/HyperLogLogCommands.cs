@@ -15,29 +15,28 @@ namespace Garnet.server
         /// Adds one element to the HyperLogLog data structure stored at the variable name specified.
         /// </summary>
         /// <typeparam name="TGarnetApi"></typeparam>
-        /// <param name="count"></param>
         /// <param name="storageApi"></param>
         /// <returns></returns>
-        private bool HyperLogLogAdd<TGarnetApi>(int count, ref TGarnetApi storageApi)
+        private bool HyperLogLogAdd<TGarnetApi>(ref TGarnetApi storageApi)
             where TGarnetApi : IGarnetApi
         {
-            if (count < 1)
+            if (parseState.count < 1)
             {
-                return AbortWithWrongNumberOfArguments(nameof(RespCommand.PFADD), count);
+                return AbortWithWrongNumberOfArguments(nameof(RespCommand.PFADD), parseState.count);
             }
 
-            //4 byte length of input
-            //1 byte RespCommand
-            //1 byte RespInputFlags
-            //4 byte count of value to insert
-            //8 byte hash value
-            int inputSize = sizeof(int) + RespInputHeader.Size + sizeof(int) + sizeof(long);
-            byte* pbCmdInput = stackalloc byte[inputSize];
+            // 4 byte length of input
+            // 1 byte RespCommand
+            // 1 byte RespInputFlags
+            // 4 byte count of value to insert
+            // 8 byte hash value
+            var inputSize = sizeof(int) + RespInputHeader.Size + sizeof(int) + sizeof(long);
+            var pbCmdInput = stackalloc byte[inputSize];
 
             ///////////////
             //Build Input//
             ///////////////
-            byte* pcurr = pbCmdInput;
+            var pcurr = pbCmdInput;
             *(int*)pcurr = inputSize - sizeof(int);
             pcurr += sizeof(int);
             //1. header
@@ -46,11 +45,11 @@ namespace Garnet.server
             pcurr += RespInputHeader.Size;
             //2. cmd args
             *(int*)pcurr = 1; pcurr += sizeof(int);
-            byte* output = stackalloc byte[1];
+            var output = stackalloc byte[1];
 
             byte pfaddUpdated = 0;
             var key = parseState.GetArgSliceByRef(0).SpanByte;
-            for (var i = 1; i < count; i++)
+            for (var i = 1; i < parseState.count; i++)
             {
                 var currSlice = parseState.GetArgSliceByRef(i);
                 *(long*)pcurr = (long)HashUtils.MurmurHash2x64A(currSlice.ptr, currSlice.Length);
@@ -87,28 +86,27 @@ namespace Garnet.server
         /// or 0 if the key does not exist.
         /// </summary>
         /// <typeparam name="TGarnetApi"></typeparam>
-        /// <param name="count"></param>
         /// <param name="storageApi"></param>
         /// <returns></returns>
         /// <exception cref="GarnetException"></exception>
-        private bool HyperLogLogLength<TGarnetApi>(int count, ref TGarnetApi storageApi)
+        private bool HyperLogLogLength<TGarnetApi>(ref TGarnetApi storageApi)
             where TGarnetApi : IGarnetApi
         {
-            if (count < 1)
+            if (parseState.count < 1)
             {
-                return AbortWithWrongNumberOfArguments(nameof(RespCommand.PFCOUNT), count);
+                return AbortWithWrongNumberOfArguments(nameof(RespCommand.PFCOUNT), parseState.count);
             }
 
             // 4 byte length of input
             // 1 byte RespCommand
             // 1 byte RespInputFlags
-            int inputSize = sizeof(int) + RespInputHeader.Size;
-            byte* pbCmdInput = stackalloc byte[inputSize];
+            var inputSize = sizeof(int) + RespInputHeader.Size;
+            var pbCmdInput = stackalloc byte[inputSize];
 
             /////////////////
             ////Build Input//
             /////////////////
-            byte* pcurr = pbCmdInput;
+            var pcurr = pbCmdInput;
             *(int*)pcurr = inputSize - sizeof(int);
             pcurr += sizeof(int);
             (*(RespInputHeader*)pcurr).cmd = RespCommand.PFCOUNT;
@@ -133,12 +131,12 @@ namespace Garnet.server
         /// Merge multiple HyperLogLog values into an unique value that will approximate the cardinality 
         /// of the union of the observed Sets of the source HyperLogLog structures.
         /// </summary>
-        private bool HyperLogLogMerge<TGarnetApi>(int count, ref TGarnetApi storageApi)
+        private bool HyperLogLogMerge<TGarnetApi>(ref TGarnetApi storageApi)
              where TGarnetApi : IGarnetApi
         {
-            if (count < 1)
+            if (parseState.count < 1)
             {
-                return AbortWithWrongNumberOfArguments(nameof(RespCommand.PFMERGE), count);
+                return AbortWithWrongNumberOfArguments(nameof(RespCommand.PFMERGE), parseState.count);
             }
 
             var status = storageApi.HyperLogLogMerge(parseState.Parameters, out bool error);
