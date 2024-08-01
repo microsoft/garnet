@@ -35,6 +35,15 @@ namespace Garnet.server
                 metrics[(int)cmd] = new LatencyMetricsEntry();
         }
 
+        public void Return()
+        {
+            foreach (var cmd in defaultLatencyTypes)
+            {
+                metrics[(int)cmd].Return();
+            }
+            metrics = null;
+        }
+
         public void Merge(GarnetLatencyMetricsSession lm)
         {
             if (lm.metrics == null) return;

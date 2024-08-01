@@ -24,6 +24,15 @@ namespace Garnet.server
             Init();
         }
 
+        public void Return()
+        {
+            foreach (var cmd in defaultLatencyTypes)
+            {
+                metrics[(int)cmd].Return();
+            }
+            metrics = null;
+        }
+
         private void Init()
         {
             metrics = new LatencyMetricsEntrySession[defaultLatencyTypes.Length];
