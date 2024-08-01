@@ -55,7 +55,7 @@ namespace Garnet.server
 
         public int phase;
 
-        internal TxnKeyEntries(int initialCount, LockableContext<SpanByte, SpanByte, SpanByte, SpanByteAndMemory, long, MainStoreFunctions> lockableContext, LockableContext<byte[], IGarnetObject, SpanByte, GarnetObjectStoreOutput, long, ObjectStoreFunctions> objectStoreLockableContext)
+        internal TxnKeyEntries(int initialCount, LockableContext<SpanByte, SpanByte, SpanByte, SpanByteAndMemory, long, MainStoreFunctions> lockableContext, LockableContext<byte[], IGarnetObject, ObjectInput, GarnetObjectStoreOutput, long, ObjectStoreFunctions> objectStoreLockableContext)
         {
             keys = new TxnKeyEntry[initialCount];
             // We sort a single array for speed, and the sessions use the same sorting logic,

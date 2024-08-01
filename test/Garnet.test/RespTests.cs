@@ -1430,6 +1430,32 @@ namespace Garnet.test
         }
 
         [Test]
+        public void PersistObjectTest()
+        {
+            using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
+            var db = redis.GetDatabase(0);
+
+            int expire = 100;
+            var keyA = "keyA";
+            db.SortedSetAdd(keyA, [new SortedSetEntry("element", 1.0)]);
+            var response = db.KeyPersist(keyA);
+            Assert.IsFalse(response);
+
+            db.KeyExpire(keyA, TimeSpan.FromSeconds(expire));
+            var time = db.KeyTimeToLive(keyA);
+            Assert.IsTrue(time.Value.TotalSeconds > 0);
+
+            response = db.KeyPersist(keyA);
+            Assert.IsTrue(response);
+
+            time = db.KeyTimeToLive(keyA);
+            Assert.IsTrue(time == null);
+
+            var value = db.SortedSetScore(keyA, "element");
+            Assert.AreEqual(1.0, value);
+        }
+
+        [Test]
         [TestCase("EXPIRE")]
         [TestCase("PEXPIRE")]
         public void KeyExpireStringTest(string command)

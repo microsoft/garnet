@@ -1,6 +1,7 @@
 ﻿// Copyright (c) Microsoft Corporation.
 // Licensed under the MIT license.
 
+using System.Linq;
 using Garnet.common;
 using Garnet.server;
 using Tsavorite.core;
@@ -31,59 +32,71 @@ namespace Garnet
 
         public override void Main<TGarnetApi>(TGarnetApi api, ArgSlice input, ref MemoryResult<byte> output)
         {
-            int offset = 0;
+            var result = TestAPI(api, input);
+            WriteSimpleString(ref output, result ? "SUCCESS" : "ERROR");
+        }
+
+        private static bool TestAPI<TGarnetApi>(TGarnetApi api, ArgSlice input) where TGarnetApi : IGarnetApi
+        {
+            var offset = 0;
             var elements = new ArgSlice[10];
-            bool result = true;
 
             var setA = GetNextArg(input, ref offset);
 
             if (setA.Length == 0)
-                result = false;
+                return false;
 
-            if (result)
+            for (var i = 0; i < elements.Length; i++)
             {
-                for (int i = 0; i < elements.Length; i++)
-                {
-                    elements[i] = GetNextArg(input, ref offset);
-                }
-
-                int count;
-                api.SetAdd(setA, elements, out count);
-                if (count != 10)
-                    result = false;
-                else
-                {
-                    ArgSlice elementremove = GetNextArg(input, ref offset);
-                    api.SetRemove(setA, elementremove, out count);
-                    if (count == 0)
-                        result = false;
-                    else
-                    {
-                        api.SetRemove(setA, elements[0..5], out count);
-                        if (count != 4)
-                            result = false;
-                        api.SetRemove(setA, elements[0..5], out count);
-                        if (count != 0)
-                            result = false;
-                        api.SetLength(setA, out count);
-                        if (count != 5)
-                            result = false;
-                        api.SetMembers(setA, out var memberssetA);
-                        if (memberssetA.Length != 5)
-                            result = false;
-                        api.SetPop(setA, out var _);
-                        api.SetPop(setA, 2, out var _);
-                        api.SetLength(setA, out count);
-                        if (count != 2)
-                            result = false;
-                    }
-                    api.SetScan(setA, 0, "*", 100, out var setItems);
-                    if (setItems.Length != 3)
-                        result = false;
-                }
+                elements[i] = GetNextArg(input, ref offset);
             }
 
-            WriteSimpleString(ref output, result ? "SUCCESS" : "ERROR");
+            var status = api.SetAdd(setA, elements.Take(9).ToArray(), out var count);
+            if (status != GarnetStatus.OK || count != 9)
+                return false;
+
+            status = api.SetAdd(setA, elements[9], out count);
+            if (status != GarnetStatus.OK || count != 1)
+                return false;
+
+            var toRemove = GetNextArg(input, ref offset);
+            status = api.SetRemove(setA, toRemove, out count);
+            if (status != GarnetStatus.OK || count == 0)
+                return false;
+
+            status = api.SetRemove(setA, elements[0..5], out count);
+            if (status != GarnetStatus.OK || count != 4)
+                return false;
+
+            status = api.SetRemove(setA, elements[0..5], out count);
+            if (status != GarnetStatus.OK || count != 0)
+                return false;
+
+            status = api.SetLength(setA, out count);
+            if (status != GarnetStatus.OK || count != 5)
+                return false;
+
+            status = api.SetMembers(setA, out var members);
+            if (status != GarnetStatus.OK || members.Length != 5)
+                return false;
+
+            status = api.SetPop(setA, out var member);
+            if (status != GarnetStatus.OK)
+                return false;
+
+            status = api.SetPop(setA, 2, out members);
+            if (status != GarnetStatus.OK || members.Length != 2)
+                return false;
+
+            status = api.SetLength(setA, out count);
+            if (status != GarnetStatus.OK || count != 2)
+                return false;
+
+            status = api.SetScan(setA, 0, "*", 100, out var setItems);
+            if (status != GarnetStatus.OK || setItems.Length != 3)
+                return false;
+
+            return true;
         }
     }
 }
