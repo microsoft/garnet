@@ -99,6 +99,36 @@ namespace Garnet.test
         }
 
         [Test]
+        [Timeout(10_000)]
+        public void AofUpsertStoreCommitTaskRecoverTest()
+        {
+            server.Dispose(false);
+            server = TestUtils.CreateGarnetServer(TestUtils.MethodTestDir, tryRecover: false, enableAOF: true, commitFrequencyMs: 100);
+            server.Start();
+
+            using (var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig()))
+            {
+                var db = redis.GetDatabase(0);
+                db.StringSet("SeAofUpsertRecoverTestKey1", "SeAofUpsertRecoverTestValue1");
+                db.StringSet("SeAofUpsertRecoverTestKey2", "SeAofUpsertRecoverTestValue2");
+            }
+
+            server.Store.WaitForCommit();
+            server.Dispose(false);
+            server = TestUtils.CreateGarnetServer(TestUtils.MethodTestDir, tryRecover: true, enableAOF: true);
+            server.Start();
+
+            using (var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig()))
+            {
+                var db = redis.GetDatabase(0);
+                var recoveredValue = db.StringGet("SeAofUpsertRecoverTestKey1");
+                Assert.AreEqual("SeAofUpsertRecoverTestValue1", recoveredValue.ToString());
+                recoveredValue = db.StringGet("SeAofUpsertRecoverTestKey2");
+                Assert.AreEqual("SeAofUpsertRecoverTestValue2", recoveredValue.ToString());
+            }
+        }
+
+        [Test]
         public void AofUpsertStoreAutoCommitCommitWaitRecoverTest()
         {
             server.Dispose(false);
@@ -419,8 +449,8 @@ namespace Garnet.test
             void RegisterCustomCommand(GarnetServer gServer)
             {
                 var factory = new MyDictFactory();
-                gServer.Register.NewCommand("MYDICTSET", 2, CommandType.ReadModifyWrite, factory, respCustomCommandsInfo["MYDICTSET"]);
-                gServer.Register.NewCommand("MYDICTGET", 1, CommandType.Read, factory, respCustomCommandsInfo["MYDICTGET"]);
+                gServer.Register.NewCommand("MYDICTSET", 2, CommandType.ReadModifyWrite, factory, new MyDictSet(), respCustomCommandsInfo["MYDICTSET"]);
+                gServer.Register.NewCommand("MYDICTGET", 1, CommandType.Read, factory, new MyDictGet(), respCustomCommandsInfo["MYDICTGET"]);
             }
 
             server.Dispose(false);
