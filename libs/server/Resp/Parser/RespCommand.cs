@@ -322,7 +322,9 @@ namespace Garnet.server
             // Latency
             RespCommand.LATENCY_HELP,
             RespCommand.LATENCY_HISTOGRAM,
-            RespCommand.LATENCY_RESET
+            RespCommand.LATENCY_RESET,
+            // Transactions
+            RespCommand.MULTI, 
         ];
 
         // long is 64 bits, 4 longs accomodate 256 resp commands which is more than enough to provide a lookup for each resp command
@@ -1889,14 +1891,23 @@ namespace Garnet.server
 
             if (storeWrapper.appendOnlyFile != null && storeWrapper.serverOptions.WaitForCommit)
             {
-                /* 
-                    keeping the expensive call inside the conditional only adds ~4 MSIL instructions in hotpath
-                    W.r.t AOF  Blocking
-                    If a previous command marked AOF for blocking we should not change AOF blocking flag.
-                    If no previous command marked AOF for blocking, then we only change AOF flag to block
-                    if the current command is AOF dependent.
-                */
-                waitForAofBlocking = waitForAofBlocking || !cmd.IsAofIndependent();
+                // Reset waitForAofBlocking if there is no pending unsent data on the network
+                if (dcurr == networkSender.GetResponseObjectHead())
+                    waitForAofBlocking = false;
+
+                // If we are in NetworkSkip's state we do not need to be changing the AOF blocking flag
+                // since we do not interact with AOF in that path.
+                if (txnManager.state != TxnState.None && txnManager.state == TxnState.Running)
+                {
+                    /* 
+                        keeping the expensive call inside the conditional only adds ~4 MSIL instructions in hotpath
+                        W.r.t AOF  Blocking
+                        If a previous command marked AOF for blocking we should not change AOF blocking flag.
+                        If no previous command marked AOF for blocking, then we only change AOF flag to block
+                        if the current command is AOF dependent.
+                    */
+                    waitForAofBlocking = waitForAofBlocking || !cmd.IsAofIndependent();
+                }
             }
 
             return cmd;
