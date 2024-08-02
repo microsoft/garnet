@@ -2,6 +2,7 @@
 // Licensed under the MIT license.
 
 using System;
+using System.Diagnostics;
 using System.Linq;
 using System.Text;
 using System.Threading;
@@ -9,6 +10,7 @@ using System.Threading.Tasks;
 using Garnet.server;
 using NUnit.Framework;
 using StackExchange.Redis;
+using NotImplementedException = System.NotImplementedException;
 
 namespace Garnet.test
 {
@@ -442,7 +444,7 @@ namespace Garnet.test
         }
 
         [Test]
-        public void SeFlushDatabaseTest()
+        public void SeFlushDbAndFlushAllTest([Values(RespCommand.FLUSHALL, RespCommand.FLUSHDB)] RespCommand cmd)
         {
             using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig(allowAdmin: true));
             IServer server = redis.GetServer($"{TestUtils.Address}:{TestUtils.Port}");
@@ -455,7 +457,17 @@ namespace Garnet.test
             string retValue = db.StringGet("mykey");
             Assert.AreEqual(origValue, retValue);
 
-            server.FlushDatabase();
+            switch (cmd)
+            {
+                case RespCommand.FLUSHDB:
+                    server.FlushDatabase();
+                    break;
+                case RespCommand.FLUSHALL:
+                    server.FlushAllDatabases();
+                    break;
+                default:
+                    throw new NotImplementedException();
+            }
 
             retValue = db.StringGet("mykey");
             Assert.AreEqual(null, retValue);
@@ -534,11 +546,12 @@ namespace Garnet.test
         }
 
         [Test]
-        public async Task SeFlushDBTest([Values] bool async, [Values] bool unsafetruncatelog)
+        public async Task SeFlushDbAndFlushAllTest2([Values(RespCommand.FLUSHALL, RespCommand.FLUSHDB)] RespCommand cmd,
+            [Values] bool async, [Values] bool unsafetruncatelog)
         {
             using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig(allowAdmin: true));
             var db = redis.GetDatabase(0);
-            var key = "flushdbTest";
+            var key = $"{cmd}Test";
             var value = key;
 
             db.StringSet(key, value);
@@ -553,7 +566,7 @@ namespace Garnet.test
 
             if (async)
             {
-                await db.ExecuteAsync("FLUSHDB", p).ConfigureAwait(false);
+                await db.ExecuteAsync(cmd.ToString(), p).ConfigureAwait(false);
                 _value = db.StringGet(key);
                 while (!_value.IsNull)
                 {
@@ -563,9 +576,10 @@ namespace Garnet.test
             }
             else
             {
-                db.Execute("FLUSHDB", p);
+                db.Execute(cmd.ToString(), p);
                 _value = db.StringGet(key);
             }
+
             Assert.IsTrue(_value.IsNull);
         }
 
