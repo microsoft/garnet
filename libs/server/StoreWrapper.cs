@@ -15,6 +15,7 @@ using Tsavorite.core;
 
 namespace Garnet.server
 {
+    using MainStoreAllocator = SpanByteAllocator<StoreFunctions<SpanByte, SpanByte, SpanByteComparer, SpanByteRecordDisposer>>;
     using MainStoreFunctions = StoreFunctions<SpanByte, SpanByte, SpanByteComparer, SpanByteRecordDisposer>;
 
     using ObjectStoreAllocator = GenericAllocator<byte[], IGarnetObject, StoreFunctions<byte[], IGarnetObject, ByteArrayKeyComparer, DefaultRecordDisposer<byte[], IGarnetObject>>>;
@@ -33,7 +34,7 @@ namespace Garnet.server
         /// <summary>
         /// Store
         /// </summary>
-        public readonly TsavoriteKV<SpanByte, SpanByte, MainStoreFunctions, SpanByteAllocator<MainStoreFunctions>> store;
+        public readonly TsavoriteKV<SpanByte, SpanByte, MainStoreFunctions, MainStoreAllocator> store;
 
         /// <summary>
         /// Object store
@@ -104,7 +105,7 @@ namespace Garnet.server
             string version,
             string redisProtocolVersion,
             IGarnetServer server,
-            TsavoriteKV<SpanByte, SpanByte, MainStoreFunctions, SpanByteAllocator<MainStoreFunctions>> store,
+            TsavoriteKV<SpanByte, SpanByte, MainStoreFunctions, MainStoreAllocator> store,
             TsavoriteKV<byte[], IGarnetObject, ObjectStoreFunctions, ObjectStoreAllocator> objectStore,
             CacheSizeTracker objectStoreSizeTracker,
             CustomCommandManager customCommandManager,

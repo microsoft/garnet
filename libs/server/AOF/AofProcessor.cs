@@ -13,6 +13,7 @@ using Tsavorite.core;
 
 namespace Garnet.server
 {
+    using MainStoreAllocator = SpanByteAllocator<StoreFunctions<SpanByte, SpanByte, SpanByteComparer, SpanByteRecordDisposer>>;
     using MainStoreFunctions = StoreFunctions<SpanByte, SpanByte, SpanByteComparer, SpanByteRecordDisposer>;
 
     using ObjectStoreAllocator = GenericAllocator<byte[], IGarnetObject, StoreFunctions<byte[], IGarnetObject, ByteArrayKeyComparer, DefaultRecordDisposer<byte[], IGarnetObject>>>;
@@ -36,7 +37,7 @@ namespace Garnet.server
         /// <summary>
         /// Session for main store
         /// </summary>
-        readonly BasicContext<SpanByte, SpanByte, SpanByte, SpanByteAndMemory, long, MainSessionFunctions, MainStoreFunctions, SpanByteAllocator<MainStoreFunctions>> basicContext;
+        readonly BasicContext<SpanByte, SpanByte, SpanByte, SpanByteAndMemory, long, MainSessionFunctions, MainStoreFunctions, MainStoreAllocator> basicContext;
 
         /// <summary>
         /// Session for object store
@@ -267,7 +268,7 @@ namespace Garnet.server
             return true;
         }
 
-        static unsafe void StoreUpsert(BasicContext<SpanByte, SpanByte, SpanByte, SpanByteAndMemory, long, MainSessionFunctions, MainStoreFunctions, SpanByteAllocator<MainStoreFunctions>> basicContext, byte* ptr)
+        static unsafe void StoreUpsert(BasicContext<SpanByte, SpanByte, SpanByte, SpanByteAndMemory, long, MainSessionFunctions, MainStoreFunctions, MainStoreAllocator> basicContext, byte* ptr)
         {
             ref var key = ref Unsafe.AsRef<SpanByte>(ptr + sizeof(AofHeader));
             ref var input = ref Unsafe.AsRef<SpanByte>(ptr + sizeof(AofHeader) + key.TotalSize);
@@ -279,7 +280,7 @@ namespace Garnet.server
                 output.Memory.Dispose();
         }
 
-        static unsafe void StoreRMW(BasicContext<SpanByte, SpanByte, SpanByte, SpanByteAndMemory, long, MainSessionFunctions, MainStoreFunctions, SpanByteAllocator<MainStoreFunctions>> basicContext, byte* ptr)
+        static unsafe void StoreRMW(BasicContext<SpanByte, SpanByte, SpanByte, SpanByteAndMemory, long, MainSessionFunctions, MainStoreFunctions, MainStoreAllocator> basicContext, byte* ptr)
         {
             byte* pbOutput = stackalloc byte[32];
             ref var key = ref Unsafe.AsRef<SpanByte>(ptr + sizeof(AofHeader));
@@ -291,7 +292,7 @@ namespace Garnet.server
                 output.Memory.Dispose();
         }
 
-        static unsafe void StoreDelete(BasicContext<SpanByte, SpanByte, SpanByte, SpanByteAndMemory, long, MainSessionFunctions, MainStoreFunctions, SpanByteAllocator<MainStoreFunctions>> basicContext, byte* ptr)
+        static unsafe void StoreDelete(BasicContext<SpanByte, SpanByte, SpanByte, SpanByteAndMemory, long, MainSessionFunctions, MainStoreFunctions, MainStoreAllocator> basicContext, byte* ptr)
         {
             ref var key = ref Unsafe.AsRef<SpanByte>(ptr + sizeof(AofHeader));
             basicContext.Delete(ref key);

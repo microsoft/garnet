@@ -14,6 +14,7 @@ using Tsavorite.core;
 
 namespace Garnet
 {
+    using MainStoreAllocator = SpanByteAllocator<StoreFunctions<SpanByte, SpanByte, SpanByteComparer, SpanByteRecordDisposer>>;
     using MainStoreFunctions = StoreFunctions<SpanByte, SpanByte, SpanByteComparer, SpanByteRecordDisposer>;
 
     using ObjectStoreAllocator = GenericAllocator<byte[], IGarnetObject, StoreFunctions<byte[], IGarnetObject, ByteArrayKeyComparer, DefaultRecordDisposer<byte[], IGarnetObject>>>;
@@ -28,7 +29,7 @@ namespace Garnet
 
         private readonly GarnetServerOptions opts;
         private IGarnetServer server;
-        private TsavoriteKV<SpanByte, SpanByte, MainStoreFunctions, SpanByteAllocator<MainStoreFunctions>> store;
+        private TsavoriteKV<SpanByte, SpanByte, MainStoreFunctions, MainStoreAllocator> store;
         private TsavoriteKV<byte[], IGarnetObject, ObjectStoreFunctions, ObjectStoreAllocator> objectStore;
         private IDevice aofDevice;
         private TsavoriteLog appendOnlyFile;
