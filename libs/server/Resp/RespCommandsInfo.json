@@ -1210,9 +1210,9 @@
     "SubCommands": null
   },
   {
-    "Command": "CustomCmd",
-    "Name": "CustomCmd",
-    "IsInternal": false,
+    "Command": "CustomRawStringCmd",
+    "Name": "CustomRawStringCmd",
+    "IsInternal": true,
     "Arity": 1,
     "Flags": "None",
     "FirstKey": 0,
@@ -1226,7 +1226,7 @@
   {
     "Command": "CustomObjCmd",
     "Name": "CustomObjCmd",
-    "IsInternal": false,
+    "IsInternal": true,
     "Arity": 1,
     "Flags": "None",
     "FirstKey": 0,
@@ -1240,13 +1240,27 @@
   {
     "Command": "CustomTxn",
     "Name": "CustomTxn",
-    "IsInternal": false,
+    "IsInternal": true,
     "Arity": 1,
     "Flags": "None",
     "FirstKey": 0,
     "LastKey": 0,
     "Step": 0,
     "AclCategories": "Dangerous, Slow, Garnet, Custom",
+    "Tips": null,
+    "KeySpecifications": null,
+    "SubCommands": null
+  },
+  {
+    "Command": "CustomProcedure",
+    "Name": "CustomProcedure",
+    "IsInternal": true,
+    "Arity": 1,
+    "Flags": "None",
+    "FirstKey": 0,
+    "LastKey": 0,
+    "Step": 0,
+    "AclCategories": "Garnet, Custom, Dangerous, Slow",
     "Tips": null,
     "KeySpecifications": null,
     "SubCommands": null

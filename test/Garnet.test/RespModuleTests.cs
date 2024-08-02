@@ -85,7 +85,8 @@ namespace Garnet.test
                 Path.GetFullPath(@"../main/GarnetServer/Extensions/ReadWriteTxn.cs", TestUtils.RootTestsProjectPath),
                 Path.GetFullPath(@"../main/GarnetServer/Extensions/MyDictObject.cs", TestUtils.RootTestsProjectPath),
                 Path.GetFullPath(@"../main/GarnetServer/Extensions/MyDictSet.cs", TestUtils.RootTestsProjectPath),
-                Path.GetFullPath(@"../main/GarnetServer/Extensions/MyDictGet.cs", TestUtils.RootTestsProjectPath)};
+                Path.GetFullPath(@"../main/GarnetServer/Extensions/MyDictGet.cs", TestUtils.RootTestsProjectPath),
+                Path.GetFullPath(@"../main/GarnetServer/Extensions/Sum.cs", TestUtils.RootTestsProjectPath)};
             TestUtils.CreateTestLibrary(null, referenceFiles, filesToCompile, modulePath);
             return modulePath;
         }
@@ -113,7 +114,9 @@ namespace Garnet.test
 
                     context.RegisterCommand(""TestModule.MYDICTGET"", factory, new MyDictGet(), CommandType.Read, 1,
                     new RespCommandsInfo { Name = ""TestModule.MYDICTGET"", Arity = 3, FirstKey = 1, LastKey = 1, Step = 1,
-                    Flags = RespCommandFlags.ReadOnly, AclCategories = RespAclCategories.Read }); ";
+                    Flags = RespCommandFlags.ReadOnly, AclCategories = RespAclCategories.Read });
+
+                    context.RegisterProcedure(""TestModule.SUM"", new Sum());";
 
             var modulePath = CreateTestModule(onLoad);
 
@@ -159,6 +162,14 @@ namespace Garnet.test
 
             var dictRetValue = db.Execute("TestModule.MYDICTGET", dictKey, dictField);
             Assert.AreEqual(dictValue, (string)dictRetValue);
+
+            // Test SUM command
+            db.StringSet("key1", "1");
+            db.StringSet("key2", "2");
+            db.StringSet("key3", "3");
+            result = db.Execute("TestModule.SUM", "key1", "key2", "key3");
+            Assert.IsNotNull(result);
+            Assert.AreEqual("6", result.ToString());
         }
 
         [Test]

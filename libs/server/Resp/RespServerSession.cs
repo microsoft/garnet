@@ -116,12 +116,17 @@ namespace Garnet.server
         /// <summary>
         /// Current custom command to be executed in the session.
         /// </summary>
-        CustomCommand currentCustomCommand = null;
+        CustomRawStringCommand currentCustomRawStringCommand = null;
 
         /// <summary>
         /// Current custom object command to be executed in the session.
         /// </summary>
         CustomObjectCommand currentCustomObjectCommand = null;
+
+        /// <summary>
+        /// Current custom command to be executed in the session.
+        /// </summary>
+        CustomProcedureWrapper currentCustomProcedure = null;
 
         /// <summary>
         /// RESP protocol version (RESP2 is the default)
@@ -653,24 +658,24 @@ namespace Garnet.server
 
                 currentCustomTransaction = null;
             }
-            else if (command == RespCommand.CustomCmd)
+            else if (command == RespCommand.CustomRawStringCmd)
             {
-                if (currentCustomCommand.NumParams < int.MaxValue && count != currentCustomCommand.NumKeys + currentCustomCommand.NumParams)
+                if (currentCustomRawStringCommand.NumParams < int.MaxValue && count != currentCustomRawStringCommand.NumKeys + currentCustomRawStringCommand.NumParams)
                 {
-                    while (!RespWriteUtils.WriteError($"ERR Invalid number of parameters, expected {currentCustomCommand.NumKeys + currentCustomCommand.NumParams}, actual {count}", ref dcurr, dend))
+                    while (!RespWriteUtils.WriteError($"ERR Invalid number of parameters, expected {currentCustomRawStringCommand.NumKeys + currentCustomRawStringCommand.NumParams}, actual {count}", ref dcurr, dend))
                         SendAndReset();
 
-                    currentCustomCommand = null;
+                    currentCustomRawStringCommand = null;
 
                     return true;
                 }
                 else
                 {
                     // Perform the operation
-                    TryCustomCommand(recvBufferPtr + readHead, recvBufferPtr + endReadHead, currentCustomCommand.GetRespCommand(), currentCustomCommand.expirationTicks, currentCustomCommand.type, ref storageApi);
+                    TryCustomRawStringCommand(recvBufferPtr + readHead, recvBufferPtr + endReadHead, currentCustomRawStringCommand.GetRespCommand(), currentCustomRawStringCommand.expirationTicks, currentCustomRawStringCommand.type, ref storageApi);
                 }
 
-                currentCustomCommand = null;
+                currentCustomRawStringCommand = null;
             }
             else if (command == RespCommand.CustomObjCmd)
             {
@@ -690,6 +695,13 @@ namespace Garnet.server
                 }
 
                 currentCustomObjectCommand = null;
+            }
+            else if (command == RespCommand.CustomProcedure)
+            {
+                TryCustomProcedure(currentCustomProcedure.Id, recvBufferPtr + readHead, recvBufferPtr + endReadHead,
+                    currentCustomProcedure.CustomProcedureImpl);
+
+                currentCustomProcedure = null;
             }
             else
             {

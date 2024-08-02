@@ -260,6 +260,49 @@ namespace Garnet.test
         }
 
         [Test]
+        public void SeSaveRecoverCustomScriptTest()
+        {
+            static void ValidateServerData(IDatabase db, string strKey, string strValue, string listKey, string listValue)
+            {
+                var retValue = db.StringGet(strKey);
+                Assert.AreEqual(strValue, (string)retValue);
+                var retList = db.ListRange(listKey);
+                Assert.AreEqual(1, retList.Length);
+                Assert.AreEqual(listValue, (string)retList[0]);
+            }
+
+            var strKey = "StrKey";
+            var strValue = "StrValue";
+            var listKey = "ListKey";
+            var listValue = "ListValue";
+
+            // Register sample custom script that updates both main store and object store keys
+            server.Register.NewProcedure("SETMAINANDOBJECT", new SetStringAndList());
+
+            using (var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig(allowAdmin: true)))
+            {
+                var db = redis.GetDatabase(0);
+                db.Execute("SETMAINANDOBJECT", strKey, strValue, listKey, listValue);
+                ValidateServerData(db, strKey, strValue, listKey, listValue);
+
+                // Issue and wait for DB save
+                var server = redis.GetServer($"{TestUtils.Address}:{TestUtils.Port}");
+                server.Save(SaveType.BackgroundSave);
+                while (server.LastSave().Ticks == DateTimeOffset.FromUnixTimeSeconds(0).Ticks) Thread.Sleep(10);
+            }
+
+            server.Dispose(false);
+            server = TestUtils.CreateGarnetServer(TestUtils.MethodTestDir, tryRecover: true);
+            server.Register.NewProcedure("SETMAINANDOBJECT", new SetStringAndList());
+            server.Start();
+
+            using (var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig(allowAdmin: true)))
+            {
+                ValidateServerData(redis.GetDatabase(0), strKey, strValue, listKey, listValue);
+            }
+        }
+
+        [Test]
         [TestCase(63, 15, 1)]
         [TestCase(63, 1, 1)]
         [TestCase(16, 16, 1)]
