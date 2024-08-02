@@ -910,6 +910,8 @@ namespace Garnet.server
                 return AbortWithWrongNumberOfArguments(nameof(RespCommand.FLUSHALL), parseState.count);
             }
 
+            // Since Garnet currently only supports a single database,
+            // FLUSHALL and FLUSHDB share the same logic
             FlushDb(RespCommand.FLUSHALL);
 
             return true;
