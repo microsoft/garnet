@@ -7,7 +7,9 @@ using Microsoft.Extensions.Logging;
 
 namespace Tsavorite.core
 {
-    public partial class TsavoriteKV<Key, Value> : TsavoriteBase
+    public partial class TsavoriteKV<Key, Value, TStoreFunctions, TAllocator> : TsavoriteBase
+        where TStoreFunctions : IStoreFunctions<Key, Value>
+        where TAllocator : IAllocator<Key, Value, TStoreFunctions>
     {
         /// <summary>
         /// Pull iterator for all (distinct) live key-values stored in Tsavorite
@@ -20,7 +22,7 @@ namespace Tsavorite.core
         {
             if (untilAddress == -1)
                 untilAddress = Log.TailAddress;
-            return new TsavoriteKVIterator<Key, Value, Input, Output, Context, Functions>(this, functions, untilAddress, loggerFactory: loggerFactory);
+            return new TsavoriteKVIterator<Key, Value, Input, Output, Context, Functions, TStoreFunctions, TAllocator>(this, functions, untilAddress, loggerFactory: loggerFactory);
         }
 
         /// <summary>
@@ -36,7 +38,7 @@ namespace Tsavorite.core
         {
             if (untilAddress == -1)
                 untilAddress = Log.TailAddress;
-            using TsavoriteKVIterator<Key, Value, Input, Output, Context, Functions> iter = new(this, functions, untilAddress, loggerFactory: loggerFactory);
+            using TsavoriteKVIterator<Key, Value, Input, Output, Context, Functions, TStoreFunctions, TAllocator> iter = new(this, functions, untilAddress, loggerFactory: loggerFactory);
 
             if (!scanFunctions.OnStart(iter.BeginAddress, iter.EndAddress))
                 return false;
@@ -71,13 +73,15 @@ namespace Tsavorite.core
             => throw new TsavoriteException("Invoke Iterate() on a client session (ClientSession), or use store.Iterate overload with Functions provided as parameter");
     }
 
-    internal sealed class TsavoriteKVIterator<Key, Value, Input, Output, Context, Functions> : ITsavoriteScanIterator<Key, Value>
+    internal sealed class TsavoriteKVIterator<Key, Value, Input, Output, Context, Functions, TStoreFunctions, TAllocator> : ITsavoriteScanIterator<Key, Value>
         where Functions : ISessionFunctions<Key, Value, Input, Output, Context>
+        where TStoreFunctions : IStoreFunctions<Key, Value>
+        where TAllocator : IAllocator<Key, Value, TStoreFunctions>
     {
-        private readonly TsavoriteKV<Key, Value> store;
-        private readonly TsavoriteKV<Key, Value> tempKv;
-        private readonly ClientSession<Key, Value, Input, Output, Context, Functions> tempKvSession;
-        private readonly BasicContext<Key, Value, Input, Output, Context, Functions> tempbContext;
+        private readonly TsavoriteKV<Key, Value, TStoreFunctions, TAllocator> store;
+        private readonly TsavoriteKV<Key, Value, TStoreFunctions, TAllocator> tempKv;
+        private readonly ClientSession<Key, Value, Input, Output, Context, Functions, TStoreFunctions, TAllocator> tempKvSession;
+        private readonly BasicContext<Key, Value, Input, Output, Context, Functions, TStoreFunctions, TAllocator> tempbContext;
         private readonly ITsavoriteScanIterator<Key, Value> mainKvIter;
         private readonly IPushScanIterator<Key> pushScanIterator;
         private ITsavoriteScanIterator<Key, Value> tempKvIter;
@@ -90,13 +94,20 @@ namespace Tsavorite.core
         };
         private IterationPhase iterationPhase;
 
-        public TsavoriteKVIterator(TsavoriteKV<Key, Value> store, Functions functions, long untilAddress, ILoggerFactory loggerFactory = null)
+        public TsavoriteKVIterator(TsavoriteKV<Key, Value, TStoreFunctions, TAllocator> store, Functions functions, long untilAddress, ILoggerFactory loggerFactory = null)
         {
             this.store = store;
             iterationPhase = IterationPhase.MainKv;
 
-            tempKv = new TsavoriteKV<Key, Value>(store.IndexSize, new LogSettings { LogDevice = new NullDevice(), ObjectLogDevice = new NullDevice(), MutableFraction = 1 }, comparer: store.Comparer,
-                                              loggerFactory: loggerFactory);
+            var tempKVSettings = new KVSettings<Key, Value>(baseDir: null, loggerFactory: loggerFactory)
+            {
+                IndexSize = KVSettings<Key, Value>.SetIndexSizeFromCacheLines(store.IndexSize),
+                LogDevice = new NullDevice(),
+                ObjectLogDevice = new NullDevice(),
+                MutableFraction = 1
+            };
+
+            tempKv = new TsavoriteKV<Key, Value, TStoreFunctions, TAllocator>(tempKVSettings, store.storeFunctions, store.allocatorFactory);
             tempKvSession = tempKv.NewSession<Input, Output, Context, Functions>(functions);
             tempbContext = tempKvSession.BasicContext;
             mainKvIter = store.Log.Scan(store.Log.BeginAddress, untilAddress);
@@ -132,7 +143,7 @@ namespace Tsavorite.core
                     if (mainKvIter.GetNext(out recordInfo))
                     {
                         ref var key = ref mainKvIter.GetKey();
-                        OperationStackContext<Key, Value> stackCtx = default;
+                        OperationStackContext<Key, Value, TStoreFunctions, TAllocator> stackCtx = default;
                         if (IsTailmostMainKvRecord(ref key, recordInfo, ref stackCtx))
                             return true;
 
@@ -173,7 +184,7 @@ namespace Tsavorite.core
             {
                 if (iterationPhase == IterationPhase.MainKv)
                 {
-                    OperationStackContext<Key, Value> stackCtx = default;
+                    OperationStackContext<Key, Value, TStoreFunctions, TAllocator> stackCtx = default;
                     if (mainKvIter.GetNext(out var recordInfo))
                     {
                         try
@@ -183,7 +194,7 @@ namespace Tsavorite.core
                             {
                                 // Push Iter records are in temp storage so do not need locks, but we'll call ConcurrentReader because, for example, GenericAllocator
                                 // may need to know the object is in that region.
-                                stop = mainKvIter.CurrentAddress >= store.hlog.ReadOnlyAddress
+                                stop = mainKvIter.CurrentAddress >= store.hlogBase.ReadOnlyAddress
                                     ? !scanFunctions.ConcurrentReader(ref key, ref mainKvIter.GetValue(), new RecordMetadata(recordInfo, mainKvIter.CurrentAddress), numRecords, out _)
                                     : !scanFunctions.SingleReader(ref key, ref mainKvIter.GetValue(), new RecordMetadata(recordInfo, mainKvIter.CurrentAddress), numRecords, out _);
                                 return !stop;
@@ -200,7 +211,7 @@ namespace Tsavorite.core
                         finally
                         {
                             if (stackCtx.recSrc.HasLock)
-                                store.UnlockForScan(ref stackCtx, ref mainKvIter.GetKey(), ref pushScanIterator.GetLockableInfo());
+                                store.UnlockForScan(ref stackCtx);
                         }
                     }
 
@@ -240,19 +251,19 @@ namespace Tsavorite.core
             {
                 // Check if it's in-memory first so we don't spuriously create a tombstone record.
                 if (tempbContext.ContainsKeyInMemory(ref key, out _).Found)
-                    tempbContext.Delete(ref key);
+                    _ = tempbContext.Delete(ref key);
             }
             else
-                tempbContext.Upsert(ref key, ref mainKvIter.GetValue());
+                _ = tempbContext.Upsert(ref key, ref mainKvIter.GetValue());
         }
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        bool IsTailmostMainKvRecord(ref Key key, RecordInfo mainKvRecordInfo, ref OperationStackContext<Key, Value> stackCtx)
+        bool IsTailmostMainKvRecord(ref Key key, RecordInfo mainKvRecordInfo, ref OperationStackContext<Key, Value, TStoreFunctions, TAllocator> stackCtx)
         {
-            stackCtx = new(store.comparer.GetHashCode64(ref key));
+            stackCtx = new(store.storeFunctions.GetKeyHashCode64(ref key));
             if (store.FindTag(ref stackCtx.hei))
             {
-                stackCtx.SetRecordSourceToHashEntry(store.hlog);
+                stackCtx.SetRecordSourceToHashEntry(store.hlogBase);
                 if (store.UseReadCache)
                     store.SkipReadCache(ref stackCtx, out _);
                 if (stackCtx.recSrc.LogicalAddress == mainKvIter.CurrentAddress)

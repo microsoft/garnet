@@ -7,14 +7,16 @@ using System.Threading;
 
 namespace Tsavorite.core
 {
-    public unsafe partial class TsavoriteKV<Key, Value> : TsavoriteBase
+    public unsafe partial class TsavoriteKV<Key, Value, TStoreFunctions, TAllocator> : TsavoriteBase
+        where TStoreFunctions : IStoreFunctions<Key, Value>
+        where TAllocator : IAllocator<Key, Value, TStoreFunctions>
     {
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         internal void SynchronizeEpoch<Input, Output, Context, TSessionFunctionsWrapper>(
             TsavoriteExecutionContext<Input, Output, Context> sessionCtx,
             ref PendingContext<Input, Output, Context> pendingContext,
             TSessionFunctionsWrapper sessionFunctions)
-            where TSessionFunctionsWrapper : ISessionFunctionsWrapper<Key, Value, Input, Output, Context>
+            where TSessionFunctionsWrapper : ISessionFunctionsWrapper<Key, Value, Input, Output, Context, TStoreFunctions, TAllocator>
         {
             var version = sessionCtx.version;
             Debug.Assert(sessionCtx.version == version, $"sessionCtx.version ({sessionCtx.version}) should == version ({version})");
@@ -33,16 +35,16 @@ namespace Tsavorite.core
         void SpinWaitUntilClosed(long address)
         {
             // Unlike HeadAddress, ClosedUntilAddress is a high-water mark; a record that is == to ClosedUntilAddress has *not* been closed yet.
-            while (address >= hlog.ClosedUntilAddress)
+            while (address >= hlogBase.ClosedUntilAddress)
             {
-                Debug.Assert(address < hlog.HeadAddress, "expected address < hlog.HeadAddress");
+                Debug.Assert(address < hlogBase.HeadAddress, "expected address < hlog.HeadAddress");
                 epoch.ProtectAndDrain();
                 Thread.Yield();
             }
         }
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        void SpinWaitUntilRecordIsClosed(long logicalAddress, AllocatorBase<Key, Value> log)
+        void SpinWaitUntilRecordIsClosed(long logicalAddress, AllocatorBase<Key, Value, TStoreFunctions, TAllocator> log)
         {
             Debug.Assert(logicalAddress < log.HeadAddress, "SpinWaitUntilRecordIsClosed should not be called for addresses above HeadAddress");
 

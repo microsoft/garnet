@@ -28,7 +28,7 @@ namespace Tsavorite.test
             device = new ManagedLocalStorageDevice(Path.Join(TestUtils.MethodTestDir, "ManagedLocalStore.log"), deleteOnClose: true);
             log = new TsavoriteLog(new TsavoriteLogSettings { LogDevice = device, PageSizeBits = 12, MemorySizeBits = 14 });
 
-            deviceFullParams = new ManagedLocalStorageDevice(Path.Join(TestUtils.MethodTestDir, "ManagedLocalStoreFullParams.log"), deleteOnClose: false, recoverDevice: true, preallocateFile: true, capacity: 1 << 30);
+            deviceFullParams = new ManagedLocalStorageDevice(Path.Join(TestUtils.MethodTestDir, "ManagedLocalStoreFullParams.log"), deleteOnClose: false, recoverDevice: true, preallocateFile: true, capacity: 1L << 30);
             logFullParams = new TsavoriteLog(new TsavoriteLogSettings { LogDevice = device, PageSizeBits = 12, MemorySizeBits = 14 });
         }
 

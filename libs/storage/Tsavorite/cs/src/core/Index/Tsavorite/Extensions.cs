@@ -19,12 +19,12 @@ namespace Tsavorite.core
         /// <typeparam name="Value"></typeparam>
         /// <param name="source"></param>
         /// <returns></returns>
-        public static IObservable<Record<Key, Value>> ToRecordObservable<Key, Value>(this IObservable<ITsavoriteScanIterator<Key, Value>> source)
+        public static IObservable<AllocatorRecord<Key, Value>> ToRecordObservable<Key, Value>(this IObservable<ITsavoriteScanIterator<Key, Value>> source)
         {
             return new RecordObservable<Key, Value>(source);
         }
 
-        internal sealed class RecordObservable<Key, Value> : IObservable<Record<Key, Value>>
+        internal sealed class RecordObservable<Key, Value> : IObservable<AllocatorRecord<Key, Value>>
         {
             readonly IObservable<ITsavoriteScanIterator<Key, Value>> o;
 
@@ -33,7 +33,7 @@ namespace Tsavorite.core
                 this.o = o;
             }
 
-            public IDisposable Subscribe(IObserver<Record<Key, Value>> observer)
+            public IDisposable Subscribe(IObserver<AllocatorRecord<Key, Value>> observer)
             {
                 return o.Subscribe(new RecordObserver<Key, Value>(observer));
             }
@@ -41,9 +41,9 @@ namespace Tsavorite.core
 
         internal sealed class RecordObserver<Key, Value> : IObserver<ITsavoriteScanIterator<Key, Value>>
         {
-            private readonly IObserver<Record<Key, Value>> observer;
+            private readonly IObserver<AllocatorRecord<Key, Value>> observer;
 
-            public RecordObserver(IObserver<Record<Key, Value>> observer)
+            public RecordObserver(IObserver<AllocatorRecord<Key, Value>> observer)
             {
                 this.observer = observer;
             }
@@ -62,7 +62,7 @@ namespace Tsavorite.core
             {
                 while (v.GetNext(out RecordInfo info, out Key key, out Value value))
                 {
-                    observer.OnNext(new Record<Key, Value> { info = info, key = key, value = value });
+                    observer.OnNext(new AllocatorRecord<Key, Value> { info = info, key = key, value = value });
                 }
             }
         }

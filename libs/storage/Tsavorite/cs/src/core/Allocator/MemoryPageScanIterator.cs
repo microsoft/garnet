@@ -13,15 +13,15 @@ namespace Tsavorite.core
     /// <typeparam name="Value"></typeparam>
     internal sealed class MemoryPageScanIterator<Key, Value> : ITsavoriteScanIterator<Key, Value>
     {
-        readonly Record<Key, Value>[] page;
+        readonly AllocatorRecord<Key, Value>[] page;
         readonly long pageStartAddress;
         readonly int recordSize;
         readonly int start, end;
         int offset;
 
-        public MemoryPageScanIterator(Record<Key, Value>[] page, int start, int end, long pageStartAddress, int recordSize)
+        public MemoryPageScanIterator(AllocatorRecord<Key, Value>[] page, int start, int end, long pageStartAddress, int recordSize)
         {
-            this.page = new Record<Key, Value>[page.Length];
+            this.page = new AllocatorRecord<Key, Value>[page.Length];
             Array.Copy(page, start, this.page, start, end - start);
             offset = start - 1;
             this.start = start;

@@ -5,21 +5,24 @@ using System.Runtime.CompilerServices;
 
 namespace Tsavorite.core
 {
-    internal readonly struct SessionFunctionsWrapper<Key, Value, Input, Output, Context, Functions, TSessionLocker> : ISessionFunctionsWrapper<Key, Value, Input, Output, Context>
+    internal readonly struct SessionFunctionsWrapper<Key, Value, Input, Output, Context, Functions, TSessionLocker, TStoreFunctions, TAllocator>
+            : ISessionFunctionsWrapper<Key, Value, Input, Output, Context, TStoreFunctions, TAllocator>
         where Functions : ISessionFunctions<Key, Value, Input, Output, Context>
-        where TSessionLocker : struct, ISessionLocker<Key, Value>
+        where TSessionLocker : struct, ISessionLocker<Key, Value, TStoreFunctions, TAllocator>
+        where TStoreFunctions : IStoreFunctions<Key, Value>
+        where TAllocator : IAllocator<Key, Value, TStoreFunctions>
     {
-        private readonly ClientSession<Key, Value, Input, Output, Context, Functions> _clientSession;
+        private readonly ClientSession<Key, Value, Input, Output, Context, Functions, TStoreFunctions, TAllocator> _clientSession;
         private readonly TSessionLocker _sessionLocker;  // Has no data members
 
-        public SessionFunctionsWrapper(ClientSession<Key, Value, Input, Output, Context, Functions> clientSession)
+        public SessionFunctionsWrapper(ClientSession<Key, Value, Input, Output, Context, Functions, TStoreFunctions, TAllocator> clientSession)
         {
             _clientSession = clientSession;
             _sessionLocker = new TSessionLocker();
         }
 
-        public TsavoriteKV<Key, Value> Store => _clientSession.store;
-        public OverflowBucketLockTable<Key, Value> LockTable => _clientSession.store.LockTable;
+        public TsavoriteKV<Key, Value, TStoreFunctions, TAllocator> Store => _clientSession.store;
+        public OverflowBucketLockTable<Key, Value, TStoreFunctions, TAllocator> LockTable => _clientSession.store.LockTable;
 
         #region Reads
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
@@ -99,11 +102,37 @@ namespace Tsavorite.core
         public bool InPlaceUpdater(long physicalAddress, ref Key key, ref Input input, ref Value value, ref Output output, ref RMWInfo rmwInfo, out OperationStatus status, ref RecordInfo recordInfo)
         {
             (rmwInfo.UsedValueLength, rmwInfo.FullValueLength, _) = _clientSession.store.GetRecordLengths(physicalAddress, ref value, ref recordInfo);
-            if (!_clientSession.InPlaceUpdater(this, ref key, ref input, ref value, ref output, ref recordInfo, ref rmwInfo, out status))
-                return false;
-            _clientSession.store.SetExtraValueLength(ref value, ref recordInfo, rmwInfo.UsedValueLength, rmwInfo.FullValueLength);
-            recordInfo.SetDirtyAndModified();
-            return true;
+
+            if (_clientSession.functions.InPlaceUpdater(ref key, ref input, ref value, ref output, ref rmwInfo, ref recordInfo))
+            {
+                rmwInfo.Action = RMWAction.Default;
+                _clientSession.store.SetExtraValueLength(ref value, ref recordInfo, rmwInfo.UsedValueLength, rmwInfo.FullValueLength);
+                recordInfo.SetDirtyAndModified();
+
+                // MarkPage is done in InternalRMW
+                status = OperationStatusUtils.AdvancedOpCode(OperationStatus.SUCCESS, StatusCode.InPlaceUpdatedRecord);
+                return true;
+            }
+
+            if (rmwInfo.Action == RMWAction.ExpireAndResume)
+            {
+                // This inserts the tombstone if appropriate
+                return _clientSession.store.ReinitializeExpiredRecord<Input, Output, Context, SessionFunctionsWrapper<Key, Value, Input, Output, Context, Functions, TSessionLocker, TStoreFunctions, TAllocator>>(
+                                                    ref key, ref input, ref value, ref output, ref recordInfo, ref rmwInfo, rmwInfo.Address, this, isIpu: true, out status);
+            }
+
+            if (rmwInfo.Action == RMWAction.CancelOperation)
+            {
+                status = OperationStatus.CANCELED;
+            }
+            else if (rmwInfo.Action == RMWAction.ExpireAndStop)
+            {
+                recordInfo.SetTombstone();
+                status = OperationStatusUtils.AdvancedOpCode(OperationStatus.SUCCESS, StatusCode.InPlaceUpdatedRecord | StatusCode.Expired);
+            }
+            else
+                status = OperationStatus.SUCCESS;
+            return false;
         }
         #endregion InPlaceUpdater
 
@@ -136,21 +165,6 @@ namespace Tsavorite.core
         }
         #endregion Deletes
 
-        #region Dispose
-        public void DisposeSingleWriter(ref Key key, ref Input input, ref Value src, ref Value dst, ref Output output, ref UpsertInfo upsertInfo, WriteReason reason)
-            => _clientSession.functions.DisposeSingleWriter(ref key, ref input, ref src, ref dst, ref output, ref upsertInfo, reason);
-        public void DisposeCopyUpdater(ref Key key, ref Input input, ref Value oldValue, ref Value newValue, ref Output output, ref RMWInfo rmwInfo)
-            => _clientSession.functions.DisposeCopyUpdater(ref key, ref input, ref oldValue, ref newValue, ref output, ref rmwInfo);
-        public void DisposeInitialUpdater(ref Key key, ref Input input, ref Value value, ref Output output, ref RMWInfo rmwInfo)
-            => _clientSession.functions.DisposeInitialUpdater(ref key, ref input, ref value, ref output, ref rmwInfo);
-        public void DisposeSingleDeleter(ref Key key, ref Value value, ref DeleteInfo deleteInfo)
-            => _clientSession.functions.DisposeSingleDeleter(ref key, ref value, ref deleteInfo);
-        public void DisposeDeserializedFromDisk(ref Key key, ref Value value, ref RecordInfo recordInfo)
-            => _clientSession.functions.DisposeDeserializedFromDisk(ref key, ref value);
-        public void DisposeForRevivification(ref Key key, ref Value value, int newKeySize, ref RecordInfo recordInfo)
-            => _clientSession.functions.DisposeForRevivification(ref key, ref value, newKeySize);
-        #endregion Dispose
-
         #region Utilities
         /// <inheritdoc/>
         public void ConvertOutputToHeap(ref Input input, ref Output output) => _clientSession.functions.ConvertOutputToHeap(ref input, ref output);
@@ -160,42 +174,48 @@ namespace Tsavorite.core
         public bool IsManualLocking => _sessionLocker.IsManualLocking;
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public bool TryLockTransientExclusive(ref Key key, ref OperationStackContext<Key, Value> stackCtx) =>
+        public bool TryLockTransientExclusive(ref Key key, ref OperationStackContext<Key, Value, TStoreFunctions, TAllocator> stackCtx) =>
             _sessionLocker.TryLockTransientExclusive(Store, ref stackCtx);
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public bool TryLockTransientShared(ref Key key, ref OperationStackContext<Key, Value> stackCtx)
+        public bool TryLockTransientShared(ref Key key, ref OperationStackContext<Key, Value, TStoreFunctions, TAllocator> stackCtx)
             => _sessionLocker.TryLockTransientShared(Store, ref stackCtx);
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public void UnlockTransientExclusive(ref Key key, ref OperationStackContext<Key, Value> stackCtx)
+        public void UnlockTransientExclusive(ref Key key, ref OperationStackContext<Key, Value, TStoreFunctions, TAllocator> stackCtx)
             => _sessionLocker.UnlockTransientExclusive(Store, ref stackCtx);
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public void UnlockTransientShared(ref Key key, ref OperationStackContext<Key, Value> stackCtx)
+        public void UnlockTransientShared(ref Key key, ref OperationStackContext<Key, Value, TStoreFunctions, TAllocator> stackCtx)
             => _sessionLocker.UnlockTransientShared(Store, ref stackCtx);
         #endregion Transient locking
 
         #region Internal utilities
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public int GetRMWInitialValueLength(ref Input input) => _clientSession.functions.GetRMWInitialValueLength(ref input);
 
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public int GetRMWModifiedValueLength(ref Value t, ref Input input) => _clientSession.functions.GetRMWModifiedValueLength(ref t, ref input);
 
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public IHeapContainer<Input> GetHeapContainer(ref Input input)
         {
             if (typeof(Input) == typeof(SpanByte))
-                return new SpanByteHeapContainer(ref Unsafe.As<Input, SpanByte>(ref input), _clientSession.store.hlog.bufferPool) as IHeapContainer<Input>;
+                return new SpanByteHeapContainer(ref Unsafe.As<Input, SpanByte>(ref input), _clientSession.store.hlogBase.bufferPool) as IHeapContainer<Input>;
             return new StandardHeapContainer<Input>(ref input);
         }
 
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public void UnsafeResumeThread() => _clientSession.UnsafeResumeThread(this);
 
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public void UnsafeSuspendThread() => _clientSession.UnsafeSuspendThread();
 
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public bool CompletePendingWithOutputs(out CompletedOutputIterator<Key, Value, Input, Output, Context> completedOutputs, bool wait = false, bool spinWaitForCommit = false)
             => _clientSession.CompletePendingWithOutputs(this, out completedOutputs, wait, spinWaitForCommit);
 
-        public TsavoriteKV<Key, Value>.TsavoriteExecutionContext<Input, Output, Context> Ctx => _clientSession.ctx;
+        public TsavoriteKV<Key, Value, TStoreFunctions, TAllocator>.TsavoriteExecutionContext<Input, Output, Context> Ctx => _clientSession.ctx;
         #endregion Internal utilities
     }
 }

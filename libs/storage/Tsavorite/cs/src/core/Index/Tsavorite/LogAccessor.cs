@@ -10,48 +10,50 @@ namespace Tsavorite.core
     /// <summary>
     /// Wrapper to process log-related commands
     /// </summary>
-    /// <typeparam name="Key"></typeparam>
-    /// <typeparam name="Value"></typeparam>
-    public sealed class LogAccessor<Key, Value> : IObservable<ITsavoriteScanIterator<Key, Value>>
+    public sealed class LogAccessor<Key, Value, TStoreFunctions, TAllocator> : IObservable<ITsavoriteScanIterator<Key, Value>>
+        where TStoreFunctions : IStoreFunctions<Key, Value>
+        where TAllocator : IAllocator<Key, Value, TStoreFunctions>
     {
-        private readonly TsavoriteKV<Key, Value> store;
-        private readonly AllocatorBase<Key, Value> allocator;
+        private readonly TsavoriteKV<Key, Value, TStoreFunctions, TAllocator> store;
+        private readonly TAllocator allocator;
+        private readonly AllocatorBase<Key, Value, TStoreFunctions, TAllocator> allocatorBase;
 
         /// <summary>
         /// Constructor
         /// </summary>
         /// <param name="store"></param>
         /// <param name="allocator"></param>
-        internal LogAccessor(TsavoriteKV<Key, Value> store, AllocatorBase<Key, Value> allocator)
+        internal LogAccessor(TsavoriteKV<Key, Value, TStoreFunctions, TAllocator> store, TAllocator allocator)
         {
             this.store = store;
             this.allocator = allocator;
+            allocatorBase = allocator.GetBase<TAllocator>();
         }
 
         /// <summary>
         /// Tail address of log
         /// </summary>
-        public long TailAddress => allocator.GetTailAddress();
+        public long TailAddress => allocatorBase.GetTailAddress();
 
         /// <summary>
         /// Read-only address of log, i.e. boundary between read-only region and mutable region
         /// </summary>
-        public long ReadOnlyAddress => allocator.ReadOnlyAddress;
+        public long ReadOnlyAddress => allocatorBase.ReadOnlyAddress;
 
         /// <summary>
         /// Safe read-only address of log, i.e. boundary between read-only region and mutable region
         /// </summary>
-        public long SafeReadOnlyAddress => allocator.SafeReadOnlyAddress;
+        public long SafeReadOnlyAddress => allocatorBase.SafeReadOnlyAddress;
 
         /// <summary>
         /// Head address of log, i.e. beginning of in-memory regions
         /// </summary>
-        public long HeadAddress => allocator.HeadAddress;
+        public long HeadAddress => allocatorBase.HeadAddress;
 
         /// <summary>
         /// Beginning address of log
         /// </summary>
-        public long BeginAddress => allocator.BeginAddress;
+        public long BeginAddress => allocatorBase.BeginAddress;
 
         /// <summary>
         /// Get the bytes used on the primary log by every record. Does not include
@@ -66,19 +68,19 @@ namespace Tsavorite.core
         /// </summary>
         public int EmptyPageCount
         {
-            get => allocator.EmptyPageCount;
-            set { allocator.EmptyPageCount = value; }
+            get => allocatorBase.EmptyPageCount;
+            set { allocatorBase.EmptyPageCount = value; }
         }
 
         /// <summary>
         /// Maximum possible number of empty pages in Allocator
         /// </summary>
-        public int MaxEmptyPageCount => allocator.MaxEmptyPageCount;
+        public int MaxEmptyPageCount => allocatorBase.MaxEmptyPageCount;
 
         /// <summary>
         /// Minimum possible number of empty pages in Allocator
         /// </summary>
-        public int MinEmptyPageCount => allocator.MinEmptyPageCount;
+        public int MinEmptyPageCount => allocatorBase.MinEmptyPageCount;
 
         /// <summary>
         /// Set empty page count in allocator
@@ -87,10 +89,10 @@ namespace Tsavorite.core
         /// <param name="wait">Whether to wait for shift addresses to complete</param>
         public void SetEmptyPageCount(int pageCount, bool wait = false)
         {
-            allocator.EmptyPageCount = pageCount;
+            allocatorBase.EmptyPageCount = pageCount;
             if (wait)
             {
-                long newHeadAddress = (allocator.GetTailAddress() & ~allocator.PageSizeMask) - allocator.HeadOffsetLagAddress;
+                long newHeadAddress = (allocatorBase.GetTailAddress() & ~allocatorBase.PageSizeMask) - allocatorBase.HeadOffsetLagAddress;
                 ShiftHeadAddress(newHeadAddress, wait);
             }
         }
@@ -98,17 +100,17 @@ namespace Tsavorite.core
         /// <summary>
         /// Total in-memory circular buffer capacity (in number of pages)
         /// </summary>
-        public int BufferSize => allocator.BufferSize;
+        public int BufferSize => allocatorBase.BufferSize;
 
         /// <summary>
         /// Actual memory used by log (not including heap objects) and overflow pages
         /// </summary>
-        public long MemorySizeBytes => ((long)(allocator.AllocatedPageCount + allocator.OverflowPageCount)) << allocator.LogPageSizeBits;
+        public long MemorySizeBytes => ((long)(allocatorBase.AllocatedPageCount + allocator.OverflowPageCount)) << allocatorBase.LogPageSizeBits;
 
         /// <summary>
         /// Number of pages allocated
         /// </summary>
-        public int AllocatedPageCount => allocator.AllocatedPageCount;
+        public int AllocatedPageCount => allocatorBase.AllocatedPageCount;
 
         /// <summary>
         /// Shift begin address to the provided untilAddress. Make sure address corresponds to record boundary if snapToPageStart is set to 
@@ -121,14 +123,14 @@ namespace Tsavorite.core
         public void ShiftBeginAddress(long untilAddress, bool snapToPageStart = false, bool truncateLog = false)
         {
             if (snapToPageStart)
-                untilAddress &= ~allocator.PageSizeMask;
+                untilAddress &= ~allocatorBase.PageSizeMask;
 
-            bool epochProtected = store.epoch.ThisInstanceProtected();
+            var epochProtected = store.epoch.ThisInstanceProtected();
             try
             {
                 if (!epochProtected)
                     store.epoch.Resume();
-                allocator.ShiftBeginAddress(untilAddress, truncateLog);
+                allocatorBase.ShiftBeginAddress(untilAddress, truncateLog);
             }
             finally
             {
@@ -161,27 +163,28 @@ namespace Tsavorite.core
                 try
                 {
                     store.epoch.Resume();
-                    allocator.ShiftHeadAddress(newHeadAddress);
+                    allocatorBase.ShiftHeadAddress(newHeadAddress);
                 }
                 finally
                 {
                     store.epoch.Suspend();
                 }
 
-                while (wait && allocator.SafeHeadAddress < newHeadAddress) Thread.Yield();
+                while (wait && allocatorBase.SafeHeadAddress < newHeadAddress)
+                    _ = Thread.Yield();
             }
             else
             {
-                allocator.ShiftHeadAddress(newHeadAddress);
-                while (wait && allocator.SafeHeadAddress < newHeadAddress)
+                allocatorBase.ShiftHeadAddress(newHeadAddress);
+                while (wait && allocatorBase.SafeHeadAddress < newHeadAddress)
                     store.epoch.ProtectAndDrain();
             }
         }
 
         public Func<bool> IsSizeBeyondLimit
         {
-            get => allocator.IsSizeBeyondLimit;
-            set => allocator.IsSizeBeyondLimit = value;
+            get => allocatorBase.IsSizeBeyondLimit;
+            set => allocatorBase.IsSizeBeyondLimit = value;
         }
 
         /// <summary>
@@ -193,8 +196,8 @@ namespace Tsavorite.core
         /// <param name="readOnlyObserver">Observer to which scan iterator is pushed</param>
         public IDisposable Subscribe(IObserver<ITsavoriteScanIterator<Key, Value>> readOnlyObserver)
         {
-            allocator.OnReadOnlyObserver = readOnlyObserver;
-            return new LogSubscribeDisposable(allocator, true);
+            allocatorBase.OnReadOnlyObserver = readOnlyObserver;
+            return new LogSubscribeDisposable(allocatorBase, isReadOnly: true);
         }
 
         /// <summary>
@@ -206,14 +209,14 @@ namespace Tsavorite.core
         /// <param name="evictionObserver">Observer to which scan iterator is pushed</param>
         public IDisposable SubscribeEvictions(IObserver<ITsavoriteScanIterator<Key, Value>> evictionObserver)
         {
-            allocator.OnEvictionObserver = evictionObserver;
-            return new LogSubscribeDisposable(allocator, false);
+            allocatorBase.OnEvictionObserver = evictionObserver;
+            return new LogSubscribeDisposable(allocatorBase, isReadOnly: false);
         }
 
         public IDisposable SubscribeDeserializations(IObserver<ITsavoriteScanIterator<Key, Value>> deserializationObserver)
         {
-            allocator.OnDeserializationObserver = deserializationObserver;
-            return new LogSubscribeDisposable(allocator, false);
+            allocatorBase.OnDeserializationObserver = deserializationObserver;
+            return new LogSubscribeDisposable(allocatorBase, isReadOnly: false);
         }
 
         /// <summary>
@@ -221,13 +224,13 @@ namespace Tsavorite.core
         /// </summary>
         class LogSubscribeDisposable : IDisposable
         {
-            private readonly AllocatorBase<Key, Value> allocator;
+            private readonly AllocatorBase<Key, Value, TStoreFunctions, TAllocator> allocator;
             private readonly bool readOnly;
 
-            public LogSubscribeDisposable(AllocatorBase<Key, Value> allocator, bool readOnly)
+            public LogSubscribeDisposable(AllocatorBase<Key, Value, TStoreFunctions, TAllocator> allocator, bool isReadOnly)
             {
                 this.allocator = allocator;
-                this.readOnly = readOnly;
+                readOnly = isReadOnly;
             }
 
             public void Dispose()
@@ -251,7 +254,7 @@ namespace Tsavorite.core
                 try
                 {
                     store.epoch.Resume();
-                    allocator.ShiftReadOnlyAddress(newReadOnlyAddress);
+                    _ = allocatorBase.ShiftReadOnlyAddress(newReadOnlyAddress);
                 }
                 finally
                 {
@@ -259,14 +262,15 @@ namespace Tsavorite.core
                 }
 
                 // Wait for flush to complete
-                while (wait && allocator.FlushedUntilAddress < newReadOnlyAddress) Thread.Yield();
+                while (wait && allocatorBase.FlushedUntilAddress < newReadOnlyAddress)
+                    _ = Thread.Yield();
             }
             else
             {
-                allocator.ShiftReadOnlyAddress(newReadOnlyAddress);
+                _ = allocatorBase.ShiftReadOnlyAddress(newReadOnlyAddress);
 
                 // Wait for flush to complete
-                while (wait && allocator.FlushedUntilAddress < newReadOnlyAddress)
+                while (wait && allocatorBase.FlushedUntilAddress < newReadOnlyAddress)
                     store.epoch.ProtectAndDrain();
             }
         }
@@ -277,7 +281,7 @@ namespace Tsavorite.core
         /// <returns>Scan iterator instance</returns>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public ITsavoriteScanIterator<Key, Value> Scan(long beginAddress, long endAddress, ScanBufferingMode scanBufferingMode = ScanBufferingMode.DoublePageBuffering, bool includeSealedRecords = false)
-            => allocator.Scan(store: null, beginAddress, endAddress, scanBufferingMode, includeSealedRecords);
+            => allocatorBase.Scan(store: null, beginAddress, endAddress, scanBufferingMode, includeSealedRecords);
 
         /// <summary>
         /// Push-scan the log given address range; returns all records with address less than endAddress
@@ -285,7 +289,7 @@ namespace Tsavorite.core
         /// <returns>True if Scan completed; false if Scan ended early due to one of the TScanIterator reader functions returning false</returns>
         public bool Scan<TScanFunctions>(ref TScanFunctions scanFunctions, long beginAddress, long endAddress, ScanBufferingMode scanBufferingMode = ScanBufferingMode.DoublePageBuffering)
             where TScanFunctions : IScanIteratorFunctions<Key, Value>
-            => allocator.Scan(store, beginAddress, endAddress, ref scanFunctions, scanBufferingMode);
+            => allocatorBase.Scan(store, beginAddress, endAddress, ref scanFunctions, scanBufferingMode);
 
         /// <summary>
         /// Iterate versions of the specified key, starting with most recent
@@ -293,7 +297,7 @@ namespace Tsavorite.core
         /// <returns>True if Scan completed; false if Scan ended early due to one of the TScanIterator reader functions returning false</returns>
         public bool IterateKeyVersions<TScanFunctions>(ref TScanFunctions scanFunctions, ref Key key)
             where TScanFunctions : IScanIteratorFunctions<Key, Value>
-            => allocator.IterateKeyVersions(store, ref key, ref scanFunctions);
+            => allocatorBase.IterateKeyVersions(store, ref key, ref scanFunctions);
 
         /// <summary>
         /// Flush log until current tail (records are still retained in memory)
@@ -301,7 +305,7 @@ namespace Tsavorite.core
         /// <param name="wait">Synchronous wait for operation to complete</param>
         public void Flush(bool wait)
         {
-            ShiftReadOnlyAddress(allocator.GetTailAddress(), wait);
+            ShiftReadOnlyAddress(allocatorBase.GetTailAddress(), wait);
         }
 
         /// <summary>
@@ -310,7 +314,7 @@ namespace Tsavorite.core
         /// <param name="wait">Wait for operation to complete</param>
         public void FlushAndEvict(bool wait)
         {
-            ShiftHeadAddress(allocator.GetTailAddress(), wait);
+            ShiftHeadAddress(allocatorBase.GetTailAddress(), wait);
         }
 
         /// <summary>
@@ -323,7 +327,7 @@ namespace Tsavorite.core
             FlushAndEvict(true);
 
             // Delete from memory
-            allocator.DeleteFromMemory();
+            allocatorBase.DeleteFromMemory();
         }
 
         /// <summary>

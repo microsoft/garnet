@@ -5,9 +5,11 @@ using System.Runtime.CompilerServices;
 
 namespace Tsavorite.core
 {
-    internal struct RevivificationManager<Key, Value>
+    internal struct RevivificationManager<Key, Value, TStoreFunctions, TAllocator>
+        where TStoreFunctions : IStoreFunctions<Key, Value>
+        where TAllocator : IAllocator<Key, Value, TStoreFunctions>
     {
-        internal FreeRecordPool<Key, Value> FreeRecordPool;
+        internal FreeRecordPool<Key, Value, TStoreFunctions, TAllocator> FreeRecordPool;
         internal readonly bool UseFreeRecordPool => FreeRecordPool is not null;
 
         internal RevivificationStats stats = new();
@@ -21,7 +23,7 @@ namespace Tsavorite.core
 
         internal double revivifiableFraction;
 
-        public RevivificationManager(TsavoriteKV<Key, Value> store, bool isFixedLen, RevivificationSettings revivSettings, LogSettings logSettings)
+        public RevivificationManager(TsavoriteKV<Key, Value, TStoreFunctions, TAllocator> store, bool isFixedLen, RevivificationSettings revivSettings, LogSettings logSettings)
         {
             IsFixedLength = isFixedLen;
             revivifiableFraction = revivSettings is null || revivSettings.RevivifiableFraction == RevivificationSettings.DefaultRevivifiableFraction
@@ -37,7 +39,7 @@ namespace Tsavorite.core
             IsEnabled = true;
             if (revivSettings.FreeRecordBins?.Length > 0)
             {
-                FreeRecordPool = new FreeRecordPool<Key, Value>(store, revivSettings, IsFixedLength ? store.hlog.GetAverageRecordSize() : -1);
+                FreeRecordPool = new FreeRecordPool<Key, Value, TStoreFunctions, TAllocator>(store, revivSettings, IsFixedLength ? store.hlog.GetAverageRecordSize() : -1);
                 restoreDeletedRecordsIfBinIsFull = revivSettings.RestoreDeletedRecordsIfBinIsFull;
                 useFreeRecordPoolForCTT = revivSettings.UseFreeRecordPoolForCopyToTail;
             }

@@ -12,14 +12,17 @@ using static Tsavorite.test.TestUtils;
 
 namespace Tsavorite.test.UnsafeContext
 {
+    using StructAllocator = BlittableAllocator<KeyStruct, ValueStruct, StoreFunctions<KeyStruct, ValueStruct, KeyStruct.Comparer, DefaultRecordDisposer<KeyStruct, ValueStruct>>>;
+    using StructStoreFunctions = StoreFunctions<KeyStruct, ValueStruct, KeyStruct.Comparer, DefaultRecordDisposer<KeyStruct, ValueStruct>>;
+
     //** These tests ensure the basics are fully covered - taken from BasicTests
 
     [TestFixture]
     internal class BasicUnsafeContextTests
     {
-        private TsavoriteKV<KeyStruct, ValueStruct> store;
-        private ClientSession<KeyStruct, ValueStruct, InputStruct, OutputStruct, Empty, Functions> fullSession;
-        private UnsafeContext<KeyStruct, ValueStruct, InputStruct, OutputStruct, Empty, Functions> uContext;
+        private TsavoriteKV<KeyStruct, ValueStruct, StructStoreFunctions, StructAllocator> store;
+        private ClientSession<KeyStruct, ValueStruct, InputStruct, OutputStruct, Empty, Functions, StructStoreFunctions, StructAllocator> fullSession;
+        private UnsafeContext<KeyStruct, ValueStruct, InputStruct, OutputStruct, Empty, Functions, StructStoreFunctions, StructAllocator> uContext;
         private IDevice log;
         DeviceType deviceType;
 
@@ -30,12 +33,17 @@ namespace Tsavorite.test.UnsafeContext
             DeleteDirectory(MethodTestDir, wait: true);
         }
 
-        private void Setup(long size, LogSettings logSettings, DeviceType deviceType)
+        private void Setup(KVSettings<KeyStruct, ValueStruct> kvSettings, DeviceType deviceType)
         {
             string filename = Path.Join(MethodTestDir, TestContext.CurrentContext.Test.Name + deviceType.ToString() + ".log");
             log = CreateTestDevice(deviceType, filename);
-            logSettings.LogDevice = log;
-            store = new TsavoriteKV<KeyStruct, ValueStruct>(size, logSettings);
+            kvSettings.LogDevice = log;
+            kvSettings.IndexSize = 1L << 13;
+
+            store = new(kvSettings
+                , StoreFunctions<KeyStruct, ValueStruct>.Create(KeyStruct.Comparer.Instance)
+                , (allocatorSettings, storeFunctions) => new(allocatorSettings, storeFunctions)
+            );
             fullSession = store.NewSession<InputStruct, OutputStruct, Empty, Functions>(new Functions());
             uContext = fullSession.UnsafeContext;
         }
@@ -62,7 +70,7 @@ namespace Tsavorite.test.UnsafeContext
 
         private (Status status, OutputStruct output) CompletePendingResult()
         {
-            uContext.CompletePendingWithOutputs(out var completedOutputs);
+            _ = uContext.CompletePendingWithOutputs(out var completedOutputs);
             return GetSinglePendingResult(completedOutputs);
         }
 
@@ -71,7 +79,7 @@ namespace Tsavorite.test.UnsafeContext
         [Category("Smoke")]
         public void NativeInMemWriteRead([Values] DeviceType deviceType)
         {
-            Setup(128, new LogSettings { PageSizeBits = 10, MemorySizeBits = 12, SegmentSizeBits = 22 }, deviceType);
+            Setup(new() { PageSize = 1L << 10, MemorySize = 1L << 12, SegmentSize = 1L << 22 }, deviceType);
             uContext.BeginUnsafe();
 
             try
@@ -82,7 +90,7 @@ namespace Tsavorite.test.UnsafeContext
                 var key1 = new KeyStruct { kfield1 = 13, kfield2 = 14 };
                 var value = new ValueStruct { vfield1 = 23, vfield2 = 24 };
 
-                uContext.Upsert(ref key1, ref value, Empty.Default);
+                _ = uContext.Upsert(ref key1, ref value, Empty.Default);
                 var status = uContext.Read(ref key1, ref input, ref output, Empty.Default);
 
                 AssertCompleted(new(StatusCode.Found), status);
@@ -100,7 +108,7 @@ namespace Tsavorite.test.UnsafeContext
         [Category("Smoke")]
         public void NativeInMemWriteReadDelete([Values] DeviceType deviceType)
         {
-            Setup(128, new LogSettings { PageSizeBits = 10, MemorySizeBits = 12, SegmentSizeBits = 22 }, deviceType);
+            Setup(new() { PageSize = 1L << 10, MemorySize = 1L << 12, SegmentSize = 1L << 22 }, deviceType);
             uContext.BeginUnsafe();
 
             try
@@ -111,11 +119,11 @@ namespace Tsavorite.test.UnsafeContext
                 var key1 = new KeyStruct { kfield1 = 13, kfield2 = 14 };
                 var value = new ValueStruct { vfield1 = 23, vfield2 = 24 };
 
-                uContext.Upsert(ref key1, ref value, Empty.Default);
+                _ = uContext.Upsert(ref key1, ref value, Empty.Default);
                 var status = uContext.Read(ref key1, ref input, ref output, Empty.Default);
                 AssertCompleted(new(StatusCode.Found), status);
 
-                uContext.Delete(ref key1, Empty.Default);
+                _ = uContext.Delete(ref key1, Empty.Default);
 
                 status = uContext.Read(ref key1, ref input, ref output, Empty.Default);
                 AssertCompleted(new(StatusCode.NotFound), status);
@@ -123,7 +131,7 @@ namespace Tsavorite.test.UnsafeContext
                 var key2 = new KeyStruct { kfield1 = 14, kfield2 = 15 };
                 var value2 = new ValueStruct { vfield1 = 24, vfield2 = 25 };
 
-                uContext.Upsert(ref key2, ref value2, Empty.Default);
+                _ = uContext.Upsert(ref key2, ref value2, Empty.Default);
                 status = uContext.Read(ref key2, ref input, ref output, Empty.Default);
 
                 AssertCompleted(new(StatusCode.Found), status);
@@ -147,8 +155,8 @@ namespace Tsavorite.test.UnsafeContext
 
             const int count = 10;
 
-            // Setup(128, new LogSettings { MemorySizeBits = 22, SegmentSizeBits = 22, PageSizeBits = 10 }, deviceType);
-            Setup(128, new LogSettings { MemorySizeBits = 29 }, deviceType);
+            // Setup(new () { MemorySize = 1L << 22, SegmentSize = 1L << 22, PageSize = 1L << 10 }, deviceType);
+            Setup(new() { MemorySize = 1L << 29 }, deviceType);
             uContext.BeginUnsafe();
 
             try
@@ -161,13 +169,13 @@ namespace Tsavorite.test.UnsafeContext
                     var key1 = new KeyStruct { kfield1 = i, kfield2 = 14 };
                     var value = new ValueStruct { vfield1 = i, vfield2 = 24 };
 
-                    uContext.Upsert(ref key1, ref value, Empty.Default);
+                    _ = uContext.Upsert(ref key1, ref value, Empty.Default);
                 }
 
                 for (int i = 0; i < 10 * count; i++)
                 {
                     var key1 = new KeyStruct { kfield1 = i, kfield2 = 14 };
-                    uContext.Delete(ref key1, Empty.Default);
+                    _ = uContext.Delete(ref key1, Empty.Default);
                 }
 
                 for (int i = 0; i < 10 * count; i++)
@@ -178,7 +186,7 @@ namespace Tsavorite.test.UnsafeContext
                     var status = uContext.Read(ref key1, ref input, ref output, Empty.Default);
                     AssertCompleted(new(StatusCode.NotFound), status);
 
-                    uContext.Upsert(ref key1, ref value, Empty.Default);
+                    _ = uContext.Upsert(ref key1, ref value, Empty.Default);
                 }
 
                 for (int i = 0; i < 10 * count; i++)
@@ -204,8 +212,8 @@ namespace Tsavorite.test.UnsafeContext
 
             int count = 200;
 
-            // Setup(128, new LogSettings { MemorySizeBits = 22, SegmentSizeBits = 22, PageSizeBits = 10 }, deviceType);
-            Setup(128, new LogSettings { MemorySizeBits = 29 }, deviceType);
+            // Setup(128, new () { MemorySize = 1L << 22, SegmentSize = 1L << 22, PageSize = 1L << 10 }, deviceType);
+            Setup(new() { MemorySize = 1L << 29 }, deviceType);
             uContext.BeginUnsafe();
 
             try
@@ -218,7 +226,7 @@ namespace Tsavorite.test.UnsafeContext
                     var i = r.Next(10000);
                     var key1 = new KeyStruct { kfield1 = i, kfield2 = i + 1 };
                     var value = new ValueStruct { vfield1 = i, vfield2 = i + 1 };
-                    uContext.Upsert(ref key1, ref value, Empty.Default);
+                    _ = uContext.Upsert(ref key1, ref value, Empty.Default);
                 }
 
                 r = new Random(10);
@@ -231,9 +239,7 @@ namespace Tsavorite.test.UnsafeContext
                     var value = new ValueStruct { vfield1 = i, vfield2 = i + 1 };
 
                     if (uContext.Read(ref key1, ref input, ref output, Empty.Default).IsPending)
-                    {
-                        uContext.CompletePending(true);
-                    }
+                        _ = uContext.CompletePending(true);
 
                     Assert.AreEqual(value.vfield1, output.value.vfield1);
                     Assert.AreEqual(value.vfield2, output.value.vfield2);
@@ -270,7 +276,7 @@ namespace Tsavorite.test.UnsafeContext
             Random r = new(RandSeed);
             var sw = Stopwatch.StartNew();
 
-            Setup(128, new LogSettings { MemorySizeBits = 22, SegmentSizeBits = 22, PageSizeBits = 10 }, deviceType);
+            Setup(new() { MemorySize = 1L << 22, SegmentSize = 1L << 22, PageSize = 1L << 10 }, deviceType);
             uContext.BeginUnsafe();
 
             try
@@ -280,7 +286,7 @@ namespace Tsavorite.test.UnsafeContext
                     var i = r.Next(RandRange);
                     var key1 = new KeyStruct { kfield1 = i, kfield2 = i + 1 };
                     var value = new ValueStruct { vfield1 = i, vfield2 = i + 1 };
-                    uContext.Upsert(ref key1, ref value, Empty.Default);
+                    _ = uContext.Upsert(ref key1, ref value, Empty.Default);
                 }
 
                 r = new Random(RandSeed);
@@ -302,7 +308,7 @@ namespace Tsavorite.test.UnsafeContext
                 }
                 if (syncMode == CompletionSyncMode.Sync)
                 {
-                    uContext.CompletePending(true);
+                    _ = uContext.CompletePending(true);
                 }
                 else
                 {
@@ -329,7 +335,7 @@ namespace Tsavorite.test.UnsafeContext
                 CompletedOutputIterator<KeyStruct, ValueStruct, InputStruct, OutputStruct, Empty> outputs;
                 if (syncMode == CompletionSyncMode.Sync)
                 {
-                    uContext.CompletePendingWithOutputs(out outputs, wait: true);
+                    _ = uContext.CompletePendingWithOutputs(out outputs, wait: true);
                 }
                 else
                 {
@@ -362,7 +368,7 @@ namespace Tsavorite.test.UnsafeContext
             InputStruct input = default;
             OutputStruct output = default;
 
-            Setup(128, new LogSettings { MemorySizeBits = 22, SegmentSizeBits = 22, PageSizeBits = 10 }, deviceType);
+            Setup(new() { MemorySize = 1L << 22, SegmentSize = 1L << 22, PageSize = 1L << 10 }, deviceType);
             uContext.BeginUnsafe();
 
             try
@@ -382,7 +388,7 @@ namespace Tsavorite.test.UnsafeContext
                     var i = nums[j];
                     var key1 = new KeyStruct { kfield1 = i, kfield2 = i + 1 };
                     input = new InputStruct { ifield1 = i, ifield2 = i + 1 };
-                    uContext.RMW(ref key1, ref input, Empty.Default);
+                    _ = uContext.RMW(ref key1, ref input, Empty.Default);
                 }
                 for (int j = 0; j < nums.Length; ++j)
                 {
@@ -391,7 +397,7 @@ namespace Tsavorite.test.UnsafeContext
                     input = new InputStruct { ifield1 = i, ifield2 = i + 1 };
                     if (uContext.RMW(ref key1, ref input, ref output, Empty.Default).IsPending)
                     {
-                        uContext.CompletePending(true);
+                        _ = uContext.CompletePending(true);
                     }
                     else
                     {
@@ -434,7 +440,7 @@ namespace Tsavorite.test.UnsafeContext
         {
             InputStruct input = default;
 
-            Setup(128, new LogSettings { MemorySizeBits = 22, SegmentSizeBits = 22, PageSizeBits = 10 }, deviceType);
+            Setup(new() { MemorySize = 1L << 22, SegmentSize = 1L << 22, PageSize = 1L << 10 }, deviceType);
             uContext.BeginUnsafe();
 
             try
@@ -454,14 +460,14 @@ namespace Tsavorite.test.UnsafeContext
                     var i = nums[j];
                     var key1 = new KeyStruct { kfield1 = i, kfield2 = i + 1 };
                     input = new InputStruct { ifield1 = i, ifield2 = i + 1 };
-                    uContext.RMW(ref key1, ref input, Empty.Default);
+                    _ = uContext.RMW(ref key1, ref input, Empty.Default);
                 }
                 for (int j = 0; j < nums.Length; ++j)
                 {
                     var i = nums[j];
                     var key1 = new KeyStruct { kfield1 = i, kfield2 = i + 1 };
                     input = new InputStruct { ifield1 = i, ifield2 = i + 1 };
-                    uContext.RMW(key1, input);  // no ref and do not set any other params
+                    _ = uContext.RMW(key1, input);  // no ref and do not set any other params
                 }
 
                 OutputStruct output = default;
@@ -500,7 +506,7 @@ namespace Tsavorite.test.UnsafeContext
         {
             InputStruct input = default;
 
-            Setup(128, new LogSettings { MemorySizeBits = 22, SegmentSizeBits = 22, PageSizeBits = 10 }, deviceType);
+            Setup(new() { MemorySize = 1L << 22, SegmentSize = 1L << 22, PageSize = 1L << 10 }, deviceType);
             uContext.BeginUnsafe();
 
             try
@@ -508,7 +514,7 @@ namespace Tsavorite.test.UnsafeContext
                 var key1 = new KeyStruct { kfield1 = 13, kfield2 = 14 };
                 var value = new ValueStruct { vfield1 = 23, vfield2 = 24 };
 
-                uContext.Upsert(ref key1, ref value, Empty.Default);
+                _ = uContext.Upsert(ref key1, ref value, Empty.Default);
                 var status = uContext.Read(key1, input, out OutputStruct output, Empty.Default);
                 AssertCompleted(new(StatusCode.Found), status);
 
@@ -529,7 +535,7 @@ namespace Tsavorite.test.UnsafeContext
         [Category("TsavoriteKV")]
         public void ReadNoRefKey([Values] DeviceType deviceType)
         {
-            Setup(128, new LogSettings { MemorySizeBits = 22, SegmentSizeBits = 22, PageSizeBits = 10 }, deviceType);
+            Setup(new() { MemorySize = 1L << 22, SegmentSize = 1L << 22, PageSize = 1L << 10 }, deviceType);
             uContext.BeginUnsafe();
 
             try
@@ -537,7 +543,7 @@ namespace Tsavorite.test.UnsafeContext
                 var key1 = new KeyStruct { kfield1 = 13, kfield2 = 14 };
                 var value = new ValueStruct { vfield1 = 23, vfield2 = 24 };
 
-                uContext.Upsert(ref key1, ref value, Empty.Default);
+                _ = uContext.Upsert(ref key1, ref value, Empty.Default);
                 var status = uContext.Read(key1, out OutputStruct output, Empty.Default);
                 AssertCompleted(new(StatusCode.Found), status);
 
@@ -560,7 +566,7 @@ namespace Tsavorite.test.UnsafeContext
         [Category("Smoke")]
         public void ReadWithoutInput([Values] DeviceType deviceType)
         {
-            Setup(128, new LogSettings { MemorySizeBits = 22, SegmentSizeBits = 22, PageSizeBits = 10 }, deviceType);
+            Setup(new() { MemorySize = 1L << 22, SegmentSize = 1L << 22, PageSize = 1L << 10 }, deviceType);
             uContext.BeginUnsafe();
 
             try
@@ -570,7 +576,7 @@ namespace Tsavorite.test.UnsafeContext
                 var key1 = new KeyStruct { kfield1 = 13, kfield2 = 14 };
                 var value = new ValueStruct { vfield1 = 23, vfield2 = 24 };
 
-                uContext.Upsert(ref key1, ref value, Empty.Default);
+                _ = uContext.Upsert(ref key1, ref value, Empty.Default);
                 var status = uContext.Read(ref key1, ref output, Empty.Default);
                 AssertCompleted(new(StatusCode.Found), status);
 
@@ -592,7 +598,7 @@ namespace Tsavorite.test.UnsafeContext
         [Category("Smoke")]
         public void ReadBareMinParams([Values] DeviceType deviceType)
         {
-            Setup(128, new LogSettings { MemorySizeBits = 22, SegmentSizeBits = 22, PageSizeBits = 10 }, deviceType);
+            Setup(new() { MemorySize = 1L << 22, SegmentSize = 1L << 22, PageSize = 1L << 10 }, deviceType);
             uContext.BeginUnsafe();
 
             try
@@ -600,7 +606,7 @@ namespace Tsavorite.test.UnsafeContext
                 var key1 = new KeyStruct { kfield1 = 13, kfield2 = 14 };
                 var value = new ValueStruct { vfield1 = 23, vfield2 = 24 };
 
-                uContext.Upsert(ref key1, ref value, Empty.Default);
+                _ = uContext.Upsert(ref key1, ref value, Empty.Default);
 
                 var (status, output) = uContext.Read(key1);
                 AssertCompleted(new(StatusCode.Found), status);
