@@ -90,7 +90,7 @@ namespace Tsavorite.benchmark
             error = false;
         }
 
-        internal long GetHashTableSize() => (long)(MaxKey / Options.HashPacking);
+        internal long GetHashTableSize() => (long)(MaxKey / Options.HashPacking) << 6;  // << 6 for consistency with pre-StoreFunctions (because it will be converted to cache lines)
 
         internal void LoadData()
         {
@@ -167,12 +167,12 @@ namespace Tsavorite.benchmark
                 Console.WriteLine($"loading subset of keys and txns from {txn_filename} into memory...");
                 using FileStream stream = File.Open(txn_filename, FileMode.Open, FileAccess.Read, FileShare.Read);
 
-                var initValueSet = new HashSet<long>(init_keys.Length);
+                var initKeySet = new HashSet<long>(init_keys.Length);
+                long[] initKeyArray = null;
 
-                long init_count = 0;
                 long txn_count = 0;
-
                 long offset = 0;
+                RandomGenerator rng = new((uint)Options.RandomSeed);
 
                 byte[] chunk = new byte[YcsbConstants.kFileChunkSize];
                 fixed (byte* chunk_ptr = chunk)
@@ -183,25 +183,27 @@ namespace Tsavorite.benchmark
                         int size = stream.Read(chunk, 0, YcsbConstants.kFileChunkSize);
                         for (int idx = 0; idx < size && txn_count < txn_keys.Length; idx += 8)
                         {
-                            var value = *(long*)(chunk_ptr + idx);
-                            if (!initValueSet.Contains(value))
+                            var key = *(long*)(chunk_ptr + idx);
+                            if (!initKeySet.Contains(key))
                             {
-                                if (init_count >= init_keys.Length)
+                                if (initKeySet.Count >= init_keys.Length)
                                 {
+                                    // Zipf txn has a high hit rate in the init array, so we'll fill up the small-txn count by just skipping out-of-range txn keys.
                                     if (distribution == YcsbConstants.ZipfDist)
                                         continue;
 
-                                    // Uniform distribution at current small-data counts is about a 1% hit rate, which is too slow here, so just modulo.
-                                    value %= init_keys.Length;
+                                    // Uniform txn at current small-data counts has about a 1% hit rate in the init array, too low to fill the small-txn count,
+                                    // so convert the init_key set to an array for random indexing get a random key from init_keys.
+                                    initKeyArray ??= initKeySet.ToArray();
+                                    key = initKeyArray[rng.Generate((uint)initKeySet.Count)];
                                 }
                                 else
                                 {
-                                    initValueSet.Add(value);
-                                    keySetter.Set(init_keys, init_count, value);
-                                    ++init_count;
+                                    keySetter.Set(init_keys, initKeySet.Count, key);
+                                    _ = initKeySet.Add(key);
                                 }
                             }
-                            keySetter.Set(txn_keys, txn_count, value);
+                            keySetter.Set(txn_keys, txn_count, key);
                             ++txn_count;
                         }
                         if (size == YcsbConstants.kFileChunkSize)
@@ -216,8 +218,8 @@ namespace Tsavorite.benchmark
 
                 sw.Stop();
 
-                if (init_count != init_keys.Length)
-                    throw new InvalidDataException($"Init file subset load fail! Expected {init_keys.Length} keys; found {init_count}");
+                if (initKeySet.Count != init_keys.Length)
+                    throw new InvalidDataException($"Init file subset load fail! Expected {init_keys.Length} keys; found {initKeySet.Count}");
                 if (txn_count != txn_keys.Length)
                     throw new InvalidDataException($"Txn file subset load fail! Expected {txn_keys.Length} keys; found {txn_count}");
 
@@ -338,7 +340,9 @@ namespace Tsavorite.benchmark
 
         internal string BackupPath => $"{DataPath}/{Distribution}_{(Options.UseSyntheticData ? "synthetic" : "ycsb")}_{(Options.UseSmallData ? "2.5M_10M" : "250M_1000M")}";
 
-        internal bool MaybeRecoverStore<K, V>(TsavoriteKV<K, V> store)
+        internal bool MaybeRecoverStore<K, V, SF, A>(TsavoriteKV<K, V, SF, A> store)
+            where SF : IStoreFunctions<K, V>
+            where A : IAllocator<K, V, SF>
         {
             // Recover database for fast benchmark repeat runs.
             if (RecoverMode)
@@ -367,7 +371,9 @@ namespace Tsavorite.benchmark
             return false;
         }
 
-        internal void MaybeCheckpointStore<K, V>(TsavoriteKV<K, V> store)
+        internal void MaybeCheckpointStore<K, V, SF, A>(TsavoriteKV<K, V, SF, A> store)
+            where SF : IStoreFunctions<K, V>
+            where A : IAllocator<K, V, SF>
         {
             // Checkpoint database for fast benchmark repeat runs.
             if (RecoverMode)

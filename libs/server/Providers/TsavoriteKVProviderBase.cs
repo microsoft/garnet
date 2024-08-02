@@ -11,14 +11,16 @@ namespace Garnet.server
     /// Abstract session provider for TsavoriteKV store based on
     /// [K, V, I, O, F, P]
     /// </summary>
-    public abstract class TsavoriteKVProviderBase<Key, Value, Input, Output, Functions, ParameterSerializer> : ISessionProvider
-        where Functions : ISessionFunctions<Key, Value, Input, Output, long>
+    public abstract class TsavoriteKVProviderBase<Key, Value, Input, Output, TSessionFunctions, TStoreFunctions, TAllocator, ParameterSerializer> : ISessionProvider
+        where TSessionFunctions : ISessionFunctions<Key, Value, Input, Output, long>
+        where TStoreFunctions : IStoreFunctions<Key, Value>
+        where TAllocator : IAllocator<Key, Value, TStoreFunctions>
         where ParameterSerializer : IServerSerializer<Key, Value, Input, Output>
     {
         /// <summary>
         /// Store
         /// </summary>
-        protected readonly TsavoriteKV<Key, Value> store;
+        protected readonly TsavoriteKV<Key, Value, TStoreFunctions, TAllocator> store;
 
         /// <summary>
         /// Serializer
@@ -43,7 +45,8 @@ namespace Garnet.server
         /// <param name="broker"></param>
         /// <param name="recoverStore"></param>
         /// <param name="maxSizeSettings"></param>
-        public TsavoriteKVProviderBase(TsavoriteKV<Key, Value> store, ParameterSerializer serializer, SubscribeBroker<Key, Value, IKeySerializer<Key>> broker = null, bool recoverStore = false, MaxSizeSettings maxSizeSettings = default)
+        public TsavoriteKVProviderBase(TsavoriteKV<Key, Value, TStoreFunctions, TAllocator> store, ParameterSerializer serializer,
+                SubscribeBroker<Key, Value, IKeySerializer<Key>> broker = null, bool recoverStore = false, MaxSizeSettings maxSizeSettings = default)
         {
             this.store = store;
             if (recoverStore)
@@ -69,7 +72,7 @@ namespace Garnet.server
         /// GetFunctions() for custom functions provided by the client
         /// </summary>
         /// <returns></returns>
-        public abstract Functions GetFunctions();
+        public abstract TSessionFunctions GetFunctions();
 
         /// <inheritdoc />
         public abstract IMessageConsumer GetSession(WireFormat wireFormat, INetworkSender networkSender);

@@ -9,30 +9,36 @@ using Tsavorite.core;
 using static Tsavorite.test.TestUtils;
 
 #pragma warning disable IDE0060 // Remove unused parameter == Some parameters are just to let [Setup] know what to do
+namespace Tsavorite.test
+{
+    // Must be in a separate block so the "using StructStoreFunctions" is the first line in its namespace declaration.
+    struct HashModuloKeyStructComparer : IKeyComparer<KeyStruct>
+    {
+        readonly HashModulo modRange;
+
+        internal HashModuloKeyStructComparer(HashModulo mod) => modRange = mod;
+
+        public readonly bool Equals(ref KeyStruct k1, ref KeyStruct k2) => k1.kfield1 == k2.kfield1;
+
+        // Force collisions to create a chain
+        public readonly long GetHashCode64(ref KeyStruct k)
+        {
+            var value = Utility.GetHashCode(k.kfield1);
+            return modRange != HashModulo.NoMod ? value % (long)modRange : value;
+        }
+    }
+}
 
 namespace Tsavorite.test
 {
+    using StructAllocator = BlittableAllocator<KeyStruct, ValueStruct, StoreFunctions<KeyStruct, ValueStruct, HashModuloKeyStructComparer, DefaultRecordDisposer<KeyStruct, ValueStruct>>>;
+    using StructStoreFunctions = StoreFunctions<KeyStruct, ValueStruct, HashModuloKeyStructComparer, DefaultRecordDisposer<KeyStruct, ValueStruct>>;
+
     [TestFixture]
     public class BlittableLogCompactionTests
     {
-        private TsavoriteKV<KeyStruct, ValueStruct> store;
+        private TsavoriteKV<KeyStruct, ValueStruct, StructStoreFunctions, StructAllocator> store;
         private IDevice log;
-
-        struct HashModuloComparer : ITsavoriteEqualityComparer<KeyStruct>
-        {
-            readonly HashModulo modRange;
-
-            internal HashModuloComparer(HashModulo mod) => modRange = mod;
-
-            public bool Equals(ref KeyStruct k1, ref KeyStruct k2) => k1.kfield1 == k2.kfield1;
-
-            // Force collisions to create a chain
-            public long GetHashCode64(ref KeyStruct k)
-            {
-                var value = Utility.GetHashCode(k.kfield1);
-                return modRange != HashModulo.NoMod ? value % (long)modRange : value;
-            }
-        }
 
         [SetUp]
         public void Setup()
@@ -50,8 +56,15 @@ namespace Tsavorite.test
                 }
             }
 
-            store = new TsavoriteKV<KeyStruct, ValueStruct>
-                (1L << 20, new LogSettings { LogDevice = log, MemorySizeBits = 15, PageSizeBits = 9 }, comparer: new HashModuloComparer(hashMod)); ;
+            store = new(new()
+            {
+                IndexSize = 1L << 26,
+                LogDevice = log,
+                MemorySize = 1L << 15,
+                PageSize = 1L << 9
+            }, StoreFunctions<KeyStruct, ValueStruct>.Create(new HashModuloKeyStructComparer(hashMod))
+                , (allocatorSettings, storeFunctions) => new(allocatorSettings, storeFunctions)
+            );
         }
 
         [TearDown]
@@ -64,7 +77,7 @@ namespace Tsavorite.test
             DeleteDirectory(MethodTestDir);
         }
 
-        void VerifyRead(ClientSession<KeyStruct, ValueStruct, InputStruct, OutputStruct, int, FunctionsCompaction> session, int totalRecords, Func<int, bool> isDeleted)
+        static void VerifyRead(ClientSession<KeyStruct, ValueStruct, InputStruct, OutputStruct, int, FunctionsCompaction, StructStoreFunctions, StructAllocator> session, int totalRecords, Func<int, bool> isDeleted)
         {
             InputStruct input = default;
             int numPending = 0;
@@ -137,7 +150,7 @@ namespace Tsavorite.test
 
                 var key1 = new KeyStruct { kfield1 = i, kfield2 = i + 1 };
                 var value = new ValueStruct { vfield1 = i, vfield2 = i + 1 };
-                bContext.Upsert(ref key1, ref value, 0);
+                _ = bContext.Upsert(ref key1, ref value, 0);
             }
 
             store.Log.FlushAndEvict(wait: true);
@@ -147,7 +160,7 @@ namespace Tsavorite.test
             Assert.AreEqual(compactUntil, store.Log.BeginAddress);
 
             // Read all keys - all should be present
-            VerifyRead(session, totalRecords, key => false);
+            BlittableLogCompactionTests.VerifyRead(session, totalRecords, key => false);
         }
 
         [Test]
@@ -169,7 +182,7 @@ namespace Tsavorite.test
 
                 var key1 = new KeyStruct { kfield1 = i, kfield2 = i + 1 };
                 var value = new ValueStruct { vfield1 = i, vfield2 = i + 1 };
-                bContext.Upsert(ref key1, ref value, 0);
+                _ = bContext.Upsert(ref key1, ref value, 0);
             }
 
             store.Log.FlushAndEvict(true);
@@ -187,7 +200,7 @@ namespace Tsavorite.test
             {
                 var key1 = new KeyStruct { kfield1 = i, kfield2 = i + 1 };
                 var value = new ValueStruct { vfield1 = i, vfield2 = i + 1 };
-                bContext.Upsert(ref key1, ref value, 0);
+                _ = bContext.Upsert(ref key1, ref value, 0);
             }
 
             compactUntil = session.Compact(compactUntil, compactionType);
@@ -195,7 +208,7 @@ namespace Tsavorite.test
             Assert.AreEqual(compactUntil, store.Log.BeginAddress);
 
             // Read all keys - all should be present
-            VerifyRead(session, totalRecords, key => false);
+            BlittableLogCompactionTests.VerifyRead(session, totalRecords, key => false);
         }
 
         [Test]
@@ -217,13 +230,13 @@ namespace Tsavorite.test
 
                 var key1 = new KeyStruct { kfield1 = i, kfield2 = i + 1 };
                 var value = new ValueStruct { vfield1 = i, vfield2 = i + 1 };
-                bContext.Upsert(ref key1, ref value, 0);
+                _ = bContext.Upsert(ref key1, ref value, 0);
 
                 if (i % 8 == 0)
                 {
                     int j = i / 4;
                     key1 = new KeyStruct { kfield1 = j, kfield2 = j + 1 };
-                    bContext.Delete(ref key1, 0);
+                    _ = bContext.Delete(ref key1, 0);
                 }
             }
 
@@ -233,7 +246,7 @@ namespace Tsavorite.test
             Assert.AreEqual(compactUntil, store.Log.BeginAddress);
 
             // Read all keys - all should be present except those we deleted
-            VerifyRead(session, totalRecords, key => (key < totalRecords / 4) && (key % 2 == 0));
+            BlittableLogCompactionTests.VerifyRead(session, totalRecords, key => (key < totalRecords / 4) && (key % 2 == 0));
         }
 
         [Test]
@@ -259,7 +272,7 @@ namespace Tsavorite.test
 
                 var key1 = new KeyStruct { kfield1 = i, kfield2 = i + 1 };
                 var value = new ValueStruct { vfield1 = i, vfield2 = i + 1 };
-                bContext.Upsert(ref key1, ref value, 0);
+                _ = bContext.Upsert(ref key1, ref value, 0);
             }
 
             var tail = store.Log.TailAddress;
@@ -314,14 +327,14 @@ namespace Tsavorite.test
             var input = default(InputStruct);
             var output = default(OutputStruct);
 
-            bContext.Upsert(ref key, ref value, 0);
+            _ = bContext.Upsert(ref key, ref value, 0);
             var status = bContext.Read(ref key, ref input, ref output, 0);
             Debug.Assert(status.Found);
 
             store.Log.Flush(true);
 
             value = new ValueStruct { vfield1 = 11, vfield2 = 21 };
-            bContext.Upsert(ref key, ref value, 0);
+            _ = bContext.Upsert(ref key, ref value, 0);
             status = bContext.Read(ref key, ref input, ref output, 0);
             Debug.Assert(status.Found);
 
@@ -347,7 +360,7 @@ namespace Tsavorite.test
 
         private struct EvenCompactionFunctions : ICompactionFunctions<KeyStruct, ValueStruct>
         {
-            public bool IsDeleted(ref KeyStruct key, ref ValueStruct value) => value.vfield1 % 2 != 0;
+            public readonly bool IsDeleted(ref KeyStruct key, ref ValueStruct value) => value.vfield1 % 2 != 0;
         }
     }
 }

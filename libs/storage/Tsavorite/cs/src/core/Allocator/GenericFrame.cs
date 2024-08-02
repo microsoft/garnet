@@ -11,20 +11,20 @@ namespace Tsavorite.core
     /// </summary>
     internal sealed class GenericFrame<Key, Value> : IDisposable
     {
-        private readonly Record<Key, Value>[][] frame;
+        private readonly AllocatorRecord<Key, Value>[][] frame;
         public readonly int frameSize, pageSize;
-        private static int RecordSize => Unsafe.SizeOf<Record<Key, Value>>();
+        private static int RecordSize => Unsafe.SizeOf<AllocatorRecord<Key, Value>>();
 
         public GenericFrame(int frameSize, int pageSize)
         {
             this.frameSize = frameSize;
             this.pageSize = pageSize;
-            frame = new Record<Key, Value>[frameSize][];
+            frame = new AllocatorRecord<Key, Value>[frameSize][];
         }
 
         public void Allocate(int index)
         {
-            frame[index] = new Record<Key, Value>[(pageSize + RecordSize - 1) / RecordSize];
+            frame[index] = new AllocatorRecord<Key, Value>[(pageSize + RecordSize - 1) / RecordSize];
         }
 
         public void Clear(int pageIndex)
@@ -47,7 +47,7 @@ namespace Tsavorite.core
             return ref frame[frameNumber][offset].info;
         }
 
-        public ref Record<Key, Value>[] GetPage(long frameNumber)
+        public ref AllocatorRecord<Key, Value>[] GetPage(long frameNumber)
         {
             return ref frame[frameNumber];
         }

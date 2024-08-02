@@ -13,21 +13,23 @@ namespace Tsavorite.core
     /// <summary>
     /// Thread-independent session interface to Tsavorite
     /// </summary>
-    public sealed class ClientSession<Key, Value, Input, Output, Context, Functions> : IClientSession, IDisposable
+    public sealed class ClientSession<Key, Value, Input, Output, Context, Functions, TStoreFunctions, TAllocator> : IClientSession, IDisposable
         where Functions : ISessionFunctions<Key, Value, Input, Output, Context>
+        where TStoreFunctions : IStoreFunctions<Key, Value>
+        where TAllocator : IAllocator<Key, Value, TStoreFunctions>
     {
-        internal readonly TsavoriteKV<Key, Value> store;
+        internal readonly TsavoriteKV<Key, Value, TStoreFunctions, TAllocator> store;
 
-        internal readonly TsavoriteKV<Key, Value>.TsavoriteExecutionContext<Input, Output, Context> ctx;
+        internal readonly TsavoriteKV<Key, Value, TStoreFunctions, TAllocator>.TsavoriteExecutionContext<Input, Output, Context> ctx;
 
         internal readonly Functions functions;
 
         internal CompletedOutputIterator<Key, Value, Input, Output, Context> completedOutputs;
 
-        readonly UnsafeContext<Key, Value, Input, Output, Context, Functions> uContext;
-        readonly LockableUnsafeContext<Key, Value, Input, Output, Context, Functions> luContext;
-        readonly LockableContext<Key, Value, Input, Output, Context, Functions> lContext;
-        readonly BasicContext<Key, Value, Input, Output, Context, Functions> bContext;
+        readonly UnsafeContext<Key, Value, Input, Output, Context, Functions, TStoreFunctions, TAllocator> uContext;
+        readonly LockableUnsafeContext<Key, Value, Input, Output, Context, Functions, TStoreFunctions, TAllocator> luContext;
+        readonly LockableContext<Key, Value, Input, Output, Context, Functions, TStoreFunctions, TAllocator> lContext;
+        readonly BasicContext<Key, Value, Input, Output, Context, Functions, TStoreFunctions, TAllocator> bContext;
 
         internal const string NotAsyncSessionErr = "Session does not support async operations";
 
@@ -43,7 +45,7 @@ namespace Tsavorite.core
         ScanCursorState<Key, Value> scanCursorState;
 
         internal void AcquireLockable<TSessionFunctions>(TSessionFunctions sessionFunctions)
-            where TSessionFunctions : ISessionFunctionsWrapper<Key, Value, Input, Output, Context>
+            where TSessionFunctions : ISessionFunctionsWrapper<Key, Value, Input, Output, Context, TStoreFunctions, TAllocator>
         {
             CheckIsNotAcquiredLockable();
 
@@ -63,7 +65,7 @@ namespace Tsavorite.core
                 if (!IsInPreparePhase())
                     break;
                 InternalReleaseLockable();
-                Thread.Yield();
+                _ = Thread.Yield();
             }
         }
 
@@ -95,8 +97,8 @@ namespace Tsavorite.core
         }
 
         internal ClientSession(
-            TsavoriteKV<Key, Value> store,
-            TsavoriteKV<Key, Value>.TsavoriteExecutionContext<Input, Output, Context> ctx,
+            TsavoriteKV<Key, Value, TStoreFunctions, TAllocator> store,
+            TsavoriteKV<Key, Value, TStoreFunctions, TAllocator>.TsavoriteExecutionContext<Input, Output, Context> ctx,
             Functions functions,
             ILoggerFactory loggerFactory = null)
         {
@@ -137,22 +139,22 @@ namespace Tsavorite.core
         /// <summary>
         /// Return a new interface to Tsavorite operations that supports manual epoch control.
         /// </summary>
-        public UnsafeContext<Key, Value, Input, Output, Context, Functions> UnsafeContext => uContext;
+        public UnsafeContext<Key, Value, Input, Output, Context, Functions, TStoreFunctions, TAllocator> UnsafeContext => uContext;
 
         /// <summary>
         /// Return a new interface to Tsavorite operations that supports manual locking and epoch control.
         /// </summary>
-        public LockableUnsafeContext<Key, Value, Input, Output, Context, Functions> LockableUnsafeContext => luContext;
+        public LockableUnsafeContext<Key, Value, Input, Output, Context, Functions, TStoreFunctions, TAllocator> LockableUnsafeContext => luContext;
 
         /// <summary>
         /// Return a session wrapper that supports manual locking.
         /// </summary>
-        public LockableContext<Key, Value, Input, Output, Context, Functions> LockableContext => lContext;
+        public LockableContext<Key, Value, Input, Output, Context, Functions, TStoreFunctions, TAllocator> LockableContext => lContext;
 
         /// <summary>
         /// Return a session wrapper struct that passes through to client session
         /// </summary>
-        public BasicContext<Key, Value, Input, Output, Context, Functions> BasicContext => bContext;
+        public BasicContext<Key, Value, Input, Output, Context, Functions, TStoreFunctions, TAllocator> BasicContext => bContext;
 
         #region ITsavoriteContext
 
@@ -164,7 +166,7 @@ namespace Tsavorite.core
 
         /// <inheritdoc/>
         internal void Refresh<TSessionFunctionsWrapper>(TSessionFunctionsWrapper sessionFunctions)
-            where TSessionFunctionsWrapper : ISessionFunctionsWrapper<Key, Value, Input, Output, Context>
+            where TSessionFunctionsWrapper : ISessionFunctionsWrapper<Key, Value, Input, Output, Context, TStoreFunctions, TAllocator>
         {
             UnsafeResumeThread(sessionFunctions);
             try
@@ -179,7 +181,7 @@ namespace Tsavorite.core
 
         /// <inheritdoc/>
         internal void ResetModified<TSessionFunctionsWrapper>(TSessionFunctionsWrapper sessionFunctions, ref Key key)
-            where TSessionFunctionsWrapper : ISessionFunctionsWrapper<Key, Value, Input, Output, Context>
+            where TSessionFunctionsWrapper : ISessionFunctionsWrapper<Key, Value, Input, Output, Context, TStoreFunctions, TAllocator>
         {
             UnsafeResumeThread(sessionFunctions);
             try
@@ -210,12 +212,12 @@ namespace Tsavorite.core
 
         /// <inheritdoc/>
         internal bool CompletePending<TSessionFunctionsWrapper>(TSessionFunctionsWrapper sessionFunctions, bool wait = false, bool spinWaitForCommit = false)
-            where TSessionFunctionsWrapper : ISessionFunctionsWrapper<Key, Value, Input, Output, Context>
+            where TSessionFunctionsWrapper : ISessionFunctionsWrapper<Key, Value, Input, Output, Context, TStoreFunctions, TAllocator>
             => CompletePending(sessionFunctions, getOutputs: false, wait, spinWaitForCommit);
 
         /// <inheritdoc/>
         internal bool CompletePendingWithOutputs<TSessionFunctionsWrapper>(TSessionFunctionsWrapper sessionFunctions, out CompletedOutputIterator<Key, Value, Input, Output, Context> completedOutputs, bool wait = false, bool spinWaitForCommit = false)
-            where TSessionFunctionsWrapper : ISessionFunctionsWrapper<Key, Value, Input, Output, Context>
+            where TSessionFunctionsWrapper : ISessionFunctionsWrapper<Key, Value, Input, Output, Context, TStoreFunctions, TAllocator>
         {
             InitializeCompletedOutputs();
             var result = CompletePending(sessionFunctions, getOutputs: true, wait, spinWaitForCommit);
@@ -228,7 +230,7 @@ namespace Tsavorite.core
         /// Assumes epoch protection is managed by user. Async operations must be completed individually.
         /// </summary>
         internal bool UnsafeCompletePendingWithOutputs<TSessionFunctionsWrapper>(TSessionFunctionsWrapper sessionFunctions, out CompletedOutputIterator<Key, Value, Input, Output, Context> completedOutputs, bool wait = false, bool spinWaitForCommit = false)
-            where TSessionFunctionsWrapper : ISessionFunctionsWrapper<Key, Value, Input, Output, Context>
+            where TSessionFunctionsWrapper : ISessionFunctionsWrapper<Key, Value, Input, Output, Context, TStoreFunctions, TAllocator>
         {
             InitializeCompletedOutputs();
             var result = UnsafeCompletePending(sessionFunctions, true, wait, spinWaitForCommit);
@@ -245,7 +247,7 @@ namespace Tsavorite.core
         }
 
         internal bool CompletePending<TSessionFunctionsWrapper>(TSessionFunctionsWrapper sessionFunctions, bool getOutputs, bool wait, bool spinWaitForCommit)
-            where TSessionFunctionsWrapper : ISessionFunctionsWrapper<Key, Value, Input, Output, Context>
+            where TSessionFunctionsWrapper : ISessionFunctionsWrapper<Key, Value, Input, Output, Context, TStoreFunctions, TAllocator>
         {
             UnsafeResumeThread(sessionFunctions);
             try
@@ -259,7 +261,7 @@ namespace Tsavorite.core
         }
 
         internal bool UnsafeCompletePending<TSessionFunctionsWrapper>(TSessionFunctionsWrapper sessionFunctions, bool getOutputs, bool wait, bool spinWaitForCommit)
-            where TSessionFunctionsWrapper : ISessionFunctionsWrapper<Key, Value, Input, Output, Context>
+            where TSessionFunctionsWrapper : ISessionFunctionsWrapper<Key, Value, Input, Output, Context, TStoreFunctions, TAllocator>
         {
             var requestedOutputs = getOutputs ? completedOutputs : default;
             var result = store.InternalCompletePending(sessionFunctions, wait, requestedOutputs);
@@ -282,13 +284,13 @@ namespace Tsavorite.core
 
         /// <inheritdoc/>
         internal ValueTask CompletePendingAsync<TSessionFunctionsWrapper>(TSessionFunctionsWrapper sessionFunctions, bool waitForCommit = false, CancellationToken token = default)
-            where TSessionFunctionsWrapper : ISessionFunctionsWrapper<Key, Value, Input, Output, Context>
+            where TSessionFunctionsWrapper : ISessionFunctionsWrapper<Key, Value, Input, Output, Context, TStoreFunctions, TAllocator>
             => CompletePendingAsync(sessionFunctions, getOutputs: false, waitForCommit, token);
 
         /// <inheritdoc/>
         internal async ValueTask<CompletedOutputIterator<Key, Value, Input, Output, Context>> CompletePendingWithOutputsAsync<TSessionFunctionsWrapper>(TSessionFunctionsWrapper sessionFunctions,
                 bool waitForCommit = false, CancellationToken token = default)
-            where TSessionFunctionsWrapper : ISessionFunctionsWrapper<Key, Value, Input, Output, Context>
+            where TSessionFunctionsWrapper : ISessionFunctionsWrapper<Key, Value, Input, Output, Context, TStoreFunctions, TAllocator>
         {
             InitializeCompletedOutputs();
             await CompletePendingAsync(sessionFunctions, getOutputs: true, waitForCommit, token).ConfigureAwait(false);
@@ -296,7 +298,7 @@ namespace Tsavorite.core
         }
 
         private async ValueTask CompletePendingAsync<TSessionFunctionsWrapper>(TSessionFunctionsWrapper sessionFunctions, bool getOutputs, bool waitForCommit = false, CancellationToken token = default)
-            where TSessionFunctionsWrapper : ISessionFunctionsWrapper<Key, Value, Input, Output, Context>
+            where TSessionFunctionsWrapper : ISessionFunctionsWrapper<Key, Value, Input, Output, Context, TStoreFunctions, TAllocator>
         {
             token.ThrowIfCancellationRequested();
 
@@ -324,7 +326,7 @@ namespace Tsavorite.core
             if (store.epoch.ThisInstanceProtected())
                 throw new NotSupportedException("Async operations not supported over protected epoch");
 
-            await TsavoriteKV<Key, Value>.ReadyToCompletePendingAsync(ctx, token).ConfigureAwait(false);
+            await TsavoriteKV<Key, Value, TStoreFunctions, TAllocator>.ReadyToCompletePendingAsync(ctx, token).ConfigureAwait(false);
         }
 
         #endregion Pending Operations
@@ -332,7 +334,7 @@ namespace Tsavorite.core
         #region Other Operations
 
         internal void UnsafeResetModified<TSessionFunctionsWrapper>(TSessionFunctionsWrapper sessionFunctions, ref Key key)
-            where TSessionFunctionsWrapper : ISessionFunctionsWrapper<Key, Value, Input, Output, Context>
+            where TSessionFunctionsWrapper : ISessionFunctionsWrapper<Key, Value, Input, Output, Context, TStoreFunctions, TAllocator>
         {
             OperationStatus status;
             do
@@ -342,12 +344,12 @@ namespace Tsavorite.core
 
         /// <inheritdoc/>
         internal unsafe void ResetModified<TSessionFunctionsWrapper>(TSessionFunctionsWrapper sessionFunctions, Key key)
-            where TSessionFunctionsWrapper : ISessionFunctionsWrapper<Key, Value, Input, Output, Context>
+            where TSessionFunctionsWrapper : ISessionFunctionsWrapper<Key, Value, Input, Output, Context, TStoreFunctions, TAllocator>
             => ResetModified(sessionFunctions, ref key);
 
         /// <inheritdoc/>
         internal bool IsModified<TSessionFunctionsWrapper>(TSessionFunctionsWrapper sessionFunctions, ref Key key)
-            where TSessionFunctionsWrapper : ISessionFunctionsWrapper<Key, Value, Input, Output, Context>
+            where TSessionFunctionsWrapper : ISessionFunctionsWrapper<Key, Value, Input, Output, Context, TStoreFunctions, TAllocator>
         {
             UnsafeResumeThread(sessionFunctions);
             try
@@ -361,7 +363,7 @@ namespace Tsavorite.core
         }
 
         internal bool UnsafeIsModified<TSessionFunctionsWrapper>(TSessionFunctionsWrapper sessionFunctions, ref Key key)
-            where TSessionFunctionsWrapper : ISessionFunctionsWrapper<Key, Value, Input, Output, Context>
+            where TSessionFunctionsWrapper : ISessionFunctionsWrapper<Key, Value, Input, Output, Context, TStoreFunctions, TAllocator>
         {
             RecordInfo modifiedInfo;
             OperationStatus status;
@@ -373,7 +375,7 @@ namespace Tsavorite.core
 
         /// <inheritdoc/>
         internal unsafe bool IsModified<TSessionFunctionsWrapper>(TSessionFunctionsWrapper sessionFunctions, Key key)
-            where TSessionFunctionsWrapper : ISessionFunctionsWrapper<Key, Value, Input, Output, Context>
+            where TSessionFunctionsWrapper : ISessionFunctionsWrapper<Key, Value, Input, Output, Context, TStoreFunctions, TAllocator>
             => IsModified(sessionFunctions, ref key);
 
         /// <summary>
@@ -382,7 +384,7 @@ namespace Tsavorite.core
         /// </summary>
         /// <returns></returns>
         private async ValueTask WaitForCommitAsync<TSessionFunctionsWrapper>(TSessionFunctionsWrapper sessionFunctions, CancellationToken token = default)
-            where TSessionFunctionsWrapper : ISessionFunctionsWrapper<Key, Value, Input, Output, Context>
+            where TSessionFunctionsWrapper : ISessionFunctionsWrapper<Key, Value, Input, Output, Context, TStoreFunctions, TAllocator>
         {
             token.ThrowIfCancellationRequested();
 
@@ -492,14 +494,14 @@ namespace Tsavorite.core
         /// or one of the TScanIterator reader functions returning false</returns>
         public bool ScanCursor<TScanFunctions>(ref long cursor, long count, TScanFunctions scanFunctions, long endAddress = long.MaxValue, bool validateCursor = false)
             where TScanFunctions : IScanIteratorFunctions<Key, Value>
-            => store.hlog.ScanCursor(store, scanCursorState ??= new(), ref cursor, count, scanFunctions, endAddress, validateCursor);
+            => store.hlogBase.ScanCursor(store, scanCursorState ??= new(), ref cursor, count, scanFunctions, endAddress, validateCursor);
 
         /// <summary>
         /// Resume session on current thread. IMPORTANT: Call SuspendThread before any async op.
         /// </summary>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         internal void UnsafeResumeThread<TSessionFunctionsWrapper>(TSessionFunctionsWrapper sessionFunctions)
-            where TSessionFunctionsWrapper : ISessionFunctionsWrapper<Key, Value, Input, Output, Context>
+            where TSessionFunctionsWrapper : ISessionFunctionsWrapper<Key, Value, Input, Output, Context, TStoreFunctions, TAllocator>
         {
             // We do not track any "acquired" state here; if someone mixes calls between safe and unsafe contexts, they will 
             // get the "trying to acquire already-acquired epoch" error.
@@ -519,7 +521,7 @@ namespace Tsavorite.core
 
         void IClientSession.AtomicSwitch(long version)
         {
-            _ = TsavoriteKV<Key, Value>.AtomicSwitch(ctx, ctx.prevCtx, version);
+            _ = TsavoriteKV<Key, Value, TStoreFunctions, TAllocator>.AtomicSwitch(ctx, ctx.prevCtx, version);
         }
 
         /// <inheritdoc/>
@@ -537,39 +539,5 @@ namespace Tsavorite.core
         }
 
         #endregion Other Operations
-
-        [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        internal bool InPlaceUpdater<TSessionFunctionsWrapper>(TSessionFunctionsWrapper sessionFunctions, ref Key key, ref Input input, ref Value value, ref Output output, ref RecordInfo recordInfo, ref RMWInfo rmwInfo, out OperationStatus status)
-            where TSessionFunctionsWrapper : ISessionFunctionsWrapper<Key, Value, Input, Output, Context>
-        {
-            // Note: KeyIndexes do not need notification of in-place updates because the key does not change.
-            if (functions.InPlaceUpdater(ref key, ref input, ref value, ref output, ref rmwInfo, ref recordInfo))
-            {
-                rmwInfo.Action = RMWAction.Default;
-                // MarkPage is done in InternalRMW
-                status = OperationStatusUtils.AdvancedOpCode(OperationStatus.SUCCESS, StatusCode.InPlaceUpdatedRecord);
-                return true;
-            }
-            if (rmwInfo.Action == RMWAction.CancelOperation)
-            {
-                status = OperationStatus.CANCELED;
-                return false;
-            }
-            if (rmwInfo.Action == RMWAction.ExpireAndResume)
-            {
-                // This inserts the tombstone if appropriate
-                return store.ReinitializeExpiredRecord<Input, Output, Context, TSessionFunctionsWrapper>(ref key, ref input, ref value, ref output, ref recordInfo,
-                                                    ref rmwInfo, rmwInfo.Address, sessionFunctions, isIpu: true, out status);
-            }
-            if (rmwInfo.Action == RMWAction.ExpireAndStop)
-            {
-                recordInfo.Tombstone = true;
-                status = OperationStatusUtils.AdvancedOpCode(OperationStatus.SUCCESS, StatusCode.InPlaceUpdatedRecord | StatusCode.Expired);
-                return false;
-            }
-
-            status = OperationStatus.SUCCESS;
-            return false;
-        }
     }
 }

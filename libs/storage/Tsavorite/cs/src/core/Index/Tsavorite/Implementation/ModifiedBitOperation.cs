@@ -6,7 +6,9 @@ using System.Runtime.CompilerServices;
 
 namespace Tsavorite.core
 {
-    public unsafe partial class TsavoriteKV<Key, Value> : TsavoriteBase
+    public unsafe partial class TsavoriteKV<Key, Value, TStoreFunctions, TAllocator> : TsavoriteBase
+        where TStoreFunctions : IStoreFunctions<Key, Value>
+        where TAllocator : IAllocator<Key, Value, TStoreFunctions>
     {
         /// <summary>
         /// if reset is true it simply resets the modified bit for the key
@@ -20,26 +22,26 @@ namespace Tsavorite.core
         {
             Debug.Assert(epoch.ThisInstanceProtected());
 
-            HashEntryInfo hei = new(comparer.GetHashCode64(ref key)); ;
+            HashEntryInfo hei = new(storeFunctions.GetKeyHashCode64(ref key)); ;
 
             #region Trace back for record in in-memory HybridLog
-            FindTag(ref hei);
+            _ = FindTag(ref hei);
             var logicalAddress = hei.Address;
             var physicalAddress = hlog.GetPhysicalAddress(logicalAddress);
 
-            if (logicalAddress >= hlog.HeadAddress)
+            if (logicalAddress >= hlogBase.HeadAddress)
             {
                 ref RecordInfo recordInfo = ref hlog.GetInfo(physicalAddress);
-                if (recordInfo.Invalid || !comparer.Equals(ref key, ref hlog.GetKey(physicalAddress)))
+                if (recordInfo.Invalid || !storeFunctions.KeysEqual(ref key, ref hlog.GetKey(physicalAddress)))
                 {
                     logicalAddress = recordInfo.PreviousAddress;
-                    TraceBackForKeyMatch(ref key, logicalAddress, hlog.HeadAddress, out logicalAddress, out physicalAddress);
+                    TraceBackForKeyMatch(ref key, logicalAddress, hlogBase.HeadAddress, out logicalAddress, out physicalAddress);
                 }
             }
             #endregion
 
             modifiedInfo = default;
-            if (logicalAddress >= hlog.HeadAddress)
+            if (logicalAddress >= hlogBase.HeadAddress)
             {
                 ref RecordInfo recordInfo = ref hlog.GetInfo(physicalAddress);
                 if (reset)
@@ -53,7 +55,7 @@ namespace Tsavorite.core
             }
 
             // If the record does not exist we return unmodified; if it is on the disk we return modified
-            modifiedInfo.Modified = logicalAddress >= hlog.BeginAddress;
+            modifiedInfo.Modified = logicalAddress >= hlogBase.BeginAddress;
 
             // It is not in memory so we return success
             return OperationStatus.SUCCESS;

@@ -8,7 +8,9 @@ using System.Threading.Tasks;
 
 namespace Tsavorite.core
 {
-    public partial class TsavoriteKV<Key, Value> : TsavoriteBase
+    public partial class TsavoriteKV<Key, Value, TStoreFunctions, TAllocator> : TsavoriteBase
+        where TStoreFunctions : IStoreFunctions<Key, Value>
+        where TAllocator : IAllocator<Key, Value, TStoreFunctions>
     {
         internal sealed class TsavoriteExecutionContext<Input, Output, Context>
         {
@@ -27,20 +29,28 @@ namespace Tsavorite.core
             public AsyncCountDown pendingReads;
             public AsyncQueue<AsyncIOContext<Key, Value>> readyResponses;
             public int asyncPendingCount;
-            public ISynchronizationStateMachine threadStateMachine;
+            public ISynchronizationStateMachine<Key, Value, TStoreFunctions, TAllocator> threadStateMachine;
 
             internal RevivificationStats RevivificationStats = new();
 
             public int SyncIoPendingCount => ioPendingRequests.Count - asyncPendingCount;
 
-            public bool IsInV1 => phase switch
+            public bool IsInV1
             {
-                Phase.IN_PROGRESS => true,
-                Phase.WAIT_INDEX_CHECKPOINT => true,
-                Phase.WAIT_FLUSH => true,
-                _ => false,
-            };
+                [MethodImpl(MethodImplOptions.AggressiveInlining)]
+                get
+                {
+                    return phase switch
+                    {
+                        Phase.IN_PROGRESS => true,
+                        Phase.WAIT_INDEX_CHECKPOINT => true,
+                        Phase.WAIT_FLUSH => true,
+                        _ => false,
+                    };
+                }
+            }
 
+            [MethodImpl(MethodImplOptions.AggressiveInlining)]
             internal void MergeReadCopyOptions(ReadCopyOptions storeCopyOptions, ReadCopyOptions copyOptions)
                 => ReadCopyOptions = ReadCopyOptions.Merge(storeCopyOptions, copyOptions);
 

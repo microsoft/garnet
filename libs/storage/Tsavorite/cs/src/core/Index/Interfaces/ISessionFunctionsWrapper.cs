@@ -7,10 +7,12 @@ namespace Tsavorite.core
     /// Provides thread management and all callbacks. A wrapper for IFunctions and additional methods called by TsavoriteImpl; the wrapped
     /// IFunctions methods provide additional parameters to support the wrapper functionality, then call through to the user implementations. 
     /// </summary>
-    internal interface ISessionFunctionsWrapper<Key, Value, Input, Output, Context> : ISessionEpochControl, IVariableLengthInput<Value, Input>
+    internal interface ISessionFunctionsWrapper<Key, Value, Input, Output, Context, TStoreFunctions, TAllocator> : ISessionEpochControl, IVariableLengthInput<Value, Input>
+        where TStoreFunctions : IStoreFunctions<Key, Value>
+        where TAllocator : IAllocator<Key, Value, TStoreFunctions>
     {
         bool IsManualLocking { get; }
-        TsavoriteKV<Key, Value> Store { get; }
+        TsavoriteKV<Key, Value, TStoreFunctions, TAllocator> Store { get; }
 
         #region Reads
         bool SingleReader(ref Key key, ref Input input, ref Value value, ref Output dst, ref ReadInfo readInfo);
@@ -50,30 +52,21 @@ namespace Tsavorite.core
         bool ConcurrentDeleter(long physicalAddress, ref Key key, ref Value value, ref DeleteInfo deleteInfo, ref RecordInfo recordInfo, out int fullRecordLength);
         #endregion Deletes
 
-        #region Disposal
-        void DisposeSingleWriter(ref Key key, ref Input input, ref Value src, ref Value dst, ref Output output, ref UpsertInfo upsertInfo, WriteReason reason);
-        void DisposeCopyUpdater(ref Key key, ref Input input, ref Value oldValue, ref Value newValue, ref Output output, ref RMWInfo rmwInfo);
-        void DisposeInitialUpdater(ref Key key, ref Input input, ref Value value, ref Output output, ref RMWInfo rmwInfo);
-        void DisposeSingleDeleter(ref Key key, ref Value value, ref DeleteInfo deleteInfo);
-        void DisposeDeserializedFromDisk(ref Key key, ref Value value, ref RecordInfo recordInfo);
-        void DisposeForRevivification(ref Key key, ref Value value, int newKeySize, ref RecordInfo recordInfo);
-        #endregion Disposal
-
         #region Utilities
         /// <inheritdoc/>
         void ConvertOutputToHeap(ref Input input, ref Output output);
         #endregion Utilities
 
         #region Transient locking
-        bool TryLockTransientExclusive(ref Key key, ref OperationStackContext<Key, Value> stackCtx);
-        bool TryLockTransientShared(ref Key key, ref OperationStackContext<Key, Value> stackCtx);
-        void UnlockTransientExclusive(ref Key key, ref OperationStackContext<Key, Value> stackCtx);
-        void UnlockTransientShared(ref Key key, ref OperationStackContext<Key, Value> stackCtx);
+        bool TryLockTransientExclusive(ref Key key, ref OperationStackContext<Key, Value, TStoreFunctions, TAllocator> stackCtx);
+        bool TryLockTransientShared(ref Key key, ref OperationStackContext<Key, Value, TStoreFunctions, TAllocator> stackCtx);
+        void UnlockTransientExclusive(ref Key key, ref OperationStackContext<Key, Value, TStoreFunctions, TAllocator> stackCtx);
+        void UnlockTransientShared(ref Key key, ref OperationStackContext<Key, Value, TStoreFunctions, TAllocator> stackCtx);
         #endregion 
 
         bool CompletePendingWithOutputs(out CompletedOutputIterator<Key, Value, Input, Output, Context> completedOutputs, bool wait = false, bool spinWaitForCommit = false);
 
-        TsavoriteKV<Key, Value>.TsavoriteExecutionContext<Input, Output, Context> Ctx { get; }
+        TsavoriteKV<Key, Value, TStoreFunctions, TAllocator>.TsavoriteExecutionContext<Input, Output, Context> Ctx { get; }
 
         IHeapContainer<Input> GetHeapContainer(ref Input input);
     }

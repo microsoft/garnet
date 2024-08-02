@@ -6,7 +6,9 @@ namespace Tsavorite.core
     /// <summary>
     /// Compaction methods
     /// </summary>
-    public partial class TsavoriteKV<Key, Value> : TsavoriteBase
+    public partial class TsavoriteKV<Key, Value, TStoreFunctions, TAllocator> : TsavoriteBase
+        where TStoreFunctions : IStoreFunctions<Key, Value>
+        where TAllocator : IAllocator<Key, Value, TStoreFunctions>
     {
         /// <summary>
         /// Compact the log until specified address, moving active records to the tail of the log. BeginAddress is shifted, but the physical log
@@ -35,7 +37,7 @@ namespace Tsavorite.core
             where Functions : ISessionFunctions<Key, Value, Input, Output, Context>
             where CompactionFunctions : ICompactionFunctions<Key, Value>
         {
-            if (untilAddress > hlog.SafeReadOnlyAddress)
+            if (untilAddress > hlogBase.SafeReadOnlyAddress)
                 throw new TsavoriteException("Can compact only until Log.SafeReadOnlyAddress");
 
             var lf = new LogCompactionFunctions<Key, Value, Input, Output, Context, Functions>(functions);
@@ -74,7 +76,7 @@ namespace Tsavorite.core
             where Functions : ISessionFunctions<Key, Value, Input, Output, Context>
             where CompactionFunctions : ICompactionFunctions<Key, Value>
         {
-            if (untilAddress > hlog.SafeReadOnlyAddress)
+            if (untilAddress > hlogBase.SafeReadOnlyAddress)
                 throw new TsavoriteException("Can compact only until Log.SafeReadOnlyAddress");
 
             var originalUntilAddress = untilAddress;
@@ -83,11 +85,18 @@ namespace Tsavorite.core
             using var storeSession = NewSession<Input, Output, Context, LogCompactionFunctions<Key, Value, Input, Output, Context, Functions>>(lf);
             var storebContext = storeSession.BasicContext;
 
-            using (var tempKv = new TsavoriteKV<Key, Value>(IndexSize, new LogSettings { LogDevice = new NullDevice(), ObjectLogDevice = new NullDevice() }, comparer: Comparer, loggerFactory: loggerFactory))
+            var tempKVSettings = new KVSettings<Key, Value>(baseDir: null, loggerFactory: loggerFactory)
+            {
+                IndexSize = KVSettings<Key, Value>.SetIndexSizeFromCacheLines(IndexSize),
+                LogDevice = new NullDevice(),
+                ObjectLogDevice = new NullDevice()
+            };
+
+            using (var tempKv = new TsavoriteKV<Key, Value, TStoreFunctions, TAllocator>(tempKVSettings, storeFunctions, allocatorFactory))
             using (var tempKvSession = tempKv.NewSession<Input, Output, Context, Functions>(functions))
             {
                 var tempbContext = tempKvSession.BasicContext;
-                using (var iter1 = Log.Scan(hlog.BeginAddress, untilAddress))
+                using (var iter1 = Log.Scan(hlogBase.BeginAddress, untilAddress))
                 {
                     while (iter1.GetNext(out var recordInfo))
                     {
@@ -104,7 +113,7 @@ namespace Tsavorite.core
                 }
 
                 // Scan until SafeReadOnlyAddress
-                var scanUntil = hlog.SafeReadOnlyAddress;
+                var scanUntil = hlogBase.SafeReadOnlyAddress;
                 if (untilAddress < scanUntil)
                     ScanImmutableTailToRemoveFromTempKv(ref untilAddress, scanUntil, tempbContext);
 
@@ -116,7 +125,7 @@ namespace Tsavorite.core
                         continue;
 
                     // Try to ensure we have checked all immutable records
-                    scanUntil = hlog.SafeReadOnlyAddress;
+                    scanUntil = hlogBase.SafeReadOnlyAddress;
                     if (untilAddress < scanUntil)
                         ScanImmutableTailToRemoveFromTempKv(ref untilAddress, scanUntil, tempbContext);
 
@@ -140,7 +149,8 @@ namespace Tsavorite.core
             return originalUntilAddress;
         }
 
-        private void ScanImmutableTailToRemoveFromTempKv<Input, Output, Context, Functions>(ref long untilAddress, long scanUntil, BasicContext<Key, Value, Input, Output, Context, Functions> tempbContext)
+        private void ScanImmutableTailToRemoveFromTempKv<Input, Output, Context, Functions>(ref long untilAddress, long scanUntil,
+                BasicContext<Key, Value, Input, Output, Context, Functions, TStoreFunctions, TAllocator> tempbContext)
             where Functions : ISessionFunctions<Key, Value, Input, Output, Context>
         {
             using var iter = Log.Scan(untilAddress, scanUntil);

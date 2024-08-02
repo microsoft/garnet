@@ -9,31 +9,39 @@ using Tsavorite.test.recovery.sumstore;
 
 namespace Tsavorite.test.statemachine
 {
+    using StructAllocator = BlittableAllocator<AdId, NumClicks, StoreFunctions<AdId, NumClicks, AdId.Comparer, DefaultRecordDisposer<AdId, NumClicks>>>;
+    using StructStoreFunctions = StoreFunctions<AdId, NumClicks, AdId.Comparer, DefaultRecordDisposer<AdId, NumClicks>>;
+
     [TestFixture]
     public class StateMachineTests
     {
         IDevice log;
-        TsavoriteKV<AdId, NumClicks> store;
-        const int numOps = 5000;
+        TsavoriteKV<AdId, NumClicks, StructStoreFunctions, StructAllocator> store;
+        const int NumOps = 5000;
         AdId[] inputArray;
 
         [SetUp]
         public void Setup()
         {
-            inputArray = new AdId[numOps];
-            for (int i = 0; i < numOps; i++)
-            {
+            inputArray = new AdId[NumOps];
+            for (int i = 0; i < NumOps; i++)
                 inputArray[i].adId = i;
-            }
 
             log = Devices.CreateLogDevice(Path.Join(TestUtils.MethodTestDir, "StateMachineTest1.log"), deleteOnClose: true);
             string checkpointDir = Path.Join(TestUtils.MethodTestDir, "statemachinetest");
-            Directory.CreateDirectory(checkpointDir);
-            store = new TsavoriteKV<AdId, NumClicks>
-                (128,
-                logSettings: new LogSettings { LogDevice = log, MutableFraction = 0.1, PageSizeBits = 10, MemorySizeBits = 13 },
-                checkpointSettings: new CheckpointSettings { CheckpointDir = checkpointDir }
-                );
+            _ = Directory.CreateDirectory(checkpointDir);
+
+            store = new(new()
+            {
+                IndexSize = 1L << 13,
+                LogDevice = log,
+                MutableFraction = 0.1,
+                PageSize = 1L << 10,
+                MemorySize = 1L << 13,
+                CheckpointDir = checkpointDir
+            }, StoreFunctions<AdId, NumClicks>.Create(new AdId.Comparer())
+                , (allocatorSettings, storeFunctions) => new(allocatorSettings, storeFunctions)
+            );
         }
 
         [TearDown]
@@ -52,7 +60,7 @@ namespace Tsavorite.test.statemachine
         [Category("Smoke")]
         public void StateMachineTest1()
         {
-            Prepare(out var f, out var s1, out var uc1, out var s2);
+            Prepare(out _, out var s1, out var uc1, out var s2);
 
             // We should be in PREPARE, 1
             Assert.IsTrue(SystemState.Equal(SystemState.Make(Phase.PREPARE, 1), store.SystemState));
@@ -96,7 +104,7 @@ namespace Tsavorite.test.statemachine
         [Category("TsavoriteKV"), Category("CheckpointRestore")]
         public void StateMachineTest2()
         {
-            Prepare(out var f, out var s1, out var uc1, out var s2);
+            Prepare(out _, out var s1, out var uc1, out var s2);
 
             // We should be in PREPARE, 1
             Assert.IsTrue(SystemState.Equal(SystemState.Make(Phase.PREPARE, 1), store.SystemState));
@@ -134,7 +142,7 @@ namespace Tsavorite.test.statemachine
         [Category("TsavoriteKV"), Category("CheckpointRestore")]
         public void StateMachineTest3()
         {
-            Prepare(out var f, out var s1, out var uc1, out var s2);
+            Prepare(out _, out var s1, out var uc1, out var s2);
 
             // We should be in PREPARE, 1
             Assert.IsTrue(SystemState.Equal(SystemState.Make(Phase.PREPARE, 1), store.SystemState));
@@ -167,7 +175,7 @@ namespace Tsavorite.test.statemachine
         [Category("TsavoriteKV"), Category("CheckpointRestore")]
         public void StateMachineTest4()
         {
-            Prepare(out var f, out var s1, out var uc1, out var s2);
+            Prepare(out _, out var s1, out var uc1, out var s2);
 
             // We should be in PREPARE, 1
             Assert.IsTrue(SystemState.Equal(SystemState.Make(Phase.PREPARE, 1), store.SystemState));
@@ -209,7 +217,7 @@ namespace Tsavorite.test.statemachine
         [Category("TsavoriteKV"), Category("CheckpointRestore")]
         public void StateMachineTest5()
         {
-            Prepare(out var f, out var s1, out var uc1, out var s2);
+            Prepare(out _, out var s1, out var uc1, out var s2);
 
             // We should be in PREPARE, 1
             Assert.IsTrue(SystemState.Equal(SystemState.Make(Phase.PREPARE, 1), store.SystemState));
@@ -263,7 +271,7 @@ namespace Tsavorite.test.statemachine
         [Category("TsavoriteKV"), Category("CheckpointRestore")]
         public void StateMachineTest6()
         {
-            Prepare(out var f, out var s1, out var uc1, out var s2);
+            Prepare(out _, out var s1, out var uc1, out var s2);
 
             // Suspend s1
             uc1.EndUnsafe();
@@ -283,7 +291,7 @@ namespace Tsavorite.test.statemachine
 
             s2.Dispose();
 
-            store.TryInitiateHybridLogCheckpoint(out _, CheckpointType.FoldOver);
+            _ = store.TryInitiateHybridLogCheckpoint(out _, CheckpointType.FoldOver);
             store.CompleteCheckpointAsync().AsTask().GetAwaiter().GetResult();
 
             // We should be in REST, 3
@@ -299,14 +307,14 @@ namespace Tsavorite.test.statemachine
         [Category("TsavoriteKV"), Category("CheckpointRestore")]
         public void LUCScenario1()
         {
-            CreateSessions(out var f, out var s1, out var ts, out var lts);
+            CreateSessions(out _, out var s1, out var ts, out var lts);
             // System should be in REST, 1
             Assert.IsTrue(SystemState.Equal(SystemState.Make(Phase.REST, 1), store.SystemState));
 
             lts.getLUC();
             Assert.IsTrue(lts.isProtected);
 
-            store.TryInitiateHybridLogCheckpoint(out _, CheckpointType.FoldOver);
+            _ = store.TryInitiateHybridLogCheckpoint(out _, CheckpointType.FoldOver);
 
             // System should be in PREPARE, 1
             Assert.IsTrue(SystemState.Equal(SystemState.Make(Phase.PREPARE, 1), store.SystemState));
@@ -334,7 +342,7 @@ namespace Tsavorite.test.statemachine
         [Category("TsavoriteKV"), Category("CheckpointRestore")]
         public void LUCScenario2()
         {
-            CreateSessions(out var f, out var s1, out var ts, out var lts);
+            CreateSessions(out _, out var s1, out var ts, out var lts);
 
             // System should be in REST, 1
             Assert.IsTrue(SystemState.Equal(SystemState.Make(Phase.REST, 1), store.SystemState));
@@ -342,7 +350,7 @@ namespace Tsavorite.test.statemachine
             var uc1 = s1.UnsafeContext;
             uc1.BeginUnsafe();
 
-            store.TryInitiateHybridLogCheckpoint(out _, CheckpointType.FoldOver);
+            _ = store.TryInitiateHybridLogCheckpoint(out _, CheckpointType.FoldOver);
 
             // should not succeed since checkpoint is in progress
             lts.getLUC();
@@ -379,7 +387,7 @@ namespace Tsavorite.test.statemachine
         [Category("TsavoriteKV"), Category("CheckpointRestore")]
         public void LUCScenario3()
         {
-            CreateSessions(out var f, out var s1, out var ts, out var lts);
+            CreateSessions(out _, out var s1, out var ts, out var lts);
 
             // System should be in REST, 1
             Assert.IsTrue(SystemState.Equal(SystemState.Make(Phase.REST, 1), store.SystemState));
@@ -389,7 +397,7 @@ namespace Tsavorite.test.statemachine
             luc1.BeginUnsafe();
             luc1.BeginLockable();
 
-            store.TryInitiateHybridLogCheckpoint(out _, CheckpointType.FoldOver);
+            _ = store.TryInitiateHybridLogCheckpoint(out _, CheckpointType.FoldOver);
 
             // System should be in PREPARE, 1
             Assert.IsTrue(SystemState.Equal(SystemState.Make(Phase.PREPARE, 1), store.SystemState));
@@ -438,7 +446,7 @@ namespace Tsavorite.test.statemachine
         {
             var callback = new TestCallback();
             store.UnsafeRegisterCallback(callback);
-            Prepare(out var f, out var s1, out var uc1, out var s2);
+            Prepare(out _, out var s1, out var uc1, out var s2);
 
             // We should be in PREPARE, 1
             Assert.IsTrue(SystemState.Equal(SystemState.Make(Phase.PREPARE, 1), store.SystemState));
@@ -483,7 +491,7 @@ namespace Tsavorite.test.statemachine
         public void VersionChangeTest()
         {
             var toVersion = 1 + (1 << 14);
-            Prepare(out var f, out var s1, out var uc1, out var s2, toVersion);
+            Prepare(out _, out var s1, out var uc1, out var s2, toVersion);
 
             // We should be in PREPARE, 1
             Assert.IsTrue(SystemState.Equal(SystemState.Make(Phase.PREPARE, 1), store.SystemState));
@@ -518,9 +526,9 @@ namespace Tsavorite.test.statemachine
         }
 
         void Prepare(out SimpleFunctions f,
-            out ClientSession<AdId, NumClicks, NumClicks, NumClicks, Empty, SimpleFunctions> s1,
-            out UnsafeContext<AdId, NumClicks, NumClicks, NumClicks, Empty, SimpleFunctions> uc1,
-            out ThreadSession<AdId, NumClicks, NumClicks, NumClicks, Empty, SimpleFunctions> s2,
+            out ClientSession<AdId, NumClicks, NumClicks, NumClicks, Empty, SimpleFunctions, StructStoreFunctions, StructAllocator> s1,
+            out UnsafeContext<AdId, NumClicks, NumClicks, NumClicks, Empty, SimpleFunctions, StructStoreFunctions, StructAllocator> uc1,
+            out ThreadSession<AdId, NumClicks, NumClicks, NumClicks, Empty, SimpleFunctions, StructStoreFunctions, StructAllocator> s2,
             long toVersion = -1)
         {
             f = new SimpleFunctions();
@@ -529,7 +537,7 @@ namespace Tsavorite.test.statemachine
             Assert.IsTrue(SystemState.Equal(SystemState.Make(Phase.REST, 1), store.SystemState));
 
             // Take index checkpoint for recovery purposes
-            store.TryInitiateIndexCheckpoint(out _);
+            _ = store.TryInitiateIndexCheckpoint(out _);
             store.CompleteCheckpointAsync().AsTask().GetAwaiter().GetResult();
 
             // Index checkpoint does not update version, so
@@ -541,10 +549,10 @@ namespace Tsavorite.test.statemachine
             s1 = store.NewSession<NumClicks, NumClicks, Empty, SimpleFunctions>(f, "foo");
             var bc1 = s1.BasicContext;
 
-            for (int key = 0; key < numOps; key++)
+            for (int key = 0; key < NumOps; key++)
             {
                 value.numClicks = key;
-                bc1.Upsert(ref inputArray[key], ref value, Empty.Default);
+                _ = bc1.Upsert(ref inputArray[key], ref value, Empty.Default);
             }
 
             // Ensure state machine needs no I/O wait during WAIT_FLUSH
@@ -555,12 +563,12 @@ namespace Tsavorite.test.statemachine
             uc1.BeginUnsafe();
 
             // Start session s2 on another thread for testing
-            s2 = store.CreateThreadSession<AdId, NumClicks, NumClicks, NumClicks, Empty, SimpleFunctions>(f);
+            s2 = store.CreateThreadSession<AdId, NumClicks, NumClicks, NumClicks, Empty, SimpleFunctions, StructStoreFunctions, StructAllocator>(f);
 
             // We should be in REST, 1
             Assert.IsTrue(SystemState.Equal(SystemState.Make(Phase.REST, 1), store.SystemState));
 
-            store.TryInitiateHybridLogCheckpoint(out _, CheckpointType.FoldOver, targetVersion: toVersion);
+            _ = store.TryInitiateHybridLogCheckpoint(out _, CheckpointType.FoldOver, targetVersion: toVersion);
 
             // We should be in PREPARE, 1
             Assert.IsTrue(SystemState.Equal(SystemState.Make(Phase.PREPARE, 1), store.SystemState));
@@ -568,9 +576,9 @@ namespace Tsavorite.test.statemachine
 
 
         void CreateSessions(out SimpleFunctions f,
-            out ClientSession<AdId, NumClicks, NumClicks, NumClicks, Empty, SimpleFunctions> s1,
-            out ThreadSession<AdId, NumClicks, NumClicks, NumClicks, Empty, SimpleFunctions> ts,
-            out LUCThreadSession<AdId, NumClicks, NumClicks, NumClicks, Empty, SimpleFunctions> lts)
+            out ClientSession<AdId, NumClicks, NumClicks, NumClicks, Empty, SimpleFunctions, StructStoreFunctions, StructAllocator> s1,
+            out ThreadSession<AdId, NumClicks, NumClicks, NumClicks, Empty, SimpleFunctions, StructStoreFunctions, StructAllocator> ts,
+            out LUCThreadSession<AdId, NumClicks, NumClicks, NumClicks, Empty, SimpleFunctions, StructStoreFunctions, StructAllocator> lts)
         {
             f = new SimpleFunctions();
             NumClicks value;
@@ -578,24 +586,24 @@ namespace Tsavorite.test.statemachine
             s1 = store.NewSession<NumClicks, NumClicks, Empty, SimpleFunctions>(f, "foo");
             var bc1 = s1.BasicContext;
 
-            for (int key = 0; key < numOps; key++)
+            for (int key = 0; key < NumOps; key++)
             {
                 value.numClicks = key;
-                bc1.Upsert(ref inputArray[key], ref value, Empty.Default);
+                _ = bc1.Upsert(ref inputArray[key], ref value, Empty.Default);
             }
 
             // Ensure state machine needs no I/O wait during WAIT_FLUSH
             store.Log.ShiftReadOnlyAddress(store.Log.TailAddress, true);
 
             // Start session s2 on another thread for testing
-            ts = store.CreateThreadSession<AdId, NumClicks, NumClicks, NumClicks, Empty, SimpleFunctions>(f);
-            lts = store.CreateLUCThreadSession<AdId, NumClicks, NumClicks, NumClicks, Empty, SimpleFunctions>(f);
+            ts = store.CreateThreadSession<AdId, NumClicks, NumClicks, NumClicks, Empty, SimpleFunctions, StructStoreFunctions, StructAllocator>(f);
+            lts = store.CreateLUCThreadSession<AdId, NumClicks, NumClicks, NumClicks, Empty, SimpleFunctions, StructStoreFunctions, StructAllocator>(f);
 
             // We should be in REST, 1
             Assert.IsTrue(SystemState.Equal(SystemState.Make(Phase.REST, 1), store.SystemState));
 
             // Take index checkpoint for recovery purposes
-            store.TryInitiateIndexCheckpoint(out _);
+            _ = store.TryInitiateIndexCheckpoint(out _);
             store.CompleteCheckpointAsync().AsTask().GetAwaiter().GetResult();
         }
     }
@@ -609,15 +617,14 @@ namespace Tsavorite.test.statemachine
         }
     }
 
-    public class TestCallback : IStateMachineCallback
+    public class TestCallback : IStateMachineCallback<AdId, NumClicks, StructStoreFunctions, StructAllocator>
     {
-        private readonly HashSet<SystemState> invokedStates = new();
+        private readonly HashSet<SystemState> invokedStates = [];
 
-
-        public void BeforeEnteringState<Key1, Value>(SystemState next, TsavoriteKV<Key1, Value> tsavorite)
+        public void BeforeEnteringState(SystemState next, TsavoriteKV<AdId, NumClicks, StructStoreFunctions, StructAllocator> tsavorite)
         {
             Assert.IsFalse(invokedStates.Contains(next));
-            invokedStates.Add(next);
+            _ = invokedStates.Add(next);
         }
 
         public void CheckInvoked(SystemState state)

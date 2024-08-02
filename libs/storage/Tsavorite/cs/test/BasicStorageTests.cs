@@ -8,11 +8,12 @@ using Tsavorite.devices;
 
 namespace Tsavorite.test
 {
+    using StructAllocator = BlittableAllocator<KeyStruct, ValueStruct, StoreFunctions<KeyStruct, ValueStruct, KeyStruct.Comparer, DefaultRecordDisposer<KeyStruct, ValueStruct>>>;
+    using StructStoreFunctions = StoreFunctions<KeyStruct, ValueStruct, KeyStruct.Comparer, DefaultRecordDisposer<KeyStruct, ValueStruct>>;
+
     [TestFixture]
     internal class BasicStorageTests
     {
-        private TsavoriteKV<KeyStruct, ValueStruct> store;
-
         [Test]
         [Category("TsavoriteKV")]
         public void LocalStorageWriteRead()
@@ -45,7 +46,7 @@ namespace Tsavorite.test
         {
             TestUtils.DeleteDirectory(TestUtils.MethodTestDir);
             IDevice tested;
-            IDevice localDevice = Devices.CreateLogDevice(Path.Join(TestUtils.MethodTestDir, "BasicDiskTests.log"), deleteOnClose: true, capacity: 1 << 30);
+            IDevice localDevice = Devices.CreateLogDevice(Path.Join(TestUtils.MethodTestDir, "BasicDiskTests.log"), deleteOnClose: true, capacity: 1L << 30);
             if (TestUtils.IsRunningAzureTests)
             {
                 IDevice cloudDevice = new AzureStorageDevice(TestUtils.AzureEmulatedStorageString, TestUtils.AzureTestContainer, TestUtils.AzureTestDirectory, "BasicDiskTests", logger: TestUtils.TestLoggerFactory.CreateLogger("asd"));
@@ -54,7 +55,7 @@ namespace Tsavorite.test
             else
             {
                 // If no Azure is enabled, just use another disk
-                IDevice localDevice2 = Devices.CreateLogDevice(Path.Join(TestUtils.MethodTestDir, "BasicDiskTests2.log"), deleteOnClose: true, capacity: 1 << 30);
+                IDevice localDevice2 = Devices.CreateLogDevice(Path.Join(TestUtils.MethodTestDir, "BasicDiskTests2.log"), deleteOnClose: true, capacity: 1L << 30);
                 tested = new TieredStorageDevice(1, localDevice, localDevice2);
 
             }
@@ -66,8 +67,8 @@ namespace Tsavorite.test
         [Category("Smoke")]
         public void ShardedWriteRead()
         {
-            IDevice localDevice1 = Devices.CreateLogDevice(Path.Join(TestUtils.MethodTestDir, "BasicDiskTests1.log"), deleteOnClose: true, capacity: 1 << 30);
-            IDevice localDevice2 = Devices.CreateLogDevice(Path.Join(TestUtils.MethodTestDir, "BasicDiskTests2.log"), deleteOnClose: true, capacity: 1 << 30);
+            IDevice localDevice1 = Devices.CreateLogDevice(Path.Join(TestUtils.MethodTestDir, "BasicDiskTests1.log"), deleteOnClose: true, capacity: 1L << 30);
+            IDevice localDevice2 = Devices.CreateLogDevice(Path.Join(TestUtils.MethodTestDir, "BasicDiskTests2.log"), deleteOnClose: true, capacity: 1L << 30);
             var device = new ShardedStorageDevice(new UniformPartitionScheme(512, localDevice1, localDevice2));
             TestDeviceWriteRead(device);
         }
@@ -92,10 +93,18 @@ namespace Tsavorite.test
             }
         }
 
-        void TestDeviceWriteRead(IDevice log)
+        static void TestDeviceWriteRead(IDevice log)
         {
-            store = new TsavoriteKV<KeyStruct, ValueStruct>
-                       (1L << 20, new LogSettings { LogDevice = log, MemorySizeBits = 15, PageSizeBits = 10 });
+            var store = new TsavoriteKV<KeyStruct, ValueStruct, StructStoreFunctions, StructAllocator>(
+                new()
+                {
+                    IndexSize = 1L << 26,
+                    LogDevice = log,
+                    MemorySize = 1L << 15,
+                    PageSize = 1L << 10,
+                }, StoreFunctions<KeyStruct, ValueStruct>.Create(KeyStruct.Comparer.Instance)
+                , (allocatorSettings, storeFunctions) => new(allocatorSettings, storeFunctions)
+            );
 
             var session = store.NewSession<InputStruct, OutputStruct, Empty, Functions>(new Functions());
             var bContext = session.BasicContext;
@@ -106,9 +115,9 @@ namespace Tsavorite.test
             {
                 var key1 = new KeyStruct { kfield1 = i, kfield2 = i + 1 };
                 var value = new ValueStruct { vfield1 = i, vfield2 = i + 1 };
-                bContext.Upsert(ref key1, ref value, Empty.Default);
+                _ = bContext.Upsert(ref key1, ref value, Empty.Default);
             }
-            bContext.CompletePending(true);
+            _ = bContext.CompletePending(true);
 
             // Update first 100 using RMW from storage
             for (int i = 0; i < 100; i++)
@@ -117,7 +126,7 @@ namespace Tsavorite.test
                 input = new InputStruct { ifield1 = 1, ifield2 = 1 };
                 var status = bContext.RMW(ref key1, ref input, Empty.Default);
                 if (status.IsPending)
-                    bContext.CompletePending(true);
+                    _ = bContext.CompletePending(true);
             }
 
 
@@ -129,7 +138,7 @@ namespace Tsavorite.test
 
                 if (bContext.Read(ref key1, ref input, ref output, Empty.Default).IsPending)
                 {
-                    bContext.CompletePending(true);
+                    _ = bContext.CompletePending(true);
                 }
                 else
                 {

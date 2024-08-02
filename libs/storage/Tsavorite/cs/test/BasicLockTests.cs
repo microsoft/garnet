@@ -11,6 +11,23 @@ using static Tsavorite.test.TestUtils;
 
 namespace Tsavorite.test.LockTests
 {
+    // Must be in a separate block so the "using StructStoreFunctions" is the first line in its namespace declaration.
+    internal sealed class LocalIntKeyComparer : IKeyComparer<int>
+    {
+        internal int mod;
+
+        internal LocalIntKeyComparer(int mod) => this.mod = mod;
+
+        public bool Equals(ref int k1, ref int k2) => k1 == k2;
+
+        public long GetHashCode64(ref int k) => Utility.GetHashCode(k % mod);
+    }
+}
+
+namespace Tsavorite.test.LockTests
+{
+    using StructStoreFunctions = StoreFunctions<int, int, LocalIntKeyComparer, DefaultRecordDisposer<int, int>>;
+
     [TestFixture]
     public class BasicLockTests
     {
@@ -60,29 +77,27 @@ namespace Tsavorite.test.LockTests
             }
         }
 
-        internal class LocalComparer : ITsavoriteEqualityComparer<int>
-        {
-            internal int mod = numRecords;
-
-            public bool Equals(ref int k1, ref int k2) => k1 == k2;
-
-            public long GetHashCode64(ref int k) => Utility.GetHashCode(k % mod);
-        }
-
-        private TsavoriteKV<int, int> store;
-        private ClientSession<int, int, int, int, Empty, Functions> session;
-        private BasicContext<int, int, int, int, Empty, Functions> bContext;
+        private TsavoriteKV<int, int, StructStoreFunctions, BlittableAllocator<int, int, StructStoreFunctions>> store;
+        private ClientSession<int, int, int, int, Empty, Functions, StructStoreFunctions, BlittableAllocator<int, int, StructStoreFunctions>> session;
+        private BasicContext<int, int, int, int, Empty, Functions, StructStoreFunctions, BlittableAllocator<int, int, StructStoreFunctions>> bContext;
         private IDevice log;
+        private LocalIntKeyComparer keyComparer = new(NumRecords);
 
-        const int numRecords = 100;
-        const int valueMult = 1000000;
+        const int NumRecords = 100;
+        const int ValueMult = 1000000;
 
         [SetUp]
         public void Setup()
         {
             DeleteDirectory(MethodTestDir, wait: true);
             log = Devices.CreateLogDevice(Path.Join(MethodTestDir, "GenericStringTests.log"), deleteOnClose: true);
-            store = new TsavoriteKV<int, int>(1L << 20, new LogSettings { LogDevice = log, ObjectLogDevice = null }, comparer: new LocalComparer());
+            store = new(new()
+            {
+                IndexSize = 1L << 26,
+                LogDevice = log
+            }, StoreFunctions<int, int>.Create(keyComparer)
+                , (allocatorSettings, storeFunctions) => new(allocatorSettings, storeFunctions)
+            );
             session = store.NewSession<int, int, Empty, Functions>(new Functions());
             bContext = session.BasicContext;
         }
@@ -105,22 +120,22 @@ namespace Tsavorite.test.LockTests
         public void FunctionsLockTest([Values(1, 20)] int numThreads)
         {
             // Populate
-            for (int key = 0; key < numRecords; key++)
+            for (var key = 0; key < NumRecords; key++)
             {
                 // For this test we should be in-memory, so no pending
-                Assert.IsFalse(bContext.Upsert(key, key * valueMult).IsPending);
+                Assert.IsFalse(bContext.Upsert(key, key * ValueMult).IsPending);
             }
 
             // Update
             const int numIters = 500;
-            var tasks = Enumerable.Range(0, numThreads).Select(ii => Task.Factory.StartNew(() => UpdateFunc((ii & 1) == 0, numRecords, numIters))).ToArray();
+            var tasks = Enumerable.Range(0, numThreads).Select(ii => Task.Factory.StartNew(() => UpdateFunc((ii & 1) == 0, NumRecords, numIters))).ToArray();
             Task.WaitAll(tasks);
 
             // Verify
-            for (int key = 0; key < numRecords; key++)
+            for (var key = 0; key < NumRecords; key++)
             {
-                var expectedValue = key * valueMult + numThreads * numIters;
-                Assert.IsFalse(bContext.Read(key, out int value).IsPending);
+                var expectedValue = key * ValueMult + numThreads * numIters;
+                Assert.IsFalse(bContext.Read(key, out var value).IsPending);
                 Assert.AreEqual(expectedValue, value);
             }
         }
@@ -129,16 +144,13 @@ namespace Tsavorite.test.LockTests
         {
             for (var key = 0; key < numRecords; ++key)
             {
-                for (int iter = 0; iter < numIters; iter++)
+                for (var iter = 0; iter < numIters; iter++)
                 {
                     if ((iter & 7) == 7)
                         Assert.IsFalse(bContext.Read(key).status.IsPending);
 
                     // These will both just increment the stored value, ignoring the input argument.
-                    if (useRMW)
-                        bContext.RMW(key, default);
-                    else
-                        bContext.Upsert(key, default);
+                    _ = useRMW ? bContext.RMW(key, default) : bContext.Upsert(key, default);
                 }
             }
         }
@@ -148,22 +160,22 @@ namespace Tsavorite.test.LockTests
         public unsafe void CollidingDeletedRecordTest([Values(UpdateOp.RMW, UpdateOp.Upsert)] UpdateOp updateOp, [Values(FlushMode.NoFlush, FlushMode.OnDisk)] FlushMode flushMode)
         {
             // Populate
-            for (int key = 0; key < numRecords; key++)
+            for (var key = 0; key < NumRecords; key++)
             {
                 // For this test we should be in-memory, so no pending
-                Assert.IsFalse(bContext.Upsert(key, key * valueMult).IsPending);
+                Assert.IsFalse(bContext.Upsert(key, key * ValueMult).IsPending);
             }
 
             // Insert a colliding key so we don't elide the deleted key from the hash chain.
-            int deleteKey = numRecords / 2;
-            int collidingKey = deleteKey + numRecords;
-            Assert.IsFalse(bContext.Upsert(collidingKey, collidingKey * valueMult).IsPending);
+            var deleteKey = NumRecords / 2;
+            var collidingKey = deleteKey + NumRecords;
+            Assert.IsFalse(bContext.Upsert(collidingKey, collidingKey * ValueMult).IsPending);
 
             // Now make sure we did collide
-            HashEntryInfo hei = new(store.comparer.GetHashCode64(ref deleteKey));
+            HashEntryInfo hei = new(store.storeFunctions.GetKeyHashCode64(ref deleteKey));
             Assert.IsTrue(store.FindTag(ref hei), "Cannot find deleteKey entry");
             Assert.Greater(hei.Address, Constants.kInvalidAddress, "Couldn't find deleteKey Address");
-            long physicalAddress = store.hlog.GetPhysicalAddress(hei.Address);
+            var physicalAddress = store.hlog.GetPhysicalAddress(hei.Address);
             ref var recordInfo = ref store.hlog.GetInfo(physicalAddress);
             ref var lookupKey = ref store.hlog.GetKey(physicalAddress);
             Assert.AreEqual(collidingKey, lookupKey, "Expected collidingKey");
@@ -180,7 +192,7 @@ namespace Tsavorite.test.LockTests
             Assert.IsTrue(recordInfo.Tombstone, "Tombstone should be true after Delete");
 
             if (flushMode == FlushMode.ReadOnly)
-                store.hlog.ShiftReadOnlyAddress(store.Log.TailAddress);
+                _ = store.hlogBase.ShiftReadOnlyAddress(store.Log.TailAddress);
 
             var status = updateOp switch
             {
@@ -199,21 +211,21 @@ namespace Tsavorite.test.LockTests
         public unsafe void SetInvalidOnException([Values] UpdateOp updateOp)
         {
             // Don't modulo the hash codes.
-            (store.comparer as LocalComparer).mod = int.MaxValue;
+            keyComparer.mod = int.MaxValue;
 
             // Populate
-            for (int key = 0; key < numRecords; key++)
+            for (var key = 0; key < NumRecords; key++)
             {
                 // For this test we should be in-memory, so no pending
-                Assert.IsFalse(bContext.Upsert(key, key * valueMult).IsPending);
+                Assert.IsFalse(bContext.Upsert(key, key * ValueMult).IsPending);
             }
 
-            long expectedThrowAddress = store.Log.TailAddress;
+            var expectedThrowAddress = store.Log.TailAddress;
             session.functions.throwOnInitialUpdater = true;
 
             // Delete must try with an existing key; Upsert and Delete should insert a new key
-            int deleteKey = numRecords / 2;
-            var insertKey = numRecords + 1;
+            var deleteKey = NumRecords / 2;
+            var insertKey = NumRecords + 1;
 
             // Make sure everything will create a new record.
             store.Log.FlushAndEvict(wait: true);
@@ -239,7 +251,7 @@ namespace Tsavorite.test.LockTests
             Assert.IsTrue(threw, "Test should have thrown");
             Assert.AreEqual(expectedThrowAddress, session.functions.initialUpdaterThrowAddress, "Unexpected throw address");
 
-            long physicalAddress = store.hlog.GetPhysicalAddress(expectedThrowAddress);
+            var physicalAddress = store.hlog.GetPhysicalAddress(expectedThrowAddress);
             ref var recordInfo = ref store.hlog.GetInfo(physicalAddress);
             Assert.IsTrue(recordInfo.Invalid, "Expected Invalid record");
         }
