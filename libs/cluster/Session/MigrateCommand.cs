@@ -233,6 +233,9 @@ namespace Garnet.cluster
                 }
                 else if (option.Equals("SLOTSRANGE", StringComparison.OrdinalIgnoreCase))
                 {
+                    if (transferOption == TransferOption.KEYS)
+                        pstate = MigrateCmdParseState.MULTI_TRANSFER_OPTION;
+                    transferOption = TransferOption.SLOTS;
                     slots = [];
                     if (args == 0 || (args & 0x1) > 0)
                     {
