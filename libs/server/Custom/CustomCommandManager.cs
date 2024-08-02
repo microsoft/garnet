@@ -15,12 +15,14 @@ namespace Garnet.server
         internal const byte StartOffset = 200;
         internal const int MaxRegistrations = byte.MaxValue - StartOffset;
 
-        internal readonly CustomCommand[] commandMap;
+        internal readonly CustomRawStringCommand[] rawStringCommandMap;
         internal readonly CustomObjectCommandWrapper[] objectCommandMap;
         internal readonly CustomTransaction[] transactionProcMap;
-        internal int CommandId = 0;
+        internal readonly CustomProcedureWrapper[] customProcedureMap;
+        internal int RawStringCommandId = 0;
         internal int ObjectTypeId = 0;
         internal int TransactionProcId = 0;
+        internal int CustomProcedureId = 0;
 
         internal int CustomCommandsInfoCount => this.customCommandsInfo.Count;
         internal IEnumerable<RespCommandsInfo> CustomCommandsInfo => this.customCommandsInfo.Values;
@@ -32,18 +34,19 @@ namespace Garnet.server
         /// </summary>
         public CustomCommandManager()
         {
-            commandMap = new CustomCommand[MaxRegistrations];
+            rawStringCommandMap = new CustomRawStringCommand[MaxRegistrations];
             objectCommandMap = new CustomObjectCommandWrapper[MaxRegistrations];
             transactionProcMap = new CustomTransaction[MaxRegistrations]; // can increase up to byte.MaxValue
+            customProcedureMap = new CustomProcedureWrapper[MaxRegistrations];
         }
 
         internal int Register(string name, int numParams, CommandType type, CustomRawStringFunctions customFunctions, RespCommandsInfo commandInfo, long expirationTicks)
         {
-            int id = Interlocked.Increment(ref CommandId) - 1;
+            int id = Interlocked.Increment(ref RawStringCommandId) - 1;
             if (id >= MaxRegistrations)
                 throw new Exception("Out of registration space");
 
-            commandMap[id] = new CustomCommand(name, (byte)id, 1, numParams, type, customFunctions, expirationTicks);
+            rawStringCommandMap[id] = new CustomRawStringCommand(name, (byte)id, 1, numParams, type, customFunctions, expirationTicks);
             if (commandInfo != null) customCommandsInfo.Add(name, commandInfo);
             return id;
         }
@@ -161,11 +164,30 @@ namespace Garnet.server
             return (objectTypeId, subCommand);
         }
 
-        internal bool Match(ReadOnlySpan<byte> command, out CustomCommand cmd)
+        /// <summary>
+        /// Register custom command
+        /// </summary>
+        /// <param name="name"></param>
+        /// <param name="customProcedure"></param>
+        /// <param name="commandInfo"></param>
+        /// <returns></returns>
+        /// <exception cref="Exception"></exception>
+        internal int Register(string name, CustomProcedure customProcedure, RespCommandsInfo commandInfo = null)
         {
-            for (int i = 0; i < CommandId; i++)
+            int id = Interlocked.Increment(ref CustomProcedureId) - 1;
+            if (id >= MaxRegistrations)
+                throw new Exception("Out of registration space");
+
+            customProcedureMap[id] = new CustomProcedureWrapper(name, (byte)id, customProcedure);
+            if (commandInfo != null) customCommandsInfo.Add(name, commandInfo);
+            return id;
+        }
+
+        internal bool Match(ReadOnlySpan<byte> command, out CustomRawStringCommand cmd)
+        {
+            for (int i = 0; i < RawStringCommandId; i++)
             {
-                cmd = commandMap[i];
+                cmd = rawStringCommandMap[i];
                 if (cmd != null && command.SequenceEqual(new ReadOnlySpan<byte>(cmd.name)))
                     return true;
             }
@@ -200,6 +222,18 @@ namespace Garnet.server
                     }
                 }
                 else break;
+            }
+            cmd = null;
+            return false;
+        }
+
+        internal bool Match(ReadOnlySpan<byte> command, out CustomProcedureWrapper cmd)
+        {
+            for (int i = 0; i < CustomProcedureId; i++)
+            {
+                cmd = customProcedureMap[i];
+                if (cmd != null && command.SequenceEqual(new ReadOnlySpan<byte>(cmd.Name)))
+                    return true;
             }
             cmd = null;
             return false;

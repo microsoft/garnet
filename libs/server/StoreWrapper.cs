@@ -193,7 +193,7 @@ namespace Garnet.server
         }
 
         internal FunctionsState CreateFunctionsState()
-            => new(appendOnlyFile, versionMap, customCommandManager.commandMap, customCommandManager.objectCommandMap, null, objectStoreSizeTracker, GarnetObjectSerializer);
+            => new(appendOnlyFile, versionMap, customCommandManager.rawStringCommandMap, customCommandManager.objectCommandMap, null, objectStoreSizeTracker, GarnetObjectSerializer);
 
         internal void Recover()
         {

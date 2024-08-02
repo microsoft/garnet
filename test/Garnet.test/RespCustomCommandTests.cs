@@ -529,6 +529,23 @@ namespace Garnet.test
             Assert.AreEqual(null, retValue);
         }
 
+        [Test]
+        public void CustomCommandRegistrationTest()
+        {
+            server.Register.NewProcedure("SUM", new Sum());
+
+            using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
+            var db = redis.GetDatabase(0);
+
+            db.StringSet("key1", "10");
+            db.StringSet("key2", "str10");
+            db.StringSet("key3", "20");
+
+            // Include non-existent and string keys as well
+            var retValue = db.Execute("SUM", "key1", "key2", "key3", "key4");
+            Assert.AreEqual("30", retValue.ToString());
+        }
+
         private string[] CreateTestLibraries()
         {
             var runtimePath = RuntimeEnvironment.GetRuntimeDirectory();

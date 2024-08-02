@@ -99,5 +99,15 @@ namespace Garnet.server
         /// <returns>ID of the registered command</returns>
         public (int objectTypeId, int subCommandId) NewCommand(string name, int numParams, CommandType commandType, CustomObjectFactory factory, CustomObjectFunctions customObjectFunctions, RespCommandsInfo commandInfo = null)
             => provider.StoreWrapper.customCommandManager.Register(name, numParams, commandType, factory, customObjectFunctions, commandInfo);
+
+        /// <summary>
+        /// Register custom procedure with Garnet
+        /// </summary>
+        /// <param name="name"></param>
+        /// <param name="customProcedure"></param>
+        /// <param name="commandInfo"></param>
+        /// <returns></returns>
+        public int NewProcedure(string name, CustomProcedure customProcedure, RespCommandsInfo commandInfo = null)
+            => provider.StoreWrapper.customCommandManager.Register(name, customProcedure, commandInfo);
     }
 }

@@ -2,6 +2,7 @@
 // Licensed under the MIT license.
 
 using System;
+using System.Diagnostics;
 using System.Linq;
 using System.Text;
 using System.Threading;
@@ -9,6 +10,7 @@ using System.Threading.Tasks;
 using Garnet.server;
 using NUnit.Framework;
 using StackExchange.Redis;
+using NotImplementedException = System.NotImplementedException;
 
 namespace Garnet.test
 {
@@ -260,6 +262,49 @@ namespace Garnet.test
         }
 
         [Test]
+        public void SeSaveRecoverCustomScriptTest()
+        {
+            static void ValidateServerData(IDatabase db, string strKey, string strValue, string listKey, string listValue)
+            {
+                var retValue = db.StringGet(strKey);
+                Assert.AreEqual(strValue, (string)retValue);
+                var retList = db.ListRange(listKey);
+                Assert.AreEqual(1, retList.Length);
+                Assert.AreEqual(listValue, (string)retList[0]);
+            }
+
+            var strKey = "StrKey";
+            var strValue = "StrValue";
+            var listKey = "ListKey";
+            var listValue = "ListValue";
+
+            // Register sample custom script that updates both main store and object store keys
+            server.Register.NewProcedure("SETMAINANDOBJECT", new SetStringAndList());
+
+            using (var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig(allowAdmin: true)))
+            {
+                var db = redis.GetDatabase(0);
+                db.Execute("SETMAINANDOBJECT", strKey, strValue, listKey, listValue);
+                ValidateServerData(db, strKey, strValue, listKey, listValue);
+
+                // Issue and wait for DB save
+                var server = redis.GetServer($"{TestUtils.Address}:{TestUtils.Port}");
+                server.Save(SaveType.BackgroundSave);
+                while (server.LastSave().Ticks == DateTimeOffset.FromUnixTimeSeconds(0).Ticks) Thread.Sleep(10);
+            }
+
+            server.Dispose(false);
+            server = TestUtils.CreateGarnetServer(TestUtils.MethodTestDir, tryRecover: true);
+            server.Register.NewProcedure("SETMAINANDOBJECT", new SetStringAndList());
+            server.Start();
+
+            using (var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig(allowAdmin: true)))
+            {
+                ValidateServerData(redis.GetDatabase(0), strKey, strValue, listKey, listValue);
+            }
+        }
+
+        [Test]
         [TestCase(63, 15, 1)]
         [TestCase(63, 1, 1)]
         [TestCase(16, 16, 1)]
@@ -399,7 +444,7 @@ namespace Garnet.test
         }
 
         [Test]
-        public void SeFlushDatabaseTest()
+        public void SeFlushDbAndFlushAllTest([Values(RespCommand.FLUSHALL, RespCommand.FLUSHDB)] RespCommand cmd)
         {
             using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig(allowAdmin: true));
             IServer server = redis.GetServer($"{TestUtils.Address}:{TestUtils.Port}");
@@ -412,7 +457,17 @@ namespace Garnet.test
             string retValue = db.StringGet("mykey");
             Assert.AreEqual(origValue, retValue);
 
-            server.FlushDatabase();
+            switch (cmd)
+            {
+                case RespCommand.FLUSHDB:
+                    server.FlushDatabase();
+                    break;
+                case RespCommand.FLUSHALL:
+                    server.FlushAllDatabases();
+                    break;
+                default:
+                    throw new NotImplementedException();
+            }
 
             retValue = db.StringGet("mykey");
             Assert.AreEqual(null, retValue);
@@ -491,11 +546,12 @@ namespace Garnet.test
         }
 
         [Test]
-        public async Task SeFlushDBTest([Values] bool async, [Values] bool unsafetruncatelog)
+        public async Task SeFlushDbAndFlushAllTest2([Values(RespCommand.FLUSHALL, RespCommand.FLUSHDB)] RespCommand cmd,
+            [Values] bool async, [Values] bool unsafetruncatelog)
         {
             using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig(allowAdmin: true));
             var db = redis.GetDatabase(0);
-            var key = "flushdbTest";
+            var key = $"{cmd}Test";
             var value = key;
 
             db.StringSet(key, value);
@@ -510,7 +566,7 @@ namespace Garnet.test
 
             if (async)
             {
-                await db.ExecuteAsync("FLUSHDB", p).ConfigureAwait(false);
+                await db.ExecuteAsync(cmd.ToString(), p).ConfigureAwait(false);
                 _value = db.StringGet(key);
                 while (!_value.IsNull)
                 {
@@ -520,9 +576,10 @@ namespace Garnet.test
             }
             else
             {
-                db.Execute("FLUSHDB", p);
+                db.Execute(cmd.ToString(), p);
                 _value = db.StringGet(key);
             }
+
             Assert.IsTrue(_value.IsNull);
         }
 

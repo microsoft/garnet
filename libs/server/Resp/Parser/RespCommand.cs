@@ -84,6 +84,7 @@ namespace Garnet.server
         DECRBY,
         DEL,
         EXPIRE,
+        FLUSHALL,
         FLUSHDB,
         GEOADD,
         GETDEL,
@@ -194,8 +195,9 @@ namespace Garnet.server
 
         // Custom commands
         CustomTxn,
-        CustomCmd,
+        CustomRawStringCmd,
         CustomObjCmd,
+        CustomProcedure,
 
         ACL,
         ACL_CAT,
@@ -1607,6 +1609,10 @@ namespace Garnet.server
             {
                 return RespCommand.COMMITAOF;
             }
+            else if (command.SequenceEqual(CmdStrings.FLUSHALL))
+            {
+                return RespCommand.FLUSHALL;
+            }
             else if (command.SequenceEqual(CmdStrings.FLUSHDB))
             {
                 return RespCommand.FLUSHDB;
@@ -1721,21 +1727,27 @@ namespace Garnet.server
                 // Custom commands should have never been set when we reach this point
                 // (they should have been executed and reset)
                 Debug.Assert(currentCustomTransaction == null);
-                Debug.Assert(currentCustomCommand == null);
+                Debug.Assert(currentCustomRawStringCommand == null);
                 Debug.Assert(currentCustomObjectCommand == null);
+                Debug.Assert(currentCustomProcedure == null);
 
                 if (storeWrapper.customCommandManager.Match(command, out currentCustomTransaction))
                 {
                     return RespCommand.CustomTxn;
                 }
-                else if (storeWrapper.customCommandManager.Match(command, out currentCustomCommand))
+                else if (storeWrapper.customCommandManager.Match(command, out currentCustomRawStringCommand))
                 {
-                    return RespCommand.CustomCmd;
+                    return RespCommand.CustomRawStringCmd;
                 }
                 else if (storeWrapper.customCommandManager.Match(command, out currentCustomObjectCommand))
                 {
                     return RespCommand.CustomObjCmd;
                 }
+                else if (storeWrapper.customCommandManager.Match(command, out currentCustomProcedure))
+                {
+                    return RespCommand.CustomProcedure;
+                }
+
             }
 
             // If this command name was not known to the slow pass, we are out of options and the command is unknown.
