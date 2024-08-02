@@ -139,8 +139,9 @@ namespace Garnet.cluster
                 /// <returns></returns>
                 public bool Consume(ref Span<byte> key)
                 {
-                    // Check if key is within the current processing window
-                    if (currentOffset < offset)
+                    // Check if key is within the current processing window only if _copyOption is set
+                    // in order to skip keys that have been send over to target node but not deleted locally
+                    if (session._copyOption && currentOffset < offset)
                     {
                         currentOffset++;
                         return true;
