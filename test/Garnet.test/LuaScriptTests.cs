@@ -136,7 +136,7 @@ namespace Garnet.test
         }
 
 
-        [Test]//start here
+        [Test]
         public void CanDoEvalShaWithZAddMultiPairSE()
         {
             using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
