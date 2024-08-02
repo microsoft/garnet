@@ -2673,6 +2673,27 @@ namespace Garnet.test.Resp.ACL
         }
 
         [Test]
+        public async Task FlushAllACLsAsync()
+        {
+            await CheckCommandsAsync(
+                "FLUSHALL",
+                [DoFlushAllAsync, DoFlushAllAsyncAsync]
+            );
+
+            static async Task DoFlushAllAsync(GarnetClient client)
+            {
+                string val = await client.ExecuteForStringResultAsync("FLUSHALL");
+                Assert.AreEqual("OK", val);
+            }
+
+            static async Task DoFlushAllAsyncAsync(GarnetClient client)
+            {
+                string val = await client.ExecuteForStringResultAsync("FLUSHALL", ["ASYNC"]);
+                Assert.AreEqual("OK", val);
+            }
+        }
+
+        [Test]
         public async Task ForceGCACLsAsync()
         {
             await CheckCommandsAsync(

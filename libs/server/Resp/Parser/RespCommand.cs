@@ -1611,7 +1611,7 @@ namespace Garnet.server
             }
             else if (command.SequenceEqual(CmdStrings.FLUSHALL))
             {
-                return RespCommand.FLUSHDB;
+                return RespCommand.FLUSHALL;
             }
             else if (command.SequenceEqual(CmdStrings.FLUSHDB))
             {
