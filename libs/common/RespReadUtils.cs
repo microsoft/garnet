@@ -326,7 +326,7 @@ namespace Garnet.common
         public static bool Read64Int(out long number, ref byte* ptr, byte* end)
         {
             var success = TryRead64Int(out number, ref ptr, end, out var unexpectedToken);
-            
+
             if (!success && unexpectedToken.HasValue)
             {
                 RespParsingException.ThrowUnexpectedToken(unexpectedToken.Value);

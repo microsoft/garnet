@@ -155,7 +155,7 @@ namespace Garnet.server
             {
                 header = new RespInputHeader
                 {
-                    type = GarnetObjectType.SortedSet, 
+                    type = GarnetObjectType.SortedSet,
                     SortedSetOp = SortedSetOperation.ZCARD,
                 },
             };

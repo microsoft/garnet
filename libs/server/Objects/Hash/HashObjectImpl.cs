@@ -19,23 +19,8 @@ namespace Garnet.server
     /// </summary>
     public unsafe partial class HashObject : IGarnetObject
     {
-        private void HashSet(ref ObjectInput input, byte* output)
-        {
-            SetOrSetNX(ref input, output);
-        }
-
-        private void HashSetWhenNotExists(ref ObjectInput input, byte* output)
-        {
-            SetOrSetNX(ref input, output);
-        }
-
         private void HashGet(ref ObjectInput input, ref SpanByteAndMemory output)
         {
-            var input_startptr = input.payload.ptr;
-            var input_currptr = input_startptr;
-            var length = input.payload.length;
-            var input_endptr = input_startptr + length;
-
             var isMemory = false;
             MemoryHandle ptrHandle = default;
             var ptr = output.SpanByte.ToPointer();
@@ -43,13 +28,14 @@ namespace Garnet.server
             var curr = ptr;
             var end = curr + output.Length;
 
+            var currTokenIdx = input.parseStateStartIdx;
+
             ObjectOutputHeader _output = default;
             try
             {
-                if (!RespReadUtils.TrySliceWithLengthHeader(out var key, ref input_currptr, input_endptr))
-                    return;
+                var key = input.parseState.GetArgSliceByRef(currTokenIdx).SpanByte.ToByteArray();
 
-                if (hash.TryGetValue(key.ToArray(), out var hashValue))
+                if (hash.TryGetValue(key, out var hashValue))
                 {
                     while (!RespWriteUtils.WriteBulkString(hashValue, ref curr, end))
                         ObjectUtils.ReallocateOutput(ref output, ref isMemory, ref ptr, ref ptrHandle, ref curr, ref end);
@@ -74,13 +60,6 @@ namespace Garnet.server
 
         private void HashMultipleGet(ref ObjectInput input, ref SpanByteAndMemory output)
         {
-            var count = input.arg1; // for multiples fields
-
-            var input_startptr = input.payload.ptr;
-            var input_currptr = input_startptr;
-            var length = input.payload.length;
-            var input_endptr = input_startptr + length;
-
             var isMemory = false;
             MemoryHandle ptrHandle = default;
             var ptr = output.SpanByte.ToPointer();
@@ -88,18 +67,21 @@ namespace Garnet.server
             var curr = ptr;
             var end = curr + output.Length;
 
+            var count = input.parseState.Count;
+            var currTokenIdx = input.parseStateStartIdx;
+
             ObjectOutputHeader _output = default;
             try
             {
-                while (!RespWriteUtils.WriteArrayLength(count, ref curr, end))
+                var expectedTokenCount = count - input.parseStateStartIdx;
+                while (!RespWriteUtils.WriteArrayLength(expectedTokenCount, ref curr, end))
                     ObjectUtils.ReallocateOutput(ref output, ref isMemory, ref ptr, ref ptrHandle, ref curr, ref end);
 
-                while (count > 0)
+                while (currTokenIdx < count)
                 {
-                    if (!RespReadUtils.TrySliceWithLengthHeader(out var key, ref input_currptr, input_endptr))
-                        break;
+                    var key = input.parseState.GetArgSliceByRef(currTokenIdx++).SpanByte.ToByteArray();
 
-                    if (hash.TryGetValue(key.ToArray(), out var hashValue))
+                    if (hash.TryGetValue(key, out var hashValue))
                     {
                         while (!RespWriteUtils.WriteBulkString(hashValue, ref curr, end))
                             ObjectUtils.ReallocateOutput(ref output, ref isMemory, ref ptr, ref ptrHandle, ref curr, ref end);
@@ -111,7 +93,6 @@ namespace Garnet.server
                     }
 
                     _output.result1++;
-                    count--;
                 }
             }
             finally
@@ -172,19 +153,11 @@ namespace Garnet.server
             var _output = (ObjectOutputHeader*)output;
             *_output = default;
 
-            var count = input.arg1;
-
-            var input_startptr = input.payload.ptr;
-            var input_currptr = input_startptr;
-            var length = input.payload.length;
-            var input_endptr = input_startptr + length;
-
-            for (var c = 0; c < count; c++)
+            for (var currTokenIdx = input.parseStateStartIdx; currTokenIdx < input.parseState.Count; currTokenIdx++)
             {
-                if (!RespReadUtils.TrySliceWithLengthHeader(out var key, ref input_currptr, input_endptr))
-                    return;
+                var key = input.parseState.GetArgSliceByRef(currTokenIdx).SpanByte.ToByteArray();
 
-                if (hash.Remove(key.ToArray(), out var hashValue))
+                if (hash.Remove(key, out var hashValue))
                 {
                     _output->result1++;
                     this.UpdateSize(key, hashValue, false);
@@ -200,15 +173,9 @@ namespace Garnet.server
         private void HashStrLength(ref ObjectInput input, byte* output)
         {
             var _output = (ObjectOutputHeader*)output;
-
-            var input_startptr = input.payload.ptr;
-            var input_currptr = input_startptr;
-            var length = input.payload.length;
-            var input_endptr = input_startptr + length;
-
             *_output = default;
-            if (!RespReadUtils.ReadByteArrayWithLengthHeader(out var key, ref input_currptr, input_endptr))
-                return;
+
+            var key = input.parseState.GetArgSliceByRef(input.parseStateStartIdx).SpanByte.ToByteArray();
             _output->result1 = hash.TryGetValue(key, out var hashValue) ? hashValue.Length : 0;
         }
 
@@ -217,35 +184,8 @@ namespace Garnet.server
             var _output = (ObjectOutputHeader*)output;
             *_output = default;
 
-            var input_startptr = input.payload.ptr;
-            var input_currptr = input_startptr;
-            var length = input.payload.length;
-            var input_endptr = input_startptr + length;
-
-            if (!RespReadUtils.ReadByteArrayWithLengthHeader(out var field, ref input_currptr, input_endptr))
-                return;
-
+            var field = input.parseState.GetArgSliceByRef(input.parseStateStartIdx).SpanByte.ToByteArray();
             _output->result1 = hash.ContainsKey(field) ? 1 : 0;
-        }
-
-        private void HashKeys(ref ObjectInput input, ref SpanByteAndMemory output)
-        {
-            GetHashKeysOrValues(ref input, ref output);
-        }
-
-        private void HashVals(ref ObjectInput input, ref SpanByteAndMemory output)
-        {
-            GetHashKeysOrValues(ref input, ref output);
-        }
-
-        private void HashIncrement(ref ObjectInput input, ref SpanByteAndMemory output)
-        {
-            IncrementIntegerOrFloat(ref input, ref output);
-        }
-
-        private void HashIncrementByFloat(ref ObjectInput input, ref SpanByteAndMemory output)
-        {
-            IncrementIntegerOrFloat(ref input, ref output);
         }
 
         private void HashRandomField(ref ObjectInput input, ref SpanByteAndMemory output)
@@ -317,28 +257,16 @@ namespace Garnet.server
             }
         }
 
-        #region CommonMethods
-
-        private void SetOrSetNX(ref ObjectInput input, byte* output)
+        private void HashSet(ref ObjectInput input, byte* output)
         {
             var _output = (ObjectOutputHeader*)output;
             *_output = default;
 
-            var count = input.arg1;
             var hop = input.header.HashOp;
-
-            var input_startptr = input.payload.ptr;
-            var input_currptr = input_startptr;
-            var length = input.payload.length;
-            var input_endptr = input_startptr + length;
-
-            for (var c = 0; c < count; c++)
+            for (var currIdx = input.parseStateStartIdx; currIdx < input.parseState.Count; currIdx += 2)
             {
-                if (!RespReadUtils.ReadByteArrayWithLengthHeader(out var key, ref input_currptr, input_endptr))
-                    return;
-
-                if (!RespReadUtils.ReadByteArrayWithLengthHeader(out var value, ref input_currptr, input_endptr))
-                    return;
+                var key = input.parseState.GetArgSliceByRef(currIdx).SpanByte.ToByteArray();
+                var value = input.parseState.GetArgSliceByRef(currIdx + 1).SpanByte.ToByteArray();
 
                 if (!hash.TryGetValue(key, out var hashValue))
                 {
@@ -357,106 +285,7 @@ namespace Garnet.server
             }
         }
 
-        private void IncrementIntegerOrFloat(ref ObjectInput input, ref SpanByteAndMemory output)
-        {
-            var op = input.header.HashOp;
-
-            var input_startptr = input.payload.ptr;
-            var input_currptr = input_startptr;
-            var length = input.payload.length;
-            var input_endptr = input_startptr + length;
-
-            var isMemory = false;
-            MemoryHandle ptrHandle = default;
-            var ptr = output.SpanByte.ToPointer();
-
-            var curr = ptr;
-            var end = curr + output.Length;
-
-            ObjectOutputHeader _output = default;
-
-            // This value is used to indicate partial command execution
-            _output.result1 = int.MinValue;
-
-            try
-            {
-                if (!RespReadUtils.ReadByteArrayWithLengthHeader(out var key, ref input_currptr, input_endptr) ||
-                    !RespReadUtils.TrySliceWithLengthHeader(out var incr, ref input_currptr, input_endptr))
-                    return;
-
-                if (hash.TryGetValue(key, out var value))
-                {
-                    if (NumUtils.TryParse(value, out float result) &&
-                        NumUtils.TryParse(incr, out float resultIncr))
-                    {
-                        result += resultIncr;
-
-                        if (op == HashOperation.HINCRBY)
-                        {
-                            Span<byte> resultBytes = stackalloc byte[NumUtils.MaximumFormatInt64Length];
-                            bool success = Utf8Formatter.TryFormat((long)result, resultBytes, out int bytesWritten, format: default);
-                            Debug.Assert(success);
-
-                            resultBytes = resultBytes.Slice(0, bytesWritten);
-
-                            hash[key] = resultBytes.ToArray();
-                            Size += Utility.RoundUp(resultBytes.Length, IntPtr.Size) - Utility.RoundUp(value.Length, IntPtr.Size);
-
-                            while (!RespWriteUtils.WriteIntegerFromBytes(resultBytes, ref curr, end))
-                                ObjectUtils.ReallocateOutput(ref output, ref isMemory, ref ptr, ref ptrHandle, ref curr, ref end);
-                        }
-                        else
-                        {
-                            var resultBytes = Encoding.ASCII.GetBytes(result.ToString(CultureInfo.InvariantCulture));
-                            hash[key] = resultBytes;
-                            Size += Utility.RoundUp(resultBytes.Length, IntPtr.Size) - Utility.RoundUp(value.Length, IntPtr.Size);
-
-                            while (!RespWriteUtils.WriteBulkString(resultBytes, ref curr, end))
-                                ObjectUtils.ReallocateOutput(ref output, ref isMemory, ref ptr, ref ptrHandle, ref curr, ref end);
-                        }
-                    }
-                    else
-                    {
-                        while (!RespWriteUtils.WriteError("ERR field value is not a number"u8, ref curr, end))
-                            ObjectUtils.ReallocateOutput(ref output, ref isMemory, ref ptr, ref ptrHandle, ref curr, ref end);
-                    }
-                }
-                else
-                {
-                    if (!NumUtils.TryParse(incr, out float resultIncr))
-                    {
-                        while (!RespWriteUtils.WriteError("ERR field value is not a number"u8, ref curr, end))
-                            ObjectUtils.ReallocateOutput(ref output, ref isMemory, ref ptr, ref ptrHandle, ref curr, ref end);
-                    }
-                    else
-                    {
-                        hash.Add(key, incr.ToArray());
-                        UpdateSize(key, incr);
-                        if (op == HashOperation.HINCRBY)
-                        {
-                            while (!RespWriteUtils.WriteInteger((long)resultIncr, ref curr, end))
-                                ObjectUtils.ReallocateOutput(ref output, ref isMemory, ref ptr, ref ptrHandle, ref curr, ref end);
-                        }
-                        else
-                        {
-                            while (!RespWriteUtils.WriteAsciiBulkString(resultIncr.ToString(CultureInfo.InvariantCulture), ref curr, end))
-                                ObjectUtils.ReallocateOutput(ref output, ref isMemory, ref ptr, ref ptrHandle, ref curr, ref end);
-                        }
-                    }
-                }
-                _output.result1 = 1;
-            }
-            finally
-            {
-                while (!RespWriteUtils.WriteDirect(ref _output, ref curr, end))
-                    ObjectUtils.ReallocateOutput(ref output, ref isMemory, ref ptr, ref ptrHandle, ref curr, ref end);
-
-                if (isMemory) ptrHandle.Dispose();
-                output.Length = (int)(curr - ptr);
-            }
-        }
-
-        private void GetHashKeysOrValues(ref ObjectInput input, ref SpanByteAndMemory output)
+        private void HashGetKeysOrValues(ref ObjectInput input, ref SpanByteAndMemory output)
         {
             var count = hash.Count;
             var op = input.header.HashOp;
@@ -499,7 +328,129 @@ namespace Garnet.server
             }
         }
 
-        #endregion
+        private void HashIncrement(ref ObjectInput input, ref SpanByteAndMemory output)
+        {
+            var op = input.header.HashOp;
 
+            var isMemory = false;
+            MemoryHandle ptrHandle = default;
+            var ptr = output.SpanByte.ToPointer();
+
+            var curr = ptr;
+            var end = curr + output.Length;
+
+            ObjectOutputHeader _output = default;
+
+            var currTokenIdx = input.parseStateStartIdx;
+
+            // This value is used to indicate partial command execution
+            _output.result1 = int.MinValue;
+
+            try
+            {
+                var key = input.parseState.GetArgSliceByRef(currTokenIdx++).SpanByte.ToByteArray();
+                var incrSlice = input.parseState.GetArgSliceByRef(currTokenIdx);
+
+                var valueExists = hash.TryGetValue(key, out var value);
+                if (op == HashOperation.HINCRBY)
+                {
+                    if (!NumUtils.TryParse(incrSlice.ReadOnlySpan, out int incr))
+                    {
+                        while (!RespWriteUtils.WriteError(CmdStrings.RESP_ERR_GENERIC_VALUE_IS_NOT_INTEGER, ref curr, end))
+                            ObjectUtils.ReallocateOutput(ref output, ref isMemory, ref ptr, ref ptrHandle, ref curr, ref end);
+                        return;
+                    }
+
+                    byte[] resultBytes;
+
+                    if (valueExists)
+                    {
+                        if (!NumUtils.TryParse(value, out int result))
+                        {
+                            while (!RespWriteUtils.WriteError(CmdStrings.RESP_ERR_HASH_VALUE_IS_NOT_INTEGER, ref curr,
+                                       end))
+                                ObjectUtils.ReallocateOutput(ref output, ref isMemory, ref ptr, ref ptrHandle, ref curr,
+                                    ref end);
+                            return;
+                        }
+
+                        result += incr;
+
+                        var resultSpan = (Span<byte>)stackalloc byte[NumUtils.MaximumFormatInt64Length];
+                        var success = Utf8Formatter.TryFormat((long)result, resultSpan, out int bytesWritten,
+                            format: default);
+                        Debug.Assert(success);
+
+                        resultSpan = resultSpan.Slice(0, bytesWritten);
+
+                        resultBytes = resultSpan.ToArray();
+                        hash[key] = resultBytes;
+                        Size += Utility.RoundUp(resultBytes.Length, IntPtr.Size) -
+                                Utility.RoundUp(value.Length, IntPtr.Size);
+                    }
+                    else
+                    {
+                        resultBytes = incrSlice.SpanByte.ToByteArray();
+                        hash.Add(key, resultBytes.ToArray());
+                        UpdateSize(key, resultBytes);
+                    }
+
+                    while (!RespWriteUtils.WriteIntegerFromBytes(resultBytes, ref curr, end))
+                        ObjectUtils.ReallocateOutput(ref output, ref isMemory, ref ptr, ref ptrHandle, ref curr,
+                            ref end);
+                }
+                else
+                {
+                    if (!NumUtils.TryParse(incrSlice.ReadOnlySpan, out float incr))
+                    {
+                        while (!RespWriteUtils.WriteError(CmdStrings.RESP_ERR_NOT_VALID_FLOAT, ref curr, end))
+                            ObjectUtils.ReallocateOutput(ref output, ref isMemory, ref ptr, ref ptrHandle, ref curr,
+                                ref end);
+                        return;
+                    }
+
+                    byte[] resultBytes;
+
+                    if (valueExists)
+                    {
+                        if (!NumUtils.TryParse(value, out float result))
+                        {
+                            while (!RespWriteUtils.WriteError(CmdStrings.RESP_ERR_HASH_VALUE_IS_NOT_FLOAT, ref curr,
+                                       end))
+                                ObjectUtils.ReallocateOutput(ref output, ref isMemory, ref ptr, ref ptrHandle, ref curr,
+                                    ref end);
+                            return;
+                        }
+
+                        result += incr;
+
+                        resultBytes = Encoding.ASCII.GetBytes(result.ToString(CultureInfo.InvariantCulture));
+                        hash[key] = resultBytes;
+                        Size += Utility.RoundUp(resultBytes.Length, IntPtr.Size) -
+                                Utility.RoundUp(value.Length, IntPtr.Size);
+                    }
+                    else
+                    {
+                        resultBytes = incrSlice.SpanByte.ToByteArray();
+                        hash.Add(key, resultBytes);
+                        UpdateSize(key, resultBytes);
+                    }
+
+                    while (!RespWriteUtils.WriteBulkString(resultBytes, ref curr, end))
+                        ObjectUtils.ReallocateOutput(ref output, ref isMemory, ref ptr, ref ptrHandle, ref curr,
+                            ref end);
+                }
+
+                _output.result1 = 1;
+            }
+            finally
+            {
+                while (!RespWriteUtils.WriteDirect(ref _output, ref curr, end))
+                    ObjectUtils.ReallocateOutput(ref output, ref isMemory, ref ptr, ref ptrHandle, ref curr, ref end);
+
+                if (isMemory) ptrHandle.Dispose();
+                output.Length = (int)(curr - ptr);
+            }
+        }
     }
 }

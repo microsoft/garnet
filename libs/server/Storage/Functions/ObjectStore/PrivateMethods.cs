@@ -50,7 +50,7 @@ namespace Garnet.server
         {
             if (functionsState.StoredProcMode) return;
             input.header.flags |= RespInputFlags.Deterministic;
-            
+
             // Serializing key & ObjectInput to RMW log
             fixed (byte* keyPtr = key)
             {

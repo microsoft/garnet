@@ -144,7 +144,8 @@ namespace Garnet.server
             {
                 header = new RespInputHeader
                 {
-                    type = GarnetObjectType.SortedSet, SortedSetOp = SortedSetOperation.ZREM,
+                    type = GarnetObjectType.SortedSet,
+                    SortedSetOp = SortedSetOperation.ZREM,
                 },
                 parseState = parseState,
                 parseStateStartIdx = 0,
@@ -562,7 +563,7 @@ namespace Garnet.server
             var parseState = new SessionParseState();
             ArgSlice[] parseStateBuffer = default;
 
-            var arguments = new List<ArgSlice> {min, max};
+            var arguments = new List<ArgSlice> { min, max };
 
             // Operation order
             if (operation != default)

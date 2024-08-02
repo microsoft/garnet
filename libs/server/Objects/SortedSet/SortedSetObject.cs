@@ -192,8 +192,9 @@ namespace Garnet.server
                     return true;
                 }
 
-                long prevSize = this.Size;
-                switch (header.SortedSetOp)
+                var prevSize = this.Size;
+                var op = header.SortedSetOp;
+                switch (op)
                 {
                     case SortedSetOperation.ZADD:
                         SortedSetAdd(ref input, ref output);
@@ -205,7 +206,7 @@ namespace Garnet.server
                         SortedSetLength(outputSpan);
                         break;
                     case SortedSetOperation.ZPOPMAX:
-                        SortedSetPop(ref input, ref output);
+                        SortedSetPopMinOrMaxCount(ref input, ref output, op);
                         break;
                     case SortedSetOperation.ZSCORE:
                         SortedSetScore(ref input, ref output);
@@ -226,7 +227,7 @@ namespace Garnet.server
                         SortedSetRange(ref input, ref output);
                         break;
                     case SortedSetOperation.ZRANGEBYSCORE:
-                        SortedSetRangeByScore(ref input, ref output);
+                        SortedSetRange(ref input, ref output);
                         break;
                     case SortedSetOperation.GEOADD:
                         GeoAdd(ref input, outputSpan);
@@ -244,16 +245,16 @@ namespace Garnet.server
                         GeoSearch(ref input, ref output);
                         break;
                     case SortedSetOperation.ZREVRANGE:
-                        SortedSetReverseRange(ref input, ref output);
+                        SortedSetRange(ref input, ref output);
                         break;
                     case SortedSetOperation.ZREVRANGEBYSCORE:
                         SortedSetRange(ref input, ref output);
                         break;
                     case SortedSetOperation.ZREVRANK:
-                        SortedSetReverseRank(ref input, ref output);
+                        SortedSetRank(ref input, ref output, ascending: false);
                         break;
                     case SortedSetOperation.ZREMRANGEBYLEX:
-                        SortedSetRemoveRangeByLex(ref input, outputSpan);
+                        SortedSetRemoveOrCountRangeByLex(ref input, outputSpan, op);
                         break;
                     case SortedSetOperation.ZREMRANGEBYRANK:
                         SortedSetRemoveRangeByRank(ref input, ref output);
@@ -262,10 +263,10 @@ namespace Garnet.server
                         SortedSetRemoveRangeByScore(ref input, ref output);
                         break;
                     case SortedSetOperation.ZLEXCOUNT:
-                        SortedSetCountByLex(ref input, outputSpan);
+                        SortedSetRemoveOrCountRangeByLex(ref input, outputSpan, op);
                         break;
                     case SortedSetOperation.ZPOPMIN:
-                        SortedSetPopMin(ref input, ref output);
+                        SortedSetPopMinOrMaxCount(ref input, ref output, op);
                         break;
                     case SortedSetOperation.ZRANDMEMBER:
                         SortedSetRandomMember(ref input, ref output);
@@ -284,7 +285,7 @@ namespace Garnet.server
                         }
                         break;
                     default:
-                        throw new GarnetException($"Unsupported operation {input.header.SortedSetOp} in SortedSetObject.Operate");
+                        throw new GarnetException($"Unsupported operation {op} in SortedSetObject.Operate");
                 }
                 sizeChange = this.Size - prevSize;
             }

@@ -117,11 +117,6 @@ namespace Garnet.server
             ((ObjectOutputHeader*)output)->result1 = sortedSetDict.Count;
         }
 
-        private void SortedSetPop(ref ObjectInput input, ref SpanByteAndMemory output)
-        {
-            PopMinOrMaxCount(ref input, ref output, SortedSetOperation.ZPOPMAX);
-        }
-
         private void SortedSetScore(ref ObjectInput input, ref SpanByteAndMemory output)
         {
             // ZSCORE key member
@@ -133,7 +128,7 @@ namespace Garnet.server
             var end = curr + output.Length;
 
             var currIdx = input.parseStateStartIdx;
-            var member = input.parseState.GetArgSliceByRef(currIdx).ReadOnlySpan.ToArray();
+            var member = input.parseState.GetArgSliceByRef(currIdx).SpanByte.ToByteArray();
 
             ObjectOutputHeader outputHeader = default;
             try
@@ -181,8 +176,8 @@ namespace Garnet.server
 
                 for (var currIdx = input.parseStateStartIdx; currIdx < count; currIdx++)
                 {
-                    var member = input.parseState.GetArgSliceByRef(currIdx).ReadOnlySpan.ToArray();
-                    
+                    var member = input.parseState.GetArgSliceByRef(currIdx).SpanByte.ToByteArray();
+
                     if (!sortedSetDict.TryGetValue(member, out var score))
                     {
                         while (!RespWriteUtils.WriteNull(ref curr, end))
@@ -284,7 +279,7 @@ namespace Garnet.server
                 }
 
                 // Read member
-                var member = input.parseState.GetArgSliceByRef(currIdx).ReadOnlySpan.ToArray();
+                var member = input.parseState.GetArgSliceByRef(currIdx).SpanByte.ToByteArray();
 
                 if (sortedSetDict.TryGetValue(member, out var score))
                 {
@@ -312,11 +307,6 @@ namespace Garnet.server
                 if (isMemory) ptrHandle.Dispose();
                 output.Length = (int)(curr - ptr);
             }
-        }
-
-        private void SortedSetRank(ref ObjectInput input, ref SpanByteAndMemory output)
-        {
-            GetRank(ref input, ref output);
         }
 
         private void SortedSetRange(ref ObjectInput input, ref SpanByteAndMemory output)
@@ -541,26 +531,6 @@ namespace Garnet.server
             }
         }
 
-        private void SortedSetRangeByScore(ref ObjectInput input, ref SpanByteAndMemory output)
-        {
-            SortedSetRange(ref input, ref output);
-        }
-
-        private void SortedSetReverseRange(ref ObjectInput input, ref SpanByteAndMemory output)
-        {
-            SortedSetRange(ref input, ref output);
-        }
-
-        private void SortedSetReverseRank(ref ObjectInput input, ref SpanByteAndMemory output)
-        {
-            GetRank(ref input, ref output, ascending: false);
-        }
-
-        private void SortedSetRemoveRangeByLex(ref ObjectInput input, byte* output)
-        {
-            GetRangeOrCountByLex(ref input, output, SortedSetOperation.ZREMRANGEBYLEX);
-        }
-
         private void SortedSetRemoveRangeByRank(ref ObjectInput input, ref SpanByteAndMemory output)
         {
             // ZREMRANGEBYRANK key start stop
@@ -667,16 +637,6 @@ namespace Garnet.server
             }
         }
 
-        private void SortedSetCountByLex(ref ObjectInput input, byte* output)
-        {
-            GetRangeOrCountByLex(ref input, output, SortedSetOperation.ZLEXCOUNT);
-        }
-
-        private void SortedSetPopMin(ref ObjectInput input, ref SpanByteAndMemory output)
-        {
-            PopMinOrMaxCount(ref input, ref output, SortedSetOperation.ZPOPMIN);
-        }
-
         private void SortedSetRandomMember(ref ObjectInput input, ref SpanByteAndMemory output)
         {
             var count = input.arg1 >> 2;
@@ -734,9 +694,7 @@ namespace Garnet.server
             }
         }
 
-        #region CommonMethods
-
-        private void GetRangeOrCountByLex(ref ObjectInput input, byte* output, SortedSetOperation op)
+        private void SortedSetRemoveOrCountRangeByLex(ref ObjectInput input, byte* output, SortedSetOperation op)
         {
             // ZREMRANGEBYLEX key min max
             // ZLEXCOUNT key min max
@@ -765,7 +723,7 @@ namespace Garnet.server
         /// <param name="input"></param>
         /// <param name="output"></param>
         /// <param name="ascending"></param>
-        private void GetRank(ref ObjectInput input, ref SpanByteAndMemory output, bool ascending = true)
+        private void SortedSetRank(ref ObjectInput input, ref SpanByteAndMemory output, bool ascending = true)
         {
             //ZRANK key member
             var isMemory = false;
@@ -781,7 +739,7 @@ namespace Garnet.server
             ObjectOutputHeader outputHeader = default;
             try
             {
-                var member = input.parseState.GetArgSliceByRef(currIdx).ReadOnlySpan.ToArray();
+                var member = input.parseState.GetArgSliceByRef(currIdx).SpanByte.ToByteArray();
 
                 if (!sortedSetDict.TryGetValue(member, out var score))
                 {
@@ -829,6 +787,66 @@ namespace Garnet.server
                 output.Length = (int)(curr - ptr);
             }
         }
+
+        /// <summary>
+        /// Removes and returns up to COUNT members with the low or high score
+        /// </summary>
+        /// <param name="input"></param>
+        /// <param name="output"></param>
+        /// <param name="op"></param>
+        private void SortedSetPopMinOrMaxCount(ref ObjectInput input, ref SpanByteAndMemory output, SortedSetOperation op)
+        {
+            var count = input.arg1;
+            var countDone = 0;
+
+            if (sortedSet.Count < count)
+                count = sortedSet.Count;
+
+            var isMemory = false;
+            MemoryHandle ptrHandle = default;
+            var ptr = output.SpanByte.ToPointer();
+
+            var curr = ptr;
+            var end = curr + output.Length;
+
+            ObjectOutputHeader outputHeader = default;
+
+            try
+            {
+                while (!RespWriteUtils.WriteArrayLength(count * 2, ref curr, end))
+                    ObjectUtils.ReallocateOutput(ref output, ref isMemory, ref ptr, ref ptrHandle, ref curr, ref end);
+
+                while (count > 0)
+                {
+                    var max = op == SortedSetOperation.ZPOPMAX ? sortedSet.Max : sortedSet.Min;
+                    sortedSet.Remove(max);
+                    sortedSetDict.Remove(max.Element);
+
+                    this.UpdateSize(max.Element, false);
+
+                    while (!RespWriteUtils.WriteBulkString(max.Element, ref curr, end))
+                        ObjectUtils.ReallocateOutput(ref output, ref isMemory, ref ptr, ref ptrHandle, ref curr, ref end);
+
+                    while (!RespWriteUtils.TryWriteDoubleBulkString(max.Score, ref curr, end))
+                        ObjectUtils.ReallocateOutput(ref output, ref isMemory, ref ptr, ref ptrHandle, ref curr, ref end);
+
+                    countDone++;
+                    count--;
+                }
+
+                outputHeader.result1 = countDone;
+            }
+            finally
+            {
+                while (!RespWriteUtils.WriteDirect(ref outputHeader, ref curr, end))
+                    ObjectUtils.ReallocateOutput(ref output, ref isMemory, ref ptr, ref ptrHandle, ref curr, ref end);
+
+                if (isMemory) ptrHandle.Dispose();
+                output.Length = (int)(curr - ptr);
+            }
+        }
+
+        #region CommonMethods
 
         /// <summary>
         /// Gets the elements that belong to the Range using lexicographical order
@@ -972,65 +990,6 @@ namespace Garnet.server
             }
 
             return scoredElements;
-        }
-
-
-        /// <summary>
-        /// Removes and returns up to COUNT members with the low or high score
-        /// </summary>
-        /// <param name="input"></param>
-        /// <param name="output"></param>
-        /// <param name="op"></param>
-        private void PopMinOrMaxCount(ref ObjectInput input, ref SpanByteAndMemory output, SortedSetOperation op)
-        {
-            var count = input.arg1;
-            var countDone = 0;
-
-            if (sortedSet.Count < count)
-                count = sortedSet.Count;
-
-            var isMemory = false;
-            MemoryHandle ptrHandle = default;
-            var ptr = output.SpanByte.ToPointer();
-
-            var curr = ptr;
-            var end = curr + output.Length;
-
-            ObjectOutputHeader outputHeader = default;
-
-            try
-            {
-                while (!RespWriteUtils.WriteArrayLength(count * 2, ref curr, end))
-                    ObjectUtils.ReallocateOutput(ref output, ref isMemory, ref ptr, ref ptrHandle, ref curr, ref end);
-
-                while (count > 0)
-                {
-                    var max = op == SortedSetOperation.ZPOPMAX ? sortedSet.Max : sortedSet.Min;
-                    sortedSet.Remove(max);
-                    sortedSetDict.Remove(max.Element);
-
-                    this.UpdateSize(max.Element, false);
-
-                    while (!RespWriteUtils.WriteBulkString(max.Element, ref curr, end))
-                        ObjectUtils.ReallocateOutput(ref output, ref isMemory, ref ptr, ref ptrHandle, ref curr, ref end);
-
-                    while (!RespWriteUtils.TryWriteDoubleBulkString(max.Score, ref curr, end))
-                        ObjectUtils.ReallocateOutput(ref output, ref isMemory, ref ptr, ref ptrHandle, ref curr, ref end);
-
-                    countDone++;
-                    count--;
-                }
-
-                outputHeader.result1 = countDone;
-            }
-            finally
-            {
-                while (!RespWriteUtils.WriteDirect(ref outputHeader, ref curr, end))
-                    ObjectUtils.ReallocateOutput(ref output, ref isMemory, ref ptr, ref ptrHandle, ref curr, ref end);
-
-                if (isMemory) ptrHandle.Dispose();
-                output.Length = (int)(curr - ptr);
-            }
         }
 
         #endregion

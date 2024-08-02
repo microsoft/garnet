@@ -153,19 +153,19 @@ namespace Garnet.server
                         HashExists(ref input, _output);
                         break;
                     case HashOperation.HKEYS:
-                        HashKeys(ref input, ref output);
+                        HashGetKeysOrValues(ref input, ref output);
                         break;
                     case HashOperation.HVALS:
-                        HashVals(ref input, ref output);
+                        HashGetKeysOrValues(ref input, ref output);
                         break;
                     case HashOperation.HINCRBY:
                         HashIncrement(ref input, ref output);
                         break;
                     case HashOperation.HINCRBYFLOAT:
-                        HashIncrementByFloat(ref input, ref output);
+                        HashIncrement(ref input, ref output);
                         break;
                     case HashOperation.HSETNX:
-                        HashSetWhenNotExists(ref input, _output);
+                        HashSet(ref input, _output);
                         break;
                     case HashOperation.HRANDFIELD:
                         HashRandomField(ref input, ref output);
