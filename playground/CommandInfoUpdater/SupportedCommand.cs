@@ -107,6 +107,7 @@ namespace CommandInfoUpdater
             new("EXISTS", RespCommand.EXISTS),
             new("EXPIRE", RespCommand.EXPIRE),
             new("FAILOVER", RespCommand.FAILOVER),
+            new("FLUSHALL", RespCommand.FLUSHALL),
             new("FLUSHDB", RespCommand.FLUSHDB),
             new("FORCEGC", RespCommand.FORCEGC),
             new("GEOADD", RespCommand.GEOADD),

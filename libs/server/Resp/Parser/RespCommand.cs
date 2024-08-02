@@ -84,6 +84,7 @@ namespace Garnet.server
         DECRBY,
         DEL,
         EXPIRE,
+        FLUSHALL,
         FLUSHDB,
         GEOADD,
         GETDEL,
@@ -1607,6 +1608,10 @@ namespace Garnet.server
             else if (command.SequenceEqual(CmdStrings.COMMITAOF))
             {
                 return RespCommand.COMMITAOF;
+            }
+            else if (command.SequenceEqual(CmdStrings.FLUSHALL))
+            {
+                return RespCommand.FLUSHALL;
             }
             else if (command.SequenceEqual(CmdStrings.FLUSHDB))
             {

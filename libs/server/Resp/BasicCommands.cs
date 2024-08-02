@@ -888,74 +888,31 @@ namespace Garnet.server
         /// <summary>
         /// FLUSHDB [ASYNC|SYNC] [UNSAFETRUNCATELOG]
         /// </summary>
-        private bool NetworkFLUSHDB(int count)
+        private bool NetworkFLUSHDB()
         {
-            if (count > 2)
+            if (parseState.count > 2)
             {
-                return AbortWithWrongNumberOfArguments(nameof(RespCommand.FLUSHDB), count);
+                return AbortWithWrongNumberOfArguments(nameof(RespCommand.FLUSHDB), parseState.count);
             }
 
-            var unsafeTruncateLog = false;
-            var async = false;
-            var sync = false;
-            var syntaxError = false;
+            FlushDb(RespCommand.FLUSHDB);
 
-            for (var i = 0; i < count; i++)
+            return true;
+        }
+
+        /// <summary>
+        /// FLUSHALL [ASYNC|SYNC] [UNSAFETRUNCATELOG]
+        /// </summary>
+        private bool NetworkFLUSHALL()
+        {
+            if (parseState.count > 2)
             {
-                var nextToken = parseState.GetArgSliceByRef(i).ReadOnlySpan;
-
-                if (nextToken.EqualsUpperCaseSpanIgnoringCase(CmdStrings.UNSAFETRUNCATELOG))
-                {
-                    if (unsafeTruncateLog)
-                    {
-                        syntaxError = true;
-                        break;
-                    }
-
-                    unsafeTruncateLog = true;
-                }
-                else if (nextToken.EqualsUpperCaseSpanIgnoringCase(CmdStrings.ASYNC))
-                {
-                    if (sync || async)
-                    {
-                        syntaxError = true;
-                        break;
-                    }
-
-                    async = true;
-                }
-                else if (nextToken.EqualsUpperCaseSpanIgnoringCase(CmdStrings.SYNC))
-                {
-                    if (sync || async)
-                    {
-                        syntaxError = true;
-                        break;
-                    }
-
-                    sync = true;
-                }
-                else
-                {
-                    syntaxError = true;
-                    break;
-                }
+                return AbortWithWrongNumberOfArguments(nameof(RespCommand.FLUSHALL), parseState.count);
             }
 
-            if (syntaxError)
-            {
-                while (!RespWriteUtils.WriteError(CmdStrings.RESP_SYNTAX_ERROR, ref dcurr, dend))
-                    SendAndReset();
-                return true;
-            }
-
-            if (async)
-                Task.Run(() => FlushDB(unsafeTruncateLog)).ConfigureAwait(false);
-            else
-                FlushDB(unsafeTruncateLog);
-
-            logger?.LogInformation("Running flushDB " + (async ? "async" : "sync") + (unsafeTruncateLog ? " with unsafetruncatelog." : ""));
-            while (!RespWriteUtils.WriteDirect(CmdStrings.RESP_OK, ref dcurr, dend))
-                SendAndReset();
+            // Since Garnet currently only supports a single database,
+            // FLUSHALL and FLUSHDB share the same logic
+            FlushDb(RespCommand.FLUSHALL);
 
             return true;
         }
@@ -1485,7 +1442,79 @@ namespace Garnet.server
                 SendAndReset();
         }
 
-        void FlushDB(bool unsafeTruncateLog)
+        /// <summary>
+        /// Common logic for FLUSHDB and FLUSHALL
+        /// </summary>
+        /// <param name="cmd">RESP command (FLUSHDB / FLUSHALL)</param>
+        void FlushDb(RespCommand cmd)
+        {
+            Debug.Assert(cmd is RespCommand.FLUSHDB or RespCommand.FLUSHALL);
+            var unsafeTruncateLog = false;
+            var async = false;
+            var sync = false;
+            var syntaxError = false;
+
+            var count = parseState.count;
+            for (var i = 0; i < count; i++)
+            {
+                var nextToken = parseState.GetArgSliceByRef(i).ReadOnlySpan;
+
+                if (nextToken.EqualsUpperCaseSpanIgnoringCase(CmdStrings.UNSAFETRUNCATELOG))
+                {
+                    if (unsafeTruncateLog)
+                    {
+                        syntaxError = true;
+                        break;
+                    }
+
+                    unsafeTruncateLog = true;
+                }
+                else if (nextToken.EqualsUpperCaseSpanIgnoringCase(CmdStrings.ASYNC))
+                {
+                    if (sync || async)
+                    {
+                        syntaxError = true;
+                        break;
+                    }
+
+                    async = true;
+                }
+                else if (nextToken.EqualsUpperCaseSpanIgnoringCase(CmdStrings.SYNC))
+                {
+                    if (sync || async)
+                    {
+                        syntaxError = true;
+                        break;
+                    }
+
+                    sync = true;
+                }
+                else
+                {
+                    syntaxError = true;
+                    break;
+                }
+            }
+
+            if (syntaxError)
+            {
+                while (!RespWriteUtils.WriteError(CmdStrings.RESP_SYNTAX_ERROR, ref dcurr, dend))
+                    SendAndReset();
+                return;
+            }
+
+            if (async)
+                Task.Run(() => ExecuteFlushDb(unsafeTruncateLog)).ConfigureAwait(false);
+            else
+                ExecuteFlushDb(unsafeTruncateLog);
+
+            logger?.LogInformation(
+                $"Running {nameof(cmd)} {(async ? "async" : "sync")} {(unsafeTruncateLog ? " with unsafetruncatelog." : string.Empty)}");
+            while (!RespWriteUtils.WriteDirect(CmdStrings.RESP_OK, ref dcurr, dend))
+                SendAndReset();
+        }
+
+        void ExecuteFlushDb(bool unsafeTruncateLog)
         {
             storeWrapper.store.Log.ShiftBeginAddress(storeWrapper.store.Log.TailAddress, truncateLog: unsafeTruncateLog);
             storeWrapper.objectStore?.Log.ShiftBeginAddress(storeWrapper.objectStore.Log.TailAddress, truncateLog: unsafeTruncateLog);
