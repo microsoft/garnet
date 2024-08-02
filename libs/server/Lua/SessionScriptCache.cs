@@ -6,7 +6,7 @@ using System.Collections.Generic;
 using System.Security.Cryptography;
 using Microsoft.Extensions.Logging;
 
-namespace Garnet.server.Scripting
+namespace Garnet.server
 {
     /// <summary>
     /// Cache of Lua scripts, per session

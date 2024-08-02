@@ -10,7 +10,6 @@ namespace Garnet.server
 {
     internal sealed unsafe partial class RespServerSession : ServerSessionBase
     {
-
         /// <summary>
         /// EVALSHA sha1 numkeys [key [key ...]] [arg [arg ...]]
         /// </summary>
@@ -116,7 +115,7 @@ namespace Garnet.server
             }
             else
             {
-                // send error to output
+                // Send error to output
                 return AbortWithWrongNumberOfArguments("SCRIPT", count);
             }
             return true;

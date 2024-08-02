@@ -106,7 +106,7 @@ namespace Garnet.server
         /// <returns></returns>
         public object garnet_call(string cmd, params object[] args)
         {
-            return respServerSession.ProcessCommandFromScripting(cmd, args);
+            return respServerSession.ProcessCommandFromScripting(state, cmd, args);
         }
 
         /// <summary>

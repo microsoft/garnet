@@ -13,7 +13,6 @@ using Garnet.common.Parsing;
 using Garnet.networking;
 using Garnet.server.ACL;
 using Garnet.server.Auth;
-using Garnet.server.Scripting;
 using Microsoft.Extensions.Logging;
 using Tsavorite.core;
 

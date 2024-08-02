@@ -128,8 +128,8 @@ namespace Garnet.test
         {
             using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
             var db = redis.GetDatabase(0);
-            string script = "return garnet.call('zadd', KEYS[1], ARGV[1], ARGV[2])";
-            RedisResult result = db.ScriptEvaluate(script, new[] { (RedisKey)"mysskey:obj: x" }, new[] { (RedisValue)1, (RedisValue)"a" });
+            string script = "return redis.call('zadd', KEYS[1], ARGV[1], ARGV[2])";
+            RedisResult result = db.ScriptEvaluate(script, [(RedisKey)"mysskey"], [(RedisValue)1, (RedisValue)"a"]);
             Assert.IsTrue(result.ToString() == "1");
             var l = db.SortedSetLength("mysskey");
             Assert.IsTrue(l == 1);
@@ -142,25 +142,25 @@ namespace Garnet.test
             using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
             var db = redis.GetDatabase(0);
 
-            //create a sorted set
-            string script = "local ptable = {100, \"value1\", 200, \"value2\"}; return garnet.call('zadd', KEYS[1], ptable)";
-            RedisResult result = db.ScriptEvaluate(script, new[] { (RedisKey)"mysskey" });
+            // Create a sorted set
+            string script = "local ptable = {100, \"value1\", 200, \"value2\"}; return redis.call('zadd', KEYS[1], ptable)";
+            RedisResult result = db.ScriptEvaluate(script, [(RedisKey)"mysskey"]);
             Assert.IsTrue(result.ToString() == "2");
 
-            //check the length
+            // Check the length
             var l = db.SortedSetLength("mysskey");
             Assert.IsTrue(l == 2);
 
-            //execute same script again
+            // Execute same script again
             result = db.ScriptEvaluate(script, [(RedisKey)"mysskey"]);
             Assert.IsTrue(result.ToString() == "0");
 
-            //add more pairs
-            script = "local ptable = {300, \"value3\", 400, \"value4\"}; return garnet.call('zadd', KEYS[1], ptable)";
+            // Add more pairs
+            script = "local ptable = {300, \"value3\", 400, \"value4\"}; return redis.call('zadd', KEYS[1], ptable)";
             result = db.ScriptEvaluate(script, [(RedisKey)"mysskey"]);
             Assert.IsTrue(result.ToString() == "2");
 
-            //review
+            // Review
             var r = db.SortedSetRangeByScoreWithScores("mysskey");
             Assert.IsTrue(r[0].Score == 100 && r[0].Element == "value1");
             l = db.SortedSetLength("mysskey");
@@ -257,15 +257,14 @@ namespace Garnet.test
             var nameKey = "strKey-";
             var valueKey = "valueKey-";
             using var lightClientRequest = TestUtils.CreateRequest();
-            var stringCmd = "*3\r\n$6\r\nSCRIPT\r\n$4\r\nLOAD\r\n$41\r\nreturn garnet.call('set',KEYS[1],ARGV[1])\r\n";
+            var stringCmd = "*3\r\n$6\r\nSCRIPT\r\n$4\r\nLOAD\r\n$40\r\nreturn redis.call('set',KEYS[1],ARGV[1])\r\n";
             var sha1SetScript = Encoding.ASCII.GetString(lightClientRequest.SendCommand(Encoding.ASCII.GetBytes(stringCmd), 1)).Substring(5, 40);
-            var attributes = ":raw:x";
 
             for (int i = 0; i < 5000; i++)
             {
-                var randPostFix = rnd.Next(1, 1000); //EVALSHA 1 key:storetype:locktype
+                var randPostFix = rnd.Next(1, 1000);
                 valueKey = $"{valueKey}{randPostFix}";
-                var r = lightClientRequest.SendCommand($"EVALSHA {sha1SetScript} 1 {nameKey}{randPostFix}{attributes} {valueKey}", 1);
+                var r = lightClientRequest.SendCommand($"EVALSHA {sha1SetScript} 1 {nameKey}{randPostFix} {valueKey}", 1);
                 var g = Encoding.ASCII.GetString(lightClientRequest.SendCommand($"get {nameKey}{randPostFix}", 1));
                 var fstEndOfLine = g.IndexOf("\n", StringComparison.OrdinalIgnoreCase) + 1;
                 var strKeyValue = g.Substring(fstEndOfLine, valueKey.Length);
