@@ -19,7 +19,7 @@ namespace Garnet.server
     public sealed unsafe partial class AofProcessor
     {
         readonly StoreWrapper storeWrapper;
-        readonly CustomCommand[] customCommands;
+        readonly CustomRawStringCommand[] customCommands;
         readonly CustomObjectCommandWrapper[] customObjectCommands;
         readonly RespServerSession respServerSession;
 
@@ -55,7 +55,7 @@ namespace Garnet.server
             ILogger logger = null)
         {
             this.storeWrapper = storeWrapper;
-            this.customCommands = storeWrapper.customCommandManager.commandMap;
+            this.customCommands = storeWrapper.customCommandManager.rawStringCommandMap;
             this.customObjectCommands = storeWrapper.customCommandManager.objectCommandMap;
             this.recordToAof = recordToAof;
 

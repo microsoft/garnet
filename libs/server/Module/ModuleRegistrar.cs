@@ -156,6 +156,22 @@ namespace Garnet.server.Module
 
             return ModuleActionStatus.Success;
         }
+
+        /// <summary>
+        /// Registers a custom procedure that performs several operations in a non-transactional manner
+        /// </summary>
+        /// <param name="name">Procedure name</param>
+        /// <param name="customScriptProc">Custom procedure implementation</param>
+        /// <param name="commandInfo">Command info</param>
+        /// <returns>Registration status</returns>
+        public ModuleActionStatus RegisterProcedure(string name, CustomProcedure customScriptProc, RespCommandsInfo commandInfo = null)
+        {
+            if (string.IsNullOrEmpty(name) || customScriptProc == null)
+                return ModuleActionStatus.InvalidRegistrationInfo;
+
+            customCommandManager.Register(name, customScriptProc, commandInfo);
+            return ModuleActionStatus.Success;
+        }
     }
 
     internal sealed class ModuleRegistrar

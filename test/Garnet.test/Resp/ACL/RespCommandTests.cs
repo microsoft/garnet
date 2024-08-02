@@ -38,6 +38,7 @@ namespace Garnet.test.Resp.ACL
             server.Register.NewCommand("SETWPIFPGT", 2, CommandType.ReadModifyWrite, new SetWPIFPGTCustomCommand(), respCustomCommandsInfo["SETWPIFPGT"]);
             server.Register.NewCommand("MYDICTGET", 1, CommandType.Read, new MyDictFactory(), new MyDictGet(), respCustomCommandsInfo["MYDICTGET"]);
             server.Register.NewTransactionProc("READWRITETX", 3, () => new ReadWriteTxn());
+            server.Register.NewProcedure("SUM", new Sum());
 
             server.Start();
         }
@@ -2223,14 +2224,14 @@ namespace Garnet.test.Resp.ACL
         }
 
         [Test]
-        public async Task CustomCmdACLsAsync()
+        public async Task CustomRawStringCmdACLsAsync()
         {
             // TODO: it probably makes sense to expose ACLs for registered commands, but for now just a blanket ACL for all custom commands is all we have
 
             int count = 0;
 
             await CheckCommandsAsync(
-                "CUSTOMCMD",
+                "CUSTOMRAWSTRINGCMD",
                 [DoSetWpIfPgtAsync],
                 knownCategories: ["garnet", "custom", "dangerous"]
             );
@@ -2277,6 +2278,22 @@ namespace Garnet.test.Resp.ACL
             {
                 string res = await client.ExecuteForStringResultAsync("READWRITETX", ["foo", "bar", "fizz"]);
                 Assert.AreEqual("SUCCESS", res);
+            }
+        }
+
+        [Test]
+        public async Task CustomProcedureACLsAsync()
+        {
+            await CheckCommandsAsync(
+                "CustomProcedure",
+                [DoSumAsync],
+                knownCategories: ["garnet", "custom", "dangerous"]
+            );
+
+            async Task DoSumAsync(GarnetClient client)
+            {
+                string res = await client.ExecuteForStringResultAsync("SUM", ["key1", "key2", "key3"]);
+                Assert.AreEqual("0", res.ToString());
             }
         }
 

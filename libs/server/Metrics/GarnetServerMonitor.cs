@@ -74,6 +74,7 @@ namespace Garnet.server
             done.WaitOne();
             cts.Dispose();
             done.Dispose();
+            globalMetrics.Dispose();
         }
 
         public void Start()
@@ -81,13 +82,14 @@ namespace Garnet.server
             Task.Run(() => MainMonitorTask(cts.Token));
         }
 
-        public void AddMetricsHistory(GarnetSessionMetrics currSessionMetrics, GarnetLatencyMetricsSession currLatencyMetrics)
+        public void AddMetricsHistorySessionDispose(GarnetSessionMetrics currSessionMetrics, GarnetLatencyMetricsSession currLatencyMetrics)
         {
             rwLock.WriteLock();
             try
             {
                 if (currSessionMetrics != null) globalMetrics.historySessionMetrics.Add(currSessionMetrics);
                 if (currLatencyMetrics != null) globalMetrics.globalLatencyMetrics.Merge(currLatencyMetrics);
+                currLatencyMetrics?.Return();
             }
             finally { rwLock.WriteUnlock(); }
         }

@@ -153,7 +153,7 @@ namespace Garnet.test
             db.Connect();
 
             var metrics = db.GetLatencyMetrics();
-            Assert.AreEqual(metrics.Length, 0);
+            Assert.AreEqual(0, metrics.Length);
 
             if (recordLatency)
             {
@@ -163,17 +163,16 @@ namespace Garnet.test
                     var task = db.StringGetAsync("mykey");
                     task.Wait();
                     var resp = task.Result;
-                    Assert.AreEqual(resp, null);
+                    Assert.AreEqual(null, resp);
                 }
 
                 metrics = db.GetLatencyMetrics();
-                Assert.AreEqual(metrics.Length, 8);
+                Assert.AreEqual(8, metrics.Length);
             }
 
             db.Dispose();
             metrics = db.GetLatencyMetrics();
-            if (recordLatency) Assert.AreEqual(metrics.Length, 8);
-            else Assert.AreEqual(metrics.Length, 0);
+            Assert.AreEqual(0, metrics.Length); // Should be 0 after dispose
         }
 
         [Test]
