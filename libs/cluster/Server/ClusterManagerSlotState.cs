@@ -415,7 +415,7 @@ namespace Garnet.cluster
             }
 
             FlushConfig();
-            logger?.LogInformation("Slots {slot} IMPORTED TO {endpoint}", GetRange(slots.ToArray()), currentConfig.GetWorkerAddressFromNodeId(nodeid));
+            logger?.LogTrace("Slots {slot} IMPORTED TO {endpoint}", GetRange(slots.ToArray()), currentConfig.GetWorkerAddressFromNodeId(nodeid));
             return true;
         }
 
