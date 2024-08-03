@@ -51,8 +51,13 @@ namespace Garnet.cluster
                 _lock.ReadLock();
                 if (_disposed) return 0;
 
+                HashSet<MigrateSession> ss = [];
                 for (var i = 0; i < sessions.Length; i++)
-                    count += sessions[i] != null ? 1 : 0;
+                {
+                    if (sessions[i] != null)
+                        _ = ss.Add(sessions[i]);
+                }
+                count = ss.Count;
             }
             finally
             {
