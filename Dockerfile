@@ -40,8 +40,6 @@ RUN if [ "$(uname -s)" = "Linux" ]; then \
 			yum install -y libaio; \
 		elif [ -f /etc/os-release ] && grep -q 'ID=cbl-mariner' /etc/os-release; then \
 			tdnf install -y libaio && tdnf clean all; \
-		elif [ -f /etc/os-release ] && grep -q 'ID=chiseled' /etc/os-release; then \
-			apt-get update && apt-get install -y libaio1 && rm -rf /var/lib/apt/lists/*; \
 		fi; \
 	fi
 
