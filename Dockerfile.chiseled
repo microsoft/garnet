@@ -30,9 +30,6 @@ RUN dotnet publish -a $TARGETARCH -c Release -o /app --no-restore --self-contain
 # Final stage/image
 FROM mcr.microsoft.com/dotnet/runtime:8.0-jammy-chiseled AS runtime
 
-# Install libaio
-RUN tdnf install -y libaio && tdnf clean all
-
 WORKDIR /app
 COPY --from=build /app .
 
