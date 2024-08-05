@@ -320,8 +320,6 @@ namespace Garnet.server
             }
             finally
             {
-                // reset the flag for the session
-                waitForAofBlocking = false;
                 networkSender.ExitAndReturnResponseObject();
                 clusterSession?.ReleaseCurrentEpoch();
             }
