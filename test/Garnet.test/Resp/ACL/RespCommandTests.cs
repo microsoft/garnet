@@ -2281,6 +2281,66 @@ namespace Garnet.test.Resp.ACL
         }
 
         [Test]
+        public async Task EvalACLsAsync()
+        {
+            await CheckCommandsAsync(
+                "EVAL",
+                [DoEvalAsync],
+                knownCategories: ["slow", "scripting"]
+            );
+
+            async Task DoEvalAsync(GarnetClient client)
+            {
+                string res = await client.ExecuteForStringResultAsync("EVAL", ["return 'OK'", "0"]);
+                Assert.AreEqual("OK", (string)res);
+            }
+        }
+
+        [Test]
+        public async Task EvalShaACLsAsync()
+        {
+            await CheckCommandsAsync(
+                "EVALSHA",
+                [DoEvalShaAsync],
+                knownCategories: ["slow", "scripting"]
+            );
+
+            async Task DoEvalShaAsync(GarnetClient client)
+            {
+                try
+                {
+                    await client.ExecuteForStringResultAsync("EVALSHA", ["57ade87c8731f041ecac85aba56623f8af391fab", "0"]);
+                    Assert.Fail("Should be unreachable, script is not loaded");
+                }
+                catch (Exception e)
+                {
+                    if (e.Message == "ERR NOSCRIPT No matching script. Please use EVAL.")
+                    {
+                        return;
+                    }
+
+                    throw;
+                }
+            }
+        }
+
+        [Test]
+        public async Task ScriptACLsAsync()
+        {
+            await CheckCommandsAsync(
+                "SCRIPT",
+                [DoScriptAsync],
+                knownCategories: ["slow"]
+            );
+
+            async Task DoScriptAsync(GarnetClient client)
+            {
+                string res = await client.ExecuteForStringResultAsync("SCRIPT", ["LOAD", "return 'OK'"]);
+                Assert.AreEqual("57ade87c8731f041ecac85aba56623f8af391fab", (string)res);
+            }
+        }
+
+        [Test]
         public async Task DBSizeACLsAsync()
         {
             await CheckCommandsAsync(

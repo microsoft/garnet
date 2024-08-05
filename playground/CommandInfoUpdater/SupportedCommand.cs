@@ -252,6 +252,9 @@ namespace CommandInfoUpdater
             new ("ZREVRANK", RespCommand.ZREVRANK),
             new ("ZSCAN", RespCommand.ZSCAN),
             new ("ZSCORE", RespCommand.ZSCORE),
+            new ("EVAL", RespCommand.EVAL),
+            new ("EVALSHA", RespCommand.EVALSHA),
+            new ("SCRIPT", RespCommand.SCRIPT),
         };
 
         private static readonly Lazy<IReadOnlyDictionary<string, SupportedCommand>> LazySupportedCommandsMap =
