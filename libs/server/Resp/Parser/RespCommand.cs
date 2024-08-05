@@ -1890,27 +1890,31 @@ namespace Garnet.server
             endReadHead = (int)(ptr - recvBufferPtr);
 
             if (storeWrapper.appendOnlyFile != null && storeWrapper.serverOptions.WaitForCommit)
-            {
-                // Reset waitForAofBlocking if there is no pending unsent data on the network
-                if (dcurr == networkSender.GetResponseObjectHead())
-                    waitForAofBlocking = false;
-
-                // If we are in NetworkSkip's state we do not need to be changing the AOF blocking flag
-                // since we do not interact with AOF in that path.
-                if (txnManager.state != TxnState.None && txnManager.state == TxnState.Running)
-                {
-                    /* 
-                        keeping the expensive call inside the conditional only adds ~4 MSIL instructions in hotpath
-                        W.r.t AOF  Blocking
-                        If a previous command marked AOF for blocking we should not change AOF blocking flag.
-                        If no previous command marked AOF for blocking, then we only change AOF flag to block
-                        if the current command is AOF dependent.
-                    */
-                    waitForAofBlocking = waitForAofBlocking || !cmd.IsAofIndependent();
-                }
-            }
+                HandleAofCommitMode(cmd);
 
             return cmd;
+        }
+
+        [MethodImpl(MethodImplOptions.NoInlining)]
+        private void HandleAofCommitMode(RespCommand cmd)
+        {
+            // Reset waitForAofBlocking if there is no pending unsent data on the network
+            if (dcurr == networkSender.GetResponseObjectHead())
+                waitForAofBlocking = false;
+
+            // If we are in NetworkSkip's state we do not need to be changing the AOF blocking flag
+            // since we do not interact with AOF in that path.
+            if (txnManager.state != TxnState.None && txnManager.state == TxnState.Running)
+            {
+                /* 
+                    keeping the expensive call inside the conditional only adds ~4 MSIL instructions in hotpath
+                    W.r.t AOF  Blocking
+                    If a previous command marked AOF for blocking we should not change AOF blocking flag.
+                    If no previous command marked AOF for blocking, then we only change AOF flag to block
+                    if the current command is AOF dependent.
+                */
+                waitForAofBlocking = waitForAofBlocking || !cmd.IsAofIndependent();
+            }
         }
 
         [MethodImpl(MethodImplOptions.NoInlining)]
