@@ -11,10 +11,12 @@ using static Tsavorite.test.TestUtils;
 
 namespace Tsavorite.test
 {
+    using SpanByteStoreFunctions = StoreFunctions<SpanByte, SpanByte, SpanByteComparer, SpanByteRecordDisposer>;
+
     [TestFixture]
     internal class SpanByteIterationTests
     {
-        private TsavoriteKV<SpanByte, SpanByte> store;
+        private TsavoriteKV<SpanByte, SpanByte, SpanByteStoreFunctions, SpanByteAllocator<SpanByteStoreFunctions>> store;
         private IDevice log;
 
         // Note: We always set value.length to 2, which includes both VLValue members; we are not exercising the "Variable Length" aspect here.
@@ -24,7 +26,7 @@ namespace Tsavorite.test
         public void Setup()
         {
             // Clean up log files from previous test runs in case they weren't cleaned up
-            DeleteDirectory(TestUtils.MethodTestDir, wait: true);
+            DeleteDirectory(MethodTestDir, wait: true);
         }
 
         [TearDown]
@@ -34,7 +36,7 @@ namespace Tsavorite.test
             store = null;
             log?.Dispose();
             log = null;
-            DeleteDirectory(TestUtils.MethodTestDir);
+            DeleteDirectory(MethodTestDir);
         }
 
         internal struct SpanBytePushIterationTestFunctions : IScanIteratorFunctions<SpanByte, SpanByte>
@@ -58,9 +60,9 @@ namespace Tsavorite.test
             public bool ConcurrentReader(ref SpanByte key, ref SpanByte value, RecordMetadata recordMetadata, long numberOfRecords, out CursorRecordResult cursorRecordResult)
                 => SingleReader(ref key, ref value, recordMetadata, numberOfRecords, out cursorRecordResult);
 
-            public bool OnStart(long beginAddress, long endAddress) => true;
-            public void OnException(Exception exception, long numberOfRecords) { }
-            public void OnStop(bool completed, long numberOfRecords) { }
+            public readonly bool OnStart(long beginAddress, long endAddress) => true;
+            public readonly void OnException(Exception exception, long numberOfRecords) { }
+            public readonly void OnStop(bool completed, long numberOfRecords) { }
         }
 
         [Test]
@@ -69,8 +71,16 @@ namespace Tsavorite.test
         public unsafe void SpanByteIterationBasicTest([Values] DeviceType deviceType, [Values] ScanIteratorType scanIteratorType)
         {
             log = CreateTestDevice(deviceType, $"{MethodTestDir}{deviceType}.log");
-            store = new TsavoriteKV<SpanByte, SpanByte>
-                 (1L << 20, new LogSettings { LogDevice = log, MemorySizeBits = 15, PageSizeBits = 9, SegmentSizeBits = 22 });
+            store = new(new()
+            {
+                IndexSize = 1L << 26,
+                LogDevice = log,
+                MemorySize = 1L << 15,
+                PageSize = 1L << 9,
+                SegmentSize = 1L << 22
+            }, StoreFunctions<SpanByte, SpanByte>.Create()
+                , (allocatorSettings, storeFunctions) => new(allocatorSettings, storeFunctions)
+            );
 
             using var session = store.NewSession<SpanByte, int[], Empty, VLVectorFunctions>(new VLVectorFunctions());
             var bContext = session.BasicContext;
@@ -88,7 +98,7 @@ namespace Tsavorite.test
                 {
                     using var iter = session.Iterate();
                     while (iter.GetNext(out var recordInfo))
-                        scanIteratorFunctions.SingleReader(ref iter.GetKey(), ref iter.GetValue(), default, default, out _);
+                        _ = scanIteratorFunctions.SingleReader(ref iter.GetKey(), ref iter.GetValue(), default, default, out _);
                 }
                 else
                     Assert.IsTrue(session.Iterate(ref scanIteratorFunctions), $"Failed to complete push iteration; numRecords = {scanIteratorFunctions.numRecords}");
@@ -107,7 +117,7 @@ namespace Tsavorite.test
             {
                 keySpan[0] = i;
                 valueSpan[0] = i;
-                bContext.Upsert(ref key, ref value);
+                _ = bContext.Upsert(ref key, ref value);
             }
             iterateAndVerify(1, totalRecords);
 
@@ -115,7 +125,7 @@ namespace Tsavorite.test
             {
                 keySpan[0] = i;
                 valueSpan[0] = i * 2;
-                bContext.Upsert(ref key, ref value);
+                _ = bContext.Upsert(ref key, ref value);
             }
             iterateAndVerify(2, totalRecords);
 
@@ -123,7 +133,7 @@ namespace Tsavorite.test
             {
                 keySpan[0] = i;
                 valueSpan[0] = i;
-                bContext.Upsert(ref key, ref value);
+                _ = bContext.Upsert(ref key, ref value);
             }
             iterateAndVerify(0, totalRecords);
 
@@ -131,14 +141,14 @@ namespace Tsavorite.test
             {
                 keySpan[0] = i;
                 valueSpan[0] = i;
-                bContext.Upsert(ref key, ref value);
+                _ = bContext.Upsert(ref key, ref value);
             }
             iterateAndVerify(0, totalRecords);
 
             for (int i = 0; i < totalRecords; i += 2)
             {
                 keySpan[0] = i;
-                bContext.Delete(ref key);
+                _ = bContext.Delete(ref key);
             }
             iterateAndVerify(0, totalRecords / 2);
 
@@ -146,7 +156,7 @@ namespace Tsavorite.test
             {
                 keySpan[0] = i;
                 valueSpan[0] = i * 3;
-                bContext.Upsert(ref key, ref value);
+                _ = bContext.Upsert(ref key, ref value);
             }
             iterateAndVerify(3, totalRecords);
 
@@ -160,8 +170,16 @@ namespace Tsavorite.test
         public void SpanByteIterationPushStopTest([Values] DeviceType deviceType)
         {
             log = CreateTestDevice(deviceType, Path.Join(MethodTestDir, $"{deviceType}.log"));
-            store = new TsavoriteKV<SpanByte, SpanByte>
-                 (1L << 20, new LogSettings { LogDevice = log, MemorySizeBits = 15, PageSizeBits = 9, SegmentSizeBits = 22 });
+            store = new(new()
+            {
+                IndexSize = 1L << 26,
+                LogDevice = log,
+                MemorySize = 1L << 15,
+                PageSize = 1L << 9,
+                SegmentSize = 1L << 22
+            }, StoreFunctions<SpanByte, SpanByte>.Create()
+                , (allocatorSettings, storeFunctions) => new(allocatorSettings, storeFunctions)
+            );
 
             using var session = store.NewSession<SpanByte, int[], Empty, VLVectorFunctions>(new VLVectorFunctions());
             var bContext = session.BasicContext;
@@ -192,7 +210,7 @@ namespace Tsavorite.test
             {
                 keySpan[0] = i;
                 valueSpan[0] = i;
-                bContext.Upsert(ref key, ref value);
+                _ = bContext.Upsert(ref key, ref value);
             }
 
             scanAndVerify(42, useScan: true);
@@ -205,9 +223,18 @@ namespace Tsavorite.test
         public unsafe void SpanByteIterationPushLockTest([Values(1, 4)] int scanThreads, [Values(1, 4)] int updateThreads, [Values] ScanMode scanMode)
         {
             log = Devices.CreateLogDevice(Path.Join(MethodTestDir, "lock_test.log"));
+
             // Must be large enough to contain all records in memory to exercise locking
-            store = new TsavoriteKV<SpanByte, SpanByte>
-                 (1L << 20, new LogSettings { LogDevice = log, MemorySizeBits = 25, PageSizeBits = 19, SegmentSizeBits = 22 });
+            store = new(new()
+            {
+                IndexSize = 1L << 26,
+                LogDevice = log,
+                MemorySize = 1L << 25,
+                PageSize = 1L << 19,
+                SegmentSize = 1L << 22
+            }, StoreFunctions<SpanByte, SpanByte>.Create()
+                , (allocatorSettings, storeFunctions) => new(allocatorSettings, storeFunctions)
+            );
 
             const int totalRecords = 2000;
             var start = store.Log.TailAddress;
@@ -237,7 +264,7 @@ namespace Tsavorite.test
                 {
                     keySpan[0] = i;
                     valueSpan[0] = i * (tid + 1);
-                    bContext.Upsert(ref key, ref value);
+                    _ = bContext.Upsert(ref key, ref value);
                 }
             }
 
@@ -255,11 +282,11 @@ namespace Tsavorite.test
                 {
                     keySpan[0] = i;
                     valueSpan[0] = i;
-                    bContext.Upsert(ref key, ref value);
+                    _ = bContext.Upsert(ref key, ref value);
                 }
             }
 
-            List<Task> tasks = new();   // Task rather than Thread for propagation of exception.
+            List<Task> tasks = [];   // Task rather than Thread for propagation of exception.
             var numThreads = scanThreads + updateThreads;
             for (int t = 0; t < numThreads; t++)
             {
@@ -269,7 +296,7 @@ namespace Tsavorite.test
                 else
                     tasks.Add(Task.Factory.StartNew(() => LocalUpdate(tid)));
             }
-            Task.WaitAll(tasks.ToArray());
+            Task.WaitAll([.. tasks]);
         }
     }
 }

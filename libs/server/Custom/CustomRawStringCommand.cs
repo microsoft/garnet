@@ -3,7 +3,7 @@
 
 namespace Garnet.server
 {
-    class CustomCommand
+    class CustomRawStringCommand
     {
         public readonly string nameStr;
         public readonly int NumKeys;
@@ -14,7 +14,7 @@ namespace Garnet.server
         public readonly CustomRawStringFunctions functions;
         public long expirationTicks;
 
-        internal CustomCommand(string name, byte id, int numKeys, int numParams, CommandType type, CustomRawStringFunctions functions, long expirationTicks)
+        internal CustomRawStringCommand(string name, byte id, int numKeys, int numParams, CommandType type, CustomRawStringFunctions functions, long expirationTicks)
         {
             nameStr = name.ToUpperInvariant();
             this.name = System.Text.Encoding.ASCII.GetBytes(nameStr);

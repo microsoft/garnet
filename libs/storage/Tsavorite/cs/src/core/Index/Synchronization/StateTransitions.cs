@@ -91,6 +91,7 @@ namespace Tsavorite.core
         /// </summary>
         public Phase Phase
         {
+            [MethodImpl(MethodImplOptions.AggressiveInlining)]
             get
             {
                 return (Phase)((Word >> kPhaseShiftInWord) & kPhaseMaskInInteger);

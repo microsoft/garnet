@@ -214,7 +214,7 @@ namespace Garnet.server
                 public bool ConcurrentReader(ref SpanByte key, ref SpanByte value, RecordMetadata recordMetadata, long numberOfRecords, out CursorRecordResult cursorRecordResult)
                 {
                     if ((patternB != null && !GlobUtils.Match(patternB, patternLength, key.ToPointer(), key.Length, true))
-                        || (value.MetadataSize != 0 && MainStoreFunctions.CheckExpiry(ref value)))
+                        || (value.MetadataSize != 0 && MainSessionFunctions.CheckExpiry(ref value)))
                     {
                         cursorRecordResult = CursorRecordResult.Skip;
                     }
@@ -251,7 +251,7 @@ namespace Garnet.server
 
                 public bool ConcurrentReader(ref byte[] key, ref IGarnetObject value, RecordMetadata recordMetadata, long numberOfRecords, out CursorRecordResult cursorRecordResult)
                 {
-                    if (value.Expiration > 0 && ObjectStoreFunctions.CheckExpiry(value))
+                    if (value.Expiration > 0 && ObjectSessionFunctions.CheckExpiry(value))
                     {
                         cursorRecordResult = CursorRecordResult.Skip;
                         return true;
@@ -294,7 +294,7 @@ namespace Garnet.server
 
                 public bool SingleReader(ref SpanByte key, ref SpanByte value, RecordMetadata recordMetadata, long numberOfRecords, out CursorRecordResult cursorRecordResult)
                 {
-                    if (value.MetadataSize != 0 && MainStoreFunctions.CheckExpiry(ref value))
+                    if (value.MetadataSize != 0 && MainSessionFunctions.CheckExpiry(ref value))
                         cursorRecordResult = CursorRecordResult.Skip;
                     else
                     {
@@ -319,7 +319,7 @@ namespace Garnet.server
 
                 public bool SingleReader(ref byte[] key, ref IGarnetObject value, RecordMetadata recordMetadata, long numberOfRecords, out CursorRecordResult cursorRecordResult)
                 {
-                    if (value.Expiration > 0 && ObjectStoreFunctions.CheckExpiry(value))
+                    if (value.Expiration > 0 && ObjectSessionFunctions.CheckExpiry(value))
                         cursorRecordResult = CursorRecordResult.Skip;
                     else
                     {

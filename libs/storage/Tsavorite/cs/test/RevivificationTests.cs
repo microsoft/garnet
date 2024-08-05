@@ -15,6 +15,35 @@ using static Tsavorite.test.TestUtils;
 
 namespace Tsavorite.test.Revivification
 {
+    // Must be in a separate block so the "using StructStoreFunctions" is the first line in its namespace declaration.
+    internal readonly struct RevivificationSpanByteComparer : IKeyComparer<SpanByte>
+    {
+        private readonly SpanByteComparer defaultComparer;
+        private readonly int collisionRange;
+
+        internal RevivificationSpanByteComparer(CollisionRange range)
+        {
+            defaultComparer = new SpanByteComparer();
+            collisionRange = (int)range;
+        }
+
+        public bool Equals(ref SpanByte k1, ref SpanByte k2) => defaultComparer.Equals(ref k1, ref k2);
+
+        // The hash code ends with 0 so mod Ten isn't so helpful, so shift
+        public long GetHashCode64(ref SpanByte k) => (defaultComparer.GetHashCode64(ref k) >> 4) % collisionRange;
+    }
+}
+
+namespace Tsavorite.test.Revivification
+{
+    using ClassAllocator = GenericAllocator<MyKey, MyValue, StoreFunctions<MyKey, MyValue, MyKey.Comparer, DefaultRecordDisposer<MyKey, MyValue>>>;
+    using ClassStoreFunctions = StoreFunctions<MyKey, MyValue, MyKey.Comparer, DefaultRecordDisposer<MyKey, MyValue>>;
+
+    using IntAllocator = BlittableAllocator<int, int, StoreFunctions<int, int, IntKeyComparer, DefaultRecordDisposer<int, int>>>;
+    using IntStoreFunctions = StoreFunctions<int, int, IntKeyComparer, DefaultRecordDisposer<int, int>>;
+
+    using SpanByteStoreFunctions = StoreFunctions<SpanByte, SpanByte, RevivificationSpanByteComparer, SpanByteRecordDisposer>;
+
     public enum DeleteDest { FreeList, InChain }
 
     public enum CollisionRange { Ten = 10, None = int.MaxValue }
@@ -49,16 +78,25 @@ namespace Tsavorite.test.Revivification
                 Action = RMWAction.Default,
             };
 
-        internal static FreeRecordPool<TKey, TValue> CreateSingleBinFreeRecordPool<TKey, TValue>(TsavoriteKV<TKey, TValue> store, RevivificationBin binDef, int fixedRecordLength = 0)
-            => new(store, new RevivificationSettings() { FreeRecordBins = new[] { binDef } }, fixedRecordLength);
+        internal static FreeRecordPool<TKey, TValue, TStoreFunctions, TAllocator> CreateSingleBinFreeRecordPool<TKey, TValue, TStoreFunctions, TAllocator>(
+                TsavoriteKV<TKey, TValue, TStoreFunctions, TAllocator> store, RevivificationBin binDef, int fixedRecordLength = 0)
+            where TStoreFunctions : IStoreFunctions<TKey, TValue>
+            where TAllocator : IAllocator<TKey, TValue, TStoreFunctions>
+            => new(store, new RevivificationSettings() { FreeRecordBins = [binDef] }, fixedRecordLength);
 
-        internal static bool HasRecords<TKey, TValue>(TsavoriteKV<TKey, TValue> store)
+        internal static bool HasRecords<TKey, TValue, TStoreFunctions, TAllocator>(TsavoriteKV<TKey, TValue, TStoreFunctions, TAllocator> store)
+            where TStoreFunctions : IStoreFunctions<TKey, TValue>
+            where TAllocator : IAllocator<TKey, TValue, TStoreFunctions>
             => HasRecords(store.RevivificationManager.FreeRecordPool);
 
-        internal static bool HasRecords<TKey, TValue>(TsavoriteKV<TKey, TValue> store, FreeRecordPool<TKey, TValue> pool)
+        internal static bool HasRecords<TKey, TValue, TStoreFunctions, TAllocator>(TsavoriteKV<TKey, TValue, TStoreFunctions, TAllocator> store, FreeRecordPool<TKey, TValue, TStoreFunctions, TAllocator> pool)
+            where TStoreFunctions : IStoreFunctions<TKey, TValue>
+            where TAllocator : IAllocator<TKey, TValue, TStoreFunctions>
             => HasRecords(pool ?? store.RevivificationManager.FreeRecordPool);
 
-        internal static bool HasRecords<TKey, TValue>(FreeRecordPool<TKey, TValue> pool)
+        internal static bool HasRecords<TKey, TValue, TStoreFunctions, TAllocator>(FreeRecordPool<TKey, TValue, TStoreFunctions, TAllocator> pool)
+            where TStoreFunctions : IStoreFunctions<TKey, TValue>
+            where TAllocator : IAllocator<TKey, TValue, TStoreFunctions>
         {
             if (pool is not null)
             {
@@ -71,7 +109,10 @@ namespace Tsavorite.test.Revivification
             return false;
         }
 
-        internal static FreeRecordPool<TKey, TValue> SwapFreeRecordPool<TKey, TValue>(TsavoriteKV<TKey, TValue> store, FreeRecordPool<TKey, TValue> inPool)
+        internal static FreeRecordPool<TKey, TValue, TStoreFunctions, TAllocator> SwapFreeRecordPool<TKey, TValue, TStoreFunctions, TAllocator>(
+                TsavoriteKV<TKey, TValue, TStoreFunctions, TAllocator> store, FreeRecordPool<TKey, TValue, TStoreFunctions, TAllocator> inPool)
+            where TStoreFunctions : IStoreFunctions<TKey, TValue>
+            where TAllocator : IAllocator<TKey, TValue, TStoreFunctions>
         {
             var pool = store.RevivificationManager.FreeRecordPool;
             store.RevivificationManager.FreeRecordPool = inPool;
@@ -80,22 +121,45 @@ namespace Tsavorite.test.Revivification
 
         internal const int DefaultRecordWaitTimeoutMs = 2000;
 
-        internal static bool GetBinIndex<TKey, TValue>(FreeRecordPool<TKey, TValue> pool, int recordSize, out int binIndex) => pool.GetBinIndex(recordSize, out binIndex);
+        internal static bool GetBinIndex<TKey, TValue, TStoreFunctions, TAllocator>(FreeRecordPool<TKey, TValue, TStoreFunctions, TAllocator> pool, int recordSize, out int binIndex)
+            where TStoreFunctions : IStoreFunctions<TKey, TValue>
+            where TAllocator : IAllocator<TKey, TValue, TStoreFunctions>
+            => pool.GetBinIndex(recordSize, out binIndex);
 
-        internal static int GetBinCount<TKey, TValue>(FreeRecordPool<TKey, TValue> pool) => pool.bins.Length;
+        internal static int GetBinCount<TKey, TValue, TStoreFunctions, TAllocator>(FreeRecordPool<TKey, TValue, TStoreFunctions, TAllocator> pool)
+            where TStoreFunctions : IStoreFunctions<TKey, TValue>
+            where TAllocator : IAllocator<TKey, TValue, TStoreFunctions>
+            => pool.bins.Length;
 
-        internal static int GetRecordCount<TKey, TValue>(FreeRecordPool<TKey, TValue> pool, int binIndex) => pool.bins[binIndex].recordCount;
+        internal static int GetRecordCount<TKey, TValue, TStoreFunctions, TAllocator>(FreeRecordPool<TKey, TValue, TStoreFunctions, TAllocator> pool, int binIndex)
+            where TStoreFunctions : IStoreFunctions<TKey, TValue>
+            where TAllocator : IAllocator<TKey, TValue, TStoreFunctions>
+            => pool.bins[binIndex].recordCount;
 
-        internal static int GetMaxRecordSize<TKey, TValue>(FreeRecordPool<TKey, TValue> pool, int binIndex) => pool.bins[binIndex].maxRecordSize;
+        internal static int GetMaxRecordSize<TKey, TValue, TStoreFunctions, TAllocator>(FreeRecordPool<TKey, TValue, TStoreFunctions, TAllocator> pool, int binIndex)
+            where TStoreFunctions : IStoreFunctions<TKey, TValue>
+            where TAllocator : IAllocator<TKey, TValue, TStoreFunctions>
+            => pool.bins[binIndex].maxRecordSize;
 
-        internal static unsafe bool IsSet<TKey, TValue>(FreeRecordPool<TKey, TValue> pool, int binIndex, int recordIndex) => pool.bins[binIndex].records[recordIndex].IsSet;
+        internal static unsafe bool IsSet<TKey, TValue, TStoreFunctions, TAllocator>(FreeRecordPool<TKey, TValue, TStoreFunctions, TAllocator> pool, int binIndex, int recordIndex)
+            where TStoreFunctions : IStoreFunctions<TKey, TValue>
+            where TAllocator : IAllocator<TKey, TValue, TStoreFunctions>
+            => pool.bins[binIndex].records[recordIndex].IsSet;
 
-        internal static bool TryTakeFromBin<TKey, TValue>(FreeRecordPool<TKey, TValue> pool, int binIndex, int recordSize, long minAddress, TsavoriteKV<TKey, TValue> store, out long address, ref RevivificationStats revivStats)
+        internal static bool TryTakeFromBin<TKey, TValue, TStoreFunctions, TAllocator>(FreeRecordPool<TKey, TValue, TStoreFunctions, TAllocator> pool, int binIndex, int recordSize, long minAddress,
+                TsavoriteKV<TKey, TValue, TStoreFunctions, TAllocator> store, out long address, ref RevivificationStats revivStats)
+            where TStoreFunctions : IStoreFunctions<TKey, TValue>
+            where TAllocator : IAllocator<TKey, TValue, TStoreFunctions>
             => pool.bins[binIndex].TryTake(recordSize, minAddress, store, out address, ref revivStats);
 
-        internal static int GetSegmentStart<TKey, TValue>(FreeRecordPool<TKey, TValue> pool, int binIndex, int recordSize) => pool.bins[binIndex].GetSegmentStart(recordSize);
+        internal static int GetSegmentStart<TKey, TValue, TStoreFunctions, TAllocator>(FreeRecordPool<TKey, TValue, TStoreFunctions, TAllocator> pool, int binIndex, int recordSize)
+            where TStoreFunctions : IStoreFunctions<TKey, TValue>
+            where TAllocator : IAllocator<TKey, TValue, TStoreFunctions>
+            => pool.bins[binIndex].GetSegmentStart(recordSize);
 
-        internal static void WaitForRecords<TKey, TValue>(TsavoriteKV<TKey, TValue> store, bool want, FreeRecordPool<TKey, TValue> pool = default)
+        internal static void WaitForRecords<TKey, TValue, TStoreFunctions, TAllocator>(TsavoriteKV<TKey, TValue, TStoreFunctions, TAllocator> store, bool want, FreeRecordPool<TKey, TValue, TStoreFunctions, TAllocator> pool = default)
+            where TStoreFunctions : IStoreFunctions<TKey, TValue>
+            where TAllocator : IAllocator<TKey, TValue, TStoreFunctions>
         {
             pool ??= store.RevivificationManager.FreeRecordPool;
 
@@ -108,18 +172,23 @@ namespace Tsavorite.test.Revivification
                 {
                     if (sw.ElapsedMilliseconds >= DefaultRecordWaitTimeoutMs)
                         Assert.Less(sw.ElapsedMilliseconds, DefaultRecordWaitTimeoutMs, $"Timeout while waiting for Pool.WaitForRecords to be {want}");
-                    Thread.Yield();
+                    _ = Thread.Yield();
                 }
                 return;
             }
         }
 
-        internal static unsafe int GetFreeRecordCount<TKey, TValue>(TsavoriteKV<TKey, TValue> store) => GetFreeRecordCount(store.RevivificationManager.FreeRecordPool);
+        internal static unsafe int GetFreeRecordCount<TKey, TValue, TStoreFunctions, TAllocator>(TsavoriteKV<TKey, TValue, TStoreFunctions, TAllocator> store)
+            where TStoreFunctions : IStoreFunctions<TKey, TValue>
+            where TAllocator : IAllocator<TKey, TValue, TStoreFunctions>
+            => GetFreeRecordCount(store.RevivificationManager.FreeRecordPool);
 
-        internal static unsafe int GetFreeRecordCount<TKey, TValue>(FreeRecordPool<TKey, TValue> pool)
+        internal static unsafe int GetFreeRecordCount<TKey, TValue, TStoreFunctions, TAllocator>(FreeRecordPool<TKey, TValue, TStoreFunctions, TAllocator> pool)
+            where TStoreFunctions : IStoreFunctions<TKey, TValue>
+            where TAllocator : IAllocator<TKey, TValue, TStoreFunctions>
         {
             // This returns the count of all records, not just the free ones.
-            int count = 0;
+            var count = 0;
             if (pool is not null)
             {
                 foreach (var bin in pool.bins)
@@ -134,37 +203,30 @@ namespace Tsavorite.test.Revivification
             return count;
         }
 
-        internal static void AssertElidable<TKey, TValue>(TsavoriteKV<TKey, TValue> store, TKey key) => AssertElidable(store, ref key);
-        internal static void AssertElidable<TKey, TValue>(TsavoriteKV<TKey, TValue> store, ref TKey key)
+        internal static void AssertElidable<TKey, TValue, TStoreFunctions, TAllocator>(TsavoriteKV<TKey, TValue, TStoreFunctions, TAllocator> store, TKey key)
+            where TStoreFunctions : IStoreFunctions<TKey, TValue>
+            where TAllocator : IAllocator<TKey, TValue, TStoreFunctions>
+            => AssertElidable(store, ref key);
+
+        internal static void AssertElidable<TKey, TValue, TStoreFunctions, TAllocator>(TsavoriteKV<TKey, TValue, TStoreFunctions, TAllocator> store, ref TKey key)
+            where TStoreFunctions : IStoreFunctions<TKey, TValue>
+            where TAllocator : IAllocator<TKey, TValue, TStoreFunctions>
         {
-            OperationStackContext<TKey, TValue> stackCtx = new(store.comparer.GetHashCode64(ref key));
+            OperationStackContext<TKey, TValue, TStoreFunctions, TAllocator> stackCtx = new(store.storeFunctions.GetKeyHashCode64(ref key));
             Assert.IsTrue(store.FindTag(ref stackCtx.hei), $"AssertElidable: Cannot find key {key}");
             var recordInfo = store.hlog.GetInfo(store.hlog.GetPhysicalAddress(stackCtx.hei.Address));
-            Assert.Less(recordInfo.PreviousAddress, store.hlog.BeginAddress, "AssertElidable: expected elidable key");
+            Assert.Less(recordInfo.PreviousAddress, store.hlogBase.BeginAddress, "AssertElidable: expected elidable key");
         }
 
-        internal static int GetRevivifiableRecordCount<TKey, TValue>(TsavoriteKV<TKey, TValue> store, int numRecords)
+        internal static int GetRevivifiableRecordCount<TKey, TValue, TStoreFunctions, TAllocator>(TsavoriteKV<TKey, TValue, TStoreFunctions, TAllocator> store, int numRecords)
+            where TStoreFunctions : IStoreFunctions<TKey, TValue>
+            where TAllocator : IAllocator<TKey, TValue, TStoreFunctions>
             => (int)(numRecords * store.RevivificationManager.revivifiableFraction);
 
-        internal static int GetMinRevivifiableKey<TKey, TValue>(TsavoriteKV<TKey, TValue> store, int numRecords)
+        internal static int GetMinRevivifiableKey<TKey, TValue, TStoreFunctions, TAllocator>(TsavoriteKV<TKey, TValue, TStoreFunctions, TAllocator> store, int numRecords)
+            where TStoreFunctions : IStoreFunctions<TKey, TValue>
+            where TAllocator : IAllocator<TKey, TValue, TStoreFunctions>
             => numRecords - GetRevivifiableRecordCount(store, numRecords);
-    }
-
-    internal readonly struct RevivificationSpanByteComparer : ITsavoriteEqualityComparer<SpanByte>
-    {
-        private readonly SpanByteComparer defaultComparer;
-        private readonly int collisionRange;
-
-        internal RevivificationSpanByteComparer(CollisionRange range)
-        {
-            defaultComparer = new SpanByteComparer();
-            collisionRange = (int)range;
-        }
-
-        public bool Equals(ref SpanByte k1, ref SpanByte k2) => defaultComparer.Equals(ref k1, ref k2);
-
-        // The hash code ends with 0 so mod Ten isn't so helpful, so shift
-        public long GetHashCode64(ref SpanByte k) => (defaultComparer.GetHashCode64(ref k) >> 4) % collisionRange;
     }
 
     [TestFixture]
@@ -174,14 +236,14 @@ namespace Tsavorite.test.Revivification
         {
         }
 
-        const int numRecords = 1000;
-        internal const int valueMult = 1_000_000;
+        const int NumRecords = 1000;
+        internal const int ValueMult = 1_000_000;
 
         RevivificationFixedLenFunctions functions;
 
-        private TsavoriteKV<int, int> store;
-        private ClientSession<int, int, int, int, Empty, RevivificationFixedLenFunctions> session;
-        private BasicContext<int, int, int, int, Empty, RevivificationFixedLenFunctions> bContext;
+        private TsavoriteKV<int, int, IntStoreFunctions, IntAllocator> store;
+        private ClientSession<int, int, int, int, Empty, RevivificationFixedLenFunctions, IntStoreFunctions, IntAllocator> session;
+        private BasicContext<int, int, int, int, Empty, RevivificationFixedLenFunctions, IntStoreFunctions, IntAllocator> bContext;
         private IDevice log;
 
         [SetUp]
@@ -211,8 +273,15 @@ namespace Tsavorite.test.Revivification
                 revivificationSettings.RevivifiableFraction = revivifiableFraction.Value;
             if (recordElision.HasValue)
                 revivificationSettings.RestoreDeletedRecordsIfBinIsFull = recordElision.Value == RecordElision.NoElide;
-            store = new TsavoriteKV<int, int>(1L << 18, new LogSettings { LogDevice = log, ObjectLogDevice = null, PageSizeBits = 12, MemorySizeBits = 20 },
-                                            revivificationSettings: revivificationSettings);
+            store = new(new()
+            {
+                IndexSize = 1L << 24,
+                LogDevice = log,
+                PageSize = 1L << 12,
+                MemorySize = 1L << 20,
+                RevivificationSettings = revivificationSettings
+            }, StoreFunctions<int, int>.Create(IntKeyComparer.Instance)
+                , (allocatorSettings, storeFunctions) => new(allocatorSettings, storeFunctions));
             functions = new RevivificationFixedLenFunctions();
             session = store.NewSession<int, int, Empty, RevivificationFixedLenFunctions>(functions);
             bContext = session.BasicContext;
@@ -233,9 +302,9 @@ namespace Tsavorite.test.Revivification
 
         void Populate()
         {
-            for (int key = 0; key < numRecords; key++)
+            for (int key = 0; key < NumRecords; key++)
             {
-                var status = bContext.Upsert(key, key * valueMult);
+                var status = bContext.Upsert(key, key * ValueMult);
                 Assert.IsTrue(status.Record.Created, status.ToString());
             }
         }
@@ -251,16 +320,16 @@ namespace Tsavorite.test.Revivification
             if (stayInChain)
                 _ = RevivificationTestUtils.SwapFreeRecordPool(store, default);
 
-            var deleteKey = RevivificationTestUtils.GetMinRevivifiableKey(store, numRecords);
+            var deleteKey = RevivificationTestUtils.GetMinRevivifiableKey(store, NumRecords);
             if (!stayInChain)
                 RevivificationTestUtils.AssertElidable(store, deleteKey);
             var tailAddress = store.Log.TailAddress;
 
-            bContext.Delete(deleteKey);
+            _ = bContext.Delete(deleteKey);
             Assert.AreEqual(tailAddress, store.Log.TailAddress);
 
-            var updateKey = deleteDest == DeleteDest.InChain ? deleteKey : numRecords + 1;
-            var updateValue = updateKey + valueMult;
+            var updateKey = deleteDest == DeleteDest.InChain ? deleteKey : NumRecords + 1;
+            var updateValue = updateKey + ValueMult;
 
             if (!stayInChain)
             {
@@ -268,10 +337,7 @@ namespace Tsavorite.test.Revivification
                 RevivificationTestUtils.WaitForRecords(store, want: true);
             }
 
-            if (updateOp == UpdateOp.Upsert)
-                bContext.Upsert(updateKey, updateValue);
-            else if (updateOp == UpdateOp.RMW)
-                bContext.RMW(updateKey, updateValue);
+            _ = updateOp == UpdateOp.Upsert ? bContext.Upsert(updateKey, updateValue) : bContext.RMW(updateKey, updateValue);
 
             if (!stayInChain)
                 RevivificationTestUtils.WaitForRecords(store, want: false);
@@ -288,9 +354,9 @@ namespace Tsavorite.test.Revivification
             var tailAddress = store.Log.TailAddress;
 
             // First delete all keys. This will overflow the bin.
-            for (var key = 0; key < numRecords; ++key)
+            for (var key = 0; key < NumRecords; ++key)
             {
-                bContext.Delete(key);
+                _ = bContext.Delete(key);
                 Assert.AreEqual(tailAddress, store.Log.TailAddress);
             }
 
@@ -298,20 +364,17 @@ namespace Tsavorite.test.Revivification
             RevivificationTestUtils.WaitForRecords(store, want: true);
 
             // Now re-add the keys.
-            for (var key = 0; key < numRecords; ++key)
+            for (var key = 0; key < NumRecords; ++key)
             {
-                var value = key + valueMult;
-                if (updateOp == UpdateOp.Upsert)
-                    bContext.Upsert(key, value);
-                else if (updateOp == UpdateOp.RMW)
-                    bContext.RMW(key, value);
+                var value = key + ValueMult;
+                _ = updateOp == UpdateOp.Upsert ? bContext.Upsert(key, value) : bContext.RMW(key, value);
             }
 
             // Now re-add the keys. For the elision case, we should see tailAddress grow sharply as only the records in the bin are available
             // for revivification. For In-Chain, we will revivify records that were unelided after the bin overflowed. But we have some records
             // ineligible for revivification due to revivifiableFraction.
             var recordSize = RecordInfo.GetLength() + sizeof(int) * 2;
-            var numIneligibleRecords = numRecords - RevivificationTestUtils.GetRevivifiableRecordCount(store, numRecords);
+            var numIneligibleRecords = NumRecords - RevivificationTestUtils.GetRevivifiableRecordCount(store, NumRecords);
             var noElisionExpectedTailAddress = tailAddress + numIneligibleRecords * recordSize;
 
             if (elision == RecordElision.NoElide)
@@ -323,7 +386,9 @@ namespace Tsavorite.test.Revivification
         [Test]
         [Category(RevivificationCategory)]
         [Category(SmokeTestCategory)]
+#pragma warning disable IDE0060 // Remove unused parameter (used by setup)
         public void SimpleMinAddressAddTest([Values] RevivifiableFraction revivifiableFraction)
+#pragma warning restore IDE0060 // Remove unused parameter
         {
             Populate();
 
@@ -332,19 +397,21 @@ namespace Tsavorite.test.Revivification
             Assert.AreEqual(0, RevivificationTestUtils.GetFreeRecordCount(store));
 
             // This should go to FreeList because it's above the RevivifiableFraction
-            Assert.IsTrue(bContext.Delete(numRecords - 1).Found);
+            Assert.IsTrue(bContext.Delete(NumRecords - 1).Found);
             Assert.AreEqual(1, RevivificationTestUtils.GetFreeRecordCount(store));
         }
 
         [Test]
         [Category(RevivificationCategory)]
         [Category(SmokeTestCategory)]
+#pragma warning disable IDE0060 // Remove unused parameter (used by setup)
         public void SimpleMinAddressTakeTest([Values] RevivifiableFraction revivifiableFraction, [Values(UpdateOp.Upsert, UpdateOp.RMW)] UpdateOp updateOp)
+#pragma warning restore IDE0060 // Remove unused parameter
         {
             Populate();
 
             // This should go to FreeList because it's above the RevivifiableFraction
-            Assert.IsTrue(bContext.Delete(numRecords - 1).Found);
+            Assert.IsTrue(bContext.Delete(NumRecords - 1).Found);
             Assert.AreEqual(1, RevivificationTestUtils.GetFreeRecordCount(store));
             RevivificationTestUtils.WaitForRecords(store, want: true);
 
@@ -352,22 +419,18 @@ namespace Tsavorite.test.Revivification
             var pool = RevivificationTestUtils.SwapFreeRecordPool(store, default);
 
             // Now add a bunch of records to drop the FreeListed address below the RevivifiableFraction
-            int maxRecord = numRecords * 2;
-            for (int key = numRecords; key < maxRecord; key++)
+            int maxRecord = NumRecords * 2;
+            for (int key = NumRecords; key < maxRecord; key++)
             {
-                var status = bContext.Upsert(key, key * valueMult);
+                var status = bContext.Upsert(key, key * ValueMult);
                 Assert.IsTrue(status.Record.Created, status.ToString());
             }
 
             // Restore the pool
-            RevivificationTestUtils.SwapFreeRecordPool(store, pool);
+            _ = RevivificationTestUtils.SwapFreeRecordPool(store, pool);
 
             var tailAddress = store.Log.TailAddress;
-
-            if (updateOp == UpdateOp.Upsert)
-                bContext.Upsert(maxRecord, maxRecord * valueMult);
-            else if (updateOp == UpdateOp.RMW)
-                bContext.RMW(maxRecord, maxRecord * valueMult);
+            _ = updateOp == UpdateOp.Upsert ? bContext.Upsert(maxRecord, maxRecord * ValueMult) : bContext.RMW(maxRecord, maxRecord * ValueMult);
 
             Assert.Less(tailAddress, store.Log.TailAddress, "Expected tail address to grow (record was not revivified)");
         }
@@ -385,10 +448,10 @@ namespace Tsavorite.test.Revivification
 
         internal class RevivificationSpanByteFunctions : SpanByteFunctions<Empty>
         {
-            private readonly TsavoriteKV<SpanByte, SpanByte> store;
+            private readonly TsavoriteKV<SpanByte, SpanByte, SpanByteStoreFunctions, SpanByteAllocator<SpanByteStoreFunctions>> store;
 
             // Must be set after session is created
-            internal ClientSession<SpanByte, SpanByte, SpanByte, SpanByteAndMemory, Empty, RevivificationSpanByteFunctions> session;
+            internal ClientSession<SpanByte, SpanByte, SpanByte, SpanByteAndMemory, Empty, RevivificationSpanByteFunctions, SpanByteStoreFunctions, SpanByteAllocator<SpanByteStoreFunctions>> session;
 
             internal int expectedConcurrentDestLength = InitialLength;
             internal int expectedSingleDestLength = InitialLength;
@@ -402,7 +465,7 @@ namespace Tsavorite.test.Revivification
 
             internal bool readCcCalled, rmwCcCalled;
 
-            internal RevivificationSpanByteFunctions(TsavoriteKV<SpanByte, SpanByte> store)
+            internal RevivificationSpanByteFunctions(TsavoriteKV<SpanByte, SpanByte, SpanByteStoreFunctions, SpanByteAllocator<SpanByteStoreFunctions>> store)
             {
                 this.store = store;
             }
@@ -459,15 +522,15 @@ namespace Tsavorite.test.Revivification
 
                 if (value.Length == 0)
                 {
-                    Assert.AreEqual(expectedUsedValueLength, rmwInfo.UsedValueLength);   // for the length header
-                    Assert.AreEqual(SpanByteAllocator.kRecordAlignment, rmwInfo.FullValueLength); // This should be the "added record for Delete" case, so a "default" value
+                    Assert.AreEqual(expectedUsedValueLength, rmwInfo.UsedValueLength);      // for the length header
+                    Assert.AreEqual(Constants.kRecordAlignment, rmwInfo.FullValueLength);   // This should be the "added record for Delete" case, so a "default" value
                 }
                 else
                 {
                     Assert.AreEqual(expectedSingleDestLength, value.Length);
                     Assert.AreEqual(expectedSingleFullValueLength, rmwInfo.FullValueLength);
                     Assert.AreEqual(expectedUsedValueLength, rmwInfo.UsedValueLength);
-                    Assert.GreaterOrEqual(rmwInfo.Address, store.hlog.ReadOnlyAddress);
+                    Assert.GreaterOrEqual(rmwInfo.Address, store.hlogBase.ReadOnlyAddress);
                 }
                 return base.InitialUpdater(ref key, ref input, ref value, ref output, ref rmwInfo, ref recordInfo);
             }
@@ -481,15 +544,15 @@ namespace Tsavorite.test.Revivification
 
                 if (newValue.Length == 0)
                 {
-                    Assert.AreEqual(sizeof(int), rmwInfo.UsedValueLength);   // for the length header
-                    Assert.AreEqual(SpanByteAllocator.kRecordAlignment, rmwInfo.FullValueLength); // This should be the "added record for Delete" case, so a "default" value
+                    Assert.AreEqual(sizeof(int), rmwInfo.UsedValueLength);                  // for the length header
+                    Assert.AreEqual(Constants.kRecordAlignment, rmwInfo.FullValueLength);   // This should be the "added record for Delete" case, so a "default" value
                 }
                 else
                 {
                     Assert.AreEqual(expectedSingleDestLength, newValue.Length);
                     Assert.AreEqual(expectedSingleFullValueLength, rmwInfo.FullValueLength);
                     Assert.AreEqual(expectedUsedValueLength, rmwInfo.UsedValueLength);
-                    Assert.GreaterOrEqual(rmwInfo.Address, store.hlog.ReadOnlyAddress);
+                    Assert.GreaterOrEqual(rmwInfo.Address, store.hlogBase.ReadOnlyAddress);
                 }
                 return base.CopyUpdater(ref key, ref input, ref oldValue, ref newValue, ref output, ref rmwInfo, ref recordInfo);
             }
@@ -506,7 +569,7 @@ namespace Tsavorite.test.Revivification
                 var expectedUsedValueLength = expectedUsedValueLengths.Dequeue();
                 Assert.AreEqual(expectedUsedValueLength, rmwInfo.UsedValueLength);
 
-                Assert.GreaterOrEqual(rmwInfo.Address, store.hlog.ReadOnlyAddress);
+                Assert.GreaterOrEqual(rmwInfo.Address, store.hlogBase.ReadOnlyAddress);
 
                 return base.InPlaceUpdater(ref key, ref input, ref value, ref output, ref rmwInfo, ref recordInfo);
             }
@@ -523,7 +586,7 @@ namespace Tsavorite.test.Revivification
                 var expectedUsedValueLength = expectedUsedValueLengths.Dequeue();
                 Assert.AreEqual(expectedUsedValueLength, deleteInfo.UsedValueLength);
 
-                Assert.GreaterOrEqual(deleteInfo.Address, store.hlog.ReadOnlyAddress);
+                Assert.GreaterOrEqual(deleteInfo.Address, store.hlogBase.ReadOnlyAddress);
 
                 return base.SingleDeleter(ref key, ref value, ref deleteInfo, ref recordInfo);
             }
@@ -537,7 +600,7 @@ namespace Tsavorite.test.Revivification
                 var expectedUsedValueLength = expectedUsedValueLengths.Dequeue();
                 Assert.AreEqual(expectedUsedValueLength, deleteInfo.UsedValueLength);
 
-                Assert.GreaterOrEqual(deleteInfo.Address, store.hlog.ReadOnlyAddress);
+                Assert.GreaterOrEqual(deleteInfo.Address, store.hlogBase.ReadOnlyAddress);
 
                 return base.ConcurrentDeleter(ref key, ref value, ref deleteInfo, ref recordInfo);
             }
@@ -583,20 +646,20 @@ namespace Tsavorite.test.Revivification
 
         static int RoundUpSpanByteFullValueLength(int dataLength) => RoundupTotalSizeFullValue(sizeof(int) + dataLength);
 
-        internal static int RoundupTotalSizeFullValue(int length) => (length + SpanByteAllocator.kRecordAlignment - 1) & (~(SpanByteAllocator.kRecordAlignment - 1));
+        internal static int RoundupTotalSizeFullValue(int length) => (length + Constants.kRecordAlignment - 1) & (~(Constants.kRecordAlignment - 1));
 
         static int RoundUpSpanByteUsedLength(int dataLength) => RoundUp(SpanByteTotalSize(dataLength), sizeof(int));
 
         static int SpanByteTotalSize(int dataLength) => sizeof(int) + dataLength;
 
-        const int numRecords = 200;
+        const int NumRecords = 200;
 
         RevivificationSpanByteFunctions functions;
         RevivificationSpanByteComparer comparer;
 
-        private TsavoriteKV<SpanByte, SpanByte> store;
-        private ClientSession<SpanByte, SpanByte, SpanByte, SpanByteAndMemory, Empty, RevivificationSpanByteFunctions> session;
-        private BasicContext<SpanByte, SpanByte, SpanByte, SpanByteAndMemory, Empty, RevivificationSpanByteFunctions> bContext;
+        private TsavoriteKV<SpanByte, SpanByte, SpanByteStoreFunctions, SpanByteAllocator<SpanByteStoreFunctions>> store;
+        private ClientSession<SpanByte, SpanByte, SpanByte, SpanByteAndMemory, Empty, RevivificationSpanByteFunctions, SpanByteStoreFunctions, SpanByteAllocator<SpanByteStoreFunctions>> session;
+        private BasicContext<SpanByte, SpanByte, SpanByte, SpanByteAndMemory, Empty, RevivificationSpanByteFunctions, SpanByteStoreFunctions, SpanByteAllocator<SpanByteStoreFunctions>> bContext;
         private IDevice log;
 
         [SetUp]
@@ -606,8 +669,16 @@ namespace Tsavorite.test.Revivification
             log = Devices.CreateLogDevice(Path.Combine(MethodTestDir, "test.log"), deleteOnClose: true);
 
             CollisionRange collisionRange = CollisionRange.None;
-            LogSettings logSettings = new() { LogDevice = log, ObjectLogDevice = null, PageSizeBits = 17, MemorySizeBits = 20 };
-            var revivificationSettings = RevivificationSettings.PowerOf2Bins;
+
+            var kvSettings = new KVSettings<SpanByte, SpanByte>()
+            {
+                IndexSize = 1L << 24,
+                LogDevice = log,
+                PageSize = 1L << 17,
+                MemorySize = 1L << 20,
+                RevivificationSettings = RevivificationSettings.PowerOf2Bins
+            };
+
             foreach (var arg in TestContext.CurrentContext.Test.Arguments)
             {
                 if (arg is CollisionRange cr)
@@ -617,19 +688,22 @@ namespace Tsavorite.test.Revivification
                 }
                 if (arg is PendingOp)
                 {
-                    logSettings.ReadCopyOptions = new(ReadCopyFrom.Device, ReadCopyTo.MainLog);
+                    kvSettings.ReadCopyOptions = new(ReadCopyFrom.Device, ReadCopyTo.MainLog);
                     continue;
                 }
                 if (arg is RevivificationEnabled revivEnabled)
                 {
                     if (revivEnabled == RevivificationEnabled.NoReviv)
-                        revivificationSettings = default;
+                        kvSettings.RevivificationSettings = default;
                     continue;
                 }
             }
 
             comparer = new RevivificationSpanByteComparer(collisionRange);
-            store = new TsavoriteKV<SpanByte, SpanByte>(1L << 16, logSettings, comparer: comparer, revivificationSettings: revivificationSettings);
+            store = new(kvSettings
+                , StoreFunctions<SpanByte, SpanByte>.Create(comparer, SpanByteRecordDisposer.Instance)
+                , (allocatorSettings, storeFunctions) => new(allocatorSettings, storeFunctions)
+            );
 
             functions = new RevivificationSpanByteFunctions(store);
             session = store.NewSession<SpanByte, SpanByteAndMemory, Empty, RevivificationSpanByteFunctions>(functions);
@@ -650,7 +724,7 @@ namespace Tsavorite.test.Revivification
             DeleteDirectory(MethodTestDir);
         }
 
-        void Populate() => Populate(0, numRecords);
+        void Populate() => Populate(0, NumRecords);
 
         void Populate(int from, int to)
         {
@@ -714,11 +788,8 @@ namespace Tsavorite.test.Revivification
                 functions.expectedUsedValueLengths.Enqueue(sizeof(int) + GrowLength);
 
             SpanByteAndMemory output = new();
+            _ = updateOp == UpdateOp.Upsert ? bContext.Upsert(ref key, ref input, ref input, ref output) : bContext.RMW(ref key, ref input);
 
-            if (updateOp == UpdateOp.Upsert)
-                bContext.Upsert(ref key, ref input, ref input, ref output);
-            else if (updateOp == UpdateOp.RMW)
-                bContext.RMW(ref key, ref input);
             Assert.IsEmpty(functions.expectedUsedValueLengths);
 
             if (growth == Growth.Shrink)
@@ -736,10 +807,7 @@ namespace Tsavorite.test.Revivification
                 functions.expectedSingleFullValueLength = RoundUpSpanByteFullValueLength(functions.expectedInputLength);
                 functions.expectedUsedValueLengths.Enqueue(input.TotalSize);
 
-                if (updateOp == UpdateOp.Upsert)
-                    bContext.Upsert(ref key, ref input, ref input, ref output);
-                else if (updateOp == UpdateOp.RMW)
-                    bContext.RMW(ref key, ref input);
+                _ = updateOp == UpdateOp.Upsert ? bContext.Upsert(ref key, ref input, ref input, ref output) : bContext.RMW(ref key, ref input);
                 Assert.IsEmpty(functions.expectedUsedValueLengths);
             }
         }
@@ -778,10 +846,7 @@ namespace Tsavorite.test.Revivification
 
             RevivificationTestUtils.WaitForRecords(store, want: true);
 
-            if (updateOp == UpdateOp.Upsert)
-                bContext.Upsert(ref key, ref input, ref input, ref output);
-            else if (updateOp == UpdateOp.RMW)
-                bContext.RMW(ref key, ref input);
+            _ = updateOp == UpdateOp.Upsert ? bContext.Upsert(ref key, ref input, ref input, ref output) : bContext.RMW(ref key, ref input);
             Assert.AreEqual(tailAddress, store.Log.TailAddress);
         }
 
@@ -835,7 +900,7 @@ namespace Tsavorite.test.Revivification
             RevivificationTestUtils.WaitForRecords(store, want: true);
 
             // Get a new key and shrink the requested length so we revivify the free record from the failed IPU.
-            keyVec.Fill(numRecords + 1);
+            keyVec.Fill(NumRecords + 1);
             input = SpanByte.FromPinnedSpan(inputVec.Slice(0, InitialLength));
 
             functions.expectedInputLength = InitialLength;
@@ -893,30 +958,25 @@ namespace Tsavorite.test.Revivification
             functions.expectedSingleFullValueLength = functions.expectedConcurrentFullValueLength = RoundUpSpanByteFullValueLength(input);
             functions.expectedUsedValueLengths.Enqueue(SpanByteTotalSize(InitialLength));
 
-            if (updateOp == UpdateOp.Upsert)
-                bContext.Upsert(ref key, ref input, ref input, ref output);
-            else if (updateOp == UpdateOp.RMW)
-                bContext.RMW(ref key, ref input);
+            _ = updateOp == UpdateOp.Upsert ? bContext.Upsert(ref key, ref input, ref input, ref output) : bContext.RMW(ref key, ref input);
             Assert.Greater(store.Log.TailAddress, tailAddress);
         }
 
         public enum UpdateKey { Unfound, DeletedAboveRO, DeletedBelowRO, CopiedBelowRO };
 
-        const byte unfound = numRecords + 2;
-        const byte delBelowRO = numRecords / 2 - 4;
-        const byte copiedBelowRO = numRecords / 2 - 5;
+        const byte Unfound = NumRecords + 2;
+        const byte DelBelowRO = NumRecords / 2 - 4;
+        const byte CopiedBelowRO = NumRecords / 2 - 5;
 
         private long PrepareDeletes(bool stayInChain, byte delAboveRO, FlushMode flushMode, CollisionRange collisionRange)
         {
-            Populate(0, numRecords / 2);
+            Populate(0, NumRecords / 2);
 
-            FreeRecordPool<SpanByte, SpanByte> pool = default;
-            if (stayInChain)
-                pool = RevivificationTestUtils.SwapFreeRecordPool(store, pool);
+            var pool = stayInChain ? RevivificationTestUtils.SwapFreeRecordPool(store, null) : null;
 
             // Delete key below (what will be) the readonly line. This is for a target for the test; the record should not be revivified.
             Span<byte> keyVecDelBelowRO = stackalloc byte[KeyLength];
-            keyVecDelBelowRO.Fill(delBelowRO);
+            keyVecDelBelowRO.Fill(DelBelowRO);
             var delKeyBelowRO = SpanByte.FromPinnedSpan(keyVecDelBelowRO);
 
             functions.expectedUsedValueLengths.Enqueue(SpanByteTotalSize(InitialLength));
@@ -928,7 +988,7 @@ namespace Tsavorite.test.Revivification
             else if (flushMode == FlushMode.OnDisk)
                 store.Log.FlushAndEvict(wait: true);
 
-            Populate(numRecords / 2 + 1, numRecords);
+            Populate(NumRecords / 2 + 1, NumRecords);
 
             var tailAddress = store.Log.TailAddress;
 
@@ -976,7 +1036,7 @@ namespace Tsavorite.test.Revivification
 
             bool stayInChain = deleteDest == DeleteDest.InChain || collisionRange != CollisionRange.None;   // Collisions make the key inelidable
 
-            byte delAboveRO = (byte)(numRecords - (stayInChain
+            byte delAboveRO = (byte)(NumRecords - (stayInChain
                 ? (int)CollisionRange.Ten + 3       // Will remain in chain
                 : 2));                              // Will be sent to free list
 
@@ -991,13 +1051,13 @@ namespace Tsavorite.test.Revivification
             var keyToTest = SpanByte.FromPinnedSpan(keyVecToTest);
 
             bool expectReviv;
-            if (updateKey == UpdateKey.Unfound || updateKey == UpdateKey.CopiedBelowRO)
+            if (updateKey is UpdateKey.Unfound or UpdateKey.CopiedBelowRO)
             {
                 // Unfound key should be satisfied from the freelist if !stayInChain, else will allocate a new record as it does not match the key chain.
                 // CopiedBelowRO should be satisfied from the freelist if !stayInChain, else will allocate a new record as it does not match the key chain
                 //      (but exercises a different code path than Unfound).
                 // CollisionRange.Ten has a valid PreviousAddress so it is not elided from the cache.
-                byte fillByte = updateKey == UpdateKey.Unfound ? unfound : copiedBelowRO;
+                byte fillByte = updateKey == UpdateKey.Unfound ? Unfound : CopiedBelowRO;
                 keyVecToTest.Fill(fillByte);
                 inputVec.Fill(fillByte);
                 expectReviv = !stayInChain && collisionRange != CollisionRange.Ten;
@@ -1006,7 +1066,7 @@ namespace Tsavorite.test.Revivification
             {
                 // DeletedBelowRO will not match the key for the in-chain above-RO slot, and we cannot reviv below RO or retrieve below-RO from the
                 // freelist, so we will always allocate a new record unless we're using the freelist.
-                byte fillByte = delBelowRO;
+                byte fillByte = DelBelowRO;
                 keyVecToTest.Fill(fillByte);
                 inputVec.Fill(fillByte);
                 expectReviv = !stayInChain && collisionRange != CollisionRange.Ten;
@@ -1032,10 +1092,7 @@ namespace Tsavorite.test.Revivification
                 functions.expectedSingleFullValueLength = functions.expectedConcurrentFullValueLength = RoundUpSpanByteFullValueLength(input);
             functions.expectedUsedValueLengths.Enqueue(SpanByteTotalSize(InitialLength));
 
-            if (updateOp == UpdateOp.Upsert)
-                bContext.Upsert(ref keyToTest, ref input, ref input, ref output);
-            else if (updateOp == UpdateOp.RMW)
-                bContext.RMW(ref keyToTest, ref input);
+            _ = updateOp == UpdateOp.Upsert ? bContext.Upsert(ref keyToTest, ref input, ref input, ref output) : bContext.RMW(ref keyToTest, ref input);
 
             if (expectReviv)
                 Assert.AreEqual(tailAddress, store.Log.TailAddress);
@@ -1055,7 +1112,7 @@ namespace Tsavorite.test.Revivification
                 _ = RevivificationTestUtils.SwapFreeRecordPool(store, default);
 
             // This freed record stays in the hash chain.
-            byte chainKey = numRecords / 2 - 1;
+            byte chainKey = NumRecords / 2 - 1;
             Span<byte> keyVec = stackalloc byte[KeyLength];
             keyVec.Fill(chainKey);
             var key = SpanByte.FromPinnedSpan(keyVec);
@@ -1079,10 +1136,7 @@ namespace Tsavorite.test.Revivification
 
             // Revivify in the chain. Because this stays in the chain, the expectedFullValueLength is roundup(InitialLength)
             functions.expectedUsedValueLengths.Enqueue(SpanByteTotalSize(InitialLength));
-            if (updateOp == UpdateOp.Upsert)
-                bContext.Upsert(ref key, ref input, ref input, ref output);
-            else if (updateOp == UpdateOp.RMW)
-                bContext.RMW(ref key, ref input);
+            _ = updateOp == UpdateOp.Upsert ? bContext.Upsert(ref key, ref input, ref input, ref output) : bContext.RMW(ref key, ref input);
 
             Assert.AreEqual(tailAddress, store.Log.TailAddress);
         }
@@ -1101,8 +1155,8 @@ namespace Tsavorite.test.Revivification
             var key = SpanByte.FromPinnedSpan(keyVec);
             var hash = comparer.GetHashCode64(ref key);
 
-            List<byte> deletedSlots = new();
-            for (int ii = chainKey + 1; ii < numRecords; ++ii)
+            List<byte> deletedSlots = [];
+            for (int ii = chainKey + 1; ii < NumRecords; ++ii)
             {
                 keyVec.Fill((byte)ii);
                 if (comparer.GetHashCode64(ref key) != hash)
@@ -1111,12 +1165,12 @@ namespace Tsavorite.test.Revivification
                 functions.expectedUsedValueLengths.Enqueue(SpanByteTotalSize(InitialLength));
                 var status = bContext.Delete(ref key);
                 Assert.IsTrue(status.Found, status.ToString());
-                if (ii > RevivificationTestUtils.GetMinRevivifiableKey(store, numRecords))
+                if (ii > RevivificationTestUtils.GetMinRevivifiableKey(store, NumRecords))
                     deletedSlots.Add((byte)ii);
             }
 
             // For this test we're still limiting to byte repetition
-            Assert.Greater(255 - numRecords, deletedSlots.Count);
+            Assert.Greater(255 - NumRecords, deletedSlots.Count);
             RevivificationTestUtils.WaitForRecords(store, want: false);
             Assert.IsFalse(RevivificationTestUtils.HasRecords(store), "Expected empty pool");
             Assert.Greater(deletedSlots.Count, 5);    // should be about Ten
@@ -1134,10 +1188,7 @@ namespace Tsavorite.test.Revivification
                 keyVec.Fill(deletedSlots[ii]);
 
                 functions.expectedUsedValueLengths.Enqueue(SpanByteTotalSize(InitialLength));
-                if (updateOp == UpdateOp.Upsert)
-                    bContext.Upsert(ref key, ref input, ref input, ref output);
-                else if (updateOp == UpdateOp.RMW)
-                    bContext.RMW(ref key, ref input);
+                _ = updateOp == UpdateOp.Upsert ? bContext.Upsert(ref key, ref input, ref input, ref output) : bContext.RMW(ref key, ref input);
                 Assert.AreEqual(tailAddress, store.Log.TailAddress);
             }
         }
@@ -1158,7 +1209,7 @@ namespace Tsavorite.test.Revivification
             var recordSize = RecordInfo.GetLength() + RoundUp(sizeof(int) + keyVec.Length, 8) + RoundUp(sizeof(int) + InitialLength, 8);
 
             // Delete
-            for (var ii = 0; ii < numRecords; ++ii)
+            for (var ii = 0; ii < NumRecords; ++ii)
             {
                 keyVec.Fill((byte)ii);
 
@@ -1167,7 +1218,7 @@ namespace Tsavorite.test.Revivification
                 Assert.IsTrue(status.Found, status.ToString());
             }
             Assert.AreEqual(tailAddress, store.Log.TailAddress);
-            Assert.AreEqual(RevivificationTestUtils.GetRevivifiableRecordCount(store, numRecords), RevivificationTestUtils.GetFreeRecordCount(store), $"Expected numRecords ({numRecords}) free records");
+            Assert.AreEqual(RevivificationTestUtils.GetRevivifiableRecordCount(store, NumRecords), RevivificationTestUtils.GetFreeRecordCount(store), $"Expected numRecords ({NumRecords}) free records");
 
             Span<byte> inputVec = stackalloc byte[InitialLength];
             var input = SpanByte.FromPinnedSpan(inputVec);
@@ -1182,17 +1233,14 @@ namespace Tsavorite.test.Revivification
             functions.expectedSingleFullValueLength = functions.expectedConcurrentFullValueLength = RoundUpSpanByteFullValueLength(InitialLength);
 
             // Revivify
-            var revivifiableKeyCount = RevivificationTestUtils.GetRevivifiableRecordCount(store, numRecords);
-            for (var ii = 0; ii < numRecords; ++ii)
+            var revivifiableKeyCount = RevivificationTestUtils.GetRevivifiableRecordCount(store, NumRecords);
+            for (var ii = 0; ii < NumRecords; ++ii)
             {
                 keyVec.Fill((byte)ii);
                 inputVec.Fill((byte)ii);
 
                 functions.expectedUsedValueLengths.Enqueue(SpanByteTotalSize(InitialLength));
-                if (updateOp == UpdateOp.Upsert)
-                    bContext.Upsert(ref key, ref input, ref input, ref output);
-                else if (updateOp == UpdateOp.RMW)
-                    bContext.RMW(ref key, ref input);
+                _ = updateOp == UpdateOp.Upsert ? bContext.Upsert(ref key, ref input, ref input, ref output) : bContext.RMW(ref key, ref input);
                 if (ii < revivifiableKeyCount)
                     Assert.AreEqual(tailAddress, store.Log.TailAddress, $"unexpected new record for key {ii}");
                 else
@@ -1206,7 +1254,7 @@ namespace Tsavorite.test.Revivification
             RevivificationTestUtils.WaitForRecords(store, want: false);
 
             // Confirm
-            for (var ii = 0; ii < numRecords; ++ii)
+            for (var ii = 0; ii < NumRecords; ++ii)
             {
                 keyVec.Fill((byte)ii);
                 var status = bContext.Read(ref key, ref output);
@@ -1225,7 +1273,7 @@ namespace Tsavorite.test.Revivification
             var key = SpanByte.FromPinnedSpan(keyVec);
 
             // Delete
-            for (var ii = 0; ii < numRecords; ++ii)
+            for (var ii = 0; ii < NumRecords; ++ii)
             {
                 keyVec.Fill((byte)ii);
 
@@ -1233,7 +1281,7 @@ namespace Tsavorite.test.Revivification
                 var status = bContext.Delete(ref key);
                 Assert.IsTrue(status.Found, status.ToString());
             }
-            Assert.AreEqual(RevivificationTestUtils.GetRevivifiableRecordCount(store, numRecords), RevivificationTestUtils.GetFreeRecordCount(store), $"Expected numRecords ({numRecords}) free records");
+            Assert.AreEqual(RevivificationTestUtils.GetRevivifiableRecordCount(store, NumRecords), RevivificationTestUtils.GetFreeRecordCount(store), $"Expected numRecords ({NumRecords}) free records");
 
             _ = store.TakeHybridLogCheckpointAsync(CheckpointType.Snapshot).GetAwaiter().GetResult();
         }
@@ -1249,7 +1297,7 @@ namespace Tsavorite.test.Revivification
             var key = SpanByte.FromPinnedSpan(keyVec);
 
             // Delete
-            for (var ii = 0; ii < numRecords; ++ii)
+            for (var ii = 0; ii < NumRecords; ++ii)
             {
                 keyVec.Fill((byte)ii);
 
@@ -1259,7 +1307,7 @@ namespace Tsavorite.test.Revivification
                 var status = bContext.Delete(ref key);
                 Assert.IsTrue(status.Found, status.ToString());
             }
-            Assert.AreEqual(RevivificationTestUtils.GetRevivifiableRecordCount(store, numRecords), RevivificationTestUtils.GetFreeRecordCount(store), $"Expected numRecords ({numRecords}) free records");
+            Assert.AreEqual(RevivificationTestUtils.GetRevivifiableRecordCount(store, NumRecords), RevivificationTestUtils.GetFreeRecordCount(store), $"Expected numRecords ({NumRecords}) free records");
 
             using var iterator = session.Iterate();
             while (iterator.GetNext(out _))
@@ -1271,7 +1319,7 @@ namespace Tsavorite.test.Revivification
         [Category(SmokeTestCategory)]
         public void BinSelectionTest()
         {
-            FreeRecordPool<SpanByte, SpanByte> pool = store.RevivificationManager.FreeRecordPool;
+            var pool = store.RevivificationManager.FreeRecordPool;
             int expectedBin = 0, recordSize = RevivificationTestUtils.GetMaxRecordSize(pool, expectedBin);
             while (true)
             {
@@ -1298,7 +1346,7 @@ namespace Tsavorite.test.Revivification
         //[Repeat(30)]
         public unsafe void ArtificialBinWrappingTest()
         {
-            FreeRecordPool<SpanByte, SpanByte> pool = store.RevivificationManager.FreeRecordPool;
+            var pool = store.RevivificationManager.FreeRecordPool;
 
             if (TestContext.CurrentContext.CurrentRepeatCount > 0)
                 Debug.WriteLine($"*** Current test iteration: {TestContext.CurrentContext.CurrentRepeatCount + 1} ***");
@@ -1339,7 +1387,7 @@ namespace Tsavorite.test.Revivification
             revivStats.Reset();
             for (var ii = 0; ii < recordCount; ++ii)
                 Assert.IsTrue(RevivificationTestUtils.TryTakeFromBin(pool, binIndex, recordSize, minAddress, store, out _, ref revivStats), $"ArtificialBinWrappingTest: failed to Take at ii == {ii}");
-            var statsString = revivStats.Dump();
+            _ = revivStats.Dump();
         }
 
         [Test]
@@ -1355,7 +1403,7 @@ namespace Tsavorite.test.Revivification
 
             // Note: this test assumes no collisions (every delete goes to the FreeList)
 
-            FreeRecordPool<SpanByte, SpanByte> pool = store.RevivificationManager.FreeRecordPool;
+            var pool = store.RevivificationManager.FreeRecordPool;
 
             Span<byte> keyVec = stackalloc byte[KeyLength];
             var key = SpanByte.FromPinnedSpan(keyVec);
@@ -1373,7 +1421,7 @@ namespace Tsavorite.test.Revivification
 
             // Delete 
             functions.expectedInputLength = InitialLength;
-            for (var ii = 0; ii < numRecords; ++ii)
+            for (var ii = 0; ii < NumRecords; ++ii)
             {
                 keyVec.Fill((byte)ii);
                 inputVec.Fill((byte)ii);
@@ -1387,14 +1435,14 @@ namespace Tsavorite.test.Revivification
             if (deleteDest == DeleteDest.FreeList && waitMode == WaitMode.Wait)
             {
                 var actualNumRecords = RevivificationTestUtils.GetFreeRecordCount(store);
-                Assert.AreEqual(RevivificationTestUtils.GetRevivifiableRecordCount(store, numRecords), actualNumRecords, $"mismatched free record count");
+                Assert.AreEqual(RevivificationTestUtils.GetRevivifiableRecordCount(store, NumRecords), actualNumRecords, $"mismatched free record count");
             }
 
             // Revivify
             functions.expectedInputLength = InitialLength;
             functions.expectedSingleDestLength = InitialLength;
             functions.expectedConcurrentDestLength = InitialLength;
-            for (var ii = 0; ii < numRecords; ++ii)
+            for (var ii = 0; ii < NumRecords; ++ii)
             {
                 keyVec.Fill((byte)ii);
                 inputVec.Fill((byte)ii);
@@ -1403,15 +1451,12 @@ namespace Tsavorite.test.Revivification
                 long tailAddress = store.Log.TailAddress;
 
                 SpanByteAndMemory output = new();
-                if (updateOp == UpdateOp.Upsert)
-                    bContext.Upsert(ref key, ref input, ref input, ref output);
-                else if (updateOp == UpdateOp.RMW)
-                    bContext.RMW(ref key, ref input);
+                _ = updateOp == UpdateOp.Upsert ? bContext.Upsert(ref key, ref input, ref input, ref output) : bContext.RMW(ref key, ref input);
                 output.Memory?.Dispose();
 
                 if (deleteDest == DeleteDest.FreeList && waitMode == WaitMode.Wait && tailAddress != store.Log.TailAddress)
                 {
-                    var expectedReviv = ii < RevivificationTestUtils.GetRevivifiableRecordCount(store, numRecords);
+                    var expectedReviv = ii < RevivificationTestUtils.GetRevivifiableRecordCount(store, NumRecords);
                     if (expectedReviv != (tailAddress == store.Log.TailAddress))
                     {
                         var freeRecs = RevivificationTestUtils.GetFreeRecordCount(store);
@@ -1448,7 +1493,7 @@ namespace Tsavorite.test.Revivification
             {
                 // Delete 
                 functions.expectedInputLength = InitialLength;
-                for (var ii = 0; ii < numRecords; ++ii)
+                for (var ii = 0; ii < NumRecords; ++ii)
                 {
                     keyVec.Fill((byte)ii);
                     inputVec.Fill((byte)ii);
@@ -1458,7 +1503,7 @@ namespace Tsavorite.test.Revivification
                     Assert.IsTrue(status.Found, $"{status} for key {ii}, iter {iter}");
                 }
 
-                for (var ii = 0; ii < numRecords; ++ii)
+                for (var ii = 0; ii < NumRecords; ++ii)
                 {
                     keyVec.Fill((byte)ii);
                     inputVec.Fill((byte)ii);
@@ -1466,10 +1511,7 @@ namespace Tsavorite.test.Revivification
                     functions.expectedUsedValueLengths.Enqueue(SpanByteTotalSize(InitialLength));
 
                     SpanByteAndMemory output = new();
-                    if (updateOp == UpdateOp.Upsert)
-                        bContext.Upsert(ref key, ref input, ref input, ref output);
-                    else if (updateOp == UpdateOp.RMW)
-                        bContext.RMW(ref key, ref input);
+                    _ = updateOp == UpdateOp.Upsert ? bContext.Upsert(ref key, ref input, ref input, ref output) : bContext.RMW(ref key, ref input);
                     output.Memory?.Dispose();
                 }
             }
@@ -1488,7 +1530,7 @@ namespace Tsavorite.test.Revivification
             if (stayInChain)
                 _ = RevivificationTestUtils.SwapFreeRecordPool(store, default);
 
-            byte chainKey = numRecords + 1;
+            byte chainKey = NumRecords + 1;
             Span<byte> keyVec = stackalloc byte[KeyLength];
             var key = SpanByte.FromPinnedSpan(keyVec);
 
@@ -1508,10 +1550,7 @@ namespace Tsavorite.test.Revivification
             functions.expectedUsedValueLengths.Enqueue(SpanByteTotalSize(OversizeLength));
 
             // Initial insert of the oversize record
-            if (updateOp == UpdateOp.Upsert)
-                bContext.Upsert(ref key, ref input, ref input, ref output);
-            else if (updateOp == UpdateOp.RMW)
-                bContext.RMW(ref key, ref input);
+            _ = updateOp == UpdateOp.Upsert ? bContext.Upsert(ref key, ref input, ref input, ref output) : bContext.RMW(ref key, ref input);
 
             // Delete it
             functions.expectedUsedValueLengths.Enqueue(SpanByteTotalSize(OversizeLength));
@@ -1524,10 +1563,7 @@ namespace Tsavorite.test.Revivification
 
             // Revivify in the chain. Because this is oversize, the expectedFullValueLength remains the same
             functions.expectedUsedValueLengths.Enqueue(SpanByteTotalSize(OversizeLength));
-            if (updateOp == UpdateOp.Upsert)
-                bContext.Upsert(ref key, ref input, ref input, ref output);
-            else if (updateOp == UpdateOp.RMW)
-                bContext.RMW(ref key, ref input);
+            _ = updateOp == UpdateOp.Upsert ? bContext.Upsert(ref key, ref input, ref input, ref output) : bContext.RMW(ref key, ref input);
 
             Assert.AreEqual(tailAddress, store.Log.TailAddress);
         }
@@ -1539,13 +1575,13 @@ namespace Tsavorite.test.Revivification
         [Category(SmokeTestCategory)]
         public void SimplePendingOpsRevivifyTest([Values(CollisionRange.None)] CollisionRange collisionRange, [Values] PendingOp pendingOp)
         {
-            byte delAboveRO = numRecords - 2;   // Will be sent to free list
-            byte targetRO = numRecords / 2 - 15;
+            byte delAboveRO = NumRecords - 2;   // Will be sent to free list
+            byte targetRO = NumRecords / 2 - 15;
 
             long tailAddress = PrepareDeletes(stayInChain: false, delAboveRO, FlushMode.OnDisk, collisionRange);
 
             // We always want freelist for this test.
-            FreeRecordPool<SpanByte, SpanByte> pool = store.RevivificationManager.FreeRecordPool;
+            var pool = store.RevivificationManager.FreeRecordPool;
             Assert.IsTrue(RevivificationTestUtils.HasRecords(pool));
 
             SpanByteAndMemory output = new();
@@ -1577,7 +1613,7 @@ namespace Tsavorite.test.Revivification
                 functions.expectedUsedValueLengths.Enqueue(SpanByteTotalSize(InitialLength));
                 var status = bContext.Read(ref key, ref inputSlice, ref output);
                 Assert.IsTrue(status.IsPending, status.ToString());
-                bContext.CompletePending(wait: true);
+                _ = bContext.CompletePending(wait: true);
                 Assert.IsTrue(functions.readCcCalled);
             }
             else if (pendingOp == PendingOp.RMW)
@@ -1590,8 +1626,8 @@ namespace Tsavorite.test.Revivification
 
                 functions.expectedUsedValueLengths.Enqueue(SpanByteTotalSize(InitialLength));
 
-                bContext.RMW(ref key, ref input);
-                bContext.CompletePending(wait: true);
+                _ = bContext.RMW(ref key, ref input);
+                _ = bContext.CompletePending(wait: true);
                 Assert.IsTrue(functions.rmwCcCalled);
             }
             Assert.AreEqual(tailAddress, store.Log.TailAddress);
@@ -1601,13 +1637,13 @@ namespace Tsavorite.test.Revivification
     [TestFixture]
     class RevivificationObjectTests
     {
-        const int numRecords = 1000;
-        internal const int valueMult = 1_000_000;
+        const int NumRecords = 1000;
+        internal const int ValueMult = 1_000_000;
 
         private MyFunctions functions;
-        private TsavoriteKV<MyKey, MyValue> store;
-        private ClientSession<MyKey, MyValue, MyInput, MyOutput, Empty, MyFunctions> session;
-        private BasicContext<MyKey, MyValue, MyInput, MyOutput, Empty, MyFunctions> bContext;
+        private TsavoriteKV<MyKey, MyValue, ClassStoreFunctions, ClassAllocator> store;
+        private ClientSession<MyKey, MyValue, MyInput, MyOutput, Empty, MyFunctions, ClassStoreFunctions, ClassAllocator> session;
+        private BasicContext<MyKey, MyValue, MyInput, MyOutput, Empty, MyFunctions, ClassStoreFunctions, ClassAllocator> bContext;
         private IDevice log;
         private IDevice objlog;
 
@@ -1618,11 +1654,18 @@ namespace Tsavorite.test.Revivification
             log = Devices.CreateLogDevice(Path.Combine(MethodTestDir, "test.log"), deleteOnClose: true);
             objlog = Devices.CreateLogDevice(Path.Combine(MethodTestDir, "test.obj.log"), deleteOnClose: true);
 
-            store = new TsavoriteKV<MyKey, MyValue>
-                (128,
-                logSettings: new LogSettings { LogDevice = log, ObjectLogDevice = objlog, MutableFraction = 0.1, MemorySizeBits = 22, PageSizeBits = 12 },
-                serializerSettings: new SerializerSettings<MyKey, MyValue> { keySerializer = () => new MyKeySerializer(), valueSerializer = () => new MyValueSerializer() },
-                revivificationSettings: RevivificationSettings.DefaultFixedLength);
+            store = new(new()
+            {
+                IndexSize = 1L << 13,
+                LogDevice = log,
+                ObjectLogDevice = objlog,
+                MutableFraction = 0.1,
+                MemorySize = 1L << 22,
+                PageSize = 1L << 12,
+                RevivificationSettings = RevivificationSettings.DefaultFixedLength
+            }, StoreFunctions<MyKey, MyValue>.Create(new MyKey.Comparer(), () => new MyKeySerializer(), () => new MyValueSerializer())
+                , (allocatorSettings, storeFunctions) => new(allocatorSettings, storeFunctions)
+            );
 
             functions = new MyFunctions();
             session = store.NewSession<MyInput, MyOutput, Empty, MyFunctions>(functions);
@@ -1646,10 +1689,10 @@ namespace Tsavorite.test.Revivification
 
         void Populate()
         {
-            for (int key = 0; key < numRecords; key++)
+            for (int key = 0; key < NumRecords; key++)
             {
                 var keyObj = new MyKey { key = key };
-                var valueObj = new MyValue { value = key + valueMult };
+                var valueObj = new MyValue { value = key + ValueMult };
                 var status = bContext.Upsert(keyObj, valueObj);
                 Assert.IsTrue(status.Record.Created, status.ToString());
             }
@@ -1662,24 +1705,21 @@ namespace Tsavorite.test.Revivification
         {
             Populate();
 
-            var deleteKey = RevivificationTestUtils.GetMinRevivifiableKey(store, numRecords);
+            var deleteKey = RevivificationTestUtils.GetMinRevivifiableKey(store, NumRecords);
             var tailAddress = store.Log.TailAddress;
-            bContext.Delete(new MyKey { key = deleteKey });
+            _ = bContext.Delete(new MyKey { key = deleteKey });
             Assert.AreEqual(tailAddress, store.Log.TailAddress);
 
-            var updateKey = deleteDest == DeleteDest.InChain ? deleteKey : numRecords + 1;
+            var updateKey = deleteDest == DeleteDest.InChain ? deleteKey : NumRecords + 1;
 
             var key = new MyKey { key = updateKey };
-            var value = new MyValue { value = key.key + valueMult };
+            var value = new MyValue { value = key.key + ValueMult };
             var input = new MyInput { value = value.value };
 
             RevivificationTestUtils.WaitForRecords(store, want: true);
             Assert.IsTrue(RevivificationTestUtils.HasRecords(store.RevivificationManager.FreeRecordPool), "Expected a free record after delete and WaitForRecords");
 
-            if (updateOp == UpdateOp.Upsert)
-                bContext.Upsert(key, value);
-            else if (updateOp == UpdateOp.RMW)
-                bContext.RMW(key, input);
+            _ = updateOp == UpdateOp.Upsert ? bContext.Upsert(key, value) : bContext.RMW(key, input);
 
             RevivificationTestUtils.WaitForRecords(store, want: false);
             Assert.AreEqual(tailAddress, store.Log.TailAddress, "Expected tail address not to grow (record was revivified)");
@@ -1694,11 +1734,11 @@ namespace Tsavorite.test.Revivification
 
         internal class RevivificationStressFunctions : SpanByteFunctions<Empty>
         {
-            internal ITsavoriteEqualityComparer<SpanByte> keyComparer;     // non-null if we are doing key comparisons (and thus expectedKey is non-default)
+            internal IKeyComparer<SpanByte> keyComparer;     // non-null if we are doing key comparisons (and thus expectedKey is non-default)
             internal SpanByte expectedKey = default;                    // Set for each operation by the calling thread
             internal bool isFirstLap = true;                            // For first 
 
-            internal RevivificationStressFunctions(ITsavoriteEqualityComparer<SpanByte> keyComparer) => this.keyComparer = keyComparer;
+            internal RevivificationStressFunctions(IKeyComparer<SpanByte> keyComparer) => this.keyComparer = keyComparer;
 
             [MethodImpl(MethodImplOptions.AggressiveInlining)]
             private void VerifyKey(ref SpanByte functionsKey)
@@ -1763,15 +1803,15 @@ namespace Tsavorite.test.Revivification
                 => base.ConcurrentDeleter(ref key, ref value, ref deleteInfo, ref recordInfo);
         }
 
-        const int numRecords = 200;
+        const int NumRecords = 200;
         const int DefaultMaxRecsPerBin = 1024;
 
         RevivificationStressFunctions functions;
         RevivificationSpanByteComparer comparer;
 
-        private TsavoriteKV<SpanByte, SpanByte> store;
-        private ClientSession<SpanByte, SpanByte, SpanByte, SpanByteAndMemory, Empty, RevivificationStressFunctions> session;
-        private BasicContext<SpanByte, SpanByte, SpanByte, SpanByteAndMemory, Empty, RevivificationStressFunctions> bContext;
+        private TsavoriteKV<SpanByte, SpanByte, SpanByteStoreFunctions, SpanByteAllocator<SpanByteStoreFunctions>> store;
+        private ClientSession<SpanByte, SpanByte, SpanByte, SpanByteAndMemory, Empty, RevivificationStressFunctions, SpanByteStoreFunctions, SpanByteAllocator<SpanByteStoreFunctions>> session;
+        private BasicContext<SpanByte, SpanByte, SpanByte, SpanByteAndMemory, Empty, RevivificationStressFunctions, SpanByteStoreFunctions, SpanByteAllocator<SpanByteStoreFunctions>> bContext;
         private IDevice log;
 
         [SetUp]
@@ -1781,7 +1821,6 @@ namespace Tsavorite.test.Revivification
             log = Devices.CreateLogDevice(Path.Combine(MethodTestDir, "test.log"), deleteOnClose: true);
 
             CollisionRange collisionRange = CollisionRange.None;
-            LogSettings logSettings = new() { LogDevice = log, ObjectLogDevice = null, PageSizeBits = 17, MemorySizeBits = 20 };
             foreach (var arg in TestContext.CurrentContext.Test.Arguments)
             {
                 if (arg is CollisionRange cr)
@@ -1792,7 +1831,16 @@ namespace Tsavorite.test.Revivification
             }
 
             comparer = new RevivificationSpanByteComparer(collisionRange);
-            store = new TsavoriteKV<SpanByte, SpanByte>(1L << 16, logSettings, comparer: comparer, revivificationSettings: RevivificationSettings.PowerOf2Bins);
+            store = new(new()
+            {
+                IndexSize = 1L << 24,
+                LogDevice = log,
+                PageSize = 1L << 17,
+                MemorySize = 1L << 20,
+                RevivificationSettings = RevivificationSettings.PowerOf2Bins
+            }, StoreFunctions<SpanByte, SpanByte>.Create(comparer, SpanByteRecordDisposer.Instance)
+                , (allocatorSettings, storeFunctions) => new(allocatorSettings, storeFunctions)
+            );
 
             functions = new RevivificationStressFunctions(keyComparer: null);
             session = store.NewSession<SpanByte, SpanByteAndMemory, Empty, RevivificationStressFunctions>(functions);
@@ -1822,7 +1870,7 @@ namespace Tsavorite.test.Revivification
 
             SpanByteAndMemory output = new();
 
-            for (int ii = 0; ii < numRecords; ++ii)
+            for (int ii = 0; ii < NumRecords; ++ii)
             {
                 keyVec.Fill((byte)ii);
                 inputVec.Fill((byte)ii);
@@ -1860,7 +1908,7 @@ namespace Tsavorite.test.Revivification
                 NumberOfRecords = maxRecords
             };
             var flags = new long[maxRecords];
-            List<int> strayFlags = new(0), strayRecords = new();
+            List<int> strayFlags = [], strayRecords = [];
 
             using var freeRecordPool = RevivificationTestUtils.CreateSingleBinFreeRecordPool(store, binDef);
 
@@ -1927,13 +1975,13 @@ namespace Tsavorite.test.Revivification
                         var addressBase = address - AddressIncrement;
                         var prevFlag = Interlocked.CompareExchange(ref flags[addressBase], RemovedBase + tid, Added);
                         Assert.AreEqual(1, prevFlag, $"Take() found unexpected addressBase {addressBase} (flag {prevFlag}), tid {tid}, iteration {iteration}");
-                        Interlocked.Increment(ref totalTaken);
+                        _ = Interlocked.Increment(ref totalTaken);
                     }
                 }
             }
 
             // Task rather than Thread for propagation of exception.
-            List<Task> tasks = new();
+            List<Task> tasks = [];
 
             // Make iteration 1-based to make the termination check easier in the threadprocs
             for (iteration = 1; iteration <= numIterations; ++iteration)
@@ -1955,7 +2003,7 @@ namespace Tsavorite.test.Revivification
                 try
                 {
                     var timeoutSec = 5;     // 5s per iteration should be plenty
-                    Assert.IsTrue(Task.WaitAll(tasks.ToArray(), TimeSpan.FromSeconds(timeoutSec)), $"Task timeout at {timeoutSec} sec, maxRec/taken {maxRecords}/{totalTaken}, iteration {iteration}");
+                    Assert.IsTrue(Task.WaitAll([.. tasks], TimeSpan.FromSeconds(timeoutSec)), $"Task timeout at {timeoutSec} sec, maxRec/taken {maxRecords}/{totalTaken}, iteration {iteration}");
                     endIteration();
                 }
                 finally
@@ -1993,13 +2041,13 @@ namespace Tsavorite.test.Revivification
             Assert.AreEqual(AddressIncrement + 1, address, "out address");
             Assert.AreEqual(1, revivStats.successfulAdds, "Successful Adds");
             Assert.AreEqual(1, revivStats.successfulTakes, "Successful Takes");
-            var statsString = revivStats.Dump();
+            _ = revivStats.Dump();
         }
 
         public enum WrapMode { Wrap, NoWrap };
         const int TakeSize = 40;
 
-        private FreeRecordPool<SpanByte, SpanByte> CreateBestFitTestPool(int scanLimit, WrapMode wrapMode, ref RevivificationStats revivStats)
+        private FreeRecordPool<SpanByte, SpanByte, SpanByteStoreFunctions, SpanByteAllocator<SpanByteStoreFunctions>> CreateBestFitTestPool(int scanLimit, WrapMode wrapMode, ref RevivificationStats revivStats)
         {
             var binDef = new RevivificationBin()
             {
@@ -2136,13 +2184,13 @@ namespace Tsavorite.test.Revivification
                 }
             }
 
-            List<Task> tasks = new();   // Task rather than Thread for propagation of exception.
+            List<Task> tasks = [];   // Task rather than Thread for propagation of exception.
             for (int t = 0; t < 8; t++)
             {
                 var tid = t + 1;
                 tasks.Add(Task.Factory.StartNew(() => runThread(tid)));
             }
-            Task.WaitAll(tasks.ToArray());
+            Task.WaitAll([.. tasks]);
 
             Assert.IsTrue(counter == 0);
         }
@@ -2171,11 +2219,11 @@ namespace Tsavorite.test.Revivification
 
                 for (var iteration = 0; iteration < numIterations; ++iteration)
                 {
-                    for (var ii = tid; ii < numRecords; ii += numDeleteThreads)
+                    for (var ii = tid; ii < NumRecords; ii += numDeleteThreads)
                     {
                         var kk = rng.Next(keyRange);
                         keyVec.Fill((byte)kk);
-                        localbContext.Delete(key);
+                        _ = localbContext.Delete(key);
                     }
                 }
             }
@@ -2190,34 +2238,31 @@ namespace Tsavorite.test.Revivification
 
                 Random rng = new(tid * 101);
 
-                RevivificationStressFunctions localFunctions = new(keyComparer: store.comparer);
+                RevivificationStressFunctions localFunctions = new(keyComparer: comparer);
                 using var localSession = store.NewSession<SpanByte, SpanByteAndMemory, Empty, RevivificationStressFunctions>(localFunctions);
                 var localbContext = localSession.BasicContext;
 
                 for (var iteration = 0; iteration < numIterations; ++iteration)
                 {
-                    for (var ii = tid; ii < numRecords; ii += numUpdateThreads)
+                    for (var ii = tid; ii < NumRecords; ii += numUpdateThreads)
                     {
                         var kk = rng.Next(keyRange);
                         keyVec.Fill((byte)kk);
                         inputVec.Fill((byte)kk);
 
                         localSession.functions.expectedKey = key;
-                        if (updateOp == UpdateOp.Upsert)
-                            localbContext.Upsert(key, input);
-                        else
-                            localbContext.RMW(key, input);
+                        _ = updateOp == UpdateOp.Upsert ? localbContext.Upsert(key, input) : localbContext.RMW(key, input);
                         localSession.functions.expectedKey = default;
                     }
 
                     // Clear keyComparer so it does not try to validate during CompletePending (when it doesn't have an expectedKey)
                     localFunctions.keyComparer = null;
-                    localbContext.CompletePending(wait: true);
-                    localFunctions.keyComparer = store.comparer;
+                    _ = localbContext.CompletePending(wait: true);
+                    localFunctions.keyComparer = comparer;
                 }
             }
 
-            List<Task> tasks = new();   // Task rather than Thread for propagation of exception.
+            List<Task> tasks = [];   // Task rather than Thread for propagation of exception.
             for (int t = 0; t < numDeleteThreads; t++)
             {
                 var tid = t + 1;
@@ -2228,7 +2273,7 @@ namespace Tsavorite.test.Revivification
                 var tid = t + 1;
                 tasks.Add(Task.Factory.StartNew(() => runUpdateThread(tid)));
             }
-            Task.WaitAll(tasks.ToArray());
+            Task.WaitAll([.. tasks]);
         }
 
         public enum ThreadingPattern { SameKeys, RandomKeys };
@@ -2257,11 +2302,11 @@ namespace Tsavorite.test.Revivification
 
                 for (var iteration = 0; iteration < numIterations; ++iteration)
                 {
-                    for (var ii = tid; ii < numRecords; ii += numDeleteThreads)
+                    for (var ii = tid; ii < NumRecords; ii += numDeleteThreads)
                     {
-                        var kk = threadingPattern == ThreadingPattern.RandomKeys ? rng.Next(numRecords) : ii;
+                        var kk = threadingPattern == ThreadingPattern.RandomKeys ? rng.Next(NumRecords) : ii;
                         keyVec.Fill((byte)kk);
-                        localbContext.Delete(key);
+                        _ = localbContext.Delete(key);
                     }
                 }
             }
@@ -2276,34 +2321,31 @@ namespace Tsavorite.test.Revivification
 
                 Random rng = new(tid * 101);
 
-                RevivificationStressFunctions localFunctions = new(keyComparer: store.comparer);
+                RevivificationStressFunctions localFunctions = new(keyComparer: comparer);
                 using var localSession = store.NewSession<SpanByte, SpanByteAndMemory, Empty, RevivificationStressFunctions>(localFunctions);
                 var localbContext = localSession.BasicContext;
 
                 for (var iteration = 0; iteration < numIterations; ++iteration)
                 {
-                    for (var ii = tid; ii < numRecords; ii += numUpdateThreads)
+                    for (var ii = tid; ii < NumRecords; ii += numUpdateThreads)
                     {
-                        var kk = threadingPattern == ThreadingPattern.RandomKeys ? rng.Next(numRecords) : ii;
+                        var kk = threadingPattern == ThreadingPattern.RandomKeys ? rng.Next(NumRecords) : ii;
                         keyVec.Fill((byte)kk);
                         inputVec.Fill((byte)kk);
 
                         localSession.functions.expectedKey = key;
-                        if (updateOp == UpdateOp.Upsert)
-                            localbContext.Upsert(key, input);
-                        else
-                            localbContext.RMW(key, input);
+                        _ = updateOp == UpdateOp.Upsert ? localbContext.Upsert(key, input) : localbContext.RMW(key, input);
                         localSession.functions.expectedKey = default;
                     }
 
                     // Clear keyComparer so it does not try to validate during CompletePending (when it doesn't have an expectedKey)
                     localFunctions.keyComparer = null;
-                    localbContext.CompletePending(wait: true);
-                    localFunctions.keyComparer = store.comparer;
+                    _ = localbContext.CompletePending(wait: true);
+                    localFunctions.keyComparer = comparer;
                 }
             }
 
-            List<Task> tasks = new();   // Task rather than Thread for propagation of exception.
+            List<Task> tasks = [];   // Task rather than Thread for propagation of exception.
             for (int t = 0; t < numDeleteThreads; t++)
             {
                 var tid = t + 1;
@@ -2314,7 +2356,7 @@ namespace Tsavorite.test.Revivification
                 var tid = t + 1;
                 tasks.Add(Task.Factory.StartNew(() => runUpdateThread(tid)));
             }
-            Task.WaitAll(tasks.ToArray());
+            Task.WaitAll([.. tasks]);
         }
 
         [Test]
@@ -2341,10 +2383,10 @@ namespace Tsavorite.test.Revivification
 
                 for (var iteration = 0; iteration < numIterations; ++iteration)
                 {
-                    for (var ii = tid; ii < numRecords; ii += numDeleteThreads)
+                    for (var ii = tid; ii < NumRecords; ii += numDeleteThreads)
                     {
                         keyVec.Fill((byte)ii);
-                        localbContext.Delete(key);
+                        _ = localbContext.Delete(key);
                     }
                 }
             }
@@ -2363,27 +2405,24 @@ namespace Tsavorite.test.Revivification
 
                 for (var iteration = 0; iteration < numIterations; ++iteration)
                 {
-                    for (var ii = tid; ii < numRecords; ii += numUpdateThreads)
+                    for (var ii = tid; ii < NumRecords; ii += numUpdateThreads)
                     {
                         keyVec.Fill((byte)ii);
                         inputVec.Fill((byte)ii);
 
                         localSession.functions.expectedKey = key;
-                        if (updateOp == UpdateOp.Upsert)
-                            localbContext.Upsert(key, input);
-                        else
-                            localbContext.RMW(key, input);
+                        _ = updateOp == UpdateOp.Upsert ? localbContext.Upsert(key, input) : localbContext.RMW(key, input);
                         localSession.functions.expectedKey = default;
                     }
 
                     // Clear keyComparer so it does not try to validate during CompletePending (when it doesn't have an expectedKey)
                     localFunctions.keyComparer = null;
-                    localbContext.CompletePending(wait: true);
-                    localFunctions.keyComparer = store.comparer;
+                    _ = localbContext.CompletePending(wait: true);
+                    localFunctions.keyComparer = comparer;
                 }
             }
 
-            List<Task> tasks = new();   // Task rather than Thread for propagation of exception.
+            List<Task> tasks = [];   // Task rather than Thread for propagation of exception.
             for (int t = 0; t < numDeleteThreads; t++)
             {
                 var tid = t + 1;
@@ -2394,7 +2433,7 @@ namespace Tsavorite.test.Revivification
                 var tid = t + 1;
                 tasks.Add(Task.Factory.StartNew(() => runUpdateThread(tid)));
             }
-            Task.WaitAll(tasks.ToArray());
+            Task.WaitAll([.. tasks]);
         }
     }
 }

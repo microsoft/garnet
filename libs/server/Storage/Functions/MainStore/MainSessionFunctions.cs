@@ -8,7 +8,7 @@ namespace Garnet.server
     /// <summary>
     /// Callback functions for main store
     /// </summary>
-    public readonly unsafe partial struct MainStoreFunctions : ISessionFunctions<SpanByte, SpanByte, SpanByte, SpanByteAndMemory, long>
+    public readonly unsafe partial struct MainSessionFunctions : ISessionFunctions<SpanByte, SpanByte, SpanByte, SpanByteAndMemory, long>
     {
         readonly FunctionsState functionsState;
 
@@ -16,7 +16,7 @@ namespace Garnet.server
         /// Constructor
         /// </summary>
         /// <param name="functionsState"></param>
-        internal MainStoreFunctions(FunctionsState functionsState)
+        internal MainSessionFunctions(FunctionsState functionsState)
         {
             this.functionsState = functionsState;
         }

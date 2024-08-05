@@ -29,7 +29,9 @@ namespace Tsavorite.core
         public const int CheckpointCompletionCallback = 4;
     }
 
-    public partial class TsavoriteKV<Key, Value>
+    public partial class TsavoriteKV<Key, Value, TStoreFunctions, TAllocator>
+        where TStoreFunctions : IStoreFunctions<Key, Value>
+        where TAllocator : IAllocator<Key, Value, TStoreFunctions>
     {
 
         internal TaskCompletionSource<LinkedCheckpointInfo> checkpointTcs = new(TaskCreationOptions.RunContinuationsAsynchronously);
@@ -75,7 +77,7 @@ namespace Tsavorite.core
 
         internal bool ObtainCurrentTailAddress(ref long location)
         {
-            var tailAddress = hlog.GetTailAddress();
+            var tailAddress = hlogBase.GetTailAddress();
             return Interlocked.CompareExchange(ref location, tailAddress, 0) == 0;
         }
 
@@ -87,7 +89,7 @@ namespace Tsavorite.core
         internal void InitializeHybridLogCheckpoint(Guid hybridLogToken, long version)
         {
             _hybridLogCheckpoint.Initialize(hybridLogToken, version, checkpointManager);
-            _hybridLogCheckpoint.info.manualLockingActive = hlog.NumActiveLockingSessions > 0;
+            _hybridLogCheckpoint.info.manualLockingActive = hlogBase.NumActiveLockingSessions > 0;
         }
 
         internal long Compact<T1, T2, T3, T4, CompactionFunctions>(ISessionFunctions<Key, Value, object, object, object> functions, CompactionFunctions compactionFunctions, long untilAddress, CompactionType compactionType)

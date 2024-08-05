@@ -108,6 +108,20 @@ Return the number of keys in the currently-selected database.
 Integer reply: the number of keys in the currently-selected database.
 
 ---
+### FLUSHALL
+#### Syntax
+
+```bash
+FLUSHALL [ASYNC | SYNC]
+```
+
+Delete all the keys of all the existing databases, not just the currently selected one. This command never fails.
+
+#### Resp Reply
+
+Simple string reply: OK.
+
+---
 ### FLUSHDB
 #### Syntax
 

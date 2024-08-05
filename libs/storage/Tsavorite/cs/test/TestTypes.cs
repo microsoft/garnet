@@ -8,21 +8,20 @@ using Tsavorite.core;
 
 namespace Tsavorite.test
 {
-    public struct KeyStruct : ITsavoriteEqualityComparer<KeyStruct>
+    public struct KeyStruct
     {
         public long kfield1;
         public long kfield2;
 
-        public long GetHashCode64(ref KeyStruct key)
-        {
-            return Utility.GetHashCode(key.kfield1);
-        }
-        public bool Equals(ref KeyStruct k1, ref KeyStruct k2)
-        {
-            return k1.kfield1 == k2.kfield1 && k1.kfield2 == k2.kfield2;
-        }
-
         public override string ToString() => $"kfield1 {kfield1}, kfield2 {kfield2}";
+
+        public struct Comparer : IKeyComparer<KeyStruct>
+        {
+            public long GetHashCode64(ref KeyStruct key) => Utility.GetHashCode(key.kfield1);
+            public bool Equals(ref KeyStruct k1, ref KeyStruct k2) => k1.kfield1 == k2.kfield1 && k1.kfield2 == k2.kfield2;
+
+            public static Comparer Instance = new();
+        }
     }
 
     public struct ValueStruct

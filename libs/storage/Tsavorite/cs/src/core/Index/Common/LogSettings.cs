@@ -1,32 +1,14 @@
 ﻿// Copyright (c) Microsoft Corporation.
 // Licensed under the MIT license.
 
-using System;
+#pragma warning disable IDE1006 // Naming Styles
 
 namespace Tsavorite.core
 {
     /// <summary>
-    /// Configuration settings for serializing objects
-    /// </summary>
-    /// <typeparam name="Key"></typeparam>
-    /// <typeparam name="Value"></typeparam>
-    public class SerializerSettings<Key, Value>
-    {
-        /// <summary>
-        /// Key serializer
-        /// </summary>
-        public Func<IObjectSerializer<Key>> keySerializer;
-
-        /// <summary>
-        /// Value serializer
-        /// </summary>
-        public Func<IObjectSerializer<Value>> valueSerializer;
-    }
-
-    /// <summary>
     /// Configuration settings for hybrid log
     /// </summary>
-    public class LogSettings
+    internal class LogSettings
     {
         /// <summary>Minimum number of bits for a page size</summary>
         public const int kMinPageSizeBits = 6;
@@ -93,28 +75,5 @@ namespace Tsavorite.core
         /// Whether to preallocate the entire log (pages) in memory
         /// </summary>
         public bool PreallocateLog = false;
-    }
-
-    /// <summary>
-    /// Configuration settings for hybrid log
-    /// </summary>
-    public class ReadCacheSettings
-    {
-        /// <summary>
-        /// Size of a segment (group of pages), in bits
-        /// </summary>
-        public int PageSizeBits = 25;
-
-        /// <summary>
-        /// Total size of in-memory part of log, in bits
-        /// </summary>
-        public int MemorySizeBits = 34;
-
-        /// <summary>
-        /// Fraction of log head (in memory) used for second chance 
-        /// copy to tail. This is (1 - MutableFraction) for the 
-        /// underlying log
-        /// </summary>
-        public double SecondChanceFraction = 0.1;
     }
 }

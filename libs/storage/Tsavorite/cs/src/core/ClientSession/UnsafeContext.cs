@@ -11,16 +11,19 @@ namespace Tsavorite.core
     /// <summary>
     /// Tsavorite Operations implementation that allows manual control of record epoch management. For advanced use only.
     /// </summary>
-    public readonly struct UnsafeContext<Key, Value, Input, Output, Context, Functions> : ITsavoriteContext<Key, Value, Input, Output, Context, Functions>, IUnsafeContext
+    public readonly struct UnsafeContext<Key, Value, Input, Output, Context, Functions, TStoreFunctions, TAllocator>
+        : ITsavoriteContext<Key, Value, Input, Output, Context, Functions, TStoreFunctions, TAllocator>, IUnsafeContext
         where Functions : ISessionFunctions<Key, Value, Input, Output, Context>
+        where TStoreFunctions : IStoreFunctions<Key, Value>
+        where TAllocator : IAllocator<Key, Value, TStoreFunctions>
     {
-        readonly ClientSession<Key, Value, Input, Output, Context, Functions> clientSession;
-        internal readonly SessionFunctionsWrapper<Key, Value, Input, Output, Context, Functions, BasicSessionLocker<Key, Value>> sessionFunctions;
+        readonly ClientSession<Key, Value, Input, Output, Context, Functions, TStoreFunctions, TAllocator> clientSession;
+        internal readonly SessionFunctionsWrapper<Key, Value, Input, Output, Context, Functions, BasicSessionLocker<Key, Value, TStoreFunctions, TAllocator>, TStoreFunctions, TAllocator> sessionFunctions;
 
         /// <inheritdoc/>
         public bool IsNull => clientSession is null;
 
-        internal UnsafeContext(ClientSession<Key, Value, Input, Output, Context, Functions> clientSession)
+        internal UnsafeContext(ClientSession<Key, Value, Input, Output, Context, Functions, TStoreFunctions, TAllocator> clientSession)
         {
             this.clientSession = clientSession;
             sessionFunctions = new(clientSession);
@@ -41,7 +44,7 @@ namespace Tsavorite.core
         #region ITsavoriteContext
 
         /// <inheritdoc/>
-        public ClientSession<Key, Value, Input, Output, Context, Functions> Session => clientSession;
+        public ClientSession<Key, Value, Input, Output, Context, Functions, TStoreFunctions, TAllocator> Session => clientSession;
 
         /// <inheritdoc/>
         public long GetKeyHash(Key key) => clientSession.store.GetKeyHash(ref key);
@@ -185,7 +188,7 @@ namespace Tsavorite.core
         {
             Input input = default;
             Output output = default;
-            return Upsert(ref key, clientSession.store.comparer.GetHashCode64(ref key), ref input, ref desiredValue, ref output, out _, userContext);
+            return Upsert(ref key, clientSession.store.storeFunctions.GetKeyHashCode64(ref key), ref input, ref desiredValue, ref output, out _, userContext);
         }
 
         /// <inheritdoc/>
@@ -194,18 +197,18 @@ namespace Tsavorite.core
         {
             Input input = default;
             Output output = default;
-            return Upsert(ref key, upsertOptions.KeyHash ?? clientSession.store.comparer.GetHashCode64(ref key), ref input, ref desiredValue, ref output, userContext);
+            return Upsert(ref key, upsertOptions.KeyHash ?? clientSession.store.storeFunctions.GetKeyHashCode64(ref key), ref input, ref desiredValue, ref output, userContext);
         }
 
         /// <inheritdoc/>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public Status Upsert(ref Key key, ref Input input, ref Value desiredValue, ref Output output, Context userContext = default)
-            => Upsert(ref key, clientSession.store.comparer.GetHashCode64(ref key), ref input, ref desiredValue, ref output, userContext);
+            => Upsert(ref key, clientSession.store.storeFunctions.GetKeyHashCode64(ref key), ref input, ref desiredValue, ref output, userContext);
 
         /// <inheritdoc/>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public Status Upsert(ref Key key, ref Input input, ref Value desiredValue, ref Output output, ref UpsertOptions upsertOptions, Context userContext = default)
-            => Upsert(ref key, upsertOptions.KeyHash ?? clientSession.store.comparer.GetHashCode64(ref key), ref input, ref desiredValue, ref output, userContext);
+            => Upsert(ref key, upsertOptions.KeyHash ?? clientSession.store.storeFunctions.GetKeyHashCode64(ref key), ref input, ref desiredValue, ref output, userContext);
 
         /// <inheritdoc/>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
@@ -218,12 +221,12 @@ namespace Tsavorite.core
         /// <inheritdoc/>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public Status Upsert(ref Key key, ref Input input, ref Value desiredValue, ref Output output, out RecordMetadata recordMetadata, Context userContext = default)
-            => Upsert(ref key, clientSession.store.comparer.GetHashCode64(ref key), ref input, ref desiredValue, ref output, out recordMetadata, userContext);
+            => Upsert(ref key, clientSession.store.storeFunctions.GetKeyHashCode64(ref key), ref input, ref desiredValue, ref output, out recordMetadata, userContext);
 
         /// <inheritdoc/>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public Status Upsert(ref Key key, ref Input input, ref Value desiredValue, ref Output output, ref UpsertOptions upsertOptions, out RecordMetadata recordMetadata, Context userContext = default)
-            => Upsert(ref key, upsertOptions.KeyHash ?? clientSession.store.comparer.GetHashCode64(ref key), ref input, ref desiredValue, ref output, out recordMetadata, userContext);
+            => Upsert(ref key, upsertOptions.KeyHash ?? clientSession.store.storeFunctions.GetKeyHashCode64(ref key), ref input, ref desiredValue, ref output, out recordMetadata, userContext);
 
         /// <inheritdoc/>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
@@ -261,17 +264,17 @@ namespace Tsavorite.core
         /// <inheritdoc/>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public Status RMW(ref Key key, ref Input input, ref Output output, ref RMWOptions rmwOptions, Context userContext = default)
-            => RMW(ref key, rmwOptions.KeyHash ?? clientSession.store.comparer.GetHashCode64(ref key), ref input, ref output, out _, userContext);
+            => RMW(ref key, rmwOptions.KeyHash ?? clientSession.store.storeFunctions.GetKeyHashCode64(ref key), ref input, ref output, out _, userContext);
 
         /// <inheritdoc/>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public Status RMW(ref Key key, ref Input input, ref Output output, out RecordMetadata recordMetadata, Context userContext = default)
-            => RMW(ref key, clientSession.store.comparer.GetHashCode64(ref key), ref input, ref output, out recordMetadata, userContext);
+            => RMW(ref key, clientSession.store.storeFunctions.GetKeyHashCode64(ref key), ref input, ref output, out recordMetadata, userContext);
 
         /// <inheritdoc/>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public Status RMW(ref Key key, ref Input input, ref Output output, ref RMWOptions rmwOptions, out RecordMetadata recordMetadata, Context userContext = default)
-            => RMW(ref key, rmwOptions.KeyHash ?? clientSession.store.comparer.GetHashCode64(ref key), ref input, ref output, out recordMetadata, userContext);
+            => RMW(ref key, rmwOptions.KeyHash ?? clientSession.store.storeFunctions.GetKeyHashCode64(ref key), ref input, ref output, out recordMetadata, userContext);
 
         /// <inheritdoc/>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
@@ -329,20 +332,20 @@ namespace Tsavorite.core
         /// <inheritdoc/>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public Status Delete(ref Key key, Context userContext = default)
-            => Delete(ref key, clientSession.store.comparer.GetHashCode64(ref key), userContext);
+            => Delete(ref key, clientSession.store.storeFunctions.GetKeyHashCode64(ref key), userContext);
 
         /// <inheritdoc/>
         /// <inheritdoc/>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public Status Delete(ref Key key, ref DeleteOptions deleteOptions, Context userContext = default)
-            => Delete(ref key, deleteOptions.KeyHash ?? clientSession.store.comparer.GetHashCode64(ref key), userContext);
+            => Delete(ref key, deleteOptions.KeyHash ?? clientSession.store.storeFunctions.GetKeyHashCode64(ref key), userContext);
 
         /// <inheritdoc/>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public Status Delete(ref Key key, long keyHash, Context userContext = default)
         {
             Debug.Assert(clientSession.store.epoch.ThisInstanceProtected());
-            return clientSession.store.ContextDelete<Input, Output, Context, SessionFunctionsWrapper<Key, Value, Input, Output, Context, Functions, BasicSessionLocker<Key, Value>>>(
+            return clientSession.store.ContextDelete<Input, Output, Context, SessionFunctionsWrapper<Key, Value, Input, Output, Context, Functions, BasicSessionLocker<Key, Value, TStoreFunctions, TAllocator>, TStoreFunctions, TAllocator>>(
                     ref key, keyHash, userContext, sessionFunctions);
         }
 
@@ -370,7 +373,7 @@ namespace Tsavorite.core
         public void Refresh()
         {
             Debug.Assert(clientSession.store.epoch.ThisInstanceProtected());
-            clientSession.store.InternalRefresh<Input, Output, Context, SessionFunctionsWrapper<Key, Value, Input, Output, Context, Functions, BasicSessionLocker<Key, Value>>>(sessionFunctions);
+            clientSession.store.InternalRefresh<Input, Output, Context, SessionFunctionsWrapper<Key, Value, Input, Output, Context, Functions, BasicSessionLocker<Key, Value, TStoreFunctions, TAllocator>, TStoreFunctions, TAllocator>>(sessionFunctions);
         }
         #endregion ITsavoriteContext
     }

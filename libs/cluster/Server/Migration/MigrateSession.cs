@@ -45,6 +45,7 @@ namespace Garnet.cluster
         readonly List<(int, int)> _slotRanges;
         readonly Dictionary<ArgSlice, KeyMigrationStatus> _keys;
         SingleWriterMultiReaderLock _keyDictLock;
+        SingleWriterMultiReaderLock _disposed;
 
         readonly HashSet<int> _sslots;
         readonly CancellationTokenSource _cts = new();
@@ -222,6 +223,7 @@ namespace Garnet.cluster
         /// </summary>
         public void Dispose()
         {
+            if (!_disposed.TryWriteLock()) return;
             _cts?.Cancel();
             _cts?.Dispose();
             _gcs.Dispose();

@@ -51,8 +51,13 @@ namespace Garnet.cluster
                 _lock.ReadLock();
                 if (_disposed) return 0;
 
+                HashSet<MigrateSession> ss = [];
                 for (var i = 0; i < sessions.Length; i++)
-                    count += sessions[i] != null ? 1 : 0;
+                {
+                    if (sessions[i] != null)
+                        _ = ss.Add(sessions[i]);
+                }
+                count = ss.Count;
             }
             finally
             {
@@ -101,6 +106,7 @@ namespace Garnet.cluster
                 _lock.WriteLock();
                 if (_disposed) return false;
 
+                // First iterate and check if corresponding slot is associated to another active migrate session
                 foreach (var slot in mSession.GetSlots)
                 {
                     if (sessions[slot] != null)
@@ -109,8 +115,12 @@ namespace Garnet.cluster
                         success = false;
                         return false;
                     }
-                    sessions[slot] = mSession;
                 }
+
+                // If reached this point all slots to be migrated are not associated with any other session
+                // so we can mark them as being associated with this newly added session
+                foreach (var slot in mSession.GetSlots)
+                    sessions[slot] = mSession;
             }
             catch (Exception ex)
             {
@@ -129,6 +139,11 @@ namespace Garnet.cluster
             return success;
         }
 
+        /// <summary>
+        /// Remove only the provided session instance
+        /// </summary>
+        /// <param name="mSession"></param>
+        /// <returns></returns>
         public bool TryRemove(MigrateSession mSession)
         {
             try
@@ -156,28 +171,25 @@ namespace Garnet.cluster
             }
         }
 
+        /// <summary>
+        /// Remove all sessions associated with the provided targetNodeId
+        /// </summary>
+        /// <param name="targetNodeId"></param>
+        /// <returns></returns>
         public bool TryRemove(string targetNodeId)
         {
             try
             {
                 _lock.WriteLock();
                 if (_disposed) return false;
-                HashSet<MigrateSession> mSessions = null;
                 for (var i = 0; i < sessions.Length; i++)
                 {
                     var s = sessions[i];
                     if (s != null && s.GetTargetNodeId.Equals(targetNodeId, StringComparison.Ordinal))
                     {
                         sessions[i] = null;
-                        mSessions ??= [];
-                        _ = mSessions.Add(s);
+                        s.Dispose();
                     }
-                }
-
-                if (mSessions != null)
-                {
-                    foreach (var session in mSessions)
-                        session.Dispose();
                 }
 
                 return true;

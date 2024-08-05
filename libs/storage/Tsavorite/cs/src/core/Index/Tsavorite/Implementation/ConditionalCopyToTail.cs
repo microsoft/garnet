@@ -6,7 +6,9 @@ using System.Runtime.CompilerServices;
 
 namespace Tsavorite.core
 {
-    public unsafe partial class TsavoriteKV<Key, Value> : TsavoriteBase
+    public unsafe partial class TsavoriteKV<Key, Value, TStoreFunctions, TAllocator> : TsavoriteBase
+        where TStoreFunctions : IStoreFunctions<Key, Value>
+        where TAllocator : IAllocator<Key, Value, TStoreFunctions>
     {
         /// <summary>
         /// Copy a record to the tail of the log after caller has verified it does not exist within a specified range.
@@ -27,8 +29,8 @@ namespace Tsavorite.core
         private OperationStatus ConditionalCopyToTail<Input, Output, Context, TSessionFunctionsWrapper>(TSessionFunctionsWrapper sessionFunctions,
                 ref PendingContext<Input, Output, Context> pendingContext,
                 ref Key key, ref Input input, ref Value value, ref Output output, Context userContext,
-                ref OperationStackContext<Key, Value> stackCtx, WriteReason writeReason, bool wantIO = true)
-            where TSessionFunctionsWrapper : ISessionFunctionsWrapper<Key, Value, Input, Output, Context>
+                ref OperationStackContext<Key, Value, TStoreFunctions, TAllocator> stackCtx, WriteReason writeReason, bool wantIO = true)
+            where TSessionFunctionsWrapper : ISessionFunctionsWrapper<Key, Value, Input, Output, Context, TStoreFunctions, TAllocator>
         {
             bool callerHasTransientLock = stackCtx.recSrc.HasTransientSLock;
 
@@ -64,7 +66,7 @@ namespace Tsavorite.core
                 // point we just searched (which may have gone below HeadAddress). +1 to LatestLogicalAddress because we have examined that already. Use stackCtx2 to
                 // preserve stacKCtx, both for retrying the Insert if needed and for preserving the caller's lock status, etc.
                 var minAddress = stackCtx.recSrc.LatestLogicalAddress + 1;
-                OperationStackContext<Key, Value> stackCtx2 = new(stackCtx.hei.hash);
+                OperationStackContext<Key, Value, TStoreFunctions, TAllocator> stackCtx2 = new(stackCtx.hei.hash);
                 bool needIO;
                 do
                 {
@@ -77,7 +79,7 @@ namespace Tsavorite.core
                 if (!wantIO)
                 {
                     // Caller (e.g. ReadFromImmutable) called this to keep read-hot records in memory. That's already failed, so give up and we'll read it when we have to.
-                    if (stackCtx.recSrc.LogicalAddress < hlog.HeadAddress)
+                    if (stackCtx.recSrc.LogicalAddress < hlogBase.HeadAddress)
                         return OperationStatus.SUCCESS;
                 }
                 else if (needIO)
@@ -89,12 +91,12 @@ namespace Tsavorite.core
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         internal Status CompactionConditionalCopyToTail<Input, Output, Context, TSessionFunctionsWrapper>(TSessionFunctionsWrapper sessionFunctions, ref Key key, ref Input input, ref Value value,
                 ref Output output, long minAddress)
-            where TSessionFunctionsWrapper : ISessionFunctionsWrapper<Key, Value, Input, Output, Context>
+            where TSessionFunctionsWrapper : ISessionFunctionsWrapper<Key, Value, Input, Output, Context, TStoreFunctions, TAllocator>
         {
             Debug.Assert(epoch.ThisInstanceProtected(), "This is called only from Compaction so the epoch should be protected");
             PendingContext<Input, Output, Context> pendingContext = new();
 
-            OperationStackContext<Key, Value> stackCtx = new(comparer.GetHashCode64(ref key));
+            OperationStackContext<Key, Value, TStoreFunctions, TAllocator> stackCtx = new(storeFunctions.GetKeyHashCode64(ref key));
             OperationStatus status;
             bool needIO;
             do
@@ -116,8 +118,9 @@ namespace Tsavorite.core
         internal OperationStatus PrepareIOForConditionalOperation<Input, Output, Context, TSessionFunctionsWrapper>(TSessionFunctionsWrapper sessionFunctions,
                                         ref PendingContext<Input, Output, Context> pendingContext,
                                         ref Key key, ref Input input, ref Value value, ref Output output, Context userContext,
-                                        ref OperationStackContext<Key, Value> stackCtx, long minAddress, WriteReason writeReason, OperationType opType = OperationType.CONDITIONAL_INSERT)
-            where TSessionFunctionsWrapper : ISessionFunctionsWrapper<Key, Value, Input, Output, Context>
+                                        ref OperationStackContext<Key, Value, TStoreFunctions, TAllocator> stackCtx, long minAddress, WriteReason writeReason,
+                                        OperationType opType = OperationType.CONDITIONAL_INSERT)
+            where TSessionFunctionsWrapper : ISessionFunctionsWrapper<Key, Value, Input, Output, Context, TStoreFunctions, TAllocator>
         {
             pendingContext.type = opType;
             pendingContext.minAddress = minAddress;

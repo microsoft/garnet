@@ -30,6 +30,7 @@ namespace Garnet.cluster
             SLOTOUTOFRANGE,
             NOTMIGRATING,
             MULTI_TRANSFER_OPTION,
+            FAILEDTOADDKEY
         }
 
         private bool HandleCommandParsingErrors(MigrateCmdParseState mpState, string targetAddress, int targetPort, int slotMultiRef)
@@ -48,6 +49,7 @@ namespace Garnet.cluster
                 MigrateCmdParseState.INCOMPLETESLOTSRANGE => CmdStrings.RESP_ERR_GENERIC_INCOMPLETESLOTSRANGE,
                 MigrateCmdParseState.SLOTOUTOFRANGE => Encoding.ASCII.GetBytes($"ERR Slot {slotMultiRef} out of range."),
                 MigrateCmdParseState.NOTMIGRATING => CmdStrings.RESP_ERR_GENERIC_SLOTNOTMIGRATING,
+                MigrateCmdParseState.FAILEDTOADDKEY => CmdStrings.RESP_ERR_GENERIC_FAILEDTOADDKEY,
                 _ => CmdStrings.RESP_ERR_GENERIC_PARSING,
             };
             while (!RespWriteUtils.WriteError(errorMessage, ref dcurr, dend))
@@ -181,9 +183,12 @@ namespace Garnet.cluster
 
                         // Add pointer of current parsed key
                         if (!keys.TryAdd(new ArgSlice(keyPtr, ksize), KeyMigrationStatus.QUEUED))
+                        {
                             logger?.LogWarning($"Failed to add {{key}}", Encoding.ASCII.GetString(keyPtr, ksize));
-                        else
-                            _ = slots.Add(slot);
+                            pstate = MigrateCmdParseState.FAILEDTOADDKEY;
+                            continue;
+                        }
+                        _ = slots.Add(slot);
                     }
                 }
                 else if (option.Equals("SLOTS", StringComparison.OrdinalIgnoreCase))
@@ -228,6 +233,9 @@ namespace Garnet.cluster
                 }
                 else if (option.Equals("SLOTSRANGE", StringComparison.OrdinalIgnoreCase))
                 {
+                    if (transferOption == TransferOption.KEYS)
+                        pstate = MigrateCmdParseState.MULTI_TRANSFER_OPTION;
+                    transferOption = TransferOption.SLOTS;
                     slots = [];
                     if (args == 0 || (args & 0x1) > 0)
                     {
