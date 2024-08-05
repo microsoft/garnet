@@ -306,9 +306,9 @@ namespace Garnet.server
             RespCommand.ACL_DELUSER,
             RespCommand.ACL_LIST,
             RespCommand.ACL_LOAD,
-            RespCommand.ACL_SAVE, 
+            RespCommand.ACL_SAVE,
             RespCommand.ACL_SETUSER,
-            RespCommand.ACL_USERS, 
+            RespCommand.ACL_USERS,
             RespCommand.ACL_WHOAMI,
             // Command
             RespCommand.COMMAND,
@@ -324,7 +324,7 @@ namespace Garnet.server
             RespCommand.LATENCY_HISTOGRAM,
             RespCommand.LATENCY_RESET,
             // Transactions
-            RespCommand.MULTI, 
+            RespCommand.MULTI,
         ];
 
         // long is 64 bits, 4 longs accomodate 256 resp commands which is more than enough to provide a lookup for each resp command
@@ -345,7 +345,7 @@ namespace Garnet.server
                 // set the respCommand's bit to indicate
                 int bitIdxOffset = (int)cmd % sizeOfLong;
                 ulong bitmask = 1UL << bitIdxOffset;
-                AofIndepenedentBitLookup[bitIdxToUse] |= bitmask ;
+                AofIndepenedentBitLookup[bitIdxToUse] |= bitmask;
             }
         }
 
