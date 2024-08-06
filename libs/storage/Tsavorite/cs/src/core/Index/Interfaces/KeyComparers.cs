@@ -7,27 +7,27 @@ using System.Diagnostics;
 
 namespace Tsavorite.core
 {
-    internal static class TsavoriteEqualityComparer
+    internal static class KeyComparers
     {
-        public static ITsavoriteEqualityComparer<T> Get<T>()
+        public static IKeyComparer<T> Get<T>()
         {
             if (typeof(T) == typeof(string))
-                return (ITsavoriteEqualityComparer<T>)(object)StringTsavoriteEqualityComparer.Instance;
+                return (IKeyComparer<T>)(object)StringKeyComparer.Instance;
             else if (typeof(T) == typeof(byte[]))
-                return (ITsavoriteEqualityComparer<T>)(object)ByteArrayTsavoriteEqualityComparer.Instance;
+                return (IKeyComparer<T>)(object)ByteArrayKeyComparer.Instance;
             else if (typeof(T) == typeof(long))
-                return (ITsavoriteEqualityComparer<T>)(object)LongTsavoriteEqualityComparer.Instance;
+                return (IKeyComparer<T>)(object)LongKeyComparer.Instance;
             else if (typeof(T) == typeof(int))
-                return (ITsavoriteEqualityComparer<T>)(object)IntTsavoriteEqualityComparer.Instance;
+                return (IKeyComparer<T>)(object)IntKeyComparer.Instance;
             else if (typeof(T) == typeof(Guid))
-                return (ITsavoriteEqualityComparer<T>)(object)GuidTsavoriteEqualityComparer.Instance;
+                return (IKeyComparer<T>)(object)GuidKeyComparer.Instance;
             else if (typeof(T) == typeof(SpanByte))
-                return (ITsavoriteEqualityComparer<T>)(object)SpanByteComparer.Instance;
+                return (IKeyComparer<T>)(object)SpanByteComparer.Instance;
             else
             {
                 Debug.WriteLine("***WARNING*** Creating default Tsavorite key equality comparer based on potentially slow EqualityComparer<Key>.Default."
                                + "To avoid this, provide a comparer (ITsavoriteEqualityComparer<Key>) as an argument to Tsavorite's constructor, or make Key implement the interface ITsavoriteEqualityComparer<Key>");
-                return DefaultTsavoriteEqualityComparer<T>.Instance;
+                return DefaultKeyComparer<T>.Instance;
             }
         }
     }
@@ -35,13 +35,13 @@ namespace Tsavorite.core
     /// <summary>
     /// Deterministic equality comparer for strings
     /// </summary>
-    public sealed class StringTsavoriteEqualityComparer : ITsavoriteEqualityComparer<string>
+    public sealed class StringKeyComparer : IKeyComparer<string>
     {
         /// <summary>
         /// The default instance.
         /// </summary>
         /// <remarks>Used to avoid allocating new comparers.</remarks>
-        public static readonly StringTsavoriteEqualityComparer Instance = new();
+        public static readonly StringKeyComparer Instance = new();
 
         /// <inheritdoc />
         public bool Equals(ref string key1, ref string key2)
@@ -69,13 +69,13 @@ namespace Tsavorite.core
     /// <summary>
     /// Deterministic equality comparer for longs
     /// </summary>
-    public sealed class LongTsavoriteEqualityComparer : ITsavoriteEqualityComparer<long>
+    public sealed class LongKeyComparer : IKeyComparer<long>
     {
         /// <summary>
         /// The default instance.
         /// </summary>
         /// <remarks>Used to avoid allocating new comparers.</remarks>
-        public static readonly LongTsavoriteEqualityComparer Instance = new();
+        public static readonly LongKeyComparer Instance = new();
 
         /// <inheritdoc />
         public bool Equals(ref long k1, ref long k2) => k1 == k2;
@@ -87,13 +87,13 @@ namespace Tsavorite.core
     /// <summary>
     /// Deterministic equality comparer for longs
     /// </summary>
-    public sealed class IntTsavoriteEqualityComparer : ITsavoriteEqualityComparer<int>
+    public sealed class IntKeyComparer : IKeyComparer<int>
     {
         /// <summary>
         /// The default instance.
         /// </summary>
         /// <remarks>Used to avoid allocating new comparers.</remarks>
-        public static readonly IntTsavoriteEqualityComparer Instance = new();
+        public static readonly IntKeyComparer Instance = new();
 
         /// <inheritdoc />
         public bool Equals(ref int k1, ref int k2) => k1 == k2;
@@ -105,13 +105,13 @@ namespace Tsavorite.core
     /// <summary>
     /// Deterministic equality comparer for longs
     /// </summary>
-    public sealed class GuidTsavoriteEqualityComparer : ITsavoriteEqualityComparer<Guid>
+    public sealed class GuidKeyComparer : IKeyComparer<Guid>
     {
         /// <summary>
         /// The default instance.
         /// </summary>
         /// <remarks>Used to avoid allocating new comparers.</remarks>
-        public static readonly GuidTsavoriteEqualityComparer Instance = new();
+        public static readonly GuidKeyComparer Instance = new();
 
         /// <inheritdoc />
         public bool Equals(ref Guid k1, ref Guid k2) => k1 == k2;
@@ -128,13 +128,13 @@ namespace Tsavorite.core
     /// <summary>
     /// Deterministic equality comparer for byte[]
     /// </summary>
-    public sealed class ByteArrayTsavoriteEqualityComparer : ITsavoriteEqualityComparer<byte[]>
+    public sealed class ByteArrayKeyComparer : IKeyComparer<byte[]>
     {
         /// <summary>
         /// The default instance.
         /// </summary>
         /// <remarks>Used to avoid allocating new comparers.</remarks>
-        public static readonly ByteArrayTsavoriteEqualityComparer Instance = new();
+        public static readonly ByteArrayKeyComparer Instance = new();
 
         /// <inheritdoc />
         public bool Equals(ref byte[] key1, ref byte[] key2) => key1.AsSpan().SequenceEqual(key2);
@@ -155,16 +155,34 @@ namespace Tsavorite.core
     }
 
     /// <summary>
-    /// Low-performance Tsavorite equality comparer wrapper around EqualityComparer.Default
+    /// No-op equality comparer for Empty (used by TsavoriteLog)
     /// </summary>
-    /// <typeparam name="T"></typeparam>
-    internal sealed class DefaultTsavoriteEqualityComparer<T> : ITsavoriteEqualityComparer<T>
+    public sealed class EmptyKeyComparer : IKeyComparer<Empty>
     {
         /// <summary>
         /// The default instance.
         /// </summary>
         /// <remarks>Used to avoid allocating new comparers.</remarks>
-        public static readonly DefaultTsavoriteEqualityComparer<T> Instance = new();
+        public static readonly EmptyKeyComparer Instance = new();
+
+        /// <inheritdoc />
+        public bool Equals(ref Empty key1, ref Empty key2) => throw new NotImplementedException();
+
+        /// <inheritdoc />
+        public long GetHashCode64(ref Empty key) => throw new NotImplementedException();
+    }
+
+    /// <summary>
+    /// Low-performance Tsavorite equality comparer wrapper around EqualityComparer.Default
+    /// </summary>
+    /// <typeparam name="T"></typeparam>
+    internal sealed class DefaultKeyComparer<T> : IKeyComparer<T>
+    {
+        /// <summary>
+        /// The default instance.
+        /// </summary>
+        /// <remarks>Used to avoid allocating new comparers.</remarks>
+        public static readonly DefaultKeyComparer<T> Instance = new();
 
         private static readonly EqualityComparer<T> DefaultEC = EqualityComparer<T>.Default;
 

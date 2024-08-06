@@ -26,7 +26,7 @@ namespace Tsavorite.test
             TestUtils.DeleteDirectory(TestUtils.MethodTestDir, wait: true);
 
             // Create devices \ log for test
-            device = Devices.CreateLogDevice(Path.Join(TestUtils.MethodTestDir, "DeviceConfig"), deleteOnClose: true, recoverDevice: true, preallocateFile: true, capacity: 1 << 30);
+            device = Devices.CreateLogDevice(Path.Join(TestUtils.MethodTestDir, "DeviceConfig"), deleteOnClose: true, recoverDevice: true, preallocateFile: true, capacity: 1L << 30);
             log = new TsavoriteLog(new TsavoriteLogSettings { LogDevice = device, PageSizeBits = 80, MemorySizeBits = 20, GetMemory = null, SegmentSizeBits = 80, MutableFraction = 0.2, LogCommitManager = null });
         }
 

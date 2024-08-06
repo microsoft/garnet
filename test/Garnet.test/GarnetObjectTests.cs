@@ -8,10 +8,13 @@ using Tsavorite.core;
 
 namespace Garnet.test
 {
+    using ObjectStoreAllocator = GenericAllocator<byte[], IGarnetObject, StoreFunctions<byte[], IGarnetObject, ByteArrayKeyComparer, DefaultRecordDisposer<byte[], IGarnetObject>>>;
+    using ObjectStoreFunctions = StoreFunctions<byte[], IGarnetObject, ByteArrayKeyComparer, DefaultRecordDisposer<byte[], IGarnetObject>>;
+
     [TestFixture]
     public class GarnetObjectTests
     {
-        TsavoriteKV<byte[], IGarnetObject> store;
+        TsavoriteKV<byte[], IGarnetObject, ObjectStoreFunctions, ObjectStoreAllocator> store;
         IDevice logDevice, objectLogDevice;
 
         [SetUp]
@@ -145,27 +148,20 @@ namespace Garnet.test
 
         private void CreateStore()
         {
-            if (logDevice == null)
-                logDevice = Devices.CreateLogDevice(TestUtils.MethodTestDir + "/hlog.log");
-            if (objectLogDevice == null)
-                objectLogDevice = Devices.CreateLogDevice(TestUtils.MethodTestDir + "/hlog.obj.log");
-            var log = new LogSettings
+            logDevice ??= Devices.CreateLogDevice(TestUtils.MethodTestDir + "/hlog.log");
+            objectLogDevice ??= Devices.CreateLogDevice(TestUtils.MethodTestDir + "/hlog.obj.log");
+
+            var kvSettings = new KVSettings<byte[], IGarnetObject>
             {
+                IndexSize = 1L << 13,
                 LogDevice = logDevice,
                 ObjectLogDevice = objectLogDevice,
-            };
-
-            var ckpt = new CheckpointSettings
-            {
                 CheckpointDir = TestUtils.MethodTestDir
             };
 
-            var serializer = new SerializerSettings<byte[], IGarnetObject>
-            {
-                valueSerializer = () => new MyGarnetObjectSerializer()
-            };
-
-            store = new TsavoriteKV<byte[], IGarnetObject>(128, log, ckpt, serializer);
+            store = new(kvSettings
+                , StoreFunctions<byte[], IGarnetObject>.Create(new ByteArrayKeyComparer(), () => new Tsavorite.core.ByteArrayBinaryObjectSerializer(), () => new MyGarnetObjectSerializer())
+                , (allocatorSettings, storeFunctions) => new(allocatorSettings, storeFunctions));
         }
     }
 

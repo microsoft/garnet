@@ -6,7 +6,9 @@ using System.Runtime.CompilerServices;
 
 namespace Tsavorite.core
 {
-    public unsafe partial class TsavoriteKV<Key, Value> : TsavoriteBase
+    public unsafe partial class TsavoriteKV<Key, Value, TStoreFunctions, TAllocator> : TsavoriteBase
+        where TStoreFunctions : IStoreFunctions<Key, Value>
+        where TAllocator : IAllocator<Key, Value, TStoreFunctions>
     {
         /// <summary>
         /// Delete operation. Replaces the value corresponding to 'key' with tombstone.
@@ -40,11 +42,11 @@ namespace Tsavorite.core
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         internal OperationStatus InternalDelete<Input, Output, Context, TSessionFunctionsWrapper>(ref Key key, long keyHash, ref Context userContext,
                             ref PendingContext<Input, Output, Context> pendingContext, TSessionFunctionsWrapper sessionFunctions)
-            where TSessionFunctionsWrapper : ISessionFunctionsWrapper<Key, Value, Input, Output, Context>
+            where TSessionFunctionsWrapper : ISessionFunctionsWrapper<Key, Value, Input, Output, Context, TStoreFunctions, TAllocator>
         {
             var latchOperation = LatchOperation.None;
 
-            OperationStackContext<Key, Value> stackCtx = new(keyHash);
+            OperationStackContext<Key, Value, TStoreFunctions, TAllocator> stackCtx = new(keyHash);
             pendingContext.keyHash = keyHash;
 
             if (sessionFunctions.Ctx.phase == Phase.IN_PROGRESS_GROW)
@@ -60,7 +62,7 @@ namespace Tsavorite.core
             try
             {
                 // Search the entire in-memory region; this lets us find a tombstoned record in the immutable region, avoiding unnecessarily adding one.
-                if (!TryFindRecordForUpdate(ref key, ref stackCtx, hlog.HeadAddress, out status))
+                if (!TryFindRecordForUpdate(ref key, ref stackCtx, hlogBase.HeadAddress, out status))
                     return status;
 
                 // Note: Delete does not track pendingContext.InitialAddress because we don't have an InternalContinuePendingDelete
@@ -96,7 +98,7 @@ namespace Tsavorite.core
                     }
                 }
 
-                if (stackCtx.recSrc.LogicalAddress >= hlog.ReadOnlyAddress)
+                if (stackCtx.recSrc.LogicalAddress >= hlogBase.ReadOnlyAddress)
                 {
                     srcRecordInfo = ref stackCtx.recSrc.GetInfo();
 
@@ -154,7 +156,7 @@ namespace Tsavorite.core
                                     // HashBucketEntry.word to 0, it means we do not expect any records for this key's tag to exist after the elision. Therefore,
                                     // we can re-insert the record iff the HashBucketEntry's address is <= kTempInvalidAddress.
                                     stackCtx.hei = new(stackCtx.hei.hash);
-                                    FindOrCreateTag(ref stackCtx.hei, hlog.BeginAddress);
+                                    FindOrCreateTag(ref stackCtx.hei, hlogBase.BeginAddress);
 
                                     if (stackCtx.hei.entry.Address <= Constants.kTempInvalidAddress && stackCtx.hei.TryCAS(stackCtx.recSrc.LogicalAddress))
                                         srcRecordInfo.UnsealAndValidate();
@@ -174,7 +176,7 @@ namespace Tsavorite.core
                     // Could not delete in place for some reason - create new record.
                     goto CreateNewRecord;
                 }
-                else if (stackCtx.recSrc.LogicalAddress >= hlog.HeadAddress)
+                else if (stackCtx.recSrc.LogicalAddress >= hlogBase.HeadAddress)
                 {
                     // If we already have a deleted record, there's nothing to do.
                     srcRecordInfo = ref stackCtx.recSrc.GetInfo();
@@ -222,8 +224,8 @@ namespace Tsavorite.core
 
         // No AggressiveInlining; this is a less-common function and it may improve inlining of InternalDelete if the compiler decides not to inline this.
         private void CreatePendingDeleteContext<Input, Output, Context, TSessionFunctionsWrapper>(ref Key key, Context userContext,
-                ref PendingContext<Input, Output, Context> pendingContext, TSessionFunctionsWrapper sessionFunctions, ref OperationStackContext<Key, Value> stackCtx)
-            where TSessionFunctionsWrapper : ISessionFunctionsWrapper<Key, Value, Input, Output, Context>
+                ref PendingContext<Input, Output, Context> pendingContext, TSessionFunctionsWrapper sessionFunctions, ref OperationStackContext<Key, Value, TStoreFunctions, TAllocator> stackCtx)
+            where TSessionFunctionsWrapper : ISessionFunctionsWrapper<Key, Value, Input, Output, Context, TStoreFunctions, TAllocator>
         {
             pendingContext.type = OperationType.DELETE;
             if (pendingContext.key == default) pendingContext.key = hlog.GetKeyContainer(ref key);
@@ -232,7 +234,7 @@ namespace Tsavorite.core
             pendingContext.logicalAddress = stackCtx.recSrc.LogicalAddress;
         }
 
-        private LatchDestination CheckCPRConsistencyDelete(Phase phase, ref OperationStackContext<Key, Value> stackCtx, ref OperationStatus status, ref LatchOperation latchOperation)
+        private LatchDestination CheckCPRConsistencyDelete(Phase phase, ref OperationStackContext<Key, Value, TStoreFunctions, TAllocator> stackCtx, ref OperationStatus status, ref LatchOperation latchOperation)
         {
             // This is the same logic as Upsert; neither goes pending.
             return CheckCPRConsistencyUpsert(phase, ref stackCtx, ref status, ref latchOperation);
@@ -244,13 +246,13 @@ namespace Tsavorite.core
         /// <param name="key">The record Key</param>
         /// <param name="pendingContext">Information about the operation context</param>
         /// <param name="sessionFunctions">The current session</param>
-        /// <param name="stackCtx">Contains the <see cref="HashEntryInfo"/> and <see cref="RecordSource{Key, Value}"/> structures for this operation,
+        /// <param name="stackCtx">Contains the <see cref="HashEntryInfo"/> and <see cref="RecordSource{Key, Value, TStoreFunctions, TAllocator}"/> structures for this operation,
         ///     and allows passing back the newLogicalAddress for invalidation in the case of exceptions.</param>
-        /// <param name="srcRecordInfo">If <paramref name="stackCtx"/>.<see cref="RecordSource{Key, Value}.HasInMemorySrc"/>,
-        ///     this is the <see cref="RecordInfo"/> for <see cref="RecordSource{Key, Value}.LogicalAddress"/></param>
+        /// <param name="srcRecordInfo">If <paramref name="stackCtx"/>.<see cref="RecordSource{Key, Value, TStoreFunctions, TAllocator}.HasInMemorySrc"/>,
+        ///     this is the <see cref="RecordInfo"/> for <see cref="RecordSource{Key, Value, TStoreFunctions, TAllocator}.LogicalAddress"/></param>
         private OperationStatus CreateNewRecordDelete<Input, Output, Context, TSessionFunctionsWrapper>(ref Key key, ref PendingContext<Input, Output, Context> pendingContext,
-                                                                                             TSessionFunctionsWrapper sessionFunctions, ref OperationStackContext<Key, Value> stackCtx, ref RecordInfo srcRecordInfo)
-            where TSessionFunctionsWrapper : ISessionFunctionsWrapper<Key, Value, Input, Output, Context>
+                TSessionFunctionsWrapper sessionFunctions, ref OperationStackContext<Key, Value, TStoreFunctions, TAllocator> stackCtx, ref RecordInfo srcRecordInfo)
+            where TSessionFunctionsWrapper : ISessionFunctionsWrapper<Key, Value, Input, Output, Context, TStoreFunctions, TAllocator>
         {
             var value = default(Value);
             var (actualSize, allocatedSize, keySize) = hlog.GetRecordSize(ref key, ref value);
@@ -260,7 +262,8 @@ namespace Tsavorite.core
                     out long newLogicalAddress, out long newPhysicalAddress, out OperationStatus status))
                 return status;
 
-            ref RecordInfo newRecordInfo = ref WriteNewRecordInfo(ref key, hlog, newPhysicalAddress, inNewVersion: sessionFunctions.Ctx.InNewVersion, tombstone: true, stackCtx.recSrc.LatestLogicalAddress);
+            ref RecordInfo newRecordInfo = ref WriteNewRecordInfo(ref key, hlogBase, newPhysicalAddress, inNewVersion: sessionFunctions.Ctx.InNewVersion, stackCtx.recSrc.LatestLogicalAddress);
+            newRecordInfo.SetTombstone();
             stackCtx.SetNewRecord(newLogicalAddress);
 
             DeleteInfo deleteInfo = new()
@@ -314,7 +317,7 @@ namespace Tsavorite.core
             stackCtx.SetNewRecordInvalid(ref newRecordInfo);
             ref Value insertedValue = ref hlog.GetValue(newPhysicalAddress);
             ref Key insertedKey = ref hlog.GetKey(newPhysicalAddress);
-            sessionFunctions.DisposeSingleDeleter(ref insertedKey, ref insertedValue, ref deleteInfo);
+            storeFunctions.DisposeRecord(ref insertedKey, ref insertedValue, DisposeReason.SingleDeleterCASFailed);
 
             SaveAllocationForRetry(ref pendingContext, newLogicalAddress, newPhysicalAddress, allocatedSize);
             return OperationStatus.RETRY_NOW;   // CAS failure does not require epoch refresh

@@ -63,6 +63,7 @@ namespace Garnet.server
         public static ReadOnlySpan<byte> MONITOR => "MONITOR"u8;
         public static ReadOnlySpan<byte> monitor => "monitor"u8;
         public static ReadOnlySpan<byte> COMMITAOF => "COMMITAOF"u8;
+        public static ReadOnlySpan<byte> FLUSHALL => "FLUSHALL"u8;
         public static ReadOnlySpan<byte> FLUSHDB => "FLUSHDB"u8;
         public static ReadOnlySpan<byte> FORCEGC => "FORCEGC"u8;
         public static ReadOnlySpan<byte> MATCH => "MATCH"u8;

@@ -397,7 +397,8 @@ namespace Tsavorite.core
 
                         // Execute the action
                         trigger_action();
-                        if (drainCount == 0) break;
+                        if (drainCount == 0)
+                            break;
                     }
                 }
             }
