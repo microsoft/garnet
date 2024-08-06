@@ -1,0 +1,54 @@
+{{- if .Values.cluster.enabled }}
+{{- if .Values.cluster.initJob.enabled }}
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: "{{ .Release.Name }}-manage-cluster"
+  labels:
+    {{- include "garnet.labels" . | nindent 4 }}
+  {{- with .Values.cluster.initJob.annotations }}
+  annotations:
+    {{- toYaml . | nindent 4 }}
+  {{- end }}
+spec:
+  backoffLimit: {{ .Values.cluster.initJob.backoffLimit }}
+  ttlSecondsAfterFinished: {{ .Values.cluster.initJob.ttlSecondsAfterFinished }}
+  template:
+    metadata:
+      labels:
+        {{- include "garnet.labels" . | nindent 8 }}
+    spec:
+      containers:
+        - name: init
+          image: "{{ .Values.cluster.initJob.image.registry }}/{{ .Values.cluster.initJob.image.repository }}:{{ .Values.cluster.initJob.image.tag | default "latest" }}"
+          imagePullPolicy: {{ .Values.image.pullPolicy }}
+          command: 
+            - /bin/sh
+            - -c
+            - |
+              echo "Waiting for DNS propagation..."
+              sleep 10
+
+              # Wait for Redis to be ready using ping
+              echo "Waiting for redis to be ready..."
+              until /usr/local/bin/redis-cli -h {{ include "garnet.fullname" . }}-{{ sub (int .Values.cluster.statefulSet.replicas) 1 }}.{{ include "garnet.fullname" . }}-headless.{{ .Release.Namespace }}.svc.cluster.local -p {{ .Values.containers.port }} ping; do
+                echo "Waiting for redis to be ready..."
+                sleep 10
+              done
+
+              # Check how many clusters are ok
+              cluster_slots_ok=$(/usr/local/bin/redis-cli -h {{ include "garnet.fullname" . }}-0.{{ include "garnet.fullname" . }}-headless.{{ .Release.Namespace }}.svc.cluster.local -p {{ .Values.containers.port }} CLUSTER INFO 2>/dev/null | grep cluster_slots_ok | awk -F ':' '{print $2}')
+
+              # Create clusters if not created
+              if [ "$cluster_slots_ok" -ne 16384 ]; then
+                echo "Cluster is not fully created. Creating cluster..."
+                /usr/local/bin/redis-cli --cluster create {{- range $i := until (int .Values.cluster.statefulSet.replicas) }} {{ printf "%s-%d.%s-headless.%s.svc.cluster.local:%d " (include "garnet.fullname" $) $i (include "garnet.fullname" $) $.Release.Namespace (int $.Values.containers.port) }} {{- end }} --cluster-yes
+              else
+                echo "Cluster is already created and all slots are covered."
+              fi
+
+              # Additional wait time to ensure stability
+              sleep 10
+      restartPolicy: Never
+{{- end }}
+{{- end }}

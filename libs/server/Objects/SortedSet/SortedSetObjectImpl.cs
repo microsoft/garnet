@@ -320,6 +320,7 @@ namespace Garnet.server
         {
             //ZRANGE key min max [BYSCORE|BYLEX] [REV] [LIMIT offset count] [WITHSCORES]
             //ZRANGEBYSCORE key min max [WITHSCORES] [LIMIT offset count]
+            //ZREVRANGEBYSCORE key max min [WITHSCORES] [LIMIT offset count]
             var _input = (ObjectInputHeader*)input;
             int count = _input->arg1;
             int respProtocolVersion = _input->arg2;
@@ -351,6 +352,11 @@ namespace Garnet.server
                 ZRangeOptions options = new();
                 if (_input->header.SortedSetOp == SortedSetOperation.ZRANGEBYSCORE) options.ByScore = true;
                 if (_input->header.SortedSetOp == SortedSetOperation.ZREVRANGE) options.Reverse = true;
+                if (_input->header.SortedSetOp == SortedSetOperation.ZREVRANGEBYSCORE)
+                {
+                    options.Reverse = true;
+                    options.ByScore = true;
+                }
 
                 if (count > 2)
                 {
@@ -783,7 +789,6 @@ namespace Garnet.server
             byte* ptr = output.SpanByte.ToPointer();
             var curr = ptr;
             var end = curr + output.Length;
-            var error = false;
 
             ObjectOutputHeader _output = default;
             try
@@ -791,59 +796,44 @@ namespace Garnet.server
                 if (!RespReadUtils.ReadByteArrayWithLengthHeader(out var member, ref input_currptr, input + length))
                     return;
 
-                if (_input->arg1 == 3) // ZRANK key member WITHSCORE
+                if (_input->arg2 == 1) // ZRANK key member WITHSCORE
                 {
-                    if (!RespReadUtils.TrySliceWithLengthHeader(out var token, ref input_currptr, input + length))
-                        return;
-
-                    if (token.EqualsUpperCaseSpanIgnoringCase("WITHSCORE"u8))
-                    {
-                        withScore = true;
-                    }
-                    else
-                    {
-                        while (!RespWriteUtils.WriteError(CmdStrings.RESP_ERR_GENERIC_SYNTAX_ERROR, ref curr, end))
-                            ObjectUtils.ReallocateOutput(ref output, ref isMemory, ref ptr, ref ptrHandle, ref curr, ref end);
-                        error = true;
-                    }
+                    withScore = true;
                 }
 
-                if (!error)
+                if (!sortedSetDict.TryGetValue(member, out var score))
                 {
-                    if (!sortedSetDict.TryGetValue(member, out var score))
+                    while (!RespWriteUtils.WriteNull(ref curr, end))
+                        ObjectUtils.ReallocateOutput(ref output, ref isMemory, ref ptr, ref ptrHandle, ref curr, ref end);
+                }
+                else
+                {
+                    var rank = 0;
+                    foreach (var item in sortedSet)
                     {
-                        while (!RespWriteUtils.WriteNull(ref curr, end))
+                        if (item.Item2.SequenceEqual(member))
+                            break;
+                        rank++;
+                    }
+
+                    if (!ascending)
+                        rank = sortedSet.Count - rank - 1;
+
+                    if (withScore)
+                    {
+                        while (!RespWriteUtils.WriteArrayLength(2, ref curr, end)) // rank and score
+                            ObjectUtils.ReallocateOutput(ref output, ref isMemory, ref ptr, ref ptrHandle, ref curr, ref end);
+
+                        while (!RespWriteUtils.WriteInteger(rank, ref curr, end))
+                            ObjectUtils.ReallocateOutput(ref output, ref isMemory, ref ptr, ref ptrHandle, ref curr, ref end);
+
+                        while (!RespWriteUtils.TryWriteDoubleBulkString(score, ref curr, end))
                             ObjectUtils.ReallocateOutput(ref output, ref isMemory, ref ptr, ref ptrHandle, ref curr, ref end);
                     }
                     else
                     {
-                        var rank = 0;
-                        foreach (var item in sortedSet)
-                        {
-                            if (item.Item2.SequenceEqual(member))
-                                break;
-                            rank++;
-                        }
-
-                        if (!ascending)
-                            rank = sortedSet.Count - rank - 1;
-
-                        if (withScore)
-                        {
-                            while (!RespWriteUtils.WriteArrayLength(2, ref curr, end)) // rank and score
-                                ObjectUtils.ReallocateOutput(ref output, ref isMemory, ref ptr, ref ptrHandle, ref curr, ref end);
-
-                            while (!RespWriteUtils.WriteInteger(rank, ref curr, end))
-                                ObjectUtils.ReallocateOutput(ref output, ref isMemory, ref ptr, ref ptrHandle, ref curr, ref end);
-
-                            while (!RespWriteUtils.TryWriteDoubleBulkString(score, ref curr, end))
-                                ObjectUtils.ReallocateOutput(ref output, ref isMemory, ref ptr, ref ptrHandle, ref curr, ref end);
-                        }
-                        else
-                        {
-                            while (!RespWriteUtils.WriteInteger(rank, ref curr, end))
-                                ObjectUtils.ReallocateOutput(ref output, ref isMemory, ref ptr, ref ptrHandle, ref curr, ref end);
-                        }
+                        while (!RespWriteUtils.WriteInteger(rank, ref curr, end))
+                            ObjectUtils.ReallocateOutput(ref output, ref isMemory, ref ptr, ref ptrHandle, ref curr, ref end);
                     }
                 }
 
@@ -892,6 +882,13 @@ namespace Garnet.server
 
             try
             {
+                if (doReverse)
+                {
+                    var tmpMinValueChars = minValueChars;
+                    minValueChars = maxValueChars;
+                    maxValueChars = tmpMinValueChars;
+                }
+
                 var iterator = sortedSet.GetViewBetween((sortedSet.Min.Item1, minValueChars.ToArray()), sortedSet.Max);
 
                 // using ToList method so we avoid the Invalid operation ex. when removing
@@ -954,6 +951,11 @@ namespace Garnet.server
         /// <returns></returns>
         private List<(double, byte[])> GetElementsInRangeByScore(double minValue, double maxValue, bool minExclusive, bool maxExclusive, bool withScore, bool doReverse, bool validLimit, bool rem, (int, int) limit = default)
         {
+            if (doReverse)
+            {
+                (minValue, maxValue) = (maxValue, minValue);
+            }
+
             List<(double, byte[])> scoredElements = new();
             if (sortedSet.Max.Item1 < minValue)
             {
