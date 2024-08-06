@@ -106,7 +106,7 @@ namespace Garnet.server
         /// <returns></returns>
         public object garnet_call(string cmd, params object[] args)
         {
-            return respServerSession.ProcessCommandFromScripting(state, cmd, args);
+            return respServerSession?.ProcessCommandFromScripting(state, cmd, args);
         }
 
         /// <summary>
@@ -119,6 +119,15 @@ namespace Garnet.server
         {
             sandbox_env["KEYS"] = keys;
             sandbox_env["ARGV"] = argv;
+            return function.Call()[0];
+        }
+
+        /// <summary>
+        /// Runs the precompiled Lua function
+        /// </summary>
+        /// <returns></returns>
+        public object Run()
+        {
             return function.Call()[0];
         }
     }

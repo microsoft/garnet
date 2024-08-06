@@ -28,17 +28,6 @@ namespace Garnet.server
             => scriptCache.TryGetValue(digest.ToArray(), out scriptRunner);
 
         /// <summary>
-        /// Try get script runner for given source
-        /// </summary>
-        public bool TryGetFromSource(ReadOnlySpan<byte> source, out byte[] digest, out LuaRunner scriptRunner)
-        {
-            digest = GetScriptDigest(source);
-            if (!scriptCache.TryGetValue(digest, out scriptRunner))
-                return TryLoad(source, digest, out scriptRunner);
-            return true;
-        }
-
-        /// <summary>
         /// Load script into the cache
         /// </summary>
         public bool TryLoad(ReadOnlySpan<byte> source, out byte[] digest, out LuaRunner runner)
@@ -51,8 +40,8 @@ namespace Garnet.server
         {
             runner = null;
 
-            if (scriptCache.ContainsKey(digest))
-                return false;
+            if (scriptCache.TryGetValue(digest, out runner))
+                return true;
 
             try
             {

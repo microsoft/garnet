@@ -14,9 +14,8 @@ namespace Garnet.server
         /// EVALSHA sha1 numkeys [key [key ...]] [arg [arg ...]]
         /// </summary>
         /// <param name="count"></param>
-        /// <param name="ptr"></param>
         /// <returns></returns>
-        private unsafe bool TryEVALSHA(int count, byte* ptr)
+        private unsafe bool TryEVALSHA(int count)
         {
             var digest = parseState.GetArgSliceByRef(0).ReadOnlySpan;
 
@@ -46,28 +45,32 @@ namespace Garnet.server
         /// EVAL script numkeys [key [key ...]] [arg [arg ...]]
         /// </summary>
         /// <param name="count"></param>
-        /// <param name="ptr"></param>
         /// <returns></returns>
-        private unsafe bool TryEVAL(int count, byte* ptr)
+        private unsafe bool TryEVAL(int count)
         {
             var script = parseState.GetArgSliceByRef(0).ReadOnlySpan;
             var digest = sessionScriptCache.GetScriptDigest(script);
 
-            using (var runner = new LuaRunner(script, this, logger))
+            var result = false;
+            sessionScriptCache.TryLoad(script, digest, out var runner);
+            if (runner == null)
             {
-                runner.Compile();
-                var result = ExecuteScript(count - 1, runner);
-                return result;
+                while (!RespWriteUtils.WriteError(CmdStrings.RESP_ERR_NO_SCRIPT, ref dcurr, dend))
+                    SendAndReset();
             }
+            else
+            {
+                result = ExecuteScript(count - 1, runner);
+            }
+            return result;
         }
 
         /// <summary>
         /// SCRIPT Commands (load, exists, flush, kills)
         /// </summary>
         /// <param name="count"></param>
-        /// <param name="ptr"></param>
         /// <returns></returns>
-        private unsafe bool TryScript(int count, byte* ptr)
+        private unsafe bool TrySCRIPT(int count)
         {
             if (count >= 1)
             {
@@ -76,10 +79,11 @@ namespace Garnet.server
                 {
                     case "load" when count == 2:
                         var source = parseState.GetArgSliceByRef(1).ReadOnlySpan;
-                        sessionScriptCache.TryLoad(source, out var digest, out _);
-
-                        // Add script to the store dictionary
-                        storeWrapper.storeScriptCache.TryAdd(digest, source.ToArray());
+                        if (sessionScriptCache.TryLoad(source, out var digest, out _))
+                        {
+                            // Add script to the store dictionary
+                            storeWrapper.storeScriptCache.TryAdd(digest, source.ToArray());
+                        }
 
                         while (!RespWriteUtils.WriteBulkString(digest, ref dcurr, dend))
                             SendAndReset();
