@@ -130,5 +130,14 @@ namespace Garnet.server
         {
             return function.Call()[0];
         }
+
+        /// <summary>
+        /// Runs the precompiled Lua function
+        /// </summary>
+        /// <returns></returns>
+        public void RunVoid()
+        {
+            function.Call();
+        }
     }
 }

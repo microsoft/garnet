@@ -36,7 +36,7 @@ namespace BDN.benchmark.Resp
 
         [Benchmark]
         public void BasicLua1()
-            => r1.Run();
+            => r1.RunVoid();
 
         [Benchmark]
         public void BasicLua2()
