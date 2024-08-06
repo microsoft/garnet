@@ -5,7 +5,7 @@ namespace Garnet.server
 {
     class CustomObjectCommand
     {
-        public readonly string nameStr;
+        public readonly string NameStr;
         public readonly int NumKeys;
         public readonly int NumParams;
         public readonly byte[] name;
@@ -17,8 +17,8 @@ namespace Garnet.server
 
         internal CustomObjectCommand(string name, byte id, byte subid, int numKeys, int numParams, CommandType type, CustomObjectFactory factory, CustomObjectFunctions functions = null)
         {
-            nameStr = name.ToUpperInvariant();
-            this.name = System.Text.Encoding.ASCII.GetBytes(nameStr);
+            NameStr = name.ToUpperInvariant();
+            this.name = System.Text.Encoding.ASCII.GetBytes(NameStr);
             this.id = id;
             this.subid = subid;
             NumKeys = numKeys;

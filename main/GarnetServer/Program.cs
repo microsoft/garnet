@@ -51,13 +51,13 @@ namespace Garnet
                 Flags = RespCommandFlags.DenyOom | RespCommandFlags.Write,
                 AclCategories = RespAclCategories.String | RespAclCategories.Write,
             };
-            server.Register.NewCommand("SETIFPM", 2, CommandType.ReadModifyWrite, new SetIfPMCustomCommand(), setIfPmCmdInfo);
+            server.Register.NewCommand("SETIFPM", CommandType.ReadModifyWrite, new SetIfPMCustomCommand(), setIfPmCmdInfo);
 
             // Register custom command on raw strings (SETWPIFPGT = "set with prefix, if prefix greater than")
-            server.Register.NewCommand("SETWPIFPGT", 2, CommandType.ReadModifyWrite, new SetWPIFPGTCustomCommand());
+            server.Register.NewCommand("SETWPIFPGT", CommandType.ReadModifyWrite, new SetWPIFPGTCustomCommand());
 
             // Register custom command on raw strings (DELIFM = "delete if value matches")
-            server.Register.NewCommand("DELIFM", 1, CommandType.ReadModifyWrite, new DeleteIfMatchCustomCommand());
+            server.Register.NewCommand("DELIFM", CommandType.ReadModifyWrite, new DeleteIfMatchCustomCommand());
 
             // Register custom commands on objects
             var factory = new MyDictFactory();

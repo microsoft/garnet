@@ -182,7 +182,6 @@ namespace Garnet.server.Custom
         {
             customCommandManager.Register(
                 this.RegisterArgs.Name,
-                this.RegisterArgs.NumParams,
                 this.RegisterArgs.CommandType,
                 this.Instance,
                 this.RegisterArgs.CommandInfo,

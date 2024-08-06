@@ -49,7 +49,7 @@ namespace Garnet.test
         public void CustomCommandTest1()
         {
             // Register sample custom command (SETIFPM = "set if prefix match")
-            int x = server.Register.NewCommand("SETIFPM", 2, CommandType.ReadModifyWrite, new SetIfPMCustomCommand());
+            int x = server.Register.NewCommand("SETIFPM", CommandType.ReadModifyWrite, new SetIfPMCustomCommand(), new RespCommandsInfo { Arity = -5 });
 
             using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
             var db = redis.GetDatabase(0);
@@ -94,7 +94,7 @@ namespace Garnet.test
         public void CustomCommandTest2()
         {
             // Register custom command on raw strings (SETWPIFPGT = "set with prefix, if prefix greater than")
-            server.Register.NewCommand("SETWPIFPGT", 2, CommandType.ReadModifyWrite, new SetWPIFPGTCustomCommand());
+            server.Register.NewCommand("SETWPIFPGT", CommandType.ReadModifyWrite, new SetWPIFPGTCustomCommand());
 
             using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
             var db = redis.GetDatabase(0);
@@ -174,7 +174,7 @@ namespace Garnet.test
         public void CustomCommandTest3()
         {
             // Register custom command on raw strings (SETWPIFPGT = "set with prefix, if prefix greater than")
-            server.Register.NewCommand("SETWPIFPGT", 2, CommandType.ReadModifyWrite, new SetWPIFPGTCustomCommand());
+            server.Register.NewCommand("SETWPIFPGT", CommandType.ReadModifyWrite, new SetWPIFPGTCustomCommand());
 
             using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
             var db = redis.GetDatabase(0);
@@ -204,7 +204,7 @@ namespace Garnet.test
         public void CustomCommandTest4()
         {
             // Register custom command on raw strings (SETWPIFPGT = "set with prefix, if prefix greater than")
-            server.Register.NewCommand("SETWPIFPGT", 2, CommandType.ReadModifyWrite, new SetWPIFPGTCustomCommand());
+            server.Register.NewCommand("SETWPIFPGT", CommandType.ReadModifyWrite, new SetWPIFPGTCustomCommand());
 
             using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
             var db = redis.GetDatabase(0);
@@ -234,7 +234,7 @@ namespace Garnet.test
         public void CustomCommandTest5()
         {
             // Register custom command on raw strings (SETWPIFPGT = "set with prefix, if prefix greater than")
-            server.Register.NewCommand("SETWPIFPGT", 2, CommandType.ReadModifyWrite, new SetWPIFPGTCustomCommand());
+            server.Register.NewCommand("SETWPIFPGT", CommandType.ReadModifyWrite, new SetWPIFPGTCustomCommand());
 
             using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
             var db = redis.GetDatabase(0);
@@ -273,7 +273,7 @@ namespace Garnet.test
         public void CustomCommandTest6()
         {
             // Register sample custom command (SETIFPM = "set if prefix match")
-            server.Register.NewCommand("DELIFM", 1, CommandType.ReadModifyWrite, new DeleteIfMatchCustomCommand());
+            server.Register.NewCommand("DELIFM", CommandType.ReadModifyWrite, new DeleteIfMatchCustomCommand());
 
             using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
             var db = redis.GetDatabase(0);
@@ -340,7 +340,7 @@ namespace Garnet.test
         public void CustomCommandSetWhileKeyHasTtlTest()
         {
             // Register sample custom command (SETWPIFPGT = "set if prefix greater than")
-            server.Register.NewCommand("SETWPIFPGT", 2, CommandType.ReadModifyWrite, new SetWPIFPGTCustomCommand());
+            server.Register.NewCommand("SETWPIFPGT", CommandType.ReadModifyWrite, new SetWPIFPGTCustomCommand());
 
             using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
             var db = redis.GetDatabase(0);
@@ -373,7 +373,7 @@ namespace Garnet.test
         public void CustomCommandSetAfterKeyDeletedWithTtlTest()
         {
             // Register sample custom command (SETWPIFPGT = "set if prefix greater than")
-            server.Register.NewCommand("SETWPIFPGT", 2, CommandType.ReadModifyWrite, new SetWPIFPGTCustomCommand());
+            server.Register.NewCommand("SETWPIFPGT", CommandType.ReadModifyWrite, new SetWPIFPGTCustomCommand());
 
             using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
             var db = redis.GetDatabase(0);
@@ -471,7 +471,7 @@ namespace Garnet.test
         public async Task CustomCommandSetFollowedByTtlTestAsync()
         {
             // Register sample custom command (SETWPIFPGT = "set if prefix greater than")
-            server.Register.NewCommand("SETWPIFPGT", 2, CommandType.ReadModifyWrite, new SetWPIFPGTCustomCommand());
+            server.Register.NewCommand("SETWPIFPGT", CommandType.ReadModifyWrite, new SetWPIFPGTCustomCommand());
 
             using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
             var db = redis.GetDatabase(0);
@@ -500,7 +500,7 @@ namespace Garnet.test
         public async Task CustomCommandSetWithCustomExpirationTestAsync()
         {
             // Register sample custom command (SETWPIFPGT = "set if prefix greater than")
-            server.Register.NewCommand("SETWPIFPGT", 2, CommandType.ReadModifyWrite, new SetWPIFPGTCustomCommand(),
+            server.Register.NewCommand("SETWPIFPGT", CommandType.ReadModifyWrite, new SetWPIFPGTCustomCommand(),
                 expirationTicks: TimeSpan.FromSeconds(4).Ticks); // provide default expiration at registration time
 
             using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());

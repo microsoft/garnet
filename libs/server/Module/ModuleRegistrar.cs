@@ -96,12 +96,12 @@ namespace Garnet.server.Module
         /// <param name="commandInfo">Command info</param>
         /// <param name="expirationTicks">Expiration ticks for the key</param>
         /// <returns>Registration status</returns>
-        public ModuleActionStatus RegisterCommand(string name, CustomRawStringFunctions customFunctions, CommandType type = CommandType.ReadModifyWrite, int numParams = int.MaxValue, RespCommandsInfo commandInfo = null, long expirationTicks = 0)
+        public ModuleActionStatus RegisterCommand(string name, CustomRawStringFunctions customFunctions, CommandType type = CommandType.ReadModifyWrite, RespCommandsInfo commandInfo = null, long expirationTicks = 0)
         {
             if (string.IsNullOrEmpty(name) || customFunctions == null)
                 return ModuleActionStatus.InvalidRegistrationInfo;
 
-            customCommandManager.Register(name, numParams, type, customFunctions, commandInfo, expirationTicks);
+            customCommandManager.Register(name, type, customFunctions, commandInfo, expirationTicks);
 
             return ModuleActionStatus.Success;
         }
