@@ -10,8 +10,9 @@ namespace Garnet.server
 {
     internal sealed unsafe partial class RespServerSession : ServerSessionBase
     {
-        private bool NetworkINFO(int count)
+        private bool NetworkINFO()
         {
+            var count = parseState.Count;
             HashSet<InfoMetricsType> sections = null;
             bool invalid = false;
             bool reset = false;

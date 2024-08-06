@@ -431,7 +431,7 @@ namespace Garnet.server
         /// <summary>
         /// SET EX NX
         /// </summary>
-        private bool NetworkSETEXNX<TGarnetApi>(int count, ref TGarnetApi storageApi)
+        private bool NetworkSETEXNX<TGarnetApi>(ref TGarnetApi storageApi)
             where TGarnetApi : IGarnetApi
         {
             var key = parseState.GetArgSliceByRef(0);
@@ -449,7 +449,7 @@ namespace Garnet.server
             var tokenIdx = 2;
             Span<byte> nextOpt = default;
             var optUpperCased = false;
-            while (tokenIdx < count || optUpperCased)
+            while (tokenIdx < parseState.Count || optUpperCased)
             {
                 if (!optUpperCased)
                 {
@@ -888,74 +888,31 @@ namespace Garnet.server
         /// <summary>
         /// FLUSHDB [ASYNC|SYNC] [UNSAFETRUNCATELOG]
         /// </summary>
-        private bool NetworkFLUSHDB(int count)
+        private bool NetworkFLUSHDB()
         {
-            if (count > 2)
+            if (parseState.Count > 2)
             {
-                return AbortWithWrongNumberOfArguments(nameof(RespCommand.FLUSHDB), count);
+                return AbortWithWrongNumberOfArguments(nameof(RespCommand.FLUSHDB), parseState.Count);
             }
 
-            var unsafeTruncateLog = false;
-            var async = false;
-            var sync = false;
-            var syntaxError = false;
+            FlushDb(RespCommand.FLUSHDB);
 
-            for (var i = 0; i < count; i++)
+            return true;
+        }
+
+        /// <summary>
+        /// FLUSHALL [ASYNC|SYNC] [UNSAFETRUNCATELOG]
+        /// </summary>
+        private bool NetworkFLUSHALL()
+        {
+            if (parseState.Count > 2)
             {
-                var nextToken = parseState.GetArgSliceByRef(i).ReadOnlySpan;
-
-                if (nextToken.EqualsUpperCaseSpanIgnoringCase(CmdStrings.UNSAFETRUNCATELOG))
-                {
-                    if (unsafeTruncateLog)
-                    {
-                        syntaxError = true;
-                        break;
-                    }
-
-                    unsafeTruncateLog = true;
-                }
-                else if (nextToken.EqualsUpperCaseSpanIgnoringCase(CmdStrings.ASYNC))
-                {
-                    if (sync || async)
-                    {
-                        syntaxError = true;
-                        break;
-                    }
-
-                    async = true;
-                }
-                else if (nextToken.EqualsUpperCaseSpanIgnoringCase(CmdStrings.SYNC))
-                {
-                    if (sync || async)
-                    {
-                        syntaxError = true;
-                        break;
-                    }
-
-                    sync = true;
-                }
-                else
-                {
-                    syntaxError = true;
-                    break;
-                }
+                return AbortWithWrongNumberOfArguments(nameof(RespCommand.FLUSHALL), parseState.Count);
             }
 
-            if (syntaxError)
-            {
-                while (!RespWriteUtils.WriteError(CmdStrings.RESP_SYNTAX_ERROR, ref dcurr, dend))
-                    SendAndReset();
-                return true;
-            }
-
-            if (async)
-                Task.Run(() => FlushDB(unsafeTruncateLog)).ConfigureAwait(false);
-            else
-                FlushDB(unsafeTruncateLog);
-
-            logger?.LogInformation("Running flushDB " + (async ? "async" : "sync") + (unsafeTruncateLog ? " with unsafetruncatelog." : ""));
-            while (!RespWriteUtils.WriteDirect(CmdStrings.RESP_OK, ref dcurr, dend))
-                SendAndReset();
+            // Since Garnet currently only supports a single database,
+            // FLUSHALL and FLUSHDB share the same logic
+            FlushDb(RespCommand.FLUSHALL);
 
             return true;
         }
@@ -1057,10 +1014,10 @@ namespace Garnet.server
         /// </summary>
         /// <param name="count">The number of arguments remaining in command buffer</param>
         /// <returns>true if parsing succeeded correctly, false if not all tokens could be consumed and further processing is necessary.</returns>
-        private bool NetworkCOMMAND(int count)
+        private bool NetworkCOMMAND()
         {
             // No additional args allowed
-            if (count != 0)
+            if (parseState.Count != 0)
             {
                 var subCommand = parseState.GetString(0);
                 var errorMsg = string.Format(CmdStrings.GenericErrUnknownSubCommand, subCommand, nameof(RespCommand.COMMAND));
@@ -1080,10 +1037,10 @@ namespace Garnet.server
         /// </summary>
         /// <param name="count">The number of arguments remaining in command buffer</param>
         /// <returns>true if parsing succeeded correctly, false if not all tokens could be consumed and further processing is necessary.</returns>
-        private bool NetworkCOMMAND_COUNT(int count)
+        private bool NetworkCOMMAND_COUNT()
         {
             // No additional args allowed
-            if (count != 0)
+            if (parseState.Count != 0)
             {
                 var errorMsg = string.Format(CmdStrings.GenericErrWrongNumArgs, "COMMAND COUNT");
                 while (!RespWriteUtils.WriteError(errorMsg, ref dcurr, dend))
@@ -1110,8 +1067,9 @@ namespace Garnet.server
         /// </summary>
         /// <param name="count">The number of arguments remaining in command buffer</param>
         /// <returns>true if parsing succeeded correctly, false if not all tokens could be consumed and further processing is necessary.</returns>
-        private bool NetworkCOMMAND_INFO(int count)
+        private bool NetworkCOMMAND_INFO()
         {
+            var count = parseState.Count;
             if (count == 0)
             {
                 // Zero arg case is equivalent to COMMAND w/o subcommand
@@ -1143,11 +1101,11 @@ namespace Garnet.server
             return true;
         }
 
-        private bool NetworkECHO(int count)
+        private bool NetworkECHO()
         {
-            if (count != 1)
+            if (parseState.Count != 1)
             {
-                return AbortWithWrongNumberOfArguments(nameof(RespCommand.ECHO), count);
+                return AbortWithWrongNumberOfArguments(nameof(RespCommand.ECHO), parseState.Count);
             }
 
             WriteDirectLarge(new ReadOnlySpan<byte>(recvBufferPtr + readHead, endReadHead - readHead));
@@ -1155,8 +1113,9 @@ namespace Garnet.server
         }
 
         // HELLO [protover [AUTH username password] [SETNAME clientname]]
-        private bool NetworkHELLO(int count)
+        private bool NetworkHELLO()
         {
+            var count = parseState.Count;
             if (count > 6)
             {
                 return AbortWithWrongNumberOfArguments(nameof(RespCommand.HELLO), count);
@@ -1228,11 +1187,11 @@ namespace Garnet.server
             return true;
         }
 
-        private bool NetworkTIME(int count)
+        private bool NetworkTIME()
         {
-            if (count != 0)
+            if (parseState.Count != 0)
             {
-                return AbortWithWrongNumberOfArguments(nameof(RespCommand.TIME), count);
+                return AbortWithWrongNumberOfArguments(nameof(RespCommand.TIME), parseState.Count);
             }
 
             var utcTime = DateTimeOffset.UtcNow;
@@ -1246,9 +1205,10 @@ namespace Garnet.server
             return true;
         }
 
-        private bool NetworkAUTH(int count)
+        private bool NetworkAUTH()
         {
             // AUTH [<username>] <password>
+            var count = parseState.Count;
             if (count < 1 || count > 2)
             {
                 return AbortWithWrongNumberOfArguments(nameof(RespCommand.AUTH), count);
@@ -1298,9 +1258,10 @@ namespace Garnet.server
         }
 
         //MEMORY USAGE key [SAMPLES count]
-        private bool NetworkMemoryUsage<TGarnetApi>(int count, ref TGarnetApi storageApi)
+        private bool NetworkMemoryUsage<TGarnetApi>(ref TGarnetApi storageApi)
             where TGarnetApi : IGarnetApi
         {
+            var count = parseState.Count;
             if (count != 1 && count != 3)
             {
                 return AbortWithWrongNumberOfArguments(
@@ -1346,7 +1307,7 @@ namespace Garnet.server
         /// <summary>
         /// ASYNC [ON|OFF|BARRIER]
         /// </summary>
-        private bool NetworkASYNC(int count)
+        private bool NetworkASYNC()
         {
             if (respProtocolVersion <= 2)
             {
@@ -1356,9 +1317,9 @@ namespace Garnet.server
                 return true;
             }
 
-            if (count != 1)
+            if (parseState.Count != 1)
             {
-                return AbortWithWrongNumberOfArguments(nameof(RespCommand.ASYNC), count);
+                return AbortWithWrongNumberOfArguments(nameof(RespCommand.ASYNC), parseState.Count);
             }
 
             var param = parseState.GetArgSliceByRef(0).ReadOnlySpan;
@@ -1485,7 +1446,79 @@ namespace Garnet.server
                 SendAndReset();
         }
 
-        void FlushDB(bool unsafeTruncateLog)
+        /// <summary>
+        /// Common logic for FLUSHDB and FLUSHALL
+        /// </summary>
+        /// <param name="cmd">RESP command (FLUSHDB / FLUSHALL)</param>
+        void FlushDb(RespCommand cmd)
+        {
+            Debug.Assert(cmd is RespCommand.FLUSHDB or RespCommand.FLUSHALL);
+            var unsafeTruncateLog = false;
+            var async = false;
+            var sync = false;
+            var syntaxError = false;
+
+            var count = parseState.Count;
+            for (var i = 0; i < count; i++)
+            {
+                var nextToken = parseState.GetArgSliceByRef(i).ReadOnlySpan;
+
+                if (nextToken.EqualsUpperCaseSpanIgnoringCase(CmdStrings.UNSAFETRUNCATELOG))
+                {
+                    if (unsafeTruncateLog)
+                    {
+                        syntaxError = true;
+                        break;
+                    }
+
+                    unsafeTruncateLog = true;
+                }
+                else if (nextToken.EqualsUpperCaseSpanIgnoringCase(CmdStrings.ASYNC))
+                {
+                    if (sync || async)
+                    {
+                        syntaxError = true;
+                        break;
+                    }
+
+                    async = true;
+                }
+                else if (nextToken.EqualsUpperCaseSpanIgnoringCase(CmdStrings.SYNC))
+                {
+                    if (sync || async)
+                    {
+                        syntaxError = true;
+                        break;
+                    }
+
+                    sync = true;
+                }
+                else
+                {
+                    syntaxError = true;
+                    break;
+                }
+            }
+
+            if (syntaxError)
+            {
+                while (!RespWriteUtils.WriteError(CmdStrings.RESP_SYNTAX_ERROR, ref dcurr, dend))
+                    SendAndReset();
+                return;
+            }
+
+            if (async)
+                Task.Run(() => ExecuteFlushDb(unsafeTruncateLog)).ConfigureAwait(false);
+            else
+                ExecuteFlushDb(unsafeTruncateLog);
+
+            logger?.LogInformation(
+                $"Running {nameof(cmd)} {(async ? "async" : "sync")} {(unsafeTruncateLog ? " with unsafetruncatelog." : string.Empty)}");
+            while (!RespWriteUtils.WriteDirect(CmdStrings.RESP_OK, ref dcurr, dend))
+                SendAndReset();
+        }
+
+        void ExecuteFlushDb(bool unsafeTruncateLog)
         {
             storeWrapper.store.Log.ShiftBeginAddress(storeWrapper.store.Log.TailAddress, truncateLog: unsafeTruncateLog);
             storeWrapper.objectStore?.Log.ShiftBeginAddress(storeWrapper.objectStore.Log.TailAddress, truncateLog: unsafeTruncateLog);

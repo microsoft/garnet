@@ -123,11 +123,7 @@ namespace Garnet.cluster
         public void FlushConfig()
         {
             lock (this)
-            {
-                logger?.LogTrace("Start FlushConfig {path}", clusterConfigDevice.FileName);
                 ClusterUtils.WriteInto(clusterConfigDevice, pool, 0, currentConfig.ToByteArray(), logger: logger);
-                logger?.LogTrace("End FlushConfig {path}", clusterConfigDevice.FileName);
-            }
         }
 
         /// <summary>

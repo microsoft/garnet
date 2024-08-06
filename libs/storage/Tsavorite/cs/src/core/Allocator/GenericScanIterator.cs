@@ -10,11 +10,11 @@ namespace Tsavorite.core
     /// <summary>
     /// Scan iterator for hybrid log
     /// </summary>
-    internal sealed class GenericScanIterator<Key, Value> : ScanIteratorBase, ITsavoriteScanIterator<Key, Value>, IPushScanIterator<Key>
+    internal sealed class GenericScanIterator<Key, Value, TStoreFunctions> : ScanIteratorBase, ITsavoriteScanIterator<Key, Value>, IPushScanIterator<Key>
+        where TStoreFunctions : IStoreFunctions<Key, Value>
     {
-        private readonly TsavoriteKV<Key, Value> store;
-        private readonly GenericAllocator<Key, Value> hlog;
-        private readonly ITsavoriteEqualityComparer<Key> comparer;
+        private readonly TsavoriteKV<Key, Value, TStoreFunctions, GenericAllocator<Key, Value, TStoreFunctions>> store;
+        private readonly GenericAllocatorImpl<Key, Value, TStoreFunctions> hlog;
         private readonly GenericFrame<Key, Value> frame;
         private readonly int recordSize;
 
@@ -26,12 +26,13 @@ namespace Tsavorite.core
         /// <summary>
         /// Constructor
         /// </summary>
-        public GenericScanIterator(TsavoriteKV<Key, Value> store, GenericAllocator<Key, Value> hlog, long beginAddress, long endAddress, ScanBufferingMode scanBufferingMode, bool includeSealedRecords, LightEpoch epoch, ILogger logger = null)
+        public GenericScanIterator(TsavoriteKV<Key, Value, TStoreFunctions, GenericAllocator<Key, Value, TStoreFunctions>> store, GenericAllocatorImpl<Key, Value, TStoreFunctions> hlog,
+                long beginAddress, long endAddress, ScanBufferingMode scanBufferingMode, bool includeSealedRecords, LightEpoch epoch, ILogger logger = null)
             : base(beginAddress == 0 ? hlog.GetFirstValidLogicalAddress(0) : beginAddress, endAddress, scanBufferingMode, includeSealedRecords, epoch, hlog.LogPageSizeBits, logger: logger)
         {
             this.store = store;
             this.hlog = hlog;
-            recordSize = hlog.GetRecordSize(0).Item2;
+            recordSize = hlog.GetRecordSize(0).allocatedSize;
             if (frameSize > 0)
                 frame = new GenericFrame<Key, Value>(frameSize, hlog.PageSize);
         }
@@ -39,13 +40,13 @@ namespace Tsavorite.core
         /// <summary>
         /// Constructor for use with tail-to-head push iteration of the passed key's record versions
         /// </summary>
-        public GenericScanIterator(TsavoriteKV<Key, Value> store, GenericAllocator<Key, Value> hlog, ITsavoriteEqualityComparer<Key> comparer, long beginAddress, LightEpoch epoch, ILogger logger = null)
+        public GenericScanIterator(TsavoriteKV<Key, Value, TStoreFunctions, GenericAllocator<Key, Value, TStoreFunctions>> store, GenericAllocatorImpl<Key, Value, TStoreFunctions> hlog,
+                long beginAddress, LightEpoch epoch, ILogger logger = null)
             : base(beginAddress == 0 ? hlog.GetFirstValidLogicalAddress(0) : beginAddress, hlog.GetTailAddress(), ScanBufferingMode.SinglePageBuffering, false, epoch, hlog.LogPageSizeBits, logger: logger)
         {
             this.store = store;
             this.hlog = hlog;
-            this.comparer = comparer;
-            recordSize = hlog.GetRecordSize(0).Item2;
+            recordSize = hlog.GetRecordSize(0).allocatedSize;
             if (frameSize > 0)
                 frame = new GenericFrame<Key, Value>(frameSize, hlog.PageSize);
         }
@@ -66,15 +67,8 @@ namespace Tsavorite.core
         public bool SnapCursorToLogicalAddress(ref long cursor)
         {
             Debug.Assert(currentAddress == -1, "SnapCursorToLogicalAddress must be called before GetNext()");
-            beginAddress = nextAddress = hlog.SnapToFixedLengthLogicalAddressBoundary(ref cursor, GenericAllocator<Key, Value>.RecordSize);
+            beginAddress = nextAddress = hlog.SnapToFixedLengthLogicalAddressBoundary(ref cursor, GenericAllocatorImpl<Key, Value, TStoreFunctions>.RecordSize);
             return true;
-        }
-
-        ref RecordInfo IPushScanIterator<Key>.GetLockableInfo()
-        {
-            Debug.Assert(currentFrame < 0, "GetLockableInfo() should be in-memory (i.e.should not have a frame)");
-            Debug.Assert(epoch.ThisInstanceProtected(), "GetLockableInfo() should be called with the epoch held");
-            return ref hlog.values[currentPage][currentOffset].info;
         }
 
         /// <summary>
@@ -112,7 +106,7 @@ namespace Tsavorite.core
                 currentOffset = (currentAddress & hlog.PageSizeMask) / recordSize;
 
                 if (currentAddress < headAddress)
-                    BufferAndLoad(currentAddress, currentPage, currentPage % frameSize, headAddress, stopAddress);
+                    _ = BufferAndLoad(currentAddress, currentPage, currentPage % frameSize, headAddress, stopAddress);
 
                 // Check if record fits on page, if not skip to next page
                 if ((currentAddress & hlog.PageSizeMask) + recordSize > hlog.PageSize)
@@ -138,15 +132,14 @@ namespace Tsavorite.core
                         continue;
                     }
 
-                    // Copy the object values from cached page memory to data members; we have no ref into the log after the epoch.Suspend()
-                    // (except for GetLockableInfo which we know is safe). These are pointer-sized shallow copies but we need to lock to ensure
-                    // no value tearing inside the object while copying to temp storage.
-                    OperationStackContext<Key, Value> stackCtx = default;
+                    // Copy the object values from cached page memory to data members; we have no ref into the log after the epoch.Suspend().
+                    // These are pointer-sized shallow copies but we need to lock to ensure no value tearing inside the object while copying to temp storage.
+                    OperationStackContext<Key, Value, TStoreFunctions, GenericAllocator<Key, Value, TStoreFunctions>> stackCtx = default;
                     try
                     {
-                        // We cannot use GetKey() and GetLockableInfo() because they have not yet been set.
+                        // We cannot use GetKey() because it has not yet been set.
                         if (currentAddress >= headAddress && store is not null)
-                            store.LockForScan(ref stackCtx, ref hlog.values[currentPage][currentOffset].key, ref hlog.values[currentPage][currentOffset].info);
+                            store.LockForScan(ref stackCtx, ref hlog.values[currentPage][currentOffset].key);
 
                         recordInfo = hlog.values[currentPage][currentOffset].info;
                         currentKey = hlog.values[currentPage][currentOffset].key;
@@ -155,7 +148,7 @@ namespace Tsavorite.core
                     finally
                     {
                         if (stackCtx.recSrc.HasLock)
-                            store.UnlockForScan(ref stackCtx, ref hlog.values[currentPage][currentOffset].key, ref hlog.values[currentPage][currentOffset].info);
+                            store.UnlockForScan(ref stackCtx);
                     }
 
                     // Success
@@ -175,7 +168,7 @@ namespace Tsavorite.core
                 // Copy the object values from the frame to data members.
                 currentKey = frame.GetKey(currentFrame, currentOffset);
                 currentValue = frame.GetValue(currentFrame, currentOffset);
-                currentPage = currentOffset = -1; // We should no longer use these except for GetLockableInfo()
+                currentPage = currentOffset = -1;
 
                 // Success
                 epoch?.Suspend();
@@ -218,14 +211,14 @@ namespace Tsavorite.core
                 nextAddress = currentAddress + recordSize;
 
                 bool skipOnScan = includeSealedRecords ? recordInfo.Invalid : recordInfo.SkipOnScan;
-                if (skipOnScan || recordInfo.IsNull() || !comparer.Equals(ref hlog.values[currentPage][currentOffset].key, ref key))
+                if (skipOnScan || recordInfo.IsNull() || !hlog._storeFunctions.KeysEqual(ref hlog.values[currentPage][currentOffset].key, ref key))
                 {
                     epoch?.Suspend();
                     continue;
                 }
 
-                // Copy the object values from cached page memory to data members; we have no ref into the log after the epoch.Suspend()
-                // (except for GetLockableInfo which we know is safe). These are pointer-sized shallow copies.
+                // Copy the object values from cached page memory to data members; we have no ref into the log after the epoch.Suspend().
+                // These are pointer-sized shallow copies.
                 recordInfo = hlog.values[currentPage][currentOffset].info;
                 currentKey = hlog.values[currentPage][currentOffset].key;
                 currentValue = hlog.values[currentPage][currentOffset].value;
@@ -271,7 +264,8 @@ namespace Tsavorite.core
             frame?.Dispose();
         }
 
-        internal override void AsyncReadPagesFromDeviceToFrame<TContext>(long readPageStart, int numPages, long untilAddress, TContext context, out CountdownEvent completed, long devicePageOffset = 0, IDevice device = null, IDevice objectLogDevice = null, CancellationTokenSource cts = null)
+        internal override void AsyncReadPagesFromDeviceToFrame<TContext>(long readPageStart, int numPages, long untilAddress, TContext context, out CountdownEvent completed,
+                long devicePageOffset = 0, IDevice device = null, IDevice objectLogDevice = null, CancellationTokenSource cts = null)
             => hlog.AsyncReadPagesFromDeviceToFrame(readPageStart, numPages, untilAddress, AsyncReadPagesCallback, context, frame, out completed, devicePageOffset, device, objectLogDevice);
 
         private unsafe void AsyncReadPagesCallback(uint errorCode, uint numBytes, object context)
@@ -292,7 +286,7 @@ namespace Tsavorite.core
             }
 
             if (errorCode == 0)
-                result.handle?.Signal();
+                _ = result.handle?.Signal();
 
             Interlocked.MemoryBarrier();
         }

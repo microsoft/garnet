@@ -7,9 +7,14 @@ using System.Runtime.InteropServices;
 using System.Threading;
 using Tsavorite.core;
 
+#pragma warning disable IDE0007 // Use implicit type
+
 namespace Tsavorite.benchmark
 {
-    internal class Tsavorite_YcsbBenchmark
+#pragma warning disable IDE0065 // Misplaced using directive
+    using SpanByteStoreFunctions = StoreFunctions<SpanByte, SpanByte, SpanByteComparer, SpanByteRecordDisposer>;
+
+    internal class SpanByteYcsbBenchmark
     {
         // Ensure sizes are aligned to chunk sizes
         static long InitCount;
@@ -19,20 +24,23 @@ namespace Tsavorite.benchmark
         readonly ManualResetEventSlim waiter = new();
         readonly int numaStyle;
         readonly int readPercent, upsertPercent, rmwPercent;
-        readonly SessionFunctions functions;
+        readonly SessionSpanByteFunctions functions;
         readonly Input[] input_;
 
-        readonly Key[] init_keys_;
-        readonly Key[] txn_keys_;
+        readonly KeySpanByte[] init_keys_;
+        readonly KeySpanByte[] txn_keys_;
 
         readonly IDevice device;
-        readonly TsavoriteKV<Key, Value> store;
+        readonly TsavoriteKV<SpanByte, SpanByte, SpanByteStoreFunctions, SpanByteAllocator<SpanByteStoreFunctions>> store;
 
         long idx_ = 0;
         long total_ops_done = 0;
         volatile bool done = false;
 
-        internal Tsavorite_YcsbBenchmark(Key[] i_keys_, Key[] t_keys_, TestLoader testLoader)
+        internal const int kKeySize = 16;
+        internal const int kValueSize = 100;
+
+        internal SpanByteYcsbBenchmark(KeySpanByte[] i_keys_, KeySpanByte[] t_keys_, TestLoader testLoader)
         {
             if (RuntimeInformation.IsOSPlatform(OSPlatform.Windows))
             {
@@ -49,7 +57,7 @@ namespace Tsavorite.benchmark
             readPercent = testLoader.ReadPercent;
             upsertPercent = testLoader.UpsertPercent;
             rmwPercent = testLoader.RmwPercent;
-            functions = new SessionFunctions();
+            functions = new SessionSpanByteFunctions();
 
             input_ = new Input[8];
             for (int i = 0; i < 8; i++)
@@ -59,12 +67,21 @@ namespace Tsavorite.benchmark
             {
                 RevivificationLevel.None => default,
                 RevivificationLevel.Chain => new RevivificationSettings(),
-                RevivificationLevel.Full => RevivificationSettings.DefaultFixedLength.Clone(),
+                RevivificationLevel.Full => new RevivificationSettings()
+                {
+                    FreeRecordBins = new[]
+                        {
+                            new RevivificationBin()
+                            {
+                                RecordSize = RecordInfo.GetLength() + kKeySize + kValueSize + 8,    // extra to ensure rounding up of value
+                                NumberOfRecords = testLoader.Options.RevivBinRecordCount,
+                                BestFitScanLimit = RevivificationBin.UseFirstFit
+                            }
+                        },
+                },
                 _ => throw new ApplicationException("Invalid RevivificationLevel")
             };
 
-            if (testLoader.Options.RevivificationLevel == RevivificationLevel.Full)
-                revivificationSettings.FreeRecordBins[0].NumberOfRecords = testLoader.Options.RevivBinRecordCount;
             if (revivificationSettings is not null)
             {
                 revivificationSettings.RevivifiableFraction = testLoader.Options.RevivifiableFraction;
@@ -73,17 +90,27 @@ namespace Tsavorite.benchmark
 
             device = Devices.CreateLogDevice(TestLoader.DevicePath, preallocateFile: true, deleteOnClose: !testLoader.RecoverMode, useIoCompletionPort: true);
 
-            if (testLoader.Options.ThreadCount >= 16)
-                device.ThrottleLimit = testLoader.Options.ThreadCount * 12;
+            var kvSettings = new KVSettings<SpanByte, SpanByte>()
+            {
+                IndexSize = testLoader.GetHashTableSize(),
+                LogDevice = device,
+                PreallocateLog = true,
+                MemorySize = 1L << 35,
+                RevivificationSettings = revivificationSettings,
+                CheckpointDir = testLoader.BackupPath
+            };
 
             if (testLoader.Options.UseSmallMemoryLog)
-                store = new TsavoriteKV<Key, Value>
-                    (testLoader.GetHashTableSize(), new LogSettings { LogDevice = device, PreallocateLog = true, PageSizeBits = 25, SegmentSizeBits = 30, MemorySizeBits = 28 },
-                    new CheckpointSettings { CheckpointDir = testLoader.BackupPath }, revivificationSettings: revivificationSettings);
-            else
-                store = new TsavoriteKV<Key, Value>
-                    (testLoader.GetHashTableSize(), new LogSettings { LogDevice = device, PreallocateLog = true },
-                    new CheckpointSettings { CheckpointDir = testLoader.BackupPath }, revivificationSettings: revivificationSettings);
+            {
+                kvSettings.PageSize = 1L << 22;
+                kvSettings.SegmentSize = 1L << 26;
+                kvSettings.MemorySize = 1L << 26;
+            }
+
+            store = new(kvSettings
+                , StoreFunctions<SpanByte, SpanByte>.Create()
+                , (allocatorSettings, storeFunctions) => new(allocatorSettings, storeFunctions)
+            );
         }
 
         internal void Dispose()
@@ -107,15 +134,19 @@ namespace Tsavorite.benchmark
 
             var sw = Stopwatch.StartNew();
 
-            Value value = default;
-            Input input = default;
-            Output output = default;
+            Span<byte> value = stackalloc byte[kValueSize];
+            Span<byte> input = stackalloc byte[kValueSize];
+            Span<byte> output = stackalloc byte[kValueSize];
+
+            SpanByte _value = SpanByte.FromPinnedSpan(value);
+            SpanByte _input = SpanByte.FromPinnedSpan(input);
+            SpanByteAndMemory _output = SpanByteAndMemory.FromPinnedSpan(output);
 
             long reads_done = 0;
             long writes_done = 0;
             long deletes_done = 0;
 
-            using var session = store.NewSession<Input, Output, Empty, SessionFunctions>(functions);
+            using var session = store.NewSession<SpanByte, SpanByteAndMemory, Empty, SessionSpanByteFunctions>(functions);
             var uContext = session.UnsafeContext;
             uContext.BeginUnsafe();
 
@@ -142,23 +173,23 @@ namespace Tsavorite.benchmark
                         int r = (int)rng.Generate(100);     // rng.Next() is not inclusive of the upper bound so this will be <= 99
                         if (r < readPercent)
                         {
-                            uContext.Read(ref txn_keys_[idx], ref input, ref output, Empty.Default);
+                            uContext.Read(ref SpanByte.Reinterpret(ref txn_keys_[idx]), ref _input, ref _output, Empty.Default);
                             ++reads_done;
                             continue;
                         }
                         if (r < upsertPercent)
                         {
-                            uContext.Upsert(ref txn_keys_[idx], ref value, Empty.Default);
+                            uContext.Upsert(ref SpanByte.Reinterpret(ref txn_keys_[idx]), ref _value, Empty.Default);
                             ++writes_done;
                             continue;
                         }
                         if (r < rmwPercent)
                         {
-                            uContext.RMW(ref txn_keys_[idx], ref input_[idx & 0x7], Empty.Default);
+                            uContext.RMW(ref SpanByte.Reinterpret(ref txn_keys_[idx]), ref _input, Empty.Default);
                             ++writes_done;
                             continue;
                         }
-                        uContext.Delete(ref txn_keys_[idx], Empty.Default);
+                        uContext.Delete(ref SpanByte.Reinterpret(ref txn_keys_[idx]), Empty.Default);
                         ++deletes_done;
                     }
                 }
@@ -191,15 +222,19 @@ namespace Tsavorite.benchmark
 
             var sw = Stopwatch.StartNew();
 
-            Value value = default;
-            Input input = default;
-            Output output = default;
+            Span<byte> value = stackalloc byte[kValueSize];
+            Span<byte> input = stackalloc byte[kValueSize];
+            Span<byte> output = stackalloc byte[kValueSize];
+
+            SpanByte _value = SpanByte.FromPinnedSpan(value);
+            SpanByte _input = SpanByte.FromPinnedSpan(input);
+            SpanByteAndMemory _output = SpanByteAndMemory.FromPinnedSpan(output);
 
             long reads_done = 0;
             long writes_done = 0;
             long deletes_done = 0;
 
-            using var session = store.NewSession<Input, Output, Empty, SessionFunctions>(functions);
+            using var session = store.NewSession<SpanByte, SpanByteAndMemory, Empty, SessionSpanByteFunctions>(functions);
             var bContext = session.BasicContext;
 
             while (!done)
@@ -215,28 +250,32 @@ namespace Tsavorite.benchmark
                 for (long idx = chunk_idx; idx < chunk_idx + YcsbConstants.kChunkSize && !done; ++idx)
                 {
                     if (idx % 512 == 0)
+                    {
+                        if (!testLoader.Options.UseSafeContext)
+                            bContext.Refresh();
                         bContext.CompletePending(false);
+                    }
 
                     int r = (int)rng.Generate(100);     // rng.Next() is not inclusive of the upper bound so this will be <= 99
                     if (r < readPercent)
                     {
-                        bContext.Read(ref txn_keys_[idx], ref input, ref output, Empty.Default);
+                        bContext.Read(ref SpanByte.Reinterpret(ref txn_keys_[idx]), ref _input, ref _output, Empty.Default);
                         ++reads_done;
                         continue;
                     }
                     if (r < upsertPercent)
                     {
-                        bContext.Upsert(ref txn_keys_[idx], ref value, Empty.Default);
+                        bContext.Upsert(ref SpanByte.Reinterpret(ref txn_keys_[idx]), ref _value, Empty.Default);
                         ++writes_done;
                         continue;
                     }
                     if (r < rmwPercent)
                     {
-                        bContext.RMW(ref txn_keys_[idx], ref input_[idx & 0x7], Empty.Default);
+                        bContext.RMW(ref SpanByte.Reinterpret(ref txn_keys_[idx]), ref _input, Empty.Default);
                         ++writes_done;
                         continue;
                     }
-                    bContext.Delete(ref txn_keys_[idx], Empty.Default);
+                    bContext.Delete(ref SpanByte.Reinterpret(ref txn_keys_[idx]), Empty.Default);
                     ++deletes_done;
                 }
             }
@@ -246,7 +285,7 @@ namespace Tsavorite.benchmark
             sw.Stop();
 
             Console.WriteLine($"Thread {thread_idx} done; {reads_done} reads, {writes_done} writes, {deletes_done} deletes in {sw.ElapsedMilliseconds} ms.");
-            Interlocked.Add(ref total_ops_done, reads_done + writes_done);
+            Interlocked.Add(ref total_ops_done, reads_done + writes_done + deletes_done);
         }
 
         internal unsafe (double insPerSec, double opsPerSec, long tailAddress) Run(TestLoader testLoader)
@@ -279,8 +318,9 @@ namespace Tsavorite.benchmark
                     worker.Join();
 
                 sw.Stop();
-                elapsedMs = sw.ElapsedMilliseconds;
                 waiter.Reset();
+
+                elapsedMs = sw.ElapsedMilliseconds;
             }
             double insertsPerSecond = elapsedMs == 0 ? 0 : ((double)InitCount / elapsedMs) * 1000;
             Console.WriteLine(TestStats.GetLoadingTimeLine(insertsPerSecond, elapsedMs));
@@ -312,6 +352,7 @@ namespace Tsavorite.benchmark
                 else
                     workers[idx] = new Thread(() => RunYcsbUnsafeContext(x));
             }
+
             // Start threads.
             foreach (Thread worker in workers)
                 worker.Start();
@@ -371,11 +412,12 @@ namespace Tsavorite.benchmark
             }
             waiter.Wait();
 
-            var session = store.NewSession<Input, Output, Empty, SessionFunctions>(functions);
+            using var session = store.NewSession<SpanByte, SpanByteAndMemory, Empty, SessionSpanByteFunctions>(functions);
             var uContext = session.UnsafeContext;
             uContext.BeginUnsafe();
 
-            Value value = default;
+            Span<byte> value = stackalloc byte[kValueSize];
+            ref SpanByte _value = ref SpanByte.Reinterpret(value);
 
             try
             {
@@ -395,7 +437,7 @@ namespace Tsavorite.benchmark
                             }
                         }
 
-                        uContext.Upsert(ref init_keys_[idx], ref value, Empty.Default);
+                        uContext.Upsert(ref SpanByte.Reinterpret(ref init_keys_[idx]), ref _value, Empty.Default);
                     }
                 }
                 uContext.CompletePending(true);
@@ -404,7 +446,6 @@ namespace Tsavorite.benchmark
             {
                 uContext.EndUnsafe();
             }
-            session.Dispose();
         }
 
         private void SetupYcsbSafeContext(int thread_idx)
@@ -418,10 +459,11 @@ namespace Tsavorite.benchmark
             }
             waiter.Wait();
 
-            using var session = store.NewSession<Input, Output, Empty, SessionFunctions>(functions);
+            using var session = store.NewSession<SpanByte, SpanByteAndMemory, Empty, SessionSpanByteFunctions>(functions);
             var bContext = session.BasicContext;
 
-            Value value = default;
+            Span<byte> value = stackalloc byte[kValueSize];
+            ref SpanByte _value = ref SpanByte.Reinterpret(value);
 
             for (long chunk_idx = Interlocked.Add(ref idx_, YcsbConstants.kChunkSize) - YcsbConstants.kChunkSize;
                 chunk_idx < InitCount;
@@ -439,7 +481,7 @@ namespace Tsavorite.benchmark
                         }
                     }
 
-                    bContext.Upsert(ref init_keys_[idx], ref value, Empty.Default);
+                    bContext.Upsert(ref SpanByte.Reinterpret(ref init_keys_[idx]), ref _value, Empty.Default);
                 }
             }
 
@@ -448,18 +490,22 @@ namespace Tsavorite.benchmark
 
         #region Load Data
 
-        internal static void CreateKeyVectors(TestLoader testLoader, out Key[] i_keys, out Key[] t_keys)
+        internal static void CreateKeyVectors(TestLoader testLoader, out KeySpanByte[] i_keys, out KeySpanByte[] t_keys)
         {
             InitCount = YcsbConstants.kChunkSize * (testLoader.InitCount / YcsbConstants.kChunkSize);
             TxnCount = YcsbConstants.kChunkSize * (testLoader.TxnCount / YcsbConstants.kChunkSize);
 
-            i_keys = new Key[InitCount];
-            t_keys = new Key[TxnCount];
+            i_keys = new KeySpanByte[InitCount];
+            t_keys = new KeySpanByte[TxnCount];
         }
 
-        internal class KeySetter : IKeySetter<Key>
+        internal class KeySetter : IKeySetter<KeySpanByte>
         {
-            public void Set(Key[] vector, long idx, long value) => vector[idx].value = value;
+            public unsafe void Set(KeySpanByte[] vector, long idx, long value)
+            {
+                vector[idx].length = kKeySize - 4;
+                vector[idx].value = value;
+            }
         }
 
         #endregion

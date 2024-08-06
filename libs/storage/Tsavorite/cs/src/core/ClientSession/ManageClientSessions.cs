@@ -7,7 +7,9 @@ using System.Threading;
 
 namespace Tsavorite.core
 {
-    public unsafe partial class TsavoriteKV<Key, Value> : TsavoriteBase
+    public unsafe partial class TsavoriteKV<Key, Value, TStoreFunctions, TAllocator> : TsavoriteBase
+        where TStoreFunctions : IStoreFunctions<Key, Value>
+        where TAllocator : IAllocator<Key, Value, TStoreFunctions>
     {
         internal Dictionary<int, SessionInfo> _activeSessions = new();
 
@@ -18,7 +20,7 @@ namespace Tsavorite.core
         /// <param name="sessionName">Name of session (optional)</param>
         /// <param name="readCopyOptions"><see cref="ReadCopyOptions"/> for this session; override those specified at TsavoriteKV level, and may be overridden on individual Read operations</param>
         /// <returns>Session instance</returns>
-        public ClientSession<Key, Value, Input, Output, Context, Functions> NewSession<Input, Output, Context, Functions>(Functions functions, string sessionName = null,
+        public ClientSession<Key, Value, Input, Output, Context, Functions, TStoreFunctions, TAllocator> NewSession<Input, Output, Context, Functions>(Functions functions, string sessionName = null,
                 ReadCopyOptions readCopyOptions = default)
             where Functions : ISessionFunctions<Key, Value, Input, Output, Context>
         {
@@ -39,9 +41,9 @@ namespace Tsavorite.core
             ctx.prevCtx = prevCtx;
 
             if (_activeSessions == null)
-                Interlocked.CompareExchange(ref _activeSessions, new Dictionary<int, SessionInfo>(), null);
+                _ = Interlocked.CompareExchange(ref _activeSessions, new Dictionary<int, SessionInfo>(), null);
 
-            var session = new ClientSession<Key, Value, Input, Output, Context, Functions>(this, ctx, functions);
+            var session = new ClientSession<Key, Value, Input, Output, Context, Functions, TStoreFunctions, TAllocator>(this, ctx, functions);
             lock (_activeSessions)
                 _activeSessions.Add(sessionID, new SessionInfo { sessionName = sessionName, session = session, isActive = true });
             return session;
@@ -65,7 +67,7 @@ namespace Tsavorite.core
                     if (RevivificationManager.IsEnabled)
                         session.MergeRevivificationStatsTo(ref RevivificationManager.stats, reset: true);
                     if (sessionPhase == Phase.REST || sessionPhase == Phase.PREPARE_GROW || sessionPhase == Phase.IN_PROGRESS_GROW)
-                        _activeSessions.Remove(sessionID);
+                        _ = _activeSessions.Remove(sessionID);
                     else
                         sessionInfo.isActive = false;
                 }

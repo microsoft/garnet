@@ -9,9 +9,9 @@ namespace Tsavorite.core
     /// <summary>
     /// The Tsavorite key-value store
     /// </summary>
-    /// <typeparam name="Key">Key</typeparam>
-    /// <typeparam name="Value">Value</typeparam>
-    public partial class TsavoriteKV<Key, Value> : TsavoriteBase
+    public partial class TsavoriteKV<Key, Value, TStoreFunctions, TAllocator> : TsavoriteBase
+        where TStoreFunctions : IStoreFunctions<Key, Value>
+        where TAllocator : IAllocator<Key, Value, TStoreFunctions>
     {
         /// <summary>
         /// Check if at least one (sync) request is ready for CompletePending to operate on
@@ -29,7 +29,7 @@ namespace Tsavorite.core
         /// <returns></returns>
         internal async ValueTask CompletePendingAsync<Input, Output, Context, TSessionFunctionsWrapper>(TSessionFunctionsWrapper sessionFunctions,
                                       CancellationToken token, CompletedOutputIterator<Key, Value, Input, Output, Context> completedOutputs)
-            where TSessionFunctionsWrapper : ISessionFunctionsWrapper<Key, Value, Input, Output, Context>
+            where TSessionFunctionsWrapper : ISessionFunctionsWrapper<Key, Value, Input, Output, Context, TStoreFunctions, TAllocator>
         {
             while (true)
             {

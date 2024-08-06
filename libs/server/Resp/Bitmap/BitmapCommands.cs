@@ -235,9 +235,10 @@ namespace Garnet.server
         /// Count the number of set bits in a key. 
         /// It can be specified an interval for counting, passing the start and end arguments.
         /// </summary>
-        private bool NetworkStringBitCount<TGarnetApi>(int count, ref TGarnetApi storageApi)
+        private bool NetworkStringBitCount<TGarnetApi>(ref TGarnetApi storageApi)
             where TGarnetApi : IGarnetApi
         {
+            var count = parseState.Count;
             if (count < 1 || count > 4)
             {
                 return AbortWithWrongNumberOfArguments(nameof(RespCommand.BITCOUNT), parseState.Count);
@@ -317,9 +318,10 @@ namespace Garnet.server
         /// <summary>
         /// Returns the position of the first bit set to 1 or 0 in a key.
         /// </summary>
-        private bool NetworkStringBitPosition<TGarnetApi>(int count, ref TGarnetApi storageApi)
+        private bool NetworkStringBitPosition<TGarnetApi>(ref TGarnetApi storageApi)
             where TGarnetApi : IGarnetApi
         {
+            var count = parseState.Count;
             if (count < 2 || count > 5)
             {
                 return AbortWithWrongNumberOfArguments(nameof(RespCommand.BITPOS), parseState.Count);

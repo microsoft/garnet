@@ -13,7 +13,12 @@ using Tsavorite.core;
 
 namespace Garnet.cluster
 {
-    using BasicGarnetApi = GarnetApi<BasicContext<SpanByte, SpanByte, SpanByte, SpanByteAndMemory, long, MainStoreFunctions>, BasicContext<byte[], IGarnetObject, ObjectInput, GarnetObjectStoreOutput, long, ObjectStoreFunctions>>;
+    using BasicGarnetApi = GarnetApi<BasicContext<SpanByte, SpanByte, SpanByte, SpanByteAndMemory, long, MainSessionFunctions,
+            /* MainStoreFunctions */ StoreFunctions<SpanByte, SpanByte, SpanByteComparer, SpanByteRecordDisposer>,
+            SpanByteAllocator<StoreFunctions<SpanByte, SpanByte, SpanByteComparer, SpanByteRecordDisposer>>>,
+        BasicContext<byte[], IGarnetObject, ObjectInput, GarnetObjectStoreOutput, long, ObjectSessionFunctions,
+            /* ObjectStoreFunctions */ StoreFunctions<byte[], IGarnetObject, ByteArrayKeyComparer, DefaultRecordDisposer<byte[], IGarnetObject>>,
+            GenericAllocator<byte[], IGarnetObject, StoreFunctions<byte[], IGarnetObject, ByteArrayKeyComparer, DefaultRecordDisposer<byte[], IGarnetObject>>>>>;
 
     /// <summary>
     /// Cluster manager
@@ -43,7 +48,7 @@ namespace Garnet.cluster
                     break;
             }
             FlushConfig();
-            logger?.LogTrace("ADD SLOTS {slots}", GetRange(slots.ToArray()));
+            logger?.LogTrace("AddSlots {slots}", GetRange(slots.ToArray()));
             return true;
         }
 
@@ -73,7 +78,7 @@ namespace Garnet.cluster
                     break;
             }
             FlushConfig();
-            logger?.LogTrace("REMOVE SLOTS {slots}", string.Join(",", slots));
+            logger?.LogTrace("RemoveSlots {slots}", GetRange(slots.ToArray()));
             return true;
         }
 
@@ -138,8 +143,7 @@ namespace Garnet.cluster
                     break;
             }
             FlushConfig();
-
-            logger?.LogInformation("MIGRATE {slot} TO {currentConfig.GetWorkerAddressFromNodeId(nodeid)}", slot, currentConfig.GetWorkerAddressFromNodeId(nodeid));
+            logger?.LogTrace("SetSlot MIGRATING {slot} TO {nodeId}", slot, currentConfig.GetWorkerAddressFromNodeId(nodeid));
             return true;
         }
 
@@ -206,8 +210,7 @@ namespace Garnet.cluster
                     break;
             }
             FlushConfig();
-
-            logger?.LogInformation("MIGRATE {slot} TO {migrating node}", string.Join(' ', slots), currentConfig.GetWorkerAddressFromNodeId(nodeid));
+            logger?.LogTrace("SetSlotsRange MIGRATING {slot} TO {nodeId}", GetRange(slots.ToArray()), currentConfig.GetWorkerAddressFromNodeId(nodeid));
             return true;
         }
 
@@ -261,8 +264,7 @@ namespace Garnet.cluster
                     break;
             }
             FlushConfig();
-
-            logger?.LogInformation("IMPORT {slot} FROM {currentConfig.GetWorkerAddressFromNodeId(nodeid)}", slot, currentConfig.GetWorkerAddressFromNodeId(nodeid));
+            logger?.LogTrace("SetSlot IMPORTING {slot} TO {nodeId}", slot, currentConfig.GetWorkerAddressFromNodeId(nodeid));
             return true;
         }
 
@@ -324,8 +326,8 @@ namespace Garnet.cluster
                 if (Interlocked.CompareExchange(ref currentConfig, newConfig, current) == current)
                     break;
             }
-
-            logger?.LogInformation("IMPORT {slot} FROM {importingNode}", string.Join(' ', slots), currentConfig.GetWorkerAddressFromNodeId(nodeid));
+            FlushConfig();
+            logger?.LogTrace("SetSlotsRange IMPORTING {slot} TO {nodeId}", GetRange(slots.ToArray()), currentConfig.GetWorkerAddressFromNodeId(nodeid));
             return true;
         }
 
@@ -359,7 +361,7 @@ namespace Garnet.cluster
                         break;
                 }
                 FlushConfig();
-                logger?.LogInformation("SLOT {slot} IMPORTED TO {nodeid}", slot, currentConfig.GetWorkerAddressFromNodeId(nodeid));
+                logger?.LogTrace("SLOT {slot} MIGRATED TO {nodeid}", slot, currentConfig.GetWorkerAddressFromNodeId(nodeid));
                 return true;
             }
             else if (current.GetState((ushort)slot) is SlotState.IMPORTING)
@@ -380,7 +382,7 @@ namespace Garnet.cluster
                         break;
                 }
                 FlushConfig();
-                logger?.LogInformation("SLOT {slot} IMPORTED FROM {nodeid}", slot, currentConfig.GetWorkerAddressFromNodeId(nodeid));
+                logger?.LogTrace("SLOT {slot} IMPORTED FROM {nodeid}", slot, currentConfig.GetWorkerAddressFromNodeId(nodeid));
                 return true;
             }
             return true;
@@ -413,7 +415,7 @@ namespace Garnet.cluster
             }
 
             FlushConfig();
-            logger?.LogInformation("SLOT {slot} IMPORTED TO {endpoint}", slots, currentConfig.GetWorkerAddressFromNodeId(nodeid));
+            logger?.LogTrace("Slots {slot} IMPORTED TO {endpoint}", GetRange(slots.ToArray()), currentConfig.GetWorkerAddressFromNodeId(nodeid));
             return true;
         }
 

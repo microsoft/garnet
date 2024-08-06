@@ -245,11 +245,12 @@ namespace Garnet.server
         private bool NetworkRUNTXPFast(byte* ptr)
         {
             int count = *(ptr - 16 + 1) - '0';
-            return NetworkRUNTXP(count);
+            return NetworkRUNTXP();
         }
 
-        private bool NetworkRUNTXP(int count)
+        private bool NetworkRUNTXP()
         {
+            var count = parseState.Count;
             if (count < 1)
                 return AbortWithWrongNumberOfArguments(nameof(RespCommand.RUNTXP), count);
 

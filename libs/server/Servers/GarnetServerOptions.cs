@@ -332,10 +332,10 @@ namespace Garnet.server
         public int RevivObjBinRecordCount;
 
         /// <summary>Max size of hash index (cache lines) after rounding down size in bytes to power of 2.</summary>
-        public int AdjustedIndexMaxSize;
+        public int AdjustedIndexMaxCacheLines;
 
         /// <summary>Max size of object store hash index (cache lines) after rounding down size in bytes to power of 2.</summary>
-        public int AdjustedObjectStoreIndexMaxSize;
+        public int AdjustedObjectStoreIndexMaxCacheLines;
 
         /// <summary>
         /// Directories on server from which custom command binaries can be loaded by admin users
@@ -356,56 +356,54 @@ namespace Garnet.server
         }
 
         /// <summary>
-        /// Get log settings
+        /// Get KVSettings for the main store log
         /// </summary>
-        /// <param name="logSettings"></param>
-        /// <param name="indexSize"></param>
-        /// <param name="revivSettings"></param>
-        /// <param name="logFactory"></param>
-        public void GetSettings(out LogSettings logSettings, out int indexSize, out RevivificationSettings revivSettings, out INamedDeviceFactory logFactory)
+        public KVSettings<SpanByte, SpanByte> GetSettings(ILogger logger, out INamedDeviceFactory logFactory)
         {
-            if (MutablePercent < 10 || MutablePercent > 95)
+            if (MutablePercent is < 10 or > 95)
                 throw new Exception("MutablePercent must be between 10 and 95");
 
-            logSettings = new LogSettings
+            KVSettings<SpanByte, SpanByte> kvSettings = new(baseDir: null, logger: logger);
+
+            var indexCacheLines = IndexSizeCachelines("hash index size", IndexSize);
+            kvSettings = new()
             {
+                IndexSize = indexCacheLines * 64L,
                 PreallocateLog = false,
                 MutableFraction = MutablePercent / 100.0,
-                PageSizeBits = PageSizeBits()
+                PageSize = 1L << PageSizeBits()
             };
-            logger?.LogInformation($"[Store] Using page size of {PrettySize((long)Math.Pow(2, logSettings.PageSizeBits))}");
+            logger?.LogInformation($"[Store] Using page size of {PrettySize(kvSettings.PageSize)}");
 
-            logSettings.MemorySizeBits = MemorySizeBits(MemorySize, PageSize, out var storeEmptyPageCount);
-            logSettings.MinEmptyPageCount = storeEmptyPageCount;
+            kvSettings.MemorySize = 1L << MemorySizeBits(MemorySize, PageSize, out var storeEmptyPageCount);
+            kvSettings.MinEmptyPageCount = storeEmptyPageCount;
 
-            long effectiveSize = (1L << logSettings.MemorySizeBits) - storeEmptyPageCount * (1L << logSettings.PageSizeBits);
+            long effectiveSize = kvSettings.MemorySize - storeEmptyPageCount * kvSettings.MemorySize;
             if (storeEmptyPageCount == 0)
-                logger?.LogInformation($"[Store] Using log memory size of {PrettySize((long)Math.Pow(2, logSettings.MemorySizeBits))}");
+                logger?.LogInformation($"[Store] Using log memory size of {PrettySize(kvSettings.MemorySize)}");
             else
-                logger?.LogInformation($"[Store] Using log memory size of {PrettySize((long)Math.Pow(2, logSettings.MemorySizeBits))}, with {storeEmptyPageCount} empty pages, for effective size of {PrettySize(effectiveSize)}");
+                logger?.LogInformation($"[Store] Using log memory size of {PrettySize(kvSettings.MemorySize)}, with {storeEmptyPageCount} empty pages, for effective size of {PrettySize(effectiveSize)}");
 
-            logger?.LogInformation($"[Store] There are {PrettySize(1 << (logSettings.MemorySizeBits - logSettings.PageSizeBits))} log pages in memory");
+            logger?.LogInformation($"[Store] There are {PrettySize(kvSettings.MemorySize / kvSettings.PageSize)} log pages in memory");
 
-            logSettings.SegmentSizeBits = SegmentSizeBits();
-            logger?.LogInformation($"[Store] Using disk segment size of {PrettySize((long)Math.Pow(2, logSettings.SegmentSizeBits))}");
+            kvSettings.SegmentSize = 1L << SegmentSizeBits();
+            logger?.LogInformation($"[Store] Using disk segment size of {PrettySize(kvSettings.SegmentSize)}");
 
-            indexSize = IndexSizeCachelines("hash index size", IndexSize);
-            logger?.LogInformation($"[Store] Using hash index size of {PrettySize(indexSize * 64L)} ({PrettySize(indexSize)} cache lines)");
-            logger?.LogInformation($"[Store] Hash index size is optimized for up to ~{PrettySize(indexSize * 4L)} distinct keys");
+            logger?.LogInformation($"[Store] Using hash index size of {PrettySize(kvSettings.IndexSize)} ({PrettySize(indexCacheLines)} cache lines)");
+            logger?.LogInformation($"[Store] Hash index size is optimized for up to ~{PrettySize(indexCacheLines * 4L)} distinct keys");
 
-            AdjustedIndexMaxSize = IndexMaxSize == string.Empty ? 0 : IndexSizeCachelines("hash index max size", IndexMaxSize);
-            if (AdjustedIndexMaxSize != 0 && AdjustedIndexMaxSize < indexSize)
+            AdjustedIndexMaxCacheLines = IndexMaxSize == string.Empty ? 0 : IndexSizeCachelines("hash index max size", IndexMaxSize);
+            if (AdjustedIndexMaxCacheLines != 0 && AdjustedIndexMaxCacheLines < indexCacheLines)
                 throw new Exception($"Index size {IndexSize} should not be less than index max size {IndexMaxSize}");
 
-            if (AdjustedIndexMaxSize > 0)
+            if (AdjustedIndexMaxCacheLines > 0)
             {
-                logger?.LogInformation($"[Store] Using hash index max size of {PrettySize(AdjustedIndexMaxSize * 64L)}, ({PrettySize(AdjustedIndexMaxSize)} cache lines)");
-                logger?.LogInformation($"[Store] Hash index max size is optimized for up to ~{PrettySize(AdjustedIndexMaxSize * 4L)} distinct keys");
+                logger?.LogInformation($"[Store] Using hash index max size of {PrettySize(AdjustedIndexMaxCacheLines * 64L)}, ({PrettySize(AdjustedIndexMaxCacheLines)} cache lines)");
+                logger?.LogInformation($"[Store] Hash index max size is optimized for up to ~{PrettySize(AdjustedIndexMaxCacheLines * 4L)} distinct keys");
             }
             logger?.LogInformation($"[Store] Using log mutable percentage of {MutablePercent}%");
 
-            if (DeviceFactoryCreator == null)
-                DeviceFactoryCreator = () => new LocalStorageNamedDeviceFactory(useNativeDeviceLinux: UseNativeDeviceLinux, logger: logger);
+            DeviceFactoryCreator ??= () => new LocalStorageNamedDeviceFactory(useNativeDeviceLinux: UseNativeDeviceLinux, logger: logger);
 
             if (LatencyMonitor && MetricsSamplingFrequency == 0)
                 throw new Exception("LatencyMonitor requires MetricsSamplingFrequency to be set");
@@ -415,30 +413,30 @@ namespace Garnet.server
                 if (LogDir is null or "")
                     LogDir = Directory.GetCurrentDirectory();
                 logFactory = GetInitializedDeviceFactory(LogDir);
-                logSettings.LogDevice = logFactory.Get(new FileDescriptor("Store", "hlog"));
+                kvSettings.LogDevice = logFactory.Get(new FileDescriptor("Store", "hlog"));
             }
             else
             {
                 if (LogDir != null)
                     throw new Exception("LogDir specified without enabling tiered storage (UseStorage)");
-                logSettings.LogDevice = new NullDevice();
+                kvSettings.LogDevice = new NullDevice();
                 logFactory = null;
             }
 
             if (CopyReadsToTail)
-                logSettings.ReadCopyOptions = new(ReadCopyFrom.AllImmutable, ReadCopyTo.MainLog);
+                kvSettings.ReadCopyOptions = new(ReadCopyFrom.AllImmutable, ReadCopyTo.MainLog);
 
             if (RevivInChainOnly)
             {
                 logger?.LogInformation($"[Store] Using Revivification in-chain only");
-                revivSettings = RevivificationSettings.InChainOnly.Clone();
+                kvSettings.RevivificationSettings = RevivificationSettings.InChainOnly.Clone();
             }
             else if (UseRevivBinsPowerOf2)
             {
                 logger?.LogInformation($"[Store] Using Revivification with power-of-2 bins");
-                revivSettings = RevivificationSettings.PowerOf2Bins.Clone();
-                revivSettings.NumberOfBinsToSearch = RevivNumberOfBinsToSearch;
-                revivSettings.RevivifiableFraction = RevivifiableFraction;
+                kvSettings.RevivificationSettings = RevivificationSettings.PowerOf2Bins.Clone();
+                kvSettings.RevivificationSettings.NumberOfBinsToSearch = RevivNumberOfBinsToSearch;
+                kvSettings.RevivificationSettings.RevivifiableFraction = RevivifiableFraction;
             }
             else if (RevivBinRecordSizes?.Length > 0)
             {
@@ -446,7 +444,7 @@ namespace Garnet.server
 
                 // We use this in the RevivBinRecordCounts and RevivObjBinRecordCount Options help text, so assert it here because we can't use an interpolated string there.
                 System.Diagnostics.Debug.Assert(RevivificationBin.DefaultRecordsPerBin == 256);
-                revivSettings = new()
+                kvSettings.RevivificationSettings = new()
                 {
                     NumberOfBinsToSearch = RevivNumberOfBinsToSearch,
                     FreeRecordBins = new RevivificationBin[RevivBinRecordSizes.Length],
@@ -460,7 +458,7 @@ namespace Garnet.server
                         1 => RevivBinRecordCounts[0],
                         _ => RevivBinRecordCounts[ii]
                     };
-                    revivSettings.FreeRecordBins[ii] = new()
+                    kvSettings.RevivificationSettings.FreeRecordBins[ii] = new()
                     {
                         RecordSize = RevivBinRecordSizes[ii],
                         NumberOfRecords = recordCount,
@@ -471,8 +469,9 @@ namespace Garnet.server
             else
             {
                 logger?.LogInformation($"[Store] Not using Revivification");
-                revivSettings = default;
             }
+
+            return kvSettings;
         }
 
         /// <summary>
@@ -495,55 +494,53 @@ namespace Garnet.server
         }
 
         /// <summary>
-        /// Get object store settings
+        /// Get KVSettings for the object store log
         /// </summary>
-        /// <param name="objLogSettings"></param>
-        /// <param name="objRevivSettings"></param>
-        /// <param name="objIndexSize"></param>
-        /// <param name="objTotalMemorySize"></param>
-
-        public void GetObjectStoreSettings(out LogSettings objLogSettings, out RevivificationSettings objRevivSettings, out int objIndexSize, out long objTotalMemorySize)
+        public KVSettings<byte[], IGarnetObject> GetObjectStoreSettings(ILogger logger, out long objTotalMemorySize)
         {
-            if (ObjectStoreMutablePercent < 10 || ObjectStoreMutablePercent > 95)
+            if (ObjectStoreMutablePercent is < 10 or > 95)
                 throw new Exception("ObjectStoreMutablePercent must be between 10 and 95");
 
-            objLogSettings = new LogSettings
+            KVSettings<byte[], IGarnetObject> kvSettings = new(baseDir: null, logger: logger);
+
+            var indexCacheLines = IndexSizeCachelines("object store hash index size", ObjectStoreIndexSize);
+            kvSettings = new()
             {
+                IndexSize = indexCacheLines * 64L,
                 PreallocateLog = false,
                 MutableFraction = ObjectStoreMutablePercent / 100.0,
-                PageSizeBits = ObjectStorePageSizeBits()
+                PageSize = 1L << ObjectStorePageSizeBits()
             };
-            logger?.LogInformation($"[Object Store] Using page size of {PrettySize((long)Math.Pow(2, objLogSettings.PageSizeBits))}");
-            logger?.LogInformation($"[Object Store] Each page can hold ~{(long)(Math.Pow(2, objLogSettings.PageSizeBits) / 24)} key-value pairs of objects");
+            logger?.LogInformation($"[Object Store] Using page size of {PrettySize(kvSettings.PageSize)}");
+            logger?.LogInformation($"[Object Store] Each page can hold ~{kvSettings.PageSize / 24} key-value pairs of objects");
 
-            objLogSettings.MemorySizeBits = MemorySizeBits(ObjectStoreLogMemorySize, ObjectStorePageSize, out var objectStoreEmptyPageCount);
-            objLogSettings.MinEmptyPageCount = objectStoreEmptyPageCount;
+            kvSettings.MemorySize = 1L << MemorySizeBits(ObjectStoreLogMemorySize, ObjectStorePageSize, out var objectStoreEmptyPageCount);
+            kvSettings.MinEmptyPageCount = objectStoreEmptyPageCount;
 
-            long effectiveSize = (1L << objLogSettings.MemorySizeBits) - objectStoreEmptyPageCount * (1L << objLogSettings.PageSizeBits);
+            long effectiveSize = kvSettings.MemorySize - objectStoreEmptyPageCount * kvSettings.PageSize;
             if (objectStoreEmptyPageCount == 0)
-                logger?.LogInformation($"[Object Store] Using log memory size of {PrettySize((long)Math.Pow(2, objLogSettings.MemorySizeBits))}");
+                logger?.LogInformation($"[Object Store] Using log memory size of {PrettySize(kvSettings.MemorySize)}");
             else
-                logger?.LogInformation($"[Object Store] Using log memory size of {PrettySize((long)Math.Pow(2, objLogSettings.MemorySizeBits))}, with {objectStoreEmptyPageCount} empty pages, for effective size of {PrettySize(effectiveSize)}");
+                logger?.LogInformation($"[Object Store] Using log memory size of {PrettySize(kvSettings.MemorySize)}, with {objectStoreEmptyPageCount} empty pages, for effective size of {PrettySize(effectiveSize)}");
 
             logger?.LogInformation($"[Object Store] This can hold ~{effectiveSize / 24} key-value pairs of objects in memory total");
 
-            logger?.LogInformation($"[Object Store] There are {PrettySize(1 << (objLogSettings.MemorySizeBits - objLogSettings.PageSizeBits))} log pages in memory");
+            logger?.LogInformation($"[Object Store] There are {PrettySize(kvSettings.MemorySize / kvSettings.PageSize)} log pages in memory");
 
-            objLogSettings.SegmentSizeBits = ObjectStoreSegmentSizeBits();
-            logger?.LogInformation($"[Object Store] Using disk segment size of {PrettySize((long)Math.Pow(2, objLogSettings.SegmentSizeBits))}");
+            kvSettings.SegmentSize = 1L << ObjectStoreSegmentSizeBits();
+            logger?.LogInformation($"[Object Store] Using disk segment size of {PrettySize(kvSettings.SegmentSize)}");
 
-            objIndexSize = IndexSizeCachelines("object store hash index size", ObjectStoreIndexSize);
-            logger?.LogInformation($"[Object Store] Using hash index size of {PrettySize(objIndexSize * 64L)} ({PrettySize(objIndexSize)} cache lines)");
-            logger?.LogInformation($"[Object Store] Hash index size is optimized for up to ~{PrettySize(objIndexSize * 4L)} distinct keys");
+            logger?.LogInformation($"[Object Store] Using hash index size of {PrettySize(kvSettings.IndexSize)} ({PrettySize(indexCacheLines)} cache lines)");
+            logger?.LogInformation($"[Object Store] Hash index size is optimized for up to ~{PrettySize(indexCacheLines * 4L)} distinct keys");
 
-            AdjustedObjectStoreIndexMaxSize = ObjectStoreIndexMaxSize == string.Empty ? 0 : IndexSizeCachelines("hash index max size", ObjectStoreIndexMaxSize);
-            if (AdjustedObjectStoreIndexMaxSize != 0 && AdjustedObjectStoreIndexMaxSize < objIndexSize)
+            AdjustedObjectStoreIndexMaxCacheLines = ObjectStoreIndexMaxSize == string.Empty ? 0 : IndexSizeCachelines("hash index max size", ObjectStoreIndexMaxSize);
+            if (AdjustedObjectStoreIndexMaxCacheLines != 0 && AdjustedObjectStoreIndexMaxCacheLines < indexCacheLines)
                 throw new Exception($"Index size {IndexSize} should not be less than index max size {IndexMaxSize}");
 
-            if (AdjustedObjectStoreIndexMaxSize > 0)
+            if (AdjustedObjectStoreIndexMaxCacheLines > 0)
             {
-                logger?.LogInformation($"[Object Store] Using hash index max size of {PrettySize(AdjustedObjectStoreIndexMaxSize * 64L)}, ({PrettySize(AdjustedObjectStoreIndexMaxSize)} cache lines)");
-                logger?.LogInformation($"[Object Store] Hash index max size is optimized for up to ~{PrettySize(AdjustedObjectStoreIndexMaxSize * 4L)} distinct keys");
+                logger?.LogInformation($"[Object Store] Using hash index max size of {PrettySize(AdjustedObjectStoreIndexMaxCacheLines * 64L)}, ({PrettySize(AdjustedObjectStoreIndexMaxCacheLines)} cache lines)");
+                logger?.LogInformation($"[Object Store] Hash index max size is optimized for up to ~{PrettySize(AdjustedObjectStoreIndexMaxCacheLines * 4L)} distinct keys");
             }
             logger?.LogInformation($"[Object Store] Using log mutable percentage of {ObjectStoreMutablePercent}%");
 
@@ -554,37 +551,38 @@ namespace Garnet.server
             {
                 if (LogDir is null or "")
                     LogDir = Directory.GetCurrentDirectory();
-                objLogSettings.LogDevice = GetInitializedDeviceFactory(LogDir).Get(new FileDescriptor("ObjectStore", "hlog"));
-                objLogSettings.ObjectLogDevice = GetInitializedDeviceFactory(LogDir).Get(new FileDescriptor("ObjectStore", "hlog.obj"));
+                kvSettings.LogDevice = GetInitializedDeviceFactory(LogDir).Get(new FileDescriptor("ObjectStore", "hlog"));
+                kvSettings.ObjectLogDevice = GetInitializedDeviceFactory(LogDir).Get(new FileDescriptor("ObjectStore", "hlog.obj"));
             }
             else
             {
                 if (LogDir != null)
                     throw new Exception("LogDir specified without enabling tiered storage (UseStorage)");
-                objLogSettings.LogDevice = objLogSettings.ObjectLogDevice = new NullDevice();
+                kvSettings.LogDevice = kvSettings.ObjectLogDevice = new NullDevice();
             }
 
             if (ObjectStoreCopyReadsToTail)
-                objLogSettings.ReadCopyOptions = new(ReadCopyFrom.AllImmutable, ReadCopyTo.MainLog);
+                kvSettings.ReadCopyOptions = new(ReadCopyFrom.AllImmutable, ReadCopyTo.MainLog);
 
             if (RevivInChainOnly)
             {
                 logger?.LogInformation($"[Object Store] Using Revivification in-chain only");
-                objRevivSettings = RevivificationSettings.InChainOnly.Clone();
+                kvSettings.RevivificationSettings = RevivificationSettings.InChainOnly.Clone();
             }
             else if (UseRevivBinsPowerOf2 || RevivBinRecordSizes?.Length > 0)
             {
                 logger?.LogInformation($"[Object Store] Using Revivification with a single fixed-size bin");
-                objRevivSettings = RevivificationSettings.DefaultFixedLength.Clone();
-                objRevivSettings.RevivifiableFraction = RevivifiableFraction;
-                objRevivSettings.FreeRecordBins[0].NumberOfRecords = RevivObjBinRecordCount;
-                objRevivSettings.FreeRecordBins[0].BestFitScanLimit = RevivBinBestFitScanLimit;
+                kvSettings.RevivificationSettings = RevivificationSettings.DefaultFixedLength.Clone();
+                kvSettings.RevivificationSettings.RevivifiableFraction = RevivifiableFraction;
+                kvSettings.RevivificationSettings.FreeRecordBins[0].NumberOfRecords = RevivObjBinRecordCount;
+                kvSettings.RevivificationSettings.FreeRecordBins[0].BestFitScanLimit = RevivBinBestFitScanLimit;
             }
             else
             {
                 logger?.LogInformation($"[Object Store] Not using Revivification");
-                objRevivSettings = default;
             }
+
+            return kvSettings;
         }
 
         /// <summary>

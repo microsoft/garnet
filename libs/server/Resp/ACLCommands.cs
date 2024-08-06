@@ -84,10 +84,10 @@ namespace Garnet.server
         /// </summary>
         /// <param name="count">The number of arguments remaining in buffer</param>
         /// <returns>true if parsing succeeded correctly, false if not all tokens could be consumed and further processing is necessary.</returns>
-        private bool NetworkAclCat(int count)
+        private bool NetworkAclCat()
         {
             // No additional args allowed
-            if (count != 0)
+            if (parseState.Count != 0)
             {
                 while (!RespWriteUtils.WriteError($"ERR Unknown subcommand or wrong number of arguments for ACL CAT.", ref dcurr, dend))
                     SendAndReset();
@@ -219,10 +219,10 @@ namespace Garnet.server
         /// </summary>
         /// <param name="count">The number of arguments remaining in buffer</param>
         /// <returns>true if parsing succeeded correctly, false if not all tokens could be consumed and further processing is necessary.</returns>
-        private bool NetworkAclWhoAmI(int count)
+        private bool NetworkAclWhoAmI()
         {
             // No additional args allowed
-            if (count != 0)
+            if (parseState.Count != 0)
             {
                 while (!RespWriteUtils.WriteError($"ERR Unknown subcommand or wrong number of arguments for ACL WHOAMI.", ref dcurr, dend))
                     SendAndReset();

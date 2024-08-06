@@ -39,7 +39,7 @@ namespace Garnet.server
                 RespCommand.CONFIG_SET => NetworkCONFIG_SET(count),
                 RespCommand.FAILOVER or
                 RespCommand.REPLICAOF or
-                RespCommand.SECONDARYOF => NetworkProcessClusterCommand(command, count),
+                RespCommand.SECONDARYOF => NetworkProcessClusterCommand(command),
                 RespCommand.LATENCY_HELP => NetworkLatencyHelp(count),
                 RespCommand.LATENCY_HISTOGRAM => NetworkLatencyHistogram(count),
                 RespCommand.LATENCY_RESET => NetworkLatencyReset(count),
@@ -64,7 +64,7 @@ namespace Garnet.server
 
             if (command.IsClusterSubCommand())
             {
-                NetworkProcessClusterCommand(command, count);
+                NetworkProcessClusterCommand(command);
                 return;
             }
 
@@ -96,9 +96,9 @@ namespace Garnet.server
             static void OnACLFailure(RespServerSession self, RespCommand cmd)
             {
                 // If we're rejecting a command, we may need to cleanup some ambient state too
-                if (cmd == RespCommand.CustomCmd)
+                if (cmd == RespCommand.CustomRawStringCmd)
                 {
-                    self.currentCustomCommand = null;
+                    self.currentCustomRawStringCommand = null;
                 }
                 else if (cmd == RespCommand.CustomObjCmd)
                 {
@@ -107,6 +107,10 @@ namespace Garnet.server
                 else if (cmd == RespCommand.CustomTxn)
                 {
                     self.currentCustomTransaction = null;
+                }
+                else if (cmd == RespCommand.CustomProcedure)
+                {
+                    self.currentCustomProcedure = null;
                 }
                 while (!RespWriteUtils.WriteError(CmdStrings.RESP_ERR_NOAUTH, ref self.dcurr, self.dend))
                     self.SendAndReset();
@@ -544,7 +548,7 @@ namespace Garnet.server
             return true;
         }
 
-        private bool NetworkProcessClusterCommand(RespCommand command, int count)
+        private bool NetworkProcessClusterCommand(RespCommand command)
         {
             if (clusterSession == null)
             {
@@ -553,7 +557,7 @@ namespace Garnet.server
                 return true;
             }
 
-            clusterSession.ProcessClusterCommands(command, count, recvBufferPtr, bytesRead, ref readHead, ref dcurr, ref dend, out var result);
+            clusterSession.ProcessClusterCommands(command, parseState.Count, recvBufferPtr, bytesRead, ref readHead, ref dcurr, ref dend, out var result);
             return result;
         }
 

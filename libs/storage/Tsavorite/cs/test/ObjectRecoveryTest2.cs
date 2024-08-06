@@ -9,6 +9,9 @@ using Tsavorite.core;
 
 namespace Tsavorite.test.recovery.objects
 {
+    using ClassAllocator = GenericAllocator<MyKey, MyValue, StoreFunctions<MyKey, MyValue, MyKey.Comparer, DefaultRecordDisposer<MyKey, MyValue>>>;
+    using ClassStoreFunctions = StoreFunctions<MyKey, MyValue, MyKey.Comparer, DefaultRecordDisposer<MyKey, MyValue>>;
+
     [TestFixture]
     public class ObjectRecoveryTests2
     {
@@ -37,64 +40,61 @@ namespace Tsavorite.test.recovery.objects
             [Values] bool isAsync)
         {
             this.iterations = iterations;
-            Prepare(out IDevice log, out IDevice objlog, out TsavoriteKV<MyKey, MyValue> h, out MyContext context);
+            Prepare(out IDevice log, out IDevice objlog, out var store, out MyContext context);
 
-            var session1 = h.NewSession<MyInput, MyOutput, MyContext, MyFunctions>(new MyFunctions());
-            Write(session1, context, h, checkpointType);
+            var session1 = store.NewSession<MyInput, MyOutput, MyContext, MyFunctions>(new MyFunctions());
+            Write(session1, context, store, checkpointType);
             Read(session1, context, false);
             session1.Dispose();
 
-            h.TryInitiateFullCheckpoint(out _, checkpointType);
-            h.CompleteCheckpointAsync().AsTask().GetAwaiter().GetResult();
+            _ = store.TryInitiateFullCheckpoint(out _, checkpointType);
+            store.CompleteCheckpointAsync().AsTask().GetAwaiter().GetResult();
 
-            Destroy(log, objlog, h);
+            Destroy(log, objlog, store);
 
-            Prepare(out log, out objlog, out h, out context);
+            Prepare(out log, out objlog, out store, out context);
 
             if (isAsync)
-                await h.RecoverAsync();
+                _ = await store.RecoverAsync();
             else
-                h.Recover();
+                _ = store.Recover();
 
-            var session2 = h.NewSession<MyInput, MyOutput, MyContext, MyFunctions>(new MyFunctions());
+            var session2 = store.NewSession<MyInput, MyOutput, MyContext, MyFunctions>(new MyFunctions());
             Read(session2, context, true);
             session2.Dispose();
 
-            Destroy(log, objlog, h);
+            Destroy(log, objlog, store);
         }
 
-        private void Prepare(out IDevice log, out IDevice objlog, out TsavoriteKV<MyKey, MyValue> h, out MyContext context)
+        private static void Prepare(out IDevice log, out IDevice objlog, out TsavoriteKV<MyKey, MyValue, ClassStoreFunctions, ClassAllocator> store, out MyContext context)
         {
             log = Devices.CreateLogDevice(Path.Combine(TestUtils.MethodTestDir, "RecoverTests.log"));
             objlog = Devices.CreateLogDevice(Path.Combine(TestUtils.MethodTestDir, "RecoverTests_HEAP.log"));
-            h = new TsavoriteKV<MyKey, MyValue>
-                (1L << 20,
-                new LogSettings
-                {
-                    LogDevice = log,
-                    ObjectLogDevice = objlog,
-                    SegmentSizeBits = 12,
-                    MemorySizeBits = 12,
-                    PageSizeBits = 9
-                },
-                new CheckpointSettings()
-                {
-                    CheckpointDir = Path.Combine(TestUtils.MethodTestDir, "check-points")
-                },
-                new SerializerSettings<MyKey, MyValue> { keySerializer = () => new MyKeySerializer(), valueSerializer = () => new MyValueSerializer() }
+            store = new(new()
+            {
+                IndexSize = 1L << 26,
+                LogDevice = log,
+                ObjectLogDevice = objlog,
+                SegmentSize = 1L << 12,
+                MemorySize = 1L << 12,
+                PageSize = 1L << 9,
+                CheckpointDir = Path.Combine(TestUtils.MethodTestDir, "check-points")
+            }, StoreFunctions<MyKey, MyValue>.Create(new MyKey.Comparer(), () => new MyKeySerializer(), () => new MyValueSerializer())
+                , (allocatorSettings, storeFunctions) => new(allocatorSettings, storeFunctions)
              );
             context = new MyContext();
         }
 
-        private static void Destroy(IDevice log, IDevice objlog, TsavoriteKV<MyKey, MyValue> h)
+        private static void Destroy(IDevice log, IDevice objlog, TsavoriteKV<MyKey, MyValue, ClassStoreFunctions, ClassAllocator> store)
         {
             // Dispose Tsavorite instance and log
-            h.Dispose();
+            store.Dispose();
             log.Dispose();
             objlog.Dispose();
         }
 
-        private void Write(ClientSession<MyKey, MyValue, MyInput, MyOutput, MyContext, MyFunctions> session, MyContext context, TsavoriteKV<MyKey, MyValue> store, CheckpointType checkpointType)
+        private void Write(ClientSession<MyKey, MyValue, MyInput, MyOutput, MyContext, MyFunctions, ClassStoreFunctions, ClassAllocator> session, MyContext context,
+                TsavoriteKV<MyKey, MyValue, ClassStoreFunctions, ClassAllocator> store, CheckpointType checkpointType)
         {
             var bContext = session.BasicContext;
 
@@ -102,17 +102,17 @@ namespace Tsavorite.test.recovery.objects
             {
                 var _key = new MyKey { key = i, name = i.ToString() };
                 var value = new MyValue { value = i.ToString() };
-                bContext.Upsert(ref _key, ref value, context);
+                _ = bContext.Upsert(ref _key, ref value, context);
 
                 if (i % 100 == 0)
                 {
-                    store.TryInitiateFullCheckpoint(out _, checkpointType);
+                    _ = store.TryInitiateFullCheckpoint(out _, checkpointType);
                     store.CompleteCheckpointAsync().AsTask().GetAwaiter().GetResult();
                 }
             }
         }
 
-        private void Read(ClientSession<MyKey, MyValue, MyInput, MyOutput, MyContext, MyFunctions> session, MyContext context, bool delete)
+        private void Read(ClientSession<MyKey, MyValue, MyInput, MyOutput, MyContext, MyFunctions, ClassStoreFunctions, ClassAllocator> session, MyContext context, bool delete)
         {
             var bContext = session.BasicContext;
 
@@ -125,7 +125,7 @@ namespace Tsavorite.test.recovery.objects
 
                 if (status.IsPending)
                 {
-                    bContext.CompletePending(true);
+                    _ = bContext.CompletePending(true);
                     context.FinalizeRead(ref status, ref g1);
                 }
 
@@ -138,12 +138,12 @@ namespace Tsavorite.test.recovery.objects
                 MyKey key = new() { key = 1, name = "1" };
                 MyInput input = default;
                 MyOutput output = new();
-                bContext.Delete(ref key, context);
+                _ = bContext.Delete(ref key, context);
                 var status = bContext.Read(ref key, ref input, ref output, context);
 
                 if (status.IsPending)
                 {
-                    bContext.CompletePending(true);
+                    _ = bContext.CompletePending(true);
                     context.FinalizeRead(ref status, ref output);
                 }
 
@@ -168,7 +168,7 @@ namespace Tsavorite.test.recovery.objects
             var size = reader.ReadInt32();
             key.key = reader.ReadInt32();
             var bytes = new byte[size - 4];
-            reader.Read(bytes, 0, size - 4);
+            _ = reader.Read(bytes, 0, size - 4);
             key.name = System.Text.Encoding.UTF8.GetString(bytes);
 
         }
@@ -188,20 +188,22 @@ namespace Tsavorite.test.recovery.objects
             value = new MyValue();
             var size = reader.ReadInt32();
             var bytes = new byte[size];
-            reader.Read(bytes, 0, size);
+            _ = reader.Read(bytes, 0, size);
             value.value = System.Text.Encoding.UTF8.GetString(bytes);
         }
     }
 
-    public class MyKey : ITsavoriteEqualityComparer<MyKey>
+    public class MyKey
     {
         public int key;
         public string name;
 
-        public long GetHashCode64(ref MyKey key) => Utility.GetHashCode(key.key);
-        public bool Equals(ref MyKey key1, ref MyKey key2) => key1.key == key2.key && key1.name == key2.name;
+        public struct Comparer : IKeyComparer<MyKey>
+        {
+            public readonly long GetHashCode64(ref MyKey key) => Utility.GetHashCode(key.key);
+            public readonly bool Equals(ref MyKey key1, ref MyKey key2) => key1.key == key2.key && key1.name == key2.name;
+        }
     }
-
 
     public class MyValue { public string value; }
     public class MyInput { public string value; }

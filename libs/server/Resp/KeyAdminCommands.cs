@@ -92,9 +92,10 @@ namespace Garnet.server
         /// <param name="count"></param>
         /// <param name="storageApi"></param>
         /// <returns></returns>
-        private bool NetworkEXISTS<TGarnetApi>(int count, ref TGarnetApi storageApi)
+        private bool NetworkEXISTS<TGarnetApi>(ref TGarnetApi storageApi)
             where TGarnetApi : IGarnetApi
         {
+            var count = parseState.Count;
             if (count < 1)
             {
                 return AbortWithWrongNumberOfArguments(nameof(RespCommand.EXISTS), count);
@@ -127,9 +128,10 @@ namespace Garnet.server
         /// <param name="count">Number of arguments sent with this command.</param>
         /// <param name="storageApi"></param>
         /// <returns></returns>
-        private bool NetworkEXPIRE<TGarnetApi>(int count, RespCommand command, ref TGarnetApi storageApi)
+        private bool NetworkEXPIRE<TGarnetApi>(RespCommand command, ref TGarnetApi storageApi)
             where TGarnetApi : IGarnetApi
         {
+            var count = parseState.Count;
             if (count < 2 || count > 3)
             {
                 return AbortWithWrongNumberOfArguments(nameof(RespCommand.EXPIRE), count);
