@@ -35,7 +35,7 @@ RUN if [ "$(uname -s)" = "Linux" ]; then \
 		if [ -f /etc/debian_version ]; then \
 			apt-get update && apt-get install -y libaio1 && rm -rf /var/lib/apt/lists/*; \
 		elif [ -f /etc/alpine-release ]; then \
-			apk add --no-cache libaio; \
+			apk update && apk add --upgrade libaio gcompat; \
 		elif [ -f /etc/centos-release ]; then \
 			yum install -y libaio; \
 		elif [ -f /etc/os-release ] && grep -q 'ID=cbl-mariner' /etc/os-release; then \
