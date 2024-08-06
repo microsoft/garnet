@@ -30,8 +30,8 @@ RUN dotnet publish -a $TARGETARCH -c Release -o /app --no-restore --self-contain
 # Final stage/image
 FROM mcr.microsoft.com/dotnet/runtime:8.0-alpine AS runtime
 
-# Install libaio
-RUN apk add --no-cache libaio
+# Install dependencies
+RUN apk update && apk add --upgrade libaio gcompat
 
 WORKDIR /app
 COPY --from=build /app .
