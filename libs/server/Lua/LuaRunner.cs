@@ -110,7 +110,7 @@ namespace Garnet.server
         }
 
         /// <summary>
-        /// Runs the precompiled Lua function
+        /// Runs the precompiled Lua function with specified (keys, argv) state
         /// </summary>
         /// <param name="keys"></param>
         /// <param name="argv"></param>
