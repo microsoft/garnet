@@ -33,15 +33,10 @@ namespace Garnet.server
             if (key.Length == 0 || elements.Length == 0)
                 return GarnetStatus.OK;
 
-            // Prepare the payload
-            var inputLength = 0;
-            foreach (var item in elements)
-            {
-                var tmp = scratchBufferManager.FormatScratchAsResp(0, item);
-                inputLength += tmp.Length;
-            }
-
-            var inputPayload = scratchBufferManager.GetSliceFromTail(inputLength);
+            // Prepare the parse state
+            var parseState = new SessionParseState();
+            ArgSlice[] parseStateBuffer = default;
+            parseState.InitializeWithArguments(ref parseStateBuffer, elements);
 
             // Prepare the input
             var input = new ObjectInput
@@ -51,8 +46,8 @@ namespace Garnet.server
                     type = GarnetObjectType.List,
                     ListOp = lop,
                 },
-                arg1 = elements.Length,
-                payload = inputPayload,
+                parseState = parseState,
+                parseStateStartIdx = 0,
             };
 
             var arrKey = key.ToArray();
@@ -81,8 +76,10 @@ namespace Garnet.server
         {
             itemsDoneCount = 0;
 
-            // Prepare the payload
-            var inputPayload = scratchBufferManager.FormatScratchAsResp(0, element);
+            // Prepare the parse state
+            var parseState = new SessionParseState();
+            ArgSlice[] parseStateBuffer = default;
+            parseState.InitializeWithArguments(ref parseStateBuffer, element);
 
             // Prepare the input
             var input = new ObjectInput
@@ -92,7 +89,8 @@ namespace Garnet.server
                     type = GarnetObjectType.List,
                     ListOp = lop,
                 },
-                payload = inputPayload,
+                parseState = parseState,
+                parseStateStartIdx = 0,
             };
 
             var status = RMWObjectStoreOperation(key.ToArray(), ref input, out var output, ref objectStoreContext);
@@ -134,9 +132,6 @@ namespace Garnet.server
         public unsafe GarnetStatus ListPop<TObjectContext>(ArgSlice key, int count, ListOperation lop, ref TObjectContext objectStoreContext, out ArgSlice[] elements)
                  where TObjectContext : ITsavoriteContext<byte[], IGarnetObject, ObjectInput, GarnetObjectStoreOutput, long, ObjectSessionFunctions, ObjectStoreFunctions, ObjectStoreAllocator>
         {
-            // Prepare the payload
-            var inputPayload = scratchBufferManager.CreateArgSlice(0);
-
             // Prepare the input
             var input = new ObjectInput
             {
@@ -146,7 +141,6 @@ namespace Garnet.server
                     ListOp = lop,
                 },
                 arg1 = count,
-                payload = inputPayload,
             };
 
             var outputFooter = new GarnetObjectStoreOutput { spanByteAndMemory = new SpanByteAndMemory(null) };
@@ -216,10 +210,6 @@ namespace Garnet.server
             if (key.Length == 0)
                 return GarnetStatus.OK;
 
-            // Prepare the payload
-            var inputLength = 0;
-            var inputPayload = scratchBufferManager.GetSliceFromTail(inputLength);
-
             // Prepare the input
             var input = new ObjectInput
             {
@@ -228,7 +218,6 @@ namespace Garnet.server
                     type = GarnetObjectType.List,
                     ListOp = ListOperation.LLEN,
                 },
-                payload = inputPayload,
             };
 
             var status = ReadObjectStoreOperation(key.ToArray(), ref input, out var output, ref objectStoreContext);
@@ -371,10 +360,6 @@ namespace Garnet.server
         public unsafe bool ListTrim<TObjectContext>(ArgSlice key, int start, int stop, ref TObjectContext objectStoreContext)
             where TObjectContext : ITsavoriteContext<byte[], IGarnetObject, ObjectInput, GarnetObjectStoreOutput, long, ObjectSessionFunctions, ObjectStoreFunctions, ObjectStoreAllocator>
         {
-            // Prepare the payload
-            var inputLength = 0;
-            var inputPayload = scratchBufferManager.GetSliceFromTail(inputLength);
-
             // Prepare the input
             var input = new ObjectInput
             {
@@ -385,7 +370,6 @@ namespace Garnet.server
                 },
                 arg1 = start,
                 arg2 = stop,
-                payload = inputPayload,
             };
 
             var status = RMWObjectStoreOperation(key.ToArray(), ref input, out _, ref objectStoreContext);

@@ -230,7 +230,7 @@ namespace Garnet.server
                         SortedSetRange(ref input, ref output);
                         break;
                     case SortedSetOperation.GEOADD:
-                        GeoAdd(ref input, outputSpan);
+                        GeoAdd(ref input, ref output);
                         break;
                     case SortedSetOperation.GEOHASH:
                         GeoHash(ref input, ref output);

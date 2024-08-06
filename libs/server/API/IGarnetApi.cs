@@ -430,9 +430,9 @@ namespace Garnet.server
         /// </summary>
         /// <param name="key"></param>
         /// <param name="input"></param>
-        /// <param name="output"></param>
+        /// <param name="outputFooter"></param>
         /// <returns></returns>
-        GarnetStatus GeoAdd(byte[] key, ref ObjectInput input, out ObjectOutputHeader output);
+        GarnetStatus GeoAdd(byte[] key, ref ObjectInput input, ref GarnetObjectStoreOutput outputFooter);
 
         #endregion
 

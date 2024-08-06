@@ -30,14 +30,10 @@ namespace Garnet.server
             var sbKey = parseState.GetArgSliceByRef(0).SpanByte;
             var keyBytes = sbKey.ToByteArray();
 
-            var ptr = sbKey.ToPointer() + sbKey.Length + 2;
-
             if (NetworkSingleKeySlotVerify(keyBytes, false))
             {
                 return true;
             }
-
-            var inputCount = count - 1;
 
             var lop =
                 command switch
@@ -57,8 +53,8 @@ namespace Garnet.server
                     type = GarnetObjectType.List,
                     ListOp = lop,
                 },
-                arg1 = inputCount,
-                payload = new ArgSlice(ptr, (int)(recvBufferPtr + bytesRead - ptr)),
+                parseState = parseState,
+                parseStateStartIdx = 1,
             };
 
             var status = command == RespCommand.LPUSH || command == RespCommand.LPUSHX
@@ -99,23 +95,17 @@ namespace Garnet.server
             var sbKey = parseState.GetArgSliceByRef(0).SpanByte;
             var keyBytes = sbKey.ToByteArray();
 
-            var ptr = sbKey.ToPointer() + sbKey.Length + 2;
-
             var popCount = 1;
 
             if (count == 2)
             {
                 // Read count
-                var popCountSlice = parseState.GetArgSliceByRef(1);
-                if (!NumUtils.TryParse(popCountSlice.ReadOnlySpan, out popCount))
+                if (!parseState.TryGetInt(1, out popCount))
                 {
                     while (!RespWriteUtils.WriteError(CmdStrings.RESP_ERR_GENERIC_VALUE_IS_NOT_INTEGER, ref dcurr, dend))
                         SendAndReset();
                     return true;
                 }
-
-                var sbPopCount = popCountSlice.SpanByte;
-                ptr = sbPopCount.ToPointer() + sbPopCount.Length + 2;
             }
 
             if (NetworkSingleKeySlotVerify(keyBytes, false))
@@ -140,7 +130,6 @@ namespace Garnet.server
                     ListOp = lop,
                 },
                 arg1 = popCount,
-                payload = new ArgSlice(ptr, (int)(recvBufferPtr + bytesRead - ptr)),
             };
 
             // Prepare GarnetObjectStore output
@@ -291,8 +280,7 @@ namespace Garnet.server
             if (NetworkMultiKeySlotVerify(readOnly: false, firstKey: 0, lastKey: -2))
                 return true;
 
-            var timeoutSlice = parseState.GetArgSliceByRef(count - 1);
-            if (!NumUtils.TryParse(timeoutSlice.ReadOnlySpan, out double timeout))
+            if (!parseState.TryGetDouble(count - 1, out var timeout))
             {
                 while (!RespWriteUtils.WriteError(CmdStrings.RESP_ERR_TIMEOUT_NOT_VALID_FLOAT, ref dcurr, dend))
                     SendAndReset();
@@ -361,8 +349,7 @@ namespace Garnet.server
             cmdArgs[1] = new ArgSlice(pSrcDir, 1);
             cmdArgs[2] = new ArgSlice(pDstDir, 1);
 
-            var timeoutSlice = parseState.GetArgSliceByRef(4);
-            if (!NumUtils.TryParse(timeoutSlice.ReadOnlySpan, out double timeout))
+            if (!parseState.TryGetDouble(4, out var timeout))
             {
                 while (!RespWriteUtils.WriteError(CmdStrings.RESP_ERR_TIMEOUT_NOT_VALID_FLOAT, ref dcurr, dend))
                     SendAndReset();
@@ -405,8 +392,6 @@ namespace Garnet.server
             var sbKey = parseState.GetArgSliceByRef(0).SpanByte;
             var keyBytes = sbKey.ToByteArray();
 
-            var ptr = sbKey.ToPointer() + sbKey.Length + 2;
-
             if (NetworkSingleKeySlotVerify(keyBytes, true))
             {
                 return true;
@@ -420,7 +405,6 @@ namespace Garnet.server
                     type = GarnetObjectType.List,
                     ListOp = ListOperation.LLEN,
                 },
-                payload = new ArgSlice(ptr, (int)(recvBufferPtr + bytesRead - ptr)),
             };
 
             var status = storageApi.ListLength(keyBytes, ref input, out var output);
@@ -466,19 +450,13 @@ namespace Garnet.server
             var keyBytes = sbKey.ToByteArray();
 
             // Read the parameters(start and stop) from LTRIM
-            var startSlice = parseState.GetArgSliceByRef(1);
-            var stopSlice = parseState.GetArgSliceByRef(2);
-
-            if (!NumUtils.TryParse(startSlice.ReadOnlySpan, out int start) ||
-                !NumUtils.TryParse(stopSlice.ReadOnlySpan, out int stop))
+            if (!parseState.TryGetInt(1, out var start) ||
+                !parseState.TryGetInt(2, out var stop))
             {
                 while (!RespWriteUtils.WriteError(CmdStrings.RESP_ERR_GENERIC_VALUE_IS_NOT_INTEGER, ref dcurr, dend))
                     SendAndReset();
                 return true;
             }
-
-            var sbStop = stopSlice.SpanByte;
-            var ptr = sbStop.ToPointer() + sbStop.Length + 2;
 
             if (NetworkSingleKeySlotVerify(keyBytes, false))
             {
@@ -495,7 +473,6 @@ namespace Garnet.server
                 },
                 arg1 = start,
                 arg2 = stop,
-                payload = new ArgSlice(ptr, (int)(recvBufferPtr + bytesRead - ptr)),
             };
 
             var status = storageApi.ListTrim(keyBytes, ref input);
@@ -538,19 +515,13 @@ namespace Garnet.server
             var keyBytes = sbKey.ToByteArray();
 
             // Read count start and end params for LRANGE
-            var startSlice = parseState.GetArgSliceByRef(1);
-            var endSlice = parseState.GetArgSliceByRef(2);
-
-            if (!NumUtils.TryParse(startSlice.ReadOnlySpan, out int start) ||
-                !NumUtils.TryParse(endSlice.ReadOnlySpan, out int end))
+            if (!parseState.TryGetInt(1, out var start) ||
+                !parseState.TryGetInt(2, out var end))
             {
                 while (!RespWriteUtils.WriteError(CmdStrings.RESP_ERR_GENERIC_VALUE_IS_NOT_INTEGER, ref dcurr, dend))
                     SendAndReset();
                 return true;
             }
-
-            var sbEnd = endSlice.SpanByte;
-            var ptr = sbEnd.ToPointer() + sbEnd.Length + 2;
 
             if (NetworkSingleKeySlotVerify(keyBytes, true))
             {
@@ -567,7 +538,6 @@ namespace Garnet.server
                 },
                 arg1 = start,
                 arg2 = end,
-                payload = new ArgSlice(ptr, (int)(recvBufferPtr + bytesRead - ptr)),
             };
 
             // Prepare GarnetObjectStore output
@@ -614,16 +584,12 @@ namespace Garnet.server
             var keyBytes = sbKey.ToByteArray();
 
             // Read index param
-            var indexSlice = parseState.GetArgSliceByRef(1);
-            if (!NumUtils.TryParse(indexSlice.ReadOnlySpan, out int index))
+            if (!parseState.TryGetInt(1, out var index))
             {
                 while (!RespWriteUtils.WriteError(CmdStrings.RESP_ERR_GENERIC_VALUE_IS_NOT_INTEGER, ref dcurr, dend))
                     SendAndReset();
                 return true;
             }
-
-            var sbIndex = indexSlice.SpanByte;
-            var ptr = sbIndex.ToPointer() + sbIndex.Length + 2;
 
             if (NetworkSingleKeySlotVerify(keyBytes, true))
             {
@@ -639,7 +605,6 @@ namespace Garnet.server
                     ListOp = ListOperation.LINDEX,
                 },
                 arg1 = index,
-                payload = new ArgSlice(ptr, (int)(recvBufferPtr + bytesRead - ptr)),
             };
 
             // Prepare GarnetObjectStore output
@@ -695,8 +660,6 @@ namespace Garnet.server
             var sbKey = parseState.GetArgSliceByRef(0).SpanByte;
             var keyBytes = sbKey.ToByteArray();
 
-            var ptr = sbKey.ToPointer() + sbKey.Length + 2;
-
             if (NetworkSingleKeySlotVerify(keyBytes, false))
             {
                 return true;
@@ -710,7 +673,8 @@ namespace Garnet.server
                     type = GarnetObjectType.List,
                     ListOp = ListOperation.LINSERT,
                 },
-                payload = new ArgSlice(ptr, (int)(recvBufferPtr + bytesRead - ptr)),
+                parseState = parseState,
+                parseStateStartIdx = 1,
             };
 
             var statusOp = storageApi.ListInsert(keyBytes, ref input, out var output);
@@ -759,16 +723,12 @@ namespace Garnet.server
             var keyBytes = sbKey.ToByteArray();
 
             // Get count parameter
-            var countSlice = parseState.GetArgSliceByRef(1);
-            if (!NumUtils.TryParse(countSlice.ReadOnlySpan, out int nCount))
+            if (!parseState.TryGetInt(1, out var nCount))
             {
                 while (!RespWriteUtils.WriteError(CmdStrings.RESP_ERR_GENERIC_VALUE_IS_NOT_INTEGER, ref dcurr, dend))
                     SendAndReset();
                 return true;
             }
-
-            var sbCount = countSlice.SpanByte;
-            var ptr = sbCount.ToPointer() + sbCount.Length + 2;
 
             if (NetworkSingleKeySlotVerify(keyBytes, false))
             {
@@ -784,7 +744,8 @@ namespace Garnet.server
                     ListOp = ListOperation.LREM,
                 },
                 arg1 = nCount,
-                payload = new ArgSlice(ptr, (int)(recvBufferPtr + bytesRead - ptr)),
+                parseState = parseState,
+                parseStateStartIdx = 2,
             };
 
             var statusOp = storageApi.ListRemove(keyBytes, ref input, out var output);
@@ -976,8 +937,6 @@ namespace Garnet.server
             var sbKey = parseState.GetArgSliceByRef(0).SpanByte;
             var keyBytes = sbKey.ToByteArray();
 
-            var ptr = sbKey.ToPointer() + sbKey.Length + 2;
-
             if (NetworkSingleKeySlotVerify(keyBytes, true))
             {
                 return true;
@@ -991,7 +950,8 @@ namespace Garnet.server
                     type = GarnetObjectType.List,
                     ListOp = ListOperation.LSET,
                 },
-                payload = new ArgSlice(ptr, (int)(recvBufferPtr + bytesRead - ptr)),
+                parseState = parseState,
+                parseStateStartIdx = 1,
             };
 
             // Prepare GarnetObjectStore output
