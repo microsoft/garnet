@@ -200,7 +200,7 @@ namespace Garnet.server.Custom
 
         public override void Register(CustomCommandManager customCommandManager)
         {
-            customCommandManager.Register(this.RegisterArgs.Name, this.RegisterArgs.NumParams, this.RegisterArgs.CommandType, this.Instance, this.RegisterArgs.CommandInfo);
+            customCommandManager.Register(this.RegisterArgs.Name, this.RegisterArgs.CommandType, this.Instance, this.RegisterArgs.CommandInfo);
         }
     }
 
@@ -218,7 +218,7 @@ namespace Garnet.server.Custom
 
         public override void Register(CustomCommandManager customCommandManager)
         {
-            customCommandManager.Register(RegisterArgs.Name, RegisterArgs.NumParams, RegisterArgs.CommandType, factory, RegisterArgs.ObjectCommand, RegisterArgs.CommandInfo);
+            customCommandManager.Register(RegisterArgs.Name, RegisterArgs.CommandType, factory, RegisterArgs.ObjectCommand, RegisterArgs.CommandInfo);
         }
     }
 

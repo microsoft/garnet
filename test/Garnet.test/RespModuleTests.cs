@@ -97,7 +97,7 @@ namespace Garnet.test
             var onLoad =
                     @"context.Initialize(""TestModule"", 1);
                     
-                    context.RegisterCommand(""TestModule.SetIfPM"", new SetIfPMCustomCommand(), CommandType.ReadModifyWrite, 2,
+                    context.RegisterCommand(""TestModule.SetIfPM"", new SetIfPMCustomCommand(), CommandType.ReadModifyWrite,
                     new RespCommandsInfo { Name = ""TestModule.SETIFPM"", Arity = 4, FirstKey = 1, LastKey = 1, Step = 1,
                     Flags = RespCommandFlags.DenyOom | RespCommandFlags.Write, AclCategories = RespAclCategories.String | RespAclCategories.Write });
                     
@@ -108,11 +108,11 @@ namespace Garnet.test
                     var factory = new MyDictFactory();
                     context.RegisterType(factory);
 
-                    context.RegisterCommand(""TestModule.MYDICTSET"", factory, new MyDictSet(), CommandType.ReadModifyWrite, 2,
+                    context.RegisterCommand(""TestModule.MYDICTSET"", factory, new MyDictSet(), CommandType.ReadModifyWrite,
                     new RespCommandsInfo { Name = ""TestModule.MYDICTSET"", Arity = 4, FirstKey = 1, LastKey = 1, Step = 1, 
                     Flags = RespCommandFlags.DenyOom | RespCommandFlags.Write, AclCategories = RespAclCategories.Write });
 
-                    context.RegisterCommand(""TestModule.MYDICTGET"", factory, new MyDictGet(), CommandType.Read, 1,
+                    context.RegisterCommand(""TestModule.MYDICTGET"", factory, new MyDictGet(), CommandType.Read,
                     new RespCommandsInfo { Name = ""TestModule.MYDICTGET"", Arity = 3, FirstKey = 1, LastKey = 1, Step = 1,
                     Flags = RespCommandFlags.ReadOnly, AclCategories = RespAclCategories.Read });
 

@@ -91,14 +91,13 @@ namespace Garnet.server
         /// Register custom command with Garnet
         /// </summary>
         /// <param name="name">Name of command</param>
-        /// <param name="numParams">Numer of parameters (excluding the key, which is always the first parameter)</param>
         /// <param name="commandType">Type of command (e.g., read)</param>
         /// <param name="factory">Custom factory for object</param>
         /// <param name="customObjectFunctions">Custom object command implementation</param>
         /// <param name="commandInfo">RESP command info</param>
         /// <returns>ID of the registered command</returns>
-        public (int objectTypeId, int subCommandId) NewCommand(string name, int numParams, CommandType commandType, CustomObjectFactory factory, CustomObjectFunctions customObjectFunctions, RespCommandsInfo commandInfo = null)
-            => provider.StoreWrapper.customCommandManager.Register(name, numParams, commandType, factory, customObjectFunctions, commandInfo);
+        public (int objectTypeId, int subCommandId) NewCommand(string name, CommandType commandType, CustomObjectFactory factory, CustomObjectFunctions customObjectFunctions, RespCommandsInfo commandInfo = null)
+            => provider.StoreWrapper.customCommandManager.Register(name, commandType, factory, customObjectFunctions, commandInfo);
 
         /// <summary>
         /// Register custom procedure with Garnet

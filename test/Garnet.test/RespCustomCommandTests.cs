@@ -49,7 +49,7 @@ namespace Garnet.test
         public void CustomCommandTest1()
         {
             // Register sample custom command (SETIFPM = "set if prefix match")
-            int x = server.Register.NewCommand("SETIFPM", CommandType.ReadModifyWrite, new SetIfPMCustomCommand(), new RespCommandsInfo { Arity = -5 });
+            int x = server.Register.NewCommand("SETIFPM", CommandType.ReadModifyWrite, new SetIfPMCustomCommand(), new RespCommandsInfo { Arity = 4 });
 
             using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
             var db = redis.GetDatabase(0);
@@ -303,8 +303,8 @@ namespace Garnet.test
         {
             // Register sample custom command on object
             var factory = new MyDictFactory();
-            server.Register.NewCommand("MYDICTSET", 2, CommandType.ReadModifyWrite, factory, new MyDictSet());
-            server.Register.NewCommand("MYDICTGET", 1, CommandType.Read, factory, new MyDictGet());
+            server.Register.NewCommand("MYDICTSET", CommandType.ReadModifyWrite, factory, new MyDictSet(), new RespCommandsInfo { Arity = 4 });
+            server.Register.NewCommand("MYDICTGET", CommandType.Read, factory, new MyDictGet(), new RespCommandsInfo { Arity = 3 });
 
             using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
             var db = redis.GetDatabase(0);
@@ -404,8 +404,8 @@ namespace Garnet.test
         {
             // Register sample custom command on object
             var factory = new MyDictFactory();
-            server.Register.NewCommand("MYDICTSET", 2, CommandType.ReadModifyWrite, factory, new MyDictSet());
-            server.Register.NewCommand("MYDICTGET", 1, CommandType.Read, factory, new MyDictGet());
+            server.Register.NewCommand("MYDICTSET", CommandType.ReadModifyWrite, factory, new MyDictSet(), new RespCommandsInfo { Arity = 4 });
+            server.Register.NewCommand("MYDICTGET", CommandType.Read, factory, new MyDictGet(), new RespCommandsInfo { Arity = 3 });
 
             using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
             var db = redis.GetDatabase(0);
@@ -441,8 +441,8 @@ namespace Garnet.test
         {
             // Register sample custom command on object
             var factory = new MyDictFactory();
-            server.Register.NewCommand("MYDICTSET", 2, CommandType.ReadModifyWrite, factory, new MyDictSet());
-            server.Register.NewCommand("MYDICTGET", 1, CommandType.Read, factory, new MyDictGet());
+            server.Register.NewCommand("MYDICTSET", CommandType.ReadModifyWrite, factory, new MyDictSet(), new RespCommandsInfo { Arity = 4 });
+            server.Register.NewCommand("MYDICTGET", CommandType.Read, factory, new MyDictGet(), new RespCommandsInfo { Arity = 3 });
 
             using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
             var db = redis.GetDatabase(0);

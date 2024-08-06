@@ -2,7 +2,6 @@
 // Licensed under the MIT license.
 
 using System;
-using System.Diagnostics;
 using System.Linq;
 using System.Text;
 using System.Threading;
@@ -231,8 +230,8 @@ namespace Garnet.test
 
             // Register sample custom command on object
             var factory = new MyDictFactory();
-            server.Register.NewCommand("MYDICTSET", 2, CommandType.ReadModifyWrite, factory, new MyDictSet());
-            server.Register.NewCommand("MYDICTGET", 1, CommandType.Read, factory, new MyDictGet());
+            server.Register.NewCommand("MYDICTSET", CommandType.ReadModifyWrite, factory, new MyDictSet(), new RespCommandsInfo { Arity = 4 });
+            server.Register.NewCommand("MYDICTGET", CommandType.Read, factory, new MyDictGet(), new RespCommandsInfo { Arity = 3 });
 
             using (var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig(allowAdmin: true)))
             {
@@ -249,8 +248,8 @@ namespace Garnet.test
 
             server.Dispose(false);
             server = TestUtils.CreateGarnetServer(TestUtils.MethodTestDir, tryRecover: true);
-            server.Register.NewCommand("MYDICTSET", 2, CommandType.ReadModifyWrite, factory, new MyDictSet());
-            server.Register.NewCommand("MYDICTGET", 1, CommandType.Read, factory, new MyDictGet());
+            server.Register.NewCommand("MYDICTSET", CommandType.ReadModifyWrite, factory, new MyDictSet(), new RespCommandsInfo { Arity = 4 });
+            server.Register.NewCommand("MYDICTGET", CommandType.Read, factory, new MyDictGet(), new RespCommandsInfo { Arity = 3 });
             server.Start();
 
             using (var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig(allowAdmin: true)))

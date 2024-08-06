@@ -147,12 +147,12 @@ namespace Garnet.server.Module
         /// <param name="numParams">Number of parameters</param>
         /// <param name="commandInfo">Command info</param>
         /// <returns></returns>
-        public ModuleActionStatus RegisterCommand(string name, CustomObjectFactory factory, CustomObjectFunctions command, CommandType type = CommandType.ReadModifyWrite, int numParams = int.MaxValue, RespCommandsInfo commandInfo = null)
+        public ModuleActionStatus RegisterCommand(string name, CustomObjectFactory factory, CustomObjectFunctions command, CommandType type = CommandType.ReadModifyWrite, RespCommandsInfo commandInfo = null)
         {
             if (string.IsNullOrEmpty(name) || factory == null || command == null)
                 return ModuleActionStatus.InvalidRegistrationInfo;
 
-            customCommandManager.Register(name, numParams, type, factory, command, commandInfo);
+            customCommandManager.Register(name, type, factory, command, commandInfo);
 
             return ModuleActionStatus.Success;
         }

@@ -108,7 +108,7 @@ namespace Garnet.server
         //    return subCommand;
         //}
 
-        internal (int objectTypeId, int subCommand) Register(string name, int numParams, CommandType commandType, CustomObjectFactory factory, RespCommandsInfo commandInfo)
+        internal (int objectTypeId, int subCommand) Register(string name, CommandType commandType, CustomObjectFactory factory, RespCommandsInfo commandInfo)
         {
             int objectTypeId = -1;
             for (int i = 0; i < ObjectTypeId; i++)
@@ -129,14 +129,14 @@ namespace Garnet.server
             int subCommand = Interlocked.Increment(ref wrapper.CommandId) - 1;
             if (subCommand >= byte.MaxValue)
                 throw new Exception("Out of registration space");
-            wrapper.commandMap[subCommand] = new CustomObjectCommand(name, (byte)objectTypeId, (byte)subCommand, 1, numParams, commandType, wrapper.factory);
+            wrapper.commandMap[subCommand] = new CustomObjectCommand(name, (byte)objectTypeId, (byte)subCommand, commandType, wrapper.factory);
 
             if (commandInfo != null) CustomCommandsInfo.Add(wrapper.commandMap[subCommand].NameStr, commandInfo);
 
             return (objectTypeId, subCommand);
         }
 
-        internal (int objectTypeId, int subCommand) Register(string name, int numParams, CommandType commandType, CustomObjectFactory factory, CustomObjectFunctions customObjectFunctions, RespCommandsInfo commandInfo)
+        internal (int objectTypeId, int subCommand) Register(string name, CommandType commandType, CustomObjectFactory factory, CustomObjectFunctions customObjectFunctions, RespCommandsInfo commandInfo)
         {
             var objectTypeId = -1;
             for (var i = 0; i < ObjectTypeId; i++)
@@ -157,7 +157,7 @@ namespace Garnet.server
             int subCommand = Interlocked.Increment(ref wrapper.CommandId) - 1;
             if (subCommand >= byte.MaxValue)
                 throw new Exception("Out of registration space");
-            wrapper.commandMap[subCommand] = new CustomObjectCommand(name, (byte)objectTypeId, (byte)subCommand, 1, numParams, commandType, wrapper.factory, customObjectFunctions);
+            wrapper.commandMap[subCommand] = new CustomObjectCommand(name, (byte)objectTypeId, (byte)subCommand, commandType, wrapper.factory, customObjectFunctions);
 
             if (commandInfo != null) CustomCommandsInfo.Add(wrapper.commandMap[subCommand].NameStr, commandInfo);
 
