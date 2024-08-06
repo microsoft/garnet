@@ -1612,5 +1612,66 @@ namespace Garnet.test.cluster
                 Assert.AreEqual(sourceNodeId, slotState[2]);
             }
         }
+
+        [Test, Order(16)]
+        [Category("CLUSTER")]
+        public void ClusterMigrateDataSlotsRange()
+        {
+            var Shards = 2;
+            context.CreateInstances(Shards, useTLS: UseTLS);
+            context.CreateConnection(useTLS: UseTLS);
+
+            var srcNodeIndex = 0;
+            var dstNodeIndex = 1;
+            Assert.AreEqual("OK", context.clusterTestUtils.AddDelSlotsRange(srcNodeIndex, [(0, 16383)], addslot: true, logger: context.logger));
+
+            context.clusterTestUtils.SetConfigEpoch(srcNodeIndex, srcNodeIndex + 1, logger: context.logger);
+            context.clusterTestUtils.SetConfigEpoch(dstNodeIndex, dstNodeIndex + 2, logger: context.logger);
+            context.clusterTestUtils.Meet(srcNodeIndex, dstNodeIndex, logger: context.logger);
+
+            var keySize = 16;
+            var keyCount = 1024;
+            List<byte[]> keys = [];
+
+            context.logger.LogDebug("1. Loading test keys {keyCount}", keyCount);
+            for (var i = 0; i < keyCount; i++)
+            {
+                var key = new byte[keySize];
+                context.clusterTestUtils.RandomBytes(ref key);
+
+                var resp = context.clusterTestUtils.SetKey(srcNodeIndex, key, key, out _, out var address, out var port, logger: context.logger);
+                Assert.AreEqual(resp, ResponseState.OK);
+                Assert.AreEqual(address, context.clusterTestUtils.GetEndPoint(srcNodeIndex).Address.ToString());
+                Assert.AreEqual(port, context.clusterTestUtils.GetEndPoint(srcNodeIndex).Port);
+                keys.Add(key);
+            }
+
+            var srcDBsize = context.clusterTestUtils.DBSize(srcNodeIndex, context.logger);
+            var dstDBsize = context.clusterTestUtils.DBSize(dstNodeIndex, context.logger);
+            Assert.AreEqual(keyCount, srcDBsize);
+            Assert.AreEqual(0, dstDBsize);
+
+            var sourceEndPoint = context.clusterTestUtils.GetEndPoint(srcNodeIndex);
+            var targetEndPoint = context.clusterTestUtils.GetEndPoint(dstNodeIndex);
+            context.clusterTestUtils.MigrateSlots(
+                sourceEndPoint,
+                targetEndPoint,
+                [0, 16383],
+                range: true,
+                logger: context.logger);
+
+            context.clusterTestUtils.WaitForMigrationCleanup(srcNodeIndex, logger: context.logger);
+            srcDBsize = context.clusterTestUtils.DBSize(srcNodeIndex, context.logger);
+            dstDBsize = context.clusterTestUtils.DBSize(dstNodeIndex, context.logger);
+            Assert.AreEqual(0, srcDBsize);
+            Assert.AreEqual(keyCount, dstDBsize);
+
+            foreach (var key in keys)
+            {
+                var resp = context.clusterTestUtils.GetKey(dstNodeIndex, key, out _, out _, out _, out var responseState, logger: context.logger);
+                Assert.AreEqual(ResponseState.OK, responseState);
+                Assert.AreEqual(Encoding.ASCII.GetString(key), resp);
+            }
+        }
     }
 }
