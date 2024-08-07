@@ -85,6 +85,8 @@ namespace Garnet.test.cluster
         readonly int timeout = 60;
         readonly int keyCount = 256;
 
+        const int testTimeout = 60000;
+
         public Dictionary<string, LogLevel> monitorTests = new()
         {
             {"ClusterReplicationSimpleFailover", LogLevel.Warning}
@@ -103,7 +105,7 @@ namespace Garnet.test.cluster
             context?.TearDown();
         }
 
-        [Test, Order(1)]
+        [Test, Order(1), Timeout(testTimeout)]
         [Category("REPLICATION")]
         public void ClusterSRTest([Values] bool disableObjects)
         {
@@ -140,7 +142,7 @@ namespace Garnet.test.cluster
                 context.ValidateKVCollectionAgainstReplica(ref context.kvPairs, i);
         }
 
-        [Test, Order(2)]
+        [Test, Order(2), Timeout(testTimeout)]
         [Category("REPLICATION")]
         public void ClusterSRNoCheckpointRestartSecondary([Values] bool performRMW, [Values] bool disableObjects)
         {
@@ -206,7 +208,7 @@ namespace Garnet.test.cluster
             context.ValidateKVCollectionAgainstReplica(ref context.kvPairs, 1);
         }
 
-        [Test, Order(3)]
+        [Test, Order(3), Timeout(testTimeout)]
         [Category("REPLICATION")]
         public void ClusterSRPrimaryCheckpoint([Values] bool performRMW, [Values] bool disableObjects)
         {
@@ -282,21 +284,21 @@ namespace Garnet.test.cluster
             context.ValidateKVCollectionAgainstReplica(ref context.kvPairs, 1);
         }
 
-        [Test, Order(4)]
+        [Test, Order(4), Timeout(testTimeout)]
         [Category("REPLICATION")]
         public void ClusterCheckpointRetrieveDisableStorageTier([Values] bool performRMW, [Values] bool disableObjects)
         {
             ClusterSRPrimaryCheckpointRetrieve(performRMW, disableObjects, false, false, true, false);
         }
 
-        [Test, Order(5)]
+        [Test, Order(5), Timeout(testTimeout)]
         [Category("REPLICATION")]
         public void ClusterCheckpointRetrieveDelta([Values] bool performRMW)
         {
             ClusterSRPrimaryCheckpointRetrieve(performRMW, true, false, false, false, true);
         }
 
-        [Test, Order(6)]
+        [Test, Order(6), Timeout(testTimeout)]
         [Category("REPLICATION")]
         public void ClusterSRPrimaryCheckpointRetrieve([Values] bool performRMW, [Values] bool disableObjects, [Values] bool lowMemory, [Values] bool manySegments)
             => ClusterSRPrimaryCheckpointRetrieve(performRMW, disableObjects, lowMemory, manySegments, false, false);
@@ -375,7 +377,7 @@ namespace Garnet.test.cluster
                 context.ValidateNodeObjects(ref context.kvPairsObj, 1);
         }
 
-        [Test, Order(7)]
+        [Test, Order(7), Timeout(testTimeout)]
         [Category("REPLICATION")]
         public void ClusterSRAddReplicaAfterPrimaryCheckpoint([Values] bool performRMW, [Values] bool disableObjects, [Values] bool lowMemory)
         {
@@ -434,7 +436,7 @@ namespace Garnet.test.cluster
                 context.ValidateNodeObjects(ref context.kvPairsObj, 1);
         }
 
-        [Test, Order(8)]
+        [Test, Order(8), Timeout(testTimeout)]
         [Category("REPLICATION")]
         public void ClusterSRPrimaryRestart([Values] bool performRMW, [Values] bool disableObjects)
         {
@@ -500,7 +502,7 @@ namespace Garnet.test.cluster
                 Assert.AreEqual(objectStoreCurrentAofAddress, objectStoreRecoveredAofAddress);
         }
 
-        [Test, Order(9)]
+        [Test, Order(9), Timeout(testTimeout)]
         [Category("REPLICATION")]
         public void ClusterSRRedirectWrites()
         {
@@ -528,7 +530,7 @@ namespace Garnet.test.cluster
             Assert.AreEqual(ResponseState.MOVED, resp);
         }
 
-        [Test, Order(10)]
+        [Test, Order(10), Timeout(testTimeout)]
         [Category("REPLICATION")]
         public void ClusterSRReplicaOfTest([Values] bool performRMW)
         {
@@ -564,7 +566,7 @@ namespace Garnet.test.cluster
             context.clusterTestUtils.WaitForReplicaAofSync(0, 1);
         }
 
-        [Test, Order(11)]
+        [Test, Order(11), Timeout(testTimeout)]
         [Category("REPLICATION")]
         public void ClusterReplicationSimpleFailover([Values] bool performRMW, [Values] bool checkpoint)
         {
@@ -634,7 +636,7 @@ namespace Garnet.test.cluster
                 context.PopulatePrimaryRMW(ref context.kvPairs, keyLength, kvpairCount, 0, addCount, slotMap: slotMap);
         }
 
-        [Test, Order(12)]
+        [Test, Order(12), Timeout(testTimeout)]
         [Category("REPLICATION")]
         public void ClusterFailoverAttachReplicas([Values] bool performRMW, [Values] bool takePrimaryCheckpoint, [Values] bool takeNewPrimaryCheckpoint, [Values] bool enableIncrementalSnapshots)
         {
@@ -715,7 +717,8 @@ namespace Garnet.test.cluster
             context.SendAndValidateKeys(1, 2, keyLength, 5);
         }
 
-        [Test, Order(13)]
+        [Test, Order(13), Timeout(testTimeout)]
+        [Category("REPLICATION")]
         public void ClusterReplicationCheckpointCleanupTest([Values] bool performRMW, [Values] bool disableObjects, [Values] bool enableIncrementalSnapshots)
         {
             var replica_count = 1;//Per primary
@@ -747,7 +750,7 @@ namespace Garnet.test.cluster
                 Assert.Fail("attachReplicaTask timeout");
         }
 
-        [Test, Order(14)]
+        [Test, Order(14), Timeout(testTimeout)]
         [Category("REPLICATION")]
         public void ClusterMainMemoryReplicationAttachReplicas()
         {
@@ -791,7 +794,7 @@ namespace Garnet.test.cluster
             context.ValidateKVCollectionAgainstReplica(ref context.kvPairs, 2);
         }
 
-        [Test, Order(15)]
+        [Test, Order(15), Timeout(testTimeout)]
         [Category("REPLICATION")]
         public void ClusterDontKnowReplicaFailTest([Values] bool performRMW, [Values] bool MainMemoryReplication, [Values] bool onDemandCheckpoint, [Values] bool useReplicaOf)
         {
@@ -842,12 +845,12 @@ namespace Garnet.test.cluster
             context.ValidateKVCollectionAgainstReplica(ref context.kvPairs, 1);
         }
 
-        [Test, Order(16)]
+        [Test, Order(16), Timeout(testTimeout)]
         [Category("REPLICATION")]
         public void ClusterDivergentReplicasTest([Values] bool performRMW, [Values] bool disableObjects, [Values] bool ckptBeforeDivergence)
             => ClusterDivergentReplicasTest(performRMW, disableObjects, ckptBeforeDivergence, false, false, fastCommit: false);
 
-        [Test, Order(17)]
+        [Test, Order(17), Timeout(testTimeout)]
         [Category("REPLICATION")]
         public void ClusterDivergentCheckpointTest([Values] bool performRMW, [Values] bool disableObjects)
             => ClusterDivergentReplicasTest(
@@ -858,7 +861,7 @@ namespace Garnet.test.cluster
                 mainMemoryReplication: false,
                 fastCommit: false);
 
-        [Test, Order(18)]
+        [Test, Order(18), Timeout(testTimeout)]
         [Category("REPLICATION")]
         public void ClusterDivergentReplicasMMTest([Values] bool performRMW, [Values] bool disableObjects, [Values] bool ckptBeforeDivergence)
             => ClusterDivergentReplicasTest(
@@ -869,7 +872,7 @@ namespace Garnet.test.cluster
                 mainMemoryReplication: true,
                 fastCommit: false);
 
-        [Test, Order(19)]
+        [Test, Order(19), Timeout(testTimeout)]
         [Category("REPLICATION")]
         public void ClusterDivergentCheckpointMMTest([Values] bool performRMW, [Values] bool disableObjects)
             => ClusterDivergentReplicasTest(
@@ -880,7 +883,7 @@ namespace Garnet.test.cluster
                 mainMemoryReplication: true,
                 fastCommit: false);
 
-        [Test, Order(20)]
+        [Test, Order(20), Timeout(testTimeout)]
         [Category("REPLICATION")]
         public void ClusterDivergentCheckpointMMFastCommitTest([Values] bool disableObjects, [Values] bool mainMemoryReplication)
             => ClusterDivergentReplicasTest(
@@ -1011,7 +1014,7 @@ namespace Garnet.test.cluster
                 context.ValidateNodeObjects(ref context.kvPairsObj, nodeIndex: newPrimaryIndex, set: set);
         }
 
-        [Test, Order(21)]
+        [Test, Order(21), Timeout(testTimeout)]
         [Category("REPLICATION")]
         public void ClusterReplicateFails()
         {
