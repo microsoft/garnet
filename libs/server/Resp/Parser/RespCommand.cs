@@ -1902,17 +1902,16 @@ namespace Garnet.server
             if (dcurr == networkSender.GetResponseObjectHead())
                 waitForAofBlocking = false;
 
-            if (txnManager.state == TxnState.None || txnManager.state == TxnState.Running)
-            {
-                /* 
-                    keeping the expensive call inside the conditional only adds ~4 MSIL instructions in hotpath
-                    W.r.t AOF  Blocking
-                    If a previous command marked AOF for blocking we should not change AOF blocking flag.
-                    If no previous command marked AOF for blocking, then we only change AOF flag to block
-                    if the current command is AOF dependent.
-                */
-                waitForAofBlocking = waitForAofBlocking || !cmd.IsAofIndependent();
-            }
+            // During a started transaction (Network Skip mode) the cmd is not executed so we can safely skip setting the AOF blocking flag
+            if (txnManager.state == TxnState.Started)
+                return;
+
+            /* 
+                If a previous command marked AOF for blocking we should not change AOF blocking flag.
+                If no previous command marked AOF for blocking, then we only change AOF flag to block
+                if the current command is AOF dependent.
+            */
+            waitForAofBlocking = waitForAofBlocking || !cmd.IsAofIndependent();
         }
 
         [MethodImpl(MethodImplOptions.NoInlining)]
