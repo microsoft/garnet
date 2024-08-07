@@ -29,6 +29,7 @@ RUN dotnet publish -a $TARGETARCH -c Release -o /app --no-restore --self-contain
 
 # Final stage/image
 FROM mcr.microsoft.com/dotnet/runtime:8.0-jammy-chiseled AS runtime
+
 WORKDIR /app
 COPY --from=build /app .
 
