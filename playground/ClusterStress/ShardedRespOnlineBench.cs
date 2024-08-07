@@ -457,6 +457,7 @@ namespace Resp.benchmark
                     }
                     else
                     {
+                        #pragma warning disable CA2254 // Template should be a static expression
                         var histogramHeader = $"{"min (us);",pad}" +
                             $"{"5th (us);",pad}" +
                             $"{"median (us);",pad}" +
@@ -468,6 +469,7 @@ namespace Resp.benchmark
                             $"{"iter_tops;",pad}" +
                             $"{"tpt (Kops/sec)",pad}";
                         logger.Log(LogLevel.Information, histogramHeader);
+                        #pragma warning restore CA2254 // Template should be a static expression
                     }
                 }
 
@@ -502,6 +504,7 @@ namespace Resp.benchmark
                 }
                 else
                 {
+                    #pragma warning disable CA2254 // Template should be a static expression
                     var histogramOutput = $"{Math.Round(summary.GetValueAtPercentile(0) / OutputScalingFactor.TimeStampToMicroseconds, 2),pad}" +
                     $"{Math.Round(summary.GetValueAtPercentile(5) / OutputScalingFactor.TimeStampToMicroseconds, 2),pad}" +
                     $"{Math.Round(summary.GetValueAtPercentile(50) / OutputScalingFactor.TimeStampToMicroseconds, 2),pad}" +
@@ -513,6 +516,7 @@ namespace Resp.benchmark
                     $"{curr_iter_ops,pad}" +
                     $"{Math.Round(BatchSize * curr_iter_ops / elapsedSecs, 2),pad}";
                     logger.Log(LogLevel.Information, histogramOutput);
+                    #pragma warning restore CA2254 // Template should be a static expression
                 }
 
                 last_iter_ops = summary.TotalCount;
