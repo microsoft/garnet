@@ -85,7 +85,10 @@ namespace Garnet.test.cluster
         readonly int timeout = 60;
         readonly int keyCount = 256;
 
-        public HashSet<string> monitorTests = [];
+        public Dictionary<string, LogLevel> monitorTests = new()
+        {
+            {"ClusterReplicationSimpleFailover", LogLevel.Warning}
+        };
 
         [SetUp]
         public void Setup()
@@ -606,6 +609,7 @@ namespace Garnet.test.cluster
                 context.clusterTestUtils.Checkpoint(0);
                 context.clusterTestUtils.WaitCheckpoint(0, primaryLastSaveTime, logger: context.logger);
                 context.clusterTestUtils.WaitCheckpoint(1, replicaLastSaveTime, logger: context.logger);
+                context.clusterTestUtils.WaitForReplicaAofSync(0, 1, context.logger);
             }
 
             #region InitiateFailover
