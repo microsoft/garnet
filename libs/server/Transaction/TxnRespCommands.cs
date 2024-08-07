@@ -287,18 +287,15 @@ namespace Garnet.server
                 return true;
             }
 
-            if ((arity > 0 && count == arity - 1) || (arity < 0 && count >= -arity - 1))
-            {
-                TryTransactionProc((byte)txId, start, end, proc);
-            }
-            else
+            if ((arity > 0 && count != arity - 1) || (arity < 0 && count < -arity - 1))
             {
                 while (!RespWriteUtils.WriteError(
-                           string.Format(CmdStrings.GenericErrWrongNumArgsTxn, txId, arity - 2, count - 1), ref dcurr, // arity includes cmdname and id, so -2
-                           dend))
+                       string.Format(CmdStrings.GenericErrWrongNumArgsTxn, txId, arity - 2, count - 1), ref dcurr, // arity includes cmdname and id, so -2
+                       dend))
                     SendAndReset();
-                return true;
             }
+            else
+                TryTransactionProc((byte)txId, start, end, proc);
 
             return true;
         }
