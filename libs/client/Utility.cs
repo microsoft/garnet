@@ -55,7 +55,7 @@ namespace Garnet.client
         {
             long adjustedSize = PreviousPowerOf2(v);
             if (v != adjustedSize)
-                logger?.LogInformation($"Warning: using lower value {adjustedSize} instead of specified value {v}");
+                logger?.LogInformation("Warning: using lower value {adjustedSize} instead of specified value {specifiedValue}", adjustedSize, v);
             return (int)Math.Log(adjustedSize, 2);
         }
 

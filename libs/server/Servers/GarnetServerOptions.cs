@@ -373,24 +373,25 @@ namespace Garnet.server
                 MutableFraction = MutablePercent / 100.0,
                 PageSize = 1L << PageSizeBits()
             };
-            logger?.LogInformation($"[Store] Using page size of {PrettySize(kvSettings.PageSize)}");
+            logger?.LogInformation("[Store] Using page size of {PageSize}", PrettySize(kvSettings.PageSize));
 
             kvSettings.MemorySize = 1L << MemorySizeBits(MemorySize, PageSize, out var storeEmptyPageCount);
             kvSettings.MinEmptyPageCount = storeEmptyPageCount;
 
             long effectiveSize = kvSettings.MemorySize - storeEmptyPageCount * kvSettings.MemorySize;
             if (storeEmptyPageCount == 0)
-                logger?.LogInformation($"[Store] Using log memory size of {PrettySize(kvSettings.MemorySize)}");
+                logger?.LogInformation("[Store] Using log memory size of {MemorySize}", PrettySize(kvSettings.MemorySize));
             else
-                logger?.LogInformation($"[Store] Using log memory size of {PrettySize(kvSettings.MemorySize)}, with {storeEmptyPageCount} empty pages, for effective size of {PrettySize(effectiveSize)}");
+                logger?.LogInformation("[Store] Using log memory size of {MemorySize}, with {storeEmptyPageCount} empty pages, for effective size of {effectiveSize}",
+                    PrettySize(kvSettings.MemorySize), storeEmptyPageCount, PrettySize(effectiveSize));
 
-            logger?.LogInformation($"[Store] There are {PrettySize(kvSettings.MemorySize / kvSettings.PageSize)} log pages in memory");
+            logger?.LogInformation("[Store] There are {LogPages} log pages in memory", PrettySize(kvSettings.MemorySize / kvSettings.PageSize));
 
             kvSettings.SegmentSize = 1L << SegmentSizeBits();
-            logger?.LogInformation($"[Store] Using disk segment size of {PrettySize(kvSettings.SegmentSize)}");
+            logger?.LogInformation("[Store] Using disk segment size of {SegmentSize}", PrettySize(kvSettings.SegmentSize));
 
-            logger?.LogInformation($"[Store] Using hash index size of {PrettySize(kvSettings.IndexSize)} ({PrettySize(indexCacheLines)} cache lines)");
-            logger?.LogInformation($"[Store] Hash index size is optimized for up to ~{PrettySize(indexCacheLines * 4L)} distinct keys");
+            logger?.LogInformation("[Store] Using hash index size of {IndexSize} (indexCacheLines} cache lines)", PrettySize(kvSettings.IndexSize), PrettySize(indexCacheLines));
+            logger?.LogInformation("[Store] Hash index size is optimized for up to ~{distinctKeys} distinct keys", PrettySize(indexCacheLines * 4L));
 
             AdjustedIndexMaxCacheLines = IndexMaxSize == string.Empty ? 0 : IndexSizeCachelines("hash index max size", IndexMaxSize);
             if (AdjustedIndexMaxCacheLines != 0 && AdjustedIndexMaxCacheLines < indexCacheLines)
