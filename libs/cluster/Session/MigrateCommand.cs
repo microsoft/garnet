@@ -138,13 +138,13 @@ namespace Garnet.cluster
                     while (currTokenIdx < parseState.Count)
                     {
                         var currKeySlice = parseState.GetArgSliceByRef(currTokenIdx++);
-                        var sbKey = keySlice.SpanByte;
+                        var sbKey = currKeySlice.SpanByte;
 
                         // Skip if previous error encountered
                         if (pstate != MigrateCmdParseState.SUCCESS) continue;
 
                         // Check if all keys are local R/W because we migrate keys and need to be able to delete them
-                        var slot = HashSlotUtils.HashSlot(ref sbKey);
+                        var slot = HashSlotUtils.HashSlot(sbKey.ToPointer(), sbKey.Length);
                         if (!current.IsLocal(slot, readWriteSession: false))
                         {
                             pstate = MigrateCmdParseState.SLOTNOTLOCAL;
