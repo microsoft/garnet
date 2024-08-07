@@ -163,7 +163,7 @@ namespace Garnet.cluster
             // Make replica syncing unavailable by setting recovery flag
             if (!clusterProvider.replicationManager.StartRecovery())
             {
-                logger?.LogWarning($"nameof(TakeOverAsPrimary): {{logMessage}}", Encoding.ASCII.GetString(CmdStrings.RESP_ERR_GENERIC_CANNOT_ACQUIRE_RECOVERY_LOCK));
+                logger?.LogWarning($"{nameof(TakeOverAsPrimary)}: {{logMessage}}", Encoding.ASCII.GetString(CmdStrings.RESP_ERR_GENERIC_CANNOT_ACQUIRE_RECOVERY_LOCK));
                 return false;
             }
             _ = clusterProvider.BumpAndWaitForEpochTransition();
@@ -173,7 +173,7 @@ namespace Garnet.cluster
                 // Take over slots from old primary
                 if (!clusterProvider.clusterManager.TryTakeOverForPrimary())
                 {
-                    logger?.LogWarning($"nameof(TakeOverAsPrimary): {{logMessage}}", Encoding.ASCII.GetString(CmdStrings.RESP_ERR_GENERIC_CANNOT_TAKEOVER_FROM_PRIMARY));
+                    logger?.LogWarning($"{nameof(TakeOverAsPrimary)}: {{logMessage}}", Encoding.ASCII.GetString(CmdStrings.RESP_ERR_GENERIC_CANNOT_TAKEOVER_FROM_PRIMARY));
                     return false;
                 }
 
