@@ -523,7 +523,9 @@ namespace Garnet.server
                 }
 
                 //Identify sign for number
+#pragma warning disable CA1865 Use 'string.Method(char)' instead of 'string.Method(string)' for string with single char
                 byte sign = encodingArg.StartsWith("i", StringComparison.OrdinalIgnoreCase) ? (byte)BitFieldSign.SIGNED : (byte)BitFieldSign.UNSIGNED;
+#pragma warning restore CA1865
                 //Number of bits in signed number
                 byte bitCount = (byte)int.Parse(encodingArg.AsSpan(1));
                 //At most 64 bits can fit into encoding info
@@ -679,7 +681,9 @@ namespace Garnet.server
                 }
 
                 //Identify sign for number
+#pragma warning disable CA1865 Use 'string.Method(char)' instead of 'string.Method(string)' for string with single char
                 byte sign = encoding.StartsWith("i", StringComparison.OrdinalIgnoreCase) ? (byte)BitFieldSign.SIGNED : (byte)BitFieldSign.UNSIGNED;
+#pragma warning restore CA1865
                 //Number of bits in signed number
                 byte bitCount = (byte)int.Parse(encoding.AsSpan(1));
                 encodingInfo = (byte)(sign | bitCount);
