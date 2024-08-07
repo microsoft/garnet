@@ -194,7 +194,7 @@ namespace Garnet.server
             kvSettings.SegmentSize = 1L << SegmentSizeBits();
             logger?.LogInformation("[Store] Using disk segment size of {SegmentSize}", PrettySize(kvSettings.SegmentSize));
 
-            logger?.LogInformation("[Store] Using hash index size of {IndexSize} (CacheLines} cache lines)", PrettySize(kvSettings.IndexSize), {PrettySize(indexCacheLines));
+            logger?.LogInformation("[Store] Using hash index size of {IndexSize} ({CacheLines} cache lines)", PrettySize(kvSettings.IndexSize), PrettySize(indexCacheLines));
 
             if (EnableStorageTier)
             {
