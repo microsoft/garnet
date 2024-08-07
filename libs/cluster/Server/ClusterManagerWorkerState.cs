@@ -149,7 +149,7 @@ namespace Garnet.cluster
                 if (current.LocalNodeId.Equals(nodeid, StringComparison.OrdinalIgnoreCase))
                 {
                     errorMessage = CmdStrings.RESP_ERR_GENERIC_CANNOT_REPLICATE_SELF;
-                    logger?.LogError(nameof(TryAddReplica) + ": {logMessage}", Encoding.ASCII.GetString(errorMessage));
+                    logger?.LogError($"{nameof(TryAddReplica)}: {{logMessage}}", Encoding.ASCII.GetString(errorMessage));
                     return false;
                 }
 
@@ -163,7 +163,7 @@ namespace Garnet.cluster
                 if (!force && current.HasAssignedSlots(1))
                 {
                     errorMessage = CmdStrings.RESP_ERR_GENERIC_CANNOT_MAKE_REPLICA_WITH_ASSIGNED_SLOTS;
-                    logger?.LogError(nameof(TryAddReplica) + ": {logMessage}", Encoding.ASCII.GetString(errorMessage));
+                    logger?.LogError($"{nameof(TryAddReplica)}: {{logMessage}}", Encoding.ASCII.GetString(errorMessage));
                     return false;
                 }
 
@@ -186,7 +186,7 @@ namespace Garnet.cluster
                 // Only one caller will succeed in becoming a replica for the provided node-id
                 if (!clusterProvider.replicationManager.StartRecovery())
                 {
-                    logger?.LogError(nameof(TryAddReplica) + ": {logMessage}", Encoding.ASCII.GetString(CmdStrings.RESP_ERR_GENERIC_CANNOT_ACQUIRE_RECOVERY_LOCK));
+                    logger?.LogError($"{nameof(TryAddReplica)}: {{logMessage}}", Encoding.ASCII.GetString(CmdStrings.RESP_ERR_GENERIC_CANNOT_ACQUIRE_RECOVERY_LOCK));
                     errorMessage = CmdStrings.RESP_ERR_GENERIC_CANNOT_ACQUIRE_RECOVERY_LOCK;
                     return false;
                 }
