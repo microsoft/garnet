@@ -29,7 +29,7 @@ namespace Garnet.cluster
                 {
                     if (!clusterProvider.replicationManager.StartRecovery())
                     {
-                        logger?.LogError(nameof(TryREPLICAOF) + ": {logMessage}", Encoding.ASCII.GetString(CmdStrings.RESP_ERR_GENERIC_CANNOT_ACQUIRE_RECOVERY_LOCK));
+                        logger?.LogError($"nameof(TryREPLICAOF): {{logMessage}}", Encoding.ASCII.GetString(CmdStrings.RESP_ERR_GENERIC_CANNOT_ACQUIRE_RECOVERY_LOCK));
                         while (!RespWriteUtils.WriteError(CmdStrings.RESP_ERR_GENERIC_CANNOT_ACQUIRE_RECOVERY_LOCK, ref dcurr, dend))
                             SendAndReset();
                         return true;
@@ -47,7 +47,7 @@ namespace Garnet.cluster
             {
                 if (!int.TryParse(portStr, out var port))
                 {
-                    logger?.LogWarning(nameof(TryREPLICAOF) + " failed to parse port {port}", portStr);
+                    logger?.LogWarning($"nameof(TryREPLICAOF) failed to parse port {{port}}", portStr);
                     while (!RespWriteUtils.WriteError($"ERR REPLICAOF failed to parse port '{portStr}'", ref dcurr, dend))
                         SendAndReset();
                     return true;
