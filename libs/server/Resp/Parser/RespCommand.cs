@@ -1902,9 +1902,7 @@ namespace Garnet.server
             if (dcurr == networkSender.GetResponseObjectHead())
                 waitForAofBlocking = false;
 
-            // If we are in NetworkSkip's state we do not need to be changing the AOF blocking flag
-            // since we do not interact with AOF in that path.
-            if (txnManager.state != TxnState.None && txnManager.state == TxnState.Running)
+            if (txnManager.state == TxnState.None || txnManager.state == TxnState.Running)
             {
                 /* 
                     keeping the expensive call inside the conditional only adds ~4 MSIL instructions in hotpath
