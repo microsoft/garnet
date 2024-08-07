@@ -19,7 +19,6 @@ namespace Garnet.server
         /// </summary>
         /// <typeparam name="TGarnetApi"></typeparam>
         /// <param name="command"></param>
-        /// <param name="count"></param>
         /// <param name="storageApi"></param>
         /// <returns></returns>
         private unsafe bool HashSet<TGarnetApi>(RespCommand command, ref TGarnetApi storageApi)
@@ -91,7 +90,6 @@ namespace Garnet.server
         /// </summary>
         /// <typeparam name="TGarnetApi"></typeparam>
         /// <param name="command"></param>
-        /// <param name="count"></param>
         /// <param name="storageApi"></param>
         /// <returns></returns>
         private bool HashGet<TGarnetApi>(RespCommand command, ref TGarnetApi storageApi)
@@ -148,7 +146,6 @@ namespace Garnet.server
         /// </summary>
         /// <typeparam name="TGarnetApi"></typeparam>
         /// <param name="command"></param>
-        /// <param name="count"></param>
         /// <param name="storageApi"></param>
         /// <returns></returns>
         private bool HashGetAll<TGarnetApi>(RespCommand command, ref TGarnetApi storageApi)
@@ -205,7 +202,6 @@ namespace Garnet.server
         /// </summary>
         /// <typeparam name="TGarnetApi"></typeparam>
         /// <param name="command"></param>
-        /// <param name="count"></param>
         /// <param name="storageApi"></param>
         /// <returns></returns>
         private bool HashGetMultiple<TGarnetApi>(RespCommand command, ref TGarnetApi storageApi)
@@ -263,7 +259,6 @@ namespace Garnet.server
         /// </summary>
         /// <typeparam name="TGarnetApi"></typeparam>
         /// <param name="command"></param>
-        /// <param name="count"></param>
         /// <param name="storageApi"></param>
         /// <returns></returns>
         private bool HashRandomField<TGarnetApi>(RespCommand command, ref TGarnetApi storageApi)
@@ -364,7 +359,6 @@ namespace Garnet.server
         /// Returns the number of fields contained in the hash key.
         /// </summary>
         /// <typeparam name="TGarnetApi"></typeparam>
-        /// <param name="count"></param>
         /// <param name="storageApi"></param>
         /// <returns></returns>
         private unsafe bool HashLength<TGarnetApi>(ref TGarnetApi storageApi)
@@ -419,7 +413,6 @@ namespace Garnet.server
         /// <summary>
         /// Returns the string length of the value associated with field in the hash stored at key. If the key or the field do not exist, 0 is returned.
         /// </summary>
-        /// <param name="count"></param>
         /// <param name="storageApi"></param>
         /// <typeparam name="TGarnetApi"></typeparam>
         /// <returns></returns>
@@ -476,7 +469,6 @@ namespace Garnet.server
         /// Removes the specified fields from the hash stored at key.
         /// </summary>
         /// <typeparam name="TGarnetApi"></typeparam>
-        /// <param name="count"></param>
         /// <param name="storageApi"></param>
         /// <returns></returns>
         private unsafe bool HashDelete<TGarnetApi>(ref TGarnetApi storageApi)
@@ -532,7 +524,6 @@ namespace Garnet.server
         /// Returns if field exists in the hash stored at key.
         /// </summary>
         /// <typeparam name="TGarnetApi"></typeparam>
-        /// <param name="count"></param>
         /// <param name="storageApi"></param>
         /// <returns></returns>
         private unsafe bool HashExists<TGarnetApi>(ref TGarnetApi storageApi)
@@ -589,7 +580,6 @@ namespace Garnet.server
         /// </summary>
         /// <typeparam name="TGarnetApi"></typeparam>
         /// <param name="command"></param>
-        /// <param name="count"></param>
         /// <param name="storageApi"></param>
         /// <returns></returns>
         private unsafe bool HashKeys<TGarnetApi>(RespCommand command, ref TGarnetApi storageApi)
@@ -657,7 +647,6 @@ namespace Garnet.server
         /// </summary>
         /// <typeparam name="TGarnetApi"></typeparam>
         /// <param name="command"></param>
-        /// <param name="count"></param>
         /// <param name="storageApi"></param>
         /// <returns></returns>
         private unsafe bool HashIncrement<TGarnetApi>(RespCommand command, ref TGarnetApi storageApi)

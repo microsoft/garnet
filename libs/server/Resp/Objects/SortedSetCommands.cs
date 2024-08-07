@@ -17,7 +17,6 @@ namespace Garnet.server
         /// Current members get the score updated and reordered.
         /// </summary>
         /// <typeparam name="TGarnetApi"></typeparam>
-        /// <param name="count"></param>
         /// <param name="storageApi"></param>
         /// <returns></returns>
         private unsafe bool SortedSetAdd<TGarnetApi>(ref TGarnetApi storageApi)
@@ -76,7 +75,6 @@ namespace Garnet.server
         /// Non existing members are ignored.
         /// </summary>
         /// <typeparam name="TGarnetApi"></typeparam>
-        /// <param name="count"></param>
         /// <param name="storageApi"></param>
         /// <returns></returns>
         private unsafe bool SortedSetRemove<TGarnetApi>(ref TGarnetApi storageApi)
@@ -131,7 +129,6 @@ namespace Garnet.server
         /// Returns the sorted set cardinality (number of elements) of the sorted set
         /// </summary>
         /// <typeparam name="TGarnetApi"></typeparam>
-        /// <param name="count"></param>
         /// <param name="storageApi"></param>
         /// <returns></returns>
         private unsafe bool SortedSetLength<TGarnetApi>(ref TGarnetApi storageApi)
@@ -189,7 +186,6 @@ namespace Garnet.server
         /// </summary>
         /// <typeparam name="TGarnetApi"></typeparam>
         /// <param name="command"></param>
-        /// <param name="count"></param>
         /// <param name="storageApi"></param>
         /// <returns></returns>
         private unsafe bool SortedSetRange<TGarnetApi>(RespCommand command, ref TGarnetApi storageApi)
@@ -258,7 +254,6 @@ namespace Garnet.server
         /// If member does not exist in the sorted set, or key does not exist, nil is returned.
         /// </summary>
         /// <typeparam name="TGarnetApi"></typeparam>
-        /// <param name="count"></param>
         /// <param name="storageApi"></param>
         /// <returns></returns>
         private unsafe bool SortedSetScore<TGarnetApi>(ref TGarnetApi storageApi)
@@ -319,7 +314,6 @@ namespace Garnet.server
         /// If member does not exist in the sorted set, or key does not exist, nil is returned.
         /// </summary>
         /// <typeparam name="TGarnetApi"></typeparam>
-        /// <param name="count"></param>
         /// <param name="storageApi"></param>
         /// <returns></returns>
         private unsafe bool SortedSetScores<TGarnetApi>(ref TGarnetApi storageApi)
@@ -381,7 +375,6 @@ namespace Garnet.server
         /// </summary>
         /// <typeparam name="TGarnetApi"></typeparam>
         /// <param name="command"></param>
-        /// <param name="count"></param>
         /// <param name="storageApi"></param>
         /// <returns></returns>
         private unsafe bool SortedSetPop<TGarnetApi>(RespCommand command, ref TGarnetApi storageApi)
@@ -461,7 +454,6 @@ namespace Garnet.server
         /// Returns the number of elements in the sorted set at key with a score between min and max.
         /// </summary>
         /// <typeparam name="TGarnetApi"></typeparam>
-        /// <param name="count"></param>
         /// <param name="storageApi"></param>
         /// <returns></returns>
         private unsafe bool SortedSetCount<TGarnetApi>(ref TGarnetApi storageApi)
@@ -525,7 +517,6 @@ namespace Garnet.server
         /// </summary>
         /// <typeparam name="TGarnetApi"></typeparam>
         /// <param name="command"></param>
-        /// <param name="count"></param>
         /// <param name="storageApi"></param>
         /// <returns></returns>
         private unsafe bool SortedSetLengthByValue<TGarnetApi>(RespCommand command, ref TGarnetApi storageApi)
@@ -603,7 +594,6 @@ namespace Garnet.server
         /// If member does not exist in the sorted set, it is added with increment as its score (as if its previous score was 0.0).
         /// </summary>
         /// <typeparam name="TGarnetApi"></typeparam>
-        /// <param name="count"></param>
         /// <param name="storageApi"></param>
         /// <returns></returns>
         private unsafe bool SortedSetIncrement<TGarnetApi>(ref TGarnetApi storageApi)
@@ -641,7 +631,6 @@ namespace Garnet.server
 
             var status = storageApi.SortedSetIncrement(keyBytes, ref input, ref outputFooter);
 
-            ReadOnlySpan<byte> errorMessage = default;
             switch (status)
             {
                 case GarnetStatus.NOTFOUND:
@@ -663,7 +652,6 @@ namespace Garnet.server
         /// </summary>
         /// <typeparam name="TGarnetApi"></typeparam>
         /// <param name="command"></param>
-        /// <param name="count"></param>
         /// <param name="storageApi"></param>
         /// <returns></returns>
         private unsafe bool SortedSetRank<TGarnetApi>(RespCommand command, ref TGarnetApi storageApi)
@@ -752,7 +740,6 @@ namespace Garnet.server
         /// </summary>
         /// <typeparam name="TGarnetApi"></typeparam>
         /// <param name="command"></param>
-        /// <param name="count"></param>
         /// <param name="storageApi"></param>
         /// <returns></returns>
         private unsafe bool SortedSetRemoveRange<TGarnetApi>(RespCommand command, ref TGarnetApi storageApi)
@@ -818,7 +805,6 @@ namespace Garnet.server
         /// Returns a random element from the sorted set key.
         /// </summary>
         /// <typeparam name="TGarnetApi"></typeparam>
-        /// <param name="count"></param>
         /// <param name="storageApi"></param>
         /// <returns></returns>
         private unsafe bool SortedSetRandomMember<TGarnetApi>(ref TGarnetApi storageApi)
@@ -921,7 +907,6 @@ namespace Garnet.server
         ///  and returns the result to the client.
         ///  The total number of input keys is specified.
         /// </summary>
-        /// <param name="count"></param>
         /// <param name="storageApi"></param>
         /// <returns></returns>
         /// <exception cref="GarnetException"></exception>

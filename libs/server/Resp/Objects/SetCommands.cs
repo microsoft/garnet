@@ -18,7 +18,6 @@ namespace Garnet.server
         ///  If key does not exist, a new set is created.
         /// </summary>
         /// <typeparam name="TGarnetApi"></typeparam>
-        /// <param name="count"></param>
         /// <param name="storageApi"></param>
         /// <returns></returns>
         private unsafe bool SetAdd<TGarnetApi>(ref TGarnetApi storageApi)
@@ -72,7 +71,6 @@ namespace Garnet.server
         /// Returns the members of the set resulting from the intersection of all the given sets.
         /// Keys that do not exist are considered to be empty sets.
         /// </summary>
-        /// <param name="count"></param>
         /// <param name="storageApi"></param>
         /// <typeparam name="TGarnetApi"></typeparam>
         /// <returns></returns>
@@ -134,7 +132,6 @@ namespace Garnet.server
         /// If destination already exists, it is overwritten.
         /// </summary>
         /// <typeparam name="TGarnetApi"></typeparam>
-        /// <param name="count"></param>
         /// <param name="storageApi"></param>
         /// <returns></returns>
         private bool SetIntersectStore<TGarnetApi>(ref TGarnetApi storageApi)
@@ -179,7 +176,6 @@ namespace Garnet.server
         /// Returns the members of the set resulting from the union of all the given sets.
         /// Keys that do not exist are considered to be empty sets.
         /// </summary>
-        /// <param name="count"></param>
         /// <param name="storageApi"></param>
         /// <typeparam name="TGarnetApi"></typeparam>
         /// <returns></returns>
@@ -232,7 +228,6 @@ namespace Garnet.server
         /// If destination already exists, it is overwritten.
         /// </summary>
         /// <typeparam name="TGarnetApi"></typeparam>
-        /// <param name="count"></param>
         /// <param name="storageApi"></param>
         /// <returns></returns>
         private bool SetUnionStore<TGarnetApi>(ref TGarnetApi storageApi)
@@ -278,7 +273,6 @@ namespace Garnet.server
         /// If key does not exist, this command returns 0.
         /// </summary>
         /// <typeparam name="TGarnetApi"></typeparam>
-        /// <param name="count"></param>
         /// <param name="storageApi"></param>
         /// <returns></returns>
         private unsafe bool SetRemove<TGarnetApi>(ref TGarnetApi storageApi)
@@ -336,7 +330,6 @@ namespace Garnet.server
         /// Returns the number of elements of the set.
         /// </summary>
         /// <typeparam name="TGarnetApi"></typeparam>
-        /// <param name="count"></param>
         /// <param name="storageApi"></param>
         /// <returns></returns>
         private unsafe bool SetLength<TGarnetApi>(ref TGarnetApi storageApi)
@@ -392,7 +385,6 @@ namespace Garnet.server
         /// Returns all members of the set at key.
         /// </summary>
         /// <typeparam name="TGarnetApi"></typeparam>
-        /// <param name="count"></param>
         /// <param name="storageApi"></param>
         /// <returns></returns>
         private unsafe bool SetMembers<TGarnetApi>(ref TGarnetApi storageApi)
@@ -503,7 +495,6 @@ namespace Garnet.server
         /// Removes and returns one or more random members from the set at key.
         /// </summary>
         /// <typeparam name="TGarnetApi"></typeparam>
-        /// <param name="count"></param>
         /// <param name="storageApi"></param>
         /// <returns></returns>
         private unsafe bool SetPop<TGarnetApi>(ref TGarnetApi storageApi)
@@ -527,7 +518,7 @@ namespace Garnet.server
             if (parseState.Count == 2)
             {
                 // Prepare response
-                if (!parseState.TryGetInt(1, out countParameter)|| countParameter < 0)
+                if (!parseState.TryGetInt(1, out countParameter) || countParameter < 0)
                 {
                     while (!RespWriteUtils.WriteError(CmdStrings.RESP_ERR_GENERIC_VALUE_IS_NOT_INTEGER, ref dcurr, dend))
                         SendAndReset();
@@ -585,7 +576,6 @@ namespace Garnet.server
         /// If the member was not found in the source set, or if no operation was performed, this command returns 0.
         /// </summary>
         /// <typeparam name="TGarnetApi"></typeparam>
-        /// <param name="count"></param>
         /// <param name="storageApi"></param>
         /// <returns></returns>
         private unsafe bool SetMove<TGarnetApi>(ref TGarnetApi storageApi)
@@ -637,7 +627,6 @@ namespace Garnet.server
         /// In this case, the number of returned elements is the absolute value of the specified count.
         /// </summary>
         /// <typeparam name="TGarnetApi"></typeparam>
-        /// <param name="count"></param>
         /// <param name="storageApi"></param>
         /// <returns></returns>
         private unsafe bool SetRandomMember<TGarnetApi>(ref TGarnetApi storageApi)
@@ -729,7 +718,6 @@ namespace Garnet.server
         /// Returns the members of the set resulting from the difference between the first set and all the successive sets.
         /// </summary>
         /// <typeparam name="TGarnetApi"></typeparam>
-        /// <param name="count"></param>
         /// <param name="storageApi"></param>
         /// <returns></returns>
         private bool SetDiff<TGarnetApi>(ref TGarnetApi storageApi)

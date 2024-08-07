@@ -205,5 +205,16 @@ namespace Garnet.server
             Debug.Assert(i < Count);
             return ParseUtils.ReadString(ref Unsafe.AsRef<ArgSlice>(bufferPtr + i));
         }
+
+        /// <summary>
+        /// Try to get enum argument at the given index
+        /// </summary>
+        /// <returns>True if integer parsed successfully</returns>
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        public bool TryGetEnum<T>(int i, bool ignoreCase, out T value) where T : struct
+        {
+            Debug.Assert(i < Count);
+            return Enum.TryParse(GetString(i), ignoreCase, out value);
+        }
     }
 }

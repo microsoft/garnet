@@ -919,7 +919,6 @@ namespace Garnet.server
         /// <typeparam name="TObjectContext"></typeparam>
         /// <param name="key"></param>
         /// <param name="input"></param>
-        /// <param name="output"></param>
         /// <param name="objectContext"></param>
         /// <returns></returns>
         public GarnetStatus SortedSetRemoveRange<TObjectContext>(byte[] key, ref ObjectInput input, ref GarnetObjectStoreOutput outputFooter, ref TObjectContext objectContext)

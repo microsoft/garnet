@@ -284,7 +284,7 @@ namespace Garnet.server
             for (var currTokenIdx = input.parseStateStartIdx; currTokenIdx < input.parseState.Count; currTokenIdx++)
             {
                 var value = input.parseState.GetArgSliceByRef(currTokenIdx).SpanByte.ToByteArray();
-                
+
                 // Add the value to the top of the list
                 if (fAddAtHead)
                     list.AddFirst(value);

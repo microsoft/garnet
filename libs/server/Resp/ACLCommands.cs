@@ -20,7 +20,6 @@ namespace Garnet.server
         /// <summary>
         /// Processes ACL LIST subcommand.
         /// </summary>
-        /// <param name="count">The number of arguments remaining in buffer</param>
         /// <returns>true if parsing succeeded correctly, false if not all tokens could be consumed and further processing is necessary.</returns>
         private bool NetworkAclList()
         {
@@ -51,7 +50,6 @@ namespace Garnet.server
         /// <summary>
         /// Processes ACL USERS subcommand.
         /// </summary>
-        /// <param name="count">The number of arguments remaining in buffer</param>
         /// <returns>true if parsing succeeded correctly, false if not all tokens could be consumed and further processing is necessary.</returns>
         private bool NetworkAclUsers()
         {
@@ -82,7 +80,6 @@ namespace Garnet.server
         /// <summary>
         /// Processes ACL CAT subcommand.
         /// </summary>
-        /// <param name="count">The number of arguments remaining in buffer</param>
         /// <returns>true if parsing succeeded correctly, false if not all tokens could be consumed and further processing is necessary.</returns>
         private bool NetworkAclCat()
         {
@@ -110,7 +107,6 @@ namespace Garnet.server
         /// <summary>
         /// Processes ACL SETUSER subcommand.
         /// </summary>
-        /// <param name="count">The number of arguments remaining in buffer</param>
         /// <returns>true if parsing succeeded correctly, false if not all tokens could be consumed and further processing is necessary.</returns>
         private bool NetworkAclSetUser()
         {
@@ -166,7 +162,6 @@ namespace Garnet.server
         /// <summary>
         /// Processes ACL DELUSER subcommand.
         /// </summary>
-        /// <param name="count">The number of arguments remaining in buffer</param>
         /// <returns>true if parsing succeeded correctly, false if not all tokens could be consumed and further processing is necessary.</returns>
         private bool NetworkAclDelUser()
         {
@@ -217,7 +212,6 @@ namespace Garnet.server
         /// <summary>
         /// Processes ACL WHOAMI subcommand.
         /// </summary>
-        /// <param name="count">The number of arguments remaining in buffer</param>
         /// <returns>true if parsing succeeded correctly, false if not all tokens could be consumed and further processing is necessary.</returns>
         private bool NetworkAclWhoAmI()
         {
@@ -244,7 +238,6 @@ namespace Garnet.server
         /// <summary>
         /// Processes ACL LOAD subcommand.
         /// </summary>
-        /// <param name="count">The number of arguments remaining in buffer</param>
         /// <returns>true if parsing succeeded correctly, false if not all tokens could be consumed and further processing is necessary.</returns>
         private bool NetworkAclLoad()
         {
@@ -283,7 +276,6 @@ namespace Garnet.server
         /// <summary>
         /// Processes ACL SAVE subcommand.
         /// </summary>
-        /// <param name="count">The number of arguments remaining in buffer</param>
         /// <returns>true if parsing succeeded correctly, false if not all tokens could be consumed and further processing is necessary.</returns>
         private bool NetworkAclSave()
         {

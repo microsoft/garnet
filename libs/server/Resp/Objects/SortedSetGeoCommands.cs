@@ -14,7 +14,6 @@ namespace Garnet.server
         /// Data is stored into the key as a sorted set.
         /// </summary>
         /// <typeparam name="TGarnetApi"></typeparam>
-        /// <param name="count"></param>
         /// <param name="storageApi"></param>
         /// <returns></returns>
         private unsafe bool GeoAdd<TGarnetApi>(ref TGarnetApi storageApi)
@@ -73,7 +72,6 @@ namespace Garnet.server
         /// </summary>
         /// <typeparam name="TGarnetApi"></typeparam>
         /// <param name="command"></param>
-        /// <param name="count"></param>
         /// <param name="storageApi"></param>
         /// <returns></returns>
         private unsafe bool GeoCommands<TGarnetApi>(RespCommand command, ref TGarnetApi storageApi)

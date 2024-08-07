@@ -160,7 +160,7 @@ namespace Garnet.server
                 }
                 else if (count == int.MinValue) // no count parameter is present, we just pop and return a random item of the set
                 {
-                
+
                     // Write a bulk string value of a random field from the hash value stored at key.
                     if (set.Count > 0)
                     {

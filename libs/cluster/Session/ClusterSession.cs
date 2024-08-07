@@ -2,9 +2,6 @@
 // Licensed under the MIT license.
 
 using System.Runtime.CompilerServices;
-using System.Runtime.InteropServices;
-using Garnet.common;
-using Garnet.common.Parsing;
 using Garnet.networking;
 using Garnet.server;
 using Garnet.server.ACL;
@@ -36,6 +33,7 @@ namespace Garnet.cluster
         // User currently authenticated in this session
         User user;
 
+        SessionParseState parseState;
         byte* dcurr, dend;
         byte* recvBufferPtr;
         int readHead, bytesRead;
@@ -65,13 +63,14 @@ namespace Garnet.cluster
             this.logger = logger;
         }
 
-        public bool ProcessClusterCommands(RespCommand command, int count, byte* recvBufferPtr, int bytesRead, ref int readHead, ref byte* dcurr, ref byte* dend, out bool result)
+        public bool ProcessClusterCommands(RespCommand command, ref SessionParseState parseState, int count, byte* recvBufferPtr, int bytesRead, ref int readHead, ref byte* dcurr, ref byte* dend, out bool result)
         {
             this.recvBufferPtr = recvBufferPtr;
             this.bytesRead = bytesRead;
             this.dcurr = dcurr;
             this.dend = dend;
             this.readHead = readHead;
+            this.parseState = parseState;
             bool ret;
             try
             {
@@ -84,8 +83,8 @@ namespace Garnet.cluster
                 {
                     (ret, result) = command switch
                     {
-                        RespCommand.MIGRATE => (true, TryMIGRATE(count, recvBufferPtr + readHead)),
-                        RespCommand.FAILOVER => (true, TryFAILOVER(count, recvBufferPtr + readHead)),
+                        RespCommand.MIGRATE => (true, TryMIGRATE()),
+                        RespCommand.FAILOVER => (true, TryFAILOVER()),
                         RespCommand.SECONDARYOF or RespCommand.REPLICAOF => (true, TryREPLICAOF(count, recvBufferPtr + readHead)),
                         _ => (false, false)
                     };
@@ -154,46 +153,6 @@ namespace Garnet.cluster
         {
             this.user = user;
         }
-
-        bool DrainCommands(int count)
-        {
-            for (var i = 0; i < count; i++)
-            {
-                if (!SkipCommand()) return false;
-            }
-            return true;
-        }
-
-        bool SkipCommand()
-        {
-            var ptr = recvBufferPtr + readHead;
-            var end = recvBufferPtr + bytesRead;
-
-            // Try to read the command length
-            if (!RespReadUtils.ReadUnsignedLengthHeader(out int length, ref ptr, end))
-            {
-                return false;
-            }
-
-            readHead = (int)(ptr - recvBufferPtr);
-
-            // Try to read the command value
-            ptr += length;
-            if (ptr + 2 > end)
-            {
-                return false;
-            }
-
-            if (*(ushort*)ptr != MemoryMarshal.Read<ushort>("\r\n"u8))
-            {
-                RespParsingException.ThrowUnexpectedToken(*ptr);
-            }
-
-            readHead += length + 2;
-
-            return true;
-        }
-
         public void AcquireCurrentEpoch() => _localCurrentEpoch = clusterProvider.GarnetCurrentEpoch;
         public void ReleaseCurrentEpoch() => _localCurrentEpoch = 0;
 

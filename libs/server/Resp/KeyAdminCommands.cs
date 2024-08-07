@@ -89,7 +89,6 @@ namespace Garnet.server
         /// EXISTS multiple keys
         /// </summary>
         /// <typeparam name="TGarnetApi"></typeparam>
-        /// <param name="count"></param>
         /// <param name="storageApi"></param>
         /// <returns></returns>
         private bool NetworkEXISTS<TGarnetApi>(ref TGarnetApi storageApi)
@@ -125,7 +124,6 @@ namespace Garnet.server
         /// </summary>
         /// <typeparam name="TGarnetApi"></typeparam>
         /// <param name="command">Indicates which command to use, expire or pexpire.</param>
-        /// <param name="count">Number of arguments sent with this command.</param>
         /// <param name="storageApi"></param>
         /// <returns></returns>
         private bool NetworkEXPIRE<TGarnetApi>(RespCommand command, ref TGarnetApi storageApi)

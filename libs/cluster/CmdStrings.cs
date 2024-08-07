@@ -49,6 +49,8 @@ namespace Garnet.cluster
         public static ReadOnlySpan<byte> RESP_ERR_GENERIC_WORKERS_NOT_INITIALIZED => "ERR workers not initialized"u8;
         public static ReadOnlySpan<byte> RESP_ERR_GENERIC_CONFIG_EPOCH_NOT_SET => "ERR Node config epoch was not set due to invalid epoch specified"u8;
         public static ReadOnlySpan<byte> RESP_ERR_GENERIC_NOT_IN_IMPORTING_STATE => "ERR Node not in IMPORTING state"u8;
+        public static ReadOnlySpan<byte> RESP_ERR_INVALID_SLOT => "ERR Invalid or out of range slot"u8;
+        public static ReadOnlySpan<byte> RESP_ERR_GENERIC_VALUE_IS_NOT_INTEGER => "ERR value is not an integer or out of range."u8;
 
         /// <summary>
         /// Generic error response strings for <c>MIGRATE</c> command

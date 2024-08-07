@@ -177,7 +177,6 @@ namespace Garnet.server
         /// <summary>
         /// Common implementation of various WATCH commands and subcommands.
         /// </summary>
-        /// <param name="count">Remaining keys in the command buffer.</param>
         /// <param name="type">Store type that's bein gwatch</param>
         /// <returns>true if parsing succeeded correctly, false if not all tokens could be consumed and further processing is necessary.</returns>
         private bool CommonWATCH(StoreType type)

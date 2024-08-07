@@ -15,7 +15,6 @@ namespace Garnet.server
         /// Adds one element to the HyperLogLog data structure stored at the variable name specified.
         /// </summary>
         /// <typeparam name="TGarnetApi"></typeparam>
-        /// <param name="count"></param>
         /// <param name="storageApi"></param>
         /// <returns></returns>
         private bool HyperLogLogAdd<TGarnetApi>(ref TGarnetApi storageApi)
@@ -90,7 +89,6 @@ namespace Garnet.server
         /// or 0 if the key does not exist.
         /// </summary>
         /// <typeparam name="TGarnetApi"></typeparam>
-        /// <param name="count"></param>
         /// <param name="storageApi"></param>
         /// <returns></returns>
         /// <exception cref="GarnetException"></exception>

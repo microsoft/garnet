@@ -13,7 +13,6 @@ namespace Garnet.server
         /// <summary>
         /// Processes LATENCY HELP subcommand.
         /// </summary>
-        /// <param name="count">The number of arguments remaining in buffer</param>
         /// <returns>true if parsing succeeded correctly, false if not all tokens could be consumed and further processing is necessary.</returns>
         private bool NetworkLatencyHelp()
         {
@@ -40,7 +39,6 @@ namespace Garnet.server
         /// <summary>
         /// Processes LATENCY HISTOGRAM subcommand.
         /// </summary>
-        /// <param name="count">The number of arguments remaining in buffer</param>
         /// <returns>true if parsing succeeded correctly, false if not all tokens could be consumed and further processing is necessary.</returns>
         private bool NetworkLatencyHistogram()
         {
@@ -89,7 +87,6 @@ namespace Garnet.server
         /// <summary>
         /// Processes LATENCY RESET subcommand.
         /// </summary>
-        /// <param name="count">The number of arguments remaining in buffer</param>
         /// <returns>true if parsing succeeded correctly, false if not all tokens could be consumed and further processing is necessary.</returns>
         private bool NetworkLatencyReset()
         {

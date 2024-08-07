@@ -1012,7 +1012,6 @@ namespace Garnet.server
         /// <summary>
         /// Processes COMMAND command.
         /// </summary>
-        /// <param name="count">The number of arguments remaining in command buffer</param>
         /// <returns>true if parsing succeeded correctly, false if not all tokens could be consumed and further processing is necessary.</returns>
         private bool NetworkCOMMAND()
         {
@@ -1035,7 +1034,6 @@ namespace Garnet.server
         /// <summary>
         /// Processes COMMAND COUNT subcommand.
         /// </summary>
-        /// <param name="count">The number of arguments remaining in command buffer</param>
         /// <returns>true if parsing succeeded correctly, false if not all tokens could be consumed and further processing is necessary.</returns>
         private bool NetworkCOMMAND_COUNT()
         {
@@ -1065,7 +1063,6 @@ namespace Garnet.server
         /// <summary>
         /// Processes COMMAND INFO subcommand.
         /// </summary>
-        /// <param name="count">The number of arguments remaining in command buffer</param>
         /// <returns>true if parsing succeeded correctly, false if not all tokens could be consumed and further processing is necessary.</returns>
         private bool NetworkCOMMAND_INFO()
         {

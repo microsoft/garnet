@@ -16,7 +16,6 @@ namespace Garnet.server
         /// </summary>
         /// <typeparam name="TGarnetApi"></typeparam>
         /// <param name="command"></param>
-        /// <param name="count"></param>
         /// <param name="storageApi"></param>
         /// <returns></returns>
         private unsafe bool ListPush<TGarnetApi>(RespCommand command, ref TGarnetApi storageApi)
@@ -80,7 +79,6 @@ namespace Garnet.server
         /// RPOP key [count]
         /// </summary>
         /// <param name="command"></param>
-        /// <param name="count"></param>
         /// <param name="storageApi"></param>
         /// <returns></returns>
         private unsafe bool ListPop<TGarnetApi>(RespCommand command, ref TGarnetApi storageApi)
@@ -162,7 +160,6 @@ namespace Garnet.server
         /// <summary>
         /// LMPOP numkeys key [key ...] LEFT | RIGHT [COUNT count]
         /// </summary>
-        /// <param name="count"></param>
         /// <param name="storageApi"></param>
         /// <returns></returns>
         private unsafe bool ListPopMultiple<TGarnetApi>(ref TGarnetApi storageApi)
@@ -378,7 +375,6 @@ namespace Garnet.server
         /// Gets the length of the list stored at key.
         /// </summary>
         /// <typeparam name="TGarnetApi"></typeparam>
-        /// <param name="count"></param>
         /// <param name="storageApi"></param>
         /// <returns></returns>
         private bool ListLength<TGarnetApi>(ref TGarnetApi storageApi)
@@ -434,7 +430,6 @@ namespace Garnet.server
         /// Trim an existing list so it only contains the specified range of elements.
         /// </summary>
         /// <typeparam name="TGarnetApi"></typeparam>
-        /// <param name="count"></param>
         /// <param name="storageApi"></param>
         /// <returns></returns>
         private bool ListTrim<TGarnetApi>(ref TGarnetApi storageApi)
@@ -499,7 +494,6 @@ namespace Garnet.server
         /// LRANGE key start stop
         /// </summary>
         /// <typeparam name="TGarnetApi"></typeparam>
-        /// <param name="count"></param>
         /// <param name="storageApi"></param>
         /// <returns></returns>
         private bool ListRange<TGarnetApi>(ref TGarnetApi storageApi)
@@ -568,7 +562,6 @@ namespace Garnet.server
         /// LINDEX key index
         /// </summary>
         /// <typeparam name="TGarnetApi"></typeparam>
-        /// <param name="count"></param>
         /// <param name="storageApi"></param>
         /// <returns></returns>
         private bool ListIndex<TGarnetApi>(ref TGarnetApi storageApi)
@@ -645,7 +638,6 @@ namespace Garnet.server
         /// LINSERT key BEFORE|AFTER pivot element
         /// </summary>
         /// <typeparam name="TGarnetApi"></typeparam>
-        /// <param name="count"></param>
         /// <param name="storageApi"></param>
         /// <returns></returns>
         private bool ListInsert<TGarnetApi>(ref TGarnetApi storageApi)
@@ -706,7 +698,6 @@ namespace Garnet.server
         /// LREM key count element
         /// </summary>
         /// <typeparam name="TGarnetApi"></typeparam>
-        /// <param name="count"></param>
         /// <param name="storageApi"></param>
         /// <returns></returns>
         private bool ListRemove<TGarnetApi>(ref TGarnetApi storageApi)
@@ -778,7 +769,6 @@ namespace Garnet.server
         /// LMOVE source destination [LEFT | RIGHT] [LEFT | RIGHT]
         /// </summary>
         /// <typeparam name="TGarnetApi"></typeparam>
-        /// <param name="count"></param>
         /// <param name="storageApi"></param>
         /// <returns></returns>
         private bool ListMove<TGarnetApi>(ref TGarnetApi storageApi)
@@ -840,7 +830,6 @@ namespace Garnet.server
         /// <summary>
         /// RPOPLPUSH source destination
         /// </summary>
-        /// <param name="count"></param>
         /// <param name="storageApi"></param>
         /// <returns></returns>
         private bool ListRightPopLeftPush<TGarnetApi>(ref TGarnetApi storageApi)
@@ -921,7 +910,6 @@ namespace Garnet.server
         /// LSET key index element
         /// </summary>
         /// <typeparam name="TGarnetApi"></typeparam>
-        /// <param name="count"></param>
         /// <param name="storageApi"></param>
         /// <returns></returns>
         public bool ListSet<TGarnetApi>(ref TGarnetApi storageApi)
