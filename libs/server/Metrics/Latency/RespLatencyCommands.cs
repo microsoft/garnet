@@ -15,10 +15,10 @@ namespace Garnet.server
         /// </summary>
         /// <param name="count">The number of arguments remaining in buffer</param>
         /// <returns>true if parsing succeeded correctly, false if not all tokens could be consumed and further processing is necessary.</returns>
-        private bool NetworkLatencyHelp(int count)
+        private bool NetworkLatencyHelp()
         {
             // No additional arguments
-            if (count != 0)
+            if (parseState.Count != 0)
             {
                 while (!RespWriteUtils.WriteError($"ERR Unknown subcommand or wrong number of arguments for LATENCY HELP.", ref dcurr, dend))
                     SendAndReset();
@@ -42,15 +42,15 @@ namespace Garnet.server
         /// </summary>
         /// <param name="count">The number of arguments remaining in buffer</param>
         /// <returns>true if parsing succeeded correctly, false if not all tokens could be consumed and further processing is necessary.</returns>
-        private bool NetworkLatencyHistogram(int count)
+        private bool NetworkLatencyHistogram()
         {
             HashSet<LatencyMetricsType> events = null;
             bool invalid = false;
             string invalidEvent = null;
-            if (count >= 1)
+            if (parseState.Count >= 1)
             {
                 events = new();
-                for (int i = 0; i < count; i++)
+                for (int i = 0; i < parseState.Count; i++)
                 {
                     var eventStr = parseState.GetString(i);
 
@@ -91,15 +91,15 @@ namespace Garnet.server
         /// </summary>
         /// <param name="count">The number of arguments remaining in buffer</param>
         /// <returns>true if parsing succeeded correctly, false if not all tokens could be consumed and further processing is necessary.</returns>
-        private bool NetworkLatencyReset(int count)
+        private bool NetworkLatencyReset()
         {
             HashSet<LatencyMetricsType> events = null;
             bool invalid = false;
             string invalidEvent = null;
-            if (count > 0)
+            if (parseState.Count > 0)
             {
                 events = new();
-                for (int i = 0; i < count; i++)
+                for (int i = 0; i < parseState.Count; i++)
                 {
                     var eventStr = parseState.GetString(i);
 

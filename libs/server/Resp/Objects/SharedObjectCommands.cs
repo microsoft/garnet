@@ -18,11 +18,11 @@ namespace Garnet.server
         /// <param name="objectType">SortedSet, Hash or Set type</param>
         /// <param name="storageApi">The storageAPI object</param>
         /// <returns></returns>
-        private unsafe bool ObjectScan<TGarnetApi>(int count, GarnetObjectType objectType, ref TGarnetApi storageApi)
+        private unsafe bool ObjectScan<TGarnetApi>(GarnetObjectType objectType, ref TGarnetApi storageApi)
              where TGarnetApi : IGarnetApi
         {
             // Check number of required parameters
-            if (count < 2)
+            if (parseState.Count < 2)
             {
                 var cmdName = objectType switch
                 {
@@ -33,7 +33,7 @@ namespace Garnet.server
                     _ => nameof(RespCommand.NONE)
                 };
 
-                return AbortWithWrongNumberOfArguments(cmdName, count);
+                return AbortWithWrongNumberOfArguments(cmdName);
             }
 
             // Read key for the scan

@@ -17,13 +17,13 @@ namespace Garnet.server
         /// <param name="count"></param>
         /// <param name="storageApi"></param>
         /// <returns></returns>
-        private unsafe bool GeoAdd<TGarnetApi>(int count, ref TGarnetApi storageApi)
+        private unsafe bool GeoAdd<TGarnetApi>(ref TGarnetApi storageApi)
             where TGarnetApi : IGarnetApi
         {
             // validate the number of parameters
-            if (count < 4)
+            if (parseState.Count < 4)
             {
-                return AbortWithWrongNumberOfArguments("GEOADD", count);
+                return AbortWithWrongNumberOfArguments("GEOADD");
             }
 
             // Get the key for SortedSet
@@ -76,7 +76,7 @@ namespace Garnet.server
         /// <param name="count"></param>
         /// <param name="storageApi"></param>
         /// <returns></returns>
-        private unsafe bool GeoCommands<TGarnetApi>(RespCommand command, int count, ref TGarnetApi storageApi)
+        private unsafe bool GeoCommands<TGarnetApi>(RespCommand command, ref TGarnetApi storageApi)
             where TGarnetApi : IGarnetApi
         {
             var paramsRequiredInCommand = 0;
@@ -98,9 +98,9 @@ namespace Garnet.server
                     break;
             }
 
-            if (count < paramsRequiredInCommand)
+            if (parseState.Count < paramsRequiredInCommand)
             {
-                return AbortWithWrongNumberOfArguments(cmd, count);
+                return AbortWithWrongNumberOfArguments(cmd);
             }
 
             // Get the key for the Sorted Set
@@ -151,7 +151,7 @@ namespace Garnet.server
                                 SendAndReset();
                             break;
                         default:
-                            var inputCount = count - 1;
+                            var inputCount = parseState.Count - 1;
                             while (!RespWriteUtils.WriteArrayLength(inputCount, ref dcurr, dend))
                                 SendAndReset();
                             for (var i = 0; i < inputCount; i++)

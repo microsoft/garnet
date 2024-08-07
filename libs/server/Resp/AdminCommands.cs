@@ -20,7 +20,7 @@ namespace Garnet.server
     /// </summary>
     internal sealed unsafe partial class RespServerSession : ServerSessionBase
     {
-        private void ProcessAdminCommands(RespCommand command, int count)
+        private void ProcessAdminCommands(RespCommand command)
         {
             hasAdminCommand = true;
 
@@ -34,28 +34,28 @@ namespace Garnet.server
             var cmdFound = true;
             _ = command switch
             {
-                RespCommand.CONFIG_GET => NetworkCONFIG_GET(count),
-                RespCommand.CONFIG_REWRITE => NetworkCONFIG_REWRITE(count),
-                RespCommand.CONFIG_SET => NetworkCONFIG_SET(count),
+                RespCommand.CONFIG_GET => NetworkCONFIG_GET(),
+                RespCommand.CONFIG_REWRITE => NetworkCONFIG_REWRITE(),
+                RespCommand.CONFIG_SET => NetworkCONFIG_SET(),
                 RespCommand.FAILOVER or
                 RespCommand.REPLICAOF or
                 RespCommand.SECONDARYOF => NetworkProcessClusterCommand(command),
-                RespCommand.LATENCY_HELP => NetworkLatencyHelp(count),
-                RespCommand.LATENCY_HISTOGRAM => NetworkLatencyHistogram(count),
-                RespCommand.LATENCY_RESET => NetworkLatencyReset(count),
-                RespCommand.SAVE => NetworkSAVE(count),
-                RespCommand.LASTSAVE => NetworkLASTSAVE(count),
-                RespCommand.BGSAVE => NetworkBGSAVE(count),
-                RespCommand.COMMITAOF => NetworkCOMMITAOF(count),
-                RespCommand.FORCEGC => NetworkFORCEGC(count),
-                RespCommand.MONITOR => NetworkMonitor(count),
-                RespCommand.ACL_DELUSER => NetworkAclDelUser(count),
-                RespCommand.ACL_LIST => NetworkAclList(count),
-                RespCommand.ACL_LOAD => NetworkAclLoad(count),
-                RespCommand.ACL_SETUSER => NetworkAclSetUser(count),
-                RespCommand.ACL_USERS => NetworkAclUsers(count),
-                RespCommand.ACL_SAVE => NetworkAclSave(count),
-                RespCommand.REGISTERCS => NetworkRegisterCs(count, storeWrapper.customCommandManager),
+                RespCommand.LATENCY_HELP => NetworkLatencyHelp(),
+                RespCommand.LATENCY_HISTOGRAM => NetworkLatencyHistogram(),
+                RespCommand.LATENCY_RESET => NetworkLatencyReset(),
+                RespCommand.SAVE => NetworkSAVE(),
+                RespCommand.LASTSAVE => NetworkLASTSAVE(),
+                RespCommand.BGSAVE => NetworkBGSAVE(),
+                RespCommand.COMMITAOF => NetworkCOMMITAOF(),
+                RespCommand.FORCEGC => NetworkFORCEGC(),
+                RespCommand.MONITOR => NetworkMonitor(),
+                RespCommand.ACL_DELUSER => NetworkAclDelUser(),
+                RespCommand.ACL_LIST => NetworkAclList(),
+                RespCommand.ACL_LOAD => NetworkAclLoad(),
+                RespCommand.ACL_SETUSER => NetworkAclSetUser(),
+                RespCommand.ACL_USERS => NetworkAclUsers(),
+                RespCommand.ACL_SAVE => NetworkAclSave(),
+                RespCommand.REGISTERCS => NetworkRegisterCs(storeWrapper.customCommandManager),
                 RespCommand.MODULE_LOADCS => NetworkModuleLoad(storeWrapper.customCommandManager),
                 _ => cmdFound = false
             };
@@ -122,11 +122,11 @@ namespace Garnet.server
             storeWrapper.appendOnlyFile?.CommitAsync().ConfigureAwait(false).GetAwaiter().GetResult();
         }
 
-        private bool NetworkMonitor(int count)
+        private bool NetworkMonitor()
         {
-            if (count != 0)
+            if (parseState.Count != 0)
             {
-                return AbortWithWrongNumberOfArguments(nameof(RespCommand.MONITOR), count);
+                return AbortWithWrongNumberOfArguments(nameof(RespCommand.MONITOR));
             }
 
             while (!RespWriteUtils.WriteError(CmdStrings.RESP_ERR_GENERIC_UNK_CMD, ref dcurr, dend))
@@ -323,7 +323,7 @@ namespace Garnet.server
         /// <summary>
         /// REGISTERCS - Registers one or more custom commands / transactions
         /// </summary>
-        private bool NetworkRegisterCs(int count, CustomCommandManager customCommandManager)
+        private bool NetworkRegisterCs(CustomCommandManager customCommandManager)
         {
             var readPathsOnly = false;
             var optionalParamsRead = 0;
@@ -336,7 +336,7 @@ namespace Garnet.server
 
             ReadOnlySpan<byte> errorMsg = null;
 
-            if (count < 6)
+            if (parseState.Count < 6)
                 errorMsg = CmdStrings.RESP_ERR_GENERIC_MALFORMED_REGISTERCS_COMMAND;
 
             // Parse the REGISTERCS command - list of registration sub-commands
@@ -347,7 +347,7 @@ namespace Garnet.server
             RegisterArgsBase args = null;
 
             var tokenIdx = 0;
-            while (tokenIdx < count)
+            while (tokenIdx < parseState.Count)
             {
                 // Read first token of current sub-command or path
                 var token = parseState.GetArgSliceByRef(tokenIdx++).ReadOnlySpan;
@@ -370,7 +370,7 @@ namespace Garnet.server
                 else if (token.EqualsUpperCaseSpanIgnoringCase(CmdStrings.INFO))
                 {
                     // If first token is not a cmdType and no other sub-command is previously defined, command is malformed
-                    if (classNameToRegisterArgs.Count == 0 || tokenIdx == count)
+                    if (classNameToRegisterArgs.Count == 0 || tokenIdx == parseState.Count)
                     {
                         errorMsg = CmdStrings.RESP_ERR_GENERIC_MALFORMED_REGISTERCS_COMMAND;
                         break;
@@ -427,7 +427,7 @@ namespace Garnet.server
 
                 // At this point we expect at least 6 remaining tokens -
                 // 3 more tokens for command definition + 2 for source definition
-                if (count - tokenIdx < 5)
+                if (parseState.Count - tokenIdx < 5)
                 {
                     errorMsg = CmdStrings.RESP_ERR_GENERIC_MALFORMED_REGISTERCS_COMMAND;
                     break;
@@ -475,7 +475,7 @@ namespace Garnet.server
         {
             if (parseState.Count < 1) // At least module path is required
             {
-                AbortWithWrongNumberOfArguments($"{RespCommand.MODULE}|{Encoding.ASCII.GetString(CmdStrings.LOADCS)}", parseState.Count);
+                AbortWithWrongNumberOfArguments($"{RespCommand.MODULE}|{Encoding.ASCII.GetString(CmdStrings.LOADCS)}");
                 return true;
             }
 
@@ -509,11 +509,11 @@ namespace Garnet.server
             return true;
         }
 
-        private bool NetworkCOMMITAOF(int count)
+        private bool NetworkCOMMITAOF()
         {
-            if (count != 0)
+            if (parseState.Count != 0)
             {
-                return AbortWithWrongNumberOfArguments(nameof(RespCommand.COMMITAOF), count);
+                return AbortWithWrongNumberOfArguments(nameof(RespCommand.COMMITAOF));
             }
 
             CommitAof();
@@ -523,15 +523,15 @@ namespace Garnet.server
             return true;
         }
 
-        private bool NetworkFORCEGC(int count)
+        private bool NetworkFORCEGC()
         {
-            if (count > 1)
+            if (parseState.Count > 1)
             {
-                return AbortWithWrongNumberOfArguments(nameof(RespCommand.FORCEGC), count);
+                return AbortWithWrongNumberOfArguments(nameof(RespCommand.FORCEGC));
             }
 
             var generation = GC.MaxGeneration;
-            if (count == 1)
+            if (parseState.Count == 1)
             {
                 if (!parseState.TryGetInt(0, out generation) || generation < 0 || generation > GC.MaxGeneration)
                 {
@@ -561,11 +561,11 @@ namespace Garnet.server
             return result;
         }
 
-        private bool NetworkSAVE(int count)
+        private bool NetworkSAVE()
         {
-            if (count != 0)
+            if (parseState.Count != 0)
             {
-                return AbortWithWrongNumberOfArguments(nameof(RespCommand.SAVE), count);
+                return AbortWithWrongNumberOfArguments(nameof(RespCommand.SAVE));
             }
 
             if (!storeWrapper.TakeCheckpoint(false, StoreType.All, logger))
@@ -582,11 +582,11 @@ namespace Garnet.server
             return true;
         }
 
-        private bool NetworkLASTSAVE(int count)
+        private bool NetworkLASTSAVE()
         {
-            if (count != 0)
+            if (parseState.Count != 0)
             {
-                return AbortWithWrongNumberOfArguments(nameof(RespCommand.SAVE), count);
+                return AbortWithWrongNumberOfArguments(nameof(RespCommand.SAVE));
             }
 
             var seconds = storeWrapper.lastSaveTime.ToUnixTimeSeconds();
@@ -596,11 +596,11 @@ namespace Garnet.server
             return true;
         }
 
-        private bool NetworkBGSAVE(int count)
+        private bool NetworkBGSAVE()
         {
-            if (count > 1)
+            if (parseState.Count > 1)
             {
-                return AbortWithWrongNumberOfArguments(nameof(RespCommand.BGSAVE), count);
+                return AbortWithWrongNumberOfArguments(nameof(RespCommand.BGSAVE));
             }
 
             var success = storeWrapper.TakeCheckpoint(true, StoreType.All, logger);

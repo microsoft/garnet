@@ -892,7 +892,7 @@ namespace Garnet.server
         {
             if (parseState.Count > 2)
             {
-                return AbortWithWrongNumberOfArguments(nameof(RespCommand.FLUSHDB), parseState.Count);
+                return AbortWithWrongNumberOfArguments(nameof(RespCommand.FLUSHDB));
             }
 
             FlushDb(RespCommand.FLUSHDB);
@@ -907,7 +907,7 @@ namespace Garnet.server
         {
             if (parseState.Count > 2)
             {
-                return AbortWithWrongNumberOfArguments(nameof(RespCommand.FLUSHALL), parseState.Count);
+                return AbortWithWrongNumberOfArguments(nameof(RespCommand.FLUSHALL));
             }
 
             // Since Garnet currently only supports a single database,
@@ -954,7 +954,7 @@ namespace Garnet.server
         {
             if (parseState.Count != 1)
             {
-                return AbortWithWrongNumberOfArguments(nameof(RespCommand.STRLEN), parseState.Count);
+                return AbortWithWrongNumberOfArguments(nameof(RespCommand.STRLEN));
             }
 
             //STRLEN key
@@ -1105,7 +1105,7 @@ namespace Garnet.server
         {
             if (parseState.Count != 1)
             {
-                return AbortWithWrongNumberOfArguments(nameof(RespCommand.ECHO), parseState.Count);
+                return AbortWithWrongNumberOfArguments(nameof(RespCommand.ECHO));
             }
 
             WriteDirectLarge(new ReadOnlySpan<byte>(recvBufferPtr + readHead, endReadHead - readHead));
@@ -1118,7 +1118,7 @@ namespace Garnet.server
             var count = parseState.Count;
             if (count > 6)
             {
-                return AbortWithWrongNumberOfArguments(nameof(RespCommand.HELLO), count);
+                return AbortWithWrongNumberOfArguments(nameof(RespCommand.HELLO));
             }
 
             byte? tmpRespProtocolVersion = null;
@@ -1191,7 +1191,7 @@ namespace Garnet.server
         {
             if (parseState.Count != 0)
             {
-                return AbortWithWrongNumberOfArguments(nameof(RespCommand.TIME), parseState.Count);
+                return AbortWithWrongNumberOfArguments(nameof(RespCommand.TIME));
             }
 
             var utcTime = DateTimeOffset.UtcNow;
@@ -1211,7 +1211,7 @@ namespace Garnet.server
             var count = parseState.Count;
             if (count < 1 || count > 2)
             {
-                return AbortWithWrongNumberOfArguments(nameof(RespCommand.AUTH), count);
+                return AbortWithWrongNumberOfArguments(nameof(RespCommand.AUTH));
             }
 
             ReadOnlySpan<byte> username = default;
@@ -1265,7 +1265,7 @@ namespace Garnet.server
             if (count != 1 && count != 3)
             {
                 return AbortWithWrongNumberOfArguments(
-                    $"{nameof(RespCommand.MEMORY)}|{Encoding.ASCII.GetString(CmdStrings.USAGE)}", count);
+                    $"{nameof(RespCommand.MEMORY)}|{Encoding.ASCII.GetString(CmdStrings.USAGE)}");
             }
 
             var key = parseState.GetArgSliceByRef(0);
@@ -1319,7 +1319,7 @@ namespace Garnet.server
 
             if (parseState.Count != 1)
             {
-                return AbortWithWrongNumberOfArguments(nameof(RespCommand.ASYNC), parseState.Count);
+                return AbortWithWrongNumberOfArguments(nameof(RespCommand.ASYNC));
             }
 
             var param = parseState.GetArgSliceByRef(0).ReadOnlySpan;

@@ -180,8 +180,9 @@ namespace Garnet.server
         /// <param name="count">Remaining keys in the command buffer.</param>
         /// <param name="type">Store type that's bein gwatch</param>
         /// <returns>true if parsing succeeded correctly, false if not all tokens could be consumed and further processing is necessary.</returns>
-        private bool CommonWATCH(int count, StoreType type)
+        private bool CommonWATCH(StoreType type)
         {
+            var count = parseState.Count;
             // Have to provide at least one key
             if (count == 0)
             {
@@ -213,20 +214,20 @@ namespace Garnet.server
         /// <summary>
         /// WATCH MS key [key ..]
         /// </summary>
-        private bool NetworkWATCH_MS(int count)
-        => CommonWATCH(count, StoreType.Main);
+        private bool NetworkWATCH_MS()
+        => CommonWATCH(StoreType.Main);
 
         /// <summary>
         /// WATCH OS key [key ..]
         /// </summary>
-        private bool NetworkWATCH_OS(int count)
-        => CommonWATCH(count, StoreType.Object);
+        private bool NetworkWATCH_OS()
+        => CommonWATCH(StoreType.Object);
 
         /// <summary>
         /// Watch key [key ...]
         /// </summary>
-        private bool NetworkWATCH(int count)
-        => CommonWATCH(count, StoreType.All);
+        private bool NetworkWATCH()
+        => CommonWATCH(StoreType.All);
 
         /// <summary>
         /// UNWATCH
@@ -252,7 +253,7 @@ namespace Garnet.server
         {
             var count = parseState.Count;
             if (count < 1)
-                return AbortWithWrongNumberOfArguments(nameof(RespCommand.RUNTXP), count);
+                return AbortWithWrongNumberOfArguments(nameof(RespCommand.RUNTXP));
 
             if (!parseState.TryGetInt(0, out var txId))
             {

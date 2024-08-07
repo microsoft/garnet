@@ -19,12 +19,12 @@ namespace Garnet.server
         /// <param name="count"></param>
         /// <param name="storageApi"></param>
         /// <returns></returns>
-        private unsafe bool ListPush<TGarnetApi>(RespCommand command, int count, ref TGarnetApi storageApi)
+        private unsafe bool ListPush<TGarnetApi>(RespCommand command, ref TGarnetApi storageApi)
                             where TGarnetApi : IGarnetApi
         {
-            if (count < 2)
+            if (parseState.Count < 2)
             {
-                return AbortWithWrongNumberOfArguments(command.ToString(), count);
+                return AbortWithWrongNumberOfArguments(command.ToString());
             }
 
             var sbKey = parseState.GetArgSliceByRef(0).SpanByte;
@@ -83,12 +83,12 @@ namespace Garnet.server
         /// <param name="count"></param>
         /// <param name="storageApi"></param>
         /// <returns></returns>
-        private unsafe bool ListPop<TGarnetApi>(RespCommand command, int count, ref TGarnetApi storageApi)
+        private unsafe bool ListPop<TGarnetApi>(RespCommand command, ref TGarnetApi storageApi)
                             where TGarnetApi : IGarnetApi
         {
-            if (count < 1)
+            if (parseState.Count < 1)
             {
-                return AbortWithWrongNumberOfArguments(command.ToString(), count);
+                return AbortWithWrongNumberOfArguments(command.ToString());
             }
 
             // Get the key for List
@@ -97,7 +97,7 @@ namespace Garnet.server
 
             var popCount = 1;
 
-            if (count == 2)
+            if (parseState.Count == 2)
             {
                 // Read count
                 if (!parseState.TryGetInt(1, out popCount))
@@ -165,12 +165,12 @@ namespace Garnet.server
         /// <param name="count"></param>
         /// <param name="storageApi"></param>
         /// <returns></returns>
-        private unsafe bool ListPopMultiple<TGarnetApi>(int count, ref TGarnetApi storageApi)
+        private unsafe bool ListPopMultiple<TGarnetApi>(ref TGarnetApi storageApi)
                             where TGarnetApi : IGarnetApi
         {
-            if (count < 3)
+            if (parseState.Count < 3)
             {
-                return AbortWithWrongNumberOfArguments("LMPOP", count);
+                return AbortWithWrongNumberOfArguments("LMPOP");
             }
 
             var currTokenId = 0;
@@ -182,7 +182,7 @@ namespace Garnet.server
                 return AbortWithErrorMessage(Encoding.ASCII.GetBytes(err));
             }
 
-            if (count != numKeys + 2 && count != numKeys + 4)
+            if (parseState.Count != numKeys + 2 && parseState.Count != numKeys + 4)
             {
                 return AbortWithErrorMessage(CmdStrings.RESP_ERR_GENERIC_SYNTAX_ERROR);
             }
@@ -210,7 +210,7 @@ namespace Garnet.server
             var popCount = 1;
 
             // Get the COUNT keyword & parameter value, if specified
-            if (count == numKeys + 4)
+            if (parseState.Count == numKeys + 4)
             {
                 var countKeyword = parseState.GetArgSliceByRef(currTokenId++);
 
@@ -263,14 +263,14 @@ namespace Garnet.server
             return true;
         }
 
-        private bool ListBlockingPop(RespCommand command, int count)
+        private bool ListBlockingPop(RespCommand command)
         {
-            if (count < 2)
+            if (parseState.Count < 2)
             {
-                return AbortWithWrongNumberOfArguments(command.ToString(), count);
+                return AbortWithWrongNumberOfArguments(command.ToString());
             }
 
-            var keysBytes = new byte[count - 1][];
+            var keysBytes = new byte[parseState.Count - 1][];
 
             for (var i = 0; i < keysBytes.Length; i++)
             {
@@ -280,7 +280,7 @@ namespace Garnet.server
             if (NetworkMultiKeySlotVerify(readOnly: false, firstKey: 0, lastKey: -2))
                 return true;
 
-            if (!parseState.TryGetDouble(count - 1, out var timeout))
+            if (!parseState.TryGetDouble(parseState.Count - 1, out var timeout))
             {
                 while (!RespWriteUtils.WriteError(CmdStrings.RESP_ERR_TIMEOUT_NOT_VALID_FLOAT, ref dcurr, dend))
                     SendAndReset();
@@ -309,11 +309,11 @@ namespace Garnet.server
             return true;
         }
 
-        private unsafe bool ListBlockingMove(RespCommand command, int count)
+        private unsafe bool ListBlockingMove(RespCommand command)
         {
-            if (count != 5)
+            if (parseState.Count != 5)
             {
-                return AbortWithWrongNumberOfArguments(command.ToString(), count);
+                return AbortWithWrongNumberOfArguments(command.ToString());
             }
 
             var cmdArgs = new ArgSlice[] { default, default, default };
@@ -381,12 +381,12 @@ namespace Garnet.server
         /// <param name="count"></param>
         /// <param name="storageApi"></param>
         /// <returns></returns>
-        private bool ListLength<TGarnetApi>(int count, ref TGarnetApi storageApi)
+        private bool ListLength<TGarnetApi>(ref TGarnetApi storageApi)
                             where TGarnetApi : IGarnetApi
         {
-            if (count != 1)
+            if (parseState.Count != 1)
             {
-                return AbortWithWrongNumberOfArguments("LLEN", count);
+                return AbortWithWrongNumberOfArguments("LLEN");
             }
 
             var sbKey = parseState.GetArgSliceByRef(0).SpanByte;
@@ -437,12 +437,12 @@ namespace Garnet.server
         /// <param name="count"></param>
         /// <param name="storageApi"></param>
         /// <returns></returns>
-        private bool ListTrim<TGarnetApi>(int count, ref TGarnetApi storageApi)
+        private bool ListTrim<TGarnetApi>(ref TGarnetApi storageApi)
                             where TGarnetApi : IGarnetApi
         {
-            if (count != 3)
+            if (parseState.Count != 3)
             {
-                return AbortWithWrongNumberOfArguments("LTRIM", count);
+                return AbortWithWrongNumberOfArguments("LTRIM");
             }
 
             // Get the key for List
@@ -502,12 +502,12 @@ namespace Garnet.server
         /// <param name="count"></param>
         /// <param name="storageApi"></param>
         /// <returns></returns>
-        private bool ListRange<TGarnetApi>(int count, ref TGarnetApi storageApi)
+        private bool ListRange<TGarnetApi>(ref TGarnetApi storageApi)
              where TGarnetApi : IGarnetApi
         {
-            if (count != 3)
+            if (parseState.Count != 3)
             {
-                return AbortWithWrongNumberOfArguments("LRANGE", count);
+                return AbortWithWrongNumberOfArguments("LRANGE");
             }
 
             // Get the key for List
@@ -571,12 +571,12 @@ namespace Garnet.server
         /// <param name="count"></param>
         /// <param name="storageApi"></param>
         /// <returns></returns>
-        private bool ListIndex<TGarnetApi>(int count, ref TGarnetApi storageApi)
+        private bool ListIndex<TGarnetApi>(ref TGarnetApi storageApi)
              where TGarnetApi : IGarnetApi
         {
-            if (count != 2)
+            if (parseState.Count != 2)
             {
-                return AbortWithWrongNumberOfArguments("LINDEX", count);
+                return AbortWithWrongNumberOfArguments("LINDEX");
             }
 
             // Get the key for List
@@ -648,12 +648,12 @@ namespace Garnet.server
         /// <param name="count"></param>
         /// <param name="storageApi"></param>
         /// <returns></returns>
-        private bool ListInsert<TGarnetApi>(int count, ref TGarnetApi storageApi)
+        private bool ListInsert<TGarnetApi>(ref TGarnetApi storageApi)
              where TGarnetApi : IGarnetApi
         {
-            if (count != 4)
+            if (parseState.Count != 4)
             {
-                return AbortWithWrongNumberOfArguments("LINSERT", count);
+                return AbortWithWrongNumberOfArguments("LINSERT");
             }
 
             // Get the key for List
@@ -709,13 +709,13 @@ namespace Garnet.server
         /// <param name="count"></param>
         /// <param name="storageApi"></param>
         /// <returns></returns>
-        private bool ListRemove<TGarnetApi>(int count, ref TGarnetApi storageApi)
+        private bool ListRemove<TGarnetApi>(ref TGarnetApi storageApi)
               where TGarnetApi : IGarnetApi
         {
             // if params are missing return error
-            if (count != 3)
+            if (parseState.Count != 3)
             {
-                return AbortWithWrongNumberOfArguments("LREM", count);
+                return AbortWithWrongNumberOfArguments("LREM");
             }
 
             // Get the key for List
@@ -781,12 +781,12 @@ namespace Garnet.server
         /// <param name="count"></param>
         /// <param name="storageApi"></param>
         /// <returns></returns>
-        private bool ListMove<TGarnetApi>(int count, ref TGarnetApi storageApi)
+        private bool ListMove<TGarnetApi>(ref TGarnetApi storageApi)
              where TGarnetApi : IGarnetApi
         {
-            if (count != 4)
+            if (parseState.Count != 4)
             {
-                return AbortWithWrongNumberOfArguments("LMOVE", count);
+                return AbortWithWrongNumberOfArguments("LMOVE");
             }
 
             var srcKey = parseState.GetArgSliceByRef(0);
@@ -841,15 +841,14 @@ namespace Garnet.server
         /// RPOPLPUSH source destination
         /// </summary>
         /// <param name="count"></param>
-        /// <param name="ptr"></param>
         /// <param name="storageApi"></param>
         /// <returns></returns>
-        private bool ListRightPopLeftPush<TGarnetApi>(int count, byte* ptr, ref TGarnetApi storageApi)
+        private bool ListRightPopLeftPush<TGarnetApi>(ref TGarnetApi storageApi)
             where TGarnetApi : IGarnetApi
         {
-            if (count != 2)
+            if (parseState.Count != 2)
             {
-                return AbortWithWrongNumberOfArguments("RPOPLPUSH", count);
+                return AbortWithWrongNumberOfArguments("RPOPLPUSH");
             }
 
             var srcKey = parseState.GetArgSliceByRef(0);
@@ -925,12 +924,12 @@ namespace Garnet.server
         /// <param name="count"></param>
         /// <param name="storageApi"></param>
         /// <returns></returns>
-        public bool ListSet<TGarnetApi>(int count, ref TGarnetApi storageApi)
+        public bool ListSet<TGarnetApi>(ref TGarnetApi storageApi)
             where TGarnetApi : IGarnetApi
         {
-            if (count != 3)
+            if (parseState.Count != 3)
             {
-                return AbortWithWrongNumberOfArguments("LSET", count);
+                return AbortWithWrongNumberOfArguments("LSET");
             }
 
             // Get the key for List

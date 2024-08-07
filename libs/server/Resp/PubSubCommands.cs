@@ -91,7 +91,7 @@ namespace Garnet.server
         {
             if (parseState.Count != 2)
             {
-                return AbortWithWrongNumberOfArguments(nameof(RespCommand.PUBLISH), parseState.Count);
+                return AbortWithWrongNumberOfArguments(nameof(RespCommand.PUBLISH));
             }
 
             Debug.Assert(isSubscriptionSession == false);
@@ -122,16 +122,16 @@ namespace Garnet.server
             return true;
         }
 
-        private bool NetworkSUBSCRIBE(int count)
+        private bool NetworkSUBSCRIBE()
         {
-            if (count < 1)
+            if (parseState.Count < 1)
             {
-                return AbortWithWrongNumberOfArguments(nameof(RespCommand.SUBSCRIBE), count);
+                return AbortWithWrongNumberOfArguments(nameof(RespCommand.SUBSCRIBE));
             }
 
             // SUBSCRIBE channel1 channel2.. ==> [$9\r\nSUBSCRIBE\r\n$]8\r\nchannel1\r\n$8\r\nchannel2\r\n => Subscribe to channel1 and channel2
             var disabledBroker = subscribeBroker == null;
-            for (var c = 0; c < count; c++)
+            for (var c = 0; c < parseState.Count; c++)
             {
                 var key = parseState.GetArgSliceByRef(c).SpanByte;
                 var keyPtr = key.ToPointer() - sizeof(int);
@@ -167,16 +167,16 @@ namespace Garnet.server
             return true;
         }
 
-        private bool NetworkPSUBSCRIBE(int count)
+        private bool NetworkPSUBSCRIBE()
         {
-            if (count < 1)
+            if (parseState.Count < 1)
             {
-                return AbortWithWrongNumberOfArguments(nameof(RespCommand.PSUBSCRIBE), count);
+                return AbortWithWrongNumberOfArguments(nameof(RespCommand.PSUBSCRIBE));
             }
 
             // PSUBSCRIBE channel1 channel2.. ==> [$10\r\nPSUBSCRIBE\r\n$]8\r\nchannel1\r\n$8\r\nchannel2\r\n => PSubscribe to channel1 and channel2
             var disabledBroker = subscribeBroker == null;
-            for (var c = 0; c < count; c++)
+            for (var c = 0; c < parseState.Count; c++)
             {
                 var key = parseState.GetArgSliceByRef(c).SpanByte;
                 var keyPtr = key.ToPointer() - sizeof(int);
@@ -212,11 +212,11 @@ namespace Garnet.server
             return true;
         }
 
-        private bool NetworkUNSUBSCRIBE(int count)
+        private bool NetworkUNSUBSCRIBE()
         {
             // UNSUBSCRIBE channel1 channel2.. ==> [$11\r\nUNSUBSCRIBE\r\n]$8\r\nchannel1\r\n$8\r\nchannel2\r\n => Subscribe to channel1 and channel2
 
-            if (count == 0)
+            if (parseState.Count == 0)
             {
                 if (subscribeBroker == null)
                 {
@@ -266,7 +266,7 @@ namespace Garnet.server
                 return true;
             }
 
-            for (var c = 0; c < count; c++)
+            for (var c = 0; c < parseState.Count; c++)
             {
                 var key = parseState.GetArgSliceByRef(c).SpanByte;
                 var keyPtr = key.ToPointer() - sizeof(int);
@@ -298,11 +298,11 @@ namespace Garnet.server
             return true;
         }
 
-        private bool NetworkPUNSUBSCRIBE(int count)
+        private bool NetworkPUNSUBSCRIBE()
         {
             // PUNSUBSCRIBE channel1 channel2.. ==> [$11\r\nPUNSUBSCRIBE\r\n]$8\r\nchannel1\r\n$8\r\nchannel2\r\n => Subscribe to channel1 and channel2
 
-            if (count == 0)
+            if (parseState.Count == 0)
             {
                 if (subscribeBroker == null)
                 {
@@ -340,7 +340,7 @@ namespace Garnet.server
                 return true;
             }
 
-            for (var c = 0; c < count; c++)
+            for (var c = 0; c < parseState.Count; c++)
             {
                 var key = parseState.GetArgSliceByRef(c).SpanByte;
                 var keyPtr = key.ToPointer() - sizeof(int);

@@ -274,7 +274,7 @@ namespace Garnet.server
         {
             if (parseState.Count != 1)
             {
-                return AbortWithWrongNumberOfArguments(nameof(RespCommand.SELECT), parseState.Count);
+                return AbortWithWrongNumberOfArguments(nameof(RespCommand.SELECT));
             }
 
             // Read index
@@ -312,7 +312,7 @@ namespace Garnet.server
         {
             if (parseState.Count != 0)
             {
-                return AbortWithWrongNumberOfArguments(nameof(RespCommand.DBSIZE), parseState.Count);
+                return AbortWithWrongNumberOfArguments(nameof(RespCommand.DBSIZE));
             }
 
             while (!RespWriteUtils.WriteInteger(storageApi.GetDbSize(), ref dcurr, dend))
@@ -326,7 +326,7 @@ namespace Garnet.server
         {
             if (parseState.Count != 1)
             {
-                return AbortWithWrongNumberOfArguments(nameof(RespCommand.KEYS), parseState.Count);
+                return AbortWithWrongNumberOfArguments(nameof(RespCommand.KEYS));
             }
 
             // Read pattern for keys filter
@@ -356,11 +356,11 @@ namespace Garnet.server
             return true;
         }
 
-        private bool NetworkSCAN<TGarnetApi>(int count, ref TGarnetApi storageApi)
+        private bool NetworkSCAN<TGarnetApi>(ref TGarnetApi storageApi)
               where TGarnetApi : IGarnetApi
         {
-            if (count < 1)
-                return AbortWithWrongNumberOfArguments("SCAN", count);
+            if (parseState.Count < 1)
+                return AbortWithWrongNumberOfArguments("SCAN");
 
             // Scan cursor [MATCH pattern] [COUNT count] [TYPE type]
             if (!parseState.TryGetLong(0, out var cursorFromInput))
@@ -377,7 +377,7 @@ namespace Garnet.server
             ReadOnlySpan<byte> typeParameterValue = default;
 
             var tokenIdx = 1;
-            while (tokenIdx < count)
+            while (tokenIdx < parseState.Count)
             {
                 var parameterWord = parseState.GetArgSliceByRef(tokenIdx++).ReadOnlySpan;
 
@@ -434,11 +434,11 @@ namespace Garnet.server
             return true;
         }
 
-        private bool NetworkTYPE<TGarnetApi>(int count, ref TGarnetApi storageApi)
+        private bool NetworkTYPE<TGarnetApi>(ref TGarnetApi storageApi)
               where TGarnetApi : IGarnetApi
         {
-            if (count != 1)
-                return AbortWithWrongNumberOfArguments("TYPE", count);
+            if (parseState.Count != 1)
+                return AbortWithWrongNumberOfArguments("TYPE");
 
             // TYPE key
             var keySlice = parseState.GetArgSliceByRef(0);
@@ -485,11 +485,12 @@ namespace Garnet.server
             }
         }
 
-        private bool NetworkArrayPING(int count)
+        private bool NetworkArrayPING()
         {
+            var count = parseState.Count;
             if (count > 1)
             {
-                return AbortWithWrongNumberOfArguments(nameof(RespCommand.PING), count);
+                return AbortWithWrongNumberOfArguments(nameof(RespCommand.PING));
             }
 
             if (count == 0)
