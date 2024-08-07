@@ -567,18 +567,18 @@ namespace Garnet.server
         /// <returns>True if index has reached its max size</returns>
         private bool GrowIndexIfNeeded(StoreType storeType, long indexMaxSize, long overflowCount, Func<long> indexSizeRetriever, Action growAction)
         {
-            logger?.LogDebug($"IndexAutoGrowTask[{storeType}]: checking index size {indexSizeRetriever()} against max {indexMaxSize} with overflow {overflowCount}");
+            logger?.LogDebug("IndexAutoGrowTask[{storeType}]: checking index size {indexSizeRetriever} against max {indexMaxSize} with overflow {overflowCount}", storeType, indexSizeRetriever(), indexMaxSize, overflowCount);
 
             if (indexSizeRetriever() < indexMaxSize &&
                 overflowCount > (indexSizeRetriever() * serverOptions.IndexResizeThreshold / 100))
             {
-                logger?.LogInformation($"IndexAutoGrowTask[{storeType}]: overflowCount {overflowCount} ratio more than threshold {serverOptions.IndexResizeThreshold}%. Doubling index size...");
+                logger?.LogInformation("IndexAutoGrowTask[{storeType}]: overflowCount {overflowCount} ratio more than threshold {indexResizeThreshold}%. Doubling index size...", storeType, overflowCount, serverOptions.IndexResizeThreshold);
                 growAction();
             }
 
             if (indexSizeRetriever() < indexMaxSize) return false;
 
-            logger?.LogDebug($"IndexAutoGrowTask[{storeType}]: index size {indexSizeRetriever()} reached index max size {indexMaxSize}");
+            logger?.LogDebug("IndexAutoGrowTask[{storeType}]: index size {indexSizeRetriever} reached index max size {indexMaxSize}", storeType, indexSizeRetriever(), indexMaxSize);
             return true;
         }
 

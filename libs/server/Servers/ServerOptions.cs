@@ -115,7 +115,7 @@ namespace Garnet.server
             long size = ParseSize(MemorySize);
             long adjustedSize = PreviousPowerOf2(size);
             if (size != adjustedSize)
-                logger?.LogInformation($"Warning: using lower log memory size than specified (power of 2)");
+                logger?.LogInformation("Warning: using lower log memory size than specified (power of 2)");
             return (int)Math.Log(adjustedSize, 2);
         }
 
@@ -128,7 +128,7 @@ namespace Garnet.server
             long size = ParseSize(PageSize);
             long adjustedSize = PreviousPowerOf2(size);
             if (size != adjustedSize)
-                logger?.LogInformation($"Warning: using lower page size than specified (power of 2)");
+                logger?.LogInformation("Warning: using lower page size than specified (power of 2)");
             return (int)Math.Log(adjustedSize, 2);
         }
 
@@ -141,7 +141,7 @@ namespace Garnet.server
             long size = ParseSize(PubSubPageSize);
             long adjustedSize = PreviousPowerOf2(size);
             if (size != adjustedSize)
-                logger?.LogInformation($"Warning: using lower pub/sub page size than specified (power of 2)");
+                logger?.LogInformation("Warning: using lower pub/sub page size than specified (power of 2)");
             return adjustedSize;
         }
 
@@ -154,7 +154,7 @@ namespace Garnet.server
             long size = ParseSize(SegmentSize);
             long adjustedSize = PreviousPowerOf2(size);
             if (size != adjustedSize)
-                logger?.LogInformation($"Warning: using lower disk segment size than specified (power of 2)");
+                logger?.LogInformation("Warning: using lower disk segment size than specified (power of 2)");
             return (int)Math.Log(adjustedSize, 2);
         }
 
@@ -168,7 +168,7 @@ namespace Garnet.server
             long adjustedSize = PreviousPowerOf2(size);
             if (adjustedSize < 64 || adjustedSize > (1L << 37)) throw new Exception($"Invalid {name}");
             if (size != adjustedSize)
-                logger?.LogInformation($"Warning: using lower {name} than specified (power of 2)");
+                logger?.LogInformation("Warning: using lower {name} than specified (power of 2)", name);
             return (int)(adjustedSize / 64);
         }
 
@@ -184,17 +184,17 @@ namespace Garnet.server
                 PreallocateLog = false,
                 PageSize = 1L << PageSizeBits()
             };
-            logger?.LogInformation($"[Store] Using page size of {PrettySize(kvSettings.PageSize)}");
+            logger?.LogInformation("[Store] Using page size of {PageSize}", PrettySize(kvSettings.PageSize));
 
             kvSettings.MemorySize = 1L << MemorySizeBits();
-            logger?.LogInformation($"[Store] Using log memory size of {PrettySize(kvSettings.MemorySize)}");
+            logger?.LogInformation("[Store] Using log memory size of {MemorySize}", PrettySize(kvSettings.MemorySize));
 
-            logger?.LogInformation($"[Store] There are {PrettySize(kvSettings.MemorySize / kvSettings.PageSize)} log pages in memory");
+            logger?.LogInformation("[Store] There are {LogPages} log pages in memory", PrettySize(kvSettings.MemorySize / kvSettings.PageSize));
 
             kvSettings.SegmentSize = 1L << SegmentSizeBits();
-            logger?.LogInformation($"[Store] Using disk segment size of {PrettySize(kvSettings.SegmentSize)}");
+            logger?.LogInformation("[Store] Using disk segment size of {SegmentSize}", PrettySize(kvSettings.SegmentSize));
 
-            logger?.LogInformation($"[Store] Using hash index size of {PrettySize(kvSettings.IndexSize)} ({PrettySize(indexCacheLines)} cache lines)");
+            logger?.LogInformation("[Store] Using hash index size of {IndexSize} (CacheLines} cache lines)", PrettySize(kvSettings.IndexSize), {PrettySize(indexCacheLines));
 
             if (EnableStorageTier)
             {
