@@ -92,20 +92,6 @@ namespace Garnet.server
             objectCommandMap[objectTypeId] = new CustomObjectCommandWrapper((byte)objectTypeId, factory);
         }
 
-        //internal int Register(string name, int numParams, CommandType commandType, int objectTypeId, RespCommandsInfo commandInfo)
-        //{
-        //    var wrapper = objectCommandMap[objectTypeId];
-
-        //    int subCommand = Interlocked.Increment(ref wrapper.CommandId) - 1;
-        //    if (subCommand >= byte.MaxValue)
-        //        throw new Exception("Out of registration space");
-
-        //    wrapper.commandMap[subCommand] = new CustomObjectCommand(name, (byte)objectTypeId, (byte)subCommand, 1, numParams, commandType, wrapper.factory);
-        //    if (commandInfo != null) CustomCommandsInfo.Add(wrapper.commandMap[subCommand].NameStr, commandInfo);
-
-        //    return subCommand;
-        //}
-
         internal (int objectTypeId, int subCommand) Register(string name, CommandType commandType, CustomObjectFactory factory, RespCommandsInfo commandInfo)
         {
             int objectTypeId = -1;

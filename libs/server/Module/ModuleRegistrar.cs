@@ -90,7 +90,6 @@ namespace Garnet.server.Module
         /// Registers a raw string custom command
         /// </summary>
         /// <param name="name">Command name</param>
-        /// <param name="numParams">Number of parameters</param>
         /// <param name="type">Command type</param>
         /// <param name="customFunctions">Custom raw string function implementation</param>
         /// <param name="commandInfo">Command info</param>
@@ -143,7 +142,6 @@ namespace Garnet.server.Module
         /// <param name="factory">Type factory</param>
         /// <param name="command">Custom object function implementation</param>
         /// <param name="type">Command type</param>
-        /// <param name="numParams">Number of parameters</param>
         /// <param name="commandInfo">Command info</param>
         /// <returns></returns>
         public ModuleActionStatus RegisterCommand(string name, CustomObjectFactory factory, CustomObjectFunctions command, CommandType type = CommandType.ReadModifyWrite, RespCommandsInfo commandInfo = null)

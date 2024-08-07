@@ -24,7 +24,6 @@ namespace Garnet.server
         /// Register custom command with Garnet
         /// </summary>
         /// <param name="name">Name of command</param>
-        /// <param name="numParams">Number of parameters (excluding the key, which is always the first parameter)</param>
         /// <param name="type">Type of command (e.g., read)</param>
         /// <param name="customFunctions">Custom functions for command logic</param>
         /// <param name="commandInfo">RESP command info</param>
@@ -63,18 +62,6 @@ namespace Garnet.server
         /// <param name="factory">Factory for object type</param>
         public void NewType(int type, CustomObjectFactory factory)
             => provider.StoreWrapper.customCommandManager.RegisterType(type, factory);
-
-        /// <summary>
-        /// Register custom command with Garnet
-        /// </summary>
-        /// <param name="name">Name of command</param>
-        /// <param name="numParams">Numer of parameters (excluding the key, which is always the first parameter)</param>
-        /// <param name="commandType">Type of command (e.g., read)</param>
-        /// <param name="type">Type ID for factory, registered using RegisterType</param>
-        /// <param name="commandInfo">RESP command info</param>
-        /// <returns>ID of the registered command</returns>
-        //public int NewCommand(string name, int numParams, CommandType commandType, int type, RespCommandsInfo commandInfo = null)
-        //    => provider.StoreWrapper.customCommandManager.Register(name, numParams, commandType, type, commandInfo);
 
         /// <summary>
         /// Register custom command with Garnet

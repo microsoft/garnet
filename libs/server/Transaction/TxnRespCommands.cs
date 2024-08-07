@@ -287,10 +287,11 @@ namespace Garnet.server
                 return true;
             }
 
-            if ((arity > 0 && count != arity - 1) || (arity < 0 && count < -arity - 1))
+            if ((arity > 0 && count != arity) || (arity < 0 && count < -arity))
             {
+                var expectedParams = arity > 0 ? arity - 1 : -arity - 1;
                 while (!RespWriteUtils.WriteError(
-                       string.Format(CmdStrings.GenericErrWrongNumArgsTxn, txId, arity - 2, count - 1), ref dcurr, // arity includes cmdname and id, so -2
+                       string.Format(CmdStrings.GenericErrWrongNumArgsTxn, txId, expectedParams, count - 1), ref dcurr,
                        dend))
                     SendAndReset();
             }

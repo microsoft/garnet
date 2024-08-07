@@ -62,7 +62,7 @@ namespace Garnet.test
         {
             // Register sample custom command (SETIFPM = "set if prefix match")
             var numParams = 3;
-            var id = server.Register.NewTransactionProc("READWRITETX", () => new ReadWriteTxn(), new RespCommandsInfo { Arity = numParams + 2 }); // +2 for cmdname and id
+            var id = server.Register.NewTransactionProc("READWRITETX", () => new ReadWriteTxn(), new RespCommandsInfo { Arity = numParams + 1 });
 
             using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
             var db = redis.GetDatabase(0);
