@@ -37,7 +37,7 @@ namespace CommandInfoUpdater
                 new Dictionary<string, RespCommandsInfo>();
             if (!force && !RespCommandsInfo.TryGetRespCommandsInfo(out existingCommandsInfo, false, logger))
             {
-                logger.LogError($"Unable to get existing RESP commands info.");
+                logger.LogError("Unable to get existing RESP commands info.");
                 return false;
             }
 
@@ -46,14 +46,14 @@ namespace CommandInfoUpdater
 
             if (!GetUserConfirmation(commandsToAdd, commandsToRemove, logger))
             {
-                logger.LogInformation($"User cancelled update operation.");
+                logger.LogInformation("User cancelled update operation.");
                 return false;
             }
 
             if (!TryGetRespCommandsInfo(GarnetCommandInfoJsonPath, logger, out var garnetCommandsInfo) ||
                 garnetCommandsInfo == null)
             {
-                logger.LogError($"Unable to read Garnet RESP commands info from {GarnetCommandInfoJsonPath}.");
+                logger.LogError("Unable to read Garnet RESP commands info from {GarnetCommandInfoJsonPath}.", GarnetCommandInfoJsonPath);
                 return false;
             }
 
@@ -98,12 +98,11 @@ namespace CommandInfoUpdater
 
             if (!TryWriteRespCommandsInfo(outputPath, updatedCommandsInfo, logger))
             {
-                logger.LogError($"Unable to write RESP commands info to path {outputPath}.");
+                logger.LogError("Unable to write RESP commands info to path {outputPath}.", outputPath);
                 return false;
             }
 
-            logger.LogInformation(
-                $"RESP commands info updated successfully! Output file written to: {Path.GetFullPath(outputPath)}");
+            logger.LogInformation("RESP commands info updated successfully! Output file written to: {fullOutputPath}", Path.GetFullPath(outputPath));
             return true;
         }
 
@@ -243,15 +242,14 @@ namespace CommandInfoUpdater
             logger.LogInformation(
                 $"Found {logCommandsToAdd.Count} commands to add and {logSubCommandsToAdd.Count} sub-commands to add.");
             if (logCommandsToAdd.Count > 0)
-                logger.LogInformation($"Commands to add: {string.Join(", ", logCommandsToAdd)}");
+                logger.LogInformation("Commands to add: {commands}", string.Join(", ", logCommandsToAdd));
             if (logSubCommandsToAdd.Count > 0)
-                logger.LogInformation($"Sub-Commands to add: {string.Join(", ", logSubCommandsToAdd)}");
-            logger.LogInformation(
-                $"Found {logCommandsToRemove.Count} commands to remove and {logSubCommandsToRemove.Count} sub-commands to commandsToRemove.");
+                logger.LogInformation("Sub-Commands to add: {commands}", string.Join(", ", logSubCommandsToAdd));
+            logger.LogInformation("Found {logCommandsToRemoveCount} commands to remove and {logSubCommandsToRemoveCount} sub-commands to commandsToRemove.", logCommandsToRemove.Count, logSubCommandsToRemove.Count);
             if (logCommandsToRemove.Count > 0)
-                logger.LogInformation($"Commands to remove: {string.Join(", ", logCommandsToRemove)}");
+                logger.LogInformation("Commands to remove: {commands}", string.Join(", ", logCommandsToRemove));
             if (logSubCommandsToRemove.Count > 0)
-                logger.LogInformation($"Sub-Commands to remove: {string.Join(", ", logSubCommandsToRemove)}");
+                logger.LogInformation("Sub-Commands to remove: {commands}", string.Join(", ", logSubCommandsToRemove));
 
             if (logCommandsToAdd.Count == 0 && logSubCommandsToAdd.Count == 0 && logCommandsToRemove.Count == 0 &&
                 logSubCommandsToRemove.Count == 0)
@@ -326,7 +324,7 @@ namespace CommandInfoUpdater
                 // Read the array length (# of commands info returned)
                 if (!RespReadUtils.ReadUnsignedArrayLength(out var cmdCount, ref ptr, end))
                 {
-                    logger.LogError($"Unable to read RESP command info count from server");
+                    logger.LogError("Unable to read RESP command info count from server");
                     return false;
                 }
 
@@ -336,8 +334,7 @@ namespace CommandInfoUpdater
                     if (!RespCommandInfoParser.TryReadFromResp(ref ptr, end, supportedCommands, out var command) ||
                         command == null)
                     {
-                        logger.LogError(
-                            $"Unable to read RESP command info from server for command {commandsToQuery[cmdIdx]}");
+                        logger.LogError("Unable to read RESP command info from server for command {command}", commandsToQuery[cmdIdx]);
                         return false;
                     }
 
