@@ -134,77 +134,54 @@ namespace Garnet.cluster
         /// </summary>
         /// <param name="command">Subcommand to execute.</param>
         /// <param name="count">Number of parameters in teh command buffer</param>
+        /// <param name="invalidParameters">True if number of parameters is invalid</param>
         /// <returns>True if command is fully processed, false if more processing is needed.</returns>
-        private bool ProcessClusterCommands(RespCommand command, int count)
+        private void ProcessClusterCommands(RespCommand command, int count, out bool invalidParameters)
         {
-            bool result;
-            bool invalidParameters;
-
-            result =
-                command switch
-                {
-                    RespCommand.CLUSTER_ADDSLOTS => NetworkClusterAddSlots(out invalidParameters),
-                    RespCommand.CLUSTER_ADDSLOTSRANGE => NetworkClusterAddSlotsRange(out invalidParameters),
-                    RespCommand.CLUSTER_AOFSYNC => NetworkClusterAOFSync(count, out invalidParameters),
-                    RespCommand.CLUSTER_APPENDLOG => NetworkClusterAppendLog(count, out invalidParameters),
-                    RespCommand.CLUSTER_BANLIST => NetworkClusterBanList(out invalidParameters),
-                    RespCommand.CLUSTER_BEGIN_REPLICA_RECOVER => NetworkClusterBeginReplicaRecover(count, out invalidParameters),
-                    RespCommand.CLUSTER_BUMPEPOCH => NetworkClusterBumpEpoch(count, out invalidParameters),
-                    RespCommand.CLUSTER_COUNTKEYSINSLOT => NetworkClusterCountKeysInSlot(out invalidParameters),
-                    RespCommand.CLUSTER_DELKEYSINSLOT => NetworkClusterDelKeysInSlot(out invalidParameters),
-                    RespCommand.CLUSTER_DELKEYSINSLOTRANGE => NetworkClusterDelKeysInSlotRange(out invalidParameters),
-                    RespCommand.CLUSTER_DELSLOTS => NetworkClusterDelSlots(out invalidParameters),
-                    RespCommand.CLUSTER_DELSLOTSRANGE => NetworkClusterDelSlotsRange(out invalidParameters),
-                    RespCommand.CLUSTER_ENDPOINT => NetworkClusterEndpoint(count, out invalidParameters),
-                    RespCommand.CLUSTER_FAILOVER => NetworkClusterFailover(count, out invalidParameters),
-                    RespCommand.CLUSTER_FAILREPLICATIONOFFSET => NetworkClusterFailReplicationOffset(count, out invalidParameters),
-                    RespCommand.CLUSTER_FAILSTOPWRITES => NetworkClusterFailStopWrites(count, out invalidParameters),
-                    RespCommand.CLUSTER_FORGET => NetworkClusterForget(count, out invalidParameters),
-                    RespCommand.CLUSTER_GOSSIP => NetworkClusterGossip(count, out invalidParameters),
-                    RespCommand.CLUSTER_GETKEYSINSLOT => NetworkClusterGetKeysInSlot(out invalidParameters),
-                    RespCommand.CLUSTER_HELP => NetworkClusterHelp(count, out invalidParameters),
-                    RespCommand.CLUSTER_INFO => NetworkClusterInfo(count, out invalidParameters),
-                    RespCommand.CLUSTER_INITIATE_REPLICA_SYNC => NetworkClusterInitiateReplicaSync(count, out invalidParameters),
-                    RespCommand.CLUSTER_KEYSLOT => NetworkClusterKeySlot(out invalidParameters),
-                    RespCommand.CLUSTER_MEET => NetworkClusterMeet(count, out invalidParameters),
-                    RespCommand.CLUSTER_MIGRATE => NetworkClusterMigrate(count, out invalidParameters),
-                    RespCommand.CLUSTER_MTASKS => NetworkClusterMTasks(count, out invalidParameters),
-                    RespCommand.CLUSTER_MYID => NetworkClusterMyId(count, out invalidParameters),
-                    RespCommand.CLUSTER_MYPARENTID => NetworkClusterMyParentId(count, out invalidParameters),
-                    RespCommand.CLUSTER_NODES => NetworkClusterNodes(count, out invalidParameters),
-                    RespCommand.CLUSTER_REPLICAS => NetworkClusterReplicas(count, out invalidParameters),
-                    RespCommand.CLUSTER_REPLICATE => NetworkClusterReplicate(count, out invalidParameters),
-                    RespCommand.CLUSTER_RESET => NetworkClusterReset(count, out invalidParameters),
-                    RespCommand.CLUSTER_SEND_CKPT_FILE_SEGMENT => NetworkClusterSendCheckpointFileSegment(count, out invalidParameters),
-                    RespCommand.CLUSTER_SEND_CKPT_METADATA => NetworkClusterSendCheckpointMetadata(count, out invalidParameters),
-                    RespCommand.CLUSTER_SETCONFIGEPOCH => NetworkClusterSetConfigEpoch(count, out invalidParameters),
-                    RespCommand.CLUSTER_SETSLOT => NetworkClusterSetSlot(out invalidParameters),
-                    RespCommand.CLUSTER_SETSLOTSRANGE => NetworkClusterSetSlotsRange(out invalidParameters),
-                    RespCommand.CLUSTER_SHARDS => NetworkClusterShards(count, out invalidParameters),
-                    RespCommand.CLUSTER_SLOTS => NetworkClusterSlots(out invalidParameters),
-                    RespCommand.CLUSTER_SLOTSTATE => NetworkClusterSlotState(out invalidParameters),
-                    _ => throw new Exception($"Unexpected cluster subcommand: {command}")
-                };
-
-            if (invalidParameters)
+            _ = command switch
             {
-                // Have to lookup the RESP name now that we're in the failure case
-                string subCommand;
-                if (RespCommandsInfo.TryGetRespCommandInfo(command, out var info))
-                {
-                    subCommand = info.Name.ToLowerInvariant();
-                }
-                else
-                {
-                    subCommand = "unknown";
-                }
-
-                var errorMsg = string.Format(CmdStrings.GenericErrWrongNumArgs, subCommand);
-                while (!RespWriteUtils.WriteError(errorMsg, ref dcurr, dend))
-                    SendAndReset();
-            }
-
-            return result;
+                RespCommand.CLUSTER_ADDSLOTS => NetworkClusterAddSlots(out invalidParameters),
+                RespCommand.CLUSTER_ADDSLOTSRANGE => NetworkClusterAddSlotsRange(out invalidParameters),
+                RespCommand.CLUSTER_AOFSYNC => NetworkClusterAOFSync(count, out invalidParameters),
+                RespCommand.CLUSTER_APPENDLOG => NetworkClusterAppendLog(count, out invalidParameters),
+                RespCommand.CLUSTER_BANLIST => NetworkClusterBanList(out invalidParameters),
+                RespCommand.CLUSTER_BEGIN_REPLICA_RECOVER => NetworkClusterBeginReplicaRecover(count, out invalidParameters),
+                RespCommand.CLUSTER_BUMPEPOCH => NetworkClusterBumpEpoch(out invalidParameters),
+                RespCommand.CLUSTER_COUNTKEYSINSLOT => NetworkClusterCountKeysInSlot(out invalidParameters),
+                RespCommand.CLUSTER_DELKEYSINSLOT => NetworkClusterDelKeysInSlot(out invalidParameters),
+                RespCommand.CLUSTER_DELKEYSINSLOTRANGE => NetworkClusterDelKeysInSlotRange(out invalidParameters),
+                RespCommand.CLUSTER_DELSLOTS => NetworkClusterDelSlots(out invalidParameters),
+                RespCommand.CLUSTER_DELSLOTSRANGE => NetworkClusterDelSlotsRange(out invalidParameters),
+                RespCommand.CLUSTER_ENDPOINT => NetworkClusterEndpoint(out invalidParameters),
+                RespCommand.CLUSTER_FAILOVER => NetworkClusterFailover(out invalidParameters),
+                RespCommand.CLUSTER_FAILREPLICATIONOFFSET => NetworkClusterFailReplicationOffset(out invalidParameters),
+                RespCommand.CLUSTER_FAILSTOPWRITES => NetworkClusterFailStopWrites(out invalidParameters),
+                RespCommand.CLUSTER_FORGET => NetworkClusterForget(out invalidParameters),
+                RespCommand.CLUSTER_GOSSIP => NetworkClusterGossip(out invalidParameters),
+                RespCommand.CLUSTER_GETKEYSINSLOT => NetworkClusterGetKeysInSlot(out invalidParameters),
+                RespCommand.CLUSTER_HELP => NetworkClusterHelp(out invalidParameters),
+                RespCommand.CLUSTER_INFO => NetworkClusterInfo(out invalidParameters),
+                RespCommand.CLUSTER_INITIATE_REPLICA_SYNC => NetworkClusterInitiateReplicaSync(count, out invalidParameters),
+                RespCommand.CLUSTER_KEYSLOT => NetworkClusterKeySlot(out invalidParameters),
+                RespCommand.CLUSTER_MEET => NetworkClusterMeet(out invalidParameters),
+                RespCommand.CLUSTER_MIGRATE => NetworkClusterMigrate(out invalidParameters),
+                RespCommand.CLUSTER_MTASKS => NetworkClusterMTasks(out invalidParameters),
+                RespCommand.CLUSTER_MYID => NetworkClusterMyId(out invalidParameters),
+                RespCommand.CLUSTER_MYPARENTID => NetworkClusterMyParentId(out invalidParameters),
+                RespCommand.CLUSTER_NODES => NetworkClusterNodes(out invalidParameters),
+                RespCommand.CLUSTER_REPLICAS => NetworkClusterReplicas(count, out invalidParameters),
+                RespCommand.CLUSTER_REPLICATE => NetworkClusterReplicate(count, out invalidParameters),
+                RespCommand.CLUSTER_RESET => NetworkClusterReset(out invalidParameters),
+                RespCommand.CLUSTER_SEND_CKPT_FILE_SEGMENT => NetworkClusterSendCheckpointFileSegment(count, out invalidParameters),
+                RespCommand.CLUSTER_SEND_CKPT_METADATA => NetworkClusterSendCheckpointMetadata(count, out invalidParameters),
+                RespCommand.CLUSTER_SETCONFIGEPOCH => NetworkClusterSetConfigEpoch(out invalidParameters),
+                RespCommand.CLUSTER_SETSLOT => NetworkClusterSetSlot(out invalidParameters),
+                RespCommand.CLUSTER_SETSLOTSRANGE => NetworkClusterSetSlotsRange(out invalidParameters),
+                RespCommand.CLUSTER_SHARDS => NetworkClusterShards(out invalidParameters),
+                RespCommand.CLUSTER_SLOTS => NetworkClusterSlots(out invalidParameters),
+                RespCommand.CLUSTER_SLOTSTATE => NetworkClusterSlotState(out invalidParameters),
+                _ => throw new Exception($"Unexpected cluster subcommand: {command}")
+            };
         }
     }
 }

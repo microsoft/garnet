@@ -2,6 +2,7 @@
 // Licensed under the MIT license.
 
 using System.Runtime.CompilerServices;
+using Garnet.common;
 using Garnet.networking;
 using Garnet.server;
 using Garnet.server.ACL;
@@ -63,7 +64,7 @@ namespace Garnet.cluster
             this.logger = logger;
         }
 
-        public bool ProcessClusterCommands(RespCommand command, ref SessionParseState parseState, int count, byte* recvBufferPtr, int bytesRead, ref int readHead, ref byte* dcurr, ref byte* dend, out bool result)
+        public void ProcessClusterCommands(RespCommand command, ref SessionParseState parseState, int count, byte* recvBufferPtr, int bytesRead, ref int readHead, ref byte* dcurr, ref byte* dend)
         {
             this.recvBufferPtr = recvBufferPtr;
             this.bytesRead = bytesRead;
@@ -71,26 +72,41 @@ namespace Garnet.cluster
             this.dend = dend;
             this.readHead = readHead;
             this.parseState = parseState;
-            bool ret;
+            var invalidParameters = false;
+            string respCommandName = default;
+
             try
             {
                 if (command.IsClusterSubCommand())
                 {
-                    result = ProcessClusterCommands(command, count);
-                    ret = true;
+                    ProcessClusterCommands(command, count, out invalidParameters);
+
+                    if (invalidParameters)
+                    {
+                        // Have to lookup the RESP name now that we're in the failure case
+                        respCommandName = RespCommandsInfo.TryGetRespCommandInfo(command, out var info)
+                            ? info.Name.ToLowerInvariant()
+                            : "unknown";
+                    }
                 }
                 else
                 {
-                    (ret, result) = command switch
+                    _ = command switch
                     {
-                        RespCommand.MIGRATE => (true, TryMIGRATE()),
-                        RespCommand.FAILOVER => (true, TryFAILOVER()),
-                        RespCommand.SECONDARYOF or RespCommand.REPLICAOF => (true, TryREPLICAOF(count, recvBufferPtr + readHead)),
-                        _ => (false, false)
+                        RespCommand.MIGRATE => TryMIGRATE(out invalidParameters),
+                        RespCommand.FAILOVER => TryFAILOVER(),
+                        RespCommand.SECONDARYOF or RespCommand.REPLICAOF => TryREPLICAOF(out invalidParameters),
+                        _ => false
                     };
                 }
 
-                return ret;
+                if (invalidParameters)
+                {
+                    var errorMessage = string.Format(CmdStrings.GenericErrWrongNumArgs,
+                        respCommandName ?? command.ToString());
+                    while (!RespWriteUtils.WriteError(errorMessage, ref this.dcurr, this.dend))
+                        SendAndReset();
+                }
             }
             finally
             {

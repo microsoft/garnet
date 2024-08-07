@@ -12,28 +12,25 @@ namespace Garnet.cluster
         /// <summary>
         /// Implements CLUSTER FAILOVER command
         /// </summary>
-        /// <param name="count"></param>
         /// <param name="invalidParameters"></param>
         /// <returns></returns>
-        private bool NetworkClusterFailover(int count, out bool invalidParameters)
+        private bool NetworkClusterFailover(out bool invalidParameters)
         {
             invalidParameters = false;
 
             // Expecting 1 or 2 arguments
-            if (count is < 0 or > 2)
+            if (parseState.Count is < 0 or > 2)
             {
                 invalidParameters = true;
                 return true;
             }
 
-            var ptr = recvBufferPtr + readHead;
             var failoverOption = FailoverOption.DEFAULT;
             TimeSpan failoverTimeout = default;
-            if (count > 0)
+            if (parseState.Count > 0)
             {
-                if (!RespReadUtils.ReadStringWithLengthHeader(out var failoverOptionStr, ref ptr, recvBufferPtr + bytesRead))
-                    return false;
-
+                var failoverOptionStr = parseState.GetString(0);
+                
                 // Try to parse failover option
                 if (!Enum.TryParse(failoverOptionStr, ignoreCase: true, out failoverOption))
                 {
@@ -43,15 +40,13 @@ namespace Garnet.cluster
                     failoverOption = FailoverOption.INVALID;
                 }
 
-                if (count > 1)
+                if (parseState.Count > 1)
                 {
-                    if (!RespReadUtils.ReadIntWithLengthHeader(out var failoverTimeoutSeconds, ref ptr, recvBufferPtr + bytesRead))
-                        return false;
+                    var failoverTimeoutSeconds = parseState.GetInt(1);
                     failoverTimeout = TimeSpan.FromSeconds(failoverTimeoutSeconds);
                 }
             }
-            readHead = (int)(ptr - recvBufferPtr);
-
+            
             // If option provided is invalid return early
             if (failoverOption == FailoverOption.INVALID)
                 return true;
@@ -101,25 +96,21 @@ namespace Garnet.cluster
         /// <summary>
         /// Implements CLUSTER failstopwrites (only for internode use)
         /// </summary>
-        /// <param name="count"></param>
         /// <param name="invalidParameters"></param>
         /// <returns></returns>
-        private bool NetworkClusterFailStopWrites(int count, out bool invalidParameters)
+        private bool NetworkClusterFailStopWrites(out bool invalidParameters)
         {
             invalidParameters = false;
 
             // Expecting exactly 1 argument
-            if (count != 1)
+            if (parseState.Count != 1)
             {
                 invalidParameters = true;
                 return true;
             }
 
-            var ptr = recvBufferPtr + readHead;
-            if (!RespReadUtils.ReadStringWithLengthHeader(out var nodeId, ref ptr, recvBufferPtr + bytesRead))
-                return false;
-            readHead = (int)(ptr - recvBufferPtr);
-
+            var nodeId = parseState.GetString(0);
+            
             if (!string.IsNullOrEmpty(nodeId))
             {// Make this node a primary after receiving a request from a replica that is trying to takeover
                 clusterProvider.clusterManager.TryStopWrites(nodeId);
@@ -137,24 +128,20 @@ namespace Garnet.cluster
         /// <summary>
         /// Implements CLUSTER failreplicationoffset (only for internode use)
         /// </summary>
-        /// <param name="count"></param>
         /// <param name="invalidParameters"></param>
         /// <returns></returns>
-        private bool NetworkClusterFailReplicationOffset(int count, out bool invalidParameters)
+        private bool NetworkClusterFailReplicationOffset(out bool invalidParameters)
         {
             invalidParameters = false;
 
             // Expects exactly 1 argument
-            if (count != 1)
+            if (parseState.Count != 1)
             {
                 invalidParameters = true;
                 return true;
             }
 
-            var ptr = recvBufferPtr + readHead;
-            if (!RespReadUtils.ReadLongWithLengthHeader(out var primaryReplicationOffset, ref ptr, recvBufferPtr + bytesRead))
-                return false;
-            readHead = (int)(ptr - recvBufferPtr);
+            var primaryReplicationOffset = parseState.GetLong(0);
 
             var rOffset = clusterProvider.replicationManager.WaitForReplicationOffset(primaryReplicationOffset).GetAwaiter().GetResult();
             while (!RespWriteUtils.WriteInteger(rOffset, ref dcurr, dend))

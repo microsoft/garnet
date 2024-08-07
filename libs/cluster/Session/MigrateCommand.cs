@@ -57,8 +57,17 @@ namespace Garnet.cluster
             return false;
         }
 
-        private bool TryMIGRATE()
+        private bool TryMIGRATE(out bool invalidParameters)
         {
+            invalidParameters = false;
+
+            // Expecting at least 5 arguments
+            if (parseState.Count < 5)
+            {
+                invalidParameters = true;
+                return true;
+            }
+
             // Migrate command format
             // migrate host port <KEY | ""> destination-db timeout [COPY] [REPLACE] [AUTH password] [AUTH2 username password] [[KEYS keys] | [SLOTSRANGE start-slot end-slot [start-slot end-slot]]]]
             #region parseMigrationArguments
