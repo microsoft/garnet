@@ -110,16 +110,15 @@ namespace Garnet.server.Module
         /// Registers a custom transaction
         /// </summary>
         /// <param name="name">Transaction name</param>
-        /// <param name="numParams">Number of parameters</param>
         /// <param name="proc">Transaction procedure implemenation</param>
         /// <param name="commandInfo">Command info</param>
         /// <returns>Registration status</returns>
-        public ModuleActionStatus RegisterTransaction(string name, Func<CustomTransactionProcedure> proc, int numParams = int.MaxValue, RespCommandsInfo commandInfo = null)
+        public ModuleActionStatus RegisterTransaction(string name, Func<CustomTransactionProcedure> proc, RespCommandsInfo commandInfo = null)
         {
             if (string.IsNullOrEmpty(name) || proc == null)
                 return ModuleActionStatus.InvalidRegistrationInfo;
 
-            customCommandManager.Register(name, numParams, proc, commandInfo);
+            customCommandManager.Register(name, proc, commandInfo);
 
             return ModuleActionStatus.Success;
         }

@@ -77,7 +77,7 @@ namespace Garnet
                 Flags = RespCommandFlags.DenyOom | RespCommandFlags.Write,
                 AclCategories = RespAclCategories.Write,
             };
-            server.Register.NewTransactionProc("READWRITETX", 3, () => new ReadWriteTxn(), readWriteTxCmdInfo);
+            server.Register.NewTransactionProc("READWRITETX", () => new ReadWriteTxn(), readWriteTxCmdInfo);
 
             // Register stored procedure to run a transactional command
             server.Register.NewTransactionProc("MSETPX", () => new MSetPxTxn());
@@ -86,11 +86,11 @@ namespace Garnet
             server.Register.NewTransactionProc("MGETIFPM", () => new MGetIfPM());
 
             // Register stored procedure to run a non-transactional command
-            server.Register.NewTransactionProc("GETTWOKEYSNOTXN", 2, () => new GetTwoKeysNoTxn());
+            server.Register.NewTransactionProc("GETTWOKEYSNOTXN", () => new GetTwoKeysNoTxn(), new RespCommandsInfo { Arity = 3 });
 
             // Register sample transactional procedures
-            server.Register.NewTransactionProc("SAMPLEUPDATETX", 8, () => new SampleUpdateTxn());
-            server.Register.NewTransactionProc("SAMPLEDELETETX", 5, () => new SampleDeleteTxn());
+            server.Register.NewTransactionProc("SAMPLEUPDATETX", () => new SampleUpdateTxn(), new RespCommandsInfo { Arity = 9 });
+            server.Register.NewTransactionProc("SAMPLEDELETETX", () => new SampleDeleteTxn(), new RespCommandsInfo { Arity = 6 });
 
             server.Register.NewProcedure("SUM", new Sum());
             server.Register.NewProcedure("SETMAINANDOBJECT", new SetStringAndList());

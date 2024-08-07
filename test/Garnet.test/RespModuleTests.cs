@@ -101,7 +101,7 @@ namespace Garnet.test
                     new RespCommandsInfo { Name = ""TestModule.SETIFPM"", Arity = 4, FirstKey = 1, LastKey = 1, Step = 1,
                     Flags = RespCommandFlags.DenyOom | RespCommandFlags.Write, AclCategories = RespAclCategories.String | RespAclCategories.Write });
                     
-                    context.RegisterTransaction(""TestModule.READWRITETX"", () => new ReadWriteTxn(), 3,
+                    context.RegisterTransaction(""TestModule.READWRITETX"", () => new ReadWriteTxn(),
                     new RespCommandsInfo { Name = ""TestModule.READWRITETX"", Arity = 4, FirstKey = 1, LastKey = 3, Step = 1,
                     Flags = RespCommandFlags.DenyOom | RespCommandFlags.Write, AclCategories = RespAclCategories.Write });
 

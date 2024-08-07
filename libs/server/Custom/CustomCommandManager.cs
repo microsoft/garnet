@@ -51,13 +51,13 @@ namespace Garnet.server
             return id;
         }
 
-        internal int Register(string name, int numParams, Func<CustomTransactionProcedure> proc, RespCommandsInfo commandInfo = null)
+        internal int Register(string name, Func<CustomTransactionProcedure> proc, RespCommandsInfo commandInfo = null)
         {
             int id = Interlocked.Increment(ref TransactionProcId) - 1;
             if (id >= MaxRegistrations)
                 throw new Exception("Out of registration space");
 
-            transactionProcMap[id] = new CustomTransaction(name, (byte)id, numParams, proc);
+            transactionProcMap[id] = new CustomTransaction(name, (byte)id, proc);
             if (commandInfo != null) CustomCommandsInfo.Add(transactionProcMap[id].NameStr, commandInfo);
             return id;
         }

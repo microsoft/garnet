@@ -233,7 +233,7 @@ namespace Garnet.server.Custom
 
         public override void Register(CustomCommandManager customCommandManager)
         {
-            customCommandManager.Register(this.RegisterArgs.Name, this.RegisterArgs.NumParams, () => this.Instance, this.RegisterArgs.CommandInfo);
+            customCommandManager.Register(this.RegisterArgs.Name, () => this.Instance, this.RegisterArgs.CommandInfo);
         }
     }
 }
