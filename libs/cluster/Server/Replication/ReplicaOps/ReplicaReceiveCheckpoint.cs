@@ -69,7 +69,6 @@ namespace Garnet.cluster
             }
         }
 
-
         /// <summary>
         /// Try to initiate the attach to primary sequence to recover checkpoint, replay AOF and start AOF stream.
         /// NOTE:
