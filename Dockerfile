@@ -29,6 +29,20 @@ RUN dotnet publish -a $TARGETARCH -c Release -o /app --no-restore --self-contain
 
 # Final stage/image
 FROM mcr.microsoft.com/dotnet/runtime:8.0 AS runtime
+
+# Determine the distribution and install libaio1
+RUN if [ "$(uname -s)" = "Linux" ]; then \
+		if [ -f /etc/debian_version ]; then \
+			apt-get update && apt-get install -y libaio1 && rm -rf /var/lib/apt/lists/*; \
+		elif [ -f /etc/alpine-release ]; then \
+			apk update && apk add --upgrade libaio gcompat; \
+		elif [ -f /etc/centos-release ]; then \
+			yum install -y libaio; \
+		elif [ -f /etc/os-release ] && grep -q 'ID=cbl-mariner' /etc/os-release; then \
+			tdnf install -y libaio && tdnf clean all; \
+		fi; \
+	fi
+
 WORKDIR /app
 COPY --from=build /app .
 
