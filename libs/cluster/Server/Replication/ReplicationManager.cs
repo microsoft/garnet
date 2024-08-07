@@ -259,7 +259,7 @@ namespace Garnet.cluster
             {
                 // At initialization of ReplicationManager, this node has been put into recovery mode
                 if (!TryReplicateFromPrimary(out var errorMessage))
-                    logger?.LogError("An error occurred at " + $"{nameof(ReplicationManager)}.{nameof(Start)}" + "{error}", Encoding.ASCII.GetString(errorMessage));
+                    logger?.LogError($"An error occurred at {nameof(ReplicationManager)}.{nameof(Start)} {{error}}", Encoding.ASCII.GetString(errorMessage));
             }
             else if (localNodeRole == NodeRole.PRIMARY && replicaOfNodeId == null)
             {
