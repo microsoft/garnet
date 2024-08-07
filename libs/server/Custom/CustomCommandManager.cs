@@ -25,8 +25,6 @@ namespace Garnet.server
         internal int CustomProcedureId = 0;
 
         internal int CustomCommandsInfoCount => CustomCommandsInfo.Count;
-        //internal IEnumerable<RespCommandsInfo> CustomCommandsInfo => this.CustomCommandsInfo.Values;
-
         internal readonly Dictionary<string, RespCommandsInfo> CustomCommandsInfo = new(StringComparer.OrdinalIgnoreCase);
 
         /// <summary>
@@ -47,7 +45,7 @@ namespace Garnet.server
                 throw new Exception("Out of registration space");
 
             rawStringCommandMap[id] = new CustomRawStringCommand(name, (byte)id, type, customFunctions, expirationTicks);
-            if (commandInfo != null) CustomCommandsInfo.Add(rawStringCommandMap[id].NameStr, commandInfo);
+            if (commandInfo != null) CustomCommandsInfo.Add(name, commandInfo);
             return id;
         }
 
@@ -58,7 +56,7 @@ namespace Garnet.server
                 throw new Exception("Out of registration space");
 
             transactionProcMap[id] = new CustomTransaction(name, (byte)id, proc);
-            if (commandInfo != null) CustomCommandsInfo.Add(transactionProcMap[id].NameStr, commandInfo);
+            if (commandInfo != null) CustomCommandsInfo.Add(name, commandInfo);
             return id;
         }
 
@@ -131,7 +129,7 @@ namespace Garnet.server
                 throw new Exception("Out of registration space");
             wrapper.commandMap[subCommand] = new CustomObjectCommand(name, (byte)objectTypeId, (byte)subCommand, commandType, wrapper.factory);
 
-            if (commandInfo != null) CustomCommandsInfo.Add(wrapper.commandMap[subCommand].NameStr, commandInfo);
+            if (commandInfo != null) CustomCommandsInfo.Add(name, commandInfo);
 
             return (objectTypeId, subCommand);
         }
@@ -159,7 +157,7 @@ namespace Garnet.server
                 throw new Exception("Out of registration space");
             wrapper.commandMap[subCommand] = new CustomObjectCommand(name, (byte)objectTypeId, (byte)subCommand, commandType, wrapper.factory, customObjectFunctions);
 
-            if (commandInfo != null) CustomCommandsInfo.Add(wrapper.commandMap[subCommand].NameStr, commandInfo);
+            if (commandInfo != null) CustomCommandsInfo.Add(name, commandInfo);
 
             return (objectTypeId, subCommand);
         }
