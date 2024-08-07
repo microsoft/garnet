@@ -398,7 +398,7 @@ namespace Resp.benchmark
             {
                 var resp = server.Execute("migrate", args);
                 if (!resp.Equals("OK"))
-                    logger?.LogError(resp.ToString());
+                    logger?.LogError("{errorMessage}", resp.ToString());
             }
             catch (Exception ex)
             {
@@ -657,7 +657,7 @@ namespace Resp.benchmark
                 {
                     //if(e.ToString().Contains())
                     if (e.ToString().Contains("CLUSTERDOWN"))
-                        logger?.LogError(e, null);
+                        logger?.LogError(e, "An error has occurred");
                 }
 
                 long elapsed = Stopwatch.GetTimestamp() - startTimestamp;

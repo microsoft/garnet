@@ -239,8 +239,7 @@ namespace CommandInfoUpdater
             var logSubCommandsToRemove = commandsToRemove.Where(c => c.Key.SubCommands != null)
                 .SelectMany(c => c.Key.SubCommands!).ToList();
 
-            logger.LogInformation(
-                $"Found {logCommandsToAdd.Count} commands to add and {logSubCommandsToAdd.Count} sub-commands to add.");
+            logger.LogInformation("Found {logCommandsToAddCount} commands to add and {logSubCommandsToAddCount} sub-commands to add.", logCommandsToAdd.Count, logSubCommandsToAdd.Count);
             if (logCommandsToAdd.Count > 0)
                 logger.LogInformation("Commands to add: {commands}", string.Join(", ", logCommandsToAdd));
             if (logSubCommandsToAdd.Count > 0)
