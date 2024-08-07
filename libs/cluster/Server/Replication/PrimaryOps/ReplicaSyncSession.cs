@@ -83,21 +83,20 @@ namespace Garnet.cluster
                 AcquireCheckpointEntry(out localEntry, out aofSyncTaskInfo);
                 logger?.LogInformation("Checkpoint search completed");
 
-                var primary_replId = clusterProvider.replicationManager.PrimaryReplId;
-                var primary_replId2 = clusterProvider.replicationManager.PrimaryReplId2;
-
-                // If the replica does not have a checkpoint we will have to send the local if it exists
-                // Else we need to compare the checkpoint versions if replica comes from the same history as this primary
-                var canCompareMainStoreCheckpoint = string.IsNullOrEmpty(remoteEntry.storePrimaryReplId) || remoteEntry.storePrimaryReplId.Equals(localEntry.storePrimaryReplId);
-                var canCompareObjectStoreCheckpoint = string.IsNullOrEmpty(remoteEntry.objectStorePrimaryReplId) || remoteEntry.objectStorePrimaryReplId.Equals(localEntry.objectStorePrimaryReplId);
-
-                // We can skip sending the local checkpoint if it is of same history and version. Remote checkpoints with greater version will be ovewritten
-                var skipSendingMainStore = localEntry.storeHlogToken == default || (canCompareMainStoreCheckpoint && localEntry.storeVersion == remoteEntry.storeVersion);
-                var skipSendingObjectStore = clusterProvider.serverOptions.DisableObjects || localEntry.objectStoreHlogToken == default || (canCompareObjectStoreCheckpoint && localEntry.objectStoreVersion == remoteEntry.objectStoreVersion);
+                // Local and remote checkpoints are of same history if both of the following hold
+                // 1. There is a checkpoint available at remote node
+                // 2. Remote and local checkpoints contain the same PrimaryReplId
+                var sameMainStoreCheckpointHistory = !string.IsNullOrEmpty(remoteEntry.storePrimaryReplId) && remoteEntry.storePrimaryReplId.Equals(localEntry.storePrimaryReplId);
+                var sameObjectStoreCheckpointHistory = !string.IsNullOrEmpty(remoteEntry.objectStorePrimaryReplId) && remoteEntry.objectStorePrimaryReplId.Equals(localEntry.objectStorePrimaryReplId);
+                // We will not send the latest local checkpoint if any of the following hold
+                // 1. Local node does not have any checkpoints
+                // 2. Local checkpoint is of same version and history as the remote checkpoint
+                var skipLocalMainStoreCheckpoint = localEntry.storeHlogToken == default || (sameMainStoreCheckpointHistory && localEntry.storeVersion == remoteEntry.storeVersion);
+                var skipLocalObjectStoreCheckpoint = clusterProvider.serverOptions.DisableObjects || localEntry.objectStoreHlogToken == default || (sameObjectStoreCheckpointHistory && localEntry.objectStoreVersion == remoteEntry.objectStoreVersion);
 
                 LogFileInfo hlog_size = default;
                 long index_size = -1;
-                if (!skipSendingMainStore)
+                if (!skipLocalMainStoreCheckpoint)
                 {
                     // Try to acquire metadata because checkpoint might not have completed and we have to spinWait
                     // TODO: maybe try once and then go back to acquire new checkpoint or limit retries to avoid getting stuck
@@ -113,7 +112,7 @@ namespace Garnet.cluster
 
                 LogFileInfo obj_hlog_size = default;
                 long obj_index_size = -1;
-                if (!skipSendingObjectStore)
+                if (!skipLocalObjectStoreCheckpoint)
                 {
                     // Try to acquire metadata because checkpoint might not have completed and we have to spinWait
                     // TODO: maybe try once and then go back to acquire new checkpoint or limit retries to avoid getting stuck
@@ -127,7 +126,7 @@ namespace Garnet.cluster
                     }
                 }
 
-                if (!skipSendingMainStore)
+                if (!skipLocalMainStoreCheckpoint)
                 {
                     logger?.LogInformation("Sending main store checkpoint {version} {storeHlogToken} {storeIndexToken} to replica", localEntry.storeVersion, localEntry.storeHlogToken, localEntry.storeIndexToken);
 
@@ -153,7 +152,7 @@ namespace Garnet.cluster
                     await SendCheckpointMetadata(gcs, storeCkptManager, CheckpointFileType.STORE_SNAPSHOT, localEntry.storeHlogToken);
                 }
 
-                if (!skipSendingObjectStore)
+                if (!skipLocalObjectStoreCheckpoint)
                 {
                     logger?.LogInformation("Sending object store checkpoint {version} {objectStoreHlogToken} {objectStoreIndexToken} to replica", localEntry.objectStoreVersion, localEntry.objectStoreHlogToken, localEntry.objectStoreIndexToken);
 
@@ -194,7 +193,7 @@ namespace Garnet.cluster
                     await SendCheckpointMetadata(gcs, objectStoreCkptManager, CheckpointFileType.OBJ_STORE_SNAPSHOT, localEntry.objectStoreHlogToken);
                 }
 
-                var recoverFromRemote = !skipSendingMainStore || !skipSendingObjectStore;
+                var recoverFromRemote = !skipLocalMainStoreCheckpoint || !skipLocalObjectStoreCheckpoint;
                 var replayAOF = false;
                 var RecoveredReplicationOffset = localEntry.GetMinAofCoveredAddress();
                 var beginAddress = RecoveredReplicationOffset;
@@ -242,12 +241,12 @@ namespace Garnet.cluster
                 }
 
                 // Signal replica to recover from local/remote checkpoint
-                // Make replica replayAOF if needed and replay from provided beginAddress to ReocoveredReplication Address
+                // Make replica replayAOF if needed and replay from provided beginAddress to RecoveredReplication Address
                 var resp = await gcs.ExecuteBeginReplicaRecover(
-                    !skipSendingMainStore,
-                    !skipSendingObjectStore,
+                    !skipLocalMainStoreCheckpoint,
+                    !skipLocalObjectStoreCheckpoint,
                     replayAOF,
-                    primary_replId,
+                    clusterProvider.replicationManager.PrimaryReplId,
                     localEntry.ToByteArray(),
                     beginAddress,
                     RecoveredReplicationOffset).ConfigureAwait(false);
@@ -325,7 +324,7 @@ namespace Garnet.cluster
                 cEntry = clusterProvider.replicationManager.GetLatestCheckpointEntryFromMemory();
 
                 // Break early if main-memory-replication on and do not wait for OnDemandCheckpoint
-                // We do this to avoid waiting indefinetely for a checkpoint that will never be taken
+                // We do this to avoid waiting indefinitely for a checkpoint that will never be taken
                 if (clusterProvider.serverOptions.MainMemoryReplication && !clusterProvider.serverOptions.OnDemandCheckpoint)
                 {
                     logger?.LogWarning("MainMemoryReplication: OnDemandCheckpoint is turned off, skipping valid checkpoint acquisition.");
