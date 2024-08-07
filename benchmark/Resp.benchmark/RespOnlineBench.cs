@@ -323,7 +323,9 @@ namespace Resp.benchmark
                             $"{"total_ops;",pad}" +
                             $"{"iter_tops;",pad}" +
                             $"{"tpt (Kops/sec)",pad}";
+                        #pragma warning disable CA2254 // Template should be a static expression
                         logger?.LogInformation(msg);
+                        #pragma warning restore CA2254 // Template should be a static expression
                     }
                 }
 
@@ -379,12 +381,16 @@ namespace Resp.benchmark
                         $"{summary.TotalCount,pad}" +
                         $"{curr_iter_ops,pad}" +
                         $"{Math.Round(BatchSize * curr_iter_ops / elapsedSecs, 2),pad}";
+                        #pragma warning disable CA2254 // Template should be a static expression
                         logger.Log(LogLevel.Information, histogramOutput);
+                        #pragma warning restore CA2254 // Template should be a static expression
                     }
                     else
                     {
                         var histogramOutput = $"{0,pad}" + $"{0,pad}" + $"{0,pad}" + $"{0,pad}" + $"{0,pad}" + $"{0,pad}" + $"{0,pad}" + $"{0,pad}" + $"{0,pad}" + $"{0,pad}";
+                        #pragma warning disable CA2254 // Template should be a static expression
                         logger.Log(LogLevel.Information, histogramOutput);
+                        #pragma warning restore CA2254 // Template should be a static expression
                     }
                 }
                 last_iter_ops = summary.TotalCount;
