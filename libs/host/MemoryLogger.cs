@@ -38,9 +38,9 @@ namespace Garnet
         {
             foreach (var entry in this._memoryLog)
             {
-                #pragma warning disable CA2254 // Template should be a static expression
+#pragma warning disable CA2254 // Template should be a static expression
                 dstLogger.Log(entry.Item1, entry.Item2, entry.Item3);
-                #pragma warning restore CA2254 // Template should be a static expression
+#pragma warning restore CA2254 // Template should be a static expression
             }
             this._memoryLog.Clear();
         }
