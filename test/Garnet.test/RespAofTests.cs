@@ -156,6 +156,36 @@ namespace Garnet.test
         }
 
         [Test]
+        public void AofTransactionStoreAutoCommitCommitWaitRecoverTest()
+        {
+            server.Dispose(false);
+            server = TestUtils.CreateGarnetServer(TestUtils.MethodTestDir, tryRecover: false, enableAOF: true, commitWait: true);
+            server.Start();
+
+            using (var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig()))
+            {
+                var db = redis.GetDatabase(0);
+                var transaction = db.CreateTransaction();
+                transaction.StringSetAsync("SeAofUpsertRecoverTestKey1", "SeAofUpsertRecoverTestValue1");
+                transaction.StringSetAsync("SeAofUpsertRecoverTestKey2", "SeAofUpsertRecoverTestValue2");
+
+                Assert.IsTrue(transaction.Execute());
+            }
+            server.Dispose(false);
+            server = TestUtils.CreateGarnetServer(TestUtils.MethodTestDir, tryRecover: true, enableAOF: true);
+            server.Start();
+
+            using (var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig()))
+            {
+                var db = redis.GetDatabase(0);
+                var recoveredValue = db.StringGet("SeAofUpsertRecoverTestKey1");
+                Assert.AreEqual("SeAofUpsertRecoverTestValue1", recoveredValue.ToString());
+                recoveredValue = db.StringGet("SeAofUpsertRecoverTestKey2");
+                Assert.AreEqual("SeAofUpsertRecoverTestValue2", recoveredValue.ToString());
+            }
+        }
+
+        [Test]
         public void AofUpsertStoreCkptRecoverTest()
         {
             using (var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig(allowAdmin: true)))
