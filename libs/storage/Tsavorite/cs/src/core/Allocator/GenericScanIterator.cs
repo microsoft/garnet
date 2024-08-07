@@ -274,7 +274,7 @@ namespace Tsavorite.core
 
             if (errorCode != 0)
             {
-                logger?.LogError(nameof(AsyncReadPagesCallback) + " error: {errorCode}", errorCode);
+                logger?.LogError($"{nameof(AsyncReadPagesCallback)} error: {{errorCode}}", errorCode);
                 result.cts?.Cancel();
             }
 

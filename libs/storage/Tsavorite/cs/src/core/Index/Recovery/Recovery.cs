@@ -1145,7 +1145,7 @@ namespace Tsavorite.core
         {
             if (errorCode != 0)
             {
-                logger?.LogError(nameof(AsyncFlushPageCallbackForRecovery) + " error: {errorCode}", errorCode);
+                logger?.LogError($"{nameof(AsyncFlushPageCallbackForRecovery)} error: {{errorCode}}", errorCode);
             }
 
             // Set the page status to flushed
@@ -1277,7 +1277,7 @@ namespace Tsavorite.core
         {
             if (errorCode != 0)
             {
-                logger?.LogError(nameof(AsyncReadPagesCallbackForRecovery) + " error: {errorCode}", errorCode);
+                logger?.LogError($"{nameof(AsyncReadPagesCallbackForRecovery)} error: {{errorCode}}", errorCode);
             }
 
             // Set the page status to "read done"

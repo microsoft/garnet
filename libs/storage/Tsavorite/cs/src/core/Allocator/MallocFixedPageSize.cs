@@ -383,7 +383,7 @@ namespace Tsavorite.core
         {
             if (errorCode != 0)
             {
-                logger?.LogError(nameof(AsyncFlushCallback) + " error: {errorCode}", errorCode);
+                logger?.LogError($"{nameof(AsyncFlushCallback)} error: {{errorCode}}", errorCode);
             }
 
             var mem = ((OverflowPagesFlushAsyncResult)context).mem;
@@ -492,7 +492,7 @@ namespace Tsavorite.core
         {
             if (errorCode != 0)
             {
-                logger?.LogError(nameof(AsyncPageReadCallback) + " error: {errorCode}", errorCode);
+                logger?.LogError($"{nameof(AsyncPageReadCallback)} error: {{errorCode}}", errorCode);
             }
             recoveryCountdown.Decrement();
         }

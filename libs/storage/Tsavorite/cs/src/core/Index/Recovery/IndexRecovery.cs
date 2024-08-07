@@ -148,7 +148,7 @@ namespace Tsavorite.core
         {
             if (errorCode != 0)
             {
-                logger?.LogError(nameof(AsyncPageReadCallback) + " error: {errorCode}", errorCode);
+                logger?.LogError($"{nameof(AsyncPageReadCallback)} error: {{errorCode}}", errorCode);
             }
             recoveryCountdown.Decrement();
         }

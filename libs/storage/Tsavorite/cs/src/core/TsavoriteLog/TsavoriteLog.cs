@@ -2599,7 +2599,7 @@ namespace Tsavorite.core
 
             if (errorCode != 0)
             {
-                logger?.LogError(nameof(AsyncGetFromDiskCallback) + " error: {errorCode}", errorCode);
+                logger?.LogError($"{nameof(AsyncGetFromDiskCallback)} error: {{errorCode}}", errorCode);
                 ctx.record.Return();
                 ctx.record = null;
                 ctx.completedRead.Release();
@@ -2638,7 +2638,7 @@ namespace Tsavorite.core
 
             if (errorCode != 0)
             {
-                logger?.LogError(nameof(AsyncGetHeaderOnlyFromDiskCallback) + " error: {errorCode}", errorCode);
+                logger?.LogError($"{nameof(AsyncGetHeaderOnlyFromDiskCallback)} error: {{errorCode}}", errorCode);
                 ctx.record.Return();
                 ctx.record = null;
                 ctx.completedRead.Release();
