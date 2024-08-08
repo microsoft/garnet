@@ -8,9 +8,9 @@ using static Tsavorite.core.Utility;
 namespace Tsavorite.core
 {
     /// <summary>
-    /// Callback functions for <see cref="SpanByte"/> Key, Value, Input; <see cref="SpanByteAndMemory"/> Output; and specified <typeparamref name="Context"/>
+    /// Callback functions for <see cref="SpanByte"/> Key, Value, Input; <see cref="SpanByteAndMemory"/> Output; and specified <typeparamref name="TContext"/>
     /// </summary>
-    public class SpanByteFunctions<Context> : SpanByteFunctions<SpanByteAndMemory, Context>
+    public class SpanByteFunctions<TContext> : SpanByteFunctions<SpanByteAndMemory, TContext>
     {
         private protected readonly MemoryPool<byte> memoryPool;
 
@@ -99,21 +99,21 @@ namespace Tsavorite.core
     }
 
     /// <summary>
-    /// Callback functions for <see cref="SpanByte"/> key, value, input; specified <typeparamref name="Output"/> and <typeparamref name="Context"/>
+    /// Callback functions for <see cref="SpanByte"/> key, value, input; specified <typeparamref name="TOutput"/> and <typeparamref name="TContext"/>
     /// </summary>
-    public class SpanByteFunctions<Output, Context> : SpanByteFunctions<SpanByte, Output, Context>
+    public class SpanByteFunctions<TOutput, TContext> : SpanByteFunctions<SpanByte, TOutput, TContext>
     {
         /// <inheritdoc/>
-        public override bool InitialUpdater(ref SpanByte key, ref SpanByte input, ref SpanByte value, ref Output output, ref RMWInfo rmwInfo, ref RecordInfo recordInfo)
+        public override bool InitialUpdater(ref SpanByte key, ref SpanByte input, ref SpanByte value, ref TOutput output, ref RMWInfo rmwInfo, ref RecordInfo recordInfo)
             => DoSafeCopy(ref input, ref value, ref rmwInfo, ref recordInfo);
 
         /// <inheritdoc/>
-        public override bool CopyUpdater(ref SpanByte key, ref SpanByte input, ref SpanByte oldValue, ref SpanByte newValue, ref Output output, ref RMWInfo rmwInfo, ref RecordInfo recordInfo)
+        public override bool CopyUpdater(ref SpanByte key, ref SpanByte input, ref SpanByte oldValue, ref SpanByte newValue, ref TOutput output, ref RMWInfo rmwInfo, ref RecordInfo recordInfo)
             => DoSafeCopy(ref oldValue, ref newValue, ref rmwInfo, ref recordInfo);
 
         /// <inheritdoc/>
         // The default implementation of IPU simply writes input to destination, if there is space
-        public override bool InPlaceUpdater(ref SpanByte key, ref SpanByte input, ref SpanByte value, ref Output output, ref RMWInfo rmwInfo, ref RecordInfo recordInfo)
+        public override bool InPlaceUpdater(ref SpanByte key, ref SpanByte input, ref SpanByte value, ref TOutput output, ref RMWInfo rmwInfo, ref RecordInfo recordInfo)
             => DoSafeCopy(ref input, ref value, ref rmwInfo, ref recordInfo);
 
         /// <summary>

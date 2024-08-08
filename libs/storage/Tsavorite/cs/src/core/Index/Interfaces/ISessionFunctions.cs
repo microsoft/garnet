@@ -260,8 +260,8 @@ namespace Tsavorite.core
     /// </summary>
     /// <typeparam name="TKey"></typeparam>
     /// <typeparam name="TValue"></typeparam>
-    /// <typeparam name="Context"></typeparam>
-    public interface ISessionFunctions<TKey, TValue, Context> : ISessionFunctions<TKey, TValue, TValue, TValue, Context>
+    /// <typeparam name="TContext"></typeparam>
+    public interface ISessionFunctions<TKey, TValue, TContext> : ISessionFunctions<TKey, TValue, TValue, TValue, TContext>
     {
     }
 }
