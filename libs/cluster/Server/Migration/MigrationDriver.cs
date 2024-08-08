@@ -80,7 +80,7 @@ namespace Garnet.cluster
                 //3. Migrate actual data
                 if (!MigrateSlotsDriver())
                 {
-                    logger?.LogError($"MigrateSlotsDriver failed");
+                    logger?.LogError("MigrateSlotsDriver failed");
                     TryRecoverFromFailure();
                     Status = MigrateState.FAIL;
                     return;
@@ -91,7 +91,7 @@ namespace Garnet.cluster
                 //5. Clear local migration set.
                 if (!RelinquishOwnership())
                 {
-                    logger?.LogError($"Failed to relinquish ownerhsip to target node");
+                    logger?.LogError("Failed to relinquish ownerhsip to target node");
                     TryRecoverFromFailure();
                     Status = MigrateState.FAIL;
                     return;
@@ -100,7 +100,7 @@ namespace Garnet.cluster
                 //6. Change ownership of slots to target node.
                 if (!TrySetSlotRanges(GetTargetNodeId, MigrateState.NODE))
                 {
-                    logger?.LogError($"Failed to assign ownerhsip to target node");
+                    logger?.LogError("Failed to assign ownerhsip to target node");
                     TryRecoverFromFailure();
                     Status = MigrateState.FAIL;
                     return;

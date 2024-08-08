@@ -168,7 +168,7 @@ namespace Tsavorite.core
 
                 if (errorCode != 0)
                 {
-                    logger?.LogError($"AsyncReadPagesCallback error: {errorCode}");
+                    logger?.LogError($"{nameof(AsyncReadPagesCallback)} error: {{errorCode}}", errorCode);
                     result.cts?.Cancel();
                 }
                 Debug.Assert(result.freeBuffer1 == null);
@@ -400,7 +400,7 @@ namespace Tsavorite.core
             {
                 if (errorCode != 0)
                 {
-                    logger?.LogError($"AsyncFlushPageToDeviceCallback error: {errorCode}");
+                    logger?.LogError($"{nameof(AsyncFlushPageToDeviceCallback)} error: {{errorCode}}", errorCode);
                 }
 
                 PageAsyncFlushResult<Empty> result = (PageAsyncFlushResult<Empty>)context;

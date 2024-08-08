@@ -161,7 +161,7 @@ namespace Tsavorite.core
 
             if (errorCode != 0)
             {
-                logger?.LogError($"AsyncPageFlushCallback error: {errorCode}");
+                logger?.LogError($"{nameof(AsyncPageFlushCallback)} error: {{errorCode}}", errorCode);
             }
             if (Interlocked.Decrement(ref mainIndexCheckpointCallbackCount) == 0)
             {
