@@ -5,6 +5,8 @@ using System.Collections.Generic;
 using System.Diagnostics;
 using System.Net.Security;
 using System.Security.Cryptography.X509Certificates;
+using System.Text;
+using Garnet.common;
 using Garnet.server;
 using StackExchange.Redis;
 
@@ -12,6 +14,33 @@ namespace Resp.benchmark
 {
     public class BenchUtils
     {
+        /// <summary>
+        /// SHA IDs for set and get scripts
+        /// </summary>
+        public static string sha1SetScript;
+        public static string sha1GetScript;
+
+        /// <summary>
+        /// Loads a Set and Get script in memory
+        /// </summary>
+        /// <param name="client"></param>
+        /// <param name="sha1SetScript"></param>
+        /// <param name="sha1GetScript"></param>
+        public static void LoadSetGetScripts(LightClient client, out string sha1SetScript, out string sha1GetScript)
+        {
+            // load set script in the server
+            var stringCmd = "*3\r\n$6\r\nSCRIPT\r\n$4\r\nLOAD\r\n$41\r\nreturn redis.call('set',KEYS[1], ARGV[1])\r\n";
+            client.Send(Encoding.ASCII.GetBytes(stringCmd), stringCmd.Length, 1);
+            client.CompletePendingRequests();
+            sha1SetScript = Encoding.ASCII.GetString(client.ResponseBuffer)[..45];
+
+            // load get script in the server
+            stringCmd = "*3\r\n$6\r\nSCRIPT\r\n$4\r\nLOAD\r\n$32\r\nreturn redis.call('get',KEYS[1])\r\n";
+            client.Send(Encoding.ASCII.GetBytes(stringCmd), stringCmd.Length, 1);
+            client.CompletePendingRequests();
+            sha1GetScript = Encoding.ASCII.GetString(client.ResponseBuffer)[..45];
+        }
+
         /// <summary>
         /// Get TLS options. NOTE: These are just test options, not for production use.
         /// </summary>
