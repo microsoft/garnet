@@ -202,7 +202,7 @@ namespace Garnet.cluster
                     // ReplicaRecover();
                     break;
                 default:
-                    logger?.LogError($"Not valid role for node {nodeRole}");
+                    logger?.LogError("Not valid role for node {nodeRole}", nodeRole);
                     throw new Exception($"Not valid role for node {nodeRole}");
             }
         }
@@ -270,7 +270,7 @@ namespace Garnet.cluster
                     if (clusterProvider.replicationManager.TryAddReplicationTask(replicaId, 0, out var aofSyncTaskInfo))
                     {
                         if (!TryConnectToReplica(replicaId, 0, aofSyncTaskInfo, out var errorMessage))
-                            logger?.LogError($"{{errorMessage}}", Encoding.ASCII.GetString(errorMessage));
+                            logger?.LogError("{errorMessage}", Encoding.ASCII.GetString(errorMessage));
                     }
                 }
             }

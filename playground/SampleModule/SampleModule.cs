@@ -15,7 +15,7 @@ namespace SampleModule
             var status = context.Initialize("SampleModule", 1);
             if (status != ModuleActionStatus.Success)
             {
-                context.Logger?.LogError($"Failed to initialize SampleModule. Error {status}");
+                context.Logger?.LogError("Failed to initialize SampleModule. Error {status}", status);
                 return;
             }
 
