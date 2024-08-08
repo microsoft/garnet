@@ -46,7 +46,6 @@ namespace Garnet.cluster
             try
             {
                 logger?.LogTrace("CLUSTER REPLICATE {nodeid}", nodeid);
-
                 if (!clusterProvider.clusterManager.TryAddReplica(nodeid, force: force, out errorMessage, logger: logger))
                     return false;
 
@@ -68,7 +67,6 @@ namespace Garnet.cluster
                 replicateLock.WriteUnlock();
             }
         }
-
 
         /// <summary>
         /// Try to initiate the attach to primary sequence to recover checkpoint, replay AOF and start AOF stream.
@@ -309,9 +307,19 @@ namespace Garnet.cluster
             {
                 UpdateLastPrimarySyncTime();
 
-                logger?.LogInformation("Initiating Checkpoint Recovery at replica {sIndexToken} {sHlogToken} {oIndexToken} {oHlogToken}", remoteCheckpoint.storeIndexToken, remoteCheckpoint.storeHlogToken, remoteCheckpoint.objectStoreIndexToken, remoteCheckpoint.objectStoreHlogToken);
-                storeWrapper.RecoverCheckpoint(recoverMainStoreFromToken, recoverObjectStoreFromToken,
-                    remoteCheckpoint.storeIndexToken, remoteCheckpoint.storeHlogToken, remoteCheckpoint.objectStoreIndexToken, remoteCheckpoint.objectStoreHlogToken);
+                logger?.LogInformation("Replica Recover MainStore: {storeVersion}>[{sIndexToken} {sHlogToken}]" +
+                    "\nObjectStore: {objectStoreVersion}>[{oIndexToken} {oHlogToken}]",
+                    remoteCheckpoint.metadata.storeVersion,
+                    remoteCheckpoint.metadata.storeIndexToken,
+                    remoteCheckpoint.metadata.storeHlogToken,
+                    remoteCheckpoint.metadata.objectStoreVersion,
+                    remoteCheckpoint.metadata.objectStoreIndexToken,
+                    remoteCheckpoint.metadata.objectStoreHlogToken);
+
+                storeWrapper.RecoverCheckpoint(
+                    recoverMainStoreFromToken,
+                    recoverObjectStoreFromToken,
+                    remoteCheckpoint.metadata);
 
                 if (replayAOF)
                 {
@@ -329,15 +337,15 @@ namespace Garnet.cluster
                 // If checkpoint for main store was send add its token here in preparation for purge later on
                 if (recoverMainStoreFromToken)
                 {
-                    cEntry.storeIndexToken = remoteCheckpoint.storeIndexToken;
-                    cEntry.storeHlogToken = remoteCheckpoint.storeHlogToken;
+                    cEntry.metadata.storeIndexToken = remoteCheckpoint.metadata.storeIndexToken;
+                    cEntry.metadata.storeHlogToken = remoteCheckpoint.metadata.storeHlogToken;
                 }
 
                 // If checkpoint for object store was send add its token here in preparation for purge later on
                 if (recoverObjectStoreFromToken)
                 {
-                    cEntry.objectStoreIndexToken = remoteCheckpoint.objectStoreIndexToken;
-                    cEntry.objectStoreHlogToken = remoteCheckpoint.objectStoreHlogToken;
+                    cEntry.metadata.objectStoreIndexToken = remoteCheckpoint.metadata.objectStoreIndexToken;
+                    cEntry.metadata.objectStoreHlogToken = remoteCheckpoint.metadata.objectStoreHlogToken;
                 }
                 checkpointStore.PurgeAllCheckpointsExceptEntry(cEntry);
 
