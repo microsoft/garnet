@@ -2679,6 +2679,30 @@ namespace Garnet.test.cluster
             return items;
         }
 
+        public string GetInfo(int nodeIndex, string section, string segment, ILogger logger = null)
+            => GetInfo(endpoints[nodeIndex].ToIPEndPoint(), section, segment, logger);
+
+        public string GetInfo(IPEndPoint endPoint, string section, string segment, ILogger logger = null)
+        {
+            try
+            {
+                var server = redis.GetServer(endPoint);
+                var result = server.Info(section);
+                Assert.AreEqual(1, result.Length, "section does not exist");
+                foreach (var item in result[0])
+                    if (item.Key.Equals(segment))
+                        return item.Value;
+                Assert.Fail($"Segment not available for {section} section");
+                return "";
+            }
+            catch (Exception ex)
+            {
+                logger?.LogError(ex, "An error has occurred; GetFailoverState");
+                Assert.Fail(ex.Message);
+                return null;
+            }
+        }
+
         public void WaitForReplicaAofSync(int primaryIndex, int secondaryIndex, ILogger logger = null)
         {
             long primaryReplicationOffset;
