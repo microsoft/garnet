@@ -216,5 +216,27 @@ namespace Garnet.server
             Debug.Assert(i < Count);
             return Enum.TryParse(GetString(i), ignoreCase, out value);
         }
+
+        /// <summary>
+        /// Get boolean argument at the given index
+        /// </summary>
+        /// <returns></returns>
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        public bool GetBool(int i)
+        {
+            Debug.Assert(i < Count);
+            return ParseUtils.ReadBool(ref Unsafe.AsRef<ArgSlice>(bufferPtr + i));
+        }
+
+        /// <summary>
+        /// Try to get boolean argument at the given index
+        /// </summary>
+        /// <returns>True if boolean parsed successfully</returns>
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        public bool TryGetBool(int i, out bool value)
+        {
+            Debug.Assert(i < Count);
+            return ParseUtils.TryReadBool(ref Unsafe.AsRef<ArgSlice>(bufferPtr + i), out value);
+        }
     }
 }

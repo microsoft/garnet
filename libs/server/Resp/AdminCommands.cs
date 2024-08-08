@@ -557,7 +557,7 @@ namespace Garnet.server
                 return true;
             }
 
-            clusterSession.ProcessClusterCommands(command, ref parseState, parseState.Count, recvBufferPtr, bytesRead, ref readHead, ref dcurr, ref dend);
+            clusterSession.ProcessClusterCommands(command, ref parseState, ref dcurr, ref dend);
             return true;
         }
 

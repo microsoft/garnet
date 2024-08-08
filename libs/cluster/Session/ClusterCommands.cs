@@ -133,19 +133,18 @@ namespace Garnet.cluster
         /// Handle cluster subcommands.
         /// </summary>
         /// <param name="command">Subcommand to execute.</param>
-        /// <param name="count">Number of parameters in teh command buffer</param>
         /// <param name="invalidParameters">True if number of parameters is invalid</param>
         /// <returns>True if command is fully processed, false if more processing is needed.</returns>
-        private void ProcessClusterCommands(RespCommand command, int count, out bool invalidParameters)
+        private void ProcessClusterCommands(RespCommand command, out bool invalidParameters)
         {
             _ = command switch
             {
                 RespCommand.CLUSTER_ADDSLOTS => NetworkClusterAddSlots(out invalidParameters),
                 RespCommand.CLUSTER_ADDSLOTSRANGE => NetworkClusterAddSlotsRange(out invalidParameters),
-                RespCommand.CLUSTER_AOFSYNC => NetworkClusterAOFSync(count, out invalidParameters),
-                RespCommand.CLUSTER_APPENDLOG => NetworkClusterAppendLog(count, out invalidParameters),
+                RespCommand.CLUSTER_AOFSYNC => NetworkClusterAOFSync(out invalidParameters),
+                RespCommand.CLUSTER_APPENDLOG => NetworkClusterAppendLog(out invalidParameters),
                 RespCommand.CLUSTER_BANLIST => NetworkClusterBanList(out invalidParameters),
-                RespCommand.CLUSTER_BEGIN_REPLICA_RECOVER => NetworkClusterBeginReplicaRecover(count, out invalidParameters),
+                RespCommand.CLUSTER_BEGIN_REPLICA_RECOVER => NetworkClusterBeginReplicaRecover(out invalidParameters),
                 RespCommand.CLUSTER_BUMPEPOCH => NetworkClusterBumpEpoch(out invalidParameters),
                 RespCommand.CLUSTER_COUNTKEYSINSLOT => NetworkClusterCountKeysInSlot(out invalidParameters),
                 RespCommand.CLUSTER_DELKEYSINSLOT => NetworkClusterDelKeysInSlot(out invalidParameters),
@@ -161,7 +160,7 @@ namespace Garnet.cluster
                 RespCommand.CLUSTER_GETKEYSINSLOT => NetworkClusterGetKeysInSlot(out invalidParameters),
                 RespCommand.CLUSTER_HELP => NetworkClusterHelp(out invalidParameters),
                 RespCommand.CLUSTER_INFO => NetworkClusterInfo(out invalidParameters),
-                RespCommand.CLUSTER_INITIATE_REPLICA_SYNC => NetworkClusterInitiateReplicaSync(count, out invalidParameters),
+                RespCommand.CLUSTER_INITIATE_REPLICA_SYNC => NetworkClusterInitiateReplicaSync(out invalidParameters),
                 RespCommand.CLUSTER_KEYSLOT => NetworkClusterKeySlot(out invalidParameters),
                 RespCommand.CLUSTER_MEET => NetworkClusterMeet(out invalidParameters),
                 RespCommand.CLUSTER_MIGRATE => NetworkClusterMigrate(out invalidParameters),
@@ -169,11 +168,11 @@ namespace Garnet.cluster
                 RespCommand.CLUSTER_MYID => NetworkClusterMyId(out invalidParameters),
                 RespCommand.CLUSTER_MYPARENTID => NetworkClusterMyParentId(out invalidParameters),
                 RespCommand.CLUSTER_NODES => NetworkClusterNodes(out invalidParameters),
-                RespCommand.CLUSTER_REPLICAS => NetworkClusterReplicas(count, out invalidParameters),
-                RespCommand.CLUSTER_REPLICATE => NetworkClusterReplicate(count, out invalidParameters),
+                RespCommand.CLUSTER_REPLICAS => NetworkClusterReplicas(out invalidParameters),
+                RespCommand.CLUSTER_REPLICATE => NetworkClusterReplicate(out invalidParameters),
                 RespCommand.CLUSTER_RESET => NetworkClusterReset(out invalidParameters),
-                RespCommand.CLUSTER_SEND_CKPT_FILE_SEGMENT => NetworkClusterSendCheckpointFileSegment(count, out invalidParameters),
-                RespCommand.CLUSTER_SEND_CKPT_METADATA => NetworkClusterSendCheckpointMetadata(count, out invalidParameters),
+                RespCommand.CLUSTER_SEND_CKPT_FILE_SEGMENT => NetworkClusterSendCheckpointFileSegment(out invalidParameters),
+                RespCommand.CLUSTER_SEND_CKPT_METADATA => NetworkClusterSendCheckpointMetadata(out invalidParameters),
                 RespCommand.CLUSTER_SETCONFIGEPOCH => NetworkClusterSetConfigEpoch(out invalidParameters),
                 RespCommand.CLUSTER_SETSLOT => NetworkClusterSetSlot(out invalidParameters),
                 RespCommand.CLUSTER_SETSLOTSRANGE => NetworkClusterSetSlotsRange(out invalidParameters),
