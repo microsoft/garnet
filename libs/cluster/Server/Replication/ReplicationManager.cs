@@ -117,16 +117,22 @@ namespace Garnet.cluster
             var clusterDataPath = opts.CheckpointDir + clusterFolder;
             var deviceFactory = opts.GetInitializedDeviceFactory(clusterDataPath);
             replicationConfigDevice = deviceFactory.Get(new FileDescriptor(directoryName: "", fileName: "replication.conf"));
-            pool = new(1, (int)replicationConfigDevice.SectorSize);
+            replicationConfigDevicePool = new(1, (int)replicationConfigDevice.SectorSize);
 
-            var recoverConfig = replicationConfigDevice.GetFileSize(0) > 0;
-            if (!recoverConfig)
+            var canRecoverReplicationHistory = replicationConfigDevice.GetFileSize(0) > 0;
+            if (clusterProvider.serverOptions.Recover && canRecoverReplicationHistory)
             {
-                InitializeReplicationHistory();
+                logger?.LogTrace("Recovering in-memory checkpoint registry");
+                // If recover option is enabled and replication history information is available
+                // recover replication history and initialize in-memory checkpoint registry.
+                RecoverReplicationHistory();
             }
             else
             {
-                RecoverReplicationHistory();
+                logger?.LogTrace("Initializing new in-memory checkpoint registry");
+                // If recover option is not enabled or replication history is not available
+                // initialize new empty replication history.
+                InitializeReplicationHistory();
             }
 
             // After initializing replication history propagate replicationId to ReplicationLogCheckpointManager
@@ -178,8 +184,8 @@ namespace Garnet.cluster
         {
             _disposed = true;
 
-            replicationConfigDevice.Dispose();
-            pool.Free();
+            replicationConfigDevice?.Dispose();
+            replicationConfigDevicePool?.Free();
 
             checkpointStore.WaitForReplicas();
             replicaSyncSessionTaskStore.Dispose();
