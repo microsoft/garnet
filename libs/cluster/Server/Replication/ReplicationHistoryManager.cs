@@ -95,17 +95,17 @@ namespace Garnet.cluster
     {
         ReplicationHistory currentReplicationConfig;
         readonly IDevice replicationConfigDevice;
-        readonly SectorAlignedBufferPool pool;
+        readonly SectorAlignedBufferPool replicationConfigDevicePool;
 
-        public void InitializeReplicationHistory()
+        private void InitializeReplicationHistory()
         {
             currentReplicationConfig = new ReplicationHistory();
             FlushConfig();
         }
 
-        public void RecoverReplicationHistory()
+        private void RecoverReplicationHistory()
         {
-            byte[] replConfig = ClusterUtils.ReadDevice(replicationConfigDevice, pool, logger);
+            var replConfig = ClusterUtils.ReadDevice(replicationConfigDevice, replicationConfigDevicePool, logger);
             currentReplicationConfig = ReplicationHistory.FromByteArray(replConfig);
             //TODO: handle scenario where replica crashed before became a primary and it has two replication ids
             //var current = storeWrapper.clusterManager.CurrentConfig;
@@ -115,12 +115,12 @@ namespace Garnet.cluster
             //}
         }
 
-        public void TryUpdateMyPrimaryReplId(string primary_replid)
+        private void TryUpdateMyPrimaryReplId(string primaryReplicationId)
         {
             while (true)
             {
                 var current = currentReplicationConfig;
-                var newConfig = current.UpdateReplicationId(primary_replid);
+                var newConfig = current.UpdateReplicationId(primaryReplicationId);
                 if (Interlocked.CompareExchange(ref currentReplicationConfig, newConfig, current) == current)
                     break;
             }
@@ -153,9 +153,9 @@ namespace Garnet.cluster
         {
             lock (this)
             {
-                logger?.LogTrace("Start FlushConfig {path}", replicationConfigDevice.FileName);
-                ClusterUtils.WriteInto(replicationConfigDevice, pool, 0, currentReplicationConfig.ToByteArray(), logger: logger);
-                logger?.LogTrace("End FlushConfig {path}", replicationConfigDevice.FileName);
+                logger?.LogTrace("Flushing replication history {path}", replicationConfigDevice.FileName);
+                ClusterUtils.WriteInto(replicationConfigDevice, replicationConfigDevicePool, 0, currentReplicationConfig.ToByteArray(), logger: logger);
+                logger?.LogTrace("Replication history flush completed {path}", replicationConfigDevice.FileName);
             }
         }
     }
