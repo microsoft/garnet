@@ -94,10 +94,10 @@ namespace Garnet.server
         }
 
         /// <inheritdoc />
-        public GarnetStatus SortedSetCount(byte[] key, ref ObjectInput input, out ObjectOutputHeader output)
+        public GarnetStatus SortedSetCount(byte[] key, ref ObjectInput input, ref GarnetObjectStoreOutput output)
         {
             garnetApi.WATCH(key, StoreType.Object);
-            return garnetApi.SortedSetCount(key, ref input, out output);
+            return garnetApi.SortedSetCount(key, ref input, ref output);
         }
 
         /// <inheritdoc />
@@ -402,7 +402,7 @@ namespace Garnet.server
         }
 
         /// <inheritdoc />
-        public GarnetStatus HashScan(ArgSlice key, long cursor, string match, long count, out ArgSlice[] items)
+        public GarnetStatus HashScan(ArgSlice key, long cursor, string match, int count, out ArgSlice[] items)
         {
             garnetApi.WATCH(key, StoreType.Object);
             return garnetApi.HashScan(key, cursor, match, count, out items);

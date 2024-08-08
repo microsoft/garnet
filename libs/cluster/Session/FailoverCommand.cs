@@ -10,24 +10,20 @@ namespace Garnet.cluster
 {
     internal sealed unsafe partial class ClusterSession : IClusterSession
     {
-        private bool TryFAILOVER(int count, byte* ptr)
+        private bool TryFAILOVER()
         {
-            var args = count - 1;
             var replicaAddress = string.Empty;
             var replicaPort = 0;
             var timeout = -1;
             var abort = false;
             var force = false;
 
-            while (args > 0)
+            var currTokenIdx = 0;
+            while (currTokenIdx < parseState.Count)
             {
-                if (!RespReadUtils.ReadStringWithLengthHeader(out var option, ref ptr, recvBufferPtr + bytesRead))
-                    return false;
-
-                if (!Enum.TryParse(option, ignoreCase: true, out FailoverOption failoverOption))
+                if (!parseState.TryGetEnum(currTokenIdx++, true, out FailoverOption failoverOption))
                     failoverOption = FailoverOption.INVALID;
 
-                args--;
                 if (failoverOption == FailoverOption.INVALID)
                     continue;
 
@@ -35,18 +31,13 @@ namespace Garnet.cluster
                 {
                     case FailoverOption.TO:
                         // 1. Address
-                        if (!RespReadUtils.ReadStringWithLengthHeader(out replicaAddress, ref ptr, recvBufferPtr + bytesRead))
-                            return false;
+                        replicaAddress = parseState.GetString(currTokenIdx++);
 
                         // 2. Port
-                        if (!RespReadUtils.ReadIntWithLengthHeader(out replicaPort, ref ptr, recvBufferPtr + bytesRead))
-                            return false;
-
-                        args -= 2;
+                        replicaPort = parseState.GetInt(currTokenIdx++);
                         break;
                     case FailoverOption.TIMEOUT:
-                        if (!RespReadUtils.ReadIntWithLengthHeader(out timeout, ref ptr, recvBufferPtr + bytesRead))
-                            return false;
+                        timeout = parseState.GetInt(currTokenIdx++);
                         break;
                     case FailoverOption.ABORT:
                         abort = true;
@@ -58,7 +49,6 @@ namespace Garnet.cluster
                         throw new Exception($"Failover option {failoverOption} not supported");
                 }
             }
-            readHead = (int)(ptr - recvBufferPtr);
 
             if (clusterProvider.clusterManager.CurrentConfig.LocalNodeRole != NodeRole.PRIMARY)
             {

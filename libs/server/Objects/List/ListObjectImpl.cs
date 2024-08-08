@@ -19,12 +19,6 @@ namespace Garnet.server
         private void ListRemove(ref ObjectInput input, byte* output)
         {
             var count = input.arg1;
-
-            var input_startptr = input.payload.ptr;
-            var input_currptr = input_startptr;
-            var length = input.payload.length;
-            var input_endptr = input_startptr + length;
-
             var _output = (ObjectOutputHeader*)output;
             *_output = default;
 
@@ -32,8 +26,7 @@ namespace Garnet.server
             _output->result1 = int.MinValue;
 
             // get the source string to remove
-            if (!RespReadUtils.TrySliceWithLengthHeader(out var itemSpan, ref input_currptr, input_endptr))
-                return;
+            var itemSpan = input.parseState.GetArgSliceByRef(input.parseStateStartIdx).ReadOnlySpan;
 
             var removedCount = 0;
             _output->result1 = 0;
@@ -81,11 +74,6 @@ namespace Garnet.server
 
         private void ListInsert(ref ObjectInput input, byte* output)
         {
-            var input_startptr = input.payload.ptr;
-            var input_currptr = input_startptr;
-            var length = input.payload.length;
-            var input_endptr = input_startptr + length;
-
             var _output = (ObjectOutputHeader*)output;
             *_output = default;
 
@@ -94,17 +82,16 @@ namespace Garnet.server
 
             if (list.Count > 0)
             {
+                var currTokenIdx = input.parseStateStartIdx;
+
                 // figure out where to insert BEFORE or AFTER
-                if (!RespReadUtils.TrySliceWithLengthHeader(out var position, ref input_currptr, input_endptr))
-                    return;
+                var position = input.parseState.GetArgSliceByRef(currTokenIdx++).ReadOnlySpan;
 
                 // get the source string
-                if (!RespReadUtils.TrySliceWithLengthHeader(out var pivot, ref input_currptr, input_endptr))
-                    return;
+                var pivot = input.parseState.GetArgSliceByRef(currTokenIdx++).ReadOnlySpan;
 
                 // get the string to INSERT into the list
-                if (!RespReadUtils.ReadByteArrayWithLengthHeader(out var item, ref input_currptr, input_endptr))
-                    return;
+                var item = input.parseState.GetArgSliceByRef(currTokenIdx).SpanByte.ToByteArray();
 
                 var insertBefore = position.SequenceEqual(CmdStrings.BEFORE);
 
@@ -290,21 +277,13 @@ namespace Garnet.server
 
         private void ListPush(ref ObjectInput input, byte* output, bool fAddAtHead)
         {
-            var count = input.arg1;
-
-            var input_startptr = input.payload.ptr;
-            var input_currptr = input_startptr;
-            var length = input.payload.length;
-            var input_endptr = input_startptr + length;
-
             var _output = (ObjectOutputHeader*)output;
             *_output = default;
 
             _output->result1 = 0;
-            for (var c = 0; c < count; c++)
+            for (var currTokenIdx = input.parseStateStartIdx; currTokenIdx < input.parseState.Count; currTokenIdx++)
             {
-                if (!RespReadUtils.ReadByteArrayWithLengthHeader(out var value, ref input_currptr, input_endptr))
-                    return;
+                var value = input.parseState.GetArgSliceByRef(currTokenIdx).SpanByte.ToByteArray();
 
                 // Add the value to the top of the list
                 if (fAddAtHead)
@@ -380,11 +359,6 @@ namespace Garnet.server
 
         private void ListSet(ref ObjectInput input, ref SpanByteAndMemory output)
         {
-            var input_startptr = input.payload.ptr;
-            var input_currptr = input_startptr;
-            var length = input.payload.length;
-            var input_endptr = input_startptr + length;
-
             var isMemory = false;
             MemoryHandle ptrHandle = default;
             var output_startptr = output.SpanByte.ToPointer();
@@ -392,7 +366,7 @@ namespace Garnet.server
             var output_end = output_currptr + output.Length;
 
             ObjectOutputHeader _output = default;
-
+            var currTokenIdx = input.parseStateStartIdx;
             try
             {
                 if (list.Count == 0)
@@ -403,10 +377,7 @@ namespace Garnet.server
                 }
 
                 // index
-                if (!RespReadUtils.TrySliceWithLengthHeader(out var indexParamBytes, ref input_currptr, input_endptr))
-                    return;
-
-                if (!NumUtils.TryParse(indexParamBytes, out int index))
+                if (!input.parseState.TryGetInt(currTokenIdx++, out var index))
                 {
                     while (!RespWriteUtils.WriteError(CmdStrings.RESP_ERR_GENERIC_VALUE_IS_NOT_INTEGER, ref output_currptr, output_end))
                         ObjectUtils.ReallocateOutput(ref output, ref isMemory, ref output_startptr, ref ptrHandle, ref output_currptr, ref output_end);
@@ -423,8 +394,7 @@ namespace Garnet.server
                 }
 
                 // element
-                if (!RespReadUtils.ReadByteArrayWithLengthHeader(out var element, ref input_currptr, input_endptr))
-                    return;
+                var element = input.parseState.GetArgSliceByRef(currTokenIdx).SpanByte.ToByteArray();
 
                 var targetNode = index == 0 ? list.First
                     : (index == list.Count - 1 ? list.Last

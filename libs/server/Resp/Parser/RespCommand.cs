@@ -1877,7 +1877,7 @@ namespace Garnet.server
             }
 
             // Set up parse state
-            parseState.Initialize(count);
+            parseState.Initialize(ref parseStateBuffer, count);
             var ptr = recvBufferPtr + readHead;
             for (int i = 0; i < count; i++)
             {

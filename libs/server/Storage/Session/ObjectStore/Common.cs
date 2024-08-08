@@ -4,6 +4,7 @@
 using System;
 using System.Diagnostics;
 using System.Runtime.CompilerServices;
+using System.Text;
 using Garnet.common;
 using Tsavorite.core;
 
@@ -111,6 +112,93 @@ namespace Garnet.server
             ref var objInput = ref Unsafe.AsRef<ObjectInput>(input.ptr);
 
             return ReadObjectStoreOperationWithOutput(key, ref objInput, ref objectStoreContext, ref outputFooter);
+        }
+
+        /// <summary>
+        /// Common functionality for executing SSCAN, HSCAN and ZSCAN
+        /// </summary>
+        /// <param name="objectType"></param>
+        /// <param name="key">The key of the object</param>
+        /// <param name="cursor">The value of the cursor</param>
+        /// <param name="match">The pattern to match</param>
+        /// <param name="count">Limit number for the response</param>
+        /// <param name="items">The list of items for the response</param>
+        /// <param name="objectStoreContext"></param>
+        public unsafe GarnetStatus ObjectScan<TObjectContext>(GarnetObjectType objectType, ArgSlice key, long cursor, string match, int count, out ArgSlice[] items, ref TObjectContext objectStoreContext)
+             where TObjectContext : ITsavoriteContext<byte[], IGarnetObject, ObjectInput, GarnetObjectStoreOutput, long, ObjectSessionFunctions, ObjectStoreFunctions, ObjectStoreAllocator>
+        {
+            Debug.Assert(objectType is GarnetObjectType.Hash or GarnetObjectType.Set or GarnetObjectType.SortedSet);
+
+            items = default;
+
+            if (key.Length == 0)
+                return GarnetStatus.OK;
+
+            if (string.IsNullOrEmpty(match))
+                match = "*";
+
+            // Prepare the parse state 
+            var parseState = new SessionParseState();
+            ArgSlice[] parseStateBuffer = default;
+
+            var matchPatternValue = Encoding.ASCII.GetBytes(match.Trim());
+
+            var lengthCountNumber = NumUtils.NumDigits(count);
+            var countBytes = new byte[lengthCountNumber];
+
+            fixed (byte* matchKeywordPtr = CmdStrings.MATCH, matchPatterPtr = matchPatternValue)
+            {
+                fixed (byte* countPtr = CmdStrings.COUNT, countValuePtr = countBytes)
+                {
+                    var matchKeywordSlice = new ArgSlice(matchKeywordPtr, CmdStrings.MATCH.Length);
+                    var matchPatternSlice = new ArgSlice(matchPatterPtr, matchPatternValue.Length);
+
+                    var countValuePtr2 = countValuePtr;
+                    NumUtils.IntToBytes(count, lengthCountNumber, ref countValuePtr2);
+
+                    var countKeywordSlice = new ArgSlice(countPtr, CmdStrings.COUNT.Length);
+                    var countValueSlice = new ArgSlice(countValuePtr, countBytes.Length);
+
+                    parseState.InitializeWithArguments(ref parseStateBuffer, matchKeywordSlice, matchPatternSlice,
+                        countKeywordSlice, countValueSlice);
+                }
+            }
+
+            // Prepare the input
+            var input = new ObjectInput
+            {
+                header = new RespInputHeader
+                {
+                    type = objectType,
+                },
+                arg1 = (int)cursor,
+                arg2 = ObjectScanCountLimit,
+                parseState = parseState,
+                parseStateStartIdx = 0,
+            };
+
+            switch (objectType)
+            {
+                case GarnetObjectType.Set:
+                    input.header.SetOp = SetOperation.SSCAN;
+                    break;
+                case GarnetObjectType.Hash:
+                    input.header.HashOp = HashOperation.HSCAN;
+                    break;
+                case GarnetObjectType.SortedSet:
+                    input.header.SortedSetOp = SortedSetOperation.ZSCAN;
+                    break;
+            }
+
+            var outputFooter = new GarnetObjectStoreOutput { spanByteAndMemory = new SpanByteAndMemory(null) };
+            var status = ReadObjectStoreOperationWithOutput(key.ToArray(), ref input, ref objectStoreContext, ref outputFooter);
+
+            items = default;
+            if (status == GarnetStatus.OK)
+                items = ProcessRespArrayOutput(outputFooter, out _, isScanOutput: true);
+
+            return status;
+
         }
 
         /// <summary>
@@ -287,6 +375,35 @@ namespace Garnet.server
             }
 
             return result;
+        }
+
+        /// <summary>
+        /// Converts a simple integer in RESP format to integer type
+        /// </summary>
+        /// <param name="outputFooter">The RESP format output object</param>
+        /// <param name="value"></param>
+        /// <returns>integer</returns>
+        unsafe bool TryProcessRespSimple64IntOutput(GarnetObjectStoreOutput outputFooter, out long value)
+        {
+            var outputSpan = outputFooter.spanByteAndMemory.IsSpanByte ?
+                outputFooter.spanByteAndMemory.SpanByte.AsReadOnlySpan() : outputFooter.spanByteAndMemory.AsMemoryReadOnlySpan();
+            try
+            {
+                fixed (byte* outputPtr = outputSpan)
+                {
+                    var refPtr = outputPtr;
+
+                    if (!RespReadUtils.TryRead64Int(out value, ref refPtr, outputPtr + outputSpan.Length, out _))
+                        return false;
+                }
+            }
+            finally
+            {
+                if (!outputFooter.spanByteAndMemory.IsSpanByte)
+                    outputFooter.spanByteAndMemory.Memory.Dispose();
+            }
+
+            return true;
         }
 
         /// <summary>

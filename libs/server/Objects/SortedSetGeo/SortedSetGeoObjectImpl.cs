@@ -5,6 +5,7 @@ using System;
 using System.Buffers;
 using System.Collections.Generic;
 using System.Diagnostics;
+using System.Text;
 using Garnet.common;
 using Tsavorite.core;
 
@@ -44,53 +45,56 @@ namespace Garnet.server
             public bool WithHash { get; set; }
         }
 
-        private void GeoAdd(ref ObjectInput input, byte* output)
+        private void GeoAdd(ref ObjectInput input, ref SpanByteAndMemory output)
         {
-            var _output = (ObjectOutputHeader*)output;
-            *_output = default;
+            var isMemory = false;
+            MemoryHandle ptrHandle = default;
+            var ptr = output.SpanByte.ToPointer();
 
-            var count = input.arg1;
+            var curr = ptr;
+            var end = curr + output.Length;
 
-            var input_startptr = input.payload.ptr;
-            var input_currptr = input_startptr;
-            var length = input.payload.length;
-            var input_endptr = input_startptr + length;
-
-            // By default add new elements but do not update the ones already in the set
+            // By default, add new elements but do not update the ones already in the set
             var nx = true;
             var ch = false;
 
-            // Read the options
-            var optsCount = count % 3;
-            if (optsCount > 0 && optsCount <= 2)
+            var count = input.parseState.Count;
+            var currTokenIdx = input.parseStateStartIdx;
+
+            ObjectOutputHeader _output = default;
+            try
             {
-                // Is NX or XX, if not nx then use XX
-                if (!RespReadUtils.TrySliceWithLengthHeader(out var byteOptions, ref input_currptr, input_endptr))
-                    return;
-                nx = byteOptions.EqualsUpperCaseSpanIgnoringCase("NX"u8);
-                if (optsCount == 2)
+                // Read the options
+                var optsCount = (count - input.parseStateStartIdx) % 3;
+                if (optsCount > 0 && optsCount <= 2)
                 {
-                    // Read CH option
-                    if (!RespReadUtils.TrySliceWithLengthHeader(out byteOptions, ref input_currptr, input_endptr))
-                        return;
-                    ch = byteOptions.EqualsUpperCaseSpanIgnoringCase("CH"u8);
+                    // Is NX or XX, if not nx then use XX
+                    var byteOptions = input.parseState.GetArgSliceByRef(currTokenIdx++).ReadOnlySpan;
+                    nx = byteOptions.EqualsUpperCaseSpanIgnoringCase("NX"u8);
+                    if (optsCount == 2)
+                    {
+                        // Read CH option
+                        byteOptions = input.parseState.GetArgSliceByRef(currTokenIdx++).ReadOnlySpan;
+                        ch = byteOptions.EqualsUpperCaseSpanIgnoringCase("CH"u8);
+                    }
                 }
-                count -= optsCount;
-            }
 
-            int elementsChanged = 0;
+                var elementsAdded = 0;
+                var elementsChanged = 0;
 
-            for (int c = 0; c < count / 3; c++)
-            {
-                if (!RespReadUtils.ReadDoubleWithLengthHeader(out var longitude, out var parsed, ref input_currptr, input_endptr))
-                    return;
-                if (!RespReadUtils.ReadDoubleWithLengthHeader(out var latitude, out parsed, ref input_currptr, input_endptr))
-                    return;
-                if (!RespReadUtils.TrySliceWithLengthHeader(out var member, ref input_currptr, input_endptr))
-                    return;
-
-                if (parsed)
+                while (currTokenIdx < count)
                 {
+                    if (!input.parseState.TryGetDouble(currTokenIdx++, out var longitude) ||
+                        !input.parseState.TryGetDouble(currTokenIdx++, out var latitude))
+                    {
+                        while (!RespWriteUtils.WriteError(CmdStrings.RESP_ERR_NOT_VALID_FLOAT, ref curr, end))
+                            ObjectUtils.ReallocateOutput(ref output, ref isMemory, ref ptr, ref ptrHandle, ref curr,
+                                ref end);
+                        return;
+                    }
+
+                    var member = input.parseState.GetArgSliceByRef(currTokenIdx++).ReadOnlySpan;
+
                     var score = server.GeoHash.GeoToLongValue(latitude, longitude);
                     if (score != -1)
                     {
@@ -101,7 +105,7 @@ namespace Garnet.server
                             {
                                 sortedSetDict.Add(memberByteArray, score);
                                 sortedSet.Add((score, memberByteArray));
-                                _output->result1++;
+                                elementsAdded++;
 
                                 this.UpdateSize(member);
                                 elementsChanged++;
@@ -118,20 +122,22 @@ namespace Garnet.server
                         }
                     }
                 }
-                _output->result1 = ch ? elementsChanged : _output->result1;
+
+                while (!RespWriteUtils.WriteInteger(ch ? elementsChanged : elementsAdded, ref curr, end))
+                    ObjectUtils.ReallocateOutput(ref output, ref isMemory, ref ptr, ref ptrHandle, ref curr, ref end);
+            }
+            finally
+            {
+                while (!RespWriteUtils.WriteDirect(ref _output, ref curr, end))
+                    ObjectUtils.ReallocateOutput(ref output, ref isMemory, ref ptr, ref ptrHandle, ref curr, ref end);
+
+                if (isMemory) ptrHandle.Dispose();
+                output.Length = (int)(curr - ptr);
             }
         }
 
         private void GeoHash(ref ObjectInput input, ref SpanByteAndMemory output)
         {
-            var count = input.arg1;
-            var countDone = 0;
-
-            var input_startptr = input.payload.ptr;
-            var input_currptr = input_startptr;
-            var length = input.payload.length;
-            var input_endptr = input_startptr + length;
-
             var isMemory = false;
             MemoryHandle ptrHandle = default;
             var ptr = output.SpanByte.ToPointer();
@@ -139,31 +145,23 @@ namespace Garnet.server
             var curr = ptr;
             var end = curr + output.Length;
 
+            var count = input.parseState.Count;
+            var currTokenIdx = input.parseStateStartIdx;
+
             ObjectOutputHeader _output = default;
             try
             {
-                if (count == 0)
-                {
-                    while (!RespWriteUtils.WriteArrayLength(count, ref curr, end))
-                        ObjectUtils.ReallocateOutput(ref output, ref isMemory, ref ptr, ref ptrHandle, ref curr, ref end);
-                }
-                while (countDone < count)
+                var tokenCount = input.parseState.Count - input.parseStateStartIdx;
+
+                while (!RespWriteUtils.WriteArrayLength(tokenCount, ref curr, end))
+                    ObjectUtils.ReallocateOutput(ref output, ref isMemory, ref ptr, ref ptrHandle, ref curr, ref end);
+
+                while (currTokenIdx < count)
                 {
                     // Read member
-                    if (!RespReadUtils.TrySliceWithLengthHeader(out var member, ref input_currptr, input_endptr))
-                        break;
+                    var member = input.parseState.GetArgSliceByRef(currTokenIdx++).SpanByte.ToByteArray();
 
-                    countDone++;
-                    _output.result1++;
-
-                    // Write output length when we have at least one item to report
-                    if (countDone == 1)
-                    {
-                        while (!RespWriteUtils.WriteArrayLength(count, ref curr, end))
-                            ObjectUtils.ReallocateOutput(ref output, ref isMemory, ref ptr, ref ptrHandle, ref curr, ref end);
-                    }
-
-                    if (sortedSetDict.TryGetValue(member.ToArray(), out var value52Int))
+                    if (sortedSetDict.TryGetValue(member, out var value52Int))
                     {
                         var geoHash = server.GeoHash.GetGeoHashCode((long)value52Int);
                         while (!RespWriteUtils.WriteAsciiBulkString(geoHash, ref curr, end))
@@ -188,13 +186,6 @@ namespace Garnet.server
 
         private void GeoDistance(ref ObjectInput input, ref SpanByteAndMemory output)
         {
-            var count = input.arg1;
-
-            var input_startptr = input.payload.ptr;
-            var input_currptr = input_startptr;
-            var length = input.payload.length;
-            var input_endptr = input_startptr + length;
-
             var isMemory = false;
             MemoryHandle ptrHandle = default;
             var ptr = output.SpanByte.ToPointer();
@@ -202,28 +193,23 @@ namespace Garnet.server
             var curr = ptr;
             var end = curr + output.Length;
 
+            var currTokenIdx = input.parseStateStartIdx;
+
             ObjectOutputHeader _output = default;
             try
             {
-                // Read member
-                if (!RespReadUtils.ReadByteArrayWithLengthHeader(out var member1ByteArray, ref input_currptr, input_endptr))
-                    return;
+                // Read 1st member
+                var member1 = input.parseState.GetArgSliceByRef(currTokenIdx++).SpanByte.ToByteArray();
 
-                // Read member
-                if (!RespReadUtils.ReadByteArrayWithLengthHeader(out var member2ByteArray, ref input_currptr, input_endptr))
-                    return;
-
-                var units = "M"u8;
+                // Read 2nd member
+                var member2 = input.parseState.GetArgSliceByRef(currTokenIdx++).SpanByte.ToByteArray();
 
                 // Read units
-                if (count > 2)
-                {
-                    if (!RespReadUtils.TrySliceWithLengthHeader(out units, ref input_currptr, input_endptr))
-                        return;
-                }
+                var units = input.parseState.Count - currTokenIdx == 0
+                    ? "M"u8
+                    : input.parseState.GetArgSliceByRef(currTokenIdx).ReadOnlySpan;
 
-                var countDone = 0;
-                if (sortedSetDict.TryGetValue(member1ByteArray, out var scoreMember1) && sortedSetDict.TryGetValue(member2ByteArray, out var scoreMember2))
+                if (sortedSetDict.TryGetValue(member1, out var scoreMember1) && sortedSetDict.TryGetValue(member2, out var scoreMember2))
                 {
                     var first = server.GeoHash.GetCoordinatesFromLong((long)scoreMember1);
                     var second = server.GeoHash.GetCoordinatesFromLong((long)scoreMember2);
@@ -235,18 +221,12 @@ namespace Garnet.server
 
                     while (!RespWriteUtils.TryWriteDoubleBulkString(distanceValue, ref curr, end))
                         ObjectUtils.ReallocateOutput(ref output, ref isMemory, ref ptr, ref ptrHandle, ref curr, ref end);
-
-                    countDone = count;
                 }
                 else
                 {
                     while (!RespWriteUtils.WriteNull(ref curr, end))
                         ObjectUtils.ReallocateOutput(ref output, ref isMemory, ref ptr, ref ptrHandle, ref curr, ref end);
-
-                    // There was no operation done but tokens were processed
-                    countDone = count;
                 }
-                _output.result1 = countDone;
             }
             finally
             {
@@ -260,14 +240,6 @@ namespace Garnet.server
 
         private void GeoPosition(ref ObjectInput input, ref SpanByteAndMemory output)
         {
-            var count = input.arg1;
-            var countDone = 0;
-
-            var input_startptr = input.payload.ptr;
-            var input_currptr = input_startptr;
-            var length = input.payload.length;
-            var input_endptr = input_startptr + length;
-
             var isMemory = false;
             MemoryHandle ptrHandle = default;
             var ptr = output.SpanByte.ToPointer();
@@ -275,32 +247,22 @@ namespace Garnet.server
             var curr = ptr;
             var end = curr + output.Length;
 
-            ObjectOutputHeader _output = default;
+            var currTokenIdx = input.parseStateStartIdx;
 
+            ObjectOutputHeader _output = default;
             try
             {
-                if (count == 0)
-                {
-                    while (!RespWriteUtils.WriteArrayLength(count, ref curr, end))
-                        ObjectUtils.ReallocateOutput(ref output, ref isMemory, ref ptr, ref ptrHandle, ref curr, ref end);
-                }
-                while (countDone < count)
+                var tokenCount = input.parseState.Count - input.parseStateStartIdx;
+
+                while (!RespWriteUtils.WriteArrayLength(tokenCount, ref curr, end))
+                    ObjectUtils.ReallocateOutput(ref output, ref isMemory, ref ptr, ref ptrHandle, ref curr, ref end);
+
+                while (currTokenIdx < input.parseState.Count)
                 {
                     // read member
-                    if (!RespReadUtils.TrySliceWithLengthHeader(out var memberBytes, ref input_currptr, input_endptr))
-                        break;
+                    var member = input.parseState.GetArgSliceByRef(currTokenIdx++).SpanByte.ToByteArray();
 
-                    countDone++;
-                    _output.result1++;
-
-                    // Write output length when we have at least one item to report
-                    if (countDone == 1)
-                    {
-                        while (!RespWriteUtils.WriteArrayLength(count, ref curr, end))
-                            ObjectUtils.ReallocateOutput(ref output, ref isMemory, ref ptr, ref ptrHandle, ref curr, ref end);
-                    }
-
-                    if (sortedSetDict.TryGetValue(memberBytes.ToArray(), out var scoreMember1))
+                    if (sortedSetDict.TryGetValue(member, out var scoreMember1))
                     {
                         var (lat, lon) = server.GeoHash.GetCoordinatesFromLong((long)scoreMember1);
 
@@ -333,13 +295,6 @@ namespace Garnet.server
 
         private void GeoSearch(ref ObjectInput input, ref SpanByteAndMemory output)
         {
-            var count = input.arg1;
-
-            var input_startptr = input.payload.ptr;
-            var input_currptr = input_startptr;
-            var length = input.payload.length;
-            var input_endptr = input_startptr + length;
-
             var isMemory = false;
             MemoryHandle ptrHandle = default;
             var ptr = output.SpanByte.ToPointer();
@@ -347,87 +302,139 @@ namespace Garnet.server
             var curr = ptr;
             var end = curr + output.Length;
 
+            var currTokenIdx = input.parseStateStartIdx;
+
             ObjectOutputHeader _output = default;
             try
             {
                 var opts = new GeoSearchOptions();
                 byte[] fromMember = null;
                 var byBoxUnits = "M"u8;
-                var byRadiusUnits = byBoxUnits;
                 double width = 0, height = 0;
                 var countValue = 0;
 
+                ReadOnlySpan<byte> errorMessage = default;
+                var argNumError = false;
+
                 // Read the options
-                while (count > 0)
+                while (currTokenIdx < input.parseState.Count)
                 {
                     // Read token
-                    if (!RespReadUtils.TrySliceWithLengthHeader(out var tokenBytes, ref input_currptr, input_endptr))
-                        return;
+                    var tokenBytes = input.parseState.GetArgSliceByRef(currTokenIdx++).ReadOnlySpan;
 
                     if (tokenBytes.EqualsUpperCaseSpanIgnoringCase("FROMMEMBER"u8))
                     {
-                        if (!RespReadUtils.ReadByteArrayWithLengthHeader(out fromMember, ref input_currptr, input_endptr))
-                            return;
+                        if (input.parseState.Count - currTokenIdx == 0)
+                        {
+                            argNumError = true;
+                            break;
+                        }
+
+                        fromMember = input.parseState.GetArgSliceByRef(currTokenIdx++).SpanByte.ToByteArray();
                         opts.FromMember = true;
-                        --count;
                     }
                     else if (tokenBytes.EqualsUpperCaseSpanIgnoringCase("FROMLONLAT"u8))
                     {
-                        // Read coordinates
-                        if (!RespReadUtils.ReadDoubleWithLengthHeader(out var longitude, out var parsed, ref input_currptr, input_endptr) ||
-                            !RespReadUtils.ReadDoubleWithLengthHeader(out var latitude, out parsed, ref input_currptr, input_endptr))
+                        if (input.parseState.Count - currTokenIdx < 2)
                         {
-                            return;
+                            argNumError = true;
+                            break;
                         }
-                        count -= 2;
+
+                        // Read coordinates
+                        if (!input.parseState.TryGetDouble(currTokenIdx++, out _) ||
+                            !input.parseState.TryGetDouble(currTokenIdx++, out _))
+                        {
+                            errorMessage = CmdStrings.RESP_ERR_NOT_VALID_FLOAT;
+                            break;
+                        }
+
                         opts.FromLonLat = true;
                     }
                     else if (tokenBytes.EqualsUpperCaseSpanIgnoringCase("BYRADIUS"u8))
                     {
-                        // Read radius and units
-                        if (!RespReadUtils.ReadDoubleWithLengthHeader(out var radius, out var parsed, ref input_currptr, input_endptr) ||
-                            !RespReadUtils.TrySliceWithLengthHeader(out byRadiusUnits, ref input_currptr, input_endptr))
+                        if (input.parseState.Count - currTokenIdx < 2)
                         {
-                            return;
+                            argNumError = true;
+                            break;
                         }
-                        count -= 2;
+
+                        // Read radius and units
+                        if (!input.parseState.TryGetDouble(currTokenIdx++, out _))
+                        {
+                            errorMessage = CmdStrings.RESP_ERR_NOT_VALID_FLOAT;
+                            break;
+                        }
+
                         opts.ByRadius = true;
                     }
                     else if (tokenBytes.EqualsUpperCaseSpanIgnoringCase("BYBOX"u8))
                     {
-                        // Read width, height & units
-                        if (!RespReadUtils.ReadDoubleWithLengthHeader(out width, out var parsed, ref input_currptr, input_endptr) ||
-                            !RespReadUtils.ReadDoubleWithLengthHeader(out height, out parsed, ref input_currptr, input_endptr) ||
-                            !RespReadUtils.TrySliceWithLengthHeader(out byBoxUnits, ref input_currptr, input_endptr))
+                        if (input.parseState.Count - currTokenIdx < 3)
                         {
-                            return;
+                            argNumError = true;
+                            break;
                         }
-                        count -= 3;
+
+                        // Read width, height
+                        if (!input.parseState.TryGetDouble(currTokenIdx++, out width) ||
+                            !input.parseState.TryGetDouble(currTokenIdx++, out height))
+                        {
+                            errorMessage = CmdStrings.RESP_ERR_NOT_VALID_FLOAT;
+                            break;
+                        }
+
+                        // Read units
+                        byBoxUnits = input.parseState.GetArgSliceByRef(currTokenIdx++).ReadOnlySpan;
+
                         opts.ByBox = true;
                     }
                     else if (tokenBytes.EqualsUpperCaseSpanIgnoringCase("ASC"u8)) opts.SortDescending = false;
                     else if (tokenBytes.EqualsUpperCaseSpanIgnoringCase("DESC"u8)) opts.SortDescending = true;
                     else if (tokenBytes.EqualsUpperCaseSpanIgnoringCase("COUNT"u8))
                     {
+                        if (input.parseState.Count - currTokenIdx == 0)
+                        {
+                            argNumError = true;
+                            break;
+                        }
+
+                        if (!input.parseState.TryGetInt(currTokenIdx++, out countValue))
+                        {
+                            errorMessage = CmdStrings.RESP_ERR_GENERIC_VALUE_IS_NOT_INTEGER;
+                            break;
+                        }
+
                         opts.WithCount = true;
-                        if (!RespReadUtils.ReadIntWithLengthHeader(out countValue, ref input_currptr, input_endptr))
-                            return;
-                        count -= 1;
                     }
                     else if (tokenBytes.EqualsUpperCaseSpanIgnoringCase("WITHCOORD"u8)) opts.WithCoord = true;
                     else if (tokenBytes.EqualsUpperCaseSpanIgnoringCase("WITHDIST"u8)) opts.WithDist = true;
                     else if (tokenBytes.EqualsUpperCaseSpanIgnoringCase("WITHHASH"u8)) opts.WithHash = true;
                     else if (tokenBytes.EqualsUpperCaseSpanIgnoringCase("ANY"u8)) opts.WithCountAny = true;
-
-                    --count;
+                    else
+                    {
+                        errorMessage = CmdStrings.RESP_SYNTAX_ERROR;
+                        break;
+                    }
                 }
 
                 // Check that we have the mandatory options
-                if (!((opts.FromMember || opts.FromLonLat) && (opts.ByRadius || opts.ByBox)))
+                if (errorMessage == default && !((opts.FromMember || opts.FromLonLat) && (opts.ByRadius || opts.ByBox)))
+                    argNumError = true;
+
+                // Check if we have a wrong number of arguments
+                if (argNumError)
                 {
-                    while (!RespWriteUtils.WriteError("ERR required parameters are missing."u8, ref curr, end))
+                    errorMessage = Encoding.ASCII.GetBytes(string.Format(CmdStrings.GenericErrWrongNumArgs,
+                        nameof(RespCommand.GEOSEARCH)));
+                }
+
+                // Check if we encountered an error while checking the parse state
+                if (errorMessage != default)
+                {
+                    while (!RespWriteUtils.WriteError(errorMessage, ref curr, end))
                         ObjectUtils.ReallocateOutput(ref output, ref isMemory, ref ptr, ref ptrHandle, ref curr, ref end);
-                    count = 0;
+                    return;
                 }
 
                 // Get the results
@@ -502,7 +509,6 @@ namespace Garnet.server
                     while (!RespWriteUtils.WriteError(CmdStrings.RESP_ERR_GENERIC_UNK_CMD, ref curr, end))
                         ObjectUtils.ReallocateOutput(ref output, ref isMemory, ref ptr, ref ptrHandle, ref curr, ref end);
                 }
-                _output.result1 = input.arg1 - count;
             }
             finally
             {

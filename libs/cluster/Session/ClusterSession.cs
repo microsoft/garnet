@@ -2,9 +2,7 @@
 // Licensed under the MIT license.
 
 using System.Runtime.CompilerServices;
-using System.Runtime.InteropServices;
 using Garnet.common;
-using Garnet.common.Parsing;
 using Garnet.networking;
 using Garnet.server;
 using Garnet.server.ACL;
@@ -36,9 +34,8 @@ namespace Garnet.cluster
         // User currently authenticated in this session
         User user;
 
+        SessionParseState parseState;
         byte* dcurr, dend;
-        byte* recvBufferPtr;
-        int readHead, bytesRead;
         long _localCurrentEpoch = 0;
 
         public long LocalCurrentEpoch => _localCurrentEpoch;
@@ -65,39 +62,51 @@ namespace Garnet.cluster
             this.logger = logger;
         }
 
-        public bool ProcessClusterCommands(RespCommand command, int count, byte* recvBufferPtr, int bytesRead, ref int readHead, ref byte* dcurr, ref byte* dend, out bool result)
+        public void ProcessClusterCommands(RespCommand command, ref SessionParseState parseState, ref byte* dcurr, ref byte* dend)
         {
-            this.recvBufferPtr = recvBufferPtr;
-            this.bytesRead = bytesRead;
             this.dcurr = dcurr;
             this.dend = dend;
-            this.readHead = readHead;
-            bool ret;
+            this.parseState = parseState;
+            var invalidParameters = false;
+            string respCommandName = default;
+
             try
             {
                 if (command.IsClusterSubCommand())
                 {
-                    result = ProcessClusterCommands(command, count);
-                    ret = true;
+                    ProcessClusterCommands(command, out invalidParameters);
+
+                    if (invalidParameters)
+                    {
+                        // Have to lookup the RESP name now that we're in the failure case
+                        respCommandName = RespCommandsInfo.TryGetRespCommandInfo(command, out var info)
+                            ? info.Name.ToLowerInvariant()
+                            : "unknown";
+                    }
                 }
                 else
                 {
-                    (ret, result) = command switch
+                    _ = command switch
                     {
-                        RespCommand.MIGRATE => (true, TryMIGRATE(count, recvBufferPtr + readHead)),
-                        RespCommand.FAILOVER => (true, TryFAILOVER(count, recvBufferPtr + readHead)),
-                        RespCommand.SECONDARYOF or RespCommand.REPLICAOF => (true, TryREPLICAOF(count, recvBufferPtr + readHead)),
-                        _ => (false, false)
+                        RespCommand.MIGRATE => TryMIGRATE(out invalidParameters),
+                        RespCommand.FAILOVER => TryFAILOVER(),
+                        RespCommand.SECONDARYOF or RespCommand.REPLICAOF => TryREPLICAOF(out invalidParameters),
+                        _ => false
                     };
                 }
 
-                return ret;
+                if (invalidParameters)
+                {
+                    var errorMessage = string.Format(CmdStrings.GenericErrWrongNumArgs,
+                        respCommandName ?? command.ToString());
+                    while (!RespWriteUtils.WriteError(errorMessage, ref this.dcurr, this.dend))
+                        SendAndReset();
+                }
             }
             finally
             {
                 dcurr = this.dcurr;
                 dend = this.dend;
-                readHead = this.readHead;
             }
         }
 
@@ -154,46 +163,6 @@ namespace Garnet.cluster
         {
             this.user = user;
         }
-
-        bool DrainCommands(int count)
-        {
-            for (var i = 0; i < count; i++)
-            {
-                if (!SkipCommand()) return false;
-            }
-            return true;
-        }
-
-        bool SkipCommand()
-        {
-            var ptr = recvBufferPtr + readHead;
-            var end = recvBufferPtr + bytesRead;
-
-            // Try to read the command length
-            if (!RespReadUtils.ReadUnsignedLengthHeader(out int length, ref ptr, end))
-            {
-                return false;
-            }
-
-            readHead = (int)(ptr - recvBufferPtr);
-
-            // Try to read the command value
-            ptr += length;
-            if (ptr + 2 > end)
-            {
-                return false;
-            }
-
-            if (*(ushort*)ptr != MemoryMarshal.Read<ushort>("\r\n"u8))
-            {
-                RespParsingException.ThrowUnexpectedToken(*ptr);
-            }
-
-            readHead += length + 2;
-
-            return true;
-        }
-
         public void AcquireCurrentEpoch() => _localCurrentEpoch = clusterProvider.GarnetCurrentEpoch;
         public void ReleaseCurrentEpoch() => _localCurrentEpoch = 0;
 

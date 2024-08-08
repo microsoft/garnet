@@ -153,28 +153,34 @@ namespace Garnet.server
                         HashExists(ref input, _output);
                         break;
                     case HashOperation.HKEYS:
-                        HashKeys(ref input, ref output);
+                        HashGetKeysOrValues(ref input, ref output);
                         break;
                     case HashOperation.HVALS:
-                        HashVals(ref input, ref output);
+                        HashGetKeysOrValues(ref input, ref output);
                         break;
                     case HashOperation.HINCRBY:
                         HashIncrement(ref input, ref output);
                         break;
                     case HashOperation.HINCRBYFLOAT:
-                        HashIncrementByFloat(ref input, ref output);
+                        HashIncrement(ref input, ref output);
                         break;
                     case HashOperation.HSETNX:
-                        HashSetWhenNotExists(ref input, _output);
+                        HashSet(ref input, _output);
                         break;
                     case HashOperation.HRANDFIELD:
                         HashRandomField(ref input, ref output);
                         break;
                     case HashOperation.HSCAN:
-                        if (ObjectUtils.ReadScanInput(ref input, ref output, out var cursorInput, out var pattern, out var patternLength, out int limitCount, out int bytesDone))
+                        if (ObjectUtils.ReadScanInput(ref input, ref output, out var cursorInput, out var pattern,
+                                out var patternLength, out var limitCount, out var error))
                         {
-                            Scan(cursorInput, out var items, out var cursorOutput, count: limitCount, pattern: pattern, patternLength: patternLength);
-                            ObjectUtils.WriteScanOutput(items, cursorOutput, ref output, bytesDone);
+                            Scan(cursorInput, out var items, out var cursorOutput, count: limitCount, pattern: pattern,
+                                patternLength: patternLength);
+                            ObjectUtils.WriteScanOutput(items, cursorOutput, ref output);
+                        }
+                        else
+                        {
+                            ObjectUtils.WriteScanError(error, ref output);
                         }
                         break;
                     default:

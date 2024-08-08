@@ -116,9 +116,9 @@ namespace Garnet.server
         private bool NetworkStringSetBit<TGarnetApi>(ref TGarnetApi storageApi)
             where TGarnetApi : IGarnetApi
         {
-            if (parseState.count != 3)
+            if (parseState.Count != 3)
             {
-                return AbortWithWrongNumberOfArguments(nameof(RespCommand.SETBIT), parseState.count);
+                return AbortWithWrongNumberOfArguments(nameof(RespCommand.SETBIT));
             }
 
             var sbKey = parseState.GetArgSliceByRef(0).SpanByte;
@@ -180,9 +180,9 @@ namespace Garnet.server
         private bool NetworkStringGetBit<TGarnetApi>(ref TGarnetApi storageApi)
             where TGarnetApi : IGarnetApi
         {
-            if (parseState.count != 2)
+            if (parseState.Count != 2)
             {
-                return AbortWithWrongNumberOfArguments(nameof(RespCommand.GETBIT), parseState.count);
+                return AbortWithWrongNumberOfArguments(nameof(RespCommand.GETBIT));
             }
 
             var sbKey = parseState.GetArgSliceByRef(0).SpanByte;
@@ -235,12 +235,13 @@ namespace Garnet.server
         /// Count the number of set bits in a key. 
         /// It can be specified an interval for counting, passing the start and end arguments.
         /// </summary>
-        private bool NetworkStringBitCount<TGarnetApi>(int count, ref TGarnetApi storageApi)
+        private bool NetworkStringBitCount<TGarnetApi>(ref TGarnetApi storageApi)
             where TGarnetApi : IGarnetApi
         {
+            var count = parseState.Count;
             if (count < 1 || count > 4)
             {
-                return AbortWithWrongNumberOfArguments(nameof(RespCommand.BITCOUNT), parseState.count);
+                return AbortWithWrongNumberOfArguments(nameof(RespCommand.BITCOUNT));
             }
 
             //<[Get Key]>
@@ -317,12 +318,13 @@ namespace Garnet.server
         /// <summary>
         /// Returns the position of the first bit set to 1 or 0 in a key.
         /// </summary>
-        private bool NetworkStringBitPosition<TGarnetApi>(int count, ref TGarnetApi storageApi)
+        private bool NetworkStringBitPosition<TGarnetApi>(ref TGarnetApi storageApi)
             where TGarnetApi : IGarnetApi
         {
+            var count = parseState.Count;
             if (count < 2 || count > 5)
             {
-                return AbortWithWrongNumberOfArguments(nameof(RespCommand.BITPOS), parseState.count);
+                return AbortWithWrongNumberOfArguments(nameof(RespCommand.BITPOS));
             }
 
             //<[Get Key]>
@@ -412,7 +414,7 @@ namespace Garnet.server
             where TGarnetApi : IGarnetApi
         {
             // Too few keys
-            if (parseState.count < 2)
+            if (parseState.Count < 2)
             {
                 while (!RespWriteUtils.WriteError(CmdStrings.RESP_ERR_WRONG_NUMBER_OF_ARGUMENTS, ref dcurr, dend))
                     SendAndReset();
@@ -420,7 +422,7 @@ namespace Garnet.server
                 return true;
             }
 
-            if (parseState.count > 64)
+            if (parseState.Count > 64)
             {
                 while (!RespWriteUtils.WriteError(CmdStrings.RESP_ERR_BITOP_KEY_LIMIT, ref dcurr, dend))
                     SendAndReset();
@@ -440,12 +442,12 @@ namespace Garnet.server
         /// <summary>
         /// Performs arbitrary bitfield integer operations on strings.
         /// </summary>
-        private bool StringBitField<TGarnetApi>(int count, ref TGarnetApi storageApi)
+        private bool StringBitField<TGarnetApi>(ref TGarnetApi storageApi)
             where TGarnetApi : IGarnetApi
         {
-            if (count < 1)
+            if (parseState.Count < 1)
             {
-                return AbortWithWrongNumberOfArguments(nameof(RespCommand.BITFIELD), count);
+                return AbortWithWrongNumberOfArguments(nameof(RespCommand.BITFIELD));
             }
 
             //BITFIELD key [GET encoding offset] [SET encoding offset value] [INCRBY encoding offset increment] [OVERFLOW WRAP| SAT | FAIL]
@@ -461,7 +463,7 @@ namespace Garnet.server
             byte encodingInfo = default;
             long offset = default;
             long value = default;
-            while (currCount < count)
+            while (currCount < parseState.Count)
             {
                 //Get subcommand
                 var command = parseState.GetArgSliceByRef(currCount++).ReadOnlySpan;
@@ -608,7 +610,7 @@ namespace Garnet.server
         /// <summary>
         /// Performs arbitrary read-only bitfield integer operations
         /// </summary>
-        private bool StringBitFieldReadOnly<TGarnetApi>(int count, ref TGarnetApi storageApi)
+        private bool StringBitFieldReadOnly<TGarnetApi>(ref TGarnetApi storageApi)
             where TGarnetApi : IGarnetApi
         {
             //BITFIELD key [GET encoding offset] [SET encoding offset value] [INCRBY encoding offset increment] [OVERFLOW WRAP| SAT | FAIL]
@@ -626,7 +628,7 @@ namespace Garnet.server
             long offset = default;
             long value = default;
             bool writeError = false;
-            while (currCount < count)
+            while (currCount < parseState.Count)
             {
                 //process overflow command
                 var command = parseState.GetArgSliceByRef(currCount++).ReadOnlySpan;
