@@ -46,7 +46,6 @@ namespace Garnet.cluster
             try
             {
                 logger?.LogTrace("CLUSTER REPLICATE {nodeid}", nodeid);
-
                 if (!clusterProvider.clusterManager.TryAddReplica(nodeid, force: force, out errorMessage, logger: logger))
                     return false;
 
@@ -315,9 +314,22 @@ namespace Garnet.cluster
             {
                 UpdateLastPrimarySyncTime();
 
-                logger?.LogInformation("Initiating Checkpoint Recovery at replica {sIndexToken} {sHlogToken} {oIndexToken} {oHlogToken}", remoteCheckpoint.storeIndexToken, remoteCheckpoint.storeHlogToken, remoteCheckpoint.objectStoreIndexToken, remoteCheckpoint.objectStoreHlogToken);
-                storeWrapper.RecoverCheckpoint(recoverMainStoreFromToken, recoverObjectStoreFromToken,
-                    remoteCheckpoint.storeIndexToken, remoteCheckpoint.storeHlogToken, remoteCheckpoint.objectStoreIndexToken, remoteCheckpoint.objectStoreHlogToken);
+                logger?.LogInformation("Replica Recover MainStore: {storeVersion}>[{sIndexToken} {sHlogToken}]" +
+                    "\nObjectStore: {objectStoreVersion}>[{oIndexToken} {oHlogToken}]",
+                    remoteCheckpoint.storeVersion,
+                    remoteCheckpoint.storeIndexToken,
+                    remoteCheckpoint.storeHlogToken,
+                    remoteCheckpoint.objectStoreVersion,
+                    remoteCheckpoint.objectStoreIndexToken,
+                    remoteCheckpoint.objectStoreHlogToken);
+
+                storeWrapper.RecoverCheckpoint(
+                    recoverMainStoreFromToken,
+                    recoverObjectStoreFromToken,
+                    remoteCheckpoint.storeIndexToken,
+                    remoteCheckpoint.storeHlogToken,
+                    remoteCheckpoint.objectStoreIndexToken,
+                    remoteCheckpoint.objectStoreHlogToken);
 
                 if (replayAOF)
                 {
