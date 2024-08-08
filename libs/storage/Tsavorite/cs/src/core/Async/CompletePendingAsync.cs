@@ -9,9 +9,9 @@ namespace Tsavorite.core
     /// <summary>
     /// The Tsavorite key-value store
     /// </summary>
-    public partial class TsavoriteKV<Key, Value, TStoreFunctions, TAllocator> : TsavoriteBase
-        where TStoreFunctions : IStoreFunctions<Key, Value>
-        where TAllocator : IAllocator<Key, Value, TStoreFunctions>
+    public partial class TsavoriteKV<TKey, TValue, TStoreFunctions, TAllocator> : TsavoriteBase
+        where TStoreFunctions : IStoreFunctions<TKey, TValue>
+        where TAllocator : IAllocator<TKey, TValue, TStoreFunctions>
     {
         /// <summary>
         /// Check if at least one (sync) request is ready for CompletePending to operate on
@@ -19,7 +19,7 @@ namespace Tsavorite.core
         /// <param name="sessionCtx"></param>
         /// <param name="token"></param>
         /// <returns></returns>
-        internal static ValueTask ReadyToCompletePendingAsync<Input, Output, Context>(TsavoriteExecutionContext<Input, Output, Context> sessionCtx, CancellationToken token = default)
+        internal static ValueTask ReadyToCompletePendingAsync<TInput, TOutput, TContext>(TsavoriteExecutionContext<TInput, TOutput, TContext> sessionCtx, CancellationToken token = default)
             => sessionCtx.WaitPendingAsync(token);
 
         /// <summary>
@@ -27,9 +27,9 @@ namespace Tsavorite.core
         /// Async operations (e.g., ReadAsync) need to be completed individually
         /// </summary>
         /// <returns></returns>
-        internal async ValueTask CompletePendingAsync<Input, Output, Context, TSessionFunctionsWrapper>(TSessionFunctionsWrapper sessionFunctions,
-                                      CancellationToken token, CompletedOutputIterator<Key, Value, Input, Output, Context> completedOutputs)
-            where TSessionFunctionsWrapper : ISessionFunctionsWrapper<Key, Value, Input, Output, Context, TStoreFunctions, TAllocator>
+        internal async ValueTask CompletePendingAsync<TInput, TOutput, TContext, TSessionFunctionsWrapper>(TSessionFunctionsWrapper sessionFunctions,
+                                      CancellationToken token, CompletedOutputIterator<TKey, TValue, TInput, TOutput, TContext> completedOutputs)
+            where TSessionFunctionsWrapper : ISessionFunctionsWrapper<TKey, TValue, TInput, TOutput, TContext, TStoreFunctions, TAllocator>
         {
             while (true)
             {
@@ -47,7 +47,7 @@ namespace Tsavorite.core
 
                 if (sessionFunctions.Ctx.HasNoPendingRequests) return;
 
-                InternalRefresh<Input, Output, Context, TSessionFunctionsWrapper>(sessionFunctions);
+                InternalRefresh<TInput, TOutput, TContext, TSessionFunctionsWrapper>(sessionFunctions);
 
                 Thread.Yield();
             }

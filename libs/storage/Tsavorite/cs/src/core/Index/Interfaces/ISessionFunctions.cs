@@ -6,12 +6,12 @@ namespace Tsavorite.core
     /// <summary>
     /// Callback functions to Tsavorite
     /// </summary>
-    /// <typeparam name="Key"></typeparam>
-    /// <typeparam name="Value"></typeparam>
-    /// <typeparam name="Input"></typeparam>
-    /// <typeparam name="Output"></typeparam>
-    /// <typeparam name="Context"></typeparam>
-    public interface ISessionFunctions<Key, Value, Input, Output, Context>
+    /// <typeparam name="TKey"></typeparam>
+    /// <typeparam name="TValue"></typeparam>
+    /// <typeparam name="TInput"></typeparam>
+    /// <typeparam name="TOutput"></typeparam>
+    /// <typeparam name="TContext"></typeparam>
+    public interface ISessionFunctions<TKey, TValue, TInput, TOutput, TContext>
     {
         #region Reads
         /// <summary>
@@ -23,7 +23,7 @@ namespace Tsavorite.core
         /// <param name="dst">The location where <paramref name="value"/> is to be copied</param>
         /// <param name="readInfo">Information about this read operation and its context</param>
         /// <returns>True if the value was available, else false (e.g. the value was expired)</returns>
-        bool SingleReader(ref Key key, ref Input input, ref Value value, ref Output dst, ref ReadInfo readInfo);
+        bool SingleReader(ref TKey key, ref TInput input, ref TValue value, ref TOutput dst, ref ReadInfo readInfo);
 
         /// <summary>
         /// Concurrent reader
@@ -35,7 +35,7 @@ namespace Tsavorite.core
         /// <param name="readInfo">Information about this read operation and its context</param>
         /// <param name="recordInfo">A reference to the RecordInfo for the record; used for variable-length record length modification</param>
         /// <returns>True if the value was available, else false (e.g. the value was expired)</returns>
-        bool ConcurrentReader(ref Key key, ref Input input, ref Value value, ref Output dst, ref ReadInfo readInfo, ref RecordInfo recordInfo);
+        bool ConcurrentReader(ref TKey key, ref TInput input, ref TValue value, ref TOutput dst, ref ReadInfo readInfo, ref RecordInfo recordInfo);
 
         /// <summary>
         /// Read completion
@@ -46,7 +46,7 @@ namespace Tsavorite.core
         /// <param name="ctx">The application context passed through the pending operation</param>
         /// <param name="status">The result of the pending operation</param>
         /// <param name="recordMetadata">Metadata for the record; may be used to obtain <see cref="RecordMetadata.RecordInfo"/>.PreviousAddress when doing iterative reads</param>
-        void ReadCompletionCallback(ref Key key, ref Input input, ref Output output, Context ctx, Status status, RecordMetadata recordMetadata);
+        void ReadCompletionCallback(ref TKey key, ref TInput input, ref TOutput output, TContext ctx, Status status, RecordMetadata recordMetadata);
         #endregion reads
 
         #region Upserts
@@ -62,7 +62,7 @@ namespace Tsavorite.core
         /// <param name="reason">The operation for which this write is being done</param>
         /// <param name="recordInfo">A reference to the RecordInfo for the record; used for variable-length record length modification</param>
         /// <returns>True if the write was performed, else false (e.g. cancellation)</returns>
-        bool SingleWriter(ref Key key, ref Input input, ref Value src, ref Value dst, ref Output output, ref UpsertInfo upsertInfo, WriteReason reason, ref RecordInfo recordInfo);
+        bool SingleWriter(ref TKey key, ref TInput input, ref TValue src, ref TValue dst, ref TOutput output, ref UpsertInfo upsertInfo, WriteReason reason, ref RecordInfo recordInfo);
 
         /// <summary>
         /// Called after SingleWriter when a record containing an upsert of a new key has been successfully inserted at the tail of the log.
@@ -74,7 +74,7 @@ namespace Tsavorite.core
         /// <param name="output">The location where the result of the update may be placed</param>
         /// <param name="upsertInfo">Information about this update operation and its context</param>
         /// <param name="reason">The operation for which this write is being done</param>
-        void PostSingleWriter(ref Key key, ref Input input, ref Value src, ref Value dst, ref Output output, ref UpsertInfo upsertInfo, WriteReason reason);
+        void PostSingleWriter(ref TKey key, ref TInput input, ref TValue src, ref TValue dst, ref TOutput output, ref UpsertInfo upsertInfo, WriteReason reason);
 
         /// <summary>
         /// Concurrent writer; called on an Upsert that finds the record in the mutable range.
@@ -88,7 +88,7 @@ namespace Tsavorite.core
         /// <param name="recordInfo">A reference to the RecordInfo for the record; used for variable-length record length modification</param>
         /// <returns>True if the value was written, else false</returns>
         /// <remarks>If the value is shrunk in-place, the caller must first zero the data that is no longer used, to ensure log-scan correctness.</remarks>
-        bool ConcurrentWriter(ref Key key, ref Input input, ref Value src, ref Value dst, ref Output output, ref UpsertInfo upsertInfo, ref RecordInfo recordInfo);
+        bool ConcurrentWriter(ref TKey key, ref TInput input, ref TValue src, ref TValue dst, ref TOutput output, ref UpsertInfo upsertInfo, ref RecordInfo recordInfo);
         #endregion Upserts
 
         #region RMWs
@@ -100,7 +100,7 @@ namespace Tsavorite.core
         /// <param name="input">The user input to be used for computing the updated value</param>
         /// <param name="output">The location where the result of the <paramref name="input"/> operation is to be copied</param>
         /// <param name="rmwInfo">Information about this update operation and its context</param>
-        bool NeedInitialUpdate(ref Key key, ref Input input, ref Output output, ref RMWInfo rmwInfo);
+        bool NeedInitialUpdate(ref TKey key, ref TInput input, ref TOutput output, ref RMWInfo rmwInfo);
 
         /// <summary>
         /// Initial update for RMW (insert at the tail of the log).
@@ -112,7 +112,7 @@ namespace Tsavorite.core
         /// <param name="rmwInfo">Information about this update operation and its context</param>
         /// <param name="recordInfo">A reference to the RecordInfo for the record; used for variable-length record length modification</param>
         /// <returns>True if the write was performed, else false (e.g. cancellation)</returns>
-        bool InitialUpdater(ref Key key, ref Input input, ref Value value, ref Output output, ref RMWInfo rmwInfo, ref RecordInfo recordInfo);
+        bool InitialUpdater(ref TKey key, ref TInput input, ref TValue value, ref TOutput output, ref RMWInfo rmwInfo, ref RecordInfo recordInfo);
 
         /// <summary>
         /// Called after a record containing an initial update for RMW has been successfully inserted at the tail of the log.
@@ -122,7 +122,7 @@ namespace Tsavorite.core
         /// <param name="value">The destination to be updated; because this is an insert, there is no previous value there.</param>
         /// <param name="output">The location where the result of the <paramref name="input"/> operation on <paramref name="value"/> is to be copied</param>
         /// <param name="rmwInfo">Information about this update operation and its context</param>
-        void PostInitialUpdater(ref Key key, ref Input input, ref Value value, ref Output output, ref RMWInfo rmwInfo);
+        void PostInitialUpdater(ref TKey key, ref TInput input, ref TValue value, ref TOutput output, ref RMWInfo rmwInfo);
         #endregion InitialUpdater
 
         #region CopyUpdater
@@ -134,7 +134,7 @@ namespace Tsavorite.core
         /// <param name="oldValue">The existing value that would be copied.</param>
         /// <param name="output">The location where the result of the <paramref name="input"/> operation on <paramref name="oldValue"/> is to be copied</param>
         /// <param name="rmwInfo">Information about this update operation and its context</param>
-        bool NeedCopyUpdate(ref Key key, ref Input input, ref Value oldValue, ref Output output, ref RMWInfo rmwInfo);
+        bool NeedCopyUpdate(ref TKey key, ref TInput input, ref TValue oldValue, ref TOutput output, ref RMWInfo rmwInfo);
 
         /// <summary>
         /// Copy-update for RMW (RCU (Read-Copy-Update) to the tail of the log)
@@ -147,7 +147,7 @@ namespace Tsavorite.core
         /// <param name="rmwInfo">Information about this update operation and its context</param>
         /// <param name="recordInfo">A reference to the RecordInfo for the record; used for variable-length record length modification</param>
         /// <returns>True if the write was performed, else false (e.g. cancellation)</returns>
-        bool CopyUpdater(ref Key key, ref Input input, ref Value oldValue, ref Value newValue, ref Output output, ref RMWInfo rmwInfo, ref RecordInfo recordInfo);
+        bool CopyUpdater(ref TKey key, ref TInput input, ref TValue oldValue, ref TValue newValue, ref TOutput output, ref RMWInfo rmwInfo, ref RecordInfo recordInfo);
 
         /// <summary>
         /// Called after a record containing an RCU (Read-Copy-Update) for RMW has been successfully inserted at the tail of the log.
@@ -161,7 +161,7 @@ namespace Tsavorite.core
         /// <returns>This is the only Post* method that returns non-void. The bool functions the same as CopyUpdater; this is because we do not want to modify
         /// objects in-memory until we know the "insert at tail" is successful. Therefore, we allow a false return as a signal to inspect <paramref name="rmwInfo.Action"/>
         /// and handle <see cref="RMWAction.ExpireAndStop"/>.</returns>
-        bool PostCopyUpdater(ref Key key, ref Input input, ref Value oldValue, ref Value newValue, ref Output output, ref RMWInfo rmwInfo);
+        bool PostCopyUpdater(ref TKey key, ref TInput input, ref TValue oldValue, ref TValue newValue, ref TOutput output, ref RMWInfo rmwInfo);
         #endregion CopyUpdater
 
         #region InPlaceUpdater
@@ -176,19 +176,19 @@ namespace Tsavorite.core
         /// <param name="recordInfo">A reference to the RecordInfo for the record; used for variable-length record length modification</param>
         /// <returns>True if the value was successfully updated, else false (e.g. the value was expired)</returns>
         /// <remarks>If the value is shrunk in-place, the caller must first zero the data that is no longer used, to ensure log-scan correctness.</remarks>
-        bool InPlaceUpdater(ref Key key, ref Input input, ref Value value, ref Output output, ref RMWInfo rmwInfo, ref RecordInfo recordInfo);
+        bool InPlaceUpdater(ref TKey key, ref TInput input, ref TValue value, ref TOutput output, ref RMWInfo rmwInfo, ref RecordInfo recordInfo);
         #endregion InPlaceUpdater
 
         #region Variable-length value size
         /// <summary>
         /// Length of resulting value object when performing RMW modification of value using given input
         /// </summary>
-        int GetRMWModifiedValueLength(ref Value value, ref Input input);
+        int GetRMWModifiedValueLength(ref TValue value, ref TInput input);
 
         /// <summary>
         /// Initial expected length of value object when populated by RMW using given input
         /// </summary>
-        int GetRMWInitialValueLength(ref Input input);
+        int GetRMWInitialValueLength(ref TInput input);
         #endregion Variable-length value size
 
         /// <summary>
@@ -200,7 +200,7 @@ namespace Tsavorite.core
         /// <param name="ctx">The application context passed through the pending operation</param>
         /// <param name="status">The result of the pending operation</param>
         /// <param name="recordMetadata">The metadata of the modified or inserted record</param>
-        void RMWCompletionCallback(ref Key key, ref Input input, ref Output output, Context ctx, Status status, RecordMetadata recordMetadata);
+        void RMWCompletionCallback(ref TKey key, ref TInput input, ref TOutput output, TContext ctx, Status status, RecordMetadata recordMetadata);
         #endregion RMWs
 
         #region Deletes
@@ -213,7 +213,7 @@ namespace Tsavorite.core
         /// <param name="recordInfo">A reference to the RecordInfo for the record; used for variable-length record length modification</param>
         /// <remarks>For Object Value types, Dispose() can be called here. If recordInfo.Invalid is true, this is called after the record was allocated and populated, but could not be appended at the end of the log.</remarks>
         /// <returns>True if the deleted record should be added, else false (e.g. cancellation)</returns>
-        bool SingleDeleter(ref Key key, ref Value value, ref DeleteInfo deleteInfo, ref RecordInfo recordInfo);
+        bool SingleDeleter(ref TKey key, ref TValue value, ref DeleteInfo deleteInfo, ref RecordInfo recordInfo);
 
         /// <summary>
         /// Called after a record marking a Delete (with Tombstone set) has been successfully inserted at the tail of the log.
@@ -222,7 +222,7 @@ namespace Tsavorite.core
         /// <param name="deleteInfo">Information about this update operation and its context</param>
         /// <remarks>This does not have the address of the record that contains the value at 'key'; Delete does not retrieve records below HeadAddress, so
         ///     the last record we have in the 'key' chain may belong to 'key' or may be a collision.</remarks>
-        void PostSingleDeleter(ref Key key, ref DeleteInfo deleteInfo);
+        void PostSingleDeleter(ref TKey key, ref DeleteInfo deleteInfo);
 
         /// <summary>
         /// Concurrent deleter; called on a Delete that finds the record in the mutable range.
@@ -233,7 +233,7 @@ namespace Tsavorite.core
         /// <param name="recordInfo">A reference to the RecordInfo for the record; used for variable-length record length modification</param>
         /// <remarks>For Object Value types, Dispose() can be called here. If recordInfo.Invalid is true, this is called after the record was allocated and populated, but could not be appended at the end of the log.</remarks>
         /// <returns>True if the value was successfully deleted, else false (e.g. the record was sealed)</returns>
-        bool ConcurrentDeleter(ref Key key, ref Value value, ref DeleteInfo deleteInfo, ref RecordInfo recordInfo);
+        bool ConcurrentDeleter(ref TKey key, ref TValue value, ref DeleteInfo deleteInfo, ref RecordInfo recordInfo);
         #endregion Deletes
 
         #region Utilities
@@ -242,26 +242,26 @@ namespace Tsavorite.core
         /// buffer in the Output is no longer valid and a heap-based buffer must be created.
         /// </summary>
         /// <param name="output"></param>
-        void ConvertOutputToHeap(ref Input input, ref Output output);
+        void ConvertOutputToHeap(ref TInput input, ref TOutput output);
         #endregion Utilities
     }
 
     /// <summary>
     /// Callback functions to Tsavorite (two-param version)
     /// </summary>
-    /// <typeparam name="Key"></typeparam>
-    /// <typeparam name="Value"></typeparam>
-    public interface ISessionFunctions<Key, Value> : ISessionFunctions<Key, Value, Value, Value, Empty>
+    /// <typeparam name="TKey"></typeparam>
+    /// <typeparam name="TValue"></typeparam>
+    public interface ISessionFunctions<TKey, TValue> : ISessionFunctions<TKey, TValue, TValue, TValue, Empty>
     {
     }
 
     /// <summary>
     /// Callback functions to Tsavorite (two-param version with context)
     /// </summary>
-    /// <typeparam name="Key"></typeparam>
-    /// <typeparam name="Value"></typeparam>
+    /// <typeparam name="TKey"></typeparam>
+    /// <typeparam name="TValue"></typeparam>
     /// <typeparam name="Context"></typeparam>
-    public interface ISessionFunctions<Key, Value, Context> : ISessionFunctions<Key, Value, Value, Value, Context>
+    public interface ISessionFunctions<TKey, TValue, Context> : ISessionFunctions<TKey, TValue, TValue, TValue, Context>
     {
     }
 }

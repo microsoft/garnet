@@ -11,11 +11,11 @@ using Microsoft.Extensions.Logging;
 
 namespace Tsavorite.core
 {
-    internal sealed unsafe class GenericAllocatorImpl<Key, Value, TStoreFunctions> : AllocatorBase<Key, Value, TStoreFunctions, GenericAllocator<Key, Value, TStoreFunctions>>
-        where TStoreFunctions : IStoreFunctions<Key, Value>
+    internal sealed unsafe class GenericAllocatorImpl<TKey, TValue, TStoreFunctions> : AllocatorBase<TKey, TValue, TStoreFunctions, GenericAllocator<TKey, TValue, TStoreFunctions>>
+        where TStoreFunctions : IStoreFunctions<TKey, TValue>
     {
         // Circular buffer definition
-        internal AllocatorRecord<Key, Value>[][] values;
+        internal AllocatorRecord<TKey, TValue>[][] values;
 
         // Object log related variables
         private readonly IDevice objectLogDevice;
@@ -25,26 +25,26 @@ namespace Tsavorite.core
         public readonly long[] segmentOffsets;
 
         // Record sizes. We do not support variable-length keys in GenericAllocator
-        internal static int KeySize => Unsafe.SizeOf<Key>();
-        internal static int ValueSize => Unsafe.SizeOf<Value>();
-        internal static int RecordSize => Unsafe.SizeOf<AllocatorRecord<Key, Value>>();
+        internal static int KeySize => Unsafe.SizeOf<TKey>();
+        internal static int ValueSize => Unsafe.SizeOf<TValue>();
+        internal static int RecordSize => Unsafe.SizeOf<AllocatorRecord<TKey, TValue>>();
 
-        private readonly OverflowPool<AllocatorRecord<Key, Value>[]> overflowPagePool;
+        private readonly OverflowPool<AllocatorRecord<TKey, TValue>[]> overflowPagePool;
 
-        public GenericAllocatorImpl(AllocatorSettings settings, TStoreFunctions storeFunctions, Func<object, GenericAllocator<Key, Value, TStoreFunctions>> wrapperCreator)
+        public GenericAllocatorImpl(AllocatorSettings settings, TStoreFunctions storeFunctions, Func<object, GenericAllocator<TKey, TValue, TStoreFunctions>> wrapperCreator)
             : base(settings.LogSettings, storeFunctions, wrapperCreator, settings.evictCallback, settings.epoch, settings.flushCallback, settings.logger)
         {
-            overflowPagePool = new OverflowPool<AllocatorRecord<Key, Value>[]>(4);
+            overflowPagePool = new OverflowPool<AllocatorRecord<TKey, TValue>[]>(4);
 
             if (settings.LogSettings.ObjectLogDevice == null)
                 throw new TsavoriteException("LogSettings.ObjectLogDevice needs to be specified (e.g., use Devices.CreateLogDevice, AzureStorageDevice, or NullDevice)");
 
-            if (typeof(Key) == typeof(SpanByte))
+            if (typeof(TKey) == typeof(SpanByte))
                 throw new TsavoriteException("SpanByte Keys cannot be mixed with object Values");
-            if (typeof(Value) == typeof(SpanByte))
+            if (typeof(TValue) == typeof(SpanByte))
                 throw new TsavoriteException("SpanByte Values cannot be mixed with object Keys");
 
-            values = new AllocatorRecord<Key, Value>[BufferSize][];
+            values = new AllocatorRecord<TKey, TValue>[BufferSize][];
             segmentOffsets = new long[SegmentBufferSize];
 
             objectLogDevice = settings.LogSettings.ObjectLogDevice;
@@ -108,9 +108,9 @@ namespace Tsavorite.core
             return ref values[pageIndex][offset / RecordSize].info;
         }
 
-        internal ref RecordInfo GetInfoFromBytePointer(byte* ptr) => ref Unsafe.AsRef<AllocatorRecord<Key, Value>>(ptr).info;
+        internal ref RecordInfo GetInfoFromBytePointer(byte* ptr) => ref Unsafe.AsRef<AllocatorRecord<TKey, TValue>>(ptr).info;
 
-        internal ref Key GetKey(long physicalAddress)
+        internal ref TKey GetKey(long physicalAddress)
         {
             // Offset within page
             var offset = (int)(physicalAddress & PageSizeMask);
@@ -121,7 +121,7 @@ namespace Tsavorite.core
             return ref values[pageIndex][offset / RecordSize].key;
         }
 
-        internal ref Value GetValue(long physicalAddress)
+        internal ref TValue GetValue(long physicalAddress)
         {
             // Offset within page
             var offset = (int)(physicalAddress & PageSizeMask);
@@ -134,22 +134,22 @@ namespace Tsavorite.core
 
         internal (int actualSize, int allocatedSize) GetRecordSize(long physicalAddress) => (RecordSize, RecordSize);
 
-        public int GetValueLength(ref Value value) => ValueSize;
+        public int GetValueLength(ref TValue value) => ValueSize;
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        internal void SerializeKey(ref Key src, long physicalAddress) => GetKey(physicalAddress) = src;
+        internal void SerializeKey(ref TKey src, long physicalAddress) => GetKey(physicalAddress) = src;
 
-        internal (int actualSize, int allocatedSize, int keySize) GetRMWCopyDestinationRecordSize<Input, TVariableLengthInput>(ref Key key, ref Input input, ref Value value, ref RecordInfo recordInfo, TVariableLengthInput varlenInput)
+        internal (int actualSize, int allocatedSize, int keySize) GetRMWCopyDestinationRecordSize<TInput, TVariableLengthInput>(ref TKey key, ref TInput input, ref TValue value, ref RecordInfo recordInfo, TVariableLengthInput varlenInput)
             => (RecordSize, RecordSize, KeySize);
 
         internal int GetAverageRecordSize() => RecordSize;
 
         internal int GetFixedRecordSize() => RecordSize;
 
-        internal (int actualSize, int allocatedSize, int keySize) GetRMWInitialRecordSize<Input, TSessionFunctionsWrapper>(ref Key key, ref Input input, TSessionFunctionsWrapper sessionFunctions)
+        internal (int actualSize, int allocatedSize, int keySize) GetRMWInitialRecordSize<TInput, TSessionFunctionsWrapper>(ref TKey key, ref TInput input, TSessionFunctionsWrapper sessionFunctions)
             => (RecordSize, RecordSize, KeySize);
 
-        internal (int actualSize, int allocatedSize, int keySize) GetRecordSize(ref Key key, ref Value value) => (RecordSize, RecordSize, KeySize);
+        internal (int actualSize, int allocatedSize, int keySize) GetRecordSize(ref TKey key, ref TValue value) => (RecordSize, RecordSize, KeySize);
 
         internal override bool TryComplete()
         {
@@ -182,22 +182,22 @@ namespace Tsavorite.core
         }
 
         internal AddressInfo* GetKeyAddressInfo(long physicalAddress)
-            => (AddressInfo*)Unsafe.AsPointer(ref Unsafe.AsRef<AllocatorRecord<Key, Value>>((byte*)physicalAddress).key);
+            => (AddressInfo*)Unsafe.AsPointer(ref Unsafe.AsRef<AllocatorRecord<TKey, TValue>>((byte*)physicalAddress).key);
 
         internal AddressInfo* GetValueAddressInfo(long physicalAddress)
-            => (AddressInfo*)Unsafe.AsPointer(ref Unsafe.AsRef<AllocatorRecord<Key, Value>>((byte*)physicalAddress).value);
+            => (AddressInfo*)Unsafe.AsPointer(ref Unsafe.AsRef<AllocatorRecord<TKey, TValue>>((byte*)physicalAddress).value);
 
         /// <summary>Allocate memory page, pinned in memory, and in sector aligned form, if possible</summary>
         internal void AllocatePage(int index) => values[index] = AllocatePage();
 
-        internal AllocatorRecord<Key, Value>[] AllocatePage()
+        internal AllocatorRecord<TKey, TValue>[] AllocatePage()
         {
             IncrementAllocatedPageCount();
 
             if (overflowPagePool.TryGet(out var item))
                 return item;
 
-            return new AllocatorRecord<Key, Value>[(PageSize + RecordSize - 1) / RecordSize];
+            return new AllocatorRecord<TKey, TValue>[(PageSize + RecordSize - 1) / RecordSize];
         }
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
@@ -327,7 +327,7 @@ namespace Tsavorite.core
             if (epoch.ThisInstanceProtected())
             {
                 epochProtected = true;
-                src = new AllocatorRecord<Key, Value>[values[flushPage % BufferSize].Length];
+                src = new AllocatorRecord<TKey, TValue>[values[flushPage % BufferSize].Length];
                 Array.Copy(values[flushPage % BufferSize], src, values[flushPage % BufferSize].Length);
                 epoch.Suspend();
             }
@@ -391,7 +391,7 @@ namespace Tsavorite.core
                     byte* recordPtr = buffer.aligned_pointer + i * RecordSize;
 
                     // Retrieve reference to record struct
-                    ref var record = ref Unsafe.AsRef<AllocatorRecord<Key, Value>>(recordPtr);
+                    ref var record = ref Unsafe.AsRef<AllocatorRecord<TKey, TValue>>(recordPtr);
                     AddressInfo* key_address = null, value_address = null;
 
                     // Zero out object reference addresses (AddressInfo) in the planned disk image
@@ -605,12 +605,12 @@ namespace Tsavorite.core
 
             var result = (PageAsyncReadResult<TContext>)context;
 
-            AllocatorRecord<Key, Value>[] src;
+            AllocatorRecord<TKey, TValue>[] src;
 
             // We are reading into a frame
             if (result.frame != null)
             {
-                var frame = (GenericFrame<Key, Value>)result.frame;
+                var frame = (GenericFrame<TKey, TValue>)result.frame;
                 src = frame.GetPage(result.page % frame.frameSize);
             }
             else
@@ -669,7 +669,7 @@ namespace Tsavorite.core
         /// <param name="callback"></param>
         /// <param name="context"></param>
         /// <param name="result"></param>
-        protected override void AsyncReadRecordObjectsToMemory(long fromLogical, int numBytes, DeviceIOCompletionCallback callback, AsyncIOContext<Key, Value> context, SectorAlignedMemory result = default)
+        protected override void AsyncReadRecordObjectsToMemory(long fromLogical, int numBytes, DeviceIOCompletionCallback callback, AsyncIOContext<TKey, TValue> context, SectorAlignedMemory result = default)
         {
             var fileOffset = (ulong)(AlignedPageSizeBytes * (fromLogical >> LogPageSizeBits) + (fromLogical & PageSizeMask));
             var alignedFileOffset = (ulong)(((long)fileOffset / sectorSize) * sectorSize);
@@ -682,7 +682,7 @@ namespace Tsavorite.core
             record.available_bytes = (int)(alignedReadLength - (fileOffset - alignedFileOffset));
             record.required_bytes = numBytes;
 
-            var asyncResult = default(AsyncGetFromDiskResult<AsyncIOContext<Key, Value>>);
+            var asyncResult = default(AsyncGetFromDiskResult<AsyncIOContext<TKey, TValue>>);
             asyncResult.context = context;
             asyncResult.context.record = result;
             asyncResult.context.objBuffer = record;
@@ -715,7 +715,7 @@ namespace Tsavorite.core
                                         long untilAddress,
                                         DeviceIOCompletionCallback callback,
                                         TContext context,
-                                        GenericFrame<Key, Value> frame,
+                                        GenericFrame<TKey, TValue> frame,
                                         out CountdownEvent completed,
                                         long devicePageOffset = 0,
                                         IDevice device = null, IDevice objectLogDevice = null)
@@ -769,7 +769,7 @@ namespace Tsavorite.core
         /// <param name="untilptr">Until pointer</param>
         /// <param name="src"></param>
         /// <param name="stream">Stream</param>
-        public void Deserialize(byte* raw, long ptr, long untilptr, AllocatorRecord<Key, Value>[] src, Stream stream)
+        public void Deserialize(byte* raw, long ptr, long untilptr, AllocatorRecord<TKey, TValue>[] src, Stream stream)
         {
             long streamStartPos = stream.Position;
             long start_addr = -1;
@@ -780,7 +780,7 @@ namespace Tsavorite.core
 
             while (ptr < untilptr)
             {
-                ref var record = ref Unsafe.AsRef<AllocatorRecord<Key, Value>>(raw + ptr);
+                ref var record = ref Unsafe.AsRef<AllocatorRecord<TKey, TValue>>(raw + ptr);
                 src[ptr / RecordSize].info = record.info;
                 if (start_offset == -1)
                     start_offset = (int)(ptr / RecordSize);
@@ -825,7 +825,7 @@ namespace Tsavorite.core
 
             if (OnDeserializationObserver != null && start_offset != -1 && end_offset != -1)
             {
-                using var iter = new MemoryPageScanIterator<Key, Value>(src, start_offset, end_offset, -1, RecordSize);
+                using var iter = new MemoryPageScanIterator<TKey, TValue>(src, start_offset, end_offset, -1, RecordSize);
                 OnDeserializationObserver.OnNext(iter);
             }
         }
@@ -847,7 +847,7 @@ namespace Tsavorite.core
 
             while (!done && (ptr < untilptr))
             {
-                ref var record = ref Unsafe.AsRef<AllocatorRecord<Key, Value>>(raw + ptr);
+                ref var record = ref Unsafe.AsRef<AllocatorRecord<TKey, TValue>>(raw + ptr);
 
                 if (!record.info.Invalid)
                 {
@@ -901,12 +901,12 @@ namespace Tsavorite.core
         }
 
         /// <summary>Retrieve objects from object log</summary>
-        internal bool RetrievedFullRecord(byte* record, ref AsyncIOContext<Key, Value> ctx)
+        internal bool RetrievedFullRecord(byte* record, ref AsyncIOContext<TKey, TValue> ctx)
         {
             if (!KeyHasObjects())
-                ctx.key = Unsafe.AsRef<AllocatorRecord<Key, Value>>(record).key;
+                ctx.key = Unsafe.AsRef<AllocatorRecord<TKey, TValue>>(record).key;
             if (!ValueHasObjects())
-                ctx.value = Unsafe.AsRef<AllocatorRecord<Key, Value>>(record).value;
+                ctx.value = Unsafe.AsRef<AllocatorRecord<TKey, TValue>>(record).value;
 
             if (!(KeyHasObjects() || ValueHasObjects()))
                 return true;
@@ -976,10 +976,10 @@ namespace Tsavorite.core
         internal void PopulatePage(byte* src, int required_bytes, long destinationPage)
             => PopulatePage(src, required_bytes, ref values[destinationPage % BufferSize]);
 
-        internal void PopulatePageFrame(byte* src, int required_bytes, AllocatorRecord<Key, Value>[] frame)
+        internal void PopulatePageFrame(byte* src, int required_bytes, AllocatorRecord<TKey, TValue>[] frame)
             => PopulatePage(src, required_bytes, ref frame);
 
-        internal void PopulatePage(byte* src, int required_bytes, ref AllocatorRecord<Key, Value>[] destinationPage)
+        internal void PopulatePage(byte* src, int required_bytes, ref AllocatorRecord<TKey, TValue>[] destinationPage)
         {
             fixed (RecordInfo* pin = &destinationPage[0].info)
             {
@@ -992,37 +992,37 @@ namespace Tsavorite.core
         /// Iterator interface for scanning Tsavorite log
         /// </summary>
         /// <returns></returns>
-        public override ITsavoriteScanIterator<Key, Value> Scan(TsavoriteKV<Key, Value, TStoreFunctions, GenericAllocator<Key, Value, TStoreFunctions>> store,
+        public override ITsavoriteScanIterator<TKey, TValue> Scan(TsavoriteKV<TKey, TValue, TStoreFunctions, GenericAllocator<TKey, TValue, TStoreFunctions>> store,
                 long beginAddress, long endAddress, ScanBufferingMode scanBufferingMode, bool includeSealedRecords)
-            => new GenericScanIterator<Key, Value, TStoreFunctions>(store, this, beginAddress, endAddress, scanBufferingMode, includeSealedRecords, epoch);
+            => new GenericScanIterator<TKey, TValue, TStoreFunctions>(store, this, beginAddress, endAddress, scanBufferingMode, includeSealedRecords, epoch);
 
         /// <summary>
         /// Implementation for push-scanning Tsavorite log, called from LogAccessor
         /// </summary>
-        internal override bool Scan<TScanFunctions>(TsavoriteKV<Key, Value, TStoreFunctions, GenericAllocator<Key, Value, TStoreFunctions>> store,
+        internal override bool Scan<TScanFunctions>(TsavoriteKV<TKey, TValue, TStoreFunctions, GenericAllocator<TKey, TValue, TStoreFunctions>> store,
                 long beginAddress, long endAddress, ref TScanFunctions scanFunctions, ScanBufferingMode scanBufferingMode)
         {
-            using GenericScanIterator<Key, Value, TStoreFunctions> iter = new(store, this, beginAddress, endAddress, scanBufferingMode, false, epoch, logger: logger);
+            using GenericScanIterator<TKey, TValue, TStoreFunctions> iter = new(store, this, beginAddress, endAddress, scanBufferingMode, false, epoch, logger: logger);
             return PushScanImpl(beginAddress, endAddress, ref scanFunctions, iter);
         }
 
         /// <summary>
         /// Implementation for push-scanning Tsavorite log with a cursor, called from LogAccessor
         /// </summary>
-        internal override bool ScanCursor<TScanFunctions>(TsavoriteKV<Key, Value, TStoreFunctions, GenericAllocator<Key, Value, TStoreFunctions>> store,
-                ScanCursorState<Key, Value> scanCursorState, ref long cursor, long count, TScanFunctions scanFunctions, long endAddress, bool validateCursor)
+        internal override bool ScanCursor<TScanFunctions>(TsavoriteKV<TKey, TValue, TStoreFunctions, GenericAllocator<TKey, TValue, TStoreFunctions>> store,
+                ScanCursorState<TKey, TValue> scanCursorState, ref long cursor, long count, TScanFunctions scanFunctions, long endAddress, bool validateCursor)
         {
-            using GenericScanIterator<Key, Value, TStoreFunctions> iter = new(store, this, cursor, endAddress, ScanBufferingMode.SinglePageBuffering, false, epoch, logger: logger);
-            return ScanLookup<long, long, TScanFunctions, GenericScanIterator<Key, Value, TStoreFunctions>>(store, scanCursorState, ref cursor, count, scanFunctions, iter, validateCursor);
+            using GenericScanIterator<TKey, TValue, TStoreFunctions> iter = new(store, this, cursor, endAddress, ScanBufferingMode.SinglePageBuffering, false, epoch, logger: logger);
+            return ScanLookup<long, long, TScanFunctions, GenericScanIterator<TKey, TValue, TStoreFunctions>>(store, scanCursorState, ref cursor, count, scanFunctions, iter, validateCursor);
         }
 
         /// <summary>
         /// Implementation for push-iterating key versions, called from LogAccessor
         /// </summary>
-        internal override bool IterateKeyVersions<TScanFunctions>(TsavoriteKV<Key, Value, TStoreFunctions, GenericAllocator<Key, Value, TStoreFunctions>> store,
-                ref Key key, long beginAddress, ref TScanFunctions scanFunctions)
+        internal override bool IterateKeyVersions<TScanFunctions>(TsavoriteKV<TKey, TValue, TStoreFunctions, GenericAllocator<TKey, TValue, TStoreFunctions>> store,
+                ref TKey key, long beginAddress, ref TScanFunctions scanFunctions)
         {
-            using GenericScanIterator<Key, Value, TStoreFunctions> iter = new(store, this, beginAddress, epoch, logger: logger);
+            using GenericScanIterator<TKey, TValue, TStoreFunctions> iter = new(store, this, beginAddress, epoch, logger: logger);
             return IterateKeyVersionsImpl(store, ref key, beginAddress, ref scanFunctions, iter);
         }
 
@@ -1042,7 +1042,7 @@ namespace Tsavorite.core
                 var beginAddress = page << LogPageSizeBits;
                 var endAddress = (page + 1) << LogPageSizeBits;
                 ComputeScanBoundaries(beginAddress, endAddress, out var pageStartAddress, out var start, out var end);
-                using var iter = new MemoryPageScanIterator<Key, Value>(values[(int)(page % BufferSize)], start, end, pageStartAddress, RecordSize);
+                using var iter = new MemoryPageScanIterator<TKey, TValue>(values[(int)(page % BufferSize)], start, end, pageStartAddress, RecordSize);
                 OnEvictionObserver?.OnNext(iter);
             }
 
@@ -1050,11 +1050,11 @@ namespace Tsavorite.core
         }
 
         /// <inheritdoc />
-        internal override void MemoryPageScan(long beginAddress, long endAddress, IObserver<ITsavoriteScanIterator<Key, Value>> observer)
+        internal override void MemoryPageScan(long beginAddress, long endAddress, IObserver<ITsavoriteScanIterator<TKey, TValue>> observer)
         {
             var page = (beginAddress >> LogPageSizeBits) % BufferSize;
             ComputeScanBoundaries(beginAddress, endAddress, out var pageStartAddress, out var start, out var end);
-            using var iter = new MemoryPageScanIterator<Key, Value>(values[page], start, end, pageStartAddress, RecordSize);
+            using var iter = new MemoryPageScanIterator<TKey, TValue>(values[page], start, end, pageStartAddress, RecordSize);
             Debug.Assert(epoch.ThisInstanceProtected());
             try
             {

@@ -46,16 +46,16 @@ namespace Tsavorite.core
     }
 
     /// <summary>
-    /// Callback functions for <see cref="SpanByte"/> key, value; specified <typeparamref name="Input"/>, <typeparamref name="Output"/>, and <typeparamref name="Context"/>
+    /// Callback functions for <see cref="SpanByte"/> key, value; specified <typeparamref name="TInput"/>, <typeparamref name="TOutput"/>, and <typeparamref name="TContext"/>
     /// </summary>
-    public class SpanByteFunctions<Input, Output, Context> : SessionFunctionsBase<SpanByte, SpanByte, Input, Output, Context>
+    public class SpanByteFunctions<TInput, TOutput, TContext> : SessionFunctionsBase<SpanByte, SpanByte, TInput, TOutput, TContext>
     {
         /// <inheritdoc />
-        public override bool SingleWriter(ref SpanByte key, ref Input input, ref SpanByte src, ref SpanByte dst, ref Output output, ref UpsertInfo upsertInfo, WriteReason reason, ref RecordInfo recordInfo)
+        public override bool SingleWriter(ref SpanByte key, ref TInput input, ref SpanByte src, ref SpanByte dst, ref TOutput output, ref UpsertInfo upsertInfo, WriteReason reason, ref RecordInfo recordInfo)
             => DoSafeCopy(ref src, ref dst, ref upsertInfo, ref recordInfo);
 
         /// <inheritdoc />
-        public override bool ConcurrentWriter(ref SpanByte key, ref Input input, ref SpanByte src, ref SpanByte dst, ref Output output, ref UpsertInfo upsertInfo, ref RecordInfo recordInfo)
+        public override bool ConcurrentWriter(ref SpanByte key, ref TInput input, ref SpanByte src, ref SpanByte dst, ref TOutput output, ref UpsertInfo upsertInfo, ref RecordInfo recordInfo)
             => DoSafeCopy(ref src, ref dst, ref upsertInfo, ref recordInfo);
 
         /// <summary>

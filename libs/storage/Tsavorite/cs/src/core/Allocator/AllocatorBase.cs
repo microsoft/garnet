@@ -14,9 +14,9 @@ namespace Tsavorite.core
     /// <summary>
     /// Base class for hybrid log memory allocator. Contains utility methods, some of which are not performance-critical so can be virtual.
     /// </summary>
-    public abstract partial class AllocatorBase<Key, Value, TStoreFunctions, TAllocator> : IDisposable
-        where TStoreFunctions : IStoreFunctions<Key, Value>
-        where TAllocator : IAllocator<Key, Value, TStoreFunctions>
+    public abstract partial class AllocatorBase<TKey, TValue, TStoreFunctions, TAllocator> : IDisposable
+        where TStoreFunctions : IStoreFunctions<TKey, TValue>
+        where TAllocator : IAllocator<TKey, TValue, TStoreFunctions>
     {
         /// <summary>The epoch we are operating with</summary>
         protected readonly LightEpoch epoch;
@@ -173,13 +173,13 @@ namespace Tsavorite.core
         private readonly ErrorList errorList = new();
 
         /// <summary>Observer for records entering read-only region</summary>
-        internal IObserver<ITsavoriteScanIterator<Key, Value>> OnReadOnlyObserver;
+        internal IObserver<ITsavoriteScanIterator<TKey, TValue>> OnReadOnlyObserver;
 
         /// <summary>Observer for records getting evicted from memory (page closed)</summary>
-        internal IObserver<ITsavoriteScanIterator<Key, Value>> OnEvictionObserver;
+        internal IObserver<ITsavoriteScanIterator<TKey, TValue>> OnEvictionObserver;
 
         /// <summary>Observer for records brought into memory by deserializing pages</summary>
-        internal IObserver<ITsavoriteScanIterator<Key, Value>> OnDeserializationObserver;
+        internal IObserver<ITsavoriteScanIterator<TKey, TValue>> OnDeserializationObserver;
 
         /// <summary>The "event" to be waited on for flush completion by the initiator of an operation</summary>
         internal CompletionEvent FlushEvent;
@@ -206,7 +206,7 @@ namespace Tsavorite.core
         protected abstract void WriteAsyncToDevice<TContext>(long startPage, long flushPage, int pageSize, DeviceIOCompletionCallback callback, PageAsyncFlushResult<TContext> result, IDevice device, IDevice objectLogDevice, long[] localSegmentOffsets, long fuzzyStartLogicalAddress);
 
         /// <summary>Read objects to memory (async)</summary>
-        protected abstract unsafe void AsyncReadRecordObjectsToMemory(long fromLogical, int numBytes, DeviceIOCompletionCallback callback, AsyncIOContext<Key, Value> context, SectorAlignedMemory result = default);
+        protected abstract unsafe void AsyncReadRecordObjectsToMemory(long fromLogical, int numBytes, DeviceIOCompletionCallback callback, AsyncIOContext<TKey, TValue> context, SectorAlignedMemory result = default);
 
         /// <summary>Read page from device (async)</summary>
         protected abstract void ReadAsync<TContext>(ulong alignedSourceAddress, int destinationPageIndex, uint aligned_read_length, DeviceIOCompletionCallback callback, PageAsyncReadResult<TContext> asyncResult, IDevice device, IDevice objlogDevice);
@@ -1284,7 +1284,7 @@ namespace Tsavorite.core
         }
 
         /// <summary>Invoked by users to obtain a record from disk. It uses sector aligned memory to read the record efficiently into memory.</summary>
-        internal unsafe void AsyncReadRecordToMemory(long fromLogical, int numBytes, DeviceIOCompletionCallback callback, ref AsyncIOContext<Key, Value> context)
+        internal unsafe void AsyncReadRecordToMemory(long fromLogical, int numBytes, DeviceIOCompletionCallback callback, ref AsyncIOContext<TKey, TValue> context)
         {
             var fileOffset = (ulong)(AlignedPageSizeBytes * (fromLogical >> LogPageSizeBits) + (fromLogical & PageSizeMask));
             var alignedFileOffset = (ulong)(((long)fileOffset / sectorSize) * sectorSize);
@@ -1297,7 +1297,7 @@ namespace Tsavorite.core
             record.available_bytes = (int)(alignedReadLength - (fileOffset - alignedFileOffset));
             record.required_bytes = numBytes;
 
-            var asyncResult = default(AsyncGetFromDiskResult<AsyncIOContext<Key, Value>>);
+            var asyncResult = default(AsyncGetFromDiskResult<AsyncIOContext<TKey, TValue>>);
             asyncResult.context = context;
             asyncResult.context.record = record;
             device.ReadAsync(alignedFileOffset,
@@ -1568,7 +1568,7 @@ namespace Tsavorite.core
             }
         }
 
-        internal void AsyncGetFromDisk(long fromLogical, int numBytes, AsyncIOContext<Key, Value> context, SectorAlignedMemory result = default)
+        internal void AsyncGetFromDisk(long fromLogical, int numBytes, AsyncIOContext<TKey, TValue> context, SectorAlignedMemory result = default)
         {
             if (epoch.ThisInstanceProtected()) // Do not spin for unprotected IO threads
             {
@@ -1591,7 +1591,7 @@ namespace Tsavorite.core
             if (errorCode != 0)
                 logger?.LogError("AsyncGetFromDiskCallback error: {0}", errorCode);
 
-            var result = (AsyncGetFromDiskResult<AsyncIOContext<Key, Value>>)context;
+            var result = (AsyncGetFromDiskResult<AsyncIOContext<TKey, TValue>>)context;
             var ctx = result.context;
             try
             {

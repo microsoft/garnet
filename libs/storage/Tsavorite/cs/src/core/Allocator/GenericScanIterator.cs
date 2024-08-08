@@ -10,23 +10,23 @@ namespace Tsavorite.core
     /// <summary>
     /// Scan iterator for hybrid log
     /// </summary>
-    internal sealed class GenericScanIterator<Key, Value, TStoreFunctions> : ScanIteratorBase, ITsavoriteScanIterator<Key, Value>, IPushScanIterator<Key>
-        where TStoreFunctions : IStoreFunctions<Key, Value>
+    internal sealed class GenericScanIterator<TKey, TValue, TStoreFunctions> : ScanIteratorBase, ITsavoriteScanIterator<TKey, TValue>, IPushScanIterator<TKey>
+        where TStoreFunctions : IStoreFunctions<TKey, TValue>
     {
-        private readonly TsavoriteKV<Key, Value, TStoreFunctions, GenericAllocator<Key, Value, TStoreFunctions>> store;
-        private readonly GenericAllocatorImpl<Key, Value, TStoreFunctions> hlog;
-        private readonly GenericFrame<Key, Value> frame;
+        private readonly TsavoriteKV<TKey, TValue, TStoreFunctions, GenericAllocator<TKey, TValue, TStoreFunctions>> store;
+        private readonly GenericAllocatorImpl<TKey, TValue, TStoreFunctions> hlog;
+        private readonly GenericFrame<TKey, TValue> frame;
         private readonly int recordSize;
 
-        private Key currentKey;
-        private Value currentValue;
+        private TKey currentKey;
+        private TValue currentValue;
 
         private long currentPage = -1, currentOffset = -1, currentFrame = -1;
 
         /// <summary>
         /// Constructor
         /// </summary>
-        public GenericScanIterator(TsavoriteKV<Key, Value, TStoreFunctions, GenericAllocator<Key, Value, TStoreFunctions>> store, GenericAllocatorImpl<Key, Value, TStoreFunctions> hlog,
+        public GenericScanIterator(TsavoriteKV<TKey, TValue, TStoreFunctions, GenericAllocator<TKey, TValue, TStoreFunctions>> store, GenericAllocatorImpl<TKey, TValue, TStoreFunctions> hlog,
                 long beginAddress, long endAddress, ScanBufferingMode scanBufferingMode, bool includeSealedRecords, LightEpoch epoch, ILogger logger = null)
             : base(beginAddress == 0 ? hlog.GetFirstValidLogicalAddress(0) : beginAddress, endAddress, scanBufferingMode, includeSealedRecords, epoch, hlog.LogPageSizeBits, logger: logger)
         {
@@ -34,13 +34,13 @@ namespace Tsavorite.core
             this.hlog = hlog;
             recordSize = hlog.GetRecordSize(0).allocatedSize;
             if (frameSize > 0)
-                frame = new GenericFrame<Key, Value>(frameSize, hlog.PageSize);
+                frame = new GenericFrame<TKey, TValue>(frameSize, hlog.PageSize);
         }
 
         /// <summary>
         /// Constructor for use with tail-to-head push iteration of the passed key's record versions
         /// </summary>
-        public GenericScanIterator(TsavoriteKV<Key, Value, TStoreFunctions, GenericAllocator<Key, Value, TStoreFunctions>> store, GenericAllocatorImpl<Key, Value, TStoreFunctions> hlog,
+        public GenericScanIterator(TsavoriteKV<TKey, TValue, TStoreFunctions, GenericAllocator<TKey, TValue, TStoreFunctions>> store, GenericAllocatorImpl<TKey, TValue, TStoreFunctions> hlog,
                 long beginAddress, LightEpoch epoch, ILogger logger = null)
             : base(beginAddress == 0 ? hlog.GetFirstValidLogicalAddress(0) : beginAddress, hlog.GetTailAddress(), ScanBufferingMode.SinglePageBuffering, false, epoch, hlog.LogPageSizeBits, logger: logger)
         {
@@ -48,26 +48,26 @@ namespace Tsavorite.core
             this.hlog = hlog;
             recordSize = hlog.GetRecordSize(0).allocatedSize;
             if (frameSize > 0)
-                frame = new GenericFrame<Key, Value>(frameSize, hlog.PageSize);
+                frame = new GenericFrame<TKey, TValue>(frameSize, hlog.PageSize);
         }
 
         /// <summary>
         /// Gets reference to current key
         /// </summary>
         /// <returns></returns>
-        public ref Key GetKey() => ref currentKey;
+        public ref TKey GetKey() => ref currentKey;
 
         /// <summary>
         /// Gets reference to current value
         /// </summary>
         /// <returns></returns>
-        public ref Value GetValue() => ref currentValue;
+        public ref TValue GetValue() => ref currentValue;
 
         /// <inheritdoc/>
         public bool SnapCursorToLogicalAddress(ref long cursor)
         {
             Debug.Assert(currentAddress == -1, "SnapCursorToLogicalAddress must be called before GetNext()");
-            beginAddress = nextAddress = hlog.SnapToFixedLengthLogicalAddressBoundary(ref cursor, GenericAllocatorImpl<Key, Value, TStoreFunctions>.RecordSize);
+            beginAddress = nextAddress = hlog.SnapToFixedLengthLogicalAddressBoundary(ref cursor, GenericAllocatorImpl<TKey, TValue, TStoreFunctions>.RecordSize);
             return true;
         }
 
@@ -134,7 +134,7 @@ namespace Tsavorite.core
 
                     // Copy the object values from cached page memory to data members; we have no ref into the log after the epoch.Suspend().
                     // These are pointer-sized shallow copies but we need to lock to ensure no value tearing inside the object while copying to temp storage.
-                    OperationStackContext<Key, Value, TStoreFunctions, GenericAllocator<Key, Value, TStoreFunctions>> stackCtx = default;
+                    OperationStackContext<TKey, TValue, TStoreFunctions, GenericAllocator<TKey, TValue, TStoreFunctions>> stackCtx = default;
                     try
                     {
                         // We cannot use GetKey() because it has not yet been set.
@@ -180,7 +180,7 @@ namespace Tsavorite.core
         /// Get previous record and keep the epoch held while we call the user's scan functions
         /// </summary>
         /// <returns>True if record found, false if end of scan</returns>
-        bool IPushScanIterator<Key>.BeginGetPrevInMemory(ref Key key, out RecordInfo recordInfo, out bool continueOnDisk)
+        bool IPushScanIterator<TKey>.BeginGetPrevInMemory(ref TKey key, out RecordInfo recordInfo, out bool continueOnDisk)
         {
             recordInfo = default;
             currentKey = default;
@@ -228,7 +228,7 @@ namespace Tsavorite.core
             }
         }
 
-        bool IPushScanIterator<Key>.EndGetPrevInMemory()
+        bool IPushScanIterator<TKey>.EndGetPrevInMemory()
         {
             epoch?.Suspend();
             return true;
@@ -241,7 +241,7 @@ namespace Tsavorite.core
         /// <param name="key"></param>
         /// <param name="value"></param>
         /// <returns></returns>
-        public bool GetNext(out RecordInfo recordInfo, out Key key, out Value value)
+        public bool GetNext(out RecordInfo recordInfo, out TKey key, out TValue value)
         {
             if (GetNext(out recordInfo))
             {
