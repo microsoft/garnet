@@ -91,8 +91,7 @@ namespace Garnet
                     MissingMemberHandling = MissingMemberHandling.Error,
                     Error = delegate (object _, ErrorEventArgs args)
                     {
-                        logger?.LogWarning(
-                            $"Encountered an issue when deserializing config file  (Path: {path}): {args.ErrorContext.Error.Message}");
+                        logger?.LogWarning("Encountered an issue when deserializing config file  (Path: {path}): {ErrorMessage}", path, args.ErrorContext.Error.Message);
                         args.ErrorContext.Handled = true;
                     }
                 };
@@ -100,7 +99,7 @@ namespace Garnet
             }
             catch (Newtonsoft.Json.JsonException je)
             {
-                logger?.LogError(je, $"An error occurred while parsing config file (Path: {path}).");
+                logger?.LogError(je, "An error occurred while parsing config file (Path: {path}).", path);
                 return false;
             }
 
@@ -116,7 +115,7 @@ namespace Garnet
             }
             catch (NotSupportedException e)
             {
-                logger?.LogError(e, $"An error occurred while serializing config file (Path: {path}).");
+                logger?.LogError(e, "An error occurred while serializing config file (Path: {path}).", path);
                 return false;
             }
 
