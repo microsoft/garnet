@@ -16,17 +16,17 @@ namespace Garnet.server
     /// Broker used for PUB-SUB to Tsavorite KV store. There is a broker per TsavoriteKV instance.
     /// A single broker can be used with multiple TsavoriteKVProviders. 
     /// </summary>
-    /// <typeparam name="Key"></typeparam>
-    /// <typeparam name="Value"></typeparam>
-    /// <typeparam name="KeyValueSerializer"></typeparam>
-    public sealed class SubscribeBroker<Key, Value, KeyValueSerializer> : IDisposable
-        where KeyValueSerializer : IKeySerializer<Key>
+    /// <typeparam name="TKey"></typeparam>
+    /// <typeparam name="TValue"></typeparam>
+    /// <typeparam name="TKeyValueSerializer"></typeparam>
+    public sealed class SubscribeBroker<TKey, TValue, TKeyValueSerializer> : IDisposable
+        where TKeyValueSerializer : IKeySerializer<TKey>
     {
         private int sid = 0;
         private ConcurrentDictionary<byte[], ConcurrentDictionary<int, ServerSessionBase>> subscriptions;
         private ConcurrentDictionary<byte[], (bool, ConcurrentDictionary<int, ServerSessionBase>)> prefixSubscriptions;
         private AsyncQueue<(byte[], byte[])> publishQueue;
-        readonly IKeySerializer<Key> keySerializer;
+        readonly IKeySerializer<TKey> keySerializer;
         readonly TsavoriteLog log;
         readonly IDevice device;
         readonly CancellationTokenSource cts = new();
@@ -40,7 +40,7 @@ namespace Garnet.server
         /// <param name="logDir">Directory where the log will be stored</param>
         /// <param name="pageSize">Page size of log used for pub/sub</param>
         /// <param name="startFresh">start the log from scratch, do not continue</param>
-        public SubscribeBroker(IKeySerializer<Key> keySerializer, string logDir, long pageSize, bool startFresh = true)
+        public SubscribeBroker(IKeySerializer<TKey> keySerializer, string logDir, long pageSize, bool startFresh = true)
         {
             this.keySerializer = keySerializer;
             device = logDir == null ? new NullDevice() : Devices.CreateLogDevice(logDir + "/pubsubkv", preallocateFile: false);
@@ -371,7 +371,7 @@ namespace Garnet.server
             if (subscriptions == null && prefixSubscriptions == null) return 0;
 
             var start = key;
-            ref Key k = ref keySerializer.ReadKeyByRef(ref key);
+            ref TKey k = ref keySerializer.ReadKeyByRef(ref key);
             var keyBytes = new Span<byte>(start, (int)(key - start)).ToArray();
             int numSubscribedSessions = Broadcast(keyBytes, value, valueLength, ascii);
             return numSubscribedSessions;
@@ -389,7 +389,7 @@ namespace Garnet.server
             if (subscriptions == null && prefixSubscriptions == null) return;
 
             var start = key;
-            ref Key k = ref keySerializer.ReadKeyByRef(ref key);
+            ref TKey k = ref keySerializer.ReadKeyByRef(ref key);
             // TODO: this needs to be a single atomic enqueue
             byte[] logEntryBytes = new byte[(key - start) + valueLength + sizeof(bool)];
             fixed (byte* logEntryBytePtr = &logEntryBytes[0])

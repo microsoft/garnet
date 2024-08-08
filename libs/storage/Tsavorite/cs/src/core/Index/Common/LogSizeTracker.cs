@@ -10,16 +10,16 @@ using Microsoft.Extensions.Logging;
 namespace Tsavorite.core
 {
     /// <summary>Interface for calculating the size of the log</summary>
-    /// <typeparam name="Key">Type of key</typeparam>
-    /// <typeparam name="Value">Type of value</typeparam>
-    public interface ILogSizeCalculator<Key, Value>
+    /// <typeparam name="TKey">Type of key</typeparam>
+    /// <typeparam name="TValue">Type of value</typeparam>
+    public interface ILogSizeCalculator<TKey, TValue>
     {
         /// <summary>Calculates the size of a log record</summary>
         /// <param name="recordInfo">Information about the record</param>
         /// <param name="key">The key</param>
         /// <param name="value">The value</param>
         /// <returns>The size of the record</returns>
-        long CalculateRecordSize(RecordInfo recordInfo, Key key, Value value);
+        long CalculateRecordSize(RecordInfo recordInfo, TKey key, TValue value);
     }
 
     public enum LogOperationType
@@ -27,15 +27,15 @@ namespace Tsavorite.core
         Deserialize
     }
 
-    public class LogOperationObserver<Key, Value, TStoreFunctions, TAllocator, TLogSizeCalculator> : IObserver<ITsavoriteScanIterator<Key, Value>>
-        where TStoreFunctions : IStoreFunctions<Key, Value>
-        where TAllocator : IAllocator<Key, Value, TStoreFunctions>
-        where TLogSizeCalculator : ILogSizeCalculator<Key, Value>
+    public class LogOperationObserver<TKey, TValue, TStoreFunctions, TAllocator, TLogSizeCalculator> : IObserver<ITsavoriteScanIterator<TKey, TValue>>
+        where TStoreFunctions : IStoreFunctions<TKey, TValue>
+        where TAllocator : IAllocator<TKey, TValue, TStoreFunctions>
+        where TLogSizeCalculator : ILogSizeCalculator<TKey, TValue>
     {
-        private readonly LogSizeTracker<Key, Value, TStoreFunctions, TAllocator, TLogSizeCalculator> logSizeTracker;
+        private readonly LogSizeTracker<TKey, TValue, TStoreFunctions, TAllocator, TLogSizeCalculator> logSizeTracker;
         private readonly LogOperationType logOperationType;
 
-        public LogOperationObserver(LogSizeTracker<Key, Value, TStoreFunctions, TAllocator, TLogSizeCalculator> logSizeTracker, LogOperationType logOperationType)
+        public LogOperationObserver(LogSizeTracker<TKey, TValue, TStoreFunctions, TAllocator, TLogSizeCalculator> logSizeTracker, LogOperationType logOperationType)
         {
             this.logSizeTracker = logSizeTracker;
             this.logOperationType = logOperationType;
@@ -45,10 +45,10 @@ namespace Tsavorite.core
 
         public void OnError(Exception error) { }
 
-        public void OnNext(ITsavoriteScanIterator<Key, Value> records)
+        public void OnNext(ITsavoriteScanIterator<TKey, TValue> records)
         {
             long size = 0;
-            while (records.GetNext(out RecordInfo info, out Key key, out Value value))
+            while (records.GetNext(out RecordInfo info, out TKey key, out TValue value))
             {
                 Debug.Assert(key != null);
                 Debug.Assert(value != null);
@@ -67,15 +67,15 @@ namespace Tsavorite.core
     }
 
     /// <summary>Tracks and controls size of log</summary>
-    /// <typeparam name="Key">Type of key</typeparam>
-    /// <typeparam name="Value">Type of value</typeparam>
+    /// <typeparam name="TKey">Type of key</typeparam>
+    /// <typeparam name="TValue">Type of value</typeparam>
     /// <typeparam name="TStoreFunctions"></typeparam>
     /// <typeparam name="TAllocator"></typeparam>
     /// <typeparam name="TLogSizeCalculator">Type of the log size calculator</typeparam>
-    public class LogSizeTracker<Key, Value, TStoreFunctions, TAllocator, TLogSizeCalculator> : IObserver<ITsavoriteScanIterator<Key, Value>>
-        where TLogSizeCalculator : ILogSizeCalculator<Key, Value>
-        where TStoreFunctions : IStoreFunctions<Key, Value>
-        where TAllocator : IAllocator<Key, Value, TStoreFunctions>
+    public class LogSizeTracker<TKey, TValue, TStoreFunctions, TAllocator, TLogSizeCalculator> : IObserver<ITsavoriteScanIterator<TKey, TValue>>
+        where TLogSizeCalculator : ILogSizeCalculator<TKey, TValue>
+        where TStoreFunctions : IStoreFunctions<TKey, TValue>
+        where TAllocator : IAllocator<TKey, TValue, TStoreFunctions>
     {
         private ConcurrentCounter logSize;
         private long lowTargetSize;
@@ -84,7 +84,7 @@ namespace Tsavorite.core
         private readonly ILogger logger;
         internal const int resizeTaskDelaySeconds = 10;
 
-        internal LogAccessor<Key, Value, TStoreFunctions, TAllocator> logAccessor;
+        internal LogAccessor<TKey, TValue, TStoreFunctions, TAllocator> logAccessor;
 
         /// <summary>Indicates whether resizer task has been stopped</summary>
         public volatile bool Stopped;
@@ -105,7 +105,7 @@ namespace Tsavorite.core
         /// <param name="targetSize">Target size for the hybrid log memory utilization</param>
         /// <param name="delta">Delta from target size to maintain memory utilization</param>
         /// <param name="logger"></param>
-        public LogSizeTracker(LogAccessor<Key, Value, TStoreFunctions, TAllocator> logAccessor, TLogSizeCalculator logSizeCalculator, long targetSize, long delta, ILogger logger)
+        public LogSizeTracker(LogAccessor<TKey, TValue, TStoreFunctions, TAllocator> logAccessor, TLogSizeCalculator logSizeCalculator, long targetSize, long delta, ILogger logger)
         {
             Debug.Assert(logAccessor != null);
             Debug.Assert(logSizeCalculator != null);
@@ -141,10 +141,10 @@ namespace Tsavorite.core
         public void OnError(Exception error) { }
 
         /// <summary>Callback on allocator evicting a page to disk</summary>
-        public void OnNext(ITsavoriteScanIterator<Key, Value> records)
+        public void OnNext(ITsavoriteScanIterator<TKey, TValue> records)
         {
             long size = 0;
-            while (records.GetNext(out RecordInfo info, out Key key, out Value value))
+            while (records.GetNext(out RecordInfo info, out TKey key, out TValue value))
             {
                 Debug.Assert(key != null);
                 Debug.Assert(value != null);

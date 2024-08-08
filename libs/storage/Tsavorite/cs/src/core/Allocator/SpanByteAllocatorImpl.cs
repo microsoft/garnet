@@ -122,8 +122,8 @@ namespace Tsavorite.core
         }
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public (int actualSize, int allocatedSize, int keySize) GetRMWCopyDestinationRecordSize<Input, TVariableLengthInput>(ref SpanByte key, ref Input input, ref SpanByte value, ref RecordInfo recordInfo, TVariableLengthInput varlenInput)
-            where TVariableLengthInput : IVariableLengthInput<SpanByte, Input>
+        public (int actualSize, int allocatedSize, int keySize) GetRMWCopyDestinationRecordSize<TInput, TVariableLengthInput>(ref SpanByte key, ref TInput input, ref SpanByte value, ref RecordInfo recordInfo, TVariableLengthInput varlenInput)
+            where TVariableLengthInput : IVariableLengthInput<SpanByte, TInput>
         {
             // Used by RMW to determine the length of copy destination (taking Input into account), so does not need to get filler length.
             var keySize = key.TotalSize;
