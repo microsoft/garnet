@@ -150,6 +150,12 @@ namespace Garnet.server
         string clientName = null;
 
         /// <summary>
+        /// Flag indicating whether any of the commands in one message
+        /// requires us to block on AOF before sending response over the network
+        /// </summary>
+        bool waitForAofBlocking = false;
+
+        /// <summary>
         /// Random number generator for operations, using a cryptographic generator as the base seed
         /// </summary>
         private static readonly Random RandomGen = new(RandomNumberGenerator.GetInt32(int.MaxValue));
@@ -911,6 +917,9 @@ namespace Garnet.server
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         private void Send(byte* d)
         {
+            // Note: This SEND method may be called for responding to multiple commands in a single message (pipelining),
+            // or multiple times in a single command for sending data larger than fitting in buffer at once.
+
             // #if DEBUG
             // logger?.LogTrace("SEND: [{send}]", Encoding.UTF8.GetString(new Span<byte>(d, (int)(dcurr - d))).Replace("\n", "|").Replace("\r", ""));
             // Debug.WriteLine($"SEND: [{Encoding.UTF8.GetString(new Span<byte>(d, (int)(dcurr - d))).Replace("\n", "|").Replace("\r", "")}]");
@@ -919,7 +928,7 @@ namespace Garnet.server
             if ((int)(dcurr - d) > 0)
             {
                 // Debug.WriteLine("SEND: [" + Encoding.UTF8.GetString(new Span<byte>(d, (int)(dcurr - d))).Replace("\n", "|").Replace("\r", "!") + "]");
-                if (storeWrapper.appendOnlyFile != null && storeWrapper.serverOptions.WaitForCommit)
+                if (waitForAofBlocking)
                 {
                     var task = storeWrapper.appendOnlyFile.WaitForCommitAsync();
                     if (!task.IsCompleted) task.AsTask().GetAwaiter().GetResult();
