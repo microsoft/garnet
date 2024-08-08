@@ -995,7 +995,7 @@ namespace Garnet.test
         [Test]
         public void CanRunHLLProcedureTest()
         {
-            server.Register.NewTransactionProc("HLLPROC", 8, () => new TestProcedureHLL());
+            server.Register.NewTransactionProc("HLLPROC", () => new TestProcedureHLL(), new RespCommandsInfo { Arity = 9 });
             using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
             var db = redis.GetDatabase(0);
 

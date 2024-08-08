@@ -4,6 +4,7 @@
 using System;
 using System.Collections.Generic;
 using Garnet.common;
+using Garnet.server;
 using NUnit.Framework;
 using StackExchange.Redis;
 
@@ -2199,7 +2200,7 @@ namespace Garnet.test
         [Category("BITMAPPROC")]
         public void BitmapCmdsProcedureTest()
         {
-            server.Register.NewTransactionProc("BITMAPPROC", 5, () => new TestProcedureBitmap());
+            server.Register.NewTransactionProc("BITMAPPROC", () => new TestProcedureBitmap(), new RespCommandsInfo { Arity = 6 });
             using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
             var db = redis.GetDatabase(0);
 
