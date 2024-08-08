@@ -75,7 +75,7 @@ namespace Garnet.cluster
             try
             {
                 logger?.LogInformation("Replica replicaId:{replicaId} requesting checkpoint replicaStoreVersion:{replicaStoreVersion} replicaObjectStoreVersion:{replicaObjectStoreVersion}",
-                    remoteNodeId, remoteEntry.storeVersion, remoteEntry.objectStoreVersion);
+                    remoteNodeId, remoteEntry.metadata.storeVersion, remoteEntry.metadata.objectStoreVersion);
                 gcs.Connect((int)clusterProvider.clusterManager.GetClusterTimeout().TotalMilliseconds);
 
             retry:
@@ -86,13 +86,13 @@ namespace Garnet.cluster
                 // Local and remote checkpoints are of same history if both of the following hold
                 // 1. There is a checkpoint available at remote node
                 // 2. Remote and local checkpoints contain the same PrimaryReplId
-                var sameMainStoreCheckpointHistory = !string.IsNullOrEmpty(remoteEntry.storePrimaryReplId) && remoteEntry.storePrimaryReplId.Equals(localEntry.storePrimaryReplId);
-                var sameObjectStoreCheckpointHistory = !string.IsNullOrEmpty(remoteEntry.objectStorePrimaryReplId) && remoteEntry.objectStorePrimaryReplId.Equals(localEntry.objectStorePrimaryReplId);
+                var sameMainStoreCheckpointHistory = !string.IsNullOrEmpty(remoteEntry.metadata.storePrimaryReplId) && remoteEntry.metadata.storePrimaryReplId.Equals(localEntry.metadata.storePrimaryReplId);
+                var sameObjectStoreCheckpointHistory = !string.IsNullOrEmpty(remoteEntry.metadata.objectStorePrimaryReplId) && remoteEntry.metadata.objectStorePrimaryReplId.Equals(localEntry.metadata.objectStorePrimaryReplId);
                 // We will not send the latest local checkpoint if any of the following hold
                 // 1. Local node does not have any checkpoints
                 // 2. Local checkpoint is of same version and history as the remote checkpoint
-                var skipLocalMainStoreCheckpoint = localEntry.storeHlogToken == default || (sameMainStoreCheckpointHistory && localEntry.storeVersion == remoteEntry.storeVersion);
-                var skipLocalObjectStoreCheckpoint = clusterProvider.serverOptions.DisableObjects || localEntry.objectStoreHlogToken == default || (sameObjectStoreCheckpointHistory && localEntry.objectStoreVersion == remoteEntry.objectStoreVersion);
+                var skipLocalMainStoreCheckpoint = localEntry.metadata.storeHlogToken == default || (sameMainStoreCheckpointHistory && localEntry.metadata.storeVersion == remoteEntry.metadata.storeVersion);
+                var skipLocalObjectStoreCheckpoint = clusterProvider.serverOptions.DisableObjects || localEntry.metadata.objectStoreHlogToken == default || (sameObjectStoreCheckpointHistory && localEntry.metadata.objectStoreVersion == remoteEntry.metadata.objectStoreVersion);
 
                 LogFileInfo hlog_size = default;
                 long index_size = -1;
@@ -128,69 +128,69 @@ namespace Garnet.cluster
 
                 if (!skipLocalMainStoreCheckpoint)
                 {
-                    logger?.LogInformation("Sending main store checkpoint {version} {storeHlogToken} {storeIndexToken} to replica", localEntry.storeVersion, localEntry.storeHlogToken, localEntry.storeIndexToken);
+                    logger?.LogInformation("Sending main store checkpoint {version} {storeHlogToken} {storeIndexToken} to replica", localEntry.metadata.storeVersion, localEntry.metadata.storeHlogToken, localEntry.metadata.storeIndexToken);
 
                     // 1. send hlog file segments
                     if (clusterProvider.serverOptions.EnableStorageTier && hlog_size.hybridLogFileEndAddress > 64)
-                        await SendFileSegments(gcs, localEntry.storeHlogToken, CheckpointFileType.STORE_HLOG, hlog_size.hybridLogFileStartAddress, hlog_size.hybridLogFileEndAddress);
+                        await SendFileSegments(gcs, localEntry.metadata.storeHlogToken, CheckpointFileType.STORE_HLOG, hlog_size.hybridLogFileStartAddress, hlog_size.hybridLogFileEndAddress);
 
                     // 2.Send index file segments
                     //var index_size = storeWrapper.store.GetIndexFileSize(localEntry.storeIndexToken);
-                    await SendFileSegments(gcs, localEntry.storeIndexToken, CheckpointFileType.STORE_INDEX, 0, index_size);
+                    await SendFileSegments(gcs, localEntry.metadata.storeIndexToken, CheckpointFileType.STORE_INDEX, 0, index_size);
 
                     // 3. Send snapshot file segments
-                    await SendFileSegments(gcs, localEntry.storeHlogToken, CheckpointFileType.STORE_SNAPSHOT, 0, hlog_size.snapshotFileEndAddress);
+                    await SendFileSegments(gcs, localEntry.metadata.storeHlogToken, CheckpointFileType.STORE_SNAPSHOT, 0, hlog_size.snapshotFileEndAddress);
 
                     // 4. Send delta log segments
                     var dlog_size = hlog_size.deltaLogTailAddress;
-                    await SendFileSegments(gcs, localEntry.storeHlogToken, CheckpointFileType.STORE_DLOG, 0, dlog_size);
+                    await SendFileSegments(gcs, localEntry.metadata.storeHlogToken, CheckpointFileType.STORE_DLOG, 0, dlog_size);
 
                     // 5.Send index metadata
-                    await SendCheckpointMetadata(gcs, storeCkptManager, CheckpointFileType.STORE_INDEX, localEntry.storeIndexToken);
+                    await SendCheckpointMetadata(gcs, storeCkptManager, CheckpointFileType.STORE_INDEX, localEntry.metadata.storeIndexToken);
 
                     // 6. Send snapshot metadata
-                    await SendCheckpointMetadata(gcs, storeCkptManager, CheckpointFileType.STORE_SNAPSHOT, localEntry.storeHlogToken);
+                    await SendCheckpointMetadata(gcs, storeCkptManager, CheckpointFileType.STORE_SNAPSHOT, localEntry.metadata.storeHlogToken);
                 }
 
                 if (!skipLocalObjectStoreCheckpoint)
                 {
-                    logger?.LogInformation("Sending object store checkpoint {version} {objectStoreHlogToken} {objectStoreIndexToken} to replica", localEntry.objectStoreVersion, localEntry.objectStoreHlogToken, localEntry.objectStoreIndexToken);
+                    logger?.LogInformation("Sending object store checkpoint {version} {objectStoreHlogToken} {objectStoreIndexToken} to replica", localEntry.metadata.objectStoreVersion, localEntry.metadata.objectStoreHlogToken, localEntry.metadata.objectStoreIndexToken);
 
                     // 1. send hlog file segments
                     if (clusterProvider.serverOptions.EnableStorageTier && obj_hlog_size.hybridLogFileEndAddress > 24)
                     {
                         //send object hlog file segments
-                        await SendFileSegments(gcs, localEntry.objectStoreHlogToken, CheckpointFileType.OBJ_STORE_HLOG, obj_hlog_size.hybridLogFileStartAddress, obj_hlog_size.hybridLogFileEndAddress);
+                        await SendFileSegments(gcs, localEntry.metadata.objectStoreHlogToken, CheckpointFileType.OBJ_STORE_HLOG, obj_hlog_size.hybridLogFileStartAddress, obj_hlog_size.hybridLogFileEndAddress);
 
                         var hlogSegmentCount = ((obj_hlog_size.hybridLogFileEndAddress - obj_hlog_size.hybridLogFileStartAddress) >> clusterProvider.serverOptions.ObjectStoreSegmentSizeBits()) + 1;
-                        await SendObjectFiles(gcs, localEntry.objectStoreHlogToken, CheckpointFileType.OBJ_STORE_HLOG_OBJ, (int)hlogSegmentCount);
+                        await SendObjectFiles(gcs, localEntry.metadata.objectStoreHlogToken, CheckpointFileType.OBJ_STORE_HLOG_OBJ, (int)hlogSegmentCount);
                     }
 
                     // 2. Send object store snapshot files
                     if (obj_hlog_size.snapshotFileEndAddress > 24)
                     {
                         //send snapshot file segments
-                        await SendFileSegments(gcs, localEntry.objectStoreHlogToken, CheckpointFileType.OBJ_STORE_SNAPSHOT, 0, obj_hlog_size.snapshotFileEndAddress);
+                        await SendFileSegments(gcs, localEntry.metadata.objectStoreHlogToken, CheckpointFileType.OBJ_STORE_SNAPSHOT, 0, obj_hlog_size.snapshotFileEndAddress);
 
                         //send snapshot.obj file segments
                         var snapshotSegmentCount = (obj_hlog_size.snapshotFileEndAddress >> clusterProvider.serverOptions.ObjectStoreSegmentSizeBits()) + 1;
-                        await SendObjectFiles(gcs, localEntry.objectStoreHlogToken, CheckpointFileType.OBJ_STORE_SNAPSHOT_OBJ, (int)snapshotSegmentCount);
+                        await SendObjectFiles(gcs, localEntry.metadata.objectStoreHlogToken, CheckpointFileType.OBJ_STORE_SNAPSHOT_OBJ, (int)snapshotSegmentCount);
                     }
 
                     // 3. Send object store index file segments
                     if (obj_index_size > 0)
-                        await SendFileSegments(gcs, localEntry.objectStoreIndexToken, CheckpointFileType.OBJ_STORE_INDEX, 0, obj_index_size);
+                        await SendFileSegments(gcs, localEntry.metadata.objectStoreIndexToken, CheckpointFileType.OBJ_STORE_INDEX, 0, obj_index_size);
 
                     // 4. Send object store delta file segments
                     var obj_dlog_size = obj_hlog_size.deltaLogTailAddress;
                     if (obj_dlog_size > 0)
-                        await SendFileSegments(gcs, localEntry.objectStoreHlogToken, CheckpointFileType.OBJ_STORE_DLOG, 0, obj_dlog_size);
+                        await SendFileSegments(gcs, localEntry.metadata.objectStoreHlogToken, CheckpointFileType.OBJ_STORE_DLOG, 0, obj_dlog_size);
 
                     // 5. Send object store index metadata
-                    await SendCheckpointMetadata(gcs, objectStoreCkptManager, CheckpointFileType.OBJ_STORE_INDEX, localEntry.objectStoreIndexToken);
+                    await SendCheckpointMetadata(gcs, objectStoreCkptManager, CheckpointFileType.OBJ_STORE_INDEX, localEntry.metadata.objectStoreIndexToken);
 
                     // 6. Send object store snapshot metadata
-                    await SendCheckpointMetadata(gcs, objectStoreCkptManager, CheckpointFileType.OBJ_STORE_SNAPSHOT, localEntry.objectStoreHlogToken);
+                    await SendCheckpointMetadata(gcs, objectStoreCkptManager, CheckpointFileType.OBJ_STORE_SNAPSHOT, localEntry.metadata.objectStoreHlogToken);
                 }
 
                 var recoverFromRemote = !skipLocalMainStoreCheckpoint || !skipLocalObjectStoreCheckpoint;
