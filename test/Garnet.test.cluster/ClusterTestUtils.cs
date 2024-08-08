@@ -2547,7 +2547,7 @@ namespace Garnet.test.cluster
         {
             try
             {
-                var failoverState = GetReplicationInfo(endPoint, new[] { ReplicationInfoItem.PRIMARY_FAILOVER_STATE }, logger)[0].Item2;
+                var failoverState = GetReplicationInfo(endPoint, [ReplicationInfoItem.PRIMARY_FAILOVER_STATE], logger)[0].Item2;
                 return failoverState;
             }
             catch (Exception ex)
