@@ -6,9 +6,9 @@ using System.Runtime.CompilerServices;
 
 namespace Tsavorite.core
 {
-    public unsafe partial class TsavoriteKV<Key, Value, TStoreFunctions, TAllocator> : TsavoriteBase
-        where TStoreFunctions : IStoreFunctions<Key, Value>
-        where TAllocator : IAllocator<Key, Value, TStoreFunctions>
+    public unsafe partial class TsavoriteKV<TKey, TValue, TStoreFunctions, TAllocator> : TsavoriteBase
+        where TStoreFunctions : IStoreFunctions<TKey, TValue>
+        where TAllocator : IAllocator<TKey, TValue, TStoreFunctions>
     {
         /// <summary>
         /// Read operation. Computes the 'output' from 'input' and current value corresponding to 'key'.
@@ -50,17 +50,17 @@ namespace Tsavorite.core
         /// </list>
         /// </returns>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        internal OperationStatus InternalRead<Input, Output, Context, TSessionFunctionsWrapper>(ref Key key, long keyHash, ref Input input, ref Output output,
-                                    Context userContext, ref PendingContext<Input, Output, Context> pendingContext, TSessionFunctionsWrapper sessionFunctions)
-            where TSessionFunctionsWrapper : ISessionFunctionsWrapper<Key, Value, Input, Output, Context, TStoreFunctions, TAllocator>
+        internal OperationStatus InternalRead<TInput, TOutput, TContext, TSessionFunctionsWrapper>(ref TKey key, long keyHash, ref TInput input, ref TOutput output,
+                                    TContext userContext, ref PendingContext<TInput, TOutput, TContext> pendingContext, TSessionFunctionsWrapper sessionFunctions)
+            where TSessionFunctionsWrapper : ISessionFunctionsWrapper<TKey, TValue, TInput, TOutput, TContext, TStoreFunctions, TAllocator>
         {
-            OperationStackContext<Key, Value, TStoreFunctions, TAllocator> stackCtx = new(keyHash);
+            OperationStackContext<TKey, TValue, TStoreFunctions, TAllocator> stackCtx = new(keyHash);
             pendingContext.keyHash = keyHash;
 
             if (sessionFunctions.Ctx.phase == Phase.IN_PROGRESS_GROW)
                 SplitBuckets(stackCtx.hei.hash);
 
-            if (!FindTagAndTryTransientSLock<Input, Output, Context, TSessionFunctionsWrapper>(sessionFunctions, ref key, ref stackCtx, out OperationStatus status))
+            if (!FindTagAndTryTransientSLock<TInput, TOutput, TContext, TSessionFunctionsWrapper>(sessionFunctions, ref key, ref stackCtx, out OperationStatus status))
                 return status;
             stackCtx.SetRecordSourceToHashEntry(hlogBase);
 
@@ -168,15 +168,15 @@ namespace Tsavorite.core
             finally
             {
                 stackCtx.HandleNewRecordOnException(this);
-                TransientSUnlock<Input, Output, Context, TSessionFunctionsWrapper>(sessionFunctions, ref key, ref stackCtx);
+                TransientSUnlock<TInput, TOutput, TContext, TSessionFunctionsWrapper>(sessionFunctions, ref key, ref stackCtx);
             }
         }
 
         // No AggressiveInlining; this is a less-common function and it may improve inlining of InternalRead to have this be a virtcall.
-        private OperationStatus CopyFromImmutable<Input, Output, Context, TSessionFunctionsWrapper>(ref Key key, ref Input input, ref Output output, Context userContext,
-                ref PendingContext<Input, Output, Context> pendingContext, TSessionFunctionsWrapper sessionFunctions,
-                ref OperationStackContext<Key, Value, TStoreFunctions, TAllocator> stackCtx, ref OperationStatus status, Value recordValue)
-            where TSessionFunctionsWrapper : ISessionFunctionsWrapper<Key, Value, Input, Output, Context, TStoreFunctions, TAllocator>
+        private OperationStatus CopyFromImmutable<TInput, TOutput, TContext, TSessionFunctionsWrapper>(ref TKey key, ref TInput input, ref TOutput output, TContext userContext,
+                ref PendingContext<TInput, TOutput, TContext> pendingContext, TSessionFunctionsWrapper sessionFunctions,
+                ref OperationStackContext<TKey, TValue, TStoreFunctions, TAllocator> stackCtx, ref OperationStatus status, TValue recordValue)
+            where TSessionFunctionsWrapper : ISessionFunctionsWrapper<TKey, TValue, TInput, TOutput, TContext, TStoreFunctions, TAllocator>
         {
             if (pendingContext.readCopyOptions.CopyTo == ReadCopyTo.MainLog)
             {
@@ -246,9 +246,9 @@ namespace Tsavorite.core
         /// </list>
         /// </returns>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        internal OperationStatus InternalReadAtAddress<Input, Output, Context, TSessionFunctionsWrapper>(long readAtAddress, ref Key key, ref Input input, ref Output output,
-                                    ref ReadOptions readOptions, Context userContext, ref PendingContext<Input, Output, Context> pendingContext, TSessionFunctionsWrapper sessionFunctions)
-            where TSessionFunctionsWrapper : ISessionFunctionsWrapper<Key, Value, Input, Output, Context, TStoreFunctions, TAllocator>
+        internal OperationStatus InternalReadAtAddress<TInput, TOutput, TContext, TSessionFunctionsWrapper>(long readAtAddress, ref TKey key, ref TInput input, ref TOutput output,
+                                    ref ReadOptions readOptions, TContext userContext, ref PendingContext<TInput, TOutput, TContext> pendingContext, TSessionFunctionsWrapper sessionFunctions)
+            where TSessionFunctionsWrapper : ISessionFunctionsWrapper<TKey, TValue, TInput, TOutput, TContext, TStoreFunctions, TAllocator>
         {
             if (readAtAddress < hlogBase.BeginAddress)
                 return OperationStatus.NOTFOUND;
@@ -268,7 +268,7 @@ namespace Tsavorite.core
             // We're in-memory, so it is safe to get the address now.
             var physicalAddress = hlog.GetPhysicalAddress(readAtAddress);
 
-            Key defaultKey = default;
+            TKey defaultKey = default;
             if (readOptions.KeyHash.HasValue)
                 pendingContext.keyHash = readOptions.KeyHash.Value;
             else if (!pendingContext.NoKey)
@@ -286,11 +286,11 @@ namespace Tsavorite.core
 #pragma warning restore CS9085
             }
 
-            OperationStackContext<Key, Value, TStoreFunctions, TAllocator> stackCtx = new(pendingContext.keyHash);
+            OperationStackContext<TKey, TValue, TStoreFunctions, TAllocator> stackCtx = new(pendingContext.keyHash);
             if (sessionFunctions.Ctx.phase == Phase.IN_PROGRESS_GROW)
                 SplitBuckets(stackCtx.hei.hash);
 
-            if (!FindTagAndTryTransientSLock<Input, Output, Context, TSessionFunctionsWrapper>(sessionFunctions, ref key, ref stackCtx, out OperationStatus status))
+            if (!FindTagAndTryTransientSLock<TInput, TOutput, TContext, TSessionFunctionsWrapper>(sessionFunctions, ref key, ref stackCtx, out OperationStatus status))
                 return status;
 
             stackCtx.SetRecordSourceToHashEntry(hlogBase);
@@ -338,15 +338,15 @@ namespace Tsavorite.core
             finally
             {
                 stackCtx.HandleNewRecordOnException(this);
-                TransientSUnlock<Input, Output, Context, TSessionFunctionsWrapper>(sessionFunctions, ref key, ref stackCtx);
+                TransientSUnlock<TInput, TOutput, TContext, TSessionFunctionsWrapper>(sessionFunctions, ref key, ref stackCtx);
             }
             return status;
         }
 
         // No AggressiveInlining; this is called only for the pending case and may improve inlining of InternalRead in the normal case if the compiler decides not to inline this.
-        private void CreatePendingReadContext<Input, Output, Context, TSessionFunctionsWrapper>(ref Key key, ref Input input, Output output, Context userContext,
-                ref PendingContext<Input, Output, Context> pendingContext, TSessionFunctionsWrapper sessionFunctions, long logicalAddress)
-            where TSessionFunctionsWrapper : ISessionFunctionsWrapper<Key, Value, Input, Output, Context, TStoreFunctions, TAllocator>
+        private void CreatePendingReadContext<TInput, TOutput, TContext, TSessionFunctionsWrapper>(ref TKey key, ref TInput input, TOutput output, TContext userContext,
+                ref PendingContext<TInput, TOutput, TContext> pendingContext, TSessionFunctionsWrapper sessionFunctions, long logicalAddress)
+            where TSessionFunctionsWrapper : ISessionFunctionsWrapper<TKey, TValue, TInput, TOutput, TContext, TStoreFunctions, TAllocator>
         {
             pendingContext.type = OperationType.READ;
             if (!pendingContext.NoKey && pendingContext.key == default)    // If this is true, we don't have a valid key

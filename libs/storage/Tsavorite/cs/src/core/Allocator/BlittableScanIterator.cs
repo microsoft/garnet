@@ -11,16 +11,16 @@ namespace Tsavorite.core
     /// <summary>
     /// Scan iterator for hybrid log
     /// </summary>
-    public sealed class BlittableScanIterator<Key, Value, TStoreFunctions> : ScanIteratorBase, ITsavoriteScanIterator<Key, Value>, IPushScanIterator<Key>
-        where TStoreFunctions : IStoreFunctions<Key, Value>
+    public sealed class BlittableScanIterator<TKey, TValue, TStoreFunctions> : ScanIteratorBase, ITsavoriteScanIterator<TKey, TValue>, IPushScanIterator<TKey>
+        where TStoreFunctions : IStoreFunctions<TKey, TValue>
     {
-        private readonly TsavoriteKV<Key, Value, TStoreFunctions, BlittableAllocator<Key, Value, TStoreFunctions>> store;
-        private readonly BlittableAllocatorImpl<Key, Value, TStoreFunctions> hlog;
+        private readonly TsavoriteKV<TKey, TValue, TStoreFunctions, BlittableAllocator<TKey, TValue, TStoreFunctions>> store;
+        private readonly BlittableAllocatorImpl<TKey, TValue, TStoreFunctions> hlog;
         private readonly BlittableFrame frame;
         private readonly bool forceInMemory;
 
-        private Key currentKey;
-        private Value currentValue;
+        private TKey currentKey;
+        private TValue currentValue;
         private long framePhysicalAddress;
 
         /// <summary>
@@ -35,7 +35,7 @@ namespace Tsavorite.core
         /// <param name="epoch">Epoch to use for protection; may be null if <paramref name="forceInMemory"/> is true.</param>
         /// <param name="forceInMemory">Provided address range is known by caller to be in memory, even if less than HeadAddress</param>
         /// <param name="logger"></param>
-        internal BlittableScanIterator(TsavoriteKV<Key, Value, TStoreFunctions, BlittableAllocator<Key, Value, TStoreFunctions>> store, BlittableAllocatorImpl<Key, Value, TStoreFunctions> hlog,
+        internal BlittableScanIterator(TsavoriteKV<TKey, TValue, TStoreFunctions, BlittableAllocator<TKey, TValue, TStoreFunctions>> store, BlittableAllocatorImpl<TKey, TValue, TStoreFunctions> hlog,
                 long beginAddress, long endAddress, ScanBufferingMode scanBufferingMode, bool includeSealedRecords, LightEpoch epoch, bool forceInMemory = false, ILogger logger = null)
             : base(beginAddress == 0 ? hlog.GetFirstValidLogicalAddress(0) : beginAddress, endAddress, scanBufferingMode, includeSealedRecords, epoch, hlog.LogPageSizeBits, logger: logger)
         {
@@ -49,7 +49,7 @@ namespace Tsavorite.core
         /// <summary>
         /// Constructor for use with tail-to-head push iteration of the passed key's record versions
         /// </summary>
-        internal BlittableScanIterator(TsavoriteKV<Key, Value, TStoreFunctions, BlittableAllocator<Key, Value, TStoreFunctions>> store, BlittableAllocatorImpl<Key, Value, TStoreFunctions> hlog,
+        internal BlittableScanIterator(TsavoriteKV<TKey, TValue, TStoreFunctions, BlittableAllocator<TKey, TValue, TStoreFunctions>> store, BlittableAllocatorImpl<TKey, TValue, TStoreFunctions> hlog,
                 long beginAddress, LightEpoch epoch, ILogger logger = null)
             : base(beginAddress == 0 ? hlog.GetFirstValidLogicalAddress(0) : beginAddress, hlog.GetTailAddress(), ScanBufferingMode.SinglePageBuffering, false, epoch, hlog.LogPageSizeBits, logger: logger)
         {
@@ -63,18 +63,18 @@ namespace Tsavorite.core
         /// <summary>
         /// Get a reference to the current key
         /// </summary>
-        public ref Key GetKey() => ref framePhysicalAddress != 0 ? ref hlog._wrapper.GetKey(framePhysicalAddress) : ref currentKey;
+        public ref TKey GetKey() => ref framePhysicalAddress != 0 ? ref hlog._wrapper.GetKey(framePhysicalAddress) : ref currentKey;
 
         /// <summary>
         /// Get a reference to the current value
         /// </summary>
-        public ref Value GetValue() => ref framePhysicalAddress != 0 ? ref hlog._wrapper.GetValue(framePhysicalAddress) : ref currentValue;
+        public ref TValue GetValue() => ref framePhysicalAddress != 0 ? ref hlog._wrapper.GetValue(framePhysicalAddress) : ref currentValue;
 
         /// <inheritdoc/>
         public bool SnapCursorToLogicalAddress(ref long cursor)
         {
             Debug.Assert(currentAddress == -1, "SnapCursorToLogicalAddress must be called before GetNext()");
-            beginAddress = nextAddress = hlog.SnapToFixedLengthLogicalAddressBoundary(ref cursor, BlittableAllocatorImpl<Key, Value, TStoreFunctions>.RecordSize);
+            beginAddress = nextAddress = hlog.SnapToFixedLengthLogicalAddressBoundary(ref cursor, BlittableAllocatorImpl<TKey, TValue, TStoreFunctions>.RecordSize);
             return true;
         }
 
@@ -133,7 +133,7 @@ namespace Tsavorite.core
                     continue;
                 }
 
-                OperationStackContext<Key, Value, TStoreFunctions, BlittableAllocator<Key, Value, TStoreFunctions>> stackCtx = default;
+                OperationStackContext<TKey, TValue, TStoreFunctions, BlittableAllocator<TKey, TValue, TStoreFunctions>> stackCtx = default;
                 try
                 {
                     // Lock to ensure no value tearing while copying to temp storage. We cannot use GetKey() because it has not yet been set.
@@ -157,7 +157,7 @@ namespace Tsavorite.core
         /// Get previous record and keep the epoch held while we call the user's scan functions
         /// </summary>
         /// <returns>True if record found, false if end of scan</returns>
-        bool IPushScanIterator<Key>.BeginGetPrevInMemory(ref Key key, out RecordInfo recordInfo, out bool continueOnDisk)
+        bool IPushScanIterator<TKey>.BeginGetPrevInMemory(ref TKey key, out RecordInfo recordInfo, out bool continueOnDisk)
         {
             recordInfo = default;
             continueOnDisk = false;
@@ -196,7 +196,7 @@ namespace Tsavorite.core
         }
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        bool IPushScanIterator<Key>.EndGetPrevInMemory()
+        bool IPushScanIterator<TKey>.EndGetPrevInMemory()
         {
             epoch?.Suspend();
             return true;
@@ -231,7 +231,7 @@ namespace Tsavorite.core
         /// <summary>
         /// Get next record in iterator
         /// </summary>
-        public bool GetNext(out RecordInfo recordInfo, out Key key, out Value value)
+        public bool GetNext(out RecordInfo recordInfo, out TKey key, out TValue value)
         {
             if (GetNext(out recordInfo))
             {
@@ -270,7 +270,7 @@ namespace Tsavorite.core
 
             if (result.freeBuffer1 != null)
             {
-                BlittableAllocatorImpl<Key, Value, TStoreFunctions>.PopulatePage(result.freeBuffer1.GetValidPointer(), result.freeBuffer1.required_bytes, result.page);
+                BlittableAllocatorImpl<TKey, TValue, TStoreFunctions>.PopulatePage(result.freeBuffer1.GetValidPointer(), result.freeBuffer1.required_bytes, result.page);
                 result.freeBuffer1.Return();
                 result.freeBuffer1 = null;
             }

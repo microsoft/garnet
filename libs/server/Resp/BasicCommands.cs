@@ -988,7 +988,7 @@ namespace Garnet.server
             var resultSb = new StringBuilder();
             var cmdCount = 0;
 
-            foreach (var customCmd in storeWrapper.customCommandManager.CustomCommandsInfo)
+            foreach (var customCmd in storeWrapper.customCommandManager.CustomCommandsInfo.Values)
             {
                 cmdCount++;
                 resultSb.Append(customCmd.RespFormat);

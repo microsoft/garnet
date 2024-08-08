@@ -6,15 +6,15 @@ using System.Runtime.CompilerServices;
 
 namespace Tsavorite.core
 {
-    public unsafe partial class TsavoriteKV<Key, Value, TStoreFunctions, TAllocator> : TsavoriteBase
-        where TStoreFunctions : IStoreFunctions<Key, Value>
-        where TAllocator : IAllocator<Key, Value, TStoreFunctions>
+    public unsafe partial class TsavoriteKV<TKey, TValue, TStoreFunctions, TAllocator> : TsavoriteBase
+        where TStoreFunctions : IStoreFunctions<TKey, TValue>
+        where TAllocator : IAllocator<TKey, TValue, TStoreFunctions>
     {
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        private bool TryTransientXLock<Input, Output, Context, TSessionFunctionsWrapper>(TSessionFunctionsWrapper sessionFunctions, ref Key key,
-                                    ref OperationStackContext<Key, Value, TStoreFunctions, TAllocator> stackCtx,
+        private bool TryTransientXLock<TInput, TOutput, TContext, TSessionFunctionsWrapper>(TSessionFunctionsWrapper sessionFunctions, ref TKey key,
+                                    ref OperationStackContext<TKey, TValue, TStoreFunctions, TAllocator> stackCtx,
                                     out OperationStatus status)
-            where TSessionFunctionsWrapper : ISessionFunctionsWrapper<Key, Value, Input, Output, Context, TStoreFunctions, TAllocator>
+            where TSessionFunctionsWrapper : ISessionFunctionsWrapper<TKey, TValue, TInput, TOutput, TContext, TStoreFunctions, TAllocator>
         {
             if (sessionFunctions.TryLockTransientExclusive(ref key, ref stackCtx))
             {
@@ -26,19 +26,19 @@ namespace Tsavorite.core
         }
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        private static void TransientXUnlock<Input, Output, Context, TSessionFunctionsWrapper>(TSessionFunctionsWrapper sessionFunctions, ref Key key,
-                                    ref OperationStackContext<Key, Value, TStoreFunctions, TAllocator> stackCtx)
-            where TSessionFunctionsWrapper : ISessionFunctionsWrapper<Key, Value, Input, Output, Context, TStoreFunctions, TAllocator>
+        private static void TransientXUnlock<TInput, TOutput, TContext, TSessionFunctionsWrapper>(TSessionFunctionsWrapper sessionFunctions, ref TKey key,
+                                    ref OperationStackContext<TKey, TValue, TStoreFunctions, TAllocator> stackCtx)
+            where TSessionFunctionsWrapper : ISessionFunctionsWrapper<TKey, TValue, TInput, TOutput, TContext, TStoreFunctions, TAllocator>
         {
             if (stackCtx.recSrc.HasTransientXLock)
                 sessionFunctions.UnlockTransientExclusive(ref key, ref stackCtx);
         }
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        internal bool TryTransientSLock<Input, Output, Context, TSessionFunctionsWrapper>(TSessionFunctionsWrapper sessionFunctions, ref Key key,
-                                    ref OperationStackContext<Key, Value, TStoreFunctions, TAllocator> stackCtx,
+        internal bool TryTransientSLock<TInput, TOutput, TContext, TSessionFunctionsWrapper>(TSessionFunctionsWrapper sessionFunctions, ref TKey key,
+                                    ref OperationStackContext<TKey, TValue, TStoreFunctions, TAllocator> stackCtx,
                                     out OperationStatus status)
-            where TSessionFunctionsWrapper : ISessionFunctionsWrapper<Key, Value, Input, Output, Context, TStoreFunctions, TAllocator>
+            where TSessionFunctionsWrapper : ISessionFunctionsWrapper<TKey, TValue, TInput, TOutput, TContext, TStoreFunctions, TAllocator>
         {
             if (sessionFunctions.TryLockTransientShared(ref key, ref stackCtx))
             {
@@ -50,16 +50,16 @@ namespace Tsavorite.core
         }
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        internal static void TransientSUnlock<Input, Output, Context, TSessionFunctionsWrapper>(TSessionFunctionsWrapper sessionFunctions, ref Key key,
-                                    ref OperationStackContext<Key, Value, TStoreFunctions, TAllocator> stackCtx)
-            where TSessionFunctionsWrapper : ISessionFunctionsWrapper<Key, Value, Input, Output, Context, TStoreFunctions, TAllocator>
+        internal static void TransientSUnlock<TInput, TOutput, TContext, TSessionFunctionsWrapper>(TSessionFunctionsWrapper sessionFunctions, ref TKey key,
+                                    ref OperationStackContext<TKey, TValue, TStoreFunctions, TAllocator> stackCtx)
+            where TSessionFunctionsWrapper : ISessionFunctionsWrapper<TKey, TValue, TInput, TOutput, TContext, TStoreFunctions, TAllocator>
         {
             if (stackCtx.recSrc.HasTransientSLock)
                 sessionFunctions.UnlockTransientShared(ref key, ref stackCtx);
         }
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        internal void LockForScan(ref OperationStackContext<Key, Value, TStoreFunctions, TAllocator> stackCtx, ref Key key)
+        internal void LockForScan(ref OperationStackContext<TKey, TValue, TStoreFunctions, TAllocator> stackCtx, ref TKey key)
         {
             Debug.Assert(!stackCtx.recSrc.HasLock, $"Should not call LockForScan if recSrc already has a lock ({stackCtx.recSrc.LockStateString()})");
 
@@ -74,7 +74,7 @@ namespace Tsavorite.core
         }
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        internal void UnlockForScan(ref OperationStackContext<Key, Value, TStoreFunctions, TAllocator> stackCtx)
+        internal void UnlockForScan(ref OperationStackContext<TKey, TValue, TStoreFunctions, TAllocator> stackCtx)
         {
             if (stackCtx.recSrc.HasTransientSLock)
             {
