@@ -71,14 +71,15 @@ namespace Garnet.test.cluster
         ClusterTestContext context;
         readonly string authPassword = null;
         readonly int defaultShards = 3;
-        readonly HashSet<string> authenticationTests = ["ClusterSimpleMigrateWithAuth"];
+        readonly Dictionary<string, LogLevel> authenticationTests = new()
+        {
+            {"ClusterSimpleMigrateWithAuth", LogLevel.Error }
+        };
 
-        readonly HashSet<string> monitorTests =
-        [
-            //"ClusterSimpleMigrateKeysTest"
-            //"ClusterTLSInitialize"
-            "ClusterTLSSlotChangeStatus",
-        ];
+        readonly Dictionary<string, LogLevel> monitorTests = new()
+        {
+            {"ClusterTLSSlotChangeStatus", LogLevel.Error }
+        };
 
         public TextWriter logTextWriter = TestContext.Progress;
 
