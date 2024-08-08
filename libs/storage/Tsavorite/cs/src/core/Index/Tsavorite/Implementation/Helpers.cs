@@ -7,9 +7,9 @@ using static Tsavorite.core.Utility;
 
 namespace Tsavorite.core
 {
-    public unsafe partial class TsavoriteKV<Key, Value, TStoreFunctions, TAllocator> : TsavoriteBase
-        where TStoreFunctions : IStoreFunctions<Key, Value>
-        where TAllocator : IAllocator<Key, Value, TStoreFunctions>
+    public unsafe partial class TsavoriteKV<TKey, TValue, TStoreFunctions, TAllocator> : TsavoriteBase
+        where TStoreFunctions : IStoreFunctions<TKey, TValue>
+        where TAllocator : IAllocator<TKey, TValue, TStoreFunctions>
     {
         private enum LatchDestination
         {
@@ -19,7 +19,7 @@ namespace Tsavorite.core
         }
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        static ref RecordInfo WriteNewRecordInfo(ref Key key, AllocatorBase<Key, Value, TStoreFunctions, TAllocator> log, long newPhysicalAddress, bool inNewVersion, long previousAddress)
+        static ref RecordInfo WriteNewRecordInfo(ref TKey key, AllocatorBase<TKey, TValue, TStoreFunctions, TAllocator> log, long newPhysicalAddress, bool inNewVersion, long previousAddress)
         {
             ref RecordInfo recordInfo = ref log._wrapper.GetInfo(newPhysicalAddress);
             recordInfo.WriteInfo(inNewVersion, previousAddress);
@@ -28,7 +28,7 @@ namespace Tsavorite.core
         }
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        internal void MarkPage<Input, Output, Context>(long logicalAddress, TsavoriteExecutionContext<Input, Output, Context> sessionCtx)
+        internal void MarkPage<TInput, TOutput, TContext>(long logicalAddress, TsavoriteExecutionContext<TInput, TOutput, TContext> sessionCtx)
         {
             if (sessionCtx.phase == Phase.REST)
                 hlog.MarkPage(logicalAddress, sessionCtx.version);
@@ -77,21 +77,21 @@ namespace Tsavorite.core
         // PreviousAddress does not point to a valid record. Otherwise an earlier record for this key could be reachable again.
         // Also, it cannot be elided if it is frozen due to checkpointing.
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        private bool CanElide<Input, Output, Context, TSessionFunctionsWrapper>(TSessionFunctionsWrapper sessionFunctions,
-                ref OperationStackContext<Key, Value, TStoreFunctions, TAllocator> stackCtx, ref RecordInfo srcRecordInfo)
-            where TSessionFunctionsWrapper : ISessionFunctionsWrapper<Key, Value, Input, Output, Context, TStoreFunctions, TAllocator>
+        private bool CanElide<TInput, TOutput, TContext, TSessionFunctionsWrapper>(TSessionFunctionsWrapper sessionFunctions,
+                ref OperationStackContext<TKey, TValue, TStoreFunctions, TAllocator> stackCtx, ref RecordInfo srcRecordInfo)
+            where TSessionFunctionsWrapper : ISessionFunctionsWrapper<TKey, TValue, TInput, TOutput, TContext, TStoreFunctions, TAllocator>
         {
             Debug.Assert(!stackCtx.recSrc.HasReadCacheSrc, "Should not call CanElide() for readcache records");
             return stackCtx.hei.Address == stackCtx.recSrc.LogicalAddress && srcRecordInfo.PreviousAddress < hlogBase.BeginAddress
-                        && !IsFrozen<Input, Output, Context, TSessionFunctionsWrapper>(sessionFunctions, ref stackCtx, ref srcRecordInfo);
+                        && !IsFrozen<TInput, TOutput, TContext, TSessionFunctionsWrapper>(sessionFunctions, ref stackCtx, ref srcRecordInfo);
         }
 
         // If the record is in a checkpoint range, it must not be modified. If it is in the fuzzy region, it can only be modified
         // if it is a new record.
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        private bool IsFrozen<Input, Output, Context, TSessionFunctionsWrapper>(TSessionFunctionsWrapper sessionFunctions,
-                ref OperationStackContext<Key, Value, TStoreFunctions, TAllocator> stackCtx, ref RecordInfo srcRecordInfo)
-            where TSessionFunctionsWrapper : ISessionFunctionsWrapper<Key, Value, Input, Output, Context, TStoreFunctions, TAllocator>
+        private bool IsFrozen<TInput, TOutput, TContext, TSessionFunctionsWrapper>(TSessionFunctionsWrapper sessionFunctions,
+                ref OperationStackContext<TKey, TValue, TStoreFunctions, TAllocator> stackCtx, ref RecordInfo srcRecordInfo)
+            where TSessionFunctionsWrapper : ISessionFunctionsWrapper<TKey, TValue, TInput, TOutput, TContext, TStoreFunctions, TAllocator>
         {
             Debug.Assert(!stackCtx.recSrc.HasReadCacheSrc, "Should not call IsFrozen() for readcache records");
             return sessionFunctions.Ctx.IsInV1
@@ -100,9 +100,9 @@ namespace Tsavorite.core
         }
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        private (bool elided, bool added) TryElideAndTransferToFreeList<Input, Output, Context, TSessionFunctionsWrapper>(TSessionFunctionsWrapper sessionFunctions,
-                ref OperationStackContext<Key, Value, TStoreFunctions, TAllocator> stackCtx, ref RecordInfo srcRecordInfo, (int usedValueLength, int fullValueLength, int fullRecordLength) recordLengths)
-            where TSessionFunctionsWrapper : ISessionFunctionsWrapper<Key, Value, Input, Output, Context, TStoreFunctions, TAllocator>
+        private (bool elided, bool added) TryElideAndTransferToFreeList<TInput, TOutput, TContext, TSessionFunctionsWrapper>(TSessionFunctionsWrapper sessionFunctions,
+                ref OperationStackContext<TKey, TValue, TStoreFunctions, TAllocator> stackCtx, ref RecordInfo srcRecordInfo, (int usedValueLength, int fullValueLength, int fullRecordLength) recordLengths)
+            where TSessionFunctionsWrapper : ISessionFunctionsWrapper<TKey, TValue, TInput, TOutput, TContext, TStoreFunctions, TAllocator>
         {
             // Try to CAS out of the hashtable and if successful, add it to the free list.
             Debug.Assert(srcRecordInfo.IsSealed, "Expected a Sealed record in TryElideAndTransferToFreeList");
@@ -110,14 +110,14 @@ namespace Tsavorite.core
             if (!stackCtx.hei.TryElide())
                 return (false, false);
 
-            return (true, TryTransferToFreeList<Input, Output, Context, TSessionFunctionsWrapper>(sessionFunctions, ref stackCtx, ref srcRecordInfo, recordLengths));
+            return (true, TryTransferToFreeList<TInput, TOutput, TContext, TSessionFunctionsWrapper>(sessionFunctions, ref stackCtx, ref srcRecordInfo, recordLengths));
         }
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        private bool TryTransferToFreeList<Input, Output, Context, TSessionFunctionsWrapper>(TSessionFunctionsWrapper sessionFunctions,
-                ref OperationStackContext<Key, Value, TStoreFunctions, TAllocator> stackCtx,
+        private bool TryTransferToFreeList<TInput, TOutput, TContext, TSessionFunctionsWrapper>(TSessionFunctionsWrapper sessionFunctions,
+                ref OperationStackContext<TKey, TValue, TStoreFunctions, TAllocator> stackCtx,
                 ref RecordInfo srcRecordInfo, (int usedValueLength, int fullValueLength, int fullRecordLength) recordLengths)
-            where TSessionFunctionsWrapper : ISessionFunctionsWrapper<Key, Value, Input, Output, Context, TStoreFunctions, TAllocator>
+            where TSessionFunctionsWrapper : ISessionFunctionsWrapper<TKey, TValue, TInput, TOutput, TContext, TStoreFunctions, TAllocator>
         {
             // The record has been CAS'd out of the hashtable or elided from the chain, so add it to the free list.
             Debug.Assert(srcRecordInfo.IsSealed, "Expected a Sealed record in TryTransferToFreeList");
@@ -125,7 +125,7 @@ namespace Tsavorite.core
             // Dispose any existing key and value. We do this as soon as we have elided so objects are released for GC as early as possible.
             // We don't want the caller to know details of the Filler, so we cleared out any extraValueLength entry to ensure the space beyond
             // usedValueLength is zero'd for log-scan correctness.
-            ref Value recordValue = ref stackCtx.recSrc.GetValue();
+            ref TValue recordValue = ref stackCtx.recSrc.GetValue();
             ClearExtraValueSpace(ref srcRecordInfo, ref recordValue, recordLengths.usedValueLength, recordLengths.fullValueLength);
             storeFunctions.DisposeRecord(ref stackCtx.recSrc.GetKey(), ref recordValue, DisposeReason.RevivificationFreeList);
 
@@ -153,7 +153,7 @@ namespace Tsavorite.core
         }
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        private bool CASRecordIntoChain(ref Key key, ref OperationStackContext<Key, Value, TStoreFunctions, TAllocator> stackCtx, long newLogicalAddress, ref RecordInfo newRecordInfo)
+        private bool CASRecordIntoChain(ref TKey key, ref OperationStackContext<TKey, TValue, TStoreFunctions, TAllocator> stackCtx, long newLogicalAddress, ref RecordInfo newRecordInfo)
         {
             var result = stackCtx.recSrc.LowestReadCachePhysicalAddress == Constants.kInvalidAddress
                 ? stackCtx.hei.TryCAS(newLogicalAddress)
@@ -164,11 +164,11 @@ namespace Tsavorite.core
         }
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        private void PostCopyToTail(ref Key key, ref OperationStackContext<Key, Value, TStoreFunctions, TAllocator> stackCtx, ref RecordInfo srcRecordInfo)
+        private void PostCopyToTail(ref TKey key, ref OperationStackContext<TKey, TValue, TStoreFunctions, TAllocator> stackCtx, ref RecordInfo srcRecordInfo)
             => PostCopyToTail(ref key, ref stackCtx, ref srcRecordInfo, stackCtx.hei.Address);
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        private void PostCopyToTail(ref Key key, ref OperationStackContext<Key, Value, TStoreFunctions, TAllocator> stackCtx, ref RecordInfo srcRecordInfo, long highestReadCacheAddressChecked)
+        private void PostCopyToTail(ref TKey key, ref OperationStackContext<TKey, TValue, TStoreFunctions, TAllocator> stackCtx, ref RecordInfo srcRecordInfo, long highestReadCacheAddressChecked)
         {
             // Nothing required here if not using ReadCache
             if (!UseReadCache)
@@ -191,7 +191,7 @@ namespace Tsavorite.core
         // Called after BlockAllocate or anything else that could shift HeadAddress, to adjust addresses or return false for RETRY as needed.
         // This refreshes the HashEntryInfo, so the caller needs to recheck to confirm the BlockAllocated address is still > hei.Address.
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        private bool VerifyInMemoryAddresses(ref OperationStackContext<Key, Value, TStoreFunctions, TAllocator> stackCtx)
+        private bool VerifyInMemoryAddresses(ref OperationStackContext<TKey, TValue, TStoreFunctions, TAllocator> stackCtx)
         {
             // If we have an in-memory source that fell below HeadAddress, return false and the caller will RETRY_LATER.
             if (stackCtx.recSrc.HasInMemorySrc && stackCtx.recSrc.LogicalAddress < stackCtx.recSrc.AllocatorBase.HeadAddress)
@@ -207,13 +207,13 @@ namespace Tsavorite.core
         }
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        private bool FindOrCreateTagAndTryTransientXLock<Input, Output, Context, TSessionFunctionsWrapper>(TSessionFunctionsWrapper sessionFunctions, ref Key key,
-                ref OperationStackContext<Key, Value, TStoreFunctions, TAllocator> stackCtx, out OperationStatus internalStatus)
-            where TSessionFunctionsWrapper : ISessionFunctionsWrapper<Key, Value, Input, Output, Context, TStoreFunctions, TAllocator>
+        private bool FindOrCreateTagAndTryTransientXLock<TInput, TOutput, TContext, TSessionFunctionsWrapper>(TSessionFunctionsWrapper sessionFunctions, ref TKey key,
+                ref OperationStackContext<TKey, TValue, TStoreFunctions, TAllocator> stackCtx, out OperationStatus internalStatus)
+            where TSessionFunctionsWrapper : ISessionFunctionsWrapper<TKey, TValue, TInput, TOutput, TContext, TStoreFunctions, TAllocator>
         {
             // Transient must lock the bucket before traceback, to prevent revivification from yanking the record out from underneath us. Manual locking already automatically locks the bucket.
             FindOrCreateTag(ref stackCtx.hei, hlogBase.BeginAddress);
-            if (!TryTransientXLock<Input, Output, Context, TSessionFunctionsWrapper>(sessionFunctions, ref key, ref stackCtx, out internalStatus))
+            if (!TryTransientXLock<TInput, TOutput, TContext, TSessionFunctionsWrapper>(sessionFunctions, ref key, ref stackCtx, out internalStatus))
                 return false;
 
             // Between the time we found the tag and the time we locked the bucket the record in hei.entry may have been elided, so make sure we don't have a stale address in hei.entry.
@@ -223,13 +223,13 @@ namespace Tsavorite.core
         }
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        private bool FindTagAndTryTransientXLock<Input, Output, Context, TSessionFunctionsWrapper>(TSessionFunctionsWrapper sessionFunctions, ref Key key,
-                ref OperationStackContext<Key, Value, TStoreFunctions, TAllocator> stackCtx, out OperationStatus internalStatus)
-            where TSessionFunctionsWrapper : ISessionFunctionsWrapper<Key, Value, Input, Output, Context, TStoreFunctions, TAllocator>
+        private bool FindTagAndTryTransientXLock<TInput, TOutput, TContext, TSessionFunctionsWrapper>(TSessionFunctionsWrapper sessionFunctions, ref TKey key,
+                ref OperationStackContext<TKey, TValue, TStoreFunctions, TAllocator> stackCtx, out OperationStatus internalStatus)
+            where TSessionFunctionsWrapper : ISessionFunctionsWrapper<TKey, TValue, TInput, TOutput, TContext, TStoreFunctions, TAllocator>
         {
             // Transient must lock the bucket before traceback, to prevent revivification from yanking the record out from underneath us. Manual locking already automatically locks the bucket.
             internalStatus = OperationStatus.NOTFOUND;
-            if (!FindTag(ref stackCtx.hei) || !TryTransientXLock<Input, Output, Context, TSessionFunctionsWrapper>(sessionFunctions, ref key, ref stackCtx, out internalStatus))
+            if (!FindTag(ref stackCtx.hei) || !TryTransientXLock<TInput, TOutput, TContext, TSessionFunctionsWrapper>(sessionFunctions, ref key, ref stackCtx, out internalStatus))
                 return false;
 
             // Between the time we found the tag and the time we locked the bucket the record in hei.entry may have been elided, so make sure we don't have a stale address in hei.entry.
@@ -239,13 +239,13 @@ namespace Tsavorite.core
         }
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        private bool FindTagAndTryTransientSLock<Input, Output, Context, TSessionFunctionsWrapper>(TSessionFunctionsWrapper sessionFunctions, ref Key key,
-                ref OperationStackContext<Key, Value, TStoreFunctions, TAllocator> stackCtx, out OperationStatus internalStatus)
-            where TSessionFunctionsWrapper : ISessionFunctionsWrapper<Key, Value, Input, Output, Context, TStoreFunctions, TAllocator>
+        private bool FindTagAndTryTransientSLock<TInput, TOutput, TContext, TSessionFunctionsWrapper>(TSessionFunctionsWrapper sessionFunctions, ref TKey key,
+                ref OperationStackContext<TKey, TValue, TStoreFunctions, TAllocator> stackCtx, out OperationStatus internalStatus)
+            where TSessionFunctionsWrapper : ISessionFunctionsWrapper<TKey, TValue, TInput, TOutput, TContext, TStoreFunctions, TAllocator>
         {
             // Transient must lock the bucket before traceback, to prevent revivification from yanking the record out from underneath us. Manual locking already automatically locks the bucket.
             internalStatus = OperationStatus.NOTFOUND;
-            if (!FindTag(ref stackCtx.hei) || !TryTransientSLock<Input, Output, Context, TSessionFunctionsWrapper>(sessionFunctions, ref key, ref stackCtx, out internalStatus))
+            if (!FindTag(ref stackCtx.hei) || !TryTransientSLock<TInput, TOutput, TContext, TSessionFunctionsWrapper>(sessionFunctions, ref key, ref stackCtx, out internalStatus))
                 return false;
 
             // Between the time we found the tag and the time we locked the bucket the record in hei.entry may have been elided, so make sure we don't have a stale address in hei.entry.
