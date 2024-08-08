@@ -200,7 +200,7 @@ namespace Tsavorite.core
             // Include memory size from the log (logAccessor.MemorySizeBytes) + heap size (logSize.Total) to check utilization
             if (logSize.Total + logAccessor.MemorySizeBytes > highTargetSize)
             {
-                logger?.LogDebug($"Heap size {logSize.Total} + log {logAccessor.MemorySizeBytes} > target {highTargetSize}. Alloc: {logAccessor.AllocatedPageCount} EPC: {logAccessor.EmptyPageCount}");
+                logger?.LogDebug("Heap size {totalLogSize} + log {MemorySizeBytes} > target {highTargetSize}. Alloc: {AllocatedPageCount} EPC: {EmptyPageCount}", logSize.Total, logAccessor.MemorySizeBytes, highTargetSize, logAccessor.AllocatedPageCount, logAccessor.EmptyPageCount);
                 while (logSize.Total + logAccessor.MemorySizeBytes > highTargetSize &&
                     logAccessor.EmptyPageCount < logAccessor.MaxEmptyPageCount)
                 {
@@ -213,12 +213,12 @@ namespace Tsavorite.core
 
                     logAccessor.EmptyPageCount++;
                     PostEmptyPageCountIncrease(logAccessor.EmptyPageCount);
-                    logger?.LogDebug($"Increasing empty page count to {logAccessor.EmptyPageCount}");
+                    logger?.LogDebug("Increasing empty page count to {EmptyPageCount}", logAccessor.EmptyPageCount);
                 }
             }
             else if (logSize.Total + logAccessor.MemorySizeBytes < lowTargetSize)
             {
-                logger?.LogDebug($"Heap size {logSize.Total} + log {logAccessor.MemorySizeBytes} < target {lowTargetSize}. Alloc: {logAccessor.AllocatedPageCount} EPC: {logAccessor.EmptyPageCount}");
+                logger?.LogDebug("Heap size {totalLogSize} + log {MemorySizeBytes} < target {lowTargetSize}. Alloc: {AllocatedPageCount} EPC: {EmptyPageCount}", logSize.Total, logAccessor.MemorySizeBytes, lowTargetSize, logAccessor.AllocatedPageCount, logAccessor.EmptyPageCount);
                 while (logSize.Total + logAccessor.MemorySizeBytes < lowTargetSize &&
                     logAccessor.EmptyPageCount > logAccessor.MinEmptyPageCount)
                 {
@@ -231,7 +231,7 @@ namespace Tsavorite.core
 
                     logAccessor.EmptyPageCount--;
                     PostEmptyPageCountDecrease(logAccessor.EmptyPageCount);
-                    logger?.LogDebug($"Decreasing empty page count to {logAccessor.EmptyPageCount}");
+                    logger?.LogDebug("Decreasing empty page count to {EmptyPageCount}", logAccessor.EmptyPageCount);
                 }
             }
         }

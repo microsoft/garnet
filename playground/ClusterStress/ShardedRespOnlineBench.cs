@@ -398,7 +398,7 @@ namespace Resp.benchmark
             {
                 var resp = server.Execute("migrate", args);
                 if (!resp.Equals("OK"))
-                    logger?.LogError(resp.ToString());
+                    logger?.LogError("{errorMessage}", resp.ToString());
             }
             catch (Exception ex)
             {
@@ -467,7 +467,7 @@ namespace Resp.benchmark
                             $"{"total_ops;",pad}" +
                             $"{"iter_tops;",pad}" +
                             $"{"tpt (Kops/sec)",pad}";
-                        logger.Log(LogLevel.Information, histogramHeader);
+                        logger.Log(LogLevel.Information, "{msg}", histogramHeader);
                     }
                 }
 
@@ -512,7 +512,7 @@ namespace Resp.benchmark
                     $"{summary.TotalCount,pad}" +
                     $"{curr_iter_ops,pad}" +
                     $"{Math.Round(BatchSize * curr_iter_ops / elapsedSecs, 2),pad}";
-                    logger.Log(LogLevel.Information, histogramOutput);
+                    logger.Log(LogLevel.Information, "{msg}", histogramOutput);
                 }
 
                 last_iter_ops = summary.TotalCount;
@@ -657,7 +657,7 @@ namespace Resp.benchmark
                 {
                     //if(e.ToString().Contains())
                     if (e.ToString().Contains("CLUSTERDOWN"))
-                        logger?.LogError(e, null);
+                        logger?.LogError(e, "An error has occurred");
                 }
 
                 long elapsed = Stopwatch.GetTimestamp() - startTimestamp;

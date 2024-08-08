@@ -547,7 +547,7 @@ namespace Tsavorite.core
         private void AsyncReadPageCallback(uint errorCode, uint numBytes, object context)
         {
             if (errorCode != 0)
-                logger?.LogError($"AsyncReadPageCallback error: {errorCode}");
+                logger?.LogError($"{nameof(AsyncReadPageCallback)} error: {{errorCode}}", errorCode);
 
             // Set the page status to flushed
             var result = (PageAsyncReadResult<Empty>)context;
@@ -591,7 +591,7 @@ namespace Tsavorite.core
         private void AsyncFlushPartialObjectLogCallback<TContext>(uint errorCode, uint numBytes, object context)
         {
             if (errorCode != 0)
-                logger?.LogError($"AsyncFlushPartialObjectLogCallback error: {errorCode}");
+                logger?.LogError($"{nameof(AsyncFlushPartialObjectLogCallback)} error: {{errorCode}}", errorCode);
 
             // Set the page status to flushed
             var result = (PageAsyncFlushResult<TContext>)context;
@@ -601,7 +601,7 @@ namespace Tsavorite.core
         private void AsyncReadPageWithObjectsCallback<TContext>(uint errorCode, uint numBytes, object context)
         {
             if (errorCode != 0)
-                logger?.LogError($"AsyncReadPageWithObjectsCallback error: {errorCode}");
+                logger?.LogError($"{nameof(AsyncReadPageWithObjectsCallback)} error: {{errorCode}}", errorCode);
 
             var result = (PageAsyncReadResult<TContext>)context;
 
