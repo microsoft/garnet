@@ -62,9 +62,9 @@ namespace Tsavorite.core
         }
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        internal bool TryPeek<Key, Value, TStoreFunctions, TAllocator>(long recordSize, TsavoriteKV<Key, Value, TStoreFunctions, TAllocator> store, bool oversize, long minAddress, out int thisRecordSize)
-            where TStoreFunctions : IStoreFunctions<Key, Value>
-            where TAllocator : IAllocator<Key, Value, TStoreFunctions>
+        internal bool TryPeek<TKey, TValue, TStoreFunctions, TAllocator>(long recordSize, TsavoriteKV<TKey, TValue, TStoreFunctions, TAllocator> store, bool oversize, long minAddress, out int thisRecordSize)
+            where TStoreFunctions : IStoreFunctions<TKey, TValue>
+            where TAllocator : IAllocator<TKey, TValue, TStoreFunctions>
         {
             FreeRecord oldRecord = this;
             thisRecordSize = 0;
@@ -139,9 +139,9 @@ namespace Tsavorite.core
         }
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        private static int GetRecordSize<Key, Value, TStoreFunctions, TAllocator>(TsavoriteKV<Key, Value, TStoreFunctions, TAllocator> store, long logicalAddress)
-            where TStoreFunctions : IStoreFunctions<Key, Value>
-            where TAllocator : IAllocator<Key, Value, TStoreFunctions>
+        private static int GetRecordSize<TKey, TValue, TStoreFunctions, TAllocator>(TsavoriteKV<TKey, TValue, TStoreFunctions, TAllocator> store, long logicalAddress)
+            where TStoreFunctions : IStoreFunctions<TKey, TValue>
+            where TAllocator : IAllocator<TKey, TValue, TStoreFunctions>
         {
             // Because this is oversize, we need hlog to get the length out of the record's value (it won't fit in FreeRecord.kSizeBits)
             long physicalAddress = store.hlog.GetPhysicalAddress(logicalAddress);
@@ -149,9 +149,9 @@ namespace Tsavorite.core
         }
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        internal unsafe bool TryTakeOversize<Key, Value, TStoreFunctions, TAllocator>(long recordSize, long minAddress, TsavoriteKV<Key, Value, TStoreFunctions, TAllocator> store, out long address, ref TakeResult takeResult)
-            where TStoreFunctions : IStoreFunctions<Key, Value>
-            where TAllocator : IAllocator<Key, Value, TStoreFunctions>
+        internal unsafe bool TryTakeOversize<TKey, TValue, TStoreFunctions, TAllocator>(long recordSize, long minAddress, TsavoriteKV<TKey, TValue, TStoreFunctions, TAllocator> store, out long address, ref TakeResult takeResult)
+            where TStoreFunctions : IStoreFunctions<TKey, TValue>
+            where TAllocator : IAllocator<TKey, TValue, TStoreFunctions>
         {
             address = 0;
 
@@ -284,9 +284,9 @@ namespace Tsavorite.core
         private FreeRecord* GetRecord(int recordIndex) => records + (recordIndex >= recordCount ? recordIndex - recordCount : recordIndex);
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public bool TryAdd<Key, Value, TStoreFunctions, TAllocator>(long address, int recordSize, TsavoriteKV<Key, Value, TStoreFunctions, TAllocator> store, long minAddress, ref RevivificationStats revivStats)
-            where TStoreFunctions : IStoreFunctions<Key, Value>
-            where TAllocator : IAllocator<Key, Value, TStoreFunctions>
+        public bool TryAdd<TKey, TValue, TStoreFunctions, TAllocator>(long address, int recordSize, TsavoriteKV<TKey, TValue, TStoreFunctions, TAllocator> store, long minAddress, ref RevivificationStats revivStats)
+            where TStoreFunctions : IStoreFunctions<TKey, TValue>
+            where TAllocator : IAllocator<TKey, TValue, TStoreFunctions>
         {
             var segmentStart = GetSegmentStart(recordSize);
 
@@ -305,15 +305,15 @@ namespace Tsavorite.core
         }
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public bool TryTake<Key, Value, TStoreFunctions, TAllocator>(int recordSize, long minAddress, TsavoriteKV<Key, Value, TStoreFunctions, TAllocator> store, out long address, ref RevivificationStats revivStats)
-            where TStoreFunctions : IStoreFunctions<Key, Value>
-            where TAllocator : IAllocator<Key, Value, TStoreFunctions>
+        public bool TryTake<TKey, TValue, TStoreFunctions, TAllocator>(int recordSize, long minAddress, TsavoriteKV<TKey, TValue, TStoreFunctions, TAllocator> store, out long address, ref RevivificationStats revivStats)
+            where TStoreFunctions : IStoreFunctions<TKey, TValue>
+            where TAllocator : IAllocator<TKey, TValue, TStoreFunctions>
             => TryTake(recordSize, minAddress, store, oversize: false, out address, ref revivStats);
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public bool TryTake<Key, Value, TStoreFunctions, TAllocator>(int recordSize, long minAddress, TsavoriteKV<Key, Value, TStoreFunctions, TAllocator> store, bool oversize, out long address, ref RevivificationStats revivStats)
-            where TStoreFunctions : IStoreFunctions<Key, Value>
-            where TAllocator : IAllocator<Key, Value, TStoreFunctions>
+        public bool TryTake<TKey, TValue, TStoreFunctions, TAllocator>(int recordSize, long minAddress, TsavoriteKV<TKey, TValue, TStoreFunctions, TAllocator> store, bool oversize, out long address, ref RevivificationStats revivStats)
+            where TStoreFunctions : IStoreFunctions<TKey, TValue>
+            where TAllocator : IAllocator<TKey, TValue, TStoreFunctions>
         {
             if (isEmpty)
             {
@@ -326,9 +326,9 @@ namespace Tsavorite.core
         }
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public bool TryTakeFirstFit<Key, Value, TStoreFunctions, TAllocator>(int recordSize, long minAddress, TsavoriteKV<Key, Value, TStoreFunctions, TAllocator> store, bool oversize, out long address, ref RevivificationStats revivStats)
-            where TStoreFunctions : IStoreFunctions<Key, Value>
-            where TAllocator : IAllocator<Key, Value, TStoreFunctions>
+        public bool TryTakeFirstFit<TKey, TValue, TStoreFunctions, TAllocator>(int recordSize, long minAddress, TsavoriteKV<TKey, TValue, TStoreFunctions, TAllocator> store, bool oversize, out long address, ref RevivificationStats revivStats)
+            where TStoreFunctions : IStoreFunctions<TKey, TValue>
+            where TAllocator : IAllocator<TKey, TValue, TStoreFunctions>
         {
             var segmentStart = GetSegmentStart(recordSize);
 
@@ -355,9 +355,9 @@ namespace Tsavorite.core
         }
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public bool TryTakeBestFit<Key, Value, TStoreFunctions, TAllocator>(int recordSize, long minAddress, TsavoriteKV<Key, Value, TStoreFunctions, TAllocator> store, bool oversize, out long address, ref RevivificationStats revivStats)
-            where TStoreFunctions : IStoreFunctions<Key, Value>
-            where TAllocator : IAllocator<Key, Value, TStoreFunctions>
+        public bool TryTakeBestFit<TKey, TValue, TStoreFunctions, TAllocator>(int recordSize, long minAddress, TsavoriteKV<TKey, TValue, TStoreFunctions, TAllocator> store, bool oversize, out long address, ref RevivificationStats revivStats)
+            where TStoreFunctions : IStoreFunctions<TKey, TValue>
+            where TAllocator : IAllocator<TKey, TValue, TStoreFunctions>
         {
             // Retry as long as we find a candidate, but reduce the best fit scan limit each retry.
             int localBestFitScanLimit = bestFitScanLimit;
@@ -437,11 +437,11 @@ namespace Tsavorite.core
         }
     }
 
-    internal unsafe class FreeRecordPool<Key, Value, TStoreFunctions, TAllocator> : IDisposable
-        where TStoreFunctions : IStoreFunctions<Key, Value>
-        where TAllocator : IAllocator<Key, Value, TStoreFunctions>
+    internal unsafe class FreeRecordPool<TKey, TValue, TStoreFunctions, TAllocator> : IDisposable
+        where TStoreFunctions : IStoreFunctions<TKey, TValue>
+        where TAllocator : IAllocator<TKey, TValue, TStoreFunctions>
     {
-        internal readonly TsavoriteKV<Key, Value, TStoreFunctions, TAllocator> store;
+        internal readonly TsavoriteKV<TKey, TValue, TStoreFunctions, TAllocator> store;
         internal readonly FreeRecordBin[] bins;
 
         internal int numberOfBinsToSearch;
@@ -451,13 +451,13 @@ namespace Tsavorite.core
         private readonly int* sizeIndex;
         private readonly int numBins;
 
-        internal readonly CheckEmptyWorker<Key, Value, TStoreFunctions, TAllocator> checkEmptyWorker;
+        internal readonly CheckEmptyWorker<TKey, TValue, TStoreFunctions, TAllocator> checkEmptyWorker;
 
         /// <inheritdoc/>
         public override string ToString()
             => $"isFixedLen {IsFixedLength}, numBins {numBins}, searchNextBin {numberOfBinsToSearch}, checkEmptyWorker: {checkEmptyWorker}";
 
-        internal FreeRecordPool(TsavoriteKV<Key, Value, TStoreFunctions, TAllocator> store, RevivificationSettings settings, int fixedRecordLength)
+        internal FreeRecordPool(TsavoriteKV<TKey, TValue, TStoreFunctions, TAllocator> store, RevivificationSettings settings, int fixedRecordLength)
         {
             this.store = store;
             IsFixedLength = fixedRecordLength > 0;

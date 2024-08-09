@@ -2547,7 +2547,7 @@ namespace Garnet.test.cluster
         {
             try
             {
-                var failoverState = GetReplicationInfo(endPoint, new[] { ReplicationInfoItem.PRIMARY_FAILOVER_STATE }, logger)[0].Item2;
+                var failoverState = GetReplicationInfo(endPoint, [ReplicationInfoItem.PRIMARY_FAILOVER_STATE], logger)[0].Item2;
                 return failoverState;
             }
             catch (Exception ex)
@@ -2650,7 +2650,7 @@ namespace Garnet.test.cluster
                     break;
                 BackOff();
             }
-            logger?.LogInformation($"Replication offset for primary {primaryIndex} and secondary {secondaryIndex} is {primaryReplicationOffset}");
+            logger?.LogInformation("Replication offset for primary {primaryIndex} and secondary {secondaryIndex} is {primaryReplicationOffset}", primaryIndex, secondaryIndex, primaryReplicationOffset);
         }
 
         public void WaitForConnectedReplicaCount(int primaryIndex, long minCount, ILogger logger = null)

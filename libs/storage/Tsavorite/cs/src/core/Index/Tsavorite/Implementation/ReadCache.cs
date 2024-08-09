@@ -8,12 +8,12 @@ using static Tsavorite.core.Utility;
 namespace Tsavorite.core
 {
     // Partial file for readcache functions
-    public unsafe partial class TsavoriteKV<Key, Value, TStoreFunctions, TAllocator> : TsavoriteBase
-        where TStoreFunctions : IStoreFunctions<Key, Value>
-        where TAllocator : IAllocator<Key, Value, TStoreFunctions>
+    public unsafe partial class TsavoriteKV<TKey, TValue, TStoreFunctions, TAllocator> : TsavoriteBase
+        where TStoreFunctions : IStoreFunctions<TKey, TValue>
+        where TAllocator : IAllocator<TKey, TValue, TStoreFunctions>
     {
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        internal bool FindInReadCache(ref Key key, ref OperationStackContext<Key, Value, TStoreFunctions, TAllocator> stackCtx, long minAddress = Constants.kInvalidAddress, bool alwaysFindLatestLA = true)
+        internal bool FindInReadCache(ref TKey key, ref OperationStackContext<TKey, TValue, TStoreFunctions, TAllocator> stackCtx, long minAddress = Constants.kInvalidAddress, bool alwaysFindLatestLA = true)
         {
             Debug.Assert(UseReadCache, "Should not call FindInReadCache if !UseReadCache");
 
@@ -80,7 +80,7 @@ namespace Tsavorite.core
         }
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        bool ReadCacheNeedToWaitForEviction(ref OperationStackContext<Key, Value, TStoreFunctions, TAllocator> stackCtx)
+        bool ReadCacheNeedToWaitForEviction(ref OperationStackContext<TKey, TValue, TStoreFunctions, TAllocator> stackCtx)
         {
             if (stackCtx.recSrc.LatestLogicalAddress < readCacheBase.HeadAddress)
             {
@@ -94,7 +94,7 @@ namespace Tsavorite.core
         }
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        private bool SpliceIntoHashChainAtReadCacheBoundary(ref Key key, ref OperationStackContext<Key, Value, TStoreFunctions, TAllocator> stackCtx, long newLogicalAddress)
+        private bool SpliceIntoHashChainAtReadCacheBoundary(ref TKey key, ref OperationStackContext<TKey, TValue, TStoreFunctions, TAllocator> stackCtx, long newLogicalAddress)
         {
             // Splice into the gap of the last readcache/first main log entries.
             Debug.Assert(stackCtx.recSrc.LowestReadCacheLogicalAddress >= readCacheBase.ClosedUntilAddress,
@@ -108,7 +108,7 @@ namespace Tsavorite.core
 
         // Skip over all readcache records in this key's chain, advancing stackCtx.recSrc to the first non-readcache record we encounter.
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        internal void SkipReadCache(ref OperationStackContext<Key, Value, TStoreFunctions, TAllocator> stackCtx, out bool didRefresh)
+        internal void SkipReadCache(ref OperationStackContext<TKey, TValue, TStoreFunctions, TAllocator> stackCtx, out bool didRefresh)
         {
             Debug.Assert(UseReadCache, "Should not call SkipReadCache if !UseReadCache");
             didRefresh = false;
@@ -175,7 +175,7 @@ namespace Tsavorite.core
 
         // Called after a readcache insert, to make sure there was no race with another session that added a main-log record at the same time.
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        private bool EnsureNoNewMainLogRecordWasSpliced(ref Key key, RecordSource<Key, Value, TStoreFunctions, TAllocator> recSrc, long highestSearchedAddress, ref OperationStatus failStatus)
+        private bool EnsureNoNewMainLogRecordWasSpliced(ref TKey key, RecordSource<TKey, TValue, TStoreFunctions, TAllocator> recSrc, long highestSearchedAddress, ref OperationStatus failStatus)
         {
             bool success = true;
             ref RecordInfo lowest_rcri = ref readcache.GetInfo(recSrc.LowestReadCachePhysicalAddress);
@@ -206,7 +206,7 @@ namespace Tsavorite.core
         // Note: The caller will do no epoch-refreshing operations after re-verifying the readcache chain following record allocation, so it is not
         // possible for the chain to be disrupted and the new insertion lost, even if readcache.HeadAddress is raised above hei.Address.
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        private void ReadCacheCheckTailAfterSplice(ref Key key, ref HashEntryInfo hei, long highestReadCacheAddressChecked)
+        private void ReadCacheCheckTailAfterSplice(ref TKey key, ref HashEntryInfo hei, long highestReadCacheAddressChecked)
         {
             Debug.Assert(UseReadCache, "Should not call ReadCacheCheckTailAfterSplice if !UseReadCache");
 
@@ -267,7 +267,7 @@ namespace Tsavorite.core
                 Debug.Assert(!IsReadCache(rcRecordInfo.PreviousAddress) || AbsoluteAddress(rcRecordInfo.PreviousAddress) < rcLogicalAddress, "Invalid record ordering in readcache");
 
                 // Find the hash index entry for the key in the store's hash table.
-                ref Key key = ref readcache.GetKey(rcPhysicalAddress);
+                ref TKey key = ref readcache.GetKey(rcPhysicalAddress);
                 HashEntryInfo hei = new(storeFunctions.GetKeyHashCode64(ref key));
                 if (!FindTag(ref hei))
                     goto NextRecord;

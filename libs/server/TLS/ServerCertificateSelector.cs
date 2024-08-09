@@ -123,7 +123,7 @@ namespace Garnet.server.TLS
             {
                 if (certRefreshFrequency > TimeSpan.Zero)
                 {
-                    this._logger?.LogError(ex, $"Unable to fetch certificate. It will be retried after {certificateRefreshRetryInterval}");
+                    this._logger?.LogError(ex, "Unable to fetch certificate. It will be retried after {certificateRefreshRetryInterval}", certificateRefreshRetryInterval);
                     try
                     {
                         _refreshTimer?.Change(certificateRefreshRetryInterval, certRefreshFrequency);

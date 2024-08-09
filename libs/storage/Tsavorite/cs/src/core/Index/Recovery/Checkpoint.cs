@@ -29,9 +29,9 @@ namespace Tsavorite.core
         public const int CheckpointCompletionCallback = 4;
     }
 
-    public partial class TsavoriteKV<Key, Value, TStoreFunctions, TAllocator>
-        where TStoreFunctions : IStoreFunctions<Key, Value>
-        where TAllocator : IAllocator<Key, Value, TStoreFunctions>
+    public partial class TsavoriteKV<TKey, TValue, TStoreFunctions, TAllocator>
+        where TStoreFunctions : IStoreFunctions<TKey, TValue>
+        where TAllocator : IAllocator<TKey, TValue, TStoreFunctions>
     {
 
         internal TaskCompletionSource<LinkedCheckpointInfo> checkpointTcs = new(TaskCreationOptions.RunContinuationsAsynchronously);
@@ -92,8 +92,8 @@ namespace Tsavorite.core
             _hybridLogCheckpoint.info.manualLockingActive = hlogBase.NumActiveLockingSessions > 0;
         }
 
-        internal long Compact<T1, T2, T3, T4, CompactionFunctions>(ISessionFunctions<Key, Value, object, object, object> functions, CompactionFunctions compactionFunctions, long untilAddress, CompactionType compactionType)
-            where CompactionFunctions : ICompactionFunctions<Key, Value>
+        internal long Compact<T1, T2, T3, T4, CompactionFunctions>(ISessionFunctions<TKey, TValue, object, object, object> functions, CompactionFunctions compactionFunctions, long untilAddress, CompactionType compactionType)
+            where CompactionFunctions : ICompactionFunctions<TKey, TValue>
         {
             throw new NotImplementedException();
         }

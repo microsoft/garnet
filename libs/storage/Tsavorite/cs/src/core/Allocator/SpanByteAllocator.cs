@@ -76,8 +76,8 @@ namespace Tsavorite.core
 
         /// <inheritdoc/>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public readonly (int actualSize, int allocatedSize, int keySize) GetRMWCopyDestinationRecordSize<Input, TVariableLengthInput>(ref SpanByte key, ref Input input, ref SpanByte value, ref RecordInfo recordInfo, TVariableLengthInput varlenInput)
-            where TVariableLengthInput : IVariableLengthInput<SpanByte, Input>
+        public readonly (int actualSize, int allocatedSize, int keySize) GetRMWCopyDestinationRecordSize<TInput, TVariableLengthInput>(ref SpanByte key, ref TInput input, ref SpanByte value, ref RecordInfo recordInfo, TVariableLengthInput varlenInput)
+            where TVariableLengthInput : IVariableLengthInput<SpanByte, TInput>
              => _this.GetRMWCopyDestinationRecordSize(ref key, ref input, ref value, ref recordInfo, varlenInput);
 
         /// <inheritdoc/>
@@ -94,8 +94,8 @@ namespace Tsavorite.core
 
         /// <inheritdoc/>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public readonly (int actualSize, int allocatedSize, int keySize) GetRMWInitialRecordSize<Input, TSessionFunctionsWrapper>(ref SpanByte key, ref Input input, TSessionFunctionsWrapper sessionFunctions)
-            where TSessionFunctionsWrapper : IVariableLengthInput<SpanByte, Input>
+        public readonly (int actualSize, int allocatedSize, int keySize) GetRMWInitialRecordSize<TInput, TSessionFunctionsWrapper>(ref SpanByte key, ref TInput input, TSessionFunctionsWrapper sessionFunctions)
+            where TSessionFunctionsWrapper : IVariableLengthInput<SpanByte, TInput>
             => _this.GetRMWInitialRecordSize(ref key, ref input, sessionFunctions);
 
         /// <inheritdoc/>

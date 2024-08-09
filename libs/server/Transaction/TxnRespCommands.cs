@@ -271,11 +271,11 @@ namespace Garnet.server
             }
 
             CustomTransactionProcedure proc;
-            int numParams;
+            int arity;
 
             try
             {
-                (proc, numParams) = customCommandManagerSession.GetCustomTransactionProcedure(txId, txnManager, scratchBufferManager);
+                (proc, arity) = customCommandManagerSession.GetCustomTransactionProcedure(txId, txnManager, scratchBufferManager);
             }
             catch (Exception e)
             {
@@ -287,18 +287,16 @@ namespace Garnet.server
                 return true;
             }
 
-            if (count - 1 == numParams)
+            if ((arity > 0 && count != arity) || (arity < 0 && count < -arity))
             {
-                TryTransactionProc((byte)txId, start, end, proc);
+                var expectedParams = arity > 0 ? arity - 1 : -arity - 1;
+                while (!RespWriteUtils.WriteError(
+                       string.Format(CmdStrings.GenericErrWrongNumArgsTxn, txId, expectedParams, count - 1), ref dcurr,
+                       dend))
+                    SendAndReset();
             }
             else
-            {
-                while (!RespWriteUtils.WriteError(
-                           string.Format(CmdStrings.GenericErrWrongNumArgsTxn, txId, numParams, count - 1), ref dcurr,
-                           dend))
-                    SendAndReset();
-                return true;
-            }
+                TryTransactionProc((byte)txId, start, end, proc);
 
             return true;
         }
