@@ -4,6 +4,8 @@
 using System;
 using System.Collections.Generic;
 using System.Security.Cryptography;
+using Garnet.server.ACL;
+using Garnet.server.Auth;
 using Microsoft.Extensions.Logging;
 
 namespace Garnet.server
@@ -16,15 +18,22 @@ namespace Garnet.server
         // Important to keep the hash length to this value 
         // for compatibility
         const int SHA1Len = 40;
-        readonly StoreWrapper storeWrapper;
+        readonly RespServerSession processor;
+        readonly ScratchBufferNetworkSender scratchBufferNetworkSender;
         readonly ILogger logger;
         readonly Dictionary<byte[], LuaRunner> scriptCache = new(new ByteArrayComparer());
         readonly byte[] hash = new byte[SHA1Len / 2];
 
-        public SessionScriptCache(StoreWrapper storeWrapper, ILogger logger = null)
+        public SessionScriptCache(StoreWrapper storeWrapper, IGarnetAuthenticator authenticator, ILogger logger = null)
         {
-            this.storeWrapper = storeWrapper;
+            this.scratchBufferNetworkSender = new ScratchBufferNetworkSender();
+            this.processor = new RespServerSession(scratchBufferNetworkSender, storeWrapper, null, null, authenticator, false);
             this.logger = logger;
+        }
+
+        public void SetUser(User user)
+        {
+            processor.SetUser(user);
         }
 
         /// <summary>
@@ -52,7 +61,7 @@ namespace Garnet.server
 
             try
             {
-                runner = new LuaRunner(source, storeWrapper, logger);
+                runner = new LuaRunner(source, processor, scratchBufferNetworkSender, logger);
                 runner.Compile();
                 scriptCache.TryAdd(digest, runner);
             }

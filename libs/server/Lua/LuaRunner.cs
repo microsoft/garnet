@@ -27,15 +27,12 @@ namespace Garnet.server
         /// <summary>
         /// Creates a new runner with the source of the script
         /// </summary>
-        public LuaRunner(string source, StoreWrapper storeWrapper = null, ILogger logger = null)
+        public LuaRunner(string source, RespServerSession respServerSession = null, ScratchBufferNetworkSender scratchBufferNetworkSender = null, ILogger logger = null)
         {
             this.source = source;
-            if (storeWrapper != null)
-            {
-                this.scratchBufferNetworkSender = new ScratchBufferNetworkSender();
-                this.respServerSession = new RespServerSession(scratchBufferNetworkSender, storeWrapper, null, null, false);
-                this.scratchBufferManager = respServerSession.scratchBufferManager;
-            }
+            this.respServerSession = respServerSession;
+            this.scratchBufferNetworkSender = scratchBufferNetworkSender;
+            this.scratchBufferManager = respServerSession?.scratchBufferManager;
             this.logger = logger;
 
             state = new Lua();
@@ -77,8 +74,8 @@ namespace Garnet.server
         /// <summary>
         /// Creates a new runner with the source of the script
         /// </summary>
-        public LuaRunner(ReadOnlySpan<byte> source, StoreWrapper storeWrapper = null, ILogger logger = null)
-            : this(Encoding.UTF8.GetString(source), storeWrapper, logger)
+        public LuaRunner(ReadOnlySpan<byte> source, RespServerSession respServerSession, ScratchBufferNetworkSender scratchBufferNetworkSender, ILogger logger = null)
+            : this(Encoding.UTF8.GetString(source), respServerSession, scratchBufferNetworkSender, logger)
         {
         }
 
@@ -148,6 +145,8 @@ namespace Garnet.server
                 case "SET":
                 case "set":
                     {
+                        if (!respServerSession.CheckACLPermissions(RespCommand.SET))
+                            return Encoding.ASCII.GetString(CmdStrings.RESP_ERR_NOAUTH);
                         var key = scratchBufferManager.CreateArgSlice(Convert.ToString(args[0]));
                         var value = scratchBufferManager.CreateArgSlice(Convert.ToString(args[1]));
                         _ = respServerSession.basicGarnetApi.SET(key, value);
@@ -156,6 +155,8 @@ namespace Garnet.server
                 case "GET":
                 case "get":
                     {
+                        if (!respServerSession.CheckACLPermissions(RespCommand.GET))
+                            throw new Exception(Encoding.ASCII.GetString(CmdStrings.RESP_ERR_NOAUTH));
                         var key = scratchBufferManager.CreateArgSlice(Convert.ToString(args[0]));
                         var status = respServerSession.basicGarnetApi.GET(key, out var value);
                         if (status == GarnetStatus.OK)

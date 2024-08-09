@@ -4,6 +4,7 @@
 using System;
 using Garnet.common;
 using Microsoft.Extensions.Logging;
+using NLua.Exceptions;
 
 namespace Garnet.server
 {
@@ -237,6 +238,13 @@ namespace Garnet.server
                     while (!RespWriteUtils.WriteDirect(CmdStrings.RESP_ERRNOTFOUND, ref dcurr, dend))
                         SendAndReset();
                 }
+            }
+            catch (LuaScriptException ex)
+            {
+                logger?.LogError(ex.InnerException, "Error executing Lua script callback");
+                while (!RespWriteUtils.WriteError("ERR " + ex.InnerException.Message, ref dcurr, dend))
+                    SendAndReset();
+                return true;
             }
             catch (Exception ex)
             {
