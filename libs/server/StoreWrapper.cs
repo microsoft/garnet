@@ -141,7 +141,8 @@ namespace Garnet.server
             this.GarnetObjectSerializer = new GarnetObjectSerializer(this.customCommandManager);
 
             // Initialize store scripting cache
-            this.storeScriptCache = new ConcurrentDictionary<byte[], byte[]>(new ByteArrayComparer());
+            if (serverOptions.EnableLua)
+                this.storeScriptCache = new ConcurrentDictionary<byte[], byte[]>(new ByteArrayComparer());
 
             if (accessControlList == null)
             {

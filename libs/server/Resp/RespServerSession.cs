@@ -191,7 +191,7 @@ namespace Garnet.server
             this.storeWrapper = storeWrapper;
             this.subscribeBroker = subscribeBroker;
             this.itemBroker = itemBroker;
-            if (enableScripts)
+            if (storeWrapper.serverOptions.EnableLua && enableScripts)
                 sessionScriptCache = new(storeWrapper, logger);
             this._authenticator = storeWrapper.serverOptions.AuthSettings?.CreateAuthenticator(this.storeWrapper) ?? new GarnetNoAuthAuthenticator();
 

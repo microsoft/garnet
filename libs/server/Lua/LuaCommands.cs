@@ -16,6 +16,13 @@ namespace Garnet.server
         /// <returns></returns>
         private unsafe bool TryEVALSHA(int count)
         {
+            if (!storeWrapper.serverOptions.EnableLua)
+            {
+                while (!RespWriteUtils.WriteError(CmdStrings.RESP_ERR_LUA_DISABLED, ref dcurr, dend))
+                    SendAndReset();
+                return true;
+            }
+
             var digest = parseState.GetArgSliceByRef(0).ReadOnlySpan;
 
             var result = false;
@@ -53,6 +60,13 @@ namespace Garnet.server
         /// <returns></returns>
         private unsafe bool TryEVAL(int count)
         {
+            if (!storeWrapper.serverOptions.EnableLua)
+            {
+                while (!RespWriteUtils.WriteError(CmdStrings.RESP_ERR_LUA_DISABLED, ref dcurr, dend))
+                    SendAndReset();
+                return true;
+            }
+
             var script = parseState.GetArgSliceByRef(0).ReadOnlySpan;
             var digest = sessionScriptCache.GetScriptDigest(script);
 
@@ -82,6 +96,13 @@ namespace Garnet.server
         /// <returns></returns>
         private unsafe bool TrySCRIPT(int count)
         {
+            if (!storeWrapper.serverOptions.EnableLua)
+            {
+                while (!RespWriteUtils.WriteError(CmdStrings.RESP_ERR_LUA_DISABLED, ref dcurr, dend))
+                    SendAndReset();
+                return true;
+            }
+
             if (count >= 1)
             {
                 var option = parseState.GetString(0).ToLowerInvariant();

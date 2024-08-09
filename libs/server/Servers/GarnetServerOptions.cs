@@ -76,6 +76,9 @@ namespace Garnet.server
         /// </summary>
         public bool EnableAOF = false;
 
+        // Enable Lua scripts on server
+        public bool EnableLua = false;
+
         /// <summary>
         /// Total AOF memory buffer used in bytes (rounds down to power of 2) - spills to disk after this limit.
         /// </summary>

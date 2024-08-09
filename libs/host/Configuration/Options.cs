@@ -213,6 +213,10 @@ namespace Garnet
         [Option("obj-compaction-max-segments", Required = false, HelpText = "Number of object store log segments created on disk before compaction triggers.")]
         public int ObjectStoreCompactionMaxSegments { get; set; }
 
+        [OptionValidation]
+        [Option("lua", Required = false, HelpText = "Enable Lua scripts on server.")]
+        public bool? EnableLua { get; set; }
+
         [PercentageValidation]
         [Option("gossip-sp", Required = false, HelpText = "Percent of cluster nodes to gossip with at each gossip iteration.")]
         public int GossipSamplePercent { get; set; }
@@ -572,6 +576,7 @@ namespace Garnet
                 CleanClusterConfig = CleanClusterConfig.GetValueOrDefault(),
                 AuthSettings = GetAuthenticationSettings(logger),
                 EnableAOF = EnableAOF.GetValueOrDefault(),
+                EnableLua = EnableLua.GetValueOrDefault(),
                 AofMemorySize = AofMemorySize,
                 AofPageSize = AofPageSize,
                 CommitFrequencyMs = CommitFrequencyMs,
