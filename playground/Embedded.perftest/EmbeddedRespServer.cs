@@ -36,7 +36,7 @@ namespace Embedded.perftest
         /// <returns>A new RESP server session</returns>
         internal RespServerSession GetRespSession()
         {
-            return new RespServerSession(new DummyNetworkSender(), storeWrapper, null, null);
+            return new RespServerSession(new DummyNetworkSender(), storeWrapper, null, null, false);
         }
     }
 }

@@ -63,7 +63,7 @@ namespace Garnet.server
 
         readonly StoreWrapper storeWrapper;
         internal readonly TransactionManager txnManager;
-        readonly ScratchBufferManager scratchBufferManager;
+        internal readonly ScratchBufferManager scratchBufferManager;
 
         internal SessionParseState parseState;
         ClusterSlotVerificationInput csvi;
@@ -162,13 +162,14 @@ namespace Garnet.server
         /// <summary>
         /// A per-session cache for storing lua scripts
         /// </summary>
-        internal SessionScriptCache sessionScriptCache;
+        internal readonly SessionScriptCache sessionScriptCache;
 
         public RespServerSession(
             INetworkSender networkSender,
             StoreWrapper storeWrapper,
             SubscribeBroker<SpanByte, SpanByte, IKeySerializer<SpanByte>> subscribeBroker,
-            CollectionItemBroker itemBroker)
+            CollectionItemBroker itemBroker,
+            bool enableScripts)
             : base(networkSender)
         {
             this.customCommandManagerSession = new CustomCommandManagerSession(storeWrapper.customCommandManager);
@@ -190,10 +191,9 @@ namespace Garnet.server
             this.storeWrapper = storeWrapper;
             this.subscribeBroker = subscribeBroker;
             this.itemBroker = itemBroker;
+            if (enableScripts)
+                sessionScriptCache = new(storeWrapper, logger);
             this._authenticator = storeWrapper.serverOptions.AuthSettings?.CreateAuthenticator(this.storeWrapper) ?? new GarnetNoAuthAuthenticator();
-
-            // Instantiates a SessionScriptCache for storing lua scripts
-            this.sessionScriptCache = new(this, logger);
 
             // Associate new session with default user and automatically authenticate, if possible
             this.AuthenticateUser(Encoding.ASCII.GetBytes(this.storeWrapper.accessControlList.GetDefaultUser().Name));

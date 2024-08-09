@@ -15,20 +15,26 @@ namespace Garnet.server
     internal sealed class LuaRunner : IDisposable
     {
         readonly string source;
+        readonly ScratchBufferNetworkSender scratchBufferNetworkSender;
         readonly RespServerSession respServerSession;
+        readonly ScratchBufferManager scratchBufferManager;
         readonly ILogger logger;
         readonly Lua state;
         readonly LuaTable sandbox_env;
         LuaFunction function;
+        string[] keys, argv;
 
         /// <summary>
         /// Creates a new runner with the source of the script
         /// </summary>
-        public LuaRunner(string source, RespServerSession respServerSession = null, ILogger logger = null)
+        public LuaRunner(string source, StoreWrapper storeWrapper = null, ILogger logger = null)
         {
             this.source = source;
-            this.respServerSession = respServerSession;
+            this.scratchBufferNetworkSender = new ScratchBufferNetworkSender();
+            this.respServerSession = new RespServerSession(scratchBufferNetworkSender, storeWrapper, null, null, false);
+            this.scratchBufferManager = respServerSession.scratchBufferManager;
             this.logger = logger;
+
             state = new Lua();
             state.State.Encoding = Encoding.UTF8;
             state.RegisterFunction("garnet_call", this, this.GetType().GetMethod("garnet_call"));
@@ -42,6 +48,7 @@ namespace Garnet.server
                     tostring = tostring;
                     print = print;
                     redis=redis;
+                    tonumber = tonumber;
                 }               
                 function load_sandboxed(source)
                     if (not source) then return nil end
@@ -54,8 +61,8 @@ namespace Garnet.server
         /// <summary>
         /// Creates a new runner with the source of the script
         /// </summary>
-        public LuaRunner(ReadOnlySpan<byte> source, RespServerSession respServerSession = null, ILogger logger = null)
-            : this(Encoding.UTF8.GetString(source), respServerSession, logger)
+        public LuaRunner(ReadOnlySpan<byte> source, StoreWrapper storeWrapper = null, ILogger logger = null)
+            : this(Encoding.UTF8.GetString(source), storeWrapper, logger)
         {
         }
 
@@ -97,6 +104,8 @@ namespace Garnet.server
         {
             function?.Dispose();
             state?.Dispose();
+            scratchBufferNetworkSender?.Dispose();
+            respServerSession?.Dispose();
         }
 
         /// <summary>
@@ -105,8 +114,79 @@ namespace Garnet.server
         /// <param name="args">Parameters</param>
         /// <returns></returns>
         public object garnet_call(string cmd, params object[] args)
+            => ProcessCommandFromScripting(cmd, args);
+
+        /// <summary>
+        /// Entry point method for executing commands from a Lua Script
+        /// </summary>
+        /// <param name="args"></param>
+        /// <returns></returns>
+        unsafe object ProcessCommandFromScripting(string cmd, params object[] args)
         {
-            return respServerSession?.ProcessCommandFromScripting(state, cmd, args);
+            var status = GarnetStatus.OK;
+
+            scratchBufferManager.Reset();
+
+            switch (cmd.ToUpper())
+            {
+                case "SET":
+                    {
+                        var key = scratchBufferManager.CreateArgSlice(Convert.ToString(args[0]));
+                        var value = scratchBufferManager.CreateArgSlice(Convert.ToString(args[1]));
+                        status = respServerSession.basicGarnetApi.SET(key, value);
+                        return "OK";
+                    }
+                case "GET":
+                    {
+                        var key = scratchBufferManager.CreateArgSlice(Convert.ToString(args[0]));
+                        status = respServerSession.basicGarnetApi.GET(key, out var value);
+                        if (status == GarnetStatus.OK)
+                            return value.ToString();
+                        return null;
+                    }
+                default:
+                    {
+                        var request = scratchBufferManager.FormatCommandAsResp(cmd, args, state);
+                        respServerSession.TryConsumeMessages(request.ptr, request.length);
+                        var response = scratchBufferNetworkSender.GetResponse();
+                        var result = ProcessResponse(response.ptr, response.length);
+                        scratchBufferNetworkSender.Reset();
+                        return result;
+                    }
+            }
+        }
+
+        unsafe object ProcessResponse(byte* ptr, int length)
+        {
+            switch (*ptr)
+            {
+                case (byte)'+':
+                    if (RespReadUtils.ReadSimpleString(out var resultStr, ref ptr, ptr + length))
+                        return resultStr;
+                    break;
+                case (byte)':':
+                    if (RespReadUtils.ReadIntegerAsString(out var resultInt, ref ptr, ptr + length))
+                        return resultInt;
+                    break;
+                case (byte)'-':
+                    if (RespReadUtils.ReadErrorAsString(out resultStr, ref ptr, ptr + length))
+                        return resultStr;
+                    break;
+
+                case (byte)'$':
+                    if (RespReadUtils.ReadStringResponseWithLengthHeader(out resultStr, ref ptr, ptr + length))
+                        return resultStr;
+                    break;
+
+                case (byte)'*':
+                    if (RespReadUtils.ReadStringArrayResponseWithLengthHeader(out var resultArray, ref ptr, ptr + length))
+                        return resultArray;
+                    break;
+
+                default:
+                    throw new Exception("Unexpected response: " + Encoding.UTF8.GetString(new Span<byte>(ptr, length)).Replace("\n", "|").Replace("\r", "") + "]");
+            }
+            return null;
         }
 
         /// <summary>
@@ -117,9 +197,45 @@ namespace Garnet.server
         /// <returns></returns>
         public object Run(string[] keys, string[] argv)
         {
-            sandbox_env["KEYS"] = keys;
-            sandbox_env["ARGV"] = argv;
-            return function.Call()[0];
+            if (keys != this.keys)
+            {
+                if (keys == null)
+                {
+                    this.keys = null;
+                    sandbox_env["KEYS"] = this.keys;
+                }
+                else
+                {
+                    if (this.keys != null && keys.Length == this.keys.Length)
+                        Array.Copy(keys, this.keys, keys.Length);
+                    else
+                    {
+                        this.keys = keys;
+                        sandbox_env["KEYS"] = this.keys;
+                    }
+                }
+            }
+            if (argv != this.argv)
+            {
+                if (argv == null)
+                {
+                    this.argv = null;
+                    sandbox_env["ARGV"] = this.argv;
+                }
+                else
+                {
+                    if (this.argv != null && argv.Length == this.argv.Length)
+                        Array.Copy(argv, this.argv, argv.Length);
+                    else
+                    {
+                        this.argv = argv;
+                        sandbox_env["ARGV"] = this.argv;
+                    }
+                }
+            }
+
+            var result = function.Call();
+            if (result.Length > 0) return result[0]; else return null;
         }
 
         /// <summary>
@@ -128,7 +244,8 @@ namespace Garnet.server
         /// <returns></returns>
         public object Run()
         {
-            return function.Call()[0];
+            var result = function.Call();
+            if (result.Length > 0) return result[0]; else return null;
         }
 
         /// <summary>

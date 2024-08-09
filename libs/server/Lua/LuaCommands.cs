@@ -2,7 +2,6 @@
 // Licensed under the MIT license.
 
 using System;
-using System.Text;
 using Garnet.common;
 using Microsoft.Extensions.Logging;
 
@@ -167,34 +166,33 @@ namespace Garnet.server
 
             try
             {
-                object luaTable = null;
-                luaTable = scriptRunner.Run(keys, argv);
-                if (luaTable != null)
+                object scriptResult = scriptRunner.Run(keys, argv);
+                if (scriptResult != null)
                 {
-                    if ((luaTable as byte?) != null && (byte)luaTable == 36) //equals to $
+                    if (scriptResult is string s)
                     {
-                        while (!RespWriteUtils.WriteDirect((byte[])luaTable, ref dcurr, dend))
+                        while (!RespWriteUtils.WriteAsciiBulkString(s, ref dcurr, dend))
                             SendAndReset();
                     }
-                    else if (luaTable as string != null)
+                    else if ((scriptResult as byte?) != null && (byte)scriptResult == 36) //equals to $
                     {
-                        while (!RespWriteUtils.WriteBulkString(Encoding.ASCII.GetBytes((string)luaTable), ref dcurr, dend))
+                        while (!RespWriteUtils.WriteDirect((byte[])scriptResult, ref dcurr, dend))
                             SendAndReset();
                     }
-                    else if (luaTable as Int64? != null)
+                    else if (scriptResult as Int64? != null)
                     {
-                        while (!RespWriteUtils.WriteInteger((Int64)luaTable, ref dcurr, dend))
+                        while (!RespWriteUtils.WriteInteger((Int64)scriptResult, ref dcurr, dend))
                             SendAndReset();
                     }
-                    else if (luaTable as ArgSlice? != null)
+                    else if (scriptResult as ArgSlice? != null)
                     {
-                        while (!RespWriteUtils.WriteBulkString(((ArgSlice)luaTable).ToArray(), ref dcurr, dend))
+                        while (!RespWriteUtils.WriteBulkString(((ArgSlice)scriptResult).ToArray(), ref dcurr, dend))
                             SendAndReset();
                     }
-                    else if (luaTable as Object[] != null)
+                    else if (scriptResult as Object[] != null)
                     {
                         // Two objects one boolean value and the result from the Lua Call
-                        while (!RespWriteUtils.WriteAsciiBulkString((luaTable as Object[])[1].ToString().AsSpan(), ref dcurr, dend))
+                        while (!RespWriteUtils.WriteAsciiBulkString((scriptResult as Object[])[1].ToString().AsSpan(), ref dcurr, dend))
                             SendAndReset();
                     }
                 }

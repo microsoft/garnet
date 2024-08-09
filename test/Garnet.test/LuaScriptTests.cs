@@ -218,6 +218,45 @@ namespace Garnet.test
         }
 
         [Test]
+        public void CanDoZAddGT()
+        {
+            using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
+            var db = redis.GetDatabase(0);
+
+            const string ZADD_GT = """
+                    local oldScore = tonumber(redis.call('ZSCORE', KEYS[1], ARGV[2]))
+                    if oldScore == nil or oldScore < tonumber(ARGV[1]) then
+                        redis.call('ZADD', KEYS[1], ARGV[1], ARGV[2])
+                    end
+                    """;
+
+            string tag = "tag";
+            long expiryTimestamp = 100;
+            RedisResult result = db.ScriptEvaluate(ZADD_GT, [(RedisKey)"zaddgtkey"], [expiryTimestamp, tag]);
+            Assert.IsTrue(result.IsNull);
+
+            // get key and verify timestamp is 100
+            var r = db.SortedSetRangeByScoreWithScores("zaddgtkey");
+            Assert.IsTrue(r[0].Score == 100 && r[0].Element == "tag");
+
+            expiryTimestamp = 200;
+            result = db.ScriptEvaluate(ZADD_GT, [(RedisKey)"zaddgtkey"], [expiryTimestamp, tag]);
+            Assert.IsTrue(result.IsNull);
+
+            // get key and verify timestamp is 200
+            r = db.SortedSetRangeByScoreWithScores("zaddgtkey");
+            Assert.IsTrue(r[0].Score == 200 && r[0].Element == "tag");
+
+            expiryTimestamp = 150;
+            result = db.ScriptEvaluate(ZADD_GT, [(RedisKey)"zaddgtkey"], [expiryTimestamp, tag]);
+            Assert.IsTrue(result.IsNull);
+
+            // get key and verify timestamp is 200
+            r = db.SortedSetRangeByScoreWithScores("zaddgtkey");
+            Assert.IsTrue(r[0].Score == 200 && r[0].Element == "tag");
+        }
+
+        [Test]
         public void CanDoScriptFlush()
         {
             using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig(allowAdmin: true));
@@ -253,7 +292,7 @@ namespace Garnet.test
         [Test]
         public void UseEvalShaLightClient()
         {
-            var rnd = new Random();
+            var rnd = new Random(0);
             var nameKey = "strKey-";
             var valueKey = "valueKey-";
             using var lightClientRequest = TestUtils.CreateRequest();

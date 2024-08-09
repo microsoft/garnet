@@ -29,13 +29,15 @@ namespace Resp.benchmark
         public static void LoadSetGetScripts(LightClient client, out string sha1SetScript, out string sha1GetScript)
         {
             // load set script in the server
-            var stringCmd = "*3\r\n$6\r\nSCRIPT\r\n$4\r\nLOAD\r\n$41\r\nreturn redis.call('set',KEYS[1], ARGV[1])\r\n";
+            string script = "return redis.call('set', KEYS[1], ARGV[1])";
+            var stringCmd = $"*3\r\n$6\r\nSCRIPT\r\n$4\r\nLOAD\r\n${script.Length}\r\n{script}\r\n";
             client.Send(Encoding.ASCII.GetBytes(stringCmd), stringCmd.Length, 1);
             client.CompletePendingRequests();
             sha1SetScript = Encoding.ASCII.GetString(client.ResponseBuffer)[..45];
 
             // load get script in the server
-            stringCmd = "*3\r\n$6\r\nSCRIPT\r\n$4\r\nLOAD\r\n$32\r\nreturn redis.call('get',KEYS[1])\r\n";
+            script = "return redis.call('get', KEYS[1])";
+            stringCmd = $"*3\r\n$6\r\nSCRIPT\r\n$4\r\nLOAD\r\n${script.Length}\r\n{script}\r\n";
             client.Send(Encoding.ASCII.GetBytes(stringCmd), stringCmd.Length, 1);
             client.CompletePendingRequests();
             sha1GetScript = Encoding.ASCII.GetString(client.ResponseBuffer)[..45];

@@ -11,15 +11,21 @@ namespace Garnet.server
     /// <summary>
     /// Cache of Lua scripts, per session
     /// </summary>
-    internal unsafe class SessionScriptCache(RespServerSession respServerSession, ILogger logger = null)
+    internal sealed unsafe class SessionScriptCache
     {
         // Important to keep the hash length to this value 
         // for compatibility
         const int SHA1Len = 40;
-        readonly RespServerSession respServerSession = respServerSession;
-        readonly ILogger logger = logger;
+        readonly StoreWrapper storeWrapper;
+        readonly ILogger logger;
         readonly Dictionary<byte[], LuaRunner> scriptCache = new(new ByteArrayComparer());
         readonly byte[] hash = new byte[SHA1Len / 2];
+
+        public SessionScriptCache(StoreWrapper storeWrapper, ILogger logger = null)
+        {
+            this.storeWrapper = storeWrapper;
+            this.logger = logger;
+        }
 
         /// <summary>
         /// Try get script runner for given digest
@@ -45,7 +51,7 @@ namespace Garnet.server
 
             try
             {
-                runner = new LuaRunner(source, respServerSession, logger);
+                runner = new LuaRunner(source, storeWrapper, logger);
                 runner.Compile();
                 scriptCache.TryAdd(digest, runner);
             }
