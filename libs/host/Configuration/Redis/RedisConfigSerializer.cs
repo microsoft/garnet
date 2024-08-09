@@ -81,7 +81,7 @@ namespace Garnet
                 var key = line.Substring(0, sepIdx);
                 if (!KeyToProperty.Value.ContainsKey(key))
                 {
-                    logger?.LogWarning($"Redis configuration option not supported: {key}.");
+                    logger?.LogWarning("Redis configuration option not supported: {key}.", key);
                     continue;
                 }
 
@@ -136,7 +136,7 @@ namespace Garnet
                 var redisOptionAttr = (RedisOptionAttribute)prop.GetCustomAttributes(typeof(RedisOptionAttribute), false).First();
                 if (!string.IsNullOrEmpty(redisOptionAttr.UsageWarning))
                 {
-                    logger?.LogWarning($"Redis configuration option usage warning ({key}): {redisOptionAttr.UsageWarning}");
+                    logger?.LogWarning("Redis configuration option usage warning ({key}): {UsageWarning}", key, redisOptionAttr.UsageWarning);
                 }
             }
 

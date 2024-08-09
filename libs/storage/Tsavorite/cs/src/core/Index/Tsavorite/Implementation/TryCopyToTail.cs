@@ -3,9 +3,9 @@
 
 namespace Tsavorite.core
 {
-    public unsafe partial class TsavoriteKV<Key, Value, TStoreFunctions, TAllocator> : TsavoriteBase
-        where TStoreFunctions : IStoreFunctions<Key, Value>
-        where TAllocator : IAllocator<Key, Value, TStoreFunctions>
+    public unsafe partial class TsavoriteKV<TKey, TValue, TStoreFunctions, TAllocator> : TsavoriteBase
+        where TStoreFunctions : IStoreFunctions<TKey, TValue>
+        where TAllocator : IAllocator<TKey, TValue, TStoreFunctions>
     {
         /// <summary>
         /// Copy a record from the immutable region of the log, from the disk, or from ConditionalCopyToTail to the tail of the log (or splice into the log/readcache boundary).
@@ -26,10 +26,10 @@ namespace Tsavorite.core
         ///     <item>SUCCESS: copy was done</item>
         ///     </list>
         /// </returns>
-        internal OperationStatus TryCopyToTail<Input, Output, Context, TSessionFunctionsWrapper>(ref PendingContext<Input, Output, Context> pendingContext,
-                                    ref Key key, ref Input input, ref Value value, ref Output output, ref OperationStackContext<Key, Value, TStoreFunctions, TAllocator> stackCtx,
+        internal OperationStatus TryCopyToTail<TInput, TOutput, TContext, TSessionFunctionsWrapper>(ref PendingContext<TInput, TOutput, TContext> pendingContext,
+                                    ref TKey key, ref TInput input, ref TValue value, ref TOutput output, ref OperationStackContext<TKey, TValue, TStoreFunctions, TAllocator> stackCtx,
                                     ref RecordInfo srcRecordInfo, TSessionFunctionsWrapper sessionFunctions, WriteReason reason)
-        where TSessionFunctionsWrapper : ISessionFunctionsWrapper<Key, Value, Input, Output, Context, TStoreFunctions, TAllocator>
+        where TSessionFunctionsWrapper : ISessionFunctionsWrapper<TKey, TValue, TInput, TOutput, TContext, TStoreFunctions, TAllocator>
         {
             var (actualSize, allocatedSize, keySize) = hlog.GetRecordSize(ref key, ref value);
             if (!TryAllocateRecord(sessionFunctions, ref pendingContext, ref stackCtx, actualSize, ref allocatedSize, keySize, new AllocateOptions() { Recycle = true },
@@ -47,7 +47,7 @@ namespace Tsavorite.core
             };
             upsertInfo.SetRecordInfo(ref newRecordInfo);
 
-            ref Value newRecordValue = ref hlog.GetAndInitializeValue(newPhysicalAddress, newPhysicalAddress + actualSize);
+            ref TValue newRecordValue = ref hlog.GetAndInitializeValue(newPhysicalAddress, newPhysicalAddress + actualSize);
             (upsertInfo.UsedValueLength, upsertInfo.FullValueLength) = GetNewValueLengths(actualSize, allocatedSize, newPhysicalAddress, ref newRecordValue);
 
             if (!sessionFunctions.SingleWriter(ref key, ref input, ref value, ref newRecordValue, ref output, ref upsertInfo, reason, ref newRecordInfo))

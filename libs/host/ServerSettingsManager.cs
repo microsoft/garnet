@@ -86,8 +86,8 @@ namespace Garnet
                 // If any unparsed arguments remain, display a warning to the user
                 if (unparsedArguments.Count > 0)
                 {
-                    logger?.LogWarning(@$"The following command line arguments were not parsed: {string.Join(',', unparsedArguments)}. 
-Please check the syntax of your command. For detailed usage information run with --help.");
+                    logger?.LogWarning(@"The following command line arguments were not parsed: {unparsedArguments}. 
+Please check the syntax of your command. For detailed usage information run with --help.", string.Join(',', unparsedArguments));
                 }
             }
 
@@ -254,8 +254,8 @@ Please check the syntax of your command. For detailed usage information run with
                 _ => throw new NotImplementedException()
             };
 
-            logger?.Log(importSucceeded ? LogLevel.Information : LogLevel.Error,
-                $"Configuration import from {fileLocation} {(importSucceeded ? "succeeded" : "failed")}. Path: {path}.");
+            logger?.Log(importSucceeded ? LogLevel.Information : LogLevel.Error, "Configuration import from {fileLocation} {importSucceeded}. Path: {path}.",
+                fileLocation, importSucceeded ? "succeeded" : "failed", path);
 
             return importSucceeded;
         }
@@ -287,8 +287,8 @@ Please check the syntax of your command. For detailed usage information run with
                 _ => throw new NotImplementedException()
             };
 
-            logger?.Log(exportSucceeded ? LogLevel.Information : LogLevel.Error,
-                $"Configuration export to {fileLocation} {(exportSucceeded ? "succeeded" : "failed")}. File path: {path}.");
+            logger?.Log(exportSucceeded ? LogLevel.Information : LogLevel.Error, "Configuration export to {fileLocation} {exportSucceeded}. File path: {path}.",
+                fileLocation, exportSucceeded ? "succeeded" : "failed", path);
             return exportSucceeded;
         }
 

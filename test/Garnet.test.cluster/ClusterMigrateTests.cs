@@ -572,7 +572,7 @@ namespace Garnet.test.cluster
         [Category("CLUSTER")]
         public void ClusterSimpleMigrateSlots()
         {
-            context.logger.LogDebug($"0. ClusterSimpleMigrateSlotsTest started");
+            context.logger.LogDebug("0. ClusterSimpleMigrateSlotsTest started");
             var Port = TestUtils.Port;
             var Shards = defaultShards;
             context.CreateInstances(Shards, useTLS: UseTLS);
@@ -585,7 +585,7 @@ namespace Garnet.test.cluster
                 msp = ClusterTestUtils.MergeSlotPortMap(msp, context.clusterTestUtils.GetSlotPortMapFromNode(i, context.logger));
             Assert.AreEqual(msp.Count, 16384);
 
-            context.logger.LogDebug($"1. Creating data");
+            context.logger.LogDebug("1. Creating data");
             var keyCount = 100;
             var slot = CreateSingleSlotData(keyLen: 16, valueLen: 16, keyTagEnd: 6, keyCount, out var data);
             var sourceIndex = context.clusterTestUtils.GetSourceNodeIndexFromSlot((ushort)slot, context.logger);
@@ -608,11 +608,11 @@ namespace Garnet.test.cluster
                 Assert.AreEqual((ushort)slot, _slot);
             }
 
-            context.logger.LogDebug($"3. Initiating async migration");
+            context.logger.LogDebug("3. Initiating async migration");
             // Initiate Migration            
             context.clusterTestUtils.MigrateSlots(sourcePort, targetPort, new List<int>() { slot }, logger: context.logger);
 
-            context.logger.LogDebug($"4. Checking keys starting");
+            context.logger.LogDebug("4. Checking keys starting");
             // Wait for keys to become available for reading
             var keysList = data.Keys.ToList();
             for (var i = 0; i < keysList.Count; i++)
@@ -627,9 +627,9 @@ namespace Garnet.test.cluster
                 Assert.AreEqual(targetPort, _port, $"[{sourcePort}] => [{targetPort}] == {_port} | expected: {targetPort}, actual: {_port}");
                 Assert.AreEqual(data[keysList[i]], Encoding.ASCII.GetBytes(value), $"[{sourcePort}] => [{targetPort}] == {_port} | expected: {Encoding.ASCII.GetString(data[keysList[i]])}, actual: {value}");
             }
-            context.logger.LogDebug($"5. Checking keys done");
+            context.logger.LogDebug("5. Checking keys done");
 
-            context.logger.LogDebug($"6. Checking configuration update starting");
+            context.logger.LogDebug("6. Checking configuration update starting");
             // Check if configuration has updated by
             var otherPorts = context.clusterTestUtils.GetEndPoints().Select(x => ((IPEndPoint)x).Port).Where(x => x != sourcePort || x != targetPort);
             while (true)
@@ -651,16 +651,16 @@ namespace Garnet.test.cluster
                     break;
             }
 
-            context.logger.LogDebug($"7. Checking configuration update done");
+            context.logger.LogDebug("7. Checking configuration update done");
             context.clusterTestUtils.WaitForMigrationCleanup(context.logger);
-            context.logger.LogDebug($"8. ClusterSimpleMigrateSlotsTest done");
+            context.logger.LogDebug("8. ClusterSimpleMigrateSlotsTest done");
         }
 
         [Test, Order(7)]
         [Category("CLUSTER")]
         public void ClusterSimpleMigrateSlotsExpiry()
         {
-            context.logger.LogDebug($"0. ClusterSimpleMigrateSlotsExpiryTest started");
+            context.logger.LogDebug("0. ClusterSimpleMigrateSlotsExpiryTest started");
             context.CreateInstances(defaultShards, useTLS: UseTLS);
             context.CreateConnection(useTLS: UseTLS);
             _ = context.clusterTestUtils.SimpleSetupCluster(logger: context.logger);
@@ -672,7 +672,7 @@ namespace Garnet.test.cluster
 
             var keyCountRet = context.clusterTestUtils.CountKeysInSlot(slot);
             Assert.AreEqual(keyCountRet, keyExpiryCount / 2);
-            context.logger.LogDebug($"2. Count keys in slot after expiry");
+            context.logger.LogDebug("2. Count keys in slot after expiry");
 
             keyCountRet = 100;
             context.logger.LogDebug("3. Creating slot data {keyCountRet} with expiry started", keyCountRet);
@@ -685,21 +685,21 @@ namespace Garnet.test.cluster
 
             context.logger.LogDebug("4. Creating slot data {keyCountRet} with expiry done", keyCountRet);
 
-            context.logger.LogDebug($"5. Initiating migration");
+            context.logger.LogDebug("5. Initiating migration");
             context.clusterTestUtils.MigrateSlots(context.clusterTestUtils.GetEndPoint(sourceNodeIndex), context.clusterTestUtils.GetEndPoint(targetNodeIndex), new List<int>() { _slot }, logger: context.logger);
-            context.logger.LogDebug($"6. Finished migration");
+            context.logger.LogDebug("6. Finished migration");
 
-            context.logger.LogDebug($"7. Checking migrating keys started");
+            context.logger.LogDebug("7. Checking migrating keys started");
             do
             {
                 _ = Thread.Yield();
                 keyCountRet = context.clusterTestUtils.CountKeysInSlot(targetNodeIndex, slot, context.logger);
             } while (keyCountRet == -1 || keyCountRet > keyExpiryCount / 2);
             Assert.AreEqual(keyExpiryCount / 2, keyCountRet);
-            context.logger.LogDebug($"8. Checking migrating keys done");
+            context.logger.LogDebug("8. Checking migrating keys done");
 
             context.clusterTestUtils.WaitForMigrationCleanup(context.logger);
-            context.logger.LogDebug($"9. ClusterSimpleMigrateSlotsExpiryTest done");
+            context.logger.LogDebug("9. ClusterSimpleMigrateSlotsExpiryTest done");
         }
 
         private (string, List<Tuple<int, byte[]>>) DoZADD(int nodeIndex, byte[] key, int memberCount, int memberSize = 8, int scoreMin = int.MinValue, int scoreMax = int.MaxValue)
@@ -846,7 +846,7 @@ namespace Garnet.test.cluster
         [Category("CLUSTER")]
         public void ClusterSimpleMigrateSlotsWithObjects()
         {
-            context.logger.LogDebug($"0. ClusterSimpleMigrateSlotsWithObjectsTest started");
+            context.logger.LogDebug("0. ClusterSimpleMigrateSlotsWithObjectsTest started");
             var Port = TestUtils.Port;
             var Shards = defaultShards;
             context.CreateInstances(defaultShards, useTLS: UseTLS);
@@ -863,7 +863,7 @@ namespace Garnet.test.cluster
             var memberCount = 10;
             Assert.AreEqual(7638, slot);
 
-            context.logger.LogDebug($"1. Loading object keys data started");
+            context.logger.LogDebug("1. Loading object keys data started");
             List<Tuple<int, byte[]>> memberPair;
             (_, memberPair) = DoZADD(sourceNodeIndex, key, memberCount);
             var resp = DoZCOUNT(sourceNodeIndex, key, out var count, out var _Address, out var _Port, out var _Slot, logger: context.logger);
@@ -873,7 +873,7 @@ namespace Garnet.test.cluster
             (resp, members) = DoZRANGE(sourceNodeIndex, key, out _Address, out _Port, out _Slot, context.logger);
             Assert.AreEqual(memberPair.Select(x => x.Item2).ToList(), members);
 
-            context.logger.LogDebug($"2. Loading object keys data done");
+            context.logger.LogDebug("2. Loading object keys data done");
 
             var sourceEndPoint = context.clusterTestUtils.GetEndPoint(sourceNodeIndex);
             var targetEndPoint = context.clusterTestUtils.GetEndPoint(targetNodeIndex);
@@ -881,7 +881,7 @@ namespace Garnet.test.cluster
             context.clusterTestUtils.MigrateSlots(context.clusterTestUtils.GetEndPoint(sourceNodeIndex), context.clusterTestUtils.GetEndPoint(targetNodeIndex), new List<int>() { slot }, logger: context.logger);
             context.logger.LogDebug("4. Migrating slot {slot} started {sourceEndPoint.Port} to {targetEndPoint.Port} done", slot, sourceEndPoint.Port, targetEndPoint.Port);
 
-            context.logger.LogDebug($"5. Checking migrated keys started");
+            context.logger.LogDebug("5. Checking migrated keys started");
             count = 0;
             do
             {
@@ -890,19 +890,19 @@ namespace Garnet.test.cluster
             while (!resp.Equals("OK"));
             Assert.AreEqual(count, memberCount);
 
-            context.logger.LogDebug($"6. Checking migrated keys done");
+            context.logger.LogDebug("6. Checking migrated keys done");
 
             (resp, members) = DoZRANGE(targetNodeIndex, key, out _Address, out _Port, out _Slot);
             Assert.AreEqual(memberPair.Select(x => Encoding.ASCII.GetString(x.Item2)).ToList(), members);
             context.clusterTestUtils.WaitForMigrationCleanup(context.logger);
-            context.logger.LogDebug($"7. ClusterSimpleMigrateSlotsWithObjectsTest done");
+            context.logger.LogDebug("7. ClusterSimpleMigrateSlotsWithObjectsTest done");
         }
 
         [Test, Order(9)]
         [Category("CLUSTER")]
         public void ClusterSimpleMigrateKeys()
         {
-            context.logger.LogDebug($"0. ClusterSimpleMigrateKeysTest started");
+            context.logger.LogDebug("0. ClusterSimpleMigrateKeysTest started");
             context.CreateInstances(defaultShards, useTLS: UseTLS);
             context.CreateConnection(useTLS: UseTLS);
             _ = context.clusterTestUtils.SimpleSetupCluster(logger: context.logger);
@@ -952,9 +952,9 @@ namespace Garnet.test.cluster
             Assert.AreEqual(keys, keysInSlot);
             context.logger.LogDebug("6. GetKeysInSlot {keysInSlot.Count}", keysInSlot.Count);
 
-            context.logger.LogDebug($"7. MigrateKeys starting");
+            context.logger.LogDebug("7. MigrateKeys starting");
             context.clusterTestUtils.MigrateKeys(context.clusterTestUtils.GetEndPoint(sourceNodeIndex), context.clusterTestUtils.GetEndPoint(targetNodeIndex), keysInSlot, context.logger);
-            context.logger.LogDebug($"8. MigrateKeys done");
+            context.logger.LogDebug("8. MigrateKeys done");
 
             var respNodeTarget = context.clusterTestUtils.SetSlot(targetNodeIndex, _workingSlot, "NODE", targetNodeId, logger: context.logger);
             Assert.AreEqual(respNodeTarget, "OK");
@@ -1003,14 +1003,14 @@ namespace Garnet.test.cluster
             context.logger.LogDebug("14. Checking migrate keys done");
 
             context.clusterTestUtils.WaitForMigrationCleanup(context.logger);
-            context.logger.LogDebug($"15. ClusterSimpleMigrateKeysTest done");
+            context.logger.LogDebug("15. ClusterSimpleMigrateKeysTest done");
         }
 
         [Test, Order(10)]
         [Category("CLUSTER")]
         public void ClusterSimpleMigrateKeysWithObjects()
         {
-            context.logger.LogDebug($"0. ClusterSimpleMigrateKeysWithObjectsTest started");
+            context.logger.LogDebug("0. ClusterSimpleMigrateKeysWithObjectsTest started");
             var Port = TestUtils.Port;
             var Shards = defaultShards;
             context.CreateInstances(Shards, useTLS: UseTLS);
@@ -1049,7 +1049,7 @@ namespace Garnet.test.cluster
             string _Address;
             int _Port;
             int _Slot;
-            context.logger.LogDebug($"3. Checking keys before migration started");
+            context.logger.LogDebug("3. Checking keys before migration started");
             foreach (var _key in data.Keys)
             {
                 var resp = DoZCOUNT(sourceNodeIndex, key, out var count, out _Address, out _Port, out _Slot, logger: context.logger);
@@ -1060,9 +1060,9 @@ namespace Garnet.test.cluster
                 (resp, members) = DoZRANGE(sourceNodeIndex, _key, out _Address, out _Port, out _Slot);
                 var expectedMembers = data[_key].Select(x => Encoding.ASCII.GetString(x.Item2)).ToList();
                 Assert.AreEqual(expectedMembers, members);
-                context.logger.LogDebug($"2. Loading object keys data done");
+                context.logger.LogDebug("2. Loading object keys data done");
             }
-            context.logger.LogDebug($"4. Checking keys before migration done");
+            context.logger.LogDebug("4. Checking keys before migration done");
 
             // Start Migration
             var respImport = context.clusterTestUtils.SetSlot(targetNodeIndex, _slot, "IMPORTING", sourceNodeId, logger: context.logger);
@@ -1081,9 +1081,9 @@ namespace Garnet.test.cluster
             Assert.AreEqual(keys, keysInSlot);
             context.logger.LogDebug("8. GetKeysInSlot {keysInSlot.Count}", keysInSlot.Count);
 
-            context.logger.LogDebug($"9. MigrateKeys starting");
+            context.logger.LogDebug("9. MigrateKeys starting");
             context.clusterTestUtils.MigrateKeys(context.clusterTestUtils.GetEndPoint(sourceNodeIndex), context.clusterTestUtils.GetEndPoint(targetNodeIndex), keysInSlot, context.logger);
-            context.logger.LogDebug($"10. MigrateKeys done");
+            context.logger.LogDebug("10. MigrateKeys done");
 
             var respNodeTarget = context.clusterTestUtils.SetSlot(targetNodeIndex, _slot, "NODE", targetNodeId, logger: context.logger);
             Assert.AreEqual(respNodeTarget, "OK");
@@ -1120,11 +1120,11 @@ namespace Garnet.test.cluster
                 (resp, members) = DoZRANGE(targetNodeIndex, _key, out _Address, out _Port, out _Slot, context.logger);
                 var expectedMembers = data[_key].Select(x => Encoding.ASCII.GetString(x.Item2)).ToList();
                 Assert.AreEqual(expectedMembers, members);
-                context.logger.LogDebug($"2. Loading object keys data done");
+                context.logger.LogDebug("2. Loading object keys data done");
             }
             context.logger.LogDebug("15. Checking migrate keys done");
             context.clusterTestUtils.WaitForMigrationCleanup(context.logger);
-            context.logger.LogDebug($"16. ClusterSimpleMigrateKeysWithObjectsTest done");
+            context.logger.LogDebug("16. ClusterSimpleMigrateKeysWithObjectsTest done");
         }
 
         private void MigrateSlotsTask(int sourceNodePort, int targetNodePort, List<int> slots, ILogger logger = null)
@@ -1238,7 +1238,7 @@ namespace Garnet.test.cluster
         [Category("CLUSTER")]
         public void ClusterSimpleMigrateWithReadWrite()
         {
-            context.logger.LogDebug($"0. ClusterSimpleMigrateTestWithReadWrite started");
+            context.logger.LogDebug("0. ClusterSimpleMigrateTestWithReadWrite started");
             var Shards = defaultShards;
             context.CreateInstances(Shards, useTLS: UseTLS);
             context.CreateConnection(useTLS: UseTLS);
@@ -1261,7 +1261,7 @@ namespace Garnet.test.cluster
                 new HashSet<int>(context.clusterTestUtils.GetOwnedSlotsFromNode(sourceNodeIndex, context.logger)));
             context.logger.LogDebug("2. CreateMultiSlotData {keyCount} done", keyCount);
 
-            context.logger.LogDebug($"2. Running workload and migration task");
+            context.logger.LogDebug("2. Running workload and migration task");
             var migratedSlots = data.Keys.ToList();
             MigrateSlotsTask(
                             context.clusterTestUtils.GetEndPoint(sourceNodeIndex).Port,
@@ -1269,9 +1269,9 @@ namespace Garnet.test.cluster
                             migratedSlots,
                             logger: context.logger);
             OperateOnSlotsTask(data, targetNodeIndex);
-            context.logger.LogDebug($"3. Migration and workload done");
+            context.logger.LogDebug("3. Migration and workload done");
 
-            context.logger.LogDebug($"4. Checking keys after migration started");
+            context.logger.LogDebug("4. Checking keys after migration started");
             foreach (var entry in operatedOnData)
             {
                 var key = entry.Item2;
@@ -1289,8 +1289,8 @@ namespace Garnet.test.cluster
                 Assert.AreEqual(context.clusterTestUtils.GetEndPoint(targetNodeIndex).Address.ToString(), address);
             }
 
-            context.logger.LogDebug($"5. Checking keys after migration done");
-            context.logger.LogDebug($"6. ClusterSimpleMigrateTestWithReadWrite done");
+            context.logger.LogDebug("5. Checking keys after migration done");
+            context.logger.LogDebug("6. ClusterSimpleMigrateTestWithReadWrite done");
             context.clusterTestUtils.WaitForMigrationCleanup(context.logger);
         }
 
@@ -1344,7 +1344,7 @@ namespace Garnet.test.cluster
         [TestCaseSource("_slotranges")]
         public void ClusterSimpleMigrateSlotsRanges(List<int> migrateRange)
         {
-            context.logger.LogDebug($"0. ClusterSimpleMigrateSlotsRanges started");
+            context.logger.LogDebug("0. ClusterSimpleMigrateSlotsRanges started");
             var Shards = defaultShards;
             context.CreateInstances(Shards, useTLS: UseTLS);
             context.CreateConnection(useTLS: UseTLS);
@@ -1396,7 +1396,7 @@ namespace Garnet.test.cluster
         [TestCaseSource("_slotranges")]
         public void ClusterSimpleMigrateWithAuth(List<int> migrateRange)
         {
-            context.logger.LogDebug($"0. ClusterSimpleMigrateWithAuth started");
+            context.logger.LogDebug("0. ClusterSimpleMigrateWithAuth started");
             var Shards = defaultShards;
             context.CreateInstances(Shards, useTLS: UseTLS);
             context.CreateConnection(useTLS: UseTLS);
@@ -1448,7 +1448,7 @@ namespace Garnet.test.cluster
         [Category("CLUSTER")]
         public void ClusterAllowWritesDuringMigrateTest()
         {
-            context.logger.LogDebug($"0. ClusterSimpleMigrateTestWithReadWrite started");
+            context.logger.LogDebug("0. ClusterSimpleMigrateTestWithReadWrite started");
             var Shards = defaultShards;
             context.CreateInstances(Shards, useTLS: UseTLS);
             context.CreateConnection(useTLS: UseTLS);
@@ -1577,7 +1577,7 @@ namespace Garnet.test.cluster
         [Category("CLUSTER")]
         public void ClusterMigrateForgetTest()
         {
-            context.logger.LogDebug($"0. ClusterSimpleMigrateSlotsRanges started");
+            context.logger.LogDebug("0. ClusterSimpleMigrateSlotsRanges started");
             var Shards = defaultShards;
             context.CreateInstances(Shards, useTLS: UseTLS);
             context.CreateConnection(useTLS: UseTLS);

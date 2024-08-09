@@ -11,7 +11,7 @@ This section discusses both of these because they were part of a change to add t
 From the caller point of view, we have two new type parameters on `TsavoriteKV<TKey, TValue, TStoreFunctions, TAllocator>`. The `TStoreFunctions` and `TAllocator` are also on `*.Context` (e.g. `BasicContext`) as well. C# allows the 'using' alias only as the first lines of a namespace declaration, and the alias is file-local and recognized by subsequent 'using' aliases, so the "Api" aliases such as `BasicGarnetApi` in multiple files are much longer now.
 
 `TsavoriteKV` constructor has been changed to take 3 parameters:
-- `KVSettings<Key, Value>`. This replaces the previous long list of parameters. `LogSettings`, `ReadCacheSettings`, and `CheckpointSettings` have become internal classes, used only by `TsavoriteKV` (created from `TsavoriteKVSettings`) when instantiating the Allocators (e.g. the new `AllocatorSettings` has a `LogSettings` member). `SerializerSettings` has been removed in favor of methods on `IStoreFunctions`.
+- `KVSettings<TKey, TValue>`. This replaces the previous long list of parameters. `LogSettings`, `ReadCacheSettings`, and `CheckpointSettings` have become internal classes, used only by `TsavoriteKV` (created from `TsavoriteKVSettings`) when instantiating the Allocators (e.g. the new `AllocatorSettings` has a `LogSettings` member). `SerializerSettings` has been removed in favor of methods on `IStoreFunctions`.
 - An instance of `TStoreFunctions`. This is usually obtained by a call to a static `StoreFunctions` factory method to create it, passing the individual components to be contained.
 - A factory `Func<>` for the `TAllocator` instantiation.
 

@@ -3,9 +3,9 @@
 
 namespace Tsavorite.core
 {
-    public unsafe partial class TsavoriteKV<Key, Value, TStoreFunctions, TAllocator> : TsavoriteBase
-        where TStoreFunctions : IStoreFunctions<Key, Value>
-        where TAllocator : IAllocator<Key, Value, TStoreFunctions>
+    public unsafe partial class TsavoriteKV<TKey, TValue, TStoreFunctions, TAllocator> : TsavoriteBase
+        where TStoreFunctions : IStoreFunctions<TKey, TValue>
+        where TAllocator : IAllocator<TKey, TValue, TStoreFunctions>
     {
         /// <summary>
         /// Copy a record from the disk to the read cache.
@@ -19,9 +19,9 @@ namespace Tsavorite.core
         /// <param name="sessionFunctions"></param>
         /// <returns>True if copied to readcache, else false; readcache is "best effort", and we don't fail the read process, or slow it down by retrying.
         /// </returns>
-        internal bool TryCopyToReadCache<Input, Output, Context, TSessionFunctionsWrapper>(TSessionFunctionsWrapper sessionFunctions, ref PendingContext<Input, Output, Context> pendingContext,
-                                        ref Key key, ref Input input, ref Value recordValue, ref OperationStackContext<Key, Value, TStoreFunctions, TAllocator> stackCtx)
-            where TSessionFunctionsWrapper : ISessionFunctionsWrapper<Key, Value, Input, Output, Context, TStoreFunctions, TAllocator>
+        internal bool TryCopyToReadCache<TInput, TOutput, TContext, TSessionFunctionsWrapper>(TSessionFunctionsWrapper sessionFunctions, ref PendingContext<TInput, TOutput, TContext> pendingContext,
+                                        ref TKey key, ref TInput input, ref TValue recordValue, ref OperationStackContext<TKey, TValue, TStoreFunctions, TAllocator> stackCtx)
+            where TSessionFunctionsWrapper : ISessionFunctionsWrapper<TKey, TValue, TInput, TOutput, TContext, TStoreFunctions, TAllocator>
         {
             var (actualSize, allocatedSize, _) = hlog.GetRecordSize(ref key, ref recordValue);
 
@@ -40,10 +40,10 @@ namespace Tsavorite.core
             upsertInfo.SetRecordInfo(ref newRecordInfo);
 
             // Even though readcache records are immutable, we have to initialize the lengths
-            ref Value newRecordValue = ref readcache.GetAndInitializeValue(newPhysicalAddress, newPhysicalAddress + actualSize);
+            ref TValue newRecordValue = ref readcache.GetAndInitializeValue(newPhysicalAddress, newPhysicalAddress + actualSize);
             (upsertInfo.UsedValueLength, upsertInfo.FullValueLength) = GetNewValueLengths(actualSize, allocatedSize, newPhysicalAddress, ref newRecordValue);
 
-            Output output = default;
+            TOutput output = default;
             if (!sessionFunctions.SingleWriter(ref key, ref input, ref recordValue, ref readcache.GetAndInitializeValue(newPhysicalAddress, newPhysicalAddress + actualSize),
                                             ref output, ref upsertInfo, WriteReason.CopyToReadCache, ref newRecordInfo))
             {

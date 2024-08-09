@@ -8,25 +8,25 @@ using System.Threading;
 
 namespace Tsavorite.core
 {
-    internal sealed unsafe class BlittableAllocatorImpl<Key, Value, TStoreFunctions> : AllocatorBase<Key, Value, TStoreFunctions, BlittableAllocator<Key, Value, TStoreFunctions>>
-        where TStoreFunctions : IStoreFunctions<Key, Value>
+    internal sealed unsafe class BlittableAllocatorImpl<TKey, TValue, TStoreFunctions> : AllocatorBase<TKey, TValue, TStoreFunctions, BlittableAllocator<TKey, TValue, TStoreFunctions>>
+        where TStoreFunctions : IStoreFunctions<TKey, TValue>
     {
         // Circular buffer definition
         private readonly byte[][] values;
         private readonly long[] pointers;
         private readonly long* nativePointers;
 
-        private static int KeySize => Unsafe.SizeOf<Key>();
-        private static int ValueSize => Unsafe.SizeOf<Value>();
-        internal static int RecordSize => Unsafe.SizeOf<AllocatorRecord<Key, Value>>();
+        private static int KeySize => Unsafe.SizeOf<TKey>();
+        private static int ValueSize => Unsafe.SizeOf<TValue>();
+        internal static int RecordSize => Unsafe.SizeOf<AllocatorRecord<TKey, TValue>>();
 
         private readonly OverflowPool<PageUnit> overflowPagePool;
 
-        public BlittableAllocatorImpl(AllocatorSettings settings, TStoreFunctions storeFunctions, Func<object, BlittableAllocator<Key, Value, TStoreFunctions>> wrapperCreator)
+        public BlittableAllocatorImpl(AllocatorSettings settings, TStoreFunctions storeFunctions, Func<object, BlittableAllocator<TKey, TValue, TStoreFunctions>> wrapperCreator)
             : base(settings.LogSettings, storeFunctions, wrapperCreator, settings.evictCallback, settings.epoch, settings.flushCallback, settings.logger)
         {
-            if (!Utility.IsBlittable<Key>() || !Utility.IsBlittable<Value>())
-                throw new TsavoriteException($"BlittableAllocator requires blittlable Key ({typeof(Key)}) and Value ({typeof(Value)})");
+            if (!Utility.IsBlittable<TKey>() || !Utility.IsBlittable<TValue>())
+                throw new TsavoriteException($"BlittableAllocator requires blittlable Key ({typeof(TKey)}) and Value ({typeof(TValue)})");
 
             overflowPagePool = new OverflowPool<PageUnit>(4, p => { });
 
@@ -74,20 +74,20 @@ namespace Tsavorite.core
         public static ref RecordInfo GetInfoFromBytePointer(byte* ptr) => ref Unsafe.AsRef<RecordInfo>(ptr);
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public static ref Key GetKey(long physicalAddress) => ref Unsafe.AsRef<Key>((byte*)physicalAddress + RecordInfo.GetLength());
+        public static ref TKey GetKey(long physicalAddress) => ref Unsafe.AsRef<TKey>((byte*)physicalAddress + RecordInfo.GetLength());
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public static ref Value GetValue(long physicalAddress) => ref Unsafe.AsRef<Value>((byte*)physicalAddress + RecordInfo.GetLength() + KeySize);
+        public static ref TValue GetValue(long physicalAddress) => ref Unsafe.AsRef<TValue>((byte*)physicalAddress + RecordInfo.GetLength() + KeySize);
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public static (int actualSize, int allocatedSize) GetRecordSize(long physicalAddress) => (RecordSize, RecordSize);
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        internal static (int actualSize, int allocatedSize, int keySize) GetRMWCopyDestinationRecordSize<Input, TVariableLengthInput>(ref Key key, ref Input input, ref Value value, ref RecordInfo recordInfo, TVariableLengthInput varlenInput)
+        internal static (int actualSize, int allocatedSize, int keySize) GetRMWCopyDestinationRecordSize<TInput, TVariableLengthInput>(ref TKey key, ref TInput input, ref TValue value, ref RecordInfo recordInfo, TVariableLengthInput varlenInput)
             => (RecordSize, RecordSize, KeySize);
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public static (int actualSize, int allocatedSize, int keySize) GetRMWInitialRecordSize<Input, TSessionFunctionsWrapper>(ref Key key, ref Input input, TSessionFunctionsWrapper sessionFunctions)
+        public static (int actualSize, int allocatedSize, int keySize) GetRMWInitialRecordSize<TInput, TSessionFunctionsWrapper>(ref TKey key, ref TInput input, TSessionFunctionsWrapper sessionFunctions)
             => (RecordSize, RecordSize, KeySize);
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
@@ -100,13 +100,13 @@ namespace Tsavorite.core
         internal static int GetFixedRecordSize() => RecordSize;
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public static (int actualSize, int allocatedSize, int keySize) GetRecordSize(ref Key key, ref Value value) => (RecordSize, RecordSize, KeySize);
+        public static (int actualSize, int allocatedSize, int keySize) GetRecordSize(ref TKey key, ref TValue value) => (RecordSize, RecordSize, KeySize);
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public static int GetValueLength(ref Value value) => ValueSize;
+        public static int GetValueLength(ref TValue value) => ValueSize;
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public static void SerializeKey(ref Key src, long physicalAddress) => GetKey(physicalAddress) = src;
+        public static void SerializeKey(ref TKey src, long physicalAddress) => GetKey(physicalAddress) = src;
 
         /// <summary>
         /// Dispose memory allocator
@@ -233,10 +233,10 @@ namespace Tsavorite.core
         /// <param name="callback"></param>
         /// <param name="context"></param>
         /// <param name="result"></param>
-        protected override void AsyncReadRecordObjectsToMemory(long fromLogical, int numBytes, DeviceIOCompletionCallback callback, AsyncIOContext<Key, Value> context, SectorAlignedMemory result = default)
+        protected override void AsyncReadRecordObjectsToMemory(long fromLogical, int numBytes, DeviceIOCompletionCallback callback, AsyncIOContext<TKey, TValue> context, SectorAlignedMemory result = default)
             => throw new InvalidOperationException("AsyncReadRecordObjectsToMemory invalid for BlittableAllocator");
 
-        internal static bool RetrievedFullRecord(byte* record, ref AsyncIOContext<Key, Value> ctx)
+        internal static bool RetrievedFullRecord(byte* record, ref AsyncIOContext<TKey, TValue> ctx)
         {
             ctx.key = GetKey((long)record);
             ctx.value = GetValue((long)record);
@@ -251,43 +251,43 @@ namespace Tsavorite.core
         /// <summary>
         /// Iterator interface for pull-scanning Tsavorite log
         /// </summary>
-        public override ITsavoriteScanIterator<Key, Value> Scan(TsavoriteKV<Key, Value, TStoreFunctions, BlittableAllocator<Key, Value, TStoreFunctions>> store,
+        public override ITsavoriteScanIterator<TKey, TValue> Scan(TsavoriteKV<TKey, TValue, TStoreFunctions, BlittableAllocator<TKey, TValue, TStoreFunctions>> store,
                 long beginAddress, long endAddress, ScanBufferingMode scanBufferingMode, bool includeSealedRecords)
-            => new BlittableScanIterator<Key, Value, TStoreFunctions>(store, this, beginAddress, endAddress, scanBufferingMode, includeSealedRecords, epoch, logger: logger);
+            => new BlittableScanIterator<TKey, TValue, TStoreFunctions>(store, this, beginAddress, endAddress, scanBufferingMode, includeSealedRecords, epoch, logger: logger);
 
         /// <summary>
         /// Implementation for push-scanning Tsavorite log, called from LogAccessor
         /// </summary>
-        internal override bool Scan<TScanFunctions>(TsavoriteKV<Key, Value, TStoreFunctions, BlittableAllocator<Key, Value, TStoreFunctions>> store,
+        internal override bool Scan<TScanFunctions>(TsavoriteKV<TKey, TValue, TStoreFunctions, BlittableAllocator<TKey, TValue, TStoreFunctions>> store,
                 long beginAddress, long endAddress, ref TScanFunctions scanFunctions, ScanBufferingMode scanBufferingMode)
         {
-            using BlittableScanIterator<Key, Value, TStoreFunctions> iter = new(store, this, beginAddress, endAddress, scanBufferingMode, false, epoch, logger: logger);
+            using BlittableScanIterator<TKey, TValue, TStoreFunctions> iter = new(store, this, beginAddress, endAddress, scanBufferingMode, false, epoch, logger: logger);
             return PushScanImpl(beginAddress, endAddress, ref scanFunctions, iter);
         }
 
         /// <summary>
         /// Implementation for push-scanning Tsavorite log with a cursor, called from LogAccessor
         /// </summary>
-        internal override bool ScanCursor<TScanFunctions>(TsavoriteKV<Key, Value, TStoreFunctions, BlittableAllocator<Key, Value, TStoreFunctions>> store,
-                ScanCursorState<Key, Value> scanCursorState, ref long cursor, long count, TScanFunctions scanFunctions, long endAddress, bool validateCursor)
+        internal override bool ScanCursor<TScanFunctions>(TsavoriteKV<TKey, TValue, TStoreFunctions, BlittableAllocator<TKey, TValue, TStoreFunctions>> store,
+                ScanCursorState<TKey, TValue> scanCursorState, ref long cursor, long count, TScanFunctions scanFunctions, long endAddress, bool validateCursor)
         {
-            using BlittableScanIterator<Key, Value, TStoreFunctions> iter = new(store, this, cursor, endAddress, ScanBufferingMode.SinglePageBuffering, false, epoch, logger: logger);
-            return ScanLookup<long, long, TScanFunctions, BlittableScanIterator<Key, Value, TStoreFunctions>>(store, scanCursorState, ref cursor, count, scanFunctions, iter, validateCursor);
+            using BlittableScanIterator<TKey, TValue, TStoreFunctions> iter = new(store, this, cursor, endAddress, ScanBufferingMode.SinglePageBuffering, false, epoch, logger: logger);
+            return ScanLookup<long, long, TScanFunctions, BlittableScanIterator<TKey, TValue, TStoreFunctions>>(store, scanCursorState, ref cursor, count, scanFunctions, iter, validateCursor);
         }
 
         /// <summary>
         /// Implementation for push-iterating key versions, called from LogAccessor
         /// </summary>
-        internal override bool IterateKeyVersions<TScanFunctions>(TsavoriteKV<Key, Value, TStoreFunctions, BlittableAllocator<Key, Value, TStoreFunctions>> store, ref Key key, long beginAddress, ref TScanFunctions scanFunctions)
+        internal override bool IterateKeyVersions<TScanFunctions>(TsavoriteKV<TKey, TValue, TStoreFunctions, BlittableAllocator<TKey, TValue, TStoreFunctions>> store, ref TKey key, long beginAddress, ref TScanFunctions scanFunctions)
         {
-            using BlittableScanIterator<Key, Value, TStoreFunctions> iter = new(store, this, beginAddress, epoch, logger: logger);
+            using BlittableScanIterator<TKey, TValue, TStoreFunctions> iter = new(store, this, beginAddress, epoch, logger: logger);
             return IterateKeyVersionsImpl(store, ref key, beginAddress, ref scanFunctions, iter);
         }
 
         /// <inheritdoc />
-        internal override void MemoryPageScan(long beginAddress, long endAddress, IObserver<ITsavoriteScanIterator<Key, Value>> observer)
+        internal override void MemoryPageScan(long beginAddress, long endAddress, IObserver<ITsavoriteScanIterator<TKey, TValue>> observer)
         {
-            using var iter = new BlittableScanIterator<Key, Value, TStoreFunctions>(store: null, this, beginAddress, endAddress, ScanBufferingMode.NoBuffering, false, epoch, true, logger: logger);
+            using var iter = new BlittableScanIterator<TKey, TValue, TStoreFunctions>(store: null, this, beginAddress, endAddress, ScanBufferingMode.NoBuffering, false, epoch, true, logger: logger);
             observer?.OnNext(iter);
         }
 

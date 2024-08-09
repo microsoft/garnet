@@ -213,7 +213,7 @@ namespace Garnet.server
                 {
                     if (resetLatencyMetrics[eventType])
                     {
-                        logger?.LogInformation($"Resetting server-side stats {eventType}");
+                        logger?.LogInformation("Resetting server-side stats {eventType}", eventType);
 
                         var sessions = ((GarnetServerBase)server).ActiveConsumers();
                         foreach (var entry in sessions)

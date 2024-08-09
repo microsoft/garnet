@@ -42,6 +42,10 @@ dotnet_diagnostic.CA1866.severity = warning
 # Use 'string.Method(char)' instead of 'string.Method(string)' for string with single char
 dotnet_diagnostic.CA1867.severity = warning
 
+# Usage rules
+# CA2254: Template should be a static expression
+dotnet_diagnostic.CA2254.severity = warning
+
 # Miscellaneous style rules
 dotnet_separate_import_directive_groups = false
 file_header_template = Copyright (c) Microsoft Corporation.\nLicensed under the MIT license.

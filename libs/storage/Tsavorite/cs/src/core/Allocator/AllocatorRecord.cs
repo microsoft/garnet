@@ -8,11 +8,11 @@ using System.Runtime.InteropServices;
 namespace Tsavorite.core
 {
     [StructLayout(LayoutKind.Sequential, Pack = 1)]
-    public struct AllocatorRecord<Key, Value>
+    public struct AllocatorRecord<TKey, TValue>
     {
         public RecordInfo info;
-        public Key key;
-        public Value value;
+        public TKey key;
+        public TValue value;
 
         public override string ToString()
         {

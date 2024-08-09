@@ -12,9 +12,9 @@ namespace Tsavorite.core
     /// synchronize and agree on certain time points. A full run of the state machine is defined as a cycle
     /// starting from REST and ending in REST, and only one state machine can be active at a given time.
     /// </summary>
-    internal interface ISynchronizationStateMachine<Key, Value, TStoreFunctions, TAllocator>
-        where TStoreFunctions : IStoreFunctions<Key, Value>
-        where TAllocator : IAllocator<Key, Value, TStoreFunctions>
+    internal interface ISynchronizationStateMachine<TKey, TValue, TStoreFunctions, TAllocator>
+        where TStoreFunctions : IStoreFunctions<TKey, TValue>
+        where TAllocator : IAllocator<TKey, TValue, TStoreFunctions>
     {
         /// <summary>
         /// Returns the version that we expect this state machine to end up at when back to REST, or -1 if not yet known.
@@ -33,23 +33,23 @@ namespace Tsavorite.core
         /// This function is invoked immediately before the global state machine enters the given state.
         /// </summary>
         void GlobalBeforeEnteringState(SystemState next,
-            TsavoriteKV<Key, Value, TStoreFunctions, TAllocator> tsavorite);
+            TsavoriteKV<TKey, TValue, TStoreFunctions, TAllocator> tsavorite);
 
         /// <summary>
         /// This function is invoked immediately after the global state machine enters the given state.
         /// </summary>
         void GlobalAfterEnteringState(SystemState next,
-            TsavoriteKV<Key, Value, TStoreFunctions, TAllocator> tsavorite);
+            TsavoriteKV<TKey, TValue, TStoreFunctions, TAllocator> tsavorite);
 
         /// <summary>
         /// This function is invoked for every thread when they refresh and observe a given state.
         ///
         /// Note that the function is not allowed to await when async is set to false.
         /// </summary>
-        void OnThreadEnteringState<Input, Output, Context, TSessionFunctionsWrapper>(SystemState current,
+        void OnThreadEnteringState<TInput, TOutput, TContext, TSessionFunctionsWrapper>(SystemState current,
             SystemState prev,
-            TsavoriteKV<Key, Value, TStoreFunctions, TAllocator> tsavorite,
-            TsavoriteKV<Key, Value, TStoreFunctions, TAllocator>.TsavoriteExecutionContext<Input, Output, Context> ctx,
+            TsavoriteKV<TKey, TValue, TStoreFunctions, TAllocator> tsavorite,
+            TsavoriteKV<TKey, TValue, TStoreFunctions, TAllocator>.TsavoriteExecutionContext<TInput, TOutput, TContext> ctx,
             TSessionFunctionsWrapper sessionFunctions,
             List<ValueTask> valueTasks,
             CancellationToken token = default)
@@ -62,34 +62,34 @@ namespace Tsavorite.core
     /// multiple state machines, or to choose the task at runtime and achieve polymorphism in the behavior
     /// of a concrete state machine class.
     /// </summary>
-    internal interface ISynchronizationTask<Key, Value, TStoreFunctions, TAllocator>
-        where TStoreFunctions : IStoreFunctions<Key, Value>
-        where TAllocator : IAllocator<Key, Value, TStoreFunctions>
+    internal interface ISynchronizationTask<TKey, TValue, TStoreFunctions, TAllocator>
+        where TStoreFunctions : IStoreFunctions<TKey, TValue>
+        where TAllocator : IAllocator<TKey, TValue, TStoreFunctions>
     {
         /// <summary>
         /// This function is invoked immediately before the global state machine enters the given state.
         /// </summary>
         void GlobalBeforeEnteringState(
             SystemState next,
-            TsavoriteKV<Key, Value, TStoreFunctions, TAllocator> tsavorite);
+            TsavoriteKV<TKey, TValue, TStoreFunctions, TAllocator> tsavorite);
 
         /// <summary>
         /// This function is invoked immediately after the global state machine enters the given state.
         /// </summary>
         void GlobalAfterEnteringState(
             SystemState next,
-            TsavoriteKV<Key, Value, TStoreFunctions, TAllocator> tsavorite);
+            TsavoriteKV<TKey, TValue, TStoreFunctions, TAllocator> tsavorite);
 
         /// <summary>
         /// This function is invoked for every thread when they refresh and observe a given state.
         ///
         /// Note that the function is not allowed to await when async is set to false.
         /// </summary>
-        void OnThreadState<Input, Output, Context, TSessionFunctionsWrapper>(
+        void OnThreadState<TInput, TOutput, TContext, TSessionFunctionsWrapper>(
             SystemState current,
             SystemState prev,
-            TsavoriteKV<Key, Value, TStoreFunctions, TAllocator> tsavorite,
-            TsavoriteKV<Key, Value, TStoreFunctions, TAllocator>.TsavoriteExecutionContext<Input, Output, Context> ctx,
+            TsavoriteKV<TKey, TValue, TStoreFunctions, TAllocator> tsavorite,
+            TsavoriteKV<TKey, TValue, TStoreFunctions, TAllocator>.TsavoriteExecutionContext<TInput, TOutput, TContext> ctx,
             TSessionFunctionsWrapper sessionFunctions,
             List<ValueTask> valueTasks,
             CancellationToken token = default)
@@ -100,11 +100,11 @@ namespace Tsavorite.core
     /// Abstract base class for ISynchronizationStateMachine that implements that state machine logic
     /// with ISynchronizationTasks
     /// </summary>
-    internal abstract class SynchronizationStateMachineBase<Key, Value, TStoreFunctions, TAllocator> : ISynchronizationStateMachine<Key, Value, TStoreFunctions, TAllocator>
-        where TStoreFunctions : IStoreFunctions<Key, Value>
-        where TAllocator : IAllocator<Key, Value, TStoreFunctions>
+    internal abstract class SynchronizationStateMachineBase<TKey, TValue, TStoreFunctions, TAllocator> : ISynchronizationStateMachine<TKey, TValue, TStoreFunctions, TAllocator>
+        where TStoreFunctions : IStoreFunctions<TKey, TValue>
+        where TAllocator : IAllocator<TKey, TValue, TStoreFunctions>
     {
-        private readonly ISynchronizationTask<Key, Value, TStoreFunctions, TAllocator>[] tasks;
+        private readonly ISynchronizationTask<TKey, TValue, TStoreFunctions, TAllocator>[] tasks;
         private long toVersion = -1;
 
 
@@ -113,7 +113,7 @@ namespace Tsavorite.core
         /// order they are executed on each state machine.
         /// </summary>
         /// <param name="tasks">The ISynchronizationTasks to run on the state machine</param>
-        protected SynchronizationStateMachineBase(params ISynchronizationTask<Key, Value, TStoreFunctions, TAllocator>[] tasks)
+        protected SynchronizationStateMachineBase(params ISynchronizationTask<TKey, TValue, TStoreFunctions, TAllocator>[] tasks)
         {
             this.tasks = tasks;
         }
@@ -132,7 +132,7 @@ namespace Tsavorite.core
 
         /// <inheritdoc />
         public void GlobalBeforeEnteringState(SystemState next,
-            TsavoriteKV<Key, Value, TStoreFunctions, TAllocator> tsavorite)
+            TsavoriteKV<TKey, TValue, TStoreFunctions, TAllocator> tsavorite)
         {
             foreach (var task in tasks)
                 task.GlobalBeforeEnteringState(next, tsavorite);
@@ -140,18 +140,18 @@ namespace Tsavorite.core
 
         /// <inheritdoc />
         public void GlobalAfterEnteringState(SystemState next,
-            TsavoriteKV<Key, Value, TStoreFunctions, TAllocator> tsavorite)
+            TsavoriteKV<TKey, TValue, TStoreFunctions, TAllocator> tsavorite)
         {
             foreach (var task in tasks)
                 task.GlobalAfterEnteringState(next, tsavorite);
         }
 
         /// <inheritdoc />
-        public void OnThreadEnteringState<Input, Output, Context, TSessionFunctionsWrapper>(
+        public void OnThreadEnteringState<TInput, TOutput, TContext, TSessionFunctionsWrapper>(
             SystemState current,
             SystemState prev,
-            TsavoriteKV<Key, Value, TStoreFunctions, TAllocator> tsavorite,
-            TsavoriteKV<Key, Value, TStoreFunctions, TAllocator>.TsavoriteExecutionContext<Input, Output, Context> ctx,
+            TsavoriteKV<TKey, TValue, TStoreFunctions, TAllocator> tsavorite,
+            TsavoriteKV<TKey, TValue, TStoreFunctions, TAllocator>.TsavoriteExecutionContext<TInput, TOutput, TContext> ctx,
             TSessionFunctionsWrapper sessionFunctions,
             List<ValueTask> valueTasks,
             CancellationToken token = default)
