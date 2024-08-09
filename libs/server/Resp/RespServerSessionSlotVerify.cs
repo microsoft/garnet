@@ -2,6 +2,7 @@
 // Licensed under the MIT license.
 
 using System;
+using Garnet.common;
 
 namespace Garnet.server
 {
@@ -51,51 +52,62 @@ namespace Garnet.server
                 return true;
 
             var specs = commandInfo.KeySpecifications;
-            switch (cmd)
+            switch (specs.Length)
             {
-                case RespCommand.ZDIFF:
-                    var beginSearch = (BeginSearchIndex)specs[0].BeginSearch;
-                    var findKeysKeyNum = (FindKeysKeyNum)specs[0].FindKeys;
-                    csvi.firstKey = beginSearch.Index;
-                    csvi.lastKey = beginSearch.Index + parseState.GetInt(0);
-                    csvi.step = findKeysKeyNum.KeyStep;
+                case 1:
+                    var searchIndex = (BeginSearchIndex)specs[0].BeginSearch;
+
+                    switch (specs[0].FindKeys)
+                    {
+                        case FindKeysRange:
+                            var findRange = (FindKeysRange)specs[0].FindKeys;
+                            csvi.firstKey = searchIndex.Index - 1;
+                            csvi.lastKey = findRange.LastKey < 0 ? findRange.LastKey + parseState.count + 1 : findRange.LastKey - searchIndex.Index + 1;
+                            csvi.step = findRange.KeyStep;
+                            break;
+                        case FindKeysKeyNum:
+                            var findKeysKeyNum = (FindKeysKeyNum)specs[0].FindKeys;
+                            csvi.firstKey = searchIndex.Index + findKeysKeyNum.FirstKey - 1;
+                            csvi.lastKey = searchIndex.Index + parseState.GetInt(0);
+                            csvi.step = findKeysKeyNum.KeyStep;
+                            break;
+                        case FindKeysUnknown:
+                        default:
+                            throw new GarnetException("FindKeysUnknown range");
+                    }
+
                     break;
-                case RespCommand.BITOP:
-                    beginSearch = (BeginSearchIndex)specs[0].BeginSearch;
-                    var findKeys = (FindKeysRange)specs[1].FindKeys;
-                    csvi.firstKey = beginSearch.Index - 2;
-                    csvi.lastKey = findKeys.LastKey < 0 ? findKeys.LastKey + parseState.count + 1 : findKeys.LastKey - beginSearch.Index + 1;
-                    csvi.step = findKeys.KeyStep;
-                    break;
-                case RespCommand.PFMERGE:
-                case RespCommand.SDIFFSTORE:
-                case RespCommand.SUNIONSTORE:
-                case RespCommand.SINTERSTORE:
-                    beginSearch = (BeginSearchIndex)specs[0].BeginSearch;
-                    findKeys = (FindKeysRange)specs[1].FindKeys;
-                    csvi.firstKey = beginSearch.Index - 1;
-                    csvi.lastKey = findKeys.LastKey < 0 ? findKeys.LastKey + parseState.count + 1 : findKeys.LastKey - beginSearch.Index + 1;
-                    csvi.step = findKeys.KeyStep;
-                    break;
-                case RespCommand.RENAME:
-                case RespCommand.SMOVE:
-                case RespCommand.LMOVE:
-                    beginSearch = (BeginSearchIndex)specs[0].BeginSearch;
-                    var beginSearch1 = (BeginSearchIndex)specs[1].BeginSearch;
-                    findKeys = (FindKeysRange)specs[1].FindKeys;
-                    csvi.firstKey = beginSearch.Index - 1;
-                    csvi.lastKey = beginSearch1.Index - beginSearch.Index + 1;
-                    csvi.step = findKeys.KeyStep;
+                case 2:
+                    searchIndex = (BeginSearchIndex)specs[0].BeginSearch;
+                    switch (specs[0].FindKeys)
+                    {
+                        case FindKeysRange:
+                            csvi.firstKey = RespCommand.BITOP == cmd ? searchIndex.Index - 2 : searchIndex.Index - 1;
+                            break;
+                        case FindKeysKeyNum:
+                        case FindKeysUnknown:
+                        default:
+                            throw new GarnetException("FindKeysUnknown range");
+                    }
+
+                    switch (specs[1].FindKeys)
+                    {
+                        case FindKeysRange:
+                            var searchIndex1 = (BeginSearchIndex)specs[1].BeginSearch;
+                            var findRange = (FindKeysRange)specs[1].FindKeys;
+                            csvi.lastKey = findRange.LastKey < 0 ? findRange.LastKey + parseState.count + 1 : findRange.LastKey + searchIndex1.Index - searchIndex.Index + 1;
+                            csvi.step = findRange.KeyStep;
+                            break;
+                        case FindKeysKeyNum:
+                        case FindKeysUnknown:
+                        default:
+                            throw new GarnetException("FindKeysUnknown range");
+                    }
+
                     break;
                 default:
-                    beginSearch = (BeginSearchIndex)specs[0].BeginSearch;
-                    findKeys = (FindKeysRange)specs[0].FindKeys;
-                    csvi.firstKey = beginSearch.Index - 1;
-                    csvi.lastKey = findKeys.LastKey < 0 ? findKeys.LastKey + parseState.count + 1 : findKeys.LastKey - beginSearch.Index + 1;
-                    csvi.step = findKeys.KeyStep;
-                    break;
+                    throw new GarnetException("KeySpecification unknown count");
             }
-
             csvi.readOnly = cmd.IsReadOnly();
             csvi.sessionAsking = SessionAsking;
 
