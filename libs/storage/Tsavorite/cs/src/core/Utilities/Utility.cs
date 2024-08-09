@@ -68,7 +68,7 @@ namespace Tsavorite.core
         {
             long adjustedSize = PreviousPowerOf2(v);
             if (v != adjustedSize)
-                logger?.LogError($"Warning: using lower value {adjustedSize} instead of specified value {v}");
+                logger?.LogError("Warning: using lower value {adjustedSize} instead of specified value {specifiedValue}", adjustedSize, v);
             return (int)Math.Log(adjustedSize, 2);
         }
 

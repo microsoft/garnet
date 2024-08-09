@@ -25,8 +25,8 @@ namespace Tsavorite.core
                 return (IKeyComparer<T>)(object)SpanByteComparer.Instance;
             else
             {
-                Debug.WriteLine("***WARNING*** Creating default Tsavorite key equality comparer based on potentially slow EqualityComparer<Key>.Default."
-                               + "To avoid this, provide a comparer (ITsavoriteEqualityComparer<Key>) as an argument to Tsavorite's constructor, or make Key implement the interface ITsavoriteEqualityComparer<Key>");
+                Debug.WriteLine("***WARNING*** Creating default Tsavorite key equality comparer based on potentially slow EqualityComparer<TKey>.Default."
+                               + "To avoid this, provide a comparer (ITsavoriteEqualityComparer<TKey>) as an argument to Tsavorite's constructor, or make Key implement the interface ITsavoriteEqualityComparer<TKey>");
                 return DefaultKeyComparer<T>.Instance;
             }
         }

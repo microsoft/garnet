@@ -11,9 +11,9 @@ namespace Tsavorite.core
 {
     internal unsafe delegate void SkipReadCache(HashBucket* bucket);
 
-    public partial class TsavoriteKV<Key, Value, TStoreFunctions, TAllocator> : TsavoriteBase
-        where TStoreFunctions : IStoreFunctions<Key, Value>
-        where TAllocator : IAllocator<Key, Value, TStoreFunctions>
+    public partial class TsavoriteKV<TKey, TValue, TStoreFunctions, TAllocator> : TsavoriteBase
+        where TStoreFunctions : IStoreFunctions<TKey, TValue>
+        where TAllocator : IAllocator<TKey, TValue, TStoreFunctions>
     {
         // Derived class facing persistence API
         internal IndexCheckpointInfo _indexCheckpoint;
@@ -161,7 +161,7 @@ namespace Tsavorite.core
 
             if (errorCode != 0)
             {
-                logger?.LogError($"AsyncPageFlushCallback error: {errorCode}");
+                logger?.LogError($"{nameof(AsyncPageFlushCallback)} error: {{errorCode}}", errorCode);
             }
             if (Interlocked.Decrement(ref mainIndexCheckpointCallbackCount) == 0)
             {

@@ -988,7 +988,7 @@ namespace Garnet.server
             var resultSb = new StringBuilder();
             var cmdCount = 0;
 
-            foreach (var customCmd in storeWrapper.customCommandManager.CustomCommandsInfo)
+            foreach (var customCmd in storeWrapper.customCommandManager.CustomCommandsInfo.Values)
             {
                 cmdCount++;
                 resultSb.Append(customCmd.RespFormat);
@@ -1508,8 +1508,7 @@ namespace Garnet.server
             else
                 ExecuteFlushDb(unsafeTruncateLog);
 
-            logger?.LogInformation(
-                $"Running {nameof(cmd)} {(async ? "async" : "sync")} {(unsafeTruncateLog ? " with unsafetruncatelog." : string.Empty)}");
+            logger?.LogInformation($"Running {nameof(cmd)} {{async}} {{mode}}", async ? "async" : "sync", unsafeTruncateLog ? " with unsafetruncatelog." : string.Empty);
             while (!RespWriteUtils.WriteDirect(CmdStrings.RESP_OK, ref dcurr, dend))
                 SendAndReset();
         }
