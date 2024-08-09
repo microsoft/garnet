@@ -197,6 +197,7 @@ namespace Resp.benchmark
                 case OpType.GET:
                 case OpType.MYDICTGET:
                 case OpType.SCRIPTGET:
+                case OpType.SCRIPTRETKEY:
                     for (int i = 0; i < bytesRead; i++)
                         if (buf[i] == '$') count++;
                     break;

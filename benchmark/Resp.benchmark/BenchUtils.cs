@@ -19,6 +19,7 @@ namespace Resp.benchmark
         /// </summary>
         public static string sha1SetScript;
         public static string sha1GetScript;
+        public static string sha1RetKeyScript;
 
         /// <summary>
         /// Loads a Set and Get script in memory
@@ -41,6 +42,13 @@ namespace Resp.benchmark
             client.Send(Encoding.ASCII.GetBytes(stringCmd), stringCmd.Length, 1);
             client.CompletePendingRequests();
             sha1GetScript = Encoding.ASCII.GetString(client.ResponseBuffer)[..45];
+
+            // load retkey script in the server
+            script = "return KEYS[1]";
+            stringCmd = $"*3\r\n$6\r\nSCRIPT\r\n$4\r\nLOAD\r\n${script.Length}\r\n{script}\r\n";
+            client.Send(Encoding.ASCII.GetBytes(stringCmd), stringCmd.Length, 1);
+            client.CompletePendingRequests();
+            sha1RetKeyScript = Encoding.ASCII.GetString(client.ResponseBuffer)[..45];
         }
 
         /// <summary>

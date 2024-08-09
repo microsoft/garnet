@@ -132,6 +132,7 @@ namespace Resp.benchmark
                 OpType.MYDICTGET => System.Text.Encoding.ASCII.GetBytes($"*3\r\n$9\r\nMYDICTGET\r\n"),
                 OpType.SCRIPTSET => System.Text.Encoding.ASCII.GetBytes($"*5\r\n$7\r\nEVALSHA\r\n{BenchUtils.sha1SetScript}\r\n$1\r\n1\r\n"),
                 OpType.SCRIPTGET => System.Text.Encoding.ASCII.GetBytes($"*4\r\n$7\r\nEVALSHA\r\n{BenchUtils.sha1GetScript}\r\n$1\r\n1\r\n"),
+                OpType.SCRIPTRETKEY => System.Text.Encoding.ASCII.GetBytes($"*4\r\n$7\r\nEVALSHA\r\n{BenchUtils.sha1RetKeyScript}\r\n$1\r\n1\r\n"),
                 _ => null
             };
 
@@ -172,6 +173,7 @@ namespace Resp.benchmark
                 case OpType.MYDICTGET:
                 case OpType.SCRIPTSET:
                 case OpType.SCRIPTGET:
+                case OpType.SCRIPTRETKEY:
                     writeSuccess = GenerateSingleKeyValueOp(i, opHeader, start, end, opType);
                     return writeSuccess;
                 default:

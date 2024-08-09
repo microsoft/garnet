@@ -225,7 +225,7 @@ namespace Resp.benchmark
                 opts.SkipLoad = true;
 
             //if we have scripts ops we need to load them in memory
-            if (opts.Op == OpType.SCRIPTGET || opts.Op == OpType.SCRIPTSET)
+            if (opts.Op == OpType.SCRIPTGET || opts.Op == OpType.SCRIPTSET || opts.Op == OpType.SCRIPTRETKEY)
             {
                 unsafe
                 {

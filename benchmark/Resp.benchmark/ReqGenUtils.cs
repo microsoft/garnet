@@ -93,6 +93,7 @@ namespace Resp.benchmark
                 case OpType.MYDICTGET:
                 case OpType.SCRIPTSET:
                 case OpType.SCRIPTGET:
+                case OpType.SCRIPTRETKEY:
                     if (!WriteKey(ref curr, vend, out keyData))
                         return false;
                     break;
@@ -204,6 +205,7 @@ namespace Resp.benchmark
                 case OpType.GET:
                 case OpType.MGET:
                 case OpType.SCRIPTGET:
+                case OpType.SCRIPTRETKEY:
                     break;
                 case OpType.SETBIT:
                 case OpType.GETBIT:
