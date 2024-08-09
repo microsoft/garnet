@@ -246,13 +246,13 @@ namespace Garnet.test
             var keys = new[] { new RedisKey("user1:obj1"), new RedisKey("user1:obj2") };
             RedisValue[][] values =
             [
-                [new RedisValue("Tel Aviv"), new RedisValue("Haifa") ],
-                [new RedisValue("Athens"), new RedisValue("Thessaloniki") ]
+                [new RedisValue("Tel Aviv"), new RedisValue("Haifa")],
+                [new RedisValue("Athens"), new RedisValue("Thessaloniki")]
             ];
             double[][][] coords =
             [
-                [ [ 2.0853, 34.7818 ], [ 32.7940, 34.9896 ] ],
-                [ [ 7.9838, 23.7275 ], [ 40.6401, 22.9444 ] ],
+                [[2.0853, 34.7818], [32.7940, 34.9896]],
+                [[7.9838, 23.7275], [40.6401, 22.9444]],
             ];
 
             var geoEntries = values.Select((h, idx) => h

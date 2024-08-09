@@ -64,7 +64,7 @@ namespace Garnet.server.Auth.Aad
             var configManager = new ConfigurationManager<OpenIdConnectConfiguration>(configUrl, new OpenIdConnectConfigurationRetriever(), new HttpDocumentRetriever());
             var doc = configManager.GetConfigurationAsync().GetAwaiter().GetResult();
 
-            return [..doc.SigningKeys];
+            return [.. doc.SigningKeys];
         }
 
         /// <summary>

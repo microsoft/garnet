@@ -1326,7 +1326,7 @@ namespace Garnet.test.cluster
 
         private static readonly object[] _slotranges =
         [
-            new object[] { new List<int>() { 5500, 5510} },
+            new object[] { new List<int>() { 5500, 5510 } },
             new object[] { new List<int>() { 6000, 6015, 9020, 9050 } }
         ];
 

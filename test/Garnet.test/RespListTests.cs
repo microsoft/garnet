@@ -120,20 +120,20 @@ namespace Garnet.test
         }
 
         private static object[] LTrimTestCases = [
-            new object[] {0, 0, new[] {0} },
-            new object[] {-2, -1, new[] {8, 9} },
-            new object[] {-2, -2, new[] {8} },
-            new object[] {3, 5, new[] {3, 4, 5} },
-            new object[] {-12, 0, new[] {0} },
-            new object[] {-12, 2, new[] {0, 1, 2} },
-            new object[] {-12, -7, new[] {0, 1, 2, 3} },
-            new object[] {-15, -11, Array.Empty<int>() },
-            new object[] {8, 8, new[] {8} },
-            new object[] {8, 12, new[] {8, 9} },
-            new object[] {9, 12, new[] {9} },
-            new object[] {10, 12, Array.Empty<int>() },
-            new object[] {5, 3, Array.Empty<int>()},
-            new object[] {-3, -5, Array.Empty<int>()}
+            new object[] { 0, 0, new[] { 0 } },
+            new object[] { -2, -1, new[] { 8, 9 } },
+            new object[] { -2, -2, new[] { 8 } },
+            new object[] { 3, 5, new[] { 3, 4, 5 } },
+            new object[] { -12, 0, new[] { 0 } },
+            new object[] { -12, 2, new[] { 0, 1, 2 } },
+            new object[] { -12, -7, new[] { 0, 1, 2, 3 } },
+            new object[] { -15, -11, Array.Empty<int>() },
+            new object[] { 8, 8, new[] { 8 } },
+            new object[] { 8, 12, new[] { 8, 9 } },
+            new object[] { 9, 12, new[] { 9 } },
+            new object[] { 10, 12, Array.Empty<int>() },
+            new object[] { 5, 3, Array.Empty<int>() },
+            new object[] { -3, -5, Array.Empty<int>() }
         ];
 
         [Test]
