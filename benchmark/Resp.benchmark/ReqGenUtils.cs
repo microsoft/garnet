@@ -91,6 +91,8 @@ namespace Resp.benchmark
                 case OpType.SETIFPM:
                 case OpType.MYDICTSET:
                 case OpType.MYDICTGET:
+                case OpType.SCRIPTSET:
+                case OpType.SCRIPTGET:
                     if (!WriteKey(ref curr, vend, out keyData))
                         return false;
                     break;
@@ -185,6 +187,7 @@ namespace Resp.benchmark
                     break;
                 case OpType.MPFADD:
                 case OpType.SET:
+                case OpType.SCRIPTSET:
                     RandomString();
                     if (!WriteStringBytes(ref curr, vend, valueBuffer))
                         return false;
@@ -200,6 +203,7 @@ namespace Resp.benchmark
                 case OpType.INCR:
                 case OpType.GET:
                 case OpType.MGET:
+                case OpType.SCRIPTGET:
                     break;
                 case OpType.SETBIT:
                 case OpType.GETBIT:

@@ -1401,6 +1401,64 @@
     "SubCommands": null
   },
   {
+    "Command": "EVAL",
+    "Name": "EVAL",
+    "IsInternal": false,
+    "Arity": -3,
+    "Flags": "MovableKeys, NoMandatoryKeys, NoScript, SkipMonitor, Stale",
+    "FirstKey": 0,
+    "LastKey": 0,
+    "Step": 0,
+    "AclCategories": "Scripting, Slow",
+    "Tips": null,
+    "KeySpecifications": [
+      {
+        "BeginSearch": {
+          "TypeDiscriminator": "BeginSearchIndex",
+          "Index": 2
+        },
+        "FindKeys": {
+          "TypeDiscriminator": "FindKeysKeyNum",
+          "KeyNumIdx": 0,
+          "FirstKey": 1,
+          "KeyStep": 1
+        },
+        "Notes": "We cannot tell how the keys will be used so we assume the worst, RW and UPDATE",
+        "Flags": "RW, Access, Update"
+      }
+    ],
+    "SubCommands": null
+  },
+  {
+    "Command": "EVALSHA",
+    "Name": "EVALSHA",
+    "IsInternal": false,
+    "Arity": -3,
+    "Flags": "MovableKeys, NoMandatoryKeys, NoScript, SkipMonitor, Stale",
+    "FirstKey": 0,
+    "LastKey": 0,
+    "Step": 0,
+    "AclCategories": "Scripting, Slow",
+    "Tips": null,
+    "KeySpecifications": [
+      {
+        "BeginSearch": {
+          "TypeDiscriminator": "BeginSearchIndex",
+          "Index": 2
+        },
+        "FindKeys": {
+          "TypeDiscriminator": "FindKeysKeyNum",
+          "KeyNumIdx": 0,
+          "FirstKey": 1,
+          "KeyStep": 1
+        },
+        "Notes": null,
+        "Flags": "RW, Access, Update"
+      }
+    ],
+    "SubCommands": null
+  },
+  {
     "Command": "EXEC",
     "Name": "EXEC",
     "IsInternal": false,
@@ -3699,6 +3757,20 @@
         "Flags": "RO"
       }
     ],
+    "SubCommands": null
+  },
+  {
+    "Command": "SCRIPT",
+    "Name": "SCRIPT",
+    "IsInternal": false,
+    "Arity": -2,
+    "Flags": "None",
+    "FirstKey": 0,
+    "LastKey": 0,
+    "Step": 0,
+    "AclCategories": "Slow",
+    "Tips": null,
+    "KeySpecifications": null,
     "SubCommands": null
   },
   {

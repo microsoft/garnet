@@ -657,6 +657,65 @@ namespace Garnet.common
         }
 
         /// <summary>
+        /// Try to read a RESP formatted bulk string
+        /// NOTE: This is used with client implementation to parse responses that may include a null value (i.e. $-1\r\n)
+        /// </summary>
+        /// <param name="result"></param>
+        /// <param name="ptr"></param>
+        /// <param name="end"></param>
+        /// <returns></returns>
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        public static bool ReadStringResponseWithLengthHeader(out string result, ref byte* ptr, byte* end)
+        {
+            result = null;
+
+            byte* keyPtr = null;
+            var length = 0;
+            if (!ReadPtrWithSignedLengthHeader(ref keyPtr, ref length, ref ptr, end))
+                return false;
+
+            if (length < 0)
+                return true;
+
+            result = Encoding.UTF8.GetString(new ReadOnlySpan<byte>(keyPtr, length));
+            return true;
+        }
+
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        static bool ReadPtrWithSignedLengthHeader(ref byte* keyPtr, ref int length, ref byte* ptr, byte* end)
+        {
+            // Parse RESP string header
+            if (!ReadSignedLengthHeader(out length, ref ptr, end))
+            {
+                return false;
+            }
+
+            // Allow for null
+            if (length < 0)
+            {
+                // NULL value ('$-1\r\n')
+                keyPtr = null;
+                return true;
+            }
+
+            keyPtr = ptr;
+
+            // Parse content: ensure that input contains key + '\r\n'
+            ptr += length + 2;
+            if (ptr > end)
+            {
+                return false;
+            }
+
+            if (*(ushort*)(ptr - 2) != MemoryMarshal.Read<ushort>("\r\n"u8))
+            {
+                RespParsingException.ThrowUnexpectedToken(*(ptr - 2));
+            }
+
+            return true;
+        }
+
+        /// <summary>
         /// Read simple string
         /// </summary>
         public static bool ReadSimpleString(out string result, ref byte* ptr, byte* end)
@@ -738,6 +797,50 @@ namespace Garnet.common
                 if (*ptr == '$')
                 {
                     if (!ReadStringWithLengthHeader(out result[i], ref ptr, end))
+                        return false;
+                }
+                else
+                {
+                    if (!ReadIntegerAsString(out result[i], ref ptr, end))
+                        return false;
+                }
+            }
+
+            return true;
+        }
+
+        /// <summary>
+        /// Read string array with length header
+        /// </summary>
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        public static bool ReadStringArrayResponseWithLengthHeader(out string[] result, ref byte* ptr, byte* end)
+        {
+            result = null;
+
+            // Parse RESP array header
+            if (!ReadSignedArrayLength(out var length, ref ptr, end))
+            {
+                return false;
+            }
+
+            if (length < 0)
+            {
+                // NULL value ('*-1\r\n')
+                return true;
+            }
+
+            // Parse individual strings in the array
+            result = new string[length];
+            for (var i = 0; i < length; i++)
+            {
+                if (*ptr == '$')
+                {
+                    if (!ReadStringWithLengthHeader(out result[i], ref ptr, end))
+                        return false;
+                }
+                else if (*ptr == '+')
+                {
+                    if (!ReadSimpleString(out result[i], ref ptr, end))
                         return false;
                 }
                 else

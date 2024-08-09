@@ -196,6 +196,7 @@ namespace Resp.benchmark
                 case OpType.MGET:
                 case OpType.GET:
                 case OpType.MYDICTGET:
+                case OpType.SCRIPTGET:
                     for (int i = 0; i < bytesRead; i++)
                         if (buf[i] == '$') count++;
                     break;
@@ -210,6 +211,7 @@ namespace Resp.benchmark
                 case OpType.PFMERGE:
                 case OpType.AUTH:
                 case OpType.SET:
+                case OpType.SCRIPTSET:
                 case OpType.SETEX:
                 case OpType.SETIFPM:
                 case OpType.MYDICTSET:

@@ -24,6 +24,7 @@
     <PackageReference Include="Microsoft.Extensions.Logging" />
     <PackageReference Include="Microsoft.IdentityModel.Protocols.OpenIdConnect" />
     <PackageReference Include="System.IdentityModel.Tokens.Jwt" />
+		<PackageReference Include="NLua" />
   </ItemGroup>
 
 </Project>

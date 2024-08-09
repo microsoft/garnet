@@ -63,7 +63,7 @@ namespace Garnet.server
 
         readonly StoreWrapper storeWrapper;
         internal readonly TransactionManager txnManager;
-        readonly ScratchBufferManager scratchBufferManager;
+        internal readonly ScratchBufferManager scratchBufferManager;
 
         internal SessionParseState parseState;
         ClusterSlotVerificationInput csvi;
@@ -159,11 +159,17 @@ namespace Garnet.server
         /// </summary>
         private static readonly Random RandomGen = new(RandomNumberGenerator.GetInt32(int.MaxValue));
 
+        /// <summary>
+        /// A per-session cache for storing lua scripts
+        /// </summary>
+        internal readonly SessionScriptCache sessionScriptCache;
+
         public RespServerSession(
             INetworkSender networkSender,
             StoreWrapper storeWrapper,
             SubscribeBroker<SpanByte, SpanByte, IKeySerializer<SpanByte>> subscribeBroker,
-            CollectionItemBroker itemBroker)
+            CollectionItemBroker itemBroker,
+            bool enableScripts)
             : base(networkSender)
         {
             this.customCommandManagerSession = new CustomCommandManagerSession(storeWrapper.customCommandManager);
@@ -185,6 +191,8 @@ namespace Garnet.server
             this.storeWrapper = storeWrapper;
             this.subscribeBroker = subscribeBroker;
             this.itemBroker = itemBroker;
+            if (enableScripts)
+                sessionScriptCache = new(storeWrapper, logger);
             this._authenticator = storeWrapper.serverOptions.AuthSettings?.CreateAuthenticator(this.storeWrapper) ?? new GarnetNoAuthAuthenticator();
 
             // Associate new session with default user and automatically authenticate, if possible
@@ -633,6 +641,10 @@ namespace Garnet.server
                 RespCommand.SUNIONSTORE => SetUnionStore(count, ref storageApi),
                 RespCommand.SDIFF => SetDiff(count, ref storageApi),
                 RespCommand.SDIFFSTORE => SetDiffStore(count, ref storageApi),
+                // Script Commands
+                RespCommand.SCRIPT => TrySCRIPT(count),
+                RespCommand.EVAL => TryEVAL(count),
+                RespCommand.EVALSHA => TryEVALSHA(count),
                 _ => ProcessOtherCommands(cmd, count, ref storageApi)
             };
             return success;
