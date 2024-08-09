@@ -1,5 +1,9 @@
 FROM --platform=$BUILDPLATFORM mcr.microsoft.com/dotnet/sdk:8.0-jammy AS build
 ARG TARGETARCH
+
+RUN mkdir /data \
+    && chown -R $APP_UID:$APP_UID /data
+
 WORKDIR /src
 
 # Copy csproj and restore as distinct layers
@@ -29,8 +33,9 @@ RUN dotnet publish -a $TARGETARCH -c Release -o /app --no-restore --self-contain
 
 # Final stage/image
 FROM mcr.microsoft.com/dotnet/runtime:8.0-jammy-chiseled AS runtime
-
 WORKDIR /app
+
+COPY --from=build --chown=$APP_UID:$APP_UID /data /data
 COPY --from=build /app .
 
 VOLUME /data
