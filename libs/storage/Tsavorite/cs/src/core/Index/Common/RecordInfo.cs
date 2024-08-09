@@ -3,7 +3,6 @@
 
 #pragma warning disable CS1591 // Missing XML comment for publicly visible type or member
 
-using System.Diagnostics;
 using System.Runtime.CompilerServices;
 using System.Runtime.InteropServices;
 using System.Threading;
@@ -12,7 +11,7 @@ using static Tsavorite.core.Utility;
 namespace Tsavorite.core
 {
     // RecordInfo layout (64 bits total):
-    // [Unused1][Modified][InNewVersion][Filler][Dirty][Unused2][Sealed][Valid][Tombstone][LLLLLLL] [RAAAAAAA] [AAAAAAAA] [AAAAAAAA] [AAAAAAAA] [AAAAAAAA] [AAAAAAAA]
+    // [Unused1][Modified][InNewVersion][Filler][Dirty][ETag][Sealed][Valid][Tombstone][LLLLLLL] [RAAAAAAA] [AAAAAAAA] [AAAAAAAA] [AAAAAAAA] [AAAAAAAA] [AAAAAAAA]
     //     where L = leftover, R = readcache, A = address
     [StructLayout(LayoutKind.Explicit, Size = 8)]
     public struct RecordInfo
@@ -31,8 +30,8 @@ namespace Tsavorite.core
         const int kTombstoneBitOffset = kPreviousAddressBits + kLeftoverBitCount;
         const int kValidBitOffset = kTombstoneBitOffset + 1;
         const int kSealedBitOffset = kValidBitOffset + 1;
-        const int kUnused2BitOffset = kSealedBitOffset + 1;
-        const int kDirtyBitOffset = kUnused2BitOffset + 1;
+        const int kETagBitOffset = kSealedBitOffset + 1;
+        const int kDirtyBitOffset = kETagBitOffset + 1;
         const int kFillerBitOffset = kDirtyBitOffset + 1;
         const int kInNewVersionBitOffset = kFillerBitOffset + 1;
         const int kModifiedBitOffset = kInNewVersionBitOffset + 1;
@@ -41,7 +40,7 @@ namespace Tsavorite.core
         const long kTombstoneBitMask = 1L << kTombstoneBitOffset;
         const long kValidBitMask = 1L << kValidBitOffset;
         const long kSealedBitMask = 1L << kSealedBitOffset;
-        const long kUnused2BitMask = 1L << kUnused2BitOffset;
+        const long kETagBitMask = 1L << kETagBitOffset;
         const long kDirtyBitMask = 1L << kDirtyBitOffset;
         const long kFillerBitMask = 1L << kFillerBitOffset;
         const long kInNewVersionBitMask = 1L << kInNewVersionBitOffset;
@@ -277,18 +276,21 @@ namespace Tsavorite.core
             set => word = value ? word | kUnused1BitMask : word & ~kUnused1BitMask;
         }
 
-        internal bool Unused2
+        internal bool ETag
         {
-            readonly get => (word & kUnused2BitMask) != 0;
-            set => word = value ? word | kUnused2BitMask : word & ~kUnused2BitMask;
+            readonly get => (word & kETagBitMask) != 0;
+            set => word = value ? word | kETagBitMask : word & ~kETagBitMask;
         }
+
+        internal void SetHasETag() => word |= kETagBitMask;
+        internal void ClearHasETag() => word &= ~kETagBitMask;
 
         public override readonly string ToString()
         {
             var paRC = IsReadCache(PreviousAddress) ? "(rc)" : string.Empty;
             static string bstr(bool value) => value ? "T" : "F";
             return $"prev {AbsoluteAddress(PreviousAddress)}{paRC}, valid {bstr(Valid)}, tomb {bstr(Tombstone)}, seal {bstr(IsSealed)},"
-                 + $" mod {bstr(Modified)}, dirty {bstr(Dirty)}, fill {bstr(HasFiller)}, Un1 {bstr(Unused1)}, Un2 {bstr(Unused2)}";
+                 + $" mod {bstr(Modified)}, dirty {bstr(Dirty)}, fill {bstr(HasFiller)}, ETag {bstr(ETag)}, Un1 {bstr(Unused1)}";
         }
     }
 }

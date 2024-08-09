@@ -532,7 +532,7 @@ namespace Garnet.server
             inputLength += tmp.Length;
 
             // Operation order
-            if (operation != default)
+            if (!operation.IsEmpty)
             {
                 fixed (byte* ptrOp = operation)
                 {

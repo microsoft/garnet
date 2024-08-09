@@ -49,7 +49,7 @@ jobs:
       - name: Setup .NET
         uses: actions/setup-dotnet@v4
         with:
-          dotnet-version: 8.0.x
+          dotnet-version: 9.0.x
       - name: Install dependencies
         run: dotnet restore Garnet.sln
       - name: Check style format
@@ -66,7 +66,7 @@ jobs:
       - name: Setup .NET
         uses: actions/setup-dotnet@v4
         with:
-          dotnet-version: 8.0.x
+          dotnet-version: 9.0.x
       - name: Install dependencies
         run: dotnet restore libs/storage/Tsavorite/cs/Tsavorite.sln
       - name: Check style format
@@ -74,14 +74,14 @@ jobs:
   
   # Job to build and test Garnet code
   build-test-garnet:
-    name: Garnet
+    name: Garnet build and test for ${{ matrix.framework }}
     needs: [changes, format-garnet]
     runs-on: ${{ matrix.os }}
     strategy:
       fail-fast: false
       matrix:
         os: [ ubuntu-latest, windows-latest ]
-        framework: [ 'net6.0', 'net8.0' ]
+        framework: [ 'net8.0', 'net9.0' ]
         configuration: [ 'Debug', 'Release' ]
         test: [ 'Garnet.test', 'Garnet.test.cluster' ]
     if: needs.changes.outputs.garnet == 'true'
@@ -91,7 +91,7 @@ jobs:
       - name: Setup .NET
         uses: actions/setup-dotnet@v4
         with:
-          dotnet-version: 8.0.x
+          dotnet-version: 9.0.x
       - name: Install dependencies
         run: dotnet restore
       - name: Build Garnet
@@ -108,14 +108,14 @@ jobs:
 
   # Job to build and test Tsavorite code (only if there were changes to it)
   build-test-tsavorite:        
-    name: Tsavorite
+    name: Tsavorite build and test for ${{ matrix.framework }}
     needs: [changes, format-tsavorite]
     runs-on: ${{ matrix.os }}
     strategy:
       fail-fast: false
       matrix:
         os: [ ubuntu-latest, windows-latest ]
-        framework: [ 'net6.0', 'net8.0' ]
+        framework: [ 'net8.0', 'net9.0' ]
         configuration: [ 'Debug', 'Release' ]
     if: needs.changes.outputs.tsavorite == 'true'   
     steps:
@@ -130,7 +130,7 @@ jobs:
       - name: Setup .NET
         uses: actions/setup-dotnet@v4
         with:
-          dotnet-version: 8.0.x
+          dotnet-version: 9.0.x
       - name: Setup Node.js for Azurite
         uses: actions/setup-node@v4
         with:
