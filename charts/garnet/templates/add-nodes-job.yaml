@@ -1,0 +1,132 @@
+{{- if .Values.cluster.enabled }}
+{{- if .Values.cluster.initJob.enabled }}
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: {{ include "garnet.fullname" . }}-cluster-add
+  labels:
+    {{- include "garnet.labels" . | nindent 4 }}
+  annotations:
+    "helm.sh/hook": post-upgrade
+spec:
+  backoffLimit: {{ .Values.cluster.initJob.backoffLimit }}
+  activeDeadlineSeconds: 1800  
+  ttlSecondsAfterFinished: 600
+  template:
+    spec:
+      restartPolicy: Never
+      containers:
+        - name: add-node
+          image: "{{ .Values.cluster.initJob.image.registry }}/{{ .Values.cluster.initJob.image.repository }}:{{ .Values.cluster.initJob.image.tag | default "latest" }}"
+          command: ["/bin/sh", "-c"]
+          args:
+            - |
+              garnet_host="{{ include "garnet.fullname" . }}-0.{{ include "garnet.fullname" . }}-headless.{{ .Release.Namespace }}.svc.cluster.local"
+              garnet_port="{{ .Values.containers.port }}"
+
+              echo "Starting node addition process..."
+
+              get_current_nodes() {
+                /usr/local/bin/redis-cli -h "$garnet_host" -p "$garnet_port" CLUSTER NODES | grep master | awk -F ',' '{print $2}' | awk '{print $1}'
+              }
+
+              check_node_ready() {
+                local node=$1
+                local retries=5
+                while [ $retries -gt 0 ]; do
+                  if /usr/local/bin/redis-cli -h "$node" -p "$garnet_port" ping | grep -q "PONG"; then
+                    return 0
+                  else
+                    echo "Node $node is not ready, retrying..."
+                    retries=$((retries - 1))
+                    sleep 5
+                  fi
+                done
+                return 1
+              }
+
+              add_node_to_cluster() {
+                local node=$1
+                local retries=5
+                while [ $retries -gt 0 ]; do
+                  /usr/local/bin/redis-cli --cluster add-node "$node:$garnet_port" "$garnet_host:$garnet_port"
+                  if [ $? -eq 0 ]; then
+                    echo "Successfully added node $node to the cluster"
+                    return 0
+                  else
+                    echo "Failed to add node $node, retrying..."
+                    retries=$((retries - 1))
+                    sleep 5
+                  fi
+                done
+                return 1
+              }
+
+
+              ensure_cluster_consistency() {
+                local consistent=false
+                while [ "$consistent" = false ]; do
+                  output=$(/usr/local/bin/redis-cli --cluster check "$garnet_host:$garnet_port" 2>&1)
+                  echo "$output"
+                  if echo "$output" | grep -q "All nodes agree about slots configuration"; then
+                    consistent=true
+                  else
+                    echo "Waiting for cluster consistency..."
+                    sleep 10
+                  fi
+                done
+              }
+
+              rebalance_cluster() {
+                local rebalanced=false
+                local attempts=0
+                local max_attempts=5
+                while [ "$rebalanced" = false ] && [ $attempts -lt $max_attempts ]; do
+                  output=$(/usr/local/bin/redis-cli --cluster rebalance --cluster-use-empty-masters --cluster-yes "$garnet_host:$garnet_port" 2>&1)
+                  echo "$output"
+                  if echo "$output" | grep -q "ERR I don't know about node"; then
+                    echo "Rebalancing encountered an error, retrying..."
+                    sleep 10
+                    attempts=$((attempts + 1))
+                  else
+                    rebalanced=true
+                  fi
+                done
+
+                if [ "$rebalanced" = false ]; then
+                  echo "Failed to rebalance the cluster after $max_attempts attempts."
+                  exit 1
+                fi
+              }
+
+              get_desired_nodes() {
+                for i in $(seq 0 $(({{ .Values.cluster.statefulSet.replicas }} - 1))); do
+                  printf "%s-%d.%s-headless.%s.svc.cluster.local " "{{ include "garnet.fullname" . }}" "$i" "{{ include "garnet.fullname" . }}" "{{ .Release.Namespace }}"
+                done
+              }
+
+              current_nodes=$(get_current_nodes)
+              desired_nodes=$(get_desired_nodes)
+
+              for node in $desired_nodes; do
+                if ! echo "$current_nodes" | grep -q "$node"; then
+                  echo "Checking readiness of node $node"
+                  if check_node_ready "$node"; then
+                    echo "Node $node is ready, adding to the cluster"
+                    add_node_to_cluster "$node"
+                  else
+                    echo "Failed to add node $node after multiple attempts"
+                    exit 1
+                  fi
+                fi
+              done
+
+              echo "Ensuring cluster consistency..."
+              ensure_cluster_consistency
+
+              echo "Rebalancing the cluster..."
+              rebalance_cluster
+              echo "Cluster rebalancing completed."
+
+{{- end }}
+{{- end }}

@@ -1,0 +1,122 @@
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: {{ include "garnet.fullname" . }}-reshard
+  labels:
+    {{- include "garnet.labels" . | nindent 4 }}
+  annotations:
+    "helm.sh/hook": pre-upgrade
+    "helm.sh/hook-weight": "0"
+spec:
+  backoffLimit: {{ .Values.cluster.initJob.backoffLimit }}
+  activeDeadlineSeconds: 1800  
+  ttlSecondsAfterFinished: 600
+  template:
+    spec:
+      containers:
+        - name: delete-node
+          image: "{{ .Values.cluster.initJob.image.registry }}/{{ .Values.cluster.initJob.image.repository }}:{{ .Values.cluster.initJob.image.tag | default "latest" }}"
+          command: ["/bin/sh", "-c"]
+          args:
+            - |
+              garnet_host="{{ include "garnet.fullname" . }}-0.{{ include "garnet.fullname" . }}-headless.{{ .Release.Namespace }}.svc.cluster.local"
+              garnet_port="{{ .Values.containers.port }}"
+
+              LOG_FILE="/tmp/reshard.log"
+
+              echo "Starting resharding process..." | tee -a $LOG_FILE
+
+              get_current_nodes() {
+                /usr/local/bin/redis-cli -h "$garnet_host" -p "$garnet_port" CLUSTER NODES | grep master | awk -F ',' '{print $2}' | awk '{print $1}'
+              }
+
+              get_desired_nodes() {
+                for i in $(seq 0 $(({{ .Values.cluster.statefulSet.replicas }} - 1))); do
+                  printf "%s-%d.%s-headless.%s.svc.cluster.local " "{{ include "garnet.fullname" . }}" "$i" "{{ include "garnet.fullname" . }}" "{{ .Release.Namespace }}"
+                done
+              }
+
+              get_node_id() {
+                local node=$1
+                /usr/local/bin/redis-cli -h "$node" -p "$garnet_port" CLUSTER NODES | grep myself | awk '{print $1}'
+              }
+
+              get_slots() {
+                local node_id=$1
+                /usr/local/bin/redis-cli -h "$garnet_host" -p "$garnet_port" CLUSTER NODES | grep "$node_id" | awk '{for(i=9;i<=NF;i++) { if ($i ~ /^[0-9]+$/ || $i ~ /^[0-9]+-[0-9]+$/) print $i }}'
+              }
+
+              reshard_slots() {
+                local from_node=$1
+                local to_node=$2
+                local slots=$3
+                /usr/local/bin/redis-cli --cluster reshard "$garnet_host:$garnet_port" --cluster-from "$from_node" --cluster-to "$to_node" --cluster-slots "$slots" --cluster-yes >> $LOG_FILE 2>&1
+                sleep 5
+              }
+
+              delete_node() {
+                local node_id=$1
+                /usr/local/bin/redis-cli --cluster del-node "$garnet_host:$garnet_port" "$node_id" >> $LOG_FILE 2>&1
+              }
+
+              current_nodes=$(get_current_nodes)
+              desired_nodes=$(get_desired_nodes)
+              echo "Desired nodes: $desired_nodes" | tee -a $LOG_FILE
+
+              nodes_to_remove=""
+              for node in $current_nodes; do
+                if ! echo "$desired_nodes" | grep -q "$node"; then
+                  nodes_to_remove="$nodes_to_remove $node"
+                fi
+              done
+              echo "Nodes to remove: $nodes_to_remove" | tee -a $LOG_FILE
+
+              total_nodes_to_share_to="{{ .Values.cluster.statefulSet.replicas }}"
+
+              for node in $nodes_to_remove; do
+                node_id=$(get_node_id "$node")
+                slots=$(get_slots "$node_id")
+
+                echo "Slots: $slots" | tee -a $LOG_FILE
+
+                num_slots=0
+                for range in $slots; do
+                  start_slot=$(echo $range | cut -d'-' -f1)
+                  end_slot=$(echo $range | cut -d'-' -f2)
+                  if [ -z "$end_slot" ]; then
+                    end_slot=$start_slot
+                  fi
+                  num_slots=$((num_slots + end_slot - start_slot + 1))
+                  echo "Range: $range, Start Slot: $start_slot, End Slot: $end_slot, Accumulated Slots: $num_slots" | tee -a $LOG_FILE
+                done
+                echo "Node $node_id manages $num_slots slots" | tee -a $LOG_FILE
+
+                if [ $num_slots -gt 0 ]; then
+                  slots_to_be_distributed=$((num_slots / total_nodes_to_share_to))
+                  remainder=$((num_slots % total_nodes_to_share_to))
+
+                  for target_node in $desired_nodes; do
+                    target_node_id=$(get_node_id "$target_node")
+                    echo "Resharding $slots_to_be_distributed slots from $node_id to $target_node_id" | tee -a $LOG_FILE
+                    reshard_slots "$node_id" "$target_node_id" "$slots_to_be_distributed"
+                  done
+
+                  while [ $remainder -ne 0 ]; do
+                    for target_node in $desired_nodes; do
+                      if [ $remainder -eq 0 ]; then
+                        break
+                      fi
+                      target_node_id=$(get_node_id "$target_node")
+                      echo "Resharding 1 slot from $node_id to $target_node_id" | tee -a $LOG_FILE
+                      reshard_slots "$node_id" "$target_node_id" 1
+                      remainder=$((remainder - 1))
+                    done
+                  done
+                fi
+                echo "Deleting node $node_id" | tee -a $LOG_FILE
+                delete_node "$node_id"
+              done
+              echo "Resharding process completed." | tee -a $LOG_FILE
+
+      restartPolicy: Never
+  backoffLimit: 1
