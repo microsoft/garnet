@@ -225,7 +225,7 @@ namespace Garnet.server
         /// <returns></returns>
         protected static long ParseSize(string value)
         {
-            char[] suffix = new char[] { 'k', 'm', 'g', 't', 'p' };
+            char[] suffix = ['k', 'm', 'g', 't', 'p'];
             long result = 0;
             foreach (char c in value)
             {
@@ -255,7 +255,7 @@ namespace Garnet.server
         /// <returns></returns>
         protected static string PrettySize(long value)
         {
-            char[] suffix = new char[] { 'k', 'm', 'g', 't', 'p' };
+            char[] suffix = ['k', 'm', 'g', 't', 'p'];
             double v = value;
             int exp = 0;
             while (v - Math.Floor(v) > 0)

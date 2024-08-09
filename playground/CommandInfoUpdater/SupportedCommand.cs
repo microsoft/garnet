@@ -10,9 +10,9 @@ namespace CommandInfoUpdater
     /// </summary>
     public class SupportedCommand
     {
-        private static readonly SupportedCommand[] AllSupportedCommands = {
-            new("ACL", RespCommand.ACL, new[]
-            {
+        private static readonly SupportedCommand[] AllSupportedCommands = [
+            new("ACL", RespCommand.ACL,
+            [
                 "ACL|CAT",
                 "ACL|DELUSER",
                 "ACL|LIST",
@@ -21,7 +21,7 @@ namespace CommandInfoUpdater
                 "ACL|SETUSER",
                 "ACL|USERS",
                 "ACL|WHOAMI",
-            }),
+        ]),
             new("APPEND", RespCommand.APPEND),
             new("ASKING", RespCommand.ASKING),
             new("ASYNC", RespCommand.ASYNC),
@@ -36,8 +36,8 @@ namespace CommandInfoUpdater
             new("BRPOP", RespCommand.BRPOP),
             new("BLMOVE", RespCommand.BLMOVE),
             new("CLIENT", RespCommand.CLIENT),
-            new("CLUSTER", RespCommand.CLUSTER, new []
-            {
+            new("CLUSTER", RespCommand.CLUSTER,
+            [
                 "CLUSTER|ADDSLOTS",
                 "CLUSTER|ADDSLOTSRANGE",
                 "CLUSTER|AOFSYNC",
@@ -78,20 +78,19 @@ namespace CommandInfoUpdater
                 "CLUSTER|SHARDS",
                 "CLUSTER|SLOTS",
                 "CLUSTER|SLOTSTATE",
-
-            }),
-            new("COMMAND", RespCommand.COMMAND, new []
-            {
+            ]),
+            new("COMMAND", RespCommand.COMMAND,
+            [
                 "COMMAND|INFO",
                 "COMMAND|COUNT",
-            }),
+            ]),
             new("COMMITAOF", RespCommand.COMMITAOF),
-            new("CONFIG", RespCommand.CONFIG, new []
-            {
+            new("CONFIG", RespCommand.CONFIG,
+            [
                 "CONFIG|GET",
                 "CONFIG|SET",
                 "CONFIG|REWRITE"
-            }),
+            ]),
             new("COSCAN", RespCommand.COSCAN),
             new("CustomRawStringCmd", RespCommand.CustomRawStringCmd),
             new("CustomObjCmd", RespCommand.CustomObjCmd),
@@ -141,12 +140,12 @@ namespace CommandInfoUpdater
             new("INFO", RespCommand.INFO),
             new("KEYS", RespCommand.KEYS),
             new("LASTSAVE", RespCommand.LASTSAVE),
-            new("LATENCY", RespCommand.LATENCY, new []
-            {
+            new("LATENCY", RespCommand.LATENCY,
+            [
                 "LATENCY|HELP",
                 "LATENCY|HISTOGRAM",
                 "LATENCY|RESET"
-            }),
+            ]),
             new("LINDEX", RespCommand.LINDEX),
             new("LINSERT", RespCommand.LINSERT),
             new("LLEN", RespCommand.LLEN),
@@ -159,10 +158,10 @@ namespace CommandInfoUpdater
             new("LREM", RespCommand.LREM),
             new("LSET", RespCommand.LSET),
             new("LTRIM", RespCommand.LTRIM),
-            new("MEMORY", RespCommand.MEMORY, new []
-            {
+            new("MEMORY", RespCommand.MEMORY,
+            [
                 "MEMORY|USAGE"
-            }),
+            ]),
             new("MGET", RespCommand.MGET),
             new("MIGRATE", RespCommand.MIGRATE),
             new("MODULE", RespCommand.MODULE,
@@ -227,11 +226,11 @@ namespace CommandInfoUpdater
             new ("UNLINK", RespCommand.UNLINK),
             new ("UNSUBSCRIBE", RespCommand.UNSUBSCRIBE),
             new ("UNWATCH", RespCommand.UNWATCH),
-            new ("WATCH", RespCommand.WATCH, new []
-            {
+            new ("WATCH", RespCommand.WATCH,
+            [
                 "WATCH|MS",
                 "WATCH|OS",
-            }),
+            ]),
             new ("ZADD", RespCommand.ZADD),
             new ("ZCARD", RespCommand.ZCARD),
             new ("ZCOUNT", RespCommand.ZCOUNT),
@@ -254,7 +253,7 @@ namespace CommandInfoUpdater
             new ("ZREVRANK", RespCommand.ZREVRANK),
             new ("ZSCAN", RespCommand.ZSCAN),
             new ("ZSCORE", RespCommand.ZSCORE),
-        };
+        ];
 
         private static readonly Lazy<IReadOnlyDictionary<string, SupportedCommand>> LazySupportedCommandsMap =
             new(() =>

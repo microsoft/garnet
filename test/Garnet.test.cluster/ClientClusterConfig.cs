@@ -51,7 +51,7 @@ namespace GarnetClusterManagement
                     (slots ??= new List<SlotRange>(parts.Length - i)).Add(range);
                 }
             }
-            Slots = slots?.AsReadOnly() ?? (IList<SlotRange>)Array.Empty<SlotRange>();
+            Slots = slots?.AsReadOnly() ?? (IList<SlotRange>)[];
             IsConnected = parts[7] == "connected"; // Can be "connected" or "disconnected"
         }
 
@@ -188,7 +188,7 @@ namespace GarnetClusterManagement
                 config.Add((workers[i].Nodeid, GetNodeInfo(workerId: i)));
             }
 
-            config = config.OrderBy(x => x.Item1).ToList();
+            config = [.. config.OrderBy(x => x.Item1)];
             return config;
         }
 
@@ -293,7 +293,7 @@ namespace GarnetClusterManagement
                 var nodeId = properties[0].Trim();
                 _orderedConfig.Add((nodeId, properties));
             }
-            _orderedConfig = _orderedConfig.OrderBy(x => x.Item1).ToList();
+            _orderedConfig = [.. _orderedConfig.OrderBy(x => x.Item1)];
 
             if (_orderedConfig.Count != orderedConfig.Count)
                 return false;

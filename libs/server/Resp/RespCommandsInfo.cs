@@ -224,7 +224,7 @@ namespace Garnet.server
             AclCommandInfo =
                 new ReadOnlyDictionary<RespAclCategories, IReadOnlyList<RespCommandsInfo>>(
                     AllRespCommandsInfo
-                        .SelectMany(static kv => (kv.Value.SubCommands ?? Array.Empty<RespCommandsInfo>()).Append(kv.Value))
+                        .SelectMany(static kv => (kv.Value.SubCommands ?? []).Append(kv.Value))
                         .SelectMany(static c => IndividualAcls(c.AclCategories).Select(a => (Acl: a, CommandInfo: c)))
                         .GroupBy(static t => t.Acl)
                         .ToDictionary(

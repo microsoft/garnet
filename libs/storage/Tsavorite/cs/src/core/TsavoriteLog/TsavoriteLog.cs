@@ -334,7 +334,7 @@ namespace Tsavorite.core
                 // Ensure all currently started entries will enqueue before we declare log closed
                 epoch.BumpCurrentEpoch(() =>
                 {
-                    CommitInternal(out _, out _, false, Array.Empty<byte>(), long.MaxValue, null);
+                    CommitInternal(out _, out _, false, [], long.MaxValue, null);
                 });
             }
             finally
@@ -2536,7 +2536,7 @@ namespace Tsavorite.core
             var recoveredIterators = info.Iterators;
             if (recoveredIterators != null)
             {
-                List<string> keys = recoveredIterators.Keys.ToList();
+                List<string> keys = [.. recoveredIterators.Keys];
                 foreach (var key in keys)
                     if (recoveredIterators[key] > SafeTailAddress)
                         recoveredIterators[key] = SafeTailAddress;

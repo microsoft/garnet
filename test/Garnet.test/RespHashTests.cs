@@ -627,11 +627,11 @@ namespace Garnet.test
             var key1Values = new[] { new RedisValue("Hello"), new RedisValue("World") };
             var key2Values = new[] { new RedisValue("Hola"), new RedisValue("Mundo") };
             var values = new[] { key1Values, key2Values };
-            var hashFields = new[]
-            {
-                new[] { new RedisValue("K1_H1"), new RedisValue("K1_H2") },
-                new[] { new RedisValue("K2_H1"), new RedisValue("K2_H2") }
-            };
+            RedisValue[][] hashFields =
+            [
+                [new RedisValue("K1_H1"), new RedisValue("K1_H2")],
+                [new RedisValue("K2_H1"), new RedisValue("K2_H2")]
+            ];
             var hashEntries = hashFields.Select((h, idx) => h
                     .Zip(values[idx], (n, v) => new HashEntry(n, v)).ToArray()).ToArray();
 
