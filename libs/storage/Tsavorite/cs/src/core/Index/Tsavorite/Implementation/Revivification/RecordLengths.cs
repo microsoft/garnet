@@ -8,26 +8,26 @@ namespace Tsavorite.core
 {
     using static Utility;
 
-    public unsafe partial class TsavoriteKV<Key, Value, TStoreFunctions, TAllocator> : TsavoriteBase
-        where TStoreFunctions : IStoreFunctions<Key, Value>
-        where TAllocator : IAllocator<Key, Value, TStoreFunctions>
+    public unsafe partial class TsavoriteKV<TKey, TValue, TStoreFunctions, TAllocator> : TsavoriteBase
+        where TStoreFunctions : IStoreFunctions<TKey, TValue>
+        where TAllocator : IAllocator<TKey, TValue, TStoreFunctions>
     {
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         internal long GetMinRevivifiableAddress()
             => RevivificationManager.GetMinRevivifiableAddress(hlogBase.GetTailAddress(), hlogBase.ReadOnlyAddress);
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        private static int GetValueOffset(long physicalAddress, ref Value recordValue) => (int)((long)Unsafe.AsPointer(ref recordValue) - physicalAddress);
+        private static int GetValueOffset(long physicalAddress, ref TValue recordValue) => (int)((long)Unsafe.AsPointer(ref recordValue) - physicalAddress);
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        private static unsafe int* GetExtraValueLengthPointer(ref Value recordValue, int usedValueLength)
+        private static unsafe int* GetExtraValueLengthPointer(ref TValue recordValue, int usedValueLength)
         {
             Debug.Assert(RoundUp(usedValueLength, sizeof(int)) == usedValueLength, "GetLiveFullValueLengthPointer: usedValueLength should have int-aligned length");
             return (int*)((long)Unsafe.AsPointer(ref recordValue) + usedValueLength);
         }
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        internal unsafe void SetExtraValueLength(ref Value recordValue, ref RecordInfo recordInfo, int usedValueLength, int fullValueLength)
+        internal unsafe void SetExtraValueLength(ref TValue recordValue, ref RecordInfo recordInfo, int usedValueLength, int fullValueLength)
         {
             if (RevivificationManager.IsFixedLength)
                 recordInfo.ClearHasFiller();
@@ -36,7 +36,7 @@ namespace Tsavorite.core
         }
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        internal static unsafe void SetVarLenExtraValueLength(ref Value recordValue, ref RecordInfo recordInfo, int usedValueLength, int fullValueLength)
+        internal static unsafe void SetVarLenExtraValueLength(ref TValue recordValue, ref RecordInfo recordInfo, int usedValueLength, int fullValueLength)
         {
             usedValueLength = RoundUp(usedValueLength, sizeof(int));
             Debug.Assert(fullValueLength >= usedValueLength, $"SetFullValueLength: usedValueLength {usedValueLength} cannot be > fullValueLength {fullValueLength}");
@@ -56,11 +56,11 @@ namespace Tsavorite.core
         }
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        internal (int usedValueLength, int fullValueLength, int fullRecordLength) GetRecordLengths(long physicalAddress, ref Value recordValue, ref RecordInfo recordInfo)
+        internal (int usedValueLength, int fullValueLength, int fullRecordLength) GetRecordLengths(long physicalAddress, ref TValue recordValue, ref RecordInfo recordInfo)
         {
             // FixedLen may be GenericAllocator which does not point physicalAddress to the actual record location, so calculate fullRecordLength via GetAverageRecordSize().
             if (RevivificationManager.IsFixedLength)
-                return (RevivificationManager<Key, Value, TStoreFunctions, TAllocator>.FixedValueLength, RevivificationManager<Key, Value, TStoreFunctions, TAllocator>.FixedValueLength, hlog.GetAverageRecordSize());
+                return (RevivificationManager<TKey, TValue, TStoreFunctions, TAllocator>.FixedValueLength, RevivificationManager<TKey, TValue, TStoreFunctions, TAllocator>.FixedValueLength, hlog.GetAverageRecordSize());
 
             int usedValueLength, fullValueLength, allocatedSize, valueOffset = GetValueOffset(physicalAddress, ref recordValue);
             if (recordInfo.HasFiller)
@@ -86,11 +86,11 @@ namespace Tsavorite.core
         }
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        private (int usedValueLength, int fullValueLength) GetNewValueLengths(int actualSize, int allocatedSize, long newPhysicalAddress, ref Value recordValue)
+        private (int usedValueLength, int fullValueLength) GetNewValueLengths(int actualSize, int allocatedSize, long newPhysicalAddress, ref TValue recordValue)
         {
             // Called after a new record is allocated
             if (RevivificationManager.IsFixedLength)
-                return (RevivificationManager<Key, Value, TStoreFunctions, TAllocator>.FixedValueLength, RevivificationManager<Key, Value, TStoreFunctions, TAllocator>.FixedValueLength);
+                return (RevivificationManager<TKey, TValue, TStoreFunctions, TAllocator>.FixedValueLength, RevivificationManager<TKey, TValue, TStoreFunctions, TAllocator>.FixedValueLength);
 
             int valueOffset = GetValueOffset(newPhysicalAddress, ref recordValue);
             int usedValueLength = actualSize - valueOffset;
@@ -116,7 +116,7 @@ namespace Tsavorite.core
             }
 
             // Store the full value length. Defer clearing the Key until the record is revivified (it may never be).
-            ref Value recordValue = ref hlog.GetValue(physicalAddress);
+            ref TValue recordValue = ref hlog.GetValue(physicalAddress);
             int usedValueLength = hlog.GetValueLength(ref recordValue);
             int fullValueLength = allocatedSize - GetValueOffset(physicalAddress, ref recordValue);
             SetVarLenExtraValueLength(ref recordValue, ref recordInfo, usedValueLength, fullValueLength);
@@ -129,7 +129,7 @@ namespace Tsavorite.core
                 : GetRecordLengths(physicalAddress, ref hlog.GetValue(physicalAddress), ref recordInfo).fullRecordLength;
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        static void ClearExtraValueSpace(ref RecordInfo recordInfo, ref Value recordValue, int usedValueLength, int fullValueLength)
+        static void ClearExtraValueSpace(ref RecordInfo recordInfo, ref TValue recordValue, int usedValueLength, int fullValueLength)
         {
             // SpanByte's implementation of GetAndInitializeValue does not clear the space after usedValueLength. This may be
             // considerably less than the previous value length, so we clear it here before DisposeForRevivification. This space
@@ -145,9 +145,9 @@ namespace Tsavorite.core
         }
 
         // Do not try to inline this; it causes TryAllocateRecord to bloat and slow
-        bool TryTakeFreeRecord<Input, Output, Context, TSessionFunctionsWrapper>(TSessionFunctionsWrapper sessionFunctions, int requiredSize, ref int allocatedSize, int newKeySize, long minRevivAddress,
+        bool TryTakeFreeRecord<TInput, TOutput, TContext, TSessionFunctionsWrapper>(TSessionFunctionsWrapper sessionFunctions, int requiredSize, ref int allocatedSize, int newKeySize, long minRevivAddress,
                     out long logicalAddress, out long physicalAddress)
-            where TSessionFunctionsWrapper : ISessionFunctionsWrapper<Key, Value, Input, Output, Context, TStoreFunctions, TAllocator>
+            where TSessionFunctionsWrapper : ISessionFunctionsWrapper<TKey, TValue, TInput, TOutput, TContext, TStoreFunctions, TAllocator>
         {
             // Caller checks for UseFreeRecordPool
             if (RevivificationManager.TryTake(allocatedSize, minRevivAddress, out logicalAddress, ref sessionFunctions.Ctx.RevivificationStats))
@@ -193,7 +193,7 @@ namespace Tsavorite.core
         #region TombstonedRecords
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        internal void SetTombstoneAndExtraValueLength(ref Value recordValue, ref RecordInfo recordInfo, int usedValueLength, int fullValueLength)
+        internal void SetTombstoneAndExtraValueLength(ref TValue recordValue, ref RecordInfo recordInfo, int usedValueLength, int fullValueLength)
         {
             recordInfo.SetTombstone();
             if (RevivificationManager.IsFixedLength)
@@ -207,9 +207,9 @@ namespace Tsavorite.core
         }
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        internal (bool ok, int usedValueLength) TryReinitializeTombstonedValue<Input, Output, Context, TSessionFunctionsWrapper>(TSessionFunctionsWrapper sessionFunctions,
-                ref RecordInfo srcRecordInfo, ref Key key, ref Value recordValue, int requiredSize, (int usedValueLength, int fullValueLength, int allocatedSize) recordLengths)
-            where TSessionFunctionsWrapper : ISessionFunctionsWrapper<Key, Value, Input, Output, Context, TStoreFunctions, TAllocator>
+        internal (bool ok, int usedValueLength) TryReinitializeTombstonedValue<TInput, TOutput, TContext, TSessionFunctionsWrapper>(TSessionFunctionsWrapper sessionFunctions,
+                ref RecordInfo srcRecordInfo, ref TKey key, ref TValue recordValue, int requiredSize, (int usedValueLength, int fullValueLength, int allocatedSize) recordLengths)
+            where TSessionFunctionsWrapper : ISessionFunctionsWrapper<TKey, TValue, TInput, TOutput, TContext, TStoreFunctions, TAllocator>
         {
             if (RevivificationManager.IsFixedLength || recordLengths.allocatedSize < requiredSize)
                 return (false, recordLengths.usedValueLength);

@@ -10,9 +10,9 @@ using Microsoft.Extensions.Logging;
 
 namespace Tsavorite.core
 {
-    public partial class TsavoriteKV<Key, Value, TStoreFunctions, TAllocator> : TsavoriteBase
-        where TStoreFunctions : IStoreFunctions<Key, Value>
-        where TAllocator : IAllocator<Key, Value, TStoreFunctions>
+    public partial class TsavoriteKV<TKey, TValue, TStoreFunctions, TAllocator> : TsavoriteBase
+        where TStoreFunctions : IStoreFunctions<TKey, TValue>
+        where TAllocator : IAllocator<TKey, TValue, TStoreFunctions>
     {
         // The current system state, defined as the combination of a phase and a version number. This value
         // is observed by all sessions and a state machine communicates its progress to sessions through
@@ -22,8 +22,8 @@ namespace Tsavorite.core
         private volatile int stateMachineActive = 0;
         // The current state machine in the system. The value could be stale and point to the previous state machine
         // if no state machine is active at this time.
-        private ISynchronizationStateMachine<Key, Value, TStoreFunctions, TAllocator> currentSyncStateMachine;
-        private List<IStateMachineCallback<Key, Value, TStoreFunctions, TAllocator>> callbacks = new();
+        private ISynchronizationStateMachine<TKey, TValue, TStoreFunctions, TAllocator> currentSyncStateMachine;
+        private List<IStateMachineCallback<TKey, TValue, TStoreFunctions, TAllocator>> callbacks = new();
         internal long lastVersion;
 
         /// <summary>
@@ -69,14 +69,14 @@ namespace Tsavorite.core
         /// may slow or halt state machine execution. For advanced users only. 
         /// </summary>
         /// <param name="callback"> callback to register </param>
-        public void UnsafeRegisterCallback(IStateMachineCallback<Key, Value, TStoreFunctions, TAllocator> callback) => callbacks.Add(callback);
+        public void UnsafeRegisterCallback(IStateMachineCallback<TKey, TValue, TStoreFunctions, TAllocator> callback) => callbacks.Add(callback);
 
         /// <summary>
         /// Attempt to start the given state machine in the system if no other state machine is active.
         /// </summary>
         /// <param name="stateMachine">The state machine to start</param>
         /// <returns>true if the state machine has started, false otherwise</returns>
-        private bool StartStateMachine(ISynchronizationStateMachine<Key, Value, TStoreFunctions, TAllocator> stateMachine)
+        private bool StartStateMachine(ISynchronizationStateMachine<TKey, TValue, TStoreFunctions, TAllocator> stateMachine)
         {
             // return immediately if there is a state machine under way.
             if (Interlocked.CompareExchange(ref stateMachineActive, 1, 0) != 0) return false;
@@ -169,7 +169,7 @@ namespace Tsavorite.core
         /// <param name="ctx"></param>
         /// <param name="threadState"></param>
         /// <returns></returns>
-        internal bool SameCycle<Input, Output, Context>(TsavoriteExecutionContext<Input, Output, Context> ctx, SystemState threadState)
+        internal bool SameCycle<TInput, TOutput, TContext>(TsavoriteExecutionContext<TInput, TOutput, TContext> ctx, SystemState threadState)
         {
             if (ctx == null)
             {
@@ -189,8 +189,8 @@ namespace Tsavorite.core
         /// <param name="valueTasks">Return list of tasks that caller needs to await, to continue checkpointing</param>
         /// <param name="token">Cancellation token</param>
         /// <returns></returns>
-        private void ThreadStateMachineStep<Input, Output, Context, TSessionFunctionsWrapper>(
-            TsavoriteExecutionContext<Input, Output, Context> ctx,
+        private void ThreadStateMachineStep<TInput, TOutput, TContext, TSessionFunctionsWrapper>(
+            TsavoriteExecutionContext<TInput, TOutput, TContext> ctx,
             TSessionFunctionsWrapper sessionFunctions,
             List<ValueTask> valueTasks,
             CancellationToken token = default)
@@ -250,7 +250,7 @@ namespace Tsavorite.core
                 Debug.Assert(
                     (threadState.Version < targetState.Version) ||
                        (threadState.Version == targetState.Version &&
-                       (threadState.Phase <= targetState.Phase || currentTask is IndexSnapshotStateMachine<Key, Value, TStoreFunctions, TAllocator>)
+                       (threadState.Phase <= targetState.Phase || currentTask is IndexSnapshotStateMachine<TKey, TValue, TStoreFunctions, TAllocator>)
                     ));
 
                 currentTask.OnThreadEnteringState(threadState, previousState, this, ctx, sessionFunctions, valueTasks, token);

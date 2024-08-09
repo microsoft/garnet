@@ -10,7 +10,7 @@ namespace Tsavorite.core
     /// <summary>
     /// Configuration settings for hybrid log. Use Utility.ParseSize to specify sizes in familiar string notation (e.g., "4k" and "4 MB").
     /// </summary>
-    public sealed class KVSettings<Key, Value> : IDisposable
+    public sealed class KVSettings<TKey, TValue> : IDisposable
     {
         readonly bool disposeDevices = false;
         readonly bool deleteDirOnDispose = false;
@@ -152,7 +152,7 @@ namespace Tsavorite.core
             this.baseDir = baseDir;
 
             LogDevice = baseDir == null ? new NullDevice() : Devices.CreateLogDevice(baseDir + "/hlog.log", deleteOnClose: deleteDirOnDispose);
-            if (!Utility.IsBlittable<Key>() || !Utility.IsBlittable<Value>())
+            if (!Utility.IsBlittable<TKey>() || !Utility.IsBlittable<TValue>())
                 ObjectLogDevice = baseDir == null ? new NullDevice() : Devices.CreateLogDevice(baseDir + "/hlog.obj.log", deleteOnClose: deleteDirOnDispose);
 
             CheckpointDir = baseDir == null ? null : baseDir + "/checkpoints";

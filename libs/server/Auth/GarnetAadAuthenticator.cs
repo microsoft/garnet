@@ -75,7 +75,7 @@ namespace Garnet.server.Auth
                 _validateTo = token.ValidTo;
 
                 _authorized = IsIdentityAuthorized(identity, username);
-                _logger?.LogInformation($"Authentication successful. Token valid from {_validFrom} to {_validateTo}");
+                _logger?.LogInformation("Authentication successful. Token valid from {validFrom} to {validateTo}", _validFrom, _validateTo);
 
                 return IsAuthorized();
             }
