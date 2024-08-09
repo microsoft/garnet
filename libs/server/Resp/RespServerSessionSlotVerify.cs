@@ -30,24 +30,88 @@ namespace Garnet.server
         bool NetworkKeyArraySlotVerify(Span<ArgSlice> keys, bool readOnly, int count = -1)
             => clusterSession != null && clusterSession.NetworkKeyArraySlotVerify(keys, readOnly, SessionAsking, ref dcurr, ref dend, count);
 
-        /// <summary>
-        /// Verify if the corresponding command can be served given the status of the slot associated with the parsed keys.
-        /// </summary>
-        /// <param name="readOnly"></param>
-        /// <param name="firstKey"></param>
-        /// <param name="lastKey"></param>
-        /// <param name="step"></param>
-        /// <returns></returns>
-        bool NetworkMultiKeySlotVerify(bool readOnly = false, int firstKey = 0, int lastKey = -1, int step = 1)
+        bool CanServeSlot(RespCommand cmd)
         {
+            // If cluster is disable all commands
             if (clusterSession == null)
+                return true;
+
+            // Verify slot for command if it falls into data command category
+            if (!cmd.IsDataCommand())
+                return true;
+
+            cmd = cmd.NormalizeForACLs();
+            if (!RespCommandsInfo.TryFastGetRespCommandInfo(cmd, out var commandInfo))
+                // This only happens if we failed to parse the json file
                 return false;
-            csvi.readOnly = readOnly;
+
+            // The provided command is not a data command
+            // so we can serve without any slot restrictions
+            if (commandInfo == null)
+                return true;
+
+            var specs = commandInfo.KeySpecifications;
+            switch (cmd)
+            {
+                case RespCommand.ZDIFF:
+                    var beginSearch = (BeginSearchIndex)specs[0].BeginSearch;
+                    var findKeysKeyNum = (FindKeysKeyNum)specs[0].FindKeys;
+                    csvi.firstKey = beginSearch.Index;
+                    csvi.lastKey = beginSearch.Index + parseState.GetInt(0);
+                    csvi.step = findKeysKeyNum.KeyStep;
+                    break;
+                case RespCommand.BITOP:
+                    beginSearch = (BeginSearchIndex)specs[0].BeginSearch;
+                    var findKeys = (FindKeysRange)specs[1].FindKeys;
+                    csvi.firstKey = beginSearch.Index - 2;
+                    csvi.lastKey = findKeys.LastKey < 0 ? findKeys.LastKey + parseState.count + 1 : findKeys.LastKey - beginSearch.Index + 1;
+                    csvi.step = findKeys.KeyStep;
+                    break;
+                case RespCommand.PFMERGE:
+                case RespCommand.SDIFFSTORE:
+                case RespCommand.SUNIONSTORE:
+                case RespCommand.SINTERSTORE:
+                    beginSearch = (BeginSearchIndex)specs[0].BeginSearch;
+                    findKeys = (FindKeysRange)specs[1].FindKeys;
+                    csvi.firstKey = beginSearch.Index - 1;
+                    csvi.lastKey = findKeys.LastKey < 0 ? findKeys.LastKey + parseState.count + 1 : findKeys.LastKey - beginSearch.Index + 1;
+                    csvi.step = findKeys.KeyStep;
+                    break;
+                case RespCommand.RENAME:
+                case RespCommand.SMOVE:
+                case RespCommand.LMOVE:
+                    beginSearch = (BeginSearchIndex)specs[0].BeginSearch;
+                    var beginSearch1 = (BeginSearchIndex)specs[1].BeginSearch;
+                    findKeys = (FindKeysRange)specs[1].FindKeys;
+                    csvi.firstKey = beginSearch.Index - 1;
+                    csvi.lastKey = beginSearch1.Index - beginSearch.Index + 1;
+                    csvi.step = findKeys.KeyStep;
+                    break;
+                default:
+                    beginSearch = (BeginSearchIndex)specs[0].BeginSearch;
+                    findKeys = (FindKeysRange)specs[0].FindKeys;
+                    csvi.firstKey = beginSearch.Index - 1;
+                    csvi.lastKey = findKeys.LastKey < 0 ? findKeys.LastKey + parseState.count + 1 : findKeys.LastKey - beginSearch.Index + 1;
+                    csvi.step = findKeys.KeyStep;
+                    break;
+            }
+
+            csvi.readOnly = cmd.IsReadOnly();
             csvi.sessionAsking = SessionAsking;
-            csvi.firstKey = firstKey;
-            csvi.lastKey = lastKey < 0 ? parseState.count + 1 + lastKey : lastKey;
-            csvi.step = step;
-            return clusterSession.NetworkMultiKeySlotVerify(ref parseState, ref csvi, ref dcurr, ref dend);
+
+            //csvi.firstKey = cmd switch
+            //{
+            //    RespCommand.ZDIFF => 1, // ZDIFF first key comes after keyCount parameter
+            //    _ => 0 // firstKey always starts at position zero since command name has been extracted earlier
+            //};
+
+            //csvi.lastKey = cmd switch
+            //{
+            //    RespCommand.ZDIFF => csvi.firstKey + parseState.GetInt(0), // ZDIFF count of keys is part of parameters
+            //    _ => commandInfo.LastKey < 0 ? commandInfo.LastKey + parseState.count + 1 : commandInfo.LastKey - commandInfo.FirstKey + 1
+            //};
+            //csvi.step = commandInfo.Step;
+            return !clusterSession.NetworkMultiKeySlotVerify(ref parseState, ref csvi, ref dcurr, ref dend);
         }
     }
 }
