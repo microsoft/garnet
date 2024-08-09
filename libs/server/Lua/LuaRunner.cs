@@ -30,9 +30,12 @@ namespace Garnet.server
         public LuaRunner(string source, StoreWrapper storeWrapper = null, ILogger logger = null)
         {
             this.source = source;
-            this.scratchBufferNetworkSender = new ScratchBufferNetworkSender();
-            this.respServerSession = new RespServerSession(scratchBufferNetworkSender, storeWrapper, null, null, false);
-            this.scratchBufferManager = respServerSession.scratchBufferManager;
+            if (storeWrapper != null)
+            {
+                this.scratchBufferNetworkSender = new ScratchBufferNetworkSender();
+                this.respServerSession = new RespServerSession(scratchBufferNetworkSender, storeWrapper, null, null, false);
+                this.scratchBufferManager = respServerSession.scratchBufferManager;
+            }
             this.logger = logger;
 
             state = new Lua();
@@ -114,7 +117,7 @@ namespace Garnet.server
         /// <param name="args">Parameters</param>
         /// <returns></returns>
         public object garnet_call(string cmd, params object[] args)
-            => ProcessCommandFromScripting(cmd, args);
+            => respServerSession == null ? null : ProcessCommandFromScripting(cmd, args);
 
         /// <summary>
         /// Entry point method for executing commands from a Lua Script
@@ -123,23 +126,23 @@ namespace Garnet.server
         /// <returns></returns>
         unsafe object ProcessCommandFromScripting(string cmd, params object[] args)
         {
-            var status = GarnetStatus.OK;
-
             scratchBufferManager.Reset();
 
-            switch (cmd.ToUpper())
+            switch (cmd)
             {
                 case "SET":
+                case "set":
                     {
                         var key = scratchBufferManager.CreateArgSlice(Convert.ToString(args[0]));
                         var value = scratchBufferManager.CreateArgSlice(Convert.ToString(args[1]));
-                        status = respServerSession.basicGarnetApi.SET(key, value);
+                        _ = respServerSession.basicGarnetApi.SET(key, value);
                         return "OK";
                     }
                 case "GET":
+                case "get":
                     {
                         var key = scratchBufferManager.CreateArgSlice(Convert.ToString(args[0]));
-                        status = respServerSession.basicGarnetApi.GET(key, out var value);
+                        var status = respServerSession.basicGarnetApi.GET(key, out var value);
                         if (status == GarnetStatus.OK)
                             return value.ToString();
                         return null;
@@ -147,7 +150,7 @@ namespace Garnet.server
                 default:
                     {
                         var request = scratchBufferManager.FormatCommandAsResp(cmd, args, state);
-                        respServerSession.TryConsumeMessages(request.ptr, request.length);
+                        _ = respServerSession.TryConsumeMessages(request.ptr, request.length);
                         var response = scratchBufferNetworkSender.GetResponse();
                         var result = ProcessResponse(response.ptr, response.length);
                         scratchBufferNetworkSender.Reset();
