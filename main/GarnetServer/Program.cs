@@ -62,10 +62,8 @@ namespace Garnet
             // Register custom commands on objects
             var factory = new MyDictFactory();
             server.Register.NewType(factory);
-            server.Register.NewCommand("MYDICTSET", CommandType.ReadModifyWrite, factory, new MyDictSet(),
-                new RespCommandsInfo { Name = "MYDICTSET", Arity = 4, FirstKey = 1, LastKey = 1, Step = 1, Flags = RespCommandFlags.DenyOom | RespCommandFlags.Write, AclCategories = RespAclCategories.Write });
-            server.Register.NewCommand("MYDICTGET", CommandType.Read, factory, new MyDictGet(),
-                new RespCommandsInfo { Name = "MYDICTGET", Arity = 3, FirstKey = 1, LastKey = 1, Step = 1, Flags = RespCommandFlags.ReadOnly, AclCategories = RespAclCategories.Read });
+            server.Register.NewCommand("MYDICTSET", CommandType.ReadModifyWrite, factory, new MyDictSet(), new RespCommandsInfo { Arity = 4 });
+            server.Register.NewCommand("MYDICTGET", CommandType.Read, factory, new MyDictGet(), new RespCommandsInfo { Arity = 3 });
 
             // Register stored procedure to run a transactional command
             // Add RESP command info to registration for command to appear when client runs COMMAND / COMMAND INFO
@@ -88,14 +86,11 @@ namespace Garnet
             server.Register.NewTransactionProc("MGETIFPM", () => new MGetIfPM());
 
             // Register stored procedure to run a non-transactional command
-            server.Register.NewTransactionProc("GETTWOKEYSNOTXN", () => new GetTwoKeysNoTxn(),
-                new RespCommandsInfo { Name = "GETTWOKEYSNOTXN", Arity = 3, Flags = RespCommandFlags.ReadOnly, AclCategories = RespAclCategories.Read });
+            server.Register.NewTransactionProc("GETTWOKEYSNOTXN", () => new GetTwoKeysNoTxn(), new RespCommandsInfo { Arity = 3 });
 
             // Register sample transactional procedures
-            server.Register.NewTransactionProc("SAMPLEUPDATETX", () => new SampleUpdateTxn(),
-                new RespCommandsInfo { Name = "SAMPLEUPDATETX", Arity = 9, Flags = RespCommandFlags.Write | RespCommandFlags.DenyOom, AclCategories = RespAclCategories.Write });
-            server.Register.NewTransactionProc("SAMPLEDELETETX", () => new SampleDeleteTxn(),
-                new RespCommandsInfo { Name = "SAMPLEDELETETX", Arity = 6, Flags = RespCommandFlags.Write | RespCommandFlags.DenyOom, AclCategories = RespAclCategories.Write });
+            server.Register.NewTransactionProc("SAMPLEUPDATETX", () => new SampleUpdateTxn(), new RespCommandsInfo { Arity = 9 });
+            server.Register.NewTransactionProc("SAMPLEDELETETX", () => new SampleDeleteTxn(), new RespCommandsInfo { Arity = 6 });
 
             server.Register.NewProcedure("SUM", new Sum());
             server.Register.NewProcedure("SETMAINANDOBJECT", new SetStringAndList());
