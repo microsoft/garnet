@@ -51,19 +51,19 @@ namespace Garnet
                 Flags = RespCommandFlags.DenyOom | RespCommandFlags.Write,
                 AclCategories = RespAclCategories.String | RespAclCategories.Write,
             };
-            server.Register.NewCommand("SETIFPM", 2, CommandType.ReadModifyWrite, new SetIfPMCustomCommand(), setIfPmCmdInfo);
+            server.Register.NewCommand("SETIFPM", CommandType.ReadModifyWrite, new SetIfPMCustomCommand(), setIfPmCmdInfo);
 
             // Register custom command on raw strings (SETWPIFPGT = "set with prefix, if prefix greater than")
-            server.Register.NewCommand("SETWPIFPGT", 2, CommandType.ReadModifyWrite, new SetWPIFPGTCustomCommand());
+            server.Register.NewCommand("SETWPIFPGT", CommandType.ReadModifyWrite, new SetWPIFPGTCustomCommand());
 
             // Register custom command on raw strings (DELIFM = "delete if value matches")
-            server.Register.NewCommand("DELIFM", 1, CommandType.ReadModifyWrite, new DeleteIfMatchCustomCommand());
+            server.Register.NewCommand("DELIFM", CommandType.ReadModifyWrite, new DeleteIfMatchCustomCommand());
 
             // Register custom commands on objects
             var factory = new MyDictFactory();
             server.Register.NewType(factory);
-            server.Register.NewCommand("MYDICTSET", 2, CommandType.ReadModifyWrite, factory, new MyDictSet());
-            server.Register.NewCommand("MYDICTGET", 1, CommandType.Read, factory, new MyDictGet());
+            server.Register.NewCommand("MYDICTSET", CommandType.ReadModifyWrite, factory, new MyDictSet(), new RespCommandsInfo { Arity = 4 });
+            server.Register.NewCommand("MYDICTGET", CommandType.Read, factory, new MyDictGet(), new RespCommandsInfo { Arity = 3 });
 
             // Register stored procedure to run a transactional command
             // Add RESP command info to registration for command to appear when client runs COMMAND / COMMAND INFO
@@ -77,7 +77,7 @@ namespace Garnet
                 Flags = RespCommandFlags.DenyOom | RespCommandFlags.Write,
                 AclCategories = RespAclCategories.Write,
             };
-            server.Register.NewTransactionProc("READWRITETX", 3, () => new ReadWriteTxn(), readWriteTxCmdInfo);
+            server.Register.NewTransactionProc("READWRITETX", () => new ReadWriteTxn(), readWriteTxCmdInfo);
 
             // Register stored procedure to run a transactional command
             server.Register.NewTransactionProc("MSETPX", () => new MSetPxTxn());
@@ -86,11 +86,14 @@ namespace Garnet
             server.Register.NewTransactionProc("MGETIFPM", () => new MGetIfPM());
 
             // Register stored procedure to run a non-transactional command
-            server.Register.NewTransactionProc("GETTWOKEYSNOTXN", 2, () => new GetTwoKeysNoTxn());
+            server.Register.NewTransactionProc("GETTWOKEYSNOTXN", () => new GetTwoKeysNoTxn(), new RespCommandsInfo { Arity = 3 });
 
             // Register sample transactional procedures
-            server.Register.NewTransactionProc("SAMPLEUPDATETX", 8, () => new SampleUpdateTxn());
-            server.Register.NewTransactionProc("SAMPLEDELETETX", 5, () => new SampleDeleteTxn());
+            server.Register.NewTransactionProc("SAMPLEUPDATETX", () => new SampleUpdateTxn(), new RespCommandsInfo { Arity = 9 });
+            server.Register.NewTransactionProc("SAMPLEDELETETX", () => new SampleDeleteTxn(), new RespCommandsInfo { Arity = 6 });
+
+            server.Register.NewProcedure("SUM", new Sum());
+            server.Register.NewProcedure("SETMAINANDOBJECT", new SetStringAndList());
         }
     }
 }

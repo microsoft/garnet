@@ -15,6 +15,12 @@ using Tsavorite.core;
 
 namespace Garnet.server
 {
+    using MainStoreAllocator = SpanByteAllocator<StoreFunctions<SpanByte, SpanByte, SpanByteComparer, SpanByteRecordDisposer>>;
+    using MainStoreFunctions = StoreFunctions<SpanByte, SpanByte, SpanByteComparer, SpanByteRecordDisposer>;
+
+    using ObjectStoreAllocator = GenericAllocator<byte[], IGarnetObject, StoreFunctions<byte[], IGarnetObject, ByteArrayKeyComparer, DefaultRecordDisposer<byte[], IGarnetObject>>>;
+    using ObjectStoreFunctions = StoreFunctions<byte[], IGarnetObject, ByteArrayKeyComparer, DefaultRecordDisposer<byte[], IGarnetObject>>;
+
     /// <summary>
     /// Wrapper for store and store-specific information
     /// </summary>   
@@ -28,12 +34,12 @@ namespace Garnet.server
         /// <summary>
         /// Store
         /// </summary>
-        public readonly TsavoriteKV<SpanByte, SpanByte> store;
+        public readonly TsavoriteKV<SpanByte, SpanByte, MainStoreFunctions, MainStoreAllocator> store;
 
         /// <summary>
         /// Object store
         /// </summary>
-        public readonly TsavoriteKV<byte[], IGarnetObject> objectStore;
+        public readonly TsavoriteKV<byte[], IGarnetObject, ObjectStoreFunctions, ObjectStoreAllocator> objectStore;
 
         /// <summary>
         /// Server options
@@ -99,8 +105,8 @@ namespace Garnet.server
             string version,
             string redisProtocolVersion,
             IGarnetServer server,
-            TsavoriteKV<SpanByte, SpanByte> store,
-            TsavoriteKV<byte[], IGarnetObject> objectStore,
+            TsavoriteKV<SpanByte, SpanByte, MainStoreFunctions, MainStoreAllocator> store,
+            TsavoriteKV<byte[], IGarnetObject, ObjectStoreFunctions, ObjectStoreAllocator> objectStore,
             CacheSizeTracker objectStoreSizeTracker,
             CustomCommandManager customCommandManager,
             TsavoriteLog appendOnlyFile,
@@ -187,7 +193,7 @@ namespace Garnet.server
         }
 
         internal FunctionsState CreateFunctionsState()
-            => new(appendOnlyFile, versionMap, customCommandManager.commandMap, customCommandManager.objectCommandMap, null, objectStoreSizeTracker, GarnetObjectSerializer);
+            => new(appendOnlyFile, versionMap, customCommandManager.rawStringCommandMap, customCommandManager.objectCommandMap, null, objectStoreSizeTracker, GarnetObjectSerializer);
 
         internal void Recover()
         {
@@ -511,7 +517,7 @@ namespace Garnet.server
                 Task.Run(async () => await CompactionTask(serverOptions.CompactionFrequencySecs, ctsCommit.Token));
             }
 
-            if (serverOptions.AdjustedIndexMaxSize > 0 || serverOptions.AdjustedObjectStoreIndexMaxSize > 0)
+            if (serverOptions.AdjustedIndexMaxCacheLines > 0 || serverOptions.AdjustedObjectStoreIndexMaxCacheLines > 0)
             {
                 Task.Run(() => IndexAutoGrowTask(ctsCommit.Token));
             }
@@ -525,8 +531,8 @@ namespace Garnet.server
         {
             try
             {
-                bool indexMaxedOut = serverOptions.AdjustedIndexMaxSize == 0;
-                bool objectStoreIndexMaxedOut = serverOptions.AdjustedObjectStoreIndexMaxSize == 0;
+                bool indexMaxedOut = serverOptions.AdjustedIndexMaxCacheLines == 0;
+                bool objectStoreIndexMaxedOut = serverOptions.AdjustedObjectStoreIndexMaxCacheLines == 0;
                 while (!indexMaxedOut || !objectStoreIndexMaxedOut)
                 {
                     if (token.IsCancellationRequested) break;
@@ -534,17 +540,17 @@ namespace Garnet.server
                     await Task.Delay(TimeSpan.FromSeconds(serverOptions.IndexResizeFrequencySecs), token);
 
                     if (!indexMaxedOut)
-                        indexMaxedOut = GrowIndexIfNeeded(StoreType.Main, serverOptions.AdjustedIndexMaxSize, store.OverflowBucketAllocations,
+                        indexMaxedOut = GrowIndexIfNeeded(StoreType.Main, serverOptions.AdjustedIndexMaxCacheLines, store.OverflowBucketAllocations,
                             () => store.IndexSize, () => store.GrowIndex());
 
                     if (!objectStoreIndexMaxedOut)
-                        objectStoreIndexMaxedOut = GrowIndexIfNeeded(StoreType.Object, serverOptions.AdjustedObjectStoreIndexMaxSize, objectStore.OverflowBucketAllocations,
+                        objectStoreIndexMaxedOut = GrowIndexIfNeeded(StoreType.Object, serverOptions.AdjustedObjectStoreIndexMaxCacheLines, objectStore.OverflowBucketAllocations,
                             () => objectStore.IndexSize, () => objectStore.GrowIndex());
                 }
             }
             catch (Exception ex)
             {
-                logger?.LogError(ex, "IndexAutoGrowTask exception received");
+                logger?.LogError(ex, $"{nameof(IndexAutoGrowTask)} exception received");
             }
         }
 
@@ -561,18 +567,18 @@ namespace Garnet.server
         /// <returns>True if index has reached its max size</returns>
         private bool GrowIndexIfNeeded(StoreType storeType, long indexMaxSize, long overflowCount, Func<long> indexSizeRetriever, Action growAction)
         {
-            logger?.LogDebug($"IndexAutoGrowTask[{storeType}]: checking index size {indexSizeRetriever()} against max {indexMaxSize} with overflow {overflowCount}");
+            logger?.LogDebug($"{nameof(IndexAutoGrowTask)}[{{storeType}}]: checking index size {{indexSizeRetriever}} against max {{indexMaxSize}} with overflow {{overflowCount}}", storeType, indexSizeRetriever(), indexMaxSize, overflowCount);
 
             if (indexSizeRetriever() < indexMaxSize &&
                 overflowCount > (indexSizeRetriever() * serverOptions.IndexResizeThreshold / 100))
             {
-                logger?.LogInformation($"IndexAutoGrowTask[{storeType}]: overflowCount {overflowCount} ratio more than threshold {serverOptions.IndexResizeThreshold}%. Doubling index size...");
+                logger?.LogInformation($"{nameof(IndexAutoGrowTask)}[{{storeType}}]: overflowCount {{overflowCount}} ratio more than threshold {{indexResizeThreshold}}%. Doubling index size...", storeType, overflowCount, serverOptions.IndexResizeThreshold);
                 growAction();
             }
 
             if (indexSizeRetriever() < indexMaxSize) return false;
 
-            logger?.LogDebug($"IndexAutoGrowTask[{storeType}]: index size {indexSizeRetriever()} reached index max size {indexMaxSize}");
+            logger?.LogDebug($"{nameof(IndexAutoGrowTask)}[{{storeType}}]: index size {{indexSizeRetriever}} reached index max size {{indexMaxSize}}", storeType, indexSizeRetriever(), indexMaxSize);
             return true;
         }
 

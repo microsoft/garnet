@@ -3,7 +3,9 @@
 
 namespace Tsavorite.core
 {
-    public unsafe partial class TsavoriteKV<Key, Value> : TsavoriteBase
+    public unsafe partial class TsavoriteKV<TKey, TValue, TStoreFunctions, TAllocator> : TsavoriteBase
+        where TStoreFunctions : IStoreFunctions<TKey, TValue>
+        where TAllocator : IAllocator<TKey, TValue, TStoreFunctions>
     {
         /// <summary>
         /// Copy a record from the disk to the read cache.
@@ -12,20 +14,20 @@ namespace Tsavorite.core
         /// <param name="key"></param>
         /// <param name="input"></param>
         /// <param name="recordValue"></param>
-        /// <param name="stackCtx">Contains the <see cref="HashEntryInfo"/> and <see cref="RecordSource{Key, Value}"/> structures for this operation,
+        /// <param name="stackCtx">Contains the <see cref="HashEntryInfo"/> and <see cref="RecordSource{Key, Value, TStoreFunctions, TAllocator}"/> structures for this operation,
         ///     and allows passing back the newLogicalAddress for invalidation in the case of exceptions.</param>
         /// <param name="sessionFunctions"></param>
         /// <returns>True if copied to readcache, else false; readcache is "best effort", and we don't fail the read process, or slow it down by retrying.
         /// </returns>
-        internal bool TryCopyToReadCache<Input, Output, Context, TSessionFunctionsWrapper>(TSessionFunctionsWrapper sessionFunctions, ref PendingContext<Input, Output, Context> pendingContext,
-                                        ref Key key, ref Input input, ref Value recordValue, ref OperationStackContext<Key, Value> stackCtx)
-            where TSessionFunctionsWrapper : ISessionFunctionsWrapper<Key, Value, Input, Output, Context>
+        internal bool TryCopyToReadCache<TInput, TOutput, TContext, TSessionFunctionsWrapper>(TSessionFunctionsWrapper sessionFunctions, ref PendingContext<TInput, TOutput, TContext> pendingContext,
+                                        ref TKey key, ref TInput input, ref TValue recordValue, ref OperationStackContext<TKey, TValue, TStoreFunctions, TAllocator> stackCtx)
+            where TSessionFunctionsWrapper : ISessionFunctionsWrapper<TKey, TValue, TInput, TOutput, TContext, TStoreFunctions, TAllocator>
         {
             var (actualSize, allocatedSize, _) = hlog.GetRecordSize(ref key, ref recordValue);
 
             if (!TryAllocateRecordReadCache(ref pendingContext, ref stackCtx, allocatedSize, out long newLogicalAddress, out long newPhysicalAddress, out _))
                 return false;
-            ref var newRecordInfo = ref WriteNewRecordInfo(ref key, readcache, newPhysicalAddress, inNewVersion: false, tombstone: false, stackCtx.hei.Address);
+            ref var newRecordInfo = ref WriteNewRecordInfo(ref key, readCacheBase, newPhysicalAddress, inNewVersion: false, stackCtx.hei.Address);
             stackCtx.SetNewRecord(newLogicalAddress | Constants.kReadCacheBitMask);
 
             UpsertInfo upsertInfo = new()
@@ -38,10 +40,10 @@ namespace Tsavorite.core
             upsertInfo.SetRecordInfo(ref newRecordInfo);
 
             // Even though readcache records are immutable, we have to initialize the lengths
-            ref Value newRecordValue = ref readcache.GetAndInitializeValue(newPhysicalAddress, newPhysicalAddress + actualSize);
+            ref TValue newRecordValue = ref readcache.GetAndInitializeValue(newPhysicalAddress, newPhysicalAddress + actualSize);
             (upsertInfo.UsedValueLength, upsertInfo.FullValueLength) = GetNewValueLengths(actualSize, allocatedSize, newPhysicalAddress, ref newRecordValue);
 
-            Output output = default;
+            TOutput output = default;
             if (!sessionFunctions.SingleWriter(ref key, ref input, ref recordValue, ref readcache.GetAndInitializeValue(newPhysicalAddress, newPhysicalAddress + actualSize),
                                             ref output, ref upsertInfo, WriteReason.CopyToReadCache, ref newRecordInfo))
             {
@@ -84,8 +86,7 @@ namespace Tsavorite.core
             stackCtx.SetNewRecordInvalid(ref newRecordInfo);
             if (!casSuccess)
             {
-                sessionFunctions.DisposeSingleWriter(ref readcache.GetKey(newPhysicalAddress), ref input, ref recordValue, ref readcache.GetValue(newPhysicalAddress),
-                                                  ref output, ref upsertInfo, WriteReason.CopyToReadCache);
+                storeFunctions.DisposeRecord(ref readcache.GetKey(newPhysicalAddress), ref readcache.GetValue(newPhysicalAddress), DisposeReason.SingleWriterCASFailed);
                 newRecordInfo.PreviousAddress = Constants.kTempInvalidAddress;     // Necessary for ReadCacheEvict, but cannot be kInvalidAddress or we have recordInfo.IsNull
             }
             return false;

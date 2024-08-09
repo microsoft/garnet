@@ -1725,6 +1725,9 @@ namespace Garnet.test.cluster
             }
         }
 
+        public void WaitForMigrationCleanup(int nodeIndex, ILogger logger = null)
+            => WaitForMigrationCleanup(endpoints[nodeIndex].ToIPEndPoint(), logger);
+
         public void WaitForMigrationCleanup(IPEndPoint endPoint, ILogger logger)
         {
             while (MigrateTasks(endPoint, logger) > 0) { BackOff(); }
@@ -2544,7 +2547,7 @@ namespace Garnet.test.cluster
         {
             try
             {
-                var failoverState = GetReplicationInfo(endPoint, new[] { ReplicationInfoItem.PRIMARY_FAILOVER_STATE }, logger)[0].Item2;
+                var failoverState = GetReplicationInfo(endPoint, [ReplicationInfoItem.PRIMARY_FAILOVER_STATE], logger)[0].Item2;
                 return failoverState;
             }
             catch (Exception ex)
@@ -2647,7 +2650,7 @@ namespace Garnet.test.cluster
                     break;
                 BackOff();
             }
-            logger?.LogInformation($"Replication offset for primary {primaryIndex} and secondary {secondaryIndex} is {primaryReplicationOffset}");
+            logger?.LogInformation("Replication offset for primary {primaryIndex} and secondary {secondaryIndex} is {primaryReplicationOffset}", primaryIndex, secondaryIndex, primaryReplicationOffset);
         }
 
         public void WaitForConnectedReplicaCount(int primaryIndex, long minCount, ILogger logger = null)
@@ -2867,6 +2870,25 @@ namespace Garnet.test.cluster
 
             Assert.Fail("Single node cluster");
             return null;
+        }
+
+        public int DBSize(int nodeIndex, ILogger logger = null)
+            => DBSize(endpoints[nodeIndex].ToIPEndPoint(), logger);
+
+        public int DBSize(IPEndPoint endPoint, ILogger logger = null)
+        {
+            try
+            {
+                var server = redis.GetServer(endPoint);
+                var count = (int)server.Execute("DBSIZE");
+                return count;
+            }
+            catch (Exception ex)
+            {
+                logger?.LogError(ex, "An error has occurred; DBSize");
+                Assert.Fail();
+                return -1;
+            }
         }
     }
 }

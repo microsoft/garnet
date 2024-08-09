@@ -84,6 +84,7 @@ namespace Garnet.server
         DECRBY,
         DEL,
         EXPIRE,
+        FLUSHALL,
         FLUSHDB,
         GEOADD,
         GETDEL,
@@ -194,8 +195,9 @@ namespace Garnet.server
 
         // Custom commands
         CustomTxn,
-        CustomCmd,
+        CustomRawStringCmd,
         CustomObjCmd,
+        CustomProcedure,
 
         ACL,
         ACL_CAT,
@@ -285,6 +287,80 @@ namespace Garnet.server
     {
         private static readonly RespCommand[] ExpandedSET = [RespCommand.SETEXNX, RespCommand.SETEXXX, RespCommand.SETKEEPTTL, RespCommand.SETKEEPTTLXX];
         private static readonly RespCommand[] ExpandedBITOP = [RespCommand.BITOP_AND, RespCommand.BITOP_NOT, RespCommand.BITOP_OR, RespCommand.BITOP_XOR];
+
+        // Commands that are either returning static data or commands that cannot have issues from concurrent AOF interaction in another session
+        private static readonly RespCommand[] AofIndependentCommands = [
+            RespCommand.ASYNC,
+            RespCommand.PING,
+            RespCommand.SELECT,
+            RespCommand.ECHO,
+            RespCommand.CLIENT,
+            RespCommand.MONITOR,
+            RespCommand.MODULE_LOADCS,
+            RespCommand.REGISTERCS,
+            RespCommand.INFO,
+            RespCommand.TIME,
+            RespCommand.LASTSAVE,
+            // ACL
+            RespCommand.ACL_CAT,
+            RespCommand.ACL_DELUSER,
+            RespCommand.ACL_LIST,
+            RespCommand.ACL_LOAD,
+            RespCommand.ACL_SAVE,
+            RespCommand.ACL_SETUSER,
+            RespCommand.ACL_USERS,
+            RespCommand.ACL_WHOAMI,
+            // Command
+            RespCommand.COMMAND,
+            RespCommand.COMMAND_COUNT,
+            RespCommand.COMMAND_INFO,
+            RespCommand.MEMORY_USAGE,
+            // Config
+            RespCommand.CONFIG_GET,
+            RespCommand.CONFIG_REWRITE,
+            RespCommand.CONFIG_SET,
+            // Latency
+            RespCommand.LATENCY_HELP,
+            RespCommand.LATENCY_HISTOGRAM,
+            RespCommand.LATENCY_RESET,
+            // Transactions
+            RespCommand.MULTI,
+        ];
+
+        // long is 64 bits, 4 longs accomodate 256 resp commands which is more than enough to provide a lookup for each resp command
+        private static readonly ulong[] AofIndepenedentBitLookup = [0, 0, 0, 0];
+
+        private const int sizeOfLong = 64;
+
+        // The static ctor maybe expensive but it is only ever run once, and doesn't interfere with common path
+        static RespCommandExtensions()
+        {
+            foreach (RespCommand cmd in Enum.GetValues(typeof(RespCommand)))
+            {
+                if (Array.IndexOf(AofIndependentCommands, cmd) == -1)
+                    continue;
+
+                // mark the command as an AOF independent command for lookups later by setting the bit in bit vec
+                int bitIdxToUse = (int)cmd / sizeOfLong;
+                // set the respCommand's bit to indicate
+                int bitIdxOffset = (int)cmd % sizeOfLong;
+                ulong bitmask = 1UL << bitIdxOffset;
+                AofIndepenedentBitLookup[bitIdxToUse] |= bitmask;
+            }
+        }
+
+        /// <summary>
+        /// Returns whether or not a Resp command can have a dirty read or is dependent on AOF or not
+        /// </summary>
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        public static bool IsAofIndependent(this RespCommand cmd)
+        {
+            // check if cmd maps to a bit vec that was set back when static ctor was run
+            int bitIdxToUse = (int)cmd / sizeOfLong;
+            int bitIdxOffset = (int)cmd % sizeOfLong;
+            ulong bitmask = 1UL << bitIdxOffset;
+            return (AofIndepenedentBitLookup[bitIdxToUse] & bitmask) != 0;
+        }
 
         /// <summary>
         /// Turns any not-quite-a-real-command entries in <see cref="RespCommand"/> into the equivalent command
@@ -1607,6 +1683,10 @@ namespace Garnet.server
             {
                 return RespCommand.COMMITAOF;
             }
+            else if (command.SequenceEqual(CmdStrings.FLUSHALL))
+            {
+                return RespCommand.FLUSHALL;
+            }
             else if (command.SequenceEqual(CmdStrings.FLUSHDB))
             {
                 return RespCommand.FLUSHDB;
@@ -1721,21 +1801,27 @@ namespace Garnet.server
                 // Custom commands should have never been set when we reach this point
                 // (they should have been executed and reset)
                 Debug.Assert(currentCustomTransaction == null);
-                Debug.Assert(currentCustomCommand == null);
+                Debug.Assert(currentCustomRawStringCommand == null);
                 Debug.Assert(currentCustomObjectCommand == null);
+                Debug.Assert(currentCustomProcedure == null);
 
                 if (storeWrapper.customCommandManager.Match(command, out currentCustomTransaction))
                 {
                     return RespCommand.CustomTxn;
                 }
-                else if (storeWrapper.customCommandManager.Match(command, out currentCustomCommand))
+                else if (storeWrapper.customCommandManager.Match(command, out currentCustomRawStringCommand))
                 {
-                    return RespCommand.CustomCmd;
+                    return RespCommand.CustomRawStringCmd;
                 }
                 else if (storeWrapper.customCommandManager.Match(command, out currentCustomObjectCommand))
                 {
                     return RespCommand.CustomObjCmd;
                 }
+                else if (storeWrapper.customCommandManager.Match(command, out currentCustomProcedure))
+                {
+                    return RespCommand.CustomProcedure;
+                }
+
             }
 
             // If this command name was not known to the slow pass, we are out of options and the command is unknown.
@@ -1803,7 +1889,29 @@ namespace Garnet.server
             }
             endReadHead = (int)(ptr - recvBufferPtr);
 
+            if (storeWrapper.appendOnlyFile != null && storeWrapper.serverOptions.WaitForCommit)
+                HandleAofCommitMode(cmd);
+
             return cmd;
+        }
+
+        [MethodImpl(MethodImplOptions.NoInlining)]
+        private void HandleAofCommitMode(RespCommand cmd)
+        {
+            // Reset waitForAofBlocking if there is no pending unsent data on the network
+            if (dcurr == networkSender.GetResponseObjectHead())
+                waitForAofBlocking = false;
+
+            // During a started transaction (Network Skip mode) the cmd is not executed so we can safely skip setting the AOF blocking flag
+            if (txnManager.state == TxnState.Started)
+                return;
+
+            /* 
+                If a previous command marked AOF for blocking we should not change AOF blocking flag.
+                If no previous command marked AOF for blocking, then we only change AOF flag to block
+                if the current command is AOF dependent.
+            */
+            waitForAofBlocking = waitForAofBlocking || !cmd.IsAofIndependent();
         }
 
         [MethodImpl(MethodImplOptions.NoInlining)]

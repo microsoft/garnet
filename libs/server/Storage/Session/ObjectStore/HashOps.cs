@@ -2,14 +2,14 @@
 // Licensed under the MIT license.
 
 using System;
-using System.Linq;
 using System.Text;
-using Garnet.client;
-using Garnet.common;
 using Tsavorite.core;
 
 namespace Garnet.server
 {
+    using ObjectStoreAllocator = GenericAllocator<byte[], IGarnetObject, StoreFunctions<byte[], IGarnetObject, ByteArrayKeyComparer, DefaultRecordDisposer<byte[], IGarnetObject>>>;
+    using ObjectStoreFunctions = StoreFunctions<byte[], IGarnetObject, ByteArrayKeyComparer, DefaultRecordDisposer<byte[], IGarnetObject>>;
+
     /// <summary>
     /// Server API methods - HASH
     /// </summary>
@@ -31,23 +31,29 @@ namespace Garnet.server
         /// <param name="nx"></param>
         /// <returns></returns>
         public unsafe GarnetStatus HashSet<TObjectContext>(ArgSlice key, ArgSlice field, ArgSlice value, out int itemsDoneCount, ref TObjectContext objectStoreContext, bool nx = false)
-           where TObjectContext : ITsavoriteContext<byte[], IGarnetObject, SpanByte, GarnetObjectStoreOutput, long, ObjectStoreFunctions>
+           where TObjectContext : ITsavoriteContext<byte[], IGarnetObject, ObjectInput, GarnetObjectStoreOutput, long, ObjectSessionFunctions, ObjectStoreFunctions, ObjectStoreAllocator>
         {
             itemsDoneCount = 0;
 
             if (key.Length == 0)
                 return GarnetStatus.OK;
 
-            var input = scratchBufferManager.FormatScratchAsResp(ObjectInputHeader.Size, field, value);
+            // Prepare the payload
+            var inputPayload = scratchBufferManager.FormatScratchAsResp(0, field, value);
 
-            // Prepare header in input buffer
-            var rmwInput = (ObjectInputHeader*)input.ptr;
-            rmwInput->header.type = GarnetObjectType.Hash;
-            rmwInput->header.flags = 0;
-            rmwInput->header.HashOp = nx ? HashOperation.HSETNX : HashOperation.HSET;
-            rmwInput->arg1 = 1;
+            // Prepare the input
+            var input = new ObjectInput
+            {
+                header = new RespInputHeader
+                {
+                    type = GarnetObjectType.Hash,
+                    HashOp = nx ? HashOperation.HSETNX : HashOperation.HSET,
+                },
+                arg1 = 1,
+                payload = inputPayload,
+            };
 
-            var status = RMWObjectStoreOperation(key.ToArray(), input, out var output, ref objectStoreContext);
+            var status = RMWObjectStoreOperation(key.ToArray(), ref input, out var output, ref objectStoreContext);
             itemsDoneCount = output.result1;
 
             return status;
@@ -65,31 +71,36 @@ namespace Garnet.server
         /// <param name="objectStoreContext"></param>
         /// <returns></returns>
         public unsafe GarnetStatus HashSet<TObjectContext>(ArgSlice key, (ArgSlice field, ArgSlice value)[] elements, out int itemsDoneCount, ref TObjectContext objectStoreContext)
-           where TObjectContext : ITsavoriteContext<byte[], IGarnetObject, SpanByte, GarnetObjectStoreOutput, long, ObjectStoreFunctions>
+           where TObjectContext : ITsavoriteContext<byte[], IGarnetObject, ObjectInput, GarnetObjectStoreOutput, long, ObjectSessionFunctions, ObjectStoreFunctions, ObjectStoreAllocator>
         {
             itemsDoneCount = 0;
 
             if (key.Length == 0)
                 return GarnetStatus.OK;
 
-            // Prepare header in buffer
-            var rmwInput = (ObjectInputHeader*)scratchBufferManager.CreateArgSlice(ObjectInputHeader.Size).ptr;
-            rmwInput->header.type = GarnetObjectType.Hash;
-            rmwInput->header.flags = 0;
-            rmwInput->header.HashOp = HashOperation.HSET;
-            rmwInput->arg1 = elements.Length;
-
-            // Iterate through all inputs and add them to the scratch buffer in RESP format
-            int inputLength = sizeof(ObjectInputHeader);
+            // Prepare the payload
+            var inputLength = 0;
             foreach (var pair in elements)
             {
                 var tmp = scratchBufferManager.FormatScratchAsResp(0, pair.field, pair.value);
                 inputLength += tmp.Length;
             }
 
-            var input = scratchBufferManager.GetSliceFromTail(inputLength);
+            var inputPayload = scratchBufferManager.GetSliceFromTail(inputLength);
 
-            var status = RMWObjectStoreOperation(key.ToArray(), input, out var output, ref objectStoreContext);
+            // Prepare the input
+            var input = new ObjectInput
+            {
+                header = new RespInputHeader
+                {
+                    type = GarnetObjectType.Hash,
+                    HashOp = HashOperation.HSET,
+                },
+                arg1 = elements.Length,
+                payload = inputPayload,
+            };
+
+            var status = RMWObjectStoreOperation(key.ToArray(), ref input, out var output, ref objectStoreContext);
             itemsDoneCount = output.result1;
 
             return status;
@@ -106,7 +117,7 @@ namespace Garnet.server
         /// <param name="nx"></param>
         /// <returns></returns>
         public GarnetStatus HashDelete<TObjectContext>(ArgSlice key, ArgSlice field, out int itemsDoneCount, ref TObjectContext objectStoreContext, bool nx = false)
-           where TObjectContext : ITsavoriteContext<byte[], IGarnetObject, SpanByte, GarnetObjectStoreOutput, long, ObjectStoreFunctions>
+           where TObjectContext : ITsavoriteContext<byte[], IGarnetObject, ObjectInput, GarnetObjectStoreOutput, long, ObjectSessionFunctions, ObjectStoreFunctions, ObjectStoreAllocator>
          => HashDelete(key, new ArgSlice[] { field }, out itemsDoneCount, ref objectStoreContext);
 
         /// <summary>
@@ -119,31 +130,36 @@ namespace Garnet.server
         /// <param name="objectStoreContext"></param>
         /// <returns></returns>
         public unsafe GarnetStatus HashDelete<TObjectContext>(ArgSlice key, ArgSlice[] fields, out int itemsDoneCount, ref TObjectContext objectStoreContext)
-           where TObjectContext : ITsavoriteContext<byte[], IGarnetObject, SpanByte, GarnetObjectStoreOutput, long, ObjectStoreFunctions>
+           where TObjectContext : ITsavoriteContext<byte[], IGarnetObject, ObjectInput, GarnetObjectStoreOutput, long, ObjectSessionFunctions, ObjectStoreFunctions, ObjectStoreAllocator>
         {
             itemsDoneCount = 0;
 
             if (key.Length == 0)
                 return GarnetStatus.OK;
 
-            // Prepare header in buffer
-            var rmwInput = (ObjectInputHeader*)scratchBufferManager.CreateArgSlice(ObjectInputHeader.Size).ptr;
-            rmwInput->header.type = GarnetObjectType.Hash;
-            rmwInput->header.flags = 0;
-            rmwInput->header.HashOp = HashOperation.HDEL;
-            rmwInput->arg1 = fields.Length;
-
-            // Iterate through all inputs and add them to the scratch buffer in RESP format
-            int inputLength = sizeof(ObjectInputHeader);
+            // Prepare the payload
+            var inputLength = 0;
             foreach (var field in fields)
             {
                 var tmp = scratchBufferManager.FormatScratchAsResp(0, field);
                 inputLength += tmp.Length;
             }
 
-            var input = scratchBufferManager.GetSliceFromTail(inputLength);
+            var inputPayload = scratchBufferManager.GetSliceFromTail(inputLength);
 
-            var status = RMWObjectStoreOperation(key.ToArray(), input, out var output, ref objectStoreContext);
+            // Prepare the input
+            var input = new ObjectInput
+            {
+                header = new RespInputHeader
+                {
+                    type = GarnetObjectType.Hash,
+                    HashOp = HashOperation.HDEL,
+                },
+                arg1 = fields.Length,
+                payload = inputPayload,
+            };
+
+            var status = RMWObjectStoreOperation(key.ToArray(), ref input, out var output, ref objectStoreContext);
             itemsDoneCount = output.result1;
 
             return status;
@@ -159,29 +175,35 @@ namespace Garnet.server
         /// <param name="objectStoreContext"></param>
         /// <returns></returns>
         public unsafe GarnetStatus HashGet<TObjectContext>(ArgSlice key, ArgSlice field, out ArgSlice value, ref TObjectContext objectStoreContext)
-            where TObjectContext : ITsavoriteContext<byte[], IGarnetObject, SpanByte, GarnetObjectStoreOutput, long, ObjectStoreFunctions>
+            where TObjectContext : ITsavoriteContext<byte[], IGarnetObject, ObjectInput, GarnetObjectStoreOutput, long, ObjectSessionFunctions, ObjectStoreFunctions, ObjectStoreAllocator>
         {
             value = default;
 
             if (key.Length == 0)
                 return GarnetStatus.OK;
 
-            // Prepare header in input buffer
-            var rmwInput = (ObjectInputHeader*)scratchBufferManager.CreateArgSlice(ObjectInputHeader.Size).ptr;
-            rmwInput->header.type = GarnetObjectType.Hash;
-            rmwInput->header.flags = 0;
-            rmwInput->header.HashOp = HashOperation.HGET;
-
-            // Iterate through all inputs and add them to the scratch buffer in RESP format
-            var inputLength = sizeof(ObjectInputHeader);
+            // Prepare the payload
+            var inputLength = 0;
 
             var tmp = scratchBufferManager.FormatScratchAsResp(0, field);
             inputLength += tmp.Length;
 
-            var input = scratchBufferManager.GetSliceFromTail(inputLength);
+            var inputPayload = scratchBufferManager.GetSliceFromTail(inputLength);
+
+            // Prepare the input
+            var input = new ObjectInput
+            {
+                header = new RespInputHeader
+                {
+                    type = GarnetObjectType.Hash,
+                    HashOp = HashOperation.HGET,
+                },
+                payload = inputPayload,
+            };
+
             var outputFooter = new GarnetObjectStoreOutput { spanByteAndMemory = new SpanByteAndMemory(null) };
 
-            var status = ReadObjectStoreOperationWithOutput(key.ToArray(), input, ref objectStoreContext, ref outputFooter);
+            var status = ReadObjectStoreOperationWithOutput(key.ToArray(), ref input, ref objectStoreContext, ref outputFooter);
 
             value = default;
             if (status == GarnetStatus.OK)
@@ -200,22 +222,15 @@ namespace Garnet.server
         /// <param name="objectStoreContext"></param>
         /// <returns></returns>
         public unsafe GarnetStatus HashGetMultiple<TObjectContext>(ArgSlice key, ArgSlice[] fields, out ArgSlice[] values, ref TObjectContext objectStoreContext)
-           where TObjectContext : ITsavoriteContext<byte[], IGarnetObject, SpanByte, GarnetObjectStoreOutput, long, ObjectStoreFunctions>
+           where TObjectContext : ITsavoriteContext<byte[], IGarnetObject, ObjectInput, GarnetObjectStoreOutput, long, ObjectSessionFunctions, ObjectStoreFunctions, ObjectStoreAllocator>
         {
             values = default;
 
             if (key.Length == 0)
                 return GarnetStatus.OK;
 
-            // Prepare header in input buffer
-            var rmwInput = (ObjectInputHeader*)scratchBufferManager.CreateArgSlice(ObjectInputHeader.Size).ptr;
-            rmwInput->header.type = GarnetObjectType.Hash;
-            rmwInput->header.flags = 0;
-            rmwInput->header.HashOp = HashOperation.HMGET;
-            rmwInput->arg1 = fields.Length;
-
-            // Iterate through all inputs and add them to the scratch buffer in RESP format
-            var inputLength = sizeof(ObjectInputHeader);
+            // Prepare the input payload
+            var inputLength = 0;
 
             foreach (var field in fields)
             {
@@ -223,10 +238,23 @@ namespace Garnet.server
                 inputLength += tmp.Length;
             }
 
-            var input = scratchBufferManager.GetSliceFromTail(inputLength);
+            var inputPayload = scratchBufferManager.GetSliceFromTail(inputLength);
+
+            // Prepare the input
+            var input = new ObjectInput
+            {
+                header = new RespInputHeader
+                {
+                    type = GarnetObjectType.Hash,
+                    HashOp = HashOperation.HMGET,
+                },
+                arg1 = fields.Length,
+                payload = inputPayload,
+            };
+
             var outputFooter = new GarnetObjectStoreOutput { spanByteAndMemory = new SpanByteAndMemory(null) };
 
-            var status = ReadObjectStoreOperationWithOutput(key.ToArray(), input, ref objectStoreContext, ref outputFooter);
+            var status = ReadObjectStoreOperationWithOutput(key.ToArray(), ref input, ref objectStoreContext, ref outputFooter);
 
             values = default;
             if (status == GarnetStatus.OK)
@@ -244,26 +272,31 @@ namespace Garnet.server
         /// <param name="objectStoreContext"></param>
         /// <returns></returns>
         public unsafe GarnetStatus HashGetAll<TObjectContext>(ArgSlice key, out ArgSlice[] values, ref TObjectContext objectStoreContext)
-            where TObjectContext : ITsavoriteContext<byte[], IGarnetObject, SpanByte, GarnetObjectStoreOutput, long, ObjectStoreFunctions>
+            where TObjectContext : ITsavoriteContext<byte[], IGarnetObject, ObjectInput, GarnetObjectStoreOutput, long, ObjectSessionFunctions, ObjectStoreFunctions, ObjectStoreAllocator>
         {
             values = default;
 
             if (key.Length == 0)
                 return GarnetStatus.OK;
 
-            // Prepare header in input buffer
-            var rmwInput = (ObjectInputHeader*)scratchBufferManager.CreateArgSlice(ObjectInputHeader.Size).ptr;
-            rmwInput->header.type = GarnetObjectType.Hash;
-            rmwInput->header.flags = 0;
-            rmwInput->header.HashOp = HashOperation.HGETALL;
+            // Prepare the input payload
+            var inputLength = 0;
+            var inputPayload = scratchBufferManager.GetSliceFromTail(inputLength);
 
-            // Iterate through all inputs and add them to the scratch buffer in RESP format
-            var inputLength = sizeof(ObjectInputHeader);
+            // Prepare the input
+            var input = new ObjectInput
+            {
+                header = new RespInputHeader
+                {
+                    type = GarnetObjectType.Hash,
+                    HashOp = HashOperation.HGETALL,
+                },
+                payload = inputPayload,
+            };
 
-            var input = scratchBufferManager.GetSliceFromTail(inputLength);
             var outputFooter = new GarnetObjectStoreOutput { spanByteAndMemory = new SpanByteAndMemory(null) };
 
-            var status = ReadObjectStoreOperationWithOutput(key.ToArray(), input, ref objectStoreContext, ref outputFooter);
+            var status = ReadObjectStoreOperationWithOutput(key.ToArray(), ref input, ref objectStoreContext, ref outputFooter);
 
             values = default;
             if (status == GarnetStatus.OK)
@@ -282,23 +315,29 @@ namespace Garnet.server
         /// <param name="nx"></param>
         /// <returns></returns>
         public unsafe GarnetStatus HashLength<TObjectContext>(ArgSlice key, out int items, ref TObjectContext objectStoreContext, bool nx = false)
-          where TObjectContext : ITsavoriteContext<byte[], IGarnetObject, SpanByte, GarnetObjectStoreOutput, long, ObjectStoreFunctions>
+          where TObjectContext : ITsavoriteContext<byte[], IGarnetObject, ObjectInput, GarnetObjectStoreOutput, long, ObjectSessionFunctions, ObjectStoreFunctions, ObjectStoreAllocator>
         {
             items = 0;
 
             if (key.Length == 0)
                 return GarnetStatus.OK;
 
-            var input = scratchBufferManager.FormatScratchAsResp(ObjectInputHeader.Size, key);
+            // Prepare the input payload
+            var inputLength = 0;
+            var inputPayload = scratchBufferManager.GetSliceFromTail(inputLength);
 
-            // Prepare header in input buffer
-            var rmwInput = (ObjectInputHeader*)input.ptr;
-            rmwInput->header.type = GarnetObjectType.Hash;
-            rmwInput->header.flags = 0;
-            rmwInput->header.HashOp = HashOperation.HLEN;
-            rmwInput->arg1 = 1;
+            // Prepare the input
+            var input = new ObjectInput
+            {
+                header = new RespInputHeader
+                {
+                    type = GarnetObjectType.Hash,
+                    HashOp = HashOperation.HLEN,
+                },
+                payload = inputPayload,
+            };
 
-            var status = ReadObjectStoreOperation(key.ToArray(), input, out var output, ref objectStoreContext);
+            var status = ReadObjectStoreOperation(key.ToArray(), ref input, out var output, ref objectStoreContext);
 
             items = output.result1;
 
@@ -315,22 +354,27 @@ namespace Garnet.server
         /// <param name="objectStoreContext"></param>
         /// <returns></returns>
         public unsafe GarnetStatus HashExists<TObjectContext>(ArgSlice key, ArgSlice field, out bool exists, ref TObjectContext objectStoreContext)
-         where TObjectContext : ITsavoriteContext<byte[], IGarnetObject, SpanByte, GarnetObjectStoreOutput, long, ObjectStoreFunctions>
+         where TObjectContext : ITsavoriteContext<byte[], IGarnetObject, ObjectInput, GarnetObjectStoreOutput, long, ObjectSessionFunctions, ObjectStoreFunctions, ObjectStoreAllocator>
         {
             exists = false;
             if (key.Length == 0)
                 return GarnetStatus.OK;
 
-            var input = scratchBufferManager.FormatScratchAsResp(ObjectInputHeader.Size, field);
+            // Prepare the input payload
+            var inputPayload = scratchBufferManager.FormatScratchAsResp(0, field);
 
-            // Prepare header in input buffer
-            var rmwInput = (ObjectInputHeader*)input.ptr;
-            rmwInput->header.type = GarnetObjectType.Hash;
-            rmwInput->header.flags = 0;
-            rmwInput->header.HashOp = HashOperation.HEXISTS;
-            rmwInput->arg1 = 1;
+            // Prepare the input
+            var input = new ObjectInput
+            {
+                header = new RespInputHeader
+                {
+                    type = GarnetObjectType.Hash,
+                    HashOp = HashOperation.HEXISTS,
+                },
+                payload = inputPayload,
+            };
 
-            var status = ReadObjectStoreOperation(key.ToArray(), input, out var output, ref objectStoreContext);
+            var status = ReadObjectStoreOperation(key.ToArray(), ref input, out var output, ref objectStoreContext);
 
             exists = output.result1 == 1;
 
@@ -346,33 +390,39 @@ namespace Garnet.server
         /// <param name="objectStoreContext"></param>
         /// <returns></returns>
         public unsafe GarnetStatus HashRandomField<TObjectContext>(ArgSlice key, out ArgSlice field, ref TObjectContext objectStoreContext)
-           where TObjectContext : ITsavoriteContext<byte[], IGarnetObject, SpanByte, GarnetObjectStoreOutput, long, ObjectStoreFunctions>
+           where TObjectContext : ITsavoriteContext<byte[], IGarnetObject, ObjectInput, GarnetObjectStoreOutput, long, ObjectSessionFunctions, ObjectStoreFunctions, ObjectStoreAllocator>
         {
             field = default;
 
             if (key.Length == 0)
                 return GarnetStatus.OK;
 
+            var inputLength = 0;
+
+            // Prepare the input payload
+            var inputPayload = scratchBufferManager.GetSliceFromTail(inputLength);
+
             // Create a random seed
             var seed = RandomGen.Next();
 
-            // Prepare header in input buffer
-            var rmwInput = (ObjectInputHeader*)scratchBufferManager.CreateArgSlice(ObjectInputHeader.Size).ptr;
-            rmwInput->header.type = GarnetObjectType.Hash;
-            rmwInput->header.flags = 0;
-            rmwInput->header.HashOp = HashOperation.HRANDFIELD;
-            rmwInput->arg1 = 1 << 2;
-            rmwInput->arg2 = seed;
-
-            var inputLength = sizeof(ObjectInputHeader);
-
-            var input = scratchBufferManager.GetSliceFromTail(inputLength);
+            // Prepare the input
+            var input = new ObjectInput
+            {
+                header = new RespInputHeader
+                {
+                    type = GarnetObjectType.Hash,
+                    HashOp = HashOperation.HRANDFIELD,
+                },
+                arg1 = 1 << 2,
+                arg2 = seed,
+                payload = inputPayload,
+            };
 
             var outputFooter = new GarnetObjectStoreOutput { spanByteAndMemory = new SpanByteAndMemory(null) };
 
-            var status = ReadObjectStoreOperationWithOutput(key.ToArray(), input, ref objectStoreContext, ref outputFooter);
+            var status = ReadObjectStoreOperationWithOutput(key.ToArray(), ref input, ref objectStoreContext, ref outputFooter);
 
-            //process output
+            // Process output
             if (status == GarnetStatus.OK)
                 field = ProcessRespSingleTokenOutput(outputFooter);
 
@@ -392,7 +442,7 @@ namespace Garnet.server
         /// <param name="objectStoreContext"></param>
         /// <returns></returns>
         public unsafe GarnetStatus HashRandomField<TObjectContext>(ArgSlice key, int count, bool withValues, out ArgSlice[] fields, ref TObjectContext objectStoreContext)
-           where TObjectContext : ITsavoriteContext<byte[], IGarnetObject, SpanByte, GarnetObjectStoreOutput, long, ObjectStoreFunctions>
+           where TObjectContext : ITsavoriteContext<byte[], IGarnetObject, ObjectInput, GarnetObjectStoreOutput, long, ObjectSessionFunctions, ObjectStoreFunctions, ObjectStoreAllocator>
         {
             fields = default;
 
@@ -402,21 +452,26 @@ namespace Garnet.server
             // Create a random seed
             var seed = RandomGen.Next();
 
-            // Prepare header in input buffer
-            var rmwInput = (ObjectInputHeader*)scratchBufferManager.CreateArgSlice(ObjectInputHeader.Size).ptr;
-            rmwInput->header.type = GarnetObjectType.Hash;
-            rmwInput->header.flags = 0;
-            rmwInput->header.HashOp = HashOperation.HRANDFIELD;
-            rmwInput->arg1 = (((count << 1) | 1) << 1) | (withValues ? 1 : 0);
-            rmwInput->arg2 = seed;
+            var inputLength = 0;
 
-            // Iterate through all inputs and add them to the scratch buffer in RESP format
-            var inputLength = sizeof(ObjectInputHeader);
+            // Prepare the input payload
+            var inputPayload = scratchBufferManager.GetSliceFromTail(inputLength);
 
-            var input = scratchBufferManager.GetSliceFromTail(inputLength);
+            // Prepare the input
+            var input = new ObjectInput
+            {
+                header = new RespInputHeader
+                {
+                    type = GarnetObjectType.Hash,
+                    HashOp = HashOperation.HRANDFIELD,
+                },
+                arg1 = (((count << 1) | 1) << 1) | (withValues ? 1 : 0),
+                arg2 = seed,
+                payload = inputPayload,
+            };
 
             var outputFooter = new GarnetObjectStoreOutput { spanByteAndMemory = new SpanByteAndMemory(null) };
-            var status = ReadObjectStoreOperationWithOutput(key.ToArray(), input, ref objectStoreContext, ref outputFooter);
+            var status = ReadObjectStoreOperationWithOutput(key.ToArray(), ref input, ref objectStoreContext, ref outputFooter);
 
             fields = default;
             if (status == GarnetStatus.OK)
@@ -437,66 +492,64 @@ namespace Garnet.server
         /// <param name="items"></param>
         /// <param name="objectStoreContext"></param>
         public unsafe GarnetStatus HashScan<TObjectContext>(ArgSlice key, long cursor, string match, long count, out ArgSlice[] items, ref TObjectContext objectStoreContext)
-             where TObjectContext : ITsavoriteContext<byte[], IGarnetObject, SpanByte, GarnetObjectStoreOutput, long, ObjectStoreFunctions>
+             where TObjectContext : ITsavoriteContext<byte[], IGarnetObject, ObjectInput, GarnetObjectStoreOutput, long, ObjectSessionFunctions, ObjectStoreFunctions, ObjectStoreAllocator>
         {
             items = default;
 
             if (key.Length == 0)
                 return GarnetStatus.OK;
 
-            if (String.IsNullOrEmpty(match))
+            if (string.IsNullOrEmpty(match))
                 match = "*";
 
-            // Prepare header in input buffer
-            // Header + ObjectScanCountLimit
-            var inputSize = ObjectInputHeader.Size + sizeof(int);
-            var rmwInput = scratchBufferManager.CreateArgSlice(inputSize).ptr;
-            ((ObjectInputHeader*)rmwInput)->header.type = GarnetObjectType.Hash;
-            ((ObjectInputHeader*)rmwInput)->header.flags = 0;
-            ((ObjectInputHeader*)rmwInput)->header.HashOp = HashOperation.HSCAN;
+            // Prepare the payload
+            var payloadSlice = scratchBufferManager.CreateArgSlice(sizeof(int));
+            *(int*)payloadSlice.ptr = ObjectScanCountLimit;
 
-            // Number of tokens in the input after the header (match, value, count, value)
-            ((ObjectInputHeader*)rmwInput)->arg1 = 4;
-            ((ObjectInputHeader*)rmwInput)->arg2 = (int)cursor;
-            rmwInput += ObjectInputHeader.Size;
-
-            // Object Input Limit
-            (*(int*)rmwInput) = ObjectScanCountLimit;
-            int inputLength = sizeof(ObjectInputHeader) + sizeof(int);
+            var payloadLength = sizeof(int);
 
             ArgSlice tmp;
-
             // Write match
-            var matchKeywordBytes = CmdStrings.MATCH;
             var matchPatternValue = Encoding.ASCII.GetBytes(match.Trim());
-            fixed (byte* matchKeywordPtr = matchKeywordBytes, matchPatterPtr = matchPatternValue)
+            fixed (byte* matchKeywordPtr = CmdStrings.MATCH, matchPatterPtr = matchPatternValue)
             {
-                tmp = scratchBufferManager.FormatScratchAsResp(0, new ArgSlice(matchKeywordPtr, matchKeywordBytes.Length),
-                            new ArgSlice(matchPatterPtr, matchPatternValue.Length));
+                tmp = scratchBufferManager.FormatScratchAsResp(0, new ArgSlice(matchKeywordPtr, CmdStrings.MATCH.Length),
+                    new ArgSlice(matchPatterPtr, matchPatternValue.Length));
             }
-            inputLength += tmp.Length;
+            payloadLength += tmp.Length;
 
             // Write count
-            var countKeywordBytes = CmdStrings.COUNT;
             var countBytes = Encoding.ASCII.GetBytes(count.ToString());
-            fixed (byte* countPtr = countKeywordBytes, countValuePtr = countBytes)
+            fixed (byte* countPtr = CmdStrings.COUNT, countValuePtr = countBytes)
             {
-                tmp = scratchBufferManager.FormatScratchAsResp(0, new ArgSlice(countPtr, countKeywordBytes.Length),
-                          new ArgSlice(countValuePtr, countBytes.Length));
+                tmp = scratchBufferManager.FormatScratchAsResp(0, new ArgSlice(countPtr, CmdStrings.COUNT.Length),
+                    new ArgSlice(countValuePtr, countBytes.Length));
             }
-            inputLength += tmp.Length;
+            payloadLength += tmp.Length;
 
-            var input = scratchBufferManager.GetSliceFromTail(inputLength);
+            var inputPayload = scratchBufferManager.GetSliceFromTail(payloadLength);
+
+            // Prepare the input
+            var input = new ObjectInput
+            {
+                header = new RespInputHeader
+                {
+                    type = GarnetObjectType.Hash,
+                    HashOp = HashOperation.HSCAN,
+                },
+                arg1 = 4,
+                arg2 = (int)cursor,
+                payload = inputPayload,
+            };
 
             var outputFooter = new GarnetObjectStoreOutput { spanByteAndMemory = new SpanByteAndMemory(null) };
-            var status = ReadObjectStoreOperationWithOutput(key.ToArray(), input, ref objectStoreContext, ref outputFooter);
+            var status = ReadObjectStoreOperationWithOutput(key.ToArray(), ref input, ref objectStoreContext, ref outputFooter);
 
             items = default;
             if (status == GarnetStatus.OK)
                 items = ProcessRespArrayOutput(outputFooter, out _, isScanOutput: true);
 
             return status;
-
         }
 
         /// <summary>
@@ -510,9 +563,9 @@ namespace Garnet.server
         /// <param name="output"></param>
         /// <param name="objectStoreContext"></param>
         /// <returns></returns>
-        public GarnetStatus HashSet<TObjectContext>(byte[] key, ArgSlice input, out ObjectOutputHeader output, ref TObjectContext objectStoreContext)
-            where TObjectContext : ITsavoriteContext<byte[], IGarnetObject, SpanByte, GarnetObjectStoreOutput, long, ObjectStoreFunctions>
-            => RMWObjectStoreOperation(key, input, out output, ref objectStoreContext);
+        public GarnetStatus HashSet<TObjectContext>(byte[] key, ref ObjectInput input, out ObjectOutputHeader output, ref TObjectContext objectStoreContext)
+            where TObjectContext : ITsavoriteContext<byte[], IGarnetObject, ObjectInput, GarnetObjectStoreOutput, long, ObjectSessionFunctions, ObjectStoreFunctions, ObjectStoreAllocator>
+            => RMWObjectStoreOperation(key, ref input, out output, ref objectStoreContext);
 
         /// <summary>
         /// HashGet: Returns the value associated with field in the hash stored at key.
@@ -526,9 +579,9 @@ namespace Garnet.server
         /// <param name="outputFooter"></param>
         /// <param name="objectStoreContext"></param>
         /// <returns></returns>
-        public GarnetStatus HashGet<TObjectContext>(byte[] key, ArgSlice input, ref GarnetObjectStoreOutput outputFooter, ref TObjectContext objectStoreContext)
-          where TObjectContext : ITsavoriteContext<byte[], IGarnetObject, SpanByte, GarnetObjectStoreOutput, long, ObjectStoreFunctions>
-            => ReadObjectStoreOperationWithOutput(key, input, ref objectStoreContext, ref outputFooter);
+        public GarnetStatus HashGet<TObjectContext>(byte[] key, ref ObjectInput input, ref GarnetObjectStoreOutput outputFooter, ref TObjectContext objectStoreContext)
+          where TObjectContext : ITsavoriteContext<byte[], IGarnetObject, ObjectInput, GarnetObjectStoreOutput, long, ObjectSessionFunctions, ObjectStoreFunctions, ObjectStoreAllocator>
+            => ReadObjectStoreOperationWithOutput(key, ref input, ref objectStoreContext, ref outputFooter);
 
         /// <summary>
         /// Returns all fields and values of the hash stored at key.
@@ -539,9 +592,9 @@ namespace Garnet.server
         /// <param name="outputFooter"></param>
         /// <param name="objectStoreContext"></param>
         /// <returns></returns>
-        public GarnetStatus HashGetAll<TObjectContext>(byte[] key, ArgSlice input, ref GarnetObjectStoreOutput outputFooter, ref TObjectContext objectStoreContext)
-            where TObjectContext : ITsavoriteContext<byte[], IGarnetObject, SpanByte, GarnetObjectStoreOutput, long, ObjectStoreFunctions>
-            => ReadObjectStoreOperationWithOutput(key, input, ref objectStoreContext, ref outputFooter);
+        public GarnetStatus HashGetAll<TObjectContext>(byte[] key, ref ObjectInput input, ref GarnetObjectStoreOutput outputFooter, ref TObjectContext objectStoreContext)
+            where TObjectContext : ITsavoriteContext<byte[], IGarnetObject, ObjectInput, GarnetObjectStoreOutput, long, ObjectSessionFunctions, ObjectStoreFunctions, ObjectStoreAllocator>
+            => ReadObjectStoreOperationWithOutput(key, ref input, ref objectStoreContext, ref outputFooter);
 
         /// <summary>
         /// Returns the values associated with the specified fields in the hash stored at key.
@@ -552,9 +605,9 @@ namespace Garnet.server
         /// <param name="outputFooter"></param>
         /// <param name="objectStoreContext"></param>
         /// <returns></returns>
-        public GarnetStatus HashGetMultiple<TObjectContext>(byte[] key, ArgSlice input, ref GarnetObjectStoreOutput outputFooter, ref TObjectContext objectStoreContext)
-            where TObjectContext : ITsavoriteContext<byte[], IGarnetObject, SpanByte, GarnetObjectStoreOutput, long, ObjectStoreFunctions>
-            => ReadObjectStoreOperationWithOutput(key, input, ref objectStoreContext, ref outputFooter);
+        public GarnetStatus HashGetMultiple<TObjectContext>(byte[] key, ref ObjectInput input, ref GarnetObjectStoreOutput outputFooter, ref TObjectContext objectStoreContext)
+            where TObjectContext : ITsavoriteContext<byte[], IGarnetObject, ObjectInput, GarnetObjectStoreOutput, long, ObjectSessionFunctions, ObjectStoreFunctions, ObjectStoreAllocator>
+            => ReadObjectStoreOperationWithOutput(key, ref input, ref objectStoreContext, ref outputFooter);
 
         /// <summary>
         /// Returns a random field from the hash value stored at key.
@@ -565,9 +618,9 @@ namespace Garnet.server
         /// <param name="outputFooter"></param>
         /// <param name="objectStoreContext"></param>
         /// <returns></returns>
-        public GarnetStatus HashRandomField<TObjectContext>(byte[] key, ArgSlice input, ref GarnetObjectStoreOutput outputFooter, ref TObjectContext objectStoreContext)
-            where TObjectContext : ITsavoriteContext<byte[], IGarnetObject, SpanByte, GarnetObjectStoreOutput, long, ObjectStoreFunctions>
-            => ReadObjectStoreOperationWithOutput(key, input, ref objectStoreContext, ref outputFooter);
+        public GarnetStatus HashRandomField<TObjectContext>(byte[] key, ref ObjectInput input, ref GarnetObjectStoreOutput outputFooter, ref TObjectContext objectStoreContext)
+            where TObjectContext : ITsavoriteContext<byte[], IGarnetObject, ObjectInput, GarnetObjectStoreOutput, long, ObjectSessionFunctions, ObjectStoreFunctions, ObjectStoreAllocator>
+            => ReadObjectStoreOperationWithOutput(key, ref input, ref objectStoreContext, ref outputFooter);
 
         /// <summary>
         /// Returns the number of fields contained in the hash key.
@@ -578,9 +631,9 @@ namespace Garnet.server
         /// <param name="output"></param>
         /// <param name="objectStoreContext"></param>
         /// <returns></returns>
-        public GarnetStatus HashLength<TObjectContext>(byte[] key, ArgSlice input, out ObjectOutputHeader output, ref TObjectContext objectStoreContext)
-            where TObjectContext : ITsavoriteContext<byte[], IGarnetObject, SpanByte, GarnetObjectStoreOutput, long, ObjectStoreFunctions>
-            => ReadObjectStoreOperation(key, input, out output, ref objectStoreContext);
+        public GarnetStatus HashLength<TObjectContext>(byte[] key, ref ObjectInput input, out ObjectOutputHeader output, ref TObjectContext objectStoreContext)
+            where TObjectContext : ITsavoriteContext<byte[], IGarnetObject, ObjectInput, GarnetObjectStoreOutput, long, ObjectSessionFunctions, ObjectStoreFunctions, ObjectStoreAllocator>
+            => ReadObjectStoreOperation(key, ref input, out output, ref objectStoreContext);
 
         /// <summary>
         /// Returns the string length of the value associated with field in the hash stored at key. If the key or the field do not exist, 0 is returned.
@@ -591,9 +644,9 @@ namespace Garnet.server
         /// <param name="objectStoreContext"></param>
         /// <typeparam name="TObjectContext"></typeparam>
         /// <returns></returns>
-        public GarnetStatus HashStrLength<TObjectContext>(byte[] key, ArgSlice input, out ObjectOutputHeader output, ref TObjectContext objectStoreContext)
-            where TObjectContext : ITsavoriteContext<byte[], IGarnetObject, SpanByte, GarnetObjectStoreOutput, long, ObjectStoreFunctions>
-            => ReadObjectStoreOperation(key, input, out output, ref objectStoreContext);
+        public GarnetStatus HashStrLength<TObjectContext>(byte[] key, ref ObjectInput input, out ObjectOutputHeader output, ref TObjectContext objectStoreContext)
+            where TObjectContext : ITsavoriteContext<byte[], IGarnetObject, ObjectInput, GarnetObjectStoreOutput, long, ObjectSessionFunctions, ObjectStoreFunctions, ObjectStoreAllocator>
+            => ReadObjectStoreOperation(key, ref input, out output, ref objectStoreContext);
 
         /// <summary>
         /// Removes the specified fields from the hash key.
@@ -604,9 +657,9 @@ namespace Garnet.server
         /// <param name="output"></param>
         /// <param name="objectStoreContext"></param>
         /// <returns></returns>
-        public GarnetStatus HashDelete<TObjectContext>(byte[] key, ArgSlice input, out ObjectOutputHeader output, ref TObjectContext objectStoreContext)
-          where TObjectContext : ITsavoriteContext<byte[], IGarnetObject, SpanByte, GarnetObjectStoreOutput, long, ObjectStoreFunctions>
-            => RMWObjectStoreOperation(key, input, out output, ref objectStoreContext);
+        public GarnetStatus HashDelete<TObjectContext>(byte[] key, ref ObjectInput input, out ObjectOutputHeader output, ref TObjectContext objectStoreContext)
+          where TObjectContext : ITsavoriteContext<byte[], IGarnetObject, ObjectInput, GarnetObjectStoreOutput, long, ObjectSessionFunctions, ObjectStoreFunctions, ObjectStoreAllocator>
+            => RMWObjectStoreOperation(key, ref input, out output, ref objectStoreContext);
 
         /// <summary>
         /// Returns if field exists in the hash stored at key.
@@ -617,9 +670,9 @@ namespace Garnet.server
         /// <param name="output"></param>
         /// <param name="objectStoreContext"></param>
         /// <returns></returns>
-        public GarnetStatus HashExists<TObjectContext>(byte[] key, ArgSlice input, out ObjectOutputHeader output, ref TObjectContext objectStoreContext)
-         where TObjectContext : ITsavoriteContext<byte[], IGarnetObject, SpanByte, GarnetObjectStoreOutput, long, ObjectStoreFunctions>
-            => ReadObjectStoreOperation(key, input, out output, ref objectStoreContext);
+        public GarnetStatus HashExists<TObjectContext>(byte[] key, ref ObjectInput input, out ObjectOutputHeader output, ref TObjectContext objectStoreContext)
+         where TObjectContext : ITsavoriteContext<byte[], IGarnetObject, ObjectInput, GarnetObjectStoreOutput, long, ObjectSessionFunctions, ObjectStoreFunctions, ObjectStoreAllocator>
+            => ReadObjectStoreOperation(key, ref input, out output, ref objectStoreContext);
 
         /// <summary>
         /// Returns all field names in the hash key.
@@ -630,9 +683,9 @@ namespace Garnet.server
         /// <param name="outputFooter"></param>
         /// <param name="objectContext"></param>
         /// <returns></returns>
-        public GarnetStatus HashKeys<TObjectContext>(byte[] key, ArgSlice input, ref GarnetObjectStoreOutput outputFooter, ref TObjectContext objectContext)
-          where TObjectContext : ITsavoriteContext<byte[], IGarnetObject, SpanByte, GarnetObjectStoreOutput, long, ObjectStoreFunctions>
-            => ReadObjectStoreOperationWithOutput(key, input, ref objectContext, ref outputFooter);
+        public GarnetStatus HashKeys<TObjectContext>(byte[] key, ref ObjectInput input, ref GarnetObjectStoreOutput outputFooter, ref TObjectContext objectContext)
+          where TObjectContext : ITsavoriteContext<byte[], IGarnetObject, ObjectInput, GarnetObjectStoreOutput, long, ObjectSessionFunctions, ObjectStoreFunctions, ObjectStoreAllocator>
+            => ReadObjectStoreOperationWithOutput(key, ref input, ref objectContext, ref outputFooter);
 
         /// <summary>
         /// Returns all values in the hash key.
@@ -643,9 +696,9 @@ namespace Garnet.server
         /// <param name="outputFooter"></param>
         /// <param name="objectContext"></param>
         /// <returns></returns>
-        public GarnetStatus HashVals<TObjectContext>(byte[] key, ArgSlice input, ref GarnetObjectStoreOutput outputFooter, ref TObjectContext objectContext)
-          where TObjectContext : ITsavoriteContext<byte[], IGarnetObject, SpanByte, GarnetObjectStoreOutput, long, ObjectStoreFunctions>
-            => ReadObjectStoreOperationWithOutput(key, input, ref objectContext, ref outputFooter);
+        public GarnetStatus HashVals<TObjectContext>(byte[] key, ref ObjectInput input, ref GarnetObjectStoreOutput outputFooter, ref TObjectContext objectContext)
+          where TObjectContext : ITsavoriteContext<byte[], IGarnetObject, ObjectInput, GarnetObjectStoreOutput, long, ObjectSessionFunctions, ObjectStoreFunctions, ObjectStoreAllocator>
+            => ReadObjectStoreOperationWithOutput(key, ref input, ref objectContext, ref outputFooter);
 
         /// <summary>
         /// Increments the number stored at field in the hash stored at key by increment.
@@ -657,7 +710,7 @@ namespace Garnet.server
         /// <param name="objectContext"></param>
         /// <returns></returns>
         public GarnetStatus HashIncrement<TObjectContext>(byte[] key, ArgSlice input, out ObjectOutputHeader output, ref TObjectContext objectContext)
-            where TObjectContext : ITsavoriteContext<byte[], IGarnetObject, SpanByte, GarnetObjectStoreOutput, long, ObjectStoreFunctions>
+            where TObjectContext : ITsavoriteContext<byte[], IGarnetObject, ObjectInput, GarnetObjectStoreOutput, long, ObjectSessionFunctions, ObjectStoreFunctions, ObjectStoreAllocator>
             => RMWObjectStoreOperation(key, input, out output, ref objectContext);
 
         /// <summary>
@@ -670,8 +723,8 @@ namespace Garnet.server
         /// <param name="outputFooter"></param>
         /// <param name="objectContext"></param>
         /// <returns></returns>
-        public GarnetStatus HashIncrement<TObjectContext>(byte[] key, ArgSlice input, ref GarnetObjectStoreOutput outputFooter, ref TObjectContext objectContext)
-            where TObjectContext : ITsavoriteContext<byte[], IGarnetObject, SpanByte, GarnetObjectStoreOutput, long, ObjectStoreFunctions>
-            => RMWObjectStoreOperationWithOutput(key, input, ref objectContext, ref outputFooter);
+        public GarnetStatus HashIncrement<TObjectContext>(byte[] key, ref ObjectInput input, ref GarnetObjectStoreOutput outputFooter, ref TObjectContext objectContext)
+            where TObjectContext : ITsavoriteContext<byte[], IGarnetObject, ObjectInput, GarnetObjectStoreOutput, long, ObjectSessionFunctions, ObjectStoreFunctions, ObjectStoreAllocator>
+            => RMWObjectStoreOperationWithOutput(key, ref input, ref objectContext, ref outputFooter);
     }
 }

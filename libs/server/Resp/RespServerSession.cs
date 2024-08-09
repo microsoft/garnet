@@ -18,8 +18,18 @@ using Tsavorite.core;
 
 namespace Garnet.server
 {
-    using BasicGarnetApi = GarnetApi<BasicContext<SpanByte, SpanByte, SpanByte, SpanByteAndMemory, long, MainStoreFunctions>, BasicContext<byte[], IGarnetObject, SpanByte, GarnetObjectStoreOutput, long, ObjectStoreFunctions>>;
-    using LockableGarnetApi = GarnetApi<LockableContext<SpanByte, SpanByte, SpanByte, SpanByteAndMemory, long, MainStoreFunctions>, LockableContext<byte[], IGarnetObject, SpanByte, GarnetObjectStoreOutput, long, ObjectStoreFunctions>>;
+    using BasicGarnetApi = GarnetApi<BasicContext<SpanByte, SpanByte, SpanByte, SpanByteAndMemory, long, MainSessionFunctions,
+            /* MainStoreFunctions */ StoreFunctions<SpanByte, SpanByte, SpanByteComparer, SpanByteRecordDisposer>,
+            SpanByteAllocator<StoreFunctions<SpanByte, SpanByte, SpanByteComparer, SpanByteRecordDisposer>>>,
+        BasicContext<byte[], IGarnetObject, ObjectInput, GarnetObjectStoreOutput, long, ObjectSessionFunctions,
+            /* ObjectStoreFunctions */ StoreFunctions<byte[], IGarnetObject, ByteArrayKeyComparer, DefaultRecordDisposer<byte[], IGarnetObject>>,
+            GenericAllocator<byte[], IGarnetObject, StoreFunctions<byte[], IGarnetObject, ByteArrayKeyComparer, DefaultRecordDisposer<byte[], IGarnetObject>>>>>;
+    using LockableGarnetApi = GarnetApi<LockableContext<SpanByte, SpanByte, SpanByte, SpanByteAndMemory, long, MainSessionFunctions,
+            /* MainStoreFunctions */ StoreFunctions<SpanByte, SpanByte, SpanByteComparer, SpanByteRecordDisposer>,
+            SpanByteAllocator<StoreFunctions<SpanByte, SpanByte, SpanByteComparer, SpanByteRecordDisposer>>>,
+        LockableContext<byte[], IGarnetObject, ObjectInput, GarnetObjectStoreOutput, long, ObjectSessionFunctions,
+            /* ObjectStoreFunctions */ StoreFunctions<byte[], IGarnetObject, ByteArrayKeyComparer, DefaultRecordDisposer<byte[], IGarnetObject>>,
+            GenericAllocator<byte[], IGarnetObject, StoreFunctions<byte[], IGarnetObject, ByteArrayKeyComparer, DefaultRecordDisposer<byte[], IGarnetObject>>>>>;
 
     /// <summary>
     /// RESP server session
@@ -116,12 +126,17 @@ namespace Garnet.server
         /// <summary>
         /// Current custom command to be executed in the session.
         /// </summary>
-        CustomCommand currentCustomCommand = null;
+        CustomRawStringCommand currentCustomRawStringCommand = null;
 
         /// <summary>
         /// Current custom object command to be executed in the session.
         /// </summary>
         CustomObjectCommand currentCustomObjectCommand = null;
+
+        /// <summary>
+        /// Current custom command to be executed in the session.
+        /// </summary>
+        CustomProcedureWrapper currentCustomProcedure = null;
 
         /// <summary>
         /// RESP protocol version (RESP2 is the default)
@@ -132,6 +147,12 @@ namespace Garnet.server
         /// Client name for the session
         /// </summary>
         string clientName = null;
+
+        /// <summary>
+        /// Flag indicating whether any of the commands in one message
+        /// requires us to block on AOF before sending response over the network
+        /// </summary>
+        bool waitForAofBlocking = false;
 
         /// <summary>
         /// Random number generator for operations, using a cryptographic generator as the base seed
@@ -198,7 +219,7 @@ namespace Garnet.server
             }
 
             if (storeWrapper.serverOptions.MetricsSamplingFrequency > 0 || storeWrapper.serverOptions.LatencyMonitor)
-                storeWrapper.monitor.AddMetricsHistory(sessionMetrics, latencyMetrics);
+                storeWrapper.monitor.AddMetricsHistorySessionDispose(sessionMetrics, latencyMetrics);
 
             subscribeBroker?.RemoveSubscription(this);
             itemBroker?.HandleSessionDisposed(this);
@@ -472,7 +493,8 @@ namespace Garnet.server
                 RespCommand.INFO => NetworkINFO(parseState.count),
                 RespCommand.HELLO => NetworkHELLO(parseState.count),
                 RespCommand.TIME => NetworkTIME(parseState.count),
-                RespCommand.FLUSHDB => NetworkFLUSHDB(parseState.count),
+                RespCommand.FLUSHALL => NetworkFLUSHALL(),
+                RespCommand.FLUSHDB => NetworkFLUSHDB(),
                 RespCommand.AUTH => NetworkAUTH(parseState.count),
                 RespCommand.MEMORY_USAGE => NetworkMemoryUsage(parseState.count, ref storageApi),
                 RespCommand.ACL_CAT => NetworkAclCat(parseState.count),
@@ -636,66 +658,76 @@ namespace Garnet.server
             }
             else if (command == RespCommand.CustomTxn)
             {
-                if (currentCustomTransaction.NumParams < int.MaxValue && count != currentCustomTransaction.NumParams)
+                if (!IsCommandArityValid(currentCustomTransaction.NameStr, count))
                 {
-                    while (!RespWriteUtils.WriteError($"ERR Invalid number of parameters to stored proc {currentCustomTransaction.nameStr}, expected {currentCustomTransaction.NumParams}, actual {count}", ref dcurr, dend))
-                        SendAndReset();
-
                     currentCustomTransaction = null;
-
                     return true;
                 }
-                else
-                {
-                    // Perform the operation
-                    TryTransactionProc(currentCustomTransaction.id, recvBufferPtr + readHead, recvBufferPtr + endReadHead, customCommandManagerSession.GetCustomTransactionProcedure(currentCustomTransaction.id, txnManager, scratchBufferManager).Item1);
-                }
 
+                // Perform the operation
+                TryTransactionProc(currentCustomTransaction.id, recvBufferPtr + readHead, recvBufferPtr + endReadHead, customCommandManagerSession.GetCustomTransactionProcedure(currentCustomTransaction.id, txnManager, scratchBufferManager).Item1);
                 currentCustomTransaction = null;
             }
-            else if (command == RespCommand.CustomCmd)
+            else if (command == RespCommand.CustomRawStringCmd)
             {
-                if (currentCustomCommand.NumParams < int.MaxValue && count != currentCustomCommand.NumKeys + currentCustomCommand.NumParams)
+                if (!IsCommandArityValid(currentCustomRawStringCommand.NameStr, count))
                 {
-                    while (!RespWriteUtils.WriteError($"ERR Invalid number of parameters, expected {currentCustomCommand.NumKeys + currentCustomCommand.NumParams}, actual {count}", ref dcurr, dend))
-                        SendAndReset();
-
-                    currentCustomCommand = null;
-
+                    currentCustomRawStringCommand = null;
                     return true;
                 }
-                else
-                {
-                    // Perform the operation
-                    TryCustomCommand(recvBufferPtr + readHead, recvBufferPtr + endReadHead, currentCustomCommand.GetRespCommand(), currentCustomCommand.expirationTicks, currentCustomCommand.type, ref storageApi);
-                }
 
-                currentCustomCommand = null;
+                // Perform the operation
+                TryCustomRawStringCommand(recvBufferPtr + readHead, recvBufferPtr + endReadHead, currentCustomRawStringCommand.GetRespCommand(), currentCustomRawStringCommand.expirationTicks, currentCustomRawStringCommand.type, ref storageApi);
+                currentCustomRawStringCommand = null;
             }
             else if (command == RespCommand.CustomObjCmd)
             {
-                if (currentCustomObjectCommand.NumParams < int.MaxValue && count != currentCustomObjectCommand.NumKeys + currentCustomObjectCommand.NumParams)
+                if (!IsCommandArityValid(currentCustomObjectCommand.NameStr, count))
                 {
-                    while (!RespWriteUtils.WriteError($"ERR Invalid number of parameters, expected {currentCustomObjectCommand.NumKeys + currentCustomObjectCommand.NumParams}, actual {count}", ref dcurr, dend))
-                        SendAndReset();
-
                     currentCustomObjectCommand = null;
-
                     return true;
                 }
-                else
+
+                // Perform the operation
+                TryCustomObjectCommand(recvBufferPtr + readHead, recvBufferPtr + endReadHead, currentCustomObjectCommand.GetRespCommand(), currentCustomObjectCommand.subid, currentCustomObjectCommand.type, ref storageApi);
+                currentCustomObjectCommand = null;
+            }
+            else if (command == RespCommand.CustomProcedure)
+            {
+                if (!IsCommandArityValid(currentCustomProcedure.NameStr, count))
                 {
-                    // Perform the operation
-                    TryCustomObjectCommand(recvBufferPtr + readHead, recvBufferPtr + endReadHead, currentCustomObjectCommand.GetRespCommand(), currentCustomObjectCommand.subid, currentCustomObjectCommand.type, ref storageApi);
+                    currentCustomProcedure = null;
+                    return true;
                 }
 
-                currentCustomObjectCommand = null;
+                TryCustomProcedure(currentCustomProcedure.Id, recvBufferPtr + readHead, recvBufferPtr + endReadHead,
+                    currentCustomProcedure.CustomProcedureImpl);
+
+                currentCustomProcedure = null;
             }
             else
             {
                 ProcessAdminCommands(command, count);
                 return true;
             }
+            return true;
+        }
+
+        private bool IsCommandArityValid(string cmdName, int count)
+        {
+            if (storeWrapper.customCommandManager.CustomCommandsInfo.TryGetValue(cmdName, out var cmdInfo))
+            {
+                Debug.Assert(cmdInfo != null, "Custom command info should not be null");
+                if ((cmdInfo.Arity > 0 && count != cmdInfo.Arity - 1) ||
+                    (cmdInfo.Arity < 0 && count < -cmdInfo.Arity - 1))
+                {
+                    while (!RespWriteUtils.WriteError(string.Format(CmdStrings.GenericErrWrongNumArgs, cmdName), ref dcurr, dend))
+                        SendAndReset();
+
+                    return false;
+                }
+            }
+
             return true;
         }
 
@@ -893,6 +925,9 @@ namespace Garnet.server
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         private void Send(byte* d)
         {
+            // Note: This SEND method may be called for responding to multiple commands in a single message (pipelining),
+            // or multiple times in a single command for sending data larger than fitting in buffer at once.
+
             // #if DEBUG
             // logger?.LogTrace("SEND: [{send}]", Encoding.UTF8.GetString(new Span<byte>(d, (int)(dcurr - d))).Replace("\n", "|").Replace("\r", ""));
             // Debug.WriteLine($"SEND: [{Encoding.UTF8.GetString(new Span<byte>(d, (int)(dcurr - d))).Replace("\n", "|").Replace("\r", "")}]");
@@ -901,7 +936,7 @@ namespace Garnet.server
             if ((int)(dcurr - d) > 0)
             {
                 // Debug.WriteLine("SEND: [" + Encoding.UTF8.GetString(new Span<byte>(d, (int)(dcurr - d))).Replace("\n", "|").Replace("\r", "!") + "]");
-                if (storeWrapper.appendOnlyFile != null && storeWrapper.serverOptions.WaitForCommit)
+                if (waitForAofBlocking)
                 {
                     var task = storeWrapper.appendOnlyFile.WaitForCommitAsync();
                     if (!task.IsCompleted) task.AsTask().GetAwaiter().GetResult();

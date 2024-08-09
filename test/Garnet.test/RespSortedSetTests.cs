@@ -16,7 +16,12 @@ using SetOperation = StackExchange.Redis.SetOperation;
 
 namespace Garnet.test
 {
-    using TestBasicGarnetApi = GarnetApi<BasicContext<SpanByte, SpanByte, SpanByte, SpanByteAndMemory, long, MainStoreFunctions>, BasicContext<byte[], IGarnetObject, SpanByte, GarnetObjectStoreOutput, long, ObjectStoreFunctions>>;
+    using TestBasicGarnetApi = GarnetApi<BasicContext<SpanByte, SpanByte, SpanByte, SpanByteAndMemory, long, MainSessionFunctions,
+            /* MainStoreFunctions */ StoreFunctions<SpanByte, SpanByte, SpanByteComparer, SpanByteRecordDisposer>,
+            SpanByteAllocator<StoreFunctions<SpanByte, SpanByte, SpanByteComparer, SpanByteRecordDisposer>>>,
+        BasicContext<byte[], IGarnetObject, ObjectInput, GarnetObjectStoreOutput, long, ObjectSessionFunctions,
+            /* ObjectStoreFunctions */ StoreFunctions<byte[], IGarnetObject, ByteArrayKeyComparer, DefaultRecordDisposer<byte[], IGarnetObject>>,
+            GenericAllocator<byte[], IGarnetObject, StoreFunctions<byte[], IGarnetObject, ByteArrayKeyComparer, DefaultRecordDisposer<byte[], IGarnetObject>>>>>;
 
     [TestFixture]
     public class RespSortedSetTests
@@ -96,15 +101,15 @@ namespace Garnet.test
             var key = Encoding.ASCII.GetBytes("key1");
             fixed (byte* keyPtr = key)
             {
-                var result = api.SortedSetPop(new ArgSlice(keyPtr, key.Length), out (ArgSlice score, ArgSlice member)[] items);
+                var result = api.SortedSetPop(new ArgSlice(keyPtr, key.Length), out var items);
                 Assert.AreEqual(1, items.Length);
-                Assert.AreEqual("a", Encoding.ASCII.GetString(items[0].score.ReadOnlySpan));
-                Assert.AreEqual("1", Encoding.ASCII.GetString(items[0].member.ReadOnlySpan));
+                Assert.AreEqual("a", Encoding.ASCII.GetString(items[0].member.ReadOnlySpan));
+                Assert.AreEqual("1", Encoding.ASCII.GetString(items[0].score.ReadOnlySpan));
 
                 result = api.SortedSetPop(new ArgSlice(keyPtr, key.Length), out items);
                 Assert.AreEqual(1, items.Length);
-                Assert.AreEqual("b", Encoding.ASCII.GetString(items[0].score.ReadOnlySpan));
-                Assert.AreEqual("2", Encoding.ASCII.GetString(items[0].member.ReadOnlySpan));
+                Assert.AreEqual("b", Encoding.ASCII.GetString(items[0].member.ReadOnlySpan));
+                Assert.AreEqual("2", Encoding.ASCII.GetString(items[0].score.ReadOnlySpan));
             }
         }
 

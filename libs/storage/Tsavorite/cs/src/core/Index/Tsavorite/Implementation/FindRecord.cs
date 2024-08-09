@@ -7,21 +7,23 @@ using static Tsavorite.core.Utility;
 
 namespace Tsavorite.core
 {
-    public unsafe partial class TsavoriteKV<Key, Value> : TsavoriteBase
+    public unsafe partial class TsavoriteKV<TKey, TValue, TStoreFunctions, TAllocator> : TsavoriteBase
+        where TStoreFunctions : IStoreFunctions<TKey, TValue>
+        where TAllocator : IAllocator<TKey, TValue, TStoreFunctions>
     {
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        private bool TryFindRecordInMemory(ref Key key, ref OperationStackContext<Key, Value> stackCtx, long minAddress, bool stopAtHeadAddress = true)
+        private bool TryFindRecordInMemory(ref TKey key, ref OperationStackContext<TKey, TValue, TStoreFunctions, TAllocator> stackCtx, long minAddress, bool stopAtHeadAddress = true)
         {
             if (UseReadCache && FindInReadCache(ref key, ref stackCtx, minAddress: Constants.kInvalidAddress))
                 return true;
-            if (minAddress < hlog.HeadAddress && stopAtHeadAddress)
-                minAddress = hlog.HeadAddress;
+            if (minAddress < hlogBase.HeadAddress && stopAtHeadAddress)
+                minAddress = hlogBase.HeadAddress;
             return TryFindRecordInMainLog(ref key, ref stackCtx, minAddress: minAddress);
         }
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        private bool TryFindRecordInMemory<Input, Output, Context>(ref Key key, ref OperationStackContext<Key, Value> stackCtx,
-                                                                   ref PendingContext<Input, Output, Context> pendingContext)
+        private bool TryFindRecordInMemory<TInput, TOutput, TContext>(ref TKey key, ref OperationStackContext<TKey, TValue, TStoreFunctions, TAllocator> stackCtx,
+                                                                   ref PendingContext<TInput, TOutput, TContext> pendingContext)
         {
             // Add 1 to the pendingContext minAddresses because we don't want an inclusive search; we're looking to see if it was added *after*.
             if (UseReadCache)
@@ -30,12 +32,12 @@ namespace Tsavorite.core
                 if (FindInReadCache(ref key, ref stackCtx, minAddress: minRC))
                     return true;
             }
-            var minLog = pendingContext.InitialLatestLogicalAddress < hlog.HeadAddress ? hlog.HeadAddress : pendingContext.InitialLatestLogicalAddress + 1;
+            var minLog = pendingContext.InitialLatestLogicalAddress < hlogBase.HeadAddress ? hlogBase.HeadAddress : pendingContext.InitialLatestLogicalAddress + 1;
             return TryFindRecordInMainLog(ref key, ref stackCtx, minAddress: minLog);
         }
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        internal bool TryFindRecordInMainLog(ref Key key, ref OperationStackContext<Key, Value> stackCtx, long minAddress)
+        internal bool TryFindRecordInMainLog(ref TKey key, ref OperationStackContext<TKey, TValue, TStoreFunctions, TAllocator> stackCtx, long minAddress)
         {
             Debug.Assert(!stackCtx.recSrc.HasInMemorySrc, "Should not have found record before this call");
             if (stackCtx.recSrc.LogicalAddress >= minAddress)
@@ -47,15 +49,15 @@ namespace Tsavorite.core
         }
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        internal bool TryFindRecordInMainLogForConditionalOperation<Input, Output, Context, TSessionFunctionsWrapper>(TSessionFunctionsWrapper sessionFunctions,
-                ref Key key, ref OperationStackContext<Key, Value> stackCtx, long minAddress, out OperationStatus internalStatus, out bool needIO)
-            where TSessionFunctionsWrapper : ISessionFunctionsWrapper<Key, Value, Input, Output, Context>
+        internal bool TryFindRecordInMainLogForConditionalOperation<TInput, TOutput, TContext, TSessionFunctionsWrapper>(TSessionFunctionsWrapper sessionFunctions,
+                ref TKey key, ref OperationStackContext<TKey, TValue, TStoreFunctions, TAllocator> stackCtx, long minAddress, out OperationStatus internalStatus, out bool needIO)
+            where TSessionFunctionsWrapper : ISessionFunctionsWrapper<TKey, TValue, TInput, TOutput, TContext, TStoreFunctions, TAllocator>
         {
             internalStatus = OperationStatus.SUCCESS;
             if (RevivificationManager.UseFreeRecordPool)
             {
                 // The TransientSLock here is necessary only for the tag chain to avoid record elision/revivification during traceback.
-                if (!FindTagAndTryTransientSLock<Input, Output, Context, TSessionFunctionsWrapper>(sessionFunctions, ref key, ref stackCtx, out internalStatus))
+                if (!FindTagAndTryTransientSLock<TInput, TOutput, TContext, TSessionFunctionsWrapper>(sessionFunctions, ref key, ref stackCtx, out internalStatus))
                     return needIO = false;
             }
             else
@@ -65,7 +67,7 @@ namespace Tsavorite.core
                     internalStatus = OperationStatus.NOTFOUND;
                     return needIO = false;
                 }
-                stackCtx.SetRecordSourceToHashEntry(hlog);
+                stackCtx.SetRecordSourceToHashEntry(hlogBase);
             }
 
             try
@@ -75,9 +77,9 @@ namespace Tsavorite.core
                 {
                     if (stackCtx.hei.Address < minAddress)
                         return needIO = false;
-                    if (stackCtx.hei.Address < hlog.HeadAddress)
+                    if (stackCtx.hei.Address < hlogBase.HeadAddress)
                     {
-                        needIO = stackCtx.hei.Address >= hlog.BeginAddress;
+                        needIO = stackCtx.hei.Address >= hlogBase.BeginAddress;
                         return false;
                     }
                 }
@@ -87,15 +89,15 @@ namespace Tsavorite.core
 
                 // We don't have a pendingContext here, so pass the minAddress directly.
                 needIO = false;
-                if (TryFindRecordInMainLogForPendingOperation(ref key, ref stackCtx, minAddress < hlog.HeadAddress ? hlog.HeadAddress : minAddress, out internalStatus))
+                if (TryFindRecordInMainLogForPendingOperation(ref key, ref stackCtx, minAddress < hlogBase.HeadAddress ? hlogBase.HeadAddress : minAddress, out internalStatus))
                     return true;
 
-                needIO = stackCtx.recSrc.LogicalAddress >= minAddress && stackCtx.recSrc.LogicalAddress < hlog.HeadAddress && stackCtx.recSrc.LogicalAddress >= hlog.BeginAddress;
+                needIO = stackCtx.recSrc.LogicalAddress >= minAddress && stackCtx.recSrc.LogicalAddress < hlogBase.HeadAddress && stackCtx.recSrc.LogicalAddress >= hlogBase.BeginAddress;
                 return false;
             }
             finally
             {
-                TransientSUnlock<Input, Output, Context, TSessionFunctionsWrapper>(sessionFunctions, ref key, ref stackCtx);
+                TransientSUnlock<TInput, TOutput, TContext, TSessionFunctionsWrapper>(sessionFunctions, ref key, ref stackCtx);
             }
         }
 
@@ -104,11 +106,11 @@ namespace Tsavorite.core
         private static bool IsValidTracebackRecord(RecordInfo recordInfo) => !recordInfo.Invalid || recordInfo.IsSealed;
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        private bool TraceBackForKeyMatch(ref Key key, ref RecordSource<Key, Value> recSrc, long minAddress)
+        private bool TraceBackForKeyMatch(ref TKey key, ref RecordSource<TKey, TValue, TStoreFunctions, TAllocator> recSrc, long minAddress)
         {
             // PhysicalAddress must already be populated by callers.
             ref var recordInfo = ref recSrc.GetInfo();
-            if (IsValidTracebackRecord(recordInfo) && comparer.Equals(ref key, ref recSrc.GetKey()))
+            if (IsValidTracebackRecord(recordInfo) && storeFunctions.KeysEqual(ref key, ref recSrc.GetKey()))
             {
                 recSrc.SetHasMainLogSrc();
                 return true;
@@ -124,7 +126,7 @@ namespace Tsavorite.core
         }
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        private bool TraceBackForKeyMatch(ref Key key, long fromLogicalAddress, long minAddress, out long foundLogicalAddress, out long foundPhysicalAddress)
+        private bool TraceBackForKeyMatch(ref TKey key, long fromLogicalAddress, long minAddress, out long foundLogicalAddress, out long foundPhysicalAddress)
         {
             // This overload is called when the record at the "current" logical address does not match 'key'; fromLogicalAddress is its .PreviousAddress.
             foundLogicalAddress = fromLogicalAddress;
@@ -133,7 +135,7 @@ namespace Tsavorite.core
                 foundPhysicalAddress = hlog.GetPhysicalAddress(foundLogicalAddress);
 
                 ref var recordInfo = ref hlog.GetInfo(foundPhysicalAddress);
-                if (IsValidTracebackRecord(recordInfo) && comparer.Equals(ref key, ref hlog.GetKey(foundPhysicalAddress)))
+                if (IsValidTracebackRecord(recordInfo) && storeFunctions.KeysEqual(ref key, ref hlog.GetKey(foundPhysicalAddress)))
                     return true;
 
                 foundLogicalAddress = recordInfo.PreviousAddress;
@@ -143,7 +145,7 @@ namespace Tsavorite.core
         }
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        private bool TryFindRecordForUpdate(ref Key key, ref OperationStackContext<Key, Value> stackCtx, long minAddress, out OperationStatus internalStatus)
+        private bool TryFindRecordForUpdate(ref TKey key, ref OperationStackContext<TKey, TValue, TStoreFunctions, TAllocator> stackCtx, long minAddress, out OperationStatus internalStatus)
         {
             // This routine returns true if we should proceed with the InternalXxx operation (whether the record was found or not),
             // else false (including false if we need a RETRY). If it returns true with recSrc.HasInMemorySrc, caller must set srcRecordInfo.
@@ -162,7 +164,7 @@ namespace Tsavorite.core
         }
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        private bool TryFindRecordForRead(ref Key key, ref OperationStackContext<Key, Value> stackCtx, long minAddress, out OperationStatus internalStatus)
+        private bool TryFindRecordForRead(ref TKey key, ref OperationStackContext<TKey, TValue, TStoreFunctions, TAllocator> stackCtx, long minAddress, out OperationStatus internalStatus)
         {
             // This routine returns true if we should proceed with the InternalXxx operation (whether the record was found or not),
             // else false (including false if we need a RETRY). If it returns true with recSrc.HasInMemorySrc, caller must set srcRecordInfo.
@@ -181,8 +183,8 @@ namespace Tsavorite.core
         }
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        private bool TryFindRecordForPendingOperation<Input, Output, Context>(ref Key key, ref OperationStackContext<Key, Value> stackCtx, long minAddress, out OperationStatus internalStatus,
-                                                      ref PendingContext<Input, Output, Context> pendingContext)
+        private bool TryFindRecordForPendingOperation<TInput, TOutput, TContext>(ref TKey key, ref OperationStackContext<TKey, TValue, TStoreFunctions, TAllocator> stackCtx, long minAddress, out OperationStatus internalStatus,
+                                                      ref PendingContext<TInput, TOutput, TContext> pendingContext)
         {
             // This routine returns true if we find the key, else false.
             internalStatus = OperationStatus.SUCCESS;
@@ -197,7 +199,7 @@ namespace Tsavorite.core
         }
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        private bool TryFindRecordInMainLogForPendingOperation(ref Key key, ref OperationStackContext<Key, Value> stackCtx, long minAddress, out OperationStatus internalStatus)
+        private bool TryFindRecordInMainLogForPendingOperation(ref TKey key, ref OperationStackContext<TKey, TValue, TStoreFunctions, TAllocator> stackCtx, long minAddress, out OperationStatus internalStatus)
         {
             // This overload is called when we do not have a PendingContext to get minAddress from, and we've skipped the readcache if present.
 

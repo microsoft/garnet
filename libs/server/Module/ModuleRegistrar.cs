@@ -90,18 +90,17 @@ namespace Garnet.server.Module
         /// Registers a raw string custom command
         /// </summary>
         /// <param name="name">Command name</param>
-        /// <param name="numParams">Number of parameters</param>
         /// <param name="type">Command type</param>
         /// <param name="customFunctions">Custom raw string function implementation</param>
         /// <param name="commandInfo">Command info</param>
         /// <param name="expirationTicks">Expiration ticks for the key</param>
         /// <returns>Registration status</returns>
-        public ModuleActionStatus RegisterCommand(string name, CustomRawStringFunctions customFunctions, CommandType type = CommandType.ReadModifyWrite, int numParams = int.MaxValue, RespCommandsInfo commandInfo = null, long expirationTicks = 0)
+        public ModuleActionStatus RegisterCommand(string name, CustomRawStringFunctions customFunctions, CommandType type = CommandType.ReadModifyWrite, RespCommandsInfo commandInfo = null, long expirationTicks = 0)
         {
             if (string.IsNullOrEmpty(name) || customFunctions == null)
                 return ModuleActionStatus.InvalidRegistrationInfo;
 
-            customCommandManager.Register(name, numParams, type, customFunctions, commandInfo, expirationTicks);
+            customCommandManager.Register(name, type, customFunctions, commandInfo, expirationTicks);
 
             return ModuleActionStatus.Success;
         }
@@ -110,16 +109,15 @@ namespace Garnet.server.Module
         /// Registers a custom transaction
         /// </summary>
         /// <param name="name">Transaction name</param>
-        /// <param name="numParams">Number of parameters</param>
         /// <param name="proc">Transaction procedure implemenation</param>
         /// <param name="commandInfo">Command info</param>
         /// <returns>Registration status</returns>
-        public ModuleActionStatus RegisterTransaction(string name, Func<CustomTransactionProcedure> proc, int numParams = int.MaxValue, RespCommandsInfo commandInfo = null)
+        public ModuleActionStatus RegisterTransaction(string name, Func<CustomTransactionProcedure> proc, RespCommandsInfo commandInfo = null)
         {
             if (string.IsNullOrEmpty(name) || proc == null)
                 return ModuleActionStatus.InvalidRegistrationInfo;
 
-            customCommandManager.Register(name, numParams, proc, commandInfo);
+            customCommandManager.Register(name, proc, commandInfo);
 
             return ModuleActionStatus.Success;
         }
@@ -144,16 +142,31 @@ namespace Garnet.server.Module
         /// <param name="factory">Type factory</param>
         /// <param name="command">Custom object function implementation</param>
         /// <param name="type">Command type</param>
-        /// <param name="numParams">Number of parameters</param>
         /// <param name="commandInfo">Command info</param>
         /// <returns></returns>
-        public ModuleActionStatus RegisterCommand(string name, CustomObjectFactory factory, CustomObjectFunctions command, CommandType type = CommandType.ReadModifyWrite, int numParams = int.MaxValue, RespCommandsInfo commandInfo = null)
+        public ModuleActionStatus RegisterCommand(string name, CustomObjectFactory factory, CustomObjectFunctions command, CommandType type = CommandType.ReadModifyWrite, RespCommandsInfo commandInfo = null)
         {
             if (string.IsNullOrEmpty(name) || factory == null || command == null)
                 return ModuleActionStatus.InvalidRegistrationInfo;
 
-            customCommandManager.Register(name, numParams, type, factory, command, commandInfo);
+            customCommandManager.Register(name, type, factory, command, commandInfo);
 
+            return ModuleActionStatus.Success;
+        }
+
+        /// <summary>
+        /// Registers a custom procedure that performs several operations in a non-transactional manner
+        /// </summary>
+        /// <param name="name">Procedure name</param>
+        /// <param name="customScriptProc">Custom procedure implementation</param>
+        /// <param name="commandInfo">Command info</param>
+        /// <returns>Registration status</returns>
+        public ModuleActionStatus RegisterProcedure(string name, CustomProcedure customScriptProc, RespCommandsInfo commandInfo = null)
+        {
+            if (string.IsNullOrEmpty(name) || customScriptProc == null)
+                return ModuleActionStatus.InvalidRegistrationInfo;
+
+            customCommandManager.Register(name, customScriptProc, commandInfo);
             return ModuleActionStatus.Success;
         }
     }

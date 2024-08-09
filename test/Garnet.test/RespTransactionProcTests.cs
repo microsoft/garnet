@@ -32,7 +32,7 @@ namespace Garnet.test
         public void TransactionProcTest1()
         {
             // Register sample custom command (SETIFPM = "set if prefix match")
-            server.Register.NewTransactionProc("READWRITETX", 3, () => new ReadWriteTxn());
+            server.Register.NewTransactionProc("READWRITETX", () => new ReadWriteTxn(), new RespCommandsInfo { Arity = 4 });
 
             using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
             var db = redis.GetDatabase(0);
@@ -62,7 +62,7 @@ namespace Garnet.test
         {
             // Register sample custom command (SETIFPM = "set if prefix match")
             var numParams = 3;
-            var id = server.Register.NewTransactionProc("READWRITETX", numParams, () => new ReadWriteTxn());
+            var id = server.Register.NewTransactionProc("READWRITETX", () => new ReadWriteTxn(), new RespCommandsInfo { Arity = numParams + 1 });
 
             using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
             var db = redis.GetDatabase(0);
@@ -113,7 +113,7 @@ namespace Garnet.test
         [Test]
         public void TransactionProcSampleUpdateTest()
         {
-            server.Register.NewTransactionProc("SAMPLEUPDATETX", 8, () => new SampleUpdateTxn());
+            server.Register.NewTransactionProc("SAMPLEUPDATETX", () => new SampleUpdateTxn(), new RespCommandsInfo { Arity = 9 });
 
             using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
             var db = redis.GetDatabase(0);
@@ -148,7 +148,7 @@ namespace Garnet.test
         [Test]
         public void TransactionProcSampleDeleteTest()
         {
-            server.Register.NewTransactionProc("SAMPLEDELETETX", 5, () => new SampleDeleteTxn());
+            server.Register.NewTransactionProc("SAMPLEDELETETX", () => new SampleDeleteTxn(), new RespCommandsInfo { Arity = 6 });
 
             using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
             var db = redis.GetDatabase(0);
@@ -185,7 +185,7 @@ namespace Garnet.test
         [Test]
         public void TransactionWriteExpiryProcTest()
         {
-            server.Register.NewTransactionProc("WRITEWITHEXPIRYTX", 3, () => new WriteWithExpiryTxn());
+            server.Register.NewTransactionProc("WRITEWITHEXPIRYTX", () => new WriteWithExpiryTxn(), new RespCommandsInfo { Arity = 4 });
 
             using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
             var db = redis.GetDatabase(0);
@@ -211,7 +211,7 @@ namespace Garnet.test
         [Test]
         public void TransactionObjectExpiryProcTest()
         {
-            server.Register.NewTransactionProc("OBJECTEXPIRYTX", 2, () => new ObjectExpiryTxn());
+            server.Register.NewTransactionProc("OBJECTEXPIRYTX", () => new ObjectExpiryTxn(), new RespCommandsInfo { Arity = 3 });
 
             using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
             var db = redis.GetDatabase(0);
@@ -245,7 +245,7 @@ namespace Garnet.test
         [Test]
         public void TransactionSortedSetRemoveProcTest()
         {
-            server.Register.NewTransactionProc("SORTEDSETREMOVETX", 2, () => new SortedSetRemoveTxn());
+            server.Register.NewTransactionProc("SORTEDSETREMOVETX", () => new SortedSetRemoveTxn(), new RespCommandsInfo { Arity = 3 });
 
             using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
             var db = redis.GetDatabase(0);
@@ -269,7 +269,7 @@ namespace Garnet.test
         [Test]
         public void TransactionDeleteProcTest()
         {
-            server.Register.NewTransactionProc("DELETETX", 1, () => new DeleteTxn());
+            server.Register.NewTransactionProc("DELETETX", () => new DeleteTxn(), new RespCommandsInfo { Arity = 2 });
 
             using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
             var db = redis.GetDatabase(0);
@@ -290,7 +290,7 @@ namespace Garnet.test
         [Test]
         public void TransactionObjectsOperTest()
         {
-            server.Register.NewTransactionProc("SORTEDSETPROC", 24, () => new TestProcedureSortedSets());
+            server.Register.NewTransactionProc("SORTEDSETPROC", () => new TestProcedureSortedSets(), new RespCommandsInfo { Arity = 25 });
             using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
             var db = redis.GetDatabase(0);
 
@@ -302,14 +302,14 @@ namespace Garnet.test
 
             // Read keys to verify transaction succeeded
             long len = db.SortedSetLength("ssA");
-            Assert.AreEqual(5, len);
+            Assert.AreEqual(1, len);
 
         }
 
         [Test]
         public void TransactionListsOperTest()
         {
-            server.Register.NewTransactionProc("LISTPROC", 12, () => new TestProcedureLists());
+            server.Register.NewTransactionProc("LISTPROC", () => new TestProcedureLists(), new RespCommandsInfo { Arity = 13 });
 
             using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
             var db = redis.GetDatabase(0);
@@ -332,7 +332,7 @@ namespace Garnet.test
         [Test]
         public void TransactionSetProcTest()
         {
-            server.Register.NewTransactionProc("SETPROC", 12, () => new TestProcedureSet());
+            server.Register.NewTransactionProc("SETPROC", () => new TestProcedureSet(), new RespCommandsInfo { Arity = 13 });
 
             using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
             var db = redis.GetDatabase(0);
@@ -352,7 +352,7 @@ namespace Garnet.test
         [Test]
         public void TransactionHashProcTest()
         {
-            server.Register.NewTransactionProc("HASHPROC", 14, () => new TestProcedureHash());
+            server.Register.NewTransactionProc("HASHPROC", () => new TestProcedureHash(), new RespCommandsInfo { Arity = 15 });
 
             using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
             var db = redis.GetDatabase(0);
@@ -370,7 +370,7 @@ namespace Garnet.test
         [Test]
         public void TransactionProcFinalizeTest()
         {
-            server.Register.NewTransactionProc("GETTWOKEYSNOTXN", 2, () => new GetTwoKeysNoTxn());
+            server.Register.NewTransactionProc("GETTWOKEYSNOTXN", () => new GetTwoKeysNoTxn(), new RespCommandsInfo { Arity = 3 });
 
             using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
             var db = redis.GetDatabase(0);

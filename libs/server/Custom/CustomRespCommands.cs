@@ -57,10 +57,34 @@ namespace Garnet.server
 
         }
 
+        private void TryCustomProcedure(byte id, byte* ptr, byte* end, CustomProcedure proc)
+        {
+            Debug.Assert(proc != null);
+
+            var output = new MemoryResult<byte>(null, 0);
+            var input = new ArgSlice(ptr, (int)(end - ptr));
+            if (proc.Execute(basicGarnetApi, input, ref output))
+            {
+                if (output.MemoryOwner != null)
+                    SendAndReset(output.MemoryOwner, output.Length);
+                else
+                    while (!RespWriteUtils.WriteDirect(CmdStrings.RESP_OK, ref dcurr, dend))
+                        SendAndReset();
+            }
+            else
+            {
+                if (output.MemoryOwner != null)
+                    SendAndReset(output.MemoryOwner, output.Length);
+                else
+                    while (!RespWriteUtils.WriteError($"ERR Command failed.", ref dcurr, dend))
+                        SendAndReset();
+            }
+        }
+
         /// <summary>
         /// Custom command
         /// </summary>
-        private bool TryCustomCommand<TGarnetApi>(byte* ptr, byte* end, RespCommand cmd, long expirationTicks, CommandType type, ref TGarnetApi storageApi)
+        private bool TryCustomRawStringCommand<TGarnetApi>(byte* ptr, byte* end, RespCommand cmd, long expirationTicks, CommandType type, ref TGarnetApi storageApi)
             where TGarnetApi : IGarnetAdvancedApi
         {
             var sbKey = parseState.GetArgSliceByRef(0).SpanByte;
@@ -147,24 +171,24 @@ namespace Garnet.server
 
             ptr = sbKey.ToPointer() + sbKey.Length + 2;
 
-            var inputPtr = ptr;
-            var iSize = (int)(end - ptr);
-
-            inputPtr -= sizeof(int);
-            inputPtr -= RespInputHeader.Size;
-
-            var savedData1 = *(int*)inputPtr;
-            *(int*)inputPtr = RespInputHeader.Size + iSize;
-
-            var savedData2 = *(RespInputHeader*)(inputPtr + sizeof(int));
-            ((RespInputHeader*)(inputPtr + sizeof(int)))->cmd = cmd;
-            ((RespInputHeader*)(inputPtr + sizeof(int)))->SubId = subid;
+            // Prepare input
+            var input = new ObjectInput
+            {
+                header = new RespInputHeader
+                {
+                    cmd = cmd,
+                    SubId = subid
+                },
+                payload = new ArgSlice(ptr, (int)(recvBufferPtr + bytesRead - ptr)),
+            };
 
             var output = new GarnetObjectStoreOutput { spanByteAndMemory = new SpanByteAndMemory(null) };
+
             GarnetStatus status;
+
             if (type == CommandType.ReadModifyWrite)
             {
-                status = storageApi.RMW_ObjectStore(ref keyBytes, ref Unsafe.AsRef<SpanByte>(inputPtr), ref output);
+                status = storageApi.RMW_ObjectStore(ref keyBytes, ref input, ref output);
                 Debug.Assert(!output.spanByteAndMemory.IsSpanByte);
 
                 switch (status)
@@ -184,7 +208,7 @@ namespace Garnet.server
             }
             else
             {
-                status = storageApi.Read_ObjectStore(ref keyBytes, ref Unsafe.AsRef<SpanByte>(inputPtr), ref output);
+                status = storageApi.Read_ObjectStore(ref keyBytes, ref input, ref output);
                 Debug.Assert(!output.spanByteAndMemory.IsSpanByte);
 
                 switch (status)
@@ -207,9 +231,6 @@ namespace Garnet.server
                         break;
                 }
             }
-
-            *(int*)inputPtr = savedData1;
-            *(RespInputHeader*)(inputPtr + sizeof(int)) = savedData2;
 
             return true;
         }

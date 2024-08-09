@@ -5,27 +5,29 @@ using System.Runtime.CompilerServices;
 
 namespace Tsavorite.core
 {
-    public unsafe partial class TsavoriteKV<Key, Value> : TsavoriteBase
+    public unsafe partial class TsavoriteKV<TKey, TValue, TStoreFunctions, TAllocator> : TsavoriteBase
+        where TStoreFunctions : IStoreFunctions<TKey, TValue>
+        where TAllocator : IAllocator<TKey, TValue, TStoreFunctions>
     {
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        internal Status InternalContainsKeyInMemory<Input, Output, Context, TSessionFunctionsWrapper>(
-            ref Key key, TSessionFunctionsWrapper sessionFunctions, out long logicalAddress, long fromAddress = -1)
-            where TSessionFunctionsWrapper : ISessionFunctionsWrapper<Key, Value, Input, Output, Context>
+        internal Status InternalContainsKeyInMemory<TInput, TOutput, TContext, TSessionFunctionsWrapper>(
+            ref TKey key, TSessionFunctionsWrapper sessionFunctions, out long logicalAddress, long fromAddress = -1)
+            where TSessionFunctionsWrapper : ISessionFunctionsWrapper<TKey, TValue, TInput, TOutput, TContext, TStoreFunctions, TAllocator>
         {
-            OperationStackContext<Key, Value> stackCtx = new(comparer.GetHashCode64(ref key));
+            OperationStackContext<TKey, TValue, TStoreFunctions, TAllocator> stackCtx = new(storeFunctions.GetKeyHashCode64(ref key));
 
             if (sessionFunctions.Ctx.phase == Phase.IN_PROGRESS_GROW)
                 SplitBuckets(stackCtx.hei.hash);
 
             if (FindTag(ref stackCtx.hei))
             {
-                stackCtx.SetRecordSourceToHashEntry(hlog);
+                stackCtx.SetRecordSourceToHashEntry(hlogBase);
 
                 if (UseReadCache)
                     SkipReadCache(ref stackCtx, out _);
 
-                if (fromAddress < hlog.HeadAddress)
-                    fromAddress = hlog.HeadAddress;
+                if (fromAddress < hlogBase.HeadAddress)
+                    fromAddress = hlogBase.HeadAddress;
 
                 if (TryFindRecordInMainLog(ref key, ref stackCtx, fromAddress) && !stackCtx.recSrc.GetInfo().Tombstone)
                 {

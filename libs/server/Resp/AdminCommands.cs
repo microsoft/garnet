@@ -96,9 +96,9 @@ namespace Garnet.server
             static void OnACLFailure(RespServerSession self, RespCommand cmd)
             {
                 // If we're rejecting a command, we may need to cleanup some ambient state too
-                if (cmd == RespCommand.CustomCmd)
+                if (cmd == RespCommand.CustomRawStringCmd)
                 {
-                    self.currentCustomCommand = null;
+                    self.currentCustomRawStringCommand = null;
                 }
                 else if (cmd == RespCommand.CustomObjCmd)
                 {
@@ -107,6 +107,10 @@ namespace Garnet.server
                 else if (cmd == RespCommand.CustomTxn)
                 {
                     self.currentCustomTransaction = null;
+                }
+                else if (cmd == RespCommand.CustomProcedure)
+                {
+                    self.currentCustomProcedure = null;
                 }
                 while (!RespWriteUtils.WriteError(CmdStrings.RESP_ERR_NOAUTH, ref self.dcurr, self.dend))
                     self.SendAndReset();
@@ -120,7 +124,14 @@ namespace Garnet.server
 
         private bool NetworkMonitor(int count)
         {
-            // TODO: Not supported yet.
+            if (count != 0)
+            {
+                return AbortWithWrongNumberOfArguments(nameof(RespCommand.MONITOR), count);
+            }
+
+            while (!RespWriteUtils.WriteError(CmdStrings.RESP_ERR_GENERIC_UNK_CMD, ref dcurr, dend))
+                SendAndReset();
+
             return true;
         }
 

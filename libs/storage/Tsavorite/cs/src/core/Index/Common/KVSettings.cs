@@ -10,7 +10,7 @@ namespace Tsavorite.core
     /// <summary>
     /// Configuration settings for hybrid log. Use Utility.ParseSize to specify sizes in familiar string notation (e.g., "4k" and "4 MB").
     /// </summary>
-    public sealed class TsavoriteKVSettings<Key, Value> : IDisposable
+    public sealed class KVSettings<TKey, TValue> : IDisposable
     {
         readonly bool disposeDevices = false;
         readonly bool deleteDirOnDispose = false;
@@ -47,6 +47,11 @@ namespace Tsavorite.core
         public long MemorySize = 1L << 34;
 
         /// <summary>
+        /// Controls how many pages should be empty to account for non-power-of-two-sized log
+        /// </summary>
+        public int MinEmptyPageCount = 0;
+
+        /// <summary>
         /// Fraction of log marked as mutable (in-place updates). Rounds down to power of 2.
         /// </summary>
         public double MutableFraction = 0.9;
@@ -60,21 +65,6 @@ namespace Tsavorite.core
         /// Whether to preallocate the entire log (pages) in memory
         /// </summary>
         public bool PreallocateLog = false;
-
-        /// <summary>
-        /// Key serializer
-        /// </summary>
-        public Func<IObjectSerializer<Key>> KeySerializer;
-
-        /// <summary>
-        /// Value serializer
-        /// </summary>
-        public Func<IObjectSerializer<Value>> ValueSerializer;
-
-        /// <summary>
-        /// Equality comparer for key
-        /// </summary>
-        public ITsavoriteEqualityComparer<Key> EqualityComparer;
 
         /// <summary>
         /// Whether read cache is enabled
@@ -112,7 +102,7 @@ namespace Tsavorite.core
         /// <summary>
         /// Whether Tsavorite should remove outdated checkpoints automatically
         /// </summary>
-        public bool RemoveOutdatedCheckpoints = true;
+        public bool RemoveOutdatedCheckpoints = false;
 
         /// <summary>
         /// Try to recover from latest checkpoint, if available
@@ -140,8 +130,9 @@ namespace Tsavorite.core
         /// Use Utility.ParseSize to specify sizes in familiar string notation (e.g., "4k" and "4 MB").
         /// Default index size is 64MB.
         /// </summary>
-        public TsavoriteKVSettings() { }
+        public KVSettings() { }
 
+        internal readonly ILoggerFactory loggerFactory;
         internal readonly ILogger logger;
 
         /// <summary>
@@ -152,15 +143,16 @@ namespace Tsavorite.core
         /// <param name="baseDir">Base directory (without trailing path separator)</param>
         /// <param name="deleteDirOnDispose">Whether to delete base directory on dispose. This option prevents later recovery.</param>
         /// <param name="logger"></param>
-        public TsavoriteKVSettings(string baseDir, bool deleteDirOnDispose = false, ILogger logger = null)
+        public KVSettings(string baseDir, bool deleteDirOnDispose = false, ILoggerFactory loggerFactory = null, ILogger logger = null)
         {
+            this.loggerFactory = loggerFactory;
             this.logger = logger;
             disposeDevices = true;
             this.deleteDirOnDispose = deleteDirOnDispose;
             this.baseDir = baseDir;
 
             LogDevice = baseDir == null ? new NullDevice() : Devices.CreateLogDevice(baseDir + "/hlog.log", deleteOnClose: deleteDirOnDispose);
-            if (!Utility.IsBlittable<Key>() || !Utility.IsBlittable<Value>())
+            if (!Utility.IsBlittable<TKey>() || !Utility.IsBlittable<TValue>())
                 ObjectLogDevice = baseDir == null ? new NullDevice() : Devices.CreateLogDevice(baseDir + "/hlog.obj.log", deleteOnClose: deleteDirOnDispose);
 
             CheckpointDir = baseDir == null ? null : baseDir + "/checkpoints";
@@ -197,12 +189,15 @@ namespace Tsavorite.core
         internal long GetIndexSizeCacheLines()
         {
             long adjustedSize = Utility.PreviousPowerOf2(IndexSize);
-            if (adjustedSize < 512)
-                throw new TsavoriteException($"{nameof(IndexSize)} should be at least of size 8 cache line (512 bytes)");
+            if (adjustedSize < 64)
+                throw new TsavoriteException($"{nameof(IndexSize)} should be at least of size 1 cache line (64 bytes)");
             if (IndexSize != adjustedSize)  // Don't use string interpolation when logging messages because it makes it impossible to group by the message template.
                 logger?.LogInformation("Warning: using lower value {0} instead of specified {1} for {2}", adjustedSize, IndexSize, nameof(IndexSize));
             return adjustedSize / 64;
         }
+
+        internal static long SetIndexSizeFromCacheLines(long cacheLines)
+            => cacheLines * 64;
 
         internal LogSettings GetLogSettings()
         {
@@ -215,6 +210,7 @@ namespace Tsavorite.core
                 PageSizeBits = Utility.NumBitsPreviousPowerOf2(PageSize),
                 SegmentSizeBits = Utility.NumBitsPreviousPowerOf2(SegmentSize),
                 MutableFraction = MutableFraction,
+                MinEmptyPageCount = MinEmptyPageCount,
                 PreallocateLog = PreallocateLog,
                 ReadCacheSettings = GetReadCacheSettings()
             };
@@ -230,18 +226,6 @@ namespace Tsavorite.core
                     SecondChanceFraction = ReadCacheSecondChanceFraction
                 }
                 : null;
-        }
-
-        internal SerializerSettings<Key, Value> GetSerializerSettings()
-        {
-            if (KeySerializer == null && ValueSerializer == null)
-                return null;
-
-            return new SerializerSettings<Key, Value>
-            {
-                keySerializer = KeySerializer,
-                valueSerializer = ValueSerializer
-            };
         }
 
         internal CheckpointSettings GetCheckpointSettings()

@@ -85,7 +85,8 @@ namespace Garnet.test
                 Path.GetFullPath(@"../main/GarnetServer/Extensions/ReadWriteTxn.cs", TestUtils.RootTestsProjectPath),
                 Path.GetFullPath(@"../main/GarnetServer/Extensions/MyDictObject.cs", TestUtils.RootTestsProjectPath),
                 Path.GetFullPath(@"../main/GarnetServer/Extensions/MyDictSet.cs", TestUtils.RootTestsProjectPath),
-                Path.GetFullPath(@"../main/GarnetServer/Extensions/MyDictGet.cs", TestUtils.RootTestsProjectPath)};
+                Path.GetFullPath(@"../main/GarnetServer/Extensions/MyDictGet.cs", TestUtils.RootTestsProjectPath),
+                Path.GetFullPath(@"../main/GarnetServer/Extensions/Sum.cs", TestUtils.RootTestsProjectPath)};
             TestUtils.CreateTestLibrary(null, referenceFiles, filesToCompile, modulePath);
             return modulePath;
         }
@@ -96,24 +97,26 @@ namespace Garnet.test
             var onLoad =
                     @"context.Initialize(""TestModule"", 1);
                     
-                    context.RegisterCommand(""TestModule.SetIfPM"", new SetIfPMCustomCommand(), CommandType.ReadModifyWrite, 2,
+                    context.RegisterCommand(""TestModule.SetIfPM"", new SetIfPMCustomCommand(), CommandType.ReadModifyWrite,
                     new RespCommandsInfo { Name = ""TestModule.SETIFPM"", Arity = 4, FirstKey = 1, LastKey = 1, Step = 1,
                     Flags = RespCommandFlags.DenyOom | RespCommandFlags.Write, AclCategories = RespAclCategories.String | RespAclCategories.Write });
                     
-                    context.RegisterTransaction(""TestModule.READWRITETX"", () => new ReadWriteTxn(), 3,
+                    context.RegisterTransaction(""TestModule.READWRITETX"", () => new ReadWriteTxn(),
                     new RespCommandsInfo { Name = ""TestModule.READWRITETX"", Arity = 4, FirstKey = 1, LastKey = 3, Step = 1,
                     Flags = RespCommandFlags.DenyOom | RespCommandFlags.Write, AclCategories = RespAclCategories.Write });
 
                     var factory = new MyDictFactory();
                     context.RegisterType(factory);
 
-                    context.RegisterCommand(""TestModule.MYDICTSET"", factory, new MyDictSet(), CommandType.ReadModifyWrite, 2,
+                    context.RegisterCommand(""TestModule.MYDICTSET"", factory, new MyDictSet(), CommandType.ReadModifyWrite,
                     new RespCommandsInfo { Name = ""TestModule.MYDICTSET"", Arity = 4, FirstKey = 1, LastKey = 1, Step = 1, 
                     Flags = RespCommandFlags.DenyOom | RespCommandFlags.Write, AclCategories = RespAclCategories.Write });
 
-                    context.RegisterCommand(""TestModule.MYDICTGET"", factory, new MyDictGet(), CommandType.Read, 1,
+                    context.RegisterCommand(""TestModule.MYDICTGET"", factory, new MyDictGet(), CommandType.Read,
                     new RespCommandsInfo { Name = ""TestModule.MYDICTGET"", Arity = 3, FirstKey = 1, LastKey = 1, Step = 1,
-                    Flags = RespCommandFlags.ReadOnly, AclCategories = RespAclCategories.Read }); ";
+                    Flags = RespCommandFlags.ReadOnly, AclCategories = RespAclCategories.Read });
+
+                    context.RegisterProcedure(""TestModule.SUM"", new Sum());";
 
             var modulePath = CreateTestModule(onLoad);
 
@@ -159,6 +162,14 @@ namespace Garnet.test
 
             var dictRetValue = db.Execute("TestModule.MYDICTGET", dictKey, dictField);
             Assert.AreEqual(dictValue, (string)dictRetValue);
+
+            // Test SUM command
+            db.StringSet("key1", "1");
+            db.StringSet("key2", "2");
+            db.StringSet("key3", "3");
+            result = db.Execute("TestModule.SUM", "key1", "key2", "key3");
+            Assert.IsNotNull(result);
+            Assert.AreEqual("6", result.ToString());
         }
 
         [Test]

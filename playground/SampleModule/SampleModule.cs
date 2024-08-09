@@ -15,7 +15,7 @@ namespace SampleModule
             var status = context.Initialize("SampleModule", 1);
             if (status != ModuleActionStatus.Success)
             {
-                context.Logger?.LogError($"Failed to initialize SampleModule. Error {status}");
+                context.Logger?.LogError("Failed to initialize SampleModule. Error {status}", status);
                 return;
             }
 
@@ -28,6 +28,8 @@ namespace SampleModule
 
             context.RegisterCommand("SampleModule.MYDICTSET", factory, new MyDictSet());
             context.RegisterCommand("SampleModule.MYDICTGET", factory, new MyDictGet(), CommandType.Read);
+
+            context.RegisterProcedure("SampleModule.SUM", new Sum());
         }
     }
 }

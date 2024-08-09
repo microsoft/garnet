@@ -44,27 +44,18 @@ namespace Garnet.server
                 return true;
             }
 
-            // Prepare input
-            var inputPtr = (ObjectInputHeader*)(ptr - sizeof(ObjectInputHeader));
+            var input = new ObjectInput
+            {
+                header = new RespInputHeader
+                {
+                    type = GarnetObjectType.SortedSet,
+                    SortedSetOp = SortedSetOperation.ZADD,
+                },
+                arg1 = (count - 1) / 2,
+                payload = new ArgSlice(ptr, (int)(recvBufferPtr + bytesRead - ptr)),
+            };
 
-            // Save old values on buffer
-            var save = *inputPtr;
-
-            // Prepare length of header in input buffer
-            var inputLength = (int)(recvBufferPtr + bytesRead - (byte*)inputPtr);
-
-            int inputCount = (count - 1) / 2;
-
-            // Prepare header in input buffer
-            inputPtr->header.type = GarnetObjectType.SortedSet;
-            inputPtr->header.flags = 0;
-            inputPtr->header.SortedSetOp = SortedSetOperation.ZADD;
-            inputPtr->arg1 = inputCount;
-
-            var status = storageApi.SortedSetAdd(keyBytes, new ArgSlice((byte*)inputPtr, inputLength), out ObjectOutputHeader output);
-
-            // Reset input buffer
-            *inputPtr = save;
+            var status = storageApi.SortedSetAdd(keyBytes, ref input, out ObjectOutputHeader output);
 
             switch (status)
             {
@@ -108,27 +99,18 @@ namespace Garnet.server
                 return true;
             }
 
-            int inputCount = count - 1;
+            var input = new ObjectInput
+            {
+                header = new RespInputHeader
+                {
+                    type = GarnetObjectType.SortedSet,
+                    SortedSetOp = SortedSetOperation.ZREM,
+                },
+                arg1 = count - 1,
+                payload = new ArgSlice(ptr, (int)(recvBufferPtr + bytesRead - ptr)),
+            };
 
-            // Prepare input
-            var rmwInput = (ObjectInputHeader*)(ptr - sizeof(ObjectInputHeader));
-
-            // Save old values on buffer for possible revert
-            var save = *rmwInput;
-
-            // Prepare length of header in input buffer
-            var inputLength = (int)(recvBufferPtr + bytesRead - (byte*)rmwInput);
-
-            // Prepare header in input buffer
-            rmwInput->header.type = GarnetObjectType.SortedSet;
-            rmwInput->header.flags = 0;
-            rmwInput->header.SortedSetOp = SortedSetOperation.ZREM;
-            rmwInput->arg1 = inputCount;
-
-            var status = storageApi.SortedSetRemove(keyBytes, new ArgSlice((byte*)rmwInput, inputLength), out ObjectOutputHeader rmwOutput);
-
-            // Reset input buffer
-            *rmwInput = save;
+            var status = storageApi.SortedSetRemove(keyBytes, ref input, out var rmwOutput);
 
             switch (status)
             {
@@ -145,7 +127,6 @@ namespace Garnet.server
                         SendAndReset();
                     break;
             }
-
             return true;
         }
 
@@ -175,25 +156,17 @@ namespace Garnet.server
                 return true;
             }
 
-            // Prepare input
-            var inputPtr = (ObjectInputHeader*)(ptr - sizeof(ObjectInputHeader));
+            var input = new ObjectInput
+            {
+                header = new RespInputHeader
+                {
+                    type = GarnetObjectType.SortedSet,
+                    SortedSetOp = SortedSetOperation.ZCARD,
+                },
+                payload = new ArgSlice(ptr, (int)(recvBufferPtr + bytesRead - ptr)),
+            };
 
-            // Save old values on buffer for possible revert
-            var save = *inputPtr;
-
-            // Prepare length of header in input buffer
-            var inputLength = (int)(recvBufferPtr + bytesRead - (byte*)inputPtr);
-
-            // Prepare header in input buffer
-            inputPtr->header.type = GarnetObjectType.SortedSet;
-            inputPtr->header.flags = 0;
-            inputPtr->header.SortedSetOp = SortedSetOperation.ZCARD;
-            inputPtr->arg1 = 1;
-
-            var status = storageApi.SortedSetLength(keyBytes, new ArgSlice((byte*)inputPtr, inputLength), out var output);
-
-            // Reset input buffer
-            *inputPtr = save;
+            var status = storageApi.SortedSetLength(keyBytes, ref input, out var output);
 
             switch (status)
             {
@@ -244,16 +217,7 @@ namespace Garnet.server
                 return true;
             }
 
-            // Prepare input
-            var inputPtr = (ObjectInputHeader*)(ptr - sizeof(ObjectInputHeader));
-
-            // Save old values
-            var save = *inputPtr;
-
-            // Prepare length of header in input buffer
-            var inputLength = (int)(recvBufferPtr + bytesRead - (byte*)inputPtr);
-
-            SortedSetOperation op =
+            var op =
                 command switch
                 {
                     RespCommand.ZRANGE => SortedSetOperation.ZRANGE,
@@ -263,19 +227,21 @@ namespace Garnet.server
                     _ => throw new Exception($"Unexpected {nameof(SortedSetOperation)}: {command}")
                 };
 
-            // Prepare header in input buffer
-            inputPtr->header.type = GarnetObjectType.SortedSet;
-            inputPtr->header.flags = 0;
-            inputPtr->header.SortedSetOp = op;
-            inputPtr->arg1 = count - 1;
-            inputPtr->arg2 = respProtocolVersion;
+            var input = new ObjectInput
+            {
+                header = new RespInputHeader
+                {
+                    type = GarnetObjectType.SortedSet,
+                    SortedSetOp = op,
+                },
+                arg1 = count - 1,
+                arg2 = respProtocolVersion,
+                payload = new ArgSlice(ptr, (int)(recvBufferPtr + bytesRead - ptr)),
+            };
 
             var outputFooter = new GarnetObjectStoreOutput { spanByteAndMemory = new SpanByteAndMemory(dcurr, (int)(dend - dcurr)) };
 
-            var status = storageApi.SortedSetRange(keyBytes, new ArgSlice((byte*)inputPtr, inputLength), ref outputFooter);
-
-            // Reset input buffer
-            *inputPtr = save;
+            var status = storageApi.SortedSetRange(keyBytes, ref input, ref outputFooter);
 
             switch (status)
             {
@@ -321,33 +287,23 @@ namespace Garnet.server
                 return true;
             }
 
-            // Read score key
-            var sbScoreKey = parseState.GetArgSliceByRef(1).SpanByte;
-            var scoreKeyPtr = sbScoreKey.ToPointer();
-            var scoreKeySize = sbScoreKey.Length;
+            var ptr = sbKey.ToPointer() + sbKey.Length + 2;
 
             // Prepare input
-            var inputPtr = (ObjectInputHeader*)(scoreKeyPtr - sizeof(ObjectInputHeader));
-
-            // Save values
-            var save = *inputPtr;
-
-            // Prepare length of header in input buffer
-            var inputLength = (int)(recvBufferPtr + bytesRead - (byte*)inputPtr);
-
-            // Prepare header in input buffer
-            inputPtr->header.type = GarnetObjectType.SortedSet;
-            inputPtr->header.flags = 0;
-            inputPtr->header.SortedSetOp = SortedSetOperation.ZSCORE;
-            inputPtr->arg1 = scoreKeySize;
+            var input = new ObjectInput
+            {
+                header = new RespInputHeader
+                {
+                    type = GarnetObjectType.SortedSet,
+                    SortedSetOp = SortedSetOperation.ZSCORE,
+                },
+                payload = new ArgSlice(ptr, (int)(recvBufferPtr + bytesRead - ptr)),
+            };
 
             // Prepare GarnetObjectStore output
             var outputFooter = new GarnetObjectStoreOutput { spanByteAndMemory = new SpanByteAndMemory(dcurr, (int)(dend - dcurr)) };
 
-            var status = storageApi.SortedSetScore(keyBytes, new ArgSlice((byte*)inputPtr, inputLength), ref outputFooter);
-
-            // Restore input
-            *inputPtr = save;
+            var status = storageApi.SortedSetScore(keyBytes, ref input, ref outputFooter);
 
             switch (status)
             {
@@ -395,29 +351,24 @@ namespace Garnet.server
                 return true;
             }
 
+            var inputCount = count - 1;
+
             // Prepare input
-            var inputPtr = (ObjectInputHeader*)(ptr - sizeof(ObjectInputHeader));
-
-            //save values
-            var save = *inputPtr;
-
-            // Prepare length of header in input buffer
-            var inputLength = (int)(recvBufferPtr + bytesRead - (byte*)inputPtr);
-            int inputCount = count - 1;
-
-            // Prepare header in input buffer
-            inputPtr->header.type = GarnetObjectType.SortedSet;
-            inputPtr->header.flags = 0;
-            inputPtr->header.SortedSetOp = SortedSetOperation.ZMSCORE;
-            inputPtr->arg1 = inputCount;
+            var input = new ObjectInput
+            {
+                header = new RespInputHeader
+                {
+                    type = GarnetObjectType.SortedSet,
+                    SortedSetOp = SortedSetOperation.ZMSCORE,
+                },
+                arg1 = inputCount,
+                payload = new ArgSlice(ptr, (int)(recvBufferPtr + bytesRead - ptr)),
+            };
 
             // Prepare GarnetObjectStore output
             var outputFooter = new GarnetObjectStoreOutput { spanByteAndMemory = new SpanByteAndMemory(dcurr, (int)(dend - dcurr)) };
 
-            var status = storageApi.SortedSetScores(keyBytes, new ArgSlice((byte*)inputPtr, inputLength), ref outputFooter);
-
-            //restore input
-            *inputPtr = save;
+            var status = storageApi.SortedSetScores(keyBytes, ref input, ref outputFooter);
 
             switch (status)
             {
@@ -453,83 +404,75 @@ namespace Garnet.server
             {
                 return AbortWithWrongNumberOfArguments(command.ToString(), count);
             }
-            else
+
+            // Get the key for SortedSet
+            var sbKey = parseState.GetArgSliceByRef(0).SpanByte;
+            var keyBytes = sbKey.ToByteArray();
+
+            var ptr = sbKey.ToPointer() + sbKey.Length + 2;
+
+            if (NetworkSingleKeySlotVerify(keyBytes, false))
             {
-                // Get the key for SortedSet
-                var sbKey = parseState.GetArgSliceByRef(0).SpanByte;
-                var keyBytes = sbKey.ToByteArray();
+                return true;
+            }
 
-                var ptr = sbKey.ToPointer() + sbKey.Length + 2;
+            var popCount = 1;
 
-                if (NetworkSingleKeySlotVerify(keyBytes, false))
+            if (count == 2)
+            {
+                // Read count
+                var popCountSlice = parseState.GetArgSliceByRef(1);
+
+                if (!NumUtils.TryParse(popCountSlice.ReadOnlySpan, out popCount))
                 {
+                    while (!RespWriteUtils.WriteError(CmdStrings.RESP_ERR_GENERIC_VALUE_IS_OUT_OF_RANGE, ref dcurr, dend))
+                        SendAndReset();
+
                     return true;
                 }
 
-                var popCount = 1;
+                var sbPopCount = popCountSlice.SpanByte;
+                ptr = sbPopCount.ToPointer() + sbPopCount.Length + 2;
+            }
 
-                if (count == 2)
+            var op =
+                command switch
                 {
-                    // Read count
-                    var popCountSlice = parseState.GetArgSliceByRef(1);
+                    RespCommand.ZPOPMIN => SortedSetOperation.ZPOPMIN,
+                    RespCommand.ZPOPMAX => SortedSetOperation.ZPOPMAX,
+                    _ => throw new Exception($"Unexpected {nameof(SortedSetOperation)}: {command}")
+                };
 
-                    if (!NumUtils.TryParse(popCountSlice.ReadOnlySpan, out popCount))
-                    {
-                        while (!RespWriteUtils.WriteError(CmdStrings.RESP_ERR_GENERIC_VALUE_IS_OUT_OF_RANGE, ref dcurr, dend))
-                            SendAndReset();
-
-                        return true;
-                    }
-
-                    var sbPopCount = popCountSlice.SpanByte;
-                    ptr = sbPopCount.ToPointer() + sbPopCount.Length + 2;
-                }
-
-                // Prepare input
-                var inputPtr = (ObjectInputHeader*)(ptr - sizeof(ObjectInputHeader));
-
-                // Save values
-                var save = *inputPtr;
-
-                // Prepare length of header in input buffer
-                var inputLength = (int)(recvBufferPtr + bytesRead - (byte*)inputPtr);
-
-                var op =
-                    command switch
-                    {
-                        RespCommand.ZPOPMIN => SortedSetOperation.ZPOPMIN,
-                        RespCommand.ZPOPMAX => SortedSetOperation.ZPOPMAX,
-                        _ => throw new Exception($"Unexpected {nameof(SortedSetOperation)}: {command}")
-                    };
-
-                // Prepare header in input buffer
-                inputPtr->header.type = GarnetObjectType.SortedSet;
-                inputPtr->header.flags = 0;
-                inputPtr->header.SortedSetOp = op;
-                inputPtr->arg1 = popCount;
-
-                // Prepare output
-                var outputFooter = new GarnetObjectStoreOutput { spanByteAndMemory = new SpanByteAndMemory(SpanByte.FromPinnedPointer(dcurr, (int)(dend - dcurr))) };
-
-                var status = storageApi.SortedSetPop(keyBytes, new ArgSlice((byte*)inputPtr, inputLength), ref outputFooter);
-
-                // Restore input buffer
-                *inputPtr = save;
-
-                switch (status)
+            // Prepare input
+            var input = new ObjectInput
+            {
+                header = new RespInputHeader
                 {
-                    case GarnetStatus.OK:
-                        ProcessOutputWithHeader(outputFooter.spanByteAndMemory);
-                        break;
-                    case GarnetStatus.NOTFOUND:
-                        while (!RespWriteUtils.WriteEmptyArray(ref dcurr, dend))
-                            SendAndReset();
-                        break;
-                    case GarnetStatus.WRONGTYPE:
-                        while (!RespWriteUtils.WriteError(CmdStrings.RESP_ERR_WRONG_TYPE, ref dcurr, dend))
-                            SendAndReset();
-                        break;
-                }
+                    type = GarnetObjectType.SortedSet,
+                    SortedSetOp = op,
+                },
+                arg1 = popCount,
+                payload = new ArgSlice(ptr, (int)(recvBufferPtr + bytesRead - ptr)),
+            };
+
+            // Prepare output
+            var outputFooter = new GarnetObjectStoreOutput { spanByteAndMemory = new SpanByteAndMemory(SpanByte.FromPinnedPointer(dcurr, (int)(dend - dcurr))) };
+
+            var status = storageApi.SortedSetPop(keyBytes, ref input, ref outputFooter);
+
+            switch (status)
+            {
+                case GarnetStatus.OK:
+                    ProcessOutputWithHeader(outputFooter.spanByteAndMemory);
+                    break;
+                case GarnetStatus.NOTFOUND:
+                    while (!RespWriteUtils.WriteEmptyArray(ref dcurr, dend))
+                        SendAndReset();
+                    break;
+                case GarnetStatus.WRONGTYPE:
+                    while (!RespWriteUtils.WriteError(CmdStrings.RESP_ERR_WRONG_TYPE, ref dcurr, dend))
+                        SendAndReset();
+                    break;
             }
 
             return true;
@@ -562,24 +505,17 @@ namespace Garnet.server
             }
 
             // Prepare input
-            var inputPtr = (ObjectInputHeader*)(ptr - sizeof(ObjectInputHeader));
+            var input = new ObjectInput
+            {
+                header = new RespInputHeader
+                {
+                    type = GarnetObjectType.SortedSet,
+                    SortedSetOp = SortedSetOperation.ZCOUNT,
+                },
+                payload = new ArgSlice(ptr, (int)(recvBufferPtr + bytesRead - ptr)),
+            };
 
-            // Save input buffer
-            var save = *inputPtr;
-
-            // Prepare length of header in input buffer
-            var inputLength = (int)(recvBufferPtr + bytesRead - (byte*)inputPtr);
-
-            // Prepare header in input buffer
-            inputPtr->header.type = GarnetObjectType.SortedSet;
-            inputPtr->header.flags = 0;
-            inputPtr->header.SortedSetOp = SortedSetOperation.ZCOUNT;
-            inputPtr->arg1 = 0;
-
-            var status = storageApi.SortedSetCount(keyBytes, new ArgSlice((byte*)inputPtr, inputLength), out var output);
-
-            // Restore input buffer
-            *inputPtr = save;
+            var status = storageApi.SortedSetCount(keyBytes, ref input, out var output);
 
             switch (status)
             {
@@ -639,15 +575,6 @@ namespace Garnet.server
                 return true;
             }
 
-            // Prepare input
-            var inputPtr = (ObjectInputHeader*)(ptr - sizeof(ObjectInputHeader));
-
-            // Save input buffer
-            var save = *inputPtr;
-
-            // Prepare length of header in input buffer
-            var inputLength = (int)(recvBufferPtr + bytesRead - (byte*)inputPtr);
-
             var op =
                 command switch
                 {
@@ -656,18 +583,20 @@ namespace Garnet.server
                     _ => throw new Exception($"Unexpected {nameof(SortedSetOperation)}: {command}")
                 };
 
-            // Prepare header in input buffer
-            inputPtr->header.type = GarnetObjectType.SortedSet;
-            inputPtr->header.flags = 0;
-            inputPtr->header.SortedSetOp = op;
-            inputPtr->arg1 = 0;
+            // Prepare input
+            var input = new ObjectInput
+            {
+                header = new RespInputHeader
+                {
+                    type = GarnetObjectType.SortedSet,
+                    SortedSetOp = op,
+                },
+                payload = new ArgSlice(ptr, (int)(recvBufferPtr + bytesRead - ptr)),
+            };
 
             var status = op == SortedSetOperation.ZREMRANGEBYLEX ?
-                storageApi.SortedSetRemoveRangeByLex(keyBytes, new ArgSlice((byte*)inputPtr, inputLength), out var output) :
-                storageApi.SortedSetLengthByValue(keyBytes, new ArgSlice((byte*)inputPtr, inputLength), out output);
-
-            // Restore input buffer
-            *inputPtr = save;
+                storageApi.SortedSetRemoveRangeByLex(keyBytes, ref input, out var output) :
+                storageApi.SortedSetLengthByValue(keyBytes, ref input, out output);
 
             switch (status)
             {
@@ -727,26 +656,21 @@ namespace Garnet.server
             }
 
             // Prepare input
-            var inputPtr = (ObjectInputHeader*)(ptr - sizeof(ObjectInputHeader));
-
-            // Save input
-            var save = *inputPtr;
-
-            var inputLength = (int)(recvBufferPtr + bytesRead - (byte*)inputPtr);
-
-            // Prepare header in input buffer
-            inputPtr->header.type = GarnetObjectType.SortedSet;
-            inputPtr->header.flags = 0;
-            inputPtr->header.SortedSetOp = SortedSetOperation.ZINCRBY;
-            inputPtr->arg1 = count - 1;
+            var input = new ObjectInput
+            {
+                header = new RespInputHeader
+                {
+                    type = GarnetObjectType.SortedSet,
+                    SortedSetOp = SortedSetOperation.ZINCRBY,
+                },
+                arg1 = count - 1,
+                payload = new ArgSlice(ptr, (int)(recvBufferPtr + bytesRead - ptr)),
+            };
 
             // Prepare GarnetObjectStore output
             var outputFooter = new GarnetObjectStoreOutput { spanByteAndMemory = new SpanByteAndMemory(dcurr, (int)(dend - dcurr)) };
 
-            var status = storageApi.SortedSetIncrement(keyBytes, new ArgSlice((byte*)inputPtr, inputLength), ref outputFooter);
-
-            // Restore input
-            *inputPtr = save;
+            var status = storageApi.SortedSetIncrement(keyBytes, ref input, ref outputFooter);
 
             ReadOnlySpan<byte> errorMessage = default;
             switch (status)
@@ -821,15 +745,6 @@ namespace Garnet.server
                 includeWithScore = true;
             }
 
-            // Prepare input
-            var inputPtr = (ObjectInputHeader*)(ptr - sizeof(ObjectInputHeader));
-
-            // Save input buffer
-            var save = *inputPtr;
-
-            // Prepare length of header in input buffer
-            var inputLength = (int)(recvBufferPtr + bytesRead - (byte*)inputPtr);
-
             var op =
                 command switch
                 {
@@ -838,20 +753,24 @@ namespace Garnet.server
                     _ => throw new Exception($"Unexpected {nameof(SortedSetOperation)}: {command}")
                 };
 
-            // Prepare header in input buffer
-            inputPtr->header.type = GarnetObjectType.SortedSet;
-            inputPtr->header.flags = 0;
-            inputPtr->header.SortedSetOp = op;
-            inputPtr->arg1 = count;
-            inputPtr->arg2 = includeWithScore ? 1 : 0;
+            // Prepare input
+            var input = new ObjectInput
+            {
+                header = new RespInputHeader
+                {
+                    type = GarnetObjectType.SortedSet,
+                    SortedSetOp = op,
+                },
+                arg1 = count,
+                arg2 = includeWithScore ? 1 : 0,
+                payload = new ArgSlice(ptr, (int)(recvBufferPtr + bytesRead - ptr)),
+            };
 
             // Prepare GarnetObjectStore output
             var outputFooter = new GarnetObjectStoreOutput { spanByteAndMemory = new SpanByteAndMemory(dcurr, (int)(dend - dcurr)) };
 
-            var status = storageApi.SortedSetRank(keyBytes, new ArgSlice((byte*)inputPtr, inputLength), ref outputFooter);
+            var status = storageApi.SortedSetRank(keyBytes, ref input, ref outputFooter);
 
-            // Reset input buffer
-            *inputPtr = save;
             switch (status)
             {
                 case GarnetStatus.OK:
@@ -900,15 +819,6 @@ namespace Garnet.server
                 return true;
             }
 
-            // Prepare input
-            var inputPtr = (ObjectInputHeader*)(ptr - sizeof(ObjectInputHeader));
-
-            // Save input buffer
-            var save = *inputPtr;
-
-            // Prepare length of header in input buffer
-            var inputLength = (int)(recvBufferPtr + bytesRead - (byte*)inputPtr);
-
             var op =
                 command switch
                 {
@@ -917,16 +827,19 @@ namespace Garnet.server
                     _ => throw new Exception($"Unexpected {nameof(SortedSetOperation)}: {command}")
                 };
 
-            // Prepare header in input buffer
-            inputPtr->header.type = GarnetObjectType.SortedSet;
-            inputPtr->header.flags = 0;
-            inputPtr->header.SortedSetOp = op;
-            inputPtr->arg1 = 0;
+            // Prepare input
+            var input = new ObjectInput
+            {
+                header = new RespInputHeader
+                {
+                    type = GarnetObjectType.SortedSet,
+                    SortedSetOp = op,
+                },
+                payload = new ArgSlice(ptr, (int)(recvBufferPtr + bytesRead - ptr)),
+            };
 
-            var status = storageApi.SortedSetRemoveRange(keyBytes, new ArgSlice((byte*)inputPtr, inputLength), out ObjectOutputHeader output);
+            var status = storageApi.SortedSetRemoveRange(keyBytes, ref input, out ObjectOutputHeader output);
 
-            // Restore input buffer
-            *inputPtr = save;
 
             switch (status)
             {
@@ -1027,24 +940,21 @@ namespace Garnet.server
                 }
             }
 
-            // Prepare input
-            var inputPtr = (ObjectInputHeader*)(ptr - sizeof(ObjectInputHeader));
-
-            // Save input buffer
-            var save = *inputPtr;
-
-            // Prepare length of header in input buffer
-            var inputLength = (int)(recvBufferPtr + bytesRead - (byte*)inputPtr);
-
             // Create a random seed
             var seed = RandomGen.Next();
 
-            // Prepare header in input buffer
-            inputPtr->header.type = GarnetObjectType.SortedSet;
-            inputPtr->header.flags = 0;
-            inputPtr->header.SortedSetOp = SortedSetOperation.ZRANDMEMBER;
-            inputPtr->arg1 = (((paramCount << 1) | (includedCount ? 1 : 0)) << 1) | (includeWithScores ? 1 : 0);
-            inputPtr->arg2 = seed;
+            // Prepare input
+            var input = new ObjectInput
+            {
+                header = new RespInputHeader
+                {
+                    type = GarnetObjectType.SortedSet,
+                    SortedSetOp = SortedSetOperation.ZRANDMEMBER,
+                },
+                arg1 = (((paramCount << 1) | (includedCount ? 1 : 0)) << 1) | (includeWithScores ? 1 : 0),
+                arg2 = seed,
+                payload = new ArgSlice(ptr, (int)(recvBufferPtr + bytesRead - ptr)),
+            };
 
             var status = GarnetStatus.NOTFOUND;
             GarnetObjectStoreOutput outputFooter = default;
@@ -1054,11 +964,8 @@ namespace Garnet.server
             {
                 // Prepare GarnetObjectStore output
                 outputFooter = new GarnetObjectStoreOutput { spanByteAndMemory = new SpanByteAndMemory(dcurr, (int)(dend - dcurr)) };
-                status = storageApi.SortedSetRandomMember(keyBytes, new ArgSlice((byte*)inputPtr, inputLength), ref outputFooter);
+                status = storageApi.SortedSetRandomMember(keyBytes, ref input, ref outputFooter);
             }
-
-            // Restore input buffer
-            *inputPtr = save;
 
             switch (status)
             {
