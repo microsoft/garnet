@@ -165,8 +165,8 @@ namespace Garnet.test
         /// Test COMMAND INFO [command-name [command-name ...]]
         /// </summary>
         [Test]
-        [TestCase(new object[] { "GET", "SET", "COSCAN" })]
-        [TestCase(new object[] { "get", "set", "coscan" })]
+        [TestCase(["GET", "SET", "COSCAN"])]
+        [TestCase(["get", "set", "coscan"])]
         public void CommandInfoWithCommandNamesTest(params string[] commands)
         {
             using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
@@ -191,8 +191,8 @@ namespace Garnet.test
         /// Test COMMAND INFO with custom commands
         /// </summary>
         [Test]
-        [TestCase(new object[] { "SETIFPM", "MYDICTSET", "MGETIFPM", "READWRITETX", "MYDICTGET" })]
-        [TestCase(new object[] { "setifpm", "mydictset", "mgetifpm", "readwritetx", "mydictget" })]
+        [TestCase(["SETIFPM", "MYDICTSET", "MGETIFPM", "READWRITETX", "MYDICTGET"])]
+        [TestCase(["setifpm", "mydictset", "mgetifpm", "readwritetx", "mydictget"])]
         public void CommandInfoWithCustomCommandNamesTest(params string[] commands)
         {
             using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
@@ -353,7 +353,7 @@ namespace Garnet.test
 
             // Register select custom commands and transactions
             var result = (string)db.Execute($"REGISTERCS",
-                args.ToArray());
+                [.. args]);
             Assert.AreEqual("OK", result);
 
             return registeredCommands;

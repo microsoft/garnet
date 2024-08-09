@@ -21,40 +21,31 @@ namespace Garnet.test.cluster
     {
         public (Action, string)[] GetUnitTests()
         {
-            (Action, string)[] x = new (Action, string)[11];
-            //1
-            x[0] = new(ClusterSimpleInitialize, "ClusterSimpleInitialize()");
-
-            //2
-            x[1] = new(ClusterSimpleSlotInfo, "ClusterSimpleSlotInfo()");
-
-            //3
-            x[2] = new(ClusterAddDelSlots, "ClusterAddDelSlots()");
-
-            //4
-            x[3] = new(ClusterSlotChangeStatus, "ClusterSlotChangeStatus()");
-
-            //5
-            x[4] = new(ClusterRedirectMessage, "ClusterRedirectMessage()");
-
-            //6
-            x[5] = new(ClusterSimpleMigrateSlots, "ClusterSimpleMigrateSlots()");
-
-            //7
-            x[6] = new(ClusterSimpleMigrateSlotsExpiry, "ClusterSimpleMigrateSlotsExpiry()");
-
-            //8
-            x[7] = new(ClusterSimpleMigrateSlotsWithObjects, "ClusterSimpleMigrateSlotsWithObjects()");
-
-            //9
-            x[8] = new(ClusterSimpleMigrateKeys, "ClusterSimpleMigrateKeys()");
-
-            //10
-            x[9] = new(ClusterSimpleMigrateKeysWithObjects, "ClusterSimpleMigrateKeysWithObjects()");
-
-            //11
-            x[10] = new(ClusterSimpleMigrateWithReadWrite, "ClusterSimpleMigrateWithReadWrite()");
-
+            (Action, string)[] x =
+            [
+                //1
+                new(ClusterSimpleInitialize, "ClusterSimpleInitialize()"),
+                //2
+                new(ClusterSimpleSlotInfo, "ClusterSimpleSlotInfo()"),
+                //3
+                new(ClusterAddDelSlots, "ClusterAddDelSlots()"),
+                //4
+                new(ClusterSlotChangeStatus, "ClusterSlotChangeStatus()"),
+                //5
+                new(ClusterRedirectMessage, "ClusterRedirectMessage()"),
+                //6
+                new(ClusterSimpleMigrateSlots, "ClusterSimpleMigrateSlots()"),
+                //7
+                new(ClusterSimpleMigrateSlotsExpiry, "ClusterSimpleMigrateSlotsExpiry()"),
+                //8
+                new(ClusterSimpleMigrateSlotsWithObjects, "ClusterSimpleMigrateSlotsWithObjects()"),
+                //9
+                new(ClusterSimpleMigrateKeys, "ClusterSimpleMigrateKeys()"),
+                //10
+                new(ClusterSimpleMigrateKeysWithObjects, "ClusterSimpleMigrateKeysWithObjects()"),
+                //11
+                new(ClusterSimpleMigrateWithReadWrite, "ClusterSimpleMigrateWithReadWrite()"),
+            ];
             return x;
         }
 
@@ -209,7 +200,7 @@ namespace Garnet.test.cluster
             }
 
             int j = 0;
-            List<ushort> slots = slotsTokey.Keys.ToList();
+            List<ushort> slots = [.. slotsTokey.Keys];
             for (int i = 0; i < keyCount; i++)
             {
                 key = slotsTokey[slots[j]];
@@ -1139,7 +1130,7 @@ namespace Garnet.test.cluster
             var Port = TestUtils.Port;
             var Shards = defaultShards;
             var Ports = Enumerable.Range(Port, Shards).ToList();
-            var connections = ClusterTestUtils.CreateLightRequestConnections(Ports.ToArray());
+            var connections = ClusterTestUtils.CreateLightRequestConnections([.. Ports]);
             operatedOnData = [];
 
             foreach (var slot in data.Keys)
@@ -1334,10 +1325,10 @@ namespace Garnet.test.cluster
         }
 
         private static readonly object[] _slotranges =
-        {
-            new object[] { new List<int>() { 5500, 5510} },
+        [
+            new object[] { new List<int>() { 5500, 5510 } },
             new object[] { new List<int>() { 6000, 6015, 9020, 9050 } }
-        };
+        ];
 
         [Test, Order(13)]
         [Category("CLUSTER")]

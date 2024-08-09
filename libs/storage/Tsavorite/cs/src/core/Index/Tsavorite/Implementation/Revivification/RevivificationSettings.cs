@@ -78,14 +78,14 @@ namespace Tsavorite.core
         /// </summary>
         public static RevivificationSettings DefaultFixedLength { get; } = new()
         {
-            FreeRecordBins = new[]
-            {
+            FreeRecordBins =
+            [
                 new RevivificationBin()
                 {
                     RecordSize = RevivificationBin.MaxRecordSize,
                     BestFitScanLimit = RevivificationBin.UseFirstFit
                 }
-            }
+            ]
         };
 
         /// <summary>
@@ -262,7 +262,7 @@ namespace Tsavorite.core
                 RecordSize = RevivificationBin.MaxRecordSize,
                 NumberOfRecords = RevivificationBin.DefaultRecordsPerBin
             });
-            FreeRecordBins = binList.ToArray();
+            FreeRecordBins = [.. binList];
         }
     }
 }

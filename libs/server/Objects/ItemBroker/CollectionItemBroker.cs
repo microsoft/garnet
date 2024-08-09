@@ -76,7 +76,7 @@ namespace Garnet.server
             RespServerSession session, double timeoutInSeconds, ArgSlice[] cmdArgs)
         {
             var observer = new CollectionItemObserver(session, command, cmdArgs);
-            return await this.GetCollectionItemAsync(observer, new[] { srcKey }, timeoutInSeconds);
+            return await this.GetCollectionItemAsync(observer, [srcKey], timeoutInSeconds);
         }
 
         private async Task<CollectionItemResult> GetCollectionItemAsync(CollectionItemObserver observer, byte[][] keys,

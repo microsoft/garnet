@@ -467,7 +467,7 @@ namespace Tsavorite.core
             if (IsFixedLength)
             {
                 numBins = 1;
-                bins = new[] { new FreeRecordBin(ref settings.FreeRecordBins[0], fixedRecordLength, isFixedLength: true) };
+                bins = [new FreeRecordBin(ref settings.FreeRecordBins[0], fixedRecordLength, isFixedLength: true)];
                 return;
             }
 
@@ -495,7 +495,7 @@ namespace Tsavorite.core
                 binList.Add(bin);
                 prevBinRecordSize = bin.maxRecordSize;
             }
-            bins = binList.ToArray();
+            bins = [.. binList];
             numBins = bins.Length;
             numberOfBinsToSearch = settings.NumberOfBinsToSearch;
         }

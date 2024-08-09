@@ -72,7 +72,7 @@ namespace Garnet.test
             var timeout = TimeSpan.FromSeconds(5);
             try
             {
-                Task.WaitAll(new[] { blockingTask, releasingTask }, timeout);
+                Task.WaitAll([blockingTask, releasingTask], timeout);
             }
             catch (AggregateException)
             {
@@ -134,7 +134,7 @@ namespace Garnet.test
             var timeout = TimeSpan.FromSeconds(5);
             try
             {
-                Task.WaitAll(new[] { blockingTask, releasingTask }, timeout);
+                Task.WaitAll([blockingTask, releasingTask], timeout);
             }
             catch (AggregateException)
             {
@@ -223,7 +223,7 @@ namespace Garnet.test
             var timeout = TimeSpan.FromSeconds(5);
             try
             {
-                Task.WaitAll(new[] { blockingTask, releasingTask }, timeout);
+                Task.WaitAll([blockingTask, releasingTask], timeout);
             }
             catch (AggregateException)
             {

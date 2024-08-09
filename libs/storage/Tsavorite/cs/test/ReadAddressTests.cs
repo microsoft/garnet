@@ -516,8 +516,8 @@ namespace Tsavorite.test.readaddress
         [Category("TsavoriteKV"), Category("Read")]
         public void ReadCopyOptionssMergeTest()
         {
-            ReadCopyOptionsMerge[] merges = new ReadCopyOptionsMerge[]
-            {
+            ReadCopyOptionsMerge[] merges =
+            [
                 new()
                 {
                     store = ReadCopyOptions.None,
@@ -567,7 +567,7 @@ namespace Tsavorite.test.readaddress
                     Read = new(ReadCopyFrom.AllImmutable, ReadCopyTo.ReadCache),
                     Expected = new(ReadCopyFrom.AllImmutable, ReadCopyTo.ReadCache)
                 },
-            };
+            ];
 
             for (var ii = 0; ii < merges.Length; ++ii)
             {

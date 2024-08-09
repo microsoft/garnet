@@ -48,7 +48,7 @@ namespace Garnet.cluster
                     break;
             }
             FlushConfig();
-            logger?.LogTrace("AddSlots {slots}", GetRange(slots.ToArray()));
+            logger?.LogTrace("AddSlots {slots}", GetRange([.. slots]));
             return true;
         }
 
@@ -78,7 +78,7 @@ namespace Garnet.cluster
                     break;
             }
             FlushConfig();
-            logger?.LogTrace("RemoveSlots {slots}", GetRange(slots.ToArray()));
+            logger?.LogTrace("RemoveSlots {slots}", GetRange([.. slots]));
             return true;
         }
 
@@ -210,7 +210,7 @@ namespace Garnet.cluster
                     break;
             }
             FlushConfig();
-            logger?.LogTrace("SetSlotsRange MIGRATING {slot} TO {nodeId}", GetRange(slots.ToArray()), currentConfig.GetWorkerAddressFromNodeId(nodeid));
+            logger?.LogTrace("SetSlotsRange MIGRATING {slot} TO {nodeId}", GetRange([.. slots]), currentConfig.GetWorkerAddressFromNodeId(nodeid));
             return true;
         }
 
@@ -327,7 +327,7 @@ namespace Garnet.cluster
                     break;
             }
             FlushConfig();
-            logger?.LogTrace("SetSlotsRange IMPORTING {slot} TO {nodeId}", GetRange(slots.ToArray()), currentConfig.GetWorkerAddressFromNodeId(nodeid));
+            logger?.LogTrace("SetSlotsRange IMPORTING {slot} TO {nodeId}", GetRange([.. slots]), currentConfig.GetWorkerAddressFromNodeId(nodeid));
             return true;
         }
 
@@ -415,7 +415,7 @@ namespace Garnet.cluster
             }
 
             FlushConfig();
-            logger?.LogTrace("Slots {slot} IMPORTED TO {endpoint}", GetRange(slots.ToArray()), currentConfig.GetWorkerAddressFromNodeId(nodeid));
+            logger?.LogTrace("Slots {slot} IMPORTED TO {endpoint}", GetRange([.. slots]), currentConfig.GetWorkerAddressFromNodeId(nodeid));
             return true;
         }
 

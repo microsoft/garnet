@@ -22,7 +22,7 @@ namespace Garnet.client
         /// <returns>The number</returns>
         public static long ParseSize(string value)
         {
-            char[] suffix = new char[] { 'k', 'm', 'g', 't', 'p' };
+            char[] suffix = ['k', 'm', 'g', 't', 'p'];
             long result = 0;
             foreach (char c in value)
             {
@@ -83,7 +83,7 @@ namespace Garnet.client
         /// <returns></returns>
         internal static string PrettySize(long value)
         {
-            char[] suffix = new char[] { 'K', 'M', 'G', 'T', 'P' };
+            char[] suffix = ['K', 'M', 'G', 'T', 'P'];
             double v = value;
             int exp = 0;
             while (v - Math.Floor(v) > 0)

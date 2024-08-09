@@ -119,22 +119,22 @@ namespace Garnet.test
             Assert.IsFalse(exists);
         }
 
-        private static object[] LTrimTestCases = {
-            new object[] {0, 0, new[] {0} },
-            new object[] {-2, -1, new[] {8, 9} },
-            new object[] {-2, -2, new[] {8} },
-            new object[] {3, 5, new[] {3, 4, 5} },
-            new object[] {-12, 0, new[] {0} },
-            new object[] {-12, 2, new[] {0, 1, 2} },
-            new object[] {-12, -7, new[] {0, 1, 2, 3} },
-            new object[] {-15, -11, Array.Empty<int>() },
-            new object[] {8, 8, new[] {8} },
-            new object[] {8, 12, new[] {8, 9} },
-            new object[] {9, 12, new[] {9} },
-            new object[] {10, 12, Array.Empty<int>() },
-            new object[] {5, 3, Array.Empty<int>()},
-            new object[] {-3, -5, Array.Empty<int>()}
-        };
+        private static object[] LTrimTestCases = [
+            new object[] { 0, 0, new[] { 0 } },
+            new object[] { -2, -1, new[] { 8, 9 } },
+            new object[] { -2, -2, new[] { 8 } },
+            new object[] { 3, 5, new[] { 3, 4, 5 } },
+            new object[] { -12, 0, new[] { 0 } },
+            new object[] { -12, 2, new[] { 0, 1, 2 } },
+            new object[] { -12, -7, new[] { 0, 1, 2, 3 } },
+            new object[] { -15, -11, Array.Empty<int>() },
+            new object[] { 8, 8, new[] { 8 } },
+            new object[] { 8, 12, new[] { 8, 9 } },
+            new object[] { 9, 12, new[] { 9 } },
+            new object[] { 10, 12, Array.Empty<int>() },
+            new object[] { 5, 3, Array.Empty<int>() },
+            new object[] { -3, -5, Array.Empty<int>() }
+        ];
 
         [Test]
         [TestCaseSource(nameof(LTrimTestCases))]
@@ -728,7 +728,7 @@ namespace Garnet.test
             // Test for Operation direction error.
             var exception = Assert.ThrowsAsync<Exception>(async () =>
             {
-                await db.ExecuteForStringResultAsync("LMOVE", new string[] { "mylist", "myotherlist", "right", "lef" });
+                await db.ExecuteForStringResultAsync("LMOVE", ["mylist", "myotherlist", "right", "lef"]);
             });
             Assert.AreEqual("ERR syntax error", exception.Message);
 
@@ -781,30 +781,30 @@ namespace Garnet.test
             using var db = TestUtils.GetGarnetClient();
             db.Connect();
 
-            await db.ExecuteForStringResultAsync("RPUSH", new string[] { "mylist", "one" });
-            await db.ExecuteForStringResultAsync("RPUSH", new string[] { "mylist", "two" });
-            await db.ExecuteForStringResultAsync("RPUSH", new string[] { "mylist", "three" });
+            await db.ExecuteForStringResultAsync("RPUSH", ["mylist", "one"]);
+            await db.ExecuteForStringResultAsync("RPUSH", ["mylist", "two"]);
+            await db.ExecuteForStringResultAsync("RPUSH", ["mylist", "three"]);
 
-            var response = await db.ExecuteForStringResultAsync("LMOVE", new string[] { "mylist", "myotherlist", "right", "left" });
+            var response = await db.ExecuteForStringResultAsync("LMOVE", ["mylist", "myotherlist", "right", "left"]);
             Assert.AreEqual("three", response);
 
-            var responseArray = await db.ExecuteForStringArrayResultAsync("LRANGE", new string[] { "mylist", "0", "-1" });
+            var responseArray = await db.ExecuteForStringArrayResultAsync("LRANGE", ["mylist", "0", "-1"]);
             var expectedResponseArray = new string[] { "one", "two" };
             Assert.AreEqual(expectedResponseArray, responseArray);
 
-            responseArray = await db.ExecuteForStringArrayResultAsync("LRANGE", new string[] { "myotherlist", "0", "-1" });
-            expectedResponseArray = new string[] { "three" };
+            responseArray = await db.ExecuteForStringArrayResultAsync("LRANGE", ["myotherlist", "0", "-1"]);
+            expectedResponseArray = ["three"];
             Assert.AreEqual(expectedResponseArray, responseArray);
 
-            response = await db.ExecuteForStringResultAsync("LMOVE", new string[] { "mylist", "myotherlist", "LeFT", "RIghT" });
+            response = await db.ExecuteForStringResultAsync("LMOVE", ["mylist", "myotherlist", "LeFT", "RIghT"]);
             Assert.AreEqual("one", response);
 
-            responseArray = await db.ExecuteForStringArrayResultAsync("LRANGE", new string[] { "mylist", "0", "-1" });
-            expectedResponseArray = new string[] { "two" };
+            responseArray = await db.ExecuteForStringArrayResultAsync("LRANGE", ["mylist", "0", "-1"]);
+            expectedResponseArray = ["two"];
             Assert.AreEqual(expectedResponseArray, responseArray);
 
-            responseArray = await db.ExecuteForStringArrayResultAsync("LRANGE", new string[] { "myotherlist", "0", "-1" });
-            expectedResponseArray = new string[] { "three", "one" };
+            responseArray = await db.ExecuteForStringArrayResultAsync("LRANGE", ["myotherlist", "0", "-1"]);
+            expectedResponseArray = ["three", "one"];
             Assert.AreEqual(expectedResponseArray, responseArray);
         }
 
@@ -1318,17 +1318,17 @@ namespace Garnet.test
             pushed = db.ListRightPush(key2, key2Values);
             Assert.AreEqual(1, pushed);
 
-            var result = db.ListLeftPop(new[] { new RedisKey("test") }, 3);
+            var result = db.ListLeftPop([new RedisKey("test")], 3);
             Assert.True(result.IsNull);
 
-            result = db.ListRightPop(new[] { new RedisKey("test") }, 3);
+            result = db.ListRightPop([new RedisKey("test")], 3);
             Assert.True(result.IsNull);
 
-            result = db.ListLeftPop(new[] { key1, key2 }, 3);
+            result = db.ListLeftPop([key1, key2], 3);
             Assert.AreEqual(key1, result.Key);
             Assert.AreEqual(key1Values, result.Values);
 
-            result = db.ListRightPop(new[] { new RedisKey("test"), key2 }, 2);
+            result = db.ListRightPop([new RedisKey("test"), key2], 2);
             Assert.AreEqual(key2, result.Key);
             Assert.AreEqual(key2Values.Reverse(), result.Values);
         }
@@ -1346,7 +1346,7 @@ namespace Garnet.test
 
             var response = db.Execute("LMPOP", "1", key1.ToString(), "LEFT");
 
-            var result = response.Resp2Type == ResultType.Array ? (string[])response : Array.Empty<string>();
+            var result = response.Resp2Type == ResultType.Array ? (string[])response : [];
             Assert.AreEqual(new string[] { key1.ToString(), key1Values[0].ToString() }, result);
         }
 
@@ -1365,12 +1365,12 @@ namespace Garnet.test
 
             for (var i = 0; i < key1Values.Length; i++)
             {
-                result = db.ListRightPop(new[] { key1 }, 1);
+                result = db.ListRightPop([key1], 1);
                 Assert.AreEqual(key1, result.Key);
                 Assert.AreEqual(key1Values[i], result.Values.FirstOrDefault());
             }
 
-            result = db.ListRightPop(new[] { key1 }, 1);
+            result = db.ListRightPop([key1], 1);
             Assert.True(result.IsNull);
         }
 

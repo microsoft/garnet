@@ -166,7 +166,7 @@ namespace CommandInfoUpdater
                 // If existing commands contain parent command and have no sub-commands, set sub-commands to add as supported command's sub-commands
                 if (existingCommandsInfo[supportedCommand.Command].SubCommands == null)
                 {
-                    subCommandsToAdd = supportedCommand.SubCommands.ToArray();
+                    subCommandsToAdd = [.. supportedCommand.SubCommands];
                 }
                 // Set sub-commands to add as the difference between existing sub-commands and supported command's sub-commands
                 else
@@ -412,7 +412,7 @@ namespace CommandInfoUpdater
                 {
                     updatedSubCommands = existingCommandsInfo[command.Command].SubCommands == null
                         ? new List<RespCommandsInfo>()
-                        : existingCommandsInfo[command.Command].SubCommands.ToList();
+                        : [.. existingCommandsInfo[command.Command].SubCommands];
 
                     // Add sub-commands with updated queried command info
                     foreach (var subCommandToAdd in command.SubCommands!)

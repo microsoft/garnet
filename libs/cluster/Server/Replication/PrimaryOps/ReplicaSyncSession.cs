@@ -428,7 +428,7 @@ namespace Garnet.cluster
                 }
 
                 // Send last empty package to indicate end of transmission and let replica dispose IDevice
-                resp = await gcs.ExecuteSendFileSegments(fileTokenBytes, (int)type, startAddress, Array.Empty<byte>()).ConfigureAwait(false);
+                resp = await gcs.ExecuteSendFileSegments(fileTokenBytes, (int)type, startAddress, []).ConfigureAwait(false);
                 if (!resp.Equals("OK"))
                 {
                     logger?.LogError("Primary error at SendFileSegments {type} {resp}", type, resp);
@@ -477,7 +477,7 @@ namespace Garnet.cluster
                         startAddress += readBytes;
                     }
 
-                    resp = await gcs.ExecuteSendFileSegments(fileTokenBytes, (int)type, 0L, Array.Empty<byte>()).ConfigureAwait(false);
+                    resp = await gcs.ExecuteSendFileSegments(fileTokenBytes, (int)type, 0L, []).ConfigureAwait(false);
                     if (!resp.Equals("OK"))
                     {
                         logger?.LogError("Primary error at SendFileSegments {type} {resp}", type, resp);

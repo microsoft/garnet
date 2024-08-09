@@ -79,7 +79,7 @@ namespace Garnet.server
         /// <returns></returns>
         public MetricsItem[] GetLatencyMetrics(LatencyMetricsType latencyMetricsType)
         {
-            if (provider.StoreWrapper.monitor?.GlobalMetrics.globalLatencyMetrics == null) return Array.Empty<MetricsItem>();
+            if (provider.StoreWrapper.monitor?.GlobalMetrics.globalLatencyMetrics == null) return [];
             return provider.StoreWrapper.monitor.GlobalMetrics.globalLatencyMetrics.GetLatencyMetrics(latencyMetricsType);
         }
 
@@ -90,7 +90,7 @@ namespace Garnet.server
         /// <returns></returns>
         public IEnumerable<(LatencyMetricsType, MetricsItem[])> GetLatencyMetrics(LatencyMetricsType[] latencyMetricsTypes = null)
         {
-            if (provider.StoreWrapper.monitor?.GlobalMetrics.globalLatencyMetrics == null) return Array.Empty<(LatencyMetricsType, MetricsItem[])>();
+            if (provider.StoreWrapper.monitor?.GlobalMetrics.globalLatencyMetrics == null) return [];
             latencyMetricsTypes ??= GarnetLatencyMetrics.defaultLatencyTypes;
             return provider.StoreWrapper.monitor?.GlobalMetrics.globalLatencyMetrics.GetLatencyMetrics(latencyMetricsTypes);
         }

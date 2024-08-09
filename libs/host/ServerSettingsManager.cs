@@ -42,7 +42,7 @@ namespace Garnet
             options = null;
             invalidOptions = new List<string>();
 
-            if (args == null) args = Array.Empty<string>();
+            if (args == null) args = [];
 
             // Initialize command line parser
             var parser = new Parser(settings =>
@@ -357,7 +357,7 @@ Please check the syntax of your command. For detailed usage information run with
                 }
             }
 
-            return consolidatedArgs.ToArray();
+            return [.. consolidatedArgs];
         }
     }
 }

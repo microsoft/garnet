@@ -643,7 +643,7 @@ namespace Garnet.test
 
             // Register select custom commands and transactions
             var resp = (string)db.Execute($"REGISTERCS",
-                args.ToArray());
+                [.. args]);
 
             // Test READWRITETX
             string key = "readkey";
@@ -725,7 +725,7 @@ namespace Garnet.test
 
             try
             {
-                resp = (string)db.Execute($"REGISTERCS", args.ToArray());
+                resp = (string)db.Execute($"REGISTERCS", [.. args]);
             }
             catch (RedisServerException rse)
             {
@@ -746,7 +746,7 @@ namespace Garnet.test
 
             try
             {
-                resp = (string)db.Execute($"REGISTERCS", args.ToArray());
+                resp = (string)db.Execute($"REGISTERCS", [.. args]);
             }
             catch (RedisServerException rse)
             {
@@ -767,7 +767,7 @@ namespace Garnet.test
 
             try
             {
-                resp = (string)db.Execute($"REGISTERCS", args.ToArray());
+                resp = (string)db.Execute($"REGISTERCS", [.. args]);
             }
             catch (RedisServerException rse)
             {
@@ -788,7 +788,7 @@ namespace Garnet.test
 
             try
             {
-                resp = (string)db.Execute($"REGISTERCS", args.ToArray());
+                resp = (string)db.Execute($"REGISTERCS", [.. args]);
             }
             catch (RedisServerException rse)
             {

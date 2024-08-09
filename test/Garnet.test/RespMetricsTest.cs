@@ -117,7 +117,7 @@ namespace Garnet.test
             while (latencyMetrics.Length == 0)
             {
                 Thread.Yield();
-                latencyMetrics = server.Metrics.GetLatencyMetrics(LatencyMetricsType.NET_RS_LAT).ToArray();
+                latencyMetrics = [.. server.Metrics.GetLatencyMetrics(LatencyMetricsType.NET_RS_LAT)];
             }
             Assert.AreNotEqual(Array.Empty<(LatencyMetricsType, MetricsItem[])>(), latencyMetrics);
             Assert.AreEqual(8, latencyMetrics.Length);
