@@ -49,10 +49,23 @@ namespace Garnet.server
                 end
                 sandbox_env = {
                     tostring = tostring;
-                    print = print;
-                    redis=redis;
+                    next = next;
+                    assert = assert;
                     tonumber = tonumber;
-                }               
+                    rawequal = rawequal;
+                    collectgarbage = collectgarbage;
+                    coroutine = coroutine;
+                    type = type;
+                    select = select;
+                    unpack = unpack;
+                    gcinfo = gcinfo;
+                    pairs = pairs;
+                    loadstring = loadstring;
+                    ipairs = ipairs;
+                    error = error;
+                    redis = redis;
+                    math = math;
+                }
                 function load_sandboxed(source)
                     if (not source) then return nil end
                     return load(source, nil, nil, sandbox_env)
@@ -114,6 +127,7 @@ namespace Garnet.server
         /// <summary>
         /// Entry point for redis.call method from a Lua script
         /// </summary>
+        /// <param name="cmd"></param>
         /// <param name="args">Parameters</param>
         /// <returns></returns>
         public object garnet_call(string cmd, params object[] args)
@@ -122,6 +136,7 @@ namespace Garnet.server
         /// <summary>
         /// Entry point method for executing commands from a Lua Script
         /// </summary>
+        /// <param name="cmd"></param>
         /// <param name="args"></param>
         /// <returns></returns>
         unsafe object ProcessCommandFromScripting(string cmd, params object[] args)

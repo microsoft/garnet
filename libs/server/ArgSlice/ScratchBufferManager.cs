@@ -257,7 +257,15 @@ namespace Garnet.server
                     scratchBufferOffset = (int)(ptr - scratchBufferHead);
                 }
                 else
-                    throw new InvalidOperationException("Invalid argument type");
+                {
+                    count++;
+                    while (!RespWriteUtils.WriteAsciiBulkString(Convert.ToString(item), ref ptr, scratchBufferHead + scratchBuffer.Length))
+                    {
+                        ExpandScratchBuffer(scratchBuffer.Length + 1);
+                        ptr = scratchBufferHead + scratchBufferOffset;
+                    }
+                    scratchBufferOffset = (int)(ptr - scratchBufferHead);
+                }
             }
             if (count != args.Length + 1)
             {

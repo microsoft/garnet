@@ -36,14 +36,15 @@ namespace Garnet.server
         /// <summary>
         /// Load script into the cache
         /// </summary>
-        public bool TryLoad(ReadOnlySpan<byte> source, out byte[] digest, out LuaRunner runner)
+        public bool TryLoad(ReadOnlySpan<byte> source, out byte[] digest, out LuaRunner runner, out string error)
         {
             digest = GetScriptDigest(source);
-            return TryLoad(source, digest, out runner);
+            return TryLoad(source, digest, out runner, out error);
         }
 
-        internal bool TryLoad(ReadOnlySpan<byte> source, byte[] digest, out LuaRunner runner)
+        internal bool TryLoad(ReadOnlySpan<byte> source, byte[] digest, out LuaRunner runner, out string error)
         {
+            error = null;
             runner = null;
 
             if (scriptCache.TryGetValue(digest, out runner))
@@ -55,8 +56,9 @@ namespace Garnet.server
                 runner.Compile();
                 scriptCache.TryAdd(digest, runner);
             }
-            catch
+            catch (Exception ex)
             {
+                error = ex.Message;
                 return false;
             }
             return true;

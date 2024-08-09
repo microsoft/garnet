@@ -24,7 +24,13 @@ namespace Garnet.server
                 var d = digest.ToArray();
                 if (storeWrapper.storeScriptCache.TryGetValue(d, out var source))
                 {
-                    sessionScriptCache.TryLoad(source, d, out runner);
+                    if (!sessionScriptCache.TryLoad(source, d, out runner, out var error))
+                    {
+                        while (!RespWriteUtils.WriteError(error, ref dcurr, dend))
+                            SendAndReset();
+                        _ = storeWrapper.storeScriptCache.TryRemove(d, out _);
+                        return result;
+                    }
                 }
             }
             if (runner == null)
@@ -51,7 +57,12 @@ namespace Garnet.server
             var digest = sessionScriptCache.GetScriptDigest(script);
 
             var result = false;
-            sessionScriptCache.TryLoad(script, digest, out var runner);
+            if (!sessionScriptCache.TryLoad(script, digest, out var runner, out var error))
+            {
+                while (!RespWriteUtils.WriteError(error, ref dcurr, dend))
+                    SendAndReset();
+                return result;
+            }
             if (runner == null)
             {
                 while (!RespWriteUtils.WriteError(CmdStrings.RESP_ERR_NO_SCRIPT, ref dcurr, dend))
@@ -78,11 +89,15 @@ namespace Garnet.server
                 {
                     case "load" when count == 2:
                         var source = parseState.GetArgSliceByRef(1).ReadOnlySpan;
-                        if (sessionScriptCache.TryLoad(source, out var digest, out _))
+                        if (!sessionScriptCache.TryLoad(source, out var digest, out _, out var error))
                         {
-                            // Add script to the store dictionary
-                            storeWrapper.storeScriptCache.TryAdd(digest, source.ToArray());
+                            while (!RespWriteUtils.WriteError(error, ref dcurr, dend))
+                                SendAndReset();
+                            return true;
                         }
+
+                        // Add script to the store dictionary
+                        storeWrapper.storeScriptCache.TryAdd(digest, source.ToArray());
 
                         while (!RespWriteUtils.WriteBulkString(digest, ref dcurr, dend))
                             SendAndReset();
@@ -205,7 +220,7 @@ namespace Garnet.server
             catch (Exception ex)
             {
                 logger?.LogError(ex, "Error executing Lua script");
-                while (!RespWriteUtils.WriteDirect(CmdStrings.RESP_EMPTY, ref dcurr, dend))
+                while (!RespWriteUtils.WriteError("ERR " + ex.Message, ref dcurr, dend))
                     SendAndReset();
                 return true;
             }
