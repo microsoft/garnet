@@ -56,7 +56,7 @@ namespace GarnetJSON
         /// <param name="type">The type of the object.</param>
         /// <param name="reader">The binary reader to deserialize from.</param>
         public JsonObject(byte type, BinaryReader reader)
-            : base(type, reader, MemoryUtils.DictionaryOverhead)
+            : base(type, reader)
         {
             Debug.Assert(reader != null);
 
@@ -87,7 +87,7 @@ namespace GarnetJSON
         /// <param name="writer">The binary writer to serialize to.</param>
         public override void SerializeObject(BinaryWriter writer)
         {
-            writer.Write(JsonConvert.SerializeObject(jObject));
+            writer.Write(JsonConvert.SerializeObject(jObject, Formatting.None));
         }
 
         /// <summary>
@@ -103,7 +103,7 @@ namespace GarnetJSON
         /// <param name="logger">The logger to log any errors.</param>
         /// <returns><c>true</c> if the value was successfully set; otherwise, <c>false</c>.</returns>
         /// <exception cref="ArgumentNullException">Thrown when <paramref name="path"/> or <paramref name="value"/> is <c>null</c>.</exception>
-        public bool TrySet(string path, string value, Microsoft.Extensions.Logging.ILogger logger)
+        public bool TrySet(string path, string value, ILogger? logger = null)
         {
             if (path == null)
                 throw new ArgumentNullException(nameof(path));
@@ -197,7 +197,7 @@ namespace GarnetJSON
         /// <param name="logger">The logger to log any errors.</param>
         /// <returns><c>true</c> if the value was successfully retrieved; otherwise, <c>false</c>.</returns>
         /// <exception cref="ArgumentNullException">Thrown when <paramref name="path"/> is <c>null</c>.</exception>
-        public bool TryGet(string path, out string jsonString, ILogger logger)
+        public bool TryGet(string path, out string jsonString, ILogger? logger = null)
         {
             if (path == null)
                 throw new ArgumentNullException(nameof(path));

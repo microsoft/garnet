@@ -65,5 +65,34 @@ namespace Garnet.test
             result = db.Execute("JSON.GET", "k1", "$");
             Assert.AreEqual("[{\"f1\":{\"a\":3},\"f2\":{\"a\":3},\"f3\":4,\"f5\":{\"c\":5}}]", result.ToString());
         }
+
+        [Test]
+        public void SerializationTest()
+        {
+            var jsonObject = new GarnetJSON.JsonObject(23);
+            jsonObject.TrySet("$", "{\"a\": 1}");
+
+            byte[] serializedData;
+            using (var memoryStream = new MemoryStream())
+            {
+                using (var binaryWriter = new BinaryWriter(memoryStream))
+                {
+                    jsonObject.Serialize(binaryWriter);
+                }
+
+                serializedData = memoryStream.ToArray();
+            }
+
+            using (var memoryStream = new MemoryStream(serializedData))
+            {
+                using (var binaryReader = new BinaryReader(memoryStream))
+                {
+                    var deserializedObject = new GarnetJSON.JsonObject(binaryReader.ReadByte(), binaryReader);
+
+                    deserializedObject.TryGet("$", out var newString);
+                    Assert.AreEqual("[{\"a\":1}]", newString);
+                }
+            }
+        }
     }
 }
