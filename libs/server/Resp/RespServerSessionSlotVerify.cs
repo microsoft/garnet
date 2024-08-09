@@ -45,24 +45,72 @@ namespace Garnet.server
                 // This only happens if we failed to parse the json file
                 return false;
 
-            // The provided command is not a data command so we can serve without any slot restrictions
+            // The provided command is not a data command
+            // so we can serve without any slot restrictions
             if (commandInfo == null)
                 return true;
 
+            var specs = commandInfo.KeySpecifications;
+            switch (cmd)
+            {
+                case RespCommand.ZDIFF:
+                    var beginSearch = (BeginSearchIndex)specs[0].BeginSearch;
+                    var findKeysKeyNum = (FindKeysKeyNum)specs[0].FindKeys;
+                    csvi.firstKey = beginSearch.Index;
+                    csvi.lastKey = beginSearch.Index + parseState.GetInt(0);
+                    csvi.step = findKeysKeyNum.KeyStep;
+                    break;
+                case RespCommand.BITOP:
+                    beginSearch = (BeginSearchIndex)specs[0].BeginSearch;
+                    var findKeys = (FindKeysRange)specs[1].FindKeys;
+                    csvi.firstKey = beginSearch.Index - 2;
+                    csvi.lastKey = findKeys.LastKey < 0 ? findKeys.LastKey + parseState.count + 1 : findKeys.LastKey - beginSearch.Index + 1;
+                    csvi.step = findKeys.KeyStep;
+                    break;
+                case RespCommand.PFMERGE:
+                case RespCommand.SDIFFSTORE:
+                case RespCommand.SUNIONSTORE:
+                case RespCommand.SINTERSTORE:
+                    beginSearch = (BeginSearchIndex)specs[0].BeginSearch;
+                    findKeys = (FindKeysRange)specs[1].FindKeys;
+                    csvi.firstKey = beginSearch.Index - 1;
+                    csvi.lastKey = findKeys.LastKey < 0 ? findKeys.LastKey + parseState.count + 1 : findKeys.LastKey - beginSearch.Index + 1;
+                    csvi.step = findKeys.KeyStep;
+                    break;
+                case RespCommand.RENAME:
+                case RespCommand.SMOVE:
+                case RespCommand.LMOVE:
+                    beginSearch = (BeginSearchIndex)specs[0].BeginSearch;
+                    var beginSearch1 = (BeginSearchIndex)specs[1].BeginSearch;
+                    findKeys = (FindKeysRange)specs[1].FindKeys;
+                    csvi.firstKey = beginSearch.Index - 1;
+                    csvi.lastKey = beginSearch1.Index - beginSearch.Index + 1;
+                    csvi.step = findKeys.KeyStep;
+                    break;
+                default:
+                    beginSearch = (BeginSearchIndex)specs[0].BeginSearch;
+                    findKeys = (FindKeysRange)specs[0].FindKeys;
+                    csvi.firstKey = beginSearch.Index - 1;
+                    csvi.lastKey = findKeys.LastKey < 0 ? findKeys.LastKey + parseState.count + 1 : findKeys.LastKey - beginSearch.Index + 1;
+                    csvi.step = findKeys.KeyStep;
+                    break;
+            }
+
             csvi.readOnly = cmd.IsReadOnly();
             csvi.sessionAsking = SessionAsking;
-            csvi.firstKey = cmd switch
-            {
-                RespCommand.ZDIFF => 1, // ZDIFF first key comes after keyCount parameter
-                _ => 0 // firstKey always starts at position zero since command name has been extracted earlier
-            };
 
-            csvi.lastKey = cmd switch
-            {
-                RespCommand.ZDIFF => csvi.firstKey + parseState.GetInt(0), // ZDIFF count of keys is part of parameters
-                _ => commandInfo.LastKey < 0 ? commandInfo.LastKey + parseState.count + 1 : commandInfo.LastKey - commandInfo.FirstKey + 1
-            };
-            csvi.step = commandInfo.Step;
+            //csvi.firstKey = cmd switch
+            //{
+            //    RespCommand.ZDIFF => 1, // ZDIFF first key comes after keyCount parameter
+            //    _ => 0 // firstKey always starts at position zero since command name has been extracted earlier
+            //};
+
+            //csvi.lastKey = cmd switch
+            //{
+            //    RespCommand.ZDIFF => csvi.firstKey + parseState.GetInt(0), // ZDIFF count of keys is part of parameters
+            //    _ => commandInfo.LastKey < 0 ? commandInfo.LastKey + parseState.count + 1 : commandInfo.LastKey - commandInfo.FirstKey + 1
+            //};
+            //csvi.step = commandInfo.Step;
             return !clusterSession.NetworkMultiKeySlotVerify(ref parseState, ref csvi, ref dcurr, ref dend);
         }
     }
