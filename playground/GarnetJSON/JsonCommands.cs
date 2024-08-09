@@ -10,11 +10,11 @@ using Tsavorite.core;
 
 namespace GarnetJSON
 {
-    class JsonSET : CustomObjectFunctions
+    public class JsonSET : CustomObjectFunctions
     {
-        private ILogger logger;
+        private ILogger? logger;
 
-        public JsonSET(ILogger logger) => this.logger = logger;
+        public JsonSET(ILogger? logger = null) => this.logger = logger;
 
         public override bool NeedInitialUpdate(ReadOnlyMemory<byte> key, ReadOnlySpan<byte> input, ref (IMemoryOwner<byte>, int) output) => true;
 
@@ -35,11 +35,11 @@ namespace GarnetJSON
         }
     }
 
-    class JsonGET : CustomObjectFunctions
+    public class JsonGET : CustomObjectFunctions
     {
-        private ILogger logger;
+        private ILogger? logger;
 
-        public JsonGET(ILogger logger) => this.logger = logger;
+        public JsonGET(ILogger? logger = null) => this.logger = logger;
 
         public override bool Reader(ReadOnlyMemory<byte> key, ReadOnlySpan<byte> input, IGarnetObject value, ref (IMemoryOwner<byte>, int) output, ref ReadInfo readInfo)
         {
