@@ -2,6 +2,7 @@
 // Licensed under the MIT license.
 
 using System;
+using System.Collections.Generic;
 using Garnet.common;
 using Microsoft.Extensions.Logging;
 using NUnit.Framework;
