@@ -64,8 +64,6 @@ namespace Garnet.test
             Assert.IsTrue(((RedisValue)response).ToString().Contains("KeyOneValue-abc", StringComparison.InvariantCultureIgnoreCase));
         }
 
-
-
         [Test]
         public void CanDoEvalSetGet()
         {

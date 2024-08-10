@@ -20,6 +20,7 @@ namespace Garnet.server
         const int SHA1Len = 40;
         readonly RespServerSession processor;
         readonly ScratchBufferNetworkSender scratchBufferNetworkSender;
+        readonly StoreWrapper storeWrapper;
         readonly ILogger logger;
         readonly Dictionary<byte[], LuaRunner> scriptCache = new(new ByteArrayComparer());
         readonly byte[] hash = new byte[SHA1Len / 2];
@@ -27,6 +28,7 @@ namespace Garnet.server
         public SessionScriptCache(StoreWrapper storeWrapper, IGarnetAuthenticator authenticator, ILogger logger = null)
         {
             this.scratchBufferNetworkSender = new ScratchBufferNetworkSender();
+            this.storeWrapper = storeWrapper;
             this.processor = new RespServerSession(scratchBufferNetworkSender, storeWrapper, null, null, authenticator, false);
             this.logger = logger;
         }
@@ -61,7 +63,7 @@ namespace Garnet.server
 
             try
             {
-                runner = new LuaRunner(source, processor, scratchBufferNetworkSender, logger);
+                runner = new LuaRunner(source, storeWrapper.serverOptions.LuaTransactionMode, processor, scratchBufferNetworkSender, logger);
                 runner.Compile();
                 scriptCache.TryAdd(digest, runner);
             }

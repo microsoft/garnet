@@ -23,13 +23,16 @@ namespace Garnet.server
         readonly LuaTable sandbox_env;
         LuaFunction function;
         string[] keys, argv;
+        readonly TxnKeyEntries txnKeyEntries;
+        readonly bool txnMode;
 
         /// <summary>
         /// Creates a new runner with the source of the script
         /// </summary>
-        public LuaRunner(string source, RespServerSession respServerSession = null, ScratchBufferNetworkSender scratchBufferNetworkSender = null, ILogger logger = null)
+        public LuaRunner(string source, bool txnMode = false, RespServerSession respServerSession = null, ScratchBufferNetworkSender scratchBufferNetworkSender = null, ILogger logger = null)
         {
             this.source = source;
+            this.txnMode = txnMode;
             this.respServerSession = respServerSession;
             this.scratchBufferNetworkSender = scratchBufferNetworkSender;
             this.scratchBufferManager = respServerSession?.scratchBufferManager;
@@ -37,7 +40,15 @@ namespace Garnet.server
 
             state = new Lua();
             state.State.Encoding = Encoding.UTF8;
-            state.RegisterFunction("garnet_call", this, this.GetType().GetMethod("garnet_call"));
+            if (txnMode)
+            {
+                this.txnKeyEntries = new TxnKeyEntries(16, respServerSession.storageSession.lockableContext, respServerSession.storageSession.objectStoreLockableContext);
+                state.RegisterFunction("garnet_call", this, this.GetType().GetMethod("garnet_call_txn"));
+            }
+            else
+            {
+                state.RegisterFunction("garnet_call", this, this.GetType().GetMethod("garnet_call"));
+            }
             state.DoString(@"
                 import = function () end
                 redis = {}
@@ -74,8 +85,8 @@ namespace Garnet.server
         /// <summary>
         /// Creates a new runner with the source of the script
         /// </summary>
-        public LuaRunner(ReadOnlySpan<byte> source, RespServerSession respServerSession, ScratchBufferNetworkSender scratchBufferNetworkSender, ILogger logger = null)
-            : this(Encoding.UTF8.GetString(source), respServerSession, scratchBufferNetworkSender, logger)
+        public LuaRunner(ReadOnlySpan<byte> source, bool txnMode, RespServerSession respServerSession, ScratchBufferNetworkSender scratchBufferNetworkSender, ILogger logger = null)
+            : this(Encoding.UTF8.GetString(source), txnMode, respServerSession, scratchBufferNetworkSender, logger)
         {
         }
 
@@ -122,13 +133,22 @@ namespace Garnet.server
         }
 
         /// <summary>
-        /// Entry point for redis.call method from a Lua script
+        /// Entry point for redis.call method from a Lua script (non-transactional mode)
         /// </summary>
         /// <param name="cmd"></param>
         /// <param name="args">Parameters</param>
         /// <returns></returns>
         public object garnet_call(string cmd, params object[] args)
-            => respServerSession == null ? null : ProcessCommandFromScripting(cmd, args);
+            => respServerSession == null ? null : ProcessCommandFromScripting(respServerSession.basicGarnetApi, cmd, args);
+
+        /// <summary>
+        /// Entry point for redis.call method from a Lua script (transactional mode)
+        /// </summary>
+        /// <param name="cmd"></param>
+        /// <param name="args">Parameters</param>
+        /// <returns></returns>
+        public object garnet_call_txn(string cmd, params object[] args)
+            => respServerSession == null ? null : ProcessCommandFromScripting(respServerSession.lockableGarnetApi, cmd, args);
 
         /// <summary>
         /// Entry point method for executing commands from a Lua Script
@@ -136,10 +156,9 @@ namespace Garnet.server
         /// <param name="cmd"></param>
         /// <param name="args"></param>
         /// <returns></returns>
-        unsafe object ProcessCommandFromScripting(string cmd, params object[] args)
+        unsafe object ProcessCommandFromScripting<TGarnetApi>(TGarnetApi api, string cmd, params object[] args)
+            where TGarnetApi : IGarnetApi
         {
-            scratchBufferManager.Reset();
-
             switch (cmd)
             {
                 case "SET":
@@ -149,7 +168,7 @@ namespace Garnet.server
                             return Encoding.ASCII.GetString(CmdStrings.RESP_ERR_NOAUTH);
                         var key = scratchBufferManager.CreateArgSlice(Convert.ToString(args[0]));
                         var value = scratchBufferManager.CreateArgSlice(Convert.ToString(args[1]));
-                        _ = respServerSession.basicGarnetApi.SET(key, value);
+                        _ = api.SET(key, value);
                         return "OK";
                     }
                 case "GET":
@@ -158,7 +177,7 @@ namespace Garnet.server
                         if (!respServerSession.CheckACLPermissions(RespCommand.GET))
                             throw new Exception(Encoding.ASCII.GetString(CmdStrings.RESP_ERR_NOAUTH));
                         var key = scratchBufferManager.CreateArgSlice(Convert.ToString(args[0]));
-                        var status = respServerSession.basicGarnetApi.GET(key, out var value);
+                        var status = api.GET(key, out var value);
                         if (status == GarnetStatus.OK)
                             return value.ToString();
                         return null;
@@ -209,12 +228,107 @@ namespace Garnet.server
         }
 
         /// <summary>
+        /// Runs the precompiled Lua function with specified parse state
+        /// </summary>
+        public object Run(int count, SessionParseState parseState)
+        {
+            scratchBufferManager.Reset();
+
+            int offset = 1;
+            int nKeys = parseState.GetInt(offset++);
+            count--;
+
+            string[] keys = null;
+            if (nKeys > 0)
+            {
+                keys = new string[nKeys + 1];
+                for (int i = 0; i < nKeys; i++)
+                {
+                    if (txnMode)
+                    {
+                        var key = parseState.GetArgSliceByRef(offset);
+                        txnKeyEntries.AddKey(key, false, Tsavorite.core.LockType.Exclusive);
+                        if (!respServerSession.storageSession.objectStoreLockableContext.IsNull)
+                            txnKeyEntries.AddKey(key, true, Tsavorite.core.LockType.Exclusive);
+                    }
+                    keys[i + 1] = parseState.GetString(offset++);
+                }
+                count -= nKeys;
+
+                //TODO: handle slot verification for Lua script keys
+                //if (NetworkKeyArraySlotVerify(keys, true))
+                //{
+                //    return true;
+                //}
+            }
+
+            string[] argv = null;
+            if (count > 0)
+            {
+                argv = new string[count + 1];
+                for (int i = 0; i < count; i++)
+                {
+                    argv[i + 1] = parseState.GetString(offset++);
+                }
+            }
+
+            if (txnMode && nKeys > 0)
+            {
+                return RunTransactionInternal(keys, argv);
+            }
+            else
+            {
+                return RunInternal(keys, argv);
+            }
+        }
+
+        /// <summary>
         /// Runs the precompiled Lua function with specified (keys, argv) state
         /// </summary>
-        /// <param name="keys"></param>
-        /// <param name="argv"></param>
-        /// <returns></returns>
         public object Run(string[] keys, string[] argv)
+        {
+            scratchBufferManager?.Reset();
+
+            if (txnMode && keys?.Length > 0)
+            {
+                // Add keys to the transaction
+                foreach (var key in keys)
+                {
+                    var _key = scratchBufferManager.CreateArgSlice(key);
+                    txnKeyEntries.AddKey(_key, false, Tsavorite.core.LockType.Exclusive);
+                    if (!respServerSession.storageSession.objectStoreLockableContext.IsNull)
+                        txnKeyEntries.AddKey(_key, true, Tsavorite.core.LockType.Exclusive);
+                }
+                return RunTransactionInternal(keys, argv);
+            }
+            else
+            {
+                return RunInternal(keys, argv);
+            }
+        }
+
+        object RunTransactionInternal(string[] keys, string[] argv)
+        {
+            try
+            {
+                respServerSession.storageSession.lockableContext.BeginLockable();
+                if (!respServerSession.storageSession.objectStoreLockableContext.IsNull)
+                    respServerSession.storageSession.objectStoreLockableContext.BeginLockable();
+                respServerSession.SetTransactionMode(true);
+                txnKeyEntries.LockAllKeys();
+                return RunInternal(keys, argv);
+            }
+            finally
+            {
+                txnKeyEntries.UnlockAllKeys();
+                respServerSession.SetTransactionMode(false);
+                respServerSession.storageSession.lockableContext.EndLockable();
+                if (!respServerSession.storageSession.objectStoreLockableContext.IsNull)
+                    respServerSession.storageSession.objectStoreLockableContext.EndLockable();
+            }
+        }
+
+        object RunInternal(string[] keys, string[] argv)
         {
             if (keys != this.keys)
             {

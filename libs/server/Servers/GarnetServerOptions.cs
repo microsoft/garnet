@@ -79,6 +79,9 @@ namespace Garnet.server
         // Enable Lua scripts on server
         public bool EnableLua = false;
 
+        // Run Lua scripts as a transaction (lock keys - run script - unlock keys)
+        public bool LuaTransactionMode = false;
+
         /// <summary>
         /// Total AOF memory buffer used in bytes (rounds down to power of 2) - spills to disk after this limit.
         /// </summary>

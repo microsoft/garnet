@@ -171,39 +171,9 @@ namespace Garnet.server
         /// <returns></returns>
         private unsafe bool ExecuteScript(int count, LuaRunner scriptRunner)
         {
-            int offset = 1;
-            int nKeys = parseState.GetInt(offset++);
-            count--;
-
-            string[] keys = null;
-            if (nKeys > 0)
-            {
-                keys = new string[nKeys + 1];
-                for (int i = 0; i < nKeys; i++)
-                {
-                    keys[i + 1] = parseState.GetString(offset++);
-                }
-                count -= nKeys;
-
-                //if (NetworkKeyArraySlotVerify(keys, true))
-                //{
-                //    return true;
-                //}
-            }
-
-            string[] argv = null;
-            if (count > 0)
-            {
-                argv = new string[count + 1];
-                for (int i = 0; i < count; i++)
-                {
-                    argv[i + 1] = parseState.GetString(offset++);
-                }
-            }
-
             try
             {
-                object scriptResult = scriptRunner.Run(keys, argv);
+                object scriptResult = scriptRunner.Run(count, parseState);
                 if (scriptResult != null)
                 {
                     if (scriptResult is string s)

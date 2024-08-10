@@ -366,6 +366,9 @@ namespace Garnet.server
             return readHead;
         }
 
+        internal void SetTransactionMode(bool enable)
+            => txnManager.state = enable ? TxnState.Running : TxnState.None;
+
         private void ProcessMessages()
         {
             // #if DEBUG

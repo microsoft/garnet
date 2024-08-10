@@ -217,6 +217,10 @@ namespace Garnet
         [Option("lua", Required = false, HelpText = "Enable Lua scripts on server.")]
         public bool? EnableLua { get; set; }
 
+        [OptionValidation]
+        [Option("lua-transaction-mode", Required = false, HelpText = "Run Lua scripts as a transaction (lock keys - run script - unlock keys).")]
+        public bool? LuaTransactionMode { get; set; }
+
         [PercentageValidation]
         [Option("gossip-sp", Required = false, HelpText = "Percent of cluster nodes to gossip with at each gossip iteration.")]
         public int GossipSamplePercent { get; set; }
@@ -577,6 +581,7 @@ namespace Garnet
                 AuthSettings = GetAuthenticationSettings(logger),
                 EnableAOF = EnableAOF.GetValueOrDefault(),
                 EnableLua = EnableLua.GetValueOrDefault(),
+                LuaTransactionMode = LuaTransactionMode.GetValueOrDefault(),
                 AofMemorySize = AofMemorySize,
                 AofPageSize = AofPageSize,
                 CommitFrequencyMs = CommitFrequencyMs,
