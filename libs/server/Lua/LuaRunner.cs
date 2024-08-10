@@ -153,14 +153,12 @@ namespace Garnet.server
         /// <summary>
         /// Entry point method for executing commands from a Lua Script
         /// </summary>
-        /// <param name="cmd"></param>
-        /// <param name="args"></param>
-        /// <returns></returns>
         unsafe object ProcessCommandFromScripting<TGarnetApi>(TGarnetApi api, string cmd, params object[] args)
             where TGarnetApi : IGarnetApi
         {
             switch (cmd)
             {
+                // We special-case a few performance-sensitive operations to directly invoke via the storage API
                 case "SET":
                 case "set":
                     {
@@ -182,6 +180,8 @@ namespace Garnet.server
                             return value.ToString();
                         return null;
                     }
+                // As fallback, we use RespServerSession with a RESP-formatted input. This could be optimized
+                // in future to provide parse state directly.
                 default:
                     {
                         var request = scratchBufferManager.FormatCommandAsResp(cmd, args, state);
@@ -194,6 +194,9 @@ namespace Garnet.server
             }
         }
 
+        /// <summary>
+        /// Process a RESP-formatted response from the RespServerSession
+        /// </summary>
         unsafe object ProcessResponse(byte* ptr, int length)
         {
             switch (*ptr)
