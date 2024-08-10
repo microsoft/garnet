@@ -161,8 +161,6 @@ namespace Garnet.server
             return true;
         }
 
-        #region CommonMethods
-
         /// <summary>
         /// Invoke the execution of a server-side Lua script.
         /// </summary>
@@ -225,86 +223,5 @@ namespace Garnet.server
             }
             return true;
         }
-
-        /// <summary>
-        /// Parse key attributes in this format
-        /// key[:storetype][:locktype]
-        /// storetype >> 'raw' or 'obj'
-        /// locktype >>  's' or 'x'
-        /// </summary>
-        /// <param name="keyName"></param>
-        /// <returns></returns>
-        private static (int nameEnd, bool raw, bool ex) ParseAttributes(byte[] keyName)
-        {
-            int[] bookmarks = new int[10];
-            int totalBookmarks = 0;
-            bool raw = true;
-            bool ex = true;
-            int nameEnd = 0;
-
-            for (int j = keyName.Length - 1; j >= 0; j--)
-            {
-                if ((char)keyName[j] == ':')
-                {
-                    bookmarks[totalBookmarks] = j;
-                    totalBookmarks++;
-                }
-            }
-
-            if (totalBookmarks == 0)
-                return (keyName.Length - 1, raw, ex);
-
-            for (int k = 0; k < totalBookmarks; k++)
-            {
-                var i = bookmarks[k];
-
-                //try read locktype 's' or 'x'
-                //:x </EOF>
-                if (i + 1 == keyName.Length - 1)
-                {
-                    if ((char)keyName[i + 1] == 'x' || (char)keyName[i + 1] == 'X')
-                        ex = true;
-                    else
-                        ex = false;
-                }
-
-                //try read keytype
-                //::
-                if (i + 3 < keyName.Length)
-                {
-                    //make sure is raw
-                    if (((char)keyName[i + 1] == 'r' || (char)keyName[i + 1] == 'R')
-                        && ((char)keyName[i + 2] == 'a' || (char)keyName[i + 2] == 'A')
-                        && ((char)keyName[i + 3] == 'w' || (char)keyName[i + 3] == 'W'))
-                    {
-                        raw = true;
-                        nameEnd = i - 1;
-                        break;
-                    }
-                    //make sure is obj
-                    if (((char)keyName[i + 1] == 'o' || (char)keyName[i + 1] == 'O')
-                        && ((char)keyName[i + 2] == 'b' || (char)keyName[i + 2] == 'B')
-                        && ((char)keyName[i + 3] == 'j' || (char)keyName[i + 3] == 'J'))
-                    {
-                        raw = false;
-                        nameEnd = i - 1;
-                        break;
-                    }
-                }
-
-                //keytype is not explicit but there's a placeholder ('::*')
-                if (i + 1 < keyName.Length - 1 && (char)keyName[i + 1] == ':')
-                {
-                    raw = true;
-                    nameEnd = i - 1;
-                    break;
-                }
-            }
-
-            return (nameEnd, raw, ex);
-        }
-
-        #endregion
-
     }
 }
