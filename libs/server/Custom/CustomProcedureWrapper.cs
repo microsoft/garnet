@@ -20,7 +20,7 @@ namespace Garnet.server
 
     class CustomProcedureWrapper
     {
-        private readonly string nameStr;
+        public readonly string NameStr;
         public readonly byte[] Name;
         public readonly byte Id;
         public readonly CustomProcedure CustomProcedureImpl;
@@ -33,8 +33,8 @@ namespace Garnet.server
             if (customScriptProc == null)
                 throw new ArgumentNullException(nameof(customScriptProc));
 
-            nameStr = name.ToUpperInvariant();
-            Name = System.Text.Encoding.ASCII.GetBytes(nameStr);
+            NameStr = name.ToUpperInvariant();
+            Name = System.Text.Encoding.ASCII.GetBytes(NameStr);
             Id = id;
             CustomProcedureImpl = customScriptProc;
         }

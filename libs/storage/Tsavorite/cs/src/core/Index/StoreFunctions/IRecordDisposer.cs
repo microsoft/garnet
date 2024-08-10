@@ -9,10 +9,10 @@ namespace Tsavorite.core
     /// <summary>
     /// Interface to implement the Disposer component of <see cref="IStoreFunctions{Key, Value}"/>
     /// </summary>
-    public interface IRecordDisposer<Key, Value>
+    public interface IRecordDisposer<TKey, TValue>
     {
         /// <summary>
-        /// If true, <see cref="DisposeRecord(ref Key, ref Value, DisposeReason, int)"/> with <see cref="DisposeReason.PageEviction"/> 
+        /// If true, <see cref="DisposeRecord(ref TKey, ref TValue, DisposeReason, int)"/> with <see cref="DisposeReason.PageEviction"/> 
         /// is called on page evictions from both readcache and main log. Otherwise, the user can register an Observer and do any needed disposal there.
         /// </summary>
         public bool DisposeOnPageEviction { get; }
@@ -20,19 +20,19 @@ namespace Tsavorite.core
         /// <summary>
         /// Dispose the Key and Value of a record, if necessary. See comments in <see cref="IStoreFunctions{Key, Value}.DisposeRecord(ref Key, ref Value, DisposeReason, int)"/> for details.
         /// </summary>
-        void DisposeRecord(ref Key key, ref Value value, DisposeReason reason, int newKeySize);
+        void DisposeRecord(ref TKey key, ref TValue value, DisposeReason reason, int newKeySize);
     }
 
     /// <summary>
     /// Default no-op implementation if <see cref="IRecordDisposer{Key, Value}"/>
     /// </summary>
     /// <remarks>It is appropriate to call methods on this instance as a no-op.</remarks>
-    public struct DefaultRecordDisposer<Key, Value> : IRecordDisposer<Key, Value>
+    public struct DefaultRecordDisposer<TKey, TValue> : IRecordDisposer<TKey, TValue>
     {
         /// <summary>
         /// Default instance
         /// </summary>
-        public static readonly DefaultRecordDisposer<Key, Value> Instance = new();
+        public static readonly DefaultRecordDisposer<TKey, TValue> Instance = new();
 
         /// <summary>
         /// Assumes the key and value have no need of Dispose(), and does nothing.
@@ -42,9 +42,9 @@ namespace Tsavorite.core
         /// <summary>
         /// Assumes the key and value have no need of Dispose(), and does nothing.
         /// </summary>
-        public readonly void DisposeRecord(ref Key key, ref Value value, DisposeReason reason, int newKeySize)
+        public readonly void DisposeRecord(ref TKey key, ref TValue value, DisposeReason reason, int newKeySize)
         {
-            Debug.Assert(typeof(Key) != typeof(SpanByte) && typeof(Value) != typeof(SpanByte), "Must use SpanByteRecordDisposer");
+            Debug.Assert(typeof(TKey) != typeof(SpanByte) && typeof(TValue) != typeof(SpanByte), "Must use SpanByteRecordDisposer");
         }
     }
 

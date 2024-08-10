@@ -336,9 +336,9 @@ namespace Tsavorite.core
         /// <param name="untilAddress">Compact log until this address</param>
         /// <param name="compactionType">Compaction type (whether we lookup records or scan log for liveness checking)</param>
         /// <returns>Address until which compaction was done</returns>
-        public long Compact<TInput, TOutput, TContext, Functions>(Functions functions, long untilAddress, CompactionType compactionType)
-            where Functions : ISessionFunctions<TKey, TValue, TInput, TOutput, TContext>
-            => Compact<TInput, TOutput, TContext, Functions, DefaultCompactionFunctions<TKey, TValue>>(functions, default, untilAddress, compactionType);
+        public long Compact<TInput, TOutput, TContext, TFunctions>(TFunctions functions, long untilAddress, CompactionType compactionType)
+            where TFunctions : ISessionFunctions<TKey, TValue, TInput, TOutput, TContext>
+            => Compact<TInput, TOutput, TContext, TFunctions, DefaultCompactionFunctions<TKey, TValue>>(functions, default, untilAddress, compactionType);
 
         /// <summary>
         /// Compact the log until specified address, moving active records to the tail of the log. BeginAddress is shifted, but the physical log
@@ -350,9 +350,9 @@ namespace Tsavorite.core
         /// <param name="untilAddress">Compact log until this address</param>
         /// <param name="compactionType">Compaction type (whether we lookup records or scan log for liveness checking)</param>
         /// <returns>Address until which compaction was done</returns>
-        public long Compact<TInput, TOutput, TContext, Functions>(Functions functions, ref TInput input, ref TOutput output, long untilAddress, CompactionType compactionType)
-            where Functions : ISessionFunctions<TKey, TValue, TInput, TOutput, TContext>
-            => Compact<TInput, TOutput, TContext, Functions, DefaultCompactionFunctions<TKey, TValue>>(functions, default, ref input, ref output, untilAddress, compactionType);
+        public long Compact<TInput, TOutput, TContext, TFunctions>(TFunctions functions, ref TInput input, ref TOutput output, long untilAddress, CompactionType compactionType)
+            where TFunctions : ISessionFunctions<TKey, TValue, TInput, TOutput, TContext>
+            => Compact<TInput, TOutput, TContext, TFunctions, DefaultCompactionFunctions<TKey, TValue>>(functions, default, ref input, ref output, untilAddress, compactionType);
 
         /// <summary>
         /// Compact the log until specified address, moving active records to the tail of the log. BeginAddress is shifted, but the physical log
@@ -363,13 +363,13 @@ namespace Tsavorite.core
         /// <param name="untilAddress">Compact log until this address</param>
         /// <param name="compactionType">Compaction type (whether we lookup records or scan log for liveness checking)</param>
         /// <returns>Address until which compaction was done</returns>
-        public long Compact<TInput, TOutput, TContext, Functions, CompactionFunctions>(Functions functions, CompactionFunctions cf, long untilAddress, CompactionType compactionType)
-            where Functions : ISessionFunctions<TKey, TValue, TInput, TOutput, TContext>
-            where CompactionFunctions : ICompactionFunctions<TKey, TValue>
+        public long Compact<TInput, TOutput, TContext, TFunctions, TCompactionFunctions>(TFunctions functions, TCompactionFunctions cf, long untilAddress, CompactionType compactionType)
+            where TFunctions : ISessionFunctions<TKey, TValue, TInput, TOutput, TContext>
+            where TCompactionFunctions : ICompactionFunctions<TKey, TValue>
         {
             TInput input = default;
             TOutput output = default;
-            return Compact<TInput, TOutput, TContext, Functions, CompactionFunctions>(functions, cf, ref input, ref output, untilAddress, compactionType);
+            return Compact<TInput, TOutput, TContext, TFunctions, TCompactionFunctions>(functions, cf, ref input, ref output, untilAddress, compactionType);
         }
 
         /// <summary>
@@ -383,9 +383,9 @@ namespace Tsavorite.core
         /// <param name="untilAddress">Compact log until this address</param>
         /// <param name="compactionType">Compaction type (whether we lookup records or scan log for liveness checking)</param>
         /// <returns>Address until which compaction was done</returns>
-        public long Compact<TInput, TOutput, TContext, TSessionFunctions, CompactionFunctions>(TSessionFunctions functions, CompactionFunctions cf, ref TInput input, ref TOutput output, long untilAddress, CompactionType compactionType)
-            where TSessionFunctions : ISessionFunctions<TKey, TValue, TInput, TOutput, TContext>
-            where CompactionFunctions : ICompactionFunctions<TKey, TValue>
-            => store.Compact<TInput, TOutput, TContext, TSessionFunctions, CompactionFunctions>(functions, cf, ref input, ref output, untilAddress, compactionType);
+        public long Compact<TInput, TOutput, TContext, TFunctions, TCompactionFunctions>(TFunctions functions, TCompactionFunctions cf, ref TInput input, ref TOutput output, long untilAddress, CompactionType compactionType)
+            where TFunctions : ISessionFunctions<TKey, TValue, TInput, TOutput, TContext>
+            where TCompactionFunctions : ICompactionFunctions<TKey, TValue>
+            => store.Compact<TInput, TOutput, TContext, TFunctions, TCompactionFunctions>(functions, cf, ref input, ref output, untilAddress, compactionType);
     }
 }

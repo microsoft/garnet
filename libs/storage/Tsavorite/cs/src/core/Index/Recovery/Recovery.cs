@@ -1145,7 +1145,7 @@ namespace Tsavorite.core
         {
             if (errorCode != 0)
             {
-                logger?.LogError($"AsyncFlushPageCallbackForRecovery error: {errorCode}");
+                logger?.LogError($"{nameof(AsyncFlushPageCallbackForRecovery)} error: {{errorCode}}", errorCode);
             }
 
             // Set the page status to flushed
@@ -1164,7 +1164,7 @@ namespace Tsavorite.core
             }
         }
 
-        internal static bool AtomicSwitch<Input, Output, Context>(TsavoriteExecutionContext<Input, Output, Context> fromCtx, TsavoriteExecutionContext<Input, Output, Context> toCtx, long version)
+        internal static bool AtomicSwitch<TInput, TOutput, TContext>(TsavoriteExecutionContext<TInput, TOutput, TContext> fromCtx, TsavoriteExecutionContext<TInput, TOutput, TContext> toCtx, long version)
         {
             lock (toCtx)
             {
@@ -1178,9 +1178,9 @@ namespace Tsavorite.core
         }
     }
 
-    public abstract partial class AllocatorBase<Key, Value, TStoreFunctions, TAllocator> : IDisposable
-        where TStoreFunctions : IStoreFunctions<Key, Value>
-        where TAllocator : IAllocator<Key, Value, TStoreFunctions>
+    public abstract partial class AllocatorBase<TKey, TValue, TStoreFunctions, TAllocator> : IDisposable
+        where TStoreFunctions : IStoreFunctions<TKey, TValue>
+        where TAllocator : IAllocator<TKey, TValue, TStoreFunctions>
     {
         /// <summary>
         /// Restore log
@@ -1277,7 +1277,7 @@ namespace Tsavorite.core
         {
             if (errorCode != 0)
             {
-                logger?.LogError($"AsyncReadPagesCallbackForRecovery error: {errorCode}");
+                logger?.LogError($"{nameof(AsyncReadPagesCallbackForRecovery)} error: {{errorCode}}", errorCode);
             }
 
             // Set the page status to "read done"

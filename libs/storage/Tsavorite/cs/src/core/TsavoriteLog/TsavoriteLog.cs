@@ -2599,7 +2599,7 @@ namespace Tsavorite.core
 
             if (errorCode != 0)
             {
-                logger?.LogError("AsyncGetFromDiskCallback error: {0}", errorCode);
+                logger?.LogError($"{nameof(AsyncGetFromDiskCallback)} error: {{errorCode}}", errorCode);
                 ctx.record.Return();
                 ctx.record = null;
                 ctx.completedRead.Release();
@@ -2611,7 +2611,7 @@ namespace Tsavorite.core
 
                 if (length < 0 || length > allocator.PageSize)
                 {
-                    logger?.LogDebug("Invalid record length found: " + length);
+                    logger?.LogDebug("Invalid record length found: {length}", length);
                     ctx.record.Return();
                     ctx.record = null;
                     ctx.completedRead.Release();
@@ -2638,7 +2638,7 @@ namespace Tsavorite.core
 
             if (errorCode != 0)
             {
-                logger?.LogError("AsyncGetFromDiskCallback error: {0}", errorCode);
+                logger?.LogError($"{nameof(AsyncGetHeaderOnlyFromDiskCallback)} error: {{errorCode}}", errorCode);
                 ctx.record.Return();
                 ctx.record = null;
                 ctx.completedRead.Release();
@@ -2647,7 +2647,7 @@ namespace Tsavorite.core
             {
                 if (ctx.record.available_bytes < headerSize)
                 {
-                    logger?.LogDebug("No record header present at address: " + ctx.logicalAddress);
+                    logger?.LogDebug("No record header present at address: {address}", ctx.logicalAddress);
                     ctx.record.Return();
                     ctx.record = null;
                 }

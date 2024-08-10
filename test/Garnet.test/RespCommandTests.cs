@@ -1,6 +1,7 @@
 ﻿// Copyright (c) Microsoft Corporation.
 // Licensed under the MIT license.
 
+using System;
 using System.Collections.Generic;
 using System.IO;
 using System.Linq;
@@ -218,13 +219,61 @@ namespace Garnet.test
             }
         }
 
+        [Test]
+        public void AofIndependentCommandsTest()
+        {
+            RespCommand[] aofIndpendentCmds = [
+                RespCommand.ASYNC,
+                RespCommand.PING,
+                RespCommand.SELECT,
+                RespCommand.ECHO,
+                RespCommand.CLIENT,
+                RespCommand.MONITOR,
+                RespCommand.MODULE_LOADCS,
+                RespCommand.REGISTERCS,
+                RespCommand.INFO,
+                RespCommand.TIME,
+                RespCommand.LASTSAVE,
+                // ACL
+                RespCommand.ACL_CAT,
+                RespCommand.ACL_DELUSER,
+                RespCommand.ACL_LIST,
+                RespCommand.ACL_LOAD,
+                RespCommand.ACL_SAVE,
+                RespCommand.ACL_SETUSER,
+                RespCommand.ACL_USERS,
+                RespCommand.ACL_WHOAMI,
+                // Command
+                RespCommand.COMMAND,
+                RespCommand.COMMAND_COUNT,
+                RespCommand.COMMAND_INFO,
+                RespCommand.MEMORY_USAGE,
+                // Config
+                RespCommand.CONFIG_GET,
+                RespCommand.CONFIG_REWRITE,
+                RespCommand.CONFIG_SET,
+                // Latency
+                RespCommand.LATENCY_HELP,
+                RespCommand.LATENCY_HISTOGRAM,
+                RespCommand.LATENCY_RESET,
+                // Transactions
+                RespCommand.MULTI,
+            ];
+
+            foreach (RespCommand cmd in Enum.GetValues(typeof(RespCommand)))
+            {
+                var expectedAofIndependence = Array.IndexOf(aofIndpendentCmds, cmd) != -1;
+                Assert.AreEqual(expectedAofIndependence, cmd.IsAofIndependent());
+            }
+        }
+
         private string[] RegisterCustomCommands()
         {
             var registeredCommands = new[] { "SETIFPM", "MYDICTSET", "MGETIFPM" };
 
             var factory = new MyDictFactory();
-            server.Register.NewCommand("SETIFPM", 2, CommandType.ReadModifyWrite, new SetIfPMCustomCommand(), respCustomCommandsInfo["SETIFPM"]);
-            server.Register.NewCommand("MYDICTSET", 2, CommandType.ReadModifyWrite, factory, new MyDictSet(), respCustomCommandsInfo["MYDICTSET"]);
+            server.Register.NewCommand("SETIFPM", CommandType.ReadModifyWrite, new SetIfPMCustomCommand(), respCustomCommandsInfo["SETIFPM"]);
+            server.Register.NewCommand("MYDICTSET", CommandType.ReadModifyWrite, factory, new MyDictSet(), respCustomCommandsInfo["MYDICTSET"]);
             server.Register.NewTransactionProc("MGETIFPM", () => new MGetIfPM(), respCustomCommandsInfo["MGETIFPM"]);
 
             return registeredCommands;

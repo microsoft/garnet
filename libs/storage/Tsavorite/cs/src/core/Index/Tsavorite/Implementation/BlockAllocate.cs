@@ -12,11 +12,11 @@ namespace Tsavorite.core
         where TAllocator : IAllocator<TKey, TValue, TStoreFunctions>
     {
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        private static bool TryBlockAllocate<Input, Output, Context>(
+        private static bool TryBlockAllocate<TInput, TOutput, TContext>(
                 AllocatorBase<TKey, TValue, TStoreFunctions, TAllocator> allocator,
                 int recordSize,
                 out long logicalAddress,
-                ref PendingContext<Input, Output, Context> pendingContext,
+                ref PendingContext<TInput, TOutput, TContext> pendingContext,
                 out OperationStatus internalStatus)
         {
             pendingContext.flushEvent = allocator.FlushEvent;
@@ -115,7 +115,7 @@ namespace Tsavorite.core
         }
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        bool TryAllocateRecordReadCache<Input, Output, Context>(ref PendingContext<Input, Output, Context> pendingContext, ref OperationStackContext<TKey, TValue, TStoreFunctions, TAllocator> stackCtx,
+        bool TryAllocateRecordReadCache<TInput, TOutput, TContext>(ref PendingContext<TInput, TOutput, TContext> pendingContext, ref OperationStackContext<TKey, TValue, TStoreFunctions, TAllocator> stackCtx,
                                                        int allocatedSize, out long newLogicalAddress, out long newPhysicalAddress, out OperationStatus status)
         {
             // Spin to make sure the start of the tag chain is not readcache, or that newLogicalAddress is > the first address in the tag chain.

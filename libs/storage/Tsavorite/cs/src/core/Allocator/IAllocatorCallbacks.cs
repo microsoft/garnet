@@ -9,8 +9,8 @@ namespace Tsavorite.core
     /// to the fully derived allocator, including both record accessors and Scan calls.
     /// </summary>
     /// <remarks>This interface does not currently appear in type constraints, but the organization may prove useful.</remarks>
-    public interface IAllocatorCallbacks<Key, Value, TStoreFunctions>
-        where TStoreFunctions : IStoreFunctions<Key, Value>
+    public interface IAllocatorCallbacks<TKey, TValue, TStoreFunctions>
+        where TStoreFunctions : IStoreFunctions<TKey, TValue>
     {
         /// <summary>Get start logical address on <paramref name="page"/></summary>
         long GetStartLogicalAddress(long page);
@@ -27,11 +27,11 @@ namespace Tsavorite.core
         /// <summary>Get <see cref="RecordInfo"/> from pinned memory</summary>
         unsafe ref RecordInfo GetInfoFromBytePointer(byte* ptr);
 
-        /// <summary>Get <typeparamref name="Key"/> from <paramref name="physicalAddress"/></summary>
-        ref Key GetKey(long physicalAddress);
+        /// <summary>Get <typeparamref name="TKey"/> from <paramref name="physicalAddress"/></summary>
+        ref TKey GetKey(long physicalAddress);
 
-        /// <summary>Get <typeparamref name="Value"/> from <paramref name="physicalAddress"/></summary>
-        ref Value GetValue(long physicalAddress);
+        /// <summary>Get <typeparamref name="TValue"/> from <paramref name="physicalAddress"/></summary>
+        ref TValue GetValue(long physicalAddress);
 
         /// <summary>Get the actual (used) and allocated record sizes at <paramref name="physicalAddress"/></summary>
         (int actualSize, int allocatedSize) GetRecordSize(long physicalAddress);
@@ -65,18 +65,18 @@ namespace Tsavorite.core
         int GetFixedRecordSize();
 
         /// <summary>Retrieve key from IO context record</summary>
-        ref Key GetContextRecordKey(ref AsyncIOContext<Key, Value> ctx);
+        ref TKey GetContextRecordKey(ref AsyncIOContext<TKey, TValue> ctx);
 
         /// <summary>Retrieve value from IO context record</summary>
-        ref Value GetContextRecordValue(ref AsyncIOContext<Key, Value> ctx);
+        ref TValue GetContextRecordValue(ref AsyncIOContext<TKey, TValue> ctx);
 
         /// <summary>Determine whether we IO has returned the full record</summary>
-        unsafe bool RetrievedFullRecord(byte* record, ref AsyncIOContext<Key, Value> ctx);
+        unsafe bool RetrievedFullRecord(byte* record, ref AsyncIOContext<TKey, TValue> ctx);
 
         /// <summary>Get heap container for pending key</summary>
-        IHeapContainer<Key> GetKeyContainer(ref Key key);
+        IHeapContainer<TKey> GetKeyContainer(ref TKey key);
 
         /// <summary>Get heap container for pending value</summary>
-        IHeapContainer<Value> GetValueContainer(ref Value value);
+        IHeapContainer<TValue> GetValueContainer(ref TValue value);
     }
 }

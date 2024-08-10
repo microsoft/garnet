@@ -8,6 +8,7 @@ using System.Net;
 using System.Net.Sockets;
 using System.Text;
 using System.Threading;
+using Microsoft.Extensions.Logging;
 using NUnit.Framework;
 using StackExchange.Redis;
 
@@ -18,7 +19,7 @@ namespace Garnet.test.cluster
     {
         ClusterTestContext context;
 
-        readonly HashSet<string> monitorTests = [];
+        readonly Dictionary<string, LogLevel> monitorTests = [];
 
         [SetUp]
         public void Setup()

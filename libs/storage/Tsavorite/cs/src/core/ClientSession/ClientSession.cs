@@ -44,8 +44,8 @@ namespace Tsavorite.core
 
         ScanCursorState<TKey, TValue> scanCursorState;
 
-        internal void AcquireLockable<TSessionFunctions>(TSessionFunctions sessionFunctions)
-            where TSessionFunctions : ISessionFunctionsWrapper<TKey, TValue, TInput, TOutput, TContext, TStoreFunctions, TAllocator>
+        internal void AcquireLockable<TSessionFunctionsWrapper>(TSessionFunctionsWrapper sessionFunctionsWrapper)
+            where TSessionFunctionsWrapper : ISessionFunctionsWrapper<TKey, TValue, TInput, TOutput, TContext, TStoreFunctions, TAllocator>
         {
             CheckIsNotAcquiredLockable();
 
@@ -55,7 +55,7 @@ namespace Tsavorite.core
                 while (IsInPreparePhase())
                 {
                     if (store.kernel.epoch.ThisInstanceProtected())
-                        store.InternalRefresh<TInput, TOutput, TContext, TSessionFunctions>(sessionFunctions);
+                        store.InternalRefresh<TInput, TOutput, TContext, TSessionFunctionsWrapper>(sessionFunctionsWrapper);
                     Thread.Yield();
                 }
 

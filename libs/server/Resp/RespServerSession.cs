@@ -149,6 +149,12 @@ namespace Garnet.server
         string clientName = null;
 
         /// <summary>
+        /// Flag indicating whether any of the commands in one message
+        /// requires us to block on AOF before sending response over the network
+        /// </summary>
+        bool waitForAofBlocking = false;
+
+        /// <summary>
         /// Random number generator for operations, using a cryptographic generator as the base seed
         /// </summary>
         private static readonly Random RandomGen = new(RandomNumberGenerator.GetInt32(int.MaxValue));
@@ -652,63 +658,48 @@ namespace Garnet.server
             }
             else if (command == RespCommand.CustomTxn)
             {
-                if (currentCustomTransaction.NumParams < int.MaxValue && count != currentCustomTransaction.NumParams)
+                if (!IsCommandArityValid(currentCustomTransaction.NameStr, count))
                 {
-                    while (!RespWriteUtils.WriteError($"ERR Invalid number of parameters to stored proc {currentCustomTransaction.nameStr}, expected {currentCustomTransaction.NumParams}, actual {count}", ref dcurr, dend))
-                        SendAndReset();
-
                     currentCustomTransaction = null;
-
                     return true;
                 }
-                else
-                {
-                    // Perform the operation
-                    TryTransactionProc(currentCustomTransaction.id, recvBufferPtr + readHead, recvBufferPtr + endReadHead, customCommandManagerSession.GetCustomTransactionProcedure(currentCustomTransaction.id, txnManager, scratchBufferManager).Item1);
-                }
 
+                // Perform the operation
+                TryTransactionProc(currentCustomTransaction.id, recvBufferPtr + readHead, recvBufferPtr + endReadHead, customCommandManagerSession.GetCustomTransactionProcedure(currentCustomTransaction.id, txnManager, scratchBufferManager).Item1);
                 currentCustomTransaction = null;
             }
             else if (command == RespCommand.CustomRawStringCmd)
             {
-                if (currentCustomRawStringCommand.NumParams < int.MaxValue && count != currentCustomRawStringCommand.NumKeys + currentCustomRawStringCommand.NumParams)
+                if (!IsCommandArityValid(currentCustomRawStringCommand.NameStr, count))
                 {
-                    while (!RespWriteUtils.WriteError($"ERR Invalid number of parameters, expected {currentCustomRawStringCommand.NumKeys + currentCustomRawStringCommand.NumParams}, actual {count}", ref dcurr, dend))
-                        SendAndReset();
-
                     currentCustomRawStringCommand = null;
-
                     return true;
                 }
-                else
-                {
-                    // Perform the operation
-                    TryCustomRawStringCommand(recvBufferPtr + readHead, recvBufferPtr + endReadHead, currentCustomRawStringCommand.GetRespCommand(), currentCustomRawStringCommand.expirationTicks, currentCustomRawStringCommand.type, ref storageApi);
-                }
 
+                // Perform the operation
+                TryCustomRawStringCommand(recvBufferPtr + readHead, recvBufferPtr + endReadHead, currentCustomRawStringCommand.GetRespCommand(), currentCustomRawStringCommand.expirationTicks, currentCustomRawStringCommand.type, ref storageApi);
                 currentCustomRawStringCommand = null;
             }
             else if (command == RespCommand.CustomObjCmd)
             {
-                if (currentCustomObjectCommand.NumParams < int.MaxValue && count != currentCustomObjectCommand.NumKeys + currentCustomObjectCommand.NumParams)
+                if (!IsCommandArityValid(currentCustomObjectCommand.NameStr, count))
                 {
-                    while (!RespWriteUtils.WriteError($"ERR Invalid number of parameters, expected {currentCustomObjectCommand.NumKeys + currentCustomObjectCommand.NumParams}, actual {count}", ref dcurr, dend))
-                        SendAndReset();
-
                     currentCustomObjectCommand = null;
-
                     return true;
                 }
-                else
-                {
-                    // Perform the operation
-                    TryCustomObjectCommand(recvBufferPtr + readHead, recvBufferPtr + endReadHead, currentCustomObjectCommand.GetRespCommand(), currentCustomObjectCommand.subid, currentCustomObjectCommand.type, ref storageApi);
-                }
 
+                // Perform the operation
+                TryCustomObjectCommand(recvBufferPtr + readHead, recvBufferPtr + endReadHead, currentCustomObjectCommand.GetRespCommand(), currentCustomObjectCommand.subid, currentCustomObjectCommand.type, ref storageApi);
                 currentCustomObjectCommand = null;
             }
             else if (command == RespCommand.CustomProcedure)
             {
+                if (!IsCommandArityValid(currentCustomProcedure.NameStr, count))
+                {
+                    currentCustomProcedure = null;
+                    return true;
+                }
+
                 TryCustomProcedure(currentCustomProcedure.Id, recvBufferPtr + readHead, recvBufferPtr + endReadHead,
                     currentCustomProcedure.CustomProcedureImpl);
 
@@ -719,6 +710,24 @@ namespace Garnet.server
                 ProcessAdminCommands(command, count);
                 return true;
             }
+            return true;
+        }
+
+        private bool IsCommandArityValid(string cmdName, int count)
+        {
+            if (storeWrapper.customCommandManager.CustomCommandsInfo.TryGetValue(cmdName, out var cmdInfo))
+            {
+                Debug.Assert(cmdInfo != null, "Custom command info should not be null");
+                if ((cmdInfo.Arity > 0 && count != cmdInfo.Arity - 1) ||
+                    (cmdInfo.Arity < 0 && count < -cmdInfo.Arity - 1))
+                {
+                    while (!RespWriteUtils.WriteError(string.Format(CmdStrings.GenericErrWrongNumArgs, cmdName), ref dcurr, dend))
+                        SendAndReset();
+
+                    return false;
+                }
+            }
+
             return true;
         }
 
@@ -916,6 +925,9 @@ namespace Garnet.server
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         private void Send(byte* d)
         {
+            // Note: This SEND method may be called for responding to multiple commands in a single message (pipelining),
+            // or multiple times in a single command for sending data larger than fitting in buffer at once.
+
             // #if DEBUG
             // logger?.LogTrace("SEND: [{send}]", Encoding.UTF8.GetString(new Span<byte>(d, (int)(dcurr - d))).Replace("\n", "|").Replace("\r", ""));
             // Debug.WriteLine($"SEND: [{Encoding.UTF8.GetString(new Span<byte>(d, (int)(dcurr - d))).Replace("\n", "|").Replace("\r", "")}]");
@@ -924,7 +936,7 @@ namespace Garnet.server
             if ((int)(dcurr - d) > 0)
             {
                 // Debug.WriteLine("SEND: [" + Encoding.UTF8.GetString(new Span<byte>(d, (int)(dcurr - d))).Replace("\n", "|").Replace("\r", "!") + "]");
-                if (storeWrapper.appendOnlyFile != null && storeWrapper.serverOptions.WaitForCommit)
+                if (waitForAofBlocking)
                 {
                     var task = storeWrapper.appendOnlyFile.WaitForCommitAsync();
                     if (!task.IsCompleted) task.AsTask().GetAwaiter().GetResult();

@@ -169,7 +169,7 @@ namespace Tsavorite.core
         /// <param name="ctx"></param>
         /// <param name="threadState"></param>
         /// <returns></returns>
-        internal bool SameCycle<Input, Output, Context>(TsavoriteExecutionContext<Input, Output, Context> ctx, SystemState threadState)
+        internal bool SameCycle<TInput, TOutput, TContext>(TsavoriteExecutionContext<TInput, TOutput, TContext> ctx, SystemState threadState)
         {
             if (ctx == null)
             {
@@ -189,8 +189,8 @@ namespace Tsavorite.core
         /// <param name="valueTasks">Return list of tasks that caller needs to await, to continue checkpointing</param>
         /// <param name="token">Cancellation token</param>
         /// <returns></returns>
-        private void ThreadStateMachineStep<Input, Output, Context, TSessionFunctionsWrapper>(
-            TsavoriteExecutionContext<Input, Output, Context> ctx,
+        private void ThreadStateMachineStep<TInput, TOutput, TContext, TSessionFunctionsWrapper>(
+            TsavoriteExecutionContext<TInput, TOutput, TContext> ctx,
             TSessionFunctionsWrapper sessionFunctions,
             List<ValueTask> valueTasks,
             CancellationToken token = default)

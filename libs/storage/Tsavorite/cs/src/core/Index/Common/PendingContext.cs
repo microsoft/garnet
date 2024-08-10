@@ -9,15 +9,15 @@ namespace Tsavorite.core
         where TStoreFunctions : IStoreFunctions<TKey, TValue>
         where TAllocator : IAllocator<TKey, TValue, TStoreFunctions>
     {
-        internal struct PendingContext<Input, Output, Context>
+        internal struct PendingContext<TInput, TOutput, TContext>
         {
             // User provided information
             internal OperationType type;
             internal IHeapContainer<TKey> key;
             internal IHeapContainer<TValue> value;
-            internal IHeapContainer<Input> input;
-            internal Output output;
-            internal Context userContext;
+            internal IHeapContainer<TInput> input;
+            internal TOutput output;
+            internal TContext userContext;
             internal long keyHash;
 
             // Some additional information about the previous attempt

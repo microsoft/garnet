@@ -29,13 +29,17 @@ RUN dotnet publish -a $TARGETARCH -c Release -o /app --no-restore --self-contain
 
 # Final stage/image
 FROM mcr.microsoft.com/dotnet/runtime:8.0-alpine AS runtime
-WORKDIR /app
-COPY --from=build /app .
 
-RUN mkdir /data \
-  && chown -R $APP_UID:$APP_UID /data
+# Install dependencies
+RUN apk update && apk add --upgrade libaio gcompat
+
+RUN mkdir /data /app \
+    && chown -R $APP_UID:$APP_UID /data /app
 
 VOLUME /data
+
+WORKDIR /app
+COPY --from=build --chown=$APP_UID:$APP_UID /app /app
 
 # Run container as a non-root user
 USER $APP_UID
