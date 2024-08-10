@@ -421,7 +421,7 @@ namespace Garnet.test.cluster
                     ResetSlot();
                     try
                     {
-                        _ = context.clusterTestUtils.GetServer(requestNodeIndex).Execute("DEL", command.GetSingleSlotKeys, CommandFlags.NoRedirect);
+                        _ = context.clusterTestUtils.GetServer(requestNodeIndex).Execute("DEL", (ICollection<object>)command.GetSingleSlotKeys, CommandFlags.NoRedirect);
                     }
                     catch (Exception ex)
                     {
