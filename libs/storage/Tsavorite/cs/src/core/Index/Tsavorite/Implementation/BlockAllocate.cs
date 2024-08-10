@@ -7,13 +7,13 @@ using System.Threading;
 
 namespace Tsavorite.core
 {
-    public unsafe partial class TsavoriteKV<Key, Value, TStoreFunctions, TAllocator> : TsavoriteBase
-        where TStoreFunctions : IStoreFunctions<Key, Value>
-        where TAllocator : IAllocator<Key, Value, TStoreFunctions>
+    public unsafe partial class TsavoriteKV<TKey, TValue, TStoreFunctions, TAllocator> : TsavoriteBase
+        where TStoreFunctions : IStoreFunctions<TKey, TValue>
+        where TAllocator : IAllocator<TKey, TValue, TStoreFunctions>
     {
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         private static bool TryBlockAllocate<Input, Output, Context>(
-                AllocatorBase<Key, Value, TStoreFunctions, TAllocator> allocator,
+                AllocatorBase<TKey, TValue, TStoreFunctions, TAllocator> allocator,
                 int recordSize,
                 out long logicalAddress,
                 ref PendingContext<Input, Output, Context> pendingContext,
@@ -49,10 +49,10 @@ namespace Tsavorite.core
         };
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        bool TryAllocateRecord<Input, Output, Context, TSessionFunctionsWrapper>(TSessionFunctionsWrapper sessionFunctions, ref PendingContext<Input, Output, Context> pendingContext,
-                                                       ref OperationStackContext<Key, Value, TStoreFunctions, TAllocator> stackCtx, int actualSize, ref int allocatedSize, int newKeySize, AllocateOptions options,
+        bool TryAllocateRecord<TInput, TOutput, TContext, TSessionFunctionsWrapper>(TSessionFunctionsWrapper sessionFunctions, ref PendingContext<TInput, TOutput, TContext> pendingContext,
+                                                       ref OperationStackContext<TKey, TValue, TStoreFunctions, TAllocator> stackCtx, int actualSize, ref int allocatedSize, int newKeySize, AllocateOptions options,
                                                        out long newLogicalAddress, out long newPhysicalAddress, out OperationStatus status)
-            where TSessionFunctionsWrapper : ISessionFunctionsWrapper<Key, Value, Input, Output, Context, TStoreFunctions, TAllocator>
+            where TSessionFunctionsWrapper : ISessionFunctionsWrapper<TKey, TValue, TInput, TOutput, TContext, TStoreFunctions, TAllocator>
         {
             status = OperationStatus.SUCCESS;
 
@@ -72,7 +72,7 @@ namespace Tsavorite.core
                     if (fuzzyStartAddress > minRevivAddress)
                         minRevivAddress = fuzzyStartAddress;
                 }
-                if (TryTakeFreeRecord<Input, Output, Context, TSessionFunctionsWrapper>(sessionFunctions, actualSize, ref allocatedSize, newKeySize, minRevivAddress, out newLogicalAddress, out newPhysicalAddress))
+                if (TryTakeFreeRecord<TInput, TOutput, TContext, TSessionFunctionsWrapper>(sessionFunctions, actualSize, ref allocatedSize, newKeySize, minRevivAddress, out newLogicalAddress, out newPhysicalAddress))
                     return true;
             }
 
@@ -115,7 +115,7 @@ namespace Tsavorite.core
         }
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        bool TryAllocateRecordReadCache<Input, Output, Context>(ref PendingContext<Input, Output, Context> pendingContext, ref OperationStackContext<Key, Value, TStoreFunctions, TAllocator> stackCtx,
+        bool TryAllocateRecordReadCache<Input, Output, Context>(ref PendingContext<Input, Output, Context> pendingContext, ref OperationStackContext<TKey, TValue, TStoreFunctions, TAllocator> stackCtx,
                                                        int allocatedSize, out long newLogicalAddress, out long newPhysicalAddress, out OperationStatus status)
         {
             // Spin to make sure the start of the tag chain is not readcache, or that newLogicalAddress is > the first address in the tag chain.
@@ -146,7 +146,7 @@ namespace Tsavorite.core
         }
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        void SaveAllocationForRetry<Input, Output, Context>(ref PendingContext<Input, Output, Context> pendingContext, long logicalAddress, long physicalAddress, int allocatedSize)
+        void SaveAllocationForRetry<TInput, TOutput, TContext>(ref PendingContext<TInput, TOutput, TContext> pendingContext, long logicalAddress, long physicalAddress, int allocatedSize)
         {
             ref var recordInfo = ref hlog.GetInfo(physicalAddress);
 
@@ -161,9 +161,9 @@ namespace Tsavorite.core
         }
 
         // Do not inline, to keep TryAllocateRecord lean
-        bool GetAllocationForRetry<Input, Output, Context, TSessionFunctionsWrapper>(TSessionFunctionsWrapper sessionFunctions, ref PendingContext<Input, Output, Context> pendingContext, long minAddress,
+        bool GetAllocationForRetry<TInput, TOutput, TContext, TSessionFunctionsWrapper>(TSessionFunctionsWrapper sessionFunctions, ref PendingContext<TInput, TOutput, TContext> pendingContext, long minAddress,
                 ref int allocatedSize, int newKeySize, out long newLogicalAddress, out long newPhysicalAddress)
-            where TSessionFunctionsWrapper : ISessionFunctionsWrapper<Key, Value, Input, Output, Context, TStoreFunctions, TAllocator>
+            where TSessionFunctionsWrapper : ISessionFunctionsWrapper<TKey, TValue, TInput, TOutput, TContext, TStoreFunctions, TAllocator>
         {
             // Use an earlier allocation from a failed operation, if possible.
             newLogicalAddress = pendingContext.retryNewLogicalAddress;

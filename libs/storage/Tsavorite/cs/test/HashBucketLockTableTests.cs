@@ -25,7 +25,7 @@ namespace Tsavorite.test.LockTable
     public enum UseSingleBucketComparer { UseSingleBucket }
 
     [TestFixture]
-    internal class OverflowBucketLockTableTests
+    internal class HashBucketLockTableTests
     {
         IKeyComparer<long> comparer = new LongKeyComparer();
         long SingleBucketKey = 1;   // We use a single bucket here for most tests so this lets us use 'ref' easily
@@ -161,7 +161,7 @@ namespace Tsavorite.test.LockTable
             where TStoreFunctions : IStoreFunctions<long, long>
             where TAllocator : IAllocator<long, long, TStoreFunctions>
         {
-            HashBucket* buckets = store.state[store.resizeInfo.version].tableAligned;
+            HashBucket* buckets = store.kernel.hashTable.spine.state[store.kernel.hashTable.spine.resizeInfo.version].tableAligned;
             var count = store.LockTable.NumBuckets;
             long xcount = 0, scount = 0;
             for (var ii = 0; ii < count; ++ii)
@@ -181,7 +181,7 @@ namespace Tsavorite.test.LockTable
             where TAllocator : IAllocator<long, long, TStoreFunctions>
         {
             var bucketIndex = store.LockTable.GetBucketIndex(key.KeyHash);
-            var bucket = store.state[store.resizeInfo.version].tableAligned + bucketIndex;
+            var bucket = store.kernel.hashTable.spine.state[store.kernel.hashTable.spine.resizeInfo.version].tableAligned + bucketIndex;
             Assert.AreEqual(expectedX == 1, HashBucket.IsLatchedExclusive(bucket));
             Assert.AreEqual(expectedS, HashBucket.NumLatchedShared(bucket));
         }

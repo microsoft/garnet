@@ -12,14 +12,14 @@ namespace Tsavorite.core
     /// <summary>
     /// This task contains logic to orchestrate the index and hybrid log checkpoint in parallel
     /// </summary>
-    internal sealed class FullCheckpointOrchestrationTask<Key, Value, TStoreFunctions, TAllocator> : ISynchronizationTask<Key, Value, TStoreFunctions, TAllocator>
-        where TStoreFunctions : IStoreFunctions<Key, Value>
-        where TAllocator : IAllocator<Key, Value, TStoreFunctions>
+    internal sealed class FullCheckpointOrchestrationTask<TKey, TValue, TStoreFunctions, TAllocator> : ISynchronizationTask<TKey, TValue, TStoreFunctions, TAllocator>
+        where TStoreFunctions : IStoreFunctions<TKey, TValue>
+        where TAllocator : IAllocator<TKey, TValue, TStoreFunctions>
     {
         /// <inheritdoc />
         public void GlobalBeforeEnteringState(
             SystemState next,
-            TsavoriteKV<Key, Value, TStoreFunctions, TAllocator> store)
+            TsavoriteKV<TKey, TValue, TStoreFunctions, TAllocator> store)
         {
             switch (next.Phase)
             {
@@ -33,7 +33,7 @@ namespace Tsavorite.core
                     store.InitializeHybridLogCheckpoint(store._hybridLogCheckpointToken, next.Version);
                     break;
                 case Phase.WAIT_FLUSH:
-                    store._indexCheckpoint.info.num_buckets = store.overflowBucketsAllocator.GetMaxValidAddress();
+                    store._indexCheckpoint.info.num_buckets = store.kernel.hashTable.overflowBucketsAllocator.GetMaxValidAddress();
                     store._indexCheckpoint.info.finalLogicalAddress = store.hlogBase.GetTailAddress();
                     break;
                 case Phase.PERSISTENCE_CALLBACK:
@@ -46,7 +46,7 @@ namespace Tsavorite.core
         /// <inheritdoc />
         public void GlobalAfterEnteringState(
             SystemState next,
-            TsavoriteKV<Key, Value, TStoreFunctions, TAllocator> store)
+            TsavoriteKV<TKey, TValue, TStoreFunctions, TAllocator> store)
         {
         }
 
@@ -54,8 +54,8 @@ namespace Tsavorite.core
         public void OnThreadState<Input, Output, Context, TSessionFunctionsWrapper>(
             SystemState current,
             SystemState prev,
-            TsavoriteKV<Key, Value, TStoreFunctions, TAllocator> store,
-            TsavoriteKV<Key, Value, TStoreFunctions, TAllocator>.TsavoriteExecutionContext<Input, Output, Context> ctx,
+            TsavoriteKV<TKey, TValue, TStoreFunctions, TAllocator> store,
+            TsavoriteKV<TKey, TValue, TStoreFunctions, TAllocator>.TsavoriteExecutionContext<Input, Output, Context> ctx,
             TSessionFunctionsWrapper sessionFunctions,
             List<ValueTask> valueTasks,
             CancellationToken token = default)

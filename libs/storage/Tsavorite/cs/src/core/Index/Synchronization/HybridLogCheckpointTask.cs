@@ -13,14 +13,14 @@ namespace Tsavorite.core
     /// This task is the base class for a checkpoint "backend", which decides how a captured version is
     /// persisted on disk.
     /// </summary>
-    internal abstract class HybridLogCheckpointOrchestrationTask<Key, Value, TStoreFunctions, TAllocator> : ISynchronizationTask<Key, Value, TStoreFunctions, TAllocator>
-        where TStoreFunctions : IStoreFunctions<Key, Value>
-        where TAllocator : IAllocator<Key, Value, TStoreFunctions>
+    internal abstract class HybridLogCheckpointOrchestrationTask<TKey, TValue, TStoreFunctions, TAllocator> : ISynchronizationTask<TKey, TValue, TStoreFunctions, TAllocator>
+        where TStoreFunctions : IStoreFunctions<TKey, TValue>
+        where TAllocator : IAllocator<TKey, TValue, TStoreFunctions>
     {
         private long lastVersion;
         /// <inheritdoc />
         public virtual void GlobalBeforeEnteringState(SystemState next,
-            TsavoriteKV<Key, Value, TStoreFunctions, TAllocator> store)
+            TsavoriteKV<TKey, TValue, TStoreFunctions, TAllocator> store)
         {
             switch (next.Phase)
             {
@@ -57,7 +57,7 @@ namespace Tsavorite.core
             }
         }
 
-        protected static void CollectMetadata(SystemState next, TsavoriteKV<Key, Value, TStoreFunctions, TAllocator> store)
+        protected static void CollectMetadata(SystemState next, TsavoriteKV<TKey, TValue, TStoreFunctions, TAllocator> store)
         {
             // Collect object log offsets only after flushes
             // are completed
@@ -96,15 +96,15 @@ namespace Tsavorite.core
 
         /// <inheritdoc />
         public virtual void GlobalAfterEnteringState(SystemState next,
-            TsavoriteKV<Key, Value, TStoreFunctions, TAllocator> store)
+            TsavoriteKV<TKey, TValue, TStoreFunctions, TAllocator> store)
         {
         }
 
         /// <inheritdoc />
         public virtual void OnThreadState<Input, Output, Context, TSessionFunctionsWrapper>(
             SystemState current,
-            SystemState prev, TsavoriteKV<Key, Value, TStoreFunctions, TAllocator> store,
-            TsavoriteKV<Key, Value, TStoreFunctions, TAllocator>.TsavoriteExecutionContext<Input, Output, Context> ctx,
+            SystemState prev, TsavoriteKV<TKey, TValue, TStoreFunctions, TAllocator> store,
+            TsavoriteKV<TKey, TValue, TStoreFunctions, TAllocator>.TsavoriteExecutionContext<Input, Output, Context> ctx,
             TSessionFunctionsWrapper sessionFunctions,
             List<ValueTask> valueTasks,
             CancellationToken token = default)
@@ -113,8 +113,8 @@ namespace Tsavorite.core
             if (current.Phase != Phase.PERSISTENCE_CALLBACK)
                 return;
 
-            store.epoch.Mark(EpochPhaseIdx.CheckpointCompletionCallback, current.Version);
-            if (store.epoch.CheckIsComplete(EpochPhaseIdx.CheckpointCompletionCallback, current.Version))
+            store.kernel.epoch.Mark(EpochPhaseIdx.CheckpointCompletionCallback, current.Version);
+            if (store.kernel.epoch.CheckIsComplete(EpochPhaseIdx.CheckpointCompletionCallback, current.Version))
             {
                 store.storeFunctions.OnCheckpointCompleted();
                 store.GlobalStateMachineStep(current);
@@ -183,8 +183,8 @@ namespace Tsavorite.core
                     ctx.prevCtx.markers[EpochPhaseIdx.WaitFlush] = true;
             }
 
-            store.epoch.Mark(EpochPhaseIdx.WaitFlush, current.Version);
-            if (store.epoch.CheckIsComplete(EpochPhaseIdx.WaitFlush, current.Version))
+            store.kernel.epoch.Mark(EpochPhaseIdx.WaitFlush, current.Version);
+            if (store.kernel.epoch.CheckIsComplete(EpochPhaseIdx.WaitFlush, current.Version))
                 store.GlobalStateMachineStep(current);
         }
     }
@@ -290,8 +290,8 @@ namespace Tsavorite.core
                     ctx.prevCtx.markers[EpochPhaseIdx.WaitFlush] = true;
             }
 
-            store.epoch.Mark(EpochPhaseIdx.WaitFlush, current.Version);
-            if (store.epoch.CheckIsComplete(EpochPhaseIdx.WaitFlush, current.Version))
+            store.kernel.epoch.Mark(EpochPhaseIdx.WaitFlush, current.Version);
+            if (store.kernel.epoch.CheckIsComplete(EpochPhaseIdx.WaitFlush, current.Version))
                 store.GlobalStateMachineStep(current);
         }
     }
@@ -386,8 +386,8 @@ namespace Tsavorite.core
                     ctx.prevCtx.markers[EpochPhaseIdx.WaitFlush] = true;
             }
 
-            store.epoch.Mark(EpochPhaseIdx.WaitFlush, current.Version);
-            if (store.epoch.CheckIsComplete(EpochPhaseIdx.WaitFlush, current.Version))
+            store.kernel.epoch.Mark(EpochPhaseIdx.WaitFlush, current.Version);
+            if (store.kernel.epoch.CheckIsComplete(EpochPhaseIdx.WaitFlush, current.Version))
                 store.GlobalStateMachineStep(current);
         }
     }

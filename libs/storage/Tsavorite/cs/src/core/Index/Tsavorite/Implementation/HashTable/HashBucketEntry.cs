@@ -11,17 +11,30 @@ namespace Tsavorite.core
     [StructLayout(LayoutKind.Explicit, Size = 8)]
     internal struct HashBucketEntry
     {
+        public const int kTentativeBitShift = 63;
+        public const long kTentativeBitMask = 1L << kTentativeBitShift;
+
+        public const int kTagSize = 14;
+        public const int kTagShift = kTentativeBitShift - 1 - kTagSize;
+        public const long kTagMask = (1L << kTagSize) - 1;
+        public const long kTagPositionMask = kTagMask << kTagShift;
+        public const int kAddressBits = 48;
+        public const long kAddressMask = (1L << kAddressBits) - 1;
+
+        // Position of tag in hash value (offset is always in the least significant bits)
+        public const int kHashTagShift = 64 - kTagSize;
+
         [FieldOffset(0)]
         public long word;
         public long Address
         {
             [MethodImpl(MethodImplOptions.AggressiveInlining)]
-            readonly get => word & Constants.kAddressMask;
+            readonly get => word & kAddressMask;
 
             set
             {
-                word &= ~Constants.kAddressMask;
-                word |= value & Constants.kAddressMask;
+                word &= ~kAddressMask;
+                word |= value & kAddressMask;
             }
         }
 
@@ -30,26 +43,26 @@ namespace Tsavorite.core
         public ushort Tag
         {
             [MethodImpl(MethodImplOptions.AggressiveInlining)]
-            readonly get => (ushort)((word & Constants.kTagPositionMask) >> Constants.kTagShift);
+            readonly get => (ushort)((word & kTagPositionMask) >> kTagShift);
 
             set
             {
-                word &= ~Constants.kTagPositionMask;
-                word |= (long)value << Constants.kTagShift;
+                word &= ~kTagPositionMask;
+                word |= (long)value << kTagShift;
             }
         }
 
         public bool Tentative
         {
             [MethodImpl(MethodImplOptions.AggressiveInlining)]
-            readonly get => (word & Constants.kTentativeBitMask) != 0;
+            readonly get => (word & kTentativeBitMask) != 0;
 
             set
             {
                 if (value)
-                    word |= Constants.kTentativeBitMask;
+                    word |= kTentativeBitMask;
                 else
-                    word &= ~Constants.kTentativeBitMask;
+                    word &= ~kTentativeBitMask;
             }
         }
 

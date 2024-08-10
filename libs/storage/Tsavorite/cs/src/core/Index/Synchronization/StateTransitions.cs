@@ -6,21 +6,6 @@ using System.Runtime.InteropServices;
 
 namespace Tsavorite.core
 {
-    internal enum ResizeOperationStatus : int { IN_PROGRESS, DONE };
-
-    [StructLayout(LayoutKind.Explicit, Size = 8)]
-    internal struct ResizeInfo
-    {
-        [FieldOffset(0)]
-        public ResizeOperationStatus status;
-
-        [FieldOffset(4)]
-        public int version; // either 0 or 1
-
-        [FieldOffset(0)]
-        public long word;
-    }
-
     /// <summary>
     /// The current phase of a state-machine operation such as a checkpoint
     /// </summary>

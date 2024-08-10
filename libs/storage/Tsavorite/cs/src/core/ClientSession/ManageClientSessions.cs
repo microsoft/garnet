@@ -7,9 +7,9 @@ using System.Threading;
 
 namespace Tsavorite.core
 {
-    public unsafe partial class TsavoriteKV<Key, Value, TStoreFunctions, TAllocator> : TsavoriteBase
-        where TStoreFunctions : IStoreFunctions<Key, Value>
-        where TAllocator : IAllocator<Key, Value, TStoreFunctions>
+    public unsafe partial class TsavoriteKV<TKey, TValue, TStoreFunctions, TAllocator> : TsavoriteBase
+        where TStoreFunctions : IStoreFunctions<TKey, TValue>
+        where TAllocator : IAllocator<TKey, TValue, TStoreFunctions>
     {
         internal Dictionary<int, SessionInfo> _activeSessions = new();
 
@@ -20,9 +20,9 @@ namespace Tsavorite.core
         /// <param name="sessionName">Name of session (optional)</param>
         /// <param name="readCopyOptions"><see cref="ReadCopyOptions"/> for this session; override those specified at TsavoriteKV level, and may be overridden on individual Read operations</param>
         /// <returns>Session instance</returns>
-        public ClientSession<Key, Value, Input, Output, Context, Functions, TStoreFunctions, TAllocator> NewSession<Input, Output, Context, Functions>(Functions functions, string sessionName = null,
+        public ClientSession<TKey, TValue, TInput, TOutput, TContext, TSessionFunctions, TStoreFunctions, TAllocator> NewSession<TInput, TOutput, TContext, TSessionFunctions>(TSessionFunctions functions, string sessionName = null,
                 ReadCopyOptions readCopyOptions = default)
-            where Functions : ISessionFunctions<Key, Value, Input, Output, Context>
+            where TSessionFunctions : ISessionFunctions<TKey, TValue, TInput, TOutput, TContext>
         {
             if (functions == null)
                 throw new ArgumentNullException(nameof(functions));
@@ -30,10 +30,10 @@ namespace Tsavorite.core
                 throw new TsavoriteException("Cannot use empty string as session name");
 
             int sessionID = Interlocked.Increment(ref maxSessionID);
-            var ctx = new TsavoriteExecutionContext<Input, Output, Context>();
+            var ctx = new TsavoriteExecutionContext<TInput, TOutput, TContext>();
             InitContext(ctx, sessionID, sessionName);
             ctx.MergeReadCopyOptions(ReadCopyOptions, readCopyOptions);
-            var prevCtx = new TsavoriteExecutionContext<Input, Output, Context>();
+            var prevCtx = new TsavoriteExecutionContext<TInput, TOutput, TContext>();
             InitContext(prevCtx, sessionID, sessionName);
             prevCtx.version--;
             prevCtx.ReadCopyOptions = ctx.ReadCopyOptions;
@@ -43,7 +43,7 @@ namespace Tsavorite.core
             if (_activeSessions == null)
                 _ = Interlocked.CompareExchange(ref _activeSessions, new Dictionary<int, SessionInfo>(), null);
 
-            var session = new ClientSession<Key, Value, Input, Output, Context, Functions, TStoreFunctions, TAllocator>(this, ctx, functions);
+            var session = new ClientSession<TKey, TValue, TInput, TOutput, TContext, TSessionFunctions, TStoreFunctions, TAllocator>(this, ctx, functions);
             lock (_activeSessions)
                 _activeSessions.Add(sessionID, new SessionInfo { sessionName = sessionName, session = session, isActive = true });
             return session;

@@ -38,7 +38,7 @@ namespace Tsavorite.core
             slot = default;
             entry = default;
             this.hash = hash;
-            tag = (ushort)((ulong)this.hash >> Constants.kHashTagShift);
+            tag = (ushort)((ulong)this.hash >> HashBucketEntry.kHashTagShift);
         }
 
         /// <summary>
@@ -86,7 +86,7 @@ namespace Tsavorite.core
             HashBucketEntry updatedEntry = new()
             {
                 Tag = tag,
-                Address = newLogicalAddress & Constants.kAddressMask,
+                Address = newLogicalAddress & HashBucketEntry.kAddressMask,
                 Tentative = false
                 // .ReadCache is included in newLogicalAddress
             };

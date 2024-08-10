@@ -8,9 +8,9 @@ using System.Threading.Tasks;
 
 namespace Tsavorite.core
 {
-    public partial class TsavoriteKV<Key, Value, TStoreFunctions, TAllocator> : TsavoriteBase
-        where TStoreFunctions : IStoreFunctions<Key, Value>
-        where TAllocator : IAllocator<Key, Value, TStoreFunctions>
+    public partial class TsavoriteKV<TKey, TValue, TStoreFunctions, TAllocator> : TsavoriteBase
+        where TStoreFunctions : IStoreFunctions<TKey, TValue>
+        where TAllocator : IAllocator<TKey, TValue, TStoreFunctions>
     {
         internal sealed class TsavoriteExecutionContext<Input, Output, Context>
         {
@@ -27,9 +27,9 @@ namespace Tsavorite.core
             public long totalPending;
             public Dictionary<long, PendingContext<Input, Output, Context>> ioPendingRequests;
             public AsyncCountDown pendingReads;
-            public AsyncQueue<AsyncIOContext<Key, Value>> readyResponses;
+            public AsyncQueue<AsyncIOContext<TKey, TValue>> readyResponses;
             public int asyncPendingCount;
-            public ISynchronizationStateMachine<Key, Value, TStoreFunctions, TAllocator> threadStateMachine;
+            public ISynchronizationStateMachine<TKey, TValue, TStoreFunctions, TAllocator> threadStateMachine;
 
             internal RevivificationStats RevivificationStats = new();
 

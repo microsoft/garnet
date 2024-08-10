@@ -231,9 +231,9 @@ namespace Tsavorite.test.LockableUnsafeContext
         }
 
         void AssertIsLocked(FixedLengthLockableKeyStruct<long> key, bool xlock, bool slock)
-            => OverflowBucketLockTableTests.AssertLockCounts(store, ref key, xlock, slock);
+            => HashBucketLockTableTests.AssertLockCounts(store, ref key, xlock, slock);
         void AssertIsLocked(ref FixedLengthLockableKeyStruct<long> key, bool xlock, bool slock)
-            => OverflowBucketLockTableTests.AssertLockCounts(store, ref key, xlock, slock);
+            => HashBucketLockTableTests.AssertLockCounts(store, ref key, xlock, slock);
 
         void PrepareRecordLocation(FlushMode recordLocation) => PrepareRecordLocation(store, recordLocation);
 
@@ -260,9 +260,9 @@ namespace Tsavorite.test.LockableUnsafeContext
             luContext.exclusiveLockCount = 0;
         }
 
-        void PopulateHei(ref HashEntryInfo hei) => OverflowBucketLockTableTests.PopulateHei(store, ref hei);
+        void PopulateHei(ref HashEntryInfo hei) => HashBucketLockTableTests.PopulateHei(store, ref hei);
 
-        void AssertTotalLockCounts(long expectedX, long expectedS) => OverflowBucketLockTableTests.AssertTotalLockCounts(store, expectedX, expectedS);
+        void AssertTotalLockCounts(long expectedX, long expectedS) => HashBucketLockTableTests.AssertTotalLockCounts(store, expectedX, expectedS);
 
         unsafe void AssertTotalLockCounts(ref BucketLockTracker blt)
         {
@@ -283,7 +283,7 @@ namespace Tsavorite.test.LockableUnsafeContext
             AssertTotalLockCounts(0, 0);
         }
 
-        internal void AssertBucketLockCount(ref FixedLengthLockableKeyStruct<long> key, long expectedX, long expectedS) => OverflowBucketLockTableTests.AssertBucketLockCount(store, ref key, expectedX, expectedS);
+        internal void AssertBucketLockCount(ref FixedLengthLockableKeyStruct<long> key, long expectedX, long expectedS) => HashBucketLockTableTests.AssertBucketLockCount(store, ref key, expectedX, expectedS);
 
         internal enum LockOperationType { Lock, Unlock }
 
@@ -1231,10 +1231,10 @@ namespace Tsavorite.test.LockableUnsafeContext
                 else
                     Assert.IsTrue(status.Record.Created, status.ToString());
 
-                OverflowBucketLockTableTests.AssertLockCounts(store, keyVec[0].Key, true, 0);
+                HashBucketLockTableTests.AssertLockCounts(store, keyVec[0].Key, true, 0);
 
                 luContext.Unlock(keyVec);
-                OverflowBucketLockTableTests.AssertLockCounts(store, keyVec[0].Key, false, 0);
+                HashBucketLockTableTests.AssertLockCounts(store, keyVec[0].Key, false, 0);
             }
             catch (Exception)
             {
@@ -1287,11 +1287,11 @@ namespace Tsavorite.test.LockableUnsafeContext
                     luContext.Lock(keyVec);
                     for (var iter = 0; iter < 2; ++iter)
                     {
-                        OverflowBucketLockTableTests.AssertLockCounts(store, key, true, 0);
+                        HashBucketLockTableTests.AssertLockCounts(store, key, true, 0);
                         updater(key, iter);
                     }
                     luContext.Unlock(keyVec);
-                    OverflowBucketLockTableTests.AssertLockCounts(store, key, false, 0);
+                    HashBucketLockTableTests.AssertLockCounts(store, key, false, 0);
                 }
             }
             catch (Exception)
@@ -1512,16 +1512,16 @@ namespace Tsavorite.test.LockableUnsafeContext
                 {
                     keyVec[0] = new(key, LockType.Shared, luContext);
                     luContext.Lock(keyVec);
-                    OverflowBucketLockTableTests.AssertLockCounts(store, key, false, ii + 1);
+                    HashBucketLockTableTests.AssertLockCounts(store, key, false, ii + 1);
                 }
 
                 for (var ii = 0; ii < maxLocks; ++ii)
                 {
                     keyVec[0] = new(key, LockType.Shared, luContext);
                     luContext.Unlock(keyVec);
-                    OverflowBucketLockTableTests.AssertLockCounts(store, key, false, maxLocks - ii - 1);
+                    HashBucketLockTableTests.AssertLockCounts(store, key, false, maxLocks - ii - 1);
                 }
-                OverflowBucketLockTableTests.AssertLockCounts(store, key, false, 0);
+                HashBucketLockTableTests.AssertLockCounts(store, key, false, 0);
             }
             catch (Exception)
             {
@@ -1574,7 +1574,7 @@ namespace Tsavorite.test.LockableUnsafeContext
                     foreach (var k in keyVec)
                     {
                         if (k.Key != blockingVec[0].Key)
-                            OverflowBucketLockTableTests.AssertLockCounts(store, k.Key, false, 0);
+                            HashBucketLockTableTests.AssertLockCounts(store, k.Key, false, 0);
                     }
 
                     luContext.Unlock(blockingVec);
@@ -1633,7 +1633,7 @@ namespace Tsavorite.test.LockableUnsafeContext
                     foreach (var k in keyVec)
                     {
                         if (k.Key != blockingVec[0].Key)
-                            OverflowBucketLockTableTests.AssertLockCounts(store, k.Key, false, 0);
+                            HashBucketLockTableTests.AssertLockCounts(store, k.Key, false, 0);
                     }
 
                     luContext.Unlock(blockingVec);

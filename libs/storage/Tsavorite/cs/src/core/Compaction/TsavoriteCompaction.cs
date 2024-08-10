@@ -6,9 +6,9 @@ namespace Tsavorite.core
     /// <summary>
     /// Compaction methods
     /// </summary>
-    public partial class TsavoriteKV<Key, Value, TStoreFunctions, TAllocator> : TsavoriteBase
-        where TStoreFunctions : IStoreFunctions<Key, Value>
-        where TAllocator : IAllocator<Key, Value, TStoreFunctions>
+    public partial class TsavoriteKV<TKey, TValue, TStoreFunctions, TAllocator> : TsavoriteBase
+        where TStoreFunctions : IStoreFunctions<TKey, TValue>
+        where TAllocator : IAllocator<TKey, TValue, TStoreFunctions>
     {
         /// <summary>
         /// Compact the log until specified address, moving active records to the tail of the log. BeginAddress is shifted, but the physical log
@@ -22,8 +22,8 @@ namespace Tsavorite.core
         /// <param name="compactionType">Compaction type (whether we lookup records or scan log for liveness checking)</param>
         /// <returns>Address until which compaction was done</returns>
         internal long Compact<Input, Output, Context, Functions, CompactionFunctions>(Functions functions, CompactionFunctions cf, ref Input input, ref Output output, long untilAddress, CompactionType compactionType)
-            where Functions : ISessionFunctions<Key, Value, Input, Output, Context>
-            where CompactionFunctions : ICompactionFunctions<Key, Value>
+            where Functions : ISessionFunctions<TKey, TValue, Input, Output, Context>
+            where CompactionFunctions : ICompactionFunctions<TKey, TValue>
         {
             return compactionType switch
             {
@@ -34,14 +34,14 @@ namespace Tsavorite.core
         }
 
         private long CompactLookup<Input, Output, Context, Functions, CompactionFunctions>(Functions functions, CompactionFunctions cf, ref Input input, ref Output output, long untilAddress)
-            where Functions : ISessionFunctions<Key, Value, Input, Output, Context>
-            where CompactionFunctions : ICompactionFunctions<Key, Value>
+            where Functions : ISessionFunctions<TKey, TValue, Input, Output, Context>
+            where CompactionFunctions : ICompactionFunctions<TKey, TValue>
         {
             if (untilAddress > hlogBase.SafeReadOnlyAddress)
                 throw new TsavoriteException("Can compact only until Log.SafeReadOnlyAddress");
 
-            var lf = new LogCompactionFunctions<Key, Value, Input, Output, Context, Functions>(functions);
-            using var storeSession = NewSession<Input, Output, Context, LogCompactionFunctions<Key, Value, Input, Output, Context, Functions>>(lf);
+            var lf = new LogCompactionFunctions<TKey, TValue, Input, Output, Context, Functions>(functions);
+            using var storeSession = NewSession<Input, Output, Context, LogCompactionFunctions<TKey, TValue, Input, Output, Context, Functions>>(lf);
             var storebContext = storeSession.BasicContext;
 
             using (var iter1 = Log.Scan(Log.BeginAddress, untilAddress))
@@ -73,26 +73,26 @@ namespace Tsavorite.core
         }
 
         private long CompactScan<Input, Output, Context, Functions, CompactionFunctions>(Functions functions, CompactionFunctions cf, ref Input input, ref Output output, long untilAddress)
-            where Functions : ISessionFunctions<Key, Value, Input, Output, Context>
-            where CompactionFunctions : ICompactionFunctions<Key, Value>
+            where Functions : ISessionFunctions<TKey, TValue, Input, Output, Context>
+            where CompactionFunctions : ICompactionFunctions<TKey, TValue>
         {
             if (untilAddress > hlogBase.SafeReadOnlyAddress)
                 throw new TsavoriteException("Can compact only until Log.SafeReadOnlyAddress");
 
             var originalUntilAddress = untilAddress;
 
-            var lf = new LogCompactionFunctions<Key, Value, Input, Output, Context, Functions>(functions);
-            using var storeSession = NewSession<Input, Output, Context, LogCompactionFunctions<Key, Value, Input, Output, Context, Functions>>(lf);
+            var lf = new LogCompactionFunctions<TKey, TValue, Input, Output, Context, Functions>(functions);
+            using var storeSession = NewSession<Input, Output, Context, LogCompactionFunctions<TKey, TValue, Input, Output, Context, Functions>>(lf);
             var storebContext = storeSession.BasicContext;
 
-            var tempKVSettings = new KVSettings<Key, Value>(baseDir: null, loggerFactory: loggerFactory)
+            var tempKVSettings = new KVSettings<TKey, TValue>(baseDir: null, loggerFactory: loggerFactory)
             {
-                IndexSize = KVSettings<Key, Value>.SetIndexSizeFromCacheLines(IndexSize),
+                IndexSize = KVSettings<TKey, TValue>.SetIndexSizeFromCacheLines(IndexSize),
                 LogDevice = new NullDevice(),
                 ObjectLogDevice = new NullDevice()
             };
 
-            using (var tempKv = new TsavoriteKV<Key, Value, TStoreFunctions, TAllocator>(tempKVSettings, storeFunctions, allocatorFactory))
+            using (var tempKv = new TsavoriteKV<TKey, TValue, TStoreFunctions, TAllocator>(tempKVSettings, storeFunctions, allocatorFactory))
             using (var tempKvSession = tempKv.NewSession<Input, Output, Context, Functions>(functions))
             {
                 var tempbContext = tempKvSession.BasicContext;
@@ -150,8 +150,8 @@ namespace Tsavorite.core
         }
 
         private void ScanImmutableTailToRemoveFromTempKv<Input, Output, Context, Functions>(ref long untilAddress, long scanUntil,
-                BasicContext<Key, Value, Input, Output, Context, Functions, TStoreFunctions, TAllocator> tempbContext)
-            where Functions : ISessionFunctions<Key, Value, Input, Output, Context>
+                BasicContext<TKey, TValue, Input, Output, Context, Functions, TStoreFunctions, TAllocator> tempbContext)
+            where Functions : ISessionFunctions<TKey, TValue, Input, Output, Context>
         {
             using var iter = Log.Scan(untilAddress, scanUntil);
             while (iter.GetNext(out var _))

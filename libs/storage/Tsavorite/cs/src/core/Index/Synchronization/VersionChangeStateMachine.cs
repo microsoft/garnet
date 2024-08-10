@@ -12,29 +12,29 @@ namespace Tsavorite.core
     /// version. It is used as the basis of many other tasks, which decides what they do with the captured
     /// version.
     /// </summary>
-    internal sealed class VersionChangeTask<Key, Value, TStoreFunctions, TAllocator> : ISynchronizationTask<Key, Value, TStoreFunctions, TAllocator>
-        where TStoreFunctions : IStoreFunctions<Key, Value>
-        where TAllocator : IAllocator<Key, Value, TStoreFunctions>
+    internal sealed class VersionChangeTask<TKey, TValue, TStoreFunctions, TAllocator> : ISynchronizationTask<TKey, TValue, TStoreFunctions, TAllocator>
+        where TStoreFunctions : IStoreFunctions<TKey, TValue>
+        where TAllocator : IAllocator<TKey, TValue, TStoreFunctions>
     {
         /// <inheritdoc />
         public void GlobalBeforeEnteringState(
             SystemState next,
-            TsavoriteKV<Key, Value, TStoreFunctions, TAllocator> store)
+            TsavoriteKV<TKey, TValue, TStoreFunctions, TAllocator> store)
         {
         }
 
         /// <inheritdoc />
         public void GlobalAfterEnteringState(
             SystemState start,
-            TsavoriteKV<Key, Value, TStoreFunctions, TAllocator> store)
+            TsavoriteKV<TKey, TValue, TStoreFunctions, TAllocator> store)
         {
         }
 
         /// <inheritdoc />
         public void OnThreadState<Input, Output, Context, TSessionFunctionsWrapper>(
             SystemState current, SystemState prev,
-            TsavoriteKV<Key, Value, TStoreFunctions, TAllocator> store,
-            TsavoriteKV<Key, Value, TStoreFunctions, TAllocator>.TsavoriteExecutionContext<Input, Output, Context> ctx,
+            TsavoriteKV<TKey, TValue, TStoreFunctions, TAllocator> store,
+            TsavoriteKV<TKey, TValue, TStoreFunctions, TAllocator>.TsavoriteExecutionContext<Input, Output, Context> ctx,
             TSessionFunctionsWrapper sessionFunctions,
             List<ValueTask> valueTasks,
             CancellationToken token = default)
@@ -46,11 +46,11 @@ namespace Tsavorite.core
                     if (ctx is not null)
                         ctx.markers[EpochPhaseIdx.Prepare] = true;
 
-                    store.epoch.Mark(EpochPhaseIdx.Prepare, current.Version);
+                    store.kernel.epoch.Mark(EpochPhaseIdx.Prepare, current.Version);
 
                     // Using bumpEpoch: true allows us to guarantee that when system state proceeds, all threads in prior state
                     // will see that hlog.NumActiveLockingSessions == 0, ensuring that they can potentially block for the next state.
-                    if (store.epoch.CheckIsComplete(EpochPhaseIdx.Prepare, current.Version) && store.hlogBase.NumActiveLockingSessions == 0)
+                    if (store.kernel.epoch.CheckIsComplete(EpochPhaseIdx.Prepare, current.Version) && store.hlogBase.NumActiveLockingSessions == 0)
                         store.GlobalStateMachineStep(current, bumpEpoch: store.CheckpointVersionSwitchBarrier);
                     break;
                 case Phase.IN_PROGRESS:
@@ -61,16 +61,16 @@ namespace Tsavorite.core
 
                         if (!_ctx.markers[EpochPhaseIdx.InProgress])
                         {
-                            _ = TsavoriteKV<Key, Value, TStoreFunctions, TAllocator>.AtomicSwitch(ctx, ctx.prevCtx, _ctx.version);
-                            TsavoriteKV<Key, Value, TStoreFunctions, TAllocator>.InitContext(ctx, ctx.prevCtx.sessionID, ctx.prevCtx.sessionName);
+                            _ = TsavoriteKV<TKey, TValue, TStoreFunctions, TAllocator>.AtomicSwitch(ctx, ctx.prevCtx, _ctx.version);
+                            TsavoriteKV<TKey, TValue, TStoreFunctions, TAllocator>.InitContext(ctx, ctx.prevCtx.sessionID, ctx.prevCtx.sessionName);
 
                             // Has to be prevCtx, not ctx
                             ctx.prevCtx.markers[EpochPhaseIdx.InProgress] = true;
                         }
                     }
 
-                    store.epoch.Mark(EpochPhaseIdx.InProgress, current.Version);
-                    if (store.epoch.CheckIsComplete(EpochPhaseIdx.InProgress, current.Version))
+                    store.kernel.epoch.Mark(EpochPhaseIdx.InProgress, current.Version);
+                    if (store.kernel.epoch.CheckIsComplete(EpochPhaseIdx.InProgress, current.Version))
                         store.GlobalStateMachineStep(current);
                     break;
                 case Phase.REST:

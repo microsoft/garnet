@@ -8,14 +8,8 @@ namespace Tsavorite.core
     /// <summary>
     /// Manual-enabled (both manual and transient) LockTable interface definition
     /// </summary>
-    /// <typeparam name="TKey"></typeparam>
-    public interface ILockTable<TKey> : IDisposable
+    public interface ILockTable : IDisposable
     {
-        /// <summary>
-        /// Try to acquire a manual lock for the key.
-        /// </summary>
-        public bool IsEnabled { get; }
-
         /// <summary>
         /// Try to acquire a shared lock for <paramref name="hei"/>. 
         /// </summary>

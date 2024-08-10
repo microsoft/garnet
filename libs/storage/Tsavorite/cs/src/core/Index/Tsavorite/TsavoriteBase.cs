@@ -1,7 +1,6 @@
 ﻿// Copyright (c) Microsoft Corporation.
 // Licensed under the MIT license.
 
-using System;
 using System.Runtime.CompilerServices;
 using System.Threading;
 using Microsoft.Extensions.Logging;
@@ -19,51 +18,25 @@ namespace Tsavorite.core
 
     public unsafe partial class TsavoriteBase
     {
-        // Initial size of the table
-        internal long minTableSize = 16;
+        internal TsavoriteKernel kernel;
 
-        // Allocator for the hash buckets
-        internal MallocFixedPageSize<HashBucket> overflowBucketsAllocator;
-        internal MallocFixedPageSize<HashBucket> overflowBucketsAllocatorResize;
-
-        // An array of size two, that contains the old and new versions of the hash-table
-        internal InternalHashTable[] state = new InternalHashTable[2];
-
-        // Array used to denote if a specific chunk is merged or not
-        internal long[] splitStatus;
-
-        // Used as an atomic counter to check if resizing is complete
-        internal long numPendingChunksToBeSplit;
-
-        internal LightEpoch epoch;
-
-        internal ResizeInfo resizeInfo;
-
-        /// <summary>
-        /// LoggerFactory
-        /// </summary>
         protected ILoggerFactory loggerFactory;
-
-        /// <summary>
-        /// Logger
-        /// </summary>
         protected ILogger logger;
 
         /// <summary>
         /// Constructor
         /// </summary>
-        public TsavoriteBase(ILogger logger = null)
+        public TsavoriteBase(ILogger logger = null, ILoggerFactory loggerFactory = null)
         {
-            epoch = new LightEpoch();
-            overflowBucketsAllocator = new MallocFixedPageSize<HashBucket>(logger);
+            this.loggerFactory = loggerFactory;
+            this.logger = logger ?? loggerFactory?.CreateLogger("TsavoriteKV");
         }
 
         internal void Free()
         {
             Free(0);
             Free(1);
-            epoch.Dispose();
-            overflowBucketsAllocator.Dispose();
+            kernel.Dispose();
         }
 
         private static void Free(int version)
@@ -77,42 +50,7 @@ namespace Tsavorite.core
         /// <param name="sector_size"></param>
         public void Initialize(long size, int sector_size)
         {
-            if (!Utility.IsPowerOfTwo(size))
-            {
-                throw new ArgumentException("Size {0} is not a power of 2");
-            }
-            if (!Utility.Is32Bit(size))
-            {
-                throw new ArgumentException("Size {0} is not 32-bit");
-            }
-
-            minTableSize = size;
-            resizeInfo = default;
-            resizeInfo.status = ResizeOperationStatus.DONE;
-            resizeInfo.version = 0;
-            Initialize(resizeInfo.version, size, sector_size);
-        }
-
-        /// <summary>
-        /// Initialize
-        /// </summary>
-        /// <param name="version"></param>
-        /// <param name="size"></param>
-        /// <param name="sector_size"></param>
-        internal void Initialize(int version, long size, int sector_size)
-        {
-            long size_bytes = size * sizeof(HashBucket);
-            long aligned_size_bytes = sector_size +
-                ((size_bytes + (sector_size - 1)) & ~(sector_size - 1));
-
-            //Over-allocate and align the table to the cacheline
-            state[version].size = size;
-            state[version].size_mask = size - 1;
-            state[version].size_bits = Utility.GetLogBase2((int)size);
-
-            state[version].tableRaw = GC.AllocateArray<HashBucket>((int)(aligned_size_bytes / Constants.kCacheLineBytes), true);
-            long sectorAlignedPointer = ((long)Unsafe.AsPointer(ref state[version].tableRaw[0]) + (sector_size - 1)) & ~(sector_size - 1);
-            state[version].tableAligned = (HashBucket*)sectorAlignedPointer;
+            kernel = new(size, sector_size, logger ?? loggerFactory?.CreateLogger("TsavoriteKV Index Overflow buckets"));
         }
 
         /// <summary>
@@ -125,9 +63,9 @@ namespace Tsavorite.core
         {
             var target_entry_word = default(long);
             var entry_slot_bucket = default(HashBucket*);
-            var version = resizeInfo.version;
-            var masked_entry_word = hei.hash & state[version].size_mask;
-            hei.firstBucket = hei.bucket = state[version].tableAligned + masked_entry_word;
+            var version = kernel.hashTable.spine.resizeInfo.version;
+            var masked_entry_word = hei.hash & kernel.hashTable.spine.state[version].size_mask;
+            hei.firstBucket = hei.bucket = kernel.hashTable.spine.state[version].tableAligned + masked_entry_word;
             hei.slot = Constants.kInvalidEntrySlot;
             hei.entry = default;
             hei.bucketIndex = masked_entry_word;
@@ -150,7 +88,7 @@ namespace Tsavorite.core
                 }
 
                 // Go to next bucket in the chain (if it is a nonzero overflow allocation)
-                target_entry_word = *(((long*)hei.bucket) + Constants.kOverflowBucketIndex) & Constants.kAddressMask;
+                target_entry_word = *(((long*)hei.bucket) + Constants.kOverflowBucketIndex) & HashBucketEntry.kAddressMask;
                 if (target_entry_word == 0)
                 {
                     // We lock the firstBucket, so it can't be cleared.
@@ -158,20 +96,20 @@ namespace Tsavorite.core
                     hei.entry = default;
                     return false;
                 }
-                hei.bucket = (HashBucket*)overflowBucketsAllocator.GetPhysicalAddress(target_entry_word);
+                hei.bucket = (HashBucket*)kernel.hashTable.overflowBucketsAllocator.GetPhysicalAddress(target_entry_word);
             } while (true);
         }
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         internal void FindOrCreateTag(ref HashEntryInfo hei, long BeginAddress)
         {
-            var version = resizeInfo.version;
-            var masked_entry_word = hei.hash & state[version].size_mask;
+            var version = kernel.hashTable.spine.resizeInfo.version;
+            var masked_entry_word = hei.hash & kernel.hashTable.spine.state[version].size_mask;
             hei.bucketIndex = masked_entry_word;
 
             while (true)
             {
-                hei.firstBucket = hei.bucket = state[version].tableAligned + masked_entry_word;
+                hei.firstBucket = hei.bucket = kernel.hashTable.spine.state[version].tableAligned + masked_entry_word;
                 hei.slot = Constants.kInvalidEntrySlot;
 
                 if (FindTagOrFreeInternal(ref hei, BeginAddress))
@@ -187,7 +125,7 @@ namespace Tsavorite.core
                 if (0 == Interlocked.CompareExchange(ref hei.bucket->bucket_entries[hei.slot], hei.entry.word, 0))
                 {
                     // Make sure this tag isn't in a different slot already; if it is, make this slot 'available' and continue the search loop.
-                    var orig_bucket = state[version].tableAligned + masked_entry_word;  // TODO local var not used; use or change to byval param
+                    var orig_bucket = kernel.hashTable.spine.state[version].tableAligned + masked_entry_word;  // TODO local var not used; use or change to byval param
                     var orig_slot = Constants.kInvalidEntrySlot;                        // TODO local var not used; use or change to byval param
 
                     if (FindOtherSlotForThisTagMaybeTentativeInternal(hei.tag, ref orig_bucket, ref orig_slot, hei.bucket, hei.slot))
@@ -257,17 +195,17 @@ namespace Tsavorite.core
 
                 // Go to next bucket in the chain (if it is a nonzero overflow allocation). Don't mask off the non-address bits here; they're needed for CAS.
                 target_entry_word = *(((long*)hei.bucket) + Constants.kOverflowBucketIndex);
-                while ((target_entry_word & Constants.kAddressMask) == 0)
+                while ((target_entry_word & HashBucketEntry.kAddressMask) == 0)
                 {
                     // There is no next bucket. If slot is Constants.kInvalidEntrySlot then we did not find an empty slot, so must allocate a new bucket.
                     if (hei.slot == Constants.kInvalidEntrySlot)
                     {
                         // Allocate new bucket
-                        var logicalBucketAddress = overflowBucketsAllocator.Allocate();
-                        var physicalBucketAddress = (HashBucket*)overflowBucketsAllocator.GetPhysicalAddress(logicalBucketAddress);
+                        var logicalBucketAddress = kernel.hashTable.overflowBucketsAllocator.Allocate();
+                        var physicalBucketAddress = (HashBucket*)kernel.hashTable.overflowBucketsAllocator.GetPhysicalAddress(logicalBucketAddress);
                         long compare_word = target_entry_word;
                         target_entry_word = logicalBucketAddress;
-                        target_entry_word |= compare_word & ~Constants.kAddressMask;
+                        target_entry_word |= compare_word & ~HashBucketEntry.kAddressMask;
 
                         long result_word = Interlocked.CompareExchange(
                             ref hei.bucket->bucket_entries[Constants.kOverflowBucketIndex],
@@ -277,7 +215,7 @@ namespace Tsavorite.core
                         if (compare_word != result_word)
                         {
                             // Install of new bucket failed; free the allocation and and continue the search using the winner's entry
-                            overflowBucketsAllocator.Free(logicalBucketAddress);
+                            kernel.hashTable.overflowBucketsAllocator.Free(logicalBucketAddress);
                             target_entry_word = result_word;
                             continue;
                         }
@@ -296,7 +234,7 @@ namespace Tsavorite.core
                 }
 
                 // The next bucket was there or was allocated. Move to it.
-                hei.bucket = (HashBucket*)overflowBucketsAllocator.GetPhysicalAddress(target_entry_word & Constants.kAddressMask);
+                hei.bucket = (HashBucket*)kernel.hashTable.overflowBucketsAllocator.GetPhysicalAddress(target_entry_word & HashBucketEntry.kAddressMask);
             } while (true);
         }
 
@@ -332,10 +270,10 @@ namespace Tsavorite.core
                 }
 
                 // Go to next bucket in the chain (if it is a nonzero overflow allocation).
-                target_entry_word = *(((long*)bucket) + Constants.kOverflowBucketIndex) & Constants.kAddressMask;
+                target_entry_word = *(((long*)bucket) + Constants.kOverflowBucketIndex) & HashBucketEntry.kAddressMask;
                 if (target_entry_word == 0)
                     return false;
-                bucket = (HashBucket*)overflowBucketsAllocator.GetPhysicalAddress(target_entry_word);
+                bucket = (HashBucket*)kernel.hashTable.overflowBucketsAllocator.GetPhysicalAddress(target_entry_word);
             } while (true);
         }
 

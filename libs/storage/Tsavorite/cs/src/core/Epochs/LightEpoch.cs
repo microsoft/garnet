@@ -202,6 +202,15 @@ namespace Tsavorite.core
             ProtectAndDrain();
         }
 
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        public bool AcquireIfNotProtected()
+        {
+            var wasProtected = ThisInstanceProtected();
+            if (!wasProtected)
+                Resume();
+            return !wasProtected;
+        }
+
         /// <summary>
         /// Increment global current epoch
         /// </summary>

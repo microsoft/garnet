@@ -157,9 +157,9 @@ namespace Tsavorite.core
         public long deltaLogTailAddress;
     }
 
-    public partial class TsavoriteKV<Key, Value, TStoreFunctions, TAllocator> : TsavoriteBase
-        where TStoreFunctions : IStoreFunctions<Key, Value>
-        where TAllocator : IAllocator<Key, Value, TStoreFunctions>
+    public partial class TsavoriteKV<TKey, TValue, TStoreFunctions, TAllocator> : TsavoriteBase
+        where TStoreFunctions : IStoreFunctions<TKey, TValue>
+        where TAllocator : IAllocator<TKey, TValue, TStoreFunctions>
     {
         private const long NoPageFreed = -1;
 
@@ -408,9 +408,9 @@ namespace Tsavorite.core
         public void Reset()
         {
             // Reset the hash index
-            Array.Clear(state[resizeInfo.version].tableRaw, 0, state[resizeInfo.version].tableRaw.Length);
-            overflowBucketsAllocator.Dispose();
-            overflowBucketsAllocator = new MallocFixedPageSize<HashBucket>(logger);
+            Array.Clear(kernel.hashTable.spine.state[kernel.hashTable.spine.resizeInfo.version].tableRaw, 0, kernel.hashTable.spine.state[kernel.hashTable.spine.resizeInfo.version].tableRaw.Length);
+            kernel.hashTable.overflowBucketsAllocator.Dispose();
+            kernel.hashTable.overflowBucketsAllocator = new MallocFixedPageSize<HashBucket>(logger);
 
             // Reset the hybrid log
             hlogBase.Reset();

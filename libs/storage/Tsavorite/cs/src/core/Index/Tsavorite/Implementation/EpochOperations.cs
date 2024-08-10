@@ -7,21 +7,21 @@ using System.Threading;
 
 namespace Tsavorite.core
 {
-    public unsafe partial class TsavoriteKV<Key, Value, TStoreFunctions, TAllocator> : TsavoriteBase
-        where TStoreFunctions : IStoreFunctions<Key, Value>
-        where TAllocator : IAllocator<Key, Value, TStoreFunctions>
+    public unsafe partial class TsavoriteKV<TKey, TValue, TStoreFunctions, TAllocator> : TsavoriteBase
+        where TStoreFunctions : IStoreFunctions<TKey, TValue>
+        where TAllocator : IAllocator<TKey, TValue, TStoreFunctions>
     {
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        internal void SynchronizeEpoch<Input, Output, Context, TSessionFunctionsWrapper>(
-            TsavoriteExecutionContext<Input, Output, Context> sessionCtx,
-            ref PendingContext<Input, Output, Context> pendingContext,
+        internal void SynchronizeEpoch<TInput, TOutput, TContext, TSessionFunctionsWrapper>(
+            TsavoriteExecutionContext<TInput, TOutput, TContext> sessionCtx,
+            ref PendingContext<TInput, TOutput, TContext> pendingContext,
             TSessionFunctionsWrapper sessionFunctions)
-            where TSessionFunctionsWrapper : ISessionFunctionsWrapper<Key, Value, Input, Output, Context, TStoreFunctions, TAllocator>
+            where TSessionFunctionsWrapper : ISessionFunctionsWrapper<TKey, TValue, TInput, TOutput, TContext, TStoreFunctions, TAllocator>
         {
             var version = sessionCtx.version;
             Debug.Assert(sessionCtx.version == version, $"sessionCtx.version ({sessionCtx.version}) should == version ({version})");
             Debug.Assert(sessionCtx.phase == Phase.PREPARE, $"sessionCtx.phase ({sessionCtx.phase}) should == Phase.PREPARE");
-            InternalRefresh<Input, Output, Context, TSessionFunctionsWrapper>(sessionFunctions);
+            InternalRefresh<TInput, TOutput, TContext, TSessionFunctionsWrapper>(sessionFunctions);
             Debug.Assert(sessionCtx.version > version, $"sessionCtx.version ({sessionCtx.version}) should be > version ({version})");
         }
 
@@ -29,7 +29,7 @@ namespace Tsavorite.core
         /// Increment global current epoch
         /// </summary>
         /// <returns></returns>
-        public long BumpCurrentEpoch() => epoch.BumpCurrentEpoch();
+        public long BumpCurrentEpoch() => kernel.epoch.BumpCurrentEpoch();
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         void SpinWaitUntilClosed(long address)
@@ -38,13 +38,13 @@ namespace Tsavorite.core
             while (address >= hlogBase.ClosedUntilAddress)
             {
                 Debug.Assert(address < hlogBase.HeadAddress, "expected address < hlog.HeadAddress");
-                epoch.ProtectAndDrain();
+                kernel.epoch.ProtectAndDrain();
                 Thread.Yield();
             }
         }
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        void SpinWaitUntilRecordIsClosed(long logicalAddress, AllocatorBase<Key, Value, TStoreFunctions, TAllocator> log)
+        void SpinWaitUntilRecordIsClosed(long logicalAddress, AllocatorBase<TKey, TValue, TStoreFunctions, TAllocator> log)
         {
             Debug.Assert(logicalAddress < log.HeadAddress, "SpinWaitUntilRecordIsClosed should not be called for addresses above HeadAddress");
 
@@ -61,7 +61,7 @@ namespace Tsavorite.core
             // So the caller has to check for logicalAddress < HeadAddress and we have to run this loop at least once.
             while (true)
             {
-                epoch.ProtectAndDrain();
+                kernel.epoch.ProtectAndDrain();
                 Thread.Yield();
 
                 // Unlike HeadAddress, ClosedUntilAddress is a high-water mark; a record that is == to ClosedUntilAddress has *not* been closed yet.

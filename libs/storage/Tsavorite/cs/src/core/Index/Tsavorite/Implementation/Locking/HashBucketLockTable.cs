@@ -4,22 +4,22 @@
 using System;
 using System.Collections.Generic;
 using System.Runtime.CompilerServices;
+using System.Runtime.InteropServices;
 
 namespace Tsavorite.core
 {
-    internal struct OverflowBucketLockTable<TKey, TValue, TStoreFunctions, TAllocator> : ILockTable<TKey>
-        where TStoreFunctions : IStoreFunctions<TKey, TValue>
-        where TAllocator : IAllocator<TKey, TValue, TStoreFunctions>
+    [StructLayout(LayoutKind.Explicit)]
+    internal struct HashBucketLockTable : ILockTable
     {
-        private readonly TsavoriteKV<TKey, TValue, TStoreFunctions, TAllocator> store;
+        // Unioned field in 'struct HashTable'
+        [FieldOffset(0)]
+        HashTableSpine spine;
 
-        internal readonly long NumBuckets => store.state[store.resizeInfo.version].size_mask + 1;
+        // No additional fields are allowed; this would mess up the union in 'struct HashTable'.
 
-        public readonly bool IsEnabled => store is not null;
+        internal readonly long NumBuckets => spine.state[spine.resizeInfo.version].size_mask + 1;
 
-        internal OverflowBucketLockTable(TsavoriteKV<TKey, TValue, TStoreFunctions, TAllocator> store) => this.store = store;
-
-        internal readonly long GetSize() => store.state[store.resizeInfo.version].size_mask;
+        public HashBucketLockTable() => throw new TsavoriteException("HashBucketLockTable is part of a union in TsavoriteKernel and must not be instantiated directly");
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         internal static long GetBucketIndex(long keyHash, long size_mask)
@@ -27,11 +27,11 @@ namespace Tsavorite.core
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         internal long GetBucketIndex(long keyHash)
-            => GetBucketIndex(keyHash, store.state[store.resizeInfo.version].size_mask);
+            => GetBucketIndex(keyHash, spine.state[spine.resizeInfo.version].size_mask);
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         internal unsafe HashBucket* GetBucket(long keyHash)
-            => store.state[store.resizeInfo.version].tableAligned + GetBucketIndex(keyHash);
+            => spine.state[spine.resizeInfo.version].tableAligned + GetBucketIndex(keyHash);
 
         /// <inheritdoc/>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
@@ -94,22 +94,22 @@ namespace Tsavorite.core
         /// <inheritdoc/>
         internal int CompareKeyHashes<TLockableKey>(TLockableKey key1, TLockableKey key2)
             where TLockableKey : ILockableKey
-            => KeyHashComparer(key1, key2, store.state[store.resizeInfo.version].size_mask);
+            => KeyHashComparer(key1, key2, spine.state[spine.resizeInfo.version].size_mask);
 
         /// <inheritdoc/>
         internal int CompareKeyHashes<TLockableKey>(ref TLockableKey key1, ref TLockableKey key2)
             where TLockableKey : ILockableKey
-            => KeyHashComparer(key1, key2, store.state[store.resizeInfo.version].size_mask);
+            => KeyHashComparer(key1, key2, spine.state[spine.resizeInfo.version].size_mask);
 
         /// <inheritdoc/>
         internal void SortKeyHashes<TLockableKey>(TLockableKey[] keys)
             where TLockableKey : ILockableKey
-            => Array.Sort(keys, new KeyComparer<TLockableKey>(store.state[store.resizeInfo.version].size_mask));
+            => Array.Sort(keys, new KeyComparer<TLockableKey>(spine.state[spine.resizeInfo.version].size_mask));
 
         /// <inheritdoc/>
         internal void SortKeyHashes<TLockableKey>(TLockableKey[] keys, int start, int count)
             where TLockableKey : ILockableKey
-            => Array.Sort(keys, start, count, new KeyComparer<TLockableKey>(store.state[store.resizeInfo.version].size_mask));
+            => Array.Sort(keys, start, count, new KeyComparer<TLockableKey>(spine.state[spine.resizeInfo.version].size_mask));
 
         /// <summary>
         /// Need this struct because the Comparison{T} form of Array.Sort is not available with start and length arguments.

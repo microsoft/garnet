@@ -5,13 +5,13 @@ using System.Threading;
 
 namespace Tsavorite.core
 {
-    public unsafe partial class TsavoriteKV<Key, Value, TStoreFunctions, TAllocator> : TsavoriteBase
-        where TStoreFunctions : IStoreFunctions<Key, Value>
-        where TAllocator : IAllocator<Key, Value, TStoreFunctions>
+    public unsafe partial class TsavoriteKV<TKey, TValue, TStoreFunctions, TAllocator> : TsavoriteBase
+        where TStoreFunctions : IStoreFunctions<TKey, TValue>
+        where TAllocator : IAllocator<TKey, TValue, TStoreFunctions>
     {
         private void SplitBuckets(long hash)
         {
-            long masked_bucket_index = hash & state[1 - resizeInfo.version].size_mask;
+            long masked_bucket_index = hash & kernel.hashTable.spine.state[1 - kernel.hashTable.spine.resizeInfo.version].size_mask;
             int chunkOffset = (int)(masked_bucket_index >> Constants.kSizeofChunkBits);
             SplitBuckets(chunkOffset);
         }
@@ -19,7 +19,7 @@ namespace Tsavorite.core
         private void SplitBuckets(int chunkOffset)
         {
             // We have updated resizeInfo.version to the new version, so must use [1 - resizeInfo.version] to reference the old version.
-            int numChunks = (int)(state[1 - resizeInfo.version].size / Constants.kSizeofChunk);
+            int numChunks = (int)(kernel.hashTable.spine.state[1 - kernel.hashTable.spine.resizeInfo.version].size / Constants.kSizeofChunk);
             if (numChunks == 0) numChunks = 1; // at least one chunk
 
             if (!Utility.IsPowerOfTwo(numChunks))
@@ -32,31 +32,31 @@ namespace Tsavorite.core
             {
                 // Try to gain exclusive access to this chunk's split state (1 means locked, 0 means unlocked, 2 means the chunk was already split);
                 // another thread could also be running SplitChunks. TODO change these numbers to named consts.
-                if (0 == Interlocked.CompareExchange(ref splitStatus[i & (numChunks - 1)], 1, 0))
+                if (0 == Interlocked.CompareExchange(ref kernel.hashTable.splitStatus[i & (numChunks - 1)], 1, 0))
                 {
                     // "Chunks" are offsets into one contiguous allocation: tableAligned
-                    long chunkSize = state[1 - resizeInfo.version].size / numChunks;
+                    long chunkSize = kernel.hashTable.spine.state[1 - kernel.hashTable.spine.resizeInfo.version].size / numChunks;
                     long ptr = chunkSize * (i & (numChunks - 1));
 
-                    HashBucket* src_start = state[1 - resizeInfo.version].tableAligned + ptr;
+                    HashBucket* src_start = kernel.hashTable.spine.state[1 - kernel.hashTable.spine.resizeInfo.version].tableAligned + ptr;
 
                     // The start of the destination chunk
-                    HashBucket* dest_start0 = state[resizeInfo.version].tableAligned + ptr;
+                    HashBucket* dest_start0 = kernel.hashTable.spine.state[kernel.hashTable.spine.resizeInfo.version].tableAligned + ptr;
                     // The midpoint of the destination chunk (old version size is half the new version size)
-                    HashBucket* dest_start1 = state[resizeInfo.version].tableAligned + state[1 - resizeInfo.version].size + ptr;
+                    HashBucket* dest_start1 = kernel.hashTable.spine.state[kernel.hashTable.spine.resizeInfo.version].tableAligned + kernel.hashTable.spine.state[1 - kernel.hashTable.spine.resizeInfo.version].size + ptr;
 
                     SplitChunk(src_start, dest_start0, dest_start1, chunkSize);
 
                     // The split for this chunk is done (2 means completed; no Interlock is needed here because we have exclusive access).
                     // splitStatus is re-created for each index size operation, so we never need to reset this to zero.
-                    splitStatus[i & (numChunks - 1)] = 2;
+                    kernel.hashTable.splitStatus[i & (numChunks - 1)] = 2;
 
-                    if (Interlocked.Decrement(ref numPendingChunksToBeSplit) == 0)
+                    if (Interlocked.Decrement(ref kernel.hashTable.numPendingChunksToBeSplit) == 0)
                     {
                         // There are no more chunks to be split so GC the old version of the hash table
-                        state[1 - resizeInfo.version] = default;
-                        overflowBucketsAllocatorResize.Dispose();
-                        overflowBucketsAllocatorResize = null;
+                        kernel.hashTable.spine.state[1 - kernel.hashTable.spine.resizeInfo.version] = default;
+                        kernel.hashTable.overflowBucketsAllocatorResize.Dispose();
+                        kernel.hashTable.overflowBucketsAllocatorResize = null;
                         GlobalStateMachineStep(systemState);
                         return;
                     }
@@ -64,7 +64,7 @@ namespace Tsavorite.core
                 }
             }
 
-            while (Interlocked.Read(ref splitStatus[chunkOffset & (numChunks - 1)]) == 1)
+            while (Interlocked.Read(ref kernel.hashTable.splitStatus[chunkOffset & (numChunks - 1)]) == 1)
             {
                 Thread.Yield();
             }
@@ -101,8 +101,11 @@ namespace Tsavorite.core
                         var logicalAddress = entry.Address;
                         long physicalAddress = 0;
 
-                        if (entry.ReadCache && entry.AbsoluteAddress >= readCacheBase.HeadAddress)
-                            physicalAddress = readcache.GetPhysicalAddress(entry.AbsoluteAddress);
+                        if (entry.ReadCache)
+                        {
+                            if (entry.AbsoluteAddress >= readCacheBase.HeadAddress)
+                                physicalAddress = readcache.GetPhysicalAddress(entry.AbsoluteAddress);
+                        }
                         else if (logicalAddress >= hlogBase.HeadAddress)
                             physicalAddress = hlog.GetPhysicalAddress(logicalAddress);
 
@@ -111,13 +114,13 @@ namespace Tsavorite.core
                         if (physicalAddress != 0)
                         {
                             var hash = storeFunctions.GetKeyHashCode64(ref hlog.GetKey(physicalAddress));
-                            if ((hash & state[resizeInfo.version].size_mask) >> (state[resizeInfo.version].size_bits - 1) == 0)
+                            if ((hash & kernel.hashTable.spine.state[kernel.hashTable.spine.resizeInfo.version].size_mask) >> (kernel.hashTable.spine.state[kernel.hashTable.spine.resizeInfo.version].size_bits - 1) == 0)
                             {
                                 // Insert in left
                                 if (left == left_end)
                                 {
-                                    var new_bucket_logical = overflowBucketsAllocator.Allocate();
-                                    var new_bucket = (HashBucket*)overflowBucketsAllocator.GetPhysicalAddress(new_bucket_logical);
+                                    var new_bucket_logical = kernel.hashTable.overflowBucketsAllocator.Allocate();
+                                    var new_bucket = (HashBucket*)kernel.hashTable.overflowBucketsAllocator.GetPhysicalAddress(new_bucket_logical);
                                     *left = new_bucket_logical;
                                     left = (long*)new_bucket;
                                     left_end = left + Constants.kOverflowBucketIndex;
@@ -132,8 +135,8 @@ namespace Tsavorite.core
                                 {
                                     if (right == right_end)
                                     {
-                                        var new_bucket_logical = overflowBucketsAllocator.Allocate();
-                                        var new_bucket = (HashBucket*)overflowBucketsAllocator.GetPhysicalAddress(new_bucket_logical);
+                                        var new_bucket_logical = kernel.hashTable.overflowBucketsAllocator.Allocate();
+                                        var new_bucket = (HashBucket*)kernel.hashTable.overflowBucketsAllocator.GetPhysicalAddress(new_bucket_logical);
                                         *right = new_bucket_logical;
                                         right = (long*)new_bucket;
                                         right_end = right + Constants.kOverflowBucketIndex;
@@ -148,8 +151,8 @@ namespace Tsavorite.core
                                 // Insert in right
                                 if (right == right_end)
                                 {
-                                    var new_bucket_logical = overflowBucketsAllocator.Allocate();
-                                    var new_bucket = (HashBucket*)overflowBucketsAllocator.GetPhysicalAddress(new_bucket_logical);
+                                    var new_bucket_logical = kernel.hashTable.overflowBucketsAllocator.Allocate();
+                                    var new_bucket = (HashBucket*)kernel.hashTable.overflowBucketsAllocator.GetPhysicalAddress(new_bucket_logical);
                                     *right = new_bucket_logical;
                                     right = (long*)new_bucket;
                                     right_end = right + Constants.kOverflowBucketIndex;
@@ -164,8 +167,8 @@ namespace Tsavorite.core
                                 {
                                     if (left == left_end)
                                     {
-                                        var new_bucket_logical = overflowBucketsAllocator.Allocate();
-                                        var new_bucket = (HashBucket*)overflowBucketsAllocator.GetPhysicalAddress(new_bucket_logical);
+                                        var new_bucket_logical = kernel.hashTable.overflowBucketsAllocator.Allocate();
+                                        var new_bucket = (HashBucket*)kernel.hashTable.overflowBucketsAllocator.GetPhysicalAddress(new_bucket_logical);
                                         *left = new_bucket_logical;
                                         left = (long*)new_bucket;
                                         left_end = left + Constants.kOverflowBucketIndex;
@@ -183,8 +186,8 @@ namespace Tsavorite.core
                             // Insert in left
                             if (left == left_end)
                             {
-                                var new_bucket_logical = overflowBucketsAllocator.Allocate();
-                                var new_bucket = (HashBucket*)overflowBucketsAllocator.GetPhysicalAddress(new_bucket_logical);
+                                var new_bucket_logical = kernel.hashTable.overflowBucketsAllocator.Allocate();
+                                var new_bucket = (HashBucket*)kernel.hashTable.overflowBucketsAllocator.GetPhysicalAddress(new_bucket_logical);
                                 *left = new_bucket_logical;
                                 left = (long*)new_bucket;
                                 left_end = left + Constants.kOverflowBucketIndex;
@@ -196,8 +199,8 @@ namespace Tsavorite.core
                             // Insert in right
                             if (right == right_end)
                             {
-                                var new_bucket_logical = overflowBucketsAllocator.Allocate();
-                                var new_bucket = (HashBucket*)overflowBucketsAllocator.GetPhysicalAddress(new_bucket_logical);
+                                var new_bucket_logical = kernel.hashTable.overflowBucketsAllocator.Allocate();
+                                var new_bucket = (HashBucket*)kernel.hashTable.overflowBucketsAllocator.GetPhysicalAddress(new_bucket_logical);
                                 *right = new_bucket_logical;
                                 right = (long*)new_bucket;
                                 right_end = right + Constants.kOverflowBucketIndex;
@@ -209,7 +212,7 @@ namespace Tsavorite.core
                     }
 
                     if (*(((long*)src_start) + Constants.kOverflowBucketIndex) == 0) break;
-                    src_start = (HashBucket*)overflowBucketsAllocatorResize.GetPhysicalAddress(*(((long*)src_start) + Constants.kOverflowBucketIndex));
+                    src_start = (HashBucket*)kernel.hashTable.overflowBucketsAllocatorResize.GetPhysicalAddress(*(((long*)src_start) + Constants.kOverflowBucketIndex));
                 } while (true);
             }
         }
@@ -226,7 +229,7 @@ namespace Tsavorite.core
                         break;
                     var physicalAddress = readcache.GetPhysicalAddress(logicalAddress);
                     var hash = storeFunctions.GetKeyHashCode64(ref readcache.GetKey(physicalAddress));
-                    if ((hash & state[resizeInfo.version].size_mask) >> (state[resizeInfo.version].size_bits - 1) == bit)
+                    if ((hash & kernel.hashTable.spine.state[kernel.hashTable.spine.resizeInfo.version].size_mask) >> (kernel.hashTable.spine.state[kernel.hashTable.spine.resizeInfo.version].size_bits - 1) == bit)
                     {
                         return logicalAddress;
                     }
@@ -238,7 +241,7 @@ namespace Tsavorite.core
                         break;
                     var physicalAddress = hlog.GetPhysicalAddress(logicalAddress);
                     var hash = storeFunctions.GetKeyHashCode64(ref hlog.GetKey(physicalAddress));
-                    if ((hash & state[resizeInfo.version].size_mask) >> (state[resizeInfo.version].size_bits - 1) == bit)
+                    if ((hash & kernel.hashTable.spine.state[kernel.hashTable.spine.resizeInfo.version].size_mask) >> (kernel.hashTable.spine.state[kernel.hashTable.spine.resizeInfo.version].size_bits - 1) == bit)
                     {
                         return logicalAddress;
                     }

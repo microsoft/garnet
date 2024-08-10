@@ -11,22 +11,22 @@ namespace Tsavorite.core
 {
     internal unsafe delegate void SkipReadCache(HashBucket* bucket);
 
-    public partial class TsavoriteKV<Key, Value, TStoreFunctions, TAllocator> : TsavoriteBase
-        where TStoreFunctions : IStoreFunctions<Key, Value>
-        where TAllocator : IAllocator<Key, Value, TStoreFunctions>
+    public partial class TsavoriteKV<TKey, TValue, TStoreFunctions, TAllocator> : TsavoriteBase
+        where TStoreFunctions : IStoreFunctions<TKey, TValue>
+        where TAllocator : IAllocator<TKey, TValue, TStoreFunctions>
     {
         // Derived class facing persistence API
         internal IndexCheckpointInfo _indexCheckpoint;
 
         internal unsafe void TakeIndexFuzzyCheckpoint()
         {
-            var ht_version = resizeInfo.version;
+            var ht_version = kernel.hashTable.spine.resizeInfo.version;
 
             BeginMainIndexCheckpoint(ht_version, _indexCheckpoint.main_ht_device, out ulong ht_num_bytes_written, UseReadCache, SkipReadCacheBucket, ThrottleCheckpointFlushDelayMs);
 
             var sectorSize = _indexCheckpoint.main_ht_device.SectorSize;
             var alignedIndexSize = (ht_num_bytes_written + (sectorSize - 1)) & ~((ulong)sectorSize - 1);
-            overflowBucketsAllocator.BeginCheckpoint(_indexCheckpoint.main_ht_device, alignedIndexSize, out ulong ofb_num_bytes_written, UseReadCache, SkipReadCacheBucket, epoch);
+            kernel.hashTable.overflowBucketsAllocator.BeginCheckpoint(_indexCheckpoint.main_ht_device, alignedIndexSize, out ulong ofb_num_bytes_written, UseReadCache, SkipReadCacheBucket, kernel.epoch);
             _indexCheckpoint.info.num_ht_bytes = ht_num_bytes_written;
             _indexCheckpoint.info.num_ofb_bytes = ofb_num_bytes_written;
         }
@@ -41,14 +41,14 @@ namespace Tsavorite.core
             BeginMainIndexCheckpoint(ht_version, device, out numBytesWritten);
             var sectorSize = device.SectorSize;
             var alignedIndexSize = (numBytesWritten + (sectorSize - 1)) & ~((ulong)sectorSize - 1);
-            overflowBucketsAllocator.BeginCheckpoint(ofbdevice, alignedIndexSize, out ofbnumBytesWritten);
-            num_ofb_buckets = overflowBucketsAllocator.GetMaxValidAddress();
+            kernel.hashTable.overflowBucketsAllocator.BeginCheckpoint(ofbdevice, alignedIndexSize, out ofbnumBytesWritten);
+            num_ofb_buckets = kernel.hashTable.overflowBucketsAllocator.GetMaxValidAddress();
         }
 
         internal bool IsIndexFuzzyCheckpointCompleted()
         {
             bool completed1 = IsMainIndexCheckpointCompleted();
-            bool completed2 = overflowBucketsAllocator.IsCheckpointCompleted();
+            bool completed2 = kernel.hashTable.overflowBucketsAllocator.IsCheckpointCompleted();
             return completed1 && completed2;
         }
 
@@ -56,7 +56,7 @@ namespace Tsavorite.core
         {
             // Get tasks first to ensure we have captured the semaphore instances synchronously
             var t1 = IsMainIndexCheckpointCompletedAsync(token);
-            var t2 = overflowBucketsAllocator.IsCheckpointCompletedAsync(token);
+            var t2 = kernel.hashTable.overflowBucketsAllocator.IsCheckpointCompletedAsync(token);
             await t1.ConfigureAwait(false);
             await t2.ConfigureAwait(false);
         }
@@ -70,7 +70,7 @@ namespace Tsavorite.core
 
         internal unsafe void BeginMainIndexCheckpoint(int version, IDevice device, out ulong numBytesWritten, bool useReadCache = false, SkipReadCache skipReadCache = default, int throttleCheckpointFlushDelayMs = -1)
         {
-            long totalSize = state[version].size * sizeof(HashBucket);
+            long totalSize = kernel.hashTable.spine.state[version].size * sizeof(HashBucket);
             numBytesWritten = (ulong)totalSize;
 
             if (throttleCheckpointFlushDelayMs >= 0)
@@ -97,7 +97,7 @@ namespace Tsavorite.core
                 mainIndexCheckpointSemaphore = new SemaphoreSlim(0);
                 if (throttleCheckpointFlushDelayMs >= 0)
                     throttleIndexCheckpointFlushSemaphore = new SemaphoreSlim(0);
-                HashBucket* start = state[version].tableAligned;
+                HashBucket* start = kernel.hashTable.spine.state[version].tableAligned;
 
                 ulong numBytesWritten = 0;
                 for (int index = 0; index < numChunks; index++)
@@ -113,10 +113,10 @@ namespace Tsavorite.core
                     {
                         result.mem = new SectorAlignedMemory((int)chunkSize, (int)device.SectorSize);
                         bool prot = false;
-                        if (!epoch.ThisInstanceProtected())
+                        if (!kernel.epoch.ThisInstanceProtected())
                         {
                             prot = true;
-                            epoch.Resume();
+                            kernel.epoch.Resume();
                         }
                         Buffer.MemoryCopy((void*)chunkStartBucket, result.mem.aligned_pointer, chunkSize, chunkSize);
                         for (int j = 0; j < chunkSize; j += sizeof(HashBucket))
@@ -124,7 +124,7 @@ namespace Tsavorite.core
                             skipReadCache((HashBucket*)(result.mem.aligned_pointer + j));
                         }
                         if (prot)
-                            epoch.Suspend();
+                            kernel.epoch.Suspend();
 
                         device.WriteAsync((IntPtr)result.mem.aligned_pointer, numBytesWritten, chunkSize, AsyncPageFlushCallback, result);
                     }

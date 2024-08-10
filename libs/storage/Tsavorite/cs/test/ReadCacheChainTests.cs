@@ -313,7 +313,7 @@ namespace Tsavorite.test.ReadCacheTests
             luContext.exclusiveLockCount = 0;
         }
 
-        void AssertTotalLockCounts(long expectedX, long expectedS) => OverflowBucketLockTableTests.AssertTotalLockCounts(store, expectedX, expectedS);
+        void AssertTotalLockCounts(long expectedX, long expectedS) => HashBucketLockTableTests.AssertTotalLockCounts(store, expectedX, expectedS);
 
         [Test]
         [Category(TsavoriteKVTestCategory)]
@@ -641,7 +641,7 @@ namespace Tsavorite.test.ReadCacheTests
                 {
                     ref var key = ref keys[idx];
                     HashEntryInfo hei = new(store.storeFunctions.GetKeyHashCode64(ref key.Key));
-                    OverflowBucketLockTableTests.PopulateHei(store, ref hei);
+                    HashBucketLockTableTests.PopulateHei(store, ref hei);
 
                     var lockState = store.LockTable.GetLockState(ref hei);
                     Assert.IsTrue(lockState.IsFound);

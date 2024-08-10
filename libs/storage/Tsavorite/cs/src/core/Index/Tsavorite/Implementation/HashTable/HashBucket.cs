@@ -12,11 +12,11 @@ namespace Tsavorite.core
     internal unsafe struct HashBucket
     {
         // We use the first overflow bucket for latching, reusing all bits after the address.
-        const int kSharedLatchBits = 63 - Constants.kAddressBits;
+        const int kSharedLatchBits = 63 - HashBucketEntry.kAddressBits;
         const int kExclusiveLatchBits = 1;
 
         // Shift positions of latches in word
-        const int kSharedLatchBitOffset = Constants.kAddressBits;
+        const int kSharedLatchBitOffset = HashBucketEntry.kAddressBits;
         const int kExclusiveLatchBitOffset = kSharedLatchBitOffset + kSharedLatchBits;
 
         // Shared latch constants

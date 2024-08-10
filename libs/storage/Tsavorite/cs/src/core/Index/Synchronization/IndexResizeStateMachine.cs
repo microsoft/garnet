@@ -10,16 +10,16 @@ namespace Tsavorite.core
     /// <summary>
     /// Resizes an index
     /// </summary>
-    internal sealed class IndexResizeTask<Key, Value, TStoreFunctions, TAllocator> : ISynchronizationTask<Key, Value, TStoreFunctions, TAllocator>
-        where TStoreFunctions : IStoreFunctions<Key, Value>
-        where TAllocator : IAllocator<Key, Value, TStoreFunctions>
+    internal sealed class IndexResizeTask<TKey, TValue, TStoreFunctions, TAllocator> : ISynchronizationTask<TKey, TValue, TStoreFunctions, TAllocator>
+        where TStoreFunctions : IStoreFunctions<TKey, TValue>
+        where TAllocator : IAllocator<TKey, TValue, TStoreFunctions>
     {
         bool allThreadsInPrepareGrow;
 
         /// <inheritdoc />
         public void GlobalBeforeEnteringState(
             SystemState next,
-            TsavoriteKV<Key, Value, TStoreFunctions, TAllocator> store)
+            TsavoriteKV<TKey, TValue, TStoreFunctions, TAllocator> store)
         {
             switch (next.Phase)
             {
@@ -28,20 +28,20 @@ namespace Tsavorite.core
                     break;
                 case Phase.IN_PROGRESS_GROW:
                     // Set up the transition to new version of HT
-                    var numChunks = (int)(store.state[store.resizeInfo.version].size / Constants.kSizeofChunk);
+                    var numChunks = (int)(store.kernel.hashTable.spine.state[store.kernel.hashTable.spine.resizeInfo.version].size / Constants.kSizeofChunk);
                     if (numChunks == 0) numChunks = 1; // at least one chunk
 
-                    store.numPendingChunksToBeSplit = numChunks;
-                    store.splitStatus = new long[numChunks];
-                    store.overflowBucketsAllocatorResize = store.overflowBucketsAllocator;
-                    store.overflowBucketsAllocator = new MallocFixedPageSize<HashBucket>();
+                    store.kernel.hashTable.numPendingChunksToBeSplit = numChunks;
+                    store.kernel.hashTable.splitStatus = new long[numChunks];
+                    store.kernel.hashTable.overflowBucketsAllocatorResize = store.kernel.hashTable.overflowBucketsAllocator;
+                    store.kernel.hashTable.overflowBucketsAllocator = new MallocFixedPageSize<HashBucket>();
 
                     // Because version is 0 or 1, indexing by [1 - resizeInfo.version] references to the "new version".
                     // Once growth initialization is complete, the state versions are swapped by setting resizeInfo.version = 1 - resizeInfo.version.
                     // Initialize the new version to twice the size of the old version.
-                    store.Initialize(1 - store.resizeInfo.version, store.state[store.resizeInfo.version].size * 2, store.sectorSize);
+                    store.kernel.hashTable.Reinitialize(1 - store.kernel.hashTable.spine.resizeInfo.version, store.kernel.hashTable.spine.state[store.kernel.hashTable.spine.resizeInfo.version].size * 2, store.sectorSize);
 
-                    store.resizeInfo.version = 1 - store.resizeInfo.version;
+                    store.kernel.hashTable.spine.resizeInfo.version = 1 - store.kernel.hashTable.spine.resizeInfo.version;
                     break;
                 case Phase.REST:
                     // nothing to do
@@ -54,22 +54,22 @@ namespace Tsavorite.core
         /// <inheritdoc />
         public void GlobalAfterEnteringState(
             SystemState next,
-            TsavoriteKV<Key, Value, TStoreFunctions, TAllocator> store)
+            TsavoriteKV<TKey, TValue, TStoreFunctions, TAllocator> store)
         {
             switch (next.Phase)
             {
                 case Phase.PREPARE_GROW:
-                    bool isProtected = store.epoch.ThisInstanceProtected();
+                    bool isProtected = store.kernel.epoch.ThisInstanceProtected();
                     if (!isProtected)
-                        store.epoch.Resume();
+                        store.kernel.epoch.Resume();
                     try
                     {
-                        store.epoch.BumpCurrentEpoch(() => allThreadsInPrepareGrow = true);
+                        store.kernel.epoch.BumpCurrentEpoch(() => allThreadsInPrepareGrow = true);
                     }
                     finally
                     {
                         if (!isProtected)
-                            store.epoch.Suspend();
+                            store.kernel.epoch.Suspend();
                     }
                     break;
                 case Phase.IN_PROGRESS_GROW:
@@ -85,8 +85,8 @@ namespace Tsavorite.core
         public void OnThreadState<Input, Output, Context, TSessionFunctionsWrapper>(
             SystemState current,
             SystemState prev,
-            TsavoriteKV<Key, Value, TStoreFunctions, TAllocator> store,
-            TsavoriteKV<Key, Value, TStoreFunctions, TAllocator>.TsavoriteExecutionContext<Input, Output, Context> ctx,
+            TsavoriteKV<TKey, TValue, TStoreFunctions, TAllocator> store,
+            TsavoriteKV<TKey, TValue, TStoreFunctions, TAllocator>.TsavoriteExecutionContext<Input, Output, Context> ctx,
             TSessionFunctionsWrapper sessionFunctions,
             List<ValueTask> valueTasks,
             CancellationToken token = default)

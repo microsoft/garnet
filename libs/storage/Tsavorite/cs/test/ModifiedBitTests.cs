@@ -74,14 +74,14 @@ namespace Tsavorite.test.ModifiedBit
 
         void AssertLockandModified(LockableUnsafeContext<int, int, int, int, Empty, SimpleSimpleFunctions<int, int>, IntStoreFunctions, IntAllocator> luContext, int key, bool xlock, bool slock, bool modified = false)
         {
-            OverflowBucketLockTableTests.AssertLockCounts(store, ref key, xlock, slock);
+            HashBucketLockTableTests.AssertLockCounts(store, ref key, xlock, slock);
             var isM = luContext.IsModified(key);
             Assert.AreEqual(modified, isM, "modified mismatch");
         }
 
         void AssertLockandModified(LockableContext<int, int, int, int, Empty, SimpleSimpleFunctions<int, int>, IntStoreFunctions, IntAllocator> luContext, int key, bool xlock, bool slock, bool modified = false)
         {
-            OverflowBucketLockTableTests.AssertLockCounts(store, ref key, xlock, slock);
+            HashBucketLockTableTests.AssertLockCounts(store, ref key, xlock, slock);
             var isM = luContext.IsModified(key);
             Assert.AreEqual(modified, isM, "modified mismatch");
         }
@@ -91,7 +91,7 @@ namespace Tsavorite.test.ModifiedBit
             var luContext = session.LockableUnsafeContext;
             luContext.BeginUnsafe();
 
-            OverflowBucketLockTableTests.AssertLockCounts(store, ref key, xlock, slock);
+            HashBucketLockTableTests.AssertLockCounts(store, ref key, xlock, slock);
             var isM = luContext.IsModified(key);
             Assert.AreEqual(modified, isM, "Modified mismatch");
 
