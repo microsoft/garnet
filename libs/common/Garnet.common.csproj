@@ -17,4 +17,9 @@
     <ProjectReference Include="..\storage\Tsavorite\cs\src\devices\AzureStorageDevice\Tsavorite.devices.AzureStorageDevice.csproj" />
   </ItemGroup>
 
+  <ItemGroup>
+    <ProjectReference Include="..\gen\Garnet.gen.csproj" />
+    <Analyzer Include="..\gen\bin\Debug\netstandard2.0\Garnet.gen.dll" />
+  </ItemGroup>
+
 </Project>

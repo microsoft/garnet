@@ -8,6 +8,11 @@ using System.Linq;
 
 namespace Garnet.common
 {
+    [AttributeUsage(AttributeTargets.Enum)]
+    public sealed class GenerateEnumUtilsAttribute : Attribute
+    {
+    }
+
     /// <summary>
     /// Utilities for enums
     /// </summary>
