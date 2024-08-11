@@ -4,6 +4,7 @@
 using System;
 using System.ComponentModel;
 using System.Net.NetworkInformation;
+using Garnet.common;
 
 namespace Garnet.server
 {
@@ -11,6 +12,7 @@ namespace Garnet.server
     /// RESP command flags
     /// </summary>
     [Flags]
+    [GenerateEnumUtils]
     public enum RespCommandFlags
     {
         None = 0,
@@ -62,6 +64,7 @@ namespace Garnet.server
     /// RESP ACL categories
     /// </summary>
     [Flags]
+    [GenerateEnumUtils]
     public enum RespAclCategories
     {
         None = 0,

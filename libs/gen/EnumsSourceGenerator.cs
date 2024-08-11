@@ -41,7 +41,7 @@ public class EnumsSourceGenerator : ISourceGenerator
             classBuilder.AppendLine("using System.ComponentModel;");
             classBuilder.AppendLine("using System.Numerics;");
             classBuilder.AppendLine();
-            classBuilder.AppendLine("namespace namespace Garnet;");
+            classBuilder.AppendLine("namespace namespace Garnet.common;");
             classBuilder.AppendLine();
             classBuilder.AppendLine($"public static partial class {GeneratedClassName}");
             classBuilder.AppendLine("{");
