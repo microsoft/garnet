@@ -43,7 +43,7 @@ namespace Garnet.server
             if (txnMode)
             {
                 this.txnKeyEntries = new TxnKeyEntries(16, respServerSession.storageSession.lockableContext, respServerSession.storageSession.objectStoreLockableContext);
-                state.RegisterFunction("garnet_call", this, this.GetType().GetMethod("garnet_call_txn"));
+                state.RegisterFunction("garnet_call", this, this.GetType().GetMethod(nameof(garnet_call_txn)));
             }
             else
             {
