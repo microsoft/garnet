@@ -12,7 +12,7 @@ namespace Garnet.server
     /// RESP command flags
     /// </summary>
     [Flags]
-    [GenerateEnumUtils]
+    [GenerateEnumDescriptionUtils]
     public enum RespCommandFlags
     {
         None = 0,
@@ -64,7 +64,7 @@ namespace Garnet.server
     /// RESP ACL categories
     /// </summary>
     [Flags]
-    [GenerateEnumUtils]
+    [GenerateEnumDescriptionUtils]
     public enum RespAclCategories
     {
         None = 0,

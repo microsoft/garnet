@@ -98,6 +98,7 @@ public class EnumsSourceGenerator : ISourceGenerator
     private static string GenerateGetEnumDescriptionsMethod(string enumName, List<(string Name, string? Value, AttributeSyntax Description)> values)
     {
         var method = new StringBuilder();
+        var defaultEnumValue = values.First(v => v.Value is "0");
         method.AppendLine($"    /// <summary>");
         method.AppendLine($"    /// Gets the descriptions of the set flags. Assumes the enum is a flags enum.");
         method.AppendLine($"    /// If no description exists, returns the ToString() value of the input value.");
@@ -107,7 +108,7 @@ public class EnumsSourceGenerator : ISourceGenerator
         method.AppendLine($"    public static string[] Get{enumName}Descriptions({enumName} value)");
         method.AppendLine("    {");
         method.AppendLine("        var setFlags = BitOperations.PopCount((uint)value);");
-        method.AppendLine("        if (setFlags == 0) return Array.Empty<string>();");
+        method.AppendLine($"        if (setFlags == 0) return [\"{defaultEnumValue.Name}\"];");
         method.AppendLine("        if (setFlags == 1)");
         method.AppendLine("        {");
         method.AppendLine("            return value switch");
@@ -142,7 +143,7 @@ public class EnumsSourceGenerator : ISourceGenerator
         public void OnVisitSyntaxNode(SyntaxNode syntaxNode)
         {
             if (syntaxNode is EnumDeclarationSyntax enumDeclarationSyntax
-                && enumDeclarationSyntax.AttributeLists.Any(al => al.Attributes.Any(a => a.Name.ToString() == "GenerateEnumUtils")))
+                && enumDeclarationSyntax.AttributeLists.Any(al => al.Attributes.Any(a => a.Name.ToString() == "GenerateEnumDescriptionUtils")))
             {
                 Enums.Add(enumDeclarationSyntax);
             }

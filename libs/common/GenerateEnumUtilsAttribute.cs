@@ -6,7 +6,7 @@ using System;
 namespace Garnet.common
 {
     [AttributeUsage(AttributeTargets.Enum)]
-    public sealed class GenerateEnumUtilsAttribute : Attribute
+    public sealed class GenerateEnumDescriptionUtilsAttribute : Attribute
     {
     }
 }

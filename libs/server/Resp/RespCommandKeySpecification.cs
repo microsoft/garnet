@@ -100,7 +100,7 @@ namespace Garnet.server
     /// RESP key specification flags
     /// </summary>
     [Flags]
-    [GenerateEnumUtils]
+    [GenerateEnumDescriptionUtils]
     public enum KeySpecificationFlags : ushort
     {
         None = 0,
