@@ -100,7 +100,7 @@ public class EnumsSourceGenerator : ISourceGenerator
         foreach (var (name, _, description) in values)
         {
             if (description is null) continue;
-            method.AppendLine($"                {enumName}.{name} => [ {description?.ArgumentList?.Arguments.FirstOrDefault()?.ToString()} ],");
+            method.AppendLine($"                {enumName}.{name} => [{description?.ArgumentList?.Arguments.FirstOrDefault()?.ToString()}],");
         }
         method.AppendLine("                _ => Array.Empty<string>(),");
         method.AppendLine("            };");
