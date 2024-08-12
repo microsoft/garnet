@@ -84,7 +84,7 @@ namespace Garnet.cluster
 
             clusterConnectionStore = new GarnetClusterConnectionStore(logger: logger);
             InitLocal(address, opts.Port, recoverConfig);
-            logger?.LogInformation("{NodeInfoStartup}", CurrentConfig.GetClusterInfo().TrimEnd('\n'));
+            logger?.LogInformation("{NodeInfoStartup}", CurrentConfig.GetClusterInfo(clusterProvider).TrimEnd('\n'));
             gossipDelay = TimeSpan.FromSeconds(opts.GossipDelay);
             clusterTimeout = opts.ClusterTimeout <= 0 ? Timeout.InfiniteTimeSpan : TimeSpan.FromSeconds(opts.ClusterTimeout);
             numActiveTasks = 0;
