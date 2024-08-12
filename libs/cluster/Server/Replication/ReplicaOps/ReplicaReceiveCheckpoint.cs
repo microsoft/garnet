@@ -324,6 +324,7 @@ namespace Garnet.cluster
                     remoteCheckpoint.metadata.objectStoreHlogToken);
 
                 storeWrapper.RecoverCheckpoint(
+                    replicaRecover: true,
                     recoverMainStoreFromToken,
                     recoverObjectStoreFromToken,
                     remoteCheckpoint.metadata);
