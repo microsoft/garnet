@@ -22,16 +22,6 @@ namespace Resp.benchmark
         private bool WriteOp(ref byte* curr, byte* vend, OpType opType)
         {
             int n;
-
-            var bitopType = opType switch
-            {
-                OpType.BITOP_AND => Encoding.ASCII.GetBytes("AND"),
-                OpType.BITOP_OR => Encoding.ASCII.GetBytes("OR"),
-                OpType.BITOP_XOR => Encoding.ASCII.GetBytes("XOR"),
-                OpType.BITOP_NOT => Encoding.ASCII.GetBytes("NOT"),
-                _ => null
-            };
-
             byte[] keyData = null;
 
             //key
@@ -95,10 +85,19 @@ namespace Resp.benchmark
                         return false;
                     break;
                 case OpType.BITOP_AND:
+                    if (!WriteStringBytes(ref curr, vend, Encoding.ASCII.GetBytes("AND")))
+                        return false;
+                    break;
                 case OpType.BITOP_OR:
+                    if (!WriteStringBytes(ref curr, vend, Encoding.ASCII.GetBytes("OR")))
+                        return false;
+                    break;
                 case OpType.BITOP_XOR:
+                    if (!WriteStringBytes(ref curr, vend, Encoding.ASCII.GetBytes("XOR")))
+                        return false;
+                    break;
                 case OpType.BITOP_NOT:
-                    if (!WriteStringBytes(ref curr, vend, bitopType))
+                    if (!WriteStringBytes(ref curr, vend, Encoding.ASCII.GetBytes("NOT")))
                         return false;
                     break;
                 case OpType.BITFIELD:
