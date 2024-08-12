@@ -51,6 +51,11 @@ namespace Garnet.cluster
         readonly CancellationTokenSource _cts = new();
 
         /// <summary>
+        /// Get endpoint of target node
+        /// </summary>
+        public string GetTargetEndpoint => _targetAddress + ":" + _targetPort;
+
+        /// <summary>
         /// Source nodeId of migration task
         /// </summary>
         public string GetSourceNodeId => _sourceNodeId;

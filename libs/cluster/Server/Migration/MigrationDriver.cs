@@ -91,7 +91,7 @@ namespace Garnet.cluster
                 //5. Clear local migration set.
                 if (!RelinquishOwnership())
                 {
-                    logger?.LogError("Failed to relinquish ownerhsip to target node");
+                    logger?.LogError("Failed to relinquish ownerhsip from source node:({srcNode}) to target node: ({tgtNode})", GetSourceNodeId, GetTargetNodeId);
                     TryRecoverFromFailure();
                     Status = MigrateState.FAIL;
                     return;
@@ -100,7 +100,7 @@ namespace Garnet.cluster
                 //6. Change ownership of slots to target node.
                 if (!TrySetSlotRanges(GetTargetNodeId, MigrateState.NODE))
                 {
-                    logger?.LogError("Failed to assign ownerhsip to target node");
+                    logger?.LogError("Failed to assign ownerhsip to target node:({tgtNodeId}) ({endpoint})", GetTargetNodeId, GetTargetEndpoint);
                     TryRecoverFromFailure();
                     Status = MigrateState.FAIL;
                     return;
