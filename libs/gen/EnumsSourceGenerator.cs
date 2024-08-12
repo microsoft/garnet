@@ -45,6 +45,9 @@ public class EnumsSourceGenerator : ISourceGenerator
             classBuilder.AppendLine();
             classBuilder.AppendLine("namespace Garnet.common;");
             classBuilder.AppendLine();
+            classBuilder.AppendLine("/// <summary>");
+            classBuilder.AppendLine($"/// Utility methods for enums.");
+            classBuilder.AppendLine("/// </summary>");
             classBuilder.AppendLine($"public static partial class {GeneratedClassName}");
             classBuilder.AppendLine("{");
             classBuilder.AppendLine(GenerateTryParseEnumFromDescriptionMethod(enumName, values));
@@ -59,6 +62,12 @@ public class EnumsSourceGenerator : ISourceGenerator
     private static string GenerateTryParseEnumFromDescriptionMethod(string enumName, List<(string Name, string? Value, AttributeSyntax Description)> values)
     {
         var method = new StringBuilder();
+        method.AppendLine($"    /// <summary>");
+        method.AppendLine($"    /// Tries to parse the enum value from the description.");
+        method.AppendLine($"    /// </summary>");
+        method.AppendLine($"    /// <param name=\"description\">Enum description.</param>");
+        method.AppendLine($"    /// <param name=\"result\">Enum value.</param>");
+        method.AppendLine($"    /// <returns>True if successful.</returns>");
         method.AppendLine($"    public static bool TryParse{enumName}FromDescription(string description, out {enumName} result)");
         method.AppendLine("    {");
         method.AppendLine("        result = default;");
@@ -89,6 +98,12 @@ public class EnumsSourceGenerator : ISourceGenerator
     private static string GenerateGetEnumDescriptionsMethod(string enumName, List<(string Name, string? Value, AttributeSyntax Description)> values)
     {
         var method = new StringBuilder();
+        method.AppendLine($"    /// <summary>");
+        method.AppendLine($"    /// Gets the descriptions of the set flags. Assumes the enum is a flags enum.");
+        method.AppendLine($"    /// If no description exists, returns the ToString() value of the input value.");
+        method.AppendLine($"    /// </summary>");
+        method.AppendLine($"    /// <param name=\"value\">Enum value.</param>");
+        method.AppendLine($"    /// <returns>Array of descriptions.</returns>");
         method.AppendLine($"    public static string[] Get{enumName}Descriptions({enumName} value)");
         method.AppendLine("    {");
         method.AppendLine("        var setFlags = BitOperations.PopCount((uint)value);");
@@ -102,7 +117,7 @@ public class EnumsSourceGenerator : ISourceGenerator
             if (description is null) continue;
             method.AppendLine($"                {enumName}.{name} => [{description?.ArgumentList?.Arguments.FirstOrDefault()?.ToString()}],");
         }
-        method.AppendLine("                _ => Array.Empty<string>(),");
+        method.AppendLine($"                _ => [value.ToString()],");
         method.AppendLine("            };");
         method.AppendLine("        }");
         method.AppendLine();
