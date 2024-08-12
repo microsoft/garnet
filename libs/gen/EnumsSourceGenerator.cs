@@ -23,10 +23,12 @@ public class EnumsSourceGenerator : ISourceGenerator
             var namespaceDeclaration = enumDeclaration.FirstAncestorOrSelf<NamespaceDeclarationSyntax>();
             var enumName = enumDeclaration.Identifier.Text;
 
+            var semanticModel = context.Compilation.GetSemanticModel(enumDeclaration.SyntaxTree);
+
             var values = enumDeclaration.Members
                 .Select(m => (
                     m.Identifier.Text,
-                    Value: m.EqualsValue?.Value?.ToString(),
+                    semanticModel.GetOperation(m.EqualsValue?.Value)!.ConstantValue.Value,
                     Description: m.AttributeLists
                         .SelectMany(al => al.Attributes).Where(a => a.Name.ToString() == "Description")
                         .SingleOrDefault()
@@ -59,7 +61,7 @@ public class EnumsSourceGenerator : ISourceGenerator
         }
     }
 
-    private static string GenerateTryParseEnumFromDescriptionMethod(string enumName, List<(string Name, string? Value, AttributeSyntax Description)> values)
+    private static string GenerateTryParseEnumFromDescriptionMethod(string enumName, List<(string Name, object? Value, AttributeSyntax Description)> values)
     {
         var method = new StringBuilder();
         method.AppendLine($"    /// <summary>");
@@ -95,10 +97,10 @@ public class EnumsSourceGenerator : ISourceGenerator
 
         return method.ToString();
     }
-    private static string GenerateGetEnumDescriptionsMethod(string enumName, List<(string Name, string? Value, AttributeSyntax Description)> values)
+
+    private static string GenerateGetEnumDescriptionsMethod(string enumName, List<(string Name, object? Value, AttributeSyntax Description)> values)
     {
         var method = new StringBuilder();
-        var defaultEnumValue = values.First(v => v.Value is "0");
         method.AppendLine($"    /// <summary>");
         method.AppendLine($"    /// Gets the descriptions of the set flags. Assumes the enum is a flags enum.");
         method.AppendLine($"    /// If no description exists, returns the ToString() value of the input value.");
@@ -107,15 +109,23 @@ public class EnumsSourceGenerator : ISourceGenerator
         method.AppendLine($"    /// <returns>Array of descriptions.</returns>");
         method.AppendLine($"    public static string[] Get{enumName}Descriptions({enumName} value)");
         method.AppendLine("    {");
-        method.AppendLine("        var setFlags = BitOperations.PopCount((uint)value);");
-        method.AppendLine($"        if (setFlags == 0) return [\"{defaultEnumValue.Name}\"];");
+        foreach (var (name, value, description) in values)
+        {
+            if (!IsPow2(value))
+            {
+                var toString = description?.ArgumentList?.Arguments.FirstOrDefault()?.ToString() ?? $"\"{name}\"";
+                method.AppendLine($"        if (value is {enumName}.{name}) return [{toString}];");
+            }
+        }
+        method.AppendLine("        var setFlags = BitOperations.PopCount((ulong)value);");
         method.AppendLine("        if (setFlags == 1)");
         method.AppendLine("        {");
         method.AppendLine("            return value switch");
         method.AppendLine("            {");
-        foreach (var (name, _, description) in values)
+        foreach (var (name, value, description) in values)
         {
             if (description is null) continue;
+            if (!IsPow2(value)) continue;
             method.AppendLine($"                {enumName}.{name} => [{description?.ArgumentList?.Arguments.FirstOrDefault()?.ToString()}],");
         }
         method.AppendLine($"                _ => [value.ToString()],");
@@ -124,9 +134,10 @@ public class EnumsSourceGenerator : ISourceGenerator
         method.AppendLine();
         method.AppendLine("        var descriptions = new string[setFlags];");
         method.AppendLine("        var index = 0;");
-        foreach (var (name, _, description) in values)
+        foreach (var (name, value, description) in values)
         {
             if (description is null) continue;
+            if (!IsPow2(value)) continue;
             method.AppendLine($"        if ((value & {enumName}.{name}) != 0) descriptions[index++] = {description.ArgumentList?.Arguments.FirstOrDefault()?.ToString()};");
         }
         method.AppendLine();
@@ -134,6 +145,12 @@ public class EnumsSourceGenerator : ISourceGenerator
         method.AppendLine("    }");
 
         return method.ToString();
+    }
+
+    static bool IsPow2(object? value)
+    {
+        if (value is int x) return x != 0 && (x & (x - 1)) == 0;
+        return false;
     }
 
     private class EnumsSyntaxReceiver : ISyntaxReceiver
