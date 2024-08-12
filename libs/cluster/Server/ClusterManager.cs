@@ -83,7 +83,6 @@ namespace Garnet.cluster
             }
 
             clusterConnectionStore = new GarnetClusterConnectionStore(logger: logger);
-
             InitLocal(address, opts.Port, recoverConfig);
             logger?.LogInformation("{NodeInfoStartup}", CurrentConfig.GetClusterInfo().TrimEnd('\n'));
             gossipDelay = TimeSpan.FromSeconds(opts.GossipDelay);
