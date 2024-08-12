@@ -52,7 +52,7 @@ namespace Garnet.server
             init
             {
                 this.flags = value;
-                this.respFormatFlags = EnumUtils.GetEnumDescriptions(this.flags);
+                this.respFormatFlags = EnumUtils.GetRespCommandFlagsDescriptions(this.flags);
             }
         }
 
@@ -80,7 +80,7 @@ namespace Garnet.server
             init
             {
                 this.aclCategories = value;
-                this.respFormatAclCategories = EnumUtils.GetEnumDescriptions(this.aclCategories);
+                this.respFormatAclCategories = EnumUtils.GetRespAclCategoriesDescriptions(this.aclCategories);
             }
         }
 

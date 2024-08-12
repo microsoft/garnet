@@ -20,6 +20,7 @@ public class EnumsSourceGenerator : ISourceGenerator
 
         foreach (var enumDeclaration in syntaxReceiver.Enums)
         {
+            var namespaceDeclaration = enumDeclaration.FirstAncestorOrSelf<NamespaceDeclarationSyntax>();
             var enumName = enumDeclaration.Identifier.Text;
 
             var values = enumDeclaration.Members
@@ -40,8 +41,9 @@ public class EnumsSourceGenerator : ISourceGenerator
             classBuilder.AppendLine("using System;");
             classBuilder.AppendLine("using System.ComponentModel;");
             classBuilder.AppendLine("using System.Numerics;");
+            classBuilder.AppendLine($"using {namespaceDeclaration!.Name};");
             classBuilder.AppendLine();
-            classBuilder.AppendLine("namespace namespace Garnet.common;");
+            classBuilder.AppendLine("namespace Garnet.common;");
             classBuilder.AppendLine();
             classBuilder.AppendLine($"public static partial class {GeneratedClassName}");
             classBuilder.AppendLine("{");

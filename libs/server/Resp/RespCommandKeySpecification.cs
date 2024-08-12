@@ -40,7 +40,7 @@ namespace Garnet.server
             init
             {
                 this.flags = value;
-                this.respFormatFlags = EnumUtils.GetEnumDescriptions(this.flags);
+                this.respFormatFlags = EnumUtils.GetKeySpecificationFlagsDescriptions(this.flags);
             }
         }
 
