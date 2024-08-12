@@ -237,13 +237,31 @@ namespace Garnet.server
         /// <summary>
         /// Caller will have to decide if recover is necessary, so we do not check if recover option is enabled
         /// </summary>
-        public void RecoverCheckpoint(bool recoverMainStoreFromToken = false, bool recoverObjectStoreFromToken = false, CheckpointMetadata metadata = null)
+        public void RecoverCheckpoint(bool replicaRecover = false, bool recoverMainStoreFromToken = false, bool recoverObjectStoreFromToken = false, CheckpointMetadata metadata = null)
         {
             long storeVersion = -1, objectStoreVersion = -1;
             try
             {
-                storeVersion = !recoverMainStoreFromToken ? store.Recover() : store.Recover(metadata.storeIndexToken, metadata.storeHlogToken);
-                if (objectStore != null) objectStoreVersion = !recoverObjectStoreFromToken ? objectStore.Recover() : objectStore.Recover(metadata.objectStoreIndexToken, metadata.objectStoreHlogToken);
+                if (replicaRecover)
+                {
+                    if (metadata.storeIndexToken != default && metadata.storeHlogToken != default)
+                    {
+                        storeVersion = !recoverMainStoreFromToken ? store.Recover() : store.Recover(metadata.storeIndexToken, metadata.storeHlogToken);
+                    }
+
+                    if (!serverOptions.DisableObjects)
+                    {
+                        if (metadata.objectStoreIndexToken != default && metadata.objectStoreHlogToken != default)
+                        {
+                            objectStoreVersion = !recoverObjectStoreFromToken ? objectStore.Recover() : objectStore.Recover(metadata.objectStoreIndexToken, metadata.objectStoreHlogToken);
+                        }
+                    }
+                }
+                else
+                {
+                    storeVersion = store.Recover();
+                    if (objectStore != null) objectStoreVersion = objectStore.Recover();
+                }
                 if (storeVersion > 0 || objectStoreVersion > 0)
                     lastSaveTime = DateTimeOffset.UtcNow;
             }
