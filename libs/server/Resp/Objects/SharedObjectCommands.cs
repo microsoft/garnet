@@ -14,7 +14,6 @@ namespace Garnet.server
         /// using a pattern to match and count to limit how many items to return.
         /// </summary>
         /// <typeparam name="TGarnetApi"></typeparam>
-        /// <param name="count">Number of tokens in the buffer, including the name of the command</param>
         /// <param name="objectType">SortedSet, Hash or Set type</param>
         /// <param name="storageApi">The storageAPI object</param>
         /// <returns></returns>

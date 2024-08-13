@@ -8,15 +8,15 @@ namespace Tsavorite.core
     /// Return Status.NotFound => TryAdd succeededed (item added).
     /// Return Status.Found => TryAdd failed (item not added, key was already present).
     /// </summary>
-    /// <typeparam name="Key"></typeparam>
-    /// <typeparam name="Value"></typeparam>
-    /// <typeparam name="Context"></typeparam>
-    public class TryAddFunctions<Key, Value, Context> : SimpleSessionFunctions<Key, Value, Context>
+    /// <typeparam name="TKey"></typeparam>
+    /// <typeparam name="TValue"></typeparam>
+    /// <typeparam name="TContext"></typeparam>
+    public class TryAddFunctions<TKey, TValue, TContext> : SimpleSessionFunctions<TKey, TValue, TContext>
     {
         /// <inheritdoc />
-        public override bool InPlaceUpdater(ref Key key, ref Value input, ref Value value, ref Value output, ref RMWInfo rmwInfo, ref RecordInfo recordInfo) => true;
+        public override bool InPlaceUpdater(ref TKey key, ref TValue input, ref TValue value, ref TValue output, ref RMWInfo rmwInfo, ref RecordInfo recordInfo) => true;
         /// <inheritdoc />
-        public override bool NeedCopyUpdate(ref Key key, ref Value input, ref Value oldValue, ref Value output, ref RMWInfo rmwInfo) => false;
+        public override bool NeedCopyUpdate(ref TKey key, ref TValue input, ref TValue oldValue, ref TValue output, ref RMWInfo rmwInfo) => false;
     }
 
     /// <summary>
@@ -24,7 +24,7 @@ namespace Tsavorite.core
     /// Return Status.NotFound => TryAdd succeededed (item added)
     /// Return Status.Found => TryAdd failed (item not added, key was already present)
     /// </summary>
-    /// <typeparam name="Key"></typeparam>
-    /// <typeparam name="Value"></typeparam>
-    public class TryAddFunctions<Key, Value> : TryAddFunctions<Key, Value, Empty> { }
+    /// <typeparam name="TKey"></typeparam>
+    /// <typeparam name="TValue"></typeparam>
+    public class TryAddFunctions<TKey, TValue> : TryAddFunctions<TKey, TValue, Empty> { }
 }

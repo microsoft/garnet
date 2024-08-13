@@ -27,7 +27,7 @@ namespace Garnet.cluster
             }
 
             var nodeId = parseState.GetString(0);
-            var replicas = clusterProvider.clusterManager.ListReplicas(nodeId);
+            var replicas = clusterProvider.clusterManager.ListReplicas(nodeId, clusterProvider);
 
             while (!RespWriteUtils.WriteArrayLength(replicas.Count, ref dcurr, dend))
                 SendAndReset();

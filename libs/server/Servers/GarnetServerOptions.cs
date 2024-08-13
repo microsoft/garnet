@@ -373,24 +373,25 @@ namespace Garnet.server
                 MutableFraction = MutablePercent / 100.0,
                 PageSize = 1L << PageSizeBits()
             };
-            logger?.LogInformation($"[Store] Using page size of {PrettySize(kvSettings.PageSize)}");
+            logger?.LogInformation("[Store] Using page size of {PageSize}", PrettySize(kvSettings.PageSize));
 
             kvSettings.MemorySize = 1L << MemorySizeBits(MemorySize, PageSize, out var storeEmptyPageCount);
             kvSettings.MinEmptyPageCount = storeEmptyPageCount;
 
             long effectiveSize = kvSettings.MemorySize - storeEmptyPageCount * kvSettings.MemorySize;
             if (storeEmptyPageCount == 0)
-                logger?.LogInformation($"[Store] Using log memory size of {PrettySize(kvSettings.MemorySize)}");
+                logger?.LogInformation("[Store] Using log memory size of {MemorySize}", PrettySize(kvSettings.MemorySize));
             else
-                logger?.LogInformation($"[Store] Using log memory size of {PrettySize(kvSettings.MemorySize)}, with {storeEmptyPageCount} empty pages, for effective size of {PrettySize(effectiveSize)}");
+                logger?.LogInformation("[Store] Using log memory size of {MemorySize}, with {storeEmptyPageCount} empty pages, for effective size of {effectiveSize}",
+                    PrettySize(kvSettings.MemorySize), storeEmptyPageCount, PrettySize(effectiveSize));
 
-            logger?.LogInformation($"[Store] There are {PrettySize(kvSettings.MemorySize / kvSettings.PageSize)} log pages in memory");
+            logger?.LogInformation("[Store] There are {LogPages} log pages in memory", PrettySize(kvSettings.MemorySize / kvSettings.PageSize));
 
             kvSettings.SegmentSize = 1L << SegmentSizeBits();
-            logger?.LogInformation($"[Store] Using disk segment size of {PrettySize(kvSettings.SegmentSize)}");
+            logger?.LogInformation("[Store] Using disk segment size of {SegmentSize}", PrettySize(kvSettings.SegmentSize));
 
-            logger?.LogInformation($"[Store] Using hash index size of {PrettySize(kvSettings.IndexSize)} ({PrettySize(indexCacheLines)} cache lines)");
-            logger?.LogInformation($"[Store] Hash index size is optimized for up to ~{PrettySize(indexCacheLines * 4L)} distinct keys");
+            logger?.LogInformation("[Store] Using hash index size of {IndexSize} ({indexCacheLines} cache lines)", PrettySize(kvSettings.IndexSize), PrettySize(indexCacheLines));
+            logger?.LogInformation("[Store] Hash index size is optimized for up to ~{distinctKeys} distinct keys", PrettySize(indexCacheLines * 4L));
 
             AdjustedIndexMaxCacheLines = IndexMaxSize == string.Empty ? 0 : IndexSizeCachelines("hash index max size", IndexMaxSize);
             if (AdjustedIndexMaxCacheLines != 0 && AdjustedIndexMaxCacheLines < indexCacheLines)
@@ -398,10 +399,10 @@ namespace Garnet.server
 
             if (AdjustedIndexMaxCacheLines > 0)
             {
-                logger?.LogInformation($"[Store] Using hash index max size of {PrettySize(AdjustedIndexMaxCacheLines * 64L)}, ({PrettySize(AdjustedIndexMaxCacheLines)} cache lines)");
-                logger?.LogInformation($"[Store] Hash index max size is optimized for up to ~{PrettySize(AdjustedIndexMaxCacheLines * 4L)} distinct keys");
+                logger?.LogInformation("[Store] Using hash index max size of {MaxSize}, ({CacheLines} cache lines)", PrettySize(AdjustedIndexMaxCacheLines * 64L), PrettySize(AdjustedIndexMaxCacheLines));
+                logger?.LogInformation("[Store] Hash index max size is optimized for up to ~{distinctKeys} distinct keys", PrettySize(AdjustedIndexMaxCacheLines * 4L));
             }
-            logger?.LogInformation($"[Store] Using log mutable percentage of {MutablePercent}%");
+            logger?.LogInformation("[Store] Using log mutable percentage of {MutablePercent}%", MutablePercent);
 
             DeviceFactoryCreator ??= () => new LocalStorageNamedDeviceFactory(useNativeDeviceLinux: UseNativeDeviceLinux, logger: logger);
 
@@ -428,19 +429,19 @@ namespace Garnet.server
 
             if (RevivInChainOnly)
             {
-                logger?.LogInformation($"[Store] Using Revivification in-chain only");
+                logger?.LogInformation("[Store] Using Revivification in-chain only");
                 kvSettings.RevivificationSettings = RevivificationSettings.InChainOnly.Clone();
             }
             else if (UseRevivBinsPowerOf2)
             {
-                logger?.LogInformation($"[Store] Using Revivification with power-of-2 bins");
+                logger?.LogInformation("[Store] Using Revivification with power-of-2 bins");
                 kvSettings.RevivificationSettings = RevivificationSettings.PowerOf2Bins.Clone();
                 kvSettings.RevivificationSettings.NumberOfBinsToSearch = RevivNumberOfBinsToSearch;
                 kvSettings.RevivificationSettings.RevivifiableFraction = RevivifiableFraction;
             }
             else if (RevivBinRecordSizes?.Length > 0)
             {
-                logger?.LogInformation($"[Store] Using Revivification with custom bins");
+                logger?.LogInformation("[Store] Using Revivification with custom bins");
 
                 // We use this in the RevivBinRecordCounts and RevivObjBinRecordCount Options help text, so assert it here because we can't use an interpolated string there.
                 System.Diagnostics.Debug.Assert(RevivificationBin.DefaultRecordsPerBin == 256);
@@ -468,7 +469,7 @@ namespace Garnet.server
             }
             else
             {
-                logger?.LogInformation($"[Store] Not using Revivification");
+                logger?.LogInformation("[Store] Not using Revivification");
             }
 
             return kvSettings;
@@ -511,27 +512,27 @@ namespace Garnet.server
                 MutableFraction = ObjectStoreMutablePercent / 100.0,
                 PageSize = 1L << ObjectStorePageSizeBits()
             };
-            logger?.LogInformation($"[Object Store] Using page size of {PrettySize(kvSettings.PageSize)}");
-            logger?.LogInformation($"[Object Store] Each page can hold ~{kvSettings.PageSize / 24} key-value pairs of objects");
+            logger?.LogInformation("[Object Store] Using page size of {PageSize}", PrettySize(kvSettings.PageSize));
+            logger?.LogInformation("[Object Store] Each page can hold ~{PageSize} key-value pairs of objects", kvSettings.PageSize / 24);
 
             kvSettings.MemorySize = 1L << MemorySizeBits(ObjectStoreLogMemorySize, ObjectStorePageSize, out var objectStoreEmptyPageCount);
             kvSettings.MinEmptyPageCount = objectStoreEmptyPageCount;
 
             long effectiveSize = kvSettings.MemorySize - objectStoreEmptyPageCount * kvSettings.PageSize;
             if (objectStoreEmptyPageCount == 0)
-                logger?.LogInformation($"[Object Store] Using log memory size of {PrettySize(kvSettings.MemorySize)}");
+                logger?.LogInformation("[Object Store] Using log memory size of {MemorySize}", PrettySize(kvSettings.MemorySize));
             else
-                logger?.LogInformation($"[Object Store] Using log memory size of {PrettySize(kvSettings.MemorySize)}, with {objectStoreEmptyPageCount} empty pages, for effective size of {PrettySize(effectiveSize)}");
+                logger?.LogInformation("[Object Store] Using log memory size of {MemorySize}, with {objectStoreEmptyPageCount} empty pages, for effective size of {effectiveSize}", PrettySize(kvSettings.MemorySize), objectStoreEmptyPageCount, PrettySize(effectiveSize));
 
-            logger?.LogInformation($"[Object Store] This can hold ~{effectiveSize / 24} key-value pairs of objects in memory total");
+            logger?.LogInformation("[Object Store] This can hold ~{PageSize} key-value pairs of objects in memory total", effectiveSize / 24);
 
-            logger?.LogInformation($"[Object Store] There are {PrettySize(kvSettings.MemorySize / kvSettings.PageSize)} log pages in memory");
+            logger?.LogInformation("[Object Store] There are {LogPages} log pages in memory", PrettySize(kvSettings.MemorySize / kvSettings.PageSize));
 
             kvSettings.SegmentSize = 1L << ObjectStoreSegmentSizeBits();
-            logger?.LogInformation($"[Object Store] Using disk segment size of {PrettySize(kvSettings.SegmentSize)}");
+            logger?.LogInformation("[Object Store] Using disk segment size of {SegmentSize}", PrettySize(kvSettings.SegmentSize));
 
-            logger?.LogInformation($"[Object Store] Using hash index size of {PrettySize(kvSettings.IndexSize)} ({PrettySize(indexCacheLines)} cache lines)");
-            logger?.LogInformation($"[Object Store] Hash index size is optimized for up to ~{PrettySize(indexCacheLines * 4L)} distinct keys");
+            logger?.LogInformation("[Object Store] Using hash index size of {IndexSize} ({indexCacheLines} cache lines)", PrettySize(kvSettings.IndexSize), PrettySize(indexCacheLines));
+            logger?.LogInformation("[Object Store] Hash index size is optimized for up to ~{distinctKeys} distinct keys", PrettySize(indexCacheLines * 4L));
 
             AdjustedObjectStoreIndexMaxCacheLines = ObjectStoreIndexMaxSize == string.Empty ? 0 : IndexSizeCachelines("hash index max size", ObjectStoreIndexMaxSize);
             if (AdjustedObjectStoreIndexMaxCacheLines != 0 && AdjustedObjectStoreIndexMaxCacheLines < indexCacheLines)
@@ -539,13 +540,13 @@ namespace Garnet.server
 
             if (AdjustedObjectStoreIndexMaxCacheLines > 0)
             {
-                logger?.LogInformation($"[Object Store] Using hash index max size of {PrettySize(AdjustedObjectStoreIndexMaxCacheLines * 64L)}, ({PrettySize(AdjustedObjectStoreIndexMaxCacheLines)} cache lines)");
-                logger?.LogInformation($"[Object Store] Hash index max size is optimized for up to ~{PrettySize(AdjustedObjectStoreIndexMaxCacheLines * 4L)} distinct keys");
+                logger?.LogInformation("[Object Store] Using hash index max size of {MaxSize}, ({CacheLines} cache lines)", PrettySize(AdjustedObjectStoreIndexMaxCacheLines * 64L), PrettySize(AdjustedObjectStoreIndexMaxCacheLines));
+                logger?.LogInformation("[Object Store] Hash index max size is optimized for up to ~{distinctKeys} distinct keys", PrettySize(AdjustedObjectStoreIndexMaxCacheLines * 4L));
             }
-            logger?.LogInformation($"[Object Store] Using log mutable percentage of {ObjectStoreMutablePercent}%");
+            logger?.LogInformation("[Object Store] Using log mutable percentage of {ObjectStoreMutablePercent}%", ObjectStoreMutablePercent);
 
             objTotalMemorySize = ParseSize(ObjectStoreTotalMemorySize);
-            logger?.LogInformation($"[Object Store] Total memory size including heap objects is {(objTotalMemorySize > 0 ? PrettySize(objTotalMemorySize) : "unlimited")}");
+            logger?.LogInformation("[Object Store] Total memory size including heap objects is {totalMemorySize}", (objTotalMemorySize > 0 ? PrettySize(objTotalMemorySize) : "unlimited"));
 
             if (EnableStorageTier)
             {
@@ -566,12 +567,12 @@ namespace Garnet.server
 
             if (RevivInChainOnly)
             {
-                logger?.LogInformation($"[Object Store] Using Revivification in-chain only");
+                logger?.LogInformation("[Object Store] Using Revivification in-chain only");
                 kvSettings.RevivificationSettings = RevivificationSettings.InChainOnly.Clone();
             }
             else if (UseRevivBinsPowerOf2 || RevivBinRecordSizes?.Length > 0)
             {
-                logger?.LogInformation($"[Object Store] Using Revivification with a single fixed-size bin");
+                logger?.LogInformation("[Object Store] Using Revivification with a single fixed-size bin");
                 kvSettings.RevivificationSettings = RevivificationSettings.DefaultFixedLength.Clone();
                 kvSettings.RevivificationSettings.RevivifiableFraction = RevivifiableFraction;
                 kvSettings.RevivificationSettings.FreeRecordBins[0].NumberOfRecords = RevivObjBinRecordCount;
@@ -579,7 +580,7 @@ namespace Garnet.server
             }
             else
             {
-                logger?.LogInformation($"[Object Store] Not using Revivification");
+                logger?.LogInformation("[Object Store] Not using Revivification");
             }
 
             return kvSettings;
@@ -635,7 +636,7 @@ namespace Garnet.server
             long size = ParseSize(AofMemorySize);
             long adjustedSize = PreviousPowerOf2(size);
             if (size != adjustedSize)
-                logger?.LogInformation($"Warning: using lower AOF memory size than specified (power of 2)");
+                logger?.LogInformation("Warning: using lower AOF memory size than specified (power of 2)");
             return (int)Math.Log(adjustedSize, 2);
         }
 
@@ -648,7 +649,7 @@ namespace Garnet.server
             long size = ParseSize(AofPageSize);
             long adjustedSize = PreviousPowerOf2(size);
             if (size != adjustedSize)
-                logger?.LogInformation($"Warning: using lower AOF page size than specified (power of 2)");
+                logger?.LogInformation("Warning: using lower AOF page size than specified (power of 2)");
             return (int)Math.Log(adjustedSize, 2);
         }
 
@@ -661,7 +662,7 @@ namespace Garnet.server
             long size = ParseSize(AofSizeLimit);
             long adjustedSize = PreviousPowerOf2(size);
             if (size != adjustedSize)
-                logger?.LogInformation($"Warning: using lower AOF memory size than specified (power of 2)");
+                logger?.LogInformation("Warning: using lower AOF memory size than specified (power of 2)");
             return (int)Math.Log(adjustedSize, 2);
         }
 
@@ -674,7 +675,7 @@ namespace Garnet.server
             long size = ParseSize(ObjectStorePageSize);
             long adjustedSize = PreviousPowerOf2(size);
             if (size != adjustedSize)
-                logger?.LogInformation($"Warning: using lower object store page size than specified (power of 2)");
+                logger?.LogInformation("Warning: using lower object store page size than specified (power of 2)");
             return (int)Math.Log(adjustedSize, 2);
         }
 
@@ -687,7 +688,7 @@ namespace Garnet.server
             long size = ParseSize(ObjectStoreSegmentSize);
             long adjustedSize = PreviousPowerOf2(size);
             if (size != adjustedSize)
-                logger?.LogInformation($"Warning: using lower object store disk segment size than specified (power of 2)");
+                logger?.LogInformation("Warning: using lower object store disk segment size than specified (power of 2)");
             return (int)Math.Log(adjustedSize, 2);
         }
 

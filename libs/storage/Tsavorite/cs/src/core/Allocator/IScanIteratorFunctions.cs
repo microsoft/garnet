@@ -30,7 +30,7 @@ namespace Tsavorite.core
     /// <summary>
     /// Callback functions for log scan or key-version iteration
     /// </summary>
-    public interface IScanIteratorFunctions<Key, Value>
+    public interface IScanIteratorFunctions<TKey, TValue>
     {
         /// <summary>Iteration is starting.</summary>
         /// <param name="beginAddress">Start address of the scan</param>
@@ -46,7 +46,7 @@ namespace Tsavorite.core
         /// <param name="cursorRecordResult">Indicates whether the current record was accepted, or whether to end the current ScanCursor call.
         ///     Ignored for non-cursor Scans; set to <see cref="CursorRecordResult.Accept"/>.</param>
         /// <returns>True to continue iteration, else false</returns>
-        bool SingleReader(ref Key key, ref Value value, RecordMetadata recordMetadata, long numberOfRecords, out CursorRecordResult cursorRecordResult);
+        bool SingleReader(ref TKey key, ref TValue value, RecordMetadata recordMetadata, long numberOfRecords, out CursorRecordResult cursorRecordResult);
 
         /// <summary>Next record in iteration for a record in mutable log memory.</summary>
         /// <param name="key">Reference to the current record's key</param>
@@ -56,7 +56,7 @@ namespace Tsavorite.core
         /// <param name="cursorRecordResult">Indicates whether the current record was accepted, or whether to end the current ScanCursor call.
         ///     Ignored for non-cursor Scans; set to <see cref="CursorRecordResult.Accept"/>.</param>
         /// <returns>True to continue iteration, else false</returns>
-        bool ConcurrentReader(ref Key key, ref Value value, RecordMetadata recordMetadata, long numberOfRecords, out CursorRecordResult cursorRecordResult);
+        bool ConcurrentReader(ref TKey key, ref TValue value, RecordMetadata recordMetadata, long numberOfRecords, out CursorRecordResult cursorRecordResult);
 
         /// <summary>Iteration is complete.</summary>
         /// <param name="completed">If true, the iteration completed; else scanFunctions.*Reader() returned false to stop the iteration.</param>
@@ -69,9 +69,9 @@ namespace Tsavorite.core
         void OnException(Exception exception, long numberOfRecords);
     }
 
-    internal interface IPushScanIterator<Key>
+    internal interface IPushScanIterator<TKey>
     {
-        bool BeginGetPrevInMemory(ref Key key, out RecordInfo recordInfo, out bool continueOnDisk);
+        bool BeginGetPrevInMemory(ref TKey key, out RecordInfo recordInfo, out bool continueOnDisk);
         bool EndGetPrevInMemory();
 
         /// <summary>

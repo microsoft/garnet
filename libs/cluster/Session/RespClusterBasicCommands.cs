@@ -250,7 +250,7 @@ namespace Garnet.cluster
                 return true;
             }
 
-            var nodes = clusterProvider.clusterManager.CurrentConfig.GetClusterInfo();
+            var nodes = clusterProvider.clusterManager.CurrentConfig.GetClusterInfo(clusterProvider);
             while (!RespWriteUtils.WriteAsciiBulkString(nodes, ref dcurr, dend))
                 SendAndReset();
 

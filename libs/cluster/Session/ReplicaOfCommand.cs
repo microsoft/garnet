@@ -52,7 +52,7 @@ namespace Garnet.cluster
                 if (!NumUtils.TryParse(portSpan, out int port))
                 {
                     var portStr = Encoding.ASCII.GetString(portSpan);
-                    logger?.LogWarning("TryREPLICAOF failed to parse port {port}", portStr);
+                    logger?.LogWarning($"{nameof(TryREPLICAOF)} failed to parse port {{port}}", portStr);
                     while (!RespWriteUtils.WriteError($"ERR REPLICAOF failed to parse port '{portStr}'", ref dcurr, dend))
                         SendAndReset();
                     return true;

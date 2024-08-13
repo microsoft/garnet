@@ -5,9 +5,9 @@ using System.Diagnostics;
 
 namespace Tsavorite.core
 {
-    public unsafe partial class TsavoriteKV<Key, Value, TStoreFunctions, TAllocator> : TsavoriteBase
-        where TStoreFunctions : IStoreFunctions<Key, Value>
-        where TAllocator : IAllocator<Key, Value, TStoreFunctions>
+    public unsafe partial class TsavoriteKV<TKey, TValue, TStoreFunctions, TAllocator> : TsavoriteBase
+        where TStoreFunctions : IStoreFunctions<TKey, TValue>
+        where TAllocator : IAllocator<TKey, TValue, TStoreFunctions>
     {
         /// <summary>
         /// Continue a pending read operation. Computes 'output' from 'input' and value corresponding to 'key'
@@ -28,9 +28,9 @@ namespace Tsavorite.core
         ///     </item>
         /// </list>
         /// </returns>
-        internal OperationStatus ContinuePendingRead<Input, Output, Context, TSessionFunctionsWrapper>(AsyncIOContext<Key, Value> request,
-                                                        ref PendingContext<Input, Output, Context> pendingContext, TSessionFunctionsWrapper sessionFunctions)
-            where TSessionFunctionsWrapper : ISessionFunctionsWrapper<Key, Value, Input, Output, Context, TStoreFunctions, TAllocator>
+        internal OperationStatus ContinuePendingRead<TInput, TOutput, TContext, TSessionFunctionsWrapper>(AsyncIOContext<TKey, TValue> request,
+                                                        ref PendingContext<TInput, TOutput, TContext> pendingContext, TSessionFunctionsWrapper sessionFunctions)
+            where TSessionFunctionsWrapper : ISessionFunctionsWrapper<TKey, TValue, TInput, TOutput, TContext, TStoreFunctions, TAllocator>
         {
             ref RecordInfo srcRecordInfo = ref hlog.GetInfoFromBytePointer(request.record.GetValidPointer());
             srcRecordInfo.ClearBitsForDiskImages();
@@ -40,12 +40,12 @@ namespace Tsavorite.core
                 SpinWaitUntilClosed(request.logicalAddress);
 
                 // If NoKey, we do not have the key in the initial call and must use the key from the satisfied request.
-                ref Key key = ref pendingContext.NoKey ? ref hlog.GetContextRecordKey(ref request) : ref pendingContext.key.Get();
-                OperationStackContext<Key, Value, TStoreFunctions, TAllocator> stackCtx = new(storeFunctions.GetKeyHashCode64(ref key));
+                ref TKey key = ref pendingContext.NoKey ? ref hlog.GetContextRecordKey(ref request) : ref pendingContext.key.Get();
+                OperationStackContext<TKey, TValue, TStoreFunctions, TAllocator> stackCtx = new(storeFunctions.GetKeyHashCode64(ref key));
 
                 while (true)
                 {
-                    if (!FindTagAndTryTransientSLock<Input, Output, Context, TSessionFunctionsWrapper>(sessionFunctions, ref key, ref stackCtx, out var status))
+                    if (!FindTagAndTryTransientSLock<TInput, TOutput, TContext, TSessionFunctionsWrapper>(sessionFunctions, ref key, ref stackCtx, out var status))
                     {
                         Debug.Assert(status != OperationStatus.NOTFOUND, "Expected to FindTag in InternalContinuePendingRead");
                         if (HandleImmediateRetryStatus(status, sessionFunctions, ref pendingContext))
@@ -148,7 +148,7 @@ namespace Tsavorite.core
                     finally
                     {
                         stackCtx.HandleNewRecordOnException(this);
-                        TransientSUnlock<Input, Output, Context, TSessionFunctionsWrapper>(sessionFunctions, ref key, ref stackCtx);
+                        TransientSUnlock<TInput, TOutput, TContext, TSessionFunctionsWrapper>(sessionFunctions, ref key, ref stackCtx);
                     }
 
                     // Must do this *after* Unlocking. Status was set by InternalTryCopyToTail.
@@ -184,11 +184,11 @@ namespace Tsavorite.core
         ///     </item>
         /// </list>
         /// </returns>
-        internal OperationStatus ContinuePendingRMW<Input, Output, Context, TSessionFunctionsWrapper>(AsyncIOContext<Key, Value> request,
-                                                ref PendingContext<Input, Output, Context> pendingContext, TSessionFunctionsWrapper sessionFunctions)
-            where TSessionFunctionsWrapper : ISessionFunctionsWrapper<Key, Value, Input, Output, Context, TStoreFunctions, TAllocator>
+        internal OperationStatus ContinuePendingRMW<TInput, TOutput, TContext, TSessionFunctionsWrapper>(AsyncIOContext<TKey, TValue> request,
+                                                ref PendingContext<TInput, TOutput, TContext> pendingContext, TSessionFunctionsWrapper sessionFunctions)
+            where TSessionFunctionsWrapper : ISessionFunctionsWrapper<TKey, TValue, TInput, TOutput, TContext, TStoreFunctions, TAllocator>
         {
-            ref Key key = ref pendingContext.key.Get();
+            ref TKey key = ref pendingContext.key.Get();
 
             SpinWaitUntilClosed(request.logicalAddress);
 
@@ -201,8 +201,8 @@ namespace Tsavorite.core
 
             while (true)
             {
-                OperationStackContext<Key, Value, TStoreFunctions, TAllocator> stackCtx = new(pendingContext.keyHash);
-                if (!FindOrCreateTagAndTryTransientXLock<Input, Output, Context, TSessionFunctionsWrapper>(sessionFunctions, ref key, ref stackCtx, out status))
+                OperationStackContext<TKey, TValue, TStoreFunctions, TAllocator> stackCtx = new(pendingContext.keyHash);
+                if (!FindOrCreateTagAndTryTransientXLock<TInput, TOutput, TContext, TSessionFunctionsWrapper>(sessionFunctions, ref key, ref stackCtx, out status))
                     goto CheckRetry;
 
                 try
@@ -236,7 +236,7 @@ namespace Tsavorite.core
                 finally
                 {
                     stackCtx.HandleNewRecordOnException(this);
-                    TransientXUnlock<Input, Output, Context, TSessionFunctionsWrapper>(sessionFunctions, ref key, ref stackCtx);
+                    TransientXUnlock<TInput, TOutput, TContext, TSessionFunctionsWrapper>(sessionFunctions, ref key, ref stackCtx);
                 }
 
             // Must do this *after* Unlocking.
@@ -276,24 +276,24 @@ namespace Tsavorite.core
         ///     </item>
         /// </list>
         /// </returns>
-        internal OperationStatus ContinuePendingConditionalCopyToTail<Input, Output, Context, TSessionFunctionsWrapper>(AsyncIOContext<Key, Value> request,
-                                                ref PendingContext<Input, Output, Context> pendingContext, TSessionFunctionsWrapper sessionFunctions)
-            where TSessionFunctionsWrapper : ISessionFunctionsWrapper<Key, Value, Input, Output, Context, TStoreFunctions, TAllocator>
+        internal OperationStatus ContinuePendingConditionalCopyToTail<TInput, TOutput, TContext, TSessionFunctionsWrapper>(AsyncIOContext<TKey, TValue> request,
+                                                ref PendingContext<TInput, TOutput, TContext> pendingContext, TSessionFunctionsWrapper sessionFunctions)
+            where TSessionFunctionsWrapper : ISessionFunctionsWrapper<TKey, TValue, TInput, TOutput, TContext, TStoreFunctions, TAllocator>
         {
             // If the key was found at or above minAddress, do nothing.
             if (request.logicalAddress >= pendingContext.minAddress)
                 return OperationStatus.SUCCESS;
 
             // Prepare to copy to tail. Use data from pendingContext, not request; we're only made it to this line if the key was not found, and thus the request was not populated.
-            ref Key key = ref pendingContext.key.Get();
-            OperationStackContext<Key, Value, TStoreFunctions, TAllocator> stackCtx = new(storeFunctions.GetKeyHashCode64(ref key));
+            ref TKey key = ref pendingContext.key.Get();
+            OperationStackContext<TKey, TValue, TStoreFunctions, TAllocator> stackCtx = new(storeFunctions.GetKeyHashCode64(ref key));
 
             // See if the record was added above the highest address we checked before issuing the IO.
             var minAddress = pendingContext.InitialLatestLogicalAddress + 1;
             OperationStatus internalStatus;
             do
             {
-                if (TryFindRecordInMainLogForConditionalOperation<Input, Output, Context, TSessionFunctionsWrapper>(sessionFunctions, ref key, ref stackCtx, minAddress, out internalStatus, out bool needIO))
+                if (TryFindRecordInMainLogForConditionalOperation<TInput, TOutput, TContext, TSessionFunctionsWrapper>(sessionFunctions, ref key, ref stackCtx, minAddress, out internalStatus, out bool needIO))
                     return OperationStatus.SUCCESS;
                 if (!OperationStatusUtils.IsRetry(internalStatus))
                 {
@@ -305,7 +305,7 @@ namespace Tsavorite.core
                                                             ref pendingContext.output, pendingContext.userContext, ref stackCtx, pendingContext.writeReason);
                 }
             }
-            while (sessionFunctions.Store.HandleImmediateNonPendingRetryStatus<Input, Output, Context, TSessionFunctionsWrapper>(internalStatus, sessionFunctions));
+            while (sessionFunctions.Store.HandleImmediateNonPendingRetryStatus<TInput, TOutput, TContext, TSessionFunctionsWrapper>(internalStatus, sessionFunctions));
             return internalStatus;
         }
 
@@ -332,9 +332,9 @@ namespace Tsavorite.core
         ///     </item>
         /// </list>
         /// </returns>
-        internal OperationStatus ContinuePendingConditionalScanPush<Input, Output, Context, TSessionFunctionsWrapper>(AsyncIOContext<Key, Value> request,
-                                                ref PendingContext<Input, Output, Context> pendingContext, TSessionFunctionsWrapper sessionFunctions)
-            where TSessionFunctionsWrapper : ISessionFunctionsWrapper<Key, Value, Input, Output, Context, TStoreFunctions, TAllocator>
+        internal OperationStatus ContinuePendingConditionalScanPush<TInput, TOutput, TContext, TSessionFunctionsWrapper>(AsyncIOContext<TKey, TValue> request,
+                                                ref PendingContext<TInput, TOutput, TContext> pendingContext, TSessionFunctionsWrapper sessionFunctions)
+            where TSessionFunctionsWrapper : ISessionFunctionsWrapper<TKey, TValue, TInput, TOutput, TContext, TStoreFunctions, TAllocator>
         {
             // If the key was found at or above minAddress, do nothing; we'll push it when we get to it. If we flagged the iteration to stop, do nothing.
             if (request.logicalAddress >= pendingContext.minAddress || pendingContext.scanCursorState.stop)
@@ -343,7 +343,7 @@ namespace Tsavorite.core
             // Prepare to push to caller's iterator functions. Use data from pendingContext, not request; we're only made it to this line if the key was not found,
             // and thus the request was not populated. The new minAddress should be the highest logicalAddress we previously saw, because we need to make sure the
             // record was not added to the log after we initialized the pending IO.
-            hlogBase.ConditionalScanPush<Input, Output, Context, TSessionFunctionsWrapper>(sessionFunctions, pendingContext.scanCursorState, pendingContext.recordInfo, ref pendingContext.key.Get(), ref pendingContext.value.Get(),
+            hlogBase.ConditionalScanPush<TInput, TOutput, TContext, TSessionFunctionsWrapper>(sessionFunctions, pendingContext.scanCursorState, pendingContext.recordInfo, ref pendingContext.key.Get(), ref pendingContext.value.Get(),
                 minAddress: pendingContext.InitialLatestLogicalAddress + 1);
 
             // ConditionalScanPush has already called HandleOperationStatus, so return SUCCESS here.

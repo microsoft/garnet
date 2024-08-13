@@ -8,13 +8,13 @@ using System.Threading;
 
 namespace Tsavorite.core
 {
-    public partial class TsavoriteKV<Key, Value, TStoreFunctions, TAllocator> : TsavoriteBase
-        where TStoreFunctions : IStoreFunctions<Key, Value>
-        where TAllocator : IAllocator<Key, Value, TStoreFunctions>
+    public partial class TsavoriteKV<TKey, TValue, TStoreFunctions, TAllocator> : TsavoriteBase
+        where TStoreFunctions : IStoreFunctions<TKey, TValue>
+        where TAllocator : IAllocator<TKey, TValue, TStoreFunctions>
     {
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        internal void InternalRefresh<Input, Output, Context, TSessionFunctionsWrapper>(TSessionFunctionsWrapper sessionFunctions)
-            where TSessionFunctionsWrapper : ISessionFunctionsWrapper<Key, Value, Input, Output, Context, TStoreFunctions, TAllocator>
+        internal void InternalRefresh<TInput, TOutput, TContext, TSessionFunctionsWrapper>(TSessionFunctionsWrapper sessionFunctions)
+            where TSessionFunctionsWrapper : ISessionFunctionsWrapper<TKey, TValue, TInput, TOutput, TContext, TStoreFunctions, TAllocator>
         {
             epoch.ProtectAndDrain();
 
@@ -57,7 +57,7 @@ namespace Tsavorite.core
             }
         }
 
-        internal static void InitContext<Input, Output, Context>(TsavoriteExecutionContext<Input, Output, Context> ctx, int sessionID, string sessionName)
+        internal static void InitContext<TInput, TOutput, TContext>(TsavoriteExecutionContext<TInput, TOutput, TContext> ctx, int sessionID, string sessionName)
         {
             ctx.phase = Phase.REST;
             // The system version starts at 1. Because we do not know what the current state machine state is,
@@ -70,13 +70,13 @@ namespace Tsavorite.core
 
             if (ctx.readyResponses is null)
             {
-                ctx.readyResponses = new AsyncQueue<AsyncIOContext<Key, Value>>();
-                ctx.ioPendingRequests = new Dictionary<long, PendingContext<Input, Output, Context>>();
+                ctx.readyResponses = new AsyncQueue<AsyncIOContext<TKey, TValue>>();
+                ctx.ioPendingRequests = new Dictionary<long, PendingContext<TInput, TOutput, TContext>>();
                 ctx.pendingReads = new AsyncCountDown();
             }
         }
 
-        internal static void CopyContext<Input, Output, Context>(TsavoriteExecutionContext<Input, Output, Context> src, TsavoriteExecutionContext<Input, Output, Context> dst)
+        internal static void CopyContext<TInput, TOutput, TContext>(TsavoriteExecutionContext<TInput, TOutput, TContext> src, TsavoriteExecutionContext<TInput, TOutput, TContext> dst)
         {
             dst.phase = src.phase;
             dst.version = src.version;
@@ -85,9 +85,9 @@ namespace Tsavorite.core
             dst.sessionName = src.sessionName;
         }
 
-        internal bool InternalCompletePending<Input, Output, Context, TSessionFunctionsWrapper>(TSessionFunctionsWrapper sessionFunctions, bool wait = false,
-                                                                                     CompletedOutputIterator<Key, Value, Input, Output, Context> completedOutputs = null)
-            where TSessionFunctionsWrapper : ISessionFunctionsWrapper<Key, Value, Input, Output, Context, TStoreFunctions, TAllocator>
+        internal bool InternalCompletePending<TInput, TOutput, TContext, TSessionFunctionsWrapper>(TSessionFunctionsWrapper sessionFunctions, bool wait = false,
+                                                                                     CompletedOutputIterator<TKey, TValue, TInput, TOutput, TContext> completedOutputs = null)
+            where TSessionFunctionsWrapper : ISessionFunctionsWrapper<TKey, TValue, TInput, TOutput, TContext, TStoreFunctions, TAllocator>
         {
             while (true)
             {
@@ -96,7 +96,7 @@ namespace Tsavorite.core
 
                 if (sessionFunctions.Ctx.HasNoPendingRequests) return true;
 
-                InternalRefresh<Input, Output, Context, TSessionFunctionsWrapper>(sessionFunctions);
+                InternalRefresh<TInput, TOutput, TContext, TSessionFunctionsWrapper>(sessionFunctions);
 
                 if (!wait) return false;
                 Thread.Yield();
@@ -106,21 +106,21 @@ namespace Tsavorite.core
         internal bool InRestPhase() => systemState.Phase == Phase.REST;
 
         #region Complete Pending Requests
-        internal void InternalCompletePendingRequests<Input, Output, Context, TSessionFunctionsWrapper>(TSessionFunctionsWrapper sessionFunctions,
-                                                                                             CompletedOutputIterator<Key, Value, Input, Output, Context> completedOutputs)
-            where TSessionFunctionsWrapper : ISessionFunctionsWrapper<Key, Value, Input, Output, Context, TStoreFunctions, TAllocator>
+        internal void InternalCompletePendingRequests<TInput, TOutput, TContext, TSessionFunctionsWrapper>(TSessionFunctionsWrapper sessionFunctions,
+                                                                                             CompletedOutputIterator<TKey, TValue, TInput, TOutput, TContext> completedOutputs)
+            where TSessionFunctionsWrapper : ISessionFunctionsWrapper<TKey, TValue, TInput, TOutput, TContext, TStoreFunctions, TAllocator>
         {
             _ = hlogBase.TryComplete();
 
             if (sessionFunctions.Ctx.readyResponses.Count == 0) return;
 
-            while (sessionFunctions.Ctx.readyResponses.TryDequeue(out AsyncIOContext<Key, Value> request))
+            while (sessionFunctions.Ctx.readyResponses.TryDequeue(out AsyncIOContext<TKey, TValue> request))
                 InternalCompletePendingRequest(sessionFunctions, request, completedOutputs);
         }
 
-        internal void InternalCompletePendingRequest<Input, Output, Context, TSessionFunctionsWrapper>(TSessionFunctionsWrapper sessionFunctions, AsyncIOContext<Key, Value> request,
-                                                                                            CompletedOutputIterator<Key, Value, Input, Output, Context> completedOutputs)
-            where TSessionFunctionsWrapper : ISessionFunctionsWrapper<Key, Value, Input, Output, Context, TStoreFunctions, TAllocator>
+        internal void InternalCompletePendingRequest<TInput, TOutput, TContext, TSessionFunctionsWrapper>(TSessionFunctionsWrapper sessionFunctions, AsyncIOContext<TKey, TValue> request,
+                                                                                            CompletedOutputIterator<TKey, TValue, TInput, TOutput, TContext> completedOutputs)
+            where TSessionFunctionsWrapper : ISessionFunctionsWrapper<TKey, TValue, TInput, TOutput, TContext, TStoreFunctions, TAllocator>
         {
             // Get and Remove this request.id pending dictionary if it is there.
             if (sessionFunctions.Ctx.ioPendingRequests.Remove(request.id, out var pendingContext))
@@ -139,9 +139,9 @@ namespace Tsavorite.core
         /// <summary>
         /// Caller is expected to dispose pendingContext after this method completes
         /// </summary>
-        internal Status InternalCompletePendingRequestFromContext<Input, Output, Context, TSessionFunctionsWrapper>(TSessionFunctionsWrapper sessionFunctions, AsyncIOContext<Key, Value> request,
-                                                                    ref PendingContext<Input, Output, Context> pendingContext, out AsyncIOContext<Key, Value> newRequest)
-            where TSessionFunctionsWrapper : ISessionFunctionsWrapper<Key, Value, Input, Output, Context, TStoreFunctions, TAllocator>
+        internal Status InternalCompletePendingRequestFromContext<TInput, TOutput, TContext, TSessionFunctionsWrapper>(TSessionFunctionsWrapper sessionFunctions, AsyncIOContext<TKey, TValue> request,
+                                                                    ref PendingContext<TInput, TOutput, TContext> pendingContext, out AsyncIOContext<TKey, TValue> newRequest)
+            where TSessionFunctionsWrapper : ISessionFunctionsWrapper<TKey, TValue, TInput, TOutput, TContext, TStoreFunctions, TAllocator>
         {
             Debug.Assert(epoch.ThisInstanceProtected(), "InternalCompletePendingRequestFromContext requires epoch acquision");
             newRequest = default;
@@ -150,7 +150,7 @@ namespace Tsavorite.core
             // With the new overload of CompletePending that returns CompletedOutputs, pendingContext must have the key.
             if (pendingContext.NoKey && pendingContext.key == default)
                 pendingContext.key = hlog.GetKeyContainer(ref hlog.GetContextRecordKey(ref request));
-            ref Key key = ref pendingContext.key.Get();
+            ref TKey key = ref pendingContext.key.Get();
 
             OperationStatus internalStatus = pendingContext.type switch
             {

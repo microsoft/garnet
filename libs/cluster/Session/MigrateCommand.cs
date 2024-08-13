@@ -177,7 +177,7 @@ namespace Garnet.cluster
                         // Add pointer of current parsed key
                         if (!keys.TryAdd(currKeySlice, KeyMigrationStatus.QUEUED))
                         {
-                            logger?.LogWarning($"Failed to add {{key}}", Encoding.ASCII.GetString(keySlice.ReadOnlySpan));
+                            logger?.LogWarning("Failed to add {key}", Encoding.ASCII.GetString(keySlice.ReadOnlySpan));
                             pstate = MigrateCmdParseState.FAILEDTOADDKEY;
                             continue;
                         }

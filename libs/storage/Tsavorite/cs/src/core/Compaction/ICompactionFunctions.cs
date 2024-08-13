@@ -6,9 +6,9 @@ namespace Tsavorite.core
     /// <summary>
     /// Optional functions to be called during compaction.
     /// </summary>
-    /// <typeparam name="Key"></typeparam>
-    /// <typeparam name="Value"></typeparam>
-    public interface ICompactionFunctions<Key, Value>
+    /// <typeparam name="TKey"></typeparam>
+    /// <typeparam name="TValue"></typeparam>
+    public interface ICompactionFunctions<TKey, TValue>
     {
         /// <summary>
         /// Checks if record in the Tsavorite log is logically deleted.
@@ -25,11 +25,11 @@ namespace Tsavorite.core
         /// <param name="key"></param>
         /// <param name="value"></param>
         /// <returns></returns>
-        bool IsDeleted(ref Key key, ref Value value);
+        bool IsDeleted(ref TKey key, ref TValue value);
     }
 
-    internal struct DefaultCompactionFunctions<Key, Value> : ICompactionFunctions<Key, Value>
+    internal struct DefaultCompactionFunctions<TKey, TValue> : ICompactionFunctions<TKey, TValue>
     {
-        public bool IsDeleted(ref Key key, ref Value value) => false;
+        public bool IsDeleted(ref TKey key, ref TValue value) => false;
     }
 }
