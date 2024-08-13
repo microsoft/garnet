@@ -29,7 +29,7 @@ namespace Garnet.server
                     {
                         var customObjectCommand = GetCustomObjectCommand(ref input, type);
                         (IMemoryOwner<byte> Memory, int Length) outp = (output.spanByteAndMemory.Memory, 0);
-                        var ret = customObjectCommand.NeedInitialUpdate(key, input.payload.ReadOnlySpan, ref outp);
+                        var ret = customObjectCommand.NeedInitialUpdate(key, ref input, ref outp);
                         output.spanByteAndMemory.Memory = outp.Memory;
                         output.spanByteAndMemory.Length = outp.Length;
                         return ret;
@@ -56,7 +56,7 @@ namespace Garnet.server
                 value = functionsState.customObjectCommands[objectId].factory.Create((byte)type);
 
                 (IMemoryOwner<byte> Memory, int Length) outp = (output.spanByteAndMemory.Memory, 0);
-                var result = customObjectCommand.InitialUpdater(key, input.payload.ReadOnlySpan, value, ref outp, ref rmwInfo);
+                var result = customObjectCommand.InitialUpdater(key, ref input, value, ref outp, ref rmwInfo);
                 output.spanByteAndMemory.Memory = outp.Memory;
                 output.spanByteAndMemory.Length = outp.Length;
                 return result;
@@ -138,7 +138,7 @@ namespace Garnet.server
 
                         (IMemoryOwner<byte> Memory, int Length) outp = (output.spanByteAndMemory.Memory, 0);
                         var customObjectCommand = GetCustomObjectCommand(ref input, input.header.type);
-                        var result = customObjectCommand.Updater(key, input.payload.ReadOnlySpan, value, ref outp, ref rmwInfo);
+                        var result = customObjectCommand.Updater(key, ref input, value, ref outp, ref rmwInfo);
                         output.spanByteAndMemory.Memory = outp.Memory;
                         output.spanByteAndMemory.Length = outp.Length;
                         return result;
@@ -211,7 +211,7 @@ namespace Garnet.server
 
                         (IMemoryOwner<byte> Memory, int Length) outp = (output.spanByteAndMemory.Memory, 0);
                         var customObjectCommand = GetCustomObjectCommand(ref input, input.header.type);
-                        var result = customObjectCommand.Updater(key, input.payload.ReadOnlySpan, value, ref outp, ref rmwInfo);
+                        var result = customObjectCommand.Updater(key, ref input, value, ref outp, ref rmwInfo);
                         output.spanByteAndMemory.Memory = outp.Memory;
                         output.spanByteAndMemory.Length = outp.Length;
                         return result;

@@ -391,7 +391,7 @@ namespace Garnet.server
                     else
                     {
                         resultBytes = incrSlice.SpanByte.ToByteArray();
-                        hash.Add(key, resultBytes.ToArray());
+                        hash.Add(key, resultBytes);
                         UpdateSize(key, resultBytes);
                     }
 

@@ -614,7 +614,7 @@ namespace Garnet.server
                 }
             }
 
-            parseState.InitializeWithArguments(ref parseStateBuffer, arguments.ToArray());
+            parseState.InitializeWithArguments(ref parseStateBuffer, [.. arguments]);
 
             // Prepare the input
             var input = new ObjectInput
