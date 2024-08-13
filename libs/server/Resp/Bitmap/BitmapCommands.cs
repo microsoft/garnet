@@ -523,14 +523,14 @@ namespace Garnet.server
                 }
 
                 //Identify sign for number
-                byte sign = encodingArg.StartsWith("i", StringComparison.OrdinalIgnoreCase) ? (byte)BitFieldSign.SIGNED : (byte)BitFieldSign.UNSIGNED;
+                byte sign = encodingArg.StartsWith('i') ? (byte)BitFieldSign.SIGNED : (byte)BitFieldSign.UNSIGNED;
                 //Number of bits in signed number
                 byte bitCount = (byte)int.Parse(encodingArg.AsSpan(1));
                 //At most 64 bits can fit into encoding info
                 encodingInfo = (byte)(sign | bitCount);
 
                 //Calculate number offset from bitCount if offsetArg starts with #
-                bool offsetType = offsetArg.StartsWith("#", StringComparison.Ordinal);
+                bool offsetType = offsetArg.StartsWith('#');
                 offset = offsetType ? long.Parse(offsetArg.AsSpan(1)) : long.Parse(offsetArg);
                 offset = offsetType ? (offset * bitCount) : offset;
 
@@ -679,13 +679,13 @@ namespace Garnet.server
                 }
 
                 //Identify sign for number
-                byte sign = encoding.StartsWith("i", StringComparison.OrdinalIgnoreCase) ? (byte)BitFieldSign.SIGNED : (byte)BitFieldSign.UNSIGNED;
+                byte sign = encoding.StartsWith('i') ? (byte)BitFieldSign.SIGNED : (byte)BitFieldSign.UNSIGNED;
                 //Number of bits in signed number
                 byte bitCount = (byte)int.Parse(encoding.AsSpan(1));
                 encodingInfo = (byte)(sign | bitCount);
 
                 //Calculate number offset from bitCount if offsetArg starts with #
-                bool offsetType = offsetArg.StartsWith("#", StringComparison.Ordinal);
+                bool offsetType = offsetArg.StartsWith('#');
                 offset = offsetType ? long.Parse(offsetArg.AsSpan(1)) : long.Parse(offsetArg);
                 offset = offsetType ? (offset * bitCount) : offset;
 
