@@ -115,5 +115,43 @@ namespace Garnet.server
         {
             return Encoding.ASCII.GetString(slice.ReadOnlySpan);
         }
+
+        /// <summary>
+        /// Read a boolean from a given ArgSlice.
+        /// </summary>
+        /// <returns>
+        /// Parsed integer
+        /// </returns>
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        public static bool ReadBool(ref ArgSlice slice)
+        {
+            if (!TryReadBool(ref slice, out var value))
+            {
+                RespParsingException.ThrowNotANumber(slice.ptr, slice.length);
+            }
+            return value;
+        }
+
+        /// <summary>
+        /// Try to read a signed 32-bit integer from a given ArgSlice.
+        /// </summary>
+        /// <returns>
+        /// True if integer read successfully
+        /// </returns>
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        public static bool TryReadBool(ref ArgSlice slice, out bool value)
+        {
+            value = false;
+
+            if (slice.Length != 1) return false;
+
+            if (*slice.ptr == '1')
+            {
+                value = true;
+                return true;
+            }
+
+            return *slice.ptr == '0';
+        }
     }
 }

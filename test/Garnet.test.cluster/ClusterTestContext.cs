@@ -36,10 +36,10 @@ namespace Garnet.test.cluster
 
         public ClusterTestUtils clusterTestUtils = null;
 
-        public void Setup(HashSet<string> monitorTests)
+        public void Setup(Dictionary<string, LogLevel> monitorTests)
         {
             TestFolder = TestUtils.UnitTestWorkingDir() + "\\";
-            var logLevel = monitorTests.Contains(TestContext.CurrentContext.Test.MethodName) ? LogLevel.Trace : LogLevel.Error;
+            var logLevel = monitorTests.ContainsKey(TestContext.CurrentContext.Test.MethodName) ? monitorTests[TestContext.CurrentContext.Test.MethodName] : LogLevel.Error;
             loggerFactory = TestUtils.CreateLoggerFactoryInstance(logTextWriter, logLevel, scope: TestContext.CurrentContext.Test.Name);
             logger = loggerFactory.CreateLogger(TestContext.CurrentContext.Test.Name);
             logger.LogDebug("0. Setup >>>>>>>>>>>>");

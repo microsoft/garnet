@@ -36,8 +36,6 @@ namespace Garnet.cluster
 
         SessionParseState parseState;
         byte* dcurr, dend;
-        byte* recvBufferPtr;
-        int readHead, bytesRead;
         long _localCurrentEpoch = 0;
 
         public long LocalCurrentEpoch => _localCurrentEpoch;
@@ -64,13 +62,10 @@ namespace Garnet.cluster
             this.logger = logger;
         }
 
-        public void ProcessClusterCommands(RespCommand command, ref SessionParseState parseState, int count, byte* recvBufferPtr, int bytesRead, ref int readHead, ref byte* dcurr, ref byte* dend)
+        public void ProcessClusterCommands(RespCommand command, ref SessionParseState parseState, ref byte* dcurr, ref byte* dend)
         {
-            this.recvBufferPtr = recvBufferPtr;
-            this.bytesRead = bytesRead;
             this.dcurr = dcurr;
             this.dend = dend;
-            this.readHead = readHead;
             this.parseState = parseState;
             var invalidParameters = false;
             string respCommandName = default;
@@ -79,7 +74,7 @@ namespace Garnet.cluster
             {
                 if (command.IsClusterSubCommand())
                 {
-                    ProcessClusterCommands(command, count, out invalidParameters);
+                    ProcessClusterCommands(command, out invalidParameters);
 
                     if (invalidParameters)
                     {
@@ -112,7 +107,6 @@ namespace Garnet.cluster
             {
                 dcurr = this.dcurr;
                 dend = this.dend;
-                readHead = this.readHead;
             }
         }
 
