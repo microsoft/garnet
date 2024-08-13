@@ -67,7 +67,7 @@ namespace Garnet.cluster
                 // [Optional] Parse expiry in seconds 
                 expirySeconds = parseState.GetInt(1);
             }
-            
+
             logger?.LogTrace("CLUSTER FORGET {nodeid} {seconds}", nodeId, expirySeconds);
             if (!clusterProvider.clusterManager.TryRemoveWorker(nodeId, expirySeconds, out var errorMessage))
             {
@@ -226,7 +226,7 @@ namespace Garnet.cluster
             }
 
             var nodeId = parseState.GetString(0);
-            
+
             var current = clusterProvider.clusterManager.CurrentConfig;
             var (host, port) = current.GetEndpointFromNodeId(nodeId);
             while (!RespWriteUtils.WriteAsciiBulkString($"{host}:{port}", ref dcurr, dend))
@@ -342,14 +342,14 @@ namespace Garnet.cluster
             if (parseState.Count > 1)
             {
                 var withMeetSpan = parseState.GetArgSliceByRef(currTokenIdx++).ReadOnlySpan;
-                
+
                 Debug.Assert(withMeetSpan.EqualsUpperCaseSpanIgnoringCase(CmdStrings.WITHMEET));
                 if (withMeetSpan.EqualsUpperCaseSpanIgnoringCase(CmdStrings.WITHMEET))
                     gossipWithMeet = true;
             }
 
             var gossipMessage = parseState.GetArgSliceByRef(currTokenIdx).SpanByte.ToByteArray();
-            
+
             clusterProvider.clusterManager.gossipStats.UpdateGossipBytesRecv(gossipMessage.Length);
             var current = clusterProvider.clusterManager.CurrentConfig;
 

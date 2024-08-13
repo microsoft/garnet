@@ -100,7 +100,7 @@ namespace Garnet.cluster
                         errorMessage = CmdStrings.RESP_ERR_INVALID_SLOT;
                         return false;
                     }
-                    
+
                     slotEnd = slotStart;
                 }
 

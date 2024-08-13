@@ -20,7 +20,7 @@ namespace Garnet.cluster
         private bool NetworkClusterAddSlots(out bool invalidParameters)
         {
             invalidParameters = false;
-            
+
             // Expecting at least 1 slot or at most maximum number of slots
             if (parseState.Count < 1 || parseState.Count >= ClusterConfig.MAX_HASH_SLOT_VALUE)
             {
@@ -80,7 +80,7 @@ namespace Garnet.cluster
                     SendAndReset();
                 return true;
             }
-            
+
             // Try to to add slots
             if (!clusterProvider.clusterManager.TryAddSlots(slots, out var slotIndex) && slotIndex != -1)
             {
@@ -522,7 +522,7 @@ namespace Garnet.cluster
 
             // Extract subcommand
             var subcommand = parseState.GetString(0);
-            
+
             // Try parse slot state
             if (!Enum.TryParse(subcommand, out SlotState slotState))
             {

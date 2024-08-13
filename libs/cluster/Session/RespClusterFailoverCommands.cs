@@ -30,7 +30,7 @@ namespace Garnet.cluster
             if (parseState.Count > 0)
             {
                 var failoverOptionStr = parseState.GetString(0);
-                
+
                 // Try to parse failover option
                 if (!Enum.TryParse(failoverOptionStr, ignoreCase: true, out failoverOption))
                 {
@@ -46,7 +46,7 @@ namespace Garnet.cluster
                     failoverTimeout = TimeSpan.FromSeconds(failoverTimeoutSeconds);
                 }
             }
-            
+
             // If option provided is invalid return early
             if (failoverOption == FailoverOption.INVALID)
                 return true;
@@ -110,7 +110,7 @@ namespace Garnet.cluster
             }
 
             var nodeId = parseState.GetString(0);
-            
+
             if (!string.IsNullOrEmpty(nodeId))
             {// Make this node a primary after receiving a request from a replica that is trying to takeover
                 clusterProvider.clusterManager.TryStopWrites(nodeId);
