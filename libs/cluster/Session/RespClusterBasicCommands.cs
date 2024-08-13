@@ -420,7 +420,7 @@ namespace Garnet.cluster
             }
             else
             {
-                while (!RespWriteUtils.WriteBulkString(Array.Empty<byte>(), ref dcurr, dend))
+                while (!RespWriteUtils.WriteBulkString([], ref dcurr, dend))
                     SendAndReset();
             }
 

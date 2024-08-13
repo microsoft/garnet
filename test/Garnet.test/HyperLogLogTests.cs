@@ -501,7 +501,7 @@ namespace Garnet.test
             List<RedisValue> rss = [];
             for (int i = 0; i < count; i++)
                 rss.Add(list[r.Next(list.Count)]);
-            return rss.ToArray();
+            return [.. rss];
         }
 
         public static List<long> ToList(RedisValue[] rss)

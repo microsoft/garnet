@@ -94,7 +94,7 @@ namespace Garnet.server.ACL
             }
             else
             {
-                commandInfos = Array.Empty<RespCommandsInfo>();
+                commandInfos = [];
                 descUpdate = null;
             }
 
@@ -216,7 +216,7 @@ namespace Garnet.server.ACL
             }
             else
             {
-                commandInfos = Array.Empty<RespCommandsInfo>();
+                commandInfos = [];
                 descUpdate = null;
             }
 
@@ -455,7 +455,7 @@ namespace Garnet.server.ACL
         /// </summary>
         private static string RationalizeACLDescription(CommandPermissionSet set, string description)
         {
-            List<string> parts = description.Split(' ', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries).ToList();
+            List<string> parts = [.. description.Split(' ', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)];
             while (true)
             {
                 bool shrunk = false;

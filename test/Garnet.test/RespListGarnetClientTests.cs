@@ -208,7 +208,7 @@ namespace Garnet.test
             // Act & Assert
             var testKey = GetTestKey(key);
 
-            var actualListLength = await db.ListRightPushAsync(testKey, elements.ToArray());
+            var actualListLength = await db.ListRightPushAsync(testKey, [.. elements]);
             Assert.AreEqual(expectedList.Length, actualListLength);
 
             await ValidateListContentAsync(db, testKey, expectedList);
