@@ -304,7 +304,7 @@ namespace Garnet.test
                 valueKey = $"{valueKey}{randPostFix}";
                 var r = lightClientRequest.SendCommand($"EVALSHA {sha1SetScript} 1 {nameKey}{randPostFix} {valueKey}", 1);
                 var g = Encoding.ASCII.GetString(lightClientRequest.SendCommand($"get {nameKey}{randPostFix}", 1));
-                var fstEndOfLine = g.IndexOf("\n", StringComparison.OrdinalIgnoreCase) + 1;
+                var fstEndOfLine = g.IndexOf('\n', StringComparison.OrdinalIgnoreCase) + 1;
                 var strKeyValue = g.Substring(fstEndOfLine, valueKey.Length);
                 Assert.IsTrue(strKeyValue == valueKey);
             }
