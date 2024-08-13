@@ -59,6 +59,7 @@ namespace MigrateBench
                         MigrateKeys();
                         break;
                     case MigrateRequestType.SLOTS:
+                        MigrateSlots();
                         break;
                     case MigrateRequestType.SLOTSRANGE:
                         MigrateSlotRanges();
@@ -99,13 +100,14 @@ namespace MigrateBench
                 }
 
                 // migrate 192.168.1.20 7001 "" 0 5000 SLOTSRANGE 1000 7000            
-                ICollection<string> request = ["MIGRATE", targetAddress, targetPort.ToString(), "", "0", timeout.ToString(), "SLOTSRANGE"];
+                ICollection<string> migrate = ["MIGRATE", targetAddress, targetPort.ToString(), "", "0", timeout.ToString(), "REPLACE", "SLOTSRANGE"];
                 foreach (var slot in slots)
-                    request.Add(slot.ToString());
+                    migrate.Add(slot.ToString());
 
+                var request = migrate.ToArray();
                 var startTimestamp = Stopwatch.GetTimestamp();
                 logger?.LogInformation("Issuing MIGRATE SLOTSRANGE");
-                var resp = sourceNode.ExecuteAsync(request.ToArray()).GetAwaiter().GetResult();
+                var resp = sourceNode.ExecuteAsync(request).GetAwaiter().GetResult();
 
                 logger?.LogInformation("Waiting for Migration to Complete");
                 resp = sourceNode.ExecuteAsync("CLUSTER", "MTASKS").GetAwaiter().GetResult();
@@ -125,11 +127,73 @@ namespace MigrateBench
             }
         }
 
+        private void MigrateSlots()
+        {
+            try
+            {
+                var slots = opts.Slots.ToArray();
+                if ((slots.Length & 0x1) > 0)
+                {
+                    logger?.LogError("Malformed SLOTSRANGES input; please provide pair of ranges");
+                    return;
+                }
+
+                var _slots = new List<int>();
+                for (var i = 0; i < slots.Length; i += 2)
+                {
+                    var startSlot = slots[i];
+                    var endSlot = slots[i + 1];
+                    for (var j = startSlot; j < endSlot; j++)
+                        _slots.Add(j);
+                }
+
+                ICollection<string> migrate = ["MIGRATE", targetAddress, targetPort.ToString(), "", "0", timeout.ToString(), "REPLACE", "SLOTS"];
+                foreach (var slot in _slots)
+                    migrate.Add(slot.ToString());
+
+                var request = migrate.ToArray();
+                var startTimestamp = Stopwatch.GetTimestamp();
+                logger?.LogInformation("Issuing MIGRATE SLOTS");
+                var resp = sourceNode.ExecuteAsync(request).GetAwaiter().GetResult();
+
+                logger?.LogInformation("Waiting for Migration to Complete");
+                resp = sourceNode.ExecuteAsync("CLUSTER", "MTASKS").GetAwaiter().GetResult();
+                while (int.Parse(resp) > 0)
+                {
+                    Thread.Yield();
+                    resp = sourceNode.ExecuteAsync("CLUSTER", "MTASKS").GetAwaiter().GetResult();
+                }
+
+                var elapsed = Stopwatch.GetTimestamp() - startTimestamp;
+                var t = TimeSpan.FromTicks(elapsed);
+                logger?.LogInformation("SlotsRange Elapsed Time: {elapsed} seconds", t.TotalSeconds);
+            }
+            catch (Exception ex)
+            {
+                logger?.LogError(ex, "Error at MigrateSlots");
+            }
+        }
+
         private void MigrateKeys()
         {
             try
             {
                 var slots = opts.Slots.ToArray();
+                if ((slots.Length & 0x1) > 0)
+                {
+                    logger?.LogError("Malformed SLOTSRANGES input; please provide pair of ranges");
+                    return;
+                }
+
+                var _slots = new List<int>();
+                for (var i = 0; i < slots.Length; i += 2)
+                {
+                    var startSlot = slots[i];
+                    var endSlot = slots[i + 1];
+                    for (var j = startSlot; j < endSlot; j++)
+                        _slots.Add(j);
+                }
+
                 var sourceNodeId = sourceNode.ExecuteAsync("cluster", "myid").GetAwaiter().GetResult();
                 var targetNodeId = targetNode.ExecuteAsync("cluster", "myid").GetAwaiter().GetResult();
 
@@ -138,7 +202,7 @@ namespace MigrateBench
                 string[] node = ["cluster", "setslot", "<slot>", "node", targetNodeId];
                 string[] countkeysinslot = ["cluster", "countkeysinslot", "<slot>"];
                 string[] getkeysinslot = ["cluster", "getkeysinslot", "<slot>"];
-                foreach (var slot in slots)
+                foreach (var slot in _slots)
                 {
                     var slotStr = slot.ToString();
                     migrating[2] = slotStr;
@@ -152,12 +216,13 @@ namespace MigrateBench
                     resp = sourceNode.ExecuteAsync(countkeysinslot).GetAwaiter().GetResult();
                     var keys = sourceNode.ExecuteForArrayAsync(getkeysinslot).GetAwaiter().GetResult();
 
-                    ICollection<string> migrate = ["MIGRATE", targetAddress, targetPort.ToString(), "", "0", timeout.ToString(), "KEYS"];
+                    ICollection<string> migrate = ["MIGRATE", targetAddress, targetPort.ToString(), "", "0", timeout.ToString(), "REPLACE", "KEYS"];
                     foreach (var key in keys)
                         migrate.Add(key);
 
+                    var request = migrate.ToArray();
                     logger?.LogInformation("KeyCount: {keys}", keys.Length);
-                    resp = sourceNode.ExecuteAsync(migrate.ToArray()).GetAwaiter().GetResult();
+                    resp = sourceNode.ExecuteAsync(request).GetAwaiter().GetResult();
 
                     resp = targetNode.ExecuteAsync(node).GetAwaiter().GetResult();
                     resp = sourceNode.ExecuteAsync(node).GetAwaiter().GetResult();
