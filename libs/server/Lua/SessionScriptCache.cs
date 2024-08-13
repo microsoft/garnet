@@ -13,7 +13,7 @@ namespace Garnet.server
     /// <summary>
     /// Cache of Lua scripts, per session
     /// </summary>
-    internal sealed unsafe class SessionScriptCache
+    internal sealed unsafe class SessionScriptCache : IDisposable
     {
         // Important to keep the hash length to this value 
         // for compatibility
@@ -31,6 +31,13 @@ namespace Garnet.server
             this.storeWrapper = storeWrapper;
             this.processor = new RespServerSession(scratchBufferNetworkSender, storeWrapper, null, null, authenticator, false);
             this.logger = logger;
+        }
+
+        public void Dispose()
+        {
+            Clear();
+            scratchBufferNetworkSender.Dispose();
+            processor.Dispose();
         }
 
         public void SetUser(User user)

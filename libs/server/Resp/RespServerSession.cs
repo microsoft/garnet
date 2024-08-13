@@ -240,6 +240,7 @@ namespace Garnet.server
 
             subscribeBroker?.RemoveSubscription(this);
             itemBroker?.HandleSessionDisposed(this);
+            sessionScriptCache?.Dispose();
 
             // Cancel the async processor, if any
             asyncWaiterCancel?.Cancel();

@@ -128,8 +128,7 @@ namespace Garnet.server
         {
             function?.Dispose();
             state?.Dispose();
-            scratchBufferNetworkSender?.Dispose();
-            respServerSession?.Dispose();
+            sandbox_env?.Dispose();
         }
 
         /// <summary>
