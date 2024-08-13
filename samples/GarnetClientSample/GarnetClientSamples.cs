@@ -120,7 +120,7 @@ namespace GarnetClientSample
             if (s != $"{nVal}")
                 throw new Exception("IncrementByAsync: Error");
 
-            long n = int.Parse(await db.ExecuteForStringResultAsync("INCRBY", new string[] { strKey, nIncr.ToString() }));
+            long n = int.Parse(await db.ExecuteForStringResultAsync("INCRBY", [strKey, nIncr.ToString()]));
             if (n != nVal + nIncr)
                 throw new Exception("IncrementByAsync: Error");
 
@@ -145,7 +145,7 @@ namespace GarnetClientSample
             if (s != $"{nVal}")
                 throw new Exception("DecrByAsync: Error");
 
-            long n = int.Parse(await db.ExecuteForStringResultAsync("DECRBY", new string[] { strKey, nDecr.ToString() }));
+            long n = int.Parse(await db.ExecuteForStringResultAsync("DECRBY", [strKey, nDecr.ToString()]));
             if (n != nVal - nDecr)
                 throw new Exception("DecrByAsync: Error");
 
@@ -206,7 +206,7 @@ namespace GarnetClientSample
             var strKey = "key1";
             await db.StringSetAsync(strKey, $"{nVal}");
 
-            bool fExists = int.Parse(await db.ExecuteForStringResultAsync("EXISTS", new string[] { strKey })) == 1 ? true : false;
+            bool fExists = int.Parse(await db.ExecuteForStringResultAsync("EXISTS", [strKey])) == 1 ? true : false;
             if (!fExists)
                 throw new Exception("ExistsAsync: Error");
             Console.WriteLine("ExistsAsync: Success");
@@ -223,7 +223,7 @@ namespace GarnetClientSample
             await db.StringSetAsync(strKey, $"{nVal}");
             await db.KeyDeleteAsync(strKey);
 
-            bool fExists = int.Parse(await db.ExecuteForStringResultAsync("EXISTS", new string[] { strKey })) == 1 ? true : false;
+            bool fExists = int.Parse(await db.ExecuteForStringResultAsync("EXISTS", [strKey])) == 1 ? true : false;
             if (fExists)
                 throw new Exception("DeleteAsync: Error");
             Console.WriteLine("DeleteAsync: Success");

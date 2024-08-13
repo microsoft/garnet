@@ -65,7 +65,7 @@ namespace Garnet.server
             }
             else
             {
-                events = GarnetLatencyMetrics.defaultLatencyTypes.ToHashSet();
+                events = [.. GarnetLatencyMetrics.defaultLatencyTypes];
             }
 
             if (invalid)
@@ -113,7 +113,7 @@ namespace Garnet.server
             }
             else
             {
-                events = GarnetLatencyMetrics.defaultLatencyTypes.ToHashSet();
+                events = [.. GarnetLatencyMetrics.defaultLatencyTypes];
             }
 
             if (invalid)

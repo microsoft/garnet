@@ -109,7 +109,7 @@ namespace Garnet.server
                 AclCategories = aclCategories,
                 Tips = tips.Length == 0 ? null : tips,
                 KeySpecifications = keySpecifications.Length == 0 ? null : keySpecifications,
-                SubCommands = subCommands.Count == 0 ? null : subCommands.OrderBy(sc => sc.Name).ToArray()
+                SubCommands = subCommands.Count == 0 ? null : [.. subCommands.OrderBy(sc => sc.Name)]
             };
 
             return true;

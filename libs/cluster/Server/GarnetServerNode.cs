@@ -151,7 +151,7 @@ namespace Garnet.cluster
             }
             else
             {
-                byteArray = Array.Empty<byte>();
+                byteArray = [];
             }
             return byteArray;
         }
