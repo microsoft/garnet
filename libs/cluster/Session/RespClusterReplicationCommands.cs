@@ -210,7 +210,7 @@ namespace Garnet.cluster
             var checkpointEntryBytes = parseState.GetArgSliceByRef(2).SpanByte.ToByteArray();
             var replicaAofBeginAddress = parseState.GetLong(3);
             var replicaAofTailAddress = parseState.GetLong(4);
-            
+
             var remoteEntry = CheckpointEntry.FromByteArray(checkpointEntryBytes);
 
             if (!clusterProvider.replicationManager.TryBeginReplicaSyncSession(
@@ -277,7 +277,7 @@ namespace Garnet.cluster
             var startAddress = parseState.GetLong(2);
             var data = parseState.GetArgSliceByRef(3).ReadOnlySpan;
             var segmentId = parseState.GetInt(4);
-            
+
             var fileToken = new Guid(fileTokenBytes);
             var ckptFileType = (CheckpointFileType)ckptFileTypeInt;
 
