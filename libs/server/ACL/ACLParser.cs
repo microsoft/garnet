@@ -210,7 +210,7 @@ namespace Garnet.server.ACL
                     user.AddCategory(category);
                 }
             }
-            else if (op.StartsWith("-", StringComparison.Ordinal) || op.StartsWith("+", StringComparison.Ordinal))
+            else if (op.StartsWith('-') || op.StartsWith('+'))
             {
                 // Individual commands or command|subcommand pairs
                 string commandName = op.Substring(1);
