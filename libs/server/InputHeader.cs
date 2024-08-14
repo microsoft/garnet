@@ -167,15 +167,9 @@ namespace Garnet.server
         public int arg2;
 
         /// <summary>
-        /// RESP-formatted payload
-        /// </summary>
-        [FieldOffset(RespInputHeader.Size + (2 * sizeof(int)))]
-        public ArgSlice payload;
-
-        /// <summary>
         /// First index to start reading the parse state for command execution
         /// </summary>
-        [FieldOffset(RespInputHeader.Size + (2 * sizeof(int)) + ArgSlice.Size)]
+        [FieldOffset(RespInputHeader.Size + (2 * sizeof(int)))]
         public int parseStateStartIdx;
 
         /// <summary>

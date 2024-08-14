@@ -207,6 +207,17 @@ namespace Garnet.server
         }
 
         /// <summary>
+        /// Get enum argument at the given index
+        /// </summary>
+        /// <returns>True if enum parsed successfully</returns>
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        public T GetEnum<T>(int i, bool ignoreCase) where T : struct
+        {
+            Debug.Assert(i < Count);
+            return Enum.Parse<T>(GetString(i), ignoreCase);
+        }
+
+        /// <summary>
         /// Try to get enum argument at the given index
         /// </summary>
         /// <returns>True if integer parsed successfully</returns>

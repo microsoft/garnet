@@ -58,12 +58,11 @@ namespace Garnet.server
 
                 var parseStateArgCount = input.parseState.Count - input.parseStateStartIdx;
 
-                var sbToSerialize = new SpanByte[3 + parseStateArgCount];
+                var sbToSerialize = new SpanByte[2 + parseStateArgCount];
                 sbToSerialize[0] = sbKey;
-                sbToSerialize[2] = input.payload.SpanByte;
                 for (var i = 0; i < parseStateArgCount; i++)
                 {
-                    sbToSerialize[i + 3] = input.parseState.GetArgSliceByRef(input.parseStateStartIdx + i).SpanByte;
+                    sbToSerialize[i + 2] = input.parseState.GetArgSliceByRef(input.parseStateStartIdx + i).SpanByte;
                 }
 
                 input.parseStateStartIdx = 0;

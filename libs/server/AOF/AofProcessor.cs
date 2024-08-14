@@ -328,12 +328,6 @@ namespace Garnet.server
             ref var input = ref Unsafe.AsRef<ObjectInput>(sbInput.ToPointer());
             curr += sbInput.TotalSize;
 
-            // payload
-            ref var sbPayload = ref Unsafe.AsRef<SpanByte>(curr);
-            var payload = new ArgSlice(ref sbPayload);
-            input.payload = payload;
-            curr += sbPayload.TotalSize;
-
             // Reconstructing parse state
             var parseStateCount = input.parseState.Count;
 

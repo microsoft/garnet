@@ -105,9 +105,10 @@ namespace Garnet.server
             switch (input.header.type)
             {
                 case GarnetObjectType.Expire:
-                    var optionType = (ExpireOption)(*input.payload.ptr);
+                    var currTokenIdx = input.parseStateStartIdx;
+                    var optionType = input.parseState.GetEnum<ExpireOption>(currTokenIdx++, true);
                     var expiryExists = (value.Expiration > 0);
-                    var expiration = *(long*)(input.payload.ptr + 1);
+                    var expiration = input.parseState.GetLong(currTokenIdx);
                     return EvaluateObjectExpireInPlace(optionType, expiryExists, expiration, ref value, ref output);
                 case GarnetObjectType.Persist:
                     if (value.Expiration > 0)
@@ -177,9 +178,10 @@ namespace Garnet.server
             switch (input.header.type)
             {
                 case GarnetObjectType.Expire:
-                    var expireOption = (ExpireOption)(*input.payload.ptr);
+                    var currTokenIdx = input.parseStateStartIdx;
+                    var expireOption = input.parseState.GetEnum<ExpireOption>(currTokenIdx++, true);
                     var expiryExists = (value.Expiration > 0);
-                    var expiration = *(long*)(input.payload.ptr + 1);
+                    var expiration = input.parseState.GetLong(currTokenIdx);
                     EvaluateObjectExpireInPlace(expireOption, expiryExists, expiration, ref value, ref output);
                     break;
                 case GarnetObjectType.Persist:
