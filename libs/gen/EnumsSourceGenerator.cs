@@ -1,5 +1,4 @@
 ﻿using System.CodeDom.Compiler;
-using System.Text;
 using Microsoft.CodeAnalysis;
 using Microsoft.CodeAnalysis.CSharp.Syntax;
 
@@ -17,7 +16,7 @@ public class EnumsSourceGenerator : IIncrementalGenerator
                 "Garnet.common.GenerateEnumDescriptionUtilsAttribute",
                 predicate: static (_, _) => true,
                 transform: static (ctx, _) => TransformEnumDetails((EnumDeclarationSyntax)ctx.TargetNode, ctx.SemanticModel)
-            );
+            ).WithComparer(new EnumDetailsComparer());
         var enumUtils = enumDetails.Select(static (details, _) => Execute(details));
 
         context.RegisterSourceOutput(enumUtils, (ctx, source) => ctx.AddSource($"{GeneratedClassName}.{source.EnumName}.g.cs", source.ClassSource));
@@ -36,7 +35,7 @@ public class EnumsSourceGenerator : IIncrementalGenerator
                     .SelectMany(al => al.Attributes).Where(a => a.Name.ToString() == "Description")
                     .SingleOrDefault()?.ArgumentList?.Arguments.Single().ToString()
             ))
-            .ToList();
+            .ToArray();
         return new EnumDetails(namespaceDeclaration!.Name.ToString(), enumName, values);
     }
 
@@ -65,7 +64,7 @@ public class EnumsSourceGenerator : IIncrementalGenerator
         classWriter.Indent--;
         classWriter.WriteLine("}");
 
-        return (details.EnumName, classWriter.InnerWriter.ToString());
+        return (details.EnumName, classWriter.InnerWriter.ToString()!);
     }
 
     private static void GenerateTryParseEnumFromDescriptionMethod(IndentedTextWriter classWriter, EnumDetails details)
@@ -165,5 +164,21 @@ public class EnumsSourceGenerator : IIncrementalGenerator
         return false;
     }
 
-    private record struct EnumDetails(string Namespace, string EnumName, List<(string Name, object? Value, string? Description)> Values);
+    private record struct EnumDetails(string Namespace, string EnumName, (string Name, object? Value, string? Description)[] Values);
+
+    private class EnumDetailsComparer : IEqualityComparer<EnumDetails>
+    {
+        public bool Equals(EnumDetails x, EnumDetails y) => x.EnumName.Equals(y.EnumName) && x.Namespace.Equals(y.Namespace) && x.Values.SequenceEqual(y.Values);
+        public int GetHashCode(EnumDetails obj) 
+        {
+            var hash = new HashCode();
+            hash.Add(obj.EnumName);
+            hash.Add(obj.Namespace);
+            foreach (var value in obj.Values)
+            {
+                hash.Add(value);
+            }
+            return hash.ToHashCode();
+        }
+    }
 }
