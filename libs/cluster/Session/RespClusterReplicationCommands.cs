@@ -30,7 +30,7 @@ namespace Garnet.cluster
             if (!RespReadUtils.ReadStringWithLengthHeader(out var nodeid, ref ptr, recvBufferPtr + bytesRead))
                 return false;
             readHead = (int)(ptr - recvBufferPtr);
-            var replicas = clusterProvider.clusterManager.ListReplicas(nodeid);
+            var replicas = clusterProvider.clusterManager.ListReplicas(nodeid, clusterProvider);
 
             while (!RespWriteUtils.WriteArrayLength(replicas.Count, ref dcurr, dend))
                 SendAndReset();

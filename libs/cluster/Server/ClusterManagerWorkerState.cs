@@ -202,11 +202,12 @@ namespace Garnet.cluster
         /// <summary>
         /// List replicas of specified primary with given nodeid
         /// </summary>
-        /// <param name="nodeid"></param>
-        public List<string> ListReplicas(string nodeid)
+        /// <param name="nodeid"> Node-id string</param>
+        /// <param name="clusterProvider">ClusterProvider instance</param>
+        public List<string> ListReplicas(string nodeid, ClusterProvider clusterProvider)
         {
             var current = CurrentConfig;
-            return current.GetReplicas(nodeid);
+            return current.GetReplicas(nodeid, clusterProvider);
         }
     }
 }

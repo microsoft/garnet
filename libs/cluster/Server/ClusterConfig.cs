@@ -469,11 +469,15 @@ namespace Garnet.cluster
         /// Get formatted (using CLUSTER NODES format) cluster info.
         /// </summary>
         /// <returns>Formatted string.</returns>
-        public string GetClusterInfo()
+        public string GetClusterInfo(ClusterProvider clusterProvider)
         {
             var nodes = "";
             for (ushort i = 1; i <= NumWorkers; i++)
-                nodes += GetNodeInfo(i);
+            {
+                var info = default(ConnectionInfo);
+                _ = clusterProvider?.clusterManager?.GetConnectionInfo(workers[i].Nodeid, out info);
+                nodes += GetNodeInfo(i, info);
+            }
             return nodes;
         }
 
@@ -481,8 +485,9 @@ namespace Garnet.cluster
         /// Get formatted (using CLUSTER NODES format) worker info.
         /// </summary>
         /// <param name="workerId">Offset of worker in the worker list.</param>
+        /// <param name="info">Connection information for the corresponding worker.</param>
         /// <returns>Formatted string.</returns>
-        public string GetNodeInfo(ushort workerId)
+        public string GetNodeInfo(ushort workerId, ConnectionInfo info)
         {
             //<id>
             //<ip:port@cport[,hostname[,auxiliary_field=value]*]>
@@ -498,10 +503,10 @@ namespace Garnet.cluster
                 $"{workers[workerId].Address}:{workers[workerId].Port}@{workers[workerId].Port + 10000},{workers[workerId].hostname} " +
                 $"{(workerId == 1 ? "myself," : "")}{(workers[workerId].Role == NodeRole.PRIMARY ? "master" : "slave")} " +
                 $"{(workers[workerId].Role == NodeRole.REPLICA ? workers[workerId].ReplicaOfNodeId : "-")} " +
-                $"0 " +
-                $"0 " +
+                $"{info.ping} " +
+                $"{info.pong} " +
                 $"{workers[workerId].ConfigEpoch} " +
-                $"connected" +
+                $"{(info.connected || workerId == 1 ? "connected" : "disconnected")}" +
                 $"{GetSlotRange(workerId)}" +
                 $"{GetSpecialStates(workerId)}\n";
         }
@@ -740,15 +745,20 @@ namespace Garnet.cluster
         /// Get Replicas for node-id.
         /// </summary>
         /// <param name="nodeid">Node-id string.</param>
+        /// <param name="clusterProvider">ClusterProvider instance.</param>
         /// <returns></returns>
-        public List<string> GetReplicas(string nodeid)
+        public List<string> GetReplicas(string nodeid, ClusterProvider clusterProvider)
         {
             List<string> replicas = [];
             for (ushort i = 1; i < workers.Length; i++)
             {
                 var replicaOf = workers[i].ReplicaOfNodeId;
                 if (replicaOf != null && replicaOf.Equals(nodeid, StringComparison.OrdinalIgnoreCase))
-                    replicas.Add(GetNodeInfo(i));
+                {
+                    var info = default(ConnectionInfo);
+                    _ = clusterProvider?.clusterManager?.GetConnectionInfo(replicaOf, out info);
+                    replicas.Add(GetNodeInfo(i, info));
+                }
             }
             return replicas;
         }

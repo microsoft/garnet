@@ -369,7 +369,7 @@ namespace Garnet.test.cluster
                 else
                 {
                     var result = clusterTestUtils.Smembers(primaryIndex, key, logger);
-                    Assert.IsTrue(result.ToHashSet().SetEquals(value.ToHashSet()));
+                    Assert.IsTrue(result.ToHashSet().SetEquals(value));
                 }
             }
         }
@@ -448,7 +448,7 @@ namespace Garnet.test.cluster
                 if (!set)
                     Assert.AreEqual(elements, result);
                 else
-                    Assert.IsTrue(result.ToHashSet().SetEquals(result.ToHashSet()));
+                    Assert.IsTrue(result.ToHashSet().SetEquals(result));
             }
         }
 
