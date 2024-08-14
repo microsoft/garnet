@@ -194,7 +194,7 @@ namespace Tsavorite.benchmark
 
                                     // Uniform txn at current small-data counts has about a 1% hit rate in the init array, too low to fill the small-txn count,
                                     // so convert the init_key set to an array for random indexing get a random key from init_keys.
-                                    initKeyArray ??= initKeySet.ToArray();
+                                    initKeyArray ??= [.. initKeySet];
                                     key = initKeyArray[rng.Generate((uint)initKeySet.Count)];
                                 }
                                 else

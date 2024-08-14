@@ -48,7 +48,7 @@ namespace Garnet.test
             using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
             var db = redis.GetDatabase(0);
             var values = new RedisValue[] { new("hello") };
-            RedisResult response = db.ScriptEvaluate("return ARGV[1]", null, values);
+            var response = db.ScriptEvaluate("return ARGV[1]", null, values);
             Assert.AreEqual((string)response, "hello");
         }
 
@@ -86,7 +86,7 @@ namespace Garnet.test
         {
             using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
             var db = redis.GetDatabase(0);
-            string script = "return redis.call('set', KEYS[1], ARGV[1]);";
+            var script = "return redis.call('set', KEYS[1], ARGV[1]);";
             var result = db.ScriptEvaluate(script, [(RedisKey)"mykey"], [(RedisValue)1]);
             script = "local i = redis.call('get',KEYS[1]); i = i + 1; redis.call('set', KEYS[1], i); return redis.call('get', KEYS[1]);";
             result = db.ScriptEvaluate(script, [(RedisKey)"mykey"]);
@@ -98,7 +98,7 @@ namespace Garnet.test
         {
             using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
             var db = redis.GetDatabase(0);
-            string script = "return redis.call('set', KEYS[1], ARGV[1]);";
+            var script = "return redis.call('set', KEYS[1], ARGV[1]);";
             var result = db.ScriptEvaluate(script, [(RedisKey)"mykey"], [(RedisValue)"NAME"]);
             script = "local i = redis.call('get', KEYS[1]); i = \"FULL \"..i; redis.call('set', KEYS[1], i); return redis.call('get', KEYS[1]);";
             result = db.ScriptEvaluate(script, [(RedisKey)"mykey"]);
@@ -112,7 +112,7 @@ namespace Garnet.test
             using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
             var db = redis.GetDatabase(0);
 
-            string script = "local i = 0; " +
+            var script = "local i = 0; " +
                             "if redis.call('set', KEYS[1], ARGV[1]) == \"OK\" then i = i + 1; end;" +
                             "if (redis.call('set', KEYS[2], ARGV[2]) == \"OK\") then i = i + 1; end;" +
                             "return i;";
@@ -126,8 +126,8 @@ namespace Garnet.test
         {
             using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
             var db = redis.GetDatabase(0);
-            string script = "return redis.call('zadd', KEYS[1], ARGV[1], ARGV[2])";
-            RedisResult result = db.ScriptEvaluate(script, [(RedisKey)"mysskey"], [(RedisValue)1, (RedisValue)"a"]);
+            var script = "return redis.call('zadd', KEYS[1], ARGV[1], ARGV[2])";
+            var result = db.ScriptEvaluate(script, [(RedisKey)"mysskey"], [(RedisValue)1, (RedisValue)"a"]);
             Assert.IsTrue(result.ToString() == "1");
             var l = db.SortedSetLength("mysskey");
             Assert.IsTrue(l == 1);
@@ -141,8 +141,8 @@ namespace Garnet.test
             var db = redis.GetDatabase(0);
 
             // Create a sorted set
-            string script = "local ptable = {100, \"value1\", 200, \"value2\"}; return redis.call('zadd', KEYS[1], ptable)";
-            RedisResult result = db.ScriptEvaluate(script, [(RedisKey)"mysskey"]);
+            var script = "local ptable = {100, \"value1\", 200, \"value2\"}; return redis.call('zadd', KEYS[1], ptable)";
+            var result = db.ScriptEvaluate(script, [(RedisKey)"mysskey"]);
             Assert.IsTrue(result.ToString() == "2");
 
             // Check the length
@@ -170,25 +170,25 @@ namespace Garnet.test
         public void CanDoEvalShaSEMultipleThreads()
         {
             var numThreads = 1;
-            Task[] tasks = new Task[numThreads];
+            var tasks = new Task[numThreads];
             using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
             var db = redis.GetDatabase(0);
             var initialValue = 0;
             var rnd = new Random();
             // create the key
-            string script = "redis.call('set',KEYS[1], ARGV[1]); return redis.call('get', KEYS[1]);";
+            var script = "redis.call('set',KEYS[1], ARGV[1]); return redis.call('get', KEYS[1]);";
             var result = db.ScriptEvaluate(script, [(RedisKey)"mykey"], [(RedisValue)initialValue]);
             Assert.IsTrue(((RedisValue)result).ToString() == "0");
             script = "i = redis.call('get', KEYS[1]); i = i + 1; return redis.call('set', KEYS[1], i)";
             var numIterations = 10;
             //updates
-            for (int i = 0; i < numThreads; i++)
+            for (var i = 0; i < numThreads; i++)
             {
                 tasks[i] = Task.Run(async () =>
                 {
                     for (var ii = 0; ii < numIterations; ++ii)
                     {
-                        db.ScriptEvaluate(script, [(RedisKey)"mykey"]);
+                        _ = db.ScriptEvaluate(script, [(RedisKey)"mykey"]);
                         await Task.Delay(millisecondsDelay: rnd.Next(10, 50));
                     }
                 });
@@ -196,15 +196,15 @@ namespace Garnet.test
             Task.WaitAll(tasks);
             script = "return redis.call('get', KEYS[1]);";
             result = db.ScriptEvaluate(script, [(RedisKey)"mykey"]);
-            Assert.IsTrue(Int32.Parse(((RedisValue)result).ToString()) == numThreads * numIterations);
+            Assert.IsTrue(int.Parse(((RedisValue)result).ToString()) == numThreads * numIterations);
             script = "i = redis.call('get', KEYS[1]); i = i - 1; return redis.call('set', KEYS[1], i)";
-            for (int i = 0; i < numThreads; i++)
+            for (var i = 0; i < numThreads; i++)
             {
                 tasks[i] = Task.Run(async () =>
                 {
                     for (var ii = 0; ii < numIterations; ++ii)
                     {
-                        db.ScriptEvaluate(script, [(RedisKey)"mykey"]);
+                        _ = db.ScriptEvaluate(script, [(RedisKey)"mykey"]);
                         await Task.Delay(millisecondsDelay: rnd.Next(10, 50));
                     }
                 });
@@ -212,7 +212,7 @@ namespace Garnet.test
             Task.WaitAll(tasks);
             script = "return redis.call('get', KEYS[1]);";
             result = db.ScriptEvaluate(script, [(RedisKey)"mykey"]);
-            Assert.IsTrue(Int32.Parse(((RedisValue)result).ToString()) == 0);
+            Assert.IsTrue(int.Parse(((RedisValue)result).ToString()) == 0);
         }
 
         [Test]
@@ -228,9 +228,9 @@ namespace Garnet.test
                     end
                     """;
 
-            string tag = "tag";
+            var tag = "tag";
             long expiryTimestamp = 100;
-            RedisResult result = db.ScriptEvaluate(ZADD_GT, [(RedisKey)"zaddgtkey"], [expiryTimestamp, tag]);
+            var result = db.ScriptEvaluate(ZADD_GT, [(RedisKey)"zaddgtkey"], [expiryTimestamp, tag]);
             Assert.IsTrue(result.IsNull);
 
             // get key and verify timestamp is 100
@@ -261,25 +261,24 @@ namespace Garnet.test
             var db = redis.GetDatabase(0);
             var server = redis.GetServer($"{TestUtils.Address}:{TestUtils.Port}");
 
-            //load a script in the memory
-            string script = "return 1;";
+            // Load a script in the memory
+            var script = "return 1;";
             var scriptId = server.ScriptLoad(script);
             var result = db.ScriptEvaluate(scriptId);
             Assert.IsTrue(((RedisValue)result) == "1");
 
-            //flush script memory
+            // Flush script memory
             server.ScriptFlush();
 
-            //Assert the script is not found
-            Assert.Throws<RedisServerException>(() => db.ScriptEvaluate(scriptId));
+            // Assert the script is not found
+            _ = Assert.Throws<RedisServerException>(() => db.ScriptEvaluate(scriptId));
         }
 
         [Test]
         public void CannotScriptUseExtendedEncoding()
         {
-            // Important: find a way to throw an exception to detect if there is a different encoding inside the script
             using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
-            string extendedCharsScript = "return '僕'";
+            var extendedCharsScript = "return '僕'";
 
             var server = redis.GetServer($"{TestUtils.Address}:{TestUtils.Port}");
             var scriptSha = server.ScriptLoad(extendedCharsScript);
@@ -298,7 +297,7 @@ namespace Garnet.test
             var sha1SetScript = Encoding.ASCII.GetString(lightClientRequest.SendCommand(Encoding.ASCII.GetBytes(stringCmd), 1)).Substring(5, 40);
 
             Assert.AreEqual("c686f316aaf1eb01d5a4de1b0b63cd233010e63d", sha1SetScript);
-            for (int i = 0; i < 5000; i++)
+            for (var i = 0; i < 5000; i++)
             {
                 var randPostFix = rnd.Next(1, 1000);
                 valueKey = $"{valueKey}{randPostFix}";
