@@ -501,7 +501,7 @@ namespace Garnet
             {
                 throw new InvalidAzureConfiguration("Cannot enable use-azure-storage without supplying storage-string or storage-service-uri & storage-managed-identity");
             }
-            if (useAzureStorage && !string.IsNullOrEmpty(AzureStorageConnectionString) 
+            if (useAzureStorage && !string.IsNullOrEmpty(AzureStorageConnectionString)
                 && (!string.IsNullOrEmpty(AzureStorageServiceUri) || !string.IsNullOrEmpty(AzureStorageManagedIdentity)))
             {
                 throw new InvalidAzureConfiguration("Cannot enable use-azure-storage with both storage-string and storage-service-uri or storage-managed-identity");
