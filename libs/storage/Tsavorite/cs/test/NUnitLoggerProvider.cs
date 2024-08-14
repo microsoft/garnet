@@ -13,15 +13,15 @@ namespace Tsavorite.test
         private readonly TextWriter textWriter;
         private readonly string scope;
 
-        static readonly string[] lvl = new string[]
-        {
+        static readonly string[] lvl =
+        [
             "trce",
             "dbug",
             "info",
             "warn",
             "errr",
             "crit",
-        };
+        ];
 
         public NUnitLoggerProvider(TextWriter textWriter, string scope = "")
         {

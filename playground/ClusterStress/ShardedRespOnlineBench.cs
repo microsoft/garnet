@@ -179,8 +179,8 @@ namespace Resp.benchmark
         private void UpdateSlotMap(ClusterConfiguration clusterConfig)
         {
             var nodes = clusterConfig.Nodes.ToArray();
-            primaryNodes = nodes.ToList().FindAll(p => !p.IsReplica).ToArray();
-            replicaNodes = nodes.ToList().FindAll(p => p.IsReplica).ToArray();
+            primaryNodes = [.. nodes.ToList().FindAll(p => !p.IsReplica)];
+            replicaNodes = [.. nodes.ToList().FindAll(p => p.IsReplica)];
             ushort j = 0;
             foreach (var node in nodes)
             {
@@ -412,7 +412,7 @@ namespace Resp.benchmark
             Console.WriteLine($"Running benchmark using {opts.Client} client type");
 
             // Initialize clients to nodes using the retrieved configuration
-            InitClients(clusterConfig.Nodes.ToArray());
+            InitClients([.. clusterConfig.Nodes]);
             Thread[] workers = InitializeThreadWorkers();
 
             // Start threads.
@@ -641,13 +641,13 @@ namespace Resp.benchmark
                     switch (op)
                     {
                         case OpType.GET:
-                            await _gcs[clientIdx].ExecuteAsync(new string[] { "GET", reqKey });
+                            await _gcs[clientIdx].ExecuteAsync(["GET", reqKey]);
                             break;
                         case OpType.SET:
-                            await _gcs[clientIdx].ExecuteAsync(new string[] { "SET", reqKey, valueData });
+                            await _gcs[clientIdx].ExecuteAsync(["SET", reqKey, valueData]);
                             break;
                         case OpType.DEL:
-                            await _gcs[clientIdx].ExecuteAsync(new string[] { "DEL", reqKey });
+                            await _gcs[clientIdx].ExecuteAsync(["DEL", reqKey]);
                             break;
                         default:
                             throw new Exception($"opType: {op} benchmark not supported with {opts.Client} ClientType!");
@@ -690,13 +690,13 @@ namespace Resp.benchmark
                 switch (op)
                 {
                     case OpType.GET:
-                        _gcs[clientIdx].ExecuteBatch(new string[] { "GET", reqKey });
+                        _gcs[clientIdx].ExecuteBatch(["GET", reqKey]);
                         break;
                     case OpType.SET:
-                        _gcs[clientIdx].ExecuteBatch(new string[] { "SET", reqKey, valueData });
+                        _gcs[clientIdx].ExecuteBatch(["SET", reqKey, valueData]);
                         break;
                     case OpType.DEL:
-                        _gcs[clientIdx].ExecuteBatch(new string[] { "DEL", reqKey });
+                        _gcs[clientIdx].ExecuteBatch(["DEL", reqKey]);
                         break;
                     default:
                         throw new Exception($"opType: {op} benchmark not supported with {opts.Client} ClientType!");

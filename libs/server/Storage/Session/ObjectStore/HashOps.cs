@@ -118,7 +118,7 @@ namespace Garnet.server
         /// <returns></returns>
         public GarnetStatus HashDelete<TObjectContext>(ArgSlice key, ArgSlice field, out int itemsDoneCount, ref TObjectContext objectStoreContext, bool nx = false)
            where TObjectContext : ITsavoriteContext<byte[], IGarnetObject, ObjectInput, GarnetObjectStoreOutput, long, ObjectSessionFunctions, ObjectStoreFunctions, ObjectStoreAllocator>
-         => HashDelete(key, new ArgSlice[] { field }, out itemsDoneCount, ref objectStoreContext);
+         => HashDelete(key, [field], out itemsDoneCount, ref objectStoreContext);
 
         /// <summary>
         /// Removes the specified fields from the hash key.
