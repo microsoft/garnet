@@ -296,11 +296,10 @@ namespace Garnet
         [Option("use-azure-storage", Required = false, HelpText = "Use Azure Page Blobs for storage instead of local storage.")]
         public bool? UseAzureStorage { get; set; }
 
-        [OptionValidation]
-        [Option("storage-service-uri", Required = false, HelpText = "The URI of the Azure Storage service to use when establishing connection to Azure Blobs Storage.")]
+        [HttpsUrlValidation]
+        [Option("storage-service-uri", Required = false, HelpText = "The URI to use when establishing connection to Azure Blobs Storage.")]
         public string AzureStorageServiceUri { get; set; }
 
-        [OptionValidation]
         [Option("storage-managed-identity", Required = false, HelpText = "The managed identity to use when establishing connection to Azure Blobs Storage.")]
         public string AzureStorageManagedIdentity { get; set; }
 
@@ -498,9 +497,14 @@ namespace Garnet
 
             if (useAzureStorage && (
                     string.IsNullOrEmpty(AzureStorageConnectionString)
-                    || string.IsNullOrEmpty(AzureStorageServiceUri) || string.IsNullOrEmpty(AzureStorageManagedIdentity)))
+                    && (string.IsNullOrEmpty(AzureStorageServiceUri) || string.IsNullOrEmpty(AzureStorageManagedIdentity))))
             {
-                throw new Exception("Cannot enable use-azure-storage without supplying storage-string or storage-service-uri & storage-managed-identity");
+                throw new InvalidAzureConfiguration("Cannot enable use-azure-storage without supplying storage-string or storage-service-uri & storage-managed-identity");
+            }
+            if (useAzureStorage && !string.IsNullOrEmpty(AzureStorageConnectionString) 
+                && (!string.IsNullOrEmpty(AzureStorageServiceUri) || !string.IsNullOrEmpty(AzureStorageManagedIdentity)))
+            {
+                throw new InvalidAzureConfiguration("Cannot enable use-azure-storage with both storage-string and storage-service-uri or storage-managed-identity");
             }
 
             var logDir = LogDir;
@@ -679,5 +683,10 @@ namespace Garnet
         GarnetConf = 0,
         // Redis.conf file format
         RedisConf = 1,
+    }
+
+    public class InvalidAzureConfiguration : Exception
+    {
+        public InvalidAzureConfiguration(string message) : base(message) { }
     }
 }
