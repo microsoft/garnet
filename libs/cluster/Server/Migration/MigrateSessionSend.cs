@@ -70,12 +70,12 @@ namespace Garnet.cluster
             {
                 try
                 {
-                    _ = task.ContinueWith(resp =>
+                    return task.ContinueWith(resp =>
                     {
                         // Check if setslotsrange executed correctly
                         if (!resp.Result.Equals("OK", StringComparison.Ordinal))
                         {
-                            logger?.LogError("TrySetSlot error: {error}", resp);
+                            logger?.LogError("ClusterMigrate Keys failed with error:{error}.", resp);
                             Status = MigrateState.FAIL;
                             return false;
                         }

@@ -143,7 +143,7 @@ namespace MigrateBench
                 {
                     var startSlot = slots[i];
                     var endSlot = slots[i + 1];
-                    for (var j = startSlot; j < endSlot; j++)
+                    for (var j = startSlot; j <= endSlot; j++)
                         _slots.Add(j);
                 }
 
