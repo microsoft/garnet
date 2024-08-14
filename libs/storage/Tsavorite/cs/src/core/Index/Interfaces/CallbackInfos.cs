@@ -100,14 +100,14 @@ namespace Tsavorite.core
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         internal static unsafe void StaticClearExtraValueLength<TValue>(ref RecordInfo recordInfo, ref TValue recordValue, int usedValueLength)
         {
-            if (!recordInfo.Filler)
+            if (!recordInfo.HasFiller)
                 return;
 
             var valueAddress = (long)Unsafe.AsPointer(ref recordValue);
             int* extraLengthPtr = (int*)(valueAddress + RoundUp(usedValueLength, sizeof(int)));
 
             *extraLengthPtr = 0;
-            recordInfo.Filler = false;
+            recordInfo.ClearHasFiller();
         }
 
         /// <summary>
@@ -129,7 +129,7 @@ namespace Tsavorite.core
         {
             // Note: This is only called for variable-length types, and for those we have ensured the location of recordValue is pinned.
             long valueAddress = (long)Unsafe.AsPointer(ref recordValue);
-            Debug.Assert(!recordInfo.Filler, "Filler should have been cleared by ClearExtraValueLength()");
+            Debug.Assert(!recordInfo.HasFiller, "Filler should have been cleared by ClearExtraValueLength()");
 
             usedValueLength = RoundUp(usedValueLength, sizeof(int));
             int extraValueLength = fullValueLength - usedValueLength;
@@ -138,7 +138,7 @@ namespace Tsavorite.core
                 int* extraValueLengthPtr = (int*)(valueAddress + usedValueLength);
                 Debug.Assert(*extraValueLengthPtr == 0 || *extraValueLengthPtr == extraValueLength, "existing ExtraValueLength should be 0 or the same value");
                 *extraValueLengthPtr = extraValueLength;
-                recordInfo.Filler = true;
+                recordInfo.SetHasFiller();
             }
         }
     }

@@ -6,6 +6,7 @@ using System.Collections.Generic;
 using System.Linq;
 using System.Security.Claims;
 using Garnet.server.Auth.Settings;
+using Microsoft.Extensions.Logging;
 using Microsoft.IdentityModel.Tokens;
 using NUnit.Framework;
 
@@ -18,7 +19,7 @@ namespace Garnet.test.cluster
     {
         ClusterTestContext context;
 
-        readonly HashSet<string> monitorTests = [];
+        readonly Dictionary<string, LogLevel> monitorTests = [];
 
         private const string issuer = "https://sts.windows.net/975f013f-7f24-47e8-a7d3-abc4752bf346/";
 

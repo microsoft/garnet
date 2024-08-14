@@ -202,7 +202,7 @@ Note that this list is subject to change as we continue to expand our API comman
 |  | [CONFIG GET](server.md#config-get) | ➕ |  |
 |  | [CONFIG SET](server.md#config-set) | ➕ |  |
 |  | [DBSIZE](server.md#dbsize) | ➕ |  |
-|  | FLUSHALL | ➖ |  |
+|  | [FLUSHALL](server.md#flushall) | ➕ |  |
 |  | [FLUSHDB](server.md#flushdb) | ➕ |  |
 |  | [LASTSAVE](checkpoint.md#lastsave) | ➕ |  |
 |  | LATENCY DOCTOR | ➖ |  |

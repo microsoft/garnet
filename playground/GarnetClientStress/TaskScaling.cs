@@ -77,7 +77,7 @@ namespace GarnetClientStress
             bool printHeader = false;
             for (int i = 0; i < gclientArray.Length; i++)
             {
-                var histogram = gclientArray[i]?.GetLatencyHistogram;
+                var histogram = gclientArray[i]?.CopyLatencyHistogram;
                 if (histogram != null && histogram.TotalCount > 0)
                 {
                     Console.WriteLine("{0,12:0.0}; {1,12:0.0}; {2,12:0.0}; {3,12:0.0}; {4,12:0.0}; {5,12:0.0}; {6,12:0.0}; {7,16:N0}; {8,12:N0}; {9,12:N0}; {10,12:N0}; {11,14:N0}",
@@ -99,6 +99,7 @@ namespace GarnetClientStress
                         printHeader = true;
                     }
                 }
+                histogram?.Return();
             }
             return printHeader;
         }

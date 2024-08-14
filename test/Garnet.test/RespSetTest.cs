@@ -3,20 +3,18 @@
 
 using System;
 using System.Collections.Generic;
-using System.Diagnostics;
 using System.Linq;
 using System.Text;
 using System.Threading.Tasks;
 using Garnet.server;
 using NUnit.Framework;
-using NUnit.Framework.Interfaces;
 using StackExchange.Redis;
 using SetOperation = StackExchange.Redis.SetOperation;
 
 namespace Garnet.test
 {
     [TestFixture]
-    public class RespSetTests
+    public class RespSetTest
     {
         GarnetServer server;
 
@@ -555,7 +553,7 @@ namespace Garnet.test
             addResult = db.SetAdd(key3, key3Value);
             Assert.AreEqual(3, addResult);
 
-            result = db.SetCombine(SetOperation.Difference, new[] { new RedisKey(key1), new RedisKey(key2), new RedisKey(key3) });
+            result = db.SetCombine(SetOperation.Difference, [new RedisKey(key1), new RedisKey(key2), new RedisKey(key3)]);
             Assert.AreEqual(2, result.Length);
             strResult = result.Select(r => r.ToString()).ToArray();
             expectedResult = ["b", "d"];
@@ -697,7 +695,7 @@ namespace Garnet.test
             Assert.AreEqual(expectedMessage, ex.Message);
 
             // Add items to set
-            var added = db.SetAdd(key, values.ToArray());
+            var added = db.SetAdd(key, [.. values]);
             Assert.AreEqual(values.Count, added);
 
             // Check SRANDMEMBER without count
@@ -1434,16 +1432,16 @@ namespace Garnet.test
             // SUNION
             RespTestsUtils.CheckCommandOnWrongTypeObjectSE(() => db.SetCombine(SetOperation.Union, keys[0], keys[1]));
             // SUNIONSTORE
-            RespTestsUtils.CheckCommandOnWrongTypeObjectSE(() => db.SetCombineAndStore(SetOperation.Union, keys[0], new[] { keys[1] }));
+            RespTestsUtils.CheckCommandOnWrongTypeObjectSE(() => db.SetCombineAndStore(SetOperation.Union, keys[0], [keys[1]]));
             // SDIFF
             RespTestsUtils.CheckCommandOnWrongTypeObjectSE(() => db.SetCombine(SetOperation.Difference, keys[0], keys[1]));
             // SDIFFSTORE
             RespTestsUtils.CheckCommandOnWrongTypeObjectSE(() =>
-                db.SetCombineAndStore(SetOperation.Difference, keys[0], new[] { keys[1] }));
+                db.SetCombineAndStore(SetOperation.Difference, keys[0], [keys[1]]));
             // SINTER
             RespTestsUtils.CheckCommandOnWrongTypeObjectSE(() => db.SetCombine(SetOperation.Intersect, keys[0], keys[1]));
             // SINTERSTORE
-            RespTestsUtils.CheckCommandOnWrongTypeObjectSE(() => db.SetCombineAndStore(SetOperation.Intersect, keys[0], new[] { keys[1] }));
+            RespTestsUtils.CheckCommandOnWrongTypeObjectSE(() => db.SetCombineAndStore(SetOperation.Intersect, keys[0], [keys[1]]));
         }
 
         #endregion

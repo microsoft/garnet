@@ -16,5 +16,8 @@ namespace Garnet.server
         {
             latency = new LongHistogram(HISTOGRAM_LOWER_BOUND, HISTOGRAM_UPPER_BOUND, 2);
         }
+
+        public void Return()
+            => latency.Return();
     }
 }

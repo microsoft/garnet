@@ -9,19 +9,19 @@ namespace Tsavorite.core
     /// Lightweight iterator for memory page (copied to buffer). GetNext() can be used outside epoch protection and locking,
     /// but ctor must be called within epoch protection.
     /// </summary>
-    /// <typeparam name="Key"></typeparam>
-    /// <typeparam name="Value"></typeparam>
-    internal sealed class MemoryPageScanIterator<Key, Value> : ITsavoriteScanIterator<Key, Value>
+    /// <typeparam name="TKey"></typeparam>
+    /// <typeparam name="TValue"></typeparam>
+    internal sealed class MemoryPageScanIterator<TKey, TValue> : ITsavoriteScanIterator<TKey, TValue>
     {
-        readonly Record<Key, Value>[] page;
+        readonly AllocatorRecord<TKey, TValue>[] page;
         readonly long pageStartAddress;
         readonly int recordSize;
         readonly int start, end;
         int offset;
 
-        public MemoryPageScanIterator(Record<Key, Value>[] page, int start, int end, long pageStartAddress, int recordSize)
+        public MemoryPageScanIterator(AllocatorRecord<TKey, TValue>[] page, int start, int end, long pageStartAddress, int recordSize)
         {
-            this.page = new Record<Key, Value>[page.Length];
+            this.page = new AllocatorRecord<TKey, TValue>[page.Length];
             Array.Copy(page, start, this.page, start, end - start);
             offset = start - 1;
             this.start = start;
@@ -42,8 +42,8 @@ namespace Tsavorite.core
         {
         }
 
-        public ref Key GetKey() => ref page[offset].key;
-        public ref Value GetValue() => ref page[offset].value;
+        public ref TKey GetKey() => ref page[offset].key;
+        public ref TValue GetValue() => ref page[offset].value;
 
         public bool GetNext(out RecordInfo recordInfo)
         {
@@ -63,7 +63,7 @@ namespace Tsavorite.core
             return true;
         }
 
-        public bool GetNext(out RecordInfo recordInfo, out Key key, out Value value)
+        public bool GetNext(out RecordInfo recordInfo, out TKey key, out TValue value)
         {
             var r = GetNext(out recordInfo);
             if (r)

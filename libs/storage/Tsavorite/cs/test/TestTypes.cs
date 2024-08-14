@@ -8,21 +8,20 @@ using Tsavorite.core;
 
 namespace Tsavorite.test
 {
-    public struct KeyStruct : ITsavoriteEqualityComparer<KeyStruct>
+    public struct KeyStruct
     {
         public long kfield1;
         public long kfield2;
 
-        public long GetHashCode64(ref KeyStruct key)
-        {
-            return Utility.GetHashCode(key.kfield1);
-        }
-        public bool Equals(ref KeyStruct k1, ref KeyStruct k2)
-        {
-            return k1.kfield1 == k2.kfield1 && k1.kfield2 == k2.kfield2;
-        }
-
         public override string ToString() => $"kfield1 {kfield1}, kfield2 {kfield2}";
+
+        public struct Comparer : IKeyComparer<KeyStruct>
+        {
+            public long GetHashCode64(ref KeyStruct key) => Utility.GetHashCode(key.kfield1);
+            public bool Equals(ref KeyStruct k1, ref KeyStruct k2) => k1.kfield1 == k2.kfield1 && k1.kfield2 == k2.kfield2;
+
+            public static Comparer Instance = new();
+        }
     }
 
     public struct ValueStruct
@@ -264,11 +263,11 @@ namespace Tsavorite.test
         }
     }
 
-    class RMWSimpleFunctions<Key, Value> : SimpleSimpleFunctions<Key, Value>
+    class RMWSimpleFunctions<TKey, TValue> : SimpleSimpleFunctions<TKey, TValue>
     {
-        public RMWSimpleFunctions(Func<Value, Value, Value> merger) : base(merger) { }
+        public RMWSimpleFunctions(Func<TValue, TValue, TValue> merger) : base(merger) { }
 
-        public override bool InitialUpdater(ref Key key, ref Value input, ref Value value, ref Value output, ref RMWInfo rmwInfo, ref RecordInfo recordInfo)
+        public override bool InitialUpdater(ref TKey key, ref TValue input, ref TValue value, ref TValue output, ref RMWInfo rmwInfo, ref RecordInfo recordInfo)
         {
             base.InitialUpdater(ref key, ref input, ref value, ref output, ref rmwInfo, ref recordInfo);
             output = input;
@@ -276,7 +275,7 @@ namespace Tsavorite.test
         }
 
         /// <inheritdoc/>
-        public override bool CopyUpdater(ref Key key, ref Value input, ref Value oldValue, ref Value newValue, ref Value output, ref RMWInfo rmwInfo, ref RecordInfo recordInfo)
+        public override bool CopyUpdater(ref TKey key, ref TValue input, ref TValue oldValue, ref TValue newValue, ref TValue output, ref RMWInfo rmwInfo, ref RecordInfo recordInfo)
         {
             base.CopyUpdater(ref key, ref input, ref oldValue, ref newValue, ref output, ref rmwInfo, ref recordInfo);
             output = newValue;
@@ -284,7 +283,7 @@ namespace Tsavorite.test
         }
 
         /// <inheritdoc/>
-        public override bool InPlaceUpdater(ref Key key, ref Value input, ref Value value, ref Value output, ref RMWInfo rmwInfo, ref RecordInfo recordInfo)
+        public override bool InPlaceUpdater(ref TKey key, ref TValue input, ref TValue value, ref TValue output, ref RMWInfo rmwInfo, ref RecordInfo recordInfo)
         {
             base.InPlaceUpdater(ref key, ref input, ref value, ref output, ref rmwInfo, ref recordInfo);
             output = value;

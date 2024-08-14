@@ -10,98 +10,85 @@ namespace Tsavorite.core
     /// <summary>
     /// Default empty functions base class to make it easy for users to provide their own implementation of ISessionFunctions
     /// </summary>
-    /// <typeparam name="Key"></typeparam>
-    /// <typeparam name="Value"></typeparam>
-    /// <typeparam name="Input"></typeparam>
-    /// <typeparam name="Output"></typeparam>
-    /// <typeparam name="Context"></typeparam>
-    public abstract class SessionFunctionsBase<Key, Value, Input, Output, Context> : ISessionFunctions<Key, Value, Input, Output, Context>
+    /// <typeparam name="TKey"></typeparam>
+    /// <typeparam name="TValue"></typeparam>
+    /// <typeparam name="TInput"></typeparam>
+    /// <typeparam name="TOutput"></typeparam>
+    /// <typeparam name="TContext"></typeparam>
+    public abstract class SessionFunctionsBase<TKey, TValue, TInput, TOutput, TContext> : ISessionFunctions<TKey, TValue, TInput, TOutput, TContext>
     {
         /// <inheritdoc/>
-        public virtual bool ConcurrentReader(ref Key key, ref Input input, ref Value value, ref Output dst, ref ReadInfo readInfo, ref RecordInfo recordInfo) => true;
+        public virtual bool ConcurrentReader(ref TKey key, ref TInput input, ref TValue value, ref TOutput dst, ref ReadInfo readInfo, ref RecordInfo recordInfo) => true;
         /// <inheritdoc/>
-        public virtual bool SingleReader(ref Key key, ref Input input, ref Value value, ref Output dst, ref ReadInfo readInfo) => true;
+        public virtual bool SingleReader(ref TKey key, ref TInput input, ref TValue value, ref TOutput dst, ref ReadInfo readInfo) => true;
 
         /// <inheritdoc/>
-        public virtual bool ConcurrentWriter(ref Key key, ref Input input, ref Value src, ref Value dst, ref Output output, ref UpsertInfo upsertInfo, ref RecordInfo recordInfo) { dst = src; return true; }
+        public virtual bool ConcurrentWriter(ref TKey key, ref TInput input, ref TValue src, ref TValue dst, ref TOutput output, ref UpsertInfo upsertInfo, ref RecordInfo recordInfo) { dst = src; return true; }
         /// <inheritdoc/>
-        public virtual bool SingleWriter(ref Key key, ref Input input, ref Value src, ref Value dst, ref Output output, ref UpsertInfo upsertInfo, WriteReason reason, ref RecordInfo recordInfo) { dst = src; return true; }
+        public virtual bool SingleWriter(ref TKey key, ref TInput input, ref TValue src, ref TValue dst, ref TOutput output, ref UpsertInfo upsertInfo, WriteReason reason, ref RecordInfo recordInfo) { dst = src; return true; }
         /// <inheritdoc/>
-        public virtual void PostSingleWriter(ref Key key, ref Input input, ref Value src, ref Value dst, ref Output output, ref UpsertInfo upsertInfo, WriteReason reason) { }
+        public virtual void PostSingleWriter(ref TKey key, ref TInput input, ref TValue src, ref TValue dst, ref TOutput output, ref UpsertInfo upsertInfo, WriteReason reason) { }
 
         /// <inheritdoc/>
-        public virtual bool InitialUpdater(ref Key key, ref Input input, ref Value value, ref Output output, ref RMWInfo rmwInfo, ref RecordInfo recordInfo) => true;
+        public virtual bool InitialUpdater(ref TKey key, ref TInput input, ref TValue value, ref TOutput output, ref RMWInfo rmwInfo, ref RecordInfo recordInfo) => true;
         /// <inheritdoc/>
-        public virtual void PostInitialUpdater(ref Key key, ref Input input, ref Value value, ref Output output, ref RMWInfo rmwInfo) { }
+        public virtual void PostInitialUpdater(ref TKey key, ref TInput input, ref TValue value, ref TOutput output, ref RMWInfo rmwInfo) { }
         /// <inheritdoc/>
-        public virtual bool NeedInitialUpdate(ref Key key, ref Input input, ref Output output, ref RMWInfo rmwInfo) => true;
+        public virtual bool NeedInitialUpdate(ref TKey key, ref TInput input, ref TOutput output, ref RMWInfo rmwInfo) => true;
         /// <inheritdoc/>
-        public virtual bool NeedCopyUpdate(ref Key key, ref Input input, ref Value oldValue, ref Output output, ref RMWInfo rmwInfo) => true;
+        public virtual bool NeedCopyUpdate(ref TKey key, ref TInput input, ref TValue oldValue, ref TOutput output, ref RMWInfo rmwInfo) => true;
         /// <inheritdoc/>
-        public virtual bool CopyUpdater(ref Key key, ref Input input, ref Value oldValue, ref Value newValue, ref Output output, ref RMWInfo rmwInfo, ref RecordInfo recordInfo) => true;
+        public virtual bool CopyUpdater(ref TKey key, ref TInput input, ref TValue oldValue, ref TValue newValue, ref TOutput output, ref RMWInfo rmwInfo, ref RecordInfo recordInfo) => true;
         /// <inheritdoc/>
-        public virtual bool PostCopyUpdater(ref Key key, ref Input input, ref Value oldValue, ref Value newValue, ref Output output, ref RMWInfo rmwInfo) => true;
+        public virtual bool PostCopyUpdater(ref TKey key, ref TInput input, ref TValue oldValue, ref TValue newValue, ref TOutput output, ref RMWInfo rmwInfo) => true;
         /// <inheritdoc/>
-        public virtual bool InPlaceUpdater(ref Key key, ref Input input, ref Value value, ref Output output, ref RMWInfo rmwInfo, ref RecordInfo recordInfo) => true;
+        public virtual bool InPlaceUpdater(ref TKey key, ref TInput input, ref TValue value, ref TOutput output, ref RMWInfo rmwInfo, ref RecordInfo recordInfo) => true;
 
         /// <inheritdoc/>
-        public virtual bool SingleDeleter(ref Key key, ref Value value, ref DeleteInfo deleteInfo, ref RecordInfo recordInfo) { value = default; return true; }
-        public virtual void PostSingleDeleter(ref Key key, ref DeleteInfo deleteInfo) { }
-        public virtual bool ConcurrentDeleter(ref Key key, ref Value value, ref DeleteInfo deleteInfo, ref RecordInfo recordInfo) => true;
+        public virtual bool SingleDeleter(ref TKey key, ref TValue value, ref DeleteInfo deleteInfo, ref RecordInfo recordInfo) { value = default; return true; }
+        public virtual void PostSingleDeleter(ref TKey key, ref DeleteInfo deleteInfo) { }
+        public virtual bool ConcurrentDeleter(ref TKey key, ref TValue value, ref DeleteInfo deleteInfo, ref RecordInfo recordInfo) => true;
+
+        public virtual void ReadCompletionCallback(ref TKey key, ref TInput input, ref TOutput output, TContext ctx, Status status, RecordMetadata recordMetadata) { }
+        /// <inheritdoc/>
+        public virtual void RMWCompletionCallback(ref TKey key, ref TInput input, ref TOutput output, TContext ctx, Status status, RecordMetadata recordMetadata) { }
 
         /// <inheritdoc/>
-        public virtual void DisposeSingleWriter(ref Key key, ref Input input, ref Value src, ref Value dst, ref Output output, ref UpsertInfo upsertInfo, WriteReason reason) { }
+        public virtual int GetRMWModifiedValueLength(ref TValue value, ref TInput input) => throw new TsavoriteException("GetRMWModifiedValueLength is only available for SpanByte Functions");
         /// <inheritdoc/>
-        public virtual void DisposeCopyUpdater(ref Key key, ref Input input, ref Value oldValue, ref Value newValue, ref Output output, ref RMWInfo rmwInfo) { }
-        /// <inheritdoc/>
-        public virtual void DisposeInitialUpdater(ref Key key, ref Input input, ref Value value, ref Output output, ref RMWInfo rmwInfo) { }
-        /// <inheritdoc/>
-        public virtual void DisposeSingleDeleter(ref Key key, ref Value value, ref DeleteInfo deleteInfo) { }
-        /// <inheritdoc/>
-        public virtual void DisposeDeserializedFromDisk(ref Key key, ref Value value) { }
-        /// <inheritdoc/>
-        public virtual void DisposeForRevivification(ref Key key, ref Value value, int newKeySize) { }
-        /// <inheritdoc/>
-        public virtual void ReadCompletionCallback(ref Key key, ref Input input, ref Output output, Context ctx, Status status, RecordMetadata recordMetadata) { }
-        /// <inheritdoc/>
-        public virtual void RMWCompletionCallback(ref Key key, ref Input input, ref Output output, Context ctx, Status status, RecordMetadata recordMetadata) { }
+        public virtual int GetRMWInitialValueLength(ref TInput input) => throw new TsavoriteException("GetRMWInitialValueLength is only available for SpanByte Functions");
 
         /// <inheritdoc/>
-        public virtual int GetRMWModifiedValueLength(ref Value value, ref Input input) => throw new TsavoriteException("GetRMWModifiedValueLength is only available for SpanByte Functions");
-        /// <inheritdoc/>
-        public virtual int GetRMWInitialValueLength(ref Input input) => throw new TsavoriteException("GetRMWInitialValueLength is only available for SpanByte Functions");
-
-        /// <inheritdoc/>
-        public virtual void ConvertOutputToHeap(ref Input input, ref Output output) { }
+        public virtual void ConvertOutputToHeap(ref TInput input, ref TOutput output) { }
     }
 
     /// <summary>
     /// Default empty functions base class to make it easy for users to provide their own implementation of FunctionsBase
     /// </summary>
-    /// <typeparam name="Key"></typeparam>
-    /// <typeparam name="Value"></typeparam>
-    /// <typeparam name="Context"></typeparam>
-    public class SimpleSessionFunctions<Key, Value, Context> : SessionFunctionsBase<Key, Value, Value, Value, Context>
+    /// <typeparam name="TKey"></typeparam>
+    /// <typeparam name="TValue"></typeparam>
+    /// <typeparam name="TContext"></typeparam>
+    public class SimpleSessionFunctions<TKey, TValue, TContext> : SessionFunctionsBase<TKey, TValue, TValue, TValue, TContext>
     {
-        private readonly Func<Value, Value, Value> merger;
+        private readonly Func<TValue, TValue, TValue> merger;
         public SimpleSessionFunctions() => merger = (l, r) => l;
-        public SimpleSessionFunctions(Func<Value, Value, Value> merger) => this.merger = merger;
+        public SimpleSessionFunctions(Func<TValue, TValue, TValue> merger) => this.merger = merger;
 
         /// <inheritdoc/>
-        public override bool ConcurrentReader(ref Key key, ref Value input, ref Value value, ref Value dst, ref ReadInfo readInfo, ref RecordInfo recordInfo)
+        public override bool ConcurrentReader(ref TKey key, ref TValue input, ref TValue value, ref TValue dst, ref ReadInfo readInfo, ref RecordInfo recordInfo)
         {
             dst = value;
             return true;
         }
 
         /// <inheritdoc/>
-        public override bool SingleReader(ref Key key, ref Value input, ref Value value, ref Value dst, ref ReadInfo readInfo)
+        public override bool SingleReader(ref TKey key, ref TValue input, ref TValue value, ref TValue dst, ref ReadInfo readInfo)
         {
             dst = value;
             return true;
         }
 
-        public override bool SingleWriter(ref Key key, ref Value input, ref Value src, ref Value dst, ref Value output, ref UpsertInfo upsertInfo, WriteReason reason, ref RecordInfo recordInfo)
+        public override bool SingleWriter(ref TKey key, ref TValue input, ref TValue src, ref TValue dst, ref TValue output, ref UpsertInfo upsertInfo, WriteReason reason, ref RecordInfo recordInfo)
         {
             var result = base.SingleWriter(ref key, ref input, ref src, ref dst, ref output, ref upsertInfo, reason, ref recordInfo);
             if (result)
@@ -109,7 +96,7 @@ namespace Tsavorite.core
             return result;
         }
 
-        public override bool ConcurrentWriter(ref Key key, ref Value input, ref Value src, ref Value dst, ref Value output, ref UpsertInfo upsertInfo, ref RecordInfo recordInfo)
+        public override bool ConcurrentWriter(ref TKey key, ref TValue input, ref TValue src, ref TValue dst, ref TValue output, ref UpsertInfo upsertInfo, ref RecordInfo recordInfo)
         {
             var result = base.ConcurrentWriter(ref key, ref input, ref src, ref dst, ref output, ref upsertInfo, ref recordInfo);
             if (result)
@@ -118,16 +105,16 @@ namespace Tsavorite.core
         }
 
         /// <inheritdoc/>
-        public override bool InitialUpdater(ref Key key, ref Value input, ref Value value, ref Value output, ref RMWInfo rmwInfo, ref RecordInfo recordInfo) { value = output = input; return true; }
+        public override bool InitialUpdater(ref TKey key, ref TValue input, ref TValue value, ref TValue output, ref RMWInfo rmwInfo, ref RecordInfo recordInfo) { value = output = input; return true; }
         /// <inheritdoc/>
-        public override bool CopyUpdater(ref Key key, ref Value input, ref Value oldValue, ref Value newValue, ref Value output, ref RMWInfo rmwInfo, ref RecordInfo recordInfo) { newValue = output = merger(input, oldValue); return true; }
+        public override bool CopyUpdater(ref TKey key, ref TValue input, ref TValue oldValue, ref TValue newValue, ref TValue output, ref RMWInfo rmwInfo, ref RecordInfo recordInfo) { newValue = output = merger(input, oldValue); return true; }
         /// <inheritdoc/>
-        public override bool InPlaceUpdater(ref Key key, ref Value input, ref Value value, ref Value output, ref RMWInfo rmwInfo, ref RecordInfo recordInfo) { value = output = merger(input, value); return true; }
+        public override bool InPlaceUpdater(ref TKey key, ref TValue input, ref TValue value, ref TValue output, ref RMWInfo rmwInfo, ref RecordInfo recordInfo) { value = output = merger(input, value); return true; }
     }
 
-    public class SimpleSimpleFunctions<Key, Value> : SimpleSessionFunctions<Key, Value, Empty>
+    public class SimpleSimpleFunctions<TKey, TValue> : SimpleSessionFunctions<TKey, TValue, Empty>
     {
         public SimpleSimpleFunctions() : base() { }
-        public SimpleSimpleFunctions(Func<Value, Value, Value> merger) : base(merger) { }
+        public SimpleSimpleFunctions(Func<TValue, TValue, TValue> merger) : base(merger) { }
     }
 }

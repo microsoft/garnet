@@ -6,15 +6,18 @@ using Tsavorite.core;
 
 namespace Tsavorite.test
 {
-    public class MyKey : ITsavoriteEqualityComparer<MyKey>
+    public class MyKey
     {
         public int key;
 
-        public long GetHashCode64(ref MyKey key) => Utility.GetHashCode(key.key);
-
-        public bool Equals(ref MyKey k1, ref MyKey k2) => k1.key == k2.key;
-
         public override string ToString() => key.ToString();
+
+        public struct Comparer : IKeyComparer<MyKey>
+        {
+            public long GetHashCode64(ref MyKey key) => Utility.GetHashCode(key.key);
+
+            public bool Equals(ref MyKey k1, ref MyKey k2) => k1.key == k2.key;
+        }
     }
 
     public class MyKeySerializer : BinaryObjectSerializer<MyKey>
@@ -24,15 +27,18 @@ namespace Tsavorite.test
         public override void Serialize(ref MyKey obj) => writer.Write(obj.key);
     }
 
-    public class MyValue : ITsavoriteEqualityComparer<MyValue>
+    public class MyValue
     {
         public int value;
 
-        public long GetHashCode64(ref MyValue k) => Utility.GetHashCode(k.value);
-
-        public bool Equals(ref MyValue k1, ref MyValue k2) => k1.value == k2.value;
-
         public override string ToString() => value.ToString();
+
+        public struct Comparer : IKeyComparer<MyValue> // This Value comparer is used by a test
+        {
+            public long GetHashCode64(ref MyValue k) => Utility.GetHashCode(k.value);
+
+            public bool Equals(ref MyValue k1, ref MyValue k2) => k1.value == k2.value;
+        }
     }
 
     public class MyValueSerializer : BinaryObjectSerializer<MyValue>

@@ -7,10 +7,13 @@ using Tsavorite.core;
 
 namespace Tsavorite.test
 {
+    using LongAllocator = BlittableAllocator<long, long, StoreFunctions<long, long, LongKeyComparer, DefaultRecordDisposer<long, long>>>;
+    using LongStoreFunctions = StoreFunctions<long, long, LongKeyComparer, DefaultRecordDisposer<long, long>>;
+
     [TestFixture]
     internal class MoreLogCompactionTests
     {
-        private TsavoriteKV<long, long> store;
+        private TsavoriteKV<long, long, LongStoreFunctions, LongAllocator> store;
         private IDevice log;
 
         [SetUp]
@@ -18,8 +21,15 @@ namespace Tsavorite.test
         {
             TestUtils.DeleteDirectory(TestUtils.MethodTestDir, wait: true);
             log = Devices.CreateLogDevice(Path.Join(TestUtils.MethodTestDir, "MoreLogCompactionTests.log"), deleteOnClose: true);
-            store = new TsavoriteKV<long, long>
-                (1L << 20, new LogSettings { LogDevice = log, MemorySizeBits = 15, PageSizeBits = 9 });
+            store = new(new()
+            {
+                IndexSize = 1L << 26,
+                LogDevice = log,
+                MemorySize = 1L << 15,
+                PageSize = 1L << 9
+            }, StoreFunctions<long, long>.Create(LongKeyComparer.Instance)
+                , (allocatorSettings, storeFunctions) => new(allocatorSettings, storeFunctions)
+            );
         }
 
         [TearDown]
@@ -50,11 +60,11 @@ namespace Tsavorite.test
             {
                 if (i == 1010)
                     compactUntil = store.Log.TailAddress;
-                bContext.Upsert(i, i);
+                _ = bContext.Upsert(i, i);
             }
 
             for (int i = 0; i < totalRecords / 2; i++)
-                bContext.Delete(i);
+                _ = bContext.Delete(i);
 
             compactUntil = session.Compact(compactUntil, compactionType);
 
@@ -69,7 +79,7 @@ namespace Tsavorite.test
                 (var status, var output) = bContext2.Read(i);
                 if (status.IsPending)
                 {
-                    bContext2.CompletePendingWithOutputs(out var completedOutputs, true);
+                    _ = bContext2.CompletePendingWithOutputs(out var completedOutputs, true);
                     Assert.IsTrue(completedOutputs.Next());
                     (status, output) = (completedOutputs.Current.Status, completedOutputs.Current.Output);
                     Assert.IsFalse(completedOutputs.Next());

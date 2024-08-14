@@ -6,15 +6,18 @@ using Tsavorite.core;
 
 namespace Tsavorite.test.recovery.sumstore
 {
-    public struct AdId : ITsavoriteEqualityComparer<AdId>
+    public struct AdId
     {
         public long adId;
 
-        public long GetHashCode64(ref AdId key) => Utility.GetHashCode(key.adId);
-
-        public bool Equals(ref AdId k1, ref AdId k2) => k1.adId == k2.adId;
-
         public override string ToString() => adId.ToString();
+
+        public struct Comparer : IKeyComparer<AdId>
+        {
+            public long GetHashCode64(ref AdId key) => Utility.GetHashCode(key.adId);
+
+            public bool Equals(ref AdId k1, ref AdId k2) => k1.adId == k2.adId;
+        }
     }
 
     public struct AdInput

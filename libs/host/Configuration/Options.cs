@@ -474,7 +474,7 @@ namespace Garnet
                 foreach (var validationResult in validationResults)
                 {
                     invalidOptions.AddRange(validationResult.MemberNames);
-                    logger?.LogError(validationResult.ErrorMessage);
+                    logger?.LogError("{errorMessage}", validationResult.ErrorMessage);
                 }
             }
 

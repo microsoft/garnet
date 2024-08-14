@@ -7,24 +7,34 @@ using Tsavorite.core;
 
 namespace Tsavorite.test.LowMemory
 {
+    using LongAllocator = BlittableAllocator<long, long, StoreFunctions<long, long, LongKeyComparer, DefaultRecordDisposer<long, long>>>;
+    using LongStoreFunctions = StoreFunctions<long, long, LongKeyComparer, DefaultRecordDisposer<long, long>>;
+
     [TestFixture]
     public class LowMemoryTests
     {
         IDevice log;
-        TsavoriteKV<long, long> store1;
-        const int numOps = 2000;
+        TsavoriteKV<long, long, LongStoreFunctions, LongAllocator> store1;
+        const int NumOps = 2000;
 
         [SetUp]
         public void Setup()
         {
             TestUtils.DeleteDirectory(TestUtils.MethodTestDir, wait: true);
             log = new LocalMemoryDevice(1L << 28, 1L << 25, 1, latencyMs: 20, fileName: Path.Join(TestUtils.MethodTestDir, "test.log"));
-            Directory.CreateDirectory(TestUtils.MethodTestDir);
-            store1 = new TsavoriteKV<long, long>
-                (1L << 10,
-                logSettings: new LogSettings { LogDevice = log, MutableFraction = 1, PageSizeBits = 10, MemorySizeBits = 12, SegmentSizeBits = 26 },
-                checkpointSettings: new CheckpointSettings { CheckpointDir = TestUtils.MethodTestDir }
-                );
+            _ = Directory.CreateDirectory(TestUtils.MethodTestDir);
+            store1 = new(new()
+            {
+                IndexSize = 1L << 16,
+                LogDevice = log,
+                MutableFraction = 1,
+                PageSize = 1L << 10,
+                MemorySize = 1L << 12,
+                SegmentSize = 1L << 26,
+                CheckpointDir = TestUtils.MethodTestDir
+            }, StoreFunctions<long, long>.Create(LongKeyComparer.Instance)
+                , (allocatorSettings, storeFunctions) => new(allocatorSettings, storeFunctions)
+            );
         }
 
         [TearDown]
@@ -37,11 +47,11 @@ namespace Tsavorite.test.LowMemory
             TestUtils.DeleteDirectory(TestUtils.MethodTestDir);
         }
 
-        private static void Populate(ClientSession<long, long, long, long, Empty, SimpleSimpleFunctions<long, long>> s1)
+        private static void Populate(ClientSession<long, long, long, long, Empty, SimpleSimpleFunctions<long, long>, LongStoreFunctions, LongAllocator> s1)
         {
             var bContext1 = s1.BasicContext;
-            for (long key = 0; key < numOps; key++)
-                bContext1.Upsert(ref key, ref key);
+            for (long key = 0; key < NumOps; key++)
+                _ = bContext1.Upsert(ref key, ref key);
         }
 
         [Test]
@@ -56,7 +66,7 @@ namespace Tsavorite.test.LowMemory
 
             // Read all keys
             var numCompleted = 0;
-            for (long key = 0; key < numOps; key++)
+            for (long key = 0; key < NumOps; key++)
             {
                 var (status, output) = bContext1.Read(key);
                 if (!status.IsPending)
@@ -67,7 +77,7 @@ namespace Tsavorite.test.LowMemory
                 }
             }
 
-            bContext1.CompletePendingWithOutputs(out var completedOutputs, wait: true);
+            _ = bContext1.CompletePendingWithOutputs(out var completedOutputs, wait: true);
             using (completedOutputs)
             {
                 while (completedOutputs.Next())
@@ -77,7 +87,7 @@ namespace Tsavorite.test.LowMemory
                     Assert.AreEqual(completedOutputs.Current.Key, completedOutputs.Current.Output);
                 }
             }
-            Assert.AreEqual(numOps, numCompleted, "numCompleted");
+            Assert.AreEqual(NumOps, numCompleted, "numCompleted");
         }
 
         [Test]
@@ -92,21 +102,21 @@ namespace Tsavorite.test.LowMemory
 
             // RMW all keys
             int numPending = 0;
-            for (long key = 0; key < numOps; key++)
+            for (long key = 0; key < NumOps; key++)
             {
                 var status = bContext1.RMW(ref key, ref key);
                 if (status.IsPending && (++numPending % 256) == 0)
                 {
-                    bContext1.CompletePending(wait: true);
+                    _ = bContext1.CompletePending(wait: true);
                     numPending = 0;
                 }
             }
             if (numPending > 0)
-                bContext1.CompletePending(wait: true);
+                _ = bContext1.CompletePending(wait: true);
 
             // Then Read all keys
             var numCompleted = 0;
-            for (long key = 0; key < numOps; key++)
+            for (long key = 0; key < NumOps; key++)
             {
                 var (status, output) = bContext1.Read(key);
                 if (!status.IsPending)
@@ -117,7 +127,7 @@ namespace Tsavorite.test.LowMemory
                 }
             }
 
-            bContext1.CompletePendingWithOutputs(out var completedOutputs, wait: true);
+            _ = bContext1.CompletePendingWithOutputs(out var completedOutputs, wait: true);
             using (completedOutputs)
             {
                 while (completedOutputs.Next())
@@ -127,7 +137,7 @@ namespace Tsavorite.test.LowMemory
                     Assert.AreEqual(completedOutputs.Current.Key * 2, completedOutputs.Current.Output);
                 }
             }
-            Assert.AreEqual(numOps, numCompleted, "numCompleted");
+            Assert.AreEqual(NumOps, numCompleted, "numCompleted");
         }
     }
 }

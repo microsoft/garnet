@@ -5,8 +5,6 @@
   </PropertyGroup>
 
   <ItemGroup>
-    <Compile Include="..\..\libs\cluster\Server\ClusterConfig.cs" Link="ClusterConfig.cs" />
-    <Compile Include="..\..\libs\cluster\Server\ClusterConfigSerializer.cs" Link="ClusterConfigSerializer.cs" />
     <Compile Include="..\..\libs\cluster\Server\Worker.cs" Link="Worker.cs" />
     <Compile Include="..\..\libs\cluster\Server\HashSlot.cs" Link="HashSlot.cs" />
     <Compile Include="..\..\benchmark\Resp.benchmark\Options.cs" Link="Options.cs" />

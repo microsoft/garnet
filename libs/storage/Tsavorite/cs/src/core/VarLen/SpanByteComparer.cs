@@ -9,7 +9,7 @@ namespace Tsavorite.core
     /// <summary>
     /// Equality comparer for <see cref="SpanByte"/>
     /// </summary>
-    public struct SpanByteComparer : ITsavoriteEqualityComparer<SpanByte>
+    public struct SpanByteComparer : IKeyComparer<SpanByte>
     {
         /// <summary>
         /// The default instance.
@@ -18,7 +18,7 @@ namespace Tsavorite.core
         public static readonly SpanByteComparer Instance = new();
 
         /// <inheritdoc />
-        public unsafe long GetHashCode64(ref SpanByte spanByte) => StaticGetHashCode64(ref spanByte);
+        public readonly unsafe long GetHashCode64(ref SpanByte spanByte) => StaticGetHashCode64(ref spanByte);
 
         /// <summary>
         /// Get 64-bit hash code
@@ -39,7 +39,7 @@ namespace Tsavorite.core
         }
 
         /// <inheritdoc />
-        public unsafe bool Equals(ref SpanByte k1, ref SpanByte k2) => StaticEquals(ref k1, ref k2);
+        public readonly unsafe bool Equals(ref SpanByte k1, ref SpanByte k2) => StaticEquals(ref k1, ref k2);
 
         /// <summary>
         /// Equality comparison

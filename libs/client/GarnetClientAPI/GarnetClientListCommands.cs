@@ -24,7 +24,7 @@ namespace Garnet.client
         /// <param name="context">An optional context to correlate request to callback.</param>
         public void ListLeftPush(string key, string element, Action<long, long, string> callback, long context = 0)
         {
-            ListLeftPush(key, new[] { element }, callback, context);
+            ListLeftPush(key, [element], callback, context);
         }
 
         /// <summary>
@@ -78,7 +78,7 @@ namespace Garnet.client
         /// <param name="context">An optional context to correlate request to callback.</param>
         public void ListRightPush(string key, string element, Action<long, long, string> callback, long context = 0)
         {
-            ListRightPush(key, new[] { element }, callback, context);
+            ListRightPush(key, [element], callback, context);
         }
 
         /// <summary>

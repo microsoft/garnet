@@ -204,14 +204,14 @@ namespace Garnet.test.cluster
         private async Task<bool> WaitForEpochSync(IPEndPoint endPoint)
         {
             var endpoints = GetEndpointsWithout(endPoint);
-            var configInfo = NodesMyself(endPoint, new[] { ClusterInfoTag.NODEID, ClusterInfoTag.CONFIG_EPOCH });
+            var configInfo = NodesMyself(endPoint, [ClusterInfoTag.NODEID, ClusterInfoTag.CONFIG_EPOCH]);
             while (true)
             {
                 await Task.Delay(endpoints.Length * 100);
             retry:
                 foreach (var endpoint in endpoints)
                 {
-                    var _configInfo = NodesAll(endpoint, new[] { ClusterInfoTag.NODEID, ClusterInfoTag.CONFIG_EPOCH }, configInfo[0]);
+                    var _configInfo = NodesAll(endpoint, [ClusterInfoTag.NODEID, ClusterInfoTag.CONFIG_EPOCH], configInfo[0]);
                     if (_configInfo[0][0] == configInfo[1])
                         ThrowException($"WaitForEpochSync unexpected node id {_configInfo[0][0]} {configInfo[1]}");
 
@@ -742,7 +742,7 @@ namespace Garnet.test.cluster
             {
                 hset.Add(r.Next(0, maxVal));
             }
-            return hset.ToList();
+            return [.. hset];
         }
 
         public string RandomStr(int length, int startOffset = -1, int endOffset = -1)
@@ -1557,7 +1557,7 @@ namespace Garnet.test.cluster
 
             try
             {
-                return (string)server.Execute("cluster", objects.ToArray());
+                return (string)server.Execute("cluster", [.. objects]);
             }
             catch (Exception e)
             {
@@ -1576,7 +1576,7 @@ namespace Garnet.test.cluster
 
             try
             {
-                return (string)server.Execute("cluster", objects.ToArray());
+                return (string)server.Execute("cluster", [.. objects]);
             }
             catch (Exception e)
             {
@@ -1724,6 +1724,9 @@ namespace Garnet.test.cluster
                 return -1;
             }
         }
+
+        public void WaitForMigrationCleanup(int nodeIndex, ILogger logger = null)
+            => WaitForMigrationCleanup(endpoints[nodeIndex].ToIPEndPoint(), logger);
 
         public void WaitForMigrationCleanup(IPEndPoint endPoint, ILogger logger)
         {
@@ -2347,7 +2350,7 @@ namespace Garnet.test.cluster
                 var args = new List<object>() { key, "0", "-1" };
 
                 var result = server.Execute("LRANGE", args);
-                return ((int[])result).ToList();
+                return [.. ((int[])result)];
             }
             catch (Exception ex)
             {
@@ -2384,7 +2387,7 @@ namespace Garnet.test.cluster
                 var args = new List<object>() { key };
 
                 var result = server.Execute("SMEMBERS", args);
-                return ((int[])result).ToList();
+                return [.. ((int[])result)];
             }
             catch (Exception ex)
             {
@@ -2401,7 +2404,7 @@ namespace Garnet.test.cluster
         {
             try
             {
-                var storeCurrentSafeAofAddress = GetReplicationInfo(endPoint, new ReplicationInfoItem[] { ReplicationInfoItem.STORE_CURRENT_SAFE_AOF_ADDRESS }, logger)[0].Item2;
+                var storeCurrentSafeAofAddress = GetReplicationInfo(endPoint, [ReplicationInfoItem.STORE_CURRENT_SAFE_AOF_ADDRESS], logger)[0].Item2;
                 return long.Parse(storeCurrentSafeAofAddress);
             }
             catch (Exception ex)
@@ -2419,7 +2422,7 @@ namespace Garnet.test.cluster
         {
             try
             {
-                var storeRecoveredSafeAofAddress = GetReplicationInfo(endPoint, new[] { ReplicationInfoItem.STORE_RECOVERED_SAFE_AOF_ADDRESS }, logger)[0].Item2;
+                var storeRecoveredSafeAofAddress = GetReplicationInfo(endPoint, [ReplicationInfoItem.STORE_RECOVERED_SAFE_AOF_ADDRESS], logger)[0].Item2;
                 return long.Parse(storeRecoveredSafeAofAddress);
             }
             catch (Exception ex)
@@ -2437,7 +2440,7 @@ namespace Garnet.test.cluster
         {
             try
             {
-                var objectStoreCurrentSafeAofAddress = GetReplicationInfo(endPoint, new[] { ReplicationInfoItem.OBJECT_STORE_CURRENT_SAFE_AOF_ADDRESS }, logger)[0].Item2;
+                var objectStoreCurrentSafeAofAddress = GetReplicationInfo(endPoint, [ReplicationInfoItem.OBJECT_STORE_CURRENT_SAFE_AOF_ADDRESS], logger)[0].Item2;
                 return long.Parse(objectStoreCurrentSafeAofAddress);
             }
             catch (Exception ex)
@@ -2455,7 +2458,7 @@ namespace Garnet.test.cluster
         {
             try
             {
-                var objectStoreRecoveredSafeAofAddress = GetReplicationInfo(endPoint, new ReplicationInfoItem[] { ReplicationInfoItem.OBJECT_STORE_RECOVERED_SAFE_AOF_ADDRESS }, logger)[0].Item2;
+                var objectStoreRecoveredSafeAofAddress = GetReplicationInfo(endPoint, [ReplicationInfoItem.OBJECT_STORE_RECOVERED_SAFE_AOF_ADDRESS], logger)[0].Item2;
                 return long.Parse(objectStoreRecoveredSafeAofAddress);
             }
             catch (Exception ex)
@@ -2544,7 +2547,7 @@ namespace Garnet.test.cluster
         {
             try
             {
-                var failoverState = GetReplicationInfo(endPoint, new[] { ReplicationInfoItem.PRIMARY_FAILOVER_STATE }, logger)[0].Item2;
+                var failoverState = GetReplicationInfo(endPoint, [ReplicationInfoItem.PRIMARY_FAILOVER_STATE], logger)[0].Item2;
                 return failoverState;
             }
             catch (Exception ex)
@@ -2647,7 +2650,7 @@ namespace Garnet.test.cluster
                     break;
                 BackOff();
             }
-            logger?.LogInformation($"Replication offset for primary {primaryIndex} and secondary {secondaryIndex} is {primaryReplicationOffset}");
+            logger?.LogInformation("Replication offset for primary {primaryIndex} and secondary {secondaryIndex} is {primaryReplicationOffset}", primaryIndex, secondaryIndex, primaryReplicationOffset);
         }
 
         public void WaitForConnectedReplicaCount(int primaryIndex, long minCount, ILogger logger = null)
@@ -2867,6 +2870,25 @@ namespace Garnet.test.cluster
 
             Assert.Fail("Single node cluster");
             return null;
+        }
+
+        public int DBSize(int nodeIndex, ILogger logger = null)
+            => DBSize(endpoints[nodeIndex].ToIPEndPoint(), logger);
+
+        public int DBSize(IPEndPoint endPoint, ILogger logger = null)
+        {
+            try
+            {
+                var server = redis.GetServer(endPoint);
+                var count = (int)server.Execute("DBSIZE");
+                return count;
+            }
+            catch (Exception ex)
+            {
+                logger?.LogError(ex, "An error has occurred; DBSize");
+                Assert.Fail();
+                return -1;
+            }
         }
     }
 }

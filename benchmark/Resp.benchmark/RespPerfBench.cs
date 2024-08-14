@@ -426,7 +426,7 @@ namespace Resp.benchmark
             {
                 var reqArgs = rg.GetRequestArgs();
                 reqArgs.Insert(0, "MSET");
-                c.Execute(reqArgs.ToArray());
+                c.Execute([.. reqArgs]);
                 c.CompletePending(true);
                 numReqs++;
                 if (numReqs == maxReqs) break;

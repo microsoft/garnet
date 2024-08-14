@@ -6,6 +6,7 @@
     <title>Garnet</title>
     <authors>Microsoft</authors>
     <projectUrl>https://microsoft.github.io/garnet</projectUrl>
+    <repository type="git" url="https://github.com/microsoft/garnet.git" />
     <description>Garnet is a remote cache-store from Microsoft Research, that offers strong performance (throughput and latency), 
   scalability, storage, recovery, cluster sharding, key migration, and replication features. Garnet uses the Redis RESP wire
   protocol and can work with existing Redis clients.</description>

@@ -361,6 +361,7 @@ namespace Garnet.client
             timeoutCheckerCts?.Cancel();
             socket?.Dispose();
             networkWriter?.Dispose();
+            latency?.Return();
         }
 
         void CheckLength(int totalLen, TcsWrapper tcs)

@@ -569,7 +569,7 @@ namespace Garnet.networking
         public override unsafe bool SendResponse(int offset, int size)
         {
 #if MESSAGETRAGE
-            logger?.LogInformation($"Sending response of size {size} bytes");
+            logger?.LogInformation("Sending response of size {size} bytes", size);
             logger?.LogTrace("SEND: [{send}]", System.Text.Encoding.UTF8.GetString(
                 new Span<byte>(transportSendBuffer).Slice(offset, size)).Replace("\n", "|").Replace("\r", ""));
 #endif
@@ -582,7 +582,7 @@ namespace Garnet.networking
         public override void SendResponse(byte[] buffer, int offset, int count, object context)
         {
 #if MESSAGETRAGE
-            logger?.LogInformation($"Sending response of size {count} bytes");
+            logger?.LogInformation("Sending response of size {count} bytes", count);
             logger?.LogTrace("SEND: [{send}]", System.Text.Encoding.UTF8.GetString(
                 new Span<byte>(buffer).Slice(offset, count)).Replace("\n", "|").Replace("\r", ""));
 #endif

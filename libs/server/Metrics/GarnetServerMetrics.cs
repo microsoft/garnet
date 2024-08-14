@@ -48,5 +48,8 @@ namespace Garnet.server
 
             globalLatencyMetrics = trackLatency ? new() : null;
         }
+
+        public void Dispose()
+            => globalLatencyMetrics?.Return();
     }
 }

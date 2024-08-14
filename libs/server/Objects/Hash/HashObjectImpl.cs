@@ -19,21 +19,22 @@ namespace Garnet.server
     /// </summary>
     public unsafe partial class HashObject : IGarnetObject
     {
-        private void HashSet(byte* input, int length, byte* output)
+        private void HashSet(ref ObjectInput input, byte* output)
         {
-            var _input = (ObjectInputHeader*)input;
-            SetOrSetNX(_input->header.HashOp, input, length, output);
+            SetOrSetNX(ref input, output);
         }
 
-        private void HashSetWhenNotExists(byte* input, int length, byte* output)
+        private void HashSetWhenNotExists(ref ObjectInput input, byte* output)
         {
-            SetOrSetNX(HashOperation.HSETNX, input, length, output);
+            SetOrSetNX(ref input, output);
         }
 
-        private void HashGet(byte* input, int length, ref SpanByteAndMemory output)
+        private void HashGet(ref ObjectInput input, ref SpanByteAndMemory output)
         {
-            var input_startptr = input + sizeof(ObjectInputHeader);
+            var input_startptr = input.payload.ptr;
             var input_currptr = input_startptr;
+            var length = input.payload.length;
+            var input_endptr = input_startptr + length;
 
             var isMemory = false;
             MemoryHandle ptrHandle = default;
@@ -45,12 +46,12 @@ namespace Garnet.server
             ObjectOutputHeader _output = default;
             try
             {
-                if (!RespReadUtils.TrySliceWithLengthHeader(out var key, ref input_currptr, input + length))
+                if (!RespReadUtils.TrySliceWithLengthHeader(out var key, ref input_currptr, input_endptr))
                     return;
 
-                if (hash.TryGetValue(key.ToArray(), out var _value))
+                if (hash.TryGetValue(key.ToArray(), out var hashValue))
                 {
-                    while (!RespWriteUtils.WriteBulkString(_value, ref curr, end))
+                    while (!RespWriteUtils.WriteBulkString(hashValue, ref curr, end))
                         ObjectUtils.ReallocateOutput(ref output, ref isMemory, ref ptr, ref ptrHandle, ref curr, ref end);
                 }
                 else
@@ -71,13 +72,14 @@ namespace Garnet.server
             }
         }
 
-        private void HashMultipleGet(byte* input, int length, ref SpanByteAndMemory output)
+        private void HashMultipleGet(ref ObjectInput input, ref SpanByteAndMemory output)
         {
-            var _input = (ObjectInputHeader*)input;
-            var count = _input->arg1; // for multiples fields
+            var count = input.arg1; // for multiples fields
 
-            var input_startptr = input + sizeof(ObjectInputHeader);
+            var input_startptr = input.payload.ptr;
             var input_currptr = input_startptr;
+            var length = input.payload.length;
+            var input_endptr = input_startptr + length;
 
             var isMemory = false;
             MemoryHandle ptrHandle = default;
@@ -94,12 +96,12 @@ namespace Garnet.server
 
                 while (count > 0)
                 {
-                    if (!RespReadUtils.TrySliceWithLengthHeader(out var key, ref input_currptr, input + length))
+                    if (!RespReadUtils.TrySliceWithLengthHeader(out var key, ref input_currptr, input_endptr))
                         break;
 
-                    if (hash.TryGetValue(key.ToArray(), out var _value))
+                    if (hash.TryGetValue(key.ToArray(), out var hashValue))
                     {
-                        while (!RespWriteUtils.WriteBulkString(_value, ref curr, end))
+                        while (!RespWriteUtils.WriteBulkString(hashValue, ref curr, end))
                             ObjectUtils.ReallocateOutput(ref output, ref isMemory, ref ptr, ref ptrHandle, ref curr, ref end);
                     }
                     else
@@ -122,8 +124,10 @@ namespace Garnet.server
             }
         }
 
-        private void HashGetAll(int respProtocolVersion, ref SpanByteAndMemory output)
+        private void HashGetAll(ref ObjectInput input, ref SpanByteAndMemory output)
         {
+            var respProtocolVersion = input.arg1;
+
             var isMemory = false;
             MemoryHandle ptrHandle = default;
             var ptr = output.SpanByte.ToPointer();
@@ -163,26 +167,27 @@ namespace Garnet.server
             }
         }
 
-        private void HashDelete(byte* input, int length, byte* output)
+        private void HashDelete(ref ObjectInput input, byte* output)
         {
-            var _input = (ObjectInputHeader*)input;
             var _output = (ObjectOutputHeader*)output;
-            int count = _input->arg1; // count of fields to delete
             *_output = default;
 
-            byte* startptr = input + sizeof(ObjectInputHeader);
-            byte* ptr = startptr;
-            var end = input + length;
+            var count = input.arg1;
 
-            for (int c = 0; c < count; c++)
+            var input_startptr = input.payload.ptr;
+            var input_currptr = input_startptr;
+            var length = input.payload.length;
+            var input_endptr = input_startptr + length;
+
+            for (var c = 0; c < count; c++)
             {
-                if (!RespReadUtils.TrySliceWithLengthHeader(out var key, ref ptr, end))
+                if (!RespReadUtils.TrySliceWithLengthHeader(out var key, ref input_currptr, input_endptr))
                     return;
 
-                if (hash.Remove(key.ToArray(), out var _value))
+                if (hash.Remove(key.ToArray(), out var hashValue))
                 {
                     _output->result1++;
-                    this.UpdateSize(key, _value, false);
+                    this.UpdateSize(key, hashValue, false);
                 }
             }
         }
@@ -192,72 +197,64 @@ namespace Garnet.server
             ((ObjectOutputHeader*)output)->result1 = hash.Count;
         }
 
-        private void HashStrLength(byte* input, int length, byte* output)
+        private void HashStrLength(ref ObjectInput input, byte* output)
         {
             var _output = (ObjectOutputHeader*)output;
 
-            byte* startptr = input + sizeof(ObjectInputHeader);
-            byte* ptr = startptr;
+            var input_startptr = input.payload.ptr;
+            var input_currptr = input_startptr;
+            var length = input.payload.length;
+            var input_endptr = input_startptr + length;
 
             *_output = default;
-            if (!RespReadUtils.ReadByteArrayWithLengthHeader(out var key, ref ptr, input + length))
+            if (!RespReadUtils.ReadByteArrayWithLengthHeader(out var key, ref input_currptr, input_endptr))
                 return;
-            _output->result1 = hash.TryGetValue(key, out var _value) ? _value.Length : 0;
+            _output->result1 = hash.TryGetValue(key, out var hashValue) ? hashValue.Length : 0;
         }
 
-        private void HashExists(byte* input, int length, byte* output)
+        private void HashExists(ref ObjectInput input, byte* output)
         {
-            var _input = (ObjectInputHeader*)input;
             var _output = (ObjectOutputHeader*)output;
-
             *_output = default;
 
-            byte* startptr = input + sizeof(ObjectInputHeader);
-            byte* ptr = startptr;
-            byte* end = input + length;
+            var input_startptr = input.payload.ptr;
+            var input_currptr = input_startptr;
+            var length = input.payload.length;
+            var input_endptr = input_startptr + length;
 
-            if (!RespReadUtils.ReadByteArrayWithLengthHeader(out var field, ref ptr, end))
+            if (!RespReadUtils.ReadByteArrayWithLengthHeader(out var field, ref input_currptr, input_endptr))
                 return;
 
             _output->result1 = hash.ContainsKey(field) ? 1 : 0;
         }
 
-        private void HashKeys(byte* input, int length, ref SpanByteAndMemory output)
+        private void HashKeys(ref ObjectInput input, ref SpanByteAndMemory output)
         {
-            var _input = (ObjectInputHeader*)input;
-            GetHashKeysOrValues(_input->header.HashOp, input, ref output);
-            return;
+            GetHashKeysOrValues(ref input, ref output);
         }
 
-        private void HashVals(byte* input, int length, ref SpanByteAndMemory output)
+        private void HashVals(ref ObjectInput input, ref SpanByteAndMemory output)
         {
-            var _input = (ObjectInputHeader*)input;
-            GetHashKeysOrValues(_input->header.HashOp, input, ref output);
-            return;
+            GetHashKeysOrValues(ref input, ref output);
         }
 
-        private void HashIncrement(byte* input, int length, ref SpanByteAndMemory output)
+        private void HashIncrement(ref ObjectInput input, ref SpanByteAndMemory output)
         {
-            var _input = (ObjectInputHeader*)input;
-            IncrementIntegerOrFloat(_input->header.HashOp, input, length, ref output);
-            return;
+            IncrementIntegerOrFloat(ref input, ref output);
         }
 
-        private void HashIncrementByFloat(byte* input, int length, ref SpanByteAndMemory output)
+        private void HashIncrementByFloat(ref ObjectInput input, ref SpanByteAndMemory output)
         {
-            var _input = (ObjectInputHeader*)input;
-            IncrementIntegerOrFloat(_input->header.HashOp, input, length, ref output);
-            return;
+            IncrementIntegerOrFloat(ref input, ref output);
         }
 
-        private void HashRandomField(byte* input, ref SpanByteAndMemory output)
+        private void HashRandomField(ref ObjectInput input, ref SpanByteAndMemory output)
         {
             // HRANDFIELD key [count [WITHVALUES]]
-            var _input = (ObjectInputHeader*)input;
-            var countParameter = _input->arg1 >> 2;
-            var withValues = (_input->arg1 & 1) == 1;
-            var includedCount = ((_input->arg1 >> 1) & 1) == 1;
-            var seed = _input->arg2;
+            var countParameter = input.arg1 >> 2;
+            var withValues = (input.arg1 & 1) == 1;
+            var includedCount = ((input.arg1 >> 1) & 1) == 1;
+            var seed = input.arg2;
 
             var countDone = 0;
 
@@ -322,52 +319,56 @@ namespace Garnet.server
 
         #region CommonMethods
 
-        private void SetOrSetNX(HashOperation op, byte* input, int length, byte* output)
+        private void SetOrSetNX(ref ObjectInput input, byte* output)
         {
-            var _input = (ObjectInputHeader*)input;
             var _output = (ObjectOutputHeader*)output;
-
-            int count = _input->arg1;
             *_output = default;
 
-            byte* startptr = input + sizeof(ObjectInputHeader);
-            byte* ptr = startptr;
-            byte* end = input + length;
+            var count = input.arg1;
+            var hop = input.header.HashOp;
 
-            for (int c = 0; c < count; c++)
+            var input_startptr = input.payload.ptr;
+            var input_currptr = input_startptr;
+            var length = input.payload.length;
+            var input_endptr = input_startptr + length;
+
+            for (var c = 0; c < count; c++)
             {
-                if (!RespReadUtils.ReadByteArrayWithLengthHeader(out var key, ref ptr, end))
+                if (!RespReadUtils.ReadByteArrayWithLengthHeader(out var key, ref input_currptr, input_endptr))
                     return;
 
-                if (!RespReadUtils.ReadByteArrayWithLengthHeader(out var value, ref ptr, end))
+                if (!RespReadUtils.ReadByteArrayWithLengthHeader(out var value, ref input_currptr, input_endptr))
                     return;
 
-                byte[] _value = default;
-                if (!hash.TryGetValue(key, out _value))
+                if (!hash.TryGetValue(key, out var hashValue))
                 {
                     hash.Add(key, value);
                     this.UpdateSize(key, value);
                     _output->result1++;
                 }
-                else if ((_input->header.HashOp == HashOperation.HSET || _input->header.HashOp == HashOperation.HMSET) && _value != default && !_value.AsSpan().SequenceEqual(value))
+                else if ((hop == HashOperation.HSET || hop == HashOperation.HMSET) && hashValue != default &&
+                         !hashValue.AsSpan().SequenceEqual(value))
                 {
                     hash[key] = value;
-                    this.Size += Utility.RoundUp(value.Length, IntPtr.Size) - Utility.RoundUp(_value.Length, IntPtr.Size); // Skip overhead as existing item is getting replaced.
+                    // Skip overhead as existing item is getting replaced.
+                    this.Size += Utility.RoundUp(value.Length, IntPtr.Size) -
+                                 Utility.RoundUp(hashValue.Length, IntPtr.Size);
                 }
             }
         }
 
-        private void IncrementIntegerOrFloat(HashOperation op, byte* input, int length, ref SpanByteAndMemory output)
+        private void IncrementIntegerOrFloat(ref ObjectInput input, ref SpanByteAndMemory output)
         {
-            var _input = (ObjectInputHeader*)input;
-            int count = _input->arg1;
+            var op = input.header.HashOp;
 
-            byte* input_startptr = input + sizeof(ObjectInputHeader);
-            byte* input_currptr = input_startptr;
+            var input_startptr = input.payload.ptr;
+            var input_currptr = input_startptr;
+            var length = input.payload.length;
+            var input_endptr = input_startptr + length;
 
-            bool isMemory = false;
+            var isMemory = false;
             MemoryHandle ptrHandle = default;
-            byte* ptr = output.SpanByte.ToPointer();
+            var ptr = output.SpanByte.ToPointer();
 
             var curr = ptr;
             var end = curr + output.Length;
@@ -379,8 +380,8 @@ namespace Garnet.server
 
             try
             {
-                if (!RespReadUtils.ReadByteArrayWithLengthHeader(out var key, ref input_currptr, input + length) ||
-                    !RespReadUtils.TrySliceWithLengthHeader(out var incr, ref input_currptr, input + length))
+                if (!RespReadUtils.ReadByteArrayWithLengthHeader(out var key, ref input_currptr, input_endptr) ||
+                    !RespReadUtils.TrySliceWithLengthHeader(out var incr, ref input_currptr, input_endptr))
                     return;
 
                 if (hash.TryGetValue(key, out var value))
@@ -455,16 +456,14 @@ namespace Garnet.server
             }
         }
 
-        private void GetHashKeysOrValues(HashOperation op, byte* input, ref SpanByteAndMemory output)
+        private void GetHashKeysOrValues(ref ObjectInput input, ref SpanByteAndMemory output)
         {
             var count = hash.Count;
+            var op = input.header.HashOp;
 
-            byte* input_startptr = input + sizeof(ObjectInputHeader);
-            byte* input_currptr = input_startptr;
-
-            bool isMemory = false;
+            var isMemory = false;
             MemoryHandle ptrHandle = default;
-            byte* ptr = output.SpanByte.ToPointer();
+            var ptr = output.SpanByte.ToPointer();
 
             var curr = ptr;
             var end = curr + output.Length;

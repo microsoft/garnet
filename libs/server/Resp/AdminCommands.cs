@@ -1,4 +1,4 @@
-﻿// Copyright (c) Microsoft Corporation.
+// Copyright (c) Microsoft Corporation.
 // Licensed under the MIT license.
 
 using System;
@@ -96,9 +96,9 @@ namespace Garnet.server
             static void OnACLFailure(RespServerSession self, RespCommand cmd)
             {
                 // If we're rejecting a command, we may need to cleanup some ambient state too
-                if (cmd == RespCommand.CustomCmd)
+                if (cmd == RespCommand.CustomRawStringCmd)
                 {
-                    self.currentCustomCommand = null;
+                    self.currentCustomRawStringCommand = null;
                 }
                 else if (cmd == RespCommand.CustomObjCmd)
                 {
@@ -107,6 +107,10 @@ namespace Garnet.server
                 else if (cmd == RespCommand.CustomTxn)
                 {
                     self.currentCustomTransaction = null;
+                }
+                else if (cmd == RespCommand.CustomProcedure)
+                {
+                    self.currentCustomProcedure = null;
                 }
                 while (!RespWriteUtils.WriteError(CmdStrings.RESP_ERR_NOAUTH, ref self.dcurr, self.dend))
                     self.SendAndReset();
@@ -120,7 +124,14 @@ namespace Garnet.server
 
         private bool NetworkMonitor(int count)
         {
-            // TODO: Not supported yet.
+            if (count != 0)
+            {
+                return AbortWithWrongNumberOfArguments(nameof(RespCommand.MONITOR), count);
+            }
+
+            while (!RespWriteUtils.WriteError(CmdStrings.RESP_ERR_GENERIC_UNK_CMD, ref dcurr, dend))
+                SendAndReset();
+
             return true;
         }
 
@@ -227,6 +238,15 @@ namespace Garnet.server
                 classInstances.TryAdd(c, null);
             }
 
+            // Also add custom object command class names to instantiate
+            var objectCommandArgs = classNameToRegisterArgs.Values
+                .SelectMany(cmdArgsList => cmdArgsList)
+                .OfType<RegisterCmdArgs>()
+                .Where(args => !string.IsNullOrEmpty(args.ObjectCommandName))
+                .ToList();
+
+            objectCommandArgs.ForEach(objCmdArgs => classInstances.TryAdd(objCmdArgs.ObjectCommandName, null));
+
             // Get types from loaded assemblies
             var loadedTypes = loadedAssemblies
                 .SelectMany(a => a.GetTypes())
@@ -260,6 +280,8 @@ namespace Garnet.server
                 errorMessage = CmdStrings.RESP_ERR_GENERIC_INSTANTIATING_CLASS;
                 return false;
             }
+
+            objectCommandArgs.ForEach(objCmdArgs => objCmdArgs.ObjectCommand = (CustomObjectFunctions)classInstances[objCmdArgs.ObjectCommandName]);
 
             // Register each command / transaction using its specified class instance
             var registerApis = new List<IRegisterCustomCommandProvider>();
@@ -320,7 +342,7 @@ namespace Garnet.server
             // Parse the REGISTERCS command - list of registration sub-commands
             // followed by an optional path to JSON file containing an array of RespCommandsInfo objects,
             // followed by a list of paths to binary files / folders
-            // Syntax - REGISTERCS cmdType name numParams className [expTicks] [cmdType name numParams className [expTicks] ...]
+            // Syntax - REGISTERCS cmdType name numParams className [expTicks] [objCmdName] [cmdType name numParams className [expTicks] [objCmdName]...]
             // [INFO path] SRC path [path ...]
             RegisterArgsBase args = null;
 
@@ -380,12 +402,20 @@ namespace Garnet.server
                 else
                 {
                     // Check optional parameters for previous sub-command
-                    if (optionalParamsRead == 0 && args is RegisterCmdArgs cmdArgs)
+                    if (optionalParamsRead < 2 && args is RegisterCmdArgs cmdArgs)
                     {
-                        var expTicks = NumUtils.BytesToLong(token);
-                        cmdArgs.ExpirationTicks = expTicks;
-                        optionalParamsRead++;
-                        continue;
+                        if (NumUtils.TryBytesToLong(token, out var expTicks))
+                        {
+                            cmdArgs.ExpirationTicks = expTicks;
+                            optionalParamsRead++;
+                            continue;
+                        }
+                        else // Treat the argument as custom object command name
+                        {
+                            cmdArgs.ObjectCommandName = Encoding.ASCII.GetString(token);
+                            optionalParamsRead++;
+                            continue;
+                        }
                     }
 
                     // Unexpected token

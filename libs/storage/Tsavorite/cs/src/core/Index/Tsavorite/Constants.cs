@@ -8,6 +8,9 @@ namespace Tsavorite.core
         /// Size of cache line in bytes
         public const int kCacheLineBytes = 64;
 
+        // RecordInfo has a long field, so it should be aligned to 8-bytes
+        public const int kRecordAlignment = 8;
+
         public const bool kFineGrainedHandoverRecord = false;
         public const bool kFineGrainedHandoverBucket = true;
 

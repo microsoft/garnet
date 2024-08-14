@@ -127,7 +127,7 @@ namespace Embedded.perftest
             // Pre-generate a random operation sequence (to exclude RNG from main benchmark loop)
             //
 
-            logger?.LogInformation($"[{threadId:00}] Generating operation sequence with {batchSize} operations per batch");
+            logger?.LogInformation("[{threadId:00}] Generating operation sequence with {batchSize} operations per batch", threadId, batchSize);
 
             Random rng = new(opts.Seed + threadId);
 

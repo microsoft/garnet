@@ -47,7 +47,7 @@ namespace Garnet.cluster
             {
                 if (!int.TryParse(portStr, out var port))
                 {
-                    logger?.LogWarning("TryREPLICAOF failed to parse port {port}", portStr);
+                    logger?.LogWarning($"{nameof(TryREPLICAOF)} failed to parse port {{port}}", portStr);
                     while (!RespWriteUtils.WriteError($"ERR REPLICAOF failed to parse port '{portStr}'", ref dcurr, dend))
                         SendAndReset();
                     return true;

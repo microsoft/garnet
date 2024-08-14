@@ -22,8 +22,7 @@ namespace Garnet.cluster
                 while (true)
                 {
                     // Iterate main store
-                    if (!localServerSession.BasicGarnetApi.IterateMainStore(ref mainStoreGetKeysInSlots, storeTailAddress))
-                        return false;
+                    _ = localServerSession.BasicGarnetApi.IterateMainStore(ref mainStoreGetKeysInSlots, storeTailAddress);
 
                     // If did not acquire any keys stop scanning
                     if (_keys.IsNullOrEmpty())
@@ -50,8 +49,7 @@ namespace Garnet.cluster
                 while (true)
                 {
                     // Iterate object store
-                    if (!localServerSession.BasicGarnetApi.IterateObjectStore(ref objectStoreGetKeysInSlots, objectStoreTailAddress))
-                        return false;
+                    _ = localServerSession.BasicGarnetApi.IterateObjectStore(ref objectStoreGetKeysInSlots, objectStoreTailAddress);
 
                     // If did not acquire any keys stop scanning
                     if (_keys.IsNullOrEmpty())

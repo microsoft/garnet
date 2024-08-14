@@ -323,7 +323,7 @@ namespace Resp.benchmark
                             $"{"total_ops;",pad}" +
                             $"{"iter_tops;",pad}" +
                             $"{"tpt (Kops/sec)",pad}";
-                        logger?.LogInformation(msg);
+                        logger?.LogInformation("{msg}", msg);
                     }
                 }
 
@@ -379,12 +379,12 @@ namespace Resp.benchmark
                         $"{summary.TotalCount,pad}" +
                         $"{curr_iter_ops,pad}" +
                         $"{Math.Round(BatchSize * curr_iter_ops / elapsedSecs, 2),pad}";
-                        logger.Log(LogLevel.Information, histogramOutput);
+                        logger.Log(LogLevel.Information, "{msg}", histogramOutput);
                     }
                     else
                     {
                         var histogramOutput = $"{0,pad}" + $"{0,pad}" + $"{0,pad}" + $"{0,pad}" + $"{0,pad}" + $"{0,pad}" + $"{0,pad}" + $"{0,pad}" + $"{0,pad}" + $"{0,pad}";
-                        logger.Log(LogLevel.Information, histogramOutput);
+                        logger.Log(LogLevel.Information, "{msg}", histogramOutput);
                     }
                 }
                 last_iter_ops = summary.TotalCount;

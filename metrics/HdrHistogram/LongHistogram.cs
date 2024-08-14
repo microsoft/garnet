@@ -7,6 +7,7 @@
  */
 
 using System;
+using System.Buffers;
 
 namespace HdrHistogram
 {
@@ -66,7 +67,8 @@ namespace HdrHistogram
                          int numberOfSignificantValueDigits)
             : base(lowestTrackableValue, highestTrackableValue, numberOfSignificantValueDigits)
         {
-            _counts = new long[CountsArrayLength];
+            _counts = ArrayPool<long>.Shared.Rent(CountsArrayLength);
+            Array.Clear(_counts, 0, CountsArrayLength);
         }
 
         /// <summary>
@@ -94,9 +96,15 @@ namespace HdrHistogram
                          int numberOfSignificantValueDigits)
             : base(instanceId, lowestTrackableValue, highestTrackableValue, numberOfSignificantValueDigits)
         {
-            _counts = new long[CountsArrayLength];
+            _counts = ArrayPool<long>.Shared.Rent(CountsArrayLength);
+            Array.Clear(_counts, 0, CountsArrayLength);
         }
 
+        /// <summary>
+        /// Return the histogram long array to the pool for recycling.
+        /// </summary>
+        public void Return()
+            => ArrayPool<long>.Shared.Return(_counts);
 
         /// <summary>
         /// Gets the total number of recorded values.
@@ -180,7 +188,7 @@ namespace HdrHistogram
         /// <param name="target">The array to write each count value into.</param>
         protected override void CopyCountsInto(long[] target)
         {
-            Array.Copy(_counts, target, target.Length);
+            Array.Copy(_counts, target, Math.Min(_counts.Length, target.Length));
         }
     }
 }

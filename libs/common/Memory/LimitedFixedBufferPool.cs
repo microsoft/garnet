@@ -76,7 +76,7 @@ namespace Garnet.common
             if (Interlocked.Increment(ref totalAllocations) < 0)
             {
                 Interlocked.Decrement(ref totalAllocations);
-                logger?.LogError($"Invalid Get on disposed pool");
+                logger?.LogError("Invalid Get on disposed pool");
                 return null;
             }
 

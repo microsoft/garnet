@@ -13,12 +13,14 @@ namespace Tsavorite.core
     /// This task is the base class for a checkpoint "backend", which decides how a captured version is
     /// persisted on disk.
     /// </summary>
-    internal abstract class HybridLogCheckpointOrchestrationTask : ISynchronizationTask
+    internal abstract class HybridLogCheckpointOrchestrationTask<TKey, TValue, TStoreFunctions, TAllocator> : ISynchronizationTask<TKey, TValue, TStoreFunctions, TAllocator>
+        where TStoreFunctions : IStoreFunctions<TKey, TValue>
+        where TAllocator : IAllocator<TKey, TValue, TStoreFunctions>
     {
         private long lastVersion;
         /// <inheritdoc />
-        public virtual void GlobalBeforeEnteringState<Key, Value>(SystemState next,
-            TsavoriteKV<Key, Value> store)
+        public virtual void GlobalBeforeEnteringState(SystemState next,
+            TsavoriteKV<TKey, TValue, TStoreFunctions, TAllocator> store)
         {
             switch (next.Phase)
             {
@@ -30,15 +32,15 @@ namespace Tsavorite.core
                         store.InitializeHybridLogCheckpoint(store._hybridLogCheckpointToken, next.Version);
                     }
                     store._hybridLogCheckpoint.info.version = next.Version;
-                    store._hybridLogCheckpoint.info.startLogicalAddress = store.hlog.GetTailAddress();
+                    store._hybridLogCheckpoint.info.startLogicalAddress = store.hlogBase.GetTailAddress();
                     // Capture begin address before checkpoint starts
-                    store._hybridLogCheckpoint.info.beginAddress = store.hlog.BeginAddress;
+                    store._hybridLogCheckpoint.info.beginAddress = store.hlogBase.BeginAddress;
                     break;
                 case Phase.IN_PROGRESS:
                     store.CheckpointVersionShift(lastVersion, next.Version);
                     break;
                 case Phase.WAIT_FLUSH:
-                    store._hybridLogCheckpoint.info.headAddress = store.hlog.HeadAddress;
+                    store._hybridLogCheckpoint.info.headAddress = store.hlogBase.HeadAddress;
                     store._hybridLogCheckpoint.info.nextVersion = next.Version;
                     break;
                 case Phase.PERSISTENCE_CALLBACK:
@@ -55,7 +57,7 @@ namespace Tsavorite.core
             }
         }
 
-        protected static void CollectMetadata<Key, Value>(SystemState next, TsavoriteKV<Key, Value> store)
+        protected static void CollectMetadata(SystemState next, TsavoriteKV<TKey, TValue, TStoreFunctions, TAllocator> store)
         {
             // Collect object log offsets only after flushes
             // are completed
@@ -87,22 +89,22 @@ namespace Tsavorite.core
                 if (toDelete != null)
                 {
                     foreach (var key in toDelete)
-                        store._activeSessions.Remove(key);
+                        _ = store._activeSessions.Remove(key);
                 }
             }
         }
 
         /// <inheritdoc />
-        public virtual void GlobalAfterEnteringState<Key, Value>(SystemState next,
-            TsavoriteKV<Key, Value> store)
+        public virtual void GlobalAfterEnteringState(SystemState next,
+            TsavoriteKV<TKey, TValue, TStoreFunctions, TAllocator> store)
         {
         }
 
         /// <inheritdoc />
-        public virtual void OnThreadState<Key, Value, Input, Output, Context, TSessionFunctionsWrapper>(
+        public virtual void OnThreadState<TInput, TOutput, TContext, TSessionFunctionsWrapper>(
             SystemState current,
-            SystemState prev, TsavoriteKV<Key, Value> store,
-            TsavoriteKV<Key, Value>.TsavoriteExecutionContext<Input, Output, Context> ctx,
+            SystemState prev, TsavoriteKV<TKey, TValue, TStoreFunctions, TAllocator> store,
+            TsavoriteKV<TKey, TValue, TStoreFunctions, TAllocator>.TsavoriteExecutionContext<TInput, TOutput, TContext> ctx,
             TSessionFunctionsWrapper sessionFunctions,
             List<ValueTask> valueTasks,
             CancellationToken token = default)
@@ -114,7 +116,7 @@ namespace Tsavorite.core
             store.epoch.Mark(EpochPhaseIdx.CheckpointCompletionCallback, current.Version);
             if (store.epoch.CheckIsComplete(EpochPhaseIdx.CheckpointCompletionCallback, current.Version))
             {
-                // TODO: store.CheckpointCompletionCallback();
+                store.storeFunctions.OnCheckpointCompleted();
                 store.GlobalStateMachineStep(current);
             }
         }
@@ -125,11 +127,13 @@ namespace Tsavorite.core
     /// version on the log and waiting until it is flushed to disk. It is simple and fast, but can result
     /// in garbage entries on the log, and a slower recovery of performance.
     /// </summary>
-    internal sealed class FoldOverCheckpointTask : HybridLogCheckpointOrchestrationTask
+    internal sealed class FoldOverCheckpointTask<TKey, TValue, TStoreFunctions, TAllocator> : HybridLogCheckpointOrchestrationTask<TKey, TValue, TStoreFunctions, TAllocator>
+        where TStoreFunctions : IStoreFunctions<TKey, TValue>
+        where TAllocator : IAllocator<TKey, TValue, TStoreFunctions>
     {
         /// <inheritdoc />
-        public override void GlobalBeforeEnteringState<Key, Value>(SystemState next,
-            TsavoriteKV<Key, Value> store)
+        public override void GlobalBeforeEnteringState(SystemState next,
+            TsavoriteKV<TKey, TValue, TStoreFunctions, TAllocator> store)
         {
             base.GlobalBeforeEnteringState(next, store);
 
@@ -143,17 +147,16 @@ namespace Tsavorite.core
 
             if (next.Phase != Phase.WAIT_FLUSH) return;
 
-            store.hlog.ShiftReadOnlyToTail(out var tailAddress,
-                out store._hybridLogCheckpoint.flushedSemaphore);
+            _ = store.hlogBase.ShiftReadOnlyToTail(out var tailAddress, out store._hybridLogCheckpoint.flushedSemaphore);
             store._hybridLogCheckpoint.info.finalLogicalAddress = tailAddress;
         }
 
         /// <inheritdoc />
-        public override void OnThreadState<Key, Value, Input, Output, Context, TSessionFunctionsWrapper>(
+        public override void OnThreadState<TInput, TOutput, TContext, TSessionFunctionsWrapper>(
             SystemState current,
             SystemState prev,
-            TsavoriteKV<Key, Value> store,
-            TsavoriteKV<Key, Value>.TsavoriteExecutionContext<Input, Output, Context> ctx,
+            TsavoriteKV<TKey, TValue, TStoreFunctions, TAllocator> store,
+            TsavoriteKV<TKey, TValue, TStoreFunctions, TAllocator>.TsavoriteExecutionContext<TInput, TOutput, TContext> ctx,
             TSessionFunctionsWrapper sessionFunctions,
             List<ValueTask> valueTasks,
             CancellationToken token = default)
@@ -166,7 +169,7 @@ namespace Tsavorite.core
             {
                 var s = store._hybridLogCheckpoint.flushedSemaphore;
 
-                var notify = store.hlog.FlushedUntilAddress >= store._hybridLogCheckpoint.info.finalLogicalAddress;
+                var notify = store.hlogBase.FlushedUntilAddress >= store._hybridLogCheckpoint.info.finalLogicalAddress;
                 notify = notify || !store.SameCycle(ctx, current) || s == null;
 
                 if (valueTasks != null && !notify)
@@ -191,10 +194,12 @@ namespace Tsavorite.core
     /// slower and more complex than a foldover, but more space-efficient on the log, and retains in-place
     /// update performance as it does not advance the readonly marker unnecessarily.
     /// </summary>
-    internal sealed class SnapshotCheckpointTask : HybridLogCheckpointOrchestrationTask
+    internal sealed class SnapshotCheckpointTask<TKey, TValue, TStoreFunctions, TAllocator> : HybridLogCheckpointOrchestrationTask<TKey, TValue, TStoreFunctions, TAllocator>
+        where TStoreFunctions : IStoreFunctions<TKey, TValue>
+        where TAllocator : IAllocator<TKey, TValue, TStoreFunctions>
     {
         /// <inheritdoc />
-        public override void GlobalBeforeEnteringState<Key, Value>(SystemState next, TsavoriteKV<Key, Value> store)
+        public override void GlobalBeforeEnteringState(SystemState next, TsavoriteKV<TKey, TValue, TStoreFunctions, TAllocator> store)
         {
             switch (next.Phase)
             {
@@ -205,21 +210,21 @@ namespace Tsavorite.core
                     break;
                 case Phase.WAIT_FLUSH:
                     base.GlobalBeforeEnteringState(next, store);
-                    store._hybridLogCheckpoint.info.finalLogicalAddress = store.hlog.GetTailAddress();
+                    store._hybridLogCheckpoint.info.finalLogicalAddress = store.hlogBase.GetTailAddress();
                     store._hybridLogCheckpoint.info.snapshotFinalLogicalAddress = store._hybridLogCheckpoint.info.finalLogicalAddress;
 
                     store._hybridLogCheckpoint.snapshotFileDevice =
                         store.checkpointManager.GetSnapshotLogDevice(store._hybridLogCheckpointToken);
                     store._hybridLogCheckpoint.snapshotFileObjectLogDevice =
                         store.checkpointManager.GetSnapshotObjectLogDevice(store._hybridLogCheckpointToken);
-                    store._hybridLogCheckpoint.snapshotFileDevice.Initialize(store.hlog.GetSegmentSize());
+                    store._hybridLogCheckpoint.snapshotFileDevice.Initialize(store.hlogBase.GetSegmentSize());
                     store._hybridLogCheckpoint.snapshotFileObjectLogDevice.Initialize(-1);
 
                     // If we are using a NullDevice then storage tier is not enabled and FlushedUntilAddress may be ReadOnlyAddress; get all records in memory.
-                    store._hybridLogCheckpoint.info.snapshotStartFlushedLogicalAddress = store.hlog.IsNullDevice ? store.hlog.HeadAddress : store.hlog.FlushedUntilAddress;
+                    store._hybridLogCheckpoint.info.snapshotStartFlushedLogicalAddress = store.hlogBase.IsNullDevice ? store.hlogBase.HeadAddress : store.hlogBase.FlushedUntilAddress;
 
-                    long startPage = store.hlog.GetPage(store._hybridLogCheckpoint.info.snapshotStartFlushedLogicalAddress);
-                    long endPage = store.hlog.GetPage(store._hybridLogCheckpoint.info.finalLogicalAddress);
+                    long startPage = store.hlogBase.GetPage(store._hybridLogCheckpoint.info.snapshotStartFlushedLogicalAddress);
+                    long endPage = store.hlogBase.GetPage(store._hybridLogCheckpoint.info.finalLogicalAddress);
                     if (store._hybridLogCheckpoint.info.finalLogicalAddress >
                         store.hlog.GetStartLogicalAddress(endPage))
                     {
@@ -230,7 +235,7 @@ namespace Tsavorite.core
                     // handle corrupted or unexpected concurrent page changes during the flush, e.g., by
                     // resuming epoch protection if necessary. Correctness is not affected as we will
                     // only read safe pages during recovery.
-                    store.hlog.AsyncFlushPagesToDevice(
+                    store.hlogBase.AsyncFlushPagesToDevice(
                         startPage,
                         endPage,
                         store._hybridLogCheckpoint.info.finalLogicalAddress,
@@ -243,7 +248,7 @@ namespace Tsavorite.core
                 case Phase.PERSISTENCE_CALLBACK:
                     // Set actual FlushedUntil to the latest possible data in main log that is on disk
                     // If we are using a NullDevice then storage tier is not enabled and FlushedUntilAddress may be ReadOnlyAddress; get all records in memory.
-                    store._hybridLogCheckpoint.info.flushedLogicalAddress = store.hlog.IsNullDevice ? store.hlog.HeadAddress : store.hlog.FlushedUntilAddress;
+                    store._hybridLogCheckpoint.info.flushedLogicalAddress = store.hlogBase.IsNullDevice ? store.hlogBase.HeadAddress : store.hlogBase.FlushedUntilAddress;
                     base.GlobalBeforeEnteringState(next, store);
                     store._lastSnapshotCheckpoint = store._hybridLogCheckpoint.Transfer();
                     break;
@@ -254,10 +259,10 @@ namespace Tsavorite.core
         }
 
         /// <inheritdoc />
-        public override void OnThreadState<Key, Value, Input, Output, Context, TSessionFunctionsWrapper>(
+        public override void OnThreadState<TInput, TOutput, TContext, TSessionFunctionsWrapper>(
             SystemState current,
-            SystemState prev, TsavoriteKV<Key, Value> store,
-            TsavoriteKV<Key, Value>.TsavoriteExecutionContext<Input, Output, Context> ctx,
+            SystemState prev, TsavoriteKV<TKey, TValue, TStoreFunctions, TAllocator> store,
+            TsavoriteKV<TKey, TValue, TStoreFunctions, TAllocator>.TsavoriteExecutionContext<TInput, TOutput, TContext> ctx,
             TSessionFunctionsWrapper sessionFunctions,
             List<ValueTask> valueTasks,
             CancellationToken token = default)
@@ -296,10 +301,12 @@ namespace Tsavorite.core
     /// slower and more complex than a foldover, but more space-efficient on the log, and retains in-place
     /// update performance as it does not advance the readonly marker unnecessarily.
     /// </summary>
-    internal sealed class IncrementalSnapshotCheckpointTask : HybridLogCheckpointOrchestrationTask
+    internal sealed class IncrementalSnapshotCheckpointTask<TKey, TValue, TStoreFunctions, TAllocator> : HybridLogCheckpointOrchestrationTask<TKey, TValue, TStoreFunctions, TAllocator>
+        where TStoreFunctions : IStoreFunctions<TKey, TValue>
+        where TAllocator : IAllocator<TKey, TValue, TStoreFunctions>
     {
         /// <inheritdoc />
-        public override void GlobalBeforeEnteringState<Key, Value>(SystemState next, TsavoriteKV<Key, Value> store)
+        public override void GlobalBeforeEnteringState(SystemState next, TsavoriteKV<TKey, TValue, TStoreFunctions, TAllocator> store)
         {
             switch (next.Phase)
             {
@@ -313,22 +320,22 @@ namespace Tsavorite.core
                     break;
                 case Phase.WAIT_FLUSH:
                     base.GlobalBeforeEnteringState(next, store);
-                    store._hybridLogCheckpoint.info.finalLogicalAddress = store.hlog.GetTailAddress();
+                    store._hybridLogCheckpoint.info.finalLogicalAddress = store.hlogBase.GetTailAddress();
 
                     if (store._hybridLogCheckpoint.deltaLog == null)
                     {
                         store._hybridLogCheckpoint.deltaFileDevice = store.checkpointManager.GetDeltaLogDevice(store._hybridLogCheckpointToken);
                         store._hybridLogCheckpoint.deltaFileDevice.Initialize(-1);
-                        store._hybridLogCheckpoint.deltaLog = new DeltaLog(store._hybridLogCheckpoint.deltaFileDevice, store.hlog.LogPageSizeBits, -1);
-                        store._hybridLogCheckpoint.deltaLog.InitializeForWrites(store.hlog.bufferPool);
+                        store._hybridLogCheckpoint.deltaLog = new DeltaLog(store._hybridLogCheckpoint.deltaFileDevice, store.hlogBase.LogPageSizeBits, -1);
+                        store._hybridLogCheckpoint.deltaLog.InitializeForWrites(store.hlogBase.bufferPool);
                     }
 
                     // We are writing delta records outside epoch protection, so callee should be able to
                     // handle corrupted or unexpected concurrent page changes during the flush, e.g., by
                     // resuming epoch protection if necessary. Correctness is not affected as we will
                     // only read safe pages during recovery.
-                    store.hlog.AsyncFlushDeltaToDevice(
-                        store.hlog.FlushedUntilAddress,
+                    store.hlogBase.AsyncFlushDeltaToDevice(
+                        store.hlogBase.FlushedUntilAddress,
                         store._hybridLogCheckpoint.info.finalLogicalAddress,
                         store._lastSnapshotCheckpoint.info.finalLogicalAddress,
                         store._hybridLogCheckpoint.prevVersion,
@@ -348,10 +355,10 @@ namespace Tsavorite.core
         }
 
         /// <inheritdoc />
-        public override void OnThreadState<Key, Value, Input, Output, Context, TSessionFunctionsWrapper>(
+        public override void OnThreadState<TInput, TOutput, TContext, TSessionFunctionsWrapper>(
             SystemState current,
-            SystemState prev, TsavoriteKV<Key, Value> store,
-            TsavoriteKV<Key, Value>.TsavoriteExecutionContext<Input, Output, Context> ctx,
+            SystemState prev, TsavoriteKV<TKey, TValue, TStoreFunctions, TAllocator> store,
+            TsavoriteKV<TKey, TValue, TStoreFunctions, TAllocator>.TsavoriteExecutionContext<TInput, TOutput, TContext> ctx,
             TSessionFunctionsWrapper sessionFunctions,
             List<ValueTask> valueTasks,
             CancellationToken token = default)
@@ -388,7 +395,9 @@ namespace Tsavorite.core
     /// <summary>
     /// 
     /// </summary>
-    internal class HybridLogCheckpointStateMachine : VersionChangeStateMachine
+    internal class HybridLogCheckpointStateMachine<TKey, TValue, TStoreFunctions, TAllocator> : VersionChangeStateMachine<TKey, TValue, TStoreFunctions, TAllocator>
+        where TStoreFunctions : IStoreFunctions<TKey, TValue>
+        where TAllocator : IAllocator<TKey, TValue, TStoreFunctions>
     {
         /// <summary>
         /// Construct a new HybridLogCheckpointStateMachine to use the given checkpoint backend (either fold-over or
@@ -396,15 +405,15 @@ namespace Tsavorite.core
         /// </summary>
         /// <param name="checkpointBackend">A task that encapsulates the logic to persist the checkpoint</param>
         /// <param name="targetVersion">upper limit (inclusive) of the version included</param>
-        public HybridLogCheckpointStateMachine(ISynchronizationTask checkpointBackend, long targetVersion = -1)
-            : base(targetVersion, new VersionChangeTask(), checkpointBackend) { }
+        public HybridLogCheckpointStateMachine(ISynchronizationTask<TKey, TValue, TStoreFunctions, TAllocator> checkpointBackend, long targetVersion = -1)
+            : base(targetVersion, new VersionChangeTask<TKey, TValue, TStoreFunctions, TAllocator>(), checkpointBackend) { }
 
         /// <summary>
         /// Construct a new HybridLogCheckpointStateMachine with the given tasks. Does not load any tasks by default.
         /// </summary>
         /// <param name="targetVersion">upper limit (inclusive) of the version included</param>
         /// <param name="tasks">The tasks to load onto the state machine</param>
-        protected HybridLogCheckpointStateMachine(long targetVersion, params ISynchronizationTask[] tasks)
+        protected HybridLogCheckpointStateMachine(long targetVersion, params ISynchronizationTask<TKey, TValue, TStoreFunctions, TAllocator>[] tasks)
             : base(targetVersion, tasks) { }
 
         /// <inheritdoc />

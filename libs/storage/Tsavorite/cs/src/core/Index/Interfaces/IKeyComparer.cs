@@ -10,7 +10,7 @@ namespace Tsavorite.core
     /// </summary>
     /// <typeparam name="T">The type of keys to compare.</typeparam>
     /// <remarks>This comparer differs from the built-in <see cref="IEqualityComparer{T}"/> in that it implements a 64-bit hash code</remarks>
-    public interface ITsavoriteEqualityComparer<T>
+    public interface IKeyComparer<T>
     {
         /// <summary>
         /// Get 64-bit hash code

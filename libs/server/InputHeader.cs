@@ -2,6 +2,7 @@
 // Licensed under the MIT license.
 
 using System;
+using System.Runtime.CompilerServices;
 using System.Runtime.InteropServices;
 
 namespace Garnet.server
@@ -40,6 +41,7 @@ namespace Garnet.server
 
         [FieldOffset(0)]
         internal RespCommand cmd;
+
         [FieldOffset(0)]
         internal GarnetObjectType type;
 
@@ -128,21 +130,46 @@ namespace Garnet.server
     }
 
     /// <summary>
-    /// Object input header, building on the basic RESP input header
+    /// Header for Garnet Object Store inputs
     /// </summary>
     [StructLayout(LayoutKind.Explicit, Size = Size)]
-    struct ObjectInputHeader
+    public struct ObjectInput
     {
-        public const int Size = RespInputHeader.Size + sizeof(int) + sizeof(int);
+        /// <summary>
+        /// Size of header
+        /// </summary>
+        public const int Size = RespInputHeader.Size + (2 * sizeof(int)) + ArgSlice.Size;
 
+        /// <summary>
+        /// Common input header for Garnet
+        /// </summary>
         [FieldOffset(0)]
         public RespInputHeader header;
 
+        /// <summary>
+        /// Argument for generic usage by command implementation
+        /// </summary>
         [FieldOffset(RespInputHeader.Size)]
         public int arg1;
 
+        /// <summary>
+        /// Argument for generic usage by command implementation
+        /// </summary>
         [FieldOffset(RespInputHeader.Size + sizeof(int))]
         public int arg2;
+
+        /// <summary>
+        /// RESP-formatted payload
+        /// </summary>
+        [FieldOffset(RespInputHeader.Size + sizeof(int) + sizeof(int))]
+        public ArgSlice payload;
+
+        /// <summary>
+        /// Gets a pointer to the top of the header
+        /// </summary>
+        /// <returns>Pointer</returns>
+        public unsafe byte* ToPointer()
+            => (byte*)Unsafe.AsPointer(ref header);
     }
 
     /// <summary>

@@ -37,6 +37,7 @@ Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "Solution Items", "Solution 
 		docker-compose.yml = docker-compose.yml
 		.github\workflows\docker.yml = .github\workflows\docker.yml
 		Dockerfile = Dockerfile
+		Dockerfile.alpine = Dockerfile.alpine
 		Dockerfile.cbl-mariner = Dockerfile.cbl-mariner
 		Dockerfile.chiseled = Dockerfile.chiseled
 		Dockerfile.nanoserver = Dockerfile.nanoserver

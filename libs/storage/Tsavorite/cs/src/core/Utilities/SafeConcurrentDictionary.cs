@@ -191,7 +191,7 @@ namespace Tsavorite.core
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public KeyValuePair<TKey, TValue>[] ToArray()
         {
-            return dictionary.ToArray();
+            return [.. dictionary];
         }
 
         /// <summary>

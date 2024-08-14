@@ -8,6 +8,9 @@ using static Tsavorite.test.TestUtils;
 
 namespace Tsavorite.test.Cancellation
 {
+    using IntAllocator = BlittableAllocator<int, int, StoreFunctions<int, int, IntKeyComparer, DefaultRecordDisposer<int, int>>>;
+    using IntStoreFunctions = StoreFunctions<int, int, IntKeyComparer, DefaultRecordDisposer<int, int>>;
+
     [TestFixture]
     class CancellationTests
     {
@@ -118,9 +121,9 @@ namespace Tsavorite.test.Cancellation
 
         IDevice log;
         CancellationFunctions functions;
-        TsavoriteKV<int, int> store;
-        ClientSession<int, int, int, int, Empty, CancellationFunctions> session;
-        BasicContext<int, int, int, int, Empty, CancellationFunctions> bContext;
+        TsavoriteKV<int, int, IntStoreFunctions, IntAllocator> store;
+        ClientSession<int, int, int, int, Empty, CancellationFunctions, IntStoreFunctions, IntAllocator> session;
+        BasicContext<int, int, int, int, Empty, CancellationFunctions, IntStoreFunctions, IntAllocator> bContext;
 
         const int NumRecs = 100;
 
@@ -130,10 +133,15 @@ namespace Tsavorite.test.Cancellation
             DeleteDirectory(MethodTestDir, wait: true);
 
             log = Devices.CreateLogDevice(Path.Join(MethodTestDir, "hlog.log"), deleteOnClose: true);
-            store = new TsavoriteKV<int, int>
-                (128,
-                new LogSettings { LogDevice = log, MemorySizeBits = 17, PageSizeBits = 12 },
-                null, null, null);
+            store = new(new()
+            {
+                IndexSize = 1L << 13,
+                LogDevice = log,
+                MemorySize = 1L << 17,
+                PageSize = 1L << 12
+            }, StoreFunctions<int, int>.Create(IntKeyComparer.Instance)
+                , (allocatorSettings, storeFunctions) => new(allocatorSettings, storeFunctions)
+            );
 
             functions = new CancellationFunctions();
             session = store.NewSession<int, int, Empty, CancellationFunctions>(functions);
@@ -156,9 +164,7 @@ namespace Tsavorite.test.Cancellation
         {
             // Single alloc outside the loop, to the max length we'll need.
             for (int ii = 0; ii < NumRecs; ii++)
-            {
-                bContext.Upsert(ii, ii * NumRecs * 10);
-            }
+                _ = bContext.Upsert(ii, ii * NumRecs * 10);
         }
 
         [Test]

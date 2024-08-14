@@ -15,9 +15,11 @@ namespace Garnet.server
     /// <remarks>
     /// SAFETY: This type is used to represent arguments that are assumed to point to pinned memory.
     /// </remarks>
-    [StructLayout(LayoutKind.Explicit, Size = 12)]
+    [StructLayout(LayoutKind.Explicit, Size = Size)]
     public unsafe struct ArgSlice
     {
+        public const int Size = 12;
+
         [FieldOffset(0)]
         internal byte* ptr;
 

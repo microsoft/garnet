@@ -59,58 +59,42 @@ namespace Garnet.server
             var ptr = sbCursor.ToPointer() + sbCursor.Length + 2;
 
             // Prepare input
-            // Header + size of int for the limitCountInOutput
-            var inputPtr = (ObjectInputHeader*)(ptr - ObjectInputHeader.Size - sizeof(int));
-            var ptrToInt = (int*)(ptr - sizeof(int));
+            ptr -= sizeof(int);
+            var save = *(int*)ptr;
+            *(int*)ptr = storeWrapper.serverOptions.ObjectScanCountLimit;
 
-            // Save old values on buffer for possible revert
-            var save = *inputPtr;
-            var savePtrToInt = *ptrToInt;
-
-            // Build the input
-            byte* pcurr = (byte*)inputPtr;
-
-            // ObjectInputHeader
-            (*(ObjectInputHeader*)(pcurr)).header.type = objectType;
-            (*(ObjectInputHeader*)(pcurr)).header.flags = 0;
+            var input = new ObjectInput
+            {
+                header = new RespInputHeader
+                {
+                    type = objectType,
+                },
+                arg1 = count - 2,
+                arg2 = cursorValue,
+                payload = new ArgSlice(ptr, (int)(recvBufferPtr + bytesRead - ptr)),
+            };
 
             switch (objectType)
             {
                 case GarnetObjectType.Hash:
-                    (*(ObjectInputHeader*)(pcurr)).header.HashOp = HashOperation.HSCAN;
+                    input.header.HashOp = HashOperation.HSCAN;
                     break;
                 case GarnetObjectType.Set:
-                    (*(ObjectInputHeader*)(pcurr)).header.SetOp = SetOperation.SSCAN;
+                    input.header.SetOp = SetOperation.SSCAN;
                     break;
                 case GarnetObjectType.SortedSet:
-                    (*(ObjectInputHeader*)(pcurr)).header.SortedSetOp = SortedSetOperation.ZSCAN;
+                    input.header.SortedSetOp = SortedSetOperation.ZSCAN;
                     break;
                 case GarnetObjectType.All:
-                    (*(ObjectInputHeader*)(pcurr)).header.cmd = RespCommand.COSCAN;
+                    input.header.cmd = RespCommand.COSCAN;
                     break;
             }
 
-            // Tokens already processed: 3, command, key and cursor
-            (*(ObjectInputHeader*)(pcurr)).arg1 = count - 2;
-
-            // Cursor value
-            (*(ObjectInputHeader*)(pcurr)).arg2 = cursorValue;
-            pcurr += ObjectInputHeader.Size;
-
-            // Object Input Limit
-            *(int*)pcurr = storeWrapper.serverOptions.ObjectScanCountLimit;
-            pcurr += sizeof(int);
-
-            // Prepare length of header in input buffer
-            var inputLength = (int)(recvBufferPtr + bytesRead - (byte*)inputPtr);
-
             // Prepare GarnetObjectStore output
             var outputFooter = new GarnetObjectStoreOutput { spanByteAndMemory = new SpanByteAndMemory(dcurr, (int)(dend - dcurr)) };
-            var status = storageApi.ObjectScan(keyBytes, new ArgSlice((byte*)inputPtr, inputLength), ref outputFooter);
+            var status = storageApi.ObjectScan(keyBytes, ref input, ref outputFooter);
 
-            // Restore input buffer
-            *inputPtr = save;
-            *ptrToInt = savePtrToInt;
+            *(int*)ptr = save;
 
             switch (status)
             {

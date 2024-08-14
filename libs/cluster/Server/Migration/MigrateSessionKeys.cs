@@ -179,7 +179,7 @@ namespace Garnet.cluster
                         continue;
                     var key = mKey.Key.ToArray();
 
-                    SpanByte input = default;
+                    ObjectInput input = default;
                     GarnetObjectStoreOutput value = default;
                     var status = localServerSession.BasicGarnetApi.Read_ObjectStore(ref key, ref input, ref value);
                     if (status == GarnetStatus.NOTFOUND)

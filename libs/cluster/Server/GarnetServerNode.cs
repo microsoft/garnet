@@ -15,6 +15,7 @@ namespace Garnet.cluster
     {
         readonly ClusterProvider clusterProvider;
         readonly GarnetClient gc;
+
         long gossip_send;
         long gossip_recv;
         private CancellationTokenSource cts = new();
@@ -67,6 +68,8 @@ namespace Garnet.cluster
                 logger: logger);
             this.initialized = 0;
             this.logger = logger;
+            this.gossip_recv = 0;
+            this.gossip_send = 0;
             ResetCts();
         }
 
@@ -148,7 +151,7 @@ namespace Garnet.cluster
             }
             else
             {
-                byteArray = Array.Empty<byte>();
+                byteArray = [];
             }
             return byteArray;
         }
@@ -223,6 +226,20 @@ namespace Garnet.cluster
                     logger?.LogCritical(ex, "GOSSIP faulted processing response");
                 }
             }, TaskContinuationOptions.OnlyOnRanToCompletion).WaitAsync(clusterProvider.clusterManager.gossipDelay, cts.Token);
+        }
+
+        public ConnectionInfo GetConnectionInfo()
+        {
+            var nowTicks = DateTimeOffset.UtcNow.Ticks;
+            var last_io_seconds = GossipRecv == 0 ? 0 : (int)TimeSpan.FromTicks(nowTicks - GossipSend).TotalSeconds;
+
+            return new ConnectionInfo()
+            {
+                ping = GossipSend,
+                pong = GossipRecv,
+                connected = IsConnected,
+                lastIO = last_io_seconds,
+            };
         }
     }
 }

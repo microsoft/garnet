@@ -9,10 +9,13 @@ using static Tsavorite.test.TestUtils;
 
 namespace Tsavorite.test.Session
 {
+    using StructAllocator = BlittableAllocator<KeyStruct, ValueStruct, StoreFunctions<KeyStruct, ValueStruct, KeyStruct.Comparer, DefaultRecordDisposer<KeyStruct, ValueStruct>>>;
+    using StructStoreFunctions = StoreFunctions<KeyStruct, ValueStruct, KeyStruct.Comparer, DefaultRecordDisposer<KeyStruct, ValueStruct>>;
+
     [TestFixture]
     internal class SessionTests
     {
-        private TsavoriteKV<KeyStruct, ValueStruct> store;
+        private TsavoriteKV<KeyStruct, ValueStruct, StructStoreFunctions, StructAllocator> store;
         private IDevice log;
 
         [SetUp]
@@ -20,8 +23,14 @@ namespace Tsavorite.test.Session
         {
             DeleteDirectory(MethodTestDir, wait: true);
             log = Devices.CreateLogDevice(Path.Join(MethodTestDir, "hlog1.log"), deleteOnClose: true);
-            store = new TsavoriteKV<KeyStruct, ValueStruct>
-                (128, new LogSettings { LogDevice = log, MemorySizeBits = 29 });
+            store = new(new()
+            {
+                IndexSize = 1L << 13,
+                LogDevice = log,
+                MemorySize = 1L << 29,
+            }, StoreFunctions<KeyStruct, ValueStruct>.Create(new KeyStruct.Comparer())
+                , (allocatorSettings, storeFunctions) => new(allocatorSettings, storeFunctions)
+            );
         }
 
         [TearDown]
@@ -48,12 +57,12 @@ namespace Tsavorite.test.Session
             var key1 = new KeyStruct { kfield1 = 13, kfield2 = 14 };
             var value = new ValueStruct { vfield1 = 23, vfield2 = 24 };
 
-            bContext.Upsert(ref key1, ref value, Empty.Default);
+            _ = bContext.Upsert(ref key1, ref value, Empty.Default);
             var status = bContext.Read(ref key1, ref input, ref output, Empty.Default);
 
             if (status.IsPending)
             {
-                bContext.CompletePendingWithOutputs(out var outputs, wait: true);
+                _ = bContext.CompletePendingWithOutputs(out var outputs, wait: true);
                 (status, output) = GetSinglePendingResult(outputs);
             }
 
@@ -78,14 +87,14 @@ namespace Tsavorite.test.Session
             var key2 = new KeyStruct { kfield1 = 15, kfield2 = 16 };
             var value2 = new ValueStruct { vfield1 = 25, vfield2 = 26 };
 
-            bContext1.Upsert(ref key1, ref value1, Empty.Default);
-            bContext2.Upsert(ref key2, ref value2, Empty.Default);
+            _ = bContext1.Upsert(ref key1, ref value1, Empty.Default);
+            _ = bContext2.Upsert(ref key2, ref value2, Empty.Default);
 
             var status = bContext1.Read(ref key1, ref input, ref output, Empty.Default);
 
             if (status.IsPending)
             {
-                bContext1.CompletePendingWithOutputs(out var outputs, wait: true);
+                _ = bContext1.CompletePendingWithOutputs(out var outputs, wait: true);
                 (status, output) = GetSinglePendingResult(outputs);
             }
 
@@ -97,7 +106,7 @@ namespace Tsavorite.test.Session
 
             if (status.IsPending)
             {
-                bContext2.CompletePendingWithOutputs(out var outputs, wait: true);
+                _ = bContext2.CompletePendingWithOutputs(out var outputs, wait: true);
                 (status, output) = GetSinglePendingResult(outputs);
             }
 
@@ -121,12 +130,12 @@ namespace Tsavorite.test.Session
                 var key1 = new KeyStruct { kfield1 = 13, kfield2 = 14 };
                 var value = new ValueStruct { vfield1 = 23, vfield2 = 24 };
 
-                bContext.Upsert(ref key1, ref value, Empty.Default);
+                _ = bContext.Upsert(ref key1, ref value, Empty.Default);
                 var status = bContext.Read(ref key1, ref input, ref output, Empty.Default);
 
                 if (status.IsPending)
                 {
-                    bContext.CompletePendingWithOutputs(out var outputs, wait: true);
+                    _ = bContext.CompletePendingWithOutputs(out var outputs, wait: true);
                     (status, output) = GetSinglePendingResult(outputs);
                 }
 
@@ -152,12 +161,12 @@ namespace Tsavorite.test.Session
                 var key1 = new KeyStruct { kfield1 = 14, kfield2 = 15 };
                 var value1 = new ValueStruct { vfield1 = 24, vfield2 = 25 };
 
-                bContext1.Upsert(ref key1, ref value1, Empty.Default);
+                _ = bContext1.Upsert(ref key1, ref value1, Empty.Default);
                 var status = bContext1.Read(ref key1, ref input, ref output, Empty.Default);
 
                 if (status.IsPending)
                 {
-                    bContext1.CompletePendingWithOutputs(out var outputs, wait: true);
+                    _ = bContext1.CompletePendingWithOutputs(out var outputs, wait: true);
                     (status, output) = GetSinglePendingResult(outputs);
                 }
 
@@ -174,13 +183,13 @@ namespace Tsavorite.test.Session
                 var key2 = new KeyStruct { kfield1 = 15, kfield2 = 16 };
                 var value2 = new ValueStruct { vfield1 = 25, vfield2 = 26 };
 
-                bContext2.Upsert(ref key2, ref value2, Empty.Default);
+                _ = bContext2.Upsert(ref key2, ref value2, Empty.Default);
 
                 var status = bContext2.Read(ref key2, ref input, ref output, Empty.Default);
 
                 if (status.IsPending)
                 {
-                    bContext2.CompletePendingWithOutputs(out var outputs, wait: true);
+                    _ = bContext2.CompletePendingWithOutputs(out var outputs, wait: true);
                     (status, output) = GetSinglePendingResult(outputs);
                 }
 
@@ -207,12 +216,12 @@ namespace Tsavorite.test.Session
             var key1 = new KeyStruct { kfield1 = 16, kfield2 = 17 };
             var value1 = new ValueStruct { vfield1 = 26, vfield2 = 27 };
 
-            bContext.Upsert(ref key1, ref value1, Empty.Default);
+            _ = bContext.Upsert(ref key1, ref value1, Empty.Default);
             var status = bContext.Read(ref key1, ref input, ref output, Empty.Default);
 
             if (status.IsPending)
             {
-                bContext.CompletePendingWithOutputs(out var outputs, wait: true);
+                _ = bContext.CompletePendingWithOutputs(out var outputs, wait: true);
                 (status, output) = GetSinglePendingResult(outputs);
             }
 
@@ -228,13 +237,13 @@ namespace Tsavorite.test.Session
             var key2 = new KeyStruct { kfield1 = 17, kfield2 = 18 };
             var value2 = new ValueStruct { vfield1 = 27, vfield2 = 28 };
 
-            bContext.Upsert(ref key2, ref value2, Empty.Default);
+            _ = bContext.Upsert(ref key2, ref value2, Empty.Default);
 
             status = bContext.Read(ref key2, ref input, ref output, Empty.Default);
 
             if (status.IsPending)
             {
-                bContext.CompletePendingWithOutputs(out var outputs, wait: true);
+                _ = bContext.CompletePendingWithOutputs(out var outputs, wait: true);
                 (status, output) = GetSinglePendingResult(outputs);
             }
             Assert.IsTrue(status.Found);
@@ -243,7 +252,7 @@ namespace Tsavorite.test.Session
 
             if (status.IsPending)
             {
-                bContext.CompletePendingWithOutputs(out var outputs, wait: true);
+                _ = bContext.CompletePendingWithOutputs(out var outputs, wait: true);
                 (status, output) = GetSinglePendingResult(outputs);
             }
 

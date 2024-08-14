@@ -21,8 +21,14 @@ namespace Garnet.server
 
         public LatencyMetricsEntrySession()
         {
-            latency = new LongHistogram[2] { new(HISTOGRAM_LOWER_BOUND, HISTOGRAM_UPPER_BOUND, 2), new(HISTOGRAM_LOWER_BOUND, HISTOGRAM_UPPER_BOUND, 2) };
+            latency = [new(HISTOGRAM_LOWER_BOUND, HISTOGRAM_UPPER_BOUND, 2), new(HISTOGRAM_LOWER_BOUND, HISTOGRAM_UPPER_BOUND, 2)];
             startTimestamp = 0;
+        }
+
+        public void Return()
+        {
+            latency[0].Return();
+            latency[1].Return();
         }
 
         public void Start()

@@ -63,27 +63,6 @@ namespace Garnet.server
             => scratchBufferManager.CreateArgSlice(str);
 
         /// <summary>
-        /// Get argument from input, at specified offset (starting from 0)
-        /// </summary>
-        /// <param name="input">Input as ArgSlice</param>
-        /// <param name="offset">Current offset into input</param>
-        /// <returns>Argument as a span</returns>
-        protected static unsafe ArgSlice GetNextArg(ArgSlice input, ref int offset)
-        {
-            byte* result = null;
-            int len = 0;
-
-            byte* ptr = input.ptr + offset;
-            byte* end = input.ptr + input.Length;
-            if (ptr < end && RespReadUtils.ReadPtrWithLengthHeader(ref result, ref len, ref ptr, end))
-            {
-                offset = (int)(ptr - input.ptr);
-                return new ArgSlice(result, len);
-            }
-            return default;
-        }
-
-        /// <summary>
         /// Prepare phase: define read/write set
         /// </summary>
         public abstract bool Prepare<TGarnetReadApi>(TGarnetReadApi api, ArgSlice input)

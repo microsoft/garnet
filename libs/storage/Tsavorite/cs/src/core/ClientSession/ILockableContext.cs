@@ -7,7 +7,9 @@ using System.Threading;
 namespace Tsavorite.core
 {
     /// <summary>
-    /// Lockable context functions. Useful when doing generic locking across diverse <see cref="LockableUnsafeContext{Key, Value, Input, Output, Context, Functions}"/> and <see cref="LockableContext{Key, Value, Input, Output, Context, Functions}"/> specializations.
+    /// Lockable context functions. Useful when doing generic locking across diverse 
+    /// <see cref="LockableUnsafeContext{Key, Value, Input, Output, Context, Functions, StoreFunctions, Allocator}"/> and 
+    /// <see cref="LockableContext{Key, Value, Input, Output, Context, Functions, StoreFunctions, Allocator}"/> specializations.
     /// </summary>
     /// <typeparam name="TKey"></typeparam>
     public interface ILockableContext<TKey>

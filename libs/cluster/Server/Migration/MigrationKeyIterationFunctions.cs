@@ -14,64 +14,6 @@ namespace Garnet.cluster
     {
         internal sealed class MigrationKeyIterationFunctions
         {
-            internal struct MainStoreMigrateSlots : IScanIteratorFunctions<SpanByte, SpanByte>
-            {
-                readonly MigrateSession session;
-                readonly HashSet<int> slots;
-
-                internal MainStoreMigrateSlots(MigrateSession session, HashSet<int> slots)
-                {
-                    this.session = session;
-                    this.slots = slots;
-                }
-
-                public bool SingleReader(ref SpanByte key, ref SpanByte value, RecordMetadata recordMetadata, long numberOfRecords, out CursorRecordResult cursorRecordResult)
-                {
-                    cursorRecordResult = CursorRecordResult.Accept; // default; not used here
-                    var s = HashSlotUtils.HashSlot(ref key);
-
-                    if (slots.Contains(s) && !ClusterSession.Expired(ref value) && !session.WriteOrSendMainStoreKeyValuePair(ref key, ref value))
-                        return false;
-                    return true;
-                }
-                public bool ConcurrentReader(ref SpanByte key, ref SpanByte value, RecordMetadata recordMetadata, long numberOfRecords, out CursorRecordResult cursorRecordResult)
-                    => SingleReader(ref key, ref value, recordMetadata, numberOfRecords, out cursorRecordResult);
-                public bool OnStart(long beginAddress, long endAddress) => true;
-                public void OnStop(bool completed, long numberOfRecords) { }
-                public void OnException(Exception exception, long numberOfRecords) { }
-            }
-
-            internal struct ObjectStoreMigrateSlots : IScanIteratorFunctions<byte[], IGarnetObject>
-            {
-                readonly MigrateSession session;
-                readonly HashSet<int> slots;
-
-                internal ObjectStoreMigrateSlots(MigrateSession session, HashSet<int> slots)
-                {
-                    this.session = session;
-                    this.slots = slots;
-                }
-
-                public bool SingleReader(ref byte[] key, ref IGarnetObject value, RecordMetadata recordMetadata, long numberOfRecords, out CursorRecordResult cursorRecordResult)
-                {
-                    cursorRecordResult = CursorRecordResult.Accept; // default; not used here
-                    var slot = HashSlotUtils.HashSlot(key);
-
-                    if (slots.Contains(slot) && !ClusterSession.Expired(ref value))
-                    {
-                        byte[] objectData = GarnetObjectSerializer.Serialize(value);
-                        if (!session.WriteOrSendObjectStoreKeyValuePair(key, objectData, value.Expiration))
-                            return false;
-                    }
-                    return true;
-                }
-                public bool ConcurrentReader(ref byte[] key, ref IGarnetObject value, RecordMetadata recordMetadata, long numberOfRecords, out CursorRecordResult cursorRecordResult)
-                    => SingleReader(ref key, ref value, recordMetadata, numberOfRecords, out cursorRecordResult);
-                public bool OnStart(long beginAddress, long endAddress) => true;
-                public void OnStop(bool completed, long numberOfRecords) { }
-                public void OnException(Exception exception, long numberOfRecords) { }
-            }
-
             internal unsafe struct MainStoreGetKeysInSlots : IScanIteratorFunctions<SpanByte, SpanByte>
             {
                 MigrationScanIterator iterator;
@@ -148,7 +90,6 @@ namespace Garnet.cluster
                 public void OnException(Exception exception, long numberOfRecords) { }
             }
 
-
             internal struct MigrationScanIterator
             {
                 readonly MigrateSession session;
@@ -198,8 +139,9 @@ namespace Garnet.cluster
                 /// <returns></returns>
                 public bool Consume(ref Span<byte> key)
                 {
-                    // Check if key is within the current processing window
-                    if (currentOffset < offset)
+                    // Check if key is within the current processing window only if _copyOption is set
+                    // in order to skip keys that have been send over to target node but not deleted locally
+                    if (session._copyOption && currentOffset < offset)
                     {
                         currentOffset++;
                         return true;

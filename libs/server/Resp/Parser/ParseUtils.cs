@@ -40,7 +40,7 @@ namespace Garnet.server
         {
             var ptr = slice.ptr;
             return RespReadUtils.TryReadInt(ref ptr, slice.ptr + slice.length, out number, out var bytesRead)
-                   || ((int)bytesRead != slice.length);
+                   && (int)bytesRead == slice.length;
         }
 
         /// <summary>
@@ -70,7 +70,7 @@ namespace Garnet.server
         {
             var ptr = slice.ptr;
             return RespReadUtils.TryReadLong(ref ptr, slice.ptr + slice.length, out number, out var bytesRead)
-                   || ((int)bytesRead != slice.length);
+                   && (int)bytesRead == slice.length;
         }
 
         /// <summary>

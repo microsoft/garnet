@@ -13,18 +13,21 @@ using static Tsavorite.test.TestUtils;
 
 namespace Tsavorite.test.recovery.sumstore
 {
+    using StructAllocator = BlittableAllocator<AdId, NumClicks, StoreFunctions<AdId, NumClicks, AdId.Comparer, DefaultRecordDisposer<AdId, NumClicks>>>;
+    using StructStoreFunctions = StoreFunctions<AdId, NumClicks, AdId.Comparer, DefaultRecordDisposer<AdId, NumClicks>>;
+
     [TestFixture]
     class RecoveryTests
     {
-        const int numOps = 5000;
+        const int NumOps = 5000;
         AdId[] inputArray;
 
         private byte[] commitCookie;
         string checkpointDir;
         ICheckpointManager checkpointManager;
 
-        private TsavoriteKV<AdId, NumClicks> store1;
-        private TsavoriteKV<AdId, NumClicks> store2;
+        private TsavoriteKV<AdId, NumClicks, StructStoreFunctions, StructAllocator> store1;
+        private TsavoriteKV<AdId, NumClicks, StructStoreFunctions, StructAllocator> store2;
         private IDevice log;
 
 
@@ -34,8 +37,8 @@ namespace Tsavorite.test.recovery.sumstore
             DeleteDirectory(MethodTestDir, wait: true);
             checkpointManager = default;
             checkpointDir = default;
-            inputArray = new AdId[numOps];
-            for (int i = 0; i < numOps; i++)
+            inputArray = new AdId[NumOps];
+            for (int i = 0; i < NumOps; i++)
                 inputArray[i].adId = i;
         }
 
@@ -99,15 +102,29 @@ namespace Tsavorite.test.recovery.sumstore
 
             log = Devices.CreateLogDevice(Path.Join(MethodTestDir, "SimpleRecoveryTest1.log"), deleteOnClose: true);
 
-            store1 = new TsavoriteKV<AdId, NumClicks>(128,
-                logSettings: new LogSettings { LogDevice = log, MutableFraction = 0.1, MemorySizeBits = 29 },
-                checkpointSettings: new CheckpointSettings { CheckpointDir = checkpointDir, CheckpointManager = checkpointManager }
-                );
+            store1 = new(new()
+            {
+                IndexSize = 1L << 13,
+                LogDevice = log,
+                MutableFraction = 0.1,
+                MemorySize = 1L << 29,
+                CheckpointDir = checkpointDir,
+                CheckpointManager = checkpointManager
+            }, StoreFunctions<AdId, NumClicks>.Create(new AdId.Comparer())
+                , (allocatorSettings, storeFunctions) => new(allocatorSettings, storeFunctions)
+            );
 
-            store2 = new TsavoriteKV<AdId, NumClicks>(128,
-                logSettings: new LogSettings { LogDevice = log, MutableFraction = 0.1, MemorySizeBits = 29 },
-                checkpointSettings: new CheckpointSettings { CheckpointDir = checkpointDir, CheckpointManager = checkpointManager }
-                );
+            store2 = new(new()
+            {
+                IndexSize = 1L << 13,
+                LogDevice = log,
+                MutableFraction = 0.1,
+                MemorySize = 1L << 29,
+                CheckpointDir = checkpointDir,
+                CheckpointManager = checkpointManager
+            }, StoreFunctions<AdId, NumClicks>.Create(new AdId.Comparer())
+                , (allocatorSettings, storeFunctions) => new(allocatorSettings, storeFunctions)
+            );
 
             NumClicks value;
             AdInput inputArg = default;
@@ -116,15 +133,15 @@ namespace Tsavorite.test.recovery.sumstore
             var session1 = store1.NewSession<AdInput, Output, Empty, AdSimpleFunctions>(new AdSimpleFunctions());
             var bContext1 = session1.BasicContext;
 
-            for (int key = 0; key < numOps; key++)
+            for (int key = 0; key < NumOps; key++)
             {
                 value.numClicks = key;
-                bContext1.Upsert(ref inputArray[key], ref value, Empty.Default);
+                _ = bContext1.Upsert(ref inputArray[key], ref value, Empty.Default);
             }
 
             if (testCommitCookie)
                 store1.CommitCookie = commitCookie;
-            store1.TryInitiateFullCheckpoint(out Guid token, checkpointType);
+            _ = store1.TryInitiateFullCheckpoint(out Guid token, checkpointType);
             if (completionSyncMode == CompletionSyncMode.Sync)
                 store1.CompleteCheckpointAsync().AsTask().GetAwaiter().GetResult();
             else
@@ -132,9 +149,9 @@ namespace Tsavorite.test.recovery.sumstore
             session1.Dispose();
 
             if (completionSyncMode == CompletionSyncMode.Sync)
-                store2.Recover(token);
+                _ = store2.Recover(token);
             else
-                await store2.RecoverAsync(token);
+                _ = await store2.RecoverAsync(token);
 
             if (testCommitCookie)
                 Assert.IsTrue(store2.RecoveredCommitCookie.SequenceEqual(commitCookie));
@@ -145,13 +162,13 @@ namespace Tsavorite.test.recovery.sumstore
             var bContext2 = session2.BasicContext;
             Assert.AreEqual(1, session2.ID);    // This is the first session on the recovered store
 
-            for (int key = 0; key < numOps; key++)
+            for (int key = 0; key < NumOps; key++)
             {
                 var status = bContext2.Read(ref inputArray[key], ref inputArg, ref output, Empty.Default);
 
                 if (status.IsPending)
                 {
-                    bContext2.CompletePendingWithOutputs(out var outputs, wait: true);
+                    _ = bContext2.CompletePendingWithOutputs(out var outputs, wait: true);
                     Assert.IsTrue(outputs.Next());
                     output = outputs.Current.Output;
                     Assert.IsFalse(outputs.Next());
@@ -171,16 +188,27 @@ namespace Tsavorite.test.recovery.sumstore
             checkpointManager = new DeviceLogCommitCheckpointManager(new LocalStorageNamedDeviceFactory(), new DefaultCheckpointNamingScheme(Path.Join(MethodTestDir, "checkpoints4")), false);
             log = Devices.CreateLogDevice(Path.Join(MethodTestDir, "SimpleRecoveryTest2.log"), deleteOnClose: true);
 
-            store1 = new TsavoriteKV<AdId, NumClicks>(128,
-                logSettings: new LogSettings { LogDevice = log, MutableFraction = 0.1, MemorySizeBits = 29 },
-                checkpointSettings: new CheckpointSettings { CheckpointManager = checkpointManager }
-                );
+            store1 = new(new()
+            {
+                IndexSize = 1L << 13,
+                LogDevice = log,
+                MutableFraction = 0.1,
+                MemorySize = 1L << 29,
+                CheckpointManager = checkpointManager
+            }, StoreFunctions<AdId, NumClicks>.Create(new AdId.Comparer())
+                , (allocatorSettings, storeFunctions) => new(allocatorSettings, storeFunctions)
+            );
 
-            store2 = new TsavoriteKV<AdId, NumClicks>(128,
-                logSettings: new LogSettings { LogDevice = log, MutableFraction = 0.1, MemorySizeBits = 29 },
-                checkpointSettings: new CheckpointSettings { CheckpointManager = checkpointManager }
-                );
-
+            store2 = new(new()
+            {
+                IndexSize = 1L << 13,
+                LogDevice = log,
+                MutableFraction = 0.1,
+                MemorySize = 1L << 29,
+                CheckpointManager = checkpointManager
+            }, StoreFunctions<AdId, NumClicks>.Create(new AdId.Comparer())
+                , (allocatorSettings, storeFunctions) => new(allocatorSettings, storeFunctions)
+            );
 
             NumClicks value;
             AdInput inputArg = default;
@@ -189,33 +217,31 @@ namespace Tsavorite.test.recovery.sumstore
             var session1 = store1.NewSession<AdInput, Output, Empty, AdSimpleFunctions>(new AdSimpleFunctions());
             var bContext1 = session1.BasicContext;
 
-            for (int key = 0; key < numOps; key++)
+            for (int key = 0; key < NumOps; key++)
             {
                 value.numClicks = key;
-                bContext1.Upsert(ref inputArray[key], ref value, Empty.Default);
+                _ = bContext1.Upsert(ref inputArray[key], ref value, Empty.Default);
             }
-            store1.TryInitiateFullCheckpoint(out Guid token, checkpointType);
+            _ = store1.TryInitiateFullCheckpoint(out Guid token, checkpointType);
             store1.CompleteCheckpointAsync().AsTask().GetAwaiter().GetResult();
             session1.Dispose();
 
             if (completionSyncMode == CompletionSyncMode.Sync)
-                store2.Recover(token);
+                _ = store2.Recover(token);
             else
-                await store2.RecoverAsync(token);
+                _ = await store2.RecoverAsync(token);
 
             var session2 = store2.NewSession<AdInput, Output, Empty, AdSimpleFunctions>(new AdSimpleFunctions());
             var bContext2 = session1.BasicContext;
 
-            for (int key = 0; key < numOps; key++)
+            for (int key = 0; key < NumOps; key++)
             {
                 var status = bContext2.Read(ref inputArray[key], ref inputArg, ref output, Empty.Default);
 
                 if (status.IsPending)
-                    bContext2.CompletePending(true);
+                    _ = bContext2.CompletePending(true);
                 else
-                {
                     Assert.AreEqual(key, output.value.numClicks);
-                }
             }
             session2.Dispose();
         }
@@ -227,15 +253,27 @@ namespace Tsavorite.test.recovery.sumstore
             log = Devices.CreateLogDevice(Path.Join(MethodTestDir, "SimpleRecoveryTest2.log"), deleteOnClose: true);
             checkpointDir = Path.Join(MethodTestDir, "checkpoints6");
 
-            store1 = new TsavoriteKV<AdId, NumClicks>(128,
-                logSettings: new LogSettings { LogDevice = log, MutableFraction = 0.1, MemorySizeBits = 29 },
-                checkpointSettings: new CheckpointSettings { CheckpointDir = checkpointDir }
-                );
+            store1 = new(new()
+            {
+                IndexSize = 1L << 13,
+                LogDevice = log,
+                MutableFraction = 0.1,
+                MemorySize = 1L << 29,
+                CheckpointDir = checkpointDir
+            }, StoreFunctions<AdId, NumClicks>.Create(new AdId.Comparer())
+                , (allocatorSettings, storeFunctions) => new(allocatorSettings, storeFunctions)
+            );
 
-            store2 = new TsavoriteKV<AdId, NumClicks>(128,
-                logSettings: new LogSettings { LogDevice = log, MutableFraction = 0.1, MemorySizeBits = 29 },
-                checkpointSettings: new CheckpointSettings { CheckpointDir = checkpointDir }
-                );
+            store2 = new(new()
+            {
+                IndexSize = 1L << 13,
+                LogDevice = log,
+                MutableFraction = 0.1,
+                MemorySize = 1L << 29,
+                CheckpointDir = checkpointDir
+            }, StoreFunctions<AdId, NumClicks>.Create(new AdId.Comparer())
+                , (allocatorSettings, storeFunctions) => new(allocatorSettings, storeFunctions)
+            );
 
             NumClicks value;
 
@@ -243,10 +281,10 @@ namespace Tsavorite.test.recovery.sumstore
             var bContext1 = session1.BasicContext;
 
             var address = 0L;
-            for (int key = 0; key < numOps; key++)
+            for (int key = 0; key < NumOps; key++)
             {
                 value.numClicks = key;
-                bContext1.Upsert(ref inputArray[key], ref value, Empty.Default);
+                _ = bContext1.Upsert(ref inputArray[key], ref value, Empty.Default);
 
                 if (key == 2999)
                     address = store1.Log.TailAddress;
@@ -254,7 +292,7 @@ namespace Tsavorite.test.recovery.sumstore
 
             store1.Log.ShiftBeginAddress(address);
 
-            store1.TryInitiateFullCheckpoint(out Guid token, CheckpointType.FoldOver);
+            _ = store1.TryInitiateFullCheckpoint(out Guid token, CheckpointType.FoldOver);
             if (completionSyncMode == CompletionSyncMode.Sync)
                 store1.CompleteCheckpointAsync().AsTask().GetAwaiter().GetResult();
             else
@@ -262,9 +300,9 @@ namespace Tsavorite.test.recovery.sumstore
             session1.Dispose();
 
             if (completionSyncMode == CompletionSyncMode.Sync)
-                store2.Recover(token);
+                _ = store2.Recover(token);
             else
-                await store2.RecoverAsync(token);
+                _ = await store2.RecoverAsync(token);
 
             Assert.AreEqual(address, store2.Log.BeginAddress);
         }
@@ -276,16 +314,27 @@ namespace Tsavorite.test.recovery.sumstore
             checkpointManager = new DeviceLogCommitCheckpointManager(new LocalStorageNamedDeviceFactory(), new DefaultCheckpointNamingScheme(Path.Join(MethodTestDir, "checkpoints")), false);
             log = Devices.CreateLogDevice(Path.Join(MethodTestDir, "SimpleReadAndUpdateInfoTest.log"), deleteOnClose: true);
 
-            store1 = new TsavoriteKV<AdId, NumClicks>(128,
-                logSettings: new LogSettings { LogDevice = log, MutableFraction = 0.1, MemorySizeBits = 29 },
-                checkpointSettings: new CheckpointSettings { CheckpointManager = checkpointManager }
-                );
+            store1 = new(new()
+            {
+                IndexSize = 1L << 13,
+                LogDevice = log,
+                MutableFraction = 0.1,
+                MemorySize = 1L << 29,
+                CheckpointManager = checkpointManager
+            }, StoreFunctions<AdId, NumClicks>.Create(new AdId.Comparer())
+                , (allocatorSettings, storeFunctions) => new(allocatorSettings, storeFunctions)
+            );
 
-            store2 = new TsavoriteKV<AdId, NumClicks>(128,
-                logSettings: new LogSettings { LogDevice = log, MutableFraction = 0.1, MemorySizeBits = 29 },
-                checkpointSettings: new CheckpointSettings { CheckpointManager = checkpointManager }
-                );
-
+            store2 = new(new()
+            {
+                IndexSize = 1L << 13,
+                LogDevice = log,
+                MutableFraction = 0.1,
+                MemorySize = 1L << 29,
+                CheckpointManager = checkpointManager
+            }, StoreFunctions<AdId, NumClicks>.Create(new AdId.Comparer())
+                , (allocatorSettings, storeFunctions) => new(allocatorSettings, storeFunctions)
+            );
 
             NumClicks value;
             AdInput inputArg = default;
@@ -296,18 +345,18 @@ namespace Tsavorite.test.recovery.sumstore
             var session1 = store1.NewSession<AdInput, Output, Empty, AdSimpleFunctions>(functions1);
             var bContext1 = session1.BasicContext;
 
-            for (int key = 0; key < numOps; key++)
+            for (int key = 0; key < NumOps; key++)
             {
                 value.numClicks = key;
                 if ((key & 1) > 0)
-                    bContext1.Upsert(ref inputArray[key], ref value, Empty.Default);
+                    _ = bContext1.Upsert(ref inputArray[key], ref value, Empty.Default);
                 else
                 {
                     AdInput input = new() { adId = inputArray[key], numClicks = value };
-                    bContext1.RMW(ref inputArray[key], ref input);
+                    _ = bContext1.RMW(ref inputArray[key], ref input);
                 }
             }
-            store1.TryInitiateFullCheckpoint(out Guid token, CheckpointType.FoldOver);
+            _ = store1.TryInitiateFullCheckpoint(out Guid token, CheckpointType.FoldOver);
             if (completionSyncMode == CompletionSyncMode.Sync)
                 store1.CompleteCheckpointAsync().AsTask().GetAwaiter().GetResult();
             else
@@ -315,9 +364,9 @@ namespace Tsavorite.test.recovery.sumstore
             session1.Dispose();
 
             if (completionSyncMode == CompletionSyncMode.Sync)
-                store2.Recover(token);
+                _ = store2.Recover(token);
             else
-                await store2.RecoverAsync(token);
+                _ = await store2.RecoverAsync(token);
 
             var session2 = store2.NewSession<AdInput, Output, Empty, AdSimpleFunctions>(functions2);
             var bContext2 = session2.BasicContext;
@@ -342,7 +391,7 @@ namespace Tsavorite.test.recovery.sumstore
             inputArg.numClicks = new() { numClicks = lastKey };
             status = bContext2.Read(ref inputArray[lastKey], ref inputArg, ref output, Empty.Default);
             Assert.IsTrue(status.IsPending, status.ToString());
-            bContext2.CompletePending(wait: true);
+            _ = bContext2.CompletePending(wait: true);
 
             // Upsert does not go pending so is skipped here
 
@@ -351,11 +400,10 @@ namespace Tsavorite.test.recovery.sumstore
             inputArg.numClicks = new() { numClicks = lastKey };
             status = bContext2.RMW(ref inputArray[lastKey], ref inputArg);
             Assert.IsTrue(status.IsPending, status.ToString());
-            bContext2.CompletePending(wait: true);
+            _ = bContext2.CompletePending(wait: true);
 
             session2.Dispose();
         }
-
     }
 
     public class AdSimpleFunctions : SessionFunctionsBase<AdId, NumClicks, AdInput, Output, Empty>
@@ -400,7 +448,7 @@ namespace Tsavorite.test.recovery.sumstore
         {
             if (expectedVersion >= 0)
                 Assert.AreEqual(expectedVersion, rmwInfo.Version);
-            Interlocked.Add(ref value.numClicks, input.numClicks.numClicks);
+            _ = Interlocked.Add(ref value.numClicks, input.numClicks.numClicks);
             return true;
         }
 

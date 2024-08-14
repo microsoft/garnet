@@ -2,6 +2,7 @@
 // Licensed under the MIT license.
 
 using System;
+using System.Linq;
 using System.Text;
 using Garnet.common;
 using Garnet.server;
@@ -20,7 +21,7 @@ namespace Garnet
     {
         public override bool Prepare<TGarnetReadApi>(TGarnetReadApi api, ArgSlice input)
         {
-            int offset = 0;
+            var offset = 0;
             var ssA = GetNextArg(input, ref offset);
 
             if (ssA.Length == 0)
@@ -33,13 +34,19 @@ namespace Garnet
 
         public override void Main<TGarnetApi>(TGarnetApi api, ArgSlice input, ref MemoryResult<byte> output)
         {
-            int offset = 0;
+            var result = TestAPI(api, input);
+            WriteSimpleString(ref output, result ? "SUCCESS" : "ERROR");
+        }
+
+        private static bool TestAPI<TGarnetApi>(TGarnetApi api, ArgSlice input) where TGarnetApi : IGarnetApi
+        {
+            var offset = 0;
             var ssItems = new (ArgSlice score, ArgSlice member)[10];
             var ssMembers = new ArgSlice[10];
 
             var ssA = GetNextArg(input, ref offset);
 
-            for (int i = 0; i < ssItems.Length; i++)
+            for (var i = 0; i < ssItems.Length; i++)
             {
                 ssItems[i].score = GetNextArg(input, ref offset);
                 ssItems[i].member = GetNextArg(input, ref offset);
@@ -50,19 +57,18 @@ namespace Garnet
             var maxRange = GetNextArg(input, ref offset);
             var match = GetNextArg(input, ref offset);
 
-            bool result = true;
-            ArgSlice ssB = new ArgSlice();
+            var ssB = new ArgSlice();
             api.SortedSetAdd(ssB, ssItems[0].score, ssItems[0].member, out int count);
             if (count != 0)
-                result = false;
+                return false;
 
             api.SortedSetAdd(ssA, ssItems[0].score, ssItems[0].member, out count);
             if (count == 0)
-                result = false;
+                return false;
 
             api.SortedSetAdd(ssA, ssItems, out count);
             if (count != 9)
-                result = false;
+                return false;
 
             var strMatch = Encoding.ASCII.GetString(match.ReadOnlySpan);
 
@@ -71,55 +77,69 @@ namespace Garnet
 
             // The pattern "*em*" should match all items
             if (itemsInScan.Length != (ssItems.Length * 2) + 1)
-            {
-                result = false;
-                goto returnToMain;
-            }
+                return false;
 
             // Exercise SortedSetScan no match
             api.SortedSetScan(ssA, 0, "*q*", ssItems.Length, out itemsInScan);
 
             // Only return the value of the cursor
             if (itemsInScan.Length != 1)
-            {
-                result = false;
-                goto returnToMain;
-            }
+                return false;
 
             // Exercise SortedSetRemove
-            api.SortedSetRemove(ssA, ssMembers[0], out count);
-            if (count == 0)
-            {
-                result = false;
-                goto returnToMain;
-            }
+            var status = api.SortedSetRemove(ssA, ssMembers[0], out count);
+            if (status != GarnetStatus.OK || count != 1)
+                return false;
 
-            var status = api.SortedSetRange(ssA, minRange, maxRange, sortedSetOrderOperation: SortedSetOrderOperation.ByScore, out var elements, out string error, false, false, limit: ("1", 5));
-            if (status == GarnetStatus.OK && error == default)
-            {
-                if (!elements[0].ReadOnlySpan.SequenceEqual(ssItems[2].member.ReadOnlySpan))
-                    result = false;
-                else
-                {
-                    status = api.SortedSetIncrement(ssA, 12345, ssMembers[0], out double newScore);
-                    if (newScore != 12345)
-                        result = false;
-                    else
-                    {
-                        status = api.SortedSetRemoveRangeByScore(ssA, "12345", "12345", out int countRemoved);
-                        if (countRemoved != 1)
-                            result = false;
-                        else
-                        {
-                            api.SortedSetRemove(ssA, ssMembers[0..5], out count);
-                            if (count != 4)
-                                result = false;
-                        }
-                    }
-                }
-            }
-        returnToMain:
-            WriteSimpleString(ref output, result ? "SUCCESS" : "ERROR");
+            // Exercise SortedSetRank
+            status = api.SortedSetRank(ssA, ssMembers[1], true, out var rank);
+            if (status != GarnetStatus.OK || rank != 8)
+                return false;
+
+            // Exercise SortedSetPop
+            status = api.SortedSetPop(ssA, out var pairs, 1, false);
+            if (status != GarnetStatus.OK || pairs.Length != 1 || !pairs[0].member.ReadOnlySpan.SequenceEqual(ssMembers[9].ReadOnlySpan))
+                return false;
+
+            // Exercise SortedSetRange
+            status = api.SortedSetRange(ssA, minRange, maxRange,
+                sortedSetOrderOperation: SortedSetOrderOperation.ByScore, out var elements, out var error, false, false,
+                limit: ("1", 5));
+            if (status != GarnetStatus.OK || error != default || elements.Length != 5 || !elements.Zip(ssItems.Skip(2).Take(5),
+                    (e, i) => e.ReadOnlySpan.SequenceEqual(i.member.ReadOnlySpan)).All(t => t))
+                return false;
+
+            // Exercise SortedSetIncrement
+            status = api.SortedSetIncrement(ssA, 12345, ssMembers[0], out var newScore);
+            if (status != GarnetStatus.OK || newScore != 12345)
+                return false;
+
+            // Exercise SortedSetRemoveRangeByScore
+            status = api.SortedSetRemoveRangeByScore(ssA, "12345", "12345", out var countRemoved);
+            if (status != GarnetStatus.OK || countRemoved != 1)
+                return false;
+
+            // Exercise SortedSetRemoveRangeByLex
+            status = api.SortedSetRemoveRangeByLex(ssA, "(item7", "[item9", out countRemoved);
+            if (status != GarnetStatus.OK || countRemoved != 2)
+                return false;
+
+            // Exercise SortedSetRemoveRangeByRank
+            status = api.SortedSetRemoveRangeByRank(ssA, 1, 3, out countRemoved);
+            if (status != GarnetStatus.OK || countRemoved != 3)
+                return false;
+
+            // Exercise SortedSetRemove
+            status = api.SortedSetRemove(ssA, ssMembers[..6], out count);
+            if (status != GarnetStatus.OK || count != 2)
+                return false;
+
+            // Exercise SortedSetLength 
+            status = api.SortedSetLength(ssA, out var length);
+            if (status != GarnetStatus.OK || length != 1)
+                return false;
+
+            return true;
         }
     }
 }

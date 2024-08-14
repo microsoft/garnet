@@ -7,25 +7,35 @@ using Tsavorite.core;
 
 namespace Tsavorite.test.ReadCacheTests
 {
+    using ClassAllocator = GenericAllocator<MyKey, MyValue, StoreFunctions<MyKey, MyValue, MyKey.Comparer, DefaultRecordDisposer<MyKey, MyValue>>>;
+    using ClassStoreFunctions = StoreFunctions<MyKey, MyValue, MyKey.Comparer, DefaultRecordDisposer<MyKey, MyValue>>;
+
     [TestFixture]
     internal class ObjectReadCacheTests
     {
-        private TsavoriteKV<MyKey, MyValue> store;
+        private TsavoriteKV<MyKey, MyValue, ClassStoreFunctions, ClassAllocator> store;
         private IDevice log, objlog;
 
         [SetUp]
         public void Setup()
         {
             TestUtils.DeleteDirectory(TestUtils.MethodTestDir, wait: true);
-            var readCacheSettings = new ReadCacheSettings { MemorySizeBits = 15, PageSizeBits = 10 };
             log = Devices.CreateLogDevice(Path.Join(TestUtils.MethodTestDir, "ObjectReadCacheTests.log"), deleteOnClose: true);
             objlog = Devices.CreateLogDevice(Path.Join(TestUtils.MethodTestDir, "ObjectReadCacheTests.obj.log"), deleteOnClose: true);
 
-            store = new TsavoriteKV<MyKey, MyValue>
-                (128,
-                logSettings: new LogSettings { LogDevice = log, ObjectLogDevice = objlog, MemorySizeBits = 15, PageSizeBits = 10, ReadCacheSettings = readCacheSettings },
-                serializerSettings: new SerializerSettings<MyKey, MyValue> { keySerializer = () => new MyKeySerializer(), valueSerializer = () => new MyValueSerializer() }
-                );
+            store = new(new()
+            {
+                IndexSize = 1L << 13,
+                LogDevice = log,
+                ObjectLogDevice = objlog,
+                MemorySize = 1L << 15,
+                PageSize = 1L << 10,
+                ReadCacheMemorySize = 1L << 15,
+                ReadCachePageSize = 1L << 10,
+                ReadCacheEnabled = true
+            }, StoreFunctions<MyKey, MyValue>.Create(new MyKey.Comparer(), () => new MyKeySerializer(), () => new MyValueSerializer(), DefaultRecordDisposer<MyKey, MyValue>.Instance)
+                , (allocatorSettings, storeFunctions) => new(allocatorSettings, storeFunctions)
+            );
         }
 
         [TearDown]

@@ -5,7 +5,9 @@ using System.Threading;
 
 namespace Tsavorite.core
 {
-    public unsafe partial class TsavoriteKV<Key, Value> : TsavoriteBase
+    public unsafe partial class TsavoriteKV<TKey, TValue, TStoreFunctions, TAllocator> : TsavoriteBase
+        where TStoreFunctions : IStoreFunctions<TKey, TValue>
+        where TAllocator : IAllocator<TKey, TValue, TStoreFunctions>
     {
         private void SplitBuckets(long hash)
         {
@@ -99,16 +101,16 @@ namespace Tsavorite.core
                         var logicalAddress = entry.Address;
                         long physicalAddress = 0;
 
-                        if (entry.ReadCache && entry.AbsoluteAddress >= readcache.HeadAddress)
+                        if (entry.ReadCache && entry.AbsoluteAddress >= readCacheBase.HeadAddress)
                             physicalAddress = readcache.GetPhysicalAddress(entry.AbsoluteAddress);
-                        else if (logicalAddress >= hlog.HeadAddress)
+                        else if (logicalAddress >= hlogBase.HeadAddress)
                             physicalAddress = hlog.GetPhysicalAddress(logicalAddress);
 
                         // It is safe to always use hlog instead of readcache for some calls such
                         // as GetKey and GetInfo
                         if (physicalAddress != 0)
                         {
-                            var hash = comparer.GetHashCode64(ref hlog.GetKey(physicalAddress));
+                            var hash = storeFunctions.GetKeyHashCode64(ref hlog.GetKey(physicalAddress));
                             if ((hash & state[resizeInfo.version].size_mask) >> (state[resizeInfo.version].size_bits - 1) == 0)
                             {
                                 // Insert in left
@@ -220,10 +222,10 @@ namespace Tsavorite.core
                 entry.Address = logicalAddress;
                 if (entry.ReadCache)
                 {
-                    if (logicalAddress < readcache.HeadAddress)
+                    if (logicalAddress < readCacheBase.HeadAddress)
                         break;
                     var physicalAddress = readcache.GetPhysicalAddress(logicalAddress);
-                    var hash = comparer.GetHashCode64(ref readcache.GetKey(physicalAddress));
+                    var hash = storeFunctions.GetKeyHashCode64(ref readcache.GetKey(physicalAddress));
                     if ((hash & state[resizeInfo.version].size_mask) >> (state[resizeInfo.version].size_bits - 1) == bit)
                     {
                         return logicalAddress;
@@ -232,10 +234,10 @@ namespace Tsavorite.core
                 }
                 else
                 {
-                    if (logicalAddress < hlog.HeadAddress)
+                    if (logicalAddress < hlogBase.HeadAddress)
                         break;
                     var physicalAddress = hlog.GetPhysicalAddress(logicalAddress);
-                    var hash = comparer.GetHashCode64(ref hlog.GetKey(physicalAddress));
+                    var hash = storeFunctions.GetKeyHashCode64(ref hlog.GetKey(physicalAddress));
                     if ((hash & state[resizeInfo.version].size_mask) >> (state[resizeInfo.version].size_bits - 1) == bit)
                     {
                         return logicalAddress;

@@ -10,11 +10,14 @@ using Tsavorite.core;
 
 namespace Garnet.test
 {
+    using ObjectStoreAllocator = GenericAllocator<byte[], IGarnetObject, StoreFunctions<byte[], IGarnetObject, ByteArrayKeyComparer, DefaultRecordDisposer<byte[], IGarnetObject>>>;
+    using ObjectStoreFunctions = StoreFunctions<byte[], IGarnetObject, ByteArrayKeyComparer, DefaultRecordDisposer<byte[], IGarnetObject>>;
+
     [TestFixture]
     public class CacheSizeTrackerTests
     {
         GarnetServer server;
-        TsavoriteKV<byte[], IGarnetObject> objStore;
+        TsavoriteKV<byte[], IGarnetObject, ObjectStoreFunctions, ObjectStoreAllocator> objStore;
         CacheSizeTracker cacheSizeTracker;
 
         [SetUp]
@@ -30,7 +33,7 @@ namespace Garnet.test
         [TearDown]
         public void TearDown()
         {
-            server.Dispose();
+            server?.Dispose();
             TestUtils.DeleteDirectory(TestUtils.MethodTestDir);
         }
 
@@ -77,7 +80,7 @@ namespace Garnet.test
 
             // Wait for the resizing to happen
             bool eventSignaled = epcEvent.Wait(
-                TimeSpan.FromSeconds(3 * LogSizeTracker<byte[], IGarnetObject, CacheSizeTracker.LogSizeCalculator>.resizeTaskDelaySeconds)); // Wait for 3x resize task delay
+                TimeSpan.FromSeconds(3 * LogSizeTracker<byte[], IGarnetObject, ObjectStoreFunctions, ObjectStoreAllocator, CacheSizeTracker.LogSizeCalculator>.resizeTaskDelaySeconds)); // Wait for 3x resize task delay
 
             if (!eventSignaled)
             {

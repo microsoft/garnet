@@ -12,11 +12,11 @@ namespace Tsavorite.core
     /// <summary>
     /// Scan iterator for hybrid log
     /// </summary>
-    public sealed class SpanByteScanIterator : ScanIteratorBase, ITsavoriteScanIterator<SpanByte, SpanByte>, IPushScanIterator<SpanByte>
+    public sealed class SpanByteScanIterator<TStoreFunctions> : ScanIteratorBase, ITsavoriteScanIterator<SpanByte, SpanByte>, IPushScanIterator<SpanByte>
+        where TStoreFunctions : IStoreFunctions<SpanByte, SpanByte>
     {
-        private readonly TsavoriteKV<SpanByte, SpanByte> store;
-        private readonly SpanByteAllocator hlog;
-        private readonly ITsavoriteEqualityComparer<SpanByte> comparer;
+        private readonly TsavoriteKV<SpanByte, SpanByte, TStoreFunctions, SpanByteAllocator<TStoreFunctions>> store;
+        private readonly SpanByteAllocatorImpl<TStoreFunctions> hlog;
         private readonly BlittableFrame frame;
 
         private SectorAlignedMemory memory;
@@ -28,15 +28,16 @@ namespace Tsavorite.core
         /// Constructor
         /// </summary>
         /// <param name="store"></param>
-        /// <param name="hlog"></param>
+        /// <param name="hlog">The fully derived log implementation</param>
         /// <param name="beginAddress"></param>
         /// <param name="endAddress"></param>
         /// <param name="scanBufferingMode"></param>
+        /// <param name="includeSealedRecords"></param>
         /// <param name="epoch">Epoch to use for protection; may be null if <paramref name="forceInMemory"/> is true.</param>
         /// <param name="forceInMemory">Provided address range is known by caller to be in memory, even if less than HeadAddress</param>
         /// <param name="logger"></param>
-        internal SpanByteScanIterator(TsavoriteKV<SpanByte, SpanByte> store, SpanByteAllocator hlog, long beginAddress, long endAddress,
-                ScanBufferingMode scanBufferingMode, bool includeSealedRecords, LightEpoch epoch, bool forceInMemory = false, ILogger logger = null)
+        internal SpanByteScanIterator(TsavoriteKV<SpanByte, SpanByte, TStoreFunctions, SpanByteAllocator<TStoreFunctions>> store, SpanByteAllocatorImpl<TStoreFunctions> hlog,
+                long beginAddress, long endAddress, ScanBufferingMode scanBufferingMode, bool includeSealedRecords, LightEpoch epoch, bool forceInMemory = false, ILogger logger = null)
             : base(beginAddress == 0 ? hlog.GetFirstValidLogicalAddress(0) : beginAddress, endAddress, scanBufferingMode, includeSealedRecords, epoch, hlog.LogPageSizeBits, logger: logger)
         {
             this.store = store;
@@ -49,12 +50,12 @@ namespace Tsavorite.core
         /// <summary>
         /// Constructor for use with tail-to-head push iteration of the passed key's record versions
         /// </summary>
-        internal SpanByteScanIterator(TsavoriteKV<SpanByte, SpanByte> store, ITsavoriteEqualityComparer<SpanByte> comparer, SpanByteAllocator hlog, long beginAddress, LightEpoch epoch, ILogger logger = null)
+        internal SpanByteScanIterator(TsavoriteKV<SpanByte, SpanByte, TStoreFunctions, SpanByteAllocator<TStoreFunctions>> store, SpanByteAllocatorImpl<TStoreFunctions> hlog,
+                long beginAddress, LightEpoch epoch, ILogger logger = null)
             : base(beginAddress == 0 ? hlog.GetFirstValidLogicalAddress(0) : beginAddress, hlog.GetTailAddress(), ScanBufferingMode.SinglePageBuffering, false, epoch, hlog.LogPageSizeBits, logger: logger)
         {
             this.store = store;
             this.hlog = hlog;
-            this.comparer = comparer;
             forceInMemory = false;
             if (frameSize > 0)
                 frame = new BlittableFrame(frameSize, hlog.PageSize, hlog.GetDeviceSectorSize());
@@ -63,7 +64,7 @@ namespace Tsavorite.core
         /// <summary>
         /// Gets reference to current key
         /// </summary>
-        public ref SpanByte GetKey() => ref hlog.GetKey(currentPhysicalAddress);
+        public ref SpanByte GetKey() => ref hlog._wrapper.GetKey(currentPhysicalAddress);
 
         /// <summary>
         /// Gets reference to current value
@@ -82,14 +83,6 @@ namespace Tsavorite.core
 
             beginAddress = nextAddress = SnapToLogicalAddressBoundary(ref cursor, headAddress, currentPage);
             return true;
-        }
-
-        ref RecordInfo IPushScanIterator<SpanByte>.GetLockableInfo()
-        {
-            // hlog.HeadAddress may have been incremented so use ClosedUntilAddress to avoid a false negative assert (not worth raising the temp headAddress out of BeginGetNext just for this).
-            Debug.Assert(currentPhysicalAddress >= hlog.ClosedUntilAddress, "GetLockableInfo() should be in-memory");
-            Debug.Assert(epoch.ThisInstanceProtected(), "GetLockableInfo() should be called with the epoch held");
-            return ref hlog.GetInfo(currentPhysicalAddress);
         }
 
         private bool InitializeGetNext(out long headAddress, out long currentPage)
@@ -117,7 +110,7 @@ namespace Tsavorite.core
 
             currentPage = currentAddress >> hlog.LogPageSizeBits;
             if (currentAddress < headAddress && !forceInMemory)
-                BufferAndLoad(currentAddress, currentPage, currentPage % frameSize, headAddress, stopAddress);
+                _ = BufferAndLoad(currentAddress, currentPage, currentPage % frameSize, headAddress, stopAddress);
 
             // Success; keep the epoch held for GetNext (SnapCursorToLogicalAddress will Suspend()).
             return true;
@@ -176,7 +169,7 @@ namespace Tsavorite.core
 
                 nextAddress = currentAddress + recordSize;
 
-                recordInfo = hlog.GetInfo(physicalAddress);
+                recordInfo = hlog._wrapper.GetInfo(physicalAddress);
                 bool skipOnScan = includeSealedRecords ? recordInfo.Invalid : recordInfo.SkipOnScan;
                 if (skipOnScan || recordInfo.IsNull())
                 {
@@ -193,12 +186,12 @@ namespace Tsavorite.core
                 memory = null;
                 if (currentAddress >= headAddress || forceInMemory)
                 {
-                    OperationStackContext<SpanByte, SpanByte> stackCtx = default;
+                    OperationStackContext<SpanByte, SpanByte, TStoreFunctions, SpanByteAllocator<TStoreFunctions>> stackCtx = default;
                     try
                     {
-                        // GetKey() and GetLockableInfo() should work but for safety and consistency with other allocators use physicalAddress.
+                        // GetKey() should work but for safety and consistency with other allocators use physicalAddress.
                         if (currentAddress >= headAddress && store is not null)
-                            store.LockForScan(ref stackCtx, ref hlog.GetKey(physicalAddress), ref hlog.GetInfo(physicalAddress));
+                            store.LockForScan(ref stackCtx, ref hlog._wrapper.GetKey(physicalAddress));
 
                         memory = hlog.bufferPool.Get(recordSize);
                         unsafe
@@ -210,7 +203,7 @@ namespace Tsavorite.core
                     finally
                     {
                         if (stackCtx.recSrc.HasLock)
-                            store.UnlockForScan(ref stackCtx, ref GetKey(), ref ((IPushScanIterator<SpanByte>)this).GetLockableInfo());
+                            store.UnlockForScan(ref stackCtx);
                     }
                 }
 
@@ -247,10 +240,10 @@ namespace Tsavorite.core
 
                 long physicalAddress = GetPhysicalAddress(currentAddress, headAddress, currentPage, offset);
 
-                recordInfo = hlog.GetInfo(physicalAddress);
+                recordInfo = hlog._wrapper.GetInfo(physicalAddress);
                 nextAddress = recordInfo.PreviousAddress;
                 bool skipOnScan = includeSealedRecords ? recordInfo.Invalid : recordInfo.SkipOnScan;
-                if (skipOnScan || recordInfo.IsNull() || !comparer.Equals(ref hlog.GetKey(physicalAddress), ref key))
+                if (skipOnScan || recordInfo.IsNull() || !hlog._storeFunctions.KeysEqual(ref hlog._wrapper.GetKey(physicalAddress), ref key))
                 {
                     epoch?.Suspend();
                     continue;
@@ -297,7 +290,8 @@ namespace Tsavorite.core
             frame?.Dispose();
         }
 
-        internal override void AsyncReadPagesFromDeviceToFrame<TContext>(long readPageStart, int numPages, long untilAddress, TContext context, out CountdownEvent completed, long devicePageOffset = 0, IDevice device = null, IDevice objectLogDevice = null, CancellationTokenSource cts = null)
+        internal override void AsyncReadPagesFromDeviceToFrame<TContext>(long readPageStart, int numPages, long untilAddress, TContext context, out CountdownEvent completed,
+                long devicePageOffset = 0, IDevice device = null, IDevice objectLogDevice = null, CancellationTokenSource cts = null)
             => hlog.AsyncReadPagesFromDeviceToFrame(readPageStart, numPages, untilAddress, AsyncReadPagesCallback, context, frame, out completed, devicePageOffset, device, objectLogDevice);
 
         private unsafe void AsyncReadPagesCallback(uint errorCode, uint numBytes, object context)
@@ -306,7 +300,7 @@ namespace Tsavorite.core
 
             if (errorCode != 0)
             {
-                logger?.LogError($"AsyncReadPagesCallback error: {errorCode}");
+                logger?.LogError($"{nameof(AsyncReadPagesCallback)} error: {{errorCode}}", errorCode);
                 result.cts?.Cancel();
             }
 

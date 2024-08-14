@@ -8,11 +8,6 @@ namespace Tsavorite.core
     /// <summary>
     /// A list of <see cref="CompletedOutputIterator{TKey, TValue, TInput, TOutput, TContext}"/> for completed outputs from a pending operation.
     /// </summary>
-    /// <typeparam name="TKey">The Key type of the <see cref="TsavoriteKV{Key, Value}"/></typeparam>
-    /// <typeparam name="TValue">The Value type of the <see cref="TsavoriteKV{Key, Value}"/></typeparam>
-    /// <typeparam name="TInput">The session input type</typeparam>
-    /// <typeparam name="TOutput">The session output type</typeparam>
-    /// <typeparam name="TContext">The session context type</typeparam>
     /// <remarks>The session holds this list and returns an enumeration to the caller of an appropriate CompletePending overload. The session will handle
     /// disposing and clearing this list, but it is best if the caller calls Dispose() after processing the results, so the key, input, and heap containers
     /// are released as soon as possible.</remarks>
@@ -24,7 +19,9 @@ namespace Tsavorite.core
         internal int maxIndex = -1;
         internal int currentIndex = -1;
 
-        internal void TransferFrom(ref TsavoriteKV<TKey, TValue>.PendingContext<TInput, TOutput, TContext> pendingContext, Status status)
+        internal void TransferFrom<TStoreFunctions, TAllocator>(ref TsavoriteKV<TKey, TValue, TStoreFunctions, TAllocator>.PendingContext<TInput, TOutput, TContext> pendingContext, Status status)
+        where TStoreFunctions : IStoreFunctions<TKey, TValue>
+        where TAllocator : IAllocator<TKey, TValue, TStoreFunctions>
         {
             // Note: vector is never null
             if (maxIndex >= vector.Length - 1)
@@ -69,11 +66,6 @@ namespace Tsavorite.core
     /// <summary>
     /// Structure to hold a key and its output for a pending operation.
     /// </summary>
-    /// <typeparam name="TKey">The Key type of the <see cref="TsavoriteKV{Key, Value}"/></typeparam>
-    /// <typeparam name="TValue">The Value type of the <see cref="TsavoriteKV{Key, Value}"/></typeparam>
-    /// <typeparam name="TInput">The session input type</typeparam>
-    /// <typeparam name="TOutput">The session output type</typeparam>
-    /// <typeparam name="TContext">The session context type</typeparam>
     /// <remarks>The session holds a list of these that it returns to the caller of an appropriate CompletePending overload. The session will handle disposing
     /// and clearing, and will manage Dispose(), but it is best if the caller calls Dispose() after processing the results, so the key, input, and heap containers
     /// are released as soon as possible.</remarks>
@@ -112,7 +104,9 @@ namespace Tsavorite.core
         /// </summary>
         public Status Status;
 
-        internal void TransferFrom(ref TsavoriteKV<TKey, TValue>.PendingContext<TInput, TOutput, TContext> pendingContext, Status status)
+        internal void TransferFrom<TStoreFunctions, TAllocator>(ref TsavoriteKV<TKey, TValue, TStoreFunctions, TAllocator>.PendingContext<TInput, TOutput, TContext> pendingContext, Status status)
+            where TStoreFunctions : IStoreFunctions<TKey, TValue>
+            where TAllocator : IAllocator<TKey, TValue, TStoreFunctions>
         {
             // Transfers the containers from the pendingContext, then null them; this is called before pendingContext.Dispose().
             keyContainer = pendingContext.key;
