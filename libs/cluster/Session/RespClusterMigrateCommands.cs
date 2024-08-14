@@ -55,6 +55,7 @@ namespace Garnet.cluster
                 payload += 4;
                 var i = 0;
 
+                logger?.LogTrace("[ReceiveStore] ClusterMigrate: keyCount:({keyCount})", keyCount);
                 while (i < keyCount)
                 {
 
@@ -94,12 +95,14 @@ namespace Garnet.cluster
                         _ = basicGarnetApi.SET(ref key, ref value);
                     i++;
                 }
+                logger?.LogTrace("[CompleteStore] ClusterMigrate: keyCount:({keyCount}) success:({success})", keyCount, migrateState == 0);
             }
             else if (storeType.Equals("OSTORE"))
             {
                 var keyCount = *(int*)payload;
                 payload += 4;
                 var i = 0;
+                logger?.LogTrace("[ReceiveObjectStore] ClusterMigrate: keyCount:({keyCount})", keyCount);
                 while (i < keyCount)
                 {
                     if (!RespReadUtils.ReadSerializedData(out var key, out var data, out var expiration, ref payload, recvBufferPtr + bytesRead))
@@ -130,6 +133,7 @@ namespace Garnet.cluster
 
                     i++;
                 }
+                logger?.LogTrace("[CompleteObjectStore] ClusterMigrate: keyCount:({keyCount}) success:({success})", keyCount, migrateState == 0);
             }
             else
             {
