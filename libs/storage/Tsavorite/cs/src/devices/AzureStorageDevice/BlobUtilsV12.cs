@@ -38,6 +38,31 @@ namespace Tsavorite.devices
 
         internal static ServiceClients GetServiceClients(string connectionString)
         {
+            var (aggressiveOptions, defaultOptions, withRetriesOptions) = GetBlobClientOptions();
+
+            return new ServiceClients()
+            {
+                Default = new BlobServiceClient(connectionString, defaultOptions),
+                Aggressive = new BlobServiceClient(connectionString, aggressiveOptions),
+                WithRetries = new BlobServiceClient(connectionString, withRetriesOptions),
+            };
+        }
+
+        internal static ServiceClients GetServiceClients(string serviceUrl, TokenCredential credential)
+        {
+            var (aggressiveOptions, defaultOptions, withRetriesOptions) = GetBlobClientOptions();
+            var serviceUri = new Uri(serviceUrl);
+
+            return new ServiceClients()
+            {
+                Default = new BlobServiceClient(serviceUri, credential, defaultOptions),
+                Aggressive = new BlobServiceClient(serviceUri, credential, aggressiveOptions),
+                WithRetries = new BlobServiceClient(serviceUri, credential, withRetriesOptions),
+            };
+        }
+
+        private static (BlobClientOptions aggressiveOptions, BlobClientOptions defaultOptions, BlobClientOptions withRetriesOptions) GetBlobClientOptions()
+        {
             var aggressiveOptions = new BlobClientOptions();
             aggressiveOptions.Retry.MaxRetries = 0;
             aggressiveOptions.Retry.NetworkTimeout = TimeSpan.FromSeconds(3);
@@ -54,12 +79,7 @@ namespace Tsavorite.devices
             withRetriesOptions.Retry.Delay = TimeSpan.FromSeconds(1);
             withRetriesOptions.Retry.MaxDelay = TimeSpan.FromSeconds(30);
 
-            return new ServiceClients()
-            {
-                Default = new BlobServiceClient(connectionString, defaultOptions),
-                Aggressive = new BlobServiceClient(connectionString, aggressiveOptions),
-                WithRetries = new BlobServiceClient(connectionString, withRetriesOptions),
-            };
+            return (aggressiveOptions, defaultOptions, withRetriesOptions);
         }
 
         public struct ContainerClients
