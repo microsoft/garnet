@@ -243,6 +243,7 @@ namespace Garnet.server
             string[] keys = null;
             if (nKeys > 0)
             {
+                // Lua uses 1-based indexing, so we allocate an extra entry in the array
                 keys = new string[nKeys + 1];
                 for (int i = 0; i < nKeys; i++)
                 {
@@ -267,6 +268,7 @@ namespace Garnet.server
             string[] argv = null;
             if (count > 0)
             {
+                // Lua uses 1-based indexing, so we allocate an extra entry in the array
                 argv = new string[count + 1];
                 for (int i = 0; i < count; i++)
                 {
@@ -370,7 +372,7 @@ namespace Garnet.server
             }
 
             var result = function.Call();
-            if (result.Length > 0) return result[0]; else return null;
+            return result.Length > 0 ? result[0] : null;
         }
 
         /// <summary>
@@ -380,7 +382,7 @@ namespace Garnet.server
         public object Run()
         {
             var result = function.Call();
-            if (result.Length > 0) return result[0]; else return null;
+            return result.Length > 0 ? result[0] : null;
         }
 
         /// <summary>
@@ -388,8 +390,6 @@ namespace Garnet.server
         /// </summary>
         /// <returns></returns>
         public void RunVoid()
-        {
-            function.Call();
-        }
+            => function.Call();
     }
 }

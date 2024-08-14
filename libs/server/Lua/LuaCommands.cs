@@ -91,7 +91,7 @@ namespace Garnet.server
         }
 
         /// <summary>
-        /// SCRIPT Commands (load, exists, flush, kills)
+        /// SCRIPT Commands (load, exists, flush)
         /// </summary>
         /// <param name="count"></param>
         /// <returns></returns>
@@ -150,6 +150,8 @@ namespace Garnet.server
                             SendAndReset();
                         break;
                     default:
+                        while (!RespWriteUtils.WriteError(CmdStrings.RESP_ERR_GENERIC_UNK_CMD, ref dcurr, dend))
+                            SendAndReset();
                         break;
                 }
             }
