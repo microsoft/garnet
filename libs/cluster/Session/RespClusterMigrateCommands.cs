@@ -46,8 +46,8 @@ namespace Garnet.cluster
                 return false;
 
             var replaceOption = _replace.Equals("T");
-
             var currentConfig = clusterProvider.clusterManager.CurrentConfig;
+            byte migrateState = 0;
 
             if (storeType.Equals("SSTORE"))
             {
@@ -84,11 +84,6 @@ namespace Garnet.cluster
                         continue;
                     }
 
-                    if (i < migrateSetCount)
-                        continue;
-
-                    migrateSetCount++;
-
                     // Set if key replace flag is set or key does not exist
                     var keySlice = new ArgSlice(key.ToPointer(), key.Length);
                     if (replaceOption || !Exists(ref keySlice))
@@ -119,11 +114,6 @@ namespace Garnet.cluster
                         continue;
                     }
 
-                    if (i < migrateSetCount)
-                        continue;
-
-                    migrateSetCount++;
-
                     var value = clusterProvider.storeWrapper.GarnetObjectSerializer.Deserialize(data);
                     value.Expiration = expiration;
 
@@ -151,9 +141,6 @@ namespace Garnet.cluster
                 while (!RespWriteUtils.WriteDirect(CmdStrings.RESP_OK, ref dcurr, dend))
                     SendAndReset();
             }
-
-            migrateSetCount = 0;
-            migrateState = 0;
             readHead = (int)(ptr - recvBufferPtr);
             return true;
         }
