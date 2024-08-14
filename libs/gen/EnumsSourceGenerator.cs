@@ -169,7 +169,7 @@ public class EnumsSourceGenerator : IIncrementalGenerator
     private class EnumDetailsComparer : IEqualityComparer<EnumDetails>
     {
         public bool Equals(EnumDetails x, EnumDetails y) => x.EnumName.Equals(y.EnumName) && x.Namespace.Equals(y.Namespace) && x.Values.SequenceEqual(y.Values);
-        public int GetHashCode(EnumDetails obj) 
+        public int GetHashCode(EnumDetails obj)
         {
             var hash = new HashCode();
             hash.Add(obj.EnumName);
