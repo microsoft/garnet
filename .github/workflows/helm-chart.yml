@@ -1,0 +1,56 @@
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - 'charts/**'
+
+permissions:
+  packages: write
+      
+jobs:
+  helm-chart:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Configure git
+        run: |
+          git config user.name "$GITHUB_ACTOR"
+          git config user.email "$GITHUB_ACTOR@users.noreply.github.com"
+
+      - name: Install helm
+        uses: azure/setup-helm@v4
+        env:
+          GITHUB_TOKEN: "${{ secrets.GITHUB_TOKEN }}"
+
+      - name: Helm lint and package
+        run: |
+          mkdir .cr-release-packages
+          for chart in $(find charts -depth 1 -type d); do
+            if [ -z "${chart:-}" ]; then
+              break
+            fi
+            helm lint "${chart}"
+            helm package "${chart}" --dependency-update --destination .cr-release-packages
+          done
+
+      - name: Login to GHCR
+        env:
+          GITHUB_TOKEN: "${{ secrets.GITHUB_TOKEN }}"
+        run: |
+          echo "$GITHUB_TOKEN" | helm registry login ghcr.io --username "$GITHUB_ACTOR" --password-stdin
+
+      - name: Push charts to GHCR
+        run: |
+          shopt -s nullglob
+          for pkg in .cr-release-packages/*.tgz; do
+            if [ -z "${pkg:-}" ]; then
+              break
+            fi
+            helm push "${pkg}" "oci://ghcr.io/${GITHUB_REPOSITORY_OWNER}/helm-charts"
+          done
+
