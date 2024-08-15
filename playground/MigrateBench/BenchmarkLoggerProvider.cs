@@ -14,15 +14,15 @@ namespace MigrateBench
     {
         private readonly TextWriter textWriter;
 
-        static readonly string[] lvl = new string[]
-        {
+        static readonly string[] lvl =
+        [
             "trce",
             "dbug",
             "info",
             "warn",
             "errr",
             "crit",
-        };
+        ];
 
         public BenchmarkLoggerProvider(TextWriter textWriter)
         {
