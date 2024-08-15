@@ -77,6 +77,7 @@ namespace MigrateBench
 
                 int dbsize(ref GarnetClientSession c)
                 {
+                    if (!opts.Dbsize) return 0;
                     var resp = c.ExecuteAsync("dbsize").GetAwaiter().GetResult();
                     return int.Parse(resp);
                 }

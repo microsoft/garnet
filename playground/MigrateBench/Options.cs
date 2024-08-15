@@ -22,5 +22,8 @@ namespace MigrateBench
 
         [Option("logger-level", Required = false, Default = LogLevel.Information, HelpText = "Logging level")]
         public LogLevel LogLevel { get; set; }
+
+        [Option("dbsize", Required = false, Default = false, HelpText = "Count keys for between instances")]
+        public bool Dbsize { get; set; }
     }
 }
