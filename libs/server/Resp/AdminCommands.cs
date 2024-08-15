@@ -456,7 +456,7 @@ namespace Garnet.server
             }
 
             // If no error is found, continue to try register custom commands in the server
-            if (errorMsg == null &&
+            if (errorMsg.IsEmpty &&
                 TryRegisterCustomCommands(binaryPaths, cmdInfoPath, classNameToRegisterArgs, customCommandManager, out errorMsg))
             {
                 while (!RespWriteUtils.WriteDirect(CmdStrings.RESP_OK, ref dcurr, dend))
@@ -500,7 +500,7 @@ namespace Garnet.server
                 }
             }
 
-            if (errorMsg != default)
+            if (!errorMsg.IsEmpty)
             {
                 while (!RespWriteUtils.WriteError(errorMsg, ref dcurr, dend))
                     SendAndReset();
