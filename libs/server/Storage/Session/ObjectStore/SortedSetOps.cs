@@ -8,7 +8,6 @@ using System.Globalization;
 using System.Text;
 using Garnet.common;
 using Tsavorite.core;
-using static System.Formats.Asn1.AsnWriter;
 
 namespace Garnet.server
 {

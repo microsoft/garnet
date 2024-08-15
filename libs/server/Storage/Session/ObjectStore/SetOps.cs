@@ -4,10 +4,6 @@
 using System;
 using System.Collections.Generic;
 using System.Diagnostics;
-using System.Diagnostics.Metrics;
-using System.Text;
-using System.Xml.Linq;
-using Garnet.common;
 using Tsavorite.core;
 
 namespace Garnet.server

@@ -2,9 +2,6 @@
 // Licensed under the MIT license.
 
 using System;
-using System.Diagnostics.Metrics;
-using System.Text;
-using System.Xml.Linq;
 using Tsavorite.core;
 
 namespace Garnet.server

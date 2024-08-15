@@ -128,13 +128,6 @@ namespace Garnet.server
         /// </summary>
         internal unsafe bool CheckSetGetFlag()
             => (flags & RespInputFlags.SetGet) != 0;
-
-        /// <summary>
-        /// Gets a pointer to the top of the header
-        /// </summary>
-        /// <returns>Pointer</returns>
-        public unsafe byte* ToPointer()
-            => (byte*)Unsafe.AsPointer(ref cmd);
     }
 
     /// <summary>
@@ -146,7 +139,7 @@ namespace Garnet.server
         /// <summary>
         /// Size of header
         /// </summary>
-        public const int Size = RespInputHeader.Size + (3 * sizeof(int)) + ArgSlice.Size + SessionParseState.Size;
+        public const int Size = RespInputHeader.Size + (3 * sizeof(int)) + SessionParseState.Size;
 
         /// <summary>
         /// Common input header for Garnet
@@ -175,7 +168,7 @@ namespace Garnet.server
         /// <summary>
         /// Session parse state
         /// </summary>
-        [FieldOffset(RespInputHeader.Size + (3 * sizeof(int)) + ArgSlice.Size)]
+        [FieldOffset(RespInputHeader.Size + (3 * sizeof(int)))]
         public SessionParseState parseState;
 
         /// <summary>

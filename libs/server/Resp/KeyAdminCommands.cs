@@ -151,9 +151,7 @@ namespace Garnet.server
 
             if (count > 2)
             {
-                optionStr = parseState.GetString(2);
-
-                if (!Enum.TryParse(optionStr, ignoreCase: true, out expireOption))
+                if (!parseState.TryGetEnum(2, true, out expireOption))
                 {
                     invalidOption = true;
                 }
