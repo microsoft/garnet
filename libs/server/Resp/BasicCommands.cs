@@ -549,7 +549,7 @@ namespace Garnet.server
                 optUpperCased = false;
             }
 
-            if (errorMessage != default)
+            if (!errorMessage.IsEmpty)
             {
                 while (!RespWriteUtils.WriteError(errorMessage, ref dcurr, dend))
                     SendAndReset();
@@ -1386,7 +1386,7 @@ namespace Garnet.server
                 this.respProtocolVersion = respProtocolVersion.Value;
             }
 
-            if (username != default)
+            if (!username.IsEmpty)
             {
                 if (!this.AuthenticateUser(username, password))
                 {

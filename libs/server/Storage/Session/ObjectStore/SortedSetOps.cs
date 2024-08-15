@@ -568,7 +568,7 @@ namespace Garnet.server
             var arguments = new List<ArgSlice> { min, max };
 
             // Operation order
-            if (operation != default)
+            if (!operation.IsEmpty)
             {
                 fixed (byte* ptrOp = operation)
                 {

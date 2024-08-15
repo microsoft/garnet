@@ -405,7 +405,7 @@ namespace Garnet.server
             }
 
             storageApi.DbScan(patternArgSlice, allKeys, cursorFromInput, out var cursor, out var keys,
-                typeParameterValue != default ? long.MaxValue : countValue, typeParameterValue);
+                !typeParameterValue.IsEmpty ? long.MaxValue : countValue, typeParameterValue);
 
             // Prepare values for output
             if (keys.Count == 0)
