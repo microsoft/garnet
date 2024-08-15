@@ -98,6 +98,8 @@ Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "SampleModule", "playground\
 EndProject
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Garnet.gen", "libs\gen\Garnet.gen.csproj", "{E248012E-1D19-4114-924F-EFC9E859C4CD}"
 EndProject
+Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "GarnetJSON", "playground\GarnetJSON\GarnetJSON.csproj", "{2C8F1F5D-31E5-4D00-A46E-F3B1D9BC098F}"
+EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
 		Debug|Any CPU = Debug|Any CPU
@@ -290,6 +292,14 @@ Global
 		{E248012E-1D19-4114-924F-EFC9E859C4CD}.Release|Any CPU.Build.0 = Release|Any CPU
 		{E248012E-1D19-4114-924F-EFC9E859C4CD}.Release|x64.ActiveCfg = Release|Any CPU
 		{E248012E-1D19-4114-924F-EFC9E859C4CD}.Release|x64.Build.0 = Release|Any CPU
+		{2C8F1F5D-31E5-4D00-A46E-F3B1D9BC098F}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{2C8F1F5D-31E5-4D00-A46E-F3B1D9BC098F}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{2C8F1F5D-31E5-4D00-A46E-F3B1D9BC098F}.Debug|x64.ActiveCfg = Debug|Any CPU
+		{2C8F1F5D-31E5-4D00-A46E-F3B1D9BC098F}.Debug|x64.Build.0 = Debug|Any CPU
+		{2C8F1F5D-31E5-4D00-A46E-F3B1D9BC098F}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{2C8F1F5D-31E5-4D00-A46E-F3B1D9BC098F}.Release|Any CPU.Build.0 = Release|Any CPU
+		{2C8F1F5D-31E5-4D00-A46E-F3B1D9BC098F}.Release|x64.ActiveCfg = Release|Any CPU
+		{2C8F1F5D-31E5-4D00-A46E-F3B1D9BC098F}.Release|x64.Build.0 = Release|Any CPU
 	EndGlobalSection
 	GlobalSection(SolutionProperties) = preSolution
 		HideSolutionNode = FALSE
@@ -320,6 +330,7 @@ Global
 		{9BE474A2-1547-43AC-B4F2-FB48A01FA995} = {69A71E2C-00E3-42F3-854E-BE157A24834E}
 		{A8CA619E-8F13-4EF8-943F-2D5E3FEBFB3F} = {69A71E2C-00E3-42F3-854E-BE157A24834E}
 		{E248012E-1D19-4114-924F-EFC9E859C4CD} = {147FCE31-EC09-4C90-8E4D-37CA87ED18C3}
+		{2C8F1F5D-31E5-4D00-A46E-F3B1D9BC098F} = {69A71E2C-00E3-42F3-854E-BE157A24834E}
 	EndGlobalSection
 	GlobalSection(ExtensibilityGlobals) = postSolution
 		SolutionGuid = {2C02C405-4798-41CA-AF98-61EDFEF6772E}
