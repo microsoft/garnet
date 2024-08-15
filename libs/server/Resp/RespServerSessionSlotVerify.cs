@@ -110,19 +110,6 @@ namespace Garnet.server
             }
             csvi.readOnly = cmd.IsReadOnly();
             csvi.sessionAsking = SessionAsking;
-
-            //csvi.firstKey = cmd switch
-            //{
-            //    RespCommand.ZDIFF => 1, // ZDIFF first key comes after keyCount parameter
-            //    _ => 0 // firstKey always starts at position zero since command name has been extracted earlier
-            //};
-
-            //csvi.lastKey = cmd switch
-            //{
-            //    RespCommand.ZDIFF => csvi.firstKey + parseState.GetInt(0), // ZDIFF count of keys is part of parameters
-            //    _ => commandInfo.LastKey < 0 ? commandInfo.LastKey + parseState.count + 1 : commandInfo.LastKey - commandInfo.FirstKey + 1
-            //};
-            //csvi.step = commandInfo.Step;
             return !clusterSession.NetworkMultiKeySlotVerify(ref parseState, ref csvi, ref dcurr, ref dend);
         }
     }
