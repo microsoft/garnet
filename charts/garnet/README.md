@@ -10,6 +10,23 @@ A Helm chart for Microsoft garnet
 
 * <https://github.com/microsoft/garnet.git>
 
+## Usage
+
+[Helm](https://helm.sh) must be installed to use the charts. Please refer to
+Helm's [documentation](https://helm.sh/docs) to get started.
+
+To install the garnet chart (using an OCI-based registry):
+
+```sh
+helm upgrade --install garnet oci://ghcr.io/microsoft/helm-charts/garnet --version <version>
+ ```
+
+To uninstall the chart:
+
+```sh
+helm delete garnet
+```
+
 ## Values
 
 | Key | Type | Default | Description |
