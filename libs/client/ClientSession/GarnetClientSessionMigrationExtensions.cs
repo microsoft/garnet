@@ -8,6 +8,7 @@ using System.Threading;
 using System.Threading.Tasks;
 using Garnet.common;
 using Garnet.networking;
+using Microsoft.Extensions.Logging;
 using Tsavorite.core;
 
 namespace Garnet.client
@@ -208,7 +209,7 @@ namespace Garnet.client
 
             // Payload format = [$length\r\n][number of keys (4 bytes)][raw key value pairs]\r\n
             var size = (int)(curr - 2 - head - (ExtraSpace - 4));
-            //logger?.LogTrace("[MIGRATE]: storeType:{(storeType)} keyCount:({keyCount}) payLoadSize:({payloadSize})", isMainStore ? "MainStore" : "ObjectStore", keyCount, size);
+            logger?.LogTrace("[MIGRATE]: storeType:{(storeType)} keyCount:({keyCount}) payLoadSize:({payloadSize})", isMainStore ? "MainStore" : "ObjectStore", keyCount, size);
             var success = RespWriteUtils.WritePaddedBulkStringLength(size, ExtraSpace - 4, ref head, end);
             Debug.Assert(success);
 

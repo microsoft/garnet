@@ -39,6 +39,7 @@ namespace MigrateBench
 
             sourceNode = new(sourceAddress, sourcePort, bufferSize: 1 << 22);
             targetNode = new(targetAddress, targetPort, bufferSize: 1 << 22);
+            this.timeout = (int)TimeSpan.FromSeconds(opts.Timeout).TotalMilliseconds;
             this.logger = logger;
         }
 
