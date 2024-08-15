@@ -666,7 +666,7 @@ namespace Garnet.server
                     break;
             }
 
-            if (error != default)
+            if (!error.IsEmpty)
             {
                 while (!RespWriteUtils.WriteDirect(error, ref dcurr, dend))
                     SendAndReset();
