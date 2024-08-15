@@ -50,7 +50,7 @@ namespace Garnet.server
             keys = Keys;
 
             Type matchType = null;
-            if (typeObject != default)
+            if (!typeObject.IsEmpty)
             {
                 if (typeObject.SequenceEqual(CmdStrings.ZSET) || typeObject.SequenceEqual(CmdStrings.zset))
                 {
@@ -88,7 +88,7 @@ namespace Garnet.server
 
             // Cursor is zero or not an object store address
             // Scan main store only for string or default key type
-            if ((cursor & IsObjectStoreCursor) == 0 && (typeObject == default || typeObject.SequenceEqual(CmdStrings.STRING) || typeObject.SequenceEqual(CmdStrings.stringt)))
+            if ((cursor & IsObjectStoreCursor) == 0 && (typeObject.IsEmpty || typeObject.SequenceEqual(CmdStrings.STRING) || typeObject.SequenceEqual(CmdStrings.stringt)))
             {
                 basicContext.Session.ScanCursor(ref storeCursor, count, mainStoreDbScanFuncs, validateCursor: cursor != 0 && cursor != lastScanCursor);
                 remainingCount -= Keys.Count;
@@ -96,7 +96,7 @@ namespace Garnet.server
 
             // Scan object store with the type parameter
             // Check the cursor value corresponds to the object store
-            if (!objectStoreBasicContext.IsNull && remainingCount > 0 && (typeObject == default || (!typeObject.SequenceEqual(CmdStrings.STRING) && !typeObject.SequenceEqual(CmdStrings.stringt))))
+            if (!objectStoreBasicContext.IsNull && remainingCount > 0 && (typeObject.IsEmpty || (!typeObject.SequenceEqual(CmdStrings.STRING) && !typeObject.SequenceEqual(CmdStrings.stringt))))
             {
                 var validateCursor = storeCursor != 0 && storeCursor != lastScanCursor;
                 storeCursor &= ~IsObjectStoreCursor;
