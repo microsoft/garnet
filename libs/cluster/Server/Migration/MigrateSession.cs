@@ -324,7 +324,7 @@ namespace Garnet.cluster
                         Status = MigrateState.FAIL;
                         return false;
                     }
-                    logger?.LogTrace("[Completed] SETSLOT {slots} {state} {nodeid}", ClusterManager.GetRange(_sslots.ToArray()), state, nodeid == null ? "" : nodeid);
+                    logger?.LogTrace("[Completed] SETSLOT {slots} {state} {nodeid}", ClusterManager.GetRange([.. _sslots]), state, nodeid == null ? "" : nodeid);
                     return true;
                 }, TaskContinuationOptions.OnlyOnRanToCompletion).WaitAsync(_timeout, _cts.Token).Result;
             }
