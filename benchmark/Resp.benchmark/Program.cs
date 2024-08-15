@@ -27,8 +27,6 @@ namespace Resp.benchmark
     ///   "--op GEOADDREM --dbsize 2048 -b 256 -t 1,2"
     /// </summary>
 
-    // Disabling for keeping compatibility with net6.0 and net7.0
-#pragma warning disable IDE0028
     class Program
     {
         public static IConnectionMultiplexer redis;
