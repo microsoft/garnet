@@ -8,7 +8,6 @@ using System.Threading;
 using System.Threading.Tasks;
 using Garnet.common;
 using Garnet.networking;
-using Microsoft.Extensions.Logging;
 using Tsavorite.core;
 
 namespace Garnet.client
@@ -24,6 +23,9 @@ namespace Garnet.client
         static ReadOnlySpan<byte> MIGRATE => "MIGRATE"u8;
         static ReadOnlySpan<byte> DELKEY => "DELKEY"u8;
         static ReadOnlySpan<byte> GETKVPAIRINSLOT => "GETKVPAIRINSLOT"u8;
+
+        static ReadOnlySpan<byte> MAIN_STORE => "SSTORE"u8;
+        static ReadOnlySpan<byte> OBJECT_STORE => "OSTORE"u8;
 
         /// <summary>
         /// Send AUTH command to target node to authenticate connection.
@@ -176,6 +178,7 @@ namespace Garnet.client
             + 2                 // \r\n
             + 4;                // We write a 4-byte int keyCount at the start of the payload
 
+        bool isMainStore;
         byte* curr, head;
         int keyCount;
         TaskCompletionSource<string> currTcsMigrate = null;
@@ -204,8 +207,8 @@ namespace Garnet.client
             *curr++ = (byte)'\n';
 
             // Payload format = [$length\r\n][number of keys (4 bytes)][raw key value pairs]\r\n
-            int size = (int)(curr - 2 - head - (ExtraSpace - 4));
-            logger?.LogTrace("[Prepare] SendAndResetMigrate: keyCount:({keyCount}) payLoadSize:({payloadSize})", keyCount, size);
+            var size = (int)(curr - 2 - head - (ExtraSpace - 4));
+            //logger?.LogTrace("[MIGRATE]: storeType:{(storeType)} keyCount:({keyCount}) payLoadSize:({payloadSize})", isMainStore ? "MainStore" : "ObjectStore", keyCount, size);
             var success = RespWriteUtils.WritePaddedBulkStringLength(size, ExtraSpace - 4, ref head, end);
             Debug.Assert(success);
 
@@ -277,13 +280,15 @@ namespace Garnet.client
         /// </summary>
         /// <param name="sourceNodeId"></param>
         /// <param name="replaceOption"></param>
-        /// <param name="storeType"></param>
-        public void SetClusterMigrate(string sourceNodeId, Memory<byte> replaceOption, Memory<byte> storeType)
+        /// <param name="isMainStore"></param>
+        public void SetClusterMigrate(string sourceNodeId, Memory<byte> replaceOption, bool isMainStore)
         {
             currTcsMigrate = new TaskCompletionSource<string>(TaskCreationOptions.RunContinuationsAsynchronously);
             tcsQueue.Enqueue(currTcsMigrate);
             curr = offset;
-            int arraySize = 6;
+            this.isMainStore = isMainStore;
+            var storeType = isMainStore ? MAIN_STORE : OBJECT_STORE;
+            var arraySize = 6;
 
             while (!RespWriteUtils.WriteArrayLength(arraySize, ref curr, end))
             {
@@ -325,7 +330,7 @@ namespace Garnet.client
             offset = curr;
 
             // 5
-            while (!RespWriteUtils.WriteBulkString(storeType.Span, ref curr, end))
+            while (!RespWriteUtils.WriteBulkString(storeType, ref curr, end))
             {
                 Flush();
                 curr = offset;

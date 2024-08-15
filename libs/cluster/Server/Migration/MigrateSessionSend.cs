@@ -21,7 +21,7 @@ namespace Garnet.cluster
         {
             // Check if we need to initialize cluster migrate command arguments
             if (_gcs.InitMigrateCommand)
-                _gcs.SetClusterMigrate(_sourceNodeId, Encoding.ASCII.GetBytes(_replaceOption ? "T" : "F"), Encoding.ASCII.GetBytes("SSTORE"));
+                _gcs.SetClusterMigrate(_sourceNodeId, Encoding.ASCII.GetBytes(_replaceOption ? "T" : "F"), isMainStore: true);
 
             // Try write serialized key value to client buffer
             while (!_gcs.TryWriteKeyValueSpanByte(ref key, ref value, out var task))
@@ -31,7 +31,7 @@ namespace Garnet.cluster
                     return false;
 
                 // re-initialize cluster migrate command parameters
-                _gcs.SetClusterMigrate(_sourceNodeId, Encoding.ASCII.GetBytes(_replaceOption ? "T" : "F"), Encoding.ASCII.GetBytes("SSTORE"));
+                _gcs.SetClusterMigrate(_sourceNodeId, Encoding.ASCII.GetBytes(_replaceOption ? "T" : "F"), isMainStore: true);
             }
             return true;
         }
@@ -47,14 +47,14 @@ namespace Garnet.cluster
         {
             // Check if we need to initialize cluster migrate command arguments
             if (_gcs.InitMigrateCommand)
-                _gcs.SetClusterMigrate(_sourceNodeId, Encoding.ASCII.GetBytes(_replaceOption ? "T" : "F"), Encoding.ASCII.GetBytes("OSTORE"));
+                _gcs.SetClusterMigrate(_sourceNodeId, Encoding.ASCII.GetBytes(_replaceOption ? "T" : "F"), isMainStore: false);
 
             while (!_gcs.TryWriteKeyValueByteArray(key, value, expiration, out var task))
             {
                 // Flush key value pairs in the buffer
                 if (!HandleMigrateTaskResponse(task))
                     return false;
-                _gcs.SetClusterMigrate(_sourceNodeId, Encoding.ASCII.GetBytes(_replaceOption ? "T" : "F"), Encoding.ASCII.GetBytes("OSTORE"));
+                _gcs.SetClusterMigrate(_sourceNodeId, Encoding.ASCII.GetBytes(_replaceOption ? "T" : "F"), isMainStore: false);
             }
             return true;
         }

@@ -273,7 +273,7 @@ namespace Garnet.cluster
         /// <returns></returns>
         private List<(int, int)> GetRanges()
         {
-            if (_sslots.Count == 1) return new List<(int, int)> { (_sslots.First(), _sslots.First()) };
+            if (_sslots.Count == 1) return new() { (_sslots.First(), _sslots.First()) };
 
             var slotRanges = new List<(int, int)>();
             var slots = _sslots.ToList();
@@ -302,11 +302,12 @@ namespace Garnet.cluster
         /// <returns></returns>
         public bool TrySetSlotRanges(string nodeid, MigrateState state)
         {
-            bool status = false;
+            var status = false;
             try
             {
-                CheckConnection();
-                Memory<byte> stateBytes = state switch
+                if (!CheckConnection())
+                    return false;
+                var stateBytes = state switch
                 {
                     MigrateState.IMPORT => IMPORTING,
                     MigrateState.STABLE => STABLE,
@@ -323,6 +324,7 @@ namespace Garnet.cluster
                         Status = MigrateState.FAIL;
                         return false;
                     }
+                    logger?.LogTrace("[Completed] SETSLOT {slots} {state} {nodeid}", ClusterManager.GetRange(_sslots.ToArray()), state, nodeid == null ? "" : nodeid);
                     return true;
                 }, TaskContinuationOptions.OnlyOnRanToCompletion).WaitAsync(_timeout, _cts.Token).Result;
             }
