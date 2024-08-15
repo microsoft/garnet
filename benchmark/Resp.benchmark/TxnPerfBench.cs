@@ -334,7 +334,7 @@ namespace Resp.benchmark
             }
 
             for (int key = 0; key < opts.DbSize; key++)
-                client.Execute(new string[] { "SET", req.GenerateExactKey(key), req.GenerateValue() });
+                client.Execute(["SET", req.GenerateExactKey(key), req.GenerateValue()]);
         }
 
 

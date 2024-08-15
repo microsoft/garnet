@@ -82,7 +82,7 @@ namespace Garnet
         public bool TransformBack(T input, out T[] output, out string errorMessage)
         {
             errorMessage = null;
-            output = new[] { input };
+            output = [input];
             return true;
         }
     }

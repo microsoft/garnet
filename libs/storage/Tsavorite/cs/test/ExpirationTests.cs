@@ -574,8 +574,7 @@ namespace Tsavorite.test.Expiration
 
         private unsafe ExpirationOutput GetRecord(int key, Status expectedStatus, FlushMode flushMode)
         {
-            Span<int> keySpan = stackalloc int[1];
-            keySpan[0] = key;
+            Span<int> keySpan = [key];
             var keySpanByte = keySpan.AsSpanByte();
             ExpirationOutput output = new();
 
@@ -593,8 +592,7 @@ namespace Tsavorite.test.Expiration
 
         private unsafe ExpirationOutput ExecuteRMW(int key, ref ExpirationInput input, FlushMode flushMode, Status expectedStatus = default)
         {
-            Span<int> keySpan = stackalloc int[1];
-            keySpan[0] = key;
+            Span<int> keySpan = [key];
             var keySpanByte = keySpan.AsSpanByte();
 
             ExpirationOutput output = new();

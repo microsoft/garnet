@@ -224,7 +224,7 @@ namespace Garnet.server
             AclCommandInfo =
                 new ReadOnlyDictionary<RespAclCategories, IReadOnlyList<RespCommandsInfo>>(
                     AllRespCommandsInfo
-                        .SelectMany(static kv => (kv.Value.SubCommands ?? Array.Empty<RespCommandsInfo>()).Append(kv.Value))
+                        .SelectMany(static kv => (kv.Value.SubCommands ?? []).Append(kv.Value))
                         .SelectMany(static c => IndividualAcls(c.AclCategories).Select(a => (Acl: a, CommandInfo: c)))
                         .GroupBy(static t => t.Acl)
                         .ToDictionary(
@@ -361,17 +361,23 @@ namespace Garnet.server
         /// <returns>Serialized value</returns>
         public string ToRespFormat()
         {
-            var sb = new StringBuilder();
+            if (string.IsNullOrWhiteSpace(this.Name))
+                return "$-1\r\n";
 
+            var sb = new StringBuilder();
             sb.Append("*10\r\n");
             // 1) Name
             sb.Append($"${this.Name.Length}\r\n{this.Name}\r\n");
             // 2) Arity
             sb.Append($":{this.Arity}\r\n");
             // 3) Flags
-            sb.Append($"*{this.respFormatFlags.Length}\r\n");
-            foreach (var flag in this.respFormatFlags)
-                sb.Append($"+{flag}\r\n");
+            sb.Append($"*{this.respFormatFlags?.Length ?? 0}\r\n");
+            if (this.respFormatFlags != null && this.respFormatFlags.Length > 0)
+            {
+                foreach (var flag in this.respFormatFlags)
+                    sb.Append($"+{flag}\r\n");
+            }
+
             // 4) First key
             sb.Append($":{this.FirstKey}\r\n");
             // 5) Last key
@@ -379,9 +385,13 @@ namespace Garnet.server
             // 6) Step
             sb.Append($":{this.Step}\r\n");
             // 7) ACL categories
-            sb.Append($"*{this.respFormatAclCategories.Length}\r\n");
-            foreach (var aclCat in this.respFormatAclCategories)
-                sb.Append($"+@{aclCat}\r\n");
+            sb.Append($"*{this.respFormatAclCategories?.Length ?? 0}\r\n");
+            if (this.respFormatAclCategories != null && this.respFormatAclCategories.Length > 0)
+            {
+                foreach (var aclCat in this.respFormatAclCategories)
+                    sb.Append($"+@{aclCat}\r\n");
+            }
+
             // 8) Tips
             var tipCount = this.Tips?.Length ?? 0;
             sb.Append($"*{tipCount}\r\n");
