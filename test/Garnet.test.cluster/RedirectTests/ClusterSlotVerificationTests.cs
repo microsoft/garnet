@@ -629,6 +629,7 @@ namespace Garnet.test.cluster
                     catch (Exception ex)
                     {
                         context.logger?.LogError(ex, "Failed executing setup {command}", command.Command);
+                        Assert.Fail("Failed executing setup {command}", command.Command);
                     }
                 }
 
