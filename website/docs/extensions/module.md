@@ -6,7 +6,7 @@ title: Modules
 
 # Modules
 
-Modules help bundle related custom commands, procedures and transactions into a single binary that could be loaded, as needed, providing all contained custom operations to users.
+Modules help bundle related custom commands, procedures and transactions into a single binary. Once loaded, a module makes all of its contained custom operations available to users.
 All modules must derive from the `ModuleBase` class and implement the `OnLoad` method to perform module initialization. All custom commands, procedures and transactions implemented within a module get registered with Garnet during initialization using this method:
 
 `OnLoad(ModuleLoadContext context, string[] args)`

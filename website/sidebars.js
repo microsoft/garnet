@@ -21,7 +21,7 @@ const sidebars = {
 		{type: 'category', label: 'Getting Started', items: ["getting-started/build", "getting-started/configuration", "getting-started/memory", "getting-started/security", "getting-started/compaction"]},
 		{type: 'category', label: 'Benchmarking', items: ["benchmarking/overview", "benchmarking/results-resp-bench", "benchmarking/resp-bench"]},
 		{type: 'category', label: 'Commands', items: ["commands/overview", "commands/api-compatibility", "commands/raw-string", "commands/generic-commands", "commands/analytics-commands", "commands/data-structures", "commands/server-commands", "commands/checkpoint-commands", "commands/transactions-commands", "commands/cluster", "commands/acl-commands"]},
-		{type: 'category', label: 'Server Extensions', items: ["extensions/module", "extensions/raw-strings", "extensions/objects", "extensions/transactions", "extensions/procedure"]},
+		{type: 'category', label: 'Server Extensions', items: ["extensions/raw-strings", "extensions/objects", "extensions/transactions", "extensions/procedure", "extensions/module"]},
 		{type: 'category', label: 'Cluster Mode', items: ["cluster/overview", "cluster/replication", "cluster/key-migration"]},
 		{type: 'category', label: 'Developer Guide', items: ["dev/onboarding", "dev/code-structure", "dev/configuration", "dev/network", "dev/processing", "dev/garnet-api",
 		  {type: 'category', label: 'Tsavorite - Storage Layer', collapsed: true, items: ["dev/tsavorite/intro", "dev/tsavorite/reviv", "dev/tsavorite/locking", "dev/tsavorite/storefunctions"]},

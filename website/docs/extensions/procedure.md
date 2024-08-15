@@ -18,7 +18,11 @@ The `Execute` method has the core logic of the custom procedure. Its implementat
 
 These are the helper methods for developing custom procedures same as that of custom transactions detailed [here](transactions.md#developing-custom-server-side-transactions).
 
-Registering the custom procedure is done on the server-side by calling the `NewProcedure(string name, CustomProcedure customProcedure, RespCommandsInfo commandInfo = null)` method on the Garnet server object's `RegisterAPI` object with its name, an instance of the custom procedure class and optional commandInfo.\
+Registering the custom procedure is done on the server-side by calling the 
+
+`NewProcedure(string name, CustomProcedure customProcedure, RespCommandsInfo commandInfo = null)` 
+
+method on the Garnet server object's `RegisterAPI` object with its name, an instance of the custom procedure class and optional commandInfo.
 
 
 :::tip 
