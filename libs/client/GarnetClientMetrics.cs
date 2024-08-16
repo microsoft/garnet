@@ -29,7 +29,7 @@ namespace Garnet.client
             if (histogram == null || histogram.TotalCount == 0)
             {
                 histogram?.Return();
-                return Array.Empty<MetricsItem>();
+                return [];
             }
 
             var _min = (histogram.GetValueAtPercentile(0) / scaling).ToString("N2", CultureInfo.InvariantCulture);
@@ -40,8 +40,8 @@ namespace Garnet.client
             var _99 = (histogram.GetValueAtPercentile(99) / scaling).ToString("N2", CultureInfo.InvariantCulture);
             var _999 = (histogram.GetValueAtPercentile(99.9) / scaling).ToString("N2", CultureInfo.InvariantCulture);
 
-            MetricsItem[] percentiles = new MetricsItem[]
-            {
+            MetricsItem[] percentiles =
+            [
                 new("calls", latency.TotalCount.ToString()),
                 new("min", _min),
                 new("5th", _5),
@@ -50,7 +50,7 @@ namespace Garnet.client
                 new("95th", _95),
                 new("99th", _99),
                 new("99.9th", _999)
-            };
+            ];
 
             histogram.Return();
             return percentiles;

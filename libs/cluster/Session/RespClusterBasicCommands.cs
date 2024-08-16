@@ -283,7 +283,7 @@ namespace Garnet.cluster
 
             var ptr = recvBufferPtr + readHead;
             readHead = (int)(ptr - recvBufferPtr);
-            var nodes = clusterProvider.clusterManager.CurrentConfig.GetClusterInfo();
+            var nodes = clusterProvider.clusterManager.CurrentConfig.GetClusterInfo(clusterProvider);
             while (!RespWriteUtils.WriteAsciiBulkString(nodes, ref dcurr, dend))
                 SendAndReset();
 
@@ -420,7 +420,7 @@ namespace Garnet.cluster
             }
             else
             {
-                while (!RespWriteUtils.WriteBulkString(Array.Empty<byte>(), ref dcurr, dend))
+                while (!RespWriteUtils.WriteBulkString([], ref dcurr, dend))
                     SendAndReset();
             }
 

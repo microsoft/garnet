@@ -2,6 +2,7 @@
 // Licensed under the MIT license.
 
 using System;
+using System.Collections.Generic;
 using Garnet.common;
 using Microsoft.Extensions.Logging;
 using NUnit.Framework;
@@ -421,7 +422,7 @@ namespace Garnet.test.cluster
                     ResetSlot();
                     try
                     {
-                        _ = context.clusterTestUtils.GetServer(requestNodeIndex).Execute("DEL", command.GetSingleSlotKeys.ToArray(), CommandFlags.NoRedirect);
+                        _ = context.clusterTestUtils.GetServer(requestNodeIndex).Execute("DEL", (ICollection<object>)command.GetSingleSlotKeys, CommandFlags.NoRedirect);
                     }
                     catch (Exception ex)
                     {

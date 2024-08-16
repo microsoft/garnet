@@ -810,7 +810,7 @@ namespace Garnet.test
             var key1Values = new[] { new RedisValue("Hello"), new RedisValue("World") };
             var key2Values = new[] { new RedisValue("Hola"), new RedisValue("Mundo") };
             var values = new[] { key1Values, key2Values };
-            var scores = new[] { new[] { 1.1, 1.2 }, new[] { 2.1, 2.2 } };
+            double[][] scores = [[1.1, 1.2], [2.1, 2.2]];
             var sortedSetEntries = values.Select((h, idx) => h
                 .Zip(scores[idx], (n, v) => new SortedSetEntry(n, v)).ToArray()).ToArray();
 
