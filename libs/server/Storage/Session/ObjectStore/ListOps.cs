@@ -59,7 +59,7 @@ namespace Garnet.server
             var status = RMWObjectStoreOperation(arrKey, ref input, out var output, ref objectStoreContext);
 
             itemsDoneCount = output.result1;
-            itemBroker.HandleCollectionUpdate(arrKey);
+            itemBroker?.HandleCollectionUpdate(arrKey);
             return status;
         }
 
@@ -98,7 +98,7 @@ namespace Garnet.server
             var status = RMWObjectStoreOperation(key.ToArray(), ref input, out var output, ref objectStoreContext);
             itemsDoneCount = output.result1;
 
-            itemBroker.HandleCollectionUpdate(key.Span.ToArray());
+            itemBroker?.HandleCollectionUpdate(key.Span.ToArray());
             return status;
         }
 
@@ -355,7 +355,7 @@ namespace Garnet.server
                     txnManager.Commit(true);
             }
 
-            itemBroker.HandleCollectionUpdate(destinationKey.Span.ToArray());
+            itemBroker?.HandleCollectionUpdate(destinationKey.Span.ToArray());
             return GarnetStatus.OK;
         }
 
@@ -406,7 +406,7 @@ namespace Garnet.server
             where TObjectContext : ITsavoriteContext<byte[], IGarnetObject, ObjectInput, GarnetObjectStoreOutput, long, ObjectSessionFunctions, ObjectStoreFunctions, ObjectStoreAllocator>
         {
             var status = RMWObjectStoreOperation(key, ref input, out output, ref objectStoreContext);
-            itemBroker.HandleCollectionUpdate(key);
+            itemBroker?.HandleCollectionUpdate(key);
             return status;
         }
 
@@ -448,7 +448,7 @@ namespace Garnet.server
             where TObjectContext : ITsavoriteContext<byte[], IGarnetObject, ObjectInput, GarnetObjectStoreOutput, long, ObjectSessionFunctions, ObjectStoreFunctions, ObjectStoreAllocator>
         {
             var status = RMWObjectStoreOperation(key, ref input, out output, ref objectStoreContext);
-            itemBroker.HandleCollectionUpdate(key);
+            itemBroker?.HandleCollectionUpdate(key);
             return status;
         }
 

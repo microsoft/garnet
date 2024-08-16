@@ -7,6 +7,7 @@ using System.Numerics;
 using System.Runtime.CompilerServices;
 using System.Text;
 using Garnet.common;
+using NLua;
 
 namespace Garnet.server
 {
@@ -65,6 +66,15 @@ namespace Garnet.server
             bytes.CopyTo(retVal.Span);
             scratchBufferOffset += bytes.Length;
             return retVal;
+        }
+
+        /// <summary>
+        /// Shift the scratch buffer offset
+        /// </summary>
+        /// <param name="length"></param>
+        public void MoveOffset(int length)
+        {
+            scratchBufferOffset += length;
         }
 
         /// <summary>
@@ -166,6 +176,11 @@ namespace Garnet.server
             return new ArgSlice(scratchBufferHead + scratchBufferOffset, scratchBuffer.Length - scratchBufferOffset);
         }
 
+        public ArgSlice ViewFullArgSlice()
+        {
+            return new ArgSlice(scratchBufferHead, scratchBufferOffset);
+        }
+
         /// <summary>
         /// Create an ArgSlice that includes a header of specified size, followed by the specified Memory
         /// </summary>
@@ -181,6 +196,97 @@ namespace Garnet.server
             arg.CopyTo(new Span<byte>(ptr, arg.Length));
 
             scratchBufferOffset += length;
+            Debug.Assert(scratchBufferOffset <= scratchBuffer.Length);
+            return retVal;
+        }
+
+        /// <summary>
+        /// Format specified command with arguments, as a RESP command. Lua state
+        /// can be specified to handle Lua tables as arguments.
+        /// </summary>
+        public ArgSlice FormatCommandAsResp(string cmd, object[] args, Lua state)
+        {
+            if (scratchBuffer == null)
+                ExpandScratchBuffer(64);
+
+            scratchBufferOffset += 10; // Reserve space for the array length if it is larger than expected
+            int commandStartOffset = scratchBufferOffset;
+            byte* ptr = scratchBufferHead + scratchBufferOffset;
+
+            while (!RespWriteUtils.WriteArrayLength(args.Length + 1, ref ptr, scratchBufferHead + scratchBuffer.Length))
+            {
+                ExpandScratchBuffer(scratchBuffer.Length + 1);
+                ptr = scratchBufferHead + scratchBufferOffset;
+            }
+            scratchBufferOffset = (int)(ptr - scratchBufferHead);
+
+            while (!RespWriteUtils.WriteAsciiBulkString(cmd, ref ptr, scratchBufferHead + scratchBuffer.Length))
+            {
+                ExpandScratchBuffer(scratchBuffer.Length + 1);
+                ptr = scratchBufferHead + scratchBufferOffset;
+            }
+            scratchBufferOffset = (int)(ptr - scratchBufferHead);
+
+            int count = 1;
+            foreach (var item in args)
+            {
+                if (item is string str)
+                {
+                    count++;
+                    while (!RespWriteUtils.WriteAsciiBulkString(str, ref ptr, scratchBufferHead + scratchBuffer.Length))
+                    {
+                        ExpandScratchBuffer(scratchBuffer.Length + 1);
+                        ptr = scratchBufferHead + scratchBufferOffset;
+                    }
+                    scratchBufferOffset = (int)(ptr - scratchBufferHead);
+                }
+                else if (item is LuaTable t)
+                {
+                    var d = state.GetTableDict(t);
+                    foreach (var value in d.Values)
+                    {
+                        count++;
+                        while (!RespWriteUtils.WriteAsciiBulkString(Convert.ToString(value), ref ptr, scratchBufferHead + scratchBuffer.Length))
+                        {
+                            ExpandScratchBuffer(scratchBuffer.Length + 1);
+                            ptr = scratchBufferHead + scratchBufferOffset;
+                        }
+                        scratchBufferOffset = (int)(ptr - scratchBufferHead);
+                    }
+                }
+                else if (item is long i)
+                {
+                    count++;
+                    while (!RespWriteUtils.WriteIntegerAsBulkString((int)i, ref ptr, scratchBufferHead + scratchBuffer.Length))
+                    {
+                        ExpandScratchBuffer(scratchBuffer.Length + 1);
+                        ptr = scratchBufferHead + scratchBufferOffset;
+                    }
+                    scratchBufferOffset = (int)(ptr - scratchBufferHead);
+                }
+                else
+                {
+                    count++;
+                    while (!RespWriteUtils.WriteAsciiBulkString(Convert.ToString(item), ref ptr, scratchBufferHead + scratchBuffer.Length))
+                    {
+                        ExpandScratchBuffer(scratchBuffer.Length + 1);
+                        ptr = scratchBufferHead + scratchBufferOffset;
+                    }
+                    scratchBufferOffset = (int)(ptr - scratchBufferHead);
+                }
+            }
+            if (count != args.Length + 1)
+            {
+                int extraSpace = NumUtils.NumDigits(count) - NumUtils.NumDigits(args.Length + 1);
+                if (commandStartOffset < extraSpace)
+                    throw new InvalidOperationException("Invalid number of arguments");
+                commandStartOffset -= extraSpace;
+                var head = scratchBufferHead + commandStartOffset;
+                // There should be space as we have reserved it
+                _ = RespWriteUtils.WriteArrayLength(count, ref head, scratchBufferHead + scratchBuffer.Length);
+            }
+
+            var retVal = new ArgSlice(scratchBufferHead + commandStartOffset, scratchBufferOffset - commandStartOffset);
             Debug.Assert(scratchBufferOffset <= scratchBuffer.Length);
             return retVal;
         }

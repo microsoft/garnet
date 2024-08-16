@@ -47,6 +47,13 @@ namespace Garnet.common
             return client.ResponseBuffer;
         }
 
+        public byte[] SendCommand(byte[] cmd, int numTokens = 1)
+        {
+            client.Send(cmd, cmd.Length, numTokens);
+            client.CompletePendingRequests();
+            return client.ResponseBuffer;
+        }
+
         public string Execute(string cmd, int responseLength, int bytesPerSend = int.MaxValue)
         {
             var bytes = SendCommandChunks(cmd, bytesPerSend, responseLength, true);
