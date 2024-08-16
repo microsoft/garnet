@@ -96,11 +96,8 @@ Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "CommandInfoUpdater", "playg
 EndProject
 Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "SampleModule", "playground\SampleModule\SampleModule.csproj", "{A8CA619E-8F13-4EF8-943F-2D5E3FEBFB3F}"
 EndProject
-<<<<<<< HEAD
 Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "GarnetJSON", "playground\GarnetJSON\GarnetJSON.csproj", "{2C8F1F5D-31E5-4D00-A46E-F3B1D9BC098F}"
-=======
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "MigrateBench", "playground\MigrateBench\MigrateBench.csproj", "{6B66B394-E410-4B61-9A5A-1595FF6F5E08}"
->>>>>>> 88d71b1 (playground migration proj)
 EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution

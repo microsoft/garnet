@@ -360,7 +360,7 @@ namespace Garnet.cluster
                         break;
                 }
                 FlushConfig();
-                logger?.LogTrace("[Processed] setslot {slot} MIGRATED TO {nodeid}", slot, nodeid);
+                logger?.LogTrace("[Processed] SetSlot {slot} MIGRATED TO {nodeId}", slot, nodeid);
                 return true;
             }
             else if (current.GetState((ushort)slot) is SlotState.IMPORTING)
@@ -381,7 +381,7 @@ namespace Garnet.cluster
                         break;
                 }
                 FlushConfig();
-                logger?.LogTrace("[Processed] setslot NODE {slot} IMPORTED TO {nodeid}", slot, nodeid);
+                logger?.LogTrace("[Processed] SetSlot NODE {slot} IMPORTED TO {nodeid}", slot, nodeid);
                 return true;
             }
             return true;
