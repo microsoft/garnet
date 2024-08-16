@@ -2,6 +2,7 @@
 // Licensed under the MIT license.
 
 using System;
+using System.Text;
 using Garnet.common;
 using Microsoft.Extensions.Logging;
 using NLua.Exceptions;
@@ -113,8 +114,12 @@ namespace Garnet.server
 
             var count = parseState.count;
             var option = parseState.GetArgSliceByRef(0).ReadOnlySpan;
-            if (parseState.count == 2 && option.EqualsUpperCaseSpanIgnoringCase("LOAD"u8))
+            if (option.EqualsUpperCaseSpanIgnoringCase("LOAD"u8))
             {
+                if (count != 2)
+                {
+                    return AbortWithWrongNumberOfArguments("SCRIPT", count);
+                }
                 var source = parseState.GetArgSliceByRef(1).ReadOnlySpan;
                 if (!sessionScriptCache.TryLoad(source, out var digest, out _, out var error))
                 {
@@ -129,8 +134,12 @@ namespace Garnet.server
                 while (!RespWriteUtils.WriteBulkString(digest, ref dcurr, dend))
                     SendAndReset();
             }
-            else if (parseState.count == 2 && option.EqualsUpperCaseSpanIgnoringCase("EXISTS"u8))
+            else if (option.EqualsUpperCaseSpanIgnoringCase("EXISTS"u8))
             {
+                if (count != 2)
+                {
+                    return AbortWithWrongNumberOfArguments("SCRIPT", count);
+                }
                 var sha1Exists = parseState.GetArgSliceByRef(1).ToArray();
 
                 // Check whether script exists at the store level
@@ -145,8 +154,12 @@ namespace Garnet.server
                         SendAndReset();
                 }
             }
-            else if (parseState.count == 1 && option.EqualsUpperCaseSpanIgnoringCase("FLUSH"u8))
+            else if (option.EqualsUpperCaseSpanIgnoringCase("FLUSH"u8))
             {
+                if (count != 1)
+                {
+                    return AbortWithWrongNumberOfArguments("SCRIPT", count);
+                }
                 // Flush store script cache
                 storeWrapper.storeScriptCache.Clear();
 
@@ -158,8 +171,10 @@ namespace Garnet.server
             }
             else
             {
-                // Send error to output
-                return AbortWithWrongNumberOfArguments("SCRIPT", count);
+                // Unknown subcommand
+                var errorMsg = string.Format(CmdStrings.GenericErrUnknownSubCommand, Encoding.ASCII.GetString(option), nameof(RespCommand.SCRIPT));
+                while (!RespWriteUtils.WriteError(errorMsg, ref dcurr, dend))
+                    SendAndReset();
             }
             return true;
         }
