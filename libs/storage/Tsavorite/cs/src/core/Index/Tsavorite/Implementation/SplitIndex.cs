@@ -1,6 +1,7 @@
 ﻿// Copyright (c) Microsoft Corporation.
 // Licensed under the MIT license.
 
+#if false
 using System.Threading;
 
 namespace Tsavorite.core
@@ -103,7 +104,7 @@ namespace Tsavorite.core
 
                         if (entry.ReadCache)
                         {
-                            if (entry.AbsoluteAddress >= readCacheBase.HeadAddress)
+                            if (entry.AbsoluteAddress >= readcacheBase.HeadAddress)
                                 physicalAddress = readcache.GetPhysicalAddress(entry.AbsoluteAddress);
                         }
                         else if (logicalAddress >= hlogBase.HeadAddress)
@@ -225,7 +226,7 @@ namespace Tsavorite.core
                 entry.Address = logicalAddress;
                 if (entry.ReadCache)
                 {
-                    if (logicalAddress < readCacheBase.HeadAddress)
+                    if (logicalAddress < readcacheBase.HeadAddress)
                         break;
                     var physicalAddress = readcache.GetPhysicalAddress(logicalAddress);
                     var hash = storeFunctions.GetKeyHashCode64(ref readcache.GetKey(physicalAddress));
@@ -252,3 +253,4 @@ namespace Tsavorite.core
         }
     }
 }
+#endif

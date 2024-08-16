@@ -18,7 +18,7 @@ namespace Tsavorite.core
             Debug.Assert(UseReadCache, "Should not call FindInReadCache if !UseReadCache");
 
             // minAddress, if present, comes from the pre-pendingIO entry.Address; there may have been no readcache entries then.
-            minAddress = IsReadCache(minAddress) ? AbsoluteAddress(minAddress) : readCacheBase.HeadAddress;
+            minAddress = IsReadCache(minAddress) ? AbsoluteAddress(minAddress) : readcacheBase.HeadAddress;
 
         RestartChain:
 
@@ -54,7 +54,7 @@ namespace Tsavorite.core
                     stackCtx.recSrc.LogicalAddress = stackCtx.recSrc.LowestReadCacheLogicalAddress;
                     stackCtx.recSrc.PhysicalAddress = stackCtx.recSrc.LowestReadCachePhysicalAddress;
                     stackCtx.recSrc.SetHasReadCacheSrc();
-                    stackCtx.recSrc.SetAllocator(readCacheBase);
+                    stackCtx.recSrc.SetAllocator(readcacheBase);
 
                     // Read() does not need to continue past the found record; updaters need to continue to find latestLogicalAddress and lowestReadCache*Address.
                     if (!alwaysFindLatestLA)
@@ -82,9 +82,9 @@ namespace Tsavorite.core
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         bool ReadCacheNeedToWaitForEviction(ref OperationStackContext<TKey, TValue, TStoreFunctions, TAllocator> stackCtx)
         {
-            if (stackCtx.recSrc.LatestLogicalAddress < readCacheBase.HeadAddress)
+            if (stackCtx.recSrc.LatestLogicalAddress < readcacheBase.HeadAddress)
             {
-                SpinWaitUntilRecordIsClosed(stackCtx.recSrc.LatestLogicalAddress, readCacheBase);
+                SpinWaitUntilRecordIsClosed(stackCtx.recSrc.LatestLogicalAddress, readcacheBase);
 
                 // Restore to hlog; we may have set readcache into Log and continued the loop, had to restart, and the matching readcache record was evicted.
                 stackCtx.UpdateRecordSourceToCurrentHashEntry(hlogBase);
@@ -97,8 +97,8 @@ namespace Tsavorite.core
         private bool SpliceIntoHashChainAtReadCacheBoundary(ref TKey key, ref OperationStackContext<TKey, TValue, TStoreFunctions, TAllocator> stackCtx, long newLogicalAddress)
         {
             // Splice into the gap of the last readcache/first main log entries.
-            Debug.Assert(stackCtx.recSrc.LowestReadCacheLogicalAddress >= readCacheBase.ClosedUntilAddress,
-                        $"{nameof(VerifyInMemoryAddresses)} should have ensured LowestReadCacheLogicalAddress ({stackCtx.recSrc.LowestReadCacheLogicalAddress}) >= readcache.ClosedUntilAddress ({readCacheBase.ClosedUntilAddress})");
+            Debug.Assert(stackCtx.recSrc.LowestReadCacheLogicalAddress >= readcacheBase.ClosedUntilAddress,
+                        $"{nameof(VerifyInMemoryAddresses)} should have ensured LowestReadCacheLogicalAddress ({stackCtx.recSrc.LowestReadCacheLogicalAddress}) >= readcache.ClosedUntilAddress ({readcacheBase.ClosedUntilAddress})");
 
             // If the LockTable is enabled, then we either have an exclusive lock and thus cannot have a competing insert to the readcache, or we are doing a
             // Read() so we allow a momentary overlap of records because they're the same value (no update is being done).
@@ -275,9 +275,9 @@ namespace Tsavorite.core
                 ReadCacheEvictChain(rcToLogicalAddress, ref hei);
 
             NextRecord:
-                if ((rcLogicalAddress & readCacheBase.PageSizeMask) + rcAllocatedSize > readCacheBase.PageSize)
+                if ((rcLogicalAddress & readcacheBase.PageSizeMask) + rcAllocatedSize > readcacheBase.PageSize)
                 {
-                    rcLogicalAddress = (1 + (rcLogicalAddress >> readCacheBase.LogPageSizeBits)) << readCacheBase.LogPageSizeBits;
+                    rcLogicalAddress = (1 + (rcLogicalAddress >> readcacheBase.LogPageSizeBits)) << readcacheBase.LogPageSizeBits;
                     continue;
                 }
                 rcLogicalAddress += rcAllocatedSize;

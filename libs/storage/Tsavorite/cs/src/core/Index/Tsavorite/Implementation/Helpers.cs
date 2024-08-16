@@ -198,7 +198,7 @@ namespace Tsavorite.core
                 return false;
 
             // If we're not using readcache or we don't have a splice point or it is still above readcache.HeadAddress, we're good.
-            if (!UseReadCache || stackCtx.recSrc.LowestReadCacheLogicalAddress == Constants.kInvalidAddress || stackCtx.recSrc.LowestReadCacheLogicalAddress >= readCacheBase.HeadAddress)
+            if (!UseReadCache || stackCtx.recSrc.LowestReadCacheLogicalAddress == Constants.kInvalidAddress || stackCtx.recSrc.LowestReadCacheLogicalAddress >= readcacheBase.HeadAddress)
                 return true;
 
             // If the splice point went below readcache.HeadAddress, we would have to wait for the chain to be fixed up by eviction,
@@ -252,6 +252,12 @@ namespace Tsavorite.core
             stackCtx.hei.SetToCurrent();
             stackCtx.SetRecordSourceToHashEntry(hlogBase);
             return true;
+        }
+
+        private void SplitBuckets(long hash)
+        {
+            if (kernel.hashTable.SplitBuckets(hash, in storeFunctions, hlog, hlogBase, readcache, readcacheBase))
+                GlobalStateMachineStep(systemState);
         }
     }
 }

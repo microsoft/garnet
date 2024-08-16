@@ -13,7 +13,7 @@ namespace Tsavorite.core
     /// The core data structures of the core, used for dual Tsavorite operations
     /// </summary>
     [StructLayout(LayoutKind.Explicit)]
-    struct TsavoriteKernel
+    public struct TsavoriteKernel
     {
         // Unioned fields
         [FieldOffset(0)]
@@ -33,6 +33,14 @@ namespace Tsavorite.core
 
             hashTable = new(size, sector_size, logger);
             epoch = new LightEpoch();
+        }
+
+        public bool EnsureEpochProtected()
+        {
+            if (epoch.ThisInstanceProtected())
+                return false;
+            epoch.Resume();
+            return true;
         }
 
         internal void Dispose()
