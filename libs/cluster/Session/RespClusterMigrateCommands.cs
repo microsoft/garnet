@@ -41,7 +41,7 @@ namespace Garnet.cluster
                 return false;
 
             byte* payload = null;
-            int length = 0;
+            var length = 0;
             if (!RespReadUtils.ReadPtrWithLengthHeader(ref payload, ref length, ref ptr, recvBufferPtr + bytesRead))
                 return false;
 
@@ -55,7 +55,7 @@ namespace Garnet.cluster
                 payload += 4;
                 var i = 0;
 
-                logger?.LogTrace("[MainStore] Receive: keyCount:({keyCount})", keyCount);
+                logger?.LogTrace("[MainStore] Receive: keyCount:({keyCount})", keyCount.ToString("N0"));
                 while (i < keyCount)
                 {
 
@@ -90,14 +90,14 @@ namespace Garnet.cluster
                         _ = basicGarnetApi.SET(ref key, ref value);
                     i++;
                 }
-                logger?.LogTrace("[MainStore] Process: keyCount:({keyCount}) success:({success})", keyCount, migrateState == 0);
+                logger?.LogTrace("[MainStore] Process: keyCount:({keyCount}) success:({success})", keyCount.ToString("N0"), migrateState == 0);
             }
             else if (storeType.Equals("OSTORE"))
             {
                 var keyCount = *(int*)payload;
                 payload += 4;
                 var i = 0;
-                logger?.LogTrace("[ObjectStore] Receive: keyCount:({keyCount})", keyCount);
+                logger?.LogTrace("[ObjectStore] Receive: keyCount:({keyCount})", keyCount.ToString("N0"));
                 while (i < keyCount)
                 {
                     if (!RespReadUtils.ReadSerializedData(out var key, out var data, out var expiration, ref payload, recvBufferPtr + bytesRead))
@@ -123,7 +123,7 @@ namespace Garnet.cluster
 
                     i++;
                 }
-                logger?.LogTrace("[ObjectStore] Process: keyCount:({keyCount}) success:({success})", keyCount, migrateState == 0);
+                logger?.LogTrace("[ObjectStore] Process: keyCount:({keyCount}) success:({success})", keyCount.ToString("N0"), migrateState == 0);
             }
             else
             {

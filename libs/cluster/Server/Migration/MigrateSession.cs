@@ -172,7 +172,6 @@ namespace Garnet.cluster
         /// <param name="_slots"></param>
         /// <param name="keys"></param>
         /// <param name="transferOption"></param>
-        /// <param name="logger"></param>
         internal MigrateSession(
             ClusterSession clusterSession,
             ClusterProvider clusterProvider,
@@ -187,10 +186,9 @@ namespace Garnet.cluster
             int _timeout,
             HashSet<int> _slots,
             Dictionary<ArgSlice, KeyMigrationStatus> keys,
-            TransferOption transferOption,
-            ILogger logger = null)
+            TransferOption transferOption)
         {
-            this.logger = logger;
+            this.logger = clusterProvider.loggerFactory.CreateLogger($"MigrateSession - {GetHashCode()}"); ;
             this.clusterSession = clusterSession;
             this.clusterProvider = clusterProvider;
             this._targetAddress = _targetAddress;

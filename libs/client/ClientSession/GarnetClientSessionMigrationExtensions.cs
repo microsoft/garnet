@@ -196,87 +196,6 @@ namespace Garnet.client
         }
 
         /// <summary>
-        /// Send key value pair and reset migrate buffers
-        /// </summary>
-        /// <returns></returns>
-        public Task<string> SendAndResetMigrate()
-        {
-            if (keyCount == 0) return null;
-
-            Debug.Assert(end - curr >= 2);
-            *curr++ = (byte)'\r';
-            *curr++ = (byte)'\n';
-
-            // Payload format = [$length\r\n][number of keys (4 bytes)][raw key value pairs]\r\n
-            var size = (int)(curr - 2 - head - (ExtraSpace - 4));
-            logger?.LogTrace("[MIGRATE]: storeType:{(storeType)} keyCount:({keyCount}) payLoadSize:({payloadSize})", isMainStore ? "MainStore" : "ObjectStore", keyCount, size);
-            var success = RespWriteUtils.WritePaddedBulkStringLength(size, ExtraSpace - 4, ref head, end);
-            Debug.Assert(success);
-
-            // Number of key value pairs in payload
-            *(int*)head = keyCount;
-
-            // Reset offset and flush buffer
-            offset = curr;
-            Flush();
-            Interlocked.Increment(ref numCommands);
-
-            // Return outstanding task and reset current tcs
-            var task = currTcsMigrate.Task;
-            currTcsMigrate = null;
-            curr = head = null;
-            keyCount = 0;
-            return task;
-        }
-
-        /// <summary>
-        /// Try write key value pair for main store directly to the client buffer
-        /// </summary>
-        /// <param name="key"></param>
-        /// <param name="value"></param>
-        /// <param name="migrateTask"></param>
-        /// <returns></returns>
-        public bool TryWriteKeyValueSpanByte(ref SpanByte key, ref SpanByte value, out Task<string> migrateTask)
-        {
-            migrateTask = null;
-            // Try write key value pair directly to client buffer
-            if (!WriteSerializedSpanByte(ref key, ref value))
-            {
-                // If failed to write because no space left send outstanding data and retrieve task
-                // Caller is responsible for retrying
-                migrateTask = SendAndResetMigrate();
-                return false;
-            }
-
-            keyCount++;
-            return true;
-        }
-
-        /// <summary>
-        /// Try write key value pair for object store directly to the client buffer
-        /// </summary>
-        /// <param name="key"></param>
-        /// <param name="value"></param>
-        /// <param name="expiration"></param>
-        /// <param name="migrateTask"></param>
-        /// <returns></returns>
-        public bool TryWriteKeyValueByteArray(byte[] key, byte[] value, long expiration, out Task<string> migrateTask)
-        {
-            migrateTask = null;
-            // Try write key value pair directly to client buffer
-            if (!WriteSerializedKeyValueByteArray(key, value, expiration))
-            {
-                // If failed to write because no space left send outstanding data and retrieve task
-                // Caller is responsible for retrying
-                migrateTask = SendAndResetMigrate();
-                return false;
-            }
-
-            keyCount++;
-            return true;
-        }
-
-        /// <summary>
         /// Write parameters of CLUSTER MIGRATE directly to the client buffer
         /// </summary>
         /// <param name="sourceNodeId"></param>
@@ -349,6 +268,87 @@ namespace Garnet.client
             curr += ExtraSpace;
         }
 
+        /// <summary>
+        /// Send key value pair and reset migrate buffers
+        /// </summary>
+        /// <returns></returns>
+        public Task<string> SendAndResetMigrate()
+        {
+            if (keyCount == 0) return null;
+
+            Debug.Assert(end - curr >= 2);
+            *curr++ = (byte)'\r';
+            *curr++ = (byte)'\n';
+
+            // Payload format = [$length\r\n][number of keys (4 bytes)][raw key value pairs]\r\n
+            var size = (int)(curr - 2 - head - (ExtraSpace - 4));
+            LogMigrateThrottled(keyCount, size, isMainStore);
+            var success = RespWriteUtils.WritePaddedBulkStringLength(size, ExtraSpace - 4, ref head, end);
+            Debug.Assert(success);
+
+            // Number of key value pairs in payload
+            *(int*)head = keyCount;
+
+            // Reset offset and flush buffer
+            offset = curr;
+            Flush();
+            Interlocked.Increment(ref numCommands);
+
+            // Return outstanding task and reset current tcs
+            var task = currTcsMigrate.Task;
+            currTcsMigrate = null;
+            curr = head = null;
+            keyCount = 0;
+            return task;
+        }
+
+        /// <summary>
+        /// Try write key value pair for main store directly to the client buffer
+        /// </summary>
+        /// <param name="key"></param>
+        /// <param name="value"></param>
+        /// <param name="migrateTask"></param>
+        /// <returns></returns>
+        public bool TryWriteKeyValueSpanByte(ref SpanByte key, ref SpanByte value, out Task<string> migrateTask)
+        {
+            migrateTask = null;
+            // Try write key value pair directly to client buffer
+            if (!WriteSerializedSpanByte(ref key, ref value))
+            {
+                // If failed to write because no space left send outstanding data and retrieve task
+                // Caller is responsible for retrying
+                migrateTask = SendAndResetMigrate();
+                return false;
+            }
+
+            keyCount++;
+            return true;
+        }
+
+        /// <summary>
+        /// Try write key value pair for object store directly to the client buffer
+        /// </summary>
+        /// <param name="key"></param>
+        /// <param name="value"></param>
+        /// <param name="expiration"></param>
+        /// <param name="migrateTask"></param>
+        /// <returns></returns>
+        public bool TryWriteKeyValueByteArray(byte[] key, byte[] value, long expiration, out Task<string> migrateTask)
+        {
+            migrateTask = null;
+            // Try write key value pair directly to client buffer
+            if (!WriteSerializedKeyValueByteArray(key, value, expiration))
+            {
+                // If failed to write because no space left send outstanding data and retrieve task
+                // Caller is responsible for retrying
+                migrateTask = SendAndResetMigrate();
+                return false;
+            }
+
+            keyCount++;
+            return true;
+        }
+
         private bool WriteSerializedSpanByte(ref SpanByte key, ref SpanByte value)
         {
             // We include space for newline at the end, to be added before sending
@@ -394,6 +394,27 @@ namespace Garnet.client
             curr += 8;
 
             return true;
+        }
+
+        long lastLog = 0;
+        long totalKeyCount = 0;
+        long totalPayloadSize = 0;
+
+        public void LogMigrateThrottled(int keyCount, int size, bool isMainStore, bool completed = false)
+        {
+            totalKeyCount += keyCount;
+            totalPayloadSize += size;
+            if (completed || lastLog == 0 || TimeSpan.FromTicks(Stopwatch.GetTimestamp() - lastLog).Seconds >= 1)
+            {
+                logger?.LogTrace("[{op}]: isMainStore:{(storeType)} batchKeyCount:({keyCount}), batchPayloadSize:({payloadSize} KB), totalKeyCount:({totalKeyCount}), totalPayloadSize:({totalPayloadSize} KB)",
+                    completed ? "COMPLETED" : "MIGRATING",
+                    isMainStore,
+                    keyCount.ToString("N0"),
+                    (int)((double)size / 1024),
+                    totalKeyCount.ToString("N0"),
+                    ((long)((double)totalPayloadSize / 1024)).ToString("N0"));
+                lastLog = Stopwatch.GetTimestamp();
+            }
         }
     }
 }

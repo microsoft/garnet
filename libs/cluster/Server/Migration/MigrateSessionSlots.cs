@@ -16,9 +16,11 @@ namespace Garnet.cluster
         public bool MigrateSlotsDriver()
         {
             {
+                logger?.LogTrace("Initializing MainStore Iterator");
                 var storeTailAddress = clusterProvider.storeWrapper.store.Log.TailAddress;
                 MigrationKeyIterationFunctions.MainStoreGetKeysInSlots mainStoreGetKeysInSlots = new(this, _sslots, bufferSize: 1 << clusterProvider.serverOptions.PageSizeBits());
 
+                logger?.LogTrace("Begin MainStore Iteration");
                 while (true)
                 {
                     // Iterate main store
@@ -39,13 +41,18 @@ namespace Garnet.cluster
                     mainStoreGetKeysInSlots.AdvanceIterator();
                     ClearKeys();
                 }
+
+                // Log stats for store after migration completes
+                _gcs.LogMigrateThrottled(0, 0, isMainStore: true, completed: true);
             }
 
             if (!clusterProvider.serverOptions.DisableObjects)
             {
+                logger?.LogTrace("Initializing ObjectStore Iterator");
                 var objectStoreTailAddress = clusterProvider.storeWrapper.objectStore.Log.TailAddress;
                 MigrationKeyIterationFunctions.ObjectStoreGetKeysInSlots objectStoreGetKeysInSlots = new(this, _sslots, bufferSize: 1 << clusterProvider.serverOptions.ObjectStorePageSizeBits());
 
+                logger?.LogTrace("Begin ObjectStore Iteration");
                 while (true)
                 {
                     // Iterate object store
@@ -66,6 +73,9 @@ namespace Garnet.cluster
                     objectStoreGetKeysInSlots.AdvanceIterator();
                     ClearKeys();
                 }
+
+                // Log stats for store after migration completes
+                _gcs.LogMigrateThrottled(0, 0, isMainStore: true, completed: true);
             }
 
             return true;

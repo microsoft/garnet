@@ -29,6 +29,8 @@ namespace Garnet.cluster
                 {
                     cursorRecordResult = CursorRecordResult.Accept; // default; not used here
 
+                    var deleted = recordMetadata.RecordInfo.Tombstone;
+
                     // Do not send key if it is expired
                     if (ClusterSession.Expired(ref value))
                         return true;

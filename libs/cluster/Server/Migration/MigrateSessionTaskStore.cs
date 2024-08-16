@@ -98,8 +98,7 @@ namespace Garnet.cluster
                 timeout,
                 slots,
                 keysWithSize,
-                transferOption,
-                clusterProvider.loggerFactory.CreateLogger("MigrateSession"));
+                transferOption);
 
             try
             {
