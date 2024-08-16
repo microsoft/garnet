@@ -664,9 +664,9 @@ namespace Garnet.server
                 RespCommand.SDIFF => SetDiff(count, ref storageApi),
                 RespCommand.SDIFFSTORE => SetDiffStore(count, ref storageApi),
                 // Script Commands
-                RespCommand.SCRIPT => TrySCRIPT(count),
-                RespCommand.EVAL => TryEVAL(count),
-                RespCommand.EVALSHA => TryEVALSHA(count),
+                RespCommand.SCRIPT => TrySCRIPT(),
+                RespCommand.EVAL => TryEVAL(),
+                RespCommand.EVALSHA => TryEVALSHA(),
                 _ => ProcessOtherCommands(cmd, count, ref storageApi)
             };
             return success;

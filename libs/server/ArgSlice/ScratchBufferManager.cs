@@ -68,6 +68,10 @@ namespace Garnet.server
             return retVal;
         }
 
+        /// <summary>
+        /// Shift the scratch buffer offset
+        /// </summary>
+        /// <param name="length"></param>
         public void MoveOffset(int length)
         {
             scratchBufferOffset += length;
@@ -196,6 +200,10 @@ namespace Garnet.server
             return retVal;
         }
 
+        /// <summary>
+        /// Format specified command with arguments, as a RESP command. Lua state
+        /// can be specified to handle Lua tables as arguments.
+        /// </summary>
         public ArgSlice FormatCommandAsResp(string cmd, object[] args, Lua state)
         {
             if (scratchBuffer == null)

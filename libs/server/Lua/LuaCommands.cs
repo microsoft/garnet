@@ -13,9 +13,8 @@ namespace Garnet.server
         /// <summary>
         /// EVALSHA sha1 numkeys [key [key ...]] [arg [arg ...]]
         /// </summary>
-        /// <param name="count"></param>
         /// <returns></returns>
-        private unsafe bool TryEVALSHA(int count)
+        private unsafe bool TryEVALSHA()
         {
             if (!storeWrapper.serverOptions.EnableLua)
             {
@@ -24,6 +23,11 @@ namespace Garnet.server
                 return true;
             }
 
+            var count = parseState.count;
+            if (count < 2)
+            {
+                return AbortWithWrongNumberOfArguments("EVALSHA", count);
+            }
             var digest = parseState.GetArgSliceByRef(0).ReadOnlySpan;
 
             var result = false;
@@ -57,9 +61,8 @@ namespace Garnet.server
         /// <summary>
         /// EVAL script numkeys [key [key ...]] [arg [arg ...]]
         /// </summary>
-        /// <param name="count"></param>
         /// <returns></returns>
-        private unsafe bool TryEVAL(int count)
+        private unsafe bool TryEVAL()
         {
             if (!storeWrapper.serverOptions.EnableLua)
             {
@@ -68,6 +71,11 @@ namespace Garnet.server
                 return true;
             }
 
+            var count = parseState.count;
+            if (count < 2)
+            {
+                return AbortWithWrongNumberOfArguments("EVAL", count);
+            }
             var script = parseState.GetArgSliceByRef(0).ReadOnlySpan;
             var digest = sessionScriptCache.GetScriptDigest(script);
 
@@ -93,9 +101,8 @@ namespace Garnet.server
         /// <summary>
         /// SCRIPT Commands (load, exists, flush)
         /// </summary>
-        /// <param name="count"></param>
         /// <returns></returns>
-        private unsafe bool TrySCRIPT(int count)
+        private unsafe bool TrySCRIPT()
         {
             if (!storeWrapper.serverOptions.EnableLua)
             {
@@ -104,56 +111,50 @@ namespace Garnet.server
                 return true;
             }
 
-            if (count >= 1)
+            var count = parseState.count;
+            var option = parseState.GetArgSliceByRef(0).ReadOnlySpan;
+            if (parseState.count == 2 && option.EqualsUpperCaseSpanIgnoringCase("LOAD"u8))
             {
-                var option = parseState.GetString(0).ToLowerInvariant();
-                switch (option)
+                var source = parseState.GetArgSliceByRef(1).ReadOnlySpan;
+                if (!sessionScriptCache.TryLoad(source, out var digest, out _, out var error))
                 {
-                    case "load" when count == 2:
-                        var source = parseState.GetArgSliceByRef(1).ReadOnlySpan;
-                        if (!sessionScriptCache.TryLoad(source, out var digest, out _, out var error))
-                        {
-                            while (!RespWriteUtils.WriteError(error, ref dcurr, dend))
-                                SendAndReset();
-                            return true;
-                        }
-
-                        // Add script to the store dictionary
-                        storeWrapper.storeScriptCache.TryAdd(digest, source.ToArray());
-
-                        while (!RespWriteUtils.WriteBulkString(digest, ref dcurr, dend))
-                            SendAndReset();
-                        break;
-                    case "exists" when count == 2:
-                        var sha1Exists = parseState.GetArgSliceByRef(0).ToArray();
-
-                        // Check whether script exists at the store level
-                        if (storeWrapper.storeScriptCache.ContainsKey(sha1Exists))
-                        {
-                            while (!RespWriteUtils.WriteBulkString(CmdStrings.RESP_OK.ToArray(), ref dcurr, dend))
-                                SendAndReset();
-                        }
-                        else
-                        {
-                            while (!RespWriteUtils.WriteBulkString(CmdStrings.RESP_RETURN_VAL_N1.ToArray(), ref dcurr, dend))
-                                SendAndReset();
-                        }
-                        break;
-                    case "flush" when count == 1:
-                        // Flush store script cache
-                        storeWrapper.storeScriptCache.Clear();
-
-                        // Flush session script cache
-                        sessionScriptCache.Clear();
-
-                        while (!RespWriteUtils.WriteDirect(CmdStrings.RESP_OK.ToArray(), ref dcurr, dend))
-                            SendAndReset();
-                        break;
-                    default:
-                        while (!RespWriteUtils.WriteError(CmdStrings.RESP_ERR_GENERIC_UNK_CMD, ref dcurr, dend))
-                            SendAndReset();
-                        break;
+                    while (!RespWriteUtils.WriteError(error, ref dcurr, dend))
+                        SendAndReset();
+                    return true;
                 }
+
+                // Add script to the store dictionary
+                storeWrapper.storeScriptCache.TryAdd(digest, source.ToArray());
+
+                while (!RespWriteUtils.WriteBulkString(digest, ref dcurr, dend))
+                    SendAndReset();
+            }
+            else if (parseState.count == 2 && option.EqualsUpperCaseSpanIgnoringCase("EXISTS"u8))
+            {
+                var sha1Exists = parseState.GetArgSliceByRef(1).ToArray();
+
+                // Check whether script exists at the store level
+                if (storeWrapper.storeScriptCache.ContainsKey(sha1Exists))
+                {
+                    while (!RespWriteUtils.WriteBulkString(CmdStrings.RESP_OK.ToArray(), ref dcurr, dend))
+                        SendAndReset();
+                }
+                else
+                {
+                    while (!RespWriteUtils.WriteBulkString(CmdStrings.RESP_RETURN_VAL_N1.ToArray(), ref dcurr, dend))
+                        SendAndReset();
+                }
+            }
+            else if (parseState.count == 1 && option.EqualsUpperCaseSpanIgnoringCase("FLUSH"u8))
+            {
+                // Flush store script cache
+                storeWrapper.storeScriptCache.Clear();
+
+                // Flush session script cache
+                sessionScriptCache.Clear();
+
+                while (!RespWriteUtils.WriteDirect(CmdStrings.RESP_OK.ToArray(), ref dcurr, dend))
+                    SendAndReset();
             }
             else
             {
