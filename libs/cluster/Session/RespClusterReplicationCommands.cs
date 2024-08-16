@@ -340,7 +340,7 @@ namespace Garnet.cluster
             }
 
             if (!parseState.TryGetBool(0, out var recoverMainStoreFromToken) ||
-                !parseState.TryGetBool(1, out var recoverObjectStoreFromToken) || 
+                !parseState.TryGetBool(1, out var recoverObjectStoreFromToken) ||
                 !parseState.TryGetBool(2, out var replayAOF))
             {
                 while (!RespWriteUtils.WriteError(CmdStrings.RESP_ERR_GENERIC_VALUE_IS_NOT_BOOLEAN, ref dcurr, dend))
