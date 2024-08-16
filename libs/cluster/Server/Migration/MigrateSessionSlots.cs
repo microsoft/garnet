@@ -42,8 +42,9 @@ namespace Garnet.cluster
                     ClearKeys();
                 }
 
-                // Log stats for store after migration completes
-                _gcs.LogMigrateThrottled(0, 0, isMainStore: true, completed: true);
+                // Signal target transmission completed and log stats for main store after migration completes
+                if (!HandleMigrateTaskResponse(_gcs.CompleteMigrate(_sourceNodeId, _replaceOption, isMainStore: true)))
+                    return false;
             }
 
             if (!clusterProvider.serverOptions.DisableObjects)
@@ -74,8 +75,9 @@ namespace Garnet.cluster
                     ClearKeys();
                 }
 
-                // Log stats for store after migration completes
-                _gcs.LogMigrateThrottled(0, 0, isMainStore: true, completed: true);
+                // Signal target transmission completed and log stats for object store after migration completes
+                if (!HandleMigrateTaskResponse(_gcs.CompleteMigrate(_sourceNodeId, _replaceOption, isMainStore: false)))
+                    return false;
             }
 
             return true;

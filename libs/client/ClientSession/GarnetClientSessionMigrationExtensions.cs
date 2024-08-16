@@ -286,7 +286,37 @@ namespace Garnet.client
 
             // Payload format = [$length\r\n][number of keys (4 bytes)][raw key value pairs]\r\n
             var size = (int)(curr - 2 - head - (ExtraSpace - 4));
-            LogMigrateThrottled(keyCount, size, isMainStore);
+            LogMigrateProgress(keyCount, size, isMainStore);
+            var success = RespWriteUtils.WritePaddedBulkStringLength(size, ExtraSpace - 4, ref head, end);
+            Debug.Assert(success);
+
+            // Number of key value pairs in payload
+            *(int*)head = keyCount;
+
+            // Reset offset and flush buffer
+            offset = curr;
+            Flush();
+            Interlocked.Increment(ref numCommands);
+
+            // Return outstanding task and reset current tcs
+            var task = currTcsMigrate.Task;
+            currTcsMigrate = null;
+            curr = head = null;
+            keyCount = 0;
+            return task;
+        }
+
+        public Task<string> CompleteMigrate(string sourceNodeId, bool replace, bool isMainStore)
+        {
+            SetClusterMigrate(sourceNodeId, replace, isMainStore);
+
+            Debug.Assert(end - curr >= 2);
+            *curr++ = (byte)'\r';
+            *curr++ = (byte)'\n';
+
+            // Payload format = [$length\r\n][number of keys (4 bytes)][raw key value pairs]\r\n
+            var size = (int)(curr - 2 - head - (ExtraSpace - 4));
+            LogMigrateProgress(keyCount, size, isMainStore, completed: true);
             var success = RespWriteUtils.WritePaddedBulkStringLength(size, ExtraSpace - 4, ref head, end);
             Debug.Assert(success);
 
@@ -404,17 +434,22 @@ namespace Garnet.client
         long totalKeyCount = 0;
         long totalPayloadSize = 0;
 
-        public void LogMigrateThrottled(int keyCount, int size, bool isMainStore, bool completed = false)
+        /// <summary>
+        /// Logging of migrate session status
+        /// </summary>
+        /// <param name="keyCount"></param>
+        /// <param name="size"></param>
+        /// <param name="isMainStore"></param>
+        /// <param name="completed"></param>
+        public void LogMigrateProgress(int keyCount, int size, bool isMainStore, bool completed = false)
         {
             totalKeyCount += keyCount;
             totalPayloadSize += size;
             if (completed || lastLog == 0 || TimeSpan.FromTicks(Stopwatch.GetTimestamp() - lastLog).Seconds >= 1)
             {
-                logger?.LogTrace("[{op}]: isMainStore:{(storeType)} batchKeyCount:({keyCount}), batchPayloadSize:({payloadSize} KB), totalKeyCount:({totalKeyCount}), totalPayloadSize:({totalPayloadSize} KB)",
+                logger?.LogTrace("[{op}]: isMainStore:{(storeType)} totalKeyCount:({totalKeyCount}), totalPayloadSize:({totalPayloadSize} KB)",
                     completed ? "COMPLETED" : "MIGRATING",
                     isMainStore,
-                    keyCount.ToString("N0"),
-                    (int)((double)size / 1024),
                     totalKeyCount.ToString("N0"),
                     ((long)((double)totalPayloadSize / 1024)).ToString("N0"));
                 lastLog = Stopwatch.GetTimestamp();
