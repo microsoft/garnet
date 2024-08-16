@@ -61,6 +61,7 @@
     <ProjectReference Include="..\..\libs\host\Garnet.host.csproj" />
     <ProjectReference Include="..\..\libs\server\Garnet.server.csproj" />
     <ProjectReference Include="..\..\libs\storage\Tsavorite\cs\src\devices\AzureStorageDevice\Tsavorite.devices.AzureStorageDevice.csproj" />
+    <ProjectReference Include="..\..\playground\GarnetJSON\GarnetJSON.csproj" />
   </ItemGroup>
 
   <ItemGroup>
