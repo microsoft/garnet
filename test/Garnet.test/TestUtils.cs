@@ -176,6 +176,7 @@ namespace Garnet.test
             bool getSG = false,
             int indexResizeFrequencySecs = 60,
             IAuthenticationSettings authenticationSettings = null,
+            bool enableLua = false,
             ILogger logger = null)
         {
             if (UseAzureStorage)
@@ -228,6 +229,7 @@ namespace Garnet.test
                 IndexSize = indexSize,
                 ObjectStoreIndexSize = objectStoreIndexSize,
                 EnableAOF = enableAOF,
+                EnableLua = enableLua,
                 CommitFrequencyMs = commitFrequencyMs,
                 WaitForCommit = commitWait,
                 TlsOptions = EnableTLS ? new GarnetTlsOptions(

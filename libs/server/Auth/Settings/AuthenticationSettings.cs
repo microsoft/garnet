@@ -2,8 +2,6 @@
 // Licensed under the MIT license.
 
 using System;
-using System.Collections.Generic;
-using Garnet.server.Auth.Aad;
 
 namespace Garnet.server.Auth.Settings
 {
@@ -32,6 +30,7 @@ namespace Garnet.server.Auth.Settings
         /// ACL - Garnet validates new connections and commands against configured ACL users and access rules.
         /// </summary>
         ACL,
+
         /// <summary>
         /// ACL mode using Aad token instead of password. Here username is expected to be ObjectId or a valid Group's Object Id and token will be validated for claims.
         /// </summary>

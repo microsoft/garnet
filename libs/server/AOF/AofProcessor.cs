@@ -80,7 +80,7 @@ namespace Garnet.server
                 accessControlList: storeWrapper.accessControlList,
                 loggerFactory: storeWrapper.loggerFactory);
 
-            this.respServerSession = new RespServerSession(null, replayAofStoreWrapper, null, null);
+            this.respServerSession = new RespServerSession(networkSender: null, storeWrapper: replayAofStoreWrapper, subscribeBroker: null, itemBroker: null, authenticator: null, enableScripts: false);
 
             var session = respServerSession.storageSession.basicContext.Session;
             basicContext = session.BasicContext;

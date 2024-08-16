@@ -10,7 +10,8 @@
 
   <ItemGroup>
     <PackageReference Include="BenchmarkDotNet" />
-  </ItemGroup>
+		<PackageReference Include="NLua" />
+	</ItemGroup>
 
   <ItemGroup>
     <ProjectReference Include="..\..\libs\host\Garnet.host.csproj" />
