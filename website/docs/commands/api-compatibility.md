@@ -179,15 +179,15 @@ Note that this list is subject to change as we continue to expand our API comman
 |  | [PUNSUBSCRIBE](analytics.md#punsubscribe) | ➕ |  |
 |  | [SUBSCRIBE](analytics.md#subscribe) | ➕ |  |
 |  | [UNSUBSCRIBE](analytics.md#unsubscribe) | ➕ |  |
-| <span id="scripting">**SCRIPTING**</span> | EVAL | ➖ |  |
+| <span id="scripting">**SCRIPTING**</span> | EVAL | ➕ |  |
 |  | EVAL_RO | ➖ |  |
-|  | EVALSHA | ➖ |  |
+|  | EVALSHA | ➕ |  |
 |  | EVALSHA_RO | ➖ |  |
 |  | SCRIPT DEBUG | ➖ |  |
-|  | SCRIPT EXISTS | ➖ |  |
-|  | SCRIPT FLUSH | ➖ |  |
+|  | SCRIPT EXISTS | ➕ |  |
+|  | SCRIPT FLUSH | ➕ |  |
 |  | SCRIPT KILL | ➖ |  |
-|  | SCRIPT LOAD | ➖ |  |
+|  | SCRIPT LOAD | ➕ |  |
 | <span id="server">**SERVER**</span> | ACL | ➖ |  |
 |  | BGREWRITEAOF | ➖ |  |
 |  | [BGSAVE](checkpoint.md#bgsave) | ➕ |  |
