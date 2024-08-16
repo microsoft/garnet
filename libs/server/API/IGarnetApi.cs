@@ -1734,6 +1734,7 @@ namespace Garnet.server
 
         #endregion
 
+        public GarnetStatus CustomCommand(byte id, ArgSlice key, ArgSlice input, ref SpanByteAndMemory output);
     }
 
     /// <summary>

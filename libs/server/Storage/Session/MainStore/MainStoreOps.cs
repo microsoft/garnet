@@ -1124,6 +1124,25 @@ namespace Garnet.server
             return GarnetStatus.OK;
         }
 
+        public unsafe GarnetStatus CustomCommand<TContext>(byte id, ArgSlice key, ArgSlice input, ref SpanByteAndMemory output, ref TContext context)
+            where TContext : ITsavoriteContext<SpanByte, SpanByte, SpanByte, SpanByteAndMemory, long, MainSessionFunctions, MainStoreFunctions, MainStoreAllocator>
+        {
+            var sbKey = key.SpanByte;
+
+            int inputSize = sizeof(int) + RespInputHeader.Size + input.Length;
+            byte* pbCmdInput = stackalloc byte[inputSize];
+
+            byte* pcurr = pbCmdInput;
+            *(int*)pcurr = inputSize - sizeof(int);
+            pcurr += sizeof(int);
+            (*(RespInputHeader*)(pcurr)).cmd = (RespCommand)(id + CustomCommandManager.StartOffset);
+            (*(RespInputHeader*)(pcurr)).flags = 0;
+            pcurr += RespInputHeader.Size;
+            Buffer.MemoryCopy(input.ptr, pcurr, input.Length, input.Length);
+
+            return RMW_MainStore(ref sbKey, ref Unsafe.AsRef<SpanByte>(pbCmdInput), ref output, ref context);
+        }
+
         public GarnetStatus GetKeyType<TContext, TObjectContext>(ArgSlice key, out string keyType, ref TContext context, ref TObjectContext objectContext)
             where TContext : ITsavoriteContext<SpanByte, SpanByte, RawStringInput, SpanByteAndMemory, long, MainSessionFunctions, MainStoreFunctions, MainStoreAllocator>
             where TObjectContext : ITsavoriteContext<byte[], IGarnetObject, ObjectInput, GarnetObjectStoreOutput, long, ObjectSessionFunctions, ObjectStoreFunctions, ObjectStoreAllocator>
