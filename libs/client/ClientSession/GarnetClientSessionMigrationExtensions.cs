@@ -27,6 +27,8 @@ namespace Garnet.client
 
         static ReadOnlySpan<byte> MAIN_STORE => "SSTORE"u8;
         static ReadOnlySpan<byte> OBJECT_STORE => "OSTORE"u8;
+        static ReadOnlySpan<byte> T => "T"u8;
+        static ReadOnlySpan<byte> F => "F"u8;
 
         /// <summary>
         /// Send AUTH command to target node to authenticate connection.
@@ -199,15 +201,17 @@ namespace Garnet.client
         /// Write parameters of CLUSTER MIGRATE directly to the client buffer
         /// </summary>
         /// <param name="sourceNodeId"></param>
-        /// <param name="replaceOption"></param>
+        /// <param name="replace"></param>
         /// <param name="isMainStore"></param>
-        public void SetClusterMigrate(string sourceNodeId, Memory<byte> replaceOption, bool isMainStore)
+        public void SetClusterMigrate(string sourceNodeId, bool replace, bool isMainStore)
         {
             currTcsMigrate = new TaskCompletionSource<string>(TaskCreationOptions.RunContinuationsAsynchronously);
             tcsQueue.Enqueue(currTcsMigrate);
             curr = offset;
             this.isMainStore = isMainStore;
             var storeType = isMainStore ? MAIN_STORE : OBJECT_STORE;
+            var replaceOption = replace ? T : F;
+
             var arraySize = 6;
 
             while (!RespWriteUtils.WriteArrayLength(arraySize, ref curr, end))
@@ -242,7 +246,7 @@ namespace Garnet.client
             offset = curr;
 
             // 4
-            while (!RespWriteUtils.WriteBulkString(replaceOption.Span, ref curr, end))
+            while (!RespWriteUtils.WriteBulkString(replaceOption, ref curr, end))
             {
                 Flush();
                 curr = offset;
