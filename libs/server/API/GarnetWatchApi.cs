@@ -528,6 +528,12 @@ namespace Garnet.server
             return garnetApi.ObjectScan(key, ref input, ref outputFooter);
         }
 
+        public GarnetStatus CustomCommand(byte id, ArgSlice key, ArgSlice input, ref SpanByteAndMemory output)
+        {
+            garnetApi.WATCH(key, StoreType.Main);
+            return garnetApi.CustomCommand(id, key, input, ref output);
+        }
+
         #endregion
     }
 }
