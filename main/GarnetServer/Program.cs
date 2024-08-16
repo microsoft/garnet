@@ -94,6 +94,8 @@ namespace Garnet
 
             server.Register.NewProcedure("SUM", new Sum());
             server.Register.NewProcedure("SETMAINANDOBJECT", new SetStringAndList());
+
+            server.Register.NewProcedure("PROCCMD", new ProcCustomCmd());
         }
     }
 }
