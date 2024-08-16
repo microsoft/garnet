@@ -113,6 +113,10 @@ namespace Garnet.server
             }
 
             var count = parseState.count;
+            if (count < 1)
+            {
+                return AbortWithWrongNumberOfArguments("SCRIPT", count);
+            }
             var option = parseState.GetArgSliceByRef(0).ReadOnlySpan;
             if (option.EqualsUpperCaseSpanIgnoringCase("LOAD"u8))
             {
