@@ -1,9 +1,8 @@
 ﻿// Copyright (c) Microsoft Corporation.
 // Licensed under the MIT license.
 
-using System;
 using System.Diagnostics;
-using System.Linq;
+using System.Text;
 using Garnet.common;
 using Garnet.server;
 using Microsoft.Extensions.Logging;
@@ -65,7 +64,12 @@ namespace Garnet.cluster
             if (parseState.Count == 2)
             {
                 // [Optional] Parse expiry in seconds 
-                expirySeconds = parseState.GetInt(1);
+                if (!parseState.TryGetInt(1, out expirySeconds))
+                {
+                    while (!RespWriteUtils.WriteError(CmdStrings.RESP_ERR_GENERIC_VALUE_IS_NOT_INTEGER, ref dcurr, dend))
+                        SendAndReset();
+                    return true;
+                }
             }
 
             logger?.LogTrace("CLUSTER FORGET {nodeid} {seconds}", nodeId, expirySeconds);
@@ -153,7 +157,14 @@ namespace Garnet.cluster
             }
 
             var ipAddress = parseState.GetString(0);
-            var port = parseState.GetInt(1);
+            if (!parseState.TryGetInt(1, out var port))
+            {
+                while (!RespWriteUtils.WriteError(
+                           Encoding.ASCII.GetBytes(string.Format(CmdStrings.GenericErrInvalidPort,
+                           parseState.GetString(1))), ref dcurr, dend))
+                    SendAndReset();
+                return true;
+            }
 
             logger?.LogTrace("CLUSTER MEET {ipaddressStr} {port}", ipAddress, port);
             clusterProvider.clusterManager.RunMeetTask(ipAddress, port);
@@ -273,7 +284,12 @@ namespace Garnet.cluster
                 return true;
             }
 
-            var configEpoch = parseState.GetInt(0);
+            if (!parseState.TryGetInt(0, out var configEpoch))
+            {
+                while (!RespWriteUtils.WriteError(CmdStrings.RESP_ERR_GENERIC_VALUE_IS_NOT_INTEGER, ref dcurr, dend))
+                    SendAndReset();
+                return true;
+            }
 
             if (clusterProvider.clusterManager.CurrentConfig.NumWorkers > 2)
             {
@@ -412,7 +428,12 @@ namespace Garnet.cluster
 
             if (parseState.Count > 1)
             {
-                expirySeconds = parseState.GetInt(1);
+                if (!parseState.TryGetInt(1, out expirySeconds))
+                {
+                    while (!RespWriteUtils.WriteError(CmdStrings.RESP_ERR_GENERIC_VALUE_IS_NOT_INTEGER, ref dcurr, dend))
+                        SendAndReset();
+                    return true;
+                }
             }
 
             var resp = clusterProvider.clusterManager.TryReset(soft, expirySeconds);

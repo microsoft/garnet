@@ -42,7 +42,12 @@ namespace Garnet.cluster
 
                 if (parseState.Count > 1)
                 {
-                    var failoverTimeoutSeconds = parseState.GetInt(1);
+                    if (!parseState.TryGetInt(1, out var failoverTimeoutSeconds))
+                    {
+                        while (!RespWriteUtils.WriteError(CmdStrings.RESP_ERR_GENERIC_VALUE_IS_NOT_INTEGER, ref dcurr, dend))
+                            SendAndReset();
+                        return true;
+                    }
                     failoverTimeout = TimeSpan.FromSeconds(failoverTimeoutSeconds);
                 }
             }
@@ -141,7 +146,12 @@ namespace Garnet.cluster
                 return true;
             }
 
-            var primaryReplicationOffset = parseState.GetLong(0);
+            if (!parseState.TryGetLong(0, out var primaryReplicationOffset))
+            {
+                while (!RespWriteUtils.WriteError(CmdStrings.RESP_ERR_GENERIC_VALUE_IS_NOT_INTEGER, ref dcurr, dend))
+                    SendAndReset();
+                return true;
+            }
 
             var rOffset = clusterProvider.replicationManager.WaitForReplicationOffset(primaryReplicationOffset).GetAwaiter().GetResult();
             while (!RespWriteUtils.WriteInteger(rOffset, ref dcurr, dend))

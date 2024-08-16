@@ -34,10 +34,20 @@ namespace Garnet.cluster
                         replicaAddress = parseState.GetString(currTokenIdx++);
 
                         // 2. Port
-                        replicaPort = parseState.GetInt(currTokenIdx++);
+                        if (!parseState.TryGetInt(currTokenIdx++, out replicaPort))
+                        {
+                            while (!RespWriteUtils.WriteError(CmdStrings.RESP_ERR_GENERIC_VALUE_IS_NOT_INTEGER, ref dcurr, dend))
+                                SendAndReset();
+                            return true;
+                        }
                         break;
                     case FailoverOption.TIMEOUT:
-                        timeout = parseState.GetInt(currTokenIdx++);
+                        if (!parseState.TryGetInt(currTokenIdx++, out timeout))
+                        {
+                            while (!RespWriteUtils.WriteError(CmdStrings.RESP_ERR_GENERIC_VALUE_IS_NOT_INTEGER, ref dcurr, dend))
+                                SendAndReset();
+                            return true;
+                        }
                         break;
                     case FailoverOption.ABORT:
                         abort = true;

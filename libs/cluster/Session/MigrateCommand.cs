@@ -72,22 +72,22 @@ namespace Garnet.cluster
             // migrate host port <KEY | ""> destination-db timeout [COPY] [REPLACE] [AUTH password] [AUTH2 username password] [[KEYS keys] | [SLOTSRANGE start-slot end-slot [start-slot end-slot]]]]
             #region parseMigrationArguments
 
-            var currTokenIdx = 0;
+            // Address
+            var targetAddress = parseState.GetString(0);
 
-            //1. Address
-            var targetAddress = parseState.GetString(currTokenIdx++);
+            // Key
+            var keySlice = parseState.GetArgSliceByRef(2);
 
-            //2. Port
-            var targetPort = parseState.GetInt(currTokenIdx++);
+            // Port, Destination DB, Timeout
+            if (!parseState.TryGetInt(1, out var targetPort) ||
+                !parseState.TryGetInt(3, out var dbId) ||
+                !parseState.TryGetInt(4, out var timeout))
 
-            //3. Key
-            var keySlice = parseState.GetArgSliceByRef(currTokenIdx++);
-
-            //4. Destination DB
-            var dbId = parseState.GetInt(currTokenIdx++);
-
-            //5. Timeout
-            var timeout = parseState.GetInt(currTokenIdx++);
+            {
+                while (!RespWriteUtils.WriteError(CmdStrings.RESP_ERR_GENERIC_VALUE_IS_NOT_INTEGER, ref dcurr, dend))
+                    SendAndReset();
+                return true;
+            }
 
             var copyOption = false;
             var replaceOption = false;
@@ -119,6 +119,7 @@ namespace Garnet.cluster
                 keys.TryAdd(keySlice, KeyMigrationStatus.QUEUED);
             }
 
+            var currTokenIdx = 5;
             while (currTokenIdx < parseState.Count)
             {
                 var option = parseState.GetArgSliceByRef(currTokenIdx++).ReadOnlySpan;
@@ -192,7 +193,12 @@ namespace Garnet.cluster
                     slots = [];
                     while (currTokenIdx < parseState.Count)
                     {
-                        var slot = parseState.GetInt(currTokenIdx++);
+                        if (!parseState.TryGetInt(currTokenIdx++, out var slot))
+                        {
+                            while (!RespWriteUtils.WriteError(CmdStrings.RESP_ERR_GENERIC_VALUE_IS_NOT_INTEGER, ref dcurr, dend))
+                                SendAndReset();
+                            return true;
+                        }
 
                         // Skip if previous error encountered
                         if (pstate != MigrateCmdParseState.SUCCESS) continue;
@@ -236,8 +242,13 @@ namespace Garnet.cluster
 
                     while (currTokenIdx < parseState.Count)
                     {
-                        var slotStart = parseState.GetInt(currTokenIdx++);
-                        var slotEnd = parseState.GetInt(currTokenIdx++);
+                        if (!parseState.TryGetInt(currTokenIdx++, out var slotStart)
+                            || !parseState.TryGetInt(currTokenIdx++, out var slotEnd))
+                        {
+                            while (!RespWriteUtils.WriteError(CmdStrings.RESP_ERR_GENERIC_VALUE_IS_NOT_INTEGER, ref dcurr, dend))
+                                SendAndReset();
+                            return true;
+                        }
 
                         // Skip if previous error encountered
                         if (pstate != MigrateCmdParseState.SUCCESS) continue;

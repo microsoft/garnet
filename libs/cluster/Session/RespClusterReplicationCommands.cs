@@ -19,8 +19,8 @@ namespace Garnet.cluster
         {
             invalidParameters = false;
 
-            // Expecting exactly 0 arguments
-            if (parseState.Count != 0)
+            // Expecting exactly 1 argument
+            if (parseState.Count != 1)
             {
                 invalidParameters = true;
                 return true;
@@ -116,7 +116,13 @@ namespace Garnet.cluster
             }
 
             var nodeId = parseState.GetString(0);
-            var nextAddress = parseState.GetLong(1);
+
+            if (!parseState.TryGetLong(1, out var nextAddress))
+            {
+                while (!RespWriteUtils.WriteError(CmdStrings.RESP_ERR_GENERIC_VALUE_IS_NOT_INTEGER, ref dcurr, dend))
+                    SendAndReset();
+                return true;
+            }
 
             if (clusterProvider.serverOptions.EnableAOF)
             {
@@ -158,9 +164,16 @@ namespace Garnet.cluster
             }
 
             var nodeId = parseState.GetString(0);
-            var previousAddress = parseState.GetLong(1);
-            var currentAddress = parseState.GetLong(2);
-            var nextAddress = parseState.GetLong(3);
+
+            if (!parseState.TryGetLong(1, out var previousAddress) ||
+                !parseState.TryGetLong(2, out var currentAddress) ||
+                !parseState.TryGetLong(3, out var nextAddress))
+            {
+                while (!RespWriteUtils.WriteError(CmdStrings.RESP_ERR_GENERIC_VALUE_IS_NOT_INTEGER, ref dcurr, dend))
+                    SendAndReset();
+                return true;
+            }
+
             var sbRecord = parseState.GetArgSliceByRef(4).SpanByte;
 
             var currentConfig = clusterProvider.clusterManager.CurrentConfig;
@@ -208,8 +221,14 @@ namespace Garnet.cluster
             var nodeId = parseState.GetString(0);
             var primaryReplicaId = parseState.GetString(1);
             var checkpointEntryBytes = parseState.GetArgSliceByRef(2).SpanByte.ToByteArray();
-            var replicaAofBeginAddress = parseState.GetLong(3);
-            var replicaAofTailAddress = parseState.GetLong(4);
+
+            if (!parseState.TryGetLong(3, out var replicaAofBeginAddress) ||
+                !parseState.TryGetLong(4, out var replicaAofTailAddress))
+            {
+                while (!RespWriteUtils.WriteError(CmdStrings.RESP_ERR_GENERIC_VALUE_IS_NOT_INTEGER, ref dcurr, dend))
+                    SendAndReset();
+                return true;
+            }
 
             var remoteEntry = CheckpointEntry.FromByteArray(checkpointEntryBytes);
 
@@ -245,7 +264,14 @@ namespace Garnet.cluster
             }
 
             var fileTokenBytes = parseState.GetArgSliceByRef(0).ReadOnlySpan;
-            var fileTypeInt = parseState.GetInt(1);
+
+            if (!parseState.TryGetInt(1, out var fileTypeInt))
+            {
+                while (!RespWriteUtils.WriteError(CmdStrings.RESP_ERR_GENERIC_VALUE_IS_NOT_INTEGER, ref dcurr, dend))
+                    SendAndReset();
+                return true;
+            }
+
             var checkpointMetadata = parseState.GetArgSliceByRef(2).SpanByte.ToByteArray();
 
             var fileToken = new Guid(fileTokenBytes);
@@ -273,10 +299,17 @@ namespace Garnet.cluster
             }
 
             var fileTokenBytes = parseState.GetArgSliceByRef(0).ReadOnlySpan;
-            var ckptFileTypeInt = parseState.GetInt(1);
-            var startAddress = parseState.GetLong(2);
+
+            if (!parseState.TryGetInt(1, out var ckptFileTypeInt) ||
+                !parseState.TryGetLong(2, out var startAddress) ||
+                !parseState.TryGetInt(4, out var segmentId))
+            {
+                while (!RespWriteUtils.WriteError(CmdStrings.RESP_ERR_GENERIC_VALUE_IS_NOT_INTEGER, ref dcurr, dend))
+                    SendAndReset();
+                return true;
+            }
+
             var data = parseState.GetArgSliceByRef(3).ReadOnlySpan;
-            var segmentId = parseState.GetInt(4);
 
             var fileToken = new Guid(fileTokenBytes);
             var ckptFileType = (CheckpointFileType)ckptFileTypeInt;
@@ -306,13 +339,25 @@ namespace Garnet.cluster
                 return true;
             }
 
-            var recoverMainStoreFromToken = parseState.GetBool(0);
-            var recoverObjectStoreFromToken = parseState.GetBool(1);
-            var replayAOF = parseState.GetBool(2);
+            if (!parseState.TryGetBool(0, out var recoverMainStoreFromToken) ||
+                !parseState.TryGetBool(1, out var recoverObjectStoreFromToken) || 
+                !parseState.TryGetBool(2, out var replayAOF))
+            {
+                while (!RespWriteUtils.WriteError(CmdStrings.RESP_ERR_GENERIC_VALUE_IS_NOT_BOOLEAN, ref dcurr, dend))
+                    SendAndReset();
+                return true;
+            }
+
             var primaryReplicaId = parseState.GetString(3);
             var checkpointEntryBytes = parseState.GetArgSliceByRef(4).SpanByte.ToByteArray();
-            var beginAddress = parseState.GetLong(5);
-            var tailAddress = parseState.GetLong(6);
+
+            if (!parseState.TryGetLong(5, out var beginAddress) ||
+                !parseState.TryGetLong(6, out var tailAddress))
+            {
+                while (!RespWriteUtils.WriteError(CmdStrings.RESP_ERR_GENERIC_VALUE_IS_NOT_INTEGER, ref dcurr, dend))
+                    SendAndReset();
+                return true;
+            }
 
             var entry = CheckpointEntry.FromByteArray(checkpointEntryBytes);
             var replicationOffset = clusterProvider.replicationManager.BeginReplicaRecover(
