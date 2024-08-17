@@ -98,7 +98,6 @@ namespace Garnet.cluster
                 long offset;
                 long currentOffset;
                 byte[] keyBuffer;
-                byte* headPtr;
                 byte* endPtr;
                 byte* currPtr;
 
@@ -110,7 +109,7 @@ namespace Garnet.cluster
                     currentOffset = 0;
 
                     keyBuffer = GC.AllocateArray<byte>(bufferSize, pinned: true);
-                    currPtr = headPtr = (byte*)Unsafe.AsPointer(ref keyBuffer[0]);
+                    currPtr = (byte*)Unsafe.AsPointer(ref keyBuffer[0]);
                     endPtr = (byte*)Unsafe.AsPointer(ref keyBuffer[^1]);
                 }
 
