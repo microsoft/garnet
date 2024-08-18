@@ -22,12 +22,8 @@ namespace Garnet.server
                 return AbortWithWrongNumberOfArguments(nameof(RespCommand.RENAME), parseState.count);
             }
 
-            if (NetworkMultiKeySlotVerify(readOnly: false))
-                return true;
-
             var oldKeySlice = parseState.GetArgSliceByRef(0);
             var newKeySlice = parseState.GetArgSliceByRef(1);
-
             var status = storageApi.RENAME(oldKeySlice, newKeySlice);
 
             switch (status)
@@ -59,10 +55,6 @@ namespace Garnet.server
             }
 
             var sbKey = parseState.GetArgSliceByRef(0).SpanByte;
-
-            if (NetworkMultiKeySlotVerify(readOnly: false))
-                return true;
-
             var o = new SpanByteAndMemory(dcurr, (int)(dend - dcurr));
             var status = garnetApi.GETDEL(ref sbKey, ref o);
 
@@ -87,23 +79,19 @@ namespace Garnet.server
         /// EXISTS multiple keys
         /// </summary>
         /// <typeparam name="TGarnetApi"></typeparam>
-        /// <param name="count"></param>
         /// <param name="storageApi"></param>
         /// <returns></returns>
-        private bool NetworkEXISTS<TGarnetApi>(int count, ref TGarnetApi storageApi)
+        private bool NetworkEXISTS<TGarnetApi>(ref TGarnetApi storageApi)
             where TGarnetApi : IGarnetApi
         {
-            if (count < 1)
+            if (parseState.count < 1)
             {
-                return AbortWithWrongNumberOfArguments(nameof(RespCommand.EXISTS), count);
+                return AbortWithWrongNumberOfArguments(nameof(RespCommand.EXISTS), parseState.count);
             }
 
-            int exists = 0;
+            var exists = 0;
 
-            if (NetworkMultiKeySlotVerify(readOnly: true))
-                return true;
-
-            for (int i = 0; i < count; i++)
+            for (var i = 0; i < parseState.count; i++)
             {
                 var key = parseState.GetArgSliceByRef(i);
                 var status = storageApi.EXISTS(key);
@@ -122,15 +110,14 @@ namespace Garnet.server
         /// </summary>
         /// <typeparam name="TGarnetApi"></typeparam>
         /// <param name="command">Indicates which command to use, expire or pexpire.</param>
-        /// <param name="count">Number of arguments sent with this command.</param>
         /// <param name="storageApi"></param>
         /// <returns></returns>
-        private bool NetworkEXPIRE<TGarnetApi>(int count, RespCommand command, ref TGarnetApi storageApi)
+        private bool NetworkEXPIRE<TGarnetApi>(RespCommand command, ref TGarnetApi storageApi)
             where TGarnetApi : IGarnetApi
         {
-            if (count < 2 || count > 3)
+            if (parseState.count < 2 || parseState.count > 3)
             {
-                return AbortWithWrongNumberOfArguments(nameof(RespCommand.EXPIRE), count);
+                return AbortWithWrongNumberOfArguments(nameof(RespCommand.EXPIRE), parseState.count);
             }
 
             var key = parseState.GetArgSliceByRef(0);
@@ -149,7 +136,7 @@ namespace Garnet.server
             var expireOption = ExpireOption.None;
             var optionStr = "";
 
-            if (count > 2)
+            if (parseState.count > 2)
             {
                 optionStr = parseState.GetString(2);
 
@@ -165,9 +152,6 @@ namespace Garnet.server
                     SendAndReset();
                 return true;
             }
-
-            if (NetworkMultiKeySlotVerify(readOnly: false, firstKey: 0, lastKey: 0))
-                return true;
 
             var status = command == RespCommand.EXPIRE ?
                         storageApi.EXPIRE(key, expiryMs, out var timeoutSet, StoreType.All, expireOption) :
@@ -202,10 +186,6 @@ namespace Garnet.server
             }
 
             var key = parseState.GetArgSliceByRef(0);
-
-            if (NetworkMultiKeySlotVerify(readOnly: false))
-                return true;
-
             var status = storageApi.PERSIST(key);
 
             if (status == GarnetStatus.OK)
@@ -237,10 +217,6 @@ namespace Garnet.server
             }
 
             var sbKey = parseState.GetArgSliceByRef(0).SpanByte;
-
-            if (NetworkMultiKeySlotVerify(readOnly: true))
-                return true;
-
             var o = new SpanByteAndMemory(dcurr, (int)(dend - dcurr));
             var status = command == RespCommand.TTL ?
                         storageApi.TTL(ref sbKey, StoreType.All, ref o) :
