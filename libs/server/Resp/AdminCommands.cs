@@ -79,7 +79,7 @@ namespace Garnet.server
         /// <param name="cmd">Command be processed</param>
         /// <returns>True if the command execution is allowed to continue, otherwise false.</returns>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        bool CheckACLPermissions(RespCommand cmd)
+        internal bool CheckACLPermissions(RespCommand cmd)
         {
             Debug.Assert(!_authenticator.IsAuthenticated || (_user != null));
 
@@ -112,8 +112,6 @@ namespace Garnet.server
                 {
                     self.currentCustomProcedure = null;
                 }
-                while (!RespWriteUtils.WriteError(CmdStrings.RESP_ERR_NOAUTH, ref self.dcurr, self.dend))
-                    self.SendAndReset();
             }
         }
 

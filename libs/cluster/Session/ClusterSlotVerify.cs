@@ -89,7 +89,7 @@ namespace Garnet.cluster
                 var state = config.GetState(_slot);
 
                 // Redirect r/w requests towards primary
-                if (config.LocalNodeRole == NodeRole.REPLICA)
+                if (config.LocalNodeRole == NodeRole.REPLICA && !readWriteSession)
                     return new(SlotVerifiedState.MOVED, _slot);
 
                 if (IsLocal)

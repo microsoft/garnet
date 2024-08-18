@@ -67,7 +67,7 @@ namespace Garnet.server
         /// <inheritdoc />
         public override IMessageConsumer GetSession(WireFormat wireFormat, INetworkSender networkSender)
             => (wireFormat == WireFormat.ASCII)
-                ? new RespServerSession(networkSender, storeWrapper, broker, itemBroker)
+                ? new RespServerSession(networkSender, storeWrapper, broker, itemBroker, null, true)
                 : throw new GarnetException($"Unsupported wireFormat {wireFormat}");
     }
 }
