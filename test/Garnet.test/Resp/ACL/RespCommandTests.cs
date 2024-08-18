@@ -2331,7 +2331,7 @@ namespace Garnet.test.Resp.ACL
                 }
                 catch (Exception e)
                 {
-                    if (e.Message == "ERR NOSCRIPT No matching script. Please use EVAL.")
+                    if (e.Message == "NOSCRIPT No matching script. Please use EVAL.")
                     {
                         return;
                     }
