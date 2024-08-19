@@ -283,6 +283,10 @@ namespace Garnet
         [Option("logger-level", Required = false, HelpText = "Logging level. Value options: Trace, Debug, Information, Warning, Error, Critical, None")]
         public LogLevel LogLevel { get; set; }
 
+        [IntRangeValidation(0, int.MaxValue)]
+        [Option("logger-freq", Required = false, Default = 10, HelpText = "Frequency (in seconds) of logging (used for tracking progress of long running operations e.g. migration)")]
+        public int LoggingFrequency { get; set; }
+
         [OptionValidation]
         [Option("disable-console-logger", Required = false, HelpText = "Disable console logger.")]
         public bool? DisableConsoleLogger { get; set; }
@@ -612,6 +616,7 @@ namespace Garnet
                 LatencyMonitor = LatencyMonitor.GetValueOrDefault(),
                 MetricsSamplingFrequency = MetricsSamplingFrequency,
                 LogLevel = LogLevel,
+                LoggingFrequency = LoggingFrequency,
                 QuietMode = QuietMode.GetValueOrDefault(),
                 ThreadPoolMinThreads = ThreadPoolMinThreads,
                 ThreadPoolMaxThreads = ThreadPoolMaxThreads,

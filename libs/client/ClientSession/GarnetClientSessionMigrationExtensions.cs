@@ -188,12 +188,14 @@ namespace Garnet.client
         /// <summary>
         /// Flush and initialize buffers/parameters used for migrate command
         /// </summary>
-        public void InitMigrateBuffer()
+        /// <param name="migrateProgressFreq"></param>
+        public void InitMigrateBuffer(TimeSpan migrateProgressFreq = default)
         {
             Flush();
             currTcsMigrate = null;
             curr = head = null;
             keyCount = 0;
+            this.migrateProgressFreq = default ? TimeSpan.FromSeconds(5) : migrateProgressFreq;
         }
 
         /// <summary>
@@ -274,7 +276,6 @@ namespace Garnet.client
         /// <summary>
         /// Send key value pair and reset migrate buffers
         /// </summary>
-        /// <returns></returns>
         public Task<string> SendAndResetMigrate()
         {
             if (keyCount == 0) return null;
@@ -285,7 +286,7 @@ namespace Garnet.client
 
             // Payload format = [$length\r\n][number of keys (4 bytes)][raw key value pairs]\r\n
             var size = (int)(curr - 2 - head - (ExtraSpace - 4));
-            LogMigrateProgress(keyCount, size, isMainStore);
+            TrackMigrateProgress(keyCount, size);
             var success = RespWriteUtils.WritePaddedBulkStringLength(size, ExtraSpace - 4, ref head, end);
             Debug.Assert(success);
 
@@ -305,6 +306,13 @@ namespace Garnet.client
             return task;
         }
 
+        /// <summary>
+        /// Signal completion of migration by sending an empty payload
+        /// </summary>
+        /// <param name="sourceNodeId"></param>
+        /// <param name="replace"></param>
+        /// <param name="isMainStore"></param>
+        /// <returns></returns>
         public Task<string> CompleteMigrate(string sourceNodeId, bool replace, bool isMainStore)
         {
             SetClusterMigrate(sourceNodeId, replace, isMainStore);
@@ -315,7 +323,7 @@ namespace Garnet.client
 
             // Payload format = [$length\r\n][number of keys (4 bytes)][raw key value pairs]\r\n
             var size = (int)(curr - 2 - head - (ExtraSpace - 4));
-            LogMigrateProgress(keyCount, size, isMainStore, completed: true);
+            TrackMigrateProgress(keyCount, size, completed: true);
             var success = RespWriteUtils.WritePaddedBulkStringLength(size, ExtraSpace - 4, ref head, end);
             Debug.Assert(success);
 
@@ -432,21 +440,22 @@ namespace Garnet.client
         long lastLog = 0;
         long totalKeyCount = 0;
         long totalPayloadSize = 0;
+        TimeSpan migrateProgressFreq;
 
         /// <summary>
         /// Logging of migrate session status
         /// </summary>
         /// <param name="keyCount"></param>
         /// <param name="size"></param>
-        /// <param name="isMainStore"></param>
         /// <param name="completed"></param>
-        public void LogMigrateProgress(int keyCount, int size, bool isMainStore, bool completed = false)
+        private void TrackMigrateProgress(int keyCount, int size, bool completed = false)
         {
             totalKeyCount += keyCount;
             totalPayloadSize += size;
-            if (completed || lastLog == 0 || TimeSpan.FromTicks(Stopwatch.GetTimestamp() - lastLog).Seconds >= 1)
+            var duration = TimeSpan.FromTicks(Stopwatch.GetTimestamp() - lastLog);
+            if (completed || lastLog == 0 || duration >= migrateProgressFreq)
             {
-                logger?.TrackMigrateProgress(
+                logger?.LogMigrateProgress(
                     completed ? "COMPLETED" : "MIGRATING",
                     isMainStore,
                     totalKeyCount.ToString("N0"),

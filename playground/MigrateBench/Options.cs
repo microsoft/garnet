@@ -26,7 +26,7 @@ namespace MigrateBench
         [Option("dbsize", Required = false, Default = false, HelpText = "Count keys for between instances")]
         public bool Dbsize { get; set; }
 
-        [Option("timeout", Required = false, Default = 10, HelpText = "Migrate timeout value")]
+        [Option("timeout", Required = false, Default = 10, HelpText = "Migrate timeout in seconds")]
         public int Timeout { get; set; }
     }
 }

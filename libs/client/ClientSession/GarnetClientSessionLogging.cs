@@ -14,6 +14,6 @@ namespace Garnet.client
             EventId = 0,
             Level = LogLevel.Trace,
             Message = "[{op}]: isMainStore:({storeType}) totalKeyCount:({totalKeyCount}), totalPayloadSize:({totalPayloadSize} KB)")]
-        public static partial void TrackMigrateProgress(this ILogger logger, string op, bool storeType, string totalKeyCount, string totalPayloadSize);
+        public static partial void LogMigrateProgress(this ILogger logger, string op, bool storeType, string totalKeyCount, string totalPayloadSize);
     }
 }

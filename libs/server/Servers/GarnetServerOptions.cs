@@ -191,9 +191,14 @@ namespace Garnet.server
         public int MetricsSamplingFrequency = 0;
 
         /// <summary>
-        /// Metrics sampling frequency
+        /// Logging level. Value options: Trace, Debug, Information, Warning, Error, Critical, None
         /// </summary>
         public LogLevel LogLevel = LogLevel.Error;
+
+        /// <summary>
+        /// Frequency (in seconds) of logging (used for tracking progress of long running operations e.g. migration)
+        /// </summary>
+        public int LoggingFrequency = TimeSpan.FromSeconds(10).Seconds;
 
         /// <summary>
         /// Metrics sampling frequency

@@ -25,7 +25,8 @@ namespace Garnet.cluster
         private void TrackImportProgress(int keyCount, bool isMainStore, bool completed = false)
         {
             totalKeyCount += keyCount;
-            if (completed || lastLog == 0 || TimeSpan.FromTicks(Stopwatch.GetTimestamp() - lastLog).Seconds >= 1)
+            var duration = TimeSpan.FromTicks(Stopwatch.GetTimestamp() - lastLog);
+            if (completed || lastLog == 0 || duration >= clusterProvider.storeWrapper.loggingFrequncy)
             {
                 logger?.LogTraceDataImport(completed ? "COMPLETED" : "IMPORTING", isMainStore, totalKeyCount.ToString("N0"));
                 lastLog = Stopwatch.GetTimestamp();
