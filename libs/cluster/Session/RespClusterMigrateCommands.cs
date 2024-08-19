@@ -22,15 +22,12 @@ namespace Garnet.cluster
         /// <param name="keyCount"></param>
         /// <param name="isMainStore"></param>
         /// <param name="completed"></param>
-        private void LogMigrateProgress(int keyCount, bool isMainStore, bool completed = false)
+        private void TrackImportProgress(int keyCount, bool isMainStore, bool completed = false)
         {
             totalKeyCount += keyCount;
             if (completed || lastLog == 0 || TimeSpan.FromTicks(Stopwatch.GetTimestamp() - lastLog).Seconds >= 1)
             {
-                logger?.LogTrace("[{op}]: isMainStore:{(storeType)} totalKeyCount:({totalKeyCount})",
-                    completed ? "COMPLETED" : "IMPORTING",
-                    isMainStore,
-                    totalKeyCount.ToString("N0"));
+                logger?.LogTraceDataImport(completed ? "COMPLETED" : "IMPORTING", isMainStore, totalKeyCount.ToString("N0"));
                 lastLog = Stopwatch.GetTimestamp();
             }
         }
@@ -78,7 +75,7 @@ namespace Garnet.cluster
                 payload += 4;
                 var i = 0;
 
-                LogMigrateProgress(keyCount, isMainStore: true, keyCount == 0);
+                TrackImportProgress(keyCount, isMainStore: true, keyCount == 0);
                 while (i < keyCount)
                 {
                     byte* keyPtr = null, valPtr = null;
@@ -118,7 +115,7 @@ namespace Garnet.cluster
                 var keyCount = *(int*)payload;
                 payload += 4;
                 var i = 0;
-                LogMigrateProgress(keyCount, isMainStore: true, keyCount == 0);
+                TrackImportProgress(keyCount, isMainStore: true, keyCount == 0);
                 while (i < keyCount)
                 {
                     if (!RespReadUtils.ReadSerializedData(out var key, out var data, out var expiration, ref payload, recvBufferPtr + bytesRead))

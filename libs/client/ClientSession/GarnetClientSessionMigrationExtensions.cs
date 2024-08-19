@@ -8,7 +8,6 @@ using System.Threading;
 using System.Threading.Tasks;
 using Garnet.common;
 using Garnet.networking;
-using Microsoft.Extensions.Logging;
 using Tsavorite.core;
 
 namespace Garnet.client
@@ -447,7 +446,7 @@ namespace Garnet.client
             totalPayloadSize += size;
             if (completed || lastLog == 0 || TimeSpan.FromTicks(Stopwatch.GetTimestamp() - lastLog).Seconds >= 1)
             {
-                logger?.LogTrace("[{op}]: isMainStore:{(storeType)} totalKeyCount:({totalKeyCount}), totalPayloadSize:({totalPayloadSize} KB)",
+                logger?.TrackMigrateProgress(
                     completed ? "COMPLETED" : "MIGRATING",
                     isMainStore,
                     totalKeyCount.ToString("N0"),
