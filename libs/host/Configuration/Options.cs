@@ -284,7 +284,7 @@ namespace Garnet
         public LogLevel LogLevel { get; set; }
 
         [IntRangeValidation(0, int.MaxValue)]
-        [Option("logger-freq", Required = false, Default = 10, HelpText = "Frequency (in seconds) of logging (used for tracking progress of long running operations e.g. migration)")]
+        [Option("logger-freq", Required = false, Default = 5, HelpText = "Frequency (in seconds) of logging (used for tracking progress of long running operations e.g. migration)")]
         public int LoggingFrequency { get; set; }
 
         [OptionValidation]

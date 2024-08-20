@@ -43,8 +43,7 @@ namespace Garnet.cluster
         readonly bool _replaceOption;
         readonly TimeSpan _timeout;
         readonly List<(int, int)> _slotRanges;
-        readonly Dictionary<ArgSlice, KeyMigrationStatus> _keys;
-        SingleWriterMultiReaderLock _keyDictLock;
+        readonly MigratingKeysWorkingSet _keys;
         SingleWriterMultiReaderLock _disposed;
 
         readonly HashSet<int> _sslots;
@@ -69,77 +68,6 @@ namespace Garnet.cluster
         /// Return slots for migration
         /// </summary>
         public HashSet<int> GetSlots => _sslots;
-
-        /// <summary>
-        /// Add key to the migrate dictionary for tracking progress during migration
-        /// </summary>
-        /// <param name="key"></param>
-        public void AddKey(ArgSlice key)
-        {
-            try
-            {
-                _keyDictLock.WriteLock();
-                _keys.TryAdd(key, KeyMigrationStatus.QUEUED);
-            }
-            finally
-            {
-                _keyDictLock.WriteUnlock();
-            }
-        }
-
-        /// <summary>
-        /// Check if it is safe to operate on the provided key when a slot state is set to MIGRATING
-        /// </summary>
-        /// <param name="key"></param>
-        /// <param name="slot"></param>
-        /// <param name="readOnly"></param>
-        /// <returns></returns>
-        /// <exception cref="GarnetException"></exception>
-        public bool CanAccessKey(ref ArgSlice key, int slot, bool readOnly)
-        {
-            try
-            {
-                _keyDictLock.ReadLock();
-                // Skip operation check since this session is not responsible for migrating the associated slot
-                if (!_sslots.Contains(slot))
-                    return true;
-
-                // If key is not queued for migration then
-                if (!_keys.TryGetValue(key, out var state))
-                    return true;
-
-                // NOTE:
-                // Caller responsible for spin-wait
-                // Check definition of KeyMigrationStatus for more info
-                return state switch
-                {
-                    KeyMigrationStatus.QUEUED or KeyMigrationStatus.MIGRATED => true,// Both reads and write commands can access key if it exists
-                    KeyMigrationStatus.MIGRATING => readOnly, // If key exists read commands can access key but write commands will be delayed
-                    KeyMigrationStatus.DELETING => false, // Neither read or write commands can access key
-                    _ => throw new GarnetException($"Invalid KeyMigrationStatus: {state}")
-                };
-            }
-            finally
-            {
-                _keyDictLock.ReadUnlock();
-            }
-        }
-
-        /// <summary>
-        /// Clear keys from dictionary
-        /// </summary>
-        public void ClearKeys()
-        {
-            try
-            {
-                _keyDictLock.WriteLock();
-                _keys.Clear();
-            }
-            finally
-            {
-                _keyDictLock.WriteUnlock();
-            }
-        }
 
         readonly GarnetClientSession _gcs;
 
@@ -185,7 +113,7 @@ namespace Garnet.cluster
             bool _replaceOption,
             int _timeout,
             HashSet<int> _slots,
-            Dictionary<ArgSlice, KeyMigrationStatus> keys,
+            MigratingKeysWorkingSet keys,
             TransferOption transferOption)
         {
             this.logger = clusterProvider.loggerFactory.CreateLogger($"MigrateSession - {GetHashCode()}"); ;
@@ -202,7 +130,7 @@ namespace Garnet.cluster
             this._timeout = TimeSpan.FromMilliseconds(_timeout);
             this._sslots = _slots;
             this._slotRanges = GetRanges();
-            this._keys = keys == null ? new Dictionary<ArgSlice, KeyMigrationStatus>(ArgSliceComparer.Instance) : keys;
+            this._keys = keys == null ? new MigratingKeysWorkingSet() : keys;
             this.transferOption = transferOption;
 
             if (clusterProvider != null)

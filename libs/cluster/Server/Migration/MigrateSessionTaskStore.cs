@@ -79,7 +79,7 @@ namespace Garnet.cluster
             bool replaceOption,
             int timeout,
             HashSet<int> slots,
-            Dictionary<ArgSlice, KeyMigrationStatus> keysWithSize,
+            MigratingKeysWorkingSet keysWithSize,
             TransferOption transferOption,
             out MigrateSession mSession)
         {

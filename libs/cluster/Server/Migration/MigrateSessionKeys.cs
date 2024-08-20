@@ -4,7 +4,6 @@
 using System;
 using System.Buffers;
 using System.Runtime.CompilerServices;
-using Garnet.common;
 using Garnet.server;
 using Microsoft.Extensions.Logging;
 using Tsavorite.core;
@@ -16,62 +15,6 @@ namespace Garnet.cluster
     /// </summary>
     internal sealed unsafe partial class MigrateSession : IDisposable
     {
-        /*
-         * [ Overview of the Key Transfer State Machine ]
-         * 
-         * - Transition all QUEUED keys to MIGRATING
-         * - Wait for status transition to propagate to all running sessions.
-         * - Repeat for all keys in MIGRATING status:
-         *      1. Lookup key in store and transfer if found
-         *      2. Otherwise transition key status back to QUEUED
-         * - If COPY option is true transition all MIGRATING keys to MIGRATED
-         * - Otherwise transition MIGRATING to DELETING, wait for status propagation and repeat for all keys in DELETING status
-         *      1. Delete key from corresponding store
-         *      2. Transition status from DELETING to MIGRATED
-         * - Repeat above steps for all remaining QUEUED keys (those not found in main store).
-         * 
-         */
-
-        /// <summary>
-        /// Wait for config propagation based on the type of MigrateSession that is currently in progress
-        /// </summary>
-        /// <exception cref="GarnetException"></exception>
-        private void WaitForConfigPropagation()
-        {
-            if (transferOption == TransferOption.KEYS)
-                clusterSession.UnsafeBumpAndWaitForEpochTransition();
-            else if (transferOption == TransferOption.SLOTS)
-                _ = clusterProvider.BumpAndWaitForEpochTransition();
-            else
-                throw new GarnetException($"MigrateSession Invalid TransferOption {transferOption}");
-        }
-
-        /// <summary>
-        /// Try to transition all keys handled by this session to the provided state
-        /// Valid state transitions are as follows:
-        ///     PREPARE to MIGRATING
-        ///     MIGRATING to MIGRATED or DELETING
-        /// If state transition is not valid it will result in a no-op and the key state will remain unchanged
-        /// </summary>
-        /// <param name="state"></param>
-        private void TryTransitionState(KeyMigrationStatus state)
-        {
-            foreach (var key in _keys.Keys)
-            {
-                _keys[key] = state switch
-                {
-                    // 1. Transition key to MIGRATING from QUEUED
-                    KeyMigrationStatus.MIGRATING when _keys[key] == KeyMigrationStatus.QUEUED => state,
-                    // 2. Transition key to MIGRATED from MIGRATING
-                    KeyMigrationStatus.MIGRATED when _keys[key] == KeyMigrationStatus.MIGRATING => state,
-                    // 3. Transition to DELETING from MIGRATING
-                    KeyMigrationStatus.DELETING when _keys[key] == KeyMigrationStatus.MIGRATING => state,
-                    // 3. Omit state transition
-                    _ => _keys[key],
-                };
-            }
-        }
-
         /// <summary>
         /// Method used to migrate individual keys from main store to target node.
         /// Used with MIGRATE KEYS option
@@ -105,7 +48,7 @@ namespace Garnet.cluster
 
                 var bufPtr = buffer.GetValidPointer();
                 var bufPtrEnd = bufPtr + bufferSize;
-                foreach (var mKey in _keys)
+                foreach (var mKey in _keys.GetKeys())
                 {
                     // Process only keys in MIGRATING status
                     if (mKey.Value != KeyMigrationStatus.MIGRATING)
@@ -121,7 +64,7 @@ namespace Garnet.cluster
                     if (status == GarnetStatus.NOTFOUND)
                     {
                         // Transition key status back to QUEUED to unblock any writers
-                        _keys[mKey.Key] = KeyMigrationStatus.QUEUED;
+                        _keys.UpdateStatus(mKey.Key, KeyMigrationStatus.QUEUED);
                         continue;
                     }
 
@@ -172,7 +115,7 @@ namespace Garnet.cluster
                 TryTransitionState(KeyMigrationStatus.MIGRATING);
                 WaitForConfigPropagation();
 
-                foreach (var mKey in _keys)
+                foreach (var mKey in _keys.GetKeys())
                 {
                     // Process only keys in MIGRATING status
                     if (mKey.Value != KeyMigrationStatus.MIGRATING)
@@ -185,7 +128,7 @@ namespace Garnet.cluster
                     if (status == GarnetStatus.NOTFOUND)
                     {
                         // Transition key status back to QUEUED to unblock any writers
-                        _keys[mKey.Key] = KeyMigrationStatus.QUEUED;
+                        _keys.UpdateStatus(mKey.Key, KeyMigrationStatus.QUEUED);
                         continue;
                     }
 
@@ -226,7 +169,7 @@ namespace Garnet.cluster
             TryTransitionState(KeyMigrationStatus.DELETING);
             WaitForConfigPropagation();
 
-            foreach (var mKey in _keys)
+            foreach (var mKey in _keys.GetKeys())
             {
                 // If key is not in deleting state skip
                 if (mKey.Value != KeyMigrationStatus.DELETING)
@@ -236,7 +179,7 @@ namespace Garnet.cluster
                 _ = localServerSession.BasicGarnetApi.DELETE(ref key);
 
                 // Set key as MIGRATED to allow allow all operations
-                _keys[mKey.Key] = KeyMigrationStatus.MIGRATED;
+                _keys.UpdateStatus(mKey.Key, KeyMigrationStatus.MIGRATED);
             }
         }
 
