@@ -92,7 +92,7 @@ namespace Garnet.server
 
             var exists = 0;
 
-            for (var i = 0; i < parseState.count; i++)
+            for (var i = 0; i < parseState.Count; i++)
             {
                 var key = parseState.GetArgSliceByRef(i);
                 var status = storageApi.EXISTS(key);
@@ -138,7 +138,7 @@ namespace Garnet.server
             var expireOption = ExpireOption.None;
             var optionStr = "";
 
-            if (parseState.count > 2)
+            if (parseState.Count > 2)
             {
                 if (!parseState.TryGetEnum(2, true, out expireOption))
                 {

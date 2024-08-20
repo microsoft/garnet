@@ -244,9 +244,9 @@ namespace Garnet.server
             var startOffset = 0; // default is at the start of bitmap array
             var endOffset = -1; // default is at the end of the bitmap array (negative values indicate offset starting from end)
             byte bitOffsetType = 0x0; // treat offsets as byte or bit offsets
-            if (parseState.count > 1)//Start offset exists
+            if (parseState.Count > 1)//Start offset exists
             {
-                if (!parseState.TryGetInt(1, out startOffset) || (parseState.count > 2 && !parseState.TryGetInt(2, out endOffset)))
+                if (!parseState.TryGetInt(1, out startOffset) || (parseState.Count > 2 && !parseState.TryGetInt(2, out endOffset)))
                 {
                     while (!RespWriteUtils.WriteError(CmdStrings.RESP_ERR_GENERIC_VALUE_IS_NOT_INTEGER, ref dcurr, dend))
                         SendAndReset();
@@ -254,7 +254,7 @@ namespace Garnet.server
                 }
             }
 
-            if (parseState.count > 3)
+            if (parseState.Count > 3)
             {
                 var sbOffsetType = parseState.GetArgSliceByRef(3).ReadOnlySpan;
                 bitOffsetType = sbOffsetType.EqualsUpperCaseSpanIgnoringCase("BIT"u8) ? (byte)0x1 : (byte)0x0;
@@ -330,9 +330,9 @@ namespace Garnet.server
             var endOffset = -1; // default is at the end of the bitmap array (negative values indicate offset starting from end)
             byte bitOffsetType = 0x0; // treat offsets as byte or bit offsets
 
-            if (parseState.count > 2)//Start offset exists
+            if (parseState.Count > 2)//Start offset exists
             {
-                if (!parseState.TryGetInt(2, out startOffset) || (parseState.count > 3 && !parseState.TryGetInt(3, out endOffset)))
+                if (!parseState.TryGetInt(2, out startOffset) || (parseState.Count > 3 && !parseState.TryGetInt(3, out endOffset)))
                 {
                     while (!RespWriteUtils.WriteError(CmdStrings.RESP_ERR_GENERIC_VALUE_IS_NOT_INTEGER, ref dcurr, dend))
                         SendAndReset();
@@ -340,7 +340,7 @@ namespace Garnet.server
                 }
             }
 
-            if (parseState.count > 4)
+            if (parseState.Count > 4)
             {
                 var sbOffsetType = parseState.GetArgSliceByRef(4).ReadOnlySpan;
                 bitOffsetType = sbOffsetType.EqualsUpperCaseSpanIgnoringCase("BIT"u8) ? (byte)0x1 : (byte)0x0;
