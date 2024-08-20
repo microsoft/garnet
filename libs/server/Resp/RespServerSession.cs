@@ -415,7 +415,8 @@ namespace Garnet.server
                         }
                         else
                         {
-                            _ = ProcessBasicCommands(cmd, ref basicGarnetApi);
+                            if (CanServeSlot(cmd))
+                                _ = ProcessBasicCommands(cmd, ref basicGarnetApi);
                         }
                     }
                     else
@@ -484,12 +485,12 @@ namespace Garnet.server
                 RespCommand.SET => NetworkSET(ref storageApi),
                 RespCommand.SETEX => NetworkSETEX(false, ref storageApi),
                 RespCommand.PSETEX => NetworkSETEX(true, ref storageApi),
-                RespCommand.SETEXNX => NetworkSETEXNX(parseState.count, ref storageApi),
+                RespCommand.SETEXNX => NetworkSETEXNX(ref storageApi),
                 RespCommand.DEL => NetworkDEL(ref storageApi),
                 RespCommand.RENAME => NetworkRENAME(ref storageApi),
-                RespCommand.EXISTS => NetworkEXISTS(parseState.count, ref storageApi),
-                RespCommand.EXPIRE => NetworkEXPIRE(parseState.count, RespCommand.EXPIRE, ref storageApi),
-                RespCommand.PEXPIRE => NetworkEXPIRE(parseState.count, RespCommand.PEXPIRE, ref storageApi),
+                RespCommand.EXISTS => NetworkEXISTS(ref storageApi),
+                RespCommand.EXPIRE => NetworkEXPIRE(RespCommand.EXPIRE, ref storageApi),
+                RespCommand.PEXPIRE => NetworkEXPIRE(RespCommand.PEXPIRE, ref storageApi),
                 RespCommand.PERSIST => NetworkPERSIST(ref storageApi),
                 RespCommand.GETRANGE => NetworkGetRange(ref storageApi),
                 RespCommand.TTL => NetworkTTL(RespCommand.TTL, ref storageApi),
@@ -503,8 +504,8 @@ namespace Garnet.server
                 RespCommand.DECRBY => NetworkIncrement(RespCommand.DECRBY, ref storageApi),
                 RespCommand.SETBIT => NetworkStringSetBit(ref storageApi),
                 RespCommand.GETBIT => NetworkStringGetBit(ref storageApi),
-                RespCommand.BITCOUNT => NetworkStringBitCount(parseState.count, ref storageApi),
-                RespCommand.BITPOS => NetworkStringBitPosition(parseState.count, ref storageApi),
+                RespCommand.BITCOUNT => NetworkStringBitCount(ref storageApi),
+                RespCommand.BITPOS => NetworkStringBitPosition(ref storageApi),
                 RespCommand.PUBLISH => NetworkPUBLISH(),
                 RespCommand.PING => parseState.count == 0 ? NetworkPING() : ProcessArrayCommands(cmd, ref storageApi),
                 RespCommand.ASKING => NetworkASKING(),
@@ -600,16 +601,16 @@ namespace Garnet.server
                 RespCommand.GEOPOS => GeoCommands(cmd, count, ref storageApi),
                 RespCommand.GEOSEARCH => GeoCommands(cmd, count, ref storageApi),
                 //HLL Commands
-                RespCommand.PFADD => HyperLogLogAdd(count, ref storageApi),
-                RespCommand.PFMERGE => HyperLogLogMerge(count, ref storageApi),
-                RespCommand.PFCOUNT => HyperLogLogLength(count, ref storageApi),
+                RespCommand.PFADD => HyperLogLogAdd(ref storageApi),
+                RespCommand.PFMERGE => HyperLogLogMerge(ref storageApi),
+                RespCommand.PFCOUNT => HyperLogLogLength(ref storageApi),
                 //Bitmap Commands
                 RespCommand.BITOP_AND => NetworkStringBitOperation(BitmapOperation.AND, ref storageApi),
                 RespCommand.BITOP_OR => NetworkStringBitOperation(BitmapOperation.OR, ref storageApi),
                 RespCommand.BITOP_XOR => NetworkStringBitOperation(BitmapOperation.XOR, ref storageApi),
                 RespCommand.BITOP_NOT => NetworkStringBitOperation(BitmapOperation.NOT, ref storageApi),
-                RespCommand.BITFIELD => StringBitField(count, ref storageApi),
-                RespCommand.BITFIELD_RO => StringBitFieldReadOnly(count, ref storageApi),
+                RespCommand.BITFIELD => StringBitField(ref storageApi),
+                RespCommand.BITFIELD_RO => StringBitFieldReadOnly(ref storageApi),
                 // List Commands
                 RespCommand.LPUSH => ListPush(cmd, count, ref storageApi),
                 RespCommand.LPUSHX => ListPush(cmd, count, ref storageApi),
