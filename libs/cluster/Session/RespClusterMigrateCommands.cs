@@ -28,7 +28,7 @@ namespace Garnet.cluster
             var duration = TimeSpan.FromTicks(Stopwatch.GetTimestamp() - lastLog);
             if (completed || lastLog == 0 || duration >= clusterProvider.storeWrapper.loggingFrequncy)
             {
-                logger?.LogTraceDataImport(completed ? "COMPLETED" : "IMPORTING", isMainStore, totalKeyCount.ToString("N0"));
+                logger?.LogTrace("[{op}]: isMainStore:({storeType}) totalKeyCount:({totalKeyCount})", completed ? "COMPLETED" : "IMPORTING", isMainStore, totalKeyCount.ToString("N0"));
                 lastLog = Stopwatch.GetTimestamp();
             }
         }

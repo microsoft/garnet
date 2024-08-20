@@ -8,6 +8,7 @@ using System.Threading;
 using System.Threading.Tasks;
 using Garnet.common;
 using Garnet.networking;
+using Microsoft.Extensions.Logging;
 using Tsavorite.core;
 
 namespace Garnet.client
@@ -455,7 +456,7 @@ namespace Garnet.client
             var duration = TimeSpan.FromTicks(Stopwatch.GetTimestamp() - lastLog);
             if (completed || lastLog == 0 || duration >= migrateProgressFreq)
             {
-                logger?.LogMigrateProgress(
+                logger?.LogTrace("[{op}]: isMainStore:({storeType}) totalKeyCount:({totalKeyCount}), totalPayloadSize:({totalPayloadSize} KB)",
                     completed ? "COMPLETED" : "MIGRATING",
                     isMainStore,
                     totalKeyCount.ToString("N0"),
