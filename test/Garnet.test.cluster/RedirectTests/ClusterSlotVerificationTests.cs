@@ -3,6 +3,7 @@
 
 using System;
 using System.Collections.Generic;
+using System.Diagnostics.CodeAnalysis;
 using Garnet.common;
 using Microsoft.Extensions.Logging;
 using NUnit.Framework;
@@ -10,21 +11,20 @@ using StackExchange.Redis;
 
 namespace Garnet.test.cluster
 {
+    public sealed class BaseCommandComparer : IEqualityComparer<BaseCommand>
+    {
+        public static readonly BaseCommandComparer Instance = new();
+
+        public bool Equals(BaseCommand x, BaseCommand y) => x.Command.Equals(y.Command);
+
+        public unsafe int GetHashCode([DisallowNull] BaseCommand obj) => obj.Command.GetHashCode();
+    }
+
+    [NonParallelizable]
     public class ClusterSlotVerificationTests
     {
-        BaseCommand[] commands;
-        ClusterTestContext context;
-
-        readonly int sourceIndex = 0;
-        readonly int targetIndex = 1;
-        readonly int otherIndex = 2;
-
-        readonly int iterations = 10;
-
-        private void InitializeCommands()
-        {
-            commands =
-            [
+        static readonly HashSet<BaseCommand> TestCommands = new(BaseCommandComparer.Instance)
+            {
                 new GET(),
                 new SET(),
                 new MGET(),
@@ -50,9 +50,23 @@ namespace Garnet.test.cluster
                 new EXISTS(),
                 new PERSIST(),
                 new EXPIRE(),
-                new TTL()
-            ];
-        }
+                new TTL(),
+                new SDIFFSTORE(),
+                new SDIFF(),
+                new SMOVE(),
+                new SUNIONSTORE(),
+                new SUNION(),
+                new SINTERSTORE(),
+                new SINTER(),
+                new LMOVE(),
+            };
+
+
+        ClusterTestContext context;
+        readonly int sourceIndex = 0;
+        readonly int targetIndex = 1;
+        readonly int otherIndex = 2;
+        readonly int iterations = 3;
 
         private void ConfigureSlotForMigration()
         {
@@ -88,8 +102,8 @@ namespace Garnet.test.cluster
             Assert.AreEqual("OK", resp);
         }
 
-        [SetUp]
-        public virtual void Setup()
+        [OneTimeSetUp]
+        public void OneTimeSetUp()
         {
             context = new ClusterTestContext();
             context.Setup([]);
@@ -104,37 +118,67 @@ namespace Garnet.test.cluster
 
             context.clusterTestUtils.Meet(sourceIndex, targetIndex, logger: context.logger);
             context.clusterTestUtils.WaitUntilNodeIsKnown(targetIndex, sourceIndex, logger: context.logger);
-            InitializeCommands();
         }
 
-        [TearDown]
-        public virtual void TearDown()
+        [OneTimeTearDown]
+        public virtual void OneTimeTearDown()
         {
             context?.TearDown();
         }
 
-        [Test, Order(1)]
+        [Test, Order(1), NonParallelizable]
         [Category("SLOT_VERIFY")]
-        public void ClusterCLUSTERDOWNTest()
+        [TestCase("GET")]
+        [TestCase("SET")]
+        [TestCase("MGET")]
+        [TestCase("MSET")]
+        [TestCase("PFADD")]
+        [TestCase("PFCOUNT")]
+        [TestCase("PFMERGE")]
+        [TestCase("SETBIT")]
+        [TestCase("GETBIT")]
+        [TestCase("BITCOUNT")]
+        [TestCase("BITPOS")]
+        [TestCase("BITOP")]
+        [TestCase("BITFIELD")]
+        [TestCase("BITFIELD_RO")]
+        [TestCase("SETRANGE")]
+        [TestCase("GETRANGE")]
+        [TestCase("INCR")]
+        [TestCase("APPEND")]
+        [TestCase("STRLEN")]
+        [TestCase("RENAME")]
+        [TestCase("DEL")]
+        [TestCase("GETDEL")]
+        [TestCase("EXISTS")]
+        [TestCase("PERSIST")]
+        [TestCase("EXPIRE")]
+        [TestCase("TTL")]
+        [TestCase("SDIFFSTORE")]
+        [TestCase("SDIFF")]
+        [TestCase("SMOVE")]
+        [TestCase("SUNIONSTORE")]
+        [TestCase("SUNION")]
+        [TestCase("SINTERSTORE")]
+        [TestCase("SINTER")]
+        [TestCase("LMOVE")]
+        public void ClusterCLUSTERDOWNTest(string commandName)
         {
             var requestNodeIndex = otherIndex;
-            foreach (var command in commands)
-            {
-                for (var i = 0; i < iterations; i++)
-                    SERedisClusterDown(command);
-            }
+            var dummyCommand = new DummyCommand(commandName);
+            Assert.IsTrue(TestCommands.TryGetValue(dummyCommand, out var command), "Command not found");
 
-            foreach (var command in commands)
-            {
-                for (var i = 0; i < iterations; i++)
-                    GarnetClientSessionClusterDown(command);
-            }
+            for (var i = 0; i < iterations; i++)
+                SERedisClusterDown(command);
+
+            for (var i = 0; i < iterations; i++)
+                GarnetClientSessionClusterDown(command);
 
             void SERedisClusterDown(BaseCommand command)
             {
                 try
                 {
-                    context.clusterTestUtils.GetServer(requestNodeIndex).Execute(command.Command, command.GetSingleSlotRequest());
+                    _ = context.clusterTestUtils.GetServer(requestNodeIndex).Execute(command.Command, command.GetSingleSlotRequest());
                 }
                 catch (Exception ex)
                 {
@@ -149,7 +193,7 @@ namespace Garnet.test.cluster
                 var client = context.clusterTestUtils.GetGarnetClientSession(requestNodeIndex);
                 try
                 {
-                    client.ExecuteAsync(command.GetSingleSlotRequestWithCommand).GetAwaiter().GetResult();
+                    _ = client.ExecuteAsync(command.GetSingleSlotRequestWithCommand).GetAwaiter().GetResult();
                 }
                 catch (Exception ex)
                 {
@@ -160,21 +204,62 @@ namespace Garnet.test.cluster
             }
         }
 
-        [Test, Order(2)]
+        [Test, Order(2), NonParallelizable]
         [Category("SLOT_VERIFY")]
-        public void ClusterOKTest()
+        [TestCase("GET")]
+        [TestCase("SET")]
+        [TestCase("MGET")]
+        [TestCase("MSET")]
+        [TestCase("PFADD")]
+        [TestCase("PFCOUNT")]
+        [TestCase("PFMERGE")]
+        [TestCase("SETBIT")]
+        [TestCase("GETBIT")]
+        [TestCase("BITCOUNT")]
+        [TestCase("BITPOS")]
+        [TestCase("BITOP")]
+        [TestCase("BITFIELD")]
+        [TestCase("BITFIELD_RO")]
+        [TestCase("SETRANGE")]
+        [TestCase("GETRANGE")]
+        [TestCase("INCR")]
+        [TestCase("APPEND")]
+        [TestCase("STRLEN")]
+        [TestCase("RENAME")]
+        [TestCase("DEL")]
+        [TestCase("GETDEL")]
+        [TestCase("EXISTS")]
+        [TestCase("PERSIST")]
+        [TestCase("EXPIRE")]
+        [TestCase("TTL")]
+        [TestCase("SDIFFSTORE")]
+        [TestCase("SDIFF")]
+        [TestCase("SMOVE")]
+        [TestCase("SUNIONSTORE")]
+        [TestCase("SUNION")]
+        [TestCase("SINTERSTORE")]
+        [TestCase("SINTER")]
+        [TestCase("LMOVE")]
+        public void ClusterOKTest(string commandName)
         {
             var requestNodeIndex = sourceIndex;
-            foreach (var command in commands)
-            {
-                for (var i = 0; i < iterations; i++)
-                    SERedisOKTest(command);
-            }
+            var dummyCommand = new DummyCommand(commandName);
+            Assert.IsTrue(TestCommands.TryGetValue(dummyCommand, out var command), "Command not found");
 
-            foreach (var command in commands)
+            for (var i = 0; i < iterations; i++)
+                SERedisOKTest(command);
+
+            for (var i = 0; i < iterations; i++)
+                GarnetClientSessionOK(command);
+
+            try
             {
-                for (var i = 0; i < iterations; i++)
-                    GarnetClientSessionOK(command);
+                var resp = (string)context.clusterTestUtils.GetServer(requestNodeIndex).Execute("DEL", [.. command.GetSingleSlotKeys], CommandFlags.NoRedirect);
+            }
+            catch (Exception ex)
+            {
+                context.logger?.LogError(ex, "Failed executing cleanup {command}", command.Command);
+                Assert.Fail("Failed executing cleanup {command}", command.Command);
             }
 
             void SERedisOKTest(BaseCommand command)
@@ -210,20 +295,51 @@ namespace Garnet.test.cluster
 
         [Test, Order(3)]
         [Category("SLOT_VERIFY")]
-        public void ClusterCROSSSLOTTest()
+        [TestCase("GET")]
+        [TestCase("SET")]
+        [TestCase("MGET")]
+        [TestCase("MSET")]
+        [TestCase("PFADD")]
+        [TestCase("PFCOUNT")]
+        [TestCase("PFMERGE")]
+        [TestCase("SETBIT")]
+        [TestCase("GETBIT")]
+        [TestCase("BITCOUNT")]
+        [TestCase("BITPOS")]
+        [TestCase("BITOP")]
+        [TestCase("BITFIELD")]
+        [TestCase("BITFIELD_RO")]
+        [TestCase("SETRANGE")]
+        [TestCase("GETRANGE")]
+        [TestCase("INCR")]
+        [TestCase("APPEND")]
+        [TestCase("STRLEN")]
+        [TestCase("RENAME")]
+        [TestCase("DEL")]
+        [TestCase("GETDEL")]
+        [TestCase("EXISTS")]
+        [TestCase("PERSIST")]
+        [TestCase("EXPIRE")]
+        [TestCase("TTL")]
+        [TestCase("SDIFFSTORE")]
+        [TestCase("SDIFF")]
+        [TestCase("SMOVE")]
+        [TestCase("SUNIONSTORE")]
+        [TestCase("SUNION")]
+        [TestCase("SINTERSTORE")]
+        [TestCase("SINTER")]
+        [TestCase("LMOVE")]
+        public void ClusterCROSSSLOTTest(string commandName)
         {
             var requestNodeIndex = sourceIndex;
-            foreach (var command in commands)
-            {
-                for (var i = 0; i < iterations; i++)
-                    SERedisCrossslotTest(command);
-            }
+            var dummyCommand = new DummyCommand(commandName);
+            Assert.IsTrue(TestCommands.TryGetValue(dummyCommand, out var command), "Command not found");
 
-            foreach (var command in commands)
-            {
-                for (var i = 0; i < iterations; i++)
-                    GarnetClientSessionCrossslotTest(command);
-            }
+            for (var i = 0; i < iterations; i++)
+                SERedisCrossslotTest(command);
+
+            for (var i = 0; i < iterations; i++)
+                GarnetClientSessionCrossslotTest(command);
 
             void SERedisCrossslotTest(BaseCommand command)
             {
@@ -259,25 +375,55 @@ namespace Garnet.test.cluster
             }
         }
 
-        [Test, Order(4)]
+        [Test, Order(4), NonParallelizable]
         [Category("SLOT_VERIFY")]
-        public void ClusterMOVEDTest()
+        [TestCase("GET")]
+        [TestCase("SET")]
+        [TestCase("MGET")]
+        [TestCase("MSET")]
+        [TestCase("PFADD")]
+        [TestCase("PFCOUNT")]
+        [TestCase("PFMERGE")]
+        [TestCase("SETBIT")]
+        [TestCase("GETBIT")]
+        [TestCase("BITCOUNT")]
+        [TestCase("BITPOS")]
+        [TestCase("BITOP")]
+        [TestCase("BITFIELD")]
+        [TestCase("BITFIELD_RO")]
+        [TestCase("SETRANGE")]
+        [TestCase("GETRANGE")]
+        [TestCase("INCR")]
+        [TestCase("APPEND")]
+        [TestCase("STRLEN")]
+        [TestCase("RENAME")]
+        [TestCase("DEL")]
+        [TestCase("GETDEL")]
+        [TestCase("EXISTS")]
+        [TestCase("PERSIST")]
+        [TestCase("EXPIRE")]
+        [TestCase("TTL")]
+        [TestCase("SDIFFSTORE")]
+        [TestCase("SDIFF")]
+        [TestCase("SMOVE")]
+        [TestCase("SUNIONSTORE")]
+        [TestCase("SUNION")]
+        [TestCase("SINTERSTORE")]
+        [TestCase("SINTER")]
+        [TestCase("LMOVE")]
+        public void ClusterMOVEDTest(string commandName)
         {
             var requestNodeIndex = targetIndex;
             var address = "127.0.0.1";
             var port = context.clusterTestUtils.GetPortFromNodeIndex(sourceIndex);
+            var dummyCommand = new DummyCommand(commandName);
+            Assert.IsTrue(TestCommands.TryGetValue(dummyCommand, out var command), "Command not found");
 
-            foreach (var command in commands)
-            {
-                for (var i = 0; i < iterations; i++)
-                    SERedisMOVEDTest(command);
-            }
+            for (var i = 0; i < iterations; i++)
+                SERedisMOVEDTest(command);
 
-            foreach (var command in commands)
-            {
-                for (var i = 0; i < iterations; i++)
-                    GarnetClientSessionMOVEDTest(command);
-            }
+            for (var i = 0; i < iterations; i++)
+                GarnetClientSessionMOVEDTest(command);
 
             void SERedisMOVEDTest(BaseCommand command)
             {
@@ -318,25 +464,71 @@ namespace Garnet.test.cluster
             }
         }
 
-        [Test, Order(5)]
+        [Test, Order(5), NonParallelizable]
         [Category("SLOT_VERIFY")]
-        public void ClusterASKTest()
+        [TestCase("GET")]
+        [TestCase("SET")]
+        [TestCase("MGET")]
+        [TestCase("MSET")]
+        [TestCase("PFADD")]
+        [TestCase("PFCOUNT")]
+        [TestCase("PFMERGE")]
+        [TestCase("SETBIT")]
+        [TestCase("GETBIT")]
+        [TestCase("BITCOUNT")]
+        [TestCase("BITPOS")]
+        [TestCase("BITOP")]
+        [TestCase("BITFIELD")]
+        [TestCase("BITFIELD_RO")]
+        [TestCase("SETRANGE")]
+        [TestCase("GETRANGE")]
+        [TestCase("INCR")]
+        [TestCase("APPEND")]
+        [TestCase("STRLEN")]
+        [TestCase("RENAME")]
+        [TestCase("DEL")]
+        [TestCase("GETDEL")]
+        [TestCase("EXISTS")]
+        [TestCase("PERSIST")]
+        [TestCase("EXPIRE")]
+        [TestCase("TTL")]
+        [TestCase("SDIFFSTORE")]
+        [TestCase("SDIFF")]
+        [TestCase("SMOVE")]
+        [TestCase("SUNIONSTORE")]
+        [TestCase("SUNION")]
+        [TestCase("SINTERSTORE")]
+        [TestCase("SINTER")]
+        [TestCase("LMOVE")]
+        public void ClusterASKTest(string commandName)
         {
             var requestNodeIndex = sourceIndex;
             var address = "127.0.0.1";
             var port = context.clusterTestUtils.GetPortFromNodeIndex(targetIndex);
+            var dummyCommand = new DummyCommand(commandName);
+            Assert.IsTrue(TestCommands.TryGetValue(dummyCommand, out var command), "Command not found");
             ConfigureSlotForMigration();
 
-            foreach (var command in commands)
+            try
             {
                 for (var i = 0; i < iterations; i++)
                     SERedisASKTest(command);
-            }
 
-            foreach (var command in commands)
-            {
                 for (var i = 0; i < iterations; i++)
                     GarnetClientSessionASKTest(command);
+            }
+            finally
+            {
+                ResetSlot();
+                try
+                {
+                    var resp = (string)context.clusterTestUtils.GetServer(requestNodeIndex).Execute("DEL", [.. command.GetSingleSlotKeys], CommandFlags.NoRedirect);
+                }
+                catch (Exception ex)
+                {
+                    context.logger?.LogError(ex, "Failed executing cleanup {command}", command.Command);
+                    Assert.Fail("Failed executing cleanup {command}", command.Command);
+                }
             }
 
             void SERedisASKTest(BaseCommand command)
@@ -367,7 +559,7 @@ namespace Garnet.test.cluster
                 var client = context.clusterTestUtils.GetGarnetClientSession(requestNodeIndex);
                 try
                 {
-                    client.ExecuteAsync(command.GetSingleSlotRequestWithCommand).GetAwaiter().GetResult();
+                    _ = client.ExecuteAsync(command.GetSingleSlotRequestWithCommand).GetAwaiter().GetResult();
                 }
                 catch (Exception ex)
                 {
@@ -378,16 +570,49 @@ namespace Garnet.test.cluster
             }
         }
 
-        [Test, Order(6)]
+        [Test, Order(6), NonParallelizable]
         [Category("SLOT_VERIFY")]
-        public void ClusterTRYAGAINTest()
+        [TestCase("GET")]
+        [TestCase("SET")]
+        [TestCase("MGET")]
+        [TestCase("MSET")]
+        [TestCase("PFADD")]
+        [TestCase("PFCOUNT")]
+        [TestCase("PFMERGE")]
+        [TestCase("SETBIT")]
+        [TestCase("GETBIT")]
+        [TestCase("BITCOUNT")]
+        [TestCase("BITPOS")]
+        [TestCase("BITOP")]
+        [TestCase("BITFIELD")]
+        [TestCase("BITFIELD_RO")]
+        [TestCase("SETRANGE")]
+        [TestCase("GETRANGE")]
+        [TestCase("INCR")]
+        [TestCase("APPEND")]
+        [TestCase("STRLEN")]
+        [TestCase("RENAME")]
+        [TestCase("DEL")]
+        [TestCase("GETDEL")]
+        [TestCase("EXISTS")]
+        [TestCase("PERSIST")]
+        [TestCase("EXPIRE")]
+        [TestCase("TTL")]
+        [TestCase("SDIFFSTORE")]
+        [TestCase("SDIFF")]
+        [TestCase("SMOVE")]
+        [TestCase("SUNIONSTORE")]
+        [TestCase("SUNION")]
+        [TestCase("SINTERSTORE")]
+        [TestCase("SINTER")]
+        [TestCase("LMOVE")]
+        public void ClusterTRYAGAINTest(string commandName)
         {
             var requestNodeIndex = sourceIndex;
-            foreach (var command in commands)
-            {
-                for (var i = 0; i < iterations; i++)
-                    SERedisTRYAGAINTest(command);
-            }
+            var dummyCommand = new DummyCommand(commandName);
+            Assert.IsTrue(TestCommands.TryGetValue(dummyCommand, out var command), "Command not found");
+            for (var i = 0; i < iterations; i++)
+                SERedisTRYAGAINTest(command);
 
             void SERedisTRYAGAINTest(BaseCommand command)
             {
@@ -404,13 +629,14 @@ namespace Garnet.test.cluster
                     catch (Exception ex)
                     {
                         context.logger?.LogError(ex, "Failed executing setup {command}", command.Command);
+                        Assert.Fail("Failed executing setup {command}", command.Command);
                     }
                 }
 
                 ConfigureSlotForMigration();
                 try
                 {
-                    context.clusterTestUtils.GetServer(requestNodeIndex).Execute(command.Command, command.GetSingleSlotRequest(), CommandFlags.NoRedirect);
+                    _ = context.clusterTestUtils.GetServer(requestNodeIndex).Execute(command.Command, command.GetSingleSlotRequest(), CommandFlags.NoRedirect);
                 }
                 catch (Exception ex)
                 {
@@ -422,11 +648,12 @@ namespace Garnet.test.cluster
                     ResetSlot();
                     try
                     {
-                        _ = context.clusterTestUtils.GetServer(requestNodeIndex).Execute("DEL", (ICollection<object>)command.GetSingleSlotKeys, CommandFlags.NoRedirect);
+                        _ = context.clusterTestUtils.GetServer(requestNodeIndex).Execute("DEL", [.. command.GetSingleSlotKeys], CommandFlags.NoRedirect);
                     }
                     catch (Exception ex)
                     {
                         context.logger?.LogError(ex, "Failed executing cleanup {command}", command.Command);
+                        Assert.Fail("Failed executing cleanup {command}", command.Command);
                     }
                 }
 

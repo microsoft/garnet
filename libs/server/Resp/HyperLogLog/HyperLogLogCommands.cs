@@ -25,21 +25,18 @@ namespace Garnet.server
                 return AbortWithWrongNumberOfArguments(nameof(RespCommand.PFADD));
             }
 
-            if (NetworkMultiKeySlotVerify(readOnly: false, firstKey: 0, lastKey: 0))
-                return true;
-
-            //4 byte length of input
-            //1 byte RespCommand
-            //1 byte RespInputFlags
-            //4 byte count of value to insert
-            //8 byte hash value
-            int inputSize = sizeof(int) + RespInputHeader.Size + sizeof(int) + sizeof(long);
-            byte* pbCmdInput = stackalloc byte[inputSize];
+            // 4 byte length of input
+            // 1 byte RespCommand
+            // 1 byte RespInputFlags
+            // 4 byte count of value to insert
+            // 8 byte hash value
+            var inputSize = sizeof(int) + RespInputHeader.Size + sizeof(int) + sizeof(long);
+            var pbCmdInput = stackalloc byte[inputSize];
 
             ///////////////
             //Build Input//
             ///////////////
-            byte* pcurr = pbCmdInput;
+            var pcurr = pbCmdInput;
             *(int*)pcurr = inputSize - sizeof(int);
             pcurr += sizeof(int);
             //1. header
@@ -48,7 +45,7 @@ namespace Garnet.server
             pcurr += RespInputHeader.Size;
             //2. cmd args
             *(int*)pcurr = 1; pcurr += sizeof(int);
-            byte* output = stackalloc byte[1];
+            var output = stackalloc byte[1];
 
             byte pfaddUpdated = 0;
             var key = parseState.GetArgSliceByRef(0).SpanByte;
@@ -100,19 +97,16 @@ namespace Garnet.server
                 return AbortWithWrongNumberOfArguments(nameof(RespCommand.PFCOUNT));
             }
 
-            if (NetworkMultiKeySlotVerify(readOnly: true))
-                return true;
-
             // 4 byte length of input
             // 1 byte RespCommand
             // 1 byte RespInputFlags
-            int inputSize = sizeof(int) + RespInputHeader.Size;
-            byte* pbCmdInput = stackalloc byte[inputSize];
+            var inputSize = sizeof(int) + RespInputHeader.Size;
+            var pbCmdInput = stackalloc byte[inputSize];
 
             /////////////////
             ////Build Input//
             /////////////////
-            byte* pcurr = pbCmdInput;
+            var pcurr = pbCmdInput;
             *(int*)pcurr = inputSize - sizeof(int);
             pcurr += sizeof(int);
             (*(RespInputHeader*)pcurr).cmd = RespCommand.PFCOUNT;
@@ -144,9 +138,6 @@ namespace Garnet.server
             {
                 return AbortWithWrongNumberOfArguments(nameof(RespCommand.PFMERGE));
             }
-
-            if (NetworkMultiKeySlotVerify(readOnly: false))
-                return true;
 
             var status = storageApi.HyperLogLogMerge(parseState.Parameters, out bool error);
             // Invalid Type

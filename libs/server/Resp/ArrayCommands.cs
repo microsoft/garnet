@@ -27,9 +27,6 @@ namespace Garnet.server
 
             SpanByte input = default;
 
-            if (NetworkMultiKeySlotVerify(readOnly: true))
-                return true;
-
             while (!RespWriteUtils.WriteArrayLength(parseState.Count, ref dcurr, dend))
                 SendAndReset();
 
@@ -65,11 +62,6 @@ namespace Garnet.server
         {
             SpanByte input = default;
             long ctx = default;
-
-            if (NetworkMultiKeySlotVerify(readOnly: true))
-            {
-                return true;
-            }
 
             int firstPending = -1;
             (GarnetStatus, SpanByteAndMemory)[] outputArr = null;
@@ -170,11 +162,6 @@ namespace Garnet.server
         {
             Debug.Assert(parseState.Count % 2 == 0);
 
-            if (NetworkMultiKeySlotVerify(readOnly: false, step: 2))
-            {
-                return true;
-            }
-
             for (int c = 0; c < parseState.Count; c += 2)
             {
                 var key = parseState.GetArgSliceByRef(c).SpanByte;
@@ -192,11 +179,6 @@ namespace Garnet.server
         private bool NetworkMSETNX<TGarnetApi>(ref TGarnetApi storageApi)
             where TGarnetApi : IGarnetApi
         {
-            if (NetworkMultiKeySlotVerify(readOnly: false))
-            {
-                return true;
-            }
-
             byte* hPtr = stackalloc byte[RespInputHeader.Size];
 
             bool anyValuesSet = false;
@@ -245,11 +227,6 @@ namespace Garnet.server
         private bool NetworkDEL<TGarnetApi>(ref TGarnetApi storageApi)
             where TGarnetApi : IGarnetApi
         {
-            if (NetworkMultiKeySlotVerify(readOnly: false))
-            {
-                return true;
-            }
-
             int keysDeleted = 0;
             for (int c = 0; c < parseState.Count; c++)
             {

@@ -192,9 +192,6 @@ namespace Garnet.server
                 keys[i] = parseState.GetArgSliceByRef(currTokenId++);
             }
 
-            if (NetworkMultiKeySlotVerify(readOnly: false, firstKey: 1, lastKey: numKeys + 1))
-                return true;
-
             // Get the direction
             var dir = parseState.GetArgSliceByRef(currTokenId++);
             var popDirection = GetOperationDirection(dir);
@@ -273,9 +270,6 @@ namespace Garnet.server
             {
                 keysBytes[i] = parseState.GetArgSliceByRef(i).SpanByte.ToByteArray();
             }
-
-            if (NetworkMultiKeySlotVerify(readOnly: false, firstKey: 0, lastKey: -2))
-                return true;
 
             if (!parseState.TryGetDouble(parseState.Count - 1, out var timeout))
             {
@@ -896,9 +890,6 @@ namespace Garnet.server
         {
             garnetStatus = GarnetStatus.OK;
             node = null;
-
-            if (NetworkMultiKeySlotVerify(readOnly: true, firstKey: 0, lastKey: 2))
-                return true;
 
             garnetStatus =
                 storageApi.ListMove(sourceKey, destinationKey, sourceDirection, destinationDirection, out node);

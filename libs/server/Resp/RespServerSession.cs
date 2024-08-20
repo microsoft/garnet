@@ -63,7 +63,7 @@ namespace Garnet.server
 
         readonly StoreWrapper storeWrapper;
         internal readonly TransactionManager txnManager;
-        readonly ScratchBufferManager scratchBufferManager;
+        internal readonly ScratchBufferManager scratchBufferManager;
 
         internal SessionParseState parseState;
         internal ArgSlice[] parseStateBuffer;
@@ -160,11 +160,18 @@ namespace Garnet.server
         /// </summary>
         private static readonly Random RandomGen = new(RandomNumberGenerator.GetInt32(int.MaxValue));
 
+        /// <summary>
+        /// A per-session cache for storing lua scripts
+        /// </summary>
+        internal readonly SessionScriptCache sessionScriptCache;
+
         public RespServerSession(
             INetworkSender networkSender,
             StoreWrapper storeWrapper,
             SubscribeBroker<SpanByte, SpanByte, IKeySerializer<SpanByte>> subscribeBroker,
-            CollectionItemBroker itemBroker)
+            CollectionItemBroker itemBroker,
+            IGarnetAuthenticator authenticator,
+            bool enableScripts)
             : base(networkSender)
         {
             this.customCommandManagerSession = new CustomCommandManagerSession(storeWrapper.customCommandManager);
@@ -186,7 +193,10 @@ namespace Garnet.server
             this.storeWrapper = storeWrapper;
             this.subscribeBroker = subscribeBroker;
             this.itemBroker = itemBroker;
-            this._authenticator = storeWrapper.serverOptions.AuthSettings?.CreateAuthenticator(this.storeWrapper) ?? new GarnetNoAuthAuthenticator();
+            this._authenticator = authenticator ?? storeWrapper.serverOptions.AuthSettings?.CreateAuthenticator(this.storeWrapper) ?? new GarnetNoAuthAuthenticator();
+
+            if (storeWrapper.serverOptions.EnableLua && enableScripts)
+                sessionScriptCache = new(storeWrapper, _authenticator, logger);
 
             // Associate new session with default user and automatically authenticate, if possible
             this.AuthenticateUser(Encoding.ASCII.GetBytes(this.storeWrapper.accessControlList.GetDefaultUser().Name));
@@ -196,6 +206,7 @@ namespace Garnet.server
 
             clusterSession = storeWrapper.clusterProvider?.CreateClusterSession(txnManager, this._authenticator, this._user, sessionMetrics, basicGarnetApi, networkSender, logger);
             clusterSession?.SetUser(this._user);
+            sessionScriptCache?.SetUser(this._user);
 
             parseState.Initialize(ref parseStateBuffer);
             readHead = 0;
@@ -208,6 +219,12 @@ namespace Garnet.server
                 if (this.networkSender.GetMaxSizeSettings?.MaxOutputSize < sizeof(int))
                     this.networkSender.GetMaxSizeSettings.MaxOutputSize = sizeof(int);
             }
+        }
+
+        internal void SetUser(User user)
+        {
+            this._user = user;
+            clusterSession?.SetUser(user);
         }
 
         public override void Dispose()
@@ -224,6 +241,7 @@ namespace Garnet.server
 
             subscribeBroker?.RemoveSubscription(this);
             itemBroker?.HandleSessionDisposed(this);
+            sessionScriptCache?.Dispose();
 
             // Cancel the async processor, if any
             asyncWaiterCancel?.Cancel();
@@ -261,6 +279,7 @@ namespace Garnet.server
 
                 // Propagate authentication to cluster session
                 clusterSession?.SetUser(this._user);
+                sessionScriptCache?.SetUser(this._user);
             }
 
             return _authenticator.CanAuthenticate ? success : false;
@@ -349,6 +368,9 @@ namespace Garnet.server
             return readHead;
         }
 
+        internal void SetTransactionMode(bool enable)
+            => txnManager.state = enable ? TxnState.Running : TxnState.None;
+
         private void ProcessMessages()
         {
             // #if DEBUG
@@ -373,26 +395,35 @@ namespace Garnet.server
                 }
 
                 // Check ACL permissions for the command
-                if (cmd != RespCommand.INVALID && CheckACLPermissions(cmd))
+                if (cmd != RespCommand.INVALID)
                 {
-                    if (txnManager.state != TxnState.None)
+                    if (CheckACLPermissions(cmd))
                     {
-                        if (txnManager.state == TxnState.Running)
+                        if (txnManager.state != TxnState.None)
                         {
-                            _ = ProcessBasicCommands(cmd, ref lockableGarnetApi);
+                            if (txnManager.state == TxnState.Running)
+                            {
+                                _ = ProcessBasicCommands(cmd, ref lockableGarnetApi);
+                            }
+                            else _ = cmd switch
+                            {
+                                RespCommand.EXEC => NetworkEXEC(),
+                                RespCommand.MULTI => NetworkMULTI(),
+                                RespCommand.DISCARD => NetworkDISCARD(),
+                                RespCommand.QUIT => NetworkQUIT(),
+                                _ => NetworkSKIP(cmd),
+                            };
                         }
-                        else _ = cmd switch
+                        else
                         {
-                            RespCommand.EXEC => NetworkEXEC(),
-                            RespCommand.MULTI => NetworkMULTI(),
-                            RespCommand.DISCARD => NetworkDISCARD(),
-                            RespCommand.QUIT => NetworkQUIT(),
-                            _ => NetworkSKIP(cmd),
-                        };
+                            if (CanServeSlot(cmd))
+                                _ = ProcessBasicCommands(cmd, ref basicGarnetApi);
+                        }
                     }
                     else
                     {
-                        _ = ProcessBasicCommands(cmd, ref basicGarnetApi);
+                        while (!RespWriteUtils.WriteError(CmdStrings.RESP_ERR_NOAUTH, ref dcurr, dend))
+                            SendAndReset();
                     }
                 }
 
@@ -628,6 +659,10 @@ namespace Garnet.server
                 RespCommand.SUNIONSTORE => SetUnionStore(ref storageApi),
                 RespCommand.SDIFF => SetDiff(ref storageApi),
                 RespCommand.SDIFFSTORE => SetDiffStore(ref storageApi),
+                // Script Commands
+                RespCommand.SCRIPT => TrySCRIPT(),
+                RespCommand.EVAL => TryEVAL(),
+                RespCommand.EVALSHA => TryEVALSHA(),
                 _ => ProcessOtherCommands(cmd, ref storageApi)
             };
             return success;
