@@ -89,7 +89,7 @@ namespace Garnet.cluster
             var replaceOption = false;
             string username = null;
             string passwd = null;
-            Dictionary<ArgSlice, KeyMigrationStatus> keys = null;
+            MigratingKeysWorkingSet keys = null;
             HashSet<int> slots = null;
 
             ClusterConfig current = null;
@@ -111,8 +111,9 @@ namespace Garnet.cluster
             if (sksize > 0)
             {
                 transferOption = TransferOption.KEYS;
-                keys = new Dictionary<ArgSlice, KeyMigrationStatus>(ArgSliceComparer.Instance);
-                keys.TryAdd(new(singleKeyPtr, sksize), KeyMigrationStatus.QUEUED);
+                keys = new();
+                var key = new ArgSlice(singleKeyPtr, sksize);
+                _ = keys.TryAdd(ref key, KeyMigrationStatus.QUEUED);
             }
 
             while (args > 0)
@@ -146,7 +147,7 @@ namespace Garnet.cluster
                         pstate = MigrateCmdParseState.MULTI_TRANSFER_OPTION;
 
                     transferOption = TransferOption.KEYS;
-                    keys = new Dictionary<ArgSlice, KeyMigrationStatus>(ArgSliceComparer.Instance);
+                    keys ??= new();
                     while (args > 0)
                     {
                         byte* keyPtr = null;
@@ -181,8 +182,9 @@ namespace Garnet.cluster
                             continue;
                         }
 
+                        var key = new ArgSlice(keyPtr, ksize);
                         // Add pointer of current parsed key
-                        if (!keys.TryAdd(new ArgSlice(keyPtr, ksize), KeyMigrationStatus.QUEUED))
+                        if (!keys.TryAdd(ref key, KeyMigrationStatus.QUEUED))
                         {
                             logger?.LogWarning("Failed to add {key}", Encoding.ASCII.GetString(keyPtr, ksize));
                             pstate = MigrateCmdParseState.FAILEDTOADDKEY;
