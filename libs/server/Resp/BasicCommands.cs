@@ -29,12 +29,11 @@ namespace Garnet.server
             if (useAsync)
                 return NetworkGETAsync(ref storageApi);
 
-            var inputHeader = new RawStringInput();
+            var input = new RawStringInput { header = new RespInputHeader { cmd = RespCommand.GET } };
 
             var key = parseState.GetArgSliceByRef(0).SpanByte;
             var o = new SpanByteAndMemory(dcurr, (int)(dend - dcurr));
-            SpanByte input = default;
-            var status = storageApi.GET(ref key, ref inputHeader, ref o);
+            var status = storageApi.GET(ref key, ref input, ref o);
 
             switch (status)
             {
@@ -60,17 +59,21 @@ namespace Garnet.server
         bool NetworkGETAsync<TGarnetApi>(ref TGarnetApi storageApi)
             where TGarnetApi : IGarnetApi
         {
-            var inputHeader = new RawStringInput();
-
             var key = parseState.GetArgSliceByRef(0).SpanByte;
             // Optimistically ask storage to write output to network buffer
             var o = new SpanByteAndMemory(dcurr, (int)(dend - dcurr));
 
             // Set up input to instruct storage to write output to IMemory rather than
             // network buffer, if the operation goes pending.
-            var h = new RespInputHeader { cmd = RespCommand.ASYNC };
-            var input = SpanByte.FromPinnedStruct(&h);
-            var status = storageApi.GET_WithPending(ref key, ref inputHeader, ref o, asyncStarted, out bool pending);
+            var input = new RawStringInput
+            {
+                header = new RespInputHeader
+                {
+                    cmd = RespCommand.ASYNC
+                }
+            };
+
+            var status = storageApi.GET_WithPending(ref key, ref input, ref o, asyncStarted, out var pending);
 
             if (pending)
             {
@@ -102,15 +105,12 @@ namespace Garnet.server
         bool NetworkGET_SG<TGarnetApi>(ref TGarnetApi storageApi)
             where TGarnetApi : IGarnetAdvancedApi
         {
-            var inputHeader = new RawStringInput();
-
             var key = parseState.GetArgSliceByRef(0).SpanByte;
-            SpanByte input = default;
-            long ctx = default;
-            int firstPending = -1;
+            RawStringInput input = default;
+            var firstPending = -1;
             (GarnetStatus, SpanByteAndMemory)[] outputArr = null;
             SpanByteAndMemory o = new(dcurr, (int)(dend - dcurr));
-            int c = 0;
+            var c = 0;
 
             for (; ; c++)
             {
@@ -118,10 +118,10 @@ namespace Garnet.server
                     break;
 
                 // Store index in context, since completions are not in order
-                ctx = firstPending == -1 ? 0 : c - firstPending;
+                long ctx = firstPending == -1 ? 0 : c - firstPending;
 
-                var status = storageApi.GET_WithPending(ref key, ref inputHeader, ref o, ctx,
-                    out bool isPending);
+                var status = storageApi.GET_WithPending(ref key, ref input, ref o, ctx,
+                    out var isPending);
 
                 if (isPending)
                 {
@@ -171,7 +171,7 @@ namespace Garnet.server
                 storageApi.GET_CompletePending(outputArr, true);
 
                 // Write the outputs to network buffer
-                for (int i = 0; i < c - firstPending; i++)
+                for (var i = 0; i < c - firstPending; i++)
                 {
                     var status = outputArr[i].Item1;
                     var output = outputArr[i].Item2;
@@ -207,7 +207,7 @@ namespace Garnet.server
         bool ParseGETAndKey(ref SpanByte key)
         {
             var oldEndReadHead = readHead = endReadHead;
-            var cmd = ParseCommand(out bool success);
+            var cmd = ParseCommand(out var success);
             if (!success || cmd != RespCommand.GET)
             {
                 // If we either find no command or a different command, we back off
@@ -265,7 +265,7 @@ namespace Garnet.server
             var key = parseState.GetArgSliceByRef(0).SpanByte;
             var value = parseState.GetArgSliceByRef(1).SpanByte;
 
-            var status = storageApi.SET(ref key, ref value);
+            storageApi.SET(ref key, ref value);
 
             while (!RespWriteUtils.WriteDirect(CmdStrings.RESP_OK, ref dcurr, dend))
                 SendAndReset();
@@ -313,7 +313,6 @@ namespace Garnet.server
         {
             var key = parseState.GetArgSliceByRef(0);
             var sbKey = key.SpanByte;
-
 
             if (!parseState.TryGetInt(1, out var sliceStart) || !parseState.TryGetInt(2, out var sliceLength))
             {
@@ -559,16 +558,16 @@ namespace Garnet.server
                     {
                         case ExistOptions.None:
                             return getValue
-                                ? NetworkSET_Conditional(RespCommand.SET, expiry, keyPtr, valPtr, vSize, true,
+                                ? NetworkSET_Conditional(RespCommand.SET, expiry, keyPtr, true,
                                     false, ref storageApi)
                                 : NetworkSET_EX(RespCommand.SET, expiry, keyPtr, valPtr, vSize, false,
                                     ref storageApi); // Can perform a blind update
                         case ExistOptions.XX:
-                            return NetworkSET_Conditional(RespCommand.SETEXXX, expiry, keyPtr, valPtr, vSize,
-                                getValue, false, ref storageApi);
+                            return NetworkSET_Conditional(RespCommand.SETEXXX, expiry, keyPtr, getValue, false,
+                                ref storageApi);
                         case ExistOptions.NX:
-                            return NetworkSET_Conditional(RespCommand.SETEXNX, expiry, keyPtr, valPtr, vSize,
-                                getValue, false, ref storageApi);
+                            return NetworkSET_Conditional(RespCommand.SETEXNX, expiry, keyPtr, getValue, false,
+                                ref storageApi);
                     }
 
                     break;
@@ -577,16 +576,16 @@ namespace Garnet.server
                     {
                         case ExistOptions.None:
                             return getValue
-                                ? NetworkSET_Conditional(RespCommand.SET, expiry, keyPtr, valPtr, vSize, true,
+                                ? NetworkSET_Conditional(RespCommand.SET, expiry, keyPtr, true,
                                     true, ref storageApi)
                                 : NetworkSET_EX(RespCommand.SET, expiry, keyPtr, valPtr, vSize, true,
                                     ref storageApi); // Can perform a blind update
                         case ExistOptions.XX:
-                            return NetworkSET_Conditional(RespCommand.SETEXXX, expiry, keyPtr, valPtr, vSize,
-                                getValue, true, ref storageApi);
+                            return NetworkSET_Conditional(RespCommand.SETEXXX, expiry, keyPtr, getValue, true,
+                                ref storageApi);
                         case ExistOptions.NX:
-                            return NetworkSET_Conditional(RespCommand.SETEXNX, expiry, keyPtr, valPtr, vSize,
-                                getValue, true, ref storageApi);
+                            return NetworkSET_Conditional(RespCommand.SETEXNX, expiry, keyPtr, getValue, true,
+                                ref storageApi);
                     }
 
                     break;
@@ -597,14 +596,14 @@ namespace Garnet.server
                     {
                         case ExistOptions.None:
                             // We can never perform a blind update due to KEEPTTL
-                            return NetworkSET_Conditional(RespCommand.SETKEEPTTL, expiry, keyPtr, valPtr, vSize,
-                                getValue, false, ref storageApi);
+                            return NetworkSET_Conditional(RespCommand.SETKEEPTTL, expiry, keyPtr, getValue, false,
+                                ref storageApi);
                         case ExistOptions.XX:
-                            return NetworkSET_Conditional(RespCommand.SETKEEPTTLXX, expiry, keyPtr, valPtr, vSize,
-                                getValue, false, ref storageApi);
+                            return NetworkSET_Conditional(RespCommand.SETKEEPTTLXX, expiry, keyPtr, getValue, false,
+                                ref storageApi);
                         case ExistOptions.NX:
-                            return NetworkSET_Conditional(RespCommand.SETEXNX, expiry, keyPtr, valPtr, vSize,
-                                getValue, false, ref storageApi);
+                            return NetworkSET_Conditional(RespCommand.SETEXNX, expiry, keyPtr, getValue, false,
+                                ref storageApi);
                     }
 
                     break;
@@ -642,44 +641,30 @@ namespace Garnet.server
             return true;
         }
 
-        private bool NetworkSET_Conditional<TGarnetApi>(RespCommand cmd, int expiry, byte* keyPtr,
-            byte* inputPtr, int isize, bool getValue, bool highPrecision, ref TGarnetApi storageApi)
+        private bool NetworkSET_Conditional<TGarnetApi>(RespCommand cmd, int expiry, byte* keyPtr, bool getValue, bool highPrecision, ref TGarnetApi storageApi)
             where TGarnetApi : IGarnetApi
         {
-            var inputHeader = new RawStringInput();
-
-            // Make space for RespCommand in input
-            inputPtr -= RespInputHeader.Size;
-
-            if (expiry == 0) // no expiration provided
+            var input = new RawStringInput
             {
-                *(int*)inputPtr = RespInputHeader.Size + isize;
-                ((RespInputHeader*)(inputPtr + sizeof(int)))->cmd = cmd;
-                ((RespInputHeader*)(inputPtr + sizeof(int)))->flags = 0;
-                if (getValue)
-                    ((RespInputHeader*)(inputPtr + sizeof(int)))->SetSetGetFlag();
-            }
-            else
-            {
-                // Move payload forward to make space for metadata
-                Buffer.MemoryCopy(inputPtr + sizeof(int) + RespInputHeader.Size,
-                    inputPtr + sizeof(int) + sizeof(long) + RespInputHeader.Size, isize, isize);
-                *(int*)inputPtr = sizeof(long) + RespInputHeader.Size + isize;
-                ((RespInputHeader*)(inputPtr + sizeof(int) + sizeof(long)))->cmd = cmd;
-                ((RespInputHeader*)(inputPtr + sizeof(int) + sizeof(long)))->flags = 0;
-                if (getValue)
-                    ((RespInputHeader*)(inputPtr + sizeof(int) + sizeof(long)))->SetSetGetFlag();
-                SpanByte.Reinterpret(inputPtr).ExtraMetadata = DateTimeOffset.UtcNow.Ticks +
-                                                               (highPrecision
-                                                                   ? TimeSpan.FromMilliseconds(expiry).Ticks
-                                                                   : TimeSpan.FromSeconds(expiry).Ticks);
-            }
+                header = new RespInputHeader { cmd = cmd, },
+                parseState = parseState,
+                parseStateStartIdx = 1,
+                ExtraMetadata = expiry == 0
+                    ? 0
+                    : DateTimeOffset.UtcNow.Ticks +
+                      (highPrecision
+                          ? TimeSpan.FromMilliseconds(expiry).Ticks
+                          : TimeSpan.FromSeconds(expiry).Ticks)
+            };
+
+            if (getValue)
+                input.header.SetSetGetFlag();
 
             if (getValue)
             {
                 var o = new SpanByteAndMemory(dcurr, (int)(dend - dcurr));
                 var status = storageApi.SET_Conditional(ref Unsafe.AsRef<SpanByte>(keyPtr),
-                    ref inputHeader, ref o);
+                    ref input, ref o);
 
                 // Status tells us whether an old image was found during RMW or not
                 if (status == GarnetStatus.NOTFOUND)
@@ -699,9 +684,9 @@ namespace Garnet.server
             else
             {
                 var status = storageApi.SET_Conditional(ref Unsafe.AsRef<SpanByte>(keyPtr),
-                    ref inputHeader);
+                    ref input);
 
-                bool ok = status != GarnetStatus.NOTFOUND;
+                var ok = status != GarnetStatus.NOTFOUND;
 
                 // Status tells us whether an old image was found during RMW or not
                 // For a "set if not exists", NOTFOUND means the operation succeeded
@@ -733,7 +718,6 @@ namespace Garnet.server
                          cmd == RespCommand.DECR);
 
             var key = parseState.GetArgSliceByRef(0);
-            var sbKey = key.SpanByte;
 
             ArgSlice input = default;
             if (cmd == RespCommand.INCRBY || cmd == RespCommand.DECRBY)
