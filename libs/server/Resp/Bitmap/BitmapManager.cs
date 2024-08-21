@@ -89,16 +89,26 @@ namespace Garnet.server
         /// <param name="valLen"></param>        
         public static byte GetBit(byte* input, byte* value, int valLen)
         {
-            long offset = *(long*)(input);
-            int byteIndex = Index(offset);
+            return GetBit(*(long*)(input), value, valLen);
+        }
+
+        /// <summary>
+        /// Get bit value from value ptr at offset specified at offset.
+        /// </summary>
+        /// <param name="offset"></param>
+        /// <param name="value"></param>
+        /// <param name="valLen"></param>        
+        public static byte GetBit(long offset, byte* value, int valLen)
+        {
+            var byteIndex = Index(offset);
             byte oldVal = 0;
 
             if (byteIndex >= valLen) // if offset outside allocated value size, return always zero            
                 oldVal = 0;
             else
             {
-                int bitIndex = 7 - (int)(offset & 7);
-                byte byteVal = *(value + byteIndex);
+                var bitIndex = 7 - (int)(offset & 7);
+                var byteVal = *(value + byteIndex);
                 oldVal = (byte)(((1 << bitIndex) & byteVal) >> bitIndex);
             }
             return oldVal;

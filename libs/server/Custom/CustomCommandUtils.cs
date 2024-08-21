@@ -29,12 +29,38 @@ namespace Garnet.server
         }
 
         /// <summary>
+        /// Get first arg from input
+        /// </summary>
+        /// <param name="input">Main store input</param>
+        /// <returns></returns>
+        public static ReadOnlySpan<byte> GetFirstArg(ref RawStringInput input)
+        {
+            var offset = 0;
+            return GetNextArg(ref input, ref offset);
+        }
+
+        /// <summary>
         /// Get argument from input, at specified offset (starting from 0)
         /// </summary>
         /// <param name="input">Object store input</param>
         /// <param name="offset">Current offset into input</param>
         /// <returns>Argument as a span</returns>
         public static ReadOnlySpan<byte> GetNextArg(ref ObjectInput input, scoped ref int offset)
+        {
+            var arg = input.parseStateStartIdx + offset < input.parseState.Count
+                ? input.parseState.GetArgSliceByRef(input.parseStateStartIdx + offset).ReadOnlySpan
+                : default;
+            offset++;
+            return arg;
+        }
+
+        /// <summary>
+        /// Get argument from input, at specified offset (starting from 0)
+        /// </summary>
+        /// <param name="input">Main store input</param>
+        /// <param name="offset">Current offset into input</param>
+        /// <returns>Argument as a span</returns>
+        public static ReadOnlySpan<byte> GetNextArg(ref RawStringInput input, scoped ref int offset)
         {
             var arg = input.parseStateStartIdx + offset < input.parseState.Count
                 ? input.parseState.GetArgSliceByRef(input.parseStateStartIdx + offset).ReadOnlySpan

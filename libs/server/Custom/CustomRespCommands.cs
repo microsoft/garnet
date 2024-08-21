@@ -87,6 +87,7 @@ namespace Garnet.server
         private bool TryCustomRawStringCommand<TGarnetApi>(byte* ptr, byte* end, RespCommand cmd, long expirationTicks, CommandType type, ref TGarnetApi storageApi)
             where TGarnetApi : IGarnetAdvancedApi
         {
+            var inputHeader = new RawStringInput();
             var sbKey = parseState.GetArgSliceByRef(0).SpanByte;
             var keyPtr = sbKey.ToPointer();
             var kSize = sbKey.Length;
@@ -127,7 +128,7 @@ namespace Garnet.server
             GarnetStatus status;
             if (type == CommandType.ReadModifyWrite)
             {
-                status = storageApi.RMW_MainStore(ref Unsafe.AsRef<SpanByte>(keyPtr), ref input, ref output);
+                status = storageApi.RMW_MainStore(ref Unsafe.AsRef<SpanByte>(keyPtr), ref inputHeader, ref output);
                 Debug.Assert(!output.IsSpanByte);
 
                 if (output.Memory != null)
@@ -138,7 +139,7 @@ namespace Garnet.server
             }
             else
             {
-                status = storageApi.Read_MainStore(ref Unsafe.AsRef<SpanByte>(keyPtr), ref input, ref output);
+                status = storageApi.Read_MainStore(ref Unsafe.AsRef<SpanByte>(keyPtr), ref inputHeader, ref output);
                 Debug.Assert(!output.IsSpanByte);
 
                 if (status == GarnetStatus.OK)

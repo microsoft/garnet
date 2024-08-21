@@ -29,10 +29,12 @@ namespace Garnet.server
             if (useAsync)
                 return NetworkGETAsync(ref storageApi);
 
+            var inputHeader = new RawStringInput();
+
             var key = parseState.GetArgSliceByRef(0).SpanByte;
             var o = new SpanByteAndMemory(dcurr, (int)(dend - dcurr));
             SpanByte input = default;
-            var status = storageApi.GET(ref key, ref input, ref o);
+            var status = storageApi.GET(ref key, ref inputHeader, ref o);
 
             switch (status)
             {
@@ -58,6 +60,8 @@ namespace Garnet.server
         bool NetworkGETAsync<TGarnetApi>(ref TGarnetApi storageApi)
             where TGarnetApi : IGarnetApi
         {
+            var inputHeader = new RawStringInput();
+
             var key = parseState.GetArgSliceByRef(0).SpanByte;
             // Optimistically ask storage to write output to network buffer
             var o = new SpanByteAndMemory(dcurr, (int)(dend - dcurr));
@@ -66,7 +70,7 @@ namespace Garnet.server
             // network buffer, if the operation goes pending.
             var h = new RespInputHeader { cmd = RespCommand.ASYNC };
             var input = SpanByte.FromPinnedStruct(&h);
-            var status = storageApi.GET_WithPending(ref key, ref input, ref o, asyncStarted, out bool pending);
+            var status = storageApi.GET_WithPending(ref key, ref inputHeader, ref o, asyncStarted, out bool pending);
 
             if (pending)
             {
@@ -98,6 +102,8 @@ namespace Garnet.server
         bool NetworkGET_SG<TGarnetApi>(ref TGarnetApi storageApi)
             where TGarnetApi : IGarnetAdvancedApi
         {
+            var inputHeader = new RawStringInput();
+
             var key = parseState.GetArgSliceByRef(0).SpanByte;
             SpanByte input = default;
             long ctx = default;
@@ -114,7 +120,7 @@ namespace Garnet.server
                 // Store index in context, since completions are not in order
                 ctx = firstPending == -1 ? 0 : c - firstPending;
 
-                var status = storageApi.GET_WithPending(ref key, ref input, ref o, ctx,
+                var status = storageApi.GET_WithPending(ref key, ref inputHeader, ref o, ctx,
                     out bool isPending);
 
                 if (isPending)
@@ -640,6 +646,8 @@ namespace Garnet.server
             byte* inputPtr, int isize, bool getValue, bool highPrecision, ref TGarnetApi storageApi)
             where TGarnetApi : IGarnetApi
         {
+            var inputHeader = new RawStringInput();
+
             // Make space for RespCommand in input
             inputPtr -= RespInputHeader.Size;
 
@@ -671,7 +679,7 @@ namespace Garnet.server
             {
                 var o = new SpanByteAndMemory(dcurr, (int)(dend - dcurr));
                 var status = storageApi.SET_Conditional(ref Unsafe.AsRef<SpanByte>(keyPtr),
-                    ref Unsafe.AsRef<SpanByte>(inputPtr), ref o);
+                    ref inputHeader, ref o);
 
                 // Status tells us whether an old image was found during RMW or not
                 if (status == GarnetStatus.NOTFOUND)
@@ -691,7 +699,7 @@ namespace Garnet.server
             else
             {
                 var status = storageApi.SET_Conditional(ref Unsafe.AsRef<SpanByte>(keyPtr),
-                    ref Unsafe.AsRef<SpanByte>(inputPtr));
+                    ref inputHeader);
 
                 bool ok = status != GarnetStatus.NOTFOUND;
 

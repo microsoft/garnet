@@ -16,12 +16,14 @@ namespace Garnet.server
     sealed partial class StorageSession : IDisposable
     {
         public unsafe GarnetStatus StringSetBit<TContext>(ArgSlice key, ArgSlice offset, bool bit, out bool previous, ref TContext context)
-            where TContext : ITsavoriteContext<SpanByte, SpanByte, SpanByte, SpanByteAndMemory, long, MainSessionFunctions, MainStoreFunctions, MainStoreAllocator>
+            where TContext : ITsavoriteContext<SpanByte, SpanByte, RawStringInput, SpanByteAndMemory, long, MainSessionFunctions, MainStoreFunctions, MainStoreAllocator>
         {
             previous = false;
 
             if (key.Length == 0)
                 return GarnetStatus.OK;
+
+            var inputHeader = new RawStringInput();
 
             int inputSize = sizeof(int) + RespInputHeader.Size + sizeof(long) + sizeof(byte);
             byte* input = scratchBufferManager.CreateArgSlice(inputSize).ptr;
@@ -44,18 +46,20 @@ namespace Garnet.server
 
             SpanByteAndMemory output = new(null);
             var keySp = key.SpanByte;
-            RMW_MainStore(ref keySp, ref Unsafe.AsRef<SpanByte>(input), ref output, ref context);
+            RMW_MainStore(ref keySp, ref inputHeader, ref output, ref context);
 
             return GarnetStatus.OK;
         }
 
         public unsafe GarnetStatus StringGetBit<TContext>(ArgSlice key, ArgSlice offset, out bool bValue, ref TContext context)
-            where TContext : ITsavoriteContext<SpanByte, SpanByte, SpanByte, SpanByteAndMemory, long, MainSessionFunctions, MainStoreFunctions, MainStoreAllocator>
+            where TContext : ITsavoriteContext<SpanByte, SpanByte, RawStringInput, SpanByteAndMemory, long, MainSessionFunctions, MainStoreFunctions, MainStoreAllocator>
         {
             bValue = false;
 
             if (key.Length == 0)
                 return GarnetStatus.OK;
+
+            var inputHeader = new RawStringInput();
 
             int inputSize = sizeof(int) + RespInputHeader.Size + sizeof(long);
             byte* input = scratchBufferManager.CreateArgSlice(inputSize).ptr;
@@ -75,7 +79,7 @@ namespace Garnet.server
 
             SpanByteAndMemory output = new(null);
             var keySp = key.SpanByte;
-            var status = Read_MainStore(ref keySp, ref Unsafe.AsRef<SpanByte>(input), ref output, ref context);
+            var status = Read_MainStore(ref keySp, ref inputHeader, ref output, ref context);
 
             if (status == GarnetStatus.OK && !output.IsSpanByte)
             {
@@ -100,6 +104,8 @@ namespace Garnet.server
             var minBitmapLen = int.MaxValue;
             var status = GarnetStatus.NOTFOUND;
             var keyCount = keys.Length;
+
+            var inputHeader = new RawStringInput();
 
             // prepare input
             var inputSize = sizeof(int) + RespInputHeader.Size;
@@ -144,7 +150,7 @@ namespace Garnet.server
                     var srcKey = keys[i];
                     //Read srcKey
                     var outputBitmap = new SpanByteAndMemory(output, 12);
-                    status = ReadWithUnsafeContext(srcKey, ref Unsafe.AsRef<SpanByte>(pbCmdInput), ref outputBitmap, localHeadAddress, out bool epochChanged, ref uc);
+                    status = ReadWithUnsafeContext(srcKey, ref inputHeader, ref outputBitmap, localHeadAddress, out bool epochChanged, ref uc);
                     if (epochChanged)
                     {
                         goto readFromScratch;
@@ -229,12 +235,14 @@ namespace Garnet.server
         }
 
         public unsafe GarnetStatus StringBitCount<TContext>(ArgSlice key, long start, long end, bool useBitInterval, out long result, ref TContext context)
-             where TContext : ITsavoriteContext<SpanByte, SpanByte, SpanByte, SpanByteAndMemory, long, MainSessionFunctions, MainStoreFunctions, MainStoreAllocator>
+             where TContext : ITsavoriteContext<SpanByte, SpanByte, RawStringInput, SpanByteAndMemory, long, MainSessionFunctions, MainStoreFunctions, MainStoreAllocator>
         {
             result = 0;
 
             if (key.Length == 0)
                 return GarnetStatus.OK;
+
+            var inputHeader = new RawStringInput();
 
             int inputSize = sizeof(int) + RespInputHeader.Size + sizeof(long) + sizeof(long) + sizeof(byte);
             byte* input = scratchBufferManager.CreateArgSlice(inputSize).ptr;
@@ -256,7 +264,7 @@ namespace Garnet.server
             SpanByteAndMemory output = new(null);
             var keySp = key.SpanByte;
 
-            var status = Read_MainStore(ref keySp, ref Unsafe.AsRef<SpanByte>(input), ref output, ref context);
+            var status = Read_MainStore(ref keySp, ref inputHeader, ref output, ref context);
 
             if (status == GarnetStatus.OK)
             {
@@ -275,8 +283,10 @@ namespace Garnet.server
         }
 
         public unsafe GarnetStatus StringBitField<TContext>(ArgSlice key, List<BitFieldCmdArgs> commandArguments, out List<long?> result, ref TContext context)
-             where TContext : ITsavoriteContext<SpanByte, SpanByte, SpanByte, SpanByteAndMemory, long, MainSessionFunctions, MainStoreFunctions, MainStoreAllocator>
+             where TContext : ITsavoriteContext<SpanByte, SpanByte, RawStringInput, SpanByteAndMemory, long, MainSessionFunctions, MainStoreFunctions, MainStoreAllocator>
         {
+            var inputHeader = new RawStringInput();
+
             int inputSize = sizeof(int) + RespInputHeader.Size + sizeof(byte) + sizeof(byte) + sizeof(long) + sizeof(long) + sizeof(byte);
             byte* input = scratchBufferManager.CreateArgSlice(inputSize).ptr;
             result = new();
@@ -310,8 +320,8 @@ namespace Garnet.server
 
                 var output = new SpanByteAndMemory(null);
                 var status = commandArguments[i].secondaryOpCode == (byte)RespCommand.GET ?
-                    Read_MainStore(ref keySp, ref Unsafe.AsRef<SpanByte>(input), ref output, ref context) :
-                    RMW_MainStore(ref keySp, ref Unsafe.AsRef<SpanByte>(input), ref output, ref context);
+                    Read_MainStore(ref keySp, ref inputHeader, ref output, ref context) :
+                    RMW_MainStore(ref keySp, ref inputHeader, ref output, ref context);
 
                 if (status == GarnetStatus.NOTFOUND && commandArguments[i].secondaryOpCode == (byte)RespCommand.GET)
                 {
@@ -346,24 +356,24 @@ namespace Garnet.server
             return GarnetStatus.OK;
         }
 
-        public GarnetStatus StringSetBit<TContext>(ref SpanByte key, ref SpanByte input, ref SpanByteAndMemory output, ref TContext context)
-          where TContext : ITsavoriteContext<SpanByte, SpanByte, SpanByte, SpanByteAndMemory, long, MainSessionFunctions, MainStoreFunctions, MainStoreAllocator>
+        public GarnetStatus StringSetBit<TContext>(ref SpanByte key, ref RawStringInput input, ref SpanByteAndMemory output, ref TContext context)
+          where TContext : ITsavoriteContext<SpanByte, SpanByte, RawStringInput, SpanByteAndMemory, long, MainSessionFunctions, MainStoreFunctions, MainStoreAllocator>
             => RMW_MainStore(ref key, ref input, ref output, ref context);
 
-        public GarnetStatus StringGetBit<TContext>(ref SpanByte key, ref SpanByte input, ref SpanByteAndMemory output, ref TContext context)
-            where TContext : ITsavoriteContext<SpanByte, SpanByte, SpanByte, SpanByteAndMemory, long, MainSessionFunctions, MainStoreFunctions, MainStoreAllocator>
+        public GarnetStatus StringGetBit<TContext>(ref SpanByte key, ref RawStringInput input, ref SpanByteAndMemory output, ref TContext context)
+            where TContext : ITsavoriteContext<SpanByte, SpanByte, RawStringInput, SpanByteAndMemory, long, MainSessionFunctions, MainStoreFunctions, MainStoreAllocator>
             => Read_MainStore(ref key, ref input, ref output, ref context);
 
-        public unsafe GarnetStatus StringBitCount<TContext>(ref SpanByte key, ref SpanByte input, ref SpanByteAndMemory output, ref TContext context)
-         where TContext : ITsavoriteContext<SpanByte, SpanByte, SpanByte, SpanByteAndMemory, long, MainSessionFunctions, MainStoreFunctions, MainStoreAllocator>
+        public unsafe GarnetStatus StringBitCount<TContext>(ref SpanByte key, ref RawStringInput input, ref SpanByteAndMemory output, ref TContext context)
+         where TContext : ITsavoriteContext<SpanByte, SpanByte, RawStringInput, SpanByteAndMemory, long, MainSessionFunctions, MainStoreFunctions, MainStoreAllocator>
              => Read_MainStore(ref key, ref input, ref output, ref context);
 
-        public unsafe GarnetStatus StringBitPosition<TContext>(ref SpanByte key, ref SpanByte input, ref SpanByteAndMemory output, ref TContext context)
-            where TContext : ITsavoriteContext<SpanByte, SpanByte, SpanByte, SpanByteAndMemory, long, MainSessionFunctions, MainStoreFunctions, MainStoreAllocator>
+        public unsafe GarnetStatus StringBitPosition<TContext>(ref SpanByte key, ref RawStringInput input, ref SpanByteAndMemory output, ref TContext context)
+            where TContext : ITsavoriteContext<SpanByte, SpanByte, RawStringInput, SpanByteAndMemory, long, MainSessionFunctions, MainStoreFunctions, MainStoreAllocator>
              => Read_MainStore(ref key, ref input, ref output, ref context);
 
-        public unsafe GarnetStatus StringBitField<TContext>(ref SpanByte key, ref SpanByte input, byte secondaryCommand, ref SpanByteAndMemory output, ref TContext context)
-            where TContext : ITsavoriteContext<SpanByte, SpanByte, SpanByte, SpanByteAndMemory, long, MainSessionFunctions, MainStoreFunctions, MainStoreAllocator>
+        public unsafe GarnetStatus StringBitField<TContext>(ref SpanByte key, ref RawStringInput input, byte secondaryCommand, ref SpanByteAndMemory output, ref TContext context)
+            where TContext : ITsavoriteContext<SpanByte, SpanByte, RawStringInput, SpanByteAndMemory, long, MainSessionFunctions, MainStoreFunctions, MainStoreAllocator>
         {
             GarnetStatus status;
             if (secondaryCommand == (byte)RespCommand.GET)
@@ -373,8 +383,8 @@ namespace Garnet.server
             return status;
         }
 
-        public unsafe GarnetStatus StringBitFieldReadOnly<TContext>(ref SpanByte key, ref SpanByte input, byte secondaryCommand, ref SpanByteAndMemory output, ref TContext context)
-              where TContext : ITsavoriteContext<SpanByte, SpanByte, SpanByte, SpanByteAndMemory, long, MainSessionFunctions, MainStoreFunctions, MainStoreAllocator>
+        public unsafe GarnetStatus StringBitFieldReadOnly<TContext>(ref SpanByte key, ref RawStringInput input, byte secondaryCommand, ref SpanByteAndMemory output, ref TContext context)
+              where TContext : ITsavoriteContext<SpanByte, SpanByte, RawStringInput, SpanByteAndMemory, long, MainSessionFunctions, MainStoreFunctions, MainStoreAllocator>
         {
             GarnetStatus status = GarnetStatus.NOTFOUND;
 

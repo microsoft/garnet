@@ -25,6 +25,8 @@ namespace Garnet.server
                 return AbortWithWrongNumberOfArguments(nameof(RespCommand.PFADD));
             }
 
+            var inputHeader = new RawStringInput();
+
             // 4 byte length of input
             // 1 byte RespCommand
             // 1 byte RespInputFlags
@@ -55,7 +57,7 @@ namespace Garnet.server
                 *(long*)pcurr = (long)HashUtils.MurmurHash2x64A(currSlice.ptr, currSlice.Length);
 
                 var o = new SpanByteAndMemory(output, 1);
-                storageApi.HyperLogLogAdd(ref key, ref Unsafe.AsRef<SpanByte>(pbCmdInput), ref o);
+                storageApi.HyperLogLogAdd(ref key, ref inputHeader, ref o);
 
                 //Invalid HLL Type
                 if (*output == (byte)0xFF)
@@ -97,6 +99,8 @@ namespace Garnet.server
                 return AbortWithWrongNumberOfArguments(nameof(RespCommand.PFCOUNT));
             }
 
+            var inputHeader = new RawStringInput();
+
             // 4 byte length of input
             // 1 byte RespCommand
             // 1 byte RespInputFlags
@@ -112,7 +116,7 @@ namespace Garnet.server
             (*(RespInputHeader*)pcurr).cmd = RespCommand.PFCOUNT;
             (*(RespInputHeader*)pcurr).flags = 0;
 
-            var status = storageApi.HyperLogLogLength(parseState.Parameters, ref Unsafe.AsRef<SpanByte>(pbCmdInput), out long cardinality, out bool error);
+            var status = storageApi.HyperLogLogLength(parseState.Parameters, ref inputHeader, out long cardinality, out bool error);
             if (error)
             {
                 while (!RespWriteUtils.WriteError(CmdStrings.RESP_ERR_WRONG_TYPE_HLL, ref dcurr, dend))

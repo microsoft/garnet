@@ -12,10 +12,10 @@ namespace Garnet.server
     /// <summary>
     /// Callback functions for main store
     /// </summary>
-    public readonly unsafe partial struct MainSessionFunctions : ISessionFunctions<SpanByte, SpanByte, SpanByte, SpanByteAndMemory, long>
+    public readonly unsafe partial struct MainSessionFunctions : ISessionFunctions<SpanByte, SpanByte, RawStringInput, SpanByteAndMemory, long>
     {
         /// <inheritdoc />
-        public bool NeedInitialUpdate(ref SpanByte key, ref SpanByte input, ref SpanByteAndMemory output, ref RMWInfo rmwInfo)
+        public bool NeedInitialUpdate(ref SpanByte key, ref RawStringInput input, ref SpanByteAndMemory output, ref RMWInfo rmwInfo)
         {
             var cmd = input.AsSpan()[0];
             switch ((RespCommand)cmd)
@@ -31,7 +31,7 @@ namespace Garnet.server
                     if (cmd >= CustomCommandManager.StartOffset)
                     {
                         (IMemoryOwner<byte> Memory, int Length) outp = (output.Memory, 0);
-                        var ret = functionsState.customCommands[cmd - CustomCommandManager.StartOffset].functions.NeedInitialUpdate(key.AsReadOnlySpan(), input.AsReadOnlySpan()[RespInputHeader.Size..], ref outp);
+                        var ret = functionsState.customCommands[cmd - CustomCommandManager.StartOffset].functions.NeedInitialUpdate(key.AsReadOnlySpan(), ref input, ref outp);
                         output.Memory = outp.Memory;
                         output.Length = outp.Length;
                         return ret;
@@ -41,14 +41,15 @@ namespace Garnet.server
         }
 
         /// <inheritdoc />
-        public bool InitialUpdater(ref SpanByte key, ref SpanByte input, ref SpanByte value, ref SpanByteAndMemory output, ref RMWInfo rmwInfo, ref RecordInfo recordInfo)
+        public bool InitialUpdater(ref SpanByte key, ref RawStringInput input, ref SpanByte value, ref SpanByteAndMemory output, ref RMWInfo rmwInfo, ref RecordInfo recordInfo)
         {
-            var inputPtr = input.ToPointer();
             rmwInfo.ClearExtraValueLength(ref recordInfo, ref value, value.TotalSize);
+            var inputPtr = input.ToPointer();
 
-            switch ((RespCommand)(*inputPtr))
+            switch (input.header.cmd)
             {
                 case RespCommand.PFADD:
+                    var count = input.parseState.GetInt(0);
                     byte* i = inputPtr + RespInputHeader.Size;
                     byte* v = value.ToPointer();
 
@@ -164,12 +165,12 @@ namespace Garnet.server
                             _ => 8,
                         };
 
-                        value.ShrinkSerializedLength(metadataSize + functions.GetInitialLength(input.AsReadOnlySpan().Slice(RespInputHeader.Size)));
+                        value.ShrinkSerializedLength(metadataSize + functions.GetInitialLength(ref input));
                         if (expiration > 0)
                             value.ExtraMetadata = expiration;
 
                         (IMemoryOwner<byte> Memory, int Length) outp = (output.Memory, 0);
-                        functions.InitialUpdater(key.AsReadOnlySpan(), input.AsReadOnlySpan()[RespInputHeader.Size..], value.AsSpan(), ref outp, ref rmwInfo);
+                        functions.InitialUpdater(key.AsReadOnlySpan(), ref input, value.AsSpan(), ref outp, ref rmwInfo);
                         output.Memory = outp.Memory;
                         output.Length = outp.Length;
                         break;
@@ -190,7 +191,7 @@ namespace Garnet.server
         }
 
         /// <inheritdoc />
-        public void PostInitialUpdater(ref SpanByte key, ref SpanByte input, ref SpanByte value, ref SpanByteAndMemory output, ref RMWInfo rmwInfo)
+        public void PostInitialUpdater(ref SpanByte key, ref RawStringInput input, ref SpanByte value, ref SpanByteAndMemory output, ref RMWInfo rmwInfo)
         {
             functionsState.watchVersionMap.IncrementVersion(rmwInfo.KeyHash);
             if (functionsState.appendOnlyFile != null)
@@ -201,7 +202,7 @@ namespace Garnet.server
         }
 
         /// <inheritdoc />
-        public bool InPlaceUpdater(ref SpanByte key, ref SpanByte input, ref SpanByte value, ref SpanByteAndMemory output, ref RMWInfo rmwInfo, ref RecordInfo recordInfo)
+        public bool InPlaceUpdater(ref SpanByte key, ref RawStringInput input, ref SpanByte value, ref SpanByteAndMemory output, ref RMWInfo rmwInfo, ref RecordInfo recordInfo)
         {
             if (InPlaceUpdaterWorker(ref key, ref input, ref value, ref output, ref rmwInfo, ref recordInfo))
             {
@@ -215,7 +216,7 @@ namespace Garnet.server
             return false;
         }
 
-        private bool InPlaceUpdaterWorker(ref SpanByte key, ref SpanByte input, ref SpanByte value, ref SpanByteAndMemory output, ref RMWInfo rmwInfo, ref RecordInfo recordInfo)
+        private bool InPlaceUpdaterWorker(ref SpanByte key, ref RawStringInput input, ref SpanByte value, ref SpanByteAndMemory output, ref RMWInfo rmwInfo, ref RecordInfo recordInfo)
         {
             var inputPtr = input.ToPointer();
 
@@ -455,7 +456,7 @@ namespace Garnet.server
 
                         int valueLength = value.LengthWithoutMetadata;
                         (IMemoryOwner<byte> Memory, int Length) outp = (output.Memory, 0);
-                        var ret = functions.InPlaceUpdater(key.AsReadOnlySpan(), input.AsReadOnlySpan()[RespInputHeader.Size..], value.AsSpan(), ref valueLength, ref outp, ref rmwInfo);
+                        var ret = functions.InPlaceUpdater(key.AsReadOnlySpan(), ref input, value.AsSpan(), ref valueLength, ref outp, ref rmwInfo);
                         Debug.Assert(valueLength <= value.LengthWithoutMetadata);
 
                         // Adjust value length if user shrinks it
@@ -475,7 +476,7 @@ namespace Garnet.server
         }
 
         /// <inheritdoc />
-        public bool NeedCopyUpdate(ref SpanByte key, ref SpanByte input, ref SpanByte oldValue, ref SpanByteAndMemory output, ref RMWInfo rmwInfo)
+        public bool NeedCopyUpdate(ref SpanByte key, ref RawStringInput input, ref SpanByte oldValue, ref SpanByteAndMemory output, ref RMWInfo rmwInfo)
         {
             var inputPtr = input.ToPointer();
             switch ((RespCommand)(*inputPtr))
@@ -499,7 +500,8 @@ namespace Garnet.server
                     if (*inputPtr >= CustomCommandManager.StartOffset)
                     {
                         (IMemoryOwner<byte> Memory, int Length) outp = (output.Memory, 0);
-                        var ret = functionsState.customCommands[*inputPtr - CustomCommandManager.StartOffset].functions.NeedCopyUpdate(key.AsReadOnlySpan(), input.AsReadOnlySpan()[RespInputHeader.Size..], oldValue.AsReadOnlySpan(), ref outp);
+                        var ret = functionsState.customCommands[*inputPtr - CustomCommandManager.StartOffset].functions
+                            .NeedCopyUpdate(key.AsReadOnlySpan(), ref input, oldValue.AsReadOnlySpan(), ref outp);
                         output.Memory = outp.Memory;
                         output.Length = outp.Length;
                         return ret;
@@ -510,7 +512,7 @@ namespace Garnet.server
         }
 
         /// <inheritdoc />
-        public bool CopyUpdater(ref SpanByte key, ref SpanByte input, ref SpanByte oldValue, ref SpanByte newValue, ref SpanByteAndMemory output, ref RMWInfo rmwInfo, ref RecordInfo recordInfo)
+        public bool CopyUpdater(ref SpanByte key, ref RawStringInput input, ref SpanByte oldValue, ref SpanByte newValue, ref SpanByteAndMemory output, ref RMWInfo rmwInfo, ref RecordInfo recordInfo)
         {
             var inputPtr = input.ToPointer();
 
@@ -703,8 +705,8 @@ namespace Garnet.server
 
                         (IMemoryOwner<byte> Memory, int Length) outp = (output.Memory, 0);
 
-                        var ret = functionsState.customCommands[*inputPtr - CustomCommandManager.StartOffset].functions.CopyUpdater(key.AsReadOnlySpan(), input.AsReadOnlySpan().Slice(RespInputHeader.Size),
-                            oldValue.AsReadOnlySpan(), newValue.AsSpan(), ref outp, ref rmwInfo);
+                        var ret = functionsState.customCommands[*inputPtr - CustomCommandManager.StartOffset].functions
+                            .CopyUpdater(key.AsReadOnlySpan(), ref input, oldValue.AsReadOnlySpan(), newValue.AsSpan(), ref outp, ref rmwInfo);
                         output.Memory = outp.Memory;
                         output.Length = outp.Length;
                         return ret;
@@ -717,7 +719,7 @@ namespace Garnet.server
         }
 
         /// <inheritdoc />
-        public bool PostCopyUpdater(ref SpanByte key, ref SpanByte input, ref SpanByte oldValue, ref SpanByte newValue, ref SpanByteAndMemory output, ref RMWInfo rmwInfo)
+        public bool PostCopyUpdater(ref SpanByte key, ref RawStringInput input, ref SpanByte oldValue, ref SpanByte newValue, ref SpanByteAndMemory output, ref RMWInfo rmwInfo)
         {
             functionsState.watchVersionMap.IncrementVersion(rmwInfo.KeyHash);
             if (functionsState.appendOnlyFile != null)

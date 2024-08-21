@@ -9,7 +9,7 @@ namespace Garnet.server
     /// <summary>
     /// Callback functions for main store
     /// </summary>
-    public readonly unsafe partial struct MainSessionFunctions : ISessionFunctions<SpanByte, SpanByte, SpanByte, SpanByteAndMemory, long>
+    public readonly unsafe partial struct MainSessionFunctions : ISessionFunctions<SpanByte, SpanByte, RawStringInput, SpanByteAndMemory, long>
     {
         /// <summary>
         /// Parse ASCII byte array into long and validate that only contains ASCII decimal characters
@@ -39,7 +39,7 @@ namespace Garnet.server
         }
 
         /// <inheritdoc/>
-        public int GetRMWInitialValueLength(ref SpanByte input)
+        public int GetRMWInitialValueLength(ref RawStringInput input)
         {
             var inputspan = input.AsSpan();
             var inputPtr = input.ToPointer();
@@ -96,14 +96,14 @@ namespace Garnet.server
                             0 => 0,
                             _ => 8,
                         };
-                        return sizeof(int) + metadataSize + functions.GetInitialLength(input.AsReadOnlySpan().Slice(RespInputHeader.Size));
+                        return sizeof(int) + metadataSize + functions.GetInitialLength(ref input);
                     }
                     return sizeof(int) + input.Length - RespInputHeader.Size;
             }
         }
 
         /// <inheritdoc/>
-        public int GetRMWModifiedValueLength(ref SpanByte t, ref SpanByte input)
+        public int GetRMWModifiedValueLength(ref SpanByte t, ref RawStringInput input)
         {
             if (input.Length > 0)
             {
@@ -200,7 +200,7 @@ namespace Garnet.server
                                 0 => t.MetadataSize,
                                 _ => 8,
                             };
-                            return sizeof(int) + metadataSize + functions.GetLength(t.AsReadOnlySpan(), input.AsReadOnlySpan().Slice(RespInputHeader.Size));
+                            return sizeof(int) + metadataSize + functions.GetLength(t.AsReadOnlySpan(), ref input);
                         }
                         throw new GarnetException("Unsupported operation on input");
                 }

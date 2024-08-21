@@ -196,6 +196,77 @@ namespace Garnet.server
     }
 
     /// <summary>
+    /// Header for Garnet Main Store inputs
+    /// </summary>
+    [StructLayout(LayoutKind.Explicit, Size = Size)]
+    public struct RawStringInput
+    {
+        /// <summary>
+        /// Size of header
+        /// </summary>
+        public const int Size = RespInputHeader.Size + sizeof(long) + sizeof(int) + SessionParseState.Size;
+
+        /// <summary>
+        /// Common input header for Garnet
+        /// </summary>
+        [FieldOffset(0)]
+        public RespInputHeader header;
+
+        /// <summary>
+        /// Argument for generic usage by command implementation
+        /// </summary>
+        [FieldOffset(RespInputHeader.Size)]
+        public long ExtraMetadata;
+
+        /// <summary>
+        /// First index to start reading the parse state for command execution
+        /// </summary>
+        [FieldOffset(RespInputHeader.Size + sizeof(long))]
+        public int parseStateStartIdx;
+
+        /// <summary>
+        /// Session parse state
+        /// </summary>
+        [FieldOffset(RespInputHeader.Size + sizeof(long) + sizeof(int))]
+        public SessionParseState parseState;
+
+        /// <summary>
+        /// Gets a pointer to the top of the header
+        /// </summary>
+        /// <returns>Pointer</returns>
+        public unsafe byte* ToPointer()
+            => (byte*)Unsafe.AsPointer(ref header);
+
+        //todo: remove
+        public int LengthWithoutMetadata => Size;
+
+        //todo: remove
+        public int MetadataSize => 0;
+
+        /// <summary>
+        /// Get header as Span
+        /// </summary>
+        /// <returns>Span</returns>
+        public unsafe Span<byte> AsSpan() => new(ToPointer(), Size);
+
+        /// <summary>
+        /// Get header as ReadOnlySpan
+        /// </summary>
+        /// <returns>ReadOnlySpan</returns>
+        public unsafe ReadOnlySpan<byte> AsReadOnlySpan() => new(ToPointer(), Size);
+
+        /// <summary>
+        /// Get header as SpanByte
+        /// </summary>
+        public unsafe SpanByte SpanByte => new(Length, (nint)ToPointer());
+
+        /// <summary>
+        /// Get header length
+        /// </summary>
+        public int Length => AsSpan().Length;
+    }
+
+    /// <summary>
     /// Object output header (sometimes used as footer)
     /// </summary>
     [StructLayout(LayoutKind.Explicit, Size = Size)]

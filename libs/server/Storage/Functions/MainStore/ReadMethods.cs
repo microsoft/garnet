@@ -10,10 +10,10 @@ namespace Garnet.server
     /// <summary>
     /// Callback functions for main store
     /// </summary>
-    public readonly unsafe partial struct MainSessionFunctions : ISessionFunctions<SpanByte, SpanByte, SpanByte, SpanByteAndMemory, long>
+    public readonly unsafe partial struct MainSessionFunctions : ISessionFunctions<SpanByte, SpanByte, RawStringInput, SpanByteAndMemory, long>
     {
         /// <inheritdoc />
-        public bool SingleReader(ref SpanByte key, ref SpanByte input, ref SpanByte value, ref SpanByteAndMemory dst, ref ReadInfo readInfo)
+        public bool SingleReader(ref SpanByte key, ref RawStringInput input, ref SpanByte value, ref SpanByteAndMemory dst, ref ReadInfo readInfo)
         {
             if (value.MetadataSize != 0 && CheckExpiry(ref value))
                 return false;
@@ -21,12 +21,13 @@ namespace Garnet.server
             var cmd = ((RespInputHeader*)input.ToPointer())->cmd;
             if ((byte)cmd >= CustomCommandManager.StartOffset)
             {
-                int valueLength = value.LengthWithoutMetadata;
-                (IMemoryOwner<byte> Memory, int Length) outp = (dst.Memory, 0);
-                var ret = functionsState.customCommands[(byte)cmd - CustomCommandManager.StartOffset].functions.Reader(key.AsReadOnlySpan(), input.AsReadOnlySpan()[RespInputHeader.Size..], value.AsReadOnlySpan(), ref outp, ref readInfo);
+                var valueLength = value.LengthWithoutMetadata;
+                (IMemoryOwner<byte> Memory, int Length) output = (dst.Memory, 0);
+                var ret = functionsState.customCommands[(byte)cmd - CustomCommandManager.StartOffset].functions
+                    .Reader(key.AsReadOnlySpan(), ref input, value.AsReadOnlySpan(), ref output, ref readInfo);
                 Debug.Assert(valueLength <= value.LengthWithoutMetadata);
-                dst.Memory = outp.Memory;
-                dst.Length = outp.Length;
+                dst.Memory = output.Memory;
+                dst.Length = output.Length;
                 return ret;
             }
 
@@ -39,7 +40,7 @@ namespace Garnet.server
         }
 
         /// <inheritdoc />
-        public bool ConcurrentReader(ref SpanByte key, ref SpanByte input, ref SpanByte value, ref SpanByteAndMemory dst, ref ReadInfo readInfo, ref RecordInfo recordInfo)
+        public bool ConcurrentReader(ref SpanByte key, ref RawStringInput input, ref SpanByte value, ref SpanByteAndMemory dst, ref ReadInfo readInfo, ref RecordInfo recordInfo)
         {
             if (value.MetadataSize != 0 && CheckExpiry(ref value))
             {
@@ -51,12 +52,13 @@ namespace Garnet.server
             var cmd = ((RespInputHeader*)input.ToPointer())->cmd;
             if ((byte)cmd >= CustomCommandManager.StartOffset)
             {
-                int valueLength = value.LengthWithoutMetadata;
-                (IMemoryOwner<byte> Memory, int Length) outp = (dst.Memory, 0);
-                var ret = functionsState.customCommands[(byte)cmd - CustomCommandManager.StartOffset].functions.Reader(key.AsReadOnlySpan(), input.AsReadOnlySpan()[RespInputHeader.Size..], value.AsReadOnlySpan(), ref outp, ref readInfo);
+                var valueLength = value.LengthWithoutMetadata;
+                (IMemoryOwner<byte> Memory, int Length) output = (dst.Memory, 0);
+                var ret = functionsState.customCommands[(byte)cmd - CustomCommandManager.StartOffset].functions
+                    .Reader(key.AsReadOnlySpan(), ref input, value.AsReadOnlySpan(), ref output, ref readInfo);
                 Debug.Assert(valueLength <= value.LengthWithoutMetadata);
-                dst.Memory = outp.Memory;
-                dst.Length = outp.Length;
+                dst.Memory = output.Memory;
+                dst.Length = output.Length;
                 return ret;
             }
 

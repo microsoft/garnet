@@ -459,19 +459,19 @@ namespace Garnet.server
         /// <returns></returns>
         public static (long, bool) BitFieldExecute(byte* input, byte* value, int valLen)
         {
-            byte secondaryOPcode = GetBitFieldSecondaryOp(input);
-            byte typeInfo = GetBitFieldType(input);
-            byte bitCount = (byte)(typeInfo & 0x7F);
-            long offset = GetBitFieldOffset(input);
-            byte overflowType = GetBitFieldOverflowType(input);
+            var secondaryOpCode = GetBitFieldSecondaryOp(input);
+            var typeInfo = GetBitFieldType(input);
+            var bitCount = (byte)(typeInfo & 0x7F);
+            var offset = GetBitFieldOffset(input);
+            var overflowType = GetBitFieldOverflowType(input);
 
-            switch (secondaryOPcode)
+            switch (secondaryOpCode)
             {
                 case (byte)RespCommand.SET:
-                    long newVal = GetBitFieldValue(input);
+                    var newVal = GetBitFieldValue(input);
                     return SetBitfieldValue(value, valLen, offset, bitCount, typeInfo, newVal, overflowType);
                 case (byte)RespCommand.INCRBY:
-                    long incrByValue = GetBitFieldValue(input);
+                    var incrByValue = GetBitFieldValue(input);
                     return IncrByBitfieldValue(value, valLen, offset, bitCount, typeInfo, incrByValue, overflowType);
                 case (byte)RespCommand.GET:
                     return (GetBitfieldValue(value, valLen, offset, bitCount, typeInfo), false);

@@ -84,6 +84,8 @@ namespace Garnet.cluster
 
             try
             {
+                var inputHeader = new RawStringInput();
+
                 // Transition keys to MIGRATING status
                 TryTransitionState(KeyMigrationStatus.MIGRATING);
                 WaitForConfigPropagation();
@@ -115,7 +117,7 @@ namespace Garnet.cluster
 
                     // Read value for key
                     var o = new SpanByteAndMemory(bufPtr, (int)(bufPtrEnd - bufPtr));
-                    var status = localServerSession.BasicGarnetApi.Read_MainStore(ref key, ref Unsafe.AsRef<SpanByte>(pbCmdInput), ref o);
+                    var status = localServerSession.BasicGarnetApi.Read_MainStore(ref key, ref inputHeader, ref o);
 
                     // Check if found in main store
                     if (status == GarnetStatus.NOTFOUND)

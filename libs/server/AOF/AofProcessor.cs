@@ -37,7 +37,7 @@ namespace Garnet.server
         /// <summary>
         /// Session for main store
         /// </summary>
-        readonly BasicContext<SpanByte, SpanByte, SpanByte, SpanByteAndMemory, long, MainSessionFunctions, MainStoreFunctions, MainStoreAllocator> basicContext;
+        readonly BasicContext<SpanByte, SpanByte, RawStringInput, SpanByteAndMemory, long, MainSessionFunctions, MainStoreFunctions, MainStoreAllocator> basicContext;
 
         /// <summary>
         /// Session for object store
@@ -268,11 +268,36 @@ namespace Garnet.server
             return true;
         }
 
-        static unsafe void StoreUpsert(BasicContext<SpanByte, SpanByte, SpanByte, SpanByteAndMemory, long, MainSessionFunctions, MainStoreFunctions, MainStoreAllocator> basicContext, byte* ptr)
+        static unsafe void StoreUpsert(BasicContext<SpanByte, SpanByte, RawStringInput, SpanByteAndMemory, long, MainSessionFunctions, MainStoreFunctions, MainStoreAllocator> basicContext, byte* ptr)
         {
-            ref var key = ref Unsafe.AsRef<SpanByte>(ptr + sizeof(AofHeader));
-            ref var input = ref Unsafe.AsRef<SpanByte>(ptr + sizeof(AofHeader) + key.TotalSize);
-            ref var value = ref Unsafe.AsRef<SpanByte>(ptr + sizeof(AofHeader) + key.TotalSize + input.TotalSize);
+            var curr = ptr + sizeof(AofHeader);
+            ref var key = ref Unsafe.AsRef<SpanByte>(curr);
+            curr += key.TotalSize;
+
+            // Reconstructing RawStringInput
+
+            // input
+            ref var sbInput = ref Unsafe.AsRef<SpanByte>(curr);
+            ref var input = ref Unsafe.AsRef<RawStringInput>(sbInput.ToPointer());
+            curr += sbInput.TotalSize;
+
+            // Reconstructing parse state
+            var parseStateCount = input.parseState.Count;
+
+            if (parseStateCount > 0)
+            {
+                ArgSlice[] parseStateBuffer = default;
+                input.parseState.Initialize(ref parseStateBuffer, parseStateCount);
+
+                for (var i = 0; i < parseStateCount; i++)
+                {
+                    ref var sbArgument = ref Unsafe.AsRef<SpanByte>(curr);
+                    parseStateBuffer[i] = new ArgSlice(ref sbArgument);
+                    curr += sbArgument.TotalSize;
+                }
+            }
+
+            ref var value = ref Unsafe.AsRef<SpanByte>(curr);
 
             SpanByteAndMemory output = default;
             basicContext.Upsert(ref key, ref input, ref value, ref output);
@@ -280,19 +305,45 @@ namespace Garnet.server
                 output.Memory.Dispose();
         }
 
-        static unsafe void StoreRMW(BasicContext<SpanByte, SpanByte, SpanByte, SpanByteAndMemory, long, MainSessionFunctions, MainStoreFunctions, MainStoreAllocator> basicContext, byte* ptr)
+        static unsafe void StoreRMW(BasicContext<SpanByte, SpanByte, RawStringInput, SpanByteAndMemory, long, MainSessionFunctions, MainStoreFunctions, MainStoreAllocator> basicContext, byte* ptr)
         {
-            byte* pbOutput = stackalloc byte[32];
-            ref var key = ref Unsafe.AsRef<SpanByte>(ptr + sizeof(AofHeader));
-            ref var input = ref Unsafe.AsRef<SpanByte>(ptr + sizeof(AofHeader) + key.TotalSize);
+            var curr = ptr + sizeof(AofHeader);
+            ref var key = ref Unsafe.AsRef<SpanByte>(curr);
+            curr += key.TotalSize;
+
+            // Reconstructing RawStringInput
+
+            // input
+            ref var sbInput = ref Unsafe.AsRef<SpanByte>(curr);
+            ref var input = ref Unsafe.AsRef<RawStringInput>(sbInput.ToPointer());
+            curr += sbInput.TotalSize;
+
+            // Reconstructing parse state
+            var parseStateCount = input.parseState.Count;
+
+            if (parseStateCount > 0)
+            {
+                ArgSlice[] parseStateBuffer = default;
+                input.parseState.Initialize(ref parseStateBuffer, parseStateCount);
+
+                for (var i = 0; i < parseStateCount; i++)
+                {
+                    ref var sbArgument = ref Unsafe.AsRef<SpanByte>(curr);
+                    parseStateBuffer[i] = new ArgSlice(ref sbArgument);
+                    curr += sbArgument.TotalSize;
+                }
+            }
+
+            var pbOutput = stackalloc byte[32];
             var output = new SpanByteAndMemory(pbOutput, 32);
+
             if (basicContext.RMW(ref key, ref input, ref output).IsPending)
                 basicContext.CompletePending(true);
             if (!output.IsSpanByte)
                 output.Memory.Dispose();
         }
 
-        static unsafe void StoreDelete(BasicContext<SpanByte, SpanByte, SpanByte, SpanByteAndMemory, long, MainSessionFunctions, MainStoreFunctions, MainStoreAllocator> basicContext, byte* ptr)
+        static unsafe void StoreDelete(BasicContext<SpanByte, SpanByte, RawStringInput, SpanByteAndMemory, long, MainSessionFunctions, MainStoreFunctions, MainStoreAllocator> basicContext, byte* ptr)
         {
             ref var key = ref Unsafe.AsRef<SpanByte>(ptr + sizeof(AofHeader));
             basicContext.Delete(ref key);

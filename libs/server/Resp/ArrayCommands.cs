@@ -25,6 +25,7 @@ namespace Garnet.server
             if (storeWrapper.serverOptions.EnableScatterGatherGet)
                 return NetworkMGET_SG(ref storageApi);
 
+            var inputHeader = new RawStringInput();
             SpanByte input = default;
 
             while (!RespWriteUtils.WriteArrayLength(parseState.Count, ref dcurr, dend))
@@ -34,7 +35,7 @@ namespace Garnet.server
             {
                 var key = parseState.GetArgSliceByRef(c).SpanByte;
                 var o = new SpanByteAndMemory(dcurr, (int)(dend - dcurr));
-                var status = storageApi.GET(ref key, ref input, ref o);
+                var status = storageApi.GET(ref key, ref inputHeader, ref o);
 
                 switch (status)
                 {
@@ -60,6 +61,7 @@ namespace Garnet.server
         private bool NetworkMGET_SG<TGarnetApi>(ref TGarnetApi storageApi)
             where TGarnetApi : IGarnetAdvancedApi
         {
+            var inputHeader = new RawStringInput();
             SpanByte input = default;
             long ctx = default;
 
@@ -78,7 +80,7 @@ namespace Garnet.server
                 // Store index in context, since completions are not in order
                 ctx = c;
 
-                var status = storageApi.GET_WithPending(ref key, ref input, ref o, ctx, out bool isPending);
+                var status = storageApi.GET_WithPending(ref key, ref inputHeader, ref o, ctx, out bool isPending);
 
                 if (isPending)
                 {
@@ -179,6 +181,7 @@ namespace Garnet.server
         private bool NetworkMSETNX<TGarnetApi>(ref TGarnetApi storageApi)
             where TGarnetApi : IGarnetApi
         {
+            var inputHeader = new RawStringInput();
             byte* hPtr = stackalloc byte[RespInputHeader.Size];
 
             bool anyValuesSet = false;
@@ -206,7 +209,7 @@ namespace Garnet.server
                 ((RespInputHeader*)(valPtr + sizeof(int)))->cmd = RespCommand.SETEXNX;
                 ((RespInputHeader*)(valPtr + sizeof(int)))->flags = 0;
 
-                var status = storageApi.SET_Conditional(ref key, ref Unsafe.AsRef<SpanByte>(valPtr));
+                var status = storageApi.SET_Conditional(ref key, ref inputHeader);
 
                 // Status tells us whether an old image was found during RMW or not
                 // For a "set if not exists", NOTFOUND means that the operation succeeded
