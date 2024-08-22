@@ -10,7 +10,6 @@ using System.Threading.Tasks;
 using Garnet.client;
 using Garnet.server;
 using Garnet.server.ACL;
-using Microsoft.CodeAnalysis;
 using NUnit.Framework;
 using NUnit.Framework.Legacy;
 

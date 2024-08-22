@@ -2,7 +2,6 @@
 // Licensed under the MIT license.
 
 using NUnit.Framework;
-using NUnit.Framework.Legacy;
 
 namespace Garnet.test.cluster
 {

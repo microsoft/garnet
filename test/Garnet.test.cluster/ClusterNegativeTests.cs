@@ -11,7 +11,6 @@ using System.Threading;
 using Microsoft.Extensions.Logging;
 using NUnit.Framework;
 using NUnit.Framework.Legacy;
-using StackExchange.Redis;
 
 namespace Garnet.test.cluster
 {

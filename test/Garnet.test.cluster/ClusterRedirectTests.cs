@@ -8,8 +8,6 @@ using Garnet.common;
 using Microsoft.Extensions.Logging;
 using NUnit.Framework;
 using NUnit.Framework.Legacy;
-using NUnit.Framework.Internal;
-using StackExchange.Redis;
 
 namespace Garnet.test.cluster
 {

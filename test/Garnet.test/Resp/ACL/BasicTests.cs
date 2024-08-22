@@ -6,7 +6,6 @@ using System.Threading.Tasks;
 using Garnet.server;
 using NUnit.Framework;
 using NUnit.Framework.Legacy;
-using NUnit.Framework.Internal;
 
 namespace Garnet.test.Resp.ACL
 {

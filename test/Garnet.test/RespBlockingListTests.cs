@@ -2,10 +2,7 @@
 // Licensed under the MIT license.
 
 using System;
-using System.Diagnostics;
-using System.Linq;
 using System.Text;
-using System.Text.RegularExpressions;
 using System.Threading.Tasks;
 using Garnet.server;
 using NUnit.Framework;

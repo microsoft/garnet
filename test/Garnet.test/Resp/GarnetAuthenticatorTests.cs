@@ -5,7 +5,6 @@ using System;
 using System.Text;
 using System.Threading.Tasks;
 using Garnet.server;
-using Garnet.server.ACL;
 using Garnet.server.Auth;
 using Garnet.server.Auth.Settings;
 using NUnit.Framework;
