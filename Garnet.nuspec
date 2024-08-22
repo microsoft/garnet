@@ -27,6 +27,7 @@
 	    <dependency id="Microsoft.IdentityModel.Validators" version="8.0.1" />
       <dependency id="Azure.Storage.Blobs" version="12.21.2" />
       <dependency id="NLua" version="1.7.3" />
+      <dependency id="System.Text.Json" version="8.0.4" />
     </dependencies>
     <readme>README.md</readme>
   </metadata>
