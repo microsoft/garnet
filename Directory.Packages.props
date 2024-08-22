@@ -8,7 +8,7 @@
     <PackageVersion Include="BenchmarkDotNet.Diagnostics.Windows" Version="0.13.12" />
     <PackageVersion Include="CommandLineParser" Version="2.9.1" />
     <PackageVersion Include="Newtonsoft.Json" Version="13.0.3" />
-		<PackageVersion Include="NLua" Version="1.7.3" />
+    <PackageVersion Include="NLua" Version="1.7.3" />
     <PackageVersion Include="NUnit" Version="3.13.3" />
     <PackageVersion Include="NUnit3TestAdapter" Version="4.5.0" />
     <PackageVersion Include="Microsoft.CodeAnalysis" Version="4.9.2" />
@@ -24,5 +24,6 @@
     <PackageVersion Include="StackExchange.Redis" Version="2.7.33" />
     <PackageVersion Include="System.IdentityModel.Tokens.Jwt" Version="7.5.1" />
     <PackageVersion Include="System.Interactive.Async" Version="6.0.1" />
+    <PackageVersion Include="System.Text.Json" Version="8.0.4" />
   </ItemGroup>
 </Project>
