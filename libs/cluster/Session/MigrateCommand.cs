@@ -116,7 +116,7 @@ namespace Garnet.cluster
             {
                 transferOption = TransferOption.KEYS;
                 keys = new();
-                _ = keys.TryAdd(keySlice, KeyMigrationStatus.QUEUED);
+                _ = keys.TryAdd(ref keySlice, KeyMigrationStatus.QUEUED);
             }
 
             var currTokenIdx = 5;
@@ -175,9 +175,8 @@ namespace Garnet.cluster
                             continue;
                         }
 
-                        var key = new ArgSlice(keyPtr, ksize);
                         // Add pointer of current parsed key
-                        if (!keys.TryAdd(currKeySlice, KeyMigrationStatus.QUEUED))
+                        if (!keys.TryAdd(ref currKeySlice, KeyMigrationStatus.QUEUED))
                         {
                             logger?.LogWarning("Failed to add {key}", Encoding.ASCII.GetString(keySlice.ReadOnlySpan));
                             pstate = MigrateCmdParseState.FAILEDTOADDKEY;
