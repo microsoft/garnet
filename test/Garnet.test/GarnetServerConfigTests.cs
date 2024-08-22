@@ -188,41 +188,96 @@ namespace Garnet.test
         [Test]
         public void ImportExportConfigAzure()
         {
+            if (!TestUtils.IsRunningAzureTests)
+            {
+                Assert.Ignore("Azure tests are disabled.");
+            }
+
             var AzureTestDirectory = $"{TestContext.CurrentContext.Test.MethodName.ToLowerInvariant()}";
             var configPath = $"{AzureTestDirectory}/test1.config";
             var AzureEmulatedStorageString = "UseDevelopmentStorage=true;";
 
-            if (TestUtils.IsRunningAzureTests)
-            {
-                // Delete blob if exists
-                var deviceFactory = new AzureStorageNamedDeviceFactory(AzureEmulatedStorageString, default);
-                deviceFactory.Initialize(AzureTestDirectory);
-                deviceFactory.Delete(new FileDescriptor { directoryName = "" });
+            // Delete blob if exists
+            var deviceFactory = new AzureStorageNamedDeviceFactory(AzureEmulatedStorageString, default);
+            deviceFactory.Initialize(AzureTestDirectory);
+            deviceFactory.Delete(new FileDescriptor { directoryName = "" });
 
-                var parseSuccessful = ServerSettingsManager.TryParseCommandLineArguments(null, out var options, out var invalidOptions);
-                Assert.IsTrue(parseSuccessful);
-                Assert.AreEqual(invalidOptions.Count, 0);
-                Assert.IsTrue(options.PageSize == "32m");
-                Assert.IsTrue(options.MemorySize == "16g");
+            var parseSuccessful = ServerSettingsManager.TryParseCommandLineArguments(null, out var options, out var invalidOptions);
+            Assert.IsTrue(parseSuccessful);
+            Assert.IsEmpty(invalidOptions);
+            Assert.IsTrue(options.PageSize == "32m");
+            Assert.IsTrue(options.MemorySize == "16g");
 
-                var args = new string[] { "--storage-string", AzureEmulatedStorageString, "--use-azure-storage-for-config-export", "true", "--config-export-path", configPath, "-p", "4m", "-m", "128m" };
-                parseSuccessful = ServerSettingsManager.TryParseCommandLineArguments(args, out options, out invalidOptions);
-                Assert.IsTrue(parseSuccessful);
-                Assert.AreEqual(invalidOptions.Count, 0);
-                Assert.IsTrue(options.PageSize == "4m");
-                Assert.IsTrue(options.MemorySize == "128m");
+            var args = new string[] { "--storage-string", AzureEmulatedStorageString, "--use-azure-storage-for-config-export", "true", "--config-export-path", configPath, "-p", "4m", "-m", "128m" };
+            parseSuccessful = ServerSettingsManager.TryParseCommandLineArguments(args, out options, out invalidOptions);
+            Assert.IsTrue(parseSuccessful);
+            Assert.IsEmpty(invalidOptions);
+            Assert.IsTrue(options.PageSize == "4m");
+            Assert.IsTrue(options.MemorySize == "128m");
 
-                args = ["--storage-string", AzureEmulatedStorageString, "--use-azure-storage-for-config-import", "true", "--config-import-path", configPath];
-                parseSuccessful = ServerSettingsManager.TryParseCommandLineArguments(args, out options, out invalidOptions);
-                Assert.IsTrue(parseSuccessful);
-                Assert.AreEqual(invalidOptions.Count, 0);
-                Assert.IsTrue(options.PageSize == "4m");
-                Assert.IsTrue(options.MemorySize == "128m");
+            args = ["--storage-string", AzureEmulatedStorageString, "--use-azure-storage-for-config-import", "true", "--config-import-path", configPath];
+            parseSuccessful = ServerSettingsManager.TryParseCommandLineArguments(args, out options, out invalidOptions);
+            Assert.IsTrue(parseSuccessful);
+            Assert.IsEmpty(invalidOptions);
+            Assert.IsTrue(options.PageSize == "4m");
+            Assert.IsTrue(options.MemorySize == "128m");
 
-                // Delete blob
-                deviceFactory.Initialize(AzureTestDirectory);
-                deviceFactory.Delete(new FileDescriptor { directoryName = "" });
-            }
+            args = ["--use-azure-storage", "--storage-string", AzureEmulatedStorageString];
+            parseSuccessful = ServerSettingsManager.TryParseCommandLineArguments(args, out options, out invalidOptions);
+            Assert.IsTrue(parseSuccessful);
+            Assert.IsEmpty(invalidOptions);
+            Assert.AreEqual(AzureEmulatedStorageString, options.AzureStorageConnectionString);
+
+            // Delete blob
+            deviceFactory.Initialize(AzureTestDirectory);
+            deviceFactory.Delete(new FileDescriptor { directoryName = "" });
+        }
+
+        [Test]
+        public void AzureStorageConfiguration()
+        {
+            // missing both storage-string and managed-identity
+            var args = new string[] { "--use-azure-storage" };
+            var parseSuccessful = ServerSettingsManager.TryParseCommandLineArguments(args, out var options, out var invalidOptions);
+            Assert.IsTrue(parseSuccessful);
+            Assert.IsEmpty(invalidOptions);
+            Assert.Throws<InvalidAzureConfiguration>(() => options.GetServerOptions());
+
+            // valid storage-string
+            args = ["--use-azure-storage", "--storage-string", "UseDevelopmentStorage=true;"];
+            parseSuccessful = ServerSettingsManager.TryParseCommandLineArguments(args, out options, out invalidOptions);
+            Assert.IsTrue(parseSuccessful);
+            Assert.IsEmpty(invalidOptions);
+            Assert.DoesNotThrow(() => options.GetServerOptions());
+
+            // insecure service-uri
+            args = ["--use-azure-storage", "--storage-service-uri", "http://demo.blob.core.windows.net"];
+            parseSuccessful = ServerSettingsManager.TryParseCommandLineArguments(args, out options, out invalidOptions);
+            Assert.IsFalse(parseSuccessful);
+            Assert.AreEqual(invalidOptions.Count, 1);
+            Assert.AreEqual(invalidOptions[0], nameof(Options.AzureStorageServiceUri));
+
+            // secure service-uri but missing managed-identity
+            args = ["--use-azure-storage", "--storage-service-uri", "https://demo.blob.core.windows.net"];
+            parseSuccessful = ServerSettingsManager.TryParseCommandLineArguments(args, out options, out invalidOptions);
+            Assert.IsTrue(parseSuccessful);
+            Assert.IsEmpty(invalidOptions);
+            Assert.Throws<InvalidAzureConfiguration>(() => options.GetServerOptions());
+
+            // secure service-uri with managed-identity
+            args = ["--use-azure-storage", "--storage-service-uri", "https://demo.blob.core.windows.net", "--storage-managed-identity", "demo"];
+            parseSuccessful = ServerSettingsManager.TryParseCommandLineArguments(args, out options, out invalidOptions);
+            Assert.IsTrue(parseSuccessful);
+            Assert.IsEmpty(invalidOptions);
+            var serverOptions = options.GetServerOptions();
+            Assert.DoesNotThrow(() => options.GetServerOptions());
+
+            // both storage-string and managed-identity
+            args = ["--use-azure-storage", "--storage-string", "UseDevelopmentStorage", "--storage-managed-identity", "demo", "--storage-service-uri", "https://demo.blob.core.windows.net"];
+            parseSuccessful = ServerSettingsManager.TryParseCommandLineArguments(args, out options, out invalidOptions);
+            Assert.IsTrue(parseSuccessful);
+            Assert.IsEmpty(invalidOptions);
+            Assert.Throws<InvalidAzureConfiguration>(() => options.GetServerOptions());
         }
     }
 }

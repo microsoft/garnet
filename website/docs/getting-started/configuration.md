@@ -138,6 +138,8 @@ For all available command line settings, run `GarnetServer.exe -h` or `GarnetSer
 | **ThreadPoolMaxThreads** | ```--maxthreads``` | ```int``` | Integer in range:<br/>[0, MaxValue] | Maximum worker and completion threads in thread pool, 0 uses the system default. |
 | **UseAzureStorage** | ```--use-azure-storage``` | ```bool``` |  | Use Azure Page Blobs for storage instead of local storage. |
 | **AzureStorageConnectionString** | ```--storage-string``` | ```string``` |  | The connection string to use when establishing connection to Azure Blobs Storage. |
+| **AzureStorageServiceUri** | ```--storage-service-uri``` | ```string``` |  | The service URI to use when establishing connection to Azure Blobs Storage. |
+| **AzureStorageManagedIdentity** | ```--storage-managed-identity``` | ```string``` |  | The managed identity to use when establishing connection to Azure Blobs Storage. |
 | **CheckpointThrottleFlushDelayMs** | ```--checkpoint-throttle-delay``` | ```int``` | Integer in range:<br/>[-1, MaxValue] | Whether and by how much should we throttle the disk IO for checkpoints: -1 - disable throttling; >= 0 - run checkpoint flush in separate task, sleep for specified time after each WriteAsync |
 | **EnableFastCommit** | ```--fast-commit``` | ```bool``` |  | Use FastCommit when writing AOF. |
 | **FastCommitThrottleFreq** | ```--fast-commit-throttle``` | ```int``` | Integer in range:<br/>[0, MaxValue] | Throttle FastCommit to write metadata once every K commits. |

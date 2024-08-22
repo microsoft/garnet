@@ -19,6 +19,7 @@
 
   <ItemGroup>
     <PackageReference Include="CommandLineParser" />
+    <PackageReference Include="Azure.Identity" />
     <PackageReference Include="Microsoft.Extensions.Logging.Console" />
     <PackageReference Include="Microsoft.SourceLink.GitHub" PrivateAssets="All" />
     <PackageReference Include="Microsoft.Extensions.Logging" />
