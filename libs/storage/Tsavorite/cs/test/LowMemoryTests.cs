@@ -3,6 +3,7 @@
 
 using System.IO;
 using NUnit.Framework;
+using NUnit.Framework.Legacy;
 using Tsavorite.core;
 
 namespace Tsavorite.test.LowMemory
@@ -72,8 +73,8 @@ namespace Tsavorite.test.LowMemory
                 if (!status.IsPending)
                 {
                     ++numCompleted;
-                    Assert.IsTrue(status.Found);
-                    Assert.AreEqual(key, output);
+                    ClassicAssert.IsTrue(status.Found);
+                    ClassicAssert.AreEqual(key, output);
                 }
             }
 
@@ -83,11 +84,11 @@ namespace Tsavorite.test.LowMemory
                 while (completedOutputs.Next())
                 {
                     ++numCompleted;
-                    Assert.IsTrue(completedOutputs.Current.Status.Found, $"{completedOutputs.Current.Status}");
-                    Assert.AreEqual(completedOutputs.Current.Key, completedOutputs.Current.Output);
+                    ClassicAssert.IsTrue(completedOutputs.Current.Status.Found, $"{completedOutputs.Current.Status}");
+                    ClassicAssert.AreEqual(completedOutputs.Current.Key, completedOutputs.Current.Output);
                 }
             }
-            Assert.AreEqual(NumOps, numCompleted, "numCompleted");
+            ClassicAssert.AreEqual(NumOps, numCompleted, "numCompleted");
         }
 
         [Test]
@@ -122,8 +123,8 @@ namespace Tsavorite.test.LowMemory
                 if (!status.IsPending)
                 {
                     ++numCompleted;
-                    Assert.IsTrue(status.Found, $"{status}");
-                    Assert.AreEqual(key + key, output);
+                    ClassicAssert.IsTrue(status.Found, $"{status}");
+                    ClassicAssert.AreEqual(key + key, output);
                 }
             }
 
@@ -133,11 +134,11 @@ namespace Tsavorite.test.LowMemory
                 while (completedOutputs.Next())
                 {
                     ++numCompleted;
-                    Assert.IsTrue(completedOutputs.Current.Status.Found, $"{completedOutputs.Current.Status}");
-                    Assert.AreEqual(completedOutputs.Current.Key * 2, completedOutputs.Current.Output);
+                    ClassicAssert.IsTrue(completedOutputs.Current.Status.Found, $"{completedOutputs.Current.Status}");
+                    ClassicAssert.AreEqual(completedOutputs.Current.Key * 2, completedOutputs.Current.Output);
                 }
             }
-            Assert.AreEqual(NumOps, numCompleted, "numCompleted");
+            ClassicAssert.AreEqual(NumOps, numCompleted, "numCompleted");
         }
     }
 }

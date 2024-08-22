@@ -5,6 +5,7 @@ using System;
 using System.Collections.Generic;
 using System.Threading;
 using NUnit.Framework;
+using NUnit.Framework.Legacy;
 using Tsavorite.core;
 
 namespace Tsavorite.test
@@ -20,17 +21,17 @@ namespace Tsavorite.test
             var protectedVal = 0;
             var v = tested.Enter();
 
-            Assert.AreEqual(1, v.Version);
+            ClassicAssert.AreEqual(1, v.Version);
             tested.TryAdvanceVersionWithCriticalSection((_, _) => protectedVal = 1);
             Thread.Sleep(10);
             // because of ongoing protection, nothing should happen yet
             tested.Leave();
             // As soon as protection is dropped, action should be done.
-            Assert.AreEqual(1, protectedVal);
+            ClassicAssert.AreEqual(1, protectedVal);
 
             // Next thread sees new version
             v = tested.Enter();
-            Assert.AreEqual(v.Version, 2);
+            ClassicAssert.AreEqual(v.Version, 2);
             tested.Leave();
         }
 
@@ -42,17 +43,17 @@ namespace Tsavorite.test
             var protectedVal = 0;
 
             var v = tested.Enter();
-            Assert.AreEqual(1, v.Version);
+            ClassicAssert.AreEqual(1, v.Version);
             tested.Leave();
 
             tested.TryAdvanceVersionWithCriticalSection((_, _) => protectedVal = 1);
-            Assert.AreEqual(1, protectedVal);
+            ClassicAssert.AreEqual(1, protectedVal);
 
             tested.TryAdvanceVersionWithCriticalSection((_, _) => protectedVal = 2, 4);
-            Assert.AreEqual(2, protectedVal);
+            ClassicAssert.AreEqual(2, protectedVal);
 
             v = tested.Enter();
-            Assert.AreEqual(4, v.Version);
+            ClassicAssert.AreEqual(4, v.Version);
             tested.Leave();
         }
 
@@ -74,7 +75,7 @@ namespace Tsavorite.test
                     while (!termination.IsSet)
                     {
                         var v = tested.Enter();
-                        Assert.AreEqual(v.Version, Interlocked.Read(ref protectedVal));
+                        ClassicAssert.AreEqual(v.Version, Interlocked.Read(ref protectedVal));
                         tested.Leave();
                     }
                 });
@@ -86,7 +87,7 @@ namespace Tsavorite.test
             {
                 tested.TryAdvanceVersionWithCriticalSection((vOld, vNew) =>
                 {
-                    Assert.AreEqual(vOld, Interlocked.Read(ref protectedVal));
+                    ClassicAssert.AreEqual(vOld, Interlocked.Read(ref protectedVal));
                     // Flip sign to simulate critical section processing
                     protectedVal = -vOld;
                     Thread.Yield();

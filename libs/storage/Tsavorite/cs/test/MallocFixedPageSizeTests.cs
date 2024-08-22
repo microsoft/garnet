@@ -2,6 +2,7 @@
 // Licensed under the MIT license.
 
 using NUnit.Framework;
+using NUnit.Framework.Legacy;
 using Tsavorite.core;
 using static Tsavorite.test.TestUtils;
 
@@ -24,7 +25,7 @@ namespace Tsavorite.test
             // where HashBucket contains its own array of entries.
 
             var allocator = new MallocFixedPageSize<HashBucket>();
-            Assert.IsTrue(MallocFixedPageSize<HashBucket>.IsBlittable);  // HashBucket is a blittable struct, so it can be pinned
+            ClassicAssert.IsTrue(MallocFixedPageSize<HashBucket>.IsBlittable);  // HashBucket is a blittable struct, so it can be pinned
             var chunkSize = allocMode == AllocMode.Single ? 1 : MallocFixedPageSize<IHeapContainer<Value>>.AllocateChunkSize;
             var numChunks = 2 * allocator.GetPageSize() / chunkSize;
 
@@ -56,12 +57,12 @@ namespace Tsavorite.test
                         var recordAddress = chunkAddress + iRecord;
                         var bucketPointer = (HashBucket*)allocator.GetPhysicalAddress(recordAddress);
                         for (int iEntry = 0; iEntry < Constants.kOverflowBucketIndex; iEntry++)
-                            Assert.AreEqual(getEntryValue(recordAddress, iEntry), bucketPointer->bucket_entries[iEntry], $"iter {iter}, iChunk {iChunk}, iEntry {iEntry}");
+                            ClassicAssert.AreEqual(getEntryValue(recordAddress, iEntry), bucketPointer->bucket_entries[iEntry], $"iter {iter}, iChunk {iChunk}, iEntry {iEntry}");
                     }
                     allocator.Free(chunkAddress);
-                    Assert.AreEqual(iChunk + 1, allocator.FreeListCount);
+                    ClassicAssert.AreEqual(iChunk + 1, allocator.FreeListCount);
                 }
-                Assert.AreEqual(numChunks, allocator.FreeListCount);
+                ClassicAssert.AreEqual(numChunks, allocator.FreeListCount);
             }
             allocator.Dispose();
         }
@@ -86,7 +87,7 @@ namespace Tsavorite.test
             // Bulk:    Value[kAllocateChunkSize]
 
             var allocator = new MallocFixedPageSize<IHeapContainer<Value>>();
-            Assert.IsFalse(MallocFixedPageSize<IHeapContainer<Value>>.IsBlittable); // IHeapContainer itself prevents pinning, regardless of its <T>
+            ClassicAssert.IsFalse(MallocFixedPageSize<IHeapContainer<Value>>.IsBlittable); // IHeapContainer itself prevents pinning, regardless of its <T>
             var chunkSize = allocMode == AllocMode.Single ? 1 : MallocFixedPageSize<IHeapContainer<Value>>.AllocateChunkSize;
             var numChunks = 2 * allocator.GetPageSize() / chunkSize;
 
@@ -115,12 +116,12 @@ namespace Tsavorite.test
                     {
                         var recordAddress = chunkAddress + iRecord;
                         ref var valueRef = ref allocator.Get(recordAddress);
-                        Assert.AreEqual(recordAddress, valueRef.Get().value);
+                        ClassicAssert.AreEqual(recordAddress, valueRef.Get().value);
                     }
                     allocator.Free(chunkAddress);
-                    Assert.AreEqual(iChunk + 1, allocator.FreeListCount);
+                    ClassicAssert.AreEqual(iChunk + 1, allocator.FreeListCount);
                 }
-                Assert.AreEqual(numChunks, allocator.FreeListCount);
+                ClassicAssert.AreEqual(numChunks, allocator.FreeListCount);
             }
             allocator.Dispose();
         }

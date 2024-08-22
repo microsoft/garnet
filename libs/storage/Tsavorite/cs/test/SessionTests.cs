@@ -4,6 +4,7 @@
 using System.IO;
 using System.Threading.Tasks;
 using NUnit.Framework;
+using NUnit.Framework.Legacy;
 using Tsavorite.core;
 using static Tsavorite.test.TestUtils;
 
@@ -66,9 +67,9 @@ namespace Tsavorite.test.Session
                 (status, output) = GetSinglePendingResult(outputs);
             }
 
-            Assert.IsTrue(status.Found);
-            Assert.AreEqual(value.vfield1, output.value.vfield1);
-            Assert.AreEqual(value.vfield2, output.value.vfield2);
+            ClassicAssert.IsTrue(status.Found);
+            ClassicAssert.AreEqual(value.vfield1, output.value.vfield1);
+            ClassicAssert.AreEqual(value.vfield2, output.value.vfield2);
         }
 
         [Test]
@@ -98,9 +99,9 @@ namespace Tsavorite.test.Session
                 (status, output) = GetSinglePendingResult(outputs);
             }
 
-            Assert.IsTrue(status.Found);
-            Assert.AreEqual(value1.vfield1, output.value.vfield1);
-            Assert.AreEqual(value1.vfield2, output.value.vfield2);
+            ClassicAssert.IsTrue(status.Found);
+            ClassicAssert.AreEqual(value1.vfield1, output.value.vfield1);
+            ClassicAssert.AreEqual(value1.vfield2, output.value.vfield2);
 
             status = bContext2.Read(ref key2, ref input, ref output, Empty.Default);
 
@@ -110,9 +111,9 @@ namespace Tsavorite.test.Session
                 (status, output) = GetSinglePendingResult(outputs);
             }
 
-            Assert.IsTrue(status.Found);
-            Assert.AreEqual(value2.vfield1, output.value.vfield1);
-            Assert.AreEqual(value2.vfield2, output.value.vfield2);
+            ClassicAssert.IsTrue(status.Found);
+            ClassicAssert.AreEqual(value2.vfield1, output.value.vfield1);
+            ClassicAssert.AreEqual(value2.vfield2, output.value.vfield2);
         }
 
         [Test]
@@ -139,9 +140,9 @@ namespace Tsavorite.test.Session
                     (status, output) = GetSinglePendingResult(outputs);
                 }
 
-                Assert.IsTrue(status.Found);
-                Assert.AreEqual(value.vfield1, output.value.vfield1);
-                Assert.AreEqual(value.vfield2, output.value.vfield2);
+                ClassicAssert.IsTrue(status.Found);
+                ClassicAssert.AreEqual(value.vfield1, output.value.vfield1);
+                ClassicAssert.AreEqual(value.vfield2, output.value.vfield2);
             }).Wait();
         }
 
@@ -170,9 +171,9 @@ namespace Tsavorite.test.Session
                     (status, output) = GetSinglePendingResult(outputs);
                 }
 
-                Assert.IsTrue(status.Found);
-                Assert.AreEqual(value1.vfield1, output.value.vfield1);
-                Assert.AreEqual(value1.vfield2, output.value.vfield2);
+                ClassicAssert.IsTrue(status.Found);
+                ClassicAssert.AreEqual(value1.vfield1, output.value.vfield1);
+                ClassicAssert.AreEqual(value1.vfield2, output.value.vfield2);
             });
 
             var t2 = Task.CompletedTask.ContinueWith((t) =>
@@ -193,9 +194,9 @@ namespace Tsavorite.test.Session
                     (status, output) = GetSinglePendingResult(outputs);
                 }
 
-                Assert.IsTrue(status.Found);
-                Assert.AreEqual(value2.vfield1, output.value.vfield1);
-                Assert.AreEqual(value2.vfield2, output.value.vfield2);
+                ClassicAssert.IsTrue(status.Found);
+                ClassicAssert.AreEqual(value2.vfield1, output.value.vfield1);
+                ClassicAssert.AreEqual(value2.vfield2, output.value.vfield2);
             });
 
             t1.Wait();
@@ -225,9 +226,9 @@ namespace Tsavorite.test.Session
                 (status, output) = GetSinglePendingResult(outputs);
             }
 
-            Assert.IsTrue(status.Found);
-            Assert.AreEqual(value1.vfield1, output.value.vfield1);
-            Assert.AreEqual(value1.vfield2, output.value.vfield2);
+            ClassicAssert.IsTrue(status.Found);
+            ClassicAssert.AreEqual(value1.vfield1, output.value.vfield1);
+            ClassicAssert.AreEqual(value1.vfield2, output.value.vfield2);
 
             session.Dispose();
 
@@ -246,7 +247,7 @@ namespace Tsavorite.test.Session
                 _ = bContext.CompletePendingWithOutputs(out var outputs, wait: true);
                 (status, output) = GetSinglePendingResult(outputs);
             }
-            Assert.IsTrue(status.Found);
+            ClassicAssert.IsTrue(status.Found);
 
             status = bContext.Read(ref key2, ref input, ref output, Empty.Default);
 
@@ -256,9 +257,9 @@ namespace Tsavorite.test.Session
                 (status, output) = GetSinglePendingResult(outputs);
             }
 
-            Assert.IsTrue(status.Found);
-            Assert.AreEqual(value2.vfield1, output.value.vfield1);
-            Assert.AreEqual(value2.vfield2, output.value.vfield2);
+            ClassicAssert.IsTrue(status.Found);
+            ClassicAssert.AreEqual(value2.vfield1, output.value.vfield1);
+            ClassicAssert.AreEqual(value2.vfield2, output.value.vfield2);
 
             session.Dispose();
         }

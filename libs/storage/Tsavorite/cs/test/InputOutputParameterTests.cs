@@ -3,6 +3,7 @@
 
 using System.IO;
 using NUnit.Framework;
+using NUnit.Framework.Legacy;
 using Tsavorite.core;
 
 namespace Tsavorite.test.InputOutputParameterTests
@@ -35,7 +36,7 @@ namespace Tsavorite.test.InputOutputParameterTests
             /// <inheritdoc/>
             public override bool SingleReader(ref int key, ref int input, ref int value, ref int output, ref ReadInfo readInfo)
             {
-                Assert.AreEqual(key * input, value);
+                ClassicAssert.AreEqual(key * input, value);
                 lastWriteAddress = readInfo.Address;
                 output = value + AddValue;
                 return true;
@@ -55,9 +56,9 @@ namespace Tsavorite.test.InputOutputParameterTests
             /// <inheritdoc/>
             public override void PostSingleWriter(ref int key, ref int input, ref int src, ref int dst, ref int output, ref UpsertInfo upsertInfo, WriteReason reasons)
             {
-                Assert.AreEqual(lastWriteAddress, upsertInfo.Address);
-                Assert.AreEqual(key * input, dst);
-                Assert.AreEqual(dst, output);
+                ClassicAssert.AreEqual(lastWriteAddress, upsertInfo.Address);
+                ClassicAssert.AreEqual(key * input, dst);
+                ClassicAssert.AreEqual(dst, output);
             }
 
             public override bool InPlaceUpdater(ref int key, ref int input, ref int value, ref int output, ref RMWInfo rmwInfo, ref RecordInfo recordInfo)
@@ -72,9 +73,9 @@ namespace Tsavorite.test.InputOutputParameterTests
             /// <inheritdoc/>
             public override void PostInitialUpdater(ref int key, ref int input, ref int value, ref int output, ref RMWInfo rmwInfo)
             {
-                Assert.AreEqual(lastWriteAddress, rmwInfo.Address);
-                Assert.AreEqual(key * input, value);
-                Assert.AreEqual(value, output);
+                ClassicAssert.AreEqual(lastWriteAddress, rmwInfo.Address);
+                ClassicAssert.AreEqual(key * input, value);
+                ClassicAssert.AreEqual(value, output);
             }
         }
 
@@ -132,16 +133,16 @@ namespace Tsavorite.test.InputOutputParameterTests
                     if (loading)
                     {
                         if (useRMW)
-                            Assert.IsFalse(status.Found, status.ToString());
+                            ClassicAssert.IsFalse(status.Found, status.ToString());
                         else
-                            Assert.IsTrue(status.Record.Created, status.ToString());
-                        Assert.AreEqual(tailAddress, session.functions.lastWriteAddress);
+                            ClassicAssert.IsTrue(status.Record.Created, status.ToString());
+                        ClassicAssert.AreEqual(tailAddress, session.functions.lastWriteAddress);
                     }
                     else
-                        Assert.IsTrue(status.Record.InPlaceUpdated, status.ToString());
+                        ClassicAssert.IsTrue(status.Record.InPlaceUpdated, status.ToString());
 
-                    Assert.AreEqual(key * input, output);
-                    Assert.AreEqual(session.functions.lastWriteAddress, recordMetadata.Address);
+                    ClassicAssert.AreEqual(key * input, output);
+                    ClassicAssert.AreEqual(session.functions.lastWriteAddress, recordMetadata.Address);
                 }
             }
 
@@ -150,7 +151,7 @@ namespace Tsavorite.test.InputOutputParameterTests
                 for (int key = 0; key < NumRecs; ++key)
                 {
                     _ = bContext.Read(ref key, ref input, ref output);
-                    Assert.AreEqual(key * input + AddValue, output);
+                    ClassicAssert.AreEqual(key * input + AddValue, output);
                 }
             }
 
