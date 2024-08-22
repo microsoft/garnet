@@ -185,8 +185,8 @@ namespace Garnet.server
 
         #region Increment (INCR, INCRBY, DECR, DECRBY)
         /// <inheritdoc />
-        public GarnetStatus Increment(ArgSlice key, ArgSlice input, ref ArgSlice output)
-            => storageSession.Increment(key, input, ref output, ref context);
+        public GarnetStatus Increment(ArgSlice key, ref RawStringInput input, ref ArgSlice output)
+            => storageSession.Increment(key, ref input, ref output, ref context);
 
         /// <inheritdoc />
         public GarnetStatus Increment(ArgSlice key, out long output, long incrementCount = 1)

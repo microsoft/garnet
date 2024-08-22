@@ -41,10 +41,9 @@ namespace Garnet.server
         /// <inheritdoc/>
         public int GetRMWInitialValueLength(ref RawStringInput input)
         {
-            var inputspan = input.AsSpan();
             var inputPtr = input.ToPointer();
-            var cmd = inputspan[0];
-            switch ((RespCommand)cmd)
+            var cmd = input.header.cmd;
+            switch (cmd)
             {
                 case RespCommand.SETBIT:
                     return sizeof(int) + BitmapManager.Length(inputPtr + RespInputHeader.Size);
@@ -67,17 +66,18 @@ namespace Garnet.server
                     return sizeof(int) + valueLength;
 
                 case RespCommand.INCRBY:
-                    if (!IsValidNumber(input.LengthWithoutMetadata - RespInputHeader.Size, inputPtr + RespInputHeader.Size, out var next))
+                    if (!input.parseState.TryGetLong(input.parseStateStartIdx, out var next))
                         return sizeof(int);
-
+                    
                     var fNeg = false;
                     var ndigits = NumUtils.NumDigitsInLong(next, ref fNeg);
 
                     return sizeof(int) + ndigits + (fNeg ? 1 : 0);
 
                 case RespCommand.DECRBY:
-                    if (!IsValidNumber(input.LengthWithoutMetadata - RespInputHeader.Size, inputPtr + RespInputHeader.Size, out next))
+                    if (!input.parseState.TryGetLong(input.parseStateStartIdx, out next))
                         return sizeof(int);
+
                     next = -next;
 
                     fNeg = false;
@@ -86,9 +86,9 @@ namespace Garnet.server
                     return sizeof(int) + ndigits + (fNeg ? 1 : 0);
 
                 default:
-                    if (cmd >= 200)
+                    if ((byte)cmd >= 200)
                     {
-                        var functions = functionsState.customCommands[cmd - 200].functions;
+                        var functions = functionsState.customCommands[(byte)cmd - 200].functions;
                         // Compute metadata size for result
                         int metadataSize = input.ExtraMetadata switch
                         {
@@ -105,21 +105,19 @@ namespace Garnet.server
         /// <inheritdoc/>
         public int GetRMWModifiedValueLength(ref SpanByte t, ref RawStringInput input)
         {
-            if (input.Length > 0)
+            if (input.header.cmd != RespCommand.NONE)
             {
-                var inputspan = input.AsSpan();
                 var inputPtr = input.ToPointer();
-                var cmd = inputspan[0];
-                switch ((RespCommand)cmd)
+                var cmd = input.header.cmd;
+                switch (cmd)
                 {
                     case RespCommand.INCR:
                     case RespCommand.INCRBY:
-                        var datalen = inputspan.Length - RespInputHeader.Size;
-                        var slicedInputData = inputspan.Slice(RespInputHeader.Size, datalen);
+                        // We don't need to TryGetLong here because InPlaceUpdater will raise an error before we reach this point
+                        var incrByValue = input.parseState.GetLong(input.parseStateStartIdx);
 
-                        // We don't need to TryParse here because InPlaceUpdater will raise an error before we reach this point
                         var curr = NumUtils.BytesToLong(t.AsSpan());
-                        var next = curr + NumUtils.BytesToLong(slicedInputData);
+                        var next = curr + incrByValue;
 
                         var fNeg = false;
                         var ndigits = NumUtils.NumDigitsInLong(next, ref fNeg);
@@ -129,13 +127,11 @@ namespace Garnet.server
 
                     case RespCommand.DECR:
                     case RespCommand.DECRBY:
-                        datalen = inputspan.Length - RespInputHeader.Size;
-                        slicedInputData = inputspan.Slice(RespInputHeader.Size, datalen);
+                        // We don't need to TryGetLong here because InPlaceUpdater will raise an error before we reach this point
+                        var decrByValue = input.parseState.GetLong(input.parseStateStartIdx);
 
-                        // We don't need to TryParse here because InPlaceUpdater will raise an error before we reach this point
                         curr = NumUtils.BytesToLong(t.AsSpan());
-                        var decrBy = NumUtils.BytesToLong(slicedInputData);
-                        next = curr + (cmd == (byte)RespCommand.DECR ? decrBy : -decrBy);
+                        next = curr + (cmd == RespCommand.DECR ? decrByValue : -decrByValue);
 
                         fNeg = false;
                         ndigits = NumUtils.NumDigitsInLong(next, ref fNeg);
@@ -190,9 +186,9 @@ namespace Garnet.server
                         return sizeof(int) + t.Length + valueLength;
 
                     default:
-                        if (cmd >= 200)
+                        if ((byte)cmd >= 200)
                         {
-                            var functions = functionsState.customCommands[cmd - 200].functions;
+                            var functions = functionsState.customCommands[(byte)cmd - 200].functions;
                             // compute metadata for result
                             int metadataSize = input.ExtraMetadata switch
                             {

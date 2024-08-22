@@ -137,16 +137,14 @@ namespace Garnet.server
                 case RespCommand.INCRBY:
                     value.UnmarkExtraMetadata();
                     // Check if input contains a valid number
-                    length = input.LengthWithoutMetadata - RespInputHeader.Size;
-                    if (!IsValidNumber(length, inputPtr + RespInputHeader.Size, output.SpanByte.AsSpan(), out var incrBy))
+                    if (!input.parseState.TryGetLong(input.parseStateStartIdx, out var incrBy))
                         return false;
                     CopyUpdateNumber(incrBy, ref value, ref output);
                     break;
                 case RespCommand.DECRBY:
                     value.UnmarkExtraMetadata();
                     // Check if input contains a valid number
-                    length = input.LengthWithoutMetadata - RespInputHeader.Size;
-                    if (!IsValidNumber(length, inputPtr + RespInputHeader.Size, output.SpanByte.AsSpan(), out var decrBy))
+                    if (!input.parseState.TryGetLong(input.parseStateStartIdx, out var decrBy))
                         return false;
                     CopyUpdateNumber(-decrBy, ref value, ref output);
                     break;
@@ -313,16 +311,14 @@ namespace Garnet.server
                     return TryInPlaceUpdateNumber(ref value, ref output, ref rmwInfo, ref recordInfo, input: -1);
 
                 case RespCommand.INCRBY:
-                    var length = input.LengthWithoutMetadata - RespInputHeader.Size;
                     // Check if input contains a valid number
-                    if (!input.parseState.TryGetLong(0, out var incrBy))
+                    if (!input.parseState.TryGetLong(input.parseStateStartIdx, out var incrBy))
                         return true;
                     return TryInPlaceUpdateNumber(ref value, ref output, ref rmwInfo, ref recordInfo, input: incrBy);
 
                 case RespCommand.DECRBY:
-                    length = input.LengthWithoutMetadata - RespInputHeader.Size;
                     // Check if input contains a valid number
-                    if (!input.parseState.TryGetLong(0, out var decrBy))
+                    if (!input.parseState.TryGetLong(input.parseStateStartIdx, out var decrBy))
                         return true;
                     return TryInPlaceUpdateNumber(ref value, ref output, ref rmwInfo, ref recordInfo, input: -decrBy);
 
@@ -591,9 +587,8 @@ namespace Garnet.server
                     break;
 
                 case RespCommand.INCRBY:
-                    var length = input.LengthWithoutMetadata - RespInputHeader.Size;
                     // Check if input contains a valid number
-                    if (!IsValidNumber(length, input.ToPointer() + RespInputHeader.Size, output.SpanByte.AsSpan(), out var incrBy))
+                    if (!input.parseState.TryGetLong(input.parseStateStartIdx, out var incrBy))
                     {
                         // Move to tail of the log
                         oldValue.CopyTo(ref newValue);
@@ -603,9 +598,8 @@ namespace Garnet.server
                     break;
 
                 case RespCommand.DECRBY:
-                    length = input.LengthWithoutMetadata - RespInputHeader.Size;
                     // Check if input contains a valid number
-                    if (!IsValidNumber(length, input.ToPointer() + RespInputHeader.Size, output.SpanByte.AsSpan(), out var decrBy))
+                    if (!input.parseState.TryGetLong(input.parseStateStartIdx, out var decrBy))
                     {
                         // Move to tail of the log
                         oldValue.CopyTo(ref newValue);

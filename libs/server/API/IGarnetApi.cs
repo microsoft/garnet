@@ -184,7 +184,7 @@ namespace Garnet.server
         /// <param name="input"></param>
         /// <param name="output"></param>
         /// <returns></returns>
-        GarnetStatus Increment(ArgSlice key, ArgSlice input, ref ArgSlice output);
+        GarnetStatus Increment(ArgSlice key, ref RawStringInput input, ref ArgSlice output);
 
         /// <summary>
         /// Increment (INCR, INCRBY)

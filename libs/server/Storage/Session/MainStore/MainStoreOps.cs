@@ -888,16 +888,13 @@ namespace Garnet.server
             return GarnetStatus.OK;
         }
 
-        public GarnetStatus Increment<TContext>(ArgSlice key, ArgSlice input, ref ArgSlice output, ref TContext context)
+        public GarnetStatus Increment<TContext>(ArgSlice key, ref RawStringInput input, ref ArgSlice output, ref TContext context)
             where TContext : ITsavoriteContext<SpanByte, SpanByte, RawStringInput, SpanByteAndMemory, long, MainSessionFunctions, MainStoreFunctions, MainStoreAllocator>
         {
-            var inputHeader = new RawStringInput();
-
             var _key = key.SpanByte;
-            var _input = input.SpanByte;
             SpanByteAndMemory _output = new(output.SpanByte);
 
-            var status = context.RMW(ref _key, ref inputHeader, ref _output);
+            var status = context.RMW(ref _key, ref input, ref _output);
             if (status.IsPending)
                 CompletePendingForSession(ref status, ref _output, ref context);
             Debug.Assert(_output.IsSpanByte);

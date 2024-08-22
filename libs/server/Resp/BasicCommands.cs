@@ -204,57 +204,6 @@ namespace Garnet.server
             return true;
         }
 
-        bool ParseGETAndKey(ref SpanByte key)
-        {
-            var oldEndReadHead = readHead = endReadHead;
-            var cmd = ParseCommand(out var success);
-            if (!success || cmd != RespCommand.GET)
-            {
-                // If we either find no command or a different command, we back off
-                endReadHead = readHead = oldEndReadHead;
-                return false;
-            }
-            key = parseState.GetArgSliceByRef(0).SpanByte;
-            return true;
-        }
-
-        static void SetResult(int c, ref int firstPending, ref (GarnetStatus, SpanByteAndMemory)[] outputArr,
-            GarnetStatus status, SpanByteAndMemory output)
-        {
-            const int initialBatchSize = 8; // number of items in initial batch
-            if (firstPending == -1)
-            {
-                outputArr = new (GarnetStatus, SpanByteAndMemory)[initialBatchSize];
-                firstPending = c;
-            }
-
-            Debug.Assert(firstPending >= 0);
-            Debug.Assert(c >= firstPending);
-            Debug.Assert(outputArr != null);
-
-            if (c - firstPending >= outputArr.Length)
-            {
-                int newCount = (int)NextPowerOf2(c - firstPending + 1);
-                var outputArr2 = new (GarnetStatus, SpanByteAndMemory)[newCount];
-                Array.Copy(outputArr, outputArr2, outputArr.Length);
-                outputArr = outputArr2;
-            }
-
-            outputArr[c - firstPending] = (status, output);
-        }
-
-        static long NextPowerOf2(long v)
-        {
-            v--;
-            v |= v >> 1;
-            v |= v >> 2;
-            v |= v >> 4;
-            v |= v >> 8;
-            v |= v >> 16;
-            v |= v >> 32;
-            return v + 1;
-        }
-
         /// <summary>
         /// SET
         /// </summary>
@@ -719,42 +668,40 @@ namespace Garnet.server
 
             var key = parseState.GetArgSliceByRef(0);
 
-            ArgSlice input = default;
-            if (cmd == RespCommand.INCRBY || cmd == RespCommand.DECRBY)
+            var inputHeader = new RawStringInput
             {
-                // Parse value argument
-                // NOTE: Parse empty strings for better error messages through storageApi.Increment
-                var sbVal = parseState.GetArgSliceByRef(1).SpanByte;
-                var valPtr = sbVal.ToPointer() - RespInputHeader.Size;
-                var vSize = sbVal.Length + RespInputHeader.Size;
-                ((RespInputHeader*)valPtr)->cmd = cmd;
-                ((RespInputHeader*)valPtr)->flags = 0;
-                input = new ArgSlice(valPtr, vSize);
-            }
-            else if (cmd == RespCommand.INCR)
-            {
-                var vSize = RespInputHeader.Size + 1;
-                var valPtr = stackalloc byte[vSize];
-                ((RespInputHeader*)valPtr)->cmd = cmd;
-                ((RespInputHeader*)valPtr)->flags = 0;
-                *(valPtr + RespInputHeader.Size) = (byte)'1';
-                input = new ArgSlice(valPtr, vSize);
-            }
-            else if (cmd == RespCommand.DECR)
-            {
-                var vSize = RespInputHeader.Size + 2;
-                var valPtr = stackalloc byte[vSize];
-                ((RespInputHeader*)valPtr)->cmd = cmd;
-                ((RespInputHeader*)valPtr)->flags = 0;
-                *(valPtr + RespInputHeader.Size) = (byte)'-';
-                *(valPtr + RespInputHeader.Size + 1) = (byte)'1';
-                input = new ArgSlice(valPtr, vSize);
-            }
+                header = new RespInputHeader { cmd = cmd }
+            };
 
             Span<byte> outputBuffer = stackalloc byte[NumUtils.MaximumFormatInt64Length + 1];
             var output = ArgSlice.FromPinnedSpan(outputBuffer);
 
-            storageApi.Increment(key, input, ref output);
+            if (cmd == RespCommand.INCRBY || cmd == RespCommand.DECRBY)
+            {
+                inputHeader.parseState = parseState;
+                inputHeader.parseStateStartIdx = 1;
+                storageApi.Increment(key, ref inputHeader, ref output);
+            }
+            else if (cmd == RespCommand.INCR || cmd == RespCommand.DECR)
+            {
+                var value = cmd == RespCommand.INCR ? "1" : "-1";
+                var valueBytes = Encoding.ASCII.GetBytes(value);
+
+                fixed (byte* ptr = valueBytes)
+                {
+                    // Prepare the parse state
+                    var valueSlice = new ArgSlice(ptr, valueBytes.Length);
+
+                    var tmpParseState = new SessionParseState();
+                    ArgSlice[] tmpParseStateBuffer = default;
+                    tmpParseState.InitializeWithArguments(ref tmpParseStateBuffer, valueSlice);
+
+                    inputHeader.parseState = tmpParseState;
+                    inputHeader.parseStateStartIdx = 0;
+                    storageApi.Increment(key, ref inputHeader, ref output);
+                }
+            }
+
             var errorFlag = output.Length == NumUtils.MaximumFormatInt64Length + 1
                 ? (OperationError)output.Span[0]
                 : OperationError.SUCCESS;
@@ -1474,6 +1421,57 @@ namespace Garnet.server
         {
             storeWrapper.store.Log.ShiftBeginAddress(storeWrapper.store.Log.TailAddress, truncateLog: unsafeTruncateLog);
             storeWrapper.objectStore?.Log.ShiftBeginAddress(storeWrapper.objectStore.Log.TailAddress, truncateLog: unsafeTruncateLog);
+        }
+
+        bool ParseGETAndKey(ref SpanByte key)
+        {
+            var oldEndReadHead = readHead = endReadHead;
+            var cmd = ParseCommand(out var success);
+            if (!success || cmd != RespCommand.GET)
+            {
+                // If we either find no command or a different command, we back off
+                endReadHead = readHead = oldEndReadHead;
+                return false;
+            }
+            key = parseState.GetArgSliceByRef(0).SpanByte;
+            return true;
+        }
+
+        static void SetResult(int c, ref int firstPending, ref (GarnetStatus, SpanByteAndMemory)[] outputArr,
+            GarnetStatus status, SpanByteAndMemory output)
+        {
+            const int initialBatchSize = 8; // number of items in initial batch
+            if (firstPending == -1)
+            {
+                outputArr = new (GarnetStatus, SpanByteAndMemory)[initialBatchSize];
+                firstPending = c;
+            }
+
+            Debug.Assert(firstPending >= 0);
+            Debug.Assert(c >= firstPending);
+            Debug.Assert(outputArr != null);
+
+            if (c - firstPending >= outputArr.Length)
+            {
+                int newCount = (int)NextPowerOf2(c - firstPending + 1);
+                var outputArr2 = new (GarnetStatus, SpanByteAndMemory)[newCount];
+                Array.Copy(outputArr, outputArr2, outputArr.Length);
+                outputArr = outputArr2;
+            }
+
+            outputArr[c - firstPending] = (status, output);
+        }
+
+        static long NextPowerOf2(long v)
+        {
+            v--;
+            v |= v >> 1;
+            v |= v >> 2;
+            v |= v >> 4;
+            v |= v >> 8;
+            v |= v >> 16;
+            v |= v >> 32;
+            return v + 1;
         }
     }
 }
