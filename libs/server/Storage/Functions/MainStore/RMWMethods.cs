@@ -138,14 +138,20 @@ namespace Garnet.server
                     value.UnmarkExtraMetadata();
                     // Check if input contains a valid number
                     if (!input.parseState.TryGetLong(input.parseStateStartIdx, out var incrBy))
-                        return false;
+                    {
+                        output.SpanByte.AsSpan()[0] = (byte)OperationError.INVALID_TYPE;
+                        return true;
+                    }
                     CopyUpdateNumber(incrBy, ref value, ref output);
                     break;
                 case RespCommand.DECRBY:
                     value.UnmarkExtraMetadata();
                     // Check if input contains a valid number
                     if (!input.parseState.TryGetLong(input.parseStateStartIdx, out var decrBy))
-                        return false;
+                    {
+                        output.SpanByte.AsSpan()[0] = (byte)OperationError.INVALID_TYPE;
+                        return true;
+                    }
                     CopyUpdateNumber(-decrBy, ref value, ref output);
                     break;
                 default:
@@ -313,13 +319,19 @@ namespace Garnet.server
                 case RespCommand.INCRBY:
                     // Check if input contains a valid number
                     if (!input.parseState.TryGetLong(input.parseStateStartIdx, out var incrBy))
+                    {
+                        output.SpanByte.AsSpan()[0] = (byte)OperationError.INVALID_TYPE;
                         return true;
+                    }
                     return TryInPlaceUpdateNumber(ref value, ref output, ref rmwInfo, ref recordInfo, input: incrBy);
 
                 case RespCommand.DECRBY:
                     // Check if input contains a valid number
                     if (!input.parseState.TryGetLong(input.parseStateStartIdx, out var decrBy))
+                    {
+                        output.SpanByte.AsSpan()[0] = (byte)OperationError.INVALID_TYPE;
                         return true;
+                    }
                     return TryInPlaceUpdateNumber(ref value, ref output, ref rmwInfo, ref recordInfo, input: -decrBy);
 
                 case RespCommand.SETBIT:
