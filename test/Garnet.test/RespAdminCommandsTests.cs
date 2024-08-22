@@ -8,6 +8,7 @@ using System.Threading;
 using System.Threading.Tasks;
 using Garnet.server;
 using NUnit.Framework;
+using NUnit.Framework.Legacy;
 using StackExchange.Redis;
 using NotImplementedException = System.NotImplementedException;
 
@@ -42,7 +43,7 @@ namespace Garnet.test
             var expectedResponse = "+PONG\r\n";
             var response = lightClientRequest.SendCommand("PING");
             var actualValue = Encoding.ASCII.GetString(response).Substring(0, expectedResponse.Length);
-            Assert.AreEqual(expectedResponse, actualValue);
+            ClassicAssert.AreEqual(expectedResponse, actualValue);
         }
 
         [Test]
@@ -52,7 +53,7 @@ namespace Garnet.test
             var expectedResponse = "$5\r\nHELLO\r\n";
             var response = lightClientRequest.SendCommand("PING HELLO");
             var actualValue = Encoding.ASCII.GetString(response).Substring(0, expectedResponse.Length);
-            Assert.AreEqual(expectedResponse, actualValue);
+            ClassicAssert.AreEqual(expectedResponse, actualValue);
         }
 
         [Test]
@@ -62,7 +63,7 @@ namespace Garnet.test
             var expectedResponse = $"-{string.Format(CmdStrings.GenericErrWrongNumArgs, $"{nameof(RespCommand.PING)}")}\r\n";
             var response = lightClientRequest.SendCommand("PING HELLO WORLD", 1);
             var actualValue = Encoding.ASCII.GetString(response).Substring(0, expectedResponse.Length);
-            Assert.AreEqual(expectedResponse, actualValue);
+            ClassicAssert.AreEqual(expectedResponse, actualValue);
         }
 
         [Test]
@@ -72,7 +73,7 @@ namespace Garnet.test
             var expectedResponse = $"-{string.Format(CmdStrings.GenericErrWrongNumArgs, $"{nameof(RespCommand.ECHO)}")}\r\n";
             var response = lightClientRequest.SendCommand("ECHO", 1);
             var actualValue = Encoding.ASCII.GetString(response).Substring(0, expectedResponse.Length);
-            Assert.AreEqual(expectedResponse, actualValue);
+            ClassicAssert.AreEqual(expectedResponse, actualValue);
         }
 
 
@@ -83,10 +84,10 @@ namespace Garnet.test
             var expectedResponse = $"-{string.Format(CmdStrings.GenericErrWrongNumArgs, $"{nameof(RespCommand.ECHO)}")}\r\n";
             var response = lightClientRequest.SendCommand("ECHO HELLO WORLD", 1);
             var actualValue = Encoding.ASCII.GetString(response).Substring(0, expectedResponse.Length);
-            Assert.AreEqual(expectedResponse, actualValue);
+            ClassicAssert.AreEqual(expectedResponse, actualValue);
             response = lightClientRequest.SendCommand("ECHO HELLO WORLD WORLD2", 1);
             actualValue = Encoding.ASCII.GetString(response).Substring(0, expectedResponse.Length);
-            Assert.AreEqual(expectedResponse, actualValue);
+            ClassicAssert.AreEqual(expectedResponse, actualValue);
         }
 
         [Test]
@@ -96,7 +97,7 @@ namespace Garnet.test
             var expectedResponse = "$5\r\nHELLO\r\n";
             var response = lightClientRequest.SendCommand("ECHO HELLO", 1);
             var actualValue = Encoding.ASCII.GetString(response).Substring(0, expectedResponse.Length);
-            Assert.AreEqual(expectedResponse, actualValue);
+            ClassicAssert.AreEqual(expectedResponse, actualValue);
         }
 
         [Test]
@@ -107,7 +108,7 @@ namespace Garnet.test
             var expectedResponse = $"-{wrongNumMessage}\r\n$5\r\nHELLO\r\n";
             var response = lightClientRequest.SendCommands("ECHO HELLO WORLD WORLD2", "ECHO HELLO", 1, 1);
             var actualValue = Encoding.ASCII.GetString(response).Substring(0, expectedResponse.Length);
-            Assert.AreEqual(expectedResponse, actualValue);
+            ClassicAssert.AreEqual(expectedResponse, actualValue);
         }
 
 
@@ -119,7 +120,7 @@ namespace Garnet.test
             var expectedResponse = "*2\r\n$10\r\n1626282789\r\n$6\r\n621362\r\n";
             var response = lightClientRequest.SendCommand("TIME", 3);
             var actualValue = Encoding.ASCII.GetString(response).Substring(0, expectedResponse.Length);
-            Assert.AreEqual(expectedResponse.Length, actualValue.Length);
+            ClassicAssert.AreEqual(expectedResponse.Length, actualValue.Length);
         }
 
 
@@ -130,7 +131,7 @@ namespace Garnet.test
             var expectedResponse = $"-{string.Format(CmdStrings.GenericErrWrongNumArgs, nameof(RespCommand.TIME))}\r\n";
             var response = lightClientRequest.SendCommand("TIME HELLO");
             var actualValue = Encoding.ASCII.GetString(response).Substring(0, expectedResponse.Length);
-            Assert.AreEqual(expectedResponse, actualValue);
+            ClassicAssert.AreEqual(expectedResponse, actualValue);
         }
 
         #endregion
@@ -146,7 +147,7 @@ namespace Garnet.test
             var lastSave = server.LastSave();
 
             // Check no saves present
-            Assert.AreEqual(DateTimeOffset.FromUnixTimeSeconds(0).Ticks, lastSave.Ticks);
+            ClassicAssert.AreEqual(DateTimeOffset.FromUnixTimeSeconds(0).Ticks, lastSave.Ticks);
 
             // Issue background save
             server.Save(SaveType.BackgroundSave);
@@ -183,7 +184,7 @@ namespace Garnet.test
             {
                 var db = redis.GetDatabase(0);
                 var recoveredValue = db.StringGet("SeSaveRecoverTestKey");
-                Assert.AreEqual("SeSaveRecoverTestValue", recoveredValue.ToString());
+                ClassicAssert.AreEqual("SeSaveRecoverTestValue", recoveredValue.ToString());
             }
         }
 
@@ -199,7 +200,7 @@ namespace Garnet.test
                 db.ListLeftPush(key, ldata);
                 ldata = ldata.Select(x => x).Reverse().ToArray();
                 returned_data_before_recovery = db.ListRange(key);
-                Assert.AreEqual(ldata, returned_data_before_recovery);
+                ClassicAssert.AreEqual(ldata, returned_data_before_recovery);
 
                 // Issue and wait for DB save
                 var server = redis.GetServer($"{TestUtils.Address}:{TestUtils.Port}");
@@ -215,9 +216,9 @@ namespace Garnet.test
             {
                 var db = redis.GetDatabase(0);
                 var returnedData = db.ListRange(key);
-                Assert.AreEqual(returned_data_before_recovery, returnedData);
-                Assert.AreEqual(ldata.Length, returnedData.Length);
-                Assert.AreEqual(ldata, returnedData);
+                ClassicAssert.AreEqual(returned_data_before_recovery, returnedData);
+                ClassicAssert.AreEqual(ldata.Length, returnedData.Length);
+                ClassicAssert.AreEqual(ldata, returnedData);
             }
         }
 
@@ -238,7 +239,7 @@ namespace Garnet.test
                 var db = redis.GetDatabase(0);
                 db.Execute("MYDICTSET", key, field, value);
                 var retValue = db.Execute("MYDICTGET", key, field);
-                Assert.AreEqual(value, (string)retValue);
+                ClassicAssert.AreEqual(value, (string)retValue);
 
                 // Issue and wait for DB save
                 var server = redis.GetServer($"{TestUtils.Address}:{TestUtils.Port}");
@@ -256,7 +257,7 @@ namespace Garnet.test
             {
                 var db = redis.GetDatabase(0);
                 var retValue = db.Execute("MYDICTGET", key, field);
-                Assert.AreEqual(value, (string)retValue);
+                ClassicAssert.AreEqual(value, (string)retValue);
             }
         }
 
@@ -266,10 +267,10 @@ namespace Garnet.test
             static void ValidateServerData(IDatabase db, string strKey, string strValue, string listKey, string listValue)
             {
                 var retValue = db.StringGet(strKey);
-                Assert.AreEqual(strValue, (string)retValue);
+                ClassicAssert.AreEqual(strValue, (string)retValue);
                 var retList = db.ListRange(listKey);
-                Assert.AreEqual(1, retList.Length);
-                Assert.AreEqual(listValue, (string)retList[0]);
+                ClassicAssert.AreEqual(1, retList.Length);
+                ClassicAssert.AreEqual(listValue, (string)retList[0]);
             }
 
             var strKey = "StrKey";
@@ -325,7 +326,7 @@ namespace Garnet.test
                     db.ListLeftPush($"SeSaveRecoverTestKey{i:0000}", ldata);
 
                 for (int i = 0; i < 3000; i++)
-                    Assert.AreEqual(ldataArr, db.ListRange($"SeSaveRecoverTestKey{i:0000}"), $"key {i:0000}");
+                    ClassicAssert.AreEqual(ldataArr, db.ListRange($"SeSaveRecoverTestKey{i:0000}"), $"key {i:0000}");
 
                 // Issue and wait for DB save
                 var server = redis.GetServer($"{TestUtils.Address}:{TestUtils.Port}");
@@ -337,7 +338,7 @@ namespace Garnet.test
             server = TestUtils.CreateGarnetServer(TestUtils.MethodTestDir, tryRecover: true, lowMemory: true, MemorySize: sizeToString(recoveryMemorySize), PageSize: sizeToString(pageSize), objectStoreTotalMemorySize: "64k");
             server.Start();
 
-            Assert.LessOrEqual(server.Provider.StoreWrapper.objectStore.MaxAllocatedPageCount, (recoveryMemorySize / pageSize) + 1);
+            ClassicAssert.LessOrEqual(server.Provider.StoreWrapper.objectStore.MaxAllocatedPageCount, (recoveryMemorySize / pageSize) + 1);
             using (var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig(allowAdmin: true)))
             {
                 var db = redis.GetDatabase(0);
@@ -345,7 +346,7 @@ namespace Garnet.test
                     db.ListLeftPush($"SeSaveRecoverTestKey{i:0000}", ldata);
 
                 for (var i = 0; i < 3100; i++)
-                    Assert.AreEqual(ldataArr, db.ListRange($"SeSaveRecoverTestKey{i:0000}"), $"key {i:0000}");
+                    ClassicAssert.AreEqual(ldataArr, db.ListRange($"SeSaveRecoverTestKey{i:0000}"), $"key {i:0000}");
             }
         }
 
@@ -376,7 +377,7 @@ namespace Garnet.test
                 for (int i = 0; i < 1000; i++)
                 {
                     var recoveredValue = db.StringGet($"SeSaveRecoverTestKey{i:0000}");
-                    Assert.AreEqual("SeSaveRecoverTestValue", recoveredValue.ToString());
+                    ClassicAssert.AreEqual("SeSaveRecoverTestValue", recoveredValue.ToString());
                 }
 
                 var inforesult = db.Execute("INFO");
@@ -394,7 +395,7 @@ namespace Garnet.test
                 for (int i = 1000; i < 2000; i++)
                 {
                     var recoveredValue = db.StringGet($"SeSaveRecoverTestKey{i:0000}");
-                    Assert.AreEqual("SeSaveRecoverTestValue", recoveredValue.ToString());
+                    ClassicAssert.AreEqual("SeSaveRecoverTestValue", recoveredValue.ToString());
                 }
 
                 db.Execute("COMMITAOF");
@@ -410,7 +411,7 @@ namespace Garnet.test
                 for (int i = 0; i < 2000; i++)
                 {
                     var recoveredValue = db.StringGet($"SeSaveRecoverTestKey{i:0000}");
-                    Assert.AreEqual("SeSaveRecoverTestValue", recoveredValue.ToString(), $"Key SeSaveRecoverTestKey{i:0000}");
+                    ClassicAssert.AreEqual("SeSaveRecoverTestValue", recoveredValue.ToString(), $"Key SeSaveRecoverTestKey{i:0000}");
                 }
             }
         }
@@ -438,7 +439,7 @@ namespace Garnet.test
             {
                 var db = redis.GetDatabase(0);
                 var recoveredValue = db.StringGet("SeAofRecoverTestKey");
-                Assert.AreEqual("SeAofRecoverTestValue", recoveredValue.ToString());
+                ClassicAssert.AreEqual("SeAofRecoverTestValue", recoveredValue.ToString());
             }
         }
 
@@ -454,7 +455,7 @@ namespace Garnet.test
             db.StringSet("mykey", origValue);
 
             string retValue = db.StringGet("mykey");
-            Assert.AreEqual(origValue, retValue);
+            ClassicAssert.AreEqual(origValue, retValue);
 
             switch (cmd)
             {
@@ -469,7 +470,7 @@ namespace Garnet.test
             }
 
             retValue = db.StringGet("mykey");
-            Assert.AreEqual(null, retValue);
+            ClassicAssert.AreEqual(null, retValue);
         }
 
         [Test]
@@ -479,7 +480,7 @@ namespace Garnet.test
             var db = redis.GetDatabase(0);
             var expectedResponse = "PONG";
             var actualValue = db.Execute("PING").ToString();
-            Assert.AreEqual(expectedResponse, actualValue);
+            ClassicAssert.AreEqual(expectedResponse, actualValue);
         }
 
 
@@ -490,7 +491,7 @@ namespace Garnet.test
             var db = redis.GetDatabase(0);
             var expectedResponse = "HELLO";
             var actualValue = db.Execute("PING", "HELLO").ToString();
-            Assert.AreEqual(expectedResponse, actualValue);
+            ClassicAssert.AreEqual(expectedResponse, actualValue);
         }
 
 
@@ -519,7 +520,7 @@ namespace Garnet.test
             var db = redis.GetDatabase(0);
             var expectedResponse = "HELLO";
             var actualValue = db.Execute("ECHO", "HELLO").ToString();
-            Assert.AreEqual(expectedResponse, actualValue);
+            ClassicAssert.AreEqual(expectedResponse, actualValue);
         }
 
 
@@ -531,8 +532,8 @@ namespace Garnet.test
             var actualValue = db.Execute("TIME");
             var seconds = ((RedisValue[])actualValue)[0];
             var microsecs = ((RedisValue[])actualValue)[1];
-            Assert.AreEqual(seconds.ToString().Length, 10);
-            Assert.AreEqual(microsecs.ToString().Length, 6);
+            ClassicAssert.AreEqual(seconds.ToString().Length, 10);
+            ClassicAssert.AreEqual(microsecs.ToString().Length, 6);
         }
 
 
@@ -555,7 +556,7 @@ namespace Garnet.test
 
             db.StringSet(key, value);
             var _value = db.StringGet(key);
-            Assert.AreEqual(value, (string)_value);
+            ClassicAssert.AreEqual(value, (string)_value);
             string[] p = default;
 
             if (async && unsafetruncatelog)
@@ -579,7 +580,7 @@ namespace Garnet.test
                 _value = db.StringGet(key);
             }
 
-            Assert.IsTrue(_value.IsNull);
+            ClassicAssert.IsTrue(_value.IsNull);
         }
 
         [Test]
@@ -596,8 +597,8 @@ namespace Garnet.test
 
             var result = (string[])db.Execute("CONFIG", "GET", parameter);
 
-            Assert.AreEqual(parameter, result[0]);
-            Assert.AreEqual(parameterValue, result[1]);
+            ClassicAssert.AreEqual(parameter, result[0]);
+            ClassicAssert.AreEqual(parameterValue, result[1]);
         }
 
         #endregion
@@ -618,7 +619,7 @@ namespace Garnet.test
             {
                 var expectedMessage = string.Format(CmdStrings.GenericErrWrongNumArgs,
                     $"{nameof(RespCommand.CONFIG)}");
-                Assert.AreEqual(expectedMessage, ex.Message);
+                ClassicAssert.AreEqual(expectedMessage, ex.Message);
             }
         }
 
@@ -636,7 +637,7 @@ namespace Garnet.test
             {
                 var expectedMessage = Encoding.ASCII.GetBytes(string.Format(CmdStrings.GenericErrWrongNumArgs,
                     $"{nameof(RespCommand.CONFIG)}|{nameof(CmdStrings.GET)}"));
-                Assert.AreEqual(expectedMessage, ex.Message);
+                ClassicAssert.AreEqual(expectedMessage, ex.Message);
             }
         }
         #endregion

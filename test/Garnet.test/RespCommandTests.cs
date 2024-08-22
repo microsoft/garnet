@@ -9,6 +9,7 @@ using System.Reflection;
 using System.Runtime.InteropServices;
 using Garnet.server;
 using NUnit.Framework;
+using NUnit.Framework.Legacy;
 using StackExchange.Redis;
 
 namespace Garnet.test
@@ -29,10 +30,10 @@ namespace Garnet.test
         {
             TestUtils.DeleteDirectory(TestUtils.MethodTestDir, wait: true);
             extTestDir = Path.Combine(TestUtils.MethodTestDir, "test");
-            Assert.IsTrue(RespCommandsInfo.TryGetRespCommandsInfo(out respCommandsInfo, externalOnly: true));
-            Assert.IsTrue(TestUtils.TryGetCustomCommandsInfo(out respCustomCommandsInfo));
-            Assert.IsNotNull(respCommandsInfo);
-            Assert.IsNotNull(respCustomCommandsInfo);
+            ClassicAssert.IsTrue(RespCommandsInfo.TryGetRespCommandsInfo(out respCommandsInfo, externalOnly: true));
+            ClassicAssert.IsTrue(TestUtils.TryGetCustomCommandsInfo(out respCustomCommandsInfo));
+            ClassicAssert.IsNotNull(respCommandsInfo);
+            ClassicAssert.IsNotNull(respCustomCommandsInfo);
             server = TestUtils.CreateGarnetServer(TestUtils.MethodTestDir, disablePubSub: true,
                 extensionBinPaths: [extTestDir]);
             server.Start();
@@ -58,8 +59,8 @@ namespace Garnet.test
             // Get all commands using COMMAND command
             var results = (RedisResult[])db.Execute("COMMAND");
 
-            Assert.IsNotNull(results);
-            Assert.AreEqual(respCommandsInfo.Count, results.Length);
+            ClassicAssert.IsNotNull(results);
+            ClassicAssert.AreEqual(respCommandsInfo.Count, results.Length);
 
             // Register custom commands
             var customCommandsRegistered = RegisterCustomCommands();
@@ -70,8 +71,8 @@ namespace Garnet.test
             // Get all commands (including custom commands) using COMMAND command
             results = (RedisResult[])db.Execute("COMMAND");
 
-            Assert.IsNotNull(results);
-            Assert.AreEqual(respCommandsInfo.Count + customCommandsRegistered.Length + customCommandsRegisteredDyn.Length, results.Length);
+            ClassicAssert.IsNotNull(results);
+            ClassicAssert.AreEqual(respCommandsInfo.Count + customCommandsRegistered.Length + customCommandsRegisteredDyn.Length, results.Length);
         }
 
         /// <summary>
@@ -86,8 +87,8 @@ namespace Garnet.test
             // Get all commands using COMMAND INFO command
             var results = (RedisResult[])db.Execute("COMMAND", "INFO");
 
-            Assert.IsNotNull(results);
-            Assert.AreEqual(respCommandsInfo.Count, results.Length);
+            ClassicAssert.IsNotNull(results);
+            ClassicAssert.AreEqual(respCommandsInfo.Count, results.Length);
 
             // Register custom commands
             var customCommandsRegistered = RegisterCustomCommands();
@@ -98,16 +99,16 @@ namespace Garnet.test
             // Get all commands (including custom commands) using COMMAND INFO command
             results = (RedisResult[])db.Execute("COMMAND", "INFO");
 
-            Assert.IsNotNull(results);
-            Assert.AreEqual(respCommandsInfo.Count + customCommandsRegistered.Length + customCommandsRegisteredDyn.Length, results.Length);
+            ClassicAssert.IsNotNull(results);
+            ClassicAssert.AreEqual(respCommandsInfo.Count + customCommandsRegistered.Length + customCommandsRegisteredDyn.Length, results.Length);
 
-            Assert.IsTrue(results.All(res => res.Length == 10));
-            Assert.IsTrue(results.All(res => (string)res[0] != null));
+            ClassicAssert.IsTrue(results.All(res => res.Length == 10));
+            ClassicAssert.IsTrue(results.All(res => (string)res[0] != null));
             var cmdNameToResult = results.ToDictionary(res => (string)res[0], res => res);
 
             foreach (var cmdName in respCommandsInfo.Keys.Union(customCommandsRegistered).Union(customCommandsRegisteredDyn))
             {
-                Assert.Contains(cmdName, cmdNameToResult.Keys);
+                ClassicAssert.Contains(cmdName, cmdNameToResult.Keys);
                 VerifyCommandInfo(cmdName, cmdNameToResult[cmdName]);
             }
         }
@@ -124,7 +125,7 @@ namespace Garnet.test
             // Get command count
             var commandCount = (int)db.Execute("COMMAND", "COUNT");
 
-            Assert.AreEqual(respCommandsInfo.Count, commandCount);
+            ClassicAssert.AreEqual(respCommandsInfo.Count, commandCount);
 
             // Register custom commands
             var customCommandsRegistered = RegisterCustomCommands();
@@ -135,7 +136,7 @@ namespace Garnet.test
             // Get command count (including custom commands)
             commandCount = (int)db.Execute("COMMAND", "COUNT");
 
-            Assert.AreEqual(respCommandsInfo.Count + customCommandsRegistered.Length + customCommandsRegisteredDyn.Length, commandCount);
+            ClassicAssert.AreEqual(respCommandsInfo.Count + customCommandsRegistered.Length + customCommandsRegisteredDyn.Length, commandCount);
         }
 
         /// <summary>
@@ -157,7 +158,7 @@ namespace Garnet.test
             }
             catch (RedisServerException e)
             {
-                Assert.AreEqual("ERR unknown command", e.Message);
+                ClassicAssert.AreEqual("ERR unknown command", e.Message);
             }
         }
 
@@ -177,8 +178,8 @@ namespace Garnet.test
             // Get basic commands using COMMAND INFO command
             var results = (RedisResult[])db.Execute("COMMAND", args);
 
-            Assert.IsNotNull(results);
-            Assert.AreEqual(commands.Length, results.Length);
+            ClassicAssert.IsNotNull(results);
+            ClassicAssert.AreEqual(commands.Length, results.Length);
 
             for (var i = 0; i < commands.Length; i++)
             {
@@ -209,8 +210,8 @@ namespace Garnet.test
             // Get basic commands using COMMAND INFO command
             var results = (RedisResult[])db.Execute("COMMAND", args);
 
-            Assert.IsNotNull(results);
-            Assert.AreEqual(commands.Length, results.Length);
+            ClassicAssert.IsNotNull(results);
+            ClassicAssert.AreEqual(commands.Length, results.Length);
 
             for (var i = 0; i < commands.Length; i++)
             {
@@ -263,7 +264,7 @@ namespace Garnet.test
             foreach (RespCommand cmd in Enum.GetValues(typeof(RespCommand)))
             {
                 var expectedAofIndependence = Array.IndexOf(aofIndpendentCmds, cmd) != -1;
-                Assert.AreEqual(expectedAofIndependence, cmd.IsAofIndependent());
+                ClassicAssert.AreEqual(expectedAofIndependence, cmd.IsAofIndependent());
             }
         }
 
@@ -283,7 +284,7 @@ namespace Garnet.test
         {
             var runtimePath = RuntimeEnvironment.GetRuntimeDirectory();
             var binPath = Path.GetDirectoryName(Assembly.GetExecutingAssembly().Location);
-            Assert.IsNotNull(binPath);
+            ClassicAssert.IsNotNull(binPath);
 
             var namespaces = new[]
             {
@@ -354,7 +355,7 @@ namespace Garnet.test
             // Register select custom commands and transactions
             var result = (string)db.Execute($"REGISTERCS",
                 [.. args]);
-            Assert.AreEqual("OK", result);
+            ClassicAssert.AreEqual("OK", result);
 
             return registeredCommands;
         }
@@ -372,10 +373,10 @@ namespace Garnet.test
             }
             else Assert.Fail();
 
-            Assert.IsNotNull(result);
-            Assert.AreEqual(10, result.Length);
-            Assert.AreEqual(cmdInfo.Name, (string)result[0]);
-            Assert.AreEqual(cmdInfo.Arity, (int)result[1]);
+            ClassicAssert.IsNotNull(result);
+            ClassicAssert.AreEqual(10, result.Length);
+            ClassicAssert.AreEqual(cmdInfo.Name, (string)result[0]);
+            ClassicAssert.AreEqual(cmdInfo.Arity, (int)result[1]);
         }
     }
 }

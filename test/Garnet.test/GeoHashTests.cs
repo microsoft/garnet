@@ -5,6 +5,7 @@ using System;
 using System.Globalization;
 using Garnet.server;
 using NUnit.Framework;
+using NUnit.Framework.Legacy;
 
 namespace Garnet.test
 {
@@ -33,8 +34,8 @@ namespace Garnet.test
             var latError = Math.Abs(latitude - actualLatitude);
             var lonError = Math.Abs(longitude - actualLongitude);
 
-            Assert.IsTrue(latError <= Epsilon, "Math.Abs(latError)=" + latError.ToString("F16", CultureInfo.InvariantCulture));
-            Assert.IsTrue(lonError <= Epsilon, "Math.Abs(lonError)=" + latError.ToString("F16", CultureInfo.InvariantCulture));
+            ClassicAssert.IsTrue(latError <= Epsilon, "Math.Abs(latError)=" + latError.ToString("F16", CultureInfo.InvariantCulture));
+            ClassicAssert.IsTrue(lonError <= Epsilon, "Math.Abs(lonError)=" + latError.ToString("F16", CultureInfo.InvariantCulture));
         }
 
         [Test]
@@ -56,11 +57,11 @@ namespace Garnet.test
             var hashInteger = GeoHash.GeoToLongValue(latitude, longitude);
             var hash = GeoHash.GetGeoHashCode(hashInteger);
 
-            Assert.AreEqual(expectedHashInteger, hashInteger);
+            ClassicAssert.AreEqual(expectedHashInteger, hashInteger);
 
             // Note: while we are comparing the entire textual representation of geohash (11 characters)
             // we are comparing in 52-bit precision, not 55-bit that is expected from GeoHash standard.
-            Assert.AreEqual(expectedHash, hash);
+            ClassicAssert.AreEqual(expectedHash, hash);
         }
     }
 }
