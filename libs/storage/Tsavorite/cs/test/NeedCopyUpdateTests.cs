@@ -3,6 +3,7 @@
 
 using System.IO;
 using NUnit.Framework;
+using NUnit.Framework.Legacy;
 using Tsavorite.core;
 using static Tsavorite.test.NeedCopyUpdateTests;
 using static Tsavorite.test.TestUtils;
@@ -69,41 +70,41 @@ namespace Tsavorite.test
 
             functions.noNeedInitialUpdater = true;
             status = bContext.RMW(ref key, ref value1); // needInitialUpdater false + NOTFOUND
-            Assert.IsFalse(status.Found, status.ToString());
-            Assert.IsFalse(value1.flag); // InitialUpdater is not called
+            ClassicAssert.IsFalse(status.Found, status.ToString());
+            ClassicAssert.IsFalse(value1.flag); // InitialUpdater is not called
             functions.noNeedInitialUpdater = false;
 
             status = bContext.RMW(ref key, ref value1); // InitialUpdater + NotFound
-            Assert.IsFalse(status.Found, status.ToString());
-            Assert.IsTrue(value1.flag); // InitialUpdater is called
+            ClassicAssert.IsFalse(status.Found, status.ToString());
+            ClassicAssert.IsTrue(value1.flag); // InitialUpdater is called
 
             status = bContext.RMW(ref key, ref value2); // InPlaceUpdater + Found
-            Assert.IsTrue(status.Record.InPlaceUpdated, status.ToString());
+            ClassicAssert.IsTrue(status.Record.InPlaceUpdated, status.ToString());
 
             store.Log.Flush(true);
             status = bContext.RMW(ref key, ref value2); // NeedCopyUpdate returns false, so RMW returns simply Found
-            Assert.IsTrue(status.Found, status.ToString());
+            ClassicAssert.IsTrue(status.Found, status.ToString());
 
             store.Log.FlushAndEvict(true);
             status = bContext.RMW(ref key, ref value2, new(StatusCode.Found)); // PENDING + NeedCopyUpdate + Found
-            Assert.IsTrue(status.IsPending, status.ToString());
+            ClassicAssert.IsTrue(status.IsPending, status.ToString());
             _ = bContext.CompletePendingWithOutputs(out var outputs, true);
 
             var output = new RMWValueObj();
             (status, output) = GetSinglePendingResult(outputs);
-            Assert.IsTrue(status.Found, status.ToString()); // NeedCopyUpdate returns false, so RMW returns simply Found
+            ClassicAssert.IsTrue(status.Found, status.ToString()); // NeedCopyUpdate returns false, so RMW returns simply Found
 
             // Test stored value. Should be value1
             status = bContext.Read(ref key, ref value1, ref output, new(StatusCode.Found));
-            Assert.IsTrue(status.IsPending, status.ToString());
+            ClassicAssert.IsTrue(status.IsPending, status.ToString());
             _ = bContext.CompletePending(true);
 
             status = bContext.Delete(ref key);
-            Assert.IsTrue(!status.Found && status.Record.Created, status.ToString());
+            ClassicAssert.IsTrue(!status.Found && status.Record.Created, status.ToString());
             _ = bContext.CompletePending(true);
             store.Log.FlushAndEvict(true);
             status = bContext.RMW(ref key, ref value2, new(StatusCode.NotFound | StatusCode.CreatedRecord)); // PENDING + InitialUpdater + NOTFOUND
-            Assert.IsTrue(status.IsPending, status.ToString());
+            ClassicAssert.IsTrue(status.IsPending, status.ToString());
             _ = bContext.CompletePending(true);
         }
 
@@ -153,15 +154,15 @@ namespace Tsavorite.test
 
             public override void RMWCompletionCallback(ref int key, ref RMWValueObj input, ref RMWValueObj output, Status ctx, Status status, RecordMetadata recordMetadata)
             {
-                Assert.AreEqual(ctx, status);
+                ClassicAssert.AreEqual(ctx, status);
 
                 if (!status.Found)
-                    Assert.IsTrue(input.flag); // InitialUpdater is called.
+                    ClassicAssert.IsTrue(input.flag); // InitialUpdater is called.
             }
 
             public override void ReadCompletionCallback(ref int key, ref RMWValueObj input, ref RMWValueObj output, Status ctx, Status status, RecordMetadata recordMetadata)
             {
-                Assert.AreEqual(output.value, input.value);
+                ClassicAssert.AreEqual(output.value, input.value);
             }
         }
     }
@@ -220,7 +221,7 @@ namespace Tsavorite.test
             for (int key = 0; key < RecsPerPage - padding; key++)
             {
                 var status = bContext.RMW(key, key << 32 + key);
-                Assert.IsTrue(status.IsCompletedSuccessfully, status.ToString());
+                ClassicAssert.IsTrue(status.IsCompletedSuccessfully, status.ToString());
             }
 
             store.Log.ShiftReadOnlyAddress(store.Log.TailAddress, wait: true);

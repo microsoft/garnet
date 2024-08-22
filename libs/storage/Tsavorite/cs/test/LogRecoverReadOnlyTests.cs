@@ -7,6 +7,7 @@ using System.Text;
 using System.Threading;
 using System.Threading.Tasks;
 using NUnit.Framework;
+using NUnit.Framework.Legacy;
 using Tsavorite.core;
 
 namespace Tsavorite.test.recovery
@@ -102,7 +103,7 @@ namespace Tsavorite.test.recovery
                 await foreach (var (result, _, _, nextAddress) in iter.GetAsyncEnumerable(cancellationToken))
                 {
                     var value = long.Parse(Encoding.UTF8.GetString(result));
-                    Assert.AreEqual(prevValue + 1, value);
+                    ClassicAssert.AreEqual(prevValue + 1, value);
                     prevValue = value;
                     iter.CompleteUntil(nextAddress);
                     if (prevValue == NumElements - 1)
@@ -110,7 +111,7 @@ namespace Tsavorite.test.recovery
                 }
             }
             catch (OperationCanceledException) { }
-            Assert.AreEqual(NumElements - 1, prevValue);
+            ClassicAssert.AreEqual(NumElements - 1, prevValue);
 
             async Task BeginRecoverAsyncLoop()
             {

@@ -3,6 +3,7 @@
 
 using System.IO;
 using NUnit.Framework;
+using NUnit.Framework.Legacy;
 using Tsavorite.core;
 
 namespace Tsavorite.test.ReadCacheTests
@@ -74,7 +75,7 @@ namespace Tsavorite.test.ReadCacheTests
                 var value = new ValueStruct { vfield1 = i, vfield2 = i + 1 };
 
                 var status = bContext.Read(ref key1, ref input, ref output, Empty.Default);
-                Assert.IsTrue(status.IsPending);
+                ClassicAssert.IsTrue(status.IsPending);
                 bContext.CompletePending(true);
             }
 
@@ -86,9 +87,9 @@ namespace Tsavorite.test.ReadCacheTests
                 var value = new ValueStruct { vfield1 = i, vfield2 = i + 1 };
 
                 var status = bContext.Read(ref key1, ref input, ref output, Empty.Default);
-                Assert.IsTrue(status.Found);
-                Assert.AreEqual(value.vfield1, output.value.vfield1);
-                Assert.AreEqual(value.vfield2, output.value.vfield2);
+                ClassicAssert.IsTrue(status.Found);
+                ClassicAssert.AreEqual(value.vfield1, output.value.vfield1);
+                ClassicAssert.AreEqual(value.vfield2, output.value.vfield2);
             }
 
             // Evict the read cache entirely
@@ -102,7 +103,7 @@ namespace Tsavorite.test.ReadCacheTests
                 var value = new ValueStruct { vfield1 = i, vfield2 = i + 1 };
 
                 var status = bContext.Read(ref key1, ref input, ref output, Empty.Default);
-                Assert.IsTrue(status.IsPending);
+                ClassicAssert.IsTrue(status.IsPending);
                 bContext.CompletePending(true);
             }
 
@@ -114,9 +115,9 @@ namespace Tsavorite.test.ReadCacheTests
                 var value = new ValueStruct { vfield1 = i, vfield2 = i + 1 };
 
                 var status = bContext.Read(ref key1, ref input, ref output, Empty.Default);
-                Assert.IsTrue(status.Found);
-                Assert.AreEqual(value.vfield1, output.value.vfield1);
-                Assert.AreEqual(value.vfield2, output.value.vfield2);
+                ClassicAssert.IsTrue(status.Found);
+                ClassicAssert.AreEqual(value.vfield1, output.value.vfield1);
+                ClassicAssert.AreEqual(value.vfield2, output.value.vfield2);
             }
 
             // Upsert to overwrite the read cache
@@ -140,8 +141,8 @@ namespace Tsavorite.test.ReadCacheTests
                 }
                 else
                 {
-                    Assert.AreEqual(i + 1, output.value.vfield1);
-                    Assert.AreEqual(i + 2, output.value.vfield2);
+                    ClassicAssert.AreEqual(i + 1, output.value.vfield1);
+                    ClassicAssert.AreEqual(i + 2, output.value.vfield2);
                 }
             }
 
@@ -153,9 +154,9 @@ namespace Tsavorite.test.ReadCacheTests
                 var value = new ValueStruct { vfield1 = i + 1, vfield2 = i + 2 };
 
                 var status = bContext.Read(ref key1, ref input, ref output, Empty.Default);
-                Assert.IsTrue(status.Found);
-                Assert.AreEqual(value.vfield1, output.value.vfield1);
-                Assert.AreEqual(value.vfield2, output.value.vfield2);
+                ClassicAssert.IsTrue(status.Found);
+                ClassicAssert.AreEqual(value.vfield1, output.value.vfield1);
+                ClassicAssert.AreEqual(value.vfield2, output.value.vfield2);
             }
         }
 
@@ -187,7 +188,7 @@ namespace Tsavorite.test.ReadCacheTests
                 var value = new ValueStruct { vfield1 = i, vfield2 = i + 1 };
 
                 var status = bContext.Read(ref key1, ref input, ref output, Empty.Default);
-                Assert.IsTrue(status.IsPending);
+                ClassicAssert.IsTrue(status.IsPending);
                 bContext.CompletePending(true);
             }
 
@@ -199,9 +200,9 @@ namespace Tsavorite.test.ReadCacheTests
                 var value = new ValueStruct { vfield1 = i, vfield2 = i + 1 };
 
                 var status = bContext.Read(ref key1, ref input, ref output, Empty.Default);
-                Assert.IsTrue(status.Found);
-                Assert.AreEqual(value.vfield1, output.value.vfield1);
-                Assert.AreEqual(value.vfield2, output.value.vfield2);
+                ClassicAssert.IsTrue(status.Found);
+                ClassicAssert.AreEqual(value.vfield1, output.value.vfield1);
+                ClassicAssert.AreEqual(value.vfield2, output.value.vfield2);
             }
 
             // Evict the read cache entirely
@@ -215,7 +216,7 @@ namespace Tsavorite.test.ReadCacheTests
                 var value = new ValueStruct { vfield1 = i, vfield2 = i + 1 };
 
                 var status = bContext.Read(ref key1, ref input, ref output, Empty.Default);
-                Assert.IsTrue(status.IsPending);
+                ClassicAssert.IsTrue(status.IsPending);
                 bContext.CompletePending(true);
             }
 
@@ -227,9 +228,9 @@ namespace Tsavorite.test.ReadCacheTests
                 var value = new ValueStruct { vfield1 = i, vfield2 = i + 1 };
 
                 var status = bContext.Read(ref key1, ref input, ref output, Empty.Default);
-                Assert.IsTrue(status.Found);
-                Assert.AreEqual(value.vfield1, output.value.vfield1);
-                Assert.AreEqual(value.vfield2, output.value.vfield2);
+                ClassicAssert.IsTrue(status.Found);
+                ClassicAssert.AreEqual(value.vfield1, output.value.vfield1);
+                ClassicAssert.AreEqual(value.vfield2, output.value.vfield2);
             }
         }
     }

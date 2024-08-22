@@ -7,6 +7,7 @@ using System.IO;
 using System.Linq;
 using System.Threading.Tasks;
 using NUnit.Framework;
+using NUnit.Framework.Legacy;
 using Tsavorite.core;
 using static Tsavorite.test.TestUtils;
 
@@ -65,7 +66,7 @@ namespace Tsavorite.test.UnsafeContext
         {
             if (actual.IsPending)
                 (actual, _) = CompletePendingResult();
-            Assert.AreEqual(expected, actual);
+            ClassicAssert.AreEqual(expected, actual);
         }
 
         private (Status status, OutputStruct output) CompletePendingResult()
@@ -94,8 +95,8 @@ namespace Tsavorite.test.UnsafeContext
                 var status = uContext.Read(ref key1, ref input, ref output, Empty.Default);
 
                 AssertCompleted(new(StatusCode.Found), status);
-                Assert.AreEqual(value.vfield1, output.value.vfield1);
-                Assert.AreEqual(value.vfield2, output.value.vfield2);
+                ClassicAssert.AreEqual(value.vfield1, output.value.vfield1);
+                ClassicAssert.AreEqual(value.vfield2, output.value.vfield2);
             }
             finally
             {
@@ -135,8 +136,8 @@ namespace Tsavorite.test.UnsafeContext
                 status = uContext.Read(ref key2, ref input, ref output, Empty.Default);
 
                 AssertCompleted(new(StatusCode.Found), status);
-                Assert.AreEqual(value2.vfield1, output.value.vfield1);
-                Assert.AreEqual(value2.vfield2, output.value.vfield2);
+                ClassicAssert.AreEqual(value2.vfield1, output.value.vfield1);
+                ClassicAssert.AreEqual(value2.vfield2, output.value.vfield2);
             }
             finally
             {
@@ -241,8 +242,8 @@ namespace Tsavorite.test.UnsafeContext
                     if (uContext.Read(ref key1, ref input, ref output, Empty.Default).IsPending)
                         _ = uContext.CompletePending(true);
 
-                    Assert.AreEqual(value.vfield1, output.value.vfield1);
-                    Assert.AreEqual(value.vfield2, output.value.vfield2);
+                    ClassicAssert.AreEqual(value.vfield1, output.value.vfield1);
+                    ClassicAssert.AreEqual(value.vfield2, output.value.vfield2);
                 }
 
                 // Clean up and retry - should not find now
@@ -254,7 +255,7 @@ namespace Tsavorite.test.UnsafeContext
                     var i = r.Next(10000);
                     OutputStruct output = default;
                     var key1 = new KeyStruct { kfield1 = i, kfield2 = i + 1 };
-                    Assert.IsFalse(uContext.Read(ref key1, ref input, ref output, Empty.Default).Found);
+                    ClassicAssert.IsFalse(uContext.Read(ref key1, ref input, ref output, Empty.Default).Found);
                 }
             }
             finally
@@ -302,8 +303,8 @@ namespace Tsavorite.test.UnsafeContext
                     Status status = uContext.Read(ref key1, ref input, ref output, Empty.Default);
                     if (!status.IsPending)
                     {
-                        Assert.AreEqual(value.vfield1, output.value.vfield1);
-                        Assert.AreEqual(value.vfield2, output.value.vfield2);
+                        ClassicAssert.AreEqual(value.vfield1, output.value.vfield1);
+                        ClassicAssert.AreEqual(value.vfield2, output.value.vfield2);
                     }
                 }
                 if (syncMode == CompletionSyncMode.Sync)
@@ -329,7 +330,7 @@ namespace Tsavorite.test.UnsafeContext
                     OutputStruct output = default;
                     var key1 = new KeyStruct { kfield1 = i, kfield2 = i + 1 };
                     Status foundStatus = uContext.Read(ref key1, ref input, ref output, Empty.Default);
-                    Assert.IsTrue(foundStatus.IsPending);
+                    ClassicAssert.IsTrue(foundStatus.IsPending);
                 }
 
                 CompletedOutputIterator<KeyStruct, ValueStruct, InputStruct, OutputStruct, Empty> outputs;
@@ -348,11 +349,11 @@ namespace Tsavorite.test.UnsafeContext
                 while (outputs.Next())
                 {
                     count++;
-                    Assert.AreEqual(outputs.Current.Key.kfield1, outputs.Current.Output.value.vfield1);
-                    Assert.AreEqual(outputs.Current.Key.kfield2, outputs.Current.Output.value.vfield2);
+                    ClassicAssert.AreEqual(outputs.Current.Key.kfield1, outputs.Current.Output.value.vfield1);
+                    ClassicAssert.AreEqual(outputs.Current.Key.kfield2, outputs.Current.Output.value.vfield2);
                 }
                 outputs.Dispose();
-                Assert.AreEqual(NumRecs, count);
+                ClassicAssert.AreEqual(NumRecs, count);
             }
             finally
             {
@@ -401,8 +402,8 @@ namespace Tsavorite.test.UnsafeContext
                     }
                     else
                     {
-                        Assert.AreEqual(2 * i, output.value.vfield1);
-                        Assert.AreEqual(2 * (i + 1), output.value.vfield2);
+                        ClassicAssert.AreEqual(2 * i, output.value.vfield1);
+                        ClassicAssert.AreEqual(2 * (i + 1), output.value.vfield2);
                     }
                 }
 
@@ -419,8 +420,8 @@ namespace Tsavorite.test.UnsafeContext
                     status = uContext.Read(ref key, ref input, ref output, Empty.Default);
 
                     AssertCompleted(new(StatusCode.Found), status);
-                    Assert.AreEqual(2 * value.vfield1, output.value.vfield1);
-                    Assert.AreEqual(2 * value.vfield2, output.value.vfield2);
+                    ClassicAssert.AreEqual(2 * value.vfield1, output.value.vfield1);
+                    ClassicAssert.AreEqual(2 * value.vfield2, output.value.vfield2);
                 }
 
                 key = new KeyStruct { kfield1 = nums.Length, kfield2 = nums.Length + 1 };
@@ -484,8 +485,8 @@ namespace Tsavorite.test.UnsafeContext
                     status = uContext.Read(ref key, ref input, ref output, Empty.Default);
 
                     AssertCompleted(new(StatusCode.Found), status);
-                    Assert.AreEqual(2 * value.vfield1, output.value.vfield1);
-                    Assert.AreEqual(2 * value.vfield2, output.value.vfield2);
+                    ClassicAssert.AreEqual(2 * value.vfield1, output.value.vfield1);
+                    ClassicAssert.AreEqual(2 * value.vfield2, output.value.vfield2);
                 }
 
                 key = new KeyStruct { kfield1 = nums.Length, kfield2 = nums.Length + 1 };
@@ -519,10 +520,10 @@ namespace Tsavorite.test.UnsafeContext
                 AssertCompleted(new(StatusCode.Found), status);
 
                 // Verify the read data
-                Assert.AreEqual(value.vfield1, output.value.vfield1);
-                Assert.AreEqual(value.vfield2, output.value.vfield2);
-                Assert.AreEqual(key1.kfield1, 13);
-                Assert.AreEqual(key1.kfield2, 14);
+                ClassicAssert.AreEqual(value.vfield1, output.value.vfield1);
+                ClassicAssert.AreEqual(value.vfield2, output.value.vfield2);
+                ClassicAssert.AreEqual(key1.kfield1, 13);
+                ClassicAssert.AreEqual(key1.kfield2, 14);
             }
             finally
             {
@@ -548,10 +549,10 @@ namespace Tsavorite.test.UnsafeContext
                 AssertCompleted(new(StatusCode.Found), status);
 
                 // Verify the read data
-                Assert.AreEqual(value.vfield1, output.value.vfield1);
-                Assert.AreEqual(value.vfield2, output.value.vfield2);
-                Assert.AreEqual(key1.kfield1, 13);
-                Assert.AreEqual(key1.kfield2, 14);
+                ClassicAssert.AreEqual(value.vfield1, output.value.vfield1);
+                ClassicAssert.AreEqual(value.vfield2, output.value.vfield2);
+                ClassicAssert.AreEqual(key1.kfield1, 13);
+                ClassicAssert.AreEqual(key1.kfield2, 14);
             }
             finally
             {
@@ -581,10 +582,10 @@ namespace Tsavorite.test.UnsafeContext
                 AssertCompleted(new(StatusCode.Found), status);
 
                 // Verify the read data
-                Assert.AreEqual(value.vfield1, output.value.vfield1);
-                Assert.AreEqual(value.vfield2, output.value.vfield2);
-                Assert.AreEqual(key1.kfield1, 13);
-                Assert.AreEqual(key1.kfield2, 14);
+                ClassicAssert.AreEqual(value.vfield1, output.value.vfield1);
+                ClassicAssert.AreEqual(value.vfield2, output.value.vfield2);
+                ClassicAssert.AreEqual(key1.kfield1, 13);
+                ClassicAssert.AreEqual(key1.kfield2, 14);
             }
             finally
             {
@@ -611,10 +612,10 @@ namespace Tsavorite.test.UnsafeContext
                 var (status, output) = uContext.Read(key1);
                 AssertCompleted(new(StatusCode.Found), status);
 
-                Assert.AreEqual(value.vfield1, output.value.vfield1);
-                Assert.AreEqual(value.vfield2, output.value.vfield2);
-                Assert.AreEqual(key1.kfield1, 13);
-                Assert.AreEqual(key1.kfield2, 14);
+                ClassicAssert.AreEqual(value.vfield1, output.value.vfield1);
+                ClassicAssert.AreEqual(value.vfield2, output.value.vfield2);
+                ClassicAssert.AreEqual(key1.kfield1, 13);
+                ClassicAssert.AreEqual(key1.kfield2, 14);
             }
             finally
             {

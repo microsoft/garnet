@@ -9,6 +9,7 @@ using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
 using NUnit.Framework;
+using NUnit.Framework.Legacy;
 using Tsavorite.core;
 
 namespace Tsavorite.test
@@ -62,8 +63,8 @@ namespace Tsavorite.test
             catch (CommitFailureException e)
             {
                 var errorRangeStart = e.LinkedCommitInfo.CommitInfo.FromAddress;
-                Assert.LessOrEqual(log.CommittedUntilAddress, errorRangeStart);
-                Assert.LessOrEqual(log.FlushedUntilAddress, errorRangeStart);
+                ClassicAssert.LessOrEqual(log.CommittedUntilAddress, errorRangeStart);
+                ClassicAssert.LessOrEqual(log.FlushedUntilAddress, errorRangeStart);
                 return;
             }
 
@@ -129,11 +130,11 @@ namespace Tsavorite.test
                 thread.Join();
 
             // Every thread observed the failure
-            Assert.IsTrue(failureList.Count == threads.Count);
+            ClassicAssert.IsTrue(failureList.Count == threads.Count);
             // They all observed the same failure
             foreach (var failure in failureList)
             {
-                Assert.AreEqual(failure.LinkedCommitInfo.CommitInfo, failureList[0].LinkedCommitInfo.CommitInfo);
+                ClassicAssert.AreEqual(failure.LinkedCommitInfo.CommitInfo, failureList[0].LinkedCommitInfo.CommitInfo);
             }
         }
 
@@ -184,18 +185,18 @@ namespace Tsavorite.test
             {
                 case IteratorType.AsyncByteVector:
                     await foreach ((byte[] result, int _, long _, long nextAddress) in iter.GetAsyncEnumerable())
-                        Assert.IsTrue(result.SequenceEqual(entry));
+                        ClassicAssert.IsTrue(result.SequenceEqual(entry));
                     break;
                 case IteratorType.AsyncMemoryOwner:
                     await foreach ((IMemoryOwner<byte> result, int _, long _, long nextAddress) in iter.GetAsyncEnumerable(MemoryPool<byte>.Shared))
                     {
-                        Assert.IsTrue(result.Memory.Span.ToArray().Take(entry.Length).SequenceEqual(entry));
+                        ClassicAssert.IsTrue(result.Memory.Span.ToArray().Take(entry.Length).SequenceEqual(entry));
                         result.Dispose();
                     }
                     break;
                 case IteratorType.Sync:
                     while (iter.GetNext(out byte[] result, out _, out _))
-                        Assert.IsTrue(result.SequenceEqual(entry));
+                        ClassicAssert.IsTrue(result.SequenceEqual(entry));
                     break;
                 default:
                     Assert.Fail("Unknown IteratorType");

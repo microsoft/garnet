@@ -3,6 +3,7 @@
 
 using System.IO;
 using NUnit.Framework;
+using NUnit.Framework.Legacy;
 using Tsavorite.core;
 using static Tsavorite.test.TestUtils;
 
@@ -75,7 +76,7 @@ namespace Tsavorite.test
                 _ = bContext.Upsert(ref _key, ref _value, Empty.Default);
             }
             _ = bContext.CompletePending(true);
-            Assert.AreEqual(totalRecords, store.EntryCount);
+            ClassicAssert.AreEqual(totalRecords, store.EntryCount);
 
             for (int i = 0; i < totalRecords; i++)
             {
@@ -90,8 +91,8 @@ namespace Tsavorite.test
                     _ = bContext.CompletePendingWithOutputs(out var outputs, wait: true);
                     (status, output) = GetSinglePendingResult(outputs);
                 }
-                Assert.IsTrue(status.Found);
-                Assert.AreEqual(value, output);
+                ClassicAssert.IsTrue(status.Found);
+                ClassicAssert.AreEqual(value, output);
             }
         }
 
@@ -99,8 +100,8 @@ namespace Tsavorite.test
         {
             public override void ReadCompletionCallback(ref string key, ref string input, ref string output, Empty ctx, Status status, RecordMetadata recordMetadata)
             {
-                Assert.IsTrue(status.Found);
-                Assert.AreEqual(key, output);
+                ClassicAssert.IsTrue(status.Found);
+                ClassicAssert.AreEqual(key, output);
             }
         }
     }

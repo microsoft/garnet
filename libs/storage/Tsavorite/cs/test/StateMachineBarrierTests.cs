@@ -3,6 +3,7 @@
 
 using System.IO;
 using NUnit.Framework;
+using NUnit.Framework.Legacy;
 using Tsavorite.core;
 using Tsavorite.test.recovery.sumstore;
 
@@ -63,13 +64,13 @@ namespace Tsavorite.test.statemachine
             Prepare(out var f, out var s1, out var uc1, out var s2);
 
             // We should be in PREPARE, 1
-            Assert.IsTrue(SystemState.Equal(SystemState.Make(Phase.PREPARE, 1), store.SystemState));
+            ClassicAssert.IsTrue(SystemState.Equal(SystemState.Make(Phase.PREPARE, 1), store.SystemState));
 
             // Invoke Refresh on session s2, it will spin (blocked from working due to CheckpointVersionSwitchBarrier)
             s2.Refresh(waitComplete: false);
 
             // s1 has not refreshed, so we should still be in PREPARE, 1
-            Assert.IsTrue(SystemState.Equal(SystemState.Make(Phase.PREPARE, 1), store.SystemState));
+            ClassicAssert.IsTrue(SystemState.Equal(SystemState.Make(Phase.PREPARE, 1), store.SystemState));
 
             // Refresh s1
             uc1.Refresh();
@@ -78,7 +79,7 @@ namespace Tsavorite.test.statemachine
             s2.CompleteOp();
 
             // Depending on timing, we should now be in IN_PROGRESS, 2 or WAIT_FLUSH, 2
-            Assert.IsTrue(
+            ClassicAssert.IsTrue(
                 SystemState.Equal(SystemState.Make(Phase.IN_PROGRESS, 2), store.SystemState) ||
                 SystemState.Equal(SystemState.Make(Phase.WAIT_FLUSH, 2), store.SystemState)
                 );
@@ -106,7 +107,7 @@ namespace Tsavorite.test.statemachine
             f = new SimpleFunctions();
 
             // We should be in REST, 1
-            Assert.IsTrue(SystemState.Equal(SystemState.Make(Phase.REST, 1), store.SystemState));
+            ClassicAssert.IsTrue(SystemState.Equal(SystemState.Make(Phase.REST, 1), store.SystemState));
 
             // Take index checkpoint for recovery purposes
             _ = store.TryInitiateIndexCheckpoint(out _);
@@ -114,7 +115,7 @@ namespace Tsavorite.test.statemachine
 
             // Index checkpoint does not update version, so
             // we should still be in REST, 1
-            Assert.IsTrue(SystemState.Equal(SystemState.Make(Phase.REST, 1), store.SystemState));
+            ClassicAssert.IsTrue(SystemState.Equal(SystemState.Make(Phase.REST, 1), store.SystemState));
 
             NumClicks value;
 
@@ -138,12 +139,12 @@ namespace Tsavorite.test.statemachine
             s2 = store.CreateThreadSession<AdId, NumClicks, NumClicks, NumClicks, Empty, SimpleFunctions, StructStoreFunctions, StructAllocator>(f);
 
             // We should be in REST, 1
-            Assert.IsTrue(SystemState.Equal(SystemState.Make(Phase.REST, 1), store.SystemState));
+            ClassicAssert.IsTrue(SystemState.Equal(SystemState.Make(Phase.REST, 1), store.SystemState));
 
             _ = store.TryInitiateHybridLogCheckpoint(out _, CheckpointType.FoldOver, targetVersion: toVersion);
 
             // We should be in PREPARE, 1
-            Assert.IsTrue(SystemState.Equal(SystemState.Make(Phase.PREPARE, 1), store.SystemState));
+            ClassicAssert.IsTrue(SystemState.Equal(SystemState.Make(Phase.PREPARE, 1), store.SystemState));
         }
     }
 }
