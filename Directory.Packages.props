@@ -24,5 +24,6 @@
     <PackageVersion Include="StackExchange.Redis" Version="2.8.0" />
     <PackageVersion Include="System.IdentityModel.Tokens.Jwt" Version="8.0.1" />
     <PackageVersion Include="System.Interactive.Async" Version="6.0.1" />
+    <PackageVersion Include="System.Text.Json" Version="8.0.4" />
   </ItemGroup>
 </Project>
