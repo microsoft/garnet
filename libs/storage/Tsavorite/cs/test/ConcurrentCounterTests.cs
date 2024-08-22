@@ -2,6 +2,7 @@
 // Licensed under the MIT license.
 
 using NUnit.Framework;
+using NUnit.Framework.Legacy;
 using Tsavorite.core;
 
 namespace Tsavorite.test
@@ -19,7 +20,7 @@ namespace Tsavorite.test
             counter.Increment(5);
 
             // Assert
-            Assert.AreEqual(5, counter.Total);
+            ClassicAssert.AreEqual(5, counter.Total);
         }
 
         [Test]
@@ -32,7 +33,7 @@ namespace Tsavorite.test
             counter.Increment(0);
 
             // Assert
-            Assert.AreEqual(0, counter.Total);
+            ClassicAssert.AreEqual(0, counter.Total);
         }
 
         [Test]
@@ -47,7 +48,7 @@ namespace Tsavorite.test
             var total = counter.Total;
 
             // Assert
-            Assert.AreEqual(10, total);
+            ClassicAssert.AreEqual(10, total);
         }
         [Test]
         public void Increment_WithMaxValue_IncreasesCounterValue()
@@ -59,7 +60,7 @@ namespace Tsavorite.test
             counter.Increment(long.MaxValue);
 
             // Assert
-            Assert.AreEqual(long.MaxValue, counter.Total);
+            ClassicAssert.AreEqual(long.MaxValue, counter.Total);
         }
 
         [Test]
@@ -72,7 +73,7 @@ namespace Tsavorite.test
             counter.Increment(long.MinValue);
 
             // Assert
-            Assert.AreEqual(long.MinValue, counter.Total);
+            ClassicAssert.AreEqual(long.MinValue, counter.Total);
         }
 
         [Test]
@@ -104,7 +105,7 @@ namespace Tsavorite.test
             }
 
             // Assert
-            Assert.AreEqual(10000, counter.Total);
+            ClassicAssert.AreEqual(10000, counter.Total);
         }
     }
 }

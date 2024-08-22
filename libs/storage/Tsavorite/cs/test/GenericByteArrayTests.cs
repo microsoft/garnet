@@ -5,6 +5,7 @@ using System;
 using System.IO;
 using System.Linq;
 using NUnit.Framework;
+using NUnit.Framework.Legacy;
 using Tsavorite.core;
 
 namespace Tsavorite.test
@@ -87,7 +88,7 @@ namespace Tsavorite.test
                 if (bContext.Read(ref key, ref input, ref output, Empty.Default).IsPending)
                     _ = bContext.CompletePending(true);
                 else
-                    Assert.IsTrue(output.SequenceEqual(value));
+                    ClassicAssert.IsTrue(output.SequenceEqual(value));
             }
         }
 
@@ -95,7 +96,7 @@ namespace Tsavorite.test
         {
             public override void ReadCompletionCallback(ref byte[] key, ref byte[] input, ref byte[] output, Empty ctx, Status status, RecordMetadata recordMetadata)
             {
-                Assert.IsTrue(output.SequenceEqual(key));
+                ClassicAssert.IsTrue(output.SequenceEqual(key));
             }
         }
     }

@@ -3,6 +3,7 @@
 
 using System.IO;
 using NUnit.Framework;
+using NUnit.Framework.Legacy;
 using Tsavorite.core;
 using static Tsavorite.test.TestUtils;
 
@@ -65,7 +66,7 @@ namespace Tsavorite.test
 
             _ = bContext.Upsert(ref key1, ref value, Empty.Default);
             _ = bContext.Read(ref key1, ref input, ref output, Empty.Default);
-            Assert.AreEqual(value.value, output.value.value);
+            ClassicAssert.AreEqual(value.value, output.value.value);
         }
 
         [Test]
@@ -87,10 +88,10 @@ namespace Tsavorite.test
 
             _ = bContext.Read(ref key1, ref input1, ref output, Empty.Default);
 
-            Assert.AreEqual(input1.value, output.value.value);
+            ClassicAssert.AreEqual(input1.value, output.value.value);
 
             _ = bContext.Read(ref key2, ref input2, ref output, Empty.Default);
-            Assert.AreEqual(input2.value, output.value.value);
+            ClassicAssert.AreEqual(input2.value, output.value.value);
 
         }
 
@@ -122,15 +123,15 @@ namespace Tsavorite.test
                 (status, g1) = GetSinglePendingResult(outputs);
             }
 
-            Assert.IsTrue(status.Found);
-            Assert.AreEqual(23, g1.value.value);
+            ClassicAssert.IsTrue(status.Found);
+            ClassicAssert.AreEqual(23, g1.value.value);
 
             key2 = new MyKey { key = 99999 };
             status = bContext.Read(ref key2, ref input, ref g1, Empty.Default);
 
             if (status.IsPending)
                 (status, _) = bContext.GetSinglePendingResult();
-            Assert.IsFalse(status.Found);
+            ClassicAssert.IsFalse(status.Found);
 
             // Update last 100 using RMW in memory
             for (int i = 1900; i < 2000; i++)
@@ -138,7 +139,7 @@ namespace Tsavorite.test
                 var key = new MyKey { key = i };
                 input = new MyInput { value = 1 };
                 status = bContext.RMW(ref key, ref input, Empty.Default);
-                Assert.IsFalse(status.IsPending, "Expected RMW to complete in-memory");
+                ClassicAssert.IsFalse(status.IsPending, "Expected RMW to complete in-memory");
             }
 
             // Update first 100 using RMW from storage
@@ -163,9 +164,9 @@ namespace Tsavorite.test
                 else
                 {
                     if (i < 100 || i >= 1900)
-                        Assert.AreEqual(value.value + 1, output.value.value);
+                        ClassicAssert.AreEqual(value.value + 1, output.value.value);
                     else
-                        Assert.AreEqual(value.value, output.value.value);
+                        ClassicAssert.AreEqual(value.value, output.value.value);
                 }
             }
         }

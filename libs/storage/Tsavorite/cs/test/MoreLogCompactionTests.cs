@@ -3,6 +3,7 @@
 
 using System.IO;
 using NUnit.Framework;
+using NUnit.Framework.Legacy;
 using Tsavorite.core;
 
 namespace Tsavorite.test
@@ -68,7 +69,7 @@ namespace Tsavorite.test
 
             compactUntil = session.Compact(compactUntil, compactionType);
 
-            Assert.AreEqual(compactUntil, store.Log.BeginAddress);
+            ClassicAssert.AreEqual(compactUntil, store.Log.BeginAddress);
 
             using var session2 = store.NewSession<long, long, Empty, SimpleSimpleFunctions<long, long>>(new SimpleSimpleFunctions<long, long>());
             var bContext2 = session2.BasicContext;
@@ -80,19 +81,19 @@ namespace Tsavorite.test
                 if (status.IsPending)
                 {
                     _ = bContext2.CompletePendingWithOutputs(out var completedOutputs, true);
-                    Assert.IsTrue(completedOutputs.Next());
+                    ClassicAssert.IsTrue(completedOutputs.Next());
                     (status, output) = (completedOutputs.Current.Status, completedOutputs.Current.Output);
-                    Assert.IsFalse(completedOutputs.Next());
+                    ClassicAssert.IsFalse(completedOutputs.Next());
                 }
 
                 if (i < totalRecords / 2)
                 {
-                    Assert.IsTrue(status.NotFound);
+                    ClassicAssert.IsTrue(status.NotFound);
                 }
                 else
                 {
-                    Assert.IsTrue(status.Found);
-                    Assert.AreEqual(i, output);
+                    ClassicAssert.IsTrue(status.Found);
+                    ClassicAssert.AreEqual(i, output);
                 }
             }
         }

@@ -3,6 +3,7 @@
 
 using System.IO;
 using NUnit.Framework;
+using NUnit.Framework.Legacy;
 using Tsavorite.core;
 using static Tsavorite.test.TestUtils;
 
@@ -103,7 +104,7 @@ namespace Tsavorite.test
             {
                 expectedAddress = store.Log.TailAddress;
                 _ = bContext.Upsert(key, key * 100);
-                Assert.AreEqual(expectedAddress, session.functions.pswAddress);
+                ClassicAssert.AreEqual(expectedAddress, session.functions.pswAddress);
             }
 
             session.functions.Clear();
@@ -115,7 +116,7 @@ namespace Tsavorite.test
             // Note: Only Read and RMW have Pending results.
             _ = bContext.CompletePendingWithOutputs(out var completedOutputs, wait: true);
             _ = GetSinglePendingResult(completedOutputs, out var recordMetadata);
-            Assert.AreEqual(expectedAddress, recordMetadata.Address);
+            ClassicAssert.AreEqual(expectedAddress, recordMetadata.Address);
         }
 
         [Test]
@@ -129,7 +130,7 @@ namespace Tsavorite.test
             store.Log.FlushAndEvict(wait: true);
             _ = bContext.Upsert(TargetKey, TargetKey * 1000);
             _ = bContext.CompletePending(wait: true);
-            Assert.AreEqual(expectedAddress, session.functions.pswAddress);
+            ClassicAssert.AreEqual(expectedAddress, session.functions.pswAddress);
         }
 
         [Test]
@@ -139,13 +140,13 @@ namespace Tsavorite.test
         {
             // Execute the not-found test (InternalRMW).
             _ = bContext.RMW(NumRecords + 1, (NumRecords + 1) * 1000);
-            Assert.AreEqual(expectedAddress, session.functions.piuAddress);
+            ClassicAssert.AreEqual(expectedAddress, session.functions.piuAddress);
             session.functions.Clear();
 
             // Now cause an attempt at InPlaceUpdater, which we've set to fail, so CopyUpdater is done (InternalInsert).
             expectedAddress = store.Log.TailAddress;
             _ = bContext.RMW(TargetKey, TargetKey * 1000);
-            Assert.AreEqual(expectedAddress, session.functions.pcuAddress);
+            ClassicAssert.AreEqual(expectedAddress, session.functions.pcuAddress);
 
             // Execute the not-in-memory test (InternalContinuePendingRMW). First delete the record so it has a tombstone; this will go to InitialUpdater.
             _ = bContext.Delete(TargetKey);
@@ -154,7 +155,7 @@ namespace Tsavorite.test
 
             _ = bContext.RMW(TargetKey, TargetKey * 1000);
             CompletePendingAndVerifyInsertedAddress();
-            Assert.AreEqual(expectedAddress, session.functions.piuAddress);
+            ClassicAssert.AreEqual(expectedAddress, session.functions.piuAddress);
         }
 
         [Test]
@@ -165,14 +166,14 @@ namespace Tsavorite.test
             // First try to modify in-memory, readonly (InternalRMW).
             store.Log.ShiftReadOnlyAddress(store.Log.ReadOnlyAddress, wait: true);
             _ = bContext.RMW(TargetKey, TargetKey * 1000);
-            Assert.AreEqual(expectedAddress, session.functions.pcuAddress);
+            ClassicAssert.AreEqual(expectedAddress, session.functions.pcuAddress);
 
             // Execute the not-in-memory test (InternalContinuePendingRMW).
             store.Log.FlushAndEvict(wait: true);
             expectedAddress = store.Log.TailAddress;
             _ = bContext.RMW(TargetKey, TargetKey * 1000);
             CompletePendingAndVerifyInsertedAddress();
-            Assert.AreEqual(expectedAddress, session.functions.pcuAddress);
+            ClassicAssert.AreEqual(expectedAddress, session.functions.pcuAddress);
         }
 
         [Test]
@@ -182,7 +183,7 @@ namespace Tsavorite.test
         {
             // Verify the key exists
             var (status, output) = bContext.Read(TargetKey);
-            Assert.IsTrue(status.Found, "Expected the record to exist");
+            ClassicAssert.IsTrue(status.Found, "Expected the record to exist");
             session.functions.returnFalseFromPCU = true;
 
             // Make the record read-only
@@ -196,7 +197,7 @@ namespace Tsavorite.test
 
             // Verify the key no longer exists.
             (status, output) = bContext.Read(TargetKey);
-            Assert.IsFalse(status.Found, "Expected the record to no longer exist");
+            ClassicAssert.IsFalse(status.Found, "Expected the record to no longer exist");
         }
 
         [Test]
@@ -206,13 +207,13 @@ namespace Tsavorite.test
         {
             // Execute the not-in-memory test (InternalDelete); ConcurrentDeleter returns false to force a new record to be added.
             _ = bContext.Delete(TargetKey);
-            Assert.AreEqual(expectedAddress, session.functions.psdAddress);
+            ClassicAssert.AreEqual(expectedAddress, session.functions.psdAddress);
 
             // Execute the not-in-memory test (InternalDelete).
             store.Log.FlushAndEvict(wait: true);
             expectedAddress = store.Log.TailAddress;
             _ = bContext.Delete(TargetKey + 1);
-            Assert.AreEqual(expectedAddress, session.functions.psdAddress);
+            ClassicAssert.AreEqual(expectedAddress, session.functions.psdAddress);
         }
     }
 }

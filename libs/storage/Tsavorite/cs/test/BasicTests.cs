@@ -7,6 +7,7 @@ using System.IO;
 using System.Linq;
 using NUnit.Framework;
 using NUnit.Framework.Internal;
+using NUnit.Framework.Legacy;
 using Tsavorite.core;
 using static Tsavorite.test.TestUtils;
 
@@ -70,7 +71,7 @@ namespace Tsavorite.test
         {
             if (actual.IsPending)
                 (actual, _) = CompletePendingResult();
-            Assert.AreEqual(expected, actual);
+            ClassicAssert.AreEqual(expected, actual);
         }
 
         private (Status status, OutputStruct output) CompletePendingResult()
@@ -96,8 +97,8 @@ namespace Tsavorite.test
             var status = bContext.Read(ref key1, ref input, ref output, Empty.Default);
 
             AssertCompleted(new(StatusCode.Found), status);
-            Assert.AreEqual(value.vfield1, output.value.vfield1);
-            Assert.AreEqual(value.vfield2, output.value.vfield2);
+            ClassicAssert.AreEqual(value.vfield1, output.value.vfield1);
+            ClassicAssert.AreEqual(value.vfield2, output.value.vfield2);
         }
 
         [Test]
@@ -129,8 +130,8 @@ namespace Tsavorite.test
             status = bContext.Read(ref key2, ref input, ref output, Empty.Default);
 
             AssertCompleted(new(StatusCode.Found), status);
-            Assert.AreEqual(value2.vfield1, output.value.vfield1);
-            Assert.AreEqual(value2.vfield2, output.value.vfield2);
+            ClassicAssert.AreEqual(value2.vfield1, output.value.vfield1);
+            ClassicAssert.AreEqual(value2.vfield2, output.value.vfield2);
         }
 
 
@@ -220,8 +221,8 @@ namespace Tsavorite.test
                     _ = bContext.CompletePending(true);
                 }
 
-                Assert.AreEqual(value.vfield1, output.value.vfield1);
-                Assert.AreEqual(value.vfield2, output.value.vfield2);
+                ClassicAssert.AreEqual(value.vfield1, output.value.vfield1);
+                ClassicAssert.AreEqual(value.vfield2, output.value.vfield2);
             }
 
             // Clean up and retry - should not find now
@@ -233,7 +234,7 @@ namespace Tsavorite.test
                 var i = r.Next(10000);
                 OutputStruct output = default;
                 var key1 = new KeyStruct { kfield1 = i, kfield2 = i + 1 };
-                Assert.IsFalse(bContext.Read(ref key1, ref input, ref output, Empty.Default).Found);
+                ClassicAssert.IsFalse(bContext.Read(ref key1, ref input, ref output, Empty.Default).Found);
             }
         }
 
@@ -273,8 +274,8 @@ namespace Tsavorite.test
 
                 if (bContext.Read(ref key1, ref input, ref output, Empty.Default).IsPending)
                 {
-                    Assert.AreEqual(value.vfield1, output.value.vfield1);
-                    Assert.AreEqual(value.vfield2, output.value.vfield2);
+                    ClassicAssert.AreEqual(value.vfield1, output.value.vfield1);
+                    ClassicAssert.AreEqual(value.vfield2, output.value.vfield2);
                 }
             }
             _ = bContext.CompletePending(true);
@@ -292,15 +293,15 @@ namespace Tsavorite.test
                 OutputStruct output = default;
                 var key1 = new KeyStruct { kfield1 = i, kfield2 = i + 1 };
                 var foundStatus = bContext.Read(ref key1, ref input, ref output, Empty.Default);
-                Assert.IsTrue(foundStatus.IsPending);
+                ClassicAssert.IsTrue(foundStatus.IsPending);
                 if (batchMode == BatchMode.NoBatch)
                 {
                     Status status;
                     _ = bContext.CompletePendingWithOutputs(out var outputs, wait: true);
                     (status, output) = GetSinglePendingResult(outputs);
-                    Assert.IsTrue(status.Found, status.ToString());
-                    Assert.AreEqual(key1.kfield1, output.value.vfield1);
-                    Assert.AreEqual(key1.kfield2, output.value.vfield2);
+                    ClassicAssert.IsTrue(status.Found, status.ToString());
+                    ClassicAssert.AreEqual(key1.kfield1, output.value.vfield1);
+                    ClassicAssert.AreEqual(key1.kfield2, output.value.vfield2);
                     outputs.Dispose();
                 }
                 else if (c > 0 && (c % batchSize) == 0)
@@ -310,11 +311,11 @@ namespace Tsavorite.test
                     while (outputs.Next())
                     {
                         count++;
-                        Assert.AreEqual(outputs.Current.Key.kfield1, outputs.Current.Output.value.vfield1);
-                        Assert.AreEqual(outputs.Current.Key.kfield2, outputs.Current.Output.value.vfield2);
+                        ClassicAssert.AreEqual(outputs.Current.Key.kfield1, outputs.Current.Output.value.vfield1);
+                        ClassicAssert.AreEqual(outputs.Current.Key.kfield2, outputs.Current.Output.value.vfield2);
                     }
                     outputs.Dispose();
-                    Assert.AreEqual(batchSize + (c == batchSize ? 1 : 0), count);
+                    ClassicAssert.AreEqual(batchSize + (c == batchSize ? 1 : 0), count);
                 }
             }
         }
@@ -355,8 +356,8 @@ namespace Tsavorite.test
                 }
                 else
                 {
-                    Assert.AreEqual(2 * i, output.value.vfield1);
-                    Assert.AreEqual(2 * (i + 1), output.value.vfield2);
+                    ClassicAssert.AreEqual(2 * i, output.value.vfield1);
+                    ClassicAssert.AreEqual(2 * (i + 1), output.value.vfield2);
                 }
             }
 
@@ -373,8 +374,8 @@ namespace Tsavorite.test
                 status = bContext.Read(ref key, ref input, ref output, Empty.Default);
 
                 AssertCompleted(new(StatusCode.Found), status);
-                Assert.AreEqual(2 * value.vfield1, output.value.vfield1);
-                Assert.AreEqual(2 * value.vfield2, output.value.vfield2);
+                ClassicAssert.AreEqual(2 * value.vfield1, output.value.vfield1);
+                ClassicAssert.AreEqual(2 * value.vfield2, output.value.vfield2);
             }
 
             key = new KeyStruct { kfield1 = nums.Length, kfield2 = nums.Length + 1 };
@@ -431,8 +432,8 @@ namespace Tsavorite.test
                 status = bContext.Read(ref key, ref input, ref output, Empty.Default);
 
                 AssertCompleted(new(StatusCode.Found), status);
-                Assert.AreEqual(2 * value.vfield1, output.value.vfield1);
-                Assert.AreEqual(2 * value.vfield2, output.value.vfield2);
+                ClassicAssert.AreEqual(2 * value.vfield1, output.value.vfield1);
+                ClassicAssert.AreEqual(2 * value.vfield2, output.value.vfield2);
             }
 
             key = new KeyStruct { kfield1 = nums.Length, kfield2 = nums.Length + 1 };
@@ -458,10 +459,10 @@ namespace Tsavorite.test
             AssertCompleted(new(StatusCode.Found), status);
 
             // Verify the read data
-            Assert.AreEqual(value.vfield1, output.value.vfield1);
-            Assert.AreEqual(value.vfield2, output.value.vfield2);
-            Assert.AreEqual(key1.kfield1, 13);
-            Assert.AreEqual(key1.kfield2, 14);
+            ClassicAssert.AreEqual(value.vfield1, output.value.vfield1);
+            ClassicAssert.AreEqual(value.vfield2, output.value.vfield2);
+            ClassicAssert.AreEqual(key1.kfield1, 13);
+            ClassicAssert.AreEqual(key1.kfield2, 14);
         }
 
         // Test the overload call of .Read (key, out output, userContext)
@@ -479,10 +480,10 @@ namespace Tsavorite.test
             AssertCompleted(new(StatusCode.Found), status);
 
             // Verify the read data
-            Assert.AreEqual(value.vfield1, output.value.vfield1);
-            Assert.AreEqual(value.vfield2, output.value.vfield2);
-            Assert.AreEqual(key1.kfield1, 13);
-            Assert.AreEqual(key1.kfield2, 14);
+            ClassicAssert.AreEqual(value.vfield1, output.value.vfield1);
+            ClassicAssert.AreEqual(value.vfield2, output.value.vfield2);
+            ClassicAssert.AreEqual(key1.kfield1, 13);
+            ClassicAssert.AreEqual(key1.kfield2, 14);
         }
 
 
@@ -504,10 +505,10 @@ namespace Tsavorite.test
             AssertCompleted(new(StatusCode.Found), status);
 
             // Verify the read data
-            Assert.AreEqual(value.vfield1, output.value.vfield1);
-            Assert.AreEqual(value.vfield2, output.value.vfield2);
-            Assert.AreEqual(key1.kfield1, 13);
-            Assert.AreEqual(key1.kfield2, 14);
+            ClassicAssert.AreEqual(value.vfield1, output.value.vfield1);
+            ClassicAssert.AreEqual(value.vfield2, output.value.vfield2);
+            ClassicAssert.AreEqual(key1.kfield1, 13);
+            ClassicAssert.AreEqual(key1.kfield2, 14);
         }
 
         // Test the overload call of .Read (key)
@@ -526,10 +527,10 @@ namespace Tsavorite.test
             var (status, output) = bContext.Read(key1);
             AssertCompleted(new(StatusCode.Found), status);
 
-            Assert.AreEqual(value.vfield1, output.value.vfield1);
-            Assert.AreEqual(value.vfield2, output.value.vfield2);
-            Assert.AreEqual(key1.kfield1, 13);
-            Assert.AreEqual(key1.kfield2, 14);
+            ClassicAssert.AreEqual(value.vfield1, output.value.vfield1);
+            ClassicAssert.AreEqual(value.vfield2, output.value.vfield2);
+            ClassicAssert.AreEqual(key1.kfield1, 13);
+            ClassicAssert.AreEqual(key1.kfield2, 14);
         }
 
         [Test]
@@ -553,10 +554,10 @@ namespace Tsavorite.test
             var status = bContext.ReadAtAddress(store.Log.BeginAddress, ref input, ref output, ref readOptions, out _, Empty.Default);
             AssertCompleted(new(StatusCode.Found), status);
 
-            Assert.AreEqual(value.vfield1, output.value.vfield1);
-            Assert.AreEqual(value.vfield2, output.value.vfield2);
-            Assert.AreEqual(key1.kfield1, 13);
-            Assert.AreEqual(key1.kfield2, 14);
+            ClassicAssert.AreEqual(value.vfield1, output.value.vfield1);
+            ClassicAssert.AreEqual(value.vfield2, output.value.vfield2);
+            ClassicAssert.AreEqual(key1.kfield1, 13);
+            ClassicAssert.AreEqual(key1.kfield2, 14);
         }
 
         class SkipReadCacheFunctions : Functions
@@ -578,7 +579,7 @@ namespace Tsavorite.test
             void Assign(ref ValueStruct value, ref OutputStruct dst, ref ReadInfo readInfo)
             {
                 dst.value = value;
-                Assert.AreEqual(expectedReadAddress, readInfo.Address);
+                ClassicAssert.AreEqual(expectedReadAddress, readInfo.Address);
                 expectedReadAddress = -1;   // show that the test executed
             }
             public override void ReadCompletionCallback(ref KeyStruct key, ref InputStruct input, ref OutputStruct output, Empty ctx, Status status, RecordMetadata recordMetadata)
@@ -612,11 +613,11 @@ namespace Tsavorite.test
 
             void VerifyOutput()
             {
-                Assert.AreEqual(-1, functions.expectedReadAddress);     // make sure the test executed
-                Assert.AreEqual(value.vfield1, output.value.vfield1);
-                Assert.AreEqual(value.vfield2, output.value.vfield2);
-                Assert.AreEqual(13, key1.kfield1);
-                Assert.AreEqual(14, key1.kfield2);
+                ClassicAssert.AreEqual(-1, functions.expectedReadAddress);     // make sure the test executed
+                ClassicAssert.AreEqual(value.vfield1, output.value.vfield1);
+                ClassicAssert.AreEqual(value.vfield2, output.value.vfield2);
+                ClassicAssert.AreEqual(13, key1.kfield1);
+                ClassicAssert.AreEqual(14, key1.kfield2);
             }
 
             void VerifyResult()
@@ -626,14 +627,14 @@ namespace Tsavorite.test
                     _ = skipReadCachebContext.CompletePendingWithOutputs(out var completedOutputs, wait: true);
                     (status, output) = GetSinglePendingResult(completedOutputs);
                 }
-                Assert.IsTrue(status.Found);
+                ClassicAssert.IsTrue(status.Found);
                 VerifyOutput();
             }
 
             // This will just be an ordinary read, as the record is in memory.
             functions.expectedReadAddress = readAtAddress;
             status = skipReadCachebContext.Read(ref key1, ref input, ref output);
-            Assert.IsTrue(status.Found);
+            ClassicAssert.IsTrue(status.Found);
             VerifyOutput();
 
             // ReadCache is used when the record is read from disk.
@@ -645,22 +646,22 @@ namespace Tsavorite.test
             status = skipReadCachebContext.ReadAtAddress(readAtAddress, ref key1, ref input, ref output, ref readOptions, out _);
             VerifyResult();
 
-            Assert.AreEqual(store.ReadCache.BeginAddress, store.ReadCache.TailAddress);
+            ClassicAssert.AreEqual(store.ReadCache.BeginAddress, store.ReadCache.TailAddress);
 
             // Put it into the read cache.
             functions.expectedReadAddress = readAtAddress;
             readOptions.CopyOptions = new(ReadCopyFrom.AllImmutable, ReadCopyTo.ReadCache);
             status = skipReadCachebContext.ReadAtAddress(readAtAddress, ref key1, ref input, ref output, ref readOptions, out _);
-            Assert.IsTrue(status.IsPending);
+            ClassicAssert.IsTrue(status.IsPending);
             VerifyResult();
 
-            Assert.Less(store.ReadCache.BeginAddress, store.ReadCache.TailAddress);
+            ClassicAssert.Less(store.ReadCache.BeginAddress, store.ReadCache.TailAddress);
 
             // Now this will read from the read cache.
             functions.expectedReadAddress = Constants.kInvalidAddress;
             status = skipReadCachebContext.Read(ref key1, ref input, ref output);
-            Assert.IsFalse(status.IsPending);
-            Assert.IsTrue(status.Found);
+            ClassicAssert.IsFalse(status.IsPending);
+            ClassicAssert.IsTrue(status.Found);
             VerifyOutput();
         }
 
@@ -678,15 +679,15 @@ namespace Tsavorite.test
             var key1 = new KeyStruct { kfield1 = 13, kfield2 = 14 };
             var value = new ValueStruct { vfield1 = 23, vfield2 = 24 };
 
-            Assert.AreEqual(0, store.EntryCount);
+            ClassicAssert.AreEqual(0, store.EntryCount);
 
             _ = bContext.Upsert(ref key1, ref value);
             var status = bContext.Read(ref key1, ref input, ref output, Empty.Default);
             AssertCompleted(new(StatusCode.Found), status);
 
-            Assert.AreEqual(1, store.EntryCount);
-            Assert.AreEqual(value.vfield1, output.value.vfield1);
-            Assert.AreEqual(value.vfield2, output.value.vfield2);
+            ClassicAssert.AreEqual(1, store.EntryCount);
+            ClassicAssert.AreEqual(value.vfield1, output.value.vfield1);
+            ClassicAssert.AreEqual(value.vfield2, output.value.vfield2);
         }
 
         // Simple Upsert test of overload where not using Ref for key and value and setting all parameters
@@ -710,8 +711,8 @@ namespace Tsavorite.test
             var status = bContext.Read(ref key1, ref input, ref output, Empty.Default);
             AssertCompleted(new(StatusCode.Found), status);
 
-            Assert.AreEqual(value.vfield1, output.value.vfield1);
-            Assert.AreEqual(value.vfield2, output.value.vfield2);
+            ClassicAssert.AreEqual(value.vfield1, output.value.vfield1);
+            ClassicAssert.AreEqual(value.vfield2, output.value.vfield2);
         }
 
         //**** Quick End to End Sample code from help docs ***
@@ -738,11 +739,11 @@ namespace Tsavorite.test
             long key = 1, value = 1, input = 10, output = 0;
             _ = bContext.Upsert(ref key, ref value);
             _ = bContext.Read(ref key, ref output);
-            Assert.AreEqual(value, output);
+            ClassicAssert.AreEqual(value, output);
             _ = bContext.RMW(ref key, ref input);
             _ = bContext.RMW(ref key, ref input);
             _ = bContext.Read(ref key, ref output);
-            Assert.AreEqual(10, output);
+            ClassicAssert.AreEqual(10, output);
         }
 
         [Test]
@@ -787,10 +788,10 @@ namespace Tsavorite.test
                 var value = key + valueMult;
                 hashes[key] = store.storeFunctions.GetKeyHashCode64(ref key);
                 status = bContext.Upsert(key, value);
-                Assert.IsTrue(status.Record.Created, status.ToString());
+                ClassicAssert.IsTrue(status.Record.Created, status.ToString());
                 status = bContext.Read(key, out output);
-                Assert.IsTrue(status.Found, status.ToString());
-                Assert.AreEqual(value, output);
+                ClassicAssert.IsTrue(status.Found, status.ToString());
+                ClassicAssert.AreEqual(value, output);
             }
 
             void doUpdate(bool useRMW)
@@ -802,16 +803,16 @@ namespace Tsavorite.test
                     if (useRMW)
                     {
                         status = bContext.RMW(key, value);
-                        Assert.IsTrue(status.Record.InPlaceUpdated, status.ToString());
+                        ClassicAssert.IsTrue(status.Record.InPlaceUpdated, status.ToString());
                     }
                     else
                     {
                         status = bContext.Upsert(key, value);
-                        Assert.IsTrue(status.Record.InPlaceUpdated, status.ToString());
+                        ClassicAssert.IsTrue(status.Record.InPlaceUpdated, status.ToString());
                     }
                     status = bContext.Read(key, out output);
-                    Assert.IsTrue(status.Found, status.ToString());
-                    Assert.AreEqual(value, output);
+                    ClassicAssert.IsTrue(status.Found, status.ToString());
+                    ClassicAssert.AreEqual(value, output);
                 }
 
                 // Update and Read with keyHash
@@ -822,18 +823,18 @@ namespace Tsavorite.test
                     {
                         RMWOptions rmwOptions = new() { KeyHash = hashes[key] };
                         status = bContext.RMW(key, value, ref rmwOptions);
-                        Assert.IsTrue(status.Record.InPlaceUpdated, status.ToString());
+                        ClassicAssert.IsTrue(status.Record.InPlaceUpdated, status.ToString());
                     }
                     else
                     {
                         UpsertOptions upsertOptions = new() { KeyHash = hashes[key] };
                         status = bContext.Upsert(key, value, ref upsertOptions);
-                        Assert.IsTrue(status.Record.InPlaceUpdated, status.ToString());
+                        ClassicAssert.IsTrue(status.Record.InPlaceUpdated, status.ToString());
                     }
                     ReadOptions readOptions = new() { KeyHash = hashes[key] };
                     status = bContext.Read(key, out output, ref readOptions);
-                    Assert.IsTrue(status.Found, status.ToString());
-                    Assert.AreEqual(value, output);
+                    ClassicAssert.IsTrue(status.Found, status.ToString());
+                    ClassicAssert.AreEqual(value, output);
                 }
             }
 
@@ -844,9 +845,9 @@ namespace Tsavorite.test
             for (var key = 0L; key < numRecords; key++)
             {
                 status = bContext.Delete(key);
-                Assert.IsTrue(status.Found, status.ToString());
+                ClassicAssert.IsTrue(status.Found, status.ToString());
                 status = bContext.Read(key, out _);
-                Assert.IsTrue(status.NotFound, status.ToString());
+                ClassicAssert.IsTrue(status.NotFound, status.ToString());
             }
 
             // Update and Read without keyHash
@@ -856,7 +857,7 @@ namespace Tsavorite.test
                 status = bContext.Delete(key, ref deleteOptions);
                 ReadOptions readOptions = new() { KeyHash = hashes[key] };
                 status = bContext.Read(key, out _, ref readOptions);
-                Assert.IsTrue(status.NotFound, status.ToString());
+                ClassicAssert.IsTrue(status.NotFound, status.ToString());
             }
         }
 
@@ -890,10 +891,10 @@ namespace Tsavorite.test
                 var value = key + valueMult;
                 hashes[key] = store.storeFunctions.GetKeyHashCode64(ref key);
                 status = bContext.Upsert(key, value);
-                Assert.IsTrue(status.Record.Created, status.ToString());
+                ClassicAssert.IsTrue(status.Record.Created, status.ToString());
                 (status, output) = bContext.Read(key);
-                Assert.IsTrue(status.Found, status.ToString());
-                Assert.AreEqual(value, output);
+                ClassicAssert.IsTrue(status.Found, status.ToString());
+                ClassicAssert.AreEqual(value, output);
             }
 
             void doUpdate(bool useRMW)
@@ -905,16 +906,16 @@ namespace Tsavorite.test
                     if (useRMW)
                     {
                         status = bContext.RMW(key, value);
-                        Assert.IsTrue(status.Record.InPlaceUpdated, status.ToString());
+                        ClassicAssert.IsTrue(status.Record.InPlaceUpdated, status.ToString());
                     }
                     else
                     {
                         status = bContext.Upsert(key, value);
-                        Assert.IsTrue(status.Record.InPlaceUpdated, status.ToString());
+                        ClassicAssert.IsTrue(status.Record.InPlaceUpdated, status.ToString());
                     }
                     (status, output) = bContext.Read(key);
-                    Assert.IsTrue(status.Found, status.ToString());
-                    Assert.AreEqual(value, output);
+                    ClassicAssert.IsTrue(status.Found, status.ToString());
+                    ClassicAssert.AreEqual(value, output);
                 }
 
                 // Update and Read with keyHash
@@ -925,18 +926,18 @@ namespace Tsavorite.test
                     {
                         RMWOptions rmwOptions = new() { KeyHash = hashes[key] };
                         status = bContext.RMW(key, value, ref rmwOptions);
-                        Assert.IsTrue(status.Record.InPlaceUpdated, status.ToString());
+                        ClassicAssert.IsTrue(status.Record.InPlaceUpdated, status.ToString());
                     }
                     else
                     {
                         UpsertOptions upsertOptions = new() { KeyHash = hashes[key] };
                         status = bContext.Upsert(key, value, ref upsertOptions);
-                        Assert.IsTrue(status.Record.InPlaceUpdated, status.ToString());
+                        ClassicAssert.IsTrue(status.Record.InPlaceUpdated, status.ToString());
                     }
                     ReadOptions readOptions = new() { KeyHash = hashes[key] };
                     (status, output) = bContext.Read(key, ref readOptions);
-                    Assert.IsTrue(status.Found, status.ToString());
-                    Assert.AreEqual(value, output);
+                    ClassicAssert.IsTrue(status.Found, status.ToString());
+                    ClassicAssert.AreEqual(value, output);
                 }
             }
 
@@ -947,9 +948,9 @@ namespace Tsavorite.test
             for (var key = 0L; key < numRecords; key++)
             {
                 status = bContext.Delete(key);
-                Assert.IsTrue(status.Found, status.ToString());
+                ClassicAssert.IsTrue(status.Found, status.ToString());
                 (status, _) = bContext.Read(key);
-                Assert.IsTrue(status.NotFound, status.ToString());
+                ClassicAssert.IsTrue(status.NotFound, status.ToString());
             }
 
             // Update and Read without keyHash
@@ -959,7 +960,7 @@ namespace Tsavorite.test
                 status = bContext.Delete(key, ref deleteOptions);
                 ReadOptions readOptions = new() { KeyHash = hashes[key] };
                 (status, _) = bContext.Read(key, ref readOptions);
-                Assert.IsTrue(status.NotFound, status.ToString());
+                ClassicAssert.IsTrue(status.NotFound, status.ToString());
             }
         }
     }

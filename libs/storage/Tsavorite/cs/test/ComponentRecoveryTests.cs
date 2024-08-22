@@ -5,6 +5,7 @@ using System;
 using System.IO;
 using System.Threading.Tasks;
 using NUnit.Framework;
+using NUnit.Framework.Legacy;
 using Tsavorite.core;
 
 namespace Tsavorite.test.recovery
@@ -45,7 +46,7 @@ namespace Tsavorite.test.recovery
 
         private static unsafe void Finish_MallocFixedPageSizeRecoveryTest(int seed, IDevice device, int numBucketsToAdd, long[] logicalAddresses, ulong numBytesWritten, MallocFixedPageSize<HashBucket> recoveredAllocator, ulong numBytesRead)
         {
-            Assert.AreEqual(numBytesRead, numBytesWritten);
+            ClassicAssert.AreEqual(numBytesRead, numBytesWritten);
 
             var rand2 = new Random(seed);
             for (int i = 0; i < numBucketsToAdd; i++)
@@ -54,7 +55,7 @@ namespace Tsavorite.test.recovery
                 var bucket = (HashBucket*)recoveredAllocator.GetPhysicalAddress(logicalAddress);
                 for (int j = 0; j < Constants.kOverflowBucketIndex; j++)
                 {
-                    Assert.AreEqual(rand2.Next(), bucket->bucket_entries[j]);
+                    ClassicAssert.AreEqual(rand2.Next(), bucket->bucket_entries[j]);
                 }
             }
 
@@ -137,11 +138,11 @@ namespace Tsavorite.test.recovery
                 var exists1 = hash_table1.FindTag(ref hei1);
                 var exists2 = hash_table2.FindTag(ref hei2);
 
-                Assert.AreEqual(exists2, exists1);
+                ClassicAssert.AreEqual(exists2, exists1);
 
                 if (exists1)
                 {
-                    Assert.AreEqual(hei2.entry.word, hei1.entry.word);
+                    ClassicAssert.AreEqual(hei2.entry.word, hei1.entry.word);
                 }
             }
 
