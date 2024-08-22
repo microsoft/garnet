@@ -5,7 +5,6 @@ using System.Collections.Generic;
 using System.Runtime.CompilerServices;
 using Garnet.common;
 using Garnet.server;
-using Microsoft.IdentityModel.Tokens;
 
 namespace Garnet.cluster
 {
@@ -30,7 +29,7 @@ namespace Garnet.cluster
         /// </summary>
         /// <returns></returns>
         public bool IsNullOrEmpty()
-            => WorkingSet.IsNullOrEmpty();
+            => WorkingSet == null || WorkingSet.Count == 0;
 
         /// <summary>
         /// Add key to migration working set with corresponding status
