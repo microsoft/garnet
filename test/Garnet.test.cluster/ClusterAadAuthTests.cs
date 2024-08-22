@@ -38,7 +38,7 @@ namespace Garnet.test.cluster
         }
 
         [Test, Order(1)]
-        [Category("CLUSTER-AUTH"), Timeout(60000)]
+        [Category("CLUSTER-AUTH"), CancelAfter(60000)]
         public void ValidateClusterAuthWithObjectId()
         {
             var nodes = 2;
@@ -60,7 +60,7 @@ namespace Garnet.test.cluster
         }
 
         [Test, Order(2)]
-        [Category("CLUSTER-AUTH"), Timeout(60000)]
+        [Category("CLUSTER-AUTH"), CancelAfter(60000)]
         public void ValidateClusterAuthWithGroupOid()
         {
             var nodes = 2;

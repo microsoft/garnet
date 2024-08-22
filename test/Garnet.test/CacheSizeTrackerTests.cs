@@ -52,7 +52,7 @@ namespace Garnet.test
             ClassicAssert.AreEqual(248, cacheSizeTracker.mainLogTracker.LogHeapSizeBytes);
         }
 
-        [Test, Timeout(40 * 1000)]
+        [Test, CancelAfter(40 * 1000)]
         public void IncreaseEmptyPageCountTest()
         {
             ManualResetEventSlim epcEvent = new ManualResetEventSlim(false);

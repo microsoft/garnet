@@ -100,7 +100,7 @@ namespace Garnet.test
         }
 
         [Test]
-        [Timeout(10_000)]
+        [CancelAfter(10_000)]
         public void AofUpsertStoreCommitTaskRecoverTest()
         {
             server.Dispose(false);
