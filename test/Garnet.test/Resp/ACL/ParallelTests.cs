@@ -4,6 +4,7 @@
 using System.Threading.Tasks;
 using Garnet.server.ACL;
 using NUnit.Framework;
+using NUnit.Framework.Legacy;
 
 namespace Garnet.test.Resp.ACL
 {
@@ -34,7 +35,7 @@ namespace Garnet.test.Resp.ACL
 
             // Add the test user and password
             var response = await c.ExecuteAsync("ACL", "SETUSER", TestUserA, "on", $">{DummyPassword}");
-            Assert.IsTrue(response.StartsWith("OK"));
+            ClassicAssert.IsTrue(response.StartsWith("OK"));
 
             // Run multiple sessions that stress AUTH
             Parallel.For(0, degreeOfParallelism, (t, state) =>

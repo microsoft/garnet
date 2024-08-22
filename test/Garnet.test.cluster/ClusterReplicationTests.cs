@@ -11,6 +11,7 @@ using System.Threading;
 using System.Threading.Tasks;
 using Microsoft.Extensions.Logging;
 using NUnit.Framework;
+using NUnit.Framework.Legacy;
 using NUnit.Framework.Internal;
 using StackExchange.Redis;
 
@@ -112,7 +113,7 @@ namespace Garnet.test.cluster
             var replica_count = 1;// Per primary
             var primary_count = 1;
             var nodes_count = primary_count + primary_count * replica_count;
-            Assert.IsTrue(primary_count > 0);
+            ClassicAssert.IsTrue(primary_count > 0);
             context.CreateInstances(nodes_count, disableObjects: disableObjects, enableAOF: true, useTLS: useTLS);
             context.CreateConnection(useTLS: useTLS);
             var (shards, _) = context.clusterTestUtils.SimpleSetupCluster(primary_count, replica_count, logger: context.logger);
@@ -120,13 +121,13 @@ namespace Garnet.test.cluster
             var cconfig = context.clusterTestUtils.ClusterNodes(0, context.logger);
             var myself = cconfig.Nodes.First();
             var slotRangesStr = string.Join(",", myself.Slots.Select(x => $"({x.From}-{x.To})").ToList());
-            Assert.AreEqual(1, myself.Slots.Count, $"Setup failed slot ranges count greater than 1 {slotRangesStr}");
+            ClassicAssert.AreEqual(1, myself.Slots.Count, $"Setup failed slot ranges count greater than 1 {slotRangesStr}");
 
             shards = context.clusterTestUtils.ClusterShards(0, context.logger);
-            Assert.AreEqual(1, shards.Count);
-            Assert.AreEqual(1, shards[0].slotRanges.Count);
-            Assert.AreEqual(0, shards[0].slotRanges[0].Item1);
-            Assert.AreEqual(16383, shards[0].slotRanges[0].Item2);
+            ClassicAssert.AreEqual(1, shards.Count);
+            ClassicAssert.AreEqual(1, shards[0].slotRanges.Count);
+            ClassicAssert.AreEqual(0, shards[0].slotRanges[0].Item1);
+            ClassicAssert.AreEqual(16383, shards[0].slotRanges[0].Item2);
 
             var keyLength = 16;
             var kvpairCount = keyCount;
@@ -149,7 +150,7 @@ namespace Garnet.test.cluster
             var replica_count = 1;// Per primary
             var primary_count = 1;
             var nodes_count = primary_count + (primary_count * replica_count);
-            Assert.IsTrue(primary_count > 0);
+            ClassicAssert.IsTrue(primary_count > 0);
             context.CreateInstances(nodes_count, disableObjects: disableObjects, enableAOF: true, useTLS: useTLS);
             context.CreateConnection(useTLS: useTLS);
             var (shards, _) = context.clusterTestUtils.SimpleSetupCluster(primary_count, replica_count, logger: context.logger);
@@ -157,13 +158,13 @@ namespace Garnet.test.cluster
             var cconfig = context.clusterTestUtils.ClusterNodes(0, context.logger);
             var myself = cconfig.Nodes.First();
             var slotRangesStr = string.Join(",", myself.Slots.Select(x => $"({x.From}-{x.To})").ToList());
-            Assert.AreEqual(1, myself.Slots.Count, $"Setup failed slot ranges count greater than 1 {slotRangesStr}");
+            ClassicAssert.AreEqual(1, myself.Slots.Count, $"Setup failed slot ranges count greater than 1 {slotRangesStr}");
 
             shards = context.clusterTestUtils.ClusterShards(0, context.logger);
-            Assert.AreEqual(1, shards.Count);
-            Assert.AreEqual(1, shards[0].slotRanges.Count);
-            Assert.AreEqual(0, shards[0].slotRanges[0].Item1);
-            Assert.AreEqual(16383, shards[0].slotRanges[0].Item2);
+            ClassicAssert.AreEqual(1, shards.Count);
+            ClassicAssert.AreEqual(1, shards[0].slotRanges.Count);
+            ClassicAssert.AreEqual(0, shards[0].slotRanges[0].Item1);
+            ClassicAssert.AreEqual(16383, shards[0].slotRanges[0].Item2);
 
             var keyLength = 32;
             var kvpairCount = keyCount;
@@ -215,7 +216,7 @@ namespace Garnet.test.cluster
             var replica_count = 1;// Per primary
             var primary_count = 1;
             var nodes_count = primary_count + (primary_count * replica_count);
-            Assert.IsTrue(primary_count > 0);
+            ClassicAssert.IsTrue(primary_count > 0);
             context.CreateInstances(nodes_count, disableObjects: disableObjects, enableAOF: true, useTLS: useTLS);
             context.CreateConnection(useTLS: useTLS);
             var (shards, _) = context.clusterTestUtils.SimpleSetupCluster(primary_count, replica_count, logger: context.logger);
@@ -223,13 +224,13 @@ namespace Garnet.test.cluster
             var cconfig = context.clusterTestUtils.ClusterNodes(0, context.logger);
             var myself = cconfig.Nodes.First();
             var slotRangesStr = string.Join(",", myself.Slots.Select(x => $"({x.From}-{x.To})").ToList());
-            Assert.AreEqual(1, myself.Slots.Count, $"Setup failed slot ranges count greater than 1 {slotRangesStr}");
+            ClassicAssert.AreEqual(1, myself.Slots.Count, $"Setup failed slot ranges count greater than 1 {slotRangesStr}");
 
             shards = context.clusterTestUtils.ClusterShards(0, context.logger);
-            Assert.AreEqual(1, shards.Count);
-            Assert.AreEqual(1, shards[0].slotRanges.Count);
-            Assert.AreEqual(0, shards[0].slotRanges[0].Item1);
-            Assert.AreEqual(16383, shards[0].slotRanges[0].Item2);
+            ClassicAssert.AreEqual(1, shards.Count);
+            ClassicAssert.AreEqual(1, shards[0].slotRanges.Count);
+            ClassicAssert.AreEqual(0, shards[0].slotRanges[0].Item1);
+            ClassicAssert.AreEqual(16383, shards[0].slotRanges[0].Item2);
 
             var keyLength = 32;
             var kvpairCount = keyCount;
@@ -311,7 +312,7 @@ namespace Garnet.test.cluster
             var replica_count = 1;// Per primary
             var primary_count = 1;
             var nodes_count = primary_count + primary_count * replica_count;
-            Assert.IsTrue(primary_count > 0);
+            ClassicAssert.IsTrue(primary_count > 0);
             context.CreateInstances(nodes_count, disableObjects: disableObjects, lowMemory: lowMemory, SegmentSize: manySegments ? "4k" : "1g", DisableStorageTier: disableStorageTier, EnableIncrementalSnapshots: incrementalSnapshots, enableAOF: true, useTLS: useTLS);
             context.CreateConnection(useTLS: useTLS);
             var (shards, _) = context.clusterTestUtils.SimpleSetupCluster(primary_count, replica_count, logger: context.logger);
@@ -319,13 +320,13 @@ namespace Garnet.test.cluster
             var cconfig = context.clusterTestUtils.ClusterNodes(0, context.logger);
             var myself = cconfig.Nodes.First();
             var slotRangesStr = string.Join(",", myself.Slots.Select(x => $"({x.From}-{x.To})").ToList());
-            Assert.AreEqual(1, myself.Slots.Count, $"Setup failed slot ranges count greater than 1 {slotRangesStr}");
+            ClassicAssert.AreEqual(1, myself.Slots.Count, $"Setup failed slot ranges count greater than 1 {slotRangesStr}");
 
             shards = context.clusterTestUtils.ClusterShards(0, context.logger);
-            Assert.AreEqual(1, shards.Count);
-            Assert.AreEqual(1, shards[0].slotRanges.Count);
-            Assert.AreEqual(0, shards[0].slotRanges[0].Item1);
-            Assert.AreEqual(16383, shards[0].slotRanges[0].Item2);
+            ClassicAssert.AreEqual(1, shards.Count);
+            ClassicAssert.AreEqual(1, shards[0].slotRanges.Count);
+            ClassicAssert.AreEqual(0, shards[0].slotRanges[0].Item1);
+            ClassicAssert.AreEqual(16383, shards[0].slotRanges[0].Item2);
 
             var keyLength = 32;
             var kvpairCount = disableStorageTier ? 16 : keyCount;
@@ -384,23 +385,23 @@ namespace Garnet.test.cluster
             var replica_count = 1;// Per primary
             var primary_count = 1;
             var nodes_count = primary_count + (primary_count * replica_count);
-            Assert.IsTrue(primary_count > 0);
+            ClassicAssert.IsTrue(primary_count > 0);
             context.CreateInstances(nodes_count, tryRecover: true, disableObjects: disableObjects, lowMemory: lowMemory, enableAOF: true, useTLS: useTLS);
             context.CreateConnection(useTLS: useTLS);
 
-            Assert.AreEqual("OK", context.clusterTestUtils.AddDelSlotsRange(0, new List<(int, int)>() { (0, 16383) }, true, context.logger));
+            ClassicAssert.AreEqual("OK", context.clusterTestUtils.AddDelSlotsRange(0, new List<(int, int)>() { (0, 16383) }, true, context.logger));
             context.clusterTestUtils.BumpEpoch(0, logger: context.logger);
 
             var cconfig = context.clusterTestUtils.ClusterNodes(0, context.logger);
             var myself = cconfig.Nodes.First();
             var slotRangesStr = string.Join(",", myself.Slots.Select(x => $"({x.From}-{x.To})").ToList());
-            Assert.AreEqual(1, myself.Slots.Count, $"Setup failed slot ranges count greater than 1 {slotRangesStr}");
+            ClassicAssert.AreEqual(1, myself.Slots.Count, $"Setup failed slot ranges count greater than 1 {slotRangesStr}");
 
             var shards = context.clusterTestUtils.ClusterShards(0, context.logger);
-            Assert.AreEqual(1, shards.Count);
-            Assert.AreEqual(1, shards[0].slotRanges.Count);
-            Assert.AreEqual(0, shards[0].slotRanges[0].Item1);
-            Assert.AreEqual(16383, shards[0].slotRanges[0].Item2);
+            ClassicAssert.AreEqual(1, shards.Count);
+            ClassicAssert.AreEqual(1, shards[0].slotRanges.Count);
+            ClassicAssert.AreEqual(0, shards[0].slotRanges[0].Item1);
+            ClassicAssert.AreEqual(16383, shards[0].slotRanges[0].Item2);
 
             var keyLength = 32;
             var kvpairCount = keyCount;
@@ -443,23 +444,23 @@ namespace Garnet.test.cluster
             var replica_count = 1;// Per primary
             var primary_count = 1;
             var nodes_count = primary_count + (primary_count * replica_count);
-            Assert.IsTrue(primary_count > 0);
+            ClassicAssert.IsTrue(primary_count > 0);
             context.CreateInstances(nodes_count, tryRecover: true, disableObjects: disableObjects, enableAOF: true, useTLS: useTLS);
             context.CreateConnection(useTLS: useTLS);
 
-            Assert.AreEqual("OK", context.clusterTestUtils.AddDelSlotsRange(0, new List<(int, int)>() { (0, 16383) }, true, context.logger));
+            ClassicAssert.AreEqual("OK", context.clusterTestUtils.AddDelSlotsRange(0, new List<(int, int)>() { (0, 16383) }, true, context.logger));
             context.clusterTestUtils.BumpEpoch(0, logger: context.logger);
 
             var cconfig = context.clusterTestUtils.ClusterNodes(0, context.logger);
             var myself = cconfig.Nodes.First();
             var slotRangesStr = string.Join(",", myself.Slots.Select(x => $"({x.From}-{x.To})").ToList());
-            Assert.AreEqual(1, myself.Slots.Count, $"Setup failed slot ranges count greater than 1 {slotRangesStr}");
+            ClassicAssert.AreEqual(1, myself.Slots.Count, $"Setup failed slot ranges count greater than 1 {slotRangesStr}");
 
             var shards = context.clusterTestUtils.ClusterShards(0, context.logger);
-            Assert.AreEqual(1, shards.Count);
-            Assert.AreEqual(1, shards[0].slotRanges.Count);
-            Assert.AreEqual(0, shards[0].slotRanges[0].Item1);
-            Assert.AreEqual(16383, shards[0].slotRanges[0].Item2);
+            ClassicAssert.AreEqual(1, shards.Count);
+            ClassicAssert.AreEqual(1, shards[0].slotRanges.Count);
+            ClassicAssert.AreEqual(0, shards[0].slotRanges[0].Item1);
+            ClassicAssert.AreEqual(16383, shards[0].slotRanges[0].Item2);
 
             var keyLength = 32;
             var kvpairCount = keyCount;
@@ -497,9 +498,9 @@ namespace Garnet.test.cluster
             if (!disableObjects)
                 objectStoreRecoveredAofAddress = context.clusterTestUtils.GetObjectStoreRecoveredAofAddress(0, logger: context.logger);
 
-            Assert.AreEqual(storeCurrentAofAddress, storeRecoveredAofAddress);
+            ClassicAssert.AreEqual(storeCurrentAofAddress, storeRecoveredAofAddress);
             if (!disableObjects)
-                Assert.AreEqual(objectStoreCurrentAofAddress, objectStoreRecoveredAofAddress);
+                ClassicAssert.AreEqual(objectStoreCurrentAofAddress, objectStoreRecoveredAofAddress);
         }
 
         [Test, Order(9), Timeout(testTimeout)]
@@ -509,7 +510,7 @@ namespace Garnet.test.cluster
             var replica_count = 1;// Per primary
             var primary_count = 1;
             var nodes_count = primary_count + (primary_count * replica_count);
-            Assert.IsTrue(primary_count > 0);
+            ClassicAssert.IsTrue(primary_count > 0);
             context.CreateInstances(nodes_count, enableAOF: true, useTLS: useTLS);
             context.CreateConnection(useTLS: useTLS);
 
@@ -518,16 +519,16 @@ namespace Garnet.test.cluster
             var cconfig = context.clusterTestUtils.ClusterNodes(0, context.logger);
             var myself = cconfig.Nodes.First();
             var slotRangesStr = string.Join(",", myself.Slots.Select(x => $"({x.From}-{x.To})").ToList());
-            Assert.AreEqual(1, myself.Slots.Count, $"Setup failed slot ranges count greater than 1 {slotRangesStr}");
+            ClassicAssert.AreEqual(1, myself.Slots.Count, $"Setup failed slot ranges count greater than 1 {slotRangesStr}");
 
             shards = context.clusterTestUtils.ClusterShards(0, context.logger);
-            Assert.AreEqual(1, shards.Count);
-            Assert.AreEqual(1, shards[0].slotRanges.Count);
-            Assert.AreEqual(0, shards[0].slotRanges[0].Item1);
-            Assert.AreEqual(16383, shards[0].slotRanges[0].Item2);
+            ClassicAssert.AreEqual(1, shards.Count);
+            ClassicAssert.AreEqual(1, shards[0].slotRanges.Count);
+            ClassicAssert.AreEqual(0, shards[0].slotRanges[0].Item1);
+            ClassicAssert.AreEqual(16383, shards[0].slotRanges[0].Item2);
 
             var resp = context.clusterTestUtils.SetKey(1, Encoding.ASCII.GetBytes("testKey"), Encoding.ASCII.GetBytes("testValue"), out _, out _, out _, logger: context.logger);
-            Assert.AreEqual(ResponseState.MOVED, resp);
+            ClassicAssert.AreEqual(ResponseState.MOVED, resp);
         }
 
         [Test, Order(10), Timeout(testTimeout)]
@@ -538,16 +539,16 @@ namespace Garnet.test.cluster
             context.CreateInstances(nodes_count, tryRecover: true, disableObjects: true, enableAOF: true, useTLS: useTLS);
             context.CreateConnection(useTLS: useTLS);
 
-            Assert.AreEqual("OK", context.clusterTestUtils.AddDelSlotsRange(0, new List<(int, int)>() { (0, 16383) }, true, context.logger));
+            ClassicAssert.AreEqual("OK", context.clusterTestUtils.AddDelSlotsRange(0, new List<(int, int)>() { (0, 16383) }, true, context.logger));
 
             context.clusterTestUtils.SetConfigEpoch(0, 1, context.logger);
             context.clusterTestUtils.SetConfigEpoch(1, 2, context.logger);
 
             var configEpoch = context.clusterTestUtils.GetConfigEpoch(0, context.logger);
-            Assert.AreEqual(1, configEpoch);
+            ClassicAssert.AreEqual(1, configEpoch);
 
             configEpoch = context.clusterTestUtils.GetConfigEpoch(1, context.logger);
-            Assert.AreEqual(2, configEpoch);
+            ClassicAssert.AreEqual(2, configEpoch);
 
             context.clusterTestUtils.Meet(0, 1, logger: context.logger);
             context.clusterTestUtils.WaitClusterNodesSync(syncOnNodeIndex: 0, count: 2, context.logger);
@@ -573,7 +574,7 @@ namespace Garnet.test.cluster
             var replica_count = 1;// Per primary
             var primary_count = 1;
             var nodes_count = primary_count + (primary_count * replica_count);
-            Assert.IsTrue(primary_count > 0);
+            ClassicAssert.IsTrue(primary_count > 0);
             context.CreateInstances(nodes_count, disableObjects: true, enableAOF: true, useTLS: useTLS);
             context.CreateConnection(useTLS: useTLS);
             var (shards, _) = context.clusterTestUtils.SimpleSetupCluster(primary_count, replica_count, logger: context.logger);
@@ -581,13 +582,13 @@ namespace Garnet.test.cluster
             var cconfig = context.clusterTestUtils.ClusterNodes(0, context.logger);
             var myself = cconfig.Nodes.First();
             var slotRangesStr = string.Join(",", myself.Slots.Select(x => $"({x.From}-{x.To})").ToList());
-            Assert.AreEqual(1, myself.Slots.Count, $"Setup failed slot ranges count greater than 1 {slotRangesStr}");
+            ClassicAssert.AreEqual(1, myself.Slots.Count, $"Setup failed slot ranges count greater than 1 {slotRangesStr}");
 
             shards = context.clusterTestUtils.ClusterShards(0, context.logger);
-            Assert.AreEqual(1, shards.Count);
-            Assert.AreEqual(1, shards[0].slotRanges.Count);
-            Assert.AreEqual(0, shards[0].slotRanges[0].Item1);
-            Assert.AreEqual(16383, shards[0].slotRanges[0].Item2);
+            ClassicAssert.AreEqual(1, shards.Count);
+            ClassicAssert.AreEqual(1, shards[0].slotRanges.Count);
+            ClassicAssert.AreEqual(0, shards[0].slotRanges[0].Item1);
+            ClassicAssert.AreEqual(16383, shards[0].slotRanges[0].Item2);
 
             var keyLength = 32;
             var kvpairCount = 16;
@@ -643,7 +644,7 @@ namespace Garnet.test.cluster
             var replica_count = 2; // Per primary
             var primary_count = 1;
             var nodes_count = primary_count + (primary_count * replica_count);
-            Assert.IsTrue(primary_count > 0);
+            ClassicAssert.IsTrue(primary_count > 0);
             context.CreateInstances(nodes_count, disableObjects: true, EnableIncrementalSnapshots: enableIncrementalSnapshots, enableAOF: true, useTLS: useTLS);
             context.CreateConnection(useTLS: useTLS);
             var (shards, _) = context.clusterTestUtils.SimpleSetupCluster(primary_count, replica_count, logger: context.logger);
@@ -651,18 +652,18 @@ namespace Garnet.test.cluster
             var cconfig = context.clusterTestUtils.ClusterNodes(0, context.logger);
             var primary = cconfig.Nodes.First();
             var slotRangesStr = string.Join(",", primary.Slots.Select(x => $"({x.From}-{x.To})").ToList());
-            Assert.AreEqual(1, primary.Slots.Count, $"Setup failed slot ranges count greater than 1 {slotRangesStr}");
+            ClassicAssert.AreEqual(1, primary.Slots.Count, $"Setup failed slot ranges count greater than 1 {slotRangesStr}");
 
             var rconfig1 = context.clusterTestUtils.ClusterNodes(1, context.logger);
             var rconfig2 = context.clusterTestUtils.ClusterNodes(2, context.logger);
-            Assert.AreEqual(primary.NodeId, rconfig1.Nodes.First().ParentNodeId);
-            Assert.AreEqual(primary.NodeId, rconfig2.Nodes.First().ParentNodeId);
+            ClassicAssert.AreEqual(primary.NodeId, rconfig1.Nodes.First().ParentNodeId);
+            ClassicAssert.AreEqual(primary.NodeId, rconfig2.Nodes.First().ParentNodeId);
 
             shards = context.clusterTestUtils.ClusterShards(0, context.logger);
-            Assert.AreEqual(1, shards.Count);
-            Assert.AreEqual(1, shards[0].slotRanges.Count);
-            Assert.AreEqual(0, shards[0].slotRanges[0].Item1);
-            Assert.AreEqual(16383, shards[0].slotRanges[0].Item2);
+            ClassicAssert.AreEqual(1, shards.Count);
+            ClassicAssert.AreEqual(1, shards[0].slotRanges.Count);
+            ClassicAssert.AreEqual(0, shards[0].slotRanges[0].Item1);
+            ClassicAssert.AreEqual(16383, shards[0].slotRanges[0].Item2);
 
             var keyLength = 32;
             var kvpairCount = keyCount;
@@ -724,22 +725,22 @@ namespace Garnet.test.cluster
             var replica_count = 1;//Per primary
             var primary_count = 1;
             var nodes_count = primary_count + (primary_count * replica_count);
-            Assert.IsTrue(primary_count > 0);
+            ClassicAssert.IsTrue(primary_count > 0);
             context.CreateInstances(nodes_count, tryRecover: true, disableObjects: disableObjects, lowMemory: true, SegmentSize: "4k", EnableIncrementalSnapshots: enableIncrementalSnapshots, enableAOF: true, useTLS: useTLS);
             context.CreateConnection(useTLS: useTLS);
-            Assert.AreEqual("OK", context.clusterTestUtils.AddDelSlotsRange(0, [(0, 16383)], true, context.logger));
+            ClassicAssert.AreEqual("OK", context.clusterTestUtils.AddDelSlotsRange(0, [(0, 16383)], true, context.logger));
             context.clusterTestUtils.BumpEpoch(0, logger: context.logger);
 
             var cconfig = context.clusterTestUtils.ClusterNodes(0, context.logger);
             var myself = cconfig.Nodes.First();
             var slotRangesStr = string.Join(",", myself.Slots.Select(x => $"({x.From}-{x.To})").ToList());
-            Assert.AreEqual(1, myself.Slots.Count, $"Setup failed slot ranges count greater than 1 {slotRangesStr}");
+            ClassicAssert.AreEqual(1, myself.Slots.Count, $"Setup failed slot ranges count greater than 1 {slotRangesStr}");
 
             var shards = context.clusterTestUtils.ClusterShards(0, context.logger);
-            Assert.AreEqual(1, shards.Count);
-            Assert.AreEqual(1, shards[0].slotRanges.Count);
-            Assert.AreEqual(0, shards[0].slotRanges[0].Item1);
-            Assert.AreEqual(16383, shards[0].slotRanges[0].Item2);
+            ClassicAssert.AreEqual(1, shards.Count);
+            ClassicAssert.AreEqual(1, shards[0].slotRanges.Count);
+            ClassicAssert.AreEqual(0, shards[0].slotRanges[0].Item1);
+            ClassicAssert.AreEqual(16383, shards[0].slotRanges[0].Item2);
 
             context.kvPairs = [];
             context.kvPairsObj = [];
@@ -757,11 +758,11 @@ namespace Garnet.test.cluster
             var replica_count = 2; // Per primary
             var primary_count = 1;
             var nodes_count = primary_count + (primary_count * replica_count);
-            Assert.IsTrue(primary_count > 0);
+            ClassicAssert.IsTrue(primary_count > 0);
             context.CreateInstances(nodes_count, disableObjects: true, MainMemoryReplication: true, OnDemandCheckpoint: true, CommitFrequencyMs: -1, enableAOF: true, useTLS: useTLS);
             context.CreateConnection(useTLS: useTLS);
 
-            Assert.AreEqual("OK", context.clusterTestUtils.AddDelSlotsRange(0, new List<(int, int)>() { (0, 16383) }, true));
+            ClassicAssert.AreEqual("OK", context.clusterTestUtils.AddDelSlotsRange(0, new List<(int, int)>() { (0, 16383) }, true));
             context.clusterTestUtils.SetConfigEpoch(0, 1, logger: context.logger);
             context.clusterTestUtils.SetConfigEpoch(1, 2, logger: context.logger);
             context.clusterTestUtils.SetConfigEpoch(2, 3, logger: context.logger);
@@ -801,11 +802,11 @@ namespace Garnet.test.cluster
             var replica_count = 1;// Per primary
             var primary_count = 1;
             var nodes_count = primary_count + (primary_count * replica_count);
-            Assert.IsTrue(primary_count > 0);
+            ClassicAssert.IsTrue(primary_count > 0);
             context.CreateInstances(nodes_count, disableObjects: true, MainMemoryReplication: MainMemoryReplication, OnDemandCheckpoint: onDemandCheckpoint, CommitFrequencyMs: -1, enableAOF: true, useTLS: useTLS);
             context.CreateConnection(useTLS: useTLS);
 
-            Assert.AreEqual("OK", context.clusterTestUtils.AddDelSlotsRange(0, new List<(int, int)>() { (0, 16383) }, true, context.logger));
+            ClassicAssert.AreEqual("OK", context.clusterTestUtils.AddDelSlotsRange(0, new List<(int, int)>() { (0, 16383) }, true, context.logger));
             context.clusterTestUtils.SetConfigEpoch(0, 1, logger: context.logger);
             context.clusterTestUtils.SetConfigEpoch(1, 2, logger: context.logger);
             context.clusterTestUtils.Meet(0, 1, logger: context.logger);
@@ -820,7 +821,7 @@ namespace Garnet.test.cluster
                 resp = context.clusterTestUtils.ClusterReplicate(1, primaryId, failEx: false, logger: context.logger);
             else
                 resp = context.clusterTestUtils.ReplicaOf(1, 0, failEx: false, logger: context.logger);
-            Assert.IsTrue(resp.StartsWith("PRIMARY-ERR"));
+            ClassicAssert.IsTrue(resp.StartsWith("PRIMARY-ERR"));
 
             while (true)
             {
@@ -900,7 +901,7 @@ namespace Garnet.test.cluster
             var replica_count = 2;// Per primary
             var primary_count = 1;
             var nodes_count = primary_count + (primary_count * replica_count);
-            Assert.IsTrue(primary_count > 0);
+            ClassicAssert.IsTrue(primary_count > 0);
             context.CreateInstances(nodes_count, disableObjects: disableObjects, MainMemoryReplication: mainMemoryReplication, CommitFrequencyMs: mainMemoryReplication ? -1 : 0, OnDemandCheckpoint: mainMemoryReplication, FastCommit: fastCommit, enableAOF: true, useTLS: useTLS);
             context.CreateConnection(useTLS: useTLS);
             _ = context.clusterTestUtils.SimpleSetupCluster(primary_count, replica_count, logger: context.logger);
@@ -1033,20 +1034,20 @@ namespace Garnet.test.cluster
             var primaryEndpoint = (IPEndPoint)context.endpoints.First();
             var replicaEndpoint = (IPEndPoint)context.endpoints.Last();
 
-            Assert.AreNotEqual(primaryEndpoint, replicaEndpoint, "Should have different endpoints for nodes");
+            ClassicAssert.AreNotEqual(primaryEndpoint, replicaEndpoint, "Should have different endpoints for nodes");
 
             using var primaryConnection = ConnectionMultiplexer.Connect($"{primaryEndpoint.Address}:{primaryEndpoint.Port},user={UserName},password={Password}");
             var primaryServer = primaryConnection.GetServer(primaryEndpoint);
 
-            Assert.AreEqual("OK", (string)primaryServer.Execute("CLUSTER", ["ADDSLOTSRANGE", "0", "16383"], flags: CommandFlags.NoRedirect));
-            Assert.AreEqual("OK", (string)primaryServer.Execute("CLUSTER", ["MEET", replicaEndpoint.Address.ToString(), replicaEndpoint.Port.ToString()], flags: CommandFlags.NoRedirect));
+            ClassicAssert.AreEqual("OK", (string)primaryServer.Execute("CLUSTER", ["ADDSLOTSRANGE", "0", "16383"], flags: CommandFlags.NoRedirect));
+            ClassicAssert.AreEqual("OK", (string)primaryServer.Execute("CLUSTER", ["MEET", replicaEndpoint.Address.ToString(), replicaEndpoint.Port.ToString()], flags: CommandFlags.NoRedirect));
 
             using var replicaConnection = ConnectionMultiplexer.Connect($"{replicaEndpoint.Address}:{replicaEndpoint.Port},user={UserName},password={Password}");
             var replicaServer = replicaConnection.GetServer(replicaEndpoint);
 
             // Try to replicate from a server that doesn't exist
             var exc = Assert.Throws<RedisServerException>(() => replicaServer.Execute("CLUSTER", ["REPLICATE", Guid.NewGuid().ToString()], flags: CommandFlags.NoRedirect));
-            Assert.IsTrue(exc.Message.StartsWith("ERR I don't know about node "));
+            ClassicAssert.IsTrue(exc.Message.StartsWith("ERR I don't know about node "));
         }
     }
 }

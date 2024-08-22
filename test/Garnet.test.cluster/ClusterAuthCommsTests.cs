@@ -7,6 +7,7 @@ using System.Net;
 using System.Threading;
 using Microsoft.Extensions.Logging;
 using NUnit.Framework;
+using NUnit.Framework.Legacy;
 using StackExchange.Redis;
 
 namespace Garnet.test.cluster
@@ -102,7 +103,7 @@ namespace Garnet.test.cluster
                 {
                     var endpoint = node.EndPoint.ToString();
                     if (slots.ContainsKey(endpoint))
-                        Assert.AreEqual(node.Slots.First(), slots[endpoint]);
+                        ClassicAssert.AreEqual(node.Slots.First(), slots[endpoint]);
                     else
                         slots.Add(endpoint, node.Slots.First());
                 }

@@ -4,6 +4,7 @@
 using System;
 using System.Threading;
 using NUnit.Framework;
+using NUnit.Framework.Legacy;
 using StackExchange.Redis;
 
 namespace Garnet.test
@@ -42,16 +43,16 @@ namespace Garnet.test
             using (var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig(allowAdmin: true)))
             {
                 var db = redis.GetDatabase(0);
-                Assert.AreEqual(0, store.OverflowBucketAllocations);
-                Assert.AreEqual(1, store.IndexSize);
+                ClassicAssert.AreEqual(0, store.OverflowBucketAllocations);
+                ClassicAssert.AreEqual(1, store.IndexSize);
 
                 for (int i = 0; i < keys.Length; i++)
                 {
                     db.StringSet(keys[i], values[i]);
                 }
 
-                Assert.AreEqual(values[0], db.StringGet(keys[0]).ToString());
-                Assert.AreEqual(1, store.OverflowBucketAllocations);
+                ClassicAssert.AreEqual(values[0], db.StringGet(keys[0]).ToString());
+                ClassicAssert.AreEqual(1, store.OverflowBucketAllocations);
 
                 // Wait for the resizing to happen
                 for (int waitCycles = 0; waitCycles < indexResizeWaitCycles; waitCycles++)
@@ -60,9 +61,9 @@ namespace Garnet.test
                     if (store.IndexSize > 1) break;
                 }
 
-                Assert.AreEqual(2, store.IndexSize);
+                ClassicAssert.AreEqual(2, store.IndexSize);
                 // Check if entry created before resizing is still accessible.
-                Assert.AreEqual(values[0], db.StringGet(keys[0]).ToString());
+                ClassicAssert.AreEqual(values[0], db.StringGet(keys[0]).ToString());
             }
         }
 
@@ -80,8 +81,8 @@ namespace Garnet.test
             using (var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig(allowAdmin: true)))
             {
                 var db = redis.GetDatabase(0);
-                Assert.AreEqual(0, objectStore.OverflowBucketAllocations);
-                Assert.AreEqual(1, objectStore.IndexSize);
+                ClassicAssert.AreEqual(0, objectStore.OverflowBucketAllocations);
+                ClassicAssert.AreEqual(1, objectStore.IndexSize);
 
                 for (int i = 0; i < keys.Length; i++)
                 {
@@ -89,7 +90,7 @@ namespace Garnet.test
                 }
 
                 VerifyObjectStoreSetMembers(db, keys, values);
-                Assert.AreEqual(1, objectStore.OverflowBucketAllocations);
+                ClassicAssert.AreEqual(1, objectStore.OverflowBucketAllocations);
 
                 // Wait for the resizing to happen
                 for (int waitCycles = 0; waitCycles < indexResizeWaitCycles; waitCycles++)
@@ -98,7 +99,7 @@ namespace Garnet.test
                     if (objectStore.IndexSize > 1) break;
                 }
 
-                Assert.AreEqual(2, objectStore.IndexSize);
+                ClassicAssert.AreEqual(2, objectStore.IndexSize);
                 VerifyObjectStoreSetMembers(db, keys, values);
             }
         }
@@ -108,8 +109,8 @@ namespace Garnet.test
             for (int i = 0; i < keys.Length; i++)
             {
                 var members = db.SetMembers(keys[i]);
-                Assert.AreEqual(1, members.Length, $"key {keys[i]}");
-                Assert.AreEqual(values[i], members[0].ToString());
+                ClassicAssert.AreEqual(1, members.Length, $"key {keys[i]}");
+                ClassicAssert.AreEqual(values[i], members[0].ToString());
             }
         }
 
@@ -128,14 +129,14 @@ namespace Garnet.test
             using (var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig(allowAdmin: true)))
             {
                 var db = redis.GetDatabase(0);
-                Assert.AreEqual(8, store.IndexSize);
+                ClassicAssert.AreEqual(8, store.IndexSize);
 
                 for (int i = 0; i < keys.Length; i++)
                 {
                     db.StringSet(keys[i], values[i]);
                 }
 
-                Assert.AreEqual(values[0], db.StringGet(keys[0]).ToString());
+                ClassicAssert.AreEqual(values[0], db.StringGet(keys[0]).ToString());
 
                 // Add lot more entries to push earlier keys to disk as server is started with low memory
                 for (int i = 0; i < 1000; i++)
@@ -145,7 +146,7 @@ namespace Garnet.test
                 }
 
                 // Verify that the earlier keys are still accessible
-                Assert.AreEqual(values[0], db.StringGet(keys[0]).ToString());
+                ClassicAssert.AreEqual(values[0], db.StringGet(keys[0]).ToString());
 
                 //Wait for the resizing to happen
                 for (int waitCycles = 0; waitCycles < indexResizeWaitCycles; waitCycles++)
@@ -154,10 +155,10 @@ namespace Garnet.test
                     if (store.IndexSize > 8) break;
                 }
 
-                Assert.AreEqual(16, store.IndexSize);
+                ClassicAssert.AreEqual(16, store.IndexSize);
 
                 // Check if entry created before resizing is still accessible.
-                Assert.AreEqual(values[0], db.StringGet(keys[0]).ToString());
+                ClassicAssert.AreEqual(values[0], db.StringGet(keys[0]).ToString());
 
                 // Issue and wait for DB save
                 var server = redis.GetServer($"{TestUtils.Address}:{TestUtils.Port}");
@@ -173,7 +174,7 @@ namespace Garnet.test
             {
                 var db = redis.GetDatabase(0);
                 // Verify that entry created before checkpoint is still accessible
-                Assert.AreEqual(values[0], db.StringGet(keys[0]).ToString());
+                ClassicAssert.AreEqual(values[0], db.StringGet(keys[0]).ToString());
             }
         }
 
@@ -192,7 +193,7 @@ namespace Garnet.test
             using (var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig(allowAdmin: true)))
             {
                 var db = redis.GetDatabase(0);
-                Assert.AreEqual(8, objectStore.IndexSize);
+                ClassicAssert.AreEqual(8, objectStore.IndexSize);
 
                 for (int i = 0; i < keys.Length; i++)
                 {
@@ -218,7 +219,7 @@ namespace Garnet.test
                     if (objectStore.IndexSize > 8) break;
                 }
 
-                Assert.AreEqual(16, objectStore.IndexSize);
+                ClassicAssert.AreEqual(16, objectStore.IndexSize);
 
                 // Check if entry created before resizing is still accessible.
                 VerifyObjectStoreSetMembers(db, keys, values);

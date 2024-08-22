@@ -10,6 +10,7 @@ using System.Text;
 using System.Threading;
 using Microsoft.Extensions.Logging;
 using NUnit.Framework;
+using NUnit.Framework.Legacy;
 using StackExchange.Redis;
 
 namespace Garnet.test.cluster
@@ -96,12 +97,12 @@ namespace Garnet.test.cluster
                 var buffer = new byte[1024];
                 var packetBytes = Encoding.ASCII.GetBytes(packet);
                 var sent = socket.Send(packetBytes);
-                Assert.AreEqual(packetBytes.Length, sent);
+                ClassicAssert.AreEqual(packetBytes.Length, sent);
                 int read;
                 if ((read = socket.Receive(buffer)) > 0)
                 {
                     var resp = Encoding.ASCII.GetString(buffer, 0, read);
-                    Assert.AreEqual(expectedResp, resp);
+                    ClassicAssert.AreEqual(expectedResp, resp);
                     break;
                 }
             }
@@ -130,7 +131,7 @@ namespace Garnet.test.cluster
                 var size = i + chunkSize < packetBytes.Length ? chunkSize : packetBytes.Length - i;
                 var slicePacket = packetBytes.Slice(i, size);
                 var sent = socket.Send(slicePacket);
-                Assert.AreEqual(slicePacket.Length, sent);
+                ClassicAssert.AreEqual(slicePacket.Length, sent);
                 Thread.Sleep(100);
             }
 
@@ -139,7 +140,7 @@ namespace Garnet.test.cluster
             if ((read = socket.Receive(buffer)) > 0)
             {
                 var resp = Encoding.ASCII.GetString(buffer, 0, read);
-                Assert.AreEqual("+OK\r\n", resp);
+                ClassicAssert.AreEqual("+OK\r\n", resp);
             }
         }
     }

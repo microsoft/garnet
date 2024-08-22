@@ -6,6 +6,7 @@ using System.Threading;
 using System.Threading.Tasks;
 using Garnet.client;
 using NUnit.Framework;
+using NUnit.Framework.Legacy;
 
 namespace Garnet.test
 {
@@ -74,8 +75,8 @@ namespace Garnet.test
             });
 
             e.Wait();
-            Assert.IsTrue(isResultSet);
-            Assert.AreEqual(expectedList.Length, actualListLength);
+            ClassicAssert.IsTrue(isResultSet);
+            ClassicAssert.AreEqual(expectedList.Length, actualListLength);
 
             await ValidateListContentAsync(db, testKey, expectedList);
         }
@@ -109,8 +110,8 @@ namespace Garnet.test
                 e.Reset();
             }
 
-            Assert.IsTrue(isResultSet);
-            Assert.AreEqual(expectedList.Length, actualListLength);
+            ClassicAssert.IsTrue(isResultSet);
+            ClassicAssert.AreEqual(expectedList.Length, actualListLength);
 
             await ValidateListContentAsync(db, testKey, expectedList);
         }
@@ -127,7 +128,7 @@ namespace Garnet.test
             var testKey = GetTestKey(key);
 
             var actualListLength = await db.ListLeftPushAsync(testKey, elements);
-            Assert.AreEqual(expectedList.Length, actualListLength);
+            ClassicAssert.AreEqual(expectedList.Length, actualListLength);
 
             await ValidateListContentAsync(db, testKey, expectedList);
         }
@@ -156,8 +157,8 @@ namespace Garnet.test
             });
 
             e.Wait();
-            Assert.IsTrue(isResultSet);
-            Assert.AreEqual(expectedList.Length, actualListLength);
+            ClassicAssert.IsTrue(isResultSet);
+            ClassicAssert.AreEqual(expectedList.Length, actualListLength);
 
             await ValidateListContentAsync(db, testKey, expectedList);
         }
@@ -191,8 +192,8 @@ namespace Garnet.test
                 e.Reset();
             }
 
-            Assert.IsTrue(isResultSet);
-            Assert.AreEqual(expectedList.Length, actualListLength);
+            ClassicAssert.IsTrue(isResultSet);
+            ClassicAssert.AreEqual(expectedList.Length, actualListLength);
 
             await ValidateListContentAsync(db, testKey, expectedList);
         }
@@ -209,7 +210,7 @@ namespace Garnet.test
             var testKey = GetTestKey(key);
 
             var actualListLength = await db.ListRightPushAsync(testKey, [.. elements]);
-            Assert.AreEqual(expectedList.Length, actualListLength);
+            ClassicAssert.AreEqual(expectedList.Length, actualListLength);
 
             await ValidateListContentAsync(db, testKey, expectedList);
         }
@@ -230,8 +231,8 @@ namespace Garnet.test
             var values = await db.ListRangeAsync(testKey, start, stop);
 
             // Assert
-            Assert.False(expectedValues.Length == 0);
-            Assert.AreEqual(expectedValues, values);
+            ClassicAssert.False(expectedValues.Length == 0);
+            ClassicAssert.AreEqual(expectedValues, values);
         }
 
         [Test]
@@ -249,7 +250,7 @@ namespace Garnet.test
             var length = await db.ListLengthAsync(testKey);
 
             // Assert
-            Assert.AreEqual(3, length);
+            ClassicAssert.AreEqual(3, length);
         }
 
         private static string GetTestKey(string key)
@@ -262,11 +263,11 @@ namespace Garnet.test
         {
             var actualElements = await db.ListRangeAsync(key, 0, -1);
 
-            Assert.AreEqual(expectedList.Length, actualElements.Length);
+            ClassicAssert.AreEqual(expectedList.Length, actualElements.Length);
 
             for (var i = 0; i < actualElements.Length; i++)
             {
-                Assert.AreEqual(expectedList[i], actualElements[i].ToString());
+                ClassicAssert.AreEqual(expectedList[i], actualElements[i].ToString());
             }
         }
 
