@@ -221,18 +221,18 @@ namespace Garnet.server
             var inputPtr = input.ToPointer();
 
             // Expired data
-            if (value.MetadataSize > 0 && ((RespInputHeader*)inputPtr)->CheckExpiry(value.ExtraMetadata))
+            if (value.MetadataSize > 0 && input.header.CheckExpiry(value.ExtraMetadata))
             {
                 rmwInfo.Action = RMWAction.ExpireAndResume;
                 return false;
             }
 
             // First byte of input payload identifies command
-            switch ((RespCommand)(*inputPtr))
+            switch (input.header.cmd)
             {
                 case RespCommand.SETEXNX:
                     // Check if SetGet flag is set
-                    if (((RespInputHeader*)inputPtr)->CheckSetGetFlag())
+                    if (input.header.CheckSetGetFlag())
                     {
                         // Copy value to output for the GET part of the command.
                         CopyRespTo(ref value, ref output);
@@ -241,11 +241,13 @@ namespace Garnet.server
 
                 case RespCommand.SET:
                 case RespCommand.SETEXXX:
+                    var setValue = input.parseState.GetArgSliceByRef(input.parseStateStartIdx);
+
                     // Need CU if no space for new value
-                    if (input.Length - RespInputHeader.Size > value.Length) return false;
+                    if (setValue.Length > value.Length) return false;
 
                     // Check if SetGet flag is set
-                    if (((RespInputHeader*)inputPtr)->CheckSetGetFlag())
+                    if (input.header.CheckSetGetFlag())
                     {
                         // Copy value to output for the GET part of the command.
                         CopyRespTo(ref value, ref output);
@@ -254,22 +256,24 @@ namespace Garnet.server
                     // Adjust value length
                     rmwInfo.ClearExtraValueLength(ref recordInfo, ref value, value.TotalSize);
                     value.UnmarkExtraMetadata();
-                    value.ShrinkSerializedLength(input.Length - RespInputHeader.Size);
+                    value.ShrinkSerializedLength(setValue.Length);
 
                     // Copy input to value
                     value.ExtraMetadata = input.ExtraMetadata;
-                    input.AsReadOnlySpan()[RespInputHeader.Size..].CopyTo(value.AsSpan());
+                    setValue.ReadOnlySpan.CopyTo(value.AsSpan());
                     rmwInfo.SetUsedValueLength(ref recordInfo, ref value, value.TotalSize);
 
                     return true;
 
                 case RespCommand.SETKEEPTTLXX:
                 case RespCommand.SETKEEPTTL:
+                    setValue = input.parseState.GetArgSliceByRef(input.parseStateStartIdx);
+
                     // Need CU if no space for new value
-                    if (value.MetadataSize + input.Length - RespInputHeader.Size > value.Length) return false;
+                    if (setValue.Length > value.Length) return false;
 
                     // Check if SetGet flag is set
-                    if (((RespInputHeader*)inputPtr)->CheckSetGetFlag())
+                    if (input.header.CheckSetGetFlag())
                     {
                         // Copy value to output for the GET part of the command.
                         CopyRespTo(ref value, ref output);
@@ -277,17 +281,17 @@ namespace Garnet.server
 
                     // Adjust value length
                     rmwInfo.ClearExtraValueLength(ref recordInfo, ref value, value.TotalSize);
-                    value.ShrinkSerializedLength(value.MetadataSize + input.Length - RespInputHeader.Size);
+                    value.ShrinkSerializedLength(setValue.Length);
 
                     // Copy input to value
-                    input.AsReadOnlySpan().Slice(RespInputHeader.Size).CopyTo(value.AsSpan());
+                    setValue.ReadOnlySpan.Slice(RespInputHeader.Size).CopyTo(value.AsSpan());
                     rmwInfo.SetUsedValueLength(ref recordInfo, ref value, value.TotalSize);
                     return true;
 
                 case RespCommand.PEXPIRE:
                 case RespCommand.EXPIRE:
-                    ExpireOption optionType = (ExpireOption)(*(inputPtr + RespInputHeader.Size));
-                    bool expiryExists = (value.MetadataSize > 0);
+                    var optionType = input.parseState.GetEnum<ExpireOption>(input.parseStateStartIdx, true);
+                    var expiryExists = (value.MetadataSize > 0);
                     return EvaluateExpireInPlace(optionType, expiryExists, ref input, ref value, ref output);
 
                 case RespCommand.PERSIST:
@@ -311,14 +315,14 @@ namespace Garnet.server
                 case RespCommand.INCRBY:
                     var length = input.LengthWithoutMetadata - RespInputHeader.Size;
                     // Check if input contains a valid number
-                    if (!IsValidNumber(length, inputPtr + RespInputHeader.Size, output.SpanByte.AsSpan(), out var incrBy))
+                    if (!input.parseState.TryGetLong(0, out var incrBy))
                         return true;
                     return TryInPlaceUpdateNumber(ref value, ref output, ref rmwInfo, ref recordInfo, input: incrBy);
 
                 case RespCommand.DECRBY:
                     length = input.LengthWithoutMetadata - RespInputHeader.Size;
                     // Check if input contains a valid number
-                    if (!IsValidNumber(length, inputPtr + RespInputHeader.Size, output.SpanByte.AsSpan(), out var decrBy))
+                    if (!input.parseState.TryGetLong(0, out var decrBy))
                         return true;
                     return TryInPlaceUpdateNumber(ref value, ref output, ref rmwInfo, ref recordInfo, input: -decrBy);
 

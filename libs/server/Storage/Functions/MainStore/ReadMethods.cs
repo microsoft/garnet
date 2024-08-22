@@ -18,7 +18,7 @@ namespace Garnet.server
             if (value.MetadataSize != 0 && CheckExpiry(ref value))
                 return false;
 
-            var cmd = ((RespInputHeader*)input.ToPointer())->cmd;
+            var cmd = input.header.cmd;
             if ((byte)cmd >= CustomCommandManager.StartOffset)
             {
                 var valueLength = value.LengthWithoutMetadata;
@@ -31,7 +31,7 @@ namespace Garnet.server
                 return ret;
             }
 
-            if (input.Length == 0)
+            if (cmd == RespCommand.NONE)
                 CopyRespTo(ref value, ref dst);
             else
                 CopyRespToWithInput(ref input, ref value, ref dst, readInfo.IsFromPending);
@@ -49,7 +49,7 @@ namespace Garnet.server
                 return false;
             }
 
-            var cmd = ((RespInputHeader*)input.ToPointer())->cmd;
+            var cmd = input.header.cmd;
             if ((byte)cmd >= CustomCommandManager.StartOffset)
             {
                 var valueLength = value.LengthWithoutMetadata;
@@ -62,7 +62,7 @@ namespace Garnet.server
                 return ret;
             }
 
-            if (input.Length == 0)
+            if (cmd == RespCommand.NONE)
                 CopyRespTo(ref value, ref dst);
             else
             {

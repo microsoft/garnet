@@ -29,7 +29,7 @@ namespace Garnet.server
             if (useAsync)
                 return NetworkGETAsync(ref storageApi);
 
-            var input = new RawStringInput { header = new RespInputHeader { cmd = RespCommand.GET } };
+            RawStringInput input = default;
 
             var key = parseState.GetArgSliceByRef(0).SpanByte;
             var o = new SpanByteAndMemory(dcurr, (int)(dend - dcurr));
