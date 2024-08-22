@@ -6,8 +6,8 @@ using System.Diagnostics;
 using System.IO;
 using System.Linq;
 using NUnit.Framework;
-using NUnit.Framework.Legacy;
 using NUnit.Framework.Internal;
+using NUnit.Framework.Legacy;
 using Tsavorite.core;
 using static Tsavorite.test.TestUtils;
 

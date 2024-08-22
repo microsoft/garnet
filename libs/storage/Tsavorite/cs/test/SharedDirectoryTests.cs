@@ -9,8 +9,8 @@ using System.Runtime.InteropServices;
 using System.Threading.Tasks;
 using Microsoft.Win32.SafeHandles;
 using NUnit.Framework;
-using NUnit.Framework.Legacy;
 using NUnit.Framework.Internal;
+using NUnit.Framework.Legacy;
 using Tsavorite.core;
 
 namespace Tsavorite.test.recovery.sumstore
