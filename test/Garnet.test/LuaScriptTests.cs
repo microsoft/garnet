@@ -5,6 +5,7 @@ using System;
 using System.Text;
 using System.Threading.Tasks;
 using NUnit.Framework;
+using NUnit.Framework.Legacy;
 using StackExchange.Redis;
 
 namespace Garnet.test
@@ -38,8 +39,8 @@ namespace Garnet.test
             var values = new RedisValue[] { new("KeyOneValue"), new("KeyTwoValue") };
             var response = db.ScriptEvaluate("redis.call('set',KEYS[1], ARGV[1]); redis.call('set',KEYS[2],ARGV[2]); return redis.call('get',KEYS[1]);", keys, values);
             string retValue = db.StringGet("KeyOne");
-            Assert.AreEqual("KeyOneValue", retValue);
-            Assert.AreEqual("KeyOneValue", response.ToString());
+            ClassicAssert.AreEqual("KeyOneValue", retValue);
+            ClassicAssert.AreEqual("KeyOneValue", response.ToString());
         }
 
         [Test]
@@ -49,7 +50,7 @@ namespace Garnet.test
             var db = redis.GetDatabase(0);
             var values = new RedisValue[] { new("hello") };
             var response = db.ScriptEvaluate("return ARGV[1]", null, values);
-            Assert.AreEqual((string)response, "hello");
+            ClassicAssert.AreEqual((string)response, "hello");
         }
 
         [Test]
@@ -61,7 +62,7 @@ namespace Garnet.test
             var values = new RedisValue[] { new("KeyOneValue-") };
             // SE lib sends a SCRIPT LOAD command followed by a EVAL script KEYS ARGS command
             var response = db.ScriptEvaluate("local v = ARGV[1]..\"abc\"; redis.call('set',KEYS[1], v); return redis.call('get',KEYS[1]);", keys, values);
-            Assert.IsTrue(((RedisValue)response).ToString().Contains("KeyOneValue-abc", StringComparison.InvariantCultureIgnoreCase));
+            ClassicAssert.IsTrue(((RedisValue)response).ToString().Contains("KeyOneValue-abc", StringComparison.InvariantCultureIgnoreCase));
         }
 
         [Test]
@@ -70,15 +71,15 @@ namespace Garnet.test
             using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
             var db = redis.GetDatabase(0);
             var response = db.Execute("EVAL", "return redis.call('SeT', KEYS[1], ARGV[1])", 1, "mykey", "myvalue");
-            Assert.AreEqual("OK", (string)response);
+            ClassicAssert.AreEqual("OK", (string)response);
             response = db.Execute("EVAL", "return redis.call('get', KEYS[1])", 1, "mykey");
-            Assert.AreEqual("myvalue", (string)response);
+            ClassicAssert.AreEqual("myvalue", (string)response);
 
             // Get numbers
             response = db.Execute("EVAL", "return redis.call('SeT', KEYS[1], ARGV[1])", 1, "mykey", 100);
-            Assert.AreEqual("OK", (string)response);
+            ClassicAssert.AreEqual("OK", (string)response);
             response = db.Execute("EVAL", "return redis.call('get', KEYS[1])", 1, "mykey");
-            Assert.AreEqual(100, Convert.ToInt64(response));
+            ClassicAssert.AreEqual(100, Convert.ToInt64(response));
         }
 
         [Test]
@@ -90,7 +91,7 @@ namespace Garnet.test
             var result = db.ScriptEvaluate(script, [(RedisKey)"mykey"], [(RedisValue)1]);
             script = "local i = redis.call('get',KEYS[1]); i = i + 1; redis.call('set', KEYS[1], i); return redis.call('get', KEYS[1]);";
             result = db.ScriptEvaluate(script, [(RedisKey)"mykey"]);
-            Assert.AreEqual(2, Convert.ToInt64(result));
+            ClassicAssert.AreEqual(2, Convert.ToInt64(result));
         }
 
         [Test]
@@ -102,7 +103,7 @@ namespace Garnet.test
             var result = db.ScriptEvaluate(script, [(RedisKey)"mykey"], [(RedisValue)"NAME"]);
             script = "local i = redis.call('get', KEYS[1]); i = \"FULL \"..i; redis.call('set', KEYS[1], i); return redis.call('get', KEYS[1]);";
             result = db.ScriptEvaluate(script, [(RedisKey)"mykey"]);
-            Assert.IsTrue(((RedisValue)result).ToString() == "FULL NAME");
+            ClassicAssert.IsTrue(((RedisValue)result).ToString() == "FULL NAME");
         }
 
 
@@ -117,7 +118,7 @@ namespace Garnet.test
                             "if (redis.call('set', KEYS[2], ARGV[2]) == \"OK\") then i = i + 1; end;" +
                             "return i;";
             var result = db.ScriptEvaluate(script, [(RedisKey)"mykey", (RedisKey)"myseckey"], [(RedisValue)"NAME", (RedisValue)"mysecvalue"]);
-            Assert.IsTrue(((RedisValue)result) == 2);
+            ClassicAssert.IsTrue(((RedisValue)result) == 2);
         }
 
 
@@ -128,9 +129,9 @@ namespace Garnet.test
             var db = redis.GetDatabase(0);
             var script = "return redis.call('zadd', KEYS[1], ARGV[1], ARGV[2])";
             var result = db.ScriptEvaluate(script, [(RedisKey)"mysskey"], [(RedisValue)1, (RedisValue)"a"]);
-            Assert.IsTrue(result.ToString() == "1");
+            ClassicAssert.IsTrue(result.ToString() == "1");
             var l = db.SortedSetLength("mysskey");
-            Assert.IsTrue(l == 1);
+            ClassicAssert.IsTrue(l == 1);
         }
 
 
@@ -143,27 +144,27 @@ namespace Garnet.test
             // Create a sorted set
             var script = "local ptable = {100, \"value1\", 200, \"value2\"}; return redis.call('zadd', KEYS[1], ptable)";
             var result = db.ScriptEvaluate(script, [(RedisKey)"mysskey"]);
-            Assert.IsTrue(result.ToString() == "2");
+            ClassicAssert.IsTrue(result.ToString() == "2");
 
             // Check the length
             var l = db.SortedSetLength("mysskey");
-            Assert.IsTrue(l == 2);
+            ClassicAssert.IsTrue(l == 2);
 
             // Execute same script again
             result = db.ScriptEvaluate(script, [(RedisKey)"mysskey"]);
-            Assert.IsTrue(result.ToString() == "0");
+            ClassicAssert.IsTrue(result.ToString() == "0");
 
             // Add more pairs
             script = "local ptable = {300, \"value3\", 400, \"value4\"}; return redis.call('zadd', KEYS[1], ptable)";
             result = db.ScriptEvaluate(script, [(RedisKey)"mysskey"]);
-            Assert.IsTrue(result.ToString() == "2");
+            ClassicAssert.IsTrue(result.ToString() == "2");
 
             // Review
             var r = db.SortedSetRangeByScoreWithScores("mysskey");
-            Assert.IsTrue(r[0].Score == 100 && r[0].Element == "value1");
+            ClassicAssert.IsTrue(r[0].Score == 100 && r[0].Element == "value1");
             l = db.SortedSetLength("mysskey");
 
-            Assert.IsTrue(l == 4);
+            ClassicAssert.IsTrue(l == 4);
         }
 
         [Test]
@@ -178,7 +179,7 @@ namespace Garnet.test
             // create the key
             var script = "redis.call('set',KEYS[1], ARGV[1]); return redis.call('get', KEYS[1]);";
             var result = db.ScriptEvaluate(script, [(RedisKey)"mykey"], [(RedisValue)initialValue]);
-            Assert.IsTrue(((RedisValue)result).ToString() == "0");
+            ClassicAssert.IsTrue(((RedisValue)result).ToString() == "0");
             script = "i = redis.call('get', KEYS[1]); i = i + 1; return redis.call('set', KEYS[1], i)";
             var numIterations = 10;
             //updates
@@ -196,7 +197,7 @@ namespace Garnet.test
             Task.WaitAll(tasks);
             script = "return redis.call('get', KEYS[1]);";
             result = db.ScriptEvaluate(script, [(RedisKey)"mykey"]);
-            Assert.IsTrue(int.Parse(((RedisValue)result).ToString()) == numThreads * numIterations);
+            ClassicAssert.IsTrue(int.Parse(((RedisValue)result).ToString()) == numThreads * numIterations);
             script = "i = redis.call('get', KEYS[1]); i = i - 1; return redis.call('set', KEYS[1], i)";
             for (var i = 0; i < numThreads; i++)
             {
@@ -212,7 +213,7 @@ namespace Garnet.test
             Task.WaitAll(tasks);
             script = "return redis.call('get', KEYS[1]);";
             result = db.ScriptEvaluate(script, [(RedisKey)"mykey"]);
-            Assert.IsTrue(int.Parse(((RedisValue)result).ToString()) == 0);
+            ClassicAssert.IsTrue(int.Parse(((RedisValue)result).ToString()) == 0);
         }
 
         [Test]
@@ -231,27 +232,27 @@ namespace Garnet.test
             var tag = "tag";
             long expiryTimestamp = 100;
             var result = db.ScriptEvaluate(ZADD_GT, [(RedisKey)"zaddgtkey"], [expiryTimestamp, tag]);
-            Assert.IsTrue(result.IsNull);
+            ClassicAssert.IsTrue(result.IsNull);
 
             // get key and verify timestamp is 100
             var r = db.SortedSetRangeByScoreWithScores("zaddgtkey");
-            Assert.IsTrue(r[0].Score == 100 && r[0].Element == "tag");
+            ClassicAssert.IsTrue(r[0].Score == 100 && r[0].Element == "tag");
 
             expiryTimestamp = 200;
             result = db.ScriptEvaluate(ZADD_GT, [(RedisKey)"zaddgtkey"], [expiryTimestamp, tag]);
-            Assert.IsTrue(result.IsNull);
+            ClassicAssert.IsTrue(result.IsNull);
 
             // get key and verify timestamp is 200
             r = db.SortedSetRangeByScoreWithScores("zaddgtkey");
-            Assert.IsTrue(r[0].Score == 200 && r[0].Element == "tag");
+            ClassicAssert.IsTrue(r[0].Score == 200 && r[0].Element == "tag");
 
             expiryTimestamp = 150;
             result = db.ScriptEvaluate(ZADD_GT, [(RedisKey)"zaddgtkey"], [expiryTimestamp, tag]);
-            Assert.IsTrue(result.IsNull);
+            ClassicAssert.IsTrue(result.IsNull);
 
             // get key and verify timestamp is 200
             r = db.SortedSetRangeByScoreWithScores("zaddgtkey");
-            Assert.IsTrue(r[0].Score == 200 && r[0].Element == "tag");
+            ClassicAssert.IsTrue(r[0].Score == 200 && r[0].Element == "tag");
         }
 
         [Test]
@@ -265,7 +266,7 @@ namespace Garnet.test
             var script = "return 1;";
             var scriptId = server.ScriptLoad(script);
             var result = db.ScriptEvaluate(scriptId);
-            Assert.IsTrue(((RedisValue)result) == "1");
+            ClassicAssert.IsTrue(((RedisValue)result) == "1");
 
             // Flush script memory
             server.ScriptFlush();
@@ -283,7 +284,7 @@ namespace Garnet.test
             var server = redis.GetServer($"{TestUtils.Address}:{TestUtils.Port}");
             var scriptSha = server.ScriptLoad(extendedCharsScript);
             var result = redis.GetDatabase(0).ScriptEvaluate(scriptSha);
-            Assert.AreNotEqual("僕", result);
+            ClassicAssert.AreNotEqual("僕", result);
         }
 
         [Test]
@@ -296,7 +297,7 @@ namespace Garnet.test
             var stringCmd = "*3\r\n$6\r\nSCRIPT\r\n$4\r\nLOAD\r\n$40\r\nreturn redis.call('set',KEYS[1],ARGV[1])\r\n";
             var sha1SetScript = Encoding.ASCII.GetString(lightClientRequest.SendCommand(Encoding.ASCII.GetBytes(stringCmd), 1)).Substring(5, 40);
 
-            Assert.AreEqual("c686f316aaf1eb01d5a4de1b0b63cd233010e63d", sha1SetScript);
+            ClassicAssert.AreEqual("c686f316aaf1eb01d5a4de1b0b63cd233010e63d", sha1SetScript);
             for (var i = 0; i < 5000; i++)
             {
                 var randPostFix = rnd.Next(1, 1000);
@@ -305,7 +306,7 @@ namespace Garnet.test
                 var g = Encoding.ASCII.GetString(lightClientRequest.SendCommand($"get {nameKey}{randPostFix}", 1));
                 var fstEndOfLine = g.IndexOf('\n', StringComparison.OrdinalIgnoreCase) + 1;
                 var strKeyValue = g.Substring(fstEndOfLine, valueKey.Length);
-                Assert.IsTrue(strKeyValue == valueKey);
+                ClassicAssert.IsTrue(strKeyValue == valueKey);
             }
         }
     }

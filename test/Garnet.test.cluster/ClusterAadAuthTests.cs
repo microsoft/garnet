@@ -9,6 +9,7 @@ using Garnet.server.Auth.Settings;
 using Microsoft.Extensions.Logging;
 using Microsoft.IdentityModel.Tokens;
 using NUnit.Framework;
+using NUnit.Framework.Legacy;
 
 namespace Garnet.test.cluster
 {
@@ -37,7 +38,7 @@ namespace Garnet.test.cluster
         }
 
         [Test, Order(1)]
-        [Category("CLUSTER-AUTH"), Timeout(60000)]
+        [Category("CLUSTER-AUTH"), CancelAfter(60000)]
         public void ValidateClusterAuthWithObjectId()
         {
             var nodes = 2;
@@ -59,7 +60,7 @@ namespace Garnet.test.cluster
         }
 
         [Test, Order(2)]
-        [Category("CLUSTER-AUTH"), Timeout(60000)]
+        [Category("CLUSTER-AUTH"), CancelAfter(60000)]
         public void ValidateClusterAuthWithGroupOid()
         {
             var nodes = 2;
@@ -96,7 +97,7 @@ namespace Garnet.test.cluster
                 context.clusterTestUtils.Authenticate(i, clientCredentials.user, clientCredentials.password, context.logger);
                 context.clusterTestUtils.Meet(i, (i + 1) % nodeCount, context.logger);
                 var ex = Assert.Throws<AssertionException>(() => context.clusterTestUtils.Authenticate(i, "randomUserId", clientCredentials.password, context.logger));
-                Assert.AreEqual("WRONGPASS Invalid username/password combination", ex.Message);
+                ClassicAssert.AreEqual("WRONGPASS Invalid username/password combination", ex.Message);
             }
 
         }

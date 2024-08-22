@@ -3,6 +3,7 @@ using System.Linq;
 using System.Text;
 using Garnet.server;
 using NUnit.Framework;
+using NUnit.Framework.Legacy;
 using StackExchange.Redis;
 
 namespace Garnet.test;
@@ -19,7 +20,7 @@ public static class RespTestsUtils
     /// <exception cref="NotSupportedException">Throws NotSupportedException if objectType is not supported</exception>
     public static void SetUpTestObjects(IDatabase db, GarnetObjectType objectType, RedisKey[] keys, RedisValue[][] values)
     {
-        Assert.AreEqual(keys.Length, values.Length);
+        ClassicAssert.AreEqual(keys.Length, values.Length);
 
         switch (objectType)
         {
@@ -27,14 +28,14 @@ public static class RespTestsUtils
                 for (var i = 0; i < keys.Length; i++)
                 {
                     var added = db.SetAdd(keys[i], values[i]);
-                    Assert.AreEqual(values[i].Select(v => v.ToString()).Distinct().Count(), added);
+                    ClassicAssert.AreEqual(values[i].Select(v => v.ToString()).Distinct().Count(), added);
                 }
                 break;
             case GarnetObjectType.List:
                 for (var i = 0; i < keys.Length; i++)
                 {
                     var added = db.ListRightPush(keys[i], values[i]);
-                    Assert.AreEqual(values[i].Length, added);
+                    ClassicAssert.AreEqual(values[i].Length, added);
                 }
                 break;
             default:
@@ -56,13 +57,13 @@ public static class RespTestsUtils
         }
         catch (RedisServerException e)
         {
-            Assert.AreEqual(expectedError, e.Message);
+            ClassicAssert.AreEqual(expectedError, e.Message);
         }
         catch (AggregateException ae)
         {
             var rse = ae.InnerExceptions.FirstOrDefault(e => e is RedisServerException);
-            Assert.IsNotNull(rse);
-            Assert.AreEqual(expectedError, rse.Message);
+            ClassicAssert.IsNotNull(rse);
+            ClassicAssert.AreEqual(expectedError, rse.Message);
         }
     }
 }

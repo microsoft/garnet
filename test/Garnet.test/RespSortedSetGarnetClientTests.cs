@@ -13,6 +13,7 @@ using Garnet.client;
 using Garnet.client.GarnetClientAPI;
 using Garnet.common;
 using NUnit.Framework;
+using NUnit.Framework.Legacy;
 using StackExchange.Redis;
 
 namespace Garnet.test
@@ -83,7 +84,7 @@ namespace Garnet.test
             // 10 entries are added
             var result = await db.ExecuteForMemoryResultAsync(ZCARD, "leaderboard");
 
-            Assert.AreEqual("10", Encoding.ASCII.GetString(result.Span));
+            ClassicAssert.AreEqual("10", Encoding.ASCII.GetString(result.Span));
 
             // disposing MR
             result.Dispose();
@@ -109,7 +110,7 @@ namespace Garnet.test
             List<string> parameters = ["myzset1", "1", "KEY1", "2", "KEY2"];
             db.ExecuteForStringResult((c, s) =>
             {
-                Assert.IsTrue(s == expectedResult); waiter.Set();
+                ClassicAssert.IsTrue(s == expectedResult); waiter.Set();
             }, 1, "ZADD", parameters);
             waiter.Wait();
             waiter.Reset();
@@ -118,7 +119,7 @@ namespace Garnet.test
 
             db.ExecuteForStringResult((c, s) =>
             {
-                Assert.IsTrue(s == expectedResult); waiter.Set();
+                ClassicAssert.IsTrue(s == expectedResult); waiter.Set();
             }, 1, ZCARD, "myzset1");
 
             waiter.Wait();
@@ -139,7 +140,7 @@ namespace Garnet.test
             Memory<byte> ZCARD = Encoding.ASCII.GetBytes("$5\r\nZCARD\r\n");
             var result = await db.ExecuteForMemoryResultAsync(ZCARD, "myzset1");
 
-            Assert.AreEqual("2", Encoding.ASCII.GetString(result.Span));
+            ClassicAssert.AreEqual("2", Encoding.ASCII.GetString(result.Span));
 
             //Dispose
             result.Dispose();
@@ -147,7 +148,7 @@ namespace Garnet.test
 
         private void SimpleMemoryResultCallback(long context, MemoryResult<byte> result)
         {
-            Assert.IsTrue(result.Span.SequenceEqual(Encoding.ASCII.GetBytes("2")));
+            ClassicAssert.IsTrue(result.Span.SequenceEqual(Encoding.ASCII.GetBytes("2")));
             result.Dispose();
             waiter.Set();
         }
@@ -197,7 +198,7 @@ namespace Garnet.test
                         foreach (var item in leaderBoard)
                         {
                             var found = result.First(t => t.Span.SequenceEqual(Encoding.ASCII.GetBytes(item.Element.ToString())));
-                            Assert.IsTrue(found.Span.Length > 0);
+                            ClassicAssert.IsTrue(found.Span.Length > 0);
                         }
 
                         Memory<byte> ZREM = Encoding.ASCII.GetBytes("$4\r\nZREM\r\n");
@@ -221,11 +222,11 @@ namespace Garnet.test
             foreach (var i in ss)
             {
                 var n = await db.ExecuteForMemoryResultAsync(ZCARD, i.Key);
-                Assert.AreEqual("0", Encoding.ASCII.GetString(n.Span));
+                ClassicAssert.AreEqual("0", Encoding.ASCII.GetString(n.Span));
                 n.Dispose();
             }
 
-            Assert.AreEqual(ss.Count, numThreads * numIterations);
+            ClassicAssert.AreEqual(ss.Count, numThreads * numIterations);
         }
 
         [Test]
@@ -254,7 +255,7 @@ namespace Garnet.test
             foreach (var item in leaderBoard)
             {
                 var found = result.First(t => t.Equals(item.Element));
-                Assert.IsTrue(found.Length > 0);
+                ClassicAssert.IsTrue(found.Length > 0);
             }
         }
 
@@ -267,16 +268,16 @@ namespace Garnet.test
             parameters = ["myzset1", "1", "KEY1", "2", "KEY2"];
 
             var result = await db.ExecuteForStringResultAsync("ZADD", parameters);
-            Assert.AreEqual("2", result);
+            ClassicAssert.AreEqual("2", result);
 
             Memory<byte> ZCARD = Encoding.ASCII.GetBytes("$5\r\nZCARD\r\n");
             result = await db.ExecuteForStringResultAsync(ZCARD, "myzset1");
-            Assert.AreEqual("2", result);
+            ClassicAssert.AreEqual("2", result);
 
 
             Memory<byte> key = Encoding.ASCII.GetBytes("myzset1");
             result = await db.ExecuteForStringResultAsync(ZCARD, key);
-            Assert.AreEqual("2", result);
+            ClassicAssert.AreEqual("2", result);
         }
 
         [Test]
@@ -304,8 +305,8 @@ namespace Garnet.test
             parameters = ["leaderboard", "-inf", "+inf"];
             var t = db.ExecuteForMemoryResultArrayWithCancellationAsync("ZRANGEBYSCORE", parameters, token);
             var result = t.GetAwaiter().GetResult();
-            Assert.IsTrue(t.IsCompletedSuccessfully);
-            Assert.IsTrue(result.Length == 10);
+            ClassicAssert.IsTrue(t.IsCompletedSuccessfully);
+            ClassicAssert.IsTrue(result.Length == 10);
 
             //execution with cancel token
             tokenSource.Cancel();
@@ -344,7 +345,7 @@ namespace Garnet.test
             // Execute without cancellation
             var t = DoZRangeAsync(1, token);
             t.GetAwaiter().GetResult();
-            Assert.IsTrue(t.IsCompletedSuccessfully);
+            ClassicAssert.IsTrue(t.IsCompletedSuccessfully);
 
             // First cancel the token to be sure the GarnetClient call sees the canceled token
             // Else, there will be a race in the testcase
@@ -359,7 +360,7 @@ namespace Garnet.test
             {
                 canceled = true;
             }
-            Assert.IsTrue(canceled);
+            ClassicAssert.IsTrue(canceled);
 
             tokenSource.Dispose();
         }
@@ -379,7 +380,7 @@ namespace Garnet.test
                 foreach (var item in leaderBoard)
                 {
                     var found = result.FirstOrDefault(t => t.Equals(item.Element));
-                    Assert.IsTrue(found != null);
+                    ClassicAssert.IsTrue(found != null);
                 }
             }
         }
@@ -423,19 +424,19 @@ namespace Garnet.test
             }
 
             var added = await db.SortedSetAddAsync("leaderboard", pairs);
-            Assert.IsTrue(added == leaderBoard.Length);
+            ClassicAssert.IsTrue(added == leaderBoard.Length);
 
             //just update
             added = await db.SortedSetAddAsync("leaderboard", pairs);
-            Assert.IsTrue(added == 0);
+            ClassicAssert.IsTrue(added == 0);
 
             //remove
             var removed = await db.SortedSetRemoveAsync("leaderboard", pairs);
-            Assert.IsTrue(removed == 10);
+            ClassicAssert.IsTrue(removed == 10);
 
             //length should be 0
             var len = await db.SortedSetLengthAsync("leaderboard");
-            Assert.IsTrue(len == 0);
+            ClassicAssert.IsTrue(len == 0);
         }
 
         [Test]
@@ -449,7 +450,7 @@ namespace Garnet.test
             // add a new Sorted Set
             db.SortedSetAdd("myss", "sspairOne", 1, (ctx, retValue, msg) =>
             {
-                Assert.IsTrue(1 == retValue);
+                ClassicAssert.IsTrue(1 == retValue);
                 e.Set();
             });
 
@@ -459,7 +460,7 @@ namespace Garnet.test
             db.SortedSetAdd("myss", "sspairOne", 2, (ctx, retValue, msg) =>
             {
                 //no adds were done
-                Assert.IsTrue(0 == retValue);
+                ClassicAssert.IsTrue(0 == retValue);
                 e.Set();
             });
 
@@ -468,7 +469,7 @@ namespace Garnet.test
             //remove
             db.SortedSetRemove("myss", "sspairOne", (ctx, retValue, msg) =>
             {
-                Assert.IsTrue(1 == retValue);
+                ClassicAssert.IsTrue(1 == retValue);
                 e.Set();
             });
 
@@ -477,7 +478,7 @@ namespace Garnet.test
             //length should be 0
             db.SortedSetLength("myss", (ctx, retValue, msg) =>
             {
-                Assert.IsTrue(0 == retValue);
+                ClassicAssert.IsTrue(0 == retValue);
                 e.Set();
             });
 
@@ -499,7 +500,7 @@ namespace Garnet.test
             //non existing key
             db.SortedSetLength("nokey", (context, retValue, msgResult) =>
             {
-                Assert.AreEqual(expectedValue, retValue);
+                ClassicAssert.AreEqual(expectedValue, retValue);
                 e.Set();
             });
 
@@ -507,7 +508,7 @@ namespace Garnet.test
 
             //ZCARD async non existing key
             var len = await db.SortedSetLengthAsync("nokey");
-            Assert.AreEqual(expectedValue, len);
+            ClassicAssert.AreEqual(expectedValue, len);
 
             // add a new Sorted Set
             List<string> parameters =
@@ -522,18 +523,18 @@ namespace Garnet.test
             }
 
             var added = await db.ExecuteForMemoryResultAsync("ZADD", parameters);
-            Assert.AreEqual("10", Encoding.ASCII.GetString(added.Span));
+            ClassicAssert.AreEqual("10", Encoding.ASCII.GetString(added.Span));
 
             //ZCARD async
             len = await db.SortedSetLengthAsync("leaderboard");
-            Assert.AreEqual(10, len);
+            ClassicAssert.AreEqual(10, len);
 
             expectedValue = 10;
 
             //ZCARD with Callback
             db.SortedSetLength("leaderboard", (context, retValue, msgResult) =>
             {
-                Assert.AreEqual(expectedValue, retValue);
+                ClassicAssert.AreEqual(expectedValue, retValue);
                 e.Set();
             });
 
