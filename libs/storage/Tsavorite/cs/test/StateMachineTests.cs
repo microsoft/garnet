@@ -4,6 +4,7 @@
 using System.Collections.Generic;
 using System.IO;
 using NUnit.Framework;
+using NUnit.Framework.Legacy;
 using Tsavorite.core;
 using Tsavorite.test.recovery.sumstore;
 
@@ -63,34 +64,34 @@ namespace Tsavorite.test.statemachine
             Prepare(out _, out var s1, out var uc1, out var s2);
 
             // We should be in PREPARE, 1
-            Assert.IsTrue(SystemState.Equal(SystemState.Make(Phase.PREPARE, 1), store.SystemState));
+            ClassicAssert.IsTrue(SystemState.Equal(SystemState.Make(Phase.PREPARE, 1), store.SystemState));
 
             // Refresh session s2
             s2.Refresh();
 
             // s1 has not refreshed, so we should still be in PREPARE, 1
-            Assert.IsTrue(SystemState.Equal(SystemState.Make(Phase.PREPARE, 1), store.SystemState));
+            ClassicAssert.IsTrue(SystemState.Equal(SystemState.Make(Phase.PREPARE, 1), store.SystemState));
 
             // Refresh s1
             uc1.Refresh();
 
             // We should now be in IN_PROGRESS, 2
-            Assert.IsTrue(SystemState.Equal(SystemState.Make(Phase.IN_PROGRESS, 2), store.SystemState));
+            ClassicAssert.IsTrue(SystemState.Equal(SystemState.Make(Phase.IN_PROGRESS, 2), store.SystemState));
 
             s2.Refresh();
 
             // We should be in WAIT_FLUSH, 2
-            Assert.IsTrue(SystemState.Equal(SystemState.Make(Phase.WAIT_FLUSH, 2), store.SystemState));
+            ClassicAssert.IsTrue(SystemState.Equal(SystemState.Make(Phase.WAIT_FLUSH, 2), store.SystemState));
 
             uc1.Refresh();
 
             // We should be in PERSISTENCE_CALLBACK, 2
-            Assert.IsTrue(SystemState.Equal(SystemState.Make(Phase.PERSISTENCE_CALLBACK, 2), store.SystemState));
+            ClassicAssert.IsTrue(SystemState.Equal(SystemState.Make(Phase.PERSISTENCE_CALLBACK, 2), store.SystemState));
 
             s2.Refresh();
 
             // We should be in REST, 2
-            Assert.IsTrue(SystemState.Equal(SystemState.Make(Phase.REST, 2), store.SystemState));
+            ClassicAssert.IsTrue(SystemState.Equal(SystemState.Make(Phase.REST, 2), store.SystemState));
 
             // Dispose session s2; does not move state machine forward
             s2.Dispose();
@@ -107,32 +108,32 @@ namespace Tsavorite.test.statemachine
             Prepare(out _, out var s1, out var uc1, out var s2);
 
             // We should be in PREPARE, 1
-            Assert.IsTrue(SystemState.Equal(SystemState.Make(Phase.PREPARE, 1), store.SystemState));
+            ClassicAssert.IsTrue(SystemState.Equal(SystemState.Make(Phase.PREPARE, 1), store.SystemState));
 
             // Refresh session s2
             s2.Refresh();
 
             // s1 has not refreshed, so we should still be in PREPARE, 1
-            Assert.IsTrue(SystemState.Equal(SystemState.Make(Phase.PREPARE, 1), store.SystemState));
+            ClassicAssert.IsTrue(SystemState.Equal(SystemState.Make(Phase.PREPARE, 1), store.SystemState));
 
             // Refresh s1
             uc1.Refresh();
 
             // We should now be in IN_PROGRESS, 2
-            Assert.IsTrue(SystemState.Equal(SystemState.Make(Phase.IN_PROGRESS, 2), store.SystemState));
+            ClassicAssert.IsTrue(SystemState.Equal(SystemState.Make(Phase.IN_PROGRESS, 2), store.SystemState));
 
             // Dispose session s2; moves state machine forward to WAIT_FLUSH, 2
             s2.Dispose();
 
             // We should be in WAIT_FLUSH, 2
-            Assert.IsTrue(SystemState.Equal(SystemState.Make(Phase.WAIT_FLUSH, 2), store.SystemState));
+            ClassicAssert.IsTrue(SystemState.Equal(SystemState.Make(Phase.WAIT_FLUSH, 2), store.SystemState));
 
             // Since s1 is the only session now, it will fast-foward state machine
             // to completion
             uc1.Refresh();
 
             // We should be in REST, 2
-            Assert.IsTrue(SystemState.Equal(SystemState.Make(Phase.REST, 2), store.SystemState));
+            ClassicAssert.IsTrue(SystemState.Equal(SystemState.Make(Phase.REST, 2), store.SystemState));
 
             uc1.EndUnsafe();
             s1.Dispose();
@@ -145,13 +146,13 @@ namespace Tsavorite.test.statemachine
             Prepare(out _, out var s1, out var uc1, out var s2);
 
             // We should be in PREPARE, 1
-            Assert.IsTrue(SystemState.Equal(SystemState.Make(Phase.PREPARE, 1), store.SystemState));
+            ClassicAssert.IsTrue(SystemState.Equal(SystemState.Make(Phase.PREPARE, 1), store.SystemState));
 
             // Refresh session s1
             uc1.Refresh();
 
             // s1 is now in PREPARE, 1
-            Assert.IsTrue(SystemState.Equal(SystemState.Make(Phase.PREPARE, 1), SystemState.Make(s1.ctx.phase, s1.ctx.version)));
+            ClassicAssert.IsTrue(SystemState.Equal(SystemState.Make(Phase.PREPARE, 1), SystemState.Make(s1.ctx.phase, s1.ctx.version)));
 
             // Suspend s1
             uc1.EndUnsafe();
@@ -161,7 +162,7 @@ namespace Tsavorite.test.statemachine
             s2.Refresh();
 
             // We should be in REST, 2
-            Assert.IsTrue(SystemState.Equal(SystemState.Make(Phase.REST, 2), store.SystemState));
+            ClassicAssert.IsTrue(SystemState.Equal(SystemState.Make(Phase.REST, 2), store.SystemState));
 
             uc1.BeginUnsafe();
 
@@ -178,22 +179,22 @@ namespace Tsavorite.test.statemachine
             Prepare(out _, out var s1, out var uc1, out var s2);
 
             // We should be in PREPARE, 1
-            Assert.IsTrue(SystemState.Equal(SystemState.Make(Phase.PREPARE, 1), store.SystemState));
+            ClassicAssert.IsTrue(SystemState.Equal(SystemState.Make(Phase.PREPARE, 1), store.SystemState));
 
             // Refresh session s2
             s2.Refresh();
 
             // s1 has not refreshed, so we should still be in PREPARE, 1
-            Assert.IsTrue(SystemState.Equal(SystemState.Make(Phase.PREPARE, 1), store.SystemState));
+            ClassicAssert.IsTrue(SystemState.Equal(SystemState.Make(Phase.PREPARE, 1), store.SystemState));
 
             // Refresh s1
             uc1.Refresh();
 
             // We should now be in IN_PROGRESS, 2
-            Assert.IsTrue(SystemState.Equal(SystemState.Make(Phase.IN_PROGRESS, 2), store.SystemState));
+            ClassicAssert.IsTrue(SystemState.Equal(SystemState.Make(Phase.IN_PROGRESS, 2), store.SystemState));
 
             // s1 is now in IN_PROGRESS, 2
-            Assert.IsTrue(SystemState.Equal(SystemState.Make(Phase.IN_PROGRESS, 2), SystemState.Make(s1.ctx.phase, s1.ctx.version)));
+            ClassicAssert.IsTrue(SystemState.Equal(SystemState.Make(Phase.IN_PROGRESS, 2), SystemState.Make(s1.ctx.phase, s1.ctx.version)));
 
             // Suspend s1
             uc1.EndUnsafe();
@@ -203,7 +204,7 @@ namespace Tsavorite.test.statemachine
             s2.Refresh();
 
             // We should be in REST, 2
-            Assert.IsTrue(SystemState.Equal(SystemState.Make(Phase.REST, 2), store.SystemState));
+            ClassicAssert.IsTrue(SystemState.Equal(SystemState.Make(Phase.REST, 2), store.SystemState));
 
             uc1.BeginUnsafe();
 
@@ -220,30 +221,30 @@ namespace Tsavorite.test.statemachine
             Prepare(out _, out var s1, out var uc1, out var s2);
 
             // We should be in PREPARE, 1
-            Assert.IsTrue(SystemState.Equal(SystemState.Make(Phase.PREPARE, 1), store.SystemState));
+            ClassicAssert.IsTrue(SystemState.Equal(SystemState.Make(Phase.PREPARE, 1), store.SystemState));
 
             // Refresh session s2
             uc1.Refresh();
             s2.Refresh();
 
             // We should now be in IN_PROGRESS, 2
-            Assert.IsTrue(SystemState.Equal(SystemState.Make(Phase.IN_PROGRESS, 2), store.SystemState));
+            ClassicAssert.IsTrue(SystemState.Equal(SystemState.Make(Phase.IN_PROGRESS, 2), store.SystemState));
 
             uc1.Refresh();
 
             // We should be in WAIT_FLUSH, 2
-            Assert.IsTrue(SystemState.Equal(SystemState.Make(Phase.WAIT_FLUSH, 2), store.SystemState));
+            ClassicAssert.IsTrue(SystemState.Equal(SystemState.Make(Phase.WAIT_FLUSH, 2), store.SystemState));
 
 
             s2.Refresh();
 
             // We should be in PERSISTENCE_CALLBACK, 2
-            Assert.IsTrue(SystemState.Equal(SystemState.Make(Phase.PERSISTENCE_CALLBACK, 2), store.SystemState));
+            ClassicAssert.IsTrue(SystemState.Equal(SystemState.Make(Phase.PERSISTENCE_CALLBACK, 2), store.SystemState));
 
             uc1.Refresh();
 
             // We should be in REST, 2
-            Assert.IsTrue(SystemState.Equal(SystemState.Make(Phase.REST, 2), store.SystemState));
+            ClassicAssert.IsTrue(SystemState.Equal(SystemState.Make(Phase.REST, 2), store.SystemState));
 
             // No callback here since already done
             uc1.Refresh();
@@ -256,7 +257,7 @@ namespace Tsavorite.test.statemachine
             s2.Refresh();
 
             // We should be in REST, 2
-            Assert.IsTrue(SystemState.Equal(SystemState.Make(Phase.REST, 2), store.SystemState));
+            ClassicAssert.IsTrue(SystemState.Equal(SystemState.Make(Phase.REST, 2), store.SystemState));
 
             uc1.BeginUnsafe();
 
@@ -277,17 +278,17 @@ namespace Tsavorite.test.statemachine
             uc1.EndUnsafe();
 
             // s1 is now in REST, 1
-            Assert.IsTrue(SystemState.Equal(SystemState.Make(Phase.REST, 1), SystemState.Make(s1.ctx.phase, s1.ctx.version)));
+            ClassicAssert.IsTrue(SystemState.Equal(SystemState.Make(Phase.REST, 1), SystemState.Make(s1.ctx.phase, s1.ctx.version)));
 
             // System should be in PREPARE, 1
-            Assert.IsTrue(SystemState.Equal(SystemState.Make(Phase.PREPARE, 1), store.SystemState));
+            ClassicAssert.IsTrue(SystemState.Equal(SystemState.Make(Phase.PREPARE, 1), store.SystemState));
 
             // Since s2 is the only session now, it will fast-foward state machine
             // to completion
             s2.Refresh();
 
             // We should be in REST, 2
-            Assert.IsTrue(SystemState.Equal(SystemState.Make(Phase.REST, 2), store.SystemState));
+            ClassicAssert.IsTrue(SystemState.Equal(SystemState.Make(Phase.REST, 2), store.SystemState));
 
             s2.Dispose();
 
@@ -295,7 +296,7 @@ namespace Tsavorite.test.statemachine
             store.CompleteCheckpointAsync().AsTask().GetAwaiter().GetResult();
 
             // We should be in REST, 3
-            Assert.IsTrue(SystemState.Equal(SystemState.Make(Phase.REST, 3), store.SystemState));
+            ClassicAssert.IsTrue(SystemState.Equal(SystemState.Make(Phase.REST, 3), store.SystemState));
 
             uc1.BeginUnsafe();
 
@@ -309,27 +310,27 @@ namespace Tsavorite.test.statemachine
         {
             CreateSessions(out _, out var s1, out var ts, out var lts);
             // System should be in REST, 1
-            Assert.IsTrue(SystemState.Equal(SystemState.Make(Phase.REST, 1), store.SystemState));
+            ClassicAssert.IsTrue(SystemState.Equal(SystemState.Make(Phase.REST, 1), store.SystemState));
 
             lts.getLUC();
-            Assert.IsTrue(lts.isProtected);
+            ClassicAssert.IsTrue(lts.isProtected);
 
             _ = store.TryInitiateHybridLogCheckpoint(out _, CheckpointType.FoldOver);
 
             // System should be in PREPARE, 1
-            Assert.IsTrue(SystemState.Equal(SystemState.Make(Phase.PREPARE, 1), store.SystemState));
+            ClassicAssert.IsTrue(SystemState.Equal(SystemState.Make(Phase.PREPARE, 1), store.SystemState));
 
             ts.Refresh();
             lts.Refresh();
 
             // System should be in PREPARE, 1 Since there is an active locking session
-            Assert.IsTrue(SystemState.Equal(SystemState.Make(Phase.PREPARE, 1), store.SystemState));
+            ClassicAssert.IsTrue(SystemState.Equal(SystemState.Make(Phase.PREPARE, 1), store.SystemState));
 
             lts.DisposeLUC();
 
             ts.Refresh();
             // fast-foward state machine to completion
-            Assert.IsTrue(SystemState.Equal(SystemState.Make(Phase.REST, 2), store.SystemState));
+            ClassicAssert.IsTrue(SystemState.Equal(SystemState.Make(Phase.REST, 2), store.SystemState));
 
             lts.Refresh();
 
@@ -345,7 +346,7 @@ namespace Tsavorite.test.statemachine
             CreateSessions(out _, out var s1, out var ts, out var lts);
 
             // System should be in REST, 1
-            Assert.IsTrue(SystemState.Equal(SystemState.Make(Phase.REST, 1), store.SystemState));
+            ClassicAssert.IsTrue(SystemState.Equal(SystemState.Make(Phase.REST, 1), store.SystemState));
 
             var uc1 = s1.UnsafeContext;
             uc1.BeginUnsafe();
@@ -354,28 +355,28 @@ namespace Tsavorite.test.statemachine
 
             // should not succeed since checkpoint is in progress
             lts.getLUC();
-            Assert.IsFalse(lts.isProtected);
+            ClassicAssert.IsFalse(lts.isProtected);
 
             // We should be in PREPARE phase
-            Assert.IsTrue(SystemState.Equal(SystemState.Make(Phase.PREPARE, 1), store.SystemState));
+            ClassicAssert.IsTrue(SystemState.Equal(SystemState.Make(Phase.PREPARE, 1), store.SystemState));
 
             ts.Refresh();
             // System should be in PREPARE, 1 
-            Assert.IsTrue(SystemState.Equal(SystemState.Make(Phase.PREPARE, 1), store.SystemState));
+            ClassicAssert.IsTrue(SystemState.Equal(SystemState.Make(Phase.PREPARE, 1), store.SystemState));
 
             // should not succeed since checkpoint is in progress
             lts.getLUC();
-            Assert.IsFalse(lts.isProtected);
+            ClassicAssert.IsFalse(lts.isProtected);
 
             uc1.EndUnsafe();
 
             // fast-foward state machine to completion
             ts.Refresh();
-            Assert.IsTrue(SystemState.Equal(SystemState.Make(Phase.REST, 2), store.SystemState));
+            ClassicAssert.IsTrue(SystemState.Equal(SystemState.Make(Phase.REST, 2), store.SystemState));
 
             // should be true since checkpoint is done
             lts.getLUC();
-            Assert.IsTrue(lts.isProtected);
+            ClassicAssert.IsTrue(lts.isProtected);
             lts.DisposeLUC();
 
             s1.Dispose();
@@ -390,7 +391,7 @@ namespace Tsavorite.test.statemachine
             CreateSessions(out _, out var s1, out var ts, out var lts);
 
             // System should be in REST, 1
-            Assert.IsTrue(SystemState.Equal(SystemState.Make(Phase.REST, 1), store.SystemState));
+            ClassicAssert.IsTrue(SystemState.Equal(SystemState.Make(Phase.REST, 1), store.SystemState));
 
             // Start first LUC before checkpoint
             var luc1 = s1.LockableUnsafeContext;
@@ -400,21 +401,21 @@ namespace Tsavorite.test.statemachine
             _ = store.TryInitiateHybridLogCheckpoint(out _, CheckpointType.FoldOver);
 
             // System should be in PREPARE, 1
-            Assert.IsTrue(SystemState.Equal(SystemState.Make(Phase.PREPARE, 1), store.SystemState));
+            ClassicAssert.IsTrue(SystemState.Equal(SystemState.Make(Phase.PREPARE, 1), store.SystemState));
 
             luc1.Refresh();
             ts.Refresh();
             luc1.Refresh();
 
             // System should be in PREPARE, 1 Since there is an active locking session
-            Assert.IsTrue(SystemState.Equal(SystemState.Make(Phase.PREPARE, 1), store.SystemState));
+            ClassicAssert.IsTrue(SystemState.Equal(SystemState.Make(Phase.PREPARE, 1), store.SystemState));
 
             // should not let new LUC start since checkpoint is in progress
             lts.getLUC();
-            Assert.IsFalse(lts.isProtected);
+            ClassicAssert.IsFalse(lts.isProtected);
 
             // We still should be in PREPARE phase
-            Assert.IsTrue(SystemState.Equal(SystemState.Make(Phase.PREPARE, 1), store.SystemState));
+            ClassicAssert.IsTrue(SystemState.Equal(SystemState.Make(Phase.PREPARE, 1), store.SystemState));
 
             // End first LUC 
             luc1.EndLockable();
@@ -422,15 +423,15 @@ namespace Tsavorite.test.statemachine
 
             s1.BasicContext.Refresh();
             // System should be in IN_PROGRESS, 1 
-            Assert.IsTrue(SystemState.Equal(SystemState.Make(Phase.IN_PROGRESS, 2), store.SystemState));
+            ClassicAssert.IsTrue(SystemState.Equal(SystemState.Make(Phase.IN_PROGRESS, 2), store.SystemState));
 
             // should be true since checkpoint is in IN_PROGRESS phase
             lts.getLUC();
-            Assert.IsTrue(lts.isProtected);
+            ClassicAssert.IsTrue(lts.isProtected);
             lts.DisposeLUC();
 
             ts.Refresh();
-            Assert.IsTrue(SystemState.Equal(SystemState.Make(Phase.REST, 2), store.SystemState));
+            ClassicAssert.IsTrue(SystemState.Equal(SystemState.Make(Phase.REST, 2), store.SystemState));
 
             // Expect checkpoint completion callback
             s1.Dispose();
@@ -449,7 +450,7 @@ namespace Tsavorite.test.statemachine
             Prepare(out _, out var s1, out var uc1, out var s2);
 
             // We should be in PREPARE, 1
-            Assert.IsTrue(SystemState.Equal(SystemState.Make(Phase.PREPARE, 1), store.SystemState));
+            ClassicAssert.IsTrue(SystemState.Equal(SystemState.Make(Phase.PREPARE, 1), store.SystemState));
             callback.CheckInvoked(store.SystemState);
 
             // Refresh session s2
@@ -457,25 +458,25 @@ namespace Tsavorite.test.statemachine
             uc1.Refresh();
 
             // We should now be in IN_PROGRESS, 2
-            Assert.IsTrue(SystemState.Equal(SystemState.Make(Phase.IN_PROGRESS, 2), store.SystemState));
+            ClassicAssert.IsTrue(SystemState.Equal(SystemState.Make(Phase.IN_PROGRESS, 2), store.SystemState));
             callback.CheckInvoked(store.SystemState);
 
             s2.Refresh();
 
             // We should be in WAIT_FLUSH, 2
-            Assert.IsTrue(SystemState.Equal(SystemState.Make(Phase.WAIT_FLUSH, 2), store.SystemState));
+            ClassicAssert.IsTrue(SystemState.Equal(SystemState.Make(Phase.WAIT_FLUSH, 2), store.SystemState));
             callback.CheckInvoked(store.SystemState);
 
             uc1.Refresh();
 
             // We should be in PERSISTENCE_CALLBACK, 2
-            Assert.IsTrue(SystemState.Equal(SystemState.Make(Phase.PERSISTENCE_CALLBACK, 2), store.SystemState));
+            ClassicAssert.IsTrue(SystemState.Equal(SystemState.Make(Phase.PERSISTENCE_CALLBACK, 2), store.SystemState));
             callback.CheckInvoked(store.SystemState);
 
             s2.Refresh();
 
             // We should be in REST, 2
-            Assert.IsTrue(SystemState.Equal(SystemState.Make(Phase.REST, 2), store.SystemState));
+            ClassicAssert.IsTrue(SystemState.Equal(SystemState.Make(Phase.REST, 2), store.SystemState));
             callback.CheckInvoked(store.SystemState);
 
             // Dispose session s2; does not move state machine forward
@@ -494,28 +495,28 @@ namespace Tsavorite.test.statemachine
             Prepare(out _, out var s1, out var uc1, out var s2, toVersion);
 
             // We should be in PREPARE, 1
-            Assert.IsTrue(SystemState.Equal(SystemState.Make(Phase.PREPARE, 1), store.SystemState));
+            ClassicAssert.IsTrue(SystemState.Equal(SystemState.Make(Phase.PREPARE, 1), store.SystemState));
 
             // Refresh session s2
             s2.Refresh();
             uc1.Refresh();
 
             // We should now be in IN_PROGRESS, toVersion
-            Assert.IsTrue(SystemState.Equal(SystemState.Make(Phase.IN_PROGRESS, toVersion), store.SystemState));
+            ClassicAssert.IsTrue(SystemState.Equal(SystemState.Make(Phase.IN_PROGRESS, toVersion), store.SystemState));
 
             s2.Refresh();
 
             // We should be in WAIT_FLUSH, 2
-            Assert.IsTrue(SystemState.Equal(SystemState.Make(Phase.WAIT_FLUSH, toVersion), store.SystemState));
+            ClassicAssert.IsTrue(SystemState.Equal(SystemState.Make(Phase.WAIT_FLUSH, toVersion), store.SystemState));
 
             uc1.Refresh();
 
             // We should be in PERSISTENCE_CALLBACK, 2
-            Assert.IsTrue(SystemState.Equal(SystemState.Make(Phase.PERSISTENCE_CALLBACK, toVersion), store.SystemState));
+            ClassicAssert.IsTrue(SystemState.Equal(SystemState.Make(Phase.PERSISTENCE_CALLBACK, toVersion), store.SystemState));
 
             s2.Refresh();
 
-            Assert.IsTrue(SystemState.Equal(SystemState.Make(Phase.REST, toVersion), store.SystemState));
+            ClassicAssert.IsTrue(SystemState.Equal(SystemState.Make(Phase.REST, toVersion), store.SystemState));
 
 
             // Dispose session s2; does not move state machine forward
@@ -534,7 +535,7 @@ namespace Tsavorite.test.statemachine
             f = new SimpleFunctions();
 
             // We should be in REST, 1
-            Assert.IsTrue(SystemState.Equal(SystemState.Make(Phase.REST, 1), store.SystemState));
+            ClassicAssert.IsTrue(SystemState.Equal(SystemState.Make(Phase.REST, 1), store.SystemState));
 
             // Take index checkpoint for recovery purposes
             _ = store.TryInitiateIndexCheckpoint(out _);
@@ -542,7 +543,7 @@ namespace Tsavorite.test.statemachine
 
             // Index checkpoint does not update version, so
             // we should still be in REST, 1
-            Assert.IsTrue(SystemState.Equal(SystemState.Make(Phase.REST, 1), store.SystemState));
+            ClassicAssert.IsTrue(SystemState.Equal(SystemState.Make(Phase.REST, 1), store.SystemState));
 
             NumClicks value;
 
@@ -566,12 +567,12 @@ namespace Tsavorite.test.statemachine
             s2 = store.CreateThreadSession<AdId, NumClicks, NumClicks, NumClicks, Empty, SimpleFunctions, StructStoreFunctions, StructAllocator>(f);
 
             // We should be in REST, 1
-            Assert.IsTrue(SystemState.Equal(SystemState.Make(Phase.REST, 1), store.SystemState));
+            ClassicAssert.IsTrue(SystemState.Equal(SystemState.Make(Phase.REST, 1), store.SystemState));
 
             _ = store.TryInitiateHybridLogCheckpoint(out _, CheckpointType.FoldOver, targetVersion: toVersion);
 
             // We should be in PREPARE, 1
-            Assert.IsTrue(SystemState.Equal(SystemState.Make(Phase.PREPARE, 1), store.SystemState));
+            ClassicAssert.IsTrue(SystemState.Equal(SystemState.Make(Phase.PREPARE, 1), store.SystemState));
         }
 
 
@@ -600,7 +601,7 @@ namespace Tsavorite.test.statemachine
             lts = store.CreateLUCThreadSession<AdId, NumClicks, NumClicks, NumClicks, Empty, SimpleFunctions, StructStoreFunctions, StructAllocator>(f);
 
             // We should be in REST, 1
-            Assert.IsTrue(SystemState.Equal(SystemState.Make(Phase.REST, 1), store.SystemState));
+            ClassicAssert.IsTrue(SystemState.Equal(SystemState.Make(Phase.REST, 1), store.SystemState));
 
             // Take index checkpoint for recovery purposes
             _ = store.TryInitiateIndexCheckpoint(out _);
@@ -612,8 +613,8 @@ namespace Tsavorite.test.statemachine
     {
         public override void ReadCompletionCallback(ref AdId key, ref NumClicks input, ref NumClicks output, Empty ctx, Status status, RecordMetadata recordMetadata)
         {
-            Assert.IsTrue(status.Found);
-            Assert.AreEqual(key.adId, output.numClicks);
+            ClassicAssert.IsTrue(status.Found);
+            ClassicAssert.AreEqual(key.adId, output.numClicks);
         }
     }
 
@@ -623,13 +624,13 @@ namespace Tsavorite.test.statemachine
 
         public void BeforeEnteringState(SystemState next, TsavoriteKV<AdId, NumClicks, StructStoreFunctions, StructAllocator> tsavorite)
         {
-            Assert.IsFalse(invokedStates.Contains(next));
+            ClassicAssert.IsFalse(invokedStates.Contains(next));
             _ = invokedStates.Add(next);
         }
 
         public void CheckInvoked(SystemState state)
         {
-            Assert.IsTrue(invokedStates.Contains(state));
+            ClassicAssert.IsTrue(invokedStates.Contains(state));
         }
     }
 }

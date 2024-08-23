@@ -16,9 +16,6 @@ namespace Garnet.cluster
     {
         ClusterConfig lastSentConfig;
 
-        int migrateSetCount = 0;
-        byte migrateState = 0;
-
         private int CountKeysInSessionStore(int slot)
         {
             ClusterKeyIterationFunctions.MainStoreCountKeys iterFuncs = new(slot);

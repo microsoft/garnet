@@ -7,6 +7,7 @@ using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
 using NUnit.Framework;
+using NUnit.Framework.Legacy;
 using Tsavorite.core;
 
 namespace Tsavorite.test
@@ -51,17 +52,17 @@ namespace Tsavorite.test
                 await l.CommitAsync();
 
                 using var originalIterator = l.Scan(0, long.MaxValue, readerName);
-                Assert.IsTrue(originalIterator.GetNext(out _, out _, out _, out long recoveryAddress));
+                ClassicAssert.IsTrue(originalIterator.GetNext(out _, out _, out _, out long recoveryAddress));
                 originalIterator.CompleteUntil(recoveryAddress);
-                Assert.IsTrue(originalIterator.GetNext(out _, out _, out _, out _));  // move the reader ahead
+                ClassicAssert.IsTrue(originalIterator.GetNext(out _, out _, out _, out _));  // move the reader ahead
                 await l.CommitAsync();
             }
 
             using (var l = new TsavoriteLog(new TsavoriteLogSettings { LogDevice = device, PageSizeBits = 16, MemorySizeBits = 16, LogChecksum = logChecksum }))
             {
                 using var recoveredIterator = l.Scan(0, long.MaxValue, readerName);
-                Assert.IsTrue(recoveredIterator.GetNext(out byte[] outBuf, out _, out _, out _));
-                Assert.True(input2.SequenceEqual(outBuf));  // we should have read in input2, not input1 or input3
+                ClassicAssert.IsTrue(recoveredIterator.GetNext(out byte[] outBuf, out _, out _, out _));
+                ClassicAssert.True(input2.SequenceEqual(outBuf));  // we should have read in input2, not input1 or input3
             }
         }
 
@@ -84,17 +85,17 @@ namespace Tsavorite.test
                 await l.CommitAsync();
 
                 using var originalIterator = l.Scan(0, long.MaxValue, readerName);
-                Assert.IsTrue(originalIterator.GetNext(out _, out _, out long recordAddress, out _));
+                ClassicAssert.IsTrue(originalIterator.GetNext(out _, out _, out long recordAddress, out _));
                 await originalIterator.CompleteUntilRecordAtAsync(recordAddress);
-                Assert.IsTrue(originalIterator.GetNext(out _, out _, out _, out _));  // move the reader ahead
+                ClassicAssert.IsTrue(originalIterator.GetNext(out _, out _, out _, out _));  // move the reader ahead
                 await l.CommitAsync();
             }
 
             using (var l = new TsavoriteLog(new TsavoriteLogSettings { LogDevice = device, PageSizeBits = 16, MemorySizeBits = 16, LogChecksum = logChecksum }))
             {
                 using var recoveredIterator = l.Scan(0, long.MaxValue, readerName);
-                Assert.IsTrue(recoveredIterator.GetNext(out byte[] outBuf, out _, out _, out _));
-                Assert.True(input2.SequenceEqual(outBuf));  // we should have read in input2, not input1 or input3
+                ClassicAssert.IsTrue(recoveredIterator.GetNext(out byte[] outBuf, out _, out _, out _));
+                ClassicAssert.True(input2.SequenceEqual(outBuf));  // we should have read in input2, not input1 or input3
             }
         }
 
@@ -121,9 +122,9 @@ namespace Tsavorite.test
                     await l.CommitAsync();
 
                     using var originalIterator = l.Scan(0, long.MaxValue, readerName);
-                    Assert.IsTrue(originalIterator.GetNext(out _, out _, out _, out long recoveryAddress));
+                    ClassicAssert.IsTrue(originalIterator.GetNext(out _, out _, out _, out long recoveryAddress));
                     originalIterator.CompleteUntil(recoveryAddress);
-                    Assert.IsTrue(originalIterator.GetNext(out _, out _, out _, out _));  // move the reader ahead
+                    ClassicAssert.IsTrue(originalIterator.GetNext(out _, out _, out _, out _));  // move the reader ahead
                     await l.CommitAsync();
                     originalCompleted = originalIterator.CompletedUntilAddress;
                 }
@@ -131,10 +132,10 @@ namespace Tsavorite.test
                 using (var l = new TsavoriteLog(new TsavoriteLogSettings { LogDevice = device, PageSizeBits = 16, MemorySizeBits = 16, LogChecksum = logChecksum, LogCommitManager = logCommitManager }))
                 {
                     using var recoveredIterator = l.Scan(0, long.MaxValue, readerName);
-                    Assert.IsTrue(recoveredIterator.GetNext(out byte[] outBuf, out _, out _, out _));
+                    ClassicAssert.IsTrue(recoveredIterator.GetNext(out byte[] outBuf, out _, out _, out _));
 
                     // we should have read in input2, not input1 or input3
-                    Assert.True(input2.SequenceEqual(outBuf), $"Original: {input2[0]}, Recovered: {outBuf[0]}, Original: {originalCompleted}, Recovered: {recoveredIterator.CompletedUntilAddress}");
+                    ClassicAssert.True(input2.SequenceEqual(outBuf), $"Original: {input2[0]}, Recovered: {outBuf[0]}, Original: {originalCompleted}, Recovered: {recoveredIterator.CompletedUntilAddress}");
 
                     // TestContext.Progress.WriteLine($"Original: {originalCompleted}, Recovered: {recoveredIterator.CompletedUntilAddress}"); 
                 }
@@ -187,10 +188,10 @@ namespace Tsavorite.test
                     await foreach (var item in recoveredIterator.GetAsyncEnumerable())
                     {
                         if (count == 0) // resumed iterator will start at item2
-                            Assert.True(input2.SequenceEqual(item.entry), $"Original: {input2[0]}, Recovered: {item.entry[0]}, Original: {originalCompleted}, Recovered: {recoveredIterator.CompletedUntilAddress}");
+                            ClassicAssert.True(input2.SequenceEqual(item.entry), $"Original: {input2[0]}, Recovered: {item.entry[0]}, Original: {originalCompleted}, Recovered: {recoveredIterator.CompletedUntilAddress}");
                         count++;
                     }
-                    Assert.IsTrue(count == 2);
+                    ClassicAssert.IsTrue(count == 2);
                 }
             }
         }

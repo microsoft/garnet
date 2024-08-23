@@ -6,6 +6,7 @@ using System.Collections.Generic;
 using System.IO;
 using System.Threading.Tasks;
 using NUnit.Framework;
+using NUnit.Framework.Legacy;
 using Tsavorite.core;
 using static Tsavorite.test.TestUtils;
 
@@ -52,7 +53,7 @@ namespace Tsavorite.test
                 {
                     var keyItem = key.AsSpan<long>()[0];
                     var valueItem = value.AsSpan<int>()[0];
-                    Assert.AreEqual(keyItem * keyMultToValue, valueItem);
+                    ClassicAssert.AreEqual(keyItem * keyMultToValue, valueItem);
                 }
                 return stopAt != ++numRecords;
             }
@@ -101,9 +102,9 @@ namespace Tsavorite.test
                         _ = scanIteratorFunctions.SingleReader(ref iter.GetKey(), ref iter.GetValue(), default, default, out _);
                 }
                 else
-                    Assert.IsTrue(session.Iterate(ref scanIteratorFunctions), $"Failed to complete push iteration; numRecords = {scanIteratorFunctions.numRecords}");
+                    ClassicAssert.IsTrue(session.Iterate(ref scanIteratorFunctions), $"Failed to complete push iteration; numRecords = {scanIteratorFunctions.numRecords}");
 
-                Assert.AreEqual(expectedRecs, scanIteratorFunctions.numRecords);
+                ClassicAssert.AreEqual(expectedRecs, scanIteratorFunctions.numRecords);
             }
 
             // Note: We only have a single value element; we are not exercising the "Variable Length" aspect here.
@@ -193,10 +194,10 @@ namespace Tsavorite.test
                 scanIteratorFunctions.numRecords = 0;
                 scanIteratorFunctions.stopAt = stopAt;
                 if (useScan)
-                    Assert.IsFalse(store.Log.Scan(ref scanIteratorFunctions, start, store.Log.TailAddress), $"Failed to terminate push iteration early; numRecords = {scanIteratorFunctions.numRecords}");
+                    ClassicAssert.IsFalse(store.Log.Scan(ref scanIteratorFunctions, start, store.Log.TailAddress), $"Failed to terminate push iteration early; numRecords = {scanIteratorFunctions.numRecords}");
                 else
-                    Assert.IsFalse(session.Iterate(ref scanIteratorFunctions), $"Failed to terminate push iteration early; numRecords = {scanIteratorFunctions.numRecords}");
-                Assert.AreEqual(stopAt, scanIteratorFunctions.numRecords);
+                    ClassicAssert.IsFalse(session.Iterate(ref scanIteratorFunctions), $"Failed to terminate push iteration early; numRecords = {scanIteratorFunctions.numRecords}");
+                ClassicAssert.AreEqual(stopAt, scanIteratorFunctions.numRecords);
             }
 
             // Note: We only have a single value element; we are not exercising the "Variable Length" aspect here.
@@ -244,10 +245,10 @@ namespace Tsavorite.test
                 using var session = store.NewSession<SpanByte, int[], Empty, VLVectorFunctions>(new VLVectorFunctions());
                 SpanBytePushIterationTestFunctions scanIteratorFunctions = new();
                 if (scanMode == ScanMode.Scan)
-                    Assert.IsTrue(store.Log.Scan(ref scanIteratorFunctions, start, store.Log.TailAddress), $"Failed to complete push scan; numRecords = {scanIteratorFunctions.numRecords}");
+                    ClassicAssert.IsTrue(store.Log.Scan(ref scanIteratorFunctions, start, store.Log.TailAddress), $"Failed to complete push scan; numRecords = {scanIteratorFunctions.numRecords}");
                 else
-                    Assert.IsTrue(session.Iterate(ref scanIteratorFunctions), $"Failed to complete push iteration; numRecords = {scanIteratorFunctions.numRecords}");
-                Assert.AreEqual(totalRecords, scanIteratorFunctions.numRecords);
+                    ClassicAssert.IsTrue(session.Iterate(ref scanIteratorFunctions), $"Failed to complete push iteration; numRecords = {scanIteratorFunctions.numRecords}");
+                ClassicAssert.AreEqual(totalRecords, scanIteratorFunctions.numRecords);
             }
 
             void LocalUpdate(int tid)

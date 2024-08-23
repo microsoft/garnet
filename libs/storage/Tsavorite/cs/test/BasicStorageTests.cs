@@ -3,6 +3,7 @@
 
 using System.IO;
 using NUnit.Framework;
+using NUnit.Framework.Legacy;
 using Tsavorite.core;
 using Tsavorite.devices;
 
@@ -86,9 +87,9 @@ namespace Tsavorite.test
                 var storageBase = (StorageDeviceBase)device;
                 var segmentFilename = storageBase.GetSegmentFilename(filename, 0);
                 if (omit)
-                    Assert.AreEqual(filename, segmentFilename);
+                    ClassicAssert.AreEqual(filename, segmentFilename);
                 else
-                    Assert.AreEqual(filename + ".0", segmentFilename);
+                    ClassicAssert.AreEqual(filename + ".0", segmentFilename);
                 omit = true;
             }
         }
@@ -144,13 +145,13 @@ namespace Tsavorite.test
                 {
                     if (i < 100)
                     {
-                        Assert.AreEqual(value.vfield1 + 1, output.value.vfield1);
-                        Assert.AreEqual(value.vfield2 + 1, output.value.vfield2);
+                        ClassicAssert.AreEqual(value.vfield1 + 1, output.value.vfield1);
+                        ClassicAssert.AreEqual(value.vfield2 + 1, output.value.vfield2);
                     }
                     else
                     {
-                        Assert.AreEqual(value.vfield1, output.value.vfield1);
-                        Assert.AreEqual(value.vfield2, output.value.vfield2);
+                        ClassicAssert.AreEqual(value.vfield1, output.value.vfield1);
+                        ClassicAssert.AreEqual(value.vfield2, output.value.vfield2);
                     }
                 }
             }

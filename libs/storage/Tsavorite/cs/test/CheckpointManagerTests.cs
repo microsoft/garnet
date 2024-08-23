@@ -7,6 +7,7 @@ using System.IO;
 using System.Linq;
 using System.Threading.Tasks;
 using NUnit.Framework;
+using NUnit.Framework.Legacy;
 using Tsavorite.core;
 using Tsavorite.devices;
 using Tsavorite.test.recovery;
@@ -93,16 +94,16 @@ namespace Tsavorite.test
                             fullCheckpoints.Add(result, 0);
                             break;
                         default:
-                            Assert.True(false);
+                            ClassicAssert.True(false);
                             break;
                     }
 
                     await store.CompleteCheckpointAsync();
                 }
 
-                Assert.AreEqual(checkpointManager.GetLogCheckpointTokens().ToDictionary(guid => guid, _ => 0),
+                ClassicAssert.AreEqual(checkpointManager.GetLogCheckpointTokens().ToDictionary(guid => guid, _ => 0),
                     logCheckpoints.Union(fullCheckpoints).ToDictionary(e => e.Key, e => e.Value));
-                Assert.AreEqual(checkpointManager.GetIndexCheckpointTokens().ToDictionary(guid => guid, _ => 0),
+                ClassicAssert.AreEqual(checkpointManager.GetIndexCheckpointTokens().ToDictionary(guid => guid, _ => 0),
                     indexCheckpoints.Union(fullCheckpoints).ToDictionary(e => e.Key, e => e.Value));
 
                 if (logCheckpoints.Count != 0)
@@ -110,9 +111,9 @@ namespace Tsavorite.test
                     var guid = logCheckpoints.First().Key;
                     checkpointManager.Purge(guid);
                     _ = logCheckpoints.Remove(guid);
-                    Assert.AreEqual(checkpointManager.GetLogCheckpointTokens().ToDictionary(guid => guid, _ => 0),
+                    ClassicAssert.AreEqual(checkpointManager.GetLogCheckpointTokens().ToDictionary(guid => guid, _ => 0),
                         logCheckpoints.Union(fullCheckpoints).ToDictionary(e => e.Key, e => e.Value));
-                    Assert.AreEqual(checkpointManager.GetIndexCheckpointTokens().ToDictionary(guid => guid, _ => 0),
+                    ClassicAssert.AreEqual(checkpointManager.GetIndexCheckpointTokens().ToDictionary(guid => guid, _ => 0),
                         indexCheckpoints.Union(fullCheckpoints).ToDictionary(e => e.Key, e => e.Value));
                 }
 
@@ -121,9 +122,9 @@ namespace Tsavorite.test
                     var guid = indexCheckpoints.First().Key;
                     checkpointManager.Purge(guid);
                     _ = indexCheckpoints.Remove(guid);
-                    Assert.AreEqual(checkpointManager.GetLogCheckpointTokens().ToDictionary(guid => guid, _ => 0),
+                    ClassicAssert.AreEqual(checkpointManager.GetLogCheckpointTokens().ToDictionary(guid => guid, _ => 0),
                         logCheckpoints.Union(fullCheckpoints).ToDictionary(e => e.Key, e => e.Value));
-                    Assert.AreEqual(checkpointManager.GetIndexCheckpointTokens().ToDictionary(guid => guid, _ => 0),
+                    ClassicAssert.AreEqual(checkpointManager.GetIndexCheckpointTokens().ToDictionary(guid => guid, _ => 0),
                         indexCheckpoints.Union(fullCheckpoints).ToDictionary(e => e.Key, e => e.Value));
                 }
 
@@ -133,15 +134,15 @@ namespace Tsavorite.test
                     var guid = fullCheckpoints.First().Key;
                     checkpointManager.Purge(guid);
                     _ = fullCheckpoints.Remove(guid);
-                    Assert.AreEqual(checkpointManager.GetLogCheckpointTokens().ToDictionary(guid => guid, _ => 0),
+                    ClassicAssert.AreEqual(checkpointManager.GetLogCheckpointTokens().ToDictionary(guid => guid, _ => 0),
                         logCheckpoints.Union(fullCheckpoints).ToDictionary(e => e.Key, e => e.Value));
-                    Assert.AreEqual(checkpointManager.GetIndexCheckpointTokens().ToDictionary(guid => guid, _ => 0),
+                    ClassicAssert.AreEqual(checkpointManager.GetIndexCheckpointTokens().ToDictionary(guid => guid, _ => 0),
                         indexCheckpoints.Union(fullCheckpoints).ToDictionary(e => e.Key, e => e.Value));
                 }
 
                 checkpointManager.PurgeAll();
-                Assert.IsEmpty(checkpointManager.GetLogCheckpointTokens());
-                Assert.IsEmpty(checkpointManager.GetIndexCheckpointTokens());
+                ClassicAssert.IsEmpty(checkpointManager.GetLogCheckpointTokens());
+                ClassicAssert.IsEmpty(checkpointManager.GetIndexCheckpointTokens());
             }
             checkpointManager.Dispose();
             TestUtils.DeleteDirectory(TestUtils.MethodTestDir, wait: true);

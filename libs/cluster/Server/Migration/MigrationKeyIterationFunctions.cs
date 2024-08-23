@@ -98,7 +98,6 @@ namespace Garnet.cluster
                 long offset;
                 long currentOffset;
                 byte[] keyBuffer;
-                byte* headPtr;
                 byte* endPtr;
                 byte* currPtr;
 
@@ -110,7 +109,7 @@ namespace Garnet.cluster
                     currentOffset = 0;
 
                     keyBuffer = GC.AllocateArray<byte>(bufferSize, pinned: true);
-                    currPtr = headPtr = (byte*)Unsafe.AsPointer(ref keyBuffer[0]);
+                    currPtr = (byte*)Unsafe.AsPointer(ref keyBuffer[0]);
                     endPtr = (byte*)Unsafe.AsPointer(ref keyBuffer[^1]);
                 }
 
@@ -154,7 +153,9 @@ namespace Garnet.cluster
 
                     // Copy key to buffer and add it to migrate session dictionary
                     key.CopyTo(keySlice.Span);
-                    session.AddKey(keySlice);
+                    if (!session.AddKey(ref keySlice))
+                        throw new GarnetException("Failed to add migrating key to working set!");
+
 
                     // Move buffer ptr and key offset
                     currPtr += keySlice.Length;

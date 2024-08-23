@@ -57,7 +57,7 @@ namespace Garnet.cluster
             bool replaceOption,
             int timeout,
             HashSet<int> slots,
-            Dictionary<ArgSlice, KeyMigrationStatus> keys,
+            MigratingKeysWorkingSet keys,
             TransferOption transferOption,
             out MigrateSession mSession) => migrationTaskStore.TryAddMigrateSession(
                 clusterSession,

@@ -10,6 +10,7 @@ using System.Threading.Tasks;
 using Microsoft.Win32.SafeHandles;
 using NUnit.Framework;
 using NUnit.Framework.Internal;
+using NUnit.Framework.Legacy;
 using Tsavorite.core;
 
 namespace Tsavorite.test.recovery.sumstore
@@ -54,15 +55,15 @@ namespace Tsavorite.test.recovery.sumstore
         public async ValueTask SharedLogDirectory([Values] bool isAsync)
         {
             original.Initialize(Path.Join(TestUtils.MethodTestDir, "OriginalCheckpoint"), sharedLogDirectory);
-            Assert.IsTrue(SharedDirectoryTests.IsDirectoryEmpty(sharedLogDirectory)); // sanity check
+            ClassicAssert.IsTrue(SharedDirectoryTests.IsDirectoryEmpty(sharedLogDirectory)); // sanity check
             SharedDirectoryTests.Populate(original.Store);
 
             // Take checkpoint from original to start the clone from
-            Assert.IsTrue(original.Store.TryInitiateFullCheckpoint(out var checkpointGuid, CheckpointType.FoldOver));
+            ClassicAssert.IsTrue(original.Store.TryInitiateFullCheckpoint(out var checkpointGuid, CheckpointType.FoldOver));
             original.Store.CompleteCheckpointAsync().GetAwaiter().GetResult();
 
             // Sanity check against original
-            Assert.IsFalse(SharedDirectoryTests.IsDirectoryEmpty(sharedLogDirectory));
+            ClassicAssert.IsFalse(SharedDirectoryTests.IsDirectoryEmpty(sharedLogDirectory));
             SharedDirectoryTests.Test(original, checkpointGuid);
 
             // Copy checkpoint directory
@@ -87,14 +88,14 @@ namespace Tsavorite.test.recovery.sumstore
             if (RuntimeInformation.IsOSPlatform(System.Runtime.InteropServices.OSPlatform.Windows))
             {
                 // Clone should still work on Windows
-                Assert.IsFalse(SharedDirectoryTests.IsDirectoryEmpty(sharedLogDirectory));
+                ClassicAssert.IsFalse(SharedDirectoryTests.IsDirectoryEmpty(sharedLogDirectory));
                 SharedDirectoryTests.Test(clone, checkpointGuid);
             }
 
             clone.TearDown();
 
             // Files should be deleted after both instances are closed
-            Assert.IsTrue(SharedDirectoryTests.IsDirectoryEmpty(sharedLogDirectory));
+            ClassicAssert.IsTrue(SharedDirectoryTests.IsDirectoryEmpty(sharedLogDirectory));
         }
 
         private struct TsavoriteTestInstance
@@ -217,7 +218,7 @@ namespace Tsavorite.test.recovery.sumstore
             for (var i = 0; i < NumUniqueKeys; i++)
             {
                 var status = bContext.Read(ref inputArray[i].adId, ref input, ref output, Empty.Default);
-                Assert.IsTrue(status.Found);
+                ClassicAssert.IsTrue(status.Found);
                 inputArray[i].numClicks = output.value;
             }
 

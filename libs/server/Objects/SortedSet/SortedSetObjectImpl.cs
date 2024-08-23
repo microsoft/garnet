@@ -48,8 +48,7 @@ namespace Garnet.server
                     if (!input.parseState.TryGetDouble(currIdx, out var score))
                     {
                         while (!RespWriteUtils.WriteError(CmdStrings.RESP_ERR_NOT_VALID_FLOAT, ref curr, end))
-                            ObjectUtils.ReallocateOutput(ref output, ref isMemory, ref ptr, ref ptrHandle, ref curr,
-                                ref end);
+                            ObjectUtils.ReallocateOutput(ref output, ref isMemory, ref ptr, ref ptrHandle, ref curr, ref end);
                         return;
                     }
 

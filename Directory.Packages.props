@@ -3,26 +3,27 @@
     <ManagePackageVersionsCentrally>true</ManagePackageVersionsCentrally>
   </PropertyGroup>
   <ItemGroup>
-    <PackageVersion Include="Azure.Storage.Blobs" Version="12.14.1" />
-    <PackageVersion Include="BenchmarkDotNet" Version="0.13.12" />
+    <PackageVersion Include="Azure.Storage.Blobs" Version="12.21.2" />
+    <PackageVersion Include="BenchmarkDotNet" Version="0.14.0" />
     <PackageVersion Include="BenchmarkDotNet.Diagnostics.Windows" Version="0.13.12" />
     <PackageVersion Include="CommandLineParser" Version="2.9.1" />
     <PackageVersion Include="Newtonsoft.Json" Version="13.0.3" />
-		<PackageVersion Include="NLua" Version="1.7.3" />
-    <PackageVersion Include="NUnit" Version="3.13.3" />
-    <PackageVersion Include="NUnit3TestAdapter" Version="4.5.0" />
-    <PackageVersion Include="Microsoft.CodeAnalysis" Version="4.9.2" />
+    <PackageVersion Include="NLua" Version="1.7.3" />
+    <PackageVersion Include="NUnit" Version="4.1.0" />
+    <PackageVersion Include="NUnit3TestAdapter" Version="4.6.0" />
+    <PackageVersion Include="Microsoft.CodeAnalysis" Version="4.11.0" />
     <PackageVersion Include="Microsoft.SourceLink.GitHub" Version="8.0.0" />
     <PackageVersion Include="Microsoft.Extensions.Logging" Version="8.0.0" />
     <PackageVersion Include="Microsoft.Extensions.Logging.Configuration" Version="8.0.0" />
     <PackageVersion Include="Microsoft.Extensions.Logging.Console" Version="8.0.0" />
     <PackageVersion Include="Microsoft.Extensions.Configuration.Json" Version="8.0.0" />
-    <PackageVersion Include="Microsoft.Extensions.Configuration.Binder" Version="8.0.1" />
-    <PackageVersion Include="Microsoft.NET.Test.Sdk" Version="17.9.0" />
-    <PackageVersion Include="Microsoft.IdentityModel.Protocols.OpenIdConnect" Version="7.5.1" />
-    <PackageVersion Include="Microsoft.IdentityModel.Validators" Version="7.5.1" />
-    <PackageVersion Include="StackExchange.Redis" Version="2.7.33" />
-    <PackageVersion Include="System.IdentityModel.Tokens.Jwt" Version="7.5.1" />
+    <PackageVersion Include="Microsoft.Extensions.Configuration.Binder" Version="8.0.2" />
+    <PackageVersion Include="Microsoft.NET.Test.Sdk" Version="17.11.0" />
+    <PackageVersion Include="Microsoft.IdentityModel.Protocols.OpenIdConnect" Version="8.0.1" />
+    <PackageVersion Include="Microsoft.IdentityModel.Validators" Version="8.0.1" />
+    <PackageVersion Include="StackExchange.Redis" Version="2.8.0" />
+    <PackageVersion Include="System.IdentityModel.Tokens.Jwt" Version="8.0.1" />
     <PackageVersion Include="System.Interactive.Async" Version="6.0.1" />
+    <PackageVersion Include="System.Text.Json" Version="8.0.4" />
   </ItemGroup>
 </Project>
