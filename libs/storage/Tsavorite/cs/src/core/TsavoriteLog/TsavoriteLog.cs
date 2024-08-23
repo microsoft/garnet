@@ -791,20 +791,23 @@ namespace Tsavorite.core
         }
 
         /// <summary>
-        /// Append a user-defined blittable struct header and four <see cref="SpanByte"/> entries entries atomically to the log.
+        /// Append a user-defined blittable struct header and <see cref="SpanByte"/> entries atomically to the log.
         /// </summary>
         /// <param name="userHeader"></param>
-        /// <param name="item1"></param>
-        /// <param name="item2"></param>
-        /// <param name="item3"></param>
-        /// <param name="item4"></param>
+        /// <param name="items"></param>
         /// <param name="logicalAddress">Logical address of added entry</param>
-        public unsafe void Enqueue<THeader>(THeader userHeader, ref SpanByte item1, ref SpanByte item2, ref SpanByte item3, ref SpanByte item4, out long logicalAddress)
+        public unsafe void Enqueue<THeader>(THeader userHeader, ref SpanByte[] items, out long logicalAddress)
             where THeader : unmanaged
         {
             logicalAddress = 0;
-            var length = sizeof(THeader) + item1.TotalSize + item2.TotalSize + item3.TotalSize + item4.TotalSize;
-            int allocatedLength = headerSize + Align(length);
+
+            var length = sizeof(THeader);
+            foreach (var item in items)
+            {
+                length += item.TotalSize;
+            }
+
+            var allocatedLength = headerSize + Align(length);
             ValidateAllocatedLength(allocatedLength);
 
             epoch.Resume();
@@ -813,10 +816,14 @@ namespace Tsavorite.core
 
             var physicalAddress = (byte*)allocator.GetPhysicalAddress(logicalAddress);
             *(THeader*)(physicalAddress + headerSize) = userHeader;
-            item1.CopyTo(physicalAddress + headerSize + sizeof(THeader));
-            item2.CopyTo(physicalAddress + headerSize + sizeof(THeader) + item1.TotalSize);
-            item3.CopyTo(physicalAddress + headerSize + sizeof(THeader) + item1.TotalSize + item2.TotalSize);
-            item4.CopyTo(physicalAddress + headerSize + sizeof(THeader) + item1.TotalSize + item2.TotalSize + item3.TotalSize);
+
+            var curr = physicalAddress + headerSize + sizeof(THeader);
+            foreach (var item in items)
+            {
+                item.CopyTo(curr);
+                curr += item.TotalSize;
+            }
+
             SetHeader(length, physicalAddress);
             if (AutoRefreshSafeTailAddress) DoAutoRefreshSafeTailAddress();
             epoch.Suspend();

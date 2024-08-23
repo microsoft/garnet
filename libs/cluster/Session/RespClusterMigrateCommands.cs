@@ -36,44 +36,36 @@ namespace Garnet.cluster
         /// <summary>
         /// Implements CLUSTER MIGRATE command (only for internode use)
         /// </summary>
-        /// <param name="count"></param>
         /// <param name="invalidParameters"></param>
         /// <returns></returns>
         /// <exception cref="Exception"></exception>
-        private bool NetworkClusterMigrate(int count, out bool invalidParameters)
+        private bool NetworkClusterMigrate(out bool invalidParameters)
         {
             invalidParameters = false;
 
             // Expecting exactly 4 arguments
-            if (count != 4)
+            if (parseState.Count != 4)
             {
                 invalidParameters = true;
                 return true;
             }
 
-            var ptr = recvBufferPtr + readHead;
-            if (!RespReadUtils.ReadStringWithLengthHeader(out var sourceNodeId, ref ptr, recvBufferPtr + bytesRead))
-                return false;
+            var replaceSpan = parseState.GetArgSliceByRef(1).ReadOnlySpan;
+            var storeTypeSpan = parseState.GetArgSliceByRef(2).ReadOnlySpan;
+            var payload = parseState.GetArgSliceByRef(3).SpanByte;
+            var payloadPtr = payload.ToPointer();
+            var lastParam = parseState.GetArgSliceByRef(parseState.Count - 1).SpanByte;
+            var payloadEndPtr = lastParam.ToPointer() + lastParam.Length;
 
-            if (!RespReadUtils.ReadStringWithLengthHeader(out var _replace, ref ptr, recvBufferPtr + bytesRead))
-                return false;
+            var replaceOption = replaceSpan.EqualsUpperCaseSpanIgnoringCase("T"u8);
 
-            if (!RespReadUtils.ReadStringWithLengthHeader(out var storeType, ref ptr, recvBufferPtr + bytesRead))
-                return false;
-
-            byte* payload = null;
-            var length = 0;
-            if (!RespReadUtils.ReadPtrWithLengthHeader(ref payload, ref length, ref ptr, recvBufferPtr + bytesRead))
-                return false;
-
-            var replaceOption = _replace.Equals("T");
             var currentConfig = clusterProvider.clusterManager.CurrentConfig;
             byte migrateState = 0;
 
-            if (storeType.Equals("SSTORE"))
+            if (storeTypeSpan.EqualsUpperCaseSpanIgnoringCase("SSTORE"u8))
             {
-                var keyCount = *(int*)payload;
-                payload += 4;
+                var keyCount = *(int*)payloadPtr;
+                payloadPtr += 4;
                 var i = 0;
 
                 TrackImportProgress(keyCount, isMainStore: true, keyCount == 0);
@@ -81,7 +73,8 @@ namespace Garnet.cluster
                 {
                     byte* keyPtr = null, valPtr = null;
                     byte keyMetaDataSize = 0, valMetaDataSize = 0;
-                    if (!RespReadUtils.ReadSerializedSpanByte(ref keyPtr, ref keyMetaDataSize, ref valPtr, ref valMetaDataSize, ref payload, recvBufferPtr + bytesRead))
+                    if (!RespReadUtils.ReadSerializedSpanByte(ref keyPtr, ref keyMetaDataSize, ref valPtr,
+                            ref valMetaDataSize, ref payloadPtr, payloadEndPtr))
                         return false;
 
                     ref var key = ref SpanByte.Reinterpret(keyPtr);
@@ -111,15 +104,15 @@ namespace Garnet.cluster
                     i++;
                 }
             }
-            else if (storeType.Equals("OSTORE"))
+            else if (storeTypeSpan.EqualsUpperCaseSpanIgnoringCase("OSTORE"u8))
             {
-                var keyCount = *(int*)payload;
-                payload += 4;
+                var keyCount = *(int*)payloadPtr;
+                payloadPtr += 4;
                 var i = 0;
                 TrackImportProgress(keyCount, isMainStore: true, keyCount == 0);
                 while (i < keyCount)
                 {
-                    if (!RespReadUtils.ReadSerializedData(out var key, out var data, out var expiration, ref payload, recvBufferPtr + bytesRead))
+                    if (!RespReadUtils.ReadSerializedData(out var key, out var data, out var expiration, ref payloadPtr, payloadEndPtr))
                         return false;
 
                     // An error has occurred
@@ -159,21 +152,20 @@ namespace Garnet.cluster
                 while (!RespWriteUtils.WriteDirect(CmdStrings.RESP_OK, ref dcurr, dend))
                     SendAndReset();
             }
-            readHead = (int)(ptr - recvBufferPtr);
+
             return true;
         }
 
         /// <summary>
         /// Implements CLUSTER MTASKS command
         /// </summary>
-        /// <param name="count"></param>
         /// <param name="invalidParameters"></param>
         /// <returns></returns>
-        private bool NetworkClusterMTasks(int count, out bool invalidParameters)
+        private bool NetworkClusterMTasks(out bool invalidParameters)
         {
             invalidParameters = false;
 
-            if (count != 0)
+            if (parseState.Count != 0)
             {
                 invalidParameters = true;
                 return true;
@@ -182,8 +174,6 @@ namespace Garnet.cluster
             var mtasks = clusterProvider.migrationManager.GetMigrationTaskCount();
             while (!RespWriteUtils.WriteInteger(mtasks, ref dcurr, dend))
                 SendAndReset();
-            var ptr = recvBufferPtr + readHead;
-            readHead = (int)(ptr - recvBufferPtr);
 
             return true;
         }

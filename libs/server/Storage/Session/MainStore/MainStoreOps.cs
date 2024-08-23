@@ -277,8 +277,6 @@ namespace Garnet.server
 
             if ((storeType == StoreType.Object || storeType == StoreType.All) && !objectStoreBasicContext.IsNull)
             {
-                var inputPayload = scratchBufferManager.CreateArgSlice(0);
-
                 var objInput = new ObjectInput
                 {
                     header = new RespInputHeader
@@ -286,7 +284,6 @@ namespace Garnet.server
                         cmd = milliseconds ? RespCommand.PTTL : RespCommand.TTL,
                         type = milliseconds ? GarnetObjectType.PTtl : GarnetObjectType.Ttl,
                     },
-                    payload = inputPayload,
                 };
 
                 var keyBA = key.ToByteArray();
@@ -720,11 +717,25 @@ namespace Garnet.server
                 if (status.Found) found = true;
             }
 
-            if (!found && (storeType == StoreType.Object || storeType == StoreType.All) && !objectStoreBasicContext.IsNull)
+            if (!found && (storeType == StoreType.Object || storeType == StoreType.All) &&
+                !objectStoreBasicContext.IsNull)
             {
-                var inputPayload = scratchBufferManager.CreateArgSlice(1 + sizeof(long));
-                *inputPayload.ptr = (byte)expireOption;
-                *(long*)(inputPayload.ptr + 1) = input.ExtraMetadata;
+                var parseState = new SessionParseState();
+                ArgSlice[] parseStateBuffer = default;
+
+                var expireOptionLength = NumUtils.NumDigits((byte)expireOption);
+                var expireOptionPtr = stackalloc byte[expireOptionLength];
+                NumUtils.IntToBytes((byte)expireOption, expireOptionLength, ref expireOptionPtr);
+                expireOptionPtr -= expireOptionLength;
+                var expireOptionSlice = new ArgSlice(expireOptionPtr, expireOptionLength);
+
+                var extraMetadataLength = NumUtils.NumDigitsInLong(input.ExtraMetadata);
+                var extraMetadataPtr = stackalloc byte[extraMetadataLength];
+                NumUtils.LongToBytes(input.ExtraMetadata, extraMetadataLength, ref extraMetadataPtr);
+                extraMetadataPtr -= extraMetadataLength;
+                var extraMetadataSlice = new ArgSlice(extraMetadataPtr, extraMetadataLength);
+
+                parseState.InitializeWithArguments(ref parseStateBuffer, expireOptionSlice, extraMetadataSlice);
 
                 var objInput = new ObjectInput
                 {
@@ -733,19 +744,20 @@ namespace Garnet.server
                         cmd = milliseconds ? RespCommand.PEXPIRE : RespCommand.EXPIRE,
                         type = GarnetObjectType.Expire,
                     },
-                    payload = inputPayload,
+                    parseState = parseState,
+                    parseStateStartIdx = 0,
                 };
 
                 // Retry on object store
-                var objO = new GarnetObjectStoreOutput { spanByteAndMemory = output };
-                var keyBA = key.ToArray();
-                var status = objectStoreContext.RMW(ref keyBA, ref objInput, ref objO);
+                var objOutput = new GarnetObjectStoreOutput { spanByteAndMemory = output };
+                var keyBytes = key.ToArray();
+                var status = objectStoreContext.RMW(ref keyBytes, ref objInput, ref objOutput);
 
                 if (status.IsPending)
-                    CompletePendingForObjectStoreSession(ref status, ref objO, ref objectStoreContext);
+                    CompletePendingForObjectStoreSession(ref status, ref objOutput, ref objectStoreContext);
                 if (status.Found) found = true;
 
-                output = objO.spanByteAndMemory;
+                output = objOutput.spanByteAndMemory;
             }
 
             Debug.Assert(output.IsSpanByte);
@@ -787,8 +799,6 @@ namespace Garnet.server
             if (status == GarnetStatus.NOTFOUND && (storeType == StoreType.Object || storeType == StoreType.All) && !objectStoreBasicContext.IsNull)
             {
                 // Retry on object store
-                var inputPayload = scratchBufferManager.CreateArgSlice(0);
-
                 var objInput = new ObjectInput
                 {
                     header = new RespInputHeader
@@ -796,7 +806,6 @@ namespace Garnet.server
                         cmd = RespCommand.PERSIST,
                         type = GarnetObjectType.Persist,
                     },
-                    payload = inputPayload,
                 };
 
                 var objO = new GarnetObjectStoreOutput { spanByteAndMemory = o };

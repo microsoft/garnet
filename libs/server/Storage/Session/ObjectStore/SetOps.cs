@@ -4,8 +4,6 @@
 using System;
 using System.Collections.Generic;
 using System.Diagnostics;
-using System.Text;
-using Garnet.common;
 using Tsavorite.core;
 
 namespace Garnet.server
@@ -34,8 +32,10 @@ namespace Garnet.server
         {
             saddCount = 0;
 
-            // Prepare the input payload
-            var inputPayload = scratchBufferManager.FormatScratchAsResp(0, member);
+            // Prepare the parse state
+            var parseState = new SessionParseState();
+            ArgSlice[] parseStateBuffer = default;
+            parseState.InitializeWithArguments(ref parseStateBuffer, member);
 
             // Prepare the input
             var input = new ObjectInput
@@ -45,8 +45,8 @@ namespace Garnet.server
                     type = GarnetObjectType.Set,
                     SetOp = SetOperation.SADD,
                 },
-                arg1 = 1,
-                payload = inputPayload,
+                parseState = parseState,
+                parseStateStartIdx = 0,
             };
 
             var status = RMWObjectStoreOperation(key.ToArray(), ref input, out var output, ref objectStoreContext);
@@ -74,15 +74,10 @@ namespace Garnet.server
             if (key.Length == 0)
                 return GarnetStatus.OK;
 
-            // Prepare the input payload
-            var inputLength = 0;
-            foreach (var member in members)
-            {
-                var tmp = scratchBufferManager.FormatScratchAsResp(0, member);
-                inputLength += tmp.Length;
-            }
-
-            var inputPayload = scratchBufferManager.GetSliceFromTail(inputLength);
+            // Prepare the parse state
+            var parseState = new SessionParseState();
+            ArgSlice[] parseStateBuffer = default;
+            parseState.InitializeWithArguments(ref parseStateBuffer, members);
 
             // Prepare the input
             var input = new ObjectInput
@@ -92,8 +87,8 @@ namespace Garnet.server
                     type = GarnetObjectType.Set,
                     SetOp = SetOperation.SADD,
                 },
-                arg1 = members.Length,
-                payload = inputPayload,
+                parseState = parseState,
+                parseStateStartIdx = 0,
             };
 
             // Iterate through all inputs and add them to the scratch buffer in RESP format
@@ -120,8 +115,10 @@ namespace Garnet.server
         {
             sremCount = 0;
 
-            // Prepare the input payload
-            var inputPayload = scratchBufferManager.FormatScratchAsResp(0, member);
+            // Prepare the parse state
+            var parseState = new SessionParseState();
+            ArgSlice[] parseStateBuffer = default;
+            parseState.InitializeWithArguments(ref parseStateBuffer, member);
 
             // Prepare the input
             var input = new ObjectInput
@@ -131,8 +128,8 @@ namespace Garnet.server
                     type = GarnetObjectType.Set,
                     SetOp = SetOperation.SREM,
                 },
-                arg1 = 1,
-                payload = inputPayload,
+                parseState = parseState,
+                parseStateStartIdx = 0,
             };
 
             var status = RMWObjectStoreOperation(key.ToArray(), ref input, out var output, ref objectStoreContext);
@@ -161,15 +158,10 @@ namespace Garnet.server
             if (key.Length == 0 || members.Length == 0)
                 return GarnetStatus.OK;
 
-            // Prepare the input payload
-            var inputLength = 0;
-            foreach (var member in members)
-            {
-                var tmp = scratchBufferManager.FormatScratchAsResp(0, member);
-                inputLength += tmp.Length;
-            }
-
-            var inputPayload = scratchBufferManager.GetSliceFromTail(inputLength);
+            // Prepare the parse state
+            var parseState = new SessionParseState();
+            ArgSlice[] parseStateBuffer = default;
+            parseState.InitializeWithArguments(ref parseStateBuffer, members);
 
             // Prepare the input
             var input = new ObjectInput
@@ -179,8 +171,8 @@ namespace Garnet.server
                     type = GarnetObjectType.Set,
                     SetOp = SetOperation.SREM,
                 },
-                arg1 = members.Length,
-                payload = inputPayload,
+                parseState = parseState,
+                parseStateStartIdx = 0,
             };
 
             var status = RMWObjectStoreOperation(key.ToArray(), ref input, out var output, ref objectStoreContext);
@@ -205,10 +197,6 @@ namespace Garnet.server
             if (key.Length == 0)
                 return GarnetStatus.OK;
 
-            // Prepare the input payload
-            var inputLength = 0;
-            var inputPayload = scratchBufferManager.GetSliceFromTail(inputLength);
-
             // Prepare the input
             var input = new ObjectInput
             {
@@ -217,7 +205,6 @@ namespace Garnet.server
                     type = GarnetObjectType.Set,
                     SetOp = SetOperation.SCARD,
                 },
-                payload = inputPayload,
             };
 
             var status = ReadObjectStoreOperation(key.ToArray(), ref input, out var output, ref objectStoreContext);
@@ -242,10 +229,6 @@ namespace Garnet.server
             if (key.Length == 0)
                 return GarnetStatus.OK;
 
-            // Prepare the input payload
-            var inputLength = 0;
-            var inputPayload = scratchBufferManager.GetSliceFromTail(inputLength);
-
             // Prepare the input
             var input = new ObjectInput
             {
@@ -254,7 +237,6 @@ namespace Garnet.server
                     type = GarnetObjectType.Set,
                     SetOp = SetOperation.SMEMBERS,
                 },
-                payload = inputPayload,
             };
 
             var outputFooter = new GarnetObjectStoreOutput { spanByteAndMemory = new SpanByteAndMemory(null) };
@@ -303,9 +285,6 @@ namespace Garnet.server
             if (key.Length == 0)
                 return GarnetStatus.OK;
 
-            // Prepare the input payload
-            var inputPayload = scratchBufferManager.CreateArgSlice(0);
-
             // Prepare the input
             var input = new ObjectInput
             {
@@ -315,7 +294,6 @@ namespace Garnet.server
                     SetOp = SetOperation.SPOP,
                 },
                 arg1 = count,
-                payload = inputPayload,
             };
 
             var outputFooter = new GarnetObjectStoreOutput { spanByteAndMemory = new SpanByteAndMemory(null) };
@@ -329,82 +307,6 @@ namespace Garnet.server
             elements = ProcessRespArrayOutput(outputFooter, out _);
 
             return GarnetStatus.OK;
-        }
-
-        /// <summary>
-        /// Iterates members of a Set key and their associated members using a cursor,
-        /// a match pattern and count parameters
-        /// </summary>
-        /// <param name="key">The key of the set</param>
-        /// <param name="cursor">The value of the cursor</param>
-        /// <param name="match">The pattern to match the members</param>
-        /// <param name="count">Limit number for the response</param>
-        /// <param name="items">The list of items for the response</param>
-        /// <param name="objectStoreContext"></param>
-        public unsafe GarnetStatus SetScan<TObjectContext>(ArgSlice key, long cursor, string match, int count, out ArgSlice[] items, ref TObjectContext objectStoreContext)
-              where TObjectContext : ITsavoriteContext<byte[], IGarnetObject, ObjectInput, GarnetObjectStoreOutput, long, ObjectSessionFunctions, ObjectStoreFunctions, ObjectStoreAllocator>
-        {
-            items = default;
-
-            if (key.Length == 0)
-                return GarnetStatus.OK;
-
-            if (string.IsNullOrEmpty(match))
-                match = "*";
-
-            // Prepare the payload
-            var payloadSlice = scratchBufferManager.CreateArgSlice(sizeof(int));
-            *(int*)payloadSlice.ptr = ObjectScanCountLimit;
-
-            var payloadLength = sizeof(int);
-
-            ArgSlice tmp;
-            // Write match
-            var matchPatternValue = Encoding.ASCII.GetBytes(match.Trim());
-            fixed (byte* matchKeywordPtr = CmdStrings.MATCH, matchPatterPtr = matchPatternValue)
-            {
-                tmp = scratchBufferManager.FormatScratchAsResp(0, new ArgSlice(matchKeywordPtr, CmdStrings.MATCH.Length),
-                    new ArgSlice(matchPatterPtr, matchPatternValue.Length));
-            }
-            payloadLength += tmp.Length;
-
-            // Write count
-            var lengthCountNumber = NumUtils.NumDigits(count);
-            var countBytes = new byte[lengthCountNumber];
-
-            fixed (byte* countPtr = CmdStrings.COUNT, countValuePtr = countBytes)
-            {
-                var countValuePtr2 = countValuePtr;
-                NumUtils.IntToBytes(count, lengthCountNumber, ref countValuePtr2);
-
-                tmp = scratchBufferManager.FormatScratchAsResp(0, new ArgSlice(countPtr, CmdStrings.COUNT.Length),
-                    new ArgSlice(countValuePtr, countBytes.Length));
-            }
-            payloadLength += tmp.Length;
-
-            var inputPayload = scratchBufferManager.GetSliceFromTail(payloadLength);
-
-            // Prepare the input
-            var input = new ObjectInput
-            {
-                header = new RespInputHeader
-                {
-                    type = GarnetObjectType.Set,
-                    SetOp = SetOperation.SSCAN,
-                },
-                arg1 = 4,
-                arg2 = (int)cursor,
-                payload = inputPayload,
-            };
-
-            var outputFooter = new GarnetObjectStoreOutput { spanByteAndMemory = new SpanByteAndMemory(null) };
-            var status = ReadObjectStoreOperationWithOutput(key.ToArray(), ref input, ref objectStoreContext, ref outputFooter);
-
-            items = default;
-            if (status == GarnetStatus.OK)
-                items = ProcessRespArrayOutput(outputFooter, out _, isScanOutput: true);
-
-            return status;
         }
 
         /// <summary>
