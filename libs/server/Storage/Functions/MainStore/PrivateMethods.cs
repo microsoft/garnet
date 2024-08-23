@@ -97,7 +97,6 @@ namespace Garnet.server
                     break;
 
                 case RespCommand.MIGRATE:
-                    long expiration = value.ExtraMetadata;
                     if (value.Length <= dst.Length)
                     {
                         value.CopyTo(ref dst.SpanByte);
@@ -107,8 +106,11 @@ namespace Garnet.server
 
                     dst.ConvertToHeap();
                     dst.Length = value.Length;
-                    dst.Memory = functionsState.memoryPool.Rent(value.Length);
-                    value.AsReadOnlySpanWithMetadata().CopyTo(dst.Memory.Memory.Span);
+                    dst.Memory = functionsState.memoryPool.Rent(dst.Length);
+                    // Need to explicitly set metadataSize because it is not serialized using AsReadOnlySpanWithMetadata
+                    fixed (byte* ptr = dst.Memory.Memory.Span)
+                        *(int*)ptr = value.MetadataSize;
+                    value.AsReadOnlySpanWithMetadata().CopyTo(dst.Memory.Memory.Span.Slice(sizeof(int)));
                     break;
 
                 case RespCommand.GET:

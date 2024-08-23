@@ -1666,5 +1666,61 @@ namespace Garnet.test.cluster
                 ClassicAssert.AreEqual(Encoding.ASCII.GetString(key), resp);
             }
         }
+
+        [Test, Order(16)]
+        [Category("CLUSTER")]
+        public void ClusterMigrateLargePayload([Values] bool expiration, [Values] bool largePayload)
+        {
+            var Shards = 2;
+            context.CreateInstances(Shards, useTLS: UseTLS);
+            context.CreateConnection(useTLS: UseTLS);
+
+            var srcNodeIndex = 0;
+            var dstNodeIndex = 1;
+            Assert.AreEqual("OK", context.clusterTestUtils.AddDelSlotsRange(srcNodeIndex, [(0, 16383)], addslot: true, logger: context.logger));
+
+            context.clusterTestUtils.SetConfigEpoch(srcNodeIndex, srcNodeIndex + 1, logger: context.logger);
+            context.clusterTestUtils.SetConfigEpoch(dstNodeIndex, dstNodeIndex + 2, logger: context.logger);
+            context.clusterTestUtils.Meet(srcNodeIndex, dstNodeIndex, logger: context.logger);
+            context.clusterTestUtils.WaitUntilNodeIsKnown(dstNodeIndex, srcNodeIndex, logger: context.logger);
+            var config1 = context.clusterTestUtils.ClusterNodes(srcNodeIndex, logger: context.logger);
+            var config2 = context.clusterTestUtils.ClusterNodes(dstNodeIndex, logger: context.logger);
+            Assert.AreEqual(config1.GetBySlot(0).NodeId, config2.GetBySlot(0).NodeId);
+
+            var db = context.clusterTestUtils.GetDatabase();
+
+            var key = new byte[12];
+            context.clusterTestUtils.RandomBytes(ref key);
+            var value = new byte[largePayload ? 6789 : 123];
+            context.clusterTestUtils.RandomBytes(ref value);
+
+            Assert.IsTrue(db.StringSet(key, value));
+            var returnedValue = (string)db.StringGet(key);
+            Assert.AreEqual(value, returnedValue);
+
+            if (expiration)
+            {
+                Assert.IsNull(db.KeyTimeToLive(key), "set key should not have an existing expiry");
+                Assert.AreEqual(true, db.KeyExpire(key, TimeSpan.FromSeconds(10000)));
+                Assert.IsNotNull(db.KeyTimeToLive(key));
+            }
+
+            var sourceEndPoint = context.clusterTestUtils.GetEndPoint(srcNodeIndex);
+            var targetEndPoint = context.clusterTestUtils.GetEndPoint(dstNodeIndex);
+            context.clusterTestUtils.MigrateSlots(
+                sourceEndPoint,
+                targetEndPoint,
+                [0, 16383],
+                range: true,
+                logger: context.logger);
+
+            context.clusterTestUtils.WaitForMigrationCleanup(srcNodeIndex, logger: context.logger);
+
+            returnedValue = (string)db.StringGet(key);
+            Assert.AreEqual(value, returnedValue, "returned value mismatch after migration");
+
+            if (expiration)
+                Assert.IsNotNull(db.KeyTimeToLive(key), "key does not have expiry after migration");
+        }
     }
 }

@@ -2,7 +2,6 @@
 // Licensed under the MIT license.
 
 using System;
-using System.Buffers;
 using System.Runtime.CompilerServices;
 using Garnet.server;
 using Microsoft.Extensions.Logging;
@@ -68,25 +67,36 @@ namespace Garnet.cluster
                         continue;
                     }
 
-                    // Make value SpanByte
-                    SpanByte value;
-                    MemoryHandle memoryHandle = default;
-                    if (!o.IsSpanByte)
-                    {
-                        memoryHandle = o.Memory.Memory.Pin();
-                        value = SpanByte.FromPinnedMemory(o.Memory.Memory);
-                    }
-                    else
+                    // Get SpanByte, check expiration and write to network buffer
+                    SpanByte value = default;
+                    if (o.IsSpanByte)
                         value = o.SpanByte;
+                    else
+                    {
+                        var metadata = 0L;
+                        var metadataSize = 0;
+
+                        // Extract metadata
+                        fixed (byte* ptr = o.Memory.Memory.Span)
+                        {
+                            metadataSize = *(int*)ptr;
+                            if (metadataSize > 0) metadata = *(long*)(ptr + 4);
+                        }
+
+                        // Build spanbyte for serialization
+                        value = SpanByte.FromPinnedSpan(o.Memory.Memory.Span.Slice(sizeof(int), o.Length));
+                        if (metadataSize > 0)
+                        {
+                            value.MarkExtraMetadata();
+                            value.ExtraMetadata = metadata;
+                        }
+                    }
 
                     if (!ClusterSession.Expired(ref value) && !WriteOrSendMainStoreKeyValuePair(ref key, ref value))
                         return false;
 
                     if (!o.IsSpanByte)
-                    {
-                        memoryHandle.Dispose();
                         o.Memory.Dispose();
-                    }
                 }
 
                 // Flush data in client buffer
