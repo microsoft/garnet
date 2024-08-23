@@ -461,6 +461,16 @@ namespace Tsavorite.core
         /// Copy serialized version to specified memory location
         /// </summary>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        public void CopyTo(Span<byte> buffer)
+        {
+            fixed (byte* ptr = buffer)
+                CopyTo(ptr);
+        }
+
+        /// <summary>
+        /// Copy serialized version to specified memory location
+        /// </summary>
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public void CopyTo(byte* destination)
         {
             if (Serialized)

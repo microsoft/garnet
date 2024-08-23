@@ -105,12 +105,9 @@ namespace Garnet.server
                     }
 
                     dst.ConvertToHeap();
-                    dst.Length = value.Length;
+                    dst.Length = value.TotalSize;
                     dst.Memory = functionsState.memoryPool.Rent(dst.Length);
-                    // Need to explicitly set metadataSize because it is not serialized using AsReadOnlySpanWithMetadata
-                    fixed (byte* ptr = dst.Memory.Memory.Span)
-                        *(int*)ptr = value.MetadataSize;
-                    value.AsReadOnlySpanWithMetadata().CopyTo(dst.Memory.Memory.Span.Slice(sizeof(int)));
+                    value.CopyTo(dst.Memory.Memory.Span);
                     break;
 
                 case RespCommand.GET:

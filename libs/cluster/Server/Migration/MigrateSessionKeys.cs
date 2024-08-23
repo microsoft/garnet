@@ -68,29 +68,9 @@ namespace Garnet.cluster
                     }
 
                     // Get SpanByte, check expiration and write to network buffer
-                    SpanByte value = default;
-                    if (o.IsSpanByte)
-                        value = o.SpanByte;
-                    else
-                    {
-                        var metadata = 0L;
-                        var metadataSize = 0;
-
-                        // Extract metadata
-                        fixed (byte* ptr = o.Memory.Memory.Span)
-                        {
-                            metadataSize = *(int*)ptr;
-                            if (metadataSize > 0) metadata = *(long*)(ptr + 4);
-                        }
-
-                        // Build spanbyte for serialization
-                        value = SpanByte.FromPinnedSpan(o.Memory.Memory.Span.Slice(sizeof(int), o.Length));
-                        if (metadataSize > 0)
-                        {
-                            value.MarkExtraMetadata();
-                            value.ExtraMetadata = metadata;
-                        }
-                    }
+                    ref var value = ref o.SpanByte;
+                    if (!o.IsSpanByte)
+                        value = ref SpanByte.ReinterpretWithoutLength(o.Memory.Memory.Span);
 
                     if (!ClusterSession.Expired(ref value) && !WriteOrSendMainStoreKeyValuePair(ref key, ref value))
                         return false;
