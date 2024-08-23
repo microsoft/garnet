@@ -166,10 +166,7 @@ namespace Garnet.server
         private bool TryCustomObjectCommand<TGarnetApi>(byte* ptr, byte* end, RespCommand cmd, byte subid, CommandType type, ref TGarnetApi storageApi)
             where TGarnetApi : IGarnetAdvancedApi
         {
-            var sbKey = parseState.GetArgSliceByRef(0).SpanByte;
-            var keyBytes = sbKey.ToByteArray();
-
-            ptr = sbKey.ToPointer() + sbKey.Length + 2;
+            var keyBytes = parseState.GetArgSliceByRef(0).SpanByte.ToByteArray();
 
             // Prepare input
             var input = new ObjectInput
@@ -179,7 +176,8 @@ namespace Garnet.server
                     cmd = cmd,
                     SubId = subid
                 },
-                payload = new ArgSlice(ptr, (int)(recvBufferPtr + bytesRead - ptr)),
+                parseState = parseState,
+                parseStateStartIdx = 1
             };
 
             var output = new GarnetObjectStoreOutput { spanByteAndMemory = new SpanByteAndMemory(null) };

@@ -12,6 +12,7 @@ using System.Threading.Tasks;
 using Garnet.server.Auth.Settings;
 using Microsoft.Extensions.Logging;
 using NUnit.Framework;
+using NUnit.Framework.Legacy;
 using StackExchange.Redis;
 
 namespace Garnet.test.cluster
@@ -308,11 +309,11 @@ namespace Garnet.test.cluster
                 }
 
                 var resp = clusterTestUtils.SetKey(primaryIndex, keyBytes, Encoding.ASCII.GetBytes(value.ToString()), out int _, out string _, out int _, logger: logger);
-                Assert.AreEqual(ResponseState.OK, resp);
+                ClassicAssert.AreEqual(ResponseState.OK, resp);
 
                 var retVal = clusterTestUtils.GetKey(primaryIndex, keyBytes, out int _, out string _, out int _, out ResponseState responseState, logger: logger);
-                Assert.AreEqual(ResponseState.OK, responseState);
-                Assert.AreEqual(value, int.Parse(retVal));
+                ClassicAssert.AreEqual(ResponseState.OK, responseState);
+                ClassicAssert.AreEqual(value, int.Parse(retVal));
 
                 kvPairs.Add(key, int.Parse(retVal));
 
@@ -366,12 +367,12 @@ namespace Garnet.test.cluster
                 if (!set)
                 {
                     var result = clusterTestUtils.Lrange(primaryIndex, key, logger);
-                    Assert.AreEqual(value, result);
+                    ClassicAssert.AreEqual(value, result);
                 }
                 else
                 {
                     var result = clusterTestUtils.Smembers(primaryIndex, key, logger);
-                    Assert.IsTrue(result.ToHashSet().SetEquals(value));
+                    ClassicAssert.IsTrue(result.ToHashSet().SetEquals(value));
                 }
             }
         }
@@ -423,8 +424,8 @@ namespace Garnet.test.cluster
                     retVal = clusterTestUtils.GetKey(replicaIndex, keyBytes, out var _, out var _, out var _, out responseState, logger: logger);
                     ClusterTestUtils.BackOff();
                 }
-                Assert.AreEqual(ResponseState.OK, responseState);
-                Assert.AreEqual(value, int.Parse(retVal), $"replOffset > p:{clusterTestUtils.GetReplicationOffset(primaryIndex, logger: logger)}, s[{replicaIndex}]:{clusterTestUtils.GetReplicationOffset(replicaIndex)}");
+                ClassicAssert.AreEqual(ResponseState.OK, responseState);
+                ClassicAssert.AreEqual(value, int.Parse(retVal), $"replOffset > p:{clusterTestUtils.GetReplicationOffset(primaryIndex, logger: logger)}, s[{replicaIndex}]:{clusterTestUtils.GetReplicationOffset(replicaIndex)}");
             }
         }
 
@@ -448,9 +449,9 @@ namespace Garnet.test.cluster
                     ClusterTestUtils.BackOff();
                 }
                 if (!set)
-                    Assert.AreEqual(elements, result);
+                    ClassicAssert.AreEqual(elements, result);
                 else
-                    Assert.IsTrue(result.ToHashSet().SetEquals(result));
+                    ClassicAssert.IsTrue(result.ToHashSet().SetEquals(result));
             }
         }
 
@@ -462,7 +463,7 @@ namespace Garnet.test.cluster
                 var keyBytes = Encoding.ASCII.GetBytes(key);
                 var value = r.Next();
                 var resp = clusterTestUtils.SetKey(primaryIndex, keyBytes, Encoding.ASCII.GetBytes(value.ToString()), out int _, out string _, out int _, logger: logger);
-                Assert.AreEqual(ResponseState.OK, resp);
+                ClassicAssert.AreEqual(ResponseState.OK, resp);
 
                 clusterTestUtils.WaitForReplicaAofSync(primaryIndex, replicaIndex);
 
@@ -472,8 +473,8 @@ namespace Garnet.test.cluster
                     retVal = clusterTestUtils.GetKey(replicaIndex, keyBytes, out int _, out string _, out int _, out responseState, logger: logger);
                     ClusterTestUtils.BackOff();
                 }
-                Assert.AreEqual(ResponseState.OK, responseState);
-                Assert.AreEqual(value, int.Parse(retVal), $"replOffset > p:{clusterTestUtils.GetReplicationOffset(primaryIndex, logger: logger)}, s[{replicaIndex}]:{clusterTestUtils.GetReplicationOffset(replicaIndex)}");
+                ClassicAssert.AreEqual(ResponseState.OK, responseState);
+                ClassicAssert.AreEqual(value, int.Parse(retVal), $"replOffset > p:{clusterTestUtils.GetReplicationOffset(primaryIndex, logger: logger)}, s[{replicaIndex}]:{clusterTestUtils.GetReplicationOffset(replicaIndex)}");
             }
         }
 

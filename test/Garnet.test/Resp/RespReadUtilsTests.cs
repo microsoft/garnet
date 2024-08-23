@@ -5,6 +5,7 @@ using System.Text;
 using Garnet.common;
 using Garnet.common.Parsing;
 using NUnit.Framework;
+using NUnit.Framework.Legacy;
 
 namespace Garnet.test.Resp
 {
@@ -30,9 +31,9 @@ namespace Garnet.test.Resp
                 var end = ptr + bytes.Length;
                 var success = RespReadUtils.ReadSignedLengthHeader(out var length, ref start, end);
 
-                Assert.IsTrue(success);
-                Assert.AreEqual(expected, length);
-                Assert.IsTrue(start == end);
+                ClassicAssert.IsTrue(success);
+                ClassicAssert.AreEqual(expected, length);
+                ClassicAssert.IsTrue(start == end);
             }
         }
 
@@ -77,9 +78,9 @@ namespace Garnet.test.Resp
                 var end = ptr + bytes.Length;
                 var success = RespReadUtils.ReadUnsignedArrayLength(out var length, ref start, end);
 
-                Assert.IsTrue(success);
-                Assert.AreEqual(expected, length);
-                Assert.IsTrue(start == end);
+                ClassicAssert.IsTrue(success);
+                ClassicAssert.AreEqual(expected, length);
+                ClassicAssert.IsTrue(start == end);
             }
         }
 
@@ -124,9 +125,9 @@ namespace Garnet.test.Resp
                 var end = ptr + bytes.Length;
                 var success = RespReadUtils.ReadIntWithLengthHeader(out var length, ref start, end);
 
-                Assert.IsTrue(success);
-                Assert.AreEqual(expected, length);
-                Assert.IsTrue(start == end);
+                ClassicAssert.IsTrue(success);
+                ClassicAssert.AreEqual(expected, length);
+                ClassicAssert.IsTrue(start == end);
             }
         }
 
@@ -169,9 +170,9 @@ namespace Garnet.test.Resp
                 var end = ptr + bytes.Length;
                 var success = RespReadUtils.ReadLongWithLengthHeader(out var length, ref start, end);
 
-                Assert.IsTrue(success);
-                Assert.AreEqual(expected, length);
-                Assert.IsTrue(start == end);
+                ClassicAssert.IsTrue(success);
+                ClassicAssert.AreEqual(expected, length);
+                ClassicAssert.IsTrue(start == end);
             }
         }
 
@@ -214,9 +215,9 @@ namespace Garnet.test.Resp
                 var end = ptr + bytes.Length;
                 var success = RespReadUtils.ReadULongWithLengthHeader(out var length, ref start, end);
 
-                Assert.IsTrue(success);
-                Assert.AreEqual(expected, length);
-                Assert.IsTrue(start == end);
+                ClassicAssert.IsTrue(success);
+                ClassicAssert.AreEqual(expected, length);
+                ClassicAssert.IsTrue(start == end);
             }
         }
 
@@ -259,10 +260,10 @@ namespace Garnet.test.Resp
                 var end = ptr + bytes.Length;
                 var success = RespReadUtils.ReadPtrWithLengthHeader(ref result, ref length, ref start, end);
 
-                Assert.IsTrue(success);
-                Assert.IsTrue(result != null);
-                Assert.IsTrue(start == end);
-                Assert.IsTrue(length == text.Length);
+                ClassicAssert.IsTrue(success);
+                ClassicAssert.IsTrue(result != null);
+                ClassicAssert.IsTrue(start == end);
+                ClassicAssert.IsTrue(length == text.Length);
             }
         }
 
@@ -282,9 +283,9 @@ namespace Garnet.test.Resp
                 var end = ptr + bytes.Length;
                 var success = RespReadUtils.ReadBoolWithLengthHeader(out var result, ref start, end);
 
-                Assert.IsTrue(success);
-                Assert.AreEqual(expected, result);
-                Assert.IsTrue(start == end);
+                ClassicAssert.IsTrue(success);
+                ClassicAssert.AreEqual(expected, result);
+                ClassicAssert.IsTrue(start == end);
             }
         }
     }

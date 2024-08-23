@@ -8,6 +8,7 @@ using System.Threading;
 using Garnet.server;
 using GarnetJSON;
 using NUnit.Framework;
+using NUnit.Framework.Legacy;
 using StackExchange.Redis;
 
 namespace Garnet.test
@@ -48,26 +49,26 @@ namespace Garnet.test
             }
             catch (RedisServerException e)
             {
-                Assert.AreEqual("ERR Invalid input", e.Message);
+                ClassicAssert.AreEqual("ERR Invalid input", e.Message);
             }
 
             db.Execute("JSON.SET", "k1", "$", "{\"f1\": {\"a\":1}, \"f2\":{\"a\":2}}");
             var result = db.Execute("JSON.GET", "k1");
-            Assert.AreEqual("[{\"f1\":{\"a\":1},\"f2\":{\"a\":2}}]", result.ToString());
+            ClassicAssert.AreEqual("[{\"f1\":{\"a\":1},\"f2\":{\"a\":2}}]", result.ToString());
             result = db.Execute("JSON.GET", "k1", "$");
-            Assert.AreEqual("[{\"f1\":{\"a\":1},\"f2\":{\"a\":2}}]", result.ToString());
+            ClassicAssert.AreEqual("[{\"f1\":{\"a\":1},\"f2\":{\"a\":2}}]", result.ToString());
 
             db.Execute("JSON.SET", "k1", "$..a", 3);
             result = db.Execute("JSON.GET", "k1", "$");
-            Assert.AreEqual("[{\"f1\":{\"a\":3},\"f2\":{\"a\":3}}]", result.ToString());
+            ClassicAssert.AreEqual("[{\"f1\":{\"a\":3},\"f2\":{\"a\":3}}]", result.ToString());
 
             db.Execute("JSON.SET", "k1", "$.f3", 4);
             result = db.Execute("JSON.GET", "k1", "$");
-            Assert.AreEqual("[{\"f1\":{\"a\":3},\"f2\":{\"a\":3},\"f3\":4}]", result.ToString());
+            ClassicAssert.AreEqual("[{\"f1\":{\"a\":3},\"f2\":{\"a\":3},\"f3\":4}]", result.ToString());
 
             db.Execute("JSON.SET", "k1", "$.f5", "{\"c\": 5}");
             result = db.Execute("JSON.GET", "k1", "$");
-            Assert.AreEqual("[{\"f1\":{\"a\":3},\"f2\":{\"a\":3},\"f3\":4,\"f5\":{\"c\":5}}]", result.ToString());
+            ClassicAssert.AreEqual("[{\"f1\":{\"a\":3},\"f2\":{\"a\":3},\"f3\":4,\"f5\":{\"c\":5}}]", result.ToString());
         }
 
         [Test]
@@ -81,7 +82,7 @@ namespace Garnet.test
                 var db = redis.GetDatabase(0);
                 db.Execute("JSON.SET", key, "$", "{\"a\": 1}");
                 var retValue = db.Execute("JSON.GET", key);
-                Assert.AreEqual("[{\"a\":1}]", (string)retValue);
+                ClassicAssert.AreEqual("[{\"a\":1}]", (string)retValue);
 
                 // Issue and wait for DB save
                 var server = redis.GetServer($"{TestUtils.Address}:{TestUtils.Port}");
@@ -98,7 +99,7 @@ namespace Garnet.test
             {
                 var db = redis.GetDatabase(0);
                 var retValue = db.Execute("JSON.GET", key);
-                Assert.AreEqual("[{\"a\":1}]", (string)retValue);
+                ClassicAssert.AreEqual("[{\"a\":1}]", (string)retValue);
             }
         }
 
@@ -116,7 +117,7 @@ namespace Garnet.test
                 var db = redis.GetDatabase(0);
                 db.Execute("JSON.SET", key, "$", "{\"a\": 1}");
                 var retValue = db.Execute("JSON.GET", key);
-                Assert.AreEqual("[{\"a\":1}]", (string)retValue);
+                ClassicAssert.AreEqual("[{\"a\":1}]", (string)retValue);
             }
 
             server.Store.CommitAOF(true);
@@ -130,7 +131,7 @@ namespace Garnet.test
                 var db = redis.GetDatabase(0);
 
                 var retValue = db.Execute("JSON.GET", key);
-                Assert.AreEqual("[{\"a\":1}]", (string)retValue);
+                ClassicAssert.AreEqual("[{\"a\":1}]", (string)retValue);
             }
         }
 
@@ -158,7 +159,7 @@ namespace Garnet.test
                     var deserializedObject = new GarnetJSON.JsonObject(binaryReader.ReadByte(), binaryReader);
 
                     deserializedObject.TryGet("$", out var newString);
-                    Assert.AreEqual("[{\"a\":1}]", newString);
+                    ClassicAssert.AreEqual("[{\"a\":1}]", newString);
                 }
             }
         }
@@ -173,7 +174,7 @@ namespace Garnet.test
             var key = "key";
             db.Execute("JSON.SET", key, "$", "{\"a\": 1}");
             var retValue = db.Execute("JSON.GET", key);
-            Assert.AreEqual("[{\"a\":1}]", (string)retValue);
+            ClassicAssert.AreEqual("[{\"a\":1}]", (string)retValue);
         }
 
         void RegisterCustomCommand()

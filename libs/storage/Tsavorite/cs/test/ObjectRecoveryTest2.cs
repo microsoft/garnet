@@ -5,6 +5,7 @@ using System;
 using System.IO;
 using System.Threading.Tasks;
 using NUnit.Framework;
+using NUnit.Framework.Legacy;
 using Tsavorite.core;
 
 namespace Tsavorite.test.recovery.objects
@@ -129,8 +130,8 @@ namespace Tsavorite.test.recovery.objects
                     context.FinalizeRead(ref status, ref g1);
                 }
 
-                Assert.IsTrue(status.Found);
-                Assert.AreEqual(i.ToString(), g1.value.value);
+                ClassicAssert.IsTrue(status.Found);
+                ClassicAssert.AreEqual(i.ToString(), g1.value.value);
             }
 
             if (delete)
@@ -147,7 +148,7 @@ namespace Tsavorite.test.recovery.objects
                     context.FinalizeRead(ref status, ref output);
                 }
 
-                Assert.IsFalse(status.Found);
+                ClassicAssert.IsFalse(status.Found);
             }
         }
     }

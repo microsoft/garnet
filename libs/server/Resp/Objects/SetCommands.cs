@@ -17,29 +17,24 @@ namespace Garnet.server
         ///  If key does not exist, a new set is created.
         /// </summary>
         /// <typeparam name="TGarnetApi"></typeparam>
-        /// <param name="count"></param>
         /// <param name="storageApi"></param>
         /// <returns></returns>
-        private unsafe bool SetAdd<TGarnetApi>(int count, ref TGarnetApi storageApi)
+        private unsafe bool SetAdd<TGarnetApi>(ref TGarnetApi storageApi)
             where TGarnetApi : IGarnetApi
         {
-            if (count < 2)
+            if (parseState.Count < 2)
             {
-                return AbortWithWrongNumberOfArguments("SADD", count);
+                return AbortWithWrongNumberOfArguments("SADD");
             }
 
             // Get the key for the Set
             var sbKey = parseState.GetArgSliceByRef(0).SpanByte;
             var keyBytes = sbKey.ToByteArray();
 
-            var ptr = sbKey.ToPointer() + sbKey.Length + 2;
-
             if (NetworkSingleKeySlotVerify(keyBytes, false))
             {
                 return true;
             }
-
-            var inputCount = count - 1;
 
             // Prepare input
             var input = new ObjectInput
@@ -49,8 +44,8 @@ namespace Garnet.server
                     type = GarnetObjectType.Set,
                     SetOp = SetOperation.SADD,
                 },
-                arg1 = inputCount,
-                payload = new ArgSlice(ptr, (int)(recvBufferPtr + bytesRead - ptr)),
+                parseState = parseState,
+                parseStateStartIdx = 1,
             };
 
             var status = storageApi.SetAdd(keyBytes, ref input, out var output);
@@ -75,20 +70,19 @@ namespace Garnet.server
         /// Returns the members of the set resulting from the intersection of all the given sets.
         /// Keys that do not exist are considered to be empty sets.
         /// </summary>
-        /// <param name="count"></param>
         /// <param name="storageApi"></param>
         /// <typeparam name="TGarnetApi"></typeparam>
         /// <returns></returns>
-        private bool SetIntersect<TGarnetApi>(int count, ref TGarnetApi storageApi)
+        private bool SetIntersect<TGarnetApi>(ref TGarnetApi storageApi)
             where TGarnetApi : IGarnetApi
         {
-            if (count < 1)
+            if (parseState.Count < 1)
             {
-                return AbortWithWrongNumberOfArguments("SINTER", count);
+                return AbortWithWrongNumberOfArguments("SINTER");
             }
 
             // Read all keys
-            var keys = new ArgSlice[count];
+            var keys = new ArgSlice[parseState.Count];
             for (var i = 0; i < keys.Length; i++)
             {
                 keys[i] = parseState.GetArgSliceByRef(i);
@@ -133,22 +127,21 @@ namespace Garnet.server
         /// If destination already exists, it is overwritten.
         /// </summary>
         /// <typeparam name="TGarnetApi"></typeparam>
-        /// <param name="count"></param>
         /// <param name="storageApi"></param>
         /// <returns></returns>
-        private bool SetIntersectStore<TGarnetApi>(int count, ref TGarnetApi storageApi)
+        private bool SetIntersectStore<TGarnetApi>(ref TGarnetApi storageApi)
             where TGarnetApi : IGarnetApi
         {
-            if (count < 2)
+            if (parseState.Count < 2)
             {
-                return AbortWithWrongNumberOfArguments("SINTERSTORE", count);
+                return AbortWithWrongNumberOfArguments("SINTERSTORE");
             }
 
             // Get the key
             var keyBytes = parseState.GetArgSliceByRef(0).SpanByte.ToByteArray();
 
-            var keys = new ArgSlice[count - 1];
-            for (var i = 1; i < count; i++)
+            var keys = new ArgSlice[parseState.Count - 1];
+            for (var i = 1; i < parseState.Count; i++)
             {
                 keys[i - 1] = parseState.GetArgSliceByRef(i);
             }
@@ -174,20 +167,19 @@ namespace Garnet.server
         /// Returns the members of the set resulting from the union of all the given sets.
         /// Keys that do not exist are considered to be empty sets.
         /// </summary>
-        /// <param name="count"></param>
         /// <param name="storageApi"></param>
         /// <typeparam name="TGarnetApi"></typeparam>
         /// <returns></returns>
-        private bool SetUnion<TGarnetApi>(int count, ref TGarnetApi storageApi)
+        private bool SetUnion<TGarnetApi>(ref TGarnetApi storageApi)
             where TGarnetApi : IGarnetApi
         {
-            if (count < 1)
+            if (parseState.Count < 1)
             {
-                return AbortWithWrongNumberOfArguments("SUNION", count);
+                return AbortWithWrongNumberOfArguments("SUNION");
             }
 
             // Read all the keys
-            var keys = new ArgSlice[count];
+            var keys = new ArgSlice[parseState.Count];
 
             for (var i = 0; i < keys.Length; i++)
             {
@@ -223,22 +215,21 @@ namespace Garnet.server
         /// If destination already exists, it is overwritten.
         /// </summary>
         /// <typeparam name="TGarnetApi"></typeparam>
-        /// <param name="count"></param>
         /// <param name="storageApi"></param>
         /// <returns></returns>
-        private bool SetUnionStore<TGarnetApi>(int count, ref TGarnetApi storageApi)
+        private bool SetUnionStore<TGarnetApi>(ref TGarnetApi storageApi)
             where TGarnetApi : IGarnetApi
         {
-            if (count < 2)
+            if (parseState.Count < 2)
             {
-                return AbortWithWrongNumberOfArguments("SUNIONSTORE", count);
+                return AbortWithWrongNumberOfArguments("SUNIONSTORE");
             }
 
             // Get the key
             var keyBytes = parseState.GetArgSliceByRef(0).SpanByte.ToByteArray();
 
-            var keys = new ArgSlice[count - 1];
-            for (var i = 1; i < count; i++)
+            var keys = new ArgSlice[parseState.Count - 1];
+            for (var i = 1; i < parseState.Count; i++)
             {
                 keys[i - 1] = parseState.GetArgSliceByRef(i);
             }
@@ -265,29 +256,24 @@ namespace Garnet.server
         /// If key does not exist, this command returns 0.
         /// </summary>
         /// <typeparam name="TGarnetApi"></typeparam>
-        /// <param name="count"></param>
         /// <param name="storageApi"></param>
         /// <returns></returns>
-        private unsafe bool SetRemove<TGarnetApi>(int count, ref TGarnetApi storageApi)
+        private unsafe bool SetRemove<TGarnetApi>(ref TGarnetApi storageApi)
             where TGarnetApi : IGarnetApi
         {
-            if (count < 2)
+            if (parseState.Count < 2)
             {
-                return AbortWithWrongNumberOfArguments("SREM", count);
+                return AbortWithWrongNumberOfArguments("SREM");
             }
 
             // Get the key 
             var sbKey = parseState.GetArgSliceByRef(0).SpanByte;
             var keyBytes = sbKey.ToByteArray();
 
-            var ptr = sbKey.ToPointer() + sbKey.Length + 2;
-
             if (NetworkSingleKeySlotVerify(keyBytes, false))
             {
                 return true;
             }
-
-            var inputCount = count - 1; // only identifiers
 
             // Prepare input
             var input = new ObjectInput
@@ -297,8 +283,8 @@ namespace Garnet.server
                     type = GarnetObjectType.Set,
                     SetOp = SetOperation.SREM,
                 },
-                arg1 = inputCount,
-                payload = new ArgSlice(ptr, (int)(recvBufferPtr + bytesRead - ptr)),
+                parseState = parseState,
+                parseStateStartIdx = 1,
             };
 
             var status = storageApi.SetRemove(keyBytes, ref input, out var output);
@@ -327,22 +313,19 @@ namespace Garnet.server
         /// Returns the number of elements of the set.
         /// </summary>
         /// <typeparam name="TGarnetApi"></typeparam>
-        /// <param name="count"></param>
         /// <param name="storageApi"></param>
         /// <returns></returns>
-        private unsafe bool SetLength<TGarnetApi>(int count, ref TGarnetApi storageApi)
+        private unsafe bool SetLength<TGarnetApi>(ref TGarnetApi storageApi)
             where TGarnetApi : IGarnetApi
         {
-            if (count != 1)
+            if (parseState.Count != 1)
             {
-                return AbortWithWrongNumberOfArguments("SCARD", count);
+                return AbortWithWrongNumberOfArguments("SCARD");
             }
 
             // Get the key for the Set
             var sbKey = parseState.GetArgSliceByRef(0).SpanByte;
             var keyBytes = sbKey.ToByteArray();
-
-            var ptr = sbKey.ToPointer() + sbKey.Length + 2;
 
             if (NetworkSingleKeySlotVerify(keyBytes, true))
             {
@@ -357,7 +340,6 @@ namespace Garnet.server
                     type = GarnetObjectType.Set,
                     SetOp = SetOperation.SCARD,
                 },
-                payload = new ArgSlice(ptr, (int)(recvBufferPtr + bytesRead - ptr)),
             };
 
             var status = storageApi.SetLength(keyBytes, ref input, out var output);
@@ -386,22 +368,19 @@ namespace Garnet.server
         /// Returns all members of the set at key.
         /// </summary>
         /// <typeparam name="TGarnetApi"></typeparam>
-        /// <param name="count"></param>
         /// <param name="storageApi"></param>
         /// <returns></returns>
-        private unsafe bool SetMembers<TGarnetApi>(int count, ref TGarnetApi storageApi)
+        private unsafe bool SetMembers<TGarnetApi>(ref TGarnetApi storageApi)
             where TGarnetApi : IGarnetApi
         {
-            if (count != 1)
+            if (parseState.Count != 1)
             {
-                return AbortWithWrongNumberOfArguments("SMEMBERS", count);
+                return AbortWithWrongNumberOfArguments("SMEMBERS");
             }
 
             // Get the key
             var sbKey = parseState.GetArgSliceByRef(0).SpanByte;
             var keyBytes = sbKey.ToByteArray();
-
-            var ptr = sbKey.ToPointer() + sbKey.Length + 2;
 
             if (NetworkSingleKeySlotVerify(keyBytes, true))
             {
@@ -416,7 +395,6 @@ namespace Garnet.server
                     type = GarnetObjectType.Set,
                     SetOp = SetOperation.SMEMBERS,
                 },
-                payload = new ArgSlice(ptr, (int)(recvBufferPtr + bytesRead - ptr)),
             };
 
             // Prepare GarnetObjectStore output
@@ -443,19 +421,17 @@ namespace Garnet.server
             return true;
         }
 
-        private unsafe bool SetIsMember<TGarnetApi>(int count, ref TGarnetApi storageApi)
+        private unsafe bool SetIsMember<TGarnetApi>(ref TGarnetApi storageApi)
             where TGarnetApi : IGarnetApi
         {
-            if (count != 2)
+            if (parseState.Count != 2)
             {
-                return AbortWithWrongNumberOfArguments("SISMEMBER", count);
+                return AbortWithWrongNumberOfArguments("SISMEMBER");
             }
 
             // Get the key
             var sbKey = parseState.GetArgSliceByRef(0).SpanByte;
             var keyBytes = sbKey.ToByteArray();
-
-            var ptr = sbKey.ToPointer() + sbKey.Length + 2;
 
             if (NetworkSingleKeySlotVerify(keyBytes, true))
             {
@@ -470,7 +446,8 @@ namespace Garnet.server
                     type = GarnetObjectType.Set,
                     SetOp = SetOperation.SISMEMBER,
                 },
-                payload = new ArgSlice(ptr, (int)(recvBufferPtr + bytesRead - ptr)),
+                parseState = parseState,
+                parseStateStartIdx = 1,
             };
 
             // Prepare GarnetObjectStore output
@@ -501,22 +478,19 @@ namespace Garnet.server
         /// Removes and returns one or more random members from the set at key.
         /// </summary>
         /// <typeparam name="TGarnetApi"></typeparam>
-        /// <param name="count"></param>
         /// <param name="storageApi"></param>
         /// <returns></returns>
-        private unsafe bool SetPop<TGarnetApi>(int count, ref TGarnetApi storageApi)
+        private unsafe bool SetPop<TGarnetApi>(ref TGarnetApi storageApi)
             where TGarnetApi : IGarnetApi
         {
-            if (count < 1 || count > 2)
+            if (parseState.Count < 1 || parseState.Count > 2)
             {
-                return AbortWithWrongNumberOfArguments("SPOP", count);
+                return AbortWithWrongNumberOfArguments("SPOP");
             }
 
             // Get the key
             var sbKey = parseState.GetArgSliceByRef(0).SpanByte;
             var keyBytes = sbKey.ToByteArray();
-
-            var ptr = sbKey.ToPointer() + sbKey.Length + 2;
 
             if (NetworkSingleKeySlotVerify(keyBytes, false))
             {
@@ -524,13 +498,10 @@ namespace Garnet.server
             }
 
             var countParameter = int.MinValue;
-            if (count == 2)
+            if (parseState.Count == 2)
             {
-                // Get the value for the count parameter
-                var countSlice = parseState.GetArgSliceByRef(1);
-
                 // Prepare response
-                if (!NumUtils.TryParse(countSlice.ReadOnlySpan, out countParameter) || countParameter < 0)
+                if (!parseState.TryGetInt(1, out countParameter) || countParameter < 0)
                 {
                     while (!RespWriteUtils.WriteError(CmdStrings.RESP_ERR_GENERIC_VALUE_IS_NOT_INTEGER, ref dcurr, dend))
                         SendAndReset();
@@ -545,9 +516,6 @@ namespace Garnet.server
 
                     return true;
                 }
-
-                var sbCount = countSlice.SpanByte;
-                ptr = sbCount.ToPointer() + sbCount.Length + 2;
             }
 
             // Prepare input
@@ -559,7 +527,6 @@ namespace Garnet.server
                     SetOp = SetOperation.SPOP,
                 },
                 arg1 = countParameter,
-                payload = new ArgSlice(ptr, (int)(recvBufferPtr + bytesRead - ptr)),
             };
 
             // Prepare GarnetObjectStore output
@@ -592,15 +559,14 @@ namespace Garnet.server
         /// If the member was not found in the source set, or if no operation was performed, this command returns 0.
         /// </summary>
         /// <typeparam name="TGarnetApi"></typeparam>
-        /// <param name="count"></param>
         /// <param name="storageApi"></param>
         /// <returns></returns>
-        private unsafe bool SetMove<TGarnetApi>(int count, ref TGarnetApi storageApi)
+        private unsafe bool SetMove<TGarnetApi>(ref TGarnetApi storageApi)
             where TGarnetApi : IGarnetApi
         {
-            if (count != 3)
+            if (parseState.Count != 3)
             {
-                return AbortWithWrongNumberOfArguments("SMOVE", count);
+                return AbortWithWrongNumberOfArguments("SMOVE");
             }
 
             // Get the source key 
@@ -640,22 +606,19 @@ namespace Garnet.server
         /// In this case, the number of returned elements is the absolute value of the specified count.
         /// </summary>
         /// <typeparam name="TGarnetApi"></typeparam>
-        /// <param name="count"></param>
         /// <param name="storageApi"></param>
         /// <returns></returns>
-        private unsafe bool SetRandomMember<TGarnetApi>(int count, ref TGarnetApi storageApi)
+        private unsafe bool SetRandomMember<TGarnetApi>(ref TGarnetApi storageApi)
             where TGarnetApi : IGarnetApi
         {
-            if (count < 1 || count > 2)
+            if (parseState.Count < 1 || parseState.Count > 2)
             {
-                return AbortWithWrongNumberOfArguments("SRANDMEMBER", count);
+                return AbortWithWrongNumberOfArguments("SRANDMEMBER");
             }
 
             // Get the key
             var sbKey = parseState.GetArgSliceByRef(0).SpanByte;
             var keyBytes = sbKey.ToByteArray();
-
-            var ptr = sbKey.ToPointer() + sbKey.Length + 2;
 
             if (NetworkSingleKeySlotVerify(keyBytes, true))
             {
@@ -663,13 +626,10 @@ namespace Garnet.server
             }
 
             var countParameter = int.MinValue;
-            if (count == 2)
+            if (parseState.Count == 2)
             {
-                // Get the value for the count parameter
-                var countSlice = parseState.GetArgSliceByRef(1);
-
                 // Prepare response
-                if (!NumUtils.TryParse(countSlice.ReadOnlySpan, out countParameter))
+                if (!parseState.TryGetInt(1, out countParameter))
                 {
                     while (!RespWriteUtils.WriteError(CmdStrings.RESP_ERR_GENERIC_VALUE_IS_NOT_INTEGER, ref dcurr, dend))
                         SendAndReset();
@@ -684,9 +644,6 @@ namespace Garnet.server
 
                     return true;
                 }
-
-                var sbCount = countSlice.SpanByte;
-                ptr = sbCount.ToPointer() + sbCount.Length + 2;
             }
 
             // Create a random seed
@@ -702,7 +659,6 @@ namespace Garnet.server
                 },
                 arg1 = countParameter,
                 arg2 = seed,
-                payload = new ArgSlice(ptr, (int)(recvBufferPtr + bytesRead - ptr)),
             };
 
             // Prepare GarnetObjectStore output
@@ -717,7 +673,7 @@ namespace Garnet.server
                     ProcessOutputWithHeader(outputFooter.spanByteAndMemory);
                     break;
                 case GarnetStatus.NOTFOUND:
-                    if (count == 2)
+                    if (parseState.Count == 2)
                     {
                         while (!RespWriteUtils.WriteEmptyArray(ref dcurr, dend))
                             SendAndReset();
@@ -741,19 +697,18 @@ namespace Garnet.server
         /// Returns the members of the set resulting from the difference between the first set and all the successive sets.
         /// </summary>
         /// <typeparam name="TGarnetApi"></typeparam>
-        /// <param name="count"></param>
         /// <param name="storageApi"></param>
         /// <returns></returns>
-        private bool SetDiff<TGarnetApi>(int count, ref TGarnetApi storageApi)
+        private bool SetDiff<TGarnetApi>(ref TGarnetApi storageApi)
             where TGarnetApi : IGarnetApi
         {
-            if (count < 1)
+            if (parseState.Count < 1)
             {
-                return AbortWithWrongNumberOfArguments("SDIFF", count);
+                return AbortWithWrongNumberOfArguments("SDIFF");
             }
 
-            var keys = new ArgSlice[count];
-            for (var i = 0; i < count; i++)
+            var keys = new ArgSlice[parseState.Count];
+            for (var i = 0; i < parseState.Count; i++)
             {
                 keys[i] = parseState.GetArgSliceByRef(i);
             }
@@ -787,19 +742,19 @@ namespace Garnet.server
             return true;
         }
 
-        private bool SetDiffStore<TGarnetApi>(int count, ref TGarnetApi storageApi)
+        private bool SetDiffStore<TGarnetApi>(ref TGarnetApi storageApi)
             where TGarnetApi : IGarnetApi
         {
-            if (count < 2)
+            if (parseState.Count < 2)
             {
-                return AbortWithWrongNumberOfArguments("SDIFFSTORE", count);
+                return AbortWithWrongNumberOfArguments("SDIFFSTORE");
             }
 
             // Get the key
             var keyBytes = parseState.GetArgSliceByRef(0).SpanByte.ToByteArray();
 
-            var keys = new ArgSlice[count - 1];
-            for (var i = 1; i < count; i++)
+            var keys = new ArgSlice[parseState.Count - 1];
+            for (var i = 1; i < parseState.Count; i++)
             {
                 keys[i - 1] = parseState.GetArgSliceByRef(i);
             }

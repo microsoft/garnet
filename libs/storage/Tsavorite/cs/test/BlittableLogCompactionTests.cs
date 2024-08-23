@@ -5,6 +5,7 @@ using System;
 using System.Diagnostics;
 using System.IO;
 using NUnit.Framework;
+using NUnit.Framework.Legacy;
 using Tsavorite.core;
 using static Tsavorite.test.TestUtils;
 
@@ -85,22 +86,22 @@ namespace Tsavorite.test
 
             void drainPending()
             {
-                Assert.IsTrue(bContext.CompletePendingWithOutputs(out var outputs, wait: true));
+                ClassicAssert.IsTrue(bContext.CompletePendingWithOutputs(out var outputs, wait: true));
                 using (outputs)
                 {
                     for (; outputs.Next(); --numPending)
                     {
                         if (isDeleted((int)outputs.Current.Key.kfield1))
                         {
-                            Assert.IsFalse(outputs.Current.Status.Found);
+                            ClassicAssert.IsFalse(outputs.Current.Status.Found);
                             continue;
                         }
-                        Assert.IsTrue(outputs.Current.Status.Found);
-                        Assert.AreEqual(outputs.Current.Key.kfield1, outputs.Current.Output.value.vfield1);
-                        Assert.AreEqual(outputs.Current.Key.kfield2, outputs.Current.Output.value.vfield2);
+                        ClassicAssert.IsTrue(outputs.Current.Status.Found);
+                        ClassicAssert.AreEqual(outputs.Current.Key.kfield1, outputs.Current.Output.value.vfield1);
+                        ClassicAssert.AreEqual(outputs.Current.Key.kfield2, outputs.Current.Output.value.vfield2);
                     }
                 }
-                Assert.AreEqual(numPending, 0);
+                ClassicAssert.AreEqual(numPending, 0);
             }
 
             for (int i = 0; i < totalRecords; i++)
@@ -114,12 +115,12 @@ namespace Tsavorite.test
                 {
                     if (isDeleted(i))
                     {
-                        Assert.IsFalse(status.Found);
+                        ClassicAssert.IsFalse(status.Found);
                         continue;
                     }
-                    Assert.IsTrue(status.Found);
-                    Assert.AreEqual(value.vfield1, output.value.vfield1);
-                    Assert.AreEqual(value.vfield2, output.value.vfield2);
+                    ClassicAssert.IsTrue(status.Found);
+                    ClassicAssert.AreEqual(value.vfield1, output.value.vfield1);
+                    ClassicAssert.AreEqual(value.vfield2, output.value.vfield2);
                 }
                 else if (++numPending == 256)
                     drainPending();
@@ -157,7 +158,7 @@ namespace Tsavorite.test
             compactUntil = session.Compact(compactUntil, compactionType);
             store.Log.Truncate();
 
-            Assert.AreEqual(compactUntil, store.Log.BeginAddress);
+            ClassicAssert.AreEqual(compactUntil, store.Log.BeginAddress);
 
             // Read all keys - all should be present
             BlittableLogCompactionTests.VerifyRead(session, totalRecords, key => false);
@@ -205,7 +206,7 @@ namespace Tsavorite.test
 
             compactUntil = session.Compact(compactUntil, compactionType);
             store.Log.Truncate();
-            Assert.AreEqual(compactUntil, store.Log.BeginAddress);
+            ClassicAssert.AreEqual(compactUntil, store.Log.BeginAddress);
 
             // Read all keys - all should be present
             BlittableLogCompactionTests.VerifyRead(session, totalRecords, key => false);
@@ -243,7 +244,7 @@ namespace Tsavorite.test
             var tail = store.Log.TailAddress;
             compactUntil = session.Compact(compactUntil, compactionType);
             store.Log.Truncate();
-            Assert.AreEqual(compactUntil, store.Log.BeginAddress);
+            ClassicAssert.AreEqual(compactUntil, store.Log.BeginAddress);
 
             // Read all keys - all should be present except those we deleted
             BlittableLogCompactionTests.VerifyRead(session, totalRecords, key => (key < totalRecords / 4) && (key % 2 == 0));
@@ -280,7 +281,7 @@ namespace Tsavorite.test
             // Only leave records with even vfield1
             compactUntil = session.Compact(compactUntil, compactionType, default(EvenCompactionFunctions));
             store.Log.Truncate();
-            Assert.AreEqual(compactUntil, store.Log.BeginAddress);
+            ClassicAssert.AreEqual(compactUntil, store.Log.BeginAddress);
 
             // Read 2000 keys - all should be present
             for (var i = 0; i < totalRecords; i++)
@@ -294,19 +295,19 @@ namespace Tsavorite.test
                 var status = bContext.Read(ref key1, ref input, ref output, ctx);
                 if (status.IsPending)
                 {
-                    Assert.IsTrue(bContext.CompletePendingWithOutputs(out var outputs, wait: true));
+                    ClassicAssert.IsTrue(bContext.CompletePendingWithOutputs(out var outputs, wait: true));
                     (status, output) = GetSinglePendingResult(outputs);
                 }
 
                 if (ctx == 0)
                 {
-                    Assert.IsTrue(status.Found);
-                    Assert.AreEqual(value.vfield1, output.value.vfield1);
-                    Assert.AreEqual(value.vfield2, output.value.vfield2);
+                    ClassicAssert.IsTrue(status.Found);
+                    ClassicAssert.AreEqual(value.vfield1, output.value.vfield1);
+                    ClassicAssert.AreEqual(value.vfield2, output.value.vfield2);
                 }
                 else
                 {
-                    Assert.IsFalse(status.Found);
+                    ClassicAssert.IsFalse(status.Found);
                 }
             }
         }
@@ -349,13 +350,13 @@ namespace Tsavorite.test
             status = bContext.Read(ref key, ref input, ref output, 0);
             if (status.IsPending)
             {
-                Assert.IsTrue(bContext.CompletePendingWithOutputs(out var outputs, wait: true));
+                ClassicAssert.IsTrue(bContext.CompletePendingWithOutputs(out var outputs, wait: true));
                 (status, output) = GetSinglePendingResult(outputs);
             }
 
-            Assert.IsTrue(status.Found);
-            Assert.AreEqual(value.vfield1, output.value.vfield1);
-            Assert.AreEqual(value.vfield2, output.value.vfield2);
+            ClassicAssert.IsTrue(status.Found);
+            ClassicAssert.AreEqual(value.vfield1, output.value.vfield1);
+            ClassicAssert.AreEqual(value.vfield2, output.value.vfield2);
         }
 
         private struct EvenCompactionFunctions : ICompactionFunctions<KeyStruct, ValueStruct>

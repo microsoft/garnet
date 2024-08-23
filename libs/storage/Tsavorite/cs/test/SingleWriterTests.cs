@@ -3,6 +3,7 @@
 
 using System.IO;
 using NUnit.Framework;
+using NUnit.Framework.Legacy;
 using Tsavorite.core;
 using static Tsavorite.test.TestUtils;
 
@@ -17,14 +18,14 @@ namespace Tsavorite.test.SingleWriter
 
         public override bool SingleWriter(ref int key, ref int input, ref int src, ref int dst, ref int output, ref UpsertInfo upsertInfo, WriteReason reason, ref RecordInfo recordInfo)
         {
-            Assert.AreEqual((WriteReason)input, reason);
+            ClassicAssert.AreEqual((WriteReason)input, reason);
             actualReason = reason;
             return true;
         }
 
         public override void PostSingleWriter(ref int key, ref int input, ref int src, ref int dst, ref int output, ref UpsertInfo upsertInfo, WriteReason reason)
         {
-            Assert.AreEqual((WriteReason)input, reason);
+            ClassicAssert.AreEqual((WriteReason)input, reason);
             actualReason = reason;
         }
     }
@@ -98,7 +99,7 @@ namespace Tsavorite.test.SingleWriter
             int input = (int)WriteReason.Upsert;
             int output = 0;
             for (int key = 0; key < NumRecords; key++)
-                Assert.False(bContext.Upsert(key, input, key * ValueMult, ref output).IsPending);
+                ClassicAssert.False(bContext.Upsert(key, input, key * ValueMult, ref output).IsPending);
         }
 
         [Test]
@@ -108,7 +109,7 @@ namespace Tsavorite.test.SingleWriter
         {
             functions.actualReason = NoReason;
             Populate();
-            Assert.AreEqual(WriteReason.Upsert, functions.actualReason);
+            ClassicAssert.AreEqual(WriteReason.Upsert, functions.actualReason);
 
             store.Log.FlushAndEvict(wait: true);
 
@@ -117,9 +118,9 @@ namespace Tsavorite.test.SingleWriter
             WriteReason expectedReason = readCopyDestination == ReadCopyDestination.ReadCache ? WriteReason.CopyToReadCache : WriteReason.CopyToTail;
             int input = (int)expectedReason;
             var status = bContext.Read(key, input, out int output);
-            Assert.IsTrue(status.IsPending);
+            ClassicAssert.IsTrue(status.IsPending);
             _ = bContext.CompletePending(wait: true);
-            Assert.AreEqual(expectedReason, functions.actualReason);
+            ClassicAssert.AreEqual(expectedReason, functions.actualReason);
 
             functions.actualReason = NoReason;
             key = 64;
@@ -127,18 +128,18 @@ namespace Tsavorite.test.SingleWriter
             input = (int)expectedReason;
             ReadOptions readOptions = new() { CopyOptions = new(ReadCopyFrom.AllImmutable, ReadCopyTo.MainLog) };
             status = bContext.Read(ref key, ref input, ref output, ref readOptions, out _);
-            Assert.IsTrue(status.IsPending && !status.IsCompleted);
+            ClassicAssert.IsTrue(status.IsPending && !status.IsCompleted);
             _ = bContext.CompletePendingWithOutputs(out var outputs, wait: true);
             (status, output) = GetSinglePendingResult(outputs);
-            Assert.IsTrue(!status.IsPending && status.IsCompleted && status.IsCompletedSuccessfully);
-            Assert.IsTrue(status.Found && !status.NotFound && status.Record.Copied);
-            Assert.AreEqual(expectedReason, functions.actualReason);
+            ClassicAssert.IsTrue(!status.IsPending && status.IsCompleted && status.IsCompletedSuccessfully);
+            ClassicAssert.IsTrue(status.Found && !status.NotFound && status.Record.Copied);
+            ClassicAssert.AreEqual(expectedReason, functions.actualReason);
 
             functions.actualReason = NoReason;
             expectedReason = WriteReason.Compaction;
             input = (int)expectedReason;
             _ = store.Log.Compact<int, int, Empty, SingleWriterTestFunctions>(functions, ref input, ref output, store.Log.SafeReadOnlyAddress, CompactionType.Scan);
-            Assert.AreEqual(expectedReason, functions.actualReason);
+            ClassicAssert.AreEqual(expectedReason, functions.actualReason);
         }
     }
 }

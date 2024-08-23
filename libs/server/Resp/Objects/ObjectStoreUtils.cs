@@ -17,9 +17,8 @@ namespace Garnet.server
         /// an error message to indicate a wrong number of arguments for the given command.
         /// </summary>
         /// <param name="cmdName">Name of the command that caused the error message.</param>
-        /// <param name="count">Number of remaining tokens belonging to this command on the receive buffer.</param>
         /// <returns>true if the command was completely consumed, false if the input on the receive buffer was incomplete.</returns>
-        private bool AbortWithWrongNumberOfArguments(string cmdName, int count)
+        private bool AbortWithWrongNumberOfArguments(string cmdName)
         {
             var errorMessage = Encoding.ASCII.GetBytes(string.Format(CmdStrings.GenericErrWrongNumArgs, cmdName));
 

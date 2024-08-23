@@ -2,6 +2,7 @@
 // Licensed under the MIT license.
 
 using NUnit.Framework;
+using NUnit.Framework.Legacy;
 using Tsavorite.core;
 
 namespace Tsavorite.test
@@ -100,14 +101,14 @@ namespace Tsavorite.test
 
         public override void ReadCompletionCallback(ref MyKey key, ref MyInput input, ref MyOutput output, Empty ctx, Status status, RecordMetadata recordMetadata)
         {
-            Assert.IsTrue(status.Found);
-            Assert.AreEqual(output.value.value, key.key);
+            ClassicAssert.IsTrue(status.Found);
+            ClassicAssert.AreEqual(output.value.value, key.key);
         }
 
         public override void RMWCompletionCallback(ref MyKey key, ref MyInput input, ref MyOutput output, Empty ctx, Status status, RecordMetadata recordMetadata)
         {
-            Assert.IsTrue(status.Found);
-            Assert.IsTrue(status.Record.CopyUpdated);
+            ClassicAssert.IsTrue(status.Found);
+            ClassicAssert.IsTrue(status.Record.CopyUpdated);
         }
 
         public override bool SingleReader(ref MyKey key, ref MyInput input, ref MyValue value, ref MyOutput dst, ref ReadInfo readInfo)
@@ -163,14 +164,14 @@ namespace Tsavorite.test
 
         public override void ReadCompletionCallback(ref MyValue key, ref MyInput input, ref MyOutput output, Empty ctx, Status status, RecordMetadata recordMetadata)
         {
-            Assert.IsTrue(status.Found);
-            Assert.AreEqual(key.value, output.value.value);
+            ClassicAssert.IsTrue(status.Found);
+            ClassicAssert.AreEqual(key.value, output.value.value);
         }
 
         public override void RMWCompletionCallback(ref MyValue key, ref MyInput input, ref MyOutput output, Empty ctx, Status status, RecordMetadata recordMetadata)
         {
-            Assert.IsTrue(status.Found);
-            Assert.IsTrue(status.Record.CopyUpdated);
+            ClassicAssert.IsTrue(status.Found);
+            ClassicAssert.IsTrue(status.Record.CopyUpdated);
         }
 
         public override bool SingleReader(ref MyValue key, ref MyInput input, ref MyValue value, ref MyOutput dst, ref ReadInfo readInfo)
@@ -227,12 +228,12 @@ namespace Tsavorite.test
         {
             if (ctx == 0)
             {
-                Assert.IsTrue(status.Found);
-                Assert.AreEqual(key.key, output.value.value);
+                ClassicAssert.IsTrue(status.Found);
+                ClassicAssert.AreEqual(key.key, output.value.value);
             }
             else if (ctx == 1)
             {
-                Assert.IsFalse(status.Found);
+                ClassicAssert.IsFalse(status.Found);
             }
         }
 
@@ -240,11 +241,11 @@ namespace Tsavorite.test
         {
             if (ctx == 0)
             {
-                Assert.IsTrue(status.Found);
-                Assert.IsTrue(status.Record.CopyUpdated);
+                ClassicAssert.IsTrue(status.Found);
+                ClassicAssert.IsTrue(status.Record.CopyUpdated);
             }
             else if (ctx == 1)
-                Assert.IsFalse(status.Found);
+                ClassicAssert.IsFalse(status.Found);
         }
 
         public override bool SingleReader(ref MyKey key, ref MyInput input, ref MyValue value, ref MyOutput dst, ref ReadInfo readInfo)
@@ -351,10 +352,10 @@ namespace Tsavorite.test
     {
         public override void ReadCompletionCallback(ref MyKey key, ref MyInput input, ref MyLargeOutput output, Empty ctx, Status status, RecordMetadata recordMetadata)
         {
-            Assert.IsTrue(status.Found);
+            ClassicAssert.IsTrue(status.Found);
             for (int i = 0; i < output.value.value.Length; i++)
             {
-                Assert.AreEqual((byte)(output.value.value.Length + i), output.value.value[i]);
+                ClassicAssert.AreEqual((byte)(output.value.value.Length + i), output.value.value[i]);
             }
         }
 

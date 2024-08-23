@@ -5,6 +5,7 @@ using System;
 using System.IO;
 using System.Threading.Tasks;
 using NUnit.Framework;
+using NUnit.Framework.Legacy;
 using Tsavorite.core;
 using static Tsavorite.test.TestUtils;
 
@@ -131,16 +132,16 @@ namespace Tsavorite.test.readaddress
                 if (status.Found)
                 {
                     if (useReadCache && readCopyOptions.CopyTo == ReadCopyTo.ReadCache)
-                        Assert.AreEqual(Constants.kInvalidAddress, recordMetadata.Address, $"key {key}");
+                        ClassicAssert.AreEqual(Constants.kInvalidAddress, recordMetadata.Address, $"key {key}");
                     else
-                        Assert.AreEqual(output.address, recordMetadata.Address, $"key {key}");  // Should agree with what SingleWriter set
+                        ClassicAssert.AreEqual(output.address, recordMetadata.Address, $"key {key}");  // Should agree with what SingleWriter set
                 }
             }
 
             public override void RMWCompletionCallback(ref KeyStruct key, ref ValueStruct input, ref Output output, Empty ctx, Status status, RecordMetadata recordMetadata)
             {
                 if (status.Found)
-                    Assert.AreEqual(output.address, recordMetadata.Address);
+                    ClassicAssert.AreEqual(output.address, recordMetadata.Address);
             }
         }
 
@@ -213,7 +214,7 @@ namespace Tsavorite.test.readaddress
                         await bContext.CompletePendingAsync();
 
                     insertAddresses[ii] = functions.lastWriteAddress;
-                    //Assert.IsTrue(session.ctx.HasNoPendingRequests);
+                    //ClassicAssert.IsTrue(session.ctx.HasNoPendingRequests);
 
                     // Illustrate that deleted records can be shown as well (unless overwritten by in-place operations, which are not done here)
                     if (lap == DeleteLap)
@@ -226,12 +227,12 @@ namespace Tsavorite.test.readaddress
             internal bool ProcessChainRecord(Status status, RecordMetadata recordMetadata, int lap, ref Output actualOutput)
             {
                 var recordInfo = recordMetadata.RecordInfo;
-                Assert.GreaterOrEqual(lap, 0);
+                ClassicAssert.GreaterOrEqual(lap, 0);
                 long expectedValue = SetReadOutput(DefaultKeyToScan, LapOffset(lap) + DefaultKeyToScan);
 
-                Assert.AreEqual(lap == DeleteLap, recordInfo.Tombstone, $"lap({lap}) == deleteLap({DeleteLap}) != Tombstone ({recordInfo.Tombstone})");
+                ClassicAssert.AreEqual(lap == DeleteLap, recordInfo.Tombstone, $"lap({lap}) == deleteLap({DeleteLap}) != Tombstone ({recordInfo.Tombstone})");
                 if (!recordInfo.Tombstone)
-                    Assert.AreEqual(expectedValue, actualOutput.value, $"lap({lap})");
+                    ClassicAssert.AreEqual(expectedValue, actualOutput.value, $"lap({lap})");
 
                 // Check for end of loop
                 return recordInfo.PreviousAddress >= store.Log.BeginAddress;
@@ -245,7 +246,7 @@ namespace Tsavorite.test.readaddress
                     var lap = keyOrdinal / KeyMod;
                     long expectedValue = SetReadOutput(keyToScan, LapOffset(lap) + keyToScan);
                     if (!recordInfo.Tombstone)
-                        Assert.AreEqual(expectedValue, actualOutput.value, $"keyToScan {keyToScan}, lap({lap})");
+                        ClassicAssert.AreEqual(expectedValue, actualOutput.value, $"keyToScan {keyToScan}, lap({lap})");
                 }
             }
 
@@ -324,8 +325,8 @@ namespace Tsavorite.test.readaddress
                 cursorRecordResult = CursorRecordResult.Accept; // default; not used here
                 Output output = new() { address = recordMetadata.Address, value = SetReadOutput(key.key, value.value) };
                 int lap = MaxLap - ++numRecords;
-                Assert.AreEqual(lap != 0, testStore.ProcessChainRecord(new(StatusCode.Found), recordMetadata, lap, ref output), $"lap ({lap}) == 0 != ProcessChainRecord(...)");
-                Assert.AreEqual(numRecords, numberOfRecords, "mismatched record count");
+                ClassicAssert.AreEqual(lap != 0, testStore.ProcessChainRecord(new(StatusCode.Found), recordMetadata, lap, ref output), $"lap ({lap}) == 0 != ProcessChainRecord(...)");
+                ClassicAssert.AreEqual(numRecords, numberOfRecords, "mismatched record count");
                 return stopAt != numRecords;
             }
 
@@ -348,8 +349,8 @@ namespace Tsavorite.test.readaddress
             {
                 var key = new KeyStruct(DefaultKeyToScan);
                 IterateKeyTestScanIteratorFunctions scanFunctions = new(testStore);
-                Assert.IsTrue(testStore.store.Log.IterateKeyVersions(ref scanFunctions, ref key));
-                Assert.AreEqual(MaxLap, scanFunctions.numRecords);
+                ClassicAssert.IsTrue(testStore.store.Log.IterateKeyVersions(ref scanFunctions, ref key));
+                ClassicAssert.AreEqual(MaxLap, scanFunctions.numRecords);
             }
         }
 
@@ -367,8 +368,8 @@ namespace Tsavorite.test.readaddress
             {
                 var key = new KeyStruct(DefaultKeyToScan);
                 IterateKeyTestScanIteratorFunctions scanFunctions = new(testStore) { stopAt = 4 };
-                Assert.IsFalse(testStore.store.Log.IterateKeyVersions(ref scanFunctions, ref key));
-                Assert.AreEqual(scanFunctions.stopAt, scanFunctions.numRecords);
+                ClassicAssert.IsFalse(testStore.store.Log.IterateKeyVersions(ref scanFunctions, ref key));
+                ClassicAssert.AreEqual(scanFunctions.stopAt, scanFunctions.numRecords);
             }
         }
 
@@ -573,7 +574,7 @@ namespace Tsavorite.test.readaddress
             {
                 var merge = merges[ii];
                 var options = ReadCopyOptions.Merge(ReadCopyOptions.Merge(merge.store, merge.Session), merge.Read);
-                Assert.AreEqual(merge.Expected, options, $"iter {ii}");
+                ClassicAssert.AreEqual(merge.Expected, options, $"iter {ii}");
             }
         }
     }

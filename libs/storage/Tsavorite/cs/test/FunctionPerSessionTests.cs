@@ -4,6 +4,7 @@
 using System.IO;
 using System.Threading;
 using NUnit.Framework;
+using NUnit.Framework.Legacy;
 using Tsavorite.core;
 
 namespace Tsavorite.test
@@ -159,19 +160,19 @@ namespace Tsavorite.test
             _ = adderSession.BasicContext.RMW(ref key, ref input);
             _ = adderSession.BasicContext.RMW(ref key, ref input);
 
-            Assert.AreEqual(1, _adder.InitialCount);
-            Assert.AreEqual(2, _adder.InPlaceCount);
+            ClassicAssert.AreEqual(1, _adder.InitialCount);
+            ClassicAssert.AreEqual(2, _adder.InPlaceCount);
 
             var empty = default(Empty);
             _ = removerSession.BasicContext.RMW(ref key, ref empty);
 
-            Assert.AreEqual(1, _remover.InPlaceCount);
+            ClassicAssert.AreEqual(1, _remover.InPlaceCount);
 
             RefCountedValueStruct output = new();
             _ = readerSession.BasicContext.Read(ref key, ref output);
 
-            Assert.AreEqual(2, output.ReferenceCount);
-            Assert.AreEqual(1000L, output.Value);
+            ClassicAssert.AreEqual(2, output.ReferenceCount);
+            ClassicAssert.AreEqual(1000L, output.Value);
 
             store.Log.FlushAndEvict(true);
 
@@ -179,9 +180,9 @@ namespace Tsavorite.test
             _ = removerSession.BasicContext.CompletePending(wait: true);
             _ = readerSession.BasicContext.Read(ref key, ref empty, ref output);
 
-            Assert.AreEqual(1, output.ReferenceCount);
-            Assert.AreEqual(1000L, output.Value);
-            Assert.AreEqual(1, _remover.CopyCount);
+            ClassicAssert.AreEqual(1, output.ReferenceCount);
+            ClassicAssert.AreEqual(1000L, output.Value);
+            ClassicAssert.AreEqual(1, _remover.CopyCount);
         }
     }
 }

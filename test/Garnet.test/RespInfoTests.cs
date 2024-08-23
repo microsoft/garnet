@@ -5,6 +5,7 @@ using System;
 using System.Linq;
 using System.Threading;
 using NUnit.Framework;
+using NUnit.Framework.Legacy;
 using StackExchange.Redis;
 
 namespace Garnet.test
@@ -41,35 +42,35 @@ namespace Garnet.test
             var infoResult = db.Execute("INFO").ToString();
             var infoResultArr = infoResult.Split("\r\n");
             var totalFound = infoResultArr.First(x => x.StartsWith("total_found"));
-            Assert.AreEqual("total_found:0", totalFound, "Expected total_found to be 0 after starting the server.");
+            ClassicAssert.AreEqual("total_found:0", totalFound, "Expected total_found to be 0 after starting the server.");
 
             var key = "myKey";
             var val = "myKeyValue";
             db.StringSet(key, val);
-            Assert.AreEqual(val, db.StringGet(key).ToString());
+            ClassicAssert.AreEqual(val, db.StringGet(key).ToString());
             Thread.Sleep(metricsUpdateDelay);
 
             infoResult = db.Execute("INFO").ToString();
             infoResultArr = infoResult.Split("\r\n");
             totalFound = infoResultArr.First(x => x.StartsWith("total_found"));
-            Assert.AreEqual("total_found:1", totalFound, "Expected total_foudn to be incremented to 1 after a successful request.");
+            ClassicAssert.AreEqual("total_found:1", totalFound, "Expected total_foudn to be incremented to 1 after a successful request.");
 
             var result = db.Execute("INFO", "RESET");
-            Assert.IsNotNull(result);
+            ClassicAssert.IsNotNull(result);
             Thread.Sleep(metricsUpdateDelay);
 
             infoResult = db.Execute("INFO").ToString();
             infoResultArr = infoResult.Split("\r\n");
             totalFound = infoResultArr.First(x => x.StartsWith("total_found"));
-            Assert.AreEqual("total_found:0", totalFound, "Expected total_found to be reset to 0 after INFO RESET command");
+            ClassicAssert.AreEqual("total_found:0", totalFound, "Expected total_found to be reset to 0 after INFO RESET command");
 
-            Assert.AreEqual(val, db.StringGet(key).ToString(), "Expected the value to match what was set earlier.");
+            ClassicAssert.AreEqual(val, db.StringGet(key).ToString(), "Expected the value to match what was set earlier.");
             Thread.Sleep(metricsUpdateDelay);
 
             infoResult = db.Execute("INFO").ToString();
             infoResultArr = infoResult.Split("\r\n");
             totalFound = infoResultArr.First(x => x.StartsWith("total_found"));
-            Assert.AreEqual("total_found:1", totalFound, "Expected total_found to be one after sending one successful request");
+            ClassicAssert.AreEqual("total_found:1", totalFound, "Expected total_found to be one after sending one successful request");
         }
     }
 }

@@ -115,9 +115,9 @@ namespace Garnet.server
         private bool NetworkStringSetBit<TGarnetApi>(ref TGarnetApi storageApi)
             where TGarnetApi : IGarnetApi
         {
-            if (parseState.count != 3)
+            if (parseState.Count != 3)
             {
-                return AbortWithWrongNumberOfArguments(nameof(RespCommand.SETBIT), parseState.count);
+                return AbortWithWrongNumberOfArguments(nameof(RespCommand.SETBIT));
             }
 
             var sbKey = parseState.GetArgSliceByRef(0).SpanByte;
@@ -176,9 +176,9 @@ namespace Garnet.server
         private bool NetworkStringGetBit<TGarnetApi>(ref TGarnetApi storageApi)
             where TGarnetApi : IGarnetApi
         {
-            if (parseState.count != 2)
+            if (parseState.Count != 2)
             {
-                return AbortWithWrongNumberOfArguments(nameof(RespCommand.GETBIT), parseState.count);
+                return AbortWithWrongNumberOfArguments(nameof(RespCommand.GETBIT));
             }
 
             var sbKey = parseState.GetArgSliceByRef(0).SpanByte;
@@ -231,9 +231,10 @@ namespace Garnet.server
         private bool NetworkStringBitCount<TGarnetApi>(ref TGarnetApi storageApi)
             where TGarnetApi : IGarnetApi
         {
-            if (parseState.count < 1 || parseState.count > 4)
+            var count = parseState.Count;
+            if (count < 1 || count > 4)
             {
-                return AbortWithWrongNumberOfArguments(nameof(RespCommand.BITCOUNT), parseState.count);
+                return AbortWithWrongNumberOfArguments(nameof(RespCommand.BITCOUNT));
             }
 
             //<[Get Key]>
@@ -243,9 +244,9 @@ namespace Garnet.server
             var startOffset = 0; // default is at the start of bitmap array
             var endOffset = -1; // default is at the end of the bitmap array (negative values indicate offset starting from end)
             byte bitOffsetType = 0x0; // treat offsets as byte or bit offsets
-            if (parseState.count > 1)//Start offset exists
+            if (parseState.Count > 1)//Start offset exists
             {
-                if (!parseState.TryGetInt(1, out startOffset) || (parseState.count > 2 && !parseState.TryGetInt(2, out endOffset)))
+                if (!parseState.TryGetInt(1, out startOffset) || (parseState.Count > 2 && !parseState.TryGetInt(2, out endOffset)))
                 {
                     while (!RespWriteUtils.WriteError(CmdStrings.RESP_ERR_GENERIC_VALUE_IS_NOT_INTEGER, ref dcurr, dend))
                         SendAndReset();
@@ -253,7 +254,7 @@ namespace Garnet.server
                 }
             }
 
-            if (parseState.count > 3)
+            if (parseState.Count > 3)
             {
                 var sbOffsetType = parseState.GetArgSliceByRef(3).ReadOnlySpan;
                 bitOffsetType = sbOffsetType.EqualsUpperCaseSpanIgnoringCase("BIT"u8) ? (byte)0x1 : (byte)0x0;
@@ -310,9 +311,10 @@ namespace Garnet.server
         private bool NetworkStringBitPosition<TGarnetApi>(ref TGarnetApi storageApi)
             where TGarnetApi : IGarnetApi
         {
-            if (parseState.count < 2 || parseState.count > 5)
+            var count = parseState.Count;
+            if (count < 2 || count > 5)
             {
-                return AbortWithWrongNumberOfArguments(nameof(RespCommand.BITPOS), parseState.count);
+                return AbortWithWrongNumberOfArguments(nameof(RespCommand.BITPOS));
             }
 
             //<[Get Key]>
@@ -328,9 +330,9 @@ namespace Garnet.server
             var endOffset = -1; // default is at the end of the bitmap array (negative values indicate offset starting from end)
             byte bitOffsetType = 0x0; // treat offsets as byte or bit offsets
 
-            if (parseState.count > 2)//Start offset exists
+            if (parseState.Count > 2)//Start offset exists
             {
-                if (!parseState.TryGetInt(2, out startOffset) || (parseState.count > 3 && !parseState.TryGetInt(3, out endOffset)))
+                if (!parseState.TryGetInt(2, out startOffset) || (parseState.Count > 3 && !parseState.TryGetInt(3, out endOffset)))
                 {
                     while (!RespWriteUtils.WriteError(CmdStrings.RESP_ERR_GENERIC_VALUE_IS_NOT_INTEGER, ref dcurr, dend))
                         SendAndReset();
@@ -338,7 +340,7 @@ namespace Garnet.server
                 }
             }
 
-            if (parseState.count > 4)
+            if (parseState.Count > 4)
             {
                 var sbOffsetType = parseState.GetArgSliceByRef(4).ReadOnlySpan;
                 bitOffsetType = sbOffsetType.EqualsUpperCaseSpanIgnoringCase("BIT"u8) ? (byte)0x1 : (byte)0x0;
@@ -399,7 +401,7 @@ namespace Garnet.server
             where TGarnetApi : IGarnetApi
         {
             // Too few keys
-            if (parseState.count < 2)
+            if (parseState.Count < 2)
             {
                 while (!RespWriteUtils.WriteError(CmdStrings.RESP_ERR_WRONG_NUMBER_OF_ARGUMENTS, ref dcurr, dend))
                     SendAndReset();
@@ -407,7 +409,7 @@ namespace Garnet.server
                 return true;
             }
 
-            if (parseState.count > 64)
+            if (parseState.Count > 64)
             {
                 while (!RespWriteUtils.WriteError(CmdStrings.RESP_ERR_BITOP_KEY_LIMIT, ref dcurr, dend))
                     SendAndReset();
@@ -427,9 +429,9 @@ namespace Garnet.server
         private bool StringBitField<TGarnetApi>(ref TGarnetApi storageApi)
             where TGarnetApi : IGarnetApi
         {
-            if (parseState.count < 1)
+            if (parseState.Count < 1)
             {
-                return AbortWithWrongNumberOfArguments(nameof(RespCommand.BITFIELD), parseState.count);
+                return AbortWithWrongNumberOfArguments(nameof(RespCommand.BITFIELD));
             }
 
             // BITFIELD key [GET encoding offset] [SET encoding offset value] [INCRBY encoding offset increment] [OVERFLOW WRAP| SAT | FAIL]
@@ -445,7 +447,7 @@ namespace Garnet.server
             byte encodingInfo = default;
             long offset = default;
             long value = default;
-            while (currCount < parseState.count)
+            while (currCount < parseState.Count)
             {
                 // Get subcommand
                 var command = parseState.GetArgSliceByRef(currCount++).ReadOnlySpan;
@@ -607,7 +609,7 @@ namespace Garnet.server
             long offset = default;
             long value = default;
             bool writeError = false;
-            while (currCount < parseState.count)
+            while (currCount < parseState.Count)
             {
                 //process overflow command
                 var command = parseState.GetArgSliceByRef(currCount++).ReadOnlySpan;

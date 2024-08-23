@@ -3,6 +3,7 @@
 
 using System.IO;
 using NUnit.Framework;
+using NUnit.Framework.Legacy;
 using Tsavorite.core;
 using static Tsavorite.test.TestUtils;
 
@@ -81,7 +82,7 @@ namespace Tsavorite.test
                 if (bContext.Read(ref key1, ref input, ref output, 0).IsPending)
                     _ = bContext.CompletePending(true);
                 else
-                    Assert.AreEqual(value.value, output.value.value);
+                    ClassicAssert.AreEqual(value.value, output.value.value);
             }
 
             for (int i = 0; i < totalRecords; i++)
@@ -103,7 +104,7 @@ namespace Tsavorite.test
                     _ = bContext.CompletePendingWithOutputs(out var outputs, wait: true);
                     (status, _) = GetSinglePendingResult(outputs);
                 }
-                Assert.IsFalse(status.Found);
+                ClassicAssert.IsFalse(status.Found);
             }
 
 
@@ -114,7 +115,7 @@ namespace Tsavorite.test
                 if (recordInfo.Tombstone)
                     val++;
             }
-            Assert.AreEqual(val, totalRecords);
+            ClassicAssert.AreEqual(val, totalRecords);
         }
 
 
@@ -139,25 +140,25 @@ namespace Tsavorite.test
             var input = new MyInput { value = 1000 };
             var output = new MyOutput();
             var status = bContext.Read(ref key100, ref input, ref output, 1);
-            Assert.IsFalse(status.Found, status.ToString());
+            ClassicAssert.IsFalse(status.Found, status.ToString());
 
             status = bContext.Upsert(ref key100, ref value100, 0);
-            Assert.IsTrue(!status.Found, status.ToString());
+            ClassicAssert.IsTrue(!status.Found, status.ToString());
 
             status = bContext.Read(ref key100, ref input, ref output, 0);
-            Assert.IsTrue(status.Found, status.ToString());
-            Assert.AreEqual(value100.value, output.value.value);
+            ClassicAssert.IsTrue(status.Found, status.ToString());
+            ClassicAssert.AreEqual(value100.value, output.value.value);
 
             _ = bContext.Delete(ref key100);
             _ = bContext.Delete(ref key200);
 
             // This RMW should create new initial value, since item is deleted
             status = bContext.RMW(ref key200, ref input, 1);
-            Assert.IsFalse(status.Found);
+            ClassicAssert.IsFalse(status.Found);
 
             status = bContext.Read(ref key200, ref input, ref output, 0);
-            Assert.IsTrue(status.Found, status.ToString());
-            Assert.AreEqual(input.value, output.value.value);
+            ClassicAssert.IsTrue(status.Found, status.ToString());
+            ClassicAssert.AreEqual(input.value, output.value.value);
 
             // Delete key 200 again
             _ = bContext.Delete(ref key200);
@@ -170,17 +171,17 @@ namespace Tsavorite.test
                 _ = bContext.Upsert(ref _key, ref _value, 0);
             }
             status = bContext.Read(ref key100, ref input, ref output, 1);
-            Assert.IsTrue(status.IsPending);
+            ClassicAssert.IsTrue(status.IsPending);
             _ = bContext.CompletePending(true);
 
             // This RMW should create new initial value, since item is deleted
             status = bContext.RMW(ref key200, ref input, 1);
-            Assert.IsTrue(status.IsPending);
+            ClassicAssert.IsTrue(status.IsPending);
             _ = bContext.CompletePending(true);
 
             status = bContext.Read(ref key200, ref input, ref output, 0);
-            Assert.IsTrue(status.Found, status.ToString());
-            Assert.AreEqual(input.value, output.value.value);
+            ClassicAssert.IsTrue(status.Found, status.ToString());
+            ClassicAssert.AreEqual(input.value, output.value.value);
         }
     }
 }

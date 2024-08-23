@@ -17,9 +17,9 @@ namespace Garnet.server
         private bool NetworkRENAME<TGarnetApi>(ref TGarnetApi storageApi)
             where TGarnetApi : IGarnetApi
         {
-            if (parseState.count != 2)
+            if (parseState.Count != 2)
             {
-                return AbortWithWrongNumberOfArguments(nameof(RespCommand.RENAME), parseState.count);
+                return AbortWithWrongNumberOfArguments(nameof(RespCommand.RENAME));
             }
 
             var oldKeySlice = parseState.GetArgSliceByRef(0);
@@ -49,9 +49,9 @@ namespace Garnet.server
         private bool NetworkGETDEL<TGarnetApi>(ref TGarnetApi garnetApi)
             where TGarnetApi : IGarnetApi
         {
-            if (parseState.count != 1)
+            if (parseState.Count != 1)
             {
-                return AbortWithWrongNumberOfArguments(nameof(RespCommand.PERSIST), parseState.count);
+                return AbortWithWrongNumberOfArguments(nameof(RespCommand.PERSIST));
             }
 
             var sbKey = parseState.GetArgSliceByRef(0).SpanByte;
@@ -84,14 +84,15 @@ namespace Garnet.server
         private bool NetworkEXISTS<TGarnetApi>(ref TGarnetApi storageApi)
             where TGarnetApi : IGarnetApi
         {
-            if (parseState.count < 1)
+            var count = parseState.Count;
+            if (count < 1)
             {
-                return AbortWithWrongNumberOfArguments(nameof(RespCommand.EXISTS), parseState.count);
+                return AbortWithWrongNumberOfArguments(nameof(RespCommand.EXISTS));
             }
 
             var exists = 0;
 
-            for (var i = 0; i < parseState.count; i++)
+            for (var i = 0; i < parseState.Count; i++)
             {
                 var key = parseState.GetArgSliceByRef(i);
                 var status = storageApi.EXISTS(key);
@@ -115,9 +116,10 @@ namespace Garnet.server
         private bool NetworkEXPIRE<TGarnetApi>(RespCommand command, ref TGarnetApi storageApi)
             where TGarnetApi : IGarnetApi
         {
-            if (parseState.count < 2 || parseState.count > 3)
+            var count = parseState.Count;
+            if (count < 2 || count > 3)
             {
-                return AbortWithWrongNumberOfArguments(nameof(RespCommand.EXPIRE), parseState.count);
+                return AbortWithWrongNumberOfArguments(nameof(RespCommand.EXPIRE));
             }
 
             var key = parseState.GetArgSliceByRef(0);
@@ -136,11 +138,9 @@ namespace Garnet.server
             var expireOption = ExpireOption.None;
             var optionStr = "";
 
-            if (parseState.count > 2)
+            if (parseState.Count > 2)
             {
-                optionStr = parseState.GetString(2);
-
-                if (!Enum.TryParse(optionStr, ignoreCase: true, out expireOption))
+                if (!parseState.TryGetEnum(2, true, out expireOption))
                 {
                     invalidOption = true;
                 }
@@ -180,9 +180,9 @@ namespace Garnet.server
         private bool NetworkPERSIST<TGarnetApi>(ref TGarnetApi storageApi)
             where TGarnetApi : IGarnetApi
         {
-            if (parseState.count != 1)
+            if (parseState.Count != 1)
             {
-                return AbortWithWrongNumberOfArguments(nameof(RespCommand.PERSIST), parseState.count);
+                return AbortWithWrongNumberOfArguments(nameof(RespCommand.PERSIST));
             }
 
             var key = parseState.GetArgSliceByRef(0);
@@ -211,9 +211,9 @@ namespace Garnet.server
         private bool NetworkTTL<TGarnetApi>(RespCommand command, ref TGarnetApi storageApi)
             where TGarnetApi : IGarnetApi
         {
-            if (parseState.count != 1)
+            if (parseState.Count != 1)
             {
-                return AbortWithWrongNumberOfArguments(nameof(RespCommand.PERSIST), parseState.count);
+                return AbortWithWrongNumberOfArguments(nameof(RespCommand.PERSIST));
             }
 
             var sbKey = parseState.GetArgSliceByRef(0).SpanByte;

@@ -4,9 +4,9 @@
 using System.Collections.Generic;
 using System.Linq;
 using System.Net;
-using System.Threading;
 using Microsoft.Extensions.Logging;
 using NUnit.Framework;
+using NUnit.Framework.Legacy;
 using StackExchange.Redis;
 
 namespace Garnet.test.cluster
@@ -32,7 +32,7 @@ namespace Garnet.test.cluster
         }
 
         [Test, Order(1)]
-        [Category("CLUSTER-AUTH"), Timeout(60000)]
+        [Category("CLUSTER-AUTH"), CancelAfter(60000)]
         public void ClusterBasicACLTest([Values] bool useDefaultUserForInterNodeComms)
         {
             var nodes = 6;
@@ -64,7 +64,7 @@ namespace Garnet.test.cluster
         }
 
         [Test, Order(2)]
-        [Category("CLUSTER-AUTH"), Timeout(60000)]
+        [Category("CLUSTER-AUTH"), CancelAfter(60000)]
         public void ClusterStartupWithoutAuthCreds([Values] bool useDefaultUserForInterNodeComms)
         {
             var shards = 3;
@@ -102,7 +102,7 @@ namespace Garnet.test.cluster
                 {
                     var endpoint = node.EndPoint.ToString();
                     if (slots.ContainsKey(endpoint))
-                        Assert.AreEqual(node.Slots.First(), slots[endpoint]);
+                        ClassicAssert.AreEqual(node.Slots.First(), slots[endpoint]);
                     else
                         slots.Add(endpoint, node.Slots.First());
                 }
@@ -110,7 +110,7 @@ namespace Garnet.test.cluster
         }
 
         [Test, Order(3)]
-        [Category("CLUSTER-AUTH"), Timeout(60000)]
+        [Category("CLUSTER-AUTH"), CancelAfter(60000)]
         public void ClusterReplicationAuth()
         {
             var shards = 3;
@@ -177,7 +177,7 @@ namespace Garnet.test.cluster
         }
 
         [Test, Order(4)]
-        [Category("CLUSTER-AUTH"), Timeout(60000)]
+        [Category("CLUSTER-AUTH"), CancelAfter(60000)]
         public void ClusterSimpleFailoverAuth()
         {
             // Setup single primary populate and then attach replicas
@@ -194,7 +194,7 @@ namespace Garnet.test.cluster
         }
 
         [Test, Order(4)]
-        [Category("CLUSTER-AUTH"), Timeout(60000)]
+        [Category("CLUSTER-AUTH"), CancelAfter(60000)]
         public void ClusterSimpleACLReload()
         {
             ClusterStartupWithoutAuthCreds(useDefaultUserForInterNodeComms: true);

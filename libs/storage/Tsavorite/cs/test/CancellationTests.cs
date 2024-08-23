@@ -3,6 +3,7 @@
 
 using System.IO;
 using NUnit.Framework;
+using NUnit.Framework.Legacy;
 using Tsavorite.core;
 using static Tsavorite.test.TestUtils;
 
@@ -57,7 +58,7 @@ namespace Tsavorite.test.Cancellation
             public override bool CopyUpdater(ref int key, ref int input, ref int oldValue, ref int newValue, ref int output, ref RMWInfo rmwInfo, ref RecordInfo recordInfo)
             {
                 lastFunc = CancelLocation.CopyUpdater;
-                Assert.AreNotEqual(CancelLocation.NeedCopyUpdate, cancelLocation);
+                ClassicAssert.AreNotEqual(CancelLocation.NeedCopyUpdate, cancelLocation);
                 if (cancelLocation == CancelLocation.CopyUpdater)
                 {
                     rmwInfo.Action = RMWAction.CancelOperation;
@@ -70,8 +71,8 @@ namespace Tsavorite.test.Cancellation
             public override bool InitialUpdater(ref int key, ref int input, ref int value, ref int output, ref RMWInfo rmwInfo, ref RecordInfo recordInfo)
             {
                 lastFunc = CancelLocation.InitialUpdater;
-                Assert.AreNotEqual(CancelLocation.NeedInitialUpdate, cancelLocation);
-                Assert.AreNotEqual(CancelLocation.InPlaceUpdater, cancelLocation);
+                ClassicAssert.AreNotEqual(CancelLocation.NeedInitialUpdate, cancelLocation);
+                ClassicAssert.AreNotEqual(CancelLocation.InPlaceUpdater, cancelLocation);
                 if (cancelLocation == CancelLocation.InitialUpdater)
                 {
                     rmwInfo.Action = RMWAction.CancelOperation;
@@ -178,13 +179,13 @@ namespace Tsavorite.test.Cancellation
 
             functions.cancelLocation = CancelLocation.NeedInitialUpdate;
             var status = bContext.RMW(key, key * NumRecs * 10);
-            Assert.IsTrue(status.IsCanceled);
-            Assert.AreEqual(CancelLocation.NeedInitialUpdate, functions.lastFunc);
+            ClassicAssert.IsTrue(status.IsCanceled);
+            ClassicAssert.AreEqual(CancelLocation.NeedInitialUpdate, functions.lastFunc);
 
             functions.cancelLocation = CancelLocation.InitialUpdater;
             status = bContext.RMW(key, key * NumRecs * 10);
-            Assert.IsTrue(status.IsCanceled);
-            Assert.AreEqual(CancelLocation.InitialUpdater, functions.lastFunc);
+            ClassicAssert.IsTrue(status.IsCanceled);
+            ClassicAssert.AreEqual(CancelLocation.InitialUpdater, functions.lastFunc);
         }
 
         [Test]
@@ -202,13 +203,13 @@ namespace Tsavorite.test.Cancellation
                 {
                     functions.cancelLocation = CancelLocation.NeedCopyUpdate;
                     var status = bContext.RMW(key, key * NumRecs * 10);
-                    Assert.IsTrue(status.IsCanceled);
-                    Assert.AreEqual(CancelLocation.NeedCopyUpdate, functions.lastFunc);
+                    ClassicAssert.IsTrue(status.IsCanceled);
+                    ClassicAssert.AreEqual(CancelLocation.NeedCopyUpdate, functions.lastFunc);
 
                     functions.cancelLocation = CancelLocation.CopyUpdater;
                     status = bContext.RMW(key, key * NumRecs * 10);
-                    Assert.IsTrue(status.IsCanceled);
-                    Assert.AreEqual(CancelLocation.CopyUpdater, functions.lastFunc);
+                    ClassicAssert.IsTrue(status.IsCanceled);
+                    ClassicAssert.AreEqual(CancelLocation.CopyUpdater, functions.lastFunc);
                 }
             }
 
@@ -232,8 +233,8 @@ namespace Tsavorite.test.Cancellation
             // Note: ExpirationTests tests the combination of CancelOperation and DeleteRecord
             functions.cancelLocation = CancelLocation.InPlaceUpdater;
             var status = bContext.RMW(key, key * NumRecs * 10);
-            Assert.IsTrue(status.IsCanceled);
-            Assert.AreEqual(CancelLocation.InPlaceUpdater, functions.lastFunc);
+            ClassicAssert.IsTrue(status.IsCanceled);
+            ClassicAssert.AreEqual(CancelLocation.InPlaceUpdater, functions.lastFunc);
         }
 
         [Test]
@@ -247,8 +248,8 @@ namespace Tsavorite.test.Cancellation
 
             functions.cancelLocation = CancelLocation.SingleWriter;
             var status = bContext.Upsert(key, key * NumRecs * 10);
-            Assert.IsTrue(status.IsCanceled);
-            Assert.AreEqual(CancelLocation.SingleWriter, functions.lastFunc);
+            ClassicAssert.IsTrue(status.IsCanceled);
+            ClassicAssert.AreEqual(CancelLocation.SingleWriter, functions.lastFunc);
         }
 
         [Test]
@@ -262,8 +263,8 @@ namespace Tsavorite.test.Cancellation
 
             functions.cancelLocation = CancelLocation.ConcurrentWriter;
             var status = bContext.Upsert(key, key * NumRecs * 10);
-            Assert.IsTrue(status.IsCanceled);
-            Assert.AreEqual(CancelLocation.ConcurrentWriter, functions.lastFunc);
+            ClassicAssert.IsTrue(status.IsCanceled);
+            ClassicAssert.AreEqual(CancelLocation.ConcurrentWriter, functions.lastFunc);
         }
     }
 }

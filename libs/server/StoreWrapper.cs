@@ -102,6 +102,8 @@ namespace Garnet.server
         // Lua script cache
         public readonly ConcurrentDictionary<byte[], byte[]> storeScriptCache;
 
+        public readonly TimeSpan loggingFrequncy;
+
         /// <summary>
         /// Constructor
         /// </summary>
@@ -139,6 +141,7 @@ namespace Garnet.server
             this.versionMap = new WatchVersionMap(1 << 16);
             this.accessControlList = accessControlList;
             this.GarnetObjectSerializer = new GarnetObjectSerializer(this.customCommandManager);
+            this.loggingFrequncy = TimeSpan.FromSeconds(serverOptions.LoggingFrequency);
 
             // Initialize store scripting cache
             if (serverOptions.EnableLua)
