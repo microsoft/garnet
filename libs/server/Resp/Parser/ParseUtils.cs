@@ -109,36 +109,6 @@ namespace Garnet.server
         }
 
         /// <summary>
-        /// Read a signed 64-bit double from a given ArgSlice.
-        /// </summary>
-        /// <returns>
-        /// Parsed double
-        /// </returns>
-        [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public static double ReadDouble(ref ArgSlice slice)
-        {
-            if (!TryReadDouble(ref slice, out var number))
-            {
-                RespParsingException.ThrowNotANumber(slice.ptr, slice.length);
-            }
-            return number;
-        }
-
-        /// <summary>
-        /// Try to read a signed 64-bit double from a given ArgSlice.
-        /// </summary>
-        /// <returns>
-        /// True if double parsed successfully
-        /// </returns>
-        [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public static bool TryReadDouble(ref ArgSlice slice, out double number)
-        {
-            var sbNumber = slice.ReadOnlySpan;
-            return Utf8Parser.TryParse(sbNumber, out number, out var bytesConsumed) &&
-                            bytesConsumed == sbNumber.Length;
-        }
-
-        /// <summary>
         /// Read an ASCII string from a given ArgSlice.
         /// </summary>
         /// <returns>
