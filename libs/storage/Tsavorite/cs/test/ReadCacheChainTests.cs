@@ -8,6 +8,7 @@ using System.IO;
 using System.Linq;
 using System.Threading.Tasks;
 using NUnit.Framework;
+using NUnit.Framework.Legacy;
 using Tsavorite.core;
 using Tsavorite.test.LockableUnsafeContext;
 using Tsavorite.test.LockTable;
@@ -157,12 +158,12 @@ namespace Tsavorite.test.ReadCacheTests
                 var status = bContext.Read(key, out _);
                 if (expectPending(key))
                 {
-                    Assert.IsTrue(status.IsPending, status.ToString());
+                    ClassicAssert.IsTrue(status.IsPending, status.ToString());
                     _ = bContext.CompletePendingWithOutputs(out var outputs, wait: true);
                     (status, output) = GetSinglePendingResult(outputs);
-                    Assert.IsTrue(status.Record.CopiedToReadCache, status.ToString());
+                    ClassicAssert.IsTrue(status.Record.CopiedToReadCache, status.ToString());
                 }
-                Assert.IsTrue(status.Found, status.ToString());
+                ClassicAssert.IsTrue(status.Found, status.ToString());
                 if (key < MidChainKey)
                     readCacheBelowMidChainKeyEvictionAddress = store.ReadCache.TailAddress;
             }
@@ -171,7 +172,7 @@ namespace Tsavorite.test.ReadCacheTests
             for (var ii = 0; ii < ChainLen; ++ii)
             {
                 var status = bContext.Read(LowChainKey + ii * HashMod, out _);
-                Assert.IsTrue(!status.IsPending && status.Found, status.ToString());
+                ClassicAssert.IsTrue(!status.IsPending && status.Found, status.ToString());
             }
 
             // Pass 3: Put in bunch of extra keys into the cache so when we FlushAndEvict we get all the ones of interest.
@@ -182,12 +183,12 @@ namespace Tsavorite.test.ReadCacheTests
                     var status = bContext.Read(key, out _);
                     if (expectPending(key))
                     {
-                        Assert.IsTrue(status.IsPending);
+                        ClassicAssert.IsTrue(status.IsPending);
                         _ = bContext.CompletePendingWithOutputs(out var outputs, wait: true);
                         (status, output) = GetSinglePendingResult(outputs);
-                        Assert.IsTrue(status.Record.CopiedToReadCache, status.ToString());
+                        ClassicAssert.IsTrue(status.Record.CopiedToReadCache, status.ToString());
                     }
-                    Assert.IsTrue(status.Found, status.ToString());
+                    ClassicAssert.IsTrue(status.Found, status.ToString());
                     _ = bContext.CompletePending(wait: true);
                 }
             }
@@ -224,7 +225,7 @@ namespace Tsavorite.test.ReadCacheTests
             where TAllocator : IAllocator<long, long, TStoreFunctions>
         {
             var tagExists = store.FindHashBucketEntryForKey(ref key, out var entry);
-            Assert.IsTrue(tagExists);
+            ClassicAssert.IsTrue(tagExists);
 
             isReadCache = entry.ReadCache;
             var log = isReadCache ? store.readcache : store.hlog;
@@ -264,24 +265,24 @@ namespace Tsavorite.test.ReadCacheTests
             {
                 // We evict from readcache only to just below midChainKey
                 if (!evicted || expectedKey >= MidChainKey)
-                    Assert.IsTrue(isReadCache);
+                    ClassicAssert.IsTrue(isReadCache);
 
                 if (isReadCache)
                 {
-                    Assert.AreEqual(expectedKey, actualKey);
+                    ClassicAssert.AreEqual(expectedKey, actualKey);
                     if (omitted.Contains(expectedKey))
-                        Assert.IsTrue(invalid);
+                        ClassicAssert.IsTrue(invalid);
                 }
                 else if (omitted.Contains(actualKey))
                 {
-                    Assert.AreEqual(deleted, store.hlog.GetInfo(pa).Tombstone);
+                    ClassicAssert.AreEqual(deleted, store.hlog.GetInfo(pa).Tombstone);
                 }
 
                 (la, pa) = NextInChain(pa, out actualKey, out invalid, ref isReadCache);
                 if (!isReadCache && la < store.hlogBase.HeadAddress)
                     break;
             }
-            Assert.IsFalse(isReadCache);
+            ClassicAssert.IsFalse(isReadCache);
             return (la, pa);
         }
 
@@ -303,7 +304,7 @@ namespace Tsavorite.test.ReadCacheTests
             // Scan to the end of the readcache chain and verify we inserted the value.
             var (_, pa) = SkipReadCacheChain(expectedKey);
             var storedKey = store.hlog.GetKey(pa);
-            Assert.AreEqual(expectedKey, storedKey);
+            ClassicAssert.AreEqual(expectedKey, storedKey);
         }
 
         static void ClearCountsOnError(ClientSession<long, long, long, long, Empty, SimpleSimpleFunctions<long, long>, LongStoreFunctions, LongAllocator> luContext)
@@ -340,10 +341,10 @@ namespace Tsavorite.test.ReadCacheTests
             void doTest(long key)
             {
                 var status = bContext.Delete(key);
-                Assert.IsTrue(!status.Found && status.Record.Created, status.ToString());
+                ClassicAssert.IsTrue(!status.Found && status.Record.Created, status.ToString());
 
                 status = bContext.Read(key, out var value);
-                Assert.IsFalse(status.Found, status.ToString());
+                ClassicAssert.IsFalse(status.Found, status.ToString());
             }
 
             doTest(LowChainKey);
@@ -369,43 +370,43 @@ namespace Tsavorite.test.ReadCacheTests
             void doTest(long key)
             {
                 var status = bContext.Delete(key);
-                Assert.IsTrue(!status.Found && status.Record.Created, status.ToString());
+                ClassicAssert.IsTrue(!status.Found && status.Record.Created, status.ToString());
 
                 status = bContext.Read(key, out var value);
-                Assert.IsFalse(status.Found, status.ToString());
+                ClassicAssert.IsFalse(status.Found, status.ToString());
             }
 
             // Should be found in the readcache before deletion
-            Assert.IsTrue(GetRecordInInMemoryHashChain(LowChainKey, out bool isReadCache));
-            Assert.IsTrue(isReadCache);
-            Assert.IsTrue(GetRecordInInMemoryHashChain(MidChainKey, out isReadCache));
-            Assert.IsTrue(isReadCache);
-            Assert.IsTrue(GetRecordInInMemoryHashChain(HighChainKey, out isReadCache));
-            Assert.IsTrue(isReadCache);
+            ClassicAssert.IsTrue(GetRecordInInMemoryHashChain(LowChainKey, out bool isReadCache));
+            ClassicAssert.IsTrue(isReadCache);
+            ClassicAssert.IsTrue(GetRecordInInMemoryHashChain(MidChainKey, out isReadCache));
+            ClassicAssert.IsTrue(isReadCache);
+            ClassicAssert.IsTrue(GetRecordInInMemoryHashChain(HighChainKey, out isReadCache));
+            ClassicAssert.IsTrue(isReadCache);
 
             // Delete all keys in the readcache chain below midChainKey.
             for (var ii = LowChainKey; ii < MidChainKey; ++ii)
                 doTest(ii);
 
             // LowChainKey should not be found in the readcache after deletion to just below midChainKey, but mid- and highChainKey should not be affected.
-            Assert.IsTrue(GetRecordInInMemoryHashChain(LowChainKey, out isReadCache));
-            Assert.IsFalse(isReadCache);
-            Assert.IsTrue(GetRecordInInMemoryHashChain(MidChainKey, out isReadCache));
-            Assert.IsTrue(isReadCache);
-            Assert.IsTrue(GetRecordInInMemoryHashChain(HighChainKey, out isReadCache));
-            Assert.IsTrue(isReadCache);
+            ClassicAssert.IsTrue(GetRecordInInMemoryHashChain(LowChainKey, out isReadCache));
+            ClassicAssert.IsFalse(isReadCache);
+            ClassicAssert.IsTrue(GetRecordInInMemoryHashChain(MidChainKey, out isReadCache));
+            ClassicAssert.IsTrue(isReadCache);
+            ClassicAssert.IsTrue(GetRecordInInMemoryHashChain(HighChainKey, out isReadCache));
+            ClassicAssert.IsTrue(isReadCache);
 
             store.ReadCacheEvict(store.ReadCache.BeginAddress, readCacheBelowMidChainKeyEvictionAddress);
 
             // Following deletion to just below midChainKey:
             //  lowChainKey's tombstone should still be found in the mutable portion of the log
             //  midChainKey and highChainKey should be found in the readcache
-            Assert.IsTrue(GetRecordInInMemoryHashChain(LowChainKey, out isReadCache));
-            Assert.IsFalse(isReadCache);
-            Assert.IsTrue(GetRecordInInMemoryHashChain(MidChainKey, out isReadCache));
-            Assert.IsTrue(isReadCache);
-            Assert.IsTrue(GetRecordInInMemoryHashChain(HighChainKey, out isReadCache));
-            Assert.IsTrue(isReadCache);
+            ClassicAssert.IsTrue(GetRecordInInMemoryHashChain(LowChainKey, out isReadCache));
+            ClassicAssert.IsFalse(isReadCache);
+            ClassicAssert.IsTrue(GetRecordInInMemoryHashChain(MidChainKey, out isReadCache));
+            ClassicAssert.IsTrue(isReadCache);
+            ClassicAssert.IsTrue(GetRecordInInMemoryHashChain(HighChainKey, out isReadCache));
+            ClassicAssert.IsTrue(isReadCache);
         }
 
         [Test]
@@ -436,26 +437,26 @@ namespace Tsavorite.test.ReadCacheTests
             void doTest(long key)
             {
                 var status = bContext.Read(key, out var value);
-                Assert.IsTrue(status.Found, status.ToString());
+                ClassicAssert.IsTrue(status.Found, status.ToString());
 
                 if (useRMW)
                 {
                     // RMW will use the readcache entry for its source and then invalidate it.
                     status = bContext.RMW(key, value + ValueAdd);
-                    Assert.IsTrue(status.Found && status.Record.CopyUpdated, status.ToString());
+                    ClassicAssert.IsTrue(status.Found && status.Record.CopyUpdated, status.ToString());
 
-                    Assert.IsTrue(FindRecordInReadCache(key, out bool invalid, out _, out _));
-                    Assert.IsTrue(invalid);
+                    ClassicAssert.IsTrue(FindRecordInReadCache(key, out bool invalid, out _, out _));
+                    ClassicAssert.IsTrue(invalid);
                 }
                 else
                 {
                     status = bContext.Upsert(key, value + ValueAdd);
-                    Assert.IsTrue(status.Record.Created, status.ToString());
+                    ClassicAssert.IsTrue(status.Record.Created, status.ToString());
                 }
 
                 status = bContext.Read(key, out value);
-                Assert.IsTrue(status.Found, status.ToString());
-                Assert.AreEqual(key + ValueAdd * 2, value);
+                ClassicAssert.IsTrue(status.Found, status.ToString());
+                ClassicAssert.AreEqual(key + ValueAdd * 2, value);
             }
 
             doTest(LowChainKey);
@@ -483,7 +484,7 @@ namespace Tsavorite.test.ReadCacheTests
             ReadOptions readOptions = new() { CopyOptions = new(ReadCopyFrom.AllImmutable, ReadCopyTo.MainLog) };
 
             var status = bContext.Read(ref key, ref input, ref output, ref readOptions, out _);
-            Assert.IsTrue(status.IsPending, status.ToString());
+            ClassicAssert.IsTrue(status.IsPending, status.ToString());
             _ = bContext.CompletePending(wait: true);
 
             VerifySplicedInKey(key);
@@ -507,13 +508,13 @@ namespace Tsavorite.test.ReadCacheTests
             {
                 key = SpliceInExistingKey;
                 var status = bContext.Upsert(key, key + ValueAdd);
-                Assert.IsTrue(!status.Found && status.Record.Created, status.ToString());
+                ClassicAssert.IsTrue(!status.Found && status.Record.Created, status.ToString());
             }
             else
             {
                 key = SpliceInNewKey;
                 var status = bContext.Upsert(key, key + ValueAdd);
-                Assert.IsTrue(!status.Found && status.Record.Created, status.ToString());
+                ClassicAssert.IsTrue(!status.Found && status.Record.Created, status.ToString());
             }
 
             VerifySplicedInKey(key);
@@ -539,11 +540,11 @@ namespace Tsavorite.test.ReadCacheTests
                 var status = bContext.RMW(key, key + ValueAdd);
 
                 // If OnDisk, this used the readcache entry for its source and then invalidated it.
-                Assert.IsTrue(status.Found && status.Record.CopyUpdated, status.ToString());
+                ClassicAssert.IsTrue(status.Found && status.Record.CopyUpdated, status.ToString());
                 if (recordRegion == RecordRegion.OnDisk)
                 {
-                    Assert.IsTrue(FindRecordInReadCache(key, out bool invalid, out _, out _));
-                    Assert.IsTrue(invalid);
+                    ClassicAssert.IsTrue(FindRecordInReadCache(key, out bool invalid, out _, out _));
+                    ClassicAssert.IsTrue(invalid);
                 }
 
                 { // New key
@@ -551,17 +552,17 @@ namespace Tsavorite.test.ReadCacheTests
                     status = bContext.RMW(key, key + ValueAdd);
 
                     // This NOTFOUND key will return PENDING because we have to trace back through the collisions.
-                    Assert.IsTrue(status.IsPending, status.ToString());
+                    ClassicAssert.IsTrue(status.IsPending, status.ToString());
                     _ = bContext.CompletePendingWithOutputs(out var outputs, wait: true);
                     (status, output) = GetSinglePendingResult(outputs);
-                    Assert.IsTrue(!status.Found && status.Record.Created, status.ToString());
+                    ClassicAssert.IsTrue(!status.Found && status.Record.Created, status.ToString());
                 }
             }
             else
             {
                 key = SpliceInNewKey;
                 var status = bContext.RMW(key, key + ValueAdd);
-                Assert.IsTrue(!status.Found && status.Record.Created, status.ToString());
+                ClassicAssert.IsTrue(!status.Found && status.Record.Created, status.ToString());
             }
 
             VerifySplicedInKey(key);
@@ -584,13 +585,13 @@ namespace Tsavorite.test.ReadCacheTests
             {
                 key = SpliceInExistingKey;
                 var status = bContext.Delete(key);
-                Assert.IsTrue(!status.Found && status.Record.Created, status.ToString());
+                ClassicAssert.IsTrue(!status.Found && status.Record.Created, status.ToString());
             }
             else
             {
                 key = SpliceInNewKey;
                 var status = bContext.Delete(key);
-                Assert.IsTrue(!status.Found && status.Record.Created, status.ToString());
+                ClassicAssert.IsTrue(!status.Found && status.Record.Created, status.ToString());
             }
 
             VerifySplicedInKey(key);
@@ -644,14 +645,14 @@ namespace Tsavorite.test.ReadCacheTests
                     OverflowBucketLockTableTests.PopulateHei(store, ref hei);
 
                     var lockState = store.LockTable.GetLockState(ref hei);
-                    Assert.IsTrue(lockState.IsFound);
-                    Assert.AreEqual(key.LockType == LockType.Exclusive, lockState.IsLockedExclusive);
-                    Assert.AreEqual(key.LockType != LockType.Exclusive, lockState.NumLockedShared > 0);
+                    ClassicAssert.IsTrue(lockState.IsFound);
+                    ClassicAssert.AreEqual(key.LockType == LockType.Exclusive, lockState.IsLockedExclusive);
+                    ClassicAssert.AreEqual(key.LockType != LockType.Exclusive, lockState.NumLockedShared > 0);
 
                     luContext.Unlock(keys, idx, 1);
                     lockState = store.LockTable.GetLockState(ref hei);
-                    Assert.IsFalse(lockState.IsLockedExclusive);
-                    Assert.AreEqual(0, lockState.NumLockedShared);
+                    ClassicAssert.IsFalse(lockState.IsLockedExclusive);
+                    ClassicAssert.AreEqual(0, lockState.NumLockedShared);
                 }
                 AssertTotalLockCounts(0, 0);
             }
@@ -779,8 +780,8 @@ namespace Tsavorite.test.ReadCacheTests
             {
                 long key = ii;
                 var status = bContext.Upsert(ref key, ref key);
-                Assert.IsFalse(status.IsPending);
-                Assert.IsTrue(status.Record.Created, $"key {key}, status {status}");
+                ClassicAssert.IsFalse(status.IsPending);
+                ClassicAssert.IsTrue(status.Record.Created, $"key {key}, status {status}");
             }
             _ = bContext.CompletePending(true);
             store.Log.FlushAndEvict(true);
@@ -825,8 +826,8 @@ namespace Tsavorite.test.ReadCacheTests
                         else
                         {
                             ++numCompleted;
-                            Assert.IsTrue(status.Found, $"key {key}, status {status}, wasPending {false}");
-                            Assert.AreEqual(ii, output % ValueAdd);
+                            ClassicAssert.IsTrue(status.Found, $"key {key}, status {status}, wasPending {false}");
+                            ClassicAssert.AreEqual(ii, output % ValueAdd);
                         }
 
                         if (numPending > 0 && ((numPending % RcTestGlobals.PendingMod == 0) || ii == NumKeys - 1))
@@ -841,14 +842,14 @@ namespace Tsavorite.test.ReadCacheTests
                                     status = completedOutputs.Current.Status;
                                     output = completedOutputs.Current.Output;
                                     key = completedOutputs.Current.Key;
-                                    Assert.AreEqual(completedOutputs.Current.RecordMetadata.Address == Constants.kInvalidAddress, status.Record.CopiedToReadCache, $"key {key}: {status}");
-                                    Assert.IsTrue(status.Found, $"key {key}, status {status}, wasPending {true}");
-                                    Assert.AreEqual(key, output % ValueAdd);
+                                    ClassicAssert.AreEqual(completedOutputs.Current.RecordMetadata.Address == Constants.kInvalidAddress, status.Record.CopiedToReadCache, $"key {key}: {status}");
+                                    ClassicAssert.IsTrue(status.Found, $"key {key}, status {status}, wasPending {true}");
+                                    ClassicAssert.AreEqual(key, output % ValueAdd);
                                 }
                             }
                         }
                     }
-                    Assert.AreEqual(NumKeys, numCompleted, "numCompleted");
+                    ClassicAssert.AreEqual(NumKeys, numCompleted, "numCompleted");
                 }
             }
 
@@ -870,15 +871,15 @@ namespace Tsavorite.test.ReadCacheTests
                         var numPending = ii - numCompleted;
                         if (status.IsPending)
                         {
-                            Assert.AreNotEqual(UpdateOp.Upsert, updateOp, "Upsert should not go pending");
+                            ClassicAssert.AreNotEqual(UpdateOp.Upsert, updateOp, "Upsert should not go pending");
                             ++numPending;
                         }
                         else
                         {
                             ++numCompleted;
                             if (updateOp == UpdateOp.RMW)   // Upsert will not try to find records below HeadAddress, but it may find them in-memory
-                                Assert.IsTrue(status.Found, $"key {key}, status {status}, wasPending {false}");
-                            Assert.AreEqual(ii + ValueAdd * tid, output);
+                                ClassicAssert.IsTrue(status.Found, $"key {key}, status {status}, wasPending {false}");
+                            ClassicAssert.AreEqual(ii + ValueAdd * tid, output);
                         }
 
                         if (numPending > 0 && ((numPending % RcTestGlobals.PendingMod == 0) || ii == NumKeys - 1))
@@ -890,14 +891,14 @@ namespace Tsavorite.test.ReadCacheTests
                                 {
                                     ++numCompleted;
                                     if (updateOp == UpdateOp.RMW)   // Upsert will not try to find records below HeadAddress, but it may find them in-memory
-                                        Assert.IsTrue(completedOutputs.Current.Status.Found, $"key {completedOutputs.Current.Key}, status {completedOutputs.Current.Status}, wasPending {true}");
-                                    Assert.AreEqual(completedOutputs.Current.Key + ValueAdd * tid, completedOutputs.Current.Output);
+                                        ClassicAssert.IsTrue(completedOutputs.Current.Status.Found, $"key {completedOutputs.Current.Key}, status {completedOutputs.Current.Status}, wasPending {true}");
+                                    ClassicAssert.AreEqual(completedOutputs.Current.Key + ValueAdd * tid, completedOutputs.Current.Output);
                                 }
                             }
                         }
                     }
 
-                    Assert.AreEqual(NumKeys, numCompleted, "numCompleted");
+                    ClassicAssert.AreEqual(NumKeys, numCompleted, "numCompleted");
                 }
             }
 
@@ -1030,9 +1031,9 @@ namespace Tsavorite.test.ReadCacheTests
 
             for (long ii = 0; ii < NumKeys; ii++)
             {
-                Assert.IsTrue(BitConverter.TryWriteBytes(keyVec, ii));
+                ClassicAssert.IsTrue(BitConverter.TryWriteBytes(keyVec, ii));
                 var status = bContext.Upsert(ref key, ref key);
-                Assert.IsTrue(status.Record.Created, status.ToString());
+                ClassicAssert.IsTrue(status.Record.Created, status.ToString());
             }
             bContext.CompletePending(true);
             store.Log.FlushAndEvict(true);
@@ -1071,7 +1072,7 @@ namespace Tsavorite.test.ReadCacheTests
                     {
                         SpanByteAndMemory output = default;
 
-                        Assert.IsTrue(BitConverter.TryWriteBytes(keyVec, ii));
+                        ClassicAssert.IsTrue(BitConverter.TryWriteBytes(keyVec, ii));
                         var status = bContext.Read(ref key, ref output);
 
                         var numPending = ii - numCompleted;
@@ -1081,10 +1082,10 @@ namespace Tsavorite.test.ReadCacheTests
                         {
                             ++numCompleted;
 
-                            Assert.IsTrue(status.Found, $"tid {tid}, key {ii}, {status}, wasPending {false}, pt 1");
-                            Assert.IsNotNull(output.Memory, $"tid {tid}, key {ii}, wasPending {false}, pt 2");
+                            ClassicAssert.IsTrue(status.Found, $"tid {tid}, key {ii}, {status}, wasPending {false}, pt 1");
+                            ClassicAssert.IsNotNull(output.Memory, $"tid {tid}, key {ii}, wasPending {false}, pt 2");
                             long value = BitConverter.ToInt64(output.AsReadOnlySpan());
-                            Assert.AreEqual(ii, value % ValueAdd, $"tid {tid}, key {ii}, wasPending {false}, pt 3");
+                            ClassicAssert.AreEqual(ii, value % ValueAdd, $"tid {tid}, key {ii}, wasPending {false}, pt 3");
                             output.Memory.Dispose();
                         }
 
@@ -1102,18 +1103,18 @@ namespace Tsavorite.test.ReadCacheTests
                                     // Note: do NOT overwrite 'key' here
                                     long keyLong = BitConverter.ToInt64(completedOutputs.Current.Key.AsReadOnlySpan());
 
-                                    Assert.AreEqual(completedOutputs.Current.RecordMetadata.Address == Constants.kInvalidAddress, status.Record.CopiedToReadCache, $"key {keyLong}: {status}");
+                                    ClassicAssert.AreEqual(completedOutputs.Current.RecordMetadata.Address == Constants.kInvalidAddress, status.Record.CopiedToReadCache, $"key {keyLong}: {status}");
 
-                                    Assert.IsTrue(status.Found, $"tid {tid}, key {keyLong}, {status}, wasPending {true}, pt 1");
-                                    Assert.IsNotNull(output.Memory, $"tid {tid}, key {keyLong}, wasPending {true}, pt 2");
+                                    ClassicAssert.IsTrue(status.Found, $"tid {tid}, key {keyLong}, {status}, wasPending {true}, pt 1");
+                                    ClassicAssert.IsNotNull(output.Memory, $"tid {tid}, key {keyLong}, wasPending {true}, pt 2");
                                     long value = BitConverter.ToInt64(output.AsReadOnlySpan());
-                                    Assert.AreEqual(keyLong, value % ValueAdd, $"tid {tid}, key {keyLong}, wasPending {true}, pt 3");
+                                    ClassicAssert.AreEqual(keyLong, value % ValueAdd, $"tid {tid}, key {keyLong}, wasPending {true}, pt 3");
                                     output.Memory.Dispose();
                                 }
                             }
                         }
                     }
-                    Assert.AreEqual(NumKeys, numCompleted, "numCompleted");
+                    ClassicAssert.AreEqual(NumKeys, numCompleted, "numCompleted");
                 }
             }
 
@@ -1134,8 +1135,8 @@ namespace Tsavorite.test.ReadCacheTests
                     {
                         SpanByteAndMemory output = default;
 
-                        Assert.IsTrue(BitConverter.TryWriteBytes(keyVec, ii));
-                        Assert.IsTrue(BitConverter.TryWriteBytes(inputVec, ii + ValueAdd));
+                        ClassicAssert.IsTrue(BitConverter.TryWriteBytes(keyVec, ii));
+                        ClassicAssert.IsTrue(BitConverter.TryWriteBytes(inputVec, ii + ValueAdd));
                         var status = updateOp == UpdateOp.RMW
                                         ? bContext.RMW(ref key, ref input, ref output)
                                         : bContext.Upsert(ref key, ref input, ref input, ref output);
@@ -1143,17 +1144,17 @@ namespace Tsavorite.test.ReadCacheTests
                         var numPending = ii - numCompleted;
                         if (status.IsPending)
                         {
-                            Assert.AreNotEqual(UpdateOp.Upsert, updateOp, "Upsert should not go pending");
+                            ClassicAssert.AreNotEqual(UpdateOp.Upsert, updateOp, "Upsert should not go pending");
                             ++numPending;
                         }
                         else
                         {
                             ++numCompleted;
                             if (updateOp == UpdateOp.RMW)   // Upsert will not try to find records below HeadAddress, but it may find them in-memory
-                                Assert.IsTrue(status.Found, $"tid {tid}, key {ii}, {status}");
+                                ClassicAssert.IsTrue(status.Found, $"tid {tid}, key {ii}, {status}");
 
                             long value = BitConverter.ToInt64(output.AsReadOnlySpan());
-                            Assert.AreEqual(ii + ValueAdd, value, $"tid {tid}, key {ii}, wasPending {false}");
+                            ClassicAssert.AreEqual(ii + ValueAdd, value, $"tid {tid}, key {ii}, wasPending {false}");
 
                             output.Memory?.Dispose();
                         }
@@ -1173,17 +1174,17 @@ namespace Tsavorite.test.ReadCacheTests
                                     long keyLong = BitConverter.ToInt64(completedOutputs.Current.Key.AsReadOnlySpan());
 
                                     if (updateOp == UpdateOp.RMW)   // Upsert will not try to find records below HeadAddress, but it may find them in-memory
-                                        Assert.IsTrue(status.Found, $"tid {tid}, key {keyLong}, {status}");
+                                        ClassicAssert.IsTrue(status.Found, $"tid {tid}, key {keyLong}, {status}");
 
                                     long value = BitConverter.ToInt64(output.AsReadOnlySpan());
-                                    Assert.AreEqual(keyLong + ValueAdd, value, $"tid {tid}, key {keyLong}, wasPending {true}");
+                                    ClassicAssert.AreEqual(keyLong + ValueAdd, value, $"tid {tid}, key {keyLong}, wasPending {true}");
 
                                     output.Memory?.Dispose();
                                 }
                             }
                         }
                     }
-                    Assert.AreEqual(NumKeys, numCompleted, "numCompleted");
+                    ClassicAssert.AreEqual(NumKeys, numCompleted, "numCompleted");
                 }
             }
 

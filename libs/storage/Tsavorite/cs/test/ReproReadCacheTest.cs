@@ -9,6 +9,7 @@ using System.IO;
 using System.Runtime.InteropServices;
 using System.Threading.Tasks;
 using NUnit.Framework;
+using NUnit.Framework.Legacy;
 using Tsavorite.core;
 using static Tsavorite.test.TestUtils;
 
@@ -30,8 +31,8 @@ namespace Tsavorite.test.ReadCacheTests
                 var inputString = new string(MemoryMarshal.Cast<byte, char>(input.AsReadOnlySpan()));
                 var valueString = new string(MemoryMarshal.Cast<byte, char>(value.AsReadOnlySpan()));
                 var actualValue = long.Parse(valueString);
-                Assert.AreEqual(long.Parse(keyString) * 2, actualValue);
-                Assert.AreEqual(long.Parse(inputString), actualValue);
+                ClassicAssert.AreEqual(long.Parse(keyString) * 2, actualValue);
+                ClassicAssert.AreEqual(long.Parse(inputString), actualValue);
 
                 value.CopyTo(ref dst, MemoryPool<byte>.Shared);
                 return true;
@@ -39,14 +40,14 @@ namespace Tsavorite.test.ReadCacheTests
 
             public override void ReadCompletionCallback(ref SpanByte key, ref SpanByte input, ref SpanByteAndMemory output, Empty context, Status status, RecordMetadata recordMetadata)
             {
-                Assert.IsTrue(status.Found);
+                ClassicAssert.IsTrue(status.Found);
                 var keyString = new string(MemoryMarshal.Cast<byte, char>(key.AsReadOnlySpan()));
                 var inputString = new string(MemoryMarshal.Cast<byte, char>(input.AsReadOnlySpan()));
                 var outputString = new string(MemoryMarshal.Cast<byte, char>(output.AsReadOnlySpan()));
                 var actualValue = long.Parse(outputString);
-                Assert.AreEqual(long.Parse(keyString) * 2, actualValue);
-                Assert.AreEqual(long.Parse(inputString), actualValue);
-                Assert.IsNotNull(output.Memory, $"key {keyString}, in ReadCC");
+                ClassicAssert.AreEqual(long.Parse(keyString) * 2, actualValue);
+                ClassicAssert.AreEqual(long.Parse(inputString), actualValue);
+                ClassicAssert.IsNotNull(output.Memory, $"key {keyString}, in ReadCC");
             }
         }
 
@@ -138,12 +139,12 @@ namespace Tsavorite.test.ReadCacheTests
                     if (status.Found)
                     {
                         var outputString = new string(MemoryMarshal.Cast<byte, char>(output.AsReadOnlySpan()));
-                        Assert.AreEqual(i * 2, long.Parse(outputString));
+                        ClassicAssert.AreEqual(i * 2, long.Parse(outputString));
                         output.Memory.Dispose();
                     }
                     else
                     {
-                        Assert.IsTrue(status.IsPending, $"was not Pending: {keyString}; status {status}");
+                        ClassicAssert.IsTrue(status.IsPending, $"was not Pending: {keyString}; status {status}");
                         ++numPending;
                     }
                 }
@@ -160,10 +161,10 @@ namespace Tsavorite.test.ReadCacheTests
                             // Note: do NOT overwrite 'key' here
                             long keyLong = long.Parse(new string(MemoryMarshal.Cast<byte, char>(completedOutputs.Current.Key.AsReadOnlySpan())));
 
-                            Assert.IsTrue(status.Found, $"key {keyLong}, {status}, wasPending {true}, pt 1");
-                            Assert.IsNotNull(output.Memory, $"key {keyLong}, wasPending {true}, pt 2");
+                            ClassicAssert.IsTrue(status.Found, $"key {keyLong}, {status}, wasPending {true}, pt 1");
+                            ClassicAssert.IsNotNull(output.Memory, $"key {keyLong}, wasPending {true}, pt 2");
                             var outputString = new string(MemoryMarshal.Cast<byte, char>(output.AsReadOnlySpan()));
-                            Assert.AreEqual(keyLong * 2, long.Parse(outputString), $"key {keyLong}, wasPending {true}, pt 3");
+                            ClassicAssert.AreEqual(keyLong * 2, long.Parse(outputString), $"key {keyLong}, wasPending {true}, pt 3");
                             output.Memory.Dispose();
                         }
                     }
@@ -203,7 +204,7 @@ namespace Tsavorite.test.ReadCacheTests
                         var sbKey = SpanByte.FromPinnedSpan(key);
                         var sbValue = SpanByte.FromPinnedSpan(value);
                         var status = bContext.Upsert(sbKey, sbValue);
-                        Assert.IsTrue(!status.Found && status.Record.Created, status.ToString());
+                        ClassicAssert.IsTrue(!status.Found && status.Record.Created, status.ToString());
                     }
                 }
             }

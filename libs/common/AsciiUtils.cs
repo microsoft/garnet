@@ -48,13 +48,7 @@ public static class AsciiUtils
     /// </summary>
     public static void ToUpperInPlace(Span<byte> command)
     {
-#if NET8_0_OR_GREATER
         Ascii.ToUpperInPlace(command, out _);
-#else
-        foreach (ref var c in command)
-            if (c > 96 && c < 123)
-                c -= 32;
-#endif
     }
 
     /// <inheritdoc cref="EqualsUpperCaseSpanIgnoringCase(ReadOnlySpan{byte}, ReadOnlySpan{byte})"/>

@@ -27,8 +27,6 @@ namespace Resp.benchmark
     ///   "--op GEOADDREM --dbsize 2048 -b 256 -t 1,2"
     /// </summary>
 
-    // Disabling for keeping compatibility with net6.0 and net7.0
-#pragma warning disable IDE0028
     class Program
     {
         public static IConnectionMultiplexer redis;
@@ -223,6 +221,19 @@ namespace Resp.benchmark
 
             if (opts.Op == OpType.ZADD || opts.Op == OpType.ZREM || opts.Op == OpType.ZADDREM || opts.Op == OpType.PING || opts.Op == OpType.GEOADD || opts.Op == OpType.GEOADDREM || opts.Op == OpType.SETEX || opts.Op == OpType.ZCARD || opts.Op == OpType.ZADDCARD)
                 opts.SkipLoad = true;
+
+            //if we have scripts ops we need to load them in memory
+            if (opts.Op == OpType.SCRIPTGET || opts.Op == OpType.SCRIPTSET || opts.Op == OpType.SCRIPTRETKEY)
+            {
+                unsafe
+                {
+                    var onResponseDelegate = new LightClient.OnResponseDelegateUnsafe(ReqGen.OnResponse);
+                    using var client = new LightClient(opts.Address, opts.Port, (int)OpType.GET, onResponseDelegate, opts.DbSize, opts.EnableTLS ? BenchUtils.GetTlsOptions(opts.TlsHost, opts.CertFileName, opts.CertPassword) : null);
+                    client.Connect();
+                    client.Authenticate(opts.Auth);
+                    BenchUtils.LoadSetGetScripts(client, out BenchUtils.sha1SetScript, out BenchUtils.sha1GetScript);
+                }
+            }
 
             if (opts.Online)
             {

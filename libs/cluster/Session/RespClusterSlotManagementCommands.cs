@@ -35,7 +35,7 @@ namespace Garnet.cluster
             readHead = (int)(ptr - recvBufferPtr);
 
             // The slot parsing may give errorMessage even if the methods TryParseSlots true.
-            if (slotsParsed && errorMessage != default)
+            if (slotsParsed && !errorMessage.IsEmpty)
             {
                 while (!RespWriteUtils.WriteError(errorMessage, ref dcurr, dend))
                     SendAndReset();
@@ -81,7 +81,7 @@ namespace Garnet.cluster
             readHead = (int)(ptr - recvBufferPtr);
 
             //The slot parsing may give errorMessage even if the TryParseSlots returns true.
-            if (slotsParsed && errorMessage != default)
+            if (slotsParsed && !errorMessage.IsEmpty)
             {
                 while (!RespWriteUtils.WriteError(errorMessage, ref dcurr, dend))
                     SendAndReset();
@@ -210,7 +210,7 @@ namespace Garnet.cluster
             readHead = (int)(ptr - recvBufferPtr);
 
             //The slot parsing may give errorMessage even if the TryParseSlots returns true.
-            if (slotsParsed && errorMessage != default)
+            if (slotsParsed && !errorMessage.IsEmpty)
             {
                 while (!RespWriteUtils.WriteError(errorMessage, ref dcurr, dend))
                     SendAndReset();
@@ -256,7 +256,7 @@ namespace Garnet.cluster
             readHead = (int)(ptr - recvBufferPtr);
 
             //The slot parsing may give errorMessage even if the TryParseSlots returns true.
-            if (slotsParsed && errorMessage != default)
+            if (slotsParsed && !errorMessage.IsEmpty)
             {
                 while (!RespWriteUtils.WriteError(errorMessage, ref dcurr, dend))
                     SendAndReset();
@@ -335,7 +335,7 @@ namespace Garnet.cluster
             readHead = (int)(ptr - recvBufferPtr);
 
             //The slot parsing may give errorMessage even if the TryParseSlots returns true.
-            if (slotsParsed && errorMessage != default)
+            if (slotsParsed && !errorMessage.IsEmpty)
             {
                 while (!RespWriteUtils.WriteError(errorMessage, ref dcurr, dend))
                     SendAndReset();
@@ -560,7 +560,7 @@ namespace Garnet.cluster
 
             // Try to parse slot ranges. The parsing may give errorMessage even if the TryParseSlots returns true.
             var slotsParsed = TryParseSlots(_count, ref ptr, out var slots, out var errorMessage, range: true);
-            if (slotsParsed && errorMessage != default)
+            if (slotsParsed && !errorMessage.IsEmpty)
             {
                 while (!RespWriteUtils.WriteError(errorMessage, ref dcurr, dend))
                     SendAndReset();

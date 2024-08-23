@@ -7,6 +7,7 @@ using System.IO;
 using System.Linq;
 using System.Threading.Tasks;
 using NUnit.Framework;
+using NUnit.Framework.Legacy;
 using Tsavorite.core;
 using Tsavorite.devices;
 
@@ -78,7 +79,7 @@ namespace Tsavorite.test
             using var iter = LocalMemorylog.Scan(0, 100_000_000);
             while (iter.GetNext(out byte[] result, out _, out _))
             {
-                Assert.IsTrue(result[currentEntry] == currentEntry, "Fail - Result[" + currentEntry.ToString() + "]: is not same as " + currentEntry.ToString());
+                ClassicAssert.IsTrue(result[currentEntry] == currentEntry, "Fail - Result[" + currentEntry.ToString() + "]: is not same as " + currentEntry.ToString());
                 currentEntry++;
             }
         }
@@ -111,14 +112,14 @@ namespace Tsavorite.test
                     case TsavoriteLogTestBase.IteratorType.AsyncByteVector:
                         await foreach ((byte[] result, _, _, long nextAddress) in iter.GetAsyncEnumerable())
                         {
-                            Assert.IsTrue(result.SequenceEqual(entry));
+                            ClassicAssert.IsTrue(result.SequenceEqual(entry));
                             counter.IncrementAndMaybeTruncateUntil(nextAddress);
                         }
                         break;
                     case TsavoriteLogTestBase.IteratorType.AsyncMemoryOwner:
                         await foreach ((IMemoryOwner<byte> result, int _, long _, long nextAddress) in iter.GetAsyncEnumerable(MemoryPool<byte>.Shared))
                         {
-                            Assert.IsTrue(result.Memory.Span.ToArray().Take(entry.Length).SequenceEqual(entry));
+                            ClassicAssert.IsTrue(result.Memory.Span.ToArray().Take(entry.Length).SequenceEqual(entry));
                             result.Dispose();
                             counter.IncrementAndMaybeTruncateUntil(nextAddress);
                         }
@@ -126,7 +127,7 @@ namespace Tsavorite.test
                     case TsavoriteLogTestBase.IteratorType.Sync:
                         while (iter.GetNext(out byte[] result, out _, out _))
                         {
-                            Assert.IsTrue(result.SequenceEqual(entry));
+                            ClassicAssert.IsTrue(result.SequenceEqual(entry));
                             counter.IncrementAndMaybeTruncateUntil(iter.NextAddress);
                         }
                         break;
@@ -134,7 +135,7 @@ namespace Tsavorite.test
                         Assert.Fail("Unknown IteratorType");
                         break;
                 }
-                Assert.IsTrue(counter.count == numEntries);
+                ClassicAssert.IsTrue(counter.count == numEntries);
             }
 
             log.Dispose();

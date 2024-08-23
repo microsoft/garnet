@@ -79,7 +79,7 @@ namespace Garnet.server
         /// <param name="cmd">Command be processed</param>
         /// <returns>True if the command execution is allowed to continue, otherwise false.</returns>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        bool CheckACLPermissions(RespCommand cmd)
+        internal bool CheckACLPermissions(RespCommand cmd)
         {
             Debug.Assert(!_authenticator.IsAuthenticated || (_user != null));
 
@@ -112,8 +112,6 @@ namespace Garnet.server
                 {
                     self.currentCustomProcedure = null;
                 }
-                while (!RespWriteUtils.WriteError(CmdStrings.RESP_ERR_NOAUTH, ref self.dcurr, self.dend))
-                    self.SendAndReset();
             }
         }
 
@@ -456,7 +454,7 @@ namespace Garnet.server
             }
 
             // If no error is found, continue to try register custom commands in the server
-            if (errorMsg == null &&
+            if (errorMsg.IsEmpty &&
                 TryRegisterCustomCommands(binaryPaths, cmdInfoPath, classNameToRegisterArgs, customCommandManager, out errorMsg))
             {
                 while (!RespWriteUtils.WriteDirect(CmdStrings.RESP_OK, ref dcurr, dend))
@@ -500,7 +498,7 @@ namespace Garnet.server
                 }
             }
 
-            if (errorMsg != default)
+            if (!errorMsg.IsEmpty)
             {
                 while (!RespWriteUtils.WriteError(errorMsg, ref dcurr, dend))
                     SendAndReset();

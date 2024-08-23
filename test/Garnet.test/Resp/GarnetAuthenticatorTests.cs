@@ -5,10 +5,10 @@ using System;
 using System.Text;
 using System.Threading.Tasks;
 using Garnet.server;
-using Garnet.server.ACL;
 using Garnet.server.Auth;
 using Garnet.server.Auth.Settings;
 using NUnit.Framework;
+using NUnit.Framework.Legacy;
 
 namespace Garnet.test.Resp
 {
@@ -64,11 +64,11 @@ namespace Garnet.test.Resp
                 {
                     if (authCalls == 0)
                     {
-                        Assert.AreEqual("default", Encoding.UTF8.GetString(u));
+                        ClassicAssert.AreEqual("default", Encoding.UTF8.GetString(u));
                     }
                     else
                     {
-                        Assert.AreEqual("foo", Encoding.UTF8.GetString(u));
+                        ClassicAssert.AreEqual("foo", Encoding.UTF8.GetString(u));
                     }
 
                     authCalls++;
@@ -85,14 +85,14 @@ namespace Garnet.test.Resp
 
             // Initial command runs under default user
             await c.ExecuteAsync("PING");
-            Assert.AreEqual(1, authCalls);
+            ClassicAssert.AreEqual(1, authCalls);
 
             // Auth as proper user, should get another call
             await c.ExecuteAsync("AUTH", "foo", "bar");
-            Assert.AreEqual(2, authCalls);
+            ClassicAssert.AreEqual(2, authCalls);
 
             await c.ExecuteAsync("PING");
-            Assert.AreEqual(2, authCalls);
+            ClassicAssert.AreEqual(2, authCalls);
 
             // Command after auth invalidation fails as no auth
             auth.IsAuthenticated = false;
@@ -103,11 +103,11 @@ namespace Garnet.test.Resp
             }
             catch (Exception e)
             {
-                Assert.AreEqual("NOAUTH Authentication required.", e.Message);
+                ClassicAssert.AreEqual("NOAUTH Authentication required.", e.Message);
             }
 
             await c.ExecuteAsync("AUTH", "foo", "bar");
-            Assert.AreEqual(3, authCalls);
+            ClassicAssert.AreEqual(3, authCalls);
         }
     }
 }

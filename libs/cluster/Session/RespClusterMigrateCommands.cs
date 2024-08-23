@@ -2,6 +2,7 @@
 // Licensed under the MIT license.
 
 using System;
+using System.Diagnostics;
 using System.Text;
 using Garnet.common;
 using Garnet.server;
@@ -12,6 +13,26 @@ namespace Garnet.cluster
 {
     internal sealed unsafe partial class ClusterSession : IClusterSession
     {
+        long lastLog = 0;
+        long totalKeyCount = 0;
+
+        /// <summary>
+        /// Logging of migrate session status
+        /// </summary>
+        /// <param name="keyCount"></param>
+        /// <param name="isMainStore"></param>
+        /// <param name="completed"></param>
+        private void TrackImportProgress(int keyCount, bool isMainStore, bool completed = false)
+        {
+            totalKeyCount += keyCount;
+            var duration = TimeSpan.FromTicks(Stopwatch.GetTimestamp() - lastLog);
+            if (completed || lastLog == 0 || duration >= clusterProvider.storeWrapper.loggingFrequncy)
+            {
+                logger?.LogTrace("[{op}]: isMainStore:({storeType}) totalKeyCount:({totalKeyCount})", completed ? "COMPLETED" : "IMPORTING", isMainStore, totalKeyCount.ToString("N0"));
+                lastLog = Stopwatch.GetTimestamp();
+            }
+        }
+
         /// <summary>
         /// Implements CLUSTER MIGRATE command (only for internode use)
         /// </summary>
@@ -41,13 +62,13 @@ namespace Garnet.cluster
                 return false;
 
             byte* payload = null;
-            int length = 0;
+            var length = 0;
             if (!RespReadUtils.ReadPtrWithLengthHeader(ref payload, ref length, ref ptr, recvBufferPtr + bytesRead))
                 return false;
 
             var replaceOption = _replace.Equals("T");
-
             var currentConfig = clusterProvider.clusterManager.CurrentConfig;
+            byte migrateState = 0;
 
             if (storeType.Equals("SSTORE"))
             {
@@ -55,9 +76,9 @@ namespace Garnet.cluster
                 payload += 4;
                 var i = 0;
 
+                TrackImportProgress(keyCount, isMainStore: true, keyCount == 0);
                 while (i < keyCount)
                 {
-
                     byte* keyPtr = null, valPtr = null;
                     byte keyMetaDataSize = 0, valMetaDataSize = 0;
                     if (!RespReadUtils.ReadSerializedSpanByte(ref keyPtr, ref keyMetaDataSize, ref valPtr, ref valMetaDataSize, ref payload, recvBufferPtr + bytesRead))
@@ -83,11 +104,6 @@ namespace Garnet.cluster
                         continue;
                     }
 
-                    if (i < migrateSetCount)
-                        continue;
-
-                    migrateSetCount++;
-
                     // Set if key replace flag is set or key does not exist
                     var keySlice = new ArgSlice(key.ToPointer(), key.Length);
                     if (replaceOption || !Exists(ref keySlice))
@@ -100,6 +116,7 @@ namespace Garnet.cluster
                 var keyCount = *(int*)payload;
                 payload += 4;
                 var i = 0;
+                TrackImportProgress(keyCount, isMainStore: true, keyCount == 0);
                 while (i < keyCount)
                 {
                     if (!RespReadUtils.ReadSerializedData(out var key, out var data, out var expiration, ref payload, recvBufferPtr + bytesRead))
@@ -115,11 +132,6 @@ namespace Garnet.cluster
                         migrateState = 1;
                         continue;
                     }
-
-                    if (i < migrateSetCount)
-                        continue;
-
-                    migrateSetCount++;
 
                     var value = clusterProvider.storeWrapper.GarnetObjectSerializer.Deserialize(data);
                     value.Expiration = expiration;
@@ -147,9 +159,6 @@ namespace Garnet.cluster
                 while (!RespWriteUtils.WriteDirect(CmdStrings.RESP_OK, ref dcurr, dend))
                     SendAndReset();
             }
-
-            migrateSetCount = 0;
-            migrateState = 0;
             readHead = (int)(ptr - recvBufferPtr);
             return true;
         }

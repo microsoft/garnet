@@ -3,6 +3,7 @@
 
 using System.IO;
 using NUnit.Framework;
+using NUnit.Framework.Legacy;
 using Tsavorite.core;
 
 namespace Tsavorite.test.ReadCacheTests
@@ -79,7 +80,7 @@ namespace Tsavorite.test.ReadCacheTests
                 var value = new MyValue { value = i };
 
                 var status = bContext.Read(ref key1, ref input, ref output, Empty.Default);
-                Assert.IsTrue(status.IsPending);
+                ClassicAssert.IsTrue(status.IsPending);
                 bContext.CompletePending(true);
             }
 
@@ -91,8 +92,8 @@ namespace Tsavorite.test.ReadCacheTests
                 var value = new MyValue { value = i };
 
                 var status = bContext.Read(ref key1, ref input, ref output, Empty.Default);
-                Assert.IsTrue(status.Found);
-                Assert.AreEqual(value.value, output.value.value);
+                ClassicAssert.IsTrue(status.Found);
+                ClassicAssert.AreEqual(value.value, output.value.value);
             }
 
             // Evict the read cache entirely
@@ -106,7 +107,7 @@ namespace Tsavorite.test.ReadCacheTests
                 var value = new MyValue { value = i };
 
                 var status = bContext.Read(ref key1, ref input, ref output, Empty.Default);
-                Assert.IsTrue(status.IsPending);
+                ClassicAssert.IsTrue(status.IsPending);
                 bContext.CompletePending(true);
             }
 
@@ -118,8 +119,8 @@ namespace Tsavorite.test.ReadCacheTests
                 var value = new MyValue { value = i };
 
                 var status = bContext.Read(ref key1, ref input, ref output, Empty.Default);
-                Assert.IsTrue(status.Found);
-                Assert.AreEqual(value.value, output.value.value);
+                ClassicAssert.IsTrue(status.Found);
+                ClassicAssert.AreEqual(value.value, output.value.value);
             }
 
 
@@ -149,8 +150,8 @@ namespace Tsavorite.test.ReadCacheTests
                 var value = new MyValue { value = i + 1 };
 
                 var status = bContext.Read(ref key1, ref input, ref output, Empty.Default);
-                Assert.IsTrue(status.Found, $"key = {key1.key}");
-                Assert.AreEqual(value.value, output.value.value);
+                ClassicAssert.IsTrue(status.Found, $"key = {key1.key}");
+                ClassicAssert.AreEqual(value.value, output.value.value);
             }
         }
 
@@ -182,7 +183,7 @@ namespace Tsavorite.test.ReadCacheTests
                 var value = new MyValue { value = i };
 
                 var status = bContext.Read(ref key1, ref input, ref output, Empty.Default);
-                Assert.IsTrue(status.IsPending);
+                ClassicAssert.IsTrue(status.IsPending);
                 bContext.CompletePending(true);
             }
 
@@ -194,8 +195,8 @@ namespace Tsavorite.test.ReadCacheTests
                 var value = new MyValue { value = i };
 
                 var status = bContext.Read(ref key1, ref input, ref output, Empty.Default);
-                Assert.IsTrue(status.Found);
-                Assert.AreEqual(value.value, output.value.value);
+                ClassicAssert.IsTrue(status.Found);
+                ClassicAssert.AreEqual(value.value, output.value.value);
             }
 
             // Evict the read cache entirely
@@ -209,7 +210,7 @@ namespace Tsavorite.test.ReadCacheTests
                 var value = new MyValue { value = i };
 
                 var status = bContext.Read(ref key1, ref input, ref output, Empty.Default);
-                Assert.IsTrue(status.IsPending);
+                ClassicAssert.IsTrue(status.IsPending);
                 bContext.CompletePending(true);
             }
 
@@ -221,8 +222,8 @@ namespace Tsavorite.test.ReadCacheTests
                 MyValue value = new() { value = i };
 
                 var status = bContext.Read(ref key1, ref input, ref output, Empty.Default);
-                Assert.IsTrue(status.Found);
-                Assert.AreEqual(value.value, output.value.value);
+                ClassicAssert.IsTrue(status.Found);
+                ClassicAssert.AreEqual(value.value, output.value.value);
             }
         }
     }

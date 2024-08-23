@@ -9,6 +9,7 @@ using System.Runtime.CompilerServices;
 using System.Threading;
 using System.Threading.Tasks;
 using NUnit.Framework;
+using NUnit.Framework.Legacy;
 using Tsavorite.core;
 using static Tsavorite.core.Utility;
 using static Tsavorite.test.TestUtils;
@@ -171,7 +172,7 @@ namespace Tsavorite.test.Revivification
                 while (HasRecords(pool) != want)
                 {
                     if (sw.ElapsedMilliseconds >= DefaultRecordWaitTimeoutMs)
-                        Assert.Less(sw.ElapsedMilliseconds, DefaultRecordWaitTimeoutMs, $"Timeout while waiting for Pool.WaitForRecords to be {want}");
+                        ClassicAssert.Less(sw.ElapsedMilliseconds, DefaultRecordWaitTimeoutMs, $"Timeout while waiting for Pool.WaitForRecords to be {want}");
                     _ = Thread.Yield();
                 }
                 return;
@@ -213,9 +214,9 @@ namespace Tsavorite.test.Revivification
             where TAllocator : IAllocator<TKey, TValue, TStoreFunctions>
         {
             OperationStackContext<TKey, TValue, TStoreFunctions, TAllocator> stackCtx = new(store.storeFunctions.GetKeyHashCode64(ref key));
-            Assert.IsTrue(store.FindTag(ref stackCtx.hei), $"AssertElidable: Cannot find key {key}");
+            ClassicAssert.IsTrue(store.FindTag(ref stackCtx.hei), $"AssertElidable: Cannot find key {key}");
             var recordInfo = store.hlog.GetInfo(store.hlog.GetPhysicalAddress(stackCtx.hei.Address));
-            Assert.Less(recordInfo.PreviousAddress, store.hlogBase.BeginAddress, "AssertElidable: expected elidable key");
+            ClassicAssert.Less(recordInfo.PreviousAddress, store.hlogBase.BeginAddress, "AssertElidable: expected elidable key");
         }
 
         internal static int GetRevivifiableRecordCount<TKey, TValue, TStoreFunctions, TAllocator>(TsavoriteKV<TKey, TValue, TStoreFunctions, TAllocator> store, int numRecords)
@@ -305,7 +306,7 @@ namespace Tsavorite.test.Revivification
             for (int key = 0; key < NumRecords; key++)
             {
                 var status = bContext.Upsert(key, key * ValueMult);
-                Assert.IsTrue(status.Record.Created, status.ToString());
+                ClassicAssert.IsTrue(status.Record.Created, status.ToString());
             }
         }
 
@@ -326,14 +327,14 @@ namespace Tsavorite.test.Revivification
             var tailAddress = store.Log.TailAddress;
 
             _ = bContext.Delete(deleteKey);
-            Assert.AreEqual(tailAddress, store.Log.TailAddress);
+            ClassicAssert.AreEqual(tailAddress, store.Log.TailAddress);
 
             var updateKey = deleteDest == DeleteDest.InChain ? deleteKey : NumRecords + 1;
             var updateValue = updateKey + ValueMult;
 
             if (!stayInChain)
             {
-                Assert.AreEqual(1, RevivificationTestUtils.GetFreeRecordCount(store));
+                ClassicAssert.AreEqual(1, RevivificationTestUtils.GetFreeRecordCount(store));
                 RevivificationTestUtils.WaitForRecords(store, want: true);
             }
 
@@ -341,7 +342,7 @@ namespace Tsavorite.test.Revivification
 
             if (!stayInChain)
                 RevivificationTestUtils.WaitForRecords(store, want: false);
-            Assert.AreEqual(tailAddress, store.Log.TailAddress, "Expected tail address not to grow (record was revivified)");
+            ClassicAssert.AreEqual(tailAddress, store.Log.TailAddress, "Expected tail address not to grow (record was revivified)");
         }
 
         [Test]
@@ -357,10 +358,10 @@ namespace Tsavorite.test.Revivification
             for (var key = 0; key < NumRecords; ++key)
             {
                 _ = bContext.Delete(key);
-                Assert.AreEqual(tailAddress, store.Log.TailAddress);
+                ClassicAssert.AreEqual(tailAddress, store.Log.TailAddress);
             }
 
-            Assert.AreEqual(RevivificationBin.DefaultRecordsPerBin, RevivificationTestUtils.GetFreeRecordCount(store));
+            ClassicAssert.AreEqual(RevivificationBin.DefaultRecordsPerBin, RevivificationTestUtils.GetFreeRecordCount(store));
             RevivificationTestUtils.WaitForRecords(store, want: true);
 
             // Now re-add the keys.
@@ -378,9 +379,9 @@ namespace Tsavorite.test.Revivification
             var noElisionExpectedTailAddress = tailAddress + numIneligibleRecords * recordSize;
 
             if (elision == RecordElision.NoElide)
-                Assert.AreEqual(noElisionExpectedTailAddress, store.Log.TailAddress, "Expected tail address not to grow (records were revivified)");
+                ClassicAssert.AreEqual(noElisionExpectedTailAddress, store.Log.TailAddress, "Expected tail address not to grow (records were revivified)");
             else
-                Assert.Less(noElisionExpectedTailAddress, store.Log.TailAddress, "Expected tail address to grow (records were not revivified)");
+                ClassicAssert.Less(noElisionExpectedTailAddress, store.Log.TailAddress, "Expected tail address to grow (records were not revivified)");
         }
 
         [Test]
@@ -393,12 +394,12 @@ namespace Tsavorite.test.Revivification
             Populate();
 
             // This should not go to FreeList because it's below the RevivifiableFraction
-            Assert.IsTrue(bContext.Delete(2).Found);
-            Assert.AreEqual(0, RevivificationTestUtils.GetFreeRecordCount(store));
+            ClassicAssert.IsTrue(bContext.Delete(2).Found);
+            ClassicAssert.AreEqual(0, RevivificationTestUtils.GetFreeRecordCount(store));
 
             // This should go to FreeList because it's above the RevivifiableFraction
-            Assert.IsTrue(bContext.Delete(NumRecords - 1).Found);
-            Assert.AreEqual(1, RevivificationTestUtils.GetFreeRecordCount(store));
+            ClassicAssert.IsTrue(bContext.Delete(NumRecords - 1).Found);
+            ClassicAssert.AreEqual(1, RevivificationTestUtils.GetFreeRecordCount(store));
         }
 
         [Test]
@@ -411,8 +412,8 @@ namespace Tsavorite.test.Revivification
             Populate();
 
             // This should go to FreeList because it's above the RevivifiableFraction
-            Assert.IsTrue(bContext.Delete(NumRecords - 1).Found);
-            Assert.AreEqual(1, RevivificationTestUtils.GetFreeRecordCount(store));
+            ClassicAssert.IsTrue(bContext.Delete(NumRecords - 1).Found);
+            ClassicAssert.AreEqual(1, RevivificationTestUtils.GetFreeRecordCount(store));
             RevivificationTestUtils.WaitForRecords(store, want: true);
 
             // Detach the pool temporarily so the records aren't revivified by the next insertions.
@@ -423,7 +424,7 @@ namespace Tsavorite.test.Revivification
             for (int key = NumRecords; key < maxRecord; key++)
             {
                 var status = bContext.Upsert(key, key * ValueMult);
-                Assert.IsTrue(status.Record.Created, status.ToString());
+                ClassicAssert.IsTrue(status.Record.Created, status.ToString());
             }
 
             // Restore the pool
@@ -432,7 +433,7 @@ namespace Tsavorite.test.Revivification
             var tailAddress = store.Log.TailAddress;
             _ = updateOp == UpdateOp.Upsert ? bContext.Upsert(maxRecord, maxRecord * ValueMult) : bContext.RMW(maxRecord, maxRecord * ValueMult);
 
-            Assert.Less(tailAddress, store.Log.TailAddress, "Expected tail address to grow (record was not revivified)");
+            ClassicAssert.Less(tailAddress, store.Log.TailAddress, "Expected tail address to grow (record was not revivified)");
         }
     }
 
@@ -472,27 +473,27 @@ namespace Tsavorite.test.Revivification
 
             private void AssertInfoValid(ref UpsertInfo updateInfo)
             {
-                Assert.AreEqual(session.ctx.version, updateInfo.Version);
+                ClassicAssert.AreEqual(session.ctx.version, updateInfo.Version);
             }
             private void AssertInfoValid(ref RMWInfo rmwInfo)
             {
-                Assert.AreEqual(session.ctx.version, rmwInfo.Version);
+                ClassicAssert.AreEqual(session.ctx.version, rmwInfo.Version);
             }
             private void AssertInfoValid(ref DeleteInfo deleteInfo)
             {
-                Assert.AreEqual(session.ctx.version, deleteInfo.Version);
+                ClassicAssert.AreEqual(session.ctx.version, deleteInfo.Version);
             }
 
             private static void VerifyKeyAndValue(ref SpanByte functionsKey, ref SpanByte functionsValue)
             {
                 int valueOffset = 0, valueLengthRemaining = functionsValue.Length;
-                Assert.Less(functionsKey.Length, valueLengthRemaining);
+                ClassicAssert.Less(functionsKey.Length, valueLengthRemaining);
                 while (valueLengthRemaining > 0)
                 {
                     var compareLength = Math.Min(functionsKey.Length, valueLengthRemaining);
                     Span<byte> valueSpan = functionsValue.AsSpan().Slice(valueOffset, compareLength);
                     Span<byte> keySpan = functionsKey.AsSpan()[..compareLength];
-                    Assert.IsTrue(valueSpan.SequenceEqual(keySpan), $"functionsValue (offset {valueOffset}, len {compareLength}: {SpanByte.FromPinnedSpan(valueSpan)}) does not match functionsKey ({SpanByte.FromPinnedSpan(keySpan)})");
+                    ClassicAssert.IsTrue(valueSpan.SequenceEqual(keySpan), $"functionsValue (offset {valueOffset}, len {compareLength}: {SpanByte.FromPinnedSpan(valueSpan)}) does not match functionsKey ({SpanByte.FromPinnedSpan(keySpan)})");
                     valueLengthRemaining -= compareLength;
                 }
             }
@@ -516,21 +517,21 @@ namespace Tsavorite.test.Revivification
             public override bool InitialUpdater(ref SpanByte key, ref SpanByte input, ref SpanByte value, ref SpanByteAndMemory output, ref RMWInfo rmwInfo, ref RecordInfo recordInfo)
             {
                 AssertInfoValid(ref rmwInfo);
-                Assert.AreEqual(expectedInputLength, input.Length);
+                ClassicAssert.AreEqual(expectedInputLength, input.Length);
 
                 var expectedUsedValueLength = expectedUsedValueLengths.Dequeue();
 
                 if (value.Length == 0)
                 {
-                    Assert.AreEqual(expectedUsedValueLength, rmwInfo.UsedValueLength);      // for the length header
-                    Assert.AreEqual(Constants.kRecordAlignment, rmwInfo.FullValueLength);   // This should be the "added record for Delete" case, so a "default" value
+                    ClassicAssert.AreEqual(expectedUsedValueLength, rmwInfo.UsedValueLength);      // for the length header
+                    ClassicAssert.AreEqual(Constants.kRecordAlignment, rmwInfo.FullValueLength);   // This should be the "added record for Delete" case, so a "default" value
                 }
                 else
                 {
-                    Assert.AreEqual(expectedSingleDestLength, value.Length);
-                    Assert.AreEqual(expectedSingleFullValueLength, rmwInfo.FullValueLength);
-                    Assert.AreEqual(expectedUsedValueLength, rmwInfo.UsedValueLength);
-                    Assert.GreaterOrEqual(rmwInfo.Address, store.hlogBase.ReadOnlyAddress);
+                    ClassicAssert.AreEqual(expectedSingleDestLength, value.Length);
+                    ClassicAssert.AreEqual(expectedSingleFullValueLength, rmwInfo.FullValueLength);
+                    ClassicAssert.AreEqual(expectedUsedValueLength, rmwInfo.UsedValueLength);
+                    ClassicAssert.GreaterOrEqual(rmwInfo.Address, store.hlogBase.ReadOnlyAddress);
                 }
                 return base.InitialUpdater(ref key, ref input, ref value, ref output, ref rmwInfo, ref recordInfo);
             }
@@ -538,21 +539,21 @@ namespace Tsavorite.test.Revivification
             public override bool CopyUpdater(ref SpanByte key, ref SpanByte input, ref SpanByte oldValue, ref SpanByte newValue, ref SpanByteAndMemory output, ref RMWInfo rmwInfo, ref RecordInfo recordInfo)
             {
                 AssertInfoValid(ref rmwInfo);
-                Assert.AreEqual(expectedInputLength, input.Length);
+                ClassicAssert.AreEqual(expectedInputLength, input.Length);
 
                 var expectedUsedValueLength = expectedUsedValueLengths.Dequeue();
 
                 if (newValue.Length == 0)
                 {
-                    Assert.AreEqual(sizeof(int), rmwInfo.UsedValueLength);                  // for the length header
-                    Assert.AreEqual(Constants.kRecordAlignment, rmwInfo.FullValueLength);   // This should be the "added record for Delete" case, so a "default" value
+                    ClassicAssert.AreEqual(sizeof(int), rmwInfo.UsedValueLength);                  // for the length header
+                    ClassicAssert.AreEqual(Constants.kRecordAlignment, rmwInfo.FullValueLength);   // This should be the "added record for Delete" case, so a "default" value
                 }
                 else
                 {
-                    Assert.AreEqual(expectedSingleDestLength, newValue.Length);
-                    Assert.AreEqual(expectedSingleFullValueLength, rmwInfo.FullValueLength);
-                    Assert.AreEqual(expectedUsedValueLength, rmwInfo.UsedValueLength);
-                    Assert.GreaterOrEqual(rmwInfo.Address, store.hlogBase.ReadOnlyAddress);
+                    ClassicAssert.AreEqual(expectedSingleDestLength, newValue.Length);
+                    ClassicAssert.AreEqual(expectedSingleFullValueLength, rmwInfo.FullValueLength);
+                    ClassicAssert.AreEqual(expectedUsedValueLength, rmwInfo.UsedValueLength);
+                    ClassicAssert.GreaterOrEqual(rmwInfo.Address, store.hlogBase.ReadOnlyAddress);
                 }
                 return base.CopyUpdater(ref key, ref input, ref oldValue, ref newValue, ref output, ref rmwInfo, ref recordInfo);
             }
@@ -560,16 +561,16 @@ namespace Tsavorite.test.Revivification
             public override bool InPlaceUpdater(ref SpanByte key, ref SpanByte input, ref SpanByte value, ref SpanByteAndMemory output, ref RMWInfo rmwInfo, ref RecordInfo recordInfo)
             {
                 AssertInfoValid(ref rmwInfo);
-                Assert.AreEqual(expectedInputLength, input.Length);
-                Assert.AreEqual(expectedConcurrentDestLength, value.Length);
-                Assert.AreEqual(expectedConcurrentFullValueLength, rmwInfo.FullValueLength);
+                ClassicAssert.AreEqual(expectedInputLength, input.Length);
+                ClassicAssert.AreEqual(expectedConcurrentDestLength, value.Length);
+                ClassicAssert.AreEqual(expectedConcurrentFullValueLength, rmwInfo.FullValueLength);
 
                 VerifyKeyAndValue(ref key, ref value);
 
                 var expectedUsedValueLength = expectedUsedValueLengths.Dequeue();
-                Assert.AreEqual(expectedUsedValueLength, rmwInfo.UsedValueLength);
+                ClassicAssert.AreEqual(expectedUsedValueLength, rmwInfo.UsedValueLength);
 
-                Assert.GreaterOrEqual(rmwInfo.Address, store.hlogBase.ReadOnlyAddress);
+                ClassicAssert.GreaterOrEqual(rmwInfo.Address, store.hlogBase.ReadOnlyAddress);
 
                 return base.InPlaceUpdater(ref key, ref input, ref value, ref output, ref rmwInfo, ref recordInfo);
             }
@@ -580,13 +581,13 @@ namespace Tsavorite.test.Revivification
             public override bool SingleDeleter(ref SpanByte key, ref SpanByte value, ref DeleteInfo deleteInfo, ref RecordInfo recordInfo)
             {
                 AssertInfoValid(ref deleteInfo);
-                Assert.AreEqual(expectedSingleDestLength, value.Length);
-                Assert.AreEqual(expectedSingleFullValueLength, deleteInfo.FullValueLength);
+                ClassicAssert.AreEqual(expectedSingleDestLength, value.Length);
+                ClassicAssert.AreEqual(expectedSingleFullValueLength, deleteInfo.FullValueLength);
 
                 var expectedUsedValueLength = expectedUsedValueLengths.Dequeue();
-                Assert.AreEqual(expectedUsedValueLength, deleteInfo.UsedValueLength);
+                ClassicAssert.AreEqual(expectedUsedValueLength, deleteInfo.UsedValueLength);
 
-                Assert.GreaterOrEqual(deleteInfo.Address, store.hlogBase.ReadOnlyAddress);
+                ClassicAssert.GreaterOrEqual(deleteInfo.Address, store.hlogBase.ReadOnlyAddress);
 
                 return base.SingleDeleter(ref key, ref value, ref deleteInfo, ref recordInfo);
             }
@@ -594,13 +595,13 @@ namespace Tsavorite.test.Revivification
             public override bool ConcurrentDeleter(ref SpanByte key, ref SpanByte value, ref DeleteInfo deleteInfo, ref RecordInfo recordInfo)
             {
                 AssertInfoValid(ref deleteInfo);
-                Assert.AreEqual(expectedConcurrentDestLength, value.Length);
-                Assert.AreEqual(expectedConcurrentFullValueLength, deleteInfo.FullValueLength);
+                ClassicAssert.AreEqual(expectedConcurrentDestLength, value.Length);
+                ClassicAssert.AreEqual(expectedConcurrentFullValueLength, deleteInfo.FullValueLength);
 
                 var expectedUsedValueLength = expectedUsedValueLengths.Dequeue();
-                Assert.AreEqual(expectedUsedValueLength, deleteInfo.UsedValueLength);
+                ClassicAssert.AreEqual(expectedUsedValueLength, deleteInfo.UsedValueLength);
 
-                Assert.GreaterOrEqual(deleteInfo.Address, store.hlogBase.ReadOnlyAddress);
+                ClassicAssert.GreaterOrEqual(deleteInfo.Address, store.hlogBase.ReadOnlyAddress);
 
                 return base.ConcurrentDeleter(ref key, ref value, ref deleteInfo, ref recordInfo);
             }
@@ -744,8 +745,8 @@ namespace Tsavorite.test.Revivification
                 inputVec.Fill((byte)ii);
                 functions.expectedUsedValueLengths.Enqueue(input.TotalSize);
                 var status = bContext.Upsert(ref key, ref input, ref input, ref output);
-                Assert.IsTrue(status.Record.Created, status.ToString());
-                Assert.IsEmpty(functions.expectedUsedValueLengths);
+                ClassicAssert.IsTrue(status.Record.Created, status.ToString());
+                ClassicAssert.IsEmpty(functions.expectedUsedValueLengths);
             }
         }
 
@@ -790,7 +791,7 @@ namespace Tsavorite.test.Revivification
             SpanByteAndMemory output = new();
             _ = updateOp == UpdateOp.Upsert ? bContext.Upsert(ref key, ref input, ref input, ref output) : bContext.RMW(ref key, ref input);
 
-            Assert.IsEmpty(functions.expectedUsedValueLengths);
+            ClassicAssert.IsEmpty(functions.expectedUsedValueLengths);
 
             if (growth == Growth.Shrink)
             {
@@ -808,7 +809,7 @@ namespace Tsavorite.test.Revivification
                 functions.expectedUsedValueLengths.Enqueue(input.TotalSize);
 
                 _ = updateOp == UpdateOp.Upsert ? bContext.Upsert(ref key, ref input, ref input, ref output) : bContext.RMW(ref key, ref input);
-                Assert.IsEmpty(functions.expectedUsedValueLengths);
+                ClassicAssert.IsEmpty(functions.expectedUsedValueLengths);
             }
         }
 
@@ -828,9 +829,9 @@ namespace Tsavorite.test.Revivification
 
             functions.expectedUsedValueLengths.Enqueue(SpanByteTotalSize(InitialLength));
             var status = bContext.Delete(ref key);
-            Assert.IsTrue(status.Found, status.ToString());
+            ClassicAssert.IsTrue(status.Found, status.ToString());
 
-            Assert.AreEqual(tailAddress, store.Log.TailAddress);
+            ClassicAssert.AreEqual(tailAddress, store.Log.TailAddress);
 
             Span<byte> inputVec = stackalloc byte[InitialLength];
             var input = SpanByte.FromPinnedSpan(inputVec);
@@ -847,7 +848,7 @@ namespace Tsavorite.test.Revivification
             RevivificationTestUtils.WaitForRecords(store, want: true);
 
             _ = updateOp == UpdateOp.Upsert ? bContext.Upsert(ref key, ref input, ref input, ref output) : bContext.RMW(ref key, ref input);
-            Assert.AreEqual(tailAddress, store.Log.TailAddress);
+            ClassicAssert.AreEqual(tailAddress, store.Log.TailAddress);
         }
 
         [Test]
@@ -883,16 +884,16 @@ namespace Tsavorite.test.Revivification
             if (updateOp == UpdateOp.Upsert)
             {
                 var status = bContext.Upsert(ref key, ref input, ref input, ref output);
-                Assert.IsTrue(status.Record.Created, status.ToString());
+                ClassicAssert.IsTrue(status.Record.Created, status.ToString());
             }
             else if (updateOp == UpdateOp.RMW)
             {
                 var status = bContext.RMW(ref key, ref input);
-                Assert.IsTrue(status.Record.CopyUpdated, status.ToString());
+                ClassicAssert.IsTrue(status.Record.CopyUpdated, status.ToString());
             }
 
-            Assert.Less(tailAddress, store.Log.TailAddress);
-            Assert.AreEqual(1, RevivificationTestUtils.GetFreeRecordCount(store));
+            ClassicAssert.Less(tailAddress, store.Log.TailAddress);
+            ClassicAssert.AreEqual(1, RevivificationTestUtils.GetFreeRecordCount(store));
             output.Memory?.Dispose();
             output.Memory = null;
             tailAddress = store.Log.TailAddress;
@@ -912,16 +913,16 @@ namespace Tsavorite.test.Revivification
             if (updateOp == UpdateOp.Upsert)
             {
                 var status = bContext.Upsert(ref key, ref input, ref input, ref output);
-                Assert.IsTrue(status.Record.Created, status.ToString());
+                ClassicAssert.IsTrue(status.Record.Created, status.ToString());
             }
             else if (updateOp == UpdateOp.RMW)
             {
                 var status = bContext.RMW(ref key, ref input);
-                Assert.IsTrue(status.Record.Created, status.ToString());
+                ClassicAssert.IsTrue(status.Record.Created, status.ToString());
             }
 
-            Assert.AreEqual(tailAddress, store.Log.TailAddress);
-            Assert.AreEqual(0, RevivificationTestUtils.GetFreeRecordCount(store));
+            ClassicAssert.AreEqual(tailAddress, store.Log.TailAddress);
+            ClassicAssert.AreEqual(0, RevivificationTestUtils.GetFreeRecordCount(store));
             output.Memory?.Dispose();
         }
 
@@ -941,9 +942,9 @@ namespace Tsavorite.test.Revivification
 
             functions.expectedUsedValueLengths.Enqueue(SpanByteTotalSize(InitialLength));
             var status = bContext.Delete(ref key);
-            Assert.IsTrue(status.Found, status.ToString());
+            ClassicAssert.IsTrue(status.Found, status.ToString());
 
-            Assert.AreEqual(tailAddress, store.Log.TailAddress);
+            ClassicAssert.AreEqual(tailAddress, store.Log.TailAddress);
             store.Log.ShiftReadOnlyAddress(store.Log.TailAddress, wait: true);
 
             Span<byte> inputVec = stackalloc byte[InitialLength];
@@ -959,7 +960,7 @@ namespace Tsavorite.test.Revivification
             functions.expectedUsedValueLengths.Enqueue(SpanByteTotalSize(InitialLength));
 
             _ = updateOp == UpdateOp.Upsert ? bContext.Upsert(ref key, ref input, ref input, ref output) : bContext.RMW(ref key, ref input);
-            Assert.Greater(store.Log.TailAddress, tailAddress);
+            ClassicAssert.Greater(store.Log.TailAddress, tailAddress);
         }
 
         public enum UpdateKey { Unfound, DeletedAboveRO, DeletedBelowRO, CopiedBelowRO };
@@ -981,7 +982,7 @@ namespace Tsavorite.test.Revivification
 
             functions.expectedUsedValueLengths.Enqueue(SpanByteTotalSize(InitialLength));
             var status = bContext.Delete(ref delKeyBelowRO);
-            Assert.IsTrue(status.Found, status.ToString());
+            ClassicAssert.IsTrue(status.Found, status.ToString());
 
             if (flushMode == FlushMode.ReadOnly)
                 store.Log.ShiftReadOnlyAddress(store.Log.TailAddress, wait: true);
@@ -1003,11 +1004,11 @@ namespace Tsavorite.test.Revivification
 
             functions.expectedUsedValueLengths.Enqueue(SpanByteTotalSize(InitialLength));
             status = bContext.Delete(ref delKeyAboveRO);
-            Assert.IsTrue(status.Found, status.ToString());
+            ClassicAssert.IsTrue(status.Found, status.ToString());
 
             if (stayInChain)
             {
-                Assert.IsFalse(RevivificationTestUtils.HasRecords(pool), "Expected empty pool");
+                ClassicAssert.IsFalse(RevivificationTestUtils.HasRecords(pool), "Expected empty pool");
                 pool = RevivificationTestUtils.SwapFreeRecordPool(store, pool);
             }
             else if (collisionRange == CollisionRange.None)     // CollisionRange.Ten has a valid .PreviousAddress so won't be moved to FreeList
@@ -1015,7 +1016,7 @@ namespace Tsavorite.test.Revivification
                 RevivificationTestUtils.WaitForRecords(store, want: true);
             }
 
-            Assert.AreEqual(tailAddress, store.Log.TailAddress);
+            ClassicAssert.AreEqual(tailAddress, store.Log.TailAddress);
 
             functions.expectedSingleDestLength = InitialLength;
             functions.expectedConcurrentDestLength = InitialLength;
@@ -1095,9 +1096,9 @@ namespace Tsavorite.test.Revivification
             _ = updateOp == UpdateOp.Upsert ? bContext.Upsert(ref keyToTest, ref input, ref input, ref output) : bContext.RMW(ref keyToTest, ref input);
 
             if (expectReviv)
-                Assert.AreEqual(tailAddress, store.Log.TailAddress);
+                ClassicAssert.AreEqual(tailAddress, store.Log.TailAddress);
             else
-                Assert.Greater(store.Log.TailAddress, tailAddress);
+                ClassicAssert.Greater(store.Log.TailAddress, tailAddress);
         }
 
         [Test]
@@ -1121,7 +1122,7 @@ namespace Tsavorite.test.Revivification
 
             functions.expectedUsedValueLengths.Enqueue(SpanByteTotalSize(InitialLength));
             var status = bContext.Delete(ref key);
-            Assert.IsTrue(status.Found, status.ToString());
+            ClassicAssert.IsTrue(status.Found, status.ToString());
 
             var tailAddress = store.Log.TailAddress;
 
@@ -1138,7 +1139,7 @@ namespace Tsavorite.test.Revivification
             functions.expectedUsedValueLengths.Enqueue(SpanByteTotalSize(InitialLength));
             _ = updateOp == UpdateOp.Upsert ? bContext.Upsert(ref key, ref input, ref input, ref output) : bContext.RMW(ref key, ref input);
 
-            Assert.AreEqual(tailAddress, store.Log.TailAddress);
+            ClassicAssert.AreEqual(tailAddress, store.Log.TailAddress);
         }
 
         [Test]
@@ -1164,16 +1165,16 @@ namespace Tsavorite.test.Revivification
 
                 functions.expectedUsedValueLengths.Enqueue(SpanByteTotalSize(InitialLength));
                 var status = bContext.Delete(ref key);
-                Assert.IsTrue(status.Found, status.ToString());
+                ClassicAssert.IsTrue(status.Found, status.ToString());
                 if (ii > RevivificationTestUtils.GetMinRevivifiableKey(store, NumRecords))
                     deletedSlots.Add((byte)ii);
             }
 
             // For this test we're still limiting to byte repetition
-            Assert.Greater(255 - NumRecords, deletedSlots.Count);
+            ClassicAssert.Greater(255 - NumRecords, deletedSlots.Count);
             RevivificationTestUtils.WaitForRecords(store, want: false);
-            Assert.IsFalse(RevivificationTestUtils.HasRecords(store), "Expected empty pool");
-            Assert.Greater(deletedSlots.Count, 5);    // should be about Ten
+            ClassicAssert.IsFalse(RevivificationTestUtils.HasRecords(store), "Expected empty pool");
+            ClassicAssert.Greater(deletedSlots.Count, 5);    // should be about Ten
             var tailAddress = store.Log.TailAddress;
 
             Span<byte> inputVec = stackalloc byte[InitialLength];
@@ -1189,7 +1190,7 @@ namespace Tsavorite.test.Revivification
 
                 functions.expectedUsedValueLengths.Enqueue(SpanByteTotalSize(InitialLength));
                 _ = updateOp == UpdateOp.Upsert ? bContext.Upsert(ref key, ref input, ref input, ref output) : bContext.RMW(ref key, ref input);
-                Assert.AreEqual(tailAddress, store.Log.TailAddress);
+                ClassicAssert.AreEqual(tailAddress, store.Log.TailAddress);
             }
         }
 
@@ -1215,10 +1216,10 @@ namespace Tsavorite.test.Revivification
 
                 functions.expectedUsedValueLengths.Enqueue(SpanByteTotalSize(InitialLength));
                 var status = bContext.Delete(ref key);
-                Assert.IsTrue(status.Found, status.ToString());
+                ClassicAssert.IsTrue(status.Found, status.ToString());
             }
-            Assert.AreEqual(tailAddress, store.Log.TailAddress);
-            Assert.AreEqual(RevivificationTestUtils.GetRevivifiableRecordCount(store, NumRecords), RevivificationTestUtils.GetFreeRecordCount(store), $"Expected numRecords ({NumRecords}) free records");
+            ClassicAssert.AreEqual(tailAddress, store.Log.TailAddress);
+            ClassicAssert.AreEqual(RevivificationTestUtils.GetRevivifiableRecordCount(store, NumRecords), RevivificationTestUtils.GetFreeRecordCount(store), $"Expected numRecords ({NumRecords}) free records");
 
             Span<byte> inputVec = stackalloc byte[InitialLength];
             var input = SpanByte.FromPinnedSpan(inputVec);
@@ -1242,15 +1243,15 @@ namespace Tsavorite.test.Revivification
                 functions.expectedUsedValueLengths.Enqueue(SpanByteTotalSize(InitialLength));
                 _ = updateOp == UpdateOp.Upsert ? bContext.Upsert(ref key, ref input, ref input, ref output) : bContext.RMW(ref key, ref input);
                 if (ii < revivifiableKeyCount)
-                    Assert.AreEqual(tailAddress, store.Log.TailAddress, $"unexpected new record for key {ii}");
+                    ClassicAssert.AreEqual(tailAddress, store.Log.TailAddress, $"unexpected new record for key {ii}");
                 else
-                    Assert.Less(tailAddress, store.Log.TailAddress, $"unexpected revivified record for key {ii}");
+                    ClassicAssert.Less(tailAddress, store.Log.TailAddress, $"unexpected revivified record for key {ii}");
 
                 var status = bContext.Read(ref key, ref output);
-                Assert.IsTrue(status.Found, $"Expected to find key {ii}; status == {status}");
+                ClassicAssert.IsTrue(status.Found, $"Expected to find key {ii}; status == {status}");
             }
 
-            Assert.AreEqual(0, RevivificationTestUtils.GetFreeRecordCount(store), "expected no free records remaining");
+            ClassicAssert.AreEqual(0, RevivificationTestUtils.GetFreeRecordCount(store), "expected no free records remaining");
             RevivificationTestUtils.WaitForRecords(store, want: false);
 
             // Confirm
@@ -1258,7 +1259,7 @@ namespace Tsavorite.test.Revivification
             {
                 keyVec.Fill((byte)ii);
                 var status = bContext.Read(ref key, ref output);
-                Assert.IsTrue(status.Found, $"Expected to find key {ii}; status == {status}");
+                ClassicAssert.IsTrue(status.Found, $"Expected to find key {ii}; status == {status}");
             }
         }
 
@@ -1279,9 +1280,9 @@ namespace Tsavorite.test.Revivification
 
                 functions.expectedUsedValueLengths.Enqueue(SpanByteTotalSize(InitialLength));
                 var status = bContext.Delete(ref key);
-                Assert.IsTrue(status.Found, status.ToString());
+                ClassicAssert.IsTrue(status.Found, status.ToString());
             }
-            Assert.AreEqual(RevivificationTestUtils.GetRevivifiableRecordCount(store, NumRecords), RevivificationTestUtils.GetFreeRecordCount(store), $"Expected numRecords ({NumRecords}) free records");
+            ClassicAssert.AreEqual(RevivificationTestUtils.GetRevivifiableRecordCount(store, NumRecords), RevivificationTestUtils.GetFreeRecordCount(store), $"Expected numRecords ({NumRecords}) free records");
 
             _ = store.TakeHybridLogCheckpointAsync(CheckpointType.Snapshot).GetAwaiter().GetResult();
         }
@@ -1305,9 +1306,9 @@ namespace Tsavorite.test.Revivification
 
                 functions.expectedUsedValueLengths.Enqueue(SpanByteTotalSize(InitialLength));
                 var status = bContext.Delete(ref key);
-                Assert.IsTrue(status.Found, status.ToString());
+                ClassicAssert.IsTrue(status.Found, status.ToString());
             }
-            Assert.AreEqual(RevivificationTestUtils.GetRevivifiableRecordCount(store, NumRecords), RevivificationTestUtils.GetFreeRecordCount(store), $"Expected numRecords ({NumRecords}) free records");
+            ClassicAssert.AreEqual(RevivificationTestUtils.GetRevivifiableRecordCount(store, NumRecords), RevivificationTestUtils.GetFreeRecordCount(store), $"Expected numRecords ({NumRecords}) free records");
 
             using var iterator = session.Iterate();
             while (iterator.GetNext(out _))
@@ -1323,19 +1324,19 @@ namespace Tsavorite.test.Revivification
             int expectedBin = 0, recordSize = RevivificationTestUtils.GetMaxRecordSize(pool, expectedBin);
             while (true)
             {
-                Assert.IsTrue(pool.GetBinIndex(recordSize - 1, out int actualBin));
-                Assert.AreEqual(expectedBin, actualBin);
-                Assert.IsTrue(pool.GetBinIndex(recordSize, out actualBin));
-                Assert.AreEqual(expectedBin, actualBin);
+                ClassicAssert.IsTrue(pool.GetBinIndex(recordSize - 1, out int actualBin));
+                ClassicAssert.AreEqual(expectedBin, actualBin);
+                ClassicAssert.IsTrue(pool.GetBinIndex(recordSize, out actualBin));
+                ClassicAssert.AreEqual(expectedBin, actualBin);
 
                 if (++expectedBin == RevivificationTestUtils.GetBinCount(pool))
                 {
-                    Assert.IsFalse(pool.GetBinIndex(recordSize + 1, out actualBin));
-                    Assert.AreEqual(-1, actualBin);
+                    ClassicAssert.IsFalse(pool.GetBinIndex(recordSize + 1, out actualBin));
+                    ClassicAssert.AreEqual(-1, actualBin);
                     break;
                 }
-                Assert.IsTrue(pool.GetBinIndex(recordSize + 1, out actualBin));
-                Assert.AreEqual(expectedBin, actualBin);
+                ClassicAssert.IsTrue(pool.GetBinIndex(recordSize + 1, out actualBin));
+                ClassicAssert.AreEqual(expectedBin, actualBin);
                 recordSize = RevivificationTestUtils.GetMaxRecordSize(pool, expectedBin);
             }
         }
@@ -1355,8 +1356,8 @@ namespace Tsavorite.test.Revivification
 
             const int recordSize = 42;
 
-            Assert.IsTrue(pool.GetBinIndex(recordSize, out int binIndex));
-            Assert.AreEqual(2, binIndex);
+            ClassicAssert.IsTrue(pool.GetBinIndex(recordSize, out int binIndex));
+            ClassicAssert.AreEqual(2, binIndex);
 
             const int minAddress = 1_000;
             int logicalAddress = 1_000_000;
@@ -1366,27 +1367,27 @@ namespace Tsavorite.test.Revivification
             // Fill the bin, including wrapping around at the end.
             var recordCount = RevivificationTestUtils.GetRecordCount(pool, binIndex);
             for (var ii = 0; ii < recordCount; ++ii)
-                Assert.IsTrue(store.RevivificationManager.TryAdd(logicalAddress + ii, recordSize, ref revivStats), "ArtificialBinWrappingTest: Failed to Add free record, pt 1");
+                ClassicAssert.IsTrue(store.RevivificationManager.TryAdd(logicalAddress + ii, recordSize, ref revivStats), "ArtificialBinWrappingTest: Failed to Add free record, pt 1");
 
             // Try to add to a full bin; this should fail.
             revivStats.Reset();
-            Assert.IsFalse(store.RevivificationManager.TryAdd(logicalAddress + recordCount, recordSize, ref revivStats), "ArtificialBinWrappingTest: Expected to fail Adding free record");
+            ClassicAssert.IsFalse(store.RevivificationManager.TryAdd(logicalAddress + recordCount, recordSize, ref revivStats), "ArtificialBinWrappingTest: Expected to fail Adding free record");
 
             RevivificationTestUtils.WaitForRecords(store, want: true);
 
             for (var ii = 0; ii < recordCount; ++ii)
-                Assert.IsTrue(RevivificationTestUtils.IsSet(pool, binIndex, ii), "expected bin to be set at ii == {ii}");
+                ClassicAssert.IsTrue(RevivificationTestUtils.IsSet(pool, binIndex, ii), "expected bin to be set at ii == {ii}");
 
             // Take() one to open up a space in the bin, then add one
             revivStats.Reset();
-            Assert.IsTrue(RevivificationTestUtils.TryTakeFromBin(pool, binIndex, recordSize, minAddress, store, out _, ref revivStats));
+            ClassicAssert.IsTrue(RevivificationTestUtils.TryTakeFromBin(pool, binIndex, recordSize, minAddress, store, out _, ref revivStats));
             revivStats.Reset();
-            Assert.IsTrue(store.RevivificationManager.TryAdd(logicalAddress + recordCount + 1, recordSize, ref revivStats), "ArtificialBinWrappingTest: Failed to Add free record, pt 2");
+            ClassicAssert.IsTrue(store.RevivificationManager.TryAdd(logicalAddress + recordCount + 1, recordSize, ref revivStats), "ArtificialBinWrappingTest: Failed to Add free record, pt 2");
 
             // Take() all records in the bin.
             revivStats.Reset();
             for (var ii = 0; ii < recordCount; ++ii)
-                Assert.IsTrue(RevivificationTestUtils.TryTakeFromBin(pool, binIndex, recordSize, minAddress, store, out _, ref revivStats), $"ArtificialBinWrappingTest: failed to Take at ii == {ii}");
+                ClassicAssert.IsTrue(RevivificationTestUtils.TryTakeFromBin(pool, binIndex, recordSize, minAddress, store, out _, ref revivStats), $"ArtificialBinWrappingTest: failed to Take at ii == {ii}");
             _ = revivStats.Dump();
         }
 
@@ -1413,11 +1414,11 @@ namespace Tsavorite.test.Revivification
 
             // "sizeof(int) +" because SpanByte has an int length prefix.
             var recordSize = RecordInfo.GetLength() + RoundUp(sizeof(int) + keyVec.Length, 8) + RoundUp(sizeof(int) + InitialLength, 8);
-            Assert.IsTrue(pool.GetBinIndex(recordSize, out int binIndex));
-            Assert.AreEqual(3, binIndex);
+            ClassicAssert.IsTrue(pool.GetBinIndex(recordSize, out int binIndex));
+            ClassicAssert.AreEqual(3, binIndex);
 
             // We should have a recordSize > min size record in the bin, to test wrapping.
-            Assert.AreNotEqual(0, RevivificationTestUtils.GetSegmentStart(pool, binIndex, recordSize), "SegmentStart should not be 0, to test wrapping");
+            ClassicAssert.AreNotEqual(0, RevivificationTestUtils.GetSegmentStart(pool, binIndex, recordSize), "SegmentStart should not be 0, to test wrapping");
 
             // Delete 
             functions.expectedInputLength = InitialLength;
@@ -1428,14 +1429,14 @@ namespace Tsavorite.test.Revivification
 
                 functions.expectedUsedValueLengths.Enqueue(SpanByteTotalSize(InitialLength));
                 var status = bContext.Delete(ref key);
-                Assert.IsTrue(status.Found, $"{status} for key {ii}");
-                //Assert.AreEqual(ii + 1, RevivificationTestUtils.GetFreeRecordCount(store), $"mismatched free record count for key {ii}, pt 1");
+                ClassicAssert.IsTrue(status.Found, $"{status} for key {ii}");
+                //ClassicAssert.AreEqual(ii + 1, RevivificationTestUtils.GetFreeRecordCount(store), $"mismatched free record count for key {ii}, pt 1");
             }
 
             if (deleteDest == DeleteDest.FreeList && waitMode == WaitMode.Wait)
             {
                 var actualNumRecords = RevivificationTestUtils.GetFreeRecordCount(store);
-                Assert.AreEqual(RevivificationTestUtils.GetRevivifiableRecordCount(store, NumRecords), actualNumRecords, $"mismatched free record count");
+                ClassicAssert.AreEqual(RevivificationTestUtils.GetRevivifiableRecordCount(store, NumRecords), actualNumRecords, $"mismatched free record count");
             }
 
             // Revivify
@@ -1461,16 +1462,16 @@ namespace Tsavorite.test.Revivification
                     {
                         var freeRecs = RevivificationTestUtils.GetFreeRecordCount(store);
                         if (expectedReviv)
-                            Assert.AreEqual(tailAddress, store.Log.TailAddress, $"failed to revivify record for key {ii}, freeRecs {freeRecs}");
+                            ClassicAssert.AreEqual(tailAddress, store.Log.TailAddress, $"failed to revivify record for key {ii}, freeRecs {freeRecs}");
                         else
-                            Assert.Less(tailAddress, store.Log.TailAddress, $"Unexpectedly revivified record for key {ii}, freeRecs {freeRecs}");
+                            ClassicAssert.Less(tailAddress, store.Log.TailAddress, $"Unexpectedly revivified record for key {ii}, freeRecs {freeRecs}");
                     }
                 }
             }
 
             if (deleteDest == DeleteDest.FreeList && waitMode == WaitMode.Wait)
             {
-                Assert.AreEqual(0, RevivificationTestUtils.GetFreeRecordCount(store), "expected no free records remaining");
+                ClassicAssert.AreEqual(0, RevivificationTestUtils.GetFreeRecordCount(store), "expected no free records remaining");
                 RevivificationTestUtils.WaitForRecords(store, want: false);
             }
         }
@@ -1500,7 +1501,7 @@ namespace Tsavorite.test.Revivification
 
                     functions.expectedUsedValueLengths.Enqueue(SpanByteTotalSize(iter == 0 ? InitialLength : InitialLength));
                     var status = bContext.Delete(ref key);
-                    Assert.IsTrue(status.Found, $"{status} for key {ii}, iter {iter}");
+                    ClassicAssert.IsTrue(status.Found, $"{status} for key {ii}, iter {iter}");
                 }
 
                 for (var ii = 0; ii < NumRecords; ++ii)
@@ -1555,7 +1556,7 @@ namespace Tsavorite.test.Revivification
             // Delete it
             functions.expectedUsedValueLengths.Enqueue(SpanByteTotalSize(OversizeLength));
             var status = bContext.Delete(ref key);
-            Assert.IsTrue(status.Found, status.ToString());
+            ClassicAssert.IsTrue(status.Found, status.ToString());
             if (!stayInChain)
                 RevivificationTestUtils.WaitForRecords(store, want: true);
 
@@ -1565,7 +1566,7 @@ namespace Tsavorite.test.Revivification
             functions.expectedUsedValueLengths.Enqueue(SpanByteTotalSize(OversizeLength));
             _ = updateOp == UpdateOp.Upsert ? bContext.Upsert(ref key, ref input, ref input, ref output) : bContext.RMW(ref key, ref input);
 
-            Assert.AreEqual(tailAddress, store.Log.TailAddress);
+            ClassicAssert.AreEqual(tailAddress, store.Log.TailAddress);
         }
 
         public enum PendingOp { Read, RMW };
@@ -1582,7 +1583,7 @@ namespace Tsavorite.test.Revivification
 
             // We always want freelist for this test.
             var pool = store.RevivificationManager.FreeRecordPool;
-            Assert.IsTrue(RevivificationTestUtils.HasRecords(pool));
+            ClassicAssert.IsTrue(RevivificationTestUtils.HasRecords(pool));
 
             SpanByteAndMemory output = new();
 
@@ -1612,9 +1613,9 @@ namespace Tsavorite.test.Revivification
 
                 functions.expectedUsedValueLengths.Enqueue(SpanByteTotalSize(InitialLength));
                 var status = bContext.Read(ref key, ref inputSlice, ref output);
-                Assert.IsTrue(status.IsPending, status.ToString());
+                ClassicAssert.IsTrue(status.IsPending, status.ToString());
                 _ = bContext.CompletePending(wait: true);
-                Assert.IsTrue(functions.readCcCalled);
+                ClassicAssert.IsTrue(functions.readCcCalled);
             }
             else if (pendingOp == PendingOp.RMW)
             {
@@ -1628,9 +1629,9 @@ namespace Tsavorite.test.Revivification
 
                 _ = bContext.RMW(ref key, ref input);
                 _ = bContext.CompletePending(wait: true);
-                Assert.IsTrue(functions.rmwCcCalled);
+                ClassicAssert.IsTrue(functions.rmwCcCalled);
             }
-            Assert.AreEqual(tailAddress, store.Log.TailAddress);
+            ClassicAssert.AreEqual(tailAddress, store.Log.TailAddress);
         }
     }
 
@@ -1694,7 +1695,7 @@ namespace Tsavorite.test.Revivification
                 var keyObj = new MyKey { key = key };
                 var valueObj = new MyValue { value = key + ValueMult };
                 var status = bContext.Upsert(keyObj, valueObj);
-                Assert.IsTrue(status.Record.Created, status.ToString());
+                ClassicAssert.IsTrue(status.Record.Created, status.ToString());
             }
         }
 
@@ -1708,7 +1709,7 @@ namespace Tsavorite.test.Revivification
             var deleteKey = RevivificationTestUtils.GetMinRevivifiableKey(store, NumRecords);
             var tailAddress = store.Log.TailAddress;
             _ = bContext.Delete(new MyKey { key = deleteKey });
-            Assert.AreEqual(tailAddress, store.Log.TailAddress);
+            ClassicAssert.AreEqual(tailAddress, store.Log.TailAddress);
 
             var updateKey = deleteDest == DeleteDest.InChain ? deleteKey : NumRecords + 1;
 
@@ -1717,12 +1718,12 @@ namespace Tsavorite.test.Revivification
             var input = new MyInput { value = value.value };
 
             RevivificationTestUtils.WaitForRecords(store, want: true);
-            Assert.IsTrue(RevivificationTestUtils.HasRecords(store.RevivificationManager.FreeRecordPool), "Expected a free record after delete and WaitForRecords");
+            ClassicAssert.IsTrue(RevivificationTestUtils.HasRecords(store.RevivificationManager.FreeRecordPool), "Expected a free record after delete and WaitForRecords");
 
             _ = updateOp == UpdateOp.Upsert ? bContext.Upsert(key, value) : bContext.RMW(key, input);
 
             RevivificationTestUtils.WaitForRecords(store, want: false);
-            Assert.AreEqual(tailAddress, store.Log.TailAddress, "Expected tail address not to grow (record was revivified)");
+            ClassicAssert.AreEqual(tailAddress, store.Log.TailAddress, "Expected tail address not to grow (record was revivified)");
         }
     }
 
@@ -1744,23 +1745,23 @@ namespace Tsavorite.test.Revivification
             private void VerifyKey(ref SpanByte functionsKey)
             {
                 if (keyComparer is not null)
-                    Assert.IsTrue(keyComparer.Equals(ref expectedKey, ref functionsKey));
+                    ClassicAssert.IsTrue(keyComparer.Equals(ref expectedKey, ref functionsKey));
             }
 
             private void VerifyKeyAndValue(ref SpanByte functionsKey, ref SpanByte functionsValue)
             {
                 if (keyComparer is not null)
-                    Assert.IsTrue(keyComparer.Equals(ref expectedKey, ref functionsKey), "functionsKey does not equal expectedKey");
+                    ClassicAssert.IsTrue(keyComparer.Equals(ref expectedKey, ref functionsKey), "functionsKey does not equal expectedKey");
 
                 // Even in CompletePending(), we can verify internal consistency of key/value
                 int valueOffset = 0, valueLengthRemaining = functionsValue.Length;
-                Assert.Less(functionsKey.Length, valueLengthRemaining);
+                ClassicAssert.Less(functionsKey.Length, valueLengthRemaining);
                 while (valueLengthRemaining > 0)
                 {
                     var compareLength = Math.Min(functionsKey.Length, valueLengthRemaining);
                     Span<byte> valueSpan = functionsValue.AsSpan().Slice(valueOffset, compareLength);
                     Span<byte> keySpan = functionsKey.AsSpan()[..compareLength];
-                    Assert.IsTrue(valueSpan.SequenceEqual(keySpan), $"functionsValue (offset {valueOffset}, len {compareLength}: {SpanByte.FromPinnedSpan(valueSpan)}) does not match functionsKey ({SpanByte.FromPinnedSpan(keySpan)})");
+                    ClassicAssert.IsTrue(valueSpan.SequenceEqual(keySpan), $"functionsValue (offset {valueOffset}, len {compareLength}: {SpanByte.FromPinnedSpan(valueSpan)}) does not match functionsKey ({SpanByte.FromPinnedSpan(keySpan)})");
                     valueOffset += compareLength;
                     valueLengthRemaining -= compareLength;
                 }
@@ -1876,7 +1877,7 @@ namespace Tsavorite.test.Revivification
                 inputVec.Fill((byte)ii);
 
                 var status = bContext.Upsert(ref key, ref input, ref input, ref output);
-                Assert.IsTrue(status.Record.Created, status.ToString());
+                ClassicAssert.IsTrue(status.Record.Created, status.ToString());
             }
         }
 
@@ -1948,7 +1949,7 @@ namespace Tsavorite.test.Revivification
             {
                 enumerateStrayFlags();
                 enumerateStrayRecords();
-                Assert.IsTrue(strayFlags.Count == 0 && strayRecords.Count == 0 && maxRecords == totalTaken,
+                ClassicAssert.IsTrue(strayFlags.Count == 0 && strayRecords.Count == 0 && maxRecords == totalTaken,
                               $"maxRec/taken {maxRecords}/{totalTaken}, strayflags {strayFlags.Count}, strayRecords {strayRecords.Count}, iteration {iteration}");
             }
 
@@ -1959,9 +1960,9 @@ namespace Tsavorite.test.Revivification
                 {
                     var addressBase = ii + tid * numRecordsPerThread;
                     var flag = flags[addressBase];
-                    Assert.AreEqual(Unadded, flag, $"Invalid flag {flag} trying to add addressBase {addressBase}, tid {tid}, iteration {iteration}");
+                    ClassicAssert.AreEqual(Unadded, flag, $"Invalid flag {flag} trying to add addressBase {addressBase}, tid {tid}, iteration {iteration}");
                     flags[addressBase] = 1;
-                    Assert.IsTrue(freeRecordPool.TryAdd(addressBase + AddressIncrement, recordSize, ref revivStats), $"Failed to add addressBase {addressBase}, tid {tid}, iteration {iteration}");
+                    ClassicAssert.IsTrue(freeRecordPool.TryAdd(addressBase + AddressIncrement, recordSize, ref revivStats), $"Failed to add addressBase {addressBase}, tid {tid}, iteration {iteration}");
                 }
             }
 
@@ -1974,7 +1975,7 @@ namespace Tsavorite.test.Revivification
                     {
                         var addressBase = address - AddressIncrement;
                         var prevFlag = Interlocked.CompareExchange(ref flags[addressBase], RemovedBase + tid, Added);
-                        Assert.AreEqual(1, prevFlag, $"Take() found unexpected addressBase {addressBase} (flag {prevFlag}), tid {tid}, iteration {iteration}");
+                        ClassicAssert.AreEqual(1, prevFlag, $"Take() found unexpected addressBase {addressBase} (flag {prevFlag}), tid {tid}, iteration {iteration}");
                         _ = Interlocked.Increment(ref totalTaken);
                     }
                 }
@@ -2003,7 +2004,7 @@ namespace Tsavorite.test.Revivification
                 try
                 {
                     var timeoutSec = 5;     // 5s per iteration should be plenty
-                    Assert.IsTrue(Task.WaitAll([.. tasks], TimeSpan.FromSeconds(timeoutSec)), $"Task timeout at {timeoutSec} sec, maxRec/taken {maxRecords}/{totalTaken}, iteration {iteration}");
+                    ClassicAssert.IsTrue(Task.WaitAll([.. tasks], TimeSpan.FromSeconds(timeoutSec)), $"Task timeout at {timeoutSec} sec, maxRec/taken {maxRecords}/{totalTaken}, iteration {iteration}");
                     endIteration();
                 }
                 finally
@@ -2035,12 +2036,12 @@ namespace Tsavorite.test.Revivification
             var freeRecordPool = RevivificationTestUtils.CreateSingleBinFreeRecordPool(store, binDef);
 
             RevivificationStats revivStats = new();
-            Assert.IsTrue(freeRecordPool.TryAdd(AddressIncrement + 1, TakeSize, ref revivStats));
-            Assert.IsTrue(freeRecordPool.TryTake(TakeSize, minAddress: AddressIncrement, out var address, ref revivStats));
+            ClassicAssert.IsTrue(freeRecordPool.TryAdd(AddressIncrement + 1, TakeSize, ref revivStats));
+            ClassicAssert.IsTrue(freeRecordPool.TryTake(TakeSize, minAddress: AddressIncrement, out var address, ref revivStats));
 
-            Assert.AreEqual(AddressIncrement + 1, address, "out address");
-            Assert.AreEqual(1, revivStats.successfulAdds, "Successful Adds");
-            Assert.AreEqual(1, revivStats.successfulTakes, "Successful Takes");
+            ClassicAssert.AreEqual(AddressIncrement + 1, address, "out address");
+            ClassicAssert.AreEqual(1, revivStats.successfulAdds, "Successful Adds");
+            ClassicAssert.AreEqual(1, revivStats.successfulTakes, "Successful Takes");
             _ = revivStats.Dump();
         }
 
@@ -2064,24 +2065,24 @@ namespace Tsavorite.test.Revivification
                 // Add too-small records to wrap around the end of the bin records. Use lower addresses so we don't mix up the "real" results.
                 const int smallSize = TakeSize - 4;
                 for (var ii = 0; ii < freeRecordPool.bins[0].recordCount - 2; ++ii, ++expectedAdds)
-                    Assert.IsTrue(freeRecordPool.TryAdd(minAddress + ii + 1, smallSize, ref revivStats));
+                    ClassicAssert.IsTrue(freeRecordPool.TryAdd(minAddress + ii + 1, smallSize, ref revivStats));
 
                 // Now take out the four at the beginning.
                 for (var ii = 0; ii < 4; ++ii, ++expectedTakes)
-                    Assert.IsTrue(freeRecordPool.TryTake(smallSize, minAddress, out _, ref revivStats));
+                    ClassicAssert.IsTrue(freeRecordPool.TryTake(smallSize, minAddress, out _, ref revivStats));
             }
 
             long address = AddressIncrement;
-            Assert.IsTrue(freeRecordPool.TryAdd(++address, TakeSize + 1, ref revivStats));
-            Assert.IsTrue(freeRecordPool.TryAdd(++address, TakeSize + 2, ref revivStats));
-            Assert.IsTrue(freeRecordPool.TryAdd(++address, TakeSize + 3, ref revivStats));
-            Assert.IsTrue(freeRecordPool.TryAdd(++address, TakeSize, ref revivStats));    // 4
-            Assert.IsTrue(freeRecordPool.TryAdd(++address, TakeSize, ref revivStats));    // 5 
-            Assert.IsTrue(freeRecordPool.TryAdd(++address, TakeSize, ref revivStats));
+            ClassicAssert.IsTrue(freeRecordPool.TryAdd(++address, TakeSize + 1, ref revivStats));
+            ClassicAssert.IsTrue(freeRecordPool.TryAdd(++address, TakeSize + 2, ref revivStats));
+            ClassicAssert.IsTrue(freeRecordPool.TryAdd(++address, TakeSize + 3, ref revivStats));
+            ClassicAssert.IsTrue(freeRecordPool.TryAdd(++address, TakeSize, ref revivStats));    // 4
+            ClassicAssert.IsTrue(freeRecordPool.TryAdd(++address, TakeSize, ref revivStats));    // 5 
+            ClassicAssert.IsTrue(freeRecordPool.TryAdd(++address, TakeSize, ref revivStats));
             expectedAdds += 6;
 
-            Assert.AreEqual(expectedAdds, revivStats.successfulAdds, "Successful Adds");
-            Assert.AreEqual(expectedTakes, revivStats.successfulTakes, "Successful Takes");
+            ClassicAssert.AreEqual(expectedAdds, revivStats.successfulAdds, "Successful Adds");
+            ClassicAssert.AreEqual(expectedTakes, revivStats.successfulTakes, "Successful Takes");
 
             return freeRecordPool;
         }
@@ -2097,27 +2098,27 @@ namespace Tsavorite.test.Revivification
             using var freeRecordPool = CreateBestFitTestPool(scanLimit: 4, wrapMode, ref revivStats);
             var expectedTakes = revivStats.successfulTakes;
             var minAddress = AddressIncrement;
-            Assert.IsTrue(freeRecordPool.TryTake(TakeSize, minAddress, out var address, ref revivStats));
-            Assert.AreEqual(4, address -= AddressIncrement);
-            Assert.IsTrue(freeRecordPool.TryTake(TakeSize, minAddress, out address, ref revivStats));
-            Assert.AreEqual(5, address -= AddressIncrement);
-            Assert.IsTrue(freeRecordPool.TryTake(TakeSize, minAddress, out address, ref revivStats));
-            Assert.AreEqual(1, address -= AddressIncrement);
+            ClassicAssert.IsTrue(freeRecordPool.TryTake(TakeSize, minAddress, out var address, ref revivStats));
+            ClassicAssert.AreEqual(4, address -= AddressIncrement);
+            ClassicAssert.IsTrue(freeRecordPool.TryTake(TakeSize, minAddress, out address, ref revivStats));
+            ClassicAssert.AreEqual(5, address -= AddressIncrement);
+            ClassicAssert.IsTrue(freeRecordPool.TryTake(TakeSize, minAddress, out address, ref revivStats));
+            ClassicAssert.AreEqual(1, address -= AddressIncrement);
 
             // Now that we've taken the first item, the new first-fit will be moved up one, which brings the last exact-fit into scanLimit range.
-            Assert.IsTrue(freeRecordPool.TryTake(TakeSize, minAddress, out address, ref revivStats));
-            Assert.AreEqual(6, address -= AddressIncrement);
+            ClassicAssert.IsTrue(freeRecordPool.TryTake(TakeSize, minAddress, out address, ref revivStats));
+            ClassicAssert.AreEqual(6, address -= AddressIncrement);
 
             // Now Take will return them in order until we have no more
-            Assert.IsTrue(freeRecordPool.TryTake(TakeSize, minAddress, out address, ref revivStats));
-            Assert.AreEqual(2, address -= AddressIncrement);
-            Assert.IsTrue(freeRecordPool.TryTake(TakeSize, minAddress, out address, ref revivStats));
-            Assert.AreEqual(3, address -= AddressIncrement);
-            Assert.IsFalse(freeRecordPool.TryTake(TakeSize, minAddress, out address, ref revivStats));
+            ClassicAssert.IsTrue(freeRecordPool.TryTake(TakeSize, minAddress, out address, ref revivStats));
+            ClassicAssert.AreEqual(2, address -= AddressIncrement);
+            ClassicAssert.IsTrue(freeRecordPool.TryTake(TakeSize, minAddress, out address, ref revivStats));
+            ClassicAssert.AreEqual(3, address -= AddressIncrement);
+            ClassicAssert.IsFalse(freeRecordPool.TryTake(TakeSize, minAddress, out address, ref revivStats));
             expectedTakes += 6; // Plus one failure
 
-            Assert.AreEqual(expectedTakes, revivStats.successfulTakes, "Successful Takes");
-            Assert.AreEqual(1, revivStats.failedTakes, "Failed Takes");
+            ClassicAssert.AreEqual(expectedTakes, revivStats.successfulTakes, "Successful Takes");
+            ClassicAssert.AreEqual(1, revivStats.failedTakes, "Failed Takes");
             var statsString = revivStats.Dump();
         }
 
@@ -2138,16 +2139,16 @@ namespace Tsavorite.test.Revivification
             {
                 if (!freeRecordPool.TryTake(TakeSize, minAddress, out address, ref revivStats))
                     Assert.Fail($"Take failed at ii {ii}: pool.HasRecords {RevivificationTestUtils.HasRecords(freeRecordPool)}");
-                Assert.AreEqual(ii + 1, address -= AddressIncrement, $"address comparison failed at ii {ii}");
+                ClassicAssert.AreEqual(ii + 1, address -= AddressIncrement, $"address comparison failed at ii {ii}");
             }
-            Assert.IsFalse(freeRecordPool.TryTake(TakeSize, minAddress, out address, ref revivStats));
+            ClassicAssert.IsFalse(freeRecordPool.TryTake(TakeSize, minAddress, out address, ref revivStats));
 
-            Assert.AreEqual(expectedSuccessfulTakes, revivStats.successfulTakes, "Successful Takes");
-            Assert.AreEqual(1, revivStats.failedTakes, "Failed Takes");
+            ClassicAssert.AreEqual(expectedSuccessfulTakes, revivStats.successfulTakes, "Successful Takes");
+            ClassicAssert.AreEqual(1, revivStats.failedTakes, "Failed Takes");
             if (wrapMode == WrapMode.NoWrap)
-                Assert.AreEqual(1, revivStats.takeEmptyBins, "Empty Bins");
+                ClassicAssert.AreEqual(1, revivStats.takeEmptyBins, "Empty Bins");
             else
-                Assert.AreEqual(1, revivStats.takeRecordSizeFailures, "Record Size");
+                ClassicAssert.AreEqual(1, revivStats.takeRecordSizeFailures, "Record Size");
             var statsString = revivStats.Dump();
         }
 
@@ -2178,7 +2179,7 @@ namespace Tsavorite.test.Revivification
                     }
                     else if (globalAddress == TestAddress && Interlocked.CompareExchange(ref globalAddress, 0, TestAddress) == TestAddress)
                     {
-                        Assert.IsTrue(freeRecordPool.TryAdd(TestAddress, size, ref revivStats), $"Failed TryAdd on iter {iteration}");
+                        ClassicAssert.IsTrue(freeRecordPool.TryAdd(TestAddress, size, ref revivStats), $"Failed TryAdd on iter {iteration}");
                         ++counter;
                     }
                 }
@@ -2192,7 +2193,7 @@ namespace Tsavorite.test.Revivification
             }
             Task.WaitAll([.. tasks]);
 
-            Assert.IsTrue(counter == 0);
+            ClassicAssert.IsTrue(counter == 0);
         }
 
         [Test]

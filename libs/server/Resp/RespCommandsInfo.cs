@@ -125,6 +125,8 @@ namespace Garnet.server
         private static IReadOnlySet<string> ExternalRespCommandNames = null;
         private static IReadOnlyDictionary<RespAclCategories, IReadOnlyList<RespCommandsInfo>> AclCommandInfo = null;
 
+        private static RespCommandsInfo[] FastBasicRespCommandsInfo = null;
+
         private readonly RespCommandFlags flags;
         private readonly RespAclCategories aclCategories;
 
@@ -232,6 +234,13 @@ namespace Garnet.server
                             static grp => (IReadOnlyList<RespCommandsInfo>)ImmutableArray.CreateRange(grp.Select(static t => t.CommandInfo))
                         )
                 );
+
+            FastBasicRespCommandsInfo = new RespCommandsInfo[(int)RespCommandExtensions.LastWriteCommand() - (int)RespCommandExtensions.FirstReadCommand()];
+            for (var i = (int)RespCommandExtensions.FirstReadCommand(); i < (int)RespCommandExtensions.LastWriteCommand(); i++)
+            {
+                BasicRespCommandsInfo.TryGetValue((RespCommand)i, out var commandInfo);
+                FastBasicRespCommandsInfo[i - 1] = commandInfo;
+            }
 
             return true;
 
@@ -352,6 +361,26 @@ namespace Garnet.server
                 (txnOnly && tmpRespCommandInfo.Flags.HasFlag(RespCommandFlags.NoMulti))) return false;
 
             respCommandsInfo = tmpRespCommandInfo;
+            return true;
+        }
+
+        /// <summary>
+        /// Get command info by RespCommand enum from array of RespCommandsInfo
+        /// </summary>
+        /// <param name="cmd"></param>
+        /// <param name="respCommandsInfo"></param>
+        /// <param name="logger"></param>
+        /// <returns></returns>
+        public static bool TryFastGetRespCommandInfo(RespCommand cmd, out RespCommandsInfo respCommandsInfo, ILogger logger = null)
+        {
+            respCommandsInfo = null;
+            if (!IsInitialized && !TryInitialize(logger)) return false;
+
+            var offset = (int)cmd - 1;
+            if (offset < 0 || offset >= FastBasicRespCommandsInfo.Length)
+                return true;
+
+            respCommandsInfo = FastBasicRespCommandsInfo[offset];
             return true;
         }
 

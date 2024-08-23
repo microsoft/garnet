@@ -4,9 +4,7 @@
 using System;
 using System.Runtime.CompilerServices;
 using System.Runtime.InteropServices;
-#if NET8_0_OR_GREATER
 using System.Runtime.Intrinsics.X86;
-#endif
 
 using Garnet.common;
 
@@ -167,7 +165,6 @@ namespace Garnet.server
                 return y;
             }
 
-#if NET8_0_OR_GREATER
             // One may ask: Why is this also guarded behind AVX512F in addition to BMI2?
             // The answer is that on AMD platforms before Zen 3, the PDEP (and PEXT) are implemented in microcode
             // and work bit-by-bit basis. It has been measured[^1] that for every bit set in the mask operand,
@@ -182,7 +179,7 @@ namespace Garnet.server
                 return Bmi2.X64.ParallelBitDeposit(x, 0x5555555555555555)
                     | Bmi2.X64.ParallelBitDeposit(y, 0xAAAAAAAAAAAAAAAA);
             }
-#endif
+
             return Spread(x) | (Spread(y) << 1);
         }
 
@@ -207,7 +204,6 @@ namespace Garnet.server
                 return (uint)y;
             }
 
-#if NET8_0_OR_GREATER
             // See the rationale for the AVX512F guard in the MortonEncode method
             if (Bmi2.X64.IsSupported && Avx512F.IsSupported)
             {
@@ -215,7 +211,7 @@ namespace Garnet.server
                     X: (uint)Bmi2.X64.ParallelBitExtract(x, 0x5555555555555555),
                     Y: (uint)Bmi2.X64.ParallelBitExtract(x, 0xAAAAAAAAAAAAAAAA));
             }
-#endif
+
             return (Squash(x), Squash(x >> 1));
         }
 

@@ -7,6 +7,7 @@ using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
 using NUnit.Framework;
+using NUnit.Framework.Legacy;
 using Tsavorite.core;
 using static Tsavorite.test.TestUtils;
 
@@ -80,12 +81,12 @@ namespace Tsavorite.test.LockTable
 
             // Check for existing lock
             var lockState = store.LockTable.GetLockState(ref hei);
-            Assert.AreEqual(expectedCurrentReadLocks, lockState.NumLockedShared);
+            ClassicAssert.AreEqual(expectedCurrentReadLocks, lockState.NumLockedShared);
 
             if (lockType == LockType.Shared)
-                Assert.AreEqual(expectedLockResult, store.LockTable.TryLockShared(ref hei));
+                ClassicAssert.AreEqual(expectedLockResult, store.LockTable.TryLockShared(ref hei));
             else
-                Assert.AreEqual(expectedLockResult, store.LockTable.TryLockExclusive(ref hei));
+                ClassicAssert.AreEqual(expectedLockResult, store.LockTable.TryLockExclusive(ref hei));
         }
 
         void Unlock(long key, LockType lockType)
@@ -108,8 +109,8 @@ namespace Tsavorite.test.LockTable
         internal void AssertLockCounts(ref HashEntryInfo hei, bool expectedX, long expectedS)
         {
             var lockState = store.LockTable.GetLockState(ref hei);
-            Assert.AreEqual(expectedX, lockState.IsLockedExclusive);
-            Assert.AreEqual(expectedS, lockState.NumLockedShared);
+            ClassicAssert.AreEqual(expectedX, lockState.IsLockedExclusive);
+            ClassicAssert.AreEqual(expectedS, lockState.NumLockedShared);
         }
 
         internal static void AssertLockCounts<TKey, TValue, TStoreFunctions, TAllocator>(TsavoriteKV<TKey, TValue, TStoreFunctions, TAllocator> store, TKey key, bool expectedX, int expectedS)
@@ -124,8 +125,8 @@ namespace Tsavorite.test.LockTable
             HashEntryInfo hei = new(store.storeFunctions.GetKeyHashCode64(ref key));
             PopulateHei(store, ref hei);
             var lockState = store.LockTable.GetLockState(ref hei);
-            Assert.AreEqual(expectedX, lockState.IsLockedExclusive, "XLock mismatch");
-            Assert.AreEqual(expectedS, lockState.NumLockedShared, "SLock mismatch");
+            ClassicAssert.AreEqual(expectedX, lockState.IsLockedExclusive, "XLock mismatch");
+            ClassicAssert.AreEqual(expectedS, lockState.NumLockedShared, "SLock mismatch");
         }
 
         internal static void AssertLockCounts<TKey, TValue, TStoreFunctions, TAllocator>(TsavoriteKV<TKey, TValue, TStoreFunctions, TAllocator> store, ref TKey key, bool expectedX, bool expectedS)
@@ -150,8 +151,8 @@ namespace Tsavorite.test.LockTable
             HashEntryInfo hei = new(key.KeyHash);
             PopulateHei(store, ref hei);
             var lockState = store.LockTable.GetLockState(ref hei);
-            Assert.AreEqual(expectedX, lockState.IsLockedExclusive, "XLock mismatch");
-            Assert.AreEqual(expectedS, lockState.NumLockedShared > 0, "SLock mismatch");
+            ClassicAssert.AreEqual(expectedX, lockState.IsLockedExclusive, "XLock mismatch");
+            ClassicAssert.AreEqual(expectedS, lockState.NumLockedShared > 0, "SLock mismatch");
         }
 
         internal unsafe void AssertTotalLockCounts(long expectedX, long expectedS)
@@ -170,8 +171,8 @@ namespace Tsavorite.test.LockTable
                     ++xcount;
                 scount += HashBucket.NumLatchedShared(buckets + ii);
             }
-            Assert.AreEqual(expectedX, xcount);
-            Assert.AreEqual(expectedS, scount);
+            ClassicAssert.AreEqual(expectedX, xcount);
+            ClassicAssert.AreEqual(expectedS, scount);
         }
 
         internal void AssertBucketLockCount(ref FixedLengthLockableKeyStruct<long> key, long expectedX, long expectedS) => AssertBucketLockCount(store, ref key, expectedX, expectedS);
@@ -182,8 +183,8 @@ namespace Tsavorite.test.LockTable
         {
             var bucketIndex = store.LockTable.GetBucketIndex(key.KeyHash);
             var bucket = store.state[store.resizeInfo.version].tableAligned + bucketIndex;
-            Assert.AreEqual(expectedX == 1, HashBucket.IsLatchedExclusive(bucket));
-            Assert.AreEqual(expectedS, HashBucket.NumLatchedShared(bucket));
+            ClassicAssert.AreEqual(expectedX == 1, HashBucket.IsLatchedExclusive(bucket));
+            ClassicAssert.AreEqual(expectedS, HashBucket.NumLatchedShared(bucket));
         }
 
         [Test]
@@ -336,20 +337,20 @@ namespace Tsavorite.test.LockTable
                     continue;
                 }
 
-                Assert.GreaterOrEqual(store.LockTable.CompareKeyHashes(key, keys[ii - 1]), 0);
+                ClassicAssert.GreaterOrEqual(store.LockTable.CompareKeyHashes(key, keys[ii - 1]), 0);
                 if (key.KeyHash != prevCode)
                 {
                     // The BucketIndex of the keys must be nondecreasing, and may be equal but the first in such an equal sequence must be Exclusive.
-                    Assert.Greater(store.LockTable.GetBucketIndex(key.KeyHash), store.LockTable.GetBucketIndex(prevCode));
+                    ClassicAssert.Greater(store.LockTable.GetBucketIndex(key.KeyHash), store.LockTable.GetBucketIndex(prevCode));
                     lastXcode = key.LockType == LockType.Exclusive ? key.KeyHash : -2;
                 }
                 else
                 {
                     // Identical BucketIndex sequence must start with an exclusive lock, followed by any number of exclusive locks, followed by any number of shared locks.
                     // (Enumeration will take only the first).
-                    Assert.AreEqual(lastXcode, key.KeyHash);
+                    ClassicAssert.AreEqual(lastXcode, key.KeyHash);
                     if (key.LockType == LockType.Exclusive)
-                        Assert.AreNotEqual(LockType.Shared, lastLockType);
+                        ClassicAssert.AreNotEqual(LockType.Shared, lastLockType);
                     lastLockType = key.LockType;
                 }
             }

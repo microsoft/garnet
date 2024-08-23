@@ -4,6 +4,7 @@
 using System;
 using System.IO;
 using NUnit.Framework;
+using NUnit.Framework.Legacy;
 using Tsavorite.core;
 using static Tsavorite.test.TestUtils;
 
@@ -71,10 +72,10 @@ namespace Tsavorite.test
             _ = bContext.RMW(ref key2, ref input2, Empty.Default);
 
             _ = bContext.Read(ref key, ref input1, ref output, Empty.Default);
-            Assert.AreEqual(input1.value, output.value.value);
+            ClassicAssert.AreEqual(input1.value, output.value.value);
 
             _ = bContext.Read(ref key2, ref input2, ref output, Empty.Default);
-            Assert.AreEqual(input2.value, output.value.value);
+            ClassicAssert.AreEqual(input2.value, output.value.value);
         }
 
         [Test]
@@ -100,9 +101,9 @@ namespace Tsavorite.test
                 _ = bContext.CompletePendingWithOutputs(out var outputs, wait: true);
                 (status, _) = GetSinglePendingResult(outputs);
             }
-            Assert.IsTrue(status.Found);
+            ClassicAssert.IsTrue(status.Found);
 
-            Assert.AreEqual(23, g1.value.value);
+            ClassicAssert.AreEqual(23, g1.value.value);
 
             key2 = 99999;
             status = bContext.Read(ref key2, ref input, ref g1, Empty.Default);
@@ -112,7 +113,7 @@ namespace Tsavorite.test
                 _ = bContext.CompletePendingWithOutputs(out var outputs, wait: true);
                 (status, _) = GetSinglePendingResult(outputs);
             }
-            Assert.IsFalse(status.Found);
+            ClassicAssert.IsFalse(status.Found);
         }
 
         [Test]
@@ -152,7 +153,7 @@ namespace Tsavorite.test
                 value = new ValueStruct() { vfield1 = 1000, vfield2 = 2000 };
 
                 var status = bContext.Upsert(ref key, ref input, ref value, ref output, out RecordMetadata recordMetadata1);
-                Assert.IsTrue(!status.Found && status.Record.Created, status.ToString());
+                ClassicAssert.IsTrue(!status.Found && status.Record.Created, status.ToString());
 
                 // ConcurrentWriter and InPlaceUpater return false, so we create a new record.
                 RecordMetadata recordMetadata2;
@@ -160,24 +161,24 @@ namespace Tsavorite.test
                 if (updateOp == UpdateOp.Upsert)
                 {
                     status = bContext.Upsert(ref key, ref input, ref value, ref output, out recordMetadata2);
-                    Assert.AreEqual(1, copyOnWrite.ConcurrentWriterCallCount);
-                    Assert.IsTrue(!status.Found && status.Record.Created, status.ToString());
+                    ClassicAssert.AreEqual(1, copyOnWrite.ConcurrentWriterCallCount);
+                    ClassicAssert.IsTrue(!status.Found && status.Record.Created, status.ToString());
                 }
                 else
                 {
                     status = bContext.RMW(ref key, ref input, ref output, out recordMetadata2);
-                    Assert.AreEqual(1, copyOnWrite.InPlaceUpdaterCallCount);
-                    Assert.IsTrue(status.Found && status.Record.CopyUpdated, status.ToString());
+                    ClassicAssert.AreEqual(1, copyOnWrite.InPlaceUpdaterCallCount);
+                    ClassicAssert.IsTrue(status.Found && status.Record.CopyUpdated, status.ToString());
                 }
-                Assert.Greater(recordMetadata2.Address, recordMetadata1.Address);
+                ClassicAssert.Greater(recordMetadata2.Address, recordMetadata1.Address);
 
                 using (var iterator = store.Log.Scan(store.Log.BeginAddress, store.Log.TailAddress))
                 {
-                    Assert.True(iterator.GetNext(out var info));    // We should only get the new record...
-                    Assert.False(iterator.GetNext(out info));       // ... the old record was elided, so was Sealed and invalidated.
+                    ClassicAssert.True(iterator.GetNext(out var info));    // We should only get the new record...
+                    ClassicAssert.False(iterator.GetNext(out info));       // ... the old record was elided, so was Sealed and invalidated.
                 }
                 status = bContext.Read(ref key, ref output);
-                Assert.IsTrue(status.Found, status.ToString());
+                ClassicAssert.IsTrue(status.Found, status.ToString());
 
                 _ = store.TryInitiateFullCheckpoint(out Guid token, CheckpointType.Snapshot);
                 store.CompleteCheckpointAsync().AsTask().GetAwaiter().GetResult();
@@ -200,11 +201,11 @@ namespace Tsavorite.test
 
                 using (var iterator = store.Log.Scan(store.Log.BeginAddress, store.Log.TailAddress))
                 {
-                    Assert.True(iterator.GetNext(out var info));    // We should only get one record...
-                    Assert.False(iterator.GetNext(out info));       // ... the old record was Unsealed by Recovery, but remains invalid.
+                    ClassicAssert.True(iterator.GetNext(out var info));    // We should only get one record...
+                    ClassicAssert.False(iterator.GetNext(out info));       // ... the old record was Unsealed by Recovery, but remains invalid.
                 }
                 status = bContext.Read(ref key, ref output);
-                Assert.IsTrue(status.Found, status.ToString());
+                ClassicAssert.IsTrue(status.Found, status.ToString());
             }
             finally
             {

@@ -690,7 +690,7 @@ namespace Garnet.server
                     break;
             }
 
-            if (errorMessage != default)
+            if (!errorMessage.IsEmpty)
             {
                 while (!RespWriteUtils.WriteError(errorMessage, ref dcurr, dend))
                     SendAndReset();
@@ -1009,7 +1009,6 @@ namespace Garnet.server
             {
                 while (!RespWriteUtils.WriteError(CmdStrings.RESP_ERR_GENERIC_VALUE_IS_NOT_INTEGER, ref dcurr, dend))
                     SendAndReset();
-
                 return true;
             }
 
@@ -1054,9 +1053,6 @@ namespace Garnet.server
 
                 includeWithScores = true;
             }
-
-            if (NetworkMultiKeySlotVerify(readOnly: true, firstKey: 1, lastKey: 1 + nKeys))
-                return true;
 
             var status = storageApi.SortedSetDifference(keys, out var result);
 

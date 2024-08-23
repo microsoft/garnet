@@ -176,7 +176,7 @@ namespace Garnet.cluster
             return ClusterInfo;
         }
 
-        private static string GetRange(int[] slots)
+        public static string GetRange(int[] slots)
         {
             var range = "> ";
             var start = slots[0];
