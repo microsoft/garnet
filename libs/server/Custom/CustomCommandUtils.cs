@@ -20,36 +20,27 @@ namespace Garnet.server
         /// <summary>
         /// Get first arg from input
         /// </summary>
-        /// <param name="input"></param>
+        /// <param name="input">Object store input</param>
         /// <returns></returns>
-        public static ReadOnlySpan<byte> GetFirstArg(ReadOnlySpan<byte> input)
+        public static ReadOnlySpan<byte> GetFirstArg(ref ObjectInput input)
         {
-            int offset = 0;
-            return GetNextArg(input, ref offset);
+            var offset = 0;
+            return GetNextArg(ref input, ref offset);
         }
 
         /// <summary>
         /// Get argument from input, at specified offset (starting from 0)
         /// </summary>
-        /// <param name="input">Input as ReadOnlySpan of byte</param>
+        /// <param name="input">Object store input</param>
         /// <param name="offset">Current offset into input</param>
         /// <returns>Argument as a span</returns>
-        public static unsafe ReadOnlySpan<byte> GetNextArg(ReadOnlySpan<byte> input, scoped ref int offset)
+        public static ReadOnlySpan<byte> GetNextArg(ref ObjectInput input, scoped ref int offset)
         {
-            byte* result = null;
-            var len = 0;
-
-            fixed (byte* inputPtr = input)
-            {
-                var ptr = inputPtr + offset;
-                var end = inputPtr + input.Length;
-                if (ptr < end && RespReadUtils.ReadPtrWithLengthHeader(ref result, ref len, ref ptr, end))
-                {
-                    offset = (int)(ptr - inputPtr);
-                    return new ReadOnlySpan<byte>(result, len);
-                }
-            }
-            return default;
+            var arg = input.parseStateStartIdx + offset < input.parseState.Count
+                ? input.parseState.GetArgSliceByRef(input.parseStateStartIdx + offset).ReadOnlySpan
+                : default;
+            offset++;
+            return arg;
         }
 
         /// <summary>

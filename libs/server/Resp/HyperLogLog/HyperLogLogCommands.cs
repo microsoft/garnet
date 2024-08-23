@@ -20,9 +20,9 @@ namespace Garnet.server
         private bool HyperLogLogAdd<TGarnetApi>(ref TGarnetApi storageApi)
             where TGarnetApi : IGarnetApi
         {
-            if (parseState.count < 1)
+            if (parseState.Count < 1)
             {
-                return AbortWithWrongNumberOfArguments(nameof(RespCommand.PFADD), parseState.count);
+                return AbortWithWrongNumberOfArguments(nameof(RespCommand.PFADD));
             }
 
             // 4 byte length of input
@@ -49,7 +49,7 @@ namespace Garnet.server
 
             byte pfaddUpdated = 0;
             var key = parseState.GetArgSliceByRef(0).SpanByte;
-            for (var i = 1; i < parseState.count; i++)
+            for (var i = 1; i < parseState.Count; i++)
             {
                 var currSlice = parseState.GetArgSliceByRef(i);
                 *(long*)pcurr = (long)HashUtils.MurmurHash2x64A(currSlice.ptr, currSlice.Length);
@@ -92,9 +92,9 @@ namespace Garnet.server
         private bool HyperLogLogLength<TGarnetApi>(ref TGarnetApi storageApi)
             where TGarnetApi : IGarnetApi
         {
-            if (parseState.count < 1)
+            if (parseState.Count < 1)
             {
-                return AbortWithWrongNumberOfArguments(nameof(RespCommand.PFCOUNT), parseState.count);
+                return AbortWithWrongNumberOfArguments(nameof(RespCommand.PFCOUNT));
             }
 
             // 4 byte length of input
@@ -134,9 +134,9 @@ namespace Garnet.server
         private bool HyperLogLogMerge<TGarnetApi>(ref TGarnetApi storageApi)
              where TGarnetApi : IGarnetApi
         {
-            if (parseState.count < 1)
+            if (parseState.Count < 1)
             {
-                return AbortWithWrongNumberOfArguments(nameof(RespCommand.PFMERGE), parseState.count);
+                return AbortWithWrongNumberOfArguments(nameof(RespCommand.PFMERGE));
             }
 
             var status = storageApi.HyperLogLogMerge(parseState.Parameters, out bool error);

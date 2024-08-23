@@ -2,7 +2,6 @@
 // Licensed under the MIT license.
 
 using System;
-using System.Text;
 using Tsavorite.core;
 
 namespace Garnet.server
@@ -38,8 +37,10 @@ namespace Garnet.server
             if (key.Length == 0)
                 return GarnetStatus.OK;
 
-            // Prepare the payload
-            var inputPayload = scratchBufferManager.FormatScratchAsResp(0, field, value);
+            // Prepare the parse state
+            var parseState = new SessionParseState();
+            ArgSlice[] parseStateBuffer = default;
+            parseState.InitializeWithArguments(ref parseStateBuffer, field, value);
 
             // Prepare the input
             var input = new ObjectInput
@@ -49,8 +50,8 @@ namespace Garnet.server
                     type = GarnetObjectType.Hash,
                     HashOp = nx ? HashOperation.HSETNX : HashOperation.HSET,
                 },
-                arg1 = 1,
-                payload = inputPayload,
+                parseState = parseState,
+                parseStateStartIdx = 0,
             };
 
             var status = RMWObjectStoreOperation(key.ToArray(), ref input, out var output, ref objectStoreContext);
@@ -78,15 +79,16 @@ namespace Garnet.server
             if (key.Length == 0)
                 return GarnetStatus.OK;
 
-            // Prepare the payload
-            var inputLength = 0;
-            foreach (var pair in elements)
-            {
-                var tmp = scratchBufferManager.FormatScratchAsResp(0, pair.field, pair.value);
-                inputLength += tmp.Length;
-            }
+            // Prepare the parse state
+            var parseState = new SessionParseState();
+            ArgSlice[] parseStateBuffer = default;
+            parseState.Initialize(ref parseStateBuffer, elements.Length * 2);
 
-            var inputPayload = scratchBufferManager.GetSliceFromTail(inputLength);
+            for (var i = 0; i < elements.Length; i++)
+            {
+                parseStateBuffer[2 * i] = elements[i].field;
+                parseStateBuffer[(2 * i) + 1] = elements[i].value;
+            }
 
             // Prepare the input
             var input = new ObjectInput
@@ -96,8 +98,8 @@ namespace Garnet.server
                     type = GarnetObjectType.Hash,
                     HashOp = HashOperation.HSET,
                 },
-                arg1 = elements.Length,
-                payload = inputPayload,
+                parseState = parseState,
+                parseStateStartIdx = 0,
             };
 
             var status = RMWObjectStoreOperation(key.ToArray(), ref input, out var output, ref objectStoreContext);
@@ -137,15 +139,10 @@ namespace Garnet.server
             if (key.Length == 0)
                 return GarnetStatus.OK;
 
-            // Prepare the payload
-            var inputLength = 0;
-            foreach (var field in fields)
-            {
-                var tmp = scratchBufferManager.FormatScratchAsResp(0, field);
-                inputLength += tmp.Length;
-            }
-
-            var inputPayload = scratchBufferManager.GetSliceFromTail(inputLength);
+            // Prepare the parse state
+            var parseState = new SessionParseState();
+            ArgSlice[] parseStateBuffer = default;
+            parseState.InitializeWithArguments(ref parseStateBuffer, fields);
 
             // Prepare the input
             var input = new ObjectInput
@@ -155,8 +152,8 @@ namespace Garnet.server
                     type = GarnetObjectType.Hash,
                     HashOp = HashOperation.HDEL,
                 },
-                arg1 = fields.Length,
-                payload = inputPayload,
+                parseState = parseState,
+                parseStateStartIdx = 0,
             };
 
             var status = RMWObjectStoreOperation(key.ToArray(), ref input, out var output, ref objectStoreContext);
@@ -182,13 +179,10 @@ namespace Garnet.server
             if (key.Length == 0)
                 return GarnetStatus.OK;
 
-            // Prepare the payload
-            var inputLength = 0;
-
-            var tmp = scratchBufferManager.FormatScratchAsResp(0, field);
-            inputLength += tmp.Length;
-
-            var inputPayload = scratchBufferManager.GetSliceFromTail(inputLength);
+            // Prepare the parse state
+            var parseState = new SessionParseState();
+            ArgSlice[] parseStateBuffer = default;
+            parseState.InitializeWithArguments(ref parseStateBuffer, field, value);
 
             // Prepare the input
             var input = new ObjectInput
@@ -198,7 +192,8 @@ namespace Garnet.server
                     type = GarnetObjectType.Hash,
                     HashOp = HashOperation.HGET,
                 },
-                payload = inputPayload,
+                parseState = parseState,
+                parseStateStartIdx = 0,
             };
 
             var outputFooter = new GarnetObjectStoreOutput { spanByteAndMemory = new SpanByteAndMemory(null) };
@@ -229,16 +224,10 @@ namespace Garnet.server
             if (key.Length == 0)
                 return GarnetStatus.OK;
 
-            // Prepare the input payload
-            var inputLength = 0;
-
-            foreach (var field in fields)
-            {
-                var tmp = scratchBufferManager.FormatScratchAsResp(0, field);
-                inputLength += tmp.Length;
-            }
-
-            var inputPayload = scratchBufferManager.GetSliceFromTail(inputLength);
+            // Prepare the parse state
+            var parseState = new SessionParseState();
+            ArgSlice[] parseStateBuffer = default;
+            parseState.InitializeWithArguments(ref parseStateBuffer, fields);
 
             // Prepare the input
             var input = new ObjectInput
@@ -248,8 +237,8 @@ namespace Garnet.server
                     type = GarnetObjectType.Hash,
                     HashOp = HashOperation.HMGET,
                 },
-                arg1 = fields.Length,
-                payload = inputPayload,
+                parseState = parseState,
+                parseStateStartIdx = 0,
             };
 
             var outputFooter = new GarnetObjectStoreOutput { spanByteAndMemory = new SpanByteAndMemory(null) };
@@ -279,10 +268,6 @@ namespace Garnet.server
             if (key.Length == 0)
                 return GarnetStatus.OK;
 
-            // Prepare the input payload
-            var inputLength = 0;
-            var inputPayload = scratchBufferManager.GetSliceFromTail(inputLength);
-
             // Prepare the input
             var input = new ObjectInput
             {
@@ -291,7 +276,7 @@ namespace Garnet.server
                     type = GarnetObjectType.Hash,
                     HashOp = HashOperation.HGETALL,
                 },
-                payload = inputPayload,
+                arg1 = 2 // Default RESP protocol version
             };
 
             var outputFooter = new GarnetObjectStoreOutput { spanByteAndMemory = new SpanByteAndMemory(null) };
@@ -322,10 +307,6 @@ namespace Garnet.server
             if (key.Length == 0)
                 return GarnetStatus.OK;
 
-            // Prepare the input payload
-            var inputLength = 0;
-            var inputPayload = scratchBufferManager.GetSliceFromTail(inputLength);
-
             // Prepare the input
             var input = new ObjectInput
             {
@@ -334,7 +315,6 @@ namespace Garnet.server
                     type = GarnetObjectType.Hash,
                     HashOp = HashOperation.HLEN,
                 },
-                payload = inputPayload,
             };
 
             var status = ReadObjectStoreOperation(key.ToArray(), ref input, out var output, ref objectStoreContext);
@@ -360,8 +340,10 @@ namespace Garnet.server
             if (key.Length == 0)
                 return GarnetStatus.OK;
 
-            // Prepare the input payload
-            var inputPayload = scratchBufferManager.FormatScratchAsResp(0, field);
+            // Prepare the parse state
+            var parseState = new SessionParseState();
+            ArgSlice[] parseStateBuffer = default;
+            parseState.InitializeWithArguments(ref parseStateBuffer, field);
 
             // Prepare the input
             var input = new ObjectInput
@@ -371,7 +353,8 @@ namespace Garnet.server
                     type = GarnetObjectType.Hash,
                     HashOp = HashOperation.HEXISTS,
                 },
-                payload = inputPayload,
+                parseState = parseState,
+                parseStateStartIdx = 0,
             };
 
             var status = ReadObjectStoreOperation(key.ToArray(), ref input, out var output, ref objectStoreContext);
@@ -397,11 +380,6 @@ namespace Garnet.server
             if (key.Length == 0)
                 return GarnetStatus.OK;
 
-            var inputLength = 0;
-
-            // Prepare the input payload
-            var inputPayload = scratchBufferManager.GetSliceFromTail(inputLength);
-
             // Create a random seed
             var seed = RandomGen.Next();
 
@@ -415,7 +393,6 @@ namespace Garnet.server
                 },
                 arg1 = 1 << 2,
                 arg2 = seed,
-                payload = inputPayload,
             };
 
             var outputFooter = new GarnetObjectStoreOutput { spanByteAndMemory = new SpanByteAndMemory(null) };
@@ -452,11 +429,6 @@ namespace Garnet.server
             // Create a random seed
             var seed = RandomGen.Next();
 
-            var inputLength = 0;
-
-            // Prepare the input payload
-            var inputPayload = scratchBufferManager.GetSliceFromTail(inputLength);
-
             // Prepare the input
             var input = new ObjectInput
             {
@@ -467,7 +439,6 @@ namespace Garnet.server
                 },
                 arg1 = (((count << 1) | 1) << 1) | (withValues ? 1 : 0),
                 arg2 = seed,
-                payload = inputPayload,
             };
 
             var outputFooter = new GarnetObjectStoreOutput { spanByteAndMemory = new SpanByteAndMemory(null) };
@@ -476,78 +447,6 @@ namespace Garnet.server
             fields = default;
             if (status == GarnetStatus.OK)
                 fields = ProcessRespArrayOutput(outputFooter, out _);
-
-            return status;
-        }
-
-
-        /// <summary>
-        /// Iterates fields of Hash key and their associated values using a cursor,
-        /// a match pattern and count parameters
-        /// </summary>
-        /// <param name="key"></param>
-        /// <param name="cursor"></param>
-        /// <param name="match"></param>
-        /// <param name="count"></param>
-        /// <param name="items"></param>
-        /// <param name="objectStoreContext"></param>
-        public unsafe GarnetStatus HashScan<TObjectContext>(ArgSlice key, long cursor, string match, long count, out ArgSlice[] items, ref TObjectContext objectStoreContext)
-             where TObjectContext : ITsavoriteContext<byte[], IGarnetObject, ObjectInput, GarnetObjectStoreOutput, long, ObjectSessionFunctions, ObjectStoreFunctions, ObjectStoreAllocator>
-        {
-            items = default;
-
-            if (key.Length == 0)
-                return GarnetStatus.OK;
-
-            if (string.IsNullOrEmpty(match))
-                match = "*";
-
-            // Prepare the payload
-            var payloadSlice = scratchBufferManager.CreateArgSlice(sizeof(int));
-            *(int*)payloadSlice.ptr = ObjectScanCountLimit;
-
-            var payloadLength = sizeof(int);
-
-            ArgSlice tmp;
-            // Write match
-            var matchPatternValue = Encoding.ASCII.GetBytes(match.Trim());
-            fixed (byte* matchKeywordPtr = CmdStrings.MATCH, matchPatterPtr = matchPatternValue)
-            {
-                tmp = scratchBufferManager.FormatScratchAsResp(0, new ArgSlice(matchKeywordPtr, CmdStrings.MATCH.Length),
-                    new ArgSlice(matchPatterPtr, matchPatternValue.Length));
-            }
-            payloadLength += tmp.Length;
-
-            // Write count
-            var countBytes = Encoding.ASCII.GetBytes(count.ToString());
-            fixed (byte* countPtr = CmdStrings.COUNT, countValuePtr = countBytes)
-            {
-                tmp = scratchBufferManager.FormatScratchAsResp(0, new ArgSlice(countPtr, CmdStrings.COUNT.Length),
-                    new ArgSlice(countValuePtr, countBytes.Length));
-            }
-            payloadLength += tmp.Length;
-
-            var inputPayload = scratchBufferManager.GetSliceFromTail(payloadLength);
-
-            // Prepare the input
-            var input = new ObjectInput
-            {
-                header = new RespInputHeader
-                {
-                    type = GarnetObjectType.Hash,
-                    HashOp = HashOperation.HSCAN,
-                },
-                arg1 = 4,
-                arg2 = (int)cursor,
-                payload = inputPayload,
-            };
-
-            var outputFooter = new GarnetObjectStoreOutput { spanByteAndMemory = new SpanByteAndMemory(null) };
-            var status = ReadObjectStoreOperationWithOutput(key.ToArray(), ref input, ref objectStoreContext, ref outputFooter);
-
-            items = default;
-            if (status == GarnetStatus.OK)
-                items = ProcessRespArrayOutput(outputFooter, out _, isScanOutput: true);
 
             return status;
         }
