@@ -347,11 +347,13 @@ namespace Garnet.common
                 return false;
 
             // Integer header must start with ':'
-            if (*ptr++ != ':')
+            if (*ptr != ':')
             {
                 unexpectedToken = *ptr;
                 return false;
             }
+
+            ptr++;
 
             // Parse length
             if (!TryReadLong(ref ptr, end, out number, out _))
