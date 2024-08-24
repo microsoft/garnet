@@ -71,16 +71,10 @@ namespace Garnet.cluster
                 TrackImportProgress(keyCount, isMainStore: true, keyCount == 0);
                 while (i < keyCount)
                 {
-                    byte* keyPtr = null, valPtr = null;
-                    byte keyMetaDataSize = 0, valMetaDataSize = 0;
-                    if (!RespReadUtils.ReadSerializedSpanByte(ref keyPtr, ref keyMetaDataSize, ref valPtr,
-                            ref valMetaDataSize, ref payloadPtr, payloadEndPtr))
-                        return false;
-
-                    ref var key = ref SpanByte.Reinterpret(keyPtr);
-                    if (keyMetaDataSize > 0) key.ExtraMetadata = *(long*)(keyPtr + 4);
-                    ref var value = ref SpanByte.Reinterpret(valPtr);
-                    if (valMetaDataSize > 0) value.ExtraMetadata = *(long*)(valPtr + 4);
+                    ref var key = ref SpanByte.Reinterpret(payloadPtr);
+                    payloadPtr += key.TotalSize;
+                    ref var value = ref SpanByte.Reinterpret(payloadPtr);
+                    payloadPtr += value.TotalSize;
 
                     // An error has occurred
                     if (migrateState > 0)
