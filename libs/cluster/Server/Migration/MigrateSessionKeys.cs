@@ -73,10 +73,12 @@ namespace Garnet.cluster
                         value = ref SpanByte.ReinterpretWithoutLength(o.Memory.Memory.Span);
 
                     if (!ClusterSession.Expired(ref value) && !WriteOrSendMainStoreKeyValuePair(ref key, ref value))
+                    {
+                        if (!o.IsSpanByte) o.Memory.Dispose();
                         return false;
+                    }
 
-                    if (!o.IsSpanByte)
-                        o.Memory.Dispose();
+                    if (!o.IsSpanByte) o.Memory.Dispose();
                 }
 
                 // Flush data in client buffer
