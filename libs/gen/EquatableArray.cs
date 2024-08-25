@@ -78,13 +78,13 @@ internal readonly struct EquatableArray<T> : IEquatable<EquatableArray<T>>, IEnu
     /// <sinheritdoc/>
     IEnumerator<T> IEnumerable<T>.GetEnumerator()
     {
-        return ((IEnumerable<T>)(_array ?? Array.Empty<T>())).GetEnumerator();
+        return ((IEnumerable<T>)(_array ?? [])).GetEnumerator();
     }
 
     /// <sinheritdoc/>
     IEnumerator IEnumerable.GetEnumerator()
     {
-        return ((IEnumerable<T>)(_array ?? Array.Empty<T>())).GetEnumerator();
+        return ((IEnumerable<T>)(_array ?? [])).GetEnumerator();
     }
 
     public int Count => _array?.Length ?? 0;
