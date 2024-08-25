@@ -22,10 +22,12 @@
       <dependency id="Microsoft.Extensions.Logging.Console" version="8.0.0" />
       <dependency id="Newtonsoft.Json" version="13.0.3" />
       <dependency id="CommandLineParser" version="2.9.1" />
-      <dependency id="Microsoft.IdentityModel.Protocols.OpenIdConnect" version="7.5.1" />
-      <dependency id="System.IdentityModel.Tokens.Jwt" version="7.5.1" />
-	    <dependency id="Microsoft.IdentityModel.Validators" version="7.5.1" />
-      <dependency id="Azure.Storage.Blobs" version="12.14.1" />
+      <dependency id="Microsoft.IdentityModel.Protocols.OpenIdConnect" version="8.0.1" />
+      <dependency id="System.IdentityModel.Tokens.Jwt" version="8.0.1" />
+	    <dependency id="Microsoft.IdentityModel.Validators" version="8.0.1" />
+      <dependency id="Azure.Storage.Blobs" version="12.21.2" />
+      <dependency id="NLua" version="1.7.3" />
+      <dependency id="System.Text.Json" version="8.0.4" />
     </dependencies>
     <readme>README.md</readme>
   </metadata>

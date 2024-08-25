@@ -5,6 +5,7 @@ using System.Collections.Generic;
 using System.IO;
 using System.Threading.Tasks;
 using NUnit.Framework;
+using NUnit.Framework.Legacy;
 using Tsavorite.core;
 using static Tsavorite.test.TestUtils;
 
@@ -72,16 +73,16 @@ namespace Tsavorite.test
 
         static void VerifyStructs(int key, ref KeyStruct keyStruct, ref InputStruct inputStruct, ref OutputStruct outputStruct, ref ContextStruct contextStruct, bool useRMW)
         {
-            Assert.AreEqual(key, keyStruct.kfield1);
-            Assert.AreEqual(key + NumRecords * 10, keyStruct.kfield2);
-            Assert.AreEqual(key + NumRecords * 30, inputStruct.ifield1);
-            Assert.AreEqual(key + NumRecords * 40, inputStruct.ifield2);
+            ClassicAssert.AreEqual(key, keyStruct.kfield1);
+            ClassicAssert.AreEqual(key + NumRecords * 10, keyStruct.kfield2);
+            ClassicAssert.AreEqual(key + NumRecords * 30, inputStruct.ifield1);
+            ClassicAssert.AreEqual(key + NumRecords * 40, inputStruct.ifield2);
 
             // RMW causes the InPlaceUpdater to be called, which adds input fields to the value.
-            Assert.AreEqual(key + (useRMW ? inputStruct.ifield1 : 0), outputStruct.value.vfield1);
-            Assert.AreEqual(key + NumRecords * 10 + (useRMW ? inputStruct.ifield2 : 0), outputStruct.value.vfield2);
-            Assert.AreEqual(key + NumRecords * 50, contextStruct.cfield1);
-            Assert.AreEqual(key + NumRecords * 60, contextStruct.cfield2);
+            ClassicAssert.AreEqual(key + (useRMW ? inputStruct.ifield1 : 0), outputStruct.value.vfield1);
+            ClassicAssert.AreEqual(key + NumRecords * 10 + (useRMW ? inputStruct.ifield2 : 0), outputStruct.value.vfield2);
+            ClassicAssert.AreEqual(key + NumRecords * 50, contextStruct.cfield1);
+            ClassicAssert.AreEqual(key + NumRecords * 60, contextStruct.cfield2);
         }
 
         class ProcessPending
@@ -112,10 +113,10 @@ namespace Tsavorite.test
             internal void Process(CompletedOutputIterator<KeyStruct, ValueStruct, InputStruct, OutputStruct, ContextStruct> completedOutputs, List<(KeyStruct, long)> rmwCopyUpdatedAddresses)
             {
                 var useRMW = rmwCopyUpdatedAddresses is not null;
-                Assert.AreEqual(CompletedOutputIterator<KeyStruct, ValueStruct, InputStruct, OutputStruct, ContextStruct>.kInitialAlloc *
+                ClassicAssert.AreEqual(CompletedOutputIterator<KeyStruct, ValueStruct, InputStruct, OutputStruct, ContextStruct>.kInitialAlloc *
                                 CompletedOutputIterator<KeyStruct, ValueStruct, InputStruct, OutputStruct, ContextStruct>.kReallocMultuple, completedOutputs.vector.Length);
-                Assert.AreEqual(deferredPending, completedOutputs.maxIndex);
-                Assert.AreEqual(-1, completedOutputs.currentIndex);
+                ClassicAssert.AreEqual(deferredPending, completedOutputs.maxIndex);
+                ClassicAssert.AreEqual(-1, completedOutputs.currentIndex);
 
                 var count = 0;
                 for (; completedOutputs.Next(); ++count)
@@ -123,14 +124,14 @@ namespace Tsavorite.test
                     ref var result = ref completedOutputs.Current;
                     VerifyStructs((int)result.Key.kfield1, ref result.Key, ref result.Input, ref result.Output, ref result.Context, useRMW);
                     if (!useRMW)
-                        Assert.AreEqual(keyAddressDict[(int)result.Key.kfield1], result.RecordMetadata.Address);
+                        ClassicAssert.AreEqual(keyAddressDict[(int)result.Key.kfield1], result.RecordMetadata.Address);
                     else if (keyAddressDict[(int)result.Key.kfield1] != result.RecordMetadata.Address)
                         rmwCopyUpdatedAddresses.Add((result.Key, result.RecordMetadata.Address));
                 }
                 completedOutputs.Dispose();
-                Assert.AreEqual(deferredPending + 1, count);
-                Assert.AreEqual(-1, completedOutputs.maxIndex);
-                Assert.AreEqual(-1, completedOutputs.currentIndex);
+                ClassicAssert.AreEqual(deferredPending + 1, count);
+                ClassicAssert.AreEqual(-1, completedOutputs.maxIndex);
+                ClassicAssert.AreEqual(-1, completedOutputs.currentIndex);
 
                 deferredPending = 0;
                 deferredPendingMax /= 2;
@@ -138,16 +139,16 @@ namespace Tsavorite.test
 
             internal void VerifyNoDeferredPending()
             {
-                Assert.AreEqual(0, deferredPendingMax);  // This implicitly does a null check as well as ensures processing actually happened
-                Assert.AreEqual(0, deferredPending);
+                ClassicAssert.AreEqual(0, deferredPendingMax);  // This implicitly does a null check as well as ensures processing actually happened
+                ClassicAssert.AreEqual(0, deferredPending);
             }
 
             internal static void VerifyOneNotFound(CompletedOutputIterator<KeyStruct, ValueStruct, InputStruct, OutputStruct, ContextStruct> completedOutputs, ref KeyStruct keyStruct)
             {
-                Assert.IsTrue(completedOutputs.Next());
-                Assert.IsFalse(completedOutputs.Current.Status.Found);
-                Assert.AreEqual(keyStruct, completedOutputs.Current.Key);
-                Assert.IsFalse(completedOutputs.Next());
+                ClassicAssert.IsTrue(completedOutputs.Next());
+                ClassicAssert.IsFalse(completedOutputs.Current.Status.Found);
+                ClassicAssert.AreEqual(keyStruct, completedOutputs.Current.Key);
+                ClassicAssert.IsFalse(completedOutputs.Next());
                 completedOutputs.Dispose();
             }
         }
@@ -158,7 +159,7 @@ namespace Tsavorite.test
         {
             using var session = store.NewSession<InputStruct, OutputStruct, ContextStruct, FunctionsWithContext<ContextStruct>>(new FunctionsWithContext<ContextStruct>());
             var bContext = session.BasicContext;
-            Assert.IsNull(session.completedOutputs);    // Do not instantiate until we need it
+            ClassicAssert.IsNull(session.completedOutputs);    // Do not instantiate until we need it
 
             ProcessPending processPending = new();
 
@@ -206,7 +207,7 @@ namespace Tsavorite.test
                     if (processPending.IsFirst())
                     {
                         _ = bContext.CompletePending(wait: true);        // Test that this does not instantiate CompletedOutputIterator
-                        Assert.IsNull(session.completedOutputs);    // Do not instantiate until we need it
+                        ClassicAssert.IsNull(session.completedOutputs);    // Do not instantiate until we need it
                         continue;
                     }
 
@@ -221,13 +222,13 @@ namespace Tsavorite.test
                     }
                     continue;
                 }
-                Assert.IsTrue(status.Found);
+                ClassicAssert.IsTrue(status.Found);
             }
             processPending.VerifyNoDeferredPending();
 
             // If we are using RMW, then all records were pending and updated their addresses, and we skipped the first one in the loop above.
             if (useRMW)
-                Assert.AreEqual(NumRecords - 1, rmwCopyUpdatedAddresses.Count);
+                ClassicAssert.AreEqual(NumRecords - 1, rmwCopyUpdatedAddresses.Count);
 
             foreach (var (key, address) in rmwCopyUpdatedAddresses)
             {
@@ -239,23 +240,23 @@ namespace Tsavorite.test
                 // This should not be pending since we've not flushed.
                 var localKey = key;
                 var status = bContext.Read(ref localKey, ref inputStruct, ref outputStruct, ref readOptions, out RecordMetadata recordMetadata);
-                Assert.IsFalse(status.IsPending);
-                Assert.AreEqual(address, recordMetadata.Address);
+                ClassicAssert.IsFalse(status.IsPending);
+                ClassicAssert.AreEqual(address, recordMetadata.Address);
             }
         }
         public class PendingReadFunctions<TContext> : SessionFunctionsBase<KeyStruct, ValueStruct, InputStruct, OutputStruct, Empty>
         {
             public override void ReadCompletionCallback(ref KeyStruct key, ref InputStruct input, ref OutputStruct output, Empty ctx, Status status, RecordMetadata recordMetadata)
             {
-                Assert.IsTrue(status.Found);
-                Assert.AreEqual(key.kfield1, output.value.vfield1);
+                ClassicAssert.IsTrue(status.Found);
+                ClassicAssert.AreEqual(key.kfield1, output.value.vfield1);
                 // Do not compare field2; that's our updated value, and the key won't be found if we change kfield2
             }
 
             // Read functions
             public override bool SingleReader(ref KeyStruct key, ref InputStruct input, ref ValueStruct value, ref OutputStruct dst, ref ReadInfo readInfo)
             {
-                Assert.IsFalse(readInfo.RecordInfo.IsNull());
+                ClassicAssert.IsFalse(readInfo.RecordInfo.IsNull());
                 dst.value = value;
                 return true;
             }
@@ -283,7 +284,7 @@ namespace Tsavorite.test
             store.Log.FlushAndEvict(wait: true);
 
             var (status, outputStruct) = bContext.Read(keyStruct);
-            Assert.IsTrue(status.IsPending, $"Expected status.IsPending: {status}");
+            ClassicAssert.IsTrue(status.IsPending, $"Expected status.IsPending: {status}");
 
             // Insert next record with the same key and flush this too if requested.
             var secondValue = firstValue + 1;
@@ -293,7 +294,7 @@ namespace Tsavorite.test
                 store.Log.FlushAndEvict(wait: true);
 
             (status, outputStruct) = bContext.GetSinglePendingResult();
-            Assert.AreEqual(secondValue * valueMult, outputStruct.value.vfield2, "Should have returned second value");
+            ClassicAssert.AreEqual(secondValue * valueMult, outputStruct.value.vfield2, "Should have returned second value");
         }
 
         [Test]
@@ -318,7 +319,7 @@ namespace Tsavorite.test
             store.Log.FlushAndEvict(wait: true);
 
             var (status, outputStruct) = bContext.Read(keyStruct);
-            Assert.IsTrue(status.IsPending, $"Expected status.IsPending: {status}");
+            ClassicAssert.IsTrue(status.IsPending, $"Expected status.IsPending: {status}");
 
             // Insert next record with a different key and flush this too if requested.
             var secondValue = firstValue + 1;
@@ -329,7 +330,7 @@ namespace Tsavorite.test
                 store.Log.FlushAndEvict(wait: true);
 
             (status, outputStruct) = bContext.GetSinglePendingResult();
-            Assert.AreEqual(firstValue * valueMult, outputStruct.value.vfield2, "Should have returned first value");
+            ClassicAssert.AreEqual(firstValue * valueMult, outputStruct.value.vfield2, "Should have returned first value");
         }
 
         [Test]
@@ -352,10 +353,10 @@ namespace Tsavorite.test
             store.Log.FlushAndEvict(wait: true);
 
             var (status, outputStruct) = bContext.Read(keyStruct);
-            Assert.IsTrue(status.IsPending, $"Expected status.IsPending: {status}");
+            ClassicAssert.IsTrue(status.IsPending, $"Expected status.IsPending: {status}");
 
             (status, outputStruct) = bContext.GetSinglePendingResult();
-            Assert.AreEqual(firstValue * valueMult, outputStruct.value.vfield2, "Should have returned first value");
+            ClassicAssert.AreEqual(firstValue * valueMult, outputStruct.value.vfield2, "Should have returned first value");
         }
     }
 }

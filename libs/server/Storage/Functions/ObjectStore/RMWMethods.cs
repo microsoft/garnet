@@ -29,7 +29,7 @@ namespace Garnet.server
                     {
                         var customObjectCommand = GetCustomObjectCommand(ref input, type);
                         (IMemoryOwner<byte> Memory, int Length) outp = (output.spanByteAndMemory.Memory, 0);
-                        var ret = customObjectCommand.NeedInitialUpdate(key, input.payload.ReadOnlySpan, ref outp);
+                        var ret = customObjectCommand.NeedInitialUpdate(key, ref input, ref outp);
                         output.spanByteAndMemory.Memory = outp.Memory;
                         output.spanByteAndMemory.Length = outp.Length;
                         return ret;
@@ -56,7 +56,7 @@ namespace Garnet.server
                 value = functionsState.customObjectCommands[objectId].factory.Create((byte)type);
 
                 (IMemoryOwner<byte> Memory, int Length) outp = (output.spanByteAndMemory.Memory, 0);
-                var result = customObjectCommand.InitialUpdater(key, input.payload.ReadOnlySpan, value, ref outp, ref rmwInfo);
+                var result = customObjectCommand.InitialUpdater(key, ref input, value, ref outp, ref rmwInfo);
                 output.spanByteAndMemory.Memory = outp.Memory;
                 output.spanByteAndMemory.Length = outp.Length;
                 return result;
@@ -105,9 +105,10 @@ namespace Garnet.server
             switch (input.header.type)
             {
                 case GarnetObjectType.Expire:
-                    var optionType = (ExpireOption)(*input.payload.ptr);
+                    var currTokenIdx = input.parseStateStartIdx;
+                    var optionType = input.parseState.GetEnum<ExpireOption>(currTokenIdx++, true);
                     var expiryExists = (value.Expiration > 0);
-                    var expiration = *(long*)(input.payload.ptr + 1);
+                    var expiration = input.parseState.GetLong(currTokenIdx);
                     return EvaluateObjectExpireInPlace(optionType, expiryExists, expiration, ref value, ref output);
                 case GarnetObjectType.Persist:
                     if (value.Expiration > 0)
@@ -138,7 +139,7 @@ namespace Garnet.server
 
                         (IMemoryOwner<byte> Memory, int Length) outp = (output.spanByteAndMemory.Memory, 0);
                         var customObjectCommand = GetCustomObjectCommand(ref input, input.header.type);
-                        var result = customObjectCommand.Updater(key, input.payload.ReadOnlySpan, value, ref outp, ref rmwInfo);
+                        var result = customObjectCommand.Updater(key, ref input, value, ref outp, ref rmwInfo);
                         output.spanByteAndMemory.Memory = outp.Memory;
                         output.spanByteAndMemory.Length = outp.Length;
                         return result;
@@ -177,9 +178,10 @@ namespace Garnet.server
             switch (input.header.type)
             {
                 case GarnetObjectType.Expire:
-                    var expireOption = (ExpireOption)(*input.payload.ptr);
+                    var currTokenIdx = input.parseStateStartIdx;
+                    var expireOption = input.parseState.GetEnum<ExpireOption>(currTokenIdx++, true);
                     var expiryExists = (value.Expiration > 0);
-                    var expiration = *(long*)(input.payload.ptr + 1);
+                    var expiration = input.parseState.GetLong(currTokenIdx);
                     EvaluateObjectExpireInPlace(expireOption, expiryExists, expiration, ref value, ref output);
                     break;
                 case GarnetObjectType.Persist:
@@ -211,7 +213,7 @@ namespace Garnet.server
 
                         (IMemoryOwner<byte> Memory, int Length) outp = (output.spanByteAndMemory.Memory, 0);
                         var customObjectCommand = GetCustomObjectCommand(ref input, input.header.type);
-                        var result = customObjectCommand.Updater(key, input.payload.ReadOnlySpan, value, ref outp, ref rmwInfo);
+                        var result = customObjectCommand.Updater(key, ref input, value, ref outp, ref rmwInfo);
                         output.spanByteAndMemory.Memory = outp.Memory;
                         output.spanByteAndMemory.Length = outp.Length;
                         return result;

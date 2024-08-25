@@ -6,6 +6,7 @@ using System.Collections.Generic;
 using System.Linq;
 using System.Threading.Tasks;
 using NUnit.Framework;
+using NUnit.Framework.Legacy;
 using StackExchange.Redis;
 
 namespace Garnet.test
@@ -45,7 +46,7 @@ namespace Garnet.test
 
             // MSET
             var result = db.StringSet(input);
-            Assert.IsTrue(result);
+            ClassicAssert.IsTrue(result);
 
             for (int iter = 1; iter < 5; iter++)
             {
@@ -59,7 +60,7 @@ namespace Garnet.test
 
                 Task.WaitAll(tasks.Select(r => r.Item2).ToArray());
                 for (int i = 0; i < numGets; i++)
-                    Assert.AreEqual(tasks[i].Item1, tasks[i].Item2.Result);
+                    ClassicAssert.AreEqual(tasks[i].Item1, tasks[i].Item2.Result);
             }
         }
 
@@ -76,11 +77,11 @@ namespace Garnet.test
 
             // MSET
             var result = db.StringSet(input);
-            Assert.IsTrue(result);
+            ClassicAssert.IsTrue(result);
 
             var results = db.StringGet(input.Select(r => (RedisKey)r.Key).ToArray());
             for (int i = 0; i < length; i++)
-                Assert.AreEqual(input[i].Value, results[i]);
+                ClassicAssert.AreEqual(input[i].Value, results[i]);
         }
     }
 }

@@ -2,6 +2,7 @@
 // Licensed under the MIT license.
 
 using System;
+using System.Collections.Concurrent;
 using System.Diagnostics;
 using System.Net;
 using System.Net.Sockets;
@@ -98,6 +99,11 @@ namespace Garnet.server
         internal readonly string run_id;
         private SingleWriterMultiReaderLock _checkpointTaskLock;
 
+        // Lua script cache
+        public readonly ConcurrentDictionary<byte[], byte[]> storeScriptCache;
+
+        public readonly TimeSpan loggingFrequncy;
+
         /// <summary>
         /// Constructor
         /// </summary>
@@ -135,6 +141,11 @@ namespace Garnet.server
             this.versionMap = new WatchVersionMap(1 << 16);
             this.accessControlList = accessControlList;
             this.GarnetObjectSerializer = new GarnetObjectSerializer(this.customCommandManager);
+            this.loggingFrequncy = TimeSpan.FromSeconds(serverOptions.LoggingFrequency);
+
+            // Initialize store scripting cache
+            if (serverOptions.EnableLua)
+                this.storeScriptCache = new ConcurrentDictionary<byte[], byte[]>(new ByteArrayComparer());
 
             if (accessControlList == null)
             {

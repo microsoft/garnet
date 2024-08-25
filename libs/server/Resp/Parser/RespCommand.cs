@@ -199,6 +199,11 @@ namespace Garnet.server
         CustomObjCmd,
         CustomProcedure,
 
+        // Scripting commands
+        EVAL,
+        EVALSHA,
+        SCRIPT,
+
         ACL,
         ACL_CAT,
         ACL_DELUSER,
@@ -395,17 +400,52 @@ namespace Garnet.server
                 };
         }
 
+        public static RespCommand FirstReadCommand()
+            => RespCommand.NONE + 1;
+
+        public static RespCommand LastReadCommand()
+            => RespCommand.APPEND - 1;
+
+        public static RespCommand FirstWriteCommand()
+            => RespCommand.APPEND;
+
+        public static RespCommand LastWriteCommand()
+            => RespCommand.BITOP_NOT;
+
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        public static bool IsReadOnly(this RespCommand cmd)
+            => cmd <= LastReadCommand();
+
+        public static bool IsDataCommand(this RespCommand cmd)
+        {
+            return cmd switch
+            {
+                // TODO: validate if these cases need to be excluded
+                RespCommand.MIGRATE => false,
+                RespCommand.DBSIZE => false,
+                RespCommand.MEMORY_USAGE => false,
+                RespCommand.FLUSHDB => false,
+                _ => cmd >= FirstReadCommand() && cmd <= LastWriteCommand()
+            };
+        }
+
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        public static bool IsWriteOnly(this RespCommand cmd)
+        {
+            // If cmd < RespCommand.Append - underflows, setting high bits
+            var test = (uint)((int)cmd - (int)FirstWriteCommand());
+
+            // Force to be branchless for same reasons as OneIfRead
+            return test <= (LastWriteCommand() - FirstWriteCommand());
+        }
+
         /// <summary>
         /// Returns 1 if <paramref name="cmd"/> is a write command.
         /// </summary>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public static ulong OneIfWrite(this RespCommand cmd)
         {
-            // If cmd < RespCommand.Append - underflows, setting high bits
-            uint test = (uint)((int)cmd - (int)RespCommand.APPEND);
-
-            // Force to be branchless for same reasons as OneIfRead
-            bool inRange = test <= (RespCommand.BITOP_NOT - RespCommand.APPEND);
+            var inRange = cmd.IsWriteOnly();
             return Unsafe.As<bool, byte>(ref inRange);
         }
 
@@ -417,7 +457,7 @@ namespace Garnet.server
         {
             // Force this to be branchless (as predictability is poor)
             // and we're in the hot path
-            bool inRange = cmd <= RespCommand.ZSCORE;
+            var inRange = cmd.IsReadOnly();
             return Unsafe.As<bool, byte>(ref inRange);
         }
 
@@ -665,6 +705,13 @@ namespace Garnet.server
                             case 4:
                                 switch ((ushort)ptr[4])
                                 {
+                                    case 'E':
+                                        if (*(ulong*)(ptr + 2) == MemoryMarshal.Read<ulong>("\r\nEVAL\r\n"u8))
+                                        {
+                                            return RespCommand.EVAL;
+                                        }
+                                        break;
+
                                     case 'H':
                                         if (*(ulong*)(ptr + 2) == MemoryMarshal.Read<ulong>("\r\nHSET\r\n"u8))
                                         {
@@ -1057,6 +1104,10 @@ namespace Garnet.server
                                         {
                                             return RespCommand.SINTER;
                                         }
+                                        else if (*(ulong*)(ptr + 4) == MemoryMarshal.Read<ulong>("SCRIPT\r\n"u8))
+                                        {
+                                            return RespCommand.SCRIPT;
+                                        }
                                         break;
 
                                     case 'U':
@@ -1086,6 +1137,13 @@ namespace Garnet.server
                             case 7:
                                 switch ((ushort)ptr[4])
                                 {
+                                    case 'E':
+                                        if (*(ulong*)(ptr + 2) == MemoryMarshal.Read<ulong>("\r\nEVALSHA\r\n"u8))
+                                        {
+                                            return RespCommand.EVALSHA;
+                                        }
+                                        break;
+
                                     case 'G':
                                         if (*(ulong*)(ptr + 4) == MemoryMarshal.Read<ulong>("GEOHASH\r"u8) && *(byte*)(ptr + 12) == '\n')
                                         {
@@ -1877,7 +1935,7 @@ namespace Garnet.server
             }
 
             // Set up parse state
-            parseState.Initialize(count);
+            parseState.Initialize(ref parseStateBuffer, count);
             var ptr = recvBufferPtr + readHead;
             for (int i = 0; i < count; i++)
             {

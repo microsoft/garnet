@@ -30,8 +30,6 @@ namespace Garnet.server
                 return NetworkGETAsync(ref storageApi);
 
             var key = parseState.GetArgSliceByRef(0).SpanByte;
-            if (NetworkMultiKeySlotVerify(readOnly: true))
-                return true;
             var o = new SpanByteAndMemory(dcurr, (int)(dend - dcurr));
             SpanByte input = default;
             var status = storageApi.GET(ref key, ref input, ref o);
@@ -61,9 +59,6 @@ namespace Garnet.server
             where TGarnetApi : IGarnetApi
         {
             var key = parseState.GetArgSliceByRef(0).SpanByte;
-            if (NetworkMultiKeySlotVerify(readOnly: true))
-                return true;
-
             // Optimistically ask storage to write output to network buffer
             var o = new SpanByteAndMemory(dcurr, (int)(dend - dcurr));
 
@@ -115,10 +110,6 @@ namespace Garnet.server
             {
                 if (c > 0 && !ParseGETAndKey(ref key))
                     break;
-
-                // Cluster verification
-                if (NetworkMultiKeySlotVerify(readOnly: true))
-                    continue;
 
                 // Store index in context, since completions are not in order
                 ctx = firstPending == -1 ? 0 : c - firstPending;
@@ -264,12 +255,9 @@ namespace Garnet.server
         private bool NetworkSET<TGarnetApi>(ref TGarnetApi storageApi)
             where TGarnetApi : IGarnetApi
         {
-            Debug.Assert(parseState.count == 2);
+            Debug.Assert(parseState.Count == 2);
             var key = parseState.GetArgSliceByRef(0).SpanByte;
             var value = parseState.GetArgSliceByRef(1).SpanByte;
-
-            if (NetworkMultiKeySlotVerify(readOnly: false, firstKey: 0, lastKey: -2))
-                return true;
 
             var status = storageApi.SET(ref key, ref value);
 
@@ -286,9 +274,6 @@ namespace Garnet.server
             where TGarnetApi : IGarnetApi
         {
             var key = parseState.GetArgSliceByRef(0);
-
-            if (NetworkMultiKeySlotVerify(readOnly: false, firstKey: 0, lastKey: 0))
-                return true;
 
             if (!parseState.TryGetInt(1, out var offset))
             {
@@ -323,8 +308,6 @@ namespace Garnet.server
             var key = parseState.GetArgSliceByRef(0);
             var sbKey = key.SpanByte;
 
-            if (NetworkMultiKeySlotVerify(readOnly: true, firstKey: 0, lastKey: 0))
-                return true;
 
             if (!parseState.TryGetInt(1, out var sliceStart) || !parseState.TryGetInt(2, out var sliceLength))
             {
@@ -367,9 +350,6 @@ namespace Garnet.server
         {
             var key = parseState.GetArgSliceByRef(0).SpanByte;
 
-            if (NetworkMultiKeySlotVerify(readOnly: false, firstKey: 0, lastKey: 1))
-                return true;
-
             if (!parseState.TryGetInt(1, out var expiry))
             {
                 while (!RespWriteUtils.WriteError(CmdStrings.RESP_ERR_GENERIC_VALUE_IS_NOT_INTEGER, ref dcurr, dend))
@@ -385,7 +365,6 @@ namespace Garnet.server
             }
 
             var val = parseState.GetArgSliceByRef(2).SpanByte;
-
             var valPtr = val.ToPointer() - (sizeof(int) + sizeof(long));
             var vSize = val.Length;
 
@@ -431,7 +410,7 @@ namespace Garnet.server
         /// <summary>
         /// SET EX NX
         /// </summary>
-        private bool NetworkSETEXNX<TGarnetApi>(int count, ref TGarnetApi storageApi)
+        private bool NetworkSETEXNX<TGarnetApi>(ref TGarnetApi storageApi)
             where TGarnetApi : IGarnetApi
         {
             var key = parseState.GetArgSliceByRef(0);
@@ -449,7 +428,7 @@ namespace Garnet.server
             var tokenIdx = 2;
             Span<byte> nextOpt = default;
             var optUpperCased = false;
-            while (tokenIdx < count || optUpperCased)
+            while (tokenIdx < parseState.Count || optUpperCased)
             {
                 if (!optUpperCased)
                 {
@@ -553,11 +532,6 @@ namespace Garnet.server
             {
                 while (!RespWriteUtils.WriteError(errorMessage, ref dcurr, dend))
                     SendAndReset();
-                return true;
-            }
-
-            if (NetworkMultiKeySlotVerify(readOnly: false, firstKey: 0, lastKey: 0))
-            {
                 return true;
             }
 
@@ -785,8 +759,6 @@ namespace Garnet.server
                 input = new ArgSlice(valPtr, vSize);
             }
 
-            if (NetworkMultiKeySlotVerify(readOnly: false, firstKey: 0, lastKey: 0))
-                return true;
             Span<byte> outputBuffer = stackalloc byte[NumUtils.MaximumFormatInt64Length + 1];
             var output = ArgSlice.FromPinnedSpan(outputBuffer);
 
@@ -820,10 +792,6 @@ namespace Garnet.server
             where TGarnetApi : IGarnetApi
         {
             var sbKey = parseState.GetArgSliceByRef(0).SpanByte;
-
-            if (NetworkMultiKeySlotVerify(readOnly: false, firstKey: 0, lastKey: 0))
-                return true;
-
             var sbVal = parseState.GetArgSliceByRef(1).SpanByte;
 
             var keyPtr = sbKey.ToPointer() - sizeof(int);
@@ -890,9 +858,9 @@ namespace Garnet.server
         /// </summary>
         private bool NetworkFLUSHDB()
         {
-            if (parseState.count > 2)
+            if (parseState.Count > 2)
             {
-                return AbortWithWrongNumberOfArguments(nameof(RespCommand.FLUSHDB), parseState.count);
+                return AbortWithWrongNumberOfArguments(nameof(RespCommand.FLUSHDB));
             }
 
             FlushDb(RespCommand.FLUSHDB);
@@ -905,9 +873,9 @@ namespace Garnet.server
         /// </summary>
         private bool NetworkFLUSHALL()
         {
-            if (parseState.count > 2)
+            if (parseState.Count > 2)
             {
-                return AbortWithWrongNumberOfArguments(nameof(RespCommand.FLUSHALL), parseState.count);
+                return AbortWithWrongNumberOfArguments(nameof(RespCommand.FLUSHALL));
             }
 
             // Since Garnet currently only supports a single database,
@@ -952,17 +920,13 @@ namespace Garnet.server
         private bool NetworkSTRLEN<TGarnetApi>(ref TGarnetApi storageApi)
             where TGarnetApi : IGarnetApi
         {
-            if (parseState.count != 1)
+            if (parseState.Count != 1)
             {
-                return AbortWithWrongNumberOfArguments(nameof(RespCommand.STRLEN), parseState.count);
+                return AbortWithWrongNumberOfArguments(nameof(RespCommand.STRLEN));
             }
 
             //STRLEN key
             var key = parseState.GetArgSliceByRef(0);
-
-            if (NetworkMultiKeySlotVerify(readOnly: true, firstKey: 0, lastKey: 0))
-                return true;
-
             var status = storageApi.GET(key, out var value);
 
             switch (status)
@@ -1012,12 +976,11 @@ namespace Garnet.server
         /// <summary>
         /// Processes COMMAND command.
         /// </summary>
-        /// <param name="count">The number of arguments remaining in command buffer</param>
         /// <returns>true if parsing succeeded correctly, false if not all tokens could be consumed and further processing is necessary.</returns>
-        private bool NetworkCOMMAND(int count)
+        private bool NetworkCOMMAND()
         {
             // No additional args allowed
-            if (count != 0)
+            if (parseState.Count != 0)
             {
                 var subCommand = parseState.GetString(0);
                 var errorMsg = string.Format(CmdStrings.GenericErrUnknownSubCommand, subCommand, nameof(RespCommand.COMMAND));
@@ -1035,12 +998,11 @@ namespace Garnet.server
         /// <summary>
         /// Processes COMMAND COUNT subcommand.
         /// </summary>
-        /// <param name="count">The number of arguments remaining in command buffer</param>
         /// <returns>true if parsing succeeded correctly, false if not all tokens could be consumed and further processing is necessary.</returns>
-        private bool NetworkCOMMAND_COUNT(int count)
+        private bool NetworkCOMMAND_COUNT()
         {
             // No additional args allowed
-            if (count != 0)
+            if (parseState.Count != 0)
             {
                 var errorMsg = string.Format(CmdStrings.GenericErrWrongNumArgs, "COMMAND COUNT");
                 while (!RespWriteUtils.WriteError(errorMsg, ref dcurr, dend))
@@ -1065,10 +1027,10 @@ namespace Garnet.server
         /// <summary>
         /// Processes COMMAND INFO subcommand.
         /// </summary>
-        /// <param name="count">The number of arguments remaining in command buffer</param>
         /// <returns>true if parsing succeeded correctly, false if not all tokens could be consumed and further processing is necessary.</returns>
-        private bool NetworkCOMMAND_INFO(int count)
+        private bool NetworkCOMMAND_INFO()
         {
+            var count = parseState.Count;
             if (count == 0)
             {
                 // Zero arg case is equivalent to COMMAND w/o subcommand
@@ -1100,11 +1062,11 @@ namespace Garnet.server
             return true;
         }
 
-        private bool NetworkECHO(int count)
+        private bool NetworkECHO()
         {
-            if (count != 1)
+            if (parseState.Count != 1)
             {
-                return AbortWithWrongNumberOfArguments(nameof(RespCommand.ECHO), count);
+                return AbortWithWrongNumberOfArguments(nameof(RespCommand.ECHO));
             }
 
             WriteDirectLarge(new ReadOnlySpan<byte>(recvBufferPtr + readHead, endReadHead - readHead));
@@ -1112,11 +1074,12 @@ namespace Garnet.server
         }
 
         // HELLO [protover [AUTH username password] [SETNAME clientname]]
-        private bool NetworkHELLO(int count)
+        private bool NetworkHELLO()
         {
+            var count = parseState.Count;
             if (count > 6)
             {
-                return AbortWithWrongNumberOfArguments(nameof(RespCommand.HELLO), count);
+                return AbortWithWrongNumberOfArguments(nameof(RespCommand.HELLO));
             }
 
             byte? tmpRespProtocolVersion = null;
@@ -1185,11 +1148,11 @@ namespace Garnet.server
             return true;
         }
 
-        private bool NetworkTIME(int count)
+        private bool NetworkTIME()
         {
-            if (count != 0)
+            if (parseState.Count != 0)
             {
-                return AbortWithWrongNumberOfArguments(nameof(RespCommand.TIME), count);
+                return AbortWithWrongNumberOfArguments(nameof(RespCommand.TIME));
             }
 
             var utcTime = DateTimeOffset.UtcNow;
@@ -1203,12 +1166,13 @@ namespace Garnet.server
             return true;
         }
 
-        private bool NetworkAUTH(int count)
+        private bool NetworkAUTH()
         {
             // AUTH [<username>] <password>
+            var count = parseState.Count;
             if (count < 1 || count > 2)
             {
-                return AbortWithWrongNumberOfArguments(nameof(RespCommand.AUTH), count);
+                return AbortWithWrongNumberOfArguments(nameof(RespCommand.AUTH));
             }
 
             ReadOnlySpan<byte> username = default;
@@ -1255,13 +1219,14 @@ namespace Garnet.server
         }
 
         //MEMORY USAGE key [SAMPLES count]
-        private bool NetworkMemoryUsage<TGarnetApi>(int count, ref TGarnetApi storageApi)
+        private bool NetworkMemoryUsage<TGarnetApi>(ref TGarnetApi storageApi)
             where TGarnetApi : IGarnetApi
         {
+            var count = parseState.Count;
             if (count != 1 && count != 3)
             {
                 return AbortWithWrongNumberOfArguments(
-                    $"{nameof(RespCommand.MEMORY)}|{Encoding.ASCII.GetString(CmdStrings.USAGE)}", count);
+                    $"{nameof(RespCommand.MEMORY)}|{Encoding.ASCII.GetString(CmdStrings.USAGE)}");
             }
 
             var key = parseState.GetArgSliceByRef(0);
@@ -1303,7 +1268,7 @@ namespace Garnet.server
         /// <summary>
         /// ASYNC [ON|OFF|BARRIER]
         /// </summary>
-        private bool NetworkASYNC(int count)
+        private bool NetworkASYNC()
         {
             if (respProtocolVersion <= 2)
             {
@@ -1313,9 +1278,9 @@ namespace Garnet.server
                 return true;
             }
 
-            if (count != 1)
+            if (parseState.Count != 1)
             {
-                return AbortWithWrongNumberOfArguments(nameof(RespCommand.ASYNC), count);
+                return AbortWithWrongNumberOfArguments(nameof(RespCommand.ASYNC));
             }
 
             var param = parseState.GetArgSliceByRef(0).ReadOnlySpan;
@@ -1454,7 +1419,7 @@ namespace Garnet.server
             var sync = false;
             var syntaxError = false;
 
-            var count = parseState.count;
+            var count = parseState.Count;
             for (var i = 0; i < count; i++)
             {
                 var nextToken = parseState.GetArgSliceByRef(i).ReadOnlySpan;

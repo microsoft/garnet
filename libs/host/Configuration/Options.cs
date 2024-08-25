@@ -213,6 +213,14 @@ namespace Garnet
         [Option("obj-compaction-max-segments", Required = false, HelpText = "Number of object store log segments created on disk before compaction triggers.")]
         public int ObjectStoreCompactionMaxSegments { get; set; }
 
+        [OptionValidation]
+        [Option("lua", Required = false, HelpText = "Enable Lua scripts on server.")]
+        public bool? EnableLua { get; set; }
+
+        [OptionValidation]
+        [Option("lua-transaction-mode", Required = false, HelpText = "Run Lua scripts as a transaction (lock keys - run script - unlock keys).")]
+        public bool? LuaTransactionMode { get; set; }
+
         [PercentageValidation]
         [Option("gossip-sp", Required = false, HelpText = "Percent of cluster nodes to gossip with at each gossip iteration.")]
         public int GossipSamplePercent { get; set; }
@@ -274,6 +282,10 @@ namespace Garnet
 
         [Option("logger-level", Required = false, HelpText = "Logging level. Value options: Trace, Debug, Information, Warning, Error, Critical, None")]
         public LogLevel LogLevel { get; set; }
+
+        [IntRangeValidation(0, int.MaxValue)]
+        [Option("logger-freq", Required = false, Default = 5, HelpText = "Frequency (in seconds) of logging (used for tracking progress of long running operations e.g. migration)")]
+        public int LoggingFrequency { get; set; }
 
         [OptionValidation]
         [Option("disable-console-logger", Required = false, HelpText = "Disable console logger.")]
@@ -572,6 +584,8 @@ namespace Garnet
                 CleanClusterConfig = CleanClusterConfig.GetValueOrDefault(),
                 AuthSettings = GetAuthenticationSettings(logger),
                 EnableAOF = EnableAOF.GetValueOrDefault(),
+                EnableLua = EnableLua.GetValueOrDefault(),
+                LuaTransactionMode = LuaTransactionMode.GetValueOrDefault(),
                 AofMemorySize = AofMemorySize,
                 AofPageSize = AofPageSize,
                 CommitFrequencyMs = CommitFrequencyMs,
@@ -602,6 +616,7 @@ namespace Garnet
                 LatencyMonitor = LatencyMonitor.GetValueOrDefault(),
                 MetricsSamplingFrequency = MetricsSamplingFrequency,
                 LogLevel = LogLevel,
+                LoggingFrequency = LoggingFrequency,
                 QuietMode = QuietMode.GetValueOrDefault(),
                 ThreadPoolMinThreads = ThreadPoolMinThreads,
                 ThreadPoolMaxThreads = ThreadPoolMaxThreads,

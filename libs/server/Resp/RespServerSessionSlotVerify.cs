@@ -2,6 +2,7 @@
 // Licensed under the MIT license.
 
 using System;
+using Garnet.common;
 
 namespace Garnet.server
 {
@@ -30,24 +31,86 @@ namespace Garnet.server
         bool NetworkKeyArraySlotVerify(Span<ArgSlice> keys, bool readOnly, int count = -1)
             => clusterSession != null && clusterSession.NetworkKeyArraySlotVerify(keys, readOnly, SessionAsking, ref dcurr, ref dend, count);
 
-        /// <summary>
-        /// Verify if the corresponding command can be served given the status of the slot associated with the parsed keys.
-        /// </summary>
-        /// <param name="readOnly"></param>
-        /// <param name="firstKey"></param>
-        /// <param name="lastKey"></param>
-        /// <param name="step"></param>
-        /// <returns></returns>
-        bool NetworkMultiKeySlotVerify(bool readOnly = false, int firstKey = 0, int lastKey = -1, int step = 1)
+        bool CanServeSlot(RespCommand cmd)
         {
+            // If cluster is disable all commands
             if (clusterSession == null)
+                return true;
+
+            // Verify slot for command if it falls into data command category
+            if (!cmd.IsDataCommand())
+                return true;
+
+            cmd = cmd.NormalizeForACLs();
+            if (!RespCommandsInfo.TryFastGetRespCommandInfo(cmd, out var commandInfo))
+                // This only happens if we failed to parse the json file
                 return false;
-            csvi.readOnly = readOnly;
+
+            // The provided command is not a data command
+            // so we can serve without any slot restrictions
+            if (commandInfo == null)
+                return true;
+
+            var specs = commandInfo.KeySpecifications;
+            switch (specs.Length)
+            {
+                case 1:
+                    var searchIndex = (BeginSearchIndex)specs[0].BeginSearch;
+
+                    switch (specs[0].FindKeys)
+                    {
+                        case FindKeysRange:
+                            var findRange = (FindKeysRange)specs[0].FindKeys;
+                            csvi.firstKey = searchIndex.Index - 1;
+                            csvi.lastKey = findRange.LastKey < 0 ? findRange.LastKey + parseState.Count + 1 : findRange.LastKey - searchIndex.Index + 1;
+                            csvi.step = findRange.KeyStep;
+                            break;
+                        case FindKeysKeyNum:
+                            var findKeysKeyNum = (FindKeysKeyNum)specs[0].FindKeys;
+                            csvi.firstKey = searchIndex.Index + findKeysKeyNum.FirstKey - 1;
+                            csvi.lastKey = searchIndex.Index + parseState.GetInt(0);
+                            csvi.step = findKeysKeyNum.KeyStep;
+                            break;
+                        case FindKeysUnknown:
+                        default:
+                            throw new GarnetException("FindKeysUnknown range");
+                    }
+
+                    break;
+                case 2:
+                    searchIndex = (BeginSearchIndex)specs[0].BeginSearch;
+                    switch (specs[0].FindKeys)
+                    {
+                        case FindKeysRange:
+                            csvi.firstKey = RespCommand.BITOP == cmd ? searchIndex.Index - 2 : searchIndex.Index - 1;
+                            break;
+                        case FindKeysKeyNum:
+                        case FindKeysUnknown:
+                        default:
+                            throw new GarnetException("FindKeysUnknown range");
+                    }
+
+                    switch (specs[1].FindKeys)
+                    {
+                        case FindKeysRange:
+                            var searchIndex1 = (BeginSearchIndex)specs[1].BeginSearch;
+                            var findRange = (FindKeysRange)specs[1].FindKeys;
+                            csvi.lastKey = findRange.LastKey < 0 ? findRange.LastKey + parseState.Count + 1 : findRange.LastKey + searchIndex1.Index - searchIndex.Index + 1;
+                            csvi.step = findRange.KeyStep;
+                            break;
+                        case FindKeysKeyNum:
+                        case FindKeysUnknown:
+                        default:
+                            throw new GarnetException("FindKeysUnknown range");
+                    }
+
+                    break;
+                default:
+                    throw new GarnetException("KeySpecification unknown count");
+            }
+            csvi.readOnly = cmd.IsReadOnly();
             csvi.sessionAsking = SessionAsking;
-            csvi.firstKey = firstKey;
-            csvi.lastKey = lastKey < 0 ? parseState.count + 1 + lastKey : lastKey;
-            csvi.step = step;
-            return clusterSession.NetworkMultiKeySlotVerify(ref parseState, ref csvi, ref dcurr, ref dend);
+            return !clusterSession.NetworkMultiKeySlotVerify(ref parseState, ref csvi, ref dcurr, ref dend);
         }
     }
 }

@@ -20,17 +20,9 @@ namespace Garnet.server
             var _output = (ObjectOutputHeader*)output;
             *_output = default;
 
-            var count = input.arg1;
-
-            var input_startptr = input.payload.ptr;
-            var input_currptr = input_startptr;
-            var length = input.payload.length;
-            var input_endptr = input_startptr + length;
-
-            for (var c = 0; c < count; c++)
+            for (var currTokenIdx = input.parseStateStartIdx; currTokenIdx < input.parseState.Count; currTokenIdx++)
             {
-                if (!RespReadUtils.ReadByteArrayWithLengthHeader(out var member, ref input_currptr, input_endptr))
-                    return;
+                var member = input.parseState.GetArgSliceByRef(currTokenIdx).SpanByte.ToByteArray();
 
                 if (set.Add(member))
                 {
@@ -74,11 +66,6 @@ namespace Garnet.server
 
         private void SetIsMember(ref ObjectInput input, ref SpanByteAndMemory output)
         {
-            var input_startptr = input.payload.ptr;
-            var input_currptr = input_startptr;
-            var length = input.payload.length;
-            var input_endptr = input_startptr + length;
-
             var isMemory = false;
             MemoryHandle ptrHandle = default;
             var ptr = output.SpanByte.ToPointer();
@@ -89,9 +76,7 @@ namespace Garnet.server
             ObjectOutputHeader _output = default;
             try
             {
-                if (!RespReadUtils.ReadByteArrayWithLengthHeader(out var member, ref input_currptr, input_endptr))
-                    return;
-
+                var member = input.parseState.GetArgSliceByRef(input.parseStateStartIdx).SpanByte.ToByteArray();
                 var isMember = set.Contains(member);
 
                 while (!RespWriteUtils.WriteInteger(isMember ? 1 : 0, ref curr, end))
@@ -113,25 +98,16 @@ namespace Garnet.server
             var _output = (ObjectOutputHeader*)output;
             *_output = default;
 
-            var count = input.arg1;
-
-            var input_startptr = input.payload.ptr;
-            var input_currptr = input_startptr;
-            var length = input.payload.length;
-            var input_endptr = input_startptr + length;
-
-            while (count > 0)
+            var currTokenIdx = input.parseStateStartIdx;
+            while (currTokenIdx < input.parseState.Count)
             {
-                if (!RespReadUtils.TrySliceWithLengthHeader(out var field, ref input_currptr, input_endptr))
-                    break;
+                var field = input.parseState.GetArgSliceByRef(currTokenIdx++).SpanByte.ToByteArray();
 
-                if (set.Remove(field.ToArray()))
+                if (set.Remove(field))
                 {
                     _output->result1++;
                     this.UpdateSize(field, false);
                 }
-
-                count--;
             }
         }
 

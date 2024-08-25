@@ -4,6 +4,7 @@
 using System.Threading.Tasks;
 using Garnet.server;
 using NUnit.Framework;
+using NUnit.Framework.Legacy;
 using Tsavorite.core;
 
 namespace Garnet.test
@@ -48,8 +49,8 @@ namespace Garnet.test
             IGarnetObject output = null;
             var status = bContext.Read(ref key, ref output);
 
-            Assert.IsTrue(status.Found);
-            Assert.AreEqual(obj, output);
+            ClassicAssert.IsTrue(status.Found);
+            ClassicAssert.AreEqual(obj, output);
         }
 
         [Test]
@@ -81,8 +82,8 @@ namespace Garnet.test
 
             session.Dispose();
 
-            Assert.IsTrue(status.Found);
-            Assert.IsTrue(obj.Equals((SortedSetObject)output));
+            ClassicAssert.IsTrue(status.Found);
+            ClassicAssert.IsTrue(obj.Equals((SortedSetObject)output));
         }
 
         [Test]
@@ -118,8 +119,8 @@ namespace Garnet.test
 
             session.Dispose();
 
-            Assert.IsTrue(status.Found);
-            Assert.IsTrue(((SortedSetObject)obj).Equals((SortedSetObject)output));
+            ClassicAssert.IsTrue(status.Found);
+            ClassicAssert.IsTrue(((SortedSetObject)obj).Equals((SortedSetObject)output));
         }
 
         private class MyFunctions : SessionFunctionsBase<byte[], IGarnetObject, IGarnetObject, IGarnetObject, Empty>

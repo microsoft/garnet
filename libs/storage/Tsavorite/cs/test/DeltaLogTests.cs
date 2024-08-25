@@ -4,6 +4,7 @@
 using System;
 using System.IO;
 using NUnit.Framework;
+using NUnit.Framework.Legacy;
 using Tsavorite.core;
 
 namespace Tsavorite.test
@@ -73,14 +74,14 @@ namespace Tsavorite.test
             for (i = 0; deltaLog.GetNext(out long address, out int len, out var type); i++)
             {
                 int _len = 1 + r.Next(254);
-                Assert.AreEqual(i % 2 == 0 ? DeltaLogEntryType.DELTA : DeltaLogEntryType.CHECKPOINT_METADATA, type);
-                Assert.AreEqual(len, _len);
+                ClassicAssert.AreEqual(i % 2 == 0 ? DeltaLogEntryType.DELTA : DeltaLogEntryType.CHECKPOINT_METADATA, type);
+                ClassicAssert.AreEqual(len, _len);
                 for (int j = 0; j < len; j++)
                 {
-                    unsafe { Assert.AreEqual((byte)_len, *(byte*)(address + j)); };
+                    unsafe { ClassicAssert.AreEqual((byte)_len, *(byte*)(address + j)); };
                 }
             }
-            Assert.AreEqual(TotalCount, i, $"i={i} and TotalCount={TotalCount}");
+            ClassicAssert.AreEqual(TotalCount, i, $"i={i} and TotalCount={TotalCount}");
             bufferPool.Free();
         }
     }

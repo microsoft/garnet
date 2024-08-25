@@ -2,6 +2,7 @@
 // Licensed under the MIT license.
 using System.IO;
 using NUnit.Framework;
+using NUnit.Framework.Legacy;
 using Tsavorite.core;
 
 namespace Tsavorite.test
@@ -60,8 +61,8 @@ namespace Tsavorite.test
             log.Commit(true);
 
             // Verify  
-            Assert.IsTrue(File.Exists(Path.Join(TestUtils.MethodTestDir, "log-commits", "commit.1.0")));
-            Assert.IsTrue(File.Exists(Path.Join(TestUtils.MethodTestDir, "DeviceConfig.0")));
+            ClassicAssert.IsTrue(File.Exists(Path.Join(TestUtils.MethodTestDir, "log-commits", "commit.1.0")));
+            ClassicAssert.IsTrue(File.Exists(Path.Join(TestUtils.MethodTestDir, "DeviceConfig.0")));
 
             // Read the log just to verify can actually read it
             int currentEntry = 0;
@@ -69,7 +70,7 @@ namespace Tsavorite.test
             {
                 while (iter.GetNext(out byte[] result, out _, out _))
                 {
-                    Assert.AreEqual(currentEntry, result[currentEntry]);
+                    ClassicAssert.AreEqual(currentEntry, result[currentEntry]);
                     currentEntry++;
                 }
             }

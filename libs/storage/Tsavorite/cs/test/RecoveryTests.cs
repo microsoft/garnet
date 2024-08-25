@@ -6,6 +6,7 @@ using System.Collections.Generic;
 using System.IO;
 using System.Threading.Tasks;
 using NUnit.Framework;
+using NUnit.Framework.Legacy;
 using Tsavorite.core;
 using static Tsavorite.test.TestUtils;
 
@@ -202,7 +203,7 @@ namespace Tsavorite.test.recovery.sumstore
             for (var i = 0; i < NumUniqueKeys; i++)
             {
                 var status = bContext.Read(ref inputArray[i].adId, ref input, ref output, Empty.Default);
-                Assert.IsTrue(status.Found, $"At tokenIndex {tokenIndex}, keyIndex {i}, AdId {inputArray[i].adId.adId}");
+                ClassicAssert.IsTrue(status.Found, $"At tokenIndex {tokenIndex}, keyIndex {i}, AdId {inputArray[i].adId.adId}");
                 inputArray[i].numClicks = output.value;
             }
 
@@ -346,8 +347,8 @@ namespace Tsavorite.test.recovery.sumstore
             else
                 await Checkpoint(store, isAsync);
 
-            Assert.AreNotEqual(Guid.Empty, logToken);
-            Assert.AreNotEqual(Guid.Empty, indexToken);
+            ClassicAssert.AreNotEqual(Guid.Empty, logToken);
+            ClassicAssert.AreNotEqual(Guid.Empty, indexToken);
             readAction(store);
 
             store = PrepareToRecover<TData, TStoreFunctions, TAllocator>(allocatorType, storeFunctionsCreator, allocatorCreator);
@@ -419,7 +420,7 @@ namespace Tsavorite.test.recovery.sumstore
             if (isAsync)
             {
                 var (success, token) = await store.TakeFullCheckpointAsync(CheckpointType.Snapshot);
-                Assert.IsTrue(success);
+                ClassicAssert.IsTrue(success);
                 logToken = token;
             }
             else
@@ -444,8 +445,8 @@ namespace Tsavorite.test.recovery.sumstore
             for (var i = 0; i < DeviceTypeRecoveryTests.NumUniqueKeys; i++)
             {
                 var status = bContext.Read(i % DeviceTypeRecoveryTests.NumUniqueKeys, default, out long output);
-                Assert.IsTrue(status.Found, $"keyIndex {i}");
-                Assert.AreEqual(ExpectedValue(i), output);
+                ClassicAssert.IsTrue(status.Found, $"keyIndex {i}");
+                ClassicAssert.AreEqual(ExpectedValue(i), output);
             }
         }
 
@@ -474,9 +475,9 @@ namespace Tsavorite.test.recovery.sumstore
                 int[] output = null;
                 var status = bContext.Read(ref keySpanByte, ref output, Empty.Default);
 
-                Assert.IsTrue(status.Found);
+                ClassicAssert.IsTrue(status.Found);
                 for (int j = 0; j < len; j++)
-                    Assert.AreEqual(ExpectedValue(i), output[j], $"mismatched data at position {j}, len {len}");
+                    ClassicAssert.AreEqual(ExpectedValue(i), output[j], $"mismatched data at position {j}, len {len}");
             }
         }
 
@@ -495,8 +496,8 @@ namespace Tsavorite.test.recovery.sumstore
             {
                 var key = new MyValue { value = i };
                 var status = bContext.Read(key, default, out MyOutput output);
-                Assert.IsTrue(status.Found, $"keyIndex {i}");
-                Assert.AreEqual(ExpectedValue(i), output.value.value);
+                ClassicAssert.IsTrue(status.Found, $"keyIndex {i}");
+                ClassicAssert.AreEqual(ExpectedValue(i), output.value.value);
             }
         }
 

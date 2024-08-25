@@ -76,6 +76,12 @@ namespace Garnet.server
         /// </summary>
         public bool EnableAOF = false;
 
+        // Enable Lua scripts on server
+        public bool EnableLua = false;
+
+        // Run Lua scripts as a transaction (lock keys - run script - unlock keys)
+        public bool LuaTransactionMode = false;
+
         /// <summary>
         /// Total AOF memory buffer used in bytes (rounds down to power of 2) - spills to disk after this limit.
         /// </summary>
@@ -185,9 +191,14 @@ namespace Garnet.server
         public int MetricsSamplingFrequency = 0;
 
         /// <summary>
-        /// Metrics sampling frequency
+        /// Logging level. Value options: Trace, Debug, Information, Warning, Error, Critical, None
         /// </summary>
         public LogLevel LogLevel = LogLevel.Error;
+
+        /// <summary>
+        /// Frequency (in seconds) of logging (used for tracking progress of long running operations e.g. migration)
+        /// </summary>
+        public int LoggingFrequency = TimeSpan.FromSeconds(5).Seconds;
 
         /// <summary>
         /// Metrics sampling frequency

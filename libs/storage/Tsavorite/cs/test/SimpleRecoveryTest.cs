@@ -7,6 +7,7 @@ using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
 using NUnit.Framework;
+using NUnit.Framework.Legacy;
 using Tsavorite.core;
 using Tsavorite.devices;
 using static Tsavorite.test.TestUtils;
@@ -154,13 +155,13 @@ namespace Tsavorite.test.recovery.sumstore
                 _ = await store2.RecoverAsync(token);
 
             if (testCommitCookie)
-                Assert.IsTrue(store2.RecoveredCommitCookie.SequenceEqual(commitCookie));
+                ClassicAssert.IsTrue(store2.RecoveredCommitCookie.SequenceEqual(commitCookie));
             else
-                Assert.Null(store2.RecoveredCommitCookie);
+                ClassicAssert.Null(store2.RecoveredCommitCookie);
 
             var session2 = store2.NewSession<AdInput, Output, Empty, AdSimpleFunctions>(new AdSimpleFunctions());
             var bContext2 = session2.BasicContext;
-            Assert.AreEqual(1, session2.ID);    // This is the first session on the recovered store
+            ClassicAssert.AreEqual(1, session2.ID);    // This is the first session on the recovered store
 
             for (int key = 0; key < NumOps; key++)
             {
@@ -169,14 +170,14 @@ namespace Tsavorite.test.recovery.sumstore
                 if (status.IsPending)
                 {
                     _ = bContext2.CompletePendingWithOutputs(out var outputs, wait: true);
-                    Assert.IsTrue(outputs.Next());
+                    ClassicAssert.IsTrue(outputs.Next());
                     output = outputs.Current.Output;
-                    Assert.IsFalse(outputs.Next());
+                    ClassicAssert.IsFalse(outputs.Next());
                     outputs.Current.Dispose();
                 }
                 else
-                    Assert.IsTrue(status.Found);
-                Assert.AreEqual(key, output.value.numClicks);
+                    ClassicAssert.IsTrue(status.Found);
+                ClassicAssert.AreEqual(key, output.value.numClicks);
             }
             session2.Dispose();
         }
@@ -241,7 +242,7 @@ namespace Tsavorite.test.recovery.sumstore
                 if (status.IsPending)
                     _ = bContext2.CompletePending(true);
                 else
-                    Assert.AreEqual(key, output.value.numClicks);
+                    ClassicAssert.AreEqual(key, output.value.numClicks);
             }
             session2.Dispose();
         }
@@ -304,7 +305,7 @@ namespace Tsavorite.test.recovery.sumstore
             else
                 _ = await store2.RecoverAsync(token);
 
-            Assert.AreEqual(address, store2.Log.BeginAddress);
+            ClassicAssert.AreEqual(address, store2.Log.BeginAddress);
         }
 
         [Test]
@@ -374,15 +375,15 @@ namespace Tsavorite.test.recovery.sumstore
             // Just need one operation here to verify readInfo/upsertInfo in the functions
             var lastKey = inputArray.Length - 1;
             var status = bContext2.Read(ref inputArray[lastKey], ref inputArg, ref output, Empty.Default);
-            Assert.IsFalse(status.IsPending, status.ToString());
+            ClassicAssert.IsFalse(status.IsPending, status.ToString());
 
             value.numClicks = lastKey;
             status = bContext2.Upsert(ref inputArray[lastKey], ref value, Empty.Default);
-            Assert.IsFalse(status.IsPending, status.ToString());
+            ClassicAssert.IsFalse(status.IsPending, status.ToString());
 
             inputArg = new() { adId = inputArray[lastKey], numClicks = new NumClicks { numClicks = 0 } }; // CopyUpdater adds, so make this 0
             status = bContext2.RMW(ref inputArray[lastKey], ref inputArg);
-            Assert.IsFalse(status.IsPending, status.ToString());
+            ClassicAssert.IsFalse(status.IsPending, status.ToString());
 
             // Now verify Pending
             store2.Log.FlushAndEvict(wait: true);
@@ -390,7 +391,7 @@ namespace Tsavorite.test.recovery.sumstore
             output.value = new() { numClicks = lastKey };
             inputArg.numClicks = new() { numClicks = lastKey };
             status = bContext2.Read(ref inputArray[lastKey], ref inputArg, ref output, Empty.Default);
-            Assert.IsTrue(status.IsPending, status.ToString());
+            ClassicAssert.IsTrue(status.IsPending, status.ToString());
             _ = bContext2.CompletePending(wait: true);
 
             // Upsert does not go pending so is skipped here
@@ -399,7 +400,7 @@ namespace Tsavorite.test.recovery.sumstore
             output.value = new() { numClicks = lastKey };
             inputArg.numClicks = new() { numClicks = lastKey };
             status = bContext2.RMW(ref inputArray[lastKey], ref inputArg);
-            Assert.IsTrue(status.IsPending, status.ToString());
+            ClassicAssert.IsTrue(status.IsPending, status.ToString());
             _ = bContext2.CompletePending(wait: true);
 
             session2.Dispose();
@@ -414,15 +415,15 @@ namespace Tsavorite.test.recovery.sumstore
 
         public override void ReadCompletionCallback(ref AdId key, ref AdInput input, ref Output output, Empty ctx, Status status, RecordMetadata recordMetadata)
         {
-            Assert.IsTrue(status.Found);
-            Assert.AreEqual(key.adId, output.value.numClicks);
+            ClassicAssert.IsTrue(status.Found);
+            ClassicAssert.AreEqual(key.adId, output.value.numClicks);
         }
 
         // Read functions
         public override bool SingleReader(ref AdId key, ref AdInput input, ref NumClicks value, ref Output dst, ref ReadInfo readInfo)
         {
             if (expectedVersion >= 0)
-                Assert.AreEqual(expectedVersion, readInfo.Version);
+                ClassicAssert.AreEqual(expectedVersion, readInfo.Version);
             dst.value = value;
             return true;
         }
@@ -430,7 +431,7 @@ namespace Tsavorite.test.recovery.sumstore
         public override bool ConcurrentReader(ref AdId key, ref AdInput input, ref NumClicks value, ref Output dst, ref ReadInfo readInfo, ref RecordInfo recordInfo)
         {
             if (expectedVersion >= 0)
-                Assert.AreEqual(expectedVersion, readInfo.Version);
+                ClassicAssert.AreEqual(expectedVersion, readInfo.Version);
             dst.value = value;
             return true;
         }
@@ -439,7 +440,7 @@ namespace Tsavorite.test.recovery.sumstore
         public override bool InitialUpdater(ref AdId key, ref AdInput input, ref NumClicks value, ref Output output, ref RMWInfo rmwInfo, ref RecordInfo recordInfo)
         {
             if (expectedVersion >= 0)
-                Assert.AreEqual(expectedVersion, rmwInfo.Version);
+                ClassicAssert.AreEqual(expectedVersion, rmwInfo.Version);
             value = input.numClicks;
             return true;
         }
@@ -447,7 +448,7 @@ namespace Tsavorite.test.recovery.sumstore
         public override bool InPlaceUpdater(ref AdId key, ref AdInput input, ref NumClicks value, ref Output output, ref RMWInfo rmwInfo, ref RecordInfo recordInfo)
         {
             if (expectedVersion >= 0)
-                Assert.AreEqual(expectedVersion, rmwInfo.Version);
+                ClassicAssert.AreEqual(expectedVersion, rmwInfo.Version);
             _ = Interlocked.Add(ref value.numClicks, input.numClicks.numClicks);
             return true;
         }
@@ -455,14 +456,14 @@ namespace Tsavorite.test.recovery.sumstore
         public override bool NeedCopyUpdate(ref AdId key, ref AdInput input, ref NumClicks oldValue, ref Output output, ref RMWInfo rmwInfo)
         {
             if (expectedVersion >= 0)
-                Assert.AreEqual(expectedVersion, rmwInfo.Version);
+                ClassicAssert.AreEqual(expectedVersion, rmwInfo.Version);
             return true;
         }
 
         public override bool CopyUpdater(ref AdId key, ref AdInput input, ref NumClicks oldValue, ref NumClicks newValue, ref Output output, ref RMWInfo rmwInfo, ref RecordInfo recordInfo)
         {
             if (expectedVersion >= 0)
-                Assert.AreEqual(expectedVersion, rmwInfo.Version);
+                ClassicAssert.AreEqual(expectedVersion, rmwInfo.Version);
             newValue.numClicks += oldValue.numClicks + input.numClicks.numClicks;
             return true;
         }

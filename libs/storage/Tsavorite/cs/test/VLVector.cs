@@ -4,6 +4,7 @@
 using System;
 using System.Runtime.CompilerServices;
 using NUnit.Framework;
+using NUnit.Framework.Legacy;
 using Tsavorite.core;
 
 namespace Tsavorite.test
@@ -37,15 +38,15 @@ namespace Tsavorite.test
     {
         public override void RMWCompletionCallback(ref SpanByte key, ref SpanByte input, ref int[] output, Empty ctx, Status status, RecordMetadata recordMetadata)
         {
-            Assert.IsTrue(status.Found);
-            Assert.IsTrue(status.Record.CopyUpdated);
+            ClassicAssert.IsTrue(status.Found);
+            ClassicAssert.IsTrue(status.Record.CopyUpdated);
         }
 
         public override void ReadCompletionCallback(ref SpanByte key, ref SpanByte input, ref int[] output, Empty ctx, Status status, RecordMetadata recordMetadata)
         {
-            Assert.IsTrue(status.Found);
+            ClassicAssert.IsTrue(status.Found);
             for (int i = 0; i < output.Length; i++)
-                Assert.AreEqual(output.Length, output[i]);
+                ClassicAssert.AreEqual(output.Length, output[i]);
         }
 
         // Read functions

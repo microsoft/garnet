@@ -6,6 +6,7 @@ using System.IO;
 using System.Runtime.InteropServices;
 using System.Threading.Tasks;
 using NUnit.Framework;
+using NUnit.Framework.Legacy;
 using Tsavorite.core;
 using Tsavorite.test.Revivification;
 using static Tsavorite.core.Utility;
@@ -130,8 +131,8 @@ namespace Tsavorite.test.spanbyte
                     scanCursorFuncs.Initialize(verifyKeys: true);
                     while (session.ScanCursor(ref cursor, counts[iCount], scanCursorFuncs, endAddresses[iAddr]))
                         ;
-                    Assert.AreEqual(TotalRecords, scanCursorFuncs.numRecords, $"count: {counts[iCount]}, endAddress {endAddresses[iAddr]}");
-                    Assert.AreEqual(0, cursor, "Expected cursor to be 0, pt 1");
+                    ClassicAssert.AreEqual(TotalRecords, scanCursorFuncs.numRecords, $"count: {counts[iCount]}, endAddress {endAddresses[iAddr]}");
+                    ClassicAssert.AreEqual(0, cursor, "Expected cursor to be 0, pt 1");
                 }
             }
 
@@ -142,9 +143,9 @@ namespace Tsavorite.test.spanbyte
 
             // Scan and verify we see them all
             scanCursorFuncs.Initialize(verifyKeys);
-            Assert.IsFalse(session.ScanCursor(ref cursor, long.MaxValue, scanCursorFuncs, long.MaxValue), "Expected scan to finish and return false, pt 1");
-            Assert.AreEqual(TotalRecords, scanCursorFuncs.numRecords, "Unexpected count for all on-disk");
-            Assert.AreEqual(0, cursor, "Expected cursor to be 0, pt 2");
+            ClassicAssert.IsFalse(session.ScanCursor(ref cursor, long.MaxValue, scanCursorFuncs, long.MaxValue), "Expected scan to finish and return false, pt 1");
+            ClassicAssert.AreEqual(TotalRecords, scanCursorFuncs.numRecords, "Unexpected count for all on-disk");
+            ClassicAssert.AreEqual(0, cursor, "Expected cursor to be 0, pt 2");
 
             // Add another totalRecords, with keys incremented by totalRecords to remain distinct, and verify we see all keys.
             for (int i = 0; i < TotalRecords; i++)
@@ -160,17 +161,17 @@ namespace Tsavorite.test.spanbyte
                 }
             }
             scanCursorFuncs.Initialize(verifyKeys);
-            Assert.IsFalse(session.ScanCursor(ref cursor, long.MaxValue, scanCursorFuncs, long.MaxValue), "Expected scan to finish and return false, pt 2");
-            Assert.AreEqual(TotalRecords * 2, scanCursorFuncs.numRecords, "Unexpected count for on-disk + in-mem");
-            Assert.AreEqual(0, cursor, "Expected cursor to be 0, pt 3");
+            ClassicAssert.IsFalse(session.ScanCursor(ref cursor, long.MaxValue, scanCursorFuncs, long.MaxValue), "Expected scan to finish and return false, pt 2");
+            ClassicAssert.AreEqual(TotalRecords * 2, scanCursorFuncs.numRecords, "Unexpected count for on-disk + in-mem");
+            ClassicAssert.AreEqual(0, cursor, "Expected cursor to be 0, pt 3");
 
             // Try an invalid cursor (not a multiple of 8) on-disk and verify we get one correct record. Use 3x page size to make sure page boundaries are tested.
-            Assert.Greater(store.hlogBase.GetTailAddress(), PageSize * 10, "Need enough space to exercise this");
+            ClassicAssert.Greater(store.hlogBase.GetTailAddress(), PageSize * 10, "Need enough space to exercise this");
             scanCursorFuncs.Initialize(verifyKeys);
             cursor = store.hlogBase.BeginAddress - 1;
             do
             {
-                Assert.IsTrue(session.ScanCursor(ref cursor, 1, scanCursorFuncs, long.MaxValue, validateCursor: true), "Expected scan to finish and return false, pt 1");
+                ClassicAssert.IsTrue(session.ScanCursor(ref cursor, 1, scanCursorFuncs, long.MaxValue, validateCursor: true), "Expected scan to finish and return false, pt 1");
                 cursor = scanCursorFuncs.lastAddress + scanCursorFuncs.lastRecordSize + 1;
             } while (cursor < PageSize * 3);
 
@@ -179,7 +180,7 @@ namespace Tsavorite.test.spanbyte
             SpanByteAndMemory output = default;
             ReadOptions readOptions = default;
             var readStatus = bContext.ReadAtAddress(store.hlogBase.HeadAddress, ref input, ref output, ref readOptions, out _);
-            Assert.IsTrue(readStatus.Found, $"Could not read at HeadAddress; {readStatus}");
+            ClassicAssert.IsTrue(readStatus.Found, $"Could not read at HeadAddress; {readStatus}");
             var keyString = new string(MemoryMarshal.Cast<byte, char>(output.AsReadOnlySpan()));
             var keyOrdinal = int.Parse(keyString.Substring(keyString.IndexOf('_') + 1));
             output.Memory.Dispose();
@@ -189,7 +190,7 @@ namespace Tsavorite.test.spanbyte
             cursor = store.Log.HeadAddress + 1;
             do
             {
-                Assert.IsTrue(session.ScanCursor(ref cursor, 1, scanCursorFuncs, long.MaxValue, validateCursor: true), "Expected scan to finish and return false, pt 1");
+                ClassicAssert.IsTrue(session.ScanCursor(ref cursor, 1, scanCursorFuncs, long.MaxValue, validateCursor: true), "Expected scan to finish and return false, pt 1");
                 cursor = scanCursorFuncs.lastAddress + scanCursorFuncs.lastRecordSize + 1;
             } while (cursor < store.hlogBase.HeadAddress + PageSize * 3);
         }
@@ -221,16 +222,16 @@ namespace Tsavorite.test.spanbyte
 
             long cursor = 0;
             scanCursorFuncs.Initialize(verifyKeys: false, k => k % 10 == 0);
-            Assert.IsTrue(session.ScanCursor(ref cursor, 10, scanCursorFuncs, store.Log.TailAddress), "ScanCursor failed, pt 1");
-            Assert.AreEqual(10, scanCursorFuncs.numRecords, "count at first 10");
-            Assert.Greater(cursor, 0, "Expected cursor to be > 0, pt 1");
+            ClassicAssert.IsTrue(session.ScanCursor(ref cursor, 10, scanCursorFuncs, store.Log.TailAddress), "ScanCursor failed, pt 1");
+            ClassicAssert.AreEqual(10, scanCursorFuncs.numRecords, "count at first 10");
+            ClassicAssert.Greater(cursor, 0, "Expected cursor to be > 0, pt 1");
 
             // Now fake out the key verification to make it think we got all the previous keys; this ensures we are aligned as expected.
             scanCursorFuncs.Initialize(verifyKeys: false, k => true);
             scanCursorFuncs.numRecords = 91;   // (filter accepts: 0-9) * 10 + 1
-            Assert.IsTrue(session.ScanCursor(ref cursor, 100, scanCursorFuncs, store.Log.TailAddress), "ScanCursor failed, pt 2");
-            Assert.AreEqual(191, scanCursorFuncs.numRecords, "count at second 100");
-            Assert.Greater(cursor, 0, "Expected cursor to be > 0, pt 1");
+            ClassicAssert.IsTrue(session.ScanCursor(ref cursor, 100, scanCursorFuncs, store.Log.TailAddress), "ScanCursor failed, pt 2");
+            ClassicAssert.AreEqual(191, scanCursorFuncs.numRecords, "count at second 100");
+            ClassicAssert.Greater(cursor, 0, "Expected cursor to be > 0, pt 1");
         }
 
         internal enum RCULocation { RCUNone, RCUBefore, RCUAfter };
@@ -269,16 +270,16 @@ namespace Tsavorite.test.spanbyte
             if (rcuLocation == RCULocation.RCUBefore)
             {
                 // RCU before we hit the record - verify we see it once; the original record is Sealed, and we see the one at the Tail.
-                Assert.IsFalse(session.ScanCursor(ref cursor, long.MaxValue, scanCursorFuncs, long.MaxValue), "Expected scan to finish and return false, pt 1");
-                Assert.AreEqual(TotalRecords, scanCursorFuncs.numRecords, "Unexpected count for RCU before we hit the scan value");
+                ClassicAssert.IsFalse(session.ScanCursor(ref cursor, long.MaxValue, scanCursorFuncs, long.MaxValue), "Expected scan to finish and return false, pt 1");
+                ClassicAssert.AreEqual(TotalRecords, scanCursorFuncs.numRecords, "Unexpected count for RCU before we hit the scan value");
             }
             else
             {
                 // RCU after we hit the record - verify we see it twice; once before we update, of course, then once again after it's added at the Tail.
-                Assert.IsFalse(session.ScanCursor(ref cursor, long.MaxValue, scanCursorFuncs, long.MaxValue), "Expected scan to finish and return false, pt 1");
-                Assert.AreEqual(TotalRecords + 1, scanCursorFuncs.numRecords, "Unexpected count for RCU after we hit the scan value");
+                ClassicAssert.IsFalse(session.ScanCursor(ref cursor, long.MaxValue, scanCursorFuncs, long.MaxValue), "Expected scan to finish and return false, pt 1");
+                ClassicAssert.AreEqual(TotalRecords + 1, scanCursorFuncs.numRecords, "Unexpected count for RCU after we hit the scan value");
             }
-            Assert.IsTrue(scanCursorFuncs.rcuDone, "RCU was not done");
+            ClassicAssert.IsTrue(scanCursorFuncs.rcuDone, "RCU was not done");
         }
 
         internal sealed class ScanCursorFuncs : IScanIteratorFunctions<SpanByte, SpanByte>
@@ -353,11 +354,11 @@ namespace Tsavorite.test.spanbyte
                 if (verifyKeys)
                 {
                     if (rcuLocation != RCULocation.RCUNone && numRecords == TotalRecords - rcuOffset)
-                        Assert.AreEqual(rcuRecord, kfield1, "Expected to find the rcuRecord value at end of RCU-testing enumeration");
+                        ClassicAssert.AreEqual(rcuRecord, kfield1, "Expected to find the rcuRecord value at end of RCU-testing enumeration");
                     else
-                        Assert.AreEqual(numRecords + rcuOffset, kfield1, "Mismatched key field on Scan");
+                        ClassicAssert.AreEqual(numRecords + rcuOffset, kfield1, "Mismatched key field on Scan");
                 }
-                Assert.Greater(recordMetadata.Address, 0);
+                ClassicAssert.Greater(recordMetadata.Address, 0);
 
                 lastAddress = recordMetadata.Address;
                 lastRecordSize = RecordInfo.GetLength() + RoundUp(key.TotalSize, 8) + RoundUp(value.TotalSize, 8);
@@ -426,21 +427,21 @@ namespace Tsavorite.test.spanbyte
 
             for (int i = 0; i < 100; ++i)
             {
-                Assert.IsTrue(iter.GetNext(out var recordInfo));
-                Assert.AreEqual(i, int.Parse(MemoryMarshal.Cast<byte, char>(iter.GetKey().AsSpan())));
-                Assert.AreEqual(i, int.Parse(MemoryMarshal.Cast<byte, char>(iter.GetValue().AsSpan())));
+                ClassicAssert.IsTrue(iter.GetNext(out var recordInfo));
+                ClassicAssert.AreEqual(i, int.Parse(MemoryMarshal.Cast<byte, char>(iter.GetKey().AsSpan())));
+                ClassicAssert.AreEqual(i, int.Parse(MemoryMarshal.Cast<byte, char>(iter.GetValue().AsSpan())));
             }
 
             store.Log.ShiftBeginAddress(shiftBeginAddressTo);
 
             for (int i = 0; i < numTailRecords; ++i)
             {
-                Assert.IsTrue(iter.GetNext(out var recordInfo));
+                ClassicAssert.IsTrue(iter.GetNext(out var recordInfo));
                 if (i == 0)
-                    Assert.AreEqual(store.Log.BeginAddress, iter.CurrentAddress);
+                    ClassicAssert.AreEqual(store.Log.BeginAddress, iter.CurrentAddress);
                 var expectedKey = numRecords - numTailRecords + i;
-                Assert.AreEqual(expectedKey, int.Parse(MemoryMarshal.Cast<byte, char>(iter.GetKey().AsSpan())));
-                Assert.AreEqual(expectedKey, int.Parse(MemoryMarshal.Cast<byte, char>(iter.GetValue().AsSpan())));
+                ClassicAssert.AreEqual(expectedKey, int.Parse(MemoryMarshal.Cast<byte, char>(iter.GetKey().AsSpan())));
+                ClassicAssert.AreEqual(expectedKey, int.Parse(MemoryMarshal.Cast<byte, char>(iter.GetValue().AsSpan())));
             }
         }
     }

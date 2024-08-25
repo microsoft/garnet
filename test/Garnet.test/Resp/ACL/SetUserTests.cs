@@ -6,6 +6,7 @@ using System.Linq;
 using System.Text;
 using System.Threading.Tasks;
 using NUnit.Framework;
+using NUnit.Framework.Legacy;
 
 namespace Garnet.test.Resp.ACL
 {
@@ -32,7 +33,7 @@ namespace Garnet.test.Resp.ACL
             var actualValue = Encoding.ASCII.GetString(response).Substring(0, expectedResponse.Length);
 
             // Correctness check
-            Assert.AreEqual(expectedResponse, actualValue);
+            ClassicAssert.AreEqual(expectedResponse, actualValue);
         }
 
         /// <summary>
@@ -56,7 +57,7 @@ namespace Garnet.test.Resp.ACL
             }
             catch (Exception exception)
             {
-                Assert.IsTrue(exception.Message.StartsWith("NOAUTH"));
+                ClassicAssert.IsTrue(exception.Message.StartsWith("NOAUTH"));
             }
         }
 
@@ -75,11 +76,11 @@ namespace Garnet.test.Resp.ACL
 
             // Authenticate user with password only
             var response = await c.ExecuteAsync("AUTH", DummyPassword);
-            Assert.IsTrue(response.StartsWith("OK"));
+            ClassicAssert.IsTrue(response.StartsWith("OK"));
 
             // Check user is authenticated as default user
             response = await c.ExecuteAsync("ACL", "WHOAMI");
-            Assert.AreEqual("default", response);
+            ClassicAssert.AreEqual("default", response);
         }
 
         /// <summary>
@@ -97,11 +98,11 @@ namespace Garnet.test.Resp.ACL
 
             // Authenticate user with username AND password
             var response = await c.ExecuteAsync("AUTH", "default", DummyPassword);
-            Assert.IsTrue(response.StartsWith("OK"));
+            ClassicAssert.IsTrue(response.StartsWith("OK"));
 
             // Check user is authenticated as default user
             response = await c.ExecuteAsync("ACL", "WHOAMI");
-            Assert.AreEqual("default", response);
+            ClassicAssert.AreEqual("default", response);
         }
 
         /// <summary>
@@ -120,7 +121,7 @@ namespace Garnet.test.Resp.ACL
 
             // Add the testuser and password
             var response = await c.ExecuteAsync("ACL", "SETUSER", TestUserA, $">{DummyPassword}");
-            Assert.IsTrue(response.StartsWith("OK"));
+            ClassicAssert.IsTrue(response.StartsWith("OK"));
 
             // Ensure the user cannot be authenticated
             try
@@ -130,23 +131,23 @@ namespace Garnet.test.Resp.ACL
             }
             catch (Exception exception)
             {
-                Assert.IsTrue(exception.Message.StartsWith("WRONGPASS"));
+                ClassicAssert.IsTrue(exception.Message.StartsWith("WRONGPASS"));
             }
 
             // Explicitly enable the user
             response = await c.ExecuteAsync("ACL", "SETUSER", TestUserA, "on");
-            Assert.IsTrue(response.StartsWith("OK"));
+            ClassicAssert.IsTrue(response.StartsWith("OK"));
 
             // User should be able to log in now
             response = await c.ExecuteAsync("AUTH", TestUserA, DummyPassword);
-            Assert.IsTrue(response.StartsWith("OK"));
+            ClassicAssert.IsTrue(response.StartsWith("OK"));
 
             // Switch to default user and explicitly disable user
             response = await c.ExecuteAsync("AUTH", "default");
-            Assert.IsTrue(response.StartsWith("OK"));
+            ClassicAssert.IsTrue(response.StartsWith("OK"));
 
             response = await c.ExecuteAsync("ACL", "SETUSER", TestUserA, "off");
-            Assert.IsTrue(response.StartsWith("OK"));
+            ClassicAssert.IsTrue(response.StartsWith("OK"));
 
             // Ensure the user cannot be authenticated anymore
             try
@@ -156,7 +157,7 @@ namespace Garnet.test.Resp.ACL
             }
             catch (Exception exception)
             {
-                Assert.IsTrue(exception.Message.StartsWith("WRONGPASS"));
+                ClassicAssert.IsTrue(exception.Message.StartsWith("WRONGPASS"));
             }
         }
 
@@ -175,17 +176,17 @@ namespace Garnet.test.Resp.ACL
 
             // Add the password and verify it is set correctly
             var response = await c.ExecuteAsync("ACL", "SETUSER", TestUserA, $">{DummyPassword}");
-            Assert.IsTrue(response.StartsWith("OK"));
+            ClassicAssert.IsTrue(response.StartsWith("OK"));
             string[] users = await c.ExecuteForArrayAsync("ACL", "list");
             foreach (string user in users)
             {
                 if (user.StartsWith($"user {TestUserA}"))
                 {
-                    Assert.IsTrue(user.Contains(DummyPasswordHash));
+                    ClassicAssert.IsTrue(user.Contains(DummyPasswordHash));
                 }
                 else
                 {
-                    Assert.IsFalse(user.Contains(DummyPasswordHash));
+                    ClassicAssert.IsFalse(user.Contains(DummyPasswordHash));
                 }
             }
         }
@@ -205,17 +206,17 @@ namespace Garnet.test.Resp.ACL
 
             // Add the password and verify it is set correctly
             var response = await c.ExecuteAsync("ACL", "SETUSER", TestUserA, $"#{DummyPasswordHash}");
-            Assert.IsTrue(response.StartsWith("OK"));
+            ClassicAssert.IsTrue(response.StartsWith("OK"));
             string[] users = await c.ExecuteForArrayAsync("ACL", "list");
             foreach (string user in users)
             {
                 if (user.StartsWith($"user {TestUserA}"))
                 {
-                    Assert.IsTrue(user.Contains(DummyPasswordHash));
+                    ClassicAssert.IsTrue(user.Contains(DummyPasswordHash));
                 }
                 else
                 {
-                    Assert.IsFalse(user.Contains(DummyPasswordHash));
+                    ClassicAssert.IsFalse(user.Contains(DummyPasswordHash));
                 }
             }
         }
@@ -235,11 +236,11 @@ namespace Garnet.test.Resp.ACL
 
             // Add the password
             var response = await c.ExecuteAsync("ACL", "SETUSER", TestUserA, $">{DummyPassword}");
-            Assert.IsTrue(response.StartsWith("OK"));
+            ClassicAssert.IsTrue(response.StartsWith("OK"));
 
             // Try to delete the password
             response = await c.ExecuteAsync("ACL", "SETUSER", TestUserA, $"<{DummyPassword}");
-            Assert.IsTrue(response.StartsWith("OK"));
+            ClassicAssert.IsTrue(response.StartsWith("OK"));
 
             // Ensure the password is not set for the testuser
             string[] users = await c.ExecuteForArrayAsync("ACL", "list");
@@ -247,7 +248,7 @@ namespace Garnet.test.Resp.ACL
             {
                 if (user.StartsWith($"user {TestUserA}"))
                 {
-                    Assert.IsFalse(user.Contains(DummyPasswordHash));
+                    ClassicAssert.IsFalse(user.Contains(DummyPasswordHash));
                 }
             }
         }
@@ -267,11 +268,11 @@ namespace Garnet.test.Resp.ACL
 
             // Add the password
             var response = await c.ExecuteAsync("ACL", "SETUSER", TestUserA, $"#{DummyPasswordHash}");
-            Assert.IsTrue(response.StartsWith("OK"));
+            ClassicAssert.IsTrue(response.StartsWith("OK"));
 
             // Try to delete the password
             response = await c.ExecuteAsync("ACL", "SETUSER", TestUserA, $"!{DummyPasswordHash}");
-            Assert.IsTrue(response.StartsWith("OK"));
+            ClassicAssert.IsTrue(response.StartsWith("OK"));
 
             // Ensure the password is not set for the testuser
             string[] users = await c.ExecuteForArrayAsync("ACL", "list");
@@ -279,7 +280,7 @@ namespace Garnet.test.Resp.ACL
             {
                 if (user.StartsWith($"user {TestUserA}"))
                 {
-                    Assert.IsFalse(user.Contains(DummyPasswordHash));
+                    ClassicAssert.IsFalse(user.Contains(DummyPasswordHash));
                 }
             }
         }
@@ -299,11 +300,11 @@ namespace Garnet.test.Resp.ACL
 
             // Add the password
             var response = await c.ExecuteAsync("ACL", "SETUSER", TestUserA, $">{DummyPassword}");
-            Assert.IsTrue(response.StartsWith("OK"));
+            ClassicAssert.IsTrue(response.StartsWith("OK"));
 
             // Try to add the same password again
             response = await c.ExecuteAsync("ACL", "SETUSER", TestUserA, $">{DummyPassword}");
-            Assert.IsTrue(response.StartsWith("OK"));
+            ClassicAssert.IsTrue(response.StartsWith("OK"));
 
             // Ensure the test user still has only one valid password hash listed
             string[] users = await c.ExecuteForArrayAsync("ACL", "list");
@@ -311,7 +312,7 @@ namespace Garnet.test.Resp.ACL
             {
                 if (user.StartsWith($"user {TestUserA}"))
                 {
-                    Assert.IsTrue(user.Count(x => x == '#') == 1);
+                    ClassicAssert.IsTrue(user.Count(x => x == '#') == 1);
                 }
             }
         }
@@ -332,11 +333,11 @@ namespace Garnet.test.Resp.ACL
 
             // Create the test user with a password
             var response = await c.ExecuteAsync("ACL", "SETUSER", TestUserA, "on", $">{DummyPassword}", "nopass");
-            Assert.IsTrue(response.StartsWith("OK"));
+            ClassicAssert.IsTrue(response.StartsWith("OK"));
 
             // Attempt to authenticate the user with a wrong password
             response = await c.ExecuteAsync("AUTH", TestUserA, DummyPasswordB);
-            Assert.IsTrue(response.StartsWith("OK"));
+            ClassicAssert.IsTrue(response.StartsWith("OK"));
         }
 
         /// <summary>
@@ -355,7 +356,7 @@ namespace Garnet.test.Resp.ACL
 
             // Add the two passwords
             var response = await c.ExecuteAsync("ACL", "SETUSER", TestUserA, $">{DummyPassword}", $">{DummyPasswordB}");
-            Assert.IsTrue(response.StartsWith("OK"));
+            ClassicAssert.IsTrue(response.StartsWith("OK"));
 
             // Ensure the test user has two passwords registered
             string[] users = await c.ExecuteForArrayAsync("ACL", "list");
@@ -363,13 +364,13 @@ namespace Garnet.test.Resp.ACL
             {
                 if (user.StartsWith($"user {TestUserA}"))
                 {
-                    Assert.IsTrue(user.Count(x => x == '#') == 2);
+                    ClassicAssert.IsTrue(user.Count(x => x == '#') == 2);
                 }
             }
 
             // Reset passwords
             response = await c.ExecuteAsync("ACL", "SETUSER", TestUserA, "resetpass");
-            Assert.IsTrue(response.StartsWith("OK"));
+            ClassicAssert.IsTrue(response.StartsWith("OK"));
 
             // Ensure the test user has no passwords registered
             users = await c.ExecuteForArrayAsync("ACL", "list");
@@ -377,7 +378,7 @@ namespace Garnet.test.Resp.ACL
             {
                 if (user.StartsWith($"user {TestUserA}"))
                 {
-                    Assert.IsTrue(!user.Contains('#'));
+                    ClassicAssert.IsTrue(!user.Contains('#'));
                 }
             }
         }
@@ -399,7 +400,7 @@ namespace Garnet.test.Resp.ACL
 
             // Add test user without the test category
             var response = await c.ExecuteAsync("ACL", "SETUSER", TestUserA, "on", $">{DummyPassword}");
-            Assert.IsTrue(response.StartsWith("OK"));
+            ClassicAssert.IsTrue(response.StartsWith("OK"));
 
             // Ensure the user IS NOT assigned the category
             string[] users = await c.ExecuteForArrayAsync("ACL", "list");
@@ -407,13 +408,13 @@ namespace Garnet.test.Resp.ACL
             {
                 if (user.StartsWith($"user {TestUserA}"))
                 {
-                    Assert.IsFalse(user.Contains($"+@{TestCategory}"));
+                    ClassicAssert.IsFalse(user.Contains($"+@{TestCategory}"));
                 }
             }
 
             // Add test category to test user
             response = await c.ExecuteAsync("ACL", "SETUSER", TestUserA, $"+@{TestCategory}");
-            Assert.IsTrue(response.StartsWith("OK"));
+            ClassicAssert.IsTrue(response.StartsWith("OK"));
 
             // Ensure the user IS assigned the category
             users = await c.ExecuteForArrayAsync("ACL", "list");
@@ -421,13 +422,13 @@ namespace Garnet.test.Resp.ACL
             {
                 if (user.StartsWith($"user {TestUserA}"))
                 {
-                    Assert.IsTrue(user.Contains($"+@{TestCategory}"));
+                    ClassicAssert.IsTrue(user.Contains($"+@{TestCategory}"));
                 }
             }
 
             // Remove test category to test user
             response = await c.ExecuteAsync("ACL", "SETUSER", TestUserA, $"-@{TestCategory}");
-            Assert.IsTrue(response.StartsWith("OK"));
+            ClassicAssert.IsTrue(response.StartsWith("OK"));
 
             // Ensure the user IS NOT assigned the category anymore
             users = await c.ExecuteForArrayAsync("ACL", "list");
@@ -435,7 +436,7 @@ namespace Garnet.test.Resp.ACL
             {
                 if (user.StartsWith($"user {TestUserA}"))
                 {
-                    Assert.IsFalse(user.Contains($"+@{TestCategory}"));
+                    ClassicAssert.IsFalse(user.Contains($"+@{TestCategory}"));
                 }
             }
         }
@@ -455,7 +456,7 @@ namespace Garnet.test.Resp.ACL
 
             // Add an enabled test user with a password and a category assigned
             var response = await c.ExecuteAsync("ACL", "SETUSER", TestUserA, "on", $">{DummyPassword}", "+@admin");
-            Assert.IsTrue(response.StartsWith("OK"));
+            ClassicAssert.IsTrue(response.StartsWith("OK"));
 
             // Verify the values have been set
             string[] users = await c.ExecuteForArrayAsync("ACL", "list");
@@ -463,15 +464,15 @@ namespace Garnet.test.Resp.ACL
             {
                 if (user.StartsWith($"user {TestUserA}"))
                 {
-                    Assert.IsTrue(user.Contains(DummyPasswordHash));
-                    Assert.IsTrue(user.Contains("on"));
-                    Assert.IsTrue(user.Contains("+@admin"));
+                    ClassicAssert.IsTrue(user.Contains(DummyPasswordHash));
+                    ClassicAssert.IsTrue(user.Contains("on"));
+                    ClassicAssert.IsTrue(user.Contains("+@admin"));
                 }
             }
 
             // Resets the user
             response = await c.ExecuteAsync("ACL", "SETUSER", TestUserA, "reset");
-            Assert.IsTrue(response.StartsWith("OK"));
+            ClassicAssert.IsTrue(response.StartsWith("OK"));
 
             // Verify the values have been reset to their original default
             users = await c.ExecuteForArrayAsync("ACL", "list");
@@ -480,7 +481,7 @@ namespace Garnet.test.Resp.ACL
                 // Ensure the user user has been fully reset and disabled
                 if (user.StartsWith($"user {TestUserA}"))
                 {
-                    Assert.AreEqual($"user {TestUserA} off", user);
+                    ClassicAssert.AreEqual($"user {TestUserA} off", user);
                 }
             }
         }
@@ -506,7 +507,7 @@ namespace Garnet.test.Resp.ACL
             }
             catch (Exception exception)
             {
-                Assert.IsTrue(exception.Message.StartsWith("ERR"));
+                ClassicAssert.IsTrue(exception.Message.StartsWith("ERR"));
             }
         }
 
@@ -531,7 +532,7 @@ namespace Garnet.test.Resp.ACL
             }
             catch (Exception exception)
             {
-                Assert.IsTrue(exception.Message.StartsWith("ERR Unknown operation"));
+                ClassicAssert.IsTrue(exception.Message.StartsWith("ERR Unknown operation"));
             }
         }
 
@@ -550,7 +551,7 @@ namespace Garnet.test.Resp.ACL
 
             // Add a user with wildcard key permissions
             var response = await c.ExecuteAsync("ACL", "SETUSER", TestUserA, "~*");
-            Assert.IsTrue(response.StartsWith("OK"));
+            ClassicAssert.IsTrue(response.StartsWith("OK"));
         }
     }
 }
