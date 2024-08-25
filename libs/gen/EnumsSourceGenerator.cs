@@ -1,4 +1,7 @@
-﻿using System.CodeDom.Compiler;
+﻿// Copyright (c) Microsoft Corporation.
+// Licensed under the MIT license.
+
+using System.CodeDom.Compiler;
 using Microsoft.CodeAnalysis;
 using Microsoft.CodeAnalysis.CSharp.Syntax;
 
@@ -16,7 +19,7 @@ public class EnumsSourceGenerator : IIncrementalGenerator
                 "Garnet.common.GenerateEnumDescriptionUtilsAttribute",
                 predicate: static (_, _) => true,
                 transform: static (ctx, _) => TransformEnumDetails((EnumDeclarationSyntax)ctx.TargetNode, ctx.SemanticModel)
-            ).WithComparer(new EnumDetailsComparer());
+            );
         var enumUtils = enumDetails.Select(static (details, _) => Execute(details));
 
         context.RegisterSourceOutput(enumUtils, (ctx, source) => ctx.AddSource($"{GeneratedClassName}.{source.EnumName}.g.cs", source.ClassSource));
@@ -36,7 +39,7 @@ public class EnumsSourceGenerator : IIncrementalGenerator
                     .SingleOrDefault()?.ArgumentList?.Arguments.Single().ToString()
             ))
             .ToArray();
-        return new EnumDetails(namespaceDeclaration!.Name.ToString(), enumName, values);
+        return new EnumDetails(namespaceDeclaration!.Name.ToString(), enumName, new EquatableArray<(string Name, object? Value, string? Description)>(values));
     }
 
     private static (string EnumName, string ClassSource) Execute(EnumDetails details)
@@ -164,7 +167,7 @@ public class EnumsSourceGenerator : IIncrementalGenerator
         return false;
     }
 
-    private record struct EnumDetails(string Namespace, string EnumName, (string Name, object? Value, string? Description)[] Values);
+    private record struct EnumDetails(string Namespace, string EnumName, EquatableArray<(string Name, object? Value, string? Description)> Values);
 
     private class EnumDetailsComparer : IEqualityComparer<EnumDetails>
     {
