@@ -422,7 +422,7 @@ namespace Garnet.cluster
         /// Reset slot state to <see cref="SlotState.STABLE"/>
         /// </summary>
         /// <param name="slot">Slot id to reset state</param>
-        public void ResetSlotState(int slot)
+        public void TryResetSlotState(int slot)
         {
             var current = currentConfig;
             var slotState = current.GetState((ushort)slot);
@@ -447,10 +447,14 @@ namespace Garnet.cluster
         /// <param name="slots">Slot list</param>
         public void ResetSlotsState(HashSet<int> slots)
         {
-            foreach (var slot in slots)
+            while (true)
             {
-                ResetSlotState(slot);
+                var current = currentConfig;
+                var newConfig = currentConfig.ResetMultiSlotState(slots);
+                if (Interlocked.CompareExchange(ref currentConfig, newConfig, current) == current)
+                    break;
             }
+            FlushConfig();
         }
 
         /// <summary>
