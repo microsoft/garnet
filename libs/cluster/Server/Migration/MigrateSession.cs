@@ -130,7 +130,7 @@ namespace Garnet.cluster
             this._timeout = TimeSpan.FromMilliseconds(_timeout);
             this._sslots = _slots;
             this._slotRanges = GetRanges();
-            this._keys = keys == null ? new MigratingKeysWorkingSet() : keys;
+            this._keys = keys ?? new MigratingKeysWorkingSet();
             this.transferOption = transferOption;
 
             if (clusterProvider != null)
