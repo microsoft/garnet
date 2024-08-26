@@ -167,7 +167,7 @@ namespace Garnet.server
 
                     case RespCommand.EXPIRE:
                     case RespCommand.PEXPIRE:
-                        return sizeof(int) + t.Length + input.MetadataSize;
+                        return sizeof(int) + t.Length + sizeof(long);
 
                     case RespCommand.SETRANGE:
                         var offset = input.parseState.GetInt(input.parseStateStartIdx);

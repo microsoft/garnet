@@ -1551,8 +1551,10 @@ namespace Garnet.test
             args[2] = "XX";// XX -- Set expiry only when the key has an existing expiry
             resp = (bool)db.Execute($"{command}", args);
             ClassicAssert.IsTrue(resp);// XX return true existing expiry
+
             var time = db.KeyTimeToLive(key);
-            ClassicAssert.IsTrue(time.Value.TotalSeconds <= (double)((int)args[1]) && time.Value.TotalSeconds > 0);
+            ClassicAssert.Greater(time.Value.TotalSeconds, 0);
+            ClassicAssert.LessOrEqual(time.Value.TotalSeconds, (int)args[1]);
 
             args[1] = 1;
             args[2] = "GT";// GT -- Set expiry only when the new expiry is greater than current one
@@ -1565,10 +1567,8 @@ namespace Garnet.test
             ClassicAssert.IsTrue(resp); // GT return true new expiry > current expiry
             time = db.KeyTimeToLive(key);
 
-            if (command.Equals("EXPIRE"))
-                ClassicAssert.IsTrue(time.Value.TotalSeconds > 500);
-            else
-                ClassicAssert.IsTrue(time.Value.TotalMilliseconds > 500);
+            ClassicAssert.Greater(command.Equals("EXPIRE") ? 
+                    time.Value.TotalSeconds : time.Value.TotalMilliseconds, 500);
 
             args[1] = 2000;
             args[2] = "LT";// LT -- Set expiry only when the new expiry is less than current one
@@ -1581,10 +1581,10 @@ namespace Garnet.test
             ClassicAssert.IsTrue(resp); // LT return true new expiry < current expiry
             time = db.KeyTimeToLive(key);
 
-            if (command.Equals("EXPIRE"))
-                ClassicAssert.IsTrue(time.Value.TotalSeconds <= (double)((int)args[1]) && time.Value.TotalSeconds > 0);
-            else
-                ClassicAssert.IsTrue(time.Value.TotalMilliseconds <= (double)((int)args[1]) && time.Value.TotalMilliseconds > 0);
+            ClassicAssert.Greater(time.Value.TotalSeconds, 0);
+
+            ClassicAssert.LessOrEqual(command.Equals("EXPIRE") ? 
+                    time.Value.TotalSeconds : time.Value.TotalMilliseconds, (int)args[1]);
         }
 
         [Test]

@@ -1,6 +1,7 @@
 ﻿// Copyright (c) Microsoft Corporation.
 // Licensed under the MIT license.
 
+using System;
 using System.Buffers;
 using System.Diagnostics;
 using Tsavorite.core;
@@ -106,10 +107,20 @@ namespace Garnet.server
             {
                 case GarnetObjectType.Expire:
                     var currTokenIdx = input.parseStateStartIdx;
-                    var optionType = input.parseState.GetEnum<ExpireOption>(currTokenIdx++, true);
-                    var expiryExists = (value.Expiration > 0);
-                    var expiration = input.parseState.GetLong(currTokenIdx);
-                    return EvaluateObjectExpireInPlace(optionType, expiryExists, expiration, ref value, ref output);
+                    var expiryValue = input.parseState.GetInt(currTokenIdx++);
+                    var tsExpiry = input.header.cmd == RespCommand.EXPIRE
+                        ? TimeSpan.FromSeconds(expiryValue)
+                        : TimeSpan.FromMilliseconds(expiryValue);
+                    var expiryTicks = DateTimeOffset.UtcNow.Ticks + tsExpiry.Ticks;
+
+                    var optionType = ExpireOption.None;
+                    if (input.parseState.Count - input.parseStateStartIdx > 1)
+                    { 
+                        optionType = input.parseState.GetEnum<ExpireOption>(currTokenIdx, true);
+                    }
+                    
+                    var expiryExists = value.Expiration > 0;
+                    return EvaluateObjectExpireInPlace(optionType, expiryExists, expiryTicks, ref value, ref output);
                 case GarnetObjectType.Persist:
                     if (value.Expiration > 0)
                     {
@@ -179,10 +190,16 @@ namespace Garnet.server
             {
                 case GarnetObjectType.Expire:
                     var currTokenIdx = input.parseStateStartIdx;
-                    var expireOption = input.parseState.GetEnum<ExpireOption>(currTokenIdx++, true);
-                    var expiryExists = (value.Expiration > 0);
-                    var expiration = input.parseState.GetLong(currTokenIdx);
-                    EvaluateObjectExpireInPlace(expireOption, expiryExists, expiration, ref value, ref output);
+                    var expiryValue = input.parseState.GetInt(currTokenIdx++);
+                    var tsExpiry = input.header.cmd == RespCommand.EXPIRE
+                        ? TimeSpan.FromSeconds(expiryValue)
+                        : TimeSpan.FromMilliseconds(expiryValue);
+                    var expiryTicks = DateTimeOffset.UtcNow.Ticks + tsExpiry.Ticks;
+
+                    var expireOption = input.parseState.GetEnum<ExpireOption>(currTokenIdx, true);
+                    var expiryExists = value.Expiration > 0;
+
+                    EvaluateObjectExpireInPlace(expireOption, expiryExists, expiryTicks, ref value, ref output);
                     break;
                 case GarnetObjectType.Persist:
                     if (value.Expiration > 0)

@@ -146,15 +146,14 @@ namespace Garnet.server
         /// Set a timeout on key using a timeSpan in seconds
         /// </summary>
         /// <param name="key">Key</param>
-        /// <param name="expiry">Expiry in TimeSpan</param>
+        /// <param name="input"></param>
         /// <param name="timeoutSet">Whether timeout was set by the call</param>
         /// <param name="storeType">Store type: main, object, or both</param>
-        /// <param name="expireOption">Expire option</param>
         /// <returns></returns>
-        GarnetStatus EXPIRE(ArgSlice key, TimeSpan expiry, out bool timeoutSet, StoreType storeType = StoreType.All, ExpireOption expireOption = ExpireOption.None);
+        GarnetStatus EXPIRE(ArgSlice key, ref RawStringInput input, out bool timeoutSet, StoreType storeType = StoreType.All);
 
         /// <summary>
-        /// Set a timeout on key using a timeSpan in milliseconds
+        /// Set a timeout on key using a timeSpan in seconds
         /// </summary>
         /// <param name="key">Key</param>
         /// <param name="expiry">Expiry in TimeSpan</param>
@@ -162,8 +161,7 @@ namespace Garnet.server
         /// <param name="storeType">Store type: main, object, or both</param>
         /// <param name="expireOption">Expire option</param>
         /// <returns></returns>
-        GarnetStatus PEXPIRE(ArgSlice key, TimeSpan expiry, out bool timeoutSet, StoreType storeType = StoreType.All, ExpireOption expireOption = ExpireOption.None);
-
+        GarnetStatus EXPIRE(ArgSlice key, TimeSpan expiry, out bool timeoutSet, StoreType storeType = StoreType.All, ExpireOption expireOption = ExpireOption.None);
         #endregion
 
         #region PERSIST

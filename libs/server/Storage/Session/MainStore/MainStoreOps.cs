@@ -636,6 +636,71 @@ namespace Garnet.server
         /// <typeparam name="TContext"></typeparam>
         /// <typeparam name="TObjectContext"></typeparam>
         /// <param name="key">The key to set the timeout on.</param>
+        /// <param name="input">Input for the main store</param>
+        /// <param name="timeoutSet">True when the timeout was properly set.</param>
+        /// <param name="storeType">The store to operate on.</param>
+        /// <param name="context">Basic context for the main store</param>
+        /// <param name="objectStoreContext">Object context for the object store</param>
+        /// <param name="milliseconds">When true the command executed is PEXPIRE, expire by default.</param>
+        /// <returns></returns>
+        public unsafe GarnetStatus EXPIRE<TContext, TObjectContext>(ArgSlice key, ref RawStringInput input, out bool timeoutSet, StoreType storeType, ref TContext context, ref TObjectContext objectStoreContext)
+            where TContext : ITsavoriteContext<SpanByte, SpanByte, RawStringInput, SpanByteAndMemory, long, MainSessionFunctions, MainStoreFunctions, MainStoreAllocator>
+            where TObjectContext : ITsavoriteContext<byte[], IGarnetObject, ObjectInput, GarnetObjectStoreOutput, long, ObjectSessionFunctions, ObjectStoreFunctions, ObjectStoreAllocator>
+        {
+            var rmwOutput = stackalloc byte[ObjectOutputHeader.Size];
+            var output = new SpanByteAndMemory(SpanByte.FromPinnedPointer(rmwOutput, ObjectOutputHeader.Size));
+            timeoutSet = false;
+
+            var found = false;
+
+            if (storeType == StoreType.Main || storeType == StoreType.All)
+            {
+                var _key = key.SpanByte;
+                var status = context.RMW(ref _key, ref input, ref output);
+
+                if (status.IsPending)
+                    CompletePendingForSession(ref status, ref output, ref context);
+                if (status.Found) found = true;
+            }
+
+            if (!found && (storeType == StoreType.Object || storeType == StoreType.All) &&
+                !objectStoreBasicContext.IsNull)
+            {
+                var objInput = new ObjectInput
+                {
+                    header = new RespInputHeader
+                    {
+                        cmd = input.header.cmd,
+                        type = GarnetObjectType.Expire,
+                    },
+                    parseState = input.parseState,
+                    parseStateStartIdx = input.parseStateStartIdx,
+                };
+
+                // Retry on object store
+                var objOutput = new GarnetObjectStoreOutput { spanByteAndMemory = output };
+                var keyBytes = key.ToArray();
+                var status = objectStoreContext.RMW(ref keyBytes, ref objInput, ref objOutput);
+
+                if (status.IsPending)
+                    CompletePendingForObjectStoreSession(ref status, ref objOutput, ref objectStoreContext);
+                if (status.Found) found = true;
+
+                output = objOutput.spanByteAndMemory;
+            }
+
+            Debug.Assert(output.IsSpanByte);
+            if (found) timeoutSet = ((ObjectOutputHeader*)output.SpanByte.ToPointer())->result1 == 1;
+
+            return found ? GarnetStatus.OK : GarnetStatus.NOTFOUND;
+        }
+
+        /// <summary>
+        /// Set a timeout on key.
+        /// </summary>
+        /// <typeparam name="TContext"></typeparam>
+        /// <typeparam name="TObjectContext"></typeparam>
+        /// <param name="key">The key to set the timeout on.</param>
         /// <param name="expiry">The timespan value to set the expiration for.</param>
         /// <param name="timeoutSet">True when the timeout was properly set.</param>
         /// <param name="storeType">The store to operate on.</param>
@@ -648,28 +713,40 @@ namespace Garnet.server
             where TContext : ITsavoriteContext<SpanByte, SpanByte, RawStringInput, SpanByteAndMemory, long, MainSessionFunctions, MainStoreFunctions, MainStoreAllocator>
             where TObjectContext : ITsavoriteContext<byte[], IGarnetObject, ObjectInput, GarnetObjectStoreOutput, long, ObjectSessionFunctions, ObjectStoreFunctions, ObjectStoreAllocator>
         {
-            var inputHeader = new RawStringInput();
-
-            byte* pbCmdInput = stackalloc byte[sizeof(int) + sizeof(long) + RespInputHeader.Size + sizeof(byte)];
-            *(int*)pbCmdInput = sizeof(long) + RespInputHeader.Size;
-            ((RespInputHeader*)(pbCmdInput + sizeof(int) + sizeof(long)))->cmd = milliseconds ? RespCommand.PEXPIRE : RespCommand.EXPIRE;
-            ((RespInputHeader*)(pbCmdInput + sizeof(int) + sizeof(long)))->flags = 0;
-
-            *(pbCmdInput + sizeof(int) + sizeof(long) + RespInputHeader.Size) = (byte)expireOption;
-            ref var input = ref SpanByte.Reinterpret(pbCmdInput);
-
-            input.ExtraMetadata = DateTimeOffset.UtcNow.Ticks + expiry.Ticks;
-
             var rmwOutput = stackalloc byte[ObjectOutputHeader.Size];
             var output = new SpanByteAndMemory(SpanByte.FromPinnedPointer(rmwOutput, ObjectOutputHeader.Size));
             timeoutSet = false;
 
-            bool found = false;
+            var found = false;
+
+            // Serialize expiry + expiry options to parse state
+            var expiryValue = (long)(milliseconds ? expiry.TotalMilliseconds : expiry.TotalSeconds);
+            var expiryLength = NumUtils.NumDigitsInLong(expiryValue);
+            var expiryBytes = stackalloc byte[expiryLength];
+            NumUtils.LongToBytes(expiryValue, expiryLength, ref expiryBytes);
+            expiryBytes -= expiryLength;
+            var expirySlice = new ArgSlice(expiryBytes, expiryLength);
+
+            var expiryOptionBytes = stackalloc byte[expiryLength];
+            expiryOptionBytes[0] = (byte)expireOption;
+            var expiryOptionSlice = new ArgSlice(expiryOptionBytes, 1);
+
+            // Build parse state
+            ArgSlice[] tmpParseStateBuffer = default;
+            var tmpParseState = new SessionParseState();
+            tmpParseState.InitializeWithArguments(ref tmpParseStateBuffer, expirySlice, expiryOptionSlice);
 
             if (storeType == StoreType.Main || storeType == StoreType.All)
             {
+                var input = new RawStringInput
+                {
+                    header = new RespInputHeader { cmd = milliseconds ? RespCommand.PEXPIRE : RespCommand.EXPIRE },
+                    parseState = tmpParseState,
+                    parseStateStartIdx = 0,
+                };
+
                 var _key = key.SpanByte;
-                var status = context.RMW(ref _key, ref inputHeader, ref output);
+                var status = context.RMW(ref _key, ref input, ref output);
 
                 if (status.IsPending)
                     CompletePendingForSession(ref status, ref output, ref context);
@@ -679,23 +756,6 @@ namespace Garnet.server
             if (!found && (storeType == StoreType.Object || storeType == StoreType.All) &&
                 !objectStoreBasicContext.IsNull)
             {
-                var parseState = new SessionParseState();
-                ArgSlice[] parseStateBuffer = default;
-
-                var expireOptionLength = NumUtils.NumDigits((byte)expireOption);
-                var expireOptionPtr = stackalloc byte[expireOptionLength];
-                NumUtils.IntToBytes((byte)expireOption, expireOptionLength, ref expireOptionPtr);
-                expireOptionPtr -= expireOptionLength;
-                var expireOptionSlice = new ArgSlice(expireOptionPtr, expireOptionLength);
-
-                var extraMetadataLength = NumUtils.NumDigitsInLong(input.ExtraMetadata);
-                var extraMetadataPtr = stackalloc byte[extraMetadataLength];
-                NumUtils.LongToBytes(input.ExtraMetadata, extraMetadataLength, ref extraMetadataPtr);
-                extraMetadataPtr -= extraMetadataLength;
-                var extraMetadataSlice = new ArgSlice(extraMetadataPtr, extraMetadataLength);
-
-                parseState.InitializeWithArguments(ref parseStateBuffer, expireOptionSlice, extraMetadataSlice);
-
                 var objInput = new ObjectInput
                 {
                     header = new RespInputHeader
@@ -703,7 +763,7 @@ namespace Garnet.server
                         cmd = milliseconds ? RespCommand.PEXPIRE : RespCommand.EXPIRE,
                         type = GarnetObjectType.Expire,
                     },
-                    parseState = parseState,
+                    parseState = tmpParseState,
                     parseStateStartIdx = 0,
                 };
 
@@ -729,19 +789,11 @@ namespace Garnet.server
             where TContext : ITsavoriteContext<SpanByte, SpanByte, RawStringInput, SpanByteAndMemory, long, MainSessionFunctions, MainStoreFunctions, MainStoreAllocator>
             where TObjectContext : ITsavoriteContext<byte[], IGarnetObject, ObjectInput, GarnetObjectStoreOutput, long, ObjectSessionFunctions, ObjectStoreFunctions, ObjectStoreAllocator>
         {
-            var inputHeader = new RawStringInput();
-
             GarnetStatus status = GarnetStatus.NOTFOUND;
 
-            int inputSize = sizeof(int) + RespInputHeader.Size;
-            byte* pbCmdInput = stackalloc byte[inputSize];
-            byte* pcurr = pbCmdInput;
-            *(int*)pcurr = inputSize - sizeof(int);
-            pcurr += sizeof(int);
-            (*(RespInputHeader*)pcurr).cmd = RespCommand.PERSIST;
-            (*(RespInputHeader*)pcurr).flags = 0;
+            var inputHeader = new RawStringInput { header = new RespInputHeader { cmd = RespCommand.PERSIST }, };
 
-            byte* pbOutput = stackalloc byte[8];
+            var pbOutput = stackalloc byte[8];
             var o = new SpanByteAndMemory(pbOutput, 8);
 
             if (storeType == StoreType.Main || storeType == StoreType.All)

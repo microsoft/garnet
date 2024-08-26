@@ -220,7 +220,7 @@ namespace Garnet.server
             }
         }
 
-        bool EvaluateExpireInPlace(ExpireOption optionType, bool expiryExists, ref RawStringInput input, ref SpanByte value, ref SpanByteAndMemory output)
+        bool EvaluateExpireInPlace(ExpireOption optionType, bool expiryExists, long newExpiry, ref SpanByte value, ref SpanByteAndMemory output)
         {
             ObjectOutputHeader* o = (ObjectOutputHeader*)output.SpanByte.ToPointer();
             if (expiryExists)
@@ -232,20 +232,20 @@ namespace Garnet.server
                         break;
                     case ExpireOption.XX:
                     case ExpireOption.None:
-                        value.ExtraMetadata = input.ExtraMetadata;
+                        value.ExtraMetadata = newExpiry;
                         o->result1 = 1;
                         break;
                     case ExpireOption.GT:
-                        bool replace = input.ExtraMetadata < value.ExtraMetadata;
-                        value.ExtraMetadata = replace ? value.ExtraMetadata : input.ExtraMetadata;
+                        var replace = newExpiry < value.ExtraMetadata;
+                        value.ExtraMetadata = replace ? value.ExtraMetadata : newExpiry;
                         if (replace)
                             o->result1 = 0;
                         else
                             o->result1 = 1;
                         break;
                     case ExpireOption.LT:
-                        replace = input.ExtraMetadata > value.ExtraMetadata;
-                        value.ExtraMetadata = replace ? value.ExtraMetadata : input.ExtraMetadata;
+                        replace = newExpiry > value.ExtraMetadata;
+                        value.ExtraMetadata = replace ? value.ExtraMetadata : newExpiry;
                         if (replace)
                             o->result1 = 0;
                         else
@@ -274,7 +274,7 @@ namespace Garnet.server
             }
         }
 
-        void EvaluateExpireCopyUpdate(ExpireOption optionType, bool expiryExists, ref RawStringInput input, ref SpanByte oldValue, ref SpanByte newValue, ref SpanByteAndMemory output)
+        void EvaluateExpireCopyUpdate(ExpireOption optionType, bool expiryExists, long newExpiry, ref SpanByte oldValue, ref SpanByte newValue, ref SpanByteAndMemory output)
         {
             ObjectOutputHeader* o = (ObjectOutputHeader*)output.SpanByte.ToPointer();
             if (expiryExists)
@@ -286,14 +286,14 @@ namespace Garnet.server
                         break;
                     case ExpireOption.XX:
                     case ExpireOption.None:
-                        newValue.ExtraMetadata = input.ExtraMetadata;
+                        newValue.ExtraMetadata = newExpiry;
                         oldValue.AsReadOnlySpan().CopyTo(newValue.AsSpan());
                         o->result1 = 1;
                         break;
                     case ExpireOption.GT:
                         oldValue.AsReadOnlySpan().CopyTo(newValue.AsSpan());
-                        bool replace = input.ExtraMetadata < oldValue.ExtraMetadata;
-                        newValue.ExtraMetadata = replace ? oldValue.ExtraMetadata : input.ExtraMetadata;
+                        bool replace = newExpiry < oldValue.ExtraMetadata;
+                        newValue.ExtraMetadata = replace ? oldValue.ExtraMetadata : newExpiry;
                         if (replace)
                             o->result1 = 0;
                         else
@@ -301,8 +301,8 @@ namespace Garnet.server
                         break;
                     case ExpireOption.LT:
                         oldValue.AsReadOnlySpan().CopyTo(newValue.AsSpan());
-                        replace = input.ExtraMetadata > oldValue.ExtraMetadata;
-                        newValue.ExtraMetadata = replace ? oldValue.ExtraMetadata : input.ExtraMetadata;
+                        replace = newExpiry > oldValue.ExtraMetadata;
+                        newValue.ExtraMetadata = replace ? oldValue.ExtraMetadata : newExpiry;
                         if (replace)
                             o->result1 = 0;
                         else
@@ -316,7 +316,7 @@ namespace Garnet.server
                 {
                     case ExpireOption.NX:
                     case ExpireOption.None:
-                        newValue.ExtraMetadata = input.ExtraMetadata;
+                        newValue.ExtraMetadata = newExpiry;
                         oldValue.AsReadOnlySpan().CopyTo(newValue.AsSpan());
                         o->result1 = 1;
                         break;

@@ -294,9 +294,21 @@ namespace Garnet.server
 
                 case RespCommand.PEXPIRE:
                 case RespCommand.EXPIRE:
-                    var optionType = input.parseState.GetEnum<ExpireOption>(input.parseStateStartIdx, true);
                     var expiryExists = (value.MetadataSize > 0);
-                    return EvaluateExpireInPlace(optionType, expiryExists, ref input, ref value, ref output);
+                    
+                    var expiryValue = input.parseState.GetInt(input.parseStateStartIdx);
+                    var tsExpiry = input.header.cmd == RespCommand.EXPIRE
+                        ? TimeSpan.FromSeconds(expiryValue)
+                        : TimeSpan.FromMilliseconds(expiryValue);
+                    var expiryTicks = DateTimeOffset.UtcNow.Ticks + tsExpiry.Ticks;
+
+                    var optionType = ExpireOption.None;
+                    if (input.parseState.Count - input.parseStateStartIdx > 1)
+                    {
+                        optionType = input.parseState.GetEnum<ExpireOption>(input.parseStateStartIdx + 1, true);
+                    }
+
+                    return EvaluateExpireInPlace(optionType, expiryExists, expiryTicks, ref value, ref output);
 
                 case RespCommand.PERSIST:
                     if (value.MetadataSize != 0)
@@ -572,10 +584,21 @@ namespace Garnet.server
 
                 case RespCommand.EXPIRE:
                 case RespCommand.PEXPIRE:
-                    Debug.Assert(newValue.Length == oldValue.Length + input.MetadataSize);
-                    ExpireOption optionType = (ExpireOption)(*(inputPtr + RespInputHeader.Size));
-                    bool expiryExists = oldValue.MetadataSize > 0;
-                    EvaluateExpireCopyUpdate(optionType, expiryExists, ref input, ref oldValue, ref newValue, ref output);
+                    var expiryExists = oldValue.MetadataSize > 0;
+
+                    var expiryValue = input.parseState.GetInt(input.parseStateStartIdx);
+                    var tsExpiry = input.header.cmd == RespCommand.EXPIRE
+                        ? TimeSpan.FromSeconds(expiryValue)
+                        : TimeSpan.FromMilliseconds(expiryValue);
+                    var expiryTicks = DateTimeOffset.UtcNow.Ticks + tsExpiry.Ticks;
+
+                    var optionType = ExpireOption.None;
+                    if (input.parseState.Count - input.parseStateStartIdx > 1)
+                    {
+                        optionType = input.parseState.GetEnum<ExpireOption>(input.parseStateStartIdx + 1, true);
+                    }
+
+                    EvaluateExpireCopyUpdate(optionType, expiryExists, expiryTicks, ref oldValue, ref newValue, ref output);
                     break;
 
                 case RespCommand.PERSIST:

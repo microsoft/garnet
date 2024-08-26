@@ -153,9 +153,12 @@ namespace Garnet.server
                 return true;
             }
 
-            var status = command == RespCommand.EXPIRE ?
-                        storageApi.EXPIRE(key, expiryMs, out var timeoutSet) :
-                        storageApi.PEXPIRE(key, expiryMs, out timeoutSet, StoreType.All, expireOption);
+            var input = new RawStringInput
+            {
+                header = new RespInputHeader { cmd = command }, parseState = parseState, parseStateStartIdx = 1,
+            };
+
+            var status = storageApi.EXPIRE(key, ref input, out var timeoutSet);
 
             if (status == GarnetStatus.OK && timeoutSet)
             {
