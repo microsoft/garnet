@@ -172,7 +172,7 @@ namespace Tsavorite.test.LockTests
             Assert.IsFalse(bContext.Upsert(collidingKey, collidingKey * ValueMult).IsPending);
 
             // Now make sure we did collide
-            HashEntryInfo hei = new(store.storeFunctions.GetKeyHashCode64(ref deleteKey));
+            HashEntryInfo hei = new(store.storeFunctions.GetKeyHashCode64(ref deleteKey), store.partitionId);
             Assert.IsTrue(store.FindTag(ref hei), "Cannot find deleteKey entry");
             Assert.Greater(hei.Address, Constants.kInvalidAddress, "Couldn't find deleteKey Address");
             var physicalAddress = store.hlog.GetPhysicalAddress(hei.Address);

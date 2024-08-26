@@ -75,7 +75,7 @@ namespace Tsavorite.test.LockTable
 
         void TryLock(long key, LockType lockType, int expectedCurrentReadLocks, bool expectedLockResult)
         {
-            HashEntryInfo hei = new(comparer.GetHashCode64(ref key));
+            HashEntryInfo hei = new(comparer.GetHashCode64(ref key), store.partitionId);
             PopulateHei(ref hei);
 
             // Check for existing lock
@@ -90,7 +90,7 @@ namespace Tsavorite.test.LockTable
 
         void Unlock(long key, LockType lockType)
         {
-            HashEntryInfo hei = new(comparer.GetHashCode64(ref key));
+            HashEntryInfo hei = new(comparer.GetHashCode64(ref key), store.partitionId);
             PopulateHei(ref hei);
             if (lockType == LockType.Shared)
                 store.LockTable.UnlockShared(ref hei);
@@ -121,7 +121,7 @@ namespace Tsavorite.test.LockTable
             where TStoreFunctions : IStoreFunctions<TKey, TValue>
             where TAllocator : IAllocator<TKey, TValue, TStoreFunctions>
         {
-            HashEntryInfo hei = new(store.storeFunctions.GetKeyHashCode64(ref key));
+            HashEntryInfo hei = new(store.storeFunctions.GetKeyHashCode64(ref key), store.partitionId);
             PopulateHei(store, ref hei);
             var lockState = store.LockTable.GetLockState(ref hei);
             Assert.AreEqual(expectedX, lockState.IsLockedExclusive, "XLock mismatch");
@@ -147,7 +147,7 @@ namespace Tsavorite.test.LockTable
             where TStoreFunctions : IStoreFunctions<TKey, TValue>
             where TAllocator : IAllocator<TKey, TValue, TStoreFunctions>
         {
-            HashEntryInfo hei = new(key.KeyHash);
+            HashEntryInfo hei = new(key.KeyHash, store.partitionId);
             PopulateHei(store, ref hei);
             var lockState = store.LockTable.GetLockState(ref hei);
             Assert.AreEqual(expectedX, lockState.IsLockedExclusive, "XLock mismatch");
@@ -190,7 +190,7 @@ namespace Tsavorite.test.LockTable
         [Category(LockTestCategory), Category(LockTableTestCategory), Category(SmokeTestCategory)]
         public void SingleKeyTest([Values] UseSingleBucketComparer /* justToSignalSetup */ _)
         {
-            HashEntryInfo hei = new(comparer.GetHashCode64(ref SingleBucketKey));
+            HashEntryInfo hei = new(comparer.GetHashCode64(ref SingleBucketKey), store.partitionId);
             PopulateHei(ref hei);
             AssertLockCounts(ref hei, false, 0);
 
@@ -226,7 +226,7 @@ namespace Tsavorite.test.LockTable
         [Category(LockTestCategory), Category(LockTableTestCategory), Category(SmokeTestCategory)]
         public void ThreeKeyTest([Values] UseSingleBucketComparer /* justToSignalSetup */ _)
         {
-            HashEntryInfo hei = new(comparer.GetHashCode64(ref SingleBucketKey));
+            HashEntryInfo hei = new(comparer.GetHashCode64(ref SingleBucketKey), store.partitionId);
             PopulateHei(ref hei);
             AssertLockCounts(ref hei, false, 0);
 
@@ -427,7 +427,7 @@ namespace Tsavorite.test.LockTable
                     store.LockTable.SortKeyHashes(threadStructs);
                     for (var ii = 0; ii < numKeys; ++ii)
                     {
-                        HashEntryInfo hei = new(threadStructs[ii].KeyHash);
+                        HashEntryInfo hei = new(threadStructs[ii].KeyHash, store.partitionId);
                         PopulateHei(ref hei);
                         if (threadStructs[ii].LockType == LockType.Shared)
                             while (!store.LockTable.TryLockShared(ref hei)) { }
@@ -441,7 +441,7 @@ namespace Tsavorite.test.LockTable
                     // Unlock
                     for (var ii = 0; ii < numKeys; ++ii)
                     {
-                        HashEntryInfo hei = new(threadStructs[ii].KeyHash);
+                        HashEntryInfo hei = new(threadStructs[ii].KeyHash, store.partitionId);
                         PopulateHei(ref hei);
                         if (threadStructs[ii].LockType == LockType.Shared)
                             store.LockTable.UnlockShared(ref hei);

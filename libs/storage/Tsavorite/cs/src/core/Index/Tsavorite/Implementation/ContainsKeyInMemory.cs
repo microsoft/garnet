@@ -14,7 +14,7 @@ namespace Tsavorite.core
             ref TKey key, TSessionFunctionsWrapper sessionFunctions, out long logicalAddress, long fromAddress = -1)
             where TSessionFunctionsWrapper : ISessionFunctionsWrapper<TKey, TValue, TInput, TOutput, TContext, TStoreFunctions, TAllocator>
         {
-            OperationStackContext<TKey, TValue, TStoreFunctions, TAllocator> stackCtx = new(storeFunctions.GetKeyHashCode64(ref key));
+            OperationStackContext<TKey, TValue, TStoreFunctions, TAllocator> stackCtx = new(storeFunctions.GetKeyHashCode64(ref key), partitionId);
 
             if (sessionFunctions.Ctx.phase == Phase.IN_PROGRESS_GROW)
                 SplitBuckets(stackCtx.hei.hash);

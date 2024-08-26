@@ -28,16 +28,20 @@ namespace Tsavorite.core
         /// <summary>The hash tag for this key</summary>
         internal ushort tag;
 
+        /// <summary>The id of the Tsavorite partition to search for this key in.</summary>
+        internal ushort partitionId;
+
         internal long bucketIndex;
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        internal HashEntryInfo(long hash)
+        internal HashEntryInfo(long hash, ushort partitionId)
         {
             firstBucket = default;
             bucket = default;
             slot = default;
             entry = default;
             this.hash = hash;
+            this.partitionId = partitionId;
             tag = (ushort)((ulong)this.hash >> HashBucketEntry.kHashTagShift);
         }
 
@@ -80,12 +84,13 @@ namespace Tsavorite.core
         internal void SetToCurrent() => entry = new() { word = bucket->bucket_entries[slot] };
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        internal bool TryCAS(long newLogicalAddress)
+        internal bool TryCAS(long newLogicalAddress, ushort partition)
         {
             // Insert as the first record in the hash chain.
             HashBucketEntry updatedEntry = new()
             {
                 Tag = tag,
+                PartitionId = partition,
                 Address = newLogicalAddress & HashBucketEntry.kAddressMask,
                 Tentative = false
                 // .ReadCache is included in newLogicalAddress

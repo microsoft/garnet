@@ -22,7 +22,7 @@ namespace Tsavorite.core
         {
             Debug.Assert(kernel.epoch.ThisInstanceProtected());
 
-            HashEntryInfo hei = new(storeFunctions.GetKeyHashCode64(ref key)); ;
+            HashEntryInfo hei = new(storeFunctions.GetKeyHashCode64(ref key), partitionId);
 
             #region Trace back for record in in-memory HybridLog
             _ = FindTag(ref hei);

@@ -17,6 +17,11 @@ namespace Tsavorite.core
         void Initialize(string baseName);
 
         /// <summary>
+        /// Size of sector
+        /// </summary>
+        uint SectorSize { get; }
+
+        /// <summary>
         /// Get IDevice instance for given file info
         /// </summary>
         /// <param name="fileInfo">File info</param>

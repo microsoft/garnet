@@ -2,8 +2,6 @@
 // Licensed under the MIT license.
 
 using System;
-using System.Drawing;
-using System.Runtime.CompilerServices;
 using System.Runtime.InteropServices;
 using Microsoft.Extensions.Logging;
 
@@ -13,7 +11,7 @@ namespace Tsavorite.core
     /// The core data structures of the core, used for dual Tsavorite operations
     /// </summary>
     [StructLayout(LayoutKind.Explicit)]
-    public struct TsavoriteKernel
+    public class TsavoriteKernel
     {
         // Unioned fields
         [FieldOffset(0)]
@@ -24,14 +22,14 @@ namespace Tsavorite.core
         [FieldOffset(HashTable.Size)]
         internal LightEpoch epoch;
 
-        public TsavoriteKernel(long size, int sector_size, ILogger logger = null)
+        public TsavoriteKernel(long numBuckets, int sectorSize, ILogger logger = null)
         {
-            if (!Utility.IsPowerOfTwo(size))
+            if (!Utility.IsPowerOfTwo(numBuckets))
                 throw new ArgumentException("Size {0} is not a power of 2");
-            if (!Utility.Is32Bit(size))
+            if (!Utility.Is32Bit(numBuckets))
                 throw new ArgumentException("Size {0} is not 32-bit");
 
-            hashTable = new(size, sector_size, logger);
+            hashTable = new(numBuckets, sectorSize, logger);
             epoch = new LightEpoch();
         }
 

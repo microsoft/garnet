@@ -26,6 +26,9 @@ namespace Tsavorite.core
         /// <summary>The store functions for this instance of TsavoriteKV</summary>
         internal readonly TStoreFunctions _storeFunctions;
 
+        /// <summary>The Partition the containing TsavoriteKV implements; default is 0 (non-partitioned implementation)</summary>
+        internal ushort partitionId;
+
         /// <summary>The fully-derived allocator struct wrapper (so calls on it are inlined rather than virtual) for this log.</summary>
         internal readonly TAllocator _wrapper;
 

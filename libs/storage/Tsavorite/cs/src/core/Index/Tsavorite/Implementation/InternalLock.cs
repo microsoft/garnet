@@ -13,7 +13,7 @@ namespace Tsavorite.core
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         internal bool InternalTryLockShared(long keyHash)
         {
-            HashEntryInfo hei = new(keyHash);
+            HashEntryInfo hei = new(keyHash, partitionId);
             FindTag(ref hei);
             return InternalTryLockShared(ref hei);
         }
@@ -28,7 +28,7 @@ namespace Tsavorite.core
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         internal bool InternalTryLockExclusive(long keyHash)
         {
-            HashEntryInfo hei = new(keyHash);
+            HashEntryInfo hei = new(keyHash, partitionId);
             FindTag(ref hei);
             return InternalTryLockExclusive(ref hei);
         }
@@ -43,7 +43,7 @@ namespace Tsavorite.core
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         internal void InternalUnlockShared(long keyHash)
         {
-            HashEntryInfo hei = new(keyHash);
+            HashEntryInfo hei = new(keyHash, partitionId);
             FindTag(ref hei);
             InternalUnlockShared(ref hei);
         }
@@ -58,7 +58,7 @@ namespace Tsavorite.core
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         internal void InternalUnlockExclusive(long keyHash)
         {
-            HashEntryInfo hei = new(keyHash);
+            HashEntryInfo hei = new(keyHash, partitionId);
             FindTag(ref hei);
             InternalUnlockExclusive(ref hei);
         }
@@ -74,7 +74,7 @@ namespace Tsavorite.core
         internal bool InternalPromoteLock(long keyHash)
         {
             Debug.Assert(kernel.epoch.ThisInstanceProtected(), "InternalLock must have protected epoch");
-            HashEntryInfo hei = new(keyHash);
+            HashEntryInfo hei = new(keyHash, partitionId);
             FindTag(ref hei);
             return LockTable.TryPromoteLock(ref hei);
         }

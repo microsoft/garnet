@@ -53,7 +53,7 @@ namespace Tsavorite.core
 
             // Insert the new record by CAS'ing directly into the hash entry (readcache records are always CAS'd into the HashBucketEntry, never spliced).
             // It is possible that we will successfully CAS but subsequently fail due to a main log entry having been spliced in.
-            var success = stackCtx.hei.TryCAS(newLogicalAddress | Constants.kReadCacheBitMask);
+            var success = stackCtx.hei.TryCAS(newLogicalAddress | Constants.kReadCacheBitMask, partitionId);
             var casSuccess = success;
 
             OperationStatus failStatus = OperationStatus.RETRY_NOW;     // Default to CAS-failed status, which does not require an epoch refresh

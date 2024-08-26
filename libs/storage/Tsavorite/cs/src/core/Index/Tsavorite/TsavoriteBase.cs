@@ -1,6 +1,7 @@
 ﻿// Copyright (c) Microsoft Corporation.
 // Licensed under the MIT license.
 
+using System.Diagnostics;
 using System.Runtime.CompilerServices;
 using System.Threading;
 using Microsoft.Extensions.Logging;
@@ -9,7 +10,7 @@ namespace Tsavorite.core
 {
     internal unsafe struct InternalHashTable
     {
-        public long size;
+        public long size;       // Number of buckets
         public long size_mask;
         public int size_bits;
         public HashBucket[] tableRaw;
@@ -20,14 +21,19 @@ namespace Tsavorite.core
     {
         internal TsavoriteKernel kernel;
 
+        // The id of the partition this TsavoriteKV instance implements.
+        internal ushort partitionId;
+
         protected ILoggerFactory loggerFactory;
         protected ILogger logger;
 
         /// <summary>
         /// Constructor
         /// </summary>
-        public TsavoriteBase(ILogger logger = null, ILoggerFactory loggerFactory = null)
+        public TsavoriteBase(TsavoriteKernel kernel, ushort partitionId, ILogger logger = null, ILoggerFactory loggerFactory = null)
         {
+            this.kernel = kernel;
+            this.partitionId = partitionId;
             this.loggerFactory = loggerFactory;
             this.logger = logger ?? loggerFactory?.CreateLogger("TsavoriteKV");
         }
@@ -44,13 +50,11 @@ namespace Tsavorite.core
         }
 
         /// <summary>
-        /// Initialize
+        /// Initialize: TODO: Left temporarily; remove
         /// </summary>
-        /// <param name="size"></param>
-        /// <param name="sector_size"></param>
-        public void Initialize(long size, int sector_size)
+        public void Initialize(long numBuckets, int sectorSize)
         {
-            kernel = new(size, sector_size, logger ?? loggerFactory?.CreateLogger("TsavoriteKV Index Overflow buckets"));
+            kernel = new(numBuckets, sectorSize, logger ?? loggerFactory?.CreateLogger("TsavoriteKV Index Overflow buckets"));
         }
 
         /// <summary>
@@ -80,7 +84,7 @@ namespace Tsavorite.core
                         continue;
 
                     hei.entry.word = target_entry_word;
-                    if (hei.tag == hei.entry.Tag && !hei.entry.Tentative)
+                    if (hei.tag == hei.entry.Tag && hei.partitionId == hei.entry.PartitionId && !hei.entry.Tentative)
                     {
                         hei.slot = index;
                         return true;
@@ -118,6 +122,7 @@ namespace Tsavorite.core
                 // Install tentative tag in free slot
                 hei.entry = default;
                 hei.entry.Tag = hei.tag;
+                hei.entry.PartitionId = hei.partitionId;
                 hei.entry.Address = Constants.kTempInvalidAddress;
                 hei.entry.Tentative = true;
 
@@ -128,7 +133,7 @@ namespace Tsavorite.core
                     var orig_bucket = kernel.hashTable.spine.state[version].tableAligned + masked_entry_word;  // TODO local var not used; use or change to byval param
                     var orig_slot = Constants.kInvalidEntrySlot;                        // TODO local var not used; use or change to byval param
 
-                    if (FindOtherSlotForThisTagMaybeTentativeInternal(hei.tag, ref orig_bucket, ref orig_slot, hei.bucket, hei.slot))
+                    if (FindOtherSlotForThisTagMaybeTentativeInternal(ref hei, ref orig_bucket, ref orig_slot))
                     {
                         // We own the slot per CAS above, so it is OK to non-CAS the 0 back in
                         hei.bucket->bucket_entries[hei.slot] = 0;
@@ -186,7 +191,7 @@ namespace Tsavorite.core
                             continue;
                         }
                     }
-                    if (hei.tag == hei.entry.Tag && !hei.entry.Tentative)
+                    if (hei.tag == hei.entry.Tag && hei.partitionId == hei.entry.PartitionId && !hei.entry.Tentative)
                     {
                         hei.slot = index;
                         return true;
@@ -244,10 +249,12 @@ namespace Tsavorite.core
         /// </summary>
         /// <returns>True if found, else false. Does not return a free slot.</returns>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        private bool FindOtherSlotForThisTagMaybeTentativeInternal(ushort tag, ref HashBucket* bucket, ref int slot, HashBucket* except_bucket, int except_entry_slot)
+        private bool FindOtherSlotForThisTagMaybeTentativeInternal(ref HashEntryInfo hei, ref HashBucket* bucket, ref int slot)
         {
             var target_entry_word = default(long);
             var entry_slot_bucket = default(HashBucket*);
+
+            // , hei.bucket, hei.slot
 
             do
             {
@@ -260,9 +267,10 @@ namespace Tsavorite.core
 
                     HashBucketEntry entry = default;
                     entry.word = target_entry_word;
-                    if (tag == entry.Tag)
+                    if (hei.tag == entry.Tag && hei.partitionId == entry.PartitionId)
                     {
-                        if ((except_entry_slot == index) && (except_bucket == bucket))
+                        // Ignore this if it is the same bucket/slot as in the hei
+                        if (hei.slot == index && hei.bucket == bucket)
                             continue;
                         slot = index;
                         return true;

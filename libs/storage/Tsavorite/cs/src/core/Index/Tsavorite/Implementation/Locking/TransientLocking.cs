@@ -64,7 +64,7 @@ namespace Tsavorite.core
             Debug.Assert(!stackCtx.recSrc.HasLock, $"Should not call LockForScan if recSrc already has a lock ({stackCtx.recSrc.LockStateString()})");
 
             // This will always be a transient lock as it is not session-based
-            stackCtx = new(storeFunctions.GetKeyHashCode64(ref key));
+            stackCtx = new(storeFunctions.GetKeyHashCode64(ref key), partitionId);
             _ = FindTag(ref stackCtx.hei);
             stackCtx.SetRecordSourceToHashEntry(hlogBase);
 

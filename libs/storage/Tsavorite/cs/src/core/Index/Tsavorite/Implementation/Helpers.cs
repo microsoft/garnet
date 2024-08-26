@@ -156,7 +156,7 @@ namespace Tsavorite.core
         private bool CASRecordIntoChain(ref TKey key, ref OperationStackContext<TKey, TValue, TStoreFunctions, TAllocator> stackCtx, long newLogicalAddress, ref RecordInfo newRecordInfo)
         {
             var result = stackCtx.recSrc.LowestReadCachePhysicalAddress == Constants.kInvalidAddress
-                ? stackCtx.hei.TryCAS(newLogicalAddress)
+                ? stackCtx.hei.TryCAS(newLogicalAddress, partitionId)
                 : SpliceIntoHashChainAtReadCacheBoundary(ref key, ref stackCtx, newLogicalAddress);
             if (result)
                 newRecordInfo.UnsealAndValidate();

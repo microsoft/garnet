@@ -388,7 +388,7 @@ namespace Tsavorite.core
 
         private string GetSegmentName(int segmentId) => GetSegmentFilename(FileName, segmentId);
 
-        private static uint GetSectorSize(string filename)
+        internal static uint GetSectorSize(string filename)
         {
             if (!RuntimeInformation.IsOSPlatform(OSPlatform.Windows))
             {

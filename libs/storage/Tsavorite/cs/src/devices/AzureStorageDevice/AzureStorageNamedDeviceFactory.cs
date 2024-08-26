@@ -44,6 +44,8 @@ namespace Tsavorite.devices
         public void Initialize(string baseName)
             => InitializeAsync(baseName).GetAwaiter().GetResult();
 
+        /// <inheritdoc />
+        public uint SectorSize => AzureStorageDevice.PAGE_BLOB_SECTOR_SIZE;
 
         async Task InitializeAsync(string baseName)
         {

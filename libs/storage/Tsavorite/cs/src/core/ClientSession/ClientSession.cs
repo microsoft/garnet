@@ -31,8 +31,6 @@ namespace Tsavorite.core
         readonly LockableContext<TKey, TValue, TInput, TOutput, TContext, TSessionFunctions, TStoreFunctions, TAllocator> lContext;
         readonly BasicContext<TKey, TValue, TInput, TOutput, TContext, TSessionFunctions, TStoreFunctions, TAllocator> bContext;
 
-        internal const string NotAsyncSessionErr = "Session does not support async operations";
-
         readonly ILoggerFactory loggerFactory;
         readonly ILogger logger;
 

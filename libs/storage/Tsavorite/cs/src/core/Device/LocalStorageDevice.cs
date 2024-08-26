@@ -485,7 +485,7 @@ namespace Tsavorite.core
         private SafeFileHandle CreateHandle(int segmentId)
             => CreateHandle(segmentId, disableFileBuffering, deleteOnClose, preallocateFile, segmentSize, FileName, ioCompletionPort);
 
-        private static uint GetSectorSize(string filename)
+        internal static uint GetSectorSize(string filename)
         {
             if (sectorSize > 0) return sectorSize;
 

@@ -174,6 +174,7 @@ namespace Garnet
 
             var customCommandManager = new CustomCommandManager();
 
+            // First attempt to set max threads
             var setMax = opts.ThreadPoolMaxThreads <= 0 || ThreadPool.SetMaxThreads(opts.ThreadPoolMaxThreads, opts.ThreadPoolMaxThreads);
 
             if (opts.ThreadPoolMinThreads > 0 && !ThreadPool.SetMinThreads(opts.ThreadPoolMinThreads, opts.ThreadPoolMinThreads))
@@ -183,8 +184,10 @@ namespace Garnet
             if (!setMax && !ThreadPool.SetMaxThreads(opts.ThreadPoolMaxThreads, opts.ThreadPoolMaxThreads))
                 throw new Exception($"Unable to call ThreadPool.SetMaxThreads with {opts.ThreadPoolMaxThreads}");
 
-            CreateMainStore(clusterFactory, out var checkpointDir);
-            CreateObjectStore(clusterFactory, customCommandManager, checkpointDir, out var objectStoreSizeTracker, out itemBroker);
+            var checkpointDir = opts.CheckpointDir ?? opts.LogDir;
+            var kernel = CreateKernel(checkpointDir);
+            CreateMainStore(ref kernel, clusterFactory, checkpointDir);
+            CreateObjectStore(ref kernel, clusterFactory, customCommandManager, checkpointDir, out var objectStoreSizeTracker, out itemBroker);
 
             if (!opts.DisablePubSub)
                 subscribeBroker = new SubscribeBroker<SpanByte, SpanByte, IKeySerializer<SpanByte>>(new SpanByteKeySerializer(), null, opts.PubSubPageSizeBytes(), true);
@@ -210,34 +213,35 @@ namespace Garnet
             server.Register(WireFormat.ASCII, Provider);
         }
 
-        private void CreateMainStore(IClusterFactory clusterFactory, out string checkpointDir)
+        private TsavoriteKernel CreateKernel(string checkpointDir)
+        {
+            // The index (hashtable) sector size must be the sector size of the device we'll write the index checkpoint to.
+            // All writes and reads must align to sector boundary so unbuffered overlapped IO happens without copies.
+            var checkpointFactory = opts.GetInitializedDeviceFactory(checkpointDir);
+            var numBuckets = opts.IndexSizeCachelines("hash index size", opts.IndexSize);
+            return new TsavoriteKernel(numBuckets, (int)checkpointFactory.SectorSize, this.loggerFactory?.CreateLogger("TsavoriteKV [kernel]"));
+        }
+
+        private void CreateMainStore(ref TsavoriteKernel kernel, IClusterFactory clusterFactory, string checkpointDir)
         {
             kvSettings = opts.GetSettings(this.loggerFactory?.CreateLogger("TsavoriteKV [main]"), out logFactory);
-
-            checkpointDir = opts.CheckpointDir ?? opts.LogDir;
 
             // Run checkpoint on its own thread to control p99
             kvSettings.ThrottleCheckpointFlushDelayMs = opts.CheckpointThrottleFlushDelayMs;
             kvSettings.CheckpointVersionSwitchBarrier = opts.EnableCluster;
 
-            var checkpointFactory = opts.DeviceFactoryCreator();
-            if (opts.EnableCluster)
-            {
-                kvSettings.CheckpointManager = clusterFactory.CreateCheckpointManager(checkpointFactory,
-                    new DefaultCheckpointNamingScheme(checkpointDir + "/Store/checkpoints"), isMainStore: true, logger);
-            }
-            else
-            {
-                kvSettings.CheckpointManager = new DeviceLogCommitCheckpointManager(checkpointFactory,
-                    new DefaultCheckpointNamingScheme(checkpointDir + "/Store/checkpoints"), removeOutdated: true);
-            }
+            var checkpointFactory = opts.GetDeviceFactory();
+            var checkpointNamingScheme = new DefaultCheckpointNamingScheme(checkpointDir + "/Store/checkpoints");
+            kvSettings.CheckpointManager = opts.EnableCluster
+                ? clusterFactory.CreateCheckpointManager(checkpointFactory, checkpointNamingScheme, isMainStore: true, logger)
+                : (ICheckpointManager)new DeviceLogCommitCheckpointManager(checkpointFactory, checkpointNamingScheme, removeOutdated: true);
 
-            store = new(kvSettings
+            store = new(kernel, partitionId: 0, kvSettings
                 , StoreFunctions<SpanByte, SpanByte>.Create()
                 , (allocatorSettings, storeFunctions) => new(allocatorSettings, storeFunctions));
         }
 
-        private void CreateObjectStore(IClusterFactory clusterFactory, CustomCommandManager customCommandManager, string CheckpointDir, out CacheSizeTracker objectStoreSizeTracker, out CollectionItemBroker itemBroker)
+        private void CreateObjectStore(ref TsavoriteKernel kernel, IClusterFactory clusterFactory, CustomCommandManager customCommandManager, string CheckpointDir, out CacheSizeTracker objectStoreSizeTracker, out CollectionItemBroker itemBroker)
         {
             objectStoreSizeTracker = null;
             itemBroker = null;
@@ -249,14 +253,13 @@ namespace Garnet
                 objKvSettings.ThrottleCheckpointFlushDelayMs = opts.CheckpointThrottleFlushDelayMs;
                 objKvSettings.CheckpointVersionSwitchBarrier = opts.EnableCluster;
 
-                if (opts.EnableCluster)
-                    objKvSettings.CheckpointManager = clusterFactory.CreateCheckpointManager(opts.DeviceFactoryCreator(),
-                        new DefaultCheckpointNamingScheme(CheckpointDir + "/ObjectStore/checkpoints"), isMainStore: false, logger);
-                else
-                    objKvSettings.CheckpointManager = new DeviceLogCommitCheckpointManager(opts.DeviceFactoryCreator(),
-                        new DefaultCheckpointNamingScheme(CheckpointDir + "/ObjectStore/checkpoints"), removeOutdated: true);
+                var checkpointFactory = opts.GetDeviceFactory();
+                var checkpointNamingScheme = new DefaultCheckpointNamingScheme(CheckpointDir + "/ObjectStore/checkpoints");
+                objKvSettings.CheckpointManager = opts.EnableCluster
+                    ? clusterFactory.CreateCheckpointManager(checkpointFactory, checkpointNamingScheme, isMainStore: false, logger)
+                    : (ICheckpointManager)new DeviceLogCommitCheckpointManager(checkpointFactory, checkpointNamingScheme, removeOutdated: true);
 
-                objectStore = new(objKvSettings
+                objectStore = new(kernel, partitionId: 1, objKvSettings
                     , StoreFunctions<byte[], IGarnetObject>.Create(new ByteArrayKeyComparer(), () => new ByteArrayBinaryObjectSerializer(), () => new GarnetObjectSerializer(customCommandManager))
                     , (allocatorSettings, storeFunctions) => new(allocatorSettings, storeFunctions));
 
@@ -319,7 +322,7 @@ namespace Garnet
                 logFactory?.Delete(new FileDescriptor { directoryName = "" });
                 if (opts.CheckpointDir != opts.LogDir && !string.IsNullOrEmpty(opts.CheckpointDir))
                 {
-                    var ckptdir = opts.DeviceFactoryCreator();
+                    var ckptdir = opts.GetDeviceFactory();
                     ckptdir.Initialize(opts.CheckpointDir);
                     ckptdir.Delete(new FileDescriptor { directoryName = "" });
                 }

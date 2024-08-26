@@ -34,7 +34,7 @@ namespace Tsavorite.core
         [FieldOffset(HashTableSpine.Size + Constants.IntPtrSize * 3)]
         internal long numPendingChunksToBeSplit;
 
-        public HashTable(long size, int sector_size, ILogger logger)
+        public HashTable(long numBuckets, int sector_size, ILogger logger)
         {
             spine = new();
             overflowBucketsAllocator = new MallocFixedPageSize<HashBucket>(logger);
@@ -42,7 +42,7 @@ namespace Tsavorite.core
             spine.resizeInfo = default;
             spine.resizeInfo.status = ResizeOperationStatus.DONE;
             spine.resizeInfo.version = 0;
-            Reinitialize(spine.resizeInfo.version, size, sector_size);
+            Reinitialize(spine.resizeInfo.version, numBuckets, sector_size);
         }
 
         // This is used by both the ctor and by index resizing.

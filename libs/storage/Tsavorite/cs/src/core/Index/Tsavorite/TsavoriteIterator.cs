@@ -2,6 +2,7 @@
 // Licensed under the MIT license.
 
 using System;
+using System.Collections.Concurrent;
 using System.Runtime.CompilerServices;
 using Microsoft.Extensions.Logging;
 
@@ -260,7 +261,7 @@ namespace Tsavorite.core
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         bool IsTailmostMainKvRecord(ref TKey key, RecordInfo mainKvRecordInfo, ref OperationStackContext<TKey, TValue, TStoreFunctions, TAllocator> stackCtx)
         {
-            stackCtx = new(store.storeFunctions.GetKeyHashCode64(ref key));
+            stackCtx = new(store.storeFunctions.GetKeyHashCode64(ref key), store.partitionId);
             if (store.FindTag(ref stackCtx.hei))
             {
                 stackCtx.SetRecordSourceToHashEntry(store.hlogBase);

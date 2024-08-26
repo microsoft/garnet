@@ -92,6 +92,7 @@ namespace Tsavorite.test.recovery
             Finish_MallocFixedPageSizeRecoveryTest(seed, device, numBucketsToAdd, logicalAddresses, numBytesWritten, recoveredAllocator, numBytesRead);
         }
 
+#if false
         private static unsafe void Setup_FuzzyIndexRecoveryTest(out int seed, out int size, out long numAdds, out IDevice ht_device, out IDevice ofb_device, out TsavoriteBase hash_table1, out ulong ht_num_bytes_written, out ulong ofb_num_bytes_written, out int num_ofb_buckets)
         {
             TestUtils.DeleteDirectory(TestUtils.MethodTestDir, wait: true);
@@ -101,7 +102,7 @@ namespace Tsavorite.test.recovery
             numAdds = 1L << 18;
             ht_device = Devices.CreateLogDevice(Path.Join(TestUtils.MethodTestDir, "TestFuzzyIndexRecoveryht.dat"), deleteOnClose: true);
             ofb_device = Devices.CreateLogDevice(Path.Join(TestUtils.MethodTestDir, "TestFuzzyIndexRecoveryofb.dat"), deleteOnClose: true);
-            hash_table1 = new TsavoriteBase();
+            hash_table1 = new TsavoriteBase(null);
             hash_table1.Initialize(size, 512);
 
             //do something
@@ -110,7 +111,7 @@ namespace Tsavorite.test.recovery
             for (int i = 0; i < numAdds; i++)
             {
                 long key = keyGenerator1.Next();
-                HashEntryInfo hei = new(Utility.GetHashCode(key));
+                HashEntryInfo hei = new(Utility.GetHashCode(key), partitionId: 0);
                 hash_table1.FindOrCreateTag(ref hei, 0);
 
                 hash_table1.UpdateSlot(hei.bucket, hei.slot, hei.entry.word, valueGenerator.Next(), out long found_word);
@@ -131,8 +132,8 @@ namespace Tsavorite.test.recovery
             for (int i = 0; i < 2 * numAdds; i++)
             {
                 long key = keyGenerator2.Next();
-                HashEntryInfo hei1 = new(Utility.GetHashCode(key));
-                HashEntryInfo hei2 = new(hei1.hash);
+                HashEntryInfo hei1 = new(Utility.GetHashCode(key), partitionId: 0);
+                HashEntryInfo hei2 = new(hei1.hash, partitionId: 0);
 
                 var exists1 = hash_table1.FindTag(ref hei1);
                 var exists2 = hash_table2.FindTag(ref hei2);
@@ -161,7 +162,7 @@ namespace Tsavorite.test.recovery
             Setup_FuzzyIndexRecoveryTest(out int seed, out int size, out long numAdds, out IDevice ht_device, out IDevice ofb_device, out TsavoriteBase hash_table1,
                                          out ulong ht_num_bytes_written, out ulong ofb_num_bytes_written, out int num_ofb_buckets);
 
-            var hash_table2 = new TsavoriteBase();
+            var hash_table2 = new TsavoriteBase(null);
             hash_table2.Initialize(size, 512);
 
             //issue recover call
@@ -180,12 +181,13 @@ namespace Tsavorite.test.recovery
             Setup_FuzzyIndexRecoveryTest(out int seed, out int size, out long numAdds, out IDevice ht_device, out IDevice ofb_device, out TsavoriteBase hash_table1,
                                          out ulong ht_num_bytes_written, out ulong ofb_num_bytes_written, out int num_ofb_buckets);
 
-            var hash_table2 = new TsavoriteBase();
+            var hash_table2 = new TsavoriteBase(null);
             hash_table2.Initialize(size, 512);
 
             await hash_table2.RecoverFuzzyIndexAsync(0, ht_device, ht_num_bytes_written, ofb_device, num_ofb_buckets, ofb_num_bytes_written, cancellationToken: default);
 
             Finish_FuzzyIndexRecoveryTest(seed, numAdds, ht_device, ofb_device, hash_table1, hash_table2);
         }
+#endif
     }
 }

@@ -339,7 +339,7 @@ namespace Tsavorite.core
         /// <returns></returns>
         protected string GetSegmentName(int segmentId) => GetSegmentFilename(FileName, segmentId);
 
-        private static uint GetSectorSize(string filename)
+        internal static uint GetSectorSize(string filename)
         {
             return sectorSize;
         }

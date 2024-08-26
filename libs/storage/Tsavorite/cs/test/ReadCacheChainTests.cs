@@ -640,7 +640,7 @@ namespace Tsavorite.test.ReadCacheTests
                 foreach (var idx in LockableUnsafeContextTests.EnumActionKeyIndices(keys, LockableUnsafeContextTests.LockOperationType.Unlock))
                 {
                     ref var key = ref keys[idx];
-                    HashEntryInfo hei = new(store.storeFunctions.GetKeyHashCode64(ref key.Key));
+                    HashEntryInfo hei = new(store.storeFunctions.GetKeyHashCode64(ref key.Key), store.partitionId);
                     HashBucketLockTableTests.PopulateHei(store, ref hei);
 
                     var lockState = store.LockTable.GetLockState(ref hei);

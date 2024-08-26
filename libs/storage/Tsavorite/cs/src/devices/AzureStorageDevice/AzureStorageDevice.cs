@@ -58,7 +58,7 @@ namespace Tsavorite.devices
         internal IStorageErrorHandler StorageErrorHandler { get; private set; }
 
         // Azure Page Blobs have a fixed sector size of 512 bytes.
-        const uint PAGE_BLOB_SECTOR_SIZE = 512;
+        internal const uint PAGE_BLOB_SECTOR_SIZE = 512;
         // Max upload size must be at most 4MB
         // we use an even smaller value to improve retry/timeout behavior in highly contended situations
         // Also, this allows us to use aggressive timeouts to kill stragglers

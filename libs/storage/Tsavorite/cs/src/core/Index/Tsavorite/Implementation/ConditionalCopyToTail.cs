@@ -66,7 +66,7 @@ namespace Tsavorite.core
                 // point we just searched (which may have gone below HeadAddress). +1 to LatestLogicalAddress because we have examined that already. Use stackCtx2 to
                 // preserve stacKCtx, both for retrying the Insert if needed and for preserving the caller's lock status, etc.
                 var minAddress = stackCtx.recSrc.LatestLogicalAddress + 1;
-                OperationStackContext<TKey, TValue, TStoreFunctions, TAllocator> stackCtx2 = new(stackCtx.hei.hash);
+                OperationStackContext<TKey, TValue, TStoreFunctions, TAllocator> stackCtx2 = new(stackCtx.hei.hash, partitionId);
                 bool needIO;
                 do
                 {
@@ -96,7 +96,7 @@ namespace Tsavorite.core
             Debug.Assert(kernel.epoch.ThisInstanceProtected(), "This is called only from Compaction so the epoch should be protected");
             PendingContext<TInput, TOutput, TContext> pendingContext = new();
 
-            OperationStackContext<TKey, TValue, TStoreFunctions, TAllocator> stackCtx = new(storeFunctions.GetKeyHashCode64(ref key));
+            OperationStackContext<TKey, TValue, TStoreFunctions, TAllocator> stackCtx = new(storeFunctions.GetKeyHashCode64(ref key), partitionId);
             OperationStatus status;
             bool needIO;
             do

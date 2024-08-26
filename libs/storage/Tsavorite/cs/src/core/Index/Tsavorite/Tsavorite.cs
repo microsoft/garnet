@@ -28,7 +28,7 @@ namespace Tsavorite.core
 
         internal readonly bool UseReadCache;
         private readonly ReadCopyOptions ReadCopyOptions;
-        internal readonly int sectorSize;
+        internal readonly int sectorSize;  // TODO: remove in favor of what's in Kernel
 
         /// <summary>
         /// Number of active entries in hash index (does not correspond to total records, due to hash collisions)
@@ -82,13 +82,26 @@ namespace Tsavorite.core
         internal Func<AllocatorSettings, TStoreFunctions, TAllocator> allocatorFactory;
 
         /// <summary>
-        /// Create TsavoriteKV instance
+        /// Create TsavoriteKV instance using non-shared kernel in a non-partitioned implementation. TODO This is temporary and used by tests only; it should eventually be removed along with kvSettings.IndexSize.
         /// </summary>
         /// <param name="kvSettings">Config settings</param>
         /// <param name="storeFunctions">Store-level user function implementations</param>
         /// <param name="allocatorFactory">Func to call to create the allocator(s, if doing readcache)</param>
         public TsavoriteKV(KVSettings<TKey, TValue> kvSettings, TStoreFunctions storeFunctions, Func<AllocatorSettings, TStoreFunctions, TAllocator> allocatorFactory)
-            : base(kvSettings.logger, kvSettings.loggerFactory)
+            : this(new TsavoriteKernel(kvSettings.GetIndexSizeCacheLines(), Environment.SystemPageSize, kvSettings.logger ?? kvSettings.loggerFactory?.CreateLogger("TsavoriteKernel")),
+                  partitionId: 0, kvSettings, storeFunctions, allocatorFactory)
+        {
+        }
+
+        /// <summary>
+        /// Create TsavoriteKV instance
+        /// </summary>
+        /// <param name="kernel">The <see cref="TsavoriteKernel"/></param>
+        /// <param name="kvSettings">Config settings</param>
+        /// <param name="storeFunctions">Store-level user function implementations</param>
+        /// <param name="allocatorFactory">Func to call to create the allocator(s, if doing readcache)</param>
+        public TsavoriteKV(TsavoriteKernel kernel, ushort partitionId, KVSettings<TKey, TValue> kvSettings, TStoreFunctions storeFunctions, Func<AllocatorSettings, TStoreFunctions, TAllocator> allocatorFactory)
+            : base(kernel, partitionId, kvSettings.logger, kvSettings.loggerFactory)
         {
             this.allocatorFactory = allocatorFactory;
 
@@ -113,7 +126,6 @@ namespace Tsavorite.core
 
             var logSettings = kvSettings.GetLogSettings();
             sectorSize = (int)logSettings.LogDevice.SectorSize;
-            Initialize(kvSettings.GetIndexSizeCacheLines(), sectorSize);
 
             UseReadCache = kvSettings.ReadCacheEnabled;
 
@@ -132,6 +144,7 @@ namespace Tsavorite.core
             var allocatorSettings = new AllocatorSettings(logSettings, kernel.epoch, kvSettings.logger ?? kvSettings.loggerFactory?.CreateLogger(typeof(TAllocator).Name));
             hlog = allocatorFactory(allocatorSettings, storeFunctions);
             hlogBase = hlog.GetBase<TAllocator>();
+            hlogBase.partitionId = partitionId;
             hlogBase.Initialize();
             Log = new(this, hlog);
 

@@ -41,7 +41,7 @@ namespace Tsavorite.core
 
                 // If NoKey, we do not have the key in the initial call and must use the key from the satisfied request.
                 ref TKey key = ref pendingContext.NoKey ? ref hlog.GetContextRecordKey(ref request) : ref pendingContext.key.Get();
-                OperationStackContext<TKey, TValue, TStoreFunctions, TAllocator> stackCtx = new(storeFunctions.GetKeyHashCode64(ref key));
+                OperationStackContext<TKey, TValue, TStoreFunctions, TAllocator> stackCtx = new(storeFunctions.GetKeyHashCode64(ref key), partitionId);
 
                 while (true)
                 {
@@ -201,7 +201,7 @@ namespace Tsavorite.core
 
             while (true)
             {
-                OperationStackContext<TKey, TValue, TStoreFunctions, TAllocator> stackCtx = new(pendingContext.keyHash);
+                OperationStackContext<TKey, TValue, TStoreFunctions, TAllocator> stackCtx = new(pendingContext.keyHash, partitionId);
                 if (!FindOrCreateTagAndTryTransientXLock<TInput, TOutput, TContext, TSessionFunctionsWrapper>(sessionFunctions, ref key, ref stackCtx, out status))
                     goto CheckRetry;
 
@@ -286,7 +286,7 @@ namespace Tsavorite.core
 
             // Prepare to copy to tail. Use data from pendingContext, not request; we're only made it to this line if the key was not found, and thus the request was not populated.
             ref TKey key = ref pendingContext.key.Get();
-            OperationStackContext<TKey, TValue, TStoreFunctions, TAllocator> stackCtx = new(storeFunctions.GetKeyHashCode64(ref key));
+            OperationStackContext<TKey, TValue, TStoreFunctions, TAllocator> stackCtx = new(storeFunctions.GetKeyHashCode64(ref key), partitionId);
 
             // See if the record was added above the highest address we checked before issuing the IO.
             var minAddress = pendingContext.InitialLatestLogicalAddress + 1;

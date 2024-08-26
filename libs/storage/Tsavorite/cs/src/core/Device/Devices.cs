@@ -31,6 +31,7 @@ namespace Tsavorite.core
         /// <returns>Device instance</returns>
         public static IDevice CreateLogDevice(string logPath, bool preallocateFile = false, bool deleteOnClose = false, long capacity = CAPACITY_UNSPECIFIED, bool recoverDevice = false, bool useIoCompletionPort = false, bool disableFileBuffering = true, bool useNativeDeviceLinux = false, ILogger logger = null)
         {
+            // Note: Keep consistent with LocalStorageNamedDeviceFactory.SectorSize
             if (!RuntimeInformation.IsOSPlatform(OSPlatform.Windows))
             {
                 if (RuntimeInformation.IsOSPlatform(OSPlatform.Linux) && useNativeDeviceLinux)

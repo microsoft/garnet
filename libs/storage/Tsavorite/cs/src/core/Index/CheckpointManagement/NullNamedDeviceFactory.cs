@@ -18,6 +18,9 @@ namespace Tsavorite.core
         public NullNamedDeviceFactory() { }
 
         /// <inheritdoc />
+        public uint SectorSize => 512;
+
+        /// <inheritdoc />
         public void Delete(FileDescriptor fileInfo) { }
 
         /// <inheritdoc />

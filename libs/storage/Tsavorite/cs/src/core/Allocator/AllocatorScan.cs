@@ -49,7 +49,7 @@ namespace Tsavorite.core
         internal bool IterateKeyVersions<TScanFunctions>(TsavoriteKV<TKey, TValue, TStoreFunctions, TAllocator> store, ref TKey key, ref TScanFunctions scanFunctions)
             where TScanFunctions : IScanIteratorFunctions<TKey, TValue>
         {
-            OperationStackContext<TKey, TValue, TStoreFunctions, TAllocator> stackCtx = new(_storeFunctions.GetKeyHashCode64(ref key));
+            OperationStackContext<TKey, TValue, TStoreFunctions, TAllocator> stackCtx = new(_storeFunctions.GetKeyHashCode64(ref key), store.partitionId);
             if (!store.FindTag(ref stackCtx.hei))
                 return false;
             stackCtx.SetRecordSourceToHashEntry(store.hlogBase);
@@ -268,7 +268,7 @@ namespace Tsavorite.core
             TsavoriteKV<TKey, TValue, TStoreFunctions, TAllocator>.PendingContext<TInput, TOutput, TContext> pendingContext = new(_storeFunctions.GetKeyHashCode64(ref key));
 
             OperationStatus internalStatus;
-            OperationStackContext<TKey, TValue, TStoreFunctions, TAllocator> stackCtx = new(pendingContext.keyHash);
+            OperationStackContext<TKey, TValue, TStoreFunctions, TAllocator> stackCtx = new(pendingContext.keyHash, partitionId);
             bool needIO;
             do
             {

@@ -46,7 +46,7 @@ namespace Tsavorite.core
         {
             var latchOperation = LatchOperation.None;
 
-            OperationStackContext<TKey, TValue, TStoreFunctions, TAllocator> stackCtx = new(keyHash);
+            OperationStackContext<TKey, TValue, TStoreFunctions, TAllocator> stackCtx = new(keyHash, partitionId);
             pendingContext.keyHash = keyHash;
 
             if (sessionFunctions.Ctx.phase == Phase.IN_PROGRESS_GROW)
@@ -155,10 +155,10 @@ namespace Tsavorite.core
                                     // elided it and the elision criteria is that it is the only above-BeginAddress record in the chain, and elision sets the
                                     // HashBucketEntry.word to 0, it means we do not expect any records for this key's tag to exist after the elision. Therefore,
                                     // we can re-insert the record iff the HashBucketEntry's address is <= kTempInvalidAddress.
-                                    stackCtx.hei = new(stackCtx.hei.hash);
+                                    stackCtx.hei = new(stackCtx.hei.hash, partitionId);
                                     FindOrCreateTag(ref stackCtx.hei, hlogBase.BeginAddress);
 
-                                    if (stackCtx.hei.entry.Address <= Constants.kTempInvalidAddress && stackCtx.hei.TryCAS(stackCtx.recSrc.LogicalAddress))
+                                    if (stackCtx.hei.entry.Address <= Constants.kTempInvalidAddress && stackCtx.hei.TryCAS(stackCtx.recSrc.LogicalAddress, partitionId))
                                         srcRecordInfo.UnsealAndValidate();
                                 }
                             }

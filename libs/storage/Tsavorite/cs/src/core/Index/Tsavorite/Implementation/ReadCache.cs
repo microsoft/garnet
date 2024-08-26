@@ -268,7 +268,7 @@ namespace Tsavorite.core
 
                 // Find the hash index entry for the key in the store's hash table.
                 ref TKey key = ref readcache.GetKey(rcPhysicalAddress);
-                HashEntryInfo hei = new(storeFunctions.GetKeyHashCode64(ref key));
+                HashEntryInfo hei = new(storeFunctions.GetKeyHashCode64(ref key), partitionId);
                 if (!FindTag(ref hei))
                     goto NextRecord;
 
@@ -325,7 +325,7 @@ namespace Tsavorite.core
                 }
 
                 // We are evicting the record whose address is in the hash bucket; unlink 'la' by setting the hash bucket to point to (la).PreviousAddress.
-                if (hei.TryCAS(ri.PreviousAddress))
+                if (hei.TryCAS(ri.PreviousAddress, partitionId))
                     ri.PreviousAddress = Constants.kTempInvalidAddress;     // The record is no longer in the chain
                 else
                     hei.SetToCurrent();

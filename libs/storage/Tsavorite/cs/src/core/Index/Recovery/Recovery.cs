@@ -1109,7 +1109,7 @@ namespace Tsavorite.core
 
                 if (!info.Invalid)
                 {
-                    HashEntryInfo hei = new(storeFunctions.GetKeyHashCode64(ref hlog.GetKey(recordStart)));
+                    HashEntryInfo hei = new(storeFunctions.GetKeyHashCode64(ref hlog.GetKey(recordStart)), partitionId);
                     FindOrCreateTag(ref hei, hlogBase.BeginAddress);
 
                     bool ignoreRecord = ((pageLogicalAddress + pointer) >= options.fuzzyRegionStartAddress) && info.IsInNewVersion;

@@ -1,6 +1,7 @@
 ﻿// Copyright (c) Microsoft Corporation.
 // Licensed under the MIT license.
 
+using System.Collections.Concurrent;
 using System.Diagnostics;
 using System.Runtime.CompilerServices;
 
@@ -15,7 +16,7 @@ namespace Tsavorite.core
         internal RecordSource<TKey, TValue, TStoreFunctions, TAllocator> recSrc;
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        internal OperationStackContext(long keyHash) => hei = new(keyHash);
+        internal OperationStackContext(long keyHash, ushort partitionId) => hei = new(keyHash, partitionId);
 
         /// <summary>
         /// Sets <see cref="recSrc"/> to the current <see cref="hei"/>.<see cref="HashEntryInfo.Address"/>, which is the address it had

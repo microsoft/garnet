@@ -891,7 +891,7 @@ namespace Tsavorite.test.LockableUnsafeContext
             var keyVec = new[] { new FixedLengthLockableKeyStruct<long>(key, LockType.Exclusive, luContext) };
             luContext.Lock(keyVec);
 
-            HashEntryInfo hei = new(comparer.GetHashCode64(ref key));
+            HashEntryInfo hei = new(comparer.GetHashCode64(ref key), store.partitionId);
             PopulateHei(ref hei);
 
             var lockState = store.LockTable.GetLockState(ref hei);
@@ -1171,7 +1171,7 @@ namespace Tsavorite.test.LockableUnsafeContext
                 foreach (var idx in EnumActionKeyIndices(keyVec, LockOperationType.Lock))
                 {
                     ref var key = ref keyVec[idx];
-                    HashEntryInfo hei = new(key.KeyHash);
+                    HashEntryInfo hei = new(key.KeyHash, store.partitionId);
                     PopulateHei(ref hei);
                     var lockState = store.LockTable.GetLockState(ref hei);
                     Assert.IsTrue(lockState.IsFound);

@@ -3,8 +3,10 @@
 
 using System;
 using System.Collections.Generic;
+using System.Diagnostics;
 using System.IO;
 using System.Linq;
+using System.Runtime.InteropServices;
 using System.Threading;
 using Microsoft.Extensions.Logging;
 
@@ -46,6 +48,24 @@ namespace Tsavorite.core
         public void Initialize(string baseName)
         {
             this.baseName = baseName;
+        }
+
+        /// <inheritdoc />
+        public uint SectorSize
+        {
+            get
+            {
+                // Note: Keep consistent with Devices.CreateLogDevice
+                if (!RuntimeInformation.IsOSPlatform(OSPlatform.Windows))
+                {
+                    if (RuntimeInformation.IsOSPlatform(OSPlatform.Linux) && useNativeDeviceLinux)
+                        return NativeStorageDevice.GetSectorSize(baseName);
+                    else
+                        return ManagedLocalStorageDevice.GetSectorSize(baseName);
+                }
+                else
+                    return LocalStorageDevice.GetSectorSize(baseName);
+            }
         }
 
         /// <inheritdoc />
