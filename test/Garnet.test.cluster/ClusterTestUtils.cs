@@ -709,6 +709,9 @@ namespace Garnet.test.cluster
         }
 
         public void RandomBytes(ref byte[] data, int startOffset = -1, int endOffset = -1)
+            => RandomBytes(ref r, ref data, startOffset, endOffset);
+
+        public static void RandomBytes(ref Random r, ref byte[] data, int startOffset = -1, int endOffset = -1)
         {
             startOffset = startOffset == -1 ? 0 : startOffset;
             endOffset = endOffset == -1 ? data.Length : endOffset;
