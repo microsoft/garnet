@@ -45,7 +45,6 @@ namespace Garnet.server
         public unsafe GarnetStatus ReadWithUnsafeContext<TContext>(ArgSlice key, ref RawStringInput input, ref SpanByteAndMemory output, long localHeadAddress, out bool epochChanged, ref TContext context)
             where TContext : ITsavoriteContext<SpanByte, SpanByte, RawStringInput, SpanByteAndMemory, long, MainSessionFunctions, MainStoreFunctions, MainStoreAllocator>, IUnsafeContext
         {
-
             var _key = key.SpanByte;
             long ctx = default;
 
@@ -82,21 +81,13 @@ namespace Garnet.server
         public unsafe GarnetStatus GET<TContext>(ArgSlice key, out ArgSlice value, ref TContext context)
             where TContext : ITsavoriteContext<SpanByte, SpanByte, RawStringInput, SpanByteAndMemory, long, MainSessionFunctions, MainStoreFunctions, MainStoreAllocator>
         {
-            var inputHeader = new RawStringInput();
-
-            int inputSize = sizeof(int) + RespInputHeader.Size;
-
-            byte* pbCmdInput = stackalloc byte[inputSize];
-            byte* pcurr = pbCmdInput;
-            *(int*)pcurr = inputSize - sizeof(int);
-            pcurr += sizeof(int);
-            (*(RespInputHeader*)pcurr).cmd = RespCommand.GET; // Proxy for "get value without RESP header"
-            (*(RespInputHeader*)pcurr).flags = 0;
+            var input = new RawStringInput { header = new RespInputHeader { cmd = RespCommand.GET } };
+            value = default;
 
             var _key = key.SpanByte;
             var _output = new SpanByteAndMemory { SpanByte = scratchBufferManager.ViewRemainingArgSlice().SpanByte };
-            var ret = GET(ref _key, ref inputHeader, ref _output, ref context);
-            value = default;
+
+            var ret = GET(ref _key, ref input, ref _output, ref context);
             if (ret == GarnetStatus.OK)
             {
                 if (!_output.IsSpanByte)
@@ -115,20 +106,12 @@ namespace Garnet.server
         public unsafe GarnetStatus GET<TContext>(ArgSlice key, out MemoryResult<byte> value, ref TContext context)
             where TContext : ITsavoriteContext<SpanByte, SpanByte, RawStringInput, SpanByteAndMemory, long, MainSessionFunctions, MainStoreFunctions, MainStoreAllocator>
         {
-            var inputHeader = new RawStringInput();
-
-            int inputSize = sizeof(int) + RespInputHeader.Size;
-
-            byte* pbCmdInput = stackalloc byte[inputSize];
-            byte* pcurr = pbCmdInput;
-            *(int*)pcurr = inputSize - sizeof(int);
-            pcurr += sizeof(int);
-            (*(RespInputHeader*)pcurr).cmd = RespCommand.GET; // Proxy for "get value without RESP header"
-            (*(RespInputHeader*)pcurr).flags = 0;
+            var input = new RawStringInput { header = new RespInputHeader { cmd = RespCommand.GET } };
 
             var _key = key.SpanByte;
             var _output = new SpanByteAndMemory();
-            var ret = GET(ref _key, ref inputHeader, ref _output, ref context);
+
+            var ret = GET(ref _key, ref input, ref _output, ref context);
             value = new MemoryResult<byte>(_output.Memory, _output.Length);
             return ret;
         }
@@ -182,21 +165,9 @@ namespace Garnet.server
         public unsafe GarnetStatus GETDEL<TContext>(ref SpanByte key, ref SpanByteAndMemory output, ref TContext context)
             where TContext : ITsavoriteContext<SpanByte, SpanByte, RawStringInput, SpanByteAndMemory, long, MainSessionFunctions, MainStoreFunctions, MainStoreAllocator>
         {
-            var inputHeader = new RawStringInput();
+            var input = new RawStringInput { header = new RespInputHeader { cmd = RespCommand.GETDEL } };
 
-            // size data + header
-            int inputSize = sizeof(int) + RespInputHeader.Size;
-            byte* pbCmdInput = stackalloc byte[inputSize];
-
-            byte* pcurr = pbCmdInput;
-            *(int*)pbCmdInput = inputSize - sizeof(int);
-            pcurr += sizeof(int);
-            ((RespInputHeader*)pcurr)->cmd = RespCommand.GETDEL;
-            ((RespInputHeader*)pcurr)->flags = 0;
-
-            ref var input = ref SpanByte.Reinterpret(pbCmdInput);
-
-            var status = context.RMW(ref key, ref inputHeader, ref output);
+            var status = context.RMW(ref key, ref input, ref output);
             Debug.Assert(output.IsSpanByte);
 
             if (status.IsPending)
@@ -205,24 +176,10 @@ namespace Garnet.server
             return status.Found ? GarnetStatus.OK : GarnetStatus.NOTFOUND;
         }
 
-        public unsafe GarnetStatus GETRANGE<TContext>(ref SpanByte key, int sliceStart, int sliceLength, ref SpanByteAndMemory output, ref TContext context)
+        public unsafe GarnetStatus GETRANGE<TContext>(ref SpanByte key, ref RawStringInput input, ref SpanByteAndMemory output, ref TContext context)
             where TContext : ITsavoriteContext<SpanByte, SpanByte, RawStringInput, SpanByteAndMemory, long, MainSessionFunctions, MainStoreFunctions, MainStoreAllocator>
         {
-            var inputHeader = new RawStringInput();
-
-            int inputSize = sizeof(int) + RespInputHeader.Size + sizeof(int) * 2;
-            byte* pbCmdInput = stackalloc byte[inputSize];
-
-            byte* pcurr = pbCmdInput;
-            *(int*)pcurr = inputSize - sizeof(int);
-            pcurr += sizeof(int);
-            (*(RespInputHeader*)(pcurr)).cmd = RespCommand.GETRANGE;
-            (*(RespInputHeader*)(pcurr)).flags = 0;
-            pcurr += RespInputHeader.Size;
-            *(int*)(pcurr) = sliceStart;
-            *(int*)(pcurr + 4) = sliceLength;
-
-            var status = context.Read(ref key, ref inputHeader, ref output);
+            var status = context.Read(ref key, ref input, ref output);
 
             if (status.IsPending)
             {
@@ -260,20 +217,11 @@ namespace Garnet.server
             where TContext : ITsavoriteContext<SpanByte, SpanByte, RawStringInput, SpanByteAndMemory, long, MainSessionFunctions, MainStoreFunctions, MainStoreAllocator>
             where TObjectContext : ITsavoriteContext<byte[], IGarnetObject, ObjectInput, GarnetObjectStoreOutput, long, ObjectSessionFunctions, ObjectStoreFunctions, ObjectStoreAllocator>
         {
-            var inputHeader = new RawStringInput();
-
-            int inputSize = sizeof(int) + RespInputHeader.Size;
-            byte* pbCmdInput = stackalloc byte[inputSize];
-
-            byte* pcurr = pbCmdInput;
-            *(int*)pcurr = inputSize - sizeof(int);
-            pcurr += sizeof(int);
-            (*(RespInputHeader*)pcurr).cmd = milliseconds ? RespCommand.PTTL : RespCommand.TTL;
-            (*(RespInputHeader*)pcurr).flags = 0;
+            var input = new RawStringInput { header = new RespInputHeader { cmd = RespCommand.TTL } };
 
             if (storeType == StoreType.Main || storeType == StoreType.All)
             {
-                var status = context.Read(ref key, ref inputHeader, ref output);
+                var status = context.Read(ref key, ref input, ref output);
 
                 if (status.IsPending)
                 {
@@ -425,10 +373,20 @@ namespace Garnet.server
             where TContext : ITsavoriteContext<SpanByte, SpanByte, RawStringInput, SpanByteAndMemory, long, MainSessionFunctions, MainStoreFunctions, MainStoreAllocator>
         {
             var _key = key.SpanByte;
-            var _value = value.SpanByte;
             var _output = new SpanByteAndMemory(output.SpanByte);
 
-            return APPEND(ref _key, ref _value, ref _output, ref context);
+            var parseState = new SessionParseState();
+            ArgSlice[] tmpParseStateBuffer = default;
+            parseState.InitializeWithArguments(ref tmpParseStateBuffer, value);
+
+            var input = new RawStringInput
+            {
+                header = new RespInputHeader { cmd = RespCommand.APPEND },
+                parseState = parseState,
+                parseStateStartIdx = 0
+            };
+
+            return APPEND(ref _key, ref input, ref _output, ref context);
         }
 
         /// <summary>
@@ -436,30 +394,14 @@ namespace Garnet.server
         /// </summary>
         /// <typeparam name="TContext">Context type</typeparam>
         /// <param name="key">Key whose value is to be appended</param>
-        /// <param name="value">Value to be appended</param>
+        /// <param name="input">Input for main store</param>
         /// <param name="output">Length of updated value</param>
         /// <param name="context">Store context</param>
         /// <returns>Operation status</returns>
-        public unsafe GarnetStatus APPEND<TContext>(ref SpanByte key, ref SpanByte value, ref SpanByteAndMemory output, ref TContext context)
+        public unsafe GarnetStatus APPEND<TContext>(ref SpanByte key, ref RawStringInput input, ref SpanByteAndMemory output, ref TContext context)
             where TContext : ITsavoriteContext<SpanByte, SpanByte, RawStringInput, SpanByteAndMemory, long, MainSessionFunctions, MainStoreFunctions, MainStoreAllocator>
         {
-            var inputHeader = new RawStringInput();
-
-            int inputSize = sizeof(int) + RespInputHeader.Size + sizeof(int) + sizeof(long);
-            byte* pbCmdInput = stackalloc byte[inputSize];
-
-            byte* pcurr = pbCmdInput;
-            *(int*)pcurr = inputSize - sizeof(int);
-            pcurr += sizeof(int);
-            (*(RespInputHeader*)(pcurr)).cmd = RespCommand.APPEND;
-            (*(RespInputHeader*)(pcurr)).flags = 0;
-
-            pcurr += RespInputHeader.Size;
-            *(int*)pcurr = value.Length;
-            pcurr += sizeof(int);
-            *(long*)pcurr = (long)value.ToPointer();
-
-            var status = context.RMW(ref key, ref inputHeader, ref output);
+            var status = context.RMW(ref key, ref input, ref output);
             if (status.IsPending)
             {
                 StartPendingMetrics();
@@ -534,15 +476,15 @@ namespace Garnet.server
 
         public unsafe GarnetStatus RENAME(ArgSlice oldKeySlice, ArgSlice newKeySlice, StoreType storeType)
         {
-            var inputHeader = new RawStringInput();
+            RawStringInput input = default;
 
-            GarnetStatus returnStatus = GarnetStatus.NOTFOUND;
+            var returnStatus = GarnetStatus.NOTFOUND;
 
             // If same name check return early.
             if (oldKeySlice.ReadOnlySpan.SequenceEqual(newKeySlice.ReadOnlySpan))
                 return GarnetStatus.OK;
 
-            bool createTransaction = false;
+            var createTransaction = false;
             if (txnManager.state != TxnState.Running)
             {
                 createTransaction = true;
@@ -558,12 +500,11 @@ namespace Garnet.server
             {
                 try
                 {
-                    SpanByte oldKey = oldKeySlice.SpanByte;
-                    SpanByte newKey = newKeySlice.SpanByte;
+                    var oldKey = oldKeySlice.SpanByte;
+                    var newKey = newKeySlice.SpanByte;
 
-                    SpanByte input = default;
                     var o = new SpanByteAndMemory();
-                    var status = GET(ref oldKey, ref inputHeader, ref o, ref context);
+                    var status = GET(ref oldKey, ref input, ref o, ref context);
 
                     if (status == GarnetStatus.OK)
                     {
@@ -644,15 +585,14 @@ namespace Garnet.server
             where TContext : ITsavoriteContext<SpanByte, SpanByte, RawStringInput, SpanByteAndMemory, long, MainSessionFunctions, MainStoreFunctions, MainStoreAllocator>
             where TObjectContext : ITsavoriteContext<byte[], IGarnetObject, ObjectInput, GarnetObjectStoreOutput, long, ObjectSessionFunctions, ObjectStoreFunctions, ObjectStoreAllocator>
         {
-            GarnetStatus status = GarnetStatus.NOTFOUND;
-            var inputHeader = new RawStringInput();
+            var status = GarnetStatus.NOTFOUND;
+            RawStringInput input = default;
 
             if (storeType == StoreType.Main || storeType == StoreType.All)
             {
                 var _key = key.SpanByte;
-                SpanByte input = default;
                 var _output = new SpanByteAndMemory { SpanByte = scratchBufferManager.ViewRemainingArgSlice().SpanByte };
-                status = GET(ref _key, ref inputHeader, ref _output, ref context);
+                status = GET(ref _key, ref input, ref _output, ref context);
 
                 if (status == GarnetStatus.OK)
                 {

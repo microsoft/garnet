@@ -77,8 +77,8 @@ namespace Garnet.server
 
         #region GETRANGE
         /// <inheritdoc />
-        public GarnetStatus GETRANGE(ref SpanByte key, int sliceStart, int sliceLength, ref SpanByteAndMemory output)
-            => storageSession.GETRANGE(ref key, sliceStart, sliceLength, ref output, ref context);
+        public GarnetStatus GETRANGE(ref SpanByte key, ref RawStringInput input, ref SpanByteAndMemory output)
+            => storageSession.GETRANGE(ref key, ref input, ref output, ref context);
         #endregion
 
         #region TTL
@@ -141,8 +141,8 @@ namespace Garnet.server
         #region APPEND
 
         /// <inheritdoc />
-        public GarnetStatus APPEND(ref SpanByte key, ref SpanByte value, ref SpanByteAndMemory output)
-            => storageSession.APPEND(ref key, ref value, ref output, ref context);
+        public GarnetStatus APPEND(ref SpanByte key, ref RawStringInput input, ref SpanByteAndMemory output)
+            => storageSession.APPEND(ref key, ref input, ref output, ref context);
 
         /// <inheritdoc />    
         public GarnetStatus APPEND(ArgSlice key, ArgSlice value, ref ArgSlice output)

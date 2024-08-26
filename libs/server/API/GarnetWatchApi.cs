@@ -53,10 +53,10 @@ namespace Garnet.server
 
         #region GETRANGE
         /// <inheritdoc />
-        public GarnetStatus GETRANGE(ref SpanByte key, int sliceStart, int sliceLength, ref SpanByteAndMemory output)
+        public GarnetStatus GETRANGE(ref SpanByte key, ref RawStringInput input, ref SpanByteAndMemory output)
         {
             garnetApi.WATCH(new ArgSlice(ref key), StoreType.Main);
-            return garnetApi.GETRANGE(ref key, sliceStart, sliceLength, ref output);
+            return garnetApi.GETRANGE(ref key, ref input, ref output);
         }
         #endregion
 

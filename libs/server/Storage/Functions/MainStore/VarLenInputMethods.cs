@@ -62,7 +62,7 @@ namespace Garnet.server
                     return sizeof(int) + newValueSize + offset + input.MetadataSize;
 
                 case RespCommand.APPEND:
-                    var valueLength = *(int*)(inputPtr + RespInputHeader.Size);
+                    var valueLength = input.parseState.GetArgSliceByRef(input.parseStateStartIdx).Length;
                     return sizeof(int) + valueLength;
 
                 case RespCommand.INCRBY:
@@ -182,7 +182,7 @@ namespace Garnet.server
                         break;
 
                     case RespCommand.APPEND:
-                        var valueLength = *((int*)(inputPtr + RespInputHeader.Size));
+                        var valueLength = input.parseState.GetArgSliceByRef(input.parseStateStartIdx).Length;
                         return sizeof(int) + t.Length + valueLength;
 
                     default:

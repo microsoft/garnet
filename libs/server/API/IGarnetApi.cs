@@ -90,14 +90,15 @@ namespace Garnet.server
         #endregion
 
         #region APPEND
+
         /// <summary>
         /// APPEND command
         /// </summary>
         /// <param name="key">Key whose value is to be appended</param>
-        /// <param name="value">Value to be appended</param>
+        /// <param name="input"></param>
         /// <param name="output">Length of updated value</param>
         /// <returns>Operation status</returns>
-        GarnetStatus APPEND(ref SpanByte key, ref SpanByte value, ref SpanByteAndMemory output);
+        GarnetStatus APPEND(ref SpanByte key, ref RawStringInput input, ref SpanByteAndMemory output);
 
         /// <summary>
         /// APPEND command
@@ -1006,15 +1007,15 @@ namespace Garnet.server
         #endregion
 
         #region GETRANGE
+
         /// <summary>
         /// GETRANGE
         /// </summary>
         /// <param name="key"></param>
-        /// <param name="sliceStart"></param>
-        /// <param name="sliceLength"></param>
+        /// <param name="input"></param>
         /// <param name="output"></param>
         /// <returns></returns>
-        GarnetStatus GETRANGE(ref SpanByte key, int sliceStart, int sliceLength, ref SpanByteAndMemory output);
+        GarnetStatus GETRANGE(ref SpanByte key, ref RawStringInput input, ref SpanByteAndMemory output);
         #endregion
 
         #region TTL

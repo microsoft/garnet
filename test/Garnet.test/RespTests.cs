@@ -1956,8 +1956,8 @@ namespace Garnet.test
             using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
             var db = redis.GetDatabase(0);
             ClassicAssert.IsTrue(db.StringSet("mykey", "foo bar"));
-            ClassicAssert.IsTrue(db.StringLength("mykey") == 7);
-            ClassicAssert.IsTrue(db.StringLength("nokey") == 0);
+            ClassicAssert.AreEqual(7, db.StringLength("mykey"));
+            ClassicAssert.AreEqual(0, db.StringLength("nokey"));
         }
 
         [Test]

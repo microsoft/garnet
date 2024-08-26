@@ -126,11 +126,10 @@ namespace Garnet.server
                     break;
 
                 case RespCommand.APPEND:
+                    var appendValue = input.parseState.GetArgSliceByRef(input.parseStateStartIdx);
+
                     // Copy value to be appended to the newly allocated value buffer
-                    var appendSize = *(int*)(inputPtr + RespInputHeader.Size);
-                    var appendPtr = *(long*)(inputPtr + RespInputHeader.Size + sizeof(int));
-                    var appendSpan = new Span<byte>((byte*)appendPtr, appendSize);
-                    appendSpan.CopyTo(value.AsSpan());
+                    appendValue.ReadOnlySpan.CopyTo(value.AsSpan());
 
                     CopyValueLengthToOutput(ref value, ref output);
                     break;
@@ -181,9 +180,10 @@ namespace Garnet.server
                     }
 
                     // Copy input to value
-                    value.ShrinkSerializedLength(input.Length - RespInputHeader.Size);
+                    var inputValue = input.parseState.GetArgSliceByRef(input.parseStateStartIdx);
+                    value.ShrinkSerializedLength(inputValue.Length);
                     value.ExtraMetadata = input.ExtraMetadata;
-                    input.AsReadOnlySpan()[RespInputHeader.Size..].CopyTo(value.AsSpan());
+                    inputValue.ReadOnlySpan.CopyTo(value.AsSpan());
 
                     // Copy value to output
                     CopyTo(ref value, ref output, functionsState.memoryPool);
@@ -429,7 +429,7 @@ namespace Garnet.server
 
                 case RespCommand.APPEND:
                     // If nothing to append, can avoid copy update.
-                    var appendSize = *(int*)(inputPtr + RespInputHeader.Size);
+                    var appendSize = input.parseState.GetArgSliceByRef(input.parseStateStartIdx).Length;
 
                     if (appendSize == 0)
                     {
@@ -687,12 +687,10 @@ namespace Garnet.server
                     // Copy any existing value with metadata to thew new value
                     oldValue.CopyTo(ref newValue);
 
-                    var appendSize = *(int*)(inputPtr + RespInputHeader.Size);
-                    var appendPtr = *(long*)(inputPtr + RespInputHeader.Size + sizeof(int));
-                    var appendSpan = new Span<byte>((byte*)appendPtr, appendSize);
+                    var appendValue = input.parseState.GetArgSliceByRef(input.parseStateStartIdx);
 
                     // Append the new value with the client input at the end of the old data
-                    appendSpan.CopyTo(newValue.AsSpan().Slice(oldValue.LengthWithoutMetadata));
+                    appendValue.ReadOnlySpan.CopyTo(newValue.AsSpan().Slice(oldValue.LengthWithoutMetadata));
 
                     CopyValueLengthToOutput(ref newValue, ref output);
                     break;

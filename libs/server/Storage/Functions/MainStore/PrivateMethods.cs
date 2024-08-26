@@ -125,7 +125,7 @@ namespace Garnet.server
                     break;
 
                 case RespCommand.GETBIT:
-                    var offset = input.parseState.GetLong(0);
+                    var offset = input.parseState.GetLong(input.parseStateStartIdx);
                     var oldValSet = BitmapManager.GetBit(offset, value.ToPointer(), value.Length);
                     if (oldValSet == 0)
                         CopyDefaultResp(CmdStrings.RESP_RETURN_VAL_0, ref dst);
@@ -134,18 +134,18 @@ namespace Garnet.server
                     break;
 
                 case RespCommand.BITCOUNT:
-                    var bcStartOffset = input.parseState.GetLong(0);
-                    var bcEndOffset = input.parseState.GetLong(1);
-                    var bcOffsetType = input.parseState.GetArgSliceByRef(2).ReadOnlySpan[0];
+                    var bcStartOffset = input.parseState.GetLong(input.parseStateStartIdx);
+                    var bcEndOffset = input.parseState.GetLong(input.parseStateStartIdx + 1);
+                    var bcOffsetType = input.parseState.GetArgSliceByRef(input.parseStateStartIdx + 2).ReadOnlySpan[0];
                     var count = BitmapManager.BitCountDriver(bcStartOffset, bcEndOffset, bcOffsetType, value.ToPointer(), value.Length);
                     CopyRespNumber(count, ref dst);
                     break;
 
                 case RespCommand.BITPOS:
-                    var bpSetVal = input.parseState.GetArgSliceByRef(0).ReadOnlySpan[0];
-                    var bpStartOffset = input.parseState.GetLong(1);
-                    var bpEndOffset = input.parseState.GetLong(2);
-                    var bpOffsetType = input.parseState.GetArgSliceByRef(3).ReadOnlySpan[0];
+                    var bpSetVal = input.parseState.GetArgSliceByRef(input.parseStateStartIdx).ReadOnlySpan[0];
+                    var bpStartOffset = input.parseState.GetLong(input.parseStateStartIdx + 1);
+                    var bpEndOffset = input.parseState.GetLong(input.parseStateStartIdx + 2);
+                    var bpOffsetType = input.parseState.GetArgSliceByRef(input.parseStateStartIdx + 3).ReadOnlySpan[0];
                     var pos = BitmapManager.BitPosDriver(bpSetVal, bpStartOffset, bpEndOffset, bpOffsetType,
                         value.ToPointer(), value.Length);
                     *(long*)dst.SpanByte.ToPointer() = pos;
@@ -162,7 +162,7 @@ namespace Garnet.server
                     return;
 
                 case RespCommand.BITFIELD:
-                    var cmdArgsPtr = input.parseState.GetArgSliceByRef(0).SpanByte.ToPointer();
+                    var cmdArgsPtr = input.parseState.GetArgSliceByRef(input.parseStateStartIdx).SpanByte.ToPointer();
                     var (retValue, overflow) = BitmapManager.BitFieldExecute(cmdArgsPtr,
                         value.ToPointer(), value.Length);
                     if (!overflow)
@@ -209,8 +209,8 @@ namespace Garnet.server
 
                 case RespCommand.GETRANGE:
                     var len = value.LengthWithoutMetadata;
-                    var start = input.parseState.GetInt(0);
-                    var end = input.parseState.GetInt(1);
+                    var start = input.parseState.GetInt(input.parseStateStartIdx);
+                    var end = input.parseState.GetInt(input.parseStateStartIdx + 1);
 
                     (start, end) = NormalizeRange(start, end, len);
                     CopyRespTo(ref value, ref dst, start, end);
