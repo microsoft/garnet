@@ -166,7 +166,11 @@ namespace Garnet.server
         ASKING,
         SELECT,
         ECHO,
+
         CLIENT,
+        CLIENT_ID,
+        CLIENT_LIST,
+        CLIENT_KILL,
 
         MONITOR,
         MODULE,
@@ -299,7 +303,9 @@ namespace Garnet.server
             RespCommand.PING,
             RespCommand.SELECT,
             RespCommand.ECHO,
-            RespCommand.CLIENT,
+            RespCommand.CLIENT_ID,
+            RespCommand.CLIENT_LIST,
+            RespCommand.CLIENT_KILL,
             RespCommand.MONITOR,
             RespCommand.MODULE_LOADCS,
             RespCommand.REGISTERCS,
@@ -1466,7 +1472,37 @@ namespace Garnet.server
             }
             else if (command.SequenceEqual(CmdStrings.CLIENT))
             {
-                return RespCommand.CLIENT;
+                if (count == 0)
+                {
+                    specificErrorMsg = Encoding.ASCII.GetBytes(string.Format(CmdStrings.GenericErrWrongNumArgs,
+                        nameof(RespCommand.CLIENT)));
+                }
+                else if (count >= 1)
+                {
+                    Span<byte> subCommand = GetCommand(out bool gotSubCommand);
+                    if (!gotSubCommand)
+                    {
+                        success = false;
+                        return RespCommand.NONE;
+                    }
+
+                    AsciiUtils.ToUpperInPlace(subCommand);
+
+                    count--;
+
+                    if (subCommand.SequenceEqual(CmdStrings.ID))
+                    {
+                        return RespCommand.CLIENT_ID;
+                    }
+                    else if(subCommand.SequenceEqual(CmdStrings.LIST))
+                    {
+                        return RespCommand.CLIENT_LIST;
+                    }
+                    else if (subCommand.SequenceEqual(CmdStrings.KILL))
+                    {
+                        return RespCommand.CLIENT_KILL;
+                    }
+                }
             }
             else if (command.SequenceEqual(CmdStrings.AUTH))
             {

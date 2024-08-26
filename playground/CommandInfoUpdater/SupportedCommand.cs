@@ -35,7 +35,12 @@ namespace CommandInfoUpdater
             new("BLPOP", RespCommand.BLPOP),
             new("BRPOP", RespCommand.BRPOP),
             new("BLMOVE", RespCommand.BLMOVE),
-            new("CLIENT", RespCommand.CLIENT),
+            new("CLIENT", RespCommand.CLIENT,
+                [
+                    "CLIENT|ID",
+                    "CLIENT|LIST",
+                    "CLIENT|KILL",
+                ]),
             new("CLUSTER", RespCommand.CLUSTER,
             [
                 "CLUSTER|ADDSLOTS",

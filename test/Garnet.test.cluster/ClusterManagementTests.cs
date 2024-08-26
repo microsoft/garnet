@@ -4,6 +4,7 @@
 using System;
 using System.Collections.Generic;
 using System.Linq;
+using System.Net;
 using System.Threading;
 using Microsoft.Extensions.Logging;
 using NUnit.Framework;
@@ -280,6 +281,82 @@ namespace Garnet.test.cluster
                 ClassicAssert.AreEqual(knownNodes.Length, 1);
                 Thread.Sleep(1000);
             }
+        }
+
+        [Test,Order(7)]
+        public void ClusterClientList()
+        {
+            const int NodeCount = 4;
+            context.CreateInstances(NodeCount, enableAOF: true, MainMemoryReplication: true, CommitFrequencyMs: -1);
+            context.CreateConnection();
+            _ = context.clusterTestUtils.SimpleSetupCluster(NodeCount / 2, 1, logger: context.logger);
+
+            // Check that all nodes have 4 connections
+            var numWithTwoMasterConnections = 0;
+            var numWithTwoReplicaConnections = 0;
+
+            // Every node should have 1 normal connection and either 2 master + 1 replica, or 2 replica + 1 master
+            for (var nodeIx =0; nodeIx < NodeCount; nodeIx++)
+            {
+                var fullList = (string)context.clusterTestUtils.Execute((IPEndPoint)context.endpoints[nodeIx], "CLIENT", ["LIST"]);
+                var numNormal = fullList.Split("\r\n").Count(static x => x.Contains(" flags=N "));
+                var numReplica = fullList.Split("\r\n").Count(static x => x.Contains(" flags=S "));
+                var numMaster = fullList.Split("\r\n").Count(static x => x.Contains(" flags=M "));
+
+                ClassicAssert.AreEqual(1, numNormal);
+                ClassicAssert.IsTrue(numReplica >= 1 && numReplica <= 2);
+                ClassicAssert.IsTrue(numMaster >= 1 && numMaster <= 2);
+
+                if(numMaster == 1)
+                {
+                    ClassicAssert.AreEqual(2, numReplica);
+                    numWithTwoReplicaConnections++;
+                }
+                else
+                {
+                    ClassicAssert.AreEqual(1, numReplica);
+                    numWithTwoMasterConnections++;
+                }
+
+                var replicaList = (string)context.clusterTestUtils.Execute((IPEndPoint)context.endpoints[nodeIx], "CLIENT", ["LIST", "TYPE", "REPLICA"]);
+                var masterList = (string)context.clusterTestUtils.Execute((IPEndPoint)context.endpoints[nodeIx], "CLIENT", ["LIST", "TYPE", "MASTER"]);
+
+                ClassicAssert.AreEqual(numReplica, replicaList.Split("\r\n").Length);
+                ClassicAssert.AreEqual(numMaster, masterList.Split("\r\n").Length);
+            }
+
+            ClassicAssert.AreEqual(2, numWithTwoMasterConnections);
+            ClassicAssert.AreEqual(2, numWithTwoReplicaConnections);
+        }
+
+        [Test, Order(7)]
+        public void ClusterClientKill()
+        {
+            const int NodeCount = 4;
+            context.CreateInstances(NodeCount, enableAOF: true, MainMemoryReplication: true, CommitFrequencyMs: -1);
+            context.CreateConnection();
+            _ = context.clusterTestUtils.SimpleSetupCluster(NodeCount / 2, 1, logger: context.logger);
+
+            var killedMaster = (int)context.clusterTestUtils.Execute((IPEndPoint)context.endpoints[0], "CLIENT", ["KILL", "TYPE", "MASTER"]);
+            var killedReplica = (int)context.clusterTestUtils.Execute((IPEndPoint)context.endpoints[0], "CLIENT", ["KILL", "TYPE", "REPLICA"]);
+
+            ClassicAssert.IsTrue(killedMaster >= 1);
+            ClassicAssert.IsTrue(killedReplica >= 1);
+        }
+
+        [Test, Order(7)]
+        public void ClusterClientKillSlave()
+        {
+            // Test SLAVE separately - it's equivalent to REPLICA, but needed for compatibility
+
+            const int NodeCount = 4;
+            context.CreateInstances(NodeCount, enableAOF: true, MainMemoryReplication: true, CommitFrequencyMs: -1);
+            context.CreateConnection();
+            _ = context.clusterTestUtils.SimpleSetupCluster(NodeCount / 2, 1, logger: context.logger);
+
+            var killed = (int)context.clusterTestUtils.Execute((IPEndPoint)context.endpoints[0], "CLIENT", ["KILL", "TYPE", "SLAVE"]);
+
+            ClassicAssert.IsTrue(killed >= 1);
         }
     }
 }

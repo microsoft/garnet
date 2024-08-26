@@ -173,6 +173,9 @@ namespace Garnet.server
         public static ReadOnlySpan<byte> RESP_ERR_MODULE_ONLOAD => "ERR Error during module OnLoad"u8;
         public static ReadOnlySpan<byte> RESP_ERR_LIMIT_NOT_SUPPORTED => "ERR syntax error, LIMIT is only supported in combination with either BYSCORE or BYLEX"u8;
         public static ReadOnlySpan<byte> RESP_ERR_NO_SCRIPT => "NOSCRIPT No matching script. Please use EVAL."u8;
+        public static ReadOnlySpan<byte> RESP_ERR_CANNOT_LIST_CLIENTS => "ERR Clients cannot be listed."u8;
+        public static ReadOnlySpan<byte> RESP_ERR_NO_SUCH_CLIENT => "ERR No such client"u8;
+        public static ReadOnlySpan<byte> RESP_ERR_INVALID_CLIENT_ID => "ERR Invalid client ID"u8;
 
         /// <summary>
         /// Response string templates
@@ -185,6 +188,8 @@ namespace Garnet.server
             "ERR Invalid number of parameters to stored proc {0}, expected {1}, actual {2}";
         public const string GenericSyntaxErrorOption = "ERR Syntax error in {0} option '{1}'";
         public const string GenericParamShouldBeGreaterThanZero = "ERR {0} should be greater than 0";
+        public const string GenericUnknownClientType = "ERR Unknown client type '{0}'";
+        public const string GenericErrDuplicateFilter = "ERR Filter '{0}' defined multiple times";
 
         /// <summary>
         /// Response errors while scripting
@@ -256,6 +261,15 @@ namespace Garnet.server
         public static ReadOnlySpan<byte> SLOTS => "SLOTS"u8;
         public static ReadOnlySpan<byte> REPLICAS => "REPLICAS"u8;
         public static ReadOnlySpan<byte> REPLICATE => "REPLICATE"u8;
+        public static ReadOnlySpan<byte> ID => "ID"u8;
+        public static ReadOnlySpan<byte> KILL => "KILL"u8;
+        public static ReadOnlySpan<byte> USER => "USER"u8;
+        public static ReadOnlySpan<byte> ADDR => "ADDR"u8;
+        public static ReadOnlySpan<byte> LADDR => "LADDR"u8;
+        public static ReadOnlySpan<byte> SKIPME => "SKIPME"u8;
+        public static ReadOnlySpan<byte> MAXAGE => "MAXAGE"u8;
+        public static ReadOnlySpan<byte> YES => "YES"u8;
+        public static ReadOnlySpan<byte> NO => "NO"u8;
 
         // Cluster subcommands which are internal and thus undocumented
         // 

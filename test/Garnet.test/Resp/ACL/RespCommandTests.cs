@@ -83,7 +83,7 @@ namespace Garnet.test.Resp.ACL
             ClassicAssert.IsTrue(RespCommandsInfo.TryGetRespCommandNames(out IReadOnlySet<string> advertisedCommands), "Couldn't get advertised RESP commands");
 
             // TODO: See if these commands could be identified programmatically
-            IEnumerable<string> withOnlySubCommands = ["ACL", "CLUSTER", "CONFIG", "LATENCY", "MEMORY", "MODULE"];
+            IEnumerable<string> withOnlySubCommands = ["ACL", "CLIENT", "CLUSTER", "CONFIG", "LATENCY", "MEMORY", "MODULE"];
             IEnumerable<string> notCoveredByACLs = allInfo.Where(static x => x.Value.Flags.HasFlag(RespCommandFlags.NoAuth)).Select(static kv => kv.Key);
 
             // Check tests against RespCommandsInfo
@@ -106,7 +106,7 @@ namespace Garnet.test.Resp.ACL
                     .Where(cmd => !notCoveredByACLs.Contains(cmd.ToString().Replace("_", ""), StringComparer.OrdinalIgnoreCase));
                 IEnumerable<RespCommand> notCovered = testableValues.Where(cmd => !covered.Contains(cmd.ToString().Replace("_", ""), StringComparer.OrdinalIgnoreCase));
 
-                ClassicAssert.IsEmpty(notCovered, $"Commands in RespCOmmand not covered by ACL Tests:{Environment.NewLine}{string.Join(Environment.NewLine, notCovered.OrderBy(static x => x))}");
+                ClassicAssert.IsEmpty(notCovered, $"Commands in RespCommand not covered by ACL Tests:{Environment.NewLine}{string.Join(Environment.NewLine, notCovered.OrderBy(static x => x))}");
             }
         }
 
@@ -639,19 +639,66 @@ namespace Garnet.test.Resp.ACL
         }
 
         [Test]
-        public async Task ClientACLsAsync()
+        public async Task ClientIdACLsAsync()
         {
-            // TODO: client isn't really implemented looks like, so this is mostly a placeholder in case it gets implemented correctly
-
             await CheckCommandsAsync(
-                "CLIENT",
-                [DoClientAsync]
+                "CLIENT ID",
+                [DoClientIdAsync]
             );
 
-            static async Task DoClientAsync(GarnetClient client)
+            static async Task DoClientIdAsync(GarnetClient client)
             {
-                string val = await client.ExecuteForStringResultAsync("CLIENT");
-                ClassicAssert.AreEqual("OK", val);
+                long val = await client.ExecuteForLongResultAsync("CLIENT", ["ID"]);
+                ClassicAssert.AreNotEqual(0, val);
+            }
+        }
+
+        [Test]
+        public async Task ClientListACLsAsync()
+        {
+            // todo: other filters
+
+            await CheckCommandsAsync(
+                "CLIENT LIST",
+                [DoClientListAsync]
+            );
+
+            static async Task DoClientListAsync(GarnetClient client)
+            {
+                string val = await client.ExecuteForStringResultAsync("CLIENT", ["LIST"]);
+                ClassicAssert.IsNotEmpty(val);
+            }
+        }
+
+        [Test]
+        public async Task ClientKillACLsAsync()
+        {
+            await CheckCommandsAsync(
+                "CLIENT KILL",
+                [DoClientKillAsync, DoClientFilterAsync]
+            );
+
+            static async Task DoClientKillAsync(GarnetClient client)
+            {
+                try
+                {
+                    _ = await client.ExecuteForStringResultAsync("CLIENT", ["KILL", "foo"]);
+                }
+                catch (Exception ex)
+                {
+                    if (ex.Message.Equals("ERR No such client"))
+                    {
+                        return;
+                    }
+
+                    throw;
+                }
+            }
+
+            static async Task DoClientFilterAsync(GarnetClient client)
+            {
+                var count = await client.ExecuteForLongResultAsync("CLIENT", ["KILL", "ID", "123"]);
+                ClassicAssert.AreEqual(0, count);
             }
         }
 

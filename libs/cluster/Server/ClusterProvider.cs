@@ -120,6 +120,19 @@ namespace Garnet.cluster
             => clusterManager?.CurrentConfig.LocalNodeRole == NodeRole.REPLICA || replicationManager?.Recovering == true;
 
         /// <inheritdoc />
+        public bool IsReplica(string nodeId)
+        {
+            var config = clusterManager?.CurrentConfig;
+            if (config is null || !config.IsKnown(nodeId))
+            {
+                return false;
+            }
+
+            var worker = config.GetWorkerFromNodeId(nodeId);
+            return worker.Role == NodeRole.REPLICA;
+        }
+
+        /// <inheritdoc />
         public void ResetGossipStats()
             => clusterManager?.gossipStats.Reset();
 
