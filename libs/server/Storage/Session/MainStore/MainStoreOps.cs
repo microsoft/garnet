@@ -3,7 +3,9 @@
 
 using System;
 using System.Diagnostics;
+using System.Globalization;
 using System.Runtime.CompilerServices;
+using System.Text;
 using Garnet.common;
 using Tsavorite.core;
 
@@ -789,36 +791,17 @@ namespace Garnet.server
         /// </summary>
         /// <typeparam name="TContext"></typeparam>
         /// <param name="key">The key for which to set the range</param>
-        /// <param name="value">The value to place at an offset</param>
-        /// <param name="offset">The offset at which to place the value</param>
+        /// <param name="input">Input for the main store</param>
         /// <param name="output">The length of the updated string</param>
         /// <param name="context">Basic context for the main store</param>
         /// <returns></returns>
-        public unsafe GarnetStatus SETRANGE<TContext>(ArgSlice key, ArgSlice value, int offset, ref ArgSlice output, ref TContext context)
+        public unsafe GarnetStatus SETRANGE<TContext>(ArgSlice key, ref RawStringInput input, ref ArgSlice output, ref TContext context)
             where TContext : ITsavoriteContext<SpanByte, SpanByte, RawStringInput, SpanByteAndMemory, long, MainSessionFunctions, MainStoreFunctions, MainStoreAllocator>
         {
-            var inputHeader = new RawStringInput();
-
             var sbKey = key.SpanByte;
             SpanByteAndMemory sbmOut = new(output.SpanByte);
 
-            // Total size + Offset size + New value size + Address of new value
-            int inputSize = sizeof(int) + sizeof(int) + sizeof(int) + sizeof(long);
-            byte* pbCmdInput = stackalloc byte[inputSize];
-
-            byte* pcurr = pbCmdInput;
-            *(int*)pcurr = inputSize - sizeof(int);
-            pcurr += sizeof(int);
-            (*(RespInputHeader*)(pcurr)).cmd = RespCommand.SETRANGE;
-            (*(RespInputHeader*)(pcurr)).flags = 0;
-            pcurr += RespInputHeader.Size;
-            *(int*)(pcurr) = offset;
-            pcurr += sizeof(int);
-            *(int*)pcurr = value.Length;
-            pcurr += sizeof(int);
-            *(long*)pcurr = (long)(value.ptr);
-
-            var status = context.RMW(ref sbKey, ref inputHeader, ref sbmOut);
+            var status = context.RMW(ref sbKey, ref input, ref sbmOut);
             if (status.IsPending)
                 CompletePendingForSession(ref status, ref sbmOut, ref context);
 
@@ -845,8 +828,6 @@ namespace Garnet.server
         public unsafe GarnetStatus Increment<TContext>(ArgSlice key, out long output, long increment, ref TContext context)
             where TContext : ITsavoriteContext<SpanByte, SpanByte, RawStringInput, SpanByteAndMemory, long, MainSessionFunctions, MainStoreFunctions, MainStoreAllocator>
         {
-            var inputHeader = new RawStringInput();
-
             var cmd = RespCommand.INCRBY;
             if (increment < 0)
             {
@@ -855,23 +836,29 @@ namespace Garnet.server
             }
 
             var incrementNumDigits = NumUtils.NumDigitsInLong(increment);
-            var inputByteSize = RespInputHeader.Size + incrementNumDigits;
-            var input = stackalloc byte[inputByteSize];
-            ((RespInputHeader*)input)->cmd = cmd;
-            ((RespInputHeader*)input)->flags = 0;
-            var longOutput = input + RespInputHeader.Size;
-            NumUtils.LongToBytes(increment, incrementNumDigits, ref longOutput);
+            var incrementBytes = stackalloc byte[incrementNumDigits];
+            NumUtils.LongToBytes(increment, incrementNumDigits, ref incrementBytes);
+            var incrementSlice = new ArgSlice(incrementBytes, incrementNumDigits);
+
+            var parseState = new SessionParseState();
+            ArgSlice[] parseStateBuffer = default;
+            parseState.InitializeWithArguments(ref parseStateBuffer, incrementSlice);
+
+            var input = new RawStringInput
+            {
+                header = new RespInputHeader { cmd = cmd }, parseState = parseState, parseStateStartIdx = 0,
+            };
 
             const int outputBufferLength = NumUtils.MaximumFormatInt64Length + 1;
-            byte* outputBuffer = stackalloc byte[outputBufferLength];
+            var outputBuffer = stackalloc byte[outputBufferLength];
 
             var _key = key.SpanByte;
-            var _input = SpanByte.FromPinnedPointer(input, inputByteSize);
             var _output = new SpanByteAndMemory(outputBuffer, outputBufferLength);
 
-            var status = context.RMW(ref _key, ref inputHeader, ref _output);
+            var status = context.RMW(ref _key, ref input, ref _output);
             if (status.IsPending)
                 CompletePendingForSession(ref status, ref _output, ref context);
+
             Debug.Assert(_output.IsSpanByte);
             Debug.Assert(_output.Length == outputBufferLength);
 

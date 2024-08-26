@@ -244,12 +244,17 @@ namespace Garnet.server
                 return true;
             }
 
-            var value = parseState.GetArgSliceByRef(2);
+            var input = new RawStringInput
+            {
+                header = new RespInputHeader { cmd = RespCommand.SETRANGE },
+                parseState = parseState,
+                parseStateStartIdx = 1,
+            };
 
             Span<byte> outputBuffer = stackalloc byte[NumUtils.MaximumFormatInt64Length];
             var output = ArgSlice.FromPinnedSpan(outputBuffer);
 
-            storageApi.SETRANGE(key, value, offset, ref output);
+            storageApi.SETRANGE(key, ref input, ref output);
 
             while (!RespWriteUtils.WriteIntegerFromBytes(outputBuffer.Slice(0, output.Length), ref dcurr, dend))
                 SendAndReset();

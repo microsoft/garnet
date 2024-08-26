@@ -181,45 +181,29 @@ namespace Garnet.server
         private bool NetworkMSETNX<TGarnetApi>(ref TGarnetApi storageApi)
             where TGarnetApi : IGarnetApi
         {
-            var inputHeader = new RawStringInput();
-            byte* hPtr = stackalloc byte[RespInputHeader.Size];
-
-            bool anyValuesSet = false;
-            for (int c = 0; c < parseState.Count; c += 2)
+            var anyValuesSet = false;
+            for (var c = 0; c < parseState.Count; c += 2)
             {
                 var key = parseState.GetArgSliceByRef(c).SpanByte;
-                var val = parseState.GetArgSliceByRef(c + 1).SpanByte;
+                var valSlice = parseState.GetArgSliceByRef(c + 1);
 
-                // We have to access the raw pointer in order to inject the input header
-                byte* valPtr = val.ToPointer();
-                int vsize = val.Length;
+                var tmpParseState = new SessionParseState();
+                ArgSlice[] tmpParseStateBuffer = default;
+                tmpParseState.InitializeWithArguments(ref tmpParseStateBuffer, valSlice);
 
-                valPtr -= sizeof(int);
+                var input = new RawStringInput
+                {
+                    header = new RespInputHeader { cmd = RespCommand.SETEXNX },
+                    parseState = tmpParseState,
+                    parseStateStartIdx = 0,
+                };
 
-                int saveV = *(int*)valPtr;
-                *(int*)valPtr = vsize;
-
-                // Make space for RespCommand in input
-                valPtr -= RespInputHeader.Size;
-
-                // Save state of memory to override with header
-                Buffer.MemoryCopy(valPtr, hPtr, RespInputHeader.Size, RespInputHeader.Size);
-
-                *(int*)valPtr = RespInputHeader.Size + vsize;
-                ((RespInputHeader*)(valPtr + sizeof(int)))->cmd = RespCommand.SETEXNX;
-                ((RespInputHeader*)(valPtr + sizeof(int)))->flags = 0;
-
-                var status = storageApi.SET_Conditional(ref key, ref inputHeader);
+                var status = storageApi.SET_Conditional(ref key, ref input);
 
                 // Status tells us whether an old image was found during RMW or not
                 // For a "set if not exists", NOTFOUND means that the operation succeeded
                 if (status == GarnetStatus.NOTFOUND)
                     anyValuesSet = true;
-
-                // Put things back in place so that network buffer is not clobbered
-                Buffer.MemoryCopy(hPtr, valPtr, RespInputHeader.Size, RespInputHeader.Size);
-                valPtr += RespInputHeader.Size;
-                *(int*)valPtr = saveV;
             }
 
             while (!RespWriteUtils.WriteInteger(anyValuesSet ? 1 : 0, ref dcurr, dend))

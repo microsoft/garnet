@@ -74,10 +74,11 @@ namespace Garnet.server
                 case RespCommand.SET:
                 case RespCommand.SETEXNX:
                     // Copy input to value
+                    var newInputValue = input.parseState.GetArgSliceByRef(input.parseStateStartIdx).ReadOnlySpan;
                     value.UnmarkExtraMetadata();
-                    value.ShrinkSerializedLength(input.Length - RespInputHeader.Size);
+                    value.ShrinkSerializedLength(newInputValue.Length);
                     value.ExtraMetadata = input.ExtraMetadata;
-                    input.AsReadOnlySpan()[RespInputHeader.Size..].CopyTo(value.AsSpan());
+                    newInputValue.CopyTo(value.AsSpan());
                     break;
 
                 case RespCommand.SETKEEPTTL:
@@ -117,10 +118,9 @@ namespace Garnet.server
                     break;
 
                 case RespCommand.SETRANGE:
-                    var offset = *(int*)(inputPtr + RespInputHeader.Size);
-                    var newValueSize = *(int*)(inputPtr + RespInputHeader.Size + sizeof(int));
-                    var newValuePtr = new Span<byte>((byte*)*(long*)(inputPtr + RespInputHeader.Size + sizeof(int) * 2), newValueSize);
-                    newValuePtr.CopyTo(value.AsSpan().Slice(offset));
+                    var offset = input.parseState.GetInt(input.parseStateStartIdx);
+                    var newValue = input.parseState.GetArgSliceByRef(input.parseStateStartIdx + 1).ReadOnlySpan;
+                    newValue.CopyTo(value.AsSpan().Slice(offset));
 
                     CopyValueLengthToOutput(ref value, ref output);
                     break;
@@ -156,9 +156,9 @@ namespace Garnet.server
                 default:
                     value.UnmarkExtraMetadata();
 
-                    if (*inputPtr >= CustomCommandManager.StartOffset)
+                    if ((byte)input.header.cmd >= CustomCommandManager.StartOffset)
                     {
-                        var functions = functionsState.customCommands[*inputPtr - CustomCommandManager.StartOffset].functions;
+                        var functions = functionsState.customCommands[(byte)input.header.cmd - CustomCommandManager.StartOffset].functions;
                         // compute metadata size for result
                         long expiration = input.ExtraMetadata;
                         int metadataSize = expiration switch
@@ -407,14 +407,13 @@ namespace Garnet.server
                     rmwInfo.SetUsedValueLength(ref recordInfo, ref value, value.TotalSize);
                     return HyperLogLog.DefaultHLL.TryMerge(srcHLL, dstHLL, value.Length);
                 case RespCommand.SETRANGE:
-                    var offset = *(int*)(inputPtr + RespInputHeader.Size);
-                    var newValueSize = *(int*)(inputPtr + RespInputHeader.Size + sizeof(int));
-                    var newValuePtr = new Span<byte>((byte*)*(long*)(inputPtr + RespInputHeader.Size + sizeof(int) * 2), newValueSize);
+                    var offset = input.parseState.GetInt(input.parseStateStartIdx);
+                    var newValue = input.parseState.GetArgSliceByRef(input.parseStateStartIdx + 1).ReadOnlySpan;
 
-                    if (newValueSize + offset > value.LengthWithoutMetadata)
+                    if (newValue.Length + offset > value.LengthWithoutMetadata)
                         return false;
 
-                    newValuePtr.CopyTo(value.AsSpan().Slice(offset));
+                    newValue.CopyTo(value.AsSpan().Slice(offset));
 
                     CopyValueLengthToOutput(ref value, ref output);
                     return true;
@@ -490,29 +489,28 @@ namespace Garnet.server
         /// <inheritdoc />
         public bool NeedCopyUpdate(ref SpanByte key, ref RawStringInput input, ref SpanByte oldValue, ref SpanByteAndMemory output, ref RMWInfo rmwInfo)
         {
-            var inputPtr = input.ToPointer();
-            switch ((RespCommand)(*inputPtr))
+            switch (input.header.cmd)
             {
                 case RespCommand.SETEXNX:
                     // Expired data, return false immediately
                     // ExpireAndStop ensures that caller sees a NOTFOUND status
-                    if (oldValue.MetadataSize > 0 && ((RespInputHeader*)inputPtr)->CheckExpiry(oldValue.ExtraMetadata))
+                    if (oldValue.MetadataSize > 0 && input.header.CheckExpiry(oldValue.ExtraMetadata))
                     {
                         rmwInfo.Action = RMWAction.ExpireAndStop;
                         return false;
                     }
                     // Check if SetGet flag is set
-                    if (((RespInputHeader*)inputPtr)->CheckSetGetFlag())
+                    if (input.header.CheckSetGetFlag())
                     {
                         // Copy value to output for the GET part of the command.
                         CopyRespTo(ref oldValue, ref output);
                     }
                     return false;
                 default:
-                    if (*inputPtr >= CustomCommandManager.StartOffset)
+                    if ((byte)input.header.cmd >= CustomCommandManager.StartOffset)
                     {
                         (IMemoryOwner<byte> Memory, int Length) outp = (output.Memory, 0);
-                        var ret = functionsState.customCommands[*inputPtr - CustomCommandManager.StartOffset].functions
+                        var ret = functionsState.customCommands[(byte)input.header.cmd - CustomCommandManager.StartOffset].functions
                             .NeedCopyUpdate(key.AsReadOnlySpan(), ref input, oldValue.AsReadOnlySpan(), ref outp);
                         output.Memory = outp.Memory;
                         output.Length = outp.Length;
@@ -529,7 +527,7 @@ namespace Garnet.server
             var inputPtr = input.ToPointer();
 
             // Expired data
-            if (oldValue.MetadataSize > 0 && ((RespInputHeader*)inputPtr)->CheckExpiry(oldValue.ExtraMetadata))
+            if (oldValue.MetadataSize > 0 && input.header.CheckExpiry(oldValue.ExtraMetadata))
             {
                 rmwInfo.Action = RMWAction.ExpireAndResume;
                 return false;
@@ -537,22 +535,23 @@ namespace Garnet.server
 
             rmwInfo.ClearExtraValueLength(ref recordInfo, ref newValue, newValue.TotalSize);
 
-            switch ((RespCommand)(*inputPtr))
+            switch (input.header.cmd)
             {
                 case RespCommand.SET:
                 case RespCommand.SETEXXX:
-                    Debug.Assert(input.Length - RespInputHeader.Size == newValue.Length);
-
                     // Check if SetGet flag is set
-                    if (((RespInputHeader*)inputPtr)->CheckSetGetFlag())
+                    if (input.header.CheckSetGetFlag())
                     {
                         // Copy value to output for the GET part of the command.
                         CopyRespTo(ref oldValue, ref output);
                     }
 
                     // Copy input to value
+                    var newInputValue = input.parseState.GetArgSliceByRef(input.parseStateStartIdx).ReadOnlySpan;
+                    Debug.Assert(newInputValue.Length == newValue.Length);
+
                     newValue.ExtraMetadata = input.ExtraMetadata;
-                    input.AsReadOnlySpan()[RespInputHeader.Size..].CopyTo(newValue.AsSpan());
+                    newInputValue.CopyTo(newValue.AsSpan());
                     break;
 
                 case RespCommand.SETKEEPTTLXX:
@@ -560,7 +559,7 @@ namespace Garnet.server
                     Debug.Assert(oldValue.MetadataSize + input.Length - RespInputHeader.Size == newValue.Length);
 
                     // Check if SetGet flag is set
-                    if (((RespInputHeader*)inputPtr)->CheckSetGetFlag())
+                    if (input.header.CheckSetGetFlag())
                     {
                         // Copy value to output for the GET part of the command.
                         CopyRespTo(ref oldValue, ref output);
@@ -666,12 +665,11 @@ namespace Garnet.server
                     break;
 
                 case RespCommand.SETRANGE:
-                    var offset = *(int*)(inputPtr + RespInputHeader.Size);
+                    var offset = input.parseState.GetInt(input.parseStateStartIdx);
                     oldValue.CopyTo(ref newValue);
 
-                    var newValueSize = *(int*)(inputPtr + RespInputHeader.Size + sizeof(int));
-                    var newValuePtr = new Span<byte>((byte*)*(long*)(inputPtr + RespInputHeader.Size + sizeof(int) * 2), newValueSize);
-                    newValuePtr.CopyTo(newValue.AsSpan().Slice(offset));
+                    newInputValue = input.parseState.GetArgSliceByRef(input.parseStateStartIdx + 1).ReadOnlySpan;
+                    newInputValue.CopyTo(newValue.AsSpan().Slice(offset));
 
                     CopyValueLengthToOutput(ref newValue, ref output);
                     break;
@@ -696,9 +694,9 @@ namespace Garnet.server
                     break;
 
                 default:
-                    if (*inputPtr >= CustomCommandManager.StartOffset)
+                    if ((byte)input.header.cmd >= CustomCommandManager.StartOffset)
                     {
-                        var functions = functionsState.customCommands[*inputPtr - CustomCommandManager.StartOffset].functions;
+                        var functions = functionsState.customCommands[(byte)input.header.cmd - CustomCommandManager.StartOffset].functions;
                         var expiration = input.ExtraMetadata;
                         if (expiration == 0)
                         {
@@ -713,7 +711,7 @@ namespace Garnet.server
 
                         (IMemoryOwner<byte> Memory, int Length) outp = (output.Memory, 0);
 
-                        var ret = functionsState.customCommands[*inputPtr - CustomCommandManager.StartOffset].functions
+                        var ret = functionsState.customCommands[(byte)input.header.cmd - CustomCommandManager.StartOffset].functions
                             .CopyUpdater(key.AsReadOnlySpan(), ref input, oldValue.AsReadOnlySpan(), newValue.AsSpan(), ref outp, ref rmwInfo);
                         output.Memory = outp.Memory;
                         output.Length = outp.Length;

@@ -133,8 +133,8 @@ namespace Garnet.server
         #region SETRANGE
 
         /// <inheritdoc />
-        public GarnetStatus SETRANGE(ArgSlice key, ArgSlice value, int offset, ref ArgSlice output)
-            => storageSession.SETRANGE(key, value, offset, ref output, ref context);
+        public GarnetStatus SETRANGE(ArgSlice key, ref RawStringInput input, ref ArgSlice output)
+            => storageSession.SETRANGE(key, ref input, ref output, ref context);
 
         #endregion
 

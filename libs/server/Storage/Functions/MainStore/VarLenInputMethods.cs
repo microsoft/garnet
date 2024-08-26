@@ -57,9 +57,9 @@ namespace Garnet.server
                     int length = *(int*)i;//[hll allocated size = 4 byte] + [hll data structure]
                     return sizeof(int) + length;
                 case RespCommand.SETRANGE:
-                    var offset = *((int*)(inputPtr + RespInputHeader.Size));
-                    var newValueSize = *((int*)(inputPtr + RespInputHeader.Size + sizeof(int)));
-                    return sizeof(int) + newValueSize + offset + input.MetadataSize;
+                    var offset = input.parseState.GetInt(input.parseStateStartIdx);
+                    var newValue = input.parseState.GetArgSliceByRef(input.parseStateStartIdx + 1).ReadOnlySpan;
+                    return sizeof(int) + newValue.Length + offset + input.MetadataSize;
 
                 case RespCommand.APPEND:
                     var valueLength = input.parseState.GetArgSliceByRef(input.parseStateStartIdx).Length;
@@ -170,11 +170,11 @@ namespace Garnet.server
                         return sizeof(int) + t.Length + input.MetadataSize;
 
                     case RespCommand.SETRANGE:
-                        var offset = *((int*)(inputPtr + RespInputHeader.Size));
-                        var newValueSize = *((int*)(inputPtr + RespInputHeader.Size + sizeof(int)));
+                        var offset = input.parseState.GetInt(input.parseStateStartIdx);
+                        var newValue = input.parseState.GetArgSliceByRef(input.parseStateStartIdx + 1).ReadOnlySpan;
 
-                        if (newValueSize + offset > t.LengthWithoutMetadata)
-                            return sizeof(int) + newValueSize + offset + t.MetadataSize;
+                        if (newValue.Length + offset > t.LengthWithoutMetadata)
+                            return sizeof(int) + newValue.Length + offset + t.MetadataSize;
                         return sizeof(int) + t.Length;
 
                     case RespCommand.GETDEL:

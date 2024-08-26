@@ -80,11 +80,10 @@ namespace Garnet.server
         /// SETRANGE
         /// </summary>
         /// <param name="key">Key</param>
-        /// <param name="value">Value</param>
-        /// <param name="offset">Offset in Bytes</param>
+        /// <param name="input"></param>
         /// <param name="output">The output of the operation</param>
         /// <returns></returns>
-        GarnetStatus SETRANGE(ArgSlice key, ArgSlice value, int offset, ref ArgSlice output);
+        GarnetStatus SETRANGE(ArgSlice key, ref RawStringInput input, ref ArgSlice output);
 
 
         #endregion
