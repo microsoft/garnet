@@ -153,7 +153,7 @@ namespace Garnet.server
         BITOP_XOR,
         BITOP_NOT, // Note: Update OneIfWrite if adding new write commands after this
 
-        // Neither read nor write commands
+        // Neither read nor write key commands
         ASYNC,
 
         PING,

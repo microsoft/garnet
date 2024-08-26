@@ -97,7 +97,6 @@ namespace Garnet.server
                     break;
 
                 case RespCommand.MIGRATE:
-                    long expiration = value.ExtraMetadata;
                     if (value.Length <= dst.Length)
                     {
                         value.CopyTo(ref dst.SpanByte);
@@ -106,9 +105,18 @@ namespace Garnet.server
                     }
 
                     dst.ConvertToHeap();
-                    dst.Length = value.Length;
-                    dst.Memory = functionsState.memoryPool.Rent(value.Length);
-                    value.AsReadOnlySpanWithMetadata().CopyTo(dst.Memory.Memory.Span);
+                    dst.Length = value.TotalSize;
+
+                    if (dst.Memory == default) // Allocate new heap buffer
+                        dst.Memory = functionsState.memoryPool.Rent(dst.Length);
+                    else if (dst.Memory.Memory.Span.Length < value.TotalSize)
+                    // Allocate new heap buffer only if existing one is smaller
+                    // otherwise it is safe to re-use existing buffer
+                    {
+                        dst.Memory.Dispose();
+                        dst.Memory = functionsState.memoryPool.Rent(dst.Length);
+                    }
+                    value.CopyTo(dst.Memory.Memory.Span);
                     break;
 
                 case RespCommand.GET:
