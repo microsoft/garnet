@@ -369,7 +369,7 @@ namespace Garnet.server
         /// <summary>
         /// Get KVSettings for the main store log
         /// </summary>
-        public KVSettings<SpanByte, SpanByte> GetSettings(ILogger logger, out INamedDeviceFactory logFactory)
+        public KVSettings<SpanByte, SpanByte> GetSettings(ILoggerFactory loggerFactory, ILogger logger, out INamedDeviceFactory logFactory)
         {
             if (MutablePercent is < 10 or > 95)
                 throw new Exception("MutablePercent must be between 10 and 95");
@@ -382,8 +382,11 @@ namespace Garnet.server
                 IndexSize = indexCacheLines * 64L,
                 PreallocateLog = false,
                 MutableFraction = MutablePercent / 100.0,
-                PageSize = 1L << PageSizeBits()
+                PageSize = 1L << PageSizeBits(),
+                loggerFactory = loggerFactory,
+                logger = logger
             };
+
             logger?.LogInformation("[Store] Using page size of {PageSize}", PrettySize(kvSettings.PageSize));
 
             kvSettings.MemorySize = 1L << MemorySizeBits(MemorySize, PageSize, out var storeEmptyPageCount);
