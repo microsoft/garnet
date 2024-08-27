@@ -1,6 +1,7 @@
 ﻿// Copyright (c) Microsoft Corporation.
 // Licensed under the MIT license.
 
+using System.Reflection.Metadata.Ecma335;
 using Garnet.common;
 using Tsavorite.core;
 
@@ -59,7 +60,7 @@ namespace Garnet.server
                 case RespCommand.SETRANGE:
                     var offset = input.parseState.GetInt(input.parseStateStartIdx);
                     var newValue = input.parseState.GetArgSliceByRef(input.parseStateStartIdx + 1).ReadOnlySpan;
-                    return sizeof(int) + newValue.Length + offset + input.MetadataSize;
+                    return sizeof(int) + newValue.Length + offset;
 
                 case RespCommand.APPEND:
                     var valueLength = input.parseState.GetArgSliceByRef(input.parseStateStartIdx).Length;
@@ -90,7 +91,7 @@ namespace Garnet.server
                     {
                         var functions = functionsState.customCommands[(byte)cmd - 200].functions;
                         // Compute metadata size for result
-                        int metadataSize = input.ExtraMetadata switch
+                        int metadataSize = input.arg1 switch
                         {
                             -1 => 0,
                             0 => 0,
@@ -98,7 +99,9 @@ namespace Garnet.server
                         };
                         return sizeof(int) + metadataSize + functions.GetInitialLength(ref input);
                     }
-                    return sizeof(int) + input.Length - RespInputHeader.Size;
+
+                    return sizeof(int) + input.parseState.GetArgSliceByRef(input.parseStateStartIdx).ReadOnlySpan.Length +
+                        (input.arg1 == 0 ? 0 : sizeof(long));
             }
         }
 
@@ -158,7 +161,8 @@ namespace Garnet.server
 
                     case RespCommand.SETKEEPTTLXX:
                     case RespCommand.SETKEEPTTL:
-                        return sizeof(int) + t.MetadataSize + input.Length - RespInputHeader.Size;
+                        var setValue = input.parseState.GetArgSliceByRef(input.parseStateStartIdx);
+                        return sizeof(int) + t.MetadataSize + setValue.Length;
 
                     case RespCommand.SET:
                     case RespCommand.SETEXXX:
@@ -190,7 +194,7 @@ namespace Garnet.server
                         {
                             var functions = functionsState.customCommands[(byte)cmd - 200].functions;
                             // compute metadata for result
-                            int metadataSize = input.ExtraMetadata switch
+                            var metadataSize = input.arg1 switch
                             {
                                 -1 => 0,
                                 0 => t.MetadataSize,
@@ -202,7 +206,8 @@ namespace Garnet.server
                 }
             }
 
-            return sizeof(int) + input.Length - RespInputHeader.Size;
+            return sizeof(int) + input.parseState.GetArgSliceByRef(input.parseStateStartIdx).ReadOnlySpan.Length +
+                (input.arg1 == 0 ? 0 : sizeof(long));
         }
     }
 }

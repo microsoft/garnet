@@ -610,7 +610,7 @@ namespace Garnet.server
                 header = new RespInputHeader { cmd = cmd, },
                 parseState = parseState,
                 parseStateStartIdx = 1,
-                ExtraMetadata = expiry == 0
+                arg1 = expiry == 0
                     ? 0
                     : DateTimeOffset.UtcNow.Ticks +
                       (highPrecision

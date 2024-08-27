@@ -216,7 +216,7 @@ namespace Garnet.server
         /// Argument for generic usage by command implementation
         /// </summary>
         [FieldOffset(RespInputHeader.Size)]
-        public long ExtraMetadata;
+        public long arg1;
 
         /// <summary>
         /// First index to start reading the parse state for command execution
@@ -236,12 +236,6 @@ namespace Garnet.server
         /// <returns>Pointer</returns>
         public unsafe byte* ToPointer()
             => (byte*)Unsafe.AsPointer(ref header);
-
-        //todo: remove
-        public int LengthWithoutMetadata => Size;
-
-        //todo: remove
-        public int MetadataSize => 0;
 
         /// <summary>
         /// Get header as Span

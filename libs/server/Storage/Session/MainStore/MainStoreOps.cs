@@ -219,7 +219,11 @@ namespace Garnet.server
             where TContext : ITsavoriteContext<SpanByte, SpanByte, RawStringInput, SpanByteAndMemory, long, MainSessionFunctions, MainStoreFunctions, MainStoreAllocator>
             where TObjectContext : ITsavoriteContext<byte[], IGarnetObject, ObjectInput, GarnetObjectStoreOutput, long, ObjectSessionFunctions, ObjectStoreFunctions, ObjectStoreAllocator>
         {
-            var input = new RawStringInput { header = new RespInputHeader { cmd = RespCommand.TTL } };
+            var cmd = milliseconds ? RespCommand.PTTL : RespCommand.TTL;
+            var input = new RawStringInput
+            {
+                header = new RespInputHeader { cmd = cmd }
+            };
 
             if (storeType == StoreType.Main || storeType == StoreType.All)
             {
@@ -241,7 +245,7 @@ namespace Garnet.server
                 {
                     header = new RespInputHeader
                     {
-                        cmd = milliseconds ? RespCommand.PTTL : RespCommand.TTL,
+                        cmd = cmd,
                         type = milliseconds ? GarnetObjectType.PTtl : GarnetObjectType.Ttl,
                     },
                 };

@@ -75,16 +75,18 @@ namespace Garnet.server
                 case RespCommand.SETEXNX:
                     // Copy input to value
                     var newInputValue = input.parseState.GetArgSliceByRef(input.parseStateStartIdx).ReadOnlySpan;
+                    var metadataSize = input.arg1 == 0 ? 0 : sizeof(long);
                     value.UnmarkExtraMetadata();
-                    value.ShrinkSerializedLength(newInputValue.Length);
-                    value.ExtraMetadata = input.ExtraMetadata;
+                    value.ShrinkSerializedLength(newInputValue.Length + metadataSize);
+                    value.ExtraMetadata = input.arg1;
                     newInputValue.CopyTo(value.AsSpan());
                     break;
 
                 case RespCommand.SETKEEPTTL:
                     // Copy input to value, retain metadata in value
-                    value.ShrinkSerializedLength(value.MetadataSize + input.Length - RespInputHeader.Size);
-                    input.AsReadOnlySpan().Slice(RespInputHeader.Size).CopyTo(value.AsSpan());
+                    var setValue = input.parseState.GetArgSliceByRef(input.parseStateStartIdx).ReadOnlySpan;
+                    value.ShrinkSerializedLength(value.MetadataSize + setValue.Length);
+                    setValue.CopyTo(value.AsSpan());
                     break;
 
                 case RespCommand.SETKEEPTTLXX:
@@ -160,8 +162,8 @@ namespace Garnet.server
                     {
                         var functions = functionsState.customCommands[(byte)input.header.cmd - CustomCommandManager.StartOffset].functions;
                         // compute metadata size for result
-                        long expiration = input.ExtraMetadata;
-                        int metadataSize = expiration switch
+                        long expiration = input.arg1;
+                        metadataSize = expiration switch
                         {
                             -1 => 0,
                             0 => 0,
@@ -182,7 +184,7 @@ namespace Garnet.server
                     // Copy input to value
                     var inputValue = input.parseState.GetArgSliceByRef(input.parseStateStartIdx);
                     value.ShrinkSerializedLength(inputValue.Length);
-                    value.ExtraMetadata = input.ExtraMetadata;
+                    value.ExtraMetadata = input.arg1;
                     inputValue.ReadOnlySpan.CopyTo(value.AsSpan());
 
                     // Copy value to output
@@ -248,7 +250,8 @@ namespace Garnet.server
                     var setValue = input.parseState.GetArgSliceByRef(input.parseStateStartIdx);
 
                     // Need CU if no space for new value
-                    if (setValue.Length > value.Length) return false;
+                    var metadataSize = input.arg1 == 0 ? 0 : sizeof(long);
+                    if (setValue.Length + metadataSize > value.Length) return false;
 
                     // Check if SetGet flag is set
                     if (input.header.CheckSetGetFlag())
@@ -260,10 +263,10 @@ namespace Garnet.server
                     // Adjust value length
                     rmwInfo.ClearExtraValueLength(ref recordInfo, ref value, value.TotalSize);
                     value.UnmarkExtraMetadata();
-                    value.ShrinkSerializedLength(setValue.Length);
+                    value.ShrinkSerializedLength(setValue.Length + metadataSize);
 
                     // Copy input to value
-                    value.ExtraMetadata = input.ExtraMetadata;
+                    value.ExtraMetadata = input.arg1;
                     setValue.ReadOnlySpan.CopyTo(value.AsSpan());
                     rmwInfo.SetUsedValueLength(ref recordInfo, ref value, value.TotalSize);
 
@@ -272,9 +275,8 @@ namespace Garnet.server
                 case RespCommand.SETKEEPTTLXX:
                 case RespCommand.SETKEEPTTL:
                     setValue = input.parseState.GetArgSliceByRef(input.parseStateStartIdx);
-
                     // Need CU if no space for new value
-                    if (setValue.Length > value.Length) return false;
+                    if (setValue.Length + value.MetadataSize > value.Length) return false;
 
                     // Check if SetGet flag is set
                     if (input.header.CheckSetGetFlag())
@@ -285,16 +287,16 @@ namespace Garnet.server
 
                     // Adjust value length
                     rmwInfo.ClearExtraValueLength(ref recordInfo, ref value, value.TotalSize);
-                    value.ShrinkSerializedLength(setValue.Length);
+                    value.ShrinkSerializedLength(setValue.Length + value.MetadataSize);
 
                     // Copy input to value
-                    setValue.ReadOnlySpan.Slice(RespInputHeader.Size).CopyTo(value.AsSpan());
+                    setValue.ReadOnlySpan.CopyTo(value.AsSpan());
                     rmwInfo.SetUsedValueLength(ref recordInfo, ref value, value.TotalSize);
                     return true;
 
                 case RespCommand.PEXPIRE:
                 case RespCommand.EXPIRE:
-                    var expiryExists = (value.MetadataSize > 0);
+                    var expiryExists = value.MetadataSize > 0;
                     
                     var expiryValue = input.parseState.GetInt(input.parseStateStartIdx);
                     var tsExpiry = input.header.cmd == RespCommand.EXPIRE
@@ -454,7 +456,7 @@ namespace Garnet.server
                     if (*inputPtr >= CustomCommandManager.StartOffset)
                     {
                         var functions = functionsState.customCommands[*inputPtr - CustomCommandManager.StartOffset].functions;
-                        var expiration = input.ExtraMetadata;
+                        var expiration = input.arg1;
                         if (expiration == -1)
                         {
                             // there is existing metadata, but we want to clear it.
@@ -560,15 +562,18 @@ namespace Garnet.server
 
                     // Copy input to value
                     var newInputValue = input.parseState.GetArgSliceByRef(input.parseStateStartIdx).ReadOnlySpan;
-                    Debug.Assert(newInputValue.Length == newValue.Length);
+                    var metadataSize = input.arg1 == 0 ? 0 : sizeof(long);
 
-                    newValue.ExtraMetadata = input.ExtraMetadata;
+                    Debug.Assert(newInputValue.Length + metadataSize == newValue.Length);
+
+                    newValue.ExtraMetadata = input.arg1;
                     newInputValue.CopyTo(newValue.AsSpan());
                     break;
 
                 case RespCommand.SETKEEPTTLXX:
                 case RespCommand.SETKEEPTTL:
-                    Debug.Assert(oldValue.MetadataSize + input.Length - RespInputHeader.Size == newValue.Length);
+                    var setValue = input.parseState.GetArgSliceByRef(input.parseStateStartIdx).ReadOnlySpan;
+                    Debug.Assert(oldValue.MetadataSize + setValue.Length == newValue.Length);
 
                     // Check if SetGet flag is set
                     if (input.header.CheckSetGetFlag())
@@ -579,7 +584,7 @@ namespace Garnet.server
 
                     // Copy input to value, retain metadata of oldValue
                     newValue.ExtraMetadata = oldValue.ExtraMetadata;
-                    input.AsReadOnlySpan().Slice(RespInputHeader.Size).CopyTo(newValue.AsSpan());
+                    setValue.CopyTo(newValue.AsSpan());
                     break;
 
                 case RespCommand.EXPIRE:
@@ -720,7 +725,7 @@ namespace Garnet.server
                     if ((byte)input.header.cmd >= CustomCommandManager.StartOffset)
                     {
                         var functions = functionsState.customCommands[(byte)input.header.cmd - CustomCommandManager.StartOffset].functions;
-                        var expiration = input.ExtraMetadata;
+                        var expiration = input.arg1;
                         if (expiration == 0)
                         {
                             // We want to retain the old metadata
