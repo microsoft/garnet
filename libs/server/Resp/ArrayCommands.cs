@@ -25,17 +25,16 @@ namespace Garnet.server
             if (storeWrapper.serverOptions.EnableScatterGatherGet)
                 return NetworkMGET_SG(ref storageApi);
 
-            var inputHeader = new RawStringInput();
-            SpanByte input = default;
-
             while (!RespWriteUtils.WriteArrayLength(parseState.Count, ref dcurr, dend))
                 SendAndReset();
 
-            for (int c = 0; c < parseState.Count; c++)
+            RawStringInput input = default;
+
+            for (var c = 0; c < parseState.Count; c++)
             {
                 var key = parseState.GetArgSliceByRef(c).SpanByte;
                 var o = new SpanByteAndMemory(dcurr, (int)(dend - dcurr));
-                var status = storageApi.GET(ref key, ref inputHeader, ref o);
+                var status = storageApi.GET(ref key, ref input, ref o);
 
                 switch (status)
                 {
@@ -61,26 +60,24 @@ namespace Garnet.server
         private bool NetworkMGET_SG<TGarnetApi>(ref TGarnetApi storageApi)
             where TGarnetApi : IGarnetAdvancedApi
         {
-            var inputHeader = new RawStringInput();
-            SpanByte input = default;
-            long ctx = default;
-
-            int firstPending = -1;
+            var firstPending = -1;
             (GarnetStatus, SpanByteAndMemory)[] outputArr = null;
 
             // Write array length header
             while (!RespWriteUtils.WriteArrayLength(parseState.Count, ref dcurr, dend))
                 SendAndReset();
 
+            RawStringInput input = default;
             SpanByteAndMemory o = new(dcurr, (int)(dend - dcurr));
-            for (int c = 0; c < parseState.Count; c++)
+
+            for (var c = 0; c < parseState.Count; c++)
             {
                 var key = parseState.GetArgSliceByRef(c).SpanByte;
 
                 // Store index in context, since completions are not in order
-                ctx = c;
+                long ctx = c;
 
-                var status = storageApi.GET_WithPending(ref key, ref inputHeader, ref o, ctx, out bool isPending);
+                var status = storageApi.GET_WithPending(ref key, ref input, ref o, ctx, out var isPending);
 
                 if (isPending)
                 {
@@ -135,7 +132,7 @@ namespace Garnet.server
                 storageApi.GET_CompletePending(outputArr, true);
 
                 // Write the outputs to network buffer
-                for (int i = firstPending; i < parseState.Count; i++)
+                for (var i = firstPending; i < parseState.Count; i++)
                 {
                     var status = outputArr[i].Item1;
                     var output = outputArr[i].Item2;

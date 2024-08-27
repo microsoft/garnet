@@ -706,7 +706,7 @@ namespace Garnet.server
                 }
 
                 // Perform the operation
-                TryCustomRawStringCommand(recvBufferPtr + readHead, recvBufferPtr + endReadHead, currentCustomRawStringCommand.GetRespCommand(), currentCustomRawStringCommand.expirationTicks, currentCustomRawStringCommand.type, ref storageApi);
+                TryCustomRawStringCommand(currentCustomRawStringCommand.GetRespCommand(), currentCustomRawStringCommand.expirationTicks, currentCustomRawStringCommand.type, ref storageApi);
                 currentCustomRawStringCommand = null;
             }
             else if (command == RespCommand.CustomObjCmd)
@@ -718,7 +718,7 @@ namespace Garnet.server
                 }
 
                 // Perform the operation
-                TryCustomObjectCommand(recvBufferPtr + readHead, recvBufferPtr + endReadHead, currentCustomObjectCommand.GetRespCommand(), currentCustomObjectCommand.subid, currentCustomObjectCommand.type, ref storageApi);
+                TryCustomObjectCommand(currentCustomObjectCommand.GetRespCommand(), currentCustomObjectCommand.subid, currentCustomObjectCommand.type, ref storageApi);
                 currentCustomObjectCommand = null;
             }
             else if (command == RespCommand.CustomProcedure)

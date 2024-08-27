@@ -732,7 +732,7 @@ namespace Garnet.server
             var expirySlice = new ArgSlice(expiryBytes, expiryLength);
 
             var expiryOptionBytes = stackalloc byte[expiryLength];
-            expiryOptionBytes[0] = (byte)expireOption;
+            expiryOptionBytes[0] = (byte)((byte)expireOption + '0');
             var expiryOptionSlice = new ArgSlice(expiryOptionBytes, 1);
 
             // Build parse state

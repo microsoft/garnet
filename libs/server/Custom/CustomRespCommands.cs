@@ -84,45 +84,17 @@ namespace Garnet.server
         /// <summary>
         /// Custom command
         /// </summary>
-        private bool TryCustomRawStringCommand<TGarnetApi>(byte* ptr, byte* end, RespCommand cmd, long expirationTicks, CommandType type, ref TGarnetApi storageApi)
+        private bool TryCustomRawStringCommand<TGarnetApi>(RespCommand cmd, long expirationTicks, CommandType type, ref TGarnetApi storageApi)
             where TGarnetApi : IGarnetAdvancedApi
         {
-            var inputHeader = new RawStringInput();
             var sbKey = parseState.GetArgSliceByRef(0).SpanByte;
             var keyPtr = sbKey.ToPointer();
-            var kSize = sbKey.Length;
 
-            ptr = keyPtr + kSize + 2;
-
-            var metadataSize = 8;
-            if (expirationTicks == 0) metadataSize = 0;
-
-            // Move key back if needed
-            if (metadataSize > 0)
+            var inputHeader = new RawStringInput
             {
-                Buffer.MemoryCopy(keyPtr, keyPtr - metadataSize, kSize, kSize);
-                keyPtr -= metadataSize;
-            }
-
-            // write key header size
-            keyPtr -= sizeof(int);
-            *(int*)keyPtr = kSize;
-
-            var inputPtr = ptr;
-            var iSize = (int)(end - ptr);
-
-            inputPtr -= RespInputHeader.Size; // input header
-            inputPtr -= metadataSize; // metadata header
-
-            var input = new SpanByte(metadataSize + RespInputHeader.Size + iSize, (nint)inputPtr);
-
-            ((RespInputHeader*)(inputPtr + metadataSize))->cmd = cmd;
-            ((RespInputHeader*)(inputPtr + metadataSize))->flags = 0;
-
-            if (expirationTicks == -1)
-                input.ExtraMetadata = expirationTicks;
-            else if (expirationTicks > 0)
-                input.ExtraMetadata = DateTimeOffset.UtcNow.Ticks + expirationTicks;
+                header = new RespInputHeader { cmd = cmd },
+                arg1 = expirationTicks == -1 ? expirationTicks : DateTimeOffset.UtcNow.Ticks + expirationTicks
+            };
 
             var output = new SpanByteAndMemory(null);
             GarnetStatus status;
@@ -164,7 +136,7 @@ namespace Garnet.server
         /// <summary>
         /// Custom object command
         /// </summary>
-        private bool TryCustomObjectCommand<TGarnetApi>(byte* ptr, byte* end, RespCommand cmd, byte subid, CommandType type, ref TGarnetApi storageApi)
+        private bool TryCustomObjectCommand<TGarnetApi>(RespCommand cmd, byte subid, CommandType type, ref TGarnetApi storageApi)
             where TGarnetApi : IGarnetAdvancedApi
         {
             var keyBytes = parseState.GetArgSliceByRef(0).SpanByte.ToByteArray();
