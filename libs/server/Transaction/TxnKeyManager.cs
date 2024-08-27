@@ -126,7 +126,7 @@ namespace Garnet.server
                 RespCommand.PFADD => SingleKey(1, false, LockType.Exclusive),
                 RespCommand.PFCOUNT => ListKeys(inputCount, false, LockType.Shared),
                 RespCommand.PFMERGE => ListKeys(inputCount, false, LockType.Exclusive),
-                RespCommand.SETEX => SingleKey(3, false, LockType.Exclusive),
+                RespCommand.SETEX => SingleKey(1, false, LockType.Exclusive),
                 RespCommand.SETEXNX => SingleKey(1, false, LockType.Exclusive),
                 RespCommand.SETEXXX => SingleKey(1, false, LockType.Exclusive),
                 RespCommand.DEL => ListKeys(inputCount, false, LockType.Exclusive),
@@ -164,6 +164,7 @@ namespace Garnet.server
                 RespCommand.CONFIG => 1,
                 RespCommand.CLIENT => 1,
                 RespCommand.PING => 1,
+                RespCommand.PUBLISH => 1,
                 _ => -1
             };
         }
