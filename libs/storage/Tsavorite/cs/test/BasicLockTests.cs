@@ -6,6 +6,7 @@ using System.IO;
 using System.Linq;
 using System.Threading.Tasks;
 using NUnit.Framework;
+using NUnit.Framework.Legacy;
 using Tsavorite.core;
 using static Tsavorite.test.TestUtils;
 
@@ -123,7 +124,7 @@ namespace Tsavorite.test.LockTests
             for (var key = 0; key < NumRecords; key++)
             {
                 // For this test we should be in-memory, so no pending
-                Assert.IsFalse(bContext.Upsert(key, key * ValueMult).IsPending);
+                ClassicAssert.IsFalse(bContext.Upsert(key, key * ValueMult).IsPending);
             }
 
             // Update
@@ -135,8 +136,8 @@ namespace Tsavorite.test.LockTests
             for (var key = 0; key < NumRecords; key++)
             {
                 var expectedValue = key * ValueMult + numThreads * numIters;
-                Assert.IsFalse(bContext.Read(key, out var value).IsPending);
-                Assert.AreEqual(expectedValue, value);
+                ClassicAssert.IsFalse(bContext.Read(key, out var value).IsPending);
+                ClassicAssert.AreEqual(expectedValue, value);
             }
         }
 
@@ -147,7 +148,7 @@ namespace Tsavorite.test.LockTests
                 for (var iter = 0; iter < numIters; iter++)
                 {
                     if ((iter & 7) == 7)
-                        Assert.IsFalse(bContext.Read(key).status.IsPending);
+                        ClassicAssert.IsFalse(bContext.Read(key).status.IsPending);
 
                     // These will both just increment the stored value, ignoring the input argument.
                     _ = useRMW ? bContext.RMW(key, default) : bContext.Upsert(key, default);
@@ -163,33 +164,33 @@ namespace Tsavorite.test.LockTests
             for (var key = 0; key < NumRecords; key++)
             {
                 // For this test we should be in-memory, so no pending
-                Assert.IsFalse(bContext.Upsert(key, key * ValueMult).IsPending);
+                ClassicAssert.IsFalse(bContext.Upsert(key, key * ValueMult).IsPending);
             }
 
             // Insert a colliding key so we don't elide the deleted key from the hash chain.
             var deleteKey = NumRecords / 2;
             var collidingKey = deleteKey + NumRecords;
-            Assert.IsFalse(bContext.Upsert(collidingKey, collidingKey * ValueMult).IsPending);
+            ClassicAssert.IsFalse(bContext.Upsert(collidingKey, collidingKey * ValueMult).IsPending);
 
             // Now make sure we did collide
             HashEntryInfo hei = new(store.storeFunctions.GetKeyHashCode64(ref deleteKey), store.partitionId);
-            Assert.IsTrue(store.FindTag(ref hei), "Cannot find deleteKey entry");
-            Assert.Greater(hei.Address, Constants.kInvalidAddress, "Couldn't find deleteKey Address");
+            ClassicAssert.IsTrue(store.FindTag(ref hei), "Cannot find deleteKey entry");
+            ClassicAssert.Greater(hei.Address, Constants.kInvalidAddress, "Couldn't find deleteKey Address");
             var physicalAddress = store.hlog.GetPhysicalAddress(hei.Address);
             ref var recordInfo = ref store.hlog.GetInfo(physicalAddress);
             ref var lookupKey = ref store.hlog.GetKey(physicalAddress);
-            Assert.AreEqual(collidingKey, lookupKey, "Expected collidingKey");
+            ClassicAssert.AreEqual(collidingKey, lookupKey, "Expected collidingKey");
 
             // Backtrace to deleteKey
             physicalAddress = store.hlog.GetPhysicalAddress(recordInfo.PreviousAddress);
             recordInfo = ref store.hlog.GetInfo(physicalAddress);
             lookupKey = ref store.hlog.GetKey(physicalAddress);
-            Assert.AreEqual(deleteKey, lookupKey, "Expected deleteKey");
-            Assert.IsFalse(recordInfo.Tombstone, "Tombstone should be false");
+            ClassicAssert.AreEqual(deleteKey, lookupKey, "Expected deleteKey");
+            ClassicAssert.IsFalse(recordInfo.Tombstone, "Tombstone should be false");
 
             // In-place delete.
-            Assert.IsFalse(bContext.Delete(deleteKey).IsPending);
-            Assert.IsTrue(recordInfo.Tombstone, "Tombstone should be true after Delete");
+            ClassicAssert.IsFalse(bContext.Delete(deleteKey).IsPending);
+            ClassicAssert.IsTrue(recordInfo.Tombstone, "Tombstone should be true after Delete");
 
             if (flushMode == FlushMode.ReadOnly)
                 _ = store.hlogBase.ShiftReadOnlyAddress(store.Log.TailAddress);
@@ -201,9 +202,9 @@ namespace Tsavorite.test.LockTests
                 UpdateOp.Delete => throw new InvalidOperationException("UpdateOp.Delete not expected in this test"),
                 _ => throw new InvalidOperationException($"Unknown updateOp {updateOp}")
             };
-            Assert.IsFalse(status.IsPending);
+            ClassicAssert.IsFalse(status.IsPending);
 
-            Assert.IsTrue(recordInfo.Tombstone, "Tombstone should be true after Update");
+            ClassicAssert.IsTrue(recordInfo.Tombstone, "Tombstone should be true after Update");
         }
 
         [Test]
@@ -217,7 +218,7 @@ namespace Tsavorite.test.LockTests
             for (var key = 0; key < NumRecords; key++)
             {
                 // For this test we should be in-memory, so no pending
-                Assert.IsFalse(bContext.Upsert(key, key * ValueMult).IsPending);
+                ClassicAssert.IsFalse(bContext.Upsert(key, key * ValueMult).IsPending);
             }
 
             var expectedThrowAddress = store.Log.TailAddress;
@@ -240,20 +241,20 @@ namespace Tsavorite.test.LockTests
                     UpdateOp.Delete => bContext.Delete(deleteKey),
                     _ => throw new InvalidOperationException($"Unknown updateOp {updateOp}")
                 };
-                Assert.IsFalse(status.IsPending);
+                ClassicAssert.IsFalse(status.IsPending);
             }
             catch (TsavoriteException ex)
             {
-                Assert.AreEqual(nameof(session.functions.throwOnInitialUpdater), ex.Message);
+                ClassicAssert.AreEqual(nameof(session.functions.throwOnInitialUpdater), ex.Message);
                 threw = true;
             }
 
-            Assert.IsTrue(threw, "Test should have thrown");
-            Assert.AreEqual(expectedThrowAddress, session.functions.initialUpdaterThrowAddress, "Unexpected throw address");
+            ClassicAssert.IsTrue(threw, "Test should have thrown");
+            ClassicAssert.AreEqual(expectedThrowAddress, session.functions.initialUpdaterThrowAddress, "Unexpected throw address");
 
             var physicalAddress = store.hlog.GetPhysicalAddress(expectedThrowAddress);
             ref var recordInfo = ref store.hlog.GetInfo(physicalAddress);
-            Assert.IsTrue(recordInfo.Invalid, "Expected Invalid record");
+            ClassicAssert.IsTrue(recordInfo.Invalid, "Expected Invalid record");
         }
     }
 }

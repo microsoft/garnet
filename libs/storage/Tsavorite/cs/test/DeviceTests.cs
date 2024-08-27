@@ -7,6 +7,7 @@ using System.Linq;
 using System.Runtime.CompilerServices;
 using System.Threading;
 using NUnit.Framework;
+using NUnit.Framework.Legacy;
 using Tsavorite.core;
 
 namespace Tsavorite.test
@@ -52,7 +53,7 @@ namespace Tsavorite.test
             WriteInto(device, 0, entry, entryLength);
             ReadInto(device, 0, out var readEntry, entryLength);
 
-            Assert.IsTrue(readEntry.SequenceEqual(entry));
+            ClassicAssert.IsTrue(readEntry.SequenceEqual(entry));
         }
 
         [Test]
@@ -80,7 +81,7 @@ namespace Tsavorite.test
                 device.ReadAsync(0, ralignedBufferPtr, (uint)size, IOCallback, null);
                 semaphore.Wait();
 
-                Assert.IsTrue(new ReadOnlySpan<byte>((void*)ralignedBufferPtr, size).SequenceEqual(new ReadOnlySpan<byte>((void*)alignedBufferPtr, size)));
+                ClassicAssert.IsTrue(new ReadOnlySpan<byte>((void*)ralignedBufferPtr, size).SequenceEqual(new ReadOnlySpan<byte>((void*)alignedBufferPtr, size)));
                 buffer = null;
             }
         }
@@ -125,7 +126,7 @@ namespace Tsavorite.test
         void IOCallback(uint errorCode, uint numBytes, object context)
         {
             if (errorCode != 0)
-                Assert.Fail("OverlappedStream GetQueuedCompletionStatus error: {0}", errorCode);
+                Assert.Fail($"OverlappedStream GetQueuedCompletionStatus error: {errorCode}");
             semaphore.Release();
         }
     }

@@ -3,6 +3,7 @@
 
 using System.IO;
 using NUnit.Framework;
+using NUnit.Framework.Legacy;
 using Tsavorite.core;
 using static Tsavorite.test.TestUtils;
 
@@ -138,8 +139,8 @@ namespace Tsavorite.test.StructWithString
                         (status, output) = GetSinglePendingResult(completedOutputs);
                 }
 
-                Assert.IsTrue(status.Found, $"{status.ToString()}; wasPending = {wasPending}");
-                Assert.AreEqual(key.intField, output.intField);
+                ClassicAssert.IsTrue(status.Found, $"{status.ToString()}; wasPending = {wasPending}");
+                ClassicAssert.AreEqual(key.intField, output.intField);
             }
 
             Populate();
@@ -153,7 +154,7 @@ namespace Tsavorite.test.StructWithString
             using var iter = store.Log.Scan(0, store.Log.TailAddress);
             while (iter.GetNext(out var _))
                 count++;
-            Assert.AreEqual(count, NumRecords);
+            ClassicAssert.AreEqual(count, NumRecords);
 
             readKey(48);
             store.Log.Compact<StructWithString, StructWithString, Empty, StructWithStringTestFunctions>(functions, store.Log.SafeReadOnlyAddress, compactionType);

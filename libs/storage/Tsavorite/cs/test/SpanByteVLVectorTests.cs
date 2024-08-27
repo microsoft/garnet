@@ -4,6 +4,7 @@
 using System;
 using System.IO;
 using NUnit.Framework;
+using NUnit.Framework.Legacy;
 using Tsavorite.core;
 using static Tsavorite.test.TestUtils;
 
@@ -74,10 +75,10 @@ namespace Tsavorite.test.spanbyte
                     (status, output) = GetSinglePendingResult(outputs);
                 }
 
-                Assert.IsTrue(status.Found);
-                Assert.AreEqual(valueLen, output.Length);
+                ClassicAssert.IsTrue(status.Found);
+                ClassicAssert.AreEqual(valueLen, output.Length);
                 for (int j = 0; j < valueLen; j++)
-                    Assert.AreEqual(valueLen, output[j]);
+                    ClassicAssert.AreEqual(valueLen, output[j]);
             }
             session.Dispose();
             store.Dispose();
@@ -145,10 +146,10 @@ namespace Tsavorite.test.spanbyte
                     (status, output) = GetSinglePendingResult(outputs);
                 }
 
-                Assert.IsTrue(status.Found);
-                Assert.AreEqual(valueLen, output.Length);
+                ClassicAssert.IsTrue(status.Found);
+                ClassicAssert.AreEqual(valueLen, output.Length);
                 for (int j = 0; j < valueLen; j++)
-                    Assert.AreEqual(valueLen, output[j]);
+                    ClassicAssert.AreEqual(valueLen, output[j]);
             }
 
             session.Dispose();

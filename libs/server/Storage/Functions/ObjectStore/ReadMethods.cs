@@ -42,7 +42,7 @@ namespace Garnet.server
 
                 (IMemoryOwner<byte> Memory, int Length) outp = (dst.spanByteAndMemory.Memory, 0);
                 var customObjectCommand = GetCustomObjectCommand(ref input, input.header.type);
-                var result = customObjectCommand.Reader(key, input.payload.ReadOnlySpan, value, ref outp, ref readInfo);
+                var result = customObjectCommand.Reader(key, ref input, value, ref outp, ref readInfo);
                 dst.spanByteAndMemory.Memory = outp.Memory;
                 dst.spanByteAndMemory.Length = outp.Length;
                 return result;

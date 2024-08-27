@@ -5,6 +5,7 @@ using System.IO;
 using System.Reflection;
 using System.Runtime.InteropServices;
 using NUnit.Framework;
+using NUnit.Framework.Legacy;
 using StackExchange.Redis;
 
 namespace Garnet.test
@@ -39,7 +40,7 @@ namespace Garnet.test
         {
             var runtimePath = RuntimeEnvironment.GetRuntimeDirectory();
             var binPath = Path.GetDirectoryName(Assembly.GetExecutingAssembly().Location);
-            Assert.IsNotNull(binPath);
+            ClassicAssert.IsNotNull(binPath);
 
             var referenceFiles = new[]
             {
@@ -124,52 +125,52 @@ namespace Garnet.test
             var db = redis.GetDatabase(0);
 
             var resp = db.Execute($"MODULE", ["LOADCS", modulePath]);
-            Assert.AreEqual("OK", (string)resp);
+            ClassicAssert.AreEqual("OK", (string)resp);
 
             // Test SETIFPM
             string key = "testkey";
             string value = "foovalue1";
             db.StringSet(key, value);
             var retValue = db.StringGet(key);
-            Assert.AreEqual(value, retValue.ToString());
+            ClassicAssert.AreEqual(value, retValue.ToString());
 
             string newValue = "foovalue2";
             resp = db.Execute("TestModule.SETIFPM", key, newValue, "foo");
-            Assert.AreEqual("OK", (string)resp);
+            ClassicAssert.AreEqual("OK", (string)resp);
             retValue = db.StringGet(key);
-            Assert.AreEqual(newValue, retValue.ToString());
+            ClassicAssert.AreEqual(newValue, retValue.ToString());
 
             string writekey1 = "writekey1";
             string writekey2 = "writekey2";
 
             var result = db.Execute("TestModule.READWRITETX", key, writekey1, writekey2);
-            Assert.AreEqual("SUCCESS", (string)result);
+            ClassicAssert.AreEqual("SUCCESS", (string)result);
 
             // Read keys to verify transaction succeeded
             retValue = db.StringGet(writekey1);
-            Assert.IsNotNull(retValue);
-            Assert.AreEqual(newValue, retValue.ToString());
+            ClassicAssert.IsNotNull(retValue);
+            ClassicAssert.AreEqual(newValue, retValue.ToString());
 
             retValue = db.StringGet(writekey2);
-            Assert.AreEqual(newValue, retValue.ToString());
+            ClassicAssert.AreEqual(newValue, retValue.ToString());
 
             // Test MYDICTSET
             var dictKey = "dictkey";
             var dictField = "dictfield";
             var dictValue = "dictvalue";
             resp = db.Execute("TestModule.MYDICTSET", dictKey, dictField, dictValue);
-            Assert.AreEqual("OK", (string)resp);
+            ClassicAssert.AreEqual("OK", (string)resp);
 
             var dictRetValue = db.Execute("TestModule.MYDICTGET", dictKey, dictField);
-            Assert.AreEqual(dictValue, (string)dictRetValue);
+            ClassicAssert.AreEqual(dictValue, (string)dictRetValue);
 
             // Test SUM command
             db.StringSet("key1", "1");
             db.StringSet("key2", "2");
             db.StringSet("key3", "3");
             result = db.Execute("TestModule.SUM", "key1", "key2", "key3");
-            Assert.IsNotNull(result);
-            Assert.AreEqual("6", result.ToString());
+            ClassicAssert.IsNotNull(result);
+            ClassicAssert.AreEqual("6", result.ToString());
         }
 
         [Test]
@@ -193,7 +194,7 @@ namespace Garnet.test
             var db = redis.GetDatabase(0);
 
             var resp = db.Execute($"MODULE", ["LOADCS", modulePath, "arg0", "arg1"]);
-            Assert.AreEqual("OK", (string)resp);
+            ClassicAssert.AreEqual("OK", (string)resp);
         }
 
         [Test]
@@ -211,7 +212,7 @@ namespace Garnet.test
             }
             catch (RedisException ex)
             {
-                Assert.AreEqual("ERR Error during module OnLoad", ex.Message);
+                ClassicAssert.AreEqual("ERR Error during module OnLoad", ex.Message);
             }
         }
 
@@ -232,7 +233,7 @@ namespace Garnet.test
             }
             catch (RedisException ex)
             {
-                Assert.AreEqual("ERR Error during module OnLoad", ex.Message);
+                ClassicAssert.AreEqual("ERR Error during module OnLoad", ex.Message);
             }
         }
 
@@ -252,7 +253,7 @@ namespace Garnet.test
             }
             catch (RedisException ex)
             {
-                Assert.AreEqual("ERR unable to access one or more binary files.", ex.Message);
+                ClassicAssert.AreEqual("ERR unable to access one or more binary files.", ex.Message);
             }
         }
     }

@@ -90,16 +90,13 @@ namespace Garnet.server
 
         /// <summary>
         /// Calculates target size for both the main cache and read cache.
-        /// Target size will be checked against the total size of the index, log pages and heap memory size.
+        /// Target size will be checked against the total size of the log pages and heap memory size.
         /// For now, main cache and read cache are allocated equal size. If needed, this could be driven by a configurable setting.
         /// </summary>
         /// <param name="newTargetSize">Target size</param>
         public (long mainLogSizeBytes, long readCacheSizeBytes) CalculateLogTargetSizeBytes(long newTargetSize)
         {
-            long residual = newTargetSize - IndexSizeBytes;
-
-            if (residual <= 0)
-                throw new TsavoriteException($"Target size {newTargetSize} must be larger than index size {IndexSizeBytes}");
+            long residual = newTargetSize;
 
             var mainLogSizeBytes = this.store.ReadCache == null ? residual : residual / 2;
             var readCacheSizeBytes = this.store.ReadCache == null ? 0 : residual / 2;

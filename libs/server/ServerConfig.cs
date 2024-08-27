@@ -39,17 +39,17 @@ namespace Garnet.server
 
     internal sealed unsafe partial class RespServerSession : ServerSessionBase
     {
-        private bool NetworkCONFIG_GET(int count)
+        private bool NetworkCONFIG_GET()
         {
-            if (count == 0)
+            if (parseState.Count == 0)
             {
-                return AbortWithWrongNumberOfArguments($"{nameof(RespCommand.CONFIG)}|{nameof(CmdStrings.GET)}", count);
+                return AbortWithWrongNumberOfArguments($"{nameof(RespCommand.CONFIG)}|{nameof(CmdStrings.GET)}");
             }
 
             // Extract requested parameters
             HashSet<ServerConfigType> parameters = [];
             var returnAll = false;
-            for (var i = 0; i < count; i++)
+            for (var i = 0; i < parseState.Count; i++)
             {
                 var parameter = parseState.GetArgSliceByRef(i).Span;
                 var serverConfigType = ServerConfig.GetConfig(parameter);
@@ -100,11 +100,11 @@ namespace Garnet.server
             return true;
         }
 
-        private bool NetworkCONFIG_REWRITE(int count)
+        private bool NetworkCONFIG_REWRITE()
         {
-            if (count != 0)
+            if (parseState.Count != 0)
             {
-                return AbortWithWrongNumberOfArguments($"{nameof(RespCommand.CONFIG)}|{nameof(CmdStrings.REWRITE)}", count);
+                return AbortWithWrongNumberOfArguments($"{nameof(RespCommand.CONFIG)}|{nameof(CmdStrings.REWRITE)}");
             }
 
             storeWrapper.clusterProvider?.FlushConfig();
@@ -114,11 +114,11 @@ namespace Garnet.server
             return true;
         }
 
-        private bool NetworkCONFIG_SET(int count)
+        private bool NetworkCONFIG_SET()
         {
-            if (count == 0 || count % 2 != 0)
+            if (parseState.Count == 0 || parseState.Count % 2 != 0)
             {
-                return AbortWithWrongNumberOfArguments($"{nameof(RespCommand.CONFIG)}|{nameof(CmdStrings.SET)}", count);
+                return AbortWithWrongNumberOfArguments($"{nameof(RespCommand.CONFIG)}|{nameof(CmdStrings.SET)}");
             }
 
             string certFileName = null;
@@ -128,7 +128,7 @@ namespace Garnet.server
             var unknownOption = false;
             var unknownKey = "";
 
-            for (var c = 0; c < count; c += 2)
+            for (var c = 0; c < parseState.Count; c += 2)
             {
                 var key = parseState.GetArgSliceByRef(c).ReadOnlySpan;
                 var value = parseState.GetArgSliceByRef(c + 1).ReadOnlySpan;

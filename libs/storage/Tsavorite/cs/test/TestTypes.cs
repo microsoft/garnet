@@ -4,6 +4,7 @@
 using System;
 using System.Threading;
 using NUnit.Framework;
+using NUnit.Framework.Legacy;
 using Tsavorite.core;
 
 namespace Tsavorite.test
@@ -58,30 +59,30 @@ namespace Tsavorite.test
     {
         public override void RMWCompletionCallback(ref KeyStruct key, ref InputStruct input, ref OutputStruct output, TContext ctx, Status status, RecordMetadata recordMetadata)
         {
-            Assert.IsTrue(status.Found);
-            Assert.IsTrue(status.Record.CopyUpdated);
-            Assert.AreEqual(key.kfield1 + input.ifield1, output.value.vfield1);
-            Assert.AreEqual(key.kfield2 + input.ifield2, output.value.vfield2);
+            ClassicAssert.IsTrue(status.Found);
+            ClassicAssert.IsTrue(status.Record.CopyUpdated);
+            ClassicAssert.AreEqual(key.kfield1 + input.ifield1, output.value.vfield1);
+            ClassicAssert.AreEqual(key.kfield2 + input.ifield2, output.value.vfield2);
         }
 
         public override void ReadCompletionCallback(ref KeyStruct key, ref InputStruct input, ref OutputStruct output, TContext ctx, Status status, RecordMetadata recordMetadata)
         {
-            Assert.IsTrue(status.Found);
-            Assert.AreEqual(key.kfield1, output.value.vfield1);
-            Assert.AreEqual(key.kfield2, output.value.vfield2);
+            ClassicAssert.IsTrue(status.Found);
+            ClassicAssert.AreEqual(key.kfield1, output.value.vfield1);
+            ClassicAssert.AreEqual(key.kfield2, output.value.vfield2);
         }
 
         // Read functions
         public override bool SingleReader(ref KeyStruct key, ref InputStruct input, ref ValueStruct value, ref OutputStruct dst, ref ReadInfo readInfo)
         {
-            Assert.IsFalse(readInfo.RecordInfo.IsNull());
+            ClassicAssert.IsFalse(readInfo.RecordInfo.IsNull());
             dst.value = value;
             return true;
         }
 
         public override bool ConcurrentReader(ref KeyStruct key, ref InputStruct input, ref ValueStruct value, ref OutputStruct dst, ref ReadInfo readInfo, ref RecordInfo recordInfo)
         {
-            Assert.IsFalse(readInfo.RecordInfo.IsNull());
+            ClassicAssert.IsFalse(readInfo.RecordInfo.IsNull());
             dst.value = value;
             return true;
         }
@@ -89,7 +90,7 @@ namespace Tsavorite.test
         // RMW functions
         public override bool InitialUpdater(ref KeyStruct key, ref InputStruct input, ref ValueStruct value, ref OutputStruct output, ref RMWInfo rmwInfo, ref RecordInfo recordInfo)
         {
-            Assert.IsFalse(rmwInfo.RecordInfo.IsNull());
+            ClassicAssert.IsFalse(rmwInfo.RecordInfo.IsNull());
             value.vfield1 = input.ifield1;
             value.vfield2 = input.ifield2;
             output.value = value;
@@ -98,7 +99,7 @@ namespace Tsavorite.test
 
         public override bool InPlaceUpdater(ref KeyStruct key, ref InputStruct input, ref ValueStruct value, ref OutputStruct output, ref RMWInfo rmwInfo, ref RecordInfo recordInfo)
         {
-            Assert.IsFalse(rmwInfo.RecordInfo.IsNull());
+            ClassicAssert.IsFalse(rmwInfo.RecordInfo.IsNull());
             value.vfield1 += input.ifield1;
             value.vfield2 += input.ifield2;
             output.value = value;
@@ -107,13 +108,13 @@ namespace Tsavorite.test
 
         public override bool NeedCopyUpdate(ref KeyStruct key, ref InputStruct input, ref ValueStruct oldValue, ref OutputStruct output, ref RMWInfo rmwInfo)
         {
-            Assert.IsFalse(rmwInfo.RecordInfo.IsNull());
+            ClassicAssert.IsFalse(rmwInfo.RecordInfo.IsNull());
             return true;
         }
 
         public override bool CopyUpdater(ref KeyStruct key, ref InputStruct input, ref ValueStruct oldValue, ref ValueStruct newValue, ref OutputStruct output, ref RMWInfo rmwInfo, ref RecordInfo recordInfo)
         {
-            Assert.IsFalse(rmwInfo.RecordInfo.IsNull());
+            ClassicAssert.IsFalse(rmwInfo.RecordInfo.IsNull());
             newValue.vfield1 = oldValue.vfield1 + input.ifield1;
             newValue.vfield2 = oldValue.vfield2 + input.ifield2;
             output.value = newValue;
@@ -125,21 +126,21 @@ namespace Tsavorite.test
     {
         public override void RMWCompletionCallback(ref KeyStruct key, ref InputStruct input, ref OutputStruct output, int ctx, Status status, RecordMetadata recordMetadata)
         {
-            Assert.IsTrue(status.Found);
-            Assert.IsTrue(status.Record.CopyUpdated);
+            ClassicAssert.IsTrue(status.Found);
+            ClassicAssert.IsTrue(status.Record.CopyUpdated);
         }
 
         public override void ReadCompletionCallback(ref KeyStruct key, ref InputStruct input, ref OutputStruct output, int ctx, Status status, RecordMetadata recordMetadata)
         {
             if (ctx == 0)
             {
-                Assert.IsTrue(status.Found);
-                Assert.AreEqual(key.kfield1, output.value.vfield1);
-                Assert.AreEqual(key.kfield2, output.value.vfield2);
+                ClassicAssert.IsTrue(status.Found);
+                ClassicAssert.AreEqual(key.kfield1, output.value.vfield1);
+                ClassicAssert.AreEqual(key.kfield2, output.value.vfield2);
             }
             else
             {
-                Assert.IsFalse(status.Found);
+                ClassicAssert.IsFalse(status.Found);
             }
         }
 
@@ -191,28 +192,28 @@ namespace Tsavorite.test
 
         public override void RMWCompletionCallback(ref KeyStruct key, ref InputStruct input, ref OutputStruct output, Empty ctx, Status status, RecordMetadata recordMetadata)
         {
-            Assert.IsTrue(status.Found);
-            Assert.IsTrue(status.Record.CopyUpdated);
+            ClassicAssert.IsTrue(status.Found);
+            ClassicAssert.IsTrue(status.Record.CopyUpdated);
         }
 
         public override void ReadCompletionCallback(ref KeyStruct key, ref InputStruct input, ref OutputStruct output, Empty ctx, Status status, RecordMetadata recordMetadata)
         {
-            Assert.IsTrue(status.Found);
-            Assert.AreEqual(key.kfield1, output.value.vfield1);
-            Assert.AreEqual(key.kfield2, output.value.vfield2);
+            ClassicAssert.IsTrue(status.Found);
+            ClassicAssert.AreEqual(key.kfield1, output.value.vfield1);
+            ClassicAssert.AreEqual(key.kfield2, output.value.vfield2);
         }
 
         // Read functions
         public override bool SingleReader(ref KeyStruct key, ref InputStruct input, ref ValueStruct value, ref OutputStruct dst, ref ReadInfo readInfo)
         {
-            Assert.IsFalse(readInfo.RecordInfo.IsNull());
+            ClassicAssert.IsFalse(readInfo.RecordInfo.IsNull());
             dst.value = value;
             return true;
         }
 
         public override bool ConcurrentReader(ref KeyStruct key, ref InputStruct input, ref ValueStruct value, ref OutputStruct dst, ref ReadInfo readInfo, ref RecordInfo recordInfo)
         {
-            Assert.IsFalse(readInfo.RecordInfo.IsNull());
+            ClassicAssert.IsFalse(readInfo.RecordInfo.IsNull());
             dst.value = value;
             return true;
         }
@@ -220,14 +221,14 @@ namespace Tsavorite.test
         // Upsert functions
         public override bool SingleWriter(ref KeyStruct key, ref InputStruct input, ref ValueStruct src, ref ValueStruct dst, ref OutputStruct output, ref UpsertInfo upsertInfo, WriteReason reason, ref RecordInfo recordInfo)
         {
-            Assert.IsFalse(upsertInfo.RecordInfo.IsNull());
+            ClassicAssert.IsFalse(upsertInfo.RecordInfo.IsNull());
             dst = src;
             return true;
         }
 
         public override bool ConcurrentWriter(ref KeyStruct key, ref InputStruct input, ref ValueStruct src, ref ValueStruct dst, ref OutputStruct output, ref UpsertInfo upsertInfo, ref RecordInfo recordInfo)
         {
-            Assert.IsFalse(upsertInfo.RecordInfo.IsNull());
+            ClassicAssert.IsFalse(upsertInfo.RecordInfo.IsNull());
             Interlocked.Increment(ref _concurrentWriterCallCount);
             return false;
         }
@@ -235,7 +236,7 @@ namespace Tsavorite.test
         // RMW functions
         public override bool InitialUpdater(ref KeyStruct key, ref InputStruct input, ref ValueStruct value, ref OutputStruct output, ref RMWInfo rmwInfo, ref RecordInfo recordInfo)
         {
-            Assert.IsFalse(rmwInfo.RecordInfo.IsNull());
+            ClassicAssert.IsFalse(rmwInfo.RecordInfo.IsNull());
             value.vfield1 = input.ifield1;
             value.vfield2 = input.ifield2;
             return true;
@@ -243,20 +244,20 @@ namespace Tsavorite.test
 
         public override bool InPlaceUpdater(ref KeyStruct key, ref InputStruct input, ref ValueStruct value, ref OutputStruct output, ref RMWInfo rmwInfo, ref RecordInfo recordInfo)
         {
-            Assert.IsFalse(rmwInfo.RecordInfo.IsNull());
+            ClassicAssert.IsFalse(rmwInfo.RecordInfo.IsNull());
             Interlocked.Increment(ref _inPlaceUpdaterCallCount);
             return false;
         }
 
         public override bool NeedCopyUpdate(ref KeyStruct key, ref InputStruct input, ref ValueStruct oldValue, ref OutputStruct output, ref RMWInfo rmwInfo)
         {
-            Assert.IsFalse(rmwInfo.RecordInfo.IsNull());
+            ClassicAssert.IsFalse(rmwInfo.RecordInfo.IsNull());
             return true;
         }
 
         public override bool CopyUpdater(ref KeyStruct key, ref InputStruct input, ref ValueStruct oldValue, ref ValueStruct newValue, ref OutputStruct output, ref RMWInfo rmwInfo, ref RecordInfo recordInfo)
         {
-            Assert.IsFalse(rmwInfo.RecordInfo.IsNull());
+            ClassicAssert.IsFalse(rmwInfo.RecordInfo.IsNull());
             newValue.vfield1 = oldValue.vfield1 + input.ifield1;
             newValue.vfield2 = oldValue.vfield2 + input.ifield2;
             return true;

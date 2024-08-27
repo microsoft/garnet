@@ -2,13 +2,11 @@
 // Licensed under the MIT license.
 
 using System;
-using System.Diagnostics;
-using System.Linq;
 using System.Text;
-using System.Text.RegularExpressions;
 using System.Threading.Tasks;
 using Garnet.server;
 using NUnit.Framework;
+using NUnit.Framework.Legacy;
 
 namespace Garnet.test
 {
@@ -46,12 +44,12 @@ namespace Garnet.test
             var response = lightClientRequest.SendCommand($"LPUSH {key} {value}");
             var expectedResponse = ":1\r\n";
             var actualValue = Encoding.ASCII.GetString(response).Substring(0, expectedResponse.Length);
-            Assert.AreEqual(expectedResponse, actualValue);
+            ClassicAssert.AreEqual(expectedResponse, actualValue);
 
             response = lightClientRequest.SendCommand($"{blockingCmd} {key} 10", 3);
             expectedResponse = $"*2\r\n${key.Length}\r\n{key}\r\n${value.Length}\r\n{value}\r\n";
             actualValue = Encoding.ASCII.GetString(response).Substring(0, expectedResponse.Length);
-            Assert.AreEqual(expectedResponse, actualValue);
+            ClassicAssert.AreEqual(expectedResponse, actualValue);
 
             var blockingTask = taskFactory.StartNew(() =>
             {
@@ -59,7 +57,7 @@ namespace Garnet.test
                 var btResponse = lcr.SendCommand($"{blockingCmd} {key2} 30", 3);
                 var btExpectedResponse = $"*2\r\n${key2.Length}\r\n{key2}\r\n${value2.Length}\r\n{value2}\r\n";
                 var btActualValue = Encoding.ASCII.GetString(btResponse).Substring(0, btExpectedResponse.Length);
-                Assert.AreEqual(btExpectedResponse, btActualValue);
+                ClassicAssert.AreEqual(btExpectedResponse, btActualValue);
             });
 
             var releasingTask = taskFactory.StartNew(() =>
@@ -79,8 +77,8 @@ namespace Garnet.test
                 Assert.Fail();
             }
 
-            Assert.IsTrue(blockingTask.IsCompletedSuccessfully);
-            Assert.IsTrue(releasingTask.IsCompletedSuccessfully);
+            ClassicAssert.IsTrue(blockingTask.IsCompletedSuccessfully);
+            ClassicAssert.IsTrue(releasingTask.IsCompletedSuccessfully);
         }
 
         [Test]
@@ -98,22 +96,22 @@ namespace Garnet.test
             var response = lightClientRequest.SendCommand($"LPUSH {srcKey1} {value1}");
             var expectedResponse = ":1\r\n";
             var actualValue = Encoding.ASCII.GetString(response).Substring(0, expectedResponse.Length);
-            Assert.AreEqual(expectedResponse, actualValue);
+            ClassicAssert.AreEqual(expectedResponse, actualValue);
 
             response = lightClientRequest.SendCommand($"BLMOVE {srcKey1} {dstKey1} {OperationDirection.Right} {OperationDirection.Left} 10");
             expectedResponse = $"${value1.Length}\r\n{value1}\r\n";
             actualValue = Encoding.ASCII.GetString(response).Substring(0, expectedResponse.Length);
-            Assert.AreEqual(expectedResponse, actualValue);
+            ClassicAssert.AreEqual(expectedResponse, actualValue);
 
             response = lightClientRequest.SendCommand($"LRANGE {srcKey1} 0 -1");
             expectedResponse = $"*0\r\n";
             actualValue = Encoding.ASCII.GetString(response).Substring(0, expectedResponse.Length);
-            Assert.AreEqual(expectedResponse, actualValue);
+            ClassicAssert.AreEqual(expectedResponse, actualValue);
 
             response = lightClientRequest.SendCommand($"LRANGE {dstKey1} 0 -1", 2);
             expectedResponse = $"*1\r\n${value1.Length}\r\n{value1}\r\n";
             actualValue = Encoding.ASCII.GetString(response).Substring(0, expectedResponse.Length);
-            Assert.AreEqual(expectedResponse, actualValue);
+            ClassicAssert.AreEqual(expectedResponse, actualValue);
 
             var blockingTask = taskFactory.StartNew(() =>
             {
@@ -121,7 +119,7 @@ namespace Garnet.test
                 var btResponse = lcr.SendCommand($"BLMOVE {srcKey2} {dstKey2} {OperationDirection.Left} {OperationDirection.Right} 0");
                 var btExpectedResponse = $"${value2.Length}\r\n{value2}\r\n";
                 var btActualValue = Encoding.ASCII.GetString(btResponse).Substring(0, btExpectedResponse.Length);
-                Assert.AreEqual(btExpectedResponse, btActualValue);
+                ClassicAssert.AreEqual(btExpectedResponse, btActualValue);
             });
 
             var releasingTask = taskFactory.StartNew(() =>
@@ -141,18 +139,18 @@ namespace Garnet.test
                 Assert.Fail();
             }
 
-            Assert.IsTrue(blockingTask.IsCompletedSuccessfully);
-            Assert.IsTrue(releasingTask.IsCompletedSuccessfully);
+            ClassicAssert.IsTrue(blockingTask.IsCompletedSuccessfully);
+            ClassicAssert.IsTrue(releasingTask.IsCompletedSuccessfully);
 
             response = lightClientRequest.SendCommand($"LRANGE {srcKey2} 0 -1");
             expectedResponse = $"*0\r\n";
             actualValue = Encoding.ASCII.GetString(response).Substring(0, expectedResponse.Length);
-            Assert.AreEqual(expectedResponse, actualValue);
+            ClassicAssert.AreEqual(expectedResponse, actualValue);
 
             response = lightClientRequest.SendCommand($"LRANGE {dstKey2} 0 -1", 2);
             expectedResponse = $"*1\r\n${value2.Length}\r\n{value2}\r\n";
             actualValue = Encoding.ASCII.GetString(response).Substring(0, expectedResponse.Length);
-            Assert.AreEqual(expectedResponse, actualValue);
+            ClassicAssert.AreEqual(expectedResponse, actualValue);
         }
 
         [Test]
@@ -173,7 +171,7 @@ namespace Garnet.test
                 response = lightClientRequest.SendCommand($"LPUSH {keys[i]} {values[i]}");
                 expectedResponse = ":1\r\n";
                 actualValue = Encoding.ASCII.GetString(response).Substring(0, expectedResponse.Length);
-                Assert.AreEqual(expectedResponse, actualValue);
+                ClassicAssert.AreEqual(expectedResponse, actualValue);
             }
 
             for (var i = 0; i < keys.Length; i++)
@@ -181,7 +179,7 @@ namespace Garnet.test
                 response = lightClientRequest.SendCommand($"{blockingCmd} {string.Join(' ', keys)} 10", 3);
                 expectedResponse = $"*2\r\n${keys[i].Length}\r\n{keys[i]}\r\n${values[i].Length}\r\n{values[i]}\r\n";
                 actualValue = Encoding.ASCII.GetString(response).Substring(0, expectedResponse.Length);
-                Assert.AreEqual(expectedResponse, actualValue);
+                ClassicAssert.AreEqual(expectedResponse, actualValue);
             }
         }
 
@@ -200,17 +198,17 @@ namespace Garnet.test
                 var response = lcr.SendCommands($"{blockingCmd} {key} 30", $"LPUSH {key} {value1}", 3, 1);
                 var expectedResponse = $"*2\r\n${key.Length}\r\n{key}\r\n${value2.Length}\r\n{value2}\r\n:1\r\n";
                 var actualValue = Encoding.ASCII.GetString(response).Substring(0, expectedResponse.Length);
-                Assert.AreEqual(expectedResponse, actualValue);
+                ClassicAssert.AreEqual(expectedResponse, actualValue);
 
                 response = lcr.SendCommand($"LLEN {key}");
                 expectedResponse = ":1\r\n";
                 actualValue = Encoding.ASCII.GetString(response).Substring(0, expectedResponse.Length);
-                Assert.AreEqual(expectedResponse, actualValue);
+                ClassicAssert.AreEqual(expectedResponse, actualValue);
 
                 response = lcr.SendCommand($"LPOP {key}");
                 expectedResponse = $"${value1.Length}\r\n{value1}\r\n";
                 actualValue = Encoding.ASCII.GetString(response).Substring(0, expectedResponse.Length);
-                Assert.AreEqual(expectedResponse, actualValue);
+                ClassicAssert.AreEqual(expectedResponse, actualValue);
             });
 
             var releasingTask = taskFactory.StartNew(() =>
@@ -230,8 +228,8 @@ namespace Garnet.test
                 Assert.Fail();
             }
 
-            Assert.IsTrue(blockingTask.IsCompletedSuccessfully);
-            Assert.IsTrue(releasingTask.IsCompletedSuccessfully);
+            ClassicAssert.IsTrue(blockingTask.IsCompletedSuccessfully);
+            ClassicAssert.IsTrue(releasingTask.IsCompletedSuccessfully);
         }
     }
 }

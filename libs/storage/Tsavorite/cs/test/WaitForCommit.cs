@@ -4,6 +4,7 @@
 using System.IO;
 using System.Threading;
 using NUnit.Framework;
+using NUnit.Framework.Legacy;
 using Tsavorite.core;
 
 namespace Tsavorite.test
@@ -81,14 +82,14 @@ namespace Tsavorite.test
                 {
                     if (currentEntry < entryLength)
                     {
-                        Assert.AreEqual((byte)currentEntry, result[currentEntry]);
+                        ClassicAssert.AreEqual((byte)currentEntry, result[currentEntry]);
                         currentEntry++;
                     }
                 }
             }
 
             // Make sure expected entries is same as current - also makes sure that data verification was not skipped
-            Assert.AreEqual(expectedEntries, currentEntry, $"expectedEntries:{expectedEntries} does not equal currentEntry:{currentEntry}");
+            ClassicAssert.AreEqual(expectedEntries, currentEntry, $"expectedEntries:{expectedEntries} does not equal currentEntry:{currentEntry}");
 
             done.WaitOne();
         }

@@ -11,11 +11,11 @@ namespace Garnet
 {
     public class MyDictGet : CustomObjectFunctions
     {
-        public override bool Reader(ReadOnlyMemory<byte> key, ReadOnlySpan<byte> input, IGarnetObject value, ref (IMemoryOwner<byte>, int) output, ref ReadInfo readInfo)
+        public override bool Reader(ReadOnlyMemory<byte> key, ref ObjectInput input, IGarnetObject value, ref (IMemoryOwner<byte>, int) output, ref ReadInfo readInfo)
         {
             Debug.Assert(value is MyDict);
 
-            var entryKey = GetFirstArg(input);
+            var entryKey = GetFirstArg(ref input);
 
             var dictObject = (MyDict)value;
             if (dictObject.TryGetValue(entryKey.ToArray(), out var result))

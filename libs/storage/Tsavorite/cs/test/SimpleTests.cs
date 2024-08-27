@@ -3,6 +3,7 @@
 
 using System;
 using NUnit.Framework;
+using NUnit.Framework.Legacy;
 using Tsavorite.core;
 
 namespace Tsavorite.test
@@ -17,38 +18,38 @@ namespace Tsavorite.test
             AddressInfo info;
 
             AddressInfo.WriteInfo(&info, 44, 55);
-            Assert.AreEqual(44, info.Address);
-            Assert.AreEqual(512, info.Size);
+            ClassicAssert.AreEqual(44, info.Address);
+            ClassicAssert.AreEqual(512, info.Size);
 
             AddressInfo.WriteInfo(&info, 44, 512);
-            Assert.AreEqual(44, info.Address);
-            Assert.AreEqual(512, info.Size);
+            ClassicAssert.AreEqual(44, info.Address);
+            ClassicAssert.AreEqual(512, info.Size);
 
             AddressInfo.WriteInfo(&info, 44, 513);
-            Assert.AreEqual(44, info.Address);
-            Assert.AreEqual(1024, info.Size);
+            ClassicAssert.AreEqual(44, info.Address);
+            ClassicAssert.AreEqual(1024, info.Size);
 
             if (sizeof(IntPtr) > 4)
             {
                 AddressInfo.WriteInfo(&info, 44, 1L << 20);
-                Assert.AreEqual(44, info.Address);
-                Assert.AreEqual(1L << 20, info.Size);
+                ClassicAssert.AreEqual(44, info.Address);
+                ClassicAssert.AreEqual(1L << 20, info.Size);
 
                 AddressInfo.WriteInfo(&info, 44, 511 * (1L << 20));
-                Assert.AreEqual(44, info.Address);
-                Assert.AreEqual(511 * (1L << 20), info.Size);
+                ClassicAssert.AreEqual(44, info.Address);
+                ClassicAssert.AreEqual(511 * (1L << 20), info.Size);
 
                 AddressInfo.WriteInfo(&info, 44, 512 * (1L << 20));
-                Assert.AreEqual(44, info.Address);
-                Assert.AreEqual(512 * (1L << 20), info.Size);
+                ClassicAssert.AreEqual(44, info.Address);
+                ClassicAssert.AreEqual(512 * (1L << 20), info.Size);
 
                 AddressInfo.WriteInfo(&info, 44, 555555555L);
-                Assert.AreEqual(44, info.Address);
-                Assert.AreEqual((1 + (555555555L / 512)) * 512, info.Size);
+                ClassicAssert.AreEqual(44, info.Address);
+                ClassicAssert.AreEqual((1 + (555555555L / 512)) * 512, info.Size);
 
                 AddressInfo.WriteInfo(&info, 44, 2 * 555555555L);
-                Assert.AreEqual(44, info.Address);
-                Assert.AreEqual((1 + (2 * 555555555L / 1048576)) * 1048576, info.Size);
+                ClassicAssert.AreEqual(44, info.Address);
+                ClassicAssert.AreEqual((1 + (2 * 555555555L / 1048576)) * 1048576, info.Size);
             }
         }
     }

@@ -44,7 +44,7 @@ namespace Garnet.server
         /// <summary>
         /// Process cluster commands
         /// </summary>
-        unsafe bool ProcessClusterCommands(RespCommand command, int count, byte* recvBufferPtr, int bytesRead, ref int readHead, ref byte* dcurr, ref byte* dend, out bool result);
+        unsafe void ProcessClusterCommands(RespCommand command, ref SessionParseState parseState, ref byte* dcurr, ref byte* dend);
 
         /// <summary>
         /// Single key slot verify (check only, do not write result to network)

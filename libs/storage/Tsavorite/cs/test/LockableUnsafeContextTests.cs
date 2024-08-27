@@ -9,6 +9,7 @@ using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
 using NUnit.Framework;
+using NUnit.Framework.Legacy;
 using Tsavorite.core;
 using Tsavorite.test.LockTable;
 using Tsavorite.test.ReadCacheTests;
@@ -94,7 +95,7 @@ namespace Tsavorite.test.LockableUnsafeContext
             if (!buckets.TryGetValue(key.KeyHash, out var counts))
                 counts = default;
             counts.x += addend;
-            Assert.GreaterOrEqual(counts.x, 0);
+            ClassicAssert.GreaterOrEqual(counts.x, 0);
             buckets[key.KeyHash] = counts;
         }
 
@@ -103,7 +104,7 @@ namespace Tsavorite.test.LockableUnsafeContext
             if (!buckets.TryGetValue(key.KeyHash, out var counts))
                 counts = default;
             counts.s += addend;
-            Assert.GreaterOrEqual(counts.s, 0);
+            ClassicAssert.GreaterOrEqual(counts.s, 0);
             buckets[key.KeyHash] = counts;
         }
 
@@ -133,8 +134,8 @@ namespace Tsavorite.test.LockableUnsafeContext
         {
             foreach (var kvp in buckets)
             {
-                Assert.AreEqual(0, kvp.Value.x);
-                Assert.AreEqual(0, kvp.Value.s);
+                ClassicAssert.AreEqual(0, kvp.Value.x);
+                ClassicAssert.AreEqual(0, kvp.Value.s);
             }
         }
     }
@@ -227,7 +228,7 @@ namespace Tsavorite.test.LockableUnsafeContext
         void Populate()
         {
             for (int key = 0; key < NumRecords; key++)
-                Assert.IsFalse(bContext.Upsert(key, key * ValueMult).IsPending);
+                ClassicAssert.IsFalse(bContext.Upsert(key, key * ValueMult).IsPending);
         }
 
         void AssertIsLocked(FixedLengthLockableKeyStruct<long> key, bool xlock, bool slock)
@@ -272,8 +273,8 @@ namespace Tsavorite.test.LockableUnsafeContext
             foreach (var kvp in blt.buckets)
             {
                 var hashBucket = store.LockTable.GetBucket(kvp.Key);
-                Assert.AreEqual(kvp.Value.s, HashBucket.NumLatchedShared(hashBucket));
-                Assert.AreEqual(kvp.Value.x == 1, HashBucket.IsLatchedExclusive(hashBucket));
+                ClassicAssert.AreEqual(kvp.Value.s, HashBucket.NumLatchedShared(hashBucket));
+                ClassicAssert.AreEqual(kvp.Value.x == 1, HashBucket.IsLatchedExclusive(hashBucket));
             }
         }
 
@@ -329,7 +330,7 @@ namespace Tsavorite.test.LockableUnsafeContext
             };
 
             for (var ii = 0; ii < keys.Length; ++ii)
-                Assert.AreEqual(bucketIndex, store.LockTable.GetBucketIndex(keys[ii].KeyHash), $"BucketIndex mismatch on key {ii}");
+                ClassicAssert.AreEqual(bucketIndex, store.LockTable.GetBucketIndex(keys[ii].KeyHash), $"BucketIndex mismatch on key {ii}");
 
             lContext.Lock(keys);
             lContext.Unlock(keys);
@@ -387,7 +388,7 @@ namespace Tsavorite.test.LockableUnsafeContext
                     Status status = luContext.Read(ref keyVec[0].Key, ref input, ref output, Empty.Default);
                     luContext.Unlock(keyVec);
                     AssertBucketLockCount(ref keyVec[0], 0, 0);
-                    Assert.IsFalse(status.IsPending);
+                    ClassicAssert.IsFalse(status.IsPending);
                 }
 
                 AssertTotalLockCounts(0, 0);
@@ -423,7 +424,7 @@ namespace Tsavorite.test.LockableUnsafeContext
                     long output = 0;
                     blt.IncrementS(ref lockKeys[idx]);
                     Status foundStatus = luContext.Read(ref lockKeys[idx].Key, ref input, ref output, Empty.Default);
-                    Assert.IsTrue(foundStatus.IsPending);
+                    ClassicAssert.IsTrue(foundStatus.IsPending);
                 }
 
                 // We did not lock all keys, only the "Action" ones - one lock per bucket, all shared in this test
@@ -454,10 +455,10 @@ namespace Tsavorite.test.LockableUnsafeContext
                 while (outputs.Next())
                 {
                     count++;
-                    Assert.AreEqual(outputs.Current.Key + NumRecords, outputs.Current.Output);
+                    ClassicAssert.AreEqual(outputs.Current.Key + NumRecords, outputs.Current.Output);
                 }
                 outputs.Dispose();
-                Assert.AreEqual(expectedS, count);
+                ClassicAssert.AreEqual(expectedS, count);
             }
             finally
             {
@@ -524,16 +525,16 @@ namespace Tsavorite.test.LockableUnsafeContext
                     if (status.IsPending)
                     {
                         _ = luContext.CompletePendingWithOutputs(out var completedOutputs, wait: true);
-                        Assert.True(completedOutputs.Next());
+                        ClassicAssert.True(completedOutputs.Next());
                         readValue24 = completedOutputs.Current.Output;
-                        Assert.AreEqual(24 * ValueMult, readValue24);
-                        Assert.False(completedOutputs.Next());
+                        ClassicAssert.AreEqual(24 * ValueMult, readValue24);
+                        ClassicAssert.False(completedOutputs.Next());
                         completedOutputs.Dispose();
                     }
                 }
                 else
                 {
-                    Assert.IsFalse(status.IsPending, status.ToString());
+                    ClassicAssert.IsFalse(status.IsPending, status.ToString());
                 }
 
                 status = luContext.Read(readKey51, out var readValue51);
@@ -542,16 +543,16 @@ namespace Tsavorite.test.LockableUnsafeContext
                     if (status.IsPending)
                     {
                         _ = luContext.CompletePendingWithOutputs(out var completedOutputs, wait: true);
-                        Assert.True(completedOutputs.Next());
+                        ClassicAssert.True(completedOutputs.Next());
                         readValue51 = completedOutputs.Current.Output;
-                        Assert.AreEqual(51 * ValueMult, readValue51);
-                        Assert.False(completedOutputs.Next());
+                        ClassicAssert.AreEqual(51 * ValueMult, readValue51);
+                        ClassicAssert.False(completedOutputs.Next());
                         completedOutputs.Dispose();
                     }
                 }
                 else
                 {
-                    Assert.IsFalse(status.IsPending, status.ToString());
+                    ClassicAssert.IsFalse(status.IsPending, status.ToString());
                 }
 
                 // Set the phase to Phase.INTERMEDIATE to test the non-Phase.REST blocks
@@ -565,22 +566,22 @@ namespace Tsavorite.test.LockableUnsafeContext
                     if (status.IsPending)
                     {
                         _ = luContext.CompletePendingWithOutputs(out var completedOutputs, wait: true);
-                        Assert.True(completedOutputs.Next());
+                        ClassicAssert.True(completedOutputs.Next());
                         resultValue = completedOutputs.Current.Output;
-                        Assert.AreEqual(expectedResult, resultValue);
-                        Assert.False(completedOutputs.Next());
+                        ClassicAssert.AreEqual(expectedResult, resultValue);
+                        ClassicAssert.False(completedOutputs.Next());
                         completedOutputs.Dispose();
                     }
                 }
                 else
                 {
-                    Assert.IsFalse(status.IsPending, status.ToString());
+                    ClassicAssert.IsFalse(status.IsPending, status.ToString());
                 }
 
                 // Reread the destination to verify
                 status = luContext.Read(resultKey, out resultValue);
-                Assert.IsFalse(status.IsPending, status.ToString());
-                Assert.AreEqual(expectedResult, resultValue);
+                ClassicAssert.IsFalse(status.IsPending, status.ToString());
+                ClassicAssert.AreEqual(expectedResult, resultValue);
 
                 luContext.Unlock(keys);
 
@@ -601,8 +602,8 @@ namespace Tsavorite.test.LockableUnsafeContext
 
             // Verify reading the destination from the BasicContext.
             status = bContext.Read(resultKey, out resultValue);
-            Assert.IsFalse(status.IsPending, status.ToString());
-            Assert.AreEqual(expectedResult, resultValue);
+            ClassicAssert.IsFalse(status.IsPending, status.ToString());
+            ClassicAssert.AreEqual(expectedResult, resultValue);
             AssertTotalLockCounts(0, 0);
         }
 
@@ -661,43 +662,43 @@ namespace Tsavorite.test.LockableUnsafeContext
                 status = luContext.Read(readKey24, out var readValue24);
                 if (flushMode == FlushMode.OnDisk)
                 {
-                    Assert.IsTrue(status.IsPending, status.ToString());
+                    ClassicAssert.IsTrue(status.IsPending, status.ToString());
                     _ = luContext.CompletePendingWithOutputs(out var completedOutputs, wait: true);
                     (status, readValue24) = GetSinglePendingResult(completedOutputs, out var recordMetadata);
-                    Assert.IsTrue(status.Found, status.ToString());
+                    ClassicAssert.IsTrue(status.Found, status.ToString());
                 }
                 else
-                    Assert.IsFalse(status.IsPending, status.ToString());
-                Assert.AreEqual(readKey24 * ValueMult, readValue24);
+                    ClassicAssert.IsFalse(status.IsPending, status.ToString());
+                ClassicAssert.AreEqual(readKey24 * ValueMult, readValue24);
 
                 // We just locked this above, but for FlushMode.OnDisk it will still be PENDING.
                 status = luContext.Read(readKey51, out var readValue51);
                 if (flushMode == FlushMode.OnDisk)
                 {
-                    Assert.IsTrue(status.IsPending, status.ToString());
+                    ClassicAssert.IsTrue(status.IsPending, status.ToString());
                     _ = luContext.CompletePendingWithOutputs(out var completedOutputs, wait: true);
-                    Assert.True(completedOutputs.Next());
+                    ClassicAssert.True(completedOutputs.Next());
                     readValue51 = completedOutputs.Current.Output;
-                    Assert.False(completedOutputs.Next());
+                    ClassicAssert.False(completedOutputs.Next());
                     completedOutputs.Dispose();
                 }
                 else
-                    Assert.IsFalse(status.IsPending, status.ToString());
-                Assert.AreEqual(readKey51 * ValueMult, readValue51);
+                    ClassicAssert.IsFalse(status.IsPending, status.ToString());
+                ClassicAssert.AreEqual(readKey51 * ValueMult, readValue51);
 
                 if (!initialDestWillBeLockTable)
                 {
                     status = luContext.Read(resultKey, out var initialResultValue);
                     if (flushMode == FlushMode.OnDisk)
                     {
-                        Assert.IsTrue(status.IsPending, status.ToString());
+                        ClassicAssert.IsTrue(status.IsPending, status.ToString());
                         _ = luContext.CompletePendingWithOutputs(out var completedOutputs, wait: true);
                         (status, initialResultValue) = GetSinglePendingResult(completedOutputs, out var recordMetadata);
-                        Assert.IsTrue(status.Found, status.ToString());
+                        ClassicAssert.IsTrue(status.Found, status.ToString());
                     }
                     else
-                        Assert.IsFalse(status.IsPending, status.ToString());
-                    Assert.AreEqual(resultKey * ValueMult, initialResultValue);
+                        ClassicAssert.IsFalse(status.IsPending, status.ToString());
+                    ClassicAssert.AreEqual(resultKey * ValueMult, initialResultValue);
                 }
 
                 // Set the phase to Phase.INTERMEDIATE to test the non-Phase.REST blocks
@@ -705,11 +706,11 @@ namespace Tsavorite.test.LockableUnsafeContext
                 status = useRMW
                     ? luContext.RMW(resultKey, (readValue24 + readValue51) * valueMult2)
                     : luContext.Upsert(resultKey, (readValue24 + readValue51) * valueMult2);
-                Assert.IsFalse(status.IsPending, status.ToString());
+                ClassicAssert.IsFalse(status.IsPending, status.ToString());
 
                 status = luContext.Read(resultKey, out resultValue);
-                Assert.IsFalse(status.IsPending, status.ToString());
-                Assert.AreEqual(expectedResult, resultValue);
+                ClassicAssert.IsFalse(status.IsPending, status.ToString());
+                ClassicAssert.AreEqual(expectedResult, resultValue);
 
                 luContext.Unlock(keys);
 
@@ -730,8 +731,8 @@ namespace Tsavorite.test.LockableUnsafeContext
 
             // Verify from the full Basic Context
             status = bContext.Read(resultKey, out resultValue);
-            Assert.IsFalse(status.IsPending, status.ToString());
-            Assert.AreEqual(expectedResult, resultValue);
+            ClassicAssert.IsFalse(status.IsPending, status.ToString());
+            ClassicAssert.AreEqual(expectedResult, resultValue);
             AssertTotalLockCounts(0, 0);
         }
 
@@ -771,11 +772,11 @@ namespace Tsavorite.test.LockableUnsafeContext
                 // Set the phase to Phase.INTERMEDIATE to test the non-Phase.REST blocks
                 session.ctx.phase = phase;
                 status = luContext.Delete(ref resultKey);
-                Assert.IsFalse(status.IsPending, status.ToString());
+                ClassicAssert.IsFalse(status.IsPending, status.ToString());
 
                 // Reread the destination to verify
                 status = luContext.Read(resultKey, out var _);
-                Assert.IsFalse(status.Found, status.ToString());
+                ClassicAssert.IsFalse(status.Found, status.ToString());
 
                 luContext.Unlock(keyVec);
                 blt.Decrement(ref keyVec[0]);
@@ -795,7 +796,7 @@ namespace Tsavorite.test.LockableUnsafeContext
 
             // Verify reading the destination from the full Basic Context
             status = bContext.Read(resultKey, out var _);
-            Assert.IsFalse(status.Found, status.ToString());
+            ClassicAssert.IsFalse(status.Found, status.ToString());
             AssertTotalLockCounts(0, 0);
         }
 
@@ -896,8 +897,8 @@ namespace Tsavorite.test.LockableUnsafeContext
 
             var lockState = store.LockTable.GetLockState(ref hei);
 
-            Assert.IsTrue(lockState.IsFound);
-            Assert.IsTrue(lockState.IsLockedExclusive);
+            ClassicAssert.IsTrue(lockState.IsFound);
+            ClassicAssert.IsTrue(lockState.IsLockedExclusive);
             return keyVec[0];
         }
 
@@ -907,7 +908,7 @@ namespace Tsavorite.test.LockableUnsafeContext
             // Scan to the end of the readcache chain and verify we inserted the value.
             var (_, pa) = ChainTests.SkipReadCacheChain(store, expectedKey);
             var storedKey = store.hlog.GetKey(pa);
-            Assert.AreEqual(expectedKey, storedKey);
+            ClassicAssert.AreEqual(expectedKey, storedKey);
 
             var keyVec = new[] { new FixedLengthLockableKeyStruct<long>(expectedKey, LockType.Exclusive, luContext) };
             luContext.Unlock(keyVec);
@@ -936,7 +937,7 @@ namespace Tsavorite.test.LockableUnsafeContext
                 AssertTotalLockCounts(ref blt);
 
                 var status = luContext.Read(ref key, ref input, ref output, ref readOptions, out _);
-                Assert.IsTrue(status.IsPending, status.ToString());
+                ClassicAssert.IsTrue(status.IsPending, status.ToString());
                 _ = luContext.CompletePending(wait: true);
 
                 VerifyAndUnlockSplicedInKey(luContext, key);
@@ -1029,7 +1030,7 @@ namespace Tsavorite.test.LockableUnsafeContext
                     keyStruct = AddLockTableEntry(luContext, UseNewKey);
                 blt.Increment(ref keyStruct);
                 var status = luContext.Upsert(keyStruct.Key, keyStruct.Key * ValueMult);
-                Assert.IsTrue(status.Record.Created, status.ToString());
+                ClassicAssert.IsTrue(status.Record.Created, status.ToString());
 
                 VerifyAndUnlockSplicedInKey(luContext, keyStruct.Key);
                 blt.Decrement(ref keyStruct);
@@ -1067,14 +1068,14 @@ namespace Tsavorite.test.LockableUnsafeContext
                 {
                     keyStruct = AddLockTableEntry(luContext, UseExistingKey);
                     var status = luContext.RMW(keyStruct.Key, keyStruct.Key * ValueMult);
-                    Assert.IsTrue(recordRegion == ChainTests.RecordRegion.OnDisk ? status.IsPending : status.Found);
+                    ClassicAssert.IsTrue(recordRegion == ChainTests.RecordRegion.OnDisk ? status.IsPending : status.Found);
                     _ = luContext.CompletePending(wait: true);
                 }
                 else
                 {
                     keyStruct = AddLockTableEntry(luContext, UseNewKey);
                     var status = luContext.RMW(keyStruct.Key, keyStruct.Key * ValueMult);
-                    Assert.IsFalse(status.Found, status.ToString());
+                    ClassicAssert.IsFalse(status.Found, status.ToString());
                 }
                 blt.Increment(ref keyStruct);
 
@@ -1117,14 +1118,14 @@ namespace Tsavorite.test.LockableUnsafeContext
                     var status = luContext.Delete(keyStruct.Key);
 
                     // Delete does not search outside mutable region so the key will not be found
-                    Assert.IsTrue(!status.Found && status.Record.Created, status.ToString());
+                    ClassicAssert.IsTrue(!status.Found && status.Record.Created, status.ToString());
                 }
                 else
                 {
                     keyStruct = AddLockTableEntry(luContext, UseNewKey);
                     blt.Increment(ref keyStruct);
                     var status = luContext.Delete(keyStruct.Key);
-                    Assert.IsFalse(status.Found, status.ToString());
+                    ClassicAssert.IsFalse(status.Found, status.ToString());
                 }
 
                 VerifyAndUnlockSplicedInKey(luContext, keyStruct.Key);
@@ -1174,10 +1175,10 @@ namespace Tsavorite.test.LockableUnsafeContext
                     HashEntryInfo hei = new(key.KeyHash, store.partitionId);
                     PopulateHei(ref hei);
                     var lockState = store.LockTable.GetLockState(ref hei);
-                    Assert.IsTrue(lockState.IsFound);
-                    Assert.AreEqual(key.LockType == LockType.Exclusive, lockState.IsLockedExclusive);
+                    ClassicAssert.IsTrue(lockState.IsFound);
+                    ClassicAssert.AreEqual(key.LockType == LockType.Exclusive, lockState.IsLockedExclusive);
                     if (key.LockType == LockType.Shared)
-                        Assert.IsTrue(lockState.IsLocked);    // Could be either shared or exclusive; we only lock the bucket once per Lock() call
+                        ClassicAssert.IsTrue(lockState.IsLocked);    // Could be either shared or exclusive; we only lock the bucket once per Lock() call
 
                     luContext.Unlock(keyVec, idx, 1);
                     blt.Decrement(ref key);
@@ -1225,11 +1226,11 @@ namespace Tsavorite.test.LockableUnsafeContext
                     UpdateOp.Delete => luContext.Delete(keyVec[0].Key),
                     _ => new(StatusCode.Error)
                 };
-                Assert.IsFalse(status.IsFaulted, $"Unexpected UpdateOp {updateOp}, status {status}");
+                ClassicAssert.IsFalse(status.IsFaulted, $"Unexpected UpdateOp {updateOp}, status {status}");
                 if (updateOp == UpdateOp.RMW)
-                    Assert.IsTrue(status.Record.CopyUpdated, status.ToString());
+                    ClassicAssert.IsTrue(status.Record.CopyUpdated, status.ToString());
                 else
-                    Assert.IsTrue(status.Record.Created, status.ToString());
+                    ClassicAssert.IsTrue(status.Record.Created, status.ToString());
 
                 HashBucketLockTableTests.AssertLockCounts(store, keyVec[0].Key, true, 0);
 
@@ -1263,7 +1264,7 @@ namespace Tsavorite.test.LockableUnsafeContext
             if (updateOp == UpdateOp.Delete)
             {
                 for (var key = NumRecords; key < NumRecords + numNewRecords; ++key)
-                    Assert.IsFalse(bContext.Upsert(key, key * ValueMult).IsPending);
+                    ClassicAssert.IsFalse(bContext.Upsert(key, key * ValueMult).IsPending);
                 store.Log.FlushAndEvict(wait: true);
             }
 
@@ -1315,28 +1316,28 @@ namespace Tsavorite.test.LockableUnsafeContext
                         case UpdateOp.Upsert:
                             status = luContext.Upsert(key, getValue(key));
                             if (iter == 0)
-                                Assert.IsTrue(status.NotFound && status.Record.Created, status.ToString());
+                                ClassicAssert.IsTrue(status.NotFound && status.Record.Created, status.ToString());
                             else
-                                Assert.IsTrue(status.Found && status.Record.InPlaceUpdated, status.ToString());
+                                ClassicAssert.IsTrue(status.Found && status.Record.InPlaceUpdated, status.ToString());
                             break;
                         case UpdateOp.RMW:
                             status = luContext.RMW(key, getValue(key));
                             if (iter == 0)
-                                Assert.IsTrue(status.NotFound && status.Record.Created, status.ToString());
+                                ClassicAssert.IsTrue(status.NotFound && status.Record.Created, status.ToString());
                             else
-                                Assert.IsTrue(status.Found && status.Record.InPlaceUpdated, status.ToString());
+                                ClassicAssert.IsTrue(status.Found && status.Record.InPlaceUpdated, status.ToString());
                             break;
                         case UpdateOp.Delete:
                             status = luContext.Delete(key);
-                            Assert.IsTrue(status.NotFound, status.ToString());
+                            ClassicAssert.IsTrue(status.NotFound, status.ToString());
                             if (iter == 0)
-                                Assert.IsTrue(status.Record.Created, status.ToString());
+                                ClassicAssert.IsTrue(status.Record.Created, status.ToString());
                             break;
                         default:
                             Assert.Fail($"Unexpected updateOp {updateOp}");
                             return;
                     };
-                    Assert.IsFalse(status.IsFaulted, $"Unexpected UpdateOp {updateOp}, status {status}");
+                    ClassicAssert.IsFalse(status.IsFaulted, $"Unexpected UpdateOp {updateOp}, status {status}");
                 }
                 catch (Exception)
                 {
@@ -1368,7 +1369,7 @@ namespace Tsavorite.test.LockableUnsafeContext
             if (updateOp == UpdateOp.Delete)
             {
                 for (var key = NumRecords; key < NumRecords + numNewRecords; ++key)
-                    Assert.IsFalse(bContext.Upsert(key, key * ValueMult).IsPending);
+                    ClassicAssert.IsFalse(bContext.Upsert(key, key * ValueMult).IsPending);
                 store.Log.FlushAndEvict(wait: true);
             }
 
@@ -1456,28 +1457,28 @@ namespace Tsavorite.test.LockableUnsafeContext
                         case UpdateOp.Upsert:
                             status = basicContext.Upsert(key, getValue(key));
                             if (iter == 0)
-                                Assert.IsTrue(status.NotFound && status.Record.Created, status.ToString());
+                                ClassicAssert.IsTrue(status.NotFound && status.Record.Created, status.ToString());
                             else
-                                Assert.IsTrue(status.Found && status.Record.InPlaceUpdated, status.ToString());
+                                ClassicAssert.IsTrue(status.Found && status.Record.InPlaceUpdated, status.ToString());
                             break;
                         case UpdateOp.RMW:
                             status = basicContext.RMW(key, getValue(key));
                             if (iter == 0)
-                                Assert.IsTrue(status.NotFound && status.Record.Created, status.ToString());
+                                ClassicAssert.IsTrue(status.NotFound && status.Record.Created, status.ToString());
                             else
-                                Assert.IsTrue(status.Found && status.Record.InPlaceUpdated, status.ToString());
+                                ClassicAssert.IsTrue(status.Found && status.Record.InPlaceUpdated, status.ToString());
                             break;
                         case UpdateOp.Delete:
                             status = basicContext.Delete(key);
-                            Assert.IsTrue(status.NotFound, status.ToString());
+                            ClassicAssert.IsTrue(status.NotFound, status.ToString());
                             if (iter == 0)
-                                Assert.IsTrue(status.Record.Created, status.ToString());
+                                ClassicAssert.IsTrue(status.Record.Created, status.ToString());
                             break;
                         default:
                             Assert.Fail($"Unexpected updateOp {updateOp}");
                             return;
                     };
-                    Assert.IsFalse(status.IsFaulted, $"Unexpected UpdateOp {updateOp}, status {status}");
+                    ClassicAssert.IsFalse(status.IsFaulted, $"Unexpected UpdateOp {updateOp}, status {status}");
                     lastUpdaterKeys[2] = key;
                 }
                 catch (Exception)
@@ -1556,7 +1557,7 @@ namespace Tsavorite.test.LockableUnsafeContext
             };
 
             // First ensure things work with no blocking locks.
-            Assert.IsTrue(luContext.TryLock(keyVec));
+            ClassicAssert.IsTrue(luContext.TryLock(keyVec));
             luContext.Unlock(keyVec);
 
             var blockingVec = new FixedLengthLockableKeyStruct<long>[1];
@@ -1570,7 +1571,7 @@ namespace Tsavorite.test.LockableUnsafeContext
                     luContext.Lock(blockingVec);
 
                     // Now try the lock, and verify there are no locks left after (any taken must be rolled back on failure).
-                    Assert.IsFalse(luContext.TryLock(keyVec, TimeSpan.FromMilliseconds(20)));
+                    ClassicAssert.IsFalse(luContext.TryLock(keyVec, TimeSpan.FromMilliseconds(20)));
                     foreach (var k in keyVec)
                     {
                         if (k.Key != blockingVec[0].Key)
@@ -1613,7 +1614,7 @@ namespace Tsavorite.test.LockableUnsafeContext
             };
 
             // First ensure things work with no blocking locks.
-            Assert.IsTrue(luContext.TryLock(keyVec));
+            ClassicAssert.IsTrue(luContext.TryLock(keyVec));
             luContext.Unlock(keyVec);
 
             var blockingVec = new FixedLengthLockableKeyStruct<long>[1];
@@ -1629,7 +1630,7 @@ namespace Tsavorite.test.LockableUnsafeContext
                     using var cts = new CancellationTokenSource(20);
 
                     // Now try the lock, and verify there are no locks left after (any taken must be rolled back on failure).
-                    Assert.IsFalse(luContext.TryLock(keyVec, cts.Token));
+                    ClassicAssert.IsFalse(luContext.TryLock(keyVec, cts.Token));
                     foreach (var k in keyVec)
                     {
                         if (k.Key != blockingVec[0].Key)
@@ -1672,14 +1673,14 @@ namespace Tsavorite.test.LockableUnsafeContext
             try
             {
                 // Lock twice so it is blocked by the second reader
-                Assert.IsTrue(luContext.TryLock(sharedVec));
-                Assert.IsTrue(luContext.TryLock(sharedVec));
+                ClassicAssert.IsTrue(luContext.TryLock(sharedVec));
+                ClassicAssert.IsTrue(luContext.TryLock(sharedVec));
 
-                Assert.IsFalse(luContext.TryPromoteLock(exclusiveVec[0], TimeSpan.FromMilliseconds(20)));
+                ClassicAssert.IsFalse(luContext.TryPromoteLock(exclusiveVec[0], TimeSpan.FromMilliseconds(20)));
 
                 // Unlock one of the readers and verify successful promotion
                 luContext.Unlock(sharedVec);
-                Assert.IsTrue(luContext.TryPromoteLock(exclusiveVec[0]));
+                ClassicAssert.IsTrue(luContext.TryPromoteLock(exclusiveVec[0]));
                 luContext.Unlock(exclusiveVec);
             }
             catch (Exception)
@@ -1715,15 +1716,15 @@ namespace Tsavorite.test.LockableUnsafeContext
             try
             {
                 // Lock twice so it is blocked by the second reader
-                Assert.IsTrue(luContext.TryLock(sharedVec));
-                Assert.IsTrue(luContext.TryLock(sharedVec));
+                ClassicAssert.IsTrue(luContext.TryLock(sharedVec));
+                ClassicAssert.IsTrue(luContext.TryLock(sharedVec));
 
                 using var cts = new CancellationTokenSource(20);
-                Assert.IsFalse(luContext.TryPromoteLock(exclusiveVec[0], cts.Token));
+                ClassicAssert.IsFalse(luContext.TryPromoteLock(exclusiveVec[0], cts.Token));
 
                 // Unlock one of the readers and verify successful promotion
                 luContext.Unlock(sharedVec);
-                Assert.IsTrue(luContext.TryPromoteLock(exclusiveVec[0]));
+                ClassicAssert.IsTrue(luContext.TryPromoteLock(exclusiveVec[0]));
                 luContext.Unlock(exclusiveVec);
             }
             catch (Exception)

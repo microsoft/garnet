@@ -10,6 +10,7 @@ using System.Threading.Tasks;
 using Garnet.common;
 using Garnet.server;
 using NUnit.Framework;
+using NUnit.Framework.Legacy;
 using StackExchange.Redis;
 
 namespace Garnet.test
@@ -47,7 +48,7 @@ namespace Garnet.test
             // Isolate command IDs that exist more than once in the array
             var duplicateIds = ids.GroupBy(e => e).Where(e => e.Count() > 1).Select(e => e.First());
 
-            Assert.IsEmpty(duplicateIds, "Found ambiguous command IDs");
+            ClassicAssert.IsEmpty(duplicateIds, "Found ambiguous command IDs");
         }
 
         /// <summary>
@@ -79,7 +80,7 @@ namespace Garnet.test
                 }
             }
 
-            Assert.IsEmpty(wrong, "These commands are incorrectly classified w.r.t. OneIfWrite");
+            ClassicAssert.IsEmpty(wrong, "These commands are incorrectly classified w.r.t. OneIfWrite");
         }
 
         /// <summary>
@@ -111,7 +112,7 @@ namespace Garnet.test
                 }
             }
 
-            Assert.IsEmpty(wrong, "These commands are incorrectly classified w.r.t. OneIfRead");
+            ClassicAssert.IsEmpty(wrong, "These commands are incorrectly classified w.r.t. OneIfRead");
         }
 
         /// <summary>
@@ -120,8 +121,8 @@ namespace Garnet.test
         [Test]
         public void IsClusterSubCommand()
         {
-            Assert.True(RespCommandsInfo.TryGetRespCommandInfo("CLUSTER", out var clusterCommand), "Couldn't load CLUSTER command details");
-            Assert.IsNotNull(clusterCommand.SubCommands, "CLUSTER didn't have any subcommands");
+            ClassicAssert.True(RespCommandsInfo.TryGetRespCommandInfo("CLUSTER", out var clusterCommand), "Couldn't load CLUSTER command details");
+            ClassicAssert.IsNotNull(clusterCommand.SubCommands, "CLUSTER didn't have any subcommands");
 
             IEnumerable<RespCommand> clusterSubCommands = clusterCommand.SubCommands.Select(static s => s.SubCommand.Value);
             foreach (var cmd in Enum.GetValues<RespCommand>())
@@ -129,7 +130,7 @@ namespace Garnet.test
                 var expectedRes = clusterSubCommands.Contains(cmd);
                 var actualRes = cmd.IsClusterSubCommand();
 
-                Assert.AreEqual(expectedRes, actualRes, $"Mismatch for {cmd}");
+                ClassicAssert.AreEqual(expectedRes, actualRes, $"Mismatch for {cmd}");
             }
         }
 
@@ -144,7 +145,7 @@ namespace Garnet.test
 
             string retValue = db.StringGet("mykey");
 
-            Assert.AreEqual(origValue, retValue);
+            ClassicAssert.AreEqual(origValue, retValue);
         }
 
         [Test]
@@ -158,7 +159,7 @@ namespace Garnet.test
 
             string retValue = await db.StringGetAsync("mykey");
 
-            Assert.AreEqual(origValue, retValue);
+            ClassicAssert.AreEqual(origValue, retValue);
         }
 
         [Test]
@@ -172,7 +173,7 @@ namespace Garnet.test
 
             string retValue = await db.StringGetAsync("mykey");
 
-            Assert.AreEqual(origValue, retValue);
+            ClassicAssert.AreEqual(origValue, retValue);
         }
 
         [Test]
@@ -188,50 +189,50 @@ namespace Garnet.test
 
             // MSET NX - non-existing values
             var result = db.StringSet(input, When.NotExists);
-            Assert.IsTrue(result);
+            ClassicAssert.IsTrue(result);
 
             var value = db.StringGet(input.Select(e => e.Key).ToArray());
-            Assert.AreEqual(length, value.Length);
+            ClassicAssert.AreEqual(length, value.Length);
 
             for (int i = 0; i < length; i++)
-                Assert.AreEqual(input[i].Value, value[i]);
+                ClassicAssert.AreEqual(input[i].Value, value[i]);
 
             // MSET
             result = db.StringSet(input);
-            Assert.IsTrue(result);
+            ClassicAssert.IsTrue(result);
 
             value = db.StringGet(input.Select(e => e.Key).ToArray());
-            Assert.AreEqual(length, value.Length);
+            ClassicAssert.AreEqual(length, value.Length);
 
             for (int i = 0; i < length; i++)
-                Assert.AreEqual(input[i].Value, value[i]);
+                ClassicAssert.AreEqual(input[i].Value, value[i]);
 
             // MSET NX - existing values
             for (int i = 0; i < length; i++)
                 input[i] = new KeyValuePair<RedisKey, RedisValue>(i.ToString(), (i + 1).ToString());
 
             result = db.StringSet(input, When.NotExists);
-            Assert.IsFalse(result);
+            ClassicAssert.IsFalse(result);
 
             value = db.StringGet(input.Select(e => e.Key).ToArray());
-            Assert.AreEqual(length, value.Length);
+            ClassicAssert.AreEqual(length, value.Length);
 
             for (int i = 0; i < length; i++)
-                Assert.AreEqual(new RedisValue(i.ToString()), value[i]);
+                ClassicAssert.AreEqual(new RedisValue(i.ToString()), value[i]);
 
             // MSET NX - non-existing and existing values
             for (int i = 0; i < length; i++)
                 input[i] = new KeyValuePair<RedisKey, RedisValue>((i % 2 == 0 ? i : i + length).ToString(), (i + length).ToString());
 
             result = db.StringSet(input, When.NotExists);
-            Assert.IsTrue(result);
+            ClassicAssert.IsTrue(result);
 
             value = db.StringGet(input.Select(e => e.Key).ToArray());
-            Assert.AreEqual(length, value.Length);
+            ClassicAssert.AreEqual(length, value.Length);
 
             for (int i = 0; i < length; i++)
             {
-                Assert.AreEqual(i % 2 == 0 ? new RedisValue((int.Parse(input[i].Value) - length).ToString()) :
+                ClassicAssert.AreEqual(i % 2 == 0 ? new RedisValue((int.Parse(input[i].Value) - length).ToString()) :
                         input[i].Value, value[i]);
             }
         }
@@ -249,11 +250,11 @@ namespace Garnet.test
                 value[i] = (byte)((byte)'a' + ((byte)i % 26));
 
             var result = db.StringSet("mykey", value);
-            Assert.IsTrue(result);
+            ClassicAssert.IsTrue(result);
 
             var retvalue = (byte[])db.StringGet("mykey");
 
-            Assert.IsTrue(new ReadOnlySpan<byte>(value).SequenceEqual(new ReadOnlySpan<byte>(retvalue)));
+            ClassicAssert.IsTrue(new ReadOnlySpan<byte>(value).SequenceEqual(new ReadOnlySpan<byte>(retvalue)));
         }
 
         [Test]
@@ -266,31 +267,31 @@ namespace Garnet.test
             db.StringSet("mykey", origValue, TimeSpan.FromSeconds(1));
 
             string retValue = db.StringGet("mykey");
-            Assert.AreEqual(origValue, retValue, "Get() before expiration");
+            ClassicAssert.AreEqual(origValue, retValue, "Get() before expiration");
 
             var actualDbSize = db.Execute("DBSIZE");
-            Assert.AreEqual(1, (ulong)actualDbSize, "DBSIZE before expiration");
+            ClassicAssert.AreEqual(1, (ulong)actualDbSize, "DBSIZE before expiration");
 
             var actualKeys = db.Execute("KEYS", ["*"]);
-            Assert.AreEqual(1, ((RedisResult[])actualKeys).Length, "KEYS before expiration");
+            ClassicAssert.AreEqual(1, ((RedisResult[])actualKeys).Length, "KEYS before expiration");
 
             var actualScan = db.Execute("SCAN", "0");
-            Assert.AreEqual(1, ((RedisValue[])((RedisResult[])actualScan!)[1]).Length, "SCAN before expiration");
+            ClassicAssert.AreEqual(1, ((RedisValue[])((RedisResult[])actualScan!)[1]).Length, "SCAN before expiration");
 
             // Sleep to wait for expiration
             Thread.Sleep(2000);
 
             retValue = db.StringGet("mykey");
-            Assert.AreEqual(null, retValue, "Get() after expiration");
+            ClassicAssert.AreEqual(null, retValue, "Get() after expiration");
 
             actualDbSize = db.Execute("DBSIZE");
-            Assert.AreEqual(0, (ulong)actualDbSize, "DBSIZE after expiration");
+            ClassicAssert.AreEqual(0, (ulong)actualDbSize, "DBSIZE after expiration");
 
             actualKeys = db.Execute("KEYS", ["*"]);
-            Assert.AreEqual(0, ((RedisResult[])actualKeys).Length, "KEYS after expiration");
+            ClassicAssert.AreEqual(0, ((RedisResult[])actualKeys).Length, "KEYS after expiration");
 
             actualScan = db.Execute("SCAN", "0");
-            Assert.AreEqual(0, ((RedisValue[])((RedisResult[])actualScan!)[1]).Length, "SCAN after expiration");
+            ClassicAssert.AreEqual(0, ((RedisValue[])((RedisResult[])actualScan!)[1]).Length, "SCAN after expiration");
         }
 
         [Test]
@@ -303,15 +304,15 @@ namespace Garnet.test
             db.StringSet("mykey", origValue, TimeSpan.FromSeconds(1.9));
 
             string retValue = db.StringGet("mykey");
-            Assert.AreEqual(origValue, retValue);
+            ClassicAssert.AreEqual(origValue, retValue);
 
             Thread.Sleep(1000);
             retValue = db.StringGet("mykey");
-            Assert.AreEqual(origValue, retValue);
+            ClassicAssert.AreEqual(origValue, retValue);
 
             Thread.Sleep(2000);
             retValue = db.StringGet("mykey");
-            Assert.AreEqual(null, retValue);
+            ClassicAssert.AreEqual(null, retValue);
         }
 
         [Test]
@@ -324,11 +325,11 @@ namespace Garnet.test
             db.StringSet("mykey", origValue, TimeSpan.FromSeconds(3), When.NotExists, CommandFlags.None);
 
             string retValue = db.StringGet("mykey");
-            Assert.AreEqual(origValue, retValue);
+            ClassicAssert.AreEqual(origValue, retValue);
 
             Thread.Sleep(4000);
             retValue = db.StringGet("mykey");
-            Assert.AreEqual(null, retValue);
+            ClassicAssert.AreEqual(null, retValue);
         }
 
         [Test]
@@ -341,24 +342,24 @@ namespace Garnet.test
             string origValue = "abcdefghij";
 
             var result = db.StringSet(key, origValue, null, When.Exists, CommandFlags.None);
-            Assert.IsFalse(result);
+            ClassicAssert.IsFalse(result);
 
             string retValue = db.StringGet(key);
-            Assert.AreEqual(null, retValue);
+            ClassicAssert.AreEqual(null, retValue);
 
             result = db.StringSet(key, origValue);
-            Assert.IsTrue(result);
+            ClassicAssert.IsTrue(result);
 
             retValue = db.StringGet(key);
-            Assert.AreEqual(origValue, retValue);
+            ClassicAssert.AreEqual(origValue, retValue);
 
             string newValue = "01234";
 
             result = db.StringSet(key, newValue, TimeSpan.FromSeconds(10), When.Exists, CommandFlags.None);
-            Assert.IsTrue(result);
+            ClassicAssert.IsTrue(result);
 
             retValue = db.StringGet(key);
-            Assert.AreEqual(newValue, retValue);
+            ClassicAssert.AreEqual(newValue, retValue);
         }
 
         [Test]
@@ -372,61 +373,61 @@ namespace Garnet.test
 
             // Initial set
             var result = db.StringSet(key, origValue);
-            Assert.IsTrue(result);
+            ClassicAssert.IsTrue(result);
             string retValue = db.StringGet(key);
-            Assert.AreEqual(origValue, retValue);
+            ClassicAssert.AreEqual(origValue, retValue);
 
             // Smaller new value without expiration
             string newValue1 = "abcdefghijklmnopqrs";
             retValue = db.StringSetAndGet(key, newValue1, null, When.Always, CommandFlags.None);
-            Assert.AreEqual(origValue, retValue);
+            ClassicAssert.AreEqual(origValue, retValue);
             retValue = db.StringGet(key);
-            Assert.AreEqual(newValue1, retValue);
+            ClassicAssert.AreEqual(newValue1, retValue);
 
             // Smaller new value with KeepTtl
             string newValue2 = "abcdefghijklmnopqr";
             retValue = db.StringSetAndGet(key, newValue2, null, true, When.Always, CommandFlags.None);
-            Assert.AreEqual(newValue1, retValue);
+            ClassicAssert.AreEqual(newValue1, retValue);
             retValue = db.StringGet(key);
-            Assert.AreEqual(newValue2, retValue);
+            ClassicAssert.AreEqual(newValue2, retValue);
             var expiry = db.KeyTimeToLive(key);
-            Assert.IsNull(expiry);
+            ClassicAssert.IsNull(expiry);
 
             // Smaller new value with expiration
             string newValue3 = "01234";
             retValue = db.StringSetAndGet(key, newValue3, TimeSpan.FromSeconds(10), When.Exists, CommandFlags.None);
-            Assert.AreEqual(newValue2, retValue);
+            ClassicAssert.AreEqual(newValue2, retValue);
             retValue = db.StringGet(key);
-            Assert.AreEqual(newValue3, retValue);
+            ClassicAssert.AreEqual(newValue3, retValue);
             expiry = db.KeyTimeToLive(key);
-            Assert.IsTrue(expiry.Value.TotalSeconds > 0);
+            ClassicAssert.IsTrue(expiry.Value.TotalSeconds > 0);
 
             // Larger new value with expiration
             string newValue4 = "abcdefghijklmnopqrstabcdefghijklmnopqrst";
             retValue = db.StringSetAndGet(key, newValue4, TimeSpan.FromSeconds(100), When.Exists, CommandFlags.None);
-            Assert.AreEqual(newValue3, retValue);
+            ClassicAssert.AreEqual(newValue3, retValue);
             retValue = db.StringGet(key);
-            Assert.AreEqual(newValue4, retValue);
+            ClassicAssert.AreEqual(newValue4, retValue);
             expiry = db.KeyTimeToLive(key);
-            Assert.IsTrue(expiry.Value.TotalSeconds > 0);
+            ClassicAssert.IsTrue(expiry.Value.TotalSeconds > 0);
 
             // Smaller new value without expiration
             string newValue5 = "0123401234";
             retValue = db.StringSetAndGet(key, newValue5, null, When.Exists, CommandFlags.None);
-            Assert.AreEqual(newValue4, retValue);
+            ClassicAssert.AreEqual(newValue4, retValue);
             retValue = db.StringGet(key);
-            Assert.AreEqual(newValue5, retValue);
+            ClassicAssert.AreEqual(newValue5, retValue);
             expiry = db.KeyTimeToLive(key);
-            Assert.IsNull(expiry);
+            ClassicAssert.IsNull(expiry);
 
             // Larger new value without expiration
             string newValue6 = "abcdefghijklmnopqrstabcdefghijklmnopqrst";
             retValue = db.StringSetAndGet(key, newValue6, null, When.Always, CommandFlags.None);
-            Assert.AreEqual(newValue5, retValue);
+            ClassicAssert.AreEqual(newValue5, retValue);
             retValue = db.StringGet(key);
-            Assert.AreEqual(newValue6, retValue);
+            ClassicAssert.AreEqual(newValue6, retValue);
             expiry = db.KeyTimeToLive(key);
-            Assert.IsNull(expiry);
+            ClassicAssert.IsNull(expiry);
         }
 
 
@@ -443,21 +444,21 @@ namespace Garnet.test
 
             long n = db.StringIncrement(strKey);
             long nRetVal = Convert.ToInt64(db.StringGet(strKey));
-            Assert.AreEqual(n, nRetVal);
-            Assert.AreEqual(-99999, nRetVal);
+            ClassicAssert.AreEqual(n, nRetVal);
+            ClassicAssert.AreEqual(-99999, nRetVal);
 
             n = db.StringIncrement(strKey);
             nRetVal = Convert.ToInt64(db.StringGet(strKey));
-            Assert.AreEqual(n, nRetVal);
-            Assert.AreEqual(-99998, nRetVal);
+            ClassicAssert.AreEqual(n, nRetVal);
+            ClassicAssert.AreEqual(-99998, nRetVal);
 
             Thread.Sleep(5000);
 
             // Expired key, restart increment
             n = db.StringIncrement(strKey);
             nRetVal = Convert.ToInt64(db.StringGet(strKey));
-            Assert.AreEqual(n, nRetVal);
-            Assert.AreEqual(1, nRetVal);
+            ClassicAssert.AreEqual(n, nRetVal);
+            ClassicAssert.AreEqual(1, nRetVal);
         }
 
         [Test]
@@ -472,35 +473,35 @@ namespace Garnet.test
 
             long n = db.StringIncrement(strKey);
             long nRetVal = Convert.ToInt64(db.StringGet(strKey));
-            Assert.AreEqual(n, nRetVal);
-            Assert.AreEqual(10, nRetVal);
+            ClassicAssert.AreEqual(n, nRetVal);
+            ClassicAssert.AreEqual(10, nRetVal);
 
             n = db.StringDecrement(strKey);
             nRetVal = Convert.ToInt64(db.StringGet(strKey));
-            Assert.AreEqual(n, nRetVal);
-            Assert.AreEqual(9, nRetVal);
+            ClassicAssert.AreEqual(n, nRetVal);
+            ClassicAssert.AreEqual(9, nRetVal);
 
             db.StringSet(strKey, 99, TimeSpan.FromSeconds(1000));
             n = db.StringIncrement(strKey);
             nRetVal = Convert.ToInt64(db.StringGet(strKey));
-            Assert.AreEqual(n, nRetVal);
-            Assert.AreEqual(100, nRetVal);
+            ClassicAssert.AreEqual(n, nRetVal);
+            ClassicAssert.AreEqual(100, nRetVal);
 
             n = db.StringDecrement(strKey);
             nRetVal = Convert.ToInt64(db.StringGet(strKey));
-            Assert.AreEqual(n, nRetVal);
-            Assert.AreEqual(99, nRetVal);
+            ClassicAssert.AreEqual(n, nRetVal);
+            ClassicAssert.AreEqual(99, nRetVal);
 
             db.StringSet(strKey, 999, TimeSpan.FromSeconds(1000));
             n = db.StringIncrement(strKey);
             nRetVal = Convert.ToInt64(db.StringGet(strKey));
-            Assert.AreEqual(n, nRetVal);
-            Assert.AreEqual(1000, nRetVal);
+            ClassicAssert.AreEqual(n, nRetVal);
+            ClassicAssert.AreEqual(1000, nRetVal);
 
             n = db.StringDecrement(strKey);
             nRetVal = Convert.ToInt64(db.StringGet(strKey));
-            Assert.AreEqual(n, nRetVal);
-            Assert.AreEqual(999, nRetVal);
+            ClassicAssert.AreEqual(n, nRetVal);
+            ClassicAssert.AreEqual(999, nRetVal);
         }
 
         [Test]
@@ -517,92 +518,92 @@ namespace Garnet.test
 
             // xx
             var resp = (string)db.Execute($"{setCommand}", key, value, "xx");
-            Assert.IsNull(resp);
+            ClassicAssert.IsNull(resp);
 
-            Assert.IsTrue(db.StringSet(key, value));
+            ClassicAssert.IsTrue(db.StringSet(key, value));
 
             // nx
             resp = (string)db.Execute($"{setCommand}", key, value, "nx");
-            Assert.IsNull(resp);
+            ClassicAssert.IsNull(resp);
 
             // ex
             resp = (string)db.Execute($"{setCommand}", key, value, "ex", "1");
-            Assert.AreEqual(okResponse, resp);
+            ClassicAssert.AreEqual(okResponse, resp);
             Thread.Sleep(TimeSpan.FromSeconds(1.1));
             resp = (string)db.Execute($"{ttlCommand}", key);
-            Assert.IsTrue(int.TryParse(resp, out var ttl));
-            Assert.AreEqual(-2, ttl);
+            ClassicAssert.IsTrue(int.TryParse(resp, out var ttl));
+            ClassicAssert.AreEqual(-2, ttl);
 
             // px
             resp = (string)db.Execute($"{setCommand}", key, value, "px", "1000");
-            Assert.AreEqual(okResponse, resp);
+            ClassicAssert.AreEqual(okResponse, resp);
             Thread.Sleep(TimeSpan.FromSeconds(1.1));
             resp = (string)db.Execute($"{ttlCommand}", key);
-            Assert.IsTrue(int.TryParse(resp, out ttl));
-            Assert.AreEqual(-2, ttl);
+            ClassicAssert.IsTrue(int.TryParse(resp, out ttl));
+            ClassicAssert.AreEqual(-2, ttl);
 
             // keepttl
-            Assert.IsTrue(db.StringSet(key, 1, TimeSpan.FromMinutes(1)));
+            ClassicAssert.IsTrue(db.StringSet(key, 1, TimeSpan.FromMinutes(1)));
             resp = (string)db.Execute($"{setCommand}", key, value, "keepttl");
-            Assert.AreEqual(okResponse, resp);
+            ClassicAssert.AreEqual(okResponse, resp);
             resp = (string)db.Execute($"{ttlCommand}", key);
-            Assert.IsTrue(int.TryParse(resp, out ttl) && ttl > 0 && ttl < 60);
+            ClassicAssert.IsTrue(int.TryParse(resp, out ttl) && ttl > 0 && ttl < 60);
 
             // ex .. nx, non-existing key
-            Assert.IsTrue(db.KeyDelete(key));
+            ClassicAssert.IsTrue(db.KeyDelete(key));
             resp = (string)db.Execute($"{setCommand}", key, value, "ex", "1", "nx");
-            Assert.AreEqual(okResponse, resp);
+            ClassicAssert.AreEqual(okResponse, resp);
             Thread.Sleep(TimeSpan.FromSeconds(1.1));
             resp = (string)db.Execute($"{ttlCommand}", key);
-            Assert.IsTrue(int.TryParse(resp, out ttl));
-            Assert.AreEqual(-2, ttl);
+            ClassicAssert.IsTrue(int.TryParse(resp, out ttl));
+            ClassicAssert.AreEqual(-2, ttl);
 
             // ex .. nx, existing key
-            Assert.IsTrue(db.StringSet(key, value));
+            ClassicAssert.IsTrue(db.StringSet(key, value));
             resp = (string)db.Execute($"{setCommand}", key, value, "ex", "1", "nx");
-            Assert.IsNull(resp);
+            ClassicAssert.IsNull(resp);
 
             // ex .. xx, non-existing key
-            Assert.IsTrue(db.KeyDelete(key));
+            ClassicAssert.IsTrue(db.KeyDelete(key));
             resp = (string)db.Execute($"{setCommand}", key, value, "ex", "1", "xx");
-            Assert.IsNull(resp);
+            ClassicAssert.IsNull(resp);
 
             // ex .. xx, existing key
-            Assert.IsTrue(db.StringSet(key, value));
+            ClassicAssert.IsTrue(db.StringSet(key, value));
             resp = (string)db.Execute($"{setCommand}", key, value, "ex", "1", "xx");
-            Assert.AreEqual(okResponse, resp);
+            ClassicAssert.AreEqual(okResponse, resp);
             Thread.Sleep(TimeSpan.FromSeconds(1.1));
             resp = (string)db.Execute($"{ttlCommand}", key);
-            Assert.IsTrue(int.TryParse(resp, out ttl));
-            Assert.AreEqual(-2, ttl);
+            ClassicAssert.IsTrue(int.TryParse(resp, out ttl));
+            ClassicAssert.AreEqual(-2, ttl);
 
             // px .. nx, non-existing key
-            Assert.IsTrue(db.KeyDelete(key));
+            ClassicAssert.IsTrue(db.KeyDelete(key));
             resp = (string)db.Execute($"{setCommand}", key, value, "px", "1000", "nx");
-            Assert.AreEqual(okResponse, resp);
+            ClassicAssert.AreEqual(okResponse, resp);
             Thread.Sleep(TimeSpan.FromSeconds(1.1));
             resp = (string)db.Execute($"{ttlCommand}", key);
-            Assert.IsTrue(int.TryParse(resp, out ttl));
-            Assert.AreEqual(-2, ttl);
+            ClassicAssert.IsTrue(int.TryParse(resp, out ttl));
+            ClassicAssert.AreEqual(-2, ttl);
 
             // px .. nx, existing key
-            Assert.IsTrue(db.StringSet(key, value));
+            ClassicAssert.IsTrue(db.StringSet(key, value));
             resp = (string)db.Execute($"{setCommand}", key, value, "px", "1000", "nx");
-            Assert.IsNull(resp);
+            ClassicAssert.IsNull(resp);
 
             // px .. xx, non-existing key
-            Assert.IsTrue(db.KeyDelete(key));
+            ClassicAssert.IsTrue(db.KeyDelete(key));
             resp = (string)db.Execute($"{setCommand}", key, value, "px", "1000", "xx");
-            Assert.IsNull(resp);
+            ClassicAssert.IsNull(resp);
 
             // px .. xx, existing key
-            Assert.IsTrue(db.StringSet(key, value));
+            ClassicAssert.IsTrue(db.StringSet(key, value));
             resp = (string)db.Execute($"{setCommand}", key, value, "px", "1000", "xx");
-            Assert.AreEqual(okResponse, resp);
+            ClassicAssert.AreEqual(okResponse, resp);
             Thread.Sleep(TimeSpan.FromSeconds(1.1));
             resp = (string)db.Execute($"{ttlCommand}", key);
-            Assert.IsTrue(int.TryParse(resp, out ttl));
-            Assert.AreEqual(-2, ttl);
+            ClassicAssert.IsTrue(int.TryParse(resp, out ttl));
+            ClassicAssert.AreEqual(-2, ttl);
         }
 
         [Test]
@@ -615,33 +616,33 @@ namespace Garnet.test
             string value = "lock-value";
 
             var success = db.LockTake(key, value, TimeSpan.FromSeconds(100));
-            Assert.IsTrue(success);
+            ClassicAssert.IsTrue(success);
 
             success = db.LockTake(key, value, TimeSpan.FromSeconds(100));
-            Assert.IsFalse(success);
+            ClassicAssert.IsFalse(success);
 
             success = db.LockRelease(key, value);
-            Assert.IsTrue(success);
+            ClassicAssert.IsTrue(success);
 
             success = db.LockRelease(key, value);
-            Assert.IsFalse(success);
+            ClassicAssert.IsFalse(success);
 
             success = db.LockTake(key, value, TimeSpan.FromSeconds(100));
-            Assert.IsTrue(success);
+            ClassicAssert.IsTrue(success);
 
             success = db.LockRelease(key, value);
-            Assert.IsTrue(success);
+            ClassicAssert.IsTrue(success);
 
             // Test auto-lock-release
             success = db.LockTake(key, value, TimeSpan.FromSeconds(1));
-            Assert.IsTrue(success);
+            ClassicAssert.IsTrue(success);
 
             Thread.Sleep(2000);
             success = db.LockTake(key, value, TimeSpan.FromSeconds(1));
-            Assert.IsTrue(success);
+            ClassicAssert.IsTrue(success);
 
             success = db.LockRelease(key, value);
-            Assert.IsTrue(success);
+            ClassicAssert.IsTrue(success);
         }
 
         [Test]
@@ -658,19 +659,19 @@ namespace Garnet.test
 
             var expectedResponse = "+OK\r\n";
             var response = lightClientRequest.Execute($"SET {strKey} {nVal}", expectedResponse.Length, bytesPerSend);
-            Assert.AreEqual(expectedResponse, response);
+            ClassicAssert.AreEqual(expectedResponse, response);
 
             expectedResponse = "$7\r\n-100000\r\n";
             response = lightClientRequest.Execute($"GET {strKey}", expectedResponse.Length, bytesPerSend);
-            Assert.AreEqual(expectedResponse, response);
+            ClassicAssert.AreEqual(expectedResponse, response);
 
             expectedResponse = ":-99999\r\n";
             response = lightClientRequest.Execute($"INCR {strKey}", expectedResponse.Length, bytesPerSend);
-            Assert.AreEqual(expectedResponse, response);
+            ClassicAssert.AreEqual(expectedResponse, response);
 
             expectedResponse = "$6\r\n-99999\r\n";
             response = lightClientRequest.Execute($"GET {strKey}", expectedResponse.Length, bytesPerSend);
-            Assert.AreEqual(expectedResponse, response);
+            ClassicAssert.AreEqual(expectedResponse, response);
         }
 
         [Test]
@@ -687,19 +688,19 @@ namespace Garnet.test
 
             var expectedResponse = "+OK\r\n";
             var response = lightClientRequest.Execute($"SET {strKey} {nVal}", expectedResponse.Length, bytesSent);
-            Assert.AreEqual(expectedResponse, response);
+            ClassicAssert.AreEqual(expectedResponse, response);
 
             expectedResponse = "$4\r\n1000\r\n";
             response = lightClientRequest.Execute($"GET {strKey}", expectedResponse.Length, bytesSent);
-            Assert.AreEqual(expectedResponse, response);
+            ClassicAssert.AreEqual(expectedResponse, response);
 
             expectedResponse = $":{nIncr + nVal}\r\n";
             response = lightClientRequest.Execute($"INCRBY {strKey} {nIncr}", expectedResponse.Length, bytesSent);
-            Assert.AreEqual(expectedResponse, response);
+            ClassicAssert.AreEqual(expectedResponse, response);
 
             expectedResponse = $"${(nIncr + nVal).ToString().Length}\r\n{nIncr + nVal}\r\n";
             response = lightClientRequest.Execute($"GET {strKey}", expectedResponse.Length, bytesSent);
-            Assert.AreEqual(expectedResponse, response);
+            ClassicAssert.AreEqual(expectedResponse, response);
         }
 
         [Test]
@@ -713,9 +714,9 @@ namespace Garnet.test
             // Key storing integer
             db.StringSet(strKey, nVal);
             long n = db.StringDecrement(strKey);
-            Assert.AreEqual(nVal - 1, n);
+            ClassicAssert.AreEqual(nVal - 1, n);
             long nRetVal = Convert.ToInt64(db.StringGet(strKey));
-            Assert.AreEqual(n, nRetVal);
+            ClassicAssert.AreEqual(n, nRetVal);
         }
 
         [Test]
@@ -733,7 +734,7 @@ namespace Garnet.test
             long n = db.StringDecrement(strKey, nDecr);
 
             int nRetVal = Convert.ToInt32(db.StringGet(strKey));
-            Assert.AreEqual(n, nRetVal);
+            ClassicAssert.AreEqual(n, nRetVal);
         }
 
         [Test]
@@ -750,7 +751,7 @@ namespace Garnet.test
             var retValStr = db.StringGet(strKey).ToString();
             int retVal = Convert.ToInt32(retValStr);
 
-            Assert.AreEqual(-decrBy, retVal);
+            ClassicAssert.AreEqual(-decrBy, retVal);
         }
 
         [Test]
@@ -765,7 +766,7 @@ namespace Garnet.test
 
             int retVal = Convert.ToInt32(db.StringGet(strKey));
 
-            Assert.AreEqual(1, retVal);
+            ClassicAssert.AreEqual(1, retVal);
 
             // Key storing integer
             strKey = "key2";
@@ -773,7 +774,7 @@ namespace Garnet.test
 
             retVal = Convert.ToInt32(db.StringGet(strKey));
 
-            Assert.AreEqual(-1, retVal);
+            ClassicAssert.AreEqual(-1, retVal);
         }
 
         [Test]
@@ -796,7 +797,7 @@ namespace Garnet.test
                 if (initialize)
                 {
                     var resp = db.StringSet(key, values[i]);
-                    Assert.AreEqual(true, resp);
+                    ClassicAssert.AreEqual(true, resp);
                 }
                 try
                 {
@@ -813,9 +814,9 @@ namespace Garnet.test
                 {
                     exception = true;
                     var msg = ex.Message;
-                    Assert.AreEqual("ERR value is not an integer or out of range.", msg);
+                    ClassicAssert.AreEqual("ERR value is not an integer or out of range.", msg);
                 }
-                Assert.IsTrue(exception);
+                ClassicAssert.IsTrue(exception);
             }
         }
 
@@ -855,9 +856,9 @@ namespace Garnet.test
             {
                 exception = true;
                 var msg = ex.Message;
-                Assert.AreEqual("ERR value is not an integer or out of range.", msg);
+                ClassicAssert.AreEqual("ERR value is not an integer or out of range.", msg);
             }
-            Assert.IsTrue(exception);
+            ClassicAssert.IsTrue(exception);
         }
 
         [Test]
@@ -872,7 +873,7 @@ namespace Garnet.test
             db.StringSet(strKey, nVal);
             db.KeyDelete(strKey);
             var retVal = Convert.ToBoolean(db.StringGet(strKey));
-            Assert.AreEqual(retVal, false);
+            ClassicAssert.AreEqual(retVal, false);
         }
 
         [Test]
@@ -891,13 +892,13 @@ namespace Garnet.test
             db.StringSet(key, value);
 
             var resp = (string)db.StringGet(key);
-            Assert.AreEqual(resp, value);
+            ClassicAssert.AreEqual(resp, value);
 
             var respDel = db.KeyDelete(key);
-            Assert.IsTrue(respDel);
+            ClassicAssert.IsTrue(respDel);
 
             respDel = db.KeyDelete(key);
-            Assert.IsFalse(respDel);
+            ClassicAssert.IsFalse(respDel);
         }
 
         private string GetRandomString(int len)
@@ -936,14 +937,14 @@ namespace Garnet.test
                 var pair = data[i];
 
                 var resp = (string)db.StringGet(pair.Item1);
-                Assert.AreEqual(resp, pair.Item2);
+                ClassicAssert.AreEqual(resp, pair.Item2);
 
                 var respDel = db.KeyDelete(pair.Item1);
                 resp = (string)db.StringGet(pair.Item1);
-                Assert.IsNull(resp);
+                ClassicAssert.IsNull(resp);
 
                 respDel = db.KeyDelete(pair.Item2);
-                Assert.IsFalse(respDel);
+                ClassicAssert.IsFalse(respDel);
             }
         }
 
@@ -976,10 +977,10 @@ namespace Garnet.test
             var keys = data.Select(x => (RedisKey)x.Item1).ToArray();
             var keysDeleted = db.KeyDeleteAsync(keys);
             keysDeleted.Wait();
-            Assert.AreEqual(keysDeleted.Result, 10);
+            ClassicAssert.AreEqual(keysDeleted.Result, 10);
 
             var keysDel = db.KeyDelete(keys);
-            Assert.AreEqual(keysDel, 0);
+            ClassicAssert.AreEqual(keysDel, 0);
         }
 
         [Test]
@@ -1009,10 +1010,10 @@ namespace Garnet.test
             var redisKeys = keys.Select(x => (RedisKey)x).ToArray();
             var keysDeleted = db.KeyDeleteAsync(redisKeys);
             keysDeleted.Wait();
-            Assert.AreEqual(keysDeleted.Result, 10);
+            ClassicAssert.AreEqual(keysDeleted.Result, 10);
 
             var keysDel = db.KeyDelete(redisKeys);
-            Assert.AreEqual(keysDel, 0);
+            ClassicAssert.AreEqual(keysDel, 0);
         }
 
         [Test]
@@ -1043,10 +1044,10 @@ namespace Garnet.test
 
             var keys = data.Select(x => (object)x.Item1).ToArray();
             var keysDeleted = (string)db.Execute("unlink", keys);
-            Assert.AreEqual(10, int.Parse(keysDeleted));
+            ClassicAssert.AreEqual(10, int.Parse(keysDeleted));
 
             keysDeleted = (string)db.Execute("unlink", keys);
-            Assert.AreEqual(0, int.Parse(keysDeleted));
+            ClassicAssert.AreEqual(0, int.Parse(keysDeleted));
         }
 
         [Test]
@@ -1075,10 +1076,10 @@ namespace Garnet.test
 
             var redisKey = keys.Select(x => (object)x).ToArray();
             var keysDeleted = (string)db.Execute("unlink", redisKey);
-            Assert.AreEqual(Int32.Parse(keysDeleted), 10);
+            ClassicAssert.AreEqual(Int32.Parse(keysDeleted), 10);
 
             keysDeleted = (string)db.Execute("unlink", redisKey);
-            Assert.AreEqual(Int32.Parse(keysDeleted), 0);
+            ClassicAssert.AreEqual(Int32.Parse(keysDeleted), 0);
         }
 
         [Test]
@@ -1097,14 +1098,14 @@ namespace Garnet.test
             // Key storing integer
             var nVal = 100;
             var strKey = "key1";
-            Assert.IsFalse(db.KeyExists(strKey));
+            ClassicAssert.IsFalse(db.KeyExists(strKey));
             db.StringSet(strKey, nVal);
 
             bool fExists = db.KeyExists("key1", CommandFlags.None);
-            Assert.AreEqual(fExists, true);
+            ClassicAssert.AreEqual(fExists, true);
 
             fExists = db.KeyExists("key2", CommandFlags.None);
-            Assert.AreEqual(fExists, false);
+            ClassicAssert.AreEqual(fExists, false);
         }
 
         [Test]
@@ -1114,12 +1115,12 @@ namespace Garnet.test
             var db = redis.GetDatabase(0);
 
             var key = "key";
-            Assert.IsFalse(db.KeyExists(key));
+            ClassicAssert.IsFalse(db.KeyExists(key));
 
             var listData = new RedisValue[] { "a", "b", "c", "d" };
             var count = db.ListLeftPush(key, listData);
-            Assert.AreEqual(4, count);
-            Assert.True(db.KeyExists(key));
+            ClassicAssert.AreEqual(4, count);
+            ClassicAssert.True(db.KeyExists(key));
         }
 
         [Test]
@@ -1129,15 +1130,15 @@ namespace Garnet.test
             var db = redis.GetDatabase(0);
 
             var count = db.ListLeftPush("listKey", ["a", "b", "c", "d"]);
-            Assert.AreEqual(4, count);
+            ClassicAssert.AreEqual(4, count);
 
             var zaddItems = db.SortedSetAdd("zset:test", [new SortedSetEntry("a", 1), new SortedSetEntry("b", 2)]);
-            Assert.AreEqual(2, zaddItems);
+            ClassicAssert.AreEqual(2, zaddItems);
 
             db.StringSet("foo", "bar");
 
             var exists = db.KeyExists(["key", "listKey", "zset:test", "foo"]);
-            Assert.AreEqual(3, exists);
+            ClassicAssert.AreEqual(3, exists);
         }
 
 
@@ -1153,10 +1154,10 @@ namespace Garnet.test
             db.KeyRename("key1", "key2");
             string retValue = db.StringGet("key2");
 
-            Assert.AreEqual(origValue, retValue);
+            ClassicAssert.AreEqual(origValue, retValue);
 
             origValue = db.StringGet("key1");
-            Assert.AreEqual(null, origValue);
+            ClassicAssert.AreEqual(null, origValue);
         }
 
         [Test]
@@ -1179,16 +1180,16 @@ namespace Garnet.test
             }
             catch (Exception ex)
             {
-                Assert.AreEqual("ERR no such key", ex.Message);
+                ClassicAssert.AreEqual("ERR no such key", ex.Message);
             }
 
             //2. Key rename oldKey.Equals(newKey)
             string origValue = "test1";
             db.StringSet("key1", origValue);
             bool renameRes = db.KeyRename("key1", "key1");
-            Assert.IsTrue(renameRes);
+            ClassicAssert.IsTrue(renameRes);
             string retValue = db.StringGet("key1");
-            Assert.AreEqual(origValue, retValue);
+            ClassicAssert.AreEqual(origValue, retValue);
         }
 
         [Test]
@@ -1200,19 +1201,19 @@ namespace Garnet.test
             var origList = new RedisValue[] { "a", "b", "c", "d" };
             var key1 = "lkey1";
             var count = db.ListRightPush(key1, origList);
-            Assert.AreEqual(4, count);
+            ClassicAssert.AreEqual(4, count);
 
             var result = db.ListRange(key1);
-            Assert.AreEqual(origList, result);
+            ClassicAssert.AreEqual(origList, result);
 
             var key2 = "lkey2";
             var rb = db.KeyRename(key1, key2);
-            Assert.IsTrue(rb);
+            ClassicAssert.IsTrue(rb);
             result = db.ListRange(key1);
-            Assert.AreEqual(Array.Empty<RedisValue>(), result);
+            ClassicAssert.AreEqual(Array.Empty<RedisValue>(), result);
 
             result = db.ListRange(key2);
-            Assert.AreEqual(origList, result);
+            ClassicAssert.AreEqual(origList, result);
         }
 
         [Test]
@@ -1221,7 +1222,7 @@ namespace Garnet.test
             using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
             var db = redis.GetDatabase(0);
             var reply = db.Execute("SELECT", "0");
-            Assert.IsTrue(reply.ToString() == "OK");
+            ClassicAssert.IsTrue(reply.ToString() == "OK");
             Assert.Throws<RedisServerException>(() => db.Execute("SELECT", "1"));
 
             //select again the def db
@@ -1235,7 +1236,7 @@ namespace Garnet.test
 
             var expectedResponse = "-ERR invalid database index.\r\n+PONG\r\n";
             var response = lightClientRequest.Execute("SELECT 1", "PING", expectedResponse.Length);
-            Assert.AreEqual(expectedResponse, response);
+            ClassicAssert.AreEqual(expectedResponse, response);
         }
 
         [Test]
@@ -1249,61 +1250,61 @@ namespace Garnet.test
 
             var expectedResponse = "+OK\r\n";
             var response = lightClientRequest.Execute("SETEX mykey 1 abcdefghij", expectedResponse.Length, bytesSent);
-            Assert.AreEqual(expectedResponse, response);
+            ClassicAssert.AreEqual(expectedResponse, response);
 
             // GET
             expectedResponse = "$10\r\nabcdefghij\r\n";
             response = lightClientRequest.Execute("GET mykey", expectedResponse.Length, bytesSent);
-            Assert.AreEqual(expectedResponse, response);
+            ClassicAssert.AreEqual(expectedResponse, response);
 
             Thread.Sleep(2000);
 
             // GET
             expectedResponse = "$-1\r\n";
             response = lightClientRequest.Execute("GET mykey", expectedResponse.Length, bytesSent);
-            Assert.AreEqual(expectedResponse, response);
+            ClassicAssert.AreEqual(expectedResponse, response);
 
             // DECR            
             expectedResponse = "+OK\r\n";
             response = lightClientRequest.Execute("SET mykeydecr 1", expectedResponse.Length, bytesSent);
-            Assert.AreEqual(expectedResponse, response);
+            ClassicAssert.AreEqual(expectedResponse, response);
 
             expectedResponse = ":0\r\n";
             response = lightClientRequest.Execute("DECR mykeydecr", expectedResponse.Length, bytesSent);
-            Assert.AreEqual(expectedResponse, response);
+            ClassicAssert.AreEqual(expectedResponse, response);
 
             expectedResponse = "$1\r\n0\r\n";
             response = lightClientRequest.Execute("GET mykeydecr", expectedResponse.Length, bytesSent);
-            Assert.AreEqual(expectedResponse, response);
+            ClassicAssert.AreEqual(expectedResponse, response);
 
             // DEL
             expectedResponse = ":1\r\n";
             response = lightClientRequest.Execute("DEL mykeydecr", expectedResponse.Length, bytesSent);
-            Assert.AreEqual(expectedResponse, response);
+            ClassicAssert.AreEqual(expectedResponse, response);
 
             expectedResponse = "$-1\r\n";
             response = lightClientRequest.Execute("GET mykeydecr", expectedResponse.Length, bytesSent);
-            Assert.AreEqual(expectedResponse, response);
+            ClassicAssert.AreEqual(expectedResponse, response);
 
             // EXISTS
             expectedResponse = ":0\r\n";
             response = lightClientRequest.Execute("EXISTS mykeydecr", expectedResponse.Length, bytesSent);
-            Assert.AreEqual(expectedResponse, response);
+            ClassicAssert.AreEqual(expectedResponse, response);
 
             // SET
             expectedResponse = "+OK\r\n";
             response = lightClientRequest.Execute("SET mykey 1", expectedResponse.Length, bytesSent);
-            Assert.AreEqual(expectedResponse, response);
+            ClassicAssert.AreEqual(expectedResponse, response);
 
             // RENAME
             expectedResponse = "+OK\r\n";
             response = lightClientRequest.Execute("RENAME mykey mynewkey", expectedResponse.Length, bytesSent);
-            Assert.AreEqual(expectedResponse, response);
+            ClassicAssert.AreEqual(expectedResponse, response);
 
             // GET
             expectedResponse = "$1\r\n1\r\n";
             response = lightClientRequest.Execute("GET mynewkey", expectedResponse.Length, bytesSent);
-            Assert.AreEqual(expectedResponse, response);
+            ClassicAssert.AreEqual(expectedResponse, response);
         }
 
 
@@ -1324,11 +1325,11 @@ namespace Garnet.test
             // MSET
             var expectedResponse = "+OK\r\n";
             var response = lightClientRequest.Execute($"MSET{sb}", expectedResponse.Length, bytesSent);
-            Assert.AreEqual(expectedResponse, response);
+            ClassicAssert.AreEqual(expectedResponse, response);
 
             expectedResponse = ":100\r\n";
             response = lightClientRequest.Execute($"DBSIZE", expectedResponse.Length, bytesSent);
-            Assert.AreEqual(expectedResponse, response);
+            ClassicAssert.AreEqual(expectedResponse, response);
 
             sb.Clear();
             for (int i = 1; i <= 100; i++)
@@ -1339,7 +1340,7 @@ namespace Garnet.test
             // MGET
             expectedResponse = "*100\r\n$2\r\n10\r\n$2\r\n20\r\n$2\r\n30\r\n$2\r\n40\r\n$2\r\n50\r\n$2\r\n60\r\n$2\r\n70\r\n$2\r\n80\r\n$2\r\n90\r\n$3\r\n100\r\n$3\r\n110\r\n$3\r\n120\r\n$3\r\n130\r\n$3\r\n140\r\n$3\r\n150\r\n$3\r\n160\r\n$3\r\n170\r\n$3\r\n180\r\n$3\r\n190\r\n$3\r\n200\r\n$3\r\n210\r\n$3\r\n220\r\n$3\r\n230\r\n$3\r\n240\r\n$3\r\n250\r\n$3\r\n260\r\n$3\r\n270\r\n$3\r\n280\r\n$3\r\n290\r\n$3\r\n300\r\n$3\r\n310\r\n$3\r\n320\r\n$3\r\n330\r\n$3\r\n340\r\n$3\r\n350\r\n$3\r\n360\r\n$3\r\n370\r\n$3\r\n380\r\n$3\r\n390\r\n$3\r\n400\r\n$3\r\n410\r\n$3\r\n420\r\n$3\r\n430\r\n$3\r\n440\r\n$3\r\n450\r\n$3\r\n460\r\n$3\r\n470\r\n$3\r\n480\r\n$3\r\n490\r\n$3\r\n500\r\n$3\r\n510\r\n$3\r\n520\r\n$3\r\n530\r\n$3\r\n540\r\n$3\r\n550\r\n$3\r\n560\r\n$3\r\n570\r\n$3\r\n580\r\n$3\r\n590\r\n$3\r\n600\r\n$3\r\n610\r\n$3\r\n620\r\n$3\r\n630\r\n$3\r\n640\r\n$3\r\n650\r\n$3\r\n660\r\n$3\r\n670\r\n$3\r\n680\r\n$3\r\n690\r\n$3\r\n700\r\n$3\r\n710\r\n$3\r\n720\r\n$3\r\n730\r\n$3\r\n740\r\n$3\r\n750\r\n$3\r\n760\r\n$3\r\n770\r\n$3\r\n780\r\n$3\r\n790\r\n$3\r\n800\r\n$3\r\n810\r\n$3\r\n820\r\n$3\r\n830\r\n$3\r\n840\r\n$3\r\n850\r\n$3\r\n860\r\n$3\r\n870\r\n$3\r\n880\r\n$3\r\n890\r\n$3\r\n900\r\n$3\r\n910\r\n$3\r\n920\r\n$3\r\n930\r\n$3\r\n940\r\n$3\r\n950\r\n$3\r\n960\r\n$3\r\n970\r\n$3\r\n980\r\n$3\r\n990\r\n$4\r\n1000\r\n";
             response = lightClientRequest.Execute($"MGET{sb}", expectedResponse.Length, bytesSent);
-            Assert.AreEqual(expectedResponse, response);
+            ClassicAssert.AreEqual(expectedResponse, response);
         }
 
         [Test]
@@ -1353,16 +1354,16 @@ namespace Garnet.test
             var expire = 2;
 
             var ttl = db.Execute("TTL", key);
-            Assert.AreEqual(-2, (int)ttl);
+            ClassicAssert.AreEqual(-2, (int)ttl);
 
             db.StringSet(key, val);
             ttl = db.Execute("TTL", key);
-            Assert.AreEqual(-1, (int)ttl);
+            ClassicAssert.AreEqual(-1, (int)ttl);
 
             db.KeyExpire(key, TimeSpan.FromSeconds(expire));
 
             var time = db.KeyTimeToLive(key);
-            Assert.IsTrue(time.Value.TotalSeconds > 0);
+            ClassicAssert.IsTrue(time.Value.TotalSeconds > 0);
 
             db.KeyExpire(key, TimeSpan.FromSeconds(expire));
             db.KeyPersist(key);
@@ -1370,10 +1371,10 @@ namespace Garnet.test
             Thread.Sleep((expire + 1) * 1000);
 
             var _val = db.StringGet(key);
-            Assert.AreEqual(val, _val.ToString());
+            ClassicAssert.AreEqual(val, _val.ToString());
 
             time = db.KeyTimeToLive(key);
-            Assert.IsNull(time);
+            ClassicAssert.IsNull(time);
         }
 
         [Test]
@@ -1386,17 +1387,17 @@ namespace Garnet.test
             var expire = 2;
 
             var ttl = db.Execute("TTL", key);
-            Assert.AreEqual(-2, (int)ttl);
+            ClassicAssert.AreEqual(-2, (int)ttl);
 
             db.SortedSetAdd(key, key, 1.0);
             ttl = db.Execute("TTL", key);
-            Assert.AreEqual(-1, (int)ttl);
+            ClassicAssert.AreEqual(-1, (int)ttl);
 
             db.KeyExpire(key, TimeSpan.FromSeconds(expire));
 
             var time = db.KeyTimeToLive(key);
-            Assert.IsNotNull(time);
-            Assert.IsTrue(time.Value.TotalSeconds > 0);
+            ClassicAssert.IsNotNull(time);
+            ClassicAssert.IsTrue(time.Value.TotalSeconds > 0);
         }
 
         [Test]
@@ -1409,24 +1410,24 @@ namespace Garnet.test
             var keyA = "keyA";
             db.StringSet(keyA, keyA);
             var response = db.KeyPersist(keyA);
-            Assert.IsFalse(response);
+            ClassicAssert.IsFalse(response);
 
             db.KeyExpire(keyA, TimeSpan.FromSeconds(expire));
             var time = db.KeyTimeToLive(keyA);
-            Assert.IsTrue(time.Value.TotalSeconds > 0);
+            ClassicAssert.IsTrue(time.Value.TotalSeconds > 0);
 
             response = db.KeyPersist(keyA);
-            Assert.IsTrue(response);
+            ClassicAssert.IsTrue(response);
 
             time = db.KeyTimeToLive(keyA);
-            Assert.IsTrue(time == null);
+            ClassicAssert.IsTrue(time == null);
 
             var value = db.StringGet(keyA);
-            Assert.AreEqual(value, keyA);
+            ClassicAssert.AreEqual(value, keyA);
 
             var noKey = "noKey";
             response = db.KeyPersist(noKey);
-            Assert.IsFalse(response);
+            ClassicAssert.IsFalse(response);
         }
 
         [Test]
@@ -1439,20 +1440,20 @@ namespace Garnet.test
             var keyA = "keyA";
             db.SortedSetAdd(keyA, [new SortedSetEntry("element", 1.0)]);
             var response = db.KeyPersist(keyA);
-            Assert.IsFalse(response);
+            ClassicAssert.IsFalse(response);
 
             db.KeyExpire(keyA, TimeSpan.FromSeconds(expire));
             var time = db.KeyTimeToLive(keyA);
-            Assert.IsTrue(time.Value.TotalSeconds > 0);
+            ClassicAssert.IsTrue(time.Value.TotalSeconds > 0);
 
             response = db.KeyPersist(keyA);
-            Assert.IsTrue(response);
+            ClassicAssert.IsTrue(response);
 
             time = db.KeyTimeToLive(keyA);
-            Assert.IsTrue(time == null);
+            ClassicAssert.IsTrue(time == null);
 
             var value = db.SortedSetScore(keyA, "element");
-            Assert.AreEqual(1.0, value);
+            ClassicAssert.AreEqual(1.0, value);
         }
 
         [Test]
@@ -1467,7 +1468,7 @@ namespace Garnet.test
             db.StringSet(key, key);
 
             var value = db.StringGet(key);
-            Assert.AreEqual(key, (string)value);
+            ClassicAssert.AreEqual(key, (string)value);
 
             if (command.Equals("EXPIRE"))
                 db.KeyExpire(key, TimeSpan.FromSeconds(1));
@@ -1477,7 +1478,7 @@ namespace Garnet.test
             Thread.Sleep(1500);
 
             value = db.StringGet(key);
-            Assert.AreEqual(null, (string)value);
+            ClassicAssert.AreEqual(null, (string)value);
         }
 
         [Test]
@@ -1492,34 +1493,34 @@ namespace Garnet.test
             db.SortedSetAdd(key, [new SortedSetEntry("element", 1.0)]);
 
             var value = db.SortedSetScore(key, "element");
-            Assert.AreEqual(1.0, value, "Get Score before expiration");
+            ClassicAssert.AreEqual(1.0, value, "Get Score before expiration");
 
             var actualDbSize = db.Execute("DBSIZE");
-            Assert.AreEqual(1, (ulong)actualDbSize, "DBSIZE before expiration");
+            ClassicAssert.AreEqual(1, (ulong)actualDbSize, "DBSIZE before expiration");
 
             var actualKeys = db.Execute("KEYS", ["*"]);
-            Assert.AreEqual(1, ((RedisResult[])actualKeys).Length, "KEYS before expiration");
+            ClassicAssert.AreEqual(1, ((RedisResult[])actualKeys).Length, "KEYS before expiration");
 
             var actualScan = db.Execute("SCAN", "0");
-            Assert.AreEqual(1, ((RedisValue[])((RedisResult[])actualScan!)[1]).Length, "SCAN before expiration");
+            ClassicAssert.AreEqual(1, ((RedisValue[])((RedisResult[])actualScan!)[1]).Length, "SCAN before expiration");
 
             var exp = db.KeyExpire(key, command.Equals("EXPIRE") ? TimeSpan.FromSeconds(1) : TimeSpan.FromMilliseconds(1000));
-            Assert.IsTrue(exp);
+            ClassicAssert.IsTrue(exp);
 
             // Sleep to wait for expiration
             Thread.Sleep(1500);
 
             value = db.SortedSetScore(key, "element");
-            Assert.AreEqual(null, value, "Get Score after expiration");
+            ClassicAssert.AreEqual(null, value, "Get Score after expiration");
 
             actualDbSize = db.Execute("DBSIZE");
-            Assert.AreEqual(0, (ulong)actualDbSize, "DBSIZE after expiration");
+            ClassicAssert.AreEqual(0, (ulong)actualDbSize, "DBSIZE after expiration");
 
             actualKeys = db.Execute("KEYS", ["*"]);
-            Assert.AreEqual(0, ((RedisResult[])actualKeys).Length, "KEYS after expiration");
+            ClassicAssert.AreEqual(0, ((RedisResult[])actualKeys).Length, "KEYS after expiration");
 
             actualScan = db.Execute("SCAN", "0");
-            Assert.AreEqual(0, ((RedisValue[])((RedisResult[])actualScan!)[1]).Length, "SCAN after expiration");
+            ClassicAssert.AreEqual(0, ((RedisValue[])((RedisResult[])actualScan!)[1]).Length, "SCAN after expiration");
         }
 
         [Test]
@@ -1536,54 +1537,54 @@ namespace Garnet.test
 
             args[2] = "XX";// XX -- Set expiry only when the key has an existing expiry
             bool resp = (bool)db.Execute($"{command}", args);
-            Assert.IsFalse(resp);//XX return false no existing expiry
+            ClassicAssert.IsFalse(resp);//XX return false no existing expiry
 
             args[2] = "NX";// NX -- Set expiry only when the key has no expiry
             resp = (bool)db.Execute($"{command}", args);
-            Assert.IsTrue(resp);// NX return true no existing expiry
+            ClassicAssert.IsTrue(resp);// NX return true no existing expiry
 
             args[2] = "NX";// NX -- Set expiry only when the key has no expiry
             resp = (bool)db.Execute($"{command}", args);
-            Assert.IsFalse(resp);// NX return false existing expiry
+            ClassicAssert.IsFalse(resp);// NX return false existing expiry
 
             args[1] = 50;
             args[2] = "XX";// XX -- Set expiry only when the key has an existing expiry
             resp = (bool)db.Execute($"{command}", args);
-            Assert.IsTrue(resp);// XX return true existing expiry
+            ClassicAssert.IsTrue(resp);// XX return true existing expiry
             var time = db.KeyTimeToLive(key);
-            Assert.IsTrue(time.Value.TotalSeconds <= (double)((int)args[1]) && time.Value.TotalSeconds > 0);
+            ClassicAssert.IsTrue(time.Value.TotalSeconds <= (double)((int)args[1]) && time.Value.TotalSeconds > 0);
 
             args[1] = 1;
             args[2] = "GT";// GT -- Set expiry only when the new expiry is greater than current one
             resp = (bool)db.Execute($"{command}", args);
-            Assert.IsFalse(resp); // GT return false new expiry < current expiry
+            ClassicAssert.IsFalse(resp); // GT return false new expiry < current expiry
 
             args[1] = 1000;
             args[2] = "GT";// GT -- Set expiry only when the new expiry is greater than current one
             resp = (bool)db.Execute($"{command}", args);
-            Assert.IsTrue(resp); // GT return true new expiry > current expiry
+            ClassicAssert.IsTrue(resp); // GT return true new expiry > current expiry
             time = db.KeyTimeToLive(key);
 
             if (command.Equals("EXPIRE"))
-                Assert.IsTrue(time.Value.TotalSeconds > 500);
+                ClassicAssert.IsTrue(time.Value.TotalSeconds > 500);
             else
-                Assert.IsTrue(time.Value.TotalMilliseconds > 500);
+                ClassicAssert.IsTrue(time.Value.TotalMilliseconds > 500);
 
             args[1] = 2000;
             args[2] = "LT";// LT -- Set expiry only when the new expiry is less than current one
             resp = (bool)db.Execute($"{command}", args);
-            Assert.IsFalse(resp); // LT return false new expiry > current expiry
+            ClassicAssert.IsFalse(resp); // LT return false new expiry > current expiry
 
             args[1] = 15;
             args[2] = "LT";// LT -- Set expiry only when the new expiry is less than current one
             resp = (bool)db.Execute($"{command}", args);
-            Assert.IsTrue(resp); // LT return true new expiry < current expiry
+            ClassicAssert.IsTrue(resp); // LT return true new expiry < current expiry
             time = db.KeyTimeToLive(key);
 
             if (command.Equals("EXPIRE"))
-                Assert.IsTrue(time.Value.TotalSeconds <= (double)((int)args[1]) && time.Value.TotalSeconds > 0);
+                ClassicAssert.IsTrue(time.Value.TotalSeconds <= (double)((int)args[1]) && time.Value.TotalSeconds > 0);
             else
-                Assert.IsTrue(time.Value.TotalMilliseconds <= (double)((int)args[1]) && time.Value.TotalMilliseconds > 0);
+                ClassicAssert.IsTrue(time.Value.TotalMilliseconds <= (double)((int)args[1]) && time.Value.TotalMilliseconds > 0);
         }
 
         [Test]
@@ -1599,75 +1600,75 @@ namespace Garnet.test
                 db.KeyDelete(key);
                 db.SetAdd(key, "v1");
 
-                Assert.IsTrue(db.KeyExists(key), $"KeyExists after initial add");
-                Assert.AreEqual("1", db.Execute("EXISTS", key).ToString(), "EXISTS after initial add");
+                ClassicAssert.IsTrue(db.KeyExists(key), $"KeyExists after initial add");
+                ClassicAssert.AreEqual("1", db.Execute("EXISTS", key).ToString(), "EXISTS after initial add");
                 var actualScan = db.Execute("SCAN", "0");
-                Assert.AreEqual(1, ((RedisValue[])((RedisResult[])actualScan!)[1]).Length, "SCAN after initial ADD");
+                ClassicAssert.AreEqual(1, ((RedisValue[])((RedisResult[])actualScan!)[1]).Length, "SCAN after initial ADD");
 
                 db.KeyExpire(key, TimeSpan.FromSeconds(1));
                 await Task.Delay(TimeSpan.FromSeconds(2));
 
-                Assert.IsFalse(db.KeyExists(key), $"KeyExists after expiration");
-                Assert.AreEqual("0", db.Execute("EXISTS", key).ToString(), "EXISTS after ADD expiration");
+                ClassicAssert.IsFalse(db.KeyExists(key), $"KeyExists after expiration");
+                ClassicAssert.AreEqual("0", db.Execute("EXISTS", key).ToString(), "EXISTS after ADD expiration");
                 actualScan = db.Execute("SCAN", "0");
-                Assert.AreEqual(0, ((RedisValue[])((RedisResult[])actualScan!)[1]).Length, "SCAN after ADD expiration");
+                ClassicAssert.AreEqual(0, ((RedisValue[])((RedisResult[])actualScan!)[1]).Length, "SCAN after ADD expiration");
 
                 db.SetAdd(key, "v2");
 
-                Assert.IsTrue(db.KeyExists(key), $"KeyExists after initial re-ADD");
-                Assert.AreEqual("1", db.Execute("EXISTS", key).ToString(), "EXISTS after initial re-ADD");
+                ClassicAssert.IsTrue(db.KeyExists(key), $"KeyExists after initial re-ADD");
+                ClassicAssert.AreEqual("1", db.Execute("EXISTS", key).ToString(), "EXISTS after initial re-ADD");
                 actualScan = db.Execute("SCAN", "0");
-                Assert.AreEqual(1, ((RedisValue[])((RedisResult[])actualScan!)[1]).Length, "SCAN after initial re-ADD");
+                ClassicAssert.AreEqual(1, ((RedisValue[])((RedisResult[])actualScan!)[1]).Length, "SCAN after initial re-ADD");
             }
             // List
             {
                 db.KeyDelete(key);
                 db.ListRightPush(key, "v1");
 
-                Assert.IsTrue(db.KeyExists(key), $"KeyExists after initial RPUSH");
-                Assert.AreEqual("1", db.Execute("EXISTS", key).ToString(), "EXISTS after initial RPUSH");
+                ClassicAssert.IsTrue(db.KeyExists(key), $"KeyExists after initial RPUSH");
+                ClassicAssert.AreEqual("1", db.Execute("EXISTS", key).ToString(), "EXISTS after initial RPUSH");
                 var actualScan = db.Execute("SCAN", "0");
-                Assert.AreEqual(1, ((RedisValue[])((RedisResult[])actualScan!)[1]).Length, "SCAN after initial RPUSH");
+                ClassicAssert.AreEqual(1, ((RedisValue[])((RedisResult[])actualScan!)[1]).Length, "SCAN after initial RPUSH");
 
                 db.KeyExpire(key, TimeSpan.FromSeconds(1));
                 await Task.Delay(TimeSpan.FromSeconds(2));
 
-                Assert.IsFalse(db.KeyExists(key), $"KeyExists after expiration");
-                Assert.AreEqual("0", db.Execute("EXISTS", key).ToString(), "EXISTS after RPUSH expiration");
+                ClassicAssert.IsFalse(db.KeyExists(key), $"KeyExists after expiration");
+                ClassicAssert.AreEqual("0", db.Execute("EXISTS", key).ToString(), "EXISTS after RPUSH expiration");
                 actualScan = db.Execute("SCAN", "0");
-                Assert.AreEqual(0, ((RedisValue[])((RedisResult[])actualScan!)[1]).Length, "SCAN after RPUSH expiration");
+                ClassicAssert.AreEqual(0, ((RedisValue[])((RedisResult[])actualScan!)[1]).Length, "SCAN after RPUSH expiration");
 
                 db.ListRightPush(key, "v2");
 
-                Assert.IsTrue(db.KeyExists(key), $"KeyExists after initial re-RPUSH");
-                Assert.AreEqual("1", db.Execute("EXISTS", key).ToString(), "EXISTS after initial re-RPUSH");
+                ClassicAssert.IsTrue(db.KeyExists(key), $"KeyExists after initial re-RPUSH");
+                ClassicAssert.AreEqual("1", db.Execute("EXISTS", key).ToString(), "EXISTS after initial re-RPUSH");
                 actualScan = db.Execute("SCAN", "0");
-                Assert.AreEqual(1, ((RedisValue[])((RedisResult[])actualScan!)[1]).Length, "SCAN after initial re-RPUSH");
+                ClassicAssert.AreEqual(1, ((RedisValue[])((RedisResult[])actualScan!)[1]).Length, "SCAN after initial re-RPUSH");
             }
             // Hash
             {
                 db.KeyDelete(key);
                 db.HashSet(key, "f1", "v1");
 
-                Assert.IsTrue(db.KeyExists(key), $"KeyExists after initial HSET");
-                Assert.AreEqual("1", db.Execute("EXISTS", key).ToString(), "EXISTS after initial HSET");
+                ClassicAssert.IsTrue(db.KeyExists(key), $"KeyExists after initial HSET");
+                ClassicAssert.AreEqual("1", db.Execute("EXISTS", key).ToString(), "EXISTS after initial HSET");
                 var actualScan = db.Execute("SCAN", "0");
-                Assert.AreEqual(1, ((RedisValue[])((RedisResult[])actualScan!)[1]).Length, "SCAN after initial HSET");
+                ClassicAssert.AreEqual(1, ((RedisValue[])((RedisResult[])actualScan!)[1]).Length, "SCAN after initial HSET");
 
                 db.KeyExpire(key, TimeSpan.FromSeconds(1));
                 await Task.Delay(TimeSpan.FromSeconds(2));
 
-                Assert.IsFalse(db.KeyExists(key), $"KeyExists after expiration");
-                Assert.AreEqual("0", db.Execute("EXISTS", key).ToString(), "EXISTS after HSET expiration");
+                ClassicAssert.IsFalse(db.KeyExists(key), $"KeyExists after expiration");
+                ClassicAssert.AreEqual("0", db.Execute("EXISTS", key).ToString(), "EXISTS after HSET expiration");
                 actualScan = db.Execute("SCAN", "0");
-                Assert.AreEqual(0, ((RedisValue[])((RedisResult[])actualScan!)[1]).Length, "SCAN after HSET expiration");
+                ClassicAssert.AreEqual(0, ((RedisValue[])((RedisResult[])actualScan!)[1]).Length, "SCAN after HSET expiration");
 
                 db.HashSet(key, "f1", "v2");
 
-                Assert.IsTrue(db.KeyExists(key), $"KeyExists after initial re-HSET");
-                Assert.AreEqual("1", db.Execute("EXISTS", key).ToString(), "EXISTS after initial re-HSET");
+                ClassicAssert.IsTrue(db.KeyExists(key), $"KeyExists after initial re-HSET");
+                ClassicAssert.AreEqual("1", db.Execute("EXISTS", key).ToString(), "EXISTS after initial re-HSET");
                 actualScan = db.Execute("SCAN", "0");
-                Assert.AreEqual(1, ((RedisValue[])((RedisResult[])actualScan!)[1]).Length, "SCAN after initial re-HSET");
+                ClassicAssert.AreEqual(1, ((RedisValue[])((RedisResult[])actualScan!)[1]).Length, "SCAN after initial re-HSET");
             }
         }
 
@@ -1681,23 +1682,23 @@ namespace Garnet.test
             const string key = "test:1";
 
             // Do StringSet
-            Assert.IsTrue(db.StringSet(key, "v1"));
+            ClassicAssert.IsTrue(db.StringSet(key, "v1"));
 
             // Do SetAdd using the same key
-            Assert.IsTrue(db.SetAdd(key, "v2"));
+            ClassicAssert.IsTrue(db.SetAdd(key, "v2"));
 
             // Two keys "test:1" - this is expected as of now
             // because Garnet has a separate main and object store
             var keys = server.Keys(db.Database, key).ToList();
-            Assert.AreEqual(2, keys.Count);
-            Assert.AreEqual(key, (string)keys[0]);
-            Assert.AreEqual(key, (string)keys[1]);
+            ClassicAssert.AreEqual(2, keys.Count);
+            ClassicAssert.AreEqual(key, (string)keys[0]);
+            ClassicAssert.AreEqual(key, (string)keys[1]);
 
             // do ListRightPush using the same key, expected error
             var ex = Assert.Throws<RedisServerException>(() => db.ListRightPush(key, "v3"));
             var expectedError = Encoding.ASCII.GetString(CmdStrings.RESP_ERR_WRONG_TYPE);
-            Assert.IsNotNull(ex);
-            Assert.AreEqual(expectedError, ex.Message);
+            ClassicAssert.IsNotNull(ex);
+            ClassicAssert.AreEqual(expectedError, ex.Message);
         }
 
         [Test]
@@ -1710,111 +1711,111 @@ namespace Garnet.test
             string value = "0123456789";
 
             var resp = (string)db.StringGetRange(key, 2, 10);
-            Assert.AreEqual(string.Empty, resp);
-            Assert.AreEqual(true, db.StringSet(key, value));
+            ClassicAssert.AreEqual(string.Empty, resp);
+            ClassicAssert.AreEqual(true, db.StringSet(key, value));
 
             //0,0
             resp = (string)db.StringGetRange(key, 0, 0);
-            Assert.AreEqual("0", resp);
+            ClassicAssert.AreEqual("0", resp);
 
             //actual value
             resp = (string)db.StringGetRange(key, 0, -1);
-            Assert.AreEqual(value, resp);
+            ClassicAssert.AreEqual(value, resp);
 
             #region testA
             //s[2,len] s < e & e = len
             resp = (string)db.StringGetRange(key, 2, 10);
-            Assert.AreEqual(value.Substring(2), resp);
+            ClassicAssert.AreEqual(value.Substring(2), resp);
 
             //s[2,len] s < e & e = len - 1
             resp = (string)db.StringGetRange(key, 2, 9);
-            Assert.AreEqual(value.Substring(2), resp);
+            ClassicAssert.AreEqual(value.Substring(2), resp);
 
             //s[2,len] s < e < len
             resp = (string)db.StringGetRange(key, 2, 5);
-            Assert.AreEqual(value.Substring(2, 4), resp);
+            ClassicAssert.AreEqual(value.Substring(2, 4), resp);
 
             //s[2,len] s < len < e
             resp = (string)db.StringGetRange(key, 2, 15);
-            Assert.AreEqual(value.Substring(2), resp);
+            ClassicAssert.AreEqual(value.Substring(2), resp);
 
             //s[4,len] e < s < len
             resp = (string)db.StringGetRange(key, 4, 2);
-            Assert.AreEqual("", resp);
+            ClassicAssert.AreEqual("", resp);
 
             //s[4,len] e < 0 < s < len
             resp = (string)db.StringGetRange(key, 4, -2);
-            Assert.AreEqual(value.Substring(4, 5), resp);
+            ClassicAssert.AreEqual(value.Substring(4, 5), resp);
 
             //s[4,len] e < -len < 0 < s < len
             resp = (string)db.StringGetRange(key, 4, -12);
-            Assert.AreEqual("", resp);
+            ClassicAssert.AreEqual("", resp);
             #endregion
 
             #region testB
             //-len < s < 0 < len < e
             resp = (string)db.StringGetRange(key, -4, 15);
-            Assert.AreEqual(value.Substring(6, 4), resp);
+            ClassicAssert.AreEqual(value.Substring(6, 4), resp);
 
             //-len < s < 0 < e < len where len + s > e
             resp = (string)db.StringGetRange(key, -4, 5);
-            Assert.AreEqual("", resp);
+            ClassicAssert.AreEqual("", resp);
 
             //-len < s < 0 < e < len where len + s < e
             resp = (string)db.StringGetRange(key, -4, 8);
-            Assert.AreEqual(value.Substring(value.Length - 4, 2), resp);
+            ClassicAssert.AreEqual(value.Substring(value.Length - 4, 2), resp);
 
             //-len < s < e < 0
             resp = (string)db.StringGetRange(key, -4, -1);
-            Assert.AreEqual(value.Substring(value.Length - 4, 4), resp);
+            ClassicAssert.AreEqual(value.Substring(value.Length - 4, 4), resp);
 
             //-len < e < s < 0
             resp = (string)db.StringGetRange(key, -4, -7);
-            Assert.AreEqual("", resp);
+            ClassicAssert.AreEqual("", resp);
             #endregion
 
             //range start > end > len
             resp = (string)db.StringGetRange(key, 17, 13);
-            Assert.AreEqual("", resp);
+            ClassicAssert.AreEqual("", resp);
 
             //range 0 > start > end
             resp = (string)db.StringGetRange(key, -1, -4);
-            Assert.AreEqual("", resp);
+            ClassicAssert.AreEqual("", resp);
 
             //equal offsets
             resp = db.StringGetRange(key, 4, 4);
-            Assert.AreEqual("4", resp);
+            ClassicAssert.AreEqual("4", resp);
 
             //equal offsets
             resp = db.StringGetRange(key, -4, -4);
-            Assert.AreEqual("6", resp);
+            ClassicAssert.AreEqual("6", resp);
 
             //equal offsets
             resp = db.StringGetRange(key, -100, -100);
-            Assert.AreEqual("0", resp);
+            ClassicAssert.AreEqual("0", resp);
 
             //equal offsets
             resp = db.StringGetRange(key, -101, -101);
-            Assert.AreEqual("9", resp);
+            ClassicAssert.AreEqual("9", resp);
 
             //start larger than end
             resp = db.StringGetRange(key, -1, -3);
-            Assert.AreEqual("", resp);
+            ClassicAssert.AreEqual("", resp);
 
             //2,-1 -> 2 9
             var negend = -1;
             resp = db.StringGetRange(key, 2, negend);
-            Assert.AreEqual(value.Substring(2, 8), resp);
+            ClassicAssert.AreEqual(value.Substring(2, 8), resp);
 
             //2,-3 -> 2 7
             negend = -3;
             resp = db.StringGetRange(key, 2, negend);
-            Assert.AreEqual(value.Substring(2, 6), resp);
+            ClassicAssert.AreEqual(value.Substring(2, 6), resp);
 
             //-5,-3 -> 5,7
             var negstart = -5;
             resp = db.StringGetRange(key, negstart, negend);
-            Assert.AreEqual(value.Substring(5, 3), resp);
+            ClassicAssert.AreEqual(value.Substring(5, 3), resp);
         }
 
         [Test]
@@ -1829,17 +1830,17 @@ namespace Garnet.test
 
             // new key, length 10, offset 0 -> 10 ("0123456789")
             var resp = (string)db.StringSetRange(key, 0, value);
-            Assert.AreEqual("10", resp);
+            ClassicAssert.AreEqual("10", resp);
             resp = db.StringGet(key);
-            Assert.AreEqual("0123456789", resp);
-            Assert.IsTrue(db.KeyDelete(key));
+            ClassicAssert.AreEqual("0123456789", resp);
+            ClassicAssert.IsTrue(db.KeyDelete(key));
 
             // new key, length 10, offset 5 -> 15 ("\0\0\0\0\00123456789")
             resp = db.StringSetRange(key, 5, value);
-            Assert.AreEqual("15", resp);
+            ClassicAssert.AreEqual("15", resp);
             resp = db.StringGet(key);
-            Assert.AreEqual("\0\0\0\0\00123456789", resp);
-            Assert.IsTrue(db.KeyDelete(key));
+            ClassicAssert.AreEqual("\0\0\0\0\00123456789", resp);
+            ClassicAssert.IsTrue(db.KeyDelete(key));
 
             // new key, length 10, offset -1 -> RedisServerException ("ERR offset is out of range")
             try
@@ -1849,43 +1850,43 @@ namespace Garnet.test
             }
             catch (RedisServerException ex)
             {
-                Assert.AreEqual(Encoding.ASCII.GetString(CmdStrings.RESP_ERR_GENERIC_OFFSETOUTOFRANGE), ex.Message);
+                ClassicAssert.AreEqual(Encoding.ASCII.GetString(CmdStrings.RESP_ERR_GENERIC_OFFSETOUTOFRANGE), ex.Message);
             }
 
             // existing key, length 10, offset 0, value length 5 -> 10 ("ABCDE56789")
-            Assert.IsTrue(db.StringSet(key, value));
+            ClassicAssert.IsTrue(db.StringSet(key, value));
             resp = db.StringSetRange(key, 0, newValue);
-            Assert.AreEqual("10", resp);
+            ClassicAssert.AreEqual("10", resp);
             resp = db.StringGet(key);
-            Assert.AreEqual("ABCDE56789", resp);
-            Assert.IsTrue(db.KeyDelete(key));
+            ClassicAssert.AreEqual("ABCDE56789", resp);
+            ClassicAssert.IsTrue(db.KeyDelete(key));
 
             // existing key, length 10, offset 5, value length 5 -> 10 ("01234ABCDE")
-            Assert.IsTrue(db.StringSet(key, value));
+            ClassicAssert.IsTrue(db.StringSet(key, value));
             resp = db.StringSetRange(key, 5, newValue);
-            Assert.AreEqual("10", resp);
+            ClassicAssert.AreEqual("10", resp);
             resp = db.StringGet(key);
-            Assert.AreEqual("01234ABCDE", resp);
-            Assert.IsTrue(db.KeyDelete(key));
+            ClassicAssert.AreEqual("01234ABCDE", resp);
+            ClassicAssert.IsTrue(db.KeyDelete(key));
 
             // existing key, length 10, offset 10, value length 5 -> 15 ("0123456789ABCDE")
-            Assert.IsTrue(db.StringSet(key, value));
+            ClassicAssert.IsTrue(db.StringSet(key, value));
             resp = db.StringSetRange(key, 10, newValue);
-            Assert.AreEqual("15", resp);
+            ClassicAssert.AreEqual("15", resp);
             resp = db.StringGet(key);
-            Assert.AreEqual("0123456789ABCDE", resp);
-            Assert.IsTrue(db.KeyDelete(key));
+            ClassicAssert.AreEqual("0123456789ABCDE", resp);
+            ClassicAssert.IsTrue(db.KeyDelete(key));
 
             // existing key, length 10, offset 15, value length 5 -> 20 ("0123456789\0\0\0\0\0ABCDE")
-            Assert.IsTrue(db.StringSet(key, value));
+            ClassicAssert.IsTrue(db.StringSet(key, value));
             resp = db.StringSetRange(key, 15, newValue);
-            Assert.AreEqual("20", resp);
+            ClassicAssert.AreEqual("20", resp);
             resp = db.StringGet(key);
-            Assert.AreEqual("0123456789\0\0\0\0\0ABCDE", resp);
-            Assert.IsTrue(db.KeyDelete(key));
+            ClassicAssert.AreEqual("0123456789\0\0\0\0\0ABCDE", resp);
+            ClassicAssert.IsTrue(db.KeyDelete(key));
 
             // existing key, length 10, offset -1, value length 5 -> RedisServerException ("ERR offset is out of range")
-            Assert.IsTrue(db.StringSet(key, value));
+            ClassicAssert.IsTrue(db.StringSet(key, value));
             try
             {
                 db.StringSetRange(key, -1, newValue);
@@ -1893,7 +1894,7 @@ namespace Garnet.test
             }
             catch (RedisServerException ex)
             {
-                Assert.AreEqual(Encoding.ASCII.GetString(CmdStrings.RESP_ERR_GENERIC_OFFSETOUTOFRANGE), ex.Message);
+                ClassicAssert.AreEqual(Encoding.ASCII.GetString(CmdStrings.RESP_ERR_GENERIC_OFFSETOUTOFRANGE), ex.Message);
             }
         }
 
@@ -1904,7 +1905,7 @@ namespace Garnet.test
             var db = redis.GetDatabase(0);
 
             string result = (string)db.Execute("PING");
-            Assert.AreEqual("PONG", result);
+            ClassicAssert.AreEqual("PONG", result);
         }
 
         [Test]
@@ -1914,7 +1915,7 @@ namespace Garnet.test
             var db = redis.GetDatabase(0);
 
             string result = (string)db.Execute("ASKING");
-            Assert.AreEqual("OK", result);
+            ClassicAssert.AreEqual("OK", result);
         }
 
         [Test]
@@ -1934,19 +1935,19 @@ namespace Garnet.test
 
             db.StringSet(keyA, keyA, keepTtl: true);
             var time = db.KeyTimeToLive(keyA);
-            Assert.IsTrue(time.Value.Ticks > 0);
+            ClassicAssert.IsTrue(time.Value.Ticks > 0);
 
             db.StringSet(keyB, keyB, keepTtl: false);
             time = db.KeyTimeToLive(keyB);
-            Assert.IsTrue(time == null);
+            ClassicAssert.IsTrue(time == null);
 
             Thread.Sleep(expire * 1000 + 100);
 
             string value = db.StringGet(keyA);
-            Assert.AreEqual(null, value);
+            ClassicAssert.AreEqual(null, value);
 
             value = db.StringGet(keyB);
-            Assert.AreEqual(keyB, value);
+            ClassicAssert.AreEqual(keyB, value);
         }
 
         [Test]
@@ -1954,9 +1955,9 @@ namespace Garnet.test
         {
             using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
             var db = redis.GetDatabase(0);
-            Assert.IsTrue(db.StringSet("mykey", "foo bar"));
-            Assert.IsTrue(db.StringLength("mykey") == 7);
-            Assert.IsTrue(db.StringLength("nokey") == 0);
+            ClassicAssert.IsTrue(db.StringSet("mykey", "foo bar"));
+            ClassicAssert.IsTrue(db.StringLength("mykey") == 7);
+            ClassicAssert.IsTrue(db.StringLength("nokey") == 0);
         }
 
         [Test]
@@ -1970,28 +1971,28 @@ namespace Garnet.test
             var expireTimeInMilliseconds = 3000;
 
             var pttl = db.Execute("PTTL", key);
-            Assert.AreEqual(-2, (int)pttl);
+            ClassicAssert.AreEqual(-2, (int)pttl);
 
             db.StringSet(key, val);
             pttl = db.Execute("PTTL", key);
-            Assert.AreEqual(-1, (int)pttl);
+            ClassicAssert.AreEqual(-1, (int)pttl);
 
             db.KeyExpire(key, TimeSpan.FromMilliseconds(expireTimeInMilliseconds));
 
             //check TTL of the key in milliseconds
             pttl = db.Execute("PTTL", key);
 
-            Assert.IsTrue(long.TryParse(pttl.ToString(), out var pttlInMs));
-            Assert.IsTrue(pttlInMs > 0);
+            ClassicAssert.IsTrue(long.TryParse(pttl.ToString(), out var pttlInMs));
+            ClassicAssert.IsTrue(pttlInMs > 0);
 
             db.KeyPersist(key);
             Thread.Sleep(expireTimeInMilliseconds);
 
             var _val = db.StringGet(key);
-            Assert.AreEqual(val, _val.ToString());
+            ClassicAssert.AreEqual(val, _val.ToString());
 
             var ttl = db.KeyTimeToLive(key);
-            Assert.IsNull(ttl);
+            ClassicAssert.IsNull(ttl);
         }
 
         [Test]
@@ -2006,32 +2007,32 @@ namespace Garnet.test
             // Key Setup
             db.StringSet(key, val);
             var retval = db.StringGet(key);
-            Assert.AreEqual(val, retval.ToString());
+            ClassicAssert.AreEqual(val, retval.ToString());
 
             retval = db.StringGetDelete(key);
-            Assert.AreEqual(val, retval.ToString());
+            ClassicAssert.AreEqual(val, retval.ToString());
 
             // Try retrieving already deleted key
             retval = db.StringGetDelete(key);
-            Assert.AreEqual(string.Empty, retval.ToString());
+            ClassicAssert.AreEqual(string.Empty, retval.ToString());
 
             // Try retrieving & deleting non-existent key
             retval = db.StringGetDelete("nonExistentKey");
-            Assert.AreEqual(string.Empty, retval.ToString());
+            ClassicAssert.AreEqual(string.Empty, retval.ToString());
 
             // Key setup with metadata
             key = "myKeyWithMetadata";
             val = "myValueWithMetadata";
             db.StringSet(key, val, expiry: TimeSpan.FromSeconds(10000));
             retval = db.StringGet(key);
-            Assert.AreEqual(val, retval.ToString());
+            ClassicAssert.AreEqual(val, retval.ToString());
 
             retval = db.StringGetDelete(key);
-            Assert.AreEqual(val, retval.ToString());
+            ClassicAssert.AreEqual(val, retval.ToString());
 
             // Try retrieving already deleted key with metadata
             retval = db.StringGetDelete(key);
-            Assert.AreEqual(string.Empty, retval.ToString());
+            ClassicAssert.AreEqual(string.Empty, retval.ToString());
         }
 
         [Test]
@@ -2046,44 +2047,44 @@ namespace Garnet.test
 
             db.StringSet(key, val);
             var len = db.StringAppend(key, val2);
-            Assert.AreEqual(val.Length + val2.Length, len);
+            ClassicAssert.AreEqual(val.Length + val2.Length, len);
 
             var _val = db.StringGet(key);
-            Assert.AreEqual(val + val2, _val.ToString());
+            ClassicAssert.AreEqual(val + val2, _val.ToString());
 
             // Test appending an empty string
             db.StringSet(key, val);
             var len1 = db.StringAppend(key, "");
-            Assert.AreEqual(val.Length, len1);
+            ClassicAssert.AreEqual(val.Length, len1);
 
             _val = db.StringGet(key);
-            Assert.AreEqual(val, _val.ToString());
+            ClassicAssert.AreEqual(val, _val.ToString());
 
             // Test appending to a non-existent key
             var nonExistentKey = "nonExistentKey";
             var len2 = db.StringAppend(nonExistentKey, val2);
-            Assert.AreEqual(val2.Length, len2);
+            ClassicAssert.AreEqual(val2.Length, len2);
 
             _val = db.StringGet(nonExistentKey);
-            Assert.AreEqual(val2, _val.ToString());
+            ClassicAssert.AreEqual(val2, _val.ToString());
 
             // Test appending to a key with a large value
             var largeVal = new string('a', 1000000);
             db.StringSet(key, largeVal);
             var len3 = db.StringAppend(key, val2);
-            Assert.AreEqual(largeVal.Length + val2.Length, len3);
+            ClassicAssert.AreEqual(largeVal.Length + val2.Length, len3);
 
             // Test appending to a key with metadata
             var keyWithMetadata = "keyWithMetadata";
             db.StringSet(keyWithMetadata, val, TimeSpan.FromSeconds(10000));
             var len4 = db.StringAppend(keyWithMetadata, val2);
-            Assert.AreEqual(val.Length + val2.Length, len4);
+            ClassicAssert.AreEqual(val.Length + val2.Length, len4);
 
             _val = db.StringGet(keyWithMetadata);
-            Assert.AreEqual(val + val2, _val.ToString());
+            ClassicAssert.AreEqual(val + val2, _val.ToString());
 
             var time = db.KeyTimeToLive(keyWithMetadata);
-            Assert.IsTrue(time.Value.TotalSeconds > 0);
+            ClassicAssert.IsTrue(time.Value.TotalSeconds > 0);
         }
 
         [Test]
@@ -2095,24 +2096,24 @@ namespace Garnet.test
             // Test "HELLO 2"
             var result = db.Execute("HELLO", "2");
 
-            Assert.IsNotNull(result);
-            Assert.AreEqual(ResultType.Array, result.Resp2Type);
-            Assert.AreEqual(ResultType.Array, result.Resp3Type);
+            ClassicAssert.IsNotNull(result);
+            ClassicAssert.AreEqual(ResultType.Array, result.Resp2Type);
+            ClassicAssert.AreEqual(ResultType.Array, result.Resp3Type);
             var resultDict = result.ToDictionary();
-            Assert.IsNotNull(resultDict);
-            Assert.AreEqual(2, (int)resultDict["proto"]);
-            Assert.AreEqual("master", (string)resultDict["role"]);
+            ClassicAssert.IsNotNull(resultDict);
+            ClassicAssert.AreEqual(2, (int)resultDict["proto"]);
+            ClassicAssert.AreEqual("master", (string)resultDict["role"]);
 
             // Test "HELLO 3"
             result = db.Execute("HELLO", "3");
 
-            Assert.IsNotNull(result);
-            Assert.AreEqual(ResultType.Array, result.Resp2Type);
-            Assert.AreEqual(ResultType.Map, result.Resp3Type);
+            ClassicAssert.IsNotNull(result);
+            ClassicAssert.AreEqual(ResultType.Array, result.Resp2Type);
+            ClassicAssert.AreEqual(ResultType.Map, result.Resp3Type);
             resultDict = result.ToDictionary();
-            Assert.IsNotNull(resultDict);
-            Assert.AreEqual(3, (int)resultDict["proto"]);
-            Assert.AreEqual("master", (string)resultDict["role"]);
+            ClassicAssert.IsNotNull(resultDict);
+            ClassicAssert.AreEqual(3, (int)resultDict["proto"]);
+            ClassicAssert.AreEqual("master", (string)resultDict["role"]);
         }
 
         [Test]
@@ -2156,7 +2157,7 @@ namespace Garnet.test
 
             var expectedNewlineCount = 32; // 32 '\n' characters expected in response
             var response = lightClientRequest.Execute($"hello 3", expectedNewlineCount);
-            Assert.IsTrue(response.Length is > 180 and < 190);
+            ClassicAssert.IsTrue(response.Length is > 180 and < 190);
 
             // Switch to byte counting in response
             lightClientRequest.countResponseType = CountResponseType.Bytes;
@@ -2164,32 +2165,32 @@ namespace Garnet.test
             // Turn on async
             var expectedResponse = "+OK\r\n";
             response = lightClientRequest.Execute($"async on", expectedResponse.Length);
-            Assert.AreEqual(expectedResponse, response);
+            ClassicAssert.AreEqual(expectedResponse, response);
 
             // Get in-memory data item
             expectedResponse = $"${lastValue.Length}\r\n{lastValue}\r\n";
             response = lightClientRequest.Execute($"GET {lastKey}", expectedResponse.Length);
-            Assert.AreEqual(expectedResponse, response);
+            ClassicAssert.AreEqual(expectedResponse, response);
 
             // Get disk data item with async on
             expectedResponse = $"-ASYNC 0\r\n>3\r\n$5\r\nasync\r\n$1\r\n0\r\n${firstValue.Length}\r\n{firstValue}\r\n";
             response = lightClientRequest.Execute($"GET {firstKey}", expectedResponse.Length);
-            Assert.AreEqual(expectedResponse, response);
+            ClassicAssert.AreEqual(expectedResponse, response);
 
             // Issue barrier command for async
             expectedResponse = "+OK\r\n";
             response = lightClientRequest.Execute($"async barrier", expectedResponse.Length);
-            Assert.AreEqual(expectedResponse, response);
+            ClassicAssert.AreEqual(expectedResponse, response);
 
             // Turn off async
             expectedResponse = "+OK\r\n";
             response = lightClientRequest.Execute($"async off", expectedResponse.Length);
-            Assert.AreEqual(expectedResponse, response);
+            ClassicAssert.AreEqual(expectedResponse, response);
 
             // Get disk data item with async off
             expectedResponse = $"${firstValue.Length}\r\n{firstValue}\r\n";
             response = lightClientRequest.Execute($"GET {firstKey}", expectedResponse.Length);
-            Assert.AreEqual(expectedResponse, response);
+            ClassicAssert.AreEqual(expectedResponse, response);
         }
     }
 }

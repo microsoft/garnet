@@ -5,6 +5,7 @@ using System;
 using System.IO;
 using System.Threading.Tasks;
 using NUnit.Framework;
+using NUnit.Framework.Legacy;
 using Tsavorite.core;
 using Tsavorite.devices;
 using Tsavorite.test.recovery.sumstore;
@@ -49,8 +50,8 @@ namespace Tsavorite.test.recovery
         {
             public override void ReadCompletionCallback(ref long key, ref long input, ref long output, Empty ctx, Status status, RecordMetadata recordMetadata)
             {
-                Assert.IsTrue(status.Found, $"status = {status}");
-                Assert.AreEqual(key, output, $"output = {output}");
+                ClassicAssert.IsTrue(status.Found, $"status = {status}");
+                ClassicAssert.AreEqual(key, output, $"output = {output}");
             }
         }
 
@@ -63,11 +64,11 @@ namespace Tsavorite.test.recovery
 
             internal static void Verify(Status status, long key, long output)
             {
-                Assert.IsTrue(status.Found);
+                ClassicAssert.IsTrue(status.Found);
                 if (key < 950)
-                    Assert.AreEqual(key, output);
+                    ClassicAssert.AreEqual(key, output);
                 else
-                    Assert.AreEqual(key + 1, output);
+                    ClassicAssert.AreEqual(key + 1, output);
             }
         }
     }
@@ -118,8 +119,8 @@ namespace Tsavorite.test.recovery
                     var status = bc1.Read(ref key, ref output);
                     if (!status.IsPending)
                     {
-                        Assert.IsTrue(status.Found, $"status = {status}");
-                        Assert.AreEqual(key, output, $"output = {output}");
+                        ClassicAssert.IsTrue(status.Found, $"status = {status}");
+                        ClassicAssert.AreEqual(key, output, $"output = {output}");
                     }
                 }
                 _ = bc1.CompletePending(true);
@@ -151,9 +152,9 @@ namespace Tsavorite.test.recovery
                 _ = store2.Recover(default, token);
             }
 
-            Assert.AreEqual(store1.Log.HeadAddress, store2.Log.HeadAddress);
-            Assert.AreEqual(store1.Log.ReadOnlyAddress, store2.Log.ReadOnlyAddress);
-            Assert.AreEqual(store1.Log.TailAddress, store2.Log.TailAddress);
+            ClassicAssert.AreEqual(store1.Log.HeadAddress, store2.Log.HeadAddress);
+            ClassicAssert.AreEqual(store1.Log.ReadOnlyAddress, store2.Log.ReadOnlyAddress);
+            ClassicAssert.AreEqual(store1.Log.TailAddress, store2.Log.TailAddress);
 
             using var s2 = store2.NewSession<long, long, Empty, MyFunctions>(new MyFunctions());
             var bc2 = s2.BasicContext;
@@ -163,8 +164,8 @@ namespace Tsavorite.test.recovery
                 var status = bc2.Read(ref key, ref output);
                 if (!status.IsPending)
                 {
-                    Assert.IsTrue(status.Found, $"status = {status}");
-                    Assert.AreEqual(key, output, $"output = {output}");
+                    ClassicAssert.IsTrue(status.Found, $"status = {status}");
+                    ClassicAssert.AreEqual(key, output, $"output = {output}");
                 }
             }
             _ = bc2.CompletePending(true);
@@ -230,8 +231,8 @@ namespace Tsavorite.test.recovery
                         var status = bc1.Read(ref key, ref output);
                         if (!status.IsPending)
                         {
-                            Assert.IsTrue(status.Found, $"status = {status}");
-                            Assert.AreEqual(key, output, $"output = {output}");
+                            ClassicAssert.IsTrue(status.Found, $"status = {status}");
+                            ClassicAssert.AreEqual(key, output, $"output = {output}");
                         }
                     }
                     _ = bc1.CompletePending(true);
@@ -250,9 +251,9 @@ namespace Tsavorite.test.recovery
                     _ = store2.Recover(default, token);
                 }
 
-                Assert.AreEqual(store1.Log.HeadAddress, store2.Log.HeadAddress);
-                Assert.AreEqual(store1.Log.ReadOnlyAddress, store2.Log.ReadOnlyAddress);
-                Assert.AreEqual(store1.Log.TailAddress, store2.Log.TailAddress);
+                ClassicAssert.AreEqual(store1.Log.HeadAddress, store2.Log.HeadAddress);
+                ClassicAssert.AreEqual(store1.Log.ReadOnlyAddress, store2.Log.ReadOnlyAddress);
+                ClassicAssert.AreEqual(store1.Log.TailAddress, store2.Log.TailAddress);
 
                 using var s2 = store2.NewSession<long, long, Empty, SimpleSimpleFunctions<long, long>>(new SimpleSimpleFunctions<long, long>());
                 var bc2 = s2.BasicContext;
@@ -262,8 +263,8 @@ namespace Tsavorite.test.recovery
                     var status = bc2.Read(ref key, ref output);
                     if (!status.IsPending)
                     {
-                        Assert.IsTrue(status.Found, $"status = {status}");
-                        Assert.AreEqual(key, output, $"output = {output}");
+                        ClassicAssert.IsTrue(status.Found, $"status = {status}");
+                        ClassicAssert.AreEqual(key, output, $"output = {output}");
                     }
                 }
                 _ = bc2.CompletePending(true);
@@ -304,7 +305,7 @@ namespace Tsavorite.test.recovery
                 var task = store.TakeHybridLogCheckpointAsync(checkpointType);
                 bool success;
                 (success, token) = task.AsTask().GetAwaiter().GetResult();
-                Assert.IsTrue(success);
+                ClassicAssert.IsTrue(success);
 
                 using var s2 = store.NewSession<long, long, Empty, SimpleSimpleFunctions<long, long>>(new SimpleSimpleFunctions<long, long>());
                 var bc2 = s2.BasicContext;
@@ -315,8 +316,8 @@ namespace Tsavorite.test.recovery
                     var status = bc2.Read(ref key, ref output);
                     if (!status.IsPending)
                     {
-                        Assert.IsTrue(status.Found, $"status = {status}");
-                        Assert.AreEqual(key, output, $"output = {output}");
+                        ClassicAssert.IsTrue(status.Found, $"status = {status}");
+                        ClassicAssert.AreEqual(key, output, $"output = {output}");
                     }
                 }
                 _ = bc2.CompletePending(true);
@@ -350,7 +351,7 @@ namespace Tsavorite.test.recovery
 
             var task = store.TakeHybridLogCheckpointAsync(checkpointType);
             (bool success, Guid token) = task.AsTask().GetAwaiter().GetResult();
-            Assert.IsTrue(success);
+            ClassicAssert.IsTrue(success);
 
             for (long key = 0; key < 1000; key++)
             {
@@ -358,15 +359,15 @@ namespace Tsavorite.test.recovery
                 var status = bc1.Read(ref key, ref output);
                 if (!status.IsPending)
                 {
-                    Assert.IsTrue(status.Found, $"status = {status}");
-                    Assert.AreEqual(key, output, $"output = {output}");
+                    ClassicAssert.IsTrue(status.Found, $"status = {status}");
+                    ClassicAssert.AreEqual(key, output, $"output = {output}");
                 }
             }
             _ = bc1.CompletePendingWithOutputs(out var completedOutputs, true);
             while (completedOutputs.Next())
             {
-                Assert.IsTrue(completedOutputs.Current.Status.Found);
-                Assert.AreEqual(completedOutputs.Current.Key, completedOutputs.Current.Output, $"output = {completedOutputs.Current.Output}");
+                ClassicAssert.IsTrue(completedOutputs.Current.Status.Found);
+                ClassicAssert.AreEqual(completedOutputs.Current.Key, completedOutputs.Current.Output, $"output = {completedOutputs.Current.Output}");
             }
             completedOutputs.Dispose();
 
@@ -384,13 +385,13 @@ namespace Tsavorite.test.recovery
                 var status = bc1.Read(ref key, ref output);
                 if (!status.IsPending)
                 {
-                    Assert.IsTrue(status.NotFound, $"status = {status}");
+                    ClassicAssert.IsTrue(status.NotFound, $"status = {status}");
                 }
             }
             _ = bc1.CompletePendingWithOutputs(out completedOutputs, true);
             while (completedOutputs.Next())
             {
-                Assert.IsTrue(completedOutputs.Current.Status.NotFound);
+                ClassicAssert.IsTrue(completedOutputs.Current.Status.NotFound);
             }
             completedOutputs.Dispose();
 
@@ -403,15 +404,15 @@ namespace Tsavorite.test.recovery
                 var status = bc1.Read(ref key, ref output);
                 if (!status.IsPending)
                 {
-                    Assert.IsTrue(status.Found, $"status = {status}");
-                    Assert.AreEqual(key, output, $"output = {output}");
+                    ClassicAssert.IsTrue(status.Found, $"status = {status}");
+                    ClassicAssert.AreEqual(key, output, $"output = {output}");
                 }
             }
             _ = bc1.CompletePendingWithOutputs(out completedOutputs, true);
             while (completedOutputs.Next())
             {
-                Assert.IsTrue(completedOutputs.Current.Status.Found);
-                Assert.AreEqual(completedOutputs.Current.Key, completedOutputs.Current.Output, $"output = {completedOutputs.Current.Output}");
+                ClassicAssert.IsTrue(completedOutputs.Current.Status.Found);
+                ClassicAssert.AreEqual(completedOutputs.Current.Key, completedOutputs.Current.Output, $"output = {completedOutputs.Current.Output}");
             }
             completedOutputs.Dispose();
 
@@ -421,13 +422,13 @@ namespace Tsavorite.test.recovery
                 var status = bc1.Read(ref key, ref output);
                 if (!status.IsPending)
                 {
-                    Assert.IsTrue(status.NotFound, $"status = {status}");
+                    ClassicAssert.IsTrue(status.NotFound, $"status = {status}");
                 }
             }
             _ = bc1.CompletePendingWithOutputs(out completedOutputs, true);
             while (completedOutputs.Next())
             {
-                Assert.IsTrue(completedOutputs.Current.Status.NotFound);
+                ClassicAssert.IsTrue(completedOutputs.Current.Status.NotFound);
             }
             completedOutputs.Dispose();
 
@@ -442,16 +443,16 @@ namespace Tsavorite.test.recovery
                 var status = bc1.Read(ref key, ref output);
                 if (!status.IsPending)
                 {
-                    Assert.IsTrue(status.Found, $"status = {status}");
-                    Assert.AreEqual(key, output, $"output = {output}");
+                    ClassicAssert.IsTrue(status.Found, $"status = {status}");
+                    ClassicAssert.AreEqual(key, output, $"output = {output}");
                 }
                 else
                 {
                     _ = bc1.CompletePendingWithOutputs(out completedOutputs, true);
                     while (completedOutputs.Next())
                     {
-                        Assert.IsTrue(completedOutputs.Current.Status.Found);
-                        Assert.AreEqual(completedOutputs.Current.Key, completedOutputs.Current.Output, $"output = {completedOutputs.Current.Output}");
+                        ClassicAssert.IsTrue(completedOutputs.Current.Status.Found);
+                        ClassicAssert.AreEqual(completedOutputs.Current.Key, completedOutputs.Current.Output, $"output = {completedOutputs.Current.Output}");
                     }
                     completedOutputs.Dispose();
                 }
@@ -459,8 +460,8 @@ namespace Tsavorite.test.recovery
             _ = bc1.CompletePendingWithOutputs(out completedOutputs, true);
             while (completedOutputs.Next())
             {
-                Assert.IsTrue(completedOutputs.Current.Status.Found);
-                Assert.AreEqual(completedOutputs.Current.Key, completedOutputs.Current.Output, $"output = {completedOutputs.Current.Output}");
+                ClassicAssert.IsTrue(completedOutputs.Current.Status.Found);
+                ClassicAssert.AreEqual(completedOutputs.Current.Key, completedOutputs.Current.Output, $"output = {completedOutputs.Current.Output}");
             }
             completedOutputs.Dispose();
         }
@@ -524,8 +525,8 @@ namespace Tsavorite.test.recovery
                         var status = bc1.Read(ref key, ref output);
                         if (!status.IsPending)
                         {
-                            Assert.IsTrue(status.Found, $"status = {status}");
-                            Assert.AreEqual(key, output, $"output = {output}");
+                            ClassicAssert.IsTrue(status.Found, $"status = {status}");
+                            ClassicAssert.AreEqual(key, output, $"output = {output}");
                         }
                     }
                     _ = bc1.CompletePending(true);
@@ -544,9 +545,9 @@ namespace Tsavorite.test.recovery
                     _ = store2.Recover(default, token);
                 }
 
-                Assert.AreEqual(store1.Log.HeadAddress, store2.Log.HeadAddress);
-                Assert.AreEqual(store1.Log.ReadOnlyAddress, store2.Log.ReadOnlyAddress);
-                Assert.AreEqual(store1.Log.TailAddress, store2.Log.TailAddress);
+                ClassicAssert.AreEqual(store1.Log.HeadAddress, store2.Log.HeadAddress);
+                ClassicAssert.AreEqual(store1.Log.ReadOnlyAddress, store2.Log.ReadOnlyAddress);
+                ClassicAssert.AreEqual(store1.Log.TailAddress, store2.Log.TailAddress);
 
                 using var s2 = store2.NewSession<long, long, Empty, SimpleSimpleFunctions<long, long>>(new SimpleSimpleFunctions<long, long>());
                 var bc2 = s2.BasicContext;
@@ -556,8 +557,8 @@ namespace Tsavorite.test.recovery
                     var status = bc2.Read(ref key, ref output);
                     if (!status.IsPending)
                     {
-                        Assert.IsTrue(status.Found, $"status = {status}");
-                        Assert.AreEqual(key, output, $"output = {output}");
+                        ClassicAssert.IsTrue(status.Found, $"status = {status}");
+                        ClassicAssert.AreEqual(key, output, $"output = {output}");
                     }
                 }
                 _ = bc2.CompletePending(true);
@@ -624,8 +625,8 @@ namespace Tsavorite.test.recovery
                         var status = bc1.Read(ref key, ref output);
                         if (!status.IsPending)
                         {
-                            Assert.IsTrue(status.Found, $"status = {status}");
-                            Assert.AreEqual(key, output, $"output = {output}");
+                            ClassicAssert.IsTrue(status.Found, $"status = {status}");
+                            ClassicAssert.AreEqual(key, output, $"output = {output}");
                         }
                     }
                     _ = bc1.CompletePending(true);
@@ -647,9 +648,9 @@ namespace Tsavorite.test.recovery
                     _ = store2.Recover(default, token);
                 }
 
-                Assert.AreEqual(store1.Log.HeadAddress, store2.Log.HeadAddress);
-                Assert.AreEqual(store1.Log.ReadOnlyAddress, store2.Log.ReadOnlyAddress);
-                Assert.AreEqual(store1.Log.TailAddress, store2.Log.TailAddress);
+                ClassicAssert.AreEqual(store1.Log.HeadAddress, store2.Log.HeadAddress);
+                ClassicAssert.AreEqual(store1.Log.ReadOnlyAddress, store2.Log.ReadOnlyAddress);
+                ClassicAssert.AreEqual(store1.Log.TailAddress, store2.Log.TailAddress);
 
                 using var s2 = store2.NewSession<long, long, Empty, SimpleSimpleFunctions<long, long>>(new SimpleSimpleFunctions<long, long>());
                 var bc2 = s2.BasicContext;
@@ -659,8 +660,8 @@ namespace Tsavorite.test.recovery
                     var status = bc2.Read(ref key, ref output);
                     if (!status.IsPending)
                     {
-                        Assert.IsTrue(status.Found, $"status = {status}");
-                        Assert.AreEqual(key, output, $"output = {output}");
+                        ClassicAssert.IsTrue(status.Found, $"status = {status}");
+                        ClassicAssert.AreEqual(key, output, $"output = {output}");
                     }
                 }
                 _ = bc2.CompletePending(true);
@@ -712,8 +713,8 @@ namespace Tsavorite.test.recovery
                     var status = bc1.Read(ref key, ref output);
                     if (!status.IsPending)
                     {
-                        Assert.IsTrue(status.Found, $"status = {status}");
-                        Assert.AreEqual(key, output, $"output = {output}");
+                        ClassicAssert.IsTrue(status.Found, $"status = {status}");
+                        ClassicAssert.AreEqual(key, output, $"output = {output}");
                     }
                 }
                 _ = bc1.CompletePending(true);
@@ -727,8 +728,8 @@ namespace Tsavorite.test.recovery
                 var status = bc1.Read(ref key, ref output);
                 if (!status.IsPending)
                 {
-                    Assert.IsTrue(status.Found, $"status = {status}");
-                    Assert.AreEqual(key, output, $"output = {output}");
+                    ClassicAssert.IsTrue(status.Found, $"status = {status}");
+                    ClassicAssert.AreEqual(key, output, $"output = {output}");
                 }
             }
             _ = bc1.CompletePending(true);
@@ -759,9 +760,9 @@ namespace Tsavorite.test.recovery
                 _ = store2.Recover(default, token);
             }
 
-            Assert.AreEqual(store1.Log.HeadAddress, store2.Log.HeadAddress);
-            Assert.AreEqual(store1.Log.ReadOnlyAddress, store2.Log.ReadOnlyAddress);
-            Assert.AreEqual(store1.Log.TailAddress, store2.Log.TailAddress);
+            ClassicAssert.AreEqual(store1.Log.HeadAddress, store2.Log.HeadAddress);
+            ClassicAssert.AreEqual(store1.Log.ReadOnlyAddress, store2.Log.ReadOnlyAddress);
+            ClassicAssert.AreEqual(store1.Log.TailAddress, store2.Log.TailAddress);
 
             using var s2 = store2.NewSession<long, long, Empty, MyFunctions>(new MyFunctions());
             var bc2 = s2.BasicContext;
@@ -772,8 +773,8 @@ namespace Tsavorite.test.recovery
                 var status = bc2.Read(ref key, ref output);
                 if (!status.IsPending)
                 {
-                    Assert.IsTrue(status.Found, $"status = {status}");
-                    Assert.AreEqual(key, output, $"output = {output}");
+                    ClassicAssert.IsTrue(status.Found, $"status = {status}");
+                    ClassicAssert.AreEqual(key, output, $"output = {output}");
                 }
             }
             _ = bc2.CompletePending(true);
@@ -844,8 +845,8 @@ namespace Tsavorite.test.recovery
             var _result1 = store1.TryInitiateHybridLogCheckpoint(out var _token1, CheckpointType.Snapshot, true);
             await store1.CompleteCheckpointAsync();
 
-            Assert.IsTrue(_result1);
-            Assert.AreEqual(token, _token1);
+            ClassicAssert.IsTrue(_result1);
+            ClassicAssert.AreEqual(token, _token1);
 
             for (long key = 1000; key < 2000; key++)
                 _ = bc1.Upsert(key, key + 1);
@@ -854,8 +855,8 @@ namespace Tsavorite.test.recovery
             var _result2 = store1.TryInitiateHybridLogCheckpoint(out var _token2, CheckpointType.Snapshot, true);
             await store1.CompleteCheckpointAsync();
 
-            Assert.IsTrue(_result2);
-            Assert.AreEqual(token, _token2);
+            ClassicAssert.IsTrue(_result2);
+            ClassicAssert.AreEqual(token, _token2);
 
             // Test that we can recover to latest version
             using var store2 = new TsavoriteKV<long, long, LongStoreFunctions, LongAllocator>(new()
@@ -872,7 +873,7 @@ namespace Tsavorite.test.recovery
 
             await store2.RecoverAsync(default, _token2);
 
-            Assert.AreEqual(store2.Log.TailAddress, store1.Log.TailAddress);
+            ClassicAssert.AreEqual(store2.Log.TailAddress, store1.Log.TailAddress);
 
             using var s2 = store2.NewSession<long, long, Empty, MyFunctions2>(new MyFunctions2());
             var bc2 = s2.BasicContext;
@@ -903,7 +904,7 @@ namespace Tsavorite.test.recovery
 
             _ = await store3.RecoverAsync(recoverTo: version1);
 
-            Assert.IsTrue(store3.EntryCount == 1000);
+            ClassicAssert.IsTrue(store3.EntryCount == 1000);
             using var s3 = store3.NewSession<long, long, Empty, MyFunctions2>(new MyFunctions2());
             var bc3 = s3.BasicContext;
             for (long key = 0; key < 1000; key++)

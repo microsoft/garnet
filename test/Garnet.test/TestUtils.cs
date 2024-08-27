@@ -23,6 +23,7 @@ using Microsoft.CodeAnalysis.CSharp;
 using Microsoft.CodeAnalysis.Text;
 using Microsoft.Extensions.Logging;
 using NUnit.Framework;
+using NUnit.Framework.Legacy;
 using StackExchange.Redis;
 using Tsavorite.core;
 using Tsavorite.devices;
@@ -373,11 +374,11 @@ namespace Garnet.test
                     logger: loggerFactory?.CreateLogger("GarnetServer"),
                     aadAuthenticationSettings: authenticationSettings);
 
-                Assert.IsNotNull(opts);
+                ClassicAssert.IsNotNull(opts);
                 int iter = 0;
                 while (!IsPortAvailable(opts.Port))
                 {
-                    Assert.Less(30, iter, "Failed to connect within 30 seconds");
+                    ClassicAssert.Less(30, iter, "Failed to connect within 30 seconds");
                     TestContext.Progress.WriteLine($"Waiting for Port {opts.Port} to become available for {TestContext.CurrentContext.WorkerId}:{iter++}");
                     Thread.Sleep(1000);
                 }
@@ -763,14 +764,14 @@ namespace Garnet.test
 
             foreach (var referenceFile in referenceFiles)
             {
-                Assert.IsTrue(File.Exists(referenceFile), $"File '{Path.GetFullPath(referenceFile)}' does not exist.");
+                ClassicAssert.IsTrue(File.Exists(referenceFile), $"File '{Path.GetFullPath(referenceFile)}' does not exist.");
             }
 
             var references = referenceFiles.Select(f => MetadataReference.CreateFromFile(f));
 
             foreach (var fileToCompile in filesToCompile)
             {
-                Assert.IsTrue(File.Exists(fileToCompile), $"File '{Path.GetFullPath(fileToCompile)}' does not exist.");
+                ClassicAssert.IsTrue(File.Exists(fileToCompile), $"File '{Path.GetFullPath(fileToCompile)}' does not exist.");
             }
 
             var parseFunc = new Func<string, SyntaxTree>(filePath =>
@@ -795,7 +796,7 @@ namespace Garnet.test
             try
             {
                 var result = compilation.Emit(dstFilePath);
-                Assert.IsTrue(result.Success, string.Join(Environment.NewLine, result.Diagnostics.Select(d => d.ToString())));
+                ClassicAssert.IsTrue(result.Success, string.Join(Environment.NewLine, result.Diagnostics.Select(d => d.ToString())));
             }
             catch (Exception ex)
             {
