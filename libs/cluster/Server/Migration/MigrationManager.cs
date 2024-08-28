@@ -3,6 +3,7 @@
 
 using System.Collections.Generic;
 using System.Runtime.CompilerServices;
+using Garnet.common;
 using Garnet.server;
 using Microsoft.Extensions.Logging;
 
@@ -12,16 +13,20 @@ namespace Garnet.cluster
     {
         readonly ClusterProvider clusterProvider;
         readonly MigrateSessionTaskStore migrationTaskStore;
+        public readonly LimitedFixedBufferPool migrationBufferPool;
 
         public MigrationManager(ClusterProvider clusterProvider, ILogger logger = null)
         {
-            migrationTaskStore = new MigrateSessionTaskStore(logger);
+            this.migrationTaskStore = new MigrateSessionTaskStore(logger);
+            var bufferSize = 1 << clusterProvider.serverOptions.PageSizeBits();
+            this.migrationBufferPool = new LimitedFixedBufferPool(bufferSize, logger: logger);
             this.clusterProvider = clusterProvider;
         }
 
         public void Dispose()
         {
-            migrationTaskStore.Dispose();
+            migrationTaskStore?.Dispose();
+            migrationBufferPool?.Dispose();
         }
 
         public int GetMigrationTaskCount()

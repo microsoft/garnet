@@ -61,6 +61,9 @@ namespace Garnet.client
         /// </summary>
         public bool IsConnected => socket != null && socket.Connected && !Disposed;
 
+        /// <summary>
+        /// Buffer pool used by this client
+        /// </summary>
         readonly LimitedFixedBufferPool networkPool;
 
         /// <summary>
@@ -73,6 +76,12 @@ namespace Garnet.client
         /// </summary>
         readonly string authPassword = null;
 
+
+        /// <summary>
+        /// Indicating whether this instance is using its own buffer pool or one that was provided
+        /// </summary>
+        readonly bool usingInternalNetworkPool = false;
+
         /// <summary>
         /// Create client instance
         /// </summary>
@@ -84,13 +93,14 @@ namespace Garnet.client
         /// <param name="bufferSize">Network buffer size</param>
         /// <param name="networkSendThrottleMax">Max outstanding network sends allowed</param>
         /// <param name="logger">Logger</param>
-        public GarnetClientSession(string address, int port, SslClientAuthenticationOptions tlsOptions = null, string authUsername = null, string authPassword = null, int bufferSize = 1 << 17, int networkSendThrottleMax = 8, ILogger logger = null)
+        public GarnetClientSession(string address, int port, SslClientAuthenticationOptions tlsOptions = null, string authUsername = null, string authPassword = null, int bufferSize = 1 << 17, LimitedFixedBufferPool bufferPool = null, int networkSendThrottleMax = 8, ILogger logger = null)
         {
-            this.networkPool = new LimitedFixedBufferPool(bufferSize, logger: logger);
+            this.usingInternalNetworkPool = bufferPool == null;
+            this.networkPool = bufferPool ?? new(bufferSize, logger: logger);
             this.address = address;
             this.port = port;
-            this.bufferSize = bufferSize;
-            this.bufferSizeDigits = NumUtils.NumDigits(bufferSize);
+            this.bufferSize = networkPool.MinAllocationSize;
+            this.bufferSizeDigits = NumUtils.NumDigits(networkPool.MinAllocationSize);
             this.logger = logger;
             this.sslOptions = tlsOptions;
             this.networkSendThrottleMax = networkSendThrottleMax;
@@ -159,7 +169,8 @@ namespace Garnet.client
             networkSender?.ReturnResponseObject();
             socket?.Dispose();
             networkHandler?.Dispose();
-            networkPool.Dispose();
+            if (usingInternalNetworkPool)
+                networkPool.Dispose();
         }
 
         /// <summary>

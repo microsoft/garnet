@@ -23,6 +23,11 @@ namespace Garnet.cluster
                     iterator = new MigrationScanIterator(session, slots, bufferSize);
                 }
 
+                internal void Dispose()
+                {
+                    iterator.Dispose();
+                }
+
                 public void AdvanceIterator() => iterator.AdvanceIterator();
 
                 public bool SingleReader(ref SpanByte key, ref SpanByte value, RecordMetadata recordMetadata, long numberOfRecords, out CursorRecordResult cursorRecordResult)
@@ -61,6 +66,11 @@ namespace Garnet.cluster
                     iterator = new MigrationScanIterator(session, slots, bufferSize);
                 }
 
+                internal void Dispose()
+                {
+                    iterator.Dispose();
+                }
+
                 public void AdvanceIterator() => iterator.AdvanceIterator();
 
                 public bool SingleReader(ref byte[] key, ref IGarnetObject value, RecordMetadata recordMetadata, long numberOfRecords, out CursorRecordResult cursorRecordResult)
@@ -95,6 +105,8 @@ namespace Garnet.cluster
                 readonly MigrateSession session;
                 readonly HashSet<int> slots;
 
+                readonly PoolEntry poolEntry;
+
                 long offset;
                 long currentOffset;
                 byte[] keyBuffer;
@@ -108,9 +120,15 @@ namespace Garnet.cluster
                     offset = 0;
                     currentOffset = 0;
 
-                    keyBuffer = GC.AllocateArray<byte>(bufferSize, pinned: true);
+                    poolEntry = session.GetBufferPool.Get(size: bufferSize);
+                    keyBuffer = poolEntry.entry;
                     currPtr = (byte*)Unsafe.AsPointer(ref keyBuffer[0]);
                     endPtr = (byte*)Unsafe.AsPointer(ref keyBuffer[^1]);
+                }
+
+                internal void Dispose()
+                {
+                    poolEntry.Dispose();
                 }
 
                 /// <summary>
