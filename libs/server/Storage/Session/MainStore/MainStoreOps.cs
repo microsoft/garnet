@@ -645,7 +645,6 @@ namespace Garnet.server
         /// <param name="storeType">The store to operate on.</param>
         /// <param name="context">Basic context for the main store</param>
         /// <param name="objectStoreContext">Object context for the object store</param>
-        /// <param name="milliseconds">When true the command executed is PEXPIRE, expire by default.</param>
         /// <returns></returns>
         public unsafe GarnetStatus EXPIRE<TContext, TObjectContext>(ArgSlice key, ref RawStringInput input, out bool timeoutSet, StoreType storeType, ref TContext context, ref TObjectContext objectStoreContext)
             where TContext : ITsavoriteContext<SpanByte, SpanByte, RawStringInput, SpanByteAndMemory, long, MainSessionFunctions, MainStoreFunctions, MainStoreAllocator>

@@ -3,7 +3,6 @@
 
 using System;
 using System.Diagnostics;
-using System.Runtime.CompilerServices;
 using System.Text;
 using Garnet.common;
 using Tsavorite.core;
@@ -81,28 +80,29 @@ namespace Garnet.server
         /// Returns the approximated cardinality computed by the HyperLogLog data structure stored at the specified key,
         /// or 0 if the key does not exist.
         /// </summary>
-        /// <param name="keys"></param>
         /// <param name="input"></param>
         /// <param name="count"></param>
         /// <param name="error"></param>
         /// <param name="context"></param>
         /// <returns></returns>
-        public unsafe GarnetStatus HyperLogLogLength<TContext>(Span<ArgSlice> keys, ref RawStringInput input, out long count, out bool error, ref TContext context)
+        public unsafe GarnetStatus HyperLogLogLength<TContext>(ref RawStringInput input, out long count, out bool error, ref TContext context)
             where TContext : ITsavoriteContext<SpanByte, SpanByte, RawStringInput, SpanByteAndMemory, long, MainSessionFunctions, MainStoreFunctions, MainStoreAllocator>
         {
             count = 0;
             error = false;
 
-            if (keys.Length == 0)
+            if (input.parseState.Count == 0)
                 return GarnetStatus.OK;
 
-            byte* output = stackalloc byte[sizeof(long)];
+            var output = stackalloc byte[sizeof(long)];
             var o = new SpanByteAndMemory(output, sizeof(long));
 
-            for (int i = 0; i < keys.Length; i++)
+            var currTokenIdx = input.parseStateStartIdx;
+            while(currTokenIdx < input.parseState.Count)
             {
-                var srcKey = keys[i].SpanByte;
+                var srcKey = input.parseState.GetArgSliceByRef(currTokenIdx++).SpanByte;
                 var status = GET(ref srcKey, ref input, ref o, ref context);
+
                 //Invalid HLL Type
                 if (*(long*)(o.SpanByte.ToPointer()) == -1)
                 {
@@ -120,21 +120,22 @@ namespace Garnet.server
         public unsafe GarnetStatus HyperLogLogLength<TContext>(Span<ArgSlice> keys, out long count, ref TContext context)
             where TContext : ITsavoriteContext<SpanByte, SpanByte, RawStringInput, SpanByteAndMemory, long, MainSessionFunctions, MainStoreFunctions, MainStoreAllocator>
         {
-            var inputHeader = new RawStringInput();
+            ArgSlice[] parseStateBuffer = default;
+            var parseState = new SessionParseState();
+            parseState.Initialize(ref parseStateBuffer, keys.Length);
+            for (var i = 0; i < keys.Length; i++)
+            {
+                parseStateBuffer[i] = keys[i];
+            }
 
-            //4 byte length of input
-            //1 byte RespCommand
-            //1 byte RespInputFlags
-            int inputSize = sizeof(int) + RespInputHeader.Size;
-            byte* pbCmdInput = stackalloc byte[inputSize];
+            var inputHeader = new RawStringInput
+            {
+                header = new RespInputHeader { cmd = RespCommand.PFCOUNT },
+                parseState = parseState,
+                parseStateStartIdx = 0,
+            };
 
-            byte* pcurr = pbCmdInput;
-            *(int*)pcurr = inputSize - sizeof(int);
-            pcurr += sizeof(int);
-            (*(RespInputHeader*)(pcurr)).cmd = RespCommand.PFCOUNT;
-            (*(RespInputHeader*)(pcurr)).flags = 0;
-
-            return HyperLogLogLength(keys, ref inputHeader, out count, out bool error, ref context);
+            return HyperLogLogLength(ref inputHeader, out count, out bool error, ref context);
         }
 
         /// <summary>

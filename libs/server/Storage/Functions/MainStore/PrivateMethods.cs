@@ -134,18 +134,42 @@ namespace Garnet.server
                     break;
 
                 case RespCommand.BITCOUNT:
-                    var bcStartOffset = input.parseState.GetLong(input.parseStateStartIdx);
-                    var bcEndOffset = input.parseState.GetLong(input.parseStateStartIdx + 1);
-                    var bcOffsetType = input.parseState.GetArgSliceByRef(input.parseStateStartIdx + 2).ReadOnlySpan[0];
+                    var currTokenIdx = input.parseStateStartIdx;
+                    var bcStartOffset = input.parseState.GetInt(currTokenIdx++);
+                    var bcEndOffset = input.parseState.GetInt(currTokenIdx++);
+                    byte bcOffsetType = 0x0;
+                    if (currTokenIdx < input.parseState.Count)
+                    {
+                        var spanOffsetType = input.parseState.GetArgSliceByRef(currTokenIdx).ReadOnlySpan;
+                        bcOffsetType = spanOffsetType.EqualsUpperCaseSpanIgnoringCase("BIT"u8) ? (byte)0x1 : (byte)0x0;
+                    }
+
                     var count = BitmapManager.BitCountDriver(bcStartOffset, bcEndOffset, bcOffsetType, value.ToPointer(), value.Length);
                     CopyRespNumber(count, ref dst);
                     break;
 
                 case RespCommand.BITPOS:
-                    var bpSetVal = input.parseState.GetArgSliceByRef(input.parseStateStartIdx).ReadOnlySpan[0];
-                    var bpStartOffset = input.parseState.GetLong(input.parseStateStartIdx + 1);
-                    var bpEndOffset = input.parseState.GetLong(input.parseStateStartIdx + 2);
-                    var bpOffsetType = input.parseState.GetArgSliceByRef(input.parseStateStartIdx + 3).ReadOnlySpan[0];
+                    currTokenIdx = input.parseStateStartIdx;
+                    var bpSetVal = (byte)(input.parseState.GetArgSliceByRef(currTokenIdx++).ReadOnlySpan[0] - '0');
+                    var bpStartOffset = 0;
+                    var bpEndOffset = -1;
+                    byte bpOffsetType = 0x0;
+                    if (input.parseState.Count - currTokenIdx > 0)
+                    {
+                        bpStartOffset = input.parseState.GetInt(currTokenIdx++);
+                        if (input.parseState.Count - currTokenIdx > 0)
+                        {
+                            bpEndOffset = input.parseState.GetInt(currTokenIdx++);
+                            if (input.parseState.Count - currTokenIdx > 0)
+                            {
+                                var sbOffsetType = input.parseState.GetArgSliceByRef(currTokenIdx).ReadOnlySpan;
+                                bpOffsetType = sbOffsetType.EqualsUpperCaseSpanIgnoringCase("BIT"u8)
+                                    ? (byte)0x1
+                                    : (byte)0x0;
+                            }
+                        }
+                    }
+                    
                     var pos = BitmapManager.BitPosDriver(bpSetVal, bpStartOffset, bpEndOffset, bpOffsetType,
                         value.ToPointer(), value.Length);
                     *(long*)dst.SpanByte.ToPointer() = pos;

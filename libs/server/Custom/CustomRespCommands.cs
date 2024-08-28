@@ -93,6 +93,8 @@ namespace Garnet.server
             var inputHeader = new RawStringInput
             {
                 header = new RespInputHeader { cmd = cmd },
+                parseState = parseState,
+                parseStateStartIdx = 1,
                 arg1 = expirationTicks == -1 ? expirationTicks : DateTimeOffset.UtcNow.Ticks + expirationTicks
             };
 

@@ -47,7 +47,8 @@ namespace Garnet.server
             switch (cmd)
             {
                 case RespCommand.SETBIT:
-                    return sizeof(int) + BitmapManager.Length(inputPtr + RespInputHeader.Size);
+                    var bOffset = input.parseState.GetLong(input.parseStateStartIdx);
+                    return sizeof(int) + BitmapManager.Length(bOffset);
                 case RespCommand.BITFIELD:
                     return sizeof(int) + BitmapManager.LengthFromType(inputPtr + RespInputHeader.Size);
                 case RespCommand.PFADD:
@@ -142,7 +143,8 @@ namespace Garnet.server
 
                         return sizeof(int) + ndigits + t.MetadataSize;
                     case RespCommand.SETBIT:
-                        return sizeof(int) + BitmapManager.NewBlockAllocLength(inputPtr + RespInputHeader.Size, t.Length);
+                        var bOffset = input.parseState.GetLong(input.parseStateStartIdx);
+                        return sizeof(int) + BitmapManager.NewBlockAllocLength(t.Length, bOffset);
                     case RespCommand.BITFIELD:
                         return sizeof(int) + BitmapManager.NewBlockAllocLengthFromType(inputPtr + RespInputHeader.Size, t.Length);
                     case RespCommand.PFADD:

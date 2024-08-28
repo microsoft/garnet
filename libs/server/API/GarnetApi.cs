@@ -316,8 +316,8 @@ namespace Garnet.server
             => storageSession.HyperLogLogAdd(key, elements, out updated, ref context);
 
         /// <inheritdoc />
-        public GarnetStatus HyperLogLogLength(Span<ArgSlice> keys, ref RawStringInput input, out long count, out bool error)
-            => storageSession.HyperLogLogLength(keys, ref input, out count, out error, ref context);
+        public GarnetStatus HyperLogLogLength(ref RawStringInput input, out long count, out bool error)
+            => storageSession.HyperLogLogLength(ref input, out count, out error, ref context);
 
         /// <inheritdoc />
         public GarnetStatus HyperLogLogLength(Span<ArgSlice> keys, out long count)

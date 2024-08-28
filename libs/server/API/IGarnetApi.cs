@@ -1541,12 +1541,11 @@ namespace Garnet.server
         /// Returns the approximated cardinality computed by the HyperLogLog data structure stored at the specified key,
         /// or 0 if the key does not exist.
         /// </summary>
-        /// <param name="keys"></param>
         /// <param name="input"></param>
         /// <param name="count"></param>
         /// <param name="error"></param>
         /// <returns></returns>
-        GarnetStatus HyperLogLogLength(Span<ArgSlice> keys, ref RawStringInput input, out long count, out bool error);
+        GarnetStatus HyperLogLogLength(ref RawStringInput input, out long count, out bool error);
 
         /// <summary>
         ///

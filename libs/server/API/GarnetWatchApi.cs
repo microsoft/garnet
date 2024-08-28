@@ -459,13 +459,15 @@ namespace Garnet.server
         #region HLL Methods
 
         /// <inheritdoc />
-        public GarnetStatus HyperLogLogLength(Span<ArgSlice> keys, ref RawStringInput input, out long count, out bool error)
+        public GarnetStatus HyperLogLogLength(ref RawStringInput input, out long count, out bool error)
         {
-            foreach (var key in keys)
+            var currTokenIdx = input.parseStateStartIdx;
+            while (currTokenIdx < input.parseState.Count)
             {
+                var key = input.parseState.GetArgSliceByRef(currTokenIdx++);
                 garnetApi.WATCH(key, StoreType.Main);
             }
-            return garnetApi.HyperLogLogLength(keys, ref input, out count, out error);
+            return garnetApi.HyperLogLogLength(ref input, out count, out error);
         }
 
         /// <inheritdoc />

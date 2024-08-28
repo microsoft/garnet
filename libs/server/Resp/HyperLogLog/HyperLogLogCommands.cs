@@ -99,24 +99,14 @@ namespace Garnet.server
                 return AbortWithWrongNumberOfArguments(nameof(RespCommand.PFCOUNT));
             }
 
-            var inputHeader = new RawStringInput();
+            var inputHeader = new RawStringInput
+            {
+                header = new RespInputHeader { cmd = RespCommand.PFCOUNT },
+                parseState = parseState,
+                parseStateStartIdx = 0,
+            };
 
-            // 4 byte length of input
-            // 1 byte RespCommand
-            // 1 byte RespInputFlags
-            var inputSize = sizeof(int) + RespInputHeader.Size;
-            var pbCmdInput = stackalloc byte[inputSize];
-
-            /////////////////
-            ////Build Input//
-            /////////////////
-            var pcurr = pbCmdInput;
-            *(int*)pcurr = inputSize - sizeof(int);
-            pcurr += sizeof(int);
-            (*(RespInputHeader*)pcurr).cmd = RespCommand.PFCOUNT;
-            (*(RespInputHeader*)pcurr).flags = 0;
-
-            var status = storageApi.HyperLogLogLength(parseState.Parameters, ref inputHeader, out long cardinality, out bool error);
+            var status = storageApi.HyperLogLogLength(ref inputHeader, out long cardinality, out bool error);
             if (error)
             {
                 while (!RespWriteUtils.WriteError(CmdStrings.RESP_ERR_WRONG_TYPE_HLL, ref dcurr, dend))

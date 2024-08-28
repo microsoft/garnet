@@ -98,11 +98,15 @@ namespace Garnet.server
                     throw new Exception();
 
                 case RespCommand.SETBIT:
+                    var currTokenIdx = input.parseStateStartIdx;
+                    var bOffset = input.parseState.GetLong(currTokenIdx++);
+                    var bSetVal = (byte)(input.parseState.GetArgSliceByRef(currTokenIdx).ReadOnlySpan[0] - '0');
+
                     value.UnmarkExtraMetadata();
-                    value.ShrinkSerializedLength(BitmapManager.Length(input.ToPointer() + RespInputHeader.Size));
+                    value.ShrinkSerializedLength(BitmapManager.Length(bOffset));
 
                     // Always return 0 at initial updater because previous value was 0
-                    BitmapManager.UpdateBitmap(inputPtr + RespInputHeader.Size, value.ToPointer());
+                    BitmapManager.UpdateBitmap(value.ToPointer(), bOffset, bSetVal);
                     CopyDefaultResp(CmdStrings.RESP_RETURN_VAL_0, ref output);
                     break;
 
@@ -349,24 +353,26 @@ namespace Garnet.server
                     return TryInPlaceUpdateNumber(ref value, ref output, ref rmwInfo, ref recordInfo, input: -decrBy);
 
                 case RespCommand.SETBIT:
-                    byte* i = inputPtr + RespInputHeader.Size;
-                    byte* v = value.ToPointer();
+                    var v = value.ToPointer();
+                    var currTokenIdx = input.parseStateStartIdx;
+                    var bOffset = input.parseState.GetLong(currTokenIdx++);
+                    var bSetVal = (byte)(input.parseState.GetArgSliceByRef(currTokenIdx).ReadOnlySpan[0] - '0');
 
-                    if (!BitmapManager.IsLargeEnough(i, value.Length)) return false;
+                    if (!BitmapManager.IsLargeEnough(value.Length, bOffset)) return false;
 
                     rmwInfo.ClearExtraValueLength(ref recordInfo, ref value, value.TotalSize);
                     value.UnmarkExtraMetadata();
                     value.ShrinkSerializedLength(value.Length + value.MetadataSize);
                     rmwInfo.SetUsedValueLength(ref recordInfo, ref value, value.TotalSize);
 
-                    byte oldValSet = BitmapManager.UpdateBitmap(i, v);
+                    var oldValSet = BitmapManager.UpdateBitmap(v, bOffset, bSetVal);
                     if (oldValSet == 0)
                         CopyDefaultResp(CmdStrings.RESP_RETURN_VAL_0, ref output);
                     else
                         CopyDefaultResp(CmdStrings.RESP_RETURN_VAL_1, ref output);
                     return true;
                 case RespCommand.BITFIELD:
-                    i = inputPtr + RespInputHeader.Size;
+                    var i = inputPtr + RespInputHeader.Size;
                     v = value.ToPointer();
                     if (!BitmapManager.IsLargeEnoughForType(i, value.Length)) return false;
 
@@ -648,8 +654,11 @@ namespace Garnet.server
                     break;
 
                 case RespCommand.SETBIT:
+                    var currTokenIdx = input.parseStateStartIdx;
+                    var bOffset = input.parseState.GetLong(currTokenIdx++);
+                    var bSetVal = (byte)(input.parseState.GetArgSliceByRef(currTokenIdx).ReadOnlySpan[0] - '0');
                     Buffer.MemoryCopy(oldValue.ToPointer(), newValue.ToPointer(), newValue.Length, oldValue.Length);
-                    byte oldValSet = BitmapManager.UpdateBitmap(inputPtr + RespInputHeader.Size, newValue.ToPointer());
+                    var oldValSet = BitmapManager.UpdateBitmap(newValue.ToPointer(), bOffset, bSetVal);
                     if (oldValSet == 0)
                         CopyDefaultResp(CmdStrings.RESP_RETURN_VAL_0, ref output);
                     else

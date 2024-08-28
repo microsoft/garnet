@@ -22,18 +22,22 @@ namespace Garnet.server
         /// NONE
         /// </summary>
         NONE,
+
         /// <summary>
         /// AND
         /// </summary>
         AND,
+
         /// <summary>
         /// OR
         /// </summary>
         OR,
+
         /// <summary>
         /// XOR
         /// </summary>
         XOR,
+
         /// <summary>
         /// NOT
         /// </summary>
@@ -46,6 +50,7 @@ namespace Garnet.server
         SAT,
         FAIL
     }
+
     internal enum BitFieldSign : byte
     {
         UNSIGNED = 0x0,
@@ -63,21 +68,25 @@ namespace Garnet.server
         /// </summary>
         [FieldOffset(0)]
         public byte secondaryOpCode;
+
         /// <summary>
         /// encoding info
         /// </summary>
         [FieldOffset(1)]
         public byte typeInfo;
+
         /// <summary>
         /// offset
         /// </summary>
         [FieldOffset(2)]
         public long offset;
+
         /// <summary>
         /// value
         /// </summary>
         [FieldOffset(10)]
         public long value;
+
         /// <summary>
         /// BitFieldOverflow enum 
         /// </summary>
@@ -119,13 +128,13 @@ namespace Garnet.server
             {
                 return AbortWithWrongNumberOfArguments(nameof(RespCommand.SETBIT));
             }
-            var inputHeader = new RawStringInput();
 
             var sbKey = parseState.GetArgSliceByRef(0).SpanByte;
 
             if (!parseState.TryGetLong(1, out var bOffset))
             {
-                while (!RespWriteUtils.WriteError(CmdStrings.RESP_ERR_GENERIC_BITOFFSET_IS_NOT_INTEGER, ref dcurr, dend))
+                while (!RespWriteUtils.WriteError(CmdStrings.RESP_ERR_GENERIC_BITOFFSET_IS_NOT_INTEGER, ref dcurr,
+                           dend))
                     SendAndReset();
                 return true;
             }
@@ -135,29 +144,12 @@ namespace Garnet.server
             var bSetVal = (byte)(bSetValSlice.ReadOnlySpan[0] - '0');
             Debug.Assert(bSetVal == 0 || bSetVal == 1);
 
-            #region SetBitCmdInput
-            //4 byte length of input
-            //1 byte RespCommand
-            //1 byte RespInputFlags
-            //8 byte bit offset
-            //1 byte set/clear bit
-            int inputSize = sizeof(int) + RespInputHeader.Size + sizeof(long) + sizeof(byte);
-            byte* pbCmdInput = stackalloc byte[inputSize];
-
-            ///////////////
-            //Build Input//
-            ///////////////
-            byte* pcurr = pbCmdInput;
-            *(int*)pcurr = inputSize - sizeof(int);
-            pcurr += sizeof(int);
-            //1. header
-            (*(RespInputHeader*)(pcurr)).cmd = RespCommand.SETBIT;
-            (*(RespInputHeader*)(pcurr)).flags = 0;
-            pcurr += RespInputHeader.Size;
-            //2. cmd args
-            *(long*)(pcurr) = bOffset; pcurr += sizeof(long);
-            *pcurr = bSetVal;
-            #endregion
+            var inputHeader = new RawStringInput
+            {
+                header = new RespInputHeader { cmd = RespCommand.SETBIT },
+                parseState = parseState,
+                parseStateStartIdx = 1
+            };
 
             var o = new SpanByteAndMemory(dcurr, (int)(dend - dcurr));
             var status = storageApi.StringSetBit(
@@ -182,38 +174,22 @@ namespace Garnet.server
                 return AbortWithWrongNumberOfArguments(nameof(RespCommand.GETBIT));
             }
 
-            var inputHeader = new RawStringInput();
-
             var sbKey = parseState.GetArgSliceByRef(0).SpanByte;
 
             if (!parseState.TryGetLong(1, out var bOffset))
             {
-                while (!RespWriteUtils.WriteError(CmdStrings.RESP_ERR_GENERIC_BITOFFSET_IS_NOT_INTEGER, ref dcurr, dend))
+                while (!RespWriteUtils.WriteError(CmdStrings.RESP_ERR_GENERIC_BITOFFSET_IS_NOT_INTEGER, ref dcurr,
+                           dend))
                     SendAndReset();
                 return true;
             }
 
-            #region GetBitCmdInput
-            //4 byte length of input
-            //1 byte RespCommand
-            //1 byte RespInputFlags
-            //8 byte bit offset
-            int inputSize = sizeof(int) + RespInputHeader.Size + sizeof(long);
-            byte* pbCmdInput = stackalloc byte[inputSize];
-
-            ///////////////
-            //Build Input//
-            ///////////////
-            byte* pcurr = pbCmdInput;
-            *(int*)pcurr = inputSize - sizeof(int);
-            pcurr += sizeof(int);
-            //1. header
-            (*(RespInputHeader*)(pcurr)).cmd = RespCommand.GETBIT;
-            (*(RespInputHeader*)(pcurr)).flags = 0;
-            pcurr += RespInputHeader.Size;
-            //2. cmd args
-            *(long*)(pcurr) = bOffset;
-            #endregion
+            var inputHeader = new RawStringInput
+            {
+                header = new RespInputHeader { cmd = RespCommand.GETBIT },
+                parseState = parseState,
+                parseStateStartIdx = 1,
+            };
 
             var o = new SpanByteAndMemory(dcurr, (int)(dend - dcurr));
             var status = storageApi.StringGetBit(ref sbKey, ref inputHeader, ref o);
@@ -240,55 +216,27 @@ namespace Garnet.server
                 return AbortWithWrongNumberOfArguments(nameof(RespCommand.BITCOUNT));
             }
 
-            var inputHeader = new RawStringInput();
-
             //<[Get Key]>
             var sbKey = parseState.GetArgSliceByRef(0).SpanByte;
 
             //Process offsets here if they exist
-            var startOffset = 0; // default is at the start of bitmap array
-            var endOffset = -1; // default is at the end of the bitmap array (negative values indicate offset starting from end)
-            byte bitOffsetType = 0x0; // treat offsets as byte or bit offsets
-            if (parseState.Count > 1)//Start offset exists
+            if (parseState.Count > 1) //Start offset exists
             {
-                if (!parseState.TryGetInt(1, out startOffset) || (parseState.Count > 2 && !parseState.TryGetInt(2, out endOffset)))
+                if (!parseState.TryGetInt(1, out _) || (parseState.Count > 2 && !parseState.TryGetInt(2, out _)))
                 {
-                    while (!RespWriteUtils.WriteError(CmdStrings.RESP_ERR_GENERIC_VALUE_IS_NOT_INTEGER, ref dcurr, dend))
+                    while (!RespWriteUtils.WriteError(CmdStrings.RESP_ERR_GENERIC_VALUE_IS_NOT_INTEGER, ref dcurr,
+                               dend))
                         SendAndReset();
                     return true;
                 }
             }
 
-            if (parseState.Count > 3)
+            var inputHeader = new RawStringInput
             {
-                var sbOffsetType = parseState.GetArgSliceByRef(3).ReadOnlySpan;
-                bitOffsetType = sbOffsetType.EqualsUpperCaseSpanIgnoringCase("BIT"u8) ? (byte)0x1 : (byte)0x0;
-            }
-
-            #region BitCountCmdInput
-            //4 byte length of input
-            //1 byte RespCommand
-            //1 byte RespInputFlags
-            //8 byte bit startOffset
-            //8 byte bit endOffset
-            int inputSize = sizeof(int) + RespInputHeader.Size + sizeof(long) + sizeof(long) + sizeof(byte);
-            byte* pbCmdInput = stackalloc byte[inputSize];
-
-            ///////////////
-            //Build Input//
-            ///////////////
-            byte* pcurr = pbCmdInput;
-            *(int*)pcurr = inputSize - sizeof(int);
-            pcurr += sizeof(int);
-            //1. header
-            (*(RespInputHeader*)(pcurr)).cmd = RespCommand.BITCOUNT;
-            (*(RespInputHeader*)(pcurr)).flags = 0;
-            pcurr += RespInputHeader.Size;
-            //2. cmd args
-            *(long*)(pcurr) = startOffset; pcurr += 8;
-            *(long*)(pcurr) = endOffset; pcurr += 8;
-            *pcurr = bitOffsetType;
-            #endregion
+                header = new RespInputHeader { cmd = RespCommand.BITCOUNT },
+                parseState = parseState,
+                parseStateStartIdx = 1
+            };
 
             var o = new SpanByteAndMemory(dcurr, (int)(dend - dcurr));
 
@@ -322,8 +270,6 @@ namespace Garnet.server
                 return AbortWithWrongNumberOfArguments(nameof(RespCommand.BITPOS));
             }
 
-            var inputHeader = new RawStringInput();
-
             //<[Get Key]>
             var sbKey = parseState.GetArgSliceByRef(0).SpanByte;
 
@@ -334,14 +280,17 @@ namespace Garnet.server
 
             //Process offsets here if they exist
             var startOffset = 0; // default is at the start of bitmap array
-            var endOffset = -1; // default is at the end of the bitmap array (negative values indicate offset starting from end)
+            var endOffset =
+                -1; // default is at the end of the bitmap array (negative values indicate offset starting from end)
             byte bitOffsetType = 0x0; // treat offsets as byte or bit offsets
 
-            if (parseState.Count > 2)//Start offset exists
+            if (parseState.Count > 2) //Start offset exists
             {
-                if (!parseState.TryGetInt(2, out startOffset) || (parseState.Count > 3 && !parseState.TryGetInt(3, out endOffset)))
+                if (!parseState.TryGetInt(2, out startOffset) ||
+                    (parseState.Count > 3 && !parseState.TryGetInt(3, out endOffset)))
                 {
-                    while (!RespWriteUtils.WriteError(CmdStrings.RESP_ERR_GENERIC_VALUE_IS_NOT_INTEGER, ref dcurr, dend))
+                    while (!RespWriteUtils.WriteError(CmdStrings.RESP_ERR_GENERIC_VALUE_IS_NOT_INTEGER, ref dcurr,
+                               dend))
                         SendAndReset();
                     return true;
                 }
@@ -353,32 +302,12 @@ namespace Garnet.server
                 bitOffsetType = sbOffsetType.EqualsUpperCaseSpanIgnoringCase("BIT"u8) ? (byte)0x1 : (byte)0x0;
             }
 
-            #region BitPosCmdIO
-            //4 byte length of input
-            //1 byte RespCommand
-            //1 byte RespInputFlags
-            //1 byte setVal
-            //8 byte bit startOffset
-            //8 byte bit endOffset
-            int inputSize = sizeof(int) + RespInputHeader.Size + sizeof(byte) + sizeof(long) + sizeof(long) + sizeof(byte);
-            byte* pbCmdInput = stackalloc byte[inputSize];
-
-            ///////////////
-            //Build Input//
-            ///////////////
-            byte* pcurr = pbCmdInput;
-            *(int*)pcurr = inputSize - sizeof(int);
-            pcurr += sizeof(int);
-            //1. header
-            (*(RespInputHeader*)(pcurr)).cmd = RespCommand.BITPOS;
-            (*(RespInputHeader*)(pcurr)).flags = 0;
-            pcurr += RespInputHeader.Size;
-            //2. cmd args
-            *(byte*)(pcurr) = bSetVal; pcurr++;
-            *(long*)(pcurr) = startOffset; pcurr += 8;
-            *(long*)(pcurr) = endOffset; pcurr += 8;
-            *pcurr = bitOffsetType;
-            #endregion
+            var inputHeader = new RawStringInput
+            {
+                header = new RespInputHeader { cmd = RespCommand.BITPOS },
+                parseState = parseState,
+                parseStateStartIdx = 1,
+            };
 
             var o = new SpanByteAndMemory(dcurr, (int)(dend - dcurr));
 
@@ -476,7 +405,9 @@ namespace Garnet.server
                     // At this point processed two arguments
                     else
                     {
-                        while (!RespWriteUtils.WriteError($"ERR Overflow type {Encoding.ASCII.GetString(overflowArg)} not supported", ref dcurr, dend))
+                        while (!RespWriteUtils.WriteError(
+                                   $"ERR Overflow type {Encoding.ASCII.GetString(overflowArg)} not supported",
+                                   ref dcurr, dend))
                             SendAndReset();
                         return true;
                     }
@@ -503,14 +434,17 @@ namespace Garnet.server
                         secondaryOPcode = (byte)RespCommand.INCRBY;
                     else
                     {
-                        while (!RespWriteUtils.WriteError($"ERR Bitfield command {Encoding.ASCII.GetString(command)} not supported", ref dcurr, dend))
+                        while (!RespWriteUtils.WriteError(
+                                   $"ERR Bitfield command {Encoding.ASCII.GetString(command)} not supported", ref dcurr,
+                                   dend))
                             SendAndReset();
                         return true;
                     }
 
                     if (!parseState.TryGetLong(currCount++, out value))
                     {
-                        while (!RespWriteUtils.WriteError(CmdStrings.RESP_ERR_GENERIC_VALUE_IS_NOT_INTEGER, ref dcurr, dend))
+                        while (!RespWriteUtils.WriteError(CmdStrings.RESP_ERR_GENERIC_VALUE_IS_NOT_INTEGER, ref dcurr,
+                                   dend))
                             SendAndReset();
 
                         return true;
@@ -545,7 +479,8 @@ namespace Garnet.server
             // 8 offset
             // 8 increment by quantity or value set
             // 1 byte increment behavior info
-            var inputSize = sizeof(int) + RespInputHeader.Size + sizeof(byte) + sizeof(byte) + sizeof(long) + sizeof(long) + sizeof(byte);
+            var inputSize = sizeof(int) + RespInputHeader.Size + sizeof(byte) + sizeof(byte) + sizeof(long) +
+                            sizeof(long) + sizeof(byte);
             var pbCmdInput = stackalloc byte[inputSize];
 
             ///////////////
@@ -571,14 +506,19 @@ namespace Garnet.server
                     $"OVERFLOW: {(BitFieldOverflow)bitfieldArgs[i].overflowType}]");
                 */
                 pcurr = pbCmdInput + sizeof(int) + RespInputHeader.Size;
-                *pcurr = bitfieldArgs[i].secondaryOpCode; pcurr++;
-                *pcurr = bitfieldArgs[i].typeInfo; pcurr++;
-                *(long*)pcurr = bitfieldArgs[i].offset; pcurr += 8;
-                *(long*)pcurr = bitfieldArgs[i].value; pcurr += 8;
+                *pcurr = bitfieldArgs[i].secondaryOpCode;
+                pcurr++;
+                *pcurr = bitfieldArgs[i].typeInfo;
+                pcurr++;
+                *(long*)pcurr = bitfieldArgs[i].offset;
+                pcurr += 8;
+                *(long*)pcurr = bitfieldArgs[i].value;
+                pcurr += 8;
                 *pcurr = bitfieldArgs[i].overflowType;
 
                 var output = new SpanByteAndMemory(dcurr, (int)(dend - dcurr));
-                var status = storageApi.StringBitField(ref sbKey, ref inputHeader, bitfieldArgs[i].secondaryOpCode, ref output);
+                var status = storageApi.StringBitField(ref sbKey, ref inputHeader, bitfieldArgs[i].secondaryOpCode,
+                    ref output);
 
                 if (status == GarnetStatus.NOTFOUND && bitfieldArgs[i].secondaryOpCode == (byte)RespCommand.GET)
                 {
@@ -639,7 +579,9 @@ namespace Garnet.server
                         overFlowType = (byte)BitFieldOverflow.FAIL;
                     else
                     {
-                        while (!RespWriteUtils.WriteError($"ERR Overflow type {Encoding.ASCII.GetString(overflowArg)} not supported", ref dcurr, dend))
+                        while (!RespWriteUtils.WriteError(
+                                   $"ERR Overflow type {Encoding.ASCII.GetString(overflowArg)} not supported",
+                                   ref dcurr, dend))
                             SendAndReset();
                         return true;
                     }
@@ -665,7 +607,8 @@ namespace Garnet.server
                     writeError = true;
                     if (!parseState.TryGetLong(currCount++, out value))
                     {
-                        while (!RespWriteUtils.WriteError(CmdStrings.RESP_ERR_GENERIC_VALUE_IS_NOT_INTEGER, ref dcurr, dend))
+                        while (!RespWriteUtils.WriteError(CmdStrings.RESP_ERR_GENERIC_VALUE_IS_NOT_INTEGER, ref dcurr,
+                                   dend))
                             SendAndReset();
 
                         return true;
@@ -690,7 +633,8 @@ namespace Garnet.server
             // Process only bitfield GET and skip any other subcommand.
             if (writeError)
             {
-                while (!RespWriteUtils.WriteError("ERR BITFIELD_RO only supports the GET subcommand."u8, ref dcurr, dend))
+                while (!RespWriteUtils.WriteError("ERR BITFIELD_RO only supports the GET subcommand."u8, ref dcurr,
+                           dend))
                     SendAndReset();
 
                 return true;
@@ -707,7 +651,8 @@ namespace Garnet.server
             // 8 offset
             // 8 increment by quantity or value set            
             // 1 byte increment behavior info          
-            var inputSize = sizeof(int) + RespInputHeader.Size + sizeof(byte) + sizeof(byte) + sizeof(long) + sizeof(long) + sizeof(byte);
+            var inputSize = sizeof(int) + RespInputHeader.Size + sizeof(byte) + sizeof(byte) + sizeof(long) +
+                            sizeof(long) + sizeof(byte);
             var pbCmdInput = stackalloc byte[inputSize];
 
             ///////////////
@@ -733,15 +678,20 @@ namespace Garnet.server
                     $"OVERFLOW: {(BitFieldOverflow)bitfieldArgs[i].overflowType}]");
                 */
                 pcurr = pbCmdInput + sizeof(int) + RespInputHeader.Size;
-                *pcurr = bitfieldArgs[i].secondaryOpCode; pcurr++;
-                *pcurr = bitfieldArgs[i].typeInfo; pcurr++;
-                *(long*)pcurr = bitfieldArgs[i].offset; pcurr += 8;
-                *(long*)pcurr = bitfieldArgs[i].value; pcurr += 8;
+                *pcurr = bitfieldArgs[i].secondaryOpCode;
+                pcurr++;
+                *pcurr = bitfieldArgs[i].typeInfo;
+                pcurr++;
+                *(long*)pcurr = bitfieldArgs[i].offset;
+                pcurr += 8;
+                *(long*)pcurr = bitfieldArgs[i].value;
+                pcurr += 8;
                 *pcurr = bitfieldArgs[i].overflowType;
 
                 var output = new SpanByteAndMemory(dcurr, (int)(dend - dcurr));
 
-                var status = storageApi.StringBitFieldReadOnly(ref sbKey, ref inputHeader, bitfieldArgs[i].secondaryOpCode, ref output);
+                var status = storageApi.StringBitFieldReadOnly(ref sbKey, ref inputHeader,
+                    bitfieldArgs[i].secondaryOpCode, ref output);
 
                 if (status == GarnetStatus.NOTFOUND && bitfieldArgs[i].secondaryOpCode == (byte)RespCommand.GET)
                 {
