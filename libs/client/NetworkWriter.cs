@@ -83,7 +83,7 @@ namespace Garnet.client
             this.networkPool = new LimitedFixedBufferPool(messageBufferSize, logger: logger);
 
             if (BufferSize > PageOffset.kPageMask) throw new Exception();
-            this.networkHandler = networkHandler = new GarnetClientTcpNetworkHandler(serverHook, AsyncFlushPageCallback, socket, networkPool, sslOptions != null, serverHook, networkSendThrottleMax, logger);
+            this.networkHandler = networkHandler = new GarnetClientTcpNetworkHandler(serverHook, AsyncFlushPageCallback, socket, networkPool, sslOptions != null, serverHook, networkSendThrottleMax: networkSendThrottleMax, logger: logger);
             networkSender = networkHandler.GetNetworkSender();
 
             FlushEvent.Initialize();

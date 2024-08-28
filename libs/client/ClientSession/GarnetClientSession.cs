@@ -117,7 +117,7 @@ namespace Garnet.client
         public void Connect(int timeoutMs = 0, CancellationToken token = default)
         {
             socket = GetSendSocket(address, port, timeoutMs);
-            networkHandler = new GarnetClientSessionTcpNetworkHandler(this, socket, networkPool, sslOptions != null, this, networkSendThrottleMax, logger);
+            networkHandler = new GarnetClientSessionTcpNetworkHandler(this, socket, networkPool, sslOptions != null, messageConsumer: this, networkSendThrottleMax: networkSendThrottleMax, logger: logger);
             networkHandler.StartAsync(sslOptions, $"{address}:{port}", token).ConfigureAwait(false).GetAwaiter().GetResult();
             networkSender = networkHandler.GetNetworkSender();
             networkSender.GetResponseObject();

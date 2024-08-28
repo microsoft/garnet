@@ -10,8 +10,8 @@ namespace Garnet.client
 {
     sealed class GarnetClientSessionTcpNetworkHandler : TcpNetworkHandlerBase<GarnetClientSession, GarnetTcpNetworkSender>
     {
-        public GarnetClientSessionTcpNetworkHandler(GarnetClientSession serverHook, Socket socket, LimitedFixedBufferPool networkPool, bool useTLS, IMessageConsumer messageConsumer, int networkSendThrottleMax = 8, ILogger logger = null)
-            : base(serverHook, new GarnetTcpNetworkSender(socket, networkPool, networkSendThrottleMax), socket, networkPool, useTLS, messageConsumer, logger)
+        public GarnetClientSessionTcpNetworkHandler(GarnetClientSession serverHook, Socket socket, LimitedFixedBufferPool sendNetworkPool, bool useTLS, IMessageConsumer messageConsumer, LimitedFixedBufferPool recvNetworkPool = null, int networkSendThrottleMax = 8, ILogger logger = null)
+            : base(serverHook, new GarnetTcpNetworkSender(socket, sendNetworkPool, networkSendThrottleMax), socket, sendNetworkPool, useTLS, recvNetworkPool: recvNetworkPool, messageConsumer: messageConsumer, logger: logger)
         {
         }
 
