@@ -283,7 +283,7 @@ namespace Garnet.test.cluster
             }
         }
 
-        [Test,Order(7)]
+        [Test, Order(7)]
         public void ClusterClientList()
         {
             const int NodeCount = 4;
@@ -296,7 +296,7 @@ namespace Garnet.test.cluster
             var numWithTwoReplicaConnections = 0;
 
             // Every node should have 1 normal connection and either 2 master + 1 replica, or 2 replica + 1 master
-            for (var nodeIx =0; nodeIx < NodeCount; nodeIx++)
+            for (var nodeIx = 0; nodeIx < NodeCount; nodeIx++)
             {
                 var fullList = (string)context.clusterTestUtils.Execute((IPEndPoint)context.endpoints[nodeIx], "CLIENT", ["LIST"]);
                 var numNormal = fullList.Split("\r\n").Count(static x => x.Contains(" flags=N "));
@@ -307,7 +307,7 @@ namespace Garnet.test.cluster
                 ClassicAssert.IsTrue(numReplica >= 1 && numReplica <= 2);
                 ClassicAssert.IsTrue(numMaster >= 1 && numMaster <= 2);
 
-                if(numMaster == 1)
+                if (numMaster == 1)
                 {
                     ClassicAssert.AreEqual(2, numReplica);
                     numWithTwoReplicaConnections++;

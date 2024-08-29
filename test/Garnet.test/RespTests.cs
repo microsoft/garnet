@@ -2422,7 +2422,7 @@ namespace Garnet.test
 
                 // Count of killed connections
                 var res = mainDB.Execute("CLIENT", "KILL", "LADDR", localEndpoint);
-                
+
                 // SE.Redis spins up multiple connections, so we can kill more than 1 (but at least 1) connection
                 ClassicAssert.IsTrue((int)res >= 1);
 
