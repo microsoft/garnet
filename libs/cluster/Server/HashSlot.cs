@@ -44,7 +44,7 @@ namespace Garnet.cluster
     /// <summary>
     /// Extension methods for <see cref="SlotState"/>.
     /// </summary>
-    public static class SloteStateExtensions
+    public static class SlotStateExtensions
     {
         /// <summary>
         /// Validate that the given <see cref="SlotState"/> is legal, and _could_ have come from the given <see cref="ReadOnlySpan{T}"/>.
