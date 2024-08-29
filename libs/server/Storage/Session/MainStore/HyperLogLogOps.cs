@@ -4,7 +4,6 @@
 using System;
 using System.Diagnostics;
 using System.Text;
-using Garnet.common;
 using Tsavorite.core;
 
 namespace Garnet.server
@@ -21,33 +20,37 @@ namespace Garnet.server
              where TContext : ITsavoriteContext<SpanByte, SpanByte, RawStringInput, SpanByteAndMemory, long, MainSessionFunctions, MainStoreFunctions, MainStoreAllocator>
         {
             updated = false;
-            int inputSize = sizeof(int) + RespInputHeader.Size + sizeof(int) + sizeof(long);
-            byte* pbCmdInput = stackalloc byte[inputSize];
 
-            var inputHeader = new RawStringInput();
+            var countBytes = stackalloc byte[1];
+            countBytes[0] = (byte)'1';
+            var countSlice = new ArgSlice(countBytes, 1);
 
-            byte* pcurr = pbCmdInput;
-            *(int*)pcurr = inputSize - sizeof(int);
-            pcurr += sizeof(int);
-            //header
-            (*(RespInputHeader*)(pcurr)).cmd = RespCommand.PFADD;
-            (*(RespInputHeader*)(pcurr)).flags = 0;
-            pcurr += RespInputHeader.Size;
+            ArgSlice[] currParseStateBuffer = default;
+            var currParseState = new SessionParseState();
+            currParseState.Initialize(ref currParseStateBuffer, 2);
+            currParseStateBuffer[0] = countSlice;
 
-            //cmd args
-            *(int*)pcurr = 1; pcurr += sizeof(int);
-            byte* output = stackalloc byte[1];
+            var input = new RawStringInput
+            {
+                header = new RespInputHeader { cmd = RespCommand.PFADD },
+                parseState = currParseState,
+                parseStateStartIdx = 0
+            };
+
+            var output = stackalloc byte[1];
             byte pfaddUpdated = 0;
 
-            for (int i = 0; i < elements.Length; i++)
+            foreach (var element in elements)
             {
-                var bString = Encoding.ASCII.GetBytes(elements[i]);
-                fixed (byte* ptr = bString)
+                var elementBytes = Encoding.ASCII.GetBytes(element);
+                fixed (byte* elementPtr = elementBytes)
                 {
-                    *(long*)pcurr = (long)HashUtils.MurmurHash2x64A(ptr, bString.Length);
+                    var elementSlice = new ArgSlice(elementPtr, elementBytes.Length);
+                    currParseStateBuffer[1] = elementSlice;
+
                     var o = new SpanByteAndMemory(output, 1);
-                    var keySB = key.SpanByte;
-                    RMW_MainStore(ref keySB, ref inputHeader, ref o, ref context);
+                    var sbKey = key.SpanByte;
+                    RMW_MainStore(ref sbKey, ref input, ref o, ref context);
                 }
 
                 //Invalid HLL Type
@@ -135,7 +138,7 @@ namespace Garnet.server
                 parseStateStartIdx = 0,
             };
 
-            return HyperLogLogLength(ref inputHeader, out count, out bool error, ref context);
+            return HyperLogLogLength(ref inputHeader, out count, out _, ref context);
         }
 
         /// <summary>

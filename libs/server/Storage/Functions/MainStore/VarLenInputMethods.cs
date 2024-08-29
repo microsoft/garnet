@@ -53,10 +53,9 @@ namespace Garnet.server
                     var bitFieldArgs = GetBitFieldArguments(input);
                     return sizeof(int) + BitmapManager.LengthFromType(bitFieldArgs);
                 case RespCommand.PFADD:
-                    byte* i = inputPtr + RespInputHeader.Size;
-                    return sizeof(int) + HyperLogLog.DefaultHLL.SparseInitialLength(i);
+                    return sizeof(int) + HyperLogLog.DefaultHLL.SparseInitialLength(input);
                 case RespCommand.PFMERGE:
-                    i = inputPtr + RespInputHeader.Size;
+                    var i = inputPtr + RespInputHeader.Size;
                     int length = *(int*)i;//[hll allocated size = 4 byte] + [hll data structure]
                     return sizeof(int) + length;
                 case RespCommand.SETRANGE:
@@ -150,10 +149,9 @@ namespace Garnet.server
                         var bitFieldArgs = GetBitFieldArguments(input);
                         return sizeof(int) + BitmapManager.NewBlockAllocLengthFromType(bitFieldArgs, t.Length);
                     case RespCommand.PFADD:
-                        int length = sizeof(int);
-                        byte* i = inputPtr + RespInputHeader.Size;
-                        byte* v = t.ToPointer();
-                        length += HyperLogLog.DefaultHLL.UpdateGrow(i, v);
+                        var length = sizeof(int);
+                        var v = t.ToPointer();
+                        length += HyperLogLog.DefaultHLL.UpdateGrow(input, v);
                         return length + t.MetadataSize;
 
                     case RespCommand.PFMERGE:

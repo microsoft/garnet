@@ -25,42 +25,36 @@ namespace Garnet.server
                 return AbortWithWrongNumberOfArguments(nameof(RespCommand.PFADD));
             }
 
-            var inputHeader = new RawStringInput();
+            var countBytes = stackalloc byte[1];
+            countBytes[0] = (byte)'1';
+            var countSlice = new ArgSlice(countBytes, 1);
 
-            // 4 byte length of input
-            // 1 byte RespCommand
-            // 1 byte RespInputFlags
-            // 4 byte count of value to insert
-            // 8 byte hash value
-            var inputSize = sizeof(int) + RespInputHeader.Size + sizeof(int) + sizeof(long);
-            var pbCmdInput = stackalloc byte[inputSize];
+            ArgSlice[] currParseStateBuffer = default;
+            var currParseState = new SessionParseState();
+            currParseState.Initialize(ref currParseStateBuffer, 2);
+            currParseStateBuffer[0] = countSlice;
 
-            ///////////////
-            //Build Input//
-            ///////////////
-            var pcurr = pbCmdInput;
-            *(int*)pcurr = inputSize - sizeof(int);
-            pcurr += sizeof(int);
-            //1. header
-            (*(RespInputHeader*)(pcurr)).cmd = RespCommand.PFADD;
-            (*(RespInputHeader*)(pcurr)).flags = 0;
-            pcurr += RespInputHeader.Size;
-            //2. cmd args
-            *(int*)pcurr = 1; pcurr += sizeof(int);
+            var input = new RawStringInput
+            {
+                header = new RespInputHeader { cmd = RespCommand.PFADD },
+                parseState = currParseState,
+                parseStateStartIdx = 0
+            };
+
             var output = stackalloc byte[1];
-
             byte pfaddUpdated = 0;
             var key = parseState.GetArgSliceByRef(0).SpanByte;
+
             for (var i = 1; i < parseState.Count; i++)
             {
-                var currSlice = parseState.GetArgSliceByRef(i);
-                *(long*)pcurr = (long)HashUtils.MurmurHash2x64A(currSlice.ptr, currSlice.Length);
+                var currElementSlice = parseState.GetArgSliceByRef(i);
+                currParseStateBuffer[1] = currElementSlice;
 
                 var o = new SpanByteAndMemory(output, 1);
-                storageApi.HyperLogLogAdd(ref key, ref inputHeader, ref o);
+                storageApi.HyperLogLogAdd(ref key, ref input, ref o);
 
                 //Invalid HLL Type
-                if (*output == (byte)0xFF)
+                if (*output == 0xFF)
                 {
                     while (!RespWriteUtils.WriteError(CmdStrings.RESP_ERR_WRONG_TYPE_HLL, ref dcurr, dend))
                         SendAndReset();

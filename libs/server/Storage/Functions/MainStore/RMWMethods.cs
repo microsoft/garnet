@@ -49,19 +49,16 @@ namespace Garnet.server
             switch (input.header.cmd)
             {
                 case RespCommand.PFADD:
-                    var count = input.parseState.GetInt(0);
-                    byte* i = inputPtr + RespInputHeader.Size;
-                    byte* v = value.ToPointer();
-
+                    var v = value.ToPointer();
                     value.UnmarkExtraMetadata();
-                    value.ShrinkSerializedLength(HyperLogLog.DefaultHLL.SparseInitialLength(i));
-                    HyperLogLog.DefaultHLL.Init(i, v, value.Length);
-                    *output.SpanByte.ToPointer() = (byte)1;
+                    value.ShrinkSerializedLength(HyperLogLog.DefaultHLL.SparseInitialLength(input));
+                    HyperLogLog.DefaultHLL.Init(input, v, value.Length);
+                    *output.SpanByte.ToPointer() = 1;
                     break;
 
                 case RespCommand.PFMERGE:
                     //srcHLL offset: [hll allocated size = 4 byte] + [hll data structure] //memcpy + 4 (skip len size)                    
-                    i = input.ToPointer() + RespInputHeader.Size;
+                    var i = input.ToPointer() + RespInputHeader.Size;
                     byte* srcHLL = sizeof(int) + i;
                     byte* dstHLL = value.ToPointer();
 
@@ -388,7 +385,6 @@ namespace Garnet.server
                     return true;
 
                 case RespCommand.PFADD:
-                    var i = inputPtr + RespInputHeader.Size;
                     v = value.ToPointer();
 
                     if (!HyperLogLog.DefaultHLL.IsValidHYLL(v, value.Length))
@@ -397,10 +393,10 @@ namespace Garnet.server
                         return true;
                     }
 
-                    bool updated = false;
+                    var updated = false;
                     rmwInfo.ClearExtraValueLength(ref recordInfo, ref value, value.TotalSize);
                     value.ShrinkSerializedLength(value.Length + value.MetadataSize);
-                    var result = HyperLogLog.DefaultHLL.Update(i, v, value.Length, ref updated);
+                    var result = HyperLogLog.DefaultHLL.Update(input, v, value.Length, ref updated);
                     rmwInfo.SetUsedValueLength(ref recordInfo, ref value, value.TotalSize);
 
                     if (result)
@@ -673,16 +669,16 @@ namespace Garnet.server
                     break;
 
                 case RespCommand.PFADD:
-                    bool updated = false;
-                    byte* newValPtr = newValue.ToPointer();
-                    byte* oldValPtr = oldValue.ToPointer();
+                    var updated = false;
+                    var newValPtr = newValue.ToPointer();
+                    var oldValPtr = oldValue.ToPointer();
 
                     if (newValue.Length != oldValue.Length)
-                        updated = HyperLogLog.DefaultHLL.CopyUpdate(inputPtr + RespInputHeader.Size, oldValPtr, newValPtr, newValue.Length);
+                        updated = HyperLogLog.DefaultHLL.CopyUpdate(input, oldValPtr, newValPtr, newValue.Length);
                     else
                     {
                         Buffer.MemoryCopy(oldValPtr, newValPtr, newValue.Length, oldValue.Length);
-                        HyperLogLog.DefaultHLL.Update(inputPtr + RespInputHeader.Size, newValPtr, newValue.Length, ref updated);
+                        HyperLogLog.DefaultHLL.Update(input, newValPtr, newValue.Length, ref updated);
                     }
                     *output.SpanByte.ToPointer() = updated ? (byte)1 : (byte)0;
                     break;

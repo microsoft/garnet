@@ -293,6 +293,24 @@ namespace Garnet.server
         }
 
         /// <summary>
+        /// Initialize HLL data structure
+        /// </summary>
+        /// <param name="input"></param>
+        /// <param name="value"></param>
+        /// <param name="vlen"></param>
+        public void Init(RawStringInput input, byte* value, int vlen)
+        {
+            var dense = vlen == this.DenseBytes;
+
+            if (dense)
+                InitDense(value);
+            else //Sparse representation
+                InitSparse(value);
+
+            IterateUpdate(input, value, dense);
+        }
+
+        /// <summary>
         /// Initialize sparse blob
         /// </summary>
         public void InitSparse(byte* ptr)
@@ -329,6 +347,17 @@ namespace Garnet.server
         public int SparseInitialLength(byte* input)
         {
             int count = *(int*)(input);//get count of elements in sequence
+            return SparseInitialLength(count);
+        }
+
+        /// <summary>
+        /// Initial length for HLL based on inserted value count from input
+        /// </summary>
+        /// <param name="input"></param>
+        /// <returns></returns>
+        public int SparseInitialLength(RawStringInput input)
+        {
+            var count = input.parseState.GetInt(input.parseStateStartIdx);
             return SparseInitialLength(count);
         }
 
@@ -372,13 +401,14 @@ namespace Garnet.server
         /// <summary>
         /// Return length of new value
         /// </summary>        
-        public int UpdateGrow(byte* input, byte* value)
+        public int UpdateGrow(RawStringInput input, byte* value)
         {
-            int count = *(int*)(input);
+            var count = input.parseState.GetInt(input.parseStateStartIdx);
+
             if (IsSparse(value))
             {
                 //calculate additional sparse needed and check if we are allowed to grow to that size based of the max-cap-size
-                int sparseBlobBytes = SparseCurrentSizeInBytes(value) + SparseRequiredBytes(count);
+                var sparseBlobBytes = SparseCurrentSizeInBytes(value) + SparseRequiredBytes(count);
                 return sparseBlobBytes < SparseSizeMaxCap ? sparseBlobBytes : this.DenseBytes;
             }
 
@@ -441,29 +471,29 @@ namespace Garnet.server
         /// <param name="newValue"></param>
         /// <param name="newValueLen"></param>
         /// <returns></returns>
-        public bool CopyUpdate(byte* input, byte* oldValue, byte* newValue, int newValueLen)
+        public bool CopyUpdate(RawStringInput input, byte* oldValue, byte* newValue, int newValueLen)
         {
-            bool fUpdated = false;
-            int count = *(int*)(input);
-            //Only reach this point if old-blob is of sparse type
+            var fUpdated = false;
+            
+            // Only reach this point if old-blob is of sparse type
             if (IsSparse(oldValue))
             {
                 if (newValueLen == this.DenseBytes)//We are upgrading to dense representation here
                 {
                     InitDense(newValue);
                     fUpdated |= SparseToDense(oldValue, newValue);
-                    fUpdated |= IterateUpdateDense(input, count, newValue);
+                    fUpdated |= IterateUpdate(input, newValue, true);
                     return fUpdated;
                 }
-                else//We are upgrading to a bigger size sparse representation
-                {
-                    InitSparse(newValue);
-                    int sparseBlobBytes = SparseCurrentSizeInBytes(oldValue);
-                    Buffer.MemoryCopy(oldValue, newValue, sparseBlobBytes, sparseBlobBytes);
-                    fUpdated = IterateUpdateSparse(input, count, newValue);
-                }
+
+                // We are upgrading to a bigger size sparse representation
+                InitSparse(newValue);
+                var sparseBlobBytes = SparseCurrentSizeInBytes(oldValue);
+                Buffer.MemoryCopy(oldValue, newValue, sparseBlobBytes, sparseBlobBytes);
+                fUpdated = IterateUpdate(input, newValue, false);
                 return fUpdated;
             }
+
             throw new GarnetException("HyperLogLog Update invalid data structure type");
         }
 
@@ -551,6 +581,37 @@ namespace Garnet.server
             throw new GarnetException("Update HyperLogLog Error!");
         }
 
+        /// <summary>
+        /// Main multi value update method
+        /// </summary>
+        /// <param name="input"></param>
+        /// <param name="value"></param>
+        /// <param name="valueLen"></param>
+        /// <param name="updated"></param>
+        /// <returns></returns>           
+        public bool Update(RawStringInput input, byte* value, int valueLen, ref bool updated)
+        {
+            var count = input.parseState.GetInt(input.parseStateStartIdx);
+
+            if (IsDense(value)) // If blob layout is dense
+            {
+                updated = IterateUpdate(input, value, true);
+                return true;
+            }
+
+            if (IsSparse(value)) // If blob layout is sparse
+            {
+                if (CanGrowInPlace(value, valueLen, count))//check if we can grow in place
+                {
+                    updated = IterateUpdate(input, value, false);
+                    return true;
+                }
+
+                return false;// need to request for more space
+            }
+            throw new GarnetException("Update HyperLogLog Error!");
+        }
+
         private bool IterateUpdateDense(byte* input, int count, byte* value)
         {
             bool updated = false;
@@ -622,6 +683,21 @@ namespace Garnet.server
                 long hv = *(long*)hash_value_vector;
                 updated |= UpdateSparse(value, hv);
                 hash_value_vector += 8;
+            }
+            return updated;
+        }
+
+        private bool IterateUpdate(RawStringInput input, byte* value, bool dense)
+        {
+            var updated = false;
+            var currTokenIdx = input.parseStateStartIdx;
+            var elementCount = input.parseState.GetInt(currTokenIdx++);
+            while (currTokenIdx < input.parseState.Count && elementCount > 0)
+            {
+                var currElement = input.parseState.GetArgSliceByRef(currTokenIdx++);
+                var hashValue = (long)HashUtils.MurmurHash2x64A(currElement.ptr, currElement.Length);
+                updated |= (dense ? UpdateDense(value, hashValue) : UpdateSparse(value, hashValue));
+                elementCount--;
             }
             return updated;
         }
