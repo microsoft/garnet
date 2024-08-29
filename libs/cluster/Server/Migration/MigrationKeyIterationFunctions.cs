@@ -120,7 +120,7 @@ namespace Garnet.cluster
                     offset = 0;
                     currentOffset = 0;
 
-                    poolEntry = session.GetBufferPool.Get(size: bufferSize);
+                    poolEntry = session.GetLargePageBufferPool.Get(size: bufferSize);
                     keyBuffer = poolEntry.entry;
                     currPtr = (byte*)Unsafe.AsPointer(ref keyBuffer[0]);
                     endPtr = (byte*)Unsafe.AsPointer(ref keyBuffer[^1]);

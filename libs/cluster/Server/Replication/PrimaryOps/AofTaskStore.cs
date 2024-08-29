@@ -130,7 +130,7 @@ namespace Garnet.cluster
                     this,
                     current.LocalNodeId,
                     remoteNodeId,
-                    new GarnetClientSession(address, port, clusterProvider.serverOptions.TlsOptions?.TlsClientOptions, authUsername: clusterProvider.ClusterUsername, authPassword: clusterProvider.ClusterPassword, 1 << 22, logger: logger),
+                    new GarnetClientSession(address, port, networkBuffers: new NetworkBuffers(1 << 22), clusterProvider.serverOptions.TlsOptions?.TlsClientOptions, authUsername: clusterProvider.ClusterUsername, authPassword: clusterProvider.ClusterPassword, logger: logger),
                     startAddress,
                     logger);
             }

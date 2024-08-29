@@ -131,11 +131,11 @@ namespace Garnet.networking
                 expectingData = new SemaphoreSlim(0);
                 cancellationTokenSource = new();
 
-                transportReceiveBufferEntry = recvNetworkPool.Get(recvNetworkPool.MinAllocationSize);
+                transportReceiveBufferEntry = this.recvNetworkPool.Get(this.recvNetworkPool.MinAllocationSize);
                 transportReceiveBuffer = transportReceiveBufferEntry.entry;
                 transportReceiveBufferPtr = transportReceiveBufferEntry.entryPtr;
 
-                transportSendBufferEntry = recvNetworkPool.Get(recvNetworkPool.MinAllocationSize);
+                transportSendBufferEntry = this.sendNetworkPool.Get(this.sendNetworkPool.MinAllocationSize);
                 transportSendBuffer = transportSendBufferEntry.entry;
                 transportSendBufferPtr = transportSendBufferEntry.entryPtr;
             }

@@ -223,8 +223,8 @@ namespace Resp.benchmark
                             gcs[j][i] = new GarnetClientSession(
                                 endpoint.Address.ToString(),
                                 endpoint.Port,
-                                opts.EnableTLS ? BenchUtils.GetTlsOptions(opts.TlsHost, opts.CertFileName, opts.CertPassword) : null,
-                                bufferSize: Math.Max(bufferSizeValue, opts.IntraThreadParallelism * opts.ValueLength));
+                                new NetworkBuffers(Math.Max(bufferSizeValue, opts.IntraThreadParallelism * opts.ValueLength)),
+                                opts.EnableTLS ? BenchUtils.GetTlsOptions(opts.TlsHost, opts.CertFileName, opts.CertPassword) : null);
                             gcs[j][i].Connect();
                             if (auth != null)
                             {

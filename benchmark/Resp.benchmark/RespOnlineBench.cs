@@ -157,7 +157,7 @@ namespace Resp.benchmark
             {
                 gcsPool = new AsyncPool<GarnetClientSession>(opts.NumThreads.First(), () =>
                 {
-                    var c = new GarnetClientSession(address, port, opts.EnableTLS ? BenchUtils.GetTlsOptions(opts.TlsHost, opts.CertFileName, opts.CertPassword) : null);
+                    var c = new GarnetClientSession(address, port, NetworkBuffers.Default, opts.EnableTLS ? BenchUtils.GetTlsOptions(opts.TlsHost, opts.CertFileName, opts.CertPassword) : null);
                     c.Connect();
                     if (auth != null)
                     {
@@ -573,8 +573,8 @@ namespace Resp.benchmark
                 client = new GarnetClientSession(
                     address,
                     port,
-                    opts.EnableTLS ? BenchUtils.GetTlsOptions(opts.TlsHost, opts.CertFileName, opts.CertPassword) : null,
-                    bufferSize: Math.Max(bufferSizeValue, opts.ValueLength * opts.IntraThreadParallelism));
+                    new(Math.Max(bufferSizeValue, opts.ValueLength * opts.IntraThreadParallelism)),
+                    opts.EnableTLS ? BenchUtils.GetTlsOptions(opts.TlsHost, opts.CertFileName, opts.CertPassword) : null);
                 client.Connect();
                 if (auth != null)
                 {
@@ -669,7 +669,7 @@ namespace Resp.benchmark
             GarnetClientSession client = null;
             if (!opts.Pool)
             {
-                client = new GarnetClientSession(address, port, opts.EnableTLS ? BenchUtils.GetTlsOptions(opts.TlsHost, opts.CertFileName, opts.CertPassword) : null, null, null, Math.Max(131072, opts.IntraThreadParallelism * opts.ValueLength));
+                client = new GarnetClientSession(address, port, new NetworkBuffers(Math.Max(131072, opts.IntraThreadParallelism * opts.ValueLength)), opts.EnableTLS ? BenchUtils.GetTlsOptions(opts.TlsHost, opts.CertFileName, opts.CertPassword) : null, null, null);
                 client.Connect();
                 if (auth != null)
                 {
