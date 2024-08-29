@@ -381,7 +381,7 @@ namespace Garnet.server
                 return GarnetStatus.OK;
 
             // Create a random seed
-            var seed = RandomGen.Next();
+            var seed = Random.Shared.Next();
 
             // Prepare the input
             var input = new ObjectInput
@@ -427,7 +427,7 @@ namespace Garnet.server
                 return GarnetStatus.OK;
 
             // Create a random seed
-            var seed = RandomGen.Next();
+            var seed = Random.Shared.Next();
 
             // Prepare the input
             var input = new ObjectInput

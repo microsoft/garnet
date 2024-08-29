@@ -156,11 +156,6 @@ namespace Garnet.server
         bool waitForAofBlocking = false;
 
         /// <summary>
-        /// Random number generator for operations, using a cryptographic generator as the base seed
-        /// </summary>
-        private static readonly Random RandomGen = new(RandomNumberGenerator.GetInt32(int.MaxValue));
-
-        /// <summary>
         /// A per-session cache for storing lua scripts
         /// </summary>
         internal readonly SessionScriptCache sessionScriptCache;
