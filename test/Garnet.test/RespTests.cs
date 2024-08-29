@@ -2490,7 +2490,7 @@ namespace Garnet.test
             static string GetFlagForSessionId(long sessionId, string flag, IDatabase db)
             {
                 var list = (string)db.Execute("CLIENT", "LIST");
-                var line = list.Split("\r\n").Single(l => l.Contains($"id={sessionId} "));
+                var line = list.Split("\n").Single(l => l.Contains($"id={sessionId} "));
 
                 string flagValue = null;
 
@@ -2610,7 +2610,7 @@ namespace Garnet.test
         /// </summary>
         private static void AssertExpectedClientFields(string list)
         {
-            var lines = list.Split("\r\n");
+            var lines = list.Split("\n");
             ClassicAssert.IsTrue(lines.Length >= 1);
 
             foreach (var line in lines)

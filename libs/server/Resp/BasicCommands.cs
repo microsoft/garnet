@@ -1471,7 +1471,8 @@ namespace Garnet.server
                     {
                         if (!first)
                         {
-                            resultSb.AppendLine();
+                            // Redis uses a single \n, not \r\n like you might expect
+                            resultSb.Append("\n");
                         }
 
                         WriteClientInfo(clusterProvider, resultSb, resp, nowMilliseconds);

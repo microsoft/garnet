@@ -299,9 +299,9 @@ namespace Garnet.test.cluster
             for (var nodeIx = 0; nodeIx < NodeCount; nodeIx++)
             {
                 var fullList = (string)context.clusterTestUtils.Execute((IPEndPoint)context.endpoints[nodeIx], "CLIENT", ["LIST"]);
-                var numNormal = fullList.Split("\r\n").Count(static x => x.Contains(" flags=N "));
-                var numReplica = fullList.Split("\r\n").Count(static x => x.Contains(" flags=S "));
-                var numMaster = fullList.Split("\r\n").Count(static x => x.Contains(" flags=M "));
+                var numNormal = fullList.Split("\n").Count(static x => x.Contains(" flags=N "));
+                var numReplica = fullList.Split("\n").Count(static x => x.Contains(" flags=S "));
+                var numMaster = fullList.Split("\n").Count(static x => x.Contains(" flags=M "));
 
                 ClassicAssert.AreEqual(1, numNormal);
                 ClassicAssert.IsTrue(numReplica >= 1 && numReplica <= 2);
@@ -321,8 +321,8 @@ namespace Garnet.test.cluster
                 var replicaList = (string)context.clusterTestUtils.Execute((IPEndPoint)context.endpoints[nodeIx], "CLIENT", ["LIST", "TYPE", "REPLICA"]);
                 var masterList = (string)context.clusterTestUtils.Execute((IPEndPoint)context.endpoints[nodeIx], "CLIENT", ["LIST", "TYPE", "MASTER"]);
 
-                ClassicAssert.AreEqual(numReplica, replicaList.Split("\r\n").Length);
-                ClassicAssert.AreEqual(numMaster, masterList.Split("\r\n").Length);
+                ClassicAssert.AreEqual(numReplica, replicaList.Split("\n").Length);
+                ClassicAssert.AreEqual(numMaster, masterList.Split("\n").Length);
             }
 
             ClassicAssert.AreEqual(2, numWithTwoMasterConnections);
