@@ -1,0 +1,27 @@
+name: CI BDN.benchmark
+on:
+  workflow_dispatch:
+  
+env:
+  DOTNET_SKIP_FIRST_TIME_EXPERIENCE: 1
+  DOTNET_NOLOGO: true
+
+jobs:
+  changes:
+    name: Check for changes
+    runs-on: ubuntu-latest # don't need matrix to test where the changes were made in code
+    permissions:
+      pull-requests: read
+      contents: read
+    steps:
+    - name: Check out code
+      uses: actions/checkout@v4
+    - name: Apply filter
+      uses: dorny/paths-filter@v3
+      id: filter
+      with:
+        filters: |
+          website:
+            - 'website/**'
+          bdnbenchmark:
+            - '!((*.md)|(website/**))'
