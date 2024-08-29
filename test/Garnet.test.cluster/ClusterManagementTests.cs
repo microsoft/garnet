@@ -317,5 +317,42 @@ namespace Garnet.test.cluster
                 ClassicAssert.AreEqual("ERR syntax error", errorMsg);
             }
         }
+
+
+
+        [Test]
+        public void ClusterFailoverBadOptions()
+        {
+            var node_count = 4;
+            context.CreateInstances(node_count);
+            context.CreateConnection();
+            var (_, _) = context.clusterTestUtils.SimpleSetupCluster(node_count, 0, logger: context.logger);
+
+            var endpoint = (IPEndPoint)context.endpoints[0];
+
+            // Default rejected
+            {
+                var errorMsg = (string)context.clusterTestUtils.Execute(endpoint, "CLUSTER", ["FAILOVER", "DEFAULT"]);
+                ClassicAssert.AreEqual("ERR Failover option (DEFAULT) not supported", errorMsg);
+            }
+
+            // Invalid rejected
+            {
+                var errorMsg = (string)context.clusterTestUtils.Execute(endpoint, "CLUSTER", ["FAILOVER", "Invalid"]);
+                ClassicAssert.AreEqual("ERR Failover option (Invalid) not supported", errorMsg);
+            }
+
+            // Numeric equivalent rejected
+            {
+                var errorMsg = (string)context.clusterTestUtils.Execute(endpoint, "CLUSTER", ["FAILOVER", "2"]);
+                ClassicAssert.AreEqual("ERR Failover option (2) not supported", errorMsg);
+            }
+
+            // Numeric out of range rejected
+            {
+                var errorMsg = (string)context.clusterTestUtils.Execute(endpoint, "CLUSTER", ["FAILOVER", "128"]);
+                ClassicAssert.AreEqual("ERR Failover option (128) not supported", errorMsg);
+            }
+        }
     }
 }
