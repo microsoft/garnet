@@ -2492,8 +2492,19 @@ namespace Garnet.test
                 var list = (string)db.Execute("CLIENT", "LIST");
                 var line = list.Split("\r\n").Single(l => l.Contains($"id={sessionId} "));
 
-                var flagPair = line.Split(" ").Single(l => l.StartsWith($"{flag}="));
-                var flagValue = flagPair[$"{flag}=".Length..];
+                string flagValue = null;
+
+                foreach (var flagPair in line.Split(" "))
+                {
+                    if (flagPair.StartsWith($"{flag}="))
+                    {
+                        ClassicAssert.IsNull(flagValue, $"In {line}, found duplicate {flag}");
+
+                        flagValue = flagPair[$"{flag}=".Length..];
+                    }
+                }
+
+                ClassicAssert.NotNull(flagValue, $"In {line}, looking for {flag}");
 
                 return flagValue;
             }
@@ -2605,17 +2616,17 @@ namespace Garnet.test
             foreach (var line in lines)
             {
                 var flags = line.Split(" ");
-                AssertField(flags, "id");
-                AssertField(flags, "addr");
-                AssertField(flags, "laddr");
-                AssertField(flags, "age");
-                AssertField(flags, "flags");
-                AssertField(flags, "resp");
+                AssertField(line, flags, "id");
+                AssertField(line, flags, "addr");
+                AssertField(line, flags, "laddr");
+                AssertField(line, flags, "age");
+                AssertField(line, flags, "flags");
+                AssertField(line, flags, "resp");
             }
 
             // Check that a given flag is set
-            static void AssertField(string[] fields, string name)
-            => ClassicAssert.AreEqual(1, fields.Count(f => f.StartsWith($"{name}=")), $"Expected field {name}");
+            static void AssertField(string line, string[] fields, string name)
+            => ClassicAssert.AreEqual(1, fields.Count(f => f.StartsWith($"{name}=")), $"In {line}, expected single field {name}");
         }
     }
 }
