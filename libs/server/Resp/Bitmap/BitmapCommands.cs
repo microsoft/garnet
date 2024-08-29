@@ -348,7 +348,7 @@ namespace Garnet.server
         /// <summary>
         /// Performs bitwise operations on multiple strings and store the result.
         /// </summary>
-        private bool NetworkStringBitOperation<TGarnetApi>(BitmapOperation bitop, ref TGarnetApi storageApi)
+        private bool NetworkStringBitOperation<TGarnetApi>(BitmapOperation bitOp, ref TGarnetApi storageApi)
             where TGarnetApi : IGarnetApi
         {
             // Too few keys
@@ -367,7 +367,14 @@ namespace Garnet.server
                 return true;
             }
 
-            _ = storageApi.StringBitOperation(parseState.Parameters, bitop, out var result);
+            var input = new RawStringInput
+            {
+                header = new RespInputHeader { cmd = RespCommand.BITOP },
+                parseState = parseState,
+                parseStateStartIdx = 0,
+            };
+
+            _ = storageApi.StringBitOperation(ref input, bitOp, out var result);
             while (!RespWriteUtils.WriteInteger(result, ref dcurr, dend))
                 SendAndReset();
 
@@ -377,7 +384,7 @@ namespace Garnet.server
         /// <summary>
         /// Performs arbitrary bitfield integer operations on strings.
         /// </summary>
-        private bool StringBitField<TGarnetApi>(ref TGarnetApi storageApi)
+        private bool StringBitField<TGarnetApi>(ref TGarnetApi storageApi, bool readOnly = false)
             where TGarnetApi : IGarnetApi
         {
             if (parseState.Count < 1)
@@ -402,7 +409,7 @@ namespace Garnet.server
                 var command = commandSlice.ReadOnlySpan;
 
                 // Process overflow command
-                if (command.EqualsUpperCaseSpanIgnoringCase("OVERFLOW"u8))
+                if (!readOnly && command.EqualsUpperCaseSpanIgnoringCase("OVERFLOW"u8))
                 {
                     // Get overflow parameter
                     overflowTypeSlice = parseState.GetArgSliceByRef(currTokenIdx);
@@ -463,6 +470,13 @@ namespace Garnet.server
                 }
                 else
                 {
+                    if (readOnly)
+                    {
+                        while (!RespWriteUtils.WriteError(CmdStrings.RESP_SYNTAX_ERROR, ref dcurr, dend))
+                            SendAndReset();
+                        return true;
+                    }
+
                     RespCommand op;
                     // SET and INCRBY take 3 args, encoding, offset, and valueArg
                     if (command.EqualsUpperCaseSpanIgnoringCase("SET"u8))
@@ -550,171 +564,8 @@ namespace Garnet.server
         private bool StringBitFieldReadOnly<TGarnetApi>(ref TGarnetApi storageApi)
             where TGarnetApi : IGarnetApi
         {
-            //BITFIELD key [GET encoding offset] [SET encoding offset value] [INCRBY encoding offset increment] [OVERFLOW WRAP| SAT | FAIL]
-            //Extract Key//
-            //Extract key to process for bitfield
-            var sbKey = parseState.GetArgSliceByRef(0).SpanByte;
-
-            var inputHeader = new RawStringInput();
-
-            var currCount = 1;
-            var secondaryCmdCount = 0;
-            var overFlowType = (byte)BitFieldOverflow.WRAP;
-
-            List<BitFieldCmdArgs> bitfieldArgs = new();
-            byte secondaryOPcode = default;
-            byte encodingInfo = default;
-            long offset = default;
-            long value = default;
-            bool writeError = false;
-            while (currCount < parseState.Count)
-            {
-                //process overflow command
-                var command = parseState.GetArgSliceByRef(currCount++).ReadOnlySpan;
-
-                //Process overflow subcommand
-                if (command.EqualsUpperCaseSpanIgnoringCase("OVERFLOW"u8))
-                {
-                    //Get overflow parameter
-                    var overflowArg = parseState.GetArgSliceByRef(currCount++).ReadOnlySpan;
-
-                    if (overflowArg.EqualsUpperCaseSpanIgnoringCase("WRAP"u8))
-                        overFlowType = (byte)BitFieldOverflow.WRAP;
-                    else if (overflowArg.EqualsUpperCaseSpanIgnoringCase("SAT"u8))
-                        overFlowType = (byte)BitFieldOverflow.SAT;
-                    else if (overflowArg.EqualsUpperCaseSpanIgnoringCase("FAIL"u8))
-                        overFlowType = (byte)BitFieldOverflow.FAIL;
-                    else
-                    {
-                        while (!RespWriteUtils.WriteError(
-                                   $"ERR Overflow type {Encoding.ASCII.GetString(overflowArg)} not supported",
-                                   ref dcurr, dend))
-                            SendAndReset();
-                        return true;
-                    }
-
-                    continue;
-                }
-
-                // [GET <encoding> <offset>] [SET <encoding> <offset> <value>] [INCRBY <encoding> <offset> <increment>]
-                // Process encoding argument
-                var encoding = parseState.GetString(currCount++);
-
-                // Process offset argument
-                var offsetArg = parseState.GetString(currCount++);
-
-                // Subcommand takes 2 args, encoding and offset
-                if (command.EqualsUpperCaseSpanIgnoringCase("GET"u8))
-                {
-                    secondaryOPcode = (byte)RespCommand.GET;
-                }
-                else
-                {
-                    // SET and INCRBY take 3 args, encoding, offset, and valueArg
-                    writeError = true;
-                    if (!parseState.TryGetLong(currCount++, out value))
-                    {
-                        while (!RespWriteUtils.WriteError(CmdStrings.RESP_ERR_GENERIC_VALUE_IS_NOT_INTEGER, ref dcurr,
-                                   dend))
-                            SendAndReset();
-
-                        return true;
-                    }
-                }
-
-                //Identify sign for number
-                byte sign = encoding.StartsWith('i') ? (byte)BitFieldSign.SIGNED : (byte)BitFieldSign.UNSIGNED;
-                //Number of bits in signed number
-                byte bitCount = (byte)int.Parse(encoding.AsSpan(1));
-                encodingInfo = (byte)(sign | bitCount);
-
-                //Calculate number offset from bitCount if offsetArg starts with #
-                bool offsetType = offsetArg.StartsWith('#');
-                offset = offsetType ? long.Parse(offsetArg.AsSpan(1)) : long.Parse(offsetArg);
-                offset = offsetType ? (offset * bitCount) : offset;
-
-                bitfieldArgs.Add(new(secondaryOPcode, encodingInfo, offset, value, overFlowType));
-                secondaryCmdCount++;
-            }
-
-            // Process only bitfield GET and skip any other subcommand.
-            if (writeError)
-            {
-                while (!RespWriteUtils.WriteError("ERR BITFIELD_RO only supports the GET subcommand."u8, ref dcurr,
-                           dend))
-                    SendAndReset();
-
-                return true;
-            }
-
-            while (!RespWriteUtils.WriteArrayLength(secondaryCmdCount, ref dcurr, dend))
-                SendAndReset();
-
-            // 4 byte length of input
-            // 1 byte RespCommand
-            // 1 byte RespInputFlags                        
-            // 1 byte secondary op-code
-            // 1 type info            
-            // 8 offset
-            // 8 increment by quantity or value set            
-            // 1 byte increment behavior info          
-            var inputSize = sizeof(int) + RespInputHeader.Size + sizeof(byte) + sizeof(byte) + sizeof(long) +
-                            sizeof(long) + sizeof(byte);
-            var pbCmdInput = stackalloc byte[inputSize];
-
-            ///////////////
-            //Build Input//
-            ///////////////
-            var pcurr = pbCmdInput;
-            *(int*)pcurr = inputSize - sizeof(int);
-            pcurr += sizeof(int);
-            //1. header
-            (*(RespInputHeader*)(pcurr)).cmd = RespCommand.BITFIELD;
-            (*(RespInputHeader*)(pcurr)).flags = 0;
-            pcurr += RespInputHeader.Size;
-
-            for (var i = 0; i < secondaryCmdCount; i++)
-            {
-                /* Commenting due to excessive verbosity
-                logger?.LogInformation($"BITFIELD > " +
-                    $"[" + $"SECONDARY-OP: {(RespCommand)bitfieldArgs[i].secondaryOpCode}, " +
-                    $"SIGN: {((bitfieldArgs[i].typeInfo & (byte)BitFieldSign.SIGNED) > 0 ? BitFieldSign.SIGNED : BitFieldSign.UNSIGNED)}, " +
-                    $"BITCOUNT: {(bitfieldArgs[i].typeInfo & 0x7F)}, " +
-                    $"OFFSET: {bitfieldArgs[i].offset}, " +
-                    $"VALUE: {bitfieldArgs[i].value}, " +
-                    $"OVERFLOW: {(BitFieldOverflow)bitfieldArgs[i].overflowType}]");
-                */
-                pcurr = pbCmdInput + sizeof(int) + RespInputHeader.Size;
-                *pcurr = bitfieldArgs[i].secondaryOpCode;
-                pcurr++;
-                *pcurr = bitfieldArgs[i].typeInfo;
-                pcurr++;
-                *(long*)pcurr = bitfieldArgs[i].offset;
-                pcurr += 8;
-                *(long*)pcurr = bitfieldArgs[i].value;
-                pcurr += 8;
-                *pcurr = bitfieldArgs[i].overflowType;
-
-                var output = new SpanByteAndMemory(dcurr, (int)(dend - dcurr));
-
-                var status = storageApi.StringBitFieldReadOnly(ref sbKey, ref inputHeader,
-                    bitfieldArgs[i].secondaryOpCode, ref output);
-
-                if (status == GarnetStatus.NOTFOUND && bitfieldArgs[i].secondaryOpCode == (byte)RespCommand.GET)
-                {
-                    while (!RespWriteUtils.WriteArrayItem(0, ref dcurr, dend))
-                        SendAndReset();
-                }
-                else
-                {
-                    if (!output.IsSpanByte)
-                        SendAndReset(output.Memory, output.Length);
-                    else
-                        dcurr += output.Length;
-                }
-            }
-
-            return true;
+            // BITFIELD_RO key [GET encoding offset [GET encoding offset] ... ]
+            return StringBitField(ref storageApi, true);
         }
     }
 }

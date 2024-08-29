@@ -87,32 +87,20 @@ namespace Garnet.server
             return status;
         }
 
-        public unsafe GarnetStatus StringBitOperation(Span<ArgSlice> keys, BitmapOperation bitop, out long result)
+        public unsafe GarnetStatus StringBitOperation(ref RawStringInput input, BitmapOperation bitOp, out long result)
         {
             var maxBitmapLen = int.MinValue;
             var minBitmapLen = int.MaxValue;
             var status = GarnetStatus.NOTFOUND;
+            var keys = input.parseState.Parameters;
             var keyCount = keys.Length;
-
-            var inputHeader = new RawStringInput();
-
-            // prepare input
-            var inputSize = sizeof(int) + RespInputHeader.Size;
-            var pbCmdInput = stackalloc byte[inputSize];
-
-            var pcurr = pbCmdInput;
-            *(int*)pcurr = inputSize - sizeof(int);
-            pcurr += sizeof(int);
-            (*(RespInputHeader*)pcurr).cmd = RespCommand.BITOP;
-            (*(RespInputHeader*)pcurr).flags = 0;
-
+            
             // 8 byte start pointer
             // 4 byte int length
             var output = stackalloc byte[12];
             var srcBitmapStartPtrs = stackalloc byte*[keyCount - 1];
             var srcBitmapEndPtrs = stackalloc byte*[keyCount - 1];
 
-            byte* dstBitmapPtr;
             var createTransaction = false;
             if (txnManager.state != TxnState.Running)
             {
@@ -139,7 +127,7 @@ namespace Garnet.server
                     var srcKey = keys[i];
                     //Read srcKey
                     var outputBitmap = new SpanByteAndMemory(output, 12);
-                    status = ReadWithUnsafeContext(srcKey, ref inputHeader, ref outputBitmap, localHeadAddress, out bool epochChanged, ref uc);
+                    status = ReadWithUnsafeContext(srcKey, ref input, ref outputBitmap, localHeadAddress, out bool epochChanged, ref uc);
                     if (epochChanged)
                     {
                         goto readFromScratch;
@@ -164,7 +152,7 @@ namespace Garnet.server
                 #region performBitop
                 // Allocate result buffers
                 sectorAlignedMemoryBitmap ??= new SectorAlignedMemory(bitmapBufferSize + sectorAlignedMemoryPoolAlignment, sectorAlignedMemoryPoolAlignment);
-                dstBitmapPtr = sectorAlignedMemoryBitmap.GetValidPointer() + sectorAlignedMemoryPoolAlignment;
+                var dstBitmapPtr = sectorAlignedMemoryBitmap.GetValidPointer() + sectorAlignedMemoryPoolAlignment;
                 if (maxBitmapLen + sectorAlignedMemoryPoolAlignment > bitmapBufferSize)
                 {
                     do
@@ -182,7 +170,7 @@ namespace Garnet.server
                 if (keysFound > 0)
                 {
                     //1. Multi-way bitmap merge
-                    _ = BitmapManager.BitOpMainUnsafeMultiKey(dstBitmapPtr, maxBitmapLen, srcBitmapStartPtrs, srcBitmapEndPtrs, keysFound, minBitmapLen, (byte)bitop);
+                    _ = BitmapManager.BitOpMainUnsafeMultiKey(dstBitmapPtr, maxBitmapLen, srcBitmapStartPtrs, srcBitmapEndPtrs, keysFound, minBitmapLen, (byte)bitOp);
                     #endregion
 
                     if (maxBitmapLen > 0)
@@ -212,15 +200,29 @@ namespace Garnet.server
             return status;
         }
 
-        public GarnetStatus StringBitOperation(BitmapOperation bitop, ArgSlice destinationKey, ArgSlice[] keys, out long result)
+        public GarnetStatus StringBitOperation(BitmapOperation bitOp, ArgSlice destinationKey, ArgSlice[] keys, out long result)
         {
             result = 0;
             if (destinationKey.Length == 0)
                 return GarnetStatus.OK;
-            ArgSlice[] keysBitOp = new ArgSlice[keys.Length + 1];
-            keysBitOp[0] = destinationKey;
-            keys.CopyTo(keysBitOp, 1);
-            return StringBitOperation(keysBitOp, bitop, out result);
+
+            ArgSlice[] parseStateBuffer = default;
+            var parseState = new SessionParseState();
+
+            var args = new ArgSlice[keys.Length + 1];
+            args[0] = destinationKey;
+            keys.CopyTo(args, 1);
+
+            parseState.InitializeWithArguments(ref parseStateBuffer, args);
+
+            var input = new RawStringInput
+            {
+                header = new RespInputHeader { cmd = RespCommand.BITOP },
+                parseState = parseState,
+                parseStateStartIdx = 0
+            };
+
+            return StringBitOperation(ref input, bitOp, out result);
         }
 
         public unsafe GarnetStatus StringBitCount<TContext>(ArgSlice key, long start, long end, bool useBitInterval, out long result, ref TContext context)
@@ -284,43 +286,48 @@ namespace Garnet.server
         public unsafe GarnetStatus StringBitField<TContext>(ArgSlice key, List<BitFieldCmdArgs> commandArguments, out List<long?> result, ref TContext context)
              where TContext : ITsavoriteContext<SpanByte, SpanByte, RawStringInput, SpanByteAndMemory, long, MainSessionFunctions, MainStoreFunctions, MainStoreAllocator>
         {
-            var inputHeader = new RawStringInput();
+            var input = new RawStringInput
+            {
+                header = new RespInputHeader { cmd = RespCommand.BITFIELD }, parseStateStartIdx = 0
+            };
 
-            int inputSize = sizeof(int) + RespInputHeader.Size + sizeof(byte) + sizeof(byte) + sizeof(long) + sizeof(long) + sizeof(byte);
-            byte* input = scratchBufferManager.CreateArgSlice(inputSize).ptr;
             result = new();
             var keySp = key.SpanByte;
 
-            byte* pcurr = input;
-            *(int*)pcurr = inputSize - sizeof(int);
-            pcurr += sizeof(int);
-
-            (*(RespInputHeader*)(pcurr)).cmd = RespCommand.BITFIELD;
-            (*(RespInputHeader*)(pcurr)).flags = 0;
-            pcurr += RespInputHeader.Size;
-
-            for (int i = 0; i < commandArguments.Count; i++)
+            for (var i = 0; i < commandArguments.Count; i++)
             {
-                /* Commenting due to excessive verbosity
-                logger?.LogInformation($"BITFIELD > " +
-                    $"[" + $"SECONDARY-OP: {(RespCommand)commandArguments[i].secondaryOpCode}, " +
-                    $"SIGN: {((commandArguments[i].typeInfo & (byte)BitFieldSign.SIGNED) > 0 ? BitFieldSign.SIGNED : BitFieldSign.UNSIGNED)}, " +
-                    $"BITCOUNT: {(commandArguments[i].typeInfo & 0x7F)}, " +
-                    $"OFFSET: {commandArguments[i].offset}, " +
-                    $"VALUE: {commandArguments[i].value}, " +
-                    $"OVERFLOW: {(BitFieldOverflow)commandArguments[i].overflowType}]");
-                */
-                pcurr = input + sizeof(int) + RespInputHeader.Size;
-                *pcurr = commandArguments[i].secondaryOpCode; pcurr++;
-                *pcurr = commandArguments[i].typeInfo; pcurr++;
-                *(long*)pcurr = commandArguments[i].offset; pcurr += 8;
-                *(long*)pcurr = commandArguments[i].value; pcurr += 8;
-                *pcurr = commandArguments[i].overflowType;
+                var op = (RespCommand)commandArguments[i].secondaryOpCode;
+                var opBytes = Encoding.ASCII.GetBytes(op.ToString());
+                var encodingPrefix = (commandArguments[i].typeInfo & (byte)BitFieldSign.SIGNED) > 0 ? "i" : "u";
+                var encodingBytes = Encoding.ASCII.GetBytes($"{encodingPrefix}{(byte)(commandArguments[i].typeInfo & 0x7F)}");
+                var offsetBytes = Encoding.ASCII.GetBytes(commandArguments[i].offset.ToString());
+                var valueBytes = Encoding.ASCII.GetBytes(commandArguments[i].value.ToString());
+                var overflowTypeBytes = Encoding.ASCII.GetBytes(((BitFieldOverflow)commandArguments[i].overflowType).ToString());
 
                 var output = new SpanByteAndMemory(null);
-                var status = commandArguments[i].secondaryOpCode == (byte)RespCommand.GET ?
-                    Read_MainStore(ref keySp, ref inputHeader, ref output, ref context) :
-                    RMW_MainStore(ref keySp, ref inputHeader, ref output, ref context);
+                GarnetStatus status;
+                fixed (byte* opPtr = opBytes)
+                fixed (byte* encodingPtr = encodingBytes)
+                fixed (byte* offsetPtr = offsetBytes)
+                fixed (byte* valuePtr = valueBytes)
+                fixed (byte* overflowTypePtr = overflowTypeBytes)
+                {
+                    var opSlice = new ArgSlice(opPtr, opBytes.Length);
+                    var encodingSlice = new ArgSlice(encodingPtr, encodingBytes.Length);
+                    var offsetSlice = new ArgSlice(offsetPtr, offsetBytes.Length);
+                    var valueSlice = new ArgSlice(valuePtr, valueBytes.Length);
+                    var overflowTypeSlice = new ArgSlice(overflowTypePtr, overflowTypeBytes.Length);
+
+                    ArgSlice[] parseStateBuffer = default;
+                    var parseState = new SessionParseState();
+                    parseState.InitializeWithArguments(ref parseStateBuffer, opSlice, encodingSlice, offsetSlice,
+                        valueSlice, overflowTypeSlice);
+
+                    input.parseState = parseState;
+                    status = commandArguments[i].secondaryOpCode == (byte)RespCommand.GET ?
+                        Read_MainStore(ref keySp, ref input, ref output, ref context) :
+                        RMW_MainStore(ref keySp, ref input, ref output, ref context);
+                }
 
                 if (status == GarnetStatus.NOTFOUND && commandArguments[i].secondaryOpCode == (byte)RespCommand.GET)
                 {
@@ -330,8 +337,8 @@ namespace Garnet.server
                 {
                     if (status == GarnetStatus.OK)
                     {
-                        long resultCmd = 0;
-                        bool error = false;
+                        long resultCmd;
+                        var error = false;
                         if (!output.IsSpanByte)
                         {
                             fixed (byte* outputPtr = output.Memory.Memory.Span)

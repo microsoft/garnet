@@ -281,8 +281,8 @@ namespace Garnet.server
              => storageSession.StringBitCount(key, start, end, useBitInterval, out result, ref context);
 
         /// <inheritdoc />
-        public GarnetStatus StringBitOperation(Span<ArgSlice> keys, BitmapOperation bitop, out long result)
-            => storageSession.StringBitOperation(keys, bitop, out result);
+        public GarnetStatus StringBitOperation(ref RawStringInput input, BitmapOperation bitOp, out long result)
+            => storageSession.StringBitOperation(ref input, bitOp, out result);
 
         /// <inheritdoc />
         public GarnetStatus StringBitOperation(BitmapOperation bitop, ArgSlice destinationKey, ArgSlice[] keys, out long result)

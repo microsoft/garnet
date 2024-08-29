@@ -135,13 +135,20 @@ namespace Garnet.server
 
                 case RespCommand.BITCOUNT:
                     var currTokenIdx = input.parseStateStartIdx;
-                    var bcStartOffset = input.parseState.GetInt(currTokenIdx++);
-                    var bcEndOffset = input.parseState.GetInt(currTokenIdx++);
+                    var bcStartOffset = 0;
+                    var bcEndOffset = -1;
                     byte bcOffsetType = 0x0;
-                    if (currTokenIdx < input.parseState.Count)
+
+                    if (currTokenIdx + 1 < input.parseState.Count)
                     {
-                        var spanOffsetType = input.parseState.GetArgSliceByRef(currTokenIdx).ReadOnlySpan;
-                        bcOffsetType = spanOffsetType.EqualsUpperCaseSpanIgnoringCase("BIT"u8) ? (byte)0x1 : (byte)0x0;
+                        bcStartOffset = input.parseState.GetInt(currTokenIdx++);
+                        bcEndOffset = input.parseState.GetInt(currTokenIdx++);
+
+                        if (currTokenIdx < input.parseState.Count)
+                        {
+                            var spanOffsetType = input.parseState.GetArgSliceByRef(currTokenIdx).ReadOnlySpan;
+                            bcOffsetType = spanOffsetType.EqualsUpperCaseSpanIgnoringCase("BIT"u8) ? (byte)0x1 : (byte)0x0;
+                        }
                     }
 
                     var count = BitmapManager.BitCountDriver(bcStartOffset, bcEndOffset, bcOffsetType, value.ToPointer(), value.Length);

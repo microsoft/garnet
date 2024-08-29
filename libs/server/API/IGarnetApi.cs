@@ -902,11 +902,11 @@ namespace Garnet.server
         /// <summary>
         /// Performs a bitwise operations on multiple keys
         /// </summary>
-        /// <param name="keys"></param>
-        /// <param name="bitop"></param>
+        /// <param name="input"></param>
+        /// <param name="bitOp"></param>
         /// <param name="result"></param>
         /// <returns></returns>
-        GarnetStatus StringBitOperation(Span<ArgSlice> keys, BitmapOperation bitop, out long result);
+        GarnetStatus StringBitOperation(ref RawStringInput input, BitmapOperation bitOp, out long result);
 
         /// <summary>
         /// Perform a bitwise operation between multiple keys
