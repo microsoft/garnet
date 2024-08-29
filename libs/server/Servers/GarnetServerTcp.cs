@@ -22,7 +22,7 @@ namespace Garnet.server
         readonly Socket servSocket;
         readonly IGarnetTlsOptions tlsOptions;
         readonly int networkSendThrottleMax;
-        readonly LimitedFixedBufferPool networkPool;
+        readonly NetworkBuffers networkBuffers;
 
         public IPEndPoint GetEndPoint
         {
@@ -73,8 +73,10 @@ namespace Garnet.server
         {
             this.tlsOptions = tlsOptions;
             this.networkSendThrottleMax = networkSendThrottleMax;
-            this.networkPool = new LimitedFixedBufferPool(BufferSizeUtils.ServerBufferSize(new MaxSizeSettings()), logger: logger);
-            servSocket = new Socket(GetEndPoint.AddressFamily, SocketType.Stream, ProtocolType.Tcp);
+            var networkPool = new LimitedFixedBufferPool(BufferSizeUtils.ServerBufferSize(new MaxSizeSettings()), logger: logger);
+            this.networkBuffers = new NetworkBuffers(networkPool, networkPool);
+            var ip = string.IsNullOrEmpty(Address) ? IPAddress.Any : IPAddress.Parse(Address);
+            servSocket = new Socket(ip.AddressFamily, SocketType.Stream, ProtocolType.Tcp);
             acceptEventArg = new SocketAsyncEventArgs();
             acceptEventArg.Completed += AcceptEventArg_Completed;
         }
@@ -88,7 +90,7 @@ namespace Garnet.server
             servSocket.Dispose();
             acceptEventArg.UserToken = null;
             acceptEventArg.Dispose();
-            networkPool.Dispose();
+            networkBuffers.Dispose();
         }
 
         /// <summary>
@@ -139,7 +141,7 @@ namespace Garnet.server
                 {
                     try
                     {
-                        handler = new ServerTcpNetworkHandler(this, e.AcceptSocket, networkPool, tlsOptions != null, networkSendThrottleMax: networkSendThrottleMax, logger: logger);
+                        handler = new ServerTcpNetworkHandler(this, e.AcceptSocket, networkBuffers, tlsOptions != null, networkSendThrottleMax: networkSendThrottleMax, logger: logger);
                         if (!activeHandlers.TryAdd(handler, default))
                             throw new Exception("Unable to add handler to dictionary");
 

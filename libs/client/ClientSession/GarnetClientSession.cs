@@ -128,9 +128,8 @@ namespace Garnet.client
             networkHandler = new GarnetClientSessionTcpNetworkHandler(
                 this,
                 socket,
-                networkBuffers.sendBufferPool,
+                networkBuffers,
                 sslOptions != null,
-                recvNetworkPool: networkBuffers.recvBufferPool,
                 messageConsumer: this,
                 networkSendThrottleMax: networkSendThrottleMax,
                 logger: logger);

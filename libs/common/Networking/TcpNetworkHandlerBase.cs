@@ -30,8 +30,8 @@ namespace Garnet.common
         /// <summary>
         /// Constructor
         /// </summary>
-        public TcpNetworkHandlerBase(TServerHook serverHook, TNetworkSender networkSender, Socket socket, LimitedFixedBufferPool sendNetworkPool, bool useTLS, LimitedFixedBufferPool recvNetworkPool = null, IMessageConsumer messageConsumer = null, ILogger logger = null)
-            : base(serverHook, networkSender, sendNetworkPool, useTLS, recvNetworkPool: recvNetworkPool, messageConsumer: messageConsumer, logger: logger)
+        public TcpNetworkHandlerBase(TServerHook serverHook, TNetworkSender networkSender, Socket socket, NetworkBuffers networkBuffers, bool useTLS, IMessageConsumer messageConsumer = null, ILogger logger = null)
+            : base(serverHook, networkSender, networkBuffers, useTLS, messageConsumer: messageConsumer, logger: logger)
         {
             this.logger = logger;
             this.socket = socket;
@@ -162,7 +162,7 @@ namespace Garnet.common
 
         unsafe void AllocateNetworkReceiveBuffer()
         {
-            networkReceiveBufferEntry = recvNetworkPool.Get(recvNetworkPool.MinAllocationSize);
+            networkReceiveBufferEntry = networkBuffers.recvBufferPool.Get(networkBuffers.recvBufferPool.MinAllocationSize);
             networkReceiveBuffer = networkReceiveBufferEntry.entry;
             networkReceiveBufferPtr = networkReceiveBufferEntry.entryPtr;
         }

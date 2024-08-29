@@ -17,8 +17,8 @@ namespace Garnet.common
         /// <summary>
         /// Constructor
         /// </summary>
-        public TcpNetworkHandler(TServerHook serverHook, Socket socket, LimitedFixedBufferPool networkPool, bool useTLS, IMessageConsumer messageConsumer = null, LimitedFixedBufferPool recvNetworkPool = null, int networkSendThrottleMax = 8, ILogger logger = null)
-            : base(serverHook, new GarnetTcpNetworkSender(socket, networkPool, networkSendThrottleMax), socket, networkPool, useTLS, recvNetworkPool: recvNetworkPool, messageConsumer: messageConsumer, logger: logger)
+        public TcpNetworkHandler(TServerHook serverHook, Socket socket, NetworkBuffers networkBuffers, bool useTLS, IMessageConsumer messageConsumer = null, LimitedFixedBufferPool recvNetworkPool = null, int networkSendThrottleMax = 8, ILogger logger = null)
+            : base(serverHook, new GarnetTcpNetworkSender(socket, networkBuffers.sendBufferPool, networkSendThrottleMax), socket, networkBuffers, useTLS, messageConsumer: messageConsumer, logger: logger)
         {
         }
     }
