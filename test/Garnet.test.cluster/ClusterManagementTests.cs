@@ -4,6 +4,7 @@
 using System;
 using System.Collections.Generic;
 using System.Linq;
+using System.Net;
 using System.Threading;
 using Microsoft.Extensions.Logging;
 using NUnit.Framework;
@@ -279,6 +280,41 @@ namespace Garnet.test.cluster
                 var knownNodes = config.Nodes.ToArray();
                 ClassicAssert.AreEqual(knownNodes.Length, 1);
                 Thread.Sleep(1000);
+            }
+        }
+
+        [Test]
+        public void FailoverBadOptions()
+        {
+            var node_count = 4;
+            context.CreateInstances(node_count);
+            context.CreateConnection();
+            var (_, _) = context.clusterTestUtils.SimpleSetupCluster(node_count, 0, logger: context.logger);
+
+            var endpoint = (IPEndPoint)context.endpoints[0];
+
+            // Default rejected
+            {
+                var errorMsg = (string)context.clusterTestUtils.Execute(endpoint, "FAILOVER", ["DEFAULT", "localhost", "6379"]);
+                ClassicAssert.AreEqual("ERR syntax error", errorMsg);
+            }
+
+            // Invalid rejected
+            {
+                var errorMsg = (string)context.clusterTestUtils.Execute(endpoint, "FAILOVER", ["INVALID", "localhost", "6379"]);
+                ClassicAssert.AreEqual("ERR syntax error", errorMsg);
+            }
+
+            // Numeric equivalent rejected
+            {
+                var errorMsg = (string)context.clusterTestUtils.Execute(endpoint, "FAILOVER", ["2", "localhost", "6379"]);
+                ClassicAssert.AreEqual("ERR syntax error", errorMsg);
+            }
+
+            // Numeric out of range rejected
+            {
+                var errorMsg = (string)context.clusterTestUtils.Execute(endpoint, "FAILOVER", ["128", "localhost", "6379"]);
+                ClassicAssert.AreEqual("ERR syntax error", errorMsg);
             }
         }
     }
