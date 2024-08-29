@@ -1,4 +1,4 @@
-name: CI BDN.benchmark
+name: Garnet CI BDN.benchmark
 on:
   workflow_dispatch:
   
