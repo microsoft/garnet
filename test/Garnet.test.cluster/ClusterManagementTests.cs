@@ -318,8 +318,6 @@ namespace Garnet.test.cluster
             }
         }
 
-
-
         [Test]
         public void ClusterFailoverBadOptions()
         {
@@ -352,6 +350,59 @@ namespace Garnet.test.cluster
             {
                 var errorMsg = (string)context.clusterTestUtils.Execute(endpoint, "CLUSTER", ["FAILOVER", "128"]);
                 ClassicAssert.AreEqual("ERR Failover option (128) not supported", errorMsg);
+            }
+        }
+
+        [Test]
+        public void ClusterSetSlotBadOptions()
+        {
+            var node_count = 4;
+            context.CreateInstances(node_count);
+            context.CreateConnection();
+            var (_, _) = context.clusterTestUtils.SimpleSetupCluster(node_count, 0, logger: context.logger);
+
+            var endpoint = (IPEndPoint)context.endpoints[0];
+
+            // Non-numeric slot
+            {
+                var errorMsg = (string)context.clusterTestUtils.Execute(endpoint, "CLUSTER", ["SETSLOT", "abc", "STABLE"]);
+                ClassicAssert.AreEqual("ERR Invalid or out of range slot", errorMsg);
+            }
+
+            // Invalid rejected
+            {
+                var errorMsg = (string)context.clusterTestUtils.Execute(endpoint, "CLUSTER", ["SETSLOT", "123", "Invalid"]);
+                ClassicAssert.AreEqual("ERR Slot state Invalid not supported.", errorMsg);
+            }
+
+            // Offline rejected
+            {
+                var errorMsg = (string)context.clusterTestUtils.Execute(endpoint, "CLUSTER", ["SETSLOT", "123", "Offline"]);
+                ClassicAssert.AreEqual("ERR Slot state Offline not supported.", errorMsg);
+            }
+
+            // Numeric rejected
+            {
+                var errorMsg = (string)context.clusterTestUtils.Execute(endpoint, "CLUSTER", ["SETSLOT", "123", "1"]);
+                ClassicAssert.AreEqual("ERR Slot state 1 not supported.", errorMsg);
+            }
+
+            // Numeric out of range rejected
+            {
+                var errorMsg = (string)context.clusterTestUtils.Execute(endpoint, "CLUSTER", ["SETSLOT", "123", "128"]);
+                ClassicAssert.AreEqual("ERR Slot state 128 not supported.", errorMsg);
+            }
+
+            // Stable with node id rejected
+            {
+                var errorMsg = (string)context.clusterTestUtils.Execute(endpoint, "CLUSTER", ["SETSLOT", "123", "STABLE", "foo"]);
+                ClassicAssert.AreEqual("ERR syntax error", errorMsg);
+            }
+
+            // Non-stable without node id rejected
+            {
+                var errorMsg = (string)context.clusterTestUtils.Execute(endpoint, "CLUSTER", ["SETSLOT", "123", "IMPORTING"]);
+                ClassicAssert.AreEqual("ERR syntax error", errorMsg);
             }
         }
     }
