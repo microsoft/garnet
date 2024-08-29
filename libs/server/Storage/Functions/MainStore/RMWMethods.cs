@@ -111,12 +111,10 @@ namespace Garnet.server
                     break;
 
                 case RespCommand.BITFIELD:
-                    long bitfieldReturnValue;
-                    bool overflow;
-
                     value.UnmarkExtraMetadata();
-                    value.ShrinkSerializedLength(BitmapManager.LengthFromType(input.ToPointer() + RespInputHeader.Size));
-                    (bitfieldReturnValue, overflow) = BitmapManager.BitFieldExecute(inputPtr + RespInputHeader.Size, value.ToPointer(), value.Length);
+                    var bitFieldArgs = GetBitFieldArguments(input);
+                    value.ShrinkSerializedLength(BitmapManager.LengthFromType(bitFieldArgs));
+                    var (bitfieldReturnValue, overflow) = BitmapManager.BitFieldExecute(bitFieldArgs, value.ToPointer(), value.Length);
                     if (!overflow)
                         CopyRespNumber(bitfieldReturnValue, ref output);
                     else
@@ -372,18 +370,16 @@ namespace Garnet.server
                         CopyDefaultResp(CmdStrings.RESP_RETURN_VAL_1, ref output);
                     return true;
                 case RespCommand.BITFIELD:
-                    var i = inputPtr + RespInputHeader.Size;
+                    var bitFieldArgs = GetBitFieldArguments(input);
                     v = value.ToPointer();
-                    if (!BitmapManager.IsLargeEnoughForType(i, value.Length)) return false;
+                    if (!BitmapManager.IsLargeEnoughForType(bitFieldArgs, value.Length)) return false;
 
                     rmwInfo.ClearExtraValueLength(ref recordInfo, ref value, value.TotalSize);
                     value.UnmarkExtraMetadata();
                     value.ShrinkSerializedLength(value.Length + value.MetadataSize);
                     rmwInfo.SetUsedValueLength(ref recordInfo, ref value, value.TotalSize);
 
-                    long bitfieldReturnValue;
-                    bool overflow;
-                    (bitfieldReturnValue, overflow) = BitmapManager.BitFieldExecute(i, v, value.Length);
+                    var (bitfieldReturnValue, overflow) = BitmapManager.BitFieldExecute(bitFieldArgs, v, value.Length);
 
                     if (!overflow)
                         CopyRespNumber(bitfieldReturnValue, ref output);
@@ -392,7 +388,7 @@ namespace Garnet.server
                     return true;
 
                 case RespCommand.PFADD:
-                    i = inputPtr + RespInputHeader.Size;
+                    var i = inputPtr + RespInputHeader.Size;
                     v = value.ToPointer();
 
                     if (!HyperLogLog.DefaultHLL.IsValidHYLL(v, value.Length))
@@ -666,10 +662,9 @@ namespace Garnet.server
                     break;
 
                 case RespCommand.BITFIELD:
+                    var bitFieldArgs = GetBitFieldArguments(input);
                     Buffer.MemoryCopy(oldValue.ToPointer(), newValue.ToPointer(), newValue.Length, oldValue.Length);
-                    long bitfieldReturnValue;
-                    bool overflow;
-                    (bitfieldReturnValue, overflow) = BitmapManager.BitFieldExecute(inputPtr + RespInputHeader.Size, newValue.ToPointer(), newValue.Length);
+                    var (bitfieldReturnValue, overflow) = BitmapManager.BitFieldExecute(bitFieldArgs, newValue.ToPointer(), newValue.Length);
 
                     if (!overflow)
                         CopyRespNumber(bitfieldReturnValue, ref output);

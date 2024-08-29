@@ -1853,6 +1853,17 @@ namespace Garnet.test
                 ClassicAssert.AreEqual(Encoding.ASCII.GetString(CmdStrings.RESP_ERR_GENERIC_OFFSETOUTOFRANGE), ex.Message);
             }
 
+            // new key, length 10, offset invalid_offset -> RedisServerException ("ERR value is not an integer or out of range.")
+            try
+            {
+                db.Execute(nameof(RespCommand.SETRANGE), key, "invalid_offset", value);
+                Assert.Fail();
+            }
+            catch (RedisServerException ex)
+            {
+                ClassicAssert.AreEqual(Encoding.ASCII.GetString(CmdStrings.RESP_ERR_GENERIC_VALUE_IS_NOT_INTEGER), ex.Message);
+            }
+
             // existing key, length 10, offset 0, value length 5 -> 10 ("ABCDE56789")
             ClassicAssert.IsTrue(db.StringSet(key, value));
             resp = db.StringSetRange(key, 0, newValue);

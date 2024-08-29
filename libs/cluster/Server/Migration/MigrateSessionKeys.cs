@@ -27,26 +27,15 @@ namespace Garnet.cluster
 
             try
             {
-                var inputHeader = new RawStringInput();
-
                 // Transition keys to MIGRATING status
                 TryTransitionState(KeyMigrationStatus.MIGRATING);
                 WaitForConfigPropagation();
 
-                // 4 byte length of input
-                // 1 byte RespCommand
-                // 1 byte RespInputFlags
-                var inputSize = sizeof(int) + RespInputHeader.Size;
-                var pbCmdInput = stackalloc byte[inputSize];
-
                 ////////////////
                 // Build Input//
                 ////////////////
-                var pcurr = pbCmdInput;
-                *(int*)pcurr = inputSize - sizeof(int);
-                pcurr += sizeof(int);
-                // 1. Header
-                ((RespInputHeader*)pcurr)->SetHeader(RespCommandAccessor.MIGRATE, 0);
+                var input = new RawStringInput();
+                input.header.SetHeader(RespCommandAccessor.MIGRATE, 0);
 
                 var bufPtr = buffer.GetValidPointer();
                 var bufPtrEnd = bufPtr + bufferSize;
@@ -60,7 +49,7 @@ namespace Garnet.cluster
 
                     // Read value for key
                     var o = new SpanByteAndMemory(bufPtr, (int)(bufPtrEnd - bufPtr));
-                    var status = localServerSession.BasicGarnetApi.Read_MainStore(ref key, ref inputHeader, ref o);
+                    var status = localServerSession.BasicGarnetApi.Read_MainStore(ref key, ref input, ref o);
 
                     // Check if found in main store
                     if (status == GarnetStatus.NOTFOUND)

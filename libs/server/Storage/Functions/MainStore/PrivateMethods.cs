@@ -186,9 +186,8 @@ namespace Garnet.server
                     return;
 
                 case RespCommand.BITFIELD:
-                    var cmdArgsPtr = input.parseState.GetArgSliceByRef(input.parseStateStartIdx).SpanByte.ToPointer();
-                    var (retValue, overflow) = BitmapManager.BitFieldExecute(cmdArgsPtr,
-                        value.ToPointer(), value.Length);
+                    var bitFieldArgs = GetBitFieldArguments(input);
+                    var (retValue, overflow) = BitmapManager.BitFieldExecute(bitFieldArgs, value.ToPointer(), value.Length);
                     if (!overflow)
                         CopyRespNumber(retValue, ref dst);
                     else
@@ -617,6 +616,37 @@ namespace Garnet.server
             if (functionsState.StoredProcMode) return;
             SpanByte def = default;
             functionsState.appendOnlyFile.Enqueue(new AofHeader { opType = AofEntryType.StoreDelete, version = version, sessionID = sessionID }, ref key, ref def, out _);
+        }
+
+        BitFieldCmdArgs GetBitFieldArguments(RawStringInput input)
+        {
+            var currTokenIdx = input.parseStateStartIdx;
+            var opCode = (byte)input.parseState.GetEnum<RespCommand>(currTokenIdx++, true);
+            var encodingArg = input.parseState.GetString(currTokenIdx++);
+            var offsetArg = input.parseState.GetString(currTokenIdx++);
+
+            long value = default;
+            if (opCode == (byte)RespCommand.SET || opCode == (byte)RespCommand.INCRBY)
+            {
+                value = input.parseState.GetLong(currTokenIdx++);
+            }
+
+            var overflowType = (byte)BitFieldOverflow.WRAP;
+            if (currTokenIdx < input.parseState.Count)
+            {
+                overflowType = (byte)input.parseState.GetEnum<BitFieldOverflow>(currTokenIdx, true);
+            }
+
+            var sign = encodingArg[0] == 'i' ? (byte)BitFieldSign.SIGNED : (byte)BitFieldSign.UNSIGNED;
+            // Number of bits in signed number
+            var bitCount = (byte)int.Parse(encodingArg.AsSpan(1));
+            // At most 64 bits can fit into encoding info
+            var typeInfo = (byte)(sign | bitCount);
+
+            // Calculate number offset from bitCount if offsetArg starts with #
+            var offset = offsetArg[0] == '#' ? long.Parse(offsetArg.AsSpan(1)) * bitCount : long.Parse(offsetArg);
+
+            return new BitFieldCmdArgs(opCode, typeInfo, offset, value, overflowType);
         }
     }
 }

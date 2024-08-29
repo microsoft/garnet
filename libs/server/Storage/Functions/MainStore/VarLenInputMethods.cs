@@ -50,7 +50,8 @@ namespace Garnet.server
                     var bOffset = input.parseState.GetLong(input.parseStateStartIdx);
                     return sizeof(int) + BitmapManager.Length(bOffset);
                 case RespCommand.BITFIELD:
-                    return sizeof(int) + BitmapManager.LengthFromType(inputPtr + RespInputHeader.Size);
+                    var bitFieldArgs = GetBitFieldArguments(input);
+                    return sizeof(int) + BitmapManager.LengthFromType(bitFieldArgs);
                 case RespCommand.PFADD:
                     byte* i = inputPtr + RespInputHeader.Size;
                     return sizeof(int) + HyperLogLog.DefaultHLL.SparseInitialLength(i);
@@ -146,7 +147,8 @@ namespace Garnet.server
                         var bOffset = input.parseState.GetLong(input.parseStateStartIdx);
                         return sizeof(int) + BitmapManager.NewBlockAllocLength(t.Length, bOffset);
                     case RespCommand.BITFIELD:
-                        return sizeof(int) + BitmapManager.NewBlockAllocLengthFromType(inputPtr + RespInputHeader.Size, t.Length);
+                        var bitFieldArgs = GetBitFieldArguments(input);
+                        return sizeof(int) + BitmapManager.NewBlockAllocLengthFromType(bitFieldArgs, t.Length);
                     case RespCommand.PFADD:
                         int length = sizeof(int);
                         byte* i = inputPtr + RespInputHeader.Size;

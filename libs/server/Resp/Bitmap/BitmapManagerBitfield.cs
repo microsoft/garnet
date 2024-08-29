@@ -1,6 +1,7 @@
 ﻿// Copyright (c) Microsoft Corporation.
 // Licensed under the MIT license.
 
+using System.Reflection;
 using System.Runtime.CompilerServices;
 using Garnet.common;
 
@@ -22,6 +23,31 @@ namespace Garnet.server
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         private static byte GetBitFieldOverflowType(byte* input) => (*(BitFieldCmdArgs*)(input)).overflowType;
+
+        /// <summary>
+        /// Check if bitmap is large enough to apply bitfield op.
+        /// </summary>
+        /// <param name="args">Command input parameters.</param>
+        /// <param name="vlen">Length of bitfield value.</param>
+        /// <returns>True if need to grow value otherwise false.</returns>
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        public static bool IsLargeEnoughForType(BitFieldCmdArgs args, int vlen)
+        {
+            return LengthFromType(args) <= vlen;
+        }
+
+        /// <summary>
+        /// Length in bytes based on offset calculated as raw bit offset or from typeInfo bitCount.
+        /// </summary>
+        /// <param name="args">Command input parameters.</param>
+        /// <returns>Integer number of bytes required to perform bitfield op.</returns>
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        public static int LengthFromType(BitFieldCmdArgs args)
+        {
+            var offset = args.offset;
+            var bitCount = (byte)(args.typeInfo & 0x7F);
+            return LengthInBytes(offset + bitCount);
+        }
 
         /// <summary>
         /// Check if bitmap is large enough to apply bitfield op.
@@ -53,13 +79,13 @@ namespace Garnet.server
         /// <summary>
         /// Get allocation size for bitfield command.
         /// </summary>
-        /// <param name="input">Command input parameters.</param>
+        /// <param name="args">Command input parameters.</param>
         /// <param name="valueLen">Current length of bitfield value.</param>
         /// <returns>Integer number of bytes required to perform bitfield operation.</returns>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public static int NewBlockAllocLengthFromType(byte* input, int valueLen)
+        public static int NewBlockAllocLengthFromType(BitFieldCmdArgs args, int valueLen)
         {
-            int lengthInBytes = LengthFromType(input);
+            var lengthInBytes = LengthFromType(args);
             return valueLen > lengthInBytes ? valueLen : lengthInBytes;
         }
 
@@ -475,6 +501,30 @@ namespace Garnet.server
                     return IncrByBitfieldValue(value, valLen, offset, bitCount, typeInfo, incrByValue, overflowType);
                 case (byte)RespCommand.GET:
                     return (GetBitfieldValue(value, valLen, offset, bitCount, typeInfo), false);
+                default:
+                    throw new GarnetException("BITFIELD secondary op not supported");
+            }
+        }
+
+        /// <summary>
+        /// Execute bitfield operation described at input on bitmap stored within value.
+        /// </summary>
+        /// <param name="args"></param>
+        /// <param name="value"></param>
+        /// <param name="valLen"></param>
+        /// <returns></returns>
+        public static (long, bool) BitFieldExecute(BitFieldCmdArgs args, byte* value, int valLen)
+        {
+            var bitCount = (byte)(args.typeInfo & 0x7F);
+
+            switch (args.secondaryOpCode)
+            {
+                case (byte)RespCommand.SET:
+                    return SetBitfieldValue(value, valLen, args.offset, bitCount, args.typeInfo, args.value, args.overflowType);
+                case (byte)RespCommand.INCRBY:
+                    return IncrByBitfieldValue(value, valLen, args.offset, bitCount, args.typeInfo, args.value, args.overflowType);
+                case (byte)RespCommand.GET:
+                    return (GetBitfieldValue(value, valLen, args.offset, bitCount, args.typeInfo), false);
                 default:
                     throw new GarnetException("BITFIELD secondary op not supported");
             }

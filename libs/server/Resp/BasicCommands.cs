@@ -268,7 +268,7 @@ namespace Garnet.server
             var key = parseState.GetArgSliceByRef(0);
             var sbKey = key.SpanByte;
 
-            if (!parseState.TryGetInt(1, out var sliceStart) || !parseState.TryGetInt(2, out var sliceLength))
+            if (!parseState.TryGetInt(1, out _) || !parseState.TryGetInt(2, out _))
             {
                 while (!RespWriteUtils.WriteError(CmdStrings.RESP_ERR_GENERIC_VALUE_IS_NOT_INTEGER, ref dcurr, dend))
                     SendAndReset();

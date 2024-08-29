@@ -4,7 +4,9 @@
 using System;
 using System.Collections.Generic;
 using System.Diagnostics;
+using System.Globalization;
 using System.Runtime.CompilerServices;
+using System.Text;
 using Garnet.common;
 using Tsavorite.core;
 
@@ -23,30 +25,24 @@ namespace Garnet.server
             if (key.Length == 0)
                 return GarnetStatus.OK;
 
-            var inputHeader = new RawStringInput();
+            var setValBytes = stackalloc byte[1];
+            setValBytes[0] = (byte)(bit ? '1' : '0');
+            var setValSlice = new ArgSlice(setValBytes, 1);
 
-            int inputSize = sizeof(int) + RespInputHeader.Size + sizeof(long) + sizeof(byte);
-            byte* input = scratchBufferManager.CreateArgSlice(inputSize).ptr;
+            ArgSlice[] parseStateBuffer = default;
+            var parseState = new SessionParseState();
+            parseState.InitializeWithArguments(ref parseStateBuffer, offset, setValSlice);
 
-            //initialize the input variable
-            byte* pcurr = input;
-            *(int*)pcurr = inputSize - sizeof(int);
-            pcurr += sizeof(int);
-
-            (*(RespInputHeader*)pcurr).cmd = RespCommand.SETBIT;
-            (*(RespInputHeader*)pcurr).flags = 0;
-            pcurr += RespInputHeader.Size;
-
-            //offset
-            *(long*)pcurr = NumUtils.BytesToLong(offset.ReadOnlySpan);
-            pcurr += sizeof(long);
-
-            //bit value
-            *(byte*)(pcurr) = bit ? (byte)0x1 : (byte)0x0;
+            var input = new RawStringInput
+            {
+                header = new RespInputHeader { cmd = RespCommand.SETBIT },
+                parseState = parseState,
+                parseStateStartIdx = 0,
+            };
 
             SpanByteAndMemory output = new(null);
             var keySp = key.SpanByte;
-            RMW_MainStore(ref keySp, ref inputHeader, ref output, ref context);
+            RMW_MainStore(ref keySp, ref input, ref output, ref context);
 
             return GarnetStatus.OK;
         }
@@ -59,27 +55,20 @@ namespace Garnet.server
             if (key.Length == 0)
                 return GarnetStatus.OK;
 
-            var inputHeader = new RawStringInput();
+            ArgSlice[] parseStateBuffer = default;
+            var parseState = new SessionParseState();
+            parseState.InitializeWithArguments(ref parseStateBuffer, offset);
 
-            int inputSize = sizeof(int) + RespInputHeader.Size + sizeof(long);
-            byte* input = scratchBufferManager.CreateArgSlice(inputSize).ptr;
-
-            //initialize the input variable
-            byte* pcurr = input;
-            *(int*)pcurr = inputSize - sizeof(int);
-            pcurr += sizeof(int);
-
-            (*(RespInputHeader*)pcurr).cmd = RespCommand.GETBIT;
-            (*(RespInputHeader*)pcurr).flags = 0;
-            pcurr += RespInputHeader.Size;
-
-            //offset
-            *(long*)pcurr = NumUtils.BytesToLong(offset.ReadOnlySpan);
-            pcurr += sizeof(long);
+            var input = new RawStringInput
+            {
+                header = new RespInputHeader { cmd = RespCommand.GETBIT },
+                parseState = parseState,
+                parseStateStartIdx = 0,
+            };
 
             SpanByteAndMemory output = new(null);
             var keySp = key.SpanByte;
-            var status = Read_MainStore(ref keySp, ref inputHeader, ref output, ref context);
+            var status = Read_MainStore(ref keySp, ref input, ref output, ref context);
 
             if (status == GarnetStatus.OK && !output.IsSpanByte)
             {
@@ -242,29 +231,39 @@ namespace Garnet.server
             if (key.Length == 0)
                 return GarnetStatus.OK;
 
-            var inputHeader = new RawStringInput();
+            var useBitIntervalBytes = stackalloc byte[1];
+            useBitIntervalBytes[0] = (byte)(useBitInterval ? '1' : '0');
+            var useBitIntervalSlice = new ArgSlice(useBitIntervalBytes, 1);
 
-            int inputSize = sizeof(int) + RespInputHeader.Size + sizeof(long) + sizeof(long) + sizeof(byte);
-            byte* input = scratchBufferManager.CreateArgSlice(inputSize).ptr;
-
-            //initialize the input variable
-            byte* pcurr = input;
-            *(int*)pcurr = inputSize - sizeof(int);
-            pcurr += sizeof(int);
-
-            (*(RespInputHeader*)pcurr).cmd = RespCommand.BITCOUNT;
-            (*(RespInputHeader*)pcurr).flags = 0;
-            pcurr += RespInputHeader.Size;
-            *(long*)(pcurr) = start;
-            pcurr += sizeof(long);
-            *(long*)(pcurr) = end;
-            pcurr += sizeof(long);
-            *pcurr = (byte)(useBitInterval ? 1 : 0);
+            var startBytes = Encoding.ASCII.GetBytes(start.ToString(CultureInfo.InvariantCulture));
+            var endBytes = Encoding.ASCII.GetBytes(end.ToString(CultureInfo.InvariantCulture));
 
             SpanByteAndMemory output = new(null);
-            var keySp = key.SpanByte;
+            GarnetStatus status;
 
-            var status = Read_MainStore(ref keySp, ref inputHeader, ref output, ref context);
+            fixed (byte* startPtr = startBytes)
+            {
+                fixed (byte* endPtr = endBytes)
+                {
+                    var startSlice = new ArgSlice(startPtr, startBytes.Length);
+                    var endSlice = new ArgSlice(endPtr, endBytes.Length);
+
+                    ArgSlice[] parseStateBuffer = default;
+                    var parseState = new SessionParseState();
+                    parseState.InitializeWithArguments(ref parseStateBuffer, startSlice, endSlice, useBitIntervalSlice);
+
+                    var input = new RawStringInput
+                    {
+                        header = new RespInputHeader { cmd = RespCommand.BITCOUNT },
+                        parseState = parseState,
+                        parseStateStartIdx = 0
+                    };
+
+                    var keySp = key.SpanByte;
+
+                    status = Read_MainStore(ref keySp, ref input, ref output, ref context);
+                }
+            }
 
             if (status == GarnetStatus.OK)
             {
