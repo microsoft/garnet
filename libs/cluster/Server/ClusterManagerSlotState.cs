@@ -445,7 +445,7 @@ namespace Garnet.cluster
         /// Reset local slot state to <see cref="SlotState.STABLE"/>
         /// </summary>
         /// <param name="slots">Slot list</param>
-        public void ResetSlotsState(HashSet<int> slots)
+        public void TryResetSlotState(HashSet<int> slots)
         {
             while (true)
             {

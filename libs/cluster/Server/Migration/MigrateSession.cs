@@ -266,7 +266,7 @@ namespace Garnet.cluster
         /// <summary>
         /// Reset local slot state
         /// </summary>
-        public void ResetLocalSlot() => clusterProvider.clusterManager.ResetSlotsState(_sslots);
+        public void ResetLocalSlot() => clusterProvider.clusterManager.TryResetSlotState(_sslots);
 
         /// <summary>
         /// Prepare remote node for importing

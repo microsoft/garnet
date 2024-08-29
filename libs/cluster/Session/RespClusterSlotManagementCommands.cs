@@ -559,7 +559,7 @@ namespace Garnet.cluster
             {
                 case SlotState.STABLE:
                     setSlotsSucceeded = true;
-                    clusterProvider.clusterManager.ResetSlotsState(slots);
+                    clusterProvider.clusterManager.TryResetSlotState(slots);
                     break;
                 case SlotState.IMPORTING:
                     setSlotsSucceeded = clusterProvider.clusterManager.TryPrepareSlotsForImport(slots, nodeId, out errorMessage);
