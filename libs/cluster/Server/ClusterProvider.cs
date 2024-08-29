@@ -123,13 +123,12 @@ namespace Garnet.cluster
         public bool IsReplica(string nodeId)
         {
             var config = clusterManager?.CurrentConfig;
-            if (config is null || !config.IsKnown(nodeId))
+            if (config is null)
             {
                 return false;
             }
 
-            var worker = config.GetWorkerFromNodeId(nodeId);
-            return worker.Role == NodeRole.REPLICA;
+            return config.GetNodeRoleFromNodeId(nodeId) == NodeRole.REPLICA;
         }
 
         /// <inheritdoc />
