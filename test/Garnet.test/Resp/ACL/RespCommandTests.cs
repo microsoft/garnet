@@ -654,18 +654,49 @@ namespace Garnet.test.Resp.ACL
         }
 
         [Test]
+        public async Task ClientInfoACLsAsync()
+        {
+            await CheckCommandsAsync(
+                "CLIENT INFO",
+                [DoClientInfoAsync]
+            );
+
+            static async Task DoClientInfoAsync(GarnetClient client)
+            {
+                string val = await client.ExecuteForStringResultAsync("CLIENT", ["INFO"]);
+                ClassicAssert.IsNotEmpty(val);
+            }
+        }
+
+        [Test]
         public async Task ClientListACLsAsync()
         {
-            // todo: other filters
-
             await CheckCommandsAsync(
                 "CLIENT LIST",
-                [DoClientListAsync]
+                [DoClientListAsync, DoClientListTypeAsync, DoClientListIdAsync, DoClientListIdsAsync]
             );
 
             static async Task DoClientListAsync(GarnetClient client)
             {
                 string val = await client.ExecuteForStringResultAsync("CLIENT", ["LIST"]);
+                ClassicAssert.IsNotEmpty(val);
+            }
+
+            static async Task DoClientListTypeAsync(GarnetClient client)
+            {
+                string val = await client.ExecuteForStringResultAsync("CLIENT", ["LIST", "TYPE", "NORMAL"]);
+                ClassicAssert.IsNotEmpty(val);
+            }
+
+            static async Task DoClientListIdAsync(GarnetClient client)
+            {
+                string val = await client.ExecuteForStringResultAsync("CLIENT", ["LIST", "ID", "1"]);
+                ClassicAssert.IsNotEmpty(val);
+            }
+
+            static async Task DoClientListIdsAsync(GarnetClient client)
+            {
+                string val = await client.ExecuteForStringResultAsync("CLIENT", ["LIST", "ID", "1", "2"]);
                 ClassicAssert.IsNotEmpty(val);
             }
         }

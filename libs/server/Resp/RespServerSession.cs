@@ -695,16 +695,25 @@ namespace Garnet.server
         {
             if (command == RespCommand.CLIENT_ID)
             {
+                if (parseState.Count != 0)
+                {
+                    return AbortWithWrongNumberOfArguments("client|id");
+                }
+
                 while (!RespWriteUtils.WriteInteger(Id, ref dcurr, dend))
                     SendAndReset();
 
                 return true;
             }
+            else if (command == RespCommand.CLIENT_INFO)
+            {
+                return NetworkCLIENTINFO();
+            }
             else if (command == RespCommand.CLIENT_LIST)
             {
                 return NetworkCLIENTLIST();
             }
-            else if(command == RespCommand.CLIENT_KILL)
+            else if (command == RespCommand.CLIENT_KILL)
             {
                 return NetworkCLIENTKILL();
             }

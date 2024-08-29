@@ -245,6 +245,7 @@ namespace Garnet.test
                 RespCommand.ACL_WHOAMI,
                 // Client
                 RespCommand.CLIENT_ID,
+                RespCommand.CLIENT_INFO,
                 RespCommand.CLIENT_LIST,
                 RespCommand.CLIENT_KILL,
                 // Command

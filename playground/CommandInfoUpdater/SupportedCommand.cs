@@ -38,6 +38,7 @@ namespace CommandInfoUpdater
             new("CLIENT", RespCommand.CLIENT,
                 [
                     "CLIENT|ID",
+                    "CLIENT|INFO",
                     "CLIENT|LIST",
                     "CLIENT|KILL",
                 ]),

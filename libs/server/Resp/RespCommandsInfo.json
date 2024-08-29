@@ -527,6 +527,22 @@
         "Tips": null,
         "KeySpecifications": null,
         "SubCommands": null
+      },
+      {
+        "Command": "CLIENT",
+        "Name": "CLIENT|INFO",
+        "IsInternal": false,
+        "Arity": 2,
+        "Flags": "Loading, NoScript, Stale",
+        "FirstKey": 0,
+        "LastKey": 0,
+        "Step": 0,
+        "AclCategories": "Connection, Slow",
+        "Tips": [
+          "nondeterministic_output"
+        ],
+        "KeySpecifications": null,
+        "SubCommands": null
       }
     ]
   },

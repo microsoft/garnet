@@ -1479,7 +1479,7 @@ namespace Garnet.server
                     }
 
                     var result = resultSb.ToString();
-                    while (!RespWriteUtils.WriteAsciiBulkString(result, ref dcurr, dend))
+                    while (!RespWriteUtils.WriteUtf8BulkString(result, ref dcurr, dend))
                         SendAndReset();
 
                     return true;
@@ -1496,63 +1496,27 @@ namespace Garnet.server
             {
                 return AbortWithErrorMessage(CmdStrings.RESP_ERR_CANNOT_LIST_CLIENTS);
             }
+        }
 
-            // Writes a string describing the given session into the string builder.
-            // Does not append a new line.
-            //
-            // Not all Redis fields are written as they do not all have Garnet equivalents
-            static void WriteClientInfo(IClusterProvider provider, StringBuilder into, RespServerSession targetSession, long nowMilliseconds)
+        /// <summary>
+        /// CLIENT INFO
+        /// </summary>
+        /// <returns></returns>
+        private bool NetworkCLIENTINFO()
+        {
+            if (parseState.Count != 0)
             {
-                var id = targetSession.Id;
-                var remoteEndpoint = targetSession.networkSender.RemoteEndpointName;
-                var localEndpoint = targetSession.networkSender.LocalEndpointName;
-                var clientName = targetSession.clientName;
-                var user = targetSession._user;
-                var resp = targetSession.respProtocolVersion;
-                var nodeId = targetSession?.clusterSession?.RemoteNodeId;
-
-                into.Append($"id={id}");
-                into.Append($" addr={remoteEndpoint}");
-                into.Append($" laddr={localEndpoint}");
-                if (clientName is not null)
-                {
-                    into.Append($" name={clientName}");
-                }
-
-                var ageSec = (nowMilliseconds - targetSession.CreationTicks) / 1_000;
-
-                into.Append($" age={ageSec}");
-
-                if (user is not null)
-                {
-                    into.Append($" user={user.Name}");
-                }
-
-                if (provider is not null && nodeId is not null)
-                {
-                    if (provider.IsReplica(nodeId))
-                    {
-                        into.Append($" flags=S");
-                    }
-                    else
-                    {
-                        into.Append($" flags=M");
-                    }
-                }
-                else
-                {
-                    if (targetSession.isSubscriptionSession)
-                    {
-                        into.Append($" flags=P");
-                    }
-                    else
-                    {
-                        into.Append($" flags=N");
-                    }
-                }
-
-                into.Append($" resp={resp}");
+                return AbortWithWrongNumberOfArguments("client|info");
             }
+
+            var resultSb = new StringBuilder();
+            WriteClientInfo(storeWrapper.clusterProvider, resultSb, this, Environment.TickCount64);
+
+            var result = resultSb.ToString();
+            while (!RespWriteUtils.WriteSimpleString(result, ref dcurr, dend))
+                SendAndReset();
+
+            return true;
         }
 
         /// <summary>
@@ -2004,6 +1968,65 @@ namespace Garnet.server
         {
             storeWrapper.store.Log.ShiftBeginAddress(storeWrapper.store.Log.TailAddress, truncateLog: unsafeTruncateLog);
             storeWrapper.objectStore?.Log.ShiftBeginAddress(storeWrapper.objectStore.Log.TailAddress, truncateLog: unsafeTruncateLog);
+        }
+
+        /// <summary>
+        /// Writes a string describing the given session into the string builder.
+        /// Does not append a new line.
+        ///
+        /// Not all Redis fields are written as they do not all have Garnet equivalents.
+        /// </summary>
+        private static void WriteClientInfo(IClusterProvider provider, StringBuilder into, RespServerSession targetSession, long nowMilliseconds)
+        {
+            var id = targetSession.Id;
+            var remoteEndpoint = targetSession.networkSender.RemoteEndpointName;
+            var localEndpoint = targetSession.networkSender.LocalEndpointName;
+            var clientName = targetSession.clientName;
+            var user = targetSession._user;
+            var resp = targetSession.respProtocolVersion;
+            var nodeId = targetSession?.clusterSession?.RemoteNodeId;
+
+            into.Append($"id={id}");
+            into.Append($" addr={remoteEndpoint}");
+            into.Append($" laddr={localEndpoint}");
+            if (clientName is not null)
+            {
+                into.Append($" name={clientName}");
+            }
+
+            var ageSec = (nowMilliseconds - targetSession.CreationTicks) / 1_000;
+
+            into.Append($" age={ageSec}");
+
+            if (user is not null)
+            {
+                into.Append($" user={user.Name}");
+            }
+
+            if (provider is not null && nodeId is not null)
+            {
+                if (provider.IsReplica(nodeId))
+                {
+                    into.Append($" flags=S");
+                }
+                else
+                {
+                    into.Append($" flags=M");
+                }
+            }
+            else
+            {
+                if (targetSession.isSubscriptionSession)
+                {
+                    into.Append($" flags=P");
+                }
+                else
+                {
+                    into.Append($" flags=N");
+                }
+            }
+
+            into.Append($" resp={resp}");
         }
     }
 }

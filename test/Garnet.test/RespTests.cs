@@ -2,13 +2,11 @@
 // Licensed under the MIT license.
 
 using System;
-using System.Buffers.Binary;
 using System.Collections.Generic;
 using System.Linq;
 using System.Text;
 using System.Threading;
 using System.Threading.Tasks;
-using Azure;
 using Garnet.client;
 using Garnet.common;
 using Garnet.server;
@@ -2197,7 +2195,7 @@ namespace Garnet.test
         }
 
         [Test]
-        public async Task ClientIdTestAsync()
+        public void ClientIdTest()
         {
             long id1;
             {
@@ -2231,6 +2229,27 @@ namespace Garnet.test
 
             ClassicAssert.AreNotEqual(id1, id2, "CLIENT IDs must be unique");
             ClassicAssert.IsTrue(id2 > id1, "CLIENT IDs should be monotonic");
+
+            {
+                using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
+                var db = redis.GetDatabase(0);
+
+                var exc = ClassicAssert.Throws<RedisServerException>(() => db.Execute("CLIENT", "ID", "foo"));
+                ClassicAssert.AreEqual("ERR wrong number of arguments for 'client|id' command", exc.Message);
+            }
+        }
+
+        [Test]
+        public void ClientInfoTest()
+        {
+            using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
+            var db = redis.GetDatabase(0);
+
+            var result = (string)db.Execute("CLIENT", "INFO");
+            AssertExpectedClientFields(result);
+
+            var exc = ClassicAssert.Throws<RedisServerException>(() => db.Execute("CLIENT", "INFO", "foo"));
+            ClassicAssert.AreEqual("ERR wrong number of arguments for 'client|info' command", exc.Message);
         }
 
         [Test]
@@ -2242,7 +2261,7 @@ namespace Garnet.test
             // List everything
             {
                 var list = (string)db.Execute("CLIENT", "LIST");
-                AssertExpectedFields(list);
+                AssertExpectedClientFields(list);
             }
 
             // List by id
@@ -2250,35 +2269,13 @@ namespace Garnet.test
                 var id = (long)db.Execute("CLIENT", "ID");
 
                 var list = (string)db.Execute("CLIENT", "LIST", "ID", id, 123);
-                AssertExpectedFields(list);
+                AssertExpectedClientFields(list);
             }
 
             // List by type
             {
                 var list = (string)db.Execute("CLIENT", "LIST", "TYPE", "NORMAL");
-                AssertExpectedFields(list);
-            }
-
-            // Check that list is non-empty, and has the minimum required fields
-            static void AssertExpectedFields(string list)
-            {
-                var lines = list.Split("\r\n");
-                ClassicAssert.IsTrue(lines.Length >= 1);
-
-                foreach(var line in lines)
-                {
-                    var flags = line.Split(" ");
-                    AssertField(flags, "id");
-                    AssertField(flags, "addr");
-                    AssertField(flags, "laddr");
-                    AssertField(flags, "age");
-                    AssertField(flags, "flags");
-                    AssertField(flags, "resp");
-                }
-
-                // Check that a given flag is set
-                static void AssertField(string[] fields, string name)
-                => ClassicAssert.AreEqual(1, fields.Count(f => f.StartsWith($"{name}=")), $"Expected field {name}");
+                AssertExpectedClientFields(list);
             }
         }
 
@@ -2328,6 +2325,12 @@ namespace Garnet.test
             {
                 var exc = ClassicAssert.Throws<RedisServerException>(() => db.Execute("CLIENT", "LIST", "ID", "abc"));
                 ClassicAssert.AreEqual("ERR Invalid client ID", exc.Message);
+            }
+
+            // Combo - Redis docs sort of imply this is supported, but that is not the case in testing
+            {
+                var exc = ClassicAssert.Throws<RedisServerException>(() => db.Execute("CLIENT", "LIST", "TYPE", "NORMAL", "ID", "1"));
+                ClassicAssert.AreEqual("ERR syntax error", exc.Message);
             }
         }
 
@@ -2575,20 +2578,44 @@ namespace Garnet.test
 
             // Because Redis behavior seems to diverge from its documentation, Garnet fails safe in these cases
             {
-                ExpectDuplicateDefinitionError("ID", () => mainDB.Execute("CLIENT", "KILL", "ID", "123", "ID", "456"));
-                ExpectDuplicateDefinitionError("TYPE", () => mainDB.Execute("CLIENT", "KILL", "TYPE", "master", "TYPE", "normal"));
-                ExpectDuplicateDefinitionError("USER", () => mainDB.Execute("CLIENT", "KILL", "USER", "foo", "USER", "bar"));
-                ExpectDuplicateDefinitionError("ADDR", () => mainDB.Execute("CLIENT", "KILL", "ADDR", "123", "ADDR", "456"));
-                ExpectDuplicateDefinitionError("LADDR", () => mainDB.Execute("CLIENT", "KILL", "LADDR", "123", "LADDR", "456"));
-                ExpectDuplicateDefinitionError("SKIPME", () => mainDB.Execute("CLIENT", "KILL", "SKIPME", "YES", "SKIPME", "NO"));
-                ExpectDuplicateDefinitionError("MAXAGE", () => mainDB.Execute("CLIENT", "KILL", "MAXAGE", "123", "MAXAGE", "456"));
+                AssertDuplicateDefinitionError("ID", () => mainDB.Execute("CLIENT", "KILL", "ID", "123", "ID", "456"));
+                AssertDuplicateDefinitionError("TYPE", () => mainDB.Execute("CLIENT", "KILL", "TYPE", "master", "TYPE", "normal"));
+                AssertDuplicateDefinitionError("USER", () => mainDB.Execute("CLIENT", "KILL", "USER", "foo", "USER", "bar"));
+                AssertDuplicateDefinitionError("ADDR", () => mainDB.Execute("CLIENT", "KILL", "ADDR", "123", "ADDR", "456"));
+                AssertDuplicateDefinitionError("LADDR", () => mainDB.Execute("CLIENT", "KILL", "LADDR", "123", "LADDR", "456"));
+                AssertDuplicateDefinitionError("SKIPME", () => mainDB.Execute("CLIENT", "KILL", "SKIPME", "YES", "SKIPME", "NO"));
+                AssertDuplicateDefinitionError("MAXAGE", () => mainDB.Execute("CLIENT", "KILL", "MAXAGE", "123", "MAXAGE", "456"));
             }
 
-            static void ExpectDuplicateDefinitionError(string filter, TestDelegate shouldThrow)
+            static void AssertDuplicateDefinitionError(string filter, TestDelegate shouldThrow)
             {
                 var exc = ClassicAssert.Throws<RedisServerException>(shouldThrow);
                 ClassicAssert.AreEqual($"ERR Filter '{filter}' defined multiple times", exc.Message);
             }
+        }
+
+        /// <summary>
+        /// Check that list is non-empty, and has the minimum required fields.
+        /// </summary>
+        private static void AssertExpectedClientFields(string list)
+        {
+            var lines = list.Split("\r\n");
+            ClassicAssert.IsTrue(lines.Length >= 1);
+
+            foreach (var line in lines)
+            {
+                var flags = line.Split(" ");
+                AssertField(flags, "id");
+                AssertField(flags, "addr");
+                AssertField(flags, "laddr");
+                AssertField(flags, "age");
+                AssertField(flags, "flags");
+                AssertField(flags, "resp");
+            }
+
+            // Check that a given flag is set
+            static void AssertField(string[] fields, string name)
+            => ClassicAssert.AreEqual(1, fields.Count(f => f.StartsWith($"{name}=")), $"Expected field {name}");
         }
     }
 }

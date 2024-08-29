@@ -169,6 +169,7 @@ namespace Garnet.server
 
         CLIENT,
         CLIENT_ID,
+        CLIENT_INFO,
         CLIENT_LIST,
         CLIENT_KILL,
 
@@ -303,9 +304,6 @@ namespace Garnet.server
             RespCommand.PING,
             RespCommand.SELECT,
             RespCommand.ECHO,
-            RespCommand.CLIENT_ID,
-            RespCommand.CLIENT_LIST,
-            RespCommand.CLIENT_KILL,
             RespCommand.MONITOR,
             RespCommand.MODULE_LOADCS,
             RespCommand.REGISTERCS,
@@ -321,6 +319,11 @@ namespace Garnet.server
             RespCommand.ACL_SETUSER,
             RespCommand.ACL_USERS,
             RespCommand.ACL_WHOAMI,
+            // Client
+            RespCommand.CLIENT_ID,
+            RespCommand.CLIENT_INFO,
+            RespCommand.CLIENT_LIST,
+            RespCommand.CLIENT_KILL,
             // Command
             RespCommand.COMMAND,
             RespCommand.COMMAND_COUNT,
@@ -1494,7 +1497,11 @@ namespace Garnet.server
                     {
                         return RespCommand.CLIENT_ID;
                     }
-                    else if(subCommand.SequenceEqual(CmdStrings.LIST))
+                    else if (subCommand.SequenceEqual(CmdStrings.INFO))
+                    {
+                        return RespCommand.CLIENT_INFO;
+                    }
+                    else if (subCommand.SequenceEqual(CmdStrings.LIST))
                     {
                         return RespCommand.CLIENT_LIST;
                     }
