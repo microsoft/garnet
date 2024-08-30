@@ -2688,7 +2688,7 @@ namespace Garnet.test.cluster
             {
                 var server = redis.GetServer(endPoint);
                 var result = server.Info(section);
-                Assert.AreEqual(1, result.Length, "section does not exist");
+                ClassicAssert.AreEqual(1, result.Length, "section does not exist");
                 foreach (var item in result[0])
                     if (item.Key.Equals(segment))
                         return item.Value;

@@ -1049,7 +1049,7 @@ namespace Garnet.test.cluster
             ClassicAssert.IsTrue(exc.Message.StartsWith("ERR I don't know about node "));
         }
 
-        [Test, Order(22), Timeout(testTimeout)]
+        [Test, Order(22), CancelAfter(testTimeout)]
         public void ClusterReplicationCheckpointAlignmentTest([Values] bool performRMW)
         {
             var replica_count = 1;// Per primary
@@ -1057,7 +1057,7 @@ namespace Garnet.test.cluster
             var nodes_count = primary_count + (primary_count * replica_count);
             var primaryNodeIndex = 0;
             var replicaNodeIndex = 1;
-            Assert.IsTrue(primary_count > 0);
+            ClassicAssert.IsTrue(primary_count > 0);
             context.CreateInstances(nodes_count, disableObjects: false, MainMemoryReplication: true, CommitFrequencyMs: -1, OnDemandCheckpoint: true, enableAOF: true, useTLS: useTLS);
             context.CreateConnection(useTLS: useTLS);
             _ = context.clusterTestUtils.SimpleSetupCluster(primary_count, replica_count, logger: context.logger);
@@ -1086,8 +1086,8 @@ namespace Garnet.test.cluster
 
             var primaryVersion = context.clusterTestUtils.GetInfo(primaryNodeIndex, "store", "CurrentVersion", logger: context.logger);
             var replicaVersion = context.clusterTestUtils.GetInfo(replicaNodeIndex, "store", "CurrentVersion", logger: context.logger);
-            Assert.AreEqual("6", primaryVersion);
-            Assert.AreEqual(primaryVersion, replicaVersion);
+            ClassicAssert.AreEqual("6", primaryVersion);
+            ClassicAssert.AreEqual(primaryVersion, replicaVersion);
 
             context.ValidateKVCollectionAgainstReplica(ref context.kvPairs, replicaNodeIndex);
 
@@ -1128,11 +1128,11 @@ namespace Garnet.test.cluster
             // Assert primary version is 1 and replica has recovered to previous checkpoint
             primaryVersion = context.clusterTestUtils.GetInfo(primaryNodeIndex, "store", "CurrentVersion", logger: context.logger);
             replicaVersion = context.clusterTestUtils.GetInfo(replicaNodeIndex, "store", "CurrentVersion", logger: context.logger);
-            Assert.AreEqual("1", primaryVersion);
-            Assert.AreEqual("6", replicaVersion);
+            ClassicAssert.AreEqual("1", primaryVersion);
+            ClassicAssert.AreEqual("6", replicaVersion);
 
             // Setup cluster
-            Assert.AreEqual("OK", context.clusterTestUtils.AddDelSlotsRange(primaryNodeIndex, [(0, 16383)], addslot: true, logger: context.logger));
+            ClassicAssert.AreEqual("OK", context.clusterTestUtils.AddDelSlotsRange(primaryNodeIndex, [(0, 16383)], addslot: true, logger: context.logger));
             context.clusterTestUtils.SetConfigEpoch(primaryNodeIndex, primaryNodeIndex + 1, logger: context.logger);
             context.clusterTestUtils.SetConfigEpoch(replicaNodeIndex, replicaNodeIndex + 1, logger: context.logger);
             context.clusterTestUtils.Meet(primaryNodeIndex, replicaNodeIndex, logger: context.logger);
@@ -1140,19 +1140,19 @@ namespace Garnet.test.cluster
 
             // Enable replication
             context.clusterTestUtils.WaitUntilNodeIdIsKnown(replicaNodeIndex, primaryNodeId, logger: context.logger);
-            Assert.AreEqual("OK", context.clusterTestUtils.ClusterReplicate(replicaNodeIndex, primaryNodeIndex, logger: context.logger));
+            ClassicAssert.AreEqual("OK", context.clusterTestUtils.ClusterReplicate(replicaNodeIndex, primaryNodeIndex, logger: context.logger));
 
             // Both nodes are at version 1 despite replica recovering to version earlier
             primaryVersion = context.clusterTestUtils.GetInfo(primaryNodeIndex, "store", "CurrentVersion", logger: context.logger);
             replicaVersion = context.clusterTestUtils.GetInfo(replicaNodeIndex, "store", "CurrentVersion", logger: context.logger);
-            Assert.AreEqual("1", primaryVersion);
-            Assert.AreEqual("1", replicaVersion);
+            ClassicAssert.AreEqual("1", primaryVersion);
+            ClassicAssert.AreEqual("1", replicaVersion);
 
             // At this point attached replica should be empty because primary did not have any data because it did not recover
             foreach (var pair in context.kvPairs)
             {
                 var resp = context.clusterTestUtils.GetKey(replicaNodeIndex, Encoding.ASCII.GetBytes(pair.Key), out _, out _, out _, out var state, logger: context.logger);
-                Assert.IsNull(resp);
+                ClassicAssert.IsNull(resp);
             }
         }
     }
