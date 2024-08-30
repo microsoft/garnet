@@ -324,8 +324,8 @@ namespace Garnet.server
             => storageSession.HyperLogLogLength(keys, out count, ref context);
 
         /// <inheritdoc />
-        public GarnetStatus HyperLogLogMerge(Span<ArgSlice> keys, out bool error)
-            => storageSession.HyperLogLogMerge(keys, out error);
+        public GarnetStatus HyperLogLogMerge(ref RawStringInput input, out bool error)
+            => storageSession.HyperLogLogMerge(ref input, out error);
         #endregion
 
         #region Server Methods

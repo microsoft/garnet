@@ -44,7 +44,6 @@ namespace Garnet.server
         public bool InitialUpdater(ref SpanByte key, ref RawStringInput input, ref SpanByte value, ref SpanByteAndMemory output, ref RMWInfo rmwInfo, ref RecordInfo recordInfo)
         {
             rmwInfo.ClearExtraValueLength(ref recordInfo, ref value, value.TotalSize);
-            var inputPtr = input.ToPointer();
 
             switch (input.header.cmd)
             {
@@ -57,12 +56,12 @@ namespace Garnet.server
                     break;
 
                 case RespCommand.PFMERGE:
-                    //srcHLL offset: [hll allocated size = 4 byte] + [hll data structure] //memcpy + 4 (skip len size)                    
-                    var i = input.ToPointer() + RespInputHeader.Size;
-                    byte* srcHLL = sizeof(int) + i;
-                    byte* dstHLL = value.ToPointer();
+                    //srcHLL offset: [hll allocated size = 4 byte] + [hll data structure] //memcpy + 4 (skip len size)
+                    var sbSrcHLL = input.parseState.GetArgSliceByRef(input.parseStateStartIdx).SpanByte;
+                    var length = sbSrcHLL.Length;
+                    var srcHLL = sbSrcHLL.ToPointer();
+                    var dstHLL = value.ToPointer();
 
-                    int length = *(int*)i;
                     value.UnmarkExtraMetadata();
                     value.ShrinkSerializedLength(length);
                     Buffer.MemoryCopy(srcHLL, dstHLL, value.Length, value.Length);
@@ -201,7 +200,7 @@ namespace Garnet.server
             functionsState.watchVersionMap.IncrementVersion(rmwInfo.KeyHash);
             if (functionsState.appendOnlyFile != null)
             {
-                ((RespInputHeader*)input.ToPointer())->SetExpiredFlag();
+                input.header.SetExpiredFlag();
                 WriteLogRMW(ref key, ref input, ref value, rmwInfo.Version, rmwInfo.SessionID);
             }
         }
@@ -404,9 +403,9 @@ namespace Garnet.server
                     return result;
 
                 case RespCommand.PFMERGE:
-                    //srcHLL offset: [hll allocated size = 4 byte] + [hll data structure] //memcpy +4 (skip len size)                    
-                    byte* srcHLL = inputPtr + RespInputHeader.Size + sizeof(int);
-                    byte* dstHLL = value.ToPointer();
+                    //srcHLL offset: [hll allocated size = 4 byte] + [hll data structure] //memcpy +4 (skip len size)
+                    var srcHLL = input.parseState.GetArgSliceByRef(input.parseStateStartIdx).SpanByte.ToPointer();
+                    var dstHLL = value.ToPointer();
 
                     if (!HyperLogLog.DefaultHLL.IsValidHYLL(dstHLL, value.Length))
                     {
@@ -477,7 +476,7 @@ namespace Garnet.server
                             value.ExtraMetadata = expiration;
                         }
 
-                        int valueLength = value.LengthWithoutMetadata;
+                        var valueLength = value.LengthWithoutMetadata;
                         (IMemoryOwner<byte> Memory, int Length) outp = (output.Memory, 0);
                         var ret = functions.InPlaceUpdater(key.AsReadOnlySpan(), ref input, value.AsSpan(), ref valueLength, ref outp, ref rmwInfo);
                         Debug.Assert(valueLength <= value.LengthWithoutMetadata);
@@ -536,8 +535,6 @@ namespace Garnet.server
         /// <inheritdoc />
         public bool CopyUpdater(ref SpanByte key, ref RawStringInput input, ref SpanByte oldValue, ref SpanByte newValue, ref SpanByteAndMemory output, ref RMWInfo rmwInfo, ref RecordInfo recordInfo)
         {
-            var inputPtr = input.ToPointer();
-
             // Expired data
             if (oldValue.MetadataSize > 0 && input.header.CheckExpiry(oldValue.ExtraMetadata))
             {
@@ -684,10 +681,10 @@ namespace Garnet.server
                     break;
 
                 case RespCommand.PFMERGE:
-                    //srcA offset: [hll allocated size = 4 byte] + [hll data structure] //memcpy +4 (skip len size)                    
-                    byte* srcHLLPtr = inputPtr + RespInputHeader.Size + sizeof(int); // HLL merging from
-                    byte* oldDstHLLPtr = oldValue.ToPointer(); // original HLL merging to (too small to hold its data plus srcA)
-                    byte* newDstHLLPtr = newValue.ToPointer(); // new HLL merging to (large enough to hold srcA and srcB
+                    //srcA offset: [hll allocated size = 4 byte] + [hll data structure] //memcpy +4 (skip len size)
+                    var srcHLLPtr = input.parseState.GetArgSliceByRef(input.parseStateStartIdx).SpanByte.ToPointer(); // HLL merging from
+                    var oldDstHLLPtr = oldValue.ToPointer(); // original HLL merging to (too small to hold its data plus srcA)
+                    var newDstHLLPtr = newValue.ToPointer(); // new HLL merging to (large enough to hold srcA and srcB
 
                     HyperLogLog.DefaultHLL.CopyUpdateMerge(srcHLLPtr, oldDstHLLPtr, newDstHLLPtr, oldValue.Length, newValue.Length);
                     break;

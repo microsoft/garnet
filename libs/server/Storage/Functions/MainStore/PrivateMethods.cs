@@ -202,16 +202,6 @@ namespace Garnet.server
                     return;
 
                 case RespCommand.PFCOUNT:
-                    if (!HyperLogLog.DefaultHLL.IsValidHYLL(value.ToPointer(), value.Length))
-                    {
-                        *(long*)dst.SpanByte.ToPointer() = -1;
-                        return;
-                    }
-
-                    var e = HyperLogLog.DefaultHLL.Count(value.ToPointer());
-                    *(long*)dst.SpanByte.ToPointer() = e;
-                    return;
-
                 case RespCommand.PFMERGE:
                     if (!HyperLogLog.DefaultHLL.IsValidHYLL(value.ToPointer(), value.Length))
                     {
@@ -225,7 +215,8 @@ namespace Garnet.server
                         dst.SpanByte.Length = value.Length;
                         return;
                     }
-                    throw new GarnetException("Not enough space in PFMERGE buffer");
+
+                    throw new GarnetException($"Not enough space in {input.header.cmd} buffer");
 
                 case RespCommand.TTL:
                     var ttlValue = ConvertUtils.SecondsFromDiffUtcNowTicks(value.MetadataSize > 0 ? value.ExtraMetadata : -1);

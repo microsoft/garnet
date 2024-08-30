@@ -42,7 +42,6 @@ namespace Garnet.server
         /// <inheritdoc/>
         public int GetRMWInitialValueLength(ref RawStringInput input)
         {
-            var inputPtr = input.ToPointer();
             var cmd = input.header.cmd;
             switch (cmd)
             {
@@ -55,8 +54,7 @@ namespace Garnet.server
                 case RespCommand.PFADD:
                     return sizeof(int) + HyperLogLog.DefaultHLL.SparseInitialLength(input);
                 case RespCommand.PFMERGE:
-                    var i = inputPtr + RespInputHeader.Size;
-                    int length = *(int*)i;//[hll allocated size = 4 byte] + [hll data structure]
+                    var length = input.parseState.GetArgSliceByRef(input.parseStateStartIdx).SpanByte.Length;
                     return sizeof(int) + length;
                 case RespCommand.SETRANGE:
                     var offset = input.parseState.GetInt(input.parseStateStartIdx);
@@ -111,7 +109,6 @@ namespace Garnet.server
         {
             if (input.header.cmd != RespCommand.NONE)
             {
-                var inputPtr = input.ToPointer();
                 var cmd = input.header.cmd;
                 switch (cmd)
                 {
@@ -156,9 +153,9 @@ namespace Garnet.server
 
                     case RespCommand.PFMERGE:
                         length = sizeof(int);
-                        byte* dstHLL = t.ToPointer();
-                        byte* srcHLL = inputPtr + RespInputHeader.Size;// srcHLL: <4byte HLL len> <HLL data>
-                        length += HyperLogLog.DefaultHLL.MergeGrow(srcHLL + sizeof(int), dstHLL);
+                        var srcHLL = input.parseState.GetArgSliceByRef(input.parseStateStartIdx).SpanByte.ToPointer();
+                        var dstHLL = t.ToPointer();
+                        length += HyperLogLog.DefaultHLL.MergeGrow(srcHLL, dstHLL);
                         return length + t.MetadataSize;
 
                     case RespCommand.SETKEEPTTLXX:

@@ -28,7 +28,8 @@ namespace Garnet.server
         public BasicContext<SpanByte, SpanByte, RawStringInput, SpanByteAndMemory, long, MainSessionFunctions, MainStoreFunctions, MainStoreAllocator> basicContext;
         public LockableContext<SpanByte, SpanByte, RawStringInput, SpanByteAndMemory, long, MainSessionFunctions, MainStoreFunctions, MainStoreAllocator> lockableContext;
 
-        SectorAlignedMemory sectorAlignedMemoryHll;
+        SectorAlignedMemory sectorAlignedMemoryHll1;
+        SectorAlignedMemory sectorAlignedMemoryHll2;
         readonly int hllBufferSize = HyperLogLog.DefaultHLL.DenseBytes;
         readonly int sectorAlignedMemoryPoolAlignment = 32;
 
@@ -90,7 +91,8 @@ namespace Garnet.server
             sectorAlignedMemoryBitmap?.Dispose();
             basicContext.Session.Dispose();
             objectStoreBasicContext.Session?.Dispose();
-            sectorAlignedMemoryHll?.Dispose();
+            sectorAlignedMemoryHll1?.Dispose();
+            sectorAlignedMemoryHll2?.Dispose();
         }
     }
 }

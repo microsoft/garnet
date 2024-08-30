@@ -959,10 +959,10 @@ namespace Garnet.server
         /// Merge multiple HyperLogLog values into a unique value that will approximate the cardinality
         /// of the union of the observed Sets of the source HyperLogLog structures.
         /// </summary>
-        /// <param name="keys"></param>
+        /// <param name="input"></param>
         /// <param name="error"></param>
         /// <returns></returns>
-        GarnetStatus HyperLogLogMerge(Span<ArgSlice> keys, out bool error);
+        GarnetStatus HyperLogLogMerge(ref RawStringInput input, out bool error);
 
         #endregion
     }

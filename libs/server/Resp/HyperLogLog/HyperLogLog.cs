@@ -981,33 +981,32 @@ namespace Garnet.server
         /// <returns></returns>
         public bool TryMerge(byte* srcBlob, byte* dstBlob, int dstLen)
         {
-            byte dTypeDst = GetType(dstBlob);
+            var dTypeDst = GetType(dstBlob);
             if (dTypeDst == (byte)HLL_DTYPE.HLL_DENSE)//destination dense
             {
                 Merge(srcBlob, dstBlob);
                 DefaultHLL.SetCard(dstBlob, long.MinValue);
                 return true;
             }
-            else// destination sparse
-            {
-                byte dTypeSrc = GetType(srcBlob);
-                if (dTypeSrc == (byte)HLL_DTYPE.HLL_SPARSE)// discover if you need to grow before merging
-                {
-                    //TODO: check if we can update in place or need to grow by counting srcBlob non-zero
-                    int srcNonZeroBytes = SparseCountNonZero(srcBlob) * 2;
 
-                    if (SparseCurrentSizeInBytes(dstBlob) + srcNonZeroBytes < dstLen)//can grow in-place
-                    {
-                        Merge(srcBlob, dstBlob);
-                        DefaultHLL.SetCard(dstBlob, long.MinValue);
-                        return true;
-                    }
-                    else
-                        return false;
+            // Destination sparse
+            var dTypeSrc = GetType(srcBlob);
+            if (dTypeSrc == (byte)HLL_DTYPE.HLL_SPARSE)// discover if you need to grow before merging
+            {
+                //TODO: check if we can update in place or need to grow by counting srcBlob non-zero
+                var srcNonZeroBytes = SparseCountNonZero(srcBlob) * 2;
+
+                if (SparseCurrentSizeInBytes(dstBlob) + srcNonZeroBytes < dstLen)//can grow in-place
+                {
+                    Merge(srcBlob, dstBlob);
+                    DefaultHLL.SetCard(dstBlob, long.MinValue);
+                    return true;
                 }
-                else return false; // always fail if merging from dense to sparse              
+
+                return false;
             }
-            throw new GarnetException("TryMerge exception");
+
+            return false; // always fail if merging from dense to sparse              
         }
 
         /// <summary>

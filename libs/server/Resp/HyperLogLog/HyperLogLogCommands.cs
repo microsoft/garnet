@@ -100,7 +100,7 @@ namespace Garnet.server
                 parseStateStartIdx = 0,
             };
 
-            var status = storageApi.HyperLogLogLength(ref inputHeader, out long cardinality, out bool error);
+            storageApi.HyperLogLogLength(ref inputHeader, out var cardinality, out var error);
             if (error)
             {
                 while (!RespWriteUtils.WriteError(CmdStrings.RESP_ERR_WRONG_TYPE_HLL, ref dcurr, dend))
@@ -127,7 +127,15 @@ namespace Garnet.server
                 return AbortWithWrongNumberOfArguments(nameof(RespCommand.PFMERGE));
             }
 
-            var status = storageApi.HyperLogLogMerge(parseState.Parameters, out bool error);
+            var input = new RawStringInput
+            {
+                header = new RespInputHeader { cmd = RespCommand.PFMERGE },
+                parseState = parseState,
+                parseStateStartIdx = 0,
+            };
+
+            var status = storageApi.HyperLogLogMerge(ref input, out var error);
+
             // Invalid Type
             if (error)
             {
@@ -135,7 +143,8 @@ namespace Garnet.server
                     SendAndReset();
                 return true;
             }
-            else if (status == GarnetStatus.OK)
+
+            if (status == GarnetStatus.OK)
             {
                 while (!RespWriteUtils.WriteDirect(CmdStrings.RESP_OK, ref dcurr, dend))
                     SendAndReset();
