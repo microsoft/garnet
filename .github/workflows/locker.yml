@@ -19,6 +19,7 @@ permissions:
 
 jobs:
   main:
+    if: github.repository == 'microsoft/garnet'
     runs-on: ubuntu-latest
     steps:
       - name: Checkout Actions
