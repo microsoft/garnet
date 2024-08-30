@@ -70,7 +70,6 @@ namespace Garnet.client
         /// </summary>
         readonly string authPassword = null;
 
-
         /// <summary>
         /// Indicating whether this instance is using its own buffer pool or one that was provided
         /// </summary>

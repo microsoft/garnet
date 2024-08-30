@@ -27,6 +27,11 @@ namespace Garnet.common
         public bool IsAllocated => sendBufferPool != null || recvBufferPool != null;
 
         /// <summary>
+        /// Default constructor
+        /// </summary>
+        public NetworkBuffers() : this(1 << 17, 1 << 17, false) { }
+
+        /// <summary>
         /// Set network buffer sizes without allocating them
         /// </summary>
         /// <param name="sendBufferPoolSize"></param>
@@ -40,6 +45,12 @@ namespace Garnet.common
             this.recvBufferPool = null;
             UseSeparatePools = useSeparatePools;
         }
+
+        /// <summary>
+        /// Set network buffer using same pool for both send and receive
+        /// </summary>
+        /// <param name="networkPool"></param>
+        public NetworkBuffers(LimitedFixedBufferPool networkPool) : this(networkPool, networkPool) { }
 
         /// <summary>
         /// Set network buffer using the provided buffer pools

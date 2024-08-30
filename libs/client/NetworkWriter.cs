@@ -81,7 +81,7 @@ namespace Garnet.client
         public NetworkWriter(GarnetClient serverHook, Socket socket, int messageBufferSize, SslClientAuthenticationOptions sslOptions, out GarnetClientTcpNetworkHandler networkHandler, int sendPageSize, int networkSendThrottleMax, ILogger logger = null)
         {
             var networkPool = new LimitedFixedBufferPool(messageBufferSize, logger: logger);
-            this.networkBuffers = new NetworkBuffers(networkPool, networkPool);
+            this.networkBuffers = new NetworkBuffers(networkPool);
 
             if (BufferSize > PageOffset.kPageMask) throw new Exception();
             this.networkHandler = networkHandler = new GarnetClientTcpNetworkHandler(serverHook, AsyncFlushPageCallback, socket, networkBuffers, sslOptions != null, serverHook, networkSendThrottleMax: networkSendThrottleMax, logger: logger);
