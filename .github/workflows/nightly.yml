@@ -12,6 +12,7 @@ jobs:
   build-test-garnet:
     name: Garnet
     runs-on: ${{ matrix.os }}
+    if: github.repository == 'microsoft/garnet'
     strategy:
       fail-fast: false
       matrix:
@@ -46,6 +47,7 @@ jobs:
   build-test-tsavorite:        
     name: Tsavorite
     runs-on: ${{ matrix.os }}
+    if: github.repository == 'microsoft/garnet'
     strategy:
       fail-fast: false
       matrix:
