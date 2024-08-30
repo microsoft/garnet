@@ -439,15 +439,28 @@ namespace Garnet.cluster
                 return true;
             }
 
-            var subcommand = parseState.GetString(1);
+            if (!parseState.TryGetEnum<SlotState>(1, ignoreCase: true, out var slotState) || !slotState.IsValid(parseState.GetArgSliceByRef(1).ReadOnlySpan))
+            {
+                var slotStateStr = parseState.GetString(1);
+                while (!RespWriteUtils.WriteError($"ERR Slot state {slotStateStr} not supported.", ref dcurr, dend))
+                    SendAndReset();
 
-            if (!Enum.TryParse(subcommand, ignoreCase: true, out SlotState slotState))
-                slotState = SlotState.INVALID;
+                return true;
+            }
 
             string nodeId = null;
             if (parseState.Count > 2)
             {
                 nodeId = parseState.GetString(2);
+            }
+
+            // Check that node id is only provided for options other than STABLE
+            if ((slotState == SlotState.STABLE && nodeId is not null) || (slotState != SlotState.STABLE && nodeId is null))
+            {
+                while (!RespWriteUtils.WriteError(CmdStrings.RESP_SYNTAX_ERROR, ref dcurr, dend))
+                    SendAndReset();
+
+                return true;
             }
 
             if (!ClusterConfig.OutOfRange(slot))
@@ -471,9 +484,7 @@ namespace Garnet.cluster
                         setSlotsSucceeded = clusterProvider.clusterManager.TryPrepareSlotForOwnershipChange(slot, nodeId, out errorMessage);
                         break;
                     default:
-                        setSlotsSucceeded = false;
-                        errorMessage = Encoding.ASCII.GetBytes($"ERR Slot state {subcommand} not supported.");
-                        break;
+                        throw new InvalidOperationException($"Unexpected {nameof(SlotState)}: {slotState}");
                 }
 
                 if (setSlotsSucceeded)
