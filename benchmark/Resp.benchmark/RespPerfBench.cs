@@ -407,7 +407,7 @@ namespace Resp.benchmark
                 default:
                     throw new Exception($"opType: {opType} benchmark not supported with GarnetClientSession!");
             }
-            var c = new GarnetClientSession(opts.Address, opts.Port, NetworkBuffers.Default, opts.EnableTLS ? BenchUtils.GetTlsOptions(opts.TlsHost, opts.CertFileName, opts.CertPassword) : null);
+            var c = new GarnetClientSession(opts.Address, opts.Port, new(), opts.EnableTLS ? BenchUtils.GetTlsOptions(opts.TlsHost, opts.CertFileName, opts.CertPassword) : null);
             c.Connect();
             if (opts.Auth != null)
             {

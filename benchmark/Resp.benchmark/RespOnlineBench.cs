@@ -157,7 +157,7 @@ namespace Resp.benchmark
             {
                 gcsPool = new AsyncPool<GarnetClientSession>(opts.NumThreads.First(), () =>
                 {
-                    var c = new GarnetClientSession(address, port, NetworkBuffers.Default, opts.EnableTLS ? BenchUtils.GetTlsOptions(opts.TlsHost, opts.CertFileName, opts.CertPassword) : null);
+                    var c = new GarnetClientSession(address, port, new(), opts.EnableTLS ? BenchUtils.GetTlsOptions(opts.TlsHost, opts.CertFileName, opts.CertPassword) : null);
                     c.Connect();
                     if (auth != null)
                     {

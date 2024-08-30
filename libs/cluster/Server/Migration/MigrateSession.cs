@@ -70,14 +70,9 @@ namespace Garnet.cluster
         public HashSet<int> GetSlots => _sslots;
 
         /// <summary>
-        /// Get buffer pool to be used for send buffer and key buffer during migration
+        /// Get network buffer pools 
         /// </summary>
-        LimitedFixedBufferPool GetLargePageBufferPool => clusterProvider.migrationManager.largePageBufferPool;
-
-        /// <summary>
-        /// Get small page buffer pool to be used for receive buffer
-        /// </summary>
-        LimitedFixedBufferPool GetSmallPageBufferPool => clusterProvider.migrationManager.smallPageBufferPool;
+        public NetworkBuffers GetNetworkBuffers => clusterProvider.migrationManager.networkBuffers;
 
         readonly GarnetClientSession _gcs;
 
@@ -152,7 +147,7 @@ namespace Garnet.cluster
             _gcs = new(
                 _targetAddress,
                 _targetPort,
-                networkBuffers: new NetworkBuffers(GetLargePageBufferPool, GetSmallPageBufferPool),
+                networkBuffers: GetNetworkBuffers,
                 clusterProvider?.serverOptions.TlsOptions?.TlsClientOptions,
                 authUsername: _username,
                 authPassword: _passwd,

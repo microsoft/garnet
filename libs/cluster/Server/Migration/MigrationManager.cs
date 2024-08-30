@@ -13,23 +13,24 @@ namespace Garnet.cluster
     {
         readonly ClusterProvider clusterProvider;
         readonly MigrateSessionTaskStore migrationTaskStore;
-        public readonly LimitedFixedBufferPool largePageBufferPool;
-        public readonly LimitedFixedBufferPool smallPageBufferPool;
+
+        /// <summary>
+        /// Used to initialize buffers for client connected to target node for active migrate sessions
+        /// </summary>
+        public readonly NetworkBuffers networkBuffers;
 
         public MigrationManager(ClusterProvider clusterProvider, ILogger logger = null)
         {
             this.migrationTaskStore = new MigrateSessionTaskStore(logger);
             var bufferSize = 1 << clusterProvider.serverOptions.PageSizeBits();
-            this.largePageBufferPool = new LimitedFixedBufferPool(bufferSize, logger: logger);
-            this.smallPageBufferPool = new LimitedFixedBufferPool(1 << 12, logger: logger);
+            this.networkBuffers = new NetworkBuffers(new LimitedFixedBufferPool(bufferSize, logger: logger), new LimitedFixedBufferPool(1 << 12, logger: logger));
             this.clusterProvider = clusterProvider;
         }
 
         public void Dispose()
         {
             migrationTaskStore?.Dispose();
-            largePageBufferPool?.Dispose();
-            smallPageBufferPool?.Dispose();
+            networkBuffers.Dispose();
         }
 
         public int GetMigrationTaskCount()

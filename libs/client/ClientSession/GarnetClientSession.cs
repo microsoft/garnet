@@ -106,7 +106,7 @@ namespace Garnet.client
             this.port = port;
 
             this.usingManagedNetworkBuffers = networkBuffers.IsAllocated;
-            this.networkBuffers = usingManagedNetworkBuffers ? networkBuffers : networkBuffers.Create(logger);
+            this.networkBuffers = usingManagedNetworkBuffers ? networkBuffers : networkBuffers.Allocate(logger);
             this.bufferSizeDigits = NumUtils.NumDigits(this.networkBuffers.sendBufferPoolSize);
 
             this.logger = logger;

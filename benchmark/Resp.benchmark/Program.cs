@@ -195,7 +195,7 @@ namespace Resp.benchmark
 
         static void WaitForServer(Options opts)
         {
-            using var client = new GarnetClientSession(opts.Address, opts.Port, NetworkBuffers.Default, opts.EnableTLS ? BenchUtils.GetTlsOptions(opts.TlsHost, opts.CertFileName, opts.CertPassword) : null);
+            using var client = new GarnetClientSession(opts.Address, opts.Port, new(), opts.EnableTLS ? BenchUtils.GetTlsOptions(opts.TlsHost, opts.CertFileName, opts.CertPassword) : null);
             while (true)
             {
                 try

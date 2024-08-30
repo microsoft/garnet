@@ -6,6 +6,9 @@ using Microsoft.Extensions.Logging;
 
 namespace Garnet.common
 {
+    /// <summary>
+    /// Create a NetworkBuffers instance
+    /// </summary>
     public struct NetworkBuffers
     {
         public LimitedFixedBufferPool sendBufferPool;
@@ -13,23 +16,29 @@ namespace Garnet.common
         public readonly int sendBufferPoolSize;
         public readonly int recvBufferPoolSize;
 
+        /// <summary>
+        /// If this NetworkBuffers object has allocated separate pools for send and receive
+        /// </summary>
+        public bool UseSeparatePools { get; private set; }
+
+        /// <summary>
+        /// Indicates if underlying buffer pools have been allocated
+        /// </summary>
         public bool IsAllocated => sendBufferPool != null || recvBufferPool != null;
-
-        bool DistinctSendRecvPool => sendBufferPool != recvBufferPool;
-
-        public static NetworkBuffers Default => new(1 << 17, 1 << 17);
 
         /// <summary>
         /// Set network buffer sizes without allocating them
         /// </summary>
         /// <param name="sendBufferPoolSize"></param>
         /// <param name="recvBufferPoolSize"></param>
-        public NetworkBuffers(int sendBufferPoolSize = 1 << 17, int recvBufferPoolSize = 1 << 17)
+        /// <param name="useSeparatePools"></param>
+        public NetworkBuffers(int sendBufferPoolSize = 1 << 17, int recvBufferPoolSize = 1 << 17, bool useSeparatePools = false)
         {
             this.sendBufferPoolSize = sendBufferPoolSize;
             this.recvBufferPoolSize = recvBufferPoolSize;
             this.sendBufferPool = null;
             this.recvBufferPool = null;
+            UseSeparatePools = useSeparatePools;
         }
 
         /// <summary>
@@ -43,6 +52,7 @@ namespace Garnet.common
             this.recvBufferPool = recvBufferPool;
             this.sendBufferPoolSize = sendBufferPool.MinAllocationSize;
             this.recvBufferPoolSize = recvBufferPool.MinAllocationSize;
+            UseSeparatePools = sendBufferPool != recvBufferPool;
         }
 
         /// <summary>
@@ -50,11 +60,11 @@ namespace Garnet.common
         /// </summary>
         /// <param name="logger"></param>
         /// <returns></returns>
-        public NetworkBuffers Create(ILogger logger = null)
+        public NetworkBuffers Allocate(ILogger logger = null)
         {
             Debug.Assert(sendBufferPool == null && recvBufferPool == null);
             sendBufferPool = new LimitedFixedBufferPool(sendBufferPoolSize, logger: logger);
-            recvBufferPool = sendBufferPoolSize != recvBufferPoolSize ? new LimitedFixedBufferPool(recvBufferPoolSize, logger: logger) : sendBufferPool;
+            recvBufferPool = UseSeparatePools ? new LimitedFixedBufferPool(recvBufferPoolSize, logger: logger) : sendBufferPool;
             return this;
         }
 
@@ -63,10 +73,14 @@ namespace Garnet.common
         /// </summary>
         public void Dispose()
         {
-            if (!DistinctSendRecvPool)
+            if (!UseSeparatePools)
+            {
+                Debug.Assert(sendBufferPool == recvBufferPool);
                 sendBufferPool?.Dispose();
+            }
             else
             {
+                Debug.Assert(sendBufferPool != recvBufferPool);
                 sendBufferPool?.Dispose();
                 recvBufferPool?.Dispose();
             }
