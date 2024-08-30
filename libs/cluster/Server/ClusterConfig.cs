@@ -1160,6 +1160,21 @@ namespace Garnet.cluster
             return new ClusterConfig(newSlotMap, workers);
         }
 
+        public ClusterConfig ResetMultiSlotState(HashSet<int> slots)
+        {
+            var newSlotMap = new HashSlot[MAX_HASH_SLOT_VALUE];
+            Array.Copy(slotMap, newSlotMap, slotMap.Length);
+
+            foreach (ushort slot in slots)
+            {
+                var slotState = GetState(slot);
+                var workerId = slotState == SlotState.MIGRATING ? 1 : GetWorkerIdFromSlot(slot);
+                newSlotMap[slot]._workerId = (ushort)workerId;
+                newSlotMap[slot]._state = SlotState.STABLE;
+            }
+            return new ClusterConfig(newSlotMap, workers);
+        }
+
         /// <summary>
         /// Update config epoch for worker in new version of config.
         /// </summary>
