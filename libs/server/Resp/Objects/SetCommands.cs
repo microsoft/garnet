@@ -1,6 +1,7 @@
 ﻿// Copyright (c) Microsoft Corporation.
 // Licensed under the MIT license.
 
+using System;
 using Garnet.common;
 using Tsavorite.core;
 
@@ -647,7 +648,7 @@ namespace Garnet.server
             }
 
             // Create a random seed
-            var seed = RandomGen.Next();
+            var seed = Random.Shared.Next();
 
             // Prepare input
             var input = new ObjectInput
