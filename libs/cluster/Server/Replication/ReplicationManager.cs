@@ -22,6 +22,10 @@ namespace Garnet.cluster
 
         readonly CancellationTokenSource ctsRepManager = new();
 
+        readonly NetworkBuffers networkBuffers;
+
+        public NetworkBuffers GetNetworkBuffers => networkBuffers;
+
         readonly ILogger logger;
         bool _disposed;
 
@@ -89,6 +93,8 @@ namespace Garnet.cluster
         public ReplicationManager(ClusterProvider clusterProvider, ILogger logger = null)
         {
             var opts = clusterProvider.serverOptions;
+
+            this.networkBuffers = new NetworkBuffers(new LimitedFixedBufferPool(1 << 22, logger: logger), new LimitedFixedBufferPool(1 << 22, logger: logger));
             this.clusterProvider = clusterProvider;
             this.storeWrapper = clusterProvider.storeWrapper;
             aofProcessor = new AofProcessor(storeWrapper, recordToAof: false, logger: logger);
@@ -177,6 +183,7 @@ namespace Garnet.cluster
             replicaSyncSessionTaskStore.Dispose();
             ctsRepManager.Dispose();
             aofProcessor?.Dispose();
+            networkBuffers.Dispose();
         }
 
         public void DisposeConnections()

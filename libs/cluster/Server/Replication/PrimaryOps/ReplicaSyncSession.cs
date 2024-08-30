@@ -60,7 +60,7 @@ namespace Garnet.cluster
                 return false;
             }
 
-            GarnetClientSession gcs = new(address, port, new NetworkBuffers(1 << 20), clusterProvider.serverOptions.TlsOptions?.TlsClientOptions, authUsername: clusterProvider.ClusterUsername, authPassword: clusterProvider.ClusterPassword, logger: logger);
+            GarnetClientSession gcs = new(address, port, clusterProvider.replicationManager.GetNetworkBuffers, clusterProvider.serverOptions.TlsOptions?.TlsClientOptions, authUsername: clusterProvider.ClusterUsername, authPassword: clusterProvider.ClusterPassword, logger: logger);
             CheckpointEntry localEntry = default;
             AofSyncTaskInfo aofSyncTaskInfo = null;
 
