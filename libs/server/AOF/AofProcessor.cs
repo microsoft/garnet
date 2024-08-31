@@ -4,6 +4,7 @@
 using System;
 using System.Buffers;
 using System.Collections.Generic;
+using System.Reflection.PortableExecutable;
 using System.Runtime.CompilerServices;
 using System.Runtime.InteropServices;
 using Garnet.common;
@@ -259,13 +260,35 @@ namespace Garnet.server
                     ObjectStoreDelete(objectStoreBasicContext, entryPtr);
                     break;
                 case AofEntryType.StoredProcedure:
-                    ref var input = ref Unsafe.AsRef<SpanByte>(entryPtr + sizeof(AofHeader));
-                    respServerSession.RunTransactionProc(header.type, new ArgSlice(ref input), ref output);
+                    RunStoredProc(header.type, entryPtr);
                     break;
                 default:
                     throw new GarnetException($"Unknown AOF header operation type {header.opType}");
             }
             return true;
+        }
+
+        unsafe void RunStoredProc(byte id, byte* ptr)
+        {
+            var curr = ptr;
+            var parseStateCount = *(int*)curr;
+            curr += sizeof(int);
+
+            var parseState = new SessionParseState();
+            if (parseStateCount > 0)
+            {
+                ArgSlice[] parseStateBuffer = default;
+                parseState.Initialize(ref parseStateBuffer, parseStateCount);
+
+                for (var i = 0; i < parseStateCount; i++)
+                {
+                    ref var sbArgument = ref Unsafe.AsRef<SpanByte>(curr);
+                    parseStateBuffer[i] = new ArgSlice(ref sbArgument);
+                    curr += sbArgument.TotalSize;
+                }
+            }
+
+            respServerSession.RunTransactionProc(id, ref parseState, ref output);
         }
 
         static unsafe void StoreUpsert(BasicContext<SpanByte, SpanByte, RawStringInput, SpanByteAndMemory, long, MainSessionFunctions, MainStoreFunctions, MainStoreAllocator> basicContext, byte* ptr)

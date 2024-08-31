@@ -16,20 +16,20 @@ namespace Garnet
     /// </summary>
     sealed class SortedSetRemoveTxn : CustomTransactionProcedure
     {
-        public override bool Prepare<TGarnetReadApi>(TGarnetReadApi api, ArgSlice input)
+        public override bool Prepare<TGarnetReadApi>(TGarnetReadApi api, ref SessionParseState parseState)
         {
-            int offset = 0;
-            ArgSlice subscriptionContainerKey = GetNextArg(input, ref offset);
+            var offset = 0;
+            var subscriptionContainerKey = GetNextArg(ref parseState, ref offset);
 
             AddKey(subscriptionContainerKey, LockType.Exclusive, true);
             return true;
         }
 
-        public override void Main<TGarnetApi>(TGarnetApi api, ArgSlice input, ref MemoryResult<byte> output)
+        public override void Main<TGarnetApi>(TGarnetApi api, ref SessionParseState parseState, ref MemoryResult<byte> output)
         {
-            int offset = 0;
-            var subscriptionContainerKey = GetNextArg(input, ref offset);
-            var subscriptionContainerEntry = GetNextArg(input, ref offset);
+            var offset = 0;
+            var subscriptionContainerKey = GetNextArg(ref parseState, ref offset);
+            var subscriptionContainerEntry = GetNextArg(ref parseState, ref offset);
 
             api.SortedSetRemove(subscriptionContainerKey, subscriptionContainerEntry, out _);
 

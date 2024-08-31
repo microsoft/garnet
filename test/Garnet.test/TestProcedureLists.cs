@@ -19,11 +19,11 @@ namespace Garnet
 
     sealed class TestProcedureLists : CustomTransactionProcedure
     {
-        public override bool Prepare<TGarnetReadApi>(TGarnetReadApi api, ArgSlice input)
+        public override bool Prepare<TGarnetReadApi>(TGarnetReadApi api, ref SessionParseState parseState)
         {
-            int offset = 0;
-            var lstKey = GetNextArg(input, ref offset);
-            var lstKeyB = GetNextArg(input, ref offset);
+            var offset = 0;
+            var lstKey = GetNextArg(ref parseState, ref offset);
+            var lstKeyB = GetNextArg(ref parseState, ref offset);
 
             if (lstKey.Length == 0 || lstKeyB.Length == 0)
                 return false;
@@ -34,26 +34,26 @@ namespace Garnet
             return true;
         }
 
-        public override void Main<TGarnetApi>(TGarnetApi api, ArgSlice input, ref MemoryResult<byte> output)
+        public override void Main<TGarnetApi>(TGarnetApi api, ref SessionParseState parseState, ref MemoryResult<byte> output)
         {
-            var result = TestAPI(api, input);
+            var result = TestAPI(api, ref parseState);
             WriteSimpleString(ref output, result ? "SUCCESS" : "ERROR");
         }
 
-        private static bool TestAPI<TGarnetApi>(TGarnetApi api, ArgSlice input) where TGarnetApi : IGarnetApi
+        private static bool TestAPI<TGarnetApi>(TGarnetApi api, ref SessionParseState parseState) where TGarnetApi : IGarnetApi
         {
             var offset = 0;
             var elements = new ArgSlice[10];
 
-            var lstKeyA = GetNextArg(input, ref offset);
-            var lstKeyB = GetNextArg(input, ref offset);
+            var lstKeyA = GetNextArg(ref parseState, ref offset);
+            var lstKeyB = GetNextArg(ref parseState, ref offset);
 
             if (lstKeyA.Length == 0 || lstKeyB.Length == 0)
                 return false;
 
             for (var i = 0; i < elements.Length; i++)
             {
-                elements[i] = GetNextArg(input, ref offset);
+                elements[i] = GetNextArg(ref parseState, ref offset);
             }
 
             var status = api.ListLeftPush(lstKeyA, elements, out var count);

@@ -729,8 +729,7 @@ namespace Garnet.server
                     return true;
                 }
 
-                TryCustomProcedure(currentCustomProcedure.Id, recvBufferPtr + readHead, recvBufferPtr + endReadHead,
-                    currentCustomProcedure.CustomProcedureImpl);
+                TryCustomProcedure(currentCustomProcedure.CustomProcedureImpl);
 
                 currentCustomProcedure = null;
             }

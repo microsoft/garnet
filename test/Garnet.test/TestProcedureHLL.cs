@@ -18,10 +18,10 @@ namespace Garnet
 
     sealed class TestProcedureHLL : CustomTransactionProcedure
     {
-        public override bool Prepare<TGarnetReadApi>(TGarnetReadApi api, ArgSlice input)
+        public override bool Prepare<TGarnetReadApi>(TGarnetReadApi api, ref SessionParseState parseState)
         {
-            int offset = 0;
-            var hll = GetNextArg(input, ref offset);
+            var offset = 0;
+            var hll = GetNextArg(ref parseState, ref offset);
 
             if (hll.Length == 0)
                 return false;
@@ -30,26 +30,26 @@ namespace Garnet
             return true;
         }
 
-        public override void Main<TGarnetApi>(TGarnetApi api, ArgSlice input, ref MemoryResult<byte> output)
+        public override void Main<TGarnetApi>(TGarnetApi api, ref SessionParseState parseState, ref MemoryResult<byte> output)
         {
-            int offset = 0;
+            var offset = 0;
             var elements = new string[7];
-            bool result = true;
+            var result = true;
 
-            var hll = GetNextArg(input, ref offset);
+            var hll = GetNextArg(ref parseState, ref offset);
 
             if (hll.Length == 0)
                 result = false;
 
             if (result)
             {
-                for (int i = 0; i < elements.Length; i++)
+                for (var i = 0; i < elements.Length; i++)
                 {
-                    elements[i] = Encoding.ASCII.GetString(GetNextArg(input, ref offset).ToArray());
+                    elements[i] = Encoding.ASCII.GetString(GetNextArg(ref parseState, ref offset).ToArray());
                 }
                 api.HyperLogLogAdd(hll, elements, out var resultPfAdd);
                 result = resultPfAdd;
-                api.HyperLogLogLength([hll], out long count);
+                api.HyperLogLogLength([hll], out var count);
                 if (count != 7)
                 {
                     result = false;

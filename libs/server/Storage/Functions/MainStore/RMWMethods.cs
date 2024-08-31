@@ -222,8 +222,6 @@ namespace Garnet.server
 
         private bool InPlaceUpdaterWorker(ref SpanByte key, ref RawStringInput input, ref SpanByte value, ref SpanByteAndMemory output, ref RMWInfo rmwInfo, ref RecordInfo recordInfo)
         {
-            var inputPtr = input.ToPointer();
-
             // Expired data
             if (value.MetadataSize > 0 && input.header.CheckExpiry(value.ExtraMetadata))
             {
@@ -450,9 +448,10 @@ namespace Garnet.server
                     return false;
 
                 default:
-                    if (*inputPtr >= CustomCommandManager.StartOffset)
+                    var cmd = (byte)input.header.cmd;
+                    if (cmd >= CustomCommandManager.StartOffset)
                     {
-                        var functions = functionsState.customCommands[*inputPtr - CustomCommandManager.StartOffset].functions;
+                        var functions = functionsState.customCommands[cmd - CustomCommandManager.StartOffset].functions;
                         var expiration = input.arg1;
                         if (expiration == -1)
                         {

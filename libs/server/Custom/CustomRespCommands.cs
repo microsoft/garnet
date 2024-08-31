@@ -19,14 +19,14 @@ namespace Garnet.server
         {
             // Define output
             var output = new MemoryResult<byte>(null, 0);
-
+            
             // Run procedure
             Debug.Assert(txnManager.state == TxnState.None);
 
             latencyMetrics?.Start(LatencyMetricsType.TX_PROC_LAT);
             var input = new ArgSlice(ptr, (int)(end - ptr));
 
-            if (txnManager.RunTransactionProc(id, input, proc, ref output))
+            if (txnManager.RunTransactionProc(id, ref parseState, proc, ref output))
             {
                 // Write output to wire
                 if (output.MemoryOwner != null)
@@ -49,21 +49,20 @@ namespace Garnet.server
             return true;
         }
 
-        public bool RunTransactionProc(byte id, ArgSlice input, ref MemoryResult<byte> output)
+        public bool RunTransactionProc(byte id, ref SessionParseState parseState, ref MemoryResult<byte> output)
         {
             var proc = customCommandManagerSession
                 .GetCustomTransactionProcedure(id, txnManager, scratchBufferManager).Item1;
-            return txnManager.RunTransactionProc(id, input, proc, ref output);
+            return txnManager.RunTransactionProc(id, ref parseState, proc, ref output);
 
         }
 
-        private void TryCustomProcedure(byte id, byte* ptr, byte* end, CustomProcedure proc)
+        private void TryCustomProcedure(CustomProcedure proc)
         {
             Debug.Assert(proc != null);
 
             var output = new MemoryResult<byte>(null, 0);
-            var input = new ArgSlice(ptr, (int)(end - ptr));
-            if (proc.Execute(basicGarnetApi, input, ref output))
+            if (proc.Execute(basicGarnetApi, ref parseState, ref output))
             {
                 if (output.MemoryOwner != null)
                     SendAndReset(output.MemoryOwner, output.Length);
@@ -88,9 +87,8 @@ namespace Garnet.server
             where TGarnetApi : IGarnetAdvancedApi
         {
             var sbKey = parseState.GetArgSliceByRef(0).SpanByte;
-            var keyPtr = sbKey.ToPointer();
 
-            var inputHeader = new RawStringInput
+            var input = new RawStringInput
             {
                 header = new RespInputHeader { cmd = cmd },
                 parseState = parseState,
@@ -102,7 +100,7 @@ namespace Garnet.server
             GarnetStatus status;
             if (type == CommandType.ReadModifyWrite)
             {
-                status = storageApi.RMW_MainStore(ref Unsafe.AsRef<SpanByte>(keyPtr), ref inputHeader, ref output);
+                status = storageApi.RMW_MainStore(ref sbKey, ref input, ref output);
                 Debug.Assert(!output.IsSpanByte);
 
                 if (output.Memory != null)
@@ -113,7 +111,7 @@ namespace Garnet.server
             }
             else
             {
-                status = storageApi.Read_MainStore(ref Unsafe.AsRef<SpanByte>(keyPtr), ref inputHeader, ref output);
+                status = storageApi.Read_MainStore(ref sbKey, ref input, ref output);
                 Debug.Assert(!output.IsSpanByte);
 
                 if (status == GarnetStatus.OK)
