@@ -311,6 +311,7 @@ namespace Tsavorite.test.LockableUnsafeContext
             long genHashCode(uint uniquifier) => ((long)uniquifier << 30) | bucketIndex;
 
             var lContext = session.LockableContext;
+            kernelSession.BeginUnsafe();
             kernelSession.BeginTransaction();
 
             var keys = new[]
@@ -327,6 +328,7 @@ namespace Tsavorite.test.LockableUnsafeContext
             store.Kernel.Unlock(ref kernelSession, keys);
 
             lContext.EndTransaction();
+            kernelSession.EndUnsafe();
         }
 
         [Test]

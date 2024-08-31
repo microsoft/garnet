@@ -210,14 +210,11 @@ namespace Tsavorite.core
             kernelSession.CheckTransactionIsStarted();
             Debug.Assert(kernelSession.IsEpochAcquired(), "Expected Epoch to be acquired for Lock");
 
-            while (true)
+            while (!DoManualLock(ref kernelSession, keys, start, count))
             {
-                if (!DoManualLock(ref kernelSession, keys, start, count))
-                {
-                    // Pulse epoch protection to give others a fair chance to progress
-                    kernelSession.EndUnsafe();
-                    kernelSession.BeginUnsafe();
-                }
+                // Pulse epoch protection to give others a fair chance to progress
+                kernelSession.EndUnsafe();
+                kernelSession.BeginUnsafe();
             }
         }
 
