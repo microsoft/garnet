@@ -25,7 +25,7 @@ namespace Garnet.server
                     return false;
                 default:
                     if ((byte)type < CustomCommandManager.StartOffset)
-                        return GarnetObject.NeedToCreate(*(RespInputHeader*)input.ToPointer());
+                        return GarnetObject.NeedToCreate(input.header);
                     else
                     {
                         var customObjectCommand = GetCustomObjectCommand(ref input, type);
@@ -70,8 +70,7 @@ namespace Garnet.server
             functionsState.watchVersionMap.IncrementVersion(rmwInfo.KeyHash);
             if (functionsState.appendOnlyFile != null)
             {
-                var header = (RespInputHeader*)input.ToPointer();
-                header->SetExpiredFlag();
+                input.header.SetExpiredFlag();
                 WriteLogRMW(ref key, ref input, rmwInfo.Version, rmwInfo.SessionID);
             }
 
@@ -166,10 +165,8 @@ namespace Garnet.server
         /// <inheritdoc />
         public bool CopyUpdater(ref byte[] key, ref ObjectInput input, ref IGarnetObject oldValue, ref IGarnetObject newValue, ref GarnetObjectStoreOutput output, ref RMWInfo rmwInfo, ref RecordInfo recordInfo)
         {
-            var header = (RespInputHeader*)input.ToPointer();
-
             // Expired data
-            if (oldValue.Expiration > 0 && header->CheckExpiry(oldValue.Expiration))
+            if (oldValue.Expiration > 0 && input.header.CheckExpiry(oldValue.Expiration))
             {
                 rmwInfo.Action = RMWAction.ExpireAndResume;
                 return false;
