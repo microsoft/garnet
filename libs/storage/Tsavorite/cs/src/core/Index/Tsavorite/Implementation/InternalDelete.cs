@@ -156,7 +156,7 @@ namespace Tsavorite.core
                                     // HashBucketEntry.word to 0, it means we do not expect any records for this key's tag to exist after the elision. Therefore,
                                     // we can re-insert the record iff the HashBucketEntry's address is <= kTempInvalidAddress.
                                     stackCtx.hei = new(stackCtx.hei.hash, partitionId);
-                                    FindOrCreateTag(ref stackCtx.hei, hlogBase.BeginAddress);
+                                    Kernel.hashTable.FindOrCreateTag(ref stackCtx.hei, hlogBase.BeginAddress);
 
                                     if (stackCtx.hei.entry.Address <= Constants.kTempInvalidAddress && stackCtx.hei.TryCAS(stackCtx.recSrc.LogicalAddress, partitionId))
                                         srcRecordInfo.UnsealAndValidate();

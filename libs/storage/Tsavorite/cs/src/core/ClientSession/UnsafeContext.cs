@@ -12,7 +12,7 @@ namespace Tsavorite.core
     /// Tsavorite Operations implementation that allows manual control of record epoch management. For advanced use only.
     /// </summary>
     public readonly struct UnsafeContext<TKey, TValue, TInput, TOutput, TContext, TSessionFunctions, TStoreFunctions, TAllocator>
-        : ITsavoriteContext<TKey, TValue, TInput, TOutput, TContext, TSessionFunctions, TStoreFunctions, TAllocator>, IUnsafeContext
+        : ITsavoriteContext<TKey, TValue, TInput, TOutput, TContext, TSessionFunctions, TStoreFunctions, TAllocator>
         where TSessionFunctions : ISessionFunctions<TKey, TValue, TInput, TOutput, TContext>
         where TStoreFunctions : IStoreFunctions<TKey, TValue>
         where TAllocator : IAllocator<TKey, TValue, TStoreFunctions>
@@ -29,40 +29,28 @@ namespace Tsavorite.core
             sessionFunctions = new(clientSession);
         }
 
-        #region Begin/EndUnsafe
-
-        /// <inheritdoc/>
-        [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public void BeginUnsafe() => clientSession.UnsafeResumeThread(sessionFunctions);
-
-        /// <inheritdoc/>
-        [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public void EndUnsafe() => clientSession.UnsafeSuspendThread();
-
-        #endregion Begin/EndUnsafe
-
         #region ITsavoriteContext
 
         /// <inheritdoc/>
         public ClientSession<TKey, TValue, TInput, TOutput, TContext, TSessionFunctions, TStoreFunctions, TAllocator> Session => clientSession;
 
         /// <inheritdoc/>
-        public long GetKeyHash(TKey key) => clientSession.store.GetKeyHash(ref key);
+        public long GetKeyHash(TKey key) => clientSession.Store.GetKeyHash(ref key);
 
         /// <inheritdoc/>
-        public long GetKeyHash(ref TKey key) => clientSession.store.GetKeyHash(ref key);
+        public long GetKeyHash(ref TKey key) => clientSession.Store.GetKeyHash(ref key);
 
         /// <inheritdoc/>
         public bool CompletePending(bool wait = false, bool spinWaitForCommit = false)
         {
-            Debug.Assert(clientSession.store.kernel.epoch.ThisInstanceProtected());
+            Debug.Assert(clientSession.Store.Kernel.Epoch.ThisInstanceProtected());
             return clientSession.UnsafeCompletePending(sessionFunctions, false, wait, spinWaitForCommit);
         }
 
         /// <inheritdoc/>
         public bool CompletePendingWithOutputs(out CompletedOutputIterator<TKey, TValue, TInput, TOutput, TContext> completedOutputs, bool wait = false, bool spinWaitForCommit = false)
         {
-            Debug.Assert(clientSession.store.kernel.epoch.ThisInstanceProtected());
+            Debug.Assert(clientSession.Store.Kernel.Epoch.ThisInstanceProtected());
             return clientSession.UnsafeCompletePendingWithOutputs(sessionFunctions, out completedOutputs, wait, spinWaitForCommit);
         }
 
@@ -78,16 +66,16 @@ namespace Tsavorite.core
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public Status Read(ref TKey key, ref TInput input, ref TOutput output, TContext userContext = default)
         {
-            Debug.Assert(clientSession.store.kernel.epoch.ThisInstanceProtected());
-            return clientSession.store.ContextRead(ref key, ref input, ref output, userContext, sessionFunctions);
+            Debug.Assert(clientSession.Store.Kernel.Epoch.ThisInstanceProtected());
+            return clientSession.Store.ContextRead(ref key, ref input, ref output, userContext, sessionFunctions);
         }
 
         /// <inheritdoc/>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public Status Read(ref TKey key, ref TInput input, ref TOutput output, ref ReadOptions readOptions, TContext userContext = default)
         {
-            Debug.Assert(clientSession.store.kernel.epoch.ThisInstanceProtected());
-            return clientSession.store.ContextRead(ref key, ref input, ref output, ref readOptions, out _, userContext, sessionFunctions);
+            Debug.Assert(clientSession.Store.Kernel.Epoch.ThisInstanceProtected());
+            return clientSession.Store.ContextRead(ref key, ref input, ref output, ref readOptions, out _, userContext, sessionFunctions);
         }
 
         /// <inheritdoc/>
@@ -162,24 +150,24 @@ namespace Tsavorite.core
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public Status Read(ref TKey key, ref TInput input, ref TOutput output, ref ReadOptions readOptions, out RecordMetadata recordMetadata, TContext userContext = default)
         {
-            Debug.Assert(clientSession.store.kernel.epoch.ThisInstanceProtected());
-            return clientSession.store.ContextRead(ref key, ref input, ref output, ref readOptions, out recordMetadata, userContext, sessionFunctions);
+            Debug.Assert(clientSession.Store.Kernel.Epoch.ThisInstanceProtected());
+            return clientSession.Store.ContextRead(ref key, ref input, ref output, ref readOptions, out recordMetadata, userContext, sessionFunctions);
         }
 
         /// <inheritdoc/>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public Status ReadAtAddress(long address, ref TInput input, ref TOutput output, ref ReadOptions readOptions, out RecordMetadata recordMetadata, TContext userContext = default)
         {
-            Debug.Assert(clientSession.store.kernel.epoch.ThisInstanceProtected());
-            return clientSession.store.ContextReadAtAddress(address, ref input, ref output, ref readOptions, out recordMetadata, userContext, sessionFunctions);
+            Debug.Assert(clientSession.Store.Kernel.Epoch.ThisInstanceProtected());
+            return clientSession.Store.ContextReadAtAddress(address, ref input, ref output, ref readOptions, out recordMetadata, userContext, sessionFunctions);
         }
 
         /// <inheritdoc/>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public Status ReadAtAddress(long address, ref TKey key, ref TInput input, ref TOutput output, ref ReadOptions readOptions, out RecordMetadata recordMetadata, TContext userContext = default)
         {
-            Debug.Assert(clientSession.store.kernel.epoch.ThisInstanceProtected());
-            return clientSession.store.ContextReadAtAddress(address, ref key, ref input, ref output, ref readOptions, out recordMetadata, userContext, sessionFunctions);
+            Debug.Assert(clientSession.Store.Kernel.Epoch.ThisInstanceProtected());
+            return clientSession.Store.ContextReadAtAddress(address, ref key, ref input, ref output, ref readOptions, out recordMetadata, userContext, sessionFunctions);
         }
 
         /// <inheritdoc/>
@@ -188,7 +176,7 @@ namespace Tsavorite.core
         {
             TInput input = default;
             TOutput output = default;
-            return Upsert(ref key, clientSession.store.storeFunctions.GetKeyHashCode64(ref key), ref input, ref desiredValue, ref output, out _, userContext);
+            return Upsert(ref key, clientSession.Store.storeFunctions.GetKeyHashCode64(ref key), ref input, ref desiredValue, ref output, out _, userContext);
         }
 
         /// <inheritdoc/>
@@ -197,43 +185,43 @@ namespace Tsavorite.core
         {
             TInput input = default;
             TOutput output = default;
-            return Upsert(ref key, upsertOptions.KeyHash ?? clientSession.store.storeFunctions.GetKeyHashCode64(ref key), ref input, ref desiredValue, ref output, userContext);
+            return Upsert(ref key, upsertOptions.KeyHash ?? clientSession.Store.storeFunctions.GetKeyHashCode64(ref key), ref input, ref desiredValue, ref output, userContext);
         }
 
         /// <inheritdoc/>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public Status Upsert(ref TKey key, ref TInput input, ref TValue desiredValue, ref TOutput output, TContext userContext = default)
-            => Upsert(ref key, clientSession.store.storeFunctions.GetKeyHashCode64(ref key), ref input, ref desiredValue, ref output, userContext);
+            => Upsert(ref key, clientSession.Store.storeFunctions.GetKeyHashCode64(ref key), ref input, ref desiredValue, ref output, userContext);
 
         /// <inheritdoc/>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public Status Upsert(ref TKey key, ref TInput input, ref TValue desiredValue, ref TOutput output, ref UpsertOptions upsertOptions, TContext userContext = default)
-            => Upsert(ref key, upsertOptions.KeyHash ?? clientSession.store.storeFunctions.GetKeyHashCode64(ref key), ref input, ref desiredValue, ref output, userContext);
+            => Upsert(ref key, upsertOptions.KeyHash ?? clientSession.Store.storeFunctions.GetKeyHashCode64(ref key), ref input, ref desiredValue, ref output, userContext);
 
         /// <inheritdoc/>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         private Status Upsert(ref TKey key, long keyHash, ref TInput input, ref TValue desiredValue, ref TOutput output, TContext userContext = default)
         {
-            Debug.Assert(clientSession.store.kernel.epoch.ThisInstanceProtected());
-            return clientSession.store.ContextUpsert(ref key, keyHash, ref input, ref desiredValue, ref output, userContext, sessionFunctions);
+            Debug.Assert(clientSession.Store.Kernel.Epoch.ThisInstanceProtected());
+            return clientSession.Store.ContextUpsert(ref key, keyHash, ref input, ref desiredValue, ref output, userContext, sessionFunctions);
         }
 
         /// <inheritdoc/>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public Status Upsert(ref TKey key, ref TInput input, ref TValue desiredValue, ref TOutput output, out RecordMetadata recordMetadata, TContext userContext = default)
-            => Upsert(ref key, clientSession.store.storeFunctions.GetKeyHashCode64(ref key), ref input, ref desiredValue, ref output, out recordMetadata, userContext);
+            => Upsert(ref key, clientSession.Store.storeFunctions.GetKeyHashCode64(ref key), ref input, ref desiredValue, ref output, out recordMetadata, userContext);
 
         /// <inheritdoc/>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public Status Upsert(ref TKey key, ref TInput input, ref TValue desiredValue, ref TOutput output, ref UpsertOptions upsertOptions, out RecordMetadata recordMetadata, TContext userContext = default)
-            => Upsert(ref key, upsertOptions.KeyHash ?? clientSession.store.storeFunctions.GetKeyHashCode64(ref key), ref input, ref desiredValue, ref output, out recordMetadata, userContext);
+            => Upsert(ref key, upsertOptions.KeyHash ?? clientSession.Store.storeFunctions.GetKeyHashCode64(ref key), ref input, ref desiredValue, ref output, out recordMetadata, userContext);
 
         /// <inheritdoc/>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         private Status Upsert(ref TKey key, long keyHash, ref TInput input, ref TValue desiredValue, ref TOutput output, out RecordMetadata recordMetadata, TContext userContext = default)
         {
-            Debug.Assert(clientSession.store.kernel.epoch.ThisInstanceProtected());
-            return clientSession.store.ContextUpsert(ref key, keyHash, ref input, ref desiredValue, ref output, out recordMetadata, userContext, sessionFunctions);
+            Debug.Assert(clientSession.Store.Kernel.Epoch.ThisInstanceProtected());
+            return clientSession.Store.ContextUpsert(ref key, keyHash, ref input, ref desiredValue, ref output, out recordMetadata, userContext, sessionFunctions);
         }
 
         /// <inheritdoc/>
@@ -264,24 +252,24 @@ namespace Tsavorite.core
         /// <inheritdoc/>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public Status RMW(ref TKey key, ref TInput input, ref TOutput output, ref RMWOptions rmwOptions, TContext userContext = default)
-            => RMW(ref key, rmwOptions.KeyHash ?? clientSession.store.storeFunctions.GetKeyHashCode64(ref key), ref input, ref output, out _, userContext);
+            => RMW(ref key, rmwOptions.KeyHash ?? clientSession.Store.storeFunctions.GetKeyHashCode64(ref key), ref input, ref output, out _, userContext);
 
         /// <inheritdoc/>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public Status RMW(ref TKey key, ref TInput input, ref TOutput output, out RecordMetadata recordMetadata, TContext userContext = default)
-            => RMW(ref key, clientSession.store.storeFunctions.GetKeyHashCode64(ref key), ref input, ref output, out recordMetadata, userContext);
+            => RMW(ref key, clientSession.Store.storeFunctions.GetKeyHashCode64(ref key), ref input, ref output, out recordMetadata, userContext);
 
         /// <inheritdoc/>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public Status RMW(ref TKey key, ref TInput input, ref TOutput output, ref RMWOptions rmwOptions, out RecordMetadata recordMetadata, TContext userContext = default)
-            => RMW(ref key, rmwOptions.KeyHash ?? clientSession.store.storeFunctions.GetKeyHashCode64(ref key), ref input, ref output, out recordMetadata, userContext);
+            => RMW(ref key, rmwOptions.KeyHash ?? clientSession.Store.storeFunctions.GetKeyHashCode64(ref key), ref input, ref output, out recordMetadata, userContext);
 
         /// <inheritdoc/>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public Status RMW(ref TKey key, long keyHash, ref TInput input, ref TOutput output, out RecordMetadata recordMetadata, TContext userContext = default)
         {
-            Debug.Assert(clientSession.store.kernel.epoch.ThisInstanceProtected());
-            return clientSession.store.ContextRMW(ref key, keyHash, ref input, ref output, out recordMetadata, userContext, sessionFunctions);
+            Debug.Assert(clientSession.Store.Kernel.Epoch.ThisInstanceProtected());
+            return clientSession.Store.ContextRMW(ref key, keyHash, ref input, ref output, out recordMetadata, userContext, sessionFunctions);
         }
 
         /// <inheritdoc/>
@@ -332,20 +320,20 @@ namespace Tsavorite.core
         /// <inheritdoc/>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public Status Delete(ref TKey key, TContext userContext = default)
-            => Delete(ref key, clientSession.store.storeFunctions.GetKeyHashCode64(ref key), userContext);
+            => Delete(ref key, clientSession.Store.storeFunctions.GetKeyHashCode64(ref key), userContext);
 
         /// <inheritdoc/>
         /// <inheritdoc/>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public Status Delete(ref TKey key, ref DeleteOptions deleteOptions, TContext userContext = default)
-            => Delete(ref key, deleteOptions.KeyHash ?? clientSession.store.storeFunctions.GetKeyHashCode64(ref key), userContext);
+            => Delete(ref key, deleteOptions.KeyHash ?? clientSession.Store.storeFunctions.GetKeyHashCode64(ref key), userContext);
 
         /// <inheritdoc/>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public Status Delete(ref TKey key, long keyHash, TContext userContext = default)
         {
-            Debug.Assert(clientSession.store.kernel.epoch.ThisInstanceProtected());
-            return clientSession.store.ContextDelete<TInput, TOutput, TContext, SessionFunctionsWrapper<TKey, TValue, TInput, TOutput, TContext, TSessionFunctions, BasicSessionLocker<TKey, TValue, TStoreFunctions, TAllocator>, TStoreFunctions, TAllocator>>(
+            Debug.Assert(clientSession.Store.Kernel.Epoch.ThisInstanceProtected());
+            return clientSession.Store.ContextDelete<TInput, TOutput, TContext, SessionFunctionsWrapper<TKey, TValue, TInput, TOutput, TContext, TSessionFunctions, BasicSessionLocker<TKey, TValue, TStoreFunctions, TAllocator>, TStoreFunctions, TAllocator>>(
                     ref key, keyHash, userContext, sessionFunctions);
         }
 
@@ -372,9 +360,21 @@ namespace Tsavorite.core
         /// <inheritdoc/>
         public void Refresh()
         {
-            Debug.Assert(clientSession.store.kernel.epoch.ThisInstanceProtected());
-            clientSession.store.InternalRefresh<TInput, TOutput, TContext, SessionFunctionsWrapper<TKey, TValue, TInput, TOutput, TContext, TSessionFunctions, BasicSessionLocker<TKey, TValue, TStoreFunctions, TAllocator>, TStoreFunctions, TAllocator>>(sessionFunctions);
+            Debug.Assert(clientSession.Store.Kernel.Epoch.ThisInstanceProtected());
+            clientSession.Store.InternalRefresh<TInput, TOutput, TContext, SessionFunctionsWrapper<TKey, TValue, TInput, TOutput, TContext, TSessionFunctions, BasicSessionLocker<TKey, TValue, TStoreFunctions, TAllocator>, TStoreFunctions, TAllocator>>(sessionFunctions);
         }
+
+        /// <inheritdoc/>
+        public void HandleImmediateNonPendingRetryStatus(bool refresh) 
+            => clientSession.Store.HandleImmediateNonPendingRetryStatus<TInput, TOutput, TContext, 
+                SessionFunctionsWrapper<TKey, TValue, TInput, TOutput, TContext, TSessionFunctions, BasicSessionLocker<TKey, TValue, TStoreFunctions, TAllocator>, TStoreFunctions, TAllocator>>
+                (refresh ? OperationStatus.RETRY_LATER : OperationStatus.RETRY_NOW, sessionFunctions);
+
+        /// <inheritdoc/>
+        public void DoThreadStateMachineStep() => clientSession.Store.DoThreadStateMachineStep<TInput, TOutput, TContext,
+                SessionFunctionsWrapper<TKey, TValue, TInput, TOutput, TContext, TSessionFunctions, BasicSessionLocker<TKey, TValue, TStoreFunctions, TAllocator>, TStoreFunctions, TAllocator>>
+                (sessionFunctions);
+
         #endregion ITsavoriteContext
     }
 }

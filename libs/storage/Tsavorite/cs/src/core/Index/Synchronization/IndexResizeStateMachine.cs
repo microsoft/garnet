@@ -28,20 +28,20 @@ namespace Tsavorite.core
                     break;
                 case Phase.IN_PROGRESS_GROW:
                     // Set up the transition to new version of HT
-                    var numChunks = (int)(store.kernel.hashTable.spine.state[store.kernel.hashTable.spine.resizeInfo.version].size / Constants.kSizeofChunk);
+                    var numChunks = (int)(store.Kernel.hashTable.spine.state[store.Kernel.hashTable.spine.resizeInfo.version].size / Constants.kSizeofChunk);
                     if (numChunks == 0) numChunks = 1; // at least one chunk
 
-                    store.kernel.hashTable.numPendingChunksToBeSplit = numChunks;
-                    store.kernel.hashTable.splitStatus = new long[numChunks];
-                    store.kernel.hashTable.overflowBucketsAllocatorResize = store.kernel.hashTable.overflowBucketsAllocator;
-                    store.kernel.hashTable.overflowBucketsAllocator = new MallocFixedPageSize<HashBucket>();
+                    store.Kernel.hashTable.numPendingChunksToBeSplit = numChunks;
+                    store.Kernel.hashTable.splitStatus = new long[numChunks];
+                    store.Kernel.hashTable.overflowBucketsAllocatorResize = store.Kernel.hashTable.overflowBucketsAllocator;
+                    store.Kernel.hashTable.overflowBucketsAllocator = new MallocFixedPageSize<HashBucket>();
 
                     // Because version is 0 or 1, indexing by [1 - resizeInfo.version] references to the "new version".
                     // Once growth initialization is complete, the state versions are swapped by setting resizeInfo.version = 1 - resizeInfo.version.
                     // Initialize the new version to twice the size of the old version.
-                    store.kernel.hashTable.Reinitialize(1 - store.kernel.hashTable.spine.resizeInfo.version, store.kernel.hashTable.spine.state[store.kernel.hashTable.spine.resizeInfo.version].size * 2, store.sectorSize);
+                    store.Kernel.hashTable.Reinitialize(1 - store.Kernel.hashTable.spine.resizeInfo.version, store.Kernel.hashTable.spine.state[store.Kernel.hashTable.spine.resizeInfo.version].size * 2, store.sectorSize);
 
-                    store.kernel.hashTable.spine.resizeInfo.version = 1 - store.kernel.hashTable.spine.resizeInfo.version;
+                    store.Kernel.hashTable.spine.resizeInfo.version = 1 - store.Kernel.hashTable.spine.resizeInfo.version;
                     break;
                 case Phase.REST:
                     // nothing to do
@@ -59,17 +59,17 @@ namespace Tsavorite.core
             switch (next.Phase)
             {
                 case Phase.PREPARE_GROW:
-                    bool isProtected = store.kernel.epoch.ThisInstanceProtected();
+                    bool isProtected = store.Kernel.Epoch.ThisInstanceProtected();
                     if (!isProtected)
-                        store.kernel.epoch.Resume();
+                        store.Kernel.Epoch.Resume();
                     try
                     {
-                        store.kernel.epoch.BumpCurrentEpoch(() => allThreadsInPrepareGrow = true);
+                        store.Kernel.Epoch.BumpCurrentEpoch(() => allThreadsInPrepareGrow = true);
                     }
                     finally
                     {
                         if (!isProtected)
-                            store.kernel.epoch.Suspend();
+                            store.Kernel.Epoch.Suspend();
                     }
                     break;
                 case Phase.IN_PROGRESS_GROW:
@@ -97,7 +97,7 @@ namespace Tsavorite.core
                 case Phase.PREPARE_GROW:
                     // Using bumpEpoch: true allows us to guarantee that when system state proceeds, all threads in prior state
                     // will see that hlog.NumActiveLockingSessions == 0, ensuring that they can potentially block for the next state.
-                    if (allThreadsInPrepareGrow && store.hlogBase.NumActiveLockingSessions == 0)
+                    if (allThreadsInPrepareGrow && store.hlogBase.NumActiveTxnSessions == 0)
                         store.GlobalStateMachineStep(current, bumpEpoch: true);
                     break;
 

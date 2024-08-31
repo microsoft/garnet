@@ -70,6 +70,7 @@ namespace Garnet.server
             var replayAofStoreWrapper = new StoreWrapper(
                 storeWrapper.version,
                 storeWrapper.redisProtocolVersion,
+                storeWrapper.TsavoriteKernel,
                 null,
                 storeWrapper.store,
                 storeWrapper.objectStore,
@@ -82,9 +83,9 @@ namespace Garnet.server
 
             this.respServerSession = new RespServerSession(networkSender: null, storeWrapper: replayAofStoreWrapper, subscribeBroker: null, itemBroker: null, authenticator: null, enableScripts: false);
 
-            var session = respServerSession.storageSession.basicContext.Session;
+            var session = respServerSession.StorageSession.basicContext.Session;
             basicContext = session.BasicContext;
-            var objectStoreSession = respServerSession.storageSession.objectStoreBasicContext.Session;
+            var objectStoreSession = respServerSession.StorageSession.objectStoreBasicContext.Session;
             if (objectStoreSession is not null)
                 objectStoreBasicContext = objectStoreSession.BasicContext;
 

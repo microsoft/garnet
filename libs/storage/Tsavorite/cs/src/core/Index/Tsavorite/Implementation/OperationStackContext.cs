@@ -28,7 +28,7 @@ namespace Tsavorite.core
 
         /// <summary>
         /// Sets <see cref="recSrc"/> to the current <see cref="hei"/>.<see cref="HashEntryInfo.CurrentAddress"/>, which is the current address
-        /// in the hash table. This is the same effect as calling <see cref="TsavoriteBase.FindTag(ref HashEntryInfo)"/>.
+        /// in the hash table. This is the same effect as calling <see cref="HashTable.FindTag(ref HashEntryInfo)"/>.
         /// </summary>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         internal void UpdateRecordSourceToCurrentHashEntry(AllocatorBase<TKey, TValue, TStoreFunctions, TAllocator> hlog)

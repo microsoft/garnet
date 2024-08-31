@@ -42,7 +42,7 @@ namespace Tsavorite.core
                     // has done so earlier (e.g. FullCheckpoint captures log tail at WAIT_FLUSH), don't update
                     // the tail address.
                     if (store.ObtainCurrentTailAddress(ref store._indexCheckpoint.info.finalLogicalAddress))
-                        store._indexCheckpoint.info.num_buckets = store.kernel.hashTable.overflowBucketsAllocator.GetMaxValidAddress();
+                        store._indexCheckpoint.info.num_buckets = store.Kernel.hashTable.overflowBucketsAllocator.GetMaxValidAddress();
                     if (!store._indexCheckpoint.IsDefault())
                     {
                         store.WriteIndexMetaInfo();

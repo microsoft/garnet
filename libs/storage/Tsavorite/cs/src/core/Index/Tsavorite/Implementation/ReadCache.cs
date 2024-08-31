@@ -269,7 +269,7 @@ namespace Tsavorite.core
                 // Find the hash index entry for the key in the store's hash table.
                 ref TKey key = ref readcache.GetKey(rcPhysicalAddress);
                 HashEntryInfo hei = new(storeFunctions.GetKeyHashCode64(ref key), partitionId);
-                if (!FindTag(ref hei))
+                if (!Kernel.hashTable.FindTag(ref hei))
                     goto NextRecord;
 
                 ReadCacheEvictChain(rcToLogicalAddress, ref hei);
@@ -299,7 +299,7 @@ namespace Tsavorite.core
 
 #if DEBUG
                 // Due to collisions, we can compare the hash code *mask* (i.e. the hash bucket index), not the key
-                var mask = kernel.hashTable.spine.state[kernel.hashTable.spine.resizeInfo.version].size_mask;
+                var mask = Kernel.hashTable.spine.state[Kernel.hashTable.spine.resizeInfo.version].size_mask;
                 var rc_mask = hei.hash & mask;
                 var pa_mask = storeFunctions.GetKeyHashCode64(ref readcache.GetKey(pa)) & mask;
                 Debug.Assert(rc_mask == pa_mask, "The keyHash mask of the hash-chain ReadCache entry does not match the one obtained from the initial readcache address");

@@ -8,42 +8,39 @@ using Tsavorite.core;
 
 namespace Garnet.server
 {
-    using MainStoreAllocator = SpanByteAllocator<StoreFunctions<SpanByte, SpanByte, SpanByteComparer, SpanByteRecordDisposer>>;
-    using MainStoreFunctions = StoreFunctions<SpanByte, SpanByte, SpanByteComparer, SpanByteRecordDisposer>;
-
-    using ObjectStoreAllocator = GenericAllocator<byte[], IGarnetObject, StoreFunctions<byte[], IGarnetObject, ByteArrayKeyComparer, DefaultRecordDisposer<byte[], IGarnetObject>>>;
-    using ObjectStoreFunctions = StoreFunctions<byte[], IGarnetObject, ByteArrayKeyComparer, DefaultRecordDisposer<byte[], IGarnetObject>>;
-
     /// <summary>
     /// Entry for a key to lock and unlock in transactions
     /// </summary>
-    [StructLayout(LayoutKind.Explicit, Size = 10)]
+    [StructLayout(LayoutKind.Explicit, Size = 11)]
     struct TxnKeyEntry : ILockableKey
     {
         [FieldOffset(0)]
         internal long keyHash;
 
         [FieldOffset(8)]
-        internal bool isObject;
+        internal ushort partitionId;
 
-        [FieldOffset(9)]
+        [FieldOffset(10)]
         internal LockType lockType;
 
         #region ILockableKey
         /// <inheritdoc/>
-        public long KeyHash { get => keyHash; }
+        public readonly long KeyHash => keyHash;
 
         /// <inheritdoc/>
-        public LockType LockType { get => lockType; }
+        public readonly ushort PartitionId => partitionId;
+
+        /// <inheritdoc/>
+        public readonly LockType LockType => lockType;
         #endregion ILockableKey
 
         /// <inheritdoc />
-        public override string ToString()
+        public override readonly string ToString()
         {
             // The debugger often can't call the Globalization NegativeSign property so ToString() would just display the class name
             var keyHashSign = keyHash < 0 ? "-" : string.Empty;
-            var absKeyHash = this.keyHash >= 0 ? this.keyHash : -this.keyHash;
-            return $"{keyHashSign}{absKeyHash}:{(isObject ? "obj" : "raw")}:{(lockType == LockType.None ? "-" : (lockType == LockType.Shared ? "s" : "x"))}";
+            var absKeyHash = keyHash >= 0 ? keyHash : -keyHash;
+            return $"{keyHashSign}{absKeyHash} : PartitionId {partitionId} : LockType {lockType}";
         }
     }
 
@@ -51,45 +48,46 @@ namespace Garnet.server
     {
         // Basic keys
         int keyCount;
-        int mainKeyCount;
         TxnKeyEntry[] keys;
 
-        bool mainStoreKeyLocked;
-        bool objectStoreKeyLocked;
+        internal TsavoriteKernel kernel;
 
-        readonly TxnKeyEntryComparer comparer;
-
-        public int phase;
-
-        internal TxnKeyEntries(int initialCount, LockableContext<SpanByte, SpanByte, SpanByte, SpanByteAndMemory, long, MainSessionFunctions, MainStoreFunctions, MainStoreAllocator> lockableContext,
-                LockableContext<byte[], IGarnetObject, ObjectInput, GarnetObjectStoreOutput, long, ObjectSessionFunctions, ObjectStoreFunctions, ObjectStoreAllocator> objectStoreLockableContext)
+        enum LockPhase
         {
-            keys = new TxnKeyEntry[initialCount];
-            // We sort a single array for speed, and the sessions use the same sorting logic,
-            this.comparer = new(lockableContext, objectStoreLockableContext);
+            /// <summary>No lock operation is in progress</summary>
+            Rest,
+
+            /// <summary>Lock() operation is in progress</summary>
+            Locking,
+
+            /// <summary>Unlock() operation is in progress</summary>
+            Unlocking
+        };
+        LockPhase lockPhase;
+
+        internal TxnKeyEntries(TsavoriteKernel kernel, int capacity)
+        {
+            keys = new TxnKeyEntry[capacity];
+            this.kernel = kernel;
         }
 
         public bool IsReadOnly
         {
             get
             {
-                bool readOnly = true;
-                for (int i = 0; i < keyCount; i++)
+                for (var i = 0; i < keyCount; i++)
                 {
                     if (keys[i].lockType == LockType.Exclusive)
-                    {
-                        readOnly = false;
-                        break;
-                    }
+                        return false;
                 }
-                return readOnly;
+                return true;
             }
         }
-        public void AddKey(ArgSlice keyArgSlice, bool isObject, LockType type)
+        public void AddKey(StoreWrapper storeWrapper, ArgSlice keyArgSlice, bool isObject, LockType type)
         {
             var keyHash = !isObject
-                ? comparer.lockableContext.GetKeyHash(keyArgSlice.SpanByte)
-                : comparer.objectStoreLockableContext.GetKeyHash(keyArgSlice.ToArray());
+                ? storeWrapper.store.GetKeyHash(keyArgSlice.SpanByte)
+                : storeWrapper.objectStore.GetKeyHash(keyArgSlice.ToArray());
 
             // Grow the buffer if needed
             if (keyCount >= keys.Length)
@@ -101,90 +99,44 @@ namespace Garnet.server
 
             // Populate the new key slot.
             keys[keyCount].keyHash = keyHash;
-            keys[keyCount].isObject = isObject;
+            keys[keyCount].partitionId = !isObject ? storeWrapper.store.PartitionId : storeWrapper.objectStore.PartitionId;
             keys[keyCount].lockType = type;
             ++keyCount;
-            if (!isObject)
-                ++mainKeyCount;
         }
 
-        internal void LockAllKeys()
+        internal void LockAllKeys(ref RespKernelSession kernelSession)
         {
-            phase = 1;
+            lockPhase = LockPhase.Locking;
 
-            // Note: We've moved Sort inside the transaction because we must have a stable Tsavorite hash table (not in GROW phase)
+            // Note: Sort happens inside the transaction because we must have a stable Tsavorite hash table (not in GROW phase)
             // during sorting as well as during locking itself. This should not be a significant impact on performance.
 
-            // This does not call Tsavorite's SortKeyHashes because we need to consider isObject as well.
-            Array.Sort(keys, 0, keyCount, comparer);
+            kernel.SortKeyHashes(keys, 0, keyCount);
+            kernel.Lock(ref kernelSession, keys, 0, keyCount);
 
-            // Issue main store locks
-            if (mainKeyCount > 0)
-            {
-                comparer.lockableContext.Lock(keys, 0, mainKeyCount);
-                mainStoreKeyLocked = true;
-            }
-
-            // Issue object store locks
-            if (mainKeyCount < keyCount)
-            {
-                comparer.objectStoreLockableContext.Lock(keys, mainKeyCount, keyCount - mainKeyCount);
-                objectStoreKeyLocked = true;
-            }
-
-            phase = 0;
+            lockPhase = LockPhase.Rest;
         }
 
-        internal bool TryLockAllKeys(TimeSpan lock_timeout)
+        internal bool TryLockAllKeys(ref RespKernelSession kernelSession, TimeSpan lock_timeout)
         {
-            phase = 1;
+            lockPhase = LockPhase.Locking;
 
-            // Note: We've moved Sort inside the transaction because we must have a stable Tsavorite hash table (not in GROW phase)
+            // Note: Sort happens inside the transaction because we must have a stable Tsavorite hash table (not in GROW phase)
             // during sorting as well as during locking itself. This should not be a significant impact on performance.
 
-            // This does not call Tsavorite's SortKeyHashes because we need to consider isObject as well.
-            Array.Sort(keys, 0, keyCount, comparer);
+            kernel.SortKeyHashes(keys, 0, keyCount);
 
-            // Issue main store locks
-            // TryLock will unlock automatically in case of partial failure
-            if (mainKeyCount > 0)
-            {
-                mainStoreKeyLocked = comparer.lockableContext.TryLock(keys, 0, mainKeyCount, lock_timeout);
-                if (!mainStoreKeyLocked)
-                {
-                    phase = 0;
-                    return false;
-                }
-            }
-
-            // Issue object store locks
-            // TryLock will unlock automatically in case of partial failure
-            if (mainKeyCount < keyCount)
-            {
-                objectStoreKeyLocked = comparer.objectStoreLockableContext.TryLock(keys, mainKeyCount, keyCount - mainKeyCount, lock_timeout);
-                if (!objectStoreKeyLocked)
-                {
-                    phase = 0;
-                    return false;
-                }
-            }
-
-            phase = 0;
-            return true;
+            var success = kernel.TryLock(ref kernelSession, keys, 0, keyCount, lock_timeout);
+            lockPhase = LockPhase.Rest;
+            return success;
         }
 
-        internal void UnlockAllKeys()
+        internal void UnlockAllKeys(ref RespKernelSession kernelSession)
         {
-            phase = 2;
-            if (mainStoreKeyLocked && mainKeyCount > 0)
-                comparer.lockableContext.Unlock(keys, 0, mainKeyCount);
-            if (objectStoreKeyLocked && mainKeyCount < keyCount)
-                comparer.objectStoreLockableContext.Unlock(keys, mainKeyCount, keyCount - mainKeyCount);
-            mainKeyCount = 0;
+            lockPhase = LockPhase.Unlocking;
+            kernel.Unlock(ref kernelSession, keys, 0, keyCount);
             keyCount = 0;
-            mainStoreKeyLocked = false;
-            objectStoreKeyLocked = false;
-            phase = 0;
+            lockPhase = LockPhase.Rest;
         }
 
         internal string GetLockset()
@@ -192,15 +144,16 @@ namespace Garnet.server
             StringBuilder sb = new();
 
             var delimiter = string.Empty;
-            for (int ii = 0; ii < keyCount; ii++)
+            for (var ii = 0; ii < keyCount; ii++)
             {
                 ref var entry = ref keys[ii];
-                sb.Append(delimiter);
-                sb.Append(entry.ToString());
+                _ = sb.Append(delimiter);
+                _ = sb.Append(entry.ToString());
+                delimiter = ", ";
             }
 
             if (sb.Length > 0)
-                sb.Append($" (phase: {(phase == 0 ? "none" : (phase == 1 ? "lock" : "unlock"))}))");
+                _ = sb.Append($" (phase: {lockPhase})");
             return sb.ToString();
         }
     }

@@ -125,7 +125,7 @@ namespace Tsavorite.core
             if (snapToPageStart)
                 untilAddress &= ~allocatorBase.PageSizeMask;
 
-            var epochTaken = store.kernel.epoch.AcquireIfNotProtected();
+            var epochTaken = store.Kernel.Epoch.AcquireIfNotProtected();
             try
             {
                 allocatorBase.ShiftBeginAddress(untilAddress, truncateLog);
@@ -133,7 +133,7 @@ namespace Tsavorite.core
             finally
             {
                 if (epochTaken)
-                    store.kernel.epoch.Suspend();
+                    store.Kernel.Epoch.Suspend();
             }
         }
 
@@ -156,16 +156,16 @@ namespace Tsavorite.core
             ShiftReadOnlyAddress(newHeadAddress, true);
 
             // Then shift head address
-            if (!store.kernel.epoch.ThisInstanceProtected())
+            if (!store.Kernel.Epoch.ThisInstanceProtected())
             {
                 try
                 {
-                    store.kernel.epoch.Resume();
+                    store.Kernel.Epoch.Resume();
                     allocatorBase.ShiftHeadAddress(newHeadAddress);
                 }
                 finally
                 {
-                    store.kernel.epoch.Suspend();
+                    store.Kernel.Epoch.Suspend();
                 }
 
                 while (wait && allocatorBase.SafeHeadAddress < newHeadAddress)
@@ -175,7 +175,7 @@ namespace Tsavorite.core
             {
                 allocatorBase.ShiftHeadAddress(newHeadAddress);
                 while (wait && allocatorBase.SafeHeadAddress < newHeadAddress)
-                    store.kernel.epoch.ProtectAndDrain();
+                    store.Kernel.Epoch.ProtectAndDrain();
             }
         }
 
@@ -247,16 +247,16 @@ namespace Tsavorite.core
         /// <param name="wait">Wait to ensure shift is complete (may involve page flushing)</param>
         public void ShiftReadOnlyAddress(long newReadOnlyAddress, bool wait)
         {
-            if (!store.kernel.epoch.ThisInstanceProtected())
+            if (!store.Kernel.Epoch.ThisInstanceProtected())
             {
                 try
                 {
-                    store.kernel.epoch.Resume();
+                    store.Kernel.Epoch.Resume();
                     _ = allocatorBase.ShiftReadOnlyAddress(newReadOnlyAddress);
                 }
                 finally
                 {
-                    store.kernel.epoch.Suspend();
+                    store.Kernel.Epoch.Suspend();
                 }
 
                 // Wait for flush to complete
@@ -269,7 +269,7 @@ namespace Tsavorite.core
 
                 // Wait for flush to complete
                 while (wait && allocatorBase.FlushedUntilAddress < newReadOnlyAddress)
-                    store.kernel.epoch.ProtectAndDrain();
+                    store.Kernel.Epoch.ProtectAndDrain();
             }
         }
 

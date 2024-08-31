@@ -262,7 +262,7 @@ namespace Tsavorite.core
         bool IsTailmostMainKvRecord(ref TKey key, RecordInfo mainKvRecordInfo, ref OperationStackContext<TKey, TValue, TStoreFunctions, TAllocator> stackCtx)
         {
             stackCtx = new(store.storeFunctions.GetKeyHashCode64(ref key), store.partitionId);
-            if (store.FindTag(ref stackCtx.hei))
+            if (store.Kernel.hashTable.FindTag(ref stackCtx.hei))
             {
                 stackCtx.SetRecordSourceToHashEntry(store.hlogBase);
                 if (store.UseReadCache)

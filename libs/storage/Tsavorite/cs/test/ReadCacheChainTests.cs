@@ -307,13 +307,6 @@ namespace Tsavorite.test.ReadCacheTests
             ClassicAssert.AreEqual(expectedKey, storedKey);
         }
 
-        static void ClearCountsOnError(ClientSession<long, long, long, long, Empty, SimpleSimpleFunctions<long, long>, LongStoreFunctions, LongAllocator> luContext)
-        {
-            // If we already have an exception, clear these counts so "Run" will not report them spuriously.
-            luContext.sharedLockCount = 0;
-            luContext.exclusiveLockCount = 0;
-        }
-
         void AssertTotalLockCounts(long expectedX, long expectedS) => HashBucketLockTableTests.AssertTotalLockCounts(store, expectedX, expectedS);
 
         [Test]
@@ -608,6 +601,8 @@ namespace Tsavorite.test.ReadCacheTests
 
             using var session = store.NewSession<long, long, Empty, SimpleSimpleFunctions<long, long>>(new SimpleSimpleFunctions<long, long>());
             var luContext = session.LockableUnsafeContext;
+            TestTransactionalKernelSession<long, long, long, long, Empty, SimpleSimpleFunctions<long, long>, LongStoreFunctions, LongAllocator,
+                                           LockableUnsafeContext<long, long, long, long, Empty, SimpleSimpleFunctions<long, long>, LongStoreFunctions, LongAllocator>> kernelSession = new(luContext);
 
             var keys = new[]
             {
@@ -616,15 +611,15 @@ namespace Tsavorite.test.ReadCacheTests
                 new FixedLengthLockableKeyStruct<long>(HighChainKey, LockType.Exclusive, luContext)
             };
 
-            luContext.BeginUnsafe();
-            luContext.BeginLockable();
+            kernelSession.BeginUnsafe();
+            kernelSession.BeginTransaction();
 
             try
             {
-                luContext.SortKeyHashes(keys);
+                store.Kernel.lockTable.SortKeyHashes(keys);
 
                 // For this single-threaded test, the locking does not really have to be in order, but for consistency do it.
-                luContext.Lock(keys);
+                store.Kernel.Lock(ref kernelSession, keys);
 
                 store.ReadCache.FlushAndEvict(wait: true);
 
@@ -649,7 +644,7 @@ namespace Tsavorite.test.ReadCacheTests
                     ClassicAssert.AreEqual(key.LockType == LockType.Exclusive, lockState.IsLockedExclusive);
                     ClassicAssert.AreEqual(key.LockType != LockType.Exclusive, lockState.NumLockedShared > 0);
 
-                    luContext.Unlock(keys, idx, 1);
+                    store.Kernel.Unlock(ref kernelSession, keys, idx, 1);
                     lockState = store.LockTable.GetLockState(ref hei);
                     ClassicAssert.IsFalse(lockState.IsLockedExclusive);
                     ClassicAssert.AreEqual(0, lockState.NumLockedShared);
@@ -658,13 +653,13 @@ namespace Tsavorite.test.ReadCacheTests
             }
             catch (Exception)
             {
-                ClearCountsOnError(session);
+                kernelSession.ClearCountsOnError();
                 throw;
             }
             finally
             {
-                luContext.EndLockable();
-                luContext.EndUnsafe();
+                kernelSession.EndTransaction();
+                kernelSession.EndUnsafe();
             }
 
             AssertTotalLockCounts(0, 0);

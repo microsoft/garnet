@@ -199,7 +199,7 @@ namespace Garnet
             // Create Garnet TCP server if none was provided.
             this.server ??= new GarnetServerTcp(opts.Address, opts.Port, 0, opts.TlsOptions, opts.NetworkSendThrottleMax, logger);
 
-            storeWrapper = new StoreWrapper(version, redisProtocolVersion, server, store, objectStore, objectStoreSizeTracker,
+            storeWrapper = new StoreWrapper(version, redisProtocolVersion, kernel, server, store, objectStore, objectStoreSizeTracker,
                     customCommandManager, appendOnlyFile, opts, clusterFactory: clusterFactory, loggerFactory: loggerFactory);
 
             // Create session provider for Garnet

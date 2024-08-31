@@ -46,11 +46,11 @@ namespace Tsavorite.core
                     if (ctx is not null)
                         ctx.markers[EpochPhaseIdx.Prepare] = true;
 
-                    store.kernel.epoch.Mark(EpochPhaseIdx.Prepare, current.Version);
+                    store.Kernel.Epoch.Mark(EpochPhaseIdx.Prepare, current.Version);
 
                     // Using bumpEpoch: true allows us to guarantee that when system state proceeds, all threads in prior state
                     // will see that hlog.NumActiveLockingSessions == 0, ensuring that they can potentially block for the next state.
-                    if (store.kernel.epoch.CheckIsComplete(EpochPhaseIdx.Prepare, current.Version) && store.hlogBase.NumActiveLockingSessions == 0)
+                    if (store.Kernel.Epoch.CheckIsComplete(EpochPhaseIdx.Prepare, current.Version) && store.hlogBase.NumActiveTxnSessions == 0)
                         store.GlobalStateMachineStep(current, bumpEpoch: store.CheckpointVersionSwitchBarrier);
                     break;
                 case Phase.IN_PROGRESS:
@@ -69,8 +69,8 @@ namespace Tsavorite.core
                         }
                     }
 
-                    store.kernel.epoch.Mark(EpochPhaseIdx.InProgress, current.Version);
-                    if (store.kernel.epoch.CheckIsComplete(EpochPhaseIdx.InProgress, current.Version))
+                    store.Kernel.Epoch.Mark(EpochPhaseIdx.InProgress, current.Version);
+                    if (store.Kernel.Epoch.CheckIsComplete(EpochPhaseIdx.InProgress, current.Version))
                         store.GlobalStateMachineStep(current);
                     break;
                 case Phase.REST:

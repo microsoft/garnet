@@ -28,7 +28,7 @@ namespace Tsavorite.core
         internal bool HandleImmediateNonPendingRetryStatus<TInput, TOutput, TContext, TSessionFunctionsWrapper>(OperationStatus internalStatus, TSessionFunctionsWrapper sessionFunctions)
             where TSessionFunctionsWrapper : ISessionFunctionsWrapper<TKey, TValue, TInput, TOutput, TContext, TStoreFunctions, TAllocator>
         {
-            Debug.Assert(kernel.epoch.ThisInstanceProtected());
+            Debug.Assert(Kernel.Epoch.ThisInstanceProtected());
             switch (internalStatus)
             {
                 case OperationStatus.RETRY_NOW:
@@ -49,7 +49,7 @@ namespace Tsavorite.core
             ref PendingContext<TInput, TOutput, TContext> pendingContext)
             where TSessionFunctionsWrapper : ISessionFunctionsWrapper<TKey, TValue, TInput, TOutput, TContext, TStoreFunctions, TAllocator>
         {
-            Debug.Assert(kernel.epoch.ThisInstanceProtected());
+            Debug.Assert(Kernel.Epoch.ThisInstanceProtected());
             switch (internalStatus)
             {
                 case OperationStatus.RETRY_NOW:
@@ -70,13 +70,13 @@ namespace Tsavorite.core
                         return false;
                     try
                     {
-                        kernel.epoch.Suspend();
+                        Kernel.Epoch.Suspend();
                         pendingContext.flushEvent.Wait();
                     }
                     finally
                     {
                         pendingContext.flushEvent = default;
-                        kernel.epoch.Resume();
+                        Kernel.Epoch.Resume();
                     }
                     return true;
                 default:

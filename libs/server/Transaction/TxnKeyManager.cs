@@ -18,7 +18,7 @@ namespace Garnet.server
         public void SaveKeyEntryToLock(ArgSlice key, bool isObject, LockType type)
         {
             UpdateTransactionStoreType(isObject ? StoreType.Object : StoreType.Main);
-            keyEntries.AddKey(key, isObject, type);
+            keyEntries.AddKey(respSession.storeWrapper, key, isObject, type);
         }
 
         /// <summary>

@@ -65,7 +65,7 @@ namespace Tsavorite.core
         /// If true, there was at least one ITsavoriteContext implementation active that did manual locking at some point during the checkpoint;
         /// these pages must be scanned for lock cleanup.
         /// </summary>
-        public bool manualLockingActive;
+        public bool transactionActive;
 
         /// <summary>
         /// Object log segment offsets
@@ -154,7 +154,7 @@ namespace Tsavorite.core
             deltaTailAddress = long.Parse(value);
 
             value = reader.ReadLine();
-            manualLockingActive = bool.Parse(value);
+            transactionActive = bool.Parse(value);
 
             value = reader.ReadLine();
             var numSessions = int.Parse(value);
@@ -262,7 +262,7 @@ namespace Tsavorite.core
                     writer.WriteLine(headAddress);
                     writer.WriteLine(beginAddress);
                     writer.WriteLine(deltaTailAddress);
-                    writer.WriteLine(manualLockingActive);
+                    writer.WriteLine(transactionActive);
 
                     writer.WriteLine(checkpointTokenCount);
 
@@ -306,7 +306,7 @@ namespace Tsavorite.core
             logger?.LogInformation("Head Address: {headAddress}", headAddress);
             logger?.LogInformation("Begin Address: {beginAddress}", beginAddress);
             logger?.LogInformation("Delta Tail Address: {deltaTailAddress}", deltaTailAddress);
-            logger?.LogInformation("Manual Locking Active: {manualLockingActive}", manualLockingActive);
+            logger?.LogInformation("Manual Locking Active: {manualLockingActive}", transactionActive);
         }
     }
 

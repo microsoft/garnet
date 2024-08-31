@@ -153,9 +153,13 @@ namespace Tsavorite.test.LockableUnsafeContext
         LockableUnsafeComparer comparer;
 
         private TsavoriteKV<long, long, LongStoreFunctions, LongAllocator> store;
+        private IDevice log;
+
         private ClientSession<long, long, long, long, Empty, LockableUnsafeFunctions, LongStoreFunctions, LongAllocator> session;
         private BasicContext<long, long, long, long, Empty, LockableUnsafeFunctions, LongStoreFunctions, LongAllocator> bContext;
-        private IDevice log;
+        private LockableUnsafeContext<long, long, long, long, Empty, LockableUnsafeFunctions, LongStoreFunctions, LongAllocator> luContext;
+        private TestTransactionalKernelSession<long, long, long, long, Empty, LockableUnsafeFunctions, LongStoreFunctions, LongAllocator,
+                                               LockableUnsafeContext<long, long, long, long, Empty, LockableUnsafeFunctions, LongStoreFunctions, LongAllocator>> kernelSession;
 
         [SetUp]
         public void Setup() => Setup(forRecovery: false);
@@ -205,6 +209,8 @@ namespace Tsavorite.test.LockableUnsafeContext
 
             session = store.NewSession<long, long, Empty, LockableUnsafeFunctions>(functions);
             bContext = session.BasicContext;
+            luContext = session.LockableUnsafeContext;
+            kernelSession = new(luContext);
         }
 
         [TearDown]
@@ -244,21 +250,6 @@ namespace Tsavorite.test.LockableUnsafeContext
                 store.Log.ShiftReadOnlyAddress(store.Log.TailAddress, wait: true);
             else if (recordLocation == FlushMode.OnDisk)
                 store.Log.FlushAndEvict(wait: true);
-        }
-
-        static void ClearCountsOnError(ClientSession<long, long, long, long, Empty, LockableUnsafeFunctions, LongStoreFunctions, LongAllocator> luContext)
-        {
-            // If we already have an exception, clear these counts so "Run" will not report them spuriously.
-            luContext.sharedLockCount = 0;
-            luContext.exclusiveLockCount = 0;
-        }
-
-        static void ClearCountsOnError<TFunctions>(ClientSession<long, long, long, long, Empty, TFunctions, LongStoreFunctions, LongAllocator> luContext)
-            where TFunctions : ISessionFunctions<long, long, long, long, Empty>
-        {
-            // If we already have an exception, clear these counts so "Run" will not report them spuriously.
-            luContext.sharedLockCount = 0;
-            luContext.exclusiveLockCount = 0;
         }
 
         void PopulateHei(ref HashEntryInfo hei) => HashBucketLockTableTests.PopulateHei(store, ref hei);
@@ -320,7 +311,7 @@ namespace Tsavorite.test.LockableUnsafeContext
             long genHashCode(uint uniquifier) => ((long)uniquifier << 30) | bucketIndex;
 
             var lContext = session.LockableContext;
-            lContext.BeginLockable();
+            kernelSession.BeginTransaction();
 
             var keys = new[]
             {
@@ -332,10 +323,10 @@ namespace Tsavorite.test.LockableUnsafeContext
             for (var ii = 0; ii < keys.Length; ++ii)
                 ClassicAssert.AreEqual(bucketIndex, store.LockTable.GetBucketIndex(keys[ii].KeyHash), $"BucketIndex mismatch on key {ii}");
 
-            lContext.Lock(keys);
-            lContext.Unlock(keys);
+            store.Kernel.Lock(ref kernelSession, keys);
+            store.Kernel.Unlock(ref kernelSession, keys);
 
-            lContext.EndLockable();
+            lContext.EndTransaction();
         }
 
         [Test]
@@ -353,8 +344,8 @@ namespace Tsavorite.test.LockableUnsafeContext
 
             // Copied from UnsafeContextTests.
             var luContext = session.LockableUnsafeContext;
-            luContext.BeginUnsafe();
-            luContext.BeginLockable();
+            kernelSession.BeginUnsafe();
+            kernelSession.BeginTransaction();
 
             var keyVec = new FixedLengthLockableKeyStruct<long>[1];
 
@@ -363,12 +354,12 @@ namespace Tsavorite.test.LockableUnsafeContext
                 for (int c = 0; c < NumRecs; c++)
                 {
                     keyVec[0] = new(r.Next(RandRange), LockType.Exclusive, luContext);
-                    luContext.Lock(keyVec);
+                    store.Kernel.Lock(ref kernelSession, keyVec);
                     AssertBucketLockCount(ref keyVec[0], 1, 0);
 
                     var value = keyVec[0].Key + NumRecords;
                     _ = luContext.Upsert(ref keyVec[0].Key, ref value, Empty.Default);
-                    luContext.Unlock(keyVec);
+                    store.Kernel.Unlock(ref kernelSession, keyVec);
                     AssertBucketLockCount(ref keyVec[0], 0, 0);
                 }
 
@@ -383,10 +374,10 @@ namespace Tsavorite.test.LockableUnsafeContext
                     var value = keyVec[0].Key + NumRecords;
                     long output = 0;
 
-                    luContext.Lock(keyVec);
+                    store.Kernel.Lock(ref kernelSession, keyVec);
                     AssertBucketLockCount(ref keyVec[0], 0, 1);
                     Status status = luContext.Read(ref keyVec[0].Key, ref input, ref output, Empty.Default);
-                    luContext.Unlock(keyVec);
+                    store.Kernel.Unlock(ref kernelSession, keyVec);
                     AssertBucketLockCount(ref keyVec[0], 0, 0);
                     ClassicAssert.IsFalse(status.IsPending);
                 }
@@ -399,9 +390,9 @@ namespace Tsavorite.test.LockableUnsafeContext
                 }
                 else
                 {
-                    luContext.EndUnsafe();
+                    kernelSession.EndUnsafe();
                     await luContext.CompletePendingAsync();
-                    luContext.BeginUnsafe();
+                    kernelSession.BeginUnsafe();
                 }
 
                 // Shift head and retry - should not find in main memory now
@@ -414,8 +405,8 @@ namespace Tsavorite.test.LockableUnsafeContext
                 // Similarly, we need to track bucket counts.
                 BucketLockTracker blt = new();
                 var lockKeys = Enumerable.Range(0, NumRecs).Select(ii => new FixedLengthLockableKeyStruct<long>(r.Next(RandRange), LockType.Shared, luContext)).ToArray();
-                luContext.SortKeyHashes(lockKeys);
-                luContext.Lock(lockKeys);
+                store.Kernel.lockTable.SortKeyHashes(lockKeys);
+                store.Kernel.Lock(ref kernelSession, lockKeys);
 
                 var expectedS = 0;
                 foreach (var idx in EnumActionKeyIndices(lockKeys, LockOperationType.Lock))
@@ -437,14 +428,14 @@ namespace Tsavorite.test.LockableUnsafeContext
                 }
                 else
                 {
-                    luContext.EndUnsafe();
+                    kernelSession.EndUnsafe();
                     outputs = await luContext.CompletePendingWithOutputsAsync();
-                    luContext.BeginUnsafe();
+                    kernelSession.BeginUnsafe();
                 }
 
                 foreach (var idx in EnumActionKeyIndices(lockKeys, LockOperationType.Unlock))
                 {
-                    luContext.Unlock(lockKeys, idx, 1);
+                    store.Kernel.Unlock(ref kernelSession, lockKeys, idx, 1);
                     blt.DecrementS(ref lockKeys[idx]);
                 }
 
@@ -462,8 +453,8 @@ namespace Tsavorite.test.LockableUnsafeContext
             }
             finally
             {
-                luContext.EndLockable();
-                luContext.EndUnsafe();
+                kernelSession.EndTransaction();
+                kernelSession.EndUnsafe();
             }
         }
 
@@ -487,8 +478,8 @@ namespace Tsavorite.test.LockableUnsafeContext
             BucketLockTracker blt = new();
 
             var luContext = session.LockableUnsafeContext;
-            luContext.BeginUnsafe();
-            luContext.BeginLockable();
+            kernelSession.BeginUnsafe();
+            kernelSession.BeginTransaction();
 
             var keys = new[]
             {
@@ -496,11 +487,11 @@ namespace Tsavorite.test.LockableUnsafeContext
                 new FixedLengthLockableKeyStruct<long>(readKey51, LockType.Shared, luContext),      // Source, shared
                 new FixedLengthLockableKeyStruct<long>(resultKey, LockType.Exclusive, luContext),   // Destination, exclusive
             };
-            luContext.SortKeyHashes(keys);
+            store.Kernel.lockTable.SortKeyHashes(keys);
 
             try
             {
-                luContext.Lock(keys);
+                store.Kernel.Lock(ref kernelSession, keys);
 
                 // Verify locks. Note that while we do not increment lock counts for multiple keys (each bucket gets a single lock per thread,
                 // shared or exclusive), each key mapping to that bucket will report 'locked'.
@@ -583,7 +574,7 @@ namespace Tsavorite.test.LockableUnsafeContext
                 ClassicAssert.IsFalse(status.IsPending, status.ToString());
                 ClassicAssert.AreEqual(expectedResult, resultValue);
 
-                luContext.Unlock(keys);
+                store.Kernel.Unlock(ref kernelSession, keys);
 
                 foreach (var idx in EnumActionKeyIndices(keys, LockOperationType.Lock))
                     blt.Decrement(ref keys[idx]);
@@ -591,13 +582,13 @@ namespace Tsavorite.test.LockableUnsafeContext
             }
             catch (Exception)
             {
-                ClearCountsOnError(session);
+                kernelSession.ClearCountsOnError();
                 throw;
             }
             finally
             {
-                luContext.EndLockable();
-                luContext.EndUnsafe();
+                kernelSession.EndTransaction();
+                kernelSession.EndUnsafe();
             }
 
             // Verify reading the destination from the BasicContext.
@@ -626,8 +617,8 @@ namespace Tsavorite.test.LockableUnsafeContext
             BucketLockTracker blt = new();
 
             var luContext = session.LockableUnsafeContext;
-            luContext.BeginUnsafe();
-            luContext.BeginLockable();
+            kernelSession.BeginUnsafe();
+            kernelSession.BeginTransaction();
 
             var keys = new[]
             {
@@ -636,13 +627,13 @@ namespace Tsavorite.test.LockableUnsafeContext
                 new FixedLengthLockableKeyStruct<long>(resultKey, LockType.Exclusive, luContext),   // Destination, exclusive
             };
 
-            luContext.SortKeyHashes(keys);
+            store.Kernel.lockTable.SortKeyHashes(keys);
 
             var buckets = keys.Select(key => store.LockTable.GetBucketIndex(key.KeyHash)).ToArray();
 
             try
             {
-                luContext.Lock(keys);
+                store.Kernel.Lock(ref kernelSession, keys);
 
                 // Verify locks. Note that while we do not increment lock counts for multiple keys (each bucket gets a single lock per thread,
                 // shared or exclusive), each key mapping to that bucket will report 'locked'.
@@ -712,7 +703,7 @@ namespace Tsavorite.test.LockableUnsafeContext
                 ClassicAssert.IsFalse(status.IsPending, status.ToString());
                 ClassicAssert.AreEqual(expectedResult, resultValue);
 
-                luContext.Unlock(keys);
+                store.Kernel.Unlock(ref kernelSession, keys);
 
                 foreach (var idx in EnumActionKeyIndices(keys, LockOperationType.Lock))
                     blt.Decrement(ref keys[idx]);
@@ -720,13 +711,13 @@ namespace Tsavorite.test.LockableUnsafeContext
             }
             catch (Exception)
             {
-                ClearCountsOnError(session);
+                kernelSession.ClearCountsOnError();
                 throw;
             }
             finally
             {
-                luContext.EndLockable();
-                luContext.EndUnsafe();
+                kernelSession.EndTransaction();
+                kernelSession.EndUnsafe();
             }
 
             // Verify from the full Basic Context
@@ -755,15 +746,15 @@ namespace Tsavorite.test.LockableUnsafeContext
             Status status;
 
             var luContext = session.LockableUnsafeContext;
-            luContext.BeginUnsafe();
-            luContext.BeginLockable();
+            kernelSession.BeginUnsafe();
+            kernelSession.BeginTransaction();
 
             var keyVec = new[] { new FixedLengthLockableKeyStruct<long>(resultKey, LockType.Exclusive, luContext) };
 
             try
             {
                 // Lock destination value.
-                luContext.Lock(keyVec);
+                store.Kernel.Lock(ref kernelSession, keyVec);
                 AssertIsLocked(ref keyVec[0], xlock: true, slock: false);
 
                 blt.Increment(ref keyVec[0]);
@@ -778,20 +769,20 @@ namespace Tsavorite.test.LockableUnsafeContext
                 status = luContext.Read(resultKey, out var _);
                 ClassicAssert.IsFalse(status.Found, status.ToString());
 
-                luContext.Unlock(keyVec);
+                store.Kernel.Unlock(ref kernelSession, keyVec);
                 blt.Decrement(ref keyVec[0]);
 
                 AssertNoLocks(ref blt);
             }
             catch (Exception)
             {
-                ClearCountsOnError(session);
+                kernelSession.ClearCountsOnError();
                 throw;
             }
             finally
             {
-                luContext.EndLockable();
-                luContext.EndUnsafe();
+                kernelSession.EndTransaction();
+                kernelSession.EndUnsafe();
             }
 
             // Verify reading the destination from the full Basic Context
@@ -827,8 +818,8 @@ namespace Tsavorite.test.LockableUnsafeContext
 
                 using var localSession = store.NewSession<long, long, Empty, LockableUnsafeFunctions>(new LockableUnsafeFunctions());
                 var luContext = localSession.LockableUnsafeContext;
-                luContext.BeginUnsafe();
-                luContext.BeginLockable();
+                kernelSession.BeginUnsafe();
+                kernelSession.BeginTransaction();
 
                 IEnumerable<FixedLengthLockableKeyStruct<long>> enumKeysToLock()
                 {
@@ -842,13 +833,13 @@ namespace Tsavorite.test.LockableUnsafeContext
                 for (var iteration = 0; iteration < numIterations; ++iteration)
                 {
                     var keys = enumKeysToLock().ToArray();
-                    FixedLengthLockableKeyStruct<long>.Sort(keys, luContext);
-                    luContext.Lock(keys);
-                    luContext.Unlock(keys);
+                    FixedLengthLockableKeyStruct<long>.Sort(keys, store.Kernel);
+                    store.Kernel.Lock(ref kernelSession, keys);
+                    store.Kernel.Unlock(ref kernelSession, keys);
                 }
 
-                luContext.EndLockable();
-                luContext.EndUnsafe();
+                kernelSession.EndTransaction();
+                kernelSession.EndUnsafe();
             }
 
             void runLTransientLockOpThread(int tid)
@@ -890,7 +881,7 @@ namespace Tsavorite.test.LockableUnsafeContext
             where TFunctions : ISessionFunctions<long, long, long, long, Empty>
         {
             var keyVec = new[] { new FixedLengthLockableKeyStruct<long>(key, LockType.Exclusive, luContext) };
-            luContext.Lock(keyVec);
+            store.Kernel.Lock(ref kernelSession, keyVec);
 
             HashEntryInfo hei = new(comparer.GetHashCode64(ref key), store.partitionId);
             PopulateHei(ref hei);
@@ -911,7 +902,7 @@ namespace Tsavorite.test.LockableUnsafeContext
             ClassicAssert.AreEqual(expectedKey, storedKey);
 
             var keyVec = new[] { new FixedLengthLockableKeyStruct<long>(expectedKey, LockType.Exclusive, luContext) };
-            luContext.Unlock(keyVec);
+            store.Kernel.Unlock(ref kernelSession, keyVec);
         }
 
         [Test]
@@ -928,8 +919,8 @@ namespace Tsavorite.test.LockableUnsafeContext
             ReadOptions readOptions = new() { CopyOptions = new(ReadCopyFrom.AllImmutable, ReadCopyTo.MainLog) };
             BucketLockTracker blt = new();
 
-            luContext.BeginUnsafe();
-            luContext.BeginLockable();
+            kernelSession.BeginUnsafe();
+            kernelSession.BeginTransaction();
             try
             {
                 var keyStruct = AddLockTableEntry(luContext, key);
@@ -946,13 +937,13 @@ namespace Tsavorite.test.LockableUnsafeContext
             }
             catch (Exception)
             {
-                ClearCountsOnError(session);
+                kernelSession.ClearCountsOnError();
                 throw;
             }
             finally
             {
-                luContext.EndLockable();
-                luContext.EndUnsafe();
+                kernelSession.EndTransaction();
+                kernelSession.EndUnsafe();
             }
         }
 
@@ -968,19 +959,19 @@ namespace Tsavorite.test.LockableUnsafeContext
             BucketLockTracker blt = new();
             long key = 24;
 
-            luContext.BeginUnsafe();
-            luContext.BeginLockable();
+            kernelSession.BeginUnsafe();
+            kernelSession.BeginTransaction();
             try
             {
                 var keyVec = new[] { new FixedLengthLockableKeyStruct<long>(key, LockType.Exclusive, luContext) };
-                luContext.Lock(keyVec);
+                store.Kernel.Lock(ref kernelSession, keyVec);
                 blt.Increment(ref keyVec[0]);
                 AssertTotalLockCounts(ref blt);
 
                 store.Log.FlushAndEvict(wait: true);
                 AssertTotalLockCounts(1, 0);
 
-                luContext.Unlock(keyVec);
+                store.Kernel.Unlock(ref kernelSession, keyVec);
                 blt.Decrement(ref keyVec[0]);
 
                 blt.AssertNoLocks();
@@ -988,13 +979,13 @@ namespace Tsavorite.test.LockableUnsafeContext
             }
             catch (Exception)
             {
-                ClearCountsOnError(session);
+                kernelSession.ClearCountsOnError();
                 throw;
             }
             finally
             {
-                luContext.EndLockable();
-                luContext.EndUnsafe();
+                kernelSession.EndTransaction();
+                kernelSession.EndUnsafe();
             }
         }
 
@@ -1018,8 +1009,8 @@ namespace Tsavorite.test.LockableUnsafeContext
             using var session = store.NewSession<long, long, Empty, SimpleSimpleFunctions<long, long>>(new SimpleSimpleFunctions<long, long>());
             var luContext = session.LockableUnsafeContext;
             BucketLockTracker blt = new();
-            luContext.BeginUnsafe();
-            luContext.BeginLockable();
+            kernelSession.BeginUnsafe();
+            kernelSession.BeginTransaction();
 
             FixedLengthLockableKeyStruct<long> keyStruct = default;
             try
@@ -1038,13 +1029,13 @@ namespace Tsavorite.test.LockableUnsafeContext
             }
             catch (Exception)
             {
-                ClearCountsOnError(session);
+                kernelSession.ClearCountsOnError();
                 throw;
             }
             finally
             {
-                luContext.EndLockable();
-                luContext.EndUnsafe();
+                kernelSession.EndTransaction();
+                kernelSession.EndUnsafe();
             }
         }
 
@@ -1058,8 +1049,8 @@ namespace Tsavorite.test.LockableUnsafeContext
             using var session = store.NewSession<long, long, Empty, SimpleSimpleFunctions<long, long>>(new SimpleSimpleFunctions<long, long>());
             var luContext = session.LockableUnsafeContext;
             BucketLockTracker blt = new();
-            luContext.BeginUnsafe();
-            luContext.BeginLockable();
+            kernelSession.BeginUnsafe();
+            kernelSession.BeginTransaction();
 
             FixedLengthLockableKeyStruct<long> keyStruct = default;
             try
@@ -1085,13 +1076,13 @@ namespace Tsavorite.test.LockableUnsafeContext
             }
             catch (Exception)
             {
-                ClearCountsOnError(session);
+                kernelSession.ClearCountsOnError();
                 throw;
             }
             finally
             {
-                luContext.EndLockable();
-                luContext.EndUnsafe();
+                kernelSession.EndTransaction();
+                kernelSession.EndUnsafe();
             }
         }
 
@@ -1105,8 +1096,8 @@ namespace Tsavorite.test.LockableUnsafeContext
             using var session = store.NewSession<long, long, Empty, SimpleSimpleFunctions<long, long>>(new SimpleSimpleFunctions<long, long>());
             var luContext = session.LockableUnsafeContext;
             BucketLockTracker blt = new();
-            luContext.BeginUnsafe();
-            luContext.BeginLockable();
+            kernelSession.BeginUnsafe();
+            kernelSession.BeginTransaction();
 
             FixedLengthLockableKeyStruct<long> keyStruct = default;
             try
@@ -1134,13 +1125,13 @@ namespace Tsavorite.test.LockableUnsafeContext
             }
             catch (Exception)
             {
-                ClearCountsOnError(session);
+                kernelSession.ClearCountsOnError();
                 throw;
             }
             finally
             {
-                luContext.EndLockable();
-                luContext.EndUnsafe();
+                kernelSession.EndTransaction();
+                kernelSession.EndUnsafe();
             }
         }
 
@@ -1159,12 +1150,12 @@ namespace Tsavorite.test.LockableUnsafeContext
             var rng = new Random(101);
             var keyVec = Enumerable.Range(0, NumRecords).Select(ii => createKey(rng.Next(NumRecords))).ToArray();
 
-            luContext.BeginUnsafe();
-            luContext.BeginLockable();
+            kernelSession.BeginUnsafe();
+            kernelSession.BeginTransaction();
             try
             {
                 store.LockTable.SortKeyHashes(keyVec);
-                luContext.Lock(keyVec);
+                store.Kernel.Lock(ref kernelSession, keyVec);
                 foreach (var idx in EnumActionKeyIndices(keyVec, LockOperationType.Lock))
                     blt.Increment(ref keyVec[idx]);
                 AssertTotalLockCounts(ref blt);
@@ -1180,7 +1171,7 @@ namespace Tsavorite.test.LockableUnsafeContext
                     if (key.LockType == LockType.Shared)
                         ClassicAssert.IsTrue(lockState.IsLocked);    // Could be either shared or exclusive; we only lock the bucket once per Lock() call
 
-                    luContext.Unlock(keyVec, idx, 1);
+                    store.Kernel.Unlock(ref kernelSession, keyVec, idx, 1);
                     blt.Decrement(ref key);
                 }
 
@@ -1189,13 +1180,13 @@ namespace Tsavorite.test.LockableUnsafeContext
             }
             catch (Exception)
             {
-                ClearCountsOnError(session);
+                kernelSession.ClearCountsOnError();
                 throw;
             }
             finally
             {
-                luContext.EndLockable();
-                luContext.EndUnsafe();
+                kernelSession.EndTransaction();
+                kernelSession.EndUnsafe();
             }
         }
 
@@ -1210,14 +1201,14 @@ namespace Tsavorite.test.LockableUnsafeContext
             static long getValue(long key) => key + ValueMult;
 
             var luContext = session.LockableUnsafeContext;
-            luContext.BeginUnsafe();
-            luContext.BeginLockable();
+            kernelSession.BeginUnsafe();
+            kernelSession.BeginTransaction();
 
             var keyVec = new[] { new FixedLengthLockableKeyStruct<long>(42, LockType.Exclusive, luContext) };
 
             try
             {
-                luContext.Lock(keyVec);
+                store.Kernel.Lock(ref kernelSession, keyVec);
 
                 var status = updateOp switch
                 {
@@ -1234,18 +1225,18 @@ namespace Tsavorite.test.LockableUnsafeContext
 
                 HashBucketLockTableTests.AssertLockCounts(store, keyVec[0].Key, true, 0);
 
-                luContext.Unlock(keyVec);
+                store.Kernel.Unlock(ref kernelSession, keyVec);
                 HashBucketLockTableTests.AssertLockCounts(store, keyVec[0].Key, false, 0);
             }
             catch (Exception)
             {
-                ClearCountsOnError(session);
+                kernelSession.ClearCountsOnError();
                 throw;
             }
             finally
             {
-                luContext.EndLockable();
-                luContext.EndUnsafe();
+                kernelSession.EndTransaction();
+                kernelSession.EndUnsafe();
             }
         }
 
@@ -1272,8 +1263,8 @@ namespace Tsavorite.test.LockableUnsafeContext
             Populate();
             BucketLockTracker blt = new();
 
-            luContext.BeginUnsafe();
-            luContext.BeginLockable();
+            kernelSession.BeginUnsafe();
+            kernelSession.BeginTransaction();
 
             var keyVec = new FixedLengthLockableKeyStruct<long>[1];
 
@@ -1285,25 +1276,25 @@ namespace Tsavorite.test.LockableUnsafeContext
                 for (var key = NumRecords; key < NumRecords + numNewRecords; ++key)
                 {
                     keyVec[0] = new(key, LockType.Exclusive, luContext);
-                    luContext.Lock(keyVec);
+                    store.Kernel.Lock(ref kernelSession, keyVec);
                     for (var iter = 0; iter < 2; ++iter)
                     {
                         HashBucketLockTableTests.AssertLockCounts(store, key, true, 0);
                         updater(key, iter);
                     }
-                    luContext.Unlock(keyVec);
+                    store.Kernel.Unlock(ref kernelSession, keyVec);
                     HashBucketLockTableTests.AssertLockCounts(store, key, false, 0);
                 }
             }
             catch (Exception)
             {
-                ClearCountsOnError(session);
+                kernelSession.ClearCountsOnError();
                 throw;
             }
             finally
             {
-                luContext.EndLockable();
-                luContext.EndUnsafe();
+                kernelSession.EndTransaction();
+                kernelSession.EndUnsafe();
             }
 
             void updater(int key, int iter)
@@ -1341,7 +1332,7 @@ namespace Tsavorite.test.LockableUnsafeContext
                 }
                 catch (Exception)
                 {
-                    ClearCountsOnError(session);
+                    kernelSession.ClearCountsOnError();
                     throw;
                 }
             }
@@ -1376,8 +1367,8 @@ namespace Tsavorite.test.LockableUnsafeContext
             // Now populate the main area of the log.
             Populate();
 
-            lockLuContext.BeginUnsafe();
-            lockLuContext.BeginLockable();
+            kernelSession.BeginUnsafe();
+            kernelSession.BeginTransaction();
 
             // These are for debugging
             int[] lastLockerKeys = new int[6], lastUpdaterKeys = new int[3];
@@ -1404,13 +1395,13 @@ namespace Tsavorite.test.LockableUnsafeContext
             }
             catch (Exception)
             {
-                ClearCountsOnError(lockSession);
+                kernelSession.ClearCountsOnError();
                 throw;
             }
             finally
             {
-                lockLuContext.EndLockable();
-                lockLuContext.EndUnsafe();
+                kernelSession.EndTransaction();
+                kernelSession.EndUnsafe();
             }
 
             void locker(int key)
@@ -1418,29 +1409,29 @@ namespace Tsavorite.test.LockableUnsafeContext
                 lockKeyVec[0] = new(key, LockType.Exclusive, lockLuContext);
                 try
                 {
-                    // Begin/EndLockable are called outside this function; we could not EndLockable in here as the lock lifetime is beyond that.
-                    // (BeginLockable's scope is the session; BeginUnsafe's scope is the thread. The session is still "mono-threaded" here because
+                    // Begin/EndTransaction are called outside this function; we could not EndTransaction in here as the lock lifetime is beyond that.
+                    // (BeginTransaction's scope is the session; BeginUnsafe's scope is the thread. The session is still "mono-threaded" here because
                     // only one thread at a time is making calls on it.)
                     lastLockerKeys[0] = key;
-                    lockLuContext.BeginUnsafe();
+                    kernelSession.BeginUnsafe();
                     lastLockerKeys[1] = key;
                     Thread.Sleep(lockRng.Next(maxSleepMs));
                     lastLockerKeys[2] = key;
-                    lockLuContext.Lock(lockKeyVec);
+                    store.Kernel.Lock(ref kernelSession, lockKeyVec);
                     lastLockerKeys[3] = key;
                     Thread.Sleep(lockRng.Next(maxSleepMs));
                     lastLockerKeys[4] = key;
-                    lockLuContext.Unlock(lockKeyVec);
+                    store.Kernel.Unlock(ref kernelSession, lockKeyVec);
                     lastLockerKeys[5] = key;
                 }
                 catch (Exception)
                 {
-                    ClearCountsOnError(lockSession);
+                    kernelSession.ClearCountsOnError();
                     throw;
                 }
                 finally
                 {
-                    lockLuContext.EndUnsafe();
+                    kernelSession.EndUnsafe();
                 }
             }
 
@@ -1483,7 +1474,7 @@ namespace Tsavorite.test.LockableUnsafeContext
                 }
                 catch (Exception)
                 {
-                    ClearCountsOnError(lockSession);
+                    kernelSession.ClearCountsOnError();
                     throw;
                 }
             }
@@ -1502,8 +1493,8 @@ namespace Tsavorite.test.LockableUnsafeContext
             const int key = 42;
             var maxLocks = 63;
 
-            luContext.BeginUnsafe();
-            luContext.BeginLockable();
+            kernelSession.BeginUnsafe();
+            kernelSession.BeginTransaction();
 
             var keyVec = new FixedLengthLockableKeyStruct<long>[1];
 
@@ -1512,27 +1503,27 @@ namespace Tsavorite.test.LockableUnsafeContext
                 for (var ii = 0; ii < maxLocks; ++ii)
                 {
                     keyVec[0] = new(key, LockType.Shared, luContext);
-                    luContext.Lock(keyVec);
+                    store.Kernel.Lock(ref kernelSession, keyVec);
                     HashBucketLockTableTests.AssertLockCounts(store, key, false, ii + 1);
                 }
 
                 for (var ii = 0; ii < maxLocks; ++ii)
                 {
                     keyVec[0] = new(key, LockType.Shared, luContext);
-                    luContext.Unlock(keyVec);
+                    store.Kernel.Unlock(ref kernelSession, keyVec);
                     HashBucketLockTableTests.AssertLockCounts(store, key, false, maxLocks - ii - 1);
                 }
                 HashBucketLockTableTests.AssertLockCounts(store, key, false, 0);
             }
             catch (Exception)
             {
-                ClearCountsOnError(session);
+                kernelSession.ClearCountsOnError();
                 throw;
             }
             finally
             {
-                luContext.EndLockable();
-                luContext.EndUnsafe();
+                kernelSession.EndTransaction();
+                kernelSession.EndUnsafe();
             }
         }
 
@@ -1546,8 +1537,8 @@ namespace Tsavorite.test.LockableUnsafeContext
             using var session = store.NewSession<long, long, Empty, SimpleSimpleFunctions<long, long>>(new SimpleSimpleFunctions<long, long>());
             var luContext = session.LockableUnsafeContext;
 
-            luContext.BeginUnsafe();
-            luContext.BeginLockable();
+            kernelSession.BeginUnsafe();
+            kernelSession.BeginTransaction();
 
             var keyVec = new FixedLengthLockableKeyStruct<long>[]
             {
@@ -1557,8 +1548,8 @@ namespace Tsavorite.test.LockableUnsafeContext
             };
 
             // First ensure things work with no blocking locks.
-            ClassicAssert.IsTrue(luContext.TryLock(keyVec));
-            luContext.Unlock(keyVec);
+            ClassicAssert.IsTrue(store.Kernel.TryLock(ref kernelSession, keyVec));
+            store.Kernel.Unlock(ref kernelSession, keyVec);
 
             var blockingVec = new FixedLengthLockableKeyStruct<long>[1];
 
@@ -1568,28 +1559,28 @@ namespace Tsavorite.test.LockableUnsafeContext
                 {
                     // This key blocks the lock. Test all positions in keyVec to ensure rollback of locks on failure.
                     blockingVec[0] = keyVec[blockingIdx];
-                    luContext.Lock(blockingVec);
+                    store.Kernel.Lock(ref kernelSession, blockingVec);
 
                     // Now try the lock, and verify there are no locks left after (any taken must be rolled back on failure).
-                    ClassicAssert.IsFalse(luContext.TryLock(keyVec, TimeSpan.FromMilliseconds(20)));
+                    ClassicAssert.IsFalse(store.Kernel.TryLock(ref kernelSession, keyVec, TimeSpan.FromMilliseconds(20)));
                     foreach (var k in keyVec)
                     {
                         if (k.Key != blockingVec[0].Key)
                             HashBucketLockTableTests.AssertLockCounts(store, k.Key, false, 0);
                     }
 
-                    luContext.Unlock(blockingVec);
+                    store.Kernel.Unlock(ref kernelSession, blockingVec);
                 }
             }
             catch (Exception)
             {
-                ClearCountsOnError(session);
+                kernelSession.ClearCountsOnError();
                 throw;
             }
             finally
             {
-                luContext.EndLockable();
-                luContext.EndUnsafe();
+                kernelSession.EndTransaction();
+                kernelSession.EndUnsafe();
             }
         }
 
@@ -1603,8 +1594,8 @@ namespace Tsavorite.test.LockableUnsafeContext
             using var session = store.NewSession<long, long, Empty, SimpleSimpleFunctions<long, long>>(new SimpleSimpleFunctions<long, long>());
             var luContext = session.LockableUnsafeContext;
 
-            luContext.BeginUnsafe();
-            luContext.BeginLockable();
+            kernelSession.BeginUnsafe();
+            kernelSession.BeginTransaction();
 
             var keyVec = new FixedLengthLockableKeyStruct<long>[]
             {
@@ -1614,8 +1605,8 @@ namespace Tsavorite.test.LockableUnsafeContext
             };
 
             // First ensure things work with no blocking locks.
-            ClassicAssert.IsTrue(luContext.TryLock(keyVec));
-            luContext.Unlock(keyVec);
+            ClassicAssert.IsTrue(store.Kernel.TryLock(ref kernelSession, keyVec));
+            store.Kernel.Unlock(ref kernelSession, keyVec);
 
             var blockingVec = new FixedLengthLockableKeyStruct<long>[1];
 
@@ -1625,30 +1616,30 @@ namespace Tsavorite.test.LockableUnsafeContext
                 {
                     // This key blocks the lock. Test all positions in keyVec to ensure rollback of locks on failure.
                     blockingVec[0] = keyVec[blockingIdx];
-                    luContext.Lock(blockingVec);
+                    store.Kernel.Lock(ref kernelSession, blockingVec);
 
                     using var cts = new CancellationTokenSource(20);
 
                     // Now try the lock, and verify there are no locks left after (any taken must be rolled back on failure).
-                    ClassicAssert.IsFalse(luContext.TryLock(keyVec, cts.Token));
+                    ClassicAssert.IsFalse(store.Kernel.TryLock(ref kernelSession, keyVec, cts.Token));
                     foreach (var k in keyVec)
                     {
                         if (k.Key != blockingVec[0].Key)
                             HashBucketLockTableTests.AssertLockCounts(store, k.Key, false, 0);
                     }
 
-                    luContext.Unlock(blockingVec);
+                    store.Kernel.Unlock(ref kernelSession, blockingVec);
                 }
             }
             catch (Exception)
             {
-                ClearCountsOnError(session);
+                kernelSession.ClearCountsOnError();
                 throw;
             }
             finally
             {
-                luContext.EndLockable();
-                luContext.EndUnsafe();
+                kernelSession.EndTransaction();
+                kernelSession.EndUnsafe();
             }
         }
 
@@ -1662,8 +1653,8 @@ namespace Tsavorite.test.LockableUnsafeContext
             using var session = store.NewSession<long, long, Empty, SimpleSimpleFunctions<long, long>>(new SimpleSimpleFunctions<long, long>());
             var luContext = session.LockableUnsafeContext;
 
-            luContext.BeginUnsafe();
-            luContext.BeginLockable();
+            kernelSession.BeginUnsafe();
+            kernelSession.BeginTransaction();
 
             var key = 42;
 
@@ -1673,25 +1664,25 @@ namespace Tsavorite.test.LockableUnsafeContext
             try
             {
                 // Lock twice so it is blocked by the second reader
-                ClassicAssert.IsTrue(luContext.TryLock(sharedVec));
-                ClassicAssert.IsTrue(luContext.TryLock(sharedVec));
+                ClassicAssert.IsTrue(store.Kernel.TryLock(ref kernelSession, sharedVec));
+                ClassicAssert.IsTrue(store.Kernel.TryLock(ref kernelSession, sharedVec));
 
-                ClassicAssert.IsFalse(luContext.TryPromoteLock(exclusiveVec[0], TimeSpan.FromMilliseconds(20)));
+                ClassicAssert.IsFalse(store.Kernel.TryPromoteLock(ref kernelSession, exclusiveVec[0], TimeSpan.FromMilliseconds(20)));
 
                 // Unlock one of the readers and verify successful promotion
-                luContext.Unlock(sharedVec);
-                ClassicAssert.IsTrue(luContext.TryPromoteLock(exclusiveVec[0]));
-                luContext.Unlock(exclusiveVec);
+                store.Kernel.Unlock(ref kernelSession, sharedVec);
+                ClassicAssert.IsTrue(store.Kernel.TryPromoteLock(ref kernelSession, exclusiveVec[0]));
+                store.Kernel.Unlock(ref kernelSession, exclusiveVec);
             }
             catch (Exception)
             {
-                ClearCountsOnError(session);
+                kernelSession.ClearCountsOnError();
                 throw;
             }
             finally
             {
-                luContext.EndLockable();
-                luContext.EndUnsafe();
+                kernelSession.EndTransaction();
+                kernelSession.EndUnsafe();
             }
         }
 
@@ -1705,8 +1696,8 @@ namespace Tsavorite.test.LockableUnsafeContext
             using var session = store.NewSession<long, long, Empty, SimpleSimpleFunctions<long, long>>(new SimpleSimpleFunctions<long, long>());
             var luContext = session.LockableUnsafeContext;
 
-            luContext.BeginUnsafe();
-            luContext.BeginLockable();
+            kernelSession.BeginUnsafe();
+            kernelSession.BeginTransaction();
 
             var key = 42;
 
@@ -1716,26 +1707,26 @@ namespace Tsavorite.test.LockableUnsafeContext
             try
             {
                 // Lock twice so it is blocked by the second reader
-                ClassicAssert.IsTrue(luContext.TryLock(sharedVec));
-                ClassicAssert.IsTrue(luContext.TryLock(sharedVec));
+                ClassicAssert.IsTrue(store.Kernel.TryLock(ref kernelSession, sharedVec));
+                ClassicAssert.IsTrue(store.Kernel.TryLock(ref kernelSession, sharedVec));
 
                 using var cts = new CancellationTokenSource(20);
-                ClassicAssert.IsFalse(luContext.TryPromoteLock(exclusiveVec[0], cts.Token));
+                ClassicAssert.IsFalse(store.Kernel.TryPromoteLock(ref kernelSession, exclusiveVec[0], cts.Token));
 
                 // Unlock one of the readers and verify successful promotion
-                luContext.Unlock(sharedVec);
-                ClassicAssert.IsTrue(luContext.TryPromoteLock(exclusiveVec[0]));
-                luContext.Unlock(exclusiveVec);
+                store.Kernel.Unlock(ref kernelSession, sharedVec);
+                ClassicAssert.IsTrue(store.Kernel.TryPromoteLock(ref kernelSession, exclusiveVec[0]));
+                store.Kernel.Unlock(ref kernelSession, exclusiveVec);
             }
             catch (Exception)
             {
-                ClearCountsOnError(session);
+                kernelSession.ClearCountsOnError();
                 throw;
             }
             finally
             {
-                luContext.EndLockable();
-                luContext.EndUnsafe();
+                kernelSession.EndTransaction();
+                kernelSession.EndUnsafe();
             }
         }
     }

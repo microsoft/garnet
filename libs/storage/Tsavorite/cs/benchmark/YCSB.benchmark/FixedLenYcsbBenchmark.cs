@@ -135,7 +135,9 @@ namespace Tsavorite.benchmark
 
             using var session = store.NewSession<Input, Output, Empty, SessionFunctions>(functions);
             var uContext = session.UnsafeContext;
-            uContext.BeginUnsafe();
+            TransientKernelSession<Key, Value, Input, Output, Empty, SessionFunctions, StructStoreFunctions, BlittableAllocator<Key, Value, StructStoreFunctions>,
+                                   UnsafeContext<Key, Value, Input, Output, Empty, SessionFunctions, StructStoreFunctions, BlittableAllocator<Key, Value, StructStoreFunctions>>> kernelSession = new(uContext);
+            kernelSession.BeginUnsafe();
 
             try
             {
@@ -185,7 +187,7 @@ namespace Tsavorite.benchmark
             }
             finally
             {
-                uContext.EndUnsafe();
+                kernelSession.EndUnsafe();
             }
 
             sw.Stop();
@@ -391,7 +393,9 @@ namespace Tsavorite.benchmark
 
             var session = store.NewSession<Input, Output, Empty, SessionFunctions>(functions);
             var uContext = session.UnsafeContext;
-            uContext.BeginUnsafe();
+            TransientKernelSession<Key, Value, Input, Output, Empty, SessionFunctions, StructStoreFunctions, BlittableAllocator<Key, Value, StructStoreFunctions>,
+                                  UnsafeContext<Key, Value, Input, Output, Empty, SessionFunctions, StructStoreFunctions, BlittableAllocator<Key, Value, StructStoreFunctions>>> kernelSession = new(uContext);
+            kernelSession.BeginUnsafe();
 
             Value value = default;
 
@@ -417,7 +421,7 @@ namespace Tsavorite.benchmark
             }
             finally
             {
-                uContext.EndUnsafe();
+                kernelSession.EndUnsafe();
             }
             session.Dispose();
         }

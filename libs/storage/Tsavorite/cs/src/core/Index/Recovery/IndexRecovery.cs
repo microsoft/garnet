@@ -24,7 +24,7 @@ namespace Tsavorite.core
         internal void RecoverFuzzyIndex(IndexCheckpointInfo info)
         {
             ulong alignedIndexSize = InitializeMainIndexRecovery(ref info, isAsync: false);
-            kernel.hashTable.overflowBucketsAllocator.Recover(info.main_ht_device, alignedIndexSize, info.info.num_buckets, info.info.num_ofb_bytes);
+            Kernel.hashTable.overflowBucketsAllocator.Recover(info.main_ht_device, alignedIndexSize, info.info.num_buckets, info.info.num_ofb_bytes);
 
             // Wait until reading is complete
             IsFuzzyIndexRecoveryComplete(true);
@@ -35,20 +35,20 @@ namespace Tsavorite.core
         {
             ulong alignedIndexSize = InitializeMainIndexRecovery(ref info, isAsync: true);
             await recoveryCountdown.WaitAsync(cancellationToken).ConfigureAwait(false);
-            await kernel.hashTable.overflowBucketsAllocator.RecoverAsync(info.main_ht_device, alignedIndexSize, info.info.num_buckets, info.info.num_ofb_bytes, cancellationToken).ConfigureAwait(false);
+            await Kernel.hashTable.overflowBucketsAllocator.RecoverAsync(info.main_ht_device, alignedIndexSize, info.info.num_buckets, info.info.num_ofb_bytes, cancellationToken).ConfigureAwait(false);
             FinalizeMainIndexRecovery(info);
         }
 
         private ulong InitializeMainIndexRecovery(ref IndexCheckpointInfo info, bool isAsync)
         {
             var token = info.info.token;
-            var ht_version = kernel.hashTable.spine.resizeInfo.version;
+            var ht_version = Kernel.hashTable.spine.resizeInfo.version;
 
             // Create devices to read from using Async API
             info.main_ht_device = checkpointManager.GetIndexDevice(token);
             var sectorSize = info.main_ht_device.SectorSize;
 
-            if (kernel.hashTable.spine.state[ht_version].size != info.info.table_size)
+            if (Kernel.hashTable.spine.state[ht_version].size != info.info.table_size)
             {
                 Free(ht_version);
                 Initialize(info.info.table_size, (int)sectorSize);
@@ -75,7 +75,7 @@ namespace Tsavorite.core
             BeginMainIndexRecovery(ht_version, device, num_ht_bytes);
             var sectorSize = device.SectorSize;
             var alignedIndexSize = (num_ht_bytes + (sectorSize - 1)) & ~((ulong)sectorSize - 1);
-            kernel.hashTable.overflowBucketsAllocator.Recover(ofbdevice, alignedIndexSize, num_buckets, num_ofb_bytes);
+            Kernel.hashTable.overflowBucketsAllocator.Recover(ofbdevice, alignedIndexSize, num_buckets, num_ofb_bytes);
         }
 
         // Test-only
@@ -85,13 +85,13 @@ namespace Tsavorite.core
             await recoveryCountdown.WaitAsync(cancellationToken).ConfigureAwait(false);
             var sectorSize = device.SectorSize;
             var alignedIndexSize = (num_ht_bytes + (sectorSize - 1)) & ~((ulong)sectorSize - 1);
-            await kernel.hashTable.overflowBucketsAllocator.RecoverAsync(ofbdevice, alignedIndexSize, num_buckets, num_ofb_bytes, cancellationToken).ConfigureAwait(false);
+            await Kernel.hashTable.overflowBucketsAllocator.RecoverAsync(ofbdevice, alignedIndexSize, num_buckets, num_ofb_bytes, cancellationToken).ConfigureAwait(false);
         }
 
         internal bool IsFuzzyIndexRecoveryComplete(bool waitUntilComplete = false)
         {
             bool completed1 = IsMainIndexRecoveryCompleted(waitUntilComplete);
-            bool completed2 = kernel.hashTable.overflowBucketsAllocator.IsRecoveryCompleted(waitUntilComplete);
+            bool completed2 = Kernel.hashTable.overflowBucketsAllocator.IsRecoveryCompleted(waitUntilComplete);
             return completed1 && completed2;
         }
 
@@ -106,7 +106,7 @@ namespace Tsavorite.core
                                 ulong num_bytes,
                                 bool isAsync = false)
         {
-            long totalSize = kernel.hashTable.spine.state[version].size * sizeof(HashBucket);
+            long totalSize = Kernel.hashTable.spine.state[version].size * sizeof(HashBucket);
 
             int numChunks = 1;
             if (totalSize > uint.MaxValue)
@@ -117,7 +117,7 @@ namespace Tsavorite.core
 
             uint chunkSize = (uint)(totalSize / numChunks);
             recoveryCountdown = new CountdownWrapper(numChunks, isAsync);
-            HashBucket* start = kernel.hashTable.spine.state[version].tableAligned;
+            HashBucket* start = Kernel.hashTable.spine.state[version].tableAligned;
 
             ulong numBytesRead = 0;
             for (int index = 0; index < numChunks; index++)
@@ -155,9 +155,9 @@ namespace Tsavorite.core
         {
             HashBucketEntry entry = default;
 
-            int version = kernel.hashTable.spine.resizeInfo.version;
-            var table_size_ = kernel.hashTable.spine.state[version].size;
-            var ptable_ = kernel.hashTable.spine.state[version].tableAligned;
+            int version = Kernel.hashTable.spine.resizeInfo.version;
+            var table_size_ = Kernel.hashTable.spine.state[version].size;
+            var ptable_ = Kernel.hashTable.spine.state[version].tableAligned;
 
             for (long bucket = 0; bucket < table_size_; ++bucket)
             {
@@ -173,7 +173,7 @@ namespace Tsavorite.core
                     // Reset any ephemeral bucket level locks
                     b->bucket_entries[Constants.kOverflowBucketIndex] &= HashBucketEntry.kAddressMask;
                     if (b->bucket_entries[Constants.kOverflowBucketIndex] == 0) break;
-                    b = (HashBucket*)kernel.hashTable.overflowBucketsAllocator.GetPhysicalAddress(b->bucket_entries[Constants.kOverflowBucketIndex]);
+                    b = (HashBucket*)Kernel.hashTable.overflowBucketsAllocator.GetPhysicalAddress(b->bucket_entries[Constants.kOverflowBucketIndex]);
                 }
             }
         }

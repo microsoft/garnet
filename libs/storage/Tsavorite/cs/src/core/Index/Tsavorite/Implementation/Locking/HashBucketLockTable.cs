@@ -9,7 +9,7 @@ using System.Runtime.InteropServices;
 namespace Tsavorite.core
 {
     [StructLayout(LayoutKind.Explicit)]
-    internal struct HashBucketLockTable : ILockTable
+    internal struct HashBucketLockTable : ILockTable 
     {
         // Unioned field in 'struct HashTable'
         [FieldOffset(0)]
@@ -121,7 +121,14 @@ namespace Tsavorite.core
 
             internal KeyComparer(long s) => size_mask = s;
 
-            public int Compare(TLockableKey key1, TLockableKey key2) => KeyHashComparer(key1, key2, size_mask);
+            public int Compare(TLockableKey key1, TLockableKey key2)
+            {
+                // This sorts by partitionId, then calls Tsavorite to sort by lock code and then by lockType.
+                var cmp = key1.PartitionId.CompareTo(key2.PartitionId);
+                if (cmp != 0)
+                    return cmp;
+                return KeyHashComparer(key1, key2, size_mask);
+            }
         }
 
         /// <inheritdoc/>

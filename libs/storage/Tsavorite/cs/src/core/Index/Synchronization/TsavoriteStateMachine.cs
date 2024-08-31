@@ -118,7 +118,7 @@ namespace Tsavorite.core
             var nextState = currentSyncStateMachine.NextState(expectedState);
 
             if (bumpEpoch)
-                kernel.epoch.BumpCurrentEpoch(() => MakeTransitionWorker(intermediate, nextState));
+                Kernel.Epoch.BumpCurrentEpoch(() => MakeTransitionWorker(intermediate, nextState));
             else
                 MakeTransitionWorker(intermediate, nextState);
         }

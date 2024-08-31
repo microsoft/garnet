@@ -18,7 +18,7 @@ namespace Tsavorite.core
         where TStoreFunctions : IStoreFunctions<TKey, TValue>
         where TAllocator : IAllocator<TKey, TValue, TStoreFunctions>
     {
-        internal readonly TsavoriteKV<TKey, TValue, TStoreFunctions, TAllocator> store;
+        public readonly TsavoriteKV<TKey, TValue, TStoreFunctions, TAllocator> Store;
 
         internal readonly TsavoriteKV<TKey, TValue, TStoreFunctions, TAllocator>.TsavoriteExecutionContext<TInput, TOutput, TContext> ctx;
 
@@ -34,64 +34,35 @@ namespace Tsavorite.core
         readonly ILoggerFactory loggerFactory;
         readonly ILogger logger;
 
-        internal ulong TotalLockCount => sharedLockCount + exclusiveLockCount;
-        internal ulong sharedLockCount;
-        internal ulong exclusiveLockCount;
-
-        bool isAcquiredLockable;
-
         ScanCursorState<TKey, TValue> scanCursorState;
 
-        internal void AcquireLockable<TSessionFunctionsWrapper>(TSessionFunctionsWrapper sessionFunctionsWrapper)
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        internal void BeginTransaction<TSessionFunctionsWrapper>(TSessionFunctionsWrapper sessionFunctionsWrapper)
             where TSessionFunctionsWrapper : ISessionFunctionsWrapper<TKey, TValue, TInput, TOutput, TContext, TStoreFunctions, TAllocator>
         {
-            CheckIsNotAcquiredLockable();
-
             while (true)
             {
                 // Checkpoints cannot complete while we have active locking sessions.
                 while (IsInPreparePhase())
                 {
-                    if (store.kernel.epoch.ThisInstanceProtected())
-                        store.InternalRefresh<TInput, TOutput, TContext, TSessionFunctionsWrapper>(sessionFunctionsWrapper);
+                    if (Store.Kernel.Epoch.ThisInstanceProtected())
+                        Store.InternalRefresh<TInput, TOutput, TContext, TSessionFunctionsWrapper>(sessionFunctionsWrapper);
                     Thread.Yield();
                 }
 
-                store.IncrementNumLockingSessions();
-                isAcquiredLockable = true;
+                Store.IncrementNumTxnSessions();
 
                 if (!IsInPreparePhase())
                     break;
-                InternalReleaseLockable();
+                EndTransaction();
                 _ = Thread.Yield();
             }
         }
 
-        internal void ReleaseLockable()
-        {
-            CheckIsAcquiredLockable();
-            if (TotalLockCount > 0)
-                throw new TsavoriteException($"EndLockable called with locks held: {sharedLockCount} shared locks, {exclusiveLockCount} exclusive locks");
-            InternalReleaseLockable();
-        }
-
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        private void InternalReleaseLockable()
+        internal void EndTransaction()
         {
-            isAcquiredLockable = false;
-            store.DecrementNumLockingSessions();
-        }
-
-        internal void CheckIsAcquiredLockable()
-        {
-            if (!isAcquiredLockable)
-                throw new TsavoriteException("Lockable method call when BeginLockable has not been called");
-        }
-
-        void CheckIsNotAcquiredLockable()
-        {
-            if (isAcquiredLockable)
-                throw new TsavoriteException("BeginLockable cannot be called twice (call EndLockable first)");
+            Store.DecrementNumTxnSessions();
         }
 
         internal ClientSession(
@@ -107,7 +78,7 @@ namespace Tsavorite.core
 
             this.loggerFactory = loggerFactory;
             logger = loggerFactory?.CreateLogger($"ClientSession-{GetHashCode():X8}");
-            this.store = store;
+            this.Store = store;
             this.ctx = ctx;
             this.functions = functions;
         }
@@ -131,7 +102,7 @@ namespace Tsavorite.core
 
             // By the time Dispose is called, we should have no outstanding locks, so can use the BasicContext's sessionFunctions.
             _ = CompletePending(bContext.sessionFunctions, true);
-            store.DisposeClientSession(ID, ctx.phase);
+            Store.DisposeClientSession(ID, ctx.phase);
         }
 
         /// <summary>
@@ -157,10 +128,10 @@ namespace Tsavorite.core
         #region ITsavoriteContext
 
         /// <inheritdoc/>
-        public long GetKeyHash(TKey key) => store.GetKeyHash(ref key);
+        public long GetKeyHash(TKey key) => Store.GetKeyHash(ref key);
 
         /// <inheritdoc/>
-        public long GetKeyHash(ref TKey key) => store.GetKeyHash(ref key);
+        public long GetKeyHash(ref TKey key) => Store.GetKeyHash(ref key);
 
         /// <inheritdoc/>
         internal void Refresh<TSessionFunctionsWrapper>(TSessionFunctionsWrapper sessionFunctions)
@@ -169,7 +140,7 @@ namespace Tsavorite.core
             UnsafeResumeThread(sessionFunctions);
             try
             {
-                store.InternalRefresh<TInput, TOutput, TContext, TSessionFunctionsWrapper>(sessionFunctions);
+                Store.InternalRefresh<TInput, TOutput, TContext, TSessionFunctionsWrapper>(sessionFunctions);
             }
             finally
             {
@@ -191,18 +162,6 @@ namespace Tsavorite.core
                 UnsafeSuspendThread();
             }
         }
-
-        /// <inheritdoc/>
-        public int CompareKeyHashes<TLockableKey>(TLockableKey key1, TLockableKey key2) where TLockableKey : ILockableKey => store.LockTable.CompareKeyHashes(key1, key2);
-
-        /// <inheritdoc/>
-        public int CompareKeyHashes<TLockableKey>(ref TLockableKey key1, ref TLockableKey key2) where TLockableKey : ILockableKey => store.LockTable.CompareKeyHashes(ref key1, ref key2);
-
-        /// <inheritdoc/>
-        public void SortKeyHashes<TLockableKey>(TLockableKey[] keys) where TLockableKey : ILockableKey => store.LockTable.SortKeyHashes(keys);
-
-        /// <inheritdoc/>
-        public void SortKeyHashes<TLockableKey>(TLockableKey[] keys, int start, int count) where TLockableKey : ILockableKey => store.LockTable.SortKeyHashes(keys, start, count);
 
         #endregion ITsavoriteContext
 
@@ -262,17 +221,17 @@ namespace Tsavorite.core
             where TSessionFunctionsWrapper : ISessionFunctionsWrapper<TKey, TValue, TInput, TOutput, TContext, TStoreFunctions, TAllocator>
         {
             var requestedOutputs = getOutputs ? completedOutputs : default;
-            var result = store.InternalCompletePending(sessionFunctions, wait, requestedOutputs);
+            var result = Store.InternalCompletePending(sessionFunctions, wait, requestedOutputs);
             if (spinWaitForCommit)
             {
                 if (!wait)
                     throw new TsavoriteException("Can spin-wait for commit (checkpoint completion) only if wait is true");
                 do
                 {
-                    _ = store.InternalCompletePending(sessionFunctions, wait, requestedOutputs);
-                    if (store.InRestPhase())
+                    _ = Store.InternalCompletePending(sessionFunctions, wait, requestedOutputs);
+                    if (Store.InRestPhase())
                     {
-                        _ = store.InternalCompletePending(sessionFunctions, wait, requestedOutputs);
+                        _ = Store.InternalCompletePending(sessionFunctions, wait, requestedOutputs);
                         return true;
                     }
                 } while (wait);
@@ -300,11 +259,11 @@ namespace Tsavorite.core
         {
             token.ThrowIfCancellationRequested();
 
-            if (store.kernel.epoch.ThisInstanceProtected())
+            if (Store.Kernel.Epoch.ThisInstanceProtected())
                 throw new NotSupportedException("Async operations not supported over protected epoch");
 
             // Complete all pending operations on session
-            await store.CompletePendingAsync(sessionFunctions, token, getOutputs ? completedOutputs : null).ConfigureAwait(false);
+            await Store.CompletePendingAsync(sessionFunctions, token, getOutputs ? completedOutputs : null).ConfigureAwait(false);
 
             // Wait for commit if necessary
             if (waitForCommit)
@@ -321,7 +280,7 @@ namespace Tsavorite.core
         {
             token.ThrowIfCancellationRequested();
 
-            if (store.kernel.epoch.ThisInstanceProtected())
+            if (Store.Kernel.Epoch.ThisInstanceProtected())
                 throw new NotSupportedException("Async operations not supported over protected epoch");
 
             await TsavoriteKV<TKey, TValue, TStoreFunctions, TAllocator>.ReadyToCompletePendingAsync(ctx, token).ConfigureAwait(false);
@@ -336,8 +295,8 @@ namespace Tsavorite.core
         {
             OperationStatus status;
             do
-                status = store.InternalModifiedBitOperation(ref key, out _);
-            while (store.HandleImmediateNonPendingRetryStatus<TInput, TOutput, TContext, TSessionFunctionsWrapper>(status, sessionFunctions));
+                status = Store.InternalModifiedBitOperation(ref key, out _);
+            while (Store.HandleImmediateNonPendingRetryStatus<TInput, TOutput, TContext, TSessionFunctionsWrapper>(status, sessionFunctions));
         }
 
         /// <inheritdoc/>
@@ -366,8 +325,8 @@ namespace Tsavorite.core
             RecordInfo modifiedInfo;
             OperationStatus status;
             do
-                status = store.InternalModifiedBitOperation(ref key, out modifiedInfo, false);
-            while (store.HandleImmediateNonPendingRetryStatus<TInput, TOutput, TContext, TSessionFunctionsWrapper>(status, sessionFunctions));
+                status = Store.InternalModifiedBitOperation(ref key, out modifiedInfo, false);
+            while (Store.HandleImmediateNonPendingRetryStatus<TInput, TOutput, TContext, TSessionFunctionsWrapper>(status, sessionFunctions));
             return modifiedInfo.Modified;
         }
 
@@ -392,13 +351,13 @@ namespace Tsavorite.core
             // Complete all pending sync operations on session
             await CompletePendingAsync(sessionFunctions, token: token).ConfigureAwait(false);
 
-            var task = store.CheckpointTask;
+            var task = Store.CheckpointTask;
 
             while (true)
             {
                 _ = await task.WithCancellationAsync(token).ConfigureAwait(false);
                 Refresh(sessionFunctions);
-                task = store.CheckpointTask;
+                task = Store.CheckpointTask;
             }
         }
 
@@ -437,7 +396,7 @@ namespace Tsavorite.core
         {
             TInput input = default;
             TOutput output = default;
-            return store.Compact<TInput, TOutput, TContext, TSessionFunctions, CompactionFunctions>(functions, compactionFunctions, ref input, ref output, untilAddress, compactionType);
+            return Store.Compact<TInput, TOutput, TContext, TSessionFunctions, CompactionFunctions>(functions, compactionFunctions, ref input, ref output, untilAddress, compactionType);
         }
 
         /// <summary>
@@ -453,7 +412,7 @@ namespace Tsavorite.core
         public long Compact<CompactionFunctions>(ref TInput input, ref TOutput output, long untilAddress, CompactionType compactionType, CompactionFunctions compactionFunctions)
             where CompactionFunctions : ICompactionFunctions<TKey, TValue>
         {
-            return store.Compact<TInput, TOutput, TContext, TSessionFunctions, CompactionFunctions>(functions, compactionFunctions, ref input, ref output, untilAddress, compactionType);
+            return Store.Compact<TInput, TOutput, TContext, TSessionFunctions, CompactionFunctions>(functions, compactionFunctions, ref input, ref output, untilAddress, compactionType);
         }
 
         /// <summary>
@@ -462,7 +421,7 @@ namespace Tsavorite.core
         /// <param name="untilAddress">Report records until this address (tail by default)</param>
         /// <returns>Tsavorite iterator</returns>
         public ITsavoriteScanIterator<TKey, TValue> Iterate(long untilAddress = -1)
-            => store.Iterate<TInput, TOutput, TContext, TSessionFunctions>(functions, untilAddress);
+            => Store.Iterate<TInput, TOutput, TContext, TSessionFunctions>(functions, untilAddress);
 
         /// <summary>
         /// Push iteration of all (distinct) live key-values stored in Tsavorite
@@ -472,7 +431,7 @@ namespace Tsavorite.core
         /// <returns>True if Iteration completed; false if Iteration ended early due to one of the TScanIterator reader functions returning false</returns>
         public bool Iterate<TScanFunctions>(ref TScanFunctions scanFunctions, long untilAddress = -1)
             where TScanFunctions : IScanIteratorFunctions<TKey, TValue>
-            => store.Iterate<TInput, TOutput, TContext, TSessionFunctions, TScanFunctions>(functions, ref scanFunctions, untilAddress);
+            => Store.Iterate<TInput, TOutput, TContext, TSessionFunctions, TScanFunctions>(functions, ref scanFunctions, untilAddress);
 
         /// <summary>
         /// Push-scan the log from <paramref name="cursor"/> (which should be a valid address) and push up to <paramref name="count"/> records
@@ -492,7 +451,7 @@ namespace Tsavorite.core
         /// or one of the TScanIterator reader functions returning false</returns>
         public bool ScanCursor<TScanFunctions>(ref long cursor, long count, TScanFunctions scanFunctions, long endAddress = long.MaxValue, bool validateCursor = false)
             where TScanFunctions : IScanIteratorFunctions<TKey, TValue>
-            => store.hlogBase.ScanCursor(store, scanCursorState ??= new(), ref cursor, count, scanFunctions, endAddress, validateCursor);
+            => Store.hlogBase.ScanCursor(Store, scanCursorState ??= new(), ref cursor, count, scanFunctions, endAddress, validateCursor);
 
         /// <summary>
         /// Resume session on current thread. IMPORTANT: Call SuspendThread before any async op.
@@ -503,8 +462,8 @@ namespace Tsavorite.core
         {
             // We do not track any "acquired" state here; if someone mixes calls between safe and unsafe contexts, they will 
             // get the "trying to acquire already-acquired epoch" error.
-            store.kernel.epoch.Resume();
-            store.InternalRefresh<TInput, TOutput, TContext, TSessionFunctionsWrapper>(sessionFunctions);
+            Store.Kernel.Epoch.Resume();
+            Store.InternalRefresh<TInput, TOutput, TContext, TSessionFunctionsWrapper>(sessionFunctions);
         }
 
         /// <summary>
@@ -513,8 +472,8 @@ namespace Tsavorite.core
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         internal void UnsafeSuspendThread()
         {
-            Debug.Assert(store.kernel.epoch.ThisInstanceProtected());
-            store.kernel.epoch.Suspend();
+            Debug.Assert(Store.Kernel.Epoch.ThisInstanceProtected());
+            Store.Kernel.Epoch.Suspend();
         }
 
         void IClientSession.AtomicSwitch(long version)
@@ -533,7 +492,7 @@ namespace Tsavorite.core
         /// </summary>
         internal bool IsInPreparePhase()
         {
-            return store.SystemState.Phase == Phase.PREPARE || store.SystemState.Phase == Phase.PREPARE_GROW;
+            return Store.SystemState.Phase == Phase.PREPARE || Store.SystemState.Phase == Phase.PREPARE_GROW;
         }
 
         #endregion Other Operations

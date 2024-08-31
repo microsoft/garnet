@@ -19,7 +19,7 @@ namespace Tsavorite.core
             if (sessionFunctions.Ctx.phase == Phase.IN_PROGRESS_GROW)
                 SplitBuckets(stackCtx.hei.hash);
 
-            if (FindTag(ref stackCtx.hei))
+            if (Kernel.hashTable.FindTag(ref stackCtx.hei))
             {
                 stackCtx.SetRecordSourceToHashEntry(hlogBase);
 

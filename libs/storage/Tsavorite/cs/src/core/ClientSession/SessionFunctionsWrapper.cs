@@ -21,8 +21,8 @@ namespace Tsavorite.core
             _sessionLocker = new TSessionLocker();
         }
 
-        public TsavoriteKV<TKey, TValue, TStoreFunctions, TAllocator> Store => _clientSession.store;
-        public HashBucketLockTable LockTable => _clientSession.store.LockTable;
+        public TsavoriteKV<TKey, TValue, TStoreFunctions, TAllocator> Store => _clientSession.Store;
+        public HashBucketLockTable LockTable => _clientSession.Store.LockTable;
 
         #region Reads
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
@@ -53,10 +53,10 @@ namespace Tsavorite.core
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public bool ConcurrentWriter(long physicalAddress, ref TKey key, ref TInput input, ref TValue src, ref TValue dst, ref TOutput output, ref UpsertInfo upsertInfo, ref RecordInfo recordInfo)
         {
-            (upsertInfo.UsedValueLength, upsertInfo.FullValueLength, _) = _clientSession.store.GetRecordLengths(physicalAddress, ref dst, ref recordInfo);
+            (upsertInfo.UsedValueLength, upsertInfo.FullValueLength, _) = _clientSession.Store.GetRecordLengths(physicalAddress, ref dst, ref recordInfo);
             if (!_clientSession.functions.ConcurrentWriter(ref key, ref input, ref src, ref dst, ref output, ref upsertInfo, ref recordInfo))
                 return false;
-            _clientSession.store.SetExtraValueLength(ref dst, ref recordInfo, upsertInfo.UsedValueLength, upsertInfo.FullValueLength);
+            _clientSession.Store.SetExtraValueLength(ref dst, ref recordInfo, upsertInfo.UsedValueLength, upsertInfo.FullValueLength);
             recordInfo.SetDirtyAndModified();
             return true;
         }
@@ -101,12 +101,12 @@ namespace Tsavorite.core
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public bool InPlaceUpdater(long physicalAddress, ref TKey key, ref TInput input, ref TValue value, ref TOutput output, ref RMWInfo rmwInfo, out OperationStatus status, ref RecordInfo recordInfo)
         {
-            (rmwInfo.UsedValueLength, rmwInfo.FullValueLength, _) = _clientSession.store.GetRecordLengths(physicalAddress, ref value, ref recordInfo);
+            (rmwInfo.UsedValueLength, rmwInfo.FullValueLength, _) = _clientSession.Store.GetRecordLengths(physicalAddress, ref value, ref recordInfo);
 
             if (_clientSession.functions.InPlaceUpdater(ref key, ref input, ref value, ref output, ref rmwInfo, ref recordInfo))
             {
                 rmwInfo.Action = RMWAction.Default;
-                _clientSession.store.SetExtraValueLength(ref value, ref recordInfo, rmwInfo.UsedValueLength, rmwInfo.FullValueLength);
+                _clientSession.Store.SetExtraValueLength(ref value, ref recordInfo, rmwInfo.UsedValueLength, rmwInfo.FullValueLength);
                 recordInfo.SetDirtyAndModified();
 
                 // MarkPage is done in InternalRMW
@@ -117,7 +117,7 @@ namespace Tsavorite.core
             if (rmwInfo.Action == RMWAction.ExpireAndResume)
             {
                 // This inserts the tombstone if appropriate
-                return _clientSession.store.ReinitializeExpiredRecord<TInput, TOutput, TContext, SessionFunctionsWrapper<TKey, TValue, TInput, TOutput, TContext, TSessionFunctions, TSessionLocker, TStoreFunctions, TAllocator>>(
+                return _clientSession.Store.ReinitializeExpiredRecord<TInput, TOutput, TContext, SessionFunctionsWrapper<TKey, TValue, TInput, TOutput, TContext, TSessionFunctions, TSessionLocker, TStoreFunctions, TAllocator>>(
                                                     ref key, ref input, ref value, ref output, ref recordInfo, ref rmwInfo, rmwInfo.Address, this, isIpu: true, out status);
             }
 
@@ -156,10 +156,10 @@ namespace Tsavorite.core
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public bool ConcurrentDeleter(long physicalAddress, ref TKey key, ref TValue value, ref DeleteInfo deleteInfo, ref RecordInfo recordInfo, out int allocatedSize)
         {
-            (deleteInfo.UsedValueLength, deleteInfo.FullValueLength, allocatedSize) = _clientSession.store.GetRecordLengths(physicalAddress, ref value, ref recordInfo);
+            (deleteInfo.UsedValueLength, deleteInfo.FullValueLength, allocatedSize) = _clientSession.Store.GetRecordLengths(physicalAddress, ref value, ref recordInfo);
             if (!_clientSession.functions.ConcurrentDeleter(ref key, ref value, ref deleteInfo, ref recordInfo))
                 return false;
-            _clientSession.store.SetTombstoneAndExtraValueLength(ref value, ref recordInfo, deleteInfo.UsedValueLength, deleteInfo.FullValueLength);
+            _clientSession.Store.SetTombstoneAndExtraValueLength(ref value, ref recordInfo, deleteInfo.UsedValueLength, deleteInfo.FullValueLength);
             recordInfo.SetDirtyAndModified();
             return true;
         }
@@ -201,7 +201,7 @@ namespace Tsavorite.core
         public IHeapContainer<TInput> GetHeapContainer(ref TInput input)
         {
             if (typeof(TInput) == typeof(SpanByte))
-                return new SpanByteHeapContainer(ref Unsafe.As<TInput, SpanByte>(ref input), _clientSession.store.hlogBase.bufferPool) as IHeapContainer<TInput>;
+                return new SpanByteHeapContainer(ref Unsafe.As<TInput, SpanByte>(ref input), _clientSession.Store.hlogBase.bufferPool) as IHeapContainer<TInput>;
             return new StandardHeapContainer<TInput>(ref input);
         }
 

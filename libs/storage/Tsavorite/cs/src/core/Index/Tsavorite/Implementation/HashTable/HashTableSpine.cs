@@ -1,11 +1,19 @@
 ﻿// Copyright (c) Microsoft Corporation.
 // Licensed under the MIT license.
 
-using System;
 using System.Runtime.InteropServices;
 
 namespace Tsavorite.core
 {
+    internal unsafe struct InternalHashTable
+    {
+        public long size;       // Number of buckets
+        public long size_mask;
+        public int size_bits;
+        public HashBucket[] tableRaw;
+        public HashBucket* tableAligned;
+    }
+
     // The spine - basic bucket array - of the hash table.
     [StructLayout(LayoutKind.Explicit, Size = Size)]
     internal unsafe struct HashTableSpine

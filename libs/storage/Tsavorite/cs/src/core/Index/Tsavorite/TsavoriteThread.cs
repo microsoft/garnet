@@ -16,8 +16,14 @@ namespace Tsavorite.core
         internal void InternalRefresh<TInput, TOutput, TContext, TSessionFunctionsWrapper>(TSessionFunctionsWrapper sessionFunctions)
             where TSessionFunctionsWrapper : ISessionFunctionsWrapper<TKey, TValue, TInput, TOutput, TContext, TStoreFunctions, TAllocator>
         {
-            kernel.epoch.ProtectAndDrain();
+            Kernel.Epoch.ProtectAndDrain();
+            DoThreadStateMachineStep<TInput, TOutput, TContext, TSessionFunctionsWrapper>(sessionFunctions);
+        }
 
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        internal void DoThreadStateMachineStep<TInput, TOutput, TContext, TSessionFunctionsWrapper>(TSessionFunctionsWrapper sessionFunctions)
+            where TSessionFunctionsWrapper : ISessionFunctionsWrapper<TKey, TValue, TInput, TOutput, TContext, TStoreFunctions, TAllocator>
+        {
             // We check if we are in normal mode
             var newPhaseInfo = SystemState.Copy(ref systemState);
             if (sessionFunctions.Ctx.phase == Phase.REST && newPhaseInfo.Phase == Phase.REST && sessionFunctions.Ctx.version == newPhaseInfo.Version)
@@ -39,17 +45,17 @@ namespace Tsavorite.core
                 //   have reached PREPARE and all multi-key ops have drained (see VersionChangeTask.OnThreadState).
                 if (CheckpointVersionSwitchBarrier &&
                     sessionFunctions.Ctx.phase == Phase.PREPARE &&
-                    hlogBase.NumActiveLockingSessions == 0)
+                    hlogBase.NumActiveTxnSessions == 0)
                 {
-                    kernel.epoch.ProtectAndDrain();
+                    Kernel.Epoch.ProtectAndDrain();
                     _ = Thread.Yield();
                     continue;
                 }
 
                 if (sessionFunctions.Ctx.phase == Phase.PREPARE_GROW &&
-                    hlogBase.NumActiveLockingSessions == 0)
+                    hlogBase.NumActiveTxnSessions == 0)
                 {
-                    kernel.epoch.ProtectAndDrain();
+                    Kernel.Epoch.ProtectAndDrain();
                     _ = Thread.Yield();
                     continue;
                 }
@@ -92,7 +98,7 @@ namespace Tsavorite.core
             while (true)
             {
                 InternalCompletePendingRequests(sessionFunctions, completedOutputs);
-                if (wait) sessionFunctions.Ctx.WaitPending(kernel.epoch);
+                if (wait) sessionFunctions.Ctx.WaitPending(Kernel.Epoch);
 
                 if (sessionFunctions.Ctx.HasNoPendingRequests) return true;
 
@@ -143,7 +149,7 @@ namespace Tsavorite.core
                                                                     ref PendingContext<TInput, TOutput, TContext> pendingContext, out AsyncIOContext<TKey, TValue> newRequest)
             where TSessionFunctionsWrapper : ISessionFunctionsWrapper<TKey, TValue, TInput, TOutput, TContext, TStoreFunctions, TAllocator>
         {
-            Debug.Assert(kernel.epoch.ThisInstanceProtected(), "InternalCompletePendingRequestFromContext requires epoch acquision");
+            Debug.Assert(Kernel.Epoch.ThisInstanceProtected(), "InternalCompletePendingRequestFromContext requires epoch acquision");
             newRequest = default;
 
             // If NoKey, we do not have the key in the initial call and must use the key from the satisfied request.

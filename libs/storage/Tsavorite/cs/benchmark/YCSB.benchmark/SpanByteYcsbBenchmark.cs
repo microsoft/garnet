@@ -148,7 +148,9 @@ namespace Tsavorite.benchmark
 
             using var session = store.NewSession<SpanByte, SpanByteAndMemory, Empty, SessionSpanByteFunctions>(functions);
             var uContext = session.UnsafeContext;
-            uContext.BeginUnsafe();
+            TransientKernelSession<SpanByte, SpanByte, SpanByte, SpanByteAndMemory, Empty, SessionSpanByteFunctions, SpanByteStoreFunctions, SpanByteAllocator<SpanByteStoreFunctions>,
+                                   UnsafeContext<SpanByte, SpanByte, SpanByte, SpanByteAndMemory, Empty, SessionSpanByteFunctions, SpanByteStoreFunctions, SpanByteAllocator<SpanByteStoreFunctions>>> kernelSession = new(uContext);
+            kernelSession.BeginUnsafe();
 
             try
             {
@@ -167,44 +169,44 @@ namespace Tsavorite.benchmark
                         if (idx % 512 == 0)
                         {
                             uContext.Refresh();
-                            uContext.CompletePending(false);
+                            _ = uContext.CompletePending(false);
                         }
 
                         int r = (int)rng.Generate(100);     // rng.Next() is not inclusive of the upper bound so this will be <= 99
                         if (r < readPercent)
                         {
-                            uContext.Read(ref SpanByte.Reinterpret(ref txn_keys_[idx]), ref _input, ref _output, Empty.Default);
+                            _ = uContext.Read(ref SpanByte.Reinterpret(ref txn_keys_[idx]), ref _input, ref _output, Empty.Default);
                             ++reads_done;
                             continue;
                         }
                         if (r < upsertPercent)
                         {
-                            uContext.Upsert(ref SpanByte.Reinterpret(ref txn_keys_[idx]), ref _value, Empty.Default);
+                            _ = uContext.Upsert(ref SpanByte.Reinterpret(ref txn_keys_[idx]), ref _value, Empty.Default);
                             ++writes_done;
                             continue;
                         }
                         if (r < rmwPercent)
                         {
-                            uContext.RMW(ref SpanByte.Reinterpret(ref txn_keys_[idx]), ref _input, Empty.Default);
+                            _ = uContext.RMW(ref SpanByte.Reinterpret(ref txn_keys_[idx]), ref _input, Empty.Default);
                             ++writes_done;
                             continue;
                         }
-                        uContext.Delete(ref SpanByte.Reinterpret(ref txn_keys_[idx]), Empty.Default);
+                        _ = uContext.Delete(ref SpanByte.Reinterpret(ref txn_keys_[idx]), Empty.Default);
                         ++deletes_done;
                     }
                 }
 
-                uContext.CompletePending(true);
+                _ = uContext.CompletePending(true);
             }
             finally
             {
-                uContext.EndUnsafe();
+                kernelSession.EndUnsafe();
             }
 
             sw.Stop();
 
             Console.WriteLine($"Thread {thread_idx} done; {reads_done} reads, {writes_done} writes, {deletes_done} deletes in {sw.ElapsedMilliseconds} ms.");
-            Interlocked.Add(ref total_ops_done, reads_done + writes_done + deletes_done);
+            _ = Interlocked.Add(ref total_ops_done, reads_done + writes_done + deletes_done);
         }
 
         private void RunYcsbSafeContext(int thread_idx)
@@ -253,39 +255,39 @@ namespace Tsavorite.benchmark
                     {
                         if (!testLoader.Options.UseSafeContext)
                             bContext.Refresh();
-                        bContext.CompletePending(false);
+                        _ = bContext.CompletePending(false);
                     }
 
                     int r = (int)rng.Generate(100);     // rng.Next() is not inclusive of the upper bound so this will be <= 99
                     if (r < readPercent)
                     {
-                        bContext.Read(ref SpanByte.Reinterpret(ref txn_keys_[idx]), ref _input, ref _output, Empty.Default);
+                        _ = bContext.Read(ref SpanByte.Reinterpret(ref txn_keys_[idx]), ref _input, ref _output, Empty.Default);
                         ++reads_done;
                         continue;
                     }
                     if (r < upsertPercent)
                     {
-                        bContext.Upsert(ref SpanByte.Reinterpret(ref txn_keys_[idx]), ref _value, Empty.Default);
+                        _ = bContext.Upsert(ref SpanByte.Reinterpret(ref txn_keys_[idx]), ref _value, Empty.Default);
                         ++writes_done;
                         continue;
                     }
                     if (r < rmwPercent)
                     {
-                        bContext.RMW(ref SpanByte.Reinterpret(ref txn_keys_[idx]), ref _input, Empty.Default);
+                        _ = bContext.RMW(ref SpanByte.Reinterpret(ref txn_keys_[idx]), ref _input, Empty.Default);
                         ++writes_done;
                         continue;
                     }
-                    bContext.Delete(ref SpanByte.Reinterpret(ref txn_keys_[idx]), Empty.Default);
+                    _ = bContext.Delete(ref SpanByte.Reinterpret(ref txn_keys_[idx]), Empty.Default);
                     ++deletes_done;
                 }
             }
 
-            bContext.CompletePending(true);
+            _ = bContext.CompletePending(true);
 
             sw.Stop();
 
             Console.WriteLine($"Thread {thread_idx} done; {reads_done} reads, {writes_done} writes, {deletes_done} deletes in {sw.ElapsedMilliseconds} ms.");
-            Interlocked.Add(ref total_ops_done, reads_done + writes_done + deletes_done);
+            _ = Interlocked.Add(ref total_ops_done, reads_done + writes_done + deletes_done);
         }
 
         internal unsafe (double insPerSec, double opsPerSec, long tailAddress) Run(TestLoader testLoader)
@@ -414,7 +416,9 @@ namespace Tsavorite.benchmark
 
             using var session = store.NewSession<SpanByte, SpanByteAndMemory, Empty, SessionSpanByteFunctions>(functions);
             var uContext = session.UnsafeContext;
-            uContext.BeginUnsafe();
+            TransientKernelSession<SpanByte, SpanByte, SpanByte, SpanByteAndMemory, Empty, SessionSpanByteFunctions, SpanByteStoreFunctions, SpanByteAllocator<SpanByteStoreFunctions>,
+                                   UnsafeContext<SpanByte, SpanByte, SpanByte, SpanByteAndMemory, Empty, SessionSpanByteFunctions, SpanByteStoreFunctions, SpanByteAllocator<SpanByteStoreFunctions>>> kernelSession = new(uContext);
+            kernelSession.BeginUnsafe();
 
             Span<byte> value = stackalloc byte[kValueSize];
             ref SpanByte _value = ref SpanByte.Reinterpret(value);
@@ -433,18 +437,18 @@ namespace Tsavorite.benchmark
 
                             if (idx % 65536 == 0)
                             {
-                                uContext.CompletePending(false);
+                                _ = uContext.CompletePending(false);
                             }
                         }
 
-                        uContext.Upsert(ref SpanByte.Reinterpret(ref init_keys_[idx]), ref _value, Empty.Default);
+                        _ = uContext.Upsert(ref SpanByte.Reinterpret(ref init_keys_[idx]), ref _value, Empty.Default);
                     }
                 }
-                uContext.CompletePending(true);
+                _ = uContext.CompletePending(true);
             }
             finally
             {
-                uContext.EndUnsafe();
+                kernelSession.EndUnsafe();
             }
         }
 
@@ -477,15 +481,15 @@ namespace Tsavorite.benchmark
 
                         if (idx % 65536 == 0)
                         {
-                            bContext.CompletePending(false);
+                            _ = bContext.CompletePending(false);
                         }
                     }
 
-                    bContext.Upsert(ref SpanByte.Reinterpret(ref init_keys_[idx]), ref _value, Empty.Default);
+                    _ = bContext.Upsert(ref SpanByte.Reinterpret(ref init_keys_[idx]), ref _value, Empty.Default);
                 }
             }
 
-            bContext.CompletePending(true);
+            _ = bContext.CompletePending(true);
         }
 
         #region Load Data

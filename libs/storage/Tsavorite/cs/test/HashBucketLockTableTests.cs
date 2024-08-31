@@ -104,7 +104,7 @@ namespace Tsavorite.test.LockTable
         internal static void PopulateHei<TKey, TValue, TStoreFunctions, TAllocator>(TsavoriteKV<TKey, TValue, TStoreFunctions, TAllocator> store, ref HashEntryInfo hei)
             where TStoreFunctions : IStoreFunctions<TKey, TValue>
             where TAllocator : IAllocator<TKey, TValue, TStoreFunctions>
-            => store.FindOrCreateTag(ref hei, store.Log.BeginAddress);
+            => store.Kernel.hashTable.FindOrCreateTag(ref hei, store.Log.BeginAddress);
 
         internal void AssertLockCounts(ref HashEntryInfo hei, bool expectedX, long expectedS)
         {
@@ -162,7 +162,7 @@ namespace Tsavorite.test.LockTable
             where TStoreFunctions : IStoreFunctions<long, long>
             where TAllocator : IAllocator<long, long, TStoreFunctions>
         {
-            HashBucket* buckets = store.kernel.hashTable.spine.state[store.kernel.hashTable.spine.resizeInfo.version].tableAligned;
+            HashBucket* buckets = store.Kernel.hashTable.spine.state[store.Kernel.hashTable.spine.resizeInfo.version].tableAligned;
             var count = store.LockTable.NumBuckets;
             long xcount = 0, scount = 0;
             for (var ii = 0; ii < count; ++ii)
@@ -182,7 +182,7 @@ namespace Tsavorite.test.LockTable
             where TAllocator : IAllocator<long, long, TStoreFunctions>
         {
             var bucketIndex = store.LockTable.GetBucketIndex(key.KeyHash);
-            var bucket = store.kernel.hashTable.spine.state[store.kernel.hashTable.spine.resizeInfo.version].tableAligned + bucketIndex;
+            var bucket = store.Kernel.hashTable.spine.state[store.Kernel.hashTable.spine.resizeInfo.version].tableAligned + bucketIndex;
             ClassicAssert.AreEqual(expectedX == 1, HashBucket.IsLatchedExclusive(bucket));
             ClassicAssert.AreEqual(expectedS, HashBucket.NumLatchedShared(bucket));
         }

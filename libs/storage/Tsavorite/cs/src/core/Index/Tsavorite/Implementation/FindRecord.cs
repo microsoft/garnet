@@ -62,7 +62,7 @@ namespace Tsavorite.core
             }
             else
             {
-                if (!FindTag(ref stackCtx.hei))
+                if (!Kernel.hashTable.FindTag(ref stackCtx.hei))
                 {
                     internalStatus = OperationStatus.NOTFOUND;
                     return needIO = false;

@@ -43,7 +43,7 @@ namespace Garnet.server
         }
 
         public unsafe GarnetStatus ReadWithUnsafeContext<TContext>(ArgSlice key, ref SpanByte input, ref SpanByteAndMemory output, long localHeadAddress, out bool epochChanged, ref TContext context)
-            where TContext : ITsavoriteContext<SpanByte, SpanByte, SpanByte, SpanByteAndMemory, long, MainSessionFunctions, MainStoreFunctions, MainStoreAllocator>, IUnsafeContext
+            where TContext : ITsavoriteContext<SpanByte, SpanByte, SpanByte, SpanByteAndMemory, long, MainSessionFunctions, MainStoreFunctions, MainStoreAllocator>
         {
 
             var _key = key.SpanByte;
@@ -54,15 +54,15 @@ namespace Garnet.server
 
             if (status.IsPending)
             {
-                context.EndUnsafe();
+                RespKernelSession.EndUnsafe(this);
                 StartPendingMetrics();
                 CompletePendingForSession(ref status, ref output, ref context);
                 StopPendingMetrics();
-                context.BeginUnsafe();
+                RespKernelSession.BeginUnsafe<SpanByte, SpanByte, SpanByte, SpanByteAndMemory, long, MainSessionFunctions, MainStoreFunctions, MainStoreAllocator, TContext>(this, context);
                 // Start read of pointers from beginning if epoch changed
                 if (HeadAddress == localHeadAddress)
                 {
-                    context.EndUnsafe();
+                    RespKernelSession.EndUnsafe(this);
                     epochChanged = true;
                 }
             }

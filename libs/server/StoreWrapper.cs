@@ -58,6 +58,8 @@ namespace Garnet.server
         /// </summary>
         public readonly AccessControlList accessControlList;
 
+        public readonly TsavoriteKernel TsavoriteKernel;
+
         /// <summary>
         /// AOF
         /// </summary>
@@ -110,6 +112,7 @@ namespace Garnet.server
         public StoreWrapper(
             string version,
             string redisProtocolVersion,
+            TsavoriteKernel tsavoriteKernel,
             IGarnetServer server,
             TsavoriteKV<SpanByte, SpanByte, MainStoreFunctions, MainStoreAllocator> store,
             TsavoriteKV<byte[], IGarnetObject, ObjectStoreFunctions, ObjectStoreAllocator> objectStore,
@@ -124,6 +127,7 @@ namespace Garnet.server
         {
             this.version = version;
             this.redisProtocolVersion = redisProtocolVersion;
+            this.TsavoriteKernel = tsavoriteKernel;
             this.server = server;
             this.startupTime = DateTimeOffset.UtcNow.Ticks;
             this.store = store;

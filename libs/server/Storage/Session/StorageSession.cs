@@ -27,6 +27,7 @@ namespace Garnet.server
         /// </summary>
         public BasicContext<SpanByte, SpanByte, SpanByte, SpanByteAndMemory, long, MainSessionFunctions, MainStoreFunctions, MainStoreAllocator> basicContext;
         public LockableContext<SpanByte, SpanByte, SpanByte, SpanByteAndMemory, long, MainSessionFunctions, MainStoreFunctions, MainStoreAllocator> lockableContext;
+        public UnsafeContext<SpanByte, SpanByte, SpanByte, SpanByteAndMemory, long, MainSessionFunctions, MainStoreFunctions, MainStoreAllocator> unsafeContext;
 
         SectorAlignedMemory sectorAlignedMemoryHll;
         readonly int hllBufferSize = HyperLogLog.DefaultHLL.DenseBytes;
@@ -37,6 +38,7 @@ namespace Garnet.server
         /// </summary>
         public BasicContext<byte[], IGarnetObject, ObjectInput, GarnetObjectStoreOutput, long, ObjectSessionFunctions, ObjectStoreFunctions, ObjectStoreAllocator> objectStoreBasicContext;
         public LockableContext<byte[], IGarnetObject, ObjectInput, GarnetObjectStoreOutput, long, ObjectSessionFunctions, ObjectStoreFunctions, ObjectStoreAllocator> objectStoreLockableContext;
+        public UnsafeContext<byte[], IGarnetObject, ObjectInput, GarnetObjectStoreOutput, long, ObjectSessionFunctions, ObjectStoreFunctions, ObjectStoreAllocator> objectStoreUnsafeContext;
 
         public readonly ScratchBufferManager scratchBufferManager;
         public readonly FunctionsState functionsState;
@@ -44,6 +46,8 @@ namespace Garnet.server
         public TransactionManager txnManager;
         readonly ILogger logger;
         private readonly CollectionItemBroker itemBroker;
+
+        internal TsavoriteKernel TsavoriteKernel => txnManager.TsavoriteKernel;
 
         public int SessionID => basicContext.Session.ID;
         public int ObjectStoreSessionID => objectStoreBasicContext.Session.ID;
@@ -75,10 +79,12 @@ namespace Garnet.server
 
             basicContext = session.BasicContext;
             lockableContext = session.LockableContext;
+            unsafeContext = session.UnsafeContext;
             if (objectStoreSession != null)
             {
                 objectStoreBasicContext = objectStoreSession.BasicContext;
                 objectStoreLockableContext = objectStoreSession.LockableContext;
+                objectStoreUnsafeContext = objectStoreSession.UnsafeContext;
             }
 
             HeadAddress = storeWrapper.store.Log.HeadAddress;

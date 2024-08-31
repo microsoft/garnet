@@ -93,7 +93,7 @@ namespace Tsavorite.core
                 ref TOutput output, long minAddress)
             where TSessionFunctionsWrapper : ISessionFunctionsWrapper<TKey, TValue, TInput, TOutput, TContext, TStoreFunctions, TAllocator>
         {
-            Debug.Assert(kernel.epoch.ThisInstanceProtected(), "This is called only from Compaction so the epoch should be protected");
+            Debug.Assert(Kernel.Epoch.ThisInstanceProtected(), "This is called only from Compaction so the epoch should be protected");
             PendingContext<TInput, TOutput, TContext> pendingContext = new();
 
             OperationStackContext<TKey, TValue, TStoreFunctions, TAllocator> stackCtx = new(storeFunctions.GetKeyHashCode64(ref key), partitionId);

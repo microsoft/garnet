@@ -9,6 +9,8 @@ using System.Threading.Tasks;
 using NUnit.Framework;
 using NUnit.Framework.Legacy;
 using Tsavorite.core;
+using Tsavorite.test.recovery.sumstore;
+using Tsavorite.test.statemachine;
 using static Tsavorite.test.TestUtils;
 
 namespace Tsavorite.test.UnsafeContext
@@ -24,6 +26,8 @@ namespace Tsavorite.test.UnsafeContext
         private TsavoriteKV<KeyStruct, ValueStruct, StructStoreFunctions, StructAllocator> store;
         private ClientSession<KeyStruct, ValueStruct, InputStruct, OutputStruct, Empty, Functions, StructStoreFunctions, StructAllocator> fullSession;
         private UnsafeContext<KeyStruct, ValueStruct, InputStruct, OutputStruct, Empty, Functions, StructStoreFunctions, StructAllocator> uContext;
+        private TestTransientKernelSession<KeyStruct, ValueStruct, InputStruct, OutputStruct, Empty, Functions, StructStoreFunctions, StructAllocator,
+                                      UnsafeContext<KeyStruct, ValueStruct, InputStruct, OutputStruct, Empty, Functions, StructStoreFunctions, StructAllocator>> kernelSession;
         private IDevice log;
         DeviceType deviceType;
 
@@ -47,6 +51,7 @@ namespace Tsavorite.test.UnsafeContext
             );
             fullSession = store.NewSession<InputStruct, OutputStruct, Empty, Functions>(new Functions());
             uContext = fullSession.UnsafeContext;
+            kernelSession = new(uContext);
         }
 
         [TearDown]
@@ -81,7 +86,7 @@ namespace Tsavorite.test.UnsafeContext
         public void NativeInMemWriteRead([Values] DeviceType deviceType)
         {
             Setup(new() { PageSize = 1L << 10, MemorySize = 1L << 12, SegmentSize = 1L << 22 }, deviceType);
-            uContext.BeginUnsafe();
+            kernelSession.BeginUnsafe();
 
             try
             {
@@ -100,7 +105,7 @@ namespace Tsavorite.test.UnsafeContext
             }
             finally
             {
-                uContext.EndUnsafe();
+                kernelSession.EndUnsafe();
             }
         }
 
@@ -110,7 +115,7 @@ namespace Tsavorite.test.UnsafeContext
         public void NativeInMemWriteReadDelete([Values] DeviceType deviceType)
         {
             Setup(new() { PageSize = 1L << 10, MemorySize = 1L << 12, SegmentSize = 1L << 22 }, deviceType);
-            uContext.BeginUnsafe();
+            kernelSession.BeginUnsafe();
 
             try
             {
@@ -141,7 +146,7 @@ namespace Tsavorite.test.UnsafeContext
             }
             finally
             {
-                uContext.EndUnsafe();
+                kernelSession.EndUnsafe();
             }
         }
 
@@ -158,7 +163,7 @@ namespace Tsavorite.test.UnsafeContext
 
             // Setup(new () { MemorySize = 1L << 22, SegmentSize = 1L << 22, PageSize = 1L << 10 }, deviceType);
             Setup(new() { MemorySize = 1L << 29 }, deviceType);
-            uContext.BeginUnsafe();
+            kernelSession.BeginUnsafe();
 
             try
             {
@@ -199,7 +204,7 @@ namespace Tsavorite.test.UnsafeContext
             }
             finally
             {
-                uContext.EndUnsafe();
+                kernelSession.EndUnsafe();
             }
         }
 
@@ -215,7 +220,7 @@ namespace Tsavorite.test.UnsafeContext
 
             // Setup(128, new () { MemorySize = 1L << 22, SegmentSize = 1L << 22, PageSize = 1L << 10 }, deviceType);
             Setup(new() { MemorySize = 1L << 29 }, deviceType);
-            uContext.BeginUnsafe();
+            kernelSession.BeginUnsafe();
 
             try
             {
@@ -260,7 +265,7 @@ namespace Tsavorite.test.UnsafeContext
             }
             finally
             {
-                uContext.EndUnsafe();
+                kernelSession.EndUnsafe();
             }
         }
 
@@ -278,7 +283,7 @@ namespace Tsavorite.test.UnsafeContext
             var sw = Stopwatch.StartNew();
 
             Setup(new() { MemorySize = 1L << 22, SegmentSize = 1L << 22, PageSize = 1L << 10 }, deviceType);
-            uContext.BeginUnsafe();
+            kernelSession.BeginUnsafe();
 
             try
             {
@@ -313,9 +318,9 @@ namespace Tsavorite.test.UnsafeContext
                 }
                 else
                 {
-                    uContext.EndUnsafe();
+                    kernelSession.EndUnsafe();
                     await uContext.CompletePendingAsync();
-                    uContext.BeginUnsafe();
+                    kernelSession.BeginUnsafe();
                 }
 
                 // Shift head and retry - should not find in main memory now
@@ -340,9 +345,9 @@ namespace Tsavorite.test.UnsafeContext
                 }
                 else
                 {
-                    uContext.EndUnsafe();
+                    kernelSession.EndUnsafe();
                     outputs = await uContext.CompletePendingWithOutputsAsync();
-                    uContext.BeginUnsafe();
+                    kernelSession.BeginUnsafe();
                 }
 
                 int count = 0;
@@ -357,7 +362,7 @@ namespace Tsavorite.test.UnsafeContext
             }
             finally
             {
-                uContext.EndUnsafe();
+                kernelSession.EndUnsafe();
             }
         }
 
@@ -370,7 +375,7 @@ namespace Tsavorite.test.UnsafeContext
             OutputStruct output = default;
 
             Setup(new() { MemorySize = 1L << 22, SegmentSize = 1L << 22, PageSize = 1L << 10 }, deviceType);
-            uContext.BeginUnsafe();
+            kernelSession.BeginUnsafe();
 
             try
             {
@@ -430,7 +435,7 @@ namespace Tsavorite.test.UnsafeContext
             }
             finally
             {
-                uContext.EndUnsafe();
+                kernelSession.EndUnsafe();
             }
         }
 
@@ -442,7 +447,7 @@ namespace Tsavorite.test.UnsafeContext
             InputStruct input = default;
 
             Setup(new() { MemorySize = 1L << 22, SegmentSize = 1L << 22, PageSize = 1L << 10 }, deviceType);
-            uContext.BeginUnsafe();
+            kernelSession.BeginUnsafe();
 
             try
             {
@@ -495,7 +500,7 @@ namespace Tsavorite.test.UnsafeContext
             }
             finally
             {
-                uContext.EndUnsafe();
+                kernelSession.EndUnsafe();
             }
         }
 
@@ -508,7 +513,7 @@ namespace Tsavorite.test.UnsafeContext
             InputStruct input = default;
 
             Setup(new() { MemorySize = 1L << 22, SegmentSize = 1L << 22, PageSize = 1L << 10 }, deviceType);
-            uContext.BeginUnsafe();
+            kernelSession.BeginUnsafe();
 
             try
             {
@@ -527,7 +532,7 @@ namespace Tsavorite.test.UnsafeContext
             }
             finally
             {
-                uContext.EndUnsafe();
+                kernelSession.EndUnsafe();
             }
         }
 
@@ -537,7 +542,7 @@ namespace Tsavorite.test.UnsafeContext
         public void ReadNoRefKey([Values] DeviceType deviceType)
         {
             Setup(new() { MemorySize = 1L << 22, SegmentSize = 1L << 22, PageSize = 1L << 10 }, deviceType);
-            uContext.BeginUnsafe();
+            kernelSession.BeginUnsafe();
 
             try
             {
@@ -556,7 +561,7 @@ namespace Tsavorite.test.UnsafeContext
             }
             finally
             {
-                uContext.EndUnsafe();
+                kernelSession.EndUnsafe();
             }
         }
 
@@ -568,7 +573,7 @@ namespace Tsavorite.test.UnsafeContext
         public void ReadWithoutInput([Values] DeviceType deviceType)
         {
             Setup(new() { MemorySize = 1L << 22, SegmentSize = 1L << 22, PageSize = 1L << 10 }, deviceType);
-            uContext.BeginUnsafe();
+            kernelSession.BeginUnsafe();
 
             try
             {
@@ -589,7 +594,7 @@ namespace Tsavorite.test.UnsafeContext
             }
             finally
             {
-                uContext.EndUnsafe();
+                kernelSession.EndUnsafe();
             }
         }
 
@@ -600,7 +605,7 @@ namespace Tsavorite.test.UnsafeContext
         public void ReadBareMinParams([Values] DeviceType deviceType)
         {
             Setup(new() { MemorySize = 1L << 22, SegmentSize = 1L << 22, PageSize = 1L << 10 }, deviceType);
-            uContext.BeginUnsafe();
+            kernelSession.BeginUnsafe();
 
             try
             {
@@ -619,7 +624,7 @@ namespace Tsavorite.test.UnsafeContext
             }
             finally
             {
-                uContext.EndUnsafe();
+                kernelSession.EndUnsafe();
             }
         }
     }

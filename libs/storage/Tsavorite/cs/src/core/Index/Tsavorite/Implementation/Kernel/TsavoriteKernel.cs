@@ -11,7 +11,7 @@ namespace Tsavorite.core
     /// The core data structures of the core, used for dual Tsavorite operations
     /// </summary>
     [StructLayout(LayoutKind.Explicit)]
-    public class TsavoriteKernel
+    public partial class TsavoriteKernel
     {
         // Unioned fields
         [FieldOffset(0)]
@@ -20,7 +20,9 @@ namespace Tsavorite.core
         internal HashBucketLockTable lockTable;
 
         [FieldOffset(HashTable.Size)]
-        internal LightEpoch epoch;
+        public LightEpoch Epoch;
+
+        const int KeyLockMaxRetryAttempts = 1000;
 
         public TsavoriteKernel(long numBuckets, int sectorSize, ILogger logger = null)
         {
@@ -30,21 +32,21 @@ namespace Tsavorite.core
                 throw new ArgumentException("Size {0} is not 32-bit");
 
             hashTable = new(numBuckets, sectorSize, logger);
-            epoch = new LightEpoch();
+            Epoch = new LightEpoch();
         }
 
         public bool EnsureEpochProtected()
         {
-            if (epoch.ThisInstanceProtected())
+            if (Epoch.ThisInstanceProtected())
                 return false;
-            epoch.Resume();
+            Epoch.Resume();
             return true;
         }
 
         internal void Dispose()
         {
             hashTable.Dispose();
-            epoch.Dispose();
+            Epoch.Dispose();
         }
     }
 }

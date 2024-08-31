@@ -29,7 +29,7 @@ namespace Tsavorite.core
         /// Increment global current epoch
         /// </summary>
         /// <returns></returns>
-        public long BumpCurrentEpoch() => kernel.epoch.BumpCurrentEpoch();
+        public long BumpCurrentEpoch() => Kernel.Epoch.BumpCurrentEpoch();
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         void SpinWaitUntilClosed(long address)
@@ -38,7 +38,7 @@ namespace Tsavorite.core
             while (address >= hlogBase.ClosedUntilAddress)
             {
                 Debug.Assert(address < hlogBase.HeadAddress, "expected address < hlog.HeadAddress");
-                kernel.epoch.ProtectAndDrain();
+                Kernel.Epoch.ProtectAndDrain();
                 Thread.Yield();
             }
         }
@@ -61,7 +61,7 @@ namespace Tsavorite.core
             // So the caller has to check for logicalAddress < HeadAddress and we have to run this loop at least once.
             while (true)
             {
-                kernel.epoch.ProtectAndDrain();
+                Kernel.Epoch.ProtectAndDrain();
                 Thread.Yield();
 
                 // Unlike HeadAddress, ClosedUntilAddress is a high-water mark; a record that is == to ClosedUntilAddress has *not* been closed yet.

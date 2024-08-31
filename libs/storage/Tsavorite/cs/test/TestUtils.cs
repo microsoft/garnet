@@ -263,7 +263,7 @@ namespace Tsavorite.test
             where TAllocator : IAllocator<TKey, TValue, TStoreFunctions>
         {
             HashEntryInfo hei = new(store.storeFunctions.GetKeyHashCode64(ref key), store.partitionId);
-            var success = store.FindTag(ref hei);
+            var success = store.Kernel.hashTable.FindTag(ref hei);
             entry = hei.entry;
             return success;
         }

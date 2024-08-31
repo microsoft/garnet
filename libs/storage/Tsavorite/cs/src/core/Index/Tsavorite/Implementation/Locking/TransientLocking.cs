@@ -65,11 +65,11 @@ namespace Tsavorite.core
 
             // This will always be a transient lock as it is not session-based
             stackCtx = new(storeFunctions.GetKeyHashCode64(ref key), partitionId);
-            _ = FindTag(ref stackCtx.hei);
+            _ = Kernel.hashTable.FindTag(ref stackCtx.hei);
             stackCtx.SetRecordSourceToHashEntry(hlogBase);
 
             while (!LockTable.TryLockShared(ref stackCtx.hei))
-                kernel.epoch.ProtectAndDrain();
+                Kernel.Epoch.ProtectAndDrain();
             stackCtx.recSrc.SetHasTransientSLock();
         }
 

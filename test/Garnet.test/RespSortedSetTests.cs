@@ -98,7 +98,7 @@ namespace Garnet.test
             db.SortedSetAdd("key1", "b", 2);
 
             var session = new RespServerSession(new DummyNetworkSender(), server.Provider.StoreWrapper, null, null, null, false);
-            var api = new TestBasicGarnetApi(session.storageSession, session.storageSession.basicContext, session.storageSession.objectStoreBasicContext);
+            var api = new TestBasicGarnetApi(session.StorageSession, session.StorageSession.basicContext, session.StorageSession.objectStoreBasicContext);
             var key = Encoding.ASCII.GetBytes("key1");
             fixed (byte* keyPtr = key)
             {

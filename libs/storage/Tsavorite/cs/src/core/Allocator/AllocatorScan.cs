@@ -50,7 +50,7 @@ namespace Tsavorite.core
             where TScanFunctions : IScanIteratorFunctions<TKey, TValue>
         {
             OperationStackContext<TKey, TValue, TStoreFunctions, TAllocator> stackCtx = new(_storeFunctions.GetKeyHashCode64(ref key), store.partitionId);
-            if (!store.FindTag(ref stackCtx.hei))
+            if (!store.Kernel.hashTable.FindTag(ref stackCtx.hei))
                 return false;
             stackCtx.SetRecordSourceToHashEntry(store.hlogBase);
             if (store.UseReadCache)

@@ -61,7 +61,7 @@ namespace Tsavorite.test.statemachine
         [Category("Smoke")]
         public void StateMachineTest1()
         {
-            Prepare(out _, out var s1, out var uc1, out var s2);
+            Prepare(out _, out var s1, out var uc1, out var ks1, out var s2);
 
             // We should be in PREPARE, 1
             ClassicAssert.IsTrue(SystemState.Equal(SystemState.Make(Phase.PREPARE, 1), store.SystemState));
@@ -96,7 +96,7 @@ namespace Tsavorite.test.statemachine
             // Dispose session s2; does not move state machine forward
             s2.Dispose();
 
-            uc1.EndUnsafe();
+            ks1.EndUnsafe();
             s1.Dispose();
         }
 
@@ -105,7 +105,7 @@ namespace Tsavorite.test.statemachine
         [Category("TsavoriteKV"), Category("CheckpointRestore")]
         public void StateMachineTest2()
         {
-            Prepare(out _, out var s1, out var uc1, out var s2);
+            Prepare(out _, out var s1, out var uc1, out var ks1, out var s2);
 
             // We should be in PREPARE, 1
             ClassicAssert.IsTrue(SystemState.Equal(SystemState.Make(Phase.PREPARE, 1), store.SystemState));
@@ -135,7 +135,7 @@ namespace Tsavorite.test.statemachine
             // We should be in REST, 2
             ClassicAssert.IsTrue(SystemState.Equal(SystemState.Make(Phase.REST, 2), store.SystemState));
 
-            uc1.EndUnsafe();
+            ks1.EndUnsafe();
             s1.Dispose();
         }
 
@@ -143,7 +143,7 @@ namespace Tsavorite.test.statemachine
         [Category("TsavoriteKV"), Category("CheckpointRestore")]
         public void StateMachineTest3()
         {
-            Prepare(out _, out var s1, out var uc1, out var s2);
+            Prepare(out _, out var s1, out var uc1, out var ks1, out var s2);
 
             // We should be in PREPARE, 1
             ClassicAssert.IsTrue(SystemState.Equal(SystemState.Make(Phase.PREPARE, 1), store.SystemState));
@@ -155,7 +155,7 @@ namespace Tsavorite.test.statemachine
             ClassicAssert.IsTrue(SystemState.Equal(SystemState.Make(Phase.PREPARE, 1), SystemState.Make(s1.ctx.phase, s1.ctx.version)));
 
             // Suspend s1
-            uc1.EndUnsafe();
+            ks1.EndUnsafe();
 
             // Since s2 is the only session now, it will fast-foward state machine
             // to completion
@@ -164,11 +164,11 @@ namespace Tsavorite.test.statemachine
             // We should be in REST, 2
             ClassicAssert.IsTrue(SystemState.Equal(SystemState.Make(Phase.REST, 2), store.SystemState));
 
-            uc1.BeginUnsafe();
+            ks1.BeginUnsafe();
 
             s2.Dispose();
 
-            uc1.EndUnsafe();
+            ks1.EndUnsafe();
             s1.Dispose();
         }
 
@@ -176,7 +176,7 @@ namespace Tsavorite.test.statemachine
         [Category("TsavoriteKV"), Category("CheckpointRestore")]
         public void StateMachineTest4()
         {
-            Prepare(out _, out var s1, out var uc1, out var s2);
+            Prepare(out _, out var s1, out var uc1, out var ks1, out var s2);
 
             // We should be in PREPARE, 1
             ClassicAssert.IsTrue(SystemState.Equal(SystemState.Make(Phase.PREPARE, 1), store.SystemState));
@@ -197,7 +197,7 @@ namespace Tsavorite.test.statemachine
             ClassicAssert.IsTrue(SystemState.Equal(SystemState.Make(Phase.IN_PROGRESS, 2), SystemState.Make(s1.ctx.phase, s1.ctx.version)));
 
             // Suspend s1
-            uc1.EndUnsafe();
+            ks1.EndUnsafe();
 
             // Since s2 is the only session now, it will fast-foward state machine
             // to completion
@@ -206,11 +206,11 @@ namespace Tsavorite.test.statemachine
             // We should be in REST, 2
             ClassicAssert.IsTrue(SystemState.Equal(SystemState.Make(Phase.REST, 2), store.SystemState));
 
-            uc1.BeginUnsafe();
+            ks1.BeginUnsafe();
 
             s2.Dispose();
 
-            uc1.EndUnsafe();
+            ks1.EndUnsafe();
             s1.Dispose();
         }
 
@@ -218,7 +218,7 @@ namespace Tsavorite.test.statemachine
         [Category("TsavoriteKV"), Category("CheckpointRestore")]
         public void StateMachineTest5()
         {
-            Prepare(out _, out var s1, out var uc1, out var s2);
+            Prepare(out _, out var s1, out var uc1, out var ks1, out var s2);
 
             // We should be in PREPARE, 1
             ClassicAssert.IsTrue(SystemState.Equal(SystemState.Make(Phase.PREPARE, 1), store.SystemState));
@@ -250,7 +250,7 @@ namespace Tsavorite.test.statemachine
             uc1.Refresh();
 
             // Suspend s1
-            uc1.EndUnsafe();
+            ks1.EndUnsafe();
 
             // Since s2 is the only session now, it will fast-foward state machine
             // to completion
@@ -259,11 +259,11 @@ namespace Tsavorite.test.statemachine
             // We should be in REST, 2
             ClassicAssert.IsTrue(SystemState.Equal(SystemState.Make(Phase.REST, 2), store.SystemState));
 
-            uc1.BeginUnsafe();
+            ks1.BeginUnsafe();
 
             s2.Dispose();
 
-            uc1.EndUnsafe();
+            ks1.EndUnsafe();
             s1.Dispose();
         }
 
@@ -272,10 +272,10 @@ namespace Tsavorite.test.statemachine
         [Category("TsavoriteKV"), Category("CheckpointRestore")]
         public void StateMachineTest6()
         {
-            Prepare(out _, out var s1, out var uc1, out var s2);
+            Prepare(out _, out var s1, out var uc1, out var ks1, out var s2);
 
             // Suspend s1
-            uc1.EndUnsafe();
+            ks1.EndUnsafe();
 
             // s1 is now in REST, 1
             ClassicAssert.IsTrue(SystemState.Equal(SystemState.Make(Phase.REST, 1), SystemState.Make(s1.ctx.phase, s1.ctx.version)));
@@ -298,9 +298,9 @@ namespace Tsavorite.test.statemachine
             // We should be in REST, 3
             ClassicAssert.IsTrue(SystemState.Equal(SystemState.Make(Phase.REST, 3), store.SystemState));
 
-            uc1.BeginUnsafe();
+            ks1.BeginUnsafe();
 
-            uc1.EndUnsafe();
+            ks1.EndUnsafe();
             s1.Dispose();
         }
 
@@ -349,7 +349,9 @@ namespace Tsavorite.test.statemachine
             ClassicAssert.IsTrue(SystemState.Equal(SystemState.Make(Phase.REST, 1), store.SystemState));
 
             var uc1 = s1.UnsafeContext;
-            uc1.BeginUnsafe();
+            var ks1 = new TestTransientKernelSession<AdId, NumClicks, NumClicks, NumClicks, Empty, SimpleFunctions, StructStoreFunctions, StructAllocator,
+                                          UnsafeContext<AdId, NumClicks, NumClicks, NumClicks, Empty, SimpleFunctions, StructStoreFunctions, StructAllocator>>(uc1);
+            ks1.BeginUnsafe();
 
             _ = store.TryInitiateHybridLogCheckpoint(out _, CheckpointType.FoldOver);
 
@@ -368,7 +370,7 @@ namespace Tsavorite.test.statemachine
             lts.getLUC();
             ClassicAssert.IsFalse(lts.isProtected);
 
-            uc1.EndUnsafe();
+            ks1.EndUnsafe();
 
             // fast-foward state machine to completion
             ts.Refresh();
@@ -395,8 +397,10 @@ namespace Tsavorite.test.statemachine
 
             // Start first LUC before checkpoint
             var luc1 = s1.LockableUnsafeContext;
-            luc1.BeginUnsafe();
-            luc1.BeginLockable();
+            var ks1 = new TestTransactionalKernelSession<AdId, NumClicks, NumClicks, NumClicks, Empty, SimpleFunctions, StructStoreFunctions, StructAllocator,
+                                          LockableUnsafeContext<AdId, NumClicks, NumClicks, NumClicks, Empty, SimpleFunctions, StructStoreFunctions, StructAllocator>>(luc1);
+            ks1.BeginUnsafe();
+            ks1.BeginTransaction();
 
             _ = store.TryInitiateHybridLogCheckpoint(out _, CheckpointType.FoldOver);
 
@@ -418,8 +422,8 @@ namespace Tsavorite.test.statemachine
             ClassicAssert.IsTrue(SystemState.Equal(SystemState.Make(Phase.PREPARE, 1), store.SystemState));
 
             // End first LUC 
-            luc1.EndLockable();
-            luc1.EndUnsafe();
+            ks1.EndTransaction();
+            ks1.EndUnsafe();
 
             s1.BasicContext.Refresh();
             // System should be in IN_PROGRESS, 1 
@@ -447,7 +451,7 @@ namespace Tsavorite.test.statemachine
         {
             var callback = new TestCallback();
             store.UnsafeRegisterCallback(callback);
-            Prepare(out _, out var s1, out var uc1, out var s2);
+            Prepare(out _, out var s1, out var uc1, out var ks1, out var s2);
 
             // We should be in PREPARE, 1
             ClassicAssert.IsTrue(SystemState.Equal(SystemState.Make(Phase.PREPARE, 1), store.SystemState));
@@ -482,7 +486,7 @@ namespace Tsavorite.test.statemachine
             // Dispose session s2; does not move state machine forward
             s2.Dispose();
 
-            uc1.EndUnsafe();
+            ks1.EndUnsafe();
             s1.Dispose();
         }
 
@@ -492,7 +496,7 @@ namespace Tsavorite.test.statemachine
         public void VersionChangeTest()
         {
             var toVersion = 1 + (1 << 14);
-            Prepare(out _, out var s1, out var uc1, out var s2, toVersion);
+            Prepare(out _, out var s1, out var uc1, out var ks1, out var s2, toVersion);
 
             // We should be in PREPARE, 1
             ClassicAssert.IsTrue(SystemState.Equal(SystemState.Make(Phase.PREPARE, 1), store.SystemState));
@@ -522,13 +526,15 @@ namespace Tsavorite.test.statemachine
             // Dispose session s2; does not move state machine forward
             s2.Dispose();
 
-            uc1.EndUnsafe();
+            ks1.EndUnsafe();
             s1.Dispose();
         }
 
         void Prepare(out SimpleFunctions f,
             out ClientSession<AdId, NumClicks, NumClicks, NumClicks, Empty, SimpleFunctions, StructStoreFunctions, StructAllocator> s1,
             out UnsafeContext<AdId, NumClicks, NumClicks, NumClicks, Empty, SimpleFunctions, StructStoreFunctions, StructAllocator> uc1,
+            out TestTransientKernelSession<AdId, NumClicks, NumClicks, NumClicks, Empty, SimpleFunctions, StructStoreFunctions, StructAllocator,
+                                          UnsafeContext<AdId, NumClicks, NumClicks, NumClicks, Empty, SimpleFunctions, StructStoreFunctions, StructAllocator>> ks1,
             out ThreadSession<AdId, NumClicks, NumClicks, NumClicks, Empty, SimpleFunctions, StructStoreFunctions, StructAllocator> s2,
             long toVersion = -1)
         {
@@ -561,7 +567,8 @@ namespace Tsavorite.test.statemachine
 
             // Create unsafe context and hold epoch to prepare for manual state machine driver
             uc1 = s1.UnsafeContext;
-            uc1.BeginUnsafe();
+            ks1 = new(uc1);
+            ks1.BeginUnsafe();
 
             // Start session s2 on another thread for testing
             s2 = store.CreateThreadSession<AdId, NumClicks, NumClicks, NumClicks, Empty, SimpleFunctions, StructStoreFunctions, StructAllocator>(f);

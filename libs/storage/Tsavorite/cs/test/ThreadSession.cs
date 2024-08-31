@@ -36,6 +36,8 @@ namespace Tsavorite.test.statemachine
         readonly TsavoriteKV<K, V, SF, A> store;
         ClientSession<K, V, I, O, C, F, SF, A> s2;
         UnsafeContext<K, V, I, O, C, F, SF, A> uc2;
+        TestTransientKernelSession<K, V, I, O, C, F, SF, A, UnsafeContext<K, V, I, O, C, F, SF, A>> kernelSession;
+
         readonly F f;
         readonly AutoResetEvent ev = new(false);
         readonly AsyncQueue<string> q = new();
@@ -68,7 +70,7 @@ namespace Tsavorite.test.statemachine
         {
             s2 = store.NewSession<I, O, C, F>(f, null);
             uc2 = s2.UnsafeContext;
-            uc2.BeginUnsafe();
+            kernelSession.BeginUnsafe();
 
             _ = ev.Set();
 
@@ -82,7 +84,7 @@ namespace Tsavorite.test.statemachine
                         _ = ev.Set();
                         break;
                     case "dispose":
-                        uc2.EndUnsafe();
+                        kernelSession.EndUnsafe();
                         s2.Dispose();
                         _ = ev.Set();
                         return;
@@ -110,6 +112,8 @@ namespace Tsavorite.test.statemachine
         readonly TsavoriteKV<K, V, SF, A> store;
         ClientSession<K, V, I, O, C, F, SF, A> session;
         LockableUnsafeContext<K, V, I, O, C, F, SF, A> luc;
+        TestTransactionalKernelSession<K, V, I, O, C, F, SF, A, LockableUnsafeContext<K, V, I, O, C, F, SF, A>> kernelSession;
+
         readonly F f;
         readonly AutoResetEvent ev = new(false);
         readonly AsyncQueue<string> q = new();
@@ -162,7 +166,7 @@ namespace Tsavorite.test.statemachine
                     case "dispose":
                         if (isProtected)
                         {
-                            luc.EndUnsafe();
+                            kernelSession.EndUnsafe();
                         }
                         session.Dispose();
                         _ = ev.Set();
@@ -175,15 +179,15 @@ namespace Tsavorite.test.statemachine
                         }
                         else
                         {
-                            luc.BeginUnsafe();
-                            luc.BeginLockable();
+                            kernelSession.BeginUnsafe();
+                            kernelSession.BeginTransaction();
                             isProtected = true;
                         }
                         _ = ev.Set();
                         break;
                     case "DisposeLUC":
-                        luc.EndLockable();
-                        luc.EndUnsafe();
+                        kernelSession.EndTransaction();
+                        kernelSession.EndUnsafe();
                         isProtected = false;
                         _ = ev.Set();
                         break;

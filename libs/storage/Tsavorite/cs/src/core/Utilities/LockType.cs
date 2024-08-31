@@ -35,6 +35,11 @@ namespace Tsavorite.core
         public long KeyHash { get; }
 
         /// <summary>
+        /// The PartitionId of the containing Tsavorite instance
+        /// </summary>
+        public ushort PartitionId { get; }
+
+        /// <summary>
         /// The lock type for a specific key
         /// </summary>
         public LockType LockType { get; }
@@ -56,45 +61,48 @@ namespace Tsavorite.core
         public long KeyHash { get; set; }
 
         /// <inheritdoc/>
+        public ushort PartitionId { get; set; }
+
+        /// <inheritdoc/>
         public LockType LockType { get; set; }
         #endregion ILockableKey
 
         /// <summary>
         /// Constructor
         /// </summary>
-        public FixedLengthLockableKeyStruct(TKey key, LockType lockType, ITsavoriteContext<TKey> context) : this(ref key, lockType, context) { }
+        public FixedLengthLockableKeyStruct(TKey key, LockType lockType, ITsavoriteContext<TKey> context, ushort partitionId = 0) : this(ref key, lockType, context, partitionId) { }
 
         /// <summary>
         /// Constructor
         /// </summary>
-        public FixedLengthLockableKeyStruct(ref TKey key, LockType lockType, ITsavoriteContext<TKey> context)
+        public FixedLengthLockableKeyStruct(ref TKey key, LockType lockType, ITsavoriteContext<TKey> context, ushort partitionId = 0)
         {
             Key = key;
             LockType = lockType;
             KeyHash = context.GetKeyHash(ref key);
+            PartitionId = partitionId;
         }
         /// <summary>
         /// Constructor
         /// </summary>
-        public FixedLengthLockableKeyStruct(TKey key, long keyHash, LockType lockType, ILockableContext<TKey> context) : this(ref key, keyHash, lockType, context) { }
+        public FixedLengthLockableKeyStruct(TKey key, long keyHash, LockType lockType, ILockableContext<TKey> context, ushort partitionId = 0) : this(ref key, keyHash, lockType, context, partitionId) { }
 
         /// <summary>
         /// Constructor
         /// </summary>
-        public FixedLengthLockableKeyStruct(ref TKey key, long keyHash, LockType lockType, ILockableContext<TKey> context)
+        public FixedLengthLockableKeyStruct(ref TKey key, long keyHash, LockType lockType, ILockableContext<TKey> context, ushort partitionId = 0)
         {
             Key = key;
             KeyHash = keyHash;
             LockType = lockType;
+            PartitionId = partitionId;
         }
 
         /// <summary>
-        /// Sort the passed key array for use in <see cref="ILockableContext{TKey}.Lock{TLockableKey}(TLockableKey[])"/>
-        /// and <see cref="ILockableContext{TKey}.Unlock{TLockableKey}(TLockableKey[])"/>
+        /// Sort the passed key array for use in <see cref="TsavoriteKernel.Lock{TKernelSession, TLockableKey}(ref TKernelSession, TLockableKey[])"/>
+        /// and <see cref="TsavoriteKernel.Unlock{TKernelSession, TLockableKey}(ref TKernelSession, TLockableKey[])"/>
         /// </summary>
-        /// <param name="keys"></param>
-        /// <param name="context"></param>
-        public static void Sort(FixedLengthLockableKeyStruct<TKey>[] keys, ILockableContext<TKey> context) => context.SortKeyHashes(keys);
+        public static void Sort(FixedLengthLockableKeyStruct<TKey>[] keys, TsavoriteKernel kernel) => kernel.lockTable.SortKeyHashes(keys);
 
         /// <inheritdoc/>
         public override string ToString()

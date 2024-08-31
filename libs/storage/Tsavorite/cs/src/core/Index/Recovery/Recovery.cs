@@ -408,9 +408,9 @@ namespace Tsavorite.core
         public void Reset()
         {
             // Reset the hash index
-            Array.Clear(kernel.hashTable.spine.state[kernel.hashTable.spine.resizeInfo.version].tableRaw, 0, kernel.hashTable.spine.state[kernel.hashTable.spine.resizeInfo.version].tableRaw.Length);
-            kernel.hashTable.overflowBucketsAllocator.Dispose();
-            kernel.hashTable.overflowBucketsAllocator = new MallocFixedPageSize<HashBucket>(logger);
+            Array.Clear(Kernel.hashTable.spine.state[Kernel.hashTable.spine.resizeInfo.version].tableRaw, 0, Kernel.hashTable.spine.state[Kernel.hashTable.spine.resizeInfo.version].tableRaw.Length);
+            Kernel.hashTable.overflowBucketsAllocator.Dispose();
+            Kernel.hashTable.overflowBucketsAllocator = new MallocFixedPageSize<HashBucket>(logger);
 
             // Reset the hybrid log
             hlogBase.Reset();
@@ -1110,7 +1110,7 @@ namespace Tsavorite.core
                 if (!info.Invalid)
                 {
                     HashEntryInfo hei = new(storeFunctions.GetKeyHashCode64(ref hlog.GetKey(recordStart)), partitionId);
-                    FindOrCreateTag(ref hei, hlogBase.BeginAddress);
+                    Kernel.hashTable.FindOrCreateTag(ref hei, hlogBase.BeginAddress);
 
                     bool ignoreRecord = ((pageLogicalAddress + pointer) >= options.fuzzyRegionStartAddress) && info.IsInNewVersion;
                     if (!options.undoNextVersion) ignoreRecord = false;

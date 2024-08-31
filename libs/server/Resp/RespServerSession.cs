@@ -61,7 +61,7 @@ namespace Garnet.server
         /// </summary>
         public void ResetAllLatencyMetrics() => latencyMetrics?.ResetAll();
 
-        readonly StoreWrapper storeWrapper;
+        internal readonly StoreWrapper storeWrapper;
         internal readonly TransactionManager txnManager;
         internal readonly ScratchBufferManager scratchBufferManager;
 
@@ -89,8 +89,10 @@ namespace Garnet.server
         byte* dcurr, dend;
         bool toDispose;
 
+        internal RespKernelSession kernelSession;
+        public StorageSession StorageSession => kernelSession.storageSession;
+
         int opCount;
-        public readonly StorageSession storageSession;
         internal BasicGarnetApi basicGarnetApi;
         internal LockableGarnetApi lockableGarnetApi;
         internal CollectionItemBroker itemBroker;
@@ -165,6 +167,8 @@ namespace Garnet.server
         /// </summary>
         internal readonly SessionScriptCache sessionScriptCache;
 
+        internal TsavoriteKernel TsavoriteKernel => storeWrapper.TsavoriteKernel;
+
         public RespServerSession(
             INetworkSender networkSender,
             StoreWrapper storeWrapper,
@@ -185,10 +189,10 @@ namespace Garnet.server
             this.scratchBufferManager = new ScratchBufferManager();
 
             // Create storage session and API
-            this.storageSession = new StorageSession(storeWrapper, scratchBufferManager, sessionMetrics, LatencyMetrics, itemBroker, logger);
+            this.kernelSession = new(new StorageSession(storeWrapper, scratchBufferManager, sessionMetrics, LatencyMetrics, itemBroker, logger));
 
-            this.basicGarnetApi = new BasicGarnetApi(storageSession, storageSession.basicContext, storageSession.objectStoreBasicContext);
-            this.lockableGarnetApi = new LockableGarnetApi(storageSession, storageSession.lockableContext, storageSession.objectStoreLockableContext);
+            this.basicGarnetApi = new BasicGarnetApi(StorageSession, StorageSession.basicContext, StorageSession.objectStoreBasicContext);
+            this.lockableGarnetApi = new LockableGarnetApi(StorageSession, StorageSession.lockableContext, StorageSession.objectStoreLockableContext);
 
             this.storeWrapper = storeWrapper;
             this.subscribeBroker = subscribeBroker;
@@ -201,8 +205,8 @@ namespace Garnet.server
             // Associate new session with default user and automatically authenticate, if possible
             this.AuthenticateUser(Encoding.ASCII.GetBytes(this.storeWrapper.accessControlList.GetDefaultUser().Name));
 
-            txnManager = new TransactionManager(this, storageSession, scratchBufferManager, storeWrapper.serverOptions.EnableCluster, logger);
-            storageSession.txnManager = txnManager;
+            txnManager = new TransactionManager(storeWrapper.TsavoriteKernel, this, StorageSession, scratchBufferManager, storeWrapper.serverOptions.EnableCluster, logger);
+            StorageSession.txnManager = txnManager;
 
             clusterSession = storeWrapper.clusterProvider?.CreateClusterSession(txnManager, this._authenticator, this._user, sessionMetrics, basicGarnetApi, networkSender, logger);
             clusterSession?.SetUser(this._user);
@@ -247,11 +251,11 @@ namespace Garnet.server
             asyncWaiterCancel?.Cancel();
             asyncWaiter?.Signal();
 
-            storageSession.Dispose();
+            StorageSession.Dispose();
         }
 
-        public int StoreSessionID => storageSession.SessionID;
-        public int ObjectStoreSessionID => storageSession.ObjectStoreSessionID;
+        public int StoreSessionID => StorageSession.SessionID;
+        public int ObjectStoreSessionID => StorageSession.ObjectStoreSessionID;
 
         /// <summary>
         /// Tries to authenticate the given username/password and updates the user associated with this server session.

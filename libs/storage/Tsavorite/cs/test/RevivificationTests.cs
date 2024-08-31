@@ -215,7 +215,7 @@ namespace Tsavorite.test.Revivification
             where TAllocator : IAllocator<TKey, TValue, TStoreFunctions>
         {
             OperationStackContext<TKey, TValue, TStoreFunctions, TAllocator> stackCtx = new(store.storeFunctions.GetKeyHashCode64(ref key), store.partitionId);
-            ClassicAssert.IsTrue(store.FindTag(ref stackCtx.hei), $"AssertElidable: Cannot find key {key}");
+            ClassicAssert.IsTrue(store.Kernel.hashTable.FindTag(ref stackCtx.hei), $"AssertElidable: Cannot find key {key}");
             var recordInfo = store.hlog.GetInfo(store.hlog.GetPhysicalAddress(stackCtx.hei.Address));
             ClassicAssert.Less(recordInfo.PreviousAddress, store.hlogBase.BeginAddress, "AssertElidable: expected elidable key");
         }

@@ -42,7 +42,7 @@ namespace Garnet.server
             state.State.Encoding = Encoding.UTF8;
             if (txnMode)
             {
-                this.txnKeyEntries = new TxnKeyEntries(16, respServerSession.storageSession.lockableContext, respServerSession.storageSession.objectStoreLockableContext);
+                this.txnKeyEntries = new TxnKeyEntries(respServerSession.TsavoriteKernel, 16);
                 state.RegisterFunction("garnet_call", this, this.GetType().GetMethod(nameof(garnet_call_txn)));
             }
             else
@@ -250,9 +250,9 @@ namespace Garnet.server
                     if (txnMode)
                     {
                         var key = parseState.GetArgSliceByRef(offset);
-                        txnKeyEntries.AddKey(key, false, Tsavorite.core.LockType.Exclusive);
-                        if (!respServerSession.storageSession.objectStoreLockableContext.IsNull)
-                            txnKeyEntries.AddKey(key, true, Tsavorite.core.LockType.Exclusive);
+                        txnKeyEntries.AddKey(respServerSession.storeWrapper, key, false, Tsavorite.core.LockType.Exclusive);
+                        if (!respServerSession.StorageSession.objectStoreLockableContext.IsNull)
+                            txnKeyEntries.AddKey(respServerSession.storeWrapper, key, true, Tsavorite.core.LockType.Exclusive);
                     }
                     keys[i + 1] = parseState.GetString(offset++);
                 }
@@ -299,9 +299,9 @@ namespace Garnet.server
                 foreach (var key in keys)
                 {
                     var _key = scratchBufferManager.CreateArgSlice(key);
-                    txnKeyEntries.AddKey(_key, false, Tsavorite.core.LockType.Exclusive);
-                    if (!respServerSession.storageSession.objectStoreLockableContext.IsNull)
-                        txnKeyEntries.AddKey(_key, true, Tsavorite.core.LockType.Exclusive);
+                    txnKeyEntries.AddKey(respServerSession.storeWrapper, _key, false, Tsavorite.core.LockType.Exclusive);
+                    if (!respServerSession.StorageSession.objectStoreLockableContext.IsNull)
+                        txnKeyEntries.AddKey(respServerSession.storeWrapper, _key, true, Tsavorite.core.LockType.Exclusive);
                 }
                 return RunTransactionInternal(keys, argv);
             }
@@ -315,20 +315,20 @@ namespace Garnet.server
         {
             try
             {
-                respServerSession.storageSession.lockableContext.BeginLockable();
-                if (!respServerSession.storageSession.objectStoreLockableContext.IsNull)
-                    respServerSession.storageSession.objectStoreLockableContext.BeginLockable();
+                respServerSession.StorageSession.lockableContext.BeginTransaction();
+                if (!respServerSession.StorageSession.objectStoreLockableContext.IsNull)
+                    respServerSession.StorageSession.objectStoreLockableContext.EndTransaction();
                 respServerSession.SetTransactionMode(true);
-                txnKeyEntries.LockAllKeys();
+                txnKeyEntries.LockAllKeys(ref respServerSession.kernelSession);
                 return RunInternal(keys, argv);
             }
             finally
             {
-                txnKeyEntries.UnlockAllKeys();
+                txnKeyEntries.UnlockAllKeys(ref respServerSession.kernelSession);
                 respServerSession.SetTransactionMode(false);
-                respServerSession.storageSession.lockableContext.EndLockable();
-                if (!respServerSession.storageSession.objectStoreLockableContext.IsNull)
-                    respServerSession.storageSession.objectStoreLockableContext.EndLockable();
+                respServerSession.StorageSession.lockableContext.EndTransaction();
+                if (!respServerSession.StorageSession.objectStoreLockableContext.IsNull)
+                    respServerSession.StorageSession.objectStoreLockableContext.EndTransaction();
             }
         }
 

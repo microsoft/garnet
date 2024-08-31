@@ -43,15 +43,15 @@ namespace Tsavorite.core
         /// <summary>
         /// Size of index in #cache lines (64 bytes each)
         /// </summary>
-        public long IndexSize => kernel.hashTable.spine.state[kernel.hashTable.spine.resizeInfo.version].size;
+        public long IndexSize => Kernel.hashTable.spine.state[Kernel.hashTable.spine.resizeInfo.version].size;
 
         /// <summary>Number of allocations performed</summary>
-        public long OverflowBucketAllocations => kernel.hashTable.overflowBucketsAllocator.NumAllocations;
+        public long OverflowBucketAllocations => Kernel.hashTable.overflowBucketsAllocator.NumAllocations;
 
         /// <summary>
         /// Number of overflow buckets in use (64 bytes each)
         /// </summary>
-        public long OverflowBucketCount => kernel.hashTable.overflowBucketsAllocator.GetMaxValidAddress();
+        public long OverflowBucketCount => Kernel.hashTable.overflowBucketsAllocator.GetMaxValidAddress();
 
         /// <summary>
         /// Hybrid log used by this Tsavorite instance
@@ -66,14 +66,14 @@ namespace Tsavorite.core
         int maxSessionID;
 
         internal readonly bool CheckpointVersionSwitchBarrier;  // version switch barrier
-        internal HashBucketLockTable LockTable => kernel.lockTable;
+        internal HashBucketLockTable LockTable => Kernel.lockTable;
 
-        internal void IncrementNumLockingSessions()
+        internal void IncrementNumTxnSessions()
         {
-            _hybridLogCheckpoint.info.manualLockingActive = true;
-            Interlocked.Increment(ref hlogBase.NumActiveLockingSessions);
+            _hybridLogCheckpoint.info.transactionActive = true;
+            Interlocked.Increment(ref hlogBase.NumActiveTxnSessions);
         }
-        internal void DecrementNumLockingSessions() => Interlocked.Decrement(ref hlogBase.NumActiveLockingSessions);
+        internal void DecrementNumTxnSessions() => Interlocked.Decrement(ref hlogBase.NumActiveTxnSessions);
 
         internal readonly int ThrottleCheckpointFlushDelayMs = -1;
 
@@ -141,7 +141,7 @@ namespace Tsavorite.core
             bool isFixedLenReviv = hlog.IsFixedLength;
 
             // Create the allocator
-            var allocatorSettings = new AllocatorSettings(logSettings, kernel.epoch, kvSettings.logger ?? kvSettings.loggerFactory?.CreateLogger(typeof(TAllocator).Name));
+            var allocatorSettings = new AllocatorSettings(logSettings, kernel.Epoch, kvSettings.logger ?? kvSettings.loggerFactory?.CreateLogger(typeof(TAllocator).Name));
             hlog = allocatorFactory(allocatorSettings, storeFunctions);
             hlogBase = hlog.GetBase<TAllocator>();
             hlogBase.partitionId = partitionId;
@@ -426,7 +426,7 @@ namespace Tsavorite.core
         /// <returns></returns>
         public async ValueTask CompleteCheckpointAsync(CancellationToken token = default)
         {
-            if (kernel.epoch.ThisInstanceProtected())
+            if (Kernel.Epoch.ThisInstanceProtected())
                 throw new TsavoriteException("Cannot use CompleteCheckpointAsync when using non-async sessions");
 
             token.ThrowIfCancellationRequested();
@@ -442,7 +442,7 @@ namespace Tsavorite.core
 
                 try
                 {
-                    kernel.epoch.Resume();
+                    Kernel.Epoch.Resume();
                     ThreadStateMachineStep<Empty, Empty, Empty, NullSession>(null, NullSession.Instance, valueTasks, token);
                 }
                 catch (Exception)
@@ -453,7 +453,7 @@ namespace Tsavorite.core
                 }
                 finally
                 {
-                    kernel.epoch.Suspend();
+                    Kernel.Epoch.Suspend();
                 }
 
                 if (valueTasks.Count == 0)
@@ -607,13 +607,13 @@ namespace Tsavorite.core
         /// <returns>Whether the grow completed</returns>
         public bool GrowIndex()
         {
-            if (kernel.epoch.ThisInstanceProtected())
+            if (Kernel.Epoch.ThisInstanceProtected())
                 throw new TsavoriteException("Cannot use GrowIndex when using non-async sessions");
 
             if (!StartStateMachine(new IndexResizeStateMachine<TKey, TValue, TStoreFunctions, TAllocator>()))
                 return false;
 
-            kernel.epoch.Resume();
+            Kernel.Epoch.Resume();
 
             try
             {
@@ -626,13 +626,13 @@ namespace Tsavorite.core
                         SplitBuckets(0);
                     else if (_systemState.Phase == Phase.REST)
                         break;
-                    kernel.epoch.ProtectAndDrain();
+                    Kernel.Epoch.ProtectAndDrain();
                     _ = Thread.Yield();
                 }
             }
             finally
             {
-                kernel.epoch.Suspend();
+                Kernel.Epoch.Suspend();
             }
             return true;
         }
@@ -658,9 +658,9 @@ namespace Tsavorite.core
         /// <returns></returns>
         private unsafe long GetEntryCount()
         {
-            var version = kernel.hashTable.spine.resizeInfo.version;
-            var table_size_ = kernel.hashTable.spine.state[version].size;
-            var ptable_ = kernel.hashTable.spine.state[version].tableAligned;
+            var version = Kernel.hashTable.spine.resizeInfo.version;
+            var table_size_ = Kernel.hashTable.spine.state[version].size;
+            var ptable_ = Kernel.hashTable.spine.state[version].tableAligned;
             long total_entry_count = 0;
             long beginAddress = hlogBase.BeginAddress;
 
@@ -673,7 +673,7 @@ namespace Tsavorite.core
                         if (b.bucket_entries[bucket_entry] >= beginAddress)
                             ++total_entry_count;
                     if ((b.bucket_entries[Constants.kOverflowBucketIndex] & HashBucketEntry.kAddressMask) == 0) break;
-                    b = *(HashBucket*)kernel.hashTable.overflowBucketsAllocator.GetPhysicalAddress(b.bucket_entries[Constants.kOverflowBucketIndex] & HashBucketEntry.kAddressMask);
+                    b = *(HashBucket*)Kernel.hashTable.overflowBucketsAllocator.GetPhysicalAddress(b.bucket_entries[Constants.kOverflowBucketIndex] & HashBucketEntry.kAddressMask);
                 }
             }
             return total_entry_count;
@@ -681,8 +681,8 @@ namespace Tsavorite.core
 
         private unsafe string DumpDistributionInternal(int version)
         {
-            var table_size_ = kernel.hashTable.spine.state[version].size;
-            var ptable_ = kernel.hashTable.spine.state[version].tableAligned;
+            var table_size_ = Kernel.hashTable.spine.state[version].size;
+            var ptable_ = Kernel.hashTable.spine.state[version].tableAligned;
             long total_record_count = 0;
             long beginAddress = hlogBase.BeginAddress;
             Dictionary<int, long> histogram = new();
@@ -708,7 +708,7 @@ namespace Tsavorite.core
                         }
                     }
                     if ((b.bucket_entries[Constants.kOverflowBucketIndex] & HashBucketEntry.kAddressMask) == 0) break;
-                    b = *(HashBucket*)kernel.hashTable.overflowBucketsAllocator.GetPhysicalAddress(b.bucket_entries[Constants.kOverflowBucketIndex] & HashBucketEntry.kAddressMask);
+                    b = *(HashBucket*)Kernel.hashTable.overflowBucketsAllocator.GetPhysicalAddress(b.bucket_entries[Constants.kOverflowBucketIndex] & HashBucketEntry.kAddressMask);
                 }
 
                 if (!histogram.ContainsKey(cnt)) histogram[cnt] = 0;
@@ -736,7 +736,7 @@ namespace Tsavorite.core
         /// </summary>
         public string DumpDistribution()
         {
-            return DumpDistributionInternal(kernel.hashTable.spine.resizeInfo.version);
+            return DumpDistributionInternal(Kernel.hashTable.spine.resizeInfo.version);
         }
     }
 }

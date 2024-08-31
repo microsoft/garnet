@@ -22,7 +22,7 @@ namespace Tsavorite.core
         /// <inheritdoc/>
         public bool IsNull => clientSession is null;
 
-        private TsavoriteKV<TKey, TValue, TStoreFunctions, TAllocator> store => clientSession.store;
+        private TsavoriteKV<TKey, TValue, TStoreFunctions, TAllocator> store => clientSession.Store;
 
         internal BasicContext(ClientSession<TKey, TValue, TInput, TOutput, TContext, TFunctions, TStoreFunctions, TAllocator> clientSession)
         {
@@ -46,10 +46,10 @@ namespace Tsavorite.core
         public ClientSession<TKey, TValue, TInput, TOutput, TContext, TFunctions, TStoreFunctions, TAllocator> Session => clientSession;
 
         /// <inheritdoc/>
-        public long GetKeyHash(TKey key) => clientSession.store.GetKeyHash(ref key);
+        public long GetKeyHash(TKey key) => clientSession.Store.GetKeyHash(ref key);
 
         /// <inheritdoc/>
-        public long GetKeyHash(ref TKey key) => clientSession.store.GetKeyHash(ref key);
+        public long GetKeyHash(ref TKey key) => clientSession.Store.GetKeyHash(ref key);
 
         /// <inheritdoc/>
         public bool CompletePending(bool wait = false, bool spinWaitForCommit = false)
@@ -74,7 +74,7 @@ namespace Tsavorite.core
             UnsafeResumeThread();
             try
             {
-                return clientSession.store.ContextRead(ref key, ref input, ref output, userContext, sessionFunctions);
+                return clientSession.Store.ContextRead(ref key, ref input, ref output, userContext, sessionFunctions);
             }
             finally
             {
@@ -419,6 +419,17 @@ namespace Tsavorite.core
         /// <inheritdoc/>
         public void Refresh()
             => clientSession.Refresh(sessionFunctions);
+
+        /// <inheritdoc/>
+        public void HandleImmediateNonPendingRetryStatus(bool refresh)
+            => clientSession.Store.HandleImmediateNonPendingRetryStatus<TInput, TOutput, TContext,
+                SessionFunctionsWrapper<TKey, TValue, TInput, TOutput, TContext, TFunctions, BasicSessionLocker<TKey, TValue, TStoreFunctions, TAllocator>, TStoreFunctions, TAllocator>>
+                (refresh ? OperationStatus.RETRY_LATER : OperationStatus.RETRY_NOW, sessionFunctions);
+
+        /// <inheritdoc/>
+        public void DoThreadStateMachineStep() => clientSession.Store.DoThreadStateMachineStep<TInput, TOutput, TContext,
+            SessionFunctionsWrapper<TKey, TValue, TInput, TOutput, TContext, TFunctions, BasicSessionLocker<TKey, TValue, TStoreFunctions, TAllocator>, TStoreFunctions, TAllocator>>
+            (sessionFunctions);
 
         #endregion ITsavoriteContext
 

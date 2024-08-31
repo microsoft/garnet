@@ -83,13 +83,13 @@ namespace Tsavorite.core
 
         internal void InitializeIndexCheckpoint(Guid indexToken)
         {
-            _indexCheckpoint.Initialize(indexToken, kernel.hashTable.spine.state[kernel.hashTable.spine.resizeInfo.version].size, checkpointManager);
+            _indexCheckpoint.Initialize(indexToken, Kernel.hashTable.spine.state[Kernel.hashTable.spine.resizeInfo.version].size, checkpointManager);
         }
 
         internal void InitializeHybridLogCheckpoint(Guid hybridLogToken, long version)
         {
             _hybridLogCheckpoint.Initialize(hybridLogToken, version, checkpointManager);
-            _hybridLogCheckpoint.info.manualLockingActive = hlogBase.NumActiveLockingSessions > 0;
+            _hybridLogCheckpoint.info.transactionActive = hlogBase.NumActiveTxnSessions > 0;
         }
 
         internal long Compact<T1, T2, T3, T4, CompactionFunctions>(ISessionFunctions<TKey, TValue, object, object, object> functions, CompactionFunctions compactionFunctions, long untilAddress, CompactionType compactionType)

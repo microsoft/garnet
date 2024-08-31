@@ -61,7 +61,7 @@ namespace Tsavorite.test.statemachine
         [Category("Smoke")]
         public void StateMachineBarrierTest1()
         {
-            Prepare(out var f, out var s1, out var uc1, out var s2);
+            Prepare(out var f, out var s1, out var uc1, out var ks1, out var s2);
 
             // We should be in PREPARE, 1
             ClassicAssert.IsTrue(SystemState.Equal(SystemState.Make(Phase.PREPARE, 1), store.SystemState));
@@ -73,7 +73,7 @@ namespace Tsavorite.test.statemachine
             ClassicAssert.IsTrue(SystemState.Equal(SystemState.Make(Phase.PREPARE, 1), store.SystemState));
 
             // Refresh s1
-            uc1.Refresh();
+            ks1.Refresh();
 
             // We can complete s2 now, as barrier is done
             s2.CompleteOp();
@@ -87,20 +87,22 @@ namespace Tsavorite.test.statemachine
             // Forward the rest of the state machine
             while (!SystemState.Equal(SystemState.Make(Phase.REST, 2), store.SystemState))
             {
-                uc1.Refresh();
+                ks1.Refresh();
                 s2.Refresh();
             }
 
             // Dispose session s2; does not move state machine forward
             s2.Dispose();
 
-            uc1.EndUnsafe();
+            ks1.EndUnsafe();
             s1.Dispose();
         }
 
         void Prepare(out SimpleFunctions f,
             out ClientSession<AdId, NumClicks, NumClicks, NumClicks, Empty, SimpleFunctions, StructStoreFunctions, StructAllocator> s1,
             out UnsafeContext<AdId, NumClicks, NumClicks, NumClicks, Empty, SimpleFunctions, StructStoreFunctions, StructAllocator> uc1,
+            out TestTransientKernelSession<AdId, NumClicks, NumClicks, NumClicks, Empty, SimpleFunctions, StructStoreFunctions, StructAllocator,
+                                        UnsafeContext<AdId, NumClicks, NumClicks, NumClicks, Empty, SimpleFunctions, StructStoreFunctions, StructAllocator>> ks1,
             out ThreadSession<AdId, NumClicks, NumClicks, NumClicks, Empty, SimpleFunctions, StructStoreFunctions, StructAllocator> s2,
             long toVersion = -1)
         {
@@ -133,7 +135,8 @@ namespace Tsavorite.test.statemachine
 
             // Create unsafe context and hold epoch to prepare for manual state machine driver
             uc1 = s1.UnsafeContext;
-            uc1.BeginUnsafe();
+            ks1 = new(uc1);
+            ks1.BeginUnsafe();
 
             // Start session s2 on another thread for testing
             s2 = store.CreateThreadSession<AdId, NumClicks, NumClicks, NumClicks, Empty, SimpleFunctions, StructStoreFunctions, StructAllocator>(f);

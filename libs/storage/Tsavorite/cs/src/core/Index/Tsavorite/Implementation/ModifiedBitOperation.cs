@@ -20,12 +20,12 @@ namespace Tsavorite.core
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         internal OperationStatus InternalModifiedBitOperation(ref TKey key, out RecordInfo modifiedInfo, bool reset = true)
         {
-            Debug.Assert(kernel.epoch.ThisInstanceProtected());
+            Debug.Assert(Kernel.Epoch.ThisInstanceProtected());
 
             HashEntryInfo hei = new(storeFunctions.GetKeyHashCode64(ref key), partitionId);
 
             #region Trace back for record in in-memory HybridLog
-            _ = FindTag(ref hei);
+            _ = Kernel.hashTable.FindTag(ref hei);
             var logicalAddress = hei.Address;
             var physicalAddress = hlog.GetPhysicalAddress(logicalAddress);
 

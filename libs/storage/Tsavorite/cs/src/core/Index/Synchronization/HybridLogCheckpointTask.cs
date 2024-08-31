@@ -113,8 +113,8 @@ namespace Tsavorite.core
             if (current.Phase != Phase.PERSISTENCE_CALLBACK)
                 return;
 
-            store.kernel.epoch.Mark(EpochPhaseIdx.CheckpointCompletionCallback, current.Version);
-            if (store.kernel.epoch.CheckIsComplete(EpochPhaseIdx.CheckpointCompletionCallback, current.Version))
+            store.Kernel.Epoch.Mark(EpochPhaseIdx.CheckpointCompletionCallback, current.Version);
+            if (store.Kernel.Epoch.CheckIsComplete(EpochPhaseIdx.CheckpointCompletionCallback, current.Version))
             {
                 store.storeFunctions.OnCheckpointCompleted();
                 store.GlobalStateMachineStep(current);
@@ -183,8 +183,8 @@ namespace Tsavorite.core
                     ctx.prevCtx.markers[EpochPhaseIdx.WaitFlush] = true;
             }
 
-            store.kernel.epoch.Mark(EpochPhaseIdx.WaitFlush, current.Version);
-            if (store.kernel.epoch.CheckIsComplete(EpochPhaseIdx.WaitFlush, current.Version))
+            store.Kernel.Epoch.Mark(EpochPhaseIdx.WaitFlush, current.Version);
+            if (store.Kernel.Epoch.CheckIsComplete(EpochPhaseIdx.WaitFlush, current.Version))
                 store.GlobalStateMachineStep(current);
         }
     }
@@ -290,8 +290,8 @@ namespace Tsavorite.core
                     ctx.prevCtx.markers[EpochPhaseIdx.WaitFlush] = true;
             }
 
-            store.kernel.epoch.Mark(EpochPhaseIdx.WaitFlush, current.Version);
-            if (store.kernel.epoch.CheckIsComplete(EpochPhaseIdx.WaitFlush, current.Version))
+            store.Kernel.Epoch.Mark(EpochPhaseIdx.WaitFlush, current.Version);
+            if (store.Kernel.Epoch.CheckIsComplete(EpochPhaseIdx.WaitFlush, current.Version))
                 store.GlobalStateMachineStep(current);
         }
     }
@@ -386,8 +386,8 @@ namespace Tsavorite.core
                     ctx.prevCtx.markers[EpochPhaseIdx.WaitFlush] = true;
             }
 
-            store.kernel.epoch.Mark(EpochPhaseIdx.WaitFlush, current.Version);
-            if (store.kernel.epoch.CheckIsComplete(EpochPhaseIdx.WaitFlush, current.Version))
+            store.Kernel.Epoch.Mark(EpochPhaseIdx.WaitFlush, current.Version);
+            if (store.Kernel.Epoch.CheckIsComplete(EpochPhaseIdx.WaitFlush, current.Version))
                 store.GlobalStateMachineStep(current);
         }
     }

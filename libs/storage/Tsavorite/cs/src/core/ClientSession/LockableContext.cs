@@ -23,344 +23,23 @@ namespace Tsavorite.core
         /// <inheritdoc/>
         public bool IsNull => clientSession is null;
 
-        const int KeyLockMaxRetryAttempts = 1000;
-
         internal LockableContext(ClientSession<TKey, TValue, TInput, TOutput, TContext, TSessionFunctions, TStoreFunctions, TAllocator> clientSession)
         {
             this.clientSession = clientSession;
             sessionFunctions = new(clientSession);
         }
 
-        #region Begin/EndLockable
 
         /// <inheritdoc/>
-        public void BeginLockable() => clientSession.AcquireLockable(sessionFunctions);
+        public void BeginTransaction() => clientSession.BeginTransaction(sessionFunctions);
 
         /// <inheritdoc/>
-        public void EndLockable() => clientSession.ReleaseLockable();
-
-        #endregion Begin/EndLockable
-
-        #region Key Locking
-
-        /// <inheritdoc/>
-        public int CompareKeyHashes<TLockableKey>(TLockableKey key1, TLockableKey key2) where TLockableKey : ILockableKey => clientSession.CompareKeyHashes(ref key1, ref key2);
-
-        /// <inheritdoc/>
-        public int CompareKeyHashes<TLockableKey>(ref TLockableKey key1, ref TLockableKey key2) where TLockableKey : ILockableKey => clientSession.CompareKeyHashes(ref key1, ref key2);
-
-        /// <inheritdoc/>
-        public void SortKeyHashes<TLockableKey>(TLockableKey[] keys) where TLockableKey : ILockableKey => clientSession.SortKeyHashes(keys);
-
-        /// <inheritdoc/>
-        public void SortKeyHashes<TLockableKey>(TLockableKey[] keys, int start, int count) where TLockableKey : ILockableKey => clientSession.SortKeyHashes(keys, start, count);
-
-        [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        internal static bool DoManualLock<TSessionFunctionsWrapper, TLockableKey>(TSessionFunctionsWrapper sessionFunctions, ClientSession<TKey, TValue, TInput, TOutput, TContext, TSessionFunctions, TStoreFunctions, TAllocator> clientSession,
-                                                                   TLockableKey[] keys, int start, int count)
-            where TSessionFunctionsWrapper : ISessionFunctionsWrapper<TKey, TValue, TInput, TOutput, TContext, TStoreFunctions, TAllocator>
-            where TLockableKey : ILockableKey
-        {
-            // The key codes are sorted, but there may be duplicates; the sorting is such that exclusive locks come first for each key code,
-            // which of course allows the session to do shared operations as well, so we take the first occurrence of each key code.
-            // This is the same as DoManualTryLock but without timeout; it will keep trying until it acquires all locks or the hardcoded retry limit is reached.
-            var end = start + count - 1;
-
-            int retryCount = 0;
-        Retry:
-            long prevBucketIndex = -1;
-
-            for (int keyIdx = start; keyIdx <= end; ++keyIdx)
-            {
-                ref var key = ref keys[keyIdx];
-                long currBucketIndex = clientSession.store.LockTable.GetBucketIndex(key.KeyHash);
-                if (currBucketIndex != prevBucketIndex)
-                {
-                    prevBucketIndex = currBucketIndex;
-                    OperationStatus status = DoManualLock(clientSession, key);
-                    if (status == OperationStatus.SUCCESS)
-                        continue;   // Success; continue to the next key.
-
-                    // Lock failure before we've completed all keys, and we did not lock the current key. Unlock anything we've locked.
-                    DoManualUnlock(clientSession, keys, start, keyIdx - 1);
-
-                    // We've released our locks so this refresh will let other threads advance and release their locks, and we will retry with a full timeout.
-                    clientSession.store.HandleImmediateNonPendingRetryStatus<TInput, TOutput, TContext, TSessionFunctionsWrapper>(status, sessionFunctions);
-                    retryCount++;
-                    if (retryCount >= KeyLockMaxRetryAttempts)
-                        return false;
-                    goto Retry;
-                }
-            }
-
-            // We reached the end of the list, possibly after a duplicate keyhash; all locks were successful.
-            return true;
-        }
-
-        [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        internal static bool DoManualTryLock<TSessionFunctionsWrapper, TLockableKey>(TSessionFunctionsWrapper sessionFunctions, ClientSession<TKey, TValue, TInput, TOutput, TContext, TSessionFunctions, TStoreFunctions, TAllocator> clientSession,
-                                                                   TLockableKey[] keys, int start, int count, TimeSpan timeout, CancellationToken cancellationToken)
-            where TSessionFunctionsWrapper : ISessionFunctionsWrapper<TKey, TValue, TInput, TOutput, TContext, TStoreFunctions, TAllocator>
-            where TLockableKey : ILockableKey
-        {
-            // The key codes are sorted, but there may be duplicates; the sorting is such that exclusive locks come first for each key code,
-            // which of course allows the session to do shared operations as well, so we take the first occurrence of each key code.
-            // This is the same as DoManualLock but with timeout.
-            var end = start + count - 1;
-
-            // We can't start each retry with a full timeout because we might always fail if someone is not unlocking (e.g. another thread hangs
-            // somehow while holding a lock, or the current thread has issued two lock calls on two key sets and the second tries to lock one in
-            // the first, and so on). So set the timeout high enough to accommodate as many retries as you want.
-            var startTime = DateTime.UtcNow;
-
-        Retry:
-            long prevBucketIndex = -1;
-
-            for (int keyIdx = start; keyIdx <= end; ++keyIdx)
-            {
-                ref var key = ref keys[keyIdx];
-                long currBucketIndex = clientSession.store.LockTable.GetBucketIndex(key.KeyHash);
-                if (currBucketIndex != prevBucketIndex)
-                {
-                    prevBucketIndex = currBucketIndex;
-
-                    OperationStatus status;
-                    if (cancellationToken.IsCancellationRequested)
-                        status = OperationStatus.CANCELED;
-                    else
-                    {
-                        status = DoManualLock(clientSession, key);
-                        if (status == OperationStatus.SUCCESS)
-                            continue;   // Success; continue to the next key.
-                    }
-
-                    // Cancellation or lock failure before we've completed all keys; we have not locked the current key. Unlock anything we've locked.
-                    DoManualUnlock(clientSession, keys, start, keyIdx - 1);
-
-                    // Lock failure is the only place we check the timeout. If we've exceeded that, or if we've had a cancellation, return false.
-                    if (cancellationToken.IsCancellationRequested || DateTime.UtcNow.Ticks - startTime.Ticks > timeout.Ticks)
-                        return false;
-
-                    // No cancellation and we're within the timeout. We've released our locks so this refresh will let other threads advance
-                    // and release their locks, and we will retry with a full timeout.
-                    clientSession.store.HandleImmediateNonPendingRetryStatus<TInput, TOutput, TContext, TSessionFunctionsWrapper>(status, sessionFunctions);
-                    goto Retry;
-                }
-            }
-
-            // All locks were successful.
-            return true;
-        }
-
-        [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        internal static bool DoManualTryPromoteLock<TSessionFunctionsWrapper, TLockableKey>(TSessionFunctionsWrapper sessionFunctions, ClientSession<TKey, TValue, TInput, TOutput, TContext, TSessionFunctions, TStoreFunctions, TAllocator> clientSession,
-                                                                   TLockableKey key, TimeSpan timeout, CancellationToken cancellationToken)
-            where TSessionFunctionsWrapper : ISessionFunctionsWrapper<TKey, TValue, TInput, TOutput, TContext, TStoreFunctions, TAllocator>
-            where TLockableKey : ILockableKey
-        {
-            var startTime = DateTime.UtcNow;
-            while (true)
-            {
-                if (clientSession.store.InternalPromoteLock(key.KeyHash))
-                {
-                    ++clientSession.exclusiveLockCount;
-                    --clientSession.sharedLockCount;
-
-                    // Success; the caller should update the ILockableKey.LockType so the unlock has the right type
-                    return true;
-                }
-
-                // CancellationToken can accompany either of the other two mechanisms
-                if (cancellationToken.IsCancellationRequested || DateTime.UtcNow.Ticks - startTime.Ticks > timeout.Ticks)
-                    break;  // out of the retry loop
-
-                // Lock failed, must retry
-                clientSession.store.HandleImmediateNonPendingRetryStatus<TInput, TOutput, TContext, TSessionFunctionsWrapper>(OperationStatus.RETRY_LATER, sessionFunctions);
-            }
-
-            // Failed to promote
-            return false;
-        }
-
-
-        [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        internal static OperationStatus DoManualLock<TLockableKey>(ClientSession<TKey, TValue, TInput, TOutput, TContext, TSessionFunctions, TStoreFunctions, TAllocator> clientSession, TLockableKey key)
-            where TLockableKey : ILockableKey
-        {
-            if (key.LockType == LockType.Shared)
-            {
-                if (!clientSession.store.InternalTryLockShared(key.KeyHash))
-                    return OperationStatus.RETRY_LATER;
-                ++clientSession.sharedLockCount;
-            }
-            else
-            {
-                if (!clientSession.store.InternalTryLockExclusive(key.KeyHash))
-                    return OperationStatus.RETRY_LATER;
-                ++clientSession.exclusiveLockCount;
-            }
-            return OperationStatus.SUCCESS;
-        }
-
-        [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        internal static void DoManualUnlock<TLockableKey>(ClientSession<TKey, TValue, TInput, TOutput, TContext, TSessionFunctions, TStoreFunctions, TAllocator> clientSession,
-                                                                   TLockableKey[] keys, int start, int keyIdx)
-            where TLockableKey : ILockableKey
-        {
-            // The key codes are sorted, but there may be duplicates; the sorting is such that exclusive locks come first for each key code.
-            // Unlock has to be done in the reverse order of locking, so we take the *last* occurrence of each key there, and keyIdx moves backward.
-            for (; keyIdx >= start; --keyIdx)
-            {
-                ref var key = ref keys[keyIdx];
-                if (keyIdx == start || clientSession.store.LockTable.GetBucketIndex(key.KeyHash) != clientSession.store.LockTable.GetBucketIndex(keys[keyIdx - 1].KeyHash))
-                {
-                    if (key.LockType == LockType.Shared)
-                    {
-                        clientSession.store.InternalUnlockShared(key.KeyHash);
-                        --clientSession.sharedLockCount;
-                    }
-                    else
-                    {
-                        clientSession.store.InternalUnlockExclusive(key.KeyHash);
-                        --clientSession.exclusiveLockCount;
-                    }
-                }
-            }
-        }
-
-
-        /// <inheritdoc/>
-        public void Lock<TLockableKey>(TLockableKey[] keys) where TLockableKey : ILockableKey => Lock(keys, 0, keys.Length);
-
-        /// <inheritdoc/>
-        public void Lock<TLockableKey>(TLockableKey[] keys, int start, int count)
-            where TLockableKey : ILockableKey
-        {
-            clientSession.CheckIsAcquiredLockable();
-            Debug.Assert(!clientSession.store.kernel.epoch.ThisInstanceProtected(), "Trying to protect an already-protected epoch for LockableUnsafeContext.Lock()");
-            bool lockAquired = false;
-            while (!lockAquired)
-            {
-                clientSession.UnsafeResumeThread(sessionFunctions);
-                try
-                {
-                    lockAquired = DoManualLock(sessionFunctions, clientSession, keys, start, count);
-                }
-                finally
-                {
-                    clientSession.UnsafeSuspendThread();
-                }
-            }
-        }
-
-        /// <inheritdoc/>
-        public bool TryLock<TLockableKey>(TLockableKey[] keys)
-            where TLockableKey : ILockableKey
-            => TryLock(keys, 0, keys.Length, Timeout.InfiniteTimeSpan, cancellationToken: default);
-
-        /// <inheritdoc/>
-        public bool TryLock<TLockableKey>(TLockableKey[] keys, TimeSpan timeout)
-            where TLockableKey : ILockableKey
-            => TryLock(keys, 0, keys.Length, timeout, cancellationToken: default);
-
-        /// <inheritdoc/>
-        public bool TryLock<TLockableKey>(TLockableKey[] keys, int start, int count, TimeSpan timeout)
-            where TLockableKey : ILockableKey
-            => TryLock(keys, start, count, timeout, cancellationToken: default);
-
-        /// <inheritdoc/>
-        public bool TryLock<TLockableKey>(TLockableKey[] keys, CancellationToken cancellationToken)
-            where TLockableKey : ILockableKey
-            => TryLock(keys, 0, keys.Length, Timeout.InfiniteTimeSpan, cancellationToken);
-
-        /// <inheritdoc/>
-        public bool TryLock<TLockableKey>(TLockableKey[] keys, int start, int count, CancellationToken cancellationToken)
-            where TLockableKey : ILockableKey
-            => TryLock(keys, start, count, Timeout.InfiniteTimeSpan, cancellationToken);
-
-        /// <inheritdoc/>
-        public bool TryLock<TLockableKey>(TLockableKey[] keys, TimeSpan timeout, CancellationToken cancellationToken)
-            where TLockableKey : ILockableKey
-            => TryLock(keys, 0, keys.Length, timeout, cancellationToken);
-
-        /// <inheritdoc/>
-        public bool TryLock<TLockableKey>(TLockableKey[] keys, int start, int count, TimeSpan timeout, CancellationToken cancellationToken)
-            where TLockableKey : ILockableKey
-        {
-            clientSession.CheckIsAcquiredLockable();
-            Debug.Assert(!clientSession.store.kernel.epoch.ThisInstanceProtected(), "Trying to protect an already-protected epoch for LockableUnsafeContext.Lock()");
-
-            clientSession.UnsafeResumeThread(sessionFunctions);
-            try
-            {
-                return DoManualTryLock(sessionFunctions, clientSession, keys, start, count, timeout, cancellationToken);
-            }
-            finally
-            {
-                clientSession.UnsafeSuspendThread();
-            }
-        }
-
-        /// <inheritdoc/>
-        public bool TryPromoteLock<TLockableKey>(TLockableKey key)
-            where TLockableKey : ILockableKey
-            => TryPromoteLock(key, Timeout.InfiniteTimeSpan, cancellationToken: default);
-
-        /// <inheritdoc/>
-        public bool TryPromoteLock<TLockableKey>(TLockableKey key, TimeSpan timeout)
-            where TLockableKey : ILockableKey
-            => TryPromoteLock(key, timeout, cancellationToken: default);
-
-        /// <inheritdoc/>
-        public bool TryPromoteLock<TLockableKey>(TLockableKey key, CancellationToken cancellationToken)
-            where TLockableKey : ILockableKey
-            => TryPromoteLock(key, Timeout.InfiniteTimeSpan, cancellationToken);
-
-        /// <inheritdoc/>
-        public bool TryPromoteLock<TLockableKey>(TLockableKey key, TimeSpan timeout, CancellationToken cancellationToken)
-            where TLockableKey : ILockableKey
-        {
-            clientSession.CheckIsAcquiredLockable();
-            Debug.Assert(!clientSession.store.kernel.epoch.ThisInstanceProtected(), "Trying to protect an already-protected epoch for LockableUnsafeContext.Lock()");
-
-            clientSession.UnsafeResumeThread(sessionFunctions);
-            try
-            {
-                return DoManualTryPromoteLock(sessionFunctions, clientSession, key, timeout, cancellationToken);
-            }
-            finally
-            {
-                clientSession.UnsafeSuspendThread();
-            }
-        }
-
-        /// <inheritdoc/>
-        public void Unlock<TLockableKey>(TLockableKey[] keys) where TLockableKey : ILockableKey => Unlock(keys, 0, keys.Length);
-
-        /// <inheritdoc/>
-        public void Unlock<TLockableKey>(TLockableKey[] keys, int start, int count)
-            where TLockableKey : ILockableKey
-        {
-            clientSession.CheckIsAcquiredLockable();
-            Debug.Assert(!clientSession.store.kernel.epoch.ThisInstanceProtected(), "Trying to protect an already-protected epoch for LockableUnsafeContext.Unlock()");
-
-            clientSession.UnsafeResumeThread(sessionFunctions);
-            try
-            {
-                DoManualUnlock(clientSession, keys, start, start + count - 1);
-            }
-            finally
-            {
-                clientSession.UnsafeSuspendThread();
-            }
-        }
+        public void EndTransaction() => clientSession.EndTransaction();
 
         /// <summary>
         /// The id of the current Tsavorite Session
         /// </summary>
         public int SessionID { get { return clientSession.ctx.sessionID; } }
-
-        #endregion Key Locking
 
         #region ITsavoriteContext
 
@@ -368,15 +47,15 @@ namespace Tsavorite.core
         public ClientSession<TKey, TValue, TInput, TOutput, TContext, TSessionFunctions, TStoreFunctions, TAllocator> Session => clientSession;
 
         /// <inheritdoc/>
-        public long GetKeyHash(TKey key) => clientSession.store.GetKeyHash(ref key);
+        public long GetKeyHash(TKey key) => clientSession.Store.GetKeyHash(ref key);
 
         /// <inheritdoc/>
-        public long GetKeyHash(ref TKey key) => clientSession.store.GetKeyHash(ref key);
+        public long GetKeyHash(ref TKey key) => clientSession.Store.GetKeyHash(ref key);
 
         /// <inheritdoc/>
         public bool CompletePending(bool wait = false, bool spinWaitForCommit = false)
         {
-            Debug.Assert(!clientSession.store.kernel.epoch.ThisInstanceProtected());
+            Debug.Assert(!clientSession.Store.Kernel.Epoch.ThisInstanceProtected());
             clientSession.UnsafeResumeThread(sessionFunctions);
             try
             {
@@ -391,7 +70,7 @@ namespace Tsavorite.core
         /// <inheritdoc/>
         public bool CompletePendingWithOutputs(out CompletedOutputIterator<TKey, TValue, TInput, TOutput, TContext> completedOutputs, bool wait = false, bool spinWaitForCommit = false)
         {
-            Debug.Assert(!clientSession.store.kernel.epoch.ThisInstanceProtected());
+            Debug.Assert(!clientSession.Store.Kernel.Epoch.ThisInstanceProtected());
             clientSession.UnsafeResumeThread(sessionFunctions);
             try
             {
@@ -415,11 +94,11 @@ namespace Tsavorite.core
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public Status Read(ref TKey key, ref TInput input, ref TOutput output, TContext userContext = default)
         {
-            Debug.Assert(!clientSession.store.kernel.epoch.ThisInstanceProtected());
+            Debug.Assert(!clientSession.Store.Kernel.Epoch.ThisInstanceProtected());
             clientSession.UnsafeResumeThread(sessionFunctions);
             try
             {
-                return clientSession.store.ContextRead(ref key, ref input, ref output, userContext, sessionFunctions);
+                return clientSession.Store.ContextRead(ref key, ref input, ref output, userContext, sessionFunctions);
             }
             finally
             {
@@ -504,11 +183,11 @@ namespace Tsavorite.core
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public Status Read(ref TKey key, ref TInput input, ref TOutput output, ref ReadOptions readOptions, out RecordMetadata recordMetadata, TContext userContext = default)
         {
-            Debug.Assert(!clientSession.store.kernel.epoch.ThisInstanceProtected());
+            Debug.Assert(!clientSession.Store.Kernel.Epoch.ThisInstanceProtected());
             clientSession.UnsafeResumeThread(sessionFunctions);
             try
             {
-                return clientSession.store.ContextRead(ref key, ref input, ref output, ref readOptions, out recordMetadata, userContext, sessionFunctions);
+                return clientSession.Store.ContextRead(ref key, ref input, ref output, ref readOptions, out recordMetadata, userContext, sessionFunctions);
             }
             finally
             {
@@ -520,11 +199,11 @@ namespace Tsavorite.core
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public Status ReadAtAddress(long address, ref TInput input, ref TOutput output, ref ReadOptions readOptions, out RecordMetadata recordMetadata, TContext userContext = default)
         {
-            Debug.Assert(!clientSession.store.kernel.epoch.ThisInstanceProtected());
+            Debug.Assert(!clientSession.Store.Kernel.Epoch.ThisInstanceProtected());
             clientSession.UnsafeResumeThread(sessionFunctions);
             try
             {
-                return clientSession.store.ContextReadAtAddress(address, ref input, ref output, ref readOptions, out recordMetadata, userContext, sessionFunctions);
+                return clientSession.Store.ContextReadAtAddress(address, ref input, ref output, ref readOptions, out recordMetadata, userContext, sessionFunctions);
             }
             finally
             {
@@ -536,11 +215,11 @@ namespace Tsavorite.core
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public Status ReadAtAddress(long address, ref TKey key, ref TInput input, ref TOutput output, ref ReadOptions readOptions, out RecordMetadata recordMetadata, TContext userContext = default)
         {
-            Debug.Assert(!clientSession.store.kernel.epoch.ThisInstanceProtected());
+            Debug.Assert(!clientSession.Store.Kernel.Epoch.ThisInstanceProtected());
             clientSession.UnsafeResumeThread(sessionFunctions);
             try
             {
-                return clientSession.store.ContextReadAtAddress(address, ref key, ref input, ref output, ref readOptions, out recordMetadata, userContext, sessionFunctions);
+                return clientSession.Store.ContextReadAtAddress(address, ref key, ref input, ref output, ref readOptions, out recordMetadata, userContext, sessionFunctions);
             }
             finally
             {
@@ -554,7 +233,7 @@ namespace Tsavorite.core
         {
             TInput input = default;
             TOutput output = default;
-            return Upsert(ref key, clientSession.store.storeFunctions.GetKeyHashCode64(ref key), ref input, ref desiredValue, ref output, userContext);
+            return Upsert(ref key, clientSession.Store.storeFunctions.GetKeyHashCode64(ref key), ref input, ref desiredValue, ref output, userContext);
         }
 
         /// <inheritdoc/>
@@ -563,28 +242,28 @@ namespace Tsavorite.core
         {
             TInput input = default;
             TOutput output = default;
-            return Upsert(ref key, upsertOptions.KeyHash ?? clientSession.store.storeFunctions.GetKeyHashCode64(ref key), ref input, ref desiredValue, ref output, userContext);
+            return Upsert(ref key, upsertOptions.KeyHash ?? clientSession.Store.storeFunctions.GetKeyHashCode64(ref key), ref input, ref desiredValue, ref output, userContext);
         }
 
         /// <inheritdoc/>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public Status Upsert(ref TKey key, ref TInput input, ref TValue desiredValue, ref TOutput output, TContext userContext = default)
-            => Upsert(ref key, clientSession.store.storeFunctions.GetKeyHashCode64(ref key), ref input, ref desiredValue, ref output, userContext);
+            => Upsert(ref key, clientSession.Store.storeFunctions.GetKeyHashCode64(ref key), ref input, ref desiredValue, ref output, userContext);
 
         /// <inheritdoc/>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public Status Upsert(ref TKey key, ref TInput input, ref TValue desiredValue, ref TOutput output, ref UpsertOptions upsertOptions, TContext userContext = default)
-            => Upsert(ref key, upsertOptions.KeyHash ?? clientSession.store.storeFunctions.GetKeyHashCode64(ref key), ref input, ref desiredValue, ref output, userContext);
+            => Upsert(ref key, upsertOptions.KeyHash ?? clientSession.Store.storeFunctions.GetKeyHashCode64(ref key), ref input, ref desiredValue, ref output, userContext);
 
         /// <inheritdoc/>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         private Status Upsert(ref TKey key, long keyHash, ref TInput input, ref TValue desiredValue, ref TOutput output, TContext userContext = default)
         {
-            Debug.Assert(!clientSession.store.kernel.epoch.ThisInstanceProtected());
+            Debug.Assert(!clientSession.Store.Kernel.Epoch.ThisInstanceProtected());
             clientSession.UnsafeResumeThread(sessionFunctions);
             try
             {
-                return clientSession.store.ContextUpsert(ref key, keyHash, ref input, ref desiredValue, ref output, userContext, sessionFunctions);
+                return clientSession.Store.ContextUpsert(ref key, keyHash, ref input, ref desiredValue, ref output, userContext, sessionFunctions);
             }
             finally
             {
@@ -595,22 +274,22 @@ namespace Tsavorite.core
         /// <inheritdoc/>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public Status Upsert(ref TKey key, ref TInput input, ref TValue desiredValue, ref TOutput output, out RecordMetadata recordMetadata, TContext userContext = default)
-            => Upsert(ref key, clientSession.store.storeFunctions.GetKeyHashCode64(ref key), ref input, ref desiredValue, ref output, out recordMetadata, userContext);
+            => Upsert(ref key, clientSession.Store.storeFunctions.GetKeyHashCode64(ref key), ref input, ref desiredValue, ref output, out recordMetadata, userContext);
 
         /// <inheritdoc/>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public Status Upsert(ref TKey key, ref TInput input, ref TValue desiredValue, ref TOutput output, ref UpsertOptions upsertOptions, out RecordMetadata recordMetadata, TContext userContext = default)
-            => Upsert(ref key, upsertOptions.KeyHash ?? clientSession.store.storeFunctions.GetKeyHashCode64(ref key), ref input, ref desiredValue, ref output, out recordMetadata, userContext);
+            => Upsert(ref key, upsertOptions.KeyHash ?? clientSession.Store.storeFunctions.GetKeyHashCode64(ref key), ref input, ref desiredValue, ref output, out recordMetadata, userContext);
 
         /// <inheritdoc/>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         private Status Upsert(ref TKey key, long keyHash, ref TInput input, ref TValue desiredValue, ref TOutput output, out RecordMetadata recordMetadata, TContext userContext = default)
         {
-            Debug.Assert(!clientSession.store.kernel.epoch.ThisInstanceProtected());
+            Debug.Assert(!clientSession.Store.Kernel.Epoch.ThisInstanceProtected());
             clientSession.UnsafeResumeThread(sessionFunctions);
             try
             {
-                return clientSession.store.ContextUpsert(ref key, keyHash, ref input, ref desiredValue, ref output, out recordMetadata, userContext, sessionFunctions);
+                return clientSession.Store.ContextUpsert(ref key, keyHash, ref input, ref desiredValue, ref output, out recordMetadata, userContext, sessionFunctions);
             }
             finally
             {
@@ -646,27 +325,27 @@ namespace Tsavorite.core
         /// <inheritdoc/>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public Status RMW(ref TKey key, ref TInput input, ref TOutput output, ref RMWOptions rmwOptions, TContext userContext = default)
-            => RMW(ref key, rmwOptions.KeyHash ?? clientSession.store.storeFunctions.GetKeyHashCode64(ref key), ref input, ref output, out _, userContext);
+            => RMW(ref key, rmwOptions.KeyHash ?? clientSession.Store.storeFunctions.GetKeyHashCode64(ref key), ref input, ref output, out _, userContext);
 
         /// <inheritdoc/>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public Status RMW(ref TKey key, ref TInput input, ref TOutput output, out RecordMetadata recordMetadata, TContext userContext = default)
-            => RMW(ref key, clientSession.store.storeFunctions.GetKeyHashCode64(ref key), ref input, ref output, out recordMetadata, userContext);
+            => RMW(ref key, clientSession.Store.storeFunctions.GetKeyHashCode64(ref key), ref input, ref output, out recordMetadata, userContext);
 
         /// <inheritdoc/>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public Status RMW(ref TKey key, ref TInput input, ref TOutput output, ref RMWOptions rmwOptions, out RecordMetadata recordMetadata, TContext userContext = default)
-            => RMW(ref key, rmwOptions.KeyHash ?? clientSession.store.storeFunctions.GetKeyHashCode64(ref key), ref input, ref output, out recordMetadata, userContext);
+            => RMW(ref key, rmwOptions.KeyHash ?? clientSession.Store.storeFunctions.GetKeyHashCode64(ref key), ref input, ref output, out recordMetadata, userContext);
 
         /// <inheritdoc/>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         private Status RMW(ref TKey key, long keyHash, ref TInput input, ref TOutput output, out RecordMetadata recordMetadata, TContext userContext = default)
         {
-            Debug.Assert(!clientSession.store.kernel.epoch.ThisInstanceProtected());
+            Debug.Assert(!clientSession.Store.Kernel.Epoch.ThisInstanceProtected());
             clientSession.UnsafeResumeThread(sessionFunctions);
             try
             {
-                return clientSession.store.ContextRMW(ref key, keyHash, ref input, ref output, out recordMetadata, userContext, sessionFunctions);
+                return clientSession.Store.ContextRMW(ref key, keyHash, ref input, ref output, out recordMetadata, userContext, sessionFunctions);
             }
             finally
             {
@@ -725,22 +404,22 @@ namespace Tsavorite.core
         /// <inheritdoc/>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public Status Delete(ref TKey key, TContext userContext = default)
-            => Delete(ref key, clientSession.store.storeFunctions.GetKeyHashCode64(ref key), userContext);
+            => Delete(ref key, clientSession.Store.storeFunctions.GetKeyHashCode64(ref key), userContext);
 
         /// <inheritdoc/>
         /// <inheritdoc/>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public Status Delete(ref TKey key, ref DeleteOptions deleteOptions, TContext userContext = default)
-            => Delete(ref key, deleteOptions.KeyHash ?? clientSession.store.storeFunctions.GetKeyHashCode64(ref key), userContext);
+            => Delete(ref key, deleteOptions.KeyHash ?? clientSession.Store.storeFunctions.GetKeyHashCode64(ref key), userContext);
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         private Status Delete(ref TKey key, long keyHash, TContext userContext = default)
         {
-            Debug.Assert(!clientSession.store.kernel.epoch.ThisInstanceProtected());
+            Debug.Assert(!clientSession.Store.Kernel.Epoch.ThisInstanceProtected());
             clientSession.UnsafeResumeThread(sessionFunctions);
             try
             {
-                return clientSession.store.ContextDelete<TInput, TOutput, TContext, SessionFunctionsWrapper<TKey, TValue, TInput, TOutput, TContext, TSessionFunctions, LockableSessionLocker<TKey, TValue, TStoreFunctions, TAllocator>, TStoreFunctions, TAllocator>>(
+                return clientSession.Store.ContextDelete<TInput, TOutput, TContext, SessionFunctionsWrapper<TKey, TValue, TInput, TOutput, TContext, TSessionFunctions, LockableSessionLocker<TKey, TValue, TStoreFunctions, TAllocator>, TStoreFunctions, TAllocator>>(
                     ref key, keyHash, userContext, sessionFunctions);
             }
             finally
@@ -771,18 +450,18 @@ namespace Tsavorite.core
 
         /// <inheritdoc/>
         public void Refresh()
-        {
-            Debug.Assert(!clientSession.store.kernel.epoch.ThisInstanceProtected());
-            clientSession.UnsafeResumeThread(sessionFunctions);
-            try
-            {
-                clientSession.store.InternalRefresh<TInput, TOutput, TContext, SessionFunctionsWrapper<TKey, TValue, TInput, TOutput, TContext, TSessionFunctions, LockableSessionLocker<TKey, TValue, TStoreFunctions, TAllocator>, TStoreFunctions, TAllocator>>(sessionFunctions);
-            }
-            finally
-            {
-                clientSession.UnsafeSuspendThread();
-            }
-        }
+            => clientSession.Refresh(sessionFunctions);
+
+        /// <inheritdoc/>
+        public void HandleImmediateNonPendingRetryStatus(bool refresh)
+            => clientSession.Store.HandleImmediateNonPendingRetryStatus<TInput, TOutput, TContext,
+                SessionFunctionsWrapper<TKey, TValue, TInput, TOutput, TContext, TSessionFunctions, LockableSessionLocker<TKey, TValue, TStoreFunctions, TAllocator>, TStoreFunctions, TAllocator>>
+                (refresh ? OperationStatus.RETRY_LATER : OperationStatus.RETRY_NOW, sessionFunctions);
+
+        /// <inheritdoc/>
+        public void DoThreadStateMachineStep() => clientSession.Store.DoThreadStateMachineStep<TInput, TOutput, TContext,
+                SessionFunctionsWrapper<TKey, TValue, TInput, TOutput, TContext, TSessionFunctions, LockableSessionLocker<TKey, TValue, TStoreFunctions, TAllocator>, TStoreFunctions, TAllocator>>
+                (sessionFunctions);
 
         #endregion ITsavoriteContext
     }

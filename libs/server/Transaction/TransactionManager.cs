@@ -66,6 +66,8 @@ namespace Garnet.server
         // Not readonly to avoid defensive copy
         BasicGarnetApi garnetTxFinalizeApi;
 
+        internal IKernelSession kernelSession;
+
         private readonly RespServerSession respSession;
         readonly FunctionsState functionsState;
         internal readonly ScratchBufferManager scratchBufferManager;
@@ -95,7 +97,10 @@ namespace Garnet.server
         /// </summary>
         private TxnKeyEntries keyEntries;
 
+        internal TsavoriteKernel TsavoriteKernel => keyEntries.kernel;
+
         internal TransactionManager(
+            TsavoriteKernel kernel,
             RespServerSession respSession,
             StorageSession storageSession,
             ScratchBufferManager scratchBufferManager,
@@ -121,7 +126,7 @@ namespace Garnet.server
             this.clusterSession = respSession.clusterSession;
 
             watchContainer = new WatchedKeysContainer(initialSliceBufferSize, functionsState.watchVersionMap);
-            keyEntries = new TxnKeyEntries(initialSliceBufferSize, lockableContext, objectStoreLockableContext);
+            keyEntries = new TxnKeyEntries(kernel, initialSliceBufferSize);
             this.scratchBufferManager = scratchBufferManager;
 
             garnetTxMainApi = respSession.lockableGarnetApi;
@@ -139,16 +144,15 @@ namespace Garnet.server
         {
             if (isRunning)
             {
-                keyEntries.UnlockAllKeys();
-
-                // Release context
-                if (transactionStoreType == StoreType.Main || transactionStoreType == StoreType.All)
-                    lockableContext.EndLockable();
-                if (transactionStoreType == StoreType.Object || transactionStoreType == StoreType.All)
+                respSession.kernelSession.BeginUnsafe();
+                try
                 {
-                    if (objectStoreBasicContext.IsNull)
-                        throw new Exception("Trying to perform object store transaction with object store disabled");
-                    objectStoreLockableContext.EndLockable();
+                    keyEntries.UnlockAllKeys(ref respSession.kernelSession);
+                    respSession.kernelSession.EndTransaction();
+                }
+                finally
+                {
+                    respSession.kernelSession.EndUnsafe();
                 }
             }
             this.txnStartHead = 0;
@@ -287,40 +291,32 @@ namespace Garnet.server
             if (!internal_txn)
                 watchContainer.SaveKeysToLock(this);
 
-            // Acquire lock sessions
-            if (transactionStoreType == StoreType.All || transactionStoreType == StoreType.Main)
+            respSession.kernelSession.BeginUnsafe();
+            try
             {
-                lockableContext.BeginLockable();
-            }
-            if (transactionStoreType == StoreType.All || transactionStoreType == StoreType.Object)
-            {
-                if (objectStoreBasicContext.IsNull)
-                    throw new Exception("Trying to perform object store transaction with object store disabled");
-                objectStoreLockableContext.BeginLockable();
-            }
+                respSession.kernelSession.BeginTransaction();
 
-            bool lockSuccess;
-            if (fail_fast_on_lock)
-            {
-                lockSuccess = keyEntries.TryLockAllKeys(lock_timeout);
-            }
-            else
-            {
-                keyEntries.LockAllKeys();
-                lockSuccess = true;
-            }
-
-            if (!lockSuccess ||
-                (!internal_txn && !watchContainer.ValidateWatchVersion()))
-            {
-                if (!lockSuccess)
-                {
-                    this.logger?.LogError("Transaction failed to acquire all the locks on keys to proceed.");
+                bool lockSuccess = true;
+                if (fail_fast_on_lock)
+                { 
+                    lockSuccess = keyEntries.TryLockAllKeys(ref respSession.kernelSession, lock_timeout);
+                    if (!lockSuccess)
+                        this.logger?.LogError("Transaction failed to acquire all the locks on keys to proceed.");
                 }
-                Reset(true);
-                if (!internal_txn)
-                    watchContainer.Reset();
-                return false;
+                else
+                    keyEntries.LockAllKeys(ref respSession.kernelSession);
+
+                if (!lockSuccess || (!internal_txn && !watchContainer.ValidateWatchVersion()))
+                {
+                    Reset(true);
+                    if (!internal_txn)
+                        watchContainer.Reset();
+                    return false;
+                }
+            }
+            finally
+            {
+                respSession.kernelSession.EndUnsafe();
             }
 
             if (appendOnlyFile != null && !functionsState.StoredProcMode)

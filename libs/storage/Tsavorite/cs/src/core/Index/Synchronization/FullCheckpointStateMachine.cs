@@ -33,7 +33,7 @@ namespace Tsavorite.core
                     store.InitializeHybridLogCheckpoint(store._hybridLogCheckpointToken, next.Version);
                     break;
                 case Phase.WAIT_FLUSH:
-                    store._indexCheckpoint.info.num_buckets = store.kernel.hashTable.overflowBucketsAllocator.GetMaxValidAddress();
+                    store._indexCheckpoint.info.num_buckets = store.Kernel.hashTable.overflowBucketsAllocator.GetMaxValidAddress();
                     store._indexCheckpoint.info.finalLogicalAddress = store.hlogBase.GetTailAddress();
                     break;
                 case Phase.PERSISTENCE_CALLBACK:
