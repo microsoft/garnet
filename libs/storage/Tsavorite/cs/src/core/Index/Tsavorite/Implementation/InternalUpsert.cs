@@ -52,7 +52,7 @@ namespace Tsavorite.core
             OperationStackContext<TKey, TValue, TStoreFunctions, TAllocator> stackCtx = new(keyHash, partitionId);
             pendingContext.keyHash = keyHash;
 
-            if (sessionFunctions.Ctx.phase == Phase.IN_PROGRESS_GROW)
+            if (sessionFunctions.ExecutionCtx.phase == Phase.IN_PROGRESS_GROW)
                 SplitBuckets(stackCtx.hei.hash);
 
             if (!FindOrCreateTagAndTryTransientXLock<TInput, TOutput, TContext, TSessionFunctionsWrapper>(sessionFunctions, ref key, ref stackCtx, out OperationStatus status))
@@ -78,9 +78,9 @@ namespace Tsavorite.core
                 }
 
                 // Check for CPR consistency after checking if source is readcache.
-                if (sessionFunctions.Ctx.phase != Phase.REST)
+                if (sessionFunctions.ExecutionCtx.phase != Phase.REST)
                 {
-                    var latchDestination = CheckCPRConsistencyUpsert(sessionFunctions.Ctx.phase, ref stackCtx, ref status, ref latchOperation);
+                    var latchDestination = CheckCPRConsistencyUpsert(sessionFunctions.ExecutionCtx.phase, ref stackCtx, ref status, ref latchOperation);
                     switch (latchDestination)
                     {
                         case LatchDestination.Retry:
@@ -100,8 +100,8 @@ namespace Tsavorite.core
                     // Mutable Region: Update the record in-place. We perform mutable updates only if we are in normal processing phase of checkpointing
                     UpsertInfo upsertInfo = new()
                     {
-                        Version = sessionFunctions.Ctx.version,
-                        SessionID = sessionFunctions.Ctx.sessionID,
+                        Version = sessionFunctions.ExecutionCtx.version,
+                        SessionID = sessionFunctions.ExecutionCtx.sessionID,
                         Address = stackCtx.recSrc.LogicalAddress,
                         KeyHash = stackCtx.hei.hash
                     };
@@ -124,7 +124,7 @@ namespace Tsavorite.core
                     // upsertInfo's lengths are filled in and GetValueLengths and SetLength are called inside ConcurrentWriter.
                     if (sessionFunctions.ConcurrentWriter(stackCtx.recSrc.PhysicalAddress, ref key, ref input, ref value, ref recordValue, ref output, ref upsertInfo, ref srcRecordInfo))
                     {
-                        MarkPage(stackCtx.recSrc.LogicalAddress, sessionFunctions.Ctx);
+                        MarkPage(stackCtx.recSrc.LogicalAddress, sessionFunctions.ExecutionCtx);
                         pendingContext.recordInfo = srcRecordInfo;
                         pendingContext.logicalAddress = stackCtx.recSrc.LogicalAddress;
                         status = OperationStatusUtils.AdvancedOpCode(OperationStatus.SUCCESS, StatusCode.InPlaceUpdatedRecord);
@@ -230,7 +230,7 @@ namespace Tsavorite.core
                     if (ok && sessionFunctions.SingleWriter(ref key, ref input, ref value, ref recordValue, ref output, ref upsertInfo, WriteReason.Upsert, ref srcRecordInfo))
                     {
                         // Success
-                        MarkPage(stackCtx.recSrc.LogicalAddress, sessionFunctions.Ctx);
+                        MarkPage(stackCtx.recSrc.LogicalAddress, sessionFunctions.ExecutionCtx);
                         pendingContext.recordInfo = srcRecordInfo;
                         pendingContext.logicalAddress = stackCtx.recSrc.LogicalAddress;
                         status = OperationStatusUtils.AdvancedOpCode(OperationStatus.SUCCESS, StatusCode.InPlaceUpdatedRecord);
@@ -312,15 +312,15 @@ namespace Tsavorite.core
                     out long newLogicalAddress, out long newPhysicalAddress, out OperationStatus status))
                 return status;
 
-            ref RecordInfo newRecordInfo = ref WriteNewRecordInfo(ref key, hlogBase, newPhysicalAddress, inNewVersion: sessionFunctions.Ctx.InNewVersion, stackCtx.recSrc.LatestLogicalAddress);
+            ref RecordInfo newRecordInfo = ref WriteNewRecordInfo(ref key, hlogBase, newPhysicalAddress, inNewVersion: sessionFunctions.ExecutionCtx.InNewVersion, stackCtx.recSrc.LatestLogicalAddress);
             if (allocOptions.IgnoreHeiAddress)
                 newRecordInfo.PreviousAddress = srcRecordInfo.PreviousAddress;
             stackCtx.SetNewRecord(newLogicalAddress);
 
             UpsertInfo upsertInfo = new()
             {
-                Version = sessionFunctions.Ctx.version,
-                SessionID = sessionFunctions.Ctx.sessionID,
+                Version = sessionFunctions.ExecutionCtx.version,
+                SessionID = sessionFunctions.ExecutionCtx.sessionID,
                 Address = newLogicalAddress,
                 KeyHash = stackCtx.hei.hash,
             };
@@ -332,7 +332,7 @@ namespace Tsavorite.core
             if (!sessionFunctions.SingleWriter(ref key, ref input, ref value, ref newRecordValue, ref output, ref upsertInfo, WriteReason.Upsert, ref newRecordInfo))
             {
                 // Save allocation for revivification (not retry, because these aren't retry status codes), or abandon it if that fails.
-                if (RevivificationManager.UseFreeRecordPool && RevivificationManager.TryAdd(newLogicalAddress, newPhysicalAddress, allocatedSize, ref sessionFunctions.Ctx.RevivificationStats))
+                if (RevivificationManager.UseFreeRecordPool && RevivificationManager.TryAdd(newLogicalAddress, newPhysicalAddress, allocatedSize, ref sessionFunctions.ExecutionCtx.RevivificationStats))
                     stackCtx.ClearNewRecord();
                 else
                     stackCtx.SetNewRecordInvalid(ref newRecordInfo);

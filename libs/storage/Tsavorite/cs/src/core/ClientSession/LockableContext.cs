@@ -1,7 +1,6 @@
 ﻿// Copyright (c) Microsoft Corporation.
 // Licensed under the MIT license.
 
-using System;
 using System.Diagnostics;
 using System.Runtime.CompilerServices;
 using System.Threading;
@@ -29,9 +28,8 @@ namespace Tsavorite.core
             sessionFunctions = new(clientSession);
         }
 
-
         /// <inheritdoc/>
-        public void BeginTransaction() => clientSession.BeginTransaction(sessionFunctions);
+        public void BeginTransaction() => clientSession.BeginTransaction();
 
         /// <inheritdoc/>
         public void EndTransaction() => clientSession.EndTransaction();
@@ -39,7 +37,7 @@ namespace Tsavorite.core
         /// <summary>
         /// The id of the current Tsavorite Session
         /// </summary>
-        public int SessionID { get { return clientSession.ctx.sessionID; } }
+        public int SessionID { get { return clientSession.ExecutionCtx.sessionID; } }
 
         #region ITsavoriteContext
 
@@ -56,7 +54,7 @@ namespace Tsavorite.core
         public bool CompletePending(bool wait = false, bool spinWaitForCommit = false)
         {
             Debug.Assert(!clientSession.Store.Kernel.Epoch.ThisInstanceProtected());
-            clientSession.UnsafeResumeThread(sessionFunctions);
+            clientSession.UnsafeResumeThread();
             try
             {
                 return clientSession.UnsafeCompletePending(sessionFunctions, false, wait, spinWaitForCommit);
@@ -71,7 +69,7 @@ namespace Tsavorite.core
         public bool CompletePendingWithOutputs(out CompletedOutputIterator<TKey, TValue, TInput, TOutput, TContext> completedOutputs, bool wait = false, bool spinWaitForCommit = false)
         {
             Debug.Assert(!clientSession.Store.Kernel.Epoch.ThisInstanceProtected());
-            clientSession.UnsafeResumeThread(sessionFunctions);
+            clientSession.UnsafeResumeThread();
             try
             {
                 return clientSession.UnsafeCompletePendingWithOutputs(sessionFunctions, out completedOutputs, wait, spinWaitForCommit);
@@ -95,7 +93,7 @@ namespace Tsavorite.core
         public Status Read(ref TKey key, ref TInput input, ref TOutput output, TContext userContext = default)
         {
             Debug.Assert(!clientSession.Store.Kernel.Epoch.ThisInstanceProtected());
-            clientSession.UnsafeResumeThread(sessionFunctions);
+            clientSession.UnsafeResumeThread();
             try
             {
                 return clientSession.Store.ContextRead(ref key, ref input, ref output, userContext, sessionFunctions);
@@ -184,7 +182,7 @@ namespace Tsavorite.core
         public Status Read(ref TKey key, ref TInput input, ref TOutput output, ref ReadOptions readOptions, out RecordMetadata recordMetadata, TContext userContext = default)
         {
             Debug.Assert(!clientSession.Store.Kernel.Epoch.ThisInstanceProtected());
-            clientSession.UnsafeResumeThread(sessionFunctions);
+            clientSession.UnsafeResumeThread();
             try
             {
                 return clientSession.Store.ContextRead(ref key, ref input, ref output, ref readOptions, out recordMetadata, userContext, sessionFunctions);
@@ -200,7 +198,7 @@ namespace Tsavorite.core
         public Status ReadAtAddress(long address, ref TInput input, ref TOutput output, ref ReadOptions readOptions, out RecordMetadata recordMetadata, TContext userContext = default)
         {
             Debug.Assert(!clientSession.Store.Kernel.Epoch.ThisInstanceProtected());
-            clientSession.UnsafeResumeThread(sessionFunctions);
+            clientSession.UnsafeResumeThread();
             try
             {
                 return clientSession.Store.ContextReadAtAddress(address, ref input, ref output, ref readOptions, out recordMetadata, userContext, sessionFunctions);
@@ -216,7 +214,7 @@ namespace Tsavorite.core
         public Status ReadAtAddress(long address, ref TKey key, ref TInput input, ref TOutput output, ref ReadOptions readOptions, out RecordMetadata recordMetadata, TContext userContext = default)
         {
             Debug.Assert(!clientSession.Store.Kernel.Epoch.ThisInstanceProtected());
-            clientSession.UnsafeResumeThread(sessionFunctions);
+            clientSession.UnsafeResumeThread();
             try
             {
                 return clientSession.Store.ContextReadAtAddress(address, ref key, ref input, ref output, ref readOptions, out recordMetadata, userContext, sessionFunctions);
@@ -260,7 +258,7 @@ namespace Tsavorite.core
         private Status Upsert(ref TKey key, long keyHash, ref TInput input, ref TValue desiredValue, ref TOutput output, TContext userContext = default)
         {
             Debug.Assert(!clientSession.Store.Kernel.Epoch.ThisInstanceProtected());
-            clientSession.UnsafeResumeThread(sessionFunctions);
+            clientSession.UnsafeResumeThread();
             try
             {
                 return clientSession.Store.ContextUpsert(ref key, keyHash, ref input, ref desiredValue, ref output, userContext, sessionFunctions);
@@ -286,7 +284,7 @@ namespace Tsavorite.core
         private Status Upsert(ref TKey key, long keyHash, ref TInput input, ref TValue desiredValue, ref TOutput output, out RecordMetadata recordMetadata, TContext userContext = default)
         {
             Debug.Assert(!clientSession.Store.Kernel.Epoch.ThisInstanceProtected());
-            clientSession.UnsafeResumeThread(sessionFunctions);
+            clientSession.UnsafeResumeThread();
             try
             {
                 return clientSession.Store.ContextUpsert(ref key, keyHash, ref input, ref desiredValue, ref output, out recordMetadata, userContext, sessionFunctions);
@@ -342,7 +340,7 @@ namespace Tsavorite.core
         private Status RMW(ref TKey key, long keyHash, ref TInput input, ref TOutput output, out RecordMetadata recordMetadata, TContext userContext = default)
         {
             Debug.Assert(!clientSession.Store.Kernel.Epoch.ThisInstanceProtected());
-            clientSession.UnsafeResumeThread(sessionFunctions);
+            clientSession.UnsafeResumeThread();
             try
             {
                 return clientSession.Store.ContextRMW(ref key, keyHash, ref input, ref output, out recordMetadata, userContext, sessionFunctions);
@@ -416,7 +414,7 @@ namespace Tsavorite.core
         private Status Delete(ref TKey key, long keyHash, TContext userContext = default)
         {
             Debug.Assert(!clientSession.Store.Kernel.Epoch.ThisInstanceProtected());
-            clientSession.UnsafeResumeThread(sessionFunctions);
+            clientSession.UnsafeResumeThread();
             try
             {
                 return clientSession.Store.ContextDelete<TInput, TOutput, TContext, SessionFunctionsWrapper<TKey, TValue, TInput, TOutput, TContext, TSessionFunctions, LockableSessionLocker<TKey, TValue, TStoreFunctions, TAllocator>, TStoreFunctions, TAllocator>>(
@@ -449,19 +447,7 @@ namespace Tsavorite.core
             => clientSession.IsModified(sessionFunctions, ref key);
 
         /// <inheritdoc/>
-        public void Refresh()
-            => clientSession.Refresh(sessionFunctions);
-
-        /// <inheritdoc/>
-        public void HandleImmediateNonPendingRetryStatus(bool refresh)
-            => clientSession.Store.HandleImmediateNonPendingRetryStatus<TInput, TOutput, TContext,
-                SessionFunctionsWrapper<TKey, TValue, TInput, TOutput, TContext, TSessionFunctions, LockableSessionLocker<TKey, TValue, TStoreFunctions, TAllocator>, TStoreFunctions, TAllocator>>
-                (refresh ? OperationStatus.RETRY_LATER : OperationStatus.RETRY_NOW, sessionFunctions);
-
-        /// <inheritdoc/>
-        public void DoThreadStateMachineStep() => clientSession.Store.DoThreadStateMachineStep<TInput, TOutput, TContext,
-                SessionFunctionsWrapper<TKey, TValue, TInput, TOutput, TContext, TSessionFunctions, LockableSessionLocker<TKey, TValue, TStoreFunctions, TAllocator>, TStoreFunctions, TAllocator>>
-                (sessionFunctions);
+        public void Refresh() => clientSession.Refresh();
 
         #endregion ITsavoriteContext
     }

@@ -66,7 +66,7 @@ namespace Tsavorite.core
             {
                 if (!options.IgnoreHeiAddress && stackCtx.hei.Address >= minMutableAddress)
                     minRevivAddress = stackCtx.hei.Address;
-                if (sessionFunctions.Ctx.IsInV1)
+                if (sessionFunctions.ExecutionCtx.IsInV1)
                 {
                     var fuzzyStartAddress = _hybridLogCheckpoint.info.startLogicalAddress;
                     if (fuzzyStartAddress > minRevivAddress)
@@ -89,7 +89,7 @@ namespace Tsavorite.core
                         return true;
 
                     // This allocation is below the necessary address so put it on the free list or abandon it, then repeat the loop.
-                    if (!RevivificationManager.UseFreeRecordPool || !RevivificationManager.TryAdd(newLogicalAddress, newPhysicalAddress, allocatedSize, ref sessionFunctions.Ctx.RevivificationStats))
+                    if (!RevivificationManager.UseFreeRecordPool || !RevivificationManager.TryAdd(newLogicalAddress, newPhysicalAddress, allocatedSize, ref sessionFunctions.ExecutionCtx.RevivificationStats))
                         hlog.GetInfo(newPhysicalAddress).SetInvalid();  // Skip on log scan
                     continue;
                 }

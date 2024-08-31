@@ -12,17 +12,15 @@ namespace Tsavorite.core
         where TAllocator : IAllocator<TKey, TValue, TStoreFunctions>
     {
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        internal void SynchronizeEpoch<TInput, TOutput, TContext, TSessionFunctionsWrapper>(
-            TsavoriteExecutionContext<TInput, TOutput, TContext> sessionCtx,
-            ref PendingContext<TInput, TOutput, TContext> pendingContext,
-            TSessionFunctionsWrapper sessionFunctions)
-            where TSessionFunctionsWrapper : ISessionFunctionsWrapper<TKey, TValue, TInput, TOutput, TContext, TStoreFunctions, TAllocator>
+        internal void SynchronizeEpoch<TInput, TOutput, TContext>(
+            TsavoriteExecutionContext<TInput, TOutput, TContext> executionCtx,
+            ref PendingContext<TInput, TOutput, TContext> pendingContext)
         {
-            var version = sessionCtx.version;
-            Debug.Assert(sessionCtx.version == version, $"sessionCtx.version ({sessionCtx.version}) should == version ({version})");
-            Debug.Assert(sessionCtx.phase == Phase.PREPARE, $"sessionCtx.phase ({sessionCtx.phase}) should == Phase.PREPARE");
-            InternalRefresh<TInput, TOutput, TContext, TSessionFunctionsWrapper>(sessionFunctions);
-            Debug.Assert(sessionCtx.version > version, $"sessionCtx.version ({sessionCtx.version}) should be > version ({version})");
+            var version = executionCtx.version;
+            Debug.Assert(executionCtx.version == version, $"sessionCtx.version ({executionCtx.version}) should == version ({version})");
+            Debug.Assert(executionCtx.phase == Phase.PREPARE, $"sessionCtx.phase ({executionCtx.phase}) should == Phase.PREPARE");
+            InternalRefresh(executionCtx);
+            Debug.Assert(executionCtx.version > version, $"sessionCtx.version ({executionCtx.version}) should be > version ({version})");
         }
 
         /// <summary>

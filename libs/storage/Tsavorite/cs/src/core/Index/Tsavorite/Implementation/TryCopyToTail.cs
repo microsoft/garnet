@@ -35,13 +35,13 @@ namespace Tsavorite.core
             if (!TryAllocateRecord(sessionFunctions, ref pendingContext, ref stackCtx, actualSize, ref allocatedSize, keySize, new AllocateOptions() { Recycle = true },
                     out long newLogicalAddress, out long newPhysicalAddress, out OperationStatus status))
                 return status;
-            ref var newRecordInfo = ref WriteNewRecordInfo(ref key, hlogBase, newPhysicalAddress, inNewVersion: sessionFunctions.Ctx.InNewVersion, stackCtx.recSrc.LatestLogicalAddress);
+            ref var newRecordInfo = ref WriteNewRecordInfo(ref key, hlogBase, newPhysicalAddress, inNewVersion: sessionFunctions.ExecutionCtx.InNewVersion, stackCtx.recSrc.LatestLogicalAddress);
             stackCtx.SetNewRecord(newLogicalAddress);
 
             UpsertInfo upsertInfo = new()
             {
-                Version = sessionFunctions.Ctx.version,
-                SessionID = sessionFunctions.Ctx.sessionID,
+                Version = sessionFunctions.ExecutionCtx.version,
+                SessionID = sessionFunctions.ExecutionCtx.sessionID,
                 Address = newLogicalAddress,
                 KeyHash = stackCtx.hei.hash,
             };
@@ -53,7 +53,7 @@ namespace Tsavorite.core
             if (!sessionFunctions.SingleWriter(ref key, ref input, ref value, ref newRecordValue, ref output, ref upsertInfo, reason, ref newRecordInfo))
             {
                 // Save allocation for revivification (not retry, because we won't retry here), or abandon it if that fails.
-                if (RevivificationManager.UseFreeRecordPool && RevivificationManager.TryAdd(newLogicalAddress, newPhysicalAddress, allocatedSize, ref sessionFunctions.Ctx.RevivificationStats))
+                if (RevivificationManager.UseFreeRecordPool && RevivificationManager.TryAdd(newLogicalAddress, newPhysicalAddress, allocatedSize, ref sessionFunctions.ExecutionCtx.RevivificationStats))
                     stackCtx.ClearNewRecord();
                 else
                     stackCtx.SetNewRecordInvalid(ref newRecordInfo);

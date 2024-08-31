@@ -81,24 +81,21 @@ namespace Tsavorite.test.ModifiedBit
             ClassicAssert.AreEqual(modified, isM, "modified mismatch");
         }
 
-        void AssertLockandModified(LockableContext<int, int, int, int, Empty, SimpleSimpleFunctions<int, int>, IntStoreFunctions, IntAllocator> luContext, int key, bool xlock, bool slock, bool modified = false)
+        void AssertLockandModified(LockableContext<int, int, int, int, Empty, SimpleSimpleFunctions<int, int>, IntStoreFunctions, IntAllocator> lContext, int key, bool xlock, bool slock, bool modified = false)
         {
             HashBucketLockTableTests.AssertLockCounts(store, ref key, xlock, slock);
-            var isM = luContext.IsModified(key);
+            var isM = lContext.IsModified(key);
             ClassicAssert.AreEqual(modified, isM, "modified mismatch");
         }
 
-        TestTransactionalKernelSession<int, int, int, int, Empty, SimpleSimpleFunctions<int, int>, IntStoreFunctions, IntAllocator,
-                                       LockableContext<int, int, int, int, Empty, SimpleSimpleFunctions<int, int>, IntStoreFunctions, IntAllocator>> GetKernelSession
-            (LockableContext<int, int, int, int, Empty, SimpleSimpleFunctions<int, int>, IntStoreFunctions, IntAllocator> context) => new(context);
+        TestTransactionalKernelSession<int, int, int, int, Empty, SimpleSimpleFunctions<int, int>, IntStoreFunctions, IntAllocator> GetKernelSession
+            (LockableContext<int, int, int, int, Empty, SimpleSimpleFunctions<int, int>, IntStoreFunctions, IntAllocator> context) => new(context.Session);
 
-        TestTransactionalKernelSession<int, int, int, int, Empty, SimpleSimpleFunctions<int, int>, IntStoreFunctions, IntAllocator,
-                                       LockableUnsafeContext<int, int, int, int, Empty, SimpleSimpleFunctions<int, int>, IntStoreFunctions, IntAllocator>> GetKernelSession
-            (LockableUnsafeContext<int, int, int, int, Empty, SimpleSimpleFunctions<int, int>, IntStoreFunctions, IntAllocator> context) => new(context);
+        TestTransactionalKernelSession<int, int, int, int, Empty, SimpleSimpleFunctions<int, int>, IntStoreFunctions, IntAllocator> GetKernelSession
+            (LockableUnsafeContext<int, int, int, int, Empty, SimpleSimpleFunctions<int, int>, IntStoreFunctions, IntAllocator> context) => new(context.Session);
 
-        TestTransientKernelSession<int, int, int, int, Empty, SimpleSimpleFunctions<int, int>, IntStoreFunctions, IntAllocator,
-                                       UnsafeContext<int, int, int, int, Empty, SimpleSimpleFunctions<int, int>, IntStoreFunctions, IntAllocator>> GetKernelSession
-            (UnsafeContext<int, int, int, int, Empty, SimpleSimpleFunctions<int, int>, IntStoreFunctions, IntAllocator> context) => new(context);
+        TestTransientKernelSession<int, int, int, int, Empty, SimpleSimpleFunctions<int, int>, IntStoreFunctions, IntAllocator> GetKernelSession
+            (UnsafeContext<int, int, int, int, Empty, SimpleSimpleFunctions<int, int>, IntStoreFunctions, IntAllocator> context) => new(context.Session);
 
         void AssertLockandModified(ClientSession<int, int, int, int, Empty, SimpleSimpleFunctions<int, int>, IntStoreFunctions, IntAllocator> session, int key, bool xlock, bool slock, bool modified = false)
         {
@@ -131,18 +128,26 @@ namespace Tsavorite.test.ModifiedBit
 
             var keyVec = new[] { new FixedLengthLockableKeyStruct<int>(key, LockType.Exclusive, lContext) };
 
+            kernelSession.BeginUnsafe();
             store.Kernel.Lock(ref kernelSession, keyVec);
+            kernelSession.EndUnsafe();
             AssertLockandModified(lContext, key, xlock: true, slock: false, modified: false);
 
+            kernelSession.BeginUnsafe();
             store.Kernel.Unlock(ref kernelSession, keyVec);
+            kernelSession.EndUnsafe();
             AssertLockandModified(lContext, key, xlock: false, slock: false, modified: false);
 
             keyVec[0].LockType = LockType.Shared;
 
+            kernelSession.BeginUnsafe();
             store.Kernel.Lock(ref kernelSession, keyVec);
+            kernelSession.EndUnsafe();
             AssertLockandModified(lContext, key, xlock: false, slock: true, modified: false);
 
+            kernelSession.BeginUnsafe();
             store.Kernel.Unlock(ref kernelSession, keyVec);
+            kernelSession.EndUnsafe();
             AssertLockandModified(lContext, key, xlock: false, slock: false, modified: false);
             kernelSession.EndTransaction();
         }
@@ -354,7 +359,9 @@ namespace Tsavorite.test.ModifiedBit
 
             var keyVec = new[] { new FixedLengthLockableKeyStruct<int>(key, LockType.Exclusive, lContext) };
 
+            kernelSession.BeginUnsafe();
             store.Kernel.Lock(ref kernelSession, keyVec);
+            kernelSession.EndUnsafe();
 
             if (flushToDisk)
                 store.Log.FlushAndEvict(wait: true);
@@ -390,15 +397,23 @@ namespace Tsavorite.test.ModifiedBit
                 }
             }
 
+            kernelSession.BeginUnsafe();
             store.Kernel.Unlock(ref kernelSession, keyVec);
+            kernelSession.EndUnsafe();
 
             if (flushToDisk)
             {
+                kernelSession.BeginUnsafe();
                 keyVec[0].LockType = LockType.Shared;
                 store.Kernel.Lock(ref kernelSession, keyVec);
+                kernelSession.EndUnsafe();
+
                 (status, _) = lContext.Read(key);
                 ClassicAssert.AreEqual(updateOp != UpdateOp.Delete, status.Found, status.ToString());
+
+                kernelSession.BeginUnsafe();
                 store.Kernel.Unlock(ref kernelSession, keyVec);
+                kernelSession.EndUnsafe();
             }
 
             AssertLockandModified(lContext, key, xlock: false, slock: false, modified: updateOp != UpdateOp.Delete);

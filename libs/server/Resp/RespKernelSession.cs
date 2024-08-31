@@ -75,9 +75,8 @@ namespace Garnet.server
             storageSession.TsavoriteKernel.Epoch.ProtectAndDrain();
 
             // These must use session to be aware of per-session SystemState.
-            storageSession.unsafeContext.Refresh();
-            if (!storageSession.objectStoreUnsafeContext.IsNull)
-                storageSession.objectStoreUnsafeContext.Refresh();
+            storageSession.session.Refresh();
+            storageSession.objectStoreSession?.Refresh();
         }
 
         /// <inheritdoc/>
@@ -85,9 +84,8 @@ namespace Garnet.server
         public void HandleImmediateNonPendingRetryStatus(bool refresh)
         {
             // These must use session to be aware of per-session SystemState.
-            storageSession.unsafeContext.HandleImmediateNonPendingRetryStatus(refresh);
-            if (!storageSession.objectStoreUnsafeContext.IsNull)
-                storageSession.objectStoreUnsafeContext.HandleImmediateNonPendingRetryStatus(refresh);
+            storageSession.session.HandleImmediateNonPendingRetryStatus(refresh);
+            storageSession.objectStoreSession?.HandleImmediateNonPendingRetryStatus(refresh);
         }
 
         /// <inheritdoc/>
@@ -97,9 +95,8 @@ namespace Garnet.server
             // get the "trying to acquire already-acquired epoch" error.
             storageSession.TsavoriteKernel.Epoch.Resume();
 
-            storageSession.unsafeContext.DoThreadStateMachineStep();
-            if (!storageSession.objectStoreUnsafeContext.IsNull)
-                storageSession.objectStoreUnsafeContext.DoThreadStateMachineStep();
+            storageSession.session.DoThreadStateMachineStep();
+            storageSession.objectStoreSession?.DoThreadStateMachineStep();
         }
 
         // Overload for single-context operation
@@ -113,7 +110,7 @@ namespace Garnet.server
             // get the "trying to acquire already-acquired epoch" error.
             storageSession.TsavoriteKernel.Epoch.Resume();
 
-            context.DoThreadStateMachineStep();
+            context.Session.DoThreadStateMachineStep();
         }
 
         /// <inheritdoc/>

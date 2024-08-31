@@ -48,7 +48,7 @@ namespace Tsavorite.core
                     if (!FindTagAndTryTransientSLock<TInput, TOutput, TContext, TSessionFunctionsWrapper>(sessionFunctions, ref key, ref stackCtx, out var status))
                     {
                         Debug.Assert(status != OperationStatus.NOTFOUND, "Expected to FindTag in InternalContinuePendingRead");
-                        if (HandleImmediateRetryStatus(status, sessionFunctions, ref pendingContext))
+                        if (HandleImmediateRetryStatus(status, sessionFunctions.ExecutionCtx, ref pendingContext))
                             continue;
                         return status;
                     }
@@ -67,7 +67,7 @@ namespace Tsavorite.core
                                 srcRecordInfo = ref stackCtx.recSrc.GetInfo();
 
                                 // V threads cannot access V+1 records. Use the latest logical address rather than the traced address (logicalAddress) per comments in AcquireCPRLatchRMW.
-                                if (sessionFunctions.Ctx.phase == Phase.PREPARE && IsEntryVersionNew(ref stackCtx.hei.entry))
+                                if (sessionFunctions.ExecutionCtx.phase == Phase.PREPARE && IsEntryVersionNew(ref stackCtx.hei.entry))
                                     return OperationStatus.CPR_SHIFT_DETECTED; // Pivot thread; retry
                                 value = ref stackCtx.recSrc.GetValue();
                             }
@@ -89,7 +89,7 @@ namespace Tsavorite.core
                                         internalStatus = InternalRead(ref key, pendingContext.keyHash, ref pendingContext.input.Get(), ref pendingContext.output,
                                             pendingContext.userContext, ref pendingContext, sessionFunctions);
                                     }
-                                    while (HandleImmediateRetryStatus(internalStatus, sessionFunctions, ref pendingContext));
+                                    while (HandleImmediateRetryStatus(internalStatus, sessionFunctions.ExecutionCtx, ref pendingContext));
                                     return internalStatus;
                                 }
                             }
@@ -100,7 +100,7 @@ namespace Tsavorite.core
 
                         ReadInfo readInfo = new()
                         {
-                            Version = sessionFunctions.Ctx.version,
+                            Version = sessionFunctions.ExecutionCtx.version,
                             Address = request.logicalAddress,
                             IsFromPending = pendingContext.type != OperationType.NONE,
                         };
@@ -152,7 +152,7 @@ namespace Tsavorite.core
                     }
 
                     // Must do this *after* Unlocking. Status was set by InternalTryCopyToTail.
-                    if (!HandleImmediateRetryStatus(status, sessionFunctions, ref pendingContext))
+                    if (!HandleImmediateRetryStatus(status, sessionFunctions.ExecutionCtx, ref pendingContext))
                         return status;
                 } // end while (true)
             }
@@ -241,7 +241,7 @@ namespace Tsavorite.core
 
             // Must do this *after* Unlocking.
             CheckRetry:
-                if (!HandleImmediateRetryStatus(status, sessionFunctions, ref pendingContext))
+                if (!HandleImmediateRetryStatus(status, sessionFunctions.ExecutionCtx, ref pendingContext))
                     return status;
             } // end while (true)
 
@@ -249,7 +249,7 @@ namespace Tsavorite.core
             // HeadAddress, and this should be rare.
             do
                 status = InternalRMW(ref key, pendingContext.keyHash, ref pendingContext.input.Get(), ref pendingContext.output, ref pendingContext.userContext, ref pendingContext, sessionFunctions);
-            while (HandleImmediateRetryStatus(status, sessionFunctions, ref pendingContext));
+            while (HandleImmediateRetryStatus(status, sessionFunctions.ExecutionCtx, ref pendingContext));
             return status;
         }
 
@@ -305,7 +305,7 @@ namespace Tsavorite.core
                                                             ref pendingContext.output, pendingContext.userContext, ref stackCtx, pendingContext.writeReason);
                 }
             }
-            while (sessionFunctions.Store.HandleImmediateNonPendingRetryStatus<TInput, TOutput, TContext, TSessionFunctionsWrapper>(internalStatus, sessionFunctions));
+            while (sessionFunctions.Store.HandleImmediateNonPendingRetryStatus(internalStatus, sessionFunctions.ExecutionCtx));
             return internalStatus;
         }
 

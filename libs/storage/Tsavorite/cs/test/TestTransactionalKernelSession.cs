@@ -7,15 +7,15 @@ using Tsavorite.core;
 
 namespace Tsavorite.test
 {
-    internal struct TestTransactionalKernelSession<TKey, TValue, TInput, TOutput, TContext, TSessionFunctions, TStoreFunctions, TAllocator, TSessionContext>: IKernelSession
+    internal struct TestTransactionalKernelSession<TKey, TValue, TInput, TOutput, TContext, TSessionFunctions, TStoreFunctions, TAllocator>: IKernelSession
         where TSessionFunctions : ISessionFunctions<TKey, TValue, TInput, TOutput, TContext>
         where TStoreFunctions : IStoreFunctions<TKey, TValue>
         where TAllocator : IAllocator<TKey, TValue, TStoreFunctions>
-        where TSessionContext : ITsavoriteContext<TKey, TValue, TInput, TOutput, TContext, TSessionFunctions, TStoreFunctions, TAllocator>, ILockableContext<TKey>
     {
-        readonly TSessionContext context;
+        readonly ClientSession<TKey, TValue, TInput, TOutput, TContext, TSessionFunctions, TStoreFunctions, TAllocator> clientSession;
 
-        internal TestTransactionalKernelSession(TSessionContext context) => this.context = context;
+        internal TestTransactionalKernelSession(ClientSession<TKey, TValue, TInput, TOutput, TContext, TSessionFunctions, TStoreFunctions, TAllocator> clientSession) 
+            => this.clientSession = clientSession;
 
         /// <inheritdoc/>
         public ulong SharedTxnLockCount { get; set; }
@@ -36,7 +36,7 @@ namespace Tsavorite.test
             isTxnStarted = true;
 
             // These must use session to be aware of per-session SystemState.
-            context.BeginTransaction();
+            clientSession.BeginTransaction();
         }
 
         /// <inheritdoc/>
@@ -48,7 +48,7 @@ namespace Tsavorite.test
             if (TotalTxnLockCount > 0)
                 throw new TsavoriteException($"EndTransaction called with locks held: {SharedTxnLockCount} shared locks, {ExclusiveTxnLockCount} exclusive locks");
 
-            context.EndTransaction();
+            clientSession.EndTransaction();
             isTxnStarted = false;
         }
 
@@ -77,27 +77,27 @@ namespace Tsavorite.test
 
         /// <inheritdoc/>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public void Refresh() => context.Refresh();
+        public void Refresh() => clientSession.Refresh();
 
         /// <inheritdoc/>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public void HandleImmediateNonPendingRetryStatus(bool refresh) => context.HandleImmediateNonPendingRetryStatus(refresh);
+        public void HandleImmediateNonPendingRetryStatus(bool refresh) => clientSession.HandleImmediateNonPendingRetryStatus(refresh);
 
         /// <inheritdoc/>
         public void BeginUnsafe()
         {
-            context.Session.Store.Kernel.Epoch.Resume();
-            context.DoThreadStateMachineStep();
+            clientSession.Store.Kernel.Epoch.Resume();
+            clientSession.DoThreadStateMachineStep();
         }
 
         /// <inheritdoc/>
         public void EndUnsafe()
         {
-            Debug.Assert(context.Session.Store.Kernel.Epoch.ThisInstanceProtected());
-            context.Session.Store.Kernel.Epoch.Suspend();
+            Debug.Assert(clientSession.Store.Kernel.Epoch.ThisInstanceProtected());
+            clientSession.Store.Kernel.Epoch.Suspend();
         }
 
         /// <inheritdoc/>
-        public bool IsEpochAcquired() => context.Session.Store.Kernel.Epoch.ThisInstanceProtected();
+        public bool IsEpochAcquired() => clientSession.Store.Kernel.Epoch.ThisInstanceProtected();
     }
 }

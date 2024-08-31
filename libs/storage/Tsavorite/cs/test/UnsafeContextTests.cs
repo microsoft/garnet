@@ -26,8 +26,6 @@ namespace Tsavorite.test.UnsafeContext
         private TsavoriteKV<KeyStruct, ValueStruct, StructStoreFunctions, StructAllocator> store;
         private ClientSession<KeyStruct, ValueStruct, InputStruct, OutputStruct, Empty, Functions, StructStoreFunctions, StructAllocator> fullSession;
         private UnsafeContext<KeyStruct, ValueStruct, InputStruct, OutputStruct, Empty, Functions, StructStoreFunctions, StructAllocator> uContext;
-        private TestTransientKernelSession<KeyStruct, ValueStruct, InputStruct, OutputStruct, Empty, Functions, StructStoreFunctions, StructAllocator,
-                                      UnsafeContext<KeyStruct, ValueStruct, InputStruct, OutputStruct, Empty, Functions, StructStoreFunctions, StructAllocator>> kernelSession;
         private IDevice log;
         DeviceType deviceType;
 
@@ -51,7 +49,6 @@ namespace Tsavorite.test.UnsafeContext
             );
             fullSession = store.NewSession<InputStruct, OutputStruct, Empty, Functions>(new Functions());
             uContext = fullSession.UnsafeContext;
-            kernelSession = new(uContext);
         }
 
         [TearDown]
@@ -86,6 +83,7 @@ namespace Tsavorite.test.UnsafeContext
         public void NativeInMemWriteRead([Values] DeviceType deviceType)
         {
             Setup(new() { PageSize = 1L << 10, MemorySize = 1L << 12, SegmentSize = 1L << 22 }, deviceType);
+            TestTransientKernelSession<KeyStruct, ValueStruct, InputStruct, OutputStruct, Empty, Functions, StructStoreFunctions, StructAllocator> kernelSession = new(fullSession);
             kernelSession.BeginUnsafe();
 
             try
@@ -115,6 +113,7 @@ namespace Tsavorite.test.UnsafeContext
         public void NativeInMemWriteReadDelete([Values] DeviceType deviceType)
         {
             Setup(new() { PageSize = 1L << 10, MemorySize = 1L << 12, SegmentSize = 1L << 22 }, deviceType);
+            TestTransientKernelSession<KeyStruct, ValueStruct, InputStruct, OutputStruct, Empty, Functions, StructStoreFunctions, StructAllocator> kernelSession = new(fullSession);
             kernelSession.BeginUnsafe();
 
             try
@@ -163,6 +162,7 @@ namespace Tsavorite.test.UnsafeContext
 
             // Setup(new () { MemorySize = 1L << 22, SegmentSize = 1L << 22, PageSize = 1L << 10 }, deviceType);
             Setup(new() { MemorySize = 1L << 29 }, deviceType);
+            TestTransientKernelSession<KeyStruct, ValueStruct, InputStruct, OutputStruct, Empty, Functions, StructStoreFunctions, StructAllocator> kernelSession = new(fullSession);
             kernelSession.BeginUnsafe();
 
             try
@@ -220,6 +220,7 @@ namespace Tsavorite.test.UnsafeContext
 
             // Setup(128, new () { MemorySize = 1L << 22, SegmentSize = 1L << 22, PageSize = 1L << 10 }, deviceType);
             Setup(new() { MemorySize = 1L << 29 }, deviceType);
+            TestTransientKernelSession<KeyStruct, ValueStruct, InputStruct, OutputStruct, Empty, Functions, StructStoreFunctions, StructAllocator> kernelSession = new(fullSession);
             kernelSession.BeginUnsafe();
 
             try
@@ -283,6 +284,7 @@ namespace Tsavorite.test.UnsafeContext
             var sw = Stopwatch.StartNew();
 
             Setup(new() { MemorySize = 1L << 22, SegmentSize = 1L << 22, PageSize = 1L << 10 }, deviceType);
+            TestTransientKernelSession<KeyStruct, ValueStruct, InputStruct, OutputStruct, Empty, Functions, StructStoreFunctions, StructAllocator> kernelSession = new(fullSession);
             kernelSession.BeginUnsafe();
 
             try
@@ -375,6 +377,7 @@ namespace Tsavorite.test.UnsafeContext
             OutputStruct output = default;
 
             Setup(new() { MemorySize = 1L << 22, SegmentSize = 1L << 22, PageSize = 1L << 10 }, deviceType);
+            TestTransientKernelSession<KeyStruct, ValueStruct, InputStruct, OutputStruct, Empty, Functions, StructStoreFunctions, StructAllocator> kernelSession = new(fullSession);
             kernelSession.BeginUnsafe();
 
             try
@@ -447,6 +450,7 @@ namespace Tsavorite.test.UnsafeContext
             InputStruct input = default;
 
             Setup(new() { MemorySize = 1L << 22, SegmentSize = 1L << 22, PageSize = 1L << 10 }, deviceType);
+            TestTransientKernelSession<KeyStruct, ValueStruct, InputStruct, OutputStruct, Empty, Functions, StructStoreFunctions, StructAllocator> kernelSession = new(fullSession);
             kernelSession.BeginUnsafe();
 
             try
@@ -513,6 +517,7 @@ namespace Tsavorite.test.UnsafeContext
             InputStruct input = default;
 
             Setup(new() { MemorySize = 1L << 22, SegmentSize = 1L << 22, PageSize = 1L << 10 }, deviceType);
+            TestTransientKernelSession<KeyStruct, ValueStruct, InputStruct, OutputStruct, Empty, Functions, StructStoreFunctions, StructAllocator> kernelSession = new(fullSession);
             kernelSession.BeginUnsafe();
 
             try
@@ -542,6 +547,7 @@ namespace Tsavorite.test.UnsafeContext
         public void ReadNoRefKey([Values] DeviceType deviceType)
         {
             Setup(new() { MemorySize = 1L << 22, SegmentSize = 1L << 22, PageSize = 1L << 10 }, deviceType);
+            TestTransientKernelSession<KeyStruct, ValueStruct, InputStruct, OutputStruct, Empty, Functions, StructStoreFunctions, StructAllocator> kernelSession = new(fullSession);
             kernelSession.BeginUnsafe();
 
             try
@@ -573,6 +579,7 @@ namespace Tsavorite.test.UnsafeContext
         public void ReadWithoutInput([Values] DeviceType deviceType)
         {
             Setup(new() { MemorySize = 1L << 22, SegmentSize = 1L << 22, PageSize = 1L << 10 }, deviceType);
+            TestTransientKernelSession<KeyStruct, ValueStruct, InputStruct, OutputStruct, Empty, Functions, StructStoreFunctions, StructAllocator> kernelSession = new(fullSession);
             kernelSession.BeginUnsafe();
 
             try
@@ -605,6 +612,7 @@ namespace Tsavorite.test.UnsafeContext
         public void ReadBareMinParams([Values] DeviceType deviceType)
         {
             Setup(new() { MemorySize = 1L << 22, SegmentSize = 1L << 22, PageSize = 1L << 10 }, deviceType);
+            TestTransientKernelSession<KeyStruct, ValueStruct, InputStruct, OutputStruct, Empty, Functions, StructStoreFunctions, StructAllocator> kernelSession = new(fullSession);
             kernelSession.BeginUnsafe();
 
             try

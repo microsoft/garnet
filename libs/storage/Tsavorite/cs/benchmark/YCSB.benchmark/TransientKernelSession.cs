@@ -7,15 +7,14 @@ using Tsavorite.core;
 
 namespace Tsavorite.benchmark
 {
-    internal struct TransientKernelSession<TKey, TValue, TInput, TOutput, TContext, TSessionFunctions, TStoreFunctions, TAllocator, TSessionContext> : IKernelSession
+    internal struct TransientKernelSession<TKey, TValue, TInput, TOutput, TContext, TSessionFunctions, TStoreFunctions, TAllocator> : IKernelSession
         where TSessionFunctions : ISessionFunctions<TKey, TValue, TInput, TOutput, TContext>
         where TStoreFunctions : IStoreFunctions<TKey, TValue>
         where TAllocator : IAllocator<TKey, TValue, TStoreFunctions>
-        where TSessionContext : ITsavoriteContext<TKey, TValue, TInput, TOutput, TContext, TSessionFunctions, TStoreFunctions, TAllocator>
     {
-        TSessionContext context;
+        ClientSession<TKey, TValue, TInput, TOutput, TContext, TSessionFunctions, TStoreFunctions, TAllocator> clientSession;
 
-        internal TransientKernelSession(TSessionContext context) => this.context = context;
+        internal TransientKernelSession(ClientSession<TKey, TValue, TInput, TOutput, TContext, TSessionFunctions, TStoreFunctions, TAllocator> clientSession) => this.clientSession = clientSession;
 
         /// <inheritdoc/>
         public ulong SharedTxnLockCount { get; set; }
@@ -45,27 +44,27 @@ namespace Tsavorite.benchmark
 
         /// <inheritdoc/>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public void Refresh() => context.Refresh();
+        public void Refresh() => clientSession.Refresh();
 
         /// <inheritdoc/>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public void HandleImmediateNonPendingRetryStatus(bool refresh) => context.HandleImmediateNonPendingRetryStatus(refresh);
+        public void HandleImmediateNonPendingRetryStatus(bool refresh) => clientSession.HandleImmediateNonPendingRetryStatus(refresh);
 
         /// <inheritdoc/>
         public void BeginUnsafe()
         {
-            context.Session.Store.Kernel.Epoch.Resume();
-            context.DoThreadStateMachineStep();
+            clientSession.Store.Kernel.Epoch.Resume();
+            clientSession.DoThreadStateMachineStep();
         }
 
         /// <inheritdoc/>
         public void EndUnsafe()
         {
-            Debug.Assert(context.Session.Store.Kernel.Epoch.ThisInstanceProtected());
-            context.Session.Store.Kernel.Epoch.Suspend();
+            Debug.Assert(clientSession.Store.Kernel.Epoch.ThisInstanceProtected());
+            clientSession.Store.Kernel.Epoch.Suspend();
         }
 
         /// <inheritdoc/>
-        public bool IsEpochAcquired() => context.Session.Store.Kernel.Epoch.ThisInstanceProtected();
+        public bool IsEpochAcquired() => clientSession.Store.Kernel.Epoch.ThisInstanceProtected();
     }
 }

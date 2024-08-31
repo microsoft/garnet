@@ -36,7 +36,6 @@ namespace Tsavorite.test.statemachine
         readonly TsavoriteKV<K, V, SF, A> store;
         ClientSession<K, V, I, O, C, F, SF, A> s2;
         UnsafeContext<K, V, I, O, C, F, SF, A> uc2;
-        TestTransientKernelSession<K, V, I, O, C, F, SF, A, UnsafeContext<K, V, I, O, C, F, SF, A>> kernelSession;
 
         readonly F f;
         readonly AutoResetEvent ev = new(false);
@@ -70,6 +69,7 @@ namespace Tsavorite.test.statemachine
         {
             s2 = store.NewSession<I, O, C, F>(f, null);
             uc2 = s2.UnsafeContext;
+            TestTransientKernelSession<K, V, I, O, C, F, SF, A> kernelSession = new(s2);
             kernelSession.BeginUnsafe();
 
             _ = ev.Set();
@@ -112,7 +112,6 @@ namespace Tsavorite.test.statemachine
         readonly TsavoriteKV<K, V, SF, A> store;
         ClientSession<K, V, I, O, C, F, SF, A> session;
         LockableUnsafeContext<K, V, I, O, C, F, SF, A> luc;
-        TestTransactionalKernelSession<K, V, I, O, C, F, SF, A, LockableUnsafeContext<K, V, I, O, C, F, SF, A>> kernelSession;
 
         readonly F f;
         readonly AutoResetEvent ev = new(false);
@@ -150,6 +149,7 @@ namespace Tsavorite.test.statemachine
         {
             session = store.NewSession<I, O, C, F>(f, null);
             _ = ev.Set();
+            TestTransactionalKernelSession<K, V, I, O, C, F, SF, A> kernelSession = new(session);
 
             while (true)
             {

@@ -43,11 +43,11 @@ namespace Tsavorite.core
                     sessionFunctions.UnsafeSuspendThread();
                 }
 
-                await sessionFunctions.Ctx.WaitPendingAsync(token).ConfigureAwait(false);
+                await sessionFunctions.ExecutionCtx.WaitPendingAsync(token).ConfigureAwait(false);
 
-                if (sessionFunctions.Ctx.HasNoPendingRequests) return;
+                if (sessionFunctions.ExecutionCtx.HasNoPendingRequests) return;
 
-                InternalRefresh<TInput, TOutput, TContext, TSessionFunctionsWrapper>(sessionFunctions);
+                InternalRefresh(sessionFunctions.ExecutionCtx);
 
                 Thread.Yield();
             }

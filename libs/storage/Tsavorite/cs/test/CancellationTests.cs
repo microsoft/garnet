@@ -174,7 +174,7 @@ namespace Tsavorite.test.Cancellation
         public void InitialUpdaterTest([Values(Phase.REST, Phase.INTERMEDIATE)] Phase phase)
         {
             Populate();
-            session.ctx.phase = phase;
+            session.ExecutionCtx.phase = phase;
             int key = NumRecs;
 
             functions.cancelLocation = CancelLocation.NeedInitialUpdate;
@@ -194,7 +194,7 @@ namespace Tsavorite.test.Cancellation
         public void CopyUpdaterTest([Values(Phase.REST, Phase.INTERMEDIATE)] Phase phase)
         {
             Populate();
-            session.ctx.phase = phase;
+            session.ExecutionCtx.phase = phase;
             int key = NumRecs / 2;
 
             void do_it()
@@ -227,7 +227,7 @@ namespace Tsavorite.test.Cancellation
         public void InPlaceUpdaterTest([Values(Phase.REST, Phase.INTERMEDIATE)] Phase phase)
         {
             Populate();
-            session.ctx.phase = phase;
+            session.ExecutionCtx.phase = phase;
             int key = NumRecs / 2;
 
             // Note: ExpirationTests tests the combination of CancelOperation and DeleteRecord
@@ -243,7 +243,7 @@ namespace Tsavorite.test.Cancellation
         public void SingleWriterTest([Values(Phase.REST, Phase.INTERMEDIATE)] Phase phase)
         {
             Populate();
-            session.ctx.phase = phase;
+            session.ExecutionCtx.phase = phase;
             int key = NumRecs + 1;
 
             functions.cancelLocation = CancelLocation.SingleWriter;
@@ -258,7 +258,7 @@ namespace Tsavorite.test.Cancellation
         public void ConcurrentWriterTest([Values(Phase.REST, Phase.INTERMEDIATE)] Phase phase)
         {
             Populate();
-            session.ctx.phase = phase;
+            session.ExecutionCtx.phase = phase;
             int key = NumRecs / 2;
 
             functions.cancelLocation = CancelLocation.ConcurrentWriter;

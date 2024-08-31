@@ -150,7 +150,7 @@ namespace Tsavorite.core
             where TSessionFunctionsWrapper : ISessionFunctionsWrapper<TKey, TValue, TInput, TOutput, TContext, TStoreFunctions, TAllocator>
         {
             // Caller checks for UseFreeRecordPool
-            if (RevivificationManager.TryTake(allocatedSize, minRevivAddress, out logicalAddress, ref sessionFunctions.Ctx.RevivificationStats))
+            if (RevivificationManager.TryTake(allocatedSize, minRevivAddress, out logicalAddress, ref sessionFunctions.ExecutionCtx.RevivificationStats))
             {
                 physicalAddress = hlog.GetPhysicalAddress(logicalAddress);
                 ref RecordInfo recordInfo = ref hlog.GetInfo(physicalAddress);

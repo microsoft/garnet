@@ -601,8 +601,7 @@ namespace Tsavorite.test.ReadCacheTests
 
             using var session = store.NewSession<long, long, Empty, SimpleSimpleFunctions<long, long>>(new SimpleSimpleFunctions<long, long>());
             var luContext = session.LockableUnsafeContext;
-            TestTransactionalKernelSession<long, long, long, long, Empty, SimpleSimpleFunctions<long, long>, LongStoreFunctions, LongAllocator,
-                                           LockableUnsafeContext<long, long, long, long, Empty, SimpleSimpleFunctions<long, long>, LongStoreFunctions, LongAllocator>> kernelSession = new(luContext);
+            TestTransactionalKernelSession<long, long, long, long, Empty, SimpleSimpleFunctions<long, long>, LongStoreFunctions, LongAllocator> kernelSession = new(session);
 
             var keys = new[]
             {

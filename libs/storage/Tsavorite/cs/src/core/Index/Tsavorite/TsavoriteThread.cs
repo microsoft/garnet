@@ -13,25 +13,23 @@ namespace Tsavorite.core
         where TAllocator : IAllocator<TKey, TValue, TStoreFunctions>
     {
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        internal void InternalRefresh<TInput, TOutput, TContext, TSessionFunctionsWrapper>(TSessionFunctionsWrapper sessionFunctions)
-            where TSessionFunctionsWrapper : ISessionFunctionsWrapper<TKey, TValue, TInput, TOutput, TContext, TStoreFunctions, TAllocator>
+        internal void InternalRefresh<TInput, TOutput, TContext>(TsavoriteExecutionContext<TInput, TOutput, TContext> executionCtx)
         {
             Kernel.Epoch.ProtectAndDrain();
-            DoThreadStateMachineStep<TInput, TOutput, TContext, TSessionFunctionsWrapper>(sessionFunctions);
+            DoThreadStateMachineStep(executionCtx);
         }
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        internal void DoThreadStateMachineStep<TInput, TOutput, TContext, TSessionFunctionsWrapper>(TSessionFunctionsWrapper sessionFunctions)
-            where TSessionFunctionsWrapper : ISessionFunctionsWrapper<TKey, TValue, TInput, TOutput, TContext, TStoreFunctions, TAllocator>
+        internal void DoThreadStateMachineStep<TInput, TOutput, TContext>(TsavoriteExecutionContext<TInput, TOutput, TContext> executionCtx)
         {
             // We check if we are in normal mode
             var newPhaseInfo = SystemState.Copy(ref systemState);
-            if (sessionFunctions.Ctx.phase == Phase.REST && newPhaseInfo.Phase == Phase.REST && sessionFunctions.Ctx.version == newPhaseInfo.Version)
+            if (executionCtx.phase == Phase.REST && newPhaseInfo.Phase == Phase.REST && executionCtx.version == newPhaseInfo.Version)
                 return;
 
             while (true)
             {
-                ThreadStateMachineStep(sessionFunctions.Ctx, sessionFunctions, default);
+                ThreadStateMachineStep(executionCtx, default);
 
                 // In prepare phases, after draining out ongoing multi-key ops, we may spin and get threads to
                 // reach the next version before proceeding
@@ -43,17 +41,14 @@ namespace Tsavorite.core
                 //   That way no thread can work in the PREPARE phase while any thread works in IN_PROGRESS phase.
                 //   This is safe, because the state machine is guaranteed to progress to (IN_PROGRESS, v+1) if all threads
                 //   have reached PREPARE and all multi-key ops have drained (see VersionChangeTask.OnThreadState).
-                if (CheckpointVersionSwitchBarrier &&
-                    sessionFunctions.Ctx.phase == Phase.PREPARE &&
-                    hlogBase.NumActiveTxnSessions == 0)
+                if (CheckpointVersionSwitchBarrier && executionCtx.phase == Phase.PREPARE && hlogBase.NumActiveTxnSessions == 0)
                 {
                     Kernel.Epoch.ProtectAndDrain();
                     _ = Thread.Yield();
                     continue;
                 }
 
-                if (sessionFunctions.Ctx.phase == Phase.PREPARE_GROW &&
-                    hlogBase.NumActiveTxnSessions == 0)
+                if (executionCtx.phase == Phase.PREPARE_GROW && hlogBase.NumActiveTxnSessions == 0)
                 {
                     Kernel.Epoch.ProtectAndDrain();
                     _ = Thread.Yield();
@@ -77,7 +72,7 @@ namespace Tsavorite.core
             if (ctx.readyResponses is null)
             {
                 ctx.readyResponses = new AsyncQueue<AsyncIOContext<TKey, TValue>>();
-                ctx.ioPendingRequests = new Dictionary<long, PendingContext<TInput, TOutput, TContext>>();
+                ctx.ioPendingRequests = [];
                 ctx.pendingReads = new AsyncCountDown();
             }
         }
@@ -98,11 +93,11 @@ namespace Tsavorite.core
             while (true)
             {
                 InternalCompletePendingRequests(sessionFunctions, completedOutputs);
-                if (wait) sessionFunctions.Ctx.WaitPending(Kernel.Epoch);
+                if (wait) sessionFunctions.ExecutionCtx.WaitPending(Kernel.Epoch);
 
-                if (sessionFunctions.Ctx.HasNoPendingRequests) return true;
+                if (sessionFunctions.ExecutionCtx.HasNoPendingRequests) return true;
 
-                InternalRefresh<TInput, TOutput, TContext, TSessionFunctionsWrapper>(sessionFunctions);
+                InternalRefresh<TInput, TOutput, TContext>(sessionFunctions.ExecutionCtx);
 
                 if (!wait) return false;
                 Thread.Yield();
@@ -118,9 +113,9 @@ namespace Tsavorite.core
         {
             _ = hlogBase.TryComplete();
 
-            if (sessionFunctions.Ctx.readyResponses.Count == 0) return;
+            if (sessionFunctions.ExecutionCtx.readyResponses.Count == 0) return;
 
-            while (sessionFunctions.Ctx.readyResponses.TryDequeue(out AsyncIOContext<TKey, TValue> request))
+            while (sessionFunctions.ExecutionCtx.readyResponses.TryDequeue(out AsyncIOContext<TKey, TValue> request))
                 InternalCompletePendingRequest(sessionFunctions, request, completedOutputs);
         }
 
@@ -129,7 +124,7 @@ namespace Tsavorite.core
             where TSessionFunctionsWrapper : ISessionFunctionsWrapper<TKey, TValue, TInput, TOutput, TContext, TStoreFunctions, TAllocator>
         {
             // Get and Remove this request.id pending dictionary if it is there.
-            if (sessionFunctions.Ctx.ioPendingRequests.Remove(request.id, out var pendingContext))
+            if (sessionFunctions.ExecutionCtx.ioPendingRequests.Remove(request.id, out var pendingContext))
             {
                 var status = InternalCompletePendingRequestFromContext(sessionFunctions, request, ref pendingContext, out _);
                 if (completedOutputs is not null && status.IsCompletedSuccessfully)
@@ -167,7 +162,7 @@ namespace Tsavorite.core
                 _ => throw new TsavoriteException("Unexpected OperationType")
             };
 
-            var status = HandleOperationStatus(sessionFunctions.Ctx, ref pendingContext, internalStatus, out newRequest);
+            var status = HandleOperationStatus(sessionFunctions.ExecutionCtx, ref pendingContext, internalStatus, out newRequest);
 
             // If done, callback user code
             if (status.IsCompletedSuccessfully)

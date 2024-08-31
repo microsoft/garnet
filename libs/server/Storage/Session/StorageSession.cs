@@ -25,9 +25,9 @@ namespace Garnet.server
         /// <summary>
         /// Session Contexts for main store
         /// </summary>
+        internal ClientSession<SpanByte, SpanByte, SpanByte, SpanByteAndMemory, long, MainSessionFunctions, MainStoreFunctions, MainStoreAllocator> session;
         public BasicContext<SpanByte, SpanByte, SpanByte, SpanByteAndMemory, long, MainSessionFunctions, MainStoreFunctions, MainStoreAllocator> basicContext;
         public LockableContext<SpanByte, SpanByte, SpanByte, SpanByteAndMemory, long, MainSessionFunctions, MainStoreFunctions, MainStoreAllocator> lockableContext;
-        public UnsafeContext<SpanByte, SpanByte, SpanByte, SpanByteAndMemory, long, MainSessionFunctions, MainStoreFunctions, MainStoreAllocator> unsafeContext;
 
         SectorAlignedMemory sectorAlignedMemoryHll;
         readonly int hllBufferSize = HyperLogLog.DefaultHLL.DenseBytes;
@@ -36,9 +36,9 @@ namespace Garnet.server
         /// <summary>
         /// Session Contexts for object store
         /// </summary>
+        internal ClientSession<byte[], IGarnetObject, ObjectInput, GarnetObjectStoreOutput, long, ObjectSessionFunctions, ObjectStoreFunctions, ObjectStoreAllocator> objectStoreSession;
         public BasicContext<byte[], IGarnetObject, ObjectInput, GarnetObjectStoreOutput, long, ObjectSessionFunctions, ObjectStoreFunctions, ObjectStoreAllocator> objectStoreBasicContext;
         public LockableContext<byte[], IGarnetObject, ObjectInput, GarnetObjectStoreOutput, long, ObjectSessionFunctions, ObjectStoreFunctions, ObjectStoreAllocator> objectStoreLockableContext;
-        public UnsafeContext<byte[], IGarnetObject, ObjectInput, GarnetObjectStoreOutput, long, ObjectSessionFunctions, ObjectStoreFunctions, ObjectStoreAllocator> objectStoreUnsafeContext;
 
         public readonly ScratchBufferManager scratchBufferManager;
         public readonly FunctionsState functionsState;
@@ -72,19 +72,17 @@ namespace Garnet.server
             functionsState = storeWrapper.CreateFunctionsState();
 
             var functions = new MainSessionFunctions(functionsState);
-            var session = storeWrapper.store.NewSession<SpanByte, SpanByteAndMemory, long, MainSessionFunctions>(functions);
+            session = storeWrapper.store.NewSession<SpanByte, SpanByteAndMemory, long, MainSessionFunctions>(functions);
 
             var objstorefunctions = new ObjectSessionFunctions(functionsState);
-            var objectStoreSession = storeWrapper.objectStore?.NewSession<ObjectInput, GarnetObjectStoreOutput, long, ObjectSessionFunctions>(objstorefunctions);
+            objectStoreSession = storeWrapper.objectStore?.NewSession<ObjectInput, GarnetObjectStoreOutput, long, ObjectSessionFunctions>(objstorefunctions);
 
             basicContext = session.BasicContext;
             lockableContext = session.LockableContext;
-            unsafeContext = session.UnsafeContext;
             if (objectStoreSession != null)
             {
                 objectStoreBasicContext = objectStoreSession.BasicContext;
                 objectStoreLockableContext = objectStoreSession.LockableContext;
-                objectStoreUnsafeContext = objectStoreSession.UnsafeContext;
             }
 
             HeadAddress = storeWrapper.store.Log.HeadAddress;

@@ -57,7 +57,7 @@ namespace Tsavorite.core
             OperationStackContext<TKey, TValue, TStoreFunctions, TAllocator> stackCtx = new(keyHash, partitionId);
             pendingContext.keyHash = keyHash;
 
-            if (sessionFunctions.Ctx.phase == Phase.IN_PROGRESS_GROW)
+            if (sessionFunctions.ExecutionCtx.phase == Phase.IN_PROGRESS_GROW)
                 SplitBuckets(stackCtx.hei.hash);
 
             if (!FindTagAndTryTransientSLock<TInput, TOutput, TContext, TSessionFunctionsWrapper>(sessionFunctions, ref key, ref stackCtx, out OperationStatus status))
@@ -71,7 +71,7 @@ namespace Tsavorite.core
 
             ReadInfo readInfo = new()
             {
-                Version = sessionFunctions.Ctx.version,
+                Version = sessionFunctions.ExecutionCtx.version,
                 Address = stackCtx.recSrc.LogicalAddress,
                 IsFromPending = pendingContext.type != OperationType.NONE,
             };
@@ -112,7 +112,7 @@ namespace Tsavorite.core
                 pendingContext.logicalAddress = stackCtx.recSrc.LogicalAddress;
 
                 // V threads cannot access V+1 records. Use the latest logical address rather than the traced address (logicalAddress) per comments in AcquireCPRLatchRMW.
-                if (sessionFunctions.Ctx.phase == Phase.PREPARE && IsEntryVersionNew(ref stackCtx.hei.entry))
+                if (sessionFunctions.ExecutionCtx.phase == Phase.PREPARE && IsEntryVersionNew(ref stackCtx.hei.entry))
                     return OperationStatus.CPR_SHIFT_DETECTED; // Pivot thread; retry
 
                 if (stackCtx.recSrc.LogicalAddress >= hlogBase.SafeReadOnlyAddress)
@@ -287,7 +287,7 @@ namespace Tsavorite.core
             }
 
             OperationStackContext<TKey, TValue, TStoreFunctions, TAllocator> stackCtx = new(pendingContext.keyHash, partitionId);
-            if (sessionFunctions.Ctx.phase == Phase.IN_PROGRESS_GROW)
+            if (sessionFunctions.ExecutionCtx.phase == Phase.IN_PROGRESS_GROW)
                 SplitBuckets(stackCtx.hei.hash);
 
             if (!FindTagAndTryTransientSLock<TInput, TOutput, TContext, TSessionFunctionsWrapper>(sessionFunctions, ref key, ref stackCtx, out OperationStatus status))
@@ -316,7 +316,7 @@ namespace Tsavorite.core
 
                 ReadInfo readInfo = new()
                 {
-                    Version = sessionFunctions.Ctx.version,
+                    Version = sessionFunctions.ExecutionCtx.version,
                     Address = stackCtx.recSrc.LogicalAddress,
                     IsFromPending = pendingContext.type != OperationType.NONE,
                 };

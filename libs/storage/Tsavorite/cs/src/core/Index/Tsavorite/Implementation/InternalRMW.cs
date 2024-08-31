@@ -56,7 +56,7 @@ namespace Tsavorite.core
             OperationStackContext<TKey, TValue, TStoreFunctions, TAllocator> stackCtx = new(keyHash, partitionId);
             pendingContext.keyHash = keyHash;
 
-            if (sessionFunctions.Ctx.phase == Phase.IN_PROGRESS_GROW)
+            if (sessionFunctions.ExecutionCtx.phase == Phase.IN_PROGRESS_GROW)
                 SplitBuckets(stackCtx.hei.hash);
 
             if (!FindOrCreateTagAndTryTransientXLock<TInput, TOutput, TContext, TSessionFunctionsWrapper>(sessionFunctions, ref key, ref stackCtx, out OperationStatus status))
@@ -84,9 +84,9 @@ namespace Tsavorite.core
                 }
 
                 // Check for CPR consistency after checking if source is readcache.
-                if (sessionFunctions.Ctx.phase != Phase.REST)
+                if (sessionFunctions.ExecutionCtx.phase != Phase.REST)
                 {
-                    var latchDestination = CheckCPRConsistencyRMW(sessionFunctions.Ctx.phase, ref stackCtx, ref status, ref latchOperation);
+                    var latchDestination = CheckCPRConsistencyRMW(sessionFunctions.ExecutionCtx.phase, ref stackCtx, ref status, ref latchOperation);
                     switch (latchDestination)
                     {
                         case LatchDestination.Retry:
@@ -106,8 +106,8 @@ namespace Tsavorite.core
                     // Mutable Region: Update the record in-place. We perform mutable updates only if we are in normal processing phase of checkpointing
                     RMWInfo rmwInfo = new()
                     {
-                        Version = sessionFunctions.Ctx.version,
-                        SessionID = sessionFunctions.Ctx.sessionID,
+                        Version = sessionFunctions.ExecutionCtx.version,
+                        SessionID = sessionFunctions.ExecutionCtx.sessionID,
                         Address = stackCtx.recSrc.LogicalAddress,
                         KeyHash = stackCtx.hei.hash,
                         IsFromPending = pendingContext.type != OperationType.NONE,
@@ -138,7 +138,7 @@ namespace Tsavorite.core
                     if (sessionFunctions.InPlaceUpdater(stackCtx.recSrc.PhysicalAddress, ref key, ref input, ref recordValue, ref output, ref rmwInfo, out status, ref srcRecordInfo)
                         || (rmwInfo.Action == RMWAction.ExpireAndStop))
                     {
-                        MarkPage(stackCtx.recSrc.LogicalAddress, sessionFunctions.Ctx);
+                        MarkPage(stackCtx.recSrc.LogicalAddress, sessionFunctions.ExecutionCtx);
 
                         // ExpireAndStop means to override default Delete handling (which is to go to InitialUpdater) by leaving the tombstoned record as current.
                         // Our SessionFunctionsWrapper.InPlaceUpdater implementation has already reinitialized-in-place or set Tombstone as appropriate and marked the record.
@@ -271,7 +271,7 @@ namespace Tsavorite.core
                     if (ok && sessionFunctions.InitialUpdater(ref key, ref input, ref recordValue, ref output, ref rmwInfo, ref srcRecordInfo))
                     {
                         // Success
-                        MarkPage(stackCtx.recSrc.LogicalAddress, sessionFunctions.Ctx);
+                        MarkPage(stackCtx.recSrc.LogicalAddress, sessionFunctions.ExecutionCtx);
                         pendingContext.recordInfo = srcRecordInfo;
                         pendingContext.logicalAddress = stackCtx.recSrc.LogicalAddress;
                         status = OperationStatusUtils.AdvancedOpCode(OperationStatus.SUCCESS, StatusCode.InPlaceUpdatedRecord);
@@ -364,8 +364,8 @@ namespace Tsavorite.core
 
             RMWInfo rmwInfo = new()
             {
-                Version = sessionFunctions.Ctx.version,
-                SessionID = sessionFunctions.Ctx.sessionID,
+                Version = sessionFunctions.ExecutionCtx.version,
+                SessionID = sessionFunctions.ExecutionCtx.sessionID,
                 Address = doingCU && !stackCtx.recSrc.HasReadCacheSrc ? stackCtx.recSrc.LogicalAddress : Constants.kInvalidAddress,
                 KeyHash = stackCtx.hei.hash,
                 IsFromPending = pendingContext.type != OperationType.NONE,
@@ -415,7 +415,7 @@ namespace Tsavorite.core
                     out long newLogicalAddress, out long newPhysicalAddress, out OperationStatus status))
                 return status;
 
-            ref RecordInfo newRecordInfo = ref WriteNewRecordInfo(ref key, hlogBase, newPhysicalAddress, inNewVersion: sessionFunctions.Ctx.InNewVersion, stackCtx.recSrc.LatestLogicalAddress);
+            ref RecordInfo newRecordInfo = ref WriteNewRecordInfo(ref key, hlogBase, newPhysicalAddress, inNewVersion: sessionFunctions.ExecutionCtx.InNewVersion, stackCtx.recSrc.LatestLogicalAddress);
             if (allocOptions.IgnoreHeiAddress)
                 newRecordInfo.PreviousAddress = srcRecordInfo.PreviousAddress;
             stackCtx.SetNewRecord(newLogicalAddress);
@@ -461,7 +461,7 @@ namespace Tsavorite.core
                 if (rmwInfo.Action == RMWAction.CancelOperation)
                 {
                     // Save allocation for revivification (not retry, because this is canceling of the current operation), or abandon it if that fails.
-                    if (RevivificationManager.UseFreeRecordPool && RevivificationManager.TryAdd(newLogicalAddress, newPhysicalAddress, allocatedSize, ref sessionFunctions.Ctx.RevivificationStats))
+                    if (RevivificationManager.UseFreeRecordPool && RevivificationManager.TryAdd(newLogicalAddress, newPhysicalAddress, allocatedSize, ref sessionFunctions.ExecutionCtx.RevivificationStats))
                         stackCtx.ClearNewRecord();
                     else
                         stackCtx.SetNewRecordInvalid(ref newRecordInfo);
@@ -486,7 +486,7 @@ namespace Tsavorite.core
                             return status;
 
                         // Save allocation for revivification (not retry, because this may have been false because the record was too small), or abandon it if that fails.
-                        if (RevivificationManager.UseFreeRecordPool && RevivificationManager.TryAdd(newLogicalAddress, newPhysicalAddress, allocatedSize, ref sessionFunctions.Ctx.RevivificationStats))
+                        if (RevivificationManager.UseFreeRecordPool && RevivificationManager.TryAdd(newLogicalAddress, newPhysicalAddress, allocatedSize, ref sessionFunctions.ExecutionCtx.RevivificationStats))
                             stackCtx.ClearNewRecord();
                         else
                             stackCtx.SetNewRecordInvalid(ref newRecordInfo);

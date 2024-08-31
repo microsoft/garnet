@@ -276,7 +276,7 @@ namespace Tsavorite.core
                 if (sessionFunctions.Store.TryFindRecordInMainLogForConditionalOperation<TInput, TOutput, TContext, TSessionFunctionsWrapper>(sessionFunctions, ref key, ref stackCtx, minAddress, out internalStatus, out needIO))
                     return Status.CreateFound();
             }
-            while (sessionFunctions.Store.HandleImmediateNonPendingRetryStatus<TInput, TOutput, TContext, TSessionFunctionsWrapper>(internalStatus, sessionFunctions));
+            while (sessionFunctions.Store.HandleImmediateNonPendingRetryStatus(internalStatus, sessionFunctions.ExecutionCtx));
 
             TInput input = default;
             TOutput output = default;
@@ -305,7 +305,7 @@ namespace Tsavorite.core
                 }
                 internalStatus = OperationStatus.SUCCESS;
             }
-            return sessionFunctions.Store.HandleOperationStatus(sessionFunctions.Ctx, ref pendingContext, internalStatus, out _);
+            return sessionFunctions.Store.HandleOperationStatus(sessionFunctions.ExecutionCtx, ref pendingContext, internalStatus, out _);
         }
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]

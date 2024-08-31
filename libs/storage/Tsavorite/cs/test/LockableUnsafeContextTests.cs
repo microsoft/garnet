@@ -158,8 +158,6 @@ namespace Tsavorite.test.LockableUnsafeContext
         private ClientSession<long, long, long, long, Empty, LockableUnsafeFunctions, LongStoreFunctions, LongAllocator> session;
         private BasicContext<long, long, long, long, Empty, LockableUnsafeFunctions, LongStoreFunctions, LongAllocator> bContext;
         private LockableUnsafeContext<long, long, long, long, Empty, LockableUnsafeFunctions, LongStoreFunctions, LongAllocator> luContext;
-        private TestTransactionalKernelSession<long, long, long, long, Empty, LockableUnsafeFunctions, LongStoreFunctions, LongAllocator,
-                                               LockableUnsafeContext<long, long, long, long, Empty, LockableUnsafeFunctions, LongStoreFunctions, LongAllocator>> kernelSession;
 
         [SetUp]
         public void Setup() => Setup(forRecovery: false);
@@ -210,7 +208,6 @@ namespace Tsavorite.test.LockableUnsafeContext
             session = store.NewSession<long, long, Empty, LockableUnsafeFunctions>(functions);
             bContext = session.BasicContext;
             luContext = session.LockableUnsafeContext;
-            kernelSession = new(luContext);
         }
 
         [TearDown]
@@ -311,6 +308,8 @@ namespace Tsavorite.test.LockableUnsafeContext
             long genHashCode(uint uniquifier) => ((long)uniquifier << 30) | bucketIndex;
 
             var lContext = session.LockableContext;
+            TestTransactionalKernelSession<long, long, long, long, Empty, LockableUnsafeFunctions, LongStoreFunctions, LongAllocator> kernelSession = new(session);
+
             kernelSession.BeginUnsafe();
             kernelSession.BeginTransaction();
 
@@ -346,6 +345,8 @@ namespace Tsavorite.test.LockableUnsafeContext
 
             // Copied from UnsafeContextTests.
             var luContext = session.LockableUnsafeContext;
+            TestTransactionalKernelSession<long, long, long, long, Empty, LockableUnsafeFunctions, LongStoreFunctions, LongAllocator> kernelSession = new(session);
+
             kernelSession.BeginUnsafe();
             kernelSession.BeginTransaction();
 
@@ -480,6 +481,7 @@ namespace Tsavorite.test.LockableUnsafeContext
             BucketLockTracker blt = new();
 
             var luContext = session.LockableUnsafeContext;
+            TestTransactionalKernelSession<long, long, long, long, Empty, LockableUnsafeFunctions, LongStoreFunctions, LongAllocator> kernelSession = new(session);
             kernelSession.BeginUnsafe();
             kernelSession.BeginTransaction();
 
@@ -549,7 +551,7 @@ namespace Tsavorite.test.LockableUnsafeContext
                 }
 
                 // Set the phase to Phase.INTERMEDIATE to test the non-Phase.REST blocks
-                session.ctx.phase = phase;
+                session.ExecutionCtx.phase = phase;
                 long dummyInOut = 0;
                 status = useRMW
                     ? luContext.RMW(ref resultKey, ref expectedResult, ref dummyInOut, out RecordMetadata recordMetadata)
@@ -619,6 +621,7 @@ namespace Tsavorite.test.LockableUnsafeContext
             BucketLockTracker blt = new();
 
             var luContext = session.LockableUnsafeContext;
+            TestTransactionalKernelSession<long, long, long, long, Empty, LockableUnsafeFunctions, LongStoreFunctions, LongAllocator> kernelSession = new(session);
             kernelSession.BeginUnsafe();
             kernelSession.BeginTransaction();
 
@@ -695,7 +698,7 @@ namespace Tsavorite.test.LockableUnsafeContext
                 }
 
                 // Set the phase to Phase.INTERMEDIATE to test the non-Phase.REST blocks
-                session.ctx.phase = phase;
+                session.ExecutionCtx.phase = phase;
                 status = useRMW
                     ? luContext.RMW(resultKey, (readValue24 + readValue51) * valueMult2)
                     : luContext.Upsert(resultKey, (readValue24 + readValue51) * valueMult2);
@@ -748,6 +751,7 @@ namespace Tsavorite.test.LockableUnsafeContext
             Status status;
 
             var luContext = session.LockableUnsafeContext;
+            TestTransactionalKernelSession<long, long, long, long, Empty, LockableUnsafeFunctions, LongStoreFunctions, LongAllocator> kernelSession = new(session);
             kernelSession.BeginUnsafe();
             kernelSession.BeginTransaction();
 
@@ -763,7 +767,7 @@ namespace Tsavorite.test.LockableUnsafeContext
                 AssertTotalLockCounts(ref blt);
 
                 // Set the phase to Phase.INTERMEDIATE to test the non-Phase.REST blocks
-                session.ctx.phase = phase;
+                session.ExecutionCtx.phase = phase;
                 status = luContext.Delete(ref resultKey);
                 ClassicAssert.IsFalse(status.IsPending, status.ToString());
 
@@ -820,6 +824,7 @@ namespace Tsavorite.test.LockableUnsafeContext
 
                 using var localSession = store.NewSession<long, long, Empty, LockableUnsafeFunctions>(new LockableUnsafeFunctions());
                 var luContext = localSession.LockableUnsafeContext;
+                TestTransactionalKernelSession<long, long, long, long, Empty, LockableUnsafeFunctions, LongStoreFunctions, LongAllocator> kernelSession = new(session);
                 kernelSession.BeginUnsafe();
                 kernelSession.BeginTransaction();
 
@@ -879,7 +884,9 @@ namespace Tsavorite.test.LockableUnsafeContext
             AssertTotalLockCounts(0, 0);
         }
 
-        FixedLengthLockableKeyStruct<long> AddLockTableEntry<TFunctions>(LockableUnsafeContext<long, long, long, long, Empty, TFunctions, LongStoreFunctions, LongAllocator> luContext, long key)
+        FixedLengthLockableKeyStruct<long> AddLockTableEntry<TFunctions>(LockableUnsafeContext<long, long, long, long, Empty, TFunctions, LongStoreFunctions, LongAllocator> luContext,
+                                                                         ref TestTransactionalKernelSession<long, long, long, long, Empty, TFunctions, LongStoreFunctions, LongAllocator> kernelSession,
+                                                                         long key)
             where TFunctions : ISessionFunctions<long, long, long, long, Empty>
         {
             var keyVec = new[] { new FixedLengthLockableKeyStruct<long>(key, LockType.Exclusive, luContext) };
@@ -895,7 +902,9 @@ namespace Tsavorite.test.LockableUnsafeContext
             return keyVec[0];
         }
 
-        void VerifyAndUnlockSplicedInKey<TFunctions>(LockableUnsafeContext<long, long, long, long, Empty, TFunctions, LongStoreFunctions, LongAllocator> luContext, long expectedKey)
+        void VerifyAndUnlockSplicedInKey<TFunctions>(LockableUnsafeContext<long, long, long, long, Empty, TFunctions, LongStoreFunctions, LongAllocator> luContext,
+                                                                        ref TestTransactionalKernelSession<long, long, long, long, Empty, TFunctions, LongStoreFunctions, LongAllocator> kernelSession,
+                                                                        long expectedKey)
             where TFunctions : ISessionFunctions<long, long, long, long, Empty>
         {
             // Scan to the end of the readcache chain and verify we inserted the value.
@@ -917,6 +926,8 @@ namespace Tsavorite.test.LockableUnsafeContext
 
             using var session = store.NewSession<long, long, Empty, SimpleSimpleFunctions<long, long>>(new SimpleSimpleFunctions<long, long>());
             var luContext = session.LockableUnsafeContext;
+            TestTransactionalKernelSession<long, long, long, long, Empty, SimpleSimpleFunctions<long, long>, LongStoreFunctions, LongAllocator> kernelSession = new(session);
+
             long input = 0, output = 0, key = 24;
             ReadOptions readOptions = new() { CopyOptions = new(ReadCopyFrom.AllImmutable, ReadCopyTo.MainLog) };
             BucketLockTracker blt = new();
@@ -925,7 +936,7 @@ namespace Tsavorite.test.LockableUnsafeContext
             kernelSession.BeginTransaction();
             try
             {
-                var keyStruct = AddLockTableEntry(luContext, key);
+                var keyStruct = AddLockTableEntry(luContext, ref kernelSession, key);
                 blt.Increment(ref keyStruct);
                 AssertTotalLockCounts(ref blt);
 
@@ -933,7 +944,7 @@ namespace Tsavorite.test.LockableUnsafeContext
                 ClassicAssert.IsTrue(status.IsPending, status.ToString());
                 _ = luContext.CompletePending(wait: true);
 
-                VerifyAndUnlockSplicedInKey(luContext, key);
+                VerifyAndUnlockSplicedInKey(luContext, ref kernelSession, key);
                 blt.Decrement(ref keyStruct);
                 AssertNoLocks(ref blt);
             }
@@ -958,6 +969,8 @@ namespace Tsavorite.test.LockableUnsafeContext
 
             using var session = store.NewSession<long, long, Empty, SimpleSimpleFunctions<long, long>>(new SimpleSimpleFunctions<long, long>());
             var luContext = session.LockableUnsafeContext;
+            TestTransactionalKernelSession<long, long, long, long, Empty, SimpleSimpleFunctions<long, long>, LongStoreFunctions, LongAllocator> kernelSession = new(session);
+
             BucketLockTracker blt = new();
             long key = 24;
 
@@ -1010,6 +1023,8 @@ namespace Tsavorite.test.LockableUnsafeContext
 
             using var session = store.NewSession<long, long, Empty, SimpleSimpleFunctions<long, long>>(new SimpleSimpleFunctions<long, long>());
             var luContext = session.LockableUnsafeContext;
+            TestTransactionalKernelSession<long, long, long, long, Empty, SimpleSimpleFunctions<long, long>, LongStoreFunctions, LongAllocator> kernelSession = new(session);
+
             BucketLockTracker blt = new();
             kernelSession.BeginUnsafe();
             kernelSession.BeginTransaction();
@@ -1018,14 +1033,14 @@ namespace Tsavorite.test.LockableUnsafeContext
             try
             {
                 if (recordRegion is ChainTests.RecordRegion.Immutable or ChainTests.RecordRegion.OnDisk)
-                    keyStruct = AddLockTableEntry(luContext, UseExistingKey);
+                    keyStruct = AddLockTableEntry(luContext, ref kernelSession, UseExistingKey);
                 else
-                    keyStruct = AddLockTableEntry(luContext, UseNewKey);
+                    keyStruct = AddLockTableEntry(luContext, ref kernelSession, UseNewKey);
                 blt.Increment(ref keyStruct);
                 var status = luContext.Upsert(keyStruct.Key, keyStruct.Key * ValueMult);
                 ClassicAssert.IsTrue(status.Record.Created, status.ToString());
 
-                VerifyAndUnlockSplicedInKey(luContext, keyStruct.Key);
+                VerifyAndUnlockSplicedInKey(luContext, ref kernelSession, keyStruct.Key);
                 blt.Decrement(ref keyStruct);
                 AssertNoLocks(ref blt);
             }
@@ -1050,6 +1065,8 @@ namespace Tsavorite.test.LockableUnsafeContext
 
             using var session = store.NewSession<long, long, Empty, SimpleSimpleFunctions<long, long>>(new SimpleSimpleFunctions<long, long>());
             var luContext = session.LockableUnsafeContext;
+            TestTransactionalKernelSession<long, long, long, long, Empty, SimpleSimpleFunctions<long, long>, LongStoreFunctions, LongAllocator> kernelSession = new(session);
+
             BucketLockTracker blt = new();
             kernelSession.BeginUnsafe();
             kernelSession.BeginTransaction();
@@ -1059,20 +1076,20 @@ namespace Tsavorite.test.LockableUnsafeContext
             {
                 if (recordRegion is ChainTests.RecordRegion.Immutable or ChainTests.RecordRegion.OnDisk)
                 {
-                    keyStruct = AddLockTableEntry(luContext, UseExistingKey);
+                    keyStruct = AddLockTableEntry(luContext, ref kernelSession, UseExistingKey);
                     var status = luContext.RMW(keyStruct.Key, keyStruct.Key * ValueMult);
                     ClassicAssert.IsTrue(recordRegion == ChainTests.RecordRegion.OnDisk ? status.IsPending : status.Found);
                     _ = luContext.CompletePending(wait: true);
                 }
                 else
                 {
-                    keyStruct = AddLockTableEntry(luContext, UseNewKey);
+                    keyStruct = AddLockTableEntry(luContext, ref kernelSession, UseNewKey);
                     var status = luContext.RMW(keyStruct.Key, keyStruct.Key * ValueMult);
                     ClassicAssert.IsFalse(status.Found, status.ToString());
                 }
                 blt.Increment(ref keyStruct);
 
-                VerifyAndUnlockSplicedInKey(luContext, keyStruct.Key);
+                VerifyAndUnlockSplicedInKey(luContext, ref kernelSession, keyStruct.Key);
                 blt.Decrement(ref keyStruct);
                 AssertNoLocks(ref blt);
             }
@@ -1097,6 +1114,8 @@ namespace Tsavorite.test.LockableUnsafeContext
 
             using var session = store.NewSession<long, long, Empty, SimpleSimpleFunctions<long, long>>(new SimpleSimpleFunctions<long, long>());
             var luContext = session.LockableUnsafeContext;
+            TestTransactionalKernelSession<long, long, long, long, Empty, SimpleSimpleFunctions<long, long>, LongStoreFunctions, LongAllocator> kernelSession = new(session);
+
             BucketLockTracker blt = new();
             kernelSession.BeginUnsafe();
             kernelSession.BeginTransaction();
@@ -1106,7 +1125,7 @@ namespace Tsavorite.test.LockableUnsafeContext
             {
                 if (recordRegion is ChainTests.RecordRegion.Immutable or ChainTests.RecordRegion.OnDisk)
                 {
-                    keyStruct = AddLockTableEntry(luContext, UseExistingKey);
+                    keyStruct = AddLockTableEntry(luContext, ref kernelSession, UseExistingKey);
                     blt.Increment(ref keyStruct);
                     var status = luContext.Delete(keyStruct.Key);
 
@@ -1115,13 +1134,13 @@ namespace Tsavorite.test.LockableUnsafeContext
                 }
                 else
                 {
-                    keyStruct = AddLockTableEntry(luContext, UseNewKey);
+                    keyStruct = AddLockTableEntry(luContext, ref kernelSession, UseNewKey);
                     blt.Increment(ref keyStruct);
                     var status = luContext.Delete(keyStruct.Key);
                     ClassicAssert.IsFalse(status.Found, status.ToString());
                 }
 
-                VerifyAndUnlockSplicedInKey(luContext, keyStruct.Key);
+                VerifyAndUnlockSplicedInKey(luContext, ref kernelSession, keyStruct.Key);
                 blt.Decrement(ref keyStruct);
                 AssertNoLocks(ref blt);
             }
@@ -1145,6 +1164,7 @@ namespace Tsavorite.test.LockableUnsafeContext
             // For this, just don't load anything, and it will happen in lock table.
             using var session = store.NewSession<long, long, Empty, SimpleSimpleFunctions<long, long>>(new SimpleSimpleFunctions<long, long>());
             var luContext = session.LockableUnsafeContext;
+            TestTransactionalKernelSession<long, long, long, long, Empty, SimpleSimpleFunctions<long, long>, LongStoreFunctions, LongAllocator> kernelSession = new(session);
             BucketLockTracker blt = new();
 
             FixedLengthLockableKeyStruct<long> createKey(long key) => new(key, (key & 1) == 0 ? LockType.Exclusive : LockType.Shared, luContext);
@@ -1203,6 +1223,7 @@ namespace Tsavorite.test.LockableUnsafeContext
             static long getValue(long key) => key + ValueMult;
 
             var luContext = session.LockableUnsafeContext;
+            TestTransactionalKernelSession<long, long, long, long, Empty, LockableUnsafeFunctions, LongStoreFunctions, LongAllocator> kernelSession = new(session);
             kernelSession.BeginUnsafe();
             kernelSession.BeginTransaction();
 
@@ -1250,6 +1271,7 @@ namespace Tsavorite.test.LockableUnsafeContext
 
             using var session = store.NewSession<long, long, Empty, SimpleSimpleFunctions<long, long>>(new SimpleSimpleFunctions<long, long>());
             var luContext = session.LockableUnsafeContext;
+            TestTransactionalKernelSession<long, long, long, long, Empty, SimpleSimpleFunctions<long, long>, LongStoreFunctions, LongAllocator> kernelSession = new(session);
 
             int getValue(int key) => key + ValueMult;
 
@@ -1352,6 +1374,7 @@ namespace Tsavorite.test.LockableUnsafeContext
 
             using var lockSession = store.NewSession<long, long, Empty, SimpleSimpleFunctions<long, long>>(new SimpleSimpleFunctions<long, long>());
             var lockLuContext = lockSession.LockableUnsafeContext;
+            TestTransactionalKernelSession<long, long, long, long, Empty, SimpleSimpleFunctions<long, long>, LongStoreFunctions, LongAllocator> kernelSession = new(lockSession);
 
             using var updateSession = store.NewSession<long, long, Empty, SimpleSimpleFunctions<long, long>>(new SimpleSimpleFunctions<long, long>());
             var basicContext = updateSession.BasicContext;
@@ -1491,6 +1514,7 @@ namespace Tsavorite.test.LockableUnsafeContext
 
             using var session = store.NewSession<long, long, Empty, SimpleSimpleFunctions<long, long>>(new SimpleSimpleFunctions<long, long>());
             var luContext = session.LockableUnsafeContext;
+            TestTransactionalKernelSession<long, long, long, long, Empty, SimpleSimpleFunctions<long, long>, LongStoreFunctions, LongAllocator> kernelSession = new(session);
 
             const int key = 42;
             var maxLocks = 63;
@@ -1538,6 +1562,7 @@ namespace Tsavorite.test.LockableUnsafeContext
 
             using var session = store.NewSession<long, long, Empty, SimpleSimpleFunctions<long, long>>(new SimpleSimpleFunctions<long, long>());
             var luContext = session.LockableUnsafeContext;
+            TestTransactionalKernelSession<long, long, long, long, Empty, SimpleSimpleFunctions<long, long>, LongStoreFunctions, LongAllocator> kernelSession = new(session);
 
             kernelSession.BeginUnsafe();
             kernelSession.BeginTransaction();
@@ -1595,6 +1620,7 @@ namespace Tsavorite.test.LockableUnsafeContext
 
             using var session = store.NewSession<long, long, Empty, SimpleSimpleFunctions<long, long>>(new SimpleSimpleFunctions<long, long>());
             var luContext = session.LockableUnsafeContext;
+            TestTransactionalKernelSession<long, long, long, long, Empty, SimpleSimpleFunctions<long, long>, LongStoreFunctions, LongAllocator> kernelSession = new(session);
 
             kernelSession.BeginUnsafe();
             kernelSession.BeginTransaction();
@@ -1654,6 +1680,7 @@ namespace Tsavorite.test.LockableUnsafeContext
 
             using var session = store.NewSession<long, long, Empty, SimpleSimpleFunctions<long, long>>(new SimpleSimpleFunctions<long, long>());
             var luContext = session.LockableUnsafeContext;
+            TestTransactionalKernelSession<long, long, long, long, Empty, SimpleSimpleFunctions<long, long>, LongStoreFunctions, LongAllocator> kernelSession = new(session);
 
             kernelSession.BeginUnsafe();
             kernelSession.BeginTransaction();
@@ -1697,6 +1724,7 @@ namespace Tsavorite.test.LockableUnsafeContext
 
             using var session = store.NewSession<long, long, Empty, SimpleSimpleFunctions<long, long>>(new SimpleSimpleFunctions<long, long>());
             var luContext = session.LockableUnsafeContext;
+            TestTransactionalKernelSession<long, long, long, long, Empty, SimpleSimpleFunctions<long, long>, LongStoreFunctions, LongAllocator> kernelSession = new(session);
 
             kernelSession.BeginUnsafe();
             kernelSession.BeginTransaction();

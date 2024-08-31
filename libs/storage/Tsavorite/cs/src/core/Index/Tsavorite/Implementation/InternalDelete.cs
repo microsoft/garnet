@@ -49,7 +49,7 @@ namespace Tsavorite.core
             OperationStackContext<TKey, TValue, TStoreFunctions, TAllocator> stackCtx = new(keyHash, partitionId);
             pendingContext.keyHash = keyHash;
 
-            if (sessionFunctions.Ctx.phase == Phase.IN_PROGRESS_GROW)
+            if (sessionFunctions.ExecutionCtx.phase == Phase.IN_PROGRESS_GROW)
                 SplitBuckets(stackCtx.hei.hash);
 
             if (!FindTagAndTryTransientXLock<TInput, TOutput, TContext, TSessionFunctionsWrapper>(sessionFunctions, ref key, ref stackCtx, out OperationStatus status))
@@ -69,8 +69,8 @@ namespace Tsavorite.core
 
                 DeleteInfo deleteInfo = new()
                 {
-                    Version = sessionFunctions.Ctx.version,
-                    SessionID = sessionFunctions.Ctx.sessionID,
+                    Version = sessionFunctions.ExecutionCtx.version,
+                    SessionID = sessionFunctions.ExecutionCtx.sessionID,
                     Address = stackCtx.recSrc.LogicalAddress,
                     KeyHash = stackCtx.hei.hash
                 };
@@ -83,9 +83,9 @@ namespace Tsavorite.core
                 }
 
                 // Check for CPR consistency after checking if source is readcache.
-                if (sessionFunctions.Ctx.phase != Phase.REST)
+                if (sessionFunctions.ExecutionCtx.phase != Phase.REST)
                 {
-                    var latchDestination = CheckCPRConsistencyDelete(sessionFunctions.Ctx.phase, ref stackCtx, ref status, ref latchOperation);
+                    var latchDestination = CheckCPRConsistencyDelete(sessionFunctions.ExecutionCtx.phase, ref stackCtx, ref status, ref latchOperation);
                     switch (latchDestination)
                     {
                         case LatchDestination.Retry:
@@ -113,7 +113,7 @@ namespace Tsavorite.core
                     // DeleteInfo's lengths are filled in and GetRecordLengths and SetDeletedValueLength are called inside ConcurrentDeleter.
                     if (sessionFunctions.ConcurrentDeleter(stackCtx.recSrc.PhysicalAddress, ref stackCtx.recSrc.GetKey(), ref recordValue, ref deleteInfo, ref srcRecordInfo, out int fullRecordLength))
                     {
-                        MarkPage(stackCtx.recSrc.LogicalAddress, sessionFunctions.Ctx);
+                        MarkPage(stackCtx.recSrc.LogicalAddress, sessionFunctions.ExecutionCtx);
 
                         // Try to transfer the record from the tag chain to the free record pool iff previous address points to invalid address.
                         // Otherwise an earlier record for this key could be reachable again.
@@ -262,14 +262,14 @@ namespace Tsavorite.core
                     out long newLogicalAddress, out long newPhysicalAddress, out OperationStatus status))
                 return status;
 
-            ref RecordInfo newRecordInfo = ref WriteNewRecordInfo(ref key, hlogBase, newPhysicalAddress, inNewVersion: sessionFunctions.Ctx.InNewVersion, stackCtx.recSrc.LatestLogicalAddress);
+            ref RecordInfo newRecordInfo = ref WriteNewRecordInfo(ref key, hlogBase, newPhysicalAddress, inNewVersion: sessionFunctions.ExecutionCtx.InNewVersion, stackCtx.recSrc.LatestLogicalAddress);
             newRecordInfo.SetTombstone();
             stackCtx.SetNewRecord(newLogicalAddress);
 
             DeleteInfo deleteInfo = new()
             {
-                Version = sessionFunctions.Ctx.version,
-                SessionID = sessionFunctions.Ctx.sessionID,
+                Version = sessionFunctions.ExecutionCtx.version,
+                SessionID = sessionFunctions.ExecutionCtx.sessionID,
                 Address = newLogicalAddress,
                 KeyHash = stackCtx.hei.hash,
             };
@@ -282,7 +282,7 @@ namespace Tsavorite.core
             {
                 // This record was allocated with a minimal Value size (unless it was a revivified larger record) so there's no room for a Filler,
                 // but we may want it for a later Delete, or for insert with a smaller Key.
-                if (RevivificationManager.UseFreeRecordPool && RevivificationManager.TryAdd(newLogicalAddress, newPhysicalAddress, allocatedSize, ref sessionFunctions.Ctx.RevivificationStats))
+                if (RevivificationManager.UseFreeRecordPool && RevivificationManager.TryAdd(newLogicalAddress, newPhysicalAddress, allocatedSize, ref sessionFunctions.ExecutionCtx.RevivificationStats))
                     stackCtx.ClearNewRecord();
                 else
                     stackCtx.SetNewRecordInvalid(ref newRecordInfo);

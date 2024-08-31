@@ -30,16 +30,6 @@ namespace Tsavorite.core
             sessionFunctions = new(clientSession);
         }
 
-        /// <inheritdoc/>
-        [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public void UnsafeResumeThread()
-            => clientSession.UnsafeResumeThread(sessionFunctions);
-
-        /// <inheritdoc/>
-        [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public void UnsafeSuspendThread()
-            => clientSession.UnsafeSuspendThread();
-
         #region ITsavoriteContext
 
         /// <inheritdoc/>
@@ -71,14 +61,14 @@ namespace Tsavorite.core
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public Status Read(ref TKey key, ref TInput input, ref TOutput output, TContext userContext = default)
         {
-            UnsafeResumeThread();
+            clientSession.UnsafeResumeThread();
             try
             {
                 return clientSession.Store.ContextRead(ref key, ref input, ref output, userContext, sessionFunctions);
             }
             finally
             {
-                UnsafeSuspendThread();
+                clientSession.UnsafeSuspendThread();
             }
         }
 
@@ -159,14 +149,14 @@ namespace Tsavorite.core
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public Status Read(ref TKey key, ref TInput input, ref TOutput output, ref ReadOptions readOptions, out RecordMetadata recordMetadata, TContext userContext = default)
         {
-            UnsafeResumeThread();
+            clientSession.UnsafeResumeThread();
             try
             {
                 return store.ContextRead(ref key, ref input, ref output, ref readOptions, out recordMetadata, userContext, sessionFunctions);
             }
             finally
             {
-                UnsafeSuspendThread();
+                clientSession.UnsafeSuspendThread();
             }
         }
 
@@ -174,14 +164,14 @@ namespace Tsavorite.core
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public Status ReadAtAddress(long address, ref TInput input, ref TOutput output, ref ReadOptions readOptions, out RecordMetadata recordMetadata, TContext userContext = default)
         {
-            UnsafeResumeThread();
+            clientSession.UnsafeResumeThread();
             try
             {
                 return store.ContextReadAtAddress(address, ref input, ref output, ref readOptions, out recordMetadata, userContext, sessionFunctions);
             }
             finally
             {
-                UnsafeSuspendThread();
+                clientSession.UnsafeSuspendThread();
             }
         }
 
@@ -189,14 +179,14 @@ namespace Tsavorite.core
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public Status ReadAtAddress(long address, ref TKey key, ref TInput input, ref TOutput output, ref ReadOptions readOptions, out RecordMetadata recordMetadata, TContext userContext = default)
         {
-            UnsafeResumeThread();
+            clientSession.UnsafeResumeThread();
             try
             {
                 return store.ContextReadAtAddress(address, ref key, ref input, ref output, ref readOptions, out recordMetadata, userContext, sessionFunctions);
             }
             finally
             {
-                UnsafeSuspendThread();
+                clientSession.UnsafeSuspendThread();
             }
         }
 
@@ -232,14 +222,14 @@ namespace Tsavorite.core
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         private Status Upsert(ref TKey key, long keyHash, ref TInput input, ref TValue desiredValue, ref TOutput output, TContext userContext = default)
         {
-            UnsafeResumeThread();
+            clientSession.UnsafeResumeThread();
             try
             {
                 return store.ContextUpsert(ref key, keyHash, ref input, ref desiredValue, ref output, userContext, sessionFunctions);
             }
             finally
             {
-                UnsafeSuspendThread();
+                clientSession.UnsafeSuspendThread();
             }
         }
 
@@ -257,14 +247,14 @@ namespace Tsavorite.core
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         private Status Upsert(ref TKey key, long keyHash, ref TInput input, ref TValue desiredValue, ref TOutput output, out RecordMetadata recordMetadata, TContext userContext = default)
         {
-            UnsafeResumeThread();
+            clientSession.UnsafeResumeThread();
             try
             {
                 return store.ContextUpsert(ref key, keyHash, ref input, ref desiredValue, ref output, out recordMetadata, userContext, sessionFunctions);
             }
             finally
             {
-                UnsafeSuspendThread();
+                clientSession.UnsafeSuspendThread();
             }
         }
 
@@ -313,14 +303,14 @@ namespace Tsavorite.core
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         private Status RMW(ref TKey key, long keyHash, ref TInput input, ref TOutput output, out RecordMetadata recordMetadata, TContext userContext = default)
         {
-            UnsafeResumeThread();
+            clientSession.UnsafeResumeThread();
             try
             {
                 return store.ContextRMW(ref key, keyHash, ref input, ref output, out recordMetadata, userContext, sessionFunctions);
             }
             finally
             {
-                UnsafeSuspendThread();
+                clientSession.UnsafeSuspendThread();
             }
         }
 
@@ -380,14 +370,14 @@ namespace Tsavorite.core
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         private Status Delete(ref TKey key, long keyHash, TContext userContext = default)
         {
-            UnsafeResumeThread();
+            clientSession.UnsafeResumeThread();
             try
             {
                 return store.ContextDelete<TInput, TOutput, TContext, SessionFunctionsWrapper<TKey, TValue, TInput, TOutput, TContext, TFunctions, BasicSessionLocker<TKey, TValue, TStoreFunctions, TAllocator>, TStoreFunctions, TAllocator>>(ref key, keyHash, userContext, sessionFunctions);
             }
             finally
             {
-                UnsafeSuspendThread();
+                clientSession.UnsafeSuspendThread();
             }
         }
 
@@ -417,19 +407,7 @@ namespace Tsavorite.core
             => clientSession.IsModified(sessionFunctions, ref key);
 
         /// <inheritdoc/>
-        public void Refresh()
-            => clientSession.Refresh(sessionFunctions);
-
-        /// <inheritdoc/>
-        public void HandleImmediateNonPendingRetryStatus(bool refresh)
-            => clientSession.Store.HandleImmediateNonPendingRetryStatus<TInput, TOutput, TContext,
-                SessionFunctionsWrapper<TKey, TValue, TInput, TOutput, TContext, TFunctions, BasicSessionLocker<TKey, TValue, TStoreFunctions, TAllocator>, TStoreFunctions, TAllocator>>
-                (refresh ? OperationStatus.RETRY_LATER : OperationStatus.RETRY_NOW, sessionFunctions);
-
-        /// <inheritdoc/>
-        public void DoThreadStateMachineStep() => clientSession.Store.DoThreadStateMachineStep<TInput, TOutput, TContext,
-            SessionFunctionsWrapper<TKey, TValue, TInput, TOutput, TContext, TFunctions, BasicSessionLocker<TKey, TValue, TStoreFunctions, TAllocator>, TStoreFunctions, TAllocator>>
-            (sessionFunctions);
+        public void Refresh() => clientSession.Refresh();
 
         #endregion ITsavoriteContext
 
@@ -444,7 +422,7 @@ namespace Tsavorite.core
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         internal Status CompactionCopyToTail(ref TKey key, ref TInput input, ref TValue value, ref TOutput output, long untilAddress)
         {
-            UnsafeResumeThread();
+            clientSession.UnsafeResumeThread();
             try
             {
                 return store.CompactionConditionalCopyToTail<TInput, TOutput, TContext, SessionFunctionsWrapper<TKey, TValue, TInput, TOutput, TContext, TFunctions, BasicSessionLocker<TKey, TValue, TStoreFunctions, TAllocator>, TStoreFunctions, TAllocator>>(
@@ -452,7 +430,7 @@ namespace Tsavorite.core
             }
             finally
             {
-                UnsafeSuspendThread();
+                clientSession.UnsafeSuspendThread();
             }
         }
 
@@ -467,7 +445,7 @@ namespace Tsavorite.core
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         internal Status ConditionalScanPush(ScanCursorState<TKey, TValue> scanCursorState, RecordInfo recordInfo, ref TKey key, ref TValue value, long untilAddress)
         {
-            UnsafeResumeThread();
+            clientSession.UnsafeResumeThread();
             try
             {
                 return store.hlogBase.ConditionalScanPush<TInput, TOutput, TContext, SessionFunctionsWrapper<TKey, TValue, TInput, TOutput, TContext, TFunctions, BasicSessionLocker<TKey, TValue, TStoreFunctions, TAllocator>, TStoreFunctions, TAllocator>>(
@@ -475,7 +453,7 @@ namespace Tsavorite.core
             }
             finally
             {
-                UnsafeSuspendThread();
+                clientSession.UnsafeSuspendThread();
             }
         }
 
@@ -488,7 +466,7 @@ namespace Tsavorite.core
         /// <returns>Status</returns>
         internal Status ContainsKeyInMemory(ref TKey key, out long logicalAddress, long fromAddress = -1)
         {
-            UnsafeResumeThread();
+            clientSession.UnsafeResumeThread();
             try
             {
                 return store.InternalContainsKeyInMemory<TInput, TOutput, TContext, SessionFunctionsWrapper<TKey, TValue, TInput, TOutput, TContext, TFunctions, BasicSessionLocker<TKey, TValue, TStoreFunctions, TAllocator>, TStoreFunctions, TAllocator>>(
@@ -496,7 +474,7 @@ namespace Tsavorite.core
             }
             finally
             {
-                UnsafeSuspendThread();
+                clientSession.UnsafeSuspendThread();
             }
         }
     }

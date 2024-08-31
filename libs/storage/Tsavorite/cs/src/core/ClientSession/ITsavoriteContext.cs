@@ -476,15 +476,5 @@ namespace Tsavorite.core
         /// in case of thread-affinitized sessions (async support is disabled).
         /// </summary>
         void Refresh();
-
-        /// <summary>
-        /// Handle a retry result in the combined stores, with or without an epoch refresh.
-        /// </summary>
-        void HandleImmediateNonPendingRetryStatus(bool refresh);
-
-        /// <summary>
-        /// Advance the state machine in the combined stores.
-        /// </summary>
-        void DoThreadStateMachineStep();
     }
 }

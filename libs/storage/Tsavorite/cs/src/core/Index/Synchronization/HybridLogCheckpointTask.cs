@@ -101,14 +101,12 @@ namespace Tsavorite.core
         }
 
         /// <inheritdoc />
-        public virtual void OnThreadState<TInput, TOutput, TContext, TSessionFunctionsWrapper>(
+        public virtual void OnThreadState<TInput, TOutput, TContext>(
             SystemState current,
             SystemState prev, TsavoriteKV<TKey, TValue, TStoreFunctions, TAllocator> store,
             TsavoriteKV<TKey, TValue, TStoreFunctions, TAllocator>.TsavoriteExecutionContext<TInput, TOutput, TContext> ctx,
-            TSessionFunctionsWrapper sessionFunctions,
             List<ValueTask> valueTasks,
             CancellationToken token = default)
-            where TSessionFunctionsWrapper : ISessionEpochControl
         {
             if (current.Phase != Phase.PERSISTENCE_CALLBACK)
                 return;
@@ -152,16 +150,15 @@ namespace Tsavorite.core
         }
 
         /// <inheritdoc />
-        public override void OnThreadState<TInput, TOutput, TContext, TSessionFunctionsWrapper>(
+        public override void OnThreadState<TInput, TOutput, TContext>(
             SystemState current,
             SystemState prev,
             TsavoriteKV<TKey, TValue, TStoreFunctions, TAllocator> store,
             TsavoriteKV<TKey, TValue, TStoreFunctions, TAllocator>.TsavoriteExecutionContext<TInput, TOutput, TContext> ctx,
-            TSessionFunctionsWrapper sessionFunctions,
             List<ValueTask> valueTasks,
             CancellationToken token = default)
         {
-            base.OnThreadState(current, prev, store, ctx, sessionFunctions, valueTasks, token);
+            base.OnThreadState(current, prev, store, ctx, valueTasks, token);
 
             if (current.Phase != Phase.WAIT_FLUSH) return;
 
@@ -259,15 +256,14 @@ namespace Tsavorite.core
         }
 
         /// <inheritdoc />
-        public override void OnThreadState<TInput, TOutput, TContext, TSessionFunctionsWrapper>(
+        public override void OnThreadState<TInput, TOutput, TContext>(
             SystemState current,
             SystemState prev, TsavoriteKV<TKey, TValue, TStoreFunctions, TAllocator> store,
             TsavoriteKV<TKey, TValue, TStoreFunctions, TAllocator>.TsavoriteExecutionContext<TInput, TOutput, TContext> ctx,
-            TSessionFunctionsWrapper sessionFunctions,
             List<ValueTask> valueTasks,
             CancellationToken token = default)
         {
-            base.OnThreadState(current, prev, store, ctx, sessionFunctions, valueTasks, token);
+            base.OnThreadState(current, prev, store, ctx, valueTasks, token);
 
             if (current.Phase != Phase.WAIT_FLUSH) return;
 
@@ -355,15 +351,14 @@ namespace Tsavorite.core
         }
 
         /// <inheritdoc />
-        public override void OnThreadState<TInput, TOutput, TContext, TSessionFunctionsWrapper>(
+        public override void OnThreadState<TInput, TOutput, TContext>(
             SystemState current,
             SystemState prev, TsavoriteKV<TKey, TValue, TStoreFunctions, TAllocator> store,
             TsavoriteKV<TKey, TValue, TStoreFunctions, TAllocator>.TsavoriteExecutionContext<TInput, TOutput, TContext> ctx,
-            TSessionFunctionsWrapper sessionFunctions,
             List<ValueTask> valueTasks,
             CancellationToken token = default)
         {
-            base.OnThreadState(current, prev, store, ctx, sessionFunctions, valueTasks, token);
+            base.OnThreadState(current, prev, store, ctx, valueTasks, token);
 
             if (current.Phase != Phase.WAIT_FLUSH) return;
 

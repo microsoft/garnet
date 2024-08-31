@@ -13,20 +13,18 @@ namespace Tsavorite.core
         where TAllocator : IAllocator<TKey, TValue, TStoreFunctions>
     {
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        private bool HandleImmediateRetryStatus<TInput, TOutput, TContext, TSessionFunctionsWrapper>(
-            OperationStatus internalStatus,
-            TSessionFunctionsWrapper sessionFunctions,
-            ref PendingContext<TInput, TOutput, TContext> pendingContext)
-            where TSessionFunctionsWrapper : ISessionFunctionsWrapper<TKey, TValue, TInput, TOutput, TContext, TStoreFunctions, TAllocator>
+        private bool HandleImmediateRetryStatus<TInput, TOutput, TContext>(
+                OperationStatus internalStatus,
+                TsavoriteExecutionContext<TInput, TOutput, TContext> executionCtx,
+                ref PendingContext<TInput, TOutput, TContext> pendingContext)
             => (internalStatus & OperationStatus.BASIC_MASK) > OperationStatus.MAX_MAP_TO_COMPLETED_STATUSCODE
-                && HandleRetryStatus(internalStatus, sessionFunctions, ref pendingContext);
+                && HandleRetryStatus(internalStatus, executionCtx, ref pendingContext);
 
         /// <summary>
         /// Handle retry for operations that will not go pending (e.g., InternalLock)
         /// </summary>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        internal bool HandleImmediateNonPendingRetryStatus<TInput, TOutput, TContext, TSessionFunctionsWrapper>(OperationStatus internalStatus, TSessionFunctionsWrapper sessionFunctions)
-            where TSessionFunctionsWrapper : ISessionFunctionsWrapper<TKey, TValue, TInput, TOutput, TContext, TStoreFunctions, TAllocator>
+        internal bool HandleImmediateNonPendingRetryStatus<TInput, TOutput, TContext>(OperationStatus internalStatus, TsavoriteExecutionContext<TInput, TOutput, TContext> executionCtx)
         {
             Debug.Assert(Kernel.Epoch.ThisInstanceProtected());
             switch (internalStatus)
@@ -35,7 +33,7 @@ namespace Tsavorite.core
                     Thread.Yield();
                     return true;
                 case OperationStatus.RETRY_LATER:
-                    InternalRefresh<TInput, TOutput, TContext, TSessionFunctionsWrapper>(sessionFunctions);
+                    InternalRefresh(executionCtx);
                     Thread.Yield();
                     return true;
                 default:
@@ -43,11 +41,10 @@ namespace Tsavorite.core
             }
         }
 
-        private bool HandleRetryStatus<TInput, TOutput, TContext, TSessionFunctionsWrapper>(
+        private bool HandleRetryStatus<TInput, TOutput, TContext>(
             OperationStatus internalStatus,
-            TSessionFunctionsWrapper sessionFunctions,
+            TsavoriteExecutionContext<TInput, TOutput, TContext> executionCtx,
             ref PendingContext<TInput, TOutput, TContext> pendingContext)
-            where TSessionFunctionsWrapper : ISessionFunctionsWrapper<TKey, TValue, TInput, TOutput, TContext, TStoreFunctions, TAllocator>
         {
             Debug.Assert(Kernel.Epoch.ThisInstanceProtected());
             switch (internalStatus)
@@ -56,12 +53,12 @@ namespace Tsavorite.core
                     Thread.Yield();
                     return true;
                 case OperationStatus.RETRY_LATER:
-                    InternalRefresh<TInput, TOutput, TContext, TSessionFunctionsWrapper>(sessionFunctions);
+                    InternalRefresh(executionCtx);
                     Thread.Yield();
                     return true;
                 case OperationStatus.CPR_SHIFT_DETECTED:
                     // Retry as (v+1) Operation
-                    SynchronizeEpoch(sessionFunctions.Ctx, ref pendingContext, sessionFunctions);
+                    SynchronizeEpoch(executionCtx, ref pendingContext);
                     return true;
                 case OperationStatus.ALLOCATE_FAILED:
                     // Async handles this in its own way, as part of the *AsyncResult.Complete*() sequence.

@@ -46,14 +46,12 @@ namespace Tsavorite.core
         ///
         /// Note that the function is not allowed to await when async is set to false.
         /// </summary>
-        void OnThreadEnteringState<TInput, TOutput, TContext, TSessionFunctionsWrapper>(SystemState current,
+        void OnThreadEnteringState<TInput, TOutput, TContext>(SystemState current,
             SystemState prev,
             TsavoriteKV<TKey, TValue, TStoreFunctions, TAllocator> tsavorite,
             TsavoriteKV<TKey, TValue, TStoreFunctions, TAllocator>.TsavoriteExecutionContext<TInput, TOutput, TContext> ctx,
-            TSessionFunctionsWrapper sessionFunctions,
             List<ValueTask> valueTasks,
-            CancellationToken token = default)
-            where TSessionFunctionsWrapper : ISessionEpochControl;
+            CancellationToken token = default);
     }
 
     /// <summary>
@@ -85,15 +83,13 @@ namespace Tsavorite.core
         ///
         /// Note that the function is not allowed to await when async is set to false.
         /// </summary>
-        void OnThreadState<TInput, TOutput, TContext, TSessionFunctionsWrapper>(
+        void OnThreadState<TInput, TOutput, TContext>(
             SystemState current,
             SystemState prev,
             TsavoriteKV<TKey, TValue, TStoreFunctions, TAllocator> tsavorite,
             TsavoriteKV<TKey, TValue, TStoreFunctions, TAllocator>.TsavoriteExecutionContext<TInput, TOutput, TContext> ctx,
-            TSessionFunctionsWrapper sessionFunctions,
             List<ValueTask> valueTasks,
-            CancellationToken token = default)
-            where TSessionFunctionsWrapper : ISessionEpochControl;
+            CancellationToken token = default);
     }
 
     /// <summary>
@@ -147,19 +143,17 @@ namespace Tsavorite.core
         }
 
         /// <inheritdoc />
-        public void OnThreadEnteringState<TInput, TOutput, TContext, TSessionFunctionsWrapper>(
+        public void OnThreadEnteringState<TInput, TOutput, TContext>(
             SystemState current,
             SystemState prev,
             TsavoriteKV<TKey, TValue, TStoreFunctions, TAllocator> tsavorite,
             TsavoriteKV<TKey, TValue, TStoreFunctions, TAllocator>.TsavoriteExecutionContext<TInput, TOutput, TContext> ctx,
-            TSessionFunctionsWrapper sessionFunctions,
             List<ValueTask> valueTasks,
             CancellationToken token = default)
-            where TSessionFunctionsWrapper : ISessionEpochControl
         {
             foreach (var task in tasks)
             {
-                task.OnThreadState(current, prev, tsavorite, ctx, sessionFunctions, valueTasks, token);
+                task.OnThreadState(current, prev, tsavorite, ctx, valueTasks, token);
             }
         }
     }

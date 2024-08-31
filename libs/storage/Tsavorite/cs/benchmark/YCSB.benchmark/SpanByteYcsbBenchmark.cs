@@ -148,8 +148,7 @@ namespace Tsavorite.benchmark
 
             using var session = store.NewSession<SpanByte, SpanByteAndMemory, Empty, SessionSpanByteFunctions>(functions);
             var uContext = session.UnsafeContext;
-            TransientKernelSession<SpanByte, SpanByte, SpanByte, SpanByteAndMemory, Empty, SessionSpanByteFunctions, SpanByteStoreFunctions, SpanByteAllocator<SpanByteStoreFunctions>,
-                                   UnsafeContext<SpanByte, SpanByte, SpanByte, SpanByteAndMemory, Empty, SessionSpanByteFunctions, SpanByteStoreFunctions, SpanByteAllocator<SpanByteStoreFunctions>>> kernelSession = new(uContext);
+            TransientKernelSession<SpanByte, SpanByte, SpanByte, SpanByteAndMemory, Empty, SessionSpanByteFunctions, SpanByteStoreFunctions, SpanByteAllocator<SpanByteStoreFunctions>> kernelSession = new(session);
             kernelSession.BeginUnsafe();
 
             try
@@ -416,8 +415,7 @@ namespace Tsavorite.benchmark
 
             using var session = store.NewSession<SpanByte, SpanByteAndMemory, Empty, SessionSpanByteFunctions>(functions);
             var uContext = session.UnsafeContext;
-            TransientKernelSession<SpanByte, SpanByte, SpanByte, SpanByteAndMemory, Empty, SessionSpanByteFunctions, SpanByteStoreFunctions, SpanByteAllocator<SpanByteStoreFunctions>,
-                                   UnsafeContext<SpanByte, SpanByte, SpanByte, SpanByteAndMemory, Empty, SessionSpanByteFunctions, SpanByteStoreFunctions, SpanByteAllocator<SpanByteStoreFunctions>>> kernelSession = new(uContext);
+            TransientKernelSession<SpanByte, SpanByte, SpanByte, SpanByteAndMemory, Empty, SessionSpanByteFunctions, SpanByteStoreFunctions, SpanByteAllocator<SpanByteStoreFunctions>> kernelSession = new(session);
             kernelSession.BeginUnsafe();
 
             Span<byte> value = stackalloc byte[kValueSize];

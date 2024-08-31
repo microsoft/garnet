@@ -361,19 +361,8 @@ namespace Tsavorite.core
         public void Refresh()
         {
             Debug.Assert(clientSession.Store.Kernel.Epoch.ThisInstanceProtected());
-            clientSession.Store.InternalRefresh<TInput, TOutput, TContext, SessionFunctionsWrapper<TKey, TValue, TInput, TOutput, TContext, TSessionFunctions, BasicSessionLocker<TKey, TValue, TStoreFunctions, TAllocator>, TStoreFunctions, TAllocator>>(sessionFunctions);
+            clientSession.Store.InternalRefresh(sessionFunctions.ExecutionCtx);
         }
-
-        /// <inheritdoc/>
-        public void HandleImmediateNonPendingRetryStatus(bool refresh) 
-            => clientSession.Store.HandleImmediateNonPendingRetryStatus<TInput, TOutput, TContext, 
-                SessionFunctionsWrapper<TKey, TValue, TInput, TOutput, TContext, TSessionFunctions, BasicSessionLocker<TKey, TValue, TStoreFunctions, TAllocator>, TStoreFunctions, TAllocator>>
-                (refresh ? OperationStatus.RETRY_LATER : OperationStatus.RETRY_NOW, sessionFunctions);
-
-        /// <inheritdoc/>
-        public void DoThreadStateMachineStep() => clientSession.Store.DoThreadStateMachineStep<TInput, TOutput, TContext,
-                SessionFunctionsWrapper<TKey, TValue, TInput, TOutput, TContext, TSessionFunctions, BasicSessionLocker<TKey, TValue, TStoreFunctions, TAllocator>, TStoreFunctions, TAllocator>>
-                (sessionFunctions);
 
         #endregion ITsavoriteContext
     }

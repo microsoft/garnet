@@ -474,15 +474,15 @@ namespace Tsavorite.test.Revivification
 
             private void AssertInfoValid(ref UpsertInfo updateInfo)
             {
-                ClassicAssert.AreEqual(session.ctx.version, updateInfo.Version);
+                ClassicAssert.AreEqual(session.ExecutionCtx.version, updateInfo.Version);
             }
             private void AssertInfoValid(ref RMWInfo rmwInfo)
             {
-                ClassicAssert.AreEqual(session.ctx.version, rmwInfo.Version);
+                ClassicAssert.AreEqual(session.ExecutionCtx.version, rmwInfo.Version);
             }
             private void AssertInfoValid(ref DeleteInfo deleteInfo)
             {
-                ClassicAssert.AreEqual(session.ctx.version, deleteInfo.Version);
+                ClassicAssert.AreEqual(session.ExecutionCtx.version, deleteInfo.Version);
             }
 
             private static void VerifyKeyAndValue(ref SpanByte functionsKey, ref SpanByte functionsValue)

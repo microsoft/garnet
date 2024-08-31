@@ -20,7 +20,7 @@ namespace Tsavorite.core
     {
         public readonly TsavoriteKV<TKey, TValue, TStoreFunctions, TAllocator> Store;
 
-        internal readonly TsavoriteKV<TKey, TValue, TStoreFunctions, TAllocator>.TsavoriteExecutionContext<TInput, TOutput, TContext> ctx;
+        internal readonly TsavoriteKV<TKey, TValue, TStoreFunctions, TAllocator>.TsavoriteExecutionContext<TInput, TOutput, TContext> ExecutionCtx;
 
         internal readonly TSessionFunctions functions;
 
@@ -37,8 +37,7 @@ namespace Tsavorite.core
         ScanCursorState<TKey, TValue> scanCursorState;
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        internal void BeginTransaction<TSessionFunctionsWrapper>(TSessionFunctionsWrapper sessionFunctionsWrapper)
-            where TSessionFunctionsWrapper : ISessionFunctionsWrapper<TKey, TValue, TInput, TOutput, TContext, TStoreFunctions, TAllocator>
+        internal void BeginTransaction()
         {
             while (true)
             {
@@ -46,8 +45,8 @@ namespace Tsavorite.core
                 while (IsInPreparePhase())
                 {
                     if (Store.Kernel.Epoch.ThisInstanceProtected())
-                        Store.InternalRefresh<TInput, TOutput, TContext, TSessionFunctionsWrapper>(sessionFunctionsWrapper);
-                    Thread.Yield();
+                        Store.InternalRefresh(ExecutionCtx);
+                    _ = Thread.Yield();
                 }
 
                 Store.IncrementNumTxnSessions();
@@ -78,20 +77,20 @@ namespace Tsavorite.core
 
             this.loggerFactory = loggerFactory;
             logger = loggerFactory?.CreateLogger($"ClientSession-{GetHashCode():X8}");
-            this.Store = store;
-            this.ctx = ctx;
+            Store = store;
+            this.ExecutionCtx = ctx;
             this.functions = functions;
         }
 
         /// <summary>
         /// Get session ID
         /// </summary>
-        public int ID { get { return ctx.sessionID; } }
+        public int ID { get { return ExecutionCtx.sessionID; } }
 
         /// <summary>
         /// Current version number of the session
         /// </summary>
-        public long Version => ctx.version;
+        public long Version => ExecutionCtx.version;
 
         /// <summary>
         /// Dispose session
@@ -102,7 +101,7 @@ namespace Tsavorite.core
 
             // By the time Dispose is called, we should have no outstanding locks, so can use the BasicContext's sessionFunctions.
             _ = CompletePending(bContext.sessionFunctions, true);
-            Store.DisposeClientSession(ID, ctx.phase);
+            Store.DisposeClientSession(ID, ExecutionCtx.phase);
         }
 
         /// <summary>
@@ -134,13 +133,12 @@ namespace Tsavorite.core
         public long GetKeyHash(ref TKey key) => Store.GetKeyHash(ref key);
 
         /// <inheritdoc/>
-        internal void Refresh<TSessionFunctionsWrapper>(TSessionFunctionsWrapper sessionFunctions)
-            where TSessionFunctionsWrapper : ISessionFunctionsWrapper<TKey, TValue, TInput, TOutput, TContext, TStoreFunctions, TAllocator>
+        public void Refresh()
         {
-            UnsafeResumeThread(sessionFunctions);
+            UnsafeResumeThread();
             try
             {
-                Store.InternalRefresh<TInput, TOutput, TContext, TSessionFunctionsWrapper>(sessionFunctions);
+                UnsafeRefresh();
             }
             finally
             {
@@ -149,10 +147,16 @@ namespace Tsavorite.core
         }
 
         /// <inheritdoc/>
+        public void UnsafeRefresh()
+        {
+            Store.InternalRefresh(ExecutionCtx);
+        }
+
+        /// <inheritdoc/>
         internal void ResetModified<TSessionFunctionsWrapper>(TSessionFunctionsWrapper sessionFunctions, ref TKey key)
             where TSessionFunctionsWrapper : ISessionFunctionsWrapper<TKey, TValue, TInput, TOutput, TContext, TStoreFunctions, TAllocator>
         {
-            UnsafeResumeThread(sessionFunctions);
+            UnsafeResumeThread();
             try
             {
                 UnsafeResetModified(sessionFunctions, ref key);
@@ -206,7 +210,7 @@ namespace Tsavorite.core
         internal bool CompletePending<TSessionFunctionsWrapper>(TSessionFunctionsWrapper sessionFunctions, bool getOutputs, bool wait, bool spinWaitForCommit)
             where TSessionFunctionsWrapper : ISessionFunctionsWrapper<TKey, TValue, TInput, TOutput, TContext, TStoreFunctions, TAllocator>
         {
-            UnsafeResumeThread(sessionFunctions);
+            UnsafeResumeThread();
             try
             {
                 return UnsafeCompletePending(sessionFunctions, getOutputs, wait, spinWaitForCommit);
@@ -283,7 +287,7 @@ namespace Tsavorite.core
             if (Store.Kernel.Epoch.ThisInstanceProtected())
                 throw new NotSupportedException("Async operations not supported over protected epoch");
 
-            await TsavoriteKV<TKey, TValue, TStoreFunctions, TAllocator>.ReadyToCompletePendingAsync(ctx, token).ConfigureAwait(false);
+            await TsavoriteKV<TKey, TValue, TStoreFunctions, TAllocator>.ReadyToCompletePendingAsync(ExecutionCtx, token).ConfigureAwait(false);
         }
 
         #endregion Pending Operations
@@ -296,7 +300,7 @@ namespace Tsavorite.core
             OperationStatus status;
             do
                 status = Store.InternalModifiedBitOperation(ref key, out _);
-            while (Store.HandleImmediateNonPendingRetryStatus<TInput, TOutput, TContext, TSessionFunctionsWrapper>(status, sessionFunctions));
+            while (Store.HandleImmediateNonPendingRetryStatus(status, sessionFunctions.ExecutionCtx));
         }
 
         /// <inheritdoc/>
@@ -308,7 +312,7 @@ namespace Tsavorite.core
         internal bool IsModified<TSessionFunctionsWrapper>(TSessionFunctionsWrapper sessionFunctions, ref TKey key)
             where TSessionFunctionsWrapper : ISessionFunctionsWrapper<TKey, TValue, TInput, TOutput, TContext, TStoreFunctions, TAllocator>
         {
-            UnsafeResumeThread(sessionFunctions);
+            UnsafeResumeThread();
             try
             {
                 return UnsafeIsModified(sessionFunctions, ref key);
@@ -326,7 +330,7 @@ namespace Tsavorite.core
             OperationStatus status;
             do
                 status = Store.InternalModifiedBitOperation(ref key, out modifiedInfo, false);
-            while (Store.HandleImmediateNonPendingRetryStatus<TInput, TOutput, TContext, TSessionFunctionsWrapper>(status, sessionFunctions));
+            while (Store.HandleImmediateNonPendingRetryStatus(status, sessionFunctions.ExecutionCtx));
             return modifiedInfo.Modified;
         }
 
@@ -345,7 +349,7 @@ namespace Tsavorite.core
         {
             token.ThrowIfCancellationRequested();
 
-            if (!ctx.prevCtx.pendingReads.IsEmpty || !ctx.pendingReads.IsEmpty)
+            if (!ExecutionCtx.prevCtx.pendingReads.IsEmpty || !ExecutionCtx.pendingReads.IsEmpty)
                 throw new TsavoriteException("Make sure all async operations issued on this session are awaited and completed first");
 
             // Complete all pending sync operations on session
@@ -356,7 +360,7 @@ namespace Tsavorite.core
             while (true)
             {
                 _ = await task.WithCancellationAsync(token).ConfigureAwait(false);
-                Refresh(sessionFunctions);
+                Refresh();
                 task = Store.CheckpointTask;
             }
         }
@@ -457,13 +461,12 @@ namespace Tsavorite.core
         /// Resume session on current thread. IMPORTANT: Call SuspendThread before any async op.
         /// </summary>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        internal void UnsafeResumeThread<TSessionFunctionsWrapper>(TSessionFunctionsWrapper sessionFunctions)
-            where TSessionFunctionsWrapper : ISessionFunctionsWrapper<TKey, TValue, TInput, TOutput, TContext, TStoreFunctions, TAllocator>
+        internal void UnsafeResumeThread()
         {
             // We do not track any "acquired" state here; if someone mixes calls between safe and unsafe contexts, they will 
             // get the "trying to acquire already-acquired epoch" error.
             Store.Kernel.Epoch.Resume();
-            Store.InternalRefresh<TInput, TOutput, TContext, TSessionFunctionsWrapper>(sessionFunctions);
+            Store.InternalRefresh(ExecutionCtx);
         }
 
         /// <summary>
@@ -476,16 +479,22 @@ namespace Tsavorite.core
             Store.Kernel.Epoch.Suspend();
         }
 
+
+        public void HandleImmediateNonPendingRetryStatus(bool refresh)
+            => Store.HandleImmediateNonPendingRetryStatus(refresh ? OperationStatus.RETRY_LATER : OperationStatus.RETRY_NOW, ExecutionCtx);
+
+        public void DoThreadStateMachineStep() => Store.DoThreadStateMachineStep(ExecutionCtx);
+
         void IClientSession.AtomicSwitch(long version)
         {
-            _ = TsavoriteKV<TKey, TValue, TStoreFunctions, TAllocator>.AtomicSwitch(ctx, ctx.prevCtx, version);
+            _ = TsavoriteKV<TKey, TValue, TStoreFunctions, TAllocator>.AtomicSwitch(ExecutionCtx, ExecutionCtx.prevCtx, version);
         }
 
         /// <inheritdoc/>
-        public void MergeRevivificationStatsTo(ref RevivificationStats to, bool reset) => ctx.MergeRevivificationStatsTo(ref to, reset);
+        public void MergeRevivificationStatsTo(ref RevivificationStats to, bool reset) => ExecutionCtx.MergeRevivificationStatsTo(ref to, reset);
 
         /// <inheritdoc/>
-        public void ResetRevivificationStats() => ctx.ResetRevivificationStats();
+        public void ResetRevivificationStats() => ExecutionCtx.ResetRevivificationStats();
 
         /// <summary>
         /// Return true if Tsavorite State Machine is in PREPARE state

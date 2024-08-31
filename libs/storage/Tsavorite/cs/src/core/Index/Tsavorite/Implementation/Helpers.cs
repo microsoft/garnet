@@ -94,7 +94,7 @@ namespace Tsavorite.core
             where TSessionFunctionsWrapper : ISessionFunctionsWrapper<TKey, TValue, TInput, TOutput, TContext, TStoreFunctions, TAllocator>
         {
             Debug.Assert(!stackCtx.recSrc.HasReadCacheSrc, "Should not call IsFrozen() for readcache records");
-            return sessionFunctions.Ctx.IsInV1
+            return sessionFunctions.ExecutionCtx.IsInV1
                         && (stackCtx.recSrc.LogicalAddress <= _hybridLogCheckpoint.info.startLogicalAddress     // In checkpoint range
                             || !srcRecordInfo.IsInNewVersion);                                                  // In fuzzy region and an old version
         }
@@ -134,7 +134,7 @@ namespace Tsavorite.core
                 return false;
 
             SetFreeRecordSize(stackCtx.recSrc.PhysicalAddress, ref srcRecordInfo, recordLengths.fullRecordLength);
-            return RevivificationManager.TryAdd(stackCtx.recSrc.LogicalAddress, recordLengths.fullRecordLength, ref sessionFunctions.Ctx.RevivificationStats);
+            return RevivificationManager.TryAdd(stackCtx.recSrc.LogicalAddress, recordLengths.fullRecordLength, ref sessionFunctions.ExecutionCtx.RevivificationStats);
         }
 
         internal enum LatchOperation : byte

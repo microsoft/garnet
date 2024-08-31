@@ -61,15 +61,13 @@ namespace Tsavorite.core
         }
 
         /// <inheritdoc />
-        public void OnThreadState<TInput, TOutput, TContext, TSessionFunctionsWrapper>(
+        public void OnThreadState<TInput, TOutput, TContext>(
             SystemState current,
             SystemState prev,
             TsavoriteKV<TKey, TValue, TStoreFunctions, TAllocator> store,
             TsavoriteKV<TKey, TValue, TStoreFunctions, TAllocator>.TsavoriteExecutionContext<TInput, TOutput, TContext> ctx,
-            TSessionFunctionsWrapper sessionFunctions,
             List<ValueTask> valueTasks,
             CancellationToken token = default)
-            where TSessionFunctionsWrapper : ISessionEpochControl
         {
             switch (current.Phase)
             {

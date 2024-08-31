@@ -59,7 +59,7 @@ namespace Tsavorite.core
                 }
 
                 // If we're here we failed TryCopyToTail, probably a failed CAS due to another record insertion.
-                if (!HandleImmediateRetryStatus(status, sessionFunctions, ref pendingContext))
+                if (!HandleImmediateRetryStatus(status, sessionFunctions.ExecutionCtx, ref pendingContext))
                     return status;
 
                 // HandleImmediateRetryStatus may have refreshed the epoch which means HeadAddress etc. may have changed. Re-traverse from the tail to the highest
@@ -73,7 +73,7 @@ namespace Tsavorite.core
                     if (TryFindRecordInMainLogForConditionalOperation<TInput, TOutput, TContext, TSessionFunctionsWrapper>(sessionFunctions, ref key, ref stackCtx2, minAddress, out status, out needIO))
                         return OperationStatus.SUCCESS;
                 }
-                while (HandleImmediateNonPendingRetryStatus<TInput, TOutput, TContext, TSessionFunctionsWrapper>(status, sessionFunctions));
+                while (HandleImmediateNonPendingRetryStatus(status, sessionFunctions.ExecutionCtx));
 
                 // Issue IO if necessary and desired (for ReadFromImmutable, it isn't; just exit in that case), else loop back up and retry the insert.
                 if (!wantIO)
@@ -104,14 +104,14 @@ namespace Tsavorite.core
                 if (TryFindRecordInMainLogForConditionalOperation<TInput, TOutput, TContext, TSessionFunctionsWrapper>(sessionFunctions, ref key, ref stackCtx, minAddress, out status, out needIO))
                     return Status.CreateFound();
             }
-            while (sessionFunctions.Store.HandleImmediateNonPendingRetryStatus<TInput, TOutput, TContext, TSessionFunctionsWrapper>(status, sessionFunctions));
+            while (sessionFunctions.Store.HandleImmediateNonPendingRetryStatus(status, sessionFunctions.ExecutionCtx));
 
             if (needIO)
                 status = PrepareIOForConditionalOperation(sessionFunctions, ref pendingContext, ref key, ref input, ref value, ref output, default,
                                                     ref stackCtx, minAddress, WriteReason.Compaction);
             else
                 status = ConditionalCopyToTail(sessionFunctions, ref pendingContext, ref key, ref input, ref value, ref output, default, ref stackCtx, WriteReason.Compaction);
-            return HandleOperationStatus(sessionFunctions.Ctx, ref pendingContext, status, out _);
+            return HandleOperationStatus(sessionFunctions.ExecutionCtx, ref pendingContext, status, out _);
         }
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]

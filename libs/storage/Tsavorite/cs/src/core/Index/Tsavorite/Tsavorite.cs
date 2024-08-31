@@ -443,7 +443,7 @@ namespace Tsavorite.core
                 try
                 {
                     Kernel.Epoch.Resume();
-                    ThreadStateMachineStep<Empty, Empty, Empty, NullSession>(null, NullSession.Instance, valueTasks, token);
+                    ThreadStateMachineStep<Empty, Empty, Empty>(null, valueTasks, token);
                 }
                 catch (Exception)
                 {
@@ -474,15 +474,15 @@ namespace Tsavorite.core
         internal Status ContextRead<TInput, TOutput, TContext, TSessionFunctionsWrapper>(ref TKey key, ref TInput input, ref TOutput output, TContext context, TSessionFunctionsWrapper sessionFunctions)
             where TSessionFunctionsWrapper : ISessionFunctionsWrapper<TKey, TValue, TInput, TOutput, TContext, TStoreFunctions, TAllocator>
         {
-            var pcontext = new PendingContext<TInput, TOutput, TContext>(sessionFunctions.Ctx.ReadCopyOptions);
+            var pcontext = new PendingContext<TInput, TOutput, TContext>(sessionFunctions.ExecutionCtx.ReadCopyOptions);
             OperationStatus internalStatus;
             var keyHash = storeFunctions.GetKeyHashCode64(ref key);
 
             do
                 internalStatus = InternalRead(ref key, keyHash, ref input, ref output, context, ref pcontext, sessionFunctions);
-            while (HandleImmediateRetryStatus(internalStatus, sessionFunctions, ref pcontext));
+            while (HandleImmediateRetryStatus(internalStatus, sessionFunctions.ExecutionCtx, ref pcontext));
 
-            var status = HandleOperationStatus(sessionFunctions.Ctx, ref pcontext, internalStatus);
+            var status = HandleOperationStatus(sessionFunctions.ExecutionCtx, ref pcontext, internalStatus);
 
             return status;
         }
@@ -492,15 +492,15 @@ namespace Tsavorite.core
                 TSessionFunctionsWrapper sessionFunctions)
             where TSessionFunctionsWrapper : ISessionFunctionsWrapper<TKey, TValue, TInput, TOutput, TContext, TStoreFunctions, TAllocator>
         {
-            var pcontext = new PendingContext<TInput, TOutput, TContext>(sessionFunctions.Ctx.ReadCopyOptions, ref readOptions);
+            var pcontext = new PendingContext<TInput, TOutput, TContext>(sessionFunctions.ExecutionCtx.ReadCopyOptions, ref readOptions);
             OperationStatus internalStatus;
             var keyHash = readOptions.KeyHash ?? storeFunctions.GetKeyHashCode64(ref key);
 
             do
                 internalStatus = InternalRead(ref key, keyHash, ref input, ref output, context, ref pcontext, sessionFunctions);
-            while (HandleImmediateRetryStatus(internalStatus, sessionFunctions, ref pcontext));
+            while (HandleImmediateRetryStatus(internalStatus, sessionFunctions.ExecutionCtx, ref pcontext));
 
-            var status = HandleOperationStatus(sessionFunctions.Ctx, ref pcontext, internalStatus);
+            var status = HandleOperationStatus(sessionFunctions.ExecutionCtx, ref pcontext, internalStatus);
             recordMetadata = status.IsCompletedSuccessfully ? new(pcontext.recordInfo, pcontext.logicalAddress) : default;
             return status;
         }
@@ -509,7 +509,7 @@ namespace Tsavorite.core
         internal Status ContextReadAtAddress<TInput, TOutput, TContext, TSessionFunctionsWrapper>(long address, ref TInput input, ref TOutput output, ref ReadOptions readOptions, out RecordMetadata recordMetadata, TContext context, TSessionFunctionsWrapper sessionFunctions)
             where TSessionFunctionsWrapper : ISessionFunctionsWrapper<TKey, TValue, TInput, TOutput, TContext, TStoreFunctions, TAllocator>
         {
-            var pcontext = new PendingContext<TInput, TOutput, TContext>(sessionFunctions.Ctx.ReadCopyOptions, ref readOptions, noKey: true);
+            var pcontext = new PendingContext<TInput, TOutput, TContext>(sessionFunctions.ExecutionCtx.ReadCopyOptions, ref readOptions, noKey: true);
             TKey key = default;
             return ContextReadAtAddress(address, ref key, ref input, ref output, ref readOptions, out recordMetadata, context, ref pcontext, sessionFunctions);
         }
@@ -518,7 +518,7 @@ namespace Tsavorite.core
         internal Status ContextReadAtAddress<TInput, TOutput, TContext, TSessionFunctionsWrapper>(long address, ref TKey key, ref TInput input, ref TOutput output, ref ReadOptions readOptions, out RecordMetadata recordMetadata, TContext context, TSessionFunctionsWrapper sessionFunctions)
             where TSessionFunctionsWrapper : ISessionFunctionsWrapper<TKey, TValue, TInput, TOutput, TContext, TStoreFunctions, TAllocator>
         {
-            var pcontext = new PendingContext<TInput, TOutput, TContext>(sessionFunctions.Ctx.ReadCopyOptions, ref readOptions, noKey: false);
+            var pcontext = new PendingContext<TInput, TOutput, TContext>(sessionFunctions.ExecutionCtx.ReadCopyOptions, ref readOptions, noKey: false);
             return ContextReadAtAddress(address, ref key, ref input, ref output, ref readOptions, out recordMetadata, context, ref pcontext, sessionFunctions);
         }
 
@@ -530,9 +530,9 @@ namespace Tsavorite.core
             OperationStatus internalStatus;
             do
                 internalStatus = InternalReadAtAddress(address, ref key, ref input, ref output, ref readOptions, context, ref pcontext, sessionFunctions);
-            while (HandleImmediateRetryStatus(internalStatus, sessionFunctions, ref pcontext));
+            while (HandleImmediateRetryStatus(internalStatus, sessionFunctions.ExecutionCtx, ref pcontext));
 
-            var status = HandleOperationStatus(sessionFunctions.Ctx, ref pcontext, internalStatus);
+            var status = HandleOperationStatus(sessionFunctions.ExecutionCtx, ref pcontext, internalStatus);
             recordMetadata = status.IsCompletedSuccessfully ? new(pcontext.recordInfo, pcontext.logicalAddress) : default;
             return status;
         }
@@ -546,9 +546,9 @@ namespace Tsavorite.core
 
             do
                 internalStatus = InternalUpsert(ref key, keyHash, ref input, ref value, ref output, ref context, ref pcontext, sessionFunctions);
-            while (HandleImmediateRetryStatus(internalStatus, sessionFunctions, ref pcontext));
+            while (HandleImmediateRetryStatus(internalStatus, sessionFunctions.ExecutionCtx, ref pcontext));
 
-            var status = HandleOperationStatus(sessionFunctions.Ctx, ref pcontext, internalStatus);
+            var status = HandleOperationStatus(sessionFunctions.ExecutionCtx, ref pcontext, internalStatus);
             return status;
         }
 
@@ -562,9 +562,9 @@ namespace Tsavorite.core
 
             do
                 internalStatus = InternalUpsert(ref key, keyHash, ref input, ref value, ref output, ref context, ref pcontext, sessionFunctions);
-            while (HandleImmediateRetryStatus(internalStatus, sessionFunctions, ref pcontext));
+            while (HandleImmediateRetryStatus(internalStatus, sessionFunctions.ExecutionCtx, ref pcontext));
 
-            var status = HandleOperationStatus(sessionFunctions.Ctx, ref pcontext, internalStatus);
+            var status = HandleOperationStatus(sessionFunctions.ExecutionCtx, ref pcontext, internalStatus);
             recordMetadata = status.IsCompletedSuccessfully ? new(pcontext.recordInfo, pcontext.logicalAddress) : default;
             return status;
         }
@@ -579,9 +579,9 @@ namespace Tsavorite.core
 
             do
                 internalStatus = InternalRMW(ref key, keyHash, ref input, ref output, ref context, ref pcontext, sessionFunctions);
-            while (HandleImmediateRetryStatus(internalStatus, sessionFunctions, ref pcontext));
+            while (HandleImmediateRetryStatus(internalStatus, sessionFunctions.ExecutionCtx, ref pcontext));
 
-            var status = HandleOperationStatus(sessionFunctions.Ctx, ref pcontext, internalStatus);
+            var status = HandleOperationStatus(sessionFunctions.ExecutionCtx, ref pcontext, internalStatus);
             recordMetadata = status.IsCompletedSuccessfully ? new(pcontext.recordInfo, pcontext.logicalAddress) : default;
             return status;
         }
@@ -595,9 +595,9 @@ namespace Tsavorite.core
 
             do
                 internalStatus = InternalDelete(ref key, keyHash, ref context, ref pcontext, sessionFunctions);
-            while (HandleImmediateRetryStatus(internalStatus, sessionFunctions, ref pcontext));
+            while (HandleImmediateRetryStatus(internalStatus, sessionFunctions.ExecutionCtx, ref pcontext));
 
-            var status = HandleOperationStatus(sessionFunctions.Ctx, ref pcontext, internalStatus);
+            var status = HandleOperationStatus(sessionFunctions.ExecutionCtx, ref pcontext, internalStatus);
             return status;
         }
 
@@ -621,7 +621,7 @@ namespace Tsavorite.core
                 {
                     var _systemState = SystemState.Copy(ref systemState);
                     if (_systemState.Phase == Phase.PREPARE_GROW)
-                        ThreadStateMachineStep<Empty, Empty, Empty, NullSession>(null, NullSession.Instance, default);
+                        ThreadStateMachineStep<Empty, Empty, Empty>(null, default);
                     else if (_systemState.Phase == Phase.IN_PROGRESS_GROW)
                         SplitBuckets(0);
                     else if (_systemState.Phase == Phase.REST)

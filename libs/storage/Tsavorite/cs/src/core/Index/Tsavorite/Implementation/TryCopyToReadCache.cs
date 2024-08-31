@@ -32,8 +32,8 @@ namespace Tsavorite.core
 
             UpsertInfo upsertInfo = new()
             {
-                Version = sessionFunctions.Ctx.version,
-                SessionID = sessionFunctions.Ctx.sessionID,
+                Version = sessionFunctions.ExecutionCtx.version,
+                SessionID = sessionFunctions.ExecutionCtx.sessionID,
                 Address = Constants.kInvalidAddress,        // We do not expose readcache addresses
                 KeyHash = stackCtx.hei.hash,
             };

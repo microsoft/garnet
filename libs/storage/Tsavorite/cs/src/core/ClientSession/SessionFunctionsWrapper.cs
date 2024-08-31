@@ -206,7 +206,7 @@ namespace Tsavorite.core
         }
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public void UnsafeResumeThread() => _clientSession.UnsafeResumeThread(this);
+        public void UnsafeResumeThread() => _clientSession.UnsafeResumeThread();
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public void UnsafeSuspendThread() => _clientSession.UnsafeSuspendThread();
@@ -215,7 +215,7 @@ namespace Tsavorite.core
         public bool CompletePendingWithOutputs(out CompletedOutputIterator<TKey, TValue, TInput, TOutput, TContext> completedOutputs, bool wait = false, bool spinWaitForCommit = false)
             => _clientSession.CompletePendingWithOutputs(this, out completedOutputs, wait, spinWaitForCommit);
 
-        public TsavoriteKV<TKey, TValue, TStoreFunctions, TAllocator>.TsavoriteExecutionContext<TInput, TOutput, TContext> Ctx => _clientSession.ctx;
+        public TsavoriteKV<TKey, TValue, TStoreFunctions, TAllocator>.TsavoriteExecutionContext<TInput, TOutput, TContext> ExecutionCtx => _clientSession.ExecutionCtx;
         #endregion Internal utilities
     }
 }

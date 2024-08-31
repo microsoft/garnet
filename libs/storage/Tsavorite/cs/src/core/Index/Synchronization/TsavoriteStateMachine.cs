@@ -185,16 +185,13 @@ namespace Tsavorite.core
         /// necessary actions associated with the state as defined by the current state machine
         /// </summary>
         /// <param name="ctx">null if calling without a context (e.g. waiting on a checkpoint)</param>
-        /// <param name="sessionFunctions">Tsavorite session.</param>
         /// <param name="valueTasks">Return list of tasks that caller needs to await, to continue checkpointing</param>
         /// <param name="token">Cancellation token</param>
         /// <returns></returns>
-        private void ThreadStateMachineStep<TInput, TOutput, TContext, TSessionFunctionsWrapper>(
+        private void ThreadStateMachineStep<TInput, TOutput, TContext>(
             TsavoriteExecutionContext<TInput, TOutput, TContext> ctx,
-            TSessionFunctionsWrapper sessionFunctions,
             List<ValueTask> valueTasks,
             CancellationToken token = default)
-            where TSessionFunctionsWrapper : ISessionEpochControl
         {
             #region Capture current (non-intermediate) system state
             var currentTask = currentSyncStateMachine;
@@ -253,7 +250,7 @@ namespace Tsavorite.core
                        (threadState.Phase <= targetState.Phase || currentTask is IndexSnapshotStateMachine<TKey, TValue, TStoreFunctions, TAllocator>)
                     ));
 
-                currentTask.OnThreadEnteringState(threadState, previousState, this, ctx, sessionFunctions, valueTasks, token);
+                currentTask.OnThreadEnteringState(threadState, previousState, this, ctx, valueTasks, token);
 
                 if (ctx is not null)
                 {
