@@ -211,7 +211,7 @@ namespace Garnet.server
         /// </summary>
         /// <returns>True if enum parsed successfully</returns>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public T GetEnum<T>(int i, bool ignoreCase) where T : struct
+        public T GetEnum<T>(int i, bool ignoreCase) where T : struct, Enum
         {
             Debug.Assert(i < Count);
             return Enum.Parse<T>(GetString(i), ignoreCase);
@@ -222,7 +222,7 @@ namespace Garnet.server
         /// </summary>
         /// <returns>True if integer parsed successfully</returns>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public bool TryGetEnum<T>(int i, bool ignoreCase, out T value) where T : struct
+        public bool TryGetEnum<T>(int i, bool ignoreCase, out T value) where T : struct, Enum
         {
             Debug.Assert(i < Count);
             return Enum.TryParse(GetString(i), ignoreCase, out value);
