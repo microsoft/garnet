@@ -85,10 +85,10 @@ Write-Output "PathString: $pathstring"
 
 if ($pathString -contains "test") {
     $position = $pathString.IndexOf("test")
+    $basePath = $pathstring.Substring(0,$position-1)  # take off slash off end as well
     Write-Output "The position of 'test' is: $position"
 } else {
-    $position = $pathString.IndexOf(".github")
-    Write-Output "The position of '.github' is: $position"
+    $basePath = $pathstring  # already in base as not in test
 }
 
 
@@ -106,20 +106,9 @@ if ($pathString -contains "test") {
 #}
 #Write-Host "-----------------------------------------------DEBUG Position: $position" 
 
-$basePath = $pathstring.Substring(0,$position-1)  # take off slash off end as well
+#$basePath = $pathstring.Substring(0,$position-1)  # take off slash off end as well
 
 Write-Host "------------ DEBUG Basepath: $basePath" 
-
-
-if ($pathString -contains "test") {
-    $position = $pathString.IndexOf("test")
-    Write-Output "The position of 'test' is: $position"
-} else {
-    $position = $pathString.IndexOf(".github")
-    Write-Output "The position of '.github' is: $position"
-}
-
-
 
 
 # Read the test config file and convert the JSON to a PowerShell object
