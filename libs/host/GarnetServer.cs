@@ -212,7 +212,7 @@ namespace Garnet
 
         private void CreateMainStore(IClusterFactory clusterFactory, out string checkpointDir)
         {
-            kvSettings = opts.GetSettings(this.loggerFactory?.CreateLogger("TsavoriteKV [main]"), out logFactory);
+            kvSettings = opts.GetSettings(loggerFactory, out logFactory);
 
             checkpointDir = opts.CheckpointDir ?? opts.LogDir;
 

@@ -1589,6 +1589,41 @@ namespace Garnet.test
         }
 
         [Test]
+        [TestCase("EXPIRE")]
+        [TestCase("PEXPIRE")]
+        public void KeyExpireBadOptionTests(string command)
+        {
+            using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
+            var db = redis.GetDatabase(0);
+
+            ClassicAssert.IsTrue(db.StringSet("foo", "bar"));
+
+            // Invalid should be rejected
+            {
+                var exc = ClassicAssert.Throws<RedisServerException>(() => db.Execute(command, "foo", "100", "Q"));
+                ClassicAssert.AreEqual("ERR Unsupported option Q", exc.Message);
+            }
+
+            // None should be rejected
+            {
+                var exc = ClassicAssert.Throws<RedisServerException>(() => db.Execute(command, "foo", "100", "None"));
+                ClassicAssert.AreEqual("ERR Unsupported option None", exc.Message);
+            }
+
+            // Numeric equivalent should be rejected
+            {
+                var exc = ClassicAssert.Throws<RedisServerException>(() => db.Execute(command, "foo", "100", "1"));
+                ClassicAssert.AreEqual("ERR Unsupported option 1", exc.Message);
+            }
+
+            // Numeric out of bounds should be rejected
+            {
+                var exc = ClassicAssert.Throws<RedisServerException>(() => db.Execute(command, "foo", "100", "128"));
+                ClassicAssert.AreEqual("ERR Unsupported option 128", exc.Message);
+            }
+        }
+
+        [Test]
         public async Task ReAddExpiredKey()
         {
             using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
