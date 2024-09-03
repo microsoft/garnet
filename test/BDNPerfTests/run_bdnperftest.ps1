@@ -80,9 +80,14 @@ param ($foundThroughPutLine)
 
 # ******** BEGIN MAIN  *********
 # Get base path since paths can differ from machine to machine
-$string = $pwd.Path
-$position = $string.IndexOf("test")
-$basePath = $string.Substring(0,$position-1)  # take off slash off end as well
+$pathstring = $pwd.Path
+Write-Host "-----------------------------------------------DEBUG Path String: $pathstring" 
+$position = $pathstring.IndexOf("test")
+Write-Host "-----------------------------------------------DEBUG Position: $position" 
+$basePath = $pathstring.Substring(0,$position-1)  # take off slash off end as well
+
+Write-Host "------------ DEBUG Basepath: $basePath" 
+
 
 # Read the test config file and convert the JSON to a PowerShell object
 if (-not (Test-Path -Path $configFile)) {
