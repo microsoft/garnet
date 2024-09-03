@@ -60,3 +60,18 @@ jobs:
           name: dotnet-bdnbenchmark-results-${{ matrix.os }}-${{ matrix.framework }}-${{ matrix.configuration }}-${{ matrix.test }}
           path: BDNBenchmarkResults-${{ matrix.os }}-${{ matrix.framework }}-${{ matrix.configuration }}-${{ matrix.test }}
         if: ${{ always() }}
+      - name: Upload test results 2
+        uses: actions/upload-artifact@v4
+        with:
+          name: ResultsDir-${{ matrix.os }}-${{ matrix.framework }}-${{ matrix.configuration }}-${{ matrix.test }}
+          path: |
+             .\test\BDNPerfTests\results
+        if: ${{ always() }}
+      - name: Upload Error Log
+        uses: actions/upload-artifact@v4
+        with:
+          name: ErrorLogDir-${{ matrix.os }}-${{ matrix.framework }}-${{ matrix.configuration }}-${{ matrix.test }}
+          path: |
+            .\test\BDNPerfTests\errorlog
+        if: ${{ always() }}
+   
