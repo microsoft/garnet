@@ -41,18 +41,18 @@ function AnalyzeResult {
     
     # Check if the actual value is within the bounds
     if ($dblfoundResultValue -ge $LowerBound -and $dblfoundResultValue -le $UpperBound) {
-        Write-Host "**   ** PASS! **  The performance result ($dblfoundResultValue) is in the acceptable range +/-$acceptablePercentRange% ($LowerBound -> $UpperBound) of expected value: $expectedResultValue " -ForegroundColor Green
-        Write-Host "** "
+        Write-Output "**   ** PASS! **  The performance result ($dblfoundResultValue) is in the acceptable range +/-$acceptablePercentRange% ($LowerBound -> $UpperBound) of expected value: $expectedResultValue " -ForegroundColor Green
+        Write-Output "** "
         return $true # the values are close enough
     }
     else {
         if ($warnonly) {
-            Write-Host "**   << PERF REGRESSION WARNING! >>  The BDN benchmark result ($dblfoundResultValue) is OUT OF RANGE +/-$acceptablePercentRange% ($LowerBound -> $UpperBound) of expected value: $expectedResultValue" -ForegroundColor Yellow
-            Write-Host "** "
+            Write-Output "**   << PERF REGRESSION WARNING! >>  The BDN benchmark result ($dblfoundResultValue) is OUT OF RANGE +/-$acceptablePercentRange% ($LowerBound -> $UpperBound) of expected value: $expectedResultValue" -ForegroundColor Yellow
+            Write-Output "** "
         }
         else {
-            Write-Host "**   << PERF REGRESSION FAIL! >>  The  BDN benchmark ($dblfoundResultValue) is OUT OF ACCEPTABLE RANGE +/-$acceptablePercentRange% ($LowerBound -> $UpperBound) of expected value: $expectedResultValue" -ForegroundColor Red
-            Write-Host "** "
+            Write-Output "**   << PERF REGRESSION FAIL! >>  The  BDN benchmark ($dblfoundResultValue) is OUT OF ACCEPTABLE RANGE +/-$acceptablePercentRange% ($LowerBound -> $UpperBound) of expected value: $expectedResultValue" -ForegroundColor Red
+            Write-Output "** "
         }
         return $false # the values are too different
     }
@@ -82,34 +82,56 @@ param ($foundThroughPutLine)
 # Get base path since paths can differ from machine to machine
 $pathstring = $pwd.Path
 Write-Output "PathString: $pathstring"
+Write-Output ($pathstring.Contains("test"))
+$position = $pathString.IndexOf('test')
+Write-Output "***************************The position of 'test' is: $position"
 
-if ($pathString -contains "test") {
+
+$string = "Hello, world!"
+$substring = "world"
+
+if ($pathstring.Contains("test")) {
+    Write-Host "String contains the substring."
+} else {
+    Write-Host "String does not contain the substring."
+}
+
+
+
+
+
+
+if ($pathstring.Contains("test")) {
+    Write-Output "***********************************"
     $position = $pathString.IndexOf("test")
     $basePath = $pathstring.Substring(0,$position-1)  # take off slash off end as well
     Write-Output "The position of 'test' is: $position"
 } else {
     $basePath = $pathstring  # already in base as not in test
+    Set-Location .\test\BDNPerfTests\
+    Write-Output "------------ DEBUG New Location:" $pwd.Path 
 }
 
 
 
-#Write-Host "-----------------------------------------------DEBUG Path String: $pathstring" 
+#Write-Output "-----------------------------------------------DEBUG Path String: $pathstring" 
 #$position = $pathstring.IndexOf("test1")
 
-#Write-Host "-----------------------------------------------DEBUG Test Position: $position" 
+#Write-Output "-----------------------------------------------DEBUG Test Position: $position" 
 #if ( 0 -eq $position )
 #{
-    #Write-Host "-----------------------------------------------DEBUG Going GitHub" 
+    #Write-Output "-----------------------------------------------DEBUG Going GitHub" 
     #$position = $pathstring.IndexOf(".github")
-    #Write-Host "-----------------------------------------------DEBUG GitHub Position: $position" 
+    #Write-Output "-----------------------------------------------DEBUG GitHub Position: $position" 
 
 #}
-#Write-Host "-----------------------------------------------DEBUG Position: $position" 
+#Write-Output "-----------------------------------------------DEBUG Position: $position" 
 
 #$basePath = $pathstring.Substring(0,$position-1)  # take off slash off end as well
 
-Write-Host "------------ DEBUG Basepath: $basePath" 
+Write-Output "------------ DEBUG Basepath: $basePath" 
 
+Exit
 
 # Read the test config file and convert the JSON to a PowerShell object
 if (-not (Test-Path -Path $configFile)) {
@@ -146,8 +168,8 @@ if ($IsLinux) {
 #    exit
 #}
 
-Write-Host "************** Start BDN.benchmark ********************" 
-Write-Host " "
+Write-Output "************** Start BDN.benchmark ********************" 
+Write-Output " "
 
 # Set all the config options (args to benchmark app) based on values from config json file
 $configuration = $object.configuration
@@ -214,18 +236,18 @@ $resultsFile = "$resultsDir/$resultsFileName"
 $BDNbenchmarkErrorFile = "$errorLogDir/$justResultsFileNameNoExt" + "_StandardError_" +$CurrentOS+".log"
 
 
-Write-Host "*#*#*################################# DEBUG #########################"
-Write-Host "*#*#* Configuration $configuration"
-Write-Host "*#*#* framework $framework"
-Write-Host "*#*#* filter $filter"
-Write-Host "*#*#* Standard Out $resultsFile"
-Write-Host "*#*#* Standard Error $BDNbenchmarkErrorFile"
-Write-Host "*#*#* Working Dir (BDNBM Path) $BDNbenchmarkPath"
-Write-Host "*#*#*################################# DEBUG #########################"
+Write-Output "*#*#*################################# DEBUG #########################"
+Write-Output "*#*#* Configuration $configuration"
+Write-Output "*#*#* framework $framework"
+Write-Output "*#*#* filter $filter"
+Write-Output "*#*#* Standard Out $resultsFile"
+Write-Output "*#*#* Standard Error $BDNbenchmarkErrorFile"
+Write-Output "*#*#* Working Dir (BDNBM Path) $BDNbenchmarkPath"
+Write-Output "*#*#*################################# DEBUG #########################"
 
-Write-Host "** Start BDN Benchmark: $filter"
-Write-Host " "
- Write-Host "** Start:  dotnet run -c $configuration -f $framework --filter $filter --project $BDNbenchmarkPath  > $resultsFile 2> $BDNbenchmarkErrorFile"
+Write-Output "** Start BDN Benchmark: $filter"
+Write-Output " "
+Write-Output "** Start:  dotnet run -c $configuration -f $framework --filter $filter --project $BDNbenchmarkPath  > $resultsFile 2> $BDNbenchmarkErrorFile"
 dotnet run -c $configuration -f $framework --filter $filter --project $BDNbenchmarkPath  > $resultsFile 2> $BDNbenchmarkErrorFile
 
 
@@ -248,11 +270,11 @@ dotnet run -c $configuration -f $framework --filter $filter --project $BDNbenchm
 
 
 
-Write-Host "** BDN Benchmark for $filter finished"
-Write-Host " "
+Write-Output "** BDN Benchmark for $filter finished"
+Write-Output " "
 
 <#
-Write-Host "**** EVALUATE THE RESULTS FILE $resultsFile ****"
+Write-Output "**** EVALUATE THE RESULTS FILE $resultsFile ****"
 
 # First check if file is there and if not, error out gracefully
 if (-not (Test-Path -Path $resultsFile)) {
@@ -270,9 +292,9 @@ if ($resultsFileSizeBytes -eq 0) {
 # Set the test suite to pass and if any one fails, then mark the suite as fail - just one result failure will mark the whole test as failed
 $testSuiteResult = $true
 
-Write-Host "************************"
-Write-Host "**   RESULTS  "
-Write-Host "**   "
+Write-Output "************************"
+Write-Output "**   RESULTS  "
+Write-Output "**   "
 
 # Parse the file for test results - offline has different output format than online
 if ($onlineMode -eq "--online")
@@ -291,33 +313,33 @@ if ($onlineMode -eq "--online")
     $resultsTPT = $results[9].trim()
    
     # Median results verification
-    Write-Host "**  Median "
+    Write-Output "**  Median "
     $currentResults = AnalyzeResult $resultsMedian $expectedMedianValue $acceptableRangeMedian
     if ($currentResults -eq $false) {
         $testSuiteResult = $false
     }
 
     # 99 Percent results verification
-    Write-Host "**  99 Percent "
+    Write-Output "**  99 Percent "
     $currentResults = AnalyzeResult $results99 $expected99Value $acceptableRange99 $true
     if ($currentResults -eq $false) {
-        Write-Host "**   NOTE: due to variance of P99 results, only showing a warning when it is out of range and not causing entire script to show as fail."
-        Write-Host "**"
+        Write-Output "**   NOTE: due to variance of P99 results, only showing a warning when it is out of range and not causing entire script to show as fail."
+        Write-Output "**"
         #        $testSuiteResult = $false
     }
 
     # 99.9 Percent results verification
-    Write-Host "**  99.9 Percent "
+    Write-Output "**  99.9 Percent "
     $currentResults = AnalyzeResult $results99_9 $expected99_9Value $acceptableRange99_9 $true
     if ($currentResults -eq $false) {
-        Write-Host "**   NOTE: due to variance of P99.9 results, only showing a warning when it is out of range and not causing entire script to show as fail."
-        Write-Host "**"
+        Write-Output "**   NOTE: due to variance of P99.9 results, only showing a warning when it is out of range and not causing entire script to show as fail."
+        Write-Output "**"
 
         #        $testSuiteResult = $false
     }
    
     # tpt (kops/sec) results verification
-    Write-Host "**  tpt (kops / sec) "
+    Write-Output "**  tpt (kops / sec) "
     $currentResults = AnalyzeResult $resultsTPT $expectedTPTValue $acceptableRangeTPT
     if ($currentResults -eq $false) {
         $testSuiteResult = $false
@@ -332,7 +354,7 @@ else {   # Offline mode
         $MSETResultsLine = Get-Content -Path $resultsFile | Select-Object -Index ($MSETLineNumber + 2)
         $foundMSETThroughputValue = ParseThroughPutValueFromResults $MSETResultsLine
 
-        Write-Host "**  MSET Throughput (ops / sec) "
+        Write-Output "**  MSET Throughput (ops / sec) "
         $currentMSETResults = AnalyzeResult $foundMSETThroughputValue $expected_MSET_ThroughputValue $acceptable_MSET_ThroughputRange
         if ($currentMSETResults -eq $false) {
             $testSuiteResult = $false
@@ -343,7 +365,7 @@ else {   # Offline mode
     $getResultsLine = Select-String -Path $resultsFile -Pattern 'ops/sec' | Select-Object -Last 1 -ExpandProperty Line
     $foundOpsSecValue = ParseThroughPutValueFromResults $getResultsLine
 
-    Write-Host "**  GET Throughput (ops / sec) "
+    Write-Output "**  GET Throughput (ops / sec) "
     $currentGetResults = AnalyzeResult $foundOpsSecValue $expected_GET_ThroughputValue $acceptable_GET_ThroughputRange
     if ($currentGetResults -eq $false) {
         $testSuiteResult = $false
@@ -351,14 +373,14 @@ else {   # Offline mode
 }
 #>
 
-Write-Host "**  "
-Write-Host "************************"
-Write-Host "**  Final summary:"
-Write-Host "**  "
+Write-Output "**  "
+Write-Output "************************"
+Write-Output "**  Final summary:"
+Write-Output "**  "
 if ($testSuiteResult) {
-    Write-Host "**   PASS!  All tests passed  " -ForegroundColor Green
+    Write-Output "**   PASS!  All tests passed  " -ForegroundColor Green
 } else {
     Write-Error -Message "**   BDN Benchmark PERFORMANCE REGRESSION FAIL!  At least one test had performance outside of expected range. NOTE: Expected results are based on CI machine and may differ from the machine that this was ran on."
 }
-Write-Host "**  "
-Write-Host "************************"
+Write-Output "**  "
+Write-Output "************************"
