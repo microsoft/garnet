@@ -83,6 +83,14 @@ param ($foundThroughPutLine)
 $pathstring = $pwd.Path
 Write-Host "-----------------------------------------------DEBUG Path String: $pathstring" 
 $position = $pathstring.IndexOf("test")
+Write-Host "-----------------------------------------------DEBUG Test Position: $position" 
+if ( 0 -eq $position )
+{
+    Write-Host "-----------------------------------------------DEBUG Going GitHub" 
+    $position = $pathstring.IndexOf(".github")
+    Write-Host "-----------------------------------------------DEBUG GitHub Position: $position" 
+
+}
 Write-Host "-----------------------------------------------DEBUG Position: $position" 
 $basePath = $pathstring.Substring(0,$position-1)  # take off slash off end as well
 
