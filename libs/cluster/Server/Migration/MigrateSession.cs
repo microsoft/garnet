@@ -130,7 +130,7 @@ namespace Garnet.cluster
             this._timeout = TimeSpan.FromMilliseconds(_timeout);
             this._sslots = _slots;
             this._slotRanges = GetRanges();
-            this._keys = keys == null ? new MigratingKeysWorkingSet() : keys;
+            this._keys = keys ?? new MigratingKeysWorkingSet();
             this.transferOption = transferOption;
 
             if (clusterProvider != null)
@@ -266,7 +266,7 @@ namespace Garnet.cluster
         /// <summary>
         /// Reset local slot state
         /// </summary>
-        public void ResetLocalSlot() => clusterProvider.clusterManager.ResetSlotsState(_sslots);
+        public void ResetLocalSlot() => clusterProvider.clusterManager.TryResetSlotState(_sslots);
 
         /// <summary>
         /// Prepare remote node for importing

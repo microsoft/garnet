@@ -1592,7 +1592,16 @@ namespace Garnet.test.cluster
 
         public static string SetSlot(ref LightClientRequest node, int slot, string state, string nodeid)
         {
-            var resp = node.SendCommand($"cluster setslot {slot} {state} {nodeid}");
+            byte[] resp;
+            if (nodeid != "")
+            {
+                resp = node.SendCommand($"cluster setslot {slot} {state} {nodeid}");
+            }
+            else
+            {
+                resp = node.SendCommand($"cluster setslot {slot} {state}");
+            }
+
             return ParseRespToString(resp, out _);
         }
 
@@ -1607,7 +1616,17 @@ namespace Garnet.test.cluster
             var server = GetServer(endPoint);
             try
             {
-                return (string)server.Execute("cluster", "setslot", $"{slot}", $"{state}", $"{nodeid}");
+                string ret;
+                if (nodeid != "")
+                {
+                    ret = (string)server.Execute("cluster", "setslot", $"{slot}", $"{state}", $"{nodeid}");
+                }
+                else
+                {
+                    ret = (string)server.Execute("cluster", "setslot", $"{slot}", $"{state}");
+                }
+
+                return ret;
             }
             catch (RedisTimeoutException tex)
             {

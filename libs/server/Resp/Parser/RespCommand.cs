@@ -425,6 +425,7 @@ namespace Garnet.server
                 RespCommand.DBSIZE => false,
                 RespCommand.MEMORY_USAGE => false,
                 RespCommand.FLUSHDB => false,
+                RespCommand.FLUSHALL => false,
                 _ => cmd >= FirstReadCommand() && cmd <= LastWriteCommand()
             };
         }

@@ -309,7 +309,7 @@ namespace Garnet.server
             var countWithMetadata = (((paramCount << 1) | (includedCount ? 1 : 0)) << 1) | (withValues ? 1 : 0);
 
             // Create a random seed
-            var seed = RandomGen.Next();
+            var seed = Random.Shared.Next();
 
             // Prepare input
             var input = new ObjectInput
