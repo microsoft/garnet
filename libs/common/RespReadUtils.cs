@@ -325,18 +325,38 @@ namespace Garnet.common
         /// </summary>
         public static bool Read64Int(out long number, ref byte* ptr, byte* end)
         {
+            var success = TryRead64Int(out number, ref ptr, end, out var unexpectedToken);
+
+            if (!success && unexpectedToken.HasValue)
+            {
+                RespParsingException.ThrowUnexpectedToken(unexpectedToken.Value);
+            }
+
+            return success;
+        }
+
+        /// <summary>
+        /// Try read signed 64 bit number
+        /// </summary>
+        public static bool TryRead64Int(out long number, ref byte* ptr, byte* end, out byte? unexpectedToken)
+        {
             number = 0;
+            unexpectedToken = null;
+
             if (ptr + 3 >= end)
                 return false;
 
             // Integer header must start with ':'
-            if (*ptr++ != ':')
+            if (*ptr != ':')
             {
-                RespParsingException.ThrowUnexpectedToken(*ptr);
+                unexpectedToken = *ptr;
+                return false;
             }
 
+            ptr++;
+
             // Parse length
-            if (!TryReadLong(ref ptr, end, out number, out var bytesRead))
+            if (!TryReadLong(ref ptr, end, out number, out _))
             {
                 return false;
             }
@@ -350,7 +370,8 @@ namespace Garnet.common
 
             if (*(ushort*)(ptr - 2) != MemoryMarshal.Read<ushort>("\r\n"u8))
             {
-                RespParsingException.ThrowUnexpectedToken(*ptr);
+                unexpectedToken = *ptr;
+                return false;
             }
 
             return true;

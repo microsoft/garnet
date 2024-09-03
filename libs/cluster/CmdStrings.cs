@@ -49,6 +49,10 @@ namespace Garnet.cluster
         public static ReadOnlySpan<byte> RESP_ERR_GENERIC_WORKERS_NOT_INITIALIZED => "ERR workers not initialized"u8;
         public static ReadOnlySpan<byte> RESP_ERR_GENERIC_CONFIG_EPOCH_NOT_SET => "ERR Node config epoch was not set due to invalid epoch specified"u8;
         public static ReadOnlySpan<byte> RESP_ERR_GENERIC_NOT_IN_IMPORTING_STATE => "ERR Node not in IMPORTING state"u8;
+        public static ReadOnlySpan<byte> RESP_ERR_INVALID_SLOT => "ERR Invalid or out of range slot"u8;
+        public static ReadOnlySpan<byte> RESP_ERR_GENERIC_VALUE_IS_NOT_INTEGER => "ERR value is not an integer or out of range."u8;
+        public static ReadOnlySpan<byte> RESP_ERR_GENERIC_VALUE_IS_NOT_BOOLEAN => "ERR value is not a boolean."u8;
+        public static ReadOnlySpan<byte> RESP_SYNTAX_ERROR => "ERR syntax error"u8;
 
         /// <summary>
         /// Generic error response strings for <c>MIGRATE</c> command
@@ -58,6 +62,7 @@ namespace Garnet.cluster
         public static ReadOnlySpan<byte> RESP_ERR_GENERIC_SLOTNOTMIGRATING => "ERR slot state not set to MIGRATING state"u8;
         public static ReadOnlySpan<byte> RESP_ERR_GENERIC_FAILEDTOADDKEY => "ERR Failed to add key for migration tracking"u8;
         public static ReadOnlySpan<byte> RESP_ERR_GENERIC_PARSING => "ERR Parsing error"u8;
+        public static ReadOnlySpan<byte> RESP_ERR_GENERIC_SLOT_STATE => "ERR Invalid slot state"u8;
 
         /// <summary>
         /// Simple error respone strings, i.e. these are of the form "-errorString\r\n"
@@ -73,5 +78,7 @@ namespace Garnet.cluster
         /// Response string templates
         /// </summary>
         public const string GenericErrWrongNumArgs = "ERR wrong number of arguments for '{0}' command";
+
+        public const string GenericErrInvalidPort = "ERR Invalid TCP base port specified: {0}";
     }
 }

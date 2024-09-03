@@ -6,6 +6,7 @@ using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
 using NUnit.Framework;
+using NUnit.Framework.Legacy;
 using Tsavorite.core;
 
 
@@ -143,11 +144,11 @@ namespace Tsavorite.test
                         // Span Batch only added first entry several times so have separate verification
                         if (iteratorType == EnqueueIteratorType.SpanBatch)
                         {
-                            Assert.AreEqual((byte)entryFlag, result[0]);
+                            ClassicAssert.AreEqual((byte)entryFlag, result[0]);
                         }
                         else
                         {
-                            Assert.AreEqual((byte)entryFlag, result[currentEntry]);
+                            ClassicAssert.AreEqual((byte)entryFlag, result[currentEntry]);
                         }
 
                         currentEntry++;
@@ -156,7 +157,7 @@ namespace Tsavorite.test
             }
 
             // Make sure expected length (entryLength) is same as current - also makes sure that data verification was not skipped
-            Assert.AreEqual(entryLength, currentEntry);
+            ClassicAssert.AreEqual(entryLength, currentEntry);
 
         }
 
@@ -206,22 +207,22 @@ namespace Tsavorite.test
                     {
                         case 1:
                             // result compared to input1
-                            Assert.IsTrue(result.SequenceEqual(input1), "Fail - Result does not equal Input1. result[0]=" + result[0].ToString() + "  result[1]=" + result[1].ToString());
+                            ClassicAssert.IsTrue(result.SequenceEqual(input1), "Fail - Result does not equal Input1. result[0]=" + result[0].ToString() + "  result[1]=" + result[1].ToString());
                             break;
                         case 2:
-                            Assert.IsTrue(result.SequenceEqual(input2), "Fail - Result does not equal Input2. result[0]=" + result[0].ToString() + "  result[1]=" + result[1].ToString());
+                            ClassicAssert.IsTrue(result.SequenceEqual(input2), "Fail - Result does not equal Input2. result[0]=" + result[0].ToString() + "  result[1]=" + result[1].ToString());
                             break;
                         case 3:
-                            Assert.IsTrue(result.SequenceEqual(input3), "Fail - Result does not equal Input3. result[0]=" + result[0].ToString() + "  result[1]=" + result[1].ToString());
+                            ClassicAssert.IsTrue(result.SequenceEqual(input3), "Fail - Result does not equal Input3. result[0]=" + result[0].ToString() + "  result[1]=" + result[1].ToString());
                             break;
                         case 4:
-                            Assert.IsTrue(result.SequenceEqual(entry), "Fail - Result does not equal ReadOnlyMemoryEntry. result[0]=" + result[0].ToString() + "  result[1]=" + result[1].ToString());
+                            ClassicAssert.IsTrue(result.SequenceEqual(entry), "Fail - Result does not equal ReadOnlyMemoryEntry. result[0]=" + result[0].ToString() + "  result[1]=" + result[1].ToString());
                             break;
                         case 5:
-                            Assert.IsTrue(result.SequenceEqual(entry), "Fail - Result does not equal SpanBatchEntry. result[0]=" + result[0].ToString() + "  result[1]=" + result[1].ToString());
+                            ClassicAssert.IsTrue(result.SequenceEqual(entry), "Fail - Result does not equal SpanBatchEntry. result[0]=" + result[0].ToString() + "  result[1]=" + result[1].ToString());
                             break;
                         case 6:
-                            Assert.IsTrue(result.SequenceEqual(entry), "Fail - Result does not equal SpanBatchEntry. result[0]=" + result[0].ToString() + "  result[1]=" + result[1].ToString());
+                            ClassicAssert.IsTrue(result.SequenceEqual(entry), "Fail - Result does not equal SpanBatchEntry. result[0]=" + result[0].ToString() + "  result[1]=" + result[1].ToString());
                             break;
 
                     }
@@ -230,7 +231,7 @@ namespace Tsavorite.test
                 }
 
                 // Make sure expected length is same as current - also makes sure that data verification was not skipped
-                Assert.AreEqual(expectedEntryCount, currentEntry);
+                ClassicAssert.AreEqual(expectedEntryCount, currentEntry);
 
             }
 

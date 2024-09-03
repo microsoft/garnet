@@ -180,8 +180,6 @@ namespace Garnet.server
         /// <inheritdoc />
         public override unsafe bool Operate(ref ObjectInput input, ref SpanByteAndMemory output, out long sizeChange, out bool removeKey)
         {
-            byte* _input = null;
-
             fixed (byte* outputSpan = output.SpanByte.AsSpan())
             {
                 var header = input.header;
@@ -194,11 +192,12 @@ namespace Garnet.server
                     return true;
                 }
 
-                long prevSize = this.Size;
-                switch (header.SortedSetOp)
+                var prevSize = this.Size;
+                var op = header.SortedSetOp;
+                switch (op)
                 {
                     case SortedSetOperation.ZADD:
-                        SortedSetAdd(ref input, outputSpan);
+                        SortedSetAdd(ref input, ref output);
                         break;
                     case SortedSetOperation.ZREM:
                         SortedSetRemove(ref input, outputSpan);
@@ -207,7 +206,7 @@ namespace Garnet.server
                         SortedSetLength(outputSpan);
                         break;
                     case SortedSetOperation.ZPOPMAX:
-                        SortedSetPop(ref input, ref output);
+                        SortedSetPopMinOrMaxCount(ref input, ref output, op);
                         break;
                     case SortedSetOperation.ZSCORE:
                         SortedSetScore(ref input, ref output);
@@ -216,7 +215,7 @@ namespace Garnet.server
                         SortedSetScores(ref input, ref output);
                         break;
                     case SortedSetOperation.ZCOUNT:
-                        SortedSetCount(ref input, outputSpan);
+                        SortedSetCount(ref input, ref output);
                         break;
                     case SortedSetOperation.ZINCRBY:
                         SortedSetIncrement(ref input, ref output);
@@ -228,10 +227,10 @@ namespace Garnet.server
                         SortedSetRange(ref input, ref output);
                         break;
                     case SortedSetOperation.ZRANGEBYSCORE:
-                        SortedSetRangeByScore(ref input, ref output);
+                        SortedSetRange(ref input, ref output);
                         break;
                     case SortedSetOperation.GEOADD:
-                        GeoAdd(ref input, outputSpan);
+                        GeoAdd(ref input, ref output);
                         break;
                     case SortedSetOperation.GEOHASH:
                         GeoHash(ref input, ref output);
@@ -246,41 +245,47 @@ namespace Garnet.server
                         GeoSearch(ref input, ref output);
                         break;
                     case SortedSetOperation.ZREVRANGE:
-                        SortedSetReverseRange(ref input, ref output);
+                        SortedSetRange(ref input, ref output);
                         break;
                     case SortedSetOperation.ZREVRANGEBYSCORE:
                         SortedSetRange(ref input, ref output);
                         break;
                     case SortedSetOperation.ZREVRANK:
-                        SortedSetReverseRank(ref input, ref output);
+                        SortedSetRank(ref input, ref output, ascending: false);
                         break;
                     case SortedSetOperation.ZREMRANGEBYLEX:
-                        SortedSetRemoveRangeByLex(ref input, outputSpan);
+                        SortedSetRemoveOrCountRangeByLex(ref input, outputSpan, op);
                         break;
                     case SortedSetOperation.ZREMRANGEBYRANK:
-                        SortedSetRemoveRangeByRank(ref input, outputSpan);
+                        SortedSetRemoveRangeByRank(ref input, ref output);
                         break;
                     case SortedSetOperation.ZREMRANGEBYSCORE:
-                        SortedSetRemoveRangeByScore(ref input, outputSpan);
+                        SortedSetRemoveRangeByScore(ref input, ref output);
                         break;
                     case SortedSetOperation.ZLEXCOUNT:
-                        SortedSetCountByLex(ref input, outputSpan);
+                        SortedSetRemoveOrCountRangeByLex(ref input, outputSpan, op);
                         break;
                     case SortedSetOperation.ZPOPMIN:
-                        SortedSetPopMin(ref input, ref output);
+                        SortedSetPopMinOrMaxCount(ref input, ref output, op);
                         break;
                     case SortedSetOperation.ZRANDMEMBER:
                         SortedSetRandomMember(ref input, ref output);
                         break;
                     case SortedSetOperation.ZSCAN:
-                        if (ObjectUtils.ReadScanInput(ref input, ref output, out var cursorInput, out var pattern, out var patternLength, out int limitCount, out int bytesDone))
+                        if (ObjectUtils.ReadScanInput(ref input, ref output, out var cursorInput, out var pattern,
+                                out var patternLength, out var limitCount, out var error))
                         {
-                            Scan(cursorInput, out var items, out var cursorOutput, count: limitCount, pattern: pattern, patternLength: patternLength);
-                            ObjectUtils.WriteScanOutput(items, cursorOutput, ref output, bytesDone);
+                            Scan(cursorInput, out var items, out var cursorOutput, count: limitCount, pattern: pattern,
+                                patternLength: patternLength);
+                            ObjectUtils.WriteScanOutput(items, cursorOutput, ref output);
+                        }
+                        else
+                        {
+                            ObjectUtils.WriteScanError(error, ref output);
                         }
                         break;
                     default:
-                        throw new GarnetException($"Unsupported operation {input.header.SortedSetOp} in SortedSetObject.Operate");
+                        throw new GarnetException($"Unsupported operation {op} in SortedSetObject.Operate");
                 }
                 sizeChange = this.Size - prevSize;
             }

@@ -24,10 +24,10 @@ namespace Garnet.server
                 return true;
             }
 
-            var count = parseState.count;
+            var count = parseState.Count;
             if (count < 2)
             {
-                return AbortWithWrongNumberOfArguments("EVALSHA", count);
+                return AbortWithWrongNumberOfArguments("EVALSHA");
             }
             var digest = parseState.GetArgSliceByRef(0).ReadOnlySpan;
 
@@ -72,10 +72,10 @@ namespace Garnet.server
                 return true;
             }
 
-            var count = parseState.count;
+            var count = parseState.Count;
             if (count < 2)
             {
-                return AbortWithWrongNumberOfArguments("EVAL", count);
+                return AbortWithWrongNumberOfArguments("EVAL");
             }
             var script = parseState.GetArgSliceByRef(0).ReadOnlySpan;
             var digest = sessionScriptCache.GetScriptDigest(script);
@@ -112,17 +112,17 @@ namespace Garnet.server
                 return true;
             }
 
-            var count = parseState.count;
+            var count = parseState.Count;
             if (count < 1)
             {
-                return AbortWithWrongNumberOfArguments("SCRIPT", count);
+                return AbortWithWrongNumberOfArguments("SCRIPT");
             }
             var option = parseState.GetArgSliceByRef(0).ReadOnlySpan;
             if (option.EqualsUpperCaseSpanIgnoringCase("LOAD"u8))
             {
                 if (count != 2)
                 {
-                    return AbortWithWrongNumberOfArguments("SCRIPT", count);
+                    return AbortWithWrongNumberOfArguments("SCRIPT");
                 }
                 var source = parseState.GetArgSliceByRef(1).ReadOnlySpan;
                 if (!sessionScriptCache.TryLoad(source, out var digest, out _, out var error))
@@ -142,7 +142,7 @@ namespace Garnet.server
             {
                 if (count != 2)
                 {
-                    return AbortWithWrongNumberOfArguments("SCRIPT", count);
+                    return AbortWithWrongNumberOfArguments("SCRIPT");
                 }
                 var sha1Exists = parseState.GetArgSliceByRef(1).ToArray();
 
@@ -162,7 +162,7 @@ namespace Garnet.server
             {
                 if (count != 1)
                 {
-                    return AbortWithWrongNumberOfArguments("SCRIPT", count);
+                    return AbortWithWrongNumberOfArguments("SCRIPT");
                 }
                 // Flush store script cache
                 storeWrapper.storeScriptCache.Clear();

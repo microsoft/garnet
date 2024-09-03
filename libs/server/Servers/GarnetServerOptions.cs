@@ -191,9 +191,14 @@ namespace Garnet.server
         public int MetricsSamplingFrequency = 0;
 
         /// <summary>
-        /// Metrics sampling frequency
+        /// Logging level. Value options: Trace, Debug, Information, Warning, Error, Critical, None
         /// </summary>
         public LogLevel LogLevel = LogLevel.Error;
+
+        /// <summary>
+        /// Frequency (in seconds) of logging (used for tracking progress of long running operations e.g. migration)
+        /// </summary>
+        public int LoggingFrequency = TimeSpan.FromSeconds(5).Seconds;
 
         /// <summary>
         /// Metrics sampling frequency
@@ -362,9 +367,13 @@ namespace Garnet.server
         }
 
         /// <summary>
-        /// Get KVSettings for the main store log
+        /// Get main store settings
         /// </summary>
-        public KVSettings<SpanByte, SpanByte> GetSettings(ILogger logger, out INamedDeviceFactory logFactory)
+        /// <param name="loggerFactory">Logger factory for debugging and error tracing</param>
+        /// <param name="logFactory">Tsavorite Log factory instance</param>
+        /// <returns></returns>
+        /// <exception cref="Exception"></exception>
+        public KVSettings<SpanByte, SpanByte> GetSettings(ILoggerFactory loggerFactory, out INamedDeviceFactory logFactory)
         {
             if (MutablePercent is < 10 or > 95)
                 throw new Exception("MutablePercent must be between 10 and 95");
@@ -377,8 +386,11 @@ namespace Garnet.server
                 IndexSize = indexCacheLines * 64L,
                 PreallocateLog = false,
                 MutableFraction = MutablePercent / 100.0,
-                PageSize = 1L << PageSizeBits()
+                PageSize = 1L << PageSizeBits(),
+                loggerFactory = loggerFactory,
+                logger = loggerFactory?.CreateLogger("TsavoriteKV [main]")
             };
+
             logger?.LogInformation("[Store] Using page size of {PageSize}", PrettySize(kvSettings.PageSize));
 
             kvSettings.MemorySize = 1L << MemorySizeBits(MemorySize, PageSize, out var storeEmptyPageCount);

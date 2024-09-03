@@ -3,7 +3,6 @@
 
 using System;
 using Microsoft.Extensions.Logging;
-using Microsoft.IdentityModel.Tokens;
 
 namespace Garnet.cluster
 {
@@ -16,9 +15,12 @@ namespace Garnet.cluster
         public bool MigrateSlotsDriver()
         {
             {
+                logger?.LogTrace("Initializing MainStore Iterator");
                 var storeTailAddress = clusterProvider.storeWrapper.store.Log.TailAddress;
-                MigrationKeyIterationFunctions.MainStoreGetKeysInSlots mainStoreGetKeysInSlots = new(this, _sslots, bufferSize: 1 << clusterProvider.serverOptions.PageSizeBits());
+                var bufferSize = 1 << clusterProvider.serverOptions.PageSizeBits();
+                MigrationKeyIterationFunctions.MainStoreGetKeysInSlots mainStoreGetKeysInSlots = new(this, _sslots, bufferSize: bufferSize);
 
+                logger?.LogTrace("Begin MainStore Iteration");
                 while (true)
                 {
                     // Iterate main store
@@ -39,13 +41,20 @@ namespace Garnet.cluster
                     mainStoreGetKeysInSlots.AdvanceIterator();
                     ClearKeys();
                 }
+
+                // Signal target transmission completed and log stats for main store after migration completes
+                if (!HandleMigrateTaskResponse(_gcs.CompleteMigrate(_sourceNodeId, _replaceOption, isMainStore: true)))
+                    return false;
             }
 
             if (!clusterProvider.serverOptions.DisableObjects)
             {
+                logger?.LogTrace("Initializing ObjectStore Iterator");
                 var objectStoreTailAddress = clusterProvider.storeWrapper.objectStore.Log.TailAddress;
-                MigrationKeyIterationFunctions.ObjectStoreGetKeysInSlots objectStoreGetKeysInSlots = new(this, _sslots, bufferSize: 1 << clusterProvider.serverOptions.ObjectStorePageSizeBits());
+                var objectBufferSize = 1 << clusterProvider.serverOptions.ObjectStorePageSizeBits();
+                MigrationKeyIterationFunctions.ObjectStoreGetKeysInSlots objectStoreGetKeysInSlots = new(this, _sslots, bufferSize: objectBufferSize);
 
+                logger?.LogTrace("Begin ObjectStore Iteration");
                 while (true)
                 {
                     // Iterate object store
@@ -66,6 +75,10 @@ namespace Garnet.cluster
                     objectStoreGetKeysInSlots.AdvanceIterator();
                     ClearKeys();
                 }
+
+                // Signal target transmission completed and log stats for object store after migration completes
+                if (!HandleMigrateTaskResponse(_gcs.CompleteMigrate(_sourceNodeId, _replaceOption, isMainStore: false)))
+                    return false;
             }
 
             return true;

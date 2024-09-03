@@ -1,9 +1,8 @@
 ﻿// Copyright (c) Microsoft Corporation.
 // Licensed under the MIT license.
 
-using System;
 using System.Diagnostics;
-using System.Linq;
+using System.Text;
 using Garnet.common;
 using Garnet.server;
 using Microsoft.Extensions.Logging;
@@ -15,22 +14,20 @@ namespace Garnet.cluster
         /// <summary>
         /// Implements CLUSTER BUMPEPOCH command
         /// </summary>
-        /// <param name="count"></param>
+        /// <param name="invalidParameters"></param>
         /// <returns></returns>
-        private bool NetworkClusterBumpEpoch(int count, out bool invalidParameters)
+        private bool NetworkClusterBumpEpoch(out bool invalidParameters)
         {
             invalidParameters = false;
 
             // Expecting exactly 0 arguments
-            if (count != 0)
+            if (parseState.Count != 0)
             {
                 invalidParameters = true;
                 return true;
             }
 
             // Process BUMPEPOCH
-            var ptr = recvBufferPtr + readHead;
-            readHead = (int)(ptr - recvBufferPtr);
             if (clusterProvider.clusterManager.TryBumpClusterEpoch())
             {
                 while (!RespWriteUtils.WriteDirect(CmdStrings.RESP_OK, ref dcurr, dend))
@@ -47,37 +44,36 @@ namespace Garnet.cluster
         /// <summary>
         /// Implements CLUSTER FORGET command
         /// </summary>
-        /// <param name="count"></param>
         /// <param name="invalidParameters"></param>
         /// <returns></returns>
-        private bool NetworkClusterForget(int count, out bool invalidParameters)
+        private bool NetworkClusterForget(out bool invalidParameters)
         {
             invalidParameters = false;
 
             // Expecting 1 or 2 arguments
-            if (count is < 1 or > 2)
+            if (parseState.Count is < 1 or > 2)
             {
                 invalidParameters = true;
                 return true;
             }
 
-            var ptr = recvBufferPtr + readHead;
-
             // Parse Node-Id
-            if (!RespReadUtils.ReadStringWithLengthHeader(out var nodeid, ref ptr, recvBufferPtr + bytesRead))
-                return false;
+            var nodeId = parseState.GetString(0);
 
             var expirySeconds = 60;
-            if (count == 2)
+            if (parseState.Count == 2)
             {
                 // [Optional] Parse expiry in seconds 
-                if (!RespReadUtils.ReadIntWithLengthHeader(out expirySeconds, ref ptr, recvBufferPtr + bytesRead))
-                    return false;
+                if (!parseState.TryGetInt(1, out expirySeconds))
+                {
+                    while (!RespWriteUtils.WriteError(CmdStrings.RESP_ERR_GENERIC_VALUE_IS_NOT_INTEGER, ref dcurr, dend))
+                        SendAndReset();
+                    return true;
+                }
             }
-            readHead = (int)(ptr - recvBufferPtr);
 
-            logger?.LogTrace("CLUSTER FORGET {nodeid} {seconds}", nodeid, expirySeconds);
-            if (!clusterProvider.clusterManager.TryRemoveWorker(nodeid, expirySeconds, out var errorMessage))
+            logger?.LogTrace("CLUSTER FORGET {nodeid} {seconds}", nodeId, expirySeconds);
+            if (!clusterProvider.clusterManager.TryRemoveWorker(nodeId, expirySeconds, out var errorMessage))
             {
                 while (!RespWriteUtils.WriteError(errorMessage, ref dcurr, dend))
                     SendAndReset();
@@ -85,7 +81,7 @@ namespace Garnet.cluster
             else
             {
                 // Terminate any outstanding migration tasks
-                _ = clusterProvider.migrationManager.TryRemoveMigrationTask(nodeid);
+                _ = clusterProvider.migrationManager.TryRemoveMigrationTask(nodeId);
                 while (!RespWriteUtils.WriteDirect(CmdStrings.RESP_OK, ref dcurr, dend))
                     SendAndReset();
             }
@@ -96,22 +92,19 @@ namespace Garnet.cluster
         /// <summary>
         /// Implements CLUSTER INFO command
         /// </summary>
-        /// <param name="count"></param>
         /// <param name="invalidParameters"></param>
         /// <returns></returns>
-        private bool NetworkClusterInfo(int count, out bool invalidParameters)
+        private bool NetworkClusterInfo(out bool invalidParameters)
         {
             invalidParameters = false;
 
             // Expecting exactly 0 arguments
-            if (count != 0)
+            if (parseState.Count != 0)
             {
                 invalidParameters = true;
                 return true;
             }
 
-            var ptr = recvBufferPtr + readHead;
-            readHead = (int)(ptr - recvBufferPtr);
             var clusterInfo = clusterProvider.clusterManager.GetInfo();
             while (!RespWriteUtils.WriteAsciiBulkString(clusterInfo, ref dcurr, dend))
                 SendAndReset();
@@ -122,22 +115,19 @@ namespace Garnet.cluster
         /// <summary>
         /// Implements CLUSTER HELP command
         /// </summary>
-        /// <param name="count"></param>
         /// <param name="invalidParameters"></param>
         /// <returns></returns>
-        private bool NetworkClusterHelp(int count, out bool invalidParameters)
+        private bool NetworkClusterHelp(out bool invalidParameters)
         {
             invalidParameters = false;
 
             // Expecting exactly 0 arguments
-            if (count != 0)
+            if (parseState.Count != 0)
             {
                 invalidParameters = true;
                 return true;
             }
 
-            var ptr = recvBufferPtr + readHead;
-            readHead = (int)(ptr - recvBufferPtr);
             var clusterCommands = ClusterCommandInfo.GetClusterCommands();
             while (!RespWriteUtils.WriteArrayLength(clusterCommands.Count, ref dcurr, dend))
                 SendAndReset();
@@ -153,30 +143,31 @@ namespace Garnet.cluster
         /// <summary>
         /// Implements CLUSTER MEET command
         /// </summary>
-        /// <param name="count"></param>
         /// <param name="invalidParameters"></param>
         /// <returns></returns>
-        private bool NetworkClusterMeet(int count, out bool invalidParameters)
+        private bool NetworkClusterMeet(out bool invalidParameters)
         {
             invalidParameters = false;
 
             // Expecting exactly 2 arguments
-            if (count != 2)
+            if (parseState.Count != 2)
             {
                 invalidParameters = true;
                 return true;
             }
 
-            var ptr = recvBufferPtr + readHead;
-            if (!RespReadUtils.ReadStringWithLengthHeader(out var ipaddressStr, ref ptr, recvBufferPtr + bytesRead))
-                return false;
+            var ipAddress = parseState.GetString(0);
+            if (!parseState.TryGetInt(1, out var port))
+            {
+                while (!RespWriteUtils.WriteError(
+                           Encoding.ASCII.GetBytes(string.Format(CmdStrings.GenericErrInvalidPort,
+                           parseState.GetString(1))), ref dcurr, dend))
+                    SendAndReset();
+                return true;
+            }
 
-            if (!RespReadUtils.ReadIntWithLengthHeader(out var port, ref ptr, recvBufferPtr + bytesRead))
-                return false;
-            readHead = (int)(ptr - recvBufferPtr);
-
-            logger?.LogTrace("CLUSTER MEET {ipaddressStr} {port}", ipaddressStr, port);
-            clusterProvider.clusterManager.RunMeetTask(ipaddressStr, port);
+            logger?.LogTrace("CLUSTER MEET {ipaddressStr} {port}", ipAddress, port);
+            clusterProvider.clusterManager.RunMeetTask(ipAddress, port);
             while (!RespWriteUtils.WriteDirect(CmdStrings.RESP_OK, ref dcurr, dend))
                 SendAndReset();
 
@@ -186,22 +177,19 @@ namespace Garnet.cluster
         /// <summary>
         /// Implements CLUSTER MYID command
         /// </summary>
-        /// <param name="count"></param>
         /// <param name="invalidParameters"></param>
         /// <returns></returns>
-        private bool NetworkClusterMyId(int count, out bool invalidParameters)
+        private bool NetworkClusterMyId(out bool invalidParameters)
         {
             invalidParameters = false;
 
             // Expecting exactly 0 arguments
-            if (count != 0)
+            if (parseState.Count != 0)
             {
                 invalidParameters = true;
                 return true;
             }
 
-            var ptr = recvBufferPtr + readHead;
-            readHead = (int)(ptr - recvBufferPtr);
             while (!RespWriteUtils.WriteAsciiBulkString(clusterProvider.clusterManager.CurrentConfig.LocalNodeId, ref dcurr, dend))
                 SendAndReset();
 
@@ -211,22 +199,18 @@ namespace Garnet.cluster
         /// <summary>
         /// Implements CLUSTER MYPARENTID command
         /// </summary>
-        /// <param name="count"></param>
         /// <param name="invalidParameters"></param>
         /// <returns></returns>
-        private bool NetworkClusterMyParentId(int count, out bool invalidParameters)
+        private bool NetworkClusterMyParentId(out bool invalidParameters)
         {
             invalidParameters = false;
 
             // Expecting exactly 0 arguments
-            if (count != 0)
+            if (parseState.Count != 0)
             {
                 invalidParameters = true;
                 return true;
             }
-
-            var ptr = recvBufferPtr + readHead;
-            readHead = (int)(ptr - recvBufferPtr);
 
             var current = clusterProvider.clusterManager.CurrentConfig;
             var parentId = current.LocalNodeRole == NodeRole.PRIMARY ? current.LocalNodeId : current.LocalNodePrimaryId;
@@ -239,26 +223,23 @@ namespace Garnet.cluster
         /// <summary>
         /// Implements CLUSTER ENDPOINT command
         /// </summary>
-        /// <param name="count"></param>
         /// <param name="invalidParameters"></param>
         /// <returns></returns>
-        private bool NetworkClusterEndpoint(int count, out bool invalidParameters)
+        private bool NetworkClusterEndpoint(out bool invalidParameters)
         {
             invalidParameters = false;
 
-            // Expecting exactly 1 arguments
-            if (count != 1)
+            // Expecting exactly 1 argument
+            if (parseState.Count != 1)
             {
                 invalidParameters = true;
                 return true;
             }
 
-            var ptr = recvBufferPtr + readHead;
-            if (!RespReadUtils.ReadStringWithLengthHeader(out var nodeid, ref ptr, recvBufferPtr + bytesRead))
-                return false;
-            readHead = (int)(ptr - recvBufferPtr);
+            var nodeId = parseState.GetString(0);
+
             var current = clusterProvider.clusterManager.CurrentConfig;
-            var (host, port) = current.GetEndpointFromNodeId(nodeid);
+            var (host, port) = current.GetEndpointFromNodeId(nodeId);
             while (!RespWriteUtils.WriteAsciiBulkString($"{host}:{port}", ref dcurr, dend))
                 SendAndReset();
             return true;
@@ -267,22 +248,19 @@ namespace Garnet.cluster
         /// <summary>
         /// Implements CLUSTER NODES command
         /// </summary>
-        /// <param name="count"></param>
         /// <param name="invalidParameters"></param>
         /// <returns></returns>
-        private bool NetworkClusterNodes(int count, out bool invalidParameters)
+        private bool NetworkClusterNodes(out bool invalidParameters)
         {
             invalidParameters = false;
 
             // Expecting exactly 0 arguments
-            if (count != 0)
+            if (parseState.Count != 0)
             {
                 invalidParameters = true;
                 return true;
             }
 
-            var ptr = recvBufferPtr + readHead;
-            readHead = (int)(ptr - recvBufferPtr);
             var nodes = clusterProvider.clusterManager.CurrentConfig.GetClusterInfo(clusterProvider);
             while (!RespWriteUtils.WriteAsciiBulkString(nodes, ref dcurr, dend))
                 SendAndReset();
@@ -293,24 +271,25 @@ namespace Garnet.cluster
         /// <summary>
         /// Implements CLUSTER SET-CONFIG-EPOCH command
         /// </summary>
-        /// <param name="count"></param>
         /// <param name="invalidParameters"></param>
         /// <returns></returns>
-        private bool NetworkClusterSetConfigEpoch(int count, out bool invalidParameters)
+        private bool NetworkClusterSetConfigEpoch(out bool invalidParameters)
         {
             invalidParameters = false;
 
             // Expecting exactly 1 arguments
-            if (count != 1)
+            if (parseState.Count != 1)
             {
                 invalidParameters = true;
                 return true;
             }
 
-            var ptr = recvBufferPtr + readHead;
-            if (!RespReadUtils.ReadIntWithLengthHeader(out var configEpoch, ref ptr, recvBufferPtr + bytesRead))
-                return false;
-            readHead = (int)(ptr - recvBufferPtr);
+            if (!parseState.TryGetInt(0, out var configEpoch))
+            {
+                while (!RespWriteUtils.WriteError(CmdStrings.RESP_ERR_GENERIC_VALUE_IS_NOT_INTEGER, ref dcurr, dend))
+                    SendAndReset();
+                return true;
+            }
 
             if (clusterProvider.clusterManager.CurrentConfig.NumWorkers > 2)
             {
@@ -337,22 +316,19 @@ namespace Garnet.cluster
         /// <summary>
         /// Implements CLUSTER SHARDS command
         /// </summary>
-        /// <param name="count"></param>
         /// <param name="invalidParameters"></param>
         /// <returns></returns>
-        private bool NetworkClusterShards(int count, out bool invalidParameters)
+        private bool NetworkClusterShards(out bool invalidParameters)
         {
             invalidParameters = false;
 
             // Expecting exactly 0 arguments
-            if (count != 0)
+            if (parseState.Count != 0)
             {
                 invalidParameters = true;
                 return true;
             }
 
-            var ptr = recvBufferPtr + readHead;
-            readHead = (int)(ptr - recvBufferPtr);
             var shardsInfo = clusterProvider.clusterManager.CurrentConfig.GetShardsInfo();
             while (!RespWriteUtils.WriteAsciiDirect(shardsInfo, ref dcurr, dend))
                 SendAndReset();
@@ -363,34 +339,32 @@ namespace Garnet.cluster
         /// <summary>
         /// Implements CLUSTER GOSSIP command
         /// </summary>
-        /// <param name="count"></param>
         /// <param name="invalidParameters"></param>
         /// <returns></returns>
-        private bool NetworkClusterGossip(int count, out bool invalidParameters)
+        private bool NetworkClusterGossip(out bool invalidParameters)
         {
             invalidParameters = false;
 
             // Expecting 1 or 2 arguments
-            if (count is < 1 or > 2)
+            if (parseState.Count is < 1 or > 2)
             {
                 invalidParameters = true;
                 return true;
             }
 
-            var ptr = recvBufferPtr + readHead;
             var gossipWithMeet = false;
-            if (count > 1)
+
+            var currTokenIdx = 0;
+            if (parseState.Count > 1)
             {
-                if (!RespReadUtils.TrySliceWithLengthHeader(out var withMeetSpan, ref ptr, recvBufferPtr + bytesRead))
-                    return false;
-                Debug.Assert(withMeetSpan.SequenceEqual(CmdStrings.WITHMEET));
-                if (withMeetSpan.SequenceEqual(CmdStrings.WITHMEET))
+                var withMeetSpan = parseState.GetArgSliceByRef(currTokenIdx++).ReadOnlySpan;
+
+                Debug.Assert(withMeetSpan.EqualsUpperCaseSpanIgnoringCase(CmdStrings.WITHMEET));
+                if (withMeetSpan.EqualsUpperCaseSpanIgnoringCase(CmdStrings.WITHMEET))
                     gossipWithMeet = true;
             }
 
-            if (!RespReadUtils.ReadByteArrayWithLengthHeader(out var gossipMessage, ref ptr, recvBufferPtr + bytesRead))
-                return false;
-            readHead = (int)(ptr - recvBufferPtr);
+            var gossipMessage = parseState.GetArgSliceByRef(currTokenIdx).SpanByte.ToByteArray();
 
             clusterProvider.clusterManager.gossipStats.UpdateGossipBytesRecv(gossipMessage.Length);
             var current = clusterProvider.clusterManager.CurrentConfig;
@@ -430,37 +404,37 @@ namespace Garnet.cluster
         /// <summary>
         /// Implements CLUSTER RESET command
         /// </summary>
-        /// <param name="count"></param>
         /// <param name="invalidParameters"></param>
         /// <returns></returns>
-        private bool NetworkClusterReset(int count, out bool invalidParameters)
+        private bool NetworkClusterReset(out bool invalidParameters)
         {
             invalidParameters = false;
 
             // Expecting 0, 1 or 2 arguments
-            if (count > 2)
+            if (parseState.Count > 2)
             {
                 invalidParameters = true;
                 return true;
             }
 
-            var ptr = recvBufferPtr + readHead;
             var soft = true;
             var expirySeconds = 60;
 
-            if (count > 0)
+            if (parseState.Count > 0)
             {
-                if (!RespReadUtils.ReadStringWithLengthHeader(out var option, ref ptr, recvBufferPtr + bytesRead))
-                    return false;
-                soft = option.Equals("SOFT", StringComparison.OrdinalIgnoreCase);
+                var option = parseState.GetArgSliceByRef(0).ReadOnlySpan;
+                soft = option.EqualsUpperCaseSpanIgnoringCase("SOFT"u8);
             }
 
-            if (count > 1)
+            if (parseState.Count > 1)
             {
-                if (!RespReadUtils.ReadIntWithLengthHeader(out expirySeconds, ref ptr, recvBufferPtr + bytesRead))
-                    return false;
+                if (!parseState.TryGetInt(1, out expirySeconds))
+                {
+                    while (!RespWriteUtils.WriteError(CmdStrings.RESP_ERR_GENERIC_VALUE_IS_NOT_INTEGER, ref dcurr, dend))
+                        SendAndReset();
+                    return true;
+                }
             }
-            readHead = (int)(ptr - recvBufferPtr);
 
             var resp = clusterProvider.clusterManager.TryReset(soft, expirySeconds);
             if (!soft) clusterProvider.FlushDB(true);

@@ -8,6 +8,7 @@ using System.Threading;
 using System.Threading.Tasks;
 using Garnet.common;
 using Garnet.networking;
+using Microsoft.Extensions.Logging;
 using Tsavorite.core;
 
 namespace Garnet.client
@@ -23,6 +24,11 @@ namespace Garnet.client
         static ReadOnlySpan<byte> MIGRATE => "MIGRATE"u8;
         static ReadOnlySpan<byte> DELKEY => "DELKEY"u8;
         static ReadOnlySpan<byte> GETKVPAIRINSLOT => "GETKVPAIRINSLOT"u8;
+
+        static ReadOnlySpan<byte> MAIN_STORE => "SSTORE"u8;
+        static ReadOnlySpan<byte> OBJECT_STORE => "OSTORE"u8;
+        static ReadOnlySpan<byte> T => "T"u8;
+        static ReadOnlySpan<byte> F => "F"u8;
 
         /// <summary>
         /// Send AUTH command to target node to authenticate connection.
@@ -161,81 +167,6 @@ namespace Garnet.client
         }
 
         /// <summary>
-        /// MIGRATE data internal command
-        /// </summary>
-        /// <param name="sourceNodeId"></param>
-        /// <param name="replaceOption"></param>
-        /// <param name="storeType"></param>
-        /// <param name="data"></param>
-        /// <returns></returns>
-        public Task<string> MigrateData(string sourceNodeId, Memory<byte> replaceOption, Memory<byte> storeType, Memory<byte> data)
-        {
-            var tcs = new TaskCompletionSource<string>(TaskCreationOptions.RunContinuationsAsynchronously);
-            tcsQueue.Enqueue(tcs);
-            byte* curr = offset;
-            int arraySize = 6;
-
-            while (!RespWriteUtils.WriteArrayLength(arraySize, ref curr, end))
-            {
-                Flush();
-                curr = offset;
-            }
-            offset = curr;
-
-            //1
-            while (!RespWriteUtils.WriteDirect(CLUSTER, ref curr, end))
-            {
-                Flush();
-                curr = offset;
-            }
-            offset = curr;
-
-            //2
-            while (!RespWriteUtils.WriteBulkString(MIGRATE, ref curr, end))
-            {
-                Flush();
-                curr = offset;
-            }
-            offset = curr;
-
-            //3
-            while (!RespWriteUtils.WriteAsciiBulkString(sourceNodeId, ref curr, end))
-            {
-                Flush();
-                curr = offset;
-            }
-            offset = curr;
-
-            //4
-            while (!RespWriteUtils.WriteBulkString(replaceOption.Span, ref curr, end))
-            {
-                Flush();
-                curr = offset;
-            }
-            offset = curr;
-
-            //5
-            while (!RespWriteUtils.WriteBulkString(storeType.Span, ref curr, end))
-            {
-                Flush();
-                curr = offset;
-            }
-            offset = curr;
-
-            //6
-            while (!RespWriteUtils.WriteBulkString(data.Span, ref curr, end))
-            {
-                Flush();
-                curr = offset;
-            }
-            offset = curr;
-
-            Flush();
-            Interlocked.Increment(ref numCommands);
-            return tcs.Task;
-        }
-
-        /// <summary>
         /// Check if migrate command parameters need to be initialized
         /// </summary>
         public bool InitMigrateCommand => curr == null;
@@ -250,6 +181,7 @@ namespace Garnet.client
             + 2                 // \r\n
             + 4;                // We write a 4-byte int keyCount at the start of the payload
 
+        bool isMainStore;
         byte* curr, head;
         int keyCount;
         TaskCompletionSource<string> currTcsMigrate = null;
@@ -257,18 +189,94 @@ namespace Garnet.client
         /// <summary>
         /// Flush and initialize buffers/parameters used for migrate command
         /// </summary>
-        public void InitMigrateBuffer()
+        /// <param name="migrateProgressFreq"></param>
+        public void InitMigrateBuffer(TimeSpan migrateProgressFreq = default)
         {
             Flush();
             currTcsMigrate = null;
             curr = head = null;
             keyCount = 0;
+            this.migrateProgressFreq = default ? TimeSpan.FromSeconds(5) : migrateProgressFreq;
+        }
+
+        /// <summary>
+        /// Write parameters of CLUSTER MIGRATE directly to the client buffer
+        /// </summary>
+        /// <param name="sourceNodeId"></param>
+        /// <param name="replace"></param>
+        /// <param name="isMainStore"></param>
+        public void SetClusterMigrate(string sourceNodeId, bool replace, bool isMainStore)
+        {
+            currTcsMigrate = new TaskCompletionSource<string>(TaskCreationOptions.RunContinuationsAsynchronously);
+            tcsQueue.Enqueue(currTcsMigrate);
+            curr = offset;
+            this.isMainStore = isMainStore;
+            var storeType = isMainStore ? MAIN_STORE : OBJECT_STORE;
+            var replaceOption = replace ? T : F;
+
+            var arraySize = 6;
+
+            while (!RespWriteUtils.WriteArrayLength(arraySize, ref curr, end))
+            {
+                Flush();
+                curr = offset;
+            }
+            offset = curr;
+
+            // 1
+            while (!RespWriteUtils.WriteDirect(CLUSTER, ref curr, end))
+            {
+                Flush();
+                curr = offset;
+            }
+            offset = curr;
+
+            // 2
+            while (!RespWriteUtils.WriteBulkString(MIGRATE, ref curr, end))
+            {
+                Flush();
+                curr = offset;
+            }
+            offset = curr;
+
+            // 3
+            while (!RespWriteUtils.WriteAsciiBulkString(sourceNodeId, ref curr, end))
+            {
+                Flush();
+                curr = offset;
+            }
+            offset = curr;
+
+            // 4
+            while (!RespWriteUtils.WriteBulkString(replaceOption, ref curr, end))
+            {
+                Flush();
+                curr = offset;
+            }
+            offset = curr;
+
+            // 5
+            while (!RespWriteUtils.WriteBulkString(storeType, ref curr, end))
+            {
+                Flush();
+                curr = offset;
+            }
+            offset = curr;
+
+            // 6
+            // Reserve space for the bulk string header + final newline
+            while (ExtraSpace + 2 > (int)(end - curr))
+            {
+                Flush();
+                curr = offset;
+            }
+            head = curr;
+            curr += ExtraSpace;
         }
 
         /// <summary>
         /// Send key value pair and reset migrate buffers
         /// </summary>
-        /// <returns></returns>
         public Task<string> SendAndResetMigrate()
         {
             if (keyCount == 0) return null;
@@ -278,7 +286,45 @@ namespace Garnet.client
             *curr++ = (byte)'\n';
 
             // Payload format = [$length\r\n][number of keys (4 bytes)][raw key value pairs]\r\n
-            int size = (int)(curr - 2 - head - (ExtraSpace - 4));
+            var size = (int)(curr - 2 - head - (ExtraSpace - 4));
+            TrackMigrateProgress(keyCount, size);
+            var success = RespWriteUtils.WritePaddedBulkStringLength(size, ExtraSpace - 4, ref head, end);
+            Debug.Assert(success);
+
+            // Number of key value pairs in payload
+            *(int*)head = keyCount;
+
+            // Reset offset and flush buffer
+            offset = curr;
+            Flush();
+            Interlocked.Increment(ref numCommands);
+
+            // Return outstanding task and reset current tcs
+            var task = currTcsMigrate.Task;
+            currTcsMigrate = null;
+            curr = head = null;
+            keyCount = 0;
+            return task;
+        }
+
+        /// <summary>
+        /// Signal completion of migration by sending an empty payload
+        /// </summary>
+        /// <param name="sourceNodeId"></param>
+        /// <param name="replace"></param>
+        /// <param name="isMainStore"></param>
+        /// <returns></returns>
+        public Task<string> CompleteMigrate(string sourceNodeId, bool replace, bool isMainStore)
+        {
+            SetClusterMigrate(sourceNodeId, replace, isMainStore);
+
+            Debug.Assert(end - curr >= 2);
+            *curr++ = (byte)'\r';
+            *curr++ = (byte)'\n';
+
+            // Payload format = [$length\r\n][number of keys (4 bytes)][raw key value pairs]\r\n
+            var size = (int)(curr - 2 - head - (ExtraSpace - 4));
+            TrackMigrateProgress(keyCount, size, completed: true);
             var success = RespWriteUtils.WritePaddedBulkStringLength(size, ExtraSpace - 4, ref head, end);
             Debug.Assert(success);
 
@@ -345,96 +391,16 @@ namespace Garnet.client
             return true;
         }
 
-        /// <summary>
-        /// Write parameters of CLUSTER MIGRATE directly to the client buffer
-        /// </summary>
-        /// <param name="sourceNodeId"></param>
-        /// <param name="replaceOption"></param>
-        /// <param name="storeType"></param>
-        public void SetClusterMigrate(string sourceNodeId, Memory<byte> replaceOption, Memory<byte> storeType)
-        {
-            currTcsMigrate = new TaskCompletionSource<string>(TaskCreationOptions.RunContinuationsAsynchronously);
-            tcsQueue.Enqueue(currTcsMigrate);
-            curr = offset;
-            int arraySize = 6;
-
-            while (!RespWriteUtils.WriteArrayLength(arraySize, ref curr, end))
-            {
-                Flush();
-                curr = offset;
-            }
-            offset = curr;
-
-            // 1
-            while (!RespWriteUtils.WriteDirect(CLUSTER, ref curr, end))
-            {
-                Flush();
-                curr = offset;
-            }
-            offset = curr;
-
-            // 2
-            while (!RespWriteUtils.WriteBulkString(MIGRATE, ref curr, end))
-            {
-                Flush();
-                curr = offset;
-            }
-            offset = curr;
-
-            // 3
-            while (!RespWriteUtils.WriteAsciiBulkString(sourceNodeId, ref curr, end))
-            {
-                Flush();
-                curr = offset;
-            }
-            offset = curr;
-
-            // 4
-            while (!RespWriteUtils.WriteBulkString(replaceOption.Span, ref curr, end))
-            {
-                Flush();
-                curr = offset;
-            }
-            offset = curr;
-
-            // 5
-            while (!RespWriteUtils.WriteBulkString(storeType.Span, ref curr, end))
-            {
-                Flush();
-                curr = offset;
-            }
-            offset = curr;
-
-            // 6
-            // Reserve space for the bulk string header + final newline
-            while (ExtraSpace + 2 > (int)(end - curr))
-            {
-                Flush();
-                curr = offset;
-            }
-            head = curr;
-            curr += ExtraSpace;
-        }
-
         private bool WriteSerializedSpanByte(ref SpanByte key, ref SpanByte value)
         {
-            // We include space for newline at the end, to be added before sending
-            int totalLen = key.TotalSize + value.TotalSize + 2 + 2;
+            var totalLen = key.TotalSize + value.TotalSize + 2 + 2;
             if (totalLen > (int)(end - curr))
                 return false;
 
-            *(int*)curr = key.Length;
-            curr += sizeof(int);
-            Buffer.MemoryCopy(key.ToPointerWithMetadata(), curr, key.Length, key.Length);
-            curr += key.Length;
-            *curr++ = (byte)key.MetadataSize;
-
-            *(int*)curr = value.Length;
-            curr += sizeof(int);
-            Buffer.MemoryCopy(value.ToPointerWithMetadata(), curr, value.Length, value.Length);
-            curr += value.Length;
-            *curr++ = (byte)value.MetadataSize;
-
+            key.CopyTo(curr);
+            curr += key.TotalSize;
+            value.CopyTo(curr);
+            curr += value.TotalSize;
             return true;
         }
 
@@ -461,6 +427,33 @@ namespace Garnet.client
             curr += 8;
 
             return true;
+        }
+
+        long lastLog = 0;
+        long totalKeyCount = 0;
+        long totalPayloadSize = 0;
+        TimeSpan migrateProgressFreq;
+
+        /// <summary>
+        /// Logging of migrate session status
+        /// </summary>
+        /// <param name="keyCount"></param>
+        /// <param name="size"></param>
+        /// <param name="completed"></param>
+        private void TrackMigrateProgress(int keyCount, int size, bool completed = false)
+        {
+            totalKeyCount += keyCount;
+            totalPayloadSize += size;
+            var duration = TimeSpan.FromTicks(Stopwatch.GetTimestamp() - lastLog);
+            if (completed || lastLog == 0 || duration >= migrateProgressFreq)
+            {
+                logger?.LogTrace("[{op}]: isMainStore:({storeType}) totalKeyCount:({totalKeyCount}), totalPayloadSize:({totalPayloadSize} KB)",
+                    completed ? "COMPLETED" : "MIGRATING",
+                    isMainStore,
+                    totalKeyCount.ToString("N0"),
+                    ((long)((double)totalPayloadSize / 1024)).ToString("N0"));
+                lastLog = Stopwatch.GetTimestamp();
+            }
         }
     }
 }

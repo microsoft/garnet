@@ -3,7 +3,6 @@
 
 using System;
 using System.Collections.Generic;
-using System.Linq;
 using System.Text;
 using System.Threading;
 using Garnet.common;
@@ -48,7 +47,7 @@ namespace Garnet.cluster
                     break;
             }
             FlushConfig();
-            logger?.LogTrace("AddSlots {slots}", GetRange([.. slots]));
+            logger?.LogTrace("[Processed] AddSlots {slots}", GetRange([.. slots]));
             return true;
         }
 
@@ -78,7 +77,7 @@ namespace Garnet.cluster
                     break;
             }
             FlushConfig();
-            logger?.LogTrace("RemoveSlots {slots}", GetRange([.. slots]));
+            logger?.LogTrace("[Processed] RemoveSlots {slots}", GetRange([.. slots]));
             return true;
         }
 
@@ -143,7 +142,7 @@ namespace Garnet.cluster
                     break;
             }
             FlushConfig();
-            logger?.LogTrace("SetSlot MIGRATING {slot} TO {nodeId}", slot, currentConfig.GetWorkerAddressFromNodeId(nodeid));
+            logger?.LogTrace("[Processed] SetSlot MIGRATING {slot} TO {nodeId}", slot, nodeid);
             return true;
         }
 
@@ -210,7 +209,7 @@ namespace Garnet.cluster
                     break;
             }
             FlushConfig();
-            logger?.LogTrace("SetSlotsRange MIGRATING {slot} TO {nodeId}", GetRange([.. slots]), currentConfig.GetWorkerAddressFromNodeId(nodeid));
+            logger?.LogTrace("[Processed] SetSlotsRange MIGRATING {slot} TO {nodeId}", GetRange([.. slots]), nodeid);
             return true;
         }
 
@@ -264,7 +263,7 @@ namespace Garnet.cluster
                     break;
             }
             FlushConfig();
-            logger?.LogTrace("SetSlot IMPORTING {slot} TO {nodeId}", slot, currentConfig.GetWorkerAddressFromNodeId(nodeid));
+            logger?.LogTrace("[Processed] SetSlot IMPORTING {slot} TO {nodeId}", slot, nodeid);
             return true;
         }
 
@@ -327,7 +326,7 @@ namespace Garnet.cluster
                     break;
             }
             FlushConfig();
-            logger?.LogTrace("SetSlotsRange IMPORTING {slot} TO {nodeId}", GetRange([.. slots]), currentConfig.GetWorkerAddressFromNodeId(nodeid));
+            logger?.LogTrace("[Processed] SetSlotsRange IMPORTING {slot} TO {nodeId}", GetRange([.. slots]), nodeid);
             return true;
         }
 
@@ -361,7 +360,7 @@ namespace Garnet.cluster
                         break;
                 }
                 FlushConfig();
-                logger?.LogTrace("SLOT {slot} MIGRATED TO {nodeid}", slot, currentConfig.GetWorkerAddressFromNodeId(nodeid));
+                logger?.LogTrace("[Processed] SetSlot {slot} MIGRATED TO {nodeId}", slot, nodeid);
                 return true;
             }
             else if (current.GetState((ushort)slot) is SlotState.IMPORTING)
@@ -382,7 +381,7 @@ namespace Garnet.cluster
                         break;
                 }
                 FlushConfig();
-                logger?.LogTrace("SLOT {slot} IMPORTED FROM {nodeid}", slot, currentConfig.GetWorkerAddressFromNodeId(nodeid));
+                logger?.LogTrace("[Processed] SetSlot NODE {slot} IMPORTED TO {nodeid}", slot, nodeid);
                 return true;
             }
             return true;
@@ -415,7 +414,7 @@ namespace Garnet.cluster
             }
 
             FlushConfig();
-            logger?.LogTrace("Slots {slot} IMPORTED TO {endpoint}", GetRange([.. slots]), currentConfig.GetWorkerAddressFromNodeId(nodeid));
+            logger?.LogTrace("[Processed] SetSlotsRange {slot} IMPORTED TO {endpoint}", GetRange([.. slots]), nodeid);
             return true;
         }
 
@@ -423,7 +422,7 @@ namespace Garnet.cluster
         /// Reset slot state to <see cref="SlotState.STABLE"/>
         /// </summary>
         /// <param name="slot">Slot id to reset state</param>
-        public void ResetSlotState(int slot)
+        public void TryResetSlotState(int slot)
         {
             var current = currentConfig;
             var slotState = current.GetState((ushort)slot);
@@ -446,12 +445,16 @@ namespace Garnet.cluster
         /// Reset local slot state to <see cref="SlotState.STABLE"/>
         /// </summary>
         /// <param name="slots">Slot list</param>
-        public void ResetSlotsState(HashSet<int> slots)
+        public void TryResetSlotState(HashSet<int> slots)
         {
-            foreach (var slot in slots)
+            while (true)
             {
-                ResetSlotState(slot);
+                var current = currentConfig;
+                var newConfig = currentConfig.ResetMultiSlotState(slots);
+                if (Interlocked.CompareExchange(ref currentConfig, newConfig, current) == current)
+                    break;
             }
+            FlushConfig();
         }
 
         /// <summary>

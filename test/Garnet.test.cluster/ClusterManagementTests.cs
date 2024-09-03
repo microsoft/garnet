@@ -4,9 +4,11 @@
 using System;
 using System.Collections.Generic;
 using System.Linq;
+using System.Net;
 using System.Threading;
 using Microsoft.Extensions.Logging;
 using NUnit.Framework;
+using NUnit.Framework.Legacy;
 using StackExchange.Redis;
 
 namespace Garnet.test.cluster
@@ -44,14 +46,14 @@ namespace Garnet.test.cluster
             _ = context.clusterTestUtils.SimpleSetupCluster(customSlotRanges: slotRanges, logger: context.logger);
 
             var slotsResult = context.clusterTestUtils.ClusterSlots(0, context.logger);
-            Assert.IsTrue(slotsResult.Count == 1);
-            Assert.AreEqual(startSlot, slotsResult[0].startSlot);
-            Assert.AreEqual(endSlot, slotsResult[0].endSlot);
-            Assert.IsTrue(slotsResult[0].nnInfo.Length == 1);
-            Assert.IsTrue(slotsResult[0].nnInfo[0].isPrimary);
-            Assert.AreEqual(slotsResult[0].nnInfo[0].address, context.clusterTestUtils.GetEndPoint(0).Address.ToString());
-            Assert.AreEqual(slotsResult[0].nnInfo[0].port, context.clusterTestUtils.GetEndPoint(0).Port);
-            Assert.AreEqual(slotsResult[0].nnInfo[0].nodeid, context.clusterTestUtils.GetNodeIdFromNode(0, context.logger));
+            ClassicAssert.IsTrue(slotsResult.Count == 1);
+            ClassicAssert.AreEqual(startSlot, slotsResult[0].startSlot);
+            ClassicAssert.AreEqual(endSlot, slotsResult[0].endSlot);
+            ClassicAssert.IsTrue(slotsResult[0].nnInfo.Length == 1);
+            ClassicAssert.IsTrue(slotsResult[0].nnInfo[0].isPrimary);
+            ClassicAssert.AreEqual(slotsResult[0].nnInfo[0].address, context.clusterTestUtils.GetEndPoint(0).Address.ToString());
+            ClassicAssert.AreEqual(slotsResult[0].nnInfo[0].port, context.clusterTestUtils.GetEndPoint(0).Port);
+            ClassicAssert.AreEqual(slotsResult[0].nnInfo[0].nodeid, context.clusterTestUtils.GetNodeIdFromNode(0, context.logger));
         }
 
         [Test, Order(2)]
@@ -68,7 +70,7 @@ namespace Garnet.test.cluster
             var slotsResult = context.clusterTestUtils.ClusterSlots(0, context.logger);
             while (slotsResult.Count < 6)
                 slotsResult = context.clusterTestUtils.ClusterSlots(0, context.logger);
-            Assert.AreEqual(6, slotsResult.Count);
+            ClassicAssert.AreEqual(6, slotsResult.Count);
 
             List<(int, (int, int))>[] origSlotRanges = new List<(int, (int, int))>[3];
             for (var i = 0; i < slotRanges.Length; i++)
@@ -78,18 +80,18 @@ namespace Garnet.test.cluster
                     origSlotRanges[i].Add((i, slotRanges[i][j]));
             }
             var ranges = origSlotRanges.SelectMany(x => x).OrderBy(x => x.Item2.Item1).ToList();
-            Assert.IsTrue(slotsResult.Count == ranges.Count);
+            ClassicAssert.IsTrue(slotsResult.Count == ranges.Count);
             for (var i = 0; i < slotsResult.Count; i++)
             {
                 var origRange = ranges[i];
                 var retRange = slotsResult[i];
-                Assert.AreEqual(origRange.Item2.Item1, retRange.startSlot);
-                Assert.AreEqual(origRange.Item2.Item2, retRange.endSlot);
-                Assert.IsTrue(retRange.nnInfo.Length == 1);
-                Assert.IsTrue(retRange.nnInfo[0].isPrimary);
-                Assert.AreEqual(context.clusterTestUtils.GetEndPoint(origRange.Item1).Address.ToString(), retRange.nnInfo[0].address);
-                Assert.AreEqual(context.clusterTestUtils.GetEndPoint(origRange.Item1).Port, retRange.nnInfo[0].port);
-                Assert.AreEqual(context.clusterTestUtils.GetNodeIdFromNode(origRange.Item1, context.logger), retRange.nnInfo[0].nodeid);
+                ClassicAssert.AreEqual(origRange.Item2.Item1, retRange.startSlot);
+                ClassicAssert.AreEqual(origRange.Item2.Item2, retRange.endSlot);
+                ClassicAssert.IsTrue(retRange.nnInfo.Length == 1);
+                ClassicAssert.IsTrue(retRange.nnInfo[0].isPrimary);
+                ClassicAssert.AreEqual(context.clusterTestUtils.GetEndPoint(origRange.Item1).Address.ToString(), retRange.nnInfo[0].address);
+                ClassicAssert.AreEqual(context.clusterTestUtils.GetEndPoint(origRange.Item1).Port, retRange.nnInfo[0].port);
+                ClassicAssert.AreEqual(context.clusterTestUtils.GetNodeIdFromNode(origRange.Item1, context.logger), retRange.nnInfo[0].nodeid);
             }
         }
 
@@ -120,7 +122,7 @@ namespace Garnet.test.cluster
             // Check if indeed nodes 1 to i-1 have forgotten node 0
             foreach (var config in configs)
                 foreach (var node in config.Nodes)
-                    Assert.AreNotEqual(nodeIds[0], node.NodeId, "node 0 node forgotten");
+                    ClassicAssert.AreNotEqual(nodeIds[0], node.NodeId, "node 0 node forgotten");
         }
 
         [Test, Order(4)]
@@ -147,10 +149,10 @@ namespace Garnet.test.cluster
             {
                 // Add data to server
                 var resp = context.clusterTestUtils.GetServer(0).Execute("SET", "wxz", "1234");
-                Assert.AreEqual("OK", (string)resp);
+                ClassicAssert.AreEqual("OK", (string)resp);
 
                 resp = context.clusterTestUtils.GetServer(0).Execute("GET", "wxz");
-                Assert.AreEqual("1234", (string)resp);
+                ClassicAssert.AreEqual("1234", (string)resp);
             }
             catch (Exception ex)
             {
@@ -163,10 +165,10 @@ namespace Garnet.test.cluster
             var node = config.Nodes.First();
 
             // Assert node 0 does not know anything about the cluster
-            Assert.AreEqual(1, config.Nodes.Count);
-            Assert.AreNotEqual(nodeIds[0], node.NodeId);
-            Assert.AreEqual(0, node.Slots.Count);
-            Assert.IsFalse(node.IsReplica);
+            ClassicAssert.AreEqual(1, config.Nodes.Count);
+            ClassicAssert.AreNotEqual(nodeIds[0], node.NodeId);
+            ClassicAssert.AreEqual(0, node.Slots.Count);
+            ClassicAssert.IsFalse(node.IsReplica);
 
             //Add slotRange for clean node
             context.clusterTestUtils.AddSlotsRange(0, slotRanges, context.logger);
@@ -174,14 +176,14 @@ namespace Garnet.test.cluster
             {
                 // Check DB was flushed due to hard reset
                 var resp = context.clusterTestUtils.GetServer(0).Execute("GET", "wxz");
-                Assert.IsTrue(resp.IsNull, "DB not flushed after HARD reset");
+                ClassicAssert.IsTrue(resp.IsNull, "DB not flushed after HARD reset");
 
                 // Add data to server
                 resp = context.clusterTestUtils.GetServer(0).Execute("SET", "wxz", "1234");
-                Assert.AreEqual("OK", (string)resp);
+                ClassicAssert.AreEqual("OK", (string)resp);
 
                 resp = context.clusterTestUtils.GetServer(0).Execute("GET", "wxz");
-                Assert.AreEqual("1234", (string)resp);
+                ClassicAssert.AreEqual("1234", (string)resp);
             }
             catch (Exception ex)
             {
@@ -243,7 +245,7 @@ namespace Garnet.test.cluster
                 var key = testCase.Item1;
                 var expectedSlot = testCase.Item2;
                 var slot = context.clusterTestUtils.ClusterKeySlot(0, key: key, logger: context.logger);
-                Assert.AreEqual(expectedSlot, slot, $"{key}");
+                ClassicAssert.AreEqual(expectedSlot, slot, $"{key}");
             }
         }
 
@@ -276,8 +278,131 @@ namespace Garnet.test.cluster
             {
                 var config = context.clusterTestUtils.ClusterNodes(restartingNode, logger: logger);
                 var knownNodes = config.Nodes.ToArray();
-                Assert.AreEqual(knownNodes.Length, 1);
+                ClassicAssert.AreEqual(knownNodes.Length, 1);
                 Thread.Sleep(1000);
+            }
+        }
+
+        [Test]
+        public void FailoverBadOptions()
+        {
+            var node_count = 4;
+            context.CreateInstances(node_count);
+            context.CreateConnection();
+            var (_, _) = context.clusterTestUtils.SimpleSetupCluster(node_count, 0, logger: context.logger);
+
+            var endpoint = (IPEndPoint)context.endpoints[0];
+
+            // Default rejected
+            {
+                var errorMsg = (string)context.clusterTestUtils.Execute(endpoint, "FAILOVER", ["DEFAULT", "localhost", "6379"]);
+                ClassicAssert.AreEqual("ERR syntax error", errorMsg);
+            }
+
+            // Invalid rejected
+            {
+                var errorMsg = (string)context.clusterTestUtils.Execute(endpoint, "FAILOVER", ["INVALID", "localhost", "6379"]);
+                ClassicAssert.AreEqual("ERR syntax error", errorMsg);
+            }
+
+            // Numeric equivalent rejected
+            {
+                var errorMsg = (string)context.clusterTestUtils.Execute(endpoint, "FAILOVER", ["2", "localhost", "6379"]);
+                ClassicAssert.AreEqual("ERR syntax error", errorMsg);
+            }
+
+            // Numeric out of range rejected
+            {
+                var errorMsg = (string)context.clusterTestUtils.Execute(endpoint, "FAILOVER", ["128", "localhost", "6379"]);
+                ClassicAssert.AreEqual("ERR syntax error", errorMsg);
+            }
+        }
+
+        [Test]
+        public void ClusterFailoverBadOptions()
+        {
+            var node_count = 4;
+            context.CreateInstances(node_count);
+            context.CreateConnection();
+            var (_, _) = context.clusterTestUtils.SimpleSetupCluster(node_count, 0, logger: context.logger);
+
+            var endpoint = (IPEndPoint)context.endpoints[0];
+
+            // Default rejected
+            {
+                var errorMsg = (string)context.clusterTestUtils.Execute(endpoint, "CLUSTER", ["FAILOVER", "DEFAULT"]);
+                ClassicAssert.AreEqual("ERR Failover option (DEFAULT) not supported", errorMsg);
+            }
+
+            // Invalid rejected
+            {
+                var errorMsg = (string)context.clusterTestUtils.Execute(endpoint, "CLUSTER", ["FAILOVER", "Invalid"]);
+                ClassicAssert.AreEqual("ERR Failover option (Invalid) not supported", errorMsg);
+            }
+
+            // Numeric equivalent rejected
+            {
+                var errorMsg = (string)context.clusterTestUtils.Execute(endpoint, "CLUSTER", ["FAILOVER", "2"]);
+                ClassicAssert.AreEqual("ERR Failover option (2) not supported", errorMsg);
+            }
+
+            // Numeric out of range rejected
+            {
+                var errorMsg = (string)context.clusterTestUtils.Execute(endpoint, "CLUSTER", ["FAILOVER", "128"]);
+                ClassicAssert.AreEqual("ERR Failover option (128) not supported", errorMsg);
+            }
+        }
+
+        [Test]
+        public void ClusterSetSlotBadOptions()
+        {
+            var node_count = 4;
+            context.CreateInstances(node_count);
+            context.CreateConnection();
+            var (_, _) = context.clusterTestUtils.SimpleSetupCluster(node_count, 0, logger: context.logger);
+
+            var endpoint = (IPEndPoint)context.endpoints[0];
+
+            // Non-numeric slot
+            {
+                var errorMsg = (string)context.clusterTestUtils.Execute(endpoint, "CLUSTER", ["SETSLOT", "abc", "STABLE"]);
+                ClassicAssert.AreEqual("ERR Invalid or out of range slot", errorMsg);
+            }
+
+            // Invalid rejected
+            {
+                var errorMsg = (string)context.clusterTestUtils.Execute(endpoint, "CLUSTER", ["SETSLOT", "123", "Invalid"]);
+                ClassicAssert.AreEqual("ERR Slot state Invalid not supported.", errorMsg);
+            }
+
+            // Offline rejected
+            {
+                var errorMsg = (string)context.clusterTestUtils.Execute(endpoint, "CLUSTER", ["SETSLOT", "123", "Offline"]);
+                ClassicAssert.AreEqual("ERR Slot state Offline not supported.", errorMsg);
+            }
+
+            // Numeric rejected
+            {
+                var errorMsg = (string)context.clusterTestUtils.Execute(endpoint, "CLUSTER", ["SETSLOT", "123", "1"]);
+                ClassicAssert.AreEqual("ERR Slot state 1 not supported.", errorMsg);
+            }
+
+            // Numeric out of range rejected
+            {
+                var errorMsg = (string)context.clusterTestUtils.Execute(endpoint, "CLUSTER", ["SETSLOT", "123", "128"]);
+                ClassicAssert.AreEqual("ERR Slot state 128 not supported.", errorMsg);
+            }
+
+            // Stable with node id rejected
+            {
+                var errorMsg = (string)context.clusterTestUtils.Execute(endpoint, "CLUSTER", ["SETSLOT", "123", "STABLE", "foo"]);
+                ClassicAssert.AreEqual("ERR syntax error", errorMsg);
+            }
+
+            // Non-stable without node id rejected
+            {
+                var errorMsg = (string)context.clusterTestUtils.Execute(endpoint, "CLUSTER", ["SETSLOT", "123", "IMPORTING"]);
+                ClassicAssert.AreEqual("ERR syntax error", errorMsg);
             }
         }
     }

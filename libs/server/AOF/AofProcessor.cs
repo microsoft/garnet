@@ -316,15 +316,35 @@ namespace Garnet.server
         static unsafe void ObjectStoreRMW(BasicContext<byte[], IGarnetObject, ObjectInput, GarnetObjectStoreOutput, long, ObjectSessionFunctions, ObjectStoreFunctions, ObjectStoreAllocator> basicContext,
                 byte* ptr, byte* outputPtr, int outputLength)
         {
-            ref var key = ref Unsafe.AsRef<SpanByte>(ptr + sizeof(AofHeader));
+            var curr = ptr + sizeof(AofHeader);
+            ref var key = ref Unsafe.AsRef<SpanByte>(curr);
+            curr += key.TotalSize;
             var keyB = key.ToByteArray();
 
-            ref var sbInput = ref Unsafe.AsRef<SpanByte>(ptr + sizeof(AofHeader) + key.TotalSize);
+            // Reconstructing ObjectInput
+
+            // input
+            ref var sbInput = ref Unsafe.AsRef<SpanByte>(curr);
             ref var input = ref Unsafe.AsRef<ObjectInput>(sbInput.ToPointer());
+            curr += sbInput.TotalSize;
 
-            ref var inputPayload = ref Unsafe.AsRef<SpanByte>(ptr + sizeof(AofHeader) + key.TotalSize + sbInput.TotalSize);
-            input.payload = new ArgSlice(ref inputPayload);
+            // Reconstructing parse state
+            var parseStateCount = input.parseState.Count;
 
+            if (parseStateCount > 0)
+            {
+                ArgSlice[] parseStateBuffer = default;
+                input.parseState.Initialize(ref parseStateBuffer, parseStateCount);
+
+                for (var i = 0; i < parseStateCount; i++)
+                {
+                    ref var sbArgument = ref Unsafe.AsRef<SpanByte>(curr);
+                    parseStateBuffer[i] = new ArgSlice(ref sbArgument);
+                    curr += sbArgument.TotalSize;
+                }
+            }
+
+            // Call RMW with the reconstructed key & ObjectInput
             var output = new GarnetObjectStoreOutput { spanByteAndMemory = new(outputPtr, outputLength) };
             if (basicContext.RMW(ref keyB, ref input, ref output).IsPending)
                 basicContext.CompletePending(true);

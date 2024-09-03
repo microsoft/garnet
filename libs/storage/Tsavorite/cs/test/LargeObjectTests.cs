@@ -5,6 +5,7 @@ using System;
 using System.IO;
 using System.Threading.Tasks;
 using NUnit.Framework;
+using NUnit.Framework.Legacy;
 using Tsavorite.core;
 using static Tsavorite.test.TestUtils;
 
@@ -95,7 +96,7 @@ namespace Tsavorite.test.largeobjects
                             (status, output) = bContext.GetSinglePendingResult();
 
                         for (int i = 0; i < output.value.value.Length; i++)
-                            Assert.AreEqual((byte)(output.value.value.Length + i), output.value.value[i]);
+                            ClassicAssert.AreEqual((byte)(output.value.value.Length + i), output.value.value[i]);
                     }
                 }
             }

@@ -46,23 +46,18 @@ namespace Garnet.server
         /// <param name="pattern"></param>
         /// <param name="patternLength"></param>
         /// <param name="countInInput"></param>
-        /// <param name="bytesDone"></param>
+        /// <param name="error"></param>
         /// <returns></returns>
-        public static unsafe bool ReadScanInput(ref ObjectInput input, ref SpanByteAndMemory output, out int cursorInput, out byte* pattern, out int patternLength, out int countInInput, out int bytesDone)
+        public static unsafe bool ReadScanInput(ref ObjectInput input, ref SpanByteAndMemory output,
+            out int cursorInput, out byte* pattern, out int patternLength, out int countInInput, out ReadOnlySpan<byte> error)
         {
-            var input_startptr = input.payload.ptr;
-
-            // Largest number of items to print 
-            var limitCountInOutput = *(int*)input_startptr;
-
-            var input_currptr = input_startptr += sizeof(int);
-            var length = input.payload.length - sizeof(int);
-            var input_endptr = input_startptr + length;
-
-            var leftTokens = input.arg1;
+            var currTokenIdx = input.parseStateStartIdx;
 
             // Cursor
-            cursorInput = input.arg2;
+            cursorInput = input.arg1;
+
+            // Largest number of items to print 
+            var limitCountInOutput = input.arg2;
 
             patternLength = 0;
             pattern = default;
@@ -70,38 +65,33 @@ namespace Garnet.server
             // Default of items in output
             countInInput = 10;
 
-            // This value is used to indicate partial command execution
-            bytesDone = 0;
+            error = default;
 
-            while (leftTokens > 0)
+            while (currTokenIdx < input.parseState.Count)
             {
-                if (!RespReadUtils.TrySliceWithLengthHeader(out var sbParam, ref input_currptr, input_endptr))
-                    return false;
+                var sbParam = input.parseState.GetArgSliceByRef(currTokenIdx++).ReadOnlySpan;
 
                 if (sbParam.SequenceEqual(CmdStrings.MATCH) || sbParam.SequenceEqual(CmdStrings.match))
                 {
                     // Read pattern for keys filter
-                    if (!RespReadUtils.ReadPtrWithLengthHeader(ref pattern, ref patternLength, ref input_currptr, input_endptr))
-                        return false;
-                    leftTokens--;
+                    var sbPattern = input.parseState.GetArgSliceByRef(currTokenIdx++).SpanByte;
+                    pattern = sbPattern.ToPointer();
+                    patternLength = sbPattern.Length;
                 }
                 else if (sbParam.SequenceEqual(CmdStrings.COUNT) || sbParam.SequenceEqual(CmdStrings.count))
                 {
-                    if (!RespReadUtils.ReadIntWithLengthHeader(out countInInput, ref input_currptr, input_endptr))
+                    if (!input.parseState.TryGetInt(currTokenIdx++, out countInInput))
                     {
+                        error = CmdStrings.RESP_ERR_GENERIC_VALUE_IS_NOT_INTEGER;
                         return false;
                     }
 
                     // Limiting number of items to send to the output
                     if (countInInput > limitCountInOutput)
                         countInInput = limitCountInOutput;
-
-                    leftTokens--;
                 }
-                leftTokens--;
             }
 
-            bytesDone = (int)(input_currptr - input_startptr);
             return true;
         }
 
@@ -112,12 +102,11 @@ namespace Garnet.server
         /// <param name="items"></param>
         /// <param name="cursor"></param>
         /// <param name="output"></param>
-        /// <param name="bytesDone"></param>
-        public static unsafe void WriteScanOutput(List<byte[]> items, long cursor, ref SpanByteAndMemory output, int bytesDone)
+        public static unsafe void WriteScanOutput(List<byte[]> items, long cursor, ref SpanByteAndMemory output)
         {
-            bool isMemory = false;
+            var isMemory = false;
             MemoryHandle ptrHandle = default;
-            byte* ptr = output.SpanByte.ToPointer();
+            var ptr = output.SpanByte.ToPointer();
 
             var curr = ptr;
             var end = curr + output.Length;
@@ -154,6 +143,37 @@ namespace Garnet.server
                     }
                 }
                 _output.result1 = items.Count;
+            }
+            finally
+            {
+                while (!RespWriteUtils.WriteDirect(ref _output, ref curr, end))
+                    ReallocateOutput(ref output, ref isMemory, ref ptr, ref ptrHandle, ref curr, ref end);
+
+                if (isMemory) ptrHandle.Dispose();
+                output.Length = (int)(curr - ptr);
+            }
+        }
+
+        /// <summary>
+        /// Writes output for scan command using RESP format
+        /// </summary>
+        /// <param name="errorMessage"></param>
+        /// <param name="output"></param>
+        public static unsafe void WriteScanError(ReadOnlySpan<byte> errorMessage, ref SpanByteAndMemory output)
+        {
+            var isMemory = false;
+            MemoryHandle ptrHandle = default;
+            var ptr = output.SpanByte.ToPointer();
+
+            var curr = ptr;
+            var end = curr + output.Length;
+
+            ObjectOutputHeader _output = default;
+
+            try
+            {
+                while (!RespWriteUtils.WriteError(errorMessage, ref curr, end))
+                    ReallocateOutput(ref output, ref isMemory, ref ptr, ref ptrHandle, ref curr, ref end);
             }
             finally
             {

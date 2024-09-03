@@ -51,13 +51,27 @@ namespace Garnet.server
             if (functionsState.StoredProcMode) return;
             input.header.flags |= RespInputFlags.Deterministic;
 
-            fixed (byte* ptr = key)
+            // Serializing key & ObjectInput to RMW log
+            fixed (byte* keyPtr = key)
             {
-                var sbKey = SpanByte.FromPinnedPointer(ptr, key.Length);
-                var sbInput = new ArgSlice(input.ToPointer(), sizeof(ObjectInput)).SpanByte;
-                var sbInputPayload = input.payload.SpanByte;
-                functionsState.appendOnlyFile.Enqueue(new AofHeader { opType = AofEntryType.ObjectStoreRMW, version = version, sessionID = sessionID },
-                    ref sbKey, ref sbInput, ref sbInputPayload, out _);
+                var sbKey = SpanByte.FromPinnedPointer(keyPtr, key.Length);
+
+                var parseStateArgCount = input.parseState.Count - input.parseStateStartIdx;
+
+                var sbToSerialize = new SpanByte[2 + parseStateArgCount];
+                sbToSerialize[0] = sbKey;
+                for (var i = 0; i < parseStateArgCount; i++)
+                {
+                    sbToSerialize[i + 2] = input.parseState.GetArgSliceByRef(input.parseStateStartIdx + i).SpanByte;
+                }
+
+                input.parseStateStartIdx = 0;
+                input.parseState.Count = parseStateArgCount;
+                sbToSerialize[1] = input.SpanByte;
+
+                functionsState.appendOnlyFile.Enqueue(
+                    new AofHeader { opType = AofEntryType.ObjectStoreRMW, version = version, sessionID = sessionID },
+                    ref sbToSerialize, out _);
             }
         }
 
