@@ -49,7 +49,8 @@ namespace Garnet
         /// </summary>
         protected StoreWrapper storeWrapper;
 
-        // IMPORTANT: Keep the version in sync with .azure\pipelines\azure-pipelines-external-release.yml line ~6.
+        // IMPORTANT: Keep the version in sync with .azure\pipelines\azure-pipelines-external-release.yml line ~6,
+        // charts\garnet\Chart.yaml line ~6 and increment line ~5 and generate charts\garnet\README.md with helm-docs.
         readonly string version = "1.0.19";
 
         /// <summary>
