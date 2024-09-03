@@ -87,8 +87,6 @@ namespace Garnet.server
             where TGarnetApi : IGarnetAdvancedApi
         {
             var sbKey = parseState.GetArgSliceByRef(0).SpanByte;
-            var keyPtr = sbKey.ToPointer() - sizeof(int);
-            *(int*)keyPtr = sbKey.Length;
 
             var input = new RawStringInput
             {
@@ -102,7 +100,7 @@ namespace Garnet.server
             GarnetStatus status;
             if (type == CommandType.ReadModifyWrite)
             {
-                status = storageApi.RMW_MainStore(ref Unsafe.AsRef<SpanByte>(keyPtr), ref input, ref output);
+                status = storageApi.RMW_MainStore(ref sbKey, ref input, ref output);
                 Debug.Assert(!output.IsSpanByte);
 
                 if (output.Memory != null)
@@ -113,7 +111,7 @@ namespace Garnet.server
             }
             else
             {
-                status = storageApi.Read_MainStore(ref Unsafe.AsRef<SpanByte>(keyPtr), ref input, ref output);
+                status = storageApi.Read_MainStore(ref sbKey, ref input, ref output);
                 Debug.Assert(!output.IsSpanByte);
 
                 if (status == GarnetStatus.OK)
