@@ -1,0 +1,62 @@
+name: Garnet CI BDN.benchmark
+on:
+  workflow_dispatch:
+  
+env:
+  DOTNET_SKIP_FIRST_TIME_EXPERIENCE: 1
+  DOTNET_NOLOGO: true
+
+jobs:
+  changes:
+    name: Check for changes
+    runs-on: ubuntu-latest # don't need matrix to test where the changes were made in code
+    permissions:
+      pull-requests: read
+      contents: read
+    steps:
+    - name: Check out code
+      uses: actions/checkout@v4
+    - name: Apply filter
+      uses: dorny/paths-filter@v3
+      id: filter
+      with:
+        filters: |
+          website:
+            - 'website/**'
+          bdnbenchmark:
+            - '!((*.md)|(website/**))'
+  
+  # Job to build and run BDN.benchmark
+  build-run-bdnbenchmark:
+    name: BDNBenchmark
+    needs: [changes]
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ ubuntu-latest, windows-latest ]
+        framework: [ 'net8.0' ]
+        configuration: [ 'Release' ]
+        test: [ 'ConfigFiles/CI_BDN_Config_RespParseStress.json' ]
+    steps:
+      - name: Check out code
+        uses: actions/checkout@v4
+      - name: Setup .NET
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: 8.0.x
+      - name: Install dependencies
+        run: dotnet restore
+      - name: Build Garnet
+        run: dotnet build --configuration ${{ matrix.configuration }}
+
+      - name: Run BDN.benchmark Perf Test
+        run: .\test\BDNPerfTests\run_bdnperftest.ps1 ${{ matrix.test }}
+        shell: pwsh
+   
+      - name: Upload test results
+        uses: actions/upload-artifact@v4
+        with:
+          name: dotnet-bdnbenchmark-results-${{ matrix.os }}-${{ matrix.framework }}-${{ matrix.configuration }}-${{ matrix.test }}
+          path: BDNBenchmarkResults-${{ matrix.os }}-${{ matrix.framework }}-${{ matrix.configuration }}-${{ matrix.test }}
+        if: ${{ always() }}

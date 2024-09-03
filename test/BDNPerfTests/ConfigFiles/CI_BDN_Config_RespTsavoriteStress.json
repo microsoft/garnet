@@ -1,0 +1,18 @@
+{
+    "_comment": "To get proper expected results, the ExpectedCoresToTestOn needs to match the number of cores on test machine. NOT SURE IF CHECKING CORES",
+    "ExpectedCoresToTestOn_win": 48,
+    "ExpectedCoresToTestOn_linux": 48,
+    "configuration": "Release",
+    "framework": "net8.0",
+    "filter": "*RespClusterMigrateBench*",
+    "expectedGETMeanValue_linux": 17,
+    "expectedSETMeanValue_linux": 17,
+    "expectedIncrMeanValue_linux": 24,
+    "expectedGETMeanValue_win": 17,
+    "expectedSETMeanValue_win": 17,
+    "expectedIncrMeanValue_win": 24,
+    "acceptableMeanRange": 10,
+    "acceptableError": ".1",
+    "acceptableStdDev": ".1"
+}
+
