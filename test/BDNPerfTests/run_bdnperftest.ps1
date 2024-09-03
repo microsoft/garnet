@@ -131,7 +131,6 @@ if ($pathstring.Contains("test")) {
 
 Write-Output "------------ DEBUG Basepath: $basePath" 
 
-Exit
 
 # Read the test config file and convert the JSON to a PowerShell object
 if (-not (Test-Path -Path $configFile)) {
