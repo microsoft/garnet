@@ -4,10 +4,10 @@
 using System.Collections.Generic;
 using System.Linq;
 using System.Text;
+using Garnet.common;
 using Microsoft.Extensions.Logging;
 using NUnit.Framework;
-using NUnit.Framework.Internal;
-using StackExchange.Redis;
+using NUnit.Framework.Legacy;
 
 namespace Garnet.test.cluster
 {
@@ -105,7 +105,7 @@ ClusterRedirectTests.TestFlags testFlags)
                     else
                     {
                         clusterTestUtils.RandomBytesRestrictedToSlot(ref key, restrictToSlot);
-                        Assert.AreEqual(restrictToSlot, ClusterTestUtils.HashSlot(key));
+                        ClassicAssert.AreEqual(restrictToSlot, ClusterTestUtils.HashSlot(key));
                     }
                     clusterTestUtils.RandomBytes(ref value);
 
@@ -490,7 +490,7 @@ ClusterRedirectTests.TestFlags testFlags)
                 out var value,
                 out var values);
             if (checkAssert)
-                Assert.AreEqual(status, ResponseState.OK, cmdTag);
+                ClassicAssert.AreEqual(status, ResponseState.OK, cmdTag);
             return (status, value, values);
         }
 
@@ -502,14 +502,14 @@ ClusterRedirectTests.TestFlags testFlags)
 
             var result = connections[otherNodeIndex].SendCommand(cmd);
             var status = ClusterTestUtils.ParseResponseState(result, out var _slot, out var _address, out var _port, out var _value, out var _values);
-            Assert.AreEqual(status, ResponseState.MOVED);
-            Assert.AreEqual(_slot, slot);
-            Assert.AreEqual(_address, connections[nodeIndex].Address);
-            Assert.AreEqual(_port, connections[nodeIndex].Port);
+            ClassicAssert.AreEqual(status, ResponseState.MOVED, cmd);
+            ClassicAssert.AreEqual(_slot, slot, cmd);
+            ClassicAssert.AreEqual(_address, connections[nodeIndex].Address, cmd);
+            ClassicAssert.AreEqual(_port, connections[nodeIndex].Port, cmd);
 
             result = connections[nodeIndex].SendCommand(cmd);
             status = ClusterTestUtils.ParseResponseState(result, out _, out _, out _, out _value, out _values);
-            Assert.AreEqual(status, ResponseState.OK, cmdTag);
+            ClassicAssert.AreEqual(status, ResponseState.OK, cmdTag);
 
             return (status, _value, _values);
         }
@@ -531,7 +531,7 @@ ClusterRedirectTests.TestFlags testFlags)
                     {
                         var resp = connections[targetNodeIndex].SendCommand(setupCmd[j]);
                         var respStatus = ClusterTestUtils.ParseResponseState(resp, out _, out _, out _, out _, out _);
-                        Assert.AreEqual(respStatus, ResponseState.OK);
+                        ClassicAssert.AreEqual(respStatus, ResponseState.OK);
                         ClusterTestUtils.Asking(ref connections[targetNodeIndex]);
                     }
                 }
@@ -542,14 +542,14 @@ ClusterRedirectTests.TestFlags testFlags)
 
             if (CheckFlag(command.testFlags, TestFlags.ASKING))
             {
-                Assert.AreEqual(status, ResponseState.OK, command.cmdTag);
+                ClassicAssert.AreEqual(status, ResponseState.OK, command.cmdTag);
                 if (command.response != null)
-                    Assert.AreEqual(_value, response, command.cmdTag);
+                    ClassicAssert.AreEqual(_value, response, command.cmdTag);
                 else if (command.arrayResponse != null)
                 {
-                    Assert.AreEqual(_values.Length, command.arrayResponse.Length);
+                    ClassicAssert.AreEqual(_values.Length, command.arrayResponse.Length);
                     for (var i = 0; i < _values.Length; i++)
-                        Assert.AreEqual(_values[i], command.arrayResponse[i], command.cmdTag);
+                        ClassicAssert.AreEqual(_values[i], command.arrayResponse[i], command.cmdTag);
                 }
 
                 if (cleanCmd != null)
@@ -559,16 +559,16 @@ ClusterRedirectTests.TestFlags testFlags)
                         ClusterTestUtils.Asking(ref connections[targetNodeIndex]);
                         var resp = connections[targetNodeIndex].SendCommand(cleanCmd[j]);
                         var respStatus = ClusterTestUtils.ParseResponseState(resp, out _, out _, out _, out _, out _);
-                        Assert.AreEqual(respStatus, ResponseState.OK);
+                        ClassicAssert.AreEqual(respStatus, ResponseState.OK);
                     }
                 }
             }
             else
             {
-                Assert.AreEqual(status, ResponseState.MOVED);
-                Assert.AreEqual(_address, connections[sourceNodeIndex].Address);
-                Assert.AreEqual(_port, connections[sourceNodeIndex].Port);
-                Assert.AreEqual(_slot, slots[0]);
+                ClassicAssert.AreEqual(status, ResponseState.MOVED);
+                ClassicAssert.AreEqual(_address, connections[sourceNodeIndex].Address);
+                ClassicAssert.AreEqual(_port, connections[sourceNodeIndex].Port);
+                ClassicAssert.AreEqual(_slot, slots[0]);
             }
         }
 
@@ -593,33 +593,33 @@ ClusterRedirectTests.TestFlags testFlags)
                     {
                         var resp = connections[sourceNodeIndex].SendCommand(setupCmd[j]);
                         var respStatus = ClusterTestUtils.ParseResponseState(resp, out _, out _, out _, out _, out _);
-                        Assert.AreEqual(respStatus, ResponseState.OK);
+                        ClassicAssert.AreEqual(respStatus, ResponseState.OK);
                     }
                 }
             }
 
             var respMigrating = ClusterTestUtils.SetSlot(ref connections[sourceNodeIndex], migrateSlot, "MIGRATING", targetNodeId);
-            Assert.AreEqual(respMigrating, "OK");
+            ClassicAssert.AreEqual(respMigrating, "OK");
 
             result = connections[sourceNodeIndex].SendCommand(testCmd);
             status = ClusterTestUtils.ParseResponseState(result, out _, out var _address, out var _port, out _, out _);
 
             var respMigratingStable = ClusterTestUtils.SetSlot(ref connections[sourceNodeIndex], migrateSlot, "STABLE", "");
-            Assert.AreEqual(respMigratingStable, "OK");
+            ClassicAssert.AreEqual(respMigratingStable, "OK");
 
-            if (CheckFlag(command.testFlags, (TestFlags.KEY_EXISTS | TestFlags.READONLY)))
+            if (CheckFlag(command.testFlags, TestFlags.KEY_EXISTS | TestFlags.READONLY))
             {
-                Assert.AreEqual(status, ResponseState.OK, command.cmdTag);
+                ClassicAssert.AreEqual(status, ResponseState.OK, command.cmdTag);
             }
             else if (CheckFlag(command.testFlags, (TestFlags.KEY_EXISTS)))
             {
-                Assert.AreEqual(status, ResponseState.MIGRATING, command.cmdTag);
+                ClassicAssert.AreEqual(status, ResponseState.OK, command.cmdTag);
             }
             else
             {
-                Assert.AreEqual(status, ResponseState.ASK, command.cmdTag);
-                Assert.AreEqual(_port, connections[targetNodeIndex].Port, command.cmdTag);
-                Assert.AreEqual(_address, connections[targetNodeIndex].Address, command.cmdTag);
+                ClassicAssert.AreEqual(status, ResponseState.ASK, command.cmdTag);
+                ClassicAssert.AreEqual(_port, connections[targetNodeIndex].Port, command.cmdTag);
+                ClassicAssert.AreEqual(_address, connections[targetNodeIndex].Address, command.cmdTag);
             }
 
             if (CheckFlag(command.testFlags, TestFlags.KEY_EXISTS))
@@ -630,7 +630,7 @@ ClusterRedirectTests.TestFlags testFlags)
                     {
                         var resp = connections[sourceNodeIndex].SendCommand(cleanCmd[j]);
                         var respStatus = ClusterTestUtils.ParseResponseState(resp, out _, out _, out _, out _, out _);
-                        Assert.AreEqual(respStatus, ResponseState.OK);
+                        ClassicAssert.AreEqual(respStatus, ResponseState.OK);
                     }
                 }
             }
@@ -661,16 +661,16 @@ ClusterRedirectTests.TestFlags testFlags)
                 if (testCmd != null)
                 {
                     var (status, value, values) = SendAndRedirectToNode(ref connections, testCmd, slots[0], command.cmdTag);
-                    Assert.AreEqual(status, ResponseState.OK, command.cmdTag);
+                    ClassicAssert.AreEqual(status, ResponseState.OK, command.cmdTag);
                     if (command.response != null)
                     {
-                        Assert.AreEqual(value, response, command.cmdTag);
+                        ClassicAssert.AreEqual(value, response, command.testCmd);
                     }
                     else if (command.arrayResponse != null)
                     {
-                        Assert.AreEqual(values.Length, command.arrayResponse.Length);
+                        ClassicAssert.AreEqual(values.Length, command.arrayResponse.Length);
                         for (var i = 0; i < values.Length; i++)
-                            Assert.AreEqual(values[i], command.arrayResponse[i], command.cmdTag);
+                            ClassicAssert.AreEqual(values[i], command.arrayResponse[i], command.cmdTag);
                     }
                 }
 
@@ -689,11 +689,11 @@ ClusterRedirectTests.TestFlags testFlags)
                 var targetNodeId = ClusterTestUtils.GetNodeIdFromNode(ref connections[targetNodeIndex]);
 
                 var respImporting = ClusterTestUtils.SetSlot(ref connections[targetNodeIndex], migrateSlot, "IMPORTING", sourceNodeId);
-                Assert.AreEqual(respImporting, "OK");
+                ClassicAssert.AreEqual(respImporting, "OK");
                 SendToImportingNode(ref connections, sourceNodeIndex, targetNodeIndex, command, migrateSlot);
 
                 var respImportingStable = ClusterTestUtils.SetSlot(ref connections[targetNodeIndex], migrateSlot, "STABLE", "");
-                Assert.AreEqual(respImportingStable, "OK");
+                ClassicAssert.AreEqual(respImportingStable, "OK");
                 SendToMigratingNode(ref connections, sourceNodeIndex, sourceNodeId, targetNodeIndex, targetNodeId, command, migrateSlot);
             }
 
@@ -722,7 +722,7 @@ ClusterRedirectTests.TestFlags testFlags)
                 var (setupCmd, testCmd, cleanCmd, response) = command.GenerateSingleKeyCmdInstance(ref context.clusterTestUtils, 4, 4, out var slots, restrictedSlot);
 
                 for (var i = 0; i < slots.Count; i++)
-                    Assert.AreEqual(slots[i], restrictedSlot);
+                    ClassicAssert.AreEqual(slots[i], restrictedSlot);
 
                 if (setupCmd != null)
                     for (var j = 0; j < setupCmd.Length; j++)
@@ -731,16 +731,16 @@ ClusterRedirectTests.TestFlags testFlags)
                 if (testCmd != null)
                 {
                     var (status, value, values) = SendAndRedirectToNode(ref connections, testCmd, slots[0], command.cmdTag);
-                    Assert.AreEqual(status, ResponseState.OK, command.cmdTag);
+                    ClassicAssert.AreEqual(status, ResponseState.OK, command.cmdTag);
                     if (command.response != null)
                     {
-                        Assert.AreEqual(value, response, command.cmdTag);
+                        ClassicAssert.AreEqual(value, response, command.cmdTag);
                     }
                     else
                     {
-                        Assert.AreEqual(values.Length, command.arrayResponse.Length);
+                        ClassicAssert.AreEqual(values.Length, command.arrayResponse.Length);
                         for (var i = 0; i < values.Length; i++)
-                            Assert.AreEqual(values[i], command.arrayResponse[i], command.cmdTag);
+                            ClassicAssert.AreEqual(values[i], command.arrayResponse[i], command.cmdTag);
                     }
                 }
 
@@ -757,7 +757,7 @@ ClusterRedirectTests.TestFlags testFlags)
                 if (testCmd != null)
                 {
                     var (status, value, values) = SendToNodeFromSlot(ref connections, testCmd, slots.Last(), command.cmdTag, false);
-                    Assert.AreEqual(ResponseState.CROSSSLOT, status);
+                    ClassicAssert.AreEqual(ResponseState.CROSSSLOT, status, testCmd);
                 }
             }
 
@@ -771,11 +771,11 @@ ClusterRedirectTests.TestFlags testFlags)
                 var targetNodeId = ClusterTestUtils.GetNodeIdFromNode(ref connections[targetNodeIndex]);
 
                 var respImporting = ClusterTestUtils.SetSlot(ref connections[targetNodeIndex], migrateSlot, "IMPORTING", sourceNodeId);
-                Assert.AreEqual(respImporting, "OK");
+                ClassicAssert.AreEqual(respImporting, "OK");
                 SendToImportingNode(ref connections, sourceNodeIndex, targetNodeIndex, command, migrateSlot);
 
                 var respImportingStable = ClusterTestUtils.SetSlot(ref connections[targetNodeIndex], migrateSlot, "STABLE", "");
-                Assert.AreEqual(respImportingStable, "OK");
+                ClassicAssert.AreEqual(respImportingStable, "OK");
                 SendToMigratingNode(ref connections, sourceNodeIndex, sourceNodeId, targetNodeIndex, targetNodeId, command, migrateSlot);
             }
 

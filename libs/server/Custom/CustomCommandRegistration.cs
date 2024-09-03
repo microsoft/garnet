@@ -21,6 +21,11 @@ namespace Garnet.server.Custom
         /// Number of parameters required by custom command / transaction
         /// </summary>
         public int NumParams { get; set; }
+
+        /// <summary>
+        /// RESP command info
+        /// </summary>
+        public RespCommandsInfo CommandInfo { get; set; }
     }
 
 
@@ -32,6 +37,10 @@ namespace Garnet.server.Custom
         public CommandType CommandType { get; set; }
 
         public long ExpirationTicks { get; set; }
+
+        public string ObjectCommandName { get; set; }
+
+        public CustomObjectFunctions ObjectCommand { get; set; }
     }
 
     /// <summary>
@@ -55,7 +64,7 @@ namespace Garnet.server.Custom
 
             if (instance is CustomObjectFactory cof && args is RegisterCmdArgs cofa)
             {
-                return new RegisterCustomObjectFactoryProvider(cof, cofa);
+                return new RegisterCustomObjectCommandProvider(cof, cofa);
             }
 
             if (instance is CustomTransactionProcedure ctp && args is RegisterTxnArgs ctpa)
@@ -108,7 +117,7 @@ namespace Garnet.server.Custom
                 }
             }
 
-            return supportedTypes.ToArray();
+            return [.. supportedTypes];
         });
 
         public abstract void Register(CustomCommandManager customCommandManager);
@@ -171,7 +180,12 @@ namespace Garnet.server.Custom
 
         public override void Register(CustomCommandManager customCommandManager)
         {
-            customCommandManager.Register(this.RegisterArgs.Name, this.RegisterArgs.NumParams, this.RegisterArgs.CommandType, this.Instance, this.RegisterArgs.ExpirationTicks);
+            customCommandManager.Register(
+                this.RegisterArgs.Name,
+                this.RegisterArgs.CommandType,
+                this.Instance,
+                this.RegisterArgs.CommandInfo,
+                this.RegisterArgs.ExpirationTicks);
         }
     }
 
@@ -186,7 +200,25 @@ namespace Garnet.server.Custom
 
         public override void Register(CustomCommandManager customCommandManager)
         {
-            customCommandManager.Register(this.RegisterArgs.Name, this.RegisterArgs.NumParams, this.RegisterArgs.CommandType, this.Instance);
+            customCommandManager.Register(this.RegisterArgs.Name, this.RegisterArgs.CommandType, this.Instance, this.RegisterArgs.CommandInfo);
+        }
+    }
+
+    /// <summary>
+    /// CustomObjectFactory registration provider
+    /// </summary>
+    internal sealed class RegisterCustomObjectCommandProvider : RegisterCustomCmdProvider<CustomObjectFunctions>
+    {
+        private CustomObjectFactory factory;
+
+        public RegisterCustomObjectCommandProvider(CustomObjectFactory instance, RegisterCmdArgs args) : base(args.ObjectCommand, args)
+        {
+            this.factory = instance;
+        }
+
+        public override void Register(CustomCommandManager customCommandManager)
+        {
+            customCommandManager.Register(RegisterArgs.Name, RegisterArgs.CommandType, factory, RegisterArgs.ObjectCommand, RegisterArgs.CommandInfo);
         }
     }
 
@@ -201,7 +233,7 @@ namespace Garnet.server.Custom
 
         public override void Register(CustomCommandManager customCommandManager)
         {
-            customCommandManager.Register(this.RegisterArgs.Name, this.RegisterArgs.NumParams, () => this.Instance);
+            customCommandManager.Register(this.RegisterArgs.Name, () => this.Instance, this.RegisterArgs.CommandInfo);
         }
     }
 }

@@ -3,8 +3,6 @@
 
 using System;
 using System.Collections.Generic;
-using System.Linq;
-using System.Runtime.CompilerServices;
 using System.Text;
 using System.Threading;
 using Garnet.common;
@@ -14,7 +12,12 @@ using Tsavorite.core;
 
 namespace Garnet.cluster
 {
-    using BasicGarnetApi = GarnetApi<BasicContext<SpanByte, SpanByte, SpanByte, SpanByteAndMemory, long, MainStoreFunctions>, BasicContext<byte[], IGarnetObject, SpanByte, GarnetObjectStoreOutput, long, ObjectStoreFunctions>>;
+    using BasicGarnetApi = GarnetApi<BasicContext<SpanByte, SpanByte, SpanByte, SpanByteAndMemory, long, MainSessionFunctions,
+            /* MainStoreFunctions */ StoreFunctions<SpanByte, SpanByte, SpanByteComparer, SpanByteRecordDisposer>,
+            SpanByteAllocator<StoreFunctions<SpanByte, SpanByte, SpanByteComparer, SpanByteRecordDisposer>>>,
+        BasicContext<byte[], IGarnetObject, ObjectInput, GarnetObjectStoreOutput, long, ObjectSessionFunctions,
+            /* ObjectStoreFunctions */ StoreFunctions<byte[], IGarnetObject, ByteArrayKeyComparer, DefaultRecordDisposer<byte[], IGarnetObject>>,
+            GenericAllocator<byte[], IGarnetObject, StoreFunctions<byte[], IGarnetObject, ByteArrayKeyComparer, DefaultRecordDisposer<byte[], IGarnetObject>>>>>;
 
     /// <summary>
     /// Cluster manager
@@ -44,12 +47,12 @@ namespace Garnet.cluster
                     break;
             }
             FlushConfig();
-            logger?.LogTrace("ADD SLOTS {slots}", GetRange(slots.ToArray()));
+            logger?.LogTrace("[Processed] AddSlots {slots}", GetRange([.. slots]));
             return true;
         }
 
         /// <summary>
-        /// Try to remove ownernship of slots. Slot state transition to OFFLINE.
+        /// Try to remove ownership of slots. Slot state transition to OFFLINE.
         /// </summary>
         /// <param name="slots">Slot list</param>
         /// <param name="notLocalSlot">The slot number that is not local.</param>
@@ -74,7 +77,7 @@ namespace Garnet.cluster
                     break;
             }
             FlushConfig();
-            logger?.LogTrace("REMOVE SLOTS {slots}", string.Join(",", slots));
+            logger?.LogTrace("[Processed] RemoveSlots {slots}", GetRange([.. slots]));
             return true;
         }
 
@@ -139,8 +142,7 @@ namespace Garnet.cluster
                     break;
             }
             FlushConfig();
-
-            logger?.LogInformation("MIGRATE {slot} TO {currentConfig.GetWorkerAddressFromNodeId(nodeid)}", slot, currentConfig.GetWorkerAddressFromNodeId(nodeid));
+            logger?.LogTrace("[Processed] SetSlot MIGRATING {slot} TO {nodeId}", slot, nodeid);
             return true;
         }
 
@@ -159,21 +161,21 @@ namespace Garnet.cluster
                 var current = currentConfig;
                 var migratingWorkerId = current.GetWorkerIdFromNodeId(nodeid);
 
-                //Check migrating worker is a known valid worker
+                // Check migrating worker is a known valid worker
                 if (migratingWorkerId == 0)
                 {
                     errorMessage = Encoding.ASCII.GetBytes($"ERR I don't know about node {nodeid}");
                     return false;
                 }
 
-                //Check if nodeid is different from local node
+                // Check if node-id is different from local node
                 if (current.LocalNodeId.Equals(nodeid, StringComparison.OrdinalIgnoreCase))
                 {
                     errorMessage = CmdStrings.RESP_ERR_GENERIC_MIGRATE_TO_MYSELF;
                     return false;
                 }
 
-                //Check if local node is primary
+                // Check if local node is primary
                 if (current.GetNodeRoleFromNodeId(nodeid) != NodeRole.PRIMARY)
                 {
                     errorMessage = Encoding.ASCII.GetBytes($"ERR Target node {nodeid} is not a master node.");
@@ -182,14 +184,14 @@ namespace Garnet.cluster
 
                 foreach (var slot in slots)
                 {
-                    //Check if slot is owned by local node
+                    // Check if slot is owned by local node
                     if (!current.IsLocal((ushort)slot))
                     {
                         errorMessage = Encoding.ASCII.GetBytes($"ERR I'm not the owner of hash slot {slot}");
                         return false;
                     }
 
-                    //Check node state is stable
+                    // Check node state is stable
                     if (current.GetState((ushort)slot) != SlotState.STABLE)
                     {
                         var _migratingNodeId = current.GetNodeIdFromSlot((ushort)slot);
@@ -207,8 +209,7 @@ namespace Garnet.cluster
                     break;
             }
             FlushConfig();
-
-            logger?.LogInformation("MIGRATE {slot} TO {migrating node}", string.Join(' ', slots), currentConfig.GetWorkerAddressFromNodeId(nodeid));
+            logger?.LogTrace("[Processed] SetSlotsRange MIGRATING {slot} TO {nodeId}", GetRange([.. slots]), nodeid);
             return true;
         }
 
@@ -238,13 +239,13 @@ namespace Garnet.cluster
                     return false;
                 }
 
-                if (current.IsLocal((ushort)slot, readCommand: false))
+                if (current.IsLocal((ushort)slot, readWriteSession: false))
                 {
                     errorMessage = Encoding.ASCII.GetBytes($"ERR This is a local hash slot {slot} and is already imported");
                     return false;
                 }
 
-                string sourceNodeId = current.GetNodeIdFromSlot((ushort)slot);
+                var sourceNodeId = current.GetNodeIdFromSlot((ushort)slot);
                 if (sourceNodeId == null || !sourceNodeId.Equals(nodeid, StringComparison.OrdinalIgnoreCase))
                 {
                     errorMessage = Encoding.ASCII.GetBytes($"ERR Slot {slot} is not owned by {nodeid}");
@@ -262,8 +263,7 @@ namespace Garnet.cluster
                     break;
             }
             FlushConfig();
-
-            logger?.LogInformation("IMPORT {slot} FROM {currentConfig.GetWorkerAddressFromNodeId(nodeid)}", slot, currentConfig.GetWorkerAddressFromNodeId(nodeid));
+            logger?.LogTrace("[Processed] SetSlot IMPORTING {slot} TO {nodeId}", slot, nodeid);
             return true;
         }
 
@@ -299,7 +299,7 @@ namespace Garnet.cluster
                 foreach (var slot in slots)
                 {
                     // Can only import remote slots
-                    if (current.IsLocal((ushort)slot, readCommand: false))
+                    if (current.IsLocal((ushort)slot, readWriteSession: false))
                     {
                         errorMessage = Encoding.ASCII.GetBytes($"ERR This is a local hash slot {slot} and is already imported");
                         return false;
@@ -325,8 +325,8 @@ namespace Garnet.cluster
                 if (Interlocked.CompareExchange(ref currentConfig, newConfig, current) == current)
                     break;
             }
-
-            logger?.LogInformation("IMPORT {slot} FROM {importingNode}", string.Join(' ', slots), currentConfig.GetWorkerAddressFromNodeId(nodeid));
+            FlushConfig();
+            logger?.LogTrace("[Processed] SetSlotsRange IMPORTING {slot} TO {nodeId}", GetRange([.. slots]), nodeid);
             return true;
         }
 
@@ -360,7 +360,7 @@ namespace Garnet.cluster
                         break;
                 }
                 FlushConfig();
-                logger?.LogInformation("SLOT {slot} IMPORTED TO {nodeid}", slot, currentConfig.GetWorkerAddressFromNodeId(nodeid));
+                logger?.LogTrace("[Processed] SetSlot {slot} MIGRATED TO {nodeId}", slot, nodeid);
                 return true;
             }
             else if (current.GetState((ushort)slot) is SlotState.IMPORTING)
@@ -381,7 +381,7 @@ namespace Garnet.cluster
                         break;
                 }
                 FlushConfig();
-                logger?.LogInformation("SLOT {slot} IMPORTED FROM {nodeid}", slot, currentConfig.GetWorkerAddressFromNodeId(nodeid));
+                logger?.LogTrace("[Processed] SetSlot NODE {slot} IMPORTED TO {nodeid}", slot, nodeid);
                 return true;
             }
             return true;
@@ -414,7 +414,7 @@ namespace Garnet.cluster
             }
 
             FlushConfig();
-            logger?.LogInformation("SLOT {slot} IMPORTED TO {endpoint}", slots, currentConfig.GetWorkerAddressFromNodeId(nodeid));
+            logger?.LogTrace("[Processed] SetSlotsRange {slot} IMPORTED TO {endpoint}", GetRange([.. slots]), nodeid);
             return true;
         }
 
@@ -422,7 +422,7 @@ namespace Garnet.cluster
         /// Reset slot state to <see cref="SlotState.STABLE"/>
         /// </summary>
         /// <param name="slot">Slot id to reset state</param>
-        public void ResetSlotState(int slot)
+        public void TryResetSlotState(int slot)
         {
             var current = currentConfig;
             var slotState = current.GetState((ushort)slot);
@@ -432,7 +432,7 @@ namespace Garnet.cluster
                 {
                     current = currentConfig;
                     slotState = current.GetState((ushort)slot);
-                    var workerId = slotState == SlotState.MIGRATING ? 1 : currentConfig.GetWorkerIdFromSlot((ushort)slot);
+                    var workerId = slotState == SlotState.MIGRATING ? 1 : current.GetWorkerIdFromSlot((ushort)slot);
                     var newConfig = currentConfig.UpdateSlotState(slot, workerId, SlotState.STABLE);
                     if (Interlocked.CompareExchange(ref currentConfig, newConfig, current) == current)
                         break;
@@ -445,21 +445,17 @@ namespace Garnet.cluster
         /// Reset local slot state to <see cref="SlotState.STABLE"/>
         /// </summary>
         /// <param name="slots">Slot list</param>
-        public void ResetSlotsState(HashSet<int> slots)
+        public void TryResetSlotState(HashSet<int> slots)
         {
-            foreach (var slot in slots)
+            while (true)
             {
-                ResetSlotState(slot);
+                var current = currentConfig;
+                var newConfig = currentConfig.ResetMultiSlotState(slots);
+                if (Interlocked.CompareExchange(ref currentConfig, newConfig, current) == current)
+                    break;
             }
+            FlushConfig();
         }
-
-        /// <summary>
-        /// Check if slot is in importing state.
-        /// </summary>
-        /// <param name="slot">Slot to check state</param>
-        /// <returns>True if slot is in Importing state, false otherwise</returns>
-        [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public bool IsImporting(ushort slot) => currentConfig.GetState(slot) == SlotState.IMPORTING;
 
         /// <summary>
         /// Methods used to cleanup keys for given slot collection in main store
@@ -469,10 +465,10 @@ namespace Garnet.cluster
         public static unsafe void DeleteKeysInSlotsFromMainStore(BasicGarnetApi BasicGarnetApi, HashSet<int> slots)
         {
             using var iter = BasicGarnetApi.IterateMainStore();
-            while (iter.GetNext(out var recordInfo))
+            while (iter.GetNext(out _))
             {
-                ref SpanByte key = ref iter.GetKey();
-                var s = NumUtils.HashSlot(key.ToPointer(), key.Length);
+                ref var key = ref iter.GetKey();
+                var s = HashSlotUtils.HashSlot(ref key);
                 if (slots.Contains(s))
                     _ = BasicGarnetApi.DELETE(ref key, StoreType.Main);
             }
@@ -486,11 +482,11 @@ namespace Garnet.cluster
         public static unsafe void DeleteKeysInSlotsFromObjectStore(BasicGarnetApi BasicGarnetApi, HashSet<int> slots)
         {
             using var iterObject = BasicGarnetApi.IterateObjectStore();
-            while (iterObject.GetNext(out var recordInfo))
+            while (iterObject.GetNext(out _))
             {
                 ref var key = ref iterObject.GetKey();
                 ref var value = ref iterObject.GetValue();
-                var s = NumUtils.HashSlot(key);
+                var s = HashSlotUtils.HashSlot(key);
                 if (slots.Contains(s))
                     _ = BasicGarnetApi.DELETE(key, StoreType.Object);
             }

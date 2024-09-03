@@ -4,6 +4,7 @@
 using System;
 using System.Threading.Tasks;
 using NUnit.Framework;
+using NUnit.Framework.Legacy;
 using StackExchange.Redis;
 
 namespace Garnet.test
@@ -53,8 +54,8 @@ namespace Garnet.test
             string string1 = db.StringGet("mykey1");
             string string2 = db.StringGet("mykey2");
 
-            Assert.AreEqual(string1, value1);
-            Assert.AreEqual(string2, value2);
+            ClassicAssert.AreEqual(string1, value1);
+            ClassicAssert.AreEqual(string2, value2);
         }
 
         [Test]
@@ -74,8 +75,8 @@ namespace Garnet.test
             bool committed = tran.Execute();
 
 
-            Assert.AreEqual(t1.Result, value1);
-            Assert.AreEqual(t2.Result, value2);
+            ClassicAssert.AreEqual(t1.Result, value1);
+            ClassicAssert.AreEqual(t2.Result, value2);
         }
 
         [Test]
@@ -94,8 +95,8 @@ namespace Garnet.test
             bool committed = tran.Execute();
 
             string string2 = db.StringGet("mykey2");
-            Assert.AreEqual(t1.Result, value1);
-            Assert.AreEqual(string2, value2);
+            ClassicAssert.AreEqual(t1.Result, value1);
+            ClassicAssert.AreEqual(string2, value2);
         }
 
 
@@ -126,12 +127,12 @@ namespace Garnet.test
             for (int i = 0; i < size * 2; i++)
             {
                 if (i % 2 == 0)
-                    Assert.AreEqual(results[i / 2].Result, value + i / 2);
+                    ClassicAssert.AreEqual(results[i / 2].Result, value + i / 2);
                 else
                 {
                     int counter = (i - 1) / 2 + size;
                     string res = db.StringGet(key + counter);
-                    Assert.AreEqual(res, value + counter);
+                    ClassicAssert.AreEqual(res, value + counter);
                 }
             }
         }
@@ -166,12 +167,12 @@ namespace Garnet.test
             for (int i = 0; i < size * 2; i++)
             {
                 if (i % 2 == 0)
-                    Assert.AreEqual(results[i / 2].Result, value + i / 2);
+                    ClassicAssert.AreEqual(results[i / 2].Result, value + i / 2);
                 else
                 {
                     int counter = (i - 1) / 2 + size;
                     string res = db.StringGet(key + counter);
-                    Assert.AreEqual(res, value + counter);
+                    ClassicAssert.AreEqual(res, value + counter);
                 }
             }
         }
@@ -184,25 +185,25 @@ namespace Garnet.test
 
             res = lightClientRequest.SendCommand("SET key1 value1");
             string expectedResponse = "+OK\r\n";
-            Assert.AreEqual(res.AsSpan().Slice(0, expectedResponse.Length).ToArray(), expectedResponse);
+            ClassicAssert.AreEqual(res.AsSpan().Slice(0, expectedResponse.Length).ToArray(), expectedResponse);
 
             res = lightClientRequest.SendCommand("WATCH key1");
-            Assert.AreEqual(res.AsSpan().Slice(0, expectedResponse.Length).ToArray(), expectedResponse);
+            ClassicAssert.AreEqual(res.AsSpan().Slice(0, expectedResponse.Length).ToArray(), expectedResponse);
 
             res = lightClientRequest.SendCommand("MULTI");
-            Assert.AreEqual(res.AsSpan().Slice(0, expectedResponse.Length).ToArray(), expectedResponse);
+            ClassicAssert.AreEqual(res.AsSpan().Slice(0, expectedResponse.Length).ToArray(), expectedResponse);
 
             res = lightClientRequest.SendCommand("GET key1");
             expectedResponse = "+QUEUED\r\n";
-            Assert.AreEqual(res.AsSpan().Slice(0, expectedResponse.Length).ToArray(), expectedResponse);
+            ClassicAssert.AreEqual(res.AsSpan().Slice(0, expectedResponse.Length).ToArray(), expectedResponse);
             res = lightClientRequest.SendCommand("SET key2 value2");
-            Assert.AreEqual(res.AsSpan().Slice(0, expectedResponse.Length).ToArray(), expectedResponse);
+            ClassicAssert.AreEqual(res.AsSpan().Slice(0, expectedResponse.Length).ToArray(), expectedResponse);
 
             await Task.Run(() => updateKey("key1", "value1_updated"));
 
             res = lightClientRequest.SendCommand("EXEC");
             expectedResponse = "$-1";
-            Assert.AreEqual(res.AsSpan().Slice(0, expectedResponse.Length).ToArray(), expectedResponse);
+            ClassicAssert.AreEqual(res.AsSpan().Slice(0, expectedResponse.Length).ToArray(), expectedResponse);
 
             // This one should Commit
             lightClientRequest.SendCommand("MULTI");
@@ -211,7 +212,7 @@ namespace Garnet.test
             res = lightClientRequest.SendCommand("EXEC");
 
             expectedResponse = "*2\r\n$14\r\nvalue1_updated\r\n+OK\r\n";
-            Assert.AreEqual(res.AsSpan().Slice(0, expectedResponse.Length).ToArray(), expectedResponse);
+            ClassicAssert.AreEqual(res.AsSpan().Slice(0, expectedResponse.Length).ToArray(), expectedResponse);
 
         }
 
@@ -225,25 +226,25 @@ namespace Garnet.test
             string expectedResponse = "+OK\r\n";
 
             res = lightClientRequest.SendCommand("SET key2 value2");
-            Assert.AreEqual(res.AsSpan().Slice(0, expectedResponse.Length).ToArray(), expectedResponse);
+            ClassicAssert.AreEqual(res.AsSpan().Slice(0, expectedResponse.Length).ToArray(), expectedResponse);
 
             res = lightClientRequest.SendCommand("WATCH key1");
-            Assert.AreEqual(res.AsSpan().Slice(0, expectedResponse.Length).ToArray(), expectedResponse);
+            ClassicAssert.AreEqual(res.AsSpan().Slice(0, expectedResponse.Length).ToArray(), expectedResponse);
 
             res = lightClientRequest.SendCommand("MULTI");
-            Assert.AreEqual(res.AsSpan().Slice(0, expectedResponse.Length).ToArray(), expectedResponse);
+            ClassicAssert.AreEqual(res.AsSpan().Slice(0, expectedResponse.Length).ToArray(), expectedResponse);
 
             res = lightClientRequest.SendCommand("GET key2");
             expectedResponse = "+QUEUED\r\n";
-            Assert.AreEqual(res.AsSpan().Slice(0, expectedResponse.Length).ToArray(), expectedResponse);
+            ClassicAssert.AreEqual(res.AsSpan().Slice(0, expectedResponse.Length).ToArray(), expectedResponse);
             res = lightClientRequest.SendCommand("SET key3 value3");
-            Assert.AreEqual(res.AsSpan().Slice(0, expectedResponse.Length).ToArray(), expectedResponse);
+            ClassicAssert.AreEqual(res.AsSpan().Slice(0, expectedResponse.Length).ToArray(), expectedResponse);
 
             await Task.Run(() => updateKey("key1", "value1"));
 
             res = lightClientRequest.SendCommand("EXEC");
             expectedResponse = "$-1";
-            Assert.AreEqual(res.AsSpan().Slice(0, expectedResponse.Length).ToArray(), expectedResponse);
+            ClassicAssert.AreEqual(res.AsSpan().Slice(0, expectedResponse.Length).ToArray(), expectedResponse);
 
             // This one should Commit
             lightClientRequest.SendCommand("MULTI");
@@ -252,7 +253,7 @@ namespace Garnet.test
             res = lightClientRequest.SendCommand("EXEC");
 
             expectedResponse = "*2\r\n$6\r\nvalue1\r\n+OK\r\n";
-            Assert.AreEqual(res.AsSpan().Slice(0, expectedResponse.Length).ToArray(), expectedResponse);
+            ClassicAssert.AreEqual(res.AsSpan().Slice(0, expectedResponse.Length).ToArray(), expectedResponse);
 
         }
 
@@ -274,22 +275,22 @@ namespace Garnet.test
             // this key should be in the disk
             res = lightClientRequest.SendCommand("WATCH key1");
             string expectedResponse = "+OK\r\n";
-            Assert.AreEqual(res.AsSpan().Slice(0, expectedResponse.Length).ToArray(), expectedResponse);
+            ClassicAssert.AreEqual(res.AsSpan().Slice(0, expectedResponse.Length).ToArray(), expectedResponse);
 
             res = lightClientRequest.SendCommand("MULTI");
-            Assert.AreEqual(res.AsSpan().Slice(0, expectedResponse.Length).ToArray(), expectedResponse);
+            ClassicAssert.AreEqual(res.AsSpan().Slice(0, expectedResponse.Length).ToArray(), expectedResponse);
 
             res = lightClientRequest.SendCommand("GET key900");
             expectedResponse = "+QUEUED\r\n";
-            Assert.AreEqual(res.AsSpan().Slice(0, expectedResponse.Length).ToArray(), expectedResponse);
+            ClassicAssert.AreEqual(res.AsSpan().Slice(0, expectedResponse.Length).ToArray(), expectedResponse);
             res = lightClientRequest.SendCommand("SET key901 value901_updated");
-            Assert.AreEqual(res.AsSpan().Slice(0, expectedResponse.Length).ToArray(), expectedResponse);
+            ClassicAssert.AreEqual(res.AsSpan().Slice(0, expectedResponse.Length).ToArray(), expectedResponse);
 
             await Task.Run(() => updateKey("key1", "value1_updated"));
 
             res = lightClientRequest.SendCommand("EXEC");
             expectedResponse = "$-1";
-            Assert.AreEqual(res.AsSpan().Slice(0, expectedResponse.Length).ToArray(), expectedResponse);
+            ClassicAssert.AreEqual(res.AsSpan().Slice(0, expectedResponse.Length).ToArray(), expectedResponse);
 
             // This one should Commit
             lightClientRequest.SendCommand("MULTI");
@@ -300,7 +301,7 @@ namespace Garnet.test
             var buffer_str = System.Text.Encoding.Default.GetString(res);
 
             expectedResponse = "*2\r\n$8\r\nvalue900\r\n+OK\r\n";
-            Assert.AreEqual(res.AsSpan().Slice(0, expectedResponse.Length).ToArray(), expectedResponse);
+            ClassicAssert.AreEqual(res.AsSpan().Slice(0, expectedResponse.Length).ToArray(), expectedResponse);
         }
 
         private static void updateKey(string key, string value)
@@ -308,7 +309,7 @@ namespace Garnet.test
             using var lightClientRequest = TestUtils.CreateRequest();
             byte[] res = lightClientRequest.SendCommand("SET " + key + " " + value);
             string expectedResponse = "+OK\r\n";
-            Assert.AreEqual(res.AsSpan().Slice(0, expectedResponse.Length).ToArray(), expectedResponse);
+            ClassicAssert.AreEqual(res.AsSpan().Slice(0, expectedResponse.Length).ToArray(), expectedResponse);
         }
     }
 }

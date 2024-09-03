@@ -5,16 +5,20 @@ using System;
 using System.IO;
 using System.Linq;
 using NUnit.Framework;
+using NUnit.Framework.Legacy;
 using Tsavorite.core;
 
 namespace Tsavorite.test
 {
+    using ClassAllocator = GenericAllocator<byte[], byte[], StoreFunctions<byte[], byte[], ByteArrayEC, DefaultRecordDisposer<byte[], byte[]>>>;
+    using ClassStoreFunctions = StoreFunctions<byte[], byte[], ByteArrayEC, DefaultRecordDisposer<byte[], byte[]>>;
 
     [TestFixture]
     internal class GenericByteArrayTests
     {
-        private TsavoriteKV<byte[], byte[]> store;
-        private ClientSession<byte[], byte[], byte[], byte[], Empty, MyByteArrayFuncs> session;
+        private TsavoriteKV<byte[], byte[], ClassStoreFunctions, ClassAllocator> store;
+        private ClientSession<byte[], byte[], byte[], byte[], Empty, MyByteArrayFuncs, ClassStoreFunctions, ClassAllocator> session;
+        private BasicContext<byte[], byte[], byte[], byte[], Empty, MyByteArrayFuncs, ClassStoreFunctions, ClassAllocator> bContext;
         private IDevice log, objlog;
 
         [SetUp]
@@ -24,13 +28,20 @@ namespace Tsavorite.test
             log = Devices.CreateLogDevice(Path.Join(TestUtils.MethodTestDir, "GenericStringTests.log"), deleteOnClose: true);
             objlog = Devices.CreateLogDevice(Path.Join(TestUtils.MethodTestDir, "GenericStringTests.obj.log"), deleteOnClose: true);
 
-            store = new TsavoriteKV<byte[], byte[]>(
-                    1L << 20, // size of hash table in #cache lines; 64 bytes per cache line
-                    new LogSettings { LogDevice = log, ObjectLogDevice = objlog, MutableFraction = 0.1, MemorySizeBits = 14, PageSizeBits = 9 }, // log device
-                    comparer: new ByteArrayEC()
-                    );
+            store = new(new()
+            {
+                IndexSize = 1L << 26,
+                LogDevice = log,
+                ObjectLogDevice = objlog,
+                MutableFraction = 0.1,
+                MemorySize = 1L << 14,
+                PageSize = 1L << 9
+            }, StoreFunctions<byte[], byte[]>.Create(new ByteArrayEC(), () => new ByteArrayBinaryObjectSerializer(), () => new ByteArrayBinaryObjectSerializer())
+                , (allocatorSettings, storeFunctions) => new(allocatorSettings, storeFunctions)
+            );
 
             session = store.NewSession<byte[], byte[], Empty, MyByteArrayFuncs>(new MyByteArrayFuncs());
+            bContext = session.BasicContext;
         }
 
         [TearDown]
@@ -63,9 +74,9 @@ namespace Tsavorite.test
             {
                 var _key = GetByteArray(i);
                 var _value = GetByteArray(i);
-                session.Upsert(ref _key, ref _value, Empty.Default, 0);
+                _ = bContext.Upsert(ref _key, ref _value, Empty.Default);
             }
-            session.CompletePending(true);
+            _ = bContext.CompletePending(true);
 
             for (int i = 0; i < totalRecords; i++)
             {
@@ -74,27 +85,23 @@ namespace Tsavorite.test
                 var key = GetByteArray(i);
                 var value = GetByteArray(i);
 
-                if (session.Read(ref key, ref input, ref output, Empty.Default, 0).IsPending)
-                {
-                    session.CompletePending(true);
-                }
+                if (bContext.Read(ref key, ref input, ref output, Empty.Default).IsPending)
+                    _ = bContext.CompletePending(true);
                 else
-                {
-                    Assert.IsTrue(output.SequenceEqual(value));
-                }
+                    ClassicAssert.IsTrue(output.SequenceEqual(value));
             }
         }
 
-        class MyByteArrayFuncs : SimpleFunctions<byte[], byte[]>
+        class MyByteArrayFuncs : SimpleSimpleFunctions<byte[], byte[]>
         {
             public override void ReadCompletionCallback(ref byte[] key, ref byte[] input, ref byte[] output, Empty ctx, Status status, RecordMetadata recordMetadata)
             {
-                Assert.IsTrue(output.SequenceEqual(key));
+                ClassicAssert.IsTrue(output.SequenceEqual(key));
             }
         }
     }
 
-    class ByteArrayEC : ITsavoriteEqualityComparer<byte[]>
+    class ByteArrayEC : IKeyComparer<byte[]>
     {
         public bool Equals(ref byte[] k1, ref byte[] k2)
         {

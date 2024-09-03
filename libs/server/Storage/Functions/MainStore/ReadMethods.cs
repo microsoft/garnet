@@ -10,7 +10,7 @@ namespace Garnet.server
     /// <summary>
     /// Callback functions for main store
     /// </summary>
-    public readonly unsafe partial struct MainStoreFunctions : IFunctions<SpanByte, SpanByte, SpanByte, SpanByteAndMemory, long>
+    public readonly unsafe partial struct MainSessionFunctions : ISessionFunctions<SpanByte, SpanByte, SpanByte, SpanByteAndMemory, long>
     {
         /// <inheritdoc />
         public bool SingleReader(ref SpanByte key, ref SpanByte input, ref SpanByte value, ref SpanByteAndMemory dst, ref ReadInfo readInfo)
@@ -33,7 +33,7 @@ namespace Garnet.server
             if (input.Length == 0)
                 CopyRespTo(ref value, ref dst);
             else
-                CopyRespToWithInput(ref input, ref value, ref dst);
+                CopyRespToWithInput(ref input, ref value, ref dst, readInfo.IsFromPending);
 
             return true;
         }
@@ -63,7 +63,9 @@ namespace Garnet.server
             if (input.Length == 0)
                 CopyRespTo(ref value, ref dst);
             else
-                CopyRespToWithInput(ref input, ref value, ref dst);
+            {
+                CopyRespToWithInput(ref input, ref value, ref dst, readInfo.IsFromPending);
+            }
 
             return true;
         }

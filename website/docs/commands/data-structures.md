@@ -218,6 +218,42 @@ Returns all values in the hash stored at **key**.
 
 ## List
 
+### BLMOVE
+
+#### Syntax
+
+```bash 
+    BLMOVE source destination <LEFT | RIGHT> <LEFT | RIGHT> timeout
+```
+
+BLMOVE is the blocking variant of [LMOVE](#lmove-lmove). When source contains elements, this command behaves exactly like LMOVE. When used inside a MULTI/EXEC block, this command behaves exactly like LMOVE. When source is empty, Garnet will block the connection until another client pushes to it or until timeout (a double value specifying the maximum number of seconds to block) is reached. A timeout of zero can be used to block indefinitely.
+
+---
+
+### BLPOP
+
+#### Syntax
+
+```bash 
+    BLPOP key [key ...] timeout
+```
+
+BLPOP is a blocking list pop primitive. It is the blocking version of [LPOP](#lpop) because it blocks the connection when there are no elements to pop from any of the given lists. An element is popped from the head of the first list that is non-empty, with the given keys being checked in the order that they are given.
+
+---
+
+### BRPOP
+
+#### Syntax
+
+```bash 
+    BRPOP key [key ...] timeout
+```
+
+BRPOP is a blocking list pop primitive. It is the blocking version of [RPOP](#rpop) because it blocks the connection when there are no elements to pop from any of the given lists. An element is popped from the tail of the first list that is non-empty, with the given keys being checked in the order that they are given.
+
+---
+
 ### LINDEX
 
 #### Syntax
@@ -545,6 +581,33 @@ Keys that do not exist are considered to be empty sets.
 ```
 
 This command is equal to [SUNION](#SUNION), but instead of returning the resulting set, it is stored in **destination**.
+
+If **destination** already exists, it is overwritten.
+
+---
+
+### SINTER
+
+#### Syntax
+
+```bash
+    SINTER key [key ...]
+```
+
+Returns the members of the set resulting from the intersection of all the given sets.
+Keys that do not exist are considered to be empty sets.
+
+---
+
+### SINTERSTORE
+
+#### Syntax
+
+```bash
+    SINTERSTORE destination key [key ...]
+```
+
+This command is equal to [SINTER](#INTER), but instead of returning the resulting set, it is stored in **destination**.
 
 If **destination** already exists, it is overwritten.
 

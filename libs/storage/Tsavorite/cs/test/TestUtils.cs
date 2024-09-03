@@ -7,6 +7,7 @@ using System.Threading;
 using System.Threading.Tasks;
 using Microsoft.Extensions.Logging;
 using NUnit.Framework;
+using NUnit.Framework.Legacy;
 using Tsavorite.core;
 using Tsavorite.devices;
 
@@ -203,7 +204,7 @@ namespace Tsavorite.test
             Generic
         }
 
-        internal enum SyncMode { Sync, Async }
+        internal enum CompletionSyncMode { Sync, Async }
 
         public enum ReadCopyDestination { Tail, ReadCache }
 
@@ -232,40 +233,12 @@ namespace Tsavorite.test
 
         internal static (Status status, TOutput output) GetSinglePendingResult<TKey, TValue, TInput, TOutput, TContext>(CompletedOutputIterator<TKey, TValue, TInput, TOutput, TContext> completedOutputs, out RecordMetadata recordMetadata)
         {
-            Assert.IsTrue(completedOutputs.Next());
+            ClassicAssert.IsTrue(completedOutputs.Next());
             var result = (completedOutputs.Current.Status, completedOutputs.Current.Output);
             recordMetadata = completedOutputs.Current.RecordMetadata;
-            Assert.IsFalse(completedOutputs.Next());
+            ClassicAssert.IsFalse(completedOutputs.Next());
             completedOutputs.Dispose();
             return result;
-        }
-
-        internal static async ValueTask<(Status status, Output output)> CompleteAsync<Key, Value, Input, Output, Context>(ValueTask<TsavoriteKV<Key, Value>.ReadAsyncResult<Input, Output, Context>> resultTask)
-        {
-            var readCompleter = await resultTask;
-            return readCompleter.Complete();
-        }
-
-        internal static async ValueTask<Status> CompleteAsync<Key, Value, Context>(ValueTask<TsavoriteKV<Key, Value>.UpsertAsyncResult<Key, Value, Context>> resultTask)
-        {
-            var result = await resultTask;
-            while (result.Status.IsPending)
-                result = await result.CompleteAsync().ConfigureAwait(false);
-            return result.Status;
-        }
-
-        internal static async ValueTask<Status> CompleteAsync<Key, Value, Context>(ValueTask<TsavoriteKV<Key, Value>.RmwAsyncResult<Value, Value, Context>> resultTask)
-        {
-            var result = await resultTask;
-            while (result.Status.IsPending)
-                result = await result.CompleteAsync().ConfigureAwait(false);
-            return result.Status;
-        }
-
-        internal static async ValueTask<Status> CompleteAsync<Key, Value, Input, Output, Context>(ValueTask<TsavoriteKV<Key, Value>.DeleteAsyncResult<Input, Output, Context>> resultTask)
-        {
-            var deleteCompleter = await resultTask;
-            return deleteCompleter.Complete();
         }
 
         internal static async ValueTask DoTwoThreadRandomKeyTest(int count, bool doRandom, Action<int> first, Action<int> second, Action<int> verification)
@@ -285,12 +258,34 @@ namespace Tsavorite.test
             }
         }
 
-        internal static unsafe bool FindHashBucketEntryForKey<Key, Value>(this TsavoriteKV<Key, Value> store, ref Key key, out HashBucketEntry entry)
+        internal static unsafe bool FindHashBucketEntryForKey<TKey, TValue, TStoreFunctions, TAllocator>(this TsavoriteKV<TKey, TValue, TStoreFunctions, TAllocator> store, ref TKey key, out HashBucketEntry entry)
+            where TStoreFunctions : IStoreFunctions<TKey, TValue>
+            where TAllocator : IAllocator<TKey, TValue, TStoreFunctions>
         {
-            HashEntryInfo hei = new(store.Comparer.GetHashCode64(ref key));
+            HashEntryInfo hei = new(store.storeFunctions.GetKeyHashCode64(ref key));
             var success = store.FindTag(ref hei);
             entry = hei.entry;
             return success;
+        }
+    }
+
+    static class StaticTestUtils
+    {
+        internal static (Status status, TOutput output) GetSinglePendingResult<TKey, TValue, TInput, TOutput, TContext, Functions, TStoreFunctions, TAllocator>(
+                this ITsavoriteContext<TKey, TValue, TInput, TOutput, TContext, Functions, TStoreFunctions, TAllocator> sessionContext)
+            where Functions : ISessionFunctions<TKey, TValue, TInput, TOutput, TContext>
+            where TStoreFunctions : IStoreFunctions<TKey, TValue>
+            where TAllocator : IAllocator<TKey, TValue, TStoreFunctions>
+            => sessionContext.GetSinglePendingResult(out _);
+
+        internal static (Status status, TOutput output) GetSinglePendingResult<TKey, TValue, TInput, TOutput, TContext, Functions, TStoreFunctions, TAllocator>(
+                this ITsavoriteContext<TKey, TValue, TInput, TOutput, TContext, Functions, TStoreFunctions, TAllocator> sessionContext, out RecordMetadata recordMetadata)
+            where Functions : ISessionFunctions<TKey, TValue, TInput, TOutput, TContext>
+            where TStoreFunctions : IStoreFunctions<TKey, TValue>
+            where TAllocator : IAllocator<TKey, TValue, TStoreFunctions>
+        {
+            sessionContext.CompletePendingWithOutputs(out var completedOutputs, wait: true);
+            return TestUtils.GetSinglePendingResult(completedOutputs, out recordMetadata);
         }
     }
 }

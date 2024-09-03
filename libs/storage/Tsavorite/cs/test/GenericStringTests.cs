@@ -3,16 +3,20 @@
 
 using System.IO;
 using NUnit.Framework;
+using NUnit.Framework.Legacy;
 using Tsavorite.core;
 using static Tsavorite.test.TestUtils;
 
 namespace Tsavorite.test
 {
+    using StringAllocator = GenericAllocator<string, string, StoreFunctions<string, string, StringKeyComparer, DefaultRecordDisposer<string, string>>>;
+    using StringStoreFunctions = StoreFunctions<string, string, StringKeyComparer, DefaultRecordDisposer<string, string>>;
+
     [TestFixture]
     internal class GenericStringTests
     {
-        private TsavoriteKV<string, string> store;
-        private ClientSession<string, string, string, string, Empty, MyFuncs> session;
+        private TsavoriteKV<string, string, StringStoreFunctions, StringAllocator> store;
+        private ClientSession<string, string, string, string, Empty, MyFuncs, StringStoreFunctions, StringAllocator> session;
         private IDevice log, objlog;
 
         [SetUp]
@@ -48,22 +52,31 @@ namespace Tsavorite.test
             log = CreateTestDevice(deviceType, logfilename);
             objlog = CreateTestDevice(deviceType, objlogfilename);
 
-            store = new TsavoriteKV<string, string>(
-                    1L << 20, // size of hash table in #cache lines; 64 bytes per cache line
-                    new LogSettings { LogDevice = log, ObjectLogDevice = objlog, MutableFraction = 0.1, MemorySizeBits = 14, PageSizeBits = 9, SegmentSizeBits = 22 } // log device
-                    );
+            store = new(new()
+            {
+                IndexSize = 1L << 26,
+                LogDevice = log,
+                ObjectLogDevice = objlog,
+                MutableFraction = 0.1,
+                MemorySize = 1L << 14,
+                PageSize = 1L << 9,
+                SegmentSize = 1L << 22
+            }, StoreFunctions<string, string>.Create(StringKeyComparer.Instance, () => new StringBinaryObjectSerializer(), () => new StringBinaryObjectSerializer())
+                , (allocatorSettings, storeFunctions) => new(allocatorSettings, storeFunctions)
+            );
 
             session = store.NewSession<string, string, Empty, MyFuncs>(new MyFuncs());
+            var bContext = session.BasicContext;
 
             const int totalRecords = 200;
             for (int i = 0; i < totalRecords; i++)
             {
                 var _key = $"{i}";
                 var _value = $"{i}"; ;
-                session.Upsert(ref _key, ref _value, Empty.Default, 0);
+                _ = bContext.Upsert(ref _key, ref _value, Empty.Default);
             }
-            session.CompletePending(true);
-            Assert.AreEqual(totalRecords, store.EntryCount);
+            _ = bContext.CompletePending(true);
+            ClassicAssert.AreEqual(totalRecords, store.EntryCount);
 
             for (int i = 0; i < totalRecords; i++)
             {
@@ -72,23 +85,23 @@ namespace Tsavorite.test
                 var key = $"{i}";
                 var value = $"{i}";
 
-                var status = session.Read(ref key, ref input, ref output, Empty.Default, 0);
+                var status = bContext.Read(ref key, ref input, ref output, Empty.Default);
                 if (status.IsPending)
                 {
-                    session.CompletePendingWithOutputs(out var outputs, wait: true);
+                    _ = bContext.CompletePendingWithOutputs(out var outputs, wait: true);
                     (status, output) = GetSinglePendingResult(outputs);
                 }
-                Assert.IsTrue(status.Found);
-                Assert.AreEqual(value, output);
+                ClassicAssert.IsTrue(status.Found);
+                ClassicAssert.AreEqual(value, output);
             }
         }
 
-        class MyFuncs : SimpleFunctions<string, string>
+        class MyFuncs : SimpleSimpleFunctions<string, string>
         {
             public override void ReadCompletionCallback(ref string key, ref string input, ref string output, Empty ctx, Status status, RecordMetadata recordMetadata)
             {
-                Assert.IsTrue(status.Found);
-                Assert.AreEqual(key, output);
+                ClassicAssert.IsTrue(status.Found);
+                ClassicAssert.AreEqual(key, output);
             }
         }
     }

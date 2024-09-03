@@ -12,17 +12,31 @@
 
   <ItemGroup>
     <Compile Include="..\..\main\GarnetServer\Extensions\DeleteIfMatch.cs" Link="DeleteIfMatch.cs" />
+    <Compile Include="..\..\main\GarnetServer\Extensions\MGetIfPM.cs" Link="MGetIfPM.cs" />
+    <Compile Include="..\..\main\GarnetServer\Extensions\MSetPx.cs" Link="MSetPx.cs" />
     <Compile Include="..\..\main\GarnetServer\Extensions\MyDictObject.cs" Link="MyDictObject.cs" />
+    <Compile Include="..\..\main\GarnetServer\Extensions\MyDictSet.cs" Link="MyDictSet.cs" />
+    <Compile Include="..\..\main\GarnetServer\Extensions\MyDictGet.cs" Link="MyDictGet.cs" />
     <Compile Include="..\..\main\GarnetServer\Extensions\GetTwoKeysNoTxn.cs" Link="GetTwoKeysNoTxn.cs" />
     <Compile Include="..\..\main\GarnetServer\Extensions\ReadWriteTxn.cs" Link="ReadWriteTxn.cs" />
     <Compile Include="..\..\main\GarnetServer\Extensions\SampleUpdateTxn.cs" Link="SampleUpdateTxn.cs" />
     <Compile Include="..\..\main\GarnetServer\Extensions\SampleDeleteTxn.cs" Link="SampleDeleteTxn.cs" />
     <Compile Include="..\..\main\GarnetServer\Extensions\SetIfPM.cs" Link="SetIfPM.cs" />
     <Compile Include="..\..\main\GarnetServer\Extensions\SetWPIfPGT.cs" Link="SetWPIFPGT.cs" />
+    <Compile Include="..\..\playground\Embedded.perftest\DummyNetworkSender.cs" Link="DummyNetworkSender.cs" />
+    <Compile Include="..\..\main\GarnetServer\Extensions\Sum.cs" Link="Sum.cs" />
+    <Compile Include="..\..\main\GarnetServer\Extensions\SetStringAndList.cs" Link="SetStringAndList.cs" />
   </ItemGroup>
 
+	<ItemGroup>
+	  <EmbeddedResource Include="CustomRespCommandsInfo.json" Link="CustomRespCommandsInfo.json">
+	    <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+	  </EmbeddedResource>
+	</ItemGroup>
+
   <ItemGroup>
-    <None Include="..\testcerts\testcert.pfx" Link="testcert.pfx">
+	  <EmbeddedResource Include="..\..\libs\host\defaults.conf" Link="defaults.conf" />
+	  <None Include="..\testcerts\testcert.pfx" Link="testcert.pfx">
       <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
     </None>
   </ItemGroup>
@@ -39,6 +53,7 @@
       <IncludeAssets>runtime; build; native; contentfiles; analyzers; buildtransitive</IncludeAssets>
     </PackageReference>
     <PackageReference Include="StackExchange.Redis" />
+    <PackageReference Include="System.Text.Json" />
   </ItemGroup>
 
   <ItemGroup>
@@ -47,6 +62,7 @@
     <ProjectReference Include="..\..\libs\host\Garnet.host.csproj" />
     <ProjectReference Include="..\..\libs\server\Garnet.server.csproj" />
     <ProjectReference Include="..\..\libs\storage\Tsavorite\cs\src\devices\AzureStorageDevice\Tsavorite.devices.AzureStorageDevice.csproj" />
+    <ProjectReference Include="..\..\playground\GarnetJSON\GarnetJSON.csproj" />
   </ItemGroup>
 
   <ItemGroup>

@@ -109,7 +109,7 @@ namespace Garnet.cluster
         readonly int GossipSamplePercent;
 
         public TimeSpan GetClusterTimeout() => clusterTimeout;
-        readonly ConcurrentDictionary<string, long> workerBanList = new ConcurrentDictionary<string, long>();
+        readonly ConcurrentDictionary<string, long> workerBanList = new();
         public readonly CancellationTokenSource ctsGossip = new();
 
         public List<string> GetBanList()
@@ -121,11 +121,14 @@ namespace Garnet.cluster
                 var expiry = w.Value;
                 var diff = expiry - DateTimeOffset.UtcNow.Ticks;
 
-                var str = $"{nodeId} : {TimeSpan.FromTicks(diff).Seconds}";
+                var str = $"{nodeId} : {(int)TimeSpan.FromTicks(diff).TotalSeconds}";
                 banlist.Add(str);
             }
             return banlist;
         }
+
+        public bool GetConnectionInfo(string nodeId, out ConnectionInfo info)
+            => clusterConnectionStore.GetConnectionInfo(nodeId, out info);
 
         /// <summary>
         /// Get link status info for primary of this node.
@@ -134,15 +137,17 @@ namespace Garnet.cluster
         /// <returns>MetricsItem array of all the associated info.</returns>
         public MetricsItem[] GetPrimaryLinkStatus(ClusterConfig config)
         {
+            ConnectionInfo info = new();
             var primaryId = config.LocalNodePrimaryId;
-            var primaryLinkStatus = new MetricsItem[2]
-            {
-                new("master_link_status", "down"),
-                new("master_last_io_seconds_ago", "0")
-            };
 
             if (primaryId != null)
-                _ = clusterConnectionStore.GetConnectionInfo(primaryId, ref primaryLinkStatus);
+                _ = clusterConnectionStore.GetConnectionInfo(primaryId, out info);
+
+            var primaryLinkStatus = new MetricsItem[2]
+            {
+                new("master_link_status", info.connected ? "up" : "down"),
+                new("master_last_io_seconds_ago", info.lastIO.ToString())
+            };
             return primaryLinkStatus;
         }
 

@@ -15,10 +15,10 @@ namespace Garnet.client
     /// </summary>
     public sealed unsafe partial class GarnetClientSession : IServerHook, IMessageConsumer
     {
-        static ReadOnlySpan<byte> initiate_replica_sync => "initiate_replica_sync"u8;
-        static ReadOnlySpan<byte> send_ckpt_metadata => "send_ckpt_metadata"u8;
-        static ReadOnlySpan<byte> send_ckpt_file_segment => "send_ckpt_file_segment"u8;
-        static ReadOnlySpan<byte> begin_replica_recover => "begin_replica_recover"u8;
+        static ReadOnlySpan<byte> initiate_replica_sync => "INITIATE_REPLICA_SYNC"u8;
+        static ReadOnlySpan<byte> send_ckpt_metadata => "SEND_CKPT_METADATA"u8;
+        static ReadOnlySpan<byte> send_ckpt_file_segment => "SEND_CKPT_FILE_SEGMENT"u8;
+        static ReadOnlySpan<byte> begin_replica_recover => "BEGIN_REPLICA_RECOVER"u8;
 
         /// <summary>
         /// Initiate checkpoint retrieval from replica by sending replica checkpoint information and AOF address range
@@ -267,7 +267,7 @@ namespace Garnet.client
             var tcs = new TaskCompletionSource<string>(TaskCreationOptions.RunContinuationsAsynchronously);
             tcsQueue.Enqueue(tcs);
             byte* curr = offset;
-            int arraySize = 8;
+            int arraySize = 9;
 
             while (!RespWriteUtils.WriteArrayLength(arraySize, ref curr, end))
             {

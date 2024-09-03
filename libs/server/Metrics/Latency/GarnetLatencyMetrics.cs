@@ -5,7 +5,6 @@ using System;
 using System.Collections.Generic;
 using System.Diagnostics;
 using System.Globalization;
-using System.Linq;
 using Garnet.common;
 using HdrHistogram;
 
@@ -19,7 +18,7 @@ namespace Garnet.server
         public static readonly LatencyMetricsType[] defaultLatencyTypes = Enum.GetValues<LatencyMetricsType>();
 
         // Whether each latency type in LatencyMetricsType enum is in ticks or is a directly reported value
-        static readonly bool[] defaultLatencyTypesTicks = new bool[6] { true, true, true, false, false, true };
+        static readonly bool[] defaultLatencyTypesTicks = [true, true, true, false, false, true];
 
         public LatencyMetricsEntry[] metrics;
 
@@ -34,6 +33,15 @@ namespace Garnet.server
             metrics = new LatencyMetricsEntry[defaultLatencyTypes.Length];
             foreach (var cmd in defaultLatencyTypes)
                 metrics[(int)cmd] = new LatencyMetricsEntry();
+        }
+
+        public void Return()
+        {
+            foreach (var cmd in defaultLatencyTypes)
+            {
+                metrics[(int)cmd].Return();
+            }
+            metrics = null;
         }
 
         public void Merge(GarnetLatencyMetricsSession lm)

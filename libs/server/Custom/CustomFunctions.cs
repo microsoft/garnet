@@ -3,6 +3,8 @@
 
 using System;
 using System.Buffers;
+using System.Collections.Generic;
+using System.Diagnostics;
 using Garnet.common;
 
 namespace Garnet.server
@@ -23,7 +25,7 @@ namespace Garnet.server
         protected static unsafe void WriteSimpleString(ref (IMemoryOwner<byte>, int) output, ReadOnlySpan<char> simpleString)
         {
             // Get space for simple string
-            int len = 1 + simpleString.Length + 2;
+            var len = 1 + simpleString.Length + 2;
             if (output.Item1 != null)
             {
                 if (output.Item1.Memory.Length < len)
@@ -38,7 +40,9 @@ namespace Garnet.server
             fixed (byte* ptr = output.Item1.Memory.Span)
             {
                 var curr = ptr;
-                RespWriteUtils.WriteSimpleString(simpleString, ref curr, ptr + len);
+                // NOTE: Expected to always have enough space to write into pre-allocated buffer
+                var success = RespWriteUtils.WriteSimpleString(simpleString, ref curr, ptr + len);
+                Debug.Assert(success, "Insufficient space in pre-allocated buffer");
             }
             output.Item2 = len;
         }
@@ -59,8 +63,8 @@ namespace Garnet.server
         /// </summary>
         protected static unsafe void WriteBulkStringArray(ref MemoryResult<byte> output, params ArgSlice[] values)
         {
-            int totalLen = 1 + NumUtils.NumDigits(values.Length) + 2;
-            for (int i = 0; i < values.Length; i++)
+            var totalLen = 1 + NumUtils.NumDigits(values.Length) + 2;
+            for (var i = 0; i < values.Length; i++)
                 totalLen += RespWriteUtils.GetBulkStringLength(values[i].Length);
 
             output.MemoryOwner?.Dispose();
@@ -70,9 +74,43 @@ namespace Garnet.server
             fixed (byte* ptr = output.MemoryOwner.Memory.Span)
             {
                 var curr = ptr;
-                RespWriteUtils.WriteArrayLength(values.Length, ref curr, ptr + totalLen);
-                for (int i = 0; i < values.Length; i++)
-                    RespWriteUtils.WriteBulkString(values[i].Span, ref curr, ptr + totalLen);
+                // NOTE: Expected to always have enough space to write into pre-allocated buffer
+                var success = RespWriteUtils.WriteArrayLength(values.Length, ref curr, ptr + totalLen);
+                Debug.Assert(success, "Insufficient space in pre-allocated buffer");
+                for (var i = 0; i < values.Length; i++)
+                {
+                    // NOTE: Expected to always have enough space to write into pre-allocated buffer
+                    success = RespWriteUtils.WriteBulkString(values[i].Span, ref curr, ptr + totalLen);
+                    Debug.Assert(success, "Insufficient space in pre-allocated buffer");
+                }
+            }
+        }
+
+        /// <summary>
+        /// Create output as an array of bulk strings, from given array of ArgSlice values
+        /// </summary>
+        protected static unsafe void WriteBulkStringArray(ref MemoryResult<byte> output, List<ArgSlice> values)
+        {
+            var totalLen = 1 + NumUtils.NumDigits(values.Count) + 2;
+            for (var i = 0; i < values.Count; i++)
+                totalLen += RespWriteUtils.GetBulkStringLength(values[i].Length);
+
+            output.MemoryOwner?.Dispose();
+            output.MemoryOwner = MemoryPool.Rent(totalLen);
+            output.Length = totalLen;
+
+            fixed (byte* ptr = output.MemoryOwner.Memory.Span)
+            {
+                var curr = ptr;
+                // NOTE: Expected to always have enough space to write into pre-allocated buffer
+                var success = RespWriteUtils.WriteArrayLength(values.Count, ref curr, ptr + totalLen);
+                Debug.Assert(success, "Insufficient response buffer space");
+                for (var i = 0; i < values.Count; i++)
+                {
+                    // NOTE: Expected to always have enough space to write into pre-allocated buffer
+                    success = RespWriteUtils.WriteBulkString(values[i].Span, ref curr, ptr + totalLen);
+                    Debug.Assert(success, "Insufficient space in pre-allocated buffer");
+                }
             }
         }
 
@@ -82,26 +120,17 @@ namespace Garnet.server
         protected static unsafe void WriteBulkString(ref (IMemoryOwner<byte>, int) output, Span<byte> bulkString)
         {
             // Get space for bulk string
-            int len = RespWriteUtils.GetBulkStringLength(bulkString.Length);
+            var len = RespWriteUtils.GetBulkStringLength(bulkString.Length);
             output.Item1?.Dispose();
             output.Item1 = MemoryPool.Rent(len);
             output.Item2 = len;
             fixed (byte* ptr = output.Item1.Memory.Span)
             {
                 var curr = ptr;
-                RespWriteUtils.WriteBulkString(bulkString, ref curr, ptr + len);
+                // NOTE: Expected to always have enough space to write into pre-allocated buffer
+                var success = RespWriteUtils.WriteBulkString(bulkString, ref curr, ptr + len);
+                Debug.Assert(success, "Insufficient space in pre-allocated buffer");
             }
-        }
-
-        /// <summary>
-        /// Create output as bulk string, from given Span
-        /// </summary>
-        protected static unsafe void WriteBulkString(ref MemoryResult<byte> output, Span<byte> bulkString)
-        {
-            var _output = (output.MemoryOwner, output.Length);
-            WriteBulkString(ref _output, bulkString);
-            output.MemoryOwner = _output.MemoryOwner;
-            output.Length = _output.Length;
         }
 
         /// <summary>
@@ -110,26 +139,17 @@ namespace Garnet.server
         protected static unsafe void WriteNullBulkString(ref (IMemoryOwner<byte>, int) output)
         {
             // Get space for null bulk string "$-1\r\n"
-            int len = 5;
+            var len = 5;
             output.Item1?.Dispose();
             output.Item1 = MemoryPool.Rent(len);
             output.Item2 = len;
             fixed (byte* ptr = output.Item1.Memory.Span)
             {
                 var curr = ptr;
-                RespWriteUtils.WriteNull(ref curr, ptr + len);
+                // NOTE: Expected to always have enough space to write into pre-allocated buffer
+                var success = RespWriteUtils.WriteNull(ref curr, ptr + len);
+                Debug.Assert(success, "Insufficient space in pre-allocated buffer");
             }
-        }
-
-        /// <summary>
-        /// Create null output as bulk string
-        /// </summary>
-        protected static unsafe void WriteNullBulkString(ref MemoryResult<byte> output)
-        {
-            var _output = (output.MemoryOwner, output.Length);
-            WriteNullBulkString(ref _output);
-            output.MemoryOwner = _output.MemoryOwner;
-            output.Length = _output.Length;
         }
 
         /// <summary>
@@ -138,26 +158,38 @@ namespace Garnet.server
         protected static unsafe void WriteError(ref (IMemoryOwner<byte>, int) output, ReadOnlySpan<char> errorMessage)
         {
             // Get space for error
-            int len = 1 + errorMessage.Length + 2;
+            var len = 1 + errorMessage.Length + 2;
             output.Item1?.Dispose();
             output.Item1 = MemoryPool.Rent(len);
             fixed (byte* ptr = output.Item1.Memory.Span)
             {
                 var curr = ptr;
-                RespWriteUtils.WriteError(errorMessage, ref curr, ptr + len);
+                // NOTE: Expected to always have enough space to write into pre-allocated buffer
+                var success = RespWriteUtils.WriteError(errorMessage, ref curr, ptr + len);
+                Debug.Assert(success, "Insufficient space in pre-allocated buffer");
             }
             output.Item2 = len;
         }
 
         /// <summary>
-        /// Create output as error message, from given string
+        /// Get argument from input, at specified offset (starting from 0)
         /// </summary>
-        protected static unsafe void WriteError(ref MemoryResult<byte> output, string errorMessage)
+        /// <param name="input">Input as ArgSlice</param>
+        /// <param name="offset">Current offset into input</param>
+        /// <returns>Argument as a span</returns>
+        protected static unsafe ArgSlice GetNextArg(ArgSlice input, ref int offset)
         {
-            var _output = (output.MemoryOwner, output.Length);
-            WriteError(ref _output, errorMessage);
-            output.MemoryOwner = _output.MemoryOwner;
-            output.Length = _output.Length;
+            byte* result = null;
+            int len = 0;
+
+            byte* ptr = input.ptr + offset;
+            byte* end = input.ptr + input.Length;
+            if (ptr < end && RespReadUtils.ReadPtrWithLengthHeader(ref result, ref len, ref ptr, end))
+            {
+                offset = (int)(ptr - input.ptr);
+                return new ArgSlice(result, len);
+            }
+            return default;
         }
     }
 }

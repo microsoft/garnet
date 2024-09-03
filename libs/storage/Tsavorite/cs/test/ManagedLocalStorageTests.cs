@@ -4,6 +4,7 @@
 using System.IO;
 using System.Threading;
 using NUnit.Framework;
+using NUnit.Framework.Legacy;
 using Tsavorite.core;
 
 namespace Tsavorite.test
@@ -28,7 +29,7 @@ namespace Tsavorite.test
             device = new ManagedLocalStorageDevice(Path.Join(TestUtils.MethodTestDir, "ManagedLocalStore.log"), deleteOnClose: true);
             log = new TsavoriteLog(new TsavoriteLogSettings { LogDevice = device, PageSizeBits = 12, MemorySizeBits = 14 });
 
-            deviceFullParams = new ManagedLocalStorageDevice(Path.Join(TestUtils.MethodTestDir, "ManagedLocalStoreFullParams.log"), deleteOnClose: false, recoverDevice: true, preallocateFile: true, capacity: 1 << 30);
+            deviceFullParams = new ManagedLocalStorageDevice(Path.Join(TestUtils.MethodTestDir, "ManagedLocalStoreFullParams.log"), deleteOnClose: false, recoverDevice: true, preallocateFile: true, capacity: 1L << 30);
             logFullParams = new TsavoriteLog(new TsavoriteLogSettings { LogDevice = device, PageSizeBits = 12, MemorySizeBits = 14 });
         }
 
@@ -124,12 +125,12 @@ namespace Tsavorite.test
                             while (iter.GetNext(out byte[] result, out _, out _))
                             {
                                 if (numEnqueueThreads == 1)
-                                    Assert.AreEqual((byte)currentEntry, result[0]);
+                                    ClassicAssert.AreEqual((byte)currentEntry, result[0]);
                                 currentEntry++;
                             }
                         }
 
-                        Assert.AreEqual(numEntries * numEnqueueThreads, currentEntry);
+                        ClassicAssert.AreEqual(numEntries * numEnqueueThreads, currentEntry);
                     });
             }
 
@@ -139,7 +140,7 @@ namespace Tsavorite.test
                 th2[t].Join();
 
             // Make sure number of entries is same as current - also makes sure that data verification was not skipped
-            Assert.AreEqual(numEntries, currentEntry);
+            ClassicAssert.AreEqual(numEntries, currentEntry);
         }
 
         [Test]
@@ -159,15 +160,15 @@ namespace Tsavorite.test
             logFullParams.Commit(true);
 
             // Verify  
-            Assert.IsTrue(File.Exists(Path.Join(TestUtils.MethodTestDir, "log-commits", "commit.1.0")));
-            Assert.IsTrue(File.Exists(Path.Join(TestUtils.MethodTestDir, "ManagedLocalStore.log.0")));
+            ClassicAssert.IsTrue(File.Exists(Path.Join(TestUtils.MethodTestDir, "log-commits", "commit.1.0")));
+            ClassicAssert.IsTrue(File.Exists(Path.Join(TestUtils.MethodTestDir, "ManagedLocalStore.log.0")));
 
             // Read the log just to verify can actually read it
             int currentEntry = 0;
             using var iter = logFullParams.Scan(0, 100_000_000);
             while (iter.GetNext(out byte[] result, out _, out _))
             {
-                Assert.AreEqual(currentEntry, result[currentEntry]);
+                ClassicAssert.AreEqual(currentEntry, result[currentEntry]);
                 currentEntry++;
             }
         }

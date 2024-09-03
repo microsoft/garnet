@@ -4,11 +4,15 @@
 using System;
 using System.Diagnostics;
 using System.Runtime.CompilerServices;
+using System.Threading;
 using Microsoft.Extensions.Logging;
 using Tsavorite.core;
 
 namespace Garnet.server
 {
+    using ObjectStoreAllocator = GenericAllocator<byte[], IGarnetObject, StoreFunctions<byte[], IGarnetObject, ByteArrayKeyComparer, DefaultRecordDisposer<byte[], IGarnetObject>>>;
+    using ObjectStoreFunctions = StoreFunctions<byte[], IGarnetObject, ByteArrayKeyComparer, DefaultRecordDisposer<byte[], IGarnetObject>>;
+
     /// <summary>
     /// Tracks the size of the main log and read cache. 
     /// Based on the current size and the target size, it uses the corresponding LogSizeTracker objects to increase
@@ -16,14 +20,16 @@ namespace Garnet.server
     /// </summary>
     public class CacheSizeTracker
     {
-        internal readonly LogSizeTracker<byte[], IGarnetObject, LogSizeCalculator> mainLogTracker;
-        internal readonly LogSizeTracker<byte[], IGarnetObject, LogSizeCalculator> readCacheTracker;
+        internal readonly LogSizeTracker<byte[], IGarnetObject, ObjectStoreFunctions, ObjectStoreAllocator, LogSizeCalculator> mainLogTracker;
+        internal readonly LogSizeTracker<byte[], IGarnetObject, ObjectStoreFunctions, ObjectStoreAllocator, LogSizeCalculator> readCacheTracker;
         internal long targetSize;
 
         private const int deltaFraction = 10; // 10% of target size
-        private TsavoriteKV<byte[], IGarnetObject> store;
+        private TsavoriteKV<byte[], IGarnetObject, ObjectStoreFunctions, ObjectStoreAllocator> store;
 
         internal long IndexSizeBytes => store.IndexSize * 64 + store.OverflowBucketCount * 64;
+
+        internal bool Stopped => mainLogTracker.Stopped && (readCacheTracker == null || readCacheTracker.Stopped);
 
         /// <summary>Helps calculate size of a record including heap memory in Object store.</summary>
         internal struct LogSizeCalculator : ILogSizeCalculator<byte[], IGarnetObject>
@@ -34,7 +40,7 @@ namespace Garnet.server
             /// <param name="value">The record's value</param>
             /// <returns>The size of the record</returns>
             [MethodImpl(MethodImplOptions.AggressiveInlining)]
-            public long CalculateRecordSize(RecordInfo recordInfo, byte[] key, IGarnetObject value)
+            public readonly long CalculateRecordSize(RecordInfo recordInfo, byte[] key, IGarnetObject value)
             {
                 long size = Utility.RoundUp(key.Length, IntPtr.Size) + MemoryUtils.ByteArrayOverhead;
 
@@ -50,7 +56,8 @@ namespace Garnet.server
         /// <param name="logSettings">Hybrid log settings</param>
         /// <param name="targetSize">Total memory size target</param>
         /// <param name="loggerFactory"></param>
-        public CacheSizeTracker(TsavoriteKV<byte[], IGarnetObject> store, LogSettings logSettings, long targetSize, ILoggerFactory loggerFactory = null)
+        public CacheSizeTracker(TsavoriteKV<byte[], IGarnetObject, ObjectStoreFunctions, ObjectStoreAllocator> store, KVSettings<byte[], IGarnetObject> logSettings,
+                long targetSize, ILoggerFactory loggerFactory = null)
         {
             Debug.Assert(store != null);
             Debug.Assert(logSettings != null);
@@ -61,16 +68,24 @@ namespace Garnet.server
 
             var (mainLogTargetSizeBytes, readCacheTargetSizeBytes) = CalculateLogTargetSizeBytes(targetSize);
 
-            this.mainLogTracker = new LogSizeTracker<byte[], IGarnetObject, LogSizeCalculator>(store.Log, logSizeCalculator,
+            this.mainLogTracker = new LogSizeTracker<byte[], IGarnetObject, ObjectStoreFunctions, ObjectStoreAllocator, LogSizeCalculator>(store.Log, logSizeCalculator,
                 mainLogTargetSizeBytes, mainLogTargetSizeBytes / deltaFraction, loggerFactory?.CreateLogger("ObjSizeTracker"));
             store.Log.SubscribeEvictions(mainLogTracker);
+            store.Log.SubscribeDeserializations(new LogOperationObserver<byte[], IGarnetObject, ObjectStoreFunctions, ObjectStoreAllocator, LogSizeCalculator>(mainLogTracker, LogOperationType.Deserialize));
+            store.Log.IsSizeBeyondLimit = () => mainLogTracker.IsSizeBeyondLimit;
 
             if (store.ReadCache != null)
             {
-                this.readCacheTracker = new LogSizeTracker<byte[], IGarnetObject, LogSizeCalculator>(store.ReadCache, logSizeCalculator,
+                this.readCacheTracker = new LogSizeTracker<byte[], IGarnetObject, ObjectStoreFunctions, ObjectStoreAllocator, LogSizeCalculator>(store.ReadCache, logSizeCalculator,
                     readCacheTargetSizeBytes, readCacheTargetSizeBytes / deltaFraction, loggerFactory?.CreateLogger("ObjReadCacheSizeTracker"));
                 store.ReadCache.SubscribeEvictions(readCacheTracker);
             }
+        }
+
+        public void Start(CancellationToken token)
+        {
+            mainLogTracker.Start(token);
+            readCacheTracker?.Start(token);
         }
 
         /// <summary>

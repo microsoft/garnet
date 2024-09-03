@@ -4,41 +4,49 @@
 using System;
 using System.IO;
 using NUnit.Framework;
+using NUnit.Framework.Legacy;
 using Tsavorite.core;
 using static Tsavorite.test.TestUtils;
 
 namespace Tsavorite.test
 {
+    // Must be in a separate block so the "using ClassStoreFunctions" is the first line in its namespace declaration.
+    public class MyObjectComparerModulo : IKeyComparer<MyKey>
+    {
+        readonly long mod;
+
+        internal MyObjectComparerModulo(long mod) => this.mod = mod;
+
+        public bool Equals(ref MyKey k1, ref MyKey k2) => k1.key == k2.key;
+
+        // Force collisions to create a chain
+        public long GetHashCode64(ref MyKey key)
+        {
+            long hash = Utility.GetHashCode(key.key);
+            return mod > 0 ? hash % mod : hash;
+        }
+    }
+}
+
+namespace Tsavorite.test
+{
+    using ClassAllocator = GenericAllocator<MyKey, MyValue, StoreFunctions<MyKey, MyValue, MyObjectComparerModulo, DefaultRecordDisposer<MyKey, MyValue>>>;
+    using ClassStoreFunctions = StoreFunctions<MyKey, MyValue, MyObjectComparerModulo, DefaultRecordDisposer<MyKey, MyValue>>;
+
     [TestFixture]
     internal class GenericLogScanTests
     {
-        private TsavoriteKV<MyKey, MyValue> store;
+        private TsavoriteKV<MyKey, MyValue, ClassStoreFunctions, ClassAllocator> store;
         private IDevice log, objlog;
-        const int totalRecords = 250;
+        const int TotalRecords = 250;
 
-        ITsavoriteEqualityComparer<MyKey> comparer = null;
-
-        public class MyObjectComparerModulo : ITsavoriteEqualityComparer<MyKey>
-        {
-            readonly long mod;
-
-            internal MyObjectComparerModulo(long mod) => this.mod = mod;
-
-            public bool Equals(ref MyKey k1, ref MyKey k2) => k1.key == k2.key;
-
-            // Force collisions to create a chain
-            public long GetHashCode64(ref MyKey key)
-            {
-                long hash = Utility.GetHashCode(key.key);
-                return mod > 0 ? hash % mod : hash;
-            }
-        }
+        MyObjectComparerModulo comparer;
 
         [SetUp]
         public void Setup()
         {
             // Clean up log files from previous test runs in case they weren't cleaned up
-            DeleteDirectory(TestUtils.MethodTestDir, wait: true);
+            DeleteDirectory(MethodTestDir, wait: true);
 
             comparer = null;
             foreach (var arg in TestContext.CurrentContext.Test.Arguments)
@@ -49,6 +57,7 @@ namespace Tsavorite.test
                     continue;
                 }
             }
+            comparer ??= new(0);
         }
 
         [TearDown]
@@ -68,7 +77,7 @@ namespace Tsavorite.test
         {
             internal long numRecords;
 
-            public bool OnStart(long beginAddress, long endAddress) => true;
+            public readonly bool OnStart(long beginAddress, long endAddress) => true;
 
             public bool ConcurrentReader(ref MyKey key, ref MyValue value, RecordMetadata recordMetadata, long numberOfRecords, out CursorRecordResult cursorRecordResult)
                 => SingleReader(ref key, ref value, recordMetadata, numberOfRecords, out cursorRecordResult);
@@ -76,16 +85,16 @@ namespace Tsavorite.test
             public bool SingleReader(ref MyKey key, ref MyValue value, RecordMetadata recordMetadata, long numberOfRecords, out CursorRecordResult cursorRecordResult)
             {
                 cursorRecordResult = CursorRecordResult.Accept; // default; not used here
-                Assert.AreEqual(numRecords, key.key, $"log scan 1: key");
-                Assert.AreEqual(numRecords, value.value, $"log scan 1: value");
+                ClassicAssert.AreEqual(numRecords, key.key, $"log scan 1: key");
+                ClassicAssert.AreEqual(numRecords, value.value, $"log scan 1: value");
 
                 ++numRecords;
                 return true;
             }
 
-            public void OnException(Exception exception, long numberOfRecords) { }
+            public readonly void OnException(Exception exception, long numberOfRecords) { }
 
-            public void OnStop(bool completed, long numberOfRecords) { }
+            public readonly void OnStop(bool completed, long numberOfRecords) { }
         }
 
         [Test]
@@ -95,21 +104,30 @@ namespace Tsavorite.test
         {
             log = CreateTestDevice(deviceType, Path.Join(MethodTestDir, $"DiskWriteScanBasicTest_{deviceType}.log"));
             objlog = CreateTestDevice(deviceType, Path.Join(MethodTestDir, $"DiskWriteScanBasicTest_{deviceType}.obj.log"));
-            store = new(128,
-                      logSettings: new LogSettings { LogDevice = log, ObjectLogDevice = objlog, MutableFraction = 0.1, MemorySizeBits = 15, PageSizeBits = 9, SegmentSizeBits = 22 },
-                      serializerSettings: new SerializerSettings<MyKey, MyValue> { keySerializer = () => new MyKeySerializer(), valueSerializer = () => new MyValueSerializer() },
-                      concurrencyControlMode: scanIteratorType == ScanIteratorType.Pull ? ConcurrencyControlMode.None : ConcurrencyControlMode.LockTable
-                      );
+            store = new(new()
+            {
+                IndexSize = 1L << 13,
+                LogDevice = log,
+                ObjectLogDevice = objlog,
+                MutableFraction = 0.1,
+                MemorySize = 1L << 15,
+                PageSize = 1L << 9,
+                SegmentSize = 1L << 22
+            }, StoreFunctions<MyKey, MyValue>.Create(comparer, () => new MyKeySerializer(), () => new MyValueSerializer())
+                , (allocatorSettings, storeFunctions) => new(allocatorSettings, storeFunctions)
+            );
 
             using var session = store.NewSession<MyInput, MyOutput, Empty, MyFunctions>(new MyFunctions());
+            var bContext = session.BasicContext;
+
             using var s = store.Log.Subscribe(new LogObserver());
 
             var start = store.Log.TailAddress;
-            for (int i = 0; i < totalRecords; i++)
+            for (int i = 0; i < TotalRecords; i++)
             {
                 var _key = new MyKey { key = i };
                 var _value = new MyValue { value = i };
-                session.Upsert(ref _key, ref _value, Empty.Default, 0);
+                _ = bContext.Upsert(ref _key, ref _value, Empty.Default);
                 if (i % 100 == 0)
                     store.Log.FlushAndEvict(true);
             }
@@ -125,12 +143,12 @@ namespace Tsavorite.test
                 {
                     using var iter = store.Log.Scan(start, store.Log.TailAddress, sbm);
                     while (iter.GetNext(out var recordInfo))
-                        scanIteratorFunctions.SingleReader(ref iter.GetKey(), ref iter.GetValue(), default, default, out _);
+                        _ = scanIteratorFunctions.SingleReader(ref iter.GetKey(), ref iter.GetValue(), default, default, out _);
                 }
                 else
-                    Assert.IsTrue(store.Log.Scan(ref scanIteratorFunctions, start, store.Log.TailAddress, sbm), "Failed to complete push iteration");
+                    ClassicAssert.IsTrue(store.Log.Scan(ref scanIteratorFunctions, start, store.Log.TailAddress, sbm), "Failed to complete push iteration");
 
-                Assert.AreEqual(totalRecords, scanIteratorFunctions.numRecords);
+                ClassicAssert.AreEqual(TotalRecords, scanIteratorFunctions.numRecords);
             }
 
             scanAndVerify(ScanBufferingMode.SinglePageBuffering);
@@ -143,7 +161,7 @@ namespace Tsavorite.test
 
             public void OnCompleted()
             {
-                Assert.AreEqual(val == totalRecords, $"LogObserver.OnCompleted: totalRecords");
+                ClassicAssert.AreEqual(val == TotalRecords, $"LogObserver.OnCompleted: totalRecords");
             }
 
             public void OnError(Exception error)
@@ -154,8 +172,8 @@ namespace Tsavorite.test
             {
                 while (iter.GetNext(out _, out MyKey key, out MyValue value))
                 {
-                    Assert.AreEqual(val, key.key, $"LogObserver.OnNext: key");
-                    Assert.AreEqual(val, value.value, $"LogObserver.OnNext: value");
+                    ClassicAssert.AreEqual(val, key.key, $"LogObserver.OnNext: key");
+                    ClassicAssert.AreEqual(val, value.value, $"LogObserver.OnNext: value");
                     val++;
                 }
             }
@@ -169,12 +187,21 @@ namespace Tsavorite.test
         {
             log = Devices.CreateLogDevice(Path.Join(MethodTestDir, "test.log"));
             objlog = Devices.CreateLogDevice(Path.Join(MethodTestDir, "test.obj.log"));
-            store = new(128,
-                      logSettings: new LogSettings { LogDevice = log, ObjectLogDevice = objlog, MutableFraction = 0.1, MemorySizeBits = 20, PageSizeBits = 15, SegmentSizeBits = 18 },
-                      serializerSettings: new SerializerSettings<MyKey, MyValue> { keySerializer = () => new MyKeySerializer(), valueSerializer = () => new MyValueSerializer() },
-                      concurrencyControlMode: ConcurrencyControlMode.None);
+            store = new(new()
+            {
+                IndexSize = 1L << 13,
+                LogDevice = log,
+                ObjectLogDevice = objlog,
+                MutableFraction = 0.1,
+                MemorySize = 1L << 20,
+                PageSize = 1L << 15,
+                SegmentSize = 1L << 18
+            }, StoreFunctions<MyKey, MyValue>.Create(comparer, () => new MyKeySerializer(), () => new MyValueSerializer())
+                , (allocatorSettings, storeFunctions) => new(allocatorSettings, storeFunctions)
+            );
 
             using var session = store.NewSession<MyInput, MyOutput, Empty, MyFunctions>(new MyFunctions());
+            var bContext = session.BasicContext;
 
             const int numRecords = 200;
             const int numTailRecords = 10;
@@ -189,28 +216,28 @@ namespace Tsavorite.test
                 }
                 var key = new MyKey { key = i };
                 var value = new MyValue { value = i };
-                session.Upsert(ref key, ref value, Empty.Default, 0);
+                _ = bContext.Upsert(ref key, ref value, Empty.Default);
             }
 
             using var iter = store.Log.Scan(store.Log.HeadAddress, store.Log.TailAddress);
 
             for (int i = 0; i < 100; ++i)
             {
-                Assert.IsTrue(iter.GetNext(out var recordInfo));
-                Assert.AreEqual(i, iter.GetKey().key);
-                Assert.AreEqual(i, iter.GetValue().value);
+                ClassicAssert.IsTrue(iter.GetNext(out var recordInfo));
+                ClassicAssert.AreEqual(i, iter.GetKey().key);
+                ClassicAssert.AreEqual(i, iter.GetValue().value);
             }
 
             store.Log.ShiftBeginAddress(shiftBeginAddressTo);
 
             for (int i = 0; i < numTailRecords; ++i)
             {
-                Assert.IsTrue(iter.GetNext(out var recordInfo));
+                ClassicAssert.IsTrue(iter.GetNext(out var recordInfo));
                 if (i == 0)
-                    Assert.AreEqual(store.Log.BeginAddress, iter.CurrentAddress);
+                    ClassicAssert.AreEqual(store.Log.BeginAddress, iter.CurrentAddress);
                 var expectedKey = numRecords - numTailRecords + i;
-                Assert.AreEqual(expectedKey, iter.GetKey().key);
-                Assert.AreEqual(expectedKey, iter.GetValue().value);
+                ClassicAssert.AreEqual(expectedKey, iter.GetKey().key);
+                ClassicAssert.AreEqual(expectedKey, iter.GetValue().value);
             }
         }
 
@@ -234,22 +261,33 @@ namespace Tsavorite.test
         {
             const int PageSizeBits = 9;
             const long PageSize = 1L << PageSizeBits;
-            var recordSize = GenericAllocator<MyKey, MyValue>.RecordSize;
+            var recordSize = GenericAllocatorImpl<MyKey, MyValue, ClassStoreFunctions>.RecordSize;
 
             log = Devices.CreateLogDevice(Path.Join(MethodTestDir, "test.log"));
             objlog = Devices.CreateLogDevice(Path.Join(MethodTestDir, "test.obj.log"));
-            store = new(128,
-                      logSettings: new LogSettings { LogDevice = log, ObjectLogDevice = objlog, MutableFraction = 0.1, MemorySizeBits = 20, PageSizeBits = 15, SegmentSizeBits = 18 },
-                      serializerSettings: new SerializerSettings<MyKey, MyValue> { keySerializer = () => new MyKeySerializer(), valueSerializer = () => new MyValueSerializer() },
-                      concurrencyControlMode: ConcurrencyControlMode.None, comparer: comparer);
+
+            store = new(new()
+            {
+                IndexSize = 1L << 13,
+                LogDevice = log,
+                ObjectLogDevice = objlog,
+                MutableFraction = 0.1,
+                MemorySize = 1L << 20,
+                PageSize = 1L << 15,
+                SegmentSize = 1L << 18
+            }, StoreFunctions<MyKey, MyValue>.Create(comparer, () => new MyKeySerializer(), () => new MyValueSerializer())
+                , (allocatorSettings, storeFunctions) => new(allocatorSettings, storeFunctions)
+            );
+
 
             using var session = store.NewSession<MyInput, MyOutput, Empty, ScanFunctions>(new ScanFunctions());
+            var bContext = session.BasicContext;
 
-            for (int i = 0; i < totalRecords; i++)
+            for (int i = 0; i < TotalRecords; i++)
             {
                 var key1 = new MyKey { key = i };
                 var value = new MyValue { value = i };
-                session.Upsert(ref key1, ref value);
+                _ = bContext.Upsert(ref key1, ref value);
             }
 
             var scanCursorFuncs = new ScanCursorFuncs();
@@ -266,8 +304,8 @@ namespace Tsavorite.test
                     scanCursorFuncs.Initialize(verifyKeys: true);
                     while (session.ScanCursor(ref cursor, counts[iCount], scanCursorFuncs, endAddresses[iAddr]))
                         ;
-                    Assert.AreEqual(totalRecords, scanCursorFuncs.numRecords, $"count: {counts[iCount]}, endAddress {endAddresses[iAddr]}");
-                    Assert.AreEqual(0, cursor, "Expected cursor to be 0, pt 1");
+                    ClassicAssert.AreEqual(TotalRecords, scanCursorFuncs.numRecords, $"count: {counts[iCount]}, endAddress {endAddresses[iAddr]}");
+                    ClassicAssert.AreEqual(0, cursor, "Expected cursor to be 0, pt 1");
                 }
             }
 
@@ -278,29 +316,29 @@ namespace Tsavorite.test
 
             // Scan and verify we see them all
             scanCursorFuncs.Initialize(verifyKeys);
-            Assert.IsFalse(session.ScanCursor(ref cursor, long.MaxValue, scanCursorFuncs, long.MaxValue), "Expected scan to finish and return false, pt 1");
-            Assert.AreEqual(totalRecords, scanCursorFuncs.numRecords, "Unexpected count for all on-disk");
-            Assert.AreEqual(0, cursor, "Expected cursor to be 0, pt 2");
+            ClassicAssert.IsFalse(session.ScanCursor(ref cursor, long.MaxValue, scanCursorFuncs, long.MaxValue), "Expected scan to finish and return false, pt 1");
+            ClassicAssert.AreEqual(TotalRecords, scanCursorFuncs.numRecords, "Unexpected count for all on-disk");
+            ClassicAssert.AreEqual(0, cursor, "Expected cursor to be 0, pt 2");
 
             // Add another totalRecords, with keys incremented by totalRecords to remain distinct, and verify we see all keys.
-            for (int i = 0; i < totalRecords; i++)
+            for (int i = 0; i < TotalRecords; i++)
             {
-                var key1 = new MyKey { key = i + totalRecords };
-                var value = new MyValue { value = i + totalRecords };
-                session.Upsert(ref key1, ref value);
+                var key1 = new MyKey { key = i + TotalRecords };
+                var value = new MyValue { value = i + TotalRecords };
+                _ = bContext.Upsert(ref key1, ref value);
             }
             scanCursorFuncs.Initialize(verifyKeys);
-            Assert.IsFalse(session.ScanCursor(ref cursor, long.MaxValue, scanCursorFuncs, long.MaxValue), "Expected scan to finish and return false, pt 1");
-            Assert.AreEqual(totalRecords * 2, scanCursorFuncs.numRecords, "Unexpected count for on-disk + in-mem");
-            Assert.AreEqual(0, cursor, "Expected cursor to be 0, pt 3");
+            ClassicAssert.IsFalse(session.ScanCursor(ref cursor, long.MaxValue, scanCursorFuncs, long.MaxValue), "Expected scan to finish and return false, pt 1");
+            ClassicAssert.AreEqual(TotalRecords * 2, scanCursorFuncs.numRecords, "Unexpected count for on-disk + in-mem");
+            ClassicAssert.AreEqual(0, cursor, "Expected cursor to be 0, pt 3");
 
             // Try an invalid cursor (not a multiple of 8) on-disk and verify we get one correct record. Use 3x page size to make sure page boundaries are tested.
-            Assert.Greater(store.hlog.GetTailAddress(), PageSize * 10, "Need enough space to exercise this");
+            ClassicAssert.Greater(store.hlogBase.GetTailAddress(), PageSize * 10, "Need enough space to exercise this");
             scanCursorFuncs.Initialize(verifyKeys);
-            cursor = store.hlog.BeginAddress - 1;
+            cursor = store.hlogBase.BeginAddress - 1;
             do
             {
-                Assert.IsTrue(session.ScanCursor(ref cursor, 1, scanCursorFuncs, long.MaxValue, validateCursor: true), "Expected scan to finish and return false, pt 1");
+                ClassicAssert.IsTrue(session.ScanCursor(ref cursor, 1, scanCursorFuncs, long.MaxValue, validateCursor: true), "Expected scan to finish and return false, pt 1");
                 cursor = scanCursorFuncs.lastAddress + recordSize + 1;
             } while (cursor < PageSize * 3);
 
@@ -308,17 +346,17 @@ namespace Tsavorite.test
             MyInput input = new();
             MyOutput output = new();
             ReadOptions readOptions = default;
-            var readStatus = session.ReadAtAddress(store.hlog.HeadAddress, ref input, ref output, ref readOptions, out _);
-            Assert.IsTrue(readStatus.Found, $"Could not read at HeadAddress; {readStatus}");
+            var readStatus = bContext.ReadAtAddress(store.hlogBase.HeadAddress, ref input, ref output, ref readOptions, out _);
+            ClassicAssert.IsTrue(readStatus.Found, $"Could not read at HeadAddress; {readStatus}");
 
             scanCursorFuncs.Initialize(verifyKeys);
             scanCursorFuncs.numRecords = output.value.value;
             cursor = store.Log.HeadAddress + 1;
             do
             {
-                Assert.IsTrue(session.ScanCursor(ref cursor, 1, scanCursorFuncs, long.MaxValue, validateCursor: true), "Expected scan to finish and return false, pt 1");
+                ClassicAssert.IsTrue(session.ScanCursor(ref cursor, 1, scanCursorFuncs, long.MaxValue, validateCursor: true), "Expected scan to finish and return false, pt 1");
                 cursor = scanCursorFuncs.lastAddress + recordSize + 1;
-            } while (cursor < store.hlog.HeadAddress + PageSize * 3);
+            } while (cursor < store.hlogBase.HeadAddress + PageSize * 3);
         }
 
         [Test]
@@ -329,34 +367,44 @@ namespace Tsavorite.test
         {
             log = Devices.CreateLogDevice(Path.Join(MethodTestDir, "test.log"));
             objlog = Devices.CreateLogDevice(Path.Join(MethodTestDir, "test.obj.log"));
-            store = new(128,
-                      logSettings: new LogSettings { LogDevice = log, ObjectLogDevice = objlog, MutableFraction = 0.1, MemorySizeBits = 20, PageSizeBits = 15, SegmentSizeBits = 18 },
-                      serializerSettings: new SerializerSettings<MyKey, MyValue> { keySerializer = () => new MyKeySerializer(), valueSerializer = () => new MyValueSerializer() },
-                      concurrencyControlMode: ConcurrencyControlMode.None, comparer: comparer);
+
+            store = new(new()
+            {
+                IndexSize = 1L << 13,
+                LogDevice = log,
+                ObjectLogDevice = objlog,
+                MutableFraction = 0.1,
+                MemorySize = 1L << 20,
+                PageSize = 1L << 15,
+                SegmentSize = 1L << 18
+            }, StoreFunctions<MyKey, MyValue>.Create(comparer, () => new MyKeySerializer(), () => new MyValueSerializer())
+                , (allocatorSettings, storeFunctions) => new(allocatorSettings, storeFunctions)
+            );
 
             using var session = store.NewSession<MyInput, MyOutput, Empty, ScanFunctions>(new ScanFunctions());
+            var bContext = session.BasicContext;
 
-            for (int i = 0; i < totalRecords; i++)
+            for (int i = 0; i < TotalRecords; i++)
             {
                 var key1 = new MyKey { key = i };
                 var value = new MyValue { value = i };
-                session.Upsert(ref key1, ref value);
+                _ = bContext.Upsert(ref key1, ref value);
             }
 
             var scanCursorFuncs = new ScanCursorFuncs();
 
             long cursor = 0;
             scanCursorFuncs.Initialize(verifyKeys: false, k => k.key % 10 == 0);
-            Assert.IsTrue(session.ScanCursor(ref cursor, 10, scanCursorFuncs, store.Log.TailAddress), "ScanCursor failed, pt 1");
-            Assert.AreEqual(10, scanCursorFuncs.numRecords, "count at first 10");
-            Assert.Greater(cursor, 0, "Expected cursor to be > 0, pt 1");
+            ClassicAssert.IsTrue(session.ScanCursor(ref cursor, 10, scanCursorFuncs, store.Log.TailAddress), "ScanCursor failed, pt 1");
+            ClassicAssert.AreEqual(10, scanCursorFuncs.numRecords, "count at first 10");
+            ClassicAssert.Greater(cursor, 0, "Expected cursor to be > 0, pt 1");
 
             // Now fake out the key verification to make it think we got all the previous keys; this ensures we are aligned as expected.
             scanCursorFuncs.Initialize(verifyKeys: true, k => true);
             scanCursorFuncs.numRecords = 91;   // (filter accepts: 0-9) * 10 + 1
-            Assert.IsTrue(session.ScanCursor(ref cursor, 100, scanCursorFuncs, store.Log.TailAddress), "ScanCursor failed, pt 2");
-            Assert.AreEqual(191, scanCursorFuncs.numRecords, "count at second 100");
-            Assert.Greater(cursor, 0, "Expected cursor to be > 0, pt 1");
+            ClassicAssert.IsTrue(session.ScanCursor(ref cursor, 100, scanCursorFuncs, store.Log.TailAddress), "ScanCursor failed, pt 2");
+            ClassicAssert.AreEqual(191, scanCursorFuncs.numRecords, "count at second 100");
+            ClassicAssert.Greater(cursor, 0, "Expected cursor to be > 0, pt 1");
         }
 
         internal sealed class ScanCursorFuncs : IScanIteratorFunctions<MyKey, MyValue>
@@ -382,8 +430,8 @@ namespace Tsavorite.test
                     return true;
 
                 if (verifyKeys)
-                    Assert.AreEqual(numRecords, key.key, "Mismatched key field on Scan");
-                Assert.Greater(recordMetadata.Address, 0);
+                    ClassicAssert.AreEqual(numRecords, key.key, "Mismatched key field on Scan");
+                ClassicAssert.Greater(recordMetadata.Address, 0);
                 ++numRecords;
                 lastAddress = recordMetadata.Address;
                 return true;

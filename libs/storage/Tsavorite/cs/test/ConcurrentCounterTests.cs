@@ -2,8 +2,10 @@
 // Licensed under the MIT license.
 
 using NUnit.Framework;
+using NUnit.Framework.Legacy;
+using Tsavorite.core;
 
-namespace Tsavorite.core.Tests
+namespace Tsavorite.test
 {
     [TestFixture]
     public class ConcurrentCounterTests
@@ -18,7 +20,7 @@ namespace Tsavorite.core.Tests
             counter.Increment(5);
 
             // Assert
-            Assert.AreEqual(5, counter.Total);
+            ClassicAssert.AreEqual(5, counter.Total);
         }
 
         [Test]
@@ -31,7 +33,7 @@ namespace Tsavorite.core.Tests
             counter.Increment(0);
 
             // Assert
-            Assert.AreEqual(0, counter.Total);
+            ClassicAssert.AreEqual(0, counter.Total);
         }
 
         [Test]
@@ -46,7 +48,7 @@ namespace Tsavorite.core.Tests
             var total = counter.Total;
 
             // Assert
-            Assert.AreEqual(10, total);
+            ClassicAssert.AreEqual(10, total);
         }
         [Test]
         public void Increment_WithMaxValue_IncreasesCounterValue()
@@ -58,7 +60,7 @@ namespace Tsavorite.core.Tests
             counter.Increment(long.MaxValue);
 
             // Assert
-            Assert.AreEqual(long.MaxValue, counter.Total);
+            ClassicAssert.AreEqual(long.MaxValue, counter.Total);
         }
 
         [Test]
@@ -71,11 +73,11 @@ namespace Tsavorite.core.Tests
             counter.Increment(long.MinValue);
 
             // Assert
-            Assert.AreEqual(long.MinValue, counter.Total);
+            ClassicAssert.AreEqual(long.MinValue, counter.Total);
         }
 
         [Test]
-        public void IncrementndTotal_WithMultipleThreads_ReturnsCorrectValue()
+        public void IncrementedTotal_WithMultipleThreads_ReturnsCorrectValue()
         {
             // Arrange
             var numThreads = 10;
@@ -103,7 +105,7 @@ namespace Tsavorite.core.Tests
             }
 
             // Assert
-            Assert.AreEqual(10000, counter.Total);
+            ClassicAssert.AreEqual(10000, counter.Total);
         }
     }
 }

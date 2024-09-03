@@ -8,16 +8,22 @@ using Tsavorite.core;
 
 namespace Garnet.server
 {
+    using MainStoreAllocator = SpanByteAllocator<StoreFunctions<SpanByte, SpanByte, SpanByteComparer, SpanByteRecordDisposer>>;
+    using MainStoreFunctions = StoreFunctions<SpanByte, SpanByte, SpanByteComparer, SpanByteRecordDisposer>;
+
+    using ObjectStoreAllocator = GenericAllocator<byte[], IGarnetObject, StoreFunctions<byte[], IGarnetObject, ByteArrayKeyComparer, DefaultRecordDisposer<byte[], IGarnetObject>>>;
+    using ObjectStoreFunctions = StoreFunctions<byte[], IGarnetObject, ByteArrayKeyComparer, DefaultRecordDisposer<byte[], IGarnetObject>>;
+
     // Example aliases:
-    //   using BasicGarnetApi = GarnetApi<BasicContext<SpanByte, SpanByte, SpanByte, SpanByteAndMemory, long, MainStoreFunctions>, BasicContext<byte[], IGarnetObject, SpanByte, GarnetObjectStoreOutput, long, ObjectStoreFunctions>>;
-    //   using LockableGarnetApi = GarnetApi<LockableContext<SpanByte, SpanByte, SpanByte, SpanByteAndMemory, long, MainStoreFunctions>, LockableContext<byte[], IGarnetObject, SpanByte, GarnetObjectStoreOutput, long, ObjectStoreFunctions>>;
+    //   using BasicGarnetApi = GarnetApi<BasicContext<SpanByte, SpanByte, SpanByte, SpanByteAndMemory, long, MainSessionFunctions, MainStoreFunctions, SpanByteAllocator>, BasicContext<byte[], IGarnetObject, ObjectInput, GarnetObjectStoreOutput, long, ObjectSessionFunctions, ObjectStoreFunctions, ObjectAllocator>>;
+    //   using LockableGarnetApi = GarnetApi<LockableContext<SpanByte, SpanByte, SpanByte, SpanByteAndMemory, long, MainSessionFunctions, MainStoreFunctions, SpanByteAllocator>, LockableContext<byte[], IGarnetObject, ObjectInput, GarnetObjectStoreOutput, long, ObjectSessionFunctions, ObjectStoreFunctions, ObjectAllocator>>;
 
     /// <summary>
     /// Garnet API implementation
     /// </summary>
     public partial struct GarnetApi<TContext, TObjectContext> : IGarnetApi, IGarnetWatchApi
-        where TContext : ITsavoriteContext<SpanByte, SpanByte, SpanByte, SpanByteAndMemory, long>
-        where TObjectContext : ITsavoriteContext<byte[], IGarnetObject, SpanByte, GarnetObjectStoreOutput, long>
+        where TContext : ITsavoriteContext<SpanByte, SpanByte, SpanByte, SpanByteAndMemory, long, MainSessionFunctions, MainStoreFunctions, MainStoreAllocator>
+        where TObjectContext : ITsavoriteContext<byte[], IGarnetObject, ObjectInput, GarnetObjectStoreOutput, long, ObjectSessionFunctions, ObjectStoreFunctions, ObjectStoreAllocator>
     {
         readonly StorageSession storageSession;
         TContext context;
@@ -52,6 +58,9 @@ namespace Garnet.server
         /// <inheritdoc />
         public bool GET_CompletePending((GarnetStatus, SpanByteAndMemory)[] outputArr, bool wait = false)
             => storageSession.GET_CompletePending(outputArr, wait, ref context);
+
+        public bool GET_CompletePending(out CompletedOutputIterator<SpanByte, SpanByte, SpanByte, SpanByteAndMemory, long> completedOutputs, bool wait)
+            => storageSession.GET_CompletePending(out completedOutputs, wait, ref context);
 
         /// <inheritdoc />
         public unsafe GarnetStatus GETForMemoryResult(ArgSlice key, out MemoryResult<byte> value)
@@ -176,8 +185,16 @@ namespace Garnet.server
 
         #region Increment (INCR, INCRBY, DECR, DECRBY)
         /// <inheritdoc />
-        public unsafe GarnetStatus Increment(ArgSlice key, ArgSlice input, ref ArgSlice output)
+        public GarnetStatus Increment(ArgSlice key, ArgSlice input, ref ArgSlice output)
             => storageSession.Increment(key, input, ref output, ref context);
+
+        /// <inheritdoc />
+        public GarnetStatus Increment(ArgSlice key, out long output, long incrementCount = 1)
+            => storageSession.Increment(key, out output, incrementCount, ref context);
+
+        /// <inheritdoc />
+        public GarnetStatus Decrement(ArgSlice key, out long output, long decrementCount = 1)
+            => Increment(key, out output, -decrementCount);
         #endregion
 
         #region DELETE
@@ -230,11 +247,11 @@ namespace Garnet.server
             => storageSession.Read_MainStore(ref key, ref input, ref output, ref context);
 
         /// <inheritdoc />
-        public GarnetStatus RMW_ObjectStore(ref byte[] key, ref SpanByte input, ref GarnetObjectStoreOutput output)
+        public GarnetStatus RMW_ObjectStore(ref byte[] key, ref ObjectInput input, ref GarnetObjectStoreOutput output)
             => storageSession.RMW_ObjectStore(ref key, ref input, ref output, ref objectContext);
 
         /// <inheritdoc />
-        public GarnetStatus Read_ObjectStore(ref byte[] key, ref SpanByte input, ref GarnetObjectStoreOutput output)
+        public GarnetStatus Read_ObjectStore(ref byte[] key, ref ObjectInput input, ref GarnetObjectStoreOutput output)
             => storageSession.Read_ObjectStore(ref key, ref input, ref output, ref objectContext);
         #endregion
 
@@ -265,7 +282,7 @@ namespace Garnet.server
              => storageSession.StringBitCount(key, start, end, useBitInterval, out result, ref context);
 
         /// <inheritdoc />
-        public GarnetStatus StringBitOperation(ArgSlice[] keys, BitmapOperation bitop, out long result)
+        public GarnetStatus StringBitOperation(Span<ArgSlice> keys, BitmapOperation bitop, out long result)
             => storageSession.StringBitOperation(keys, bitop, out result);
 
         /// <inheritdoc />
@@ -300,15 +317,15 @@ namespace Garnet.server
             => storageSession.HyperLogLogAdd(key, elements, out updated, ref context);
 
         /// <inheritdoc />
-        public GarnetStatus HyperLogLogLength(ArgSlice[] keys, ref SpanByte input, out long count, out bool error)
+        public GarnetStatus HyperLogLogLength(Span<ArgSlice> keys, ref SpanByte input, out long count, out bool error)
             => storageSession.HyperLogLogLength(keys, ref input, out count, out error, ref context);
 
         /// <inheritdoc />
-        public GarnetStatus HyperLogLogLength(ArgSlice[] keys, out long count)
+        public GarnetStatus HyperLogLogLength(Span<ArgSlice> keys, out long count)
             => storageSession.HyperLogLogLength(keys, out count, ref context);
 
         /// <inheritdoc />
-        public GarnetStatus HyperLogLogMerge(ArgSlice[] keys, out bool error)
+        public GarnetStatus HyperLogLogMerge(Span<ArgSlice> keys, out bool error)
             => storageSession.HyperLogLogMerge(keys, out error);
         #endregion
 
@@ -323,7 +340,7 @@ namespace Garnet.server
             => storageSession.DbSize();
 
         /// <inheritdoc />
-        public bool DbScan(ArgSlice patternB, bool allKeys, long cursor, out long storeCursor, out List<byte[]> Keys, long count = 10, Span<byte> type = default)
+        public bool DbScan(ArgSlice patternB, bool allKeys, long cursor, out long storeCursor, out List<byte[]> Keys, long count = 10, ReadOnlySpan<byte> type = default)
             => storageSession.DbScan(patternB, allKeys, cursor, out storeCursor, out Keys, count, type);
 
         /// <inheritdoc />
@@ -349,8 +366,8 @@ namespace Garnet.server
         #region Common Methods
 
         /// <inheritdoc />
-        public GarnetStatus ObjectScan(byte[] key, ArgSlice input, ref GarnetObjectStoreOutput outputFooter)
-         => storageSession.ObjectScan(key, input, ref outputFooter, ref objectContext);
+        public GarnetStatus ObjectScan(byte[] key, ref ObjectInput input, ref GarnetObjectStoreOutput outputFooter)
+         => storageSession.ObjectScan(key, ref input, ref outputFooter, ref objectContext);
 
         #endregion
     }

@@ -5,6 +5,7 @@ using System;
 using System.Collections.Generic;
 using System.Threading;
 using NUnit.Framework;
+using NUnit.Framework.Legacy;
 using Tsavorite.core;
 
 namespace Tsavorite.test
@@ -23,7 +24,7 @@ namespace Tsavorite.test
         public void TsavoriteLogShiftTailStressTest()
         {
             // Get an excruciatingly slow storage device to maximize chance of clogging the flush pipeline
-            device = new LocalMemoryDevice(1L << 28, 1 << 28, 2, sector_size: 512, latencyMs: 50, fileName: "stress.log");
+            device = new LocalMemoryDevice(1L << 28, 1L << 28, 2, sector_size: 512, latencyMs: 50, fileName: "stress.log");
             var logSettings = new TsavoriteLogSettings { LogDevice = device, LogChecksum = LogChecksumType.None, LogCommitManager = manager, SegmentSizeBits = 28 };
             log = new TsavoriteLog(logSettings);
 

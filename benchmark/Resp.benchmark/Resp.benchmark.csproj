@@ -7,10 +7,6 @@
   </PropertyGroup>
 
   <ItemGroup>
-    <Compile Include="..\..\libs\server\Resp\RespInfo.cs" Link="RespInfo.cs" />
-  </ItemGroup>
-
-  <ItemGroup>
     <None Include="..\..\test\testcerts\testcert.pfx" Link="testcert.pfx">
       <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
     </None>
@@ -21,11 +17,13 @@
     <PackageReference Include="StackExchange.Redis" />
     <PackageReference Include="Microsoft.Extensions.Logging.Configuration" />
     <PackageReference Include="Microsoft.Extensions.Logging.Console" />
+    <PackageReference Include="System.Text.Json" />
   </ItemGroup>
 
   <ItemGroup>
     <ProjectReference Include="..\..\libs\client\Garnet.client.csproj" />
-    <ProjectReference Include="..\..\metrics\HdrHistogram\HdrHistogram.csproj" />
+    <ProjectReference Include="..\..\libs\server\Garnet.server.csproj" />
+    <ProjectReference Include="..\..\metrics\HdrHistogram\HdrHistogram.csproj" />     
   </ItemGroup>
 
 </Project>

@@ -15,6 +15,8 @@ using Microsoft.Extensions.Logging;
 
 namespace Tsavorite.core
 {
+    using EmptyStoreFunctions = StoreFunctions<Empty, byte, EmptyKeyComparer, DefaultRecordDisposer<Empty, byte>>;
+
     /// <summary>
     /// Tsavorite log
     /// </summary>
@@ -22,7 +24,7 @@ namespace Tsavorite.core
     {
         private Exception cannedException = null;
 
-        readonly BlittableAllocator<Empty, byte> allocator;
+        readonly BlittableAllocatorImpl<Empty, byte, EmptyStoreFunctions> allocator;
         readonly LightEpoch epoch;
         readonly ILogCommitManager logCommitManager;
         readonly bool disposeLogCommitManager;
@@ -189,9 +191,10 @@ namespace Tsavorite.core
             CommittedBeginAddress = Constants.kFirstValidAddress;
             SafeTailAddress = Constants.kFirstValidAddress;
             commitQueue = new WorkQueueLIFO<CommitInfo>(SerialCommitCallbackWorker);
-            allocator = new BlittableAllocator<Empty, byte>(
-                logSettings.GetLogSettings(), null,
-                null, epoch, CommitCallback, logger);
+            allocator = new(
+                new AllocatorSettings(logSettings.GetLogSettings(), epoch, logger) { flushCallback = CommitCallback },
+                StoreFunctions<Empty, byte>.Create(EmptyKeyComparer.Instance),
+                @this => new BlittableAllocator<Empty, Byte, EmptyStoreFunctions>(@this));
             allocator.Initialize();
             beginAddress = allocator.BeginAddress;
 
@@ -331,7 +334,7 @@ namespace Tsavorite.core
                 // Ensure all currently started entries will enqueue before we declare log closed
                 epoch.BumpCurrentEpoch(() =>
                 {
-                    CommitInternal(out _, out _, false, Array.Empty<byte>(), long.MaxValue, null);
+                    CommitInternal(out _, out _, false, [], long.MaxValue, null);
                 });
             }
             finally
@@ -781,6 +784,46 @@ namespace Tsavorite.core
             item1.CopyTo(physicalAddress + headerSize + sizeof(THeader));
             item2.CopyTo(physicalAddress + headerSize + sizeof(THeader) + item1.TotalSize);
             item3.CopyTo(physicalAddress + headerSize + sizeof(THeader) + item1.TotalSize + item2.TotalSize);
+            SetHeader(length, physicalAddress);
+            if (AutoRefreshSafeTailAddress) DoAutoRefreshSafeTailAddress();
+            epoch.Suspend();
+            if (AutoCommit) Commit();
+        }
+
+        /// <summary>
+        /// Append a user-defined blittable struct header and <see cref="SpanByte"/> entries atomically to the log.
+        /// </summary>
+        /// <param name="userHeader"></param>
+        /// <param name="items"></param>
+        /// <param name="logicalAddress">Logical address of added entry</param>
+        public unsafe void Enqueue<THeader>(THeader userHeader, ref SpanByte[] items, out long logicalAddress)
+            where THeader : unmanaged
+        {
+            logicalAddress = 0;
+
+            var length = sizeof(THeader);
+            foreach (var item in items)
+            {
+                length += item.TotalSize;
+            }
+
+            var allocatedLength = headerSize + Align(length);
+            ValidateAllocatedLength(allocatedLength);
+
+            epoch.Resume();
+
+            logicalAddress = AllocateBlock(allocatedLength);
+
+            var physicalAddress = (byte*)allocator.GetPhysicalAddress(logicalAddress);
+            *(THeader*)(physicalAddress + headerSize) = userHeader;
+
+            var curr = physicalAddress + headerSize + sizeof(THeader);
+            foreach (var item in items)
+            {
+                item.CopyTo(curr);
+                curr += item.TotalSize;
+            }
+
             SetHeader(length, physicalAddress);
             if (AutoRefreshSafeTailAddress) DoAutoRefreshSafeTailAddress();
             epoch.Suspend();
@@ -2500,7 +2543,7 @@ namespace Tsavorite.core
             var recoveredIterators = info.Iterators;
             if (recoveredIterators != null)
             {
-                List<string> keys = recoveredIterators.Keys.ToList();
+                List<string> keys = [.. recoveredIterators.Keys];
                 foreach (var key in keys)
                     if (recoveredIterators[key] > SafeTailAddress)
                         recoveredIterators[key] = SafeTailAddress;
@@ -2563,7 +2606,7 @@ namespace Tsavorite.core
 
             if (errorCode != 0)
             {
-                logger?.LogError("AsyncGetFromDiskCallback error: {0}", errorCode);
+                logger?.LogError($"{nameof(AsyncGetFromDiskCallback)} error: {{errorCode}}", errorCode);
                 ctx.record.Return();
                 ctx.record = null;
                 ctx.completedRead.Release();
@@ -2575,7 +2618,7 @@ namespace Tsavorite.core
 
                 if (length < 0 || length > allocator.PageSize)
                 {
-                    logger?.LogDebug("Invalid record length found: " + length);
+                    logger?.LogDebug("Invalid record length found: {length}", length);
                     ctx.record.Return();
                     ctx.record = null;
                     ctx.completedRead.Release();
@@ -2602,7 +2645,7 @@ namespace Tsavorite.core
 
             if (errorCode != 0)
             {
-                logger?.LogError("AsyncGetFromDiskCallback error: {0}", errorCode);
+                logger?.LogError($"{nameof(AsyncGetHeaderOnlyFromDiskCallback)} error: {{errorCode}}", errorCode);
                 ctx.record.Return();
                 ctx.record = null;
                 ctx.completedRead.Release();
@@ -2611,7 +2654,7 @@ namespace Tsavorite.core
             {
                 if (ctx.record.available_bytes < headerSize)
                 {
-                    logger?.LogDebug("No record header present at address: " + ctx.logicalAddress);
+                    logger?.LogDebug("No record header present at address: {address}", ctx.logicalAddress);
                     ctx.record.Return();
                     ctx.record = null;
                 }

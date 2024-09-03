@@ -12,31 +12,33 @@ namespace Tsavorite.core
     /// version. It is used as the basis of many other tasks, which decides what they do with the captured
     /// version.
     /// </summary>
-    internal sealed class VersionChangeTask : ISynchronizationTask
+    internal sealed class VersionChangeTask<TKey, TValue, TStoreFunctions, TAllocator> : ISynchronizationTask<TKey, TValue, TStoreFunctions, TAllocator>
+        where TStoreFunctions : IStoreFunctions<TKey, TValue>
+        where TAllocator : IAllocator<TKey, TValue, TStoreFunctions>
     {
         /// <inheritdoc />
-        public void GlobalBeforeEnteringState<Key, Value>(
+        public void GlobalBeforeEnteringState(
             SystemState next,
-            TsavoriteKV<Key, Value> store)
+            TsavoriteKV<TKey, TValue, TStoreFunctions, TAllocator> store)
         {
         }
 
         /// <inheritdoc />
-        public void GlobalAfterEnteringState<Key, Value>(
+        public void GlobalAfterEnteringState(
             SystemState start,
-            TsavoriteKV<Key, Value> store)
+            TsavoriteKV<TKey, TValue, TStoreFunctions, TAllocator> store)
         {
         }
 
         /// <inheritdoc />
-        public void OnThreadState<Key, Value, Input, Output, Context, TsavoriteSession>(
+        public void OnThreadState<TInput, TOutput, TContext, TSessionFunctionsWrapper>(
             SystemState current, SystemState prev,
-            TsavoriteKV<Key, Value> store,
-            TsavoriteKV<Key, Value>.TsavoriteExecutionContext<Input, Output, Context> ctx,
-            TsavoriteSession storeSession,
+            TsavoriteKV<TKey, TValue, TStoreFunctions, TAllocator> store,
+            TsavoriteKV<TKey, TValue, TStoreFunctions, TAllocator>.TsavoriteExecutionContext<TInput, TOutput, TContext> ctx,
+            TSessionFunctionsWrapper sessionFunctions,
             List<ValueTask> valueTasks,
             CancellationToken token = default)
-            where TsavoriteSession : ITsavoriteSession
+            where TSessionFunctionsWrapper : ISessionEpochControl
         {
             switch (current.Phase)
             {
@@ -48,7 +50,7 @@ namespace Tsavorite.core
 
                     // Using bumpEpoch: true allows us to guarantee that when system state proceeds, all threads in prior state
                     // will see that hlog.NumActiveLockingSessions == 0, ensuring that they can potentially block for the next state.
-                    if (store.epoch.CheckIsComplete(EpochPhaseIdx.Prepare, current.Version) && store.hlog.NumActiveLockingSessions == 0)
+                    if (store.epoch.CheckIsComplete(EpochPhaseIdx.Prepare, current.Version) && store.hlogBase.NumActiveLockingSessions == 0)
                         store.GlobalStateMachineStep(current, bumpEpoch: store.CheckpointVersionSwitchBarrier);
                     break;
                 case Phase.IN_PROGRESS:
@@ -56,14 +58,11 @@ namespace Tsavorite.core
                     {
                         // Need to be very careful here as threadCtx is changing
                         var _ctx = prev.Phase == Phase.IN_PROGRESS ? ctx.prevCtx : ctx;
-                        var tokens = store._hybridLogCheckpoint.info.checkpointTokens;
-                        if (!store.SameCycle(ctx, current) || tokens == null)
-                            return;
 
                         if (!_ctx.markers[EpochPhaseIdx.InProgress])
                         {
-                            TsavoriteKV<Key, Value>.AtomicSwitch(ctx, ctx.prevCtx, _ctx.version, tokens);
-                            TsavoriteKV<Key, Value>.InitContext(ctx, ctx.prevCtx.sessionID, ctx.prevCtx.sessionName, ctx.prevCtx.serialNum);
+                            _ = TsavoriteKV<TKey, TValue, TStoreFunctions, TAllocator>.AtomicSwitch(ctx, ctx.prevCtx, _ctx.version);
+                            TsavoriteKV<TKey, TValue, TStoreFunctions, TAllocator>.InitContext(ctx, ctx.prevCtx.sessionID, ctx.prevCtx.sessionName);
 
                             // Has to be prevCtx, not ctx
                             ctx.prevCtx.markers[EpochPhaseIdx.InProgress] = true;
@@ -84,34 +83,36 @@ namespace Tsavorite.core
     /// The FoldOver task simply sets the read only offset to the current end of the log, so a captured version
     /// is immutable and will eventually be flushed to disk.
     /// </summary>
-    internal sealed class FoldOverTask : ISynchronizationTask
+    internal sealed class FoldOverTask<TKey, TValue, TStoreFunctions, TAllocator> : ISynchronizationTask<TKey, TValue, TStoreFunctions, TAllocator>
+        where TStoreFunctions : IStoreFunctions<TKey, TValue>
+        where TAllocator : IAllocator<TKey, TValue, TStoreFunctions>
     {
         /// <inheritdoc />
-        public void GlobalBeforeEnteringState<Key, Value>(
+        public void GlobalBeforeEnteringState(
             SystemState next,
-            TsavoriteKV<Key, Value> store)
+            TsavoriteKV<TKey, TValue, TStoreFunctions, TAllocator> store)
         {
             if (next.Phase == Phase.REST)
                 // Before leaving the checkpoint, make sure all previous versions are read-only.
-                store.hlog.ShiftReadOnlyToTail(out _, out _);
+                store.hlogBase.ShiftReadOnlyToTail(out _, out _);
         }
 
         /// <inheritdoc />
-        public void GlobalAfterEnteringState<Key, Value>(
+        public void GlobalAfterEnteringState(
             SystemState next,
-            TsavoriteKV<Key, Value> store)
+            TsavoriteKV<TKey, TValue, TStoreFunctions, TAllocator> store)
         { }
 
         /// <inheritdoc />
-        public void OnThreadState<Key, Value, Input, Output, Context, TsavoriteSession>(
+        public void OnThreadState<TInput, TOutput, TContext, TSessionFunctionsWrapper>(
             SystemState current,
             SystemState prev,
-            TsavoriteKV<Key, Value> store,
-            TsavoriteKV<Key, Value>.TsavoriteExecutionContext<Input, Output, Context> ctx,
-            TsavoriteSession storeSession,
+            TsavoriteKV<TKey, TValue, TStoreFunctions, TAllocator> store,
+            TsavoriteKV<TKey, TValue, TStoreFunctions, TAllocator>.TsavoriteExecutionContext<TInput, TOutput, TContext> ctx,
+            TSessionFunctionsWrapper sessionFunctions,
             List<ValueTask> valueTasks,
             CancellationToken token = default)
-            where TsavoriteSession : ITsavoriteSession
+            where TSessionFunctionsWrapper : ISessionEpochControl
         {
         }
     }
@@ -119,7 +120,9 @@ namespace Tsavorite.core
     /// <summary>
     /// A VersionChangeStateMachine orchestrates to capture a version, but does not flush to disk.
     /// </summary>
-    internal class VersionChangeStateMachine : SynchronizationStateMachineBase
+    internal class VersionChangeStateMachine<TKey, TValue, TStoreFunctions, TAllocator> : SynchronizationStateMachineBase<TKey, TValue, TStoreFunctions, TAllocator>
+        where TStoreFunctions : IStoreFunctions<TKey, TValue>
+        where TAllocator : IAllocator<TKey, TValue, TStoreFunctions>
     {
         private readonly long targetVersion;
 
@@ -128,7 +131,7 @@ namespace Tsavorite.core
         /// </summary>
         /// <param name="targetVersion">upper limit (inclusive) of the version included</param>
         /// <param name="tasks">The tasks to load onto the state machine</param>
-        protected VersionChangeStateMachine(long targetVersion = -1, params ISynchronizationTask[] tasks) : base(tasks)
+        protected VersionChangeStateMachine(long targetVersion = -1, params ISynchronizationTask<TKey, TValue, TStoreFunctions, TAllocator>[] tasks) : base(tasks)
         {
             this.targetVersion = targetVersion;
         }

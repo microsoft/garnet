@@ -7,11 +7,14 @@ using System.IO;
 using System.Linq;
 using System.Runtime.InteropServices;
 using NUnit.Framework;
+using NUnit.Framework.Legacy;
 using Tsavorite.core;
 using static Tsavorite.core.Utility;
 
-namespace Tsavorite.test
+namespace Tsavorite.test.spanbyte
 {
+    using SpanByteStoreFunctions = StoreFunctions<SpanByte, SpanByte, SpanByteComparer, SpanByteRecordDisposer>;
+
     [TestFixture]
     internal class SpanByteTests
     {
@@ -27,9 +30,18 @@ namespace Tsavorite.test
             try
             {
                 using var log = Devices.CreateLogDevice(Path.Join(TestUtils.MethodTestDir, "hlog1.log"), deleteOnClose: true);
-                using var store = new TsavoriteKV<SpanByte, SpanByte>
-                    (128, new LogSettings { LogDevice = log, MemorySizeBits = 17, PageSizeBits = 12 });
-                using var s = store.NewSession<SpanByte, SpanByteAndMemory, Empty, SpanByteFunctions<Empty>>(new SpanByteFunctions<Empty>());
+                using var store = new TsavoriteKV<SpanByte, SpanByte, SpanByteStoreFunctions, SpanByteAllocator<SpanByteStoreFunctions>>(
+                    new()
+                    {
+                        IndexSize = 1L << 13,
+                        LogDevice = log,
+                        MemorySize = 1L << 17,
+                        PageSize = 1L << 12
+                    }, StoreFunctions<SpanByte, SpanByte>.Create()
+                    , (allocatorSettings, storeFunctions) => new(allocatorSettings, storeFunctions)
+                );
+                using var session = store.NewSession<SpanByte, SpanByteAndMemory, Empty, SpanByteFunctions<Empty>>(new SpanByteFunctions<Empty>());
+                var bContext = session.BasicContext;
 
                 var key1 = MemoryMarshal.Cast<char, byte>("key1".AsSpan());
                 var value1 = MemoryMarshal.Cast<char, byte>("value1".AsSpan());
@@ -41,12 +53,12 @@ namespace Tsavorite.test
                     var key1SpanByte = SpanByte.FromPinnedPointer(key1Ptr, key1.Length);
                     var value1SpanByte = SpanByte.FromPinnedPointer(value1Ptr, value1.Length);
 
-                    s.Upsert(key1SpanByte, value1SpanByte);
-                    s.Read(ref key1SpanByte, ref input, ref output1);
+                    _ = bContext.Upsert(key1SpanByte, value1SpanByte);
+                    _ = bContext.Read(ref key1SpanByte, ref input, ref output1);
                 }
 
-                Assert.IsTrue(output1.IsSpanByte);
-                Assert.IsTrue(output1.SpanByte.AsReadOnlySpan().SequenceEqual(value1));
+                ClassicAssert.IsTrue(output1.IsSpanByte);
+                ClassicAssert.IsTrue(output1.SpanByte.AsReadOnlySpan().SequenceEqual(value1));
 
                 var key2 = MemoryMarshal.Cast<char, byte>("key2".AsSpan());
                 var value2 = MemoryMarshal.Cast<char, byte>("value2value2value2".AsSpan());
@@ -58,12 +70,13 @@ namespace Tsavorite.test
                     var key2SpanByte = SpanByte.FromPinnedPointer(key2Ptr, key2.Length);
                     var value2SpanByte = SpanByte.FromPinnedPointer(value2Ptr, value2.Length);
 
-                    s.Upsert(key2SpanByte, value2SpanByte);
-                    s.Read(ref key2SpanByte, ref input, ref output2);
+                    _ = bContext.Upsert(key2SpanByte, value2SpanByte);
+                    _ = bContext.Read(ref key2SpanByte, ref input, ref output2);
                 }
 
-                Assert.IsTrue(!output2.IsSpanByte);
-                Assert.IsTrue(output2.Memory.Memory.Span.Slice(0, output2.Length).SequenceEqual(value2));
+                ClassicAssert.IsTrue(!output2.IsSpanByte);
+                ClassicAssert.IsTrue(output2.Memory.Memory.Span.Slice(0, output2.Length).SequenceEqual(value2));
+                output2.Memory.Dispose();
             }
             finally
             {
@@ -81,17 +94,25 @@ namespace Tsavorite.test
             try
             {
                 using var log = Devices.CreateLogDevice(Path.Join(TestUtils.MethodTestDir, "test.log"), deleteOnClose: true);
-                using var store = new TsavoriteKV<SpanByte, SpanByte>(
-                    size: 1L << 10,
-                    new LogSettings { LogDevice = log, MemorySizeBits = 15, PageSizeBits = 12 });
+                using var store = new TsavoriteKV<SpanByte, SpanByte, SpanByteStoreFunctions, SpanByteAllocator<SpanByteStoreFunctions>>(
+                    new()
+                    {
+                        IndexSize = 1L << 16,
+                        LogDevice = log,
+                        MemorySize = 1L << 15,
+                        PageSize = 1L << 12
+                    }, StoreFunctions<SpanByte, SpanByte>.Create()
+                    , (allocatorSettings, storeFunctions) => new(allocatorSettings, storeFunctions)
+                );
                 using var session = store.NewSession<SpanByte, SpanByteAndMemory, Empty, SpanByteFunctions<Empty>>(new SpanByteFunctions<Empty>());
+                var bContext = session.BasicContext;
 
                 for (int i = 0; i < 200; i++)
                 {
                     var key = MemoryMarshal.Cast<char, byte>($"{i}".AsSpan());
                     var value = MemoryMarshal.Cast<char, byte>($"{i + 1000}".AsSpan());
                     fixed (byte* k = key, v = value)
-                        session.Upsert(SpanByte.FromPinnedSpan(key), SpanByte.FromPinnedSpan(value));
+                        _ = bContext.Upsert(SpanByte.FromPinnedSpan(key), SpanByte.FromPinnedSpan(value));
                 }
 
                 // Read, evict all records to disk, read again
@@ -116,26 +137,17 @@ namespace Tsavorite.test
 
                     var keyBytes = MemoryMarshal.Cast<char, byte>($"{key}".AsSpan());
                     fixed (byte* _ = keyBytes)
-                        status = session.Read(key: SpanByte.FromPinnedSpan(keyBytes), out output);
-                    Assert.AreEqual(evicted, status.IsPending, "evicted/pending mismatch");
+                        status = bContext.Read(key: SpanByte.FromPinnedSpan(keyBytes), out output);
+                    ClassicAssert.AreEqual(evicted, status.IsPending, "evicted/pending mismatch");
 
-                    if (!evicted)
-                        Assert.IsTrue(status.Found, $"expected to find key; status = {status}");
-                    else    // needs to be fetched from disk
-                    {
-                        session.CompletePendingWithOutputs(out var completedOutputs, wait: true);
-                        using (completedOutputs)
-                        {
-                            for (var count = 0; completedOutputs.Next(); ++count)
-                            {
-                                Assert.AreEqual(0, count, "should only have one record returned");
-                                Assert.IsTrue(completedOutputs.Current.Status.Found);
-                                output = completedOutputs.Current.Output;
-                            }
-                        }
-                    }
-                    var outputString = new string(MemoryMarshal.Cast<byte, char>(output.Memory.Memory.Span));
-                    Assert.AreEqual(value, long.Parse(outputString));
+                    if (evicted)
+                        (status, output) = bContext.GetSinglePendingResult();
+                    ClassicAssert.IsTrue(status.Found, $"expected to find key; status = {status}, pending = {evicted}");
+
+                    ClassicAssert.IsFalse(output.IsSpanByte, "Output should not have a valid SpanByte");
+                    var outputString = new string(MemoryMarshal.Cast<byte, char>(output.AsReadOnlySpan()));
+                    ClassicAssert.AreEqual(value, long.Parse(outputString), $"outputString mismatch; pending = {evicted}");
+                    output.Memory.Dispose();
                 }
             }
             finally
@@ -153,49 +165,49 @@ namespace Tsavorite.test
             Span<byte> serialized = stackalloc byte[24];
 
             SpanByte sb = SpanByte.FromPinnedSpan(payload);
-            Assert.IsFalse(sb.Serialized);
-            Assert.AreEqual(20, sb.Length);
-            Assert.AreEqual(24, sb.TotalSize);
-            Assert.AreEqual(20, sb.AsSpan().Length);
-            Assert.AreEqual(20, sb.AsReadOnlySpan().Length);
+            ClassicAssert.IsFalse(sb.Serialized);
+            ClassicAssert.AreEqual(20, sb.Length);
+            ClassicAssert.AreEqual(24, sb.TotalSize);
+            ClassicAssert.AreEqual(20, sb.AsSpan().Length);
+            ClassicAssert.AreEqual(20, sb.AsReadOnlySpan().Length);
 
             fixed (byte* ptr = serialized)
                 sb.CopyTo(ptr);
             ref SpanByte ssb = ref SpanByte.ReinterpretWithoutLength(serialized);
-            Assert.IsTrue(ssb.Serialized);
-            Assert.AreEqual(0, ssb.MetadataSize);
-            Assert.AreEqual(20, ssb.Length);
-            Assert.AreEqual(24, ssb.TotalSize);
-            Assert.AreEqual(20, ssb.AsSpan().Length);
-            Assert.AreEqual(20, ssb.AsReadOnlySpan().Length);
+            ClassicAssert.IsTrue(ssb.Serialized);
+            ClassicAssert.AreEqual(0, ssb.MetadataSize);
+            ClassicAssert.AreEqual(20, ssb.Length);
+            ClassicAssert.AreEqual(24, ssb.TotalSize);
+            ClassicAssert.AreEqual(20, ssb.AsSpan().Length);
+            ClassicAssert.AreEqual(20, ssb.AsReadOnlySpan().Length);
 
             ssb.MarkExtraMetadata();
-            Assert.IsTrue(ssb.Serialized);
-            Assert.AreEqual(8, ssb.MetadataSize);
-            Assert.AreEqual(20, ssb.Length);
-            Assert.AreEqual(24, ssb.TotalSize);
-            Assert.AreEqual(20 - 8, ssb.AsSpan().Length);
-            Assert.AreEqual(20 - 8, ssb.AsReadOnlySpan().Length);
+            ClassicAssert.IsTrue(ssb.Serialized);
+            ClassicAssert.AreEqual(8, ssb.MetadataSize);
+            ClassicAssert.AreEqual(20, ssb.Length);
+            ClassicAssert.AreEqual(24, ssb.TotalSize);
+            ClassicAssert.AreEqual(20 - 8, ssb.AsSpan().Length);
+            ClassicAssert.AreEqual(20 - 8, ssb.AsReadOnlySpan().Length);
             ssb.ExtraMetadata = 31337;
-            Assert.AreEqual(31337, ssb.ExtraMetadata);
+            ClassicAssert.AreEqual(31337, ssb.ExtraMetadata);
 
             sb.MarkExtraMetadata();
-            Assert.AreEqual(20, sb.Length);
-            Assert.AreEqual(24, sb.TotalSize);
-            Assert.AreEqual(20 - 8, sb.AsSpan().Length);
-            Assert.AreEqual(20 - 8, sb.AsReadOnlySpan().Length);
+            ClassicAssert.AreEqual(20, sb.Length);
+            ClassicAssert.AreEqual(24, sb.TotalSize);
+            ClassicAssert.AreEqual(20 - 8, sb.AsSpan().Length);
+            ClassicAssert.AreEqual(20 - 8, sb.AsReadOnlySpan().Length);
             sb.ExtraMetadata = 31337;
-            Assert.AreEqual(31337, sb.ExtraMetadata);
+            ClassicAssert.AreEqual(31337, sb.ExtraMetadata);
 
             fixed (byte* ptr = serialized)
                 sb.CopyTo(ptr);
-            Assert.IsTrue(ssb.Serialized);
-            Assert.AreEqual(8, ssb.MetadataSize);
-            Assert.AreEqual(20, ssb.Length);
-            Assert.AreEqual(24, ssb.TotalSize);
-            Assert.AreEqual(20 - 8, ssb.AsSpan().Length);
-            Assert.AreEqual(20 - 8, ssb.AsReadOnlySpan().Length);
-            Assert.AreEqual(31337, ssb.ExtraMetadata);
+            ClassicAssert.IsTrue(ssb.Serialized);
+            ClassicAssert.AreEqual(8, ssb.MetadataSize);
+            ClassicAssert.AreEqual(20, ssb.Length);
+            ClassicAssert.AreEqual(24, ssb.TotalSize);
+            ClassicAssert.AreEqual(20 - 8, ssb.AsSpan().Length);
+            ClassicAssert.AreEqual(20 - 8, ssb.AsReadOnlySpan().Length);
+            ClassicAssert.AreEqual(31337, ssb.ExtraMetadata);
         }
 
         [Test]
@@ -205,11 +217,18 @@ namespace Tsavorite.test
             TestUtils.DeleteDirectory(TestUtils.MethodTestDir, wait: true);
 
             using var log = Devices.CreateLogDevice(Path.Join(TestUtils.MethodTestDir, "vl-iter.log"), deleteOnClose: true);
-            using var store = new TsavoriteKV<SpanByte, SpanByte>
-                (128,
-                new LogSettings { LogDevice = log, MemorySizeBits = 17, PageSizeBits = 10 }, // 1KB page
-                null, null, null, concurrencyControlMode: ConcurrencyControlMode.None);
+            using var store = new TsavoriteKV<SpanByte, SpanByte, SpanByteStoreFunctions, SpanByteAllocator<SpanByteStoreFunctions>>(
+                new()
+                {
+                    IndexSize = 1L << 13,
+                    LogDevice = log,
+                    MemorySize = 1L << 17,
+                    PageSize = 1L << 10    // 1KB page
+                }, StoreFunctions<SpanByte, SpanByte>.Create()
+                , (allocatorSettings, storeFunctions) => new(allocatorSettings, storeFunctions)
+            );
             using var session = store.NewSession<SpanByte, int[], Empty, VLVectorFunctions>(new VLVectorFunctions());
+            var bContext = session.BasicContext;
 
             const int PageSize = 1024;
             Span<long> keySpan = stackalloc long[1];
@@ -225,11 +244,11 @@ namespace Tsavorite.test
             // the value space for the first record, and the length header for the second record. This is the space available for the second record's value.
             var p2value2len = PageSize
                                 - 2 * RecordInfo.GetLength()
-                                - 2 * RoundUp(key.TotalSize, SpanByteAllocator.kRecordAlignment)
-                                - RoundUp(value.TotalSize, SpanByteAllocator.kRecordAlignment)
+                                - 2 * RoundUp(key.TotalSize, Constants.kRecordAlignment)
+                                - RoundUp(value.TotalSize, Constants.kRecordAlignment)
                                 - sizeof(int);
             Set(ref keySpan, 3L, ref valueSpan, p2value2len, 3);        // Inserted on page#1
-            Assert.AreEqual(PageSize * 2, store.Log.TailAddress, "TailAddress should be at the end of page#2");
+            ClassicAssert.AreEqual(PageSize * 2, store.Log.TailAddress, "TailAddress should be at the end of page#2");
 
             Set(ref keySpan, 4L, ref valueSpan, 64, 4);                 // Inserted on page#2
 
@@ -245,12 +264,12 @@ namespace Tsavorite.test
                 }
             }
 
-            Assert.AreEqual(4, data.Count);
+            ClassicAssert.AreEqual(4, data.Count);
 
-            Assert.AreEqual((1L, 800, 1), data[0]);
-            Assert.AreEqual((2L, 800, 2), data[1]);
-            Assert.AreEqual((3L, p2value2len, 3), data[2]);
-            Assert.AreEqual((4L, 64, 4), data[3]);
+            ClassicAssert.AreEqual((1L, 800, 1), data[0]);
+            ClassicAssert.AreEqual((2L, 800, 2), data[1]);
+            ClassicAssert.AreEqual((3L, p2value2len, 3), data[2]);
+            ClassicAssert.AreEqual((4L, 64, 4), data[3]);
 
             TestUtils.DeleteDirectory(TestUtils.MethodTestDir);
 
@@ -259,7 +278,7 @@ namespace Tsavorite.test
                 keySpan[0] = keyValue;
                 value.Length = valueLength;
                 valueSpan[0] = tag;
-                session.Upsert(ref key, ref value, Empty.Default, 0);
+                _ = bContext.Upsert(ref key, ref value, Empty.Default);
             }
         }
     }

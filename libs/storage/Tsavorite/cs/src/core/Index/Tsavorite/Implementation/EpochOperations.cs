@@ -7,22 +7,22 @@ using System.Threading;
 
 namespace Tsavorite.core
 {
-    public unsafe partial class TsavoriteKV<Key, Value> : TsavoriteBase
+    public unsafe partial class TsavoriteKV<TKey, TValue, TStoreFunctions, TAllocator> : TsavoriteBase
+        where TStoreFunctions : IStoreFunctions<TKey, TValue>
+        where TAllocator : IAllocator<TKey, TValue, TStoreFunctions>
     {
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        internal void SynchronizeEpoch<Input, Output, Context, TsavoriteSession>(
-            TsavoriteExecutionContext<Input, Output, Context> sessionCtx,
-            ref PendingContext<Input, Output, Context> pendingContext,
-            TsavoriteSession tsavoriteSession)
-            where TsavoriteSession : ITsavoriteSession<Key, Value, Input, Output, Context>
+        internal void SynchronizeEpoch<TInput, TOutput, TContext, TSessionFunctionsWrapper>(
+            TsavoriteExecutionContext<TInput, TOutput, TContext> sessionCtx,
+            ref PendingContext<TInput, TOutput, TContext> pendingContext,
+            TSessionFunctionsWrapper sessionFunctions)
+            where TSessionFunctionsWrapper : ISessionFunctionsWrapper<TKey, TValue, TInput, TOutput, TContext, TStoreFunctions, TAllocator>
         {
             var version = sessionCtx.version;
             Debug.Assert(sessionCtx.version == version, $"sessionCtx.version ({sessionCtx.version}) should == version ({version})");
             Debug.Assert(sessionCtx.phase == Phase.PREPARE, $"sessionCtx.phase ({sessionCtx.phase}) should == Phase.PREPARE");
-            InternalRefresh<Input, Output, Context, TsavoriteSession>(tsavoriteSession);
+            InternalRefresh<TInput, TOutput, TContext, TSessionFunctionsWrapper>(sessionFunctions);
             Debug.Assert(sessionCtx.version > version, $"sessionCtx.version ({sessionCtx.version}) should be > version ({version})");
-
-            pendingContext.version = sessionCtx.version;
         }
 
         /// <summary>
@@ -35,16 +35,16 @@ namespace Tsavorite.core
         void SpinWaitUntilClosed(long address)
         {
             // Unlike HeadAddress, ClosedUntilAddress is a high-water mark; a record that is == to ClosedUntilAddress has *not* been closed yet.
-            while (address >= hlog.ClosedUntilAddress)
+            while (address >= hlogBase.ClosedUntilAddress)
             {
-                Debug.Assert(address < hlog.HeadAddress, "expected address < hlog.HeadAddress");
+                Debug.Assert(address < hlogBase.HeadAddress, "expected address < hlog.HeadAddress");
                 epoch.ProtectAndDrain();
                 Thread.Yield();
             }
         }
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        void SpinWaitUntilRecordIsClosed(long logicalAddress, AllocatorBase<Key, Value> log)
+        void SpinWaitUntilRecordIsClosed(long logicalAddress, AllocatorBase<TKey, TValue, TStoreFunctions, TAllocator> log)
         {
             Debug.Assert(logicalAddress < log.HeadAddress, "SpinWaitUntilRecordIsClosed should not be called for addresses above HeadAddress");
 

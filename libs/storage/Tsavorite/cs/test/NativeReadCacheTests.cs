@@ -3,24 +3,37 @@
 
 using System.IO;
 using NUnit.Framework;
+using NUnit.Framework.Legacy;
 using Tsavorite.core;
 
 namespace Tsavorite.test.ReadCacheTests
 {
+    using StructAllocator = BlittableAllocator<KeyStruct, ValueStruct, StoreFunctions<KeyStruct, ValueStruct, KeyStruct.Comparer, DefaultRecordDisposer<KeyStruct, ValueStruct>>>;
+    using StructStoreFunctions = StoreFunctions<KeyStruct, ValueStruct, KeyStruct.Comparer, DefaultRecordDisposer<KeyStruct, ValueStruct>>;
+
     [TestFixture]
     public class NativeReadCacheTests
     {
-        private TsavoriteKV<KeyStruct, ValueStruct> store;
+        private TsavoriteKV<KeyStruct, ValueStruct, StructStoreFunctions, StructAllocator> store;
         private IDevice log;
 
         [SetUp]
         public void Setup()
         {
             TestUtils.DeleteDirectory(TestUtils.MethodTestDir, wait: true);
-            var readCacheSettings = new ReadCacheSettings { MemorySizeBits = 15, PageSizeBits = 10 };
             log = Devices.CreateLogDevice(Path.Join(TestUtils.MethodTestDir, "NativeReadCacheTests.log"), deleteOnClose: true);
-            store = new TsavoriteKV<KeyStruct, ValueStruct>
-                (1L << 20, new LogSettings { LogDevice = log, MemorySizeBits = 15, PageSizeBits = 10, ReadCacheSettings = readCacheSettings });
+            store = new(new()
+            {
+                IndexSize = 1L << 26,
+                LogDevice = log,
+                MemorySize = 1L << 15,
+                PageSize = 1L << 10,
+                ReadCacheMemorySize = 1L << 15,
+                ReadCachePageSize = 1L << 10,
+                ReadCacheEnabled = true
+            }, StoreFunctions<KeyStruct, ValueStruct>.Create(new KeyStruct.Comparer())
+                , (allocatorSettings, storeFunctions) => new(allocatorSettings, storeFunctions)
+            );
         }
 
         [TearDown]
@@ -39,6 +52,7 @@ namespace Tsavorite.test.ReadCacheTests
         public void NativeDiskWriteReadCache()
         {
             using var session = store.NewSession<InputStruct, OutputStruct, Empty, Functions>(new Functions());
+            var bContext = session.BasicContext;
 
             InputStruct input = default;
 
@@ -46,9 +60,9 @@ namespace Tsavorite.test.ReadCacheTests
             {
                 var key1 = new KeyStruct { kfield1 = i, kfield2 = i + 1 };
                 var value = new ValueStruct { vfield1 = i, vfield2 = i + 1 };
-                session.Upsert(ref key1, ref value, Empty.Default, 0);
+                bContext.Upsert(ref key1, ref value, Empty.Default);
             }
-            session.CompletePending(true);
+            bContext.CompletePending(true);
 
             // Evict all records from main memory of hybrid log
             store.Log.FlushAndEvict(true);
@@ -60,9 +74,9 @@ namespace Tsavorite.test.ReadCacheTests
                 var key1 = new KeyStruct { kfield1 = i, kfield2 = i + 1 };
                 var value = new ValueStruct { vfield1 = i, vfield2 = i + 1 };
 
-                var status = session.Read(ref key1, ref input, ref output, Empty.Default, 0);
-                Assert.IsTrue(status.IsPending);
-                session.CompletePending(true);
+                var status = bContext.Read(ref key1, ref input, ref output, Empty.Default);
+                ClassicAssert.IsTrue(status.IsPending);
+                bContext.CompletePending(true);
             }
 
             // Read last 100 keys - all should be served from cache
@@ -72,10 +86,10 @@ namespace Tsavorite.test.ReadCacheTests
                 var key1 = new KeyStruct { kfield1 = i, kfield2 = i + 1 };
                 var value = new ValueStruct { vfield1 = i, vfield2 = i + 1 };
 
-                var status = session.Read(ref key1, ref input, ref output, Empty.Default, 0);
-                Assert.IsTrue(status.Found);
-                Assert.AreEqual(value.vfield1, output.value.vfield1);
-                Assert.AreEqual(value.vfield2, output.value.vfield2);
+                var status = bContext.Read(ref key1, ref input, ref output, Empty.Default);
+                ClassicAssert.IsTrue(status.Found);
+                ClassicAssert.AreEqual(value.vfield1, output.value.vfield1);
+                ClassicAssert.AreEqual(value.vfield2, output.value.vfield2);
             }
 
             // Evict the read cache entirely
@@ -88,9 +102,9 @@ namespace Tsavorite.test.ReadCacheTests
                 var key1 = new KeyStruct { kfield1 = i, kfield2 = i + 1 };
                 var value = new ValueStruct { vfield1 = i, vfield2 = i + 1 };
 
-                var status = session.Read(ref key1, ref input, ref output, Empty.Default, 0);
-                Assert.IsTrue(status.IsPending);
-                session.CompletePending(true);
+                var status = bContext.Read(ref key1, ref input, ref output, Empty.Default);
+                ClassicAssert.IsTrue(status.IsPending);
+                bContext.CompletePending(true);
             }
 
             // Read 100 keys - all should be served from cache
@@ -100,10 +114,10 @@ namespace Tsavorite.test.ReadCacheTests
                 var key1 = new KeyStruct { kfield1 = i, kfield2 = i + 1 };
                 var value = new ValueStruct { vfield1 = i, vfield2 = i + 1 };
 
-                var status = session.Read(ref key1, ref input, ref output, Empty.Default, 0);
-                Assert.IsTrue(status.Found);
-                Assert.AreEqual(value.vfield1, output.value.vfield1);
-                Assert.AreEqual(value.vfield2, output.value.vfield2);
+                var status = bContext.Read(ref key1, ref input, ref output, Empty.Default);
+                ClassicAssert.IsTrue(status.Found);
+                ClassicAssert.AreEqual(value.vfield1, output.value.vfield1);
+                ClassicAssert.AreEqual(value.vfield2, output.value.vfield2);
             }
 
             // Upsert to overwrite the read cache
@@ -111,7 +125,7 @@ namespace Tsavorite.test.ReadCacheTests
             {
                 var key1 = new KeyStruct { kfield1 = i, kfield2 = i + 1 };
                 var value = new ValueStruct { vfield1 = i + 1, vfield2 = i + 2 };
-                session.Upsert(ref key1, ref value, Empty.Default, 0);
+                bContext.Upsert(ref key1, ref value, Empty.Default);
             }
 
             // RMW to overwrite the read cache
@@ -120,15 +134,15 @@ namespace Tsavorite.test.ReadCacheTests
                 OutputStruct output = default;
                 var key1 = new KeyStruct { kfield1 = i, kfield2 = i + 1 };
                 input = new InputStruct { ifield1 = 1, ifield2 = 1 };
-                var status = session.RMW(ref key1, ref input, ref output, Empty.Default, 0);
+                var status = bContext.RMW(ref key1, ref input, ref output, Empty.Default);
                 if (status.IsPending)
                 {
-                    session.CompletePending(true);
+                    bContext.CompletePending(true);
                 }
                 else
                 {
-                    Assert.AreEqual(i + 1, output.value.vfield1);
-                    Assert.AreEqual(i + 2, output.value.vfield2);
+                    ClassicAssert.AreEqual(i + 1, output.value.vfield1);
+                    ClassicAssert.AreEqual(i + 2, output.value.vfield2);
                 }
             }
 
@@ -139,10 +153,10 @@ namespace Tsavorite.test.ReadCacheTests
                 var key1 = new KeyStruct { kfield1 = i, kfield2 = i + 1 };
                 var value = new ValueStruct { vfield1 = i + 1, vfield2 = i + 2 };
 
-                var status = session.Read(ref key1, ref input, ref output, Empty.Default, 0);
-                Assert.IsTrue(status.Found);
-                Assert.AreEqual(value.vfield1, output.value.vfield1);
-                Assert.AreEqual(value.vfield2, output.value.vfield2);
+                var status = bContext.Read(ref key1, ref input, ref output, Empty.Default);
+                ClassicAssert.IsTrue(status.Found);
+                ClassicAssert.AreEqual(value.vfield1, output.value.vfield1);
+                ClassicAssert.AreEqual(value.vfield2, output.value.vfield2);
             }
         }
 
@@ -151,6 +165,7 @@ namespace Tsavorite.test.ReadCacheTests
         public void NativeDiskWriteReadCache2()
         {
             using var session = store.NewSession<InputStruct, OutputStruct, Empty, Functions>(new Functions());
+            var bContext = session.BasicContext;
 
             InputStruct input = default;
 
@@ -158,9 +173,9 @@ namespace Tsavorite.test.ReadCacheTests
             {
                 var key1 = new KeyStruct { kfield1 = i, kfield2 = i + 1 };
                 var value = new ValueStruct { vfield1 = i, vfield2 = i + 1 };
-                session.Upsert(ref key1, ref value, Empty.Default, 0);
+                bContext.Upsert(ref key1, ref value, Empty.Default);
             }
-            session.CompletePending(true);
+            bContext.CompletePending(true);
 
             // Dispose the hybrid log from memory entirely
             store.Log.DisposeFromMemory();
@@ -172,9 +187,9 @@ namespace Tsavorite.test.ReadCacheTests
                 var key1 = new KeyStruct { kfield1 = i, kfield2 = i + 1 };
                 var value = new ValueStruct { vfield1 = i, vfield2 = i + 1 };
 
-                var status = session.Read(ref key1, ref input, ref output, Empty.Default, 0);
-                Assert.IsTrue(status.IsPending);
-                session.CompletePending(true);
+                var status = bContext.Read(ref key1, ref input, ref output, Empty.Default);
+                ClassicAssert.IsTrue(status.IsPending);
+                bContext.CompletePending(true);
             }
 
             // Read last 100 keys - all should be served from cache
@@ -184,10 +199,10 @@ namespace Tsavorite.test.ReadCacheTests
                 var key1 = new KeyStruct { kfield1 = i, kfield2 = i + 1 };
                 var value = new ValueStruct { vfield1 = i, vfield2 = i + 1 };
 
-                var status = session.Read(ref key1, ref input, ref output, Empty.Default, 0);
-                Assert.IsTrue(status.Found);
-                Assert.AreEqual(value.vfield1, output.value.vfield1);
-                Assert.AreEqual(value.vfield2, output.value.vfield2);
+                var status = bContext.Read(ref key1, ref input, ref output, Empty.Default);
+                ClassicAssert.IsTrue(status.Found);
+                ClassicAssert.AreEqual(value.vfield1, output.value.vfield1);
+                ClassicAssert.AreEqual(value.vfield2, output.value.vfield2);
             }
 
             // Evict the read cache entirely
@@ -200,9 +215,9 @@ namespace Tsavorite.test.ReadCacheTests
                 var key1 = new KeyStruct { kfield1 = i, kfield2 = i + 1 };
                 var value = new ValueStruct { vfield1 = i, vfield2 = i + 1 };
 
-                var status = session.Read(ref key1, ref input, ref output, Empty.Default, 0);
-                Assert.IsTrue(status.IsPending);
-                session.CompletePending(true);
+                var status = bContext.Read(ref key1, ref input, ref output, Empty.Default);
+                ClassicAssert.IsTrue(status.IsPending);
+                bContext.CompletePending(true);
             }
 
             // Read 100 keys - all should be served from cache
@@ -212,10 +227,10 @@ namespace Tsavorite.test.ReadCacheTests
                 var key1 = new KeyStruct { kfield1 = i, kfield2 = i + 1 };
                 var value = new ValueStruct { vfield1 = i, vfield2 = i + 1 };
 
-                var status = session.Read(ref key1, ref input, ref output, Empty.Default, 0);
-                Assert.IsTrue(status.Found);
-                Assert.AreEqual(value.vfield1, output.value.vfield1);
-                Assert.AreEqual(value.vfield2, output.value.vfield2);
+                var status = bContext.Read(ref key1, ref input, ref output, Empty.Default);
+                ClassicAssert.IsTrue(status.Found);
+                ClassicAssert.AreEqual(value.vfield1, output.value.vfield1);
+                ClassicAssert.AreEqual(value.vfield2, output.value.vfield2);
             }
         }
     }

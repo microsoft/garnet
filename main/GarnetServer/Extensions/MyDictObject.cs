@@ -2,9 +2,9 @@
 // Licensed under the MIT license.
 
 using System;
-using System.Buffers;
 using System.Collections.Generic;
 using System.Diagnostics;
+using System.Diagnostics.CodeAnalysis;
 using System.IO;
 using Garnet.server;
 using Tsavorite.core;
@@ -27,13 +27,13 @@ namespace Garnet
         public MyDict(byte type)
             : base(type, 0, MemoryUtils.DictionaryOverhead)
         {
-            dict = new(new ByteArrayComparer());
+            dict = new(ByteArrayComparer.Instance);
         }
 
         public MyDict(byte type, BinaryReader reader)
             : base(type, reader, MemoryUtils.DictionaryOverhead)
         {
-            dict = new(new ByteArrayComparer());
+            dict = new(ByteArrayComparer.Instance);
 
             int count = reader.ReadInt32();
             for (int i = 0; i < count; i++)
@@ -66,37 +66,7 @@ namespace Garnet
             }
         }
 
-        public override void Operate(byte subCommand, ReadOnlySpan<byte> input, ref (IMemoryOwner<byte>, int) output)
-        {
-            switch (subCommand)
-            {
-                case 0: // MYDICTSET
-                    {
-                        int offset = 0;
-                        var key = GetNextArg(input, ref offset).ToArray();
-                        var value = GetNextArg(input, ref offset).ToArray();
-
-                        dict[key] = value;
-                        UpdateSize(key, value);
-                        break; // +OK is sent as response, by default
-                    }
-                case 1: // MYDICTGET
-                    {
-                        var key = GetFirstArg(input);
-                        if (dict.TryGetValue(key.ToArray(), out var result))
-                            WriteBulkString(ref output, result);
-                        else
-                            WriteNullBulkString(ref output);
-                        break;
-                    }
-                default:
-                    WriteError(ref output, "Unexpected command");
-                    break;
-            }
-        }
-
         public override void Dispose() { }
-
 
         /// <summary>
         /// Returns the items from this object using a cursor to indicate the start of the scan,
@@ -162,12 +132,29 @@ namespace Garnet
                 cursor = 0;
         }
 
+        public bool Set(byte[] key, byte[] value)
+        {
+            if (dict.TryGetValue(key, out var oldValue))
+            {
+                UpdateSize(key, oldValue, false);
+            }
+
+            dict[key] = value;
+            UpdateSize(key, value);
+            return true;
+        }
+
         private void UpdateSize(byte[] key, byte[] value, bool add = true)
         {
             var size = Utility.RoundUp(key.Length, IntPtr.Size) + Utility.RoundUp(value.Length, IntPtr.Size)
                 + (2 * MemoryUtils.ByteArrayOverhead) + MemoryUtils.DictionaryEntryOverhead;
             this.Size += add ? size : -size;
             Debug.Assert(this.Size >= MemoryUtils.DictionaryOverhead);
+        }
+
+        public bool TryGetValue(byte[] key, [MaybeNullWhen(false)] out byte[] value)
+        {
+            return dict.TryGetValue(key, out value);
         }
     }
 }

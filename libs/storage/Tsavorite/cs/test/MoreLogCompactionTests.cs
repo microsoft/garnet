@@ -3,14 +3,18 @@
 
 using System.IO;
 using NUnit.Framework;
+using NUnit.Framework.Legacy;
 using Tsavorite.core;
 
 namespace Tsavorite.test
 {
+    using LongAllocator = BlittableAllocator<long, long, StoreFunctions<long, long, LongKeyComparer, DefaultRecordDisposer<long, long>>>;
+    using LongStoreFunctions = StoreFunctions<long, long, LongKeyComparer, DefaultRecordDisposer<long, long>>;
+
     [TestFixture]
     internal class MoreLogCompactionTests
     {
-        private TsavoriteKV<long, long> store;
+        private TsavoriteKV<long, long, LongStoreFunctions, LongAllocator> store;
         private IDevice log;
 
         [SetUp]
@@ -18,8 +22,15 @@ namespace Tsavorite.test
         {
             TestUtils.DeleteDirectory(TestUtils.MethodTestDir, wait: true);
             log = Devices.CreateLogDevice(Path.Join(TestUtils.MethodTestDir, "MoreLogCompactionTests.log"), deleteOnClose: true);
-            store = new TsavoriteKV<long, long>
-                (1L << 20, new LogSettings { LogDevice = log, MemorySizeBits = 15, PageSizeBits = 9 });
+            store = new(new()
+            {
+                IndexSize = 1L << 26,
+                LogDevice = log,
+                MemorySize = 1L << 15,
+                PageSize = 1L << 9
+            }, StoreFunctions<long, long>.Create(LongKeyComparer.Instance)
+                , (allocatorSettings, storeFunctions) => new(allocatorSettings, storeFunctions)
+            );
         }
 
         [TearDown]
@@ -39,7 +50,8 @@ namespace Tsavorite.test
 
         public void DeleteCompactLookup([Values] CompactionType compactionType)
         {
-            using var session = store.NewSession<long, long, Empty, SimpleFunctions<long, long>>(new SimpleFunctions<long, long>());
+            using var session = store.NewSession<long, long, Empty, SimpleSimpleFunctions<long, long>>(new SimpleSimpleFunctions<long, long>());
+            var bContext = session.BasicContext;
 
             const int totalRecords = 2000;
             var start = store.Log.TailAddress;
@@ -49,38 +61,39 @@ namespace Tsavorite.test
             {
                 if (i == 1010)
                     compactUntil = store.Log.TailAddress;
-                session.Upsert(i, i);
+                _ = bContext.Upsert(i, i);
             }
 
             for (int i = 0; i < totalRecords / 2; i++)
-                session.Delete(i);
+                _ = bContext.Delete(i);
 
             compactUntil = session.Compact(compactUntil, compactionType);
 
-            Assert.AreEqual(compactUntil, store.Log.BeginAddress);
+            ClassicAssert.AreEqual(compactUntil, store.Log.BeginAddress);
 
-            using var session2 = store.NewSession<long, long, Empty, SimpleFunctions<long, long>>(new SimpleFunctions<long, long>());
+            using var session2 = store.NewSession<long, long, Empty, SimpleSimpleFunctions<long, long>>(new SimpleSimpleFunctions<long, long>());
+            var bContext2 = session2.BasicContext;
 
             // Verify records by reading
             for (int i = 0; i < totalRecords; i++)
             {
-                (var status, var output) = session2.Read(i);
+                (var status, var output) = bContext2.Read(i);
                 if (status.IsPending)
                 {
-                    session2.CompletePendingWithOutputs(out var completedOutputs, true);
-                    Assert.IsTrue(completedOutputs.Next());
+                    _ = bContext2.CompletePendingWithOutputs(out var completedOutputs, true);
+                    ClassicAssert.IsTrue(completedOutputs.Next());
                     (status, output) = (completedOutputs.Current.Status, completedOutputs.Current.Output);
-                    Assert.IsFalse(completedOutputs.Next());
+                    ClassicAssert.IsFalse(completedOutputs.Next());
                 }
 
                 if (i < totalRecords / 2)
                 {
-                    Assert.IsTrue(status.NotFound);
+                    ClassicAssert.IsTrue(status.NotFound);
                 }
                 else
                 {
-                    Assert.IsTrue(status.Found);
-                    Assert.AreEqual(i, output);
+                    ClassicAssert.IsTrue(status.Found);
+                    ClassicAssert.AreEqual(i, output);
                 }
             }
         }

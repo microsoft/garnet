@@ -29,7 +29,9 @@ namespace Tsavorite.core
         public const int CheckpointCompletionCallback = 4;
     }
 
-    public partial class TsavoriteKV<Key, Value>
+    public partial class TsavoriteKV<TKey, TValue, TStoreFunctions, TAllocator>
+        where TStoreFunctions : IStoreFunctions<TKey, TValue>
+        where TAllocator : IAllocator<TKey, TValue, TStoreFunctions>
     {
 
         internal TaskCompletionSource<LinkedCheckpointInfo> checkpointTcs = new(TaskCreationOptions.RunContinuationsAsynchronously);
@@ -50,7 +52,7 @@ namespace Tsavorite.core
             if (CommitCookie != null && CommitCookie.Length != 0)
             {
                 var convertedCookie = Convert.ToBase64String(CommitCookie);
-                metadata = metadata.Concat(Encoding.Default.GetBytes(convertedCookie)).ToArray();
+                metadata = [.. metadata, .. Encoding.Default.GetBytes(convertedCookie)];
             }
             checkpointManager.CommitLogCheckpoint(_hybridLogCheckpointToken, metadata);
             Log.ShiftBeginAddress(_hybridLogCheckpoint.info.beginAddress, truncateLog: true);
@@ -62,7 +64,7 @@ namespace Tsavorite.core
             if (CommitCookie != null && CommitCookie.Length != 0)
             {
                 var convertedCookie = Convert.ToBase64String(CommitCookie);
-                metadata = metadata.Concat(Encoding.Default.GetBytes(convertedCookie)).ToArray();
+                metadata = [.. metadata, .. Encoding.Default.GetBytes(convertedCookie)];
             }
             checkpointManager.CommitLogIncrementalCheckpoint(_hybridLogCheckpointToken, _hybridLogCheckpoint.info.version, metadata, deltaLog);
             Log.ShiftBeginAddress(_hybridLogCheckpoint.info.beginAddress, truncateLog: true);
@@ -75,7 +77,7 @@ namespace Tsavorite.core
 
         internal bool ObtainCurrentTailAddress(ref long location)
         {
-            var tailAddress = hlog.GetTailAddress();
+            var tailAddress = hlogBase.GetTailAddress();
             return Interlocked.CompareExchange(ref location, tailAddress, 0) == 0;
         }
 
@@ -87,11 +89,11 @@ namespace Tsavorite.core
         internal void InitializeHybridLogCheckpoint(Guid hybridLogToken, long version)
         {
             _hybridLogCheckpoint.Initialize(hybridLogToken, version, checkpointManager);
-            _hybridLogCheckpoint.info.manualLockingActive = hlog.NumActiveLockingSessions > 0;
+            _hybridLogCheckpoint.info.manualLockingActive = hlogBase.NumActiveLockingSessions > 0;
         }
 
-        internal long Compact<T1, T2, T3, T4, CompactionFunctions>(IFunctions<Key, Value, object, object, object> functions, CompactionFunctions compactionFunctions, long untilAddress, CompactionType compactionType)
-            where CompactionFunctions : ICompactionFunctions<Key, Value>
+        internal long Compact<T1, T2, T3, T4, CompactionFunctions>(ISessionFunctions<TKey, TValue, object, object, object> functions, CompactionFunctions compactionFunctions, long untilAddress, CompactionType compactionType)
+            where CompactionFunctions : ICompactionFunctions<TKey, TValue>
         {
             throw new NotImplementedException();
         }

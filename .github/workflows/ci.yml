@@ -81,7 +81,7 @@ jobs:
       fail-fast: false
       matrix:
         os: [ ubuntu-latest, windows-latest ]
-        framework: [ 'net6.0', 'net8.0' ]
+        framework: [ 'net8.0' ]
         configuration: [ 'Debug', 'Release' ]
         test: [ 'Garnet.test', 'Garnet.test.cluster' ]
     if: needs.changes.outputs.garnet == 'true'
@@ -97,8 +97,8 @@ jobs:
       - name: Build Garnet
         run: dotnet build --configuration ${{ matrix.configuration }}
       - name: Run tests ${{ matrix.test }}
-        run: dotnet test test/${{ matrix.test }} -f ${{ matrix.framework }} --logger "console;verbosity=detailed" --logger trx --results-directory "GarnetTestResults-${{ matrix.os }}-${{ matrix.framework }}-${{ matrix.configuration }}-${{ matrix.test }}"
-        timeout-minutes: 30 
+        run: dotnet test test/${{ matrix.test }} -f ${{ matrix.framework }} --configuration ${{ matrix.configuration }} --logger "console;verbosity=detailed" --logger trx --results-directory "GarnetTestResults-${{ matrix.os }}-${{ matrix.framework }}-${{ matrix.configuration }}-${{ matrix.test }}"
+        timeout-minutes: 45 
       - name: Upload test results
         uses: actions/upload-artifact@v4
         with:
@@ -115,7 +115,7 @@ jobs:
       fail-fast: false
       matrix:
         os: [ ubuntu-latest, windows-latest ]
-        framework: [ 'net6.0', 'net8.0' ]
+        framework: [ 'net8.0' ]
         configuration: [ 'Debug', 'Release' ]
     if: needs.changes.outputs.tsavorite == 'true'   
     steps:
@@ -134,7 +134,7 @@ jobs:
       - name: Setup Node.js for Azurite
         uses: actions/setup-node@v4
         with:
-          node-version: '20'
+          node-version: 20
       - name: Install and Run Azurite
         shell: bash
         run: |
@@ -145,8 +145,8 @@ jobs:
       - name: Build Tsavorite
         run: dotnet build libs/storage/Tsavorite/cs/test/Tsavorite.test.csproj --configuration ${{ matrix.configuration }}
       - name: Run Tsavorite tests
-        run: dotnet test libs/storage/Tsavorite/cs/test/Tsavorite.test.csproj -f ${{ matrix.framework }} --logger "console;verbosity=detailed" --logger trx --results-directory "TsavoriteTestResults-${{ matrix.os }}-${{ matrix.framework }}-${{ matrix.configuration }}"
-        timeout-minutes: 30 
+        run: dotnet test libs/storage/Tsavorite/cs/test/Tsavorite.test.csproj -f ${{ matrix.framework }} --configuration ${{ matrix.configuration }} --logger "console;verbosity=detailed" --logger trx --results-directory "TsavoriteTestResults-${{ matrix.os }}-${{ matrix.framework }}-${{ matrix.configuration }}"
+        timeout-minutes: 45 
       - name: Upload test results
         uses: actions/upload-artifact@v4
         with:
@@ -163,10 +163,10 @@ jobs:
         working-directory: website
     if: needs.changes.outputs.website == 'true'   
     steps:
-      - uses: actions/checkout@v3
-      - uses: actions/setup-node@v3
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
         with:
-          node-version: 18
+          node-version: 20
           cache: yarn
           cache-dependency-path: ./website/yarn.lock
       - name: Install dependencies

@@ -3,8 +3,9 @@
 
 using System;
 using System.Threading.Tasks;
+using Garnet.server;
 using NUnit.Framework;
-using NUnit.Framework.Internal;
+using NUnit.Framework.Legacy;
 
 namespace Garnet.test.Resp.ACL
 {
@@ -35,23 +36,23 @@ namespace Garnet.test.Resp.ACL
 
             // Check user is authenticated to default
             var response = await c.ExecuteAsync("ACL", "WHOAMI");
-            Assert.AreEqual("default", response);
+            ClassicAssert.AreEqual("default", response);
 
             // Add the testuser and password
-            response = await c.ExecuteAsync("ACL", "SETUSER", TestUserA, "on", "nopass", "+@admin");
-            Assert.IsTrue(response.StartsWith("OK"));
+            response = await c.ExecuteAsync("ACL", "SETUSER", TestUserA, "on", "nopass", "+@admin", "+@slow");
+            ClassicAssert.IsTrue(response.StartsWith("OK"));
 
             // Change users and verify whoami changes
             response = await c.ExecuteAsync("AUTH", TestUserA, "password");
-            Assert.IsTrue(response.StartsWith("OK"));
+            ClassicAssert.IsTrue(response.StartsWith("OK"));
             response = await c.ExecuteAsync("ACL", "WHOAMI");
-            Assert.AreEqual(TestUserA, response);
+            ClassicAssert.AreEqual(TestUserA, response);
 
             // Change users back to default and verify whoami changes
             response = await c.ExecuteAsync("AUTH", "default", "password");
-            Assert.IsTrue(response.StartsWith("OK"));
+            ClassicAssert.IsTrue(response.StartsWith("OK"));
             response = await c.ExecuteAsync("ACL", "WHOAMI");
-            Assert.AreEqual("default", response);
+            ClassicAssert.AreEqual("default", response);
         }
 
         /// <summary>
@@ -60,7 +61,7 @@ namespace Garnet.test.Resp.ACL
         [Test]
         public async Task BasicListTest()
         {
-            const string ExpectedDefaultRule = "user default on nopass +@admin";
+            const string ExpectedDefaultRule = "user default on nopass +@all";
             const string ExpectedTestUserRule = $"user {TestUserA} off";
 
             using var c = TestUtils.GetGarnetClientSession();
@@ -68,23 +69,23 @@ namespace Garnet.test.Resp.ACL
 
             // Right now only the default user should exist
             string[] users = await c.ExecuteForArrayAsync("ACL", "LIST");
-            Assert.IsTrue(1 == users.Length);
-            Assert.Contains(ExpectedDefaultRule, users);
+            ClassicAssert.IsTrue(1 == users.Length);
+            ClassicAssert.Contains(ExpectedDefaultRule, users);
 
             // Add the test user and makes sure the list gets extended
             var response = await c.ExecuteAsync("ACL", "SETUSER", TestUserA);
-            Assert.AreEqual("OK", response);
+            ClassicAssert.AreEqual("OK", response);
             users = await c.ExecuteForArrayAsync("ACL", "LIST");
-            Assert.IsTrue(2 == users.Length);
-            Assert.Contains(ExpectedDefaultRule, users);
-            Assert.Contains(ExpectedTestUserRule, users);
+            ClassicAssert.IsTrue(2 == users.Length);
+            ClassicAssert.Contains(ExpectedDefaultRule, users);
+            ClassicAssert.Contains(ExpectedTestUserRule, users);
 
             // Remove the test user and make sure the list gets trimmed again
             response = await c.ExecuteAsync("ACL", "DELUSER", TestUserA);
-            Assert.AreEqual("1", response);
+            ClassicAssert.AreEqual("1", response);
             users = await c.ExecuteForArrayAsync("ACL", "LIST");
-            Assert.IsTrue(1 == users.Length);
-            Assert.Contains(ExpectedDefaultRule, users);
+            ClassicAssert.IsTrue(1 == users.Length);
+            ClassicAssert.Contains(ExpectedDefaultRule, users);
         }
 
         /// <summary>
@@ -98,16 +99,16 @@ namespace Garnet.test.Resp.ACL
 
             // Right now only the default user should exist
             string[] users = await c.ExecuteForArrayAsync("ACL", "USERS");
-            Assert.IsTrue(1 == users.Length);
-            Assert.Contains("default", users);
+            ClassicAssert.IsTrue(1 == users.Length);
+            ClassicAssert.Contains("default", users);
 
             // Add a second user and makes sure the list gets longer.
             var response = await c.ExecuteAsync("ACL", "SETUSER", TestUserA);
-            Assert.AreEqual("OK", response);
+            ClassicAssert.AreEqual("OK", response);
             users = await c.ExecuteForArrayAsync("ACL", "USERS");
-            Assert.IsTrue(2 == users.Length);
-            Assert.Contains(TestUserA, users);
-            Assert.Contains("default", users);
+            ClassicAssert.IsTrue(2 == users.Length);
+            ClassicAssert.Contains(TestUserA, users);
+            ClassicAssert.Contains("default", users);
         }
 
         /// <summary>
@@ -118,7 +119,30 @@ namespace Garnet.test.Resp.ACL
         {
             using var lightClientRequest = TestUtils.CreateRequest();
             var response = lightClientRequest.SendCommand("ACL subcommand");
-            Assert.IsTrue(response.AsSpan().StartsWith("-ERR"u8));
+            ClassicAssert.IsTrue(response.AsSpan().StartsWith("-ERR"u8));
+        }
+
+        /// <summary>
+        /// Test that our check for "has subcommands" matches reality.
+        /// </summary>
+        [Test]
+        public void NoAuthValidation()
+        {
+            foreach (var cmd in Enum.GetValues<RespCommand>())
+            {
+                if (cmd == RespCommand.NONE || cmd == RespCommand.INVALID)
+                {
+                    continue;
+                }
+
+                if (RespCommandsInfo.TryGetRespCommandInfo(cmd, out var info))
+                {
+                    var infoIsNoAuth = info.Flags.HasFlag(RespCommandFlags.NoAuth);
+                    var cmdIsNoAuth = cmd.IsNoAuth();
+
+                    ClassicAssert.AreEqual(infoIsNoAuth, cmdIsNoAuth, $"Mismatch for command {cmd}");
+                }
+            }
         }
     }
 }

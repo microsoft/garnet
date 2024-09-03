@@ -15,9 +15,11 @@ namespace Garnet.server
     /// <remarks>
     /// SAFETY: This type is used to represent arguments that are assumed to point to pinned memory.
     /// </remarks>
-    [StructLayout(LayoutKind.Explicit, Size = 12)]
+    [StructLayout(LayoutKind.Explicit, Size = Size)]
     public unsafe struct ArgSlice
     {
+        public const int Size = 12;
+
         [FieldOffset(0)]
         internal byte* ptr;
 
@@ -60,7 +62,7 @@ namespace Garnet.server
         /// <summary>
         /// Get slice as SpanByte
         /// </summary>
-        public readonly SpanByte SpanByte => SpanByte.FromPinnedPointer(ptr, length);
+        public readonly SpanByte SpanByte => new(length, (nint)ptr);
 
         /// <summary>
         /// Copies the contents of this slice into a new array.
@@ -84,5 +86,12 @@ namespace Garnet.server
         {
             return new ArgSlice((byte*)Unsafe.AsPointer(ref MemoryMarshal.GetReference(span)), span.Length);
         }
+
+        /// <summary>
+        /// Check for equality to the provided argSlice
+        /// </summary>
+        /// <param name="argSlice"></param>
+        /// <returns></returns>
+        public readonly bool Equals(ArgSlice argSlice) => argSlice.Span.SequenceEqual(Span);
     }
 }

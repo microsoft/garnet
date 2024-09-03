@@ -16,7 +16,7 @@ namespace Garnet.client
         /// <summary>
         /// Get client latency histogram
         /// </summary>
-        public HistogramBase GetLatencyHistogram => latency?.Copy();
+        public LongHistogram CopyLatencyHistogram => (LongHistogram)(latency?.Copy());
 
         /// <summary>
         /// Reset internal latency histogram if enabled
@@ -25,9 +25,12 @@ namespace Garnet.client
 
         private MetricsItem[] GetPercentiles(LongHistogram longHistogram, double scaling)
         {
-            var histogram = GetLatencyHistogram;
+            var histogram = CopyLatencyHistogram;
             if (histogram == null || histogram.TotalCount == 0)
-                return Array.Empty<MetricsItem>();
+            {
+                histogram?.Return();
+                return [];
+            }
 
             var _min = (histogram.GetValueAtPercentile(0) / scaling).ToString("N2", CultureInfo.InvariantCulture);
             var _5 = (histogram.GetValueAtPercentile(5) / scaling).ToString("N2", CultureInfo.InvariantCulture);
@@ -37,8 +40,8 @@ namespace Garnet.client
             var _99 = (histogram.GetValueAtPercentile(99) / scaling).ToString("N2", CultureInfo.InvariantCulture);
             var _999 = (histogram.GetValueAtPercentile(99.9) / scaling).ToString("N2", CultureInfo.InvariantCulture);
 
-            MetricsItem[] percentiles = new MetricsItem[]
-            {
+            MetricsItem[] percentiles =
+            [
                 new("calls", latency.TotalCount.ToString()),
                 new("min", _min),
                 new("5th", _5),
@@ -47,8 +50,9 @@ namespace Garnet.client
                 new("95th", _95),
                 new("99th", _99),
                 new("99.9th", _999)
-            };
+            ];
 
+            histogram.Return();
             return percentiles;
         }
 

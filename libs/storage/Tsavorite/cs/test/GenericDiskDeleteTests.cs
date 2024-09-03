@@ -3,16 +3,21 @@
 
 using System.IO;
 using NUnit.Framework;
+using NUnit.Framework.Legacy;
 using Tsavorite.core;
 using static Tsavorite.test.TestUtils;
 
 namespace Tsavorite.test
 {
+    using ClassAllocator = GenericAllocator<MyKey, MyValue, StoreFunctions<MyKey, MyValue, MyKey.Comparer, DefaultRecordDisposer<MyKey, MyValue>>>;
+    using ClassStoreFunctions = StoreFunctions<MyKey, MyValue, MyKey.Comparer, DefaultRecordDisposer<MyKey, MyValue>>;
+
     [TestFixture]
     internal class GenericDiskDeleteTests
     {
-        private TsavoriteKV<MyKey, MyValue> store;
-        private ClientSession<MyKey, MyValue, MyInput, MyOutput, int, MyFunctionsDelete> session;
+        private TsavoriteKV<MyKey, MyValue, ClassStoreFunctions, ClassAllocator> store;
+        private ClientSession<MyKey, MyValue, MyInput, MyOutput, int, MyFunctionsDelete, ClassStoreFunctions, ClassAllocator> session;
+        private BasicContext<MyKey, MyValue, MyInput, MyOutput, int, MyFunctionsDelete, ClassStoreFunctions, ClassAllocator> bContext;
         private IDevice log, objlog;
 
         [SetUp]
@@ -22,12 +27,19 @@ namespace Tsavorite.test
             log = Devices.CreateLogDevice(Path.Join(MethodTestDir, "GenericDiskDeleteTests.log"), deleteOnClose: true);
             objlog = Devices.CreateLogDevice(Path.Join(MethodTestDir, "GenericDiskDeleteTests.obj.log"), deleteOnClose: true);
 
-            store = new TsavoriteKV<MyKey, MyValue>
-                (128,
-                logSettings: new LogSettings { LogDevice = log, ObjectLogDevice = objlog, MutableFraction = 0.1, MemorySizeBits = 14, PageSizeBits = 9 },
-                serializerSettings: new SerializerSettings<MyKey, MyValue> { keySerializer = () => new MyKeySerializer(), valueSerializer = () => new MyValueSerializer() },
-                concurrencyControlMode: ConcurrencyControlMode.None);
+            store = new(new()
+            {
+                IndexSize = 1L << 13,
+                LogDevice = log,
+                ObjectLogDevice = objlog,
+                MutableFraction = 0.1,
+                MemorySize = 1L << 14,
+                PageSize = 1L << 9
+            }, StoreFunctions<MyKey, MyValue>.Create(new MyKey.Comparer(), () => new MyKeySerializer(), () => new MyValueSerializer())
+                , (allocatorSettings, storeFunctions) => new(allocatorSettings, storeFunctions)
+            );
             session = store.NewSession<MyInput, MyOutput, int, MyFunctionsDelete>(new MyFunctionsDelete());
+            bContext = session.BasicContext;
         }
 
         [TearDown]
@@ -57,7 +69,7 @@ namespace Tsavorite.test
             {
                 var _key = new MyKey { key = i };
                 var _value = new MyValue { value = i };
-                session.Upsert(ref _key, ref _value, 0, 0);
+                _ = bContext.Upsert(ref _key, ref _value, 0);
             }
 
             for (int i = 0; i < totalRecords; i++)
@@ -67,20 +79,16 @@ namespace Tsavorite.test
                 var key1 = new MyKey { key = i };
                 var value = new MyValue { value = i };
 
-                if (session.Read(ref key1, ref input, ref output, 0, 0).IsPending)
-                {
-                    session.CompletePending(true);
-                }
+                if (bContext.Read(ref key1, ref input, ref output, 0).IsPending)
+                    _ = bContext.CompletePending(true);
                 else
-                {
-                    Assert.AreEqual(value.value, output.value.value);
-                }
+                    ClassicAssert.AreEqual(value.value, output.value.value);
             }
 
             for (int i = 0; i < totalRecords; i++)
             {
                 var key1 = new MyKey { key = i };
-                session.Delete(ref key1, 0, 0);
+                _ = bContext.Delete(ref key1);
             }
 
             for (int i = 0; i < totalRecords; i++)
@@ -89,14 +97,14 @@ namespace Tsavorite.test
                 var output = new MyOutput();
                 var key1 = new MyKey { key = i };
 
-                var status = session.Read(ref key1, ref input, ref output, 1, 0);
+                var status = bContext.Read(ref key1, ref input, ref output, 1);
 
                 if (status.IsPending)
                 {
-                    session.CompletePendingWithOutputs(out var outputs, wait: true);
+                    _ = bContext.CompletePendingWithOutputs(out var outputs, wait: true);
                     (status, _) = GetSinglePendingResult(outputs);
                 }
-                Assert.IsFalse(status.Found);
+                ClassicAssert.IsFalse(status.Found);
             }
 
 
@@ -107,7 +115,7 @@ namespace Tsavorite.test
                 if (recordInfo.Tombstone)
                     val++;
             }
-            Assert.AreEqual(val, totalRecords);
+            ClassicAssert.AreEqual(val, totalRecords);
         }
 
 
@@ -120,60 +128,60 @@ namespace Tsavorite.test
             {
                 var _key = new MyKey { key = i };
                 var _value = new MyValue { value = i };
-                session.Upsert(ref _key, ref _value, 0, 0);
+                _ = bContext.Upsert(ref _key, ref _value, 0);
             }
 
             var key100 = new MyKey { key = 100 };
             var value100 = new MyValue { value = 100 };
             var key200 = new MyKey { key = 200 };
 
-            session.Delete(ref key100, 0, 0);
+            _ = bContext.Delete(ref key100);
 
             var input = new MyInput { value = 1000 };
             var output = new MyOutput();
-            var status = session.Read(ref key100, ref input, ref output, 1, 0);
-            Assert.IsFalse(status.Found, status.ToString());
+            var status = bContext.Read(ref key100, ref input, ref output, 1);
+            ClassicAssert.IsFalse(status.Found, status.ToString());
 
-            status = session.Upsert(ref key100, ref value100, 0, 0);
-            Assert.IsTrue(!status.Found, status.ToString());
+            status = bContext.Upsert(ref key100, ref value100, 0);
+            ClassicAssert.IsTrue(!status.Found, status.ToString());
 
-            status = session.Read(ref key100, ref input, ref output, 0, 0);
-            Assert.IsTrue(status.Found, status.ToString());
-            Assert.AreEqual(value100.value, output.value.value);
+            status = bContext.Read(ref key100, ref input, ref output, 0);
+            ClassicAssert.IsTrue(status.Found, status.ToString());
+            ClassicAssert.AreEqual(value100.value, output.value.value);
 
-            session.Delete(ref key100, 0, 0);
-            session.Delete(ref key200, 0, 0);
+            _ = bContext.Delete(ref key100);
+            _ = bContext.Delete(ref key200);
 
             // This RMW should create new initial value, since item is deleted
-            status = session.RMW(ref key200, ref input, 1, 0);
-            Assert.IsFalse(status.Found);
+            status = bContext.RMW(ref key200, ref input, 1);
+            ClassicAssert.IsFalse(status.Found);
 
-            status = session.Read(ref key200, ref input, ref output, 0, 0);
-            Assert.IsTrue(status.Found, status.ToString());
-            Assert.AreEqual(input.value, output.value.value);
+            status = bContext.Read(ref key200, ref input, ref output, 0);
+            ClassicAssert.IsTrue(status.Found, status.ToString());
+            ClassicAssert.AreEqual(input.value, output.value.value);
 
             // Delete key 200 again
-            session.Delete(ref key200, 0, 0);
+            _ = bContext.Delete(ref key200);
 
             // Eliminate all records from memory
             for (int i = 201; i < 2000; i++)
             {
                 var _key = new MyKey { key = i };
                 var _value = new MyValue { value = i };
-                session.Upsert(ref _key, ref _value, 0, 0);
+                _ = bContext.Upsert(ref _key, ref _value, 0);
             }
-            status = session.Read(ref key100, ref input, ref output, 1, 0);
-            Assert.IsTrue(status.IsPending);
-            session.CompletePending(true);
+            status = bContext.Read(ref key100, ref input, ref output, 1);
+            ClassicAssert.IsTrue(status.IsPending);
+            _ = bContext.CompletePending(true);
 
             // This RMW should create new initial value, since item is deleted
-            status = session.RMW(ref key200, ref input, 1, 0);
-            Assert.IsTrue(status.IsPending);
-            session.CompletePending(true);
+            status = bContext.RMW(ref key200, ref input, 1);
+            ClassicAssert.IsTrue(status.IsPending);
+            _ = bContext.CompletePending(true);
 
-            status = session.Read(ref key200, ref input, ref output, 0, 0);
-            Assert.IsTrue(status.Found, status.ToString());
-            Assert.AreEqual(input.value, output.value.value);
+            status = bContext.Read(ref key200, ref input, ref output, 0);
+            ClassicAssert.IsTrue(status.Found, status.ToString());
+            ClassicAssert.AreEqual(input.value, output.value.value);
         }
     }
 }

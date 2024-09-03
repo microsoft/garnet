@@ -1,6 +1,8 @@
 ﻿// Copyright (c) Microsoft Corporation.
 // Licensed under the MIT license.
 
+using Garnet.common;
+
 namespace Garnet.server
 {
     /// <summary>
@@ -21,9 +23,20 @@ namespace Garnet.server
         {
             if (sessionTransactionProcMap[id].Item1 == null)
             {
-                var entry = customCommandManager.transactionProcMap[id];
-                sessionTransactionProcMap[id].Item1 = entry.proc != null ? entry.proc() : null;
-                sessionTransactionProcMap[id].Item2 = entry.NumParams;
+                var entry = customCommandManager.transactionProcMap[id] ?? throw new GarnetException($"Transaction procedure {id} not found");
+                _ = customCommandManager.CustomCommandsInfo.TryGetValue(entry.NameStr, out var cmdInfo);
+                return GetCustomTransactionProcedure(entry, txnManager, scratchBufferManager, cmdInfo?.Arity ?? 0);
+            }
+            return sessionTransactionProcMap[id];
+        }
+
+        public (CustomTransactionProcedure, int) GetCustomTransactionProcedure(CustomTransaction entry, TransactionManager txnManager, ScratchBufferManager scratchBufferManager, int arity)
+        {
+            int id = entry.id;
+            if (sessionTransactionProcMap[id].Item1 == null)
+            {
+                sessionTransactionProcMap[id].Item1 = entry.proc();
+                sessionTransactionProcMap[id].Item2 = arity;
 
                 sessionTransactionProcMap[id].Item1.txnManager = txnManager;
                 sessionTransactionProcMap[id].Item1.scratchBufferManager = scratchBufferManager;

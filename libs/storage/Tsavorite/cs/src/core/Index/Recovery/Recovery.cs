@@ -2,7 +2,6 @@
 // Licensed under the MIT license.
 
 using System;
-using System.Collections.Concurrent;
 using System.Diagnostics;
 using System.Runtime.CompilerServices;
 using System.Threading;
@@ -158,8 +157,12 @@ namespace Tsavorite.core
         public long deltaLogTailAddress;
     }
 
-    public partial class TsavoriteKV<Key, Value> : TsavoriteBase
+    public partial class TsavoriteKV<TKey, TValue, TStoreFunctions, TAllocator> : TsavoriteBase
+        where TStoreFunctions : IStoreFunctions<TKey, TValue>
+        where TAllocator : IAllocator<TKey, TValue, TStoreFunctions>
     {
+        private const long NoPageFreed = -1;
+
         /// <summary>
         /// GetLatestCheckpointTokens
         /// </summary>
@@ -185,7 +188,7 @@ namespace Tsavorite.core
             using var current = new HybridLogCheckpointInfo();
 
             // Make sure we consider delta log in order to compute latest checkpoint version
-            current.Recover(hlogToken, checkpointManager, hlog.LogPageSizeBits,
+            current.Recover(hlogToken, checkpointManager, hlogBase.LogPageSizeBits,
                 out var _, true);
             return current.info.nextVersion;
         }
@@ -200,13 +203,13 @@ namespace Tsavorite.core
         {
             using var current = new HybridLogCheckpointInfo();
             // We find the latest checkpoint metadata for the given token, including scanning the delta log for the latest metadata
-            current.Recover(token, checkpointManager, hlog.LogPageSizeBits,
+            current.Recover(token, checkpointManager, hlogBase.LogPageSizeBits,
                 out var _, true, version);
-            long snapshotDeviceOffset = hlog.GetPage(current.info.snapshotStartFlushedLogicalAddress) << hlog.LogPageSizeBits;
+            long snapshotDeviceOffset = hlogBase.GetPage(current.info.snapshotStartFlushedLogicalAddress) << hlogBase.LogPageSizeBits;
             return new LogFileInfo
             {
                 snapshotFileEndAddress = current.info.snapshotFinalLogicalAddress - snapshotDeviceOffset,
-                hybridLogFileStartAddress = hlog.GetPage(current.info.beginAddress) << hlog.LogPageSizeBits,
+                hybridLogFileStartAddress = hlogBase.GetPage(current.info.beginAddress) << hlogBase.LogPageSizeBits,
                 hybridLogFileEndAddress = current.info.flushedLogicalAddress,
                 deltaLogTailAddress = current.info.deltaTailAddress,
             };
@@ -219,7 +222,7 @@ namespace Tsavorite.core
         /// <returns></returns>
         public long GetIndexFileSize(Guid token)
         {
-            IndexCheckpointInfo recoveredICInfo = new IndexCheckpointInfo();
+            var recoveredICInfo = new IndexCheckpointInfo();
             recoveredICInfo.Recover(token, checkpointManager);
             return (long)(recoveredICInfo.info.num_ht_bytes + recoveredICInfo.info.num_ofb_bytes);
         }
@@ -231,7 +234,7 @@ namespace Tsavorite.core
             out byte[] cookie)
         {
             HybridLogCheckpointInfo current;
-            long closestVersion = long.MaxValue;
+            var closestVersion = long.MaxValue;
             closest = default;
             closestToken = default;
             cookie = default;
@@ -244,7 +247,7 @@ namespace Tsavorite.core
                 try
                 {
                     current = new HybridLogCheckpointInfo();
-                    current.Recover(hybridLogToken, checkpointManager, hlog.LogPageSizeBits,
+                    current.Recover(hybridLogToken, checkpointManager, hlogBase.LogPageSizeBits,
                         out var currCookie, false);
                     var distanceToTarget = (requestedVersion == -1 ? long.MaxValue : requestedVersion) - current.info.version;
                     // This is larger than intended version, cannot recover to this.
@@ -327,7 +330,7 @@ namespace Tsavorite.core
             {
                 recoveredHlcInfo.Dispose();
                 // need to actually scan delta log now
-                recoveredHlcInfo.Recover(closestToken, checkpointManager, hlog.LogPageSizeBits, out _, true);
+                recoveredHlcInfo.Recover(closestToken, checkpointManager, hlogBase.LogPageSizeBits, out _, true);
             }
             recoveredHlcInfo.info.DebugPrint(logger);
 
@@ -371,7 +374,7 @@ namespace Tsavorite.core
 
             // Recovery appropriate context information
             recoveredHLCInfo = new HybridLogCheckpointInfo();
-            recoveredHLCInfo.Recover(hybridLogToken, checkpointManager, hlog.LogPageSizeBits, out recoveredCommitCookie, true);
+            recoveredHLCInfo.Recover(hybridLogToken, checkpointManager, hlogBase.LogPageSizeBits, out recoveredCommitCookie, true);
             recoveredHLCInfo.info.DebugPrint(logger);
             try
             {
@@ -410,15 +413,15 @@ namespace Tsavorite.core
             overflowBucketsAllocator = new MallocFixedPageSize<HashBucket>(logger);
 
             // Reset the hybrid log
-            hlog.Reset();
+            hlogBase.Reset();
         }
 
 
         private long InternalRecover(IndexCheckpointInfo recoveredICInfo, HybridLogCheckpointInfo recoveredHLCInfo, int numPagesToPreload, bool undoNextVersion, long recoverTo)
         {
-            hlog.VerifyRecoveryInfo(recoveredHLCInfo, false);
+            hlogBase.VerifyRecoveryInfo(recoveredHLCInfo, false);
 
-            if (hlog.GetTailAddress() > hlog.GetFirstValidLogicalAddress(0))
+            if (hlogBase.GetTailAddress() > hlog.GetFirstValidLogicalAddress(0))
             {
                 logger?.LogInformation("Recovery called on non-empty log - resetting to empty state first. Make sure store is quiesced before calling Recover on a running store.");
                 Reset();
@@ -432,10 +435,11 @@ namespace Tsavorite.core
             RecoveryOptions options = new(headAddress, recoveredHLCInfo.info.startLogicalAddress, undoNextVersion);
 
             long readOnlyAddress;
+            long lastFreedPage;
             // Make index consistent for version v
             if (recoveredHLCInfo.info.useSnapshotFile == 0)
             {
-                RecoverHybridLog(scanFromAddress, recoverFromAddress, recoveredHLCInfo.info.finalLogicalAddress, recoveredHLCInfo.info.nextVersion, CheckpointType.FoldOver, options);
+                lastFreedPage = RecoverHybridLog(scanFromAddress, recoverFromAddress, recoveredHLCInfo.info.finalLogicalAddress, recoveredHLCInfo.info.nextVersion, CheckpointType.FoldOver, options);
                 readOnlyAddress = tailAddress;
             }
             else
@@ -444,23 +448,26 @@ namespace Tsavorite.core
                     headAddress = recoveredHLCInfo.info.flushedLogicalAddress;
 
                 // First recover from index starting point (fromAddress) to snapshot starting point (flushedLogicalAddress)
-                RecoverHybridLog(scanFromAddress, recoverFromAddress, recoveredHLCInfo.info.flushedLogicalAddress, recoveredHLCInfo.info.nextVersion, CheckpointType.Snapshot, options);
+                lastFreedPage = RecoverHybridLog(scanFromAddress, recoverFromAddress, recoveredHLCInfo.info.flushedLogicalAddress, recoveredHLCInfo.info.nextVersion, CheckpointType.Snapshot, options);
                 // Then recover snapshot into mutable region
-                RecoverHybridLogFromSnapshotFile(recoveredHLCInfo.info.flushedLogicalAddress, recoverFromAddress, recoveredHLCInfo.info.finalLogicalAddress, recoveredHLCInfo.info.snapshotStartFlushedLogicalAddress,
+                var snapshotLastFreedPage = RecoverHybridLogFromSnapshotFile(recoveredHLCInfo.info.flushedLogicalAddress, recoverFromAddress, recoveredHLCInfo.info.finalLogicalAddress, recoveredHLCInfo.info.snapshotStartFlushedLogicalAddress,
                                 recoveredHLCInfo.info.snapshotFinalLogicalAddress, recoveredHLCInfo.info.nextVersion, recoveredHLCInfo.info.guid, options, recoveredHLCInfo.deltaLog, recoverTo);
+
+                if (snapshotLastFreedPage != NoPageFreed)
+                    lastFreedPage = snapshotLastFreedPage;
 
                 readOnlyAddress = recoveredHLCInfo.info.flushedLogicalAddress;
             }
 
-            DoPostRecovery(recoveredICInfo, recoveredHLCInfo, tailAddress, ref headAddress, ref readOnlyAddress);
+            DoPostRecovery(recoveredICInfo, recoveredHLCInfo, tailAddress, ref headAddress, ref readOnlyAddress, lastFreedPage);
             return recoveredHLCInfo.info.version;
         }
 
         private async ValueTask<long> InternalRecoverAsync(IndexCheckpointInfo recoveredICInfo, HybridLogCheckpointInfo recoveredHLCInfo, int numPagesToPreload, bool undoNextVersion, long recoverTo, CancellationToken cancellationToken)
         {
-            hlog.VerifyRecoveryInfo(recoveredHLCInfo, false);
+            hlogBase.VerifyRecoveryInfo(recoveredHLCInfo, false);
 
-            if (hlog.GetTailAddress() > hlog.GetFirstValidLogicalAddress(0))
+            if (hlogBase.GetTailAddress() > hlog.GetFirstValidLogicalAddress(0))
             {
                 logger?.LogInformation("Recovery called on non-empty log - resetting to empty state first. Make sure store is quiesced before calling Recover on a running store.");
                 Reset();
@@ -474,10 +481,11 @@ namespace Tsavorite.core
             RecoveryOptions options = new(headAddress, recoveredHLCInfo.info.startLogicalAddress, undoNextVersion);
 
             long readOnlyAddress;
+            long lastFreedPage;
             // Make index consistent for version v
             if (recoveredHLCInfo.info.useSnapshotFile == 0)
             {
-                await RecoverHybridLogAsync(scanFromAddress, recoverFromAddress, recoveredHLCInfo.info.finalLogicalAddress, recoveredHLCInfo.info.nextVersion, CheckpointType.FoldOver,
+                lastFreedPage = await RecoverHybridLogAsync(scanFromAddress, recoverFromAddress, recoveredHLCInfo.info.finalLogicalAddress, recoveredHLCInfo.info.nextVersion, CheckpointType.FoldOver,
                                             options, cancellationToken).ConfigureAwait(false);
                 readOnlyAddress = tailAddress;
             }
@@ -487,33 +495,41 @@ namespace Tsavorite.core
                     headAddress = recoveredHLCInfo.info.flushedLogicalAddress;
 
                 // First recover from index starting point (fromAddress) to snapshot starting point (flushedLogicalAddress)
-                await RecoverHybridLogAsync(scanFromAddress, recoverFromAddress, recoveredHLCInfo.info.flushedLogicalAddress, recoveredHLCInfo.info.nextVersion, CheckpointType.Snapshot,
+                lastFreedPage = await RecoverHybridLogAsync(scanFromAddress, recoverFromAddress, recoveredHLCInfo.info.flushedLogicalAddress, recoveredHLCInfo.info.nextVersion, CheckpointType.Snapshot,
                                            new RecoveryOptions(headAddress, recoveredHLCInfo.info.startLogicalAddress, undoNextVersion), cancellationToken).ConfigureAwait(false);
                 // Then recover snapshot into mutable region
-                await RecoverHybridLogFromSnapshotFileAsync(recoveredHLCInfo.info.flushedLogicalAddress, recoverFromAddress, recoveredHLCInfo.info.finalLogicalAddress, recoveredHLCInfo.info.snapshotStartFlushedLogicalAddress,
+                var snapshotLastFreedPage = await RecoverHybridLogFromSnapshotFileAsync(recoveredHLCInfo.info.flushedLogicalAddress, recoverFromAddress, recoveredHLCInfo.info.finalLogicalAddress, recoveredHLCInfo.info.snapshotStartFlushedLogicalAddress,
                                         recoveredHLCInfo.info.snapshotFinalLogicalAddress, recoveredHLCInfo.info.nextVersion, recoveredHLCInfo.info.guid, options, recoveredHLCInfo.deltaLog, recoverTo, cancellationToken).ConfigureAwait(false);
+
+                if (snapshotLastFreedPage != NoPageFreed)
+                    lastFreedPage = snapshotLastFreedPage;
 
                 readOnlyAddress = recoveredHLCInfo.info.flushedLogicalAddress;
             }
 
-            DoPostRecovery(recoveredICInfo, recoveredHLCInfo, tailAddress, ref headAddress, ref readOnlyAddress);
+            DoPostRecovery(recoveredICInfo, recoveredHLCInfo, tailAddress, ref headAddress, ref readOnlyAddress, lastFreedPage);
             return recoveredHLCInfo.info.version;
         }
 
-        private void DoPostRecovery(IndexCheckpointInfo recoveredICInfo, HybridLogCheckpointInfo recoveredHLCInfo, long tailAddress, ref long headAddress, ref long readOnlyAddress)
+        private void DoPostRecovery(IndexCheckpointInfo recoveredICInfo, HybridLogCheckpointInfo recoveredHLCInfo, long tailAddress, ref long headAddress, ref long readOnlyAddress, long lastFreedPage)
         {
             // Adjust head and read-only address post-recovery
-            var _head = (1 + (tailAddress >> hlog.LogPageSizeBits) - (hlog.GetCapacityNumPages() - hlog.MinEmptyPageCount)) << hlog.LogPageSizeBits;
+            var _head = (1 + (tailAddress >> hlogBase.LogPageSizeBits) - (hlogBase.GetCapacityNumPages() - hlogBase.MinEmptyPageCount)) << hlogBase.LogPageSizeBits;
+
+            // If additional pages have been freed to accommodate heap memory constraints, adjust head address accordingly
+            if (lastFreedPage != NoPageFreed)
+            {
+                var nextAddress = (lastFreedPage + 1) << hlogBase.LogPageSizeBits;
+                if (_head < nextAddress)
+                    _head = nextAddress;
+            }
+
             if (_head > headAddress)
                 headAddress = _head;
             if (readOnlyAddress < headAddress)
                 readOnlyAddress = headAddress;
 
-            // Recover session information
-            hlog.RecoveryReset(tailAddress, headAddress, recoveredHLCInfo.info.beginAddress, readOnlyAddress);
-            _recoveredSessions = recoveredHLCInfo.info.continueTokens;
-            _recoveredSessionNameMap = recoveredHLCInfo.info.sessionNameMap;
-            maxSessionID = Math.Max(recoveredHLCInfo.info.maxSessionID, maxSessionID);
+            hlogBase.RecoveryReset(tailAddress, headAddress, recoveredHLCInfo.info.beginAddress, readOnlyAddress);
             checkpointManager.OnRecovery(recoveredICInfo.info.token, recoveredHLCInfo.info.guid);
             recoveredHLCInfo.Dispose();
         }
@@ -545,8 +561,8 @@ namespace Tsavorite.core
                 recoverFromAddress = recoveredHLCInfo.info.beginAddress;
 
                 // Unless we recovered previously until some hlog address
-                if (hlog.FlushedUntilAddress > recoverFromAddress)
-                    recoverFromAddress = hlog.FlushedUntilAddress;
+                if (hlogBase.FlushedUntilAddress > recoverFromAddress)
+                    recoverFromAddress = hlogBase.FlushedUntilAddress;
 
                 // Start recovery at least from beginning of fuzzy log region
                 // Needed if we are recovering to the same checkpoint a second time, with undo
@@ -571,7 +587,7 @@ namespace Tsavorite.core
 
         private bool SetRecoveryPageRanges(HybridLogCheckpointInfo recoveredHLCInfo, int numPagesToPreload, long fromAddress, out long tailAddress, out long headAddress, out long scanFromAddress)
         {
-            if ((recoveredHLCInfo.info.useSnapshotFile == 0) && (recoveredHLCInfo.info.finalLogicalAddress <= hlog.GetTailAddress()))
+            if ((recoveredHLCInfo.info.useSnapshotFile == 0) && (recoveredHLCInfo.info.finalLogicalAddress <= hlogBase.GetTailAddress()))
             {
                 tailAddress = headAddress = scanFromAddress = default;
                 return false;
@@ -587,7 +603,7 @@ namespace Tsavorite.core
             headAddress = recoveredHLCInfo.info.headAddress;
             if (numPagesToPreload != -1)
             {
-                var head = (hlog.GetPage(tailAddress) - numPagesToPreload) << hlog.LogPageSizeBits;
+                var head = (hlogBase.GetPage(tailAddress) - numPagesToPreload) << hlogBase.LogPageSizeBits;
                 if (head > headAddress)
                     headAddress = head;
             }
@@ -604,8 +620,8 @@ namespace Tsavorite.core
                     headAddress = recoveredHLCInfo.info.headAddress;
             }
 
-            if (hlog.FlushedUntilAddress > scanFromAddress)
-                scanFromAddress = hlog.FlushedUntilAddress;
+            if (hlogBase.FlushedUntilAddress > scanFromAddress)
+                scanFromAddress = hlogBase.FlushedUntilAddress;
             return true;
         }
 
@@ -621,16 +637,17 @@ namespace Tsavorite.core
         /// </summary>
         private void FreePagesBeyondUsableCapacity(long startPage, int capacity, int usableCapacity, int pagesToRead, RecoveryStatus recoveryStatus)
         {
-            var beg = startPage - capacity;
-            var end = startPage - (usableCapacity - pagesToRead);
-            if (beg < 0) beg = 0;
-            if (end < 0) end = 0;
+            var beg = Math.Max(0, startPage - capacity);
+            var end = Math.Max(0, startPage - (usableCapacity - pagesToRead));
 
-            WaitUntilAllPagesHaveBeenFlushed(beg, end, recoveryStatus);
             for (var page = beg; page < end; page++)
             {
-                if (hlog.IsAllocated(hlog.GetPageIndexForPage(page)))
-                    hlog.FreePage(page);
+                var pageIndex = hlogBase.GetPageIndexForPage(page);
+                if (hlog.IsAllocated(pageIndex))
+                {
+                    recoveryStatus.WaitFlush(pageIndex);
+                    hlogBase.EvictPage(page);
+                }
             }
         }
 
@@ -638,14 +655,35 @@ namespace Tsavorite.core
         {
             // Before reading in additional pages, make sure that any previously allocated pages that would violate the memory size
             // constraint are freed.
-            FreePagesBeyondUsableCapacity(startPage: page, capacity: capacity, usableCapacity: capacity - hlog.MinEmptyPageCount, pagesToRead: numPagesToRead, recoveryStatus);
+            FreePagesBeyondUsableCapacity(startPage: page, capacity: capacity, usableCapacity: capacity - hlogBase.MinEmptyPageCount, pagesToRead: numPagesToRead, recoveryStatus);
 
             // Issue request to read pages as much as possible
-            for (var p = page; p < endPage; p++) recoveryStatus.readStatus[hlog.GetPageIndexForPage(p)] = ReadStatus.Pending;
-            hlog.AsyncReadPagesFromDevice(page, numPagesToRead, endAddress,
-                                          hlog.AsyncReadPagesCallbackForRecovery,
+            for (var p = page; p < endPage; p++) recoveryStatus.readStatus[hlogBase.GetPageIndexForPage(p)] = ReadStatus.Pending;
+            hlogBase.AsyncReadPagesFromDevice(page, numPagesToRead, endAddress,
+                                          hlogBase.AsyncReadPagesCallbackForRecovery,
                                           recoveryStatus, recoveryStatus.recoveryDevicePageOffset,
                                           recoveryStatus.recoveryDevice, recoveryStatus.objectLogRecoveryDevice);
+        }
+
+        private long FreePagesToLimitHeapMemory(RecoveryStatus recoveryStatus, long page)
+        {
+            long lastFreedPage = NoPageFreed;
+            if (hlogBase.IsSizeBeyondLimit == null)
+                return lastFreedPage;
+
+            // free up additional pages, one at a time, to bring memory usage under control starting with the earliest possible page
+            for (var p = Math.Max(0, page - recoveryStatus.usableCapacity + 1); p < page && hlogBase.IsSizeBeyondLimit(); p++)
+            {
+                var pageIndex = hlogBase.GetPageIndexForPage(p);
+                if (hlog.IsAllocated(pageIndex))
+                {
+                    recoveryStatus.WaitFlush(pageIndex);
+                    hlogBase.EvictPage(p);
+                    lastFreedPage = p;
+                }
+            }
+
+            return lastFreedPage;
         }
 
         private long ReadPagesForRecovery(long untilAddress, RecoveryStatus recoveryStatus, long endPage, int capacity, int numPagesToReadPerIteration, long page)
@@ -682,10 +720,32 @@ namespace Tsavorite.core
             return readEndPage;
         }
 
-        private void RecoverHybridLog(long scanFromAddress, long recoverFromAddress, long untilAddress, long nextVersion, CheckpointType checkpointType, RecoveryOptions options)
+        private async Task<long> FreePagesToLimitHeapMemoryAsync(RecoveryStatus recoveryStatus, long page, CancellationToken cancellationToken)
         {
+            long lastFreedPage = NoPageFreed;
+            if (hlogBase.IsSizeBeyondLimit == null)
+                return lastFreedPage;
+
+            // free up additional pages, one at a time, to bring memory usage under control starting with the earliest possible page
+            for (var p = Math.Max(0, page - recoveryStatus.usableCapacity + 1); p < page && hlogBase.IsSizeBeyondLimit(); p++)
+            {
+                var pageIndex = hlogBase.GetPageIndexForPage(p);
+                if (hlog.IsAllocated(pageIndex))
+                {
+                    await recoveryStatus.WaitFlushAsync(pageIndex, cancellationToken);
+                    hlogBase.EvictPage(p);
+                    lastFreedPage = p;
+                }
+            }
+
+            return lastFreedPage;
+        }
+
+        private long RecoverHybridLog(long scanFromAddress, long recoverFromAddress, long untilAddress, long nextVersion, CheckpointType checkpointType, RecoveryOptions options)
+        {
+            long lastFreedPage = NoPageFreed;
             if (untilAddress <= scanFromAddress)
-                return;
+                return lastFreedPage;
             var recoveryStatus = GetPageRangesToRead(scanFromAddress, untilAddress, checkpointType, out long startPage, out long endPage, out int capacity, out int numPagesToReadPerIteration);
 
             for (long page = startPage; page < endPage; page += numPagesToReadPerIteration)
@@ -695,8 +755,12 @@ namespace Tsavorite.core
                 for (var p = page; p < end; p++)
                 {
                     // Ensure page has been read into memory
-                    int pageIndex = hlog.GetPageIndexForPage(p);
+                    int pageIndex = hlogBase.GetPageIndexForPage(p);
                     recoveryStatus.WaitRead(pageIndex);
+
+                    var freedPage = FreePagesToLimitHeapMemory(recoveryStatus, p);
+                    if (freedPage != NoPageFreed)
+                        lastFreedPage = freedPage;
 
                     // We make an extra pass to clear locks when reading every page back into memory
                     ClearLocksOnPage(p, options);
@@ -706,12 +770,15 @@ namespace Tsavorite.core
             }
 
             WaitUntilAllPagesHaveBeenFlushed(startPage, endPage, recoveryStatus);
+            return lastFreedPage;
         }
 
-        private async ValueTask RecoverHybridLogAsync(long scanFromAddress, long recoverFromAddress, long untilAddress, long nextVersion, CheckpointType checkpointType, RecoveryOptions options, CancellationToken cancellationToken)
+        private async ValueTask<long> RecoverHybridLogAsync(long scanFromAddress, long recoverFromAddress, long untilAddress, long nextVersion, CheckpointType checkpointType, RecoveryOptions options, CancellationToken cancellationToken)
         {
+            long lastFreedPage = NoPageFreed;
             if (untilAddress <= scanFromAddress)
-                return;
+                return lastFreedPage;
+
             var recoveryStatus = GetPageRangesToRead(scanFromAddress, untilAddress, checkpointType, out long startPage, out long endPage, out int capacity, out int numPagesToReadPerIteration);
 
             for (long page = startPage; page < endPage; page += numPagesToReadPerIteration)
@@ -721,8 +788,12 @@ namespace Tsavorite.core
                 for (var p = page; p < end; p++)
                 {
                     // Ensure page has been read into memory
-                    int pageIndex = hlog.GetPageIndexForPage(p);
+                    int pageIndex = hlogBase.GetPageIndexForPage(p);
                     await recoveryStatus.WaitReadAsync(pageIndex, cancellationToken).ConfigureAwait(false);
+
+                    var freedPage = await FreePagesToLimitHeapMemoryAsync(recoveryStatus, p, cancellationToken).ConfigureAwait(false);
+                    if (freedPage != NoPageFreed)
+                        lastFreedPage = freedPage;
 
                     // We make an extra pass to clear locks when reading every page back into memory
                     ClearLocksOnPage(p, options);
@@ -732,23 +803,25 @@ namespace Tsavorite.core
             }
 
             await WaitUntilAllPagesHaveBeenFlushedAsync(startPage, endPage, recoveryStatus, cancellationToken).ConfigureAwait(false);
+            return lastFreedPage;
         }
 
-        private RecoveryStatus GetPageRangesToRead(long scanFromAddress, long untilAddress, CheckpointType checkpointType, out long startPage, out long endPage, out int capacity, out int numPagesToReadFirst)
+        private RecoveryStatus GetPageRangesToRead(long scanFromAddress, long untilAddress, CheckpointType checkpointType, out long startPage, out long endPage, out int capacity, out int numPagesToReadPerIteration)
         {
-            startPage = hlog.GetPage(scanFromAddress);
-            endPage = hlog.GetPage(untilAddress);
+            startPage = hlogBase.GetPage(scanFromAddress);
+            endPage = hlogBase.GetPage(untilAddress);
             if (untilAddress > hlog.GetStartLogicalAddress(endPage) && untilAddress > scanFromAddress)
             {
                 endPage++;
             }
 
-            capacity = hlog.GetCapacityNumPages();
+            capacity = hlogBase.GetCapacityNumPages();
             int totalPagesToRead = (int)(endPage - startPage);
 
             // Leave out at least MinEmptyPageCount pages to maintain memory size during recovery
-            numPagesToReadFirst = Math.Min(capacity - hlog.MinEmptyPageCount, totalPagesToRead);
-            return new RecoveryStatus(capacity, hlog.MinEmptyPageCount, endPage, untilAddress, checkpointType);
+            // If heap memory is to be tracked, then read one page at a time to control memory usage
+            numPagesToReadPerIteration = hlogBase.IsSizeBeyondLimit == null ? Math.Min(capacity - hlogBase.MinEmptyPageCount, totalPagesToRead) : 1;
+            return new RecoveryStatus(capacity, hlogBase.MinEmptyPageCount, endPage, untilAddress, checkpointType);
         }
 
         private void ProcessReadPageAndFlush(long recoverFromAddress, long untilAddress, long nextVersion, RecoveryOptions options, RecoveryStatus recoveryStatus, long page, int pageIndex)
@@ -756,7 +829,7 @@ namespace Tsavorite.core
             if (ProcessReadPage(recoverFromAddress, untilAddress, nextVersion, options, recoveryStatus, page, pageIndex))
             {
                 // Page was modified due to undoFutureVersion. Flush it to disk; the callback issues the after-capacity read request if necessary.
-                hlog.AsyncFlushPages(page, 1, AsyncFlushPageCallbackForRecovery, recoveryStatus);
+                hlogBase.AsyncFlushPages(page, 1, AsyncFlushPageCallbackForRecovery, recoveryStatus);
                 return;
             }
 
@@ -774,13 +847,13 @@ namespace Tsavorite.core
                 return false;
 
             var pageFromAddress = 0L;
-            var pageUntilAddress = hlog.GetPageSize();
+            var pageUntilAddress = hlogBase.GetPageSize();
 
             if (recoverFromAddress > startLogicalAddress)
-                pageFromAddress = hlog.GetOffsetInPage(recoverFromAddress);
+                pageFromAddress = hlogBase.GetOffsetInPage(recoverFromAddress);
 
             if (untilAddress < endLogicalAddress)
-                pageUntilAddress = hlog.GetOffsetInPage(untilAddress);
+                pageUntilAddress = hlogBase.GetOffsetInPage(untilAddress);
 
             if (RecoverFromPage(recoverFromAddress, pageFromAddress, pageUntilAddress, startLogicalAddress, physicalAddress, nextVersion, options))
             {
@@ -796,31 +869,34 @@ namespace Tsavorite.core
         private void WaitUntilAllPagesHaveBeenFlushed(long startPage, long endPage, RecoveryStatus recoveryStatus)
         {
             for (long page = startPage; page < endPage; page++)
-                recoveryStatus.WaitFlush(hlog.GetPageIndexForPage(page));
+                recoveryStatus.WaitFlush(hlogBase.GetPageIndexForPage(page));
         }
 
         private async ValueTask WaitUntilAllPagesHaveBeenFlushedAsync(long startPage, long endPage, RecoveryStatus recoveryStatus, CancellationToken cancellationToken)
         {
             for (long page = startPage; page < endPage; page++)
-                await recoveryStatus.WaitFlushAsync(hlog.GetPageIndexForPage(page), cancellationToken).ConfigureAwait(false);
+                await recoveryStatus.WaitFlushAsync(hlogBase.GetPageIndexForPage(page), cancellationToken).ConfigureAwait(false);
         }
 
-        private void RecoverHybridLogFromSnapshotFile(long scanFromAddress, long recoverFromAddress, long untilAddress, long snapshotStartAddress, long snapshotEndAddress, long nextVersion, Guid guid, RecoveryOptions options, DeltaLog deltaLog, long recoverTo)
+        private long RecoverHybridLogFromSnapshotFile(long scanFromAddress, long recoverFromAddress, long untilAddress, long snapshotStartAddress, long snapshotEndAddress, long nextVersion, Guid guid, RecoveryOptions options, DeltaLog deltaLog, long recoverTo)
         {
+            long lastFreedPage = NoPageFreed;
             GetSnapshotPageRangesToRead(scanFromAddress, untilAddress, snapshotStartAddress, snapshotEndAddress, guid, out long startPage, out long endPage, out long snapshotEndPage, out int capacity, out var recoveryStatus, out int numPagesToReadPerIteration);
 
             for (long page = startPage; page < endPage; page += numPagesToReadPerIteration)
             {
                 ReadPagesForRecovery(snapshotEndAddress, recoveryStatus, snapshotEndPage, capacity, numPagesToReadPerIteration, page);
-
-                long end = Math.Min(page + numPagesToReadPerIteration, endPage);
+                var end = Math.Min(page + numPagesToReadPerIteration, endPage);
                 for (long p = page; p < end; p++)
                 {
-                    int pageIndex = hlog.GetPageIndexForPage(p);
+                    int pageIndex = hlogBase.GetPageIndexForPage(p);
                     if (p < snapshotEndPage)
                     {
                         // Ensure the page is read from file
                         recoveryStatus.WaitRead(pageIndex);
+                        var freedPage = FreePagesToLimitHeapMemory(recoveryStatus, p);
+                        if (freedPage != NoPageFreed)
+                            lastFreedPage = freedPage;
 
                         // We make an extra pass to clear locks when reading pages back into memory
                         ClearLocksOnPage(p, options);
@@ -840,24 +916,29 @@ namespace Tsavorite.core
 
             WaitUntilAllPagesHaveBeenFlushed(startPage, endPage, recoveryStatus);
             recoveryStatus.Dispose();
+            return lastFreedPage;
         }
 
-        private async ValueTask RecoverHybridLogFromSnapshotFileAsync(long scanFromAddress, long recoverFromAddress, long untilAddress, long snapshotStartAddress, long snapshotEndAddress, long nextVersion, Guid guid, RecoveryOptions options, DeltaLog deltaLog, long recoverTo, CancellationToken cancellationToken)
+        private async ValueTask<long> RecoverHybridLogFromSnapshotFileAsync(long scanFromAddress, long recoverFromAddress, long untilAddress, long snapshotStartAddress, long snapshotEndAddress, long nextVersion, Guid guid, RecoveryOptions options, DeltaLog deltaLog, long recoverTo, CancellationToken cancellationToken)
         {
+            long lastFreedPage = NoPageFreed;
             GetSnapshotPageRangesToRead(scanFromAddress, untilAddress, snapshotStartAddress, snapshotEndAddress, guid, out long startPage, out long endPage, out long snapshotEndPage, out int capacity, out var recoveryStatus, out int numPagesToReadPerIteration);
 
             for (long page = startPage; page < endPage; page += numPagesToReadPerIteration)
             {
                 await ReadPagesForRecoveryAsync(snapshotEndAddress, recoveryStatus, snapshotEndPage, capacity, numPagesToReadPerIteration, page, cancellationToken).ConfigureAwait(false);
 
-                long end = Math.Min(page + numPagesToReadPerIteration, endPage);
+                var end = Math.Min(page + numPagesToReadPerIteration, endPage);
                 for (long p = page; p < end; p++)
                 {
-                    int pageIndex = hlog.GetPageIndexForPage(p);
+                    int pageIndex = hlogBase.GetPageIndexForPage(p);
                     if (p < snapshotEndPage)
                     {
                         // Ensure the page is read from file
                         await recoveryStatus.WaitReadAsync(pageIndex, cancellationToken).ConfigureAwait(false);
+                        var freedPage = await FreePagesToLimitHeapMemoryAsync(recoveryStatus, p, cancellationToken).ConfigureAwait(false);
+                        if (freedPage != NoPageFreed)
+                            lastFreedPage = freedPage;
 
                         // We make an extra pass to clear locks when reading pages back into memory
                         ClearLocksOnPage(p, options);
@@ -877,15 +958,16 @@ namespace Tsavorite.core
 
             await WaitUntilAllPagesHaveBeenFlushedAsync(startPage, endPage, recoveryStatus, cancellationToken).ConfigureAwait(false);
             recoveryStatus.Dispose();
+            return lastFreedPage;
         }
 
         private void ApplyDelta(long scanFromAddress, long recoverFromAddress, long untilAddress, long nextVersion, RecoveryOptions options, DeltaLog deltaLog, long recoverTo, long endPage, long snapshotEndPage, int capacity, int numPagesToRead, RecoveryStatus recoveryStatus, long page, long end)
         {
-            hlog.ApplyDelta(deltaLog, page, end, recoverTo);
+            hlogBase.ApplyDelta(deltaLog, page, end, recoverTo);
 
             for (long p = page; p < end; p++)
             {
-                int pageIndex = hlog.GetPageIndexForPage(p);
+                int pageIndex = hlogBase.GetPageIndexForPage(p);
 
                 var endLogicalAddress = hlog.GetStartLogicalAddress(p + 1);
                 if (recoverFromAddress < endLogicalAddress && recoverFromAddress < untilAddress)
@@ -896,32 +978,32 @@ namespace Tsavorite.core
                 {
                     // Flush snapshot page to main log
                     recoveryStatus.flushStatus[pageIndex] = FlushStatus.Pending;
-                    hlog.AsyncFlushPages(p, 1, AsyncFlushPageCallbackForRecovery, recoveryStatus);
+                    hlogBase.AsyncFlushPages(p, 1, AsyncFlushPageCallbackForRecovery, recoveryStatus);
                 }
             }
         }
 
         private void GetSnapshotPageRangesToRead(long fromAddress, long untilAddress, long snapshotStartAddress, long snapshotEndAddress, Guid guid, out long startPage, out long endPage, out long snapshotEndPage, out int capacity,
-                                                 out RecoveryStatus recoveryStatus, out int numPagesToReadFirst)
+                                                 out RecoveryStatus recoveryStatus, out int numPagesToReadPerIteration)
         {
             // Compute startPage and endPage
-            startPage = hlog.GetPage(fromAddress);
-            endPage = hlog.GetPage(untilAddress);
+            startPage = hlogBase.GetPage(fromAddress);
+            endPage = hlogBase.GetPage(untilAddress);
             if (untilAddress > hlog.GetStartLogicalAddress(endPage) && untilAddress > fromAddress)
                 endPage++;
-            long snapshotStartPage = hlog.GetPage(snapshotStartAddress);
-            snapshotEndPage = hlog.GetPage(snapshotEndAddress);
+            long snapshotStartPage = hlogBase.GetPage(snapshotStartAddress);
+            snapshotEndPage = hlogBase.GetPage(snapshotEndAddress);
             if (snapshotEndAddress > hlog.GetStartLogicalAddress(snapshotEndPage) && snapshotEndAddress > snapshotStartAddress)
                 snapshotEndPage++;
 
             // By default first page has one extra record
-            capacity = hlog.GetCapacityNumPages();
+            capacity = hlogBase.GetCapacityNumPages();
             var recoveryDevice = checkpointManager.GetSnapshotLogDevice(guid);
             var objectLogRecoveryDevice = checkpointManager.GetSnapshotObjectLogDevice(guid);
 
-            recoveryDevice.Initialize(hlog.GetSegmentSize());
+            recoveryDevice.Initialize(hlogBase.GetSegmentSize());
             objectLogRecoveryDevice.Initialize(-1);
-            recoveryStatus = new RecoveryStatus(capacity, hlog.MinEmptyPageCount, endPage, untilAddress, CheckpointType.Snapshot)
+            recoveryStatus = new RecoveryStatus(capacity, hlogBase.MinEmptyPageCount, endPage, untilAddress, CheckpointType.Snapshot)
             {
                 recoveryDevice = recoveryDevice,
                 objectLogRecoveryDevice = objectLogRecoveryDevice,
@@ -930,8 +1012,9 @@ namespace Tsavorite.core
             };
 
             // Initially issue read request for all pages that can be held in memory
+            // If heap memory is to be tracked, then read one page at a time to control memory usage
             int totalPagesToRead = (int)(snapshotEndPage - startPage);
-            numPagesToReadFirst = Math.Min(capacity - hlog.MinEmptyPageCount, totalPagesToRead);
+            numPagesToReadPerIteration = hlogBase.IsSizeBeyondLimit == null ? Math.Min(capacity - hlogBase.MinEmptyPageCount, totalPagesToRead) : 1;
         }
 
         private void ProcessReadSnapshotPage(long fromAddress, long untilAddress, long nextVersion, RecoveryOptions options, RecoveryStatus recoveryStatus, long page, int pageIndex)
@@ -952,16 +1035,16 @@ namespace Tsavorite.core
                  */
 
                 var pageFromAddress = 0L;
-                var pageUntilAddress = hlog.GetPageSize();
+                var pageUntilAddress = hlogBase.GetPageSize();
                 var physicalAddress = hlog.GetPhysicalAddress(startLogicalAddress);
 
 
                 if (fromAddress > startLogicalAddress && fromAddress < endLogicalAddress)
-                    pageFromAddress = hlog.GetOffsetInPage(fromAddress);
+                    pageFromAddress = hlogBase.GetOffsetInPage(fromAddress);
                 if (endLogicalAddress > untilAddress)
-                    pageUntilAddress = hlog.GetOffsetInPage(untilAddress);
+                    pageUntilAddress = hlogBase.GetOffsetInPage(untilAddress);
 
-                RecoverFromPage(fromAddress, pageFromAddress, pageUntilAddress,
+                _ = RecoverFromPage(fromAddress, pageFromAddress, pageUntilAddress,
                                 startLogicalAddress, physicalAddress, nextVersion, options);
             }
 
@@ -977,7 +1060,7 @@ namespace Tsavorite.core
             // no need to clear locks for records that will not end up in main memory
             if (options.headAddress >= endLogicalAddress) return;
 
-            long untilLogicalAddressInPage = hlog.GetPageSize();
+            long untilLogicalAddressInPage = hlogBase.GetPageSize();
             long pointer = 0;
 
             while (pointer < untilLogicalAddressInPage)
@@ -991,7 +1074,7 @@ namespace Tsavorite.core
                 else
                 {
                     int size = hlog.GetRecordSize(recordStart).Item2;
-                    Debug.Assert(size <= hlog.GetPageSize());
+                    Debug.Assert(size <= hlogBase.GetPageSize());
                     pointer += size;
                 }
             }
@@ -1007,7 +1090,7 @@ namespace Tsavorite.core
                                      long pagePhysicalAddress,
                                      long nextVersion, RecoveryOptions options)
         {
-            bool touched = false;
+            var touched = false;
 
             var pointer = default(long);
             var recordStart = default(long);
@@ -1026,8 +1109,8 @@ namespace Tsavorite.core
 
                 if (!info.Invalid)
                 {
-                    HashEntryInfo hei = new(comparer.GetHashCode64(ref hlog.GetKey(recordStart)));
-                    FindOrCreateTag(ref hei, hlog.BeginAddress);
+                    HashEntryInfo hei = new(storeFunctions.GetKeyHashCode64(ref hlog.GetKey(recordStart)));
+                    FindOrCreateTag(ref hei, hlogBase.BeginAddress);
 
                     bool ignoreRecord = ((pageLogicalAddress + pointer) >= options.fuzzyRegionStartAddress) && info.IsInNewVersion;
                     if (!options.undoNextVersion) ignoreRecord = false;
@@ -1062,7 +1145,7 @@ namespace Tsavorite.core
         {
             if (errorCode != 0)
             {
-                logger?.LogError($"AsyncFlushPageCallbackForRecovery error: {errorCode}");
+                logger?.LogError($"{nameof(AsyncFlushPageCallbackForRecovery)} error: {{errorCode}}", errorCode);
             }
 
             // Set the page status to flushed
@@ -1070,7 +1153,7 @@ namespace Tsavorite.core
 
             if (Interlocked.Decrement(ref result.count) == 0)
             {
-                int pageIndex = hlog.GetPageIndexForPage(result.page);
+                int pageIndex = hlogBase.GetPageIndexForPage(result.page);
 
                 if (errorCode != 0)
                     result.context.SignalFlushedError(pageIndex);
@@ -1081,22 +1164,13 @@ namespace Tsavorite.core
             }
         }
 
-        internal static bool AtomicSwitch<Input, Output, Context>(TsavoriteExecutionContext<Input, Output, Context> fromCtx, TsavoriteExecutionContext<Input, Output, Context> toCtx, long version, ConcurrentDictionary<int, (string, CommitPoint)> tokens)
+        internal static bool AtomicSwitch<TInput, TOutput, TContext>(TsavoriteExecutionContext<TInput, TOutput, TContext> fromCtx, TsavoriteExecutionContext<TInput, TOutput, TContext> toCtx, long version)
         {
             lock (toCtx)
             {
                 if (toCtx.version < version)
                 {
                     CopyContext(fromCtx, toCtx);
-                    if (toCtx.serialNum != -1)
-                    {
-                        tokens.TryAdd(toCtx.sessionID, (toCtx.sessionName,
-                            new CommitPoint
-                            {
-                                UntilSerialNo = toCtx.serialNum,
-                                ExcludedSerialNos = toCtx.excludedSerialNos
-                            }));
-                    }
                     return true;
                 }
             }
@@ -1104,7 +1178,9 @@ namespace Tsavorite.core
         }
     }
 
-    internal abstract partial class AllocatorBase<Key, Value> : IDisposable
+    public abstract partial class AllocatorBase<TKey, TValue, TStoreFunctions, TAllocator> : IDisposable
+        where TStoreFunctions : IStoreFunctions<TKey, TValue>
+        where TAllocator : IAllocator<TKey, TValue, TStoreFunctions>
     {
         /// <summary>
         /// Restore log
@@ -1163,8 +1239,8 @@ namespace Tsavorite.core
                 ((headAddress == untilAddress) && (GetOffsetInPage(headAddress) == 0)) // Empty in-memory page
                 )
             {
-                if (!IsAllocated(GetPageIndexForAddress(headAddress)))
-                    AllocatePage(GetPageIndexForAddress(headAddress));
+                if (!_wrapper.IsAllocated(GetPageIndexForAddress(headAddress)))
+                    _wrapper.AllocatePage(GetPageIndexForAddress(headAddress));
             }
             else
             {
@@ -1201,7 +1277,7 @@ namespace Tsavorite.core
         {
             if (errorCode != 0)
             {
-                logger?.LogError($"AsyncReadPagesCallbackForRecovery error: {errorCode}");
+                logger?.LogError($"{nameof(AsyncReadPagesCallbackForRecovery)} error: {{errorCode}}", errorCode);
             }
 
             // Set the page status to "read done"
@@ -1209,7 +1285,7 @@ namespace Tsavorite.core
 
             if (result.freeBuffer1 != null)
             {
-                PopulatePage(result.freeBuffer1.GetValidPointer(), result.freeBuffer1.required_bytes, result.page);
+                _wrapper.PopulatePage(result.freeBuffer1.GetValidPointer(), result.freeBuffer1.required_bytes, result.page);
                 result.freeBuffer1.Return();
             }
             int pageIndex = GetPageIndexForPage(result.page);

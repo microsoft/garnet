@@ -2,19 +2,23 @@
 // Licensed under the MIT license.
 
 using NUnit.Framework;
+using NUnit.Framework.Legacy;
 using Tsavorite.core;
 
 namespace Tsavorite.test
 {
-    public class MyKey : ITsavoriteEqualityComparer<MyKey>
+    public class MyKey
     {
         public int key;
 
-        public long GetHashCode64(ref MyKey key) => Utility.GetHashCode(key.key);
-
-        public bool Equals(ref MyKey k1, ref MyKey k2) => k1.key == k2.key;
-
         public override string ToString() => key.ToString();
+
+        public struct Comparer : IKeyComparer<MyKey>
+        {
+            public long GetHashCode64(ref MyKey key) => Utility.GetHashCode(key.key);
+
+            public bool Equals(ref MyKey k1, ref MyKey k2) => k1.key == k2.key;
+        }
     }
 
     public class MyKeySerializer : BinaryObjectSerializer<MyKey>
@@ -24,15 +28,18 @@ namespace Tsavorite.test
         public override void Serialize(ref MyKey obj) => writer.Write(obj.key);
     }
 
-    public class MyValue : ITsavoriteEqualityComparer<MyValue>
+    public class MyValue
     {
         public int value;
 
-        public long GetHashCode64(ref MyValue k) => Utility.GetHashCode(k.value);
-
-        public bool Equals(ref MyValue k1, ref MyValue k2) => k1.value == k2.value;
-
         public override string ToString() => value.ToString();
+
+        public struct Comparer : IKeyComparer<MyValue> // This Value comparer is used by a test
+        {
+            public long GetHashCode64(ref MyValue k) => Utility.GetHashCode(k.value);
+
+            public bool Equals(ref MyValue k1, ref MyValue k2) => k1.value == k2.value;
+        }
     }
 
     public class MyValueSerializer : BinaryObjectSerializer<MyValue>
@@ -56,7 +63,7 @@ namespace Tsavorite.test
         public override string ToString() => value.ToString();
     }
 
-    public class MyFunctions : FunctionsBase<MyKey, MyValue, MyInput, MyOutput, Empty>
+    public class MyFunctions : SessionFunctionsBase<MyKey, MyValue, MyInput, MyOutput, Empty>
     {
         public override bool InitialUpdater(ref MyKey key, ref MyInput input, ref MyValue value, ref MyOutput output, ref RMWInfo rmwInfo, ref RecordInfo recordInfo)
         {
@@ -94,14 +101,14 @@ namespace Tsavorite.test
 
         public override void ReadCompletionCallback(ref MyKey key, ref MyInput input, ref MyOutput output, Empty ctx, Status status, RecordMetadata recordMetadata)
         {
-            Assert.IsTrue(status.Found);
-            Assert.AreEqual(output.value.value, key.key);
+            ClassicAssert.IsTrue(status.Found);
+            ClassicAssert.AreEqual(output.value.value, key.key);
         }
 
         public override void RMWCompletionCallback(ref MyKey key, ref MyInput input, ref MyOutput output, Empty ctx, Status status, RecordMetadata recordMetadata)
         {
-            Assert.IsTrue(status.Found);
-            Assert.IsTrue(status.Record.CopyUpdated);
+            ClassicAssert.IsTrue(status.Found);
+            ClassicAssert.IsTrue(status.Record.CopyUpdated);
         }
 
         public override bool SingleReader(ref MyKey key, ref MyInput input, ref MyValue value, ref MyOutput dst, ref ReadInfo readInfo)
@@ -119,7 +126,7 @@ namespace Tsavorite.test
         }
     }
 
-    public class MyFunctions2 : FunctionsBase<MyValue, MyValue, MyInput, MyOutput, Empty>
+    public class MyFunctions2 : SessionFunctionsBase<MyValue, MyValue, MyInput, MyOutput, Empty>
     {
         public override bool InitialUpdater(ref MyValue key, ref MyInput input, ref MyValue value, ref MyOutput output, ref RMWInfo rmwInfo, ref RecordInfo recordInfo)
         {
@@ -157,14 +164,14 @@ namespace Tsavorite.test
 
         public override void ReadCompletionCallback(ref MyValue key, ref MyInput input, ref MyOutput output, Empty ctx, Status status, RecordMetadata recordMetadata)
         {
-            Assert.IsTrue(status.Found);
-            Assert.AreEqual(key.value, output.value.value);
+            ClassicAssert.IsTrue(status.Found);
+            ClassicAssert.AreEqual(key.value, output.value.value);
         }
 
         public override void RMWCompletionCallback(ref MyValue key, ref MyInput input, ref MyOutput output, Empty ctx, Status status, RecordMetadata recordMetadata)
         {
-            Assert.IsTrue(status.Found);
-            Assert.IsTrue(status.Record.CopyUpdated);
+            ClassicAssert.IsTrue(status.Found);
+            ClassicAssert.IsTrue(status.Record.CopyUpdated);
         }
 
         public override bool SingleReader(ref MyValue key, ref MyInput input, ref MyValue value, ref MyOutput dst, ref ReadInfo readInfo)
@@ -182,7 +189,7 @@ namespace Tsavorite.test
         }
     }
 
-    public class MyFunctionsDelete : FunctionsBase<MyKey, MyValue, MyInput, MyOutput, int>
+    public class MyFunctionsDelete : SessionFunctionsBase<MyKey, MyValue, MyInput, MyOutput, int>
     {
         public override bool InitialUpdater(ref MyKey key, ref MyInput input, ref MyValue value, ref MyOutput output, ref RMWInfo rmwInfo, ref RecordInfo recordInfo)
         {
@@ -221,12 +228,12 @@ namespace Tsavorite.test
         {
             if (ctx == 0)
             {
-                Assert.IsTrue(status.Found);
-                Assert.AreEqual(key.key, output.value.value);
+                ClassicAssert.IsTrue(status.Found);
+                ClassicAssert.AreEqual(key.key, output.value.value);
             }
             else if (ctx == 1)
             {
-                Assert.IsFalse(status.Found);
+                ClassicAssert.IsFalse(status.Found);
             }
         }
 
@@ -234,11 +241,11 @@ namespace Tsavorite.test
         {
             if (ctx == 0)
             {
-                Assert.IsTrue(status.Found);
-                Assert.IsTrue(status.Record.CopyUpdated);
+                ClassicAssert.IsTrue(status.Found);
+                ClassicAssert.IsTrue(status.Record.CopyUpdated);
             }
             else if (ctx == 1)
-                Assert.IsFalse(status.Found);
+                ClassicAssert.IsFalse(status.Found);
         }
 
         public override bool SingleReader(ref MyKey key, ref MyInput input, ref MyValue value, ref MyOutput dst, ref ReadInfo readInfo)
@@ -255,7 +262,7 @@ namespace Tsavorite.test
         }
     }
 
-    public class MixedFunctions : FunctionsBase<int, MyValue, MyInput, MyOutput, Empty>
+    public class MixedFunctions : SessionFunctionsBase<int, MyValue, MyInput, MyOutput, Empty>
     {
         public override bool InitialUpdater(ref int key, ref MyInput input, ref MyValue value, ref MyOutput output, ref RMWInfo rmwInfo, ref RecordInfo recordInfo)
         {
@@ -341,14 +348,14 @@ namespace Tsavorite.test
         public MyLargeValue value;
     }
 
-    public class MyLargeFunctions : FunctionsBase<MyKey, MyLargeValue, MyInput, MyLargeOutput, Empty>
+    public class MyLargeFunctions : SessionFunctionsBase<MyKey, MyLargeValue, MyInput, MyLargeOutput, Empty>
     {
         public override void ReadCompletionCallback(ref MyKey key, ref MyInput input, ref MyLargeOutput output, Empty ctx, Status status, RecordMetadata recordMetadata)
         {
-            Assert.IsTrue(status.Found);
+            ClassicAssert.IsTrue(status.Found);
             for (int i = 0; i < output.value.value.Length; i++)
             {
-                Assert.AreEqual((byte)(output.value.value.Length + i), output.value.value[i]);
+                ClassicAssert.AreEqual((byte)(output.value.value.Length + i), output.value.value[i]);
             }
         }
 

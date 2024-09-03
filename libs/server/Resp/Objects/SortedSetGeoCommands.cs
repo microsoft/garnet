@@ -14,72 +14,53 @@ namespace Garnet.server
         /// Data is stored into the key as a sorted set.
         /// </summary>
         /// <typeparam name="TGarnetApi"></typeparam>
-        /// <param name="count"></param>
-        /// <param name="ptr"></param>
         /// <param name="storageApi"></param>
         /// <returns></returns>
-        private unsafe bool GeoAdd<TGarnetApi>(int count, byte* ptr, ref TGarnetApi storageApi)
+        private unsafe bool GeoAdd<TGarnetApi>(ref TGarnetApi storageApi)
             where TGarnetApi : IGarnetApi
         {
             // validate the number of parameters
-            if (count < 4)
+            if (parseState.Count < 4)
             {
-                return AbortWithWrongNumberOfArguments("GEOADD", count);
+                return AbortWithWrongNumberOfArguments("GEOADD");
             }
-            else
-            {
-                // Get the key for SortedSet
-                if (!RespReadUtils.ReadByteArrayWithLengthHeader(out var key, ref ptr, recvBufferPtr + bytesRead))
-                    return false;
 
-                if (NetworkSingleKeySlotVerify(key, false))
+            // Get the key for SortedSet
+            var sbKey = parseState.GetArgSliceByRef(0).SpanByte;
+            var keyBytes = sbKey.ToByteArray();
+
+            if (NetworkSingleKeySlotVerify(keyBytes, false))
+            {
+                return true;
+            }
+
+            // Prepare input
+            var input = new ObjectInput
+            {
+                header = new RespInputHeader
                 {
-                    var bufSpan = new ReadOnlySpan<byte>(recvBufferPtr, bytesRead);
-                    if (!DrainCommands(bufSpan, count))
-                        return false;
-                    return true;
-                }
+                    type = GarnetObjectType.SortedSet,
+                    SortedSetOp = SortedSetOperation.GEOADD,
+                },
+                parseState = parseState,
+                parseStateStartIdx = 1,
+            };
 
-                // Prepare input
-                var inputPtr = (ObjectInputHeader*)(ptr - sizeof(ObjectInputHeader));
+            var outputFooter = new GarnetObjectStoreOutput { spanByteAndMemory = new SpanByteAndMemory(dcurr, (int)(dend - dcurr)) };
 
-                // Save old values on buffer for possible revert
-                var save = *inputPtr;
+            var status = storageApi.GeoAdd(keyBytes, ref input, ref outputFooter);
 
-                var inputCount = count - 1;
-
-                // Prepare length of header in input buffer
-                var inputLength = (int)(recvBufferPtr + bytesRead - (byte*)inputPtr);
-
-                // Prepare header in input buffer
-                inputPtr->header.type = GarnetObjectType.SortedSet;
-                inputPtr->header.SortedSetOp = SortedSetOperation.GEOADD;
-                inputPtr->count = inputCount;
-                inputPtr->done = zaddDoneCount;
-
-                var status = storageApi.GeoAdd(key, new ArgSlice((byte*)inputPtr, inputLength), out ObjectOutputHeader output);
-
-                //restore input buffer
-                *inputPtr = save;
-
-                zaddDoneCount += output.countDone;
-                zaddAddCount += output.opsDone;
-
-                // return if command is only partially done
-                if (zaddDoneCount < (inputCount / 3))
-                    return false;
-
-                //update pointers
-                ptr += output.bytesDone;
-                while (!RespWriteUtils.WriteInteger(zaddAddCount, ref dcurr, dend))
-                    SendAndReset();
+            switch (status)
+            {
+                case GarnetStatus.WRONGTYPE:
+                    while (!RespWriteUtils.WriteError(CmdStrings.RESP_ERR_WRONG_TYPE, ref dcurr, dend))
+                        SendAndReset();
+                    break;
+                default:
+                    ProcessOutputWithHeader(outputFooter.spanByteAndMemory);
+                    break;
             }
 
-            //reset sesion counters
-            zaddDoneCount = zaddAddCount = 0;
-
-            //update read pointers
-            readHead = (int)(ptr - recvBufferPtr);
             return true;
         }
 
@@ -90,106 +71,102 @@ namespace Garnet.server
         /// GEOSEARCH: Returns the members of a sorted set populated with geospatial data, which are within the borders of the area specified by a given shape.
         /// </summary>
         /// <typeparam name="TGarnetApi"></typeparam>
-        /// <param name="count"></param>
-        /// <param name="ptr"></param>
+        /// <param name="command"></param>
         /// <param name="storageApi"></param>
-        /// <param name="op"></param>
         /// <returns></returns>
-        private unsafe bool GeoCommands<TGarnetApi>(int count, byte* ptr, SortedSetOperation op, ref TGarnetApi storageApi)
+        private unsafe bool GeoCommands<TGarnetApi>(RespCommand command, ref TGarnetApi storageApi)
             where TGarnetApi : IGarnetApi
         {
-            int paramsRequiredInCommand = 0;
-            string cmd = string.Empty;
-            var responseWhenNotFound = CmdStrings.RESP_EMPTYLIST;
-            switch (op)
+            var paramsRequiredInCommand = 0;
+            var cmd = nameof(command);
+
+            switch (command)
             {
-                case SortedSetOperation.GEODIST:
+                case RespCommand.GEODIST:
                     paramsRequiredInCommand = 3;
-                    cmd = "GEODIST";
-                    responseWhenNotFound = CmdStrings.RESP_ERRNOTFOUND;
                     break;
-                case SortedSetOperation.GEOHASH:
+                case RespCommand.GEOHASH:
                     paramsRequiredInCommand = 1;
-                    cmd = "GEOHASH";
                     break;
-                case SortedSetOperation.GEOPOS:
+                case RespCommand.GEOPOS:
                     paramsRequiredInCommand = 1;
-                    cmd = "GEOPOS";
                     break;
-                case SortedSetOperation.GEOSEARCH:
+                case RespCommand.GEOSEARCH:
                     paramsRequiredInCommand = 3;
-                    cmd = "GEOSEARCH";
                     break;
             }
 
-            if (count < paramsRequiredInCommand)
+            if (parseState.Count < paramsRequiredInCommand)
             {
-                zaddDoneCount = zaddAddCount = 0;
-                return AbortWithWrongNumberOfArguments(cmd, count);
-            }
-            else
-            {
-                // Get the key for the Sorted Set
-                if (!RespReadUtils.ReadByteArrayWithLengthHeader(out var key, ref ptr, recvBufferPtr + bytesRead))
-                    return false;
-
-                if (NetworkSingleKeySlotVerify(key, true))
-                {
-                    var bufSpan = new ReadOnlySpan<byte>(recvBufferPtr, bytesRead);
-                    if (!DrainCommands(bufSpan, count))
-                        return false;
-                    return true;
-                }
-
-                // Prepare input
-                var inputPtr = (ObjectInputHeader*)(ptr - sizeof(ObjectInputHeader));
-
-                // Save old values for possible revert
-                var save = *inputPtr;
-
-                var inputCount = count - 1;
-
-                // Prepare length of header in input buffer
-                var inputLength = (int)(recvBufferPtr + bytesRead - (byte*)inputPtr);
-
-                // Prepare header in input buffer
-                inputPtr->header.type = GarnetObjectType.SortedSet;
-                inputPtr->header.SortedSetOp = op;
-                inputPtr->count = inputCount;
-
-                //take into account the ones already processed
-                inputPtr->done = zaddDoneCount;
-
-                var outputFooter = new GarnetObjectStoreOutput { spanByteAndMemory = new SpanByteAndMemory(dcurr, (int)(dend - dcurr)) };
-
-                var status = storageApi.GeoCommands(key, new ArgSlice((byte*)inputPtr, inputLength), ref outputFooter);
-
-                //restore input buffer
-                *inputPtr = save;
-
-                switch (status)
-                {
-                    case GarnetStatus.OK:
-                        var objOutputHeader = ProcessOutputWithHeader(outputFooter.spanByteAndMemory);
-                        zaddDoneCount += objOutputHeader.countDone;
-                        zaddAddCount += objOutputHeader.opsDone;
-                        //command partially done
-                        if (zaddDoneCount < inputCount)
-                            return false;
-                        ptr += objOutputHeader.bytesDone;
-                        break;
-                    case GarnetStatus.NOTFOUND:
-                        while (!RespWriteUtils.WriteDirect(responseWhenNotFound, ref dcurr, dend))
-                            SendAndReset();
-                        break;
-                }
+                return AbortWithWrongNumberOfArguments(cmd);
             }
 
-            // Reset session counters
-            zaddAddCount = zaddDoneCount = 0;
+            // Get the key for the Sorted Set
+            var sbKey = parseState.GetArgSliceByRef(0).SpanByte;
+            var keyBytes = sbKey.ToByteArray();
 
-            // Move input head
-            readHead = (int)(ptr - recvBufferPtr);
+            if (NetworkSingleKeySlotVerify(keyBytes, true))
+            {
+                return true;
+            }
+
+            var op =
+                command switch
+                {
+                    RespCommand.GEOHASH => SortedSetOperation.GEOHASH,
+                    RespCommand.GEODIST => SortedSetOperation.GEODIST,
+                    RespCommand.GEOPOS => SortedSetOperation.GEOPOS,
+                    RespCommand.GEOSEARCH => SortedSetOperation.GEOSEARCH,
+                    _ => throw new Exception($"Unexpected {nameof(SortedSetOperation)}: {command}")
+                };
+
+            // Prepare input
+            var input = new ObjectInput
+            {
+                header = new RespInputHeader
+                {
+                    type = GarnetObjectType.SortedSet,
+                    SortedSetOp = op,
+                },
+                parseState = parseState,
+                parseStateStartIdx = 1,
+            };
+
+            var outputFooter = new GarnetObjectStoreOutput { spanByteAndMemory = new SpanByteAndMemory(dcurr, (int)(dend - dcurr)) };
+
+            var status = storageApi.GeoCommands(keyBytes, ref input, ref outputFooter);
+
+            switch (status)
+            {
+                case GarnetStatus.OK:
+                    ProcessOutputWithHeader(outputFooter.spanByteAndMemory);
+                    break;
+                case GarnetStatus.NOTFOUND:
+                    switch (op)
+                    {
+                        case SortedSetOperation.GEODIST:
+                            while (!RespWriteUtils.WriteDirect(CmdStrings.RESP_ERRNOTFOUND, ref dcurr, dend))
+                                SendAndReset();
+                            break;
+                        default:
+                            var inputCount = parseState.Count - 1;
+                            while (!RespWriteUtils.WriteArrayLength(inputCount, ref dcurr, dend))
+                                SendAndReset();
+                            for (var i = 0; i < inputCount; i++)
+                            {
+                                while (!RespWriteUtils.WriteNullArray(ref dcurr, dend))
+                                    SendAndReset();
+                            }
+                            break;
+                    }
+
+                    break;
+                case GarnetStatus.WRONGTYPE:
+                    while (!RespWriteUtils.WriteError(CmdStrings.RESP_ERR_WRONG_TYPE, ref dcurr, dend))
+                        SendAndReset();
+                    break;
+            }
+
             return true;
         }
     }

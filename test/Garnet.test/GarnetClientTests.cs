@@ -2,13 +2,13 @@
 // Licensed under the MIT license.
 
 using System;
-using System.Collections.Generic;
 using System.Linq;
 using System.Text;
 using System.Threading;
 using System.Threading.Tasks;
 using Garnet.common;
 using NUnit.Framework;
+using NUnit.Framework.Legacy;
 
 namespace Garnet.test
 {
@@ -129,7 +129,7 @@ namespace Garnet.test
             ManualResetEventSlim e = new();
             db.StringSet("mykey", origValue, (c, retValue) =>
             {
-                Assert.AreEqual("OK", retValue);
+                ClassicAssert.AreEqual("OK", retValue);
                 e.Set();
             });
 
@@ -138,7 +138,7 @@ namespace Garnet.test
 
             db.StringGet("mykey", (c, retValue) =>
             {
-                Assert.AreEqual(origValue, retValue);
+                ClassicAssert.AreEqual(origValue, retValue);
                 e.Set();
             });
             e.Wait();
@@ -154,7 +154,7 @@ namespace Garnet.test
             db.Connect();
 
             var metrics = db.GetLatencyMetrics();
-            Assert.AreEqual(metrics.Length, 0);
+            ClassicAssert.AreEqual(0, metrics.Length);
 
             if (recordLatency)
             {
@@ -164,17 +164,16 @@ namespace Garnet.test
                     var task = db.StringGetAsync("mykey");
                     task.Wait();
                     var resp = task.Result;
-                    Assert.AreEqual(resp, null);
+                    ClassicAssert.AreEqual(null, resp);
                 }
 
                 metrics = db.GetLatencyMetrics();
-                Assert.AreEqual(metrics.Length, 8);
+                ClassicAssert.AreEqual(8, metrics.Length);
             }
 
             db.Dispose();
             metrics = db.GetLatencyMetrics();
-            if (recordLatency) Assert.AreEqual(metrics.Length, 8);
-            else Assert.AreEqual(metrics.Length, 0);
+            ClassicAssert.AreEqual(0, metrics.Length); // Should be 0 after dispose
         }
 
         [Test]
@@ -190,7 +189,7 @@ namespace Garnet.test
                 int.Parse(await db.ExecuteForStringResultAsync("INCRBY", ["myKey", "10"])) :
                 int.Parse(await db.ExecuteForStringResultAsync(Encoding.ASCII.GetBytes("$6\r\nINCRBY\r\n"), [Encoding.ASCII.GetBytes("myKey"), Encoding.ASCII.GetBytes("10")]));
 
-            Assert.AreEqual(10, n);
+            ClassicAssert.AreEqual(10, n);
         }
 
         [Test]
@@ -203,10 +202,10 @@ namespace Garnet.test
             db.Connect();
 
             var result = await db.ExecuteForStringResultAsync("PING");
-            Assert.AreEqual("PONG", result);
+            ClassicAssert.AreEqual("PONG", result);
 
             result = await db.ExecuteForStringResultAsync("ASKING");
-            Assert.AreEqual("OK", result);
+            ClassicAssert.AreEqual("OK", result);
         }
 
         [Test]
@@ -222,11 +221,11 @@ namespace Garnet.test
 
             long expectedV = 1;
             long v = stringParams ? await db.StringIncrement(key) : await db.StringIncrement(Encoding.ASCII.GetBytes(key));
-            Assert.AreEqual(expectedV, v);
+            ClassicAssert.AreEqual(expectedV, v);
 
             expectedV += 10;
             v = stringParams ? await db.StringIncrement(key, 10) : await db.StringIncrement(Encoding.ASCII.GetBytes(key), 10);
-            Assert.AreEqual(expectedV, v);
+            ClassicAssert.AreEqual(expectedV, v);
 
             expectedV++;
             if (stringParams)
@@ -234,7 +233,7 @@ namespace Garnet.test
                 db.StringIncrement(key, (c, retValue) =>
                 {
                     long v = long.Parse(retValue);
-                    Assert.AreEqual(expectedV, v);
+                    ClassicAssert.AreEqual(expectedV, v);
                     e.Set();
                 });
             }
@@ -243,7 +242,7 @@ namespace Garnet.test
                 db.StringIncrement(Encoding.ASCII.GetBytes(key), (c, retValue) =>
                 {
                     long v = long.Parse(retValue);
-                    Assert.AreEqual(expectedV, v);
+                    ClassicAssert.AreEqual(expectedV, v);
                     e.Set();
                 });
             }
@@ -255,7 +254,7 @@ namespace Garnet.test
                 db.StringIncrement(key, 7, (c, retValue) =>
                 {
                     long v = long.Parse(retValue);
-                    Assert.AreEqual(expectedV, v);
+                    ClassicAssert.AreEqual(expectedV, v);
                     e.Set();
                 });
             }
@@ -264,7 +263,7 @@ namespace Garnet.test
                 db.StringIncrement(Encoding.ASCII.GetBytes(key), 7, (c, retValue) =>
                 {
                     long v = long.Parse(retValue);
-                    Assert.AreEqual(expectedV, v);
+                    ClassicAssert.AreEqual(expectedV, v);
                     e.Set();
                 });
             }
@@ -284,11 +283,11 @@ namespace Garnet.test
 
             long expectedV = -1;
             long v = stringParams ? await db.StringDecrement(key) : await db.StringDecrement(Encoding.ASCII.GetBytes(key));
-            Assert.AreEqual(expectedV, v);
+            ClassicAssert.AreEqual(expectedV, v);
 
             expectedV -= 10;
             v = stringParams ? await db.StringDecrement(key, 10) : await db.StringDecrement(Encoding.ASCII.GetBytes(key), 10);
-            Assert.AreEqual(expectedV, v);
+            ClassicAssert.AreEqual(expectedV, v);
 
             expectedV--;
             if (stringParams)
@@ -296,7 +295,7 @@ namespace Garnet.test
                 db.StringDecrement(key, (c, retValue) =>
                 {
                     long v = long.Parse(retValue);
-                    Assert.AreEqual(expectedV, v);
+                    ClassicAssert.AreEqual(expectedV, v);
                     e.Set();
                 });
             }
@@ -305,7 +304,7 @@ namespace Garnet.test
                 db.StringDecrement(Encoding.ASCII.GetBytes(key), (c, retValue) =>
                 {
                     long v = long.Parse(retValue);
-                    Assert.AreEqual(expectedV, v);
+                    ClassicAssert.AreEqual(expectedV, v);
                     e.Set();
                 });
             }
@@ -317,7 +316,7 @@ namespace Garnet.test
                 db.StringDecrement(key, 7, (c, retValue) =>
                 {
                     long v = long.Parse(retValue);
-                    Assert.AreEqual(expectedV, v);
+                    ClassicAssert.AreEqual(expectedV, v);
                     e.Set();
                 });
             }
@@ -326,7 +325,7 @@ namespace Garnet.test
                 db.StringDecrement(Encoding.ASCII.GetBytes(key), 7, (c, retValue) =>
                 {
                     long v = long.Parse(retValue);
-                    Assert.AreEqual(expectedV, v);
+                    ClassicAssert.AreEqual(expectedV, v);
                     e.Set();
                 });
             }
@@ -343,13 +342,13 @@ namespace Garnet.test
             db.Connect();
 
             var result = await db.ExecuteForStringResultAsync("SET", ["mykey", "Hello", "NX"]);
-            Assert.AreEqual("OK", result);
+            ClassicAssert.AreEqual("OK", result);
 
             result = await db.ExecuteForStringResultAsync("SET", ["mykey", "World", "NX"]);
-            Assert.AreEqual(null, result);
+            ClassicAssert.AreEqual(null, result);
 
             var resultMykey = await db.StringGetAsync("mykey");
-            Assert.AreEqual("Hello", resultMykey);
+            ClassicAssert.AreEqual("Hello", resultMykey);
         }
 
         [Test]
@@ -369,13 +368,13 @@ namespace Garnet.test
                 var result = await db.ExecuteForStringResultAsync("SET", [worldcities[i, 1], worldcities[i, 0]]);
                 keys[i] = worldcities[i, 1];
                 keysMemory[i] = Encoding.ASCII.GetBytes(keys[i]);
-                Assert.AreEqual("OK", result);
+                ClassicAssert.AreEqual("OK", result);
             }
 
             var keysValues = await db.StringGetAsMemoryAsync(keysMemory);
             for (int i = 0; i < keysValues.Length; i++)
             {
-                Assert.IsTrue(keysValues[i].Span.SequenceEqual(Encoding.ASCII.GetBytes(worldcities[i, 0])));
+                ClassicAssert.IsTrue(keysValues[i].Span.SequenceEqual(Encoding.ASCII.GetBytes(worldcities[i, 0])));
             }
 
             waiter.Reset();
@@ -391,7 +390,7 @@ namespace Garnet.test
 
             var tReadValues = ReadValuesMGet(keys, token);
             tReadValues.GetAwaiter().GetResult();
-            Assert.IsTrue(tReadValues.IsCompletedSuccessfully);
+            ClassicAssert.IsTrue(tReadValues.IsCompletedSuccessfully);
 
             //StringGetAsync with cancellation
             tokenSource.Cancel();
@@ -402,7 +401,7 @@ namespace Garnet.test
             var vals = await db.StringGetAsync(keys);
             for (int i = 0; i < nKeys; i++)
             {
-                Assert.AreEqual(worldcities[i, 0], vals[i]);
+                ClassicAssert.AreEqual(worldcities[i, 0], vals[i]);
             }
 
             //StringGet with string array callback type
@@ -429,7 +428,7 @@ namespace Garnet.test
             int i = 0;
             while (i < keys.Length)
             {
-                Assert.AreEqual(worldcities[i, 0], vals[i]);
+                ClassicAssert.AreEqual(worldcities[i, 0], vals[i]);
                 i++;
             }
             return i;
@@ -440,7 +439,7 @@ namespace Garnet.test
             int i = 0;
             while (i < result.Length)
             {
-                Assert.IsTrue(result[i].Span.SequenceEqual(Encoding.ASCII.GetBytes(worldcities[i, 0])));
+                ClassicAssert.IsTrue(result[i].Span.SequenceEqual(Encoding.ASCII.GetBytes(worldcities[i, 0])));
                 //Dispose
                 result[i].Dispose();
                 i++;
@@ -452,7 +451,7 @@ namespace Garnet.test
         {
             for (int i = 0; i < result.Length; i++)
             {
-                Assert.AreEqual(result[i], worldcities[i, 0]);
+                ClassicAssert.AreEqual(result[i], worldcities[i, 0]);
             }
             waiter.Set();
         }
@@ -480,14 +479,14 @@ namespace Garnet.test
                 var result = await db.ExecuteForStringResultAsync("SET", [worldcities[i, 1], worldcities[i, 0]]);
                 keys[i] = worldcities[i, 1];
                 keysMemoryByte[i] = Encoding.ASCII.GetBytes(keys[i]);
-                Assert.AreEqual("OK", result);
+                ClassicAssert.AreEqual("OK", result);
             }
 
             for (int x = 0; x < nKeysObjectStore; x++)
             {
                 // create in the object store
                 var result = await db.ExecuteForStringResultAsync("ZADD", [$"myzset{x}", "1", "KEY1", "2", "KEY2"]);
-                Assert.AreEqual("2", result);
+                ClassicAssert.AreEqual("2", result);
                 keys[nKeys + x] = $"myzset{x}";
                 keysMemoryByte[nKeys + x] = Encoding.ASCII.GetBytes(keys[nKeys + x]);
             }
@@ -496,7 +495,7 @@ namespace Garnet.test
             {
                 //delete the first 20 keys added previously
                 var keysDeleted = await db.KeyDeleteAsync(keys.Take(20).ToArray());
-                Assert.AreEqual(iterationSize, keysDeleted);
+                ClassicAssert.AreEqual(iterationSize, keysDeleted);
 
                 //try to delete the next 20 keys using a cancellation token
                 var sc = new CancellationTokenSource();
@@ -514,7 +513,7 @@ namespace Garnet.test
                 mrObj.Reset();
                 db.KeyDelete(keys.Skip(iterationSize).ToArray(), (ct, result, e) =>
                 {
-                    Assert.AreEqual(keys.Length - iterationSize, result);
+                    ClassicAssert.AreEqual(keys.Length - iterationSize, result);
                     mrObj.Set();
                 });
                 mrObj.Wait();
@@ -524,7 +523,7 @@ namespace Garnet.test
             {
                 //delete with Memory<Byte> type
                 var keysDeletedMB = await db.KeyDeleteAsync(keysMemoryByte.Take(20).ToArray());
-                Assert.AreEqual(iterationSize, keysDeletedMB);
+                ClassicAssert.AreEqual(iterationSize, keysDeletedMB);
 
                 var sc = new CancellationTokenSource();
                 var t = sc.Token;
@@ -540,7 +539,7 @@ namespace Garnet.test
                 mrObj.Reset();
                 db.KeyDelete(keysMemoryByte.Skip(iterationSize).ToArray(), (ct, result, e) =>
                 {
-                    Assert.AreEqual(keysMemoryByte.Length - iterationSize, result);
+                    ClassicAssert.AreEqual(keysMemoryByte.Length - iterationSize, result);
                     mrObj.Set();
                 });
                 mrObj.Wait();
@@ -551,7 +550,7 @@ namespace Garnet.test
             foreach (var key in keys)
             {
                 var result = await db.ExecuteForStringResultAsync("EXISTS", [key]);
-                Assert.AreEqual("0", result);
+                ClassicAssert.AreEqual("0", result);
             }
         }
 

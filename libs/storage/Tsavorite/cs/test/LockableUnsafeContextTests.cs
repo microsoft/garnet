@@ -9,6 +9,7 @@ using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
 using NUnit.Framework;
+using NUnit.Framework.Legacy;
 using Tsavorite.core;
 using Tsavorite.test.LockTable;
 using Tsavorite.test.ReadCacheTests;
@@ -16,10 +17,31 @@ using static Tsavorite.test.TestUtils;
 
 namespace Tsavorite.test.LockableUnsafeContext
 {
+    // Must be in a separate block so the "using StructStoreFunctions" is the first line in its namespace declaration.
+    internal class LockableUnsafeComparer : IKeyComparer<long>
+    {
+        internal int maxSleepMs;
+        readonly Random rng = new(101);
+
+        public bool Equals(ref long k1, ref long k2) => k1 == k2;
+
+        public long GetHashCode64(ref long k)
+        {
+            if (maxSleepMs > 0)
+                Thread.Sleep(rng.Next(maxSleepMs));
+            return Utility.GetHashCode(k);
+        }
+    }
+}
+namespace Tsavorite.test.LockableUnsafeContext
+{
+    using LongAllocator = BlittableAllocator<long, long, StoreFunctions<long, long, LockableUnsafeComparer, DefaultRecordDisposer<long, long>>>;
+    using LongStoreFunctions = StoreFunctions<long, long, LockableUnsafeComparer, DefaultRecordDisposer<long, long>>;
+
     // Functions for the "Simple lock transaction" case, e.g.:
     //  - Lock key1, key2, key3, keyResult
     //  - Do some operation on value1, value2, value3 and write the result to valueResult
-    internal class LockableUnsafeFunctions : SimpleFunctions<long, long>
+    internal class LockableUnsafeFunctions : SimpleSimpleFunctions<long, long>
     {
         internal long recordAddress;
 
@@ -35,21 +57,6 @@ namespace Tsavorite.test.LockableUnsafeContext
         }
     }
 
-    internal class LockableUnsafeComparer : ITsavoriteEqualityComparer<long>
-    {
-        internal int maxSleepMs;
-        readonly Random rng = new(101);
-
-        public bool Equals(ref long k1, ref long k2) => k1 == k2;
-
-        public long GetHashCode64(ref long k)
-        {
-            if (maxSleepMs > 0)
-                Thread.Sleep(rng.Next(maxSleepMs));
-            return Utility.GetHashCode(k);
-        }
-    }
-
     public enum ResultLockTarget { MutableLock, LockTable }
 
     internal struct BucketLockTracker
@@ -58,19 +65,19 @@ namespace Tsavorite.test.LockableUnsafeContext
 
         public BucketLockTracker()
         {
-            buckets = new();
+            buckets = [];
         }
 
-        internal void Increment(FixedLengthLockableKeyStruct<long> key) => Increment(ref key); // easier with 'foreach' because iteration vars can't be passed by 'ref'
-        internal void Increment(ref FixedLengthLockableKeyStruct<long> key)
+        internal readonly void Increment(FixedLengthLockableKeyStruct<long> key) => Increment(ref key); // easier with 'foreach' because iteration vars can't be passed by 'ref'
+        internal readonly void Increment(ref FixedLengthLockableKeyStruct<long> key)
         {
             if (key.LockType == LockType.Exclusive)
                 IncrementX(ref key);
             else
                 IncrementS(ref key);
         }
-        internal void Decrement(FixedLengthLockableKeyStruct<long> key) => Decrement(ref key);
-        internal void Decrement(ref FixedLengthLockableKeyStruct<long> key)
+        internal readonly void Decrement(FixedLengthLockableKeyStruct<long> key) => Decrement(ref key);
+        internal readonly void Decrement(ref FixedLengthLockableKeyStruct<long> key)
         {
             if (key.LockType == LockType.Exclusive)
                 DecrementX(ref key);
@@ -78,30 +85,30 @@ namespace Tsavorite.test.LockableUnsafeContext
                 DecrementS(ref key);
         }
 
-        internal void IncrementX(ref FixedLengthLockableKeyStruct<long> key) => AddX(ref key, 1);
-        internal void DecrementX(ref FixedLengthLockableKeyStruct<long> key) => AddX(ref key, -1);
-        internal void IncrementS(ref FixedLengthLockableKeyStruct<long> key) => AddS(ref key, 1);
-        internal void DecrementS(ref FixedLengthLockableKeyStruct<long> key) => AddS(ref key, -1);
+        internal readonly void IncrementX(ref FixedLengthLockableKeyStruct<long> key) => AddX(ref key, 1);
+        internal readonly void DecrementX(ref FixedLengthLockableKeyStruct<long> key) => AddX(ref key, -1);
+        internal readonly void IncrementS(ref FixedLengthLockableKeyStruct<long> key) => AddS(ref key, 1);
+        internal readonly void DecrementS(ref FixedLengthLockableKeyStruct<long> key) => AddS(ref key, -1);
 
-        private void AddX(ref FixedLengthLockableKeyStruct<long> key, int addend)
+        private readonly void AddX(ref FixedLengthLockableKeyStruct<long> key, int addend)
         {
             if (!buckets.TryGetValue(key.KeyHash, out var counts))
                 counts = default;
             counts.x += addend;
-            Assert.GreaterOrEqual(counts.x, 0);
+            ClassicAssert.GreaterOrEqual(counts.x, 0);
             buckets[key.KeyHash] = counts;
         }
 
-        private void AddS(ref FixedLengthLockableKeyStruct<long> key, int addend)
+        private readonly void AddS(ref FixedLengthLockableKeyStruct<long> key, int addend)
         {
             if (!buckets.TryGetValue(key.KeyHash, out var counts))
                 counts = default;
             counts.s += addend;
-            Assert.GreaterOrEqual(counts.s, 0);
+            ClassicAssert.GreaterOrEqual(counts.s, 0);
             buckets[key.KeyHash] = counts;
         }
 
-        internal bool GetLockCounts(ref FixedLengthLockableKeyStruct<long> key, out (int x, int s) counts)
+        internal readonly bool GetLockCounts(ref FixedLengthLockableKeyStruct<long> key, out (int x, int s) counts)
         {
             if (!buckets.TryGetValue(key.KeyHash, out counts))
             {
@@ -111,7 +118,7 @@ namespace Tsavorite.test.LockableUnsafeContext
             return true;
         }
 
-        internal (int x, int s) GetLockCounts()
+        internal readonly (int x, int s) GetLockCounts()
         {
             var xx = 0;
             var ss = 0;
@@ -123,12 +130,12 @@ namespace Tsavorite.test.LockableUnsafeContext
             return (xx, ss);
         }
 
-        internal void AssertNoLocks()
+        internal readonly void AssertNoLocks()
         {
             foreach (var kvp in buckets)
             {
-                Assert.AreEqual(0, kvp.Value.x);
-                Assert.AreEqual(0, kvp.Value.s);
+                ClassicAssert.AreEqual(0, kvp.Value.x);
+                ClassicAssert.AreEqual(0, kvp.Value.s);
             }
         }
     }
@@ -136,17 +143,18 @@ namespace Tsavorite.test.LockableUnsafeContext
     [TestFixture]
     class LockableUnsafeContextTests
     {
-        const int numRecords = 1000;
-        const int useNewKey = 1010;
-        const int useExistingKey = 200;
+        const int NumRecords = 1000;
+        const int UseNewKey = 1010;
+        const int UseExistingKey = 200;
 
-        const int valueMult = 1_000_000;
+        const int ValueMult = 1_000_000;
 
         LockableUnsafeFunctions functions;
         LockableUnsafeComparer comparer;
 
-        private TsavoriteKV<long, long> store;
-        private ClientSession<long, long, long, long, Empty, LockableUnsafeFunctions> session;
+        private TsavoriteKV<long, long, LongStoreFunctions, LongAllocator> store;
+        private ClientSession<long, long, long, long, Empty, LockableUnsafeFunctions, LongStoreFunctions, LongAllocator> session;
+        private BasicContext<long, long, long, long, Empty, LockableUnsafeFunctions, LongStoreFunctions, LongAllocator> bContext;
         private IDevice log;
 
         [SetUp]
@@ -160,19 +168,29 @@ namespace Tsavorite.test.LockableUnsafeContext
             }
             log = Devices.CreateLogDevice(Path.Combine(MethodTestDir, "test.log"), deleteOnClose: false, recoverDevice: forRecovery);
 
-            ReadCacheSettings readCacheSettings = default;
-            CheckpointSettings checkpointSettings = default;
+            var kvSettings = new KVSettings<long, long>()
+            {
+                IndexSize = 1L << 26,
+                LogDevice = log,
+                PageSize = 1L << 12,
+                MemorySize = 1L << 22
+            };
+
             foreach (var arg in TestContext.CurrentContext.Test.Arguments)
             {
                 if (arg is ReadCopyDestination dest)
                 {
                     if (dest == ReadCopyDestination.ReadCache)
-                        readCacheSettings = new() { PageSizeBits = 12, MemorySizeBits = 22 };
+                    {
+                        kvSettings.ReadCachePageSize = 1L << 12;
+                        kvSettings.ReadCacheMemorySize = 1L << 22;
+                        kvSettings.ReadCacheEnabled = true;
+                    }
                     break;
                 }
-                if (arg is CheckpointType chktType)
+                if (arg is CheckpointType)
                 {
-                    checkpointSettings = new CheckpointSettings { CheckpointDir = MethodTestDir };
+                    kvSettings.CheckpointDir = MethodTestDir;
                     break;
                 }
             }
@@ -180,10 +198,13 @@ namespace Tsavorite.test.LockableUnsafeContext
             comparer = new LockableUnsafeComparer();
             functions = new LockableUnsafeFunctions();
 
-            store = new TsavoriteKV<long, long>(1L << 20, new LogSettings { LogDevice = log, ObjectLogDevice = null, PageSizeBits = 12, MemorySizeBits = 22, ReadCacheSettings = readCacheSettings },
-                                            checkpointSettings: checkpointSettings, comparer: comparer,
-                                            concurrencyControlMode: ConcurrencyControlMode.LockTable);
+            store = new(kvSettings
+                , StoreFunctions<long, long>.Create(comparer)
+                , (allocatorSettings, storeFunctions) => new(allocatorSettings, storeFunctions)
+            );
+
             session = store.NewSession<long, long, Empty, LockableUnsafeFunctions>(functions);
+            bContext = session.BasicContext;
         }
 
         [TearDown]
@@ -206,8 +227,8 @@ namespace Tsavorite.test.LockableUnsafeContext
 
         void Populate()
         {
-            for (int key = 0; key < numRecords; key++)
-                Assert.IsFalse(session.Upsert(key, key * valueMult).IsPending);
+            for (int key = 0; key < NumRecords; key++)
+                ClassicAssert.IsFalse(bContext.Upsert(key, key * ValueMult).IsPending);
         }
 
         void AssertIsLocked(FixedLengthLockableKeyStruct<long> key, bool xlock, bool slock)
@@ -217,7 +238,7 @@ namespace Tsavorite.test.LockableUnsafeContext
 
         void PrepareRecordLocation(FlushMode recordLocation) => PrepareRecordLocation(store, recordLocation);
 
-        static void PrepareRecordLocation(TsavoriteKV<long, long> store, FlushMode recordLocation)
+        static void PrepareRecordLocation(TsavoriteKV<long, long, LongStoreFunctions, LongAllocator> store, FlushMode recordLocation)
         {
             if (recordLocation == FlushMode.ReadOnly)
                 store.Log.ShiftReadOnlyAddress(store.Log.TailAddress, wait: true);
@@ -225,15 +246,15 @@ namespace Tsavorite.test.LockableUnsafeContext
                 store.Log.FlushAndEvict(wait: true);
         }
 
-        static void ClearCountsOnError(ClientSession<long, long, long, long, Empty, LockableUnsafeFunctions> luContext)
+        static void ClearCountsOnError(ClientSession<long, long, long, long, Empty, LockableUnsafeFunctions, LongStoreFunctions, LongAllocator> luContext)
         {
             // If we already have an exception, clear these counts so "Run" will not report them spuriously.
             luContext.sharedLockCount = 0;
             luContext.exclusiveLockCount = 0;
         }
 
-        static void ClearCountsOnError<TFunctions>(ClientSession<long, long, long, long, Empty, TFunctions> luContext)
-            where TFunctions : IFunctions<long, long, long, long, Empty>
+        static void ClearCountsOnError<TFunctions>(ClientSession<long, long, long, long, Empty, TFunctions, LongStoreFunctions, LongAllocator> luContext)
+            where TFunctions : ISessionFunctions<long, long, long, long, Empty>
         {
             // If we already have an exception, clear these counts so "Run" will not report them spuriously.
             luContext.sharedLockCount = 0;
@@ -252,8 +273,8 @@ namespace Tsavorite.test.LockableUnsafeContext
             foreach (var kvp in blt.buckets)
             {
                 var hashBucket = store.LockTable.GetBucket(kvp.Key);
-                Assert.AreEqual(kvp.Value.s, HashBucket.NumLatchedShared(hashBucket));
-                Assert.AreEqual(kvp.Value.x == 1, HashBucket.IsLatchedExclusive(hashBucket));
+                ClassicAssert.AreEqual(kvp.Value.s, HashBucket.NumLatchedShared(hashBucket));
+                ClassicAssert.AreEqual(kvp.Value.x == 1, HashBucket.IsLatchedExclusive(hashBucket));
             }
         }
 
@@ -309,7 +330,7 @@ namespace Tsavorite.test.LockableUnsafeContext
             };
 
             for (var ii = 0; ii < keys.Length; ++ii)
-                Assert.AreEqual(bucketIndex, store.LockTable.GetBucketIndex(keys[ii].KeyHash), $"BucketIndex mismatch on key {ii}");
+                ClassicAssert.AreEqual(bucketIndex, store.LockTable.GetBucketIndex(keys[ii].KeyHash), $"BucketIndex mismatch on key {ii}");
 
             lContext.Lock(keys);
             lContext.Unlock(keys);
@@ -320,17 +341,17 @@ namespace Tsavorite.test.LockableUnsafeContext
         [Test]
         [Category("TsavoriteKV")]
         [Category("Smoke")]
-        public async Task TestShiftHeadAddressLUC([Values] SyncMode syncMode)
+        public async Task TestShiftHeadAddressLUC([Values] CompletionSyncMode syncMode)
         {
             long input = default;
             const int RandSeed = 10;
-            const int RandRange = numRecords;
+            const int RandRange = NumRecords;
             const int NumRecs = 200;
 
             Random r = new(RandSeed);
             var sw = Stopwatch.StartNew();
 
-            // Copied from UnsafeContextTests to test Async.
+            // Copied from UnsafeContextTests.
             var luContext = session.LockableUnsafeContext;
             luContext.BeginUnsafe();
             luContext.BeginLockable();
@@ -345,18 +366,8 @@ namespace Tsavorite.test.LockableUnsafeContext
                     luContext.Lock(keyVec);
                     AssertBucketLockCount(ref keyVec[0], 1, 0);
 
-                    var value = keyVec[0].Key + numRecords;
-                    if (syncMode == SyncMode.Sync)
-                    {
-                        luContext.Upsert(ref keyVec[0].Key, ref value, Empty.Default, 0);
-                    }
-                    else
-                    {
-                        luContext.EndUnsafe();
-                        var status = (await luContext.UpsertAsync(ref keyVec[0].Key, ref value)).Complete();
-                        luContext.BeginUnsafe();
-                        Assert.IsFalse(status.IsPending);
-                    }
+                    var value = keyVec[0].Key + NumRecords;
+                    _ = luContext.Upsert(ref keyVec[0].Key, ref value, Empty.Default);
                     luContext.Unlock(keyVec);
                     AssertBucketLockCount(ref keyVec[0], 0, 0);
                 }
@@ -369,32 +380,22 @@ namespace Tsavorite.test.LockableUnsafeContext
                 for (int c = 0; c < NumRecs; c++)
                 {
                     keyVec[0] = new(r.Next(RandRange), LockType.Shared, luContext);
-                    var value = keyVec[0].Key + numRecords;
+                    var value = keyVec[0].Key + NumRecords;
                     long output = 0;
 
                     luContext.Lock(keyVec);
                     AssertBucketLockCount(ref keyVec[0], 0, 1);
-                    Status status;
-                    if (syncMode == SyncMode.Sync || (c % 1 == 0))  // in .Async mode, half the ops should be sync to test CompletePendingAsync
-                    {
-                        status = luContext.Read(ref keyVec[0].Key, ref input, ref output, Empty.Default, 0);
-                    }
-                    else
-                    {
-                        luContext.EndUnsafe();
-                        (status, output) = (await luContext.ReadAsync(ref keyVec[0].Key, ref input)).Complete();
-                        luContext.BeginUnsafe();
-                    }
+                    Status status = luContext.Read(ref keyVec[0].Key, ref input, ref output, Empty.Default);
                     luContext.Unlock(keyVec);
                     AssertBucketLockCount(ref keyVec[0], 0, 0);
-                    Assert.IsFalse(status.IsPending);
+                    ClassicAssert.IsFalse(status.IsPending);
                 }
 
                 AssertTotalLockCounts(0, 0);
 
-                if (syncMode == SyncMode.Sync)
+                if (syncMode == CompletionSyncMode.Sync)
                 {
-                    luContext.CompletePending(true);
+                    _ = luContext.CompletePending(true);
                 }
                 else
                 {
@@ -422,17 +423,17 @@ namespace Tsavorite.test.LockableUnsafeContext
                     ++expectedS;
                     long output = 0;
                     blt.IncrementS(ref lockKeys[idx]);
-                    Status foundStatus = luContext.Read(ref lockKeys[idx].Key, ref input, ref output, Empty.Default, 0);
-                    Assert.IsTrue(foundStatus.IsPending);
+                    Status foundStatus = luContext.Read(ref lockKeys[idx].Key, ref input, ref output, Empty.Default);
+                    ClassicAssert.IsTrue(foundStatus.IsPending);
                 }
 
                 // We did not lock all keys, only the "Action" ones - one lock per bucket, all shared in this test
                 AssertTotalLockCounts(0, expectedS);
 
                 CompletedOutputIterator<long, long, long, long, Empty> outputs;
-                if (syncMode == SyncMode.Sync)
+                if (syncMode == CompletionSyncMode.Sync)
                 {
-                    luContext.CompletePendingWithOutputs(out outputs, wait: true);
+                    _ = luContext.CompletePendingWithOutputs(out outputs, wait: true);
                 }
                 else
                 {
@@ -454,10 +455,10 @@ namespace Tsavorite.test.LockableUnsafeContext
                 while (outputs.Next())
                 {
                     count++;
-                    Assert.AreEqual(outputs.Current.Key + numRecords, outputs.Current.Output);
+                    ClassicAssert.AreEqual(outputs.Current.Key + NumRecords, outputs.Current.Output);
                 }
                 outputs.Dispose();
-                Assert.AreEqual(expectedS, count);
+                ClassicAssert.AreEqual(expectedS, count);
             }
             finally
             {
@@ -476,12 +477,12 @@ namespace Tsavorite.test.LockableUnsafeContext
             Populate();
             PrepareRecordLocation(flushMode);
 
-            // SetUp also reads this to determine whether to supply ReadCacheSettings. If ReadCache is specified it wins over CopyToTail.
+            // SetUp also reads this to determine whether to supply ReadCache settings. If ReadCache is specified it wins over CopyToTail.
             var useRMW = updateOp == UpdateOp.RMW;
             const int readKey24 = 24, readKey51 = 51;
-            long resultKey = resultLockTarget == ResultLockTarget.LockTable ? numRecords + 1 : readKey24 + readKey51;
+            long resultKey = resultLockTarget == ResultLockTarget.LockTable ? NumRecords + 1 : readKey24 + readKey51;
             long resultValue;
-            long expectedResult = (readKey24 + readKey51) * valueMult;
+            long expectedResult = (readKey24 + readKey51) * ValueMult;
             Status status;
             BucketLockTracker blt = new();
 
@@ -523,17 +524,17 @@ namespace Tsavorite.test.LockableUnsafeContext
                 {
                     if (status.IsPending)
                     {
-                        luContext.CompletePendingWithOutputs(out var completedOutputs, wait: true);
-                        Assert.True(completedOutputs.Next());
+                        _ = luContext.CompletePendingWithOutputs(out var completedOutputs, wait: true);
+                        ClassicAssert.True(completedOutputs.Next());
                         readValue24 = completedOutputs.Current.Output;
-                        Assert.AreEqual(24 * valueMult, readValue24);
-                        Assert.False(completedOutputs.Next());
+                        ClassicAssert.AreEqual(24 * ValueMult, readValue24);
+                        ClassicAssert.False(completedOutputs.Next());
                         completedOutputs.Dispose();
                     }
                 }
                 else
                 {
-                    Assert.IsFalse(status.IsPending, status.ToString());
+                    ClassicAssert.IsFalse(status.IsPending, status.ToString());
                 }
 
                 status = luContext.Read(readKey51, out var readValue51);
@@ -541,17 +542,17 @@ namespace Tsavorite.test.LockableUnsafeContext
                 {
                     if (status.IsPending)
                     {
-                        luContext.CompletePendingWithOutputs(out var completedOutputs, wait: true);
-                        Assert.True(completedOutputs.Next());
+                        _ = luContext.CompletePendingWithOutputs(out var completedOutputs, wait: true);
+                        ClassicAssert.True(completedOutputs.Next());
                         readValue51 = completedOutputs.Current.Output;
-                        Assert.AreEqual(51 * valueMult, readValue51);
-                        Assert.False(completedOutputs.Next());
+                        ClassicAssert.AreEqual(51 * ValueMult, readValue51);
+                        ClassicAssert.False(completedOutputs.Next());
                         completedOutputs.Dispose();
                     }
                 }
                 else
                 {
-                    Assert.IsFalse(status.IsPending, status.ToString());
+                    ClassicAssert.IsFalse(status.IsPending, status.ToString());
                 }
 
                 // Set the phase to Phase.INTERMEDIATE to test the non-Phase.REST blocks
@@ -564,23 +565,23 @@ namespace Tsavorite.test.LockableUnsafeContext
                 {
                     if (status.IsPending)
                     {
-                        luContext.CompletePendingWithOutputs(out var completedOutputs, wait: true);
-                        Assert.True(completedOutputs.Next());
+                        _ = luContext.CompletePendingWithOutputs(out var completedOutputs, wait: true);
+                        ClassicAssert.True(completedOutputs.Next());
                         resultValue = completedOutputs.Current.Output;
-                        Assert.AreEqual(expectedResult, resultValue);
-                        Assert.False(completedOutputs.Next());
+                        ClassicAssert.AreEqual(expectedResult, resultValue);
+                        ClassicAssert.False(completedOutputs.Next());
                         completedOutputs.Dispose();
                     }
                 }
                 else
                 {
-                    Assert.IsFalse(status.IsPending, status.ToString());
+                    ClassicAssert.IsFalse(status.IsPending, status.ToString());
                 }
 
                 // Reread the destination to verify
                 status = luContext.Read(resultKey, out resultValue);
-                Assert.IsFalse(status.IsPending, status.ToString());
-                Assert.AreEqual(expectedResult, resultValue);
+                ClassicAssert.IsFalse(status.IsPending, status.ToString());
+                ClassicAssert.AreEqual(expectedResult, resultValue);
 
                 luContext.Unlock(keys);
 
@@ -599,10 +600,10 @@ namespace Tsavorite.test.LockableUnsafeContext
                 luContext.EndUnsafe();
             }
 
-            // Verify reading the destination from the full session.
-            status = session.Read(resultKey, out resultValue);
-            Assert.IsFalse(status.IsPending, status.ToString());
-            Assert.AreEqual(expectedResult, resultValue);
+            // Verify reading the destination from the BasicContext.
+            status = bContext.Read(resultKey, out resultValue);
+            ClassicAssert.IsFalse(status.IsPending, status.ToString());
+            ClassicAssert.AreEqual(expectedResult, resultValue);
             AssertTotalLockCounts(0, 0);
         }
 
@@ -617,9 +618,9 @@ namespace Tsavorite.test.LockableUnsafeContext
 
             bool initialDestWillBeLockTable = resultLockTarget == ResultLockTarget.LockTable || flushMode == FlushMode.OnDisk;
             const int readKey24 = 24, readKey51 = 51, valueMult2 = 10;
-            long resultKey = initialDestWillBeLockTable ? numRecords + 1 : readKey24 + readKey51;
+            long resultKey = initialDestWillBeLockTable ? NumRecords + 1 : readKey24 + readKey51;
             long resultValue;
-            int expectedResult = (readKey24 + readKey51) * valueMult * valueMult2;
+            int expectedResult = (readKey24 + readKey51) * ValueMult * valueMult2;
             var useRMW = updateOp == UpdateOp.RMW;
             Status status;
             BucketLockTracker blt = new();
@@ -661,43 +662,43 @@ namespace Tsavorite.test.LockableUnsafeContext
                 status = luContext.Read(readKey24, out var readValue24);
                 if (flushMode == FlushMode.OnDisk)
                 {
-                    Assert.IsTrue(status.IsPending, status.ToString());
-                    luContext.CompletePendingWithOutputs(out var completedOutputs, wait: true);
+                    ClassicAssert.IsTrue(status.IsPending, status.ToString());
+                    _ = luContext.CompletePendingWithOutputs(out var completedOutputs, wait: true);
                     (status, readValue24) = GetSinglePendingResult(completedOutputs, out var recordMetadata);
-                    Assert.IsTrue(status.Found, status.ToString());
+                    ClassicAssert.IsTrue(status.Found, status.ToString());
                 }
                 else
-                    Assert.IsFalse(status.IsPending, status.ToString());
-                Assert.AreEqual(readKey24 * valueMult, readValue24);
+                    ClassicAssert.IsFalse(status.IsPending, status.ToString());
+                ClassicAssert.AreEqual(readKey24 * ValueMult, readValue24);
 
                 // We just locked this above, but for FlushMode.OnDisk it will still be PENDING.
                 status = luContext.Read(readKey51, out var readValue51);
                 if (flushMode == FlushMode.OnDisk)
                 {
-                    Assert.IsTrue(status.IsPending, status.ToString());
-                    luContext.CompletePendingWithOutputs(out var completedOutputs, wait: true);
-                    Assert.True(completedOutputs.Next());
+                    ClassicAssert.IsTrue(status.IsPending, status.ToString());
+                    _ = luContext.CompletePendingWithOutputs(out var completedOutputs, wait: true);
+                    ClassicAssert.True(completedOutputs.Next());
                     readValue51 = completedOutputs.Current.Output;
-                    Assert.False(completedOutputs.Next());
+                    ClassicAssert.False(completedOutputs.Next());
                     completedOutputs.Dispose();
                 }
                 else
-                    Assert.IsFalse(status.IsPending, status.ToString());
-                Assert.AreEqual(readKey51 * valueMult, readValue51);
+                    ClassicAssert.IsFalse(status.IsPending, status.ToString());
+                ClassicAssert.AreEqual(readKey51 * ValueMult, readValue51);
 
                 if (!initialDestWillBeLockTable)
                 {
                     status = luContext.Read(resultKey, out var initialResultValue);
                     if (flushMode == FlushMode.OnDisk)
                     {
-                        Assert.IsTrue(status.IsPending, status.ToString());
-                        luContext.CompletePendingWithOutputs(out var completedOutputs, wait: true);
+                        ClassicAssert.IsTrue(status.IsPending, status.ToString());
+                        _ = luContext.CompletePendingWithOutputs(out var completedOutputs, wait: true);
                         (status, initialResultValue) = GetSinglePendingResult(completedOutputs, out var recordMetadata);
-                        Assert.IsTrue(status.Found, status.ToString());
+                        ClassicAssert.IsTrue(status.Found, status.ToString());
                     }
                     else
-                        Assert.IsFalse(status.IsPending, status.ToString());
-                    Assert.AreEqual(resultKey * valueMult, initialResultValue);
+                        ClassicAssert.IsFalse(status.IsPending, status.ToString());
+                    ClassicAssert.AreEqual(resultKey * ValueMult, initialResultValue);
                 }
 
                 // Set the phase to Phase.INTERMEDIATE to test the non-Phase.REST blocks
@@ -705,11 +706,11 @@ namespace Tsavorite.test.LockableUnsafeContext
                 status = useRMW
                     ? luContext.RMW(resultKey, (readValue24 + readValue51) * valueMult2)
                     : luContext.Upsert(resultKey, (readValue24 + readValue51) * valueMult2);
-                Assert.IsFalse(status.IsPending, status.ToString());
+                ClassicAssert.IsFalse(status.IsPending, status.ToString());
 
                 status = luContext.Read(resultKey, out resultValue);
-                Assert.IsFalse(status.IsPending, status.ToString());
-                Assert.AreEqual(expectedResult, resultValue);
+                ClassicAssert.IsFalse(status.IsPending, status.ToString());
+                ClassicAssert.AreEqual(expectedResult, resultValue);
 
                 luContext.Unlock(keys);
 
@@ -728,10 +729,10 @@ namespace Tsavorite.test.LockableUnsafeContext
                 luContext.EndUnsafe();
             }
 
-            // Verify from the full session.
-            status = session.Read(resultKey, out resultValue);
-            Assert.IsFalse(status.IsPending, status.ToString());
-            Assert.AreEqual(expectedResult, resultValue);
+            // Verify from the full Basic Context
+            status = bContext.Read(resultKey, out resultValue);
+            ClassicAssert.IsFalse(status.IsPending, status.ToString());
+            ClassicAssert.AreEqual(expectedResult, resultValue);
             AssertTotalLockCounts(0, 0);
         }
 
@@ -749,8 +750,8 @@ namespace Tsavorite.test.LockableUnsafeContext
 
             BucketLockTracker blt = new();
 
-            // SetUp also reads this to determine whether to supply ReadCacheSettings. If ReadCache is specified it wins over CopyToTail.
-            long resultKey = resultLockTarget == ResultLockTarget.LockTable ? numRecords + 1 : 75;
+            // SetUp also reads this to determine whether to supply ReadCache settings. If ReadCache is specified it wins over CopyToTail.
+            long resultKey = resultLockTarget == ResultLockTarget.LockTable ? NumRecords + 1 : 75;
             Status status;
 
             var luContext = session.LockableUnsafeContext;
@@ -771,11 +772,11 @@ namespace Tsavorite.test.LockableUnsafeContext
                 // Set the phase to Phase.INTERMEDIATE to test the non-Phase.REST blocks
                 session.ctx.phase = phase;
                 status = luContext.Delete(ref resultKey);
-                Assert.IsFalse(status.IsPending, status.ToString());
+                ClassicAssert.IsFalse(status.IsPending, status.ToString());
 
                 // Reread the destination to verify
                 status = luContext.Read(resultKey, out var _);
-                Assert.IsFalse(status.Found, status.ToString());
+                ClassicAssert.IsFalse(status.Found, status.ToString());
 
                 luContext.Unlock(keyVec);
                 blt.Decrement(ref keyVec[0]);
@@ -793,9 +794,9 @@ namespace Tsavorite.test.LockableUnsafeContext
                 luContext.EndUnsafe();
             }
 
-            // Verify reading the destination from the full session.
-            status = session.Read(resultKey, out var _);
-            Assert.IsFalse(status.Found, status.ToString());
+            // Verify reading the destination from the full Basic Context
+            status = bContext.Read(resultKey, out var _);
+            ClassicAssert.IsFalse(status.Found, status.ToString());
             AssertTotalLockCounts(0, 0);
         }
 
@@ -860,15 +861,12 @@ namespace Tsavorite.test.LockableUnsafeContext
                 for (var iteration = 0; iteration < numIterations; ++iteration)
                 {
                     foreach (var key in enumKeys(rng))
-                    {
-                        var rand = rng.Next(100);
-                        if (rand < 33)
-                            basicContext.Read(key);
-                        else if (rand < 66)
-                            basicContext.Upsert(key, key * valueMult);
-                        else
-                            basicContext.RMW(key, key * valueMult);
-                    }
+                        _ = rng.Next(100) switch
+                        {
+                            int rand when rand < 33 => basicContext.Read(key).status,
+                            int rand when rand < 66 => basicContext.Upsert(key, key * ValueMult),
+                            _ => basicContext.RMW(key, key * ValueMult)
+                        };
                 }
             }
 
@@ -888,8 +886,8 @@ namespace Tsavorite.test.LockableUnsafeContext
             AssertTotalLockCounts(0, 0);
         }
 
-        FixedLengthLockableKeyStruct<long> AddLockTableEntry<TFunctions>(LockableUnsafeContext<long, long, long, long, Empty, TFunctions> luContext, long key)
-            where TFunctions : IFunctions<long, long, long, long, Empty>
+        FixedLengthLockableKeyStruct<long> AddLockTableEntry<TFunctions>(LockableUnsafeContext<long, long, long, long, Empty, TFunctions, LongStoreFunctions, LongAllocator> luContext, long key)
+            where TFunctions : ISessionFunctions<long, long, long, long, Empty>
         {
             var keyVec = new[] { new FixedLengthLockableKeyStruct<long>(key, LockType.Exclusive, luContext) };
             luContext.Lock(keyVec);
@@ -897,20 +895,20 @@ namespace Tsavorite.test.LockableUnsafeContext
             HashEntryInfo hei = new(comparer.GetHashCode64(ref key));
             PopulateHei(ref hei);
 
-            var lockState = store.LockTable.GetLockState(ref key, ref hei);
+            var lockState = store.LockTable.GetLockState(ref hei);
 
-            Assert.IsTrue(lockState.IsFound);
-            Assert.IsTrue(lockState.IsLockedExclusive);
+            ClassicAssert.IsTrue(lockState.IsFound);
+            ClassicAssert.IsTrue(lockState.IsLockedExclusive);
             return keyVec[0];
         }
 
-        void VerifyAndUnlockSplicedInKey<TFunctions>(LockableUnsafeContext<long, long, long, long, Empty, TFunctions> luContext, long expectedKey)
-            where TFunctions : IFunctions<long, long, long, long, Empty>
+        void VerifyAndUnlockSplicedInKey<TFunctions>(LockableUnsafeContext<long, long, long, long, Empty, TFunctions, LongStoreFunctions, LongAllocator> luContext, long expectedKey)
+            where TFunctions : ISessionFunctions<long, long, long, long, Empty>
         {
             // Scan to the end of the readcache chain and verify we inserted the value.
             var (_, pa) = ChainTests.SkipReadCacheChain(store, expectedKey);
             var storedKey = store.hlog.GetKey(pa);
-            Assert.AreEqual(expectedKey, storedKey);
+            ClassicAssert.AreEqual(expectedKey, storedKey);
 
             var keyVec = new[] { new FixedLengthLockableKeyStruct<long>(expectedKey, LockType.Exclusive, luContext) };
             luContext.Unlock(keyVec);
@@ -924,7 +922,7 @@ namespace Tsavorite.test.LockableUnsafeContext
             Populate();
             store.Log.FlushAndEvict(wait: true);
 
-            using var session = store.NewSession<long, long, Empty, SimpleFunctions<long, long>>(new SimpleFunctions<long, long>());
+            using var session = store.NewSession<long, long, Empty, SimpleSimpleFunctions<long, long>>(new SimpleSimpleFunctions<long, long>());
             var luContext = session.LockableUnsafeContext;
             long input = 0, output = 0, key = 24;
             ReadOptions readOptions = new() { CopyOptions = new(ReadCopyFrom.AllImmutable, ReadCopyTo.MainLog) };
@@ -939,8 +937,8 @@ namespace Tsavorite.test.LockableUnsafeContext
                 AssertTotalLockCounts(ref blt);
 
                 var status = luContext.Read(ref key, ref input, ref output, ref readOptions, out _);
-                Assert.IsTrue(status.IsPending, status.ToString());
-                luContext.CompletePending(wait: true);
+                ClassicAssert.IsTrue(status.IsPending, status.ToString());
+                _ = luContext.CompletePending(wait: true);
 
                 VerifyAndUnlockSplicedInKey(luContext, key);
                 blt.Decrement(ref keyStruct);
@@ -965,7 +963,7 @@ namespace Tsavorite.test.LockableUnsafeContext
         {
             Populate();
 
-            using var session = store.NewSession<long, long, Empty, SimpleFunctions<long, long>>(new SimpleFunctions<long, long>());
+            using var session = store.NewSession<long, long, Empty, SimpleSimpleFunctions<long, long>>(new SimpleSimpleFunctions<long, long>());
             var luContext = session.LockableUnsafeContext;
             BucketLockTracker blt = new();
             long key = 24;
@@ -1017,7 +1015,7 @@ namespace Tsavorite.test.LockableUnsafeContext
         {
             PopulateAndEvict(recordRegion == ChainTests.RecordRegion.Immutable);
 
-            using var session = store.NewSession<long, long, Empty, SimpleFunctions<long, long>>(new SimpleFunctions<long, long>());
+            using var session = store.NewSession<long, long, Empty, SimpleSimpleFunctions<long, long>>(new SimpleSimpleFunctions<long, long>());
             var luContext = session.LockableUnsafeContext;
             BucketLockTracker blt = new();
             luContext.BeginUnsafe();
@@ -1026,13 +1024,13 @@ namespace Tsavorite.test.LockableUnsafeContext
             FixedLengthLockableKeyStruct<long> keyStruct = default;
             try
             {
-                if (recordRegion == ChainTests.RecordRegion.Immutable || recordRegion == ChainTests.RecordRegion.OnDisk)
-                    keyStruct = AddLockTableEntry(luContext, useExistingKey);
+                if (recordRegion is ChainTests.RecordRegion.Immutable or ChainTests.RecordRegion.OnDisk)
+                    keyStruct = AddLockTableEntry(luContext, UseExistingKey);
                 else
-                    keyStruct = AddLockTableEntry(luContext, useNewKey);
+                    keyStruct = AddLockTableEntry(luContext, UseNewKey);
                 blt.Increment(ref keyStruct);
-                var status = luContext.Upsert(keyStruct.Key, keyStruct.Key * valueMult);
-                Assert.IsTrue(status.Record.Created, status.ToString());
+                var status = luContext.Upsert(keyStruct.Key, keyStruct.Key * ValueMult);
+                ClassicAssert.IsTrue(status.Record.Created, status.ToString());
 
                 VerifyAndUnlockSplicedInKey(luContext, keyStruct.Key);
                 blt.Decrement(ref keyStruct);
@@ -1057,7 +1055,7 @@ namespace Tsavorite.test.LockableUnsafeContext
         {
             PopulateAndEvict(recordRegion == ChainTests.RecordRegion.Immutable);
 
-            using var session = store.NewSession<long, long, Empty, SimpleFunctions<long, long>>(new SimpleFunctions<long, long>());
+            using var session = store.NewSession<long, long, Empty, SimpleSimpleFunctions<long, long>>(new SimpleSimpleFunctions<long, long>());
             var luContext = session.LockableUnsafeContext;
             BucketLockTracker blt = new();
             luContext.BeginUnsafe();
@@ -1066,18 +1064,18 @@ namespace Tsavorite.test.LockableUnsafeContext
             FixedLengthLockableKeyStruct<long> keyStruct = default;
             try
             {
-                if (recordRegion == ChainTests.RecordRegion.Immutable || recordRegion == ChainTests.RecordRegion.OnDisk)
+                if (recordRegion is ChainTests.RecordRegion.Immutable or ChainTests.RecordRegion.OnDisk)
                 {
-                    keyStruct = AddLockTableEntry(luContext, useExistingKey);
-                    var status = luContext.RMW(keyStruct.Key, keyStruct.Key * valueMult);
-                    Assert.IsTrue(recordRegion == ChainTests.RecordRegion.OnDisk ? status.IsPending : status.Found);
-                    luContext.CompletePending(wait: true);
+                    keyStruct = AddLockTableEntry(luContext, UseExistingKey);
+                    var status = luContext.RMW(keyStruct.Key, keyStruct.Key * ValueMult);
+                    ClassicAssert.IsTrue(recordRegion == ChainTests.RecordRegion.OnDisk ? status.IsPending : status.Found);
+                    _ = luContext.CompletePending(wait: true);
                 }
                 else
                 {
-                    keyStruct = AddLockTableEntry(luContext, useNewKey);
-                    var status = luContext.RMW(keyStruct.Key, keyStruct.Key * valueMult);
-                    Assert.IsFalse(status.Found, status.ToString());
+                    keyStruct = AddLockTableEntry(luContext, UseNewKey);
+                    var status = luContext.RMW(keyStruct.Key, keyStruct.Key * ValueMult);
+                    ClassicAssert.IsFalse(status.Found, status.ToString());
                 }
                 blt.Increment(ref keyStruct);
 
@@ -1104,7 +1102,7 @@ namespace Tsavorite.test.LockableUnsafeContext
         {
             PopulateAndEvict(recordRegion == ChainTests.RecordRegion.Immutable);
 
-            using var session = store.NewSession<long, long, Empty, SimpleFunctions<long, long>>(new SimpleFunctions<long, long>());
+            using var session = store.NewSession<long, long, Empty, SimpleSimpleFunctions<long, long>>(new SimpleSimpleFunctions<long, long>());
             var luContext = session.LockableUnsafeContext;
             BucketLockTracker blt = new();
             luContext.BeginUnsafe();
@@ -1113,21 +1111,21 @@ namespace Tsavorite.test.LockableUnsafeContext
             FixedLengthLockableKeyStruct<long> keyStruct = default;
             try
             {
-                if (recordRegion == ChainTests.RecordRegion.Immutable || recordRegion == ChainTests.RecordRegion.OnDisk)
+                if (recordRegion is ChainTests.RecordRegion.Immutable or ChainTests.RecordRegion.OnDisk)
                 {
-                    keyStruct = AddLockTableEntry(luContext, useExistingKey);
+                    keyStruct = AddLockTableEntry(luContext, UseExistingKey);
                     blt.Increment(ref keyStruct);
                     var status = luContext.Delete(keyStruct.Key);
 
                     // Delete does not search outside mutable region so the key will not be found
-                    Assert.IsTrue(!status.Found && status.Record.Created, status.ToString());
+                    ClassicAssert.IsTrue(!status.Found && status.Record.Created, status.ToString());
                 }
                 else
                 {
-                    keyStruct = AddLockTableEntry(luContext, useNewKey);
+                    keyStruct = AddLockTableEntry(luContext, UseNewKey);
                     blt.Increment(ref keyStruct);
                     var status = luContext.Delete(keyStruct.Key);
-                    Assert.IsFalse(status.Found, status.ToString());
+                    ClassicAssert.IsFalse(status.Found, status.ToString());
                 }
 
                 VerifyAndUnlockSplicedInKey(luContext, keyStruct.Key);
@@ -1152,14 +1150,14 @@ namespace Tsavorite.test.LockableUnsafeContext
         public void LockAndUnlockInLockTableOnlyTest()
         {
             // For this, just don't load anything, and it will happen in lock table.
-            using var session = store.NewSession<long, long, Empty, SimpleFunctions<long, long>>(new SimpleFunctions<long, long>());
+            using var session = store.NewSession<long, long, Empty, SimpleSimpleFunctions<long, long>>(new SimpleSimpleFunctions<long, long>());
             var luContext = session.LockableUnsafeContext;
             BucketLockTracker blt = new();
 
             FixedLengthLockableKeyStruct<long> createKey(long key) => new(key, (key & 1) == 0 ? LockType.Exclusive : LockType.Shared, luContext);
 
             var rng = new Random(101);
-            var keyVec = Enumerable.Range(0, numRecords).Select(ii => createKey(rng.Next(numRecords))).ToArray();
+            var keyVec = Enumerable.Range(0, NumRecords).Select(ii => createKey(rng.Next(NumRecords))).ToArray();
 
             luContext.BeginUnsafe();
             luContext.BeginLockable();
@@ -1176,11 +1174,11 @@ namespace Tsavorite.test.LockableUnsafeContext
                     ref var key = ref keyVec[idx];
                     HashEntryInfo hei = new(key.KeyHash);
                     PopulateHei(ref hei);
-                    var lockState = store.LockTable.GetLockState(ref key.Key, ref hei);
-                    Assert.IsTrue(lockState.IsFound);
-                    Assert.AreEqual(key.LockType == LockType.Exclusive, lockState.IsLockedExclusive);
+                    var lockState = store.LockTable.GetLockState(ref hei);
+                    ClassicAssert.IsTrue(lockState.IsFound);
+                    ClassicAssert.AreEqual(key.LockType == LockType.Exclusive, lockState.IsLockedExclusive);
                     if (key.LockType == LockType.Shared)
-                        Assert.IsTrue(lockState.IsLocked);    // Could be either shared or exclusive; we only lock the bucket once per Lock() call
+                        ClassicAssert.IsTrue(lockState.IsLocked);    // Could be either shared or exclusive; we only lock the bucket once per Lock() call
 
                     luContext.Unlock(keyVec, idx, 1);
                     blt.Decrement(ref key);
@@ -1209,7 +1207,7 @@ namespace Tsavorite.test.LockableUnsafeContext
             Populate();
             store.Log.ShiftReadOnlyAddress(store.Log.TailAddress, wait: true);
 
-            static long getValue(long key) => key + valueMult;
+            static long getValue(long key) => key + ValueMult;
 
             var luContext = session.LockableUnsafeContext;
             luContext.BeginUnsafe();
@@ -1228,11 +1226,11 @@ namespace Tsavorite.test.LockableUnsafeContext
                     UpdateOp.Delete => luContext.Delete(keyVec[0].Key),
                     _ => new(StatusCode.Error)
                 };
-                Assert.IsFalse(status.IsFaulted, $"Unexpected UpdateOp {updateOp}, status {status}");
+                ClassicAssert.IsFalse(status.IsFaulted, $"Unexpected UpdateOp {updateOp}, status {status}");
                 if (updateOp == UpdateOp.RMW)
-                    Assert.IsTrue(status.Record.CopyUpdated, status.ToString());
+                    ClassicAssert.IsTrue(status.Record.CopyUpdated, status.ToString());
                 else
-                    Assert.IsTrue(status.Record.Created, status.ToString());
+                    ClassicAssert.IsTrue(status.Record.Created, status.ToString());
 
                 OverflowBucketLockTableTests.AssertLockCounts(store, keyVec[0].Key, true, 0);
 
@@ -1257,16 +1255,16 @@ namespace Tsavorite.test.LockableUnsafeContext
         {
             const int numNewRecords = 100;
 
-            using var session = store.NewSession<long, long, Empty, SimpleFunctions<long, long>>(new SimpleFunctions<long, long>());
+            using var session = store.NewSession<long, long, Empty, SimpleSimpleFunctions<long, long>>(new SimpleSimpleFunctions<long, long>());
             var luContext = session.LockableUnsafeContext;
 
-            int getValue(int key) => key + valueMult;
+            int getValue(int key) => key + ValueMult;
 
             // If we are testing Delete, then we need to have the records ON-DISK first; Delete is a no-op for unfound records.
             if (updateOp == UpdateOp.Delete)
             {
-                for (var key = numRecords; key < numRecords + numNewRecords; ++key)
-                    Assert.IsFalse(this.session.Upsert(key, key * valueMult).IsPending);
+                for (var key = NumRecords; key < NumRecords + numNewRecords; ++key)
+                    ClassicAssert.IsFalse(bContext.Upsert(key, key * ValueMult).IsPending);
                 store.Log.FlushAndEvict(wait: true);
             }
 
@@ -1284,7 +1282,7 @@ namespace Tsavorite.test.LockableUnsafeContext
                 // We don't sleep in this test
                 comparer.maxSleepMs = 0;
 
-                for (var key = numRecords; key < numRecords + numNewRecords; ++key)
+                for (var key = NumRecords; key < NumRecords + numNewRecords; ++key)
                 {
                     keyVec[0] = new(key, LockType.Exclusive, luContext);
                     luContext.Lock(keyVec);
@@ -1318,28 +1316,28 @@ namespace Tsavorite.test.LockableUnsafeContext
                         case UpdateOp.Upsert:
                             status = luContext.Upsert(key, getValue(key));
                             if (iter == 0)
-                                Assert.IsTrue(status.NotFound && status.Record.Created, status.ToString());
+                                ClassicAssert.IsTrue(status.NotFound && status.Record.Created, status.ToString());
                             else
-                                Assert.IsTrue(status.Found && status.Record.InPlaceUpdated, status.ToString());
+                                ClassicAssert.IsTrue(status.Found && status.Record.InPlaceUpdated, status.ToString());
                             break;
                         case UpdateOp.RMW:
                             status = luContext.RMW(key, getValue(key));
                             if (iter == 0)
-                                Assert.IsTrue(status.NotFound && status.Record.Created, status.ToString());
+                                ClassicAssert.IsTrue(status.NotFound && status.Record.Created, status.ToString());
                             else
-                                Assert.IsTrue(status.Found && status.Record.InPlaceUpdated, status.ToString());
+                                ClassicAssert.IsTrue(status.Found && status.Record.InPlaceUpdated, status.ToString());
                             break;
                         case UpdateOp.Delete:
                             status = luContext.Delete(key);
-                            Assert.IsTrue(status.NotFound, status.ToString());
+                            ClassicAssert.IsTrue(status.NotFound, status.ToString());
                             if (iter == 0)
-                                Assert.IsTrue(status.Record.Created, status.ToString());
+                                ClassicAssert.IsTrue(status.Record.Created, status.ToString());
                             break;
                         default:
                             Assert.Fail($"Unexpected updateOp {updateOp}");
                             return;
                     };
-                    Assert.IsFalse(status.IsFaulted, $"Unexpected UpdateOp {updateOp}, status {status}");
+                    ClassicAssert.IsFalse(status.IsFaulted, $"Unexpected UpdateOp {updateOp}, status {status}");
                 }
                 catch (Exception)
                 {
@@ -1359,19 +1357,19 @@ namespace Tsavorite.test.LockableUnsafeContext
 
             const int numNewRecords = 50;
 
-            using var lockSession = store.NewSession<long, long, Empty, SimpleFunctions<long, long>>(new SimpleFunctions<long, long>());
+            using var lockSession = store.NewSession<long, long, Empty, SimpleSimpleFunctions<long, long>>(new SimpleSimpleFunctions<long, long>());
             var lockLuContext = lockSession.LockableUnsafeContext;
 
-            using var updateSession = store.NewSession<long, long, Empty, SimpleFunctions<long, long>>(new SimpleFunctions<long, long>());
+            using var updateSession = store.NewSession<long, long, Empty, SimpleSimpleFunctions<long, long>>(new SimpleSimpleFunctions<long, long>());
             var basicContext = updateSession.BasicContext;
 
-            int getValue(int key) => key + valueMult;
+            int getValue(int key) => key + ValueMult;
 
             // If we are testing Delete, then we need to have the records ON-DISK first; Delete is a no-op for unfound records.
             if (updateOp == UpdateOp.Delete)
             {
-                for (var key = numRecords; key < numRecords + numNewRecords; ++key)
-                    Assert.IsFalse(session.Upsert(key, key * valueMult).IsPending);
+                for (var key = NumRecords; key < NumRecords + numNewRecords; ++key)
+                    ClassicAssert.IsFalse(bContext.Upsert(key, key * ValueMult).IsPending);
                 store.Log.FlushAndEvict(wait: true);
             }
 
@@ -1392,7 +1390,7 @@ namespace Tsavorite.test.LockableUnsafeContext
 
             try
             {
-                for (var key = numRecords; key < numRecords + numNewRecords; ++key)
+                for (var key = NumRecords; key < NumRecords + numNewRecords; ++key)
                 {
                     for (var iter = 0; iter < 2; ++iter)
                     {
@@ -1459,28 +1457,28 @@ namespace Tsavorite.test.LockableUnsafeContext
                         case UpdateOp.Upsert:
                             status = basicContext.Upsert(key, getValue(key));
                             if (iter == 0)
-                                Assert.IsTrue(status.NotFound && status.Record.Created, status.ToString());
+                                ClassicAssert.IsTrue(status.NotFound && status.Record.Created, status.ToString());
                             else
-                                Assert.IsTrue(status.Found && status.Record.InPlaceUpdated, status.ToString());
+                                ClassicAssert.IsTrue(status.Found && status.Record.InPlaceUpdated, status.ToString());
                             break;
                         case UpdateOp.RMW:
                             status = basicContext.RMW(key, getValue(key));
                             if (iter == 0)
-                                Assert.IsTrue(status.NotFound && status.Record.Created, status.ToString());
+                                ClassicAssert.IsTrue(status.NotFound && status.Record.Created, status.ToString());
                             else
-                                Assert.IsTrue(status.Found && status.Record.InPlaceUpdated, status.ToString());
+                                ClassicAssert.IsTrue(status.Found && status.Record.InPlaceUpdated, status.ToString());
                             break;
                         case UpdateOp.Delete:
                             status = basicContext.Delete(key);
-                            Assert.IsTrue(status.NotFound, status.ToString());
+                            ClassicAssert.IsTrue(status.NotFound, status.ToString());
                             if (iter == 0)
-                                Assert.IsTrue(status.Record.Created, status.ToString());
+                                ClassicAssert.IsTrue(status.Record.Created, status.ToString());
                             break;
                         default:
                             Assert.Fail($"Unexpected updateOp {updateOp}");
                             return;
                     };
-                    Assert.IsFalse(status.IsFaulted, $"Unexpected UpdateOp {updateOp}, status {status}");
+                    ClassicAssert.IsFalse(status.IsFaulted, $"Unexpected UpdateOp {updateOp}, status {status}");
                     lastUpdaterKeys[2] = key;
                 }
                 catch (Exception)
@@ -1498,7 +1496,7 @@ namespace Tsavorite.test.LockableUnsafeContext
         {
             Populate();
 
-            using var session = store.NewSession<long, long, Empty, SimpleFunctions<long, long>>(new SimpleFunctions<long, long>());
+            using var session = store.NewSession<long, long, Empty, SimpleSimpleFunctions<long, long>>(new SimpleSimpleFunctions<long, long>());
             var luContext = session.LockableUnsafeContext;
 
             const int key = 42;
@@ -1545,7 +1543,7 @@ namespace Tsavorite.test.LockableUnsafeContext
         {
             Populate();
 
-            using var session = store.NewSession<long, long, Empty, SimpleFunctions<long, long>>(new SimpleFunctions<long, long>());
+            using var session = store.NewSession<long, long, Empty, SimpleSimpleFunctions<long, long>>(new SimpleSimpleFunctions<long, long>());
             var luContext = session.LockableUnsafeContext;
 
             luContext.BeginUnsafe();
@@ -1559,7 +1557,7 @@ namespace Tsavorite.test.LockableUnsafeContext
             };
 
             // First ensure things work with no blocking locks.
-            Assert.IsTrue(luContext.TryLock(keyVec));
+            ClassicAssert.IsTrue(luContext.TryLock(keyVec));
             luContext.Unlock(keyVec);
 
             var blockingVec = new FixedLengthLockableKeyStruct<long>[1];
@@ -1573,7 +1571,7 @@ namespace Tsavorite.test.LockableUnsafeContext
                     luContext.Lock(blockingVec);
 
                     // Now try the lock, and verify there are no locks left after (any taken must be rolled back on failure).
-                    Assert.IsFalse(luContext.TryLock(keyVec, TimeSpan.FromMilliseconds(20)));
+                    ClassicAssert.IsFalse(luContext.TryLock(keyVec, TimeSpan.FromMilliseconds(20)));
                     foreach (var k in keyVec)
                     {
                         if (k.Key != blockingVec[0].Key)
@@ -1602,7 +1600,7 @@ namespace Tsavorite.test.LockableUnsafeContext
         {
             Populate();
 
-            using var session = store.NewSession<long, long, Empty, SimpleFunctions<long, long>>(new SimpleFunctions<long, long>());
+            using var session = store.NewSession<long, long, Empty, SimpleSimpleFunctions<long, long>>(new SimpleSimpleFunctions<long, long>());
             var luContext = session.LockableUnsafeContext;
 
             luContext.BeginUnsafe();
@@ -1616,7 +1614,7 @@ namespace Tsavorite.test.LockableUnsafeContext
             };
 
             // First ensure things work with no blocking locks.
-            Assert.IsTrue(luContext.TryLock(keyVec));
+            ClassicAssert.IsTrue(luContext.TryLock(keyVec));
             luContext.Unlock(keyVec);
 
             var blockingVec = new FixedLengthLockableKeyStruct<long>[1];
@@ -1632,7 +1630,7 @@ namespace Tsavorite.test.LockableUnsafeContext
                     using var cts = new CancellationTokenSource(20);
 
                     // Now try the lock, and verify there are no locks left after (any taken must be rolled back on failure).
-                    Assert.IsFalse(luContext.TryLock(keyVec, cts.Token));
+                    ClassicAssert.IsFalse(luContext.TryLock(keyVec, cts.Token));
                     foreach (var k in keyVec)
                     {
                         if (k.Key != blockingVec[0].Key)
@@ -1661,7 +1659,7 @@ namespace Tsavorite.test.LockableUnsafeContext
         {
             Populate();
 
-            using var session = store.NewSession<long, long, Empty, SimpleFunctions<long, long>>(new SimpleFunctions<long, long>());
+            using var session = store.NewSession<long, long, Empty, SimpleSimpleFunctions<long, long>>(new SimpleSimpleFunctions<long, long>());
             var luContext = session.LockableUnsafeContext;
 
             luContext.BeginUnsafe();
@@ -1675,14 +1673,14 @@ namespace Tsavorite.test.LockableUnsafeContext
             try
             {
                 // Lock twice so it is blocked by the second reader
-                Assert.IsTrue(luContext.TryLock(sharedVec));
-                Assert.IsTrue(luContext.TryLock(sharedVec));
+                ClassicAssert.IsTrue(luContext.TryLock(sharedVec));
+                ClassicAssert.IsTrue(luContext.TryLock(sharedVec));
 
-                Assert.IsFalse(luContext.TryPromoteLock(exclusiveVec[0], TimeSpan.FromMilliseconds(20)));
+                ClassicAssert.IsFalse(luContext.TryPromoteLock(exclusiveVec[0], TimeSpan.FromMilliseconds(20)));
 
                 // Unlock one of the readers and verify successful promotion
                 luContext.Unlock(sharedVec);
-                Assert.IsTrue(luContext.TryPromoteLock(exclusiveVec[0]));
+                ClassicAssert.IsTrue(luContext.TryPromoteLock(exclusiveVec[0]));
                 luContext.Unlock(exclusiveVec);
             }
             catch (Exception)
@@ -1704,7 +1702,7 @@ namespace Tsavorite.test.LockableUnsafeContext
         {
             Populate();
 
-            using var session = store.NewSession<long, long, Empty, SimpleFunctions<long, long>>(new SimpleFunctions<long, long>());
+            using var session = store.NewSession<long, long, Empty, SimpleSimpleFunctions<long, long>>(new SimpleSimpleFunctions<long, long>());
             var luContext = session.LockableUnsafeContext;
 
             luContext.BeginUnsafe();
@@ -1718,15 +1716,15 @@ namespace Tsavorite.test.LockableUnsafeContext
             try
             {
                 // Lock twice so it is blocked by the second reader
-                Assert.IsTrue(luContext.TryLock(sharedVec));
-                Assert.IsTrue(luContext.TryLock(sharedVec));
+                ClassicAssert.IsTrue(luContext.TryLock(sharedVec));
+                ClassicAssert.IsTrue(luContext.TryLock(sharedVec));
 
                 using var cts = new CancellationTokenSource(20);
-                Assert.IsFalse(luContext.TryPromoteLock(exclusiveVec[0], cts.Token));
+                ClassicAssert.IsFalse(luContext.TryPromoteLock(exclusiveVec[0], cts.Token));
 
                 // Unlock one of the readers and verify successful promotion
                 luContext.Unlock(sharedVec);
-                Assert.IsTrue(luContext.TryPromoteLock(exclusiveVec[0]));
+                ClassicAssert.IsTrue(luContext.TryPromoteLock(exclusiveVec[0]));
                 luContext.Unlock(exclusiveVec);
             }
             catch (Exception)

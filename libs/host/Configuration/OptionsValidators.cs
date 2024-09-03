@@ -46,7 +46,7 @@ namespace Garnet
 
             var baseError = validationContext.MemberName != null ? base.FormatErrorMessage(validationContext.MemberName) : string.Empty;
             var errorMessage = $"{baseError} Required value was not specified.";
-            return new ValidationResult(errorMessage, new[] { validationContext.MemberName });
+            return new ValidationResult(errorMessage, [validationContext.MemberName]);
         }
 
         /// <summary>
@@ -76,7 +76,7 @@ namespace Garnet
             {
                 var baseError = validationContext.MemberName != null ? base.FormatErrorMessage(validationContext.MemberName) : string.Empty;
                 var errorMessage = $"{baseError} Invalid type. Expected: {typeof(T)}. Actual: {value?.GetType()}";
-                validationResult = new ValidationResult(errorMessage, new[] { validationContext.MemberName });
+                validationResult = new ValidationResult(errorMessage, [validationContext.MemberName]);
                 return true;
             }
 
@@ -124,7 +124,7 @@ namespace Garnet
             catch (Exception e) when (e is SecurityException or PathTooLongException)
             {
                 var errorMessage = $"{baseError} An exception of type {e.GetType()} has occurred while trying to access directory. Directory path: {directoryPath}.";
-                return new ValidationResult(errorMessage, new[] { validationContext.MemberName });
+                return new ValidationResult(errorMessage, [validationContext.MemberName]);
             }
 
             var options = (Options)validationContext.ObjectInstance;
@@ -138,7 +138,7 @@ namespace Garnet
             if (this._mustExist && !directoryInfo.Exists)
             {
                 var errorMessage = $"{baseError} Specified directory does not exist. Directory path: {directoryPath}.";
-                return new ValidationResult(errorMessage, new[] { validationContext.MemberName });
+                return new ValidationResult(errorMessage, [validationContext.MemberName]);
             }
 
             return ValidationResult.Success;
@@ -188,7 +188,7 @@ namespace Garnet
             if (!isValid)
             {
                 var errorMessage = $"Error(s) validating one or more directories:{Environment.NewLine}{errorSb}";
-                return new ValidationResult(errorMessage, new[] { validationContext.MemberName });
+                return new ValidationResult(errorMessage, [validationContext.MemberName]);
             }
 
             return ValidationResult.Success;
@@ -243,7 +243,7 @@ namespace Garnet
             catch (Exception e) when (e is SecurityException or UnauthorizedAccessException or NotSupportedException or PathTooLongException)
             {
                 var errorMessage = $"{baseError} An exception of type {e.GetType()} has occurred while trying to access file. File path: {filePath}.";
-                return new ValidationResult(errorMessage, new[] { validationContext.MemberName });
+                return new ValidationResult(errorMessage, [validationContext.MemberName]);
             }
 
             var options = (Options)validationContext.ObjectInstance;
@@ -257,20 +257,20 @@ namespace Garnet
             if (this._fileMustExist && !fileInfo.Exists)
             {
                 var errorMessage = $"{baseError} Specified file does not exist. File path: {filePath}.";
-                return new ValidationResult(errorMessage, new[] { validationContext.MemberName });
+                return new ValidationResult(errorMessage, [validationContext.MemberName]);
             }
 
             if (this._directoryMustExist && (fileInfo.Directory == null || !fileInfo.Directory.Exists))
             {
                 var errorMessage = $"{baseError} Directory containing specified file does not exist. File path: {filePath}.";
-                return new ValidationResult(errorMessage, new[] { validationContext.MemberName });
+                return new ValidationResult(errorMessage, [validationContext.MemberName]);
             }
 
             if (this._acceptedFileExtensions != null && !this._acceptedFileExtensions.Any(filePath.EndsWith))
             {
                 var errorMessage =
                     $"{baseError} Unexpected extension for specified file. Expected: {string.Join(" / ", this._acceptedFileExtensions)}.";
-                return new ValidationResult(errorMessage, new[] { validationContext.MemberName });
+                return new ValidationResult(errorMessage, [validationContext.MemberName]);
             }
 
             return ValidationResult.Success;
@@ -305,7 +305,7 @@ namespace Garnet
 
             var baseError = validationContext.MemberName != null ? base.FormatErrorMessage(validationContext.MemberName) : string.Empty;
             var errorMessage = $"{baseError} Expected string in IPv4 / IPv6 format (e.g. 127.0.0.1 / 0:0:0:0:0:0:0:1) or 'localhost'. Actual value: {ipAddress}";
-            return new ValidationResult(errorMessage, new[] { validationContext.MemberName });
+            return new ValidationResult(errorMessage, [validationContext.MemberName]);
         }
     }
 
@@ -337,7 +337,7 @@ namespace Garnet
 
             var baseError = validationContext.MemberName != null ? base.FormatErrorMessage(validationContext.MemberName) : string.Empty;
             var errorMessage = $"{baseError} Expected string in memory size format (e.g. 1k, 1kb, 10m, 10mb, 50g, 50gb etc). Actual value: {memorySize}";
-            return new ValidationResult(errorMessage, new[] { validationContext.MemberName });
+            return new ValidationResult(errorMessage, [validationContext.MemberName]);
         }
     }
 
@@ -417,7 +417,7 @@ namespace Garnet
 
             var baseError = validationContext.MemberName != null ? base.FormatErrorMessage(validationContext.MemberName) : string.Empty;
             var errorMessage = $"{baseError} Expected to be in range {(this._includeMin ? "[" : "(")}{this._min}, {this._max}{(this._includeMax ? "]" : ")")}. Actual value: {value}";
-            return new ValidationResult(errorMessage, new[] { validationContext.MemberName });
+            return new ValidationResult(errorMessage, [validationContext.MemberName]);
         }
     }
 
@@ -507,7 +507,7 @@ namespace Garnet
     internal sealed class CertFileValidationAttribute : FilePathValidationAttribute
     {
         internal CertFileValidationAttribute(bool fileMustExist, bool directoryMustExist, bool isRequired) : base(
-            fileMustExist, directoryMustExist, isRequired, new[] { ".pfx" })
+            fileMustExist, directoryMustExist, isRequired, [".pfx"])
         {
         }
 

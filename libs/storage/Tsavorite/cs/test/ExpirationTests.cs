@@ -4,11 +4,14 @@
 using System;
 using System.IO;
 using NUnit.Framework;
+using NUnit.Framework.Legacy;
 using Tsavorite.core;
 using static Tsavorite.test.TestUtils;
 
 namespace Tsavorite.test.Expiration
 {
+    using SpanByteStoreFunctions = StoreFunctions<SpanByte, SpanByte, SpanByteComparer, SpanByteRecordDisposer>;
+
     [TestFixture]
     internal class ExpirationTests
     {
@@ -44,7 +47,7 @@ namespace Tsavorite.test.Expiration
             None,                       // Default value
             Incremented,                // Initial increment was done
             ExpireDelete,               // Record was expired so deleted
-            ExpireRollover,             // Record was expired and reinitialized within the IFunctions call
+            ExpireRollover,             // Record was expired and reinitialized within the ISessionFunctions call
             Updated,                    // Record was updated normally
             NotUpdated,                 // Record was not updated
             Deleted,                    // Record was expired with AndStop (no reinitialization done)
@@ -152,13 +155,13 @@ namespace Tsavorite.test.Expiration
 #pragma warning restore format
         };
 
-        public class ExpirationFunctions : FunctionsBase<SpanByte, SpanByte, ExpirationInput, ExpirationOutput, Empty>
+        public class ExpirationFunctions : SessionFunctionsBase<SpanByte, SpanByte, ExpirationInput, ExpirationOutput, Empty>
         {
             private static unsafe void VerifyValue(int key, ref SpanByte valueSpanByte)
             {
                 Span<int> valueSpan = valueSpanByte.AsSpan<int>();
                 for (int j = 0; j < valueSpan.Length; j++)
-                    Assert.AreEqual(key, valueSpan[j]);
+                    ClassicAssert.AreEqual(key, valueSpan[j]);
             }
 
             static bool IsExpired(int key, int value) => value == GetValue(key) + 2;
@@ -255,20 +258,20 @@ namespace Tsavorite.test.Expiration
                 switch (input.testOp)
                 {
                     case TestOp.Increment:
-                        Assert.AreEqual(GetValue(key1), oldField1);
+                        ClassicAssert.AreEqual(GetValue(key1), oldField1);
                         goto case TestOp.PassiveExpire;
                     case TestOp.PassiveExpire:
                         newField1 = oldField1 + 1;
                         output.result = ExpirationResult.Incremented;
                         return true;
                     case TestOp.ExpireDelete:
-                        Assert.AreEqual(GetValue(key1) + 1, oldField1);      // For this test we only call this operation when the value will expire
+                        ClassicAssert.AreEqual(GetValue(key1) + 1, oldField1);      // For this test we only call this operation when the value will expire
                         newField1 = oldField1 + 1;
                         rmwInfo.Action = RMWAction.ExpireAndResume;
                         output.result = ExpirationResult.ExpireDelete;
                         return true;
                     case TestOp.ExpireRollover:
-                        Assert.AreEqual(GetValue(key1) + 1, oldField1);      // For this test we only call this operation when the value will expire
+                        ClassicAssert.AreEqual(GetValue(key1) + 1, oldField1);      // For this test we only call this operation when the value will expire
                         newField1 = GetValue(key1);
                         output.result = ExpirationResult.ExpireRollover;
                         output.retrievedValue = newField1;
@@ -374,20 +377,20 @@ namespace Tsavorite.test.Expiration
                 switch (input.testOp)
                 {
                     case TestOp.Increment:
-                        Assert.AreEqual(GetValue(key1), field1);
+                        ClassicAssert.AreEqual(GetValue(key1), field1);
                         goto case TestOp.PassiveExpire;
                     case TestOp.PassiveExpire:
                         ++field1;
                         output.result = ExpirationResult.Incremented;
                         return true;
                     case TestOp.ExpireDelete:
-                        Assert.AreEqual(GetValue(key1) + 1, field1);            // For this test we only call this operation when the value will expire
+                        ClassicAssert.AreEqual(GetValue(key1) + 1, field1);            // For this test we only call this operation when the value will expire
                         ++field1;
                         rmwInfo.Action = RMWAction.ExpireAndStop;
                         output.result = ExpirationResult.ExpireDelete;
                         return false;
                     case TestOp.ExpireRollover:
-                        Assert.AreEqual(GetValue(key1) + 1, field1);            // For this test we only call this operation when the value will expire
+                        ClassicAssert.AreEqual(GetValue(key1) + 1, field1);            // For this test we only call this operation when the value will expire
                         field1 = GetValue(key1);
                         output.result = ExpirationResult.ExpireRollover;
                         output.retrievedValue = field1;
@@ -513,8 +516,9 @@ namespace Tsavorite.test.Expiration
 
         IDevice log;
         ExpirationFunctions functions;
-        TsavoriteKV<SpanByte, SpanByte> store;
-        ClientSession<SpanByte, SpanByte, ExpirationInput, ExpirationOutput, Empty, ExpirationFunctions> session;
+        TsavoriteKV<SpanByte, SpanByte, SpanByteStoreFunctions, SpanByteAllocator<SpanByteStoreFunctions>> store;
+        ClientSession<SpanByte, SpanByte, ExpirationInput, ExpirationOutput, Empty, ExpirationFunctions, SpanByteStoreFunctions, SpanByteAllocator<SpanByteStoreFunctions>> session;
+        BasicContext<SpanByte, SpanByte, ExpirationInput, ExpirationOutput, Empty, ExpirationFunctions, SpanByteStoreFunctions, SpanByteAllocator<SpanByteStoreFunctions>> bContext;
 
         [SetUp]
         public void Setup()
@@ -522,13 +526,19 @@ namespace Tsavorite.test.Expiration
             DeleteDirectory(MethodTestDir, wait: true);
 
             log = Devices.CreateLogDevice(Path.Join(MethodTestDir, "hlog.log"), deleteOnClose: true);
-            store = new TsavoriteKV<SpanByte, SpanByte>
-                (128,
-                new LogSettings { LogDevice = log, MemorySizeBits = 19, PageSizeBits = 14 },
-                null, null, null);
+            store = new(new()
+            {
+                IndexSize = 1L << 13,
+                LogDevice = log,
+                MemorySize = 1L << 19,
+                PageSize = 1L << 14
+            }, StoreFunctions<SpanByte, SpanByte>.Create()
+                , (allocatorSettings, storeFunctions) => new(allocatorSettings, storeFunctions)
+            );
 
             functions = new ExpirationFunctions();
             session = store.NewSession<ExpirationInput, ExpirationOutput, Empty, ExpirationFunctions>(functions);
+            bContext = session.BasicContext;
         }
 
         [TearDown]
@@ -559,46 +569,44 @@ namespace Tsavorite.test.Expiration
                     valueSpan[j] = GetValue(i);
                 var valueSpanByte = valueSpan.AsSpanByte();
 
-                session.Upsert(ref keySpanByte, ref valueSpanByte, Empty.Default, 0);
+                bContext.Upsert(ref keySpanByte, ref valueSpanByte, Empty.Default);
             }
         }
 
         private unsafe ExpirationOutput GetRecord(int key, Status expectedStatus, FlushMode flushMode)
         {
-            Span<int> keySpan = stackalloc int[1];
-            keySpan[0] = key;
+            Span<int> keySpan = [key];
             var keySpanByte = keySpan.AsSpanByte();
             ExpirationOutput output = new();
 
-            var status = session.Read(ref keySpanByte, ref output, Empty.Default, 0);
+            var status = bContext.Read(ref keySpanByte, ref output, Empty.Default);
             if (status.IsPending)
             {
-                Assert.AreNotEqual(FlushMode.NoFlush, flushMode);
-                session.CompletePendingWithOutputs(out var completedOutputs, wait: true);
+                ClassicAssert.AreNotEqual(FlushMode.NoFlush, flushMode);
+                bContext.CompletePendingWithOutputs(out var completedOutputs, wait: true);
                 (status, output) = GetSinglePendingResult(completedOutputs);
             }
 
-            Assert.AreEqual(expectedStatus, status, status.ToString());
+            ClassicAssert.AreEqual(expectedStatus, status, status.ToString());
             return output;
         }
 
         private unsafe ExpirationOutput ExecuteRMW(int key, ref ExpirationInput input, FlushMode flushMode, Status expectedStatus = default)
         {
-            Span<int> keySpan = stackalloc int[1];
-            keySpan[0] = key;
+            Span<int> keySpan = [key];
             var keySpanByte = keySpan.AsSpanByte();
 
             ExpirationOutput output = new();
-            var status = session.RMW(ref keySpanByte, ref input, ref output);
+            var status = bContext.RMW(ref keySpanByte, ref input, ref output);
             if (status.IsPending)
             {
-                Assert.AreNotEqual(FlushMode.NoFlush, flushMode);
-                session.CompletePendingWithOutputs(out var completedOutputs, wait: true);
+                ClassicAssert.AreNotEqual(FlushMode.NoFlush, flushMode);
+                bContext.CompletePendingWithOutputs(out var completedOutputs, wait: true);
                 (status, output) = GetSinglePendingResult(completedOutputs);
             }
 
-            Assert.AreEqual(expectedStatus, status, status.ToString());
-            Assert.AreEqual(expectedStatus.Expired, status.Expired, status.ToString());
+            ClassicAssert.AreEqual(expectedStatus, status, status.ToString());
+            ClassicAssert.AreEqual(expectedStatus.Expired, status.Expired, status.ToString());
             return output;
         }
 
@@ -620,7 +628,7 @@ namespace Tsavorite.test.Expiration
         private void InitialRead(FlushMode flushMode, bool afterIncrement)
         {
             var output = GetRecord(ModifyKey, new(StatusCode.Found), flushMode);
-            Assert.AreEqual(GetValue(ModifyKey) + (afterIncrement ? 1 : 0), output.retrievedValue);
+            ClassicAssert.AreEqual(GetValue(ModifyKey) + (afterIncrement ? 1 : 0), output.retrievedValue);
             Funcs expectedFuncs = flushMode switch
             {
                 FlushMode.NoFlush => Funcs.ConcurrentReader,
@@ -628,8 +636,8 @@ namespace Tsavorite.test.Expiration
                 FlushMode.OnDisk => Funcs.SingleReader | Funcs.ReadCompletionCallback,
                 _ => Funcs.Invalid
             };
-            Assert.AreNotEqual(expectedFuncs, Funcs.Invalid, $"Unexpected flushmode {flushMode}");
-            Assert.AreEqual(expectedFuncs, output.functionsCalled);
+            ClassicAssert.AreNotEqual(expectedFuncs, Funcs.Invalid, $"Unexpected flushmode {flushMode}");
+            ClassicAssert.AreEqual(expectedFuncs, output.functionsCalled);
         }
 
         private void IncrementValue(TestOp testOp, FlushMode flushMode)
@@ -642,8 +650,8 @@ namespace Tsavorite.test.Expiration
                                             noFlush: Funcs.InPlaceUpdater,
                                             readOnly: Funcs.DidCopyUpdate,
                                             onDisk: Funcs.DidCopyUpdateCC);
-            Assert.AreEqual(expectedFuncs, output.functionsCalled);
-            Assert.AreEqual(ExpirationResult.Incremented, output.result);
+            ClassicAssert.AreEqual(expectedFuncs, output.functionsCalled);
+            ClassicAssert.AreEqual(ExpirationResult.Incremented, output.result);
         }
 
         private void MaybeEvict(FlushMode flushMode)
@@ -665,9 +673,9 @@ namespace Tsavorite.test.Expiration
             ExpirationInput input = new() { testOp = testOp, value = NoValue, comparisonValue = GetValue(key) + 1 };
 
             ExpirationOutput output = ExecuteRMW(key, ref input, flushMode, new(StatusCode.NotFound));
-            Assert.AreEqual(Funcs.NeedInitialUpdate, output.functionsCalled);
-            Assert.AreEqual(ExpirationResult.None, output.result);
-            Assert.AreEqual(0, output.retrievedValue);
+            ClassicAssert.AreEqual(Funcs.NeedInitialUpdate, output.functionsCalled);
+            ClassicAssert.AreEqual(ExpirationResult.None, output.result);
+            ClassicAssert.AreEqual(0, output.retrievedValue);
 #endif
 
             // Verify it's not there
@@ -683,7 +691,7 @@ namespace Tsavorite.test.Expiration
                 FlushMode.OnDisk => onDisk,
                 _ => Funcs.Invalid
             };
-            Assert.AreNotEqual(expectedFuncs, Funcs.Invalid, $"Unexpected flushmode {flushMode}");
+            ClassicAssert.AreNotEqual(expectedFuncs, Funcs.Invalid, $"Unexpected flushmode {flushMode}");
             return expectedFuncs;
         }
 
@@ -719,8 +727,8 @@ namespace Tsavorite.test.Expiration
                                             noFlush: Funcs.InPlaceUpdater,
                                             readOnly: Funcs.DidCopyUpdate,
                                             onDisk: Funcs.DidCopyUpdateCC);
-            Assert.AreEqual(expectedFuncs, output.functionsCalled);
-            Assert.AreEqual(ExpirationResult.ExpireDelete, output.result);
+            ClassicAssert.AreEqual(expectedFuncs, output.functionsCalled);
+            ClassicAssert.AreEqual(ExpirationResult.ExpireDelete, output.result);
 
             // Verify it's not there
             if (flushMode == FlushMode.NoFlush)
@@ -749,13 +757,13 @@ namespace Tsavorite.test.Expiration
                                             noFlush: Funcs.InPlaceUpdater,
                                             readOnly: Funcs.DidCopyUpdate,
                                             onDisk: Funcs.DidCopyUpdateCC);
-            Assert.AreEqual(expectedFuncs, output.functionsCalled);
-            Assert.AreEqual(ExpirationResult.ExpireRollover, output.result);
-            Assert.AreEqual(GetValue(key), output.retrievedValue);
+            ClassicAssert.AreEqual(expectedFuncs, output.functionsCalled);
+            ClassicAssert.AreEqual(ExpirationResult.ExpireRollover, output.result);
+            ClassicAssert.AreEqual(GetValue(key), output.retrievedValue);
 
             // Verify it's there with initial state
             output = GetRecord(key, new(StatusCode.Found), FlushMode.NoFlush /* update was appended */);
-            Assert.AreEqual(GetValue(key), output.retrievedValue);
+            ClassicAssert.AreEqual(GetValue(key), output.retrievedValue);
         }
 
         [Test]
@@ -778,13 +786,13 @@ namespace Tsavorite.test.Expiration
                                             noFlush: Funcs.InPlaceUpdater,
                                             readOnly: Funcs.DidCopyUpdate,
                                             onDisk: Funcs.DidCopyUpdateCC);
-            Assert.AreEqual(expectedFuncs, output.functionsCalled);
-            Assert.AreEqual(ExpirationResult.Updated, output.result);
-            Assert.AreEqual(input.value, output.retrievedValue);
+            ClassicAssert.AreEqual(expectedFuncs, output.functionsCalled);
+            ClassicAssert.AreEqual(ExpirationResult.Updated, output.result);
+            ClassicAssert.AreEqual(input.value, output.retrievedValue);
 
             // Verify it's there with updated value
             output = GetRecord(key, new(StatusCode.Found), FlushMode.NoFlush /* update was appended */);
-            Assert.AreEqual(input.value, output.retrievedValue);
+            ClassicAssert.AreEqual(input.value, output.retrievedValue);
 
             // Key doesn't exist - no-op
             key += SetIncrement;
@@ -796,7 +804,7 @@ namespace Tsavorite.test.Expiration
             expectedFuncs = Funcs.NeedInitialUpdate;
             if (flushMode == FlushMode.OnDisk)
                 expectedFuncs |= Funcs.RMWCompletionCallback;
-            Assert.AreEqual(expectedFuncs, output.functionsCalled);
+            ClassicAssert.AreEqual(expectedFuncs, output.functionsCalled);
 
             // Verify it's not there
             GetRecord(key, new(StatusCode.NotFound), flushMode);
@@ -821,11 +829,11 @@ namespace Tsavorite.test.Expiration
                                             noFlush: Funcs.InPlaceUpdater,
                                             readOnly: Funcs.NeedCopyUpdate,
                                             onDisk: Funcs.SkippedCopyUpdate);
-            Assert.AreEqual(expectedFuncs, output.functionsCalled);
+            ClassicAssert.AreEqual(expectedFuncs, output.functionsCalled);
 
             // Verify it's there with unchanged value
             output = GetRecord(key, new(StatusCode.Found), flushMode);
-            Assert.AreEqual(GetValue(key) + 1, output.retrievedValue);
+            ClassicAssert.AreEqual(GetValue(key) + 1, output.retrievedValue);
 
             // Key doesn't exist - create it
             key += SetIncrement;
@@ -837,14 +845,14 @@ namespace Tsavorite.test.Expiration
             expectedFuncs = Funcs.DidInitialUpdate;
             if (flushMode == FlushMode.OnDisk)
                 expectedFuncs |= Funcs.RMWCompletionCallback;
-            Assert.AreEqual(expectedFuncs, output.functionsCalled);
+            ClassicAssert.AreEqual(expectedFuncs, output.functionsCalled);
 
-            Assert.AreEqual(ExpirationResult.Updated, output.result);
-            Assert.AreEqual(input.value, output.retrievedValue);
+            ClassicAssert.AreEqual(ExpirationResult.Updated, output.result);
+            ClassicAssert.AreEqual(input.value, output.retrievedValue);
 
             // Verify it's there with specified value
             output = GetRecord(key, new(StatusCode.Found), FlushMode.NoFlush /* was just added */);
-            Assert.AreEqual(input.value, output.retrievedValue);
+            ClassicAssert.AreEqual(input.value, output.retrievedValue);
         }
 
         [Test]
@@ -868,13 +876,13 @@ namespace Tsavorite.test.Expiration
                                             noFlush: Funcs.InPlaceUpdater,
                                             readOnly: Funcs.DidCopyUpdate,
                                             onDisk: Funcs.DidCopyUpdateCC);
-            Assert.AreEqual(expectedFuncs, output.functionsCalled);
-            Assert.AreEqual(ExpirationResult.Updated, output.result);
-            Assert.AreEqual(input.value, output.retrievedValue);
+            ClassicAssert.AreEqual(expectedFuncs, output.functionsCalled);
+            ClassicAssert.AreEqual(ExpirationResult.Updated, output.result);
+            ClassicAssert.AreEqual(input.value, output.retrievedValue);
 
             // Verify it's there with updated value
             output = GetRecord(key, new(StatusCode.Found), flushMode);
-            Assert.AreEqual(input.value, output.retrievedValue);
+            ClassicAssert.AreEqual(input.value, output.retrievedValue);
 
             // Value doesn't equal - no-op
             key += 1;   // We modified ModifyKey so get the next-higher key
@@ -884,13 +892,13 @@ namespace Tsavorite.test.Expiration
                                             noFlush: Funcs.InPlaceUpdater,
                                             readOnly: Funcs.NeedCopyUpdate,
                                             onDisk: Funcs.SkippedCopyUpdate);
-            Assert.AreEqual(expectedFuncs, output.functionsCalled);
-            Assert.AreEqual(flushMode == FlushMode.NoFlush ? ExpirationResult.NotUpdated : ExpirationResult.None, output.result);
-            Assert.AreEqual(flushMode == FlushMode.NoFlush ? GetValue(key) : 0, output.retrievedValue);
+            ClassicAssert.AreEqual(expectedFuncs, output.functionsCalled);
+            ClassicAssert.AreEqual(flushMode == FlushMode.NoFlush ? ExpirationResult.NotUpdated : ExpirationResult.None, output.result);
+            ClassicAssert.AreEqual(flushMode == FlushMode.NoFlush ? GetValue(key) : 0, output.retrievedValue);
 
             // Verify it's there with unchanged value; note that it has not been InitialIncrement()ed
             output = GetRecord(key, new(StatusCode.Found), flushMode);
-            Assert.AreEqual(GetValue(key), output.retrievedValue);
+            ClassicAssert.AreEqual(GetValue(key), output.retrievedValue);
         }
 
         [Test]
@@ -914,12 +922,12 @@ namespace Tsavorite.test.Expiration
                                             noFlush: Funcs.InPlaceUpdater,
                                             readOnly: Funcs.NeedCopyUpdate,
                                             onDisk: Funcs.SkippedCopyUpdate);
-            Assert.AreEqual(expectedFuncs, output.functionsCalled);
-            Assert.AreEqual(flushMode == FlushMode.NoFlush ? ExpirationResult.NotUpdated : ExpirationResult.None, output.result);
-            Assert.AreEqual(flushMode == FlushMode.NoFlush ? GetValue(key) + 1 : 0, output.retrievedValue);
+            ClassicAssert.AreEqual(expectedFuncs, output.functionsCalled);
+            ClassicAssert.AreEqual(flushMode == FlushMode.NoFlush ? ExpirationResult.NotUpdated : ExpirationResult.None, output.result);
+            ClassicAssert.AreEqual(flushMode == FlushMode.NoFlush ? GetValue(key) + 1 : 0, output.retrievedValue);
 
             output = GetRecord(key, new(StatusCode.Found), flushMode);
-            Assert.AreEqual(GetValue(key) + 1, output.retrievedValue);
+            ClassicAssert.AreEqual(GetValue(key) + 1, output.retrievedValue);
 
             // Value doesn't equal
             input = new() { testOp = testOp, value = GetValue(key) + SetIncrement, comparisonValue = -1 };
@@ -928,12 +936,12 @@ namespace Tsavorite.test.Expiration
                                             noFlush: Funcs.InPlaceUpdater,
                                             readOnly: Funcs.DidCopyUpdate,
                                             onDisk: Funcs.DidCopyUpdateCC);
-            Assert.AreEqual(expectedFuncs, output.functionsCalled);
-            Assert.AreEqual(ExpirationResult.Updated, output.result);
-            Assert.AreEqual(GetValue(key) + SetIncrement, output.retrievedValue);
+            ClassicAssert.AreEqual(expectedFuncs, output.functionsCalled);
+            ClassicAssert.AreEqual(ExpirationResult.Updated, output.result);
+            ClassicAssert.AreEqual(GetValue(key) + SetIncrement, output.retrievedValue);
 
             output = GetRecord(key, new(StatusCode.Found), flushMode);
-            Assert.AreEqual(GetValue(key) + SetIncrement, output.retrievedValue);
+            ClassicAssert.AreEqual(GetValue(key) + SetIncrement, output.retrievedValue);
         }
 
         [Test]
@@ -961,12 +969,12 @@ namespace Tsavorite.test.Expiration
                                             noFlush: Funcs.InPlaceUpdater | Funcs.DidInitialUpdate,
                                             readOnly: Funcs.DidCopyUpdate | Funcs.DidInitialUpdate,
                                             onDisk: Funcs.DidCopyUpdateCC | Funcs.DidInitialUpdate);
-            Assert.AreEqual(expectedFuncs, output.functionsCalled);
-            Assert.AreEqual(ExpirationResult.DeletedThenUpdated, output.result);
+            ClassicAssert.AreEqual(expectedFuncs, output.functionsCalled);
+            ClassicAssert.AreEqual(ExpirationResult.DeletedThenUpdated, output.result);
 
             // Verify we did the reInitialization (this test should always have restored it with its initial values)
             output = GetRecord(key, new(StatusCode.Found), flushMode);
-            Assert.AreEqual(reinitValue, output.retrievedValue);
+            ClassicAssert.AreEqual(reinitValue, output.retrievedValue);
 
             // No-op value - if isEqual, a bogus value, else the actual value of the key. Does nothing to the record.
             key += 1;   // We deleted ModifyKey so get the next-higher key
@@ -976,13 +984,13 @@ namespace Tsavorite.test.Expiration
                                             noFlush: Funcs.InPlaceUpdater,
                                             readOnly: Funcs.NeedCopyUpdate,
                                             onDisk: Funcs.SkippedCopyUpdate);
-            Assert.AreEqual(expectedFuncs, output.functionsCalled);
-            Assert.AreEqual(flushMode == FlushMode.NoFlush ? ExpirationResult.NotDeleted : ExpirationResult.None, output.result);
-            Assert.AreEqual(flushMode == FlushMode.NoFlush ? GetValue(key) : 0, output.retrievedValue);
+            ClassicAssert.AreEqual(expectedFuncs, output.functionsCalled);
+            ClassicAssert.AreEqual(flushMode == FlushMode.NoFlush ? ExpirationResult.NotDeleted : ExpirationResult.None, output.result);
+            ClassicAssert.AreEqual(flushMode == FlushMode.NoFlush ? GetValue(key) : 0, output.retrievedValue);
 
             // Verify it's there with unchanged value; note that it has not been InitialIncrement()ed
             output = GetRecord(key, new(StatusCode.Found), flushMode);
-            Assert.AreEqual(GetValue(key), output.retrievedValue);
+            ClassicAssert.AreEqual(GetValue(key), output.retrievedValue);
         }
 
         [Test]
@@ -1010,12 +1018,12 @@ namespace Tsavorite.test.Expiration
                                             noFlush: Funcs.DidInitialUpdate | Funcs.InPlaceUpdater,
                                             readOnly: Funcs.DidInitialUpdate | Funcs.DidCopyUpdate,
                                             onDisk: Funcs.DidInitialUpdate | Funcs.DidCopyUpdateCC);
-            Assert.AreEqual(expectedFuncs, output.functionsCalled);
-            Assert.AreEqual(ExpirationResult.DeletedThenInserted, output.result);
+            ClassicAssert.AreEqual(expectedFuncs, output.functionsCalled);
+            ClassicAssert.AreEqual(ExpirationResult.DeletedThenInserted, output.result);
 
             // Verify we did the reInitialization (this test should always have restored it with its initial values)
             output = GetRecord(key, new(StatusCode.Found), flushMode);
-            Assert.AreEqual(reinitValue, output.retrievedValue);
+            ClassicAssert.AreEqual(reinitValue, output.retrievedValue);
             // No-op value - if isEqual, a bogus value, else the actual value of the key. Does nothing to the record.
             key += 1;   // We deleted ModifyKey so get the next-higher key
             input = new() { testOp = testOp, comparisonValue = isEqual ? -1 : GetValue(key) };
@@ -1024,13 +1032,13 @@ namespace Tsavorite.test.Expiration
                                             noFlush: Funcs.InPlaceUpdater,
                                             readOnly: Funcs.NeedCopyUpdate,
                                             onDisk: Funcs.SkippedCopyUpdate);
-            Assert.AreEqual(expectedFuncs, output.functionsCalled);
-            Assert.AreEqual(flushMode == FlushMode.NoFlush ? ExpirationResult.NotDeleted : ExpirationResult.None, output.result);
-            Assert.AreEqual(flushMode == FlushMode.NoFlush ? GetValue(key) : 0, output.retrievedValue);
+            ClassicAssert.AreEqual(expectedFuncs, output.functionsCalled);
+            ClassicAssert.AreEqual(flushMode == FlushMode.NoFlush ? ExpirationResult.NotDeleted : ExpirationResult.None, output.result);
+            ClassicAssert.AreEqual(flushMode == FlushMode.NoFlush ? GetValue(key) : 0, output.retrievedValue);
 
             // Verify it's there with unchanged value; note that it has not been InitialIncrement()ed
             output = GetRecord(key, new(StatusCode.Found), flushMode);
-            Assert.AreEqual(GetValue(key), output.retrievedValue);
+            ClassicAssert.AreEqual(GetValue(key), output.retrievedValue);
         }
 
         [Test]
@@ -1050,8 +1058,8 @@ namespace Tsavorite.test.Expiration
             // Value equals - delete it
             ExpirationInput input = new() { testOp = testOp, comparisonValue = GetValue(key) + 1 };
             ExpirationOutput output = ExecuteRMW(key, ref input, flushMode, expectedFoundRmwStatus);
-            Assert.AreEqual(Funcs.InPlaceUpdater, output.functionsCalled);
-            Assert.AreEqual(ExpirationResult.Deleted, output.result);
+            ClassicAssert.AreEqual(Funcs.InPlaceUpdater, output.functionsCalled);
+            ClassicAssert.AreEqual(ExpirationResult.Deleted, output.result);
 
             // Verify it's not there
             GetRecord(key, new(StatusCode.NotFound), flushMode);
@@ -1060,13 +1068,13 @@ namespace Tsavorite.test.Expiration
             key += 1;   // We deleted ModifyKey so get the next-higher key
             input = new() { testOp = testOp, comparisonValue = -1 };
             output = ExecuteRMW(key, ref input, flushMode, GetMutableVsOnDiskStatus(flushMode));
-            Assert.AreEqual(flushMode == FlushMode.NoFlush ? Funcs.InPlaceUpdater : Funcs.SkippedCopyUpdate, output.functionsCalled);
-            Assert.AreEqual(flushMode == FlushMode.NoFlush ? ExpirationResult.NotDeleted : ExpirationResult.None, output.result);
-            Assert.AreEqual(flushMode == FlushMode.NoFlush ? GetValue(key) : 0, output.retrievedValue);
+            ClassicAssert.AreEqual(flushMode == FlushMode.NoFlush ? Funcs.InPlaceUpdater : Funcs.SkippedCopyUpdate, output.functionsCalled);
+            ClassicAssert.AreEqual(flushMode == FlushMode.NoFlush ? ExpirationResult.NotDeleted : ExpirationResult.None, output.result);
+            ClassicAssert.AreEqual(flushMode == FlushMode.NoFlush ? GetValue(key) : 0, output.retrievedValue);
 
             // Verify it's there with unchanged value; note that it has not been InitialIncrement()ed
             output = GetRecord(key, new(StatusCode.Found), flushMode);
-            Assert.AreEqual(GetValue(key), output.retrievedValue);
+            ClassicAssert.AreEqual(GetValue(key), output.retrievedValue);
         }
 
         [Test]
@@ -1081,7 +1089,7 @@ namespace Tsavorite.test.Expiration
 
             // For this test, IPU will Cancel rather than go to the IPU path
             Status expectedFoundRmwStatus = flushMode == FlushMode.NoFlush ? new(StatusCode.InPlaceUpdatedRecord | StatusCode.Expired) : new(StatusCode.CreatedRecord | StatusCode.Expired);
-            Assert.IsTrue(expectedFoundRmwStatus.Expired, expectedFoundRmwStatus.ToString());
+            ClassicAssert.IsTrue(expectedFoundRmwStatus.Expired, expectedFoundRmwStatus.ToString());
 
             VerifyKeyNotCreated(testOp, flushMode);
             session.ctx.phase = phase;
@@ -1093,13 +1101,13 @@ namespace Tsavorite.test.Expiration
                                             noFlush: Funcs.InPlaceUpdater,
                                             readOnly: Funcs.NeedCopyUpdate,
                                             onDisk: Funcs.SkippedCopyUpdate);
-            Assert.AreEqual(expectedFuncs, output.functionsCalled);
-            Assert.AreEqual(flushMode == FlushMode.NoFlush ? ExpirationResult.NotDeleted : ExpirationResult.None, output.result);
-            Assert.AreEqual(flushMode == FlushMode.NoFlush ? GetValue(key) + 1 : 0, output.retrievedValue);
+            ClassicAssert.AreEqual(expectedFuncs, output.functionsCalled);
+            ClassicAssert.AreEqual(flushMode == FlushMode.NoFlush ? ExpirationResult.NotDeleted : ExpirationResult.None, output.result);
+            ClassicAssert.AreEqual(flushMode == FlushMode.NoFlush ? GetValue(key) + 1 : 0, output.retrievedValue);
 
             // Verify it's there with unchanged value
             output = GetRecord(key, new(StatusCode.Found), flushMode);
-            Assert.AreEqual(GetValue(key) + 1, output.retrievedValue);
+            ClassicAssert.AreEqual(GetValue(key) + 1, output.retrievedValue);
 
             // Value doesn't equal - delete it
             input = new() { testOp = testOp, comparisonValue = -1 };
@@ -1108,8 +1116,8 @@ namespace Tsavorite.test.Expiration
                                             noFlush: Funcs.InPlaceUpdater,
                                             readOnly: Funcs.DidCopyUpdate,
                                             onDisk: Funcs.DidCopyUpdateCC);
-            Assert.AreEqual(expectedFuncs, output.functionsCalled);
-            Assert.AreEqual(ExpirationResult.Deleted, output.result);
+            ClassicAssert.AreEqual(expectedFuncs, output.functionsCalled);
+            ClassicAssert.AreEqual(ExpirationResult.Deleted, output.result);
 
             // Verify it's not there
             GetRecord(key, new(StatusCode.NotFound), flushMode);

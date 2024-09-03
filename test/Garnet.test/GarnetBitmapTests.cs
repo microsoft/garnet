@@ -4,7 +4,9 @@
 using System;
 using System.Collections.Generic;
 using Garnet.common;
+using Garnet.server;
 using NUnit.Framework;
+using NUnit.Framework.Legacy;
 using StackExchange.Redis;
 
 namespace Garnet.test
@@ -53,49 +55,49 @@ namespace Garnet.test
             var db = redis.GetDatabase(0);
 
             string key = "setResponseTest";
-            Assert.IsFalse(db.StringSetBit(key, 7, true));
-            Assert.IsFalse(db.StringSetBit(key, 14, true));
-            Assert.IsFalse(db.StringSetBit(key, 37, true));
-            Assert.IsFalse(db.StringSetBit(key, 144, true));
-            Assert.IsFalse(db.StringSetBit(key, 777, true));
-            Assert.IsFalse(db.StringSetBit(key, 1444, true));
-            Assert.IsFalse(db.StringSetBit(key, 9999, true));
+            ClassicAssert.IsFalse(db.StringSetBit(key, 7, true));
+            ClassicAssert.IsFalse(db.StringSetBit(key, 14, true));
+            ClassicAssert.IsFalse(db.StringSetBit(key, 37, true));
+            ClassicAssert.IsFalse(db.StringSetBit(key, 144, true));
+            ClassicAssert.IsFalse(db.StringSetBit(key, 777, true));
+            ClassicAssert.IsFalse(db.StringSetBit(key, 1444, true));
+            ClassicAssert.IsFalse(db.StringSetBit(key, 9999, true));
 
 
-            Assert.IsTrue(db.StringSetBit(key, 7, true));
-            Assert.IsTrue(db.StringSetBit(key, 14, true));
-            Assert.IsTrue(db.StringSetBit(key, 37, true));
-            Assert.IsTrue(db.StringSetBit(key, 144, true));
-            Assert.IsTrue(db.StringSetBit(key, 777, true));
-            Assert.IsTrue(db.StringSetBit(key, 1444, true));
-            Assert.IsTrue(db.StringSetBit(key, 9999, true));
+            ClassicAssert.IsTrue(db.StringSetBit(key, 7, true));
+            ClassicAssert.IsTrue(db.StringSetBit(key, 14, true));
+            ClassicAssert.IsTrue(db.StringSetBit(key, 37, true));
+            ClassicAssert.IsTrue(db.StringSetBit(key, 144, true));
+            ClassicAssert.IsTrue(db.StringSetBit(key, 777, true));
+            ClassicAssert.IsTrue(db.StringSetBit(key, 1444, true));
+            ClassicAssert.IsTrue(db.StringSetBit(key, 9999, true));
 
-            Assert.IsTrue(db.StringGetBit(key, 7));
-            Assert.IsFalse(db.StringGetBit(key, 8));
-            Assert.IsTrue(db.StringGetBit(key, 14));
-            Assert.IsFalse(db.StringGetBit(key, 15));
+            ClassicAssert.IsTrue(db.StringGetBit(key, 7));
+            ClassicAssert.IsFalse(db.StringGetBit(key, 8));
+            ClassicAssert.IsTrue(db.StringGetBit(key, 14));
+            ClassicAssert.IsFalse(db.StringGetBit(key, 15));
 
-            Assert.IsTrue(db.StringGetBit(key, 37));
-            Assert.IsFalse(db.StringGetBit(key, 42));
-            Assert.IsFalse(db.StringGetBit(key, 52));
+            ClassicAssert.IsTrue(db.StringGetBit(key, 37));
+            ClassicAssert.IsFalse(db.StringGetBit(key, 42));
+            ClassicAssert.IsFalse(db.StringGetBit(key, 52));
 
-            Assert.IsTrue(db.StringGetBit(key, 144));
-            Assert.IsFalse(db.StringGetBit(key, 164));
-            Assert.IsFalse(db.StringGetBit(key, 174));
+            ClassicAssert.IsTrue(db.StringGetBit(key, 144));
+            ClassicAssert.IsFalse(db.StringGetBit(key, 164));
+            ClassicAssert.IsFalse(db.StringGetBit(key, 174));
 
-            Assert.IsTrue(db.StringGetBit(key, 777));
-            Assert.IsFalse(db.StringGetBit(key, 888));
-            Assert.IsFalse(db.StringGetBit(key, 999));
+            ClassicAssert.IsTrue(db.StringGetBit(key, 777));
+            ClassicAssert.IsFalse(db.StringGetBit(key, 888));
+            ClassicAssert.IsFalse(db.StringGetBit(key, 999));
 
-            Assert.IsTrue(db.StringGetBit(key, 1444));
-            Assert.IsFalse(db.StringGetBit(key, 2444));
-            Assert.IsFalse(db.StringGetBit(key, 3444));
-            Assert.IsFalse(db.StringGetBit(key, 4444));
+            ClassicAssert.IsTrue(db.StringGetBit(key, 1444));
+            ClassicAssert.IsFalse(db.StringGetBit(key, 2444));
+            ClassicAssert.IsFalse(db.StringGetBit(key, 3444));
+            ClassicAssert.IsFalse(db.StringGetBit(key, 4444));
 
-            Assert.IsFalse(db.StringGetBit(key, 6999));
-            Assert.IsFalse(db.StringGetBit(key, 7999));
-            Assert.IsFalse(db.StringGetBit(key, 8999));
-            Assert.IsTrue(db.StringGetBit(key, 9999));
+            ClassicAssert.IsFalse(db.StringGetBit(key, 6999));
+            ClassicAssert.IsFalse(db.StringGetBit(key, 7999));
+            ClassicAssert.IsFalse(db.StringGetBit(key, 8999));
+            ClassicAssert.IsTrue(db.StringGetBit(key, 9999));
         }
 
         [Test, Order(2)]
@@ -108,7 +110,7 @@ namespace Garnet.test
             string key = "getResponseTest";
             for (long i = 0; i < (1 << 5); i++)
             {
-                Assert.IsFalse(db.StringGetBit(key, i));
+                ClassicAssert.IsFalse(db.StringGetBit(key, i));
             }
         }
 
@@ -123,19 +125,19 @@ namespace Garnet.test
             long span = 1 << 10;
             for (long i = 0; i < span; i += 2)
             {
-                Assert.IsFalse(db.StringSetBit(key, i, true));
+                ClassicAssert.IsFalse(db.StringSetBit(key, i, true));
             }
 
             for (long i = 0; i < span; i += 2)
             {
-                Assert.IsTrue(db.StringGetBit(key, i));
-                Assert.IsFalse(db.StringSetBit(key, i + 1, true));
+                ClassicAssert.IsTrue(db.StringGetBit(key, i));
+                ClassicAssert.IsFalse(db.StringSetBit(key, i + 1, true));
             }
 
             for (long i = 0; i < span; i += 2)
             {
-                Assert.IsTrue(db.StringSetBit(key, i, false));
-                Assert.IsFalse(db.StringGetBit(key, i));
+                ClassicAssert.IsTrue(db.StringSetBit(key, i, false));
+                ClassicAssert.IsFalse(db.StringGetBit(key, i));
             }
         }
 
@@ -149,11 +151,11 @@ namespace Garnet.test
 
             var expectedResponse = ":0\r\n";
             var response = lightClientRequest.SendCommandChunks("SETBIT mykey 7 1", bytesPerSend);
-            Assert.AreEqual(response.AsSpan().Slice(0, expectedResponse.Length).ToArray(), expectedResponse);
+            ClassicAssert.AreEqual(response.AsSpan().Slice(0, expectedResponse.Length).ToArray(), expectedResponse);
 
             expectedResponse = ":1\r\n";
             response = lightClientRequest.SendCommandChunks("GETBIT mykey 7", bytesPerSend);
-            Assert.AreEqual(response.AsSpan().Slice(0, expectedResponse.Length).ToArray(), expectedResponse);
+            ClassicAssert.AreEqual(response.AsSpan().Slice(0, expectedResponse.Length).ToArray(), expectedResponse);
         }
 
         [Test, Order(5)]
@@ -217,7 +219,7 @@ namespace Garnet.test
                         state[key].Add(offset, set);
                     }
 
-                    Assert.AreEqual(returnedVal, expectedVal);
+                    ClassicAssert.AreEqual(returnedVal, expectedVal);
                 }
             }
 
@@ -234,7 +236,7 @@ namespace Garnet.test
                     bool expectedVal = false;
                     if (state.ContainsKey(key) && state[key].ContainsKey(offset))
                         expectedVal = state[key][offset];
-                    Assert.AreEqual(expectedVal, returnedVal, $"{offset}");
+                    ClassicAssert.AreEqual(expectedVal, returnedVal, $"{offset}");
                 }
             }
         }
@@ -259,7 +261,7 @@ namespace Garnet.test
             }
 
             long count = db.StringBitCount(key);
-            Assert.AreEqual(expectedCount, count);
+            ClassicAssert.AreEqual(expectedCount, count);
         }
 
         private static int Index(long offset) => (int)(offset >> 3);
@@ -307,7 +309,7 @@ namespace Garnet.test
             string key = "BitCountBetweenOffsetsTest";
 
             long count = db.StringBitCount(key);
-            Assert.AreEqual(count, 0);
+            ClassicAssert.AreEqual(count, 0);
 
             int maxBitmapLen = 1 << 12;
             int iter = 1024;
@@ -337,7 +339,7 @@ namespace Garnet.test
 
             long expectedCount = Count(bitmap, 0, -1);
             count = db.StringBitCount(key, 0, -1);
-            Assert.AreEqual(count, expectedCount, $"{0} {-1} {bitmap.Length}");
+            ClassicAssert.AreEqual(count, expectedCount, $"{0} {-1} {bitmap.Length}");
 
             //Test with startOffset
             for (int i = 0; i < iter; i++)
@@ -346,7 +348,7 @@ namespace Garnet.test
                 expectedCount = Count(bitmap, startOffset, -1);
                 count = db.StringBitCount(key, startOffset);
 
-                Assert.AreEqual(expectedCount, count, $"{startOffset} {-1} {maxSizeInBytes}");
+                ClassicAssert.AreEqual(expectedCount, count, $"{startOffset} {-1} {maxSizeInBytes}");
             }
 
             //Test with startOffset and endOffset
@@ -357,7 +359,7 @@ namespace Garnet.test
                 expectedCount = Count(bitmap, startOffset, endOffset);
                 count = db.StringBitCount(key, startOffset, endOffset);
 
-                Assert.AreEqual(expectedCount, count, $"{startOffset} {endOffset} {maxSizeInBytes}");
+                ClassicAssert.AreEqual(expectedCount, count, $"{startOffset} {endOffset} {maxSizeInBytes}");
             }
         }
 
@@ -371,7 +373,7 @@ namespace Garnet.test
             string key = "BitCountBetweenOffsetsTestV2";
 
             long count = db.StringBitCount(key);
-            Assert.AreEqual(count, 0);
+            ClassicAssert.AreEqual(count, 0);
 
             int maxBitmapLen = 1 << 12;
             int iter = 1 << 5;
@@ -390,7 +392,7 @@ namespace Garnet.test
                 long expectedCount = Count(buf, startOffset, endOffset);
                 count = db.StringBitCount(key, startOffset, endOffset);
 
-                Assert.AreEqual(expectedCount, count, $"{startOffset} {endOffset}");
+                ClassicAssert.AreEqual(expectedCount, count, $"{startOffset} {endOffset}");
             }
         }
 
@@ -421,7 +423,7 @@ namespace Garnet.test
                 expectedCount = Count(buf, startOffset, endOffset);
                 count = db.StringBitCount(key, startOffset, endOffset);
 
-                Assert.AreEqual(expectedCount, count, $"{startOffset} {endOffset}");
+                ClassicAssert.AreEqual(expectedCount, count, $"{startOffset} {endOffset}");
             }
 
             //check negative offsets beyond range
@@ -436,7 +438,7 @@ namespace Garnet.test
                 expectedCount = Count(buf, startOffset, endOffset);
                 count = db.StringBitCount(key, startOffset, endOffset);
 
-                Assert.AreEqual(expectedCount, count, $"{startOffset} {endOffset}");
+                ClassicAssert.AreEqual(expectedCount, count, $"{startOffset} {endOffset}");
             }
         }
 
@@ -474,7 +476,7 @@ namespace Garnet.test
                 string sKey = key.ToString();
                 long count = db.StringBitCount(sKey);
                 long expectedCount = bitmapList[key];
-                Assert.AreEqual(expectedCount, count);
+                ClassicAssert.AreEqual(expectedCount, count);
             }
         }
 
@@ -499,7 +501,7 @@ namespace Garnet.test
             long count = 0;
             byte[] response = lightClientRequest.SendCommandChunks("BITCOUNT mykey", bytesPerSend);
             count = ResponseToLong(response, 1);
-            Assert.AreEqual(expectedCount, count);
+            ClassicAssert.AreEqual(expectedCount, count);
         }
 
         private static unsafe long Bitpos(byte[] bitmap, int startOffset = 0, int endOffset = -1, bool set = true)
@@ -558,11 +560,11 @@ namespace Garnet.test
                 db.StringSetBit(key, offset, true);
 
                 long offsetPos = db.StringBitPosition(key, true);
-                Assert.AreEqual(offset, offsetPos);
+                ClassicAssert.AreEqual(offset, offsetPos);
 
                 buf = db.StringGet(key);
                 long expectedPos = Bitpos(buf, set: true);
-                Assert.AreEqual(expectedPos, offsetPos);
+                ClassicAssert.AreEqual(expectedPos, offsetPos);
 
                 db.StringSetBit(key, offset, false);
                 maxOffset = Math.Max(maxOffset, offset);
@@ -572,7 +574,7 @@ namespace Garnet.test
                 db.StringSetBit(key, i, true);
 
             long count = db.StringBitCount(key);
-            Assert.AreEqual(count, maxOffset);
+            ClassicAssert.AreEqual(count, maxOffset);
 
             for (int i = 0; i < iter; i++)
             {
@@ -580,11 +582,11 @@ namespace Garnet.test
                 db.StringSetBit(key, offset, false);
 
                 long offsetPos = db.StringBitPosition(key, false);
-                Assert.AreEqual(offset, offsetPos);
+                ClassicAssert.AreEqual(offset, offsetPos);
 
                 buf = db.StringGet(key);
                 long expectedPos = Bitpos(buf, set: false);
-                Assert.AreEqual(expectedPos, offsetPos);
+                ClassicAssert.AreEqual(expectedPos, offsetPos);
 
                 db.StringSetBit(key, offset, true);
             }
@@ -618,7 +620,7 @@ namespace Garnet.test
                 expectedPos = Bitpos(buf, startOffset, endOffset, set);
                 pos = db.StringBitPosition(key, set, startOffset, endOffset);
 
-                Assert.AreEqual(expectedPos, pos, $"{set} {startOffset} {endOffset}");
+                ClassicAssert.AreEqual(expectedPos, pos, $"{set} {startOffset} {endOffset}");
             }
 
             //check negative offsets in range
@@ -633,7 +635,7 @@ namespace Garnet.test
                 bool set = r.Next(0, 1) == 0 ? false : true;
                 pos = Bitpos(buf, startOffset, endOffset, set);
                 expectedPos = db.StringBitPosition(key, set, startOffset, endOffset);
-                Assert.AreEqual(pos, expectedPos);
+                ClassicAssert.AreEqual(pos, expectedPos);
             }
         }
 
@@ -671,7 +673,7 @@ namespace Garnet.test
                 string sKey = key.ToString();
                 long pos = db.StringBitPosition(sKey, true);
                 long expectedPos = bitmapList[key];
-                Assert.AreEqual(expectedPos, pos);
+                ClassicAssert.AreEqual(expectedPos, pos);
             }
         }
 
@@ -696,7 +698,7 @@ namespace Garnet.test
             long pos = 0;
             byte[] response = lightClientRequest.SendCommandChunks("BITPOS mykey 1", bytesPerSend);
             pos = ResponseToLong(response, 1);
-            Assert.AreEqual(expectedPos, pos);
+            ClassicAssert.AreEqual(expectedPos, pos);
         }
 
         [Test, Order(16)]
@@ -728,11 +730,11 @@ namespace Garnet.test
                 long size = 0;
                 byte[] response = lightClientRequest.SendCommandChunks("BITOP NOT " + d + " " + a, bytesPerSend);
                 size = ResponseToLong(response, 1);
-                Assert.AreEqual(size, 8);
+                ClassicAssert.AreEqual(size, 8);
 
                 data = db.StringGet(d);
                 src = BitConverter.ToInt64(data, 0);
-                Assert.AreEqual(dst, src);
+                ClassicAssert.AreEqual(dst, src);
             }
 
 
@@ -762,25 +764,25 @@ namespace Garnet.test
                     {
                         case Bitwise.And:
                             dst = srcA & srcB & srcC;
-                            response = lightClientRequest.SendCommandChunks("BITOP AND " + d + " " + a + " " + b + " " + " " + c, bytesPerSend);
+                            response = lightClientRequest.SendCommandChunks("BITOP AND " + d + " " + a + " " + b + " " + c, bytesPerSend);
                             break;
                         case Bitwise.Or:
                             dst = srcA | srcB | srcC;
-                            response = lightClientRequest.SendCommandChunks("BITOP OR " + d + " " + a + " " + b + " " + " " + c, bytesPerSend);
+                            response = lightClientRequest.SendCommandChunks("BITOP OR " + d + " " + a + " " + b + " " + c, bytesPerSend);
                             break;
                         case Bitwise.Xor:
                             dst = srcA ^ srcB ^ srcC;
-                            response = lightClientRequest.SendCommandChunks("BITOP XOR " + d + " " + a + " " + b + " " + " " + c, bytesPerSend);
+                            response = lightClientRequest.SendCommandChunks("BITOP XOR " + d + " " + a + " " + b + " " + c, bytesPerSend);
                             break;
                     }
 
                     size = ResponseToLong(response, 1);
-                    Assert.AreEqual(size, 8);
+                    ClassicAssert.AreEqual(size, 8);
 
                     data = db.StringGet(d);
                     src = BitConverter.ToInt64(data, 0);
 
-                    Assert.AreEqual(dst, src);
+                    ClassicAssert.AreEqual(dst, src);
                 }
             }
         }
@@ -811,11 +813,11 @@ namespace Garnet.test
 
                 dst = ~src;
                 long size = db.StringBitOperation(Bitwise.Not, d, a);
-                Assert.AreEqual(size, 8);
+                ClassicAssert.AreEqual(size, 8);
 
                 data = db.StringGet(d);
                 src = BitConverter.ToInt64(data, 0);
-                Assert.AreEqual(dst, src);
+                ClassicAssert.AreEqual(dst, src);
             }
 
             //Test AND, OR, XOR
@@ -851,12 +853,12 @@ namespace Garnet.test
                     }
 
                     long size = db.StringBitOperation(bitwiseOps[j], d, keys);
-                    Assert.AreEqual(size, 8);
+                    ClassicAssert.AreEqual(size, 8);
 
                     data = db.StringGet(d);
                     src = BitConverter.ToInt64(data, 0);
 
-                    Assert.AreEqual(dst, src);
+                    ClassicAssert.AreEqual(dst, src);
                 }
             }
         }
@@ -949,11 +951,11 @@ namespace Garnet.test
                     ApplyBitop(ref dataX, dataD, f8);
 
                     long size = db.StringBitOperation(bitwiseOps[j], x, keys);
-                    Assert.AreEqual(size, dataX.Length);
+                    ClassicAssert.AreEqual(size, dataX.Length);
 
                     byte[] expectedX = db.StringGet(x);
 
-                    Assert.AreEqual(dataX, expectedX);
+                    ClassicAssert.AreEqual(dataX, expectedX);
                 }
             }
         }
@@ -963,7 +965,7 @@ namespace Garnet.test
             for (int i = 0; i < srcVal.Length; i++)
             {
                 byte srcV = (byte)~srcVal[i];
-                Assert.AreEqual(srcV, dstVal[i]);
+                ClassicAssert.AreEqual(srcV, dstVal[i]);
             }
         }
 
@@ -990,7 +992,7 @@ namespace Garnet.test
 
                 long size = db.StringBitOperation(Bitwise.Not, dstKey, srcKey);
 
-                Assert.AreEqual(size, srcVal.Length);
+                ClassicAssert.AreEqual(size, srcVal.Length);
                 dstVal = db.StringGet(dstKey);
 
                 AssertNegatedEqual(dstVal, srcVal);
@@ -1029,10 +1031,10 @@ namespace Garnet.test
                 dataX = null;
                 InitBitmap(ref dataX, dataA, true);
                 long size = db.StringBitOperation(Bitwise.Not, x, a);
-                Assert.AreEqual(size, dataX.Length);
+                ClassicAssert.AreEqual(size, dataX.Length);
 
                 byte[] expectedX = db.StringGet(x);
-                Assert.AreEqual(dataX, expectedX);
+                ClassicAssert.AreEqual(dataX, expectedX);
             }
 
             //Test AND, OR, XOR
@@ -1077,11 +1079,11 @@ namespace Garnet.test
                     ApplyBitop(ref dataX, dataD, f8);
 
                     long size = db.StringBitOperation(bitwiseOps[j], x, keys);
-                    Assert.AreEqual(size, dataX.Length);
+                    ClassicAssert.AreEqual(size, dataX.Length);
                     byte[] expectedX = db.StringGet(x);
 
-                    Assert.AreEqual(expectedX.Length, dataX.Length);
-                    Assert.AreEqual(dataX, expectedX);
+                    ClassicAssert.AreEqual(expectedX.Length, dataX.Length);
+                    ClassicAssert.AreEqual(dataX, expectedX);
                 }
             }
         }
@@ -1186,8 +1188,8 @@ namespace Garnet.test
                     expectedValue = GetValueFromBitmap(ref bitmapData, i, j, true);
                     redisValue = GetFromBitmapRedis(ref bitmapData, (ulong)i, (ulong)j, true);
                     returnedValue = (long)(db.Execute("BITFIELD", (RedisKey)key, "get", "i" + j.ToString(), $"{i}"));
-                    Assert.AreEqual(expectedValue, redisValue);
-                    Assert.AreEqual(expectedValue, returnedValue);
+                    ClassicAssert.AreEqual(expectedValue, redisValue);
+                    ClassicAssert.AreEqual(expectedValue, returnedValue);
 
                     //unsigned
                     if (j < 64)
@@ -1195,8 +1197,8 @@ namespace Garnet.test
                         expectedValue = GetValueFromBitmap(ref bitmapData, i, j, false);
                         redisValue = GetFromBitmapRedis(ref bitmapData, (ulong)i, (ulong)j, false);
                         returnedValue = ((long)db.Execute("BITFIELD", (RedisKey)key, "GET", "u" + j.ToString(), $"{i}"));
-                        Assert.AreEqual(expectedValue, redisValue);
-                        Assert.AreEqual(expectedValue, returnedValue);
+                        ClassicAssert.AreEqual(expectedValue, redisValue);
+                        ClassicAssert.AreEqual(expectedValue, returnedValue);
                     }
                 }
             }
@@ -1243,8 +1245,8 @@ namespace Garnet.test
                     byte[] response = lightClientRequest.SendCommandChunks("BITFIELD " + key + " GET i" + j.ToString() + " " + $"{i}", bytesPerSend);
                     returnedValue = ResponseToLong(response, 5);
 
-                    Assert.AreEqual(expectedValue, redisValue);
-                    Assert.AreEqual(expectedValue, returnedValue);
+                    ClassicAssert.AreEqual(expectedValue, redisValue);
+                    ClassicAssert.AreEqual(expectedValue, returnedValue);
 
                     //unsigned
                     if (j < 64)
@@ -1254,8 +1256,8 @@ namespace Garnet.test
                         response = lightClientRequest.SendCommandChunks("BITFIELD " + key + " GET u" + j.ToString() + " " + $"{i}", bytesPerSend);
                         returnedValue = ResponseToLong(response, 5);
 
-                        Assert.AreEqual(expectedValue, redisValue);
-                        Assert.AreEqual(expectedValue, returnedValue);
+                        ClassicAssert.AreEqual(expectedValue, redisValue);
+                        ClassicAssert.AreEqual(expectedValue, returnedValue);
                     }
                 }
             }
@@ -1305,14 +1307,14 @@ namespace Garnet.test
                 //signed
                 expectedValue = GetValueFromBitmap(ref currBitmap, offset, bitCount, true);
                 returnedValue = (long)(db.Execute("BITFIELD", (RedisKey)sKey, "get", "i" + bitCount.ToString(), $"{offset}"));
-                Assert.AreEqual(expectedValue, returnedValue);
+                ClassicAssert.AreEqual(expectedValue, returnedValue);
 
                 //unsigned
                 if (bitCount < 64)
                 {
                     expectedValue = GetValueFromBitmap(ref currBitmap, offset, bitCount, false);
                     returnedValue = ((long)db.Execute("BITFIELD", (RedisKey)sKey, "GET", "u" + bitCount.ToString(), $"{offset}"));
-                    Assert.AreEqual(expectedValue, returnedValue);
+                    ClassicAssert.AreEqual(expectedValue, returnedValue);
                 }
             }
         }
@@ -1329,8 +1331,8 @@ namespace Garnet.test
                 value = (r.Next() & 0x1) == 0x1 ? -value : value;
                 value = value >> (64 - bitCount);
 
-                Assert.IsTrue(value >= minVal);
-                Assert.IsTrue(value <= maxVal);
+                ClassicAssert.IsTrue(value >= minVal);
+                ClassicAssert.IsTrue(value <= maxVal);
                 return value;
             }
             else
@@ -1341,8 +1343,8 @@ namespace Garnet.test
                 ulong value = ULongRandom();
                 value = value >> (64 - bitCount);
 
-                Assert.IsTrue(value >= minVal);
-                Assert.IsTrue(value <= maxVal);
+                ClassicAssert.IsTrue(value >= minVal);
+                ClassicAssert.IsTrue(value <= maxVal);
                 return (long)value;
             }
         }
@@ -1409,15 +1411,15 @@ namespace Garnet.test
                 //oldVal = (long)(db.Execute("BITFIELD", (RedisKey)key, "set", "i" + bitCount.ToString(), $"{offset}", expectedReturnVal));
                 response = lightClientRequest.SendCommandChunks("BITFIELD " + key + " SET i" + bitCount.ToString() + " " + $"{offset}" + " " + $"{expectedReturnVal}", bytesPerSend);
                 oldVal = ResponseToLong(response, 5);
-                Assert.AreEqual(expectedOldVal, oldVal);
+                ClassicAssert.AreEqual(expectedOldVal, oldVal);
 
                 //returnVal = (long)(db.Execute("BITFIELD", (RedisKey)key, "GET", "i" + bitCount.ToString(), $"{offset}"));
                 response = lightClientRequest.SendCommandChunks("BITFIELD " + key + " GET i" + bitCount.ToString() + " " + $"{offset}", bytesPerSend);
                 returnVal = ResponseToLong(response, 5);
-                Assert.AreEqual(expectedReturnVal, returnVal);
+                ClassicAssert.AreEqual(expectedReturnVal, returnVal);
 
                 expectedBitmap = db.StringGet(key);
-                Assert.AreEqual(expectedBitmap, bitmapData);
+                ClassicAssert.AreEqual(expectedBitmap, bitmapData);
             }
         }
 
@@ -1452,13 +1454,13 @@ namespace Garnet.test
                 expectedOldVal = (long)(db.Execute("BITFIELD", (RedisKey)key, "GET", "i" + bitCount.ToString(), $"{offset}"));
                 setSignedBitfield(ref bitmapData, (ulong)offset, (ulong)bitCount, expectedReturnVal);
                 oldVal = (long)(db.Execute("BITFIELD", (RedisKey)key, "set", "i" + bitCount.ToString(), $"{offset}", expectedReturnVal));
-                Assert.AreEqual(expectedOldVal, oldVal);
+                ClassicAssert.AreEqual(expectedOldVal, oldVal);
 
                 returnVal = (long)(db.Execute("BITFIELD", (RedisKey)key, "GET", "i" + bitCount.ToString(), $"{offset}"));
-                Assert.AreEqual(expectedReturnVal, returnVal);
+                ClassicAssert.AreEqual(expectedReturnVal, returnVal);
 
                 expectedBitmap = db.StringGet(key);
-                Assert.AreEqual(expectedBitmap, bitmapData);
+                ClassicAssert.AreEqual(expectedBitmap, bitmapData);
             }
         }
 
@@ -1511,14 +1513,14 @@ namespace Garnet.test
                 //signed
                 expectedOldValue = GetValueFromBitmap(ref currBitmap, offset, bitCount, true);
                 returnedOldValue = (long)(db.Execute("BITFIELD", (RedisKey)sKey, "get", "i" + bitCount.ToString(), $"{offset}"));
-                Assert.AreEqual(expectedOldValue, returnedOldValue);
+                ClassicAssert.AreEqual(expectedOldValue, returnedOldValue);
 
                 setSignedBitfield(ref currBitmap, (ulong)offset, (ulong)bitCount, setNewValue);
                 returnedOldValue = (long)(db.Execute("BITFIELD", (RedisKey)sKey, "set", "i" + bitCount.ToString(), $"{offset}", setNewValue));
-                Assert.AreEqual(expectedOldValue, returnedOldValue);
+                ClassicAssert.AreEqual(expectedOldValue, returnedOldValue);
 
                 returnedValue = (long)(db.Execute("BITFIELD", (RedisKey)sKey, "GET", "i" + bitCount.ToString(), $"{offset}"));
-                Assert.AreEqual(setNewValue, returnedValue);
+                ClassicAssert.AreEqual(setNewValue, returnedValue);
             }
         }
 
@@ -1651,16 +1653,16 @@ namespace Garnet.test
                 bool overflowV1, overflowV2;
                 (resV1, overflowV1) = CheckSignedBitfieldOverflowRedis(value, incrBy, (byte)bitCount, 0);
                 (resV2, overflowV2) = CheckSignedBitfieldOverflow(value, incrBy, (byte)bitCount, 0);
-                Assert.AreEqual(resV1, resV2);
-                Assert.AreEqual(overflowV1, overflowV2);
+                ClassicAssert.AreEqual(resV1, resV2);
+                ClassicAssert.AreEqual(overflowV1, overflowV2);
 
                 //sat
                 value = RandomIntBitRange(bitCount, true);
                 incrBy = RandomIntBitRange(bitCount, true);
                 (resV1, overflowV1) = CheckSignedBitfieldOverflowRedis(value, incrBy, (byte)bitCount, 1);
                 (resV2, overflowV2) = CheckSignedBitfieldOverflow(value, incrBy, (byte)bitCount, 1);
-                Assert.AreEqual(resV1, resV2);
-                Assert.AreEqual(overflowV1, overflowV2);
+                ClassicAssert.AreEqual(resV1, resV2);
+                ClassicAssert.AreEqual(overflowV1, overflowV2);
             }
 
             //signed overflow-underflow tests
@@ -1682,9 +1684,9 @@ namespace Garnet.test
 
                 (resV1, overflowV1) = CheckSignedBitfieldOverflowRedis(maxValue, incrementValue, (byte)bitCount, 0);
                 (resV2, overflowV2) = CheckSignedBitfieldOverflow(maxValue, incrementValue, (byte)bitCount, 0);
-                Assert.AreEqual(resV1, resV2);
-                Assert.AreEqual(overflowV1, overflowV2);
-                Assert.AreEqual(result, resV2);
+                ClassicAssert.AreEqual(resV1, resV2);
+                ClassicAssert.AreEqual(overflowV1, overflowV2);
+                ClassicAssert.AreEqual(result, resV2);
 
                 //underflow wrap test
                 incrementValue = -1;
@@ -1699,9 +1701,9 @@ namespace Garnet.test
 
                 (resV1, overflowV1) = CheckSignedBitfieldOverflowRedis(minValue, incrementValue, (byte)bitCount, 0);
                 (resV2, overflowV2) = CheckSignedBitfieldOverflow(minValue, incrementValue, (byte)bitCount, 0);
-                Assert.AreEqual(resV1, resV2);
-                Assert.AreEqual(overflowV1, overflowV2);
-                Assert.AreEqual(result, resV2);
+                ClassicAssert.AreEqual(resV1, resV2);
+                ClassicAssert.AreEqual(overflowV1, overflowV2);
+                ClassicAssert.AreEqual(result, resV2);
 
                 //overflow wrap test
                 incrementValue = maxValue + 2;
@@ -1713,9 +1715,9 @@ namespace Garnet.test
 
                 (resV1, overflowV1) = CheckSignedBitfieldOverflowRedis(maxValue, incrementValue, (byte)bitCount, 0);
                 (resV2, overflowV2) = CheckSignedBitfieldOverflow(maxValue, incrementValue, (byte)bitCount, 0);
-                Assert.AreEqual(resV1, resV2);
-                Assert.AreEqual(overflowV1, overflowV2);
-                Assert.AreEqual(result, resV2);
+                ClassicAssert.AreEqual(resV1, resV2);
+                ClassicAssert.AreEqual(overflowV1, overflowV2);
+                ClassicAssert.AreEqual(result, resV2);
             }
 
             //signed overflow with wrap and sat
@@ -1737,8 +1739,8 @@ namespace Garnet.test
                 expectedResult = ResponseToLong(response, 5);
                 (result, overflow) = CheckSignedBitfieldOverflow(value, incrBy, (byte)bitCount, 0);
                 (resV1, overflowV1) = CheckSignedBitfieldOverflowRedis(value, incrBy, (byte)bitCount, 0);
-                Assert.AreEqual(resV1, result);
-                Assert.AreEqual(result, expectedResult);
+                ClassicAssert.AreEqual(resV1, result);
+                ClassicAssert.AreEqual(result, expectedResult);
 
                 //sat overflowtype
                 value = RandomIntBitRange(bitCount, true);
@@ -1756,8 +1758,8 @@ namespace Garnet.test
                 expectedResult = ResponseToLong(response, 5);
                 (result, overflow) = CheckSignedBitfieldOverflow(value, incrBy, (byte)bitCount, 1);
                 (resV1, overflowV1) = CheckSignedBitfieldOverflowRedis(value, incrBy, (byte)bitCount, 1);
-                Assert.AreEqual(resV1, result);
-                Assert.AreEqual(result, expectedResult);
+                ClassicAssert.AreEqual(resV1, result);
+                ClassicAssert.AreEqual(result, expectedResult);
 
                 //fail overflowtype
                 value = RandomIntBitRange(bitCount, true);
@@ -1770,9 +1772,9 @@ namespace Garnet.test
                 //else
                 //    redisResult = (RedisResult[])db.Execute("BITFIELD", (RedisKey)key, "OVERFLOW", "FAIL", "INCRBY", "i" + bitCount.ToString(), $"{offset}", incrBy);
                 //if (!overflow)
-                //    Assert.AreEqual(result, (long)redisResult[0]);
+                //    ClassicAssert.AreEqual(result, (long)redisResult[0]);
                 //else
-                //    Assert.AreEqual(redisResult[0].IsNull, true);
+                //    ClassicAssert.AreEqual(redisResult[0].IsNull, true);
                 if ((i & 0x1) == 0x1)
                     response = lightClientRequest.SendCommandChunks("BITFIELD " + key + " OVERFLOW fail INCRBY i" + bitCount.ToString() + " " + $"{offset}" + " " + $"{incrBy}", bytesPerSend);
                 else
@@ -1782,9 +1784,9 @@ namespace Garnet.test
 
                 //Debug.WriteLine(System.Text.Encoding.ASCII.GetString(response, 4, 3));
                 if (!overflow)
-                    Assert.AreEqual(result, ResponseToLong(response, 5));
+                    ClassicAssert.AreEqual(result, ResponseToLong(response, 5));
                 else
-                    Assert.AreEqual(System.Text.Encoding.ASCII.GetString(response, 4, 3), "$-1");
+                    ClassicAssert.AreEqual(System.Text.Encoding.ASCII.GetString(response, 4, 3), "$-1");
             }
         }
 
@@ -1821,16 +1823,16 @@ namespace Garnet.test
                 bool overflowV1, overflowV2;
                 (resV1, overflowV1) = CheckSignedBitfieldOverflowRedis(value, incrBy, (byte)bitCount, 0);
                 (resV2, overflowV2) = CheckSignedBitfieldOverflow(value, incrBy, (byte)bitCount, 0);
-                Assert.AreEqual(resV1, resV2);
-                Assert.AreEqual(overflowV1, overflowV2);
+                ClassicAssert.AreEqual(resV1, resV2);
+                ClassicAssert.AreEqual(overflowV1, overflowV2);
 
                 //sat
                 value = RandomIntBitRange(bitCount, true);
                 incrBy = RandomIntBitRange(bitCount, true);
                 (resV1, overflowV1) = CheckSignedBitfieldOverflowRedis(value, incrBy, (byte)bitCount, 1);
                 (resV2, overflowV2) = CheckSignedBitfieldOverflow(value, incrBy, (byte)bitCount, 1);
-                Assert.AreEqual(resV1, resV2);
-                Assert.AreEqual(overflowV1, overflowV2);
+                ClassicAssert.AreEqual(resV1, resV2);
+                ClassicAssert.AreEqual(overflowV1, overflowV2);
             }
 
             //signed overflow-underflow tests
@@ -1849,9 +1851,9 @@ namespace Garnet.test
 
                 (resV1, overflowV1) = CheckSignedBitfieldOverflowRedis(maxValue, incrementValue, (byte)bitCount, 0);
                 (resV2, overflowV2) = CheckSignedBitfieldOverflow(maxValue, incrementValue, (byte)bitCount, 0);
-                Assert.AreEqual(resV1, resV2);
-                Assert.AreEqual(overflowV1, overflowV2);
-                Assert.AreEqual(result, resV2);
+                ClassicAssert.AreEqual(resV1, resV2);
+                ClassicAssert.AreEqual(overflowV1, overflowV2);
+                ClassicAssert.AreEqual(result, resV2);
 
                 //underflow wrap test
                 incrementValue = -1;
@@ -1861,9 +1863,9 @@ namespace Garnet.test
 
                 (resV1, overflowV1) = CheckSignedBitfieldOverflowRedis(minValue, incrementValue, (byte)bitCount, 0);
                 (resV2, overflowV2) = CheckSignedBitfieldOverflow(minValue, incrementValue, (byte)bitCount, 0);
-                Assert.AreEqual(resV1, resV2);
-                Assert.AreEqual(overflowV1, overflowV2);
-                Assert.AreEqual(result, resV2);
+                ClassicAssert.AreEqual(resV1, resV2);
+                ClassicAssert.AreEqual(overflowV1, overflowV2);
+                ClassicAssert.AreEqual(result, resV2);
 
                 //overflow wrap test
                 incrementValue = maxValue + 2;
@@ -1872,9 +1874,9 @@ namespace Garnet.test
 
                 (resV1, overflowV1) = CheckSignedBitfieldOverflowRedis(maxValue, incrementValue, (byte)bitCount, 0);
                 (resV2, overflowV2) = CheckSignedBitfieldOverflow(maxValue, incrementValue, (byte)bitCount, 0);
-                Assert.AreEqual(resV1, resV2);
-                Assert.AreEqual(overflowV1, overflowV2);
-                Assert.AreEqual(result, resV2);
+                ClassicAssert.AreEqual(resV1, resV2);
+                ClassicAssert.AreEqual(overflowV1, overflowV2);
+                ClassicAssert.AreEqual(result, resV2);
             }
 
             //signed overflow with wrap and sat
@@ -1893,8 +1895,8 @@ namespace Garnet.test
                 expectedResult = (long)db.Execute("BITFIELD", (RedisKey)key, "OVERFLOW", "WRAP", "INCRBY", "i" + bitCount.ToString(), $"{offset}", incrBy);
                 (result, overflow) = CheckSignedBitfieldOverflow(value, incrBy, (byte)bitCount, 0);
                 (resV1, overflowV1) = CheckSignedBitfieldOverflowRedis(value, incrBy, (byte)bitCount, 0);
-                Assert.AreEqual(resV1, result);
-                Assert.AreEqual(result, expectedResult);
+                ClassicAssert.AreEqual(resV1, result);
+                ClassicAssert.AreEqual(result, expectedResult);
 
                 //sat overflowtype
                 value = RandomIntBitRange(bitCount, true);
@@ -1906,8 +1908,8 @@ namespace Garnet.test
                     expectedResult = (long)db.Execute("BITFIELD", (RedisKey)key, "OVERFLOW", "SAT", "INCRBY", "i" + bitCount.ToString(), $"{offset}", incrBy);
                 (result, overflow) = CheckSignedBitfieldOverflow(value, incrBy, (byte)bitCount, 1);
                 (resV1, overflowV1) = CheckSignedBitfieldOverflowRedis(value, incrBy, (byte)bitCount, 1);
-                Assert.AreEqual(resV1, result);
-                Assert.AreEqual(result, expectedResult);
+                ClassicAssert.AreEqual(resV1, result);
+                ClassicAssert.AreEqual(result, expectedResult);
 
                 //fail overflowtype
                 value = RandomIntBitRange(bitCount, true);
@@ -1922,9 +1924,9 @@ namespace Garnet.test
                 (result, overflow) = CheckSignedBitfieldOverflow(value, incrBy, (byte)bitCount, 2);
 
                 if (!overflow)
-                    Assert.AreEqual(result, (long)redisResult[0]);
+                    ClassicAssert.AreEqual(result, (long)redisResult[0]);
                 else
-                    Assert.AreEqual(redisResult[0].IsNull, true);
+                    ClassicAssert.AreEqual(redisResult[0].IsNull, true);
             }
         }
 
@@ -1979,7 +1981,7 @@ namespace Garnet.test
                 db.Execute("BITFIELD", (RedisKey)sKey, "SET", "i" + bitCount.ToString(), $"{offset}", setNewValue);
                 returnedValue = (long)db.Execute("BITFIELD", (RedisKey)sKey, "OVERFLOW", "WRAP", "INCRBY", "i" + bitCount.ToString(), $"{offset}", incrByValue);
                 (expectedValue, overflow) = CheckSignedBitfieldOverflow(setNewValue, incrByValue, (byte)bitCount, 0);
-                Assert.AreEqual(expectedValue, returnedValue);
+                ClassicAssert.AreEqual(expectedValue, returnedValue);
             }
         }
 
@@ -2050,14 +2052,14 @@ namespace Garnet.test
                 result = (long)db.Execute("BITFIELD", (RedisKey)key, "OVERFLOW", "WRAP", "INCRBY", "u" + bitCount.ToString(), $"{offset}", incrBy);
 
                 (expectedResult, overflow) = CheckUnsignedBitfieldOverflow((ulong)value, incrBy, (byte)bitCount, 0);
-                Assert.AreEqual(result, expectedResult);
+                ClassicAssert.AreEqual(result, expectedResult);
 
                 //sat overflowtype
                 db.Execute("BITFIELD", (RedisKey)key, "SET", "u" + bitCount.ToString(), $"{offset}", value);
                 result = (long)db.Execute("BITFIELD", (RedisKey)key, "OVERFLOW", "SAT", "INCRBY", "u" + bitCount.ToString(), $"{offset}", incrBy);
 
                 (expectedResult, overflow) = CheckUnsignedBitfieldOverflow((ulong)value, incrBy, (byte)bitCount, 1);
-                Assert.AreEqual(result, expectedResult);
+                ClassicAssert.AreEqual(result, expectedResult);
 
                 //fail overflowtype
                 db.Execute("BITFIELD", (RedisKey)key, "SET", "u" + bitCount.ToString(), $"{offset}", value);
@@ -2065,9 +2067,9 @@ namespace Garnet.test
 
                 (expectedResult, overflow) = CheckUnsignedBitfieldOverflow((ulong)value, incrBy, (byte)bitCount, 2);
                 if (!overflow)
-                    Assert.AreEqual((long)redisResult[0], expectedResult);
+                    ClassicAssert.AreEqual((long)redisResult[0], expectedResult);
                 else
-                    Assert.AreEqual(redisResult[0].IsNull, true);
+                    ClassicAssert.AreEqual(redisResult[0].IsNull, true);
             }
         }
 
@@ -2105,7 +2107,7 @@ namespace Garnet.test
                     offset = i;
                     result = (long)db.Execute("BITFIELD", (RedisKey)key, "GET", "i" + bitCount.ToString(), "#" + offset.ToString());
                     expectedResult = values[i];
-                    Assert.AreEqual(result, expectedResult);
+                    ClassicAssert.AreEqual(result, expectedResult);
                 }
             }
 
@@ -2123,11 +2125,11 @@ namespace Garnet.test
                     long incrBy = RandomIntBitRange(bitCount, true);
 
                     result = (long)db.Execute("BITFIELD", (RedisKey)key, "OVERFLOW", "WRAP", "INCRBY", "i" + bitCount.ToString(), "#" + offset.ToString(), value);
-                    Assert.AreEqual(result, value);
+                    ClassicAssert.AreEqual(result, value);
 
                     result = (long)db.Execute("BITFIELD", (RedisKey)key, "OVERFLOW", "WRAP", "INCRBY", "i" + bitCount.ToString(), "#" + offset.ToString(), incrBy);
                     (expectedResult, overflow) = CheckSignedBitfieldOverflow(value, incrBy, (byte)bitCount, 0);
-                    Assert.AreEqual(result, expectedResult);
+                    ClassicAssert.AreEqual(result, expectedResult);
                 }
 
                 //sat incrby
@@ -2139,11 +2141,11 @@ namespace Garnet.test
                     long incrBy = RandomIntBitRange(bitCount, true);
 
                     result = (long)db.Execute("BITFIELD", (RedisKey)key, "OVERFLOW", "SAT", "INCRBY", "i" + bitCount.ToString(), "#" + offset.ToString(), value);
-                    Assert.AreEqual(result, value);
+                    ClassicAssert.AreEqual(result, value);
 
                     result = (long)db.Execute("BITFIELD", (RedisKey)key, "OVERFLOW", "SAT", "INCRBY", "i" + bitCount.ToString(), "#" + offset.ToString(), incrBy);
                     (expectedResult, overflow) = CheckSignedBitfieldOverflow(value, incrBy, (byte)bitCount, 1);
-                    Assert.AreEqual(result, expectedResult);
+                    ClassicAssert.AreEqual(result, expectedResult);
                 }
 
                 db.KeyDelete(key);
@@ -2154,11 +2156,11 @@ namespace Garnet.test
                     long incrBy = RandomIntBitRange(bitCount, true);
 
                     result = (long)db.Execute("BITFIELD", (RedisKey)key, "OVERFLOW", "SAT", "INCRBY", "i" + bitCount.ToString(), "#" + offset.ToString(), value);
-                    Assert.AreEqual(result, value);
+                    ClassicAssert.AreEqual(result, value);
 
                     result = (long)db.Execute("BITFIELD", (RedisKey)key, "OVERFLOW", "SAT", "INCRBY", "i" + bitCount.ToString(), "#" + offset.ToString(), incrBy);
                     (expectedResult, overflow) = CheckSignedBitfieldOverflow(value, incrBy, (byte)bitCount, 1);
-                    Assert.AreEqual(result, expectedResult);
+                    ClassicAssert.AreEqual(result, expectedResult);
                 }
             }
 
@@ -2176,7 +2178,7 @@ namespace Garnet.test
                     long incrBy = RandomIntBitRange(bitCount, true);
 
                     result = (long)db.Execute("BITFIELD", (RedisKey)key, "OVERFLOW", "FAIL", "INCRBY", "i" + bitCount.ToString(), "#" + offset.ToString(), value);
-                    Assert.AreEqual(result, value);
+                    ClassicAssert.AreEqual(result, value);
 
                     db.Execute("BITFIELD", (RedisKey)key, "OVERFLOW", "FAIL", "INCRBY", "i" + bitCount.ToString(), "#" + offset.ToString(), incrBy);
                     (expectedResult, overflow) = CheckSignedBitfieldOverflow(value, incrBy, (byte)bitCount, 2);
@@ -2190,7 +2192,7 @@ namespace Garnet.test
                     offset = i;
                     result = (long)db.Execute("BITFIELD", (RedisKey)key, "GET", "i" + bitCount.ToString(), "#" + offset.ToString());
                     expectedResult = values[i];
-                    Assert.AreEqual(result, expectedResult);
+                    ClassicAssert.AreEqual(result, expectedResult);
                 }
             }
         }
@@ -2199,7 +2201,7 @@ namespace Garnet.test
         [Category("BITMAPPROC")]
         public void BitmapCmdsProcedureTest()
         {
-            server.Register.NewTransactionProc("BITMAPPROC", 5, () => new TestProcedureBitmap());
+            server.Register.NewTransactionProc("BITMAPPROC", () => new TestProcedureBitmap(), new RespCommandsInfo { Arity = 6 });
             using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
             var db = redis.GetDatabase(0);
 
@@ -2208,7 +2210,7 @@ namespace Garnet.test
             string bitmapC = "bitmapB";
 
             var result = db.Execute("BITMAPPROC", bitmapA, DateTime.Now.Day, 1, bitmapB, bitmapC);
-            Assert.AreEqual("SUCCESS", (string)result);
+            ClassicAssert.AreEqual("SUCCESS", (string)result);
         }
 
         [Test, Order(33)]
@@ -2222,28 +2224,28 @@ namespace Garnet.test
             db.StringSet(key, "foobar");
 
             long count = db.StringBitCount(key);
-            Assert.AreEqual(26, count);
+            ClassicAssert.AreEqual(26, count);
 
             count = db.StringBitCount(key, 0, 0);
-            Assert.AreEqual(4, count);
+            ClassicAssert.AreEqual(4, count);
 
             count = db.StringBitCount(key, 1, 1);
-            Assert.AreEqual(6, count);
+            ClassicAssert.AreEqual(6, count);
 
             count = db.StringBitCount(key, 1, 1, StringIndexType.Byte);
-            Assert.AreEqual(6, count);
+            ClassicAssert.AreEqual(6, count);
 
             count = db.StringBitCount(key, 5, 30, StringIndexType.Bit);
-            Assert.AreEqual(17, count);
+            ClassicAssert.AreEqual(17, count);
 
             count = db.StringBitCount(key, 16, 22, StringIndexType.Bit);
-            Assert.AreEqual(5, count);
+            ClassicAssert.AreEqual(5, count);
 
             count = db.StringBitCount(key, -30, -5, StringIndexType.Bit);
-            Assert.AreEqual(14, count);
+            ClassicAssert.AreEqual(14, count);
         }
 
-        [Test, Order(33)]
+        [Test, Order(34)]
         [Category("BITPOS")]
         public void BitmapBitPosFixedTests()
         {
@@ -2255,24 +2257,79 @@ namespace Garnet.test
             db.StringSet(key, value);
 
             long pos = db.StringBitPosition(key, true, 0);
-            Assert.AreEqual(8, pos);
+            ClassicAssert.AreEqual(8, pos);
 
             pos = db.StringBitPosition(key, true, 2, -1, StringIndexType.Byte);
-            Assert.AreEqual(16, pos);
+            ClassicAssert.AreEqual(16, pos);
 
             pos = db.StringBitPosition(key, true, 0, 0, StringIndexType.Byte);
-            Assert.AreEqual(-1, pos);
+            ClassicAssert.AreEqual(-1, pos);
 
             pos = db.StringBitPosition(key, false, 0, 0, StringIndexType.Byte);
-            Assert.AreEqual(-1, pos);
+            ClassicAssert.AreEqual(-1, pos);
 
             value = [0xf8, 0x6f, 0xf0];
             db.StringSet(key, value);
             pos = db.StringBitPosition(key, true, 5, 17, StringIndexType.Bit);
-            Assert.AreEqual(9, pos);
+            ClassicAssert.AreEqual(9, pos);
 
             pos = db.StringBitPosition(key, true, 10, 12, StringIndexType.Bit);
-            Assert.AreEqual(10, pos);
+            ClassicAssert.AreEqual(10, pos);
+        }
+
+        [Test, Order(34)]
+        [Category("BITOP")]
+        public void BitmapOperationNonExistentSourceKeys()
+        {
+            using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
+            var db = redis.GetDatabase(0);
+
+            RedisKey dstKey = "dstKey";
+            RedisKey[] sourceKeys = ["a", "b", "c"];
+            var size = db.StringBitOperation(Bitwise.And, dstKey, sourceKeys);
+            ClassicAssert.AreEqual(0, size);
+        }
+
+        [Test, Order(35)]
+        [Category("BITOP")]
+        public void BitmapOperationInvalidOption()
+        {
+            using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
+            var db = redis.GetDatabase(0);
+
+            var args = new List<object> { "INVALID_OPTION", "a", "b", "c" };
+            try
+            {
+                db.Execute("BITOP", args);
+                Assert.Fail("Should be unreachable, arguments are incorrect");
+            }
+            catch (Exception ex)
+            {
+                ClassicAssert.AreEqual("ERR syntax error", ex.Message);
+            }
+        }
+
+        [Test, Order(36)]
+        [Category("BITOP")]
+        public void BitmapOperationTooManyKeys()
+        {
+            using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
+            var db = redis.GetDatabase(0);
+
+            var args = new List<object> { "AND", "a" };
+
+            for (var i = 0; i < 128; i++)
+                args.Add(i.ToString());
+
+            try
+            {
+                db.Execute("BITOP", args);
+                Assert.Fail("Should be unreachable, too many arguments");
+            }
+            catch (Exception ex)
+            {
+                ClassicAssert.AreEqual("ERR Bitop source key limit (64) exceeded", ex.Message);
+            }
         }
     }
 }

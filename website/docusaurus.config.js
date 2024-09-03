@@ -65,11 +65,16 @@ const config = {
     ],
   ],
 
-  plugins: ["docusaurus-plugin-clarity"],
+  plugins: [
+    "docusaurus-plugin-clarity",
+  ],
 
   themeConfig:
     /** @type {import('@docusaurus/preset-classic').ThemeConfig} */
     ({
+      mermaid: {
+        theme: {light: 'neutral', dark: 'dark'},
+      },
       // Replace with your project's social card
       //image: 'img/docusaurus-social-card.jpg',
       navbar: {
@@ -148,6 +153,7 @@ const config = {
           </p>`,
       },
       prism: {
+        additionalLanguages: ['csharp'],
         theme: prismThemes.github,
         darkTheme: prismThemes.dracula,
       },
@@ -159,9 +165,25 @@ const config = {
       clarity: {
         ID: "loh6v65ww5",
       },
+      // github codeblock theme configuration
+        codeblock: {
+            showGithubLink: true,
+            githubLinkLabel: 'View on GitHub',
+            showRunmeLink: false,
+            runmeLinkLabel: 'Checkout via Runme'
+      },
     }),
-
-  themes: ['@docusaurus/theme-mermaid'],
+  themes: [
+    '@docusaurus/theme-mermaid',
+    'docusaurus-theme-github-codeblock',
+    [
+      require.resolve("@easyops-cn/docusaurus-search-local"),
+      {
+        hashed: true,
+        blogDir: "./blog/",
+      },
+    ],
+  ],
 };
 
 export default config;

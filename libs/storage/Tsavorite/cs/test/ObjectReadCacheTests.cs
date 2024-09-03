@@ -3,29 +3,40 @@
 
 using System.IO;
 using NUnit.Framework;
+using NUnit.Framework.Legacy;
 using Tsavorite.core;
 
 namespace Tsavorite.test.ReadCacheTests
 {
+    using ClassAllocator = GenericAllocator<MyKey, MyValue, StoreFunctions<MyKey, MyValue, MyKey.Comparer, DefaultRecordDisposer<MyKey, MyValue>>>;
+    using ClassStoreFunctions = StoreFunctions<MyKey, MyValue, MyKey.Comparer, DefaultRecordDisposer<MyKey, MyValue>>;
+
     [TestFixture]
     internal class ObjectReadCacheTests
     {
-        private TsavoriteKV<MyKey, MyValue> store;
+        private TsavoriteKV<MyKey, MyValue, ClassStoreFunctions, ClassAllocator> store;
         private IDevice log, objlog;
 
         [SetUp]
         public void Setup()
         {
             TestUtils.DeleteDirectory(TestUtils.MethodTestDir, wait: true);
-            var readCacheSettings = new ReadCacheSettings { MemorySizeBits = 15, PageSizeBits = 10 };
             log = Devices.CreateLogDevice(Path.Join(TestUtils.MethodTestDir, "ObjectReadCacheTests.log"), deleteOnClose: true);
             objlog = Devices.CreateLogDevice(Path.Join(TestUtils.MethodTestDir, "ObjectReadCacheTests.obj.log"), deleteOnClose: true);
 
-            store = new TsavoriteKV<MyKey, MyValue>
-                (128,
-                logSettings: new LogSettings { LogDevice = log, ObjectLogDevice = objlog, MemorySizeBits = 15, PageSizeBits = 10, ReadCacheSettings = readCacheSettings },
-                serializerSettings: new SerializerSettings<MyKey, MyValue> { keySerializer = () => new MyKeySerializer(), valueSerializer = () => new MyValueSerializer() }
-                );
+            store = new(new()
+            {
+                IndexSize = 1L << 13,
+                LogDevice = log,
+                ObjectLogDevice = objlog,
+                MemorySize = 1L << 15,
+                PageSize = 1L << 10,
+                ReadCacheMemorySize = 1L << 15,
+                ReadCachePageSize = 1L << 10,
+                ReadCacheEnabled = true
+            }, StoreFunctions<MyKey, MyValue>.Create(new MyKey.Comparer(), () => new MyKeySerializer(), () => new MyValueSerializer(), DefaultRecordDisposer<MyKey, MyValue>.Instance)
+                , (allocatorSettings, storeFunctions) => new(allocatorSettings, storeFunctions)
+            );
         }
 
         [TearDown]
@@ -46,6 +57,7 @@ namespace Tsavorite.test.ReadCacheTests
         public void ObjectDiskWriteReadCache()
         {
             using var session = store.NewSession<MyInput, MyOutput, Empty, MyFunctions>(new MyFunctions());
+            var bContext = session.BasicContext;
 
             MyInput input = default;
 
@@ -53,9 +65,9 @@ namespace Tsavorite.test.ReadCacheTests
             {
                 var key = new MyKey { key = i };
                 var value = new MyValue { value = i };
-                session.Upsert(ref key, ref value, Empty.Default, 0);
+                bContext.Upsert(ref key, ref value, Empty.Default);
             }
-            session.CompletePending(true);
+            bContext.CompletePending(true);
 
             // Evict all records from main memory of hybrid log
             store.Log.FlushAndEvict(true);
@@ -67,9 +79,9 @@ namespace Tsavorite.test.ReadCacheTests
                 var key1 = new MyKey { key = i };
                 var value = new MyValue { value = i };
 
-                var status = session.Read(ref key1, ref input, ref output, Empty.Default, 0);
-                Assert.IsTrue(status.IsPending);
-                session.CompletePending(true);
+                var status = bContext.Read(ref key1, ref input, ref output, Empty.Default);
+                ClassicAssert.IsTrue(status.IsPending);
+                bContext.CompletePending(true);
             }
 
             // Read last 100 keys - all should be served from cache
@@ -79,9 +91,9 @@ namespace Tsavorite.test.ReadCacheTests
                 var key1 = new MyKey { key = i };
                 var value = new MyValue { value = i };
 
-                var status = session.Read(ref key1, ref input, ref output, Empty.Default, 0);
-                Assert.IsTrue(status.Found);
-                Assert.AreEqual(value.value, output.value.value);
+                var status = bContext.Read(ref key1, ref input, ref output, Empty.Default);
+                ClassicAssert.IsTrue(status.Found);
+                ClassicAssert.AreEqual(value.value, output.value.value);
             }
 
             // Evict the read cache entirely
@@ -94,9 +106,9 @@ namespace Tsavorite.test.ReadCacheTests
                 var key1 = new MyKey { key = i };
                 var value = new MyValue { value = i };
 
-                var status = session.Read(ref key1, ref input, ref output, Empty.Default, 0);
-                Assert.IsTrue(status.IsPending);
-                session.CompletePending(true);
+                var status = bContext.Read(ref key1, ref input, ref output, Empty.Default);
+                ClassicAssert.IsTrue(status.IsPending);
+                bContext.CompletePending(true);
             }
 
             // Read 100 keys - all should be served from cache
@@ -106,9 +118,9 @@ namespace Tsavorite.test.ReadCacheTests
                 var key1 = new MyKey { key = i };
                 var value = new MyValue { value = i };
 
-                var status = session.Read(ref key1, ref input, ref output, Empty.Default, 0);
-                Assert.IsTrue(status.Found);
-                Assert.AreEqual(value.value, output.value.value);
+                var status = bContext.Read(ref key1, ref input, ref output, Empty.Default);
+                ClassicAssert.IsTrue(status.Found);
+                ClassicAssert.AreEqual(value.value, output.value.value);
             }
 
 
@@ -117,7 +129,7 @@ namespace Tsavorite.test.ReadCacheTests
             {
                 var key1 = new MyKey { key = i };
                 var value = new MyValue { value = i + 1 };
-                session.Upsert(ref key1, ref value, Empty.Default, 0);
+                bContext.Upsert(ref key1, ref value, Empty.Default);
             }
 
             // RMW to overwrite the read cache
@@ -125,9 +137,9 @@ namespace Tsavorite.test.ReadCacheTests
             {
                 var key1 = new MyKey { key = i };
                 input = new MyInput { value = 1 };
-                var status = session.RMW(ref key1, ref input, Empty.Default, 0);
+                var status = bContext.RMW(ref key1, ref input, Empty.Default);
                 if (status.IsPending)
-                    session.CompletePending(true);
+                    bContext.CompletePending(true);
             }
 
             // Read the 100 keys
@@ -137,9 +149,9 @@ namespace Tsavorite.test.ReadCacheTests
                 var key1 = new MyKey { key = i };
                 var value = new MyValue { value = i + 1 };
 
-                var status = session.Read(ref key1, ref input, ref output, Empty.Default, 0);
-                Assert.IsTrue(status.Found, $"key = {key1.key}");
-                Assert.AreEqual(value.value, output.value.value);
+                var status = bContext.Read(ref key1, ref input, ref output, Empty.Default);
+                ClassicAssert.IsTrue(status.Found, $"key = {key1.key}");
+                ClassicAssert.AreEqual(value.value, output.value.value);
             }
         }
 
@@ -148,6 +160,7 @@ namespace Tsavorite.test.ReadCacheTests
         public void ObjectDiskWriteReadCache2()
         {
             using var session = store.NewSession<MyInput, MyOutput, Empty, MyFunctions>(new MyFunctions());
+            var bContext = session.BasicContext;
 
             MyInput input = default;
 
@@ -155,9 +168,9 @@ namespace Tsavorite.test.ReadCacheTests
             {
                 var key = new MyKey { key = i };
                 var value = new MyValue { value = i };
-                session.Upsert(ref key, ref value, Empty.Default, 0);
+                bContext.Upsert(ref key, ref value, Empty.Default);
             }
-            session.CompletePending(true);
+            bContext.CompletePending(true);
 
             // Dispose the hybrid log from memory entirely
             store.Log.DisposeFromMemory();
@@ -169,9 +182,9 @@ namespace Tsavorite.test.ReadCacheTests
                 var key1 = new MyKey { key = i };
                 var value = new MyValue { value = i };
 
-                var status = session.Read(ref key1, ref input, ref output, Empty.Default, 0);
-                Assert.IsTrue(status.IsPending);
-                session.CompletePending(true);
+                var status = bContext.Read(ref key1, ref input, ref output, Empty.Default);
+                ClassicAssert.IsTrue(status.IsPending);
+                bContext.CompletePending(true);
             }
 
             // Read last 100 keys - all should be served from cache
@@ -181,9 +194,9 @@ namespace Tsavorite.test.ReadCacheTests
                 var key1 = new MyKey { key = i };
                 var value = new MyValue { value = i };
 
-                var status = session.Read(ref key1, ref input, ref output, Empty.Default, 0);
-                Assert.IsTrue(status.Found);
-                Assert.AreEqual(value.value, output.value.value);
+                var status = bContext.Read(ref key1, ref input, ref output, Empty.Default);
+                ClassicAssert.IsTrue(status.Found);
+                ClassicAssert.AreEqual(value.value, output.value.value);
             }
 
             // Evict the read cache entirely
@@ -196,9 +209,9 @@ namespace Tsavorite.test.ReadCacheTests
                 var key1 = new MyKey { key = i };
                 var value = new MyValue { value = i };
 
-                var status = session.Read(ref key1, ref input, ref output, Empty.Default, 0);
-                Assert.IsTrue(status.IsPending);
-                session.CompletePending(true);
+                var status = bContext.Read(ref key1, ref input, ref output, Empty.Default);
+                ClassicAssert.IsTrue(status.IsPending);
+                bContext.CompletePending(true);
             }
 
             // Read 100 keys - all should be served from cache
@@ -208,9 +221,9 @@ namespace Tsavorite.test.ReadCacheTests
                 MyKey key1 = new() { key = i };
                 MyValue value = new() { value = i };
 
-                var status = session.Read(ref key1, ref input, ref output, Empty.Default, 0);
-                Assert.IsTrue(status.Found);
-                Assert.AreEqual(value.value, output.value.value);
+                var status = bContext.Read(ref key1, ref input, ref output, Empty.Default);
+                ClassicAssert.IsTrue(status.Found);
+                ClassicAssert.AreEqual(value.value, output.value.value);
             }
         }
     }

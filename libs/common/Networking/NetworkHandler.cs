@@ -4,6 +4,7 @@
 using System;
 using System.Diagnostics;
 using System.Net.Security;
+using System.Runtime.CompilerServices;
 using System.Security.Cryptography.X509Certificates;
 using System.Threading;
 using System.Threading.Tasks;
@@ -85,7 +86,7 @@ namespace Garnet.networking
 
         /* TLS related fields */
         readonly SslStream sslStream;
-        readonly SemaphoreSlim receivedData;
+        readonly SemaphoreSlim receivedData, expectingData;
         readonly CancellationTokenSource cancellationTokenSource;
 
         // Stream reader status: Rest = 0, Active = 1, Waiting = 2
@@ -121,6 +122,7 @@ namespace Garnet.networking
                 sslStream = new SslStream(new NetworkHandlerStream(this, logger));
 
                 receivedData = new SemaphoreSlim(0);
+                expectingData = new SemaphoreSlim(0);
                 cancellationTokenSource = new();
 
                 transportReceiveBufferEntry = networkPool.Get(networkPool.MinAllocationSize);
@@ -193,6 +195,7 @@ namespace Garnet.networking
             {
                 logger?.LogWarning(ex, "An error has occurred");
                 readerStatus = TlsReaderStatus.Rest;
+                if (expectingData.CurrentCount == 0) expectingData.Release();
                 Dispose();
                 throw;
             }
@@ -254,6 +257,7 @@ namespace Garnet.networking
             {
                 logger?.LogWarning(ex, "An error has occurred");
                 readerStatus = TlsReaderStatus.Rest;
+                if (expectingData.CurrentCount == 0) expectingData.Release();
                 Dispose();
                 throw;
             }
@@ -265,56 +269,65 @@ namespace Garnet.networking
         /// <param name="bytesTransferred">Number of bytes transferred</param>
         public unsafe void OnNetworkReceive(int bytesTransferred)
         {
-            // Wait for SslStream sync processing task to complete, if any
-            if (sslStream != null)
-                while (readerStatus == TlsReaderStatus.Active) Thread.Yield();
+            // Wait for SslStream async processing to complete, if any (e.g., authentication phase)
+            while (readerStatus == TlsReaderStatus.Active)
+                expectingData.WaitAsync(cancellationTokenSource.Token).ConfigureAwait(false).GetAwaiter().GetResult();
 
             // Increment network bytes read
             networkBytesRead += bytesTransferred;
 
-            // Double network buffer if out of space
-            // Okay to do since we have control over network buffer here
-            if (networkBytesRead == networkReceiveBuffer.Length)
-                DoubleNetworkReceiveBuffer();
-
-            if (readerStatus == TlsReaderStatus.Rest)
+            switch (readerStatus)
             {
-                // Synchronously try to process the received data
-                BeginTransformNetworkToTransport();
+                case TlsReaderStatus.Rest:
+                    // Synchronously try to process the received data
+                    if (sslStream == null)
+                    {
+                        transportReceiveBuffer = networkReceiveBuffer;
+                        transportReceiveBufferPtr = networkReceiveBufferPtr;
+                        transportBytesRead = networkBytesRead;
 
-                // If ReadAsync is active, we are done here, the ReadAsync task will continue the processing
-                if (readerStatus == TlsReaderStatus.Active) return;
+                        // We do not have an active read task, so we will process on the network thread
+                        Process();
+                    }
+                    else
+                    {
+                        readerStatus = TlsReaderStatus.Active;
+                        Read();
+                        while (readerStatus == TlsReaderStatus.Active)
+                            expectingData.WaitAsync(cancellationTokenSource.Token).ConfigureAwait(false).GetAwaiter().GetResult();
+                    }
+                    break;
+                case TlsReaderStatus.Waiting:
+                    // We have a ReadAsync task waiting for new data, set it to active status
+                    readerStatus = TlsReaderStatus.Active;
+
+                    // Unblock the asynchronous ReadAsync task
+                    _ = receivedData.Release();
+
+                    while (readerStatus == TlsReaderStatus.Active)
+                        expectingData.WaitAsync(cancellationTokenSource.Token).ConfigureAwait(false).GetAwaiter().GetResult();
+                    break;
+                default:
+                    ThrowInvalidOperationException($"Unexpected reader status {readerStatus}");
+                    break;
             }
-            else
-            {
-                Debug.Assert(readerStatus == TlsReaderStatus.Waiting);
 
-                // ReadAsync task is waiting on semaphore, safe to shift network buffer
-                // We do this here because the ReadAsync task cannot safely modify network buffer
-                // as we will be performing a Socket.ReadAsync on it.
-                if (networkReadHead > 0)
-                    ShiftNetworkReceiveBuffer();
-
-                // We have a ReadAsync task waiting for new data, set it to active status
-                readerStatus = TlsReaderStatus.Active;
-
-                // Unblock the asynchronous ReadAsync task
-                receivedData.Release();
-
-                // Release this task - ReadAsync task will continue the processing
-                return;
-            }
-
-            // We do not have an active read task, so we will process on the network thread
             Debug.Assert(readerStatus != TlsReaderStatus.Active);
-            Process();
 
             EndTransformNetworkToTransport();
 
             // Shift network buffer after processing is done
             if (networkReadHead > 0)
                 ShiftNetworkReceiveBuffer();
+
+            // Double network buffer if out of space after processing is complete
+            if (networkBytesRead == networkReceiveBuffer.Length)
+                DoubleNetworkReceiveBuffer();
         }
+
+        [MethodImpl(MethodImplOptions.NoInlining)]
+        static void ThrowInvalidOperationException(string message)
+            => throw new InvalidOperationException(message);
 
         unsafe void Process()
         {
@@ -330,21 +343,6 @@ namespace Garnet.networking
         /// </summary>
         public INetworkSender GetNetworkSender() => sslStream == null ? networkSender : this;
 
-        unsafe void BeginTransformNetworkToTransport()
-        {
-            if (sslStream == null)
-            {
-                transportReceiveBuffer = networkReceiveBuffer;
-                transportReceiveBufferPtr = networkReceiveBufferPtr;
-                transportBytesRead = networkBytesRead;
-            }
-            else
-            {
-                readerStatus = TlsReaderStatus.Active;
-                Read();
-            }
-        }
-
         void Read()
         {
             bool retry = false;
@@ -355,6 +353,9 @@ namespace Garnet.networking
                 if (result.IsCompletedSuccessfully)
                 {
                     transportBytesRead += result.Result;
+
+                    // Read task has control, process the decrypted transport bytes
+                    Process();
 
                     // Shift bytes in transport buffer
                     if (transportReadHead > 0)
@@ -375,6 +376,7 @@ namespace Garnet.networking
                 }
             }
             readerStatus = TlsReaderStatus.Rest;
+            // We do not release expectingData here because it is the synchronous code path (i.e., there is no waiter)
         }
 
         async Task SslReaderAsync(Task<int> readTask, CancellationToken token = default)
@@ -406,12 +408,16 @@ namespace Garnet.networking
                 if (networkBytesRead > networkReadHead || retry)
                     _ = SslReaderAsync(token);
                 else
+                {
                     readerStatus = TlsReaderStatus.Rest;
+                    if (expectingData.CurrentCount == 0) expectingData.Release();
+                }
             }
             catch (Exception ex)
             {
                 logger?.LogWarning(ex, "An exception has occurred during NetworkHandler.SslReaderAsync(Task)");
                 readerStatus = TlsReaderStatus.Rest;
+                if (expectingData.CurrentCount == 0) expectingData.Release();
                 Dispose();
             }
         }
@@ -457,6 +463,7 @@ namespace Garnet.networking
             finally
             {
                 readerStatus = TlsReaderStatus.Rest;
+                if (expectingData.CurrentCount == 0) expectingData.Release();
             }
         }
 
@@ -531,6 +538,28 @@ namespace Garnet.networking
         }
 
         /// <inheritdoc />
+        public override void Enter()
+            => networkSender.Enter();
+
+        /// <inheritdoc />
+        public override unsafe void EnterAndGetResponseObject(out byte* head, out byte* tail)
+        {
+            networkSender.Enter();
+            head = transportSendBufferPtr;
+            tail = transportSendBufferPtr + transportSendBuffer.Length;
+        }
+
+        /// <inheritdoc />
+        public override void Exit()
+            => networkSender.Exit();
+
+        /// <inheritdoc />
+        public override void ExitAndReturnResponseObject()
+        {
+            networkSender.Exit();
+        }
+
+        /// <inheritdoc />
         public override void GetResponseObject() { }
 
         /// <inheritdoc />
@@ -540,7 +569,7 @@ namespace Garnet.networking
         public override unsafe bool SendResponse(int offset, int size)
         {
 #if MESSAGETRAGE
-            logger?.LogInformation($"Sending response of size {size} bytes");
+            logger?.LogInformation("Sending response of size {size} bytes", size);
             logger?.LogTrace("SEND: [{send}]", System.Text.Encoding.UTF8.GetString(
                 new Span<byte>(transportSendBuffer).Slice(offset, size)).Replace("\n", "|").Replace("\r", ""));
 #endif
@@ -553,7 +582,7 @@ namespace Garnet.networking
         public override void SendResponse(byte[] buffer, int offset, int count, object context)
         {
 #if MESSAGETRAGE
-            logger?.LogInformation($"Sending response of size {count} bytes");
+            logger?.LogInformation("Sending response of size {count} bytes", count);
             logger?.LogTrace("SEND: [{send}]", System.Text.Encoding.UTF8.GetString(
                 new Span<byte>(buffer).Slice(offset, count)).Replace("\n", "|").Replace("\r", ""));
 #endif
@@ -596,6 +625,9 @@ namespace Garnet.networking
             // Release the reader so it sees the cancellation
             receivedData?.Release();
             receivedData?.Dispose();
+            // Release the expecter so it sees the cancellation
+            expectingData?.Release();
+            expectingData?.Dispose();
             cancellationTokenSource?.Dispose();
             networkReceiveBufferEntry?.Dispose();
             transportSendBufferEntry?.Dispose();

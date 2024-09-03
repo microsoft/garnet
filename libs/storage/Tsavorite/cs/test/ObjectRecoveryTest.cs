@@ -2,13 +2,18 @@
 // Licensed under the MIT license.
 
 using System;
+using System.Diagnostics;
 using System.IO;
 using System.Threading.Tasks;
 using NUnit.Framework;
+using NUnit.Framework.Legacy;
 using Tsavorite.core;
 
-namespace Tsavorite.test.recovery.objectstore
+namespace Tsavorite.test.recovery.objects
 {
+    using ClassAllocator = GenericAllocator<AdIdObj, NumClicksObj, StoreFunctions<AdIdObj, NumClicksObj, AdIdObj.Comparer, DefaultRecordDisposer<AdIdObj, NumClicksObj>>>;
+    using ClassStoreFunctions = StoreFunctions<AdIdObj, NumClicksObj, AdIdObj.Comparer, DefaultRecordDisposer<AdIdObj, NumClicksObj>>;
+
     internal struct StructTuple<T1, T2>
     {
         public T1 Item1;
@@ -18,12 +23,12 @@ namespace Tsavorite.test.recovery.objectstore
     [TestFixture]
     internal class ObjectRecoveryTests
     {
-        const long numUniqueKeys = (1 << 14);
-        const long keySpace = (1L << 14);
-        const long numOps = (1L << 19);
-        const long completePendingInterval = (1L << 10);
-        const long checkpointInterval = (1L << 16);
-        private TsavoriteKV<AdId, NumClicks> store;
+        const long NumUniqueKeys = 1L << 14;
+        const long KeySpace = 1L << 14;
+        const long NumOps = 1L << 19;
+        const long CompletePendingInterval = 1L << 10;
+        const long CheckpointInterval = 1L << 16;
+        private TsavoriteKV<AdIdObj, NumClicksObj, ClassStoreFunctions, ClassAllocator> store;
         private Guid token;
         private IDevice log, objlog;
 
@@ -38,13 +43,15 @@ namespace Tsavorite.test.recovery.objectstore
             log = Devices.CreateLogDevice(Path.Join(TestUtils.MethodTestDir, "ObjectRecoveryTests.log"), false);
             objlog = Devices.CreateLogDevice(Path.Join(TestUtils.MethodTestDir, "ObjectRecoveryTests.obj.log"), false);
 
-            store = new TsavoriteKV<AdId, NumClicks>
-                (
-                    keySpace,
-                    new LogSettings { LogDevice = log, ObjectLogDevice = objlog },
-                    new CheckpointSettings { CheckpointDir = TestUtils.MethodTestDir },
-                    new SerializerSettings<AdId, NumClicks> { keySerializer = () => new AdIdSerializer(), valueSerializer = () => new NumClicksSerializer() }
-                    );
+            store = new(new()
+            {
+                IndexSize = KeySpace,
+                LogDevice = log,
+                ObjectLogDevice = objlog,
+                CheckpointDir = TestUtils.MethodTestDir
+            }, StoreFunctions<AdIdObj, NumClicksObj>.Create(new AdIdObj.Comparer(), () => new AdIdObj.Serializer(), () => new NumClicksObj.Serializer())
+                , (allocatorSettings, storeFunctions) => new(allocatorSettings, storeFunctions)
+            );
         }
 
         [TearDown]
@@ -77,9 +84,9 @@ namespace Tsavorite.test.recovery.objectstore
             PrepareToRecover();
 
             if (isAsync)
-                await store.RecoverAsync(token, token);
+                _ = await store.RecoverAsync(token, token);
             else
-                store.Recover(token, token);
+                _ = store.Recover(token, token);
 
             Verify(token, token);
         }
@@ -87,26 +94,27 @@ namespace Tsavorite.test.recovery.objectstore
         public unsafe void Populate()
         {
             // Prepare the dataset
-            var inputArray = new StructTuple<AdId, Input>[numOps];
-            for (int i = 0; i < numOps; i++)
+            var inputArray = new StructTuple<AdIdObj, Input>[NumOps];
+            for (int i = 0; i < NumOps; i++)
             {
-                inputArray[i] = new StructTuple<AdId, Input>
+                inputArray[i] = new StructTuple<AdIdObj, Input>
                 {
-                    Item1 = new AdId { adId = i % numUniqueKeys },
-                    Item2 = new Input { numClicks = new NumClicks { numClicks = 1 } }
+                    Item1 = new AdIdObj { adId = i % NumUniqueKeys },
+                    Item2 = new Input { numClicks = new NumClicksObj { numClicks = 1 } }
                 };
             }
 
             // Register thread with Tsavorite
             var session = store.NewSession<Input, Output, Empty, Functions>(new Functions());
+            var bContext = session.BasicContext;
 
             // Process the batch of input data
             bool first = true;
-            for (int i = 0; i < numOps; i++)
+            for (int i = 0; i < NumOps; i++)
             {
-                session.RMW(ref inputArray[i].Item1, ref inputArray[i].Item2, Empty.Default, i);
+                _ = bContext.RMW(ref inputArray[i].Item1, ref inputArray[i].Item2, Empty.Default);
 
-                if ((i + 1) % checkpointInterval == 0)
+                if ((i + 1) % CheckpointInterval == 0)
                 {
                     if (first)
                         while (!store.TryInitiateFullCheckpoint(out token, CheckpointType.Snapshot)) ;
@@ -118,90 +126,47 @@ namespace Tsavorite.test.recovery.objectstore
                     first = false;
                 }
 
-                if (i % completePendingInterval == 0)
+                if (i % CompletePendingInterval == 0)
                 {
-                    session.CompletePending(false, false);
+                    _ = bContext.CompletePending(false, false);
                 }
             }
 
 
             // Make sure operations are completed
-            session.CompletePending(true);
+            _ = bContext.CompletePending(true);
             session.Dispose();
         }
 
         public unsafe void Verify(Guid cprVersion, Guid indexVersion)
         {
             // Create array for reading
-            var inputArray = new StructTuple<AdId, Input>[numUniqueKeys];
-            for (int i = 0; i < numUniqueKeys; i++)
+            var inputArray = new StructTuple<AdIdObj, Input>[NumUniqueKeys];
+            for (int i = 0; i < NumUniqueKeys; i++)
             {
-                inputArray[i] = new StructTuple<AdId, Input>
+                inputArray[i] = new StructTuple<AdIdObj, Input>
                 {
-                    Item1 = new AdId { adId = i },
-                    Item2 = new Input { numClicks = new NumClicks { numClicks = 0 } }
+                    Item1 = new AdIdObj { adId = i },
+                    Item2 = new Input { numClicks = new NumClicksObj { numClicks = 0 } }
                 };
             }
 
-            var outputArray = new Output[numUniqueKeys];
-            for (int i = 0; i < numUniqueKeys; i++)
-            {
-                outputArray[i] = new Output();
-            }
-
-            // Register with thread
             var session = store.NewSession<Input, Output, Empty, Functions>(new Functions());
+            var bContext = session.BasicContext;
 
             Input input = default;
             // Issue read requests
-            for (var i = 0; i < numUniqueKeys; i++)
+            for (var i = 0; i < NumUniqueKeys; i++)
             {
-                session.Read(ref inputArray[i].Item1, ref input, ref outputArray[i], Empty.Default, i);
+                Output output = new();
+                _ = bContext.Read(ref inputArray[i].Item1, ref input, ref output, Empty.Default);
             }
 
             // Complete all pending requests
-            session.CompletePending(true);
+            _ = bContext.CompletePending(true);
 
             // Release
             session.Dispose();
-
-            // Test outputs
-            var checkpointInfo = default(HybridLogRecoveryInfo);
-            checkpointInfo.Recover(cprVersion,
-                new DeviceLogCommitCheckpointManager(
-                    new LocalStorageNamedDeviceFactory(),
-                        new DefaultCheckpointNamingScheme(
-                          new DirectoryInfo(TestUtils.MethodTestDir).FullName)), null);
-
-            // Compute expected array
-            long[] expected = new long[numUniqueKeys];
-            foreach (var guid in checkpointInfo.continueTokens.Keys)
-            {
-                var cp = checkpointInfo.continueTokens[guid].Item2;
-                for (long i = 0; i <= cp.UntilSerialNo; i++)
-                {
-                    var id = i % numUniqueKeys;
-                    expected[id]++;
-                }
-            }
-
-            int threadCount = 1; // single threaded test
-            int numCompleted = threadCount - checkpointInfo.continueTokens.Count;
-            for (int t = 0; t < numCompleted; t++)
-            {
-                var sno = numOps;
-                for (long i = 0; i < sno; i++)
-                {
-                    var id = i % numUniqueKeys;
-                    expected[id]++;
-                }
-            }
-
-            // Assert if expected is same as found
-            for (long i = 0; i < numUniqueKeys; i++)
-            {
-                Assert.AreEqual(expected[i], outputArray[i].value.numClicks, $"AdId {inputArray[i].Item1.adId}");
-            }
         }
     }
 }

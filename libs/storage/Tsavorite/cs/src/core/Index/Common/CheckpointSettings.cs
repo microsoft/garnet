@@ -23,7 +23,7 @@ namespace Tsavorite.core
     /// <summary>
     /// Checkpoint-related settings
     /// </summary>
-    public class CheckpointSettings
+    internal class CheckpointSettings
     {
         /// <summary>
         /// Checkpoint manager

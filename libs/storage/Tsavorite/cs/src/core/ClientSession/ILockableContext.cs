@@ -7,7 +7,9 @@ using System.Threading;
 namespace Tsavorite.core
 {
     /// <summary>
-    /// Lockable context functions. Useful when doing generic locking across diverse <see cref="LockableUnsafeContext{Key, Value, Input, Output, Context, Functions}"/> and <see cref="LockableContext{Key, Value, Input, Output, Context, Functions}"/> specializations.
+    /// Lockable context functions. Useful when doing generic locking across diverse 
+    /// <see cref="LockableUnsafeContext{Key, Value, Input, Output, Context, Functions, StoreFunctions, Allocator}"/> and 
+    /// <see cref="LockableContext{Key, Value, Input, Output, Context, Functions, StoreFunctions, Allocator}"/> specializations.
     /// </summary>
     /// <typeparam name="TKey"></typeparam>
     public interface ILockableContext<TKey>
@@ -21,12 +23,6 @@ namespace Tsavorite.core
         /// Ends a series of lock operations on possibly multiple keys; call after all locks are released.
         /// </summary>
         void EndLockable();
-
-        /// <summary>
-        /// If true, then keys must use one of the <see cref="ITsavoriteContext{TKey}.GetKeyHash(ref TKey)"/> overloads to obtain a code by which groups of keys will be sorted for manual locking, to avoid deadlocks.
-        /// </summary>
-        /// <remarks>Whether this returns true depends on the <see cref="ConcurrencyControlMode"/> on <see cref="TsavoriteKVSettings{Key, Value}"/>, or passed to the TsavoriteKV constructor.</remarks>
-        bool NeedKeyHash { get; }
 
         /// <summary>
         /// Compare two structures that implement ILockableKey.

@@ -4,104 +4,83 @@
 using System.Threading;
 using Tsavorite.core;
 
-namespace Tsavorite.test.recovery.objectstore
+namespace Tsavorite.test.recovery.objects
 {
-    public class AdId : ITsavoriteEqualityComparer<AdId>
+    public class AdIdObj
     {
         public long adId;
 
-        public long GetHashCode64(ref AdId key)
+        public partial struct Comparer : IKeyComparer<AdIdObj>
         {
-            return Utility.GetHashCode(key.adId);
+            public readonly long GetHashCode64(ref AdIdObj key) => Utility.GetHashCode(key.adId);
+
+            public readonly bool Equals(ref AdIdObj k1, ref AdIdObj k2) => k1.adId == k2.adId;
         }
-        public bool Equals(ref AdId k1, ref AdId k2)
+
+        public class Serializer : BinaryObjectSerializer<AdIdObj>
         {
-            return k1.adId == k2.adId;
+            public override void Deserialize(out AdIdObj obj) => obj = new AdIdObj { adId = reader.ReadInt64() };
+
+            public override void Serialize(ref AdIdObj obj) => writer.Write(obj.adId);
         }
     }
 
-    public class AdIdSerializer : BinaryObjectSerializer<AdId>
+    public class NumClicksObj
     {
-        public override void Deserialize(out AdId obj)
-        {
-            obj = new AdId
-            {
-                adId = reader.ReadInt64()
-            };
-        }
+        public long numClicks;
 
-        public override void Serialize(ref AdId obj)
+        public class Serializer : BinaryObjectSerializer<NumClicksObj>
         {
-            writer.Write(obj.adId);
+            public override void Deserialize(out NumClicksObj obj) => obj = new NumClicksObj { numClicks = reader.ReadInt64() };
+
+            public override void Serialize(ref NumClicksObj obj) => writer.Write(obj.numClicks);
         }
     }
 
     public class Input
     {
-        public AdId adId;
-        public NumClicks numClicks;
+        public AdIdObj adId;
+        public NumClicksObj numClicks;
     }
-
-    public class NumClicks
-    {
-        public long numClicks;
-    }
-
-    public class NumClicksSerializer : BinaryObjectSerializer<NumClicks>
-    {
-        public override void Deserialize(out NumClicks obj)
-        {
-            obj = new NumClicks
-            {
-                numClicks = reader.ReadInt64()
-            };
-        }
-
-        public override void Serialize(ref NumClicks obj)
-        {
-            writer.Write(obj.numClicks);
-        }
-    }
-
 
     public class Output
     {
-        public NumClicks value;
+        public NumClicksObj value;
     }
 
-    public class Functions : FunctionsBase<AdId, NumClicks, Input, Output, Empty>
+    public class Functions : SessionFunctionsBase<AdIdObj, NumClicksObj, Input, Output, Empty>
     {
         // Read functions
-        public override bool SingleReader(ref AdId key, ref Input input, ref NumClicks value, ref Output dst, ref ReadInfo readInfo)
+        public override bool SingleReader(ref AdIdObj key, ref Input input, ref NumClicksObj value, ref Output dst, ref ReadInfo readInfo)
         {
             dst.value = value;
             return true;
         }
 
-        public override bool ConcurrentReader(ref AdId key, ref Input input, ref NumClicks value, ref Output dst, ref ReadInfo readInfo, ref RecordInfo recordInfo)
+        public override bool ConcurrentReader(ref AdIdObj key, ref Input input, ref NumClicksObj value, ref Output dst, ref ReadInfo readInfo, ref RecordInfo recordInfo)
         {
             dst.value = value;
             return true;
         }
 
         // RMW functions
-        public override bool InitialUpdater(ref AdId key, ref Input input, ref NumClicks value, ref Output output, ref RMWInfo rmwInfo, ref RecordInfo recordInfo)
+        public override bool InitialUpdater(ref AdIdObj key, ref Input input, ref NumClicksObj value, ref Output output, ref RMWInfo rmwInfo, ref RecordInfo recordInfo)
         {
             value = input.numClicks;
             return true;
         }
 
-        public override bool InPlaceUpdater(ref AdId key, ref Input input, ref NumClicks value, ref Output output, ref RMWInfo rmwInfo, ref RecordInfo recordInfo)
+        public override bool InPlaceUpdater(ref AdIdObj key, ref Input input, ref NumClicksObj value, ref Output output, ref RMWInfo rmwInfo, ref RecordInfo recordInfo)
         {
-            Interlocked.Add(ref value.numClicks, input.numClicks.numClicks);
+            _ = Interlocked.Add(ref value.numClicks, input.numClicks.numClicks);
             return true;
         }
 
-        public override bool NeedCopyUpdate(ref AdId key, ref Input input, ref NumClicks oldValue, ref Output output, ref RMWInfo rmwInfo) => true;
+        public override bool NeedCopyUpdate(ref AdIdObj key, ref Input input, ref NumClicksObj oldValue, ref Output output, ref RMWInfo rmwInfo) => true;
 
-        public override bool CopyUpdater(ref AdId key, ref Input input, ref NumClicks oldValue, ref NumClicks newValue, ref Output output, ref RMWInfo rmwInfo, ref RecordInfo recordInfo)
+        public override bool CopyUpdater(ref AdIdObj key, ref Input input, ref NumClicksObj oldValue, ref NumClicksObj newValue, ref Output output, ref RMWInfo rmwInfo, ref RecordInfo recordInfo)
         {
-            newValue = new NumClicks { numClicks = oldValue.numClicks + input.numClicks.numClicks };
+            newValue = new NumClicksObj { numClicks = oldValue.numClicks + input.numClicks.numClicks };
             return true;
         }
     }

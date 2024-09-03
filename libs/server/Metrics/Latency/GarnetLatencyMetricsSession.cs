@@ -2,7 +2,6 @@
 // Licensed under the MIT license.
 
 using System;
-using System.Linq;
 using System.Runtime.CompilerServices;
 using Garnet.common;
 
@@ -23,6 +22,15 @@ namespace Garnet.server
         {
             this.monitor = monitor;
             Init();
+        }
+
+        public void Return()
+        {
+            foreach (var cmd in defaultLatencyTypes)
+            {
+                metrics[(int)cmd].Return();
+            }
+            metrics = null;
         }
 
         private void Init()

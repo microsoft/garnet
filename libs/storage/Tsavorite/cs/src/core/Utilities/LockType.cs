@@ -25,27 +25,6 @@ namespace Tsavorite.core
     }
 
     /// <summary>
-    /// How Tsavorite should do concurrency control
-    /// </summary>
-    public enum ConcurrencyControlMode : byte
-    {
-        /// <summary>
-        /// Keys are locked using a LockTable. Currently the implementation latches the hash index buckets. Supports manual and transient locking, based on the session type.
-        /// </summary>
-        LockTable,
-
-        /// <summary>
-        /// Records are locked only for the duration of a concurrent IFunctions call (one that operates on data in the mutable region of the log), using the RecordInfo header.
-        /// </summary>
-        RecordIsolation,
-
-        /// <summary>
-        /// Record locking is not done in Tsavorite.
-        /// </summary>
-        None
-    }
-
-    /// <summary>
     /// Interface that must be implemented to participate in keyHash-based locking.
     /// </summary>
     public interface ILockableKey
@@ -128,7 +107,7 @@ namespace Tsavorite.core
     /// <summary>
     /// Lock state of a record
     /// </summary>
-    internal struct LockState
+    public struct LockState
     {
         internal bool IsLockedExclusive;
         internal bool IsFound;

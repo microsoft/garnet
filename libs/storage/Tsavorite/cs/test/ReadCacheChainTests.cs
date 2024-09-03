@@ -8,69 +8,100 @@ using System.IO;
 using System.Linq;
 using System.Threading.Tasks;
 using NUnit.Framework;
+using NUnit.Framework.Legacy;
 using Tsavorite.core;
 using Tsavorite.test.LockableUnsafeContext;
 using Tsavorite.test.LockTable;
 using static Tsavorite.test.TestUtils;
 
-#pragma warning disable IDE0060 // Remove unused parameter (used for Setup)
+#pragma warning disable  // Add parentheses for clarity
 
 namespace Tsavorite.test.ReadCacheTests
 {
+    // Must be in a separate block so the "using StructStoreFunctions" is the first line in its namespace declaration.
+    internal class LongComparerModulo : IKeyComparer<long>
+    {
+        readonly long mod;
+
+        internal LongComparerModulo(long mod) => this.mod = mod;
+
+        public bool Equals(ref long k1, ref long k2) => k1 == k2;
+
+        public long GetHashCode64(ref long k) => mod == 0 ? k : k % mod;
+    }
+
+    internal struct SpanByteComparerModulo : IKeyComparer<SpanByte>
+    {
+        readonly HashModulo modRange;
+
+        internal SpanByteComparerModulo(HashModulo mod) => modRange = mod;
+
+        public readonly bool Equals(ref SpanByte k1, ref SpanByte k2) => SpanByteComparer.StaticEquals(ref k1, ref k2);
+
+        // Force collisions to create a chain
+        public readonly long GetHashCode64(ref SpanByte k)
+        {
+            var value = SpanByteComparer.StaticGetHashCode64(ref k);
+            return modRange != HashModulo.NoMod ? value % (long)modRange : value;
+        }
+    }
+}
+
+namespace Tsavorite.test.ReadCacheTests
+{
+    using LongAllocator = BlittableAllocator<long, long, StoreFunctions<long, long, LongComparerModulo, DefaultRecordDisposer<long, long>>>;
+    using LongStoreFunctions = StoreFunctions<long, long, LongComparerModulo, DefaultRecordDisposer<long, long>>;
+    using SpanByteStoreFunctions = StoreFunctions<SpanByte, SpanByte, SpanByteComparerModulo, SpanByteRecordDisposer>;
+
+    internal static class RcTestGlobals
+    {
+        internal const int PendingMod = 16;
+    }
+
     class ChainTests
     {
-        private TsavoriteKV<long, long> store;
+        private TsavoriteKV<long, long, LongStoreFunctions, LongAllocator> store;
         private IDevice log;
-        const long lowChainKey = 40;
-        const long midChainKey = lowChainKey + chainLen * (mod / 2);
-        const long highChainKey = lowChainKey + chainLen * (mod - 1);
-        const int mod = 10;
-        const int chainLen = 10;
-        const int valueAdd = 1_000_000;
+        private LongComparerModulo comparer;
+
+        const long LowChainKey = 40;
+        const long MidChainKey = LowChainKey + ChainLen * (HashMod / 2);
+        const long HighChainKey = LowChainKey + ChainLen * (HashMod - 1);
+        const long HashMod = 10;
+        const int ChainLen = 10;
+        const int ValueAdd = 1_000_000;
 
         // -1 so highChainKey is first in the chain.
-        const long numKeys = highChainKey + mod - 1;
+        const long NumKeys = HighChainKey + HashMod - 1;
 
         // Insert into chain.
-        const long spliceInNewKey = highChainKey + mod * 2;
-        const long spliceInExistingKey = highChainKey - mod;
-        const long immutableSplitKey = numKeys / 2;
+        const long SpliceInNewKey = HighChainKey + HashMod * 2;
+        const long SpliceInExistingKey = HighChainKey - HashMod;
+        const long ImmutableSplitKey = NumKeys / 2;
 
         // This is the record after the first readcache record we insert; it lets us limit the range to ReadCacheEvict
         // so we get outsplicing rather than successively overwriting the hash table entry on ReadCacheEvict.
         long readCacheBelowMidChainKeyEvictionAddress;
 
-        internal class ChainComparer : ITsavoriteEqualityComparer<long>
-        {
-            readonly int mod;
-
-            internal ChainComparer(int mod) => this.mod = mod;
-
-            public bool Equals(ref long k1, ref long k2) => k1 == k2;
-
-            public long GetHashCode64(ref long k) => k % mod;
-        }
-
         [SetUp]
         public void Setup()
         {
             DeleteDirectory(MethodTestDir, wait: true);
-            var readCacheSettings = new ReadCacheSettings { MemorySizeBits = 15, PageSizeBits = 9 };
             log = Devices.CreateLogDevice(Path.Join(MethodTestDir, "NativeReadCacheTests.log"), deleteOnClose: true);
 
-            var concurrencyControlMode = ConcurrencyControlMode.None;
-            foreach (var arg in TestContext.CurrentContext.Test.Arguments)
+            comparer = new LongComparerModulo(HashMod);
+            store = new(new()
             {
-                if (arg is ConcurrencyControlMode ccm)
-                {
-                    concurrencyControlMode = ccm;
-                    continue;
-                }
-            }
-
-            store = new TsavoriteKV<long, long>
-                (1L << 20, new LogSettings { LogDevice = log, MemorySizeBits = 15, PageSizeBits = 10, ReadCacheSettings = readCacheSettings },
-                comparer: new ChainComparer(mod), concurrencyControlMode: concurrencyControlMode);
+                IndexSize = 1L << 26,
+                LogDevice = log,
+                MemorySize = 1L << 15,
+                PageSize = 1L << 10,
+                ReadCacheMemorySize = 1L << 15,
+                ReadCachePageSize = 1L << 9,
+                ReadCacheEnabled = true
+            }, StoreFunctions<long, long>.Create(comparer)
+                , (allocatorSettings, storeFunctions) => new(allocatorSettings, storeFunctions)
+            );
         }
 
         [TearDown]
@@ -87,75 +118,78 @@ namespace Tsavorite.test.ReadCacheTests
 
         void PopulateAndEvict(RecordRegion recordRegion = RecordRegion.OnDisk)
         {
-            using var session = store.NewSession<long, long, Empty, SimpleFunctions<long, long>>(new SimpleFunctions<long, long>());
+            using var session = store.NewSession<long, long, Empty, SimpleSimpleFunctions<long, long>>(new SimpleSimpleFunctions<long, long>());
+            var bContext = session.BasicContext;
 
             if (recordRegion != RecordRegion.Immutable)
             {
-                for (int key = 0; key < numKeys; key++)
-                    session.Upsert(key, key + valueAdd);
-                session.CompletePending(true);
+                for (int key = 0; key < NumKeys; key++)
+                    _ = bContext.Upsert(key, key + ValueAdd);
+                _ = bContext.CompletePending(true);
                 if (recordRegion == RecordRegion.OnDisk)
                     store.Log.FlushAndEvict(true);
                 return;
             }
 
             // Two parts, so we can have some evicted (and bring them into the readcache), and some in immutable (readonly).
-            for (int key = 0; key < immutableSplitKey; key++)
-                session.Upsert(key, key + valueAdd);
-            session.CompletePending(true);
+            for (int key = 0; key < ImmutableSplitKey; key++)
+                _ = bContext.Upsert(key, key + ValueAdd);
+            _ = bContext.CompletePending(true);
             store.Log.FlushAndEvict(true);
 
-            for (long key = immutableSplitKey; key < numKeys; key++)
-                session.Upsert(key, key + valueAdd);
-            session.CompletePending(true);
+            for (long key = ImmutableSplitKey; key < NumKeys; key++)
+                _ = bContext.Upsert(key, key + ValueAdd);
+            _ = bContext.CompletePending(true);
             store.Log.ShiftReadOnlyAddress(store.Log.TailAddress, wait: true);
         }
 
         void CreateChain(RecordRegion recordRegion = RecordRegion.OnDisk)
         {
-            using var session = store.NewSession<long, long, Empty, SimpleFunctions<long, long>>(new SimpleFunctions<long, long>());
+            using var session = store.NewSession<long, long, Empty, SimpleSimpleFunctions<long, long>>(new SimpleSimpleFunctions<long, long>());
+            var bContext = session.BasicContext;
+
             long output = -1;
-            bool expectPending(long key) => recordRegion == RecordRegion.OnDisk || (recordRegion == RecordRegion.Immutable && key < immutableSplitKey);
+            bool expectPending(long key) => recordRegion == RecordRegion.OnDisk || (recordRegion == RecordRegion.Immutable && key < ImmutableSplitKey);
 
             // Pass1: PENDING reads and populate the cache
-            for (long ii = 0; ii < chainLen; ++ii)
+            for (long ii = 0; ii < ChainLen; ++ii)
             {
-                var key = lowChainKey + ii * mod;
-                var status = session.Read(key, out _);
+                var key = LowChainKey + ii * HashMod;
+                var status = bContext.Read(key, out _);
                 if (expectPending(key))
                 {
-                    Assert.IsTrue(status.IsPending, status.ToString());
-                    session.CompletePendingWithOutputs(out var outputs, wait: true);
+                    ClassicAssert.IsTrue(status.IsPending, status.ToString());
+                    _ = bContext.CompletePendingWithOutputs(out var outputs, wait: true);
                     (status, output) = GetSinglePendingResult(outputs);
-                    Assert.IsTrue(status.Record.CopiedToReadCache, status.ToString());
+                    ClassicAssert.IsTrue(status.Record.CopiedToReadCache, status.ToString());
                 }
-                Assert.IsTrue(status.Found, status.ToString());
-                if (key < midChainKey)
+                ClassicAssert.IsTrue(status.Found, status.ToString());
+                if (key < MidChainKey)
                     readCacheBelowMidChainKeyEvictionAddress = store.ReadCache.TailAddress;
             }
 
             // Pass2: non-PENDING reads from the cache
-            for (var ii = 0; ii < chainLen; ++ii)
+            for (var ii = 0; ii < ChainLen; ++ii)
             {
-                var status = session.Read(lowChainKey + ii * mod, out _);
-                Assert.IsTrue(!status.IsPending && status.Found, status.ToString());
+                var status = bContext.Read(LowChainKey + ii * HashMod, out _);
+                ClassicAssert.IsTrue(!status.IsPending && status.Found, status.ToString());
             }
 
             // Pass 3: Put in bunch of extra keys into the cache so when we FlushAndEvict we get all the ones of interest.
-            for (var key = 0; key < numKeys; ++key)
+            for (var key = 0; key < NumKeys; ++key)
             {
-                if ((key % mod) != 0)
+                if ((key % HashMod) != 0)
                 {
-                    var status = session.Read(key, out _);
+                    var status = bContext.Read(key, out _);
                     if (expectPending(key))
                     {
-                        Assert.IsTrue(status.IsPending);
-                        session.CompletePendingWithOutputs(out var outputs, wait: true);
+                        ClassicAssert.IsTrue(status.IsPending);
+                        _ = bContext.CompletePendingWithOutputs(out var outputs, wait: true);
                         (status, output) = GetSinglePendingResult(outputs);
-                        Assert.IsTrue(status.Record.CopiedToReadCache, status.ToString());
+                        ClassicAssert.IsTrue(status.Record.CopiedToReadCache, status.ToString());
                     }
-                    Assert.IsTrue(status.Found, status.ToString());
-                    session.CompletePending(wait: true);
+                    ClassicAssert.IsTrue(status.Found, status.ToString());
+                    _ = bContext.CompletePending(wait: true);
                 }
             }
         }
@@ -164,7 +198,7 @@ namespace Tsavorite.test.ReadCacheTests
         {
             // returns whether the key was found before we'd go pending
             var (la, pa) = GetHashChain(store, key, out long recordKey, out bool invalid, out isReadCache);
-            while (isReadCache || la >= store.hlog.HeadAddress)
+            while (isReadCache || la >= store.hlogBase.HeadAddress)
             {
                 if (recordKey == key && !invalid)
                     return true;
@@ -186,10 +220,12 @@ namespace Tsavorite.test.ReadCacheTests
             return false;
         }
 
-        internal static (long logicalAddress, long physicalAddress) GetHashChain(TsavoriteKV<long, long> store, long key, out long recordKey, out bool invalid, out bool isReadCache)
+        internal static (long logicalAddress, long physicalAddress) GetHashChain<TStoreFunctions, TAllocator>(TsavoriteKV<long, long, TStoreFunctions, TAllocator> store, long key, out long recordKey, out bool invalid, out bool isReadCache)
+            where TStoreFunctions : IStoreFunctions<long, long>
+            where TAllocator : IAllocator<long, long, TStoreFunctions>
         {
             var tagExists = store.FindHashBucketEntryForKey(ref key, out var entry);
-            Assert.IsTrue(tagExists);
+            ClassicAssert.IsTrue(tagExists);
 
             isReadCache = entry.ReadCache;
             var log = isReadCache ? store.readcache : store.hlog;
@@ -203,7 +239,9 @@ namespace Tsavorite.test.ReadCacheTests
         (long logicalAddress, long physicalAddress) NextInChain(long physicalAddress, out long recordKey, out bool invalid, ref bool isReadCache)
             => NextInChain(store, physicalAddress, out recordKey, out invalid, ref isReadCache);
 
-        internal static (long logicalAddress, long physicalAddress) NextInChain(TsavoriteKV<long, long> store, long physicalAddress, out long recordKey, out bool invalid, ref bool isReadCache)
+        internal static (long logicalAddress, long physicalAddress) NextInChain<TStoreFunctions, TAllocator>(TsavoriteKV<long, long, TStoreFunctions, TAllocator> store, long physicalAddress, out long recordKey, out bool invalid, ref bool isReadCache)
+            where TStoreFunctions : IStoreFunctions<long, long>
+            where TAllocator : IAllocator<long, long, TStoreFunctions>
         {
             var log = isReadCache ? store.readcache : store.hlog;
             var info = log.GetInfo(physicalAddress);
@@ -220,38 +258,40 @@ namespace Tsavorite.test.ReadCacheTests
 
         (long logicalAddress, long physicalAddress) ScanReadCacheChain(long[] omitted = null, bool evicted = false, bool deleted = false)
         {
-            omitted ??= Array.Empty<long>();
+            omitted ??= [];
 
-            var (la, pa) = GetHashChain(store, lowChainKey, out long actualKey, out bool invalid, out bool isReadCache);
-            for (var expectedKey = highChainKey; expectedKey >= lowChainKey; expectedKey -= mod)
+            var (la, pa) = GetHashChain(store, LowChainKey, out long actualKey, out bool invalid, out bool isReadCache);
+            for (var expectedKey = HighChainKey; expectedKey >= LowChainKey; expectedKey -= HashMod)
             {
                 // We evict from readcache only to just below midChainKey
-                if (!evicted || expectedKey >= midChainKey)
-                    Assert.IsTrue(isReadCache);
+                if (!evicted || expectedKey >= MidChainKey)
+                    ClassicAssert.IsTrue(isReadCache);
 
                 if (isReadCache)
                 {
-                    Assert.AreEqual(expectedKey, actualKey);
+                    ClassicAssert.AreEqual(expectedKey, actualKey);
                     if (omitted.Contains(expectedKey))
-                        Assert.IsTrue(invalid);
+                        ClassicAssert.IsTrue(invalid);
                 }
                 else if (omitted.Contains(actualKey))
                 {
-                    Assert.AreEqual(deleted, store.hlog.GetInfo(pa).Tombstone);
+                    ClassicAssert.AreEqual(deleted, store.hlog.GetInfo(pa).Tombstone);
                 }
 
                 (la, pa) = NextInChain(pa, out actualKey, out invalid, ref isReadCache);
-                if (!isReadCache && la < store.hlog.HeadAddress)
+                if (!isReadCache && la < store.hlogBase.HeadAddress)
                     break;
             }
-            Assert.IsFalse(isReadCache);
+            ClassicAssert.IsFalse(isReadCache);
             return (la, pa);
         }
 
         (long logicalAddress, long physicalAddress) SkipReadCacheChain(long key)
             => SkipReadCacheChain(store, key);
 
-        internal static (long logicalAddress, long physicalAddress) SkipReadCacheChain(TsavoriteKV<long, long> store, long key)
+        internal static (long logicalAddress, long physicalAddress) SkipReadCacheChain<TStoreFunctions, TAllocator>(TsavoriteKV<long, long, TStoreFunctions, TAllocator> store, long key)
+            where TStoreFunctions : IStoreFunctions<long, long>
+            where TAllocator : IAllocator<long, long, TStoreFunctions>
         {
             var (la, pa) = GetHashChain(store, key, out _, out _, out bool isReadCache);
             while (isReadCache)
@@ -264,10 +304,10 @@ namespace Tsavorite.test.ReadCacheTests
             // Scan to the end of the readcache chain and verify we inserted the value.
             var (_, pa) = SkipReadCacheChain(expectedKey);
             var storedKey = store.hlog.GetKey(pa);
-            Assert.AreEqual(expectedKey, storedKey);
+            ClassicAssert.AreEqual(expectedKey, storedKey);
         }
 
-        static void ClearCountsOnError(ClientSession<long, long, long, long, Empty, SimpleFunctions<long, long>> luContext)
+        static void ClearCountsOnError(ClientSession<long, long, long, long, Empty, SimpleSimpleFunctions<long, long>, LongStoreFunctions, LongAllocator> luContext)
         {
             // If we already have an exception, clear these counts so "Run" will not report them spuriously.
             luContext.sharedLockCount = 0;
@@ -284,95 +324,96 @@ namespace Tsavorite.test.ReadCacheTests
         {
             PopulateAndEvict();
             CreateChain();
-
-            ScanReadCacheChain();
+            _ = ScanReadCacheChain();
         }
 
         [Test]
         [Category(TsavoriteKVTestCategory)]
         [Category(ReadCacheTestCategory)]
         [Category(SmokeTestCategory)]
-        public void DeleteCacheRecordTest([Values] ConcurrencyControlMode concurrencyControlMode)
+        public void DeleteCacheRecordTest()
         {
             PopulateAndEvict();
             CreateChain();
-            using var session = store.NewSession<long, long, Empty, SimpleFunctions<long, long>>(new SimpleFunctions<long, long>());
+            using var session = store.NewSession<long, long, Empty, SimpleSimpleFunctions<long, long>>(new SimpleSimpleFunctions<long, long>());
+            var bContext = session.BasicContext;
 
             void doTest(long key)
             {
-                var status = session.Delete(key);
-                Assert.IsTrue(!status.Found && status.Record.Created, status.ToString());
+                var status = bContext.Delete(key);
+                ClassicAssert.IsTrue(!status.Found && status.Record.Created, status.ToString());
 
-                status = session.Read(key, out var value);
-                Assert.IsFalse(status.Found, status.ToString());
+                status = bContext.Read(key, out var value);
+                ClassicAssert.IsFalse(status.Found, status.ToString());
             }
 
-            doTest(lowChainKey);
-            doTest(highChainKey);
-            doTest(midChainKey);
-            ScanReadCacheChain(new[] { lowChainKey, midChainKey, highChainKey }, evicted: false);
+            doTest(LowChainKey);
+            doTest(HighChainKey);
+            doTest(MidChainKey);
+            _ = ScanReadCacheChain([LowChainKey, MidChainKey, HighChainKey], evicted: false);
 
             store.ReadCacheEvict(store.ReadCache.BeginAddress, readCacheBelowMidChainKeyEvictionAddress);
-            ScanReadCacheChain(new[] { lowChainKey, midChainKey, highChainKey }, evicted: true, deleted: true);
+            _ = ScanReadCacheChain([LowChainKey, MidChainKey, HighChainKey], evicted: true, deleted: true);
         }
 
         [Test]
         [Category(TsavoriteKVTestCategory)]
         [Category(ReadCacheTestCategory)]
         [Category(SmokeTestCategory)]
-        public void DeleteHalfOfAllCacheRecordsTest([Values] ConcurrencyControlMode concurrencyControlMode)
+        public void DeleteHalfOfAllReadCacheRecordsTest()
         {
             PopulateAndEvict();
             CreateChain();
-            using var session = store.NewSession<long, long, Empty, SimpleFunctions<long, long>>(new SimpleFunctions<long, long>());
+            using var session = store.NewSession<long, long, Empty, SimpleSimpleFunctions<long, long>>(new SimpleSimpleFunctions<long, long>());
+            var bContext = session.BasicContext;
 
             void doTest(long key)
             {
-                var status = session.Delete(key);
-                Assert.IsTrue(!status.Found && status.Record.Created, status.ToString());
+                var status = bContext.Delete(key);
+                ClassicAssert.IsTrue(!status.Found && status.Record.Created, status.ToString());
 
-                status = session.Read(key, out var value);
-                Assert.IsFalse(status.Found, status.ToString());
+                status = bContext.Read(key, out var value);
+                ClassicAssert.IsFalse(status.Found, status.ToString());
             }
 
             // Should be found in the readcache before deletion
-            Assert.IsTrue(GetRecordInInMemoryHashChain(lowChainKey, out bool isReadCache));
-            Assert.IsTrue(isReadCache);
-            Assert.IsTrue(GetRecordInInMemoryHashChain(midChainKey, out isReadCache));
-            Assert.IsTrue(isReadCache);
-            Assert.IsTrue(GetRecordInInMemoryHashChain(highChainKey, out isReadCache));
-            Assert.IsTrue(isReadCache);
+            ClassicAssert.IsTrue(GetRecordInInMemoryHashChain(LowChainKey, out bool isReadCache));
+            ClassicAssert.IsTrue(isReadCache);
+            ClassicAssert.IsTrue(GetRecordInInMemoryHashChain(MidChainKey, out isReadCache));
+            ClassicAssert.IsTrue(isReadCache);
+            ClassicAssert.IsTrue(GetRecordInInMemoryHashChain(HighChainKey, out isReadCache));
+            ClassicAssert.IsTrue(isReadCache);
 
             // Delete all keys in the readcache chain below midChainKey.
-            for (var ii = lowChainKey; ii < midChainKey; ++ii)
+            for (var ii = LowChainKey; ii < MidChainKey; ++ii)
                 doTest(ii);
 
             // LowChainKey should not be found in the readcache after deletion to just below midChainKey, but mid- and highChainKey should not be affected.
-            Assert.IsTrue(GetRecordInInMemoryHashChain(lowChainKey, out isReadCache));
-            Assert.IsFalse(isReadCache);
-            Assert.IsTrue(GetRecordInInMemoryHashChain(midChainKey, out isReadCache));
-            Assert.IsTrue(isReadCache);
-            Assert.IsTrue(GetRecordInInMemoryHashChain(highChainKey, out isReadCache));
-            Assert.IsTrue(isReadCache);
+            ClassicAssert.IsTrue(GetRecordInInMemoryHashChain(LowChainKey, out isReadCache));
+            ClassicAssert.IsFalse(isReadCache);
+            ClassicAssert.IsTrue(GetRecordInInMemoryHashChain(MidChainKey, out isReadCache));
+            ClassicAssert.IsTrue(isReadCache);
+            ClassicAssert.IsTrue(GetRecordInInMemoryHashChain(HighChainKey, out isReadCache));
+            ClassicAssert.IsTrue(isReadCache);
 
             store.ReadCacheEvict(store.ReadCache.BeginAddress, readCacheBelowMidChainKeyEvictionAddress);
 
             // Following deletion to just below midChainKey:
             //  lowChainKey's tombstone should still be found in the mutable portion of the log
             //  midChainKey and highChainKey should be found in the readcache
-            Assert.IsTrue(GetRecordInInMemoryHashChain(lowChainKey, out isReadCache));
-            Assert.IsFalse(isReadCache);
-            Assert.IsTrue(GetRecordInInMemoryHashChain(midChainKey, out isReadCache));
-            Assert.IsTrue(isReadCache);
-            Assert.IsTrue(GetRecordInInMemoryHashChain(highChainKey, out isReadCache));
-            Assert.IsTrue(isReadCache);
+            ClassicAssert.IsTrue(GetRecordInInMemoryHashChain(LowChainKey, out isReadCache));
+            ClassicAssert.IsFalse(isReadCache);
+            ClassicAssert.IsTrue(GetRecordInInMemoryHashChain(MidChainKey, out isReadCache));
+            ClassicAssert.IsTrue(isReadCache);
+            ClassicAssert.IsTrue(GetRecordInInMemoryHashChain(HighChainKey, out isReadCache));
+            ClassicAssert.IsTrue(isReadCache);
         }
 
         [Test]
         [Category(TsavoriteKVTestCategory)]
         [Category(ReadCacheTestCategory)]
         [Category(SmokeTestCategory)]
-        public void UpsertCacheRecordTest([Values] ConcurrencyControlMode concurrencyControlMode)
+        public void UpsertCacheRecordTest()
         {
             DoUpdateTest(useRMW: false);
         }
@@ -381,7 +422,7 @@ namespace Tsavorite.test.ReadCacheTests
         [Category(TsavoriteKVTestCategory)]
         [Category(ReadCacheTestCategory)]
         [Category(SmokeTestCategory)]
-        public void RMWCacheRecordTest([Values] ConcurrencyControlMode concurrencyControlMode)
+        public void RMWCacheRecordTest()
         {
             DoUpdateTest(useRMW: true);
         }
@@ -390,58 +431,61 @@ namespace Tsavorite.test.ReadCacheTests
         {
             PopulateAndEvict();
             CreateChain();
-            using var session = store.NewSession<long, long, Empty, SimpleFunctions<long, long>>(new SimpleFunctions<long, long>());
+            using var session = store.NewSession<long, long, Empty, SimpleSimpleFunctions<long, long>>(new SimpleSimpleFunctions<long, long>());
+            var bContext = session.BasicContext;
 
             void doTest(long key)
             {
-                var status = session.Read(key, out var value);
-                Assert.IsTrue(status.Found, status.ToString());
+                var status = bContext.Read(key, out var value);
+                ClassicAssert.IsTrue(status.Found, status.ToString());
 
                 if (useRMW)
                 {
                     // RMW will use the readcache entry for its source and then invalidate it.
-                    status = session.RMW(key, value + valueAdd);
-                    Assert.IsTrue(status.Found && status.Record.CopyUpdated, status.ToString());
+                    status = bContext.RMW(key, value + ValueAdd);
+                    ClassicAssert.IsTrue(status.Found && status.Record.CopyUpdated, status.ToString());
 
-                    Assert.IsTrue(FindRecordInReadCache(key, out bool invalid, out _, out _));
-                    Assert.IsTrue(invalid);
+                    ClassicAssert.IsTrue(FindRecordInReadCache(key, out bool invalid, out _, out _));
+                    ClassicAssert.IsTrue(invalid);
                 }
                 else
                 {
-                    status = session.Upsert(key, value + valueAdd);
-                    Assert.IsTrue(status.Record.Created, status.ToString());
+                    status = bContext.Upsert(key, value + ValueAdd);
+                    ClassicAssert.IsTrue(status.Record.Created, status.ToString());
                 }
 
-                status = session.Read(key, out value);
-                Assert.IsTrue(status.Found, status.ToString());
-                Assert.AreEqual(key + valueAdd * 2, value);
+                status = bContext.Read(key, out value);
+                ClassicAssert.IsTrue(status.Found, status.ToString());
+                ClassicAssert.AreEqual(key + ValueAdd * 2, value);
             }
 
-            doTest(lowChainKey);
-            doTest(highChainKey);
-            doTest(midChainKey);
-            ScanReadCacheChain(new[] { lowChainKey, midChainKey, highChainKey }, evicted: false);
+            doTest(LowChainKey);
+            doTest(HighChainKey);
+            doTest(MidChainKey);
+            _ = ScanReadCacheChain([LowChainKey, MidChainKey, HighChainKey], evicted: false);
 
             store.ReadCacheEvict(store.ReadCache.BeginAddress, readCacheBelowMidChainKeyEvictionAddress);
-            ScanReadCacheChain(new[] { lowChainKey, midChainKey, highChainKey }, evicted: true);
+            _ = ScanReadCacheChain([LowChainKey, MidChainKey, HighChainKey], evicted: true);
         }
 
         [Test]
         [Category(TsavoriteKVTestCategory)]
         [Category(ReadCacheTestCategory)]
         [Category(SmokeTestCategory)]
-        public void SpliceInFromCTTTest([Values] ConcurrencyControlMode concurrencyControlMode)
+        public void SpliceInFromCTTTest()
         {
             PopulateAndEvict();
             CreateChain();
 
-            using var session = store.NewSession<long, long, Empty, SimpleFunctions<long, long>>(new SimpleFunctions<long, long>());
-            long input = 0, output = 0, key = lowChainKey - mod; // key must be in evicted region for this test
+            using var session = store.NewSession<long, long, Empty, SimpleSimpleFunctions<long, long>>(new SimpleSimpleFunctions<long, long>());
+            var bContext = session.BasicContext;
+
+            long input = 0, output = 0, key = LowChainKey - HashMod; // key must be in evicted region for this test
             ReadOptions readOptions = new() { CopyOptions = new(ReadCopyFrom.AllImmutable, ReadCopyTo.MainLog) };
 
-            var status = session.Read(ref key, ref input, ref output, ref readOptions, out _);
-            Assert.IsTrue(status.IsPending, status.ToString());
-            session.CompletePending(wait: true);
+            var status = bContext.Read(ref key, ref input, ref output, ref readOptions, out _);
+            ClassicAssert.IsTrue(status.IsPending, status.ToString());
+            _ = bContext.CompletePending(wait: true);
 
             VerifySplicedInKey(key);
         }
@@ -450,25 +494,27 @@ namespace Tsavorite.test.ReadCacheTests
         [Category(TsavoriteKVTestCategory)]
         [Category(ReadCacheTestCategory)]
         [Category(SmokeTestCategory)]
-        public void SpliceInFromUpsertTest([Values] RecordRegion recordRegion, [Values] ConcurrencyControlMode concurrencyControlMode)
+        public void SpliceInFromUpsertTest([Values] RecordRegion recordRegion)
         {
             PopulateAndEvict(recordRegion);
             CreateChain(recordRegion);
 
-            using var session = store.NewSession<long, long, Empty, SimpleFunctions<long, long>>(new SimpleFunctions<long, long>());
+            using var session = store.NewSession<long, long, Empty, SimpleSimpleFunctions<long, long>>(new SimpleSimpleFunctions<long, long>());
+            var bContext = session.BasicContext;
+
             long key = -1;
 
-            if (recordRegion == RecordRegion.Immutable || recordRegion == RecordRegion.OnDisk)
+            if (recordRegion is RecordRegion.Immutable or RecordRegion.OnDisk)
             {
-                key = spliceInExistingKey;
-                var status = session.Upsert(key, key + valueAdd);
-                Assert.IsTrue(!status.Found && status.Record.Created, status.ToString());
+                key = SpliceInExistingKey;
+                var status = bContext.Upsert(key, key + ValueAdd);
+                ClassicAssert.IsTrue(!status.Found && status.Record.Created, status.ToString());
             }
             else
             {
-                key = spliceInNewKey;
-                var status = session.Upsert(key, key + valueAdd);
-                Assert.IsTrue(!status.Found && status.Record.Created, status.ToString());
+                key = SpliceInNewKey;
+                var status = bContext.Upsert(key, key + ValueAdd);
+                ClassicAssert.IsTrue(!status.Found && status.Record.Created, status.ToString());
             }
 
             VerifySplicedInKey(key);
@@ -478,44 +524,45 @@ namespace Tsavorite.test.ReadCacheTests
         [Category(TsavoriteKVTestCategory)]
         [Category(ReadCacheTestCategory)]
         [Category(SmokeTestCategory)]
-        public void SpliceInFromRMWTest([Values] RecordRegion recordRegion, [Values] ConcurrencyControlMode concurrencyControlMode)
+        public void SpliceInFromRMWTest([Values] RecordRegion recordRegion)
         {
             PopulateAndEvict(recordRegion);
             CreateChain(recordRegion);
 
-            using var session = store.NewSession<long, long, Empty, SimpleFunctions<long, long>>(new SimpleFunctions<long, long>());
+            using var session = store.NewSession<long, long, Empty, SimpleSimpleFunctions<long, long>>(new SimpleSimpleFunctions<long, long>());
+            var bContext = session.BasicContext;
             long key = -1, output = -1;
 
-            if (recordRegion == RecordRegion.Immutable || recordRegion == RecordRegion.OnDisk)
+            if (recordRegion is RecordRegion.Immutable or RecordRegion.OnDisk)
             {
                 // Existing key
-                key = spliceInExistingKey;
-                var status = session.RMW(key, key + valueAdd);
+                key = SpliceInExistingKey;
+                var status = bContext.RMW(key, key + ValueAdd);
 
                 // If OnDisk, this used the readcache entry for its source and then invalidated it.
-                Assert.IsTrue(status.Found && status.Record.CopyUpdated, status.ToString());
+                ClassicAssert.IsTrue(status.Found && status.Record.CopyUpdated, status.ToString());
                 if (recordRegion == RecordRegion.OnDisk)
                 {
-                    Assert.IsTrue(FindRecordInReadCache(key, out bool invalid, out _, out _));
-                    Assert.IsTrue(invalid);
+                    ClassicAssert.IsTrue(FindRecordInReadCache(key, out bool invalid, out _, out _));
+                    ClassicAssert.IsTrue(invalid);
                 }
 
                 { // New key
-                    key = spliceInNewKey;
-                    status = session.RMW(key, key + valueAdd);
+                    key = SpliceInNewKey;
+                    status = bContext.RMW(key, key + ValueAdd);
 
                     // This NOTFOUND key will return PENDING because we have to trace back through the collisions.
-                    Assert.IsTrue(status.IsPending, status.ToString());
-                    session.CompletePendingWithOutputs(out var outputs, wait: true);
+                    ClassicAssert.IsTrue(status.IsPending, status.ToString());
+                    _ = bContext.CompletePendingWithOutputs(out var outputs, wait: true);
                     (status, output) = GetSinglePendingResult(outputs);
-                    Assert.IsTrue(!status.Found && status.Record.Created, status.ToString());
+                    ClassicAssert.IsTrue(!status.Found && status.Record.Created, status.ToString());
                 }
             }
             else
             {
-                key = spliceInNewKey;
-                var status = session.RMW(key, key + valueAdd);
-                Assert.IsTrue(!status.Found && status.Record.Created, status.ToString());
+                key = SpliceInNewKey;
+                var status = bContext.RMW(key, key + ValueAdd);
+                ClassicAssert.IsTrue(!status.Found && status.Record.Created, status.ToString());
             }
 
             VerifySplicedInKey(key);
@@ -525,25 +572,26 @@ namespace Tsavorite.test.ReadCacheTests
         [Category(TsavoriteKVTestCategory)]
         [Category(ReadCacheTestCategory)]
         [Category(SmokeTestCategory)]
-        public void SpliceInFromDeleteTest([Values] RecordRegion recordRegion, [Values] ConcurrencyControlMode concurrencyControlMode)
+        public void SpliceInFromDeleteTest([Values] RecordRegion recordRegion)
         {
             PopulateAndEvict(recordRegion);
             CreateChain(recordRegion);
 
-            using var session = store.NewSession<long, long, Empty, SimpleFunctions<long, long>>(new SimpleFunctions<long, long>());
+            using var session = store.NewSession<long, long, Empty, SimpleSimpleFunctions<long, long>>(new SimpleSimpleFunctions<long, long>());
+            var bContext = session.BasicContext;
             long key = -1;
 
-            if (recordRegion == RecordRegion.Immutable || recordRegion == RecordRegion.OnDisk)
+            if (recordRegion is RecordRegion.Immutable or RecordRegion.OnDisk)
             {
-                key = spliceInExistingKey;
-                var status = session.Delete(key);
-                Assert.IsTrue(!status.Found && status.Record.Created, status.ToString());
+                key = SpliceInExistingKey;
+                var status = bContext.Delete(key);
+                ClassicAssert.IsTrue(!status.Found && status.Record.Created, status.ToString());
             }
             else
             {
-                key = spliceInNewKey;
-                var status = session.Delete(key);
-                Assert.IsTrue(!status.Found && status.Record.Created, status.ToString());
+                key = SpliceInNewKey;
+                var status = bContext.Delete(key);
+                ClassicAssert.IsTrue(!status.Found && status.Record.Created, status.ToString());
             }
 
             VerifySplicedInKey(key);
@@ -553,19 +601,19 @@ namespace Tsavorite.test.ReadCacheTests
         [Category(TsavoriteKVTestCategory)]
         [Category(ReadCacheTestCategory)]
         [Category(SmokeTestCategory)]
-        public void VerifyLockCountsAfterReadCacheEvict([Values(ConcurrencyControlMode.LockTable)] ConcurrencyControlMode concurrencyControlMode)
+        public void VerifyLockCountsAfterReadCacheEvict()
         {
             PopulateAndEvict();
             CreateChain();
 
-            using var session = store.NewSession<long, long, Empty, SimpleFunctions<long, long>>(new SimpleFunctions<long, long>());
+            using var session = store.NewSession<long, long, Empty, SimpleSimpleFunctions<long, long>>(new SimpleSimpleFunctions<long, long>());
             var luContext = session.LockableUnsafeContext;
 
             var keys = new[]
             {
-                new FixedLengthLockableKeyStruct<long>(lowChainKey, LockType.Exclusive, luContext),
-                new FixedLengthLockableKeyStruct<long>(midChainKey, LockType.Shared, luContext),
-                new FixedLengthLockableKeyStruct<long>(highChainKey, LockType.Exclusive, luContext)
+                new FixedLengthLockableKeyStruct<long>(LowChainKey, LockType.Exclusive, luContext),
+                new FixedLengthLockableKeyStruct<long>(MidChainKey, LockType.Shared, luContext),
+                new FixedLengthLockableKeyStruct<long>(HighChainKey, LockType.Exclusive, luContext)
             };
 
             luContext.BeginUnsafe();
@@ -593,18 +641,18 @@ namespace Tsavorite.test.ReadCacheTests
                 foreach (var idx in LockableUnsafeContextTests.EnumActionKeyIndices(keys, LockableUnsafeContextTests.LockOperationType.Unlock))
                 {
                     ref var key = ref keys[idx];
-                    HashEntryInfo hei = new(store.comparer.GetHashCode64(ref key.Key));
+                    HashEntryInfo hei = new(store.storeFunctions.GetKeyHashCode64(ref key.Key));
                     OverflowBucketLockTableTests.PopulateHei(store, ref hei);
 
-                    var lockState = store.LockTable.GetLockState(ref key.Key, ref hei);
-                    Assert.IsTrue(lockState.IsFound);
-                    Assert.AreEqual(key.LockType == LockType.Exclusive, lockState.IsLockedExclusive);
-                    Assert.AreEqual(key.LockType != LockType.Exclusive, lockState.NumLockedShared > 0);
+                    var lockState = store.LockTable.GetLockState(ref hei);
+                    ClassicAssert.IsTrue(lockState.IsFound);
+                    ClassicAssert.AreEqual(key.LockType == LockType.Exclusive, lockState.IsLockedExclusive);
+                    ClassicAssert.AreEqual(key.LockType != LockType.Exclusive, lockState.NumLockedShared > 0);
 
                     luContext.Unlock(keys, idx, 1);
-                    lockState = store.LockTable.GetLockState(ref key.Key, ref hei);
-                    Assert.IsFalse(lockState.IsLockedExclusive);
-                    Assert.AreEqual(0, lockState.NumLockedShared);
+                    lockState = store.LockTable.GetLockState(ref hei);
+                    ClassicAssert.IsFalse(lockState.IsLockedExclusive);
+                    ClassicAssert.AreEqual(0, lockState.NumLockedShared);
                 }
                 AssertTotalLockCounts(0, 0);
             }
@@ -625,27 +673,12 @@ namespace Tsavorite.test.ReadCacheTests
 
     class LongStressChainTests
     {
-        private TsavoriteKV<long, long> store;
+        private TsavoriteKV<long, long, LongStoreFunctions, LongAllocator> store;
         private IDevice log;
-        const long valueAdd = 1_000_000_000;
+        private LongComparerModulo comparer;
+        const long ValueAdd = 1_000_000_000;
 
-        const long numKeys = 2_000;
-
-        struct LongComparerModulo : ITsavoriteEqualityComparer<long>
-        {
-            readonly HashModulo modRange;
-
-            internal LongComparerModulo(HashModulo mod) => modRange = mod;
-
-            public bool Equals(ref long k1, ref long k2) => k1 == k2;
-
-            // Force collisions to create a chain
-            public long GetHashCode64(ref long k)
-            {
-                long value = Utility.GetHashCode(k);
-                return modRange != HashModulo.NoMod ? value % (long)modRange : value;
-            }
-        }
+        const long NumKeys = 2_000;
 
         [SetUp]
         public void Setup()
@@ -663,10 +696,6 @@ namespace Tsavorite.test.ReadCacheTests
             }
             log ??= Devices.CreateLogDevice(filename, deleteOnClose: true);
 
-            // Make the main log small enough that we force the readcache
-            ReadCacheSettings readCacheSettings = new() { MemorySizeBits = 15, PageSizeBits = 9 };
-            var logSettings = new LogSettings { LogDevice = log, MemorySizeBits = 15, PageSizeBits = 10, ReadCacheSettings = readCacheSettings };
-
             HashModulo modRange = HashModulo.NoMod;
             foreach (var arg in TestContext.CurrentContext.Test.Arguments)
             {
@@ -677,8 +706,21 @@ namespace Tsavorite.test.ReadCacheTests
                 }
             }
 
-            store = new TsavoriteKV<long, long>(1L << 20, logSettings, comparer: new LongComparerModulo(modRange),
-                concurrencyControlMode: ConcurrencyControlMode.RecordIsolation);
+            comparer = new LongComparerModulo((long)modRange);
+
+            // Make the main log small enough that we force the readcache
+            store = new(new()
+            {
+                IndexSize = 1L << 26,
+                LogDevice = log,
+                MemorySize = 1L << 15,
+                PageSize = 1L << 10,
+                ReadCacheMemorySize = 1L << 15,
+                ReadCachePageSize = 1L << 9,
+                ReadCacheEnabled = true
+            }, StoreFunctions<long, long>.Create(comparer)
+                , (allocatorSettings, storeFunctions) => new(allocatorSettings, storeFunctions)
+            );
         }
 
         [TearDown]
@@ -691,7 +733,7 @@ namespace Tsavorite.test.ReadCacheTests
             DeleteDirectory(MethodTestDir);
         }
 
-        internal class RmwLongFunctions : SimpleFunctions<long, long, Empty>
+        internal class RmwLongFunctions : SimpleSessionFunctions<long, long, Empty>
         {
             /// <inheritdoc/>
             public override bool ConcurrentWriter(ref long key, ref long input, ref long src, ref long dst, ref long output, ref UpsertInfo upsertInfo, ref RecordInfo recordInfo)
@@ -731,16 +773,17 @@ namespace Tsavorite.test.ReadCacheTests
 
         unsafe void PopulateAndEvict()
         {
-            using var session = store.NewSession<long, long, Empty, SimpleFunctions<long, long, Empty>>(new SimpleFunctions<long, long, Empty>());
+            using var session = store.NewSession<long, long, Empty, SimpleSessionFunctions<long, long, Empty>>(new SimpleSessionFunctions<long, long, Empty>());
+            var bContext = session.BasicContext;
 
-            for (long ii = 0; ii < numKeys; ii++)
+            for (long ii = 0; ii < NumKeys; ii++)
             {
                 long key = ii;
-                var status = session.Upsert(ref key, ref key);
-                Assert.IsFalse(status.IsPending);
-                Assert.IsTrue(status.Record.Created, $"key {key}, status {status}");
+                var status = bContext.Upsert(ref key, ref key);
+                ClassicAssert.IsFalse(status.IsPending);
+                ClassicAssert.IsTrue(status.Record.Created, $"key {key}, status {status}");
             }
-            session.CompletePending(true);
+            _ = bContext.CompletePending(true);
             store.Log.FlushAndEvict(true);
         }
 
@@ -766,59 +809,100 @@ namespace Tsavorite.test.ReadCacheTests
             const int numIterations = 1;
             unsafe void runReadThread(int tid)
             {
-                using var session = store.NewSession<long, long, Empty, SimpleFunctions<long, long, Empty>>(new SimpleFunctions<long, long, Empty>());
+                using var session = store.NewSession<long, long, Empty, SimpleSessionFunctions<long, long, Empty>>(new SimpleSessionFunctions<long, long, Empty>());
+                var bContext = session.BasicContext;
 
-                Random rng = new(tid * 101);
                 for (var iteration = 0; iteration < numIterations; ++iteration)
                 {
-                    for (var ii = 0; ii < numKeys; ++ii)
+                    var numCompleted = 0;
+                    for (var ii = 0; ii < NumKeys; ++ii)
                     {
                         long key = ii, output = 0;
-                        var status = session.Read(ref key, ref output);
-                        bool wasPending = status.IsPending;
-                        if (wasPending)
+                        var status = bContext.Read(ref key, ref output);
+
+                        var numPending = ii - numCompleted;
+                        if (status.IsPending)
+                            ++numPending;
+                        else
                         {
-                            session.CompletePendingWithOutputs(out var completedOutputs, wait: true);
-                            (status, output) = GetSinglePendingResult(completedOutputs, out var recordMetadata);
-                            Assert.AreEqual(recordMetadata.Address == Constants.kInvalidAddress, status.Record.CopiedToReadCache, $"key {ii}: {status}");
+                            ++numCompleted;
+                            ClassicAssert.IsTrue(status.Found, $"key {key}, status {status}, wasPending {false}");
+                            ClassicAssert.AreEqual(ii, output % ValueAdd);
                         }
-                        Assert.IsTrue(status.Found, $"key {key}, status {status}, wasPending {wasPending}");
-                        Assert.AreEqual(ii, output % valueAdd);
+
+                        if (numPending > 0 && ((numPending % RcTestGlobals.PendingMod == 0) || ii == NumKeys - 1))
+                        {
+                            _ = bContext.CompletePendingWithOutputs(out var completedOutputs, wait: true);
+                            using (completedOutputs)
+                            {
+                                while (completedOutputs.Next())
+                                {
+                                    ++numCompleted;
+
+                                    status = completedOutputs.Current.Status;
+                                    output = completedOutputs.Current.Output;
+                                    key = completedOutputs.Current.Key;
+                                    ClassicAssert.AreEqual(completedOutputs.Current.RecordMetadata.Address == Constants.kInvalidAddress, status.Record.CopiedToReadCache, $"key {key}: {status}");
+                                    ClassicAssert.IsTrue(status.Found, $"key {key}, status {status}, wasPending {true}");
+                                    ClassicAssert.AreEqual(key, output % ValueAdd);
+                                }
+                            }
+                        }
                     }
+                    ClassicAssert.AreEqual(NumKeys, numCompleted, "numCompleted");
                 }
             }
 
             unsafe void runUpdateThread(int tid)
             {
                 using var session = store.NewSession<long, long, Empty, RmwLongFunctions>(new RmwLongFunctions());
+                var bContext = session.BasicContext;
 
-                Random rng = new(tid * 101);
                 for (var iteration = 0; iteration < numIterations; ++iteration)
                 {
-                    for (var ii = 0; ii < numKeys; ++ii)
+                    var numCompleted = 0;
+                    for (var ii = 0; ii < NumKeys; ++ii)
                     {
-                        long key = ii, input = ii + valueAdd * tid, output = 0;
+                        long key = ii, input = ii + ValueAdd * tid, output = 0;
                         var status = updateOp == UpdateOp.RMW
-                                        ? session.RMW(ref key, ref input, ref output)
-                                        : session.Upsert(ref key, ref input, ref input, ref output);
-                        bool wasPending = status.IsPending;
-                        if (wasPending)
-                        {
-                            Assert.AreNotEqual(UpdateOp.Upsert, updateOp, "Upsert should not go pending");
-                            session.CompletePendingWithOutputs(out var completedOutputs, wait: true);
-                            (status, output) = GetSinglePendingResult(completedOutputs);
+                                        ? bContext.RMW(ref key, ref input, ref output)
+                                        : bContext.Upsert(ref key, ref input, ref input, ref output);
 
-                            // Record may have been updated in-place if a CTT was done during the pending operation.
-                            // Assert.IsTrue(status.Record.CopyUpdated, $"Expected Record.CopyUpdated but was: {status}");
+                        var numPending = ii - numCompleted;
+                        if (status.IsPending)
+                        {
+                            ClassicAssert.AreNotEqual(UpdateOp.Upsert, updateOp, "Upsert should not go pending");
+                            ++numPending;
                         }
-                        if (updateOp == UpdateOp.RMW)   // Upsert will not try to find records below HeadAddress, but it may find them in-memory
-                            Assert.IsTrue(status.Found, $"key {key}, status {status}, wasPending {wasPending}");
-                        Assert.AreEqual(ii + valueAdd * tid, output);
+                        else
+                        {
+                            ++numCompleted;
+                            if (updateOp == UpdateOp.RMW)   // Upsert will not try to find records below HeadAddress, but it may find them in-memory
+                                ClassicAssert.IsTrue(status.Found, $"key {key}, status {status}, wasPending {false}");
+                            ClassicAssert.AreEqual(ii + ValueAdd * tid, output);
+                        }
+
+                        if (numPending > 0 && ((numPending % RcTestGlobals.PendingMod == 0) || ii == NumKeys - 1))
+                        {
+                            _ = bContext.CompletePendingWithOutputs(out var completedOutputs, wait: true);
+                            using (completedOutputs)
+                            {
+                                while (completedOutputs.Next())
+                                {
+                                    ++numCompleted;
+                                    if (updateOp == UpdateOp.RMW)   // Upsert will not try to find records below HeadAddress, but it may find them in-memory
+                                        ClassicAssert.IsTrue(completedOutputs.Current.Status.Found, $"key {completedOutputs.Current.Key}, status {completedOutputs.Current.Status}, wasPending {true}");
+                                    ClassicAssert.AreEqual(completedOutputs.Current.Key + ValueAdd * tid, completedOutputs.Current.Output);
+                                }
+                            }
+                        }
                     }
+
+                    ClassicAssert.AreEqual(NumKeys, numCompleted, "numCompleted");
                 }
             }
 
-            List<Task> tasks = new();   // Task rather than Thread for propagation of exceptions.
+            List<Task> tasks = [];   // Task rather than Thread for propagation of exceptions.
             for (int t = 1; t <= numReadThreads + numWriteThreads; t++)
             {
                 var tid = t;
@@ -827,33 +911,19 @@ namespace Tsavorite.test.ReadCacheTests
                 else
                     tasks.Add(Task.Factory.StartNew(() => runUpdateThread(tid)));
             }
-            Task.WaitAll(tasks.ToArray());
+            Task.WaitAll([.. tasks]);
         }
     }
 
     class SpanByteStressChainTests
     {
-        private TsavoriteKV<SpanByte, SpanByte> store;
+        private TsavoriteKV<SpanByte, SpanByte, SpanByteStoreFunctions, SpanByteAllocator<SpanByteStoreFunctions>> store;
         private IDevice log;
-        const long valueAdd = 1_000_000_000;
+        SpanByteComparerModulo comparer;
 
-        const long numKeys = 2_000;
+        const long ValueAdd = 1_000_000_000;
 
-        struct SpanByteComparerModulo : ITsavoriteEqualityComparer<SpanByte>
-        {
-            readonly HashModulo modRange;
-
-            internal SpanByteComparerModulo(HashModulo mod) => modRange = mod;
-
-            public readonly bool Equals(ref SpanByte k1, ref SpanByte k2) => SpanByteComparer.StaticEquals(ref k1, ref k2);
-
-            // Force collisions to create a chain
-            public long GetHashCode64(ref SpanByte k)
-            {
-                var value = SpanByteComparer.StaticGetHashCode64(ref k);
-                return modRange != HashModulo.NoMod ? value % (long)modRange : value;
-            }
-        }
+        const long NumKeys = 2_000;
 
         [SetUp]
         public void Setup()
@@ -871,10 +941,6 @@ namespace Tsavorite.test.ReadCacheTests
             }
             log ??= Devices.CreateLogDevice(filename, deleteOnClose: true);
 
-            // Make the main log small enough that we force the readcache
-            var readCacheSettings = new ReadCacheSettings { MemorySizeBits = 15, PageSizeBits = 9 };
-            var logSettings = new LogSettings { LogDevice = log, MemorySizeBits = 15, PageSizeBits = 10, ReadCacheSettings = readCacheSettings };
-
             HashModulo modRange = HashModulo.NoMod;
             foreach (var arg in TestContext.CurrentContext.Test.Arguments)
             {
@@ -885,8 +951,21 @@ namespace Tsavorite.test.ReadCacheTests
                 }
             }
 
-            store = new TsavoriteKV<SpanByte, SpanByte>(1L << 20, logSettings, comparer: new SpanByteComparerModulo(modRange),
-                concurrencyControlMode: ConcurrencyControlMode.LockTable);
+            comparer = new SpanByteComparerModulo(modRange);
+
+            // Make the main log small enough that we force the readcache
+            store = new(new()
+            {
+                IndexSize = 1L << 20,
+                LogDevice = log,
+                MemorySize = 1L << 15,
+                PageSize = 1L << 10,
+                ReadCacheMemorySize = 1L << 15,
+                ReadCachePageSize = 1L << 9,
+                ReadCacheEnabled = true
+            }, StoreFunctions<SpanByte, SpanByte>.Create(comparer, SpanByteRecordDisposer.Instance)
+            , (allocatorSettings, storeFunctions) => new(allocatorSettings, storeFunctions)
+            );
         }
 
         [TearDown]
@@ -945,25 +1024,19 @@ namespace Tsavorite.test.ReadCacheTests
         unsafe void PopulateAndEvict()
         {
             using var session = store.NewSession<SpanByte, SpanByteAndMemory, Empty, SpanByteFunctions<Empty>>(new SpanByteFunctions<Empty>());
+            var bContext = session.BasicContext;
 
             Span<byte> keyVec = stackalloc byte[sizeof(long)];
             var key = SpanByte.FromPinnedSpan(keyVec);
 
-            for (long ii = 0; ii < numKeys; ii++)
+            for (long ii = 0; ii < NumKeys; ii++)
             {
-                Assert.IsTrue(BitConverter.TryWriteBytes(keyVec, ii));
-                var status = session.Upsert(ref key, ref key);
-                Assert.IsTrue(status.Record.Created, status.ToString());
+                ClassicAssert.IsTrue(BitConverter.TryWriteBytes(keyVec, ii));
+                var status = bContext.Upsert(ref key, ref key);
+                ClassicAssert.IsTrue(status.Record.Created, status.ToString());
             }
-            session.CompletePending(true);
+            bContext.CompletePending(true);
             store.Log.FlushAndEvict(true);
-        }
-
-        static void ClearCountsOnError(ClientSession<SpanByte, SpanByte, SpanByte, SpanByteAndMemory, Empty, IFunctions<SpanByte, SpanByte, SpanByte, SpanByteAndMemory, Empty>> luContext)
-        {
-            // If we already have an exception, clear these counts so "Run" will not report them spuriously.
-            luContext.sharedLockCount = 0;
-            luContext.exclusiveLockCount = 0;
         }
 
         [Test]
@@ -987,77 +1060,131 @@ namespace Tsavorite.test.ReadCacheTests
             unsafe void runReadThread(int tid)
             {
                 using var session = store.NewSession<SpanByte, SpanByteAndMemory, Empty, SpanByteFunctions<Empty>>(new SpanByteFunctions<Empty>());
+                var bContext = session.BasicContext;
 
                 Span<byte> keyVec = stackalloc byte[sizeof(long)];
                 var key = SpanByte.FromPinnedSpan(keyVec);
 
-                Random rng = new(tid * 101);
                 for (var iteration = 0; iteration < numIterations; ++iteration)
                 {
-                    for (var ii = 0; ii < numKeys; ++ii)
+                    var numCompleted = 0;
+                    for (var ii = 0; ii < NumKeys; ++ii)
                     {
                         SpanByteAndMemory output = default;
 
-                        Assert.IsTrue(BitConverter.TryWriteBytes(keyVec, ii));
-                        var status = session.Read(ref key, ref output);
-                        bool wasPending = status.IsPending;
-                        if (wasPending)
+                        ClassicAssert.IsTrue(BitConverter.TryWriteBytes(keyVec, ii));
+                        var status = bContext.Read(ref key, ref output);
+
+                        var numPending = ii - numCompleted;
+                        if (status.IsPending)
+                            ++numPending;
+                        else
                         {
-                            session.CompletePendingWithOutputs(out var completedOutputs, wait: true);
-                            (status, output) = GetSinglePendingResult(completedOutputs, out var recordMetadata);
-                            Assert.AreEqual(recordMetadata.Address == Constants.kInvalidAddress, status.Record.CopiedToReadCache, $"key {ii}: {status}");
+                            ++numCompleted;
+
+                            ClassicAssert.IsTrue(status.Found, $"tid {tid}, key {ii}, {status}, wasPending {false}, pt 1");
+                            ClassicAssert.IsNotNull(output.Memory, $"tid {tid}, key {ii}, wasPending {false}, pt 2");
+                            long value = BitConverter.ToInt64(output.AsReadOnlySpan());
+                            ClassicAssert.AreEqual(ii, value % ValueAdd, $"tid {tid}, key {ii}, wasPending {false}, pt 3");
+                            output.Memory.Dispose();
                         }
-                        Assert.IsTrue(status.Found, $"tid {tid}, key {ii}, {status}, wasPending {wasPending}, pt 1");
 
-                        Assert.IsNotNull(output.Memory, $"tid {tid}, key {ii}, wasPending {wasPending}, pt 2");
-                        Assert.IsNotNull(output.Memory.Memory, $"tid {tid}, key {ii}, wasPending {wasPending}, pt 3");
-                        long value = BitConverter.ToInt64(output.Memory.Memory.Span);
-                        Assert.AreEqual(ii, value % valueAdd, $"tid {tid}, key {ii}, wasPending {wasPending}, pt 4");
+                        if (numPending > 0 && ((numPending % RcTestGlobals.PendingMod == 0) || ii == NumKeys - 1))
+                        {
+                            bContext.CompletePendingWithOutputs(out var completedOutputs, wait: true);
+                            using (completedOutputs)
+                            {
+                                while (completedOutputs.Next())
+                                {
+                                    ++numCompleted;
 
-                        output.Memory.Dispose();
+                                    status = completedOutputs.Current.Status;
+                                    output = completedOutputs.Current.Output;
+                                    // Note: do NOT overwrite 'key' here
+                                    long keyLong = BitConverter.ToInt64(completedOutputs.Current.Key.AsReadOnlySpan());
+
+                                    ClassicAssert.AreEqual(completedOutputs.Current.RecordMetadata.Address == Constants.kInvalidAddress, status.Record.CopiedToReadCache, $"key {keyLong}: {status}");
+
+                                    ClassicAssert.IsTrue(status.Found, $"tid {tid}, key {keyLong}, {status}, wasPending {true}, pt 1");
+                                    ClassicAssert.IsNotNull(output.Memory, $"tid {tid}, key {keyLong}, wasPending {true}, pt 2");
+                                    long value = BitConverter.ToInt64(output.AsReadOnlySpan());
+                                    ClassicAssert.AreEqual(keyLong, value % ValueAdd, $"tid {tid}, key {keyLong}, wasPending {true}, pt 3");
+                                    output.Memory.Dispose();
+                                }
+                            }
+                        }
                     }
+                    ClassicAssert.AreEqual(NumKeys, numCompleted, "numCompleted");
                 }
             }
 
             unsafe void runUpdateThread(int tid)
             {
                 using var session = store.NewSession<SpanByte, SpanByteAndMemory, Empty, SpanByteFunctions<Empty>>(new RmwSpanByteFunctions());
+                var bContext = session.BasicContext;
 
                 Span<byte> keyVec = stackalloc byte[sizeof(long)];
                 var key = SpanByte.FromPinnedSpan(keyVec);
                 Span<byte> inputVec = stackalloc byte[sizeof(long)];
                 var input = SpanByte.FromPinnedSpan(inputVec);
 
-                Random rng = new(tid * 101);
                 for (var iteration = 0; iteration < numIterations; ++iteration)
                 {
-                    for (var ii = 0; ii < numKeys; ++ii)
+                    var numCompleted = 0;
+                    for (var ii = 0; ii < NumKeys; ++ii)
                     {
                         SpanByteAndMemory output = default;
 
-                        Assert.IsTrue(BitConverter.TryWriteBytes(keyVec, ii));
-                        Assert.IsTrue(BitConverter.TryWriteBytes(inputVec, ii + valueAdd));
+                        ClassicAssert.IsTrue(BitConverter.TryWriteBytes(keyVec, ii));
+                        ClassicAssert.IsTrue(BitConverter.TryWriteBytes(inputVec, ii + ValueAdd));
                         var status = updateOp == UpdateOp.RMW
-                                        ? session.RMW(ref key, ref input, ref output)
-                                        : session.Upsert(ref key, ref input, ref input, ref output);
-                        bool wasPending = status.IsPending;
-                        if (wasPending)
+                                        ? bContext.RMW(ref key, ref input, ref output)
+                                        : bContext.Upsert(ref key, ref input, ref input, ref output);
+
+                        var numPending = ii - numCompleted;
+                        if (status.IsPending)
                         {
-                            Assert.AreNotEqual(UpdateOp.Upsert, updateOp, "Upsert should not go pending");
-                            session.CompletePendingWithOutputs(out var completedOutputs, wait: true);
-                            (status, output) = GetSinglePendingResult(completedOutputs);
-
-                            // Record may have been updated in-place if a CTT was done during the pending operation.
-                            // Assert.IsTrue(status.Record.CopyUpdated, $"Expected Record.CopyUpdated but was: {status}");
+                            ClassicAssert.AreNotEqual(UpdateOp.Upsert, updateOp, "Upsert should not go pending");
+                            ++numPending;
                         }
-                        if (updateOp == UpdateOp.RMW)   // Upsert will not try to find records below HeadAddress, but it may find them in-memory
-                            Assert.IsTrue(status.Found, $"tid {tid}, key {ii}, {status}");
+                        else
+                        {
+                            ++numCompleted;
+                            if (updateOp == UpdateOp.RMW)   // Upsert will not try to find records below HeadAddress, but it may find them in-memory
+                                ClassicAssert.IsTrue(status.Found, $"tid {tid}, key {ii}, {status}");
 
-                        long value = BitConverter.ToInt64(output.Memory.Memory.Span);
-                        Assert.AreEqual(ii + valueAdd, value, $"tid {tid}, key {ii}, wasPending {wasPending}");
+                            long value = BitConverter.ToInt64(output.AsReadOnlySpan());
+                            ClassicAssert.AreEqual(ii + ValueAdd, value, $"tid {tid}, key {ii}, wasPending {false}");
 
-                        output.Memory.Dispose();
+                            output.Memory?.Dispose();
+                        }
+
+                        if (numPending > 0 && ((numPending % RcTestGlobals.PendingMod == 0) || ii == NumKeys - 1))
+                        {
+                            bContext.CompletePendingWithOutputs(out var completedOutputs, wait: true);
+                            using (completedOutputs)
+                            {
+                                while (completedOutputs.Next())
+                                {
+                                    ++numCompleted;
+
+                                    status = completedOutputs.Current.Status;
+                                    output = completedOutputs.Current.Output;
+                                    // Note: do NOT overwrite 'key' here
+                                    long keyLong = BitConverter.ToInt64(completedOutputs.Current.Key.AsReadOnlySpan());
+
+                                    if (updateOp == UpdateOp.RMW)   // Upsert will not try to find records below HeadAddress, but it may find them in-memory
+                                        ClassicAssert.IsTrue(status.Found, $"tid {tid}, key {keyLong}, {status}");
+
+                                    long value = BitConverter.ToInt64(output.AsReadOnlySpan());
+                                    ClassicAssert.AreEqual(keyLong + ValueAdd, value, $"tid {tid}, key {keyLong}, wasPending {true}");
+
+                                    output.Memory?.Dispose();
+                                }
+                            }
+                        }
                     }
+                    ClassicAssert.AreEqual(NumKeys, numCompleted, "numCompleted");
                 }
             }
 

@@ -9,60 +9,79 @@ namespace Garnet.cluster
     internal sealed unsafe partial class MigrateSession : IDisposable
     {
         /// <summary>
-        /// Main data driver of migration task
+        /// Migrate slots main driver
         /// </summary>
         /// <returns></returns>
-        private bool MigrateSlotsDataDriver()
+        public bool MigrateSlotsDriver()
         {
-            try
             {
+                logger?.LogTrace("Initializing MainStore Iterator");
                 var storeTailAddress = clusterProvider.storeWrapper.store.Log.TailAddress;
-                MigrationKeyIterationFunctions.MainStoreMigrateSlots mainStoreIterFuncs = new(this, _sslots);
+                var bufferSize = 1 << clusterProvider.serverOptions.PageSizeBits();
+                MigrationKeyIterationFunctions.MainStoreGetKeysInSlots mainStoreGetKeysInSlots = new(this, _sslots, bufferSize: bufferSize);
 
-                // Initialize migrate buffers
-                _gcs.InitMigrateBuffer();
-                // Iterate main store
-                if (!localServerSession.BasicGarnetApi.IterateMainStore(ref mainStoreIterFuncs, storeTailAddress))
-                    return false;
-                // Flush data in client buffer
-                if (!HandleMigrateTaskResponse(_gcs.SendAndResetMigrate()))
-                    return false;
-
-                // Flush and initialize gcs buffers and offsets
-                if (!clusterProvider.serverOptions.DisableObjects)
+                logger?.LogTrace("Begin MainStore Iteration");
+                while (true)
                 {
-                    var objectStoreTailAddress = clusterProvider.storeWrapper.objectStore.Log.TailAddress;
-                    MigrationKeyIterationFunctions.ObjectStoreMigrateSlots objectStoreIterFuncs = new(this, _sslots);
+                    // Iterate main store
+                    _ = localServerSession.BasicGarnetApi.IterateMainStore(ref mainStoreGetKeysInSlots, storeTailAddress);
 
-                    // Initialize migrate buffers
-                    _gcs.InitMigrateBuffer();
-                    // Iterate object store
-                    if (!localServerSession.BasicGarnetApi.IterateObjectStore(ref objectStoreIterFuncs, objectStoreTailAddress))
+                    // If did not acquire any keys stop scanning
+                    if (_keys.IsNullOrEmpty())
+                        break;
+
+                    // Safely migrate keys to target node
+                    if (!MigrateKeys())
+                    {
+                        logger?.LogError("IOERR Migrate keys failed.");
+                        Status = MigrateState.FAIL;
                         return false;
-                    // Flush data in client buffer
-                    if (!HandleMigrateTaskResponse(_gcs.SendAndResetMigrate()))
-                        return false;
+                    }
+
+                    mainStoreGetKeysInSlots.AdvanceIterator();
+                    ClearKeys();
                 }
-            }
-            catch (Exception ex)
-            {
-                logger?.LogError(ex, "Exception at MigrateSlotsDataDriver");
-            }
-            return true;
-        }
 
-        /// <summary>
-        /// Delete local copy of keys in slot if _copyOption is set to false.
-        /// </summary>
-        public void DeleteKeysInSlot()
-        {
-            if (!_copyOption)
-                return;
-
-            ClusterManager.DeleteKeysInSlotsFromMainStore(localServerSession.BasicGarnetApi, _sslots);
+                // Signal target transmission completed and log stats for main store after migration completes
+                if (!HandleMigrateTaskResponse(_gcs.CompleteMigrate(_sourceNodeId, _replaceOption, isMainStore: true)))
+                    return false;
+            }
 
             if (!clusterProvider.serverOptions.DisableObjects)
-                ClusterManager.DeleteKeysInSlotsFromObjectStore(localServerSession.BasicGarnetApi, _sslots);
+            {
+                logger?.LogTrace("Initializing ObjectStore Iterator");
+                var objectStoreTailAddress = clusterProvider.storeWrapper.objectStore.Log.TailAddress;
+                var objectBufferSize = 1 << clusterProvider.serverOptions.ObjectStorePageSizeBits();
+                MigrationKeyIterationFunctions.ObjectStoreGetKeysInSlots objectStoreGetKeysInSlots = new(this, _sslots, bufferSize: objectBufferSize);
+
+                logger?.LogTrace("Begin ObjectStore Iteration");
+                while (true)
+                {
+                    // Iterate object store
+                    _ = localServerSession.BasicGarnetApi.IterateObjectStore(ref objectStoreGetKeysInSlots, objectStoreTailAddress);
+
+                    // If did not acquire any keys stop scanning
+                    if (_keys.IsNullOrEmpty())
+                        break;
+
+                    // Safely migrate keys to target node
+                    if (!MigrateKeys())
+                    {
+                        logger?.LogError("IOERR Migrate keys failed.");
+                        Status = MigrateState.FAIL;
+                        return false;
+                    }
+
+                    objectStoreGetKeysInSlots.AdvanceIterator();
+                    ClearKeys();
+                }
+
+                // Signal target transmission completed and log stats for object store after migration completes
+                if (!HandleMigrateTaskResponse(_gcs.CompleteMigrate(_sourceNodeId, _replaceOption, isMainStore: false)))
+                    return false;
+            }
+
+            return true;
         }
     }
 }

@@ -2,7 +2,6 @@
 // Licensed under the MIT license.
 
 using System;
-using System.Buffers.Text;
 using System.Collections.Generic;
 using System.Diagnostics;
 using System.Globalization;
@@ -12,6 +11,9 @@ using Tsavorite.core;
 
 namespace Garnet.server
 {
+    using ObjectStoreAllocator = GenericAllocator<byte[], IGarnetObject, StoreFunctions<byte[], IGarnetObject, ByteArrayKeyComparer, DefaultRecordDisposer<byte[], IGarnetObject>>>;
+    using ObjectStoreFunctions = StoreFunctions<byte[], IGarnetObject, ByteArrayKeyComparer, DefaultRecordDisposer<byte[], IGarnetObject>>;
+
     sealed partial class StorageSession : IDisposable
     {
 
@@ -26,25 +28,39 @@ namespace Garnet.server
         /// <param name="objectStoreContext"></param>
         /// <returns></returns>
         public unsafe GarnetStatus SortedSetAdd<TObjectContext>(ArgSlice key, ArgSlice score, ArgSlice member, out int zaddCount, ref TObjectContext objectStoreContext)
-            where TObjectContext : ITsavoriteContext<byte[], IGarnetObject, SpanByte, GarnetObjectStoreOutput, long>
+            where TObjectContext : ITsavoriteContext<byte[], IGarnetObject, ObjectInput, GarnetObjectStoreOutput, long, ObjectSessionFunctions, ObjectStoreFunctions, ObjectStoreAllocator>
         {
             zaddCount = 0;
             if (key.Length == 0)
                 return GarnetStatus.OK;
 
-            var input = scratchBufferManager.FormatScratchAsResp(ObjectInputHeader.Size, score, member);
+            // Prepare the parse state
+            var parseState = new SessionParseState();
+            ArgSlice[] parseStateBuffer = default;
+            parseState.InitializeWithArguments(ref parseStateBuffer, score, member);
 
-            // Prepare header in input buffer
-            var rmwInput = (ObjectInputHeader*)input.ptr;
-            rmwInput->header.type = GarnetObjectType.SortedSet;
-            rmwInput->header.SortedSetOp = SortedSetOperation.ZADD;
-            rmwInput->count = 1;
-            rmwInput->done = 0;
+            // Prepare the input
+            var input = new ObjectInput
+            {
+                header = new RespInputHeader
+                {
+                    type = GarnetObjectType.SortedSet,
+                    SortedSetOp = SortedSetOperation.ZADD,
+                },
+                parseState = parseState,
+                parseStateStartIdx = 0,
+            };
 
-            RMWObjectStoreOperation(key.ToArray(), input, out var output, ref objectStoreContext);
+            var outputFooter = new GarnetObjectStoreOutput { spanByteAndMemory = new SpanByteAndMemory(null) };
 
-            zaddCount = output.opsDone;
-            return GarnetStatus.OK;
+            var status = RMWObjectStoreOperationWithOutput(key.ToArray(), ref input, ref objectStoreContext, ref outputFooter);
+
+            if (status == GarnetStatus.OK)
+            {
+                zaddCount = TryProcessRespSimple64IntOutput(outputFooter, out var value) ? (int)value : default;
+            }
+
+            return status;
         }
 
         /// <summary>
@@ -58,32 +74,45 @@ namespace Garnet.server
         /// <param name="objectStoreContext"></param>
         /// <returns></returns>
         public unsafe GarnetStatus SortedSetAdd<TObjectContext>(ArgSlice key, (ArgSlice score, ArgSlice member)[] inputs, out int zaddCount, ref TObjectContext objectStoreContext)
-            where TObjectContext : ITsavoriteContext<byte[], IGarnetObject, SpanByte, GarnetObjectStoreOutput, long>
+            where TObjectContext : ITsavoriteContext<byte[], IGarnetObject, ObjectInput, GarnetObjectStoreOutput, long, ObjectSessionFunctions, ObjectStoreFunctions, ObjectStoreAllocator>
         {
             zaddCount = 0;
 
             if (inputs.Length == 0 || key.Length == 0)
                 return GarnetStatus.OK;
 
-            // Prepare header in buffer
-            var rmwInput = (ObjectInputHeader*)scratchBufferManager.CreateArgSlice(ObjectInputHeader.Size).ptr;
-            rmwInput->header.type = GarnetObjectType.SortedSet;
-            rmwInput->header.SortedSetOp = SortedSetOperation.ZADD;
-            rmwInput->count = inputs.Length;
-            rmwInput->done = 0;
+            var parseState = new SessionParseState();
+            ArgSlice[] parseStateBuffer = default;
+            parseState.Initialize(ref parseStateBuffer, inputs.Length * 2);
 
-            int inputLength = sizeof(ObjectInputHeader);
-            foreach (var (score, member) in inputs)
+            for (var i = 0; i < inputs.Length; i++)
             {
-                var tmp = scratchBufferManager.FormatScratchAsResp(0, score, member);
-                inputLength += tmp.Length;
+                parseStateBuffer[2 * i] = inputs[i].score;
+                parseStateBuffer[(2 * i) + 1] = inputs[i].member;
             }
-            var input = scratchBufferManager.GetSliceFromTail(inputLength);
 
-            RMWObjectStoreOperation(key.ToArray(), input, out var output, ref objectStoreContext);
+            // Prepare the input
+            var input = new ObjectInput
+            {
+                header = new RespInputHeader
+                {
+                    type = GarnetObjectType.SortedSet,
+                    SortedSetOp = SortedSetOperation.ZADD,
+                },
+                parseState = parseState,
+                parseStateStartIdx = 0,
+            };
 
-            zaddCount = output.opsDone;
-            return GarnetStatus.OK;
+            var outputFooter = new GarnetObjectStoreOutput { spanByteAndMemory = new SpanByteAndMemory(null) };
+
+            var status = RMWObjectStoreOperationWithOutput(key.ToArray(), ref input, ref objectStoreContext, ref outputFooter);
+
+            if (status == GarnetStatus.OK)
+            {
+                zaddCount = TryProcessRespSimple64IntOutput(outputFooter, out var value) ? (int)value : default;
+            }
+
+            return status;
         }
 
         /// <summary>
@@ -96,27 +125,38 @@ namespace Garnet.server
         /// <param name="zremCount"></param>
         /// <param name="objectStoreContext"></param>
         /// <returns></returns>
-        public unsafe GarnetStatus SortedSetRemove<TObjectContext>(byte[] key, ArgSlice member, out int zremCount, ref TObjectContext objectStoreContext)
-            where TObjectContext : ITsavoriteContext<byte[], IGarnetObject, SpanByte, GarnetObjectStoreOutput, long>
+        public unsafe GarnetStatus SortedSetRemove<TObjectContext>(byte[] key, ArgSlice member, out int zremCount,
+            ref TObjectContext objectStoreContext)
+            where TObjectContext : ITsavoriteContext<byte[], IGarnetObject, ObjectInput, GarnetObjectStoreOutput, long,
+                ObjectSessionFunctions, ObjectStoreFunctions, ObjectStoreAllocator>
         {
             zremCount = 0;
 
             if (key.Length == 0)
                 return GarnetStatus.OK;
 
-            var _inputSlice = scratchBufferManager.FormatScratchAsResp(ObjectInputHeader.Size, member);
+            // Prepare the parse state
+            var parseState = new SessionParseState();
+            ArgSlice[] parseStateBuffer = default;
 
-            // Prepare header in input buffer
-            var rmwInput = (ObjectInputHeader*)_inputSlice.ptr;
-            rmwInput->header.type = GarnetObjectType.SortedSet;
-            rmwInput->header.SortedSetOp = SortedSetOperation.ZREM;
-            rmwInput->count = 1;
-            rmwInput->done = 0;
+            parseState.InitializeWithArguments(ref parseStateBuffer, member);
 
-            RMWObjectStoreOperation(key, _inputSlice, out var output, ref objectStoreContext);
+            // Prepare the input
+            var input = new ObjectInput
+            {
+                header = new RespInputHeader
+                {
+                    type = GarnetObjectType.SortedSet,
+                    SortedSetOp = SortedSetOperation.ZREM,
+                },
+                parseState = parseState,
+                parseStateStartIdx = 0,
+            };
 
-            zremCount = output.opsDone;
-            return GarnetStatus.OK;
+            var status = RMWObjectStoreOperation(key, ref input, out var output, ref objectStoreContext);
+
+            zremCount = output.result1;
+            return status;
         }
 
         /// <summary>
@@ -130,32 +170,38 @@ namespace Garnet.server
         /// <param name="objectStoreContext"></param>
         /// <returns></returns>
         public unsafe GarnetStatus SortedSetRemove<TObjectContext>(byte[] key, ArgSlice[] members, out int zremCount, ref TObjectContext objectStoreContext)
-           where TObjectContext : ITsavoriteContext<byte[], IGarnetObject, SpanByte, GarnetObjectStoreOutput, long>
+           where TObjectContext : ITsavoriteContext<byte[], IGarnetObject, ObjectInput, GarnetObjectStoreOutput, long, ObjectSessionFunctions, ObjectStoreFunctions, ObjectStoreAllocator>
         {
             zremCount = 0;
 
             if (key.Length == 0 || members.Length == 0)
                 return GarnetStatus.OK;
 
-            // Prepare header in input buffer
-            var rmwInput = (ObjectInputHeader*)scratchBufferManager.CreateArgSlice(ObjectInputHeader.Size).ptr;
-            rmwInput->header.type = GarnetObjectType.SortedSet;
-            rmwInput->header.SortedSetOp = SortedSetOperation.ZREM;
-            rmwInput->count = members.Length;
-            rmwInput->done = 0;
+            var parseState = new SessionParseState();
+            ArgSlice[] parseStateBuffer = default;
+            parseState.Initialize(ref parseStateBuffer, members.Length);
 
-            var inputLength = sizeof(ObjectInputHeader);
-            foreach (var member in members)
+            for (var i = 0; i < members.Length; i++)
             {
-                var tmp = scratchBufferManager.FormatScratchAsResp(0, member);
-                inputLength += tmp.Length;
+                parseStateBuffer[i] = members[i];
             }
-            var input = scratchBufferManager.GetSliceFromTail(inputLength);
 
-            RMWObjectStoreOperation(key, input, out var output, ref objectStoreContext);
+            // Prepare the input
+            var input = new ObjectInput
+            {
+                header = new RespInputHeader
+                {
+                    type = GarnetObjectType.SortedSet,
+                    SortedSetOp = SortedSetOperation.ZREM,
+                },
+                parseState = parseState,
+                parseStateStartIdx = 0,
+            };
 
-            zremCount = output.opsDone;
-            return GarnetStatus.OK;
+            var status = RMWObjectStoreOperation(key, ref input, out var output, ref objectStoreContext);
+
+            zremCount = output.result1;
+            return status;
         }
 
         /// <summary>
@@ -169,7 +215,7 @@ namespace Garnet.server
         /// <param name="objectStoreContext"></param>
         /// <returns></returns>
         public unsafe GarnetStatus SortedSetRemoveRangeByLex<TObjectContext>(ArgSlice key, string min, string max, out int countRemoved, ref TObjectContext objectStoreContext)
-            where TObjectContext : ITsavoriteContext<byte[], IGarnetObject, SpanByte, GarnetObjectStoreOutput, long>
+            where TObjectContext : ITsavoriteContext<byte[], IGarnetObject, ObjectInput, GarnetObjectStoreOutput, long, ObjectSessionFunctions, ObjectStoreFunctions, ObjectStoreAllocator>
         {
             countRemoved = 0;
 
@@ -179,27 +225,37 @@ namespace Garnet.server
             var minBytes = Encoding.ASCII.GetBytes(min);
             var maxBytes = Encoding.ASCII.GetBytes(max);
 
+            GarnetStatus status;
             fixed (byte* ptr = minBytes)
             {
                 fixed (byte* ptr2 = maxBytes)
                 {
+                    // Prepare the parse state
                     var minArgSlice = new ArgSlice(ptr, minBytes.Length);
                     var maxArgSlice = new ArgSlice(ptr2, maxBytes.Length);
-                    var _inputSlice = scratchBufferManager.FormatScratchAsResp(ObjectInputHeader.Size, minArgSlice, maxArgSlice);
 
-                    // Prepare header in input buffer
-                    var rmwInput = (ObjectInputHeader*)_inputSlice.ptr;
-                    rmwInput->header.type = GarnetObjectType.SortedSet;
-                    rmwInput->header.SortedSetOp = SortedSetOperation.ZREMRANGEBYLEX;
-                    rmwInput->count = 3;
-                    rmwInput->done = 0;
+                    var parseState = new SessionParseState();
+                    ArgSlice[] parseStateBuffer = default;
+                    parseState.InitializeWithArguments(ref parseStateBuffer, minArgSlice, maxArgSlice);
 
-                    RMWObjectStoreOperation(key.ToArray(), _inputSlice, out var output, ref objectStoreContext);
-                    countRemoved = output.opsDone;
+                    // Prepare the input
+                    var input = new ObjectInput
+                    {
+                        header = new RespInputHeader
+                        {
+                            type = GarnetObjectType.SortedSet,
+                            SortedSetOp = SortedSetOperation.ZREMRANGEBYLEX,
+                        },
+                        parseState = parseState,
+                        parseStateStartIdx = 0,
+                    };
+
+                    status = RMWObjectStoreOperation(key.ToArray(), ref input, out var output, ref objectStoreContext);
+                    countRemoved = output.result1;
                 }
             }
 
-            return GarnetStatus.OK;
+            return status;
         }
 
         /// <summary>
@@ -213,7 +269,7 @@ namespace Garnet.server
         /// <param name="objectStoreContext"></param>
         /// <returns></returns>
         public unsafe GarnetStatus SortedSetRemoveRangeByScore<TObjectContext>(ArgSlice key, string min, string max, out int countRemoved, ref TObjectContext objectStoreContext)
-            where TObjectContext : ITsavoriteContext<byte[], IGarnetObject, SpanByte, GarnetObjectStoreOutput, long>
+            where TObjectContext : ITsavoriteContext<byte[], IGarnetObject, ObjectInput, GarnetObjectStoreOutput, long, ObjectSessionFunctions, ObjectStoreFunctions, ObjectStoreAllocator>
         {
             countRemoved = 0;
 
@@ -223,27 +279,43 @@ namespace Garnet.server
             var minBytes = Encoding.ASCII.GetBytes(min);
             var maxBytes = Encoding.ASCII.GetBytes(max);
 
+            GarnetStatus status;
             fixed (byte* ptr = minBytes)
             {
                 fixed (byte* ptr2 = maxBytes)
                 {
+                    // Prepare the parse state
                     var minArgSlice = new ArgSlice(ptr, minBytes.Length);
                     var maxArgSlice = new ArgSlice(ptr2, maxBytes.Length);
-                    var _inputSlice = scratchBufferManager.FormatScratchAsResp(ObjectInputHeader.Size, minArgSlice, maxArgSlice);
 
-                    // Prepare header in input buffer
-                    var rmwInput = (ObjectInputHeader*)_inputSlice.ptr;
-                    rmwInput->header.type = GarnetObjectType.SortedSet;
-                    rmwInput->header.SortedSetOp = SortedSetOperation.ZREMRANGEBYSCORE;
-                    rmwInput->count = 3;
-                    rmwInput->done = 0;
+                    var parseState = new SessionParseState();
+                    ArgSlice[] parseStateBuffer = default;
+                    parseState.InitializeWithArguments(ref parseStateBuffer, minArgSlice, maxArgSlice);
 
-                    RMWObjectStoreOperation(key.ToArray(), _inputSlice, out var output, ref objectStoreContext);
-                    countRemoved = output.opsDone;
+                    // Prepare the input
+                    var input = new ObjectInput
+                    {
+                        header = new RespInputHeader
+                        {
+                            type = GarnetObjectType.SortedSet,
+                            SortedSetOp = SortedSetOperation.ZREMRANGEBYSCORE,
+                        },
+                        parseState = parseState,
+                        parseStateStartIdx = 0,
+                    };
+
+                    var outputFooter = new GarnetObjectStoreOutput { spanByteAndMemory = new SpanByteAndMemory(null) };
+
+                    status = RMWObjectStoreOperationWithOutput(key.ToArray(), ref input, ref objectStoreContext, ref outputFooter);
+
+                    if (status == GarnetStatus.OK)
+                    {
+                        countRemoved = TryProcessRespSimple64IntOutput(outputFooter, out var value) ? (int)value : default;
+                    }
                 }
             }
 
-            return GarnetStatus.OK;
+            return status;
         }
 
         /// <summary>
@@ -257,7 +329,7 @@ namespace Garnet.server
         /// <param name="objectStoreContext"></param>
         /// <returns></returns>
         public unsafe GarnetStatus SortedSetRemoveRangeByRank<TObjectContext>(ArgSlice key, int start, int stop, out int countRemoved, ref TObjectContext objectStoreContext)
-            where TObjectContext : ITsavoriteContext<byte[], IGarnetObject, SpanByte, GarnetObjectStoreOutput, long>
+            where TObjectContext : ITsavoriteContext<byte[], IGarnetObject, ObjectInput, GarnetObjectStoreOutput, long, ObjectSessionFunctions, ObjectStoreFunctions, ObjectStoreAllocator>
         {
             countRemoved = 0;
 
@@ -267,27 +339,43 @@ namespace Garnet.server
             var startBytes = Encoding.ASCII.GetBytes(start.ToString());
             var stopBytes = Encoding.ASCII.GetBytes(stop.ToString());
 
+            GarnetStatus status;
             fixed (byte* ptr = startBytes)
             {
                 fixed (byte* ptr2 = stopBytes)
                 {
+                    // Prepare the parse state
                     var startArgSlice = new ArgSlice(ptr, startBytes.Length);
                     var stopArgSlice = new ArgSlice(ptr2, stopBytes.Length);
-                    var _inputSlice = scratchBufferManager.FormatScratchAsResp(ObjectInputHeader.Size, startArgSlice, stopArgSlice);
 
-                    // Prepare header in input buffer
-                    var rmwInput = (ObjectInputHeader*)_inputSlice.ptr;
-                    rmwInput->header.type = GarnetObjectType.SortedSet;
-                    rmwInput->header.SortedSetOp = SortedSetOperation.ZREMRANGEBYRANK;
-                    rmwInput->count = 3;
-                    rmwInput->done = 0;
+                    var parseState = new SessionParseState();
+                    ArgSlice[] parseStateBuffer = default;
+                    parseState.InitializeWithArguments(ref parseStateBuffer, startArgSlice, stopArgSlice);
 
-                    RMWObjectStoreOperation(key.ToArray(), _inputSlice, out var output, ref objectStoreContext);
-                    countRemoved = output.opsDone;
+                    // Prepare the input
+                    var input = new ObjectInput
+                    {
+                        header = new RespInputHeader
+                        {
+                            type = GarnetObjectType.SortedSet,
+                            SortedSetOp = SortedSetOperation.ZREMRANGEBYRANK,
+                        },
+                        parseState = parseState,
+                        parseStateStartIdx = 0,
+                    };
+
+                    var outputFooter = new GarnetObjectStoreOutput { spanByteAndMemory = new SpanByteAndMemory(null) };
+
+                    status = RMWObjectStoreOperationWithOutput(key.ToArray(), ref input, ref objectStoreContext, ref outputFooter);
+
+                    if (status == GarnetStatus.OK)
+                    {
+                        countRemoved = TryProcessRespSimple64IntOutput(outputFooter, out var value) ? (int)value : default;
+                    }
                 }
             }
 
-            return GarnetStatus.OK;
+            return status;
         }
 
         /// <summary>
@@ -300,29 +388,31 @@ namespace Garnet.server
         /// <param name="pairs"></param>
         /// <param name="objectStoreContext"></param>
         /// <returns></returns>
-        public unsafe GarnetStatus SortedSetPop<TObjectContext>(ArgSlice key, int count, bool lowScoresFirst, out (ArgSlice score, ArgSlice member)[] pairs, ref TObjectContext objectStoreContext)
-                where TObjectContext : ITsavoriteContext<byte[], IGarnetObject, SpanByte, GarnetObjectStoreOutput, long>
+        public unsafe GarnetStatus SortedSetPop<TObjectContext>(ArgSlice key, int count, bool lowScoresFirst, out (ArgSlice member, ArgSlice score)[] pairs, ref TObjectContext objectStoreContext)
+                where TObjectContext : ITsavoriteContext<byte[], IGarnetObject, ObjectInput, GarnetObjectStoreOutput, long, ObjectSessionFunctions, ObjectStoreFunctions, ObjectStoreAllocator>
         {
             pairs = default;
             if (key.Length == 0)
                 return GarnetStatus.OK;
 
-            // Prepare header in input buffer
-            var input = scratchBufferManager.FormatScratchAsResp(ObjectInputHeader.Size, key);
-
-            var inputPtr = (ObjectInputHeader*)input.ptr;
-            inputPtr->header.type = GarnetObjectType.SortedSet;
-            inputPtr->header.SortedSetOp = lowScoresFirst ? SortedSetOperation.ZPOPMIN : SortedSetOperation.ZPOPMAX;
-            inputPtr->count = count;
-            inputPtr->done = 0;
+            // Prepare the input
+            var input = new ObjectInput
+            {
+                header = new RespInputHeader
+                {
+                    type = GarnetObjectType.SortedSet,
+                    SortedSetOp = lowScoresFirst ? SortedSetOperation.ZPOPMIN : SortedSetOperation.ZPOPMAX,
+                },
+                arg1 = count,
+            };
 
             var outputFooter = new GarnetObjectStoreOutput { spanByteAndMemory = new SpanByteAndMemory(null) };
 
-            var status = RMWObjectStoreOperationWithOutput(key.ToArray(), input, ref objectStoreContext, ref outputFooter);
+            var status = RMWObjectStoreOperationWithOutput(key.ToArray(), ref input, ref objectStoreContext, ref outputFooter);
 
             //process output
-            //if (status == GarnetStatus.OK)
-            var npairs = ProcessRespArrayOutput(outputFooter, out string error);
+            if (status == GarnetStatus.OK)
+                pairs = ProcessRespArrayOutputAsPairs(outputFooter, out _);
 
             return status;
         }
@@ -340,7 +430,7 @@ namespace Garnet.server
         /// <param name="objectStoreContext"></param>
         /// <returns></returns>
         public unsafe GarnetStatus SortedSetIncrement<TObjectContext>(ArgSlice key, double increment, ArgSlice member, out double newScore, ref TObjectContext objectStoreContext)
-                where TObjectContext : ITsavoriteContext<byte[], IGarnetObject, SpanByte, GarnetObjectStoreOutput, long>
+                where TObjectContext : ITsavoriteContext<byte[], IGarnetObject, ObjectInput, GarnetObjectStoreOutput, long, ObjectSessionFunctions, ObjectStoreFunctions, ObjectStoreAllocator>
         {
             newScore = 0;
 
@@ -349,35 +439,44 @@ namespace Garnet.server
 
             var incrementBytes = Encoding.ASCII.GetBytes(increment.ToString(CultureInfo.InvariantCulture));
 
+            GarnetStatus status;
             fixed (byte* ptr = incrementBytes)
             {
+                // Prepare the parse state
                 var incrementArgSlice = new ArgSlice(ptr, incrementBytes.Length);
-                var _inputSlice = scratchBufferManager.FormatScratchAsResp(ObjectInputHeader.Size, incrementArgSlice, member);
 
-                // Prepare header in input buffer
-                var rmwInput = (ObjectInputHeader*)_inputSlice.ptr;
-                rmwInput->header.type = GarnetObjectType.SortedSet;
-                rmwInput->header.SortedSetOp = SortedSetOperation.ZINCRBY;
-                rmwInput->count = 3;
-                rmwInput->done = 0;
+                var parseState = new SessionParseState();
+                ArgSlice[] parseStateBuffer = default;
+                parseState.InitializeWithArguments(ref parseStateBuffer, incrementArgSlice, member);
+
+                // Prepare the input
+                var input = new ObjectInput
+                {
+                    header = new RespInputHeader
+                    {
+                        type = GarnetObjectType.SortedSet,
+                        SortedSetOp = SortedSetOperation.ZINCRBY,
+                    },
+                    parseState = parseState,
+                    parseStateStartIdx = 0,
+                };
 
                 var outputFooter = new GarnetObjectStoreOutput { spanByteAndMemory = new SpanByteAndMemory(null) };
-                var status = RMWObjectStoreOperationWithOutput(key.ToArray(), _inputSlice, ref objectStoreContext, ref outputFooter);
+                status = RMWObjectStoreOperationWithOutput(key.ToArray(), ref input, ref objectStoreContext, ref outputFooter);
 
-                //Process output
-                string error = default;
+                // Process output
                 if (status == GarnetStatus.OK)
                 {
-                    var result = ProcessRespArrayOutput(outputFooter, out error);
+                    var result = ProcessRespArrayOutput(outputFooter, out var error);
                     if (error == default)
                     {
                         // get the new score
-                        _ = Utf8Parser.TryParse(result[0].ReadOnlySpan, out newScore, out _, default);
+                        _ = NumUtils.TryParse(result[0].ReadOnlySpan, out newScore);
                     }
                 }
             }
 
-            return GarnetStatus.OK;
+            return status;
         }
 
         /// <summary>
@@ -389,25 +488,27 @@ namespace Garnet.server
         /// <param name="objectStoreContext"></param>
         /// <returns></returns>
         public unsafe GarnetStatus SortedSetLength<TObjectContext>(ArgSlice key, out int zcardCount, ref TObjectContext objectStoreContext)
-            where TObjectContext : ITsavoriteContext<byte[], IGarnetObject, SpanByte, GarnetObjectStoreOutput, long>
+            where TObjectContext : ITsavoriteContext<byte[], IGarnetObject, ObjectInput, GarnetObjectStoreOutput, long, ObjectSessionFunctions, ObjectStoreFunctions, ObjectStoreAllocator>
         {
             zcardCount = 0;
 
             if (key.Length == 0)
                 return GarnetStatus.OK;
 
-            var input = scratchBufferManager.FormatScratchAsResp(ObjectInputHeader.Size, key);
-            // Prepare header in input buffer
-            var rmwInput = (ObjectInputHeader*)input.ptr;
-            rmwInput->header.type = GarnetObjectType.SortedSet;
-            rmwInput->header.SortedSetOp = SortedSetOperation.ZCARD;
-            rmwInput->count = 1;
-            rmwInput->done = 0;
+            // Prepare the input
+            var input = new ObjectInput
+            {
+                header = new RespInputHeader
+                {
+                    type = GarnetObjectType.SortedSet,
+                    SortedSetOp = SortedSetOperation.ZCARD,
+                },
+            };
 
-            ReadObjectStoreOperation(key.ToArray(), input, out ObjectOutputHeader output, ref objectStoreContext);
+            var status = ReadObjectStoreOperation(key.ToArray(), ref input, out var output, ref objectStoreContext);
 
-            zcardCount = output.opsDone;
-            return GarnetStatus.OK;
+            zcardCount = output.result1;
+            return status;
         }
 
         /// <summary>
@@ -428,7 +529,7 @@ namespace Garnet.server
         /// <param name="limit"></param>
         /// <returns></returns>
         public unsafe GarnetStatus SortedSetRange<TObjectContext>(ArgSlice key, ArgSlice min, ArgSlice max, SortedSetOrderOperation sortedSetOrderOperation, ref TObjectContext objectContext, out ArgSlice[] elements, out string error, bool withScores = false, bool reverse = false, (string, int) limit = default)
-            where TObjectContext : ITsavoriteContext<byte[], IGarnetObject, SpanByte, GarnetObjectStoreOutput, long>
+            where TObjectContext : ITsavoriteContext<byte[], IGarnetObject, ObjectInput, GarnetObjectStoreOutput, long, ObjectSessionFunctions, ObjectStoreFunctions, ObjectStoreAllocator>
         {
             elements = default;
             error = default;
@@ -437,7 +538,7 @@ namespace Garnet.server
             if (min.Length == 0 || max.Length == 0)
             {
                 //error in arguments
-                error = "Missins required min and max parameters";
+                error = "Missing required min and max parameters";
                 return GarnetStatus.NOTFOUND;
             }
 
@@ -460,73 +561,75 @@ namespace Garnet.server
                     break;
             }
 
-            // Prepare header in input buffer
-            var inputPtr = (ObjectInputHeader*)scratchBufferManager.CreateArgSlice(ObjectInputHeader.Size).ptr;
-            inputPtr->header.SortedSetOp = sortedOperation;
-            inputPtr->header.type = GarnetObjectType.SortedSet;
-            inputPtr->count = 2 + (operation != default ? 1 : 0) + (sortedOperation != SortedSetOperation.ZREVRANGE && reverse ? 1 : 0) + (limit != default ? 3 : 0);
-            inputPtr->done = 0;
+            // Prepare the parse state
+            var parseState = new SessionParseState();
+            ArgSlice[] parseStateBuffer = default;
 
-            var inputLength = sizeof(ObjectInputHeader);
+            var arguments = new List<ArgSlice> { min, max };
 
-            // min and max parameters
-            var tmp = scratchBufferManager.FormatScratchAsResp(0, min, max);
-            inputLength += tmp.Length;
-
-            //operation order
-            if (operation != default)
+            // Operation order
+            if (!operation.IsEmpty)
             {
                 fixed (byte* ptrOp = operation)
                 {
-                    tmp = scratchBufferManager.FormatScratchAsResp(0, new ArgSlice(ptrOp, operation.Length));
+                    arguments.Add(new ArgSlice(ptrOp, operation.Length));
                 }
-                inputLength += tmp.Length;
             }
 
-            //reverse
+            // Reverse
             if (sortedOperation != SortedSetOperation.ZREVRANGE && reverse)
             {
-                ReadOnlySpan<byte> reverseBytes = "REV"u8;
+                var reverseBytes = "REV"u8;
                 fixed (byte* ptrOp = reverseBytes)
                 {
-                    tmp = scratchBufferManager.FormatScratchAsResp(0, new ArgSlice(ptrOp, reverseBytes.Length));
+                    arguments.Add(new ArgSlice(ptrOp, reverseBytes.Length));
                 }
-                inputLength += tmp.Length;
             }
 
-            //limit parameter
+            // Limit parameter
             if (limit != default && (sortedSetOrderOperation == SortedSetOrderOperation.ByScore || sortedSetOrderOperation == SortedSetOrderOperation.ByLex))
             {
-                ReadOnlySpan<byte> limitBytes = "LIMIT"u8;
+                var limitBytes = "LIMIT"u8;
                 fixed (byte* ptrOp = limitBytes)
                 {
-                    tmp = scratchBufferManager.FormatScratchAsResp(0, new ArgSlice(ptrOp, limitBytes.Length));
+                    arguments.Add(new ArgSlice(ptrOp, limitBytes.Length));
                 }
-                inputLength += tmp.Length;
 
-                //offset
+                // Offset
                 var limitOffset = Encoding.ASCII.GetBytes(limit.Item1);
                 fixed (byte* ptrOp = limitOffset)
                 {
-                    tmp = scratchBufferManager.FormatScratchAsResp(0, new ArgSlice(ptrOp, limitOffset.Length));
-                    inputLength += tmp.Length;
+                    arguments.Add(new ArgSlice(ptrOp, limitOffset.Length));
                 }
 
-                //count
+                // Count
                 var limitCountLength = NumUtils.NumDigitsInLong(limit.Item2);
                 var limitCountBytes = new byte[limitCountLength];
                 fixed (byte* ptrCount = limitCountBytes)
                 {
-                    byte* ptr = (byte*)ptrCount;
+                    var ptr = ptrCount;
                     NumUtils.IntToBytes(limit.Item2, limitCountLength, ref ptr);
-                    tmp = scratchBufferManager.FormatScratchAsResp(0, new ArgSlice(ptrCount, limitCountLength));
-                    inputLength += tmp.Length;
+                    arguments.Add(new ArgSlice(ptrCount, limitCountLength));
                 }
             }
 
-            var input = scratchBufferManager.GetSliceFromTail(inputLength);
+            parseState.InitializeWithArguments(ref parseStateBuffer, [.. arguments]);
+
+            // Prepare the input
+            var input = new ObjectInput
+            {
+                header = new RespInputHeader
+                {
+                    type = GarnetObjectType.SortedSet,
+                    SortedSetOp = sortedOperation,
+                },
+                arg1 = 2, // Default RESP server protocol version
+                parseState = parseState,
+                parseStateStartIdx = 0,
+            };
+
             var outputFooter = new GarnetObjectStoreOutput { spanByteAndMemory = new SpanByteAndMemory(null) };
-            var status = ReadObjectStoreOperationWithOutput(key.ToArray(), input, ref objectContext, ref outputFooter);
+            var status = ReadObjectStoreOperationWithOutput(key.ToArray(), ref input, ref objectContext, ref outputFooter);
 
             if (status == GarnetStatus.OK)
                 elements = ProcessRespArrayOutput(outputFooter, out error);
@@ -548,7 +651,7 @@ namespace Garnet.server
             if (keys.Length == 0)
                 return GarnetStatus.OK;
 
-            bool createTransaction = false;
+            var createTransaction = false;
 
             if (txnManager.state != TxnState.Running)
             {
@@ -559,25 +662,34 @@ namespace Garnet.server
                 txnManager.Run(true);
             }
 
-            var objectStoreLockableContext = txnManager.ObjectStoreLockableContext;
+            var objectContext = txnManager.ObjectStoreLockableContext;
 
             try
             {
-                var statusOp = GET(keys[0].ToArray(), out GarnetObjectStoreOutput firstSortedSet, ref objectStoreLockableContext);
+                var statusOp = GET(keys[0].ToArray(), out var firstObj, ref objectContext);
                 if (statusOp == GarnetStatus.OK)
                 {
-                    // read the rest of the keys
-                    for (int item = 1; item < keys.Length; item++)
+                    if (firstObj.garnetObject is not SortedSetObject firstSortedSet)
                     {
-                        statusOp = GET(keys[item].ToArray(), out GarnetObjectStoreOutput nextSortedSet, ref objectStoreLockableContext);
+                        return GarnetStatus.WRONGTYPE;
+                    }
+                    // read the rest of the keys
+                    for (var item = 1; item < keys.Length; item++)
+                    {
+                        statusOp = GET(keys[item].ToArray(), out var nextObj, ref objectContext);
                         if (statusOp != GarnetStatus.OK)
-                        {
                             continue;
+
+                        if (nextObj.garnetObject is not SortedSetObject nextSortedSet)
+                        {
+                            pairs = default;
+                            return GarnetStatus.WRONGTYPE;
                         }
+
                         if (pairs == default)
-                            pairs = SortedSetObject.CopyDiff(((SortedSetObject)firstSortedSet.garnetObject)?.Dictionary, ((SortedSetObject)nextSortedSet.garnetObject)?.Dictionary);
+                            pairs = SortedSetObject.CopyDiff(firstSortedSet.Dictionary, nextSortedSet.Dictionary);
                         else
-                            SortedSetObject.InPlaceDiff(pairs, ((SortedSetObject)nextSortedSet.garnetObject)?.Dictionary);
+                            SortedSetObject.InPlaceDiff(pairs, nextSortedSet.Dictionary);
                     }
                 }
             }
@@ -591,77 +703,57 @@ namespace Garnet.server
         }
 
         /// <summary>
-        /// Iterates members of SortedSet key and their associated scores using a cursor,
-        /// a match pattern and count parameters
-        /// </summary>
+        /// Returns the rank of member in the sorted set, the scores in the sorted set are ordered from high to low
         /// <param name="key">The key of the sorted set</param>
-        /// <param name="cursor">The value of the cursor</param>
-        /// <param name="match">The pattern to match the members</param>
-        /// <param name="count">Limit number for the response</param>
-        /// <param name="items">The list of items for the response</param>
+        /// <param name="member">The member to get the rank</param>
+        /// <param name="reverse">If true, the rank is calculated from low to high</param>
+        /// <param name="rank">The rank of the member (null if the member does not exist)</param>
         /// <param name="objectStoreContext"></param>
-        public unsafe GarnetStatus SortedSetScan<TObjectContext>(ArgSlice key, long cursor, string match, int count, out ArgSlice[] items, ref TObjectContext objectStoreContext)
-             where TObjectContext : ITsavoriteContext<byte[], IGarnetObject, SpanByte, GarnetObjectStoreOutput, long>
+        /// </summary>
+        public unsafe GarnetStatus SortedSetRank<TObjectContext>(ArgSlice key, ArgSlice member, bool reverse, out long? rank, ref TObjectContext objectStoreContext)
+            where TObjectContext : ITsavoriteContext<byte[], IGarnetObject, ObjectInput, GarnetObjectStoreOutput, long, ObjectSessionFunctions, ObjectStoreFunctions, ObjectStoreAllocator>
         {
-            items = default;
-
+            rank = null;
             if (key.Length == 0)
                 return GarnetStatus.OK;
 
-            if (String.IsNullOrEmpty(match))
-                match = "*";
+            // Prepare the parse state
+            var parseState = new SessionParseState();
+            ArgSlice[] parseStateBuffer = default;
+            parseState.InitializeWithArguments(ref parseStateBuffer, member);
 
-            // Prepare header in input buffer
-            // Header + ObjectScanCountLimit
-            var inputSize = ObjectInputHeader.Size + sizeof(int);
-            var rmwInput = scratchBufferManager.CreateArgSlice(inputSize).ptr;
-            ((ObjectInputHeader*)rmwInput)->header.type = GarnetObjectType.SortedSet;
-            ((ObjectInputHeader*)rmwInput)->header.SortedSetOp = SortedSetOperation.ZSCAN;
-
-            // Number of tokens in the input after the header (match, value, count, value)
-            ((ObjectInputHeader*)rmwInput)->count = 4;
-            ((ObjectInputHeader*)rmwInput)->done = (int)cursor;
-            rmwInput += ObjectInputHeader.Size;
-
-            // Object Input Limit
-            (*(int*)rmwInput) = ObjectScanCountLimit;
-            int inputLength = sizeof(ObjectInputHeader) + sizeof(int);
-
-            ArgSlice tmp;
-            // Write match
-            var matchPatternValue = Encoding.ASCII.GetBytes(match.Trim());
-            fixed (byte* matchKeywordPtr = CmdStrings.MATCH, matchPatterPtr = matchPatternValue)
+            // Prepare the input
+            var input = new ObjectInput
             {
-                tmp = scratchBufferManager.FormatScratchAsResp(0, new ArgSlice(matchKeywordPtr, CmdStrings.MATCH.Length),
-                            new ArgSlice(matchPatterPtr, matchPatternValue.Length));
-            }
-            inputLength += tmp.Length;
+                header = new RespInputHeader
+                {
+                    type = GarnetObjectType.SortedSet,
+                    SortedSetOp = reverse ? SortedSetOperation.ZREVRANK : SortedSetOperation.ZRANK,
+                },
+                parseState = parseState,
+                parseStateStartIdx = 0,
+            };
 
-            // Write count
-            int lengthCountNumber = NumUtils.NumDigits(count);
-            byte[] countBytes = new byte[lengthCountNumber];
+            const int outputContainerSize = 32; // 3 for HEADER + CRLF + 20 for ascii long
+            var outputContainer = stackalloc byte[outputContainerSize];
+            var outputFooter = new GarnetObjectStoreOutput { spanByteAndMemory = new SpanByteAndMemory(outputContainer, outputContainerSize) };
 
-            fixed (byte* countPtr = CmdStrings.COUNT, countValuePtr = countBytes)
-            {
-                byte* countValuePtr2 = countValuePtr;
-                NumUtils.IntToBytes(count, lengthCountNumber, ref countValuePtr2);
+            var status = ReadObjectStoreOperationWithOutput(key.ToArray(), ref input, ref objectStoreContext, ref outputFooter);
 
-                tmp = scratchBufferManager.FormatScratchAsResp(0, new ArgSlice(countPtr, CmdStrings.COUNT.Length),
-                          new ArgSlice(countValuePtr, countBytes.Length));
-            }
-            inputLength += tmp.Length;
-
-            var input = scratchBufferManager.GetSliceFromTail(inputLength);
-
-            var outputFooter = new GarnetObjectStoreOutput { spanByteAndMemory = new SpanByteAndMemory(null) };
-            var status = ReadObjectStoreOperationWithOutput(key.ToArray(), input, ref objectStoreContext, ref outputFooter);
-
-            items = default;
             if (status == GarnetStatus.OK)
-                items = ProcessRespArrayOutput(outputFooter, out _, isScanOutput: true);
+            {
+                Debug.Assert(*outputContainer == (byte)'$' || *outputContainer == (byte)':');
+                if (*outputContainer == (byte)':')
+                {
+                    // member exists -> read the rank
+                    var read = TryProcessRespSimple64IntOutput(outputFooter, out var value);
+                    var rankValue = read ? (int)value : default;
+                    Debug.Assert(read);
+                    rank = rankValue;
+                }
+            }
 
             return status;
-
         }
 
         /// <summary>
@@ -674,9 +766,9 @@ namespace Garnet.server
         /// <param name="output"></param>
         /// <param name="objectStoreContext"></param>
         /// <returns></returns>
-        public GarnetStatus SortedSetAdd<TObjectContext>(byte[] key, ArgSlice input, out ObjectOutputHeader output, ref TObjectContext objectStoreContext)
-        where TObjectContext : ITsavoriteContext<byte[], IGarnetObject, SpanByte, GarnetObjectStoreOutput, long>
-        => RMWObjectStoreOperation(key, input, out output, ref objectStoreContext);
+        public GarnetStatus SortedSetAdd<TObjectContext>(byte[] key, ref ObjectInput input, ref GarnetObjectStoreOutput output, ref TObjectContext objectStoreContext)
+        where TObjectContext : ITsavoriteContext<byte[], IGarnetObject, ObjectInput, GarnetObjectStoreOutput, long, ObjectSessionFunctions, ObjectStoreFunctions, ObjectStoreAllocator>
+        => RMWObjectStoreOperationWithOutput(key, ref input, ref objectStoreContext, ref output);
 
         /// <summary>
         /// Removes the specified members from the sorted set stored at key.
@@ -688,9 +780,9 @@ namespace Garnet.server
         /// <param name="output"></param>
         /// <param name="objectStoreContext"></param>
         /// <returns></returns>
-        public GarnetStatus SortedSetRemove<TObjectContext>(byte[] key, ArgSlice input, out ObjectOutputHeader output, ref TObjectContext objectStoreContext)
-            where TObjectContext : ITsavoriteContext<byte[], IGarnetObject, SpanByte, GarnetObjectStoreOutput, long>
-            => RMWObjectStoreOperation(key, input, out output, ref objectStoreContext);
+        public GarnetStatus SortedSetRemove<TObjectContext>(byte[] key, ref ObjectInput input, out ObjectOutputHeader output, ref TObjectContext objectStoreContext)
+            where TObjectContext : ITsavoriteContext<byte[], IGarnetObject, ObjectInput, GarnetObjectStoreOutput, long, ObjectSessionFunctions, ObjectStoreFunctions, ObjectStoreAllocator>
+            => RMWObjectStoreOperation(key, ref input, out output, ref objectStoreContext);
 
         /// <summary>
         /// Returns the number of members of the sorted set.
@@ -701,9 +793,9 @@ namespace Garnet.server
         /// <param name="output"></param>
         /// <param name="objectStoreContext"></param>
         /// <returns></returns>
-        public GarnetStatus SortedSetLength<TObjectContext>(byte[] key, ArgSlice input, out ObjectOutputHeader output, ref TObjectContext objectStoreContext)
-            where TObjectContext : ITsavoriteContext<byte[], IGarnetObject, SpanByte, GarnetObjectStoreOutput, long>
-            => ReadObjectStoreOperation(key, input, out output, ref objectStoreContext);
+        public GarnetStatus SortedSetLength<TObjectContext>(byte[] key, ref ObjectInput input, out ObjectOutputHeader output, ref TObjectContext objectStoreContext)
+            where TObjectContext : ITsavoriteContext<byte[], IGarnetObject, ObjectInput, GarnetObjectStoreOutput, long, ObjectSessionFunctions, ObjectStoreFunctions, ObjectStoreAllocator>
+            => ReadObjectStoreOperation(key, ref input, out output, ref objectStoreContext);
 
         /// <summary>
         /// Returns the specified range of elements in the sorted set stored at key.
@@ -716,9 +808,9 @@ namespace Garnet.server
         /// <param name="outputFooter"></param>
         /// <param name="objectStoreContext"></param>
         /// <returns></returns>
-        public GarnetStatus SortedSetRange<TObjectContext>(byte[] key, ArgSlice input, ref GarnetObjectStoreOutput outputFooter, ref TObjectContext objectStoreContext)
-            where TObjectContext : ITsavoriteContext<byte[], IGarnetObject, SpanByte, GarnetObjectStoreOutput, long>
-            => ReadObjectStoreOperationWithOutput(key, input, ref objectStoreContext, ref outputFooter);
+        public GarnetStatus SortedSetRange<TObjectContext>(byte[] key, ref ObjectInput input, ref GarnetObjectStoreOutput outputFooter, ref TObjectContext objectStoreContext)
+            where TObjectContext : ITsavoriteContext<byte[], IGarnetObject, ObjectInput, GarnetObjectStoreOutput, long, ObjectSessionFunctions, ObjectStoreFunctions, ObjectStoreAllocator>
+            => ReadObjectStoreOperationWithOutput(key, ref input, ref objectStoreContext, ref outputFooter);
 
         /// <summary>
         /// Returns the score of member in the sorted set at key.
@@ -730,9 +822,9 @@ namespace Garnet.server
         /// <param name="outputFooter"></param>
         /// <param name="objectStoreContext"></param>
         /// <returns></returns>
-        public GarnetStatus SortedSetScore<TObjectContext>(byte[] key, ArgSlice input, ref GarnetObjectStoreOutput outputFooter, ref TObjectContext objectStoreContext)
-            where TObjectContext : ITsavoriteContext<byte[], IGarnetObject, SpanByte, GarnetObjectStoreOutput, long>
-            => ReadObjectStoreOperationWithOutput(key, input, ref objectStoreContext, ref outputFooter);
+        public GarnetStatus SortedSetScore<TObjectContext>(byte[] key, ref ObjectInput input, ref GarnetObjectStoreOutput outputFooter, ref TObjectContext objectStoreContext)
+            where TObjectContext : ITsavoriteContext<byte[], IGarnetObject, ObjectInput, GarnetObjectStoreOutput, long, ObjectSessionFunctions, ObjectStoreFunctions, ObjectStoreAllocator>
+            => ReadObjectStoreOperationWithOutput(key, ref input, ref objectStoreContext, ref outputFooter);
 
         /// <summary>
         /// Returns the scores of members in the sorted set at key.
@@ -744,9 +836,9 @@ namespace Garnet.server
         /// <param name="outputFooter"></param>
         /// <param name="objectStoreContext"></param>
         /// <returns></returns>
-        public GarnetStatus SortedSetScores<TObjectContext>(byte[] key, ArgSlice input, ref GarnetObjectStoreOutput outputFooter, ref TObjectContext objectStoreContext)
-            where TObjectContext : ITsavoriteContext<byte[], IGarnetObject, SpanByte, GarnetObjectStoreOutput, long>
-            => ReadObjectStoreOperationWithOutput(key, input, ref objectStoreContext, ref outputFooter);
+        public GarnetStatus SortedSetScores<TObjectContext>(byte[] key, ref ObjectInput input, ref GarnetObjectStoreOutput outputFooter, ref TObjectContext objectStoreContext)
+            where TObjectContext : ITsavoriteContext<byte[], IGarnetObject, ObjectInput, GarnetObjectStoreOutput, long, ObjectSessionFunctions, ObjectStoreFunctions, ObjectStoreAllocator>
+            => ReadObjectStoreOperationWithOutput(key, ref input, ref objectStoreContext, ref outputFooter);
 
         /// <summary>
         /// Removes and returns the first element from the sorted set stored at key,
@@ -758,9 +850,9 @@ namespace Garnet.server
         /// <param name="outputFooter"></param>
         /// <param name="objectStoreContext"></param>
         /// <returns></returns>
-        public GarnetStatus SortedSetPop<TObjectContext>(byte[] key, ArgSlice input, ref GarnetObjectStoreOutput outputFooter, ref TObjectContext objectStoreContext)
-             where TObjectContext : ITsavoriteContext<byte[], IGarnetObject, SpanByte, GarnetObjectStoreOutput, long>
-            => RMWObjectStoreOperationWithOutput(key, input, ref objectStoreContext, ref outputFooter);
+        public GarnetStatus SortedSetPop<TObjectContext>(byte[] key, ref ObjectInput input, ref GarnetObjectStoreOutput outputFooter, ref TObjectContext objectStoreContext)
+             where TObjectContext : ITsavoriteContext<byte[], IGarnetObject, ObjectInput, GarnetObjectStoreOutput, long, ObjectSessionFunctions, ObjectStoreFunctions, ObjectStoreAllocator>
+            => RMWObjectStoreOperationWithOutput(key, ref input, ref objectStoreContext, ref outputFooter);
 
         /// <summary>
         /// Returns the number of elements in the sorted set at key with a score between min and max.
@@ -768,12 +860,12 @@ namespace Garnet.server
         /// <typeparam name="TObjectContext"></typeparam>
         /// <param name="key"></param>
         /// <param name="input"></param>
-        /// <param name="output"></param>
+        /// <param name="outputFooter"></param>
         /// <param name="objectContext"></param>
         /// <returns></returns>
-        public GarnetStatus SortedSetCount<TObjectContext>(byte[] key, ArgSlice input, out ObjectOutputHeader output, ref TObjectContext objectContext)
-             where TObjectContext : ITsavoriteContext<byte[], IGarnetObject, SpanByte, GarnetObjectStoreOutput, long>
-            => ReadObjectStoreOperation(key, input, out output, ref objectContext);
+        public GarnetStatus SortedSetCount<TObjectContext>(byte[] key, ref ObjectInput input, ref GarnetObjectStoreOutput outputFooter, ref TObjectContext objectContext)
+             where TObjectContext : ITsavoriteContext<byte[], IGarnetObject, ObjectInput, GarnetObjectStoreOutput, long, ObjectSessionFunctions, ObjectStoreFunctions, ObjectStoreAllocator>
+            => ReadObjectStoreOperationWithOutput(key, ref input, ref objectContext, ref outputFooter);
 
         /// <summary>
         /// Removes all elements in the sorted set between the
@@ -785,9 +877,9 @@ namespace Garnet.server
         /// <param name="output"></param>
         /// <param name="objectContext"></param>
         /// <returns></returns>
-        public GarnetStatus SortedSetRemoveRangeByLex<TObjectContext>(byte[] key, ArgSlice input, out ObjectOutputHeader output, ref TObjectContext objectContext)
-            where TObjectContext : ITsavoriteContext<byte[], IGarnetObject, SpanByte, GarnetObjectStoreOutput, long>
-            => RMWObjectStoreOperation(key, input, out output, ref objectContext);
+        public GarnetStatus SortedSetRemoveRangeByLex<TObjectContext>(byte[] key, ref ObjectInput input, out ObjectOutputHeader output, ref TObjectContext objectContext)
+            where TObjectContext : ITsavoriteContext<byte[], IGarnetObject, ObjectInput, GarnetObjectStoreOutput, long, ObjectSessionFunctions, ObjectStoreFunctions, ObjectStoreAllocator>
+            => RMWObjectStoreOperation(key, ref input, out output, ref objectContext);
 
         /// <summary>
         /// Returns the number of elements in the sorted set with a value between min and max.
@@ -800,9 +892,9 @@ namespace Garnet.server
         /// <param name="output"></param>
         /// <param name="objectStoreContext"></param>
         /// <returns></returns>
-        public GarnetStatus SortedSetLengthByValue<TObjectContext>(byte[] key, ArgSlice input, out ObjectOutputHeader output, ref TObjectContext objectStoreContext)
-             where TObjectContext : ITsavoriteContext<byte[], IGarnetObject, SpanByte, GarnetObjectStoreOutput, long>
-            => ReadObjectStoreOperation(key, input, out output, ref objectStoreContext);
+        public GarnetStatus SortedSetLengthByValue<TObjectContext>(byte[] key, ref ObjectInput input, out ObjectOutputHeader output, ref TObjectContext objectStoreContext)
+             where TObjectContext : ITsavoriteContext<byte[], IGarnetObject, ObjectInput, GarnetObjectStoreOutput, long, ObjectSessionFunctions, ObjectStoreFunctions, ObjectStoreAllocator>
+            => ReadObjectStoreOperation(key, ref input, out output, ref objectStoreContext);
 
         /// <summary>
         /// Increments the score of member in the sorted set stored at key by increment.
@@ -814,9 +906,9 @@ namespace Garnet.server
         /// <param name="outputFooter"></param>
         /// <param name="objectStoreContext"></param>
         /// <returns></returns>
-        public GarnetStatus SortedSetIncrement<TObjectContext>(byte[] key, ArgSlice input, ref GarnetObjectStoreOutput outputFooter, ref TObjectContext objectStoreContext)
-             where TObjectContext : ITsavoriteContext<byte[], IGarnetObject, SpanByte, GarnetObjectStoreOutput, long>
-            => RMWObjectStoreOperationWithOutput(key, input, ref objectStoreContext, ref outputFooter);
+        public GarnetStatus SortedSetIncrement<TObjectContext>(byte[] key, ref ObjectInput input, ref GarnetObjectStoreOutput outputFooter, ref TObjectContext objectStoreContext)
+             where TObjectContext : ITsavoriteContext<byte[], IGarnetObject, ObjectInput, GarnetObjectStoreOutput, long, ObjectSessionFunctions, ObjectStoreFunctions, ObjectStoreAllocator>
+            => RMWObjectStoreOperationWithOutput(key, ref input, ref objectStoreContext, ref outputFooter);
 
         /// <summary>
         /// ZREMRANGEBYRANK: Removes all elements in the sorted set stored at key with rank between start and stop.
@@ -826,12 +918,11 @@ namespace Garnet.server
         /// <typeparam name="TObjectContext"></typeparam>
         /// <param name="key"></param>
         /// <param name="input"></param>
-        /// <param name="output"></param>
         /// <param name="objectContext"></param>
         /// <returns></returns>
-        public GarnetStatus SortedSetRemoveRange<TObjectContext>(byte[] key, ArgSlice input, out ObjectOutputHeader output, ref TObjectContext objectContext)
-            where TObjectContext : ITsavoriteContext<byte[], IGarnetObject, SpanByte, GarnetObjectStoreOutput, long>
-            => RMWObjectStoreOperation(key, input, out output, ref objectContext);
+        public GarnetStatus SortedSetRemoveRange<TObjectContext>(byte[] key, ref ObjectInput input, ref GarnetObjectStoreOutput outputFooter, ref TObjectContext objectContext)
+            where TObjectContext : ITsavoriteContext<byte[], IGarnetObject, ObjectInput, GarnetObjectStoreOutput, long, ObjectSessionFunctions, ObjectStoreFunctions, ObjectStoreAllocator>
+            => RMWObjectStoreOperationWithOutput(key, ref input, ref objectContext, ref outputFooter);
 
         /// <summary>
         /// Returns the rank of member in the sorted set, the scores in the sorted set are ordered from low to high
@@ -839,12 +930,12 @@ namespace Garnet.server
         /// <typeparam name="TObjectContext"></typeparam>
         /// <param name="key"></param>
         /// <param name="input"></param>
-        /// <param name="output"></param>
+        /// <param name="outputFooter"></param>
         /// <param name="objectContext"></param>
         /// <returns></returns>
-        public GarnetStatus SortedSetRank<TObjectContext>(byte[] key, ArgSlice input, out ObjectOutputHeader output, ref TObjectContext objectContext)
-            where TObjectContext : ITsavoriteContext<byte[], IGarnetObject, SpanByte, GarnetObjectStoreOutput, long>
-            => ReadObjectStoreOperation(key, input, out output, ref objectContext);
+        public GarnetStatus SortedSetRank<TObjectContext>(byte[] key, ref ObjectInput input, ref GarnetObjectStoreOutput outputFooter, ref TObjectContext objectContext)
+            where TObjectContext : ITsavoriteContext<byte[], IGarnetObject, ObjectInput, GarnetObjectStoreOutput, long, ObjectSessionFunctions, ObjectStoreFunctions, ObjectStoreAllocator>
+            => ReadObjectStoreOperationWithOutput(key, ref input, ref objectContext, ref outputFooter);
 
         /// <summary>
         /// Returns a random member from the sorted set key.
@@ -855,9 +946,9 @@ namespace Garnet.server
         /// <param name="outputFooter"></param>
         /// <param name="objectContext"></param>
         /// <returns></returns>
-        public GarnetStatus SortedSetRandomMember<TObjectContext>(byte[] key, ArgSlice input, ref GarnetObjectStoreOutput outputFooter, ref TObjectContext objectContext)
-            where TObjectContext : ITsavoriteContext<byte[], IGarnetObject, SpanByte, GarnetObjectStoreOutput, long>
-            => ReadObjectStoreOperationWithOutput(key, input, ref objectContext, ref outputFooter);
+        public GarnetStatus SortedSetRandomMember<TObjectContext>(byte[] key, ref ObjectInput input, ref GarnetObjectStoreOutput outputFooter, ref TObjectContext objectContext)
+            where TObjectContext : ITsavoriteContext<byte[], IGarnetObject, ObjectInput, GarnetObjectStoreOutput, long, ObjectSessionFunctions, ObjectStoreFunctions, ObjectStoreAllocator>
+            => ReadObjectStoreOperationWithOutput(key, ref input, ref objectContext, ref outputFooter);
 
         /// <summary>
         /// Iterates members of SortedSet key and their associated scores using a cursor,
@@ -869,8 +960,8 @@ namespace Garnet.server
         /// <param name="outputFooter"></param>
         /// <param name="objectStoreContext"></param>
         /// <returns></returns>
-        public GarnetStatus SortedSetScan<TObjectContext>(byte[] key, ArgSlice input, ref GarnetObjectStoreOutput outputFooter, ref TObjectContext objectStoreContext)
-         where TObjectContext : ITsavoriteContext<byte[], IGarnetObject, SpanByte, GarnetObjectStoreOutput, long>
-           => ReadObjectStoreOperationWithOutput(key, input, ref objectStoreContext, ref outputFooter);
+        public GarnetStatus SortedSetScan<TObjectContext>(byte[] key, ref ObjectInput input, ref GarnetObjectStoreOutput outputFooter, ref TObjectContext objectStoreContext)
+         where TObjectContext : ITsavoriteContext<byte[], IGarnetObject, ObjectInput, GarnetObjectStoreOutput, long, ObjectSessionFunctions, ObjectStoreFunctions, ObjectStoreAllocator>
+           => ReadObjectStoreOperationWithOutput(key, ref input, ref objectStoreContext, ref outputFooter);
     }
 }

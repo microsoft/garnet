@@ -9,7 +9,7 @@ slug: replication
 
 Garnet cluster support asynchronous replication following a simple leader-follower (i.e. primary-replica) model.
 This allows the replica to be exact copies of the primary.
-Replication can be leveraged to scale reads and mitigate the effects of failures primary failures by promoting replicas to primary.
+Replication can be leveraged to scale reads and mitigate the effects of primary failures by promoting replicas to primary.
 In this page, we present an overview of the replication protocol and discuss the different persistent/consistency options available to the cluster operator.
 
 # Garnet Replication Properties
@@ -18,14 +18,9 @@ Garnet cluster implements replication through log shipping.
 Primaries utilize the Append-Only-File (AOF) to record insert/update operations.
 A dedicated background task iterates through the log pages and transmits them in bulk to the corresponding replica.
 Replicas will iterate through the received log pages, replay all insert/update operations in order, and generate their own AOF.
-When the cluster operator issues a checkpoint 
-
-The cluster operator can issue a checkpoint to any primary.
-The act of taking a checkpoint 
-
-Primaries are free to take arbitrary checkpoints.
-The act of taking a checkpoint is propagated through the AOF log to the corresponding replica.
-As a side effect a given replica will also take and maintain its own checkpoints.
+Primaries are generally free to take arbitrary checkpoints.
+When the primary takes a checkpoint, it will insert a checkpoint marker into the AOF.
+As a side effect of this, when any of the attached replicas receive the corresponding records, it will initiate its own checkpoint.
 For this reason, an exact version of the data is identified from the following triplet:
 
 ``` bash

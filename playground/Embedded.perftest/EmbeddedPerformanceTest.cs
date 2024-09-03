@@ -52,8 +52,12 @@ namespace Embedded.perftest
             this.server = server;
             this.opts = opts;
             logger = loggerFactory.CreateLogger("EmbeddedBench");
-            opPercent = opts.OpPercent?.ToArray();
-            opWorkload = opts.OpWorkload?.ToArray();
+
+            if (opts.OpPercent == null || opts.OpWorkload == null)
+                throw new Exception("OpPercent and OpWorkload must be specified!");
+
+            opPercent = opts.OpPercent.ToArray();
+            opWorkload = opts.OpWorkload.ToArray();
 
             if (opPercent.Length != opWorkload.Length)
                 throw new Exception($"opPercent {opWorkload.Length} and opWorkload {opWorkload.Length} mismatch!");
@@ -123,7 +127,7 @@ namespace Embedded.perftest
             // Pre-generate a random operation sequence (to exclude RNG from main benchmark loop)
             //
 
-            logger?.LogInformation($"[{threadId:00}] Generating operation sequence with {batchSize} operations per batch");
+            logger?.LogInformation("[{threadId:00}] Generating operation sequence with {batchSize} operations per batch", threadId, batchSize);
 
             Random rng = new(opts.Seed + threadId);
 

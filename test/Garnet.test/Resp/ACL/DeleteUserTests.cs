@@ -4,6 +4,7 @@
 using System;
 using System.Threading.Tasks;
 using NUnit.Framework;
+using NUnit.Framework.Legacy;
 
 namespace Garnet.test.Resp.ACL
 {
@@ -34,10 +35,10 @@ namespace Garnet.test.Resp.ACL
 
             // Add two new users
             var response = await c.ExecuteAsync("ACL", "setuser", TestUserA, ">passwd");
-            Assert.AreEqual("OK", response);
+            ClassicAssert.AreEqual("OK", response);
 
             response = await c.ExecuteAsync("ACL", "setuser", TestUserB, ">passwd");
-            Assert.AreEqual("OK", response);
+            ClassicAssert.AreEqual("OK", response);
 
             // Verify that both users exist
             string[] usernames = await c.ExecuteForArrayAsync("ACL", "users");
@@ -46,7 +47,7 @@ namespace Garnet.test.Resp.ACL
 
             // Try to delete test user A
             response = await c.ExecuteAsync("ACL", "deluser", TestUserA);
-            Assert.AreEqual("1", response);
+            ClassicAssert.AreEqual("1", response);
 
             // Ensure test user A is not listed, but test user B still exists
             usernames = await c.ExecuteForArrayAsync("ACL", "users");
@@ -65,10 +66,10 @@ namespace Garnet.test.Resp.ACL
 
             // Add two new users
             var response = await c.ExecuteAsync("ACL", "setuser", TestUserA, ">passwd");
-            Assert.AreEqual("OK", response);
+            ClassicAssert.AreEqual("OK", response);
 
             response = await c.ExecuteAsync("ACL", "setuser", TestUserB, ">passwd");
-            Assert.AreEqual("OK", response);
+            ClassicAssert.AreEqual("OK", response);
 
             // Verify that both users exist
             string[] usernames = await c.ExecuteForArrayAsync("ACL", "users");
@@ -77,7 +78,7 @@ namespace Garnet.test.Resp.ACL
 
             // Try to delete both users in a single command
             response = await c.ExecuteAsync("ACL", "deluser", TestUserA, TestUserB);
-            Assert.AreEqual("2", response);
+            ClassicAssert.AreEqual("2", response);
 
             // Ensure both users have been deleted
             usernames = await c.ExecuteForArrayAsync("ACL", "users");
@@ -96,10 +97,10 @@ namespace Garnet.test.Resp.ACL
 
             // Add two new users
             var response = await c.ExecuteAsync("ACL", "setuser", TestUserA, ">passwd");
-            Assert.AreEqual("OK", response);
+            ClassicAssert.AreEqual("OK", response);
 
             response = await c.ExecuteAsync("ACL", "setuser", TestUserB, ">passwd");
-            Assert.AreEqual("OK", response);
+            ClassicAssert.AreEqual("OK", response);
 
             // Verify that both users exist
             string[] usernames = await c.ExecuteForArrayAsync("ACL", "users");
@@ -108,7 +109,7 @@ namespace Garnet.test.Resp.ACL
 
             // Try to delete both users in a single command
             response = await c.ExecuteAsync("ACL", "deluser", TestUserUnknown);
-            Assert.AreEqual("0", response);
+            ClassicAssert.AreEqual("0", response);
 
             // Ensure both users still exist
             usernames = await c.ExecuteForArrayAsync("ACL", "users");
@@ -137,7 +138,7 @@ namespace Garnet.test.Resp.ACL
             }
             catch (Exception exception)
             {
-                Assert.IsTrue(exception.Message.StartsWith("ERR"));
+                ClassicAssert.IsTrue(exception.Message.StartsWith("ERR"));
             }
 
             // Verify that default user still exists
@@ -156,10 +157,10 @@ namespace Garnet.test.Resp.ACL
 
             // Add two new users
             var response = await c.ExecuteAsync("ACL", "setuser", TestUserA, ">passwd");
-            Assert.AreEqual("OK", response);
+            ClassicAssert.AreEqual("OK", response);
 
             response = await c.ExecuteAsync("ACL", "setuser", TestUserB, ">passwd");
-            Assert.AreEqual("OK", response);
+            ClassicAssert.AreEqual("OK", response);
 
             // Verify that both users exist
             string[] usernames = await c.ExecuteForArrayAsync("ACL", "users");
@@ -167,8 +168,15 @@ namespace Garnet.test.Resp.ACL
             Assert.That(usernames, Does.Contain(TestUserB));
 
             // Try to delete both users in a single command
-            response = await c.ExecuteAsync("ACL", "deluser");
-            Assert.AreEqual("0", response);
+            try
+            {
+                response = await c.ExecuteAsync("ACL", "deluser");
+                Assert.Fail("Shouldn't succeed, DELUSER requires arguments");
+            }
+            catch (Exception e)
+            {
+                ClassicAssert.AreEqual("ERR Unknown subcommand or wrong number of arguments for ACL DELUSER.", e.Message);
+            }
 
             // Ensure both users still exist
             usernames = await c.ExecuteForArrayAsync("ACL", "users");

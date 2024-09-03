@@ -2,6 +2,7 @@
 // Licensed under the MIT license.
 
 using System;
+using System.Collections.Concurrent;
 using System.Diagnostics;
 using System.Net;
 using System.Net.Sockets;
@@ -9,12 +10,18 @@ using System.Threading;
 using System.Threading.Tasks;
 using Garnet.common;
 using Garnet.server.ACL;
-using Garnet.server.Auth;
+using Garnet.server.Auth.Settings;
 using Microsoft.Extensions.Logging;
 using Tsavorite.core;
 
 namespace Garnet.server
 {
+    using MainStoreAllocator = SpanByteAllocator<StoreFunctions<SpanByte, SpanByte, SpanByteComparer, SpanByteRecordDisposer>>;
+    using MainStoreFunctions = StoreFunctions<SpanByte, SpanByte, SpanByteComparer, SpanByteRecordDisposer>;
+
+    using ObjectStoreAllocator = GenericAllocator<byte[], IGarnetObject, StoreFunctions<byte[], IGarnetObject, ByteArrayKeyComparer, DefaultRecordDisposer<byte[], IGarnetObject>>>;
+    using ObjectStoreFunctions = StoreFunctions<byte[], IGarnetObject, ByteArrayKeyComparer, DefaultRecordDisposer<byte[], IGarnetObject>>;
+
     /// <summary>
     /// Wrapper for store and store-specific information
     /// </summary>   
@@ -28,12 +35,12 @@ namespace Garnet.server
         /// <summary>
         /// Store
         /// </summary>
-        public readonly TsavoriteKV<SpanByte, SpanByte> store;
+        public readonly TsavoriteKV<SpanByte, SpanByte, MainStoreFunctions, MainStoreAllocator> store;
 
         /// <summary>
         /// Object store
         /// </summary>
-        public readonly TsavoriteKV<byte[], IGarnetObject> objectStore;
+        public readonly TsavoriteKV<byte[], IGarnetObject, ObjectStoreFunctions, ObjectStoreAllocator> objectStore;
 
         /// <summary>
         /// Server options
@@ -92,6 +99,11 @@ namespace Garnet.server
         internal readonly string run_id;
         private SingleWriterMultiReaderLock _checkpointTaskLock;
 
+        // Lua script cache
+        public readonly ConcurrentDictionary<byte[], byte[]> storeScriptCache;
+
+        public readonly TimeSpan loggingFrequncy;
+
         /// <summary>
         /// Constructor
         /// </summary>
@@ -99,8 +111,8 @@ namespace Garnet.server
             string version,
             string redisProtocolVersion,
             IGarnetServer server,
-            TsavoriteKV<SpanByte, SpanByte> store,
-            TsavoriteKV<byte[], IGarnetObject> objectStore,
+            TsavoriteKV<SpanByte, SpanByte, MainStoreFunctions, MainStoreAllocator> store,
+            TsavoriteKV<byte[], IGarnetObject, ObjectStoreFunctions, ObjectStoreAllocator> objectStore,
             CacheSizeTracker objectStoreSizeTracker,
             CustomCommandManager customCommandManager,
             TsavoriteLog appendOnlyFile,
@@ -129,13 +141,18 @@ namespace Garnet.server
             this.versionMap = new WatchVersionMap(1 << 16);
             this.accessControlList = accessControlList;
             this.GarnetObjectSerializer = new GarnetObjectSerializer(this.customCommandManager);
+            this.loggingFrequncy = TimeSpan.FromSeconds(serverOptions.LoggingFrequency);
+
+            // Initialize store scripting cache
+            if (serverOptions.EnableLua)
+                this.storeScriptCache = new ConcurrentDictionary<byte[], byte[]>(new ByteArrayComparer());
 
             if (accessControlList == null)
             {
                 // If ACL authentication is enabled, initiate access control list
                 // NOTE: This is a temporary workflow. ACL should always be initiated and authenticator
                 //       should become a parameter of AccessControlList.
-                if ((this.serverOptions.AuthSettings != null) && (this.serverOptions.AuthSettings.GetType() == typeof(AclAuthenticationSettings)))
+                if ((this.serverOptions.AuthSettings != null) && (this.serverOptions.AuthSettings.GetType().BaseType == typeof(AclAuthenticationSettings)))
                 {
                     // Create a new access control list and register it with the authentication settings
                     AclAuthenticationSettings aclAuthenticationSettings = (AclAuthenticationSettings)this.serverOptions.AuthSettings;
@@ -187,7 +204,7 @@ namespace Garnet.server
         }
 
         internal FunctionsState CreateFunctionsState()
-            => new(appendOnlyFile, versionMap, customCommandManager.commandMap, customCommandManager.objectCommandMap, null, objectStoreSizeTracker, GarnetObjectSerializer);
+            => new(appendOnlyFile, versionMap, customCommandManager.rawStringCommandMap, customCommandManager.objectCommandMap, null, objectStoreSizeTracker, GarnetObjectSerializer);
 
         internal void Recover()
         {
@@ -220,7 +237,8 @@ namespace Garnet.server
             {
                 storeVersion = !recoverMainStoreFromToken ? store.Recover() : store.Recover(storeIndexToken, storeHlogToken);
                 if (objectStore != null) objectStoreVersion = !recoverObjectStoreFromToken ? objectStore.Recover() : objectStore.Recover(objectStoreIndexToken, objectStoreHlogToken);
-                lastSaveTime = DateTimeOffset.UtcNow;
+                if (storeVersion > 0 || objectStoreVersion > 0)
+                    lastSaveTime = DateTimeOffset.UtcNow;
             }
             catch (Exception ex)
             {
@@ -254,7 +272,7 @@ namespace Garnet.server
             }
             catch (Exception ex)
             {
-                logger?.LogInformation(ex, "Error during reset of store");
+                logger?.LogError(ex, "Error during reset of store");
             }
         }
 
@@ -269,8 +287,8 @@ namespace Garnet.server
             long replicationOffset = 0;
             try
             {
-                //When replaying AOF we do not want to write record again to AOF.
-                //So initialize local AofProcessor with recordToAof: false.
+                // When replaying AOF we do not want to write record again to AOF.
+                // So initialize local AofProcessor with recordToAof: false.
                 var aofProcessor = new AofProcessor(this, recordToAof: false, logger);
                 aofProcessor.Recover(untilAddress);
                 aofProcessor.Dispose();
@@ -279,7 +297,7 @@ namespace Garnet.server
             }
             catch (Exception ex)
             {
-                logger?.LogInformation(ex, "Error during recovery of AofProcessor");
+                logger?.LogError(ex, "Error during recovery of AofProcessor");
             }
             return replicationOffset;
         }
@@ -316,7 +334,7 @@ namespace Garnet.server
                     if (token.IsCancellationRequested) break;
 
                     // if we are replica and in auto-commit - do not commit as it will clobber the AOF addresses
-                    if (serverOptions.EnableFastCommit && clusterProvider.IsReplica())
+                    if (serverOptions.EnableFastCommit && (clusterProvider?.IsReplica() ?? false))
                     {
                         await Task.Delay(commitFrequencyMs, token);
                     }
@@ -329,7 +347,7 @@ namespace Garnet.server
             }
             catch (Exception ex)
             {
-                logger?.LogInformation(ex, "CommitTask exception received, AOF tail address = {tailAddress}; AOF committed until address = {commitAddress}; ", appendOnlyFile.TailAddress, appendOnlyFile.CommittedUntilAddress);
+                logger?.LogError(ex, "CommitTask exception received, AOF tail address = {tailAddress}; AOF committed until address = {commitAddress}; ", appendOnlyFile.TailAddress, appendOnlyFile.CommittedUntilAddress);
             }
         }
 
@@ -341,18 +359,18 @@ namespace Garnet.server
                 while (true)
                 {
                     if (token.IsCancellationRequested) return;
-                    DoCompaction(serverOptions.CompactionMaxSegments, serverOptions.ObjectStoreCompactionMaxSegments, 1, serverOptions.CompactionType);
-                    if (serverOptions.CompactionType != LogCompactionType.ShiftForced)
+                    DoCompaction(serverOptions.CompactionMaxSegments, serverOptions.ObjectStoreCompactionMaxSegments, 1, serverOptions.CompactionType, serverOptions.CompactionForceDelete);
+                    if (!serverOptions.CompactionForceDelete)
                         logger?.LogInformation("NOTE: Take a checkpoint (SAVE/BGSAVE) in order to actually delete the older data segments (files) from disk");
                     else
-                        logger?.LogInformation("NOTE: ShiftForced compaction type - make sure checkpoint/recovery is not being used");
+                        logger?.LogInformation("NOTE: Compaction will delete files, make sure checkpoint/recovery is not being used");
 
                     await Task.Delay(compactionFrequencySecs * 1000, token);
                 }
             }
             catch (Exception ex)
             {
-                logger?.LogInformation(ex, "CompactionTask exception received, AOF tail address = {tailAddress}; AOF committed until address = {commitAddress}; ", appendOnlyFile.TailAddress, appendOnlyFile.CommittedUntilAddress);
+                logger?.LogError(ex, "CompactionTask exception received, AOF tail address = {tailAddress}; AOF committed until address = {commitAddress}; ", appendOnlyFile.TailAddress, appendOnlyFile.CommittedUntilAddress);
             }
         }
 
@@ -360,15 +378,8 @@ namespace Garnet.server
         {
             // Periodic compaction -> no need to compact before checkpointing
             if (serverOptions.CompactionFrequencySecs > 0) return;
-            if (serverOptions.CompactionType == LogCompactionType.ShiftForced)
-            {
-                string error = "Cannot use ShiftForced with checkpointing";
-                logger.LogError(error);
-                Debug.Fail(error);
-                return;
-            }
 
-            DoCompaction(serverOptions.CompactionMaxSegments, serverOptions.ObjectStoreCompactionMaxSegments, 1, serverOptions.CompactionType);
+            DoCompaction(serverOptions.CompactionMaxSegments, serverOptions.ObjectStoreCompactionMaxSegments, 1, serverOptions.CompactionType, serverOptions.CompactionForceDelete);
         }
 
         /// <summary>
@@ -387,7 +398,7 @@ namespace Garnet.server
             appendOnlyFile?.Enqueue(header, out _);
         }
 
-        void DoCompaction(int mainStoreMaxSegments, int objectStoreMaxSegments, int numSegmentsToCompact, LogCompactionType compactionType)
+        void DoCompaction(int mainStoreMaxSegments, int objectStoreMaxSegments, int numSegmentsToCompact, LogCompactionType compactionType, bool compactionForceDelete)
         {
             if (compactionType == LogCompactionType.None) return;
 
@@ -403,19 +414,25 @@ namespace Garnet.server
                 switch (compactionType)
                 {
                     case LogCompactionType.Shift:
-                        store.Log.ShiftBeginAddress(untilAddress, true, false);
-                        break;
-
-                    case LogCompactionType.ShiftForced:
-                        store.Log.ShiftBeginAddress(untilAddress, true, true);
+                        store.Log.ShiftBeginAddress(untilAddress, true, compactionForceDelete);
                         break;
 
                     case LogCompactionType.Scan:
                         store.Log.Compact<SpanByte, Empty, Empty, SpanByteFunctions<Empty, Empty>>(new SpanByteFunctions<Empty, Empty>(), untilAddress, CompactionType.Scan);
+                        if (compactionForceDelete)
+                        {
+                            CompactionCommitAof();
+                            store.Log.Truncate();
+                        }
                         break;
 
                     case LogCompactionType.Lookup:
                         store.Log.Compact<SpanByte, Empty, Empty, SpanByteFunctions<Empty, Empty>>(new SpanByteFunctions<Empty, Empty>(), untilAddress, CompactionType.Lookup);
+                        if (compactionForceDelete)
+                        {
+                            CompactionCommitAof();
+                            store.Log.Truncate();
+                        }
                         break;
 
                     default:
@@ -439,21 +456,27 @@ namespace Garnet.server
                 switch (compactionType)
                 {
                     case LogCompactionType.Shift:
-                        objectStore.Log.ShiftBeginAddress(untilAddress, true, false);
-                        break;
-
-                    case LogCompactionType.ShiftForced:
-                        objectStore.Log.ShiftBeginAddress(untilAddress, true, true);
+                        objectStore.Log.ShiftBeginAddress(untilAddress, compactionForceDelete);
                         break;
 
                     case LogCompactionType.Scan:
-                        objectStore.Log.Compact<IGarnetObject, IGarnetObject, Empty, SimpleFunctions<byte[], IGarnetObject, Empty>>(
-                            new SimpleFunctions<byte[], IGarnetObject, Empty>(), untilAddress, CompactionType.Scan);
+                        objectStore.Log.Compact<IGarnetObject, IGarnetObject, Empty, SimpleSessionFunctions<byte[], IGarnetObject, Empty>>(
+                            new SimpleSessionFunctions<byte[], IGarnetObject, Empty>(), untilAddress, CompactionType.Scan);
+                        if (compactionForceDelete)
+                        {
+                            CompactionCommitAof();
+                            objectStore.Log.Truncate();
+                        }
                         break;
 
                     case LogCompactionType.Lookup:
-                        objectStore.Log.Compact<IGarnetObject, IGarnetObject, Empty, SimpleFunctions<byte[], IGarnetObject, Empty>>(
-                            new SimpleFunctions<byte[], IGarnetObject, Empty>(), untilAddress, CompactionType.Lookup);
+                        objectStore.Log.Compact<IGarnetObject, IGarnetObject, Empty, SimpleSessionFunctions<byte[], IGarnetObject, Empty>>(
+                            new SimpleSessionFunctions<byte[], IGarnetObject, Empty>(), untilAddress, CompactionType.Lookup);
+                        if (compactionForceDelete)
+                        {
+                            CompactionCommitAof();
+                            objectStore.Log.Truncate();
+                        }
                         break;
 
                     default:
@@ -461,6 +484,26 @@ namespace Garnet.server
                 }
 
                 logger?.LogInformation("End object store compact until {untilAddress}, Begin = {beginAddress}, ReadOnly = {readOnlyAddress}, Tail = {tailAddress}", untilAddress, store.Log.BeginAddress, readOnlyAddress, store.Log.TailAddress);
+            }
+        }
+
+        void CompactionCommitAof()
+        {
+            // If we are the primary, we commit the AOF.
+            // If we are the replica, we commit the AOF only if fast commit is disabled
+            // because we do not want to clobber AOF addresses.
+            // TODO: replica should instead wait until the next AOF commit is done via primary
+            if (serverOptions.EnableAOF)
+            {
+                if (serverOptions.EnableCluster && clusterProvider.IsReplica())
+                {
+                    if (!serverOptions.EnableFastCommit)
+                        appendOnlyFile?.CommitAsync().ConfigureAwait(false).GetAwaiter().GetResult();
+                }
+                else
+                {
+                    appendOnlyFile?.CommitAsync().ConfigureAwait(false).GetAwaiter().GetResult();
+                }
             }
         }
 
@@ -485,10 +528,12 @@ namespace Garnet.server
                 Task.Run(async () => await CompactionTask(serverOptions.CompactionFrequencySecs, ctsCommit.Token));
             }
 
-            if (serverOptions.AdjustedIndexMaxSize > 0 || serverOptions.AdjustedObjectStoreIndexMaxSize > 0)
+            if (serverOptions.AdjustedIndexMaxCacheLines > 0 || serverOptions.AdjustedObjectStoreIndexMaxCacheLines > 0)
             {
                 Task.Run(() => IndexAutoGrowTask(ctsCommit.Token));
             }
+
+            objectStoreSizeTracker?.Start(ctsCommit.Token);
         }
 
         /// <summary>Grows indexes of both main store and object store if current size is too small.</summary>
@@ -497,8 +542,8 @@ namespace Garnet.server
         {
             try
             {
-                bool indexMaxedOut = serverOptions.AdjustedIndexMaxSize == 0;
-                bool objectStoreIndexMaxedOut = serverOptions.AdjustedObjectStoreIndexMaxSize == 0;
+                bool indexMaxedOut = serverOptions.AdjustedIndexMaxCacheLines == 0;
+                bool objectStoreIndexMaxedOut = serverOptions.AdjustedObjectStoreIndexMaxCacheLines == 0;
                 while (!indexMaxedOut || !objectStoreIndexMaxedOut)
                 {
                     if (token.IsCancellationRequested) break;
@@ -506,17 +551,17 @@ namespace Garnet.server
                     await Task.Delay(TimeSpan.FromSeconds(serverOptions.IndexResizeFrequencySecs), token);
 
                     if (!indexMaxedOut)
-                        indexMaxedOut = GrowIndexIfNeeded(StoreType.Main, serverOptions.AdjustedIndexMaxSize, store.OverflowBucketAllocations,
+                        indexMaxedOut = GrowIndexIfNeeded(StoreType.Main, serverOptions.AdjustedIndexMaxCacheLines, store.OverflowBucketAllocations,
                             () => store.IndexSize, () => store.GrowIndex());
 
                     if (!objectStoreIndexMaxedOut)
-                        objectStoreIndexMaxedOut = GrowIndexIfNeeded(StoreType.Object, serverOptions.AdjustedObjectStoreIndexMaxSize, objectStore.OverflowBucketAllocations,
+                        objectStoreIndexMaxedOut = GrowIndexIfNeeded(StoreType.Object, serverOptions.AdjustedObjectStoreIndexMaxCacheLines, objectStore.OverflowBucketAllocations,
                             () => objectStore.IndexSize, () => objectStore.GrowIndex());
                 }
             }
             catch (Exception ex)
             {
-                logger?.LogError(ex, "IndexAutoGrowTask exception received");
+                logger?.LogError(ex, $"{nameof(IndexAutoGrowTask)} exception received");
             }
         }
 
@@ -533,18 +578,18 @@ namespace Garnet.server
         /// <returns>True if index has reached its max size</returns>
         private bool GrowIndexIfNeeded(StoreType storeType, long indexMaxSize, long overflowCount, Func<long> indexSizeRetriever, Action growAction)
         {
-            logger?.LogDebug($"IndexAutoGrowTask[{storeType}]: checking index size {indexSizeRetriever()} against max {indexMaxSize} with overflow {overflowCount}");
+            logger?.LogDebug($"{nameof(IndexAutoGrowTask)}[{{storeType}}]: checking index size {{indexSizeRetriever}} against max {{indexMaxSize}} with overflow {{overflowCount}}", storeType, indexSizeRetriever(), indexMaxSize, overflowCount);
 
             if (indexSizeRetriever() < indexMaxSize &&
                 overflowCount > (indexSizeRetriever() * serverOptions.IndexResizeThreshold / 100))
             {
-                logger?.LogInformation($"IndexAutoGrowTask[{storeType}]: overflowCount {overflowCount} ratio more than threshold {serverOptions.IndexResizeThreshold}%. Doubling index size...");
+                logger?.LogInformation($"{nameof(IndexAutoGrowTask)}[{{storeType}}]: overflowCount {{overflowCount}} ratio more than threshold {{indexResizeThreshold}}%. Doubling index size...", storeType, overflowCount, serverOptions.IndexResizeThreshold);
                 growAction();
             }
 
             if (indexSizeRetriever() < indexMaxSize) return false;
 
-            logger?.LogDebug($"IndexAutoGrowTask[{storeType}]: index size {indexSizeRetriever()} reached index max size {indexMaxSize}");
+            logger?.LogDebug($"{nameof(IndexAutoGrowTask)}[{{storeType}}]: index size {{indexSizeRetriever}} reached index max size {{indexMaxSize}}", storeType, indexSizeRetriever(), indexMaxSize);
             return true;
         }
 
@@ -558,6 +603,10 @@ namespace Garnet.server
 
             monitor?.Dispose();
             ctsCommit?.Cancel();
+
+            while (objectStoreSizeTracker != null && !objectStoreSizeTracker.Stopped)
+                Thread.Yield();
+
             ctsCommit?.Dispose();
             clusterProvider?.Dispose();
         }
@@ -566,34 +615,34 @@ namespace Garnet.server
         /// Mark the beginning of a checkpoint by taking and a lock to avoid concurrent checkpoint tasks
         /// </summary>
         /// <returns></returns>
-        bool StartCheckpoint()
+        public bool TryPauseCheckpoints()
             => _checkpointTaskLock.TryWriteLock();
 
         /// <summary>
         /// Release checkpoint task lock
         /// </summary>
-        void CompleteCheckpoint()
+        public void ResumeCheckpoints()
             => _checkpointTaskLock.WriteUnlock();
 
         /// <summary>
         /// Take a checkpoint if no checkpoint was taken after the provided time offset
         /// </summary>
-        /// <param name="afterTime"></param>
+        /// <param name="entryTime"></param>
         /// <returns></returns>
-        public async Task TakeOnDemandCheckpoint(DateTimeOffset afterTime)
+        public async Task TakeOnDemandCheckpoint(DateTimeOffset entryTime)
         {
-            //Take lock to ensure not other task will be taking a checkpoint
-            while (!StartCheckpoint())
+            // Take lock to ensure no other task will be taking a checkpoint
+            while (!TryPauseCheckpoints())
                 await Task.Yield();
 
-            //If an external task has taken a checkpoint after the provided afterTime return
-            if (this.lastSaveTime > afterTime)
+            // If an external task has taken a checkpoint beyond the provided entryTime return
+            if (this.lastSaveTime > entryTime)
             {
-                CompleteCheckpoint();
+                ResumeCheckpoints();
                 return;
             }
 
-            //If no newer checkpoint was taken compared to the provided afterTime take a checkpoint
+            // Necessary to take a checkpoint because the latest checkpoint is before entryTime
             await CheckpointTask(StoreType.All, logger: logger);
         }
 
@@ -606,7 +655,8 @@ namespace Garnet.server
         /// <returns></returns>
         public bool TakeCheckpoint(bool background, StoreType storeType = StoreType.All, ILogger logger = null)
         {
-            if (!StartCheckpoint()) return false;
+            // Prevent parallel checkpoint
+            if (!TryPauseCheckpoints()) return false;
             if (background)
                 Task.Run(async () => await CheckpointTask(storeType, logger));
             else
@@ -651,7 +701,7 @@ namespace Garnet.server
             }
             finally
             {
-                CompleteCheckpoint();
+                ResumeCheckpoints();
             }
         }
 

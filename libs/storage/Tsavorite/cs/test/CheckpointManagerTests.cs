@@ -7,22 +7,26 @@ using System.IO;
 using System.Linq;
 using System.Threading.Tasks;
 using NUnit.Framework;
+using NUnit.Framework.Legacy;
 using Tsavorite.core;
 using Tsavorite.devices;
 using Tsavorite.test.recovery;
 
 namespace Tsavorite.test
 {
+    using LongAllocator = BlittableAllocator<long, long, StoreFunctions<long, long, LongKeyComparer, DefaultRecordDisposer<long, long>>>;
+    using LongStoreFunctions = StoreFunctions<long, long, LongKeyComparer, DefaultRecordDisposer<long, long>>;
+
     public class CheckpointManagerTests
     {
-        private Random random = new Random(0);
+        private readonly Random random = new(0);
 
         [Test]
         [Category("CheckpointRestore")]
         [Category("Smoke")]
         public async Task CheckpointManagerPurgeCheck([Values] DeviceMode deviceMode)
         {
-            ICheckpointManager checkpointManager;
+            DeviceLogCommitCheckpointManager checkpointManager;
             if (deviceMode == DeviceMode.Local)
             {
                 checkpointManager = new DeviceLogCommitCheckpointManager(
@@ -41,19 +45,20 @@ namespace Tsavorite.test
             {
                 TestUtils.RecreateDirectory(TestUtils.MethodTestDir);
 
-                using var store = new TsavoriteKV<long, long>
-                (1 << 10,
-                    logSettings: new LogSettings
+                using var store = new TsavoriteKV<long, long, LongStoreFunctions, LongAllocator>(
+                    new()
                     {
+                        IndexSize = 1L << 16,
                         LogDevice = log,
                         MutableFraction = 1,
-                        PageSizeBits = 10,
-                        MemorySizeBits = 20,
-                        ReadCacheSettings = null
-                    },
-                    checkpointSettings: new CheckpointSettings { CheckpointManager = checkpointManager }
+                        PageSize = 1L << 10,
+                        MemorySize = 1L << 20,
+                        CheckpointManager = checkpointManager
+                    }, StoreFunctions<long, long>.Create(LongKeyComparer.Instance)
+                    , (allocatorSettings, storeFunctions) => new(allocatorSettings, storeFunctions)
                 );
-                using var s = store.NewSession<long, long, Empty, SimpleFunctions<long, long>>(new SimpleFunctions<long, long>());
+                using var s = store.NewSession<long, long, Empty, SimpleSimpleFunctions<long, long>>(new SimpleSimpleFunctions<long, long>());
+                var bContext = s.BasicContext;
 
                 var logCheckpoints = new Dictionary<Guid, int>();
                 var indexCheckpoints = new Dictionary<Guid, int>();
@@ -62,53 +67,53 @@ namespace Tsavorite.test
                 for (var i = 0; i < 10; i++)
                 {
                     // Do some dummy update
-                    s.Upsert(0, random.Next());
+                    _ = bContext.Upsert(0, random.Next());
 
                     var checkpointType = random.Next(5);
                     Guid result = default;
                     switch (checkpointType)
                     {
                         case 0:
-                            store.TryInitiateHybridLogCheckpoint(out result, CheckpointType.FoldOver);
+                            _ = store.TryInitiateHybridLogCheckpoint(out result, CheckpointType.FoldOver);
                             logCheckpoints.Add(result, 0);
                             break;
                         case 1:
-                            store.TryInitiateHybridLogCheckpoint(out result, CheckpointType.Snapshot);
+                            _ = store.TryInitiateHybridLogCheckpoint(out result, CheckpointType.Snapshot);
                             logCheckpoints.Add(result, 0);
                             break;
                         case 2:
-                            store.TryInitiateIndexCheckpoint(out result);
+                            _ = store.TryInitiateIndexCheckpoint(out result);
                             indexCheckpoints.Add(result, 0);
                             break;
                         case 3:
-                            store.TryInitiateFullCheckpoint(out result, CheckpointType.FoldOver);
+                            _ = store.TryInitiateFullCheckpoint(out result, CheckpointType.FoldOver);
                             fullCheckpoints.Add(result, 0);
                             break;
                         case 4:
-                            store.TryInitiateFullCheckpoint(out result, CheckpointType.Snapshot);
+                            _ = store.TryInitiateFullCheckpoint(out result, CheckpointType.Snapshot);
                             fullCheckpoints.Add(result, 0);
                             break;
                         default:
-                            Assert.True(false);
+                            ClassicAssert.True(false);
                             break;
                     }
 
                     await store.CompleteCheckpointAsync();
                 }
 
-                Assert.AreEqual(checkpointManager.GetLogCheckpointTokens().ToDictionary(guid => guid, _ => 0),
+                ClassicAssert.AreEqual(checkpointManager.GetLogCheckpointTokens().ToDictionary(guid => guid, _ => 0),
                     logCheckpoints.Union(fullCheckpoints).ToDictionary(e => e.Key, e => e.Value));
-                Assert.AreEqual(checkpointManager.GetIndexCheckpointTokens().ToDictionary(guid => guid, _ => 0),
+                ClassicAssert.AreEqual(checkpointManager.GetIndexCheckpointTokens().ToDictionary(guid => guid, _ => 0),
                     indexCheckpoints.Union(fullCheckpoints).ToDictionary(e => e.Key, e => e.Value));
 
                 if (logCheckpoints.Count != 0)
                 {
                     var guid = logCheckpoints.First().Key;
                     checkpointManager.Purge(guid);
-                    logCheckpoints.Remove(guid);
-                    Assert.AreEqual(checkpointManager.GetLogCheckpointTokens().ToDictionary(guid => guid, _ => 0),
+                    _ = logCheckpoints.Remove(guid);
+                    ClassicAssert.AreEqual(checkpointManager.GetLogCheckpointTokens().ToDictionary(guid => guid, _ => 0),
                         logCheckpoints.Union(fullCheckpoints).ToDictionary(e => e.Key, e => e.Value));
-                    Assert.AreEqual(checkpointManager.GetIndexCheckpointTokens().ToDictionary(guid => guid, _ => 0),
+                    ClassicAssert.AreEqual(checkpointManager.GetIndexCheckpointTokens().ToDictionary(guid => guid, _ => 0),
                         indexCheckpoints.Union(fullCheckpoints).ToDictionary(e => e.Key, e => e.Value));
                 }
 
@@ -116,10 +121,10 @@ namespace Tsavorite.test
                 {
                     var guid = indexCheckpoints.First().Key;
                     checkpointManager.Purge(guid);
-                    indexCheckpoints.Remove(guid);
-                    Assert.AreEqual(checkpointManager.GetLogCheckpointTokens().ToDictionary(guid => guid, _ => 0),
+                    _ = indexCheckpoints.Remove(guid);
+                    ClassicAssert.AreEqual(checkpointManager.GetLogCheckpointTokens().ToDictionary(guid => guid, _ => 0),
                         logCheckpoints.Union(fullCheckpoints).ToDictionary(e => e.Key, e => e.Value));
-                    Assert.AreEqual(checkpointManager.GetIndexCheckpointTokens().ToDictionary(guid => guid, _ => 0),
+                    ClassicAssert.AreEqual(checkpointManager.GetIndexCheckpointTokens().ToDictionary(guid => guid, _ => 0),
                         indexCheckpoints.Union(fullCheckpoints).ToDictionary(e => e.Key, e => e.Value));
                 }
 
@@ -128,16 +133,16 @@ namespace Tsavorite.test
                 {
                     var guid = fullCheckpoints.First().Key;
                     checkpointManager.Purge(guid);
-                    fullCheckpoints.Remove(guid);
-                    Assert.AreEqual(checkpointManager.GetLogCheckpointTokens().ToDictionary(guid => guid, _ => 0),
+                    _ = fullCheckpoints.Remove(guid);
+                    ClassicAssert.AreEqual(checkpointManager.GetLogCheckpointTokens().ToDictionary(guid => guid, _ => 0),
                         logCheckpoints.Union(fullCheckpoints).ToDictionary(e => e.Key, e => e.Value));
-                    Assert.AreEqual(checkpointManager.GetIndexCheckpointTokens().ToDictionary(guid => guid, _ => 0),
+                    ClassicAssert.AreEqual(checkpointManager.GetIndexCheckpointTokens().ToDictionary(guid => guid, _ => 0),
                         indexCheckpoints.Union(fullCheckpoints).ToDictionary(e => e.Key, e => e.Value));
                 }
 
                 checkpointManager.PurgeAll();
-                Assert.IsEmpty(checkpointManager.GetLogCheckpointTokens());
-                Assert.IsEmpty(checkpointManager.GetIndexCheckpointTokens());
+                ClassicAssert.IsEmpty(checkpointManager.GetLogCheckpointTokens());
+                ClassicAssert.IsEmpty(checkpointManager.GetIndexCheckpointTokens());
             }
             checkpointManager.Dispose();
             TestUtils.DeleteDirectory(TestUtils.MethodTestDir, wait: true);

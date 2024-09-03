@@ -7,11 +7,14 @@ using Tsavorite.core;
 
 namespace Garnet.server
 {
+    using MainStoreAllocator = SpanByteAllocator<StoreFunctions<SpanByte, SpanByte, SpanByteComparer, SpanByteRecordDisposer>>;
+    using MainStoreFunctions = StoreFunctions<SpanByte, SpanByte, SpanByteComparer, SpanByteRecordDisposer>;
+
     /// <summary>
     /// Session provider for Garnet, based on
     /// [K, V, I, O, C] = [SpanByte, SpanByte, SpanByte, SpanByteAndMemory, long]
     /// </summary>
-    public sealed class GarnetProvider : TsavoriteKVProviderBase<SpanByte, SpanByte, SpanByte, SpanByteAndMemory, SpanByteFunctionsForServer<long>, SpanByteServerSerializer>
+    public sealed class GarnetProvider : TsavoriteKVProviderBase<SpanByte, SpanByte, SpanByte, SpanByteAndMemory, SpanByteFunctionsForServer<long>, MainStoreFunctions, MainStoreAllocator, SpanByteServerSerializer>
     {
         readonly StoreWrapper storeWrapper;
 
@@ -19,6 +22,8 @@ namespace Garnet.server
         /// StoreWrapper
         /// </summary>
         internal StoreWrapper StoreWrapper => storeWrapper;
+
+        internal CollectionItemBroker itemBroker;
 
         /// <summary>
         /// Create SpanByte TsavoriteKV backend for Garnet
@@ -28,10 +33,12 @@ namespace Garnet.server
         /// <param name="maxSizeSettings"></param>        
         public GarnetProvider(StoreWrapper storeWrapper,
             SubscribeBroker<SpanByte, SpanByte, IKeySerializer<SpanByte>> broker = null,
+            CollectionItemBroker itemBroker = null,
             MaxSizeSettings maxSizeSettings = default)
             : base(storeWrapper.store, new(), broker, false, maxSizeSettings)
         {
             this.storeWrapper = storeWrapper;
+            this.itemBroker = itemBroker;
         }
 
         /// <summary>
@@ -60,7 +67,7 @@ namespace Garnet.server
         /// <inheritdoc />
         public override IMessageConsumer GetSession(WireFormat wireFormat, INetworkSender networkSender)
             => (wireFormat == WireFormat.ASCII)
-                ? new RespServerSession(networkSender, storeWrapper, broker)
+                ? new RespServerSession(networkSender, storeWrapper, broker, itemBroker, null, true)
                 : throw new GarnetException($"Unsupported wireFormat {wireFormat}");
     }
 }

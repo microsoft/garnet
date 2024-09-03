@@ -105,6 +105,7 @@ namespace Tsavorite.core
             long aligned_size_bytes = sector_size +
                 ((size_bytes + (sector_size - 1)) & ~(sector_size - 1));
 
+            logger?.LogTrace("KV Initialize size:{size}, sizeBytes:{sizeBytes} sectorSize:{sectorSize} alignedSizeBytes:{alignedSizeBytes}", size, size_bytes, sector_size, aligned_size_bytes);
             //Over-allocate and align the table to the cacheline
             state[version].size = size;
             state[version].size_mask = size - 1;

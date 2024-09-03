@@ -9,6 +9,7 @@ using System.Text;
 using System.Text.RegularExpressions;
 using CommandLine;
 using CommandLine.Text;
+using Garnet.common;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Logging.Abstractions;
 
@@ -41,7 +42,7 @@ namespace Garnet
             options = null;
             invalidOptions = new List<string>();
 
-            if (args == null) args = Array.Empty<string>();
+            if (args == null) args = [];
 
             // Initialize command line parser
             var parser = new Parser(settings =>
@@ -85,8 +86,8 @@ namespace Garnet
                 // If any unparsed arguments remain, display a warning to the user
                 if (unparsedArguments.Count > 0)
                 {
-                    logger?.LogWarning(@$"The following command line arguments were not parsed: {string.Join(',', unparsedArguments)}. 
-Please check the syntax of your command. For detailed usage information run with --help.");
+                    logger?.LogWarning(@"The following command line arguments were not parsed: {unparsedArguments}. 
+Please check the syntax of your command. For detailed usage information run with --help.", string.Join(',', unparsedArguments));
                 }
             }
 
@@ -237,7 +238,9 @@ Please check the syntax of your command. For detailed usage information run with
         /// <returns>True if import succeeded</returns>
         private static bool TryImportServerOptions(string path, ConfigFileType configFileType, Options options, ILogger logger, FileLocationType fileLocationType, string connString = null)
         {
-            var streamProvider = StreamProviderFactory.GetStreamProvider(fileLocationType, connString);
+            var assembly = fileLocationType == FileLocationType.EmbeddedResource ? Assembly.GetExecutingAssembly() : null;
+
+            var streamProvider = StreamProviderFactory.GetStreamProvider(fileLocationType, connString, assembly);
             var configProvider = ConfigProviderFactory.GetConfigProvider(configFileType);
 
             using var stream = streamProvider.Read(path);
@@ -251,8 +254,8 @@ Please check the syntax of your command. For detailed usage information run with
                 _ => throw new NotImplementedException()
             };
 
-            logger?.Log(importSucceeded ? LogLevel.Information : LogLevel.Error,
-                $"Configuration import from {fileLocation} {(importSucceeded ? "succeeded" : "failed")}. Path: {path}.");
+            logger?.Log(importSucceeded ? LogLevel.Information : LogLevel.Error, "Configuration import from {fileLocation} {importSucceeded}. Path: {path}.",
+                fileLocation, importSucceeded ? "succeeded" : "failed", path);
 
             return importSucceeded;
         }
@@ -269,7 +272,9 @@ Please check the syntax of your command. For detailed usage information run with
         /// <returns>True if export succeeded</returns>
         private static bool TryExportServerOptions(string path, ConfigFileType configFileType, Options options, ILogger logger, FileLocationType fileLocationType, string connString = null)
         {
-            var streamProvider = StreamProviderFactory.GetStreamProvider(fileLocationType, connString);
+            var assembly = fileLocationType == FileLocationType.EmbeddedResource ? Assembly.GetExecutingAssembly() : null;
+
+            var streamProvider = StreamProviderFactory.GetStreamProvider(fileLocationType, connString, assembly);
             var configProvider = ConfigProviderFactory.GetConfigProvider(configFileType);
 
             var exportSucceeded = configProvider.TryExportOptions(path, streamProvider, options, logger);
@@ -282,8 +287,8 @@ Please check the syntax of your command. For detailed usage information run with
                 _ => throw new NotImplementedException()
             };
 
-            logger?.Log(exportSucceeded ? LogLevel.Information : LogLevel.Error,
-                $"Configuration export to {fileLocation} {(exportSucceeded ? "succeeded" : "failed")}. File path: {path}.");
+            logger?.Log(exportSucceeded ? LogLevel.Information : LogLevel.Error, "Configuration export to {fileLocation} {exportSucceeded}. File path: {path}.",
+                fileLocation, exportSucceeded ? "succeeded" : "failed", path);
             return exportSucceeded;
         }
 
@@ -352,7 +357,7 @@ Please check the syntax of your command. For detailed usage information run with
                 }
             }
 
-            return consolidatedArgs.ToArray();
+            return [.. consolidatedArgs];
         }
     }
 }

@@ -10,23 +10,30 @@ namespace Tsavorite.core
     /// <summary>
     /// Basic Tsavorite Context implementation.
     /// </summary>
-    public readonly struct BasicContext<Key, Value, Input, Output, Context, Functions> : ITsavoriteContext<Key, Value, Input, Output, Context>
-        where Functions : IFunctions<Key, Value, Input, Output, Context>
+    public readonly struct BasicContext<TKey, TValue, TInput, TOutput, TContext, TFunctions, TStoreFunctions, TAllocator>
+        : ITsavoriteContext<TKey, TValue, TInput, TOutput, TContext, TFunctions, TStoreFunctions, TAllocator>
+        where TFunctions : ISessionFunctions<TKey, TValue, TInput, TOutput, TContext>
+        where TStoreFunctions : IStoreFunctions<TKey, TValue>
+        where TAllocator : IAllocator<TKey, TValue, TStoreFunctions>
     {
-        readonly ClientSession<Key, Value, Input, Output, Context, Functions> clientSession;
+        readonly ClientSession<TKey, TValue, TInput, TOutput, TContext, TFunctions, TStoreFunctions, TAllocator> clientSession;
+        internal readonly SessionFunctionsWrapper<TKey, TValue, TInput, TOutput, TContext, TFunctions, BasicSessionLocker<TKey, TValue, TStoreFunctions, TAllocator>, TStoreFunctions, TAllocator> sessionFunctions;
 
-        /// <summary>Indicates whether this struct has been initialized</summary>
+        /// <inheritdoc/>
         public bool IsNull => clientSession is null;
 
-        internal BasicContext(ClientSession<Key, Value, Input, Output, Context, Functions> clientSession)
+        private TsavoriteKV<TKey, TValue, TStoreFunctions, TAllocator> store => clientSession.store;
+
+        internal BasicContext(ClientSession<TKey, TValue, TInput, TOutput, TContext, TFunctions, TStoreFunctions, TAllocator> clientSession)
         {
             this.clientSession = clientSession;
+            sessionFunctions = new(clientSession);
         }
 
         /// <inheritdoc/>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public void UnsafeResumeThread()
-            => clientSession.UnsafeResumeThread();
+            => clientSession.UnsafeResumeThread(sessionFunctions);
 
         /// <inheritdoc/>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
@@ -36,356 +43,450 @@ namespace Tsavorite.core
         #region ITsavoriteContext
 
         /// <inheritdoc/>
-        public long GetKeyHash(Key key) => clientSession.store.GetKeyHash(ref key);
+        public ClientSession<TKey, TValue, TInput, TOutput, TContext, TFunctions, TStoreFunctions, TAllocator> Session => clientSession;
 
         /// <inheritdoc/>
-        public long GetKeyHash(ref Key key) => clientSession.store.GetKeyHash(ref key);
+        public long GetKeyHash(TKey key) => clientSession.store.GetKeyHash(ref key);
+
+        /// <inheritdoc/>
+        public long GetKeyHash(ref TKey key) => clientSession.store.GetKeyHash(ref key);
 
         /// <inheritdoc/>
         public bool CompletePending(bool wait = false, bool spinWaitForCommit = false)
-            => clientSession.CompletePending(wait, spinWaitForCommit);
+            => clientSession.CompletePending(sessionFunctions, wait, spinWaitForCommit);
 
         /// <inheritdoc/>
-        public bool CompletePendingWithOutputs(out CompletedOutputIterator<Key, Value, Input, Output, Context> completedOutputs, bool wait = false, bool spinWaitForCommit = false)
-            => clientSession.CompletePendingWithOutputs(out completedOutputs, wait, spinWaitForCommit);
+        public bool CompletePendingWithOutputs(out CompletedOutputIterator<TKey, TValue, TInput, TOutput, TContext> completedOutputs, bool wait = false, bool spinWaitForCommit = false)
+            => clientSession.CompletePendingWithOutputs(sessionFunctions, out completedOutputs, wait, spinWaitForCommit);
 
         /// <inheritdoc/>
         public ValueTask CompletePendingAsync(bool waitForCommit = false, CancellationToken token = default)
-            => clientSession.CompletePendingAsync(waitForCommit, token);
+            => clientSession.CompletePendingAsync(sessionFunctions, waitForCommit, token);
 
         /// <inheritdoc/>
-        public ValueTask<CompletedOutputIterator<Key, Value, Input, Output, Context>> CompletePendingWithOutputsAsync(bool waitForCommit = false, CancellationToken token = default)
-            => clientSession.CompletePendingWithOutputsAsync(waitForCommit, token);
+        public ValueTask<CompletedOutputIterator<TKey, TValue, TInput, TOutput, TContext>> CompletePendingWithOutputsAsync(bool waitForCommit = false, CancellationToken token = default)
+            => clientSession.CompletePendingWithOutputsAsync(sessionFunctions, waitForCommit, token);
 
         /// <inheritdoc/>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public Status Read(ref Key key, ref Input input, ref Output output, Context userContext = default, long serialNo = 0)
-            => clientSession.Read(ref key, ref input, ref output, userContext, serialNo);
+        public Status Read(ref TKey key, ref TInput input, ref TOutput output, TContext userContext = default)
+        {
+            UnsafeResumeThread();
+            try
+            {
+                return clientSession.store.ContextRead(ref key, ref input, ref output, userContext, sessionFunctions);
+            }
+            finally
+            {
+                UnsafeSuspendThread();
+            }
+        }
 
         /// <inheritdoc/>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public Status Read(ref Key key, ref Input input, ref Output output, ref ReadOptions readOptions, Context userContext = default, long serialNo = 0)
-            => clientSession.Read(ref key, ref input, ref output, ref readOptions, userContext, serialNo);
+        public Status Read(ref TKey key, ref TInput input, ref TOutput output, ref ReadOptions readOptions, TContext userContext = default)
+            => Read(ref key, ref input, ref output, ref readOptions, out _, userContext);
 
         /// <inheritdoc/>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public Status Read(Key key, Input input, out Output output, Context userContext = default, long serialNo = 0)
-            => clientSession.Read(key, input, out output, userContext, serialNo);
+        public Status Read(TKey key, TInput input, out TOutput output, TContext userContext = default)
+        {
+            output = default;
+            return Read(ref key, ref input, ref output, userContext);
+        }
 
         /// <inheritdoc/>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public Status Read(Key key, Input input, out Output output, ref ReadOptions readOptions, Context userContext = default, long serialNo = 0)
-            => clientSession.Read(key, input, out output, ref readOptions, userContext, serialNo);
+        public Status Read(TKey key, TInput input, out TOutput output, ref ReadOptions readOptions, TContext userContext = default)
+        {
+            output = default;
+            return Read(ref key, ref input, ref output, ref readOptions, userContext);
+        }
 
         /// <inheritdoc/>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public Status Read(ref Key key, ref Output output, Context userContext = default, long serialNo = 0)
-            => clientSession.Read(ref key, ref output, userContext, serialNo);
+        public Status Read(ref TKey key, ref TOutput output, TContext userContext = default)
+        {
+            TInput input = default;
+            return Read(ref key, ref input, ref output, userContext);
+        }
 
         /// <inheritdoc/>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public Status Read(ref Key key, ref Output output, ref ReadOptions readOptions, Context userContext = default, long serialNo = 0)
-            => clientSession.Read(ref key, ref output, ref readOptions, userContext, serialNo);
+        public Status Read(ref TKey key, ref TOutput output, ref ReadOptions readOptions, TContext userContext = default)
+        {
+            TInput input = default;
+            return Read(ref key, ref input, ref output, ref readOptions, userContext);
+        }
 
         /// <inheritdoc/>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public Status Read(Key key, out Output output, Context userContext = default, long serialNo = 0)
-            => clientSession.Read(key, out output, userContext, serialNo);
+        public Status Read(TKey key, out TOutput output, TContext userContext = default)
+        {
+            TInput input = default;
+            output = default;
+            return Read(ref key, ref input, ref output, userContext);
+        }
 
         /// <inheritdoc/>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public Status Read(Key key, out Output output, ref ReadOptions readOptions, Context userContext = default, long serialNo = 0)
-            => clientSession.Read(key, out output, ref readOptions, userContext, serialNo);
+        public Status Read(TKey key, out TOutput output, ref ReadOptions readOptions, TContext userContext = default)
+        {
+            TInput input = default;
+            output = default;
+            return Read(ref key, ref input, ref output, ref readOptions, userContext);
+        }
 
         /// <inheritdoc/>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public (Status status, Output output) Read(Key key, Context userContext = default, long serialNo = 0)
-            => clientSession.Read(key, userContext, serialNo);
+        public (Status status, TOutput output) Read(TKey key, TContext userContext = default)
+        {
+            TInput input = default;
+            TOutput output = default;
+            return (Read(ref key, ref input, ref output, userContext), output);
+        }
 
         /// <inheritdoc/>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public (Status status, Output output) Read(Key key, ref ReadOptions readOptions, Context userContext = default, long serialNo = 0)
-            => clientSession.Read(key, ref readOptions, userContext, serialNo);
+        public (Status status, TOutput output) Read(TKey key, ref ReadOptions readOptions, TContext userContext = default)
+        {
+            TInput input = default;
+            TOutput output = default;
+            return (Read(ref key, ref input, ref output, ref readOptions, userContext), output);
+        }
 
         /// <inheritdoc/>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public Status Read(ref Key key, ref Input input, ref Output output, ref ReadOptions readOptions, out RecordMetadata recordMetadata, Context userContext = default, long serialNo = 0)
-            => clientSession.Read(ref key, ref input, ref output, ref readOptions, out recordMetadata, userContext, serialNo);
+        public Status Read(ref TKey key, ref TInput input, ref TOutput output, ref ReadOptions readOptions, out RecordMetadata recordMetadata, TContext userContext = default)
+        {
+            UnsafeResumeThread();
+            try
+            {
+                return store.ContextRead(ref key, ref input, ref output, ref readOptions, out recordMetadata, userContext, sessionFunctions);
+            }
+            finally
+            {
+                UnsafeSuspendThread();
+            }
+        }
 
         /// <inheritdoc/>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public Status ReadAtAddress(long address, ref Input input, ref Output output, ref ReadOptions readOptions, out RecordMetadata recordMetadata, Context userContext = default, long serialNo = 0)
-            => clientSession.ReadAtAddress(address, ref input, ref output, ref readOptions, out recordMetadata, userContext, serialNo);
+        public Status ReadAtAddress(long address, ref TInput input, ref TOutput output, ref ReadOptions readOptions, out RecordMetadata recordMetadata, TContext userContext = default)
+        {
+            UnsafeResumeThread();
+            try
+            {
+                return store.ContextReadAtAddress(address, ref input, ref output, ref readOptions, out recordMetadata, userContext, sessionFunctions);
+            }
+            finally
+            {
+                UnsafeSuspendThread();
+            }
+        }
 
         /// <inheritdoc/>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public Status ReadAtAddress(long address, ref Key key, ref Input input, ref Output output, ref ReadOptions readOptions, out RecordMetadata recordMetadata, Context userContext = default, long serialNo = 0)
-            => clientSession.ReadAtAddress(address, ref key, ref input, ref output, ref readOptions, out recordMetadata, userContext, serialNo);
+        public Status ReadAtAddress(long address, ref TKey key, ref TInput input, ref TOutput output, ref ReadOptions readOptions, out RecordMetadata recordMetadata, TContext userContext = default)
+        {
+            UnsafeResumeThread();
+            try
+            {
+                return store.ContextReadAtAddress(address, ref key, ref input, ref output, ref readOptions, out recordMetadata, userContext, sessionFunctions);
+            }
+            finally
+            {
+                UnsafeSuspendThread();
+            }
+        }
 
         /// <inheritdoc/>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public ValueTask<TsavoriteKV<Key, Value>.ReadAsyncResult<Input, Output, Context>> ReadAsync(ref Key key, ref Input input, Context userContext = default, long serialNo = 0, CancellationToken cancellationToken = default)
-            => clientSession.ReadAsync(ref key, ref input, userContext, serialNo, cancellationToken);
+        public Status Upsert(ref TKey key, ref TValue desiredValue, TContext userContext = default)
+        {
+            TInput input = default;
+            TOutput output = default;
+            return Upsert(ref key, store.storeFunctions.GetKeyHashCode64(ref key), ref input, ref desiredValue, ref output, userContext);
+        }
 
         /// <inheritdoc/>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public ValueTask<TsavoriteKV<Key, Value>.ReadAsyncResult<Input, Output, Context>> ReadAsync(Key key, Input input, Context context = default, long serialNo = 0, CancellationToken token = default)
-            => clientSession.ReadAsync(key, input, context, serialNo, token);
+        public Status Upsert(ref TKey key, ref TValue desiredValue, ref UpsertOptions upsertOptions, TContext userContext = default)
+        {
+            TInput input = default;
+            TOutput output = default;
+            return Upsert(ref key, upsertOptions.KeyHash ?? store.storeFunctions.GetKeyHashCode64(ref key), ref input, ref desiredValue, ref output, userContext);
+        }
 
         /// <inheritdoc/>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public ValueTask<TsavoriteKV<Key, Value>.ReadAsyncResult<Input, Output, Context>> ReadAsync(Key key, Input input, ref ReadOptions readOptions, Context context = default, long serialNo = 0, CancellationToken token = default)
-            => clientSession.ReadAsync(key, input, ref readOptions, context, serialNo, token);
+        public Status Upsert(ref TKey key, ref TInput input, ref TValue desiredValue, ref TOutput output, TContext userContext = default)
+            => Upsert(ref key, store.storeFunctions.GetKeyHashCode64(ref key), ref input, ref desiredValue, ref output, userContext);
 
         /// <inheritdoc/>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public ValueTask<TsavoriteKV<Key, Value>.ReadAsyncResult<Input, Output, Context>> ReadAsync(ref Key key, Context userContext = default, long serialNo = 0, CancellationToken token = default)
-            => clientSession.ReadAsync(ref key, userContext, serialNo, token);
+        public Status Upsert(ref TKey key, ref TInput input, ref TValue desiredValue, ref TOutput output, ref UpsertOptions upsertOptions, TContext userContext = default)
+            => Upsert(ref key, upsertOptions.KeyHash ?? store.storeFunctions.GetKeyHashCode64(ref key), ref input, ref desiredValue, ref output, userContext);
 
         /// <inheritdoc/>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public ValueTask<TsavoriteKV<Key, Value>.ReadAsyncResult<Input, Output, Context>> ReadAsync(ref Key key, ref ReadOptions readOptions, Context userContext = default, long serialNo = 0, CancellationToken token = default)
-            => clientSession.ReadAsync(ref key, ref readOptions, userContext, serialNo, token);
+        private Status Upsert(ref TKey key, long keyHash, ref TInput input, ref TValue desiredValue, ref TOutput output, TContext userContext = default)
+        {
+            UnsafeResumeThread();
+            try
+            {
+                return store.ContextUpsert(ref key, keyHash, ref input, ref desiredValue, ref output, userContext, sessionFunctions);
+            }
+            finally
+            {
+                UnsafeSuspendThread();
+            }
+        }
 
         /// <inheritdoc/>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public ValueTask<TsavoriteKV<Key, Value>.ReadAsyncResult<Input, Output, Context>> ReadAsync(Key key, Context context = default, long serialNo = 0, CancellationToken token = default)
-            => clientSession.ReadAsync(key, context, serialNo, token);
+        public Status Upsert(ref TKey key, ref TInput input, ref TValue desiredValue, ref TOutput output, out RecordMetadata recordMetadata, TContext userContext = default)
+            => Upsert(ref key, store.storeFunctions.GetKeyHashCode64(ref key), ref input, ref desiredValue, ref output, out recordMetadata, userContext);
 
         /// <inheritdoc/>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public ValueTask<TsavoriteKV<Key, Value>.ReadAsyncResult<Input, Output, Context>> ReadAsync(Key key, ref ReadOptions readOptions, Context context = default, long serialNo = 0, CancellationToken token = default)
-            => clientSession.ReadAsync(key, ref readOptions, context, serialNo, token);
+        public Status Upsert(ref TKey key, ref TInput input, ref TValue desiredValue, ref TOutput output, ref UpsertOptions upsertOptions, out RecordMetadata recordMetadata, TContext userContext = default)
+            => Upsert(ref key, upsertOptions.KeyHash ?? store.storeFunctions.GetKeyHashCode64(ref key), ref input, ref desiredValue, ref output, out recordMetadata, userContext);
 
         /// <inheritdoc/>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public ValueTask<TsavoriteKV<Key, Value>.ReadAsyncResult<Input, Output, Context>> ReadAsync(ref Key key, ref Input input, ref ReadOptions readOptions, Context userContext = default, long serialNo = 0, CancellationToken cancellationToken = default)
-            => clientSession.ReadAsync(ref key, ref input, ref readOptions, userContext, serialNo, cancellationToken);
+        private Status Upsert(ref TKey key, long keyHash, ref TInput input, ref TValue desiredValue, ref TOutput output, out RecordMetadata recordMetadata, TContext userContext = default)
+        {
+            UnsafeResumeThread();
+            try
+            {
+                return store.ContextUpsert(ref key, keyHash, ref input, ref desiredValue, ref output, out recordMetadata, userContext, sessionFunctions);
+            }
+            finally
+            {
+                UnsafeSuspendThread();
+            }
+        }
 
         /// <inheritdoc/>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public ValueTask<TsavoriteKV<Key, Value>.ReadAsyncResult<Input, Output, Context>> ReadAtAddressAsync(long address, ref Input input, ref ReadOptions readOptions, Context userContext = default, long serialNo = 0, CancellationToken cancellationToken = default)
-            => clientSession.ReadAtAddressAsync(address, ref input, ref readOptions, userContext, serialNo, cancellationToken);
+        public Status Upsert(TKey key, TValue desiredValue, TContext userContext = default)
+            => Upsert(ref key, ref desiredValue, userContext);
 
         /// <inheritdoc/>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public ValueTask<TsavoriteKV<Key, Value>.ReadAsyncResult<Input, Output, Context>> ReadAtAddressAsync(long address, ref Key key, ref Input input, ref ReadOptions readOptions, Context userContext = default, long serialNo = 0, CancellationToken cancellationToken = default)
-            => clientSession.ReadAtAddressAsync(address, ref key, ref input, ref readOptions, userContext, serialNo, cancellationToken);
+        public Status Upsert(TKey key, TValue desiredValue, ref UpsertOptions upsertOptions, TContext userContext = default)
+            => Upsert(ref key, ref desiredValue, ref upsertOptions, userContext);
 
         /// <inheritdoc/>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public Status Upsert(ref Key key, ref Value desiredValue, Context userContext = default, long serialNo = 0)
-            => clientSession.Upsert(ref key, ref desiredValue, userContext, serialNo);
+        public Status Upsert(TKey key, TInput input, TValue desiredValue, ref TOutput output, TContext userContext = default)
+            => Upsert(ref key, ref input, ref desiredValue, ref output, userContext);
 
         /// <inheritdoc/>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public Status Upsert(ref Key key, ref Value desiredValue, ref UpsertOptions upsertOptions, Context userContext = default, long serialNo = 0)
-            => clientSession.Upsert(ref key, ref desiredValue, ref upsertOptions, userContext, serialNo);
+        public Status Upsert(TKey key, TInput input, TValue desiredValue, ref TOutput output, ref UpsertOptions upsertOptions, TContext userContext = default)
+            => Upsert(ref key, ref input, ref desiredValue, ref output, ref upsertOptions, userContext);
 
         /// <inheritdoc/>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public Status Upsert(ref Key key, ref Input input, ref Value desiredValue, ref Output output, Context userContext = default, long serialNo = 0)
-            => clientSession.Upsert(ref key, ref input, ref desiredValue, ref output, userContext, serialNo);
+        public Status RMW(ref TKey key, ref TInput input, ref TOutput output, TContext userContext = default)
+            => RMW(ref key, store.storeFunctions.GetKeyHashCode64(ref key), ref input, ref output, out _, userContext);
 
         /// <inheritdoc/>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public Status Upsert(ref Key key, ref Input input, ref Value desiredValue, ref Output output, ref UpsertOptions upsertOptions, Context userContext = default, long serialNo = 0)
-            => clientSession.Upsert(ref key, ref input, ref desiredValue, ref output, ref upsertOptions, userContext, serialNo);
+        public Status RMW(ref TKey key, ref TInput input, ref TOutput output, ref RMWOptions rmwOptions, TContext userContext = default)
+            => RMW(ref key, rmwOptions.KeyHash ?? store.storeFunctions.GetKeyHashCode64(ref key), ref input, ref output, out _, userContext);
 
         /// <inheritdoc/>
-        [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public Status Upsert(ref Key key, ref Input input, ref Value desiredValue, ref Output output, out RecordMetadata recordMetadata, Context userContext = default, long serialNo = 0)
-            => clientSession.Upsert(ref key, ref input, ref desiredValue, ref output, out recordMetadata, userContext, serialNo);
-
-        /// <inheritdoc/>
-        [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public Status Upsert(ref Key key, ref Input input, ref Value desiredValue, ref Output output, ref UpsertOptions upsertOptions, out RecordMetadata recordMetadata, Context userContext = default, long serialNo = 0)
-            => clientSession.Upsert(ref key, ref input, ref desiredValue, ref output, ref upsertOptions, out recordMetadata, userContext, serialNo);
-
-        /// <inheritdoc/>
-        [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public Status Upsert(Key key, Value desiredValue, Context userContext = default, long serialNo = 0)
-            => clientSession.Upsert(key, desiredValue, userContext, serialNo);
-
-        /// <inheritdoc/>
-        [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public Status Upsert(Key key, Value desiredValue, ref UpsertOptions upsertOptions, Context userContext = default, long serialNo = 0)
-            => clientSession.Upsert(key, desiredValue, ref upsertOptions, userContext, serialNo);
-
-        /// <inheritdoc/>
-        [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public Status Upsert(Key key, Input input, Value desiredValue, ref Output output, Context userContext = default, long serialNo = 0)
-            => clientSession.Upsert(key, input, desiredValue, ref output, userContext, serialNo);
-
-        /// <inheritdoc/>
-        [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public Status Upsert(Key key, Input input, Value desiredValue, ref Output output, ref UpsertOptions upsertOptions, Context userContext = default, long serialNo = 0)
-            => clientSession.Upsert(ref key, ref input, ref desiredValue, ref output, ref upsertOptions, userContext, serialNo);
-
-        /// <inheritdoc/>
-        [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public ValueTask<TsavoriteKV<Key, Value>.UpsertAsyncResult<Input, Output, Context>> UpsertAsync(ref Key key, ref Value desiredValue, Context userContext = default, long serialNo = 0, CancellationToken token = default)
-            => clientSession.UpsertAsync(ref key, ref desiredValue, userContext, serialNo, token);
-
-        /// <inheritdoc/>
-        [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public ValueTask<TsavoriteKV<Key, Value>.UpsertAsyncResult<Input, Output, Context>> UpsertAsync(ref Key key, ref Value desiredValue, ref UpsertOptions upsertOptions, Context userContext = default, long serialNo = 0, CancellationToken token = default)
-            => clientSession.UpsertAsync(ref key, ref desiredValue, ref upsertOptions, userContext, serialNo, token);
-
-        /// <inheritdoc/>
-        [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public ValueTask<TsavoriteKV<Key, Value>.UpsertAsyncResult<Input, Output, Context>> UpsertAsync(ref Key key, ref Input input, ref Value desiredValue, ref UpsertOptions upsertOptions, Context userContext = default, long serialNo = 0, CancellationToken token = default)
-            => clientSession.UpsertAsync(ref key, ref input, ref desiredValue, ref upsertOptions, userContext, serialNo, token);
-
-        /// <inheritdoc/>
-        [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public ValueTask<TsavoriteKV<Key, Value>.UpsertAsyncResult<Input, Output, Context>> UpsertAsync(ref Key key, ref Input input, ref Value desiredValue, Context userContext = default, long serialNo = 0, CancellationToken token = default)
-            => clientSession.UpsertAsync(ref key, ref input, ref desiredValue, userContext, serialNo, token);
-
-        /// <inheritdoc/>
-        [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public ValueTask<TsavoriteKV<Key, Value>.UpsertAsyncResult<Input, Output, Context>> UpsertAsync(Key key, Value desiredValue, Context userContext = default, long serialNo = 0, CancellationToken token = default)
-            => clientSession.UpsertAsync(key, desiredValue, userContext, serialNo, token);
-
-        /// <inheritdoc/>
-        [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public ValueTask<TsavoriteKV<Key, Value>.UpsertAsyncResult<Input, Output, Context>> UpsertAsync(Key key, Value desiredValue, ref UpsertOptions upsertOptions, Context userContext = default, long serialNo = 0, CancellationToken token = default)
-            => clientSession.UpsertAsync(key, desiredValue, ref upsertOptions, userContext, serialNo, token);
-
-        /// <inheritdoc/>
-        [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public ValueTask<TsavoriteKV<Key, Value>.UpsertAsyncResult<Input, Output, Context>> UpsertAsync(Key key, Input input, Value desiredValue, Context userContext = default, long serialNo = 0, CancellationToken token = default)
-            => clientSession.UpsertAsync(key, input, desiredValue, userContext, serialNo, token);
-
-        /// <inheritdoc/>
-        [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public ValueTask<TsavoriteKV<Key, Value>.UpsertAsyncResult<Input, Output, Context>> UpsertAsync(Key key, Input input, Value desiredValue, ref UpsertOptions upsertOptions, Context userContext = default, long serialNo = 0, CancellationToken token = default)
-            => clientSession.UpsertAsync(key, input, desiredValue, ref upsertOptions, userContext, serialNo, token);
-
-        /// <inheritdoc/>
-        [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public Status RMW(ref Key key, ref Input input, ref Output output, Context userContext = default, long serialNo = 0)
-            => clientSession.RMW(ref key, ref input, ref output, userContext, serialNo);
-
-        /// <inheritdoc/>
-        [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public Status RMW(ref Key key, ref Input input, ref Output output, ref RMWOptions rmwOptions, Context userContext = default, long serialNo = 0)
-            => clientSession.RMW(ref key, ref input, ref output, ref rmwOptions, userContext, serialNo);
-
-        /// <inheritdoc/>
-        [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public Status RMW(ref Key key, ref Input input, ref Output output, ref RMWOptions rmwOptions, out RecordMetadata recordMetadata, Context userContext = default, long serialNo = 0)
-            => clientSession.RMW(ref key, ref input, ref output, ref rmwOptions, out recordMetadata, userContext, serialNo);
-
-        /// <inheritdoc/>
-        [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public Status RMW(ref Key key, ref Input input, ref Output output, out RecordMetadata recordMetadata, Context userContext = default, long serialNo = 0)
-            => clientSession.RMW(ref key, ref input, ref output, out recordMetadata, userContext, serialNo);
-
-        /// <inheritdoc/>
-        [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public Status RMW(Key key, Input input, out Output output, Context userContext = default, long serialNo = 0)
-            => clientSession.RMW(key, input, out output, userContext, serialNo);
-
-        /// <inheritdoc/>
-        [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public Status RMW(Key key, Input input, out Output output, ref RMWOptions rmwOptions, Context userContext = default, long serialNo = 0)
-            => clientSession.RMW(key, input, out output, ref rmwOptions, userContext, serialNo);
-
-        /// <inheritdoc/>
-        [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public Status RMW(ref Key key, ref Input input, Context userContext = default, long serialNo = 0)
-            => clientSession.RMW(ref key, ref input, userContext, serialNo);
-
-        /// <inheritdoc/>
-        [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public Status RMW(ref Key key, ref Input input, ref RMWOptions rmwOptions, Context userContext = default, long serialNo = 0)
-            => clientSession.RMW(ref key, ref input, ref rmwOptions, userContext, serialNo);
+        public Status RMW(ref TKey key, ref TInput input, ref TOutput output, out RecordMetadata recordMetadata, TContext userContext = default)
+            => RMW(ref key, store.storeFunctions.GetKeyHashCode64(ref key), ref input, ref output, out recordMetadata, userContext);
 
         /// <inheritdoc/>
-        [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public Status RMW(Key key, Input input, Context userContext = default, long serialNo = 0)
-            => clientSession.RMW(key, input, userContext, serialNo);
+        public Status RMW(ref TKey key, ref TInput input, ref TOutput output, ref RMWOptions rmwOptions, out RecordMetadata recordMetadata, TContext userContext = default)
+        {
+            var keyHash = rmwOptions.KeyHash ?? store.storeFunctions.GetKeyHashCode64(ref key);
+            return RMW(ref key, keyHash, ref input, ref output, out recordMetadata, userContext);
+        }
 
         /// <inheritdoc/>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public Status RMW(Key key, Input input, ref RMWOptions rmwOptions, Context userContext = default, long serialNo = 0)
-            => clientSession.RMW(key, input, ref rmwOptions, userContext, serialNo);
+        private Status RMW(ref TKey key, long keyHash, ref TInput input, ref TOutput output, out RecordMetadata recordMetadata, TContext userContext = default)
+        {
+            UnsafeResumeThread();
+            try
+            {
+                return store.ContextRMW(ref key, keyHash, ref input, ref output, out recordMetadata, userContext, sessionFunctions);
+            }
+            finally
+            {
+                UnsafeSuspendThread();
+            }
+        }
 
         /// <inheritdoc/>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public ValueTask<TsavoriteKV<Key, Value>.RmwAsyncResult<Input, Output, Context>> RMWAsync(ref Key key, ref Input input, Context context = default, long serialNo = 0, CancellationToken token = default)
-            => clientSession.RMWAsync(ref key, ref input, context, serialNo, token);
+        public Status RMW(TKey key, TInput input, out TOutput output, TContext userContext = default)
+        {
+            output = default;
+            return RMW(ref key, ref input, ref output, userContext);
+        }
 
         /// <inheritdoc/>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public ValueTask<TsavoriteKV<Key, Value>.RmwAsyncResult<Input, Output, Context>> RMWAsync(ref Key key, ref Input input, ref RMWOptions rmwOptions, Context context = default, long serialNo = 0, CancellationToken token = default)
-            => clientSession.RMWAsync(ref key, ref input, ref rmwOptions, context, serialNo, token);
+        public Status RMW(TKey key, TInput input, out TOutput output, ref RMWOptions rmwOptions, TContext userContext = default)
+        {
+            output = default;
+            return RMW(ref key, ref input, ref output, ref rmwOptions, userContext);
+        }
 
         /// <inheritdoc/>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public ValueTask<TsavoriteKV<Key, Value>.RmwAsyncResult<Input, Output, Context>> RMWAsync(Key key, Input input, Context context = default, long serialNo = 0, CancellationToken token = default)
-            => clientSession.RMWAsync(key, input, context, serialNo, token);
+        public Status RMW(ref TKey key, ref TInput input, TContext userContext = default)
+        {
+            TOutput output = default;
+            return RMW(ref key, ref input, ref output, userContext);
+        }
 
         /// <inheritdoc/>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public ValueTask<TsavoriteKV<Key, Value>.RmwAsyncResult<Input, Output, Context>> RMWAsync(Key key, Input input, ref RMWOptions rmwOptions, Context context = default, long serialNo = 0, CancellationToken token = default)
-            => clientSession.RMWAsync(key, input, ref rmwOptions, context, serialNo, token);
+        public Status RMW(ref TKey key, ref TInput input, ref RMWOptions rmwOptions, TContext userContext = default)
+        {
+            TOutput output = default;
+            return RMW(ref key, ref input, ref output, ref rmwOptions, userContext);
+        }
 
         /// <inheritdoc/>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public Status Delete(ref Key key, Context userContext = default, long serialNo = 0)
-            => clientSession.Delete(ref key, userContext, serialNo);
+        public Status RMW(TKey key, TInput input, TContext userContext = default)
+            => RMW(ref key, ref input, userContext);
 
         /// <inheritdoc/>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public Status Delete(ref Key key, ref DeleteOptions deleteOptions, Context userContext = default, long serialNo = 0)
-            => clientSession.Delete(ref key, ref deleteOptions, userContext, serialNo);
+        public Status RMW(TKey key, TInput input, ref RMWOptions rmwOptions, TContext userContext = default)
+            => RMW(ref key, ref input, ref rmwOptions, userContext);
 
         /// <inheritdoc/>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public Status Delete(Key key, Context userContext = default, long serialNo = 0)
-            => clientSession.Delete(key, userContext, serialNo);
+        public Status Delete(ref TKey key, TContext userContext = default)
+            => Delete(ref key, store.storeFunctions.GetKeyHashCode64(ref key), userContext);
 
         /// <inheritdoc/>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public Status Delete(Key key, ref DeleteOptions deleteOptions, Context userContext = default, long serialNo = 0)
-            => clientSession.Delete(key, ref deleteOptions, userContext, serialNo);
+        public Status Delete(ref TKey key, ref DeleteOptions deleteOptions, TContext userContext = default)
+            => Delete(ref key, deleteOptions.KeyHash ?? store.storeFunctions.GetKeyHashCode64(ref key), userContext);
 
         /// <inheritdoc/>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public ValueTask<TsavoriteKV<Key, Value>.DeleteAsyncResult<Input, Output, Context>> DeleteAsync(ref Key key, Context userContext = default, long serialNo = 0, CancellationToken token = default)
-            => clientSession.DeleteAsync(ref key, userContext, serialNo, token);
+        private Status Delete(ref TKey key, long keyHash, TContext userContext = default)
+        {
+            UnsafeResumeThread();
+            try
+            {
+                return store.ContextDelete<TInput, TOutput, TContext, SessionFunctionsWrapper<TKey, TValue, TInput, TOutput, TContext, TFunctions, BasicSessionLocker<TKey, TValue, TStoreFunctions, TAllocator>, TStoreFunctions, TAllocator>>(ref key, keyHash, userContext, sessionFunctions);
+            }
+            finally
+            {
+                UnsafeSuspendThread();
+            }
+        }
 
         /// <inheritdoc/>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public ValueTask<TsavoriteKV<Key, Value>.DeleteAsyncResult<Input, Output, Context>> DeleteAsync(ref Key key, ref DeleteOptions deleteOptions, Context userContext = default, long serialNo = 0, CancellationToken token = default)
-            => clientSession.DeleteAsync(ref key, ref deleteOptions, userContext, serialNo, token);
+        public Status Delete(TKey key, TContext userContext = default)
+            => Delete(ref key, userContext);
 
         /// <inheritdoc/>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public ValueTask<TsavoriteKV<Key, Value>.DeleteAsyncResult<Input, Output, Context>> DeleteAsync(Key key, Context userContext = default, long serialNo = 0, CancellationToken token = default)
-            => clientSession.DeleteAsync(key, userContext, serialNo, token);
+        public Status Delete(TKey key, ref DeleteOptions deleteOptions, TContext userContext = default)
+            => Delete(ref key, ref deleteOptions, userContext);
 
         /// <inheritdoc/>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public ValueTask<TsavoriteKV<Key, Value>.DeleteAsyncResult<Input, Output, Context>> DeleteAsync(Key key, ref DeleteOptions deleteOptions, Context userContext = default, long serialNo = 0, CancellationToken token = default)
-            => clientSession.DeleteAsync(key, ref deleteOptions, userContext, serialNo, token);
+        public void ResetModified(TKey key)
+            => clientSession.ResetModified(sessionFunctions, ref key);
 
         /// <inheritdoc/>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public void ResetModified(ref Key key)
-            => clientSession.ResetModified(ref key);
+        public void ResetModified(ref TKey key)
+            => clientSession.ResetModified(sessionFunctions, ref key);
 
         /// <inheritdoc/>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        internal bool IsModified(Key key)
-            => clientSession.IsModified(ref key);
+        internal bool IsModified(TKey key)
+            => clientSession.IsModified(sessionFunctions, ref key);
 
         /// <inheritdoc/>
         public void Refresh()
-            => clientSession.Refresh();
+            => clientSession.Refresh(sessionFunctions);
 
         #endregion ITsavoriteContext
+
+        /// <summary>
+        /// Copy key and value to tail, succeed only if key is known to not exist in between expectedLogicalAddress and tail.
+        /// </summary>
+        /// <param name="key"></param>
+        /// <param name="input"></param>
+        /// <param name="output"></param>
+        /// <param name="value"></param>
+        /// <param name="untilAddress">Lower-bound address (addresses are searched from tail (high) to head (low); do not search for "future records" earlier than this)</param>
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        internal Status CompactionCopyToTail(ref TKey key, ref TInput input, ref TValue value, ref TOutput output, long untilAddress)
+        {
+            UnsafeResumeThread();
+            try
+            {
+                return store.CompactionConditionalCopyToTail<TInput, TOutput, TContext, SessionFunctionsWrapper<TKey, TValue, TInput, TOutput, TContext, TFunctions, BasicSessionLocker<TKey, TValue, TStoreFunctions, TAllocator>, TStoreFunctions, TAllocator>>(
+                        sessionFunctions, ref key, ref input, ref value, ref output, untilAddress);
+            }
+            finally
+            {
+                UnsafeSuspendThread();
+            }
+        }
+
+        /// <summary>
+        /// Push a scan record to client if key is known to not exist in between expectedLogicalAddress and tail.
+        /// </summary>
+        /// <param name="scanCursorState">Scan cursor tracking state, from the session on which this scan was initiated</param>
+        /// <param name="recordInfo"></param>
+        /// <param name="key"></param>
+        /// <param name="value"></param>
+        /// <param name="untilAddress">Lower-bound address (addresses are searched from tail (high) to head (low); do not search for "future records" earlier than this)</param>
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        internal Status ConditionalScanPush(ScanCursorState<TKey, TValue> scanCursorState, RecordInfo recordInfo, ref TKey key, ref TValue value, long untilAddress)
+        {
+            UnsafeResumeThread();
+            try
+            {
+                return store.hlogBase.ConditionalScanPush<TInput, TOutput, TContext, SessionFunctionsWrapper<TKey, TValue, TInput, TOutput, TContext, TFunctions, BasicSessionLocker<TKey, TValue, TStoreFunctions, TAllocator>, TStoreFunctions, TAllocator>>(
+                        sessionFunctions, scanCursorState, recordInfo, ref key, ref value, untilAddress);
+            }
+            finally
+            {
+                UnsafeSuspendThread();
+            }
+        }
+
+        /// <summary>
+        /// Checks whether specified record is present in memory (between max(fromAddress, HeadAddress) and tail), including tombstones.
+        /// </summary>
+        /// <param name="key">Key of the record.</param>
+        /// <param name="logicalAddress">Logical address of record, if found</param>
+        /// <param name="fromAddress">Look until this address; if less than HeadAddress, then HeadAddress is used</param>
+        /// <returns>Status</returns>
+        internal Status ContainsKeyInMemory(ref TKey key, out long logicalAddress, long fromAddress = -1)
+        {
+            UnsafeResumeThread();
+            try
+            {
+                return store.InternalContainsKeyInMemory<TInput, TOutput, TContext, SessionFunctionsWrapper<TKey, TValue, TInput, TOutput, TContext, TFunctions, BasicSessionLocker<TKey, TValue, TStoreFunctions, TAllocator>, TStoreFunctions, TAllocator>>(
+                        ref key, sessionFunctions, out logicalAddress, fromAddress);
+            }
+            finally
+            {
+                UnsafeSuspendThread();
+            }
+        }
     }
 }

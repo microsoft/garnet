@@ -10,7 +10,9 @@ using Microsoft.Extensions.Logging;
 
 namespace Tsavorite.core
 {
-    public partial class TsavoriteKV<Key, Value>
+    public partial class TsavoriteKV<TKey, TValue, TStoreFunctions, TAllocator> : TsavoriteBase
+        where TStoreFunctions : IStoreFunctions<TKey, TValue>
+        where TAllocator : IAllocator<TKey, TValue, TStoreFunctions>
     {
         // The current system state, defined as the combination of a phase and a version number. This value
         // is observed by all sessions and a state machine communicates its progress to sessions through
@@ -20,8 +22,8 @@ namespace Tsavorite.core
         private volatile int stateMachineActive = 0;
         // The current state machine in the system. The value could be stale and point to the previous state machine
         // if no state machine is active at this time.
-        private ISynchronizationStateMachine currentSyncStateMachine;
-        private List<IStateMachineCallback> callbacks = new List<IStateMachineCallback>();
+        private ISynchronizationStateMachine<TKey, TValue, TStoreFunctions, TAllocator> currentSyncStateMachine;
+        private List<IStateMachineCallback<TKey, TValue, TStoreFunctions, TAllocator>> callbacks = new();
         internal long lastVersion;
 
         /// <summary>
@@ -67,14 +69,14 @@ namespace Tsavorite.core
         /// may slow or halt state machine execution. For advanced users only. 
         /// </summary>
         /// <param name="callback"> callback to register </param>
-        public void UnsafeRegisterCallback(IStateMachineCallback callback) => callbacks.Add(callback);
+        public void UnsafeRegisterCallback(IStateMachineCallback<TKey, TValue, TStoreFunctions, TAllocator> callback) => callbacks.Add(callback);
 
         /// <summary>
         /// Attempt to start the given state machine in the system if no other state machine is active.
         /// </summary>
         /// <param name="stateMachine">The state machine to start</param>
         /// <returns>true if the state machine has started, false otherwise</returns>
-        private bool StartStateMachine(ISynchronizationStateMachine stateMachine)
+        private bool StartStateMachine(ISynchronizationStateMachine<TKey, TValue, TStoreFunctions, TAllocator> stateMachine)
         {
             // return immediately if there is a state machine under way.
             if (Interlocked.CompareExchange(ref stateMachineActive, 1, 0) != 0) return false;
@@ -167,7 +169,7 @@ namespace Tsavorite.core
         /// <param name="ctx"></param>
         /// <param name="threadState"></param>
         /// <returns></returns>
-        internal bool SameCycle<Input, Output, Context>(TsavoriteExecutionContext<Input, Output, Context> ctx, SystemState threadState)
+        internal bool SameCycle<TInput, TOutput, TContext>(TsavoriteExecutionContext<TInput, TOutput, TContext> ctx, SystemState threadState)
         {
             if (ctx == null)
             {
@@ -183,18 +185,17 @@ namespace Tsavorite.core
         /// necessary actions associated with the state as defined by the current state machine
         /// </summary>
         /// <param name="ctx">null if calling without a context (e.g. waiting on a checkpoint)</param>
-        /// <param name="tsavoriteSession">Tsavorite session.</param>
+        /// <param name="sessionFunctions">Tsavorite session.</param>
         /// <param name="valueTasks">Return list of tasks that caller needs to await, to continue checkpointing</param>
         /// <param name="token">Cancellation token</param>
         /// <returns></returns>
-        private void ThreadStateMachineStep<Input, Output, Context, TsavoriteSession>(
-            TsavoriteExecutionContext<Input, Output, Context> ctx,
-            TsavoriteSession tsavoriteSession,
+        private void ThreadStateMachineStep<TInput, TOutput, TContext, TSessionFunctionsWrapper>(
+            TsavoriteExecutionContext<TInput, TOutput, TContext> ctx,
+            TSessionFunctionsWrapper sessionFunctions,
             List<ValueTask> valueTasks,
             CancellationToken token = default)
-            where TsavoriteSession : ITsavoriteSession
+            where TSessionFunctionsWrapper : ISessionEpochControl
         {
-
             #region Capture current (non-intermediate) system state
             var currentTask = currentSyncStateMachine;
             var targetState = SystemState.Copy(ref systemState);
@@ -210,37 +211,6 @@ namespace Tsavorite.core
 
             var currentState = ctx is null ? targetState : SystemState.Make(ctx.phase, ctx.version);
             var targetStartState = StartOfCurrentCycle(targetState);
-
-            #region Get returning thread to start of current cycle, issuing completion callbacks if needed
-            if (ctx is not null)
-            {
-                if (ctx.version < targetStartState.Version)
-                {
-                    // Issue CPR callback for full session
-                    if (ctx.serialNum != -1)
-                    {
-                        List<long> excludedSerialNos = new();
-                        foreach (var v in ctx.ioPendingRequests.Values)
-                        {
-                            excludedSerialNos.Add(v.serialNum);
-                        }
-
-                        var commitPoint = new CommitPoint
-                        {
-                            UntilSerialNo = ctx.serialNum,
-                            ExcludedSerialNos = excludedSerialNos
-                        };
-
-                        // Thread local action
-                        tsavoriteSession?.CheckpointCompletionCallback(ctx.sessionID, ctx.sessionName, commitPoint);
-                    }
-                }
-                if ((ctx.version == targetStartState.Version) && (ctx.phase < Phase.REST) && ctx.threadStateMachine is not IndexSnapshotStateMachine)
-                {
-                    IssueCompletionCallback(ctx, tsavoriteSession);
-                }
-            }
-            #endregion 
 
             // No state machine associated with target, or target is in REST phase:
             // we can directly fast forward session to target state
@@ -280,10 +250,10 @@ namespace Tsavorite.core
                 Debug.Assert(
                     (threadState.Version < targetState.Version) ||
                        (threadState.Version == targetState.Version &&
-                       (threadState.Phase <= targetState.Phase || currentTask is IndexSnapshotStateMachine)
+                       (threadState.Phase <= targetState.Phase || currentTask is IndexSnapshotStateMachine<TKey, TValue, TStoreFunctions, TAllocator>)
                     ));
 
-                currentTask.OnThreadEnteringState(threadState, previousState, this, ctx, tsavoriteSession, valueTasks, token);
+                currentTask.OnThreadEnteringState(threadState, previousState, this, ctx, sessionFunctions, valueTasks, token);
 
                 if (ctx is not null)
                 {
@@ -306,33 +276,6 @@ namespace Tsavorite.core
             #endregion
 
             return;
-        }
-
-        /// <summary>
-        /// Issue completion callback if needed, for the given context's prevCtx
-        /// </summary>
-        internal static void IssueCompletionCallback<Input, Output, Context, TsavoriteSession>(TsavoriteExecutionContext<Input, Output, Context> ctx, TsavoriteSession tsavoriteSession)
-             where TsavoriteSession : ITsavoriteSession
-        {
-            CommitPoint commitPoint = default;
-            if (ctx.prevCtx.excludedSerialNos != null)
-            {
-                lock (ctx.prevCtx)
-                {
-                    if (ctx.prevCtx.serialNum != -1)
-                    {
-                        commitPoint = new CommitPoint
-                        {
-                            UntilSerialNo = ctx.prevCtx.serialNum,
-                            ExcludedSerialNos = ctx.prevCtx.excludedSerialNos
-                        };
-                        ctx.prevCtx.excludedSerialNos = null;
-                    }
-                }
-                if (commitPoint.ExcludedSerialNos != null)
-                    tsavoriteSession?.CheckpointCompletionCallback(ctx.sessionID, ctx.sessionName, commitPoint);
-            }
-
         }
     }
 }

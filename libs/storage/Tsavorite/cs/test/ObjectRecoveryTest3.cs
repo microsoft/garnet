@@ -7,10 +7,14 @@ using System.IO;
 using System.Linq;
 using System.Threading.Tasks;
 using NUnit.Framework;
+using NUnit.Framework.Legacy;
 using Tsavorite.core;
 
 namespace Tsavorite.test.recovery.objects
 {
+    using ClassAllocator = GenericAllocator<MyKey, MyValue, StoreFunctions<MyKey, MyValue, MyKey.Comparer, DefaultRecordDisposer<MyKey, MyValue>>>;
+    using ClassStoreFunctions = StoreFunctions<MyKey, MyValue, MyKey.Comparer, DefaultRecordDisposer<MyKey, MyValue>>;
+
     [TestFixture]
     public class ObjectRecoveryTests3
     {
@@ -36,78 +40,77 @@ namespace Tsavorite.test.recovery.objects
             [Values] bool isAsync)
         {
             this.iterations = iterations;
-            Prepare(out IDevice log, out IDevice objlog, out TsavoriteKV<MyKey, MyValue> h, out MyContext context);
+            ObjectRecoveryTests3.Prepare(out IDevice log, out IDevice objlog, out var store, out MyContext context);
 
-            var session1 = h.NewSession<MyInput, MyOutput, MyContext, MyFunctions>(new MyFunctions());
-            var tokens = Write(session1, context, h, checkpointType);
+            var session1 = store.NewSession<MyInput, MyOutput, MyContext, MyFunctions>(new MyFunctions());
+            var tokens = Write(session1, context, store, checkpointType);
             Read(session1, context, false, iterations);
             session1.Dispose();
 
-            h.TryInitiateHybridLogCheckpoint(out Guid token, checkpointType);
-            h.CompleteCheckpointAsync().AsTask().GetAwaiter().GetResult();
+            _ = store.TryInitiateHybridLogCheckpoint(out Guid token, checkpointType);
+            store.CompleteCheckpointAsync().AsTask().GetAwaiter().GetResult();
             tokens.Add((iterations, token));
-            Destroy(log, objlog, h);
+            Destroy(log, objlog, store);
 
             foreach (var item in tokens)
             {
-                Prepare(out log, out objlog, out h, out context);
+                ObjectRecoveryTests3.Prepare(out log, out objlog, out store, out context);
 
                 if (isAsync)
-                    await h.RecoverAsync(default, item.Item2);
+                    _ = await store.RecoverAsync(default, item.Item2);
                 else
-                    h.Recover(default, item.Item2);
+                    _ = store.Recover(default, item.Item2);
 
-                var session2 = h.NewSession<MyInput, MyOutput, MyContext, MyFunctions>(new MyFunctions());
+                var session2 = store.NewSession<MyInput, MyOutput, MyContext, MyFunctions>(new MyFunctions());
                 Read(session2, context, false, item.Item1);
                 session2.Dispose();
 
-                Destroy(log, objlog, h);
+                Destroy(log, objlog, store);
             }
         }
 
-        private void Prepare(out IDevice log, out IDevice objlog, out TsavoriteKV<MyKey, MyValue> h, out MyContext context)
+        private static void Prepare(out IDevice log, out IDevice objlog, out TsavoriteKV<MyKey, MyValue, ClassStoreFunctions, ClassAllocator> store, out MyContext context)
         {
             log = Devices.CreateLogDevice(Path.Combine(TestUtils.MethodTestDir, "RecoverTests.log"));
             objlog = Devices.CreateLogDevice(Path.Combine(TestUtils.MethodTestDir, "RecoverTests_HEAP.log"));
-            h = new TsavoriteKV<MyKey, MyValue>
-                (1L << 20,
-                new LogSettings
-                {
-                    LogDevice = log,
-                    ObjectLogDevice = objlog,
-                    SegmentSizeBits = 12,
-                    MemorySizeBits = 12,
-                    PageSizeBits = 9
-                },
-                new CheckpointSettings()
-                {
-                    CheckpointDir = Path.Combine(TestUtils.MethodTestDir, "check-points")
-                },
-                new SerializerSettings<MyKey, MyValue> { keySerializer = () => new MyKeySerializer(), valueSerializer = () => new MyValueSerializer() }
+            store = new(new()
+            {
+                IndexSize = 1L << 26,
+                LogDevice = log,
+                ObjectLogDevice = objlog,
+                SegmentSize = 1L << 12,
+                MemorySize = 1L << 12,
+                PageSize = 1L << 9,
+                CheckpointDir = Path.Combine(TestUtils.MethodTestDir, "check-points")
+            }, StoreFunctions<MyKey, MyValue>.Create(new MyKey.Comparer(), () => new MyKeySerializer(), () => new MyValueSerializer())
+                , (allocatorSettings, storeFunctions) => new(allocatorSettings, storeFunctions)
              );
             context = new MyContext();
         }
 
-        private static void Destroy(IDevice log, IDevice objlog, TsavoriteKV<MyKey, MyValue> h)
+        private static void Destroy(IDevice log, IDevice objlog, TsavoriteKV<MyKey, MyValue, ClassStoreFunctions, ClassAllocator> store)
         {
             // Dispose Tsavorite instance and log
-            h.Dispose();
+            store.Dispose();
             log.Dispose();
             objlog.Dispose();
         }
 
-        private List<(int, Guid)> Write(ClientSession<MyKey, MyValue, MyInput, MyOutput, MyContext, MyFunctions> session, MyContext context, TsavoriteKV<MyKey, MyValue> store, CheckpointType checkpointType)
+        private List<(int, Guid)> Write(ClientSession<MyKey, MyValue, MyInput, MyOutput, MyContext, MyFunctions, ClassStoreFunctions, ClassAllocator> session, MyContext context,
+                TsavoriteKV<MyKey, MyValue, ClassStoreFunctions, ClassAllocator> store, CheckpointType checkpointType)
         {
+            var bContext = session.BasicContext;
+
             var tokens = new List<(int, Guid)>();
             for (int i = 0; i < iterations; i++)
             {
                 var _key = new MyKey { key = i, name = string.Concat(Enumerable.Repeat(i.ToString(), 100)) };
                 var value = new MyValue { value = i.ToString() };
-                session.Upsert(ref _key, ref value, context, 0);
+                _ = bContext.Upsert(ref _key, ref value, context);
 
                 if (i % 1000 == 0 && i > 0)
                 {
-                    store.TryInitiateHybridLogCheckpoint(out Guid token, checkpointType);
+                    _ = store.TryInitiateHybridLogCheckpoint(out Guid token, checkpointType);
                     store.CompleteCheckpointAsync().AsTask().GetAwaiter().GetResult();
                     tokens.Add((i, token));
                 }
@@ -115,23 +118,25 @@ namespace Tsavorite.test.recovery.objects
             return tokens;
         }
 
-        private void Read(ClientSession<MyKey, MyValue, MyInput, MyOutput, MyContext, MyFunctions> session, MyContext context, bool delete, int iter)
+        private static void Read(ClientSession<MyKey, MyValue, MyInput, MyOutput, MyContext, MyFunctions, ClassStoreFunctions, ClassAllocator> session, MyContext context, bool delete, int iter)
         {
+            var bContext = session.BasicContext;
+
             for (int i = 0; i < iter; i++)
             {
                 var key = new MyKey { key = i, name = string.Concat(Enumerable.Repeat(i.ToString(), 100)) };
                 MyInput input = default;
                 MyOutput g1 = new();
-                var status = session.Read(ref key, ref input, ref g1, context, 0);
+                var status = bContext.Read(ref key, ref input, ref g1, context);
 
                 if (status.IsPending)
                 {
-                    session.CompletePending(true);
+                    _ = bContext.CompletePending(true);
                     context.FinalizeRead(ref status, ref g1);
                 }
 
-                Assert.IsTrue(status.Found);
-                Assert.AreEqual(i.ToString(), g1.value.value);
+                ClassicAssert.IsTrue(status.Found);
+                ClassicAssert.AreEqual(i.ToString(), g1.value.value);
             }
 
             if (delete)
@@ -139,16 +144,16 @@ namespace Tsavorite.test.recovery.objects
                 var key = new MyKey { key = 1, name = "1" };
                 var input = default(MyInput);
                 var output = new MyOutput();
-                session.Delete(ref key, context, 0);
-                var status = session.Read(ref key, ref input, ref output, context, 0);
+                _ = bContext.Delete(ref key, context);
+                var status = bContext.Read(ref key, ref input, ref output, context);
 
                 if (status.IsPending)
                 {
-                    session.CompletePending(true);
+                    _ = bContext.CompletePending(true);
                     context.FinalizeRead(ref status, ref output);
                 }
 
-                Assert.IsFalse(status.Found);
+                ClassicAssert.IsFalse(status.Found);
             }
         }
     }

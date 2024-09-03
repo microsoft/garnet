@@ -6,12 +6,15 @@ using System.Runtime.CompilerServices;
 
 namespace Tsavorite.core
 {
-    internal struct OperationStackContext<Key, Value>
+    public struct OperationStackContext<TKey, TValue, TStoreFunctions, TAllocator>
+        where TStoreFunctions : IStoreFunctions<TKey, TValue>
+        where TAllocator : IAllocator<TKey, TValue, TStoreFunctions>
     {
         // Note: Cannot use ref fields because they are not supported before net7.0.
         internal HashEntryInfo hei;
-        internal RecordSource<Key, Value> recSrc;
+        internal RecordSource<TKey, TValue, TStoreFunctions, TAllocator> recSrc;
 
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
         internal OperationStackContext(long keyHash) => hei = new(keyHash);
 
         /// <summary>
@@ -20,14 +23,14 @@ namespace Tsavorite.core
         /// </summary>
         /// <param name="srcLog">The TsavoriteKV's hlog</param>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        internal void SetRecordSourceToHashEntry(AllocatorBase<Key, Value> srcLog) => recSrc.Set(hei.Address, srcLog);
+        internal void SetRecordSourceToHashEntry(AllocatorBase<TKey, TValue, TStoreFunctions, TAllocator> srcLog) => recSrc.Set(hei.Address, srcLog);
 
         /// <summary>
         /// Sets <see cref="recSrc"/> to the current <see cref="hei"/>.<see cref="HashEntryInfo.CurrentAddress"/>, which is the current address
         /// in the hash table. This is the same effect as calling <see cref="TsavoriteBase.FindTag(ref HashEntryInfo)"/>.
         /// </summary>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        internal void UpdateRecordSourceToCurrentHashEntry(AllocatorBase<Key, Value> hlog)
+        internal void UpdateRecordSourceToCurrentHashEntry(AllocatorBase<TKey, TValue, TStoreFunctions, TAllocator> hlog)
         {
             hei.SetToCurrent();
             SetRecordSourceToHashEntry(hlog);
@@ -66,7 +69,7 @@ namespace Tsavorite.core
         /// Called during InternalXxx 'finally' handler, to set the new record invalid if an exception or other error occurred.
         /// </summary>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        internal void HandleNewRecordOnException(TsavoriteKV<Key, Value> store)
+        internal void HandleNewRecordOnException(TsavoriteKV<TKey, TValue, TStoreFunctions, TAllocator> store)
         {
             if (newLogicalAddress != Constants.kInvalidAddress)
             {

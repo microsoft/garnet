@@ -83,9 +83,8 @@ namespace Garnet.cluster
             }
 
             clusterConnectionStore = new GarnetClusterConnectionStore(logger: logger);
-
             InitLocal(address, opts.Port, recoverConfig);
-            logger?.LogInformation("{NodeInfoStartup}", CurrentConfig.GetClusterInfo().TrimEnd('\n'));
+            logger?.LogInformation("{NodeInfoStartup}", CurrentConfig.GetClusterInfo(clusterProvider).TrimEnd('\n'));
             gossipDelay = TimeSpan.FromSeconds(opts.GossipDelay);
             clusterTimeout = opts.ClusterTimeout <= 0 ? Timeout.InfiniteTimeSpan : TimeSpan.FromSeconds(opts.ClusterTimeout);
             numActiveTasks = 0;
@@ -123,11 +122,7 @@ namespace Garnet.cluster
         public void FlushConfig()
         {
             lock (this)
-            {
-                logger?.LogTrace("Start FlushConfig {path}", clusterConfigDevice.FileName);
                 ClusterUtils.WriteInto(clusterConfigDevice, pool, 0, currentConfig.ToByteArray(), logger: logger);
-                logger?.LogTrace("End FlushConfig {path}", clusterConfigDevice.FileName);
-            }
         }
 
         /// <summary>
@@ -146,8 +141,6 @@ namespace Garnet.cluster
                     address,
                     port,
                     configEpoch: conf.LocalNodeConfigEpoch,
-                    currentConfigEpoch: conf.LocalNodeCurrentConfigEpoch,
-                    lastVotedConfigEpoch: conf.LocalNodeLastVotedEpoch,
                     role: conf.LocalNodeRole,
                     replicaOfNodeId: conf.LocalNodePrimaryId,
                     hostname: Format.GetHostName());
@@ -159,8 +152,6 @@ namespace Garnet.cluster
                     address,
                     port,
                     configEpoch: 0,
-                    currentConfigEpoch: 0,
-                    lastVotedConfigEpoch: 0,
                     NodeRole.PRIMARY,
                     null,
                     Format.GetHostName());
@@ -185,7 +176,7 @@ namespace Garnet.cluster
             return ClusterInfo;
         }
 
-        private static string GetRange(int[] slots)
+        public static string GetRange(int[] slots)
         {
             var range = "> ";
             var start = slots[0];
@@ -284,7 +275,6 @@ namespace Garnet.cluster
                 if (Interlocked.CompareExchange(ref currentConfig, newConfig, current) == current)
                     break;
             }
-            clusterProvider.replicationManager.Reset();
             FlushConfig();
         }
 
@@ -307,72 +297,20 @@ namespace Garnet.cluster
         /// <summary>
         /// Takeover as new primary but forcefully claim ownership of old primary's slots.
         /// </summary>
-        public void TryTakeOverForPrimary()
-        {
-            while (true)
-            {
-                var current = currentConfig;
-                var newConfig = current.TakeOverFromPrimary();
-                newConfig = newConfig.BumpLocalNodeConfigEpoch();
-                if (Interlocked.CompareExchange(ref currentConfig, newConfig, current) == current)
-                    break;
-            }
-            FlushConfig();
-        }
-
-        private static bool slotBitmapGetBit(ref byte[] bitmap, int pos)
-        {
-            int BYTE = (pos / 8);
-            int BIT = pos & 7;
-            return (bitmap[BYTE] & (1 << BIT)) != 0;
-        }
-
-        /// <summary>
-        /// This method is used to process failover requests from replicas of a given primary.
-        /// This node will vote in favor of the request when returning true, or against when returning false.
-        /// </summary>
-        /// <param name="requestingNodeId"></param>
-        /// <param name="requestedEpoch"></param>
-        /// <param name="claimedSlots"></param>
-        /// <returns></returns>
-        public bool AuthorizeFailover(string requestingNodeId, long requestedEpoch, byte[] claimedSlots)
+        public bool TryTakeOverForPrimary()
         {
             while (true)
             {
                 var current = currentConfig;
 
-                //If I am not a primary or I do not have any assigned slots cannot vote
-                var role = current.LocalNodeRole;
-                if (role != NodeRole.PRIMARY || current.HasAssignedSlots(1))
+                if (!current.IsReplica || current.LocalNodePrimaryId == null)
                     return false;
 
-                //if I already voted for this epoch return
-                if (current.LocalNodeLastVotedEpoch == requestedEpoch)
-                    return false;
-
-                //Requesting node has to be a known replica node
-                var requestingNodeWorker = current.GetWorkerFromNodeId(requestingNodeId);
-                if (requestingNodeWorker.Role == NodeRole.UNASSIGNED)
-                    return false;
-
-                //Check if configEpoch for claimed slots is lower than the config of the requested epoch.
-                for (int i = 0; i < ClusterConfig.MAX_HASH_SLOT_VALUE; i++)
-                {
-                    if (slotBitmapGetBit(ref claimedSlots, i)) continue;
-                    if (current.GetConfigEpochFromSlot(i) < requestedEpoch) continue;
-                    return false;
-                }
-
-                //if reached this point try to update last voted epoch with requested epoch
-                var newConfig = currentConfig.SetLocalNodeLastVotedConfigEpoch(requestedEpoch);
-                //If config has changed in between go back and retry
-                //This can happen when another node trying to acquire that epoch succeeded from the perspective of this node
-                //If that is the case, when we retry to authorize. If lastVotedEpoch has been captured we return no vote
+                var newConfig = current.TakeOverFromPrimary().BumpLocalNodeConfigEpoch();
                 if (Interlocked.CompareExchange(ref currentConfig, newConfig, current) == current)
                     break;
             }
             FlushConfig();
-
             return true;
         }
     }

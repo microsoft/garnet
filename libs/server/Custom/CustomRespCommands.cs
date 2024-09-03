@@ -1,4 +1,4 @@
-﻿// Copyright (c) Microsoft Corporation.
+// Copyright (c) Microsoft Corporation.
 // Licensed under the MIT license.
 
 using System;
@@ -57,39 +57,63 @@ namespace Garnet.server
 
         }
 
+        private void TryCustomProcedure(byte id, byte* ptr, byte* end, CustomProcedure proc)
+        {
+            Debug.Assert(proc != null);
+
+            var output = new MemoryResult<byte>(null, 0);
+            var input = new ArgSlice(ptr, (int)(end - ptr));
+            if (proc.Execute(basicGarnetApi, input, ref output))
+            {
+                if (output.MemoryOwner != null)
+                    SendAndReset(output.MemoryOwner, output.Length);
+                else
+                    while (!RespWriteUtils.WriteDirect(CmdStrings.RESP_OK, ref dcurr, dend))
+                        SendAndReset();
+            }
+            else
+            {
+                if (output.MemoryOwner != null)
+                    SendAndReset(output.MemoryOwner, output.Length);
+                else
+                    while (!RespWriteUtils.WriteError($"ERR Command failed.", ref dcurr, dend))
+                        SendAndReset();
+            }
+        }
+
         /// <summary>
         /// Custom command
         /// </summary>
-        private bool TryCustomCommand<TGarnetApi>(byte* ptr, byte* end, RespCommand cmd, long expirationTicks, CommandType type, ref TGarnetApi storageApi)
+        private bool TryCustomRawStringCommand<TGarnetApi>(byte* ptr, byte* end, RespCommand cmd, long expirationTicks, CommandType type, ref TGarnetApi storageApi)
             where TGarnetApi : IGarnetAdvancedApi
         {
-            byte* keyPtr = null, inputPtr = null;
-            int ksize = 0, isize = 0;
+            var sbKey = parseState.GetArgSliceByRef(0).SpanByte;
+            var keyPtr = sbKey.ToPointer();
+            var kSize = sbKey.Length;
 
-            if (!RespReadUtils.ReadPtrWithLengthHeader(ref keyPtr, ref ksize, ref ptr, recvBufferPtr + bytesRead))
-                return false;
+            ptr = keyPtr + kSize + 2;
 
-            int metadataSize = 8;
+            var metadataSize = 8;
             if (expirationTicks == 0) metadataSize = 0;
 
             // Move key back if needed
             if (metadataSize > 0)
             {
-                Buffer.MemoryCopy(keyPtr, keyPtr - metadataSize, ksize, ksize);
+                Buffer.MemoryCopy(keyPtr, keyPtr - metadataSize, kSize, kSize);
                 keyPtr -= metadataSize;
             }
 
             // write key header size
             keyPtr -= sizeof(int);
-            *(int*)keyPtr = ksize;
+            *(int*)keyPtr = kSize;
 
-            inputPtr = ptr;
-            isize = (int)(end - ptr);
+            var inputPtr = ptr;
+            var iSize = (int)(end - ptr);
 
             inputPtr -= RespInputHeader.Size; // input header
             inputPtr -= metadataSize; // metadata header
 
-            var input = new SpanByte(metadataSize + RespInputHeader.Size + isize, (nint)inputPtr);
+            var input = new SpanByte(metadataSize + RespInputHeader.Size + iSize, (nint)inputPtr);
 
             ((RespInputHeader*)(inputPtr + metadataSize))->cmd = cmd;
             ((RespInputHeader*)(inputPtr + metadataSize))->flags = 0;
@@ -99,7 +123,7 @@ namespace Garnet.server
             else if (expirationTicks > 0)
                 input.ExtraMetadata = DateTimeOffset.UtcNow.Ticks + expirationTicks;
 
-            SpanByteAndMemory output = new SpanByteAndMemory(null);
+            var output = new SpanByteAndMemory(null);
             GarnetStatus status;
             if (type == CommandType.ReadModifyWrite)
             {
@@ -142,54 +166,67 @@ namespace Garnet.server
         private bool TryCustomObjectCommand<TGarnetApi>(byte* ptr, byte* end, RespCommand cmd, byte subid, CommandType type, ref TGarnetApi storageApi)
             where TGarnetApi : IGarnetAdvancedApi
         {
-            byte* keyPtr = null, inputPtr = null;
-            int ksize = 0, isize = 0;
+            var keyBytes = parseState.GetArgSliceByRef(0).SpanByte.ToByteArray();
 
-            if (!RespReadUtils.ReadPtrWithLengthHeader(ref keyPtr, ref ksize, ref ptr, recvBufferPtr + bytesRead))
-                return false;
-
-            byte[] key = new Span<byte>(keyPtr, ksize).ToArray();
-
-            inputPtr = ptr;
-            isize = (int)(end - ptr);
-            inputPtr -= sizeof(int);
-            inputPtr -= RespInputHeader.Size;
-            *(int*)inputPtr = RespInputHeader.Size + isize;
-            ((RespInputHeader*)(inputPtr + sizeof(int)))->cmd = cmd;
-            ((RespInputHeader*)(inputPtr + sizeof(int)))->SubId = subid;
+            // Prepare input
+            var input = new ObjectInput
+            {
+                header = new RespInputHeader
+                {
+                    cmd = cmd,
+                    SubId = subid
+                },
+                parseState = parseState,
+                parseStateStartIdx = 1
+            };
 
             var output = new GarnetObjectStoreOutput { spanByteAndMemory = new SpanByteAndMemory(null) };
+
             GarnetStatus status;
+
             if (type == CommandType.ReadModifyWrite)
             {
-                status = storageApi.RMW_ObjectStore(ref key, ref Unsafe.AsRef<SpanByte>(inputPtr), ref output);
+                status = storageApi.RMW_ObjectStore(ref keyBytes, ref input, ref output);
                 Debug.Assert(!output.spanByteAndMemory.IsSpanByte);
 
-                if (output.spanByteAndMemory.Memory != null)
-                    SendAndReset(output.spanByteAndMemory.Memory, output.spanByteAndMemory.Length);
-                else
-                    while (!RespWriteUtils.WriteDirect(CmdStrings.RESP_OK, ref dcurr, dend))
-                        SendAndReset();
+                switch (status)
+                {
+                    case GarnetStatus.WRONGTYPE:
+                        while (!RespWriteUtils.WriteError(CmdStrings.RESP_ERR_WRONG_TYPE, ref dcurr, dend))
+                            SendAndReset();
+                        break;
+                    default:
+                        if (output.spanByteAndMemory.Memory != null)
+                            SendAndReset(output.spanByteAndMemory.Memory, output.spanByteAndMemory.Length);
+                        else
+                            while (!RespWriteUtils.WriteDirect(CmdStrings.RESP_OK, ref dcurr, dend))
+                                SendAndReset();
+                        break;
+                }
             }
             else
             {
-                status = storageApi.Read_ObjectStore(ref key, ref Unsafe.AsRef<SpanByte>(inputPtr), ref output);
+                status = storageApi.Read_ObjectStore(ref keyBytes, ref input, ref output);
                 Debug.Assert(!output.spanByteAndMemory.IsSpanByte);
 
-                if (status == GarnetStatus.OK)
+                switch (status)
                 {
-                    if (output.spanByteAndMemory.Memory != null)
-                        SendAndReset(output.spanByteAndMemory.Memory, output.spanByteAndMemory.Length);
-                    else
-                        while (!RespWriteUtils.WriteDirect(CmdStrings.RESP_OK, ref dcurr, dend))
+                    case GarnetStatus.OK:
+                        if (output.spanByteAndMemory.Memory != null)
+                            SendAndReset(output.spanByteAndMemory.Memory, output.spanByteAndMemory.Length);
+                        else
+                            while (!RespWriteUtils.WriteDirect(CmdStrings.RESP_OK, ref dcurr, dend))
+                                SendAndReset();
+                        break;
+                    case GarnetStatus.NOTFOUND:
+                        Debug.Assert(output.spanByteAndMemory.Memory == null);
+                        while (!RespWriteUtils.WriteDirect(CmdStrings.RESP_ERRNOTFOUND, ref dcurr, dend))
                             SendAndReset();
-
-                }
-                else
-                {
-                    Debug.Assert(output.spanByteAndMemory.Memory == null);
-                    while (!RespWriteUtils.WriteDirect(CmdStrings.RESP_ERRNOTFOUND, ref dcurr, dend))
-                        SendAndReset();
+                        break;
+                    case GarnetStatus.WRONGTYPE:
+                        while (!RespWriteUtils.WriteError(CmdStrings.RESP_ERR_WRONG_TYPE, ref dcurr, dend))
+                            SendAndReset();
+                        break;
                 }
             }
 

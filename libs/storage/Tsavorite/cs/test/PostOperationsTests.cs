@@ -3,19 +3,25 @@
 
 using System.IO;
 using NUnit.Framework;
+using NUnit.Framework.Legacy;
 using Tsavorite.core;
+using static Tsavorite.test.TestUtils;
 
 namespace Tsavorite.test
 {
+    using IntAllocator = BlittableAllocator<int, int, StoreFunctions<int, int, IntKeyComparer, DefaultRecordDisposer<int, int>>>;
+    using IntStoreFunctions = StoreFunctions<int, int, IntKeyComparer, DefaultRecordDisposer<int, int>>;
+
     [TestFixture]
     internal class PostOperationsTests
     {
-        class PostFunctions : SimpleFunctions<int, int>
+        class PostFunctions : SimpleSimpleFunctions<int, int>
         {
             internal long pswAddress;
             internal long piuAddress;
             internal long pcuAddress;
             internal long psdAddress;
+            internal bool returnFalseFromPCU;
 
             internal void Clear()
             {
@@ -38,30 +44,45 @@ namespace Tsavorite.test
             /// <inheritdoc/>
             public override bool CopyUpdater(ref int key, ref int input, ref int oldValue, ref int newValue, ref int output, ref RMWInfo rmwInfo, ref RecordInfo recordInfo) { newValue = oldValue; return true; }
             /// <inheritdoc/>
-            public override void PostCopyUpdater(ref int key, ref int input, ref int oldValue, ref int newValue, ref int output, ref RMWInfo rmwInfo) { pcuAddress = rmwInfo.Address; }
+            public override bool PostCopyUpdater(ref int key, ref int input, ref int oldValue, ref int newValue, ref int output, ref RMWInfo rmwInfo)
+            {
+                pcuAddress = rmwInfo.Address;
+                if (returnFalseFromPCU)
+                    rmwInfo.Action = RMWAction.ExpireAndStop;
+                return !returnFalseFromPCU;
+            }
 
             public override void PostSingleDeleter(ref int key, ref DeleteInfo deleteInfo) { psdAddress = deleteInfo.Address; }
             public override bool ConcurrentDeleter(ref int key, ref int value, ref DeleteInfo deleteInfo, ref RecordInfo recordInfo) => false;
         }
 
-        private TsavoriteKV<int, int> store;
-        private ClientSession<int, int, int, int, Empty, PostFunctions> session;
+        private TsavoriteKV<int, int, IntStoreFunctions, IntAllocator> store;
+        private ClientSession<int, int, int, int, Empty, PostFunctions, IntStoreFunctions, IntAllocator> session;
+        private BasicContext<int, int, int, int, Empty, PostFunctions, IntStoreFunctions, IntAllocator> bContext;
         private IDevice log;
 
-        const int numRecords = 100;
-        const int targetKey = 42;
+        const int NumRecords = 100;
+        const int TargetKey = 42;
         long expectedAddress;
 
         [SetUp]
         public void Setup()
         {
             // Clean up log files from previous test runs in case they weren't cleaned up
-            TestUtils.DeleteDirectory(TestUtils.MethodTestDir, wait: true);
+            DeleteDirectory(MethodTestDir, wait: true);
 
-            log = Devices.CreateLogDevice(Path.Join(TestUtils.MethodTestDir, "PostOperations.log"), deleteOnClose: true);
-            store = new TsavoriteKV<int, int>
-                       (1L << 20, new LogSettings { LogDevice = log, MemorySizeBits = 15, PageSizeBits = 10 });
+            log = Devices.CreateLogDevice(Path.Join(MethodTestDir, "PostOperations.log"), deleteOnClose: true);
+            store = new(new()
+            {
+                IndexSize = 1L << 26,
+                LogDevice = log,
+                MemorySize = 1L << 15,
+                PageSize = 1L << 10
+            }, StoreFunctions<int, int>.Create(IntKeyComparer.Instance)
+                , (allocatorSettings, storeFunctions) => new(allocatorSettings, storeFunctions)
+            );
             session = store.NewSession<int, int, Empty, PostFunctions>(new PostFunctions());
+            bContext = session.BasicContext;
             Populate();
         }
 
@@ -74,16 +95,16 @@ namespace Tsavorite.test
             store = null;
             log?.Dispose();
             log = null;
-            TestUtils.DeleteDirectory(TestUtils.MethodTestDir);
+            DeleteDirectory(MethodTestDir);
         }
 
         void Populate()
         {
-            for (var key = 0; key < numRecords; ++key)
+            for (var key = 0; key < NumRecords; ++key)
             {
                 expectedAddress = store.Log.TailAddress;
-                session.Upsert(key, key * 100);
-                Assert.AreEqual(expectedAddress, session.functions.pswAddress);
+                _ = bContext.Upsert(key, key * 100);
+                ClassicAssert.AreEqual(expectedAddress, session.functions.pswAddress);
             }
 
             session.functions.Clear();
@@ -93,9 +114,9 @@ namespace Tsavorite.test
         internal void CompletePendingAndVerifyInsertedAddress()
         {
             // Note: Only Read and RMW have Pending results.
-            session.CompletePendingWithOutputs(out var completedOutputs, wait: true);
-            TestUtils.GetSinglePendingResult(completedOutputs, out var recordMetadata);
-            Assert.AreEqual(expectedAddress, recordMetadata.Address);
+            _ = bContext.CompletePendingWithOutputs(out var completedOutputs, wait: true);
+            _ = GetSinglePendingResult(completedOutputs, out var recordMetadata);
+            ClassicAssert.AreEqual(expectedAddress, recordMetadata.Address);
         }
 
         [Test]
@@ -107,9 +128,9 @@ namespace Tsavorite.test
 
             // Execute the ReadOnly (InternalInsert) test
             store.Log.FlushAndEvict(wait: true);
-            session.Upsert(targetKey, targetKey * 1000);
-            session.CompletePending(wait: true);
-            Assert.AreEqual(expectedAddress, session.functions.pswAddress);
+            _ = bContext.Upsert(TargetKey, TargetKey * 1000);
+            _ = bContext.CompletePending(wait: true);
+            ClassicAssert.AreEqual(expectedAddress, session.functions.pswAddress);
         }
 
         [Test]
@@ -118,23 +139,23 @@ namespace Tsavorite.test
         public void PostInitialUpdaterTest()
         {
             // Execute the not-found test (InternalRMW).
-            session.RMW(numRecords + 1, (numRecords + 1) * 1000);
-            Assert.AreEqual(expectedAddress, session.functions.piuAddress);
+            _ = bContext.RMW(NumRecords + 1, (NumRecords + 1) * 1000);
+            ClassicAssert.AreEqual(expectedAddress, session.functions.piuAddress);
             session.functions.Clear();
 
             // Now cause an attempt at InPlaceUpdater, which we've set to fail, so CopyUpdater is done (InternalInsert).
             expectedAddress = store.Log.TailAddress;
-            session.RMW(targetKey, targetKey * 1000);
-            Assert.AreEqual(expectedAddress, session.functions.pcuAddress);
+            _ = bContext.RMW(TargetKey, TargetKey * 1000);
+            ClassicAssert.AreEqual(expectedAddress, session.functions.pcuAddress);
 
             // Execute the not-in-memory test (InternalContinuePendingRMW). First delete the record so it has a tombstone; this will go to InitialUpdater.
-            session.Delete(targetKey);
+            _ = bContext.Delete(TargetKey);
             store.Log.FlushAndEvict(wait: true);
             expectedAddress = store.Log.TailAddress;
 
-            session.RMW(targetKey, targetKey * 1000);
+            _ = bContext.RMW(TargetKey, TargetKey * 1000);
             CompletePendingAndVerifyInsertedAddress();
-            Assert.AreEqual(expectedAddress, session.functions.piuAddress);
+            ClassicAssert.AreEqual(expectedAddress, session.functions.piuAddress);
         }
 
         [Test]
@@ -144,15 +165,39 @@ namespace Tsavorite.test
         {
             // First try to modify in-memory, readonly (InternalRMW).
             store.Log.ShiftReadOnlyAddress(store.Log.ReadOnlyAddress, wait: true);
-            session.RMW(targetKey, targetKey * 1000);
-            Assert.AreEqual(expectedAddress, session.functions.pcuAddress);
+            _ = bContext.RMW(TargetKey, TargetKey * 1000);
+            ClassicAssert.AreEqual(expectedAddress, session.functions.pcuAddress);
 
             // Execute the not-in-memory test (InternalContinuePendingRMW).
             store.Log.FlushAndEvict(wait: true);
             expectedAddress = store.Log.TailAddress;
-            session.RMW(targetKey, targetKey * 1000);
+            _ = bContext.RMW(TargetKey, TargetKey * 1000);
             CompletePendingAndVerifyInsertedAddress();
-            Assert.AreEqual(expectedAddress, session.functions.pcuAddress);
+            ClassicAssert.AreEqual(expectedAddress, session.functions.pcuAddress);
+        }
+
+        [Test]
+        [Category("TsavoriteKV")]
+        [Category("Smoke")]
+        public void PostCopyUpdaterFalseTest([Values(FlushMode.ReadOnly, FlushMode.OnDisk)] FlushMode flushMode)
+        {
+            // Verify the key exists
+            var (status, output) = bContext.Read(TargetKey);
+            ClassicAssert.IsTrue(status.Found, "Expected the record to exist");
+            session.functions.returnFalseFromPCU = true;
+
+            // Make the record read-only
+            if (flushMode == FlushMode.OnDisk)
+                store.Log.ShiftReadOnlyAddress(store.Log.ReadOnlyAddress, wait: true);
+            else
+                store.Log.FlushAndEvict(wait: true);
+
+            // Call RMW
+            _ = bContext.RMW(TargetKey, TargetKey * 1000);
+
+            // Verify the key no longer exists.
+            (status, output) = bContext.Read(TargetKey);
+            ClassicAssert.IsFalse(status.Found, "Expected the record to no longer exist");
         }
 
         [Test]
@@ -161,14 +206,14 @@ namespace Tsavorite.test
         public void PostSingleDeleterTest()
         {
             // Execute the not-in-memory test (InternalDelete); ConcurrentDeleter returns false to force a new record to be added.
-            session.Delete(targetKey);
-            Assert.AreEqual(expectedAddress, session.functions.psdAddress);
+            _ = bContext.Delete(TargetKey);
+            ClassicAssert.AreEqual(expectedAddress, session.functions.psdAddress);
 
             // Execute the not-in-memory test (InternalDelete).
             store.Log.FlushAndEvict(wait: true);
             expectedAddress = store.Log.TailAddress;
-            session.Delete(targetKey + 1);
-            Assert.AreEqual(expectedAddress, session.functions.psdAddress);
+            _ = bContext.Delete(TargetKey + 1);
+            ClassicAssert.AreEqual(expectedAddress, session.functions.psdAddress);
         }
     }
 }

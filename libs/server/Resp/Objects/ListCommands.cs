@@ -2,7 +2,7 @@
 // Licensed under the MIT license.
 
 using System;
-using System.Linq;
+using System.Text;
 using Garnet.common;
 using Tsavorite.core;
 
@@ -11,99 +11,66 @@ namespace Garnet.server
     internal sealed unsafe partial class RespServerSession : ServerSessionBase
     {
         /// <summary>
-        /// Session counter of number of List entries(PUSH,POP etc.) partially done
-        /// </summary>
-        int listItemsDoneCount;
-
-        /// <summary>
-        /// Session counter of number of List operations partially done
-        /// </summary>
-        int listOpsCount;
-
-        /// <summary>
         /// LPUSH key element[element...]
         /// RPUSH key element [element ...]
         /// </summary>
         /// <typeparam name="TGarnetApi"></typeparam>
-        /// <param name="count"></param>
-        /// <param name="ptr"></param>
-        /// <param name="lop"></param>
+        /// <param name="command"></param>
         /// <param name="storageApi"></param>
         /// <returns></returns>
-        private unsafe bool ListPush<TGarnetApi>(int count, byte* ptr, ListOperation lop, ref TGarnetApi storageApi)
+        private unsafe bool ListPush<TGarnetApi>(RespCommand command, ref TGarnetApi storageApi)
                             where TGarnetApi : IGarnetApi
         {
-            if (count < 2)
+            if (parseState.Count < 2)
             {
-                return AbortWithWrongNumberOfArguments(lop.ToString(), count);
+                return AbortWithWrongNumberOfArguments(command.ToString());
             }
 
-            // Get the key for List
-            if (!RespReadUtils.ReadByteArrayWithLengthHeader(out var sskey, ref ptr, recvBufferPtr + bytesRead))
-                return false;
+            var sbKey = parseState.GetArgSliceByRef(0).SpanByte;
+            var keyBytes = sbKey.ToByteArray();
 
-            if (NetworkSingleKeySlotVerify(sskey, false))
+            if (NetworkSingleKeySlotVerify(keyBytes, false))
             {
-                var bufSpan = new ReadOnlySpan<byte>(recvBufferPtr, bytesRead);
-                if (!DrainCommands(bufSpan, count))
-                    return false;
                 return true;
             }
 
+            var lop =
+                command switch
+                {
+                    RespCommand.LPUSH => ListOperation.LPUSH,
+                    RespCommand.LPUSHX => ListOperation.LPUSHX,
+                    RespCommand.RPUSH => ListOperation.RPUSH,
+                    RespCommand.RPUSHX => ListOperation.RPUSHX,
+                    _ => throw new Exception($"Unexpected {nameof(ListOperation)}: {command}")
+                };
+
             // Prepare input
-            var inputPtr = (ObjectInputHeader*)(ptr - sizeof(ObjectInputHeader));
+            var input = new ObjectInput
+            {
+                header = new RespInputHeader
+                {
+                    type = GarnetObjectType.List,
+                    ListOp = lop,
+                },
+                parseState = parseState,
+                parseStateStartIdx = 1,
+            };
 
-            // Save old values on buffer for possible revert
-            var save = *inputPtr;
+            var status = command == RespCommand.LPUSH || command == RespCommand.LPUSHX
+                ? storageApi.ListLeftPush(keyBytes, ref input, out var output)
+                : storageApi.ListRightPush(keyBytes, ref input, out output);
 
-            var inputCount = count - 1;
-            // Prepare length of header in input buffer
-            var inputLength = (int)(recvBufferPtr + bytesRead - (byte*)inputPtr);
-
-            // Prepare header in input buffer
-            inputPtr->header.type = GarnetObjectType.List;
-            inputPtr->header.ListOp = lop;
-            inputPtr->count = inputCount;
-            inputPtr->done = listItemsDoneCount;
-
-            var input = new ArgSlice((byte*)inputPtr, inputLength);
-
-            ObjectOutputHeader output;
-            output = default;
-
-            var status = GarnetStatus.OK;
-
-            if (lop == ListOperation.LPUSH || lop == ListOperation.LPUSHX)
-                status = storageApi.ListLeftPush(sskey, input, out output);
+            if (status == GarnetStatus.WRONGTYPE)
+            {
+                while (!RespWriteUtils.WriteError(CmdStrings.RESP_ERR_WRONG_TYPE, ref dcurr, dend))
+                    SendAndReset();
+            }
             else
-                status = storageApi.ListRightPush(sskey, input, out output);
-
-            //restore input buffer
-            *inputPtr = save;
-
-            listItemsDoneCount += output.countDone;
-            listOpsCount += output.opsDone;
-
-            //return if command is only partially done
-            if (output.countDone == Int32.MinValue && listOpsCount < inputCount)
-                return false;
-
-            // FIXME: Need to use ptr += output.bytesDone; instead of ReadLeftToken
-
-            // Skip the element tokens on the input buffer
-            var tokens = ReadLeftToken(count - 1, ref ptr);
-            if (tokens < count - 1)
-                return false;
-
-            //write result to output
-            while (!RespWriteUtils.WriteInteger(listItemsDoneCount, ref dcurr, dend))
-                SendAndReset();
-
-            //reset session counters
-            listItemsDoneCount = listOpsCount = 0;
-
-            // Move head
-            readHead = (int)(ptr - recvBufferPtr);
+            {
+                // Write result to output
+                while (!RespWriteUtils.WriteInteger(output.result1, ref dcurr, dend))
+                    SendAndReset();
+            }
             return true;
         }
 
@@ -111,82 +78,289 @@ namespace Garnet.server
         /// LPOP key [count]
         /// RPOP key [count]
         /// </summary>
-        /// <param name="count"></param>
-        /// <param name="ptr"></param>
-        /// <param name="lop"></param>
+        /// <param name="command"></param>
         /// <param name="storageApi"></param>
         /// <returns></returns>
-        private unsafe bool ListPop<TGarnetApi>(int count, byte* ptr, ListOperation lop, ref TGarnetApi storageApi)
+        private unsafe bool ListPop<TGarnetApi>(RespCommand command, ref TGarnetApi storageApi)
                             where TGarnetApi : IGarnetApi
         {
-            if (count < 1)
+            if (parseState.Count < 1)
             {
-                return AbortWithWrongNumberOfArguments(lop.ToString(), count);
+                return AbortWithWrongNumberOfArguments(command.ToString());
             }
 
             // Get the key for List
-            if (!RespReadUtils.ReadByteArrayWithLengthHeader(out var key, ref ptr, recvBufferPtr + bytesRead))
-                return false;
+            var sbKey = parseState.GetArgSliceByRef(0).SpanByte;
+            var keyBytes = sbKey.ToByteArray();
 
-            if (NetworkSingleKeySlotVerify(key, false))
+            var popCount = 1;
+
+            if (parseState.Count == 2)
             {
-                var bufSpan = new ReadOnlySpan<byte>(recvBufferPtr, bytesRead);
-                if (!DrainCommands(bufSpan, count))
-                    return false;
+                // Read count
+                if (!parseState.TryGetInt(1, out popCount))
+                {
+                    while (!RespWriteUtils.WriteError(CmdStrings.RESP_ERR_GENERIC_VALUE_IS_NOT_INTEGER, ref dcurr, dend))
+                        SendAndReset();
+                    return true;
+                }
+            }
+
+            if (NetworkSingleKeySlotVerify(keyBytes, false))
+            {
                 return true;
             }
 
+            var lop =
+                command switch
+                {
+                    RespCommand.LPOP => ListOperation.LPOP,
+                    RespCommand.RPOP => ListOperation.RPOP,
+                    _ => throw new Exception($"Unexpected {nameof(ListOperation)}: {command}")
+                };
+
             // Prepare input
-            var inputPtr = (ObjectInputHeader*)(ptr - sizeof(ObjectInputHeader));
-            int popCount = 1;
-
-            // Save old values on buffer for possible revert
-            var save = *inputPtr;
-
-            if (count == 2)
+            var input = new ObjectInput
             {
-                // Read count
-                if (!RespReadUtils.ReadIntWithLengthHeader(out popCount, ref ptr, recvBufferPtr + bytesRead))
-                    return false;
-            }
+                header = new RespInputHeader
+                {
+                    type = GarnetObjectType.List,
+                    ListOp = lop,
+                },
+                arg1 = popCount,
+            };
 
             // Prepare GarnetObjectStore output
             var outputFooter = new GarnetObjectStoreOutput { spanByteAndMemory = new SpanByteAndMemory(dcurr, (int)(dend - dcurr)) };
 
-            // Prepare length of header in input buffer
-            var inputLength = (int)(recvBufferPtr + bytesRead - (byte*)inputPtr);
-
-            // Prepare header in input buffer
-            inputPtr->header.type = GarnetObjectType.List;
-            inputPtr->header.ListOp = lop;
-            inputPtr->done = 0;
-            inputPtr->count = popCount;
-
-            GarnetStatus statusOp = GarnetStatus.NOTFOUND;
-
-            if (lop == ListOperation.LPOP)
-                statusOp = storageApi.ListLeftPop(key, new ArgSlice((byte*)inputPtr, inputLength), ref outputFooter);
-            else
-                statusOp = storageApi.ListRightPop(key, new ArgSlice((byte*)inputPtr, inputLength), ref outputFooter);
-
-            // Reset input buffer
-            *inputPtr = save;
+            var statusOp = command == RespCommand.LPOP
+                ? storageApi.ListLeftPop(keyBytes, ref input, ref outputFooter)
+                : storageApi.ListRightPop(keyBytes, ref input, ref outputFooter);
 
             switch (statusOp)
             {
                 case GarnetStatus.OK:
                     //process output
-                    var objOutputHeader = ProcessOutputWithHeader(outputFooter.spanByteAndMemory);
-                    ptr += objOutputHeader.bytesDone;
+                    ProcessOutputWithHeader(outputFooter.spanByteAndMemory);
                     break;
                 case GarnetStatus.NOTFOUND:
                     while (!RespWriteUtils.WriteDirect(CmdStrings.RESP_ERRNOTFOUND, ref dcurr, dend))
                         SendAndReset();
                     break;
+                case GarnetStatus.WRONGTYPE:
+                    while (!RespWriteUtils.WriteError(CmdStrings.RESP_ERR_WRONG_TYPE, ref dcurr, dend))
+                        SendAndReset();
+                    break;
             }
 
-            // Move input head
-            readHead = (int)(ptr - recvBufferPtr);
+            return true;
+        }
+
+
+        /// <summary>
+        /// LMPOP numkeys key [key ...] LEFT | RIGHT [COUNT count]
+        /// </summary>
+        /// <param name="storageApi"></param>
+        /// <returns></returns>
+        private unsafe bool ListPopMultiple<TGarnetApi>(ref TGarnetApi storageApi)
+                            where TGarnetApi : IGarnetApi
+        {
+            if (parseState.Count < 3)
+            {
+                return AbortWithWrongNumberOfArguments("LMPOP");
+            }
+
+            var currTokenId = 0;
+
+            // Read count of keys
+            if (!parseState.TryGetInt(currTokenId++, out var numKeys))
+            {
+                var err = string.Format(CmdStrings.GenericParamShouldBeGreaterThanZero, "numkeys");
+                return AbortWithErrorMessage(Encoding.ASCII.GetBytes(err));
+            }
+
+            if (parseState.Count != numKeys + 2 && parseState.Count != numKeys + 4)
+            {
+                return AbortWithErrorMessage(CmdStrings.RESP_ERR_GENERIC_SYNTAX_ERROR);
+            }
+
+            // Get the keys for Lists
+            var keys = new ArgSlice[numKeys];
+
+            for (var i = 0; i < keys.Length; i++)
+            {
+                keys[i] = parseState.GetArgSliceByRef(currTokenId++);
+            }
+
+            // Get the direction
+            var dir = parseState.GetArgSliceByRef(currTokenId++);
+            var popDirection = GetOperationDirection(dir);
+
+            if (popDirection == OperationDirection.Unknown)
+            {
+                return AbortWithErrorMessage(CmdStrings.RESP_ERR_GENERIC_SYNTAX_ERROR);
+            }
+
+            var popCount = 1;
+
+            // Get the COUNT keyword & parameter value, if specified
+            if (parseState.Count == numKeys + 4)
+            {
+                var countKeyword = parseState.GetArgSliceByRef(currTokenId++);
+
+                if (!countKeyword.ReadOnlySpan.EqualsUpperCaseSpanIgnoringCase(CmdStrings.COUNT))
+                {
+                    return AbortWithErrorMessage(CmdStrings.RESP_ERR_GENERIC_SYNTAX_ERROR);
+                }
+
+                // Read count
+                if (!parseState.TryGetInt(currTokenId, out popCount))
+                {
+                    var err = string.Format(CmdStrings.GenericParamShouldBeGreaterThanZero, "count");
+                    return AbortWithErrorMessage(Encoding.ASCII.GetBytes(err));
+                }
+            }
+
+            var statusOp = popDirection == OperationDirection.Left
+                ? storageApi.ListLeftPop(keys, popCount, out var key, out var elements)
+                : storageApi.ListRightPop(keys, popCount, out key, out elements);
+
+            switch (statusOp)
+            {
+                case GarnetStatus.OK:
+                    while (!RespWriteUtils.WriteArrayLength(2, ref dcurr, dend))
+                        SendAndReset();
+
+                    while (!RespWriteUtils.WriteBulkString(key.Span, ref dcurr, dend))
+                        SendAndReset();
+
+                    while (!RespWriteUtils.WriteArrayLength(elements.Length, ref dcurr, dend))
+                        SendAndReset();
+
+                    foreach (var element in elements)
+                    {
+                        while (!RespWriteUtils.WriteBulkString(element.Span, ref dcurr, dend))
+                            SendAndReset();
+                    }
+
+                    break;
+                case GarnetStatus.NOTFOUND:
+                    while (!RespWriteUtils.WriteNullArray(ref dcurr, dend))
+                        SendAndReset();
+                    break;
+                case GarnetStatus.WRONGTYPE:
+                    while (!RespWriteUtils.WriteError(CmdStrings.RESP_ERR_WRONG_TYPE, ref dcurr, dend))
+                        SendAndReset();
+                    break;
+            }
+
+            return true;
+        }
+
+        private bool ListBlockingPop(RespCommand command)
+        {
+            if (parseState.Count < 2)
+            {
+                return AbortWithWrongNumberOfArguments(command.ToString());
+            }
+
+            var keysBytes = new byte[parseState.Count - 1][];
+
+            for (var i = 0; i < keysBytes.Length; i++)
+            {
+                keysBytes[i] = parseState.GetArgSliceByRef(i).SpanByte.ToByteArray();
+            }
+
+            if (!parseState.TryGetDouble(parseState.Count - 1, out var timeout))
+            {
+                while (!RespWriteUtils.WriteError(CmdStrings.RESP_ERR_TIMEOUT_NOT_VALID_FLOAT, ref dcurr, dend))
+                    SendAndReset();
+                return true;
+            }
+
+            var result = itemBroker.GetCollectionItemAsync(command, keysBytes, this, timeout).Result;
+
+            if (!result.Found)
+            {
+                while (!RespWriteUtils.WriteNullArray(ref dcurr, dend))
+                    SendAndReset();
+            }
+            else
+            {
+                while (!RespWriteUtils.WriteArrayLength(2, ref dcurr, dend))
+                    SendAndReset();
+
+                while (!RespWriteUtils.WriteBulkString(new Span<byte>(result.Key), ref dcurr, dend))
+                    SendAndReset();
+
+                while (!RespWriteUtils.WriteBulkString(new Span<byte>(result.Item), ref dcurr, dend))
+                    SendAndReset();
+            }
+
+            return true;
+        }
+
+        private unsafe bool ListBlockingMove(RespCommand command)
+        {
+            if (parseState.Count != 5)
+            {
+                return AbortWithWrongNumberOfArguments(command.ToString());
+            }
+
+            var cmdArgs = new ArgSlice[] { default, default, default };
+
+            var srcKey = parseState.GetArgSliceByRef(0);
+
+            if (NetworkSingleKeySlotVerify(srcKey.ReadOnlySpan, false))
+            {
+                return true;
+            }
+
+            // Read destination key
+            cmdArgs[0] = parseState.GetArgSliceByRef(1);
+
+            if (NetworkSingleKeySlotVerify(cmdArgs[0].ReadOnlySpan, false))
+            {
+                return true;
+            }
+
+            var srcDir = parseState.GetArgSliceByRef(2);
+            var dstDir = parseState.GetArgSliceByRef(3);
+
+            var sourceDirection = GetOperationDirection(srcDir);
+            var destinationDirection = GetOperationDirection(dstDir);
+
+            if (sourceDirection == OperationDirection.Unknown || destinationDirection == OperationDirection.Unknown)
+            {
+                return AbortWithErrorMessage(CmdStrings.RESP_ERR_GENERIC_SYNTAX_ERROR);
+            }
+
+            var pSrcDir = (byte*)&sourceDirection;
+            var pDstDir = (byte*)&destinationDirection;
+            cmdArgs[1] = new ArgSlice(pSrcDir, 1);
+            cmdArgs[2] = new ArgSlice(pDstDir, 1);
+
+            if (!parseState.TryGetDouble(4, out var timeout))
+            {
+                while (!RespWriteUtils.WriteError(CmdStrings.RESP_ERR_TIMEOUT_NOT_VALID_FLOAT, ref dcurr, dend))
+                    SendAndReset();
+                return true;
+            }
+
+            var result = itemBroker.MoveCollectionItemAsync(command, srcKey.ToArray(), this, timeout,
+                cmdArgs).Result;
+
+            if (!result.Found)
+            {
+                while (!RespWriteUtils.WriteNull(ref dcurr, dend))
+                    SendAndReset();
+            }
+            else
+            {
+                while (!RespWriteUtils.WriteBulkString(new Span<byte>(result.Item), ref dcurr, dend))
+                    SendAndReset();
+            }
+
             return true;
         }
 
@@ -195,66 +369,52 @@ namespace Garnet.server
         /// Gets the length of the list stored at key.
         /// </summary>
         /// <typeparam name="TGarnetApi"></typeparam>
-        /// <param name="count"></param>
-        /// <param name="ptr"></param>
         /// <param name="storageApi"></param>
         /// <returns></returns>
-        private unsafe bool ListLength<TGarnetApi>(int count, byte* ptr, ref TGarnetApi storageApi)
+        private bool ListLength<TGarnetApi>(ref TGarnetApi storageApi)
                             where TGarnetApi : IGarnetApi
         {
-            if (count != 1)
+            if (parseState.Count != 1)
             {
-                return AbortWithWrongNumberOfArguments("LLEN", count);
+                return AbortWithWrongNumberOfArguments("LLEN");
             }
-            else
+
+            var sbKey = parseState.GetArgSliceByRef(0).SpanByte;
+            var keyBytes = sbKey.ToByteArray();
+
+            if (NetworkSingleKeySlotVerify(keyBytes, true))
             {
-                // Get the key for List
-                if (!RespReadUtils.ReadByteArrayWithLengthHeader(out var key, ref ptr, recvBufferPtr + bytesRead))
-                    return false;
+                return true;
+            }
 
-                if (NetworkSingleKeySlotVerify(key, true))
+            // Prepare input
+            var input = new ObjectInput
+            {
+                header = new RespInputHeader
                 {
-                    var bufSpan = new ReadOnlySpan<byte>(recvBufferPtr, bytesRead);
-                    if (!DrainCommands(bufSpan, count))
-                        return false;
-                    return true;
-                }
+                    type = GarnetObjectType.List,
+                    ListOp = ListOperation.LLEN,
+                },
+            };
 
-                // Prepare input
-                var inputPtr = (ObjectInputHeader*)(ptr - sizeof(ObjectInputHeader));
+            var status = storageApi.ListLength(keyBytes, ref input, out var output);
 
-                // save old values
-                var save = *inputPtr;
-
-                // Prepare length of header in input buffer
-                var inputLength = (int)(recvBufferPtr + bytesRead - ptr) + sizeof(ObjectInputHeader);
-
-                // Prepare header in input buffer
-                inputPtr->header.type = GarnetObjectType.List;
-                inputPtr->header.ListOp = ListOperation.LLEN;
-                inputPtr->count = count;
-                inputPtr->done = 0;
-
-                var status = storageApi.ListLength(key, new ArgSlice((byte*)inputPtr, inputLength), out var output);
-
-                //restore input buffer
-                *inputPtr = save;
-
-                if (status == GarnetStatus.NOTFOUND)
-                {
+            switch (status)
+            {
+                case GarnetStatus.NOTFOUND:
                     while (!RespWriteUtils.WriteDirect(CmdStrings.RESP_RETURN_VAL_0, ref dcurr, dend))
                         SendAndReset();
-                }
-                else
-                {
-                    // Process output
-                    while (!RespWriteUtils.WriteInteger(output.countDone, ref dcurr, dend))
+                    break;
+                case GarnetStatus.WRONGTYPE:
+                    while (!RespWriteUtils.WriteError(CmdStrings.RESP_ERR_WRONG_TYPE, ref dcurr, dend))
                         SendAndReset();
-                }
+                    break;
+                default:
+                    // Process output
+                    while (!RespWriteUtils.WriteInteger(output.result1, ref dcurr, dend))
+                        SendAndReset();
+                    break;
             }
-
-            // Move input head, write result to output
-            readHead = (int)(ptr - recvBufferPtr);
 
             return true;
         }
@@ -264,66 +424,62 @@ namespace Garnet.server
         /// Trim an existing list so it only contains the specified range of elements.
         /// </summary>
         /// <typeparam name="TGarnetApi"></typeparam>
-        /// <param name="count"></param>
-        /// <param name="ptr"></param>
         /// <param name="storageApi"></param>
         /// <returns></returns>
-        private unsafe bool ListTrim<TGarnetApi>(int count, byte* ptr, ref TGarnetApi storageApi)
+        private bool ListTrim<TGarnetApi>(ref TGarnetApi storageApi)
                             where TGarnetApi : IGarnetApi
         {
-            if (count != 3)
+            if (parseState.Count != 3)
             {
-                return AbortWithWrongNumberOfArguments("LTRIM", count);
+                return AbortWithWrongNumberOfArguments("LTRIM");
             }
-            else
+
+            // Get the key for List
+            var sbKey = parseState.GetArgSliceByRef(0).SpanByte;
+            var keyBytes = sbKey.ToByteArray();
+
+            // Read the parameters(start and stop) from LTRIM
+            if (!parseState.TryGetInt(1, out var start) ||
+                !parseState.TryGetInt(2, out var stop))
             {
-                // Get the key for List
-                if (!RespReadUtils.ReadByteArrayWithLengthHeader(out var key, ref ptr, recvBufferPtr + bytesRead))
-                    return false;
-
-                // Read the parameters(start and stop) from LTRIM
-                if (!RespReadUtils.ReadIntWithLengthHeader(out var start, ref ptr, recvBufferPtr + bytesRead))
-                    return false;
-
-                // Read the parameters(start and stop) from LTRIM
-                if (!RespReadUtils.ReadIntWithLengthHeader(out var stop, ref ptr, recvBufferPtr + bytesRead))
-                    return false;
-
-                if (NetworkSingleKeySlotVerify(key, false))
-                {
-                    var bufSpan = new ReadOnlySpan<byte>(recvBufferPtr, bytesRead);
-                    if (!DrainCommands(bufSpan, count))
-                        return false;
-                    return true;
-                }
-
-                // Prepare input
-                var inputPtr = (ObjectInputHeader*)(ptr - sizeof(ObjectInputHeader));
-
-                // Save old values on buffer for possible revert
-                var save = *inputPtr;
-
-                // Prepare length of header in input buffer
-                var inputLength = (int)(recvBufferPtr + bytesRead - (byte*)inputPtr);
-
-                // Prepare header in input buffer
-                inputPtr->header.type = GarnetObjectType.List;
-                inputPtr->header.ListOp = ListOperation.LTRIM;
-                inputPtr->count = start;
-                inputPtr->done = stop;
-
-                var statusOp = storageApi.ListTrim(key, new ArgSlice((byte*)inputPtr, inputLength));
-
-                //restore input buffer
-                *inputPtr = save;
-
-                //GarnetStatus.OK or NOTFOUND have same result
-                // no need to process output, just send OK
-                while (!RespWriteUtils.WriteDirect(CmdStrings.RESP_OK, ref dcurr, dend))
+                while (!RespWriteUtils.WriteError(CmdStrings.RESP_ERR_GENERIC_VALUE_IS_NOT_INTEGER, ref dcurr, dend))
                     SendAndReset();
+                return true;
             }
-            // Move input head, write result to output
-            readHead = (int)(ptr - recvBufferPtr);
+
+            if (NetworkSingleKeySlotVerify(keyBytes, false))
+            {
+                return true;
+            }
+
+            // Prepare input
+            var input = new ObjectInput
+            {
+                header = new RespInputHeader
+                {
+                    type = GarnetObjectType.List,
+                    ListOp = ListOperation.LTRIM,
+                },
+                arg1 = start,
+                arg2 = stop,
+            };
+
+            var status = storageApi.ListTrim(keyBytes, ref input);
+
+            switch (status)
+            {
+                case GarnetStatus.WRONGTYPE:
+                    while (!RespWriteUtils.WriteError(CmdStrings.RESP_ERR_WRONG_TYPE, ref dcurr, dend))
+                        SendAndReset();
+                    break;
+                default:
+                    //GarnetStatus.OK or NOTFOUND have same result
+                    // no need to process output, just send OK
+                    while (!RespWriteUtils.WriteDirect(CmdStrings.RESP_OK, ref dcurr, dend))
+                        SendAndReset();
+                    break;
+            }
+
             return true;
         }
 
@@ -332,74 +488,66 @@ namespace Garnet.server
         /// LRANGE key start stop
         /// </summary>
         /// <typeparam name="TGarnetApi"></typeparam>
-        /// <param name="count"></param>
-        /// <param name="ptr"></param>
         /// <param name="storageApi"></param>
         /// <returns></returns>
-        private unsafe bool ListRange<TGarnetApi>(int count, byte* ptr, ref TGarnetApi storageApi)
+        private bool ListRange<TGarnetApi>(ref TGarnetApi storageApi)
              where TGarnetApi : IGarnetApi
         {
-            if (count != 3)
+            if (parseState.Count != 3)
             {
-                return AbortWithWrongNumberOfArguments("LRANGE", count);
+                return AbortWithWrongNumberOfArguments("LRANGE");
             }
-            else
+
+            // Get the key for List
+            var sbKey = parseState.GetArgSliceByRef(0).SpanByte;
+            var keyBytes = sbKey.ToByteArray();
+
+            // Read count start and end params for LRANGE
+            if (!parseState.TryGetInt(1, out var start) ||
+                !parseState.TryGetInt(2, out var end))
             {
-                // Get the key for List
-                if (!RespReadUtils.ReadByteArrayWithLengthHeader(out var key, ref ptr, recvBufferPtr + bytesRead))
-                    return false;
-
-                // Read count start and stop params for LRANGE
-                if (!RespReadUtils.ReadIntWithLengthHeader(out int start, ref ptr, recvBufferPtr + bytesRead))
-                    return false;
-                if (!RespReadUtils.ReadIntWithLengthHeader(out int end, ref ptr, recvBufferPtr + bytesRead))
-                    return false;
-
-                if (NetworkSingleKeySlotVerify(key, true))
-                {
-                    var bufSpan = new ReadOnlySpan<byte>(recvBufferPtr, bytesRead);
-                    if (!DrainCommands(bufSpan, count))
-                        return false;
-                    return true;
-                }
-
-                // Prepare input
-                var inputPtr = (ObjectInputHeader*)(ptr - sizeof(ObjectInputHeader));
-
-                // Save old values on buffer for possible revert
-                var save = *inputPtr;
-
-                // Prepare GarnetObjectStore output
-                var outputFooter = new GarnetObjectStoreOutput { spanByteAndMemory = new SpanByteAndMemory(dcurr, (int)(dend - dcurr)) };
-
-                // Prepare length of header in input buffer
-                var inputLength = (int)(recvBufferPtr + bytesRead - (byte*)inputPtr);
-
-                inputPtr->header.type = GarnetObjectType.List;
-                inputPtr->header.ListOp = ListOperation.LRANGE;
-                inputPtr->count = start;
-                inputPtr->done = end;
-
-                var statusOp = storageApi.ListRange(key, new ArgSlice((byte*)inputPtr, inputLength), ref outputFooter);
-
-                // Reset input buffer
-                *inputPtr = save;
-
-                switch (statusOp)
-                {
-                    case GarnetStatus.OK:
-                        //process output
-                        var objOutputHeader = ProcessOutputWithHeader(outputFooter.spanByteAndMemory);
-                        ptr += objOutputHeader.bytesDone;
-                        break;
-                    case GarnetStatus.NOTFOUND:
-                        while (!RespWriteUtils.WriteDirect(CmdStrings.RESP_EMPTYLIST, ref dcurr, dend))
-                            SendAndReset();
-                        break;
-                }
+                while (!RespWriteUtils.WriteError(CmdStrings.RESP_ERR_GENERIC_VALUE_IS_NOT_INTEGER, ref dcurr, dend))
+                    SendAndReset();
+                return true;
             }
-            // Move input head, write result to output
-            readHead = (int)(ptr - recvBufferPtr);
+
+            if (NetworkSingleKeySlotVerify(keyBytes, true))
+            {
+                return true;
+            }
+
+            // Prepare input
+            var input = new ObjectInput
+            {
+                header = new RespInputHeader
+                {
+                    type = GarnetObjectType.List,
+                    ListOp = ListOperation.LRANGE,
+                },
+                arg1 = start,
+                arg2 = end,
+            };
+
+            // Prepare GarnetObjectStore output
+            var outputFooter = new GarnetObjectStoreOutput { spanByteAndMemory = new SpanByteAndMemory(dcurr, (int)(dend - dcurr)) };
+
+            var statusOp = storageApi.ListRange(keyBytes, ref input, ref outputFooter);
+
+            switch (statusOp)
+            {
+                case GarnetStatus.OK:
+                    //process output
+                    ProcessOutputWithHeader(outputFooter.spanByteAndMemory);
+                    break;
+                case GarnetStatus.NOTFOUND:
+                    while (!RespWriteUtils.WriteDirect(CmdStrings.RESP_EMPTYLIST, ref dcurr, dend))
+                        SendAndReset();
+                    break;
+                case GarnetStatus.WRONGTYPE:
+                    while (!RespWriteUtils.WriteError(CmdStrings.RESP_ERR_WRONG_TYPE, ref dcurr, dend))
+                        SendAndReset();
+                    break;
+            }
             return true;
         }
 
@@ -408,79 +556,74 @@ namespace Garnet.server
         /// LINDEX key index
         /// </summary>
         /// <typeparam name="TGarnetApi"></typeparam>
-        /// <param name="count"></param>
-        /// <param name="ptr"></param>
         /// <param name="storageApi"></param>
         /// <returns></returns>
-        private unsafe bool ListIndex<TGarnetApi>(int count, byte* ptr, ref TGarnetApi storageApi)
+        private bool ListIndex<TGarnetApi>(ref TGarnetApi storageApi)
              where TGarnetApi : IGarnetApi
         {
-            if (count != 2)
+            if (parseState.Count != 2)
             {
-                return AbortWithWrongNumberOfArguments("LINDEX", count);
+                return AbortWithWrongNumberOfArguments("LINDEX");
             }
-            else
+
+            // Get the key for List
+            var sbKey = parseState.GetArgSliceByRef(0).SpanByte;
+            var keyBytes = sbKey.ToByteArray();
+
+            // Read index param
+            if (!parseState.TryGetInt(1, out var index))
             {
-                // Get the key for List
-                if (!RespReadUtils.ReadByteArrayWithLengthHeader(out var key, ref ptr, recvBufferPtr + bytesRead))
-                    return false;
+                while (!RespWriteUtils.WriteError(CmdStrings.RESP_ERR_GENERIC_VALUE_IS_NOT_INTEGER, ref dcurr, dend))
+                    SendAndReset();
+                return true;
+            }
 
-                // Read index param
-                if (!RespReadUtils.ReadIntWithLengthHeader(out int index, ref ptr, recvBufferPtr + bytesRead))
-                    return false;
+            if (NetworkSingleKeySlotVerify(keyBytes, true))
+            {
+                return true;
+            }
 
-                if (NetworkSingleKeySlotVerify(key, true))
+            // Prepare input
+            var input = new ObjectInput
+            {
+                header = new RespInputHeader
                 {
-                    var bufSpan = new ReadOnlySpan<byte>(recvBufferPtr, bytesRead);
-                    if (!DrainCommands(bufSpan, count))
-                        return false;
-                    return true;
-                }
+                    type = GarnetObjectType.List,
+                    ListOp = ListOperation.LINDEX,
+                },
+                arg1 = index,
+            };
 
-                // Prepare input
-                var inputPtr = (ObjectInputHeader*)(ptr - sizeof(ObjectInputHeader));
+            // Prepare GarnetObjectStore output
+            var outputFooter = new GarnetObjectStoreOutput { spanByteAndMemory = new SpanByteAndMemory(dcurr, (int)(dend - dcurr)) };
 
-                // Save old values for possible revert
-                var save = *inputPtr;
+            var statusOp = storageApi.ListIndex(keyBytes, ref input, ref outputFooter);
 
-                // Prepare GarnetObjectStore output
-                var outputFooter = new GarnetObjectStoreOutput { spanByteAndMemory = new SpanByteAndMemory(dcurr, (int)(dend - dcurr)) };
+            ReadOnlySpan<byte> error = default;
 
-                var inputLength = (int)(recvBufferPtr + bytesRead - (byte*)inputPtr);
-
-                // Prepare header in input buffer
-                inputPtr->header.type = GarnetObjectType.List;
-                inputPtr->header.ListOp = ListOperation.LINDEX;
-                inputPtr->count = index;
-                inputPtr->done = 0;
-
-                var statusOp = storageApi.ListIndex(key, new ArgSlice((byte*)inputPtr, inputLength), ref outputFooter);
-
-                //restore input
-                *inputPtr = save;
-
-                var error = CmdStrings.RESP_ERRNOTFOUND;
-
-                switch (statusOp)
-                {
-                    case GarnetStatus.OK:
-                        //process output
-                        var objOutputHeader = ProcessOutputWithHeader(outputFooter.spanByteAndMemory);
-                        ptr += objOutputHeader.bytesDone;
-                        if (objOutputHeader.opsDone != -1)
-                            error = default;
-                        break;
-                }
-
-                if (error != default)
-                {
-                    while (!RespWriteUtils.WriteDirect(error, ref dcurr, dend))
+            switch (statusOp)
+            {
+                case GarnetStatus.OK:
+                    //process output
+                    var objOutputHeader = ProcessOutputWithHeader(outputFooter.spanByteAndMemory);
+                    if (objOutputHeader.result1 == -1)
+                        error = CmdStrings.RESP_ERRNOTFOUND;
+                    break;
+                case GarnetStatus.NOTFOUND:
+                    error = CmdStrings.RESP_ERRNOTFOUND;
+                    break;
+                case GarnetStatus.WRONGTYPE:
+                    while (!RespWriteUtils.WriteError(CmdStrings.RESP_ERR_WRONG_TYPE, ref dcurr, dend))
                         SendAndReset();
-                }
+                    break;
             }
 
-            // Move input head, write result to output
-            readHead = (int)(ptr - recvBufferPtr);
+            if (!error.IsEmpty)
+            {
+                while (!RespWriteUtils.WriteDirect(error, ref dcurr, dend))
+                    SendAndReset();
+            }
+
             return true;
         }
 
@@ -489,80 +632,59 @@ namespace Garnet.server
         /// LINSERT key BEFORE|AFTER pivot element
         /// </summary>
         /// <typeparam name="TGarnetApi"></typeparam>
-        /// <param name="count"></param>
-        /// <param name="ptr"></param>
         /// <param name="storageApi"></param>
         /// <returns></returns>
-        private unsafe bool ListInsert<TGarnetApi>(int count, byte* ptr, ref TGarnetApi storageApi)
+        private bool ListInsert<TGarnetApi>(ref TGarnetApi storageApi)
              where TGarnetApi : IGarnetApi
         {
-            if (count != 4)
+            if (parseState.Count != 4)
             {
-                return AbortWithWrongNumberOfArguments("LINSERT", count);
+                return AbortWithWrongNumberOfArguments("LINSERT");
             }
-            else
-            {
-                // Get the key for List
-                if (!RespReadUtils.ReadByteArrayWithLengthHeader(out var key, ref ptr, recvBufferPtr + bytesRead))
-                    return false;
 
-                if (NetworkSingleKeySlotVerify(key, false))
+            // Get the key for List
+            var sbKey = parseState.GetArgSliceByRef(0).SpanByte;
+            var keyBytes = sbKey.ToByteArray();
+
+            if (NetworkSingleKeySlotVerify(keyBytes, false))
+            {
+                return true;
+            }
+
+            // Prepare input
+            var input = new ObjectInput
+            {
+                header = new RespInputHeader
                 {
-                    var bufSpan = new ReadOnlySpan<byte>(recvBufferPtr, bytesRead);
-                    if (!DrainCommands(bufSpan, count))
+                    type = GarnetObjectType.List,
+                    ListOp = ListOperation.LINSERT,
+                },
+                parseState = parseState,
+                parseStateStartIdx = 1,
+            };
+
+            var statusOp = storageApi.ListInsert(keyBytes, ref input, out var output);
+
+            switch (statusOp)
+            {
+                case GarnetStatus.OK:
+                    //check for partial execution
+                    if (output.result1 == int.MinValue)
                         return false;
-                    return true;
-                }
-
-                // Prepare input
-                var inputPtr = (ObjectInputHeader*)(ptr - sizeof(ObjectInputHeader));
-
-                // Save old values
-                var save = *inputPtr;
-
-                // Prepare length of header in input buffer
-                var inputLength = (int)(recvBufferPtr + bytesRead - (byte*)inputPtr);
-
-                // Prepare header in input buffer
-                inputPtr->header.type = GarnetObjectType.List;
-                inputPtr->header.ListOp = ListOperation.LINSERT;
-                inputPtr->done = 0;
-                inputPtr->count = 0;
-
-                var statusOp = storageApi.ListInsert(key, new ArgSlice((byte*)inputPtr, inputLength), out var output);
-
-                //restore input buffer
-                *inputPtr = save;
-
-                switch (statusOp)
-                {
-                    case GarnetStatus.OK:
-                        //TODO: validation for different object type, pending to review
-                        if (output.countDone == 0 && output.countDone == 0 && output.bytesDone == 0)
-                        {
-                            while (!RespWriteUtils.WriteError("ERR wrong key type used in LINSERT command."u8, ref dcurr, dend))
-                                SendAndReset();
-                        }
-                        //check for partial execution
-                        if (output.countDone == int.MinValue)
-                            return false;
-                        //process output
-                        ptr += output.bytesDone;
-                        while (!RespWriteUtils.WriteInteger(output.opsDone, ref dcurr, dend))
-                            SendAndReset();
-                        break;
-                    case GarnetStatus.NOTFOUND:
-                        var tokens = ReadLeftToken(count - 1, ref ptr);
-                        if (tokens < count - 1)
-                            return false;
-                        while (!RespWriteUtils.WriteDirect(CmdStrings.RESP_RETURN_VAL_0, ref dcurr, dend))
-                            SendAndReset();
-                        break;
-                }
+                    //process output
+                    while (!RespWriteUtils.WriteInteger(output.result1, ref dcurr, dend))
+                        SendAndReset();
+                    break;
+                case GarnetStatus.NOTFOUND:
+                    while (!RespWriteUtils.WriteDirect(CmdStrings.RESP_RETURN_VAL_0, ref dcurr, dend))
+                        SendAndReset();
+                    break;
+                case GarnetStatus.WRONGTYPE:
+                    while (!RespWriteUtils.WriteError(CmdStrings.RESP_ERR_WRONG_TYPE, ref dcurr, dend))
+                        SendAndReset();
+                    break;
             }
 
-            // Move input head, write result to output
-            readHead = (int)(ptr - recvBufferPtr);
             return true;
         }
 
@@ -570,77 +692,69 @@ namespace Garnet.server
         /// LREM key count element
         /// </summary>
         /// <typeparam name="TGarnetApi"></typeparam>
-        /// <param name="count"></param>
-        /// <param name="ptr"></param>
         /// <param name="storageApi"></param>
         /// <returns></returns>
-        private unsafe bool ListRemove<TGarnetApi>(int count, byte* ptr, ref TGarnetApi storageApi)
+        private bool ListRemove<TGarnetApi>(ref TGarnetApi storageApi)
               where TGarnetApi : IGarnetApi
         {
             // if params are missing return error
-            if (count != 3)
+            if (parseState.Count != 3)
             {
-                return AbortWithWrongNumberOfArguments("LREM", count);
+                return AbortWithWrongNumberOfArguments("LREM");
             }
-            else
+
+            // Get the key for List
+            var sbKey = parseState.GetArgSliceByRef(0).SpanByte;
+            var keyBytes = sbKey.ToByteArray();
+
+            // Get count parameter
+            if (!parseState.TryGetInt(1, out var nCount))
             {
-                // Get the key for List
-                if (!RespReadUtils.ReadByteArrayWithLengthHeader(out var key, ref ptr, recvBufferPtr + bytesRead))
-                    return false;
+                while (!RespWriteUtils.WriteError(CmdStrings.RESP_ERR_GENERIC_VALUE_IS_NOT_INTEGER, ref dcurr, dend))
+                    SendAndReset();
+                return true;
+            }
 
-                // Get count parameter
-                if (!RespReadUtils.ReadIntWithLengthHeader(out int nCount, ref ptr, recvBufferPtr + bytesRead))
-                    return false;
+            if (NetworkSingleKeySlotVerify(keyBytes, false))
+            {
+                return true;
+            }
 
-                if (NetworkSingleKeySlotVerify(key, false))
+            // Prepare input
+            var input = new ObjectInput
+            {
+                header = new RespInputHeader
                 {
-                    var bufSpan = new ReadOnlySpan<byte>(recvBufferPtr, bytesRead);
-                    if (!DrainCommands(bufSpan, count))
+                    type = GarnetObjectType.List,
+                    ListOp = ListOperation.LREM,
+                },
+                arg1 = nCount,
+                parseState = parseState,
+                parseStateStartIdx = 2,
+            };
+
+            var statusOp = storageApi.ListRemove(keyBytes, ref input, out var output);
+
+            switch (statusOp)
+            {
+                case GarnetStatus.OK:
+                    //check for partial execution
+                    if (output.result1 == int.MinValue)
                         return false;
-                    return true;
-                }
-
-                // Prepare input
-                var inputPtr = (ObjectInputHeader*)(ptr - sizeof(ObjectInputHeader));
-
-                // Save old values
-                var save = *inputPtr;
-
-                // Prepare length of header in input buffer
-                var inputLength = (int)(recvBufferPtr + bytesRead - (byte*)inputPtr);
-
-                // Prepare header in input buffer
-                inputPtr->header.type = GarnetObjectType.List;
-                inputPtr->header.ListOp = ListOperation.LREM;
-                inputPtr->count = nCount;
-                inputPtr->done = 0;
-
-                var statusOp = storageApi.ListRemove(key, new ArgSlice((byte*)inputPtr, inputLength), out ObjectOutputHeader output);
-                //restore input buffer
-                *inputPtr = save;
-
-                switch (statusOp)
-                {
-                    case GarnetStatus.OK:
-                        //check for partial execution
-                        if (output.countDone == int.MinValue)
-                            return false;
-                        //process output
-                        ptr += output.bytesDone;
-                        while (!RespWriteUtils.WriteInteger(output.opsDone, ref dcurr, dend))
-                            SendAndReset();
-                        break;
-                    case GarnetStatus.NOTFOUND:
-                        var tokens = ReadLeftToken(count - 2, ref ptr);
-                        if (tokens < count - 2)
-                            return false;
-                        while (!RespWriteUtils.WriteDirect(CmdStrings.RESP_RETURN_VAL_0, ref dcurr, dend))
-                            SendAndReset();
-                        break;
-                }
+                    //process output
+                    while (!RespWriteUtils.WriteInteger(output.result1, ref dcurr, dend))
+                        SendAndReset();
+                    break;
+                case GarnetStatus.NOTFOUND:
+                    while (!RespWriteUtils.WriteDirect(CmdStrings.RESP_RETURN_VAL_0, ref dcurr, dend))
+                        SendAndReset();
+                    break;
+                case GarnetStatus.WRONGTYPE:
+                    while (!RespWriteUtils.WriteError(CmdStrings.RESP_ERR_WRONG_TYPE, ref dcurr, dend))
+                        SendAndReset();
+                    break;
             }
-            // Move input head, write result to output
-            readHead = (int)(ptr - recvBufferPtr);
+
             return true;
         }
 
@@ -649,134 +763,137 @@ namespace Garnet.server
         /// LMOVE source destination [LEFT | RIGHT] [LEFT | RIGHT]
         /// </summary>
         /// <typeparam name="TGarnetApi"></typeparam>
-        /// <param name="count"></param>
-        /// <param name="ptr"></param>
         /// <param name="storageApi"></param>
         /// <returns></returns>
-        private unsafe bool ListMove<TGarnetApi>(int count, byte* ptr, ref TGarnetApi storageApi)
+        private bool ListMove<TGarnetApi>(ref TGarnetApi storageApi)
              where TGarnetApi : IGarnetApi
         {
-            bool result = false;
-
-            if (count != 4)
+            if (parseState.Count != 4)
             {
-                return AbortWithWrongNumberOfArguments("LMOVE", count);
-            }
-            else
-            {
-                ArgSlice sourceKey = default, destinationKey = default, param1 = default, param2 = default;
-
-                if (!RespReadUtils.ReadPtrWithLengthHeader(ref sourceKey.ptr, ref sourceKey.length, ref ptr, recvBufferPtr + bytesRead))
-                    return false;
-
-                if (!RespReadUtils.ReadPtrWithLengthHeader(ref destinationKey.ptr, ref destinationKey.length, ref ptr, recvBufferPtr + bytesRead))
-                    return false;
-
-                if (!RespReadUtils.ReadPtrWithLengthHeader(ref param1.ptr, ref param1.length, ref ptr, recvBufferPtr + bytesRead))
-                    return false;
-
-                if (!RespReadUtils.ReadPtrWithLengthHeader(ref param2.ptr, ref param2.length, ref ptr, recvBufferPtr + bytesRead))
-                    return false;
-
-                OperationDirection sourceDirection = GetOperationDirection(param1);
-                OperationDirection destinationDirection = GetOperationDirection(param2);
-                if (sourceDirection == OperationDirection.Unknown || destinationDirection == OperationDirection.Unknown)
-                {
-                    return AbortWithErrorMessage(count, CmdStrings.RESP_ERR_GENERIC_SYNTAX_ERROR);
-                }
-
-                result = ListMove(count, sourceKey, destinationKey, sourceDirection, destinationDirection, out var node, ref storageApi);
-                if (node != null)
-                {
-                    while (!RespWriteUtils.WriteBulkString(node, ref dcurr, dend))
-                        SendAndReset();
-                }
-                else
-                {
-                    while (!RespWriteUtils.WriteNull(ref dcurr, dend))
-                        SendAndReset();
-                }
+                return AbortWithWrongNumberOfArguments("LMOVE");
             }
 
-            // Move input head, write result to output
-            readHead = (int)(ptr - recvBufferPtr);
-            return result;
+            var srcKey = parseState.GetArgSliceByRef(0);
+            var dstKey = parseState.GetArgSliceByRef(1);
+
+            if (NetworkSingleKeySlotVerify(srcKey.ReadOnlySpan, false) ||
+                NetworkSingleKeySlotVerify(dstKey.ReadOnlySpan, false))
+            {
+                return true;
+            }
+
+            var srcDirSlice = parseState.GetArgSliceByRef(2);
+            var dstDirSlice = parseState.GetArgSliceByRef(3);
+
+            var sourceDirection = GetOperationDirection(srcDirSlice);
+            var destinationDirection = GetOperationDirection(dstDirSlice);
+
+            if (sourceDirection == OperationDirection.Unknown || destinationDirection == OperationDirection.Unknown)
+            {
+                return AbortWithErrorMessage(CmdStrings.RESP_ERR_GENERIC_SYNTAX_ERROR);
+            }
+
+            if (!ListMove(srcKey, dstKey, sourceDirection, destinationDirection, out var node,
+                    ref storageApi, out var garnetStatus))
+                return false;
+
+            switch (garnetStatus)
+            {
+                case GarnetStatus.OK:
+                    if (node != null)
+                    {
+                        while (!RespWriteUtils.WriteBulkString(node, ref dcurr, dend))
+                            SendAndReset();
+                    }
+                    else
+                    {
+                        while (!RespWriteUtils.WriteNull(ref dcurr, dend))
+                            SendAndReset();
+                    }
+
+                    break;
+                case GarnetStatus.WRONGTYPE:
+                    while (!RespWriteUtils.WriteError(CmdStrings.RESP_ERR_WRONG_TYPE, ref dcurr, dend))
+                        SendAndReset();
+                    break;
+            }
+
+            return true;
         }
 
         /// <summary>
         /// RPOPLPUSH source destination
         /// </summary>
-        /// <param name="count"></param>
-        /// <param name="ptr"></param>
         /// <param name="storageApi"></param>
         /// <returns></returns>
-        private unsafe bool ListRightPopLeftPush<TGarnetApi>(int count, byte* ptr, ref TGarnetApi storageApi)
+        private bool ListRightPopLeftPush<TGarnetApi>(ref TGarnetApi storageApi)
             where TGarnetApi : IGarnetApi
         {
-            bool result = false;
-
-            if (count != 2)
+            if (parseState.Count != 2)
             {
-                return AbortWithWrongNumberOfArguments("RPOPLPUSH", count);
-            }
-            else
-            {
-                ArgSlice sourceKey = default, destinationKey = default;
-
-                if (!RespReadUtils.ReadPtrWithLengthHeader(ref sourceKey.ptr, ref sourceKey.length, ref ptr, recvBufferPtr + bytesRead))
-                    return false;
-
-                if (!RespReadUtils.ReadPtrWithLengthHeader(ref destinationKey.ptr, ref destinationKey.length, ref ptr, recvBufferPtr + bytesRead))
-                    return false;
-
-                result = ListMove(count, sourceKey, destinationKey, OperationDirection.Right, OperationDirection.Left, out var node, ref storageApi);
-
-                if (node != null)
-                {
-                    while (!RespWriteUtils.WriteBulkString(node, ref dcurr, dend))
-                        SendAndReset();
-                }
-                else
-                {
-                    while (!RespWriteUtils.WriteNull(ref dcurr, dend))
-                        SendAndReset();
-                }
+                return AbortWithWrongNumberOfArguments("RPOPLPUSH");
             }
 
-            // update read pointers
-            readHead = (int)(ptr - recvBufferPtr);
-            return result;
+            var srcKey = parseState.GetArgSliceByRef(0);
+            var dstKey = parseState.GetArgSliceByRef(1);
+
+            if (NetworkSingleKeySlotVerify(srcKey.ReadOnlySpan, false) ||
+                NetworkSingleKeySlotVerify(dstKey.ReadOnlySpan, false))
+            {
+                return true;
+            }
+
+            if (!ListMove(srcKey, dstKey, OperationDirection.Right, OperationDirection.Left,
+                    out var node, ref storageApi, out var garnetStatus))
+                return false;
+
+            switch (garnetStatus)
+            {
+                case GarnetStatus.OK:
+                    if (node != null)
+                    {
+                        while (!RespWriteUtils.WriteBulkString(node, ref dcurr, dend))
+                            SendAndReset();
+                    }
+                    else
+                    {
+                        while (!RespWriteUtils.WriteNull(ref dcurr, dend))
+                            SendAndReset();
+                    }
+
+                    break;
+                case GarnetStatus.WRONGTYPE:
+                    while (!RespWriteUtils.WriteError(CmdStrings.RESP_ERR_WRONG_TYPE, ref dcurr, dend))
+                        SendAndReset();
+                    break;
+            }
+
+            return true;
         }
 
         /// <summary>
         /// LMOVE source destination LEFT|RIGHT LEFT|RIGHT
         /// RPOPLPUSH source destination
         /// </summary>
-        /// <param name="count">Number of tokens in input</param>
         /// <param name="sourceKey"></param>
         /// <param name="destinationKey"></param>
         /// <param name="sourceDirection"></param>
         /// <param name="destinationDirection"></param>
         /// <param name="node"></param>
         /// <param name="storageApi"></param>
+        /// <param name="garnetStatus"></param>
         /// <returns></returns>
-        private unsafe bool ListMove<TGarnetApi>(int count, ArgSlice sourceKey, ArgSlice destinationKey, OperationDirection sourceDirection, OperationDirection destinationDirection, out byte[] node, ref TGarnetApi storageApi)
-                where TGarnetApi : IGarnetApi
+        private bool ListMove<TGarnetApi>(ArgSlice sourceKey, ArgSlice destinationKey,
+            OperationDirection sourceDirection, OperationDirection destinationDirection, out byte[] node,
+            ref TGarnetApi storageApi, out GarnetStatus garnetStatus)
+            where TGarnetApi : IGarnetApi
         {
-            ArgSlice[] keys = new ArgSlice[2] { sourceKey, destinationKey };
+            garnetStatus = GarnetStatus.OK;
             node = null;
-            if (NetworkKeyArraySlotVerify(ref keys, false))
-            {
-                // check for non crosslot error
-                var bufSpan = new ReadOnlySpan<byte>(recvBufferPtr, bytesRead);
-                if (!DrainCommands(bufSpan, count))
-                {
-                    return false;
-                }
-                return true;
-            }
 
-            return storageApi.ListMove(sourceKey, destinationKey, sourceDirection, destinationDirection, out node);
+            garnetStatus =
+                storageApi.ListMove(sourceKey, destinationKey, sourceDirection, destinationDirection, out node);
+            return true;
         }
 
         /// <summary>
@@ -784,65 +901,58 @@ namespace Garnet.server
         /// LSET key index element
         /// </summary>
         /// <typeparam name="TGarnetApi"></typeparam>
-        /// <param name="count"></param>
-        /// <param name="ptr"></param>
         /// <param name="storageApi"></param>
         /// <returns></returns>
-        public unsafe bool ListSet<TGarnetApi>(int count, byte* ptr, ref TGarnetApi storageApi)
+        public bool ListSet<TGarnetApi>(ref TGarnetApi storageApi)
             where TGarnetApi : IGarnetApi
         {
-            if (count != 3)
+            if (parseState.Count != 3)
             {
-                return AbortWithWrongNumberOfArguments("LSET", count);
-            }
-            else
-            {
-                // Get the key for List
-                if (!RespReadUtils.ReadByteArrayWithLengthHeader(out var key, ref ptr, recvBufferPtr + bytesRead))
-                    return false;
-
-                if (NetworkSingleKeySlotVerify(key, true))
-                {
-                    var bufSpan = new ReadOnlySpan<byte>(recvBufferPtr, bytesRead);
-                    if (!DrainCommands(bufSpan, count))
-                        return false;
-                    return true;
-                }
-
-                // Prepare input
-                var inputPtr = (ObjectInputHeader*)(ptr - sizeof(ObjectInputHeader));
-
-                // Save old values for possible revert
-                var save = *inputPtr;
-
-                var inputLength = (int)(recvBufferPtr + bytesRead - (byte*)inputPtr);
-
-                // Prepare header in input buffer
-                inputPtr->header.type = GarnetObjectType.List;
-                inputPtr->header.ListOp = ListOperation.LSET;
-                inputPtr->count = 0;
-                inputPtr->done = 0;
-
-                // Prepare GarnetObjectStore output
-                var outputFooter = new GarnetObjectStoreOutput { spanByteAndMemory = new SpanByteAndMemory(dcurr, (int)(dend - dcurr)) };
-
-                var statusOp = storageApi.ListSet(key, new ArgSlice((byte*)inputPtr, inputLength), ref outputFooter);
-
-                //restore input
-                *inputPtr = save;
-
-                switch (statusOp)
-                {
-                    case GarnetStatus.OK:
-                        //process output
-                        var objOutputHeader = ProcessOutputWithHeader(outputFooter.spanByteAndMemory);
-                        ptr += objOutputHeader.bytesDone;
-                        break;
-                }
+                return AbortWithWrongNumberOfArguments("LSET");
             }
 
-            // Move input head, write result to output
-            readHead = (int)(ptr - recvBufferPtr);
+            // Get the key for List
+            var sbKey = parseState.GetArgSliceByRef(0).SpanByte;
+            var keyBytes = sbKey.ToByteArray();
+
+            if (NetworkSingleKeySlotVerify(keyBytes, true))
+            {
+                return true;
+            }
+
+            // Prepare input
+            var input = new ObjectInput
+            {
+                header = new RespInputHeader
+                {
+                    type = GarnetObjectType.List,
+                    ListOp = ListOperation.LSET,
+                },
+                parseState = parseState,
+                parseStateStartIdx = 1,
+            };
+
+            // Prepare GarnetObjectStore output
+            var outputFooter = new GarnetObjectStoreOutput { spanByteAndMemory = new SpanByteAndMemory(dcurr, (int)(dend - dcurr)) };
+
+            var statusOp = storageApi.ListSet(keyBytes, ref input, ref outputFooter);
+
+            switch (statusOp)
+            {
+                case GarnetStatus.OK:
+                    //process output
+                    ProcessOutputWithHeader(outputFooter.spanByteAndMemory);
+                    break;
+                case GarnetStatus.NOTFOUND:
+                    while (!RespWriteUtils.WriteError(CmdStrings.RESP_ERR_GENERIC_NOSUCHKEY, ref dcurr, dend))
+                        SendAndReset();
+                    break;
+                case GarnetStatus.WRONGTYPE:
+                    while (!RespWriteUtils.WriteError(CmdStrings.RESP_ERR_WRONG_TYPE, ref dcurr, dend))
+                        SendAndReset();
+                    break;
+            }
+
             return true;
         }
     }

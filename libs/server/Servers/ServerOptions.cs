@@ -16,7 +16,7 @@ namespace Garnet.server
         /// <summary>
         /// Port to run server on.
         /// </summary>
-        public int Port = 3278;
+        public int Port = 6379;
 
         /// <summary>
         /// IP address to bind server to.
@@ -41,7 +41,7 @@ namespace Garnet.server
         /// <summary>
         /// Size of hash index in bytes (rounds down to power of 2).
         /// </summary>
-        public string IndexSize = "8g";
+        public string IndexSize = "128m";
 
         /// <summary>
         /// Max size of hash index in bytes (rounds down to power of 2). If unspecified, index size doesn't grow (default behavior).
@@ -115,7 +115,7 @@ namespace Garnet.server
             long size = ParseSize(MemorySize);
             long adjustedSize = PreviousPowerOf2(size);
             if (size != adjustedSize)
-                logger?.LogInformation($"Warning: using lower log memory size than specified (power of 2)");
+                logger?.LogInformation("Warning: using lower log memory size than specified (power of 2)");
             return (int)Math.Log(adjustedSize, 2);
         }
 
@@ -128,7 +128,7 @@ namespace Garnet.server
             long size = ParseSize(PageSize);
             long adjustedSize = PreviousPowerOf2(size);
             if (size != adjustedSize)
-                logger?.LogInformation($"Warning: using lower page size than specified (power of 2)");
+                logger?.LogInformation("Warning: using lower page size than specified (power of 2)");
             return (int)Math.Log(adjustedSize, 2);
         }
 
@@ -141,7 +141,7 @@ namespace Garnet.server
             long size = ParseSize(PubSubPageSize);
             long adjustedSize = PreviousPowerOf2(size);
             if (size != adjustedSize)
-                logger?.LogInformation($"Warning: using lower pub/sub page size than specified (power of 2)");
+                logger?.LogInformation("Warning: using lower pub/sub page size than specified (power of 2)");
             return adjustedSize;
         }
 
@@ -154,7 +154,7 @@ namespace Garnet.server
             long size = ParseSize(SegmentSize);
             long adjustedSize = PreviousPowerOf2(size);
             if (size != adjustedSize)
-                logger?.LogInformation($"Warning: using lower disk segment size than specified (power of 2)");
+                logger?.LogInformation("Warning: using lower disk segment size than specified (power of 2)");
             return (int)Math.Log(adjustedSize, 2);
         }
 
@@ -168,47 +168,45 @@ namespace Garnet.server
             long adjustedSize = PreviousPowerOf2(size);
             if (adjustedSize < 64 || adjustedSize > (1L << 37)) throw new Exception($"Invalid {name}");
             if (size != adjustedSize)
-                logger?.LogInformation($"Warning: using lower {name} than specified (power of 2)");
+                logger?.LogInformation("Warning: using lower {name} than specified (power of 2)", name);
             return (int)(adjustedSize / 64);
         }
 
         /// <summary>
-        /// Get log settings
+        /// Get KVSettings
         /// </summary>
-        /// <param name="logSettings"></param>
-        /// <param name="checkpointSettings"></param>
-        /// <param name="indexSize"></param>
-        public void GetSettings(out LogSettings logSettings, out CheckpointSettings checkpointSettings, out int indexSize)
+        public void GetSettings<TKey, TValue>()
         {
-            logSettings = new LogSettings
+            var indexCacheLines = IndexSizeCachelines("hash index size", IndexSize);
+            var kvSettings = new KVSettings<TKey, TValue>()
             {
+                IndexSize = indexCacheLines * 64L,
                 PreallocateLog = false,
-                PageSizeBits = PageSizeBits()
+                PageSize = 1L << PageSizeBits()
             };
-            logger?.LogInformation($"[Store] Using page size of {PrettySize((long)Math.Pow(2, logSettings.PageSizeBits))}");
+            logger?.LogInformation("[Store] Using page size of {PageSize}", PrettySize(kvSettings.PageSize));
 
-            logSettings.MemorySizeBits = MemorySizeBits();
-            logger?.LogInformation($"[Store] Using log memory size of {PrettySize((long)Math.Pow(2, logSettings.MemorySizeBits))}");
+            kvSettings.MemorySize = 1L << MemorySizeBits();
+            logger?.LogInformation("[Store] Using log memory size of {MemorySize}", PrettySize(kvSettings.MemorySize));
 
-            logger?.LogInformation($"[Store] There are {PrettySize(1 << (logSettings.MemorySizeBits - logSettings.PageSizeBits))} log pages in memory");
+            logger?.LogInformation("[Store] There are {LogPages} log pages in memory", PrettySize(kvSettings.MemorySize / kvSettings.PageSize));
 
-            logSettings.SegmentSizeBits = SegmentSizeBits();
-            logger?.LogInformation($"[Store] Using disk segment size of {PrettySize((long)Math.Pow(2, logSettings.SegmentSizeBits))}");
+            kvSettings.SegmentSize = 1L << SegmentSizeBits();
+            logger?.LogInformation("[Store] Using disk segment size of {SegmentSize}", PrettySize(kvSettings.SegmentSize));
 
-            indexSize = IndexSizeCachelines("hash index size", IndexSize);
-            logger?.LogInformation($"[Store] Using hash index size of {PrettySize(indexSize * 64L)} ({PrettySize(indexSize)} cache lines)");
+            logger?.LogInformation("[Store] Using hash index size of {IndexSize} ({CacheLines} cache lines)", PrettySize(kvSettings.IndexSize), PrettySize(indexCacheLines));
 
             if (EnableStorageTier)
             {
                 if (LogDir is null or "")
                     LogDir = Directory.GetCurrentDirectory();
-                logSettings.LogDevice = Devices.CreateLogDevice(LogDir + "/Store/hlog", logger: logger);
+                kvSettings.LogDevice = Devices.CreateLogDevice(LogDir + "/Store/hlog", logger: logger);
             }
             else
             {
                 if (LogDir != null)
                     throw new Exception("LogDir specified without enabling tiered storage (UseStorage)");
-                logSettings.LogDevice = new NullDevice();
+                kvSettings.LogDevice = new NullDevice();
             }
 
             if (CheckpointDir == null) CheckpointDir = LogDir;
@@ -216,11 +214,8 @@ namespace Garnet.server
             if (CheckpointDir is null or "")
                 CheckpointDir = Directory.GetCurrentDirectory();
 
-            checkpointSettings = new CheckpointSettings
-            {
-                CheckpointDir = CheckpointDir + "/Store/checkpoints",
-                RemoveOutdated = true,
-            };
+            kvSettings.CheckpointDir = CheckpointDir + "/Store/checkpoints";
+            kvSettings.RemoveOutdatedCheckpoints = true;
         }
 
         /// <summary>
@@ -230,7 +225,7 @@ namespace Garnet.server
         /// <returns></returns>
         protected static long ParseSize(string value)
         {
-            char[] suffix = new char[] { 'k', 'm', 'g', 't', 'p' };
+            char[] suffix = ['k', 'm', 'g', 't', 'p'];
             long result = 0;
             foreach (char c in value)
             {
@@ -260,7 +255,7 @@ namespace Garnet.server
         /// <returns></returns>
         protected static string PrettySize(long value)
         {
-            char[] suffix = new char[] { 'k', 'm', 'g', 't', 'p' };
+            char[] suffix = ['k', 'm', 'g', 't', 'p'];
             double v = value;
             int exp = 0;
             while (v - Math.Floor(v) > 0)

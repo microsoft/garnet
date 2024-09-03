@@ -1,8 +1,6 @@
 ﻿// Copyright (c) Microsoft Corporation.
 // Licensed under the MIT license.
 
-using System;
-using System.Diagnostics;
 using System.Runtime.CompilerServices;
 using Garnet.common;
 using Garnet.networking;
@@ -14,7 +12,12 @@ using Tsavorite.core;
 
 namespace Garnet.cluster
 {
-    using BasicGarnetApi = GarnetApi<BasicContext<SpanByte, SpanByte, SpanByte, SpanByteAndMemory, long, MainStoreFunctions>, BasicContext<byte[], IGarnetObject, SpanByte, GarnetObjectStoreOutput, long, ObjectStoreFunctions>>;
+    using BasicGarnetApi = GarnetApi<BasicContext<SpanByte, SpanByte, SpanByte, SpanByteAndMemory, long, MainSessionFunctions,
+            /* MainStoreFunctions */ StoreFunctions<SpanByte, SpanByte, SpanByteComparer, SpanByteRecordDisposer>,
+            SpanByteAllocator<StoreFunctions<SpanByte, SpanByte, SpanByteComparer, SpanByteRecordDisposer>>>,
+        BasicContext<byte[], IGarnetObject, ObjectInput, GarnetObjectStoreOutput, long, ObjectSessionFunctions,
+            /* ObjectStoreFunctions */ StoreFunctions<byte[], IGarnetObject, ByteArrayKeyComparer, DefaultRecordDisposer<byte[], IGarnetObject>>,
+            GenericAllocator<byte[], IGarnetObject, StoreFunctions<byte[], IGarnetObject, ByteArrayKeyComparer, DefaultRecordDisposer<byte[], IGarnetObject>>>>>;
 
     internal sealed unsafe partial class ClusterSession : IClusterSession
     {
@@ -31,9 +34,8 @@ namespace Garnet.cluster
         // User currently authenticated in this session
         User user;
 
+        SessionParseState parseState;
         byte* dcurr, dend;
-        byte* recvBufferPtr;
-        int readHead, bytesRead;
         long _localCurrentEpoch = 0;
 
         public long LocalCurrentEpoch => _localCurrentEpoch;
@@ -42,6 +44,8 @@ namespace Garnet.cluster
         /// Indicates if this is a session that allows for reads and writes
         /// </summary>
         bool readWriteSession = false;
+
+        public bool ReadWriteSession => clusterProvider.clusterManager.CurrentConfig.IsPrimary || readWriteSession;
 
         public void SetReadOnlySession() => readWriteSession = false;
         public void SetReadWriteSession() => readWriteSession = true;
@@ -58,57 +62,51 @@ namespace Garnet.cluster
             this.logger = logger;
         }
 
-        public void AcquireCurrentEpoch() => _localCurrentEpoch = clusterProvider.GarnetCurrentEpoch;
-        public void ReleaseCurrentEpoch() => _localCurrentEpoch = 0;
-
-        public bool ProcessClusterCommands(RespCommand command, ReadOnlySpan<byte> bufSpan, int count, byte* recvBufferPtr, int bytesRead, ref int readHead, ref byte* dcurr, ref byte* dend, out bool result)
+        public void ProcessClusterCommands(RespCommand command, ref SessionParseState parseState, ref byte* dcurr, ref byte* dend)
         {
-            this.recvBufferPtr = recvBufferPtr;
-            this.bytesRead = bytesRead;
             this.dcurr = dcurr;
             this.dend = dend;
-            this.readHead = readHead;
-            result = false;
+            this.parseState = parseState;
+            var invalidParameters = false;
+            string respCommandName = default;
 
             try
             {
-                if (command == RespCommand.CLUSTER)
+                if (command.IsClusterSubCommand())
                 {
-                    result = ProcessClusterCommands(bufSpan, count);
-                }
-                else if (command == RespCommand.MIGRATE)
-                {
-                    result = TryMIGRATE(count, recvBufferPtr + readHead);
-                }
-                else if (command == RespCommand.FAILOVER)
-                {
-                    if (!CheckACLAdminPermissions(bufSpan, count, out bool success))
-                    {
-                        return success;
-                    }
+                    ProcessClusterCommands(command, out invalidParameters);
 
-                    result = TryFAILOVER(count, recvBufferPtr + readHead);
-                }
-                else if ((command == RespCommand.REPLICAOF) || (command == RespCommand.SECONDARYOF))
-                {
-                    if (!CheckACLAdminPermissions(bufSpan, count, out bool success))
+                    if (invalidParameters)
                     {
-                        return success;
+                        // Have to lookup the RESP name now that we're in the failure case
+                        respCommandName = RespCommandsInfo.TryGetRespCommandInfo(command, out var info)
+                            ? info.Name.ToLowerInvariant()
+                            : "unknown";
                     }
-
-                    result = TryREPLICAOF(count, recvBufferPtr + readHead);
                 }
                 else
                 {
-                    return false;
+                    _ = command switch
+                    {
+                        RespCommand.MIGRATE => TryMIGRATE(out invalidParameters),
+                        RespCommand.FAILOVER => TryFAILOVER(),
+                        RespCommand.SECONDARYOF or RespCommand.REPLICAOF => TryREPLICAOF(out invalidParameters),
+                        _ => false
+                    };
                 }
-                return true;
+
+                if (invalidParameters)
+                {
+                    var errorMessage = string.Format(CmdStrings.GenericErrWrongNumArgs,
+                        respCommandName ?? command.ToString());
+                    while (!RespWriteUtils.WriteError(errorMessage, ref this.dcurr, this.dend))
+                        SendAndReset();
+                }
             }
             finally
             {
                 dcurr = this.dcurr;
                 dend = this.dend;
-                readHead = this.readHead;
             }
         }
 
@@ -157,16 +155,6 @@ namespace Garnet.cluster
             }
         }
 
-        bool DrainCommands(ReadOnlySpan<byte> bufSpan, int count)
-        {
-            for (int i = 0; i < count; i++)
-            {
-                GetCommand(bufSpan, out bool success1);
-                if (!success1) return false;
-            }
-            return true;
-        }
-
         /// <summary>
         /// Updates the user currently authenticated in the session.
         /// </summary>
@@ -175,89 +163,17 @@ namespace Garnet.cluster
         {
             this.user = user;
         }
+        public void AcquireCurrentEpoch() => _localCurrentEpoch = clusterProvider.GarnetCurrentEpoch;
+        public void ReleaseCurrentEpoch() => _localCurrentEpoch = 0;
 
         /// <summary>
-        /// Performs @admin command group permission checks for the current user and the given command.
-        /// (NOTE: This function is temporary until per-command permissions are implemented)
+        /// Release epoch, wait for config transition and re-acquire the epoch
         /// </summary>
-        /// <param name="bufSpan">Buffer containing the current command in RESP3 style.</param>
-        /// <param name="count">Number of parameters left in the command specification.</param>
-        /// <param name="processingCompleted">Indicates whether the command was completely processed, regardless of whether execution was successful or not.</param>
-        /// <returns>True if the command execution is allowed to continue, otherwise false.</returns>
-        bool CheckACLAdminPermissions(ReadOnlySpan<byte> bufSpan, int count, out bool processingCompleted)
+        public void UnsafeBumpAndWaitForEpochTransition()
         {
-            Debug.Assert(!authenticator.IsAuthenticated || (user != null));
-
-            if (!authenticator.IsAuthenticated || (!user.CanAccessCategory(CommandCategory.Flag.Admin)))
-            {
-                if (!DrainCommands(bufSpan, count))
-                {
-                    processingCompleted = false;
-                }
-                else
-                {
-                    while (!RespWriteUtils.WriteError(CmdStrings.RESP_ERR_NOAUTH, ref dcurr, dend))
-                        SendAndReset();
-                    processingCompleted = true;
-                }
-                return false;
-            }
-
-            processingCompleted = true;
-
-            return true;
-        }
-
-        /// <summary>
-        /// Performs @admin command group permission checks for the current user and the given command.
-        /// (NOTE: This function is temporary until per-command permissions are implemented)
-        /// Does not write to response buffer. Caller responsible for handling error.
-        /// </summary>
-        /// <returns>True if the command execution is allowed to continue, otherwise false.</returns>
-        bool CheckACLAdminPermissions()
-        {
-            Debug.Assert(!authenticator.IsAuthenticated || (user != null));
-
-            if (!authenticator.IsAuthenticated || (!user.CanAccessCategory(CommandCategory.Flag.Admin)))
-                return false;
-            return true;
-        }
-
-        ReadOnlySpan<byte> GetCommand(ReadOnlySpan<byte> bufSpan, out bool success)
-        {
-            if (bytesRead - readHead < 6)
-            {
-                success = false;
-                return default;
-            }
-
-            Debug.Assert(*(recvBufferPtr + readHead) == '$');
-            int psize = *(recvBufferPtr + readHead + 1) - '0';
-            readHead += 2;
-            while (*(recvBufferPtr + readHead) != '\r')
-            {
-                psize = psize * 10 + *(recvBufferPtr + readHead) - '0';
-                if (bytesRead - readHead < 1)
-                {
-                    success = false;
-                    return default;
-                }
-                readHead++;
-            }
-            if (bytesRead - readHead < 2 + psize + 2)
-            {
-                success = false;
-                return default;
-            }
-            Debug.Assert(*(recvBufferPtr + readHead + 1) == '\n');
-
-            var result = bufSpan.Slice(readHead + 2, psize);
-            Debug.Assert(*(recvBufferPtr + readHead + 2 + psize) == '\r');
-            Debug.Assert(*(recvBufferPtr + readHead + 2 + psize + 1) == '\n');
-
-            readHead += 2 + psize + 2;
-            success = true;
-            return result;
+            ReleaseCurrentEpoch();
+            _ = clusterProvider.BumpAndWaitForEpochTransition();
+            AcquireCurrentEpoch();
         }
     }
 }

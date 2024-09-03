@@ -10,14 +10,16 @@ namespace Tsavorite.core
     /// <summary>
     /// Resizes an index
     /// </summary>
-    internal sealed class IndexResizeTask : ISynchronizationTask
+    internal sealed class IndexResizeTask<TKey, TValue, TStoreFunctions, TAllocator> : ISynchronizationTask<TKey, TValue, TStoreFunctions, TAllocator>
+        where TStoreFunctions : IStoreFunctions<TKey, TValue>
+        where TAllocator : IAllocator<TKey, TValue, TStoreFunctions>
     {
         bool allThreadsInPrepareGrow;
 
         /// <inheritdoc />
-        public void GlobalBeforeEnteringState<Key, Value>(
+        public void GlobalBeforeEnteringState(
             SystemState next,
-            TsavoriteKV<Key, Value> store)
+            TsavoriteKV<TKey, TValue, TStoreFunctions, TAllocator> store)
         {
             switch (next.Phase)
             {
@@ -50,9 +52,9 @@ namespace Tsavorite.core
         }
 
         /// <inheritdoc />
-        public void GlobalAfterEnteringState<Key, Value>(
+        public void GlobalAfterEnteringState(
             SystemState next,
-            TsavoriteKV<Key, Value> store)
+            TsavoriteKV<TKey, TValue, TStoreFunctions, TAllocator> store)
         {
             switch (next.Phase)
             {
@@ -80,22 +82,22 @@ namespace Tsavorite.core
         }
 
         /// <inheritdoc />
-        public void OnThreadState<Key, Value, Input, Output, Context, TsavoriteSession>(
+        public void OnThreadState<TInput, TOutput, TContext, TSessionFunctionsWrapper>(
             SystemState current,
             SystemState prev,
-            TsavoriteKV<Key, Value> store,
-            TsavoriteKV<Key, Value>.TsavoriteExecutionContext<Input, Output, Context> ctx,
-            TsavoriteSession storeSession,
+            TsavoriteKV<TKey, TValue, TStoreFunctions, TAllocator> store,
+            TsavoriteKV<TKey, TValue, TStoreFunctions, TAllocator>.TsavoriteExecutionContext<TInput, TOutput, TContext> ctx,
+            TSessionFunctionsWrapper sessionFunctions,
             List<ValueTask> valueTasks,
             CancellationToken token = default)
-            where TsavoriteSession : ITsavoriteSession
+            where TSessionFunctionsWrapper : ISessionEpochControl
         {
             switch (current.Phase)
             {
                 case Phase.PREPARE_GROW:
                     // Using bumpEpoch: true allows us to guarantee that when system state proceeds, all threads in prior state
                     // will see that hlog.NumActiveLockingSessions == 0, ensuring that they can potentially block for the next state.
-                    if (allThreadsInPrepareGrow && store.hlog.NumActiveLockingSessions == 0)
+                    if (allThreadsInPrepareGrow && store.hlogBase.NumActiveLockingSessions == 0)
                         store.GlobalStateMachineStep(current, bumpEpoch: true);
                     break;
 
@@ -111,12 +113,14 @@ namespace Tsavorite.core
     /// <summary>
     /// Resizes the index
     /// </summary>
-    internal sealed class IndexResizeStateMachine : SynchronizationStateMachineBase
+    internal sealed class IndexResizeStateMachine<TKey, TValue, TStoreFunctions, TAllocator> : SynchronizationStateMachineBase<TKey, TValue, TStoreFunctions, TAllocator>
+        where TStoreFunctions : IStoreFunctions<TKey, TValue>
+        where TAllocator : IAllocator<TKey, TValue, TStoreFunctions>
     {
         /// <summary>
         /// Constructs a new IndexResizeStateMachine
         /// </summary>
-        public IndexResizeStateMachine() : base(new IndexResizeTask()) { }
+        public IndexResizeStateMachine() : base(new IndexResizeTask<TKey, TValue, TStoreFunctions, TAllocator>()) { }
 
         /// <inheritdoc />
         public override SystemState NextState(SystemState start)

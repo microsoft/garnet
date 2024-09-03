@@ -9,8 +9,10 @@ using System.Security.Cryptography.X509Certificates;
 using System.Text;
 using System.Threading;
 using System.Threading.Tasks;
+using Garnet.server.Auth.Settings;
 using Microsoft.Extensions.Logging;
 using NUnit.Framework;
+using NUnit.Framework.Legacy;
 using StackExchange.Redis;
 
 namespace Garnet.test.cluster
@@ -35,10 +37,12 @@ namespace Garnet.test.cluster
 
         public ClusterTestUtils clusterTestUtils = null;
 
-        public void Setup(HashSet<string> monitorTests)
+        public void Setup(Dictionary<string, LogLevel> monitorTests)
         {
             TestFolder = TestUtils.UnitTestWorkingDir() + "\\";
-            var logLevel = monitorTests.Contains(TestContext.CurrentContext.Test.MethodName) ? LogLevel.Trace : LogLevel.Error;
+            var logLevel = LogLevel.Error;
+            if (!string.IsNullOrEmpty(TestContext.CurrentContext.Test.MethodName) && monitorTests.TryGetValue(TestContext.CurrentContext.Test.MethodName, out var value))
+                logLevel = value;
             loggerFactory = TestUtils.CreateLoggerFactoryInstance(logTextWriter, logLevel, scope: TestContext.CurrentContext.Test.Name);
             logger = loggerFactory.CreateLogger(TestContext.CurrentContext.Test.Name);
             logger.LogDebug("0. Setup >>>>>>>>>>>>");
@@ -97,17 +101,19 @@ namespace Garnet.test.cluster
             int CommitFrequencyMs = 0,
             bool DisableStorageTier = false,
             bool EnableIncrementalSnapshots = false,
-            bool FastCommit = false,
+            bool FastCommit = true,
             int timeout = -1,
             bool useTLS = false,
             bool useAcl = false,
             X509CertificateCollection certificates = null,
-            ServerCredential clusterCreds = new ServerCredential())
+            ServerCredential clusterCreds = new ServerCredential(),
+            AadAuthenticationSettings authenticationSettings = null,
+            bool disablePubSub = true)
         {
             endpoints = TestUtils.GetEndPoints(shards, 7000);
             nodes = TestUtils.CreateGarnetCluster(
                 TestFolder,
-                disablePubSub: true,
+                disablePubSub: disablePubSub,
                 disableObjects: disableObjects,
                 endpoints: endpoints,
                 enableAOF: enableAOF,
@@ -131,7 +137,8 @@ namespace Garnet.test.cluster
                 aclFile: credManager.aclFilePath,
                 authUsername: clusterCreds.user,
                 authPassword: clusterCreds.password,
-                certificates: certificates);
+                certificates: certificates,
+                authenticationSettings: authenticationSettings);
 
             foreach (var node in nodes)
                 node.Start();
@@ -179,7 +186,7 @@ namespace Garnet.test.cluster
             int CommitFrequencyMs = 0,
             bool DisableStorageTier = false,
             bool EnableIncrementalSnapshots = false,
-            bool FastCommit = false,
+            bool FastCommit = true,
             int timeout = -1,
             int gossipDelay = 5,
             bool useTLS = false,
@@ -302,11 +309,11 @@ namespace Garnet.test.cluster
                 }
 
                 var resp = clusterTestUtils.SetKey(primaryIndex, keyBytes, Encoding.ASCII.GetBytes(value.ToString()), out int _, out string _, out int _, logger: logger);
-                Assert.AreEqual(ResponseState.OK, resp);
+                ClassicAssert.AreEqual(ResponseState.OK, resp);
 
                 var retVal = clusterTestUtils.GetKey(primaryIndex, keyBytes, out int _, out string _, out int _, out ResponseState responseState, logger: logger);
-                Assert.AreEqual(ResponseState.OK, responseState);
-                Assert.AreEqual(value, int.Parse(retVal));
+                ClassicAssert.AreEqual(ResponseState.OK, responseState);
+                ClassicAssert.AreEqual(value, int.Parse(retVal));
 
                 kvPairs.Add(key, int.Parse(retVal));
 
@@ -360,12 +367,12 @@ namespace Garnet.test.cluster
                 if (!set)
                 {
                     var result = clusterTestUtils.Lrange(primaryIndex, key, logger);
-                    Assert.AreEqual(value, result);
+                    ClassicAssert.AreEqual(value, result);
                 }
                 else
                 {
                     var result = clusterTestUtils.Smembers(primaryIndex, key, logger);
-                    Assert.IsTrue(result.ToHashSet().SetEquals(value.ToHashSet()));
+                    ClassicAssert.IsTrue(result.ToHashSet().SetEquals(value));
                 }
             }
         }
@@ -412,13 +419,13 @@ namespace Garnet.test.cluster
                 }
 
                 var retVal = clusterTestUtils.GetKey(replicaIndex, keyBytes, out var _, out var _, out var _, out var responseState, logger: logger);
-                while (retVal == null || (value != int.Parse(retVal)))
+                while (responseState != ResponseState.OK || retVal == null || (value != int.Parse(retVal)))
                 {
                     retVal = clusterTestUtils.GetKey(replicaIndex, keyBytes, out var _, out var _, out var _, out responseState, logger: logger);
                     ClusterTestUtils.BackOff();
                 }
-                Assert.AreEqual(ResponseState.OK, responseState);
-                Assert.AreEqual(value, int.Parse(retVal), $"replOffset > p:{clusterTestUtils.GetReplicationOffset(primaryIndex, logger: logger)}, s[{replicaIndex}]:{clusterTestUtils.GetReplicationOffset(replicaIndex)}");
+                ClassicAssert.AreEqual(ResponseState.OK, responseState);
+                ClassicAssert.AreEqual(value, int.Parse(retVal), $"replOffset > p:{clusterTestUtils.GetReplicationOffset(primaryIndex, logger: logger)}, s[{replicaIndex}]:{clusterTestUtils.GetReplicationOffset(replicaIndex)}");
             }
         }
 
@@ -442,9 +449,9 @@ namespace Garnet.test.cluster
                     ClusterTestUtils.BackOff();
                 }
                 if (!set)
-                    Assert.AreEqual(elements, result);
+                    ClassicAssert.AreEqual(elements, result);
                 else
-                    Assert.IsTrue(result.ToHashSet().SetEquals(result.ToHashSet()));
+                    ClassicAssert.IsTrue(result.ToHashSet().SetEquals(result));
             }
         }
 
@@ -456,18 +463,18 @@ namespace Garnet.test.cluster
                 var keyBytes = Encoding.ASCII.GetBytes(key);
                 var value = r.Next();
                 var resp = clusterTestUtils.SetKey(primaryIndex, keyBytes, Encoding.ASCII.GetBytes(value.ToString()), out int _, out string _, out int _, logger: logger);
-                Assert.AreEqual(ResponseState.OK, resp);
+                ClassicAssert.AreEqual(ResponseState.OK, resp);
 
                 clusterTestUtils.WaitForReplicaAofSync(primaryIndex, replicaIndex);
 
                 var retVal = clusterTestUtils.GetKey(replicaIndex, keyBytes, out int _, out string _, out int _, out ResponseState responseState, logger: logger);
-                while (retVal == null || (value != int.Parse(retVal)))
+                while (responseState != ResponseState.OK || retVal == null || (value != int.Parse(retVal)))
                 {
                     retVal = clusterTestUtils.GetKey(replicaIndex, keyBytes, out int _, out string _, out int _, out responseState, logger: logger);
                     ClusterTestUtils.BackOff();
                 }
-                Assert.AreEqual(ResponseState.OK, responseState);
-                Assert.AreEqual(value, int.Parse(retVal), $"replOffset > p:{clusterTestUtils.GetReplicationOffset(primaryIndex, logger: logger)}, s[{replicaIndex}]:{clusterTestUtils.GetReplicationOffset(replicaIndex)}");
+                ClassicAssert.AreEqual(ResponseState.OK, responseState);
+                ClassicAssert.AreEqual(value, int.Parse(retVal), $"replOffset > p:{clusterTestUtils.GetReplicationOffset(primaryIndex, logger: logger)}, s[{replicaIndex}]:{clusterTestUtils.GetReplicationOffset(replicaIndex)}");
             }
         }
 

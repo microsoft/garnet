@@ -7,34 +7,39 @@ using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
 using NUnit.Framework;
+using NUnit.Framework.Legacy;
 using Tsavorite.core;
 using Tsavorite.devices;
+using static Tsavorite.test.TestUtils;
 
-namespace Tsavorite.test.recovery.sumstore.simple
+namespace Tsavorite.test.recovery.sumstore
 {
+    using StructAllocator = BlittableAllocator<AdId, NumClicks, StoreFunctions<AdId, NumClicks, AdId.Comparer, DefaultRecordDisposer<AdId, NumClicks>>>;
+    using StructStoreFunctions = StoreFunctions<AdId, NumClicks, AdId.Comparer, DefaultRecordDisposer<AdId, NumClicks>>;
+
     [TestFixture]
-    public class RecoveryTests
+    class RecoveryTests
     {
-        const int numOps = 5000;
+        const int NumOps = 5000;
         AdId[] inputArray;
 
         private byte[] commitCookie;
         string checkpointDir;
         ICheckpointManager checkpointManager;
 
-        private TsavoriteKV<AdId, NumClicks> store1;
-        private TsavoriteKV<AdId, NumClicks> store2;
+        private TsavoriteKV<AdId, NumClicks, StructStoreFunctions, StructAllocator> store1;
+        private TsavoriteKV<AdId, NumClicks, StructStoreFunctions, StructAllocator> store2;
         private IDevice log;
 
 
         [SetUp]
         public void Setup()
         {
-            TestUtils.DeleteDirectory(TestUtils.MethodTestDir, wait: true);
+            DeleteDirectory(MethodTestDir, wait: true);
             checkpointManager = default;
             checkpointDir = default;
-            inputArray = new AdId[numOps];
-            for (int i = 0; i < numOps; i++)
+            inputArray = new AdId[NumOps];
+            for (int i = 0; i < NumOps; i++)
                 inputArray[i].adId = i;
         }
 
@@ -49,18 +54,18 @@ namespace Tsavorite.test.recovery.sumstore.simple
             log = null;
 
             checkpointManager?.Dispose();
-            TestUtils.DeleteDirectory(TestUtils.MethodTestDir);
+            DeleteDirectory(MethodTestDir);
         }
 
         [Test]
         [Category("TsavoriteKV"), Category("CheckpointRestore")]
-        public async ValueTask PageBlobSimpleRecoveryTest([Values] CheckpointType checkpointType, [Values] bool isAsync, [Values] bool testCommitCookie)
+        public async ValueTask PageBlobSimpleRecoveryTest([Values] CheckpointType checkpointType, [Values] CompletionSyncMode completionSyncMode, [Values] bool testCommitCookie)
         {
-            TestUtils.IgnoreIfNotRunningAzureTests();
+            IgnoreIfNotRunningAzureTests();
             checkpointManager = new DeviceLogCommitCheckpointManager(
-                new AzureStorageNamedDeviceFactory(TestUtils.AzureEmulatedStorageString),
-                new AzureCheckpointNamingScheme($"{TestUtils.AzureTestContainer}/{TestUtils.AzureTestDirectory}"));
-            await SimpleRecoveryTest1_Worker(checkpointType, isAsync, testCommitCookie);
+                new AzureStorageNamedDeviceFactory(AzureEmulatedStorageString),
+                new AzureCheckpointNamingScheme($"{AzureTestContainer}/{AzureTestDirectory}"));
+            await SimpleRecoveryTest1_Worker(checkpointType, completionSyncMode, testCommitCookie);
             checkpointManager.PurgeAll();
         }
 
@@ -69,23 +74,23 @@ namespace Tsavorite.test.recovery.sumstore.simple
         [Category("CheckpointRestore")]
         [Category("Smoke")]
 
-        public async ValueTask LocalDeviceSimpleRecoveryTest([Values] CheckpointType checkpointType, [Values] bool isAsync, [Values] bool testCommitCookie)
+        public async ValueTask LocalDeviceSimpleRecoveryTest([Values] CheckpointType checkpointType, [Values] CompletionSyncMode completionSyncMode, [Values] bool testCommitCookie)
         {
             checkpointManager = new DeviceLogCommitCheckpointManager(
                 new LocalStorageNamedDeviceFactory(),
-                new DefaultCheckpointNamingScheme(Path.Join(TestUtils.MethodTestDir, "chkpt")));
-            await SimpleRecoveryTest1_Worker(checkpointType, isAsync, testCommitCookie);
+                new DefaultCheckpointNamingScheme(Path.Join(MethodTestDir, "chkpt")));
+            await SimpleRecoveryTest1_Worker(checkpointType, completionSyncMode, testCommitCookie);
             checkpointManager.PurgeAll();
         }
 
         [Test]
         [Category("TsavoriteKV"), Category("CheckpointRestore")]
-        public async ValueTask SimpleRecoveryTest1([Values] CheckpointType checkpointType, [Values] bool isAsync, [Values] bool testCommitCookie)
+        public async ValueTask SimpleRecoveryTest1([Values] CheckpointType checkpointType, [Values] CompletionSyncMode completionSyncMode, [Values] bool testCommitCookie)
         {
-            await SimpleRecoveryTest1_Worker(checkpointType, isAsync, testCommitCookie);
+            await SimpleRecoveryTest1_Worker(checkpointType, completionSyncMode, testCommitCookie);
         }
 
-        private async ValueTask SimpleRecoveryTest1_Worker(CheckpointType checkpointType, bool isAsync, bool testCommitCookie)
+        private async ValueTask SimpleRecoveryTest1_Worker(CheckpointType checkpointType, CompletionSyncMode completionSyncMode, bool testCommitCookie)
         {
             if (testCommitCookie)
             {
@@ -94,146 +99,193 @@ namespace Tsavorite.test.recovery.sumstore.simple
             }
 
             if (checkpointManager is null)
-                checkpointDir = Path.Join(TestUtils.MethodTestDir, "checkpoints");
+                checkpointDir = Path.Join(MethodTestDir, "checkpoints");
 
-            log = Devices.CreateLogDevice(Path.Join(TestUtils.MethodTestDir, "SimpleRecoveryTest1.log"), deleteOnClose: true);
+            log = Devices.CreateLogDevice(Path.Join(MethodTestDir, "SimpleRecoveryTest1.log"), deleteOnClose: true);
 
-            store1 = new TsavoriteKV<AdId, NumClicks>(128,
-                logSettings: new LogSettings { LogDevice = log, MutableFraction = 0.1, MemorySizeBits = 29 },
-                checkpointSettings: new CheckpointSettings { CheckpointDir = checkpointDir, CheckpointManager = checkpointManager }
-                );
+            store1 = new(new()
+            {
+                IndexSize = 1L << 13,
+                LogDevice = log,
+                MutableFraction = 0.1,
+                MemorySize = 1L << 29,
+                CheckpointDir = checkpointDir,
+                CheckpointManager = checkpointManager
+            }, StoreFunctions<AdId, NumClicks>.Create(new AdId.Comparer())
+                , (allocatorSettings, storeFunctions) => new(allocatorSettings, storeFunctions)
+            );
 
-            store2 = new TsavoriteKV<AdId, NumClicks>(128,
-                logSettings: new LogSettings { LogDevice = log, MutableFraction = 0.1, MemorySizeBits = 29 },
-                checkpointSettings: new CheckpointSettings { CheckpointDir = checkpointDir, CheckpointManager = checkpointManager }
-                );
+            store2 = new(new()
+            {
+                IndexSize = 1L << 13,
+                LogDevice = log,
+                MutableFraction = 0.1,
+                MemorySize = 1L << 29,
+                CheckpointDir = checkpointDir,
+                CheckpointManager = checkpointManager
+            }, StoreFunctions<AdId, NumClicks>.Create(new AdId.Comparer())
+                , (allocatorSettings, storeFunctions) => new(allocatorSettings, storeFunctions)
+            );
 
             NumClicks value;
             AdInput inputArg = default;
             Output output = default;
 
             var session1 = store1.NewSession<AdInput, Output, Empty, AdSimpleFunctions>(new AdSimpleFunctions());
-            for (int key = 0; key < numOps; key++)
+            var bContext1 = session1.BasicContext;
+
+            for (int key = 0; key < NumOps; key++)
             {
                 value.numClicks = key;
-                session1.Upsert(ref inputArray[key], ref value, Empty.Default, 0);
+                _ = bContext1.Upsert(ref inputArray[key], ref value, Empty.Default);
             }
 
             if (testCommitCookie)
                 store1.CommitCookie = commitCookie;
-            store1.TryInitiateFullCheckpoint(out Guid token, checkpointType);
-            store1.CompleteCheckpointAsync().AsTask().GetAwaiter().GetResult();
+            _ = store1.TryInitiateFullCheckpoint(out Guid token, checkpointType);
+            if (completionSyncMode == CompletionSyncMode.Sync)
+                store1.CompleteCheckpointAsync().AsTask().GetAwaiter().GetResult();
+            else
+                await store1.CompleteCheckpointAsync();
             session1.Dispose();
 
-            if (isAsync)
-                await store2.RecoverAsync(token);
+            if (completionSyncMode == CompletionSyncMode.Sync)
+                _ = store2.Recover(token);
             else
-                store2.Recover(token);
+                _ = await store2.RecoverAsync(token);
 
             if (testCommitCookie)
-                Assert.IsTrue(store2.RecoveredCommitCookie.SequenceEqual(commitCookie));
+                ClassicAssert.IsTrue(store2.RecoveredCommitCookie.SequenceEqual(commitCookie));
             else
-                Assert.Null(store2.RecoveredCommitCookie);
+                ClassicAssert.Null(store2.RecoveredCommitCookie);
 
             var session2 = store2.NewSession<AdInput, Output, Empty, AdSimpleFunctions>(new AdSimpleFunctions());
-            Assert.AreEqual(2, session2.ID);
+            var bContext2 = session2.BasicContext;
+            ClassicAssert.AreEqual(1, session2.ID);    // This is the first session on the recovered store
 
-            for (int key = 0; key < numOps; key++)
+            for (int key = 0; key < NumOps; key++)
             {
-                var status = session2.Read(ref inputArray[key], ref inputArg, ref output, Empty.Default, 0);
+                var status = bContext2.Read(ref inputArray[key], ref inputArg, ref output, Empty.Default);
 
                 if (status.IsPending)
                 {
-                    session2.CompletePendingWithOutputs(out var outputs, wait: true);
-                    Assert.IsTrue(outputs.Next());
+                    _ = bContext2.CompletePendingWithOutputs(out var outputs, wait: true);
+                    ClassicAssert.IsTrue(outputs.Next());
                     output = outputs.Current.Output;
-                    Assert.IsFalse(outputs.Next());
+                    ClassicAssert.IsFalse(outputs.Next());
                     outputs.Current.Dispose();
                 }
                 else
-                    Assert.IsTrue(status.Found);
-                Assert.AreEqual(key, output.value.numClicks);
+                    ClassicAssert.IsTrue(status.Found);
+                ClassicAssert.AreEqual(key, output.value.numClicks);
             }
             session2.Dispose();
         }
 
         [Test]
         [Category("TsavoriteKV"), Category("CheckpointRestore")]
-        public async ValueTask SimpleRecoveryTest2([Values] CheckpointType checkpointType, [Values] bool isAsync)
+        public async ValueTask SimpleRecoveryTest2([Values] CheckpointType checkpointType, [Values] CompletionSyncMode completionSyncMode)
         {
-            checkpointManager = new DeviceLogCommitCheckpointManager(new LocalStorageNamedDeviceFactory(), new DefaultCheckpointNamingScheme(Path.Join(TestUtils.MethodTestDir, "checkpoints4")), false);
-            log = Devices.CreateLogDevice(Path.Join(TestUtils.MethodTestDir, "SimpleRecoveryTest2.log"), deleteOnClose: true);
+            checkpointManager = new DeviceLogCommitCheckpointManager(new LocalStorageNamedDeviceFactory(), new DefaultCheckpointNamingScheme(Path.Join(MethodTestDir, "checkpoints4")), false);
+            log = Devices.CreateLogDevice(Path.Join(MethodTestDir, "SimpleRecoveryTest2.log"), deleteOnClose: true);
 
-            store1 = new TsavoriteKV<AdId, NumClicks>(128,
-                logSettings: new LogSettings { LogDevice = log, MutableFraction = 0.1, MemorySizeBits = 29 },
-                checkpointSettings: new CheckpointSettings { CheckpointManager = checkpointManager }
-                );
+            store1 = new(new()
+            {
+                IndexSize = 1L << 13,
+                LogDevice = log,
+                MutableFraction = 0.1,
+                MemorySize = 1L << 29,
+                CheckpointManager = checkpointManager
+            }, StoreFunctions<AdId, NumClicks>.Create(new AdId.Comparer())
+                , (allocatorSettings, storeFunctions) => new(allocatorSettings, storeFunctions)
+            );
 
-            store2 = new TsavoriteKV<AdId, NumClicks>(128,
-                logSettings: new LogSettings { LogDevice = log, MutableFraction = 0.1, MemorySizeBits = 29 },
-                checkpointSettings: new CheckpointSettings { CheckpointManager = checkpointManager }
-                );
-
+            store2 = new(new()
+            {
+                IndexSize = 1L << 13,
+                LogDevice = log,
+                MutableFraction = 0.1,
+                MemorySize = 1L << 29,
+                CheckpointManager = checkpointManager
+            }, StoreFunctions<AdId, NumClicks>.Create(new AdId.Comparer())
+                , (allocatorSettings, storeFunctions) => new(allocatorSettings, storeFunctions)
+            );
 
             NumClicks value;
             AdInput inputArg = default;
             Output output = default;
 
             var session1 = store1.NewSession<AdInput, Output, Empty, AdSimpleFunctions>(new AdSimpleFunctions());
-            for (int key = 0; key < numOps; key++)
+            var bContext1 = session1.BasicContext;
+
+            for (int key = 0; key < NumOps; key++)
             {
                 value.numClicks = key;
-                session1.Upsert(ref inputArray[key], ref value, Empty.Default, 0);
+                _ = bContext1.Upsert(ref inputArray[key], ref value, Empty.Default);
             }
-            store1.TryInitiateFullCheckpoint(out Guid token, checkpointType);
+            _ = store1.TryInitiateFullCheckpoint(out Guid token, checkpointType);
             store1.CompleteCheckpointAsync().AsTask().GetAwaiter().GetResult();
             session1.Dispose();
 
-            if (isAsync)
-                await store2.RecoverAsync(token);
+            if (completionSyncMode == CompletionSyncMode.Sync)
+                _ = store2.Recover(token);
             else
-                store2.Recover(token);
+                _ = await store2.RecoverAsync(token);
 
             var session2 = store2.NewSession<AdInput, Output, Empty, AdSimpleFunctions>(new AdSimpleFunctions());
-            for (int key = 0; key < numOps; key++)
+            var bContext2 = session1.BasicContext;
+
+            for (int key = 0; key < NumOps; key++)
             {
-                var status = session2.Read(ref inputArray[key], ref inputArg, ref output, Empty.Default, 0);
+                var status = bContext2.Read(ref inputArray[key], ref inputArg, ref output, Empty.Default);
 
                 if (status.IsPending)
-                    session2.CompletePending(true);
+                    _ = bContext2.CompletePending(true);
                 else
-                {
-                    Assert.AreEqual(key, output.value.numClicks);
-                }
+                    ClassicAssert.AreEqual(key, output.value.numClicks);
             }
             session2.Dispose();
         }
 
         [Test]
         [Category("TsavoriteKV"), Category("CheckpointRestore")]
-        public async ValueTask ShouldRecoverBeginAddress([Values] bool isAsync)
+        public async ValueTask ShouldRecoverBeginAddress([Values] CompletionSyncMode completionSyncMode)
         {
-            log = Devices.CreateLogDevice(Path.Join(TestUtils.MethodTestDir, "SimpleRecoveryTest2.log"), deleteOnClose: true);
-            checkpointDir = Path.Join(TestUtils.MethodTestDir, "checkpoints6");
+            log = Devices.CreateLogDevice(Path.Join(MethodTestDir, "SimpleRecoveryTest2.log"), deleteOnClose: true);
+            checkpointDir = Path.Join(MethodTestDir, "checkpoints6");
 
-            store1 = new TsavoriteKV<AdId, NumClicks>(128,
-                logSettings: new LogSettings { LogDevice = log, MutableFraction = 0.1, MemorySizeBits = 29 },
-                checkpointSettings: new CheckpointSettings { CheckpointDir = checkpointDir }
-                );
+            store1 = new(new()
+            {
+                IndexSize = 1L << 13,
+                LogDevice = log,
+                MutableFraction = 0.1,
+                MemorySize = 1L << 29,
+                CheckpointDir = checkpointDir
+            }, StoreFunctions<AdId, NumClicks>.Create(new AdId.Comparer())
+                , (allocatorSettings, storeFunctions) => new(allocatorSettings, storeFunctions)
+            );
 
-            store2 = new TsavoriteKV<AdId, NumClicks>(128,
-                logSettings: new LogSettings { LogDevice = log, MutableFraction = 0.1, MemorySizeBits = 29 },
-                checkpointSettings: new CheckpointSettings { CheckpointDir = checkpointDir }
-                );
+            store2 = new(new()
+            {
+                IndexSize = 1L << 13,
+                LogDevice = log,
+                MutableFraction = 0.1,
+                MemorySize = 1L << 29,
+                CheckpointDir = checkpointDir
+            }, StoreFunctions<AdId, NumClicks>.Create(new AdId.Comparer())
+                , (allocatorSettings, storeFunctions) => new(allocatorSettings, storeFunctions)
+            );
 
             NumClicks value;
 
             var session1 = store1.NewSession<AdInput, Output, Empty, AdSimpleFunctions>(new AdSimpleFunctions());
+            var bContext1 = session1.BasicContext;
+
             var address = 0L;
-            for (int key = 0; key < numOps; key++)
+            for (int key = 0; key < NumOps; key++)
             {
                 value.numClicks = key;
-                session1.Upsert(ref inputArray[key], ref value, Empty.Default, 0);
+                _ = bContext1.Upsert(ref inputArray[key], ref value, Empty.Default);
 
                 if (key == 2999)
                     address = store1.Log.TailAddress;
@@ -241,35 +293,49 @@ namespace Tsavorite.test.recovery.sumstore.simple
 
             store1.Log.ShiftBeginAddress(address);
 
-            store1.TryInitiateFullCheckpoint(out Guid token, CheckpointType.FoldOver);
-            store1.CompleteCheckpointAsync().AsTask().GetAwaiter().GetResult();
+            _ = store1.TryInitiateFullCheckpoint(out Guid token, CheckpointType.FoldOver);
+            if (completionSyncMode == CompletionSyncMode.Sync)
+                store1.CompleteCheckpointAsync().AsTask().GetAwaiter().GetResult();
+            else
+                await store1.CompleteCheckpointAsync();
             session1.Dispose();
 
-            if (isAsync)
-                await store2.RecoverAsync(token);
+            if (completionSyncMode == CompletionSyncMode.Sync)
+                _ = store2.Recover(token);
             else
-                store2.Recover(token);
+                _ = await store2.RecoverAsync(token);
 
-            Assert.AreEqual(address, store2.Log.BeginAddress);
+            ClassicAssert.AreEqual(address, store2.Log.BeginAddress);
         }
 
         [Test]
         [Category("TsavoriteKV"), Category("CheckpointRestore")]
-        public void SimpleReadAndUpdateInfoTest()
+        public async ValueTask SimpleReadAndUpdateInfoTest([Values] CompletionSyncMode completionSyncMode)
         {
-            checkpointManager = new DeviceLogCommitCheckpointManager(new LocalStorageNamedDeviceFactory(), new DefaultCheckpointNamingScheme(Path.Join(TestUtils.MethodTestDir, "checkpoints")), false);
-            log = Devices.CreateLogDevice(Path.Join(TestUtils.MethodTestDir, "SimpleReadAndUpdateInfoTest.log"), deleteOnClose: true);
+            checkpointManager = new DeviceLogCommitCheckpointManager(new LocalStorageNamedDeviceFactory(), new DefaultCheckpointNamingScheme(Path.Join(MethodTestDir, "checkpoints")), false);
+            log = Devices.CreateLogDevice(Path.Join(MethodTestDir, "SimpleReadAndUpdateInfoTest.log"), deleteOnClose: true);
 
-            store1 = new TsavoriteKV<AdId, NumClicks>(128,
-                logSettings: new LogSettings { LogDevice = log, MutableFraction = 0.1, MemorySizeBits = 29 },
-                checkpointSettings: new CheckpointSettings { CheckpointManager = checkpointManager }
-                );
+            store1 = new(new()
+            {
+                IndexSize = 1L << 13,
+                LogDevice = log,
+                MutableFraction = 0.1,
+                MemorySize = 1L << 29,
+                CheckpointManager = checkpointManager
+            }, StoreFunctions<AdId, NumClicks>.Create(new AdId.Comparer())
+                , (allocatorSettings, storeFunctions) => new(allocatorSettings, storeFunctions)
+            );
 
-            store2 = new TsavoriteKV<AdId, NumClicks>(128,
-                logSettings: new LogSettings { LogDevice = log, MutableFraction = 0.1, MemorySizeBits = 29 },
-                checkpointSettings: new CheckpointSettings { CheckpointManager = checkpointManager }
-                );
-
+            store2 = new(new()
+            {
+                IndexSize = 1L << 13,
+                LogDevice = log,
+                MutableFraction = 0.1,
+                MemorySize = 1L << 29,
+                CheckpointManager = checkpointManager
+            }, StoreFunctions<AdId, NumClicks>.Create(new AdId.Comparer())
+                , (allocatorSettings, storeFunctions) => new(allocatorSettings, storeFunctions)
+            );
 
             NumClicks value;
             AdInput inputArg = default;
@@ -278,62 +344,70 @@ namespace Tsavorite.test.recovery.sumstore.simple
             AdSimpleFunctions functions2 = new(2);
 
             var session1 = store1.NewSession<AdInput, Output, Empty, AdSimpleFunctions>(functions1);
-            for (int key = 0; key < numOps; key++)
+            var bContext1 = session1.BasicContext;
+
+            for (int key = 0; key < NumOps; key++)
             {
                 value.numClicks = key;
                 if ((key & 1) > 0)
-                    session1.Upsert(ref inputArray[key], ref value, Empty.Default, 0);
+                    _ = bContext1.Upsert(ref inputArray[key], ref value, Empty.Default);
                 else
                 {
                     AdInput input = new() { adId = inputArray[key], numClicks = value };
-                    session1.RMW(ref inputArray[key], ref input);
+                    _ = bContext1.RMW(ref inputArray[key], ref input);
                 }
             }
-            store1.TryInitiateFullCheckpoint(out Guid token, CheckpointType.FoldOver);
-            store1.CompleteCheckpointAsync().AsTask().GetAwaiter().GetResult();
+            _ = store1.TryInitiateFullCheckpoint(out Guid token, CheckpointType.FoldOver);
+            if (completionSyncMode == CompletionSyncMode.Sync)
+                store1.CompleteCheckpointAsync().AsTask().GetAwaiter().GetResult();
+            else
+                await store1.CompleteCheckpointAsync();
             session1.Dispose();
 
-            store2.Recover(token);
+            if (completionSyncMode == CompletionSyncMode.Sync)
+                _ = store2.Recover(token);
+            else
+                _ = await store2.RecoverAsync(token);
 
             var session2 = store2.NewSession<AdInput, Output, Empty, AdSimpleFunctions>(functions2);
+            var bContext2 = session2.BasicContext;
 
             // Just need one operation here to verify readInfo/upsertInfo in the functions
             var lastKey = inputArray.Length - 1;
-            var status = session2.Read(ref inputArray[lastKey], ref inputArg, ref output, Empty.Default, 0);
-            Assert.IsFalse(status.IsPending, status.ToString());
+            var status = bContext2.Read(ref inputArray[lastKey], ref inputArg, ref output, Empty.Default);
+            ClassicAssert.IsFalse(status.IsPending, status.ToString());
 
             value.numClicks = lastKey;
-            status = session2.Upsert(ref inputArray[lastKey], ref value, Empty.Default, 0);
-            Assert.IsFalse(status.IsPending, status.ToString());
+            status = bContext2.Upsert(ref inputArray[lastKey], ref value, Empty.Default);
+            ClassicAssert.IsFalse(status.IsPending, status.ToString());
 
             inputArg = new() { adId = inputArray[lastKey], numClicks = new NumClicks { numClicks = 0 } }; // CopyUpdater adds, so make this 0
-            status = session2.RMW(ref inputArray[lastKey], ref inputArg);
-            Assert.IsFalse(status.IsPending, status.ToString());
+            status = bContext2.RMW(ref inputArray[lastKey], ref inputArg);
+            ClassicAssert.IsFalse(status.IsPending, status.ToString());
 
             // Now verify Pending
             store2.Log.FlushAndEvict(wait: true);
 
             output.value = new() { numClicks = lastKey };
             inputArg.numClicks = new() { numClicks = lastKey };
-            status = session2.Read(ref inputArray[lastKey], ref inputArg, ref output, Empty.Default, 0);
-            Assert.IsTrue(status.IsPending, status.ToString());
-            session2.CompletePending(wait: true);
+            status = bContext2.Read(ref inputArray[lastKey], ref inputArg, ref output, Empty.Default);
+            ClassicAssert.IsTrue(status.IsPending, status.ToString());
+            _ = bContext2.CompletePending(wait: true);
 
             // Upsert does not go pending so is skipped here
 
             --lastKey;
             output.value = new() { numClicks = lastKey };
             inputArg.numClicks = new() { numClicks = lastKey };
-            status = session2.RMW(ref inputArray[lastKey], ref inputArg);
-            Assert.IsTrue(status.IsPending, status.ToString());
-            session2.CompletePending(wait: true);
+            status = bContext2.RMW(ref inputArray[lastKey], ref inputArg);
+            ClassicAssert.IsTrue(status.IsPending, status.ToString());
+            _ = bContext2.CompletePending(wait: true);
 
             session2.Dispose();
         }
-
     }
 
-    public class AdSimpleFunctions : FunctionsBase<AdId, NumClicks, AdInput, Output, Empty>
+    public class AdSimpleFunctions : SessionFunctionsBase<AdId, NumClicks, AdInput, Output, Empty>
     {
         long expectedVersion;
 
@@ -341,15 +415,15 @@ namespace Tsavorite.test.recovery.sumstore.simple
 
         public override void ReadCompletionCallback(ref AdId key, ref AdInput input, ref Output output, Empty ctx, Status status, RecordMetadata recordMetadata)
         {
-            Assert.IsTrue(status.Found);
-            Assert.AreEqual(key.adId, output.value.numClicks);
+            ClassicAssert.IsTrue(status.Found);
+            ClassicAssert.AreEqual(key.adId, output.value.numClicks);
         }
 
         // Read functions
         public override bool SingleReader(ref AdId key, ref AdInput input, ref NumClicks value, ref Output dst, ref ReadInfo readInfo)
         {
             if (expectedVersion >= 0)
-                Assert.AreEqual(expectedVersion, readInfo.Version);
+                ClassicAssert.AreEqual(expectedVersion, readInfo.Version);
             dst.value = value;
             return true;
         }
@@ -357,7 +431,7 @@ namespace Tsavorite.test.recovery.sumstore.simple
         public override bool ConcurrentReader(ref AdId key, ref AdInput input, ref NumClicks value, ref Output dst, ref ReadInfo readInfo, ref RecordInfo recordInfo)
         {
             if (expectedVersion >= 0)
-                Assert.AreEqual(expectedVersion, readInfo.Version);
+                ClassicAssert.AreEqual(expectedVersion, readInfo.Version);
             dst.value = value;
             return true;
         }
@@ -366,7 +440,7 @@ namespace Tsavorite.test.recovery.sumstore.simple
         public override bool InitialUpdater(ref AdId key, ref AdInput input, ref NumClicks value, ref Output output, ref RMWInfo rmwInfo, ref RecordInfo recordInfo)
         {
             if (expectedVersion >= 0)
-                Assert.AreEqual(expectedVersion, rmwInfo.Version);
+                ClassicAssert.AreEqual(expectedVersion, rmwInfo.Version);
             value = input.numClicks;
             return true;
         }
@@ -374,22 +448,22 @@ namespace Tsavorite.test.recovery.sumstore.simple
         public override bool InPlaceUpdater(ref AdId key, ref AdInput input, ref NumClicks value, ref Output output, ref RMWInfo rmwInfo, ref RecordInfo recordInfo)
         {
             if (expectedVersion >= 0)
-                Assert.AreEqual(expectedVersion, rmwInfo.Version);
-            Interlocked.Add(ref value.numClicks, input.numClicks.numClicks);
+                ClassicAssert.AreEqual(expectedVersion, rmwInfo.Version);
+            _ = Interlocked.Add(ref value.numClicks, input.numClicks.numClicks);
             return true;
         }
 
         public override bool NeedCopyUpdate(ref AdId key, ref AdInput input, ref NumClicks oldValue, ref Output output, ref RMWInfo rmwInfo)
         {
             if (expectedVersion >= 0)
-                Assert.AreEqual(expectedVersion, rmwInfo.Version);
+                ClassicAssert.AreEqual(expectedVersion, rmwInfo.Version);
             return true;
         }
 
         public override bool CopyUpdater(ref AdId key, ref AdInput input, ref NumClicks oldValue, ref NumClicks newValue, ref Output output, ref RMWInfo rmwInfo, ref RecordInfo recordInfo)
         {
             if (expectedVersion >= 0)
-                Assert.AreEqual(expectedVersion, rmwInfo.Version);
+                ClassicAssert.AreEqual(expectedVersion, rmwInfo.Version);
             newValue.numClicks += oldValue.numClicks + input.numClicks.numClicks;
             return true;
         }

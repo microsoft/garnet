@@ -3,36 +3,46 @@
 
 using System.IO;
 using NUnit.Framework;
+using NUnit.Framework.Legacy;
 using Tsavorite.core;
 using Tsavorite.test.recovery.sumstore;
 
 namespace Tsavorite.test.statemachine
 {
+    using StructAllocator = BlittableAllocator<AdId, NumClicks, StoreFunctions<AdId, NumClicks, AdId.Comparer, DefaultRecordDisposer<AdId, NumClicks>>>;
+    using StructStoreFunctions = StoreFunctions<AdId, NumClicks, AdId.Comparer, DefaultRecordDisposer<AdId, NumClicks>>;
+
     [TestFixture]
     public class StateMachineBarrierTests
     {
         IDevice log;
-        TsavoriteKV<AdId, NumClicks> store;
-        const int numOps = 5000;
+        private TsavoriteKV<AdId, NumClicks, StructStoreFunctions, StructAllocator> store;
+        const int NumOps = 5000;
         AdId[] inputArray;
 
         [SetUp]
         public void Setup()
         {
-            inputArray = new AdId[numOps];
-            for (int i = 0; i < numOps; i++)
-            {
+            inputArray = new AdId[NumOps];
+            for (int i = 0; i < NumOps; i++)
                 inputArray[i].adId = i;
-            }
 
             log = Devices.CreateLogDevice(Path.Join(TestUtils.MethodTestDir, "StateMachineTest1.log"), deleteOnClose: true);
             string checkpointDir = Path.Join(TestUtils.MethodTestDir, "statemachinetest");
-            Directory.CreateDirectory(checkpointDir);
-            store = new TsavoriteKV<AdId, NumClicks>
-                (128,
-                logSettings: new LogSettings { LogDevice = log, MutableFraction = 0.1, PageSizeBits = 10, MemorySizeBits = 13 },
-                checkpointSettings: new CheckpointSettings { CheckpointDir = checkpointDir, CheckpointVersionSwitchBarrier = true }
-                );
+            _ = Directory.CreateDirectory(checkpointDir);
+
+            store = new(new()
+            {
+                IndexSize = 1L << 13,
+                LogDevice = log,
+                MutableFraction = 0.1,
+                PageSize = 1L << 10,
+                MemorySize = 1L << 13,
+                CheckpointDir = checkpointDir,
+                CheckpointVersionSwitchBarrier = true
+            }, StoreFunctions<AdId, NumClicks>.Create(new AdId.Comparer())
+                , (allocatorSettings, storeFunctions) => new(allocatorSettings, storeFunctions)
+            );
         }
 
         [TearDown]
@@ -54,13 +64,13 @@ namespace Tsavorite.test.statemachine
             Prepare(out var f, out var s1, out var uc1, out var s2);
 
             // We should be in PREPARE, 1
-            Assert.IsTrue(SystemState.Equal(SystemState.Make(Phase.PREPARE, 1), store.SystemState));
+            ClassicAssert.IsTrue(SystemState.Equal(SystemState.Make(Phase.PREPARE, 1), store.SystemState));
 
             // Invoke Refresh on session s2, it will spin (blocked from working due to CheckpointVersionSwitchBarrier)
             s2.Refresh(waitComplete: false);
 
             // s1 has not refreshed, so we should still be in PREPARE, 1
-            Assert.IsTrue(SystemState.Equal(SystemState.Make(Phase.PREPARE, 1), store.SystemState));
+            ClassicAssert.IsTrue(SystemState.Equal(SystemState.Make(Phase.PREPARE, 1), store.SystemState));
 
             // Refresh s1
             uc1.Refresh();
@@ -69,12 +79,10 @@ namespace Tsavorite.test.statemachine
             s2.CompleteOp();
 
             // Depending on timing, we should now be in IN_PROGRESS, 2 or WAIT_FLUSH, 2
-            Assert.IsTrue(
+            ClassicAssert.IsTrue(
                 SystemState.Equal(SystemState.Make(Phase.IN_PROGRESS, 2), store.SystemState) ||
                 SystemState.Equal(SystemState.Make(Phase.WAIT_FLUSH, 2), store.SystemState)
                 );
-
-            f.checkpointCallbackExpectation = 1;
 
             // Forward the rest of the state machine
             while (!SystemState.Equal(SystemState.Make(Phase.REST, 2), store.SystemState))
@@ -83,44 +91,41 @@ namespace Tsavorite.test.statemachine
                 s2.Refresh();
             }
 
-            Assert.AreEqual(0, f.checkpointCallbackExpectation);
-
             // Dispose session s2; does not move state machine forward
             s2.Dispose();
 
             uc1.EndUnsafe();
             s1.Dispose();
-
-            RecoverAndTest(log);
         }
 
         void Prepare(out SimpleFunctions f,
-            out ClientSession<AdId, NumClicks, NumClicks, NumClicks, Empty, SimpleFunctions> s1,
-            out UnsafeContext<AdId, NumClicks, NumClicks, NumClicks, Empty, SimpleFunctions> uc1,
-            out ThreadSession<AdId, NumClicks, NumClicks, NumClicks, Empty, SimpleFunctions> s2,
+            out ClientSession<AdId, NumClicks, NumClicks, NumClicks, Empty, SimpleFunctions, StructStoreFunctions, StructAllocator> s1,
+            out UnsafeContext<AdId, NumClicks, NumClicks, NumClicks, Empty, SimpleFunctions, StructStoreFunctions, StructAllocator> uc1,
+            out ThreadSession<AdId, NumClicks, NumClicks, NumClicks, Empty, SimpleFunctions, StructStoreFunctions, StructAllocator> s2,
             long toVersion = -1)
         {
             f = new SimpleFunctions();
 
             // We should be in REST, 1
-            Assert.IsTrue(SystemState.Equal(SystemState.Make(Phase.REST, 1), store.SystemState));
+            ClassicAssert.IsTrue(SystemState.Equal(SystemState.Make(Phase.REST, 1), store.SystemState));
 
             // Take index checkpoint for recovery purposes
-            store.TryInitiateIndexCheckpoint(out _);
+            _ = store.TryInitiateIndexCheckpoint(out _);
             store.CompleteCheckpointAsync().AsTask().GetAwaiter().GetResult();
 
             // Index checkpoint does not update version, so
             // we should still be in REST, 1
-            Assert.IsTrue(SystemState.Equal(SystemState.Make(Phase.REST, 1), store.SystemState));
+            ClassicAssert.IsTrue(SystemState.Equal(SystemState.Make(Phase.REST, 1), store.SystemState));
 
             NumClicks value;
 
             s1 = store.NewSession<NumClicks, NumClicks, Empty, SimpleFunctions>(f, "foo");
+            var bc1 = s1.BasicContext;
 
-            for (int key = 0; key < numOps; key++)
+            for (int key = 0; key < NumOps; key++)
             {
                 value.numClicks = key;
-                s1.Upsert(ref inputArray[key], ref value, Empty.Default, key);
+                _ = bc1.Upsert(ref inputArray[key], ref value, Empty.Default);
             }
 
             // Ensure state machine needs no I/O wait during WAIT_FLUSH
@@ -131,57 +136,15 @@ namespace Tsavorite.test.statemachine
             uc1.BeginUnsafe();
 
             // Start session s2 on another thread for testing
-            s2 = store.CreateThreadSession<AdId, NumClicks, NumClicks, NumClicks, Empty, SimpleFunctions>(f);
+            s2 = store.CreateThreadSession<AdId, NumClicks, NumClicks, NumClicks, Empty, SimpleFunctions, StructStoreFunctions, StructAllocator>(f);
 
             // We should be in REST, 1
-            Assert.IsTrue(SystemState.Equal(SystemState.Make(Phase.REST, 1), store.SystemState));
+            ClassicAssert.IsTrue(SystemState.Equal(SystemState.Make(Phase.REST, 1), store.SystemState));
 
-            store.TryInitiateHybridLogCheckpoint(out _, CheckpointType.FoldOver, targetVersion: toVersion);
+            _ = store.TryInitiateHybridLogCheckpoint(out _, CheckpointType.FoldOver, targetVersion: toVersion);
 
             // We should be in PREPARE, 1
-            Assert.IsTrue(SystemState.Equal(SystemState.Make(Phase.PREPARE, 1), store.SystemState));
-        }
-
-        void RecoverAndTest(IDevice log)
-        {
-            NumClicks inputArg = default;
-            NumClicks output = default;
-            var f = new SimpleFunctions();
-
-            var store = new TsavoriteKV<AdId, NumClicks>
-                (128,
-                logSettings: new LogSettings { LogDevice = log, MutableFraction = 0.1, PageSizeBits = 10, MemorySizeBits = 13 },
-                checkpointSettings: new CheckpointSettings { CheckpointDir = Path.Join(TestUtils.MethodTestDir, "statemachinetest") }
-                );
-
-            store.Recover(); // sync, does not require session
-
-            using (var s3 = store.ResumeSession<NumClicks, NumClicks, Empty, SimpleFunctions>(f, "foo", out CommitPoint lsn))
-            {
-                Assert.AreEqual(numOps - 1, lsn.UntilSerialNo);
-
-                // Expect checkpoint completion callback
-                f.checkpointCallbackExpectation = 1;
-
-                s3.Refresh();
-
-                // Completion callback should have been called once
-                Assert.AreEqual(0, f.checkpointCallbackExpectation);
-
-                for (var key = 0; key < numOps; key++)
-                {
-                    var status = s3.Read(ref inputArray[key], ref inputArg, ref output, Empty.Default, s3.SerialNo);
-
-                    if (status.IsPending)
-                        s3.CompletePending(true);
-                    else
-                    {
-                        Assert.AreEqual(key, output.numClicks);
-                    }
-                }
-            }
-
-            store.Dispose();
+            ClassicAssert.IsTrue(SystemState.Equal(SystemState.Make(Phase.PREPARE, 1), store.SystemState));
         }
     }
 }

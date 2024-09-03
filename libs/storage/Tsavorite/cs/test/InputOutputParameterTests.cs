@@ -2,12 +2,15 @@
 // Licensed under the MIT license.
 
 using System.IO;
-using System.Threading.Tasks;
 using NUnit.Framework;
+using NUnit.Framework.Legacy;
 using Tsavorite.core;
 
 namespace Tsavorite.test.InputOutputParameterTests
 {
+    using IntAllocator = BlittableAllocator<int, int, StoreFunctions<int, int, IntKeyComparer, DefaultRecordDisposer<int, int>>>;
+    using IntStoreFunctions = StoreFunctions<int, int, IntKeyComparer, DefaultRecordDisposer<int, int>>;
+
     [TestFixture]
     class InputOutputParameterTests
     {
@@ -15,11 +18,12 @@ namespace Tsavorite.test.InputOutputParameterTests
         const int MultValue = 100;
         const int NumRecs = 10;
 
-        private TsavoriteKV<int, int> store;
-        private ClientSession<int, int, int, int, Empty, UpsertInputFunctions> session;
+        private TsavoriteKV<int, int, IntStoreFunctions, IntAllocator> store;
+        private ClientSession<int, int, int, int, Empty, UpsertInputFunctions, IntStoreFunctions, IntAllocator> session;
+        private BasicContext<int, int, int, int, Empty, UpsertInputFunctions, IntStoreFunctions, IntAllocator> bContext;
         private IDevice log;
 
-        internal class UpsertInputFunctions : FunctionsBase<int, int, int, int, Empty>
+        internal class UpsertInputFunctions : SessionFunctionsBase<int, int, int, int, Empty>
         {
             internal long lastWriteAddress;
 
@@ -32,7 +36,7 @@ namespace Tsavorite.test.InputOutputParameterTests
             /// <inheritdoc/>
             public override bool SingleReader(ref int key, ref int input, ref int value, ref int output, ref ReadInfo readInfo)
             {
-                Assert.AreEqual(key * input, value);
+                ClassicAssert.AreEqual(key * input, value);
                 lastWriteAddress = readInfo.Address;
                 output = value + AddValue;
                 return true;
@@ -52,9 +56,9 @@ namespace Tsavorite.test.InputOutputParameterTests
             /// <inheritdoc/>
             public override void PostSingleWriter(ref int key, ref int input, ref int src, ref int dst, ref int output, ref UpsertInfo upsertInfo, WriteReason reasons)
             {
-                Assert.AreEqual(lastWriteAddress, upsertInfo.Address);
-                Assert.AreEqual(key * input, dst);
-                Assert.AreEqual(dst, output);
+                ClassicAssert.AreEqual(lastWriteAddress, upsertInfo.Address);
+                ClassicAssert.AreEqual(key * input, dst);
+                ClassicAssert.AreEqual(dst, output);
             }
 
             public override bool InPlaceUpdater(ref int key, ref int input, ref int value, ref int output, ref RMWInfo rmwInfo, ref RecordInfo recordInfo)
@@ -69,9 +73,9 @@ namespace Tsavorite.test.InputOutputParameterTests
             /// <inheritdoc/>
             public override void PostInitialUpdater(ref int key, ref int input, ref int value, ref int output, ref RMWInfo rmwInfo)
             {
-                Assert.AreEqual(lastWriteAddress, rmwInfo.Address);
-                Assert.AreEqual(key * input, value);
-                Assert.AreEqual(value, output);
+                ClassicAssert.AreEqual(lastWriteAddress, rmwInfo.Address);
+                ClassicAssert.AreEqual(key * input, value);
+                ClassicAssert.AreEqual(value, output);
             }
         }
 
@@ -81,9 +85,18 @@ namespace Tsavorite.test.InputOutputParameterTests
             TestUtils.DeleteDirectory(TestUtils.MethodTestDir, wait: true);
 
             log = TestUtils.CreateTestDevice(TestUtils.DeviceType.LocalMemory, Path.Combine(TestUtils.MethodTestDir, "Device.log"));
-            store = new TsavoriteKV<int, int>
-                (128, new LogSettings { LogDevice = log, MemorySizeBits = 22, SegmentSizeBits = 22, PageSizeBits = 10 });
+            store = new(new()
+            {
+                IndexSize = 1L << 13,
+                LogDevice = log,
+                MemorySize = 1L << 22,
+                SegmentSize = 1L << 22,
+                PageSize = 1L << 10
+            }, StoreFunctions<int, int>.Create(IntKeyComparer.Instance)
+                , (allocatorSettings, storeFunctions) => new(allocatorSettings, storeFunctions)
+            );
             session = store.NewSession<int, int, Empty, UpsertInputFunctions>(new UpsertInputFunctions());
+            bContext = session.BasicContext;
         }
 
         [TearDown]
@@ -102,73 +115,34 @@ namespace Tsavorite.test.InputOutputParameterTests
         [Test]
         [Category(TestUtils.TsavoriteKVTestCategory)]
         [Category(TestUtils.SmokeTestCategory)]
-        public async Task InputOutputParametersTest([Values] bool useRMW, [Values] bool isAsync)
+        public void InputOutputParametersTest([Values] bool useRMW)
         {
             int input = MultValue;
             Status status;
             int output = -1;
             bool loading = true;
 
-            async Task doWrites()
+            void doWrites()
             {
                 for (int key = 0; key < NumRecs; ++key)
                 {
                     var tailAddress = store.Log.TailAddress;
-                    RecordMetadata recordMetadata;
-                    if (isAsync)
-                    {
-                        if (useRMW)
-                        {
-                            var r = await session.RMWAsync(ref key, ref input);
-                            if ((key & 0x1) == 0)
-                            {
-                                while (r.Status.IsPending)
-                                    r = await r.CompleteAsync();
-                                status = r.Status;
-                                output = r.Output;
-                                recordMetadata = r.RecordMetadata;
-                            }
-                            else
-                            {
-                                (status, output) = r.Complete(out recordMetadata);
-                            }
-                        }
-                        else
-                        {
-                            var r = await session.UpsertAsync(ref key, ref input, ref key);
-                            if ((key & 0x1) == 0)
-                            {
-                                while (r.Status.IsPending)
-                                    r = await r.CompleteAsync();
-                                status = r.Status;
-                                output = r.Output;
-                                recordMetadata = r.RecordMetadata;
-                            }
-                            else
-                            {
-                                (status, output) = r.Complete(out recordMetadata);
-                            }
-                        }
-                    }
-                    else
-                    {
-                        status = useRMW
-                            ? session.RMW(ref key, ref input, ref output, out recordMetadata)
-                            : session.Upsert(ref key, ref input, ref key, ref output, out recordMetadata);
-                    }
+                    status = useRMW
+                        ? bContext.RMW(ref key, ref input, ref output, out var recordMetadata)
+                        : bContext.Upsert(ref key, ref input, ref key, ref output, out recordMetadata);
                     if (loading)
                     {
                         if (useRMW)
-                            Assert.IsFalse(status.Found, status.ToString());
+                            ClassicAssert.IsFalse(status.Found, status.ToString());
                         else
-                            Assert.IsTrue(status.Record.Created, status.ToString());
-                        Assert.AreEqual(tailAddress, session.functions.lastWriteAddress);
+                            ClassicAssert.IsTrue(status.Record.Created, status.ToString());
+                        ClassicAssert.AreEqual(tailAddress, session.functions.lastWriteAddress);
                     }
                     else
-                        Assert.IsTrue(status.Record.InPlaceUpdated, status.ToString());
+                        ClassicAssert.IsTrue(status.Record.InPlaceUpdated, status.ToString());
 
-                    Assert.AreEqual(key * input, output);
-                    Assert.AreEqual(session.functions.lastWriteAddress, recordMetadata.Address);
+                    ClassicAssert.AreEqual(key * input, output);
+                    ClassicAssert.AreEqual(session.functions.lastWriteAddress, recordMetadata.Address);
                 }
             }
 
@@ -176,20 +150,20 @@ namespace Tsavorite.test.InputOutputParameterTests
             {
                 for (int key = 0; key < NumRecs; ++key)
                 {
-                    session.Read(ref key, ref input, ref output);
-                    Assert.AreEqual(key * input + AddValue, output);
+                    _ = bContext.Read(ref key, ref input, ref output);
+                    ClassicAssert.AreEqual(key * input + AddValue, output);
                 }
             }
 
             // SingleWriter (records do not yet exist)
-            await doWrites();
+            doWrites();
             doReads();
 
             loading = false;
             input *= input;
 
             // ConcurrentWriter (update existing records)
-            await doWrites();
+            doWrites();
             doReads();
         }
     }

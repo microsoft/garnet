@@ -6,16 +6,21 @@ using System.Collections.Generic;
 using System.IO;
 using System.Threading.Tasks;
 using NUnit.Framework;
+using NUnit.Framework.Legacy;
 using Tsavorite.core;
 using static Tsavorite.test.TestUtils;
 
 namespace Tsavorite.test
 {
+    using ClassAllocator = GenericAllocator<MyKey, MyValue, StoreFunctions<MyKey, MyValue, MyKey.Comparer, DefaultRecordDisposer<MyKey, MyValue>>>;
+    using ClassStoreFunctions = StoreFunctions<MyKey, MyValue, MyKey.Comparer, DefaultRecordDisposer<MyKey, MyValue>>;
+
     [TestFixture]
     internal class GenericIterationTests
     {
-        private TsavoriteKV<MyKey, MyValue> store;
-        private ClientSession<MyKey, MyValue, MyInput, MyOutput, int, MyFunctionsDelete> session;
+        private TsavoriteKV<MyKey, MyValue, ClassStoreFunctions, ClassAllocator> store;
+        private ClientSession<MyKey, MyValue, MyInput, MyOutput, int, MyFunctionsDelete, ClassStoreFunctions, ClassAllocator> session;
+        private BasicContext<MyKey, MyValue, MyInput, MyOutput, int, MyFunctionsDelete, ClassStoreFunctions, ClassAllocator> bContext;
         private IDevice log, objlog;
 
         [SetUp]
@@ -25,25 +30,25 @@ namespace Tsavorite.test
             // Tests call InternalSetup()
         }
 
-        private void InternalSetup(ScanIteratorType scanIteratorType, bool largeMemory)
-        {
-            // Default ConcurrencyControlMode for this iterator type.
-            var concurrencyControlMode = scanIteratorType == ScanIteratorType.Pull ? ConcurrencyControlMode.None : ConcurrencyControlMode.LockTable;
-            InternalSetup(concurrencyControlMode, largeMemory);
-        }
-
-        private void InternalSetup(ConcurrencyControlMode concurrencyControlMode, bool largeMemory)
+        private void InternalSetup(bool largeMemory)
         {
             // Broke this out as we have different requirements by test.
             log = Devices.CreateLogDevice(Path.Join(MethodTestDir, "GenericIterationTests.log"), deleteOnClose: true);
             objlog = Devices.CreateLogDevice(Path.Join(MethodTestDir, "GenericIterationTests.obj.log"), deleteOnClose: true);
 
-            store = new TsavoriteKV<MyKey, MyValue>
-                (128,
-                logSettings: new LogSettings { LogDevice = log, ObjectLogDevice = objlog, MutableFraction = 0.1, MemorySizeBits = largeMemory ? 25 : 14, PageSizeBits = largeMemory ? 20 : 9 },
-                serializerSettings: new SerializerSettings<MyKey, MyValue> { keySerializer = () => new MyKeySerializer(), valueSerializer = () => new MyValueSerializer() },
-                concurrencyControlMode: concurrencyControlMode);
+            store = new(new()
+            {
+                IndexSize = 1L << 13,
+                LogDevice = log,
+                ObjectLogDevice = objlog,
+                MutableFraction = 0.1,
+                MemorySize = 1L << (largeMemory ? 25 : 14),
+                PageSize = 1L << (largeMemory ? 20 : 9)
+            }, StoreFunctions<MyKey, MyValue>.Create(new MyKey.Comparer(), () => new MyKeySerializer(), () => new MyValueSerializer(), DefaultRecordDisposer<MyKey, MyValue>.Instance)
+                , (allocatorSettings, storeFunctions) => new(allocatorSettings, storeFunctions)
+            );
             session = store.NewSession<MyInput, MyOutput, int, MyFunctionsDelete>(new MyFunctionsDelete());
+            bContext = session.BasicContext;
         }
 
         [TearDown]
@@ -71,15 +76,15 @@ namespace Tsavorite.test
             {
                 cursorRecordResult = CursorRecordResult.Accept; // default; not used here
                 if (keyMultToValue > 0)
-                    Assert.AreEqual(key.key * keyMultToValue, value.value);
+                    ClassicAssert.AreEqual(key.key * keyMultToValue, value.value);
                 return stopAt != ++numRecords;
             }
 
             public bool ConcurrentReader(ref MyKey key, ref MyValue value, RecordMetadata recordMetadata, long numberOfRecords, out CursorRecordResult cursorRecordResult)
                 => SingleReader(ref key, ref value, recordMetadata, numberOfRecords, out cursorRecordResult);
-            public bool OnStart(long beginAddress, long endAddress) => true;
-            public void OnException(Exception exception, long numberOfRecords) { }
-            public void OnStop(bool completed, long numberOfRecords) { }
+            public readonly bool OnStart(long beginAddress, long endAddress) => true;
+            public readonly void OnException(Exception exception, long numberOfRecords) { }
+            public readonly void OnStop(bool completed, long numberOfRecords) { }
         }
 
         [Test]
@@ -88,7 +93,7 @@ namespace Tsavorite.test
 
         public void GenericIterationBasicTest([Values] ScanIteratorType scanIteratorType)
         {
-            InternalSetup(scanIteratorType, largeMemory: false);
+            InternalSetup(largeMemory: false);
             GenericPushIterationTestFunctions scanIteratorFunctions = new();
 
             const int totalRecords = 2000;
@@ -102,12 +107,12 @@ namespace Tsavorite.test
                 {
                     using var iter = session.Iterate();
                     while (iter.GetNext(out var recordInfo))
-                        scanIteratorFunctions.SingleReader(ref iter.GetKey(), ref iter.GetValue(), default, default, out _);
+                        _ = scanIteratorFunctions.SingleReader(ref iter.GetKey(), ref iter.GetValue(), default, default, out _);
                 }
                 else
-                    Assert.IsTrue(session.Iterate(ref scanIteratorFunctions), $"Failed to complete push iteration; numRecords = {scanIteratorFunctions.numRecords}");
+                    ClassicAssert.IsTrue(session.Iterate(ref scanIteratorFunctions), $"Failed to complete push iteration; numRecords = {scanIteratorFunctions.numRecords}");
 
-                Assert.AreEqual(expectedRecs, scanIteratorFunctions.numRecords);
+                ClassicAssert.AreEqual(expectedRecs, scanIteratorFunctions.numRecords);
             }
 
             // Initial population
@@ -115,7 +120,7 @@ namespace Tsavorite.test
             {
                 var key1 = new MyKey { key = i };
                 var value = new MyValue { value = i };
-                session.Upsert(ref key1, ref value);
+                _ = bContext.Upsert(ref key1, ref value);
             }
             iterateAndVerify(1, totalRecords);
 
@@ -123,7 +128,7 @@ namespace Tsavorite.test
             {
                 var key1 = new MyKey { key = i };
                 var value = new MyValue { value = 2 * i };
-                session.Upsert(ref key1, ref value);
+                _ = bContext.Upsert(ref key1, ref value);
             }
             iterateAndVerify(2, totalRecords);
 
@@ -131,7 +136,7 @@ namespace Tsavorite.test
             {
                 var key1 = new MyKey { key = i };
                 var value = new MyValue { value = i };
-                session.Upsert(ref key1, ref value);
+                _ = bContext.Upsert(ref key1, ref value);
             }
             iterateAndVerify(0, totalRecords);
 
@@ -139,14 +144,14 @@ namespace Tsavorite.test
             {
                 var key1 = new MyKey { key = i };
                 var value = new MyValue { value = i };
-                session.Upsert(ref key1, ref value);
+                _ = bContext.Upsert(ref key1, ref value);
             }
             iterateAndVerify(0, totalRecords);
 
             for (int i = 0; i < totalRecords; i += 2)
             {
                 var key1 = new MyKey { key = i };
-                session.Delete(ref key1);
+                _ = bContext.Delete(ref key1);
             }
             iterateAndVerify(0, totalRecords / 2);
 
@@ -154,7 +159,7 @@ namespace Tsavorite.test
             {
                 var key1 = new MyKey { key = i };
                 var value = new MyValue { value = 3 * i };
-                session.Upsert(ref key1, ref value);
+                _ = bContext.Upsert(ref key1, ref value);
             }
             iterateAndVerify(3, totalRecords);
 
@@ -168,7 +173,7 @@ namespace Tsavorite.test
 
         public void GenericIterationPushStopTest()
         {
-            InternalSetup(ScanIteratorType.Push, largeMemory: false);
+            InternalSetup(largeMemory: false);
             GenericPushIterationTestFunctions scanIteratorFunctions = new();
 
             const int totalRecords = 2000;
@@ -179,10 +184,10 @@ namespace Tsavorite.test
                 scanIteratorFunctions.numRecords = 0;
                 scanIteratorFunctions.stopAt = stopAt;
                 if (useScan)
-                    Assert.IsFalse(store.Log.Scan(ref scanIteratorFunctions, start, store.Log.TailAddress), $"Failed to terminate push iteration early; numRecords = {scanIteratorFunctions.numRecords}");
+                    ClassicAssert.IsFalse(store.Log.Scan(ref scanIteratorFunctions, start, store.Log.TailAddress), $"Failed to terminate push iteration early; numRecords = {scanIteratorFunctions.numRecords}");
                 else
-                    Assert.IsFalse(session.Iterate(ref scanIteratorFunctions), $"Failed to terminate push iteration early; numRecords = {scanIteratorFunctions.numRecords}");
-                Assert.AreEqual(stopAt, scanIteratorFunctions.numRecords);
+                    ClassicAssert.IsFalse(session.Iterate(ref scanIteratorFunctions), $"Failed to terminate push iteration early; numRecords = {scanIteratorFunctions.numRecords}");
+                ClassicAssert.AreEqual(stopAt, scanIteratorFunctions.numRecords);
             }
 
             // Initial population
@@ -190,7 +195,7 @@ namespace Tsavorite.test
             {
                 var key1 = new MyKey { key = i };
                 var value = new MyValue { value = i };
-                session.Upsert(ref key1, ref value);
+                _ = bContext.Upsert(ref key1, ref value);
             }
 
             scanAndVerify(42, useScan: true);
@@ -200,9 +205,9 @@ namespace Tsavorite.test
         [Test]
         [Category(TsavoriteKVTestCategory)]
         [Category(SmokeTestCategory)]
-        public unsafe void GenericIterationPushLockTest([Values(1, 4)] int scanThreads, [Values(1, 4)] int updateThreads, [Values] ConcurrencyControlMode concurrencyControlMode, [Values] ScanMode scanMode)
+        public unsafe void GenericIterationPushLockTest([Values(1, 4)] int scanThreads, [Values(1, 4)] int updateThreads, [Values] ScanMode scanMode)
         {
-            InternalSetup(concurrencyControlMode, largeMemory: true);
+            InternalSetup(largeMemory: true);
 
             const int totalRecords = 2000;
             var start = store.Log.TailAddress;
@@ -213,10 +218,10 @@ namespace Tsavorite.test
                 GenericPushIterationTestFunctions scanIteratorFunctions = new();
 
                 if (scanMode == ScanMode.Scan)
-                    Assert.IsTrue(store.Log.Scan(ref scanIteratorFunctions, start, store.Log.TailAddress), $"Failed to complete push scan; numRecords = {scanIteratorFunctions.numRecords}");
+                    ClassicAssert.IsTrue(store.Log.Scan(ref scanIteratorFunctions, start, store.Log.TailAddress), $"Failed to complete push scan; numRecords = {scanIteratorFunctions.numRecords}");
                 else
-                    Assert.IsTrue(session.Iterate(ref scanIteratorFunctions), $"Failed to complete push iteration; numRecords = {scanIteratorFunctions.numRecords}");
-                Assert.AreEqual(totalRecords, scanIteratorFunctions.numRecords);
+                    ClassicAssert.IsTrue(session.Iterate(ref scanIteratorFunctions), $"Failed to complete push iteration; numRecords = {scanIteratorFunctions.numRecords}");
+                ClassicAssert.AreEqual(totalRecords, scanIteratorFunctions.numRecords);
             }
 
             void LocalUpdate(int tid)
@@ -226,7 +231,7 @@ namespace Tsavorite.test
                 {
                     var key1 = new MyKey { key = i };
                     var value = new MyValue { value = (tid + 1) * i };
-                    session.Upsert(ref key1, ref value);
+                    _ = bContext.Upsert(ref key1, ref value);
                 }
             }
 
@@ -235,11 +240,11 @@ namespace Tsavorite.test
                 {
                     var key1 = new MyKey { key = i };
                     var value = new MyValue { value = i };
-                    session.Upsert(ref key1, ref value);
+                    _ = bContext.Upsert(ref key1, ref value);
                 }
             }
 
-            List<Task> tasks = new();   // Task rather than Thread for propagation of exception.
+            List<Task> tasks = [];   // Task rather than Thread for propagation of exception.
             var numThreads = scanThreads + updateThreads;
             for (int t = 0; t < numThreads; t++)
             {
@@ -249,7 +254,7 @@ namespace Tsavorite.test
                 else
                     tasks.Add(Task.Factory.StartNew(() => LocalUpdate(tid)));
             }
-            Task.WaitAll(tasks.ToArray());
+            Task.WaitAll([.. tasks]);
         }
     }
 }

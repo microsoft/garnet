@@ -4,14 +4,18 @@
 using System.Threading.Tasks;
 using Garnet.server;
 using NUnit.Framework;
+using NUnit.Framework.Legacy;
 using Tsavorite.core;
 
 namespace Garnet.test
 {
+    using ObjectStoreAllocator = GenericAllocator<byte[], IGarnetObject, StoreFunctions<byte[], IGarnetObject, ByteArrayKeyComparer, DefaultRecordDisposer<byte[], IGarnetObject>>>;
+    using ObjectStoreFunctions = StoreFunctions<byte[], IGarnetObject, ByteArrayKeyComparer, DefaultRecordDisposer<byte[], IGarnetObject>>;
+
     [TestFixture]
     public class GarnetObjectTests
     {
-        TsavoriteKV<byte[], IGarnetObject> store;
+        TsavoriteKV<byte[], IGarnetObject, ObjectStoreFunctions, ObjectStoreAllocator> store;
         IDevice logDevice, objectLogDevice;
 
         [SetUp]
@@ -34,30 +38,32 @@ namespace Garnet.test
         [Test]
         public void WriteRead()
         {
-            using var session = store.NewSession<IGarnetObject, IGarnetObject, Empty, SimpleFunctions<byte[], IGarnetObject, Empty>>(new SimpleFunctions<byte[], IGarnetObject, Empty>());
+            using var session = store.NewSession<IGarnetObject, IGarnetObject, Empty, SimpleSessionFunctions<byte[], IGarnetObject, Empty>>(new SimpleSessionFunctions<byte[], IGarnetObject, Empty>());
+            var bContext = session.BasicContext;
 
             var key = new byte[] { 0 };
             var obj = new SortedSetObject();
 
-            session.Upsert(key, obj);
+            bContext.Upsert(key, obj);
 
             IGarnetObject output = null;
-            var status = session.Read(ref key, ref output);
+            var status = bContext.Read(ref key, ref output);
 
-            Assert.IsTrue(status.Found);
-            Assert.AreEqual(obj, output);
+            ClassicAssert.IsTrue(status.Found);
+            ClassicAssert.AreEqual(obj, output);
         }
 
         [Test]
         public async Task WriteCheckpointRead()
         {
             var session = store.NewSession<IGarnetObject, IGarnetObject, Empty, MyFunctions>(new MyFunctions());
+            var bContext = session.BasicContext;
 
             var key = new byte[] { 0 };
             var obj = new SortedSetObject();
             obj.Add([15], 10);
 
-            session.Upsert(key, obj);
+            bContext.Upsert(key, obj);
 
             session.Dispose();
 
@@ -69,30 +75,32 @@ namespace Garnet.test
             store.Recover();
 
             session = store.NewSession<IGarnetObject, IGarnetObject, Empty, MyFunctions>(new MyFunctions());
+            bContext = session.BasicContext;
 
             IGarnetObject output = null;
-            var status = session.Read(ref key, ref output);
+            var status = bContext.Read(ref key, ref output);
 
             session.Dispose();
 
-            Assert.IsTrue(status.Found);
-            Assert.IsTrue(obj.Equals((SortedSetObject)output));
+            ClassicAssert.IsTrue(status.Found);
+            ClassicAssert.IsTrue(obj.Equals((SortedSetObject)output));
         }
 
         [Test]
         public async Task CopyUpdate()
         {
             var session = store.NewSession<IGarnetObject, IGarnetObject, Empty, MyFunctions>(new MyFunctions());
+            var bContext = session.BasicContext;
 
             var key = new byte[] { 0 };
             IGarnetObject obj = new SortedSetObject();
             ((SortedSetObject)obj).Add([15], 10);
 
-            session.Upsert(key, obj);
+            bContext.Upsert(key, obj);
 
             store.Log.Flush(true);
 
-            session.RMW(ref key, ref obj);
+            bContext.RMW(ref key, ref obj);
 
             session.Dispose();
 
@@ -104,17 +112,18 @@ namespace Garnet.test
             store.Recover();
 
             session = store.NewSession<IGarnetObject, IGarnetObject, Empty, MyFunctions>(new MyFunctions());
+            bContext = session.BasicContext;
 
             IGarnetObject output = null;
-            var status = session.Read(ref key, ref output);
+            var status = bContext.Read(ref key, ref output);
 
             session.Dispose();
 
-            Assert.IsTrue(status.Found);
-            Assert.IsTrue(((SortedSetObject)obj).Equals((SortedSetObject)output));
+            ClassicAssert.IsTrue(status.Found);
+            ClassicAssert.IsTrue(((SortedSetObject)obj).Equals((SortedSetObject)output));
         }
 
-        private class MyFunctions : FunctionsBase<byte[], IGarnetObject, IGarnetObject, IGarnetObject, Empty>
+        private class MyFunctions : SessionFunctionsBase<byte[], IGarnetObject, IGarnetObject, IGarnetObject, Empty>
         {
             public MyFunctions()
             { }
@@ -140,27 +149,20 @@ namespace Garnet.test
 
         private void CreateStore()
         {
-            if (logDevice == null)
-                logDevice = Devices.CreateLogDevice(TestUtils.MethodTestDir + "/hlog.log");
-            if (objectLogDevice == null)
-                objectLogDevice = Devices.CreateLogDevice(TestUtils.MethodTestDir + "/hlog.obj.log");
-            var log = new LogSettings
+            logDevice ??= Devices.CreateLogDevice(TestUtils.MethodTestDir + "/hlog.log");
+            objectLogDevice ??= Devices.CreateLogDevice(TestUtils.MethodTestDir + "/hlog.obj.log");
+
+            var kvSettings = new KVSettings<byte[], IGarnetObject>
             {
+                IndexSize = 1L << 13,
                 LogDevice = logDevice,
                 ObjectLogDevice = objectLogDevice,
-            };
-
-            var ckpt = new CheckpointSettings
-            {
                 CheckpointDir = TestUtils.MethodTestDir
             };
 
-            var serializer = new SerializerSettings<byte[], IGarnetObject>
-            {
-                valueSerializer = () => new MyGarnetObjectSerializer()
-            };
-
-            store = new TsavoriteKV<byte[], IGarnetObject>(128, log, ckpt, serializer);
+            store = new(kvSettings
+                , StoreFunctions<byte[], IGarnetObject>.Create(new ByteArrayKeyComparer(), () => new Tsavorite.core.ByteArrayBinaryObjectSerializer(), () => new MyGarnetObjectSerializer())
+                , (allocatorSettings, storeFunctions) => new(allocatorSettings, storeFunctions));
         }
     }
 

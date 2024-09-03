@@ -3,15 +3,18 @@
 
 using System;
 using System.IO;
-using System.Linq;
 using System.Threading.Tasks;
 using NUnit.Framework;
+using NUnit.Framework.Legacy;
 using Tsavorite.core;
 using Tsavorite.devices;
 using Tsavorite.test.recovery.sumstore;
 
 namespace Tsavorite.test.recovery
 {
+    using LongAllocator = BlittableAllocator<long, long, StoreFunctions<long, long, LongKeyComparer, DefaultRecordDisposer<long, long>>>;
+    using LongStoreFunctions = StoreFunctions<long, long, LongKeyComparer, DefaultRecordDisposer<long, long>>;
+
     public enum DeviceMode
     {
         Local,
@@ -21,13 +24,13 @@ namespace Tsavorite.test.recovery
     public class RecoveryCheckBase
     {
         protected IDevice log;
-        protected const int numOps = 5000;
+        protected const int NumOps = 5000;
         protected AdId[] inputArray;
 
         protected void BaseSetup()
         {
-            inputArray = new AdId[numOps];
-            for (int i = 0; i < numOps; i++)
+            inputArray = new AdId[NumOps];
+            for (int i = 0; i < NumOps; i++)
             {
                 inputArray[i].adId = i;
             }
@@ -43,16 +46,16 @@ namespace Tsavorite.test.recovery
             TestUtils.DeleteDirectory(TestUtils.MethodTestDir);
         }
 
-        public class MyFunctions : SimpleFunctions<long, long>
+        public class MyFunctions : SimpleSimpleFunctions<long, long>
         {
             public override void ReadCompletionCallback(ref long key, ref long input, ref long output, Empty ctx, Status status, RecordMetadata recordMetadata)
             {
-                Assert.IsTrue(status.Found, $"status = {status}");
-                Assert.AreEqual(key, output, $"output = {output}");
+                ClassicAssert.IsTrue(status.Found, $"status = {status}");
+                ClassicAssert.AreEqual(key, output, $"output = {output}");
             }
         }
 
-        public class MyFunctions2 : SimpleFunctions<long, long>
+        public class MyFunctions2 : SimpleSimpleFunctions<long, long>
         {
             public override void ReadCompletionCallback(ref long key, ref long input, ref long output, Empty ctx, Status status, RecordMetadata recordMetadata)
             {
@@ -61,11 +64,11 @@ namespace Tsavorite.test.recovery
 
             internal static void Verify(Status status, long key, long output)
             {
-                Assert.IsTrue(status.Found);
+                ClassicAssert.IsTrue(status.Found);
                 if (key < 950)
-                    Assert.AreEqual(key, output);
+                    ClassicAssert.AreEqual(key, output);
                 else
-                    Assert.AreEqual(key + 1, output);
+                    ClassicAssert.AreEqual(key + 1, output);
             }
         }
     }
@@ -84,18 +87,27 @@ namespace Tsavorite.test.recovery
         [Category("CheckpointRestore")]
         [Category("Smoke")]
 
-        public async ValueTask RecoveryCheck1([Values] CheckpointType checkpointType, [Values] bool isAsync, [Values] bool useReadCache, [Values(128, 1 << 10)] int size)
+        public async ValueTask RecoveryCheck1([Values] CheckpointType checkpointType, [Values] bool isAsync, [Values] bool useReadCache, [Values(1L << 13, 1L << 16)] long indexSize)
         {
-            using var store1 = new TsavoriteKV<long, long>
-                (size,
-                logSettings: new LogSettings { LogDevice = log, MutableFraction = 1, PageSizeBits = 10, MemorySizeBits = 20, ReadCacheSettings = useReadCache ? new ReadCacheSettings() : null },
-                checkpointSettings: new CheckpointSettings { CheckpointDir = TestUtils.MethodTestDir }
-                );
+            using var store1 = new TsavoriteKV<long, long, LongStoreFunctions, LongAllocator>(new()
+            {
+                IndexSize = indexSize,
+                LogDevice = log,
+                MutableFraction = 1,
+                PageSize = 1L << 10,
+                MemorySize = 1L << 20,
+                ReadCacheEnabled = useReadCache,
+                CheckpointDir = TestUtils.MethodTestDir
+            }, StoreFunctions<long, long>.Create(LongKeyComparer.Instance)
+                , (allocatorSettings, storeFunctions) => new(allocatorSettings, storeFunctions)
+            );
 
             using var s1 = store1.NewSession<long, long, Empty, MyFunctions>(new MyFunctions());
+            var bc1 = s1.BasicContext;
+
             for (long key = 0; key < 1000; key++)
             {
-                s1.Upsert(ref key, ref key);
+                _ = bc1.Upsert(ref key, ref key);
             }
 
             if (useReadCache)
@@ -104,51 +116,59 @@ namespace Tsavorite.test.recovery
                 for (long key = 0; key < 1000; key++)
                 {
                     long output = default;
-                    var status = s1.Read(ref key, ref output);
+                    var status = bc1.Read(ref key, ref output);
                     if (!status.IsPending)
                     {
-                        Assert.IsTrue(status.Found, $"status = {status}");
-                        Assert.AreEqual(key, output, $"output = {output}");
+                        ClassicAssert.IsTrue(status.Found, $"status = {status}");
+                        ClassicAssert.AreEqual(key, output, $"output = {output}");
                     }
                 }
-                s1.CompletePending(true);
+                _ = bc1.CompletePending(true);
             }
 
             var task = store1.TakeFullCheckpointAsync(checkpointType);
 
-            using var store2 = new TsavoriteKV<long, long>
-                (size,
-                logSettings: new LogSettings { LogDevice = log, MutableFraction = 1, PageSizeBits = 10, MemorySizeBits = 20, ReadCacheSettings = useReadCache ? new ReadCacheSettings() : null },
-                checkpointSettings: new CheckpointSettings { CheckpointDir = TestUtils.MethodTestDir }
-                );
+            using var store2 = new TsavoriteKV<long, long, LongStoreFunctions, LongAllocator>(new()
+            {
+                IndexSize = indexSize,
+                LogDevice = log,
+                MutableFraction = 1,
+                PageSize = 1L << 10,
+                MemorySize = 1L << 20,
+                ReadCacheEnabled = useReadCache,
+                CheckpointDir = TestUtils.MethodTestDir
+            }, StoreFunctions<long, long>.Create(LongKeyComparer.Instance)
+                , (allocatorSettings, storeFunctions) => new(allocatorSettings, storeFunctions)
+            );
 
             if (isAsync)
             {
                 var (status, token) = await task;
-                await store2.RecoverAsync(default, token);
+                _ = await store2.RecoverAsync(default, token);
             }
             else
             {
                 var (status, token) = task.AsTask().GetAwaiter().GetResult();
-                store2.Recover(default, token);
+                _ = store2.Recover(default, token);
             }
 
-            Assert.AreEqual(store1.Log.HeadAddress, store2.Log.HeadAddress);
-            Assert.AreEqual(store1.Log.ReadOnlyAddress, store2.Log.ReadOnlyAddress);
-            Assert.AreEqual(store1.Log.TailAddress, store2.Log.TailAddress);
+            ClassicAssert.AreEqual(store1.Log.HeadAddress, store2.Log.HeadAddress);
+            ClassicAssert.AreEqual(store1.Log.ReadOnlyAddress, store2.Log.ReadOnlyAddress);
+            ClassicAssert.AreEqual(store1.Log.TailAddress, store2.Log.TailAddress);
 
             using var s2 = store2.NewSession<long, long, Empty, MyFunctions>(new MyFunctions());
+            var bc2 = s2.BasicContext;
             for (long key = 0; key < 1000; key++)
             {
                 long output = default;
-                var status = s2.Read(ref key, ref output);
+                var status = bc2.Read(ref key, ref output);
                 if (!status.IsPending)
                 {
-                    Assert.IsTrue(status.Found, $"status = {status}");
-                    Assert.AreEqual(key, output, $"output = {output}");
+                    ClassicAssert.IsTrue(status.Found, $"status = {status}");
+                    ClassicAssert.AreEqual(key, output, $"output = {output}");
                 }
             }
-            s2.CompletePending(true);
+            _ = bc2.CompletePending(true);
         }
 
     }
@@ -164,27 +184,42 @@ namespace Tsavorite.test.recovery
 
         [Test]
         [Category("TsavoriteKV"), Category("CheckpointRestore")]
-        public async ValueTask RecoveryCheck2([Values] CheckpointType checkpointType, [Values] bool isAsync, [Values] bool useReadCache, [Values(128, 1 << 10)] int size)
+        public async ValueTask RecoveryCheck2([Values] CheckpointType checkpointType, [Values] bool isAsync, [Values] bool useReadCache, [Values(1L << 13, 1L << 16)] long indexSize)
         {
-            using var store1 = new TsavoriteKV<long, long>
-                (size,
-                logSettings: new LogSettings { LogDevice = log, MutableFraction = 1, PageSizeBits = 10, MemorySizeBits = 20, ReadCacheSettings = useReadCache ? new ReadCacheSettings() : null },
-                checkpointSettings: new CheckpointSettings { CheckpointDir = TestUtils.MethodTestDir }
-                );
+            using var store1 = new TsavoriteKV<long, long, LongStoreFunctions, LongAllocator>(new()
+            {
+                IndexSize = indexSize,
+                LogDevice = log,
+                MutableFraction = 1,
+                PageSize = 1L << 10,
+                MemorySize = 1L << 20,
+                ReadCacheEnabled = useReadCache,
+                CheckpointDir = TestUtils.MethodTestDir
+            }, StoreFunctions<long, long>.Create(LongKeyComparer.Instance)
+                , (allocatorSettings, storeFunctions) => new(allocatorSettings, storeFunctions)
+            );
 
-            using var s1 = store1.NewSession<long, long, Empty, SimpleFunctions<long, long>>(new SimpleFunctions<long, long>());
+            using var s1 = store1.NewSession<long, long, Empty, SimpleSimpleFunctions<long, long>>(new SimpleSimpleFunctions<long, long>());
+            var bc1 = s1.BasicContext;
 
-            using var store2 = new TsavoriteKV<long, long>
-                (size,
-                logSettings: new LogSettings { LogDevice = log, MutableFraction = 1, PageSizeBits = 10, MemorySizeBits = 20, ReadCacheSettings = useReadCache ? new ReadCacheSettings() : null },
-                checkpointSettings: new CheckpointSettings { CheckpointDir = TestUtils.MethodTestDir }
-                );
+            using var store2 = new TsavoriteKV<long, long, LongStoreFunctions, LongAllocator>(new()
+            {
+                IndexSize = indexSize,
+                LogDevice = log,
+                MutableFraction = 1,
+                PageSize = 1L << 10,
+                MemorySize = 1L << 20,
+                ReadCacheEnabled = useReadCache,
+                CheckpointDir = TestUtils.MethodTestDir
+            }, StoreFunctions<long, long>.Create(LongKeyComparer.Instance)
+                , (allocatorSettings, storeFunctions) => new(allocatorSettings, storeFunctions)
+            );
 
             for (int i = 0; i < 5; i++)
             {
                 for (long key = 1000 * i; key < 1000 * i + 1000; key++)
                 {
-                    s1.Upsert(ref key, ref key);
+                    _ = bc1.Upsert(ref key, ref key);
                 }
 
                 if (useReadCache)
@@ -193,14 +228,14 @@ namespace Tsavorite.test.recovery
                     for (long key = 1000 * i; key < 1000 * i + 1000; key++)
                     {
                         long output = default;
-                        var status = s1.Read(ref key, ref output);
+                        var status = bc1.Read(ref key, ref output);
                         if (!status.IsPending)
                         {
-                            Assert.IsTrue(status.Found, $"status = {status}");
-                            Assert.AreEqual(key, output, $"output = {output}");
+                            ClassicAssert.IsTrue(status.Found, $"status = {status}");
+                            ClassicAssert.AreEqual(key, output, $"output = {output}");
                         }
                     }
-                    s1.CompletePending(true);
+                    _ = bc1.CompletePending(true);
                 }
 
                 var task = store1.TakeHybridLogCheckpointAsync(checkpointType);
@@ -208,30 +243,31 @@ namespace Tsavorite.test.recovery
                 if (isAsync)
                 {
                     var (status, token) = await task;
-                    await store2.RecoverAsync(default, token);
+                    _ = await store2.RecoverAsync(default, token);
                 }
                 else
                 {
                     var (status, token) = task.AsTask().GetAwaiter().GetResult();
-                    store2.Recover(default, token);
+                    _ = store2.Recover(default, token);
                 }
 
-                Assert.AreEqual(store1.Log.HeadAddress, store2.Log.HeadAddress);
-                Assert.AreEqual(store1.Log.ReadOnlyAddress, store2.Log.ReadOnlyAddress);
-                Assert.AreEqual(store1.Log.TailAddress, store2.Log.TailAddress);
+                ClassicAssert.AreEqual(store1.Log.HeadAddress, store2.Log.HeadAddress);
+                ClassicAssert.AreEqual(store1.Log.ReadOnlyAddress, store2.Log.ReadOnlyAddress);
+                ClassicAssert.AreEqual(store1.Log.TailAddress, store2.Log.TailAddress);
 
-                using var s2 = store2.NewSession<long, long, Empty, SimpleFunctions<long, long>>(new SimpleFunctions<long, long>());
+                using var s2 = store2.NewSession<long, long, Empty, SimpleSimpleFunctions<long, long>>(new SimpleSimpleFunctions<long, long>());
+                var bc2 = s2.BasicContext;
                 for (long key = 0; key < 1000 * i + 1000; key++)
                 {
                     long output = default;
-                    var status = s2.Read(ref key, ref output);
+                    var status = bc2.Read(ref key, ref output);
                     if (!status.IsPending)
                     {
-                        Assert.IsTrue(status.Found, $"status = {status}");
-                        Assert.AreEqual(key, output, $"output = {output}");
+                        ClassicAssert.IsTrue(status.Found, $"status = {status}");
+                        ClassicAssert.AreEqual(key, output, $"output = {output}");
                     }
                 }
-                s2.CompletePending(true);
+                _ = bc2.CompletePending(true);
             }
         }
 
@@ -243,47 +279,48 @@ namespace Tsavorite.test.recovery
 
             for (int i = 0; i < 6; i++)
             {
-                using var store = new TsavoriteKV<long, long>
-                    (128,
-                    logSettings: new LogSettings { LogDevice = log, MutableFraction = 1, PageSizeBits = 10, MemorySizeBits = 20 },
-                    checkpointSettings: new CheckpointSettings { CheckpointDir = TestUtils.MethodTestDir }
-                    );
+                using var store = new TsavoriteKV<long, long, LongStoreFunctions, LongAllocator>(new()
+                {
+                    IndexSize = 1L << 13,
+                    LogDevice = log,
+                    MutableFraction = 1,
+                    PageSize = 1L << 10,
+                    MemorySize = 1L << 20,
+                    CheckpointDir = TestUtils.MethodTestDir
+                }, StoreFunctions<long, long>.Create(LongKeyComparer.Instance)
+                    , (allocatorSettings, storeFunctions) => new(allocatorSettings, storeFunctions)
+                );
 
                 if (i > 0)
-                {
-                    store.Recover(default, token);
-                    if (i == 3) store.DisposeRecoverableSessions();
-                    int recoverableSessionCount = store.RecoverableSessions.Count();
-                    if (i < 3)
-                        Assert.AreEqual(i, recoverableSessionCount);
-                    else
-                        Assert.AreEqual(i - 3, recoverableSessionCount);
-                }
+                    _ = store.Recover(default, token);
 
-                using var s1 = store.NewSession<long, long, Empty, SimpleFunctions<long, long>>(new SimpleFunctions<long, long>());
+                using var s1 = store.NewSession<long, long, Empty, SimpleSimpleFunctions<long, long>>(new SimpleSimpleFunctions<long, long>());
+                var bc1 = s1.BasicContext;
 
                 for (long key = 1000 * i; key < 1000 * i + 1000; key++)
                 {
-                    s1.Upsert(ref key, ref key);
+                    _ = bc1.Upsert(ref key, ref key);
                 }
 
                 var task = store.TakeHybridLogCheckpointAsync(checkpointType);
                 bool success;
                 (success, token) = task.AsTask().GetAwaiter().GetResult();
-                Assert.IsTrue(success);
+                ClassicAssert.IsTrue(success);
 
-                using var s2 = store.NewSession<long, long, Empty, SimpleFunctions<long, long>>(new SimpleFunctions<long, long>());
+                using var s2 = store.NewSession<long, long, Empty, SimpleSimpleFunctions<long, long>>(new SimpleSimpleFunctions<long, long>());
+                var bc2 = s2.BasicContext;
+
                 for (long key = 0; key < 1000 * i + 1000; key++)
                 {
                     long output = default;
-                    var status = s2.Read(ref key, ref output);
+                    var status = bc2.Read(ref key, ref output);
                     if (!status.IsPending)
                     {
-                        Assert.IsTrue(status.Found, $"status = {status}");
-                        Assert.AreEqual(key, output, $"output = {output}");
+                        ClassicAssert.IsTrue(status.Found, $"status = {status}");
+                        ClassicAssert.AreEqual(key, output, $"output = {output}");
                     }
                 }
-                s2.CompletePending(true);
+                _ = bc2.CompletePending(true);
             }
         }
 
@@ -291,44 +328,52 @@ namespace Tsavorite.test.recovery
         [Category("TsavoriteKV"), Category("CheckpointRestore")]
         public void RecoveryRollback([Values] CheckpointType checkpointType)
         {
-            using var store = new TsavoriteKV<long, long>
-                (128,
-                logSettings: new LogSettings { LogDevice = log, MutableFraction = 1, PageSizeBits = 10, MemorySizeBits = 11, SegmentSizeBits = 11 },
-                checkpointSettings: new CheckpointSettings { CheckpointDir = TestUtils.MethodTestDir }
-                );
+            using var store = new TsavoriteKV<long, long, LongStoreFunctions, LongAllocator>(new()
+            {
+                IndexSize = 1L << 13,
+                LogDevice = log,
+                MutableFraction = 1,
+                PageSize = 1L << 10,
+                MemorySize = 1L << 11,
+                SegmentSize = 1L << 11,
+                CheckpointDir = TestUtils.MethodTestDir
+            }, StoreFunctions<long, long>.Create(LongKeyComparer.Instance)
+                , (allocatorSettings, storeFunctions) => new(allocatorSettings, storeFunctions)
+            );
 
-            using var s1 = store.NewSession<long, long, Empty, SimpleFunctions<long, long>>(new SimpleFunctions<long, long>());
+            using var s1 = store.NewSession<long, long, Empty, SimpleSimpleFunctions<long, long>>(new SimpleSimpleFunctions<long, long>());
+            var bc1 = s1.BasicContext;
 
             for (long key = 0; key < 1000; key++)
             {
-                s1.Upsert(ref key, ref key);
+                _ = bc1.Upsert(ref key, ref key);
             }
 
             var task = store.TakeHybridLogCheckpointAsync(checkpointType);
             (bool success, Guid token) = task.AsTask().GetAwaiter().GetResult();
-            Assert.IsTrue(success);
+            ClassicAssert.IsTrue(success);
 
             for (long key = 0; key < 1000; key++)
             {
                 long output = default;
-                var status = s1.Read(ref key, ref output);
+                var status = bc1.Read(ref key, ref output);
                 if (!status.IsPending)
                 {
-                    Assert.IsTrue(status.Found, $"status = {status}");
-                    Assert.AreEqual(key, output, $"output = {output}");
+                    ClassicAssert.IsTrue(status.Found, $"status = {status}");
+                    ClassicAssert.AreEqual(key, output, $"output = {output}");
                 }
             }
-            s1.CompletePendingWithOutputs(out var completedOutputs, true);
+            _ = bc1.CompletePendingWithOutputs(out var completedOutputs, true);
             while (completedOutputs.Next())
             {
-                Assert.IsTrue(completedOutputs.Current.Status.Found);
-                Assert.AreEqual(completedOutputs.Current.Key, completedOutputs.Current.Output, $"output = {completedOutputs.Current.Output}");
+                ClassicAssert.IsTrue(completedOutputs.Current.Status.Found);
+                ClassicAssert.AreEqual(completedOutputs.Current.Key, completedOutputs.Current.Output, $"output = {completedOutputs.Current.Output}");
             }
             completedOutputs.Dispose();
 
             for (long key = 1000; key < 2000; key++)
             {
-                s1.Upsert(ref key, ref key);
+                _ = bc1.Upsert(ref key, ref key);
             }
 
             // Reset store to empty state
@@ -337,86 +382,86 @@ namespace Tsavorite.test.recovery
             for (long key = 0; key < 2000; key++)
             {
                 long output = default;
-                var status = s1.Read(ref key, ref output);
+                var status = bc1.Read(ref key, ref output);
                 if (!status.IsPending)
                 {
-                    Assert.IsTrue(status.NotFound, $"status = {status}");
+                    ClassicAssert.IsTrue(status.NotFound, $"status = {status}");
                 }
             }
-            s1.CompletePendingWithOutputs(out completedOutputs, true);
+            _ = bc1.CompletePendingWithOutputs(out completedOutputs, true);
             while (completedOutputs.Next())
             {
-                Assert.IsTrue(completedOutputs.Current.Status.NotFound);
+                ClassicAssert.IsTrue(completedOutputs.Current.Status.NotFound);
             }
             completedOutputs.Dispose();
 
             // Rollback to previous checkpoint
-            store.Recover(default, token);
+            _ = store.Recover(default, token);
 
             for (long key = 0; key < 1000; key++)
             {
                 long output = default;
-                var status = s1.Read(ref key, ref output);
+                var status = bc1.Read(ref key, ref output);
                 if (!status.IsPending)
                 {
-                    Assert.IsTrue(status.Found, $"status = {status}");
-                    Assert.AreEqual(key, output, $"output = {output}");
+                    ClassicAssert.IsTrue(status.Found, $"status = {status}");
+                    ClassicAssert.AreEqual(key, output, $"output = {output}");
                 }
             }
-            s1.CompletePendingWithOutputs(out completedOutputs, true);
+            _ = bc1.CompletePendingWithOutputs(out completedOutputs, true);
             while (completedOutputs.Next())
             {
-                Assert.IsTrue(completedOutputs.Current.Status.Found);
-                Assert.AreEqual(completedOutputs.Current.Key, completedOutputs.Current.Output, $"output = {completedOutputs.Current.Output}");
+                ClassicAssert.IsTrue(completedOutputs.Current.Status.Found);
+                ClassicAssert.AreEqual(completedOutputs.Current.Key, completedOutputs.Current.Output, $"output = {completedOutputs.Current.Output}");
             }
             completedOutputs.Dispose();
 
             for (long key = 1000; key < 2000; key++)
             {
                 long output = default;
-                var status = s1.Read(ref key, ref output);
+                var status = bc1.Read(ref key, ref output);
                 if (!status.IsPending)
                 {
-                    Assert.IsTrue(status.NotFound, $"status = {status}");
+                    ClassicAssert.IsTrue(status.NotFound, $"status = {status}");
                 }
             }
-            s1.CompletePendingWithOutputs(out completedOutputs, true);
+            _ = bc1.CompletePendingWithOutputs(out completedOutputs, true);
             while (completedOutputs.Next())
             {
-                Assert.IsTrue(completedOutputs.Current.Status.NotFound);
+                ClassicAssert.IsTrue(completedOutputs.Current.Status.NotFound);
             }
             completedOutputs.Dispose();
 
             for (long key = 1000; key < 2000; key++)
             {
-                s1.Upsert(ref key, ref key);
+                _ = bc1.Upsert(ref key, ref key);
             }
 
             for (long key = 0; key < 2000; key++)
             {
                 long output = default;
-                var status = s1.Read(ref key, ref output);
+                var status = bc1.Read(ref key, ref output);
                 if (!status.IsPending)
                 {
-                    Assert.IsTrue(status.Found, $"status = {status}");
-                    Assert.AreEqual(key, output, $"output = {output}");
+                    ClassicAssert.IsTrue(status.Found, $"status = {status}");
+                    ClassicAssert.AreEqual(key, output, $"output = {output}");
                 }
                 else
                 {
-                    s1.CompletePendingWithOutputs(out completedOutputs, true);
+                    _ = bc1.CompletePendingWithOutputs(out completedOutputs, true);
                     while (completedOutputs.Next())
                     {
-                        Assert.IsTrue(completedOutputs.Current.Status.Found);
-                        Assert.AreEqual(completedOutputs.Current.Key, completedOutputs.Current.Output, $"output = {completedOutputs.Current.Output}");
+                        ClassicAssert.IsTrue(completedOutputs.Current.Status.Found);
+                        ClassicAssert.AreEqual(completedOutputs.Current.Key, completedOutputs.Current.Output, $"output = {completedOutputs.Current.Output}");
                     }
                     completedOutputs.Dispose();
                 }
             }
-            s1.CompletePendingWithOutputs(out completedOutputs, true);
+            _ = bc1.CompletePendingWithOutputs(out completedOutputs, true);
             while (completedOutputs.Next())
             {
-                Assert.IsTrue(completedOutputs.Current.Status.Found);
-                Assert.AreEqual(completedOutputs.Current.Key, completedOutputs.Current.Output, $"output = {completedOutputs.Current.Output}");
+                ClassicAssert.IsTrue(completedOutputs.Current.Status.Found);
+                ClassicAssert.AreEqual(completedOutputs.Current.Key, completedOutputs.Current.Output, $"output = {completedOutputs.Current.Output}");
             }
             completedOutputs.Dispose();
         }
@@ -433,27 +478,42 @@ namespace Tsavorite.test.recovery
 
         [Test]
         [Category("TsavoriteKV"), Category("CheckpointRestore")]
-        public async ValueTask RecoveryCheck3([Values] CheckpointType checkpointType, [Values] bool isAsync, [Values] bool useReadCache, [Values(128, 1 << 10)] int size)
+        public async ValueTask RecoveryCheck3([Values] CheckpointType checkpointType, [Values] bool isAsync, [Values] bool useReadCache, [Values(1L << 13, 1L << 16)] long indexSize)
         {
-            using var store1 = new TsavoriteKV<long, long>
-                (size,
-                logSettings: new LogSettings { LogDevice = log, MutableFraction = 1, PageSizeBits = 10, MemorySizeBits = 20, ReadCacheSettings = useReadCache ? new ReadCacheSettings() : null },
-                checkpointSettings: new CheckpointSettings { CheckpointDir = TestUtils.MethodTestDir }
-                );
+            using var store1 = new TsavoriteKV<long, long, LongStoreFunctions, LongAllocator>(new()
+            {
+                IndexSize = indexSize,
+                LogDevice = log,
+                MutableFraction = 1,
+                PageSize = 1L << 10,
+                MemorySize = 1L << 20,
+                ReadCacheEnabled = useReadCache,
+                CheckpointDir = TestUtils.MethodTestDir
+            }, StoreFunctions<long, long>.Create(LongKeyComparer.Instance)
+                , (allocatorSettings, storeFunctions) => new(allocatorSettings, storeFunctions)
+            );
 
-            using var s1 = store1.NewSession<long, long, Empty, SimpleFunctions<long, long>>(new SimpleFunctions<long, long>());
+            using var s1 = store1.NewSession<long, long, Empty, SimpleSimpleFunctions<long, long>>(new SimpleSimpleFunctions<long, long>());
+            var bc1 = s1.BasicContext;
 
-            using var store2 = new TsavoriteKV<long, long>
-                (size,
-                logSettings: new LogSettings { LogDevice = log, MutableFraction = 1, PageSizeBits = 10, MemorySizeBits = 20, ReadCacheSettings = useReadCache ? new ReadCacheSettings() : null },
-                checkpointSettings: new CheckpointSettings { CheckpointDir = TestUtils.MethodTestDir }
-                );
+            using var store2 = new TsavoriteKV<long, long, LongStoreFunctions, LongAllocator>(new()
+            {
+                IndexSize = indexSize,
+                LogDevice = log,
+                MutableFraction = 1,
+                PageSize = 1L << 10,
+                MemorySize = 1L << 20,
+                ReadCacheEnabled = useReadCache,
+                CheckpointDir = TestUtils.MethodTestDir
+            }, StoreFunctions<long, long>.Create(LongKeyComparer.Instance)
+                , (allocatorSettings, storeFunctions) => new(allocatorSettings, storeFunctions)
+            );
 
             for (int i = 0; i < 5; i++)
             {
                 for (long key = 1000 * i; key < 1000 * i + 1000; key++)
                 {
-                    s1.Upsert(ref key, ref key);
+                    _ = bc1.Upsert(ref key, ref key);
                 }
 
                 if (useReadCache)
@@ -462,14 +522,14 @@ namespace Tsavorite.test.recovery
                     for (long key = 1000 * i; key < 1000 * i + 1000; key++)
                     {
                         long output = default;
-                        var status = s1.Read(ref key, ref output);
+                        var status = bc1.Read(ref key, ref output);
                         if (!status.IsPending)
                         {
-                            Assert.IsTrue(status.Found, $"status = {status}");
-                            Assert.AreEqual(key, output, $"output = {output}");
+                            ClassicAssert.IsTrue(status.Found, $"status = {status}");
+                            ClassicAssert.AreEqual(key, output, $"output = {output}");
                         }
                     }
-                    s1.CompletePending(true);
+                    _ = bc1.CompletePending(true);
                 }
 
                 var task = store1.TakeFullCheckpointAsync(checkpointType);
@@ -477,30 +537,31 @@ namespace Tsavorite.test.recovery
                 if (isAsync)
                 {
                     var (status, token) = await task;
-                    await store2.RecoverAsync(default, token);
+                    _ = await store2.RecoverAsync(default, token);
                 }
                 else
                 {
                     var (status, token) = task.AsTask().GetAwaiter().GetResult();
-                    store2.Recover(default, token);
+                    _ = store2.Recover(default, token);
                 }
 
-                Assert.AreEqual(store1.Log.HeadAddress, store2.Log.HeadAddress);
-                Assert.AreEqual(store1.Log.ReadOnlyAddress, store2.Log.ReadOnlyAddress);
-                Assert.AreEqual(store1.Log.TailAddress, store2.Log.TailAddress);
+                ClassicAssert.AreEqual(store1.Log.HeadAddress, store2.Log.HeadAddress);
+                ClassicAssert.AreEqual(store1.Log.ReadOnlyAddress, store2.Log.ReadOnlyAddress);
+                ClassicAssert.AreEqual(store1.Log.TailAddress, store2.Log.TailAddress);
 
-                using var s2 = store2.NewSession<long, long, Empty, SimpleFunctions<long, long>>(new SimpleFunctions<long, long>());
+                using var s2 = store2.NewSession<long, long, Empty, SimpleSimpleFunctions<long, long>>(new SimpleSimpleFunctions<long, long>());
+                var bc2 = s2.BasicContext;
                 for (long key = 0; key < 1000 * i + 1000; key++)
                 {
                     long output = default;
-                    var status = s2.Read(ref key, ref output);
+                    var status = bc2.Read(ref key, ref output);
                     if (!status.IsPending)
                     {
-                        Assert.IsTrue(status.Found, $"status = {status}");
-                        Assert.AreEqual(key, output, $"output = {output}");
+                        ClassicAssert.IsTrue(status.Found, $"status = {status}");
+                        ClassicAssert.AreEqual(key, output, $"output = {output}");
                     }
                 }
-                s2.CompletePending(true);
+                _ = bc2.CompletePending(true);
             }
         }
 
@@ -517,27 +578,42 @@ namespace Tsavorite.test.recovery
 
         [Test]
         [Category("TsavoriteKV"), Category("CheckpointRestore")]
-        public async ValueTask RecoveryCheck4([Values] CheckpointType checkpointType, [Values] bool isAsync, [Values] bool useReadCache, [Values(128, 1 << 10)] int size)
+        public async ValueTask RecoveryCheck4([Values] CheckpointType checkpointType, [Values] bool isAsync, [Values] bool useReadCache, [Values(1L << 13, 1L << 16)] long indexSize)
         {
-            using var store1 = new TsavoriteKV<long, long>
-                (size,
-                logSettings: new LogSettings { LogDevice = log, MutableFraction = 1, PageSizeBits = 10, MemorySizeBits = 20, ReadCacheSettings = useReadCache ? new ReadCacheSettings() : null },
-                checkpointSettings: new CheckpointSettings { CheckpointDir = TestUtils.MethodTestDir }
-                );
+            using var store1 = new TsavoriteKV<long, long, LongStoreFunctions, LongAllocator>(new()
+            {
+                IndexSize = indexSize,
+                LogDevice = log,
+                MutableFraction = 1,
+                PageSize = 1L << 10,
+                MemorySize = 1L << 20,
+                ReadCacheEnabled = useReadCache,
+                CheckpointDir = TestUtils.MethodTestDir
+            }, StoreFunctions<long, long>.Create(LongKeyComparer.Instance)
+                , (allocatorSettings, storeFunctions) => new(allocatorSettings, storeFunctions)
+            );
 
-            using var s1 = store1.NewSession<long, long, Empty, SimpleFunctions<long, long>>(new SimpleFunctions<long, long>());
+            using var s1 = store1.NewSession<long, long, Empty, SimpleSimpleFunctions<long, long>>(new SimpleSimpleFunctions<long, long>());
+            var bc1 = s1.BasicContext;
 
-            using var store2 = new TsavoriteKV<long, long>
-                (size,
-                logSettings: new LogSettings { LogDevice = log, MutableFraction = 1, PageSizeBits = 10, MemorySizeBits = 20, ReadCacheSettings = useReadCache ? new ReadCacheSettings() : null },
-                checkpointSettings: new CheckpointSettings { CheckpointDir = TestUtils.MethodTestDir }
-                );
+            using var store2 = new TsavoriteKV<long, long, LongStoreFunctions, LongAllocator>(new()
+            {
+                IndexSize = indexSize,
+                LogDevice = log,
+                MutableFraction = 1,
+                PageSize = 1L << 10,
+                MemorySize = 1L << 20,
+                ReadCacheEnabled = useReadCache,
+                CheckpointDir = TestUtils.MethodTestDir
+            }, StoreFunctions<long, long>.Create(LongKeyComparer.Instance)
+                , (allocatorSettings, storeFunctions) => new(allocatorSettings, storeFunctions)
+            );
 
             for (int i = 0; i < 5; i++)
             {
                 for (long key = 1000 * i; key < 1000 * i + 1000; key++)
                 {
-                    s1.Upsert(ref key, ref key);
+                    _ = bc1.Upsert(ref key, ref key);
                 }
 
                 if (useReadCache)
@@ -546,48 +622,49 @@ namespace Tsavorite.test.recovery
                     for (long key = 1000 * i; key < 1000 * i + 1000; key++)
                     {
                         long output = default;
-                        var status = s1.Read(ref key, ref output);
+                        var status = bc1.Read(ref key, ref output);
                         if (!status.IsPending)
                         {
-                            Assert.IsTrue(status.Found, $"status = {status}");
-                            Assert.AreEqual(key, output, $"output = {output}");
+                            ClassicAssert.IsTrue(status.Found, $"status = {status}");
+                            ClassicAssert.AreEqual(key, output, $"output = {output}");
                         }
                     }
-                    s1.CompletePending(true);
+                    _ = bc1.CompletePending(true);
                 }
 
                 if (i == 0)
-                    store1.TakeIndexCheckpointAsync().AsTask().GetAwaiter().GetResult();
+                    _ = store1.TakeIndexCheckpointAsync().AsTask().GetAwaiter().GetResult();
 
                 var task = store1.TakeHybridLogCheckpointAsync(checkpointType);
 
                 if (isAsync)
                 {
                     var (status, token) = await task;
-                    await store2.RecoverAsync(default, token);
+                    _ = await store2.RecoverAsync(default, token);
                 }
                 else
                 {
                     var (status, token) = task.AsTask().GetAwaiter().GetResult();
-                    store2.Recover(default, token);
+                    _ = store2.Recover(default, token);
                 }
 
-                Assert.AreEqual(store1.Log.HeadAddress, store2.Log.HeadAddress);
-                Assert.AreEqual(store1.Log.ReadOnlyAddress, store2.Log.ReadOnlyAddress);
-                Assert.AreEqual(store1.Log.TailAddress, store2.Log.TailAddress);
+                ClassicAssert.AreEqual(store1.Log.HeadAddress, store2.Log.HeadAddress);
+                ClassicAssert.AreEqual(store1.Log.ReadOnlyAddress, store2.Log.ReadOnlyAddress);
+                ClassicAssert.AreEqual(store1.Log.TailAddress, store2.Log.TailAddress);
 
-                using var s2 = store2.NewSession<long, long, Empty, SimpleFunctions<long, long>>(new SimpleFunctions<long, long>());
+                using var s2 = store2.NewSession<long, long, Empty, SimpleSimpleFunctions<long, long>>(new SimpleSimpleFunctions<long, long>());
+                var bc2 = s2.BasicContext;
                 for (long key = 0; key < 1000 * i + 1000; key++)
                 {
                     long output = default;
-                    var status = s2.Read(ref key, ref output);
+                    var status = bc2.Read(ref key, ref output);
                     if (!status.IsPending)
                     {
-                        Assert.IsTrue(status.Found, $"status = {status}");
-                        Assert.AreEqual(key, output, $"output = {output}");
+                        ClassicAssert.IsTrue(status.Found, $"status = {status}");
+                        ClassicAssert.AreEqual(key, output, $"output = {output}");
                     }
                 }
-                s2.CompletePending(true);
+                _ = bc2.CompletePending(true);
             }
         }
 
@@ -605,19 +682,26 @@ namespace Tsavorite.test.recovery
         [Test]
         [Category("TsavoriteKV")]
         [Category("CheckpointRestore")]
-        public async ValueTask RecoveryCheck5([Values] CheckpointType checkpointType, [Values] bool isAsync, [Values] bool useReadCache, [Values(128, 1 << 10)] int size)
+        public async ValueTask RecoveryCheck5([Values] CheckpointType checkpointType, [Values] bool isAsync, [Values] bool useReadCache, [Values(1L << 13, 1L << 16)] long indexSize)
         {
-            using var store1 = new TsavoriteKV<long, long>
-                (size,
-                logSettings: new LogSettings { LogDevice = log, MutableFraction = 1, PageSizeBits = 10, MemorySizeBits = 14, ReadCacheSettings = useReadCache ? new ReadCacheSettings() : null },
-                checkpointSettings: new CheckpointSettings { CheckpointDir = TestUtils.MethodTestDir },
-                concurrencyControlMode: ConcurrencyControlMode.RecordIsolation
-                );
+            using var store1 = new TsavoriteKV<long, long, LongStoreFunctions, LongAllocator>(new()
+            {
+                IndexSize = indexSize,
+                LogDevice = log,
+                MutableFraction = 1,
+                PageSize = 1L << 10,
+                MemorySize = 1L << 20,
+                ReadCacheEnabled = useReadCache,
+                CheckpointDir = TestUtils.MethodTestDir
+            }, StoreFunctions<long, long>.Create(LongKeyComparer.Instance)
+                , (allocatorSettings, storeFunctions) => new(allocatorSettings, storeFunctions)
+            );
 
             using var s1 = store1.NewSession<long, long, Empty, MyFunctions>(new MyFunctions());
+            var bc1 = s1.BasicContext;
             for (long key = 0; key < 1000; key++)
             {
-                s1.Upsert(ref key, ref key);
+                _ = bc1.Upsert(ref key, ref key);
             }
 
             if (useReadCache)
@@ -626,65 +710,74 @@ namespace Tsavorite.test.recovery
                 for (long key = 0; key < 1000; key++)
                 {
                     long output = default;
-                    var status = s1.Read(ref key, ref output);
+                    var status = bc1.Read(ref key, ref output);
                     if (!status.IsPending)
                     {
-                        Assert.IsTrue(status.Found, $"status = {status}");
-                        Assert.AreEqual(key, output, $"output = {output}");
+                        ClassicAssert.IsTrue(status.Found, $"status = {status}");
+                        ClassicAssert.AreEqual(key, output, $"output = {output}");
                     }
                 }
-                s1.CompletePending(true);
+                _ = bc1.CompletePending(true);
             }
 
-            store1.GrowIndex();
+            _ = store1.GrowIndex();
 
             for (long key = 0; key < 1000; key++)
             {
                 long output = default;
-                var status = s1.Read(ref key, ref output);
+                var status = bc1.Read(ref key, ref output);
                 if (!status.IsPending)
                 {
-                    Assert.IsTrue(status.Found, $"status = {status}");
-                    Assert.AreEqual(key, output, $"output = {output}");
+                    ClassicAssert.IsTrue(status.Found, $"status = {status}");
+                    ClassicAssert.AreEqual(key, output, $"output = {output}");
                 }
             }
-            s1.CompletePending(true);
+            _ = bc1.CompletePending(true);
 
             var task = store1.TakeFullCheckpointAsync(checkpointType);
 
-            using var store2 = new TsavoriteKV<long, long>
-                (size,
-                logSettings: new LogSettings { LogDevice = log, MutableFraction = 1, PageSizeBits = 10, MemorySizeBits = 20, ReadCacheSettings = useReadCache ? new ReadCacheSettings() : null },
-                checkpointSettings: new CheckpointSettings { CheckpointDir = TestUtils.MethodTestDir }
-                );
+            using var store2 = new TsavoriteKV<long, long, LongStoreFunctions, LongAllocator>(new()
+            {
+                IndexSize = indexSize,
+                LogDevice = log,
+                MutableFraction = 1,
+                PageSize = 1L << 10,
+                MemorySize = 1L << 20,
+                ReadCacheEnabled = useReadCache,
+                CheckpointDir = TestUtils.MethodTestDir
+            }, StoreFunctions<long, long>.Create(LongKeyComparer.Instance)
+                , (allocatorSettings, storeFunctions) => new(allocatorSettings, storeFunctions)
+            );
 
             if (isAsync)
             {
                 var (status, token) = await task;
-                await store2.RecoverAsync(default, token);
+                _ = await store2.RecoverAsync(default, token);
             }
             else
             {
                 var (status, token) = task.AsTask().GetAwaiter().GetResult();
-                store2.Recover(default, token);
+                _ = store2.Recover(default, token);
             }
 
-            Assert.AreEqual(store1.Log.HeadAddress, store2.Log.HeadAddress);
-            Assert.AreEqual(store1.Log.ReadOnlyAddress, store2.Log.ReadOnlyAddress);
-            Assert.AreEqual(store1.Log.TailAddress, store2.Log.TailAddress);
+            ClassicAssert.AreEqual(store1.Log.HeadAddress, store2.Log.HeadAddress);
+            ClassicAssert.AreEqual(store1.Log.ReadOnlyAddress, store2.Log.ReadOnlyAddress);
+            ClassicAssert.AreEqual(store1.Log.TailAddress, store2.Log.TailAddress);
 
             using var s2 = store2.NewSession<long, long, Empty, MyFunctions>(new MyFunctions());
+            var bc2 = s2.BasicContext;
+
             for (long key = 0; key < 1000; key++)
             {
                 long output = default;
-                var status = s2.Read(ref key, ref output);
+                var status = bc2.Read(ref key, ref output);
                 if (!status.IsPending)
                 {
-                    Assert.IsTrue(status.Found, $"status = {status}");
-                    Assert.AreEqual(key, output, $"output = {output}");
+                    ClassicAssert.IsTrue(status.Found, $"status = {status}");
+                    ClassicAssert.AreEqual(key, output, $"output = {output}");
                 }
             }
-            s2.CompletePending(true);
+            _ = bc2.CompletePending(true);
         }
     }
 
@@ -725,89 +818,105 @@ namespace Tsavorite.test.recovery
 
         private async ValueTask IncrSnapshotRecoveryCheck(ICheckpointManager checkpointManager)
         {
-            using var store1 = new TsavoriteKV<long, long>
-                (1 << 10,
-                logSettings: new LogSettings { LogDevice = log, MutableFraction = 1, PageSizeBits = 10, MemorySizeBits = 20, ReadCacheSettings = null },
-                checkpointSettings: new CheckpointSettings { CheckpointManager = checkpointManager }
-                );
+            using var store1 = new TsavoriteKV<long, long, LongStoreFunctions, LongAllocator>(new()
+            {
+                IndexSize = 1L << 16,
+                LogDevice = log,
+                MutableFraction = 1,
+                PageSize = 1L << 10,
+                MemorySize = 1L << 20,
+                CheckpointManager = checkpointManager
+            }, StoreFunctions<long, long>.Create(LongKeyComparer.Instance)
+                , (allocatorSettings, storeFunctions) => new(allocatorSettings, storeFunctions)
+            );
 
             using var s1 = store1.NewSession<long, long, Empty, MyFunctions2>(new MyFunctions2());
+            var bc1 = s1.BasicContext;
             for (long key = 0; key < 1000; key++)
-            {
-                s1.Upsert(ref key, ref key);
-            }
+                _ = bc1.Upsert(ref key, ref key);
 
             var task = store1.TakeHybridLogCheckpointAsync(CheckpointType.Snapshot);
             var (success, token) = await task;
 
             for (long key = 950; key < 1000; key++)
-            {
-                s1.Upsert(key, key + 1);
-            }
+                _ = bc1.Upsert(key, key + 1);
 
             var version1 = store1.CurrentVersion;
             var _result1 = store1.TryInitiateHybridLogCheckpoint(out var _token1, CheckpointType.Snapshot, true);
             await store1.CompleteCheckpointAsync();
 
-            Assert.IsTrue(_result1);
-            Assert.AreEqual(token, _token1);
+            ClassicAssert.IsTrue(_result1);
+            ClassicAssert.AreEqual(token, _token1);
 
             for (long key = 1000; key < 2000; key++)
-            {
-                s1.Upsert(key, key + 1);
-            }
+                _ = bc1.Upsert(key, key + 1);
 
             var version2 = store1.CurrentVersion;
             var _result2 = store1.TryInitiateHybridLogCheckpoint(out var _token2, CheckpointType.Snapshot, true);
             await store1.CompleteCheckpointAsync();
 
-            Assert.IsTrue(_result2);
-            Assert.AreEqual(token, _token2);
+            ClassicAssert.IsTrue(_result2);
+            ClassicAssert.AreEqual(token, _token2);
 
             // Test that we can recover to latest version
-            using var store2 = new TsavoriteKV<long, long>
-                (1 << 10,
-                logSettings: new LogSettings { LogDevice = log, MutableFraction = 1, PageSizeBits = 10, MemorySizeBits = 14, ReadCacheSettings = null },
-                checkpointSettings: new CheckpointSettings { CheckpointManager = checkpointManager }
-                );
+            using var store2 = new TsavoriteKV<long, long, LongStoreFunctions, LongAllocator>(new()
+            {
+                IndexSize = 1L << 16,
+                LogDevice = log,
+                MutableFraction = 1,
+                PageSize = 1L << 10,
+                MemorySize = 1L << 14,
+                CheckpointManager = checkpointManager
+            }, StoreFunctions<long, long>.Create(LongKeyComparer.Instance)
+                , (allocatorSettings, storeFunctions) => new(allocatorSettings, storeFunctions)
+            );
 
             await store2.RecoverAsync(default, _token2);
 
-            Assert.AreEqual(store2.Log.TailAddress, store1.Log.TailAddress);
+            ClassicAssert.AreEqual(store2.Log.TailAddress, store1.Log.TailAddress);
 
             using var s2 = store2.NewSession<long, long, Empty, MyFunctions2>(new MyFunctions2());
+            var bc2 = s2.BasicContext;
+
             for (long key = 0; key < 2000; key++)
             {
                 long output = default;
-                var status = s2.Read(ref key, ref output);
+                var status = bc2.Read(ref key, ref output);
                 if (!status.IsPending)
                 {
                     MyFunctions2.Verify(status, key, output);
                 }
             }
-            s2.CompletePending(true);
+            _ = bc2.CompletePending(true);
 
             // Test that we can recover to earlier version
-            using var store3 = new TsavoriteKV<long, long>
-            (1 << 10,
-                logSettings: new LogSettings { LogDevice = log, MutableFraction = 1, PageSizeBits = 10, MemorySizeBits = 14, ReadCacheSettings = null },
-                checkpointSettings: new CheckpointSettings { CheckpointManager = checkpointManager }
+            using var store3 = new TsavoriteKV<long, long, LongStoreFunctions, LongAllocator>(new()
+            {
+                IndexSize = 1L << 16,
+                LogDevice = log,
+                MutableFraction = 1,
+                PageSize = 1L << 10,
+                MemorySize = 1L << 14,
+                CheckpointManager = checkpointManager
+            }, StoreFunctions<long, long>.Create(LongKeyComparer.Instance)
+                , (allocatorSettings, storeFunctions) => new(allocatorSettings, storeFunctions)
             );
 
-            await store3.RecoverAsync(recoverTo: version1);
+            _ = await store3.RecoverAsync(recoverTo: version1);
 
-            Assert.IsTrue(store3.EntryCount == 1000);
+            ClassicAssert.IsTrue(store3.EntryCount == 1000);
             using var s3 = store3.NewSession<long, long, Empty, MyFunctions2>(new MyFunctions2());
+            var bc3 = s3.BasicContext;
             for (long key = 0; key < 1000; key++)
             {
                 long output = default;
-                var status = s3.Read(ref key, ref output);
+                var status = bc3.Read(ref key, ref output);
                 if (!status.IsPending)
                 {
                     MyFunctions2.Verify(status, key, output);
                 }
             }
-            s3.CompletePending(true);
+            _ = bc3.CompletePending(true);
         }
     }
 }

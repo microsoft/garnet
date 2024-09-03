@@ -47,7 +47,7 @@ Note that this list is subject to change as we continue to expand our API comman
 |  | [WHOAMI](acl.md#acl-whoami) | ➕ |  |
 | <span id="bitmap">**BITMAP**</span> | [BITCOUNT](analytics.md#bitcount) | ➕ |  |
 |  | [BITFIELD](analytics.md#bitfield) | ➕ |  |
-|  | BITFIELD_RO | ➖ |  |
+|  | [BITFIELD_RO](analytics.md#bitfield_ro) | ➕ |  |
 |  | [BITOP AND](analytics.md#bitop-and) | ➕ |  |
 |  | [BITOP NOT](analytics.md#bitop-not) | ➕ |  |
 |  | [BITPOS](analytics.md#bitpos) | ➕ |  |
@@ -84,6 +84,7 @@ Note that this list is subject to change as we continue to expand our API comman
 | <span id="connection">**CONNECTION**</span> | [AUTH](generic-commands.md#auth) | ➕ |  |
 |  | CLIENT CACHING | ➖ |  |
 |  | [ECHO](generic-commands.md#echo) | ➕ |  |
+|  | [HELLO](generic-commands.md#hello) | ➕ |  |
 |  | [PING](generic-commands.md#ping) | ➕ |  |
 |  | [QUIT](generic-commands.md#quit) | ➕ |  |
 |  | SELECT | ➕ |  |
@@ -148,10 +149,10 @@ Note that this list is subject to change as we continue to expand our API comman
 |  | [KEYS](generic-commands.md#keys) | ➕ |  |
 |  | [MIGRATE](generic-commands.md#migrate) | ➕ |  |
 |  | MOVE | ➖ |  |
-| <span id="list">**LIST**</span> | BLMOVE | ➖ |  |
+| <span id="list">**LIST**</span> | [BLMOVE](data-structures.md#blmove) | ➕ |  |
 |  | BLMPOP | ➖ |  |
-|  | BLPOP | ➖ |  |
-|  | BRPOP | ➖ |  |
+|  | [BLPOP](data-structures.md#blpop) | ➕ |  |
+|  | [BRPOP](data-structures.md#brpop) | ➕ |  |
 |  | BRPOPLPUSH | ➖ |  |
 |  | [LINDEX](data-structures.md#lindex) | ➕ |  |
 |  | [LINSERT](data-structures.md#linsert) | ➕ |  |
@@ -178,24 +179,30 @@ Note that this list is subject to change as we continue to expand our API comman
 |  | [PUNSUBSCRIBE](analytics.md#punsubscribe) | ➕ |  |
 |  | [SUBSCRIBE](analytics.md#subscribe) | ➕ |  |
 |  | [UNSUBSCRIBE](analytics.md#unsubscribe) | ➕ |  |
-| <span id="scripting">**SCRIPTING**</span> | EVAL | ➖ |  |
+| <span id="scripting">**SCRIPTING**</span> | EVAL | ➕ |  |
 |  | EVAL_RO | ➖ |  |
-|  | EVALSHA | ➖ |  |
+|  | EVALSHA | ➕ |  |
 |  | EVALSHA_RO | ➖ |  |
 |  | SCRIPT DEBUG | ➖ |  |
-|  | SCRIPT EXISTS | ➖ |  |
-|  | SCRIPT FLUSH | ➖ |  |
+|  | SCRIPT EXISTS | ➕ |  |
+|  | SCRIPT FLUSH | ➕ |  |
 |  | SCRIPT KILL | ➖ |  |
-|  | SCRIPT LOAD | ➖ |  |
+|  | SCRIPT LOAD | ➕ |  |
 | <span id="server">**SERVER**</span> | ACL | ➖ |  |
 |  | BGREWRITEAOF | ➖ |  |
 |  | [BGSAVE](checkpoint.md#bgsave) | ➕ |  |
 |  | [COMMAND](server.md#command) | ➕ |  |
+|  | [COMMAND COUNT](server.md#command-count) | ➕ |  |
+|  | COMMAND DOCS | ➖ |  |
+|  | COMMAND GETKEYS | ➖ |  |
+|  | COMMAND GETKEYSANDFLAGS | ➖ |  | 
+|  | [COMMAND INFO](server.md#command-info) | ➕ |  | 
+|  | COMMAND LIST | ➖ |  | 
 |  | [COMMITAOF](server.md#commitaof) | ➕ |  |
 |  | [CONFIG GET](server.md#config-get) | ➕ |  |
 |  | [CONFIG SET](server.md#config-set) | ➕ |  |
 |  | [DBSIZE](server.md#dbsize) | ➕ |  |
-|  | FLUSHALL | ➖ |  |
+|  | [FLUSHALL](server.md#flushall) | ➕ |  |
 |  | [FLUSHDB](server.md#flushdb) | ➕ |  |
 |  | [LASTSAVE](checkpoint.md#lastsave) | ➕ |  |
 |  | LATENCY DOCTOR | ➖ |  |
@@ -228,9 +235,9 @@ Note that this list is subject to change as we continue to expand our API comman
 |  | [SCARD](data-structures.md#scard) | ➕ |  |
 |  | [SDIFF](data-structures.md#sdiff) | ➕ |  |
 |  | [SDIFFSTORE](data-structures.md#sdiffstore) | ➕ |  |
-|  | SINTER | ➖ |  |
+|  | [SINTER](data-structures.md#sinter) | ➕ |  |
+|  | [SINTERSTORE](data-structures.md#sinterstore) | ➕ |  |
 |  | SINTERCARD | ➖ |  |
-|  | SINTERSTORE | ➖ |  |
 |  | SISMEMBER | ➕ |  |
 |  | [SMEMBERS](data-structures.md#smembers) | ➕ |  |
 |  | SMISMEMBER | ➖ |  |

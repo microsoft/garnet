@@ -2,7 +2,9 @@
 // Licensed under the MIT license.
 
 using System;
+using System.Runtime.CompilerServices;
 using System.Runtime.InteropServices;
+using Tsavorite.core;
 
 namespace Garnet.server
 {
@@ -36,10 +38,11 @@ namespace Garnet.server
         /// Size of header
         /// </summary>
         public const int Size = 2;
-        internal const byte FlagMask = (byte)RespInputFlags.Deterministic - 1;
+        internal const byte FlagMask = (byte)RespInputFlags.SetGet - 1;
 
         [FieldOffset(0)]
         internal RespCommand cmd;
+
         [FieldOffset(0)]
         internal GarnetObjectType type;
 
@@ -128,19 +131,68 @@ namespace Garnet.server
     }
 
     /// <summary>
-    /// Object input header, building on the basic RESP input header
+    /// Header for Garnet Object Store inputs
     /// </summary>
     [StructLayout(LayoutKind.Explicit, Size = Size)]
-    struct ObjectInputHeader
+    public struct ObjectInput
     {
-        public const int Size = RespInputHeader.Size + sizeof(int) + sizeof(int);
+        /// <summary>
+        /// Size of header
+        /// </summary>
+        public const int Size = RespInputHeader.Size + (3 * sizeof(int)) + SessionParseState.Size;
 
+        /// <summary>
+        /// Common input header for Garnet
+        /// </summary>
         [FieldOffset(0)]
         public RespInputHeader header;
+
+        /// <summary>
+        /// Argument for generic usage by command implementation
+        /// </summary>
         [FieldOffset(RespInputHeader.Size)]
-        public int count;
+        public int arg1;
+
+        /// <summary>
+        /// Argument for generic usage by command implementation
+        /// </summary>
         [FieldOffset(RespInputHeader.Size + sizeof(int))]
-        public int done;
+        public int arg2;
+
+        /// <summary>
+        /// First index to start reading the parse state for command execution
+        /// </summary>
+        [FieldOffset(RespInputHeader.Size + (2 * sizeof(int)))]
+        public int parseStateStartIdx;
+
+        /// <summary>
+        /// Session parse state
+        /// </summary>
+        [FieldOffset(RespInputHeader.Size + (3 * sizeof(int)))]
+        public SessionParseState parseState;
+
+        /// <summary>
+        /// Gets a pointer to the top of the header
+        /// </summary>
+        /// <returns>Pointer</returns>
+        public unsafe byte* ToPointer()
+            => (byte*)Unsafe.AsPointer(ref header);
+
+        /// <summary>
+        /// Get header as Span
+        /// </summary>
+        /// <returns>Span</returns>
+        public unsafe Span<byte> AsSpan() => new(ToPointer(), Size);
+
+        /// <summary>
+        /// Get header as SpanByte
+        /// </summary>
+        public unsafe SpanByte SpanByte => new(Length, (nint)ToPointer());
+
+        /// <summary>
+        /// Get header length
+        /// </summary>
+        public int Length => AsSpan().Length;
     }
 
     /// <summary>
@@ -152,24 +204,12 @@ namespace Garnet.server
         /// <summary>
         /// Expected size of this object
         /// </summary>
-        public const int Size = 12;
+        public const int Size = 4;
 
         /// <summary>
-        /// Amount of items processed
+        /// Some result of operation (e.g., number of items added successfully)
         /// </summary>
         [FieldOffset(0)]
-        public int countDone;
-
-        /// <summary>
-        /// Bytes that were read
-        /// </summary>
-        [FieldOffset(4)]
-        public int bytesDone;
-
-        /// <summary>
-        /// Amount of ops completed
-        /// </summary>
-        [FieldOffset(8)]
-        public int opsDone;
+        public int result1;
     }
 }

@@ -56,16 +56,16 @@ namespace Garnet.server
             // start running transaction and setting readHead to first operation
             else if (txnManager.state == TxnState.Started)
             {
-                var _origReadHead = readHead;
-                readHead = txnManager.txnStartHead;
+                var _origReadHead = endReadHead;
+                endReadHead = txnManager.txnStartHead;
 
                 txnManager.GetKeysForValidation(recvBufferPtr, out var keys, out int keyCount, out bool readOnly);
-                if (NetworkKeyArraySlotVerify(ref keys, readOnly, keyCount))
+                if (NetworkKeyArraySlotVerify(keys, readOnly, keyCount))
                 {
                     logger?.LogWarning("Failed CheckClusterTxnKeys");
                     txnManager.Reset(false);
                     txnManager.watchContainer.Reset();
-                    readHead = _origReadHead;
+                    endReadHead = _origReadHead;
                     return true;
                 }
 
@@ -78,7 +78,7 @@ namespace Garnet.server
                 }
                 else
                 {
-                    readHead = _origReadHead;
+                    endReadHead = _origReadHead;
                     while (!RespWriteUtils.WriteNull(ref dcurr, dend))
                         SendAndReset();
                 }
@@ -95,28 +95,25 @@ namespace Garnet.server
         /// <summary>
         /// Skip the commands, first phase of the transactions processing.
         /// </summary>
-        private bool NetworkSKIP(RespCommand cmd, byte subCommand, int count)
+        private bool NetworkSKIP(RespCommand cmd)
         {
-            ReadOnlySpan<byte> bufSpan = new ReadOnlySpan<byte>(recvBufferPtr, bytesRead);
-
             // Retrieve the meta-data for the command to do basic sanity checking for command arguments
-            RespCommandsInfo commandInfo = RespCommandsInfo.findCommand(cmd, subCommand);
-            if (commandInfo == null)
+            if (!RespCommandsInfo.TryGetRespCommandInfo(cmd, out var commandInfo, txnOnly: true, logger))
             {
                 while (!RespWriteUtils.WriteError(CmdStrings.RESP_ERR_GENERIC_UNK_CMD, ref dcurr, dend))
                     SendAndReset();
                 txnManager.Abort();
-                if (!DrainCommands(bufSpan, count))
-                    return false;
                 return true;
             }
 
             // Check if input is valid and abort if necessary
             // NOTE: Negative arity means it's an expected minimum of args. Positive means exact.
-            bool invalidNumArgs = commandInfo.arity > 0 ? count != (commandInfo.arity) : count < -commandInfo.arity;
+            int count = parseState.Count;
+            var arity = commandInfo.Arity > 0 ? commandInfo.Arity - 1 : commandInfo.Arity + 1;
+            bool invalidNumArgs = arity > 0 ? count != (arity) : count < -arity;
 
             // Watch not allowed during TXN
-            bool isWatch = (commandInfo.command == RespCommand.WATCH || commandInfo.command == RespCommand.WATCHMS || commandInfo.command == RespCommand.WATCHOS);
+            bool isWatch = commandInfo.Command == RespCommand.WATCH || commandInfo.Command == RespCommand.WATCH_MS || commandInfo.Command == RespCommand.WATCH_OS;
 
             if (invalidNumArgs || isWatch)
             {
@@ -127,20 +124,17 @@ namespace Garnet.server
                 }
                 else
                 {
-                    string err = string.Format(CmdStrings.GenericErrWrongNumArgs, commandInfo.nameStr);
+                    string err = string.Format(CmdStrings.GenericErrWrongNumArgs, commandInfo.Name);
                     while (!RespWriteUtils.WriteError(err, ref dcurr, dend))
                         SendAndReset();
                     txnManager.Abort();
                 }
 
-                if (!DrainCommands(bufSpan, count))
-                    return false;
-
                 return true;
             }
 
             // Get and add keys to txn key list
-            int skipped = txnManager.GetKeys(cmd, count, out ReadOnlySpan<byte> error, subCommand);
+            int skipped = txnManager.GetKeys(cmd, count, out ReadOnlySpan<byte> error);
 
             if (skipped < 0)
             {
@@ -153,19 +147,7 @@ namespace Garnet.server
 
                 txnManager.Abort();
 
-                if (!DrainCommands(bufSpan, count))
-                    return false;
-
                 return true;
-            }
-
-            // Consume the remaining arguments in the input
-            for (int i = skipped; i < count; i++)
-            {
-                GetCommand(bufSpan, out bool success);
-
-                if (!success)
-                    return false;
             }
 
             while (!RespWriteUtils.WriteDirect(CmdStrings.RESP_QUEUED, ref dcurr, dend))
@@ -193,40 +175,58 @@ namespace Garnet.server
         }
 
         /// <summary>
-        /// Watch
+        /// Common implementation of various WATCH commands and subcommands.
         /// </summary>
-        private bool NetworkWATCH(int count, StoreType type = StoreType.All)
+        /// <param name="type">Store type that's bein gwatch</param>
+        /// <returns>true if parsing succeeded correctly, false if not all tokens could be consumed and further processing is necessary.</returns>
+        private bool CommonWATCH(StoreType type)
         {
-            bool success;
-
-            if (count > 1)
+            var count = parseState.Count;
+            // Have to provide at least one key
+            if (count == 0)
             {
-                List<ArgSlice> keys = new();
+                while (!RespWriteUtils.WriteError(CmdStrings.GenericErrWrongNumArgs, ref dcurr, dend))
+                    SendAndReset();
 
-                for (int c = 0; c < count - 1; c++)
-                {
-                    var key = GetCommandAsArgSlice(out success);
-                    if (!success) return false;
-                    keys.Add(key);
-                }
-
-                foreach (var key in keys)
-                    txnManager.Watch(key, type);
+                return true;
             }
-            else
+
+            List<ArgSlice> keys = [];
+
+            for (var c = 0; c < count; c++)
             {
-                for (int c = 0; c < count; c++)
-                {
-                    var key = GetCommandAsArgSlice(out success);
-                    if (!success) return false;
-                    txnManager.Watch(key, type);
-                }
+                var nextKey = parseState.GetArgSliceByRef(c);
+                keys.Add(nextKey);
+            }
+
+            foreach (var toWatch in keys)
+            {
+                txnManager.Watch(toWatch, type);
             }
 
             while (!RespWriteUtils.WriteDirect(CmdStrings.RESP_OK, ref dcurr, dend))
                 SendAndReset();
+
             return true;
         }
+
+        /// <summary>
+        /// WATCH MS key [key ..]
+        /// </summary>
+        private bool NetworkWATCH_MS()
+        => CommonWATCH(StoreType.Main);
+
+        /// <summary>
+        /// WATCH OS key [key ..]
+        /// </summary>
+        private bool NetworkWATCH_OS()
+        => CommonWATCH(StoreType.Object);
+
+        /// <summary>
+        /// Watch key [key ...]
+        /// </summary>
+        private bool NetworkWATCH()
+        => CommonWATCH(StoreType.All);
 
         /// <summary>
         /// UNWATCH
@@ -245,40 +245,59 @@ namespace Garnet.server
         private bool NetworkRUNTXPFast(byte* ptr)
         {
             int count = *(ptr - 16 + 1) - '0';
-            return NetworkRUNTXP(count, ptr);
+            return NetworkRUNTXP();
         }
 
-        private bool NetworkRUNTXP(int count, byte* ptr)
+        private bool NetworkRUNTXP()
         {
-            if (!RespReadUtils.ReadIntWithLengthHeader(out int txid, ref ptr, recvBufferPtr + bytesRead))
-                return false;
+            var count = parseState.Count;
+            if (count < 1)
+                return AbortWithWrongNumberOfArguments(nameof(RespCommand.RUNTXP));
 
-            byte* start = ptr;
-
-            // Verify all args available
-            for (int i = 0; i < count - 1; i++)
+            if (!parseState.TryGetInt(0, out var txId))
             {
-                byte* result = default;
-                int len = 0;
-                if (!RespReadUtils.ReadPtrWithLengthHeader(ref result, ref len, ref ptr, recvBufferPtr + bytesRead))
-                    return false;
-            }
-
-            // Shift read head
-            readHead = (int)(ptr - recvBufferPtr);
-
-
-            var (proc, numParams) = customCommandManagerSession.GetCustomTransactionProcedure(txid, txnManager, scratchBufferManager);
-            if (count - 1 == numParams)
-            {
-                TryTransactionProc((byte)txid, start, ptr, proc);
-            }
-            else
-            {
-                while (!RespWriteUtils.WriteError($"ERR Invalid number of parameters to stored proc {txid}, expected {numParams}, actual {count - 1}", ref dcurr, dend))
+                while (!RespWriteUtils.WriteError(CmdStrings.RESP_ERR_GENERIC_VALUE_IS_NOT_INTEGER, ref dcurr, dend))
                     SendAndReset();
                 return true;
             }
+
+            var sbFirstParam = parseState.GetArgSliceByRef(0).SpanByte;
+            var start = sbFirstParam.ToPointer() + sbFirstParam.Length + 2;
+
+            var end = start;
+            if (count > 1)
+            {
+                var sbLastParam = parseState.GetArgSliceByRef(count - 1).SpanByte;
+                end = sbLastParam.ToPointer() + sbLastParam.Length + 2;
+            }
+
+            CustomTransactionProcedure proc;
+            int arity;
+
+            try
+            {
+                (proc, arity) = customCommandManagerSession.GetCustomTransactionProcedure(txId, txnManager, scratchBufferManager);
+            }
+            catch (Exception e)
+            {
+                logger?.LogError(e, "Getting customer transaction in RUNTXP failed");
+
+                while (!RespWriteUtils.WriteError(CmdStrings.RESP_ERR_NO_TRANSACTION_PROCEDURE, ref dcurr, dend))
+                    SendAndReset();
+
+                return true;
+            }
+
+            if ((arity > 0 && count != arity) || (arity < 0 && count < -arity))
+            {
+                var expectedParams = arity > 0 ? arity - 1 : -arity - 1;
+                while (!RespWriteUtils.WriteError(
+                       string.Format(CmdStrings.GenericErrWrongNumArgsTxn, txId, expectedParams, count - 1), ref dcurr,
+                       dend))
+                    SendAndReset();
+            }
+            else
+                TryTransactionProc((byte)txId, start, end, proc);
 
             return true;
         }

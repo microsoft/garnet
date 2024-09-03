@@ -74,6 +74,7 @@ namespace Garnet.server
             done.WaitOne();
             cts.Dispose();
             done.Dispose();
+            globalMetrics.Dispose();
         }
 
         public void Start()
@@ -81,13 +82,14 @@ namespace Garnet.server
             Task.Run(() => MainMonitorTask(cts.Token));
         }
 
-        public void AddMetricsHistory(GarnetSessionMetrics currSessionMetrics, GarnetLatencyMetricsSession currLatencyMetrics)
+        public void AddMetricsHistorySessionDispose(GarnetSessionMetrics currSessionMetrics, GarnetLatencyMetricsSession currLatencyMetrics)
         {
             rwLock.WriteLock();
             try
             {
                 if (currSessionMetrics != null) globalMetrics.historySessionMetrics.Add(currSessionMetrics);
                 if (currLatencyMetrics != null) globalMetrics.globalLatencyMetrics.Merge(currLatencyMetrics);
+                currLatencyMetrics?.Return();
             }
             finally { rwLock.WriteUnlock(); }
         }
@@ -194,10 +196,10 @@ namespace Garnet.server
                 garnetServer.reset_conn_recv();
                 garnetServer.reset_conn_disp();
 
-                storeWrapper.clusterProvider.ResetGossipStats();
+                storeWrapper.clusterProvider?.ResetGossipStats();
 
                 storeWrapper.store.ResetRevivificationStats();
-                storeWrapper.objectStore.ResetRevivificationStats();
+                storeWrapper.objectStore?.ResetRevivificationStats();
 
                 resetEventFlags[InfoMetricsType.STATS] = false;
             }
@@ -211,7 +213,7 @@ namespace Garnet.server
                 {
                     if (resetLatencyMetrics[eventType])
                     {
-                        logger?.LogInformation($"Resetting server-side stats {eventType}");
+                        logger?.LogInformation("Resetting server-side stats {eventType}", eventType);
 
                         var sessions = ((GarnetServerBase)server).ActiveConsumers();
                         foreach (var entry in sessions)

@@ -3,24 +3,23 @@
 
 using System;
 using System.Collections.Generic;
+using System.Diagnostics;
 using Garnet.common;
+using Garnet.server;
 using Microsoft.Extensions.Logging;
 
 namespace Garnet.cluster
 {
     internal sealed class MigrateSessionTaskStore
     {
-        MigrateSession[] sessions;
-        int numSessions;
+        readonly MigrateSession[] sessions;
         SingleWriterMultiReaderLock _lock;
         readonly ILogger logger;
-
         private bool _disposed;
 
         public MigrateSessionTaskStore(ILogger logger = null)
         {
-            sessions = new MigrateSession[1];
-            numSessions = 0;
+            this.sessions = new MigrateSession[ClusterConfig.MAX_HASH_SLOT_VALUE];
             this.logger = logger;
         }
 
@@ -30,12 +29,8 @@ namespace Garnet.cluster
             {
                 _lock.WriteLock();
                 _disposed = true;
-                for (int i = 0; i < numSessions; i++)
-                {
-                    var s = sessions[i];
-                    s.Dispose();
-                }
-                numSessions = 0;
+                for (var i = 0; i < sessions.Length; i++)
+                    sessions[i]?.Dispose();
                 Array.Clear(sessions);
             }
             finally
@@ -44,32 +39,35 @@ namespace Garnet.cluster
             }
         }
 
-        public int GetNumSession() => numSessions;
-
-        private void GrowSessionArray()
+        /// <summary>
+        /// Count active MigrateSessions
+        /// </summary>
+        /// <returns></returns>
+        public int GetNumSessions()
         {
-            if (numSessions == sessions.Length)
+            var count = 0;
+            try
             {
-                var _sessions = new MigrateSession[sessions.Length << 1];
-                Array.Copy(sessions, _sessions, sessions.Length);
-                sessions = _sessions;
-            }
-        }
+                _lock.ReadLock();
+                if (_disposed) return 0;
 
-        private void ShrinkSessionArray()
-        {
-            // Shrink the array if it got too big but avoid often shrinking/growing
-            if (numSessions > 0 && (numSessions << 2) < sessions.Length)
-            {
-                var oldSessions = sessions;
-                var _sessions = new MigrateSession[sessions.Length >> 1];
-                Array.Copy(sessions, _sessions, sessions.Length >> 2);
-                sessions = _sessions;
-                Array.Clear(oldSessions);
+                HashSet<MigrateSession> ss = [];
+                for (var i = 0; i < sessions.Length; i++)
+                {
+                    if (sessions[i] != null)
+                        _ = ss.Add(sessions[i]);
+                }
+                count = ss.Count;
             }
+            finally
+            {
+                _lock.ReadUnlock();
+            }
+            return count;
         }
 
         public bool TryAddMigrateSession(
+            ClusterSession clusterSession,
             ClusterProvider clusterProvider,
             string sourceNodeId,
             string targetAddress,
@@ -81,11 +79,13 @@ namespace Garnet.cluster
             bool replaceOption,
             int timeout,
             HashSet<int> slots,
-            List<(long, long)> keysWithSize,
+            MigratingKeysWorkingSet keysWithSize,
+            TransferOption transferOption,
             out MigrateSession mSession)
         {
-            bool success = true;
+            var success = true;
             mSession = new MigrateSession(
+                clusterSession,
                 clusterProvider,
                 targetAddress,
                 targetPort,
@@ -98,26 +98,28 @@ namespace Garnet.cluster
                 timeout,
                 slots,
                 keysWithSize,
-                clusterProvider.loggerFactory.CreateLogger("MigrateSession"));
+                transferOption);
 
             try
             {
                 _lock.WriteLock();
                 if (_disposed) return false;
 
-                // Check if an existing migration session is migrating slots that are already scheduled for migration from another task
-                for (int i = 0; i < numSessions; i++)
+                // First iterate and check if corresponding slot is associated to another active migrate session
+                foreach (var slot in mSession.GetSlots)
                 {
-                    if (sessions[i].Overlap(mSession))
+                    if (sessions[slot] != null)
                     {
-                        logger?.LogError("Migrate slot range overlaps with range of ongoing task");
+                        logger?.LogError("Failed to add new session due to an existing MigrateSession operating on overlapping slots");
                         success = false;
                         return false;
                     }
                 }
 
-                GrowSessionArray();
-                sessions[numSessions++] = mSession;
+                // If reached this point all slots to be migrated are not associated with any other session
+                // so we can mark them as being associated with this newly added session
+                foreach (var slot in mSession.GetSlots)
+                    sessions[slot] = mSession;
             }
             catch (Exception ex)
             {
@@ -136,36 +138,102 @@ namespace Garnet.cluster
             return success;
         }
 
+        /// <summary>
+        /// Remove only the provided session instance
+        /// </summary>
+        /// <param name="mSession"></param>
+        /// <returns></returns>
         public bool TryRemove(MigrateSession mSession)
         {
             try
             {
                 _lock.WriteLock();
-                if (_disposed) return true;
-                for (int i = 0; i < numSessions; i++)
+                if (_disposed) return false;
+
+                foreach (var slot in mSession.GetSlots)
                 {
-                    var s = sessions[i];
-
-                    if (s == mSession)
-                    {
-                        sessions[i] = null;
-                        if (i < numSessions - 1)
-                        {
-                            sessions[i] = sessions[numSessions - 1];
-                            sessions[numSessions - 1] = null;
-                        }
-                        numSessions--;
-                        s.Dispose();
-
-                        ShrinkSessionArray();
-                    }
+                    Debug.Assert(sessions[slot] == mSession, "MigrateSession not found in slot");
+                    sessions[slot] = null;
                 }
+
+                mSession.Dispose();
+                return true;
+            }
+            catch (Exception ex)
+            {
+                logger?.LogError(ex, "Error at TryRemove");
                 return false;
             }
             finally
             {
                 _lock.WriteUnlock();
             }
+        }
+
+        /// <summary>
+        /// Remove all sessions associated with the provided targetNodeId
+        /// </summary>
+        /// <param name="targetNodeId"></param>
+        /// <returns></returns>
+        public bool TryRemove(string targetNodeId)
+        {
+            try
+            {
+                _lock.WriteLock();
+                if (_disposed) return false;
+                for (var i = 0; i < sessions.Length; i++)
+                {
+                    var s = sessions[i];
+                    if (s != null && s.GetTargetNodeId.Equals(targetNodeId, StringComparison.Ordinal))
+                    {
+                        sessions[i] = null;
+                        s.Dispose();
+                    }
+                }
+
+                return true;
+            }
+            catch (Exception ex)
+            {
+                logger?.LogError(ex, "Error at TryRemove");
+                return false;
+            }
+            finally
+            {
+                _lock.WriteUnlock();
+            }
+        }
+
+        /// <summary>
+        /// Check if provided key can be operated on.
+        /// </summary>
+        /// <param name="key"></param>
+        /// <param name="slot"></param>
+        /// <param name="readOnly"></param>
+        /// <returns>True if we can operate on the key, otherwise false (i.e. key is being migrated)</returns>
+        public bool CanAccessKey(ref ArgSlice key, int slot, bool readOnly)
+        {
+            try
+            {
+                _lock.ReadLock();
+                if (_disposed) return true;
+
+                // Search slotMap
+                var s = sessions[slot];
+                if (s == null) // Slot is not managed by any session so can safely operate on it
+                    return true;
+
+                Debug.Assert(s != null);
+                // Check owner of slot if can operate on key
+                if (!s.CanAccessKey(ref key, slot, readOnly))
+                    return false;
+            }
+            finally
+            {
+                _lock.ReadUnlock();
+            }
+
+            return true;
         }
     }
 }

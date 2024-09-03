@@ -11,12 +11,14 @@ namespace Tsavorite.core
     /// <summary>
     /// This task performs an index checkpoint.
     /// </summary>
-    internal sealed class IndexSnapshotTask : ISynchronizationTask
+    internal sealed class IndexSnapshotTask<TKey, TValue, TStoreFunctions, TAllocator> : ISynchronizationTask<TKey, TValue, TStoreFunctions, TAllocator>
+        where TStoreFunctions : IStoreFunctions<TKey, TValue>
+        where TAllocator : IAllocator<TKey, TValue, TStoreFunctions>
     {
         /// <inheritdoc />
-        public void GlobalBeforeEnteringState<Key, Value>(
+        public void GlobalBeforeEnteringState(
             SystemState next,
-            TsavoriteKV<Key, Value> store)
+            TsavoriteKV<TKey, TValue, TStoreFunctions, TAllocator> store)
         {
             switch (next.Phase)
             {
@@ -27,7 +29,7 @@ namespace Tsavorite.core
                         store.InitializeIndexCheckpoint(store._indexCheckpointToken);
                     }
 
-                    store._indexCheckpoint.info.startLogicalAddress = store.hlog.GetTailAddress();
+                    store._indexCheckpoint.info.startLogicalAddress = store.hlogBase.GetTailAddress();
                     store.TakeIndexFuzzyCheckpoint();
                     break;
 
@@ -52,22 +54,22 @@ namespace Tsavorite.core
         }
 
         /// <inheritdoc />
-        public void GlobalAfterEnteringState<Key, Value>(
+        public void GlobalAfterEnteringState(
             SystemState next,
-            TsavoriteKV<Key, Value> store)
+            TsavoriteKV<TKey, TValue, TStoreFunctions, TAllocator> store)
         {
         }
 
         /// <inheritdoc />
-        public void OnThreadState<Key, Value, Input, Output, Context, TsavoriteSession>(
+        public void OnThreadState<TInput, TOutput, TContext, TSessionFunctionsWrapper>(
             SystemState current,
             SystemState prev,
-            TsavoriteKV<Key, Value> store,
-            TsavoriteKV<Key, Value>.TsavoriteExecutionContext<Input, Output, Context> ctx,
-            TsavoriteSession storeSession,
+            TsavoriteKV<TKey, TValue, TStoreFunctions, TAllocator> store,
+            TsavoriteKV<TKey, TValue, TStoreFunctions, TAllocator>.TsavoriteExecutionContext<TInput, TOutput, TContext> ctx,
+            TSessionFunctionsWrapper sessionFunctions,
             List<ValueTask> valueTasks,
             CancellationToken token = default)
-            where TsavoriteSession : ITsavoriteSession
+            where TSessionFunctionsWrapper : ISessionEpochControl
         {
             switch (current.Phase)
             {
@@ -98,12 +100,14 @@ namespace Tsavorite.core
     /// <summary>
     /// This state machine performs an index checkpoint
     /// </summary>
-    internal sealed class IndexSnapshotStateMachine : SynchronizationStateMachineBase
+    internal sealed class IndexSnapshotStateMachine<TKey, TValue, TStoreFunctions, TAllocator> : SynchronizationStateMachineBase<TKey, TValue, TStoreFunctions, TAllocator>
+        where TStoreFunctions : IStoreFunctions<TKey, TValue>
+        where TAllocator : IAllocator<TKey, TValue, TStoreFunctions>
     {
         /// <summary>
         /// Create a new IndexSnapshotStateMachine
         /// </summary>
-        public IndexSnapshotStateMachine() : base(new IndexSnapshotTask())
+        public IndexSnapshotStateMachine() : base(new IndexSnapshotTask<TKey, TValue, TStoreFunctions, TAllocator>())
         {
         }
 

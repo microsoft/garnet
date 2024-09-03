@@ -15,7 +15,12 @@ using Tsavorite.core;
 
 namespace Garnet.cluster
 {
-    using BasicGarnetApi = GarnetApi<BasicContext<SpanByte, SpanByte, SpanByte, SpanByteAndMemory, long, MainStoreFunctions>, BasicContext<byte[], IGarnetObject, SpanByte, GarnetObjectStoreOutput, long, ObjectStoreFunctions>>;
+    using BasicGarnetApi = GarnetApi<BasicContext<SpanByte, SpanByte, SpanByte, SpanByteAndMemory, long, MainSessionFunctions,
+            /* MainStoreFunctions */ StoreFunctions<SpanByte, SpanByte, SpanByteComparer, SpanByteRecordDisposer>,
+            SpanByteAllocator<StoreFunctions<SpanByte, SpanByte, SpanByteComparer, SpanByteRecordDisposer>>>,
+        BasicContext<byte[], IGarnetObject, ObjectInput, GarnetObjectStoreOutput, long, ObjectSessionFunctions,
+            /* ObjectStoreFunctions */ StoreFunctions<byte[], IGarnetObject, ByteArrayKeyComparer, DefaultRecordDisposer<byte[], IGarnetObject>>,
+            GenericAllocator<byte[], IGarnetObject, StoreFunctions<byte[], IGarnetObject, ByteArrayKeyComparer, DefaultRecordDisposer<byte[], IGarnetObject>>>>>;
 
     /// <summary>
     /// Cluster provider
@@ -112,7 +117,7 @@ namespace Garnet.cluster
 
         /// <inheritdoc />
         public bool IsReplica()
-            => clusterManager?.CurrentConfig.LocalNodeRole == NodeRole.REPLICA || replicationManager?.recovering == true;
+            => clusterManager?.CurrentConfig.LocalNodeRole == NodeRole.REPLICA || replicationManager?.Recovering == true;
 
         /// <inheritdoc />
         public void ResetGossipStats()
@@ -218,7 +223,7 @@ namespace Garnet.cluster
                     replicationInfo.Add(new("master_port", port.ToString()));
                     replicationInfo.Add(primaryLinkStatus[0]);
                     replicationInfo.Add(primaryLinkStatus[1]);
-                    replicationInfo.Add(new("master_sync_in_progress", replicationManager.recovering.ToString()));
+                    replicationInfo.Add(new("master_sync_in_progress", replicationManager.Recovering.ToString()));
                     replicationInfo.Add(new("slave_read_repl_offset", replication_offset));
                     replicationInfo.Add(new("slave_priority", "100"));
                     replicationInfo.Add(new("slave_read_only", "1"));
@@ -274,20 +279,22 @@ namespace Garnet.cluster
         /// Wait for config transition
         /// </summary>
         /// <returns></returns>
-        internal bool WaitForConfigTransition()
+        internal bool BumpAndWaitForEpochTransition()
         {
             var server = storeWrapper.GetServer();
             BumpCurrentEpoch();
             while (true)
             {
             retry:
-                var currentEpoch = GarnetCurrentEpoch;
                 Thread.Yield();
+                // Acquire latest bumped epoch
+                var currentEpoch = GarnetCurrentEpoch;
                 var sessions = server.ActiveClusterSessions();
                 foreach (var s in sessions)
                 {
                     var entryEpoch = s.LocalCurrentEpoch;
-                    if (entryEpoch != 0 && entryEpoch >= currentEpoch)
+                    // Retry if at least one session has not yet caught up to the current epoch.
+                    if (entryEpoch != 0 && entryEpoch < currentEpoch)
                         goto retry;
                 }
                 break;

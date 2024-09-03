@@ -23,6 +23,14 @@ namespace Garnet.server
         bool GET_CompletePending((GarnetStatus, SpanByteAndMemory)[] outputArr, bool wait = false);
 
         /// <summary>
+        /// Complete pending read operations on main store
+        /// </summary>
+        /// <param name="completedOutputs"></param>
+        /// <param name="wait"></param>
+        /// <returns></returns>
+        bool GET_CompletePending(out CompletedOutputIterator<SpanByte, SpanByte, SpanByte, SpanByteAndMemory, long> completedOutputs, bool wait = false);
+
+        /// <summary>
         /// RMW operation on main store
         /// </summary>
         GarnetStatus RMW_MainStore(ref SpanByte key, ref SpanByte input, ref SpanByteAndMemory output);
@@ -35,11 +43,11 @@ namespace Garnet.server
         /// <summary>
         /// RMW operation on object store
         /// </summary>
-        GarnetStatus RMW_ObjectStore(ref byte[] key, ref SpanByte input, ref GarnetObjectStoreOutput output);
+        GarnetStatus RMW_ObjectStore(ref byte[] key, ref ObjectInput input, ref GarnetObjectStoreOutput output);
 
         /// <summary>
         /// Read operation on object store
         /// </summary>
-        GarnetStatus Read_ObjectStore(ref byte[] key, ref SpanByte input, ref GarnetObjectStoreOutput output);
+        GarnetStatus Read_ObjectStore(ref byte[] key, ref ObjectInput input, ref GarnetObjectStoreOutput output);
     }
 }

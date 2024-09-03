@@ -47,6 +47,7 @@ namespace Garnet.cluster
         public async Task<bool> SendCheckpoint()
         {
             errorMsg = default;
+            var retryCount = 0;
             var storeCkptManager = clusterProvider.GetReplicationLogCheckpointManager(StoreType.Main);
             var objectStoreCkptManager = clusterProvider.GetReplicationLogCheckpointManager(StoreType.Object);
             var current = clusterProvider.clusterManager.CurrentConfig;
@@ -96,6 +97,8 @@ namespace Garnet.cluster
                     {
                         localEntry.RemoveReader();
                         _ = Thread.Yield();
+                        if (retryCount++ > 10)
+                            throw new GarnetException("Attaching replica maximum retry count reached!");
                         goto retry;
                     }
                 }
@@ -110,6 +113,8 @@ namespace Garnet.cluster
                     {
                         localEntry.RemoveReader();
                         _ = Thread.Yield();
+                        if (retryCount++ > 10)
+                            throw new GarnetException("Attaching replica maximum retry count reached!");
                         goto retry;
                     }
                 }
@@ -187,7 +192,7 @@ namespace Garnet.cluster
                 var beginAddress = RecoveredReplicationOffset;
                 if (!recoverFromRemote)
                 {
-                    //If replica is ahead of this primary it will force itself to forget and start syncing from RecoveredReplicationOffset
+                    // If replica is ahead of this primary it will force itself to forget and start syncing from RecoveredReplicationOffset
                     if (replicaAofBeginAddress > ReplicationManager.kFirstValidAofAddress && replicaAofBeginAddress > RecoveredReplicationOffset)
                     {
                         logger?.LogInformation(
@@ -351,6 +356,7 @@ namespace Garnet.cluster
 
         private async Task SendCheckpointMetadata(GarnetClientSession gcs, ReplicationLogCheckpointManager ckptManager, CheckpointFileType fileType, Guid fileToken)
         {
+            logger?.LogInformation("<Begin sending checkpoint metadata {fileToken} {fileType}", fileToken, fileType);
             var checkpointMetadata = Array.Empty<byte>();
             if (fileToken != default)
             {
@@ -388,6 +394,8 @@ namespace Garnet.cluster
                 logger?.LogError("Primary error at SendCheckpointMetadata {resp}", resp);
                 throw new Exception($"Primary error at SendCheckpointMetadata {resp}");
             }
+
+            logger?.LogInformation("<Complete sending checkpoint metadata {fileToken} {fileType}", fileToken, fileType);
         }
 
         private async Task SendFileSegments(GarnetClientSession gcs, Guid token, CheckpointFileType type, long startAddress, long endAddress, int batchSize = 1 << 17)
@@ -420,7 +428,7 @@ namespace Garnet.cluster
                 }
 
                 // Send last empty package to indicate end of transmission and let replica dispose IDevice
-                resp = await gcs.ExecuteSendFileSegments(fileTokenBytes, (int)type, startAddress, Array.Empty<byte>()).ConfigureAwait(false);
+                resp = await gcs.ExecuteSendFileSegments(fileTokenBytes, (int)type, startAddress, []).ConfigureAwait(false);
                 if (!resp.Equals("OK"))
                 {
                     logger?.LogError("Primary error at SendFileSegments {type} {resp}", type, resp);
@@ -435,6 +443,7 @@ namespace Garnet.cluster
             {
                 device.Dispose();
             }
+            logger?.LogInformation("<Complete sending checkpoint file segments {guid} {type} {startAddress} {endAddress}", token, type, startAddress, endAddress);
         }
 
         private async Task SendObjectFiles(GarnetClientSession gcs, Guid token, CheckpointFileType type, int segmentCount, int batchSize = 1 << 17)
@@ -468,7 +477,7 @@ namespace Garnet.cluster
                         startAddress += readBytes;
                     }
 
-                    resp = await gcs.ExecuteSendFileSegments(fileTokenBytes, (int)type, 0L, Array.Empty<byte>()).ConfigureAwait(false);
+                    resp = await gcs.ExecuteSendFileSegments(fileTokenBytes, (int)type, 0L, []).ConfigureAwait(false);
                     if (!resp.Equals("OK"))
                     {
                         logger?.LogError("Primary error at SendFileSegments {type} {resp}", type, resp);

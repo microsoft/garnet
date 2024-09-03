@@ -11,8 +11,8 @@ using System.Reflection;
 using System.Security.Cryptography.X509Certificates;
 using CommandLine;
 using Garnet.server;
-using Garnet.server.Auth;
 using Garnet.server.Auth.Aad;
+using Garnet.server.Auth.Settings;
 using Garnet.server.TLS;
 using Microsoft.Extensions.Logging;
 using Tsavorite.core;
@@ -167,6 +167,9 @@ namespace Garnet
         [Option("aad-authorized-app-ids", Required = false, Separator = ',', HelpText = "The authorized client app Ids for AAD authentication. Should be a comma separated string.")]
         public string AuthorizedAadApplicationIds { get; set; }
 
+        [Option("aad-validate-acl-username", Required = false, Separator = ',', HelpText = "Only valid for AclWithAAD mode. Validates username -  expected to be OID of client app or a valid group's object id of which the client is part of.")]
+        public bool? AadValidateUsername { get; set; }
+
         [OptionValidation]
         [Option("aof", Required = false, HelpText = "Enable write ahead logging (append-only file).")]
         public bool? EnableAOF { get; set; }
@@ -195,8 +198,12 @@ namespace Garnet
         [Option("compaction-freq", Required = false, HelpText = "Background hybrid log compaction frequency in seconds. 0 = disabled (compaction performed before checkpointing instead)")]
         public int CompactionFrequencySecs { get; set; }
 
-        [Option("compaction-type", Required = false, HelpText = "Hybrid log compaction type. Value options: None - No compaction, Shift - shift begin address without compaction (data loss), ShiftForced - shift begin address without compaction (data loss). Immediately deletes files - do not use if you plan to recover after failure, Scan - scan old pages and move live records to tail (no data loss - take a checkpoint to actually delete the older data files from disk), Lookup - Lookup each record in compaction range, for record liveness checking using hash chain (no data loss - take a checkpoint to actually delete the older data files from disk)")]
+        [Option("compaction-type", Required = false, HelpText = "Hybrid log compaction type. Value options: None - no compaction, Shift - shift begin address without compaction (data loss), Scan - scan old pages and move live records to tail (no data loss), Lookup - lookup each record in compaction range, for record liveness checking using hash chain (no data loss)")]
         public LogCompactionType CompactionType { get; set; }
+
+        [OptionValidation]
+        [Option("compaction-force-delete", Required = false, HelpText = "Forcefully delete the inactive segments immediately after the compaction strategy (type) is applied. If false, take a checkpoint to actually delete the older data files from disk.")]
+        public bool? CompactionForceDelete { get; set; }
 
         [IntRangeValidation(0, int.MaxValue)]
         [Option("compaction-max-segments", Required = false, HelpText = "Number of log segments created on disk before compaction triggers.")]
@@ -205,6 +212,14 @@ namespace Garnet
         [IntRangeValidation(0, int.MaxValue)]
         [Option("obj-compaction-max-segments", Required = false, HelpText = "Number of object store log segments created on disk before compaction triggers.")]
         public int ObjectStoreCompactionMaxSegments { get; set; }
+
+        [OptionValidation]
+        [Option("lua", Required = false, HelpText = "Enable Lua scripts on server.")]
+        public bool? EnableLua { get; set; }
+
+        [OptionValidation]
+        [Option("lua-transaction-mode", Required = false, HelpText = "Run Lua scripts as a transaction (lock keys - run script - unlock keys).")]
+        public bool? LuaTransactionMode { get; set; }
 
         [PercentageValidation]
         [Option("gossip-sp", Required = false, HelpText = "Percent of cluster nodes to gossip with at each gossip iteration.")]
@@ -220,6 +235,10 @@ namespace Garnet
 
         [Option("cluster-tls-client-target-host", Required = false, HelpText = "Name for the client target host when using TLS connections in cluster mode.")]
         public string ClusterTlsClientTargetHost { get; set; }
+
+        [OptionValidation]
+        [Option("server-certificate-required", Required = false, HelpText = "Whether server TLS certificate is required by clients established on the server side, e.g., for cluster gossip and replication.")]
+        public bool? ServerCertificateRequired { get; set; }
 
         [OptionValidation]
         [Option("tls", Required = false, HelpText = "Enable TLS.")]
@@ -240,7 +259,7 @@ namespace Garnet
         public int CertificateRefreshFrequency { get; set; }
 
         [OptionValidation]
-        [Option("client-certificate-required", Required = false, HelpText = "Whether TLS client certificate required.")]
+        [Option("client-certificate-required", Required = false, HelpText = "Whether client TLS certificate is required by the server.")]
         public bool? ClientCertificateRequired { get; set; }
 
         [Option("certificate-revocation-check-mode", Required = false, HelpText = "Certificate revocation check mode for certificate validation (NoCheck, Online, Offline).")]
@@ -263,6 +282,10 @@ namespace Garnet
 
         [Option("logger-level", Required = false, HelpText = "Logging level. Value options: Trace, Debug, Information, Warning, Error, Critical, None")]
         public LogLevel LogLevel { get; set; }
+
+        [IntRangeValidation(0, int.MaxValue)]
+        [Option("logger-freq", Required = false, Default = 5, HelpText = "Frequency (in seconds) of logging (used for tracking progress of long running operations e.g. migration)")]
+        public int LoggingFrequency { get; set; }
 
         [OptionValidation]
         [Option("disable-console-logger", Required = false, HelpText = "Disable console logger.")]
@@ -463,7 +486,7 @@ namespace Garnet
                 foreach (var validationResult in validationResults)
                 {
                     invalidOptions.AddRange(validationResult.MemberNames);
-                    logger?.LogError(validationResult.ErrorMessage);
+                    logger?.LogError("{errorMessage}", validationResult.ErrorMessage);
                 }
             }
 
@@ -482,7 +505,7 @@ namespace Garnet
             var logDir = LogDir;
             if (!useAzureStorage && enableStorageTier) logDir = new DirectoryInfo(string.IsNullOrEmpty(logDir) ? "." : logDir).FullName;
             var checkpointDir = CheckpointDir;
-            if (!useAzureStorage) checkpointDir = new DirectoryInfo(string.IsNullOrEmpty(checkpointDir) ? "." : checkpointDir).FullName;
+            if (!useAzureStorage) checkpointDir = new DirectoryInfo(string.IsNullOrEmpty(checkpointDir) ? (string.IsNullOrEmpty(logDir) ? "." : logDir) : checkpointDir).FullName;
 
             var address = !string.IsNullOrEmpty(this.Address) && this.Address.Equals("localhost", StringComparison.CurrentCultureIgnoreCase)
                 ? IPAddress.Loopback.ToString()
@@ -522,6 +545,14 @@ namespace Garnet
                     throw new Exception("Revivification cannot specify RevivifiableFraction without specifying bins.");
             }
 
+            // For backwards compatibility
+            if (CompactionType == LogCompactionType.ShiftForced)
+            {
+                logger?.LogWarning("Compaction type ShiftForced is deprecated. Use Shift instead along with CompactionForceDelete.");
+                CompactionType = LogCompactionType.Shift;
+                CompactionForceDelete = true;
+            }
+
             return new GarnetServerOptions(logger)
             {
                 Port = Port,
@@ -553,6 +584,8 @@ namespace Garnet
                 CleanClusterConfig = CleanClusterConfig.GetValueOrDefault(),
                 AuthSettings = GetAuthenticationSettings(logger),
                 EnableAOF = EnableAOF.GetValueOrDefault(),
+                EnableLua = EnableLua.GetValueOrDefault(),
+                LuaTransactionMode = LuaTransactionMode.GetValueOrDefault(),
                 AofMemorySize = AofMemorySize,
                 AofPageSize = AofPageSize,
                 CommitFrequencyMs = CommitFrequencyMs,
@@ -560,6 +593,7 @@ namespace Garnet
                 AofSizeLimit = AofSizeLimit,
                 CompactionFrequencySecs = CompactionFrequencySecs,
                 CompactionType = CompactionType,
+                CompactionForceDelete = CompactionForceDelete.GetValueOrDefault(),
                 CompactionMaxSegments = CompactionMaxSegments,
                 ObjectStoreCompactionMaxSegments = ObjectStoreCompactionMaxSegments,
                 GossipSamplePercent = GossipSamplePercent,
@@ -577,10 +611,12 @@ namespace Garnet
                     CertificateRefreshFrequency,
                     EnableCluster.GetValueOrDefault(),
                     ClusterTlsClientTargetHost,
+                    ServerCertificateRequired.GetValueOrDefault(),
                     logger: logger) : null,
                 LatencyMonitor = LatencyMonitor.GetValueOrDefault(),
                 MetricsSamplingFrequency = MetricsSamplingFrequency,
                 LogLevel = LogLevel,
+                LoggingFrequency = LoggingFrequency,
                 QuietMode = QuietMode.GetValueOrDefault(),
                 ThreadPoolMinThreads = ThreadPoolMinThreads,
                 ThreadPoolMaxThreads = ThreadPoolMaxThreads,
@@ -623,14 +659,15 @@ namespace Garnet
                 case GarnetAuthenticationMode.Aad:
                     return new AadAuthenticationSettings(AuthorizedAadApplicationIds?.Split(','), AadAudiences?.Split(','), AadIssuers?.Split(','), IssuerSigningTokenProvider.Create(AadAuthority, logger));
                 case GarnetAuthenticationMode.ACL:
-                    return new AclAuthenticationSettings(AclFile, Password);
+                    return new AclAuthenticationPasswordSettings(AclFile, Password);
+                case GarnetAuthenticationMode.AclWithAad:
+                    var aadAuthSettings = new AadAuthenticationSettings(AuthorizedAadApplicationIds?.Split(','), AadAudiences?.Split(','), AadIssuers?.Split(','), IssuerSigningTokenProvider.Create(AadAuthority, logger), AadValidateUsername.GetValueOrDefault());
+                    return new AclAuthenticationAadSettings(AclFile, Password, aadAuthSettings);
                 default:
                     logger?.LogError("Unsupported authentication mode: {mode}", AuthenticationMode);
                     throw new Exception($"Authentication mode {AuthenticationMode} is not supported.");
             }
         }
-
-
     }
 
     /// <summary>

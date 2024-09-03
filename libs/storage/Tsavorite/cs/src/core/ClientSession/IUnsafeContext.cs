@@ -4,8 +4,9 @@
 namespace Tsavorite.core
 {
     /// <summary>
-    /// Manual epoch control functions. Useful when doing generic operations across diverse <see cref="LockableUnsafeContext{Key, Value, Input, Output, Context, Functions}"/> 
-    /// and <see cref="UnsafeContext{Key, Value, Input, Output, Context, Functions}"/> specializations.
+    /// Manual epoch control functions. Useful when doing generic operations across diverse 
+    /// <see cref="LockableUnsafeContext{Key, Value, Input, Output, Context, Functions, StoreFunctions, Allocator}"/> and
+    /// <see cref="UnsafeContext{Key, Value, Input, Output, Context, Functions, StoreFunctions, Allocator}"/> specializations.
     /// </summary>
     public interface IUnsafeContext
     {

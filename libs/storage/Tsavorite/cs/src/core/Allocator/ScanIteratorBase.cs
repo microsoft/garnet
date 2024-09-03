@@ -209,11 +209,13 @@ namespace Tsavorite.core
             return false;
         }
 
-        internal abstract void AsyncReadPagesFromDeviceToFrame<TContext>(long readPageStart, int numPages, long untilAddress, TContext context, out CountdownEvent completed, long devicePageOffset = 0, IDevice device = null, IDevice objectLogDevice = null, CancellationTokenSource cts = null);
+        internal abstract void AsyncReadPagesFromDeviceToFrame<TContext>(long readPageStart, int numPages, long untilAddress, TContext context, out CountdownEvent completed,
+                long devicePageOffset = 0, IDevice device = null, IDevice objectLogDevice = null, CancellationTokenSource cts = null);
 
         private bool WaitForFrameLoad(long currentAddress, long currentFrame)
         {
-            if (loaded[currentFrame].IsSet) return false;
+            if (loaded[currentFrame].IsSet)
+                return false;
 
             try
             {

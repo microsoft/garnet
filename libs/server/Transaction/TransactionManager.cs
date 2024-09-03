@@ -10,8 +10,24 @@ using Tsavorite.core;
 
 namespace Garnet.server
 {
-    using BasicGarnetApi = GarnetApi<BasicContext<SpanByte, SpanByte, SpanByte, SpanByteAndMemory, long, MainStoreFunctions>, BasicContext<byte[], IGarnetObject, SpanByte, GarnetObjectStoreOutput, long, ObjectStoreFunctions>>;
-    using LockableGarnetApi = GarnetApi<LockableContext<SpanByte, SpanByte, SpanByte, SpanByteAndMemory, long, MainStoreFunctions>, LockableContext<byte[], IGarnetObject, SpanByte, GarnetObjectStoreOutput, long, ObjectStoreFunctions>>;
+    using BasicGarnetApi = GarnetApi<BasicContext<SpanByte, SpanByte, SpanByte, SpanByteAndMemory, long, MainSessionFunctions,
+            /* MainStoreFunctions */ StoreFunctions<SpanByte, SpanByte, SpanByteComparer, SpanByteRecordDisposer>,
+            SpanByteAllocator<StoreFunctions<SpanByte, SpanByte, SpanByteComparer, SpanByteRecordDisposer>>>,
+        BasicContext<byte[], IGarnetObject, ObjectInput, GarnetObjectStoreOutput, long, ObjectSessionFunctions,
+            /* ObjectStoreFunctions */ StoreFunctions<byte[], IGarnetObject, ByteArrayKeyComparer, DefaultRecordDisposer<byte[], IGarnetObject>>,
+            GenericAllocator<byte[], IGarnetObject, StoreFunctions<byte[], IGarnetObject, ByteArrayKeyComparer, DefaultRecordDisposer<byte[], IGarnetObject>>>>>;
+    using LockableGarnetApi = GarnetApi<LockableContext<SpanByte, SpanByte, SpanByte, SpanByteAndMemory, long, MainSessionFunctions,
+            /* MainStoreFunctions */ StoreFunctions<SpanByte, SpanByte, SpanByteComparer, SpanByteRecordDisposer>,
+            SpanByteAllocator<StoreFunctions<SpanByte, SpanByte, SpanByteComparer, SpanByteRecordDisposer>>>,
+        LockableContext<byte[], IGarnetObject, ObjectInput, GarnetObjectStoreOutput, long, ObjectSessionFunctions,
+            /* ObjectStoreFunctions */ StoreFunctions<byte[], IGarnetObject, ByteArrayKeyComparer, DefaultRecordDisposer<byte[], IGarnetObject>>,
+            GenericAllocator<byte[], IGarnetObject, StoreFunctions<byte[], IGarnetObject, ByteArrayKeyComparer, DefaultRecordDisposer<byte[], IGarnetObject>>>>>;
+
+    using MainStoreAllocator = SpanByteAllocator<StoreFunctions<SpanByte, SpanByte, SpanByteComparer, SpanByteRecordDisposer>>;
+    using MainStoreFunctions = StoreFunctions<SpanByte, SpanByte, SpanByteComparer, SpanByteRecordDisposer>;
+
+    using ObjectStoreAllocator = GenericAllocator<byte[], IGarnetObject, StoreFunctions<byte[], IGarnetObject, ByteArrayKeyComparer, DefaultRecordDisposer<byte[], IGarnetObject>>>;
+    using ObjectStoreFunctions = StoreFunctions<byte[], IGarnetObject, ByteArrayKeyComparer, DefaultRecordDisposer<byte[], IGarnetObject>>;
 
     /// <summary>
     /// Transaction manager
@@ -19,24 +35,24 @@ namespace Garnet.server
     public sealed unsafe partial class TransactionManager
     {
         /// <summary>
-        /// Session for main store
+        /// Basic context for main store
         /// </summary>
-        readonly ClientSession<SpanByte, SpanByte, SpanByte, SpanByteAndMemory, long, MainStoreFunctions> session;
+        readonly BasicContext<SpanByte, SpanByte, SpanByte, SpanByteAndMemory, long, MainSessionFunctions, MainStoreFunctions, MainStoreAllocator> basicContext;
 
         /// <summary>
         /// Lockable context for main store
         /// </summary>
-        readonly LockableContext<SpanByte, SpanByte, SpanByte, SpanByteAndMemory, long, MainStoreFunctions> lockableContext;
+        readonly LockableContext<SpanByte, SpanByte, SpanByte, SpanByteAndMemory, long, MainSessionFunctions, MainStoreFunctions, MainStoreAllocator> lockableContext;
 
         /// <summary>
-        /// Session for object store
+        /// Basic context for object store
         /// </summary>
-        readonly ClientSession<byte[], IGarnetObject, SpanByte, GarnetObjectStoreOutput, long, ObjectStoreFunctions> objectStoreSession;
+        readonly BasicContext<byte[], IGarnetObject, ObjectInput, GarnetObjectStoreOutput, long, ObjectSessionFunctions, ObjectStoreFunctions, ObjectStoreAllocator> objectStoreBasicContext;
 
         /// <summary>
         /// Lockable context for object store
         /// </summary>
-        readonly LockableContext<byte[], IGarnetObject, SpanByte, GarnetObjectStoreOutput, long, ObjectStoreFunctions> objectStoreLockableContext;
+        readonly LockableContext<byte[], IGarnetObject, ObjectInput, GarnetObjectStoreOutput, long, ObjectSessionFunctions, ObjectStoreFunctions, ObjectStoreAllocator> objectStoreLockableContext;
 
         // Not readonly to avoid defensive copy
         GarnetWatchApi<BasicGarnetApi> garnetTxPrepareApi;
@@ -67,11 +83,11 @@ namespace Garnet.server
         StoreType transactionStoreType;
         readonly ILogger logger;
 
-        internal LockableContext<SpanByte, SpanByte, SpanByte, SpanByteAndMemory, long, MainStoreFunctions> LockableContext
+        internal LockableContext<SpanByte, SpanByte, SpanByte, SpanByteAndMemory, long, MainSessionFunctions, MainStoreFunctions, MainStoreAllocator> LockableContext
             => lockableContext;
-        internal LockableUnsafeContext<SpanByte, SpanByte, SpanByte, SpanByteAndMemory, long, MainStoreFunctions> LockableUnsafeContext
-            => session.LockableUnsafeContext;
-        internal LockableContext<byte[], IGarnetObject, SpanByte, GarnetObjectStoreOutput, long, ObjectStoreFunctions> ObjectStoreLockableContext
+        internal LockableUnsafeContext<SpanByte, SpanByte, SpanByte, SpanByteAndMemory, long, MainSessionFunctions, MainStoreFunctions, MainStoreAllocator> LockableUnsafeContext
+            => basicContext.Session.LockableUnsafeContext;
+        internal LockableContext<byte[], IGarnetObject, ObjectInput, GarnetObjectStoreOutput, long, ObjectSessionFunctions, ObjectStoreFunctions, ObjectStoreAllocator> ObjectStoreLockableContext
             => objectStoreLockableContext;
 
         /// <summary>
@@ -86,12 +102,16 @@ namespace Garnet.server
             bool clusterEnabled,
             ILogger logger = null)
         {
-            this.session = storageSession.session;
+            var session = storageSession.basicContext.Session;
+            basicContext = session.BasicContext;
             lockableContext = session.LockableContext;
 
-            this.objectStoreSession = storageSession.objectStoreSession;
+            var objectStoreSession = storageSession.objectStoreBasicContext.Session;
             if (objectStoreSession != null)
+            {
+                objectStoreBasicContext = objectStoreSession.BasicContext;
                 objectStoreLockableContext = objectStoreSession.LockableContext;
+            }
 
             this.functionsState = storageSession.functionsState;
             this.appendOnlyFile = functionsState.appendOnlyFile;
@@ -126,9 +146,8 @@ namespace Garnet.server
                     lockableContext.EndLockable();
                 if (transactionStoreType == StoreType.Object || transactionStoreType == StoreType.All)
                 {
-                    if (objectStoreSession == null)
+                    if (objectStoreBasicContext.IsNull)
                         throw new Exception("Trying to perform object store transaction with object store disabled");
-
                     objectStoreLockableContext.EndLockable();
                 }
             }
@@ -212,14 +231,14 @@ namespace Garnet.server
         {
             Debug.Assert(functionsState.StoredProcMode);
             SpanByte sb = new SpanByte(input.Length, (nint)input.ptr);
-            appendOnlyFile?.Enqueue(new AofHeader { opType = AofEntryType.StoredProcedure, type = id, version = session.Version, sessionID = session.ID }, ref sb, out _);
+            appendOnlyFile?.Enqueue(new AofHeader { opType = AofEntryType.StoredProcedure, type = id, version = basicContext.Session.Version, sessionID = basicContext.Session.ID }, ref sb, out _);
         }
 
         internal void Commit(bool internal_txn = false)
         {
             if (appendOnlyFile != null && !functionsState.StoredProcMode)
             {
-                appendOnlyFile.Enqueue(new AofHeader { opType = AofEntryType.TxnCommit, version = session.Version, sessionID = session.ID }, out _);
+                appendOnlyFile.Enqueue(new AofHeader { opType = AofEntryType.TxnCommit, version = basicContext.Session.Version, sessionID = basicContext.Session.ID }, out _);
             }
             if (!internal_txn)
                 watchContainer.Reset();
@@ -232,9 +251,9 @@ namespace Garnet.server
             watchContainer.AddWatch(key, type);
 
             if (type == StoreType.Main || type == StoreType.All)
-                session.ResetModified(key.SpanByte);
-            if (type == StoreType.Object || type == StoreType.All)
-                objectStoreSession?.ResetModified(key.ToArray());
+                basicContext.ResetModified(key.SpanByte);
+            if ((type == StoreType.Object || type == StoreType.All) && !objectStoreBasicContext.IsNull)
+                objectStoreBasicContext.ResetModified(key.ToArray());
         }
 
         void UpdateTransactionStoreType(StoreType type)
@@ -275,9 +294,8 @@ namespace Garnet.server
             }
             if (transactionStoreType == StoreType.All || transactionStoreType == StoreType.Object)
             {
-                if (objectStoreSession == null)
+                if (objectStoreBasicContext.IsNull)
                     throw new Exception("Trying to perform object store transaction with object store disabled");
-
                 objectStoreLockableContext.BeginLockable();
             }
 
@@ -307,7 +325,7 @@ namespace Garnet.server
 
             if (appendOnlyFile != null && !functionsState.StoredProcMode)
             {
-                appendOnlyFile.Enqueue(new AofHeader { opType = AofEntryType.TxnStart, version = session.Version, sessionID = session.ID }, out _);
+                appendOnlyFile.Enqueue(new AofHeader { opType = AofEntryType.TxnStart, version = basicContext.Session.Version, sessionID = basicContext.Session.ID }, out _);
             }
 
             state = TxnState.Running;

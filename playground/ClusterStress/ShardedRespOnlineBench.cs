@@ -179,8 +179,8 @@ namespace Resp.benchmark
         private void UpdateSlotMap(ClusterConfiguration clusterConfig)
         {
             var nodes = clusterConfig.Nodes.ToArray();
-            primaryNodes = nodes.ToList().FindAll(p => !p.IsReplica).ToArray();
-            replicaNodes = nodes.ToList().FindAll(p => p.IsReplica).ToArray();
+            primaryNodes = [.. nodes.ToList().FindAll(p => !p.IsReplica)];
+            replicaNodes = [.. nodes.ToList().FindAll(p => p.IsReplica)];
             ushort j = 0;
             foreach (var node in nodes)
             {
@@ -398,7 +398,7 @@ namespace Resp.benchmark
             {
                 var resp = server.Execute("migrate", args);
                 if (!resp.Equals("OK"))
-                    logger?.LogError(resp.ToString());
+                    logger?.LogError("{errorMessage}", resp.ToString());
             }
             catch (Exception ex)
             {
@@ -411,7 +411,8 @@ namespace Resp.benchmark
             PrintClusterConfig();
             Console.WriteLine($"Running benchmark using {opts.Client} client type");
 
-            InitClients(clusterConfig?.Nodes.ToArray());
+            // Initialize clients to nodes using the retrieved configuration
+            InitClients([.. clusterConfig.Nodes]);
             Thread[] workers = InitializeThreadWorkers();
 
             // Start threads.
@@ -466,7 +467,7 @@ namespace Resp.benchmark
                             $"{"total_ops;",pad}" +
                             $"{"iter_tops;",pad}" +
                             $"{"tpt (Kops/sec)",pad}";
-                        logger.Log(LogLevel.Information, histogramHeader);
+                        logger.Log(LogLevel.Information, "{msg}", histogramHeader);
                     }
                 }
 
@@ -511,7 +512,7 @@ namespace Resp.benchmark
                     $"{summary.TotalCount,pad}" +
                     $"{curr_iter_ops,pad}" +
                     $"{Math.Round(BatchSize * curr_iter_ops / elapsedSecs, 2),pad}";
-                    logger.Log(LogLevel.Information, histogramOutput);
+                    logger.Log(LogLevel.Information, "{msg}", histogramOutput);
                 }
 
                 last_iter_ops = summary.TotalCount;
@@ -640,13 +641,13 @@ namespace Resp.benchmark
                     switch (op)
                     {
                         case OpType.GET:
-                            await _gcs[clientIdx].ExecuteAsync(new string[] { "GET", reqKey });
+                            await _gcs[clientIdx].ExecuteAsync(["GET", reqKey]);
                             break;
                         case OpType.SET:
-                            await _gcs[clientIdx].ExecuteAsync(new string[] { "SET", reqKey, valueData });
+                            await _gcs[clientIdx].ExecuteAsync(["SET", reqKey, valueData]);
                             break;
                         case OpType.DEL:
-                            await _gcs[clientIdx].ExecuteAsync(new string[] { "DEL", reqKey });
+                            await _gcs[clientIdx].ExecuteAsync(["DEL", reqKey]);
                             break;
                         default:
                             throw new Exception($"opType: {op} benchmark not supported with {opts.Client} ClientType!");
@@ -656,7 +657,7 @@ namespace Resp.benchmark
                 {
                     //if(e.ToString().Contains())
                     if (e.ToString().Contains("CLUSTERDOWN"))
-                        logger?.LogError(e, null);
+                        logger?.LogError(e, "An error has occurred");
                 }
 
                 long elapsed = Stopwatch.GetTimestamp() - startTimestamp;
@@ -689,13 +690,13 @@ namespace Resp.benchmark
                 switch (op)
                 {
                     case OpType.GET:
-                        _gcs[clientIdx].ExecuteBatch(new string[] { "GET", reqKey });
+                        _gcs[clientIdx].ExecuteBatch(["GET", reqKey]);
                         break;
                     case OpType.SET:
-                        _gcs[clientIdx].ExecuteBatch(new string[] { "SET", reqKey, valueData });
+                        _gcs[clientIdx].ExecuteBatch(["SET", reqKey, valueData]);
                         break;
                     case OpType.DEL:
-                        _gcs[clientIdx].ExecuteBatch(new string[] { "DEL", reqKey });
+                        _gcs[clientIdx].ExecuteBatch(["DEL", reqKey]);
                         break;
                     default:
                         throw new Exception($"opType: {op} benchmark not supported with {opts.Client} ClientType!");

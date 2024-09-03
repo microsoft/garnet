@@ -8,7 +8,7 @@ using static Tsavorite.core.Utility;
 namespace Tsavorite.core
 {
     /// <summary>Hash table entry information for a key</summary>
-    internal unsafe struct HashEntryInfo
+    public unsafe struct HashEntryInfo
     {
         /// <summary>The first bucket in this chain for this hash bucket</summary>
         internal HashBucket* firstBucket;
@@ -50,7 +50,12 @@ namespace Tsavorite.core
         /// <summary>
         /// The current address of this hash entry (which may have been updated (via CAS) in the bucket after FindTag, etc.)
         /// </summary>
-        internal readonly long CurrentAddress => new HashBucketEntry() { word = bucket->bucket_entries[slot] }.Address;
+        internal readonly long CurrentAddress
+        {
+            [MethodImpl(MethodImplOptions.AggressiveInlining)]
+            get { return new HashBucketEntry() { word = bucket->bucket_entries[slot] }.Address; }
+        }
+
         internal readonly long AbsoluteCurrentAddress => Utility.AbsoluteAddress(CurrentAddress);
 
         /// <summary>
@@ -72,7 +77,7 @@ namespace Tsavorite.core
         /// Set members to the current entry (which may have been updated (via CAS) in the bucket after FindTag, etc.)
         /// </summary>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        internal void SetToCurrent() => entry = new HashBucketEntry() { word = bucket->bucket_entries[slot] };
+        internal void SetToCurrent() => entry = new() { word = bucket->bucket_entries[slot] };
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         internal bool TryCAS(long newLogicalAddress)

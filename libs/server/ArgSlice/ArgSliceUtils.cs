@@ -13,7 +13,7 @@ namespace Garnet.server
         /// <summary>
         /// Compute hash slot of given ArgSlice
         /// </summary>
-        public static unsafe ushort HashSlot(ArgSlice argSlice)
-            => NumUtils.HashSlot(argSlice.ptr, argSlice.Length);
+        public static unsafe ushort HashSlot(ref ArgSlice argSlice)
+            => HashSlotUtils.HashSlot(argSlice.ptr, argSlice.Length);
     }
 }

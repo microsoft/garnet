@@ -8,6 +8,7 @@ using System.Text;
 using System.Threading;
 using System.Threading.Tasks;
 using Garnet.client;
+using Garnet.common;
 using Garnet.server;
 using Microsoft.Extensions.Logging;
 
@@ -22,6 +23,7 @@ namespace Garnet.cluster
         static readonly Memory<byte> NODE = "NODE"u8.ToArray();
         static readonly Memory<byte> STABLE = "STABLE"u8.ToArray();
 
+        readonly ClusterSession clusterSession;
         readonly ClusterProvider clusterProvider;
         readonly LocalServerSession localServerSession;
 
@@ -41,10 +43,16 @@ namespace Garnet.cluster
         readonly bool _replaceOption;
         readonly TimeSpan _timeout;
         readonly List<(int, int)> _slotRanges;
-        readonly List<(long, long)> _keysWithSize;
+        readonly MigratingKeysWorkingSet _keys;
+        SingleWriterMultiReaderLock _disposed;
 
         readonly HashSet<int> _sslots;
         readonly CancellationTokenSource _cts = new();
+
+        /// <summary>
+        /// Get endpoint of target node
+        /// </summary>
+        public string GetTargetEndpoint => _targetAddress + ":" + _targetPort;
 
         /// <summary>
         /// Source nodeId of migration task
@@ -73,9 +81,12 @@ namespace Garnet.cluster
 
         readonly int _clientBufferSize;
 
+        TransferOption transferOption;
+
         /// <summary>
         /// MigrateSession Constructor
         /// </summary>
+        /// <param name="clusterSession"></param>
         /// <param name="clusterProvider"></param>
         /// <param name="_targetAddress"></param>
         /// <param name="_targetPort"></param>
@@ -87,9 +98,10 @@ namespace Garnet.cluster
         /// <param name="_replaceOption"></param>
         /// <param name="_timeout"></param>
         /// <param name="_slots"></param>
-        /// <param name="keysWithSize"></param>
-        /// <param name="logger"></param>
+        /// <param name="keys"></param>
+        /// <param name="transferOption"></param>
         internal MigrateSession(
+            ClusterSession clusterSession,
             ClusterProvider clusterProvider,
             string _targetAddress,
             int _targetPort,
@@ -101,10 +113,11 @@ namespace Garnet.cluster
             bool _replaceOption,
             int _timeout,
             HashSet<int> _slots,
-            List<(long, long)> keysWithSize,
-            ILogger logger = null)
+            MigratingKeysWorkingSet keys,
+            TransferOption transferOption)
         {
-            this.logger = logger;
+            this.logger = clusterProvider.loggerFactory.CreateLogger($"MigrateSession - {GetHashCode()}"); ;
+            this.clusterSession = clusterSession;
             this.clusterProvider = clusterProvider;
             this._targetAddress = _targetAddress;
             this._targetPort = _targetPort;
@@ -117,7 +130,8 @@ namespace Garnet.cluster
             this._timeout = TimeSpan.FromMilliseconds(_timeout);
             this._sslots = _slots;
             this._slotRanges = GetRanges();
-            this._keysWithSize = keysWithSize;
+            this._keys = keys ?? new MigratingKeysWorkingSet();
+            this.transferOption = transferOption;
 
             if (clusterProvider != null)
                 localServerSession = new LocalServerSession(clusterProvider.storeWrapper);
@@ -140,6 +154,7 @@ namespace Garnet.cluster
         /// </summary>
         public void Dispose()
         {
+            if (!_disposed.TryWriteLock()) return;
             _cts?.Cancel();
             _cts?.Dispose();
             _gcs.Dispose();
@@ -184,7 +199,7 @@ namespace Garnet.cluster
         /// <returns></returns>
         private List<(int, int)> GetRanges()
         {
-            if (_sslots.Count == 1) return new List<(int, int)> { (_sslots.First(), _sslots.First()) };
+            if (_sslots.Count == 1) return new() { (_sslots.First(), _sslots.First()) };
 
             var slotRanges = new List<(int, int)>();
             var slots = _sslots.ToList();
@@ -213,11 +228,12 @@ namespace Garnet.cluster
         /// <returns></returns>
         public bool TrySetSlotRanges(string nodeid, MigrateState state)
         {
-            bool status = false;
+            var status = false;
             try
             {
-                CheckConnection();
-                Memory<byte> stateBytes = state switch
+                if (!CheckConnection())
+                    return false;
+                var stateBytes = state switch
                 {
                     MigrateState.IMPORT => IMPORTING,
                     MigrateState.STABLE => STABLE,
@@ -234,6 +250,7 @@ namespace Garnet.cluster
                         Status = MigrateState.FAIL;
                         return false;
                     }
+                    logger?.LogTrace("[Completed] SETSLOT {slots} {state} {nodeid}", ClusterManager.GetRange([.. _sslots]), state, nodeid == null ? "" : nodeid);
                     return true;
                 }, TaskContinuationOptions.OnlyOnRanToCompletion).WaitAsync(_timeout, _cts.Token).Result;
             }
@@ -249,7 +266,7 @@ namespace Garnet.cluster
         /// <summary>
         /// Reset local slot state
         /// </summary>
-        public void ResetLocalSlot() => clusterProvider.clusterManager.ResetSlotsState(_sslots);
+        public void ResetLocalSlot() => clusterProvider.clusterManager.TryResetSlotState(_sslots);
 
         /// <summary>
         /// Prepare remote node for importing
@@ -260,7 +277,7 @@ namespace Garnet.cluster
             if (!clusterProvider.clusterManager.TryPrepareSlotsForMigration(_sslots, _targetNodeId, out var resp))
             {
                 Status = MigrateState.FAIL;
-                logger?.LogError(Encoding.ASCII.GetString(resp));
+                logger?.LogError("{errorMsg}", Encoding.ASCII.GetString(resp));
                 return false;
             }
             return true;
@@ -286,7 +303,10 @@ namespace Garnet.cluster
             // Set slot at target to stable state when migrate slots fails
             // This issues a SETSLOTRANGE STABLE for the slots of the failed migration task
             if (!TrySetSlotRanges(null, MigrateState.STABLE))
+            {
+                logger?.LogError("MigrateSession.RecoverFromFailure failed to make slots STABLE");
                 return false;
+            }
 
             // Set slots at source node to their original state when migrate fails
             // This will execute the equivalent of SETSLOTRANGE STABLE for the slots of the failed migration task

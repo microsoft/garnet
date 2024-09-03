@@ -8,7 +8,7 @@ using static Tsavorite.core.Utility;
 namespace Tsavorite.core
 {
     /// <summary>
-    /// What actions to take following the RMW IFunctions method call, such as cancellation or record expiration.
+    /// What actions to take following the RMW ISessionFunctions method call, such as cancellation or record expiration.
     /// </summary>
     public enum UpsertAction
     {
@@ -24,7 +24,7 @@ namespace Tsavorite.core
     }
 
     /// <summary>
-    /// Information passed to <see cref="IFunctions{Key, Value, Input, Output, Context}"/> record-update callbacks. 
+    /// Information passed to <see cref="ISessionFunctions{Key, Value, Input, Output, Context}"/> record-update callbacks. 
     /// </summary>
     public struct UpsertInfo
     {
@@ -67,7 +67,7 @@ namespace Tsavorite.core
         public int FullValueLength { get; internal set; }
 
         /// <summary>
-        /// What actions Tsavorite should perform on a false return from the IFunctions method
+        /// What actions Tsavorite should perform on a false return from the ISessionFunctions method
         /// </summary>
         public UpsertAction Action { get; set; }
 
@@ -100,14 +100,14 @@ namespace Tsavorite.core
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         internal static unsafe void StaticClearExtraValueLength<TValue>(ref RecordInfo recordInfo, ref TValue recordValue, int usedValueLength)
         {
-            if (!recordInfo.Filler)
+            if (!recordInfo.HasFiller)
                 return;
 
             var valueAddress = (long)Unsafe.AsPointer(ref recordValue);
             int* extraLengthPtr = (int*)(valueAddress + RoundUp(usedValueLength, sizeof(int)));
 
             *extraLengthPtr = 0;
-            recordInfo.Filler = false;
+            recordInfo.ClearHasFiller();
         }
 
         /// <summary>
@@ -129,7 +129,7 @@ namespace Tsavorite.core
         {
             // Note: This is only called for variable-length types, and for those we have ensured the location of recordValue is pinned.
             long valueAddress = (long)Unsafe.AsPointer(ref recordValue);
-            Debug.Assert(!recordInfo.Filler, "Filler should have been cleared by ClearExtraValueLength()");
+            Debug.Assert(!recordInfo.HasFiller, "Filler should have been cleared by ClearExtraValueLength()");
 
             usedValueLength = RoundUp(usedValueLength, sizeof(int));
             int extraValueLength = fullValueLength - usedValueLength;
@@ -138,13 +138,13 @@ namespace Tsavorite.core
                 int* extraValueLengthPtr = (int*)(valueAddress + usedValueLength);
                 Debug.Assert(*extraValueLengthPtr == 0 || *extraValueLengthPtr == extraValueLength, "existing ExtraValueLength should be 0 or the same value");
                 *extraValueLengthPtr = extraValueLength;
-                recordInfo.Filler = true;
+                recordInfo.SetHasFiller();
             }
         }
     }
 
     /// <summary>
-    /// What actions to take following the RMW IFunctions method call, such as cancellation or record expiration.
+    /// What actions to take following the RMW ISessionFunctions method call, such as cancellation or record expiration.
     /// </summary>
     public enum RMWAction
     {
@@ -170,7 +170,7 @@ namespace Tsavorite.core
     }
 
     /// <summary>
-    /// Information passed to <see cref="IFunctions{Key, Value, Input, Output, Context}"/> record-update callbacks. 
+    /// Information passed to <see cref="ISessionFunctions{Key, Value, Input, Output, Context}"/> record-update callbacks. 
     /// </summary>
     public struct RMWInfo
     {
@@ -220,7 +220,12 @@ namespace Tsavorite.core
         public bool PreserveCopyUpdaterSourceRecord { get; set; }
 
         /// <summary>
-        /// What actions Tsavorite should perform on a false return from the IFunctions method
+        /// Whether the call is from sync or async (pending) path
+        /// </summary>
+        public bool IsFromPending { get; internal set; }
+
+        /// <summary>
+        /// What actions Tsavorite should perform on a false return from the ISessionFunctions method
         /// </summary>
         public RMWAction Action { get; set; }
 
@@ -254,7 +259,7 @@ namespace Tsavorite.core
     }
 
     /// <summary>
-    /// What actions to take following the RMW IFunctions method call, such as cancellation or record expiration.
+    /// What actions to take following the RMW ISessionFunctions method call, such as cancellation or record expiration.
     /// </summary>
     public enum DeleteAction
     {
@@ -269,7 +274,7 @@ namespace Tsavorite.core
         CancelOperation
     }
     /// <summary>
-    /// Information passed to <see cref="IFunctions{Key, Value, Input, Output, Context}"/> record-update callbacks. 
+    /// Information passed to <see cref="ISessionFunctions{Key, Value, Input, Output, Context}"/> record-update callbacks. 
     /// </summary>
     public struct DeleteInfo
     {
@@ -312,13 +317,13 @@ namespace Tsavorite.core
         public int FullValueLength { get; internal set; }
 
         /// <summary>
-        /// What actions Tsavorite should perform on a false return from the IFunctions method
+        /// What actions Tsavorite should perform on a false return from the ISessionFunctions method
         /// </summary>
         public DeleteAction Action { get; set; }
     }
 
     /// <summary>
-    /// What actions to take following the RMW IFunctions method call, such as cancellation or record expiration.
+    /// What actions to take following the RMW ISessionFunctions method call, such as cancellation or record expiration.
     /// </summary>
     public enum ReadAction
     {
@@ -339,7 +344,7 @@ namespace Tsavorite.core
     }
 
     /// <summary>
-    /// Information passed to <see cref="IFunctions{Key, Value, Input, Output, Context}"/> record-read callbacks. 
+    /// Information passed to <see cref="ISessionFunctions{Key, Value, Input, Output, Context}"/> record-read callbacks. 
     /// </summary>
     public struct ReadInfo
     {
@@ -361,7 +366,12 @@ namespace Tsavorite.core
         internal void SetRecordInfo(ref RecordInfo recordInfo) => RecordInfo = recordInfo;
 
         /// <summary>
-        /// What actions Tsavorite should perform on a false return from the IFunctions method
+        /// Whether the call is from sync or async (pending) path
+        /// </summary>
+        public bool IsFromPending { get; internal set; }
+
+        /// <summary>
+        /// What actions Tsavorite should perform on a false return from the ISessionFunctions method
         /// </summary>
         public ReadAction Action { get; set; }
     }

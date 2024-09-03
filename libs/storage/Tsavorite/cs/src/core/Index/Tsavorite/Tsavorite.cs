@@ -2,9 +2,7 @@
 // Licensed under the MIT license.
 
 using System;
-using System.Collections.Concurrent;
 using System.Collections.Generic;
-using System.Diagnostics;
 using System.IO;
 using System.Linq;
 using System.Runtime.CompilerServices;
@@ -14,15 +12,19 @@ using Microsoft.Extensions.Logging;
 
 namespace Tsavorite.core
 {
-    public partial class TsavoriteKV<Key, Value> : TsavoriteBase, IDisposable
+    /// <summary>
+    /// The Tsavorite Key/Value store class
+    /// </summary>
+    public partial class TsavoriteKV<TKey, TValue, TStoreFunctions, TAllocator> : TsavoriteBase, IDisposable
+        where TStoreFunctions : IStoreFunctions<TKey, TValue>
+        where TAllocator : IAllocator<TKey, TValue, TStoreFunctions>
     {
-        internal readonly AllocatorBase<Key, Value> hlog;
-        internal readonly AllocatorBase<Key, Value> readcache;
+        internal readonly TAllocator hlog;
+        internal readonly AllocatorBase<TKey, TValue, TStoreFunctions, TAllocator> hlogBase;
+        internal readonly TAllocator readcache;
+        internal readonly AllocatorBase<TKey, TValue, TStoreFunctions, TAllocator> readCacheBase;
 
-        /// <summary>
-        /// Compares two keys
-        /// </summary>
-        internal readonly ITsavoriteEqualityComparer<Key> comparer;
+        internal readonly TStoreFunctions storeFunctions;
 
         internal readonly bool UseReadCache;
         private readonly ReadCopyOptions ReadCopyOptions;
@@ -36,7 +38,7 @@ namespace Tsavorite.core
         /// <summary>
         /// Maximum number of memory pages ever allocated
         /// </summary>
-        public long MaxAllocatedPageCount => hlog.MaxAllocatedPageCount;
+        public long MaxAllocatedPageCount => hlogBase.MaxAllocatedPageCount;
 
         /// <summary>
         /// Size of index in #cache lines (64 bytes each)
@@ -52,101 +54,49 @@ namespace Tsavorite.core
         public long OverflowBucketAllocations => overflowBucketsAllocator.NumAllocations;
 
         /// <summary>
-        /// Comparer used by Tsavorite
-        /// </summary>
-        public ITsavoriteEqualityComparer<Key> Comparer => comparer;
-
-        /// <summary>
         /// Hybrid log used by this Tsavorite instance
         /// </summary>
-        public LogAccessor<Key, Value> Log { get; }
+        public LogAccessor<TKey, TValue, TStoreFunctions, TAllocator> Log { get; }
 
         /// <summary>
         /// Read cache used by this Tsavorite instance
         /// </summary>
-        public LogAccessor<Key, Value> ReadCache { get; }
+        public LogAccessor<TKey, TValue, TStoreFunctions, TAllocator> ReadCache { get; }
 
-        ConcurrentDictionary<int, (string, CommitPoint)> _recoveredSessions;
-        ConcurrentDictionary<string, int> _recoveredSessionNameMap;
         int maxSessionID;
 
-        internal readonly bool DoTransientLocking;  // uses LockTable
-        internal readonly bool DoRecordIsolation;  // uses RecordInfo
-        internal bool IsLocking => DoTransientLocking || DoRecordIsolation;
-        internal bool IsBucketLocking => DoTransientLocking;
         internal readonly bool CheckpointVersionSwitchBarrier;  // version switch barrier
-        internal readonly OverflowBucketLockTable<Key, Value> LockTable;
+        internal readonly OverflowBucketLockTable<TKey, TValue, TStoreFunctions, TAllocator> LockTable;
 
         internal void IncrementNumLockingSessions()
         {
             _hybridLogCheckpoint.info.manualLockingActive = true;
-            Interlocked.Increment(ref hlog.NumActiveLockingSessions);
+            Interlocked.Increment(ref hlogBase.NumActiveLockingSessions);
         }
-        internal void DecrementNumLockingSessions() => Interlocked.Decrement(ref hlog.NumActiveLockingSessions);
+        internal void DecrementNumLockingSessions() => Interlocked.Decrement(ref hlogBase.NumActiveLockingSessions);
 
         internal readonly int ThrottleCheckpointFlushDelayMs = -1;
 
-        internal RevivificationManager<Key, Value> RevivificationManager;
+        internal RevivificationManager<TKey, TValue, TStoreFunctions, TAllocator> RevivificationManager;
+
+        internal Func<AllocatorSettings, TStoreFunctions, TAllocator> allocatorFactory;
 
         /// <summary>
         /// Create TsavoriteKV instance
         /// </summary>
-        /// <param name="tsavoriteKVSettings">Config settings</param>
-        public TsavoriteKV(TsavoriteKVSettings<Key, Value> tsavoriteKVSettings) :
-            this(
-                tsavoriteKVSettings.GetIndexSizeCacheLines(), tsavoriteKVSettings.GetLogSettings(),
-                tsavoriteKVSettings.GetCheckpointSettings(), tsavoriteKVSettings.GetSerializerSettings(),
-                tsavoriteKVSettings.EqualityComparer, tsavoriteKVSettings.TryRecoverLatest, tsavoriteKVSettings.ConcurrencyControlMode,
-                null, revivificationSettings: tsavoriteKVSettings.RevivificationSettings)
-        { }
-
-        /// <summary>
-        /// Create TsavoriteKV instance
-        /// </summary>
-        /// <param name="size">Size of core index (#cache lines)</param>
-        /// <param name="logSettings">Log settings</param>
-        /// <param name="checkpointSettings">Checkpoint settings</param>
-        /// <param name="serializerSettings">Serializer settings</param>
-        /// <param name="comparer">Tsavorite equality comparer for key</param>
-        /// <param name="tryRecoverLatest">Try to recover from latest checkpoint, if any</param>
-        /// <param name="concurrencyControlMode">How Tsavorite should do record locking</param>
-        /// <param name="loggerFactory">Logger factory to create an ILogger, if one is not passed in (e.g. from <see cref="TsavoriteKVSettings{Key, Value}"/>).</param>
-        /// <param name="logger">Logger to use.</param>
-        /// <param name="revivificationSettings">Settings for recycling deleted records on the log.</param>
-        public TsavoriteKV(long size, LogSettings logSettings,
-            CheckpointSettings checkpointSettings = null, SerializerSettings<Key, Value> serializerSettings = null,
-            ITsavoriteEqualityComparer<Key> comparer = null, bool tryRecoverLatest = false,
-            ConcurrencyControlMode concurrencyControlMode = ConcurrencyControlMode.LockTable,
-            ILoggerFactory loggerFactory = null, ILogger logger = null, RevivificationSettings revivificationSettings = null)
+        /// <param name="kvSettings">Config settings</param>
+        /// <param name="storeFunctions">Store-level user function implementations</param>
+        /// <param name="allocatorFactory">Func to call to create the allocator(s, if doing readcache)</param>
+        public TsavoriteKV(KVSettings<TKey, TValue> kvSettings, TStoreFunctions storeFunctions, Func<AllocatorSettings, TStoreFunctions, TAllocator> allocatorFactory)
+            : base(kvSettings.logger ?? kvSettings.loggerFactory?.CreateLogger("TsavoriteKV Index Overflow buckets"))
         {
-            this.loggerFactory = loggerFactory;
-            this.logger = logger ?? this.loggerFactory?.CreateLogger("TsavoriteKV Constructor");
+            this.allocatorFactory = allocatorFactory;
+            loggerFactory = kvSettings.loggerFactory;
+            logger = kvSettings.logger ?? kvSettings.loggerFactory?.CreateLogger("TsavoriteKV");
 
-            if (comparer != null)
-                this.comparer = comparer;
-            else
-            {
-                if (typeof(ITsavoriteEqualityComparer<Key>).IsAssignableFrom(typeof(Key)))
-                {
-                    if (default(Key) is not null)
-                    {
-                        this.comparer = default(Key) as ITsavoriteEqualityComparer<Key>;
-                    }
-                    else if (typeof(Key).GetConstructor(Type.EmptyTypes) != null)
-                    {
-                        this.comparer = Activator.CreateInstance(typeof(Key)) as ITsavoriteEqualityComparer<Key>;
-                    }
-                }
-                else
-                {
-                    this.comparer = TsavoriteEqualityComparer.Get<Key>();
-                }
-            }
+            this.storeFunctions = storeFunctions;
 
-            DoTransientLocking = concurrencyControlMode == ConcurrencyControlMode.LockTable;
-            DoRecordIsolation = concurrencyControlMode == ConcurrencyControlMode.RecordIsolation;
-
-            checkpointSettings ??= new CheckpointSettings();
+            var checkpointSettings = kvSettings.GetCheckpointSettings() ?? new CheckpointSettings();
 
             CheckpointVersionSwitchBarrier = checkpointSettings.CheckpointVersionSwitchBarrier;
             ThrottleCheckpointFlushDelayMs = checkpointSettings.ThrottleCheckpointFlushDelayMs;
@@ -163,7 +113,9 @@ namespace Tsavorite.core
             if (checkpointSettings.CheckpointManager is null)
                 disposeCheckpointManager = true;
 
-            UseReadCache = logSettings.ReadCacheSettings is not null;
+            var logSettings = kvSettings.GetLogSettings();
+
+            UseReadCache = kvSettings.ReadCacheEnabled;
 
             ReadCopyOptions = logSettings.ReadCopyOptions;
             if (ReadCopyOptions.CopyTo == ReadCopyTo.Inherit)
@@ -174,80 +126,43 @@ namespace Tsavorite.core
             if (ReadCopyOptions.CopyFrom == ReadCopyFrom.Inherit)
                 ReadCopyOptions.CopyFrom = ReadCopyFrom.Device;
 
-            bool isFixedLenReviv = true;
+            bool isFixedLenReviv = hlog.IsFixedLength;
 
-            if (!Utility.IsBlittable<Key>() || !Utility.IsBlittable<Value>())
-            {
-                hlog = new GenericAllocator<Key, Value>(logSettings, serializerSettings, this.comparer, null, epoch, logger: logger ?? loggerFactory?.CreateLogger("GenericAllocator HybridLog"));
-                Log = new LogAccessor<Key, Value>(this, hlog);
-                if (UseReadCache)
-                {
-                    readcache = new GenericAllocator<Key, Value>(
-                        new LogSettings
-                        {
-                            LogDevice = new NullDevice(),
-                            ObjectLogDevice = new NullDevice(),
-                            PageSizeBits = logSettings.ReadCacheSettings.PageSizeBits,
-                            MemorySizeBits = logSettings.ReadCacheSettings.MemorySizeBits,
-                            SegmentSizeBits = logSettings.ReadCacheSettings.MemorySizeBits,
-                            MutableFraction = 1 - logSettings.ReadCacheSettings.SecondChanceFraction
-                        }, serializerSettings, this.comparer, ReadCacheEvict, epoch, logger: logger ?? loggerFactory?.CreateLogger("GenericAllocator ReadCache"));
-                    readcache.Initialize();
-                    ReadCache = new LogAccessor<Key, Value>(this, readcache);
-                }
-            }
-            else if (typeof(Key) == typeof(SpanByte) && typeof(Value) == typeof(SpanByte))
-            {
-                isFixedLenReviv = false;
-                var spanByteComparer = this.comparer as ITsavoriteEqualityComparer<SpanByte>;
-                hlog = new SpanByteAllocator(logSettings, spanByteComparer, null, epoch, logger: logger ?? loggerFactory?.CreateLogger("SpanByteAllocator HybridLog")) as AllocatorBase<Key, Value>;
-                Log = new LogAccessor<Key, Value>(this, hlog);
-                if (UseReadCache)
-                {
-                    readcache = new SpanByteAllocator(
-                        new LogSettings
-                        {
-                            LogDevice = new NullDevice(),
-                            PageSizeBits = logSettings.ReadCacheSettings.PageSizeBits,
-                            MemorySizeBits = logSettings.ReadCacheSettings.MemorySizeBits,
-                            SegmentSizeBits = logSettings.ReadCacheSettings.MemorySizeBits,
-                            MutableFraction = 1 - logSettings.ReadCacheSettings.SecondChanceFraction
-                        }, spanByteComparer, ReadCacheEvict, epoch, logger: logger ?? loggerFactory?.CreateLogger("SpanByteAllocator ReadCache")) as AllocatorBase<Key, Value>;
-                    readcache.Initialize();
-                    ReadCache = new LogAccessor<Key, Value>(this, readcache);
-                }
-            }
-            else
-            {
-                hlog = new BlittableAllocator<Key, Value>(logSettings, this.comparer, null, epoch, logger: logger ?? loggerFactory?.CreateLogger("BlittableAllocator HybridLog"));
-                Log = new LogAccessor<Key, Value>(this, hlog);
-                if (UseReadCache)
-                {
-                    readcache = new BlittableAllocator<Key, Value>(
-                        new LogSettings
-                        {
-                            LogDevice = new NullDevice(),
-                            PageSizeBits = logSettings.ReadCacheSettings.PageSizeBits,
-                            MemorySizeBits = logSettings.ReadCacheSettings.MemorySizeBits,
-                            SegmentSizeBits = logSettings.ReadCacheSettings.MemorySizeBits,
-                            MutableFraction = 1 - logSettings.ReadCacheSettings.SecondChanceFraction
-                        }, this.comparer, ReadCacheEvict, epoch, logger: logger ?? loggerFactory?.CreateLogger("BlittableAllocator ReadCache"));
-                    readcache.Initialize();
-                    ReadCache = new LogAccessor<Key, Value>(this, readcache);
-                }
-            }
+            // Create the allocator
+            var allocatorSettings = new AllocatorSettings(logSettings, epoch, kvSettings.logger ?? kvSettings.loggerFactory?.CreateLogger(typeof(TAllocator).Name));
+            hlog = allocatorFactory(allocatorSettings, storeFunctions);
+            hlogBase = hlog.GetBase<TAllocator>();
+            hlogBase.Initialize();
+            Log = new(this, hlog);
 
-            hlog.Initialize();
+            if (UseReadCache)
+            {
+                allocatorSettings.LogSettings = new()
+                {
+                    LogDevice = new NullDevice(),
+                    ObjectLogDevice = hlog.HasObjectLog ? new NullDevice() : null,
+                    PageSizeBits = logSettings.ReadCacheSettings.PageSizeBits,
+                    MemorySizeBits = logSettings.ReadCacheSettings.MemorySizeBits,
+                    SegmentSizeBits = logSettings.ReadCacheSettings.MemorySizeBits,
+                    MutableFraction = 1 - logSettings.ReadCacheSettings.SecondChanceFraction
+                };
+                allocatorSettings.logger = kvSettings.logger ?? kvSettings.loggerFactory?.CreateLogger($"{typeof(TAllocator).Name} ReadCache");
+                allocatorSettings.evictCallback = ReadCacheEvict;
+                readcache = allocatorFactory(allocatorSettings, storeFunctions);
+                readCacheBase = readcache.GetBase<TAllocator>();
+                readCacheBase.Initialize();
+                ReadCache = new(this, readcache);
+            }
 
             sectorSize = (int)logSettings.LogDevice.SectorSize;
-            Initialize(size, sectorSize);
+            Initialize(kvSettings.GetIndexSizeCacheLines(), sectorSize);
 
-            LockTable = new OverflowBucketLockTable<Key, Value>(concurrencyControlMode == ConcurrencyControlMode.LockTable ? this : null);
-            RevivificationManager = new(this, isFixedLenReviv, revivificationSettings, logSettings);
+            LockTable = new OverflowBucketLockTable<TKey, TValue, TStoreFunctions, TAllocator>(this);
+            RevivificationManager = new(this, isFixedLenReviv, kvSettings.RevivificationSettings, logSettings);
 
             systemState = SystemState.Make(Phase.REST, 1);
 
-            if (tryRecoverLatest)
+            if (kvSettings.TryRecoverLatest)
             {
                 try
                 {
@@ -258,10 +173,10 @@ namespace Tsavorite.core
         }
 
         /// <summary>Get the hashcode for a key.</summary>
-        public long GetKeyHash(Key key) => comparer.GetHashCode64(ref key);
+        public long GetKeyHash(TKey key) => storeFunctions.GetKeyHashCode64(ref key);
 
         /// <summary>Get the hashcode for a key.</summary>
-        public long GetKeyHash(ref Key key) => comparer.GetHashCode64(ref key);
+        public long GetKeyHash(ref TKey key) => storeFunctions.GetKeyHashCode64(ref key);
 
         /// <summary>
         /// Initiate full checkpoint
@@ -280,15 +195,15 @@ namespace Tsavorite.core
         /// </returns>
         public bool TryInitiateFullCheckpoint(out Guid token, CheckpointType checkpointType, long targetVersion = -1)
         {
-            ISynchronizationTask backend;
+            ISynchronizationTask<TKey, TValue, TStoreFunctions, TAllocator> backend;
             if (checkpointType == CheckpointType.FoldOver)
-                backend = new FoldOverCheckpointTask();
+                backend = new FoldOverCheckpointTask<TKey, TValue, TStoreFunctions, TAllocator>();
             else if (checkpointType == CheckpointType.Snapshot)
-                backend = new SnapshotCheckpointTask();
+                backend = new SnapshotCheckpointTask<TKey, TValue, TStoreFunctions, TAllocator>();
             else
                 throw new TsavoriteException("Unsupported full checkpoint type");
 
-            var result = StartStateMachine(new FullCheckpointStateMachine(backend, targetVersion));
+            var result = StartStateMachine(new FullCheckpointStateMachine<TKey, TValue, TStoreFunctions, TAllocator>(backend, targetVersion));
             if (result)
                 token = _hybridLogCheckpointToken;
             else
@@ -332,7 +247,7 @@ namespace Tsavorite.core
         /// <returns>Whether we could initiate the checkpoint. Use CompleteCheckpointAsync to wait completion.</returns>
         public bool TryInitiateIndexCheckpoint(out Guid token)
         {
-            var result = StartStateMachine(new IndexSnapshotStateMachine());
+            var result = StartStateMachine(new IndexSnapshotStateMachine<TKey, TValue, TStoreFunctions, TAllocator>());
             token = _indexCheckpointToken;
             return result;
         }
@@ -374,20 +289,20 @@ namespace Tsavorite.core
         public bool TryInitiateHybridLogCheckpoint(out Guid token, CheckpointType checkpointType, bool tryIncremental = false,
             long targetVersion = -1)
         {
-            ISynchronizationTask backend;
+            ISynchronizationTask<TKey, TValue, TStoreFunctions, TAllocator> backend;
             if (checkpointType == CheckpointType.FoldOver)
-                backend = new FoldOverCheckpointTask();
+                backend = new FoldOverCheckpointTask<TKey, TValue, TStoreFunctions, TAllocator>();
             else if (checkpointType == CheckpointType.Snapshot)
             {
-                if (tryIncremental && _lastSnapshotCheckpoint.info.guid != default && _lastSnapshotCheckpoint.info.finalLogicalAddress > hlog.FlushedUntilAddress && (hlog is not GenericAllocator<Key, Value>))
-                    backend = new IncrementalSnapshotCheckpointTask();
+                if (tryIncremental && _lastSnapshotCheckpoint.info.guid != default && _lastSnapshotCheckpoint.info.finalLogicalAddress > hlogBase.FlushedUntilAddress && !hlog.HasObjectLog)
+                    backend = new IncrementalSnapshotCheckpointTask<TKey, TValue, TStoreFunctions, TAllocator>();
                 else
-                    backend = new SnapshotCheckpointTask();
+                    backend = new SnapshotCheckpointTask<TKey, TValue, TStoreFunctions, TAllocator>();
             }
             else
                 throw new TsavoriteException("Unsupported checkpoint type");
 
-            var result = StartStateMachine(new HybridLogCheckpointStateMachine(backend, targetVersion));
+            var result = StartStateMachine(new HybridLogCheckpointStateMachine<TKey, TValue, TStoreFunctions, TAllocator>(backend, targetVersion));
             token = _hybridLogCheckpointToken;
             return result;
         }
@@ -482,48 +397,7 @@ namespace Tsavorite.core
         /// <param name="undoNextVersion">Whether records with versions beyond checkpoint version need to be undone (and invalidated on log)</param>
         /// <returns>Version we actually recovered to</returns>
         public long Recover(Guid indexCheckpointToken, Guid hybridLogCheckpointToken, int numPagesToPreload = -1, bool undoNextVersion = true)
-        {
-            return InternalRecover(indexCheckpointToken, hybridLogCheckpointToken, numPagesToPreload, undoNextVersion, -1);
-        }
-
-        /// <summary>
-        /// Enumerate all currently recoverable sessions
-        /// </summary>
-        public IEnumerable<(int, string, CommitPoint)> RecoverableSessions
-        {
-            get
-            {
-                if (_recoveredSessions != null)
-                {
-                    foreach (var kvp in _recoveredSessions)
-                    {
-                        yield return (kvp.Key, kvp.Value.Item1, kvp.Value.Item2);
-                    }
-                }
-            }
-        }
-
-        /// <summary>
-        /// Dispose recoverable session with given ID, use RecoverableSessions to get recoverable session details
-        /// </summary>
-        /// <param name="sessionID"></param>
-        public void DisposeRecoverableSession(int sessionID)
-        {
-            if (_recoveredSessions != null && _recoveredSessions.TryRemove(sessionID, out var entry))
-            {
-                if (entry.Item1 != null)
-                    _recoveredSessionNameMap.TryRemove(entry.Item1, out _);
-            }
-        }
-
-        /// <summary>
-        /// Dispose (all) recoverable sessions
-        /// </summary>
-        public void DisposeRecoverableSessions()
-        {
-            _recoveredSessions = null;
-            _recoveredSessionNameMap = null;
-        }
+            => InternalRecover(indexCheckpointToken, hybridLogCheckpointToken, numPagesToPreload, undoNextVersion, -1);
 
         /// <summary>
         /// Asynchronously recover from specific index and log token (blocking operation)
@@ -560,7 +434,7 @@ namespace Tsavorite.core
                 try
                 {
                     epoch.Resume();
-                    ThreadStateMachineStep<Empty, Empty, Empty, NullTsavoriteSession>(null, NullTsavoriteSession.Instance, valueTasks, token);
+                    ThreadStateMachineStep<Empty, Empty, Empty, NullSession>(null, NullSession.Instance, valueTasks, token);
                 }
                 catch (Exception)
                 {
@@ -588,153 +462,133 @@ namespace Tsavorite.core
         }
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        internal Status ContextRead<Input, Output, Context, TsavoriteSession>(ref Key key, ref Input input, ref Output output, Context context, TsavoriteSession tsavoriteSession, long serialNo)
-            where TsavoriteSession : ITsavoriteSession<Key, Value, Input, Output, Context>
+        internal Status ContextRead<TInput, TOutput, TContext, TSessionFunctionsWrapper>(ref TKey key, ref TInput input, ref TOutput output, TContext context, TSessionFunctionsWrapper sessionFunctions)
+            where TSessionFunctionsWrapper : ISessionFunctionsWrapper<TKey, TValue, TInput, TOutput, TContext, TStoreFunctions, TAllocator>
         {
-            var pcontext = new PendingContext<Input, Output, Context>(tsavoriteSession.Ctx.ReadCopyOptions);
+            var pcontext = new PendingContext<TInput, TOutput, TContext>(sessionFunctions.Ctx.ReadCopyOptions);
             OperationStatus internalStatus;
-            var keyHash = comparer.GetHashCode64(ref key);
+            var keyHash = storeFunctions.GetKeyHashCode64(ref key);
 
             do
-                internalStatus = InternalRead(ref key, keyHash, ref input, ref output, context, serialNo, ref pcontext, tsavoriteSession);
-            while (HandleImmediateRetryStatus(internalStatus, tsavoriteSession, ref pcontext));
+                internalStatus = InternalRead(ref key, keyHash, ref input, ref output, context, ref pcontext, sessionFunctions);
+            while (HandleImmediateRetryStatus(internalStatus, sessionFunctions, ref pcontext));
 
-            var status = HandleOperationStatus(tsavoriteSession.Ctx, ref pcontext, internalStatus);
+            var status = HandleOperationStatus(sessionFunctions.Ctx, ref pcontext, internalStatus);
 
-            Debug.Assert(serialNo >= tsavoriteSession.Ctx.serialNum, "Operation serial numbers must be non-decreasing");
-            tsavoriteSession.Ctx.serialNum = serialNo;
             return status;
         }
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        internal Status ContextRead<Input, Output, Context, TsavoriteSession>(ref Key key, ref Input input, ref Output output, ref ReadOptions readOptions, out RecordMetadata recordMetadata, Context context,
-                TsavoriteSession tsavoriteSession, long serialNo)
-            where TsavoriteSession : ITsavoriteSession<Key, Value, Input, Output, Context>
+        internal Status ContextRead<TInput, TOutput, TContext, TSessionFunctionsWrapper>(ref TKey key, ref TInput input, ref TOutput output, ref ReadOptions readOptions, out RecordMetadata recordMetadata, TContext context,
+                TSessionFunctionsWrapper sessionFunctions)
+            where TSessionFunctionsWrapper : ISessionFunctionsWrapper<TKey, TValue, TInput, TOutput, TContext, TStoreFunctions, TAllocator>
         {
-            var pcontext = new PendingContext<Input, Output, Context>(tsavoriteSession.Ctx.ReadCopyOptions, ref readOptions);
+            var pcontext = new PendingContext<TInput, TOutput, TContext>(sessionFunctions.Ctx.ReadCopyOptions, ref readOptions);
             OperationStatus internalStatus;
-            var keyHash = readOptions.KeyHash ?? comparer.GetHashCode64(ref key);
+            var keyHash = readOptions.KeyHash ?? storeFunctions.GetKeyHashCode64(ref key);
 
             do
-                internalStatus = InternalRead(ref key, keyHash, ref input, ref output, context, serialNo, ref pcontext, tsavoriteSession);
-            while (HandleImmediateRetryStatus(internalStatus, tsavoriteSession, ref pcontext));
+                internalStatus = InternalRead(ref key, keyHash, ref input, ref output, context, ref pcontext, sessionFunctions);
+            while (HandleImmediateRetryStatus(internalStatus, sessionFunctions, ref pcontext));
 
-            var status = HandleOperationStatus(tsavoriteSession.Ctx, ref pcontext, internalStatus);
+            var status = HandleOperationStatus(sessionFunctions.Ctx, ref pcontext, internalStatus);
             recordMetadata = status.IsCompletedSuccessfully ? new(pcontext.recordInfo, pcontext.logicalAddress) : default;
-
-            Debug.Assert(serialNo >= tsavoriteSession.Ctx.serialNum, "Operation serial numbers must be non-decreasing");
-            tsavoriteSession.Ctx.serialNum = serialNo;
             return status;
         }
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        internal Status ContextReadAtAddress<Input, Output, Context, TsavoriteSession>(long address, ref Input input, ref Output output, ref ReadOptions readOptions, out RecordMetadata recordMetadata, Context context, long serialNo, TsavoriteSession tsavoriteSession)
-            where TsavoriteSession : ITsavoriteSession<Key, Value, Input, Output, Context>
+        internal Status ContextReadAtAddress<TInput, TOutput, TContext, TSessionFunctionsWrapper>(long address, ref TInput input, ref TOutput output, ref ReadOptions readOptions, out RecordMetadata recordMetadata, TContext context, TSessionFunctionsWrapper sessionFunctions)
+            where TSessionFunctionsWrapper : ISessionFunctionsWrapper<TKey, TValue, TInput, TOutput, TContext, TStoreFunctions, TAllocator>
         {
-            var pcontext = new PendingContext<Input, Output, Context>(tsavoriteSession.Ctx.ReadCopyOptions, ref readOptions, noKey: true);
-            Key key = default;
-            return ContextReadAtAddress(address, ref key, ref input, ref output, ref readOptions, out recordMetadata, serialNo, context, ref pcontext, tsavoriteSession);
+            var pcontext = new PendingContext<TInput, TOutput, TContext>(sessionFunctions.Ctx.ReadCopyOptions, ref readOptions, noKey: true);
+            TKey key = default;
+            return ContextReadAtAddress(address, ref key, ref input, ref output, ref readOptions, out recordMetadata, context, ref pcontext, sessionFunctions);
         }
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        internal Status ContextReadAtAddress<Input, Output, Context, TsavoriteSession>(long address, ref Key key, ref Input input, ref Output output, ref ReadOptions readOptions, out RecordMetadata recordMetadata, Context context, long serialNo, TsavoriteSession tsavoriteSession)
-            where TsavoriteSession : ITsavoriteSession<Key, Value, Input, Output, Context>
+        internal Status ContextReadAtAddress<TInput, TOutput, TContext, TSessionFunctionsWrapper>(long address, ref TKey key, ref TInput input, ref TOutput output, ref ReadOptions readOptions, out RecordMetadata recordMetadata, TContext context, TSessionFunctionsWrapper sessionFunctions)
+            where TSessionFunctionsWrapper : ISessionFunctionsWrapper<TKey, TValue, TInput, TOutput, TContext, TStoreFunctions, TAllocator>
         {
-            var pcontext = new PendingContext<Input, Output, Context>(tsavoriteSession.Ctx.ReadCopyOptions, ref readOptions, noKey: false);
-            return ContextReadAtAddress(address, ref key, ref input, ref output, ref readOptions, out recordMetadata, serialNo, context, ref pcontext, tsavoriteSession);
+            var pcontext = new PendingContext<TInput, TOutput, TContext>(sessionFunctions.Ctx.ReadCopyOptions, ref readOptions, noKey: false);
+            return ContextReadAtAddress(address, ref key, ref input, ref output, ref readOptions, out recordMetadata, context, ref pcontext, sessionFunctions);
         }
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        private Status ContextReadAtAddress<Input, Output, Context, TsavoriteSession>(long address, ref Key key, ref Input input, ref Output output, ref ReadOptions readOptions, out RecordMetadata recordMetadata, long serialNo,
-                Context context, ref PendingContext<Input, Output, Context> pcontext, TsavoriteSession tsavoriteSession)
-            where TsavoriteSession : ITsavoriteSession<Key, Value, Input, Output, Context>
+        private Status ContextReadAtAddress<TInput, TOutput, TContext, TSessionFunctionsWrapper>(long address, ref TKey key, ref TInput input, ref TOutput output, ref ReadOptions readOptions, out RecordMetadata recordMetadata,
+                TContext context, ref PendingContext<TInput, TOutput, TContext> pcontext, TSessionFunctionsWrapper sessionFunctions)
+            where TSessionFunctionsWrapper : ISessionFunctionsWrapper<TKey, TValue, TInput, TOutput, TContext, TStoreFunctions, TAllocator>
         {
             OperationStatus internalStatus;
             do
-                internalStatus = InternalReadAtAddress(address, ref key, ref input, ref output, ref readOptions, context, serialNo, ref pcontext, tsavoriteSession);
-            while (HandleImmediateRetryStatus(internalStatus, tsavoriteSession, ref pcontext));
+                internalStatus = InternalReadAtAddress(address, ref key, ref input, ref output, ref readOptions, context, ref pcontext, sessionFunctions);
+            while (HandleImmediateRetryStatus(internalStatus, sessionFunctions, ref pcontext));
 
-            var status = HandleOperationStatus(tsavoriteSession.Ctx, ref pcontext, internalStatus);
+            var status = HandleOperationStatus(sessionFunctions.Ctx, ref pcontext, internalStatus);
             recordMetadata = status.IsCompletedSuccessfully ? new(pcontext.recordInfo, pcontext.logicalAddress) : default;
-
-            Debug.Assert(serialNo >= tsavoriteSession.Ctx.serialNum, "Operation serial numbers must be non-decreasing");
-            tsavoriteSession.Ctx.serialNum = serialNo;
             return status;
         }
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        internal Status ContextUpsert<Input, Output, Context, TsavoriteSession>(ref Key key, long keyHash, ref Input input, ref Value value, ref Output output, Context context, TsavoriteSession tsavoriteSession, long serialNo)
-            where TsavoriteSession : ITsavoriteSession<Key, Value, Input, Output, Context>
+        internal Status ContextUpsert<TInput, TOutput, TContext, TSessionFunctionsWrapper>(ref TKey key, long keyHash, ref TInput input, ref TValue value, ref TOutput output, TContext context, TSessionFunctionsWrapper sessionFunctions)
+            where TSessionFunctionsWrapper : ISessionFunctionsWrapper<TKey, TValue, TInput, TOutput, TContext, TStoreFunctions, TAllocator>
         {
-            var pcontext = default(PendingContext<Input, Output, Context>);
+            var pcontext = default(PendingContext<TInput, TOutput, TContext>);
             OperationStatus internalStatus;
 
             do
-                internalStatus = InternalUpsert(ref key, keyHash, ref input, ref value, ref output, ref context, ref pcontext, tsavoriteSession, serialNo);
-            while (HandleImmediateRetryStatus(internalStatus, tsavoriteSession, ref pcontext));
+                internalStatus = InternalUpsert(ref key, keyHash, ref input, ref value, ref output, ref context, ref pcontext, sessionFunctions);
+            while (HandleImmediateRetryStatus(internalStatus, sessionFunctions, ref pcontext));
 
-            var status = HandleOperationStatus(tsavoriteSession.Ctx, ref pcontext, internalStatus);
-
-            Debug.Assert(serialNo >= tsavoriteSession.Ctx.serialNum, "Operation serial numbers must be non-decreasing");
-            tsavoriteSession.Ctx.serialNum = serialNo;
+            var status = HandleOperationStatus(sessionFunctions.Ctx, ref pcontext, internalStatus);
             return status;
         }
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        internal Status ContextUpsert<Input, Output, Context, TsavoriteSession>(ref Key key, long keyHash, ref Input input, ref Value value, ref Output output, out RecordMetadata recordMetadata,
-                                                                            Context context, TsavoriteSession tsavoriteSession, long serialNo)
-            where TsavoriteSession : ITsavoriteSession<Key, Value, Input, Output, Context>
+        internal Status ContextUpsert<TInput, TOutput, TContext, TSessionFunctionsWrapper>(ref TKey key, long keyHash, ref TInput input, ref TValue value, ref TOutput output, out RecordMetadata recordMetadata,
+                                                                            TContext context, TSessionFunctionsWrapper sessionFunctions)
+            where TSessionFunctionsWrapper : ISessionFunctionsWrapper<TKey, TValue, TInput, TOutput, TContext, TStoreFunctions, TAllocator>
         {
-            var pcontext = default(PendingContext<Input, Output, Context>);
+            var pcontext = default(PendingContext<TInput, TOutput, TContext>);
             OperationStatus internalStatus;
 
             do
-                internalStatus = InternalUpsert(ref key, keyHash, ref input, ref value, ref output, ref context, ref pcontext, tsavoriteSession, serialNo);
-            while (HandleImmediateRetryStatus(internalStatus, tsavoriteSession, ref pcontext));
+                internalStatus = InternalUpsert(ref key, keyHash, ref input, ref value, ref output, ref context, ref pcontext, sessionFunctions);
+            while (HandleImmediateRetryStatus(internalStatus, sessionFunctions, ref pcontext));
 
-            var status = HandleOperationStatus(tsavoriteSession.Ctx, ref pcontext, internalStatus);
+            var status = HandleOperationStatus(sessionFunctions.Ctx, ref pcontext, internalStatus);
             recordMetadata = status.IsCompletedSuccessfully ? new(pcontext.recordInfo, pcontext.logicalAddress) : default;
-
-            Debug.Assert(serialNo >= tsavoriteSession.Ctx.serialNum, "Operation serial numbers must be non-decreasing");
-            tsavoriteSession.Ctx.serialNum = serialNo;
             return status;
         }
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        internal Status ContextRMW<Input, Output, Context, TsavoriteSession>(ref Key key, long keyHash, ref Input input, ref Output output, out RecordMetadata recordMetadata,
-                                                                          Context context, TsavoriteSession tsavoriteSession, long serialNo)
-            where TsavoriteSession : ITsavoriteSession<Key, Value, Input, Output, Context>
+        internal Status ContextRMW<TInput, TOutput, TContext, TSessionFunctionsWrapper>(ref TKey key, long keyHash, ref TInput input, ref TOutput output, out RecordMetadata recordMetadata,
+                                                                          TContext context, TSessionFunctionsWrapper sessionFunctions)
+            where TSessionFunctionsWrapper : ISessionFunctionsWrapper<TKey, TValue, TInput, TOutput, TContext, TStoreFunctions, TAllocator>
         {
-            var pcontext = default(PendingContext<Input, Output, Context>);
+            var pcontext = default(PendingContext<TInput, TOutput, TContext>);
             OperationStatus internalStatus;
 
             do
-                internalStatus = InternalRMW(ref key, keyHash, ref input, ref output, ref context, ref pcontext, tsavoriteSession, serialNo);
-            while (HandleImmediateRetryStatus(internalStatus, tsavoriteSession, ref pcontext));
+                internalStatus = InternalRMW(ref key, keyHash, ref input, ref output, ref context, ref pcontext, sessionFunctions);
+            while (HandleImmediateRetryStatus(internalStatus, sessionFunctions, ref pcontext));
 
-            var status = HandleOperationStatus(tsavoriteSession.Ctx, ref pcontext, internalStatus);
+            var status = HandleOperationStatus(sessionFunctions.Ctx, ref pcontext, internalStatus);
             recordMetadata = status.IsCompletedSuccessfully ? new(pcontext.recordInfo, pcontext.logicalAddress) : default;
-
-            Debug.Assert(serialNo >= tsavoriteSession.Ctx.serialNum, "Operation serial numbers must be non-decreasing");
-            tsavoriteSession.Ctx.serialNum = serialNo;
             return status;
         }
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        internal Status ContextDelete<Input, Output, Context, TsavoriteSession>(ref Key key, long keyHash, Context context, TsavoriteSession tsavoriteSession, long serialNo)
-            where TsavoriteSession : ITsavoriteSession<Key, Value, Input, Output, Context>
+        internal Status ContextDelete<TInput, TOutput, TContext, TSessionFunctionsWrapper>(ref TKey key, long keyHash, TContext context, TSessionFunctionsWrapper sessionFunctions)
+            where TSessionFunctionsWrapper : ISessionFunctionsWrapper<TKey, TValue, TInput, TOutput, TContext, TStoreFunctions, TAllocator>
         {
-            var pcontext = default(PendingContext<Input, Output, Context>);
+            var pcontext = default(PendingContext<TInput, TOutput, TContext>);
             OperationStatus internalStatus;
 
             do
-                internalStatus = InternalDelete(ref key, keyHash, ref context, ref pcontext, tsavoriteSession, serialNo);
-            while (HandleImmediateRetryStatus(internalStatus, tsavoriteSession, ref pcontext));
+                internalStatus = InternalDelete(ref key, keyHash, ref context, ref pcontext, sessionFunctions);
+            while (HandleImmediateRetryStatus(internalStatus, sessionFunctions, ref pcontext));
 
-            var status = HandleOperationStatus(tsavoriteSession.Ctx, ref pcontext, internalStatus);
-
-            Debug.Assert(serialNo >= tsavoriteSession.Ctx.serialNum, "Operation serial numbers must be non-decreasing");
-            tsavoriteSession.Ctx.serialNum = serialNo;
+            var status = HandleOperationStatus(sessionFunctions.Ctx, ref pcontext, internalStatus);
             return status;
         }
 
@@ -747,7 +601,7 @@ namespace Tsavorite.core
             if (epoch.ThisInstanceProtected())
                 throw new TsavoriteException("Cannot use GrowIndex when using non-async sessions");
 
-            if (!StartStateMachine(new IndexResizeStateMachine()))
+            if (!StartStateMachine(new IndexResizeStateMachine<TKey, TValue, TStoreFunctions, TAllocator>()))
                 return false;
 
             epoch.Resume();
@@ -756,15 +610,15 @@ namespace Tsavorite.core
             {
                 while (true)
                 {
-                    SystemState _systemState = SystemState.Copy(ref systemState);
+                    var _systemState = SystemState.Copy(ref systemState);
                     if (_systemState.Phase == Phase.PREPARE_GROW)
-                        ThreadStateMachineStep<Empty, Empty, Empty, NullTsavoriteSession>(null, NullTsavoriteSession.Instance, default);
+                        ThreadStateMachineStep<Empty, Empty, Empty, NullSession>(null, NullSession.Instance, default);
                     else if (_systemState.Phase == Phase.IN_PROGRESS_GROW)
                         SplitBuckets(0);
                     else if (_systemState.Phase == Phase.REST)
                         break;
                     epoch.ProtectAndDrain();
-                    Thread.Yield();
+                    _ = Thread.Yield();
                 }
             }
             finally
@@ -780,8 +634,8 @@ namespace Tsavorite.core
         public void Dispose()
         {
             Free();
-            hlog.Dispose();
-            readcache?.Dispose();
+            hlogBase.Dispose();
+            readCacheBase?.Dispose();
             LockTable.Dispose();
             _lastSnapshotCheckpoint.Dispose();
             if (disposeCheckpointManager)
@@ -799,7 +653,7 @@ namespace Tsavorite.core
             var table_size_ = state[version].size;
             var ptable_ = state[version].tableAligned;
             long total_entry_count = 0;
-            long beginAddress = hlog.BeginAddress;
+            long beginAddress = hlogBase.BeginAddress;
 
             for (long bucket = 0; bucket < table_size_; ++bucket)
             {
@@ -821,7 +675,7 @@ namespace Tsavorite.core
             var table_size_ = state[version].size;
             var ptable_ = state[version].tableAligned;
             long total_record_count = 0;
-            long beginAddress = hlog.BeginAddress;
+            long beginAddress = hlogBase.BeginAddress;
             Dictionary<int, long> histogram = new();
 
             for (long bucket = 0; bucket < table_size_; ++bucket)
@@ -835,7 +689,7 @@ namespace Tsavorite.core
                     {
                         var x = default(HashBucketEntry);
                         x.word = b.bucket_entries[bucket_entry];
-                        if (((!x.ReadCache) && (x.Address >= beginAddress)) || (x.ReadCache && (x.AbsoluteAddress >= readcache.HeadAddress)))
+                        if (((!x.ReadCache) && (x.Address >= beginAddress)) || (x.ReadCache && (x.AbsoluteAddress >= readCacheBase.HeadAddress)))
                         {
                             if (tags.Contains(x.Tag) && !x.Tentative)
                                 throw new TsavoriteException("Duplicate tag found in index");

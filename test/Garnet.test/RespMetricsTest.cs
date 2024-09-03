@@ -7,6 +7,7 @@ using System.Threading;
 using Garnet.common;
 using Microsoft.Extensions.Logging;
 using NUnit.Framework;
+using NUnit.Framework.Legacy;
 using StackExchange.Redis;
 
 namespace Garnet.test
@@ -47,7 +48,7 @@ namespace Garnet.test
             var logger = loggerFactory.CreateLogger(TestContext.CurrentContext.Test.Name);
             var infoMetrics = server.Metrics.GetInfoMetrics().ToArray();
 
-            Assert.AreNotEqual(null, infoMetrics);
+            ClassicAssert.AreNotEqual(null, infoMetrics);
             foreach (var section in infoMetrics)
             {
                 logger.LogDebug("<{sectionName}>", section.Item1);
@@ -56,9 +57,9 @@ namespace Garnet.test
                     if (section.Item1 == InfoMetricsType.STATS)
                     {
                         if (prop.Name.Equals("garnet_hit_rate"))
-                            Assert.AreEqual("0.00", prop.Value);
+                            ClassicAssert.AreEqual("0.00", prop.Value);
                         else
-                            Assert.AreEqual("0", prop.Value);
+                            ClassicAssert.AreEqual("0", prop.Value);
                     }
                     logger.LogDebug("\t {propName} : {propValue}", prop.Name, prop.Value);
                 }
@@ -66,7 +67,7 @@ namespace Garnet.test
             }
 
             var latencyMetrics = server.Metrics.GetLatencyMetrics().ToArray();
-            Assert.AreEqual(Array.Empty<(LatencyMetricsType, MetricsItem[])>(), latencyMetrics);
+            ClassicAssert.AreEqual(Array.Empty<(LatencyMetricsType, MetricsItem[])>(), latencyMetrics);
         }
 
         [Test]
@@ -80,16 +81,16 @@ namespace Garnet.test
             int opCount = 1000;
             for (int i = 0; i < opCount; i++)
             {
-                Assert.IsTrue(db.StringSet(i.ToString(), i.ToString()));
+                ClassicAssert.IsTrue(db.StringSet(i.ToString(), i.ToString()));
                 var result = (string)db.StringGet(i.ToString());
-                Assert.AreEqual(i.ToString(), result);
+                ClassicAssert.AreEqual(i.ToString(), result);
             }
 
             bool first = true;
         retry:
             Thread.Sleep(2000);
             var infoMetrics = server.Metrics.GetInfoMetrics().ToArray();
-            Assert.AreNotEqual(null, infoMetrics);
+            ClassicAssert.AreNotEqual(null, infoMetrics);
             foreach (var section in infoMetrics)
             {
                 logger.LogDebug("<{sectionName}>", section.Item1);
@@ -105,7 +106,7 @@ namespace Garnet.test
                                 first = false;
                                 goto retry;
                             }
-                            Assert.GreaterOrEqual(total_commands_processed, opCount);
+                            ClassicAssert.GreaterOrEqual(total_commands_processed, opCount);
                         }
                     }
                     logger.LogDebug("\t {propName} : {propValue}", prop.Name, prop.Value);
@@ -117,19 +118,19 @@ namespace Garnet.test
             while (latencyMetrics.Length == 0)
             {
                 Thread.Yield();
-                latencyMetrics = server.Metrics.GetLatencyMetrics(LatencyMetricsType.NET_RS_LAT).ToArray();
+                latencyMetrics = [.. server.Metrics.GetLatencyMetrics(LatencyMetricsType.NET_RS_LAT)];
             }
-            Assert.AreNotEqual(Array.Empty<(LatencyMetricsType, MetricsItem[])>(), latencyMetrics);
-            Assert.AreEqual(8, latencyMetrics.Length);
+            ClassicAssert.AreNotEqual(Array.Empty<(LatencyMetricsType, MetricsItem[])>(), latencyMetrics);
+            ClassicAssert.AreEqual(8, latencyMetrics.Length);
 
-            Assert.AreEqual("calls", latencyMetrics[0].Name);
-            Assert.AreEqual("min", latencyMetrics[1].Name);
-            Assert.AreEqual("5th", latencyMetrics[2].Name);
-            Assert.AreEqual("50th", latencyMetrics[3].Name);
-            Assert.AreEqual("mean", latencyMetrics[4].Name);
-            Assert.AreEqual("95th", latencyMetrics[5].Name);
-            Assert.AreEqual("99th", latencyMetrics[6].Name);
-            Assert.AreEqual("99.9th", latencyMetrics[7].Name);
+            ClassicAssert.AreEqual("calls", latencyMetrics[0].Name);
+            ClassicAssert.AreEqual("min", latencyMetrics[1].Name);
+            ClassicAssert.AreEqual("5th", latencyMetrics[2].Name);
+            ClassicAssert.AreEqual("50th", latencyMetrics[3].Name);
+            ClassicAssert.AreEqual("mean", latencyMetrics[4].Name);
+            ClassicAssert.AreEqual("95th", latencyMetrics[5].Name);
+            ClassicAssert.AreEqual("99th", latencyMetrics[6].Name);
+            ClassicAssert.AreEqual("99.9th", latencyMetrics[7].Name);
 
         }
     }

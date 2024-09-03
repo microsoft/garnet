@@ -3,16 +3,21 @@
 
 using System.IO;
 using NUnit.Framework;
+using NUnit.Framework.Legacy;
 using Tsavorite.core;
 using static Tsavorite.test.TestUtils;
 
 namespace Tsavorite.test
 {
+    using ClassAllocator = GenericAllocator<MyKey, MyValue, StoreFunctions<MyKey, MyValue, MyKey.Comparer, DefaultRecordDisposer<MyKey, MyValue>>>;
+    using ClassStoreFunctions = StoreFunctions<MyKey, MyValue, MyKey.Comparer, DefaultRecordDisposer<MyKey, MyValue>>;
+
     [TestFixture]
     internal class GenericLogCompactionTests
     {
-        private TsavoriteKV<MyKey, MyValue> store;
-        private ClientSession<MyKey, MyValue, MyInput, MyOutput, int, MyFunctionsDelete> session;
+        private TsavoriteKV<MyKey, MyValue, ClassStoreFunctions, ClassAllocator> store;
+        private ClientSession<MyKey, MyValue, MyInput, MyOutput, int, MyFunctionsDelete, ClassStoreFunctions, ClassAllocator> session;
+        private BasicContext<MyKey, MyValue, MyInput, MyOutput, int, MyFunctionsDelete, ClassStoreFunctions, ClassAllocator> bContext;
         private IDevice log, objlog;
 
         [SetUp]
@@ -21,17 +26,19 @@ namespace Tsavorite.test
             // Clean up log files from previous test runs in case they weren't cleaned up
             DeleteDirectory(MethodTestDir, wait: true);
 
+            var kvSettings = new KVSettings<MyKey, MyValue>()
+            {
+                IndexSize = 1L << 13,
+                MutableFraction = 0.1,
+                MemorySize = 1L << 14,
+                PageSize = 1L << 9
+            };
+
             if (TestContext.CurrentContext.Test.Arguments.Length == 0)
             {
                 // Default log creation
                 log = Devices.CreateLogDevice(Path.Join(MethodTestDir, "GenericLogCompactionTests.log"), deleteOnClose: true);
                 objlog = Devices.CreateLogDevice(Path.Join(MethodTestDir, "GenericLogCompactionTests.obj.log"), deleteOnClose: true);
-
-                store = new TsavoriteKV<MyKey, MyValue>
-                    (128,
-                    logSettings: new LogSettings { LogDevice = log, ObjectLogDevice = objlog, MutableFraction = 0.1, MemorySizeBits = 14, PageSizeBits = 9 },
-                    serializerSettings: new SerializerSettings<MyKey, MyValue> { keySerializer = () => new MyKeySerializer(), valueSerializer = () => new MyValueSerializer() }
-                    );
             }
             else
             {
@@ -42,13 +49,19 @@ namespace Tsavorite.test
                 log = CreateTestDevice(deviceType, Path.Join(MethodTestDir, $"LogCompactBasicTest_{deviceType}.log"));
                 objlog = CreateTestDevice(deviceType, Path.Join(MethodTestDir, $"LogCompactBasicTest_{deviceType}.obj.log"));
 
-                store = new TsavoriteKV<MyKey, MyValue>
-                    (128,
-                    logSettings: new LogSettings { LogDevice = log, ObjectLogDevice = objlog, MutableFraction = 0.1, MemorySizeBits = 14, PageSizeBits = 9, SegmentSizeBits = 22 },
-                    serializerSettings: new SerializerSettings<MyKey, MyValue> { keySerializer = () => new MyKeySerializer(), valueSerializer = () => new MyValueSerializer() }
-                    );
+                kvSettings.SegmentSize = 1L << 22;
             }
+
+            kvSettings.LogDevice = log;
+            kvSettings.ObjectLogDevice = objlog;
+
+            store = new(kvSettings
+                , StoreFunctions<MyKey, MyValue>.Create(new MyKey.Comparer(), () => new MyKeySerializer(), () => new MyValueSerializer(), DefaultRecordDisposer<MyKey, MyValue>.Instance)
+                , (allocatorSettings, storeFunctions) => new(allocatorSettings, storeFunctions)
+            );
+
             session = store.NewSession<MyInput, MyOutput, int, MyFunctionsDelete>(new MyFunctionsDelete());
+            bContext = session.BasicContext;
         }
 
         [TearDown]
@@ -84,12 +97,12 @@ namespace Tsavorite.test
 
                 var key1 = new MyKey { key = i };
                 var value = new MyValue { value = i };
-                session.Upsert(ref key1, ref value, 0, 0);
+                _ = bContext.Upsert(ref key1, ref value, 0);
             }
 
             compactUntil = session.Compact(compactUntil, compactionType);
             store.Log.Truncate();
-            Assert.AreEqual(compactUntil, store.Log.BeginAddress);
+            ClassicAssert.AreEqual(compactUntil, store.Log.BeginAddress);
 
             // Read all keys - all should be present
             for (int i = 0; i < totalRecords; i++)
@@ -99,18 +112,18 @@ namespace Tsavorite.test
                 var key1 = new MyKey { key = i };
                 var value = new MyValue { value = i };
 
-                var status = session.Read(ref key1, ref input, ref output, 0, 0);
+                var status = bContext.Read(ref key1, ref input, ref output, 0);
                 if (status.IsPending)
                 {
-                    session.CompletePendingWithOutputs(out var completedOutputs, wait: true);
-                    Assert.IsTrue(completedOutputs.Next());
-                    Assert.IsTrue(completedOutputs.Current.Status.Found);
+                    _ = bContext.CompletePendingWithOutputs(out var completedOutputs, wait: true);
+                    ClassicAssert.IsTrue(completedOutputs.Next());
+                    ClassicAssert.IsTrue(completedOutputs.Current.Status.Found);
                     output = completedOutputs.Current.Output;
-                    Assert.IsFalse(completedOutputs.Next());
+                    ClassicAssert.IsFalse(completedOutputs.Next());
                     completedOutputs.Dispose();
                 }
-                Assert.IsTrue(status.Found);
-                Assert.AreEqual(value.value, output.value.value);
+                ClassicAssert.IsTrue(status.Found);
+                ClassicAssert.AreEqual(value.value, output.value.value);
             }
         }
 
@@ -131,7 +144,7 @@ namespace Tsavorite.test
 
                 var key1 = new MyKey { key = i };
                 var value = new MyValue { value = i };
-                session.Upsert(ref key1, ref value, 0, 0);
+                _ = bContext.Upsert(ref key1, ref value, 0);
             }
 
             // Put fresh entries for 1000 records
@@ -139,7 +152,7 @@ namespace Tsavorite.test
             {
                 var key1 = new MyKey { key = i };
                 var value = new MyValue { value = i };
-                session.Upsert(ref key1, ref value, 0, 0);
+                _ = bContext.Upsert(ref key1, ref value, 0);
             }
 
             store.Log.Flush(true);
@@ -147,8 +160,8 @@ namespace Tsavorite.test
             var tail = store.Log.TailAddress;
             compactUntil = session.Compact(compactUntil, compactionType);
             store.Log.Truncate();
-            Assert.AreEqual(compactUntil, store.Log.BeginAddress);
-            Assert.AreEqual(tail, store.Log.TailAddress);
+            ClassicAssert.AreEqual(compactUntil, store.Log.BeginAddress);
+            ClassicAssert.AreEqual(tail, store.Log.TailAddress);
 
             // Read 2000 keys - all should be present
             for (int i = 0; i < totalRecords; i++)
@@ -157,13 +170,13 @@ namespace Tsavorite.test
                 var key1 = new MyKey { key = i };
                 var value = new MyValue { value = i };
 
-                var status = session.Read(ref key1, ref input, ref output, 0, 0);
+                var status = bContext.Read(ref key1, ref input, ref output, 0);
                 if (status.IsPending)
-                    session.CompletePending(true);
+                    _ = bContext.CompletePending(true);
                 else
                 {
-                    Assert.IsTrue(status.Found);
-                    Assert.AreEqual(value.value, output.value.value);
+                    ClassicAssert.IsTrue(status.Found);
+                    ClassicAssert.AreEqual(value.value, output.value.value);
                 }
             }
         }
@@ -186,19 +199,19 @@ namespace Tsavorite.test
 
                 var key1 = new MyKey { key = i };
                 var value = new MyValue { value = i };
-                session.Upsert(ref key1, ref value, 0, 0);
+                _ = bContext.Upsert(ref key1, ref value, 0);
 
                 if (i % 8 == 0)
                 {
                     int j = i / 4;
                     key1 = new MyKey { key = j };
-                    session.Delete(ref key1, 0, 0);
+                    _ = bContext.Delete(ref key1);
                 }
             }
 
             compactUntil = session.Compact(compactUntil, compactionType);
             store.Log.Truncate();
-            Assert.AreEqual(compactUntil, store.Log.BeginAddress);
+            ClassicAssert.AreEqual(compactUntil, store.Log.BeginAddress);
 
             // Read keys - all should be present
             for (int i = 0; i < totalRecords; i++)
@@ -209,19 +222,19 @@ namespace Tsavorite.test
 
                 int ctx = ((i < 500) && (i % 2 == 0)) ? 1 : 0;
 
-                var status = session.Read(ref key1, ref input, ref output, ctx, 0);
+                var status = bContext.Read(ref key1, ref input, ref output, ctx);
                 if (status.IsPending)
-                    session.CompletePending(true);
+                    _ = bContext.CompletePending(true);
                 else
                 {
                     if (ctx == 0)
                     {
-                        Assert.IsTrue(status.Found);
-                        Assert.AreEqual(value.value, output.value.value);
+                        ClassicAssert.IsTrue(status.Found);
+                        ClassicAssert.AreEqual(value.value, output.value.value);
                     }
                     else
                     {
-                        Assert.IsFalse(status.Found);
+                        ClassicAssert.IsFalse(status.Found);
                     }
                 }
             }
@@ -245,12 +258,12 @@ namespace Tsavorite.test
 
                 var key1 = new MyKey { key = i };
                 var value = new MyValue { value = i };
-                session.Upsert(ref key1, ref value, 0, 0);
+                _ = bContext.Upsert(ref key1, ref value, 0);
             }
 
             compactUntil = session.Compact(compactUntil, compactionType, default(EvenCompactionFunctions));
             store.Log.Truncate();
-            Assert.AreEqual(compactUntil, store.Log.BeginAddress);
+            ClassicAssert.AreEqual(compactUntil, store.Log.BeginAddress);
 
             // Read 2000 keys - all should be present
             for (var i = 0; i < totalRecords; i++)
@@ -261,21 +274,21 @@ namespace Tsavorite.test
 
                 var ctx = (i < (totalRecords / 2) && (i % 2 != 0)) ? 1 : 0;
 
-                var status = session.Read(ref key1, ref input, ref output, ctx, 0);
+                var status = bContext.Read(ref key1, ref input, ref output, ctx);
                 if (status.IsPending)
                 {
-                    session.CompletePending(true);
+                    _ = bContext.CompletePending(true);
                 }
                 else
                 {
                     if (ctx == 0)
                     {
-                        Assert.IsTrue(status.Found);
-                        Assert.AreEqual(value.value, output.value.value);
+                        ClassicAssert.IsTrue(status.Found);
+                        ClassicAssert.AreEqual(value.value, output.value.value);
                     }
                     else
                     {
-                        Assert.IsFalse(status.Found);
+                        ClassicAssert.IsFalse(status.Found);
                     }
                 }
             }
@@ -295,12 +308,12 @@ namespace Tsavorite.test
             var key = new MyKey { key = 100 };
             var value = new MyValue { value = 20 };
 
-            session.Upsert(ref key, ref value, 0, 0);
+            _ = bContext.Upsert(ref key, ref value, 0);
 
             store.Log.Flush(true);
 
             value = new MyValue { value = 21 };
-            session.Upsert(ref key, ref value, 0, 0);
+            _ = bContext.Upsert(ref key, ref value, 0);
 
             store.Log.Flush(true);
 
@@ -310,14 +323,14 @@ namespace Tsavorite.test
 
             var input = default(MyInput);
             var output = default(MyOutput);
-            var status = session.Read(ref key, ref input, ref output, 0, 0);
+            var status = bContext.Read(ref key, ref input, ref output);
             if (status.IsPending)
             {
-                session.CompletePendingWithOutputs(out var outputs, wait: true);
+                ClassicAssert.IsTrue(bContext.CompletePendingWithOutputs(out var outputs, wait: true));
                 (status, output) = GetSinglePendingResult(outputs);
             }
-            Assert.IsTrue(status.Found);
-            Assert.AreEqual(value.value, output.value.value);
+            ClassicAssert.IsTrue(status.Found);
+            ClassicAssert.AreEqual(value.value, output.value.value);
         }
 
         private class Test2CompactionFunctions : ICompactionFunctions<MyKey, MyValue>
@@ -327,8 +340,7 @@ namespace Tsavorite.test
 
         private struct EvenCompactionFunctions : ICompactionFunctions<MyKey, MyValue>
         {
-            public bool IsDeleted(ref MyKey key, ref MyValue value) => value.value % 2 != 0;
+            public readonly bool IsDeleted(ref MyKey key, ref MyValue value) => value.value % 2 != 0;
         }
-
     }
 }

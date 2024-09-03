@@ -29,8 +29,17 @@ RUN dotnet publish -a $TARGETARCH -c Release -o /app --no-restore --self-contain
 
 # Final stage/image
 FROM mcr.microsoft.com/dotnet/runtime:8.0-jammy AS runtime
+
+# Install libaio
+RUN apt-get update && apt-get install -y libaio1 && rm -rf /var/lib/apt/lists/*
+
+RUN mkdir /data /app \
+    && chown -R $APP_UID:$APP_UID /data /app
+
+VOLUME /data
+
 WORKDIR /app
-COPY --from=build /app .
+COPY --from=build --chown=$APP_UID:$APP_UID /app /app
 
 # Run container as a non-root user
 USER $APP_UID
@@ -38,5 +47,4 @@ USER $APP_UID
 # For inter-container communication.
 EXPOSE 6379
 
-# Run GarnetServer with an index size of 128MB
-ENTRYPOINT ["./GarnetServer", "-i", "128m", "--port", "6379"]
+ENTRYPOINT ["/app/GarnetServer"]

@@ -144,7 +144,7 @@ namespace Garnet.cluster
         {
             conn = null;
             if (_disposed) return false;
-            for (int i = 0; i < numConnection; i++)
+            for (var i = 0; i < numConnection; i++)
             {
                 var _conn = connections[i];
                 if (_conn.NodeId.Equals(nodeId, StringComparison.OrdinalIgnoreCase))
@@ -233,24 +233,19 @@ namespace Garnet.cluster
         /// Populate metrics related to link connection status.
         /// </summary>
         /// <param name="nodeId">Node-id to search for.</param>
-        /// <param name="linkStatus">Metrics info to retrieve for connection.</param>
+        /// <param name="info">Connection info corresponding to specified connection.</param>
         /// <returns></returns>
-        public bool GetConnectionInfo(string nodeId, ref MetricsItem[] linkStatus)
+        public bool GetConnectionInfo(string nodeId, out ConnectionInfo info)
         {
             try
             {
                 _lock.ReadLock();
                 if (UnsafeGetConnection(nodeId, out var conn))
                 {
-                    var nowTicks = DateTimeOffset.UtcNow.Ticks;
-                    var last_io_seconds = conn.GossipRecv == -1 ? -1 : nowTicks - conn.GossipSend;
-                    last_io_seconds = last_io_seconds < 0 ? 0 : TimeSpan.FromTicks(last_io_seconds).Seconds;
-                    var connection_status = conn.IsConnected ? "up" : "down";
-                    linkStatus[0] = new("master_link_status", connection_status);
-                    linkStatus[1] = new("master_last_io_seconds_ago", last_io_seconds.ToString());
+                    info = conn.GetConnectionInfo();
                     return true;
                 }
-
+                info = new ConnectionInfo();
             }
             finally
             {

@@ -6,22 +6,34 @@ using System.Collections.Generic;
 using System.IO;
 using System.Threading.Tasks;
 using NUnit.Framework;
+using NUnit.Framework.Legacy;
 using Tsavorite.core;
+using static Tsavorite.test.TestUtils;
 
 namespace Tsavorite.test.recovery.sumstore
 {
+    using LongAllocator = BlittableAllocator<long, long, StoreFunctions<long, long, LongKeyComparer, DefaultRecordDisposer<long, long>>>;
+    using LongStoreFunctions = StoreFunctions<long, long, LongKeyComparer, DefaultRecordDisposer<long, long>>;
+    using MyValueAllocator = GenericAllocator<MyValue, MyValue, StoreFunctions<MyValue, MyValue, MyValue.Comparer, DefaultRecordDisposer<MyValue, MyValue>>>;
+    using MyValueStoreFunctions = StoreFunctions<MyValue, MyValue, MyValue.Comparer, DefaultRecordDisposer<MyValue, MyValue>>;
+
+    using SpanByteStoreFunctions = StoreFunctions<SpanByte, SpanByte, SpanByteComparer, SpanByteRecordDisposer>;
+
+    using StructAllocator = BlittableAllocator<AdId, NumClicks, StoreFunctions<AdId, NumClicks, AdId.Comparer, DefaultRecordDisposer<AdId, NumClicks>>>;
+    using StructStoreFunctions = StoreFunctions<AdId, NumClicks, AdId.Comparer, DefaultRecordDisposer<AdId, NumClicks>>;
+
     [TestFixture]
     internal class DeviceTypeRecoveryTests
     {
-        internal const long numUniqueKeys = (1 << 12);
-        internal const long keySpace = (1L << 14);
-        internal const long numOps = (1L << 17);
-        internal const long completePendingInterval = (1L << 10);
-        internal const long checkpointInterval = (1L << 14);
+        internal const long NumUniqueKeys = 1L << 12;
+        internal const long KeySpace = 1L << 20;
+        internal const long NumOps = 1L << 17;
+        internal const long CompletePendingInterval = 1L << 10;
+        internal const long CheckpointInterval = 1L << 14;
 
-        private TsavoriteKV<AdId, NumClicks> store;
-        private readonly List<Guid> logTokens = new();
-        private readonly List<Guid> indexTokens = new();
+        private TsavoriteKV<AdId, NumClicks, StructStoreFunctions, StructAllocator> store;
+        private readonly List<Guid> logTokens = [];
+        private readonly List<Guid> indexTokens = [];
         private IDevice log;
 
         [SetUp]
@@ -30,15 +42,20 @@ namespace Tsavorite.test.recovery.sumstore
             // Only clean these in the initial Setup, as tests use the other Setup() overload to recover
             logTokens.Clear();
             indexTokens.Clear();
-            TestUtils.DeleteDirectory(TestUtils.MethodTestDir, true);
+            DeleteDirectory(MethodTestDir, true);
         }
 
-        private void Setup(TestUtils.DeviceType deviceType)
+        private void Setup(DeviceType deviceType)
         {
-            log = TestUtils.CreateTestDevice(deviceType, Path.Join(TestUtils.MethodTestDir, "Test.log"));
-            store = new TsavoriteKV<AdId, NumClicks>(keySpace,
-                new LogSettings { LogDevice = log, SegmentSizeBits = 25 }, //new LogSettings { LogDevice = log, MemorySizeBits = 14, PageSizeBits = 9 },  // locks ups at session.RMW line in Populate() for Local Memory
-                new CheckpointSettings { CheckpointDir = TestUtils.MethodTestDir }
+            log = CreateTestDevice(deviceType, Path.Join(MethodTestDir, "Test.log"));
+            store = new(new()
+            {
+                IndexSize = KeySpace,
+                LogDevice = log,
+                SegmentSize = 1L << 25, //MemorySize = 1L << 14, PageSize = 1L << 9,  // locks ups at session.RMW line in Populate() for Local Memory
+                CheckpointDir = MethodTestDir
+            }, StoreFunctions<AdId, NumClicks>.Create(new AdId.Comparer())
+                , (allocatorSettings, storeFunctions) => new(allocatorSettings, storeFunctions)
             );
         }
 
@@ -54,10 +71,10 @@ namespace Tsavorite.test.recovery.sumstore
 
             // Do NOT clean up here unless specified, as tests use this TearDown() to prepare for recovery
             if (deleteDir)
-                TestUtils.DeleteDirectory(TestUtils.MethodTestDir);
+                DeleteDirectory(MethodTestDir);
         }
 
-        private void PrepareToRecover(TestUtils.DeviceType deviceType)
+        private void PrepareToRecover(DeviceType deviceType)
         {
             TearDown(deleteDir: false);
             Setup(deviceType);
@@ -66,7 +83,7 @@ namespace Tsavorite.test.recovery.sumstore
         [Test]
         [Category("TsavoriteKV")]
         [Category("CheckpointRestore")]
-        public async ValueTask RecoveryTestSeparateCheckpoint([Values] bool isAsync, [Values] TestUtils.DeviceType deviceType)
+        public async ValueTask RecoveryTestSeparateCheckpoint([Values] bool isAsync, [Values] DeviceType deviceType)
         {
             Setup(deviceType);
             Populate(SeparateCheckpointAction);
@@ -83,7 +100,7 @@ namespace Tsavorite.test.recovery.sumstore
         [Category("TsavoriteKV")]
         [Category("CheckpointRestore")]
         [Category("Smoke")]
-        public async ValueTask RecoveryTestFullCheckpoint([Values] bool isAsync, [Values] TestUtils.DeviceType deviceType)
+        public async ValueTask RecoveryTestFullCheckpoint([Values] bool isAsync, [Values] DeviceType deviceType)
         {
             Setup(deviceType);
             Populate(FullCheckpointAction);
@@ -97,7 +114,7 @@ namespace Tsavorite.test.recovery.sumstore
 
         private void FullCheckpointAction(int opNum)
         {
-            if ((opNum + 1) % checkpointInterval == 0)
+            if ((opNum + 1) % CheckpointInterval == 0)
             {
                 Guid token;
                 while (!store.TryInitiateFullCheckpoint(out token, CheckpointType.Snapshot)) { }
@@ -109,10 +126,10 @@ namespace Tsavorite.test.recovery.sumstore
 
         private void SeparateCheckpointAction(int opNum)
         {
-            if ((opNum + 1) % checkpointInterval != 0)
+            if ((opNum + 1) % CheckpointInterval != 0)
                 return;
 
-            var checkpointNum = (opNum + 1) / checkpointInterval;
+            var checkpointNum = (opNum + 1) / CheckpointInterval;
             Guid token;
             if (checkpointNum % 2 == 1)
             {
@@ -130,29 +147,30 @@ namespace Tsavorite.test.recovery.sumstore
         private void Populate(Action<int> checkpointAction)
         {
             // Prepare the dataset
-            var inputArray = new AdInput[numOps];
-            for (int i = 0; i < numOps; i++)
+            var inputArray = new AdInput[NumOps];
+            for (int i = 0; i < NumOps; i++)
             {
-                inputArray[i].adId.adId = i % numUniqueKeys;
+                inputArray[i].adId.adId = i % NumUniqueKeys;
                 inputArray[i].numClicks.numClicks = 1;
             }
 
             // Register thread with Tsavorite
             using var session = store.NewSession<AdInput, Output, Empty, Functions>(new Functions());
+            var bContext = session.BasicContext;
 
             // Process the batch of input data
-            for (int i = 0; i < numOps; i++)
+            for (int i = 0; i < NumOps; i++)
             {
-                session.RMW(ref inputArray[i].adId, ref inputArray[i], Empty.Default, i);
+                _ = bContext.RMW(ref inputArray[i].adId, ref inputArray[i], Empty.Default);
 
                 checkpointAction(i);
 
-                if (i % completePendingInterval == 0)
-                    session.CompletePending(false);
+                if (i % CompletePendingInterval == 0)
+                    _ = bContext.CompletePending(false);
             }
 
             // Make sure operations are completed
-            session.CompletePending(true);
+            _ = bContext.CompletePending(true);
         }
 
         private async ValueTask RecoverAndTestAsync(int tokenIndex, bool isAsync)
@@ -162,75 +180,35 @@ namespace Tsavorite.test.recovery.sumstore
 
             // Recover
             if (isAsync)
-                await store.RecoverAsync(indexToken, logToken);
+                _ = await store.RecoverAsync(indexToken, logToken);
             else
-                store.Recover(indexToken, logToken);
+                _ = store.Recover(indexToken, logToken);
 
             // Create array for reading
-            var inputArray = new AdInput[numUniqueKeys];
-            for (int i = 0; i < numUniqueKeys; i++)
+            var inputArray = new AdInput[NumUniqueKeys];
+            for (int i = 0; i < NumUniqueKeys; i++)
             {
                 inputArray[i].adId.adId = i;
                 inputArray[i].numClicks.numClicks = 0;
             }
 
             // Register with thread
-            var session = store.NewSession<AdInput, Output, Empty, Functions>(new Functions());
+            using var session = store.NewSession<AdInput, Output, Empty, Functions>(new Functions());
+            var bContext = session.BasicContext;
 
             AdInput input = default;
             Output output = default;
 
             // Issue read requests
-            for (var i = 0; i < numUniqueKeys; i++)
+            for (var i = 0; i < NumUniqueKeys; i++)
             {
-                var status = session.Read(ref inputArray[i].adId, ref input, ref output, Empty.Default, i);
-                Assert.IsTrue(status.Found, $"At tokenIndex {tokenIndex}, keyIndex {i}, AdId {inputArray[i].adId.adId}");
+                var status = bContext.Read(ref inputArray[i].adId, ref input, ref output, Empty.Default);
+                ClassicAssert.IsTrue(status.Found, $"At tokenIndex {tokenIndex}, keyIndex {i}, AdId {inputArray[i].adId.adId}");
                 inputArray[i].numClicks = output.value;
             }
 
             // Complete all pending requests
-            session.CompletePending(true);
-
-            // Release
-            session.Dispose();
-
-            // Test outputs
-            var checkpointInfo = default(HybridLogRecoveryInfo);
-            checkpointInfo.Recover(logToken,
-                new DeviceLogCommitCheckpointManager(
-                    new LocalStorageNamedDeviceFactory(),
-                        new DefaultCheckpointNamingScheme(
-                          new DirectoryInfo(TestUtils.MethodTestDir).FullName)));
-
-            // Compute expected array
-            long[] expected = new long[numUniqueKeys];
-            foreach (var guid in checkpointInfo.continueTokens.Keys)
-            {
-                var cp = checkpointInfo.continueTokens[guid].Item2;
-                for (long i = 0; i <= cp.UntilSerialNo; i++)
-                {
-                    var id = i % numUniqueKeys;
-                    expected[id]++;
-                }
-            }
-
-            int threadCount = 1; // single threaded test
-            int numCompleted = threadCount - checkpointInfo.continueTokens.Count;
-            for (int t = 0; t < numCompleted; t++)
-            {
-                var sno = numOps;
-                for (long i = 0; i < sno; i++)
-                {
-                    var id = i % numUniqueKeys;
-                    expected[id]++;
-                }
-            }
-
-            // Assert if expected is same as found
-            for (long i = 0; i < numUniqueKeys; i++)
-            {
-                Assert.AreEqual(expected[i], inputArray[i].numClicks.numClicks, $"At keyIndex {i}, AdId {inputArray[i].adId.adId}");
-            }
+            _ = bContext.CompletePending(true);
         }
     }
 
@@ -239,8 +217,8 @@ namespace Tsavorite.test.recovery.sumstore
     {
         const int StackAllocMax = 12;
         const int RandSeed = 101;
-        const long expectedValueBase = DeviceTypeRecoveryTests.numUniqueKeys * (DeviceTypeRecoveryTests.numOps / DeviceTypeRecoveryTests.numUniqueKeys - 1);
-        private static long ExpectedValue(int key) => expectedValueBase + key;
+        const long ExpectedValueBase = DeviceTypeRecoveryTests.NumUniqueKeys * (DeviceTypeRecoveryTests.NumOps / DeviceTypeRecoveryTests.NumUniqueKeys - 1);
+        private static long ExpectedValue(int key) => ExpectedValueBase + key;
 
         private IDisposable storeDisp;
         private Guid logToken;
@@ -249,32 +227,35 @@ namespace Tsavorite.test.recovery.sumstore
         private IDevice objlog;
         private bool smallSector;
 
-        // 'object' to avoid generic args
-        private object serializerSettingsObj;
-
         [SetUp]
         public void Setup()
         {
             smallSector = false;
-            serializerSettingsObj = null;
 
             // Only clean these in the initial Setup, as tests use the other Setup() overload to recover
             logToken = Guid.Empty;
             indexToken = Guid.Empty;
-            TestUtils.DeleteDirectory(TestUtils.MethodTestDir, true);
+            DeleteDirectory(MethodTestDir, true);
         }
 
-        private TsavoriteKV<TData, TData> Setup<TData>()
+        private TsavoriteKV<TData, TData, TStoreFunctions, TAllocator> Setup<TData, TStoreFunctions, TAllocator>(AllocatorType allocatorType, Func<TStoreFunctions> storeFunctionsCreator, Func<AllocatorSettings, TStoreFunctions, TAllocator> allocatorCreator)
+            where TStoreFunctions : IStoreFunctions<TData, TData>
+            where TAllocator : IAllocator<TData, TData, TStoreFunctions>
         {
-            log = new LocalMemoryDevice(1L << 26, 1L << 22, 2, sector_size: smallSector ? 64 : (uint)512, fileName: Path.Join(TestUtils.MethodTestDir, $"{typeof(TData).Name}.log"));
-            objlog = serializerSettingsObj is null
-                ? null
-                : new LocalMemoryDevice(1L << 26, 1L << 22, 2, fileName: Path.Join(TestUtils.MethodTestDir, $"{typeof(TData).Name}.obj.log"));
+            log = new LocalMemoryDevice(1L << 26, 1L << 22, 2, sector_size: smallSector ? 64 : (uint)512, fileName: Path.Join(MethodTestDir, $"{typeof(TData).Name}.log"));
+            objlog = allocatorType == AllocatorType.Generic
+                ? new LocalMemoryDevice(1L << 26, 1L << 22, 2, fileName: Path.Join(MethodTestDir, $"{typeof(TData).Name}.obj.log"))
+                : null;
 
-            var result = new TsavoriteKV<TData, TData>(DeviceTypeRecoveryTests.keySpace,
-                new LogSettings { LogDevice = log, ObjectLogDevice = objlog, SegmentSizeBits = 25 },
-                new CheckpointSettings { CheckpointDir = TestUtils.MethodTestDir },
-                serializerSettingsObj as SerializerSettings<TData, TData>
+            var result = new TsavoriteKV<TData, TData, TStoreFunctions, TAllocator>(new()
+            {
+                IndexSize = DeviceTypeRecoveryTests.KeySpace,
+                LogDevice = log,
+                ObjectLogDevice = objlog,
+                SegmentSize = 1L << 25,
+                CheckpointDir = MethodTestDir
+            }, storeFunctionsCreator()
+                , allocatorCreator
             );
 
             storeDisp = result;
@@ -295,19 +276,22 @@ namespace Tsavorite.test.recovery.sumstore
 
             // Do NOT clean up here unless specified, as tests use this TearDown() to prepare for recovery
             if (deleteDir)
-                TestUtils.DeleteDirectory(TestUtils.MethodTestDir);
+                DeleteDirectory(MethodTestDir);
         }
 
-        private TsavoriteKV<TData, TData> PrepareToRecover<TData>()
+        private TsavoriteKV<TData, TData, TStoreFunctions, TAllocator> PrepareToRecover<TData, TStoreFunctions, TAllocator>(AllocatorType allocatorType,
+                Func<TStoreFunctions> storeFunctionsCreator, Func<AllocatorSettings, TStoreFunctions, TAllocator> allocatorCreator)
+            where TStoreFunctions : IStoreFunctions<TData, TData>
+            where TAllocator : IAllocator<TData, TData, TStoreFunctions>
         {
             TearDown(deleteDir: false);
-            return Setup<TData>();
+            return Setup<TData, TStoreFunctions, TAllocator>(allocatorType, storeFunctionsCreator, allocatorCreator);
         }
 
         [Test]
         [Category("TsavoriteKV")]
         [Category("CheckpointRestore")]
-        public async ValueTask RecoveryTestByAllocatorType([Values] TestUtils.AllocatorType allocatorType, [Values] bool isAsync)
+        public async ValueTask RecoveryTestByAllocatorType([Values] AllocatorType allocatorType, [Values] bool isAsync)
         {
             await TestDriver(allocatorType, isAsync);
         }
@@ -315,36 +299,44 @@ namespace Tsavorite.test.recovery.sumstore
         [Test]
         [Category("TsavoriteKV")]
         [Category("CheckpointRestore")]
-        public async ValueTask RecoveryTestFailOnSectorSize([Values] TestUtils.AllocatorType allocatorType, [Values] bool isAsync)
+        public async ValueTask RecoveryTestFailOnSectorSize([Values] AllocatorType allocatorType, [Values] bool isAsync)
         {
             smallSector = true;
             await TestDriver(allocatorType, isAsync);
         }
 
-        private async ValueTask TestDriver(TestUtils.AllocatorType allocatorType, [Values] bool isAsync)
+        private async ValueTask TestDriver(AllocatorType allocatorType, [Values] bool isAsync)
         {
-            ValueTask task;
-            switch (allocatorType)
+            var task = allocatorType switch
             {
-                case TestUtils.AllocatorType.FixedBlittable:
-                    task = RunTest<long>(Populate, Read, Recover, isAsync);
-                    break;
-                case TestUtils.AllocatorType.SpanByte:
-                    task = RunTest<SpanByte>(Populate, Read, Recover, isAsync);
-                    break;
-                case TestUtils.AllocatorType.Generic:
-                    serializerSettingsObj = new MyValueSerializer();
-                    task = RunTest<MyValue>(Populate, Read, Recover, isAsync);
-                    break;
-                default:
-                    throw new ApplicationException("Unknown allocator type");
+                AllocatorType.FixedBlittable => RunTest<long, LongStoreFunctions, LongAllocator>(allocatorType,
+                                                () => StoreFunctions<long, long>.Create(LongKeyComparer.Instance),
+                                                (allocatorSettings, storeFunctions) => new(allocatorSettings, storeFunctions),
+                                                Populate, Read, Recover, isAsync),
+                AllocatorType.SpanByte => RunTest<SpanByte, SpanByteStoreFunctions, SpanByteAllocator<SpanByteStoreFunctions>>(allocatorType,
+                                                StoreFunctions<SpanByte, SpanByte>.Create,
+                                                (allocatorSettings, storeFunctions) => new(allocatorSettings, storeFunctions),
+                                                Populate, Read, Recover, isAsync),
+                AllocatorType.Generic => RunTest<MyValue, MyValueStoreFunctions, MyValueAllocator>(allocatorType,
+                                                () => StoreFunctions<MyValue, MyValue>.Create(new MyValue.Comparer(), () => new MyValueSerializer(), () => new MyValueSerializer(), DefaultRecordDisposer<MyValue, MyValue>.Instance),
+                                                (allocatorSettings, storeFunctions) => new(allocatorSettings, storeFunctions),
+                                                Populate, Read, Recover, isAsync),
+                _ => throw new ApplicationException("Unknown allocator type"),
             };
+            ;
             await task;
         }
 
-        private async ValueTask RunTest<TData>(Action<TsavoriteKV<TData, TData>> populateAction, Action<TsavoriteKV<TData, TData>> readAction, Func<TsavoriteKV<TData, TData>, bool, ValueTask> recoverFunc, bool isAsync)
+        private async ValueTask RunTest<TData, TStoreFunctions, TAllocator>(AllocatorType allocatorType,
+                Func<TStoreFunctions> storeFunctionsCreator, Func<AllocatorSettings, TStoreFunctions, TAllocator> allocatorCreator,
+                Action<TsavoriteKV<TData, TData, TStoreFunctions, TAllocator>> populateAction,
+                Action<TsavoriteKV<TData, TData, TStoreFunctions, TAllocator>> readAction,
+                Func<TsavoriteKV<TData, TData, TStoreFunctions, TAllocator>, bool, ValueTask> recoverFunc,
+                bool isAsync)
+            where TStoreFunctions : IStoreFunctions<TData, TData>
+            where TAllocator : IAllocator<TData, TData, TStoreFunctions>
         {
-            var store = Setup<TData>();
+            var store = Setup<TData, TStoreFunctions, TAllocator>(allocatorType, storeFunctionsCreator, allocatorCreator);
             populateAction(store);
             readAction(store);
             if (smallSector)
@@ -355,39 +347,42 @@ namespace Tsavorite.test.recovery.sumstore
             else
                 await Checkpoint(store, isAsync);
 
-            Assert.AreNotEqual(Guid.Empty, logToken);
-            Assert.AreNotEqual(Guid.Empty, indexToken);
+            ClassicAssert.AreNotEqual(Guid.Empty, logToken);
+            ClassicAssert.AreNotEqual(Guid.Empty, indexToken);
             readAction(store);
 
-            store = PrepareToRecover<TData>();
+            store = PrepareToRecover<TData, TStoreFunctions, TAllocator>(allocatorType, storeFunctionsCreator, allocatorCreator);
             await recoverFunc(store, isAsync);
             readAction(store);
         }
 
-        private void Populate(TsavoriteKV<long, long> store)
+        private void Populate(TsavoriteKV<long, long, LongStoreFunctions, LongAllocator> store)
         {
-            using var session = store.NewSession<long, long, Empty, SimpleFunctions<long, long>>(new SimpleFunctions<long, long>());
+            using var session = store.NewSession<long, long, Empty, SimpleSimpleFunctions<long, long>>(new SimpleSimpleFunctions<long, long>());
+            var bContext = session.BasicContext;
 
-            for (int i = 0; i < DeviceTypeRecoveryTests.numOps; i++)
-                session.Upsert(i % DeviceTypeRecoveryTests.numUniqueKeys, i);
-            session.CompletePending(true);
+            for (int i = 0; i < DeviceTypeRecoveryTests.NumOps; i++)
+                _ = bContext.Upsert(i % DeviceTypeRecoveryTests.NumUniqueKeys, i);
+            _ = bContext.CompletePending(true);
         }
 
         static int GetRandomLength(Random r) => r.Next(StackAllocMax) + 1;  // +1 to remain in range 1..StackAllocMax
 
-        private unsafe void Populate(TsavoriteKV<SpanByte, SpanByte> store)
+        private unsafe void Populate(TsavoriteKV<SpanByte, SpanByte, SpanByteStoreFunctions, SpanByteAllocator<SpanByteStoreFunctions>> store)
         {
             using var session = store.NewSession<SpanByte, int[], Empty, VLVectorFunctions>(new VLVectorFunctions());
+            var bContext = session.BasicContext;
+
             Random rng = new(RandSeed);
 
             // Single alloc outside the loop, to the max length we'll need.
             Span<int> keySpan = stackalloc int[1];
             Span<int> valueSpan = stackalloc int[StackAllocMax];
 
-            for (int i = 0; i < DeviceTypeRecoveryTests.numOps; i++)
+            for (int i = 0; i < DeviceTypeRecoveryTests.NumOps; i++)
             {
                 // We must be consistent on length across iterations of each key value
-                var key0 = i % (int)DeviceTypeRecoveryTests.numUniqueKeys;
+                var key0 = i % (int)DeviceTypeRecoveryTests.NumUniqueKeys;
                 if (key0 == 0)
                     rng = new(RandSeed);
 
@@ -399,30 +394,33 @@ namespace Tsavorite.test.recovery.sumstore
                     valueSpan[j] = i;
                 var valueSpanByte = valueSpan.Slice(0, len).AsSpanByte();
 
-                session.Upsert(ref keySpanByte, ref valueSpanByte, Empty.Default, 0);
+                _ = bContext.Upsert(ref keySpanByte, ref valueSpanByte, Empty.Default);
             }
-            session.CompletePending(true);
+            _ = bContext.CompletePending(true);
         }
 
-        private unsafe void Populate(TsavoriteKV<MyValue, MyValue> store)
+        private unsafe void Populate(TsavoriteKV<MyValue, MyValue, MyValueStoreFunctions, MyValueAllocator> store)
         {
             using var session = store.NewSession<MyInput, MyOutput, Empty, MyFunctions2>(new MyFunctions2());
+            var bContext = session.BasicContext;
 
-            for (int i = 0; i < DeviceTypeRecoveryTests.numOps; i++)
+            for (int i = 0; i < DeviceTypeRecoveryTests.NumOps; i++)
             {
-                var key = new MyValue { value = i % (int)DeviceTypeRecoveryTests.numUniqueKeys };
+                var key = new MyValue { value = i % (int)DeviceTypeRecoveryTests.NumUniqueKeys };
                 var value = new MyValue { value = i };
-                session.Upsert(key, value);
+                _ = bContext.Upsert(key, value);
             }
-            session.CompletePending(true);
+            _ = bContext.CompletePending(true);
         }
 
-        private async ValueTask Checkpoint<TData>(TsavoriteKV<TData, TData> store, bool isAsync)
+        private async ValueTask Checkpoint<TData, TStoreFunctions, TAllocator>(TsavoriteKV<TData, TData, TStoreFunctions, TAllocator> store, bool isAsync)
+            where TStoreFunctions : IStoreFunctions<TData, TData>
+            where TAllocator : IAllocator<TData, TData, TStoreFunctions>
         {
             if (isAsync)
             {
                 var (success, token) = await store.TakeFullCheckpointAsync(CheckpointType.Snapshot);
-                Assert.IsTrue(success);
+                ClassicAssert.IsTrue(success);
                 logToken = token;
             }
             else
@@ -433,79 +431,84 @@ namespace Tsavorite.test.recovery.sumstore
             indexToken = logToken;
         }
 
-        private async ValueTask RecoverAndReadTest(TsavoriteKV<long, long> store, bool isAsync)
+        private async ValueTask RecoverAndReadTest(TsavoriteKV<long, long, LongStoreFunctions, LongAllocator> store, bool isAsync)
         {
             await Recover(store, isAsync);
             Read(store);
         }
 
-        private static void Read(TsavoriteKV<long, long> store)
+        private static void Read(TsavoriteKV<long, long, LongStoreFunctions, LongAllocator> store)
         {
-            using var session = store.NewSession<long, long, Empty, SimpleFunctions<long, long>>(new SimpleFunctions<long, long>());
+            using var session = store.NewSession<long, long, Empty, SimpleSimpleFunctions<long, long>>(new SimpleSimpleFunctions<long, long>());
+            var bContext = session.BasicContext;
 
-            for (var i = 0; i < DeviceTypeRecoveryTests.numUniqueKeys; i++)
+            for (var i = 0; i < DeviceTypeRecoveryTests.NumUniqueKeys; i++)
             {
-                var status = session.Read(i % DeviceTypeRecoveryTests.numUniqueKeys, default, out long output);
-                Assert.IsTrue(status.Found, $"keyIndex {i}");
-                Assert.AreEqual(ExpectedValue(i), output);
+                var status = bContext.Read(i % DeviceTypeRecoveryTests.NumUniqueKeys, default, out long output);
+                ClassicAssert.IsTrue(status.Found, $"keyIndex {i}");
+                ClassicAssert.AreEqual(ExpectedValue(i), output);
             }
         }
 
-        private async ValueTask RecoverAndReadTest(TsavoriteKV<SpanByte, SpanByte> store, bool isAsync)
+        private async ValueTask RecoverAndReadTest(TsavoriteKV<SpanByte, SpanByte, SpanByteStoreFunctions, SpanByteAllocator<SpanByteStoreFunctions>> store, bool isAsync)
         {
             await Recover(store, isAsync);
             Read(store);
         }
 
-        private static void Read(TsavoriteKV<SpanByte, SpanByte> store)
+        private static void Read(TsavoriteKV<SpanByte, SpanByte, SpanByteStoreFunctions, SpanByteAllocator<SpanByteStoreFunctions>> store)
         {
             using var session = store.NewSession<SpanByte, int[], Empty, VLVectorFunctions>(new VLVectorFunctions());
+            var bContext = session.BasicContext;
 
             Random rng = new(RandSeed);
 
             Span<int> keySpan = stackalloc int[1];
             var keySpanByte = keySpan.AsSpanByte();
 
-            for (var i = 0; i < DeviceTypeRecoveryTests.numUniqueKeys; i++)
+            for (var i = 0; i < DeviceTypeRecoveryTests.NumUniqueKeys; i++)
             {
                 keySpan[0] = i;
 
                 var len = GetRandomLength(rng);
 
                 int[] output = null;
-                var status = session.Read(ref keySpanByte, ref output, Empty.Default, 0);
+                var status = bContext.Read(ref keySpanByte, ref output, Empty.Default);
 
-                Assert.IsTrue(status.Found);
+                ClassicAssert.IsTrue(status.Found);
                 for (int j = 0; j < len; j++)
-                    Assert.AreEqual(ExpectedValue(i), output[j], $"mismatched data at position {j}, len {len}");
+                    ClassicAssert.AreEqual(ExpectedValue(i), output[j], $"mismatched data at position {j}, len {len}");
             }
         }
 
-        private async ValueTask RecoverAndReadTest(TsavoriteKV<MyValue, MyValue> store, bool isAsync)
+        private async ValueTask RecoverAndReadTest(TsavoriteKV<MyValue, MyValue, MyValueStoreFunctions, MyValueAllocator> store, bool isAsync)
         {
             await Recover(store, isAsync);
             Read(store);
         }
 
-        private static void Read(TsavoriteKV<MyValue, MyValue> store)
+        private static void Read(TsavoriteKV<MyValue, MyValue, MyValueStoreFunctions, MyValueAllocator> store)
         {
             using var session = store.NewSession<MyInput, MyOutput, Empty, MyFunctions2>(new MyFunctions2());
+            var bContext = session.BasicContext;
 
-            for (var i = 0; i < DeviceTypeRecoveryTests.numUniqueKeys; i++)
+            for (var i = 0; i < DeviceTypeRecoveryTests.NumUniqueKeys; i++)
             {
                 var key = new MyValue { value = i };
-                var status = session.Read(key, default, out MyOutput output);
-                Assert.IsTrue(status.Found, $"keyIndex {i}");
-                Assert.AreEqual(ExpectedValue(i), output.value.value);
+                var status = bContext.Read(key, default, out MyOutput output);
+                ClassicAssert.IsTrue(status.Found, $"keyIndex {i}");
+                ClassicAssert.AreEqual(ExpectedValue(i), output.value.value);
             }
         }
 
-        private async ValueTask Recover<TData>(TsavoriteKV<TData, TData> store, bool isAsync = false)
+        private async ValueTask Recover<TData, TStoreFunctions, TAllocator>(TsavoriteKV<TData, TData, TStoreFunctions, TAllocator> store, bool isAsync = false)
+            where TStoreFunctions : IStoreFunctions<TData, TData>
+            where TAllocator : IAllocator<TData, TData, TStoreFunctions>
         {
             if (isAsync)
-                await store.RecoverAsync(indexToken, logToken);
+                _ = await store.RecoverAsync(indexToken, logToken);
             else
-                store.Recover(indexToken, logToken);
+                _ = store.Recover(indexToken, logToken);
         }
     }
 }

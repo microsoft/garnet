@@ -10,7 +10,8 @@
 
   <ItemGroup>
     <PackageReference Include="BenchmarkDotNet" />
-  </ItemGroup>
+		<PackageReference Include="NLua" />
+	</ItemGroup>
 
   <ItemGroup>
     <ProjectReference Include="..\..\libs\host\Garnet.host.csproj" />
@@ -21,6 +22,9 @@
   <ItemGroup>
     <Compile Include="..\..\playground\Embedded.perftest\EmbeddedRespServer.cs" Link="EmbeddedRespServer.cs" />
     <Compile Include="..\..\playground\Embedded.perftest\DummyNetworkSender.cs" Link="DummyNetworkSender.cs" />
-  </ItemGroup>
+    <Compile Include="..\..\main\GarnetServer\Extensions\MyDictObject.cs" Link="MyDictObject.cs" />
+    <Compile Include="..\..\main\GarnetServer\Extensions\MyDictSet.cs" Link="MyDictSet.cs" />
+    <Compile Include="..\..\main\GarnetServer\Extensions\MyDictGet.cs" Link="MyDictGet.cs" />
+	</ItemGroup>
 
 </Project>

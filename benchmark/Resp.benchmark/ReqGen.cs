@@ -169,7 +169,7 @@ namespace Resp.benchmark
             fixed (byte* buf = buffer)
             {
                 byte* ptr = buf;
-                RespReadUtils.ReadArrayLength(out int count, ref ptr, buf + buffer.Length);
+                RespReadUtils.ReadUnsignedArrayLength(out int count, ref ptr, buf + buffer.Length);
                 RespReadUtils.ReadStringWithLengthHeader(out var cmd, ref ptr, buf + buffer.Length);
 
                 for (int j = 0; j < count - 1; j++)
@@ -196,6 +196,8 @@ namespace Resp.benchmark
                 case OpType.MGET:
                 case OpType.GET:
                 case OpType.MYDICTGET:
+                case OpType.SCRIPTGET:
+                case OpType.SCRIPTRETKEY:
                     for (int i = 0; i < bytesRead; i++)
                         if (buf[i] == '$') count++;
                     break;
@@ -210,6 +212,7 @@ namespace Resp.benchmark
                 case OpType.PFMERGE:
                 case OpType.AUTH:
                 case OpType.SET:
+                case OpType.SCRIPTSET:
                 case OpType.SETEX:
                 case OpType.SETIFPM:
                 case OpType.MYDICTSET:

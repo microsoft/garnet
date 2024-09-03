@@ -4,6 +4,7 @@ using System;
 using System.IO;
 using System.Threading.Tasks;
 using NUnit.Framework;
+using NUnit.Framework.Legacy;
 using Tsavorite.core;
 
 namespace Tsavorite.test
@@ -85,12 +86,12 @@ namespace Tsavorite.test
             int currentEntry = 0;
             while (iter.GetNext(out byte[] result, out _, out _))
             {
-                Assert.Less(currentEntry, entryLength);
-                Assert.AreEqual((byte)currentEntry, result[currentEntry]);
+                ClassicAssert.Less(currentEntry, entryLength);
+                ClassicAssert.AreEqual((byte)currentEntry, result[currentEntry]);
                 currentEntry++;
             }
 
-            Assert.AreNotEqual(0, currentEntry, "Failure -- data loop after log.Scan never entered so wasn't verified.");
+            ClassicAssert.AreNotEqual(0, currentEntry, "Failure -- data loop after log.Scan never entered so wasn't verified.");
         }
 
         public static void LogWriter(TsavoriteLog log, byte[] entry, EnqueueIteratorType iteratorType)
@@ -106,7 +107,7 @@ namespace Tsavorite.test
                     _ => throw new ApplicationException("Test failure: Unknown EnqueueIteratorType")
                 };
 
-                Assert.AreNotEqual(0, returnLogicalAddress, "LogWriter: Returned Logical Address = 0");
+                ClassicAssert.AreNotEqual(0, returnLogicalAddress, "LogWriter: Returned Logical Address = 0");
             }
             catch (Exception ex)
             {
