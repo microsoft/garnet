@@ -2,7 +2,6 @@
 // Licensed under the MIT license.
 
 using System;
-using Azure.Core.Pipeline;
 using Garnet.common;
 using Garnet.server;
 

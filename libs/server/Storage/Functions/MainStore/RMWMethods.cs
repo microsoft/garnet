@@ -50,8 +50,8 @@ namespace Garnet.server
                 case RespCommand.PFADD:
                     var v = value.ToPointer();
                     value.UnmarkExtraMetadata();
-                    value.ShrinkSerializedLength(HyperLogLog.DefaultHLL.SparseInitialLength(input));
-                    HyperLogLog.DefaultHLL.Init(input, v, value.Length);
+                    value.ShrinkSerializedLength(HyperLogLog.DefaultHLL.SparseInitialLength(ref input));
+                    HyperLogLog.DefaultHLL.Init(ref input, v, value.Length);
                     *output.SpanByte.ToPointer() = 1;
                     break;
 
@@ -108,7 +108,7 @@ namespace Garnet.server
 
                 case RespCommand.BITFIELD:
                     value.UnmarkExtraMetadata();
-                    var bitFieldArgs = GetBitFieldArguments(input);
+                    var bitFieldArgs = GetBitFieldArguments(ref input);
                     value.ShrinkSerializedLength(BitmapManager.LengthFromType(bitFieldArgs));
                     var (bitfieldReturnValue, overflow) = BitmapManager.BitFieldExecute(bitFieldArgs, value.ToPointer(), value.Length);
                     if (!overflow)
@@ -364,7 +364,7 @@ namespace Garnet.server
                         CopyDefaultResp(CmdStrings.RESP_RETURN_VAL_1, ref output);
                     return true;
                 case RespCommand.BITFIELD:
-                    var bitFieldArgs = GetBitFieldArguments(input);
+                    var bitFieldArgs = GetBitFieldArguments(ref input);
                     v = value.ToPointer();
                     if (!BitmapManager.IsLargeEnoughForType(bitFieldArgs, value.Length)) return false;
 
@@ -393,7 +393,7 @@ namespace Garnet.server
                     var updated = false;
                     rmwInfo.ClearExtraValueLength(ref recordInfo, ref value, value.TotalSize);
                     value.ShrinkSerializedLength(value.Length + value.MetadataSize);
-                    var result = HyperLogLog.DefaultHLL.Update(input, v, value.Length, ref updated);
+                    var result = HyperLogLog.DefaultHLL.Update(ref input, v, value.Length, ref updated);
                     rmwInfo.SetUsedValueLength(ref recordInfo, ref value, value.TotalSize);
 
                     if (result)
@@ -654,7 +654,7 @@ namespace Garnet.server
                     break;
 
                 case RespCommand.BITFIELD:
-                    var bitFieldArgs = GetBitFieldArguments(input);
+                    var bitFieldArgs = GetBitFieldArguments(ref input);
                     Buffer.MemoryCopy(oldValue.ToPointer(), newValue.ToPointer(), newValue.Length, oldValue.Length);
                     var (bitfieldReturnValue, overflow) = BitmapManager.BitFieldExecute(bitFieldArgs, newValue.ToPointer(), newValue.Length);
 
@@ -670,11 +670,11 @@ namespace Garnet.server
                     var oldValPtr = oldValue.ToPointer();
 
                     if (newValue.Length != oldValue.Length)
-                        updated = HyperLogLog.DefaultHLL.CopyUpdate(input, oldValPtr, newValPtr, newValue.Length);
+                        updated = HyperLogLog.DefaultHLL.CopyUpdate(ref input, oldValPtr, newValPtr, newValue.Length);
                     else
                     {
                         Buffer.MemoryCopy(oldValPtr, newValPtr, newValue.Length, oldValue.Length);
-                        HyperLogLog.DefaultHLL.Update(input, newValPtr, newValue.Length, ref updated);
+                        HyperLogLog.DefaultHLL.Update(ref input, newValPtr, newValue.Length, ref updated);
                     }
                     *output.SpanByte.ToPointer() = updated ? (byte)1 : (byte)0;
                     break;
@@ -735,7 +735,7 @@ namespace Garnet.server
 
                         (IMemoryOwner<byte> Memory, int Length) outp = (output.Memory, 0);
 
-                        var ret = functionsState.customCommands[(byte)input.header.cmd - CustomCommandManager.StartOffset].functions
+                        var ret = functions
                             .CopyUpdater(key.AsReadOnlySpan(), ref input, oldValue.AsReadOnlySpan(), newValue.AsSpan(), ref outp, ref rmwInfo);
                         output.Memory = outp.Memory;
                         output.Length = outp.Length;

@@ -193,7 +193,7 @@ namespace Garnet.server
                     return;
 
                 case RespCommand.BITFIELD:
-                    var bitFieldArgs = GetBitFieldArguments(input);
+                    var bitFieldArgs = GetBitFieldArguments(ref input);
                     var (retValue, overflow) = BitmapManager.BitFieldExecute(bitFieldArgs, value.ToPointer(), value.Length);
                     if (!overflow)
                         CopyRespNumber(retValue, ref dst);
@@ -616,7 +616,7 @@ namespace Garnet.server
             functionsState.appendOnlyFile.Enqueue(new AofHeader { opType = AofEntryType.StoreDelete, version = version, sessionID = sessionID }, ref key, ref def, out _);
         }
 
-        BitFieldCmdArgs GetBitFieldArguments(RawStringInput input)
+        BitFieldCmdArgs GetBitFieldArguments(ref RawStringInput input)
         {
             var currTokenIdx = input.parseStateStartIdx;
             var opCode = (byte)input.parseState.GetEnum<RespCommand>(currTokenIdx++, true);

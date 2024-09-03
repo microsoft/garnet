@@ -298,7 +298,7 @@ namespace Garnet.server
         /// <param name="input"></param>
         /// <param name="value"></param>
         /// <param name="vlen"></param>
-        public void Init(RawStringInput input, byte* value, int vlen)
+        public void Init(ref RawStringInput input, byte* value, int vlen)
         {
             var dense = vlen == this.DenseBytes;
 
@@ -307,7 +307,7 @@ namespace Garnet.server
             else //Sparse representation
                 InitSparse(value);
 
-            IterateUpdate(input, value, dense);
+            IterateUpdate(ref input, value, dense);
         }
 
         /// <summary>
@@ -355,7 +355,7 @@ namespace Garnet.server
         /// </summary>
         /// <param name="input"></param>
         /// <returns></returns>
-        public int SparseInitialLength(RawStringInput input)
+        public int SparseInitialLength(ref RawStringInput input)
         {
             var count = input.parseState.GetInt(input.parseStateStartIdx);
             return SparseInitialLength(count);
@@ -401,7 +401,7 @@ namespace Garnet.server
         /// <summary>
         /// Return length of new value
         /// </summary>        
-        public int UpdateGrow(RawStringInput input, byte* value)
+        public int UpdateGrow(ref RawStringInput input, byte* value)
         {
             var count = input.parseState.GetInt(input.parseStateStartIdx);
 
@@ -471,7 +471,7 @@ namespace Garnet.server
         /// <param name="newValue"></param>
         /// <param name="newValueLen"></param>
         /// <returns></returns>
-        public bool CopyUpdate(RawStringInput input, byte* oldValue, byte* newValue, int newValueLen)
+        public bool CopyUpdate(ref RawStringInput input, byte* oldValue, byte* newValue, int newValueLen)
         {
             var fUpdated = false;
             
@@ -482,7 +482,7 @@ namespace Garnet.server
                 {
                     InitDense(newValue);
                     fUpdated |= SparseToDense(oldValue, newValue);
-                    fUpdated |= IterateUpdate(input, newValue, true);
+                    fUpdated |= IterateUpdate(ref input, newValue, true);
                     return fUpdated;
                 }
 
@@ -490,7 +490,7 @@ namespace Garnet.server
                 InitSparse(newValue);
                 var sparseBlobBytes = SparseCurrentSizeInBytes(oldValue);
                 Buffer.MemoryCopy(oldValue, newValue, sparseBlobBytes, sparseBlobBytes);
-                fUpdated = IterateUpdate(input, newValue, false);
+                fUpdated = IterateUpdate(ref input, newValue, false);
                 return fUpdated;
             }
 
@@ -589,13 +589,13 @@ namespace Garnet.server
         /// <param name="valueLen"></param>
         /// <param name="updated"></param>
         /// <returns></returns>           
-        public bool Update(RawStringInput input, byte* value, int valueLen, ref bool updated)
+        public bool Update(ref RawStringInput input, byte* value, int valueLen, ref bool updated)
         {
             var count = input.parseState.GetInt(input.parseStateStartIdx);
 
             if (IsDense(value)) // If blob layout is dense
             {
-                updated = IterateUpdate(input, value, true);
+                updated = IterateUpdate(ref input, value, true);
                 return true;
             }
 
@@ -603,7 +603,7 @@ namespace Garnet.server
             {
                 if (CanGrowInPlace(value, valueLen, count))//check if we can grow in place
                 {
-                    updated = IterateUpdate(input, value, false);
+                    updated = IterateUpdate(ref input, value, false);
                     return true;
                 }
 
@@ -687,7 +687,7 @@ namespace Garnet.server
             return updated;
         }
 
-        private bool IterateUpdate(RawStringInput input, byte* value, bool dense)
+        private bool IterateUpdate(ref RawStringInput input, byte* value, bool dense)
         {
             var updated = false;
             var currTokenIdx = input.parseStateStartIdx;
