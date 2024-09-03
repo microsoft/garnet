@@ -81,54 +81,16 @@ param ($foundThroughPutLine)
 # ******** BEGIN MAIN  *********
 # Get base path since paths can differ from machine to machine
 $pathstring = $pwd.Path
-Write-Output "PathString: $pathstring"
-Write-Output ($pathstring.Contains("test"))
-$position = $pathString.IndexOf('test')
-Write-Output "***************************The position of 'test' is: $position"
-
-
-$string = "Hello, world!"
-$substring = "world"
-
 if ($pathstring.Contains("test")) {
-    Write-Host "String contains the substring."
-} else {
-    Write-Host "String does not contain the substring."
-}
-
-
-
-
-
-
-if ($pathstring.Contains("test")) {
-    Write-Output "***********************************"
+    Write-Output "------------ DEBUG ***********************************"
     $position = $pathString.IndexOf("test")
     $basePath = $pathstring.Substring(0,$position-1)  # take off slash off end as well
-    Write-Output "The position of 'test' is: $position"
+    Write-Output "------------ DEBUG The position of 'test' is: $position"
 } else {
     $basePath = $pathstring  # already in base as not in test
     Set-Location .\test\BDNPerfTests\
     Write-Output "------------ DEBUG New Location:" $pwd.Path 
 }
-
-
-
-#Write-Output "-----------------------------------------------DEBUG Path String: $pathstring" 
-#$position = $pathstring.IndexOf("test1")
-
-#Write-Output "-----------------------------------------------DEBUG Test Position: $position" 
-#if ( 0 -eq $position )
-#{
-    #Write-Output "-----------------------------------------------DEBUG Going GitHub" 
-    #$position = $pathstring.IndexOf(".github")
-    #Write-Output "-----------------------------------------------DEBUG GitHub Position: $position" 
-
-#}
-#Write-Output "-----------------------------------------------DEBUG Position: $position" 
-
-#$basePath = $pathstring.Substring(0,$position-1)  # take off slash off end as well
-
 Write-Output "------------ DEBUG Basepath: $basePath" 
 
 
@@ -235,14 +197,14 @@ $resultsFile = "$resultsDir/$resultsFileName"
 $BDNbenchmarkErrorFile = "$errorLogDir/$justResultsFileNameNoExt" + "_StandardError_" +$CurrentOS+".log"
 
 
-Write-Output "*#*#*################################# DEBUG #########################"
+Write-Output "------------ DEBUG #########################"
 Write-Output "*#*#* Configuration $configuration"
 Write-Output "*#*#* framework $framework"
 Write-Output "*#*#* filter $filter"
 Write-Output "*#*#* Standard Out $resultsFile"
 Write-Output "*#*#* Standard Error $BDNbenchmarkErrorFile"
 Write-Output "*#*#* Working Dir (BDNBM Path) $BDNbenchmarkPath"
-Write-Output "*#*#*################################# DEBUG #########################"
+Write-Output "*------------ DEBUG #########################"
 
 Write-Output "** Start BDN Benchmark: $filter"
 Write-Output " "
@@ -251,28 +213,17 @@ dotnet run -c $configuration -f $framework --filter $filter --project $BDNbenchm
 
 
 # TO DO ###########################
-# Failed on GH Action regarding base path -- line 85 (see message below) ... looks like not finding "test" ... guess because it is in the yml -- maybe have it find "workflows" or ".github" if "test" is not found
 # For YML files (ADO and GH) - do we need "build" Tsav and Garnet before?  Guessing yes, but worth a test to see. Maybe the run of benchmark builds everything it needs
 # Parse output
 # Analyze?
 # Add "CI" only switch so can run on GH (default to CI?  If so - add full run switch to not analyze but gather and push data somewhere)
 # TO DO ###########################
 
-### ERROR WHEN RUNNING GH ACTIONS ###
-#ParentContainsErrorRecordException: /home/runner/work/garnet/garnet/test/BDNPerfTests/run_bdnperftest.ps1:85
-#Line |
-#  85 |  $basePath = $string.Substring(0,$position-1)  # take off slash off en …
-#     |  ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-#     | Exception calling "Substring" with "2" argument(s): "length ('-2') must
-     #| be a non-negative value. (Parameter 'length') Actual value was -2."
-#Error: Process completed with exit code 1.
-
-
 
 Write-Output "** BDN Benchmark for $filter finished"
 Write-Output " "
 
-<#
+
 Write-Output "**** EVALUATE THE RESULTS FILE $resultsFile ****"
 
 # First check if file is there and if not, error out gracefully
@@ -295,6 +246,7 @@ Write-Output "************************"
 Write-Output "**   RESULTS  "
 Write-Output "**   "
 
+<#
 # Parse the file for test results - offline has different output format than online
 if ($onlineMode -eq "--online")
 {
