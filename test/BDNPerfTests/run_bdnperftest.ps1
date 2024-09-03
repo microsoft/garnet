@@ -81,20 +81,45 @@ param ($foundThroughPutLine)
 # ******** BEGIN MAIN  *********
 # Get base path since paths can differ from machine to machine
 $pathstring = $pwd.Path
-Write-Host "-----------------------------------------------DEBUG Path String: $pathstring" 
-$position = $pathstring.IndexOf("test")
-Write-Host "-----------------------------------------------DEBUG Test Position: $position" 
-if ( 0 -eq $position )
-{
-    Write-Host "-----------------------------------------------DEBUG Going GitHub" 
-    $position = $pathstring.IndexOf(".github")
-    Write-Host "-----------------------------------------------DEBUG GitHub Position: $position" 
+Write-Output "PathString: $pathstring"
 
+if ($pathString -contains "test") {
+    $position = $pathString.IndexOf("test")
+    Write-Output "The position of 'test' is: $position"
+} else {
+    $position = $pathString.IndexOf(".github")
+    Write-Output "The position of '.github' is: $position"
 }
-Write-Host "-----------------------------------------------DEBUG Position: $position" 
+
+
+
+#Write-Host "-----------------------------------------------DEBUG Path String: $pathstring" 
+#$position = $pathstring.IndexOf("test1")
+
+#Write-Host "-----------------------------------------------DEBUG Test Position: $position" 
+#if ( 0 -eq $position )
+#{
+    #Write-Host "-----------------------------------------------DEBUG Going GitHub" 
+    #$position = $pathstring.IndexOf(".github")
+    #Write-Host "-----------------------------------------------DEBUG GitHub Position: $position" 
+
+#}
+#Write-Host "-----------------------------------------------DEBUG Position: $position" 
+
 $basePath = $pathstring.Substring(0,$position-1)  # take off slash off end as well
 
 Write-Host "------------ DEBUG Basepath: $basePath" 
+
+
+if ($pathString -contains "test") {
+    $position = $pathString.IndexOf("test")
+    Write-Output "The position of 'test' is: $position"
+} else {
+    $position = $pathString.IndexOf(".github")
+    Write-Output "The position of '.github' is: $position"
+}
+
+
 
 
 # Read the test config file and convert the JSON to a PowerShell object
