@@ -22,6 +22,7 @@ param (
   [string]$configFile = "CI_BDN_Config_RespParseStress.json"
 )
 
+$OFS = "`r`n"
 
 # ******** FUNCTION DEFINITIONS  *********
 
@@ -33,6 +34,14 @@ param (
 function AnalyzeResult {
     param ($foundResultValue, $expectedResultValue, $acceptablePercentRange, $warnonly)
 
+    Write-Host "------   ANALYZE RESULTS------"
+    Write-Host "------------ DEBUG  Found Results:" 
+    Write-Host $foundResultValue
+    Write-Host "------------ DEBUG  Expected Results: $expectedResultValue"
+    Write-Host "------------ DEBUG  Accept Percent: $acceptablePercentRange"    
+    Write-Host "------------ DEBUG  Warn Only: $warnonly"    
+
+
     # Calculate the lower and upper bounds of the expected value
     [double] $Tolerance = $acceptablePercentRange / 100
     [double] $LowerBound = $expectedResultValue * (1 - $Tolerance)
@@ -41,57 +50,61 @@ function AnalyzeResult {
     
     # Check if the actual value is within the bounds
     if ($dblfoundResultValue -ge $LowerBound -and $dblfoundResultValue -le $UpperBound) {
-        Write-Output "**   ** PASS! **  The performance result ($dblfoundResultValue) is in the acceptable range +/-$acceptablePercentRange% ($LowerBound -> $UpperBound) of expected value: $expectedResultValue " -ForegroundColor Green
-        Write-Output "** "
+        Write-Host "**   ** PASS! **  The performance result ($dblfoundResultValue) is in the acceptable range +/-$acceptablePercentRange% ($LowerBound -> $UpperBound) of expected value: $expectedResultValue " 
+        Write-Host "** "
         return $true # the values are close enough
     }
     else {
         if ($warnonly) {
-            Write-Output "**   << PERF REGRESSION WARNING! >>  The BDN benchmark result ($dblfoundResultValue) is OUT OF RANGE +/-$acceptablePercentRange% ($LowerBound -> $UpperBound) of expected value: $expectedResultValue" -ForegroundColor Yellow
-            Write-Output "** "
+            Write-Host "**   << PERF REGRESSION WARNING! >>  The BDN benchmark result ($dblfoundResultValue) is OUT OF RANGE +/-$acceptablePercentRange% ($LowerBound -> $UpperBound) of expected value: $expectedResultValue" 
+            Write-Host "** "
         }
         else {
-            Write-Output "**   << PERF REGRESSION FAIL! >>  The  BDN benchmark ($dblfoundResultValue) is OUT OF ACCEPTABLE RANGE +/-$acceptablePercentRange% ($LowerBound -> $UpperBound) of expected value: $expectedResultValue" -ForegroundColor Red
-            Write-Output "** "
+            Write-Host "**   << PERF REGRESSION FAIL! >>  The  BDN benchmark ($dblfoundResultValue) is OUT OF ACCEPTABLE RANGE +/-$acceptablePercentRange% ($LowerBound -> $UpperBound) of expected value: $expectedResultValue"
+            Write-Host "** "
         }
         return $false # the values are too different
     }
   }
 
-######### ParseThroughPutValuefrom Results ###########
+######### ParseValueFromResults ###########
 #  
-# Takes the "Throughput" output line that is in a file and 
+# Takes the line from the results file and returns the value from the requested column
 # strips off all the characters and just to return the actual value
 #
-# TO DO: NOT WWORKING YET
-#  
+# NOTE: Example of ResultsLine from BDN benchmark: "| InlinePing   |   2.343 us | 0.0135 us | 0.0113 us |         - |"
+# NOTE: columnNum is zero based
+#
 ######################################################
-function ParseThroughPutValueFromResults {
-param ($foundThroughPutLine)
+function ParseValueFromResults {
+param ($ResultsLine, $columnNum)
 
-    #$foundThroughputValue = $foundThroughPutLine -replace "^.{12}"  # gets rid of label "Throughput:"
-    #$foundThroughputValue = $foundThroughputValue.Remove($foundThroughputValue.Length - 8)  # gets rid of the "ops/sec" 
-    #$foundThroughputValue = $foundThroughputValue -replace ",", ""  # gets rid of the "," in the number
+    # Remove the leading and trailing pipes and split the string by '|'
+    $columns = $ResultsLine.Trim('|').Split('|') 
+    $column = $columns | ForEach-Object { $_.Trim() }
+    $foundValue = $column[$columnNum].Trim(' us') 
 
-    $foundThroughputValue = "0"
-
-    return $foundThroughputValue
+    return $foundValue
 }
+
+
+
+
 
 # ******** BEGIN MAIN  *********
 # Get base path since paths can differ from machine to machine
 $pathstring = $pwd.Path
 if ($pathstring.Contains("test")) {
-    Write-Output "------------ DEBUG ***********************************"
+    Write-Host "------------ DEBUG ***********************************"
     $position = $pathString.IndexOf("test")
     $basePath = $pathstring.Substring(0,$position-1)  # take off slash off end as well
-    Write-Output "------------ DEBUG The position of 'test' is: $position"
+    Write-Host "------------ DEBUG The position of 'test' is: $position"
 } else {
     $basePath = $pathstring  # already in base as not in test
     Set-Location .\test\BDNPerfTests\
-    Write-Output "------------ DEBUG New Location:" $pwd.Path 
+    Write-Host "------------ DEBUG New Location:" $pwd.Path 
 }
-Write-Output "------------ DEBUG Basepath: $basePath" 
+Write-Host "------------ DEBUG Basepath: $basePath" 
 
 
 # Read the test config file and convert the JSON to a PowerShell object
@@ -130,13 +143,16 @@ if ($IsLinux) {
 #    exit
 #}
 
-Write-Output "************** Start BDN.benchmark ********************" 
-Write-Output " "
+Write-Host "************** Start BDN.benchmark ********************" 
+Write-Host " "
 
 # Set all the config options (args to benchmark app) based on values from config json file
 $configuration = $object.configuration
 $framework = $object.framework
 $filter = $object.filter
+$meanColumn = "1"
+$errorColumn = "2"
+$stdDevColumn = "3"
 
 # Set the expected values based on the OS
 if ($IsLinux) {
@@ -209,12 +225,10 @@ Write-Output "*------------ DEBUG #########################"
 Write-Output "** Start BDN Benchmark: $filter"
 Write-Output " "
 Write-Output "** Start:  dotnet run -c $configuration -f $framework --filter $filter --project $BDNbenchmarkPath  > $resultsFile 2> $BDNbenchmarkErrorFile"
-dotnet run -c $configuration -f $framework --filter $filter --project $BDNbenchmarkPath  > $resultsFile 2> $BDNbenchmarkErrorFile
+# --- DEBUG --- RENABLE --- DEBUG ----  dotnet run -c $configuration -f $framework --filter $filter --project $BDNbenchmarkPath  > $resultsFile 2> $BDNbenchmarkErrorFile
 
 
 # TO DO ###########################
-# Get Upload of artifacts working (YML file changes) -- Might be fixed, just need to check in and try
-# Parse output  -- WHERE LEFT OFF!!!!  After ran once, comment out the dotnet run and just work on parsing stuff
 # Analyze?
 # Add "CI" only switch so can run on GH (default to CI?  If so - add full run switch to not analyze but gather and push data somewhere)
 # For YML files (ADO and GH) - do we need "build" Tsav and Garnet before?  Guessing yes, but worth a test to see. Maybe the run of benchmark builds everything it needs
@@ -247,28 +261,58 @@ Write-Output "************************"
 Write-Output "**   RESULTS  "
 Write-Output "**   "
 
-# Results to monitor \ analyze: Median, 99, 99.9 and tpt
-# The columns are separated by spaces but the problem is that each column number of spaces differs so can't just easily do a split. 
-# However, can remove a chunk of them and put in a ; in and then use that to delimit. If only do a few spaces, then get multiple ";" between the columns where only want 1 ";"
-$resultsLine = Get-Content -Tail 1 $resultsFile
-$resultsLine = $resultsLine -replace  " {7}", ";"
-Write-Output "-- Debug --  $resultsLine"
 
-# Get the column values that are wanted (Median, 99 percent, 99.9 percent and TPT)
-$results = $resultsLine -split ";"
-$resultsMethod = $results[2].trim()
-$resultsMean = $results[5].trim()
-$resultsError = $results[6].trim()
-$resultsStdDev = $results[9].trim()
-$resultsAllocated = $results[12].trim()
+# Read the results file line by line and pull out the specific results if exists
+Get-Content $resultsFile | ForEach-Object {
+    $line = $_
+    switch -Wildcard ($line) {
+        "*| InlinePing*" {
+            # Action for InlinePing
+            Write-Output "-- DEBUG --- InlinePing found.  $line"
+            $foundInLinePingMeanValue = ParseValueFromResults $line $meanColumn
+            $currentResults = AnalyzeResult $foundInLinePingMeanValue $expectedInLinePingMeanValue $acceptableMeanRange $true
+            if ($currentResults -eq $false) {
+                $testSuiteResult = $false
+            }
+        }
+        "*| Set*" {
+            # Action for Set
+            Write-Host "Set found. Performing action... $line"
+            # Add your specific action here
+        }
+        "*| Get*" {
+            # Action for Get
+            Write-Host "Get found. Performing action... $line"
+            # Add your specific action here
+        }
+        "*| ZAddRem*" {
+            # Action for ZAddRem
+            Write-Host "ZAddRem found. Performing action... $line"
+            # Add your specific action here
+        }
+        "*| LPushPop*" {
+            # Action for LPushPop
+            Write-Host "LPushPop found. Performing action... $line"
+            # Add your specific action here
+        }
+        "*| SAddRem*" {
+            # Action for LPushPop
+            Write-Host "LPushPop found. Performing action... $line"
+            # Add your specific action here
+        }
+        "*| HSetDel*" {
+            # Action for LPushPop
+            Write-Host "LPushPop found. Performing action... $line"
+            # Add your specific action here
+        }
+        "*| MyDictSetGet*" {
+            # Action for LPushPop
+            Write-Host "LPushPop found. Performing action... $line"
+            # Add your specific action here
+        }
 
-# Median results verification
-Write-Output "**  Median "
-#$currentResults = AnalyzeResult $resultsMedian $expectedMedianValue $acceptableRangeMedian
-#if ($currentResults -eq $false) {
-#    $testSuiteResult = $false
-#}
-
+    }
+}
 
 
 Write-Output "**  "
