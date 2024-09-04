@@ -275,9 +275,6 @@ namespace Garnet.server
                 return true;
             }
 
-            var keyPtr = sbKey.ToPointer() - sizeof(int); // length header
-            *(int*)keyPtr = sbKey.Length;
-
             var input = new RawStringInput
             {
                 header = new RespInputHeader { cmd = RespCommand.GETRANGE },
@@ -287,7 +284,7 @@ namespace Garnet.server
 
             var o = new SpanByteAndMemory(dcurr, (int)(dend - dcurr));
 
-            var status = storageApi.GETRANGE(ref Unsafe.AsRef<SpanByte>(keyPtr), ref input, ref o);
+            var status = storageApi.GETRANGE(ref sbKey, ref input, ref o);
 
             if (status == GarnetStatus.OK)
             {
@@ -331,24 +328,18 @@ namespace Garnet.server
             }
 
             var val = parseState.GetArgSliceByRef(2).SpanByte;
-            var valPtr = val.ToPointer() - (sizeof(int) + sizeof(long));
-            var vSize = val.Length;
 
-            // Save prior state on network buffer
-            var save1 = *(int*)valPtr;
-            var save2 = *(long*)(valPtr + sizeof(int));
+            var newValLen = val.Length + sizeof(long);
+            var newVal = stackalloc byte[newValLen];
 
-            *(int*)valPtr = vSize + sizeof(long); // expiry info
-            SpanByte.Reinterpret(valPtr).ExtraMetadata = DateTimeOffset.UtcNow.Ticks +
-                                                         (highPrecision
-                                                             ? TimeSpan.FromMilliseconds(expiry).Ticks
-                                                             : TimeSpan.FromSeconds(expiry).Ticks);
-
-            _ = storageApi.SET(ref key, ref Unsafe.AsRef<SpanByte>(valPtr));
-
-            // Restore prior state on network buffer
-            *(int*)valPtr = save1;
-            *(long*)(valPtr + sizeof(int)) = save2;
+            var sbNewVal = SpanByte.FromPinnedPointer(newVal, newValLen);
+            sbNewVal.ExtraMetadata = DateTimeOffset.UtcNow.Ticks +
+                                     (highPrecision
+                                         ? TimeSpan.FromMilliseconds(expiry).Ticks
+                                         : TimeSpan.FromSeconds(expiry).Ticks);
+            val.AsReadOnlySpan().CopyTo(sbNewVal.AsSpan());
+            
+            _ = storageApi.SET(ref key, ref sbNewVal);
 
             while (!RespWriteUtils.WriteDirect(CmdStrings.RESP_OK, ref dcurr, dend))
                 SendAndReset();
@@ -501,10 +492,6 @@ namespace Garnet.server
                 return true;
             }
 
-            // Make space for value header
-            var valPtr = sbVal.ToPointer() - sizeof(int);
-            var vSize = sbVal.Length;
-
             switch (expOption)
             {
                 case ExpirationOption.None:
@@ -515,7 +502,7 @@ namespace Garnet.server
                             return getValue
                                 ? NetworkSET_Conditional(RespCommand.SET, expiry, ref sbKey, true,
                                     false, ref storageApi)
-                                : NetworkSET_EX(RespCommand.SET, expiry, ref sbKey, valPtr, vSize, false,
+                                : NetworkSET_EX(RespCommand.SET, expiry, ref sbKey, ref sbVal, false,
                                     ref storageApi); // Can perform a blind update
                         case ExistOptions.XX:
                             return NetworkSET_Conditional(RespCommand.SETEXXX, expiry, ref sbKey, getValue, false,
@@ -533,7 +520,7 @@ namespace Garnet.server
                             return getValue
                                 ? NetworkSET_Conditional(RespCommand.SET, expiry, ref sbKey, true,
                                     true, ref storageApi)
-                                : NetworkSET_EX(RespCommand.SET, expiry, ref sbKey, valPtr, vSize, true,
+                                : NetworkSET_EX(RespCommand.SET, expiry, ref sbKey, ref sbVal, true,
                                     ref storageApi); // Can perform a blind update
                         case ExistOptions.XX:
                             return NetworkSET_Conditional(RespCommand.SETEXXX, expiry, ref sbKey, getValue, true,
@@ -569,34 +556,33 @@ namespace Garnet.server
             return true;
         }
 
-        private bool NetworkSET_EX<TGarnetApi>(RespCommand cmd, int expiry, ref SpanByte key, byte* valPtr,
-            int vsize, bool highPrecision, ref TGarnetApi storageApi)
+        private unsafe bool NetworkSET_EX<TGarnetApi>(RespCommand cmd, int expiry, ref SpanByte key, ref SpanByte val,
+            bool highPrecision, ref TGarnetApi storageApi)
             where TGarnetApi : IGarnetApi
         {
             Debug.Assert(cmd == RespCommand.SET);
 
-            if (expiry == 0) // no expiration provided - this code path will not be currently hit as TrySET is used
+            if (expiry != 0)
             {
-                *(int*)valPtr = vsize;
-            }
-            else
-            {
-                // Move payload forward to make space for metadata
-                Buffer.MemoryCopy(valPtr + sizeof(int), valPtr + sizeof(int) + sizeof(long), vsize, vsize);
-                *(int*)valPtr = vsize + sizeof(long);
-                SpanByte.Reinterpret(valPtr).ExtraMetadata = DateTimeOffset.UtcNow.Ticks +
-                                                             (highPrecision
-                                                                 ? TimeSpan.FromMilliseconds(expiry).Ticks
-                                                                 : TimeSpan.FromSeconds(expiry).Ticks);
+                var newValLen = val.Length + sizeof(long);
+                var newVal = stackalloc byte[newValLen];
+
+                var sbNewVal = SpanByte.FromPinnedPointer(newVal, newValLen);
+                sbNewVal.ExtraMetadata = DateTimeOffset.UtcNow.Ticks +
+                                         (highPrecision
+                                             ? TimeSpan.FromMilliseconds(expiry).Ticks
+                                             : TimeSpan.FromSeconds(expiry).Ticks);
+                val.AsReadOnlySpan().CopyTo(sbNewVal.AsSpan());
+                val = sbNewVal;
             }
 
-            storageApi.SET(ref key, ref Unsafe.AsRef<SpanByte>(valPtr));
+            storageApi.SET(ref key, ref val);
             while (!RespWriteUtils.WriteDirect(CmdStrings.RESP_OK, ref dcurr, dend))
                 SendAndReset();
             return true;
         }
 
-        private bool NetworkSET_Conditional<TGarnetApi>(RespCommand cmd, int expiry, ref SpanByte keyPtr, bool getValue, bool highPrecision, ref TGarnetApi storageApi)
+        private bool NetworkSET_Conditional<TGarnetApi>(RespCommand cmd, int expiry, ref SpanByte key, bool getValue, bool highPrecision, ref TGarnetApi storageApi)
             where TGarnetApi : IGarnetApi
         {
             var input = new RawStringInput
@@ -618,7 +604,7 @@ namespace Garnet.server
             if (getValue)
             {
                 var o = new SpanByteAndMemory(dcurr, (int)(dend - dcurr));
-                var status = storageApi.SET_Conditional(ref keyPtr,
+                var status = storageApi.SET_Conditional(ref key,
                     ref input, ref o);
 
                 // Status tells us whether an old image was found during RMW or not
@@ -638,8 +624,7 @@ namespace Garnet.server
             }
             else
             {
-                var status = storageApi.SET_Conditional(ref Unsafe.AsRef<SpanByte>(keyPtr),
-                    ref input);
+                var status = storageApi.SET_Conditional(ref key, ref input);
 
                 var ok = status != GarnetStatus.NOTFOUND;
 
@@ -737,8 +722,6 @@ namespace Garnet.server
             where TGarnetApi : IGarnetApi
         {
             var sbKey = parseState.GetArgSliceByRef(0).SpanByte;
-            var keyPtr = sbKey.ToPointer() - sizeof(int);
-            *(int*)keyPtr = sbKey.Length;
 
             var input = new RawStringInput
             {
@@ -750,7 +733,7 @@ namespace Garnet.server
             Span<byte> outputBuffer = stackalloc byte[NumUtils.MaximumFormatInt64Length];
             var output = SpanByteAndMemory.FromPinnedSpan(outputBuffer);
 
-            storageApi.APPEND(ref Unsafe.AsRef<SpanByte>(keyPtr), ref input, ref output);
+            storageApi.APPEND(ref sbKey, ref input, ref output);
 
             while (!RespWriteUtils.WriteIntegerFromBytes(outputBuffer.Slice(0, output.Length), ref dcurr, dend))
                 SendAndReset();
