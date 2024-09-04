@@ -87,17 +87,12 @@ param ($ResultsLine, $columnNum)
 # Get base path since paths can differ from machine to machine
 $pathstring = $pwd.Path
 if ($pathstring.Contains("test")) {
-    Write-Host "------------ DEBUG ***********************************"
     $position = $pathString.IndexOf("test")
     $basePath = $pathstring.Substring(0,$position-1)  # take off slash off end as well
-    Write-Host "------------ DEBUG The position of 'test' is: $position"
 } else {
     $basePath = $pathstring  # already in base as not in test
     Set-Location .\test\BDNPerfTests\
-    Write-Host "------------ DEBUG New Location:" $pwd.Path 
 }
-Write-Host "------------ DEBUG Basepath: $basePath" 
-
 
 # Read the test config file and convert the JSON to a PowerShell object
 $fullConfiFileAndPath = "ConfigFiles/$configFile"
@@ -149,32 +144,32 @@ $stdDevColumn = "3"
 # Set the expected values based on the OS
 if ($IsLinux) {
     # Linux expected values
-    $expectedGetMeanValue = $object.expectedGETMeanValue_linux
-    $expectedSetMeanValue = $object.expectedSETMeanValue_linux
-    $expectedMGetMeanValue = $object.expectedMGETMeanValue_linux
-    $expectedMSetMeanValue = $object.expectedMSETMeanValue_linux
     $expectedInLinePingMeanValue = $object.expectedInLinePingMeanValue_linux
-    $expectedSETEXMeanValue = $object.expectedSETEXMeanValue_linux
+    $expectedSetMeanValue = $object.expectedSETMeanValue_linux
+    $expectedSetEXMeanValue = $object.expectedSETEXMeanValue_linux
+    $expectedGetMeanValue = $object.expectedGETMeanValue_linux
     $expectedZAddRemMeanValue = $object.expectedZAddRemMeanValue_linux
     $expectedLPushPopMeanValue = $object.expectedLPushPopMeanValue_linux
     $expectedSAddRemMeanValue = $object.expectedSAddRemMeanValue_linux
     $expectedHSetDelMeanValue = $object.expectedHSetDelMeanValue_linux
     $expectedMyDictSetGetMeanValue = $object.expectedMyDictSetGetMeanValue_linux
+    $expectedMGetMeanValue = $object.expectedMGETMeanValue_linux
+    $expectedMSetMeanValue = $object.expectedMSETMeanValue_linux
     $expectedIncrMeanValue = $object.expectedIncrMeanValue_linux
 }
 else {
     # Windows expected values
-    $expectedGetMeanValue = $object.expectedGETMeanValue_win
-    $expectedSetMeanValue = $object.expectedSETMeanValue_win
-    $expectedMGetMeanValue = $object.expectedMGETMeanValue_win
-    $expectedMSetMeanValue = $object.expectedMSETMeanValue_win
     $expectedInLinePingMeanValue = $object.expectedInLinePingMeanValue_win
-    $expectedSETEXMeanValue = $object.expectedSETEXMeanValue_win
+    $expectedSetMeanValue = $object.expectedSETMeanValue_win
+    $expectedSetEXMeanValue = $object.expectedSETEXMeanValue_win
+    $expectedGetMeanValue = $object.expectedGETMeanValue_win
     $expectedZAddRemMeanValue = $object.expectedZAddRemMeanValue_win
     $expectedLPushPopMeanValue = $object.expectedLPushPopMeanValue_win
     $expectedSAddRemMeanValue = $object.expectedSAddRemMeanValue_win
     $expectedHSetDelMeanValue = $object.expectedHSetDelMeanValue_win
     $expectedMyDictSetGetMeanValue = $object.expectedMyDictSetGetMeanValue_win
+    $expectedMGetMeanValue = $object.expectedMGETMeanValue_win
+    $expectedMSetMeanValue = $object.expectedMSETMeanValue_win
     $expectedIncrMeanValue = $object.expectedIncrMeanValue_win
 }
 
@@ -266,8 +261,8 @@ Get-Content $resultsFile | ForEach-Object {
                 $testSuiteResult = $false
             }
         }
-        # This one a bit different as need extra | in the check so doesn't pick up other Set* calls
-        "*| Set          |*" {
+        # This one a bit different as need extra space in the check so doesn't pick up other Set* calls
+        "*| Set *" {
             Write-Host "** Set Mean Value test"
             $foundSetMeanValue = ParseValueFromResults $line $meanColumn
             $currentResults = AnalyzeResult $foundSetMeanValue $expectedSetMeanValue $acceptableMeanRange $true

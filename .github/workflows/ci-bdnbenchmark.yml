@@ -37,7 +37,7 @@ jobs:
         os: [ ubuntu-latest, windows-latest ]
         framework: [ 'net8.0' ]
         configuration: [ 'Release' ]
-        test: [ 'CI_BDN_Config_RespParseStress.json' ]
+        test: [ 'CI_BDN_Config_RespParseStress.json', 'CI_BDN_Config_RespTsavoriteStress.json' ]
     steps:
       - name: Check out code
         uses: actions/checkout@v4
