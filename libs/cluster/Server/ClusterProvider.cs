@@ -293,7 +293,7 @@ namespace Garnet.cluster
         /// <returns></returns>
         internal bool BumpAndWaitForEpochTransition()
         {
-            var server = storeWrapper.GetServer();
+            var server = storeWrapper.GetTcpServer();
             BumpCurrentEpoch();
             while (true)
             {
