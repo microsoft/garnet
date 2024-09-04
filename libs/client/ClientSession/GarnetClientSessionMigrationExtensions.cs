@@ -393,23 +393,14 @@ namespace Garnet.client
 
         private bool WriteSerializedSpanByte(ref SpanByte key, ref SpanByte value)
         {
-            // We include space for newline at the end, to be added before sending
-            int totalLen = key.TotalSize + value.TotalSize + 2 + 2;
+            var totalLen = key.TotalSize + value.TotalSize + 2 + 2;
             if (totalLen > (int)(end - curr))
                 return false;
 
-            *(int*)curr = key.Length;
-            curr += sizeof(int);
-            Buffer.MemoryCopy(key.ToPointerWithMetadata(), curr, key.Length, key.Length);
-            curr += key.Length;
-            *curr++ = (byte)key.MetadataSize;
-
-            *(int*)curr = value.Length;
-            curr += sizeof(int);
-            Buffer.MemoryCopy(value.ToPointerWithMetadata(), curr, value.Length, value.Length);
-            curr += value.Length;
-            *curr++ = (byte)value.MetadataSize;
-
+            key.CopyTo(curr);
+            curr += key.TotalSize;
+            value.CopyTo(curr);
+            curr += value.TotalSize;
             return true;
         }
 

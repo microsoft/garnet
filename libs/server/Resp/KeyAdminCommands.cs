@@ -134,23 +134,18 @@ namespace Garnet.server
                 ? TimeSpan.FromSeconds(expiryValue)
                 : TimeSpan.FromMilliseconds(expiryValue);
 
-            var invalidOption = false;
             var expireOption = ExpireOption.None;
-            var optionStr = "";
 
             if (parseState.Count > 2)
             {
-                if (!parseState.TryGetEnum(2, true, out expireOption))
+                if (!parseState.TryGetEnum(2, true, out expireOption) || !expireOption.IsValid(ref parseState.GetArgSliceByRef(2)))
                 {
-                    invalidOption = true;
-                }
-            }
+                    var optionStr = parseState.GetString(2);
 
-            if (invalidOption)
-            {
-                while (!RespWriteUtils.WriteError($"ERR Unsupported option {optionStr}", ref dcurr, dend))
-                    SendAndReset();
-                return true;
+                    while (!RespWriteUtils.WriteError($"ERR Unsupported option {optionStr}", ref dcurr, dend))
+                        SendAndReset();
+                    return true;
+                }
             }
 
             var input = new RawStringInput

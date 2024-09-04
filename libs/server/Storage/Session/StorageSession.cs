@@ -51,8 +51,6 @@ namespace Garnet.server
 
         public readonly int ObjectScanCountLimit;
 
-        private static Random RandomGen = new();
-
         public StorageSession(StoreWrapper storeWrapper,
             ScratchBufferManager scratchBufferManager,
             GarnetSessionMetrics sessionMetrics,

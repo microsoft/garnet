@@ -859,7 +859,7 @@ namespace Garnet.server
             }
 
             // Create a random seed
-            var seed = RandomGen.Next();
+            var seed = Random.Shared.Next();
 
             // Prepare input
             var input = new ObjectInput

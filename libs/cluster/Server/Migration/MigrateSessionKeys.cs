@@ -2,7 +2,6 @@
 // Licensed under the MIT license.
 
 using System;
-using System.Buffers;
 using System.Runtime.CompilerServices;
 using Garnet.server;
 using Microsoft.Extensions.Logging;
@@ -24,6 +23,9 @@ namespace Garnet.cluster
         {
             var bufferSize = 1 << 10;
             SectorAlignedMemory buffer = new(bufferSize, 1);
+            var bufPtr = buffer.GetValidPointer();
+            var bufPtrEnd = bufPtr + bufferSize;
+            var o = new SpanByteAndMemory(bufPtr, (int)(bufPtrEnd - bufPtr));
 
             try
             {
@@ -37,59 +39,55 @@ namespace Garnet.cluster
                 var input = new RawStringInput();
                 input.header.SetHeader(RespCommandAccessor.MIGRATE, 0);
 
-                var bufPtr = buffer.GetValidPointer();
-                var bufPtrEnd = bufPtr + bufferSize;
-                foreach (var mKey in _keys.GetKeys())
+                foreach (var pair in _keys.GetKeys())
                 {
                     // Process only keys in MIGRATING status
-                    if (mKey.Value != KeyMigrationStatus.MIGRATING)
+                    if (pair.Value != KeyMigrationStatus.MIGRATING)
                         continue;
 
-                    var key = mKey.Key.SpanByte;
+                    var key = pair.Key.SpanByte;
 
                     // Read value for key
-                    var o = new SpanByteAndMemory(bufPtr, (int)(bufPtrEnd - bufPtr));
                     var status = localServerSession.BasicGarnetApi.Read_MainStore(ref key, ref input, ref o);
 
                     // Check if found in main store
                     if (status == GarnetStatus.NOTFOUND)
                     {
                         // Transition key status back to QUEUED to unblock any writers
-                        _keys.UpdateStatus(mKey.Key, KeyMigrationStatus.QUEUED);
+                        _keys.UpdateStatus(pair.Key, KeyMigrationStatus.QUEUED);
                         continue;
                     }
 
-                    // Make value SpanByte
-                    SpanByte value;
-                    MemoryHandle memoryHandle = default;
+                    // Get SpanByte from stack if any
+                    ref var value = ref o.SpanByte;
                     if (!o.IsSpanByte)
                     {
-                        memoryHandle = o.Memory.Memory.Pin();
-                        value = SpanByte.FromPinnedMemory(o.Memory.Memory);
+                        // Reinterpret heap memory to SpanByte
+                        value = ref SpanByte.ReinterpretWithoutLength(o.Memory.Memory.Span);
                     }
-                    else
-                        value = o.SpanByte;
 
+                    // Write key to network buffer if it has not expired
                     if (!ClusterSession.Expired(ref value) && !WriteOrSendMainStoreKeyValuePair(ref key, ref value))
                         return false;
 
-                    if (!o.IsSpanByte)
-                    {
-                        memoryHandle.Dispose();
-                        o.Memory.Dispose();
-                    }
+                    // Reset SpanByte for next read if any but don't dispose heap buffer as we might re-use it
+                    o.SpanByte = new SpanByte((int)(bufPtrEnd - bufPtr), (IntPtr)bufPtr);
                 }
 
                 // Flush data in client buffer
                 if (!HandleMigrateTaskResponse(_gcs.SendAndResetMigrate()))
                     return false;
-                return true;
+
+                DeleteKeys();
             }
             finally
             {
-                DeleteKeys();
+                // If allocated memory in heap dispose it here.
+                if (o.Memory != default)
+                    o.Memory.Dispose();
                 buffer.Dispose();
             }
+            return true;
         }
 
         /// <summary>

@@ -153,7 +153,7 @@ namespace Garnet.server
         BITOP_XOR,
         BITOP_NOT, // Note: Update OneIfWrite if adding new write commands after this
 
-        // Neither read nor write commands
+        // Neither read nor write key commands
         ASYNC,
 
         PING,
@@ -425,6 +425,7 @@ namespace Garnet.server
                 RespCommand.DBSIZE => false,
                 RespCommand.MEMORY_USAGE => false,
                 RespCommand.FLUSHDB => false,
+                RespCommand.FLUSHALL => false,
                 _ => cmd >= FirstReadCommand() && cmd <= LastWriteCommand()
             };
         }
