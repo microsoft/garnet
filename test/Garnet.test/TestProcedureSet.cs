@@ -18,10 +18,10 @@ namespace Garnet
 
     sealed class TestProcedureSet : CustomTransactionProcedure
     {
-        public override bool Prepare<TGarnetReadApi>(TGarnetReadApi api, ref SessionParseState parseState)
+        public override bool Prepare<TGarnetReadApi>(TGarnetReadApi api, ref SessionParseState parseState, int parseStateStartIdx)
         {
             var offset = 0;
-            var setA = GetNextArg(ref parseState, ref offset);
+            var setA = GetNextArg(ref parseState, parseStateStartIdx, ref offset);
 
             if (setA.Length == 0)
                 return false;
@@ -30,25 +30,25 @@ namespace Garnet
             return true;
         }
 
-        public override void Main<TGarnetApi>(TGarnetApi api, ref SessionParseState parseState, ref MemoryResult<byte> output)
+        public override void Main<TGarnetApi>(TGarnetApi api, ref SessionParseState parseState, int parseStateStartIdx, ref MemoryResult<byte> output)
         {
-            var result = TestAPI(api, ref parseState);
+            var result = TestAPI(api, ref parseState, parseStateStartIdx);
             WriteSimpleString(ref output, result ? "SUCCESS" : "ERROR");
         }
 
-        private static bool TestAPI<TGarnetApi>(TGarnetApi api, ref SessionParseState parseState) where TGarnetApi : IGarnetApi
+        private static bool TestAPI<TGarnetApi>(TGarnetApi api, ref SessionParseState parseState, int parseStateStartIdx) where TGarnetApi : IGarnetApi
         {
             var offset = 0;
             var elements = new ArgSlice[10];
 
-            var setA = GetNextArg(ref parseState, ref offset);
+            var setA = GetNextArg(ref parseState, parseStateStartIdx, ref offset);
 
             if (setA.Length == 0)
                 return false;
 
             for (var i = 0; i < elements.Length; i++)
             {
-                elements[i] = GetNextArg(ref parseState, ref offset);
+                elements[i] = GetNextArg(ref parseState, parseStateStartIdx, ref offset);
             }
 
             var status = api.SetAdd(setA, elements.Take(9).ToArray(), out var count);
@@ -59,7 +59,7 @@ namespace Garnet
             if (status != GarnetStatus.OK || count != 1)
                 return false;
 
-            var toRemove = GetNextArg(ref parseState, ref offset);
+            var toRemove = GetNextArg(ref parseState, parseStateStartIdx, ref offset);
             status = api.SetRemove(setA, toRemove, out count);
             if (status != GarnetStatus.OK || count == 0)
                 return false;

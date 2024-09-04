@@ -18,10 +18,10 @@ namespace Garnet
 
     sealed class TestProcedureHLL : CustomTransactionProcedure
     {
-        public override bool Prepare<TGarnetReadApi>(TGarnetReadApi api, ref SessionParseState parseState)
+        public override bool Prepare<TGarnetReadApi>(TGarnetReadApi api, ref SessionParseState parseState, int parseStateStartIdx)
         {
             var offset = 0;
-            var hll = GetNextArg(ref parseState, ref offset);
+            var hll = GetNextArg(ref parseState, parseStateStartIdx, ref offset);
 
             if (hll.Length == 0)
                 return false;
@@ -30,13 +30,13 @@ namespace Garnet
             return true;
         }
 
-        public override void Main<TGarnetApi>(TGarnetApi api, ref SessionParseState parseState, ref MemoryResult<byte> output)
+        public override void Main<TGarnetApi>(TGarnetApi api, ref SessionParseState parseState, int parseStateStartIdx, ref MemoryResult<byte> output)
         {
             var offset = 0;
             var elements = new string[7];
             var result = true;
 
-            var hll = GetNextArg(ref parseState, ref offset);
+            var hll = GetNextArg(ref parseState, parseStateStartIdx, ref offset);
 
             if (hll.Length == 0)
                 result = false;
@@ -45,7 +45,7 @@ namespace Garnet
             {
                 for (var i = 0; i < elements.Length; i++)
                 {
-                    elements[i] = Encoding.ASCII.GetString(GetNextArg(ref parseState, ref offset).ToArray());
+                    elements[i] = Encoding.ASCII.GetString(GetNextArg(ref parseState, parseStateStartIdx, ref offset).ToArray());
                 }
                 api.HyperLogLogAdd(hll, elements, out var resultPfAdd);
                 result = resultPfAdd;

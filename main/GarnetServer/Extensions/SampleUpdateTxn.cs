@@ -27,25 +27,25 @@ namespace Garnet
     {
         public override bool FailFastOnKeyLockFailure => true;
 
-        public override bool Prepare<TGarnetReadApi>(TGarnetReadApi api, ref SessionParseState parseState)
+        public override bool Prepare<TGarnetReadApi>(TGarnetReadApi api, ref SessionParseState parseState, int parseStateStartIdx)
         {
             var offset = 0;
 
-            var mainStoreKey = GetNextArg(ref parseState, ref offset);
-            GetNextArg(ref parseState, ref offset); // mainStoreValue
+            var mainStoreKey = GetNextArg(ref parseState, parseStateStartIdx, ref offset);
+            GetNextArg(ref parseState, parseStateStartIdx, ref offset); // mainStoreValue
 
             AddKey(mainStoreKey, LockType.Exclusive, false);
 
-            var sortedSet1Key = GetNextArg(ref parseState, ref offset);
+            var sortedSet1Key = GetNextArg(ref parseState, parseStateStartIdx, ref offset);
             if (sortedSet1Key.Length > 0)
             {
                 AddKey(sortedSet1Key, LockType.Exclusive, true);
             }
 
-            GetNextArg(ref parseState, ref offset); // sortedSet1Entry
-            GetNextArg(ref parseState, ref offset); // sortedSetScore
+            GetNextArg(ref parseState, parseStateStartIdx, ref offset); // sortedSet1Entry
+            GetNextArg(ref parseState, parseStateStartIdx, ref offset); // sortedSetScore
 
-            var sortedSet2Key = GetNextArg(ref parseState, ref offset);
+            var sortedSet2Key = GetNextArg(ref parseState, parseStateStartIdx, ref offset);
             if (sortedSet2Key.Length > 0)
             {
                 AddKey(sortedSet2Key, LockType.Exclusive, true);
@@ -54,18 +54,18 @@ namespace Garnet
             return true;
         }
 
-        public override void Main<TGarnetApi>(TGarnetApi api, ref SessionParseState parseState, ref MemoryResult<byte> output)
+        public override void Main<TGarnetApi>(TGarnetApi api, ref SessionParseState parseState, int parseStateStartIdx, ref MemoryResult<byte> output)
         {
             var offset = 0;
 
-            var mainStoreKey = GetNextArg(ref parseState, ref offset);
-            var mainStoreValue = GetNextArg(ref parseState, ref offset);
+            var mainStoreKey = GetNextArg(ref parseState, parseStateStartIdx, ref offset);
+            var mainStoreValue = GetNextArg(ref parseState, parseStateStartIdx, ref offset);
 
             api.SET(mainStoreKey, mainStoreValue);
 
-            var sortedSet1Key = GetNextArg(ref parseState, ref offset);
-            var sortedSet1Entry = GetNextArg(ref parseState, ref offset);
-            var sortedSet1EntryScore = GetNextArg(ref parseState, ref offset);
+            var sortedSet1Key = GetNextArg(ref parseState, parseStateStartIdx, ref offset);
+            var sortedSet1Entry = GetNextArg(ref parseState, parseStateStartIdx, ref offset);
+            var sortedSet1EntryScore = GetNextArg(ref parseState, parseStateStartIdx, ref offset);
 
 
             if (sortedSet1Key.Length > 0)
@@ -73,9 +73,9 @@ namespace Garnet
                 api.SortedSetAdd(sortedSet1Key, sortedSet1EntryScore, sortedSet1Entry, out _);
             }
 
-            var sortedSet2Key = GetNextArg(ref parseState, ref offset);
-            var sortedSet2Entry = GetNextArg(ref parseState, ref offset);
-            var sortedSet2EntryScore = GetNextArg(ref parseState, ref offset);
+            var sortedSet2Key = GetNextArg(ref parseState, parseStateStartIdx, ref offset);
+            var sortedSet2Entry = GetNextArg(ref parseState, parseStateStartIdx, ref offset);
+            var sortedSet2EntryScore = GetNextArg(ref parseState, parseStateStartIdx, ref offset);
 
             if (sortedSet2Key.Length > 0)
             {

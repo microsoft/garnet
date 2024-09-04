@@ -3,7 +3,6 @@
 
 using System;
 using System.Diagnostics;
-using System.Runtime.CompilerServices;
 using Garnet.common;
 using Tsavorite.core;
 
@@ -15,7 +14,7 @@ namespace Garnet.server
     /// </summary>
     internal sealed unsafe partial class RespServerSession : ServerSessionBase
     {
-        private bool TryTransactionProc(byte id, byte* ptr, byte* end, CustomTransactionProcedure proc)
+        private bool TryTransactionProc(byte id, CustomTransactionProcedure proc)
         {
             // Define output
             var output = new MemoryResult<byte>(null, 0);
@@ -24,9 +23,8 @@ namespace Garnet.server
             Debug.Assert(txnManager.state == TxnState.None);
 
             latencyMetrics?.Start(LatencyMetricsType.TX_PROC_LAT);
-            var input = new ArgSlice(ptr, (int)(end - ptr));
 
-            if (txnManager.RunTransactionProc(id, ref parseState, proc, ref output))
+            if (txnManager.RunTransactionProc(id, ref parseState, 1, proc, ref output))
             {
                 // Write output to wire
                 if (output.MemoryOwner != null)
@@ -49,11 +47,11 @@ namespace Garnet.server
             return true;
         }
 
-        public bool RunTransactionProc(byte id, ref SessionParseState parseState, ref MemoryResult<byte> output)
+        public bool RunTransactionProc(byte id, ref MemoryResult<byte> output)
         {
             var proc = customCommandManagerSession
                 .GetCustomTransactionProcedure(id, txnManager, scratchBufferManager).Item1;
-            return txnManager.RunTransactionProc(id, ref parseState, proc, ref output);
+            return txnManager.RunTransactionProc(id, ref parseState, 1, proc, ref output);
 
         }
 
@@ -62,7 +60,7 @@ namespace Garnet.server
             Debug.Assert(proc != null);
 
             var output = new MemoryResult<byte>(null, 0);
-            if (proc.Execute(basicGarnetApi, ref parseState, ref output))
+            if (proc.Execute(basicGarnetApi, ref parseState, 1, ref output))
             {
                 if (output.MemoryOwner != null)
                     SendAndReset(output.MemoryOwner, output.Length);
@@ -93,7 +91,7 @@ namespace Garnet.server
                 header = new RespInputHeader { cmd = cmd },
                 parseState = parseState,
                 parseStateStartIdx = 1,
-                arg1 = expirationTicks == -1 ? expirationTicks : DateTimeOffset.UtcNow.Ticks + expirationTicks
+                arg1 = expirationTicks > 0 ? DateTimeOffset.UtcNow.Ticks + expirationTicks : expirationTicks
             };
 
             var output = new SpanByteAndMemory(null);

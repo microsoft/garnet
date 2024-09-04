@@ -162,7 +162,7 @@ namespace Garnet.server
             this.keyCount = 0;
         }
 
-        internal bool RunTransactionProc(byte id, ref SessionParseState parseState, CustomTransactionProcedure proc, ref MemoryResult<byte> output)
+        internal bool RunTransactionProc(byte id, ref SessionParseState parseState, int parseStateStartIdx, CustomTransactionProcedure proc, ref MemoryResult<byte> output)
         {
             bool running = false;
             scratchBufferManager.Reset();
@@ -170,7 +170,7 @@ namespace Garnet.server
             {
                 functionsState.StoredProcMode = true;
                 // Prepare phase
-                if (!proc.Prepare(garnetTxPrepareApi, ref parseState))
+                if (!proc.Prepare(garnetTxPrepareApi, ref parseState, parseStateStartIdx))
                 {
                     Reset(running);
                     return false;
@@ -186,10 +186,10 @@ namespace Garnet.server
                 running = true;
 
                 // Run main procedure on locked data
-                proc.Main(garnetTxMainApi, ref parseState, ref output);
+                proc.Main(garnetTxMainApi, ref parseState, parseStateStartIdx, ref output);
 
                 // Log the transaction to AOF
-                Log(id, ref parseState);
+                Log(id, ref parseState, parseStateStartIdx);
 
                 // Commit
                 Commit();
@@ -204,7 +204,7 @@ namespace Garnet.server
                 try
                 {
                     // Run finalize procedure at the end
-                    proc.Finalize(garnetTxFinalizeApi, ref parseState, ref output);
+                    proc.Finalize(garnetTxFinalizeApi, ref parseState, parseStateStartIdx, ref output);
                 }
                 catch { }
 
@@ -227,7 +227,7 @@ namespace Garnet.server
             state = TxnState.Aborted;
         }
 
-        internal void Log(byte id, ref SessionParseState parseState)
+        internal void Log(byte id, ref SessionParseState parseState, int parseStateStartIdx)
         {
             Debug.Assert(functionsState.StoredProcMode);
             var sbToSerialize = new SpanByte[1 + parseState.Count];

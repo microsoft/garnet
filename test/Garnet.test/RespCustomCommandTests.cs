@@ -59,11 +59,14 @@ namespace Garnet.test
             string origValue = "foovalue0";
             db.StringSet(key, origValue);
 
+            string retValue = db.StringGet(key);
+            ClassicAssert.AreEqual(origValue, retValue);
+
             string newValue1 = "foovalue1";
-            db.Execute("SETIFPM", key, newValue1, "foo");
+            var res = db.Execute("SETIFPM", key, newValue1, "foo");
 
             // This conditional set should pass (prefix matches)
-            string retValue = db.StringGet(key);
+            retValue = db.StringGet(key);
             ClassicAssert.AreEqual(newValue1, retValue);
 
             // This conditional set should fail (prefix does not match)

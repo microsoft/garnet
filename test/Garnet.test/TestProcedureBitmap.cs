@@ -19,14 +19,14 @@ namespace Garnet
 
     sealed class TestProcedureBitmap : CustomTransactionProcedure
     {
-        public override bool Prepare<TGarnetReadApi>(TGarnetReadApi api, ref SessionParseState parseState)
+        public override bool Prepare<TGarnetReadApi>(TGarnetReadApi api, ref SessionParseState parseState, int parseStateStartIdx)
         {
             var offset = 0;
-            var bitmapA = GetNextArg(ref parseState, ref offset);
-            GetNextArg(ref parseState, ref offset);
-            GetNextArg(ref parseState, ref offset);
-            var destinationKey = GetNextArg(ref parseState, ref offset);
-            var bitmapB = GetNextArg(ref parseState, ref offset);
+            var bitmapA = GetNextArg(ref parseState, parseStateStartIdx, ref offset);
+            GetNextArg(ref parseState, parseStateStartIdx, ref offset);
+            GetNextArg(ref parseState, parseStateStartIdx, ref offset);
+            var destinationKey = GetNextArg(ref parseState, parseStateStartIdx, ref offset);
+            var bitmapB = GetNextArg(ref parseState, parseStateStartIdx, ref offset);
 
             if (bitmapA.Length == 0)
                 return false;
@@ -42,18 +42,18 @@ namespace Garnet
             return true;
         }
 
-        public override void Main<TGarnetApi>(TGarnetApi api, ref SessionParseState parseState, ref MemoryResult<byte> output)
+        public override void Main<TGarnetApi>(TGarnetApi api, ref SessionParseState parseState, int parseStateStartIdx, ref MemoryResult<byte> output)
         {
             int offset = 0;
             bool result = true;
             BitmapOperation[] bitwiseOps = [BitmapOperation.AND, BitmapOperation.OR, BitmapOperation.XOR];
 
             //get paramaters
-            var bitmapA = GetNextArg(ref parseState, ref offset);
-            var offsetArgument = GetNextArg(ref parseState, ref offset);
-            var bitValueArgument = GetNextArg(ref parseState, ref offset);
-            var destinationKeyBitOp = GetNextArg(ref parseState, ref offset);
-            var bitmapB = GetNextArg(ref parseState, ref offset);
+            var bitmapA = GetNextArg(ref parseState, parseStateStartIdx, ref offset);
+            var offsetArgument = GetNextArg(ref parseState, parseStateStartIdx, ref offset);
+            var bitValueArgument = GetNextArg(ref parseState, parseStateStartIdx, ref offset);
+            var destinationKeyBitOp = GetNextArg(ref parseState, parseStateStartIdx, ref offset);
+            var bitmapB = GetNextArg(ref parseState, parseStateStartIdx, ref offset);
 
             //simple set and get for bitmaps
             api.StringSetBit(bitmapA, offsetArgument, bitValueArgument.ToArray()[0] == '1', out _);

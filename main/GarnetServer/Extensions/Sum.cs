@@ -8,13 +8,13 @@ namespace Garnet
 {
     class Sum : CustomProcedure
     {
-        public override bool Execute(IGarnetApi garnetApi, ref SessionParseState parseState, ref MemoryResult<byte> output)
+        public override bool Execute(IGarnetApi garnetApi, ref SessionParseState parseState, int parseStateStartIdx, ref MemoryResult<byte> output)
         {
             var offset = 0;
             var sum = 0;
             ArgSlice key;
 
-            while ((key = GetNextArg(ref parseState, ref offset)).Length > 0)
+            while ((key = GetNextArg(ref parseState, parseStateStartIdx, ref offset)).Length > 0)
             {
                 if (garnetApi.GET(key, out var value) == GarnetStatus.OK)
                 {

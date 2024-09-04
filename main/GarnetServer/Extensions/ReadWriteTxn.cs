@@ -19,23 +19,23 @@ namespace Garnet
     /// </summary>
     sealed class ReadWriteTxn : CustomTransactionProcedure
     {
-        public override bool Prepare<TGarnetReadApi>(TGarnetReadApi api, ref SessionParseState parseState)
+        public override bool Prepare<TGarnetReadApi>(TGarnetReadApi api, ref SessionParseState parseState, int parseStateStartIdx)
         {
             int offset = 0;
-            api.GET(GetNextArg(ref parseState, ref offset), out var key1);
+            api.GET(GetNextArg(ref parseState, parseStateStartIdx, ref offset), out var key1);
             if (key1.ReadOnlySpan.SequenceEqual("wrong_string"u8))
                 return false;
-            AddKey(GetNextArg(ref parseState, ref offset), LockType.Exclusive, false);
-            AddKey(GetNextArg(ref parseState, ref offset), LockType.Exclusive, false);
+            AddKey(GetNextArg(ref parseState, parseStateStartIdx, ref offset), LockType.Exclusive, false);
+            AddKey(GetNextArg(ref parseState, parseStateStartIdx, ref offset), LockType.Exclusive, false);
             return true;
         }
 
-        public override void Main<TGarnetApi>(TGarnetApi api, ref SessionParseState parseState, ref MemoryResult<byte> output)
+        public override void Main<TGarnetApi>(TGarnetApi api, ref SessionParseState parseState, int parseStateStartIdx, ref MemoryResult<byte> output)
         {
             var offset = 0;
-            var key1 = GetNextArg(ref parseState, ref offset);
-            var key2 = GetNextArg(ref parseState, ref offset);
-            var key3 = GetNextArg(ref parseState, ref offset);
+            var key1 = GetNextArg(ref parseState, parseStateStartIdx, ref offset);
+            var key2 = GetNextArg(ref parseState, parseStateStartIdx, ref offset);
+            var key3 = GetNextArg(ref parseState, parseStateStartIdx, ref offset);
 
             var status = api.GET(key1, out var result);
             if (status == GarnetStatus.OK)

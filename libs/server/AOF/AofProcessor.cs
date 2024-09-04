@@ -287,7 +287,7 @@ namespace Garnet.server
                 }
             }
 
-            respServerSession.RunTransactionProc(id, ref parseState, ref output);
+            respServerSession.RunTransactionProc(id, ref output);
         }
 
         static unsafe void StoreUpsert(BasicContext<SpanByte, SpanByte, RawStringInput, SpanByteAndMemory, long, MainSessionFunctions, MainStoreFunctions, MainStoreAllocator> basicContext, byte* ptr)

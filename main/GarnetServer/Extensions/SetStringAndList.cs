@@ -8,16 +8,16 @@ namespace Garnet
 {
     class SetStringAndList : CustomProcedure
     {
-        public override bool Execute(IGarnetApi garnetApi, ref SessionParseState parseState, ref MemoryResult<byte> output)
+        public override bool Execute(IGarnetApi garnetApi, ref SessionParseState parseState, int parseStateStartIdx, ref MemoryResult<byte> output)
         {
             var offset = 0;
-            var key = GetNextArg(ref parseState, ref offset);
-            var value = GetNextArg(ref parseState, ref offset);
+            var key = GetNextArg(ref parseState, parseStateStartIdx, ref offset);
+            var value = GetNextArg(ref parseState, parseStateStartIdx, ref offset);
             garnetApi.SET(key, value);
 
             // Create an object and set it
-            var objKey = GetNextArg(ref parseState, ref offset);
-            var objValue = GetNextArg(ref parseState, ref offset);
+            var objKey = GetNextArg(ref parseState, parseStateStartIdx, ref offset);
+            var objValue = GetNextArg(ref parseState, parseStateStartIdx, ref offset);
             garnetApi.ListRightPush(objKey, [objValue], out _);
 
             WriteSimpleString(ref output, "OK");

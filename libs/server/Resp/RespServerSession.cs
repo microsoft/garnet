@@ -694,7 +694,7 @@ namespace Garnet.server
                 }
 
                 // Perform the operation
-                TryTransactionProc(currentCustomTransaction.id, recvBufferPtr + readHead, recvBufferPtr + endReadHead, customCommandManagerSession.GetCustomTransactionProcedure(currentCustomTransaction.id, txnManager, scratchBufferManager).Item1);
+                TryTransactionProc(currentCustomTransaction.id, customCommandManagerSession.GetCustomTransactionProcedure(currentCustomTransaction.id, txnManager, scratchBufferManager).Item1);
                 currentCustomTransaction = null;
             }
             else if (command == RespCommand.CustomRawStringCmd)

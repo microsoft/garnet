@@ -16,17 +16,17 @@ namespace Garnet
     /// </summary>
     sealed class DeleteTxn : CustomTransactionProcedure
     {
-        public override bool Prepare<TGarnetReadApi>(TGarnetReadApi api, ref SessionParseState parseState)
+        public override bool Prepare<TGarnetReadApi>(TGarnetReadApi api, ref SessionParseState parseState, int parseStateStartIdx)
         {
             var offset = 0;
-            AddKey(GetNextArg(ref parseState, ref offset), LockType.Exclusive, false);
+            AddKey(GetNextArg(ref parseState, parseStateStartIdx, ref offset), LockType.Exclusive, false);
             return true;
         }
 
-        public override void Main<TGarnetApi>(TGarnetApi api, ref SessionParseState parseState, ref MemoryResult<byte> output)
+        public override void Main<TGarnetApi>(TGarnetApi api, ref SessionParseState parseState, int parseStateStartIdx, ref MemoryResult<byte> output)
         {
             var offset = 0;
-            var key = GetNextArg(ref parseState, ref offset);
+            var key = GetNextArg(ref parseState, parseStateStartIdx, ref offset);
             api.DELETE(key, StoreType.Main);
             WriteSimpleString(ref output, "SUCCESS");
         }
