@@ -12,6 +12,11 @@ namespace Garnet.server
     public interface IClusterSession
     {
         /// <summary>
+        /// If the current session is being used by a remote cluster node, the id that was last presented during a GOSSIP message.
+        /// </summary>
+        string RemoteNodeId { get; }
+
+        /// <summary>
         /// Type of session
         /// </summary>
         bool ReadWriteSession { get; }

@@ -47,6 +47,7 @@ namespace Garnet.common
         protected readonly int ThrottleMax = 8;
 
         readonly string remoteEndpoint;
+        readonly string localEndpoint;
 
         readonly LimitedFixedBufferPool networkPool;
 
@@ -54,6 +55,8 @@ namespace Garnet.common
         /// NOTE: This variable should not be marked as readonly as it is a mutable struct
         /// </summary>
         SpinLock spinLock;
+
+        private int closeRequested;
 
         /// <summary>
         /// 
@@ -73,17 +76,18 @@ namespace Garnet.common
             this.responseObject = null;
             this.ThrottleMax = throttleMax;
             this.spinLock = new();
+            this.closeRequested = 0;
 
-            var endpoint = socket.RemoteEndPoint as IPEndPoint;
-            if (endpoint != null)
-                remoteEndpoint = $"{endpoint.Address}:{endpoint.Port}";
-            else
-                remoteEndpoint = "";
+            remoteEndpoint = socket.RemoteEndPoint is IPEndPoint remote ? $"{remote.Address}:{remote.Port}" : "";
+            localEndpoint = socket.LocalEndPoint is IPEndPoint local ? $"{local.Address}:{local.Port}" : "";
         }
 
 
         /// <inheritdoc />
         public override string RemoteEndpointName => remoteEndpoint;
+
+        /// <inheritdoc />
+        public override string LocalEndpointName => localEndpoint;
 
         /// <inheritdoc />
         public override void Enter()
@@ -255,6 +259,31 @@ namespace Garnet.common
             // Release throttle, since we used up one slot
             if (Interlocked.Decrement(ref throttleCount) >= ThrottleMax)
                 throttle.Release();
+        }
+
+        /// <inheritdoc />
+        public override bool TryClose()
+        {
+            // Only one caller gets to invoke Close, as we'd expect subsequent ones to fail and throw
+            if (Interlocked.CompareExchange(ref closeRequested, 1, 0) != 0)
+            {
+                return false;
+            }
+
+            try
+            {
+                // This close should cause all outstanding requests to fail.
+                // 
+                // We don't distinguish between clients closing their end of the Socket
+                // and us forcing it closed on request.
+                socket.Close();
+            }
+            catch
+            {
+                // Best effort, just swallow any exceptions
+            }
+
+            return true;
         }
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]

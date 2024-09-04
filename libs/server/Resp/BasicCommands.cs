@@ -3,6 +3,7 @@
 
 using System;
 using System.Diagnostics;
+using System.Linq;
 using System.Runtime.CompilerServices;
 using System.Text;
 using System.Threading.Tasks;
@@ -1412,6 +1413,65 @@ namespace Garnet.server
         {
             storeWrapper.store.Log.ShiftBeginAddress(storeWrapper.store.Log.TailAddress, truncateLog: unsafeTruncateLog);
             storeWrapper.objectStore?.Log.ShiftBeginAddress(storeWrapper.objectStore.Log.TailAddress, truncateLog: unsafeTruncateLog);
+        }
+
+        /// <summary>
+        /// Writes a string describing the given session into the string builder.
+        /// Does not append a new line.
+        ///
+        /// Not all Redis fields are written as they do not all have Garnet equivalents.
+        /// </summary>
+        private static void WriteClientInfo(IClusterProvider provider, StringBuilder into, RespServerSession targetSession, long nowMilliseconds)
+        {
+            var id = targetSession.Id;
+            var remoteEndpoint = targetSession.networkSender.RemoteEndpointName;
+            var localEndpoint = targetSession.networkSender.LocalEndpointName;
+            var clientName = targetSession.clientName;
+            var user = targetSession._user;
+            var resp = targetSession.respProtocolVersion;
+            var nodeId = targetSession?.clusterSession?.RemoteNodeId;
+
+            into.Append($"id={id}");
+            into.Append($" addr={remoteEndpoint}");
+            into.Append($" laddr={localEndpoint}");
+            if (clientName is not null)
+            {
+                into.Append($" name={clientName}");
+            }
+
+            var ageSec = (nowMilliseconds - targetSession.CreationTicks) / 1_000;
+
+            into.Append($" age={ageSec}");
+
+            if (user is not null)
+            {
+                into.Append($" user={user.Name}");
+            }
+
+            if (provider is not null && nodeId is not null)
+            {
+                if (provider.IsReplica(nodeId))
+                {
+                    into.Append($" flags=S");
+                }
+                else
+                {
+                    into.Append($" flags=M");
+                }
+            }
+            else
+            {
+                if (targetSession.isSubscriptionSession)
+                {
+                    into.Append($" flags=P");
+                }
+                else
+                {
+                    into.Append($" flags=N");
+                }
+            }
+
+            into.Append($" resp={resp}");
         }
 
         bool ParseGETAndKey(ref SpanByte key)

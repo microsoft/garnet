@@ -24,6 +24,8 @@ namespace Garnet.common
         readonly ILogger logger;
         readonly Socket socket;
         readonly string remoteEndpoint;
+        readonly string localEndpoint;
+        int closeRequested;
 
         /// <summary>
         /// Constructor
@@ -33,16 +35,19 @@ namespace Garnet.common
         {
             this.logger = logger;
             this.socket = socket;
-            var endpoint = socket.RemoteEndPoint as IPEndPoint;
-            if (endpoint != null)
-                remoteEndpoint = $"{endpoint.Address}:{endpoint.Port}";
-            else
-                remoteEndpoint = "";
+            this.closeRequested = 0;
+
+            remoteEndpoint = socket.RemoteEndPoint is IPEndPoint remote ? $"{remote.Address}:{remote.Port}" : "";
+            localEndpoint = socket.LocalEndPoint is IPEndPoint local ? $"{local.Address}:{local.Port}" : "";
+
             AllocateNetworkReceiveBuffer();
         }
 
         /// <inheritdoc />
         public override string RemoteEndpointName => remoteEndpoint;
+
+        /// <inheritdoc />
+        public override string LocalEndpointName => localEndpoint;
 
         /// <inheritdoc />
         public override void Start(SslServerAuthenticationOptions tlsOptions = null, string remoteEndpointName = null, CancellationToken token = default)
@@ -70,6 +75,31 @@ namespace Garnet.common
         {
             Start();
             await base.StartAsync(tlsOptions, remoteEndpointName, token).ConfigureAwait(false);
+        }
+
+        /// <inheritdoc />
+        public override bool TryClose()
+        {
+            // Only one caller gets to invoke Close, as we'd expect subsequent ones to fail and throw
+            if (Interlocked.CompareExchange(ref closeRequested, 0, 1) != 0)
+            {
+                return false;
+            }
+
+            try
+            {
+                // This close should cause all outstanding requests to fail.
+                // 
+                // We don't distinguish between clients closing their end of the Socket
+                // and us forcing it closed on request.
+                socket.Close();
+            }
+            catch
+            {
+                // Best effort, just swallow any exceptions
+            }
+
+            return true;
         }
 
         void Start()
