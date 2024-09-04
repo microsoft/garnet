@@ -83,11 +83,12 @@ namespace Tsavorite.test.ReadCacheTests
                 }
                 if (arg is DeviceType deviceType)
                 {
-                    kvSettings.LogDevice = CreateTestDevice(deviceType, filename, deleteOnClose: true);
+                    log = CreateTestDevice(deviceType, filename, deleteOnClose: true);
                     continue;
                 }
             }
-            kvSettings.LogDevice ??= Devices.CreateLogDevice(filename, deleteOnClose: true);
+
+            kvSettings.LogDevice = log ??= Devices.CreateLogDevice(filename, deleteOnClose: true);
 
             store = new(kvSettings
                 , StoreFunctions<SpanByte, SpanByte>.Create()
