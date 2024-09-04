@@ -992,7 +992,7 @@ namespace Tsavorite.core
                 try
                 {
                     epoch.Suspend();
-                    flushEvent.Wait();
+                    if (!noFlush) flushEvent.Wait();
                 }
                 finally
                 {
