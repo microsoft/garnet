@@ -20,6 +20,7 @@ jobs:
       uses: dorny/paths-filter@v3
       id: filter
       with:
+        base: 'main'
         ref: 'HEAD'
         filters: |
           website:
