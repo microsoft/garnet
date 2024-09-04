@@ -992,7 +992,7 @@ namespace Tsavorite.core
                 try
                 {
                     epoch.Suspend();
-                    if (!noFlush) flushEvent.Wait();
+                    flushEvent.Wait();
                 }
                 finally
                 {
@@ -1444,12 +1444,13 @@ namespace Tsavorite.core
                         asyncResult.fromAddress = fromAddress;
                 }
 
+                bool skip = false;
                 if (asyncResult.untilAddress <= BeginAddress)
                 {
                     // Short circuit as no flush needed
                     _ = Utility.MonotonicUpdate(ref PageStatusIndicator[flushPage % BufferSize].LastFlushedUntilAddress, BeginAddress, out _);
                     ShiftFlushedUntilAddress();
-                    continue;
+                    skip = true;
                 }
 
                 if (IsNullDevice || noFlush)
@@ -1457,8 +1458,10 @@ namespace Tsavorite.core
                     // Short circuit as no flush needed
                     _ = Utility.MonotonicUpdate(ref PageStatusIndicator[flushPage % BufferSize].LastFlushedUntilAddress, asyncResult.untilAddress, out _);
                     ShiftFlushedUntilAddress();
-                    continue;
+                    skip = true;
                 }
+
+                if (skip) continue;
 
                 // Partial page starting point, need to wait until the
                 // ongoing adjacent flush is completed to ensure correctness
