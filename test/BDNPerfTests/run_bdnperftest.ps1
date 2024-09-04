@@ -4,9 +4,9 @@
 
 .DESCRIPTION
 
-    Script to test for performance regressions using BDN Benchmark tool.  There are configuration files associated with each test that contains name and expected values of the BDN benchmark. Any of these can be sent as the parameter to the file.
+    Script to test for performance regressions using BDN Benchmark tool.  There are configuration files (in /ConfigFiles dir) associated with each test that contains name and expected values of the BDN benchmark. Any of these can be sent as the parameter to the file.
     
-        ConfigFiles/CI_BDN_Config_RespParseStress.json
+        CI_BDN_Config_RespParseStress.json
         
 
     NOTE: The expected values are specific for the CI Machine. If you run these on your machine, you will need to change the expected values.
@@ -14,12 +14,12 @@
     
 .EXAMPLE
     ./run_bdnperftest.ps1 
-    ./run_bdnperftest.ps1 ConfigFiles/CI_BDN_Config_RespParseStress.json
+    ./run_bdnperftest.ps1 CI_BDN_Config_RespParseStress.json
 #>
 
 # Send the config file for the benchmark. Defaults to a simple one
 param (
-  [string]$configFile = "ConfigFiles/CI_BDN_Config_RespParseStress.json"
+  [string]$configFile = "CI_BDN_Config_RespParseStress.json"
 )
 
 
@@ -95,11 +95,12 @@ Write-Output "------------ DEBUG Basepath: $basePath"
 
 
 # Read the test config file and convert the JSON to a PowerShell object
-if (-not (Test-Path -Path $configFile)) {
-    Write-Error -Message "The test config file $configFile does not exist." -Category ObjectNotFound
+$fullConfiFileAndPath = "ConfigFiles/$configFile"
+if (-not (Test-Path -Path $fullConfiFileAndPath)) {
+    Write-Error -Message "The test config file $fullConfiFileAndPath does not exist." -Category ObjectNotFound
     exit
 }
-$json = Get-Content -Raw $configFile
+$json = Get-Content -Raw $fullConfiFileAndPath
 $object = $json | ConvertFrom-Json
 
 # Use this in the file name to separate outputs when running in ADO
@@ -125,7 +126,7 @@ if ($IsLinux) {
 
 # To get accurate comparison of found vs expected values, double check to make sure config settings for Number of Cores of the test machine are what is specified in the test config file
 #if ($ExpectedCoresToTestOn -ne $NumberOfCores) {
-#    Write-Error -Message "The Number of Cores on this machine ($NumberOfCores) are not the same as the Expected Cores ($ExpectedCoresToTestOn) found in the test config file: $configFile."
+#    Write-Error -Message "The Number of Cores on this machine ($NumberOfCores) are not the same as the Expected Cores ($ExpectedCoresToTestOn) found in the test config file: $fullConfiFileAndPath."
 #    exit
 #}
 
@@ -190,8 +191,7 @@ if (-not (Test-Path -Path $errorLogDir)) {
 $BDNbenchmarkPath = "$basePath/benchmark/BDN.benchmark"  
 
 # Create Results and all the log files using the the config file name as part of the name of the results \ logs
-$resultsFileName = $configFile.Substring(12)
-$justResultsFileNameNoExt = $resultsFileName -replace ".{5}$"
+$justResultsFileNameNoExt = $configFile -replace ".{5}$"   # strip off the .json
 $resultsFileName = $justResultsFileNameNoExt + "_" + $CurrentOS + ".results"
 $resultsFile = "$resultsDir/$resultsFileName"
 $BDNbenchmarkErrorFile = "$errorLogDir/$justResultsFileNameNoExt" + "_StandardError_" +$CurrentOS+".log"
@@ -201,7 +201,7 @@ Write-Output "------------ DEBUG #########################"
 Write-Output "*#*#* Configuration $configuration"
 Write-Output "*#*#* framework $framework"
 Write-Output "*#*#* filter $filter"
-Write-Output "*#*#* Standard Out $resultsFile"
+Write-Output "*#*#* Standard Out (Results) $resultsFile"
 Write-Output "*#*#* Standard Error $BDNbenchmarkErrorFile"
 Write-Output "*#*#* Working Dir (BDNBM Path) $BDNbenchmarkPath"
 Write-Output "*------------ DEBUG #########################"
@@ -213,10 +213,11 @@ dotnet run -c $configuration -f $framework --filter $filter --project $BDNbenchm
 
 
 # TO DO ###########################
-# For YML files (ADO and GH) - do we need "build" Tsav and Garnet before?  Guessing yes, but worth a test to see. Maybe the run of benchmark builds everything it needs
-# Parse output
+# Get Upload of artifacts working (YML file changes) -- Might be fixed, just need to check in and try
+# Parse output  -- WHERE LEFT OFF!!!!  After ran once, comment out the dotnet run and just work on parsing stuff
 # Analyze?
 # Add "CI" only switch so can run on GH (default to CI?  If so - add full run switch to not analyze but gather and push data somewhere)
+# For YML files (ADO and GH) - do we need "build" Tsav and Garnet before?  Guessing yes, but worth a test to see. Maybe the run of benchmark builds everything it needs
 # TO DO ###########################
 
 
@@ -246,90 +247,36 @@ Write-Output "************************"
 Write-Output "**   RESULTS  "
 Write-Output "**   "
 
-<#
-# Parse the file for test results - offline has different output format than online
-if ($onlineMode -eq "--online")
-{
-    # Results to monitor \ analyze: Median, 99, 99.9 and tpt
-    # The columns are separated by spaces but the problem is that each column number of spaces differs so can't just easily do a split. 
-    # However, can remove a chunk of them and put in a ; in and then use that to delimit. If only do a few spaces, then get multiple ";" between the columns where only want 1 ";"
-    $resultsLine = Get-Content -Tail 1 $resultsFile
-    $resultsLine = $resultsLine -replace  " {7}", ";"
+# Results to monitor \ analyze: Median, 99, 99.9 and tpt
+# The columns are separated by spaces but the problem is that each column number of spaces differs so can't just easily do a split. 
+# However, can remove a chunk of them and put in a ; in and then use that to delimit. If only do a few spaces, then get multiple ";" between the columns where only want 1 ";"
+$resultsLine = Get-Content -Tail 1 $resultsFile
+$resultsLine = $resultsLine -replace  " {7}", ";"
+Write-Output "-- Debug --  $resultsLine"
 
-    # Get the column values that are wanted (Median, 99 percent, 99.9 percent and TPT)
-    $results = $resultsLine -split ";"
-    $resultsMedian = $results[2].trim()
-    $results99 = $results[5].trim()
-    $results99_9 = $results[6].trim()
-    $resultsTPT = $results[9].trim()
-   
-    # Median results verification
-    Write-Output "**  Median "
-    $currentResults = AnalyzeResult $resultsMedian $expectedMedianValue $acceptableRangeMedian
-    if ($currentResults -eq $false) {
-        $testSuiteResult = $false
-    }
+# Get the column values that are wanted (Median, 99 percent, 99.9 percent and TPT)
+$results = $resultsLine -split ";"
+$resultsMethod = $results[2].trim()
+$resultsMean = $results[5].trim()
+$resultsError = $results[6].trim()
+$resultsStdDev = $results[9].trim()
+$resultsAllocated = $results[12].trim()
 
-    # 99 Percent results verification
-    Write-Output "**  99 Percent "
-    $currentResults = AnalyzeResult $results99 $expected99Value $acceptableRange99 $true
-    if ($currentResults -eq $false) {
-        Write-Output "**   NOTE: due to variance of P99 results, only showing a warning when it is out of range and not causing entire script to show as fail."
-        Write-Output "**"
-        #        $testSuiteResult = $false
-    }
+# Median results verification
+Write-Output "**  Median "
+#$currentResults = AnalyzeResult $resultsMedian $expectedMedianValue $acceptableRangeMedian
+#if ($currentResults -eq $false) {
+#    $testSuiteResult = $false
+#}
 
-    # 99.9 Percent results verification
-    Write-Output "**  99.9 Percent "
-    $currentResults = AnalyzeResult $results99_9 $expected99_9Value $acceptableRange99_9 $true
-    if ($currentResults -eq $false) {
-        Write-Output "**   NOTE: due to variance of P99.9 results, only showing a warning when it is out of range and not causing entire script to show as fail."
-        Write-Output "**"
 
-        #        $testSuiteResult = $false
-    }
-   
-    # tpt (kops/sec) results verification
-    Write-Output "**  tpt (kops / sec) "
-    $currentResults = AnalyzeResult $resultsTPT $expectedTPTValue $acceptableRangeTPT
-    if ($currentResults -eq $false) {
-        $testSuiteResult = $false
-    }
-}
-else {   # Offline mode
-
-    # Parse out MSET Throughput only if it exists - only in GET not ZADDREM
-    $MSETLineNumber = Select-String -Path $resultsFile -Pattern "Operation type: MSET" | Select-Object -ExpandProperty LineNumber
-    if ($MSETLineNumber)
-    {
-        $MSETResultsLine = Get-Content -Path $resultsFile | Select-Object -Index ($MSETLineNumber + 2)
-        $foundMSETThroughputValue = ParseThroughPutValueFromResults $MSETResultsLine
-
-        Write-Output "**  MSET Throughput (ops / sec) "
-        $currentMSETResults = AnalyzeResult $foundMSETThroughputValue $expected_MSET_ThroughputValue $acceptable_MSET_ThroughputRange
-        if ($currentMSETResults -eq $false) {
-            $testSuiteResult = $false
-        }
-    }
-
-    # Parse out GET Throughput (ops/sec) - known that it is the last "Throughput" in file
-    $getResultsLine = Select-String -Path $resultsFile -Pattern 'ops/sec' | Select-Object -Last 1 -ExpandProperty Line
-    $foundOpsSecValue = ParseThroughPutValueFromResults $getResultsLine
-
-    Write-Output "**  GET Throughput (ops / sec) "
-    $currentGetResults = AnalyzeResult $foundOpsSecValue $expected_GET_ThroughputValue $acceptable_GET_ThroughputRange
-    if ($currentGetResults -eq $false) {
-        $testSuiteResult = $false
-    }
-}
-#>
 
 Write-Output "**  "
 Write-Output "************************"
 Write-Output "**  Final summary:"
 Write-Output "**  "
 if ($testSuiteResult) {
-    Write-Output "**   PASS!  All tests passed  " -ForegroundColor Green
+    Write-Output "**   PASS!  All tests passed  "
 } else {
     Write-Error -Message "**   BDN Benchmark PERFORMANCE REGRESSION FAIL!  At least one test had performance outside of expected range. NOTE: Expected results are based on CI machine and may differ from the machine that this was ran on."
 }

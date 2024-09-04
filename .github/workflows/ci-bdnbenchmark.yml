@@ -37,7 +37,7 @@ jobs:
         os: [ ubuntu-latest, windows-latest ]
         framework: [ 'net8.0' ]
         configuration: [ 'Release' ]
-        test: [ 'ConfigFiles/CI_BDN_Config_RespParseStress.json' ]
+        test: [ 'CI_BDN_Config_RespParseStress.json' ]
     steps:
       - name: Check out code
         uses: actions/checkout@v4
@@ -54,12 +54,6 @@ jobs:
         run: .\test\BDNPerfTests\run_bdnperftest.ps1 ${{ matrix.test }}
         shell: pwsh
    
-      - name: Upload test results
-        uses: actions/upload-artifact@v4
-        with:
-          name: dotnet-bdnbenchmark-results-${{ matrix.os }}-${{ matrix.framework }}-${{ matrix.configuration }}-${{ matrix.test }}
-          path: BDNBenchmarkResults-${{ matrix.os }}-${{ matrix.framework }}-${{ matrix.configuration }}-${{ matrix.test }}
-        if: ${{ always() }}
       - name: Upload test results 2
         uses: actions/upload-artifact@v4
         with:
