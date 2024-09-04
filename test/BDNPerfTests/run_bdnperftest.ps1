@@ -34,14 +34,6 @@ $OFS = "`r`n"
 function AnalyzeResult {
     param ($foundResultValue, $expectedResultValue, $acceptablePercentRange, $warnonly)
 
-    Write-Host "------   ANALYZE RESULTS------"
-    Write-Host "------------ DEBUG  Found Results:" 
-    Write-Host $foundResultValue
-    Write-Host "------------ DEBUG  Expected Results: $expectedResultValue"
-    Write-Host "------------ DEBUG  Accept Percent: $acceptablePercentRange"    
-    Write-Host "------------ DEBUG  Warn Only: $warnonly"    
-
-
     # Calculate the lower and upper bounds of the expected value
     [double] $Tolerance = $acceptablePercentRange / 100
     [double] $LowerBound = $expectedResultValue * (1 - $Tolerance)
@@ -50,17 +42,17 @@ function AnalyzeResult {
     
     # Check if the actual value is within the bounds
     if ($dblfoundResultValue -ge $LowerBound -and $dblfoundResultValue -le $UpperBound) {
-        Write-Host "**   ** PASS! **  The performance result ($dblfoundResultValue) is in the acceptable range +/-$acceptablePercentRange% ($LowerBound -> $UpperBound) of expected value: $expectedResultValue " 
+        Write-Host "**   ** PASS! **  Mean Value result ($dblfoundResultValue) is in the acceptable range +/-$acceptablePercentRange% ($LowerBound -> $UpperBound) of expected value: $expectedResultValue " 
         Write-Host "** "
         return $true # the values are close enough
     }
     else {
         if ($warnonly) {
-            Write-Host "**   << PERF REGRESSION WARNING! >>  The BDN benchmark result ($dblfoundResultValue) is OUT OF RANGE +/-$acceptablePercentRange% ($LowerBound -> $UpperBound) of expected value: $expectedResultValue" 
+            Write-Host "**   << PERF REGRESSION WARNING! >>  The BDN benchmark Mean Value result ($dblfoundResultValue) is OUT OF RANGE +/-$acceptablePercentRange% ($LowerBound -> $UpperBound) of expected value: $expectedResultValue" 
             Write-Host "** "
         }
         else {
-            Write-Host "**   << PERF REGRESSION FAIL! >>  The  BDN benchmark ($dblfoundResultValue) is OUT OF ACCEPTABLE RANGE +/-$acceptablePercentRange% ($LowerBound -> $UpperBound) of expected value: $expectedResultValue"
+            Write-Host "**   << PERF REGRESSION FAIL! >>  The  BDN benchmark Mean Value ($dblfoundResultValue) is OUT OF ACCEPTABLE RANGE +/-$acceptablePercentRange% ($LowerBound -> $UpperBound) of expected value: $expectedResultValue"
             Write-Host "** "
         }
         return $false # the values are too different
@@ -164,7 +156,7 @@ if ($IsLinux) {
     $expectedInLinePingMeanValue = $object.expectedInLinePingMeanValue_linux
     $expectedSETEXMeanValue = $object.expectedSETEXMeanValue_linux
     $expectedZAddRemMeanValue = $object.expectedZAddRemMeanValue_linux
-    $expectedLPushPopMeanValu = $object.expectedLPushPopMeanValue_linux
+    $expectedLPushPopMeanValue = $object.expectedLPushPopMeanValue_linux
     $expectedSAddRemMeanValue = $object.expectedSAddRemMeanValue_linux
     $expectedHSetDelMeanValue = $object.expectedHSetDelMeanValue_linux
     $expectedMyDictSetGetMeanValue = $object.expectedMyDictSetGetMeanValue_linux
@@ -179,7 +171,7 @@ else {
     $expectedInLinePingMeanValue = $object.expectedInLinePingMeanValue_win
     $expectedSETEXMeanValue = $object.expectedSETEXMeanValue_win
     $expectedZAddRemMeanValue = $object.expectedZAddRemMeanValue_win
-    $expectedLPushPopMeanValu = $object.expectedLPushPopMeanValue_win
+    $expectedLPushPopMeanValue = $object.expectedLPushPopMeanValue_win
     $expectedSAddRemMeanValue = $object.expectedSAddRemMeanValue_win
     $expectedHSetDelMeanValue = $object.expectedHSetDelMeanValue_win
     $expectedMyDictSetGetMeanValue = $object.expectedMyDictSetGetMeanValue_win
@@ -187,7 +179,7 @@ else {
 }
 
 # percent allowed variance when comparing expected vs actual found value - same for linux and windows. 
-# TO DO: Figure out Error and Std Dev range ... have % off of .1 or we have 
+# TO DO: Figure out if using Error and Std Dev range ... have % off of .1 or we have 
 $acceptableError = $object.acceptableError  
 $acceptableStdDev = $object.acceptableStdDev  
 $acceptableMeanRange = $object.acceptableMeanRange 
@@ -225,7 +217,7 @@ Write-Output "*------------ DEBUG #########################"
 Write-Output "** Start BDN Benchmark: $filter"
 Write-Output " "
 Write-Output "** Start:  dotnet run -c $configuration -f $framework --filter $filter --project $BDNbenchmarkPath  > $resultsFile 2> $BDNbenchmarkErrorFile"
-# --- DEBUG --- RENABLE --- DEBUG ----  dotnet run -c $configuration -f $framework --filter $filter --project $BDNbenchmarkPath  > $resultsFile 2> $BDNbenchmarkErrorFile
+dotnet run -c $configuration -f $framework --filter $filter --project $BDNbenchmarkPath  > $resultsFile 2> $BDNbenchmarkErrorFile
 
 
 # TO DO ###########################
@@ -267,50 +259,102 @@ Get-Content $resultsFile | ForEach-Object {
     $line = $_
     switch -Wildcard ($line) {
         "*| InlinePing*" {
-            # Action for InlinePing
-            Write-Output "-- DEBUG --- InlinePing found.  $line"
+            Write-Output "** InlinePing Mean Value test"
             $foundInLinePingMeanValue = ParseValueFromResults $line $meanColumn
             $currentResults = AnalyzeResult $foundInLinePingMeanValue $expectedInLinePingMeanValue $acceptableMeanRange $true
             if ($currentResults -eq $false) {
                 $testSuiteResult = $false
             }
         }
-        "*| Set*" {
-            # Action for Set
-            Write-Host "Set found. Performing action... $line"
-            # Add your specific action here
+        # This one a bit different as need extra | in the check so doesn't pick up other Set* calls
+        "*| Set          |*" {
+            Write-Host "** Set Mean Value test"
+            $foundSetMeanValue = ParseValueFromResults $line $meanColumn
+            $currentResults = AnalyzeResult $foundSetMeanValue $expectedSetMeanValue $acceptableMeanRange $true
+            if ($currentResults -eq $false) {
+                $testSuiteResult = $false
+            }
+        }
+        "*| SetEx*" {
+            Write-Host "** SetEx Mean Value test"
+            $foundSetExMeanValue = ParseValueFromResults $line $meanColumn
+            $currentResults = AnalyzeResult $foundSetExMeanValue $expectedSETEXMeanValue $acceptableMeanRange $true
+            if ($currentResults -eq $false) {
+                $testSuiteResult = $false
+            }
         }
         "*| Get*" {
-            # Action for Get
-            Write-Host "Get found. Performing action... $line"
-            # Add your specific action here
+            Write-Host "** Get Mean Value test"
+            $foundGetMeanValue = ParseValueFromResults $line $meanColumn
+            $currentResults = AnalyzeResult $foundGetMeanValue $expectedGetMeanValue $acceptableMeanRange $true
+            if ($currentResults -eq $false) {
+                $testSuiteResult = $false
+            }
         }
         "*| ZAddRem*" {
-            # Action for ZAddRem
-            Write-Host "ZAddRem found. Performing action... $line"
-            # Add your specific action here
+            Write-Host "** ZAddRem Mean Value test"
+            $foundZAddRemMeanValue = ParseValueFromResults $line $meanColumn
+            $currentResults = AnalyzeResult $foundZAddRemMeanValue $expectedZAddRemMeanValue $acceptableMeanRange $true
+            if ($currentResults -eq $false) {
+                $testSuiteResult = $false
+            }
         }
         "*| LPushPop*" {
-            # Action for LPushPop
-            Write-Host "LPushPop found. Performing action... $line"
-            # Add your specific action here
+            Write-Host "** LPushPop Mean Value test"
+            $foundLPushPopMeanValue = ParseValueFromResults $line $meanColumn
+            $currentResults = AnalyzeResult $foundLPushPopMeanValue $expectedLPushPopMeanValue $acceptableMeanRange $true
+            if ($currentResults -eq $false) {
+                $testSuiteResult = $false
+            }
         }
         "*| SAddRem*" {
-            # Action for LPushPop
-            Write-Host "LPushPop found. Performing action... $line"
-            # Add your specific action here
+            Write-Host "** SAddRem Mean Value test"
+            $foundSAddRemMeanValue = ParseValueFromResults $line $meanColumn
+            $currentResults = AnalyzeResult $foundSAddRemMeanValue $expectedSAddRemMeanValue $acceptableMeanRange $true
+            if ($currentResults -eq $false) {
+                $testSuiteResult = $false
+            }
         }
         "*| HSetDel*" {
-            # Action for LPushPop
-            Write-Host "LPushPop found. Performing action... $line"
-            # Add your specific action here
+            Write-Host "** HSetDel Mean Value test"
+            $foundHSetDelMeanValue = ParseValueFromResults $line $meanColumn
+            $currentResults = AnalyzeResult $foundHSetDelMeanValue $expectedHSetDelMeanValue $acceptableMeanRange $true
+            if ($currentResults -eq $false) {
+                $testSuiteResult = $false
+            }
         }
         "*| MyDictSetGet*" {
-            # Action for LPushPop
-            Write-Host "LPushPop found. Performing action... $line"
-            # Add your specific action here
+            Write-Host "** MyDictSetGet Mean Value test"
+            $foundMyDictSetGetMeanValue = ParseValueFromResults $line $meanColumn
+            $currentResults = AnalyzeResult $foundMyDictSetGetMeanValue $expectedMyDictSetGetMeanValue $acceptableMeanRange $true
+            if ($currentResults -eq $false) {
+                $testSuiteResult = $false
+            }
         }
-
+        "*| Incr*" {
+            Write-Host "** Incr Mean Value test"
+            $foundIncrMeanValue = ParseValueFromResults $line $meanColumn
+            $currentResults = AnalyzeResult $foundIncrMeanValue $expectedIncrMeanValue $acceptableMeanRange $true
+            if ($currentResults -eq $false) {
+                $testSuiteResult = $false
+            }
+        }
+        "*| MGet*" {
+            Write-Host "** MGet Mean Value test"
+            $foundMGetMeanValue = ParseValueFromResults $line $meanColumn
+            $currentResults = AnalyzeResult $foundMGetMeanValue $expectedMGetMeanValue $acceptableMeanRange $true
+            if ($currentResults -eq $false) {
+                $testSuiteResult = $false
+            }
+        }
+        "*| MSet*" {
+            Write-Host "** MSet Mean Value test"
+            $foundMSetMeanValue = ParseValueFromResults $line $meanColumn
+            $currentResults = AnalyzeResult $foundMSetMeanValue $expectedMSetMeanValue $acceptableMeanRange $true
+            if ($currentResults -eq $false) {
+                $testSuiteResult = $false
+            }
+        }
     }
 }
 
