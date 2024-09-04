@@ -1717,12 +1717,16 @@ namespace Garnet.test.cluster
             context.clusterTestUtils.SetConfigEpoch(dstNodeIndex, dstNodeIndex + 2, logger: context.logger);
             context.clusterTestUtils.Meet(srcNodeIndex, dstNodeIndex, logger: context.logger);
             context.clusterTestUtils.WaitUntilNodeIsKnown(dstNodeIndex, srcNodeIndex, logger: context.logger);
+            context.clusterTestUtils.WaitUntilNodeIsKnown(srcNodeIndex, dstNodeIndex, logger: context.logger);
             var config1 = context.clusterTestUtils.ClusterNodes(srcNodeIndex, logger: context.logger);
             var config2 = context.clusterTestUtils.ClusterNodes(dstNodeIndex, logger: context.logger);
             ClassicAssert.AreEqual(config1.GetBySlot(0).NodeId, config2.GetBySlot(0).NodeId);
+            ClassicAssert.AreEqual(Shards, config1.Nodes.Count);
+            ClassicAssert.AreEqual(Shards, config2.Nodes.Count);
+            ClassicAssert.AreEqual(config1.Nodes.Last().NodeId, config2.Nodes.First().NodeId);
+            ClassicAssert.AreEqual(config2.Nodes.Last().NodeId, config1.Nodes.First().NodeId);
 
             var db = context.clusterTestUtils.GetDatabase();
-
             foreach (var pair in data)
                 ClassicAssert.IsTrue(db.StringSet(pair.Item1, pair.Item2));
 
