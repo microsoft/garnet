@@ -216,7 +216,6 @@ dotnet run -c $configuration -f $framework --filter $filter --project $BDNbenchm
 
 
 # TO DO ###########################
-# Analyze?
 # Add "CI" only switch so can run on GH (default to CI?  If so - add full run switch to not analyze but gather and push data somewhere)
 # For YML files (ADO and GH) - do we need "build" Tsav and Garnet before?  Guessing yes, but worth a test to see. Maybe the run of benchmark builds everything it needs
 # TO DO ###########################
@@ -361,7 +360,7 @@ Write-Output "**  "
 if ($testSuiteResult) {
     Write-Output "**   PASS!  All tests passed  "
 } else {
-    Write-Error -Message "**   BDN Benchmark PERFORMANCE REGRESSION FAIL!  At least one test had performance outside of expected range. NOTE: Expected results are based on CI machine and may differ from the machine that this was ran on."
+    Write-Error -Message "**   BDN Benchmark PERFORMANCE REGRESSION FAIL!  At least one test had benchmark value outside of expected range. NOTE: Expected results are based on CI machine and may differ from the machine that this was ran on."
 }
 Write-Output "**  "
 Write-Output "************************"
