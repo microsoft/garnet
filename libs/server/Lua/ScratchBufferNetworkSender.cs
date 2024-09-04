@@ -42,6 +42,8 @@ namespace Garnet.server
 
         public string RemoteEndpointName => "";
 
+        public string LocalEndpointName => "";
+
         /// <summary>
         /// Cleanup this DummyNetworkSender instance
         /// </summary>
@@ -117,6 +119,12 @@ namespace Garnet.server
         /// <inheritdoc />
         public void Throttle()
         {
+        }
+
+        /// <inheritdoc />
+        public bool TryClose()
+        {
+            return false;
         }
     }
 }

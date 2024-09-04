@@ -3,6 +3,7 @@
 
 using System;
 using System.Buffers;
+using System.Buffers.Binary;
 using System.Diagnostics;
 using System.Runtime.CompilerServices;
 using System.Runtime.InteropServices;
@@ -109,6 +110,13 @@ namespace Garnet.server
         /// </summary>
         public byte SessionAsking { get; set; }
 
+        /// <summary>
+        /// If set, commands can use this to enumerate details about the server or other sessions.
+        /// 
+        /// It is not guaranteed to be set.
+        /// </summary>
+        public IGarnetServer Server { get; set; }
+
         // Track whether the incoming network batch had some admin command
         bool hasAdminCommand;
 
@@ -160,7 +168,18 @@ namespace Garnet.server
         /// </summary>
         internal readonly SessionScriptCache sessionScriptCache;
 
+        /// <summary>
+        /// Identifier for session - used for CLIENT and related commands.
+        /// </summary>
+        public long Id { get; }
+
+        /// <summary>
+        /// <see cref="Environment.TickCount64"/> when this <see cref="RespServerSession"/> was created.
+        /// </summary>
+        public long CreationTicks { get; }
+
         public RespServerSession(
+            long id,
             INetworkSender networkSender,
             StoreWrapper storeWrapper,
             SubscribeBroker<SpanByte, SpanByte, IKeySerializer<SpanByte>> subscribeBroker,
@@ -174,7 +193,10 @@ namespace Garnet.server
             this.LatencyMetrics = storeWrapper.serverOptions.LatencyMonitor ? new GarnetLatencyMetricsSession(storeWrapper.monitor) : null;
             logger = storeWrapper.sessionLogger != null ? new SessionLogger(storeWrapper.sessionLogger, $"[{storeWrapper.localEndpoint}] [{networkSender?.RemoteEndpointName}] [{GetHashCode():X8}] ") : null;
 
-            logger?.LogDebug("Starting RespServerSession");
+            this.Id = id;
+            this.CreationTicks = Environment.TickCount64;
+
+            logger?.LogDebug("Starting RespServerSession Id={0}", this.Id);
 
             // Initialize session-local scratch buffer of size 64 bytes, used for constructing arguments in GarnetApi
             this.scratchBufferManager = new ScratchBufferManager();
@@ -666,10 +688,29 @@ namespace Garnet.server
         private bool ProcessOtherCommands<TGarnetApi>(RespCommand command, ref TGarnetApi storageApi)
             where TGarnetApi : IGarnetApi
         {
-            if (command == RespCommand.CLIENT)
+            if (command == RespCommand.CLIENT_ID)
             {
-                while (!RespWriteUtils.WriteDirect(CmdStrings.RESP_OK, ref dcurr, dend))
+                if (parseState.Count != 0)
+                {
+                    return AbortWithWrongNumberOfArguments("client|id");
+                }
+
+                while (!RespWriteUtils.WriteInteger(Id, ref dcurr, dend))
                     SendAndReset();
+
+                return true;
+            }
+            else if (command == RespCommand.CLIENT_INFO)
+            {
+                return NetworkCLIENTINFO();
+            }
+            else if (command == RespCommand.CLIENT_LIST)
+            {
+                return NetworkCLIENTLIST();
+            }
+            else if (command == RespCommand.CLIENT_KILL)
+            {
+                return NetworkCLIENTKILL();
             }
             else if (command == RespCommand.SUBSCRIBE)
             {
@@ -825,6 +866,16 @@ namespace Garnet.server
             success = true;
             return result;
         }
+
+        /// <summary>
+        /// Attempt to kill this session.
+        /// 
+        /// Returns true if this call actually kills the underlying network connection.
+        /// 
+        /// Subsequent calls will return false.
+        /// </summary>
+        public bool TryKill()
+        => networkSender.TryClose();
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         private unsafe bool Write(ref Status s, ref byte* dst, int length)

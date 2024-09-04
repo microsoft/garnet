@@ -148,6 +148,14 @@ namespace Garnet.server
         public bool AddSession(WireFormat protocol, ref ISessionProvider provider, INetworkSender networkSender, out IMessageConsumer session)
         {
             session = provider.GetSession(protocol, networkSender);
+
+            // RESP sessions need to be able to enumerate other sessions.
+            // So stash a reference back to the GarnetServer if we created a RespServerSessions.
+            if (session is RespServerSession respSession)
+            {
+                respSession.Server = this;
+            }
+
             return true;
         }
 

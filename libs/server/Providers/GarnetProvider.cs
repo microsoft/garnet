@@ -1,6 +1,7 @@
 // Copyright (c) Microsoft Corporation.
 // Licensed under the MIT license.
 
+using System.Threading;
 using Garnet.common;
 using Garnet.networking;
 using Tsavorite.core;
@@ -17,6 +18,8 @@ namespace Garnet.server
     public sealed class GarnetProvider : TsavoriteKVProviderBase<SpanByte, SpanByte, SpanByte, SpanByteAndMemory, SpanByteFunctionsForServer<long>, MainStoreFunctions, MainStoreAllocator, SpanByteServerSerializer>
     {
         readonly StoreWrapper storeWrapper;
+
+        long lastSessionId;
 
         /// <summary>
         /// StoreWrapper
@@ -67,7 +70,7 @@ namespace Garnet.server
         /// <inheritdoc />
         public override IMessageConsumer GetSession(WireFormat wireFormat, INetworkSender networkSender)
             => (wireFormat == WireFormat.ASCII)
-                ? new RespServerSession(networkSender, storeWrapper, broker, itemBroker, null, true)
+                ? new RespServerSession(Interlocked.Increment(ref lastSessionId), networkSender, storeWrapper, broker, itemBroker, null, true)
                 : throw new GarnetException($"Unsupported wireFormat {wireFormat}");
     }
 }
