@@ -59,12 +59,9 @@ namespace Tsavorite.core
         struct InternalStates
         {
             internal const int None = 0;
-            internal const int TransientSLock = 0x0001;    // LockTable
-            internal const int TransientXLock = 0x0002;    // LockTable
-            internal const int LockBits = TransientSLock | TransientXLock;
 
-            internal const int MainLogSrc = 0x0100;
-            internal const int ReadCacheSrc = 0x0200;
+            internal const int MainLogSrc = 0x0001;
+            internal const int ReadCacheSrc = 0x0002;
             internal const int InMemSrcBits = MainLogSrc | ReadCacheSrc;
 
             internal static string ToString(int state)
@@ -84,8 +81,6 @@ namespace Tsavorite.core
                     }
                 }
 
-                append(TransientSLock, nameof(TransientSLock));
-                append(TransientXLock, nameof(TransientXLock));
                 append(MainLogSrc, nameof(MainLogSrc));
                 append(ReadCacheSrc, nameof(ReadCacheSrc));
                 return sb.ToString();
@@ -93,29 +88,6 @@ namespace Tsavorite.core
         }
 
         int internalState;
-
-        /// <summary>
-        /// Set (and cleared) by caller to indicate whether we have a LockTable-based Transient Shared lock (does not include Manual locks; this is per-operation only).
-        /// </summary>
-        internal readonly bool HasTransientSLock => (internalState & InternalStates.TransientSLock) != 0;
-        [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        internal void SetHasTransientSLock() => internalState |= InternalStates.TransientSLock;
-        [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        internal void ClearHasTransientSLock() => internalState &= ~InternalStates.TransientSLock;
-
-        /// <summary>
-        /// Set (and cleared) by caller to indicate whether we have a LockTable-based Transient Exclusive lock (does not include Manual locks; this is per-operation only).
-        /// </summary>
-        internal readonly bool HasTransientXLock => (internalState & InternalStates.TransientXLock) != 0;
-        [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        internal void SetHasTransientXLock() => internalState |= InternalStates.TransientXLock;
-        [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        internal void ClearHasTransientXLock() => internalState &= ~InternalStates.TransientXLock;
-
-        /// <summary>
-        /// Indicates whether we have any type of non-Manual lock.
-        /// </summary>
-        internal readonly bool HasLock => (internalState & InternalStates.LockBits) != 0;
 
         /// <summary>
         /// Set by caller to indicate whether the <see cref="LogicalAddress"/> is an in-memory record in the main log, being used as a copy source and/or a lock.
@@ -171,16 +143,13 @@ namespace Tsavorite.core
             this.Allocator = AllocatorBase._wrapper;
         }
 
-        [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        internal readonly string LockStateString() => InternalStates.ToString(internalState & InternalStates.LockBits);
-
         public override readonly string ToString()
         {
             var isRC = "(rc)";
             var llaRC = IsReadCache(LatestLogicalAddress) ? isRC : string.Empty;
             var laRC = IsReadCache(LogicalAddress) ? isRC : string.Empty;
             return $"lla {AbsoluteAddress(LatestLogicalAddress)}{llaRC}, la {AbsoluteAddress(LogicalAddress)}{laRC}, lrcla {AbsoluteAddress(LowestReadCacheLogicalAddress)},"
-                 + $" hasInMemorySrc {InternalStates.ToString(internalState & InternalStates.InMemSrcBits)}, hasLocks {LockStateString()}";
+                 + $" hasInMemorySrc {InternalStates.ToString(internalState & InternalStates.InMemSrcBits)}";
         }
     }
 }

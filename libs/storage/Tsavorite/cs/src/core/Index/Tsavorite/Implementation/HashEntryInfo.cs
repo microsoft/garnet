@@ -1,6 +1,7 @@
 ﻿// Copyright (c) Microsoft Corporation.
 // Licensed under the MIT license.
 
+using System.Diagnostics;
 using System.Runtime.CompilerServices;
 using System.Threading;
 using static Tsavorite.core.Utility;
@@ -26,12 +27,21 @@ namespace Tsavorite.core
         internal readonly long hash;
 
         /// <summary>The hash tag for this key</summary>
-        internal ushort tag;
-
-        /// <summary>The id of the Tsavorite partition to search for this key in.</summary>
-        internal ushort partitionId;
+        internal readonly ushort tag;
 
         internal long bucketIndex;
+
+        enum TransientLockState
+        {
+            None = 0,
+            TransientSLock,
+            TransientXLock
+        }
+
+        private TransientLockState transientLockState;
+
+        /// <summary>The id of the Tsavorite partition to search for this key in.</summary>
+        public readonly ushort partitionId;
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         internal HashEntryInfo(long hash, ushort partitionId)
@@ -43,6 +53,13 @@ namespace Tsavorite.core
             this.hash = hash;
             this.partitionId = partitionId;
             tag = (ushort)((ulong)this.hash >> HashBucketEntry.kHashTagShift);
+        }
+
+        internal void Reset()
+        {
+            var lockState = transientLockState;
+            this = new(hash, partitionId);
+            transientLockState = lockState;
         }
 
         /// <summary>
@@ -113,6 +130,42 @@ namespace Tsavorite.core
             return true;
         }
 
+        /// <summary>
+        /// Set (and cleared) by caller to indicate whether we have a LockTable-based Transient Shared lock (does not include Manual locks; this is per-operation only).
+        /// </summary>
+        internal readonly bool HasTransientSLock => transientLockState == TransientLockState.TransientSLock;
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        internal void SetHasTransientSLock()
+        {
+            Debug.Assert(transientLockState == TransientLockState.None, $"Cannot set TransientSLock while holding {TransientLockStateString()}");
+            transientLockState = TransientLockState.TransientSLock;
+        }
+
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        internal void ClearHasTransientSLock() => transientLockState = TransientLockState.None;
+
+        /// <summary>
+        /// Set (and cleared) by caller to indicate whether we have a LockTable-based Transient Exclusive lock (does not include Manual locks; this is per-operation only).
+        /// </summary>
+        internal readonly bool HasTransientXLock => transientLockState == TransientLockState.TransientXLock;
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        internal void SetHasTransientXLock()
+        {
+            Debug.Assert(transientLockState == TransientLockState.None, $"Cannot set TransientXLock while holding {TransientLockStateString()}");
+            transientLockState = TransientLockState.TransientXLock;
+        }
+
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        internal void ClearHasTransientXLock() => transientLockState = TransientLockState.None;
+
+        /// <summary>
+        /// Indicates whether we have any type of non-Manual lock.
+        /// </summary>
+        internal readonly bool HasTransientLock => transientLockState != TransientLockState.None;
+
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        internal readonly string TransientLockStateString() => transientLockState.ToString();
+
         public override string ToString()
         {
             var hashStr = GetHashString(hash);
@@ -125,7 +178,7 @@ namespace Tsavorite.core
             var currAddrRC = IsCurrentReadCache ? isRC : string.Empty;
             var isNotCurr = Address == CurrentAddress ? string.Empty : "*";
 
-            var result = $"addr {AbsoluteAddress}{addrRC}, currAddr {AbsoluteCurrentAddress}{currAddrRC}{isNotCurr}, hash {hashStr}, tag {tag}, slot {slot},";
+            var result = $"addr {AbsoluteAddress}{addrRC}, currAddr {AbsoluteCurrentAddress}{currAddrRC}{isNotCurr}, hash {hashStr}, tag {tag}, slot {slot}, transientLocks {TransientLockStateString()},";
             result += $" Bkt1 [index {bucketIndex}, {HashBucket.ToString(firstBucket)}]";
             return result;
         }

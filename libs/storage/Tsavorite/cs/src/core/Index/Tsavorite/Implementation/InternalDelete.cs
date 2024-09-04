@@ -153,9 +153,9 @@ namespace Tsavorite.core
                                 {
                                     // The record was not added to the freelist, but was elided. See if we can put it back in as a normal Tombstone. Since we just
                                     // elided it and the elision criteria is that it is the only above-BeginAddress record in the chain, and elision sets the
-                                    // HashBucketEntry.word to 0, it means we do not expect any records for this key's tag to exist after the elision. Therefore,
-                                    // we can re-insert the record iff the HashBucketEntry's address is <= kTempInvalidAddress.
-                                    stackCtx.hei = new(stackCtx.hei.hash, partitionId);
+                                    // HashBucketEntry.word to 0, it means we do not expect any records for this key's tag to exist after the elision (and the 
+                                    // bucket* and slot may change). Therefore, we can re-insert the record iff the HashBucketEntry's address is <= kTempInvalidAddress.
+                                    stackCtx.hei.Reset();
                                     Kernel.hashTable.FindOrCreateTag(ref stackCtx.hei, hlogBase.BeginAddress);
 
                                     if (stackCtx.hei.entry.Address <= Constants.kTempInvalidAddress && stackCtx.hei.TryCAS(stackCtx.recSrc.LogicalAddress, partitionId))
@@ -202,7 +202,7 @@ namespace Tsavorite.core
             finally
             {
                 stackCtx.HandleNewRecordOnException(this);
-                TransientXUnlock<TInput, TOutput, TContext, TSessionFunctionsWrapper>(sessionFunctions, ref key, ref stackCtx);
+                TransientXUnlock<TInput, TOutput, TContext, TSessionFunctionsWrapper>(sessionFunctions, ref stackCtx);
             }
 
         LatchRelease:

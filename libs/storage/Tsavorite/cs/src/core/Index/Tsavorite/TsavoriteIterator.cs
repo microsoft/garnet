@@ -211,7 +211,7 @@ namespace Tsavorite.core
                         }
                         finally
                         {
-                            if (stackCtx.recSrc.HasLock)
+                            if (stackCtx.hei.HasTransientLock)
                                 store.UnlockForScan(ref stackCtx);
                         }
                     }

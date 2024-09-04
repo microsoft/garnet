@@ -148,7 +148,7 @@ namespace Tsavorite.core
                     finally
                     {
                         stackCtx.HandleNewRecordOnException(this);
-                        TransientSUnlock<TInput, TOutput, TContext, TSessionFunctionsWrapper>(sessionFunctions, ref key, ref stackCtx);
+                        TransientSUnlock<TInput, TOutput, TContext, TSessionFunctionsWrapper>(sessionFunctions, ref stackCtx);
                     }
 
                     // Must do this *after* Unlocking. Status was set by InternalTryCopyToTail.
@@ -236,7 +236,7 @@ namespace Tsavorite.core
                 finally
                 {
                     stackCtx.HandleNewRecordOnException(this);
-                    TransientXUnlock<TInput, TOutput, TContext, TSessionFunctionsWrapper>(sessionFunctions, ref key, ref stackCtx);
+                    TransientXUnlock<TInput, TOutput, TContext, TSessionFunctionsWrapper>(sessionFunctions, ref stackCtx);
                 }
 
             // Must do this *after* Unlocking.

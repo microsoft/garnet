@@ -8,7 +8,7 @@ namespace Tsavorite.core
     internal readonly struct SessionFunctionsWrapper<TKey, TValue, TInput, TOutput, TContext, TSessionFunctions, TSessionLocker, TStoreFunctions, TAllocator>
             : ISessionFunctionsWrapper<TKey, TValue, TInput, TOutput, TContext, TStoreFunctions, TAllocator>
         where TSessionFunctions : ISessionFunctions<TKey, TValue, TInput, TOutput, TContext>
-        where TSessionLocker : struct, ISessionLocker<TKey, TValue, TStoreFunctions, TAllocator>
+        where TSessionLocker : struct, ISessionLocker
         where TStoreFunctions : IStoreFunctions<TKey, TValue>
         where TAllocator : IAllocator<TKey, TValue, TStoreFunctions>
     {
@@ -174,20 +174,16 @@ namespace Tsavorite.core
         public bool IsManualLocking => _sessionLocker.IsManualLocking;
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public bool TryLockTransientExclusive(ref TKey key, ref OperationStackContext<TKey, TValue, TStoreFunctions, TAllocator> stackCtx) =>
-            _sessionLocker.TryLockTransientExclusive(Store, ref stackCtx);
+        public bool TryLockTransientExclusive(TsavoriteKernel kernel, ref HashEntryInfo hei) => _sessionLocker.TryLockTransientExclusive(kernel, ref hei);
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public bool TryLockTransientShared(ref TKey key, ref OperationStackContext<TKey, TValue, TStoreFunctions, TAllocator> stackCtx)
-            => _sessionLocker.TryLockTransientShared(Store, ref stackCtx);
+        public bool TryLockTransientShared(TsavoriteKernel kernel, ref HashEntryInfo hei) => _sessionLocker.TryLockTransientShared(kernel, ref hei);
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public void UnlockTransientExclusive(ref TKey key, ref OperationStackContext<TKey, TValue, TStoreFunctions, TAllocator> stackCtx)
-            => _sessionLocker.UnlockTransientExclusive(Store, ref stackCtx);
+        public void UnlockTransientExclusive(TsavoriteKernel kernel, ref HashEntryInfo hei) => _sessionLocker.UnlockTransientExclusive(kernel, ref hei);
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public void UnlockTransientShared(ref TKey key, ref OperationStackContext<TKey, TValue, TStoreFunctions, TAllocator> stackCtx)
-            => _sessionLocker.UnlockTransientShared(Store, ref stackCtx);
+        public void UnlockTransientShared(TsavoriteKernel kernel, ref HashEntryInfo hei) => _sessionLocker.UnlockTransientShared(kernel, ref hei);
         #endregion Transient locking
 
         #region Internal utilities

@@ -117,6 +117,11 @@ namespace Tsavorite.core
         public bool Expired => (statusCode & StatusCode.Expired) == StatusCode.Expired;
 
         /// <summary>
+        /// Whether the operation was canceled
+        /// </summary>
+        public bool IsLockFailed => statusCode == StatusCode.LockFailed;
+
+        /// <summary>
         /// Whether the operation completed successfully, i.e., it is not pending and did not error out
         /// </summary>
         public bool IsCompletedSuccessfully
@@ -124,7 +129,7 @@ namespace Tsavorite.core
             get
             {
                 var basicCode = statusCode & StatusCode.BasicMask;
-                return basicCode != StatusCode.Pending && basicCode != StatusCode.Error;
+                return basicCode < StatusCode.Pending;
             }
         }
 

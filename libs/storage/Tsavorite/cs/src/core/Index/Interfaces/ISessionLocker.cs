@@ -10,108 +10,102 @@ namespace Tsavorite.core
     /// Provides thread management and all callbacks. A wrapper for ISessionFunctions and additional methods called by TsavoriteImpl; the wrapped
     /// ISessionFunctions methods provide additional parameters to support the wrapper functionality, then call through to the user implementations. 
     /// </summary>
-    public interface ISessionLocker<TKey, TValue, TStoreFunctions, TAllocator>
-        where TStoreFunctions : IStoreFunctions<TKey, TValue>
-        where TAllocator : IAllocator<TKey, TValue, TStoreFunctions>
+    public interface ISessionLocker
     {
         bool IsManualLocking { get; }
 
-        bool TryLockTransientExclusive(TsavoriteKV<TKey, TValue, TStoreFunctions, TAllocator> store, ref OperationStackContext<TKey, TValue, TStoreFunctions, TAllocator> stackCtx);
-        bool TryLockTransientShared(TsavoriteKV<TKey, TValue, TStoreFunctions, TAllocator> store, ref OperationStackContext<TKey, TValue, TStoreFunctions, TAllocator> stackCtx);
-        void UnlockTransientExclusive(TsavoriteKV<TKey, TValue, TStoreFunctions, TAllocator> store, ref OperationStackContext<TKey, TValue, TStoreFunctions, TAllocator> stackCtx);
-        void UnlockTransientShared(TsavoriteKV<TKey, TValue, TStoreFunctions, TAllocator> store, ref OperationStackContext<TKey, TValue, TStoreFunctions, TAllocator> stackCtx);
+        bool TryLockTransientExclusive(TsavoriteKernel kernel, ref HashEntryInfo hei);
+        bool TryLockTransientShared(TsavoriteKernel kernel, ref HashEntryInfo hei);
+        void UnlockTransientExclusive(TsavoriteKernel kernel, ref HashEntryInfo hei);
+        void UnlockTransientShared(TsavoriteKernel kernel, ref HashEntryInfo hei);
     }
-
+     
     /// <summary>
     /// Basic (non-lockable) sessions must do transient locking.
     /// </summary>
     /// <remarks>
     /// This struct contains no data fields; SessionFunctionsWrapper redirects with its ClientSession.
     /// </remarks>
-    internal struct BasicSessionLocker<TKey, TValue, TStoreFunctions, TAllocator> : ISessionLocker<TKey, TValue, TStoreFunctions, TAllocator>
-        where TStoreFunctions : IStoreFunctions<TKey, TValue>
-        where TAllocator : IAllocator<TKey, TValue, TStoreFunctions>
+    internal struct BasicSessionLocker : ISessionLocker
     {
         public bool IsManualLocking => false;
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public bool TryLockTransientExclusive(TsavoriteKV<TKey, TValue, TStoreFunctions, TAllocator> store, ref OperationStackContext<TKey, TValue, TStoreFunctions, TAllocator> stackCtx)
+        public bool TryLockTransientExclusive(TsavoriteKernel kernel, ref HashEntryInfo hei)
         {
-            if (!store.LockTable.TryLockExclusive(ref stackCtx.hei))
+            if (!kernel.lockTable.TryLockExclusive(ref hei))
                 return false;
-            stackCtx.recSrc.SetHasTransientXLock();
+            hei.SetHasTransientXLock();
             return true;
         }
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public bool TryLockTransientShared(TsavoriteKV<TKey, TValue, TStoreFunctions, TAllocator> store, ref OperationStackContext<TKey, TValue, TStoreFunctions, TAllocator> stackCtx)
+        public bool TryLockTransientShared(TsavoriteKernel kernel, ref HashEntryInfo hei)
         {
-            if (!store.LockTable.TryLockShared(ref stackCtx.hei))
+            if (!kernel.lockTable.TryLockShared(ref hei))
                 return false;
-            stackCtx.recSrc.SetHasTransientSLock();
+            hei.SetHasTransientSLock();
             return true;
         }
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public void UnlockTransientExclusive(TsavoriteKV<TKey, TValue, TStoreFunctions, TAllocator> store, ref OperationStackContext<TKey, TValue, TStoreFunctions, TAllocator> stackCtx)
+        public void UnlockTransientExclusive(TsavoriteKernel kernel, ref HashEntryInfo hei)
         {
-            store.LockTable.UnlockExclusive(ref stackCtx.hei);
-            stackCtx.recSrc.ClearHasTransientXLock();
+            kernel.lockTable.UnlockExclusive(ref hei);
+            hei.ClearHasTransientXLock();
         }
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public void UnlockTransientShared(TsavoriteKV<TKey, TValue, TStoreFunctions, TAllocator> store, ref OperationStackContext<TKey, TValue, TStoreFunctions, TAllocator> stackCtx)
+        public void UnlockTransientShared(TsavoriteKernel kernel, ref HashEntryInfo hei)
         {
-            store.LockTable.UnlockShared(ref stackCtx.hei);
-            stackCtx.recSrc.ClearHasTransientSLock();
+            kernel.lockTable.UnlockShared(ref hei);
+            hei.ClearHasTransientSLock();
         }
     }
 
     /// <summary>
     /// Lockable sessions are manual locking and thus must have already locked the record prior to an operation on it, so assert that.
     /// </summary>
-    internal struct LockableSessionLocker<TKey, TValue, TStoreFunctions, TAllocator> : ISessionLocker<TKey, TValue, TStoreFunctions, TAllocator>
-        where TStoreFunctions : IStoreFunctions<TKey, TValue>
-        where TAllocator : IAllocator<TKey, TValue, TStoreFunctions>
+    internal struct LockableSessionLocker : ISessionLocker
     {
         public bool IsManualLocking => true;
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public bool TryLockTransientExclusive(TsavoriteKV<TKey, TValue, TStoreFunctions, TAllocator> store, ref OperationStackContext<TKey, TValue, TStoreFunctions, TAllocator> stackCtx)
+        public bool TryLockTransientExclusive(TsavoriteKernel kernel, ref HashEntryInfo hei)
         {
-            Debug.Assert(store.LockTable.IsLockedExclusive(ref stackCtx.hei),
+            Debug.Assert(kernel.lockTable.IsLockedExclusive(ref hei),
                         $"Attempting to use a non-XLocked key in a Lockable context (requesting XLock):"
-                        + $" XLocked {store.LockTable.IsLockedExclusive(ref stackCtx.hei)},"
-                        + $" Slocked {store.LockTable.IsLockedShared(ref stackCtx.hei)}");
+                        + $" XLocked {kernel.lockTable.IsLockedExclusive(ref hei)},"
+                        + $" Slocked {kernel.lockTable.IsLockedShared(ref hei)}");
             return true;
         }
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public bool TryLockTransientShared(TsavoriteKV<TKey, TValue, TStoreFunctions, TAllocator> store, ref OperationStackContext<TKey, TValue, TStoreFunctions, TAllocator> stackCtx)
+        public bool TryLockTransientShared(TsavoriteKernel kernel, ref HashEntryInfo hei)
         {
-            Debug.Assert(store.LockTable.IsLocked(ref stackCtx.hei),
+            Debug.Assert(kernel.lockTable.IsLocked(ref hei),
                         $"Attempting to use a non-Locked (S or X) key in a Lockable context (requesting SLock):"
-                        + $" XLocked {store.LockTable.IsLockedExclusive(ref stackCtx.hei)},"
-                        + $" Slocked {store.LockTable.IsLockedShared(ref stackCtx.hei)}");
+                        + $" XLocked {kernel.lockTable.IsLockedExclusive(ref hei)},"
+                        + $" Slocked {kernel.lockTable.IsLockedShared(ref hei)}");
             return true;
         }
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public void UnlockTransientExclusive(TsavoriteKV<TKey, TValue, TStoreFunctions, TAllocator> store, ref OperationStackContext<TKey, TValue, TStoreFunctions, TAllocator> stackCtx)
+        public void UnlockTransientExclusive(TsavoriteKernel kernel, ref HashEntryInfo hei)
         {
-            Debug.Assert(store.LockTable.IsLockedExclusive(ref stackCtx.hei),
+            Debug.Assert(kernel.lockTable.IsLockedExclusive(ref hei),
                         $"Attempting to unlock a non-XLocked key in a Lockable context (requesting XLock):"
-                        + $" XLocked {store.LockTable.IsLockedExclusive(ref stackCtx.hei)},"
-                        + $" Slocked {store.LockTable.IsLockedShared(ref stackCtx.hei)}");
+                        + $" XLocked {kernel.lockTable.IsLockedExclusive(ref hei)},"
+                        + $" Slocked {kernel.lockTable.IsLockedShared(ref hei)}");
         }
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public void UnlockTransientShared(TsavoriteKV<TKey, TValue, TStoreFunctions, TAllocator> store, ref OperationStackContext<TKey, TValue, TStoreFunctions, TAllocator> stackCtx)
+        public void UnlockTransientShared(TsavoriteKernel kernel, ref HashEntryInfo hei)
         {
-            Debug.Assert(store.LockTable.IsLockedShared(ref stackCtx.hei),
+            Debug.Assert(kernel.lockTable.IsLockedShared(ref hei),
                         $"Attempting to use a non-XLocked key in a Lockable context (requesting XLock):"
-                        + $" XLocked {store.LockTable.IsLockedExclusive(ref stackCtx.hei)},"
-                        + $" Slocked {store.LockTable.IsLockedShared(ref stackCtx.hei)}");
+                        + $" XLocked {kernel.lockTable.IsLockedExclusive(ref hei)},"
+                        + $" Slocked {kernel.lockTable.IsLockedShared(ref hei)}");
         }
     }
 }

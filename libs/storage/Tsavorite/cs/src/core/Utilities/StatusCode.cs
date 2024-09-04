@@ -67,9 +67,14 @@ namespace Tsavorite.core
         Pending = 0x03,
 
         /// <summary>
+        /// An attempt to lock was not successful
+        /// </summary>
+        LockFailed = 0x04,
+
+        /// <summary>
         /// An error occurred. This is not combined with advanced enum values.
         /// </summary>
-        Error = 0x04,
+        Error = 0x0E,
 
         // Values 0x03-0x0F are reserved for future use
 

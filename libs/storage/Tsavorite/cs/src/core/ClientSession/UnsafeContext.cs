@@ -18,7 +18,7 @@ namespace Tsavorite.core
         where TAllocator : IAllocator<TKey, TValue, TStoreFunctions>
     {
         readonly ClientSession<TKey, TValue, TInput, TOutput, TContext, TSessionFunctions, TStoreFunctions, TAllocator> clientSession;
-        internal readonly SessionFunctionsWrapper<TKey, TValue, TInput, TOutput, TContext, TSessionFunctions, BasicSessionLocker<TKey, TValue, TStoreFunctions, TAllocator>, TStoreFunctions, TAllocator> sessionFunctions;
+        internal readonly SessionFunctionsWrapper<TKey, TValue, TInput, TOutput, TContext, TSessionFunctions, BasicSessionLocker, TStoreFunctions, TAllocator> sessionFunctions;
 
         /// <inheritdoc/>
         public bool IsNull => clientSession is null;
@@ -333,8 +333,7 @@ namespace Tsavorite.core
         public Status Delete(ref TKey key, long keyHash, TContext userContext = default)
         {
             Debug.Assert(clientSession.Store.Kernel.Epoch.ThisInstanceProtected());
-            return clientSession.Store.ContextDelete<TInput, TOutput, TContext, SessionFunctionsWrapper<TKey, TValue, TInput, TOutput, TContext, TSessionFunctions, BasicSessionLocker<TKey, TValue, TStoreFunctions, TAllocator>, TStoreFunctions, TAllocator>>(
-                    ref key, keyHash, userContext, sessionFunctions);
+            return clientSession.Store.ContextDelete<TInput, TOutput, TContext, SessionFunctionsWrapper<TKey, TValue, TInput, TOutput, TContext, TSessionFunctions, BasicSessionLocker, TStoreFunctions, TAllocator>>(ref key, keyHash, userContext, sessionFunctions);
         }
 
         /// <inheritdoc/>

@@ -43,6 +43,14 @@ namespace Tsavorite.core
             return true;
         }
 
+#if false
+        public Status EnterForRead<TKernelSession, TKeyLocker, TEpochGuard>(ref TKernelSession kernelSession, TKeyLocker keyLocker, TEpochGuard epochGuard)
+        {
+            epochGuard.Acquire(this.epoch);
+            keyLocker.
+        }
+#endif
+
         internal void Dispose()
         {
             hashTable.Dispose();

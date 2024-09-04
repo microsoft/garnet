@@ -213,7 +213,7 @@ namespace Tsavorite.core
         {
             // Transient must lock the bucket before traceback, to prevent revivification from yanking the record out from underneath us. Manual locking already automatically locks the bucket.
             Kernel.hashTable.FindOrCreateTag(ref stackCtx.hei, hlogBase.BeginAddress);
-            if (!TryTransientXLock<TInput, TOutput, TContext, TSessionFunctionsWrapper>(sessionFunctions, ref key, ref stackCtx, out internalStatus))
+            if (!TryTransientXLock<TInput, TOutput, TContext, TSessionFunctionsWrapper>(sessionFunctions, ref stackCtx, out internalStatus))
                 return false;
 
             // Between the time we found the tag and the time we locked the bucket the record in hei.entry may have been elided, so make sure we don't have a stale address in hei.entry.
@@ -229,7 +229,7 @@ namespace Tsavorite.core
         {
             // Transient must lock the bucket before traceback, to prevent revivification from yanking the record out from underneath us. Manual locking already automatically locks the bucket.
             internalStatus = OperationStatus.NOTFOUND;
-            if (!Kernel.hashTable.FindTag(ref stackCtx.hei) || !TryTransientXLock<TInput, TOutput, TContext, TSessionFunctionsWrapper>(sessionFunctions, ref key, ref stackCtx, out internalStatus))
+            if (!Kernel.hashTable.FindTag(ref stackCtx.hei) || !TryTransientXLock<TInput, TOutput, TContext, TSessionFunctionsWrapper>(sessionFunctions, ref stackCtx, out internalStatus))
                 return false;
 
             // Between the time we found the tag and the time we locked the bucket the record in hei.entry may have been elided, so make sure we don't have a stale address in hei.entry.
@@ -245,7 +245,7 @@ namespace Tsavorite.core
         {
             // Transient must lock the bucket before traceback, to prevent revivification from yanking the record out from underneath us. Manual locking already automatically locks the bucket.
             internalStatus = OperationStatus.NOTFOUND;
-            if (!Kernel.hashTable.FindTag(ref stackCtx.hei) || !TryTransientSLock<TInput, TOutput, TContext, TSessionFunctionsWrapper>(sessionFunctions, ref key, ref stackCtx, out internalStatus))
+            if (!Kernel.hashTable.FindTag(ref stackCtx.hei) || !TryTransientSLock<TInput, TOutput, TContext, TSessionFunctionsWrapper>(sessionFunctions, ref stackCtx, out internalStatus))
                 return false;
 
             // Between the time we found the tag and the time we locked the bucket the record in hei.entry may have been elided, so make sure we don't have a stale address in hei.entry.
