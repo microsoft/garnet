@@ -20,6 +20,7 @@ jobs:
       uses: dorny/paths-filter@v3
       id: filter
       with:
+        ref: 'HEAD'
         filters: |
           website:
             - 'website/**'
@@ -54,14 +55,14 @@ jobs:
         run: .\test\BDNPerfTests\run_bdnperftest.ps1 ${{ matrix.test }}
         shell: pwsh
    
-      - name: Upload test results 2
+      - name: Upload test results to artifacts
         uses: actions/upload-artifact@v4
         with:
           name: ResultsDir-${{ matrix.os }}-${{ matrix.framework }}-${{ matrix.configuration }}-${{ matrix.test }}
           path: |
              .\test\BDNPerfTests\results
         if: ${{ always() }}
-      - name: Upload Error Log
+      - name: Upload Error Log to artifacts
         uses: actions/upload-artifact@v4
         with:
           name: ErrorLogDir-${{ matrix.os }}-${{ matrix.framework }}-${{ matrix.configuration }}-${{ matrix.test }}
