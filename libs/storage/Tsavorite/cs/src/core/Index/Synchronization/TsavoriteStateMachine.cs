@@ -169,7 +169,7 @@ namespace Tsavorite.core
         /// <param name="ctx"></param>
         /// <param name="threadState"></param>
         /// <returns></returns>
-        internal bool SameCycle<TInput, TOutput, TContext>(TsavoriteExecutionContext<TInput, TOutput, TContext> ctx, SystemState threadState)
+        internal bool SameCycle<TInput, TOutput, TContext>(ExecutionContext<TInput, TOutput, TContext> ctx, SystemState threadState)
         {
             if (ctx == null)
             {
@@ -189,7 +189,7 @@ namespace Tsavorite.core
         /// <param name="token">Cancellation token</param>
         /// <returns></returns>
         private void ThreadStateMachineStep<TInput, TOutput, TContext>(
-            TsavoriteExecutionContext<TInput, TOutput, TContext> ctx,
+            ExecutionContext<TInput, TOutput, TContext> ctx,
             List<ValueTask> valueTasks,
             CancellationToken token = default)
         {

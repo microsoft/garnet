@@ -20,7 +20,7 @@ namespace Tsavorite.core
     {
         public readonly TsavoriteKV<TKey, TValue, TStoreFunctions, TAllocator> Store;
 
-        internal readonly TsavoriteKV<TKey, TValue, TStoreFunctions, TAllocator>.TsavoriteExecutionContext<TInput, TOutput, TContext> ExecutionCtx;
+        internal readonly TsavoriteKV<TKey, TValue, TStoreFunctions, TAllocator>.ExecutionContext<TInput, TOutput, TContext> ExecutionCtx;
 
         internal readonly TSessionFunctions functions;
 
@@ -66,7 +66,7 @@ namespace Tsavorite.core
 
         internal ClientSession(
             TsavoriteKV<TKey, TValue, TStoreFunctions, TAllocator> store,
-            TsavoriteKV<TKey, TValue, TStoreFunctions, TAllocator>.TsavoriteExecutionContext<TInput, TOutput, TContext> ctx,
+            TsavoriteKV<TKey, TValue, TStoreFunctions, TAllocator>.ExecutionContext<TInput, TOutput, TContext> ctx,
             TSessionFunctions functions,
             ILoggerFactory loggerFactory = null)
         {

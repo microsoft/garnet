@@ -12,7 +12,7 @@ namespace Tsavorite.core
         where TStoreFunctions : IStoreFunctions<TKey, TValue>
         where TAllocator : IAllocator<TKey, TValue, TStoreFunctions>
     {
-        internal sealed class TsavoriteExecutionContext<TInput, TOutput, TContext>
+        internal sealed class ExecutionContext<TInput, TOutput, TContext>
         {
             internal int sessionID;
             internal string sessionName;
@@ -86,7 +86,7 @@ namespace Tsavorite.core
 
             public bool InNewVersion => phase < Phase.REST;
 
-            public TsavoriteExecutionContext<TInput, TOutput, TContext> prevCtx;
+            public ExecutionContext<TInput, TOutput, TContext> prevCtx;
         }
     }
 }

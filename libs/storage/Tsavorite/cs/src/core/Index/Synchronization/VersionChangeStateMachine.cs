@@ -34,7 +34,7 @@ namespace Tsavorite.core
         public void OnThreadState<TInput, TOutput, TContext>(
             SystemState current, SystemState prev,
             TsavoriteKV<TKey, TValue, TStoreFunctions, TAllocator> store,
-            TsavoriteKV<TKey, TValue, TStoreFunctions, TAllocator>.TsavoriteExecutionContext<TInput, TOutput, TContext> ctx,
+            TsavoriteKV<TKey, TValue, TStoreFunctions, TAllocator>.ExecutionContext<TInput, TOutput, TContext> ctx,
             List<ValueTask> valueTasks,
             CancellationToken token = default)
         {
@@ -106,7 +106,7 @@ namespace Tsavorite.core
             SystemState current,
             SystemState prev,
             TsavoriteKV<TKey, TValue, TStoreFunctions, TAllocator> store,
-            TsavoriteKV<TKey, TValue, TStoreFunctions, TAllocator>.TsavoriteExecutionContext<TInput, TOutput, TContext> ctx,
+            TsavoriteKV<TKey, TValue, TStoreFunctions, TAllocator>.ExecutionContext<TInput, TOutput, TContext> ctx,
             List<ValueTask> valueTasks,
             CancellationToken token = default)
         {

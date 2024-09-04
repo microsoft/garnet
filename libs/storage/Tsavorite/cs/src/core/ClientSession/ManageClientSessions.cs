@@ -30,10 +30,10 @@ namespace Tsavorite.core
                 throw new TsavoriteException("Cannot use empty string as session name");
 
             int sessionID = Interlocked.Increment(ref maxSessionID);
-            var ctx = new TsavoriteExecutionContext<TInput, TOutput, TContext>();
+            var ctx = new ExecutionContext<TInput, TOutput, TContext>();
             InitContext(ctx, sessionID, sessionName);
             ctx.MergeReadCopyOptions(ReadCopyOptions, readCopyOptions);
-            var prevCtx = new TsavoriteExecutionContext<TInput, TOutput, TContext>();
+            var prevCtx = new ExecutionContext<TInput, TOutput, TContext>();
             InitContext(prevCtx, sessionID, sessionName);
             prevCtx.version--;
             prevCtx.ReadCopyOptions = ctx.ReadCopyOptions;

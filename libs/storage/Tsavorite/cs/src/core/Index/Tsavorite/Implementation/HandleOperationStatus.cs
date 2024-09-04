@@ -15,7 +15,7 @@ namespace Tsavorite.core
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         private bool HandleImmediateRetryStatus<TInput, TOutput, TContext>(
                 OperationStatus internalStatus,
-                TsavoriteExecutionContext<TInput, TOutput, TContext> executionCtx,
+                ExecutionContext<TInput, TOutput, TContext> executionCtx,
                 ref PendingContext<TInput, TOutput, TContext> pendingContext)
             => (internalStatus & OperationStatus.BASIC_MASK) > OperationStatus.MAX_MAP_TO_COMPLETED_STATUSCODE
                 && HandleRetryStatus(internalStatus, executionCtx, ref pendingContext);
@@ -24,7 +24,7 @@ namespace Tsavorite.core
         /// Handle retry for operations that will not go pending (e.g., InternalLock)
         /// </summary>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        internal bool HandleImmediateNonPendingRetryStatus<TInput, TOutput, TContext>(OperationStatus internalStatus, TsavoriteExecutionContext<TInput, TOutput, TContext> executionCtx)
+        internal bool HandleImmediateNonPendingRetryStatus<TInput, TOutput, TContext>(OperationStatus internalStatus, ExecutionContext<TInput, TOutput, TContext> executionCtx)
         {
             Debug.Assert(Kernel.Epoch.ThisInstanceProtected());
             switch (internalStatus)
@@ -43,7 +43,7 @@ namespace Tsavorite.core
 
         private bool HandleRetryStatus<TInput, TOutput, TContext>(
             OperationStatus internalStatus,
-            TsavoriteExecutionContext<TInput, TOutput, TContext> executionCtx,
+            ExecutionContext<TInput, TOutput, TContext> executionCtx,
             ref PendingContext<TInput, TOutput, TContext> pendingContext)
         {
             Debug.Assert(Kernel.Epoch.ThisInstanceProtected());
@@ -90,7 +90,7 @@ namespace Tsavorite.core
         /// <returns>Operation status</returns>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         internal Status HandleOperationStatus<TInput, TOutput, TContext>(
-            TsavoriteExecutionContext<TInput, TOutput, TContext> sessionCtx,
+            ExecutionContext<TInput, TOutput, TContext> sessionCtx,
             ref PendingContext<TInput, TOutput, TContext> pendingContext,
             OperationStatus operationStatus)
         {
@@ -109,7 +109,7 @@ namespace Tsavorite.core
         /// <returns>Operation status</returns>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         internal Status HandleOperationStatus<TInput, TOutput, TContext>(
-            TsavoriteExecutionContext<TInput, TOutput, TContext> sessionCtx,
+            ExecutionContext<TInput, TOutput, TContext> sessionCtx,
             ref PendingContext<TInput, TOutput, TContext> pendingContext,
             OperationStatus operationStatus,
             out AsyncIOContext<TKey, TValue> request)

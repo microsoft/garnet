@@ -28,7 +28,7 @@ namespace Tsavorite.core
         }
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        internal void MarkPage<TInput, TOutput, TContext>(long logicalAddress, TsavoriteExecutionContext<TInput, TOutput, TContext> sessionCtx)
+        internal void MarkPage<TInput, TOutput, TContext>(long logicalAddress, ExecutionContext<TInput, TOutput, TContext> sessionCtx)
         {
             if (sessionCtx.phase == Phase.REST)
                 hlog.MarkPage(logicalAddress, sessionCtx.version);

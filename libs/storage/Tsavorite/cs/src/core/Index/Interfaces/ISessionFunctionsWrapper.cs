@@ -66,7 +66,7 @@ namespace Tsavorite.core
 
         bool CompletePendingWithOutputs(out CompletedOutputIterator<TKey, TValue, TInput, TOutput, TContext> completedOutputs, bool wait = false, bool spinWaitForCommit = false);
 
-        TsavoriteKV<TKey, TValue, TStoreFunctions, TAllocator>.TsavoriteExecutionContext<TInput, TOutput, TContext> ExecutionCtx { get; }
+        TsavoriteKV<TKey, TValue, TStoreFunctions, TAllocator>.ExecutionContext<TInput, TOutput, TContext> ExecutionCtx { get; }
 
         IHeapContainer<TInput> GetHeapContainer(ref TInput input);
     }

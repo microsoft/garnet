@@ -1164,7 +1164,7 @@ namespace Tsavorite.core
             }
         }
 
-        internal static bool AtomicSwitch<TInput, TOutput, TContext>(TsavoriteExecutionContext<TInput, TOutput, TContext> fromCtx, TsavoriteExecutionContext<TInput, TOutput, TContext> toCtx, long version)
+        internal static bool AtomicSwitch<TInput, TOutput, TContext>(ExecutionContext<TInput, TOutput, TContext> fromCtx, ExecutionContext<TInput, TOutput, TContext> toCtx, long version)
         {
             lock (toCtx)
             {

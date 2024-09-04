@@ -13,14 +13,14 @@ namespace Tsavorite.core
         where TAllocator : IAllocator<TKey, TValue, TStoreFunctions>
     {
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        internal void InternalRefresh<TInput, TOutput, TContext>(TsavoriteExecutionContext<TInput, TOutput, TContext> executionCtx)
+        internal void InternalRefresh<TInput, TOutput, TContext>(ExecutionContext<TInput, TOutput, TContext> executionCtx)
         {
             Kernel.Epoch.ProtectAndDrain();
             DoThreadStateMachineStep(executionCtx);
         }
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        internal void DoThreadStateMachineStep<TInput, TOutput, TContext>(TsavoriteExecutionContext<TInput, TOutput, TContext> executionCtx)
+        internal void DoThreadStateMachineStep<TInput, TOutput, TContext>(ExecutionContext<TInput, TOutput, TContext> executionCtx)
         {
             // We check if we are in normal mode
             var newPhaseInfo = SystemState.Copy(ref systemState);
@@ -58,7 +58,7 @@ namespace Tsavorite.core
             }
         }
 
-        internal static void InitContext<TInput, TOutput, TContext>(TsavoriteExecutionContext<TInput, TOutput, TContext> ctx, int sessionID, string sessionName)
+        internal static void InitContext<TInput, TOutput, TContext>(ExecutionContext<TInput, TOutput, TContext> ctx, int sessionID, string sessionName)
         {
             ctx.phase = Phase.REST;
             // The system version starts at 1. Because we do not know what the current state machine state is,
@@ -77,7 +77,7 @@ namespace Tsavorite.core
             }
         }
 
-        internal static void CopyContext<TInput, TOutput, TContext>(TsavoriteExecutionContext<TInput, TOutput, TContext> src, TsavoriteExecutionContext<TInput, TOutput, TContext> dst)
+        internal static void CopyContext<TInput, TOutput, TContext>(ExecutionContext<TInput, TOutput, TContext> src, ExecutionContext<TInput, TOutput, TContext> dst)
         {
             dst.phase = src.phase;
             dst.version = src.version;

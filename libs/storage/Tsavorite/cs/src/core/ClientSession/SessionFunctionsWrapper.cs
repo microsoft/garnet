@@ -211,7 +211,7 @@ namespace Tsavorite.core
         public bool CompletePendingWithOutputs(out CompletedOutputIterator<TKey, TValue, TInput, TOutput, TContext> completedOutputs, bool wait = false, bool spinWaitForCommit = false)
             => _clientSession.CompletePendingWithOutputs(this, out completedOutputs, wait, spinWaitForCommit);
 
-        public TsavoriteKV<TKey, TValue, TStoreFunctions, TAllocator>.TsavoriteExecutionContext<TInput, TOutput, TContext> ExecutionCtx => _clientSession.ExecutionCtx;
+        public TsavoriteKV<TKey, TValue, TStoreFunctions, TAllocator>.ExecutionContext<TInput, TOutput, TContext> ExecutionCtx => _clientSession.ExecutionCtx;
         #endregion Internal utilities
     }
 }

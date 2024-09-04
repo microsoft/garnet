@@ -19,7 +19,7 @@ namespace Tsavorite.core
         /// <param name="sessionCtx"></param>
         /// <param name="token"></param>
         /// <returns></returns>
-        internal static ValueTask ReadyToCompletePendingAsync<TInput, TOutput, TContext>(TsavoriteExecutionContext<TInput, TOutput, TContext> sessionCtx, CancellationToken token = default)
+        internal static ValueTask ReadyToCompletePendingAsync<TInput, TOutput, TContext>(ExecutionContext<TInput, TOutput, TContext> sessionCtx, CancellationToken token = default)
             => sessionCtx.WaitPendingAsync(token);
 
         /// <summary>

@@ -13,7 +13,7 @@ namespace Tsavorite.core
     {
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         internal void SynchronizeEpoch<TInput, TOutput, TContext>(
-            TsavoriteExecutionContext<TInput, TOutput, TContext> executionCtx,
+            ExecutionContext<TInput, TOutput, TContext> executionCtx,
             ref PendingContext<TInput, TOutput, TContext> pendingContext)
         {
             var version = executionCtx.version;
