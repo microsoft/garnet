@@ -57,8 +57,7 @@ namespace Garnet.common
             SslClientAuthenticationOptions sslOptions = null)
             : base(address, port, BufferSize)
         {
-            var networkPool = new LimitedFixedBufferPool(BufferSize);
-            this.networkBuffers = new NetworkBuffers(networkPool);
+            this.networkBuffers = new NetworkBuffers(BufferSize, BufferSize).Allocate();
             this.onResponseDelegateUnsafe = onResponseDelegateUnsafe ?? new OnResponseDelegateUnsafe(DefaultLightReceiveUnsafe);
             this.opType = opType;
             this.BufferSize = BufferSize;

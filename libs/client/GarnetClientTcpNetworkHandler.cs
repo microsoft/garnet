@@ -12,7 +12,7 @@ namespace Garnet.client
     sealed class GarnetClientTcpNetworkHandler : TcpNetworkHandlerBase<GarnetClient, ClientTcpNetworkSender>
     {
         public GarnetClientTcpNetworkHandler(GarnetClient serverHook, Action<object> callback, Socket socket, NetworkBuffers networkBuffers, bool useTLS, IMessageConsumer messageConsumer, int networkSendThrottleMax = 8, ILogger logger = null)
-            : base(serverHook, new ClientTcpNetworkSender(socket, callback, networkBuffers.sendBufferPool, networkSendThrottleMax), socket, networkBuffers, useTLS, messageConsumer: messageConsumer, logger: logger)
+            : base(serverHook, new ClientTcpNetworkSender(socket, callback, networkBuffers.bufferPool, networkSendThrottleMax), socket, networkBuffers, useTLS, messageConsumer: messageConsumer, logger: logger)
         {
         }
 

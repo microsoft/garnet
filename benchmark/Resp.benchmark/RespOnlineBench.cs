@@ -669,7 +669,7 @@ namespace Resp.benchmark
             GarnetClientSession client = null;
             if (!opts.Pool)
             {
-                client = new GarnetClientSession(address, port, new NetworkBuffers(Math.Max(131072, opts.IntraThreadParallelism * opts.ValueLength)), opts.EnableTLS ? BenchUtils.GetTlsOptions(opts.TlsHost, opts.CertFileName, opts.CertPassword) : null, null, null);
+                client = new GarnetClientSession(address, port, new(Math.Max(131072, opts.IntraThreadParallelism * opts.ValueLength)), opts.EnableTLS ? BenchUtils.GetTlsOptions(opts.TlsHost, opts.CertFileName, opts.CertPassword) : null, null, null);
                 client.Connect();
                 if (auth != null)
                 {

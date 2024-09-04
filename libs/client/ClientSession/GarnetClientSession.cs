@@ -106,7 +106,7 @@ namespace Garnet.client
 
             this.usingManagedNetworkBuffers = networkBuffers.IsAllocated;
             this.networkBuffers = usingManagedNetworkBuffers ? networkBuffers : networkBuffers.Allocate(logger);
-            this.bufferSizeDigits = NumUtils.NumDigits(this.networkBuffers.sendBufferPoolSize);
+            this.bufferSizeDigits = NumUtils.NumDigits(this.networkBuffers.sendMinAllocationSize);
 
             this.logger = logger;
             this.sslOptions = tlsOptions;
@@ -284,8 +284,8 @@ namespace Garnet.client
             }
             offset = curr;
 
-            if (payloadLength > networkBuffers.sendBufferPoolSize)
-                throw new Exception($"Payload length {payloadLength} is larger than bufferSize {networkBuffers.sendBufferPoolSize} bytes");
+            if (payloadLength > networkBuffers.sendMinAllocationSize)
+                throw new Exception($"Payload length {payloadLength} is larger than bufferSize {networkBuffers.sendMinAllocationSize} bytes");
 
             while (!RespWriteUtils.WriteBulkString(new Span<byte>((void*)payloadPtr, payloadLength), ref curr, end))
             {

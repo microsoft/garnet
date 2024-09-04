@@ -23,7 +23,7 @@ namespace Garnet.cluster
         {
             this.migrationTaskStore = new MigrateSessionTaskStore(logger);
             var bufferSize = 1 << clusterProvider.serverOptions.PageSizeBits();
-            this.networkBuffers = new NetworkBuffers(new LimitedFixedBufferPool(bufferSize, logger: logger), new LimitedFixedBufferPool(1 << 12, logger: logger));
+            this.networkBuffers = new NetworkBuffers(bufferSize, 1 << 12).Allocate(logger: logger);
             this.clusterProvider = clusterProvider;
         }
 

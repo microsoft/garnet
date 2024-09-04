@@ -97,7 +97,7 @@ namespace Garnet.networking
         /// Constructor
         /// </summary>
         public unsafe NetworkHandler(TServerHook serverHook, TNetworkSender networkSender, NetworkBuffers networkBuffers, bool useTLS, IMessageConsumer messageConsumer = null, ILogger logger = null)
-            : base(networkBuffers.sendBufferPool.MinAllocationSize)
+            : base(networkBuffers.bufferPool.MinAllocationSize)
         {
             this.logger = logger;
             this.serverHook = serverHook;
@@ -123,11 +123,11 @@ namespace Garnet.networking
                 expectingData = new SemaphoreSlim(0);
                 cancellationTokenSource = new();
 
-                transportReceiveBufferEntry = this.networkBuffers.recvBufferPool.Get(this.networkBuffers.recvBufferPool.MinAllocationSize);
+                transportReceiveBufferEntry = this.networkBuffers.bufferPool.Get(this.networkBuffers.recvMinAllocationSize);
                 transportReceiveBuffer = transportReceiveBufferEntry.entry;
                 transportReceiveBufferPtr = transportReceiveBufferEntry.entryPtr;
 
-                transportSendBufferEntry = this.networkBuffers.sendBufferPool.Get(this.networkBuffers.sendBufferPool.MinAllocationSize);
+                transportSendBufferEntry = this.networkBuffers.bufferPool.Get(this.networkBuffers.bufferPool.MinAllocationSize);
                 transportSendBuffer = transportSendBufferEntry.entry;
                 transportSendBufferPtr = transportSendBufferEntry.entryPtr;
             }
@@ -489,7 +489,7 @@ namespace Garnet.networking
 
         unsafe void DoubleNetworkReceiveBuffer()
         {
-            var tmp = networkBuffers.recvBufferPool.Get(networkReceiveBuffer.Length * 2);
+            var tmp = networkBuffers.bufferPool.Get(networkReceiveBuffer.Length * 2);
             Array.Copy(networkReceiveBuffer, tmp.entry, networkReceiveBuffer.Length);
             networkReceiveBufferEntry.Dispose();
             networkReceiveBufferEntry = tmp;
@@ -513,7 +513,7 @@ namespace Garnet.networking
         {
             if (sslStream != null)
             {
-                var tmp = networkBuffers.recvBufferPool.Get(transportReceiveBuffer.Length * 2);
+                var tmp = networkBuffers.bufferPool.Get(transportReceiveBuffer.Length * 2);
                 Array.Copy(transportReceiveBuffer, tmp.entry, transportReceiveBuffer.Length);
                 transportReceiveBufferEntry.Dispose();
                 transportReceiveBufferEntry = tmp;

@@ -11,7 +11,7 @@ namespace Garnet.client
     sealed class GarnetClientSessionTcpNetworkHandler : TcpNetworkHandlerBase<GarnetClientSession, GarnetTcpNetworkSender>
     {
         public GarnetClientSessionTcpNetworkHandler(GarnetClientSession serverHook, Socket socket, NetworkBuffers networkBuffers, bool useTLS, IMessageConsumer messageConsumer, int networkSendThrottleMax = 8, ILogger logger = null)
-            : base(serverHook, new GarnetTcpNetworkSender(socket, networkBuffers.sendBufferPool, networkSendThrottleMax), socket, networkBuffers, useTLS, messageConsumer: messageConsumer, logger: logger)
+            : base(serverHook, new GarnetTcpNetworkSender(socket, networkBuffers.bufferPool, networkSendThrottleMax), socket, networkBuffers, useTLS, messageConsumer: messageConsumer, logger: logger)
         {
         }
 

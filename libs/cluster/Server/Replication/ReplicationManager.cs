@@ -94,7 +94,7 @@ namespace Garnet.cluster
         {
             var opts = clusterProvider.serverOptions;
 
-            this.networkBuffers = new NetworkBuffers(new LimitedFixedBufferPool(1 << 22, logger: logger), new LimitedFixedBufferPool(1 << 22, logger: logger));
+            this.networkBuffers = new NetworkBuffers(1 << 22, 1 << 22).Allocate(logger: logger);
             this.clusterProvider = clusterProvider;
             this.storeWrapper = clusterProvider.storeWrapper;
             aofProcessor = new AofProcessor(storeWrapper, recordToAof: false, logger: logger);
