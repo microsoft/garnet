@@ -47,11 +47,11 @@ namespace Garnet.server
             return true;
         }
 
-        public bool RunTransactionProc(byte id, ref MemoryResult<byte> output, int parseStateStartIdx = 0)
+        public bool RunTransactionProc(byte id, ref SessionParseState currParseState, ref MemoryResult<byte> output, int parseStateStartIdx = 0)
         {
             var proc = customCommandManagerSession
                 .GetCustomTransactionProcedure(id, txnManager, scratchBufferManager).Item1;
-            return txnManager.RunTransactionProc(id, ref parseState, parseStateStartIdx, proc, ref output);
+            return txnManager.RunTransactionProc(id, ref currParseState, parseStateStartIdx, proc, ref output);
 
         }
 
