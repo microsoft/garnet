@@ -27,12 +27,9 @@ namespace Tsavorite.core
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         private void TransientXUnlock<TInput, TOutput, TContext, TSessionFunctionsWrapper>(TSessionFunctionsWrapper sessionFunctions,
-                                    ref OperationStackContext<TKey, TValue, TStoreFunctions, TAllocator> stackCtx)
-            where TSessionFunctionsWrapper : ISessionFunctionsWrapper<TKey, TValue, TInput, TOutput, TContext, TStoreFunctions, TAllocator>
-        {
-            if (stackCtx.hei.HasTransientXLock)
-                sessionFunctions.UnlockTransientExclusive(Kernel, ref stackCtx.hei);
-        }
+                                    ref OperationStackContext<TKey, TValue, TStoreFunctions, TAllocator> stackCtx, bool isRetry)
+            where TSessionFunctionsWrapper : ISessionFunctionsWrapper<TKey, TValue, TInput, TOutput, TContext, TStoreFunctions, TAllocator> 
+            => sessionFunctions.UnlockTransientExclusive(Kernel, ref stackCtx.hei, isRetry);
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         internal bool TryTransientSLock<TInput, TOutput, TContext, TSessionFunctionsWrapper>(TSessionFunctionsWrapper sessionFunctions,
@@ -51,12 +48,9 @@ namespace Tsavorite.core
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         internal void TransientSUnlock<TInput, TOutput, TContext, TSessionFunctionsWrapper>(TSessionFunctionsWrapper sessionFunctions,
-                                    ref OperationStackContext<TKey, TValue, TStoreFunctions, TAllocator> stackCtx)
-            where TSessionFunctionsWrapper : ISessionFunctionsWrapper<TKey, TValue, TInput, TOutput, TContext, TStoreFunctions, TAllocator>
-        {
-            if (stackCtx.hei.HasTransientSLock)
-                sessionFunctions.UnlockTransientShared(Kernel, ref stackCtx.hei);
-        }
+                                    ref OperationStackContext<TKey, TValue, TStoreFunctions, TAllocator> stackCtx, bool isRetry)
+            where TSessionFunctionsWrapper : ISessionFunctionsWrapper<TKey, TValue, TInput, TOutput, TContext, TStoreFunctions, TAllocator> 
+            => sessionFunctions.UnlockTransientShared(Kernel, ref stackCtx.hei, isRetry);
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         internal void LockForScan(ref OperationStackContext<TKey, TValue, TStoreFunctions, TAllocator> stackCtx, ref TKey key)

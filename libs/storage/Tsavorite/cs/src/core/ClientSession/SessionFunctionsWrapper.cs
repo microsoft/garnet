@@ -171,7 +171,7 @@ namespace Tsavorite.core
         #endregion Utilities
 
         #region Transient locking
-        public bool IsManualLocking => _sessionLocker.IsManualLocking;
+        public bool IsManualLocking => _sessionLocker.IsTransactionalLocking;
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public bool TryLockTransientExclusive(TsavoriteKernel kernel, ref HashEntryInfo hei) => _sessionLocker.TryLockTransientExclusive(kernel, ref hei);
@@ -180,10 +180,10 @@ namespace Tsavorite.core
         public bool TryLockTransientShared(TsavoriteKernel kernel, ref HashEntryInfo hei) => _sessionLocker.TryLockTransientShared(kernel, ref hei);
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public void UnlockTransientExclusive(TsavoriteKernel kernel, ref HashEntryInfo hei) => _sessionLocker.UnlockTransientExclusive(kernel, ref hei);
+        public void UnlockTransientExclusive(TsavoriteKernel kernel, ref HashEntryInfo hei, bool isRetry) => _sessionLocker.UnlockTransientExclusive(kernel, ref hei, isRetry);
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public void UnlockTransientShared(TsavoriteKernel kernel, ref HashEntryInfo hei) => _sessionLocker.UnlockTransientShared(kernel, ref hei);
+        public void UnlockTransientShared(TsavoriteKernel kernel, ref HashEntryInfo hei, bool isRetry) => _sessionLocker.UnlockTransientShared(kernel, ref hei, isRetry);
         #endregion Transient locking
 
         #region Internal utilities

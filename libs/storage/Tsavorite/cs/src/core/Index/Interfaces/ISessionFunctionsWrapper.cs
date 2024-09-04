@@ -60,8 +60,8 @@ namespace Tsavorite.core
         #region Transient locking
         bool TryLockTransientExclusive(TsavoriteKernel kernel, ref HashEntryInfo hei);
         bool TryLockTransientShared(TsavoriteKernel kernel, ref HashEntryInfo hei);
-        void UnlockTransientExclusive(TsavoriteKernel kernel, ref HashEntryInfo hei);
-        void UnlockTransientShared(TsavoriteKernel kernel, ref HashEntryInfo hei);
+        void UnlockTransientExclusive(TsavoriteKernel kernel, ref HashEntryInfo hei, bool isRetry);
+        void UnlockTransientShared(TsavoriteKernel kernel, ref HashEntryInfo hei, bool isRetry);
         #endregion 
 
         bool CompletePendingWithOutputs(out CompletedOutputIterator<TKey, TValue, TInput, TOutput, TContext> completedOutputs, bool wait = false, bool spinWaitForCommit = false);

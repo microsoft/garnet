@@ -43,7 +43,8 @@ namespace Tsavorite.core
             {
                 // ConditionalCopyToTail is different from the usual procedures, in that if we find a source record we don't lock--we exit with success.
                 // So we only lock for tag-chain stability during search.
-                if (callerHasTransientLock || TryTransientSLock<TInput, TOutput, TContext, TSessionFunctionsWrapper>(sessionFunctions, ref stackCtx, out OperationStatus status))
+                OperationStatus status = OperationStatus.SUCCESS;   // separate initialization for compiler
+                if (callerHasTransientLock || TryTransientSLock<TInput, TOutput, TContext, TSessionFunctionsWrapper>(sessionFunctions, ref stackCtx, out status))
                 {
                     try
                     {
@@ -54,7 +55,7 @@ namespace Tsavorite.core
                     {
                         stackCtx.HandleNewRecordOnException(this);
                         if (!callerHasTransientLock)
-                            TransientSUnlock<TInput, TOutput, TContext, TSessionFunctionsWrapper>(sessionFunctions, ref stackCtx);
+                            TransientSUnlock<TInput, TOutput, TContext, TSessionFunctionsWrapper>(sessionFunctions, ref stackCtx, OperationStatusUtils.IsRetry(status));
                     }
                 }
 

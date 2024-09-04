@@ -30,48 +30,39 @@ namespace Tsavorite.core
             => GetBucketIndex(keyHash, spine.state[spine.resizeInfo.version].size_mask);
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        internal unsafe HashBucket* GetBucket(long keyHash)
-            => spine.state[spine.resizeInfo.version].tableAligned + GetBucketIndex(keyHash);
+        internal unsafe HashBucket* GetBucket(long keyHash) => spine.state[spine.resizeInfo.version].tableAligned + GetBucketIndex(keyHash);
 
         /// <inheritdoc/>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public unsafe bool TryLockShared(ref HashEntryInfo hei)
-            => HashBucket.TryAcquireSharedLatch(hei.firstBucket);
+        public unsafe bool TryLockShared(ref HashEntryInfo hei) => HashBucket.TryAcquireSharedLatch(hei.firstBucket);
 
         /// <inheritdoc/>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public unsafe bool TryLockExclusive(ref HashEntryInfo hei)
-            => HashBucket.TryAcquireExclusiveLatch(hei.firstBucket);
+        public unsafe bool TryLockExclusive(ref HashEntryInfo hei) => HashBucket.TryAcquireExclusiveLatch(hei.firstBucket);
 
         /// <inheritdoc/>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public unsafe bool TryPromoteLock(ref HashEntryInfo hei)
-            => HashBucket.TryPromoteLatch(hei.firstBucket);
+        public unsafe bool TryPromoteLock(ref HashEntryInfo hei) => HashBucket.TryPromoteLatch(hei.firstBucket);
 
         /// <inheritdoc/>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public unsafe void UnlockShared(ref HashEntryInfo hei)
-            => HashBucket.ReleaseSharedLatch(ref hei);
+        public unsafe void UnlockShared(ref HashEntryInfo hei) => HashBucket.ReleaseSharedLatch(ref hei);
 
         /// <inheritdoc/>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public unsafe void UnlockExclusive(ref HashEntryInfo hei)
-            => HashBucket.ReleaseExclusiveLatch(ref hei);
+        public unsafe void UnlockExclusive(ref HashEntryInfo hei) => HashBucket.ReleaseExclusiveLatch(ref hei);
 
         /// <inheritdoc/>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public unsafe bool IsLockedShared(ref HashEntryInfo hei)
-            => HashBucket.NumLatchedShared(hei.firstBucket) > 0;
+        public unsafe bool IsLockedShared(ref HashEntryInfo hei) => HashBucket.NumLatchedShared(hei.firstBucket) > 0;
 
         /// <inheritdoc/>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public unsafe bool IsLockedExclusive(ref HashEntryInfo hei)
-            => HashBucket.IsLatchedExclusive(hei.firstBucket);
+        public unsafe bool IsLockedExclusive(ref HashEntryInfo hei) => HashBucket.IsLatchedExclusive(hei.firstBucket);
 
         /// <inheritdoc/>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public unsafe bool IsLocked(ref HashEntryInfo hei)
-            => HashBucket.IsLatched(hei.firstBucket);
+        public unsafe bool IsLocked(ref HashEntryInfo hei) => HashBucket.IsLatched(hei.firstBucket);
 
         /// <inheritdoc/>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
