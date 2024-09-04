@@ -158,7 +158,7 @@ namespace Garnet.server
                     {
                         header = new RespInputHeader { cmd = RespCommand.PFCOUNT },
                     };
-                    
+
                     var srcKey = input.parseState.GetArgSliceByRef(currTokenIdx++).SpanByte;
 
                     var status = GET(ref srcKey, ref currInput, ref srcMergeBuffer, ref currLockableContext);
@@ -237,11 +237,11 @@ namespace Garnet.server
             {
                 sectorAlignedMemoryHll1 ??= new SectorAlignedMemory(hllBufferSize + sectorAlignedMemoryPoolAlignment, sectorAlignedMemoryPoolAlignment);
                 var readBuffer = sectorAlignedMemoryHll1.GetValidPointer();
-                
+
                 var currTokenIdx = input.parseStateStartIdx;
                 var dstKey = input.parseState.GetArgSliceByRef(currTokenIdx++).SpanByte;
 
-                while(currTokenIdx < input.parseState.Count)
+                while (currTokenIdx < input.parseState.Count)
                 {
                     #region readSrcHLL
 

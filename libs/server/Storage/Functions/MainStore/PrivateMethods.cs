@@ -176,7 +176,7 @@ namespace Garnet.server
                             }
                         }
                     }
-                    
+
                     var pos = BitmapManager.BitPosDriver(bpSetVal, bpStartOffset, bpEndOffset, bpOffsetType,
                         value.ToPointer(), value.Length);
                     *(long*)dst.SpanByte.ToPointer() = pos;

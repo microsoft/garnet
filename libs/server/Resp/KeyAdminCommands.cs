@@ -155,7 +155,9 @@ namespace Garnet.server
 
             var input = new RawStringInput
             {
-                header = new RespInputHeader { cmd = command }, parseState = parseState, parseStateStartIdx = 1,
+                header = new RespInputHeader { cmd = command },
+                parseState = parseState,
+                parseStateStartIdx = 1,
             };
 
             var status = storageApi.EXPIRE(key, ref input, out var timeoutSet);

@@ -338,7 +338,7 @@ namespace Garnet.server
                                          ? TimeSpan.FromMilliseconds(expiry).Ticks
                                          : TimeSpan.FromSeconds(expiry).Ticks);
             val.AsReadOnlySpan().CopyTo(sbNewVal.AsSpan());
-            
+
             _ = storageApi.SET(ref key, ref sbNewVal);
 
             while (!RespWriteUtils.WriteDirect(CmdStrings.RESP_OK, ref dcurr, dend))

@@ -901,7 +901,9 @@ namespace Garnet.server
 
             var input = new RawStringInput
             {
-                header = new RespInputHeader { cmd = cmd }, parseState = parseState, parseStateStartIdx = 0,
+                header = new RespInputHeader { cmd = cmd },
+                parseState = parseState,
+                parseStateStartIdx = 0,
             };
 
             const int outputBufferLength = NumUtils.MaximumFormatInt64Length + 1;

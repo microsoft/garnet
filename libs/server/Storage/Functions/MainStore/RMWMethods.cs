@@ -293,7 +293,7 @@ namespace Garnet.server
                 case RespCommand.PEXPIRE:
                 case RespCommand.EXPIRE:
                     var expiryExists = value.MetadataSize > 0;
-                    
+
                     var expiryValue = input.parseState.GetInt(input.parseStateStartIdx);
                     var tsExpiry = input.header.cmd == RespCommand.EXPIRE
                         ? TimeSpan.FromSeconds(expiryValue)

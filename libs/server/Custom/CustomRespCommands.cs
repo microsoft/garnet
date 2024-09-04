@@ -18,7 +18,7 @@ namespace Garnet.server
         {
             // Define output
             var output = new MemoryResult<byte>(null, 0);
-            
+
             // Run procedure
             Debug.Assert(txnManager.state == TxnState.None);
 

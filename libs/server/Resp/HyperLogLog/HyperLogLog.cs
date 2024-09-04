@@ -474,7 +474,7 @@ namespace Garnet.server
         public bool CopyUpdate(ref RawStringInput input, byte* oldValue, byte* newValue, int newValueLen)
         {
             var fUpdated = false;
-            
+
             // Only reach this point if old-blob is of sparse type
             if (IsSparse(oldValue))
             {

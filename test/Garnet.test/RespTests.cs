@@ -1567,7 +1567,7 @@ namespace Garnet.test
             ClassicAssert.IsTrue(resp); // GT return true new expiry > current expiry
             time = db.KeyTimeToLive(key);
 
-            ClassicAssert.Greater(command.Equals("EXPIRE") ? 
+            ClassicAssert.Greater(command.Equals("EXPIRE") ?
                     time.Value.TotalSeconds : time.Value.TotalMilliseconds, 500);
 
             args[1] = 2000;
@@ -1583,7 +1583,7 @@ namespace Garnet.test
 
             ClassicAssert.Greater(time.Value.TotalSeconds, 0);
 
-            ClassicAssert.LessOrEqual(command.Equals("EXPIRE") ? 
+            ClassicAssert.LessOrEqual(command.Equals("EXPIRE") ?
                     time.Value.TotalSeconds : time.Value.TotalMilliseconds, (int)args[1]);
         }
 

@@ -146,7 +146,7 @@ namespace Garnet.server
             if (!TryReadBool(ref slice, out var value))
             {
                 RespParsingException.ThrowNotANumber(slice.ptr, slice.length);
-            } 
+            }
             return value;
         }
 

@@ -94,7 +94,7 @@ namespace Garnet.server
             var status = GarnetStatus.NOTFOUND;
             var keys = input.parseState.Parameters;
             var keyCount = keys.Length;
-            
+
             // 8 byte start pointer
             // 4 byte int length
             var output = stackalloc byte[12];
@@ -288,7 +288,8 @@ namespace Garnet.server
         {
             var input = new RawStringInput
             {
-                header = new RespInputHeader { cmd = RespCommand.BITFIELD }, parseStateStartIdx = 0
+                header = new RespInputHeader { cmd = RespCommand.BITFIELD },
+                parseStateStartIdx = 0
             };
 
             result = new();

@@ -68,7 +68,7 @@ namespace Garnet.server
                 case RespCommand.INCRBY:
                     if (!input.parseState.TryGetLong(input.parseStateStartIdx, out var next))
                         return sizeof(int);
-                    
+
                     var fNeg = false;
                     var ndigits = NumUtils.NumDigitsInLong(next, ref fNeg);
 

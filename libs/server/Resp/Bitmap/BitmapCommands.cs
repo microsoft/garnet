@@ -524,7 +524,7 @@ namespace Garnet.server
                 var secParseState = new SessionParseState();
                 secParseState.Initialize(ref secParseStateBuffer,
                     opArgs.Length + (isOverflowTypeSet ? 1 : 0));
-                
+
                 for (var j = 0; j < opArgs.Length; j++)
                 {
                     secParseStateBuffer[j] = opArgs[j];

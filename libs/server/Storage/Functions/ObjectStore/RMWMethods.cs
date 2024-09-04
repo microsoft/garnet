@@ -114,10 +114,10 @@ namespace Garnet.server
 
                     var optionType = ExpireOption.None;
                     if (input.parseState.Count - input.parseStateStartIdx > 1)
-                    { 
+                    {
                         optionType = input.parseState.GetEnum<ExpireOption>(currTokenIdx, true);
                     }
-                    
+
                     var expiryExists = value.Expiration > 0;
                     return EvaluateObjectExpireInPlace(optionType, expiryExists, expiryTicks, ref value, ref output);
                 case GarnetObjectType.Persist:
