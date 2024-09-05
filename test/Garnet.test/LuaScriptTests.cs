@@ -337,7 +337,7 @@ namespace Garnet.test
             {
                 ClassicAssert.AreEqual(ex.Message, "Failure");
             }
-            var directReplyScript = "return { err = 'Success' }";
+            var directReplyScript = "return { err = 'Failure' }";
             try
             {
                 _ = db.ScriptEvaluate(directReplyScript);
