@@ -27,13 +27,13 @@ namespace Garnet.cluster
                 if (clusterProvider.replicationManager.Recovering)
                 {
                     logger?.LogWarning("Replica is recovering cannot sync AOF");
-                    throw new GarnetException("Replica is recovering cannot sync AOF", LogLevel.Warning);
+                    throw new GarnetException("Replica is recovering cannot sync AOF", LogLevel.Warning, clientResponse: false);
                 }
 
                 if (currentConfig.LocalNodeRole != NodeRole.REPLICA)
                 {
                     logger?.LogWarning("This node {nodeId} is not a replica", currentConfig.LocalNodeId);
-                    throw new GarnetException($"This node {currentConfig.LocalNodeId} is not a replica", LogLevel.Warning);
+                    throw new GarnetException($"This node {currentConfig.LocalNodeId} is not a replica", LogLevel.Warning, clientResponse: false);
                 }
 
                 if (clusterProvider.serverOptions.MainMemoryReplication)
@@ -53,7 +53,7 @@ namespace Garnet.cluster
                 {
                     logger?.LogInformation("Processing {recordLength} bytes; previousAddress {previousAddress}, currentAddress {currentAddress}, nextAddress {nextAddress}, current AOF tail {tail}", recordLength, previousAddress, currentAddress, nextAddress, storeWrapper.appendOnlyFile.TailAddress);
                     logger?.LogError("Before ProcessPrimaryStream: Replication offset mismatch: ReplicaReplicationOffset {ReplicaReplicationOffset}, aof.TailAddress {tailAddress}", ReplicationOffset, storeWrapper.appendOnlyFile.TailAddress);
-                    throw new GarnetException($"Before ProcessPrimaryStream: Replication offset mismatch: ReplicaReplicationOffset {ReplicationOffset}, aof.TailAddress {storeWrapper.appendOnlyFile.TailAddress}", LogLevel.Warning);
+                    throw new GarnetException($"Before ProcessPrimaryStream: Replication offset mismatch: ReplicaReplicationOffset {ReplicationOffset}, aof.TailAddress {storeWrapper.appendOnlyFile.TailAddress}", LogLevel.Warning, clientResponse: false);
                 }
 
                 // Enqueue to AOF
@@ -76,7 +76,7 @@ namespace Garnet.cluster
                     {
                         if (!clusterProvider.serverOptions.EnableFastCommit)
                         {
-                            throw new Exception("Received FastCommit request at replica AOF processor, but FastCommit is not enabled");
+                            throw new GarnetException("Received FastCommit request at replica AOF processor, but FastCommit is not enabled", clientResponse: false);
                         }
                         TsavoriteLogRecoveryInfo info = new();
                         info.Initialize(new ReadOnlySpan<byte>(ptr + entryLength, -payloadLength));
@@ -90,19 +90,19 @@ namespace Garnet.cluster
                 if (ReplicationOffset != nextAddress)
                 {
                     logger?.LogWarning("Replication offset mismatch: ReplicaReplicationOffset {ReplicaReplicationOffset}, nextAddress {nextAddress}", ReplicationOffset, nextAddress);
-                    throw new GarnetException($"Replication offset mismatch: ReplicaReplicationOffset {ReplicationOffset}, nextAddress {nextAddress}", LogLevel.Warning);
+                    throw new GarnetException($"Replication offset mismatch: ReplicaReplicationOffset {ReplicationOffset}, nextAddress {nextAddress}", LogLevel.Warning, clientResponse: false);
                 }
 
                 if (ReplicationOffset != storeWrapper.appendOnlyFile.TailAddress)
                 {
                     logger?.LogWarning("After ProcessPrimaryStream: Replication offset mismatch: ReplicaReplicationOffset {ReplicaReplicationOffset}, aof.TailAddress {tailAddress}", ReplicationOffset, storeWrapper.appendOnlyFile.TailAddress);
-                    throw new GarnetException($"After ProcessPrimaryStream: Replication offset mismatch: ReplicaReplicationOffset {ReplicationOffset}, aof.TailAddress {storeWrapper.appendOnlyFile.TailAddress}", LogLevel.Warning);
+                    throw new GarnetException($"After ProcessPrimaryStream: Replication offset mismatch: ReplicaReplicationOffset {ReplicationOffset}, aof.TailAddress {storeWrapper.appendOnlyFile.TailAddress}", LogLevel.Warning, clientResponse: false);
                 }
             }
             catch (Exception ex)
             {
                 logger?.LogWarning(ex, "An exception occurred at ReplicationManager.ProcessPrimaryStream");
-                throw new GarnetException(ex.Message, ex, LogLevel.Warning);
+                throw new GarnetException(ex.Message, ex, LogLevel.Warning, clientResponse: false);
             }
         }
 

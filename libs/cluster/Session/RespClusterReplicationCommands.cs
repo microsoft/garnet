@@ -181,29 +181,16 @@ namespace Garnet.cluster
             var primaryId = currentConfig.LocalNodePrimaryId;
             if (localRole != NodeRole.REPLICA)
             {
-                // TODO: handle this
-                logger?.LogError("{str}", "aofsync node not a replica");
-                //while (!RespWriteUtils.WriteError("ERR aofsync node not a replica"u8, ref dcurr, dend))
-                //    SendAndReset();
+                throw new GarnetException("aofsync node not a replica", LogLevel.Error, clientResponse: false);
             }
             else if (!primaryId.Equals(nodeId))
             {
-                // TODO: handle this
-                logger?.LogError("aofsync node replicating {primaryId}", primaryId);
-                //while (!RespWriteUtils.WriteError($"ERR aofsync node replicating {primaryId}", ref dcurr, dend))
-                //    SendAndReset();
+                throw new GarnetException($"aofsync node replicating {primaryId}", LogLevel.Error, clientResponse: false);
             }
             else
             {
-                try
-                {
-                    clusterProvider.replicationManager.ProcessPrimaryStream(sbRecord.ToPointer(), sbRecord.Length,
-                        previousAddress, currentAddress, nextAddress);
-                }
-                catch (Exception ex)
-                {
-                    logger?.LogError(ex, "Error processing primary stream");
-                }
+                clusterProvider.replicationManager.ProcessPrimaryStream(sbRecord.ToPointer(), sbRecord.Length,
+                    previousAddress, currentAddress, nextAddress);
             }
 
             return true;

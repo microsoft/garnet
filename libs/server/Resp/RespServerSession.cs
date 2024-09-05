@@ -6,7 +6,6 @@ using System.Buffers;
 using System.Diagnostics;
 using System.Runtime.CompilerServices;
 using System.Runtime.InteropServices;
-using System.Security.Cryptography;
 using System.Text;
 using Garnet.common;
 using Garnet.common.Parsing;
@@ -316,8 +315,11 @@ namespace Garnet.server
                 logger?.Log(ex.LogLevel, ex, "ProcessMessages threw a GarnetException:");
 
                 // Forward Garnet error as RESP error
-                while (!RespWriteUtils.WriteError($"ERR Garnet Exception: {ex.Message}", ref dcurr, dend))
-                    SendAndReset();
+                if (ex.ClientResponse)
+                {
+                    while (!RespWriteUtils.WriteError($"ERR Garnet Exception: {ex.Message}", ref dcurr, dend))
+                        SendAndReset();
+                }
 
                 // Send message and dispose the network sender to end the session
                 if (dcurr > networkSender.GetResponseObjectHead())
