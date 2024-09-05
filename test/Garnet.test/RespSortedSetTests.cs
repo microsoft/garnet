@@ -265,11 +265,7 @@ namespace Garnet.test
             ClassicAssert.AreEqual(3, changed);
 
             // INCR - When this option is specified ZADD acts like ZINCRBY
-            testArgs =
-            [
-                key, "INCR",
-                "3.5", "a",
-            ];
+            testArgs = [ key, "INCR", "3.5", "a" ];
 
             resp = db.Execute("ZADD", testArgs);
             ClassicAssert.IsTrue(double.TryParse(resp.ToString(), out var newVal));
