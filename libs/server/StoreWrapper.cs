@@ -51,7 +51,7 @@ namespace Garnet.server
         /// <summary>
         /// Get server
         /// </summary>
-        public GarnetServerTcp GetServer() => (GarnetServerTcp)server;
+        public GarnetServerTcp GetTcpServer() => (GarnetServerTcp)server;
 
         /// <summary>
         /// Access control list governing all commands
@@ -74,8 +74,6 @@ namespace Garnet.server
         /// Logger factory
         /// </summary>
         public readonly ILoggerFactory loggerFactory;
-
-        internal readonly string localEndpoint;
 
         internal readonly CustomCommandManager customCommandManager;
         internal readonly GarnetServerMonitor monitor;
@@ -176,13 +174,6 @@ namespace Garnet.server
 
             if (clusterFactory != null)
                 clusterProvider = clusterFactory.CreateClusterProvider(this);
-
-            string address = serverOptions.Address ?? GetIp();
-            int port = serverOptions.Port;
-            localEndpoint = address + ":" + port;
-
-            logger?.LogInformation("Local endpoint: {localEndpoint}", localEndpoint);
-
             ctsCommit = new();
             run_id = Generator.CreateHexId();
         }
@@ -191,16 +182,28 @@ namespace Garnet.server
         /// Get IP
         /// </summary>
         /// <returns></returns>
-        public static string GetIp()
+        public string GetIp()
         {
-            string localIP;
-            using (Socket socket = new(AddressFamily.InterNetwork, SocketType.Dgram, 0))
+            var localEndpoint = GetTcpServer().GetEndPoint;
+            if (localEndpoint.Address.Equals(IPAddress.Any))
             {
-                socket.Connect("8.8.8.8", 65530);
-                IPEndPoint endPoint = socket.LocalEndPoint as IPEndPoint;
-                localIP = endPoint.Address.ToString();
+                using (Socket socket = new(AddressFamily.InterNetwork, SocketType.Dgram, 0))
+                {
+                    socket.Connect("8.8.8.8", 65530);
+                    var endPoint = socket.LocalEndPoint as IPEndPoint;
+                    return endPoint.Address.ToString();
+                }
             }
-            return localIP;
+            else if (localEndpoint.Address.Equals(IPAddress.IPv6Any))
+            {
+                using (Socket socket = new(AddressFamily.InterNetworkV6, SocketType.Dgram, 0))
+                {
+                    socket.Connect("2001:4860:4860::8888", 65530);
+                    var endPoint = socket.LocalEndPoint as IPEndPoint;
+                    return endPoint.Address.ToString();
+                }
+            }
+            return localEndpoint.Address.ToString();
         }
 
         internal FunctionsState CreateFunctionsState()

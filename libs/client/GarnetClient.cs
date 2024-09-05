@@ -5,6 +5,7 @@ using System;
 using System.Buffers;
 using System.Collections.Generic;
 using System.Diagnostics;
+using System.Net;
 using System.Net.Security;
 using System.Net.Sockets;
 using System.Runtime.CompilerServices;
@@ -247,7 +248,8 @@ namespace Garnet.client
 
         Socket GetSendSocket(int millisecondsTimeout = 0)
         {
-            _ = Format.TryParseEndPoint($"{address}:{port}", out var endPoint);
+            var ip = IPAddress.Parse(address);
+            var endPoint = new IPEndPoint(ip, port);
 
             var socket = new Socket(endPoint.AddressFamily, SocketType.Stream, ProtocolType.Tcp)
             {
@@ -256,7 +258,7 @@ namespace Garnet.client
 
             if (millisecondsTimeout > 0)
             {
-                IAsyncResult result = socket.BeginConnect(endPoint, null, null);
+                var result = socket.BeginConnect(endPoint, null, null);
                 result.AsyncWaitHandle.WaitOne(millisecondsTimeout, true);
 
                 if (socket.Connected)
