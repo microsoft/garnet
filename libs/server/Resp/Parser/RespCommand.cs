@@ -146,7 +146,7 @@ namespace Garnet.server
         ZREMRANGEBYRANK,
         ZREMRANGEBYSCORE,
 
-        // BITOP is the true command, AND|OR|XOR|NOT are psuedo-subcommands
+        // BITOP is the true command, AND|OR|XOR|NOT are pseudo-subcommands
         BITOP,
         BITOP_AND,
         BITOP_OR,
@@ -435,6 +435,8 @@ namespace Garnet.server
                 RespCommand.MEMORY_USAGE => false,
                 RespCommand.FLUSHDB => false,
                 RespCommand.FLUSHALL => false,
+                RespCommand.KEYS => false,
+                RespCommand.SCAN => false,
                 _ => cmd >= FirstReadCommand() && cmd <= LastWriteCommand()
             };
         }
