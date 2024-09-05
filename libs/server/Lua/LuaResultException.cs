@@ -8,10 +8,10 @@ using Azure.Messaging;
 namespace Garnet.server
 {
     [Serializable]
-    public class LuaResultException: Exception
+    public class LuaResultException : Exception
     {
         public LuaResultException() : base() { }
-        public LuaResultException(String message) : base(message) { }            
+        public LuaResultException(String message) : base(message) { }
         public LuaResultException(string message, Exception innerException) : base(message, innerException) { }
     }
 }
