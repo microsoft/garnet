@@ -307,7 +307,7 @@ namespace Garnet.test
             ClassicAssert.AreEqual(Encoding.ASCII.GetString(CmdStrings.RESP_ERR_INCR_SUPPORTS_ONLY_SINGLE_PAIR), ex.Message);
 
             // No member-score pairs
-            args = [key, "XX"];
+            args = [key, "XX", "CH"];
             ex = Assert.Throws<RedisServerException>(() => db.Execute("ZADD", args));
             ClassicAssert.AreEqual(Encoding.ASCII.GetString(CmdStrings.RESP_SYNTAX_ERROR), ex.Message);
         }
