@@ -232,7 +232,7 @@ namespace Garnet.server
             catch (LuaScriptException ex)
             {
                 logger?.LogError(ex.InnerException, "Error executing Lua script callback");
-                while (!RespWriteUtils.WriteError("ERR " + ex.InnerException.Message, ref dcurr, dend))
+                while (!RespWriteUtils.WriteError("ERR " + (ex.InnerException ?? ex).Message, ref dcurr, dend))
                     SendAndReset();
                 return true;
             }
