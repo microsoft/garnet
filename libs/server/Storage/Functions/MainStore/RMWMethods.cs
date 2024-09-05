@@ -17,8 +17,7 @@ namespace Garnet.server
         /// <inheritdoc />
         public bool NeedInitialUpdate(ref SpanByte key, ref RawStringInput input, ref SpanByteAndMemory output, ref RMWInfo rmwInfo)
         {
-            var cmd = input.AsSpan()[0];
-            switch ((RespCommand)cmd)
+            switch (input.header.cmd)
             {
                 case RespCommand.SETKEEPTTLXX:
                 case RespCommand.SETEXXX:
@@ -28,10 +27,12 @@ namespace Garnet.server
                 case RespCommand.GETDEL:
                     return false;
                 default:
-                    if (cmd >= CustomCommandManager.StartOffset)
+                    if ((byte)input.header.cmd >= CustomCommandManager.StartOffset)
                     {
                         (IMemoryOwner<byte> Memory, int Length) outp = (output.Memory, 0);
-                        var ret = functionsState.customCommands[cmd - CustomCommandManager.StartOffset].functions.NeedInitialUpdate(key.AsReadOnlySpan(), ref input, ref outp);
+                        var ret = functionsState
+                            .customCommands[(byte)input.header.cmd - CustomCommandManager.StartOffset].functions
+                            .NeedInitialUpdate(key.AsReadOnlySpan(), ref input, ref outp);
                         output.Memory = outp.Memory;
                         output.Length = outp.Length;
                         return ret;
@@ -160,7 +161,7 @@ namespace Garnet.server
                     {
                         var functions = functionsState.customCommands[(byte)input.header.cmd - CustomCommandManager.StartOffset].functions;
                         // compute metadata size for result
-                        long expiration = input.arg1;
+                        var expiration = input.arg1;
                         metadataSize = expiration switch
                         {
                             -1 => 0,
