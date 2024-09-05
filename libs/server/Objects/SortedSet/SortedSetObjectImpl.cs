@@ -89,7 +89,7 @@ namespace Garnet.server
                         ObjectUtils.ReallocateOutput(ref output, ref isMemory, ref ptr, ref ptrHandle, ref curr, ref end);
                     return;
                 }
-                
+
                 while (currTokenIdx < input.parseState.Count)
                 {
                     // Score
@@ -132,7 +132,7 @@ namespace Garnet.server
 
                         // Don't update existing member if NX flag is set
                         // or if GT/LT flag is set and existing score is higher/lower than new score, respectively
-                        if (options.HasFlag(SortedSetAddOption.NX) || 
+                        if (options.HasFlag(SortedSetAddOption.NX) ||
                             (options.HasFlag(SortedSetAddOption.GT) && scoreStored > score) ||
                             (options.HasFlag(SortedSetAddOption.LT) && scoreStored < score)) continue;
 

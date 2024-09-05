@@ -3,11 +3,9 @@
 
 using System;
 using System.Collections.Generic;
-using System.Diagnostics;
 using System.Linq;
 using System.Text;
 using System.Threading.Tasks;
-using CommandLine;
 using Embedded.perftest;
 using Garnet.common;
 using Garnet.server;
@@ -201,53 +199,53 @@ namespace Garnet.test
 
             added = db.SortedSetAdd(key, testEntries, SortedSetWhen.Exists);
             ClassicAssert.AreEqual(0, added);
-            var scores = db.SortedSetScores(key, new[] { new RedisValue("a"), new RedisValue("b") });
+            var scores = db.SortedSetScores(key, [new RedisValue("a"), new RedisValue("b")]);
             CollectionAssert.AreEqual(new double[] { 3, 4 }, scores);
             var count = db.SortedSetLength(key);
             ClassicAssert.AreEqual(10, count);
 
             // NX - Only add new elements. Don't update already existing elements.
-            testEntries = new[]
-            {
+            testEntries =
+            [
                 new SortedSetEntry("a", 4),
                 new SortedSetEntry("b", 5),
                 new SortedSetEntry("k", 11),
                 new SortedSetEntry("l", 12),
-            };
+            ];
 
             added = db.SortedSetAdd(key, testEntries, SortedSetWhen.NotExists);
             ClassicAssert.AreEqual(2, added);
-            scores = db.SortedSetScores(key, new[] { new RedisValue("a"), new RedisValue("b"), new RedisValue("k"), new RedisValue("l") });
+            scores = db.SortedSetScores(key, [new RedisValue("a"), new RedisValue("b"), new RedisValue("k"), new RedisValue("l")]);
             CollectionAssert.AreEqual(new double[] { 3, 4, 11, 12 }, scores);
             count = db.SortedSetLength(key);
             ClassicAssert.AreEqual(12, count);
 
             // LT - Only update existing elements if the new score is less than the current score.
-            testEntries = new[]
-            {
+            testEntries =
+            [
                 new SortedSetEntry("a", 4),
                 new SortedSetEntry("b", 3),
                 new SortedSetEntry("m", 13),
-            };
+            ];
 
             added = db.SortedSetAdd(key, testEntries, SortedSetWhen.LessThan);
             ClassicAssert.AreEqual(1, added);
-            scores = db.SortedSetScores(key, new[] { new RedisValue("a"), new RedisValue("b"), new RedisValue("m") });
+            scores = db.SortedSetScores(key, [new RedisValue("a"), new RedisValue("b"), new RedisValue("m")]);
             CollectionAssert.AreEqual(new double[] { 3, 3, 13 }, scores);
             count = db.SortedSetLength(key);
             ClassicAssert.AreEqual(13, count);
 
             // GT - Only update existing elements if the new score is greater than the current score.
-            testEntries = new[]
-            {
+            testEntries =
+            [
                 new SortedSetEntry("a", 4),
                 new SortedSetEntry("b", 2),
                 new SortedSetEntry("n", 14),
-            };
+            ];
 
             added = db.SortedSetAdd(key, testEntries, SortedSetWhen.GreaterThan);
             ClassicAssert.AreEqual(1, added);
-            scores = db.SortedSetScores(key, new[] { new RedisValue("a"), new RedisValue("b"), new RedisValue("n") });
+            scores = db.SortedSetScores(key, [new RedisValue("a"), new RedisValue("b"), new RedisValue("n")]);
             CollectionAssert.AreEqual(new double[] { 4, 3, 14 }, scores);
             count = db.SortedSetLength(key);
             ClassicAssert.AreEqual(14, count);
@@ -258,7 +256,7 @@ namespace Garnet.test
                 key, "CH",
                 "1", "a",
                 "2", "b",
-                "3", "c", 
+                "3", "c",
                 "15", "o"
             };
 
@@ -267,11 +265,11 @@ namespace Garnet.test
             ClassicAssert.AreEqual(3, changed);
 
             // INCR - When this option is specified ZADD acts like ZINCRBY
-            testArgs = new object[]
-            {
+            testArgs =
+            [
                 key, "INCR",
                 "3.5", "a",
-            };
+            ];
 
             resp = db.Execute("ZADD", testArgs);
             ClassicAssert.IsTrue(double.TryParse(resp.ToString(), out var newVal));
@@ -286,7 +284,7 @@ namespace Garnet.test
 
             var key = "SortedSet_Add";
             var sampleEntries = new[] { "1", "m1", "2", "m2" };
-            
+
             // XX & NX options are mutually exclusive
             var args = new[] { key, "XX", "NX" }.Union(sampleEntries).ToArray<object>();
             var ex = Assert.Throws<RedisServerException>(() => db.Execute("ZADD", args));
@@ -296,8 +294,8 @@ namespace Garnet.test
             var argCombinations = new[]
             {
                 new[] { key, "GT", "LT" },
-                new[] { key, "GT", "NX" },
-                new[] { key, "LT", "NX" },
+                [key, "GT", "NX"],
+                [key, "LT", "NX"],
             };
 
             foreach (var argCombination in argCombinations)
