@@ -231,6 +231,7 @@ namespace Garnet.server
         {
             var key = parseState.GetArgSliceByRef(0);
 
+            // Validate offset
             if (!parseState.TryGetInt(1, out var offset))
             {
                 while (!RespWriteUtils.WriteError(CmdStrings.RESP_ERR_GENERIC_VALUE_IS_NOT_INTEGER, ref dcurr, dend))
@@ -269,6 +270,7 @@ namespace Garnet.server
             var key = parseState.GetArgSliceByRef(0);
             var sbKey = key.SpanByte;
 
+            // Validate range
             if (!parseState.TryGetInt(1, out _) || !parseState.TryGetInt(2, out _))
             {
                 while (!RespWriteUtils.WriteError(CmdStrings.RESP_ERR_GENERIC_VALUE_IS_NOT_INTEGER, ref dcurr, dend))
@@ -314,6 +316,7 @@ namespace Garnet.server
         {
             var key = parseState.GetArgSliceByRef(0).SpanByte;
 
+            // Validate expiry
             if (!parseState.TryGetInt(1, out var expiry))
             {
                 while (!RespWriteUtils.WriteError(CmdStrings.RESP_ERR_GENERIC_VALUE_IS_NOT_INTEGER, ref dcurr, dend))
@@ -395,6 +398,7 @@ namespace Garnet.server
 
                 if (nextOpt.SequenceEqual(CmdStrings.EX))
                 {
+                    // Validate expiry
                     if (!parseState.TryGetInt(tokenIdx++, out expiry))
                     {
                         errorMessage = CmdStrings.RESP_ERR_GENERIC_VALUE_IS_NOT_INTEGER;
@@ -416,6 +420,7 @@ namespace Garnet.server
                 }
                 else if (nextOpt.SequenceEqual(CmdStrings.PX))
                 {
+                    // Validate expiry
                     if (!parseState.TryGetInt(tokenIdx++, out expiry))
                     {
                         errorMessage = CmdStrings.RESP_ERR_GENERIC_VALUE_IS_NOT_INTEGER;
@@ -1021,6 +1026,7 @@ namespace Garnet.server
             if (count > 0)
             {
                 var tokenIdx = 0;
+                // Validate protocol version
                 if (!parseState.TryGetInt(tokenIdx++, out var localRespProtocolVersion))
                 {
                     while (!RespWriteUtils.WriteError(CmdStrings.RESP_ERR_PROTOCOL_VALUE_IS_NOT_INTEGER, ref dcurr, dend))
@@ -1172,6 +1178,7 @@ namespace Garnet.server
                     return true;
                 }
 
+                // Validate samples count
                 if (!parseState.TryGetInt(2, out _))
                 {
                     while (!RespWriteUtils.WriteError(CmdStrings.RESP_ERR_GENERIC_VALUE_IS_NOT_INTEGER, ref dcurr, dend))

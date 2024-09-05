@@ -79,17 +79,6 @@ namespace Garnet.server
         }
 
         /// <summary>
-        /// Get bit value from value ptr at offset specified at input ptr.
-        /// </summary>
-        /// <param name="input"></param>
-        /// <param name="value"></param>
-        /// <param name="valLen"></param>        
-        public static byte GetBit(byte* input, byte* value, int valLen)
-        {
-            return GetBit(*(long*)(input), value, valLen);
-        }
-
-        /// <summary>
         /// Get bit value from value ptr at offset specified at offset.
         /// </summary>
         /// <param name="offset"></param>

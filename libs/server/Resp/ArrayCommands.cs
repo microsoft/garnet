@@ -238,7 +238,7 @@ namespace Garnet.server
                 return AbortWithWrongNumberOfArguments(nameof(RespCommand.SELECT));
             }
 
-            // Read index
+            // Validate index
             if (!parseState.TryGetInt(0, out var index))
             {
                 while (!RespWriteUtils.WriteError(CmdStrings.RESP_ERR_GENERIC_VALUE_IS_NOT_INTEGER, ref dcurr, dend))
@@ -323,7 +323,7 @@ namespace Garnet.server
             if (parseState.Count < 1)
                 return AbortWithWrongNumberOfArguments("SCAN");
 
-            // Scan cursor [MATCH pattern] [COUNT count] [TYPE type]
+            // Validate scan cursor
             if (!parseState.TryGetLong(0, out var cursorFromInput))
             {
                 while (!RespWriteUtils.WriteError(CmdStrings.RESP_ERR_GENERIC_INVALIDCURSOR, ref dcurr, dend))
@@ -352,6 +352,7 @@ namespace Garnet.server
                 }
                 else if (parameterWord.EqualsUpperCaseSpanIgnoringCase(CmdStrings.COUNT))
                 {
+                    // Validate count
                     if (!parseState.TryGetLong(tokenIdx++, out countValue))
                     {
                         while (!RespWriteUtils.WriteError(CmdStrings.RESP_ERR_GENERIC_VALUE_IS_NOT_INTEGER, ref dcurr, dend))

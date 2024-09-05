@@ -73,28 +73,6 @@ namespace Garnet.server
         /// <summary>
         /// Main driver for bit position command.
         /// </summary>
-        /// <param name="input">Input properties for bitmap operation.</param>
-        /// <param name="value">Pointer to start of bitmap.</param>
-        /// <param name="valLen">Length of bitmap.</param>
-        /// <returns></returns>
-        public static long BitPosDriver(byte* input, byte* value, int valLen)
-        {
-            //4 byte: length
-            //1 byte: op-code
-            //1 byte: setVal
-            //4 byte: startOffset    // offset are byte indices not bits, therefore int is sufficient because max will be at most offset >> 3
-            //4 byte: endOffset            
-            var bSetVal = *(input);
-            var startOffset = *(long*)(input + sizeof(byte));
-            var endOffset = *(long*)(input + sizeof(byte) + sizeof(long));
-            var offsetType = *(input + sizeof(byte) + sizeof(long) * 2);
-
-            return BitPosDriver(bSetVal, startOffset, endOffset, offsetType, value, valLen);
-        }
-
-        /// <summary>
-        /// Main driver for bit position command.
-        /// </summary>
         /// <param name="setVal"></param>
         /// <param name="startOffset"></param>
         /// <param name="endOffset"></param>

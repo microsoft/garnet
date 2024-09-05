@@ -150,7 +150,7 @@ namespace Garnet.server
                 return true;
             }
 
-            var inputHeader = new RawStringInput
+            var input = new RawStringInput
             {
                 header = new RespInputHeader { cmd = RespCommand.SETBIT },
                 parseState = parseState,
@@ -160,7 +160,7 @@ namespace Garnet.server
             var o = new SpanByteAndMemory(dcurr, (int)(dend - dcurr));
             var status = storageApi.StringSetBit(
                 ref sbKey,
-                ref inputHeader,
+                ref input,
                 ref o);
 
             if (status == GarnetStatus.OK)
@@ -191,7 +191,7 @@ namespace Garnet.server
                 return true;
             }
 
-            var inputHeader = new RawStringInput
+            var input = new RawStringInput
             {
                 header = new RespInputHeader { cmd = RespCommand.GETBIT },
                 parseState = parseState,
@@ -199,7 +199,7 @@ namespace Garnet.server
             };
 
             var o = new SpanByteAndMemory(dcurr, (int)(dend - dcurr));
-            var status = storageApi.StringGetBit(ref sbKey, ref inputHeader, ref o);
+            var status = storageApi.StringGetBit(ref sbKey, ref input, ref o);
 
             if (status == GarnetStatus.NOTFOUND)
                 while (!RespWriteUtils.WriteDirect(CmdStrings.RESP_RETURN_VAL_0, ref dcurr, dend))
@@ -238,7 +238,7 @@ namespace Garnet.server
                 }
             }
 
-            var inputHeader = new RawStringInput
+            var input = new RawStringInput
             {
                 header = new RespInputHeader { cmd = RespCommand.BITCOUNT },
                 parseState = parseState,
@@ -247,7 +247,7 @@ namespace Garnet.server
 
             var o = new SpanByteAndMemory(dcurr, (int)(dend - dcurr));
 
-            var status = storageApi.StringBitCount(ref sbKey, ref inputHeader, ref o);
+            var status = storageApi.StringBitCount(ref sbKey, ref input, ref o);
 
             if (status == GarnetStatus.OK)
             {
@@ -317,7 +317,7 @@ namespace Garnet.server
                 }
             }
 
-            var inputHeader = new RawStringInput
+            var input = new RawStringInput
             {
                 header = new RespInputHeader { cmd = RespCommand.BITPOS },
                 parseState = parseState,
@@ -326,7 +326,7 @@ namespace Garnet.server
 
             var o = new SpanByteAndMemory(dcurr, (int)(dend - dcurr));
 
-            var status = storageApi.StringBitPosition(ref sbKey, ref inputHeader, ref o);
+            var status = storageApi.StringBitPosition(ref sbKey, ref input, ref o);
 
             if (status == GarnetStatus.OK)
             {
@@ -415,6 +415,7 @@ namespace Garnet.server
                     overflowTypeSlice = parseState.GetArgSliceByRef(currTokenIdx);
                     isOverflowTypeSet = true;
 
+                    // Validate overflow type
                     if (!parseState.TryGetEnum(currTokenIdx, true, out BitFieldOverflow _))
                     {
                         while (!RespWriteUtils.WriteError(
@@ -510,7 +511,7 @@ namespace Garnet.server
             while (!RespWriteUtils.WriteArrayLength(secondaryCommandArgs.Count, ref dcurr, dend))
                 SendAndReset();
 
-            var inputHeader = new RawStringInput
+            var input = new RawStringInput
             {
                 header = new RespInputHeader { cmd = RespCommand.BITFIELD },
                 parseStateStartIdx = 0,
@@ -535,10 +536,10 @@ namespace Garnet.server
                     secParseStateBuffer[^1] = overflowTypeSlice;
                 }
 
-                inputHeader.parseState = secParseState;
+                input.parseState = secParseState;
 
                 var output = new SpanByteAndMemory(dcurr, (int)(dend - dcurr));
-                var status = storageApi.StringBitField(ref sbKey, ref inputHeader, opCode,
+                var status = storageApi.StringBitField(ref sbKey, ref input, opCode,
                     ref output);
 
                 if (status == GarnetStatus.NOTFOUND && opCode == (byte)RespCommand.GET)

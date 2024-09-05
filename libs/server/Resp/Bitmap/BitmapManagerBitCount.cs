@@ -54,22 +54,6 @@ namespace Garnet.server
         /// <summary>
         /// Main driver of BitCount Command.
         /// </summary>
-        /// <param name="input">Command input containing startOffset,endOffset and offsetType (i.e. Bit, Byte)/</param>
-        /// <param name="value">Value containing bits to count.</param>
-        /// <param name="valLen">Value length</param>
-        /// <returns>Integer count of all bits set to one.</returns>
-        public static long BitCountDriver(byte* input, byte* value, int valLen)
-        {
-            var startOffset = *(long*)(input);
-            var endOffset = *(long*)(input + sizeof(long));
-            var offsetType = *(input + sizeof(long) * 2);
-
-            return BitCountDriver(startOffset, endOffset, offsetType, value, valLen);
-        }
-
-        /// <summary>
-        /// Main driver of BitCount Command.
-        /// </summary>
         /// <param name="offsetType"></param>
         /// <param name="value">Value containing bits to count.</param>
         /// <param name="valLen">Value length</param>

@@ -50,33 +50,6 @@ namespace Garnet.server
         }
 
         /// <summary>
-        /// Check if bitmap is large enough to apply bitfield op.
-        /// </summary>
-        /// <param name="input">Command input parameters.</param>
-        /// <param name="vlen">Length of bitfield value.</param>
-        /// <returns>True if need to grow value otherwise false.</returns>
-        [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public static bool IsLargeEnoughForType(byte* input, int vlen)
-        {
-            int len = LengthFromType(input);
-            return len <= vlen;
-        }
-
-        /// <summary>
-        /// Length in bytes based on offset calculated as raw bit offset or from typeInfo bitCount.
-        /// </summary>
-        /// <param name="input">Command input parameters.</param>
-        /// <returns>Integer number of bytes required to perform bitfield op.</returns>
-        [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public static int LengthFromType(byte* input)
-        {
-            long offset = GetBitFieldOffset(input);
-            byte bitCount = (byte)(GetBitFieldType(input) & 0x7F);
-            int len = LengthInBytes(offset + bitCount);
-            return len;
-        }
-
-        /// <summary>
         /// Get allocation size for bitfield command.
         /// </summary>
         /// <param name="args">Command input parameters.</param>
@@ -474,36 +447,6 @@ namespace Garnet.server
                     return (result, false);
             }
             return (0, true);
-        }
-
-        /// <summary>
-        /// Execute bitfield operation described at input on bitmap stored within value.
-        /// </summary>
-        /// <param name="input"></param>
-        /// <param name="value"></param>
-        /// <param name="valLen"></param>
-        /// <returns></returns>
-        public static (long, bool) BitFieldExecute(byte* input, byte* value, int valLen)
-        {
-            var secondaryOpCode = GetBitFieldSecondaryOp(input);
-            var typeInfo = GetBitFieldType(input);
-            var bitCount = (byte)(typeInfo & 0x7F);
-            var offset = GetBitFieldOffset(input);
-            var overflowType = GetBitFieldOverflowType(input);
-
-            switch (secondaryOpCode)
-            {
-                case (byte)RespCommand.SET:
-                    var newVal = GetBitFieldValue(input);
-                    return SetBitfieldValue(value, valLen, offset, bitCount, typeInfo, newVal, overflowType);
-                case (byte)RespCommand.INCRBY:
-                    var incrByValue = GetBitFieldValue(input);
-                    return IncrByBitfieldValue(value, valLen, offset, bitCount, typeInfo, incrByValue, overflowType);
-                case (byte)RespCommand.GET:
-                    return (GetBitfieldValue(value, valLen, offset, bitCount, typeInfo), false);
-                default:
-                    throw new GarnetException("BITFIELD secondary op not supported");
-            }
         }
 
         /// <summary>
