@@ -229,6 +229,13 @@ namespace Garnet.server
                         SendAndReset();
                 }
             }
+            catch (LuaResultException ex)
+            {
+                // A LuaResultException is thrown for the return from redis.error_reply() and should not be prefixed with ERR
+                while (!RespWriteUtils.WriteError(ex.Message, ref dcurr, dend))
+                    SendAndReset();
+                return true;
+            }
             catch (LuaScriptException ex)
             {
                 logger?.LogError(ex.InnerException ?? ex, "Error executing Lua script callback");

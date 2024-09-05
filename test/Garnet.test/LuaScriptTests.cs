@@ -309,5 +309,43 @@ namespace Garnet.test
                 ClassicAssert.IsTrue(strKeyValue == valueKey);
             }
         }
+
+        [Test]
+        public void SuccessfulStatusReturn()
+        {
+            using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
+            var db = redis.GetDatabase(0);
+            var statusReplyScript = "return redis.status_reply('Success')";
+            var result = db.ScriptEvaluate(statusReplyScript);
+            ClassicAssert.AreEqual((RedisValue)result, "Success");
+            var directReplyScript = "return { ok = 'Success' }";
+            result = db.ScriptEvaluate(directReplyScript);
+            ClassicAssert.AreEqual((RedisValue)result, "Success");
+        }
+
+        [Test]
+        public void FailureStatusReturn()
+        {
+            using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
+            var db = redis.GetDatabase(0);
+            var statusReplyScript = "return redis.error_reply('Failure')";
+            try
+            {
+                _ = db.ScriptEvaluate(statusReplyScript);
+            }
+            catch (RedisServerException ex)
+            {
+                ClassicAssert.AreEqual(ex.Message, "Failure");
+            }
+            var directReplyScript = "return { err = 'Success' }";
+            try
+            {
+                _ = db.ScriptEvaluate(directReplyScript);
+            }
+            catch (RedisServerException ex)
+            {
+                ClassicAssert.AreEqual(ex.Message, "Failure");
+            }
+        }
     }
 }

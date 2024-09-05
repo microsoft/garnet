@@ -1,4 +1,4 @@
-﻿// Copyright (c) Microsoft Corporation.
+// Copyright (c) Microsoft Corporation.
 // Licensed under the MIT license.
 
 using System;
@@ -54,6 +54,12 @@ namespace Garnet.server
                 redis = {}
                 function redis.call(cmd, ...)
                     return garnet_call(cmd, ...)
+                end
+                function redis.status_reply(text)
+                    return { ok = text }
+                end
+                function redis.error_reply(text)
+                    return { err = text }
                 end
                 sandbox_env = {
                     tostring = tostring;
@@ -372,7 +378,7 @@ namespace Garnet.server
             }
 
             var result = function.Call();
-            return result.Length > 0 ? result[0] : null;
+            return ProcessLuaResult(result);
         }
 
         /// <summary>
@@ -382,7 +388,29 @@ namespace Garnet.server
         public object Run()
         {
             var result = function.Call();
-            return result.Length > 0 ? result[0] : null;
+            return ProcessLuaResult(result);
+        }
+
+        private object ProcessLuaResult(object[] result)
+        {
+            if (result.Length > 0)
+            {
+                var firstResult = result[0];
+                if (firstResult is LuaTable luaTable)
+                {
+                    if (luaTable["ok"] != null)
+                    {
+                        return luaTable["ok"].ToString();
+                    }
+                    else if (luaTable["err"] != null)
+                    {
+                        throw new LuaResultException(luaTable["err"].ToString());
+                    }
+                }
+                return firstResult;
+            }
+            else
+                return null;
         }
 
         /// <summary>
