@@ -63,7 +63,7 @@ namespace Garnet.common
 
             var levels = maxSize / minSize;
             Debug.Assert(levels > 0);
-            levels = levels == 1 ? 4 : levels;
+            levels = Math.Max(4, levels);
             bufferPool = new LimitedFixedBufferPool(sendMinAllocationSize, numLevels: levels, logger: logger);
             return this;
         }
