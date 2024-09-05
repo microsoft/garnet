@@ -59,13 +59,13 @@ jobs:
         with:
           name: ResultsDir-${{ matrix.os }}-${{ matrix.framework }}-${{ matrix.configuration }}-${{ matrix.test }}
           path: |
-             .\test\BDNPerfTests\results
+             ./test/BDNPerfTests/results
         if: ${{ always() }}
       - name: Upload Error Log to artifacts
         uses: actions/upload-artifact@v4
         with:
           name: ErrorLogDir-${{ matrix.os }}-${{ matrix.framework }}-${{ matrix.configuration }}-${{ matrix.test }}
           path: |
-            .\test\BDNPerfTests\errorlog
+            ./test/BDNPerfTests/errorlog
         if: ${{ always() }}
    

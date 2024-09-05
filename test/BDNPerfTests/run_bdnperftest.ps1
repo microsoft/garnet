@@ -109,21 +109,25 @@ if ($IsLinux) {
     $CurrentOS = "Linux"
 }
 
-# Don't Think Need this 
-# Calculate number of cores on the test machine - used for max thread and to verify the config file settings
-#if ($IsLinux) {
-#    $sockets = [int]$(lscpu | grep -E '^Socket' | awk '{print $2}')
-#    $coresPerSocket = [int]$(lscpu | grep -E '^Core' | awk '{print $4}')
-#    $NumberOfCores = ($sockets * $coresPerSocket)
 
-#    $ExpectedCoresToTestOn = $object.ExpectedCoresToTestOn_linux
-#}
-#else {
-#    $NumberOfCores = (Get-CimInstance -ClassName Win32_Processor).NumberOfCores | Measure-Object -Sum | Select-Object -ExpandProperty Sum
+ Calculate number of cores on the test machine - used for max thread and to verify the config file settings
+if ($IsLinux) {
+    $sockets = [int]$(lscpu | grep -E '^Socket' | awk '{print $2}')
+    $coresPerSocket = [int]$(lscpu | grep -E '^Core' | awk '{print $4}')
+    $NumberOfCores = ($sockets * $coresPerSocket)
 
-#    $ExpectedCoresToTestOn = $object.ExpectedCoresToTestOn_win
-#}
+    $ExpectedCoresToTestOn = $object.ExpectedCoresToTestOn_linux
+}
+else {
+    $NumberOfCores = (Get-CimInstance -ClassName Win32_Processor).NumberOfCores | Measure-Object -Sum | Select-Object -ExpandProperty Sum
 
+    $ExpectedCoresToTestOn = $object.ExpectedCoresToTestOn_win
+}
+
+Write-Host "---- DEBUG --- Number of Cores Found: $NumberOfCores "
+Write-Host "---- DEBUG --- Expected Number of Cores: $ExpectedCoresToTestOn "
+
+# TO DO - ENABLE THIS 
 # To get accurate comparison of found vs expected values, double check to make sure config settings for Number of Cores of the test machine are what is specified in the test config file
 #if ($ExpectedCoresToTestOn -ne $NumberOfCores) {
 #    Write-Error -Message "The Number of Cores on this machine ($NumberOfCores) are not the same as the Expected Cores ($ExpectedCoresToTestOn) found in the test config file: $fullConfiFileAndPath."
@@ -216,6 +220,8 @@ dotnet run -c $configuration -f $framework --filter $filter --project $BDNbenchm
 
 
 # TO DO ###########################
+# Get all tests working on GH Actions -- some values not up to date and others fails on linux
+# Clean up DEBUG statements
 # Add "CI" only switch so can run on GH (default to CI?  If so - add full run switch to not analyze but gather and push data somewhere)
 # For YML files (ADO and GH) - do we need "build" Tsav and Garnet before?  Guessing yes, but worth a test to see. Maybe the run of benchmark builds everything it needs
 # TO DO ###########################

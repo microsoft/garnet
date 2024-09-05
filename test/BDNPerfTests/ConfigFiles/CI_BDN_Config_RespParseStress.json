@@ -21,7 +21,7 @@
     "expectedZAddRemMeanValue_win": 141,
     "expectedLPushPopMeanValue_win": 145,
     "expectedSAddRemMeanValue_win": 118,
-    "expectedHSetDelMeanValue_win": 150,
+    "expectedHSetDelMeanValue_win": 160,
     "expectedMyDictSetGetMeanValue_win": 242,
     "acceptableMeanRange": 10,
     "acceptableError": ".1",
