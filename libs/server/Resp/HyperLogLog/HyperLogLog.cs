@@ -277,27 +277,6 @@ namespace Garnet.server
         /// <param name="input"></param>
         /// <param name="value"></param>
         /// <param name="vlen"></param>
-        public void Init(byte* input, byte* value, int vlen)
-        {
-            int count = *(int*)(input);
-            if (vlen != this.DenseBytes)//Sparse representation
-            {
-                InitSparse(value);
-                IterateUpdateSparse(input, count, value);
-            }
-            else
-            {
-                InitDense(value);
-                IterateUpdateDense(input, count, value);
-            }
-        }
-
-        /// <summary>
-        /// Initialize HLL data structure
-        /// </summary>
-        /// <param name="input"></param>
-        /// <param name="value"></param>
-        /// <param name="vlen"></param>
         public void Init(ref RawStringInput input, byte* value, int vlen)
         {
             var dense = vlen == this.DenseBytes;
@@ -337,17 +316,6 @@ namespace Garnet.server
             SetPrefix(ptr);
             SetType(ptr, (byte)HLL_DTYPE.HLL_DENSE);
             SetCard(ptr, long.MinValue);
-        }
-
-        /// <summary>
-        /// Initial length for HLL based on inserted value count from input
-        /// </summary>
-        /// <param name="input"></param>
-        /// <returns></returns>
-        public int SparseInitialLength(byte* input)
-        {
-            int count = *(int*)(input);//get count of elements in sequence
-            return SparseInitialLength(count);
         }
 
         /// <summary>
@@ -559,36 +527,6 @@ namespace Garnet.server
         /// <param name="valueLen"></param>
         /// <param name="updated"></param>
         /// <returns></returns>           
-        public bool Update(byte* input, byte* value, int valueLen, ref bool updated)
-        {
-            int count = *(int*)(input);
-
-            if (IsDense(value))// if blob layout is dense
-            {
-                updated = IterateUpdateDense(input, count, value);
-                return true;
-            }
-
-            if (IsSparse(value))// if blob layout is sparse
-            {
-                if (CanGrowInPlace(value, valueLen, count))//check if we can grow in place
-                {
-                    updated = IterateUpdateSparse(input, count, value);
-                    return true;
-                }
-                else return false;// need to request for more space
-            }
-            throw new GarnetException("Update HyperLogLog Error!");
-        }
-
-        /// <summary>
-        /// Main multi value update method
-        /// </summary>
-        /// <param name="input"></param>
-        /// <param name="value"></param>
-        /// <param name="valueLen"></param>
-        /// <param name="updated"></param>
-        /// <returns></returns>           
         public bool Update(ref RawStringInput input, byte* value, int valueLen, ref bool updated)
         {
             var count = input.parseState.GetInt(input.parseStateStartIdx);
@@ -610,19 +548,6 @@ namespace Garnet.server
                 return false;// need to request for more space
             }
             throw new GarnetException("Update HyperLogLog Error!");
-        }
-
-        private bool IterateUpdateDense(byte* input, int count, byte* value)
-        {
-            bool updated = false;
-            byte* hash_value_vector = input + sizeof(int); //4 byte count + hash values
-            for (int i = 0; i < count; i++)
-            {
-                long hv = *(long*)hash_value_vector;
-                updated |= UpdateDense(value, hv);
-                hash_value_vector += 8;
-            }
-            return updated;
         }
 
         /// <summary>
@@ -673,19 +598,6 @@ namespace Garnet.server
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         private void SetNonZero(byte* p, byte cnt) => *p = (byte)(cnt - 1); // 0vvv vvvv        
-
-        private bool IterateUpdateSparse(byte* input, int count, byte* value)
-        {
-            bool updated = false;
-            byte* hash_value_vector = input + sizeof(int); // 4 byte count + hash values
-            for (int i = 0; i < count; i++)
-            {
-                long hv = *(long*)hash_value_vector;
-                updated |= UpdateSparse(value, hv);
-                hash_value_vector += 8;
-            }
-            return updated;
-        }
 
         private bool IterateUpdate(ref RawStringInput input, byte* value, bool dense)
         {

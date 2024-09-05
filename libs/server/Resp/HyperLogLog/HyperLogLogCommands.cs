@@ -3,7 +3,6 @@
 
 //#define HLL_SINGLE_PFADD_ENABLED
 
-using System.Runtime.CompilerServices;
 using Garnet.common;
 using Tsavorite.core;
 
@@ -93,14 +92,14 @@ namespace Garnet.server
                 return AbortWithWrongNumberOfArguments(nameof(RespCommand.PFCOUNT));
             }
 
-            var inputHeader = new RawStringInput
+            var input = new RawStringInput
             {
                 header = new RespInputHeader { cmd = RespCommand.PFCOUNT },
                 parseState = parseState,
                 parseStateStartIdx = 0,
             };
 
-            storageApi.HyperLogLogLength(ref inputHeader, out var cardinality, out var error);
+            storageApi.HyperLogLogLength(ref input, out var cardinality, out var error);
             if (error)
             {
                 while (!RespWriteUtils.WriteError(CmdStrings.RESP_ERR_WRONG_TYPE_HLL, ref dcurr, dend))
