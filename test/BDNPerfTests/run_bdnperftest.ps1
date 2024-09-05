@@ -34,14 +34,6 @@ $OFS = "`r`n"
 function AnalyzeResult {
     param ($foundResultValue, $expectedResultValue, $acceptablePercentRange, $warnonly)
 
-    # Just dobule check found results
-    if ($foundResultsValue -eq "NA") {
-        Write-Host "**   << Data Error! >>  The  BDN benchmark Mean Value is not a valid value.  Mean value found: $dblfoundResultValue"
-        Write-Host "** "
-
-        return $false 
-    }
-
     # Calculate the lower and upper bounds of the expected value
     [double] $Tolerance = $acceptablePercentRange / 100
     [double] $LowerBound = $expectedResultValue * (1 - $Tolerance)
@@ -83,6 +75,14 @@ param ($ResultsLine, $columnNum)
     $columns = $ResultsLine.Trim('|').Split('|') 
     $column = $columns | ForEach-Object { $_.Trim() }
     $foundValue = $column[$columnNum].Trim(' us') 
+
+    # Just double check found results is not NA
+    if ($foundResultsValue -eq "NA") {
+        Write-Error -Message "**   << Data Error! >>  The  BDN benchmark Mean Value is not a valid value.  Mean value found: $dblfoundResultValue"
+        Write-Host "** "
+
+        return 0
+    }
 
     return $foundValue
 }
@@ -168,6 +168,10 @@ if ($IsLinux) {
     $expectedMGetMeanValue = $object.expectedMGETMeanValue_linux
     $expectedMSetMeanValue = $object.expectedMSETMeanValue_linux
     $expectedIncrMeanValue = $object.expectedIncrMeanValue_linux
+    $expectedBasicLua1MeanValue = $object.expectedBasicLua1MeanValue_linux
+    $expectedBasicLua2MeanValue = $object.expectedBasicLua2MeanValue_linux
+    $expectedBasicLua3MeanValue = $object.expectedBasicLua3MeanValue_linux
+    $expectedBasicLua4MeanValue = $object.expectedBasicLua3MeanValue_linux
 }
 else {
     # Windows expected values
@@ -183,6 +187,10 @@ else {
     $expectedMGetMeanValue = $object.expectedMGETMeanValue_win
     $expectedMSetMeanValue = $object.expectedMSETMeanValue_win
     $expectedIncrMeanValue = $object.expectedIncrMeanValue_win
+    $expectedBasicLua1MeanValue = $object.expectedBasicLua1MeanValue_win
+    $expectedBasicLua2MeanValue = $object.expectedBasicLua2MeanValue_win
+    $expectedBasicLua3MeanValue = $object.expectedBasicLua3MeanValue_win
+    $expectedBasicLua4MeanValue = $object.expectedBasicLua3MeanValue_win
 }
 
 # percent allowed variance when comparing expected vs actual found value - same for linux and windows. 
@@ -355,6 +363,38 @@ Get-Content $resultsFile | ForEach-Object {
             Write-Host "** MSet Mean Value test"
             $foundMSetMeanValue = ParseValueFromResults $line $meanColumn
             $currentResults = AnalyzeResult $foundMSetMeanValue $expectedMSetMeanValue $acceptableMeanRange $true
+            if ($currentResults -eq $false) {
+                $testSuiteResult = $false
+            }
+        }
+        "*| BasicLua1*" {
+            Write-Host "** BasicLua1 Mean Value test"
+            $foundBasicLua1MeanValue = ParseValueFromResults $line $meanColumn
+            $currentResults = AnalyzeResult $foundBasicLua1MeanValue $expectedBasicLua1MeanValue $acceptableMeanRange $true
+            if ($currentResults -eq $false) {
+                $testSuiteResult = $false
+            }
+        }
+        "*| BasicLua2*" {
+            Write-Host "** BasicLua2 Mean Value test"
+            $foundBasicLua2MeanValue = ParseValueFromResults $line $meanColumn
+            $currentResults = AnalyzeResult $foundBasicLua2MeanValue $expectedBasicLua2MeanValue $acceptableMeanRange $true
+            if ($currentResults -eq $false) {
+                $testSuiteResult = $false
+            }
+        }
+        "*| BasicLua3*" {
+            Write-Host "** BasicLua3 Mean Value test"
+            $foundBasicLua3MeanValue = ParseValueFromResults $line $meanColumn
+            $currentResults = AnalyzeResult $foundBasicLua3MeanValue $expectedBasicLua3MeanValue $acceptableMeanRange $true
+            if ($currentResults -eq $false) {
+                $testSuiteResult = $false
+            }
+        }
+        "*| BasicLua4*" {
+            Write-Host "** BasicLua4 Mean Value test"
+            $foundBasicLua4MeanValue = ParseValueFromResults $line $meanColumn
+            $currentResults = AnalyzeResult $foundBasicLua4MeanValue $expectedBasicLua4MeanValue $acceptableMeanRange $true
             if ($currentResults -eq $false) {
                 $testSuiteResult = $false
             }
