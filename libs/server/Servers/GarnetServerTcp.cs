@@ -24,6 +24,15 @@ namespace Garnet.server
         readonly int networkSendThrottleMax;
         readonly LimitedFixedBufferPool networkPool;
 
+        public IPEndPoint GetEndPoint
+        {
+            get
+            {
+                var ip = string.IsNullOrEmpty(Address) ? IPAddress.Any : IPAddress.Parse(Address);
+                return new IPEndPoint(ip, Port);
+            }
+        }
+
         /// <summary>
         /// Get active consumers
         /// </summary>
@@ -65,8 +74,7 @@ namespace Garnet.server
             this.tlsOptions = tlsOptions;
             this.networkSendThrottleMax = networkSendThrottleMax;
             this.networkPool = new LimitedFixedBufferPool(BufferSizeUtils.ServerBufferSize(new MaxSizeSettings()), logger: logger);
-            var ip = string.IsNullOrEmpty(Address) ? IPAddress.Any : IPAddress.Parse(Address);
-            servSocket = new Socket(ip.AddressFamily, SocketType.Stream, ProtocolType.Tcp);
+            servSocket = new Socket(GetEndPoint.AddressFamily, SocketType.Stream, ProtocolType.Tcp);
             acceptEventArg = new SocketAsyncEventArgs();
             acceptEventArg.Completed += AcceptEventArg_Completed;
         }
@@ -88,8 +96,7 @@ namespace Garnet.server
         /// </summary>
         public override void Start()
         {
-            var ip = Address == null ? IPAddress.Any : IPAddress.Parse(Address);
-            var endPoint = new IPEndPoint(ip, Port);
+            var endPoint = GetEndPoint;
             servSocket.Bind(endPoint);
             servSocket.Listen(512);
             if (!servSocket.AcceptAsync(acceptEventArg))

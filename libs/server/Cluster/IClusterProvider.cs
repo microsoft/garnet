@@ -50,6 +50,11 @@ namespace Garnet.server
         bool IsReplica();
 
         /// <summary>
+        /// Returns true if the given nodeId is a replica, according to the current cluster configuration.
+        /// </summary>
+        bool IsReplica(string nodeId);
+
+        /// <summary>
         /// On checkpoint initiated
         /// </summary>
         /// <param name="CheckpointCoveredAofAddress"></param>
