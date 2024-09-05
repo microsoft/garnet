@@ -7,7 +7,6 @@ using System.Collections.Concurrent;
 using System.Collections.Generic;
 using System.Diagnostics;
 using System.IO;
-using System.Linq;
 using System.Runtime.CompilerServices;
 using System.Threading;
 using System.Threading.Tasks;
@@ -1806,8 +1805,7 @@ namespace Tsavorite.core
         /// <param name="untilAddress"></param>
         /// <param name="snapToPageStart"></param>
         /// <param name="truncateLog"></param>
-        /// <param name="noFlush"></param>
-        public void UnsafeShiftBeginAddress(long untilAddress, bool snapToPageStart = false, bool truncateLog = false, bool noFlush = false)
+        public void UnsafeShiftBeginAddress(long untilAddress, bool snapToPageStart = false, bool truncateLog = false)
         {
             if (Utility.MonotonicUpdate(ref beginAddress, untilAddress, out _))
             {
@@ -1819,7 +1817,7 @@ namespace Tsavorite.core
                 {
                     if (!epochProtected)
                         epoch.Resume();
-                    allocator.ShiftBeginAddress(untilAddress, truncateLog, noFlush);
+                    allocator.ShiftBeginAddress(untilAddress, truncateLog, noFlush: true);
                 }
                 finally
                 {

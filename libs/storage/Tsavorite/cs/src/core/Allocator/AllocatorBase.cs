@@ -978,27 +978,30 @@ namespace Tsavorite.core
             var flushEvent = FlushEvent;
             _ = ShiftReadOnlyAddress(newBeginAddress, noFlush);
 
-            // Wait for flush to complete
-            var spins = 0;
-            while (true)
+            if (!noFlush)
             {
-                if (FlushedUntilAddress >= newBeginAddress)
-                    break;
-                if (++spins < Constants.kFlushSpinCount)
+                // Wait for flush to complete
+                var spins = 0;
+                while (true)
                 {
-                    _ = Thread.Yield();
-                    continue;
+                    if (FlushedUntilAddress >= newBeginAddress)
+                        break;
+                    if (++spins < Constants.kFlushSpinCount)
+                    {
+                        _ = Thread.Yield();
+                        continue;
+                    }
+                    try
+                    {
+                        epoch.Suspend();
+                        flushEvent.Wait();
+                    }
+                    finally
+                    {
+                        epoch.Resume();
+                    }
+                    flushEvent = FlushEvent;
                 }
-                try
-                {
-                    epoch.Suspend();
-                    flushEvent.Wait();
-                }
-                finally
-                {
-                    epoch.Resume();
-                }
-                flushEvent = FlushEvent;
             }
 
             // Then shift head address
