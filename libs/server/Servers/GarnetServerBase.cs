@@ -116,7 +116,7 @@ namespace Garnet.server
         /// <param name="logger"></param>
         public GarnetServerBase(string address, int port, int networkBufferSize, ILogger logger = null)
         {
-            this.logger = logger == null ? null : new SessionLogger(logger, $"[{address ?? StoreWrapper.GetIp()}:{port}] ");
+            this.logger = logger;
             this.address = address;
             this.port = port;
             this.networkBufferSize = networkBufferSize;
