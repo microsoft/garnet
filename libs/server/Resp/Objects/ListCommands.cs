@@ -278,7 +278,7 @@ namespace Garnet.server
                 return true;
             }
 
-            var result = itemBroker.GetCollectionItemAsync(command, keysBytes, this, timeout).Result;
+            var result = storeWrapper.itemBroker.GetCollectionItemAsync(command, keysBytes, this, timeout).Result;
 
             if (!result.Found)
             {
@@ -347,7 +347,7 @@ namespace Garnet.server
                 return true;
             }
 
-            var result = itemBroker.MoveCollectionItemAsync(command, srcKey.ToArray(), this, timeout,
+            var result = storeWrapper.itemBroker.MoveCollectionItemAsync(command, srcKey.ToArray(), this, timeout,
                 cmdArgs).Result;
 
             if (!result.Found)
