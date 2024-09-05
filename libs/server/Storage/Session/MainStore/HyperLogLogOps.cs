@@ -3,7 +3,6 @@
 
 using System;
 using System.Diagnostics;
-using System.Security.Cryptography;
 using System.Text;
 using Tsavorite.core;
 

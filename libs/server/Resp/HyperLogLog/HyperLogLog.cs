@@ -446,7 +446,7 @@ namespace Garnet.server
             // Only reach this point if old-blob is of sparse type
             if (IsSparse(oldValue))
             {
-                if (newValueLen == this.DenseBytes)//We are upgrading to dense representation here
+                if (newValueLen == this.DenseBytes) // We are upgrading to dense representation here
                 {
                     InitDense(newValue);
                     fUpdated |= SparseToDense(oldValue, newValue);

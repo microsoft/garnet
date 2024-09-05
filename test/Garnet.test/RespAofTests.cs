@@ -228,7 +228,7 @@ namespace Garnet.test
             {
                 var db = redis.GetDatabase(0);
                 db.StringSet("SeAofUpsertRecoverTestKey1", "SeAofUpsertRecoverTestValue1", expiry: TimeSpan.FromDays(1), when: When.NotExists);
-                //db.StringSet("SeAofUpsertRecoverTestKey2", "SeAofUpsertRecoverTestValue2", expiry: TimeSpan.FromDays(1), when: When.NotExists);
+                db.StringSet("SeAofUpsertRecoverTestKey2", "SeAofUpsertRecoverTestValue2", expiry: TimeSpan.FromDays(1), when: When.NotExists);
             }
 
             server.Store.CommitAOF(true);
@@ -241,8 +241,8 @@ namespace Garnet.test
                 var db = redis.GetDatabase(0);
                 var recoveredValue = db.StringGet("SeAofUpsertRecoverTestKey1");
                 ClassicAssert.AreEqual("SeAofUpsertRecoverTestValue1", recoveredValue.ToString());
-                //recoveredValue = db.StringGet("SeAofUpsertRecoverTestKey2");
-                //ClassicAssert.AreEqual("SeAofUpsertRecoverTestValue2", recoveredValue.ToString());
+                recoveredValue = db.StringGet("SeAofUpsertRecoverTestKey2");
+                ClassicAssert.AreEqual("SeAofUpsertRecoverTestValue2", recoveredValue.ToString());
             }
         }
 
