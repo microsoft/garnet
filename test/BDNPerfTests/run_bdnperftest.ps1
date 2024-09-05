@@ -110,7 +110,7 @@ if ($IsLinux) {
 }
 
 
- Calculate number of cores on the test machine - used for max thread and to verify the config file settings
+ # Calculate number of cores on the test machine - used for max thread and to verify the config file settings
 if ($IsLinux) {
     $sockets = [int]$(lscpu | grep -E '^Socket' | awk '{print $2}')
     $coresPerSocket = [int]$(lscpu | grep -E '^Core' | awk '{print $4}')
