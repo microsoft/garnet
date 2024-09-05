@@ -34,6 +34,14 @@ $OFS = "`r`n"
 function AnalyzeResult {
     param ($foundResultValue, $expectedResultValue, $acceptablePercentRange, $warnonly)
 
+    # Just dobule check found results
+    if ($foundResultsValue -eq "NA") {
+        Write-Host "**   << Data Error! >>  The  BDN benchmark Mean Value is not a valid value.  Mean value found: $dblfoundResultValue"
+        Write-Host "** "
+
+        return $false 
+    }
+
     # Calculate the lower and upper bounds of the expected value
     [double] $Tolerance = $acceptablePercentRange / 100
     [double] $LowerBound = $expectedResultValue * (1 - $Tolerance)
@@ -109,7 +117,6 @@ if ($IsLinux) {
     $CurrentOS = "Linux"
 }
 
-
  # Calculate number of cores on the test machine - used for max thread and to verify the config file settings
 if ($IsLinux) {
     $sockets = [int]$(lscpu | grep -E '^Socket' | awk '{print $2}')
@@ -124,15 +131,16 @@ else {
     $ExpectedCoresToTestOn = $object.ExpectedCoresToTestOn_win
 }
 
+# When Remove these, then set up the actual error so it fails out if cores do not match
 Write-Host "---- DEBUG --- Number of Cores Found: $NumberOfCores "
 Write-Host "---- DEBUG --- Expected Number of Cores: $ExpectedCoresToTestOn "
 
-# TO DO - ENABLE THIS 
 # To get accurate comparison of found vs expected values, double check to make sure config settings for Number of Cores of the test machine are what is specified in the test config file
-#if ($ExpectedCoresToTestOn -ne $NumberOfCores) {
+if ($ExpectedCoresToTestOn -ne $NumberOfCores) {
 #    Write-Error -Message "The Number of Cores on this machine ($NumberOfCores) are not the same as the Expected Cores ($ExpectedCoresToTestOn) found in the test config file: $fullConfiFileAndPath."
 #    exit
-#}
+     Write-Host "WARNING!!!!  The Number of Cores on this machine ($NumberOfCores) are not the same as the Expected Cores ($ExpectedCoresToTestOn) found in the test config file: $fullConfiFileAndPath."
+}
 
 Write-Host "************** Start BDN.benchmark ********************" 
 Write-Host " "
@@ -142,8 +150,8 @@ $configuration = $object.configuration
 $framework = $object.framework
 $filter = $object.filter
 $meanColumn = "1"
-$errorColumn = "2"
-$stdDevColumn = "3"
+$errorColumn = "2"  # TODO:  Need this - check it?
+$stdDevColumn = "3"  # TODO:  Need this - check it?
 
 # Set the expected values based on the OS
 if ($IsLinux) {
@@ -178,11 +186,10 @@ else {
 }
 
 # percent allowed variance when comparing expected vs actual found value - same for linux and windows. 
-# TO DO: Figure out if using Error and Std Dev range ... have % off of .1 or we have 
+# TODO: Figure out if using Error and Std Dev range ... have % off of .1 or we have 
 $acceptableError = $object.acceptableError  
-$acceptableStdDev = $object.acceptableStdDev  
+$acceptableStdDev = $object.acceptableStdDev 
 $acceptableMeanRange = $object.acceptableMeanRange 
-
 
 # Set up the results dir and errorlog dir
 $resultsDir = "$basePath/test/BDNPerfTests/results" 
@@ -202,7 +209,6 @@ $justResultsFileNameNoExt = $configFile -replace ".{5}$"   # strip off the .json
 $resultsFileName = $justResultsFileNameNoExt + "_" + $CurrentOS + ".results"
 $resultsFile = "$resultsDir/$resultsFileName"
 $BDNbenchmarkErrorFile = "$errorLogDir/$justResultsFileNameNoExt" + "_StandardError_" +$CurrentOS+".log"
-
 
 Write-Output "------------ DEBUG #########################"
 Write-Output "*#*#* Configuration $configuration"
@@ -230,7 +236,6 @@ dotnet run -c $configuration -f $framework --filter $filter --project $BDNbenchm
 Write-Output "** BDN Benchmark for $filter finished"
 Write-Output " "
 
-
 Write-Output "**** EVALUATE THE RESULTS FILE $resultsFile ****"
 
 # First check if file is there and if not, error out gracefully
@@ -246,13 +251,12 @@ if ($resultsFileSizeBytes -eq 0) {
     exit
 }
 
-# Set the test suite to pass and if any one fails, then mark the suite as fail - just one result failure will mark the whole test as failed
-$testSuiteResult = $true
-
 Write-Output "************************"
 Write-Output "**   RESULTS  "
 Write-Output "**   "
 
+# Set the test suite to pass and if any one fails, then mark the suite as fail - just one result failure will mark the whole test as failed
+$testSuiteResult = $true
 
 # Read the results file line by line and pull out the specific results if exists
 Get-Content $resultsFile | ForEach-Object {
@@ -357,7 +361,6 @@ Get-Content $resultsFile | ForEach-Object {
         }
     }
 }
-
 
 Write-Output "**  "
 Write-Output "************************"
