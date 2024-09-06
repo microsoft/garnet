@@ -3,7 +3,6 @@
 
 using System;
 using System.Diagnostics;
-using System.Text;
 using Garnet.common;
 using Garnet.server.ACL;
 using Garnet.server.Auth;
@@ -17,6 +16,17 @@ namespace Garnet.server
     /// </summary>
     internal sealed unsafe partial class RespServerSession : ServerSessionBase
     {
+        private bool IsACLAuthenticatorEnabled()
+        {
+            if (_authenticator is null or not GarnetACLAuthenticator)
+            {
+                while (!RespWriteUtils.WriteError(CmdStrings.RESP_ERR_ACL_AUTH_DISABLED, ref dcurr, dend))
+                    SendAndReset();
+                return false;
+            }
+            return true;
+        }
+
         /// <summary>
         /// Processes ACL LIST subcommand.
         /// </summary>
@@ -31,8 +41,10 @@ namespace Garnet.server
             }
             else
             {
-                GarnetACLAuthenticator aclAuthenticator = (GarnetACLAuthenticator)_authenticator;
+                if (!IsACLAuthenticatorEnabled())
+                    return true;
 
+                var aclAuthenticator = (GarnetACLAuthenticator)_authenticator;
                 var users = aclAuthenticator.GetAccessControlList().GetUsers();
                 while (!RespWriteUtils.WriteArrayLength(users.Count, ref dcurr, dend))
                     SendAndReset();
@@ -61,8 +73,10 @@ namespace Garnet.server
             }
             else
             {
-                GarnetACLAuthenticator aclAuthenticator = (GarnetACLAuthenticator)_authenticator;
+                if (!IsACLAuthenticatorEnabled())
+                    return true;
 
+                var aclAuthenticator = (GarnetACLAuthenticator)_authenticator;
                 var users = aclAuthenticator.GetAccessControlList().GetUsers();
                 while (!RespWriteUtils.WriteArrayLength(users.Count, ref dcurr, dend))
                     SendAndReset();
@@ -91,6 +105,9 @@ namespace Garnet.server
             }
             else
             {
+                if (!IsACLAuthenticatorEnabled())
+                    return true;
+
                 var categories = ACLParser.ListCategories();
                 RespWriteUtils.WriteArrayLength(categories.Count, ref dcurr, dend);
 
@@ -118,6 +135,9 @@ namespace Garnet.server
             }
             else
             {
+                if (!IsACLAuthenticatorEnabled())
+                    return true;
+
                 var aclAuthenticator = (GarnetACLAuthenticator)_authenticator;
 
                 // REQUIRED: username
@@ -173,8 +193,10 @@ namespace Garnet.server
             }
             else
             {
-                var aclAuthenticator = (GarnetACLAuthenticator)_authenticator;
+                if (!IsACLAuthenticatorEnabled())
+                    return true;
 
+                var aclAuthenticator = (GarnetACLAuthenticator)_authenticator;
                 var successfulDeletes = 0;
 
                 try
@@ -223,7 +245,10 @@ namespace Garnet.server
             }
             else
             {
-                GarnetACLAuthenticator aclAuthenticator = (GarnetACLAuthenticator)_authenticator;
+                if (!IsACLAuthenticatorEnabled())
+                    return true;
+
+                var aclAuthenticator = (GarnetACLAuthenticator)_authenticator;
 
                 // Return the name of the currently authenticated user.
                 Debug.Assert(aclAuthenticator.GetUser() != null);
@@ -249,6 +274,9 @@ namespace Garnet.server
             }
             else
             {
+                if (!IsACLAuthenticatorEnabled())
+                    return true;
+
                 // NOTE: This is temporary as long as ACL operations are only supported when using the ACL authenticator
                 Debug.Assert(storeWrapper.serverOptions.AuthSettings != null);
                 Debug.Assert(storeWrapper.serverOptions.AuthSettings.GetType().BaseType == typeof(AclAuthenticationSettings));
@@ -284,6 +312,9 @@ namespace Garnet.server
                 while (!RespWriteUtils.WriteError($"ERR Unknown subcommand or wrong number of arguments for ACL SAVE.", ref dcurr, dend))
                     SendAndReset();
             }
+
+            if (!IsACLAuthenticatorEnabled())
+                return true;
 
             // NOTE: This is temporary as long as ACL operations are only supported when using the ACL authenticator
             Debug.Assert(storeWrapper.serverOptions.AuthSettings != null);
