@@ -77,14 +77,6 @@ param ($ResultsLine, $columnNum)
     $foundValue = $column[$columnNum].Trim(' us') 
     $foundValue = $column[$columnNum].Trim(' ns')  
 
-    # Just double check found results is not NA
-    if ($foundResultsValue -eq "NA") {
-        Write-Error -Message "**   << Data Error! >>  The  BDN benchmark Mean Value is not a valid value.  Mean value found: $dblfoundResultValue"
-        Write-Host "** "
-
-        return 0
-    }
-
     return $foundValue
 }
 
