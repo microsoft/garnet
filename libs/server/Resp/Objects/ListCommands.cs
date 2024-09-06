@@ -278,6 +278,9 @@ namespace Garnet.server
                 return true;
             }
 
+            if (storeWrapper.itemBroker == null)
+                throw new GarnetException("Object store is disabled");
+
             var result = storeWrapper.itemBroker.GetCollectionItemAsync(command, keysBytes, this, timeout).Result;
 
             if (!result.Found)
@@ -346,6 +349,9 @@ namespace Garnet.server
                     SendAndReset();
                 return true;
             }
+
+            if (storeWrapper.itemBroker == null)
+                throw new GarnetException("Object store is disabled");
 
             var result = storeWrapper.itemBroker.MoveCollectionItemAsync(command, srcKey.ToArray(), this, timeout,
                 cmdArgs).Result;
