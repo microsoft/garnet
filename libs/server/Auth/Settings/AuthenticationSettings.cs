@@ -34,7 +34,12 @@ namespace Garnet.server.Auth.Settings
         /// <summary>
         /// ACL mode using Aad token instead of password. Here username is expected to be ObjectId or a valid Group's Object Id and token will be validated for claims.
         /// </summary>
-        AclWithAad
+        AclWithAad,
+
+        /// <summary>
+        /// Custom authentication mode. Requires a custom authenticator to be implemented and passed during Garnet server instantiation.
+        /// </summary>
+        Custom
     }
 
     /// <summary>
