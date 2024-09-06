@@ -196,7 +196,12 @@ namespace Garnet.server
                 object scriptResult = scriptRunner.Run(count, parseState);
                 if (scriptResult != null)
                 {
-                    if (scriptResult is string s)
+                    if (scriptResult is LuaSimpleString lss)
+                    {
+                        while (!RespWriteUtils.WriteSimpleString(lss.getContents(), ref dcurr, dend))
+                            SendAndReset();
+                    }
+                    else if (scriptResult is string s)
                     {
                         while (!RespWriteUtils.WriteAsciiBulkString(s, ref dcurr, dend))
                             SendAndReset();

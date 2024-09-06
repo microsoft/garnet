@@ -400,7 +400,7 @@ namespace Garnet.server
                 {
                     if (luaTable["ok"] != null)
                     {
-                        return luaTable["ok"].ToString();
+                        return new LuaSimpleString(luaTable["ok"].ToString());
                     }
                     else if (luaTable["err"] != null)
                     {
