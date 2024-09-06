@@ -75,7 +75,7 @@ param ($ResultsLine, $columnNum)
     $columns = $ResultsLine.Trim('|').Split('|') 
     $column = $columns | ForEach-Object { $_.Trim() }
     $foundValue = $column[$columnNum].Trim(' us') 
-    $foundValue = $column[$columnNum].Trim(' ns')  
+    $foundValue = $foundValue.Trim(' ns')  
 
     return $foundValue
 }

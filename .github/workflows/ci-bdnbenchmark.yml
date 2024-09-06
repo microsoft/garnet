@@ -38,11 +38,6 @@ jobs:
         framework: [ 'net8.0' ]
         configuration: [ 'Release' ]
         test: [ 'CI_BDN_Config_RespParseStress.json', 'CI_BDN_Config_RespTsavoriteStress.json', 'CI_BDN_Config_RespClusterBench.json', 'CI_BDN_Config_RespClusterMigrateBench.json', 'CI_BDN_Config_Lua.json' ]
-        exclude:
-          - os: ubuntu-latest
-            test: 'CI_BDN_Config_RespClusterBench.json'
-          - os: ubuntu-latest
-            test: 'CI_BDN_Config_RespClusterMigrateBench.json'
     steps:
       - name: Check out code
         uses: actions/checkout@v4
