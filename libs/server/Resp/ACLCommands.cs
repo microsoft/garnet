@@ -27,6 +27,26 @@ namespace Garnet.server
             return true;
         }
 
+        private bool CanUseAclFile()
+        {
+            if (storeWrapper.serverOptions.AuthSettings is not AclAuthenticationSettings)
+            {
+                while (!RespWriteUtils.WriteError(CmdStrings.RESP_ERR_ACL_AUTH_DISABLED, ref dcurr, dend))
+                    SendAndReset();
+                return false;
+            }
+
+            var aclAuthenticationSettings = (AclAuthenticationSettings)storeWrapper.serverOptions.AuthSettings;
+            if (aclAuthenticationSettings.AclConfigurationFile == null)
+            {
+                while (!RespWriteUtils.WriteError(CmdStrings.RESP_ERR_ACL_AUTH_FILE_DISABLED, ref dcurr, dend))
+                    SendAndReset();
+                return false;
+            }
+
+            return true;
+        }
+
         /// <summary>
         /// Processes ACL LIST subcommand.
         /// </summary>
@@ -277,6 +297,9 @@ namespace Garnet.server
                 if (!IsACLAuthenticatorEnabled())
                     return true;
 
+                if (!CanUseAclFile())
+                    return true;
+
                 // NOTE: This is temporary as long as ACL operations are only supported when using the ACL authenticator
                 Debug.Assert(storeWrapper.serverOptions.AuthSettings != null);
                 Debug.Assert(storeWrapper.serverOptions.AuthSettings.GetType().BaseType == typeof(AclAuthenticationSettings));
@@ -314,6 +337,9 @@ namespace Garnet.server
             }
 
             if (!IsACLAuthenticatorEnabled())
+                return true;
+
+            if (!CanUseAclFile())
                 return true;
 
             // NOTE: This is temporary as long as ACL operations are only supported when using the ACL authenticator
