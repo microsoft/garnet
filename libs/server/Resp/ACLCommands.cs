@@ -16,7 +16,7 @@ namespace Garnet.server
     /// </summary>
     internal sealed unsafe partial class RespServerSession : ServerSessionBase
     {
-        private bool IsACLAuthenticatorEnabled()
+        private bool ValidateACLAuthenticator()
         {
             if (_authenticator is null or not GarnetACLAuthenticator)
             {
@@ -27,7 +27,7 @@ namespace Garnet.server
             return true;
         }
 
-        private bool CanUseAclFile()
+        private bool ValidateACLFileUse()
         {
             if (storeWrapper.serverOptions.AuthSettings is not AclAuthenticationSettings)
             {
@@ -61,7 +61,7 @@ namespace Garnet.server
             }
             else
             {
-                if (!IsACLAuthenticatorEnabled())
+                if (!ValidateACLAuthenticator())
                     return true;
 
                 var aclAuthenticator = (GarnetACLAuthenticator)_authenticator;
@@ -93,7 +93,7 @@ namespace Garnet.server
             }
             else
             {
-                if (!IsACLAuthenticatorEnabled())
+                if (!ValidateACLAuthenticator())
                     return true;
 
                 var aclAuthenticator = (GarnetACLAuthenticator)_authenticator;
@@ -125,7 +125,7 @@ namespace Garnet.server
             }
             else
             {
-                if (!IsACLAuthenticatorEnabled())
+                if (!ValidateACLAuthenticator())
                     return true;
 
                 var categories = ACLParser.ListCategories();
@@ -155,7 +155,7 @@ namespace Garnet.server
             }
             else
             {
-                if (!IsACLAuthenticatorEnabled())
+                if (!ValidateACLAuthenticator())
                     return true;
 
                 var aclAuthenticator = (GarnetACLAuthenticator)_authenticator;
@@ -213,7 +213,7 @@ namespace Garnet.server
             }
             else
             {
-                if (!IsACLAuthenticatorEnabled())
+                if (!ValidateACLAuthenticator())
                     return true;
 
                 var aclAuthenticator = (GarnetACLAuthenticator)_authenticator;
@@ -265,7 +265,7 @@ namespace Garnet.server
             }
             else
             {
-                if (!IsACLAuthenticatorEnabled())
+                if (!ValidateACLAuthenticator())
                     return true;
 
                 var aclAuthenticator = (GarnetACLAuthenticator)_authenticator;
@@ -294,10 +294,10 @@ namespace Garnet.server
             }
             else
             {
-                if (!IsACLAuthenticatorEnabled())
+                if (!ValidateACLAuthenticator())
                     return true;
 
-                if (!CanUseAclFile())
+                if (!ValidateACLFileUse())
                     return true;
 
                 // NOTE: This is temporary as long as ACL operations are only supported when using the ACL authenticator
@@ -336,10 +336,10 @@ namespace Garnet.server
                     SendAndReset();
             }
 
-            if (!IsACLAuthenticatorEnabled())
+            if (!ValidateACLAuthenticator())
                 return true;
 
-            if (!CanUseAclFile())
+            if (!ValidateACLFileUse())
                 return true;
 
             // NOTE: This is temporary as long as ACL operations are only supported when using the ACL authenticator
