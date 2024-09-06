@@ -3076,6 +3076,20 @@
     "SubCommands": null
   },
   {
+    "Command": "MIGRATEGC",
+    "Name": "MIGRATEGC",
+    "IsInternal": false,
+    "Arity": 0,
+    "Flags": "Admin, NoMulti, NoScript, ReadOnly",
+    "FirstKey": 1,
+    "LastKey": 1,
+    "Step": 1,
+    "AclCategories": "Admin, Garnet",
+    "Tips": null,
+    "KeySpecifications": null,
+    "SubCommands": null
+  },
+  {
     "Command": "MODULE",
     "Name": "MODULE",
     "IsInternal": false,
