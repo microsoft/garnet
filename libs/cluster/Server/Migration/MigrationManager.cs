@@ -1,6 +1,7 @@
 ﻿// Copyright (c) Microsoft Corporation.
 // Licensed under the MIT license.
 
+using System;
 using System.Collections.Generic;
 using System.Runtime.CompilerServices;
 using Garnet.common;
@@ -11,28 +12,55 @@ namespace Garnet.cluster
 {
     internal sealed class MigrationManager
     {
+        readonly ILogger logger;
         readonly ClusterProvider clusterProvider;
         readonly MigrateSessionTaskStore migrationTaskStore;
 
         /// <summary>
         /// Used to initialize buffers for client connected to target node for active migrate sessions
         /// </summary>
-        public readonly NetworkBuffers networkBuffers;
+        public NetworkBuffers networkBuffers;
 
         public MigrationManager(ClusterProvider clusterProvider, ILogger logger = null)
         {
+            this.logger = logger;
             this.migrationTaskStore = new MigrateSessionTaskStore(logger);
-            var bufferSize = 1 << clusterProvider.serverOptions.PageSizeBits();
-            this.networkBuffers = new NetworkBuffers(bufferSize, 1 << 12).Allocate(logger: logger);
             this.clusterProvider = clusterProvider;
+            AllocatePool();
         }
 
+        /// <summary>
+        /// Dispose
+        /// </summary>
         public void Dispose()
         {
             migrationTaskStore?.Dispose();
             networkBuffers.Dispose();
         }
 
+        /// <summary>
+        /// Allocate shared network buffer pool
+        /// </summary>
+        internal void AllocatePool()
+        {
+            var bufferSize = 1 << clusterProvider.serverOptions.PageSizeBits();
+            this.networkBuffers = new NetworkBuffers(bufferSize, 1 << 12).Allocate(logger: logger);
+        }
+
+        /// <summary>
+        /// Used to free up buffer pool
+        /// </summary>
+        public void Collect()
+        {
+            networkBuffers.Dispose();
+            GC.Collect(GC.MaxGeneration);
+            AllocatePool();
+        }
+
+        /// <summary>
+        /// Get number of active migrate sessions
+        /// </summary>
+        /// <returns></returns>
         public int GetMigrationTaskCount()
             => migrationTaskStore.GetNumSessions();
 

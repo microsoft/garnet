@@ -13,6 +13,23 @@ namespace Garnet.cluster
 {
     internal sealed unsafe partial class ClusterSession : IClusterSession
     {
+        private bool TryMigrateGC()
+        {
+            try
+            {
+                clusterProvider.migrationManager.Collect();
+                while (!RespWriteUtils.WriteDirect(CmdStrings.RESP_OK, ref dcurr, dend))
+                    SendAndReset();
+            }
+            catch (Exception ex)
+            {
+                logger?.LogError(ex, "MigrationManager.Collect");
+                while (!RespWriteUtils.WriteError($"ERR {ex.Message}", ref dcurr, dend))
+                    SendAndReset();
+            }
+            return true;
+        }
+
         public static bool Expired(ref SpanByte value) => value.MetadataSize > 0 && value.ExtraMetadata < DateTimeOffset.UtcNow.Ticks;
 
         public static bool Expired(ref IGarnetObject value) => value.Expiration != 0 && value.Expiration < DateTimeOffset.UtcNow.Ticks;

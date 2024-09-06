@@ -116,7 +116,7 @@ namespace Garnet.common
 #endif
                 Thread.Yield();
             }
-            for (int i = 0; i < numLevels; i++)
+            for (var i = 0; i < numLevels; i++)
             {
                 if (pool[i] == null) continue;
                 while (pool[i].size > 0)

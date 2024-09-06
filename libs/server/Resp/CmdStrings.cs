@@ -40,6 +40,7 @@ namespace Garnet.server
         public static ReadOnlySpan<byte> LATENCY => "LATENCY"u8;
         public static ReadOnlySpan<byte> CLUSTER => "CLUSTER"u8;
         public static ReadOnlySpan<byte> MIGRATE => "MIGRATE"u8;
+        public static ReadOnlySpan<byte> MIGRATEGC => "MIGRATEGC"u8;
         public static ReadOnlySpan<byte> FAILOVER => "FAILOVER"u8;
         public static ReadOnlySpan<byte> HISTOGRAM => "HISTOGRAM"u8;
         public static ReadOnlySpan<byte> histogram => "histogram"u8;
