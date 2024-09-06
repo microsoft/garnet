@@ -83,7 +83,6 @@ param ($ResultsLine, $columnNum)
 
 
 
-
 # ******** BEGIN MAIN  *********
 # Get base path since paths can differ from machine to machine
 $pathstring = $pwd.Path
@@ -165,6 +164,10 @@ if ($IsLinux) {
     $expectedBasicLua2MeanValue = $object.expectedBasicLua2MeanValue_linux
     $expectedBasicLua3MeanValue = $object.expectedBasicLua3MeanValue_linux
     $expectedBasicLua4MeanValue = $object.expectedBasicLua3MeanValue_linux
+    $expectedBasicLuaRunner1MeanValue = $object.expectedBasicLuaRunner1MeanValue_linux
+    $expectedBasicLuaRunner2MeanValue = $object.expectedBasicLuaRunner2MeanValue_linux
+    $expectedBasicLuaRunner3MeanValue = $object.expectedBasicLuaRunner3MeanValue_linux
+    $expectedBasicLuaRunner4MeanValue = $object.expectedBasicLuaRunner3MeanValue_linux
 }
 else {
     # Windows expected values
@@ -184,6 +187,10 @@ else {
     $expectedBasicLua2MeanValue = $object.expectedBasicLua2MeanValue_win
     $expectedBasicLua3MeanValue = $object.expectedBasicLua3MeanValue_win
     $expectedBasicLua4MeanValue = $object.expectedBasicLua3MeanValue_win
+    $expectedBasicLuaRunner1MeanValue = $object.expectedBasicLuaRunner1MeanValue_win
+    $expectedBasicLuaRunner2MeanValue = $object.expectedBasicLuaRunner2MeanValue_win
+    $expectedBasicLuaRunner3MeanValue = $object.expectedBasicLuaRunner3MeanValue_win
+    $expectedBasicLuaRunner4MeanValue = $object.expectedBasicLuaRunner3MeanValue_win
 }
 
 # percent allowed variance when comparing expected vs actual found value - same for linux and windows. 
@@ -388,6 +395,38 @@ Get-Content $resultsFile | ForEach-Object {
             Write-Host "** BasicLua4 Mean Value test"
             $foundBasicLua4MeanValue = ParseValueFromResults $line $meanColumn
             $currentResults = AnalyzeResult $foundBasicLua4MeanValue $expectedBasicLua4MeanValue $acceptableMeanRange $true
+            if ($currentResults -eq $false) {
+                $testSuiteResult = $false
+            }
+        }
+        "*| BasicLuaRunner1*" {
+            Write-Host "** BasicLuaRunner1 Mean Value test"
+            $foundBasicLuaRunner1MeanValue = ParseValueFromResults $line $meanColumn
+            $currentResults = AnalyzeResult $foundBasicLuaRunner1MeanValue $expectedBasicLuaRunner1MeanValue $acceptableMeanRange $true
+            if ($currentResults -eq $false) {
+                $testSuiteResult = $false
+            }
+        }
+        "*| BasicLuaRunner2*" {
+            Write-Host "** BasicLuaRunner2 Mean Value test"
+            $foundBasicLuaRunner2MeanValue = ParseValueFromResults $line $meanColumn
+            $currentResults = AnalyzeResult $foundBasicLuaRunner2MeanValue $expectedBasicLuaRunner2MeanValue $acceptableMeanRange $true
+            if ($currentResults -eq $false) {
+                $testSuiteResult = $false
+            }
+        }
+        "*| BasicLuaRunner3*" {
+            Write-Host "** BasicLuaRunner3 Mean Value test"
+            $foundBasicLuaRunner3MeanValue = ParseValueFromResults $line $meanColumn
+            $currentResults = AnalyzeResult $foundBasicLuaRunner3MeanValue $expectedBasicLuaRunner3MeanValue $acceptableMeanRange $true
+            if ($currentResults -eq $false) {
+                $testSuiteResult = $false
+            }
+        }
+        "*| BasicLuaRunner4*" {
+            Write-Host "** BasicLuaRunner4 Mean Value test"
+            $foundBasicLuaRunner4MeanValue = ParseValueFromResults $line $meanColumn
+            $currentResults = AnalyzeResult $foundBasicLuaRunner4MeanValue $expectedBasicLuaRunner4MeanValue $acceptableMeanRange $true
             if ($currentResults -eq $false) {
                 $testSuiteResult = $false
             }

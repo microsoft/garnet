@@ -35,19 +35,19 @@ namespace BDN.benchmark.Resp
         }
 
         [Benchmark]
-        public void BasicLua1()
+        public void BasicLuaRunner1()
             => r1.RunVoid();
 
         [Benchmark]
-        public void BasicLua2()
+        public void BasicLuaRunner2()
             => r2.Run();
 
         [Benchmark]
-        public void BasicLua3()
+        public void BasicLuaRunner3()
             => r3.Run(keys, null);
 
         [Benchmark]
-        public void BasicLua4()
+        public void BasicLuaRunner4()
             => r4.Run(keys, null);
     }
 }
