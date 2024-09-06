@@ -75,6 +75,7 @@ param ($ResultsLine, $columnNum)
     $columns = $ResultsLine.Trim('|').Split('|') 
     $column = $columns | ForEach-Object { $_.Trim() }
     $foundValue = $column[$columnNum].Trim(' us') 
+    $foundValue = $column[$columnNum].Trim(' ns')  
 
     # Just double check found results is not NA
     if ($foundResultsValue -eq "NA") {
