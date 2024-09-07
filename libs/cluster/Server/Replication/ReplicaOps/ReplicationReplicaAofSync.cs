@@ -56,6 +56,15 @@ namespace Garnet.cluster
                     throw new GarnetException($"Before ProcessPrimaryStream: Replication offset mismatch: ReplicaReplicationOffset {ReplicationOffset}, aof.TailAddress {storeWrapper.appendOnlyFile.TailAddress}", LogLevel.Warning, clientResponse: false);
                 }
 
+                // If there is a gap between the local tail and incoming currentAddress, try to skip local AOF to the next page
+                if (currentAddress >= storeWrapper.appendOnlyFile.TailAddress + recordLength
+                    && storeWrapper.appendOnlyFile.GetPage(currentAddress) == storeWrapper.appendOnlyFile.GetPage(storeWrapper.appendOnlyFile.TailAddress) + 1)
+                {
+                    logger?.LogWarning("SkipPage from {previousAddress} to {currentAddress}, tail is {tailAddress}", previousAddress, currentAddress, storeWrapper.appendOnlyFile.TailAddress);
+                    storeWrapper.appendOnlyFile.UnsafeSkipPage();
+                    logger?.LogWarning("New tail after SkipPage is {tailAddress}", storeWrapper.appendOnlyFile.TailAddress);
+                }
+
                 // Enqueue to AOF
                 _ = clusterProvider.storeWrapper.appendOnlyFile?.UnsafeEnqueueRaw(new Span<byte>(record, recordLength), noCommit: clusterProvider.serverOptions.EnableFastCommit);
 
