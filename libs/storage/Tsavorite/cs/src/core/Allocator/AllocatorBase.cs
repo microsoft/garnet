@@ -781,10 +781,19 @@ namespace Tsavorite.core
         public long GetTailAddress()
         {
             var local = TailPageOffset;
-            if (local.Offset >= PageSize)
+
+            // Handle corner cases during page overflow
+            while (local.Offset >= PageSize)
             {
-                local.Page++;
-                local.Offset = 0;
+                if (local.Offset == PageSize)
+                {
+                    local.Page++;
+                    local.Offset = 0;
+                    break;
+                }
+                // Offset is being adjusted by overflow thread, spin-wait
+                Thread.Yield();
+                local = TailPageOffset;
             }
             return ((long)local.Page << LogPageSizeBits) | (uint)local.Offset;
         }
@@ -830,6 +839,75 @@ namespace Tsavorite.core
             }
         }
 
+        [MethodImpl(MethodImplOptions.NoInlining)]
+        static void ThrowTsavoriteException(string message)
+            => throw new TsavoriteException(message);
+
+        void IssueShiftAddress(long pageIndex)
+        {
+            // Issue the shift of address
+            var shiftAddress = pageIndex << LogPageSizeBits;
+            PageAlignedShiftReadOnlyAddress(shiftAddress);
+            PageAlignedShiftHeadAddress(shiftAddress);
+        }
+
+        [MethodImpl(MethodImplOptions.NoInlining)]
+        long HandlePageOverflow(ref PageOffset localTailPageOffset, int page, int offset, int numSlots)
+        {
+            int pageIndex = localTailPageOffset.Page + 1;
+
+            // This thread is trying to allocate at an offset past where one or more previous threads
+            // already overflowed; exit and allow the first overflow thread to proceed
+            if (offset > PageSize)
+            {
+                if (NeedToWait(pageIndex))
+                    return 0; // RETRY_LATER
+                return -1; // RETRY_NOW
+            }
+
+            // Thread that owns the page-increment owns the latch now
+            if (NeedToWait(pageIndex))
+            {
+                // Reset to previous tail so that next attempt can retry
+                localTailPageOffset.PageAndOffset -= numSlots;
+                Interlocked.Exchange(ref TailPageOffset.PageAndOffset, localTailPageOffset.PageAndOffset);
+
+                // Shift only after TailPageOffset is reset to a valid state
+                IssueShiftAddress(pageIndex);
+
+                // Re-check as the shifting may have allowed us to proceed
+                if (NeedToWait(pageIndex))
+                    return 0; // RETRY_LATER
+            }
+
+            // The thread that "makes" the offset incorrect should allocate next page and set new tail
+            if (CannotAllocate(pageIndex))
+            {
+                // Reset to previous tail so that next attempt can retry
+                localTailPageOffset.PageAndOffset -= numSlots;
+                Interlocked.Exchange(ref TailPageOffset.PageAndOffset, localTailPageOffset.PageAndOffset);
+
+                // Shift only after TailPageOffset is reset to a valid state
+                IssueShiftAddress(pageIndex);
+
+                // Re-check as the shifting may have allowed us to proceed
+                if (CannotAllocate(pageIndex))
+                    return -1; // RETRY_NOW
+            }
+
+            IssueShiftAddress(pageIndex);
+
+            if (!_wrapper.IsAllocated(pageIndex % BufferSize) || !_wrapper.IsAllocated((pageIndex + 1) % BufferSize))
+                AllocatePagesWithException(pageIndex, localTailPageOffset);
+
+            localTailPageOffset.Page++;
+            localTailPageOffset.Offset = numSlots;
+            TailPageOffset = localTailPageOffset;
+            page++;
+            offset = 0;
+            return (((long)page) << LogPageSizeBits) | ((long)offset);
+        }
+
         /// <summary>Try allocate, no thread spinning allowed</summary>
         /// <param name="numSlots">Number of slots to allocate</param>
         /// <returns>The allocated logical address, or 0 in case of inability to allocate</returns>
@@ -837,7 +915,7 @@ namespace Tsavorite.core
         public long TryAllocate(int numSlots = 1)
         {
             if (numSlots > PageSize)
-                throw new TsavoriteException("Entry does not fit on page");
+                ThrowTsavoriteException("Entry does not fit on page");
 
             PageOffset localTailPageOffset = default;
             localTailPageOffset.PageAndOffset = TailPageOffset.PageAndOffset;
@@ -857,53 +935,10 @@ namespace Tsavorite.core
             int page = localTailPageOffset.Page;
             int offset = localTailPageOffset.Offset - numSlots;
 
-            #region HANDLE PAGE OVERFLOW
             if (localTailPageOffset.Offset > PageSize)
             {
-                int pageIndex = localTailPageOffset.Page + 1;
-
-                // All overflow threads try to shift addresses
-                long shiftAddress = ((long)pageIndex) << LogPageSizeBits;
-                PageAlignedShiftReadOnlyAddress(shiftAddress);
-                PageAlignedShiftHeadAddress(shiftAddress);
-
-                // This thread is trying to allocate at an offset past where one or more previous threads
-                // already overflowed; exit and allow the first overflow thread to proceed
-                if (offset > PageSize)
-                {
-                    if (NeedToWait(pageIndex))
-                        return 0; // RETRY_LATER
-                    return -1; // RETRY_NOW
-                }
-
-                if (NeedToWait(pageIndex))
-                {
-                    // Reset to end of page so that next attempt can retry
-                    localTailPageOffset.Offset = PageSize;
-                    Interlocked.Exchange(ref TailPageOffset.PageAndOffset, localTailPageOffset.PageAndOffset);
-                    return 0; // RETRY_LATER
-                }
-
-                // The thread that "makes" the offset incorrect should allocate next page and set new tail
-                if (CannotAllocate(pageIndex))
-                {
-                    // Reset to end of page so that next attempt can retry
-                    localTailPageOffset.Offset = PageSize;
-                    Interlocked.Exchange(ref TailPageOffset.PageAndOffset, localTailPageOffset.PageAndOffset);
-                    return -1; // RETRY_NOW
-                }
-
-                if (!_wrapper.IsAllocated(pageIndex % BufferSize) || !_wrapper.IsAllocated((pageIndex + 1) % BufferSize))
-                    AllocatePagesWithException(pageIndex, localTailPageOffset);
-
-                localTailPageOffset.Page++;
-                localTailPageOffset.Offset = numSlots;
-                TailPageOffset = localTailPageOffset;
-                page++;
-                offset = 0;
+                return HandlePageOverflow(ref localTailPageOffset, page, offset, numSlots);
             }
-            #endregion
-
             return (((long)page) << LogPageSizeBits) | ((long)offset);
         }
 
