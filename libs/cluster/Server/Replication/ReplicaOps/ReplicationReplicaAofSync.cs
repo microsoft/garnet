@@ -40,7 +40,7 @@ namespace Garnet.cluster
                 {
                     var firstRecordLength = GetFirstAofEntryLength(record);
                     if (previousAddress > ReplicationOffset ||
-                        currentAddress > previousAddress + firstRecordLength)
+                        currentAddress >= previousAddress + firstRecordLength)
                     {
                         logger?.LogWarning("MainMemoryReplication: Skipping from {ReplicaReplicationOffset} to {currentAddress}", ReplicationOffset, currentAddress);
                         storeWrapper.appendOnlyFile.Initialize(currentAddress, currentAddress);
