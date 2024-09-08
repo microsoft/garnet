@@ -819,7 +819,8 @@ namespace Tsavorite.core
         /// <summary>Get sector size for main hlog device</summary>
         public int GetDeviceSectorSize() => sectorSize;
 
-        void AllocatePagesWithException(int pageIndex, PageOffset localTailPageOffset)
+        [MethodImpl(MethodImplOptions.NoInlining)]
+        void AllocatePagesWithException(int pageIndex, PageOffset localTailPageOffset, int numSlots)
         {
             try
             {
@@ -833,16 +834,27 @@ namespace Tsavorite.core
             }
             catch
             {
-                localTailPageOffset.Offset = PageSize;
+                // Reset to previous tail
+                localTailPageOffset.PageAndOffset -= numSlots;
                 Interlocked.Exchange(ref TailPageOffset.PageAndOffset, localTailPageOffset.PageAndOffset);
                 throw;
             }
         }
 
+        /// <summary>
+        /// Throw Tsavorite exception with message. We use a method wrapper so that
+        /// the caller method can execute inlined.
+        /// </summary>
+        /// <param name="message"></param>
+        /// <exception cref="TsavoriteException"></exception>
         [MethodImpl(MethodImplOptions.NoInlining)]
         static void ThrowTsavoriteException(string message)
             => throw new TsavoriteException(message);
 
+        /// <summary>
+        /// Shift log addresses when turning the page.
+        /// </summary>
+        /// <param name="pageIndex">The page we are turning to</param>
         void IssueShiftAddress(long pageIndex)
         {
             // Issue the shift of address
@@ -852,20 +864,20 @@ namespace Tsavorite.core
         }
 
         [MethodImpl(MethodImplOptions.NoInlining)]
-        long HandlePageOverflow(ref PageOffset localTailPageOffset, int page, int offset, int numSlots)
+        long HandlePageOverflow(ref PageOffset localTailPageOffset, int numSlots)
         {
             int pageIndex = localTailPageOffset.Page + 1;
 
             // This thread is trying to allocate at an offset past where one or more previous threads
-            // already overflowed; exit and allow the first overflow thread to proceed
-            if (offset > PageSize)
+            // already overflowed; exit and allow the first overflow thread to proceed.
+            if (localTailPageOffset.Offset - numSlots > PageSize)
             {
                 if (NeedToWait(pageIndex))
                     return 0; // RETRY_LATER
                 return -1; // RETRY_NOW
             }
 
-            // Thread that owns the page-increment owns the latch now
+            // The single thread that "owns" the page-increment proceeds below.
             if (NeedToWait(pageIndex))
             {
                 // Reset to previous tail so that next attempt can retry
@@ -895,17 +907,18 @@ namespace Tsavorite.core
                     return -1; // RETRY_NOW
             }
 
-            IssueShiftAddress(pageIndex);
-
             if (!_wrapper.IsAllocated(pageIndex % BufferSize) || !_wrapper.IsAllocated((pageIndex + 1) % BufferSize))
-                AllocatePagesWithException(pageIndex, localTailPageOffset);
+                AllocatePagesWithException(pageIndex, localTailPageOffset, numSlots);
 
             localTailPageOffset.Page++;
             localTailPageOffset.Offset = numSlots;
             TailPageOffset = localTailPageOffset;
-            page++;
-            offset = 0;
-            return (((long)page) << LogPageSizeBits) | ((long)offset);
+
+            // Shift only after TailPageOffset is reset to a valid state
+            IssueShiftAddress(pageIndex);
+
+            // Offset is zero, for the first allocation on the new page
+            return ((long)localTailPageOffset.Page) << LogPageSizeBits;
         }
 
         /// <summary>Try allocate, no thread spinning allowed</summary>
@@ -921,7 +934,7 @@ namespace Tsavorite.core
             localTailPageOffset.PageAndOffset = TailPageOffset.PageAndOffset;
 
             // Necessary to check because threads keep retrying and we do not
-            // want to overflow offset more than once per thread
+            // want to overflow the offset more than once per thread
             if (localTailPageOffset.Offset > PageSize)
             {
                 if (NeedToWait(localTailPageOffset.Page + 1))
@@ -932,14 +945,15 @@ namespace Tsavorite.core
             // Determine insertion index.
             localTailPageOffset.PageAndOffset = Interlocked.Add(ref TailPageOffset.PageAndOffset, numSlots);
 
-            int page = localTailPageOffset.Page;
-            int offset = localTailPageOffset.Offset - numSlots;
-
+            // Slow path when we reach the end of a page.
             if (localTailPageOffset.Offset > PageSize)
             {
-                return HandlePageOverflow(ref localTailPageOffset, page, offset, numSlots);
+                // Note that TailPageOffset is now unstable -- there may be a GetTailAddress call spinning for
+                // it to stabilize. Therefore, HandlePageOverflow needs to stabilize TailPageOffset immediately,
+                // before performing any epoch bumps or system calls.
+                return HandlePageOverflow(ref localTailPageOffset, numSlots);
             }
-            return (((long)page) << LogPageSizeBits) | ((long)offset);
+            return (((long)localTailPageOffset.Page) << LogPageSizeBits) | ((long)(localTailPageOffset.Offset - numSlots));
         }
 
         /// <summary>Try allocate, spin for RETRY_NOW case</summary>
