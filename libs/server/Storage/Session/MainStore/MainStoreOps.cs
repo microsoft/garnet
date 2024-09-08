@@ -560,17 +560,17 @@ namespace Garnet.server
                         // Find expiration time of the old key
                         var expireSpan = new SpanByteAndMemory();
                         var ttlStatus = TTL(ref oldKey, storeType, ref expireSpan, ref context, ref objectContext, true);
-                        var expireMemoryHandle = expireSpan.Memory.Memory.Pin();
-                        var expirePtrVal = (byte*)expireMemoryHandle.Pointer;
-                        RespReadUtils.TryRead64Int(out var expireTimeMs, ref expirePtrVal, expirePtrVal + expireSpan.Length, out var _);
 
                         if (ttlStatus == GarnetStatus.OK && !expireSpan.IsSpanByte)
                         {
+                            var expireMemoryHandle = expireSpan.Memory.Memory.Pin();
+                            var expirePtrVal = (byte*)expireMemoryHandle.Pointer;
+                            RespReadUtils.TryRead64Int(out var expireTimeMs, ref expirePtrVal, expirePtrVal + expireSpan.Length, out var _);
+
                             // If the key has an expiration, set the new key with the expiration
                             if (expireTimeMs > 0)
                             {
                                 SETEX(newKeySlice, new ArgSlice(ptrVal, headerLength), TimeSpan.FromMilliseconds(expireTimeMs), ref context);
-                                expireMemoryHandle.Dispose();
                             }
                             else if (expireTimeMs == -1) // Its possible to have expire as 0 or -2, in those cases we don't SET the new key
                             {
@@ -579,6 +579,7 @@ namespace Garnet.server
                                 SET(ref newKey, ref value, ref context);
                             }
 
+                            expireMemoryHandle.Dispose();
                             expireSpan.Memory.Dispose();
                             memoryHandle.Dispose();
                             o.Memory.Dispose();
@@ -620,24 +621,31 @@ namespace Garnet.server
 
                         var expireSpan = new SpanByteAndMemory();
                         var ttlStatus = TTL(ref oldKey, StoreType.Object, ref expireSpan, ref context, ref objectContext, true);
-                        var expireMemoryHandle = expireSpan.Memory.Memory.Pin();
-                        var expirePtrVal = (byte*)expireMemoryHandle.Pointer;
-                        RespReadUtils.TryRead64Int(out var expireTimeMs, ref expirePtrVal, expirePtrVal + expireSpan.Length, out var _);
-
-                        if (expireTimeMs > 0)
+                        
+                        if (ttlStatus == GarnetStatus.OK && !expireSpan.IsSpanByte)
                         {
-                            SET(newKeyArray, valObj, ref objectContext);
-                            EXPIRE(newKeySlice, TimeSpan.FromMilliseconds(expireTimeMs), out _, StoreType.Object, ExpireOption.None, ref context, ref objectContext, true);
-                        }
-                        else if (expireTimeMs == -1) // Its possible to have expire as 0 or -2, in those cases we don't SET the new key
-                        {
-                            SET(newKeyArray, valObj, ref objectContext);
+                            var expireMemoryHandle = expireSpan.Memory.Memory.Pin();
+                            var expirePtrVal = (byte*)expireMemoryHandle.Pointer;
+                            RespReadUtils.TryRead64Int(out var expireTimeMs, ref expirePtrVal, expirePtrVal + expireSpan.Length, out var _);
+                            expireMemoryHandle.Dispose();
+                            expireSpan.Memory.Dispose();
+
+                            if (expireTimeMs > 0)
+                            {
+                                SET(newKeyArray, valObj, ref objectContext);
+                                EXPIRE(newKeySlice, TimeSpan.FromMilliseconds(expireTimeMs), out _, StoreType.Object, ExpireOption.None, ref context, ref objectContext, true);
+                            }
+                            else if (expireTimeMs == -1) // Its possible to have expire as 0 or -2, in those cases we don't SET the new key
+                            {
+                                SET(newKeyArray, valObj, ref objectContext);
+                            }
+
+                            // Delete the old key
+                            DELETE(oldKeyArray, StoreType.Object, ref context, ref objectContext);
+
+                            returnStatus = GarnetStatus.OK;
                         }
 
-                        // Delete the old key
-                        DELETE(oldKeyArray, StoreType.Object, ref context, ref objectContext);
-
-                        returnStatus = GarnetStatus.OK;
                     }
                 }
                 finally
