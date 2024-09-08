@@ -783,6 +783,8 @@ namespace Tsavorite.core
             var local = TailPageOffset;
 
             // Handle corner cases during page overflow
+            // The while loop is guaranteed to terminate because HandlePageOverflow
+            // ensures that it fixes the unstable TailPageOffset immediately.
             while (local.Offset >= PageSize)
             {
                 if (local.Offset == PageSize)
