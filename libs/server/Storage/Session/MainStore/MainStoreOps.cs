@@ -616,6 +616,137 @@ namespace Garnet.server
             return returnStatus;
         }
 
+        public unsafe GarnetStatus RENAMENX(ArgSlice oldKeySlice, ArgSlice newKeySlice, StoreType storeType)
+        {
+            GarnetStatus returnStatus = GarnetStatus.NOTFOUND;
+
+            // If same name check return early.
+            if (oldKeySlice.ReadOnlySpan.SequenceEqual(newKeySlice.ReadOnlySpan))
+                return GarnetStatus.OK;
+
+            bool createTransaction = false;
+            if (txnManager.state != TxnState.Running)
+            {
+                createTransaction = true;
+                txnManager.SaveKeyEntryToLock(oldKeySlice, false, LockType.Exclusive);
+                txnManager.SaveKeyEntryToLock(newKeySlice, false, LockType.Exclusive);
+                txnManager.Run(true);
+            }
+
+            var context = txnManager.LockableContext;
+            var objectContext = txnManager.ObjectStoreLockableContext;
+
+            if (storeType == StoreType.Main || storeType == StoreType.All)
+            {
+                try
+                {
+                    SpanByte oldKey = oldKeySlice.SpanByte;
+                    SpanByte newKey = newKeySlice.SpanByte;
+
+                    SpanByte input = default;
+                    var o = new SpanByteAndMemory();
+                    var status = GET(ref oldKey, ref input, ref o, ref context);
+
+                    if (status == GarnetStatus.OK)
+                    {
+                        Debug.Assert(!o.IsSpanByte);
+                        var memoryHandle = o.Memory.Memory.Pin();
+                        var ptrVal = (byte*)memoryHandle.Pointer;
+
+                        RespReadUtils.ReadUnsignedLengthHeader(out var headerLength, ref ptrVal, ptrVal + o.Length);
+                        var value = SpanByte.FromPinnedPointer(ptrVal, headerLength);
+
+                        // TODO: (Nirmal) Find the right way to get the inputPtr (pointer to input value). 
+                        byte* inputPtr = null;
+                        // Make space for RespCommand in input
+                        inputPtr -= RespInputHeader.Size;
+                        var expiryBytes = new SpanByteAndMemory();
+                        var expiryStatus = TTL(ref oldKey, storeType, ref expiryBytes, ref context, ref objectContext, true);
+
+                        if (expiry == 0) // no expiration provided
+                        {
+                            *(int*)inputPtr = RespInputHeader.Size + isize;
+                            ((RespInputHeader*)(inputPtr + sizeof(int)))->cmd = cmd;
+                            ((RespInputHeader*)(inputPtr + sizeof(int)))->flags = 0;
+                            if (getValue)
+                                ((RespInputHeader*)(inputPtr + sizeof(int)))->SetSetGetFlag();
+                        }
+                        else
+                        {
+                            // Move payload forward to make space for metadata
+                            Buffer.MemoryCopy(inputPtr + sizeof(int) + RespInputHeader.Size,
+                                inputPtr + sizeof(int) + sizeof(long) + RespInputHeader.Size, isize, isize);
+                            *(int*)inputPtr = sizeof(long) + RespInputHeader.Size + isize;
+                            ((RespInputHeader*)(inputPtr + sizeof(int) + sizeof(long)))->cmd = cmd;
+                            ((RespInputHeader*)(inputPtr + sizeof(int) + sizeof(long)))->flags = 0;
+                            if (getValue)
+                                ((RespInputHeader*)(inputPtr + sizeof(int) + sizeof(long)))->SetSetGetFlag();
+                            SpanByte.Reinterpret(inputPtr).ExtraMetadata = DateTimeOffset.UtcNow.Ticks +
+                                                                           (highPrecision
+                                                                               ? TimeSpan.FromMilliseconds(expiry).Ticks
+                                                                               : TimeSpan.FromSeconds(expiry).Ticks);
+                        }
+
+                        SET_Conditional(ref newKey, ref Unsafe.AsRef<SpanByte>(inputPtr), ref context);
+
+                        memoryHandle.Dispose();
+                        o.Memory.Dispose();
+
+                        // Delete the old key
+                        DELETE(ref oldKey, StoreType.Main, ref context, ref objectContext);
+
+                        returnStatus = GarnetStatus.OK;
+                    }
+                }
+                finally
+                {
+                    if (createTransaction)
+                        txnManager.Commit(true);
+                }
+            }
+
+            if ((storeType == StoreType.Object || storeType == StoreType.All) && !objectStoreBasicContext.IsNull)
+            {
+                createTransaction = false;
+                if (txnManager.state != TxnState.Running)
+                {
+                    txnManager.SaveKeyEntryToLock(oldKeySlice, true, LockType.Exclusive);
+                    txnManager.SaveKeyEntryToLock(newKeySlice, true, LockType.Exclusive);
+                    txnManager.Run(true);
+                    createTransaction = true;
+                }
+
+                try
+                {
+                    // TODO: (Nirmal) Use span if possible
+                    byte[] oldKeyArray = oldKeySlice.ToArray();
+                    byte[] newKeyArray = newKeySlice.ToArray();
+
+                    var status = GET(oldKeyArray, out var value, ref objectContext);
+
+                    if (status == GarnetStatus.OK)
+                    {
+                        var valObj = value.garnetObject;
+
+                        // TODO: (Nirmal) Change this to SETNX as well
+                        SET(newKeyArray, valObj, ref objectContext);
+
+                        // Delete the old key
+                        DELETE(oldKeyArray, StoreType.Object, ref context, ref objectContext);
+
+                        returnStatus = GarnetStatus.OK;
+                    }
+                }
+                finally
+                {
+                    if (createTransaction)
+                        txnManager.Commit(true);
+                }
+            }
+
+            return returnStatus;
+        }
+
         /// <summary>
         /// Returns if key is an existing one in the store.
         /// </summary>

@@ -41,6 +41,30 @@ namespace Garnet.server
         }
 
         /// <summary>
+        /// TryRENAMENX
+        /// </summary>
+        private bool NetworkRENAMENX<TGarnetApi>(ref TGarnetApi storageApi)
+            where TGarnetApi : IGarnetApi
+        {
+            // TODO: (Nirmal) If need combine the RENAME and RENAMENX commands by passing RespCommand command. Refer: HashSet, HashCommands.cs
+            if (parseState.Count != 2)
+            {
+                return AbortWithWrongNumberOfArguments(nameof(RespCommand.RENAMENX));
+            }
+
+            var oldKeySlice = parseState.GetArgSliceByRef(0); 
+            var newKeySlice = parseState.GetArgSliceByRef(1);
+            // TODO: (Nirmal) If need combine the RENAME and RENAMENX commands by using out param. Refer: HashSet, HashCommands.cs
+            var status = storageApi.RENAMENX(oldKeySlice, newKeySlice);
+
+            // TODO: (Nirmal) Add int response for the RENAMENX command by adding first param
+            while (!RespWriteUtils.WriteInteger(1, ref dcurr, dend))
+                SendAndReset();
+
+            return true;
+        }
+
+        /// <summary>
         /// GETDEL command processor
         /// </summary>
         /// <typeparam name="TGarnetApi"> Garnet API type </typeparam>
