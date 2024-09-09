@@ -123,15 +123,10 @@ else {
     $ExpectedCoresToTestOn = $object.ExpectedCoresToTestOn_win
 }
 
-# When Remove these, then set up the actual error so it fails out if cores do not match
-Write-Host "---- DEBUG --- Number of Cores Found: $NumberOfCores "
-Write-Host "---- DEBUG --- Expected Number of Cores: $ExpectedCoresToTestOn "
-
 # To get accurate comparison of found vs expected values, double check to make sure config settings for Number of Cores of the test machine are what is specified in the test config file
 if ($ExpectedCoresToTestOn -ne $NumberOfCores) {
-#    Write-Error -Message "The Number of Cores on this machine ($NumberOfCores) are not the same as the Expected Cores ($ExpectedCoresToTestOn) found in the test config file: $fullConfiFileAndPath."
-#    exit
-     Write-Host "WARNING!!!!  The Number of Cores on this machine ($NumberOfCores) are not the same as the Expected Cores ($ExpectedCoresToTestOn) found in the test config file: $fullConfiFileAndPath."
+    Write-Error -Message "The Number of Cores on this machine ($NumberOfCores) are not the same as the Expected Cores ($ExpectedCoresToTestOn) found in the test config file: $fullConfiFileAndPath."
+    exit
 }
 
 Write-Host "************** Start BDN.benchmark ********************" 
@@ -212,15 +207,6 @@ $justResultsFileNameNoExt = $configFile -replace ".{5}$"   # strip off the .json
 $resultsFileName = $justResultsFileNameNoExt + "_" + $CurrentOS + ".results"
 $resultsFile = "$resultsDir/$resultsFileName"
 $BDNbenchmarkErrorFile = "$errorLogDir/$justResultsFileNameNoExt" + "_StandardError_" +$CurrentOS+".log"
-
-Write-Output "------------ DEBUG #########################"
-Write-Output "*#*#* Configuration $configuration"
-Write-Output "*#*#* framework $framework"
-Write-Output "*#*#* filter $filter"
-Write-Output "*#*#* Standard Out (Results) $resultsFile"
-Write-Output "*#*#* Standard Error $BDNbenchmarkErrorFile"
-Write-Output "*#*#* Working Dir (BDNBM Path) $BDNbenchmarkPath"
-Write-Output "*------------ DEBUG #########################"
 
 Write-Output "** Start BDN Benchmark: $filter"
 Write-Output " "
