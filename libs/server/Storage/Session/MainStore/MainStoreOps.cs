@@ -621,7 +621,7 @@ namespace Garnet.server
 
                         var expireSpan = new SpanByteAndMemory();
                         var ttlStatus = TTL(ref oldKey, StoreType.Object, ref expireSpan, ref context, ref objectContext, true);
-                        
+
                         if (ttlStatus == GarnetStatus.OK && !expireSpan.IsSpanByte)
                         {
                             var expireMemoryHandle = expireSpan.Memory.Memory.Pin();
