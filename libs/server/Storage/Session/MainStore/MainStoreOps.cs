@@ -563,7 +563,7 @@ namespace Garnet.server
 
                         if (ttlStatus == GarnetStatus.OK && !expireSpan.IsSpanByte)
                         {
-                            var expireMemoryHandle = expireSpan.Memory.Memory.Pin();
+                            using var expireMemoryHandle = expireSpan.Memory.Memory.Pin();
                             var expirePtrVal = (byte*)expireMemoryHandle.Pointer;
                             RespReadUtils.TryRead64Int(out var expireTimeMs, ref expirePtrVal, expirePtrVal + expireSpan.Length, out var _);
 
@@ -572,14 +572,13 @@ namespace Garnet.server
                             {
                                 SETEX(newKeySlice, new ArgSlice(ptrVal, headerLength), TimeSpan.FromMilliseconds(expireTimeMs), ref context);
                             }
-                            else if (expireTimeMs == -1) // Its possible to have expire as 0 or -2, in those cases we don't SET the new key
+                            else if (expireTimeMs == -1) // Its possible to have expireTimeMs as 0 (Key expired or will be expired now) or -2 (Key does not exist), in those cases we don't SET the new key
                             {
                                 SpanByte newKey = newKeySlice.SpanByte;
                                 var value = SpanByte.FromPinnedPointer(ptrVal, headerLength);
                                 SET(ref newKey, ref value, ref context);
                             }
 
-                            expireMemoryHandle.Dispose();
                             expireSpan.Memory.Dispose();
                             memoryHandle.Dispose();
                             o.Memory.Dispose();
@@ -624,10 +623,9 @@ namespace Garnet.server
 
                         if (ttlStatus == GarnetStatus.OK && !expireSpan.IsSpanByte)
                         {
-                            var expireMemoryHandle = expireSpan.Memory.Memory.Pin();
+                            using var expireMemoryHandle = expireSpan.Memory.Memory.Pin();
                             var expirePtrVal = (byte*)expireMemoryHandle.Pointer;
                             RespReadUtils.TryRead64Int(out var expireTimeMs, ref expirePtrVal, expirePtrVal + expireSpan.Length, out var _);
-                            expireMemoryHandle.Dispose();
                             expireSpan.Memory.Dispose();
 
                             if (expireTimeMs > 0)
