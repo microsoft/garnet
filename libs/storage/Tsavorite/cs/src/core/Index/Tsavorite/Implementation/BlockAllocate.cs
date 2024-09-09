@@ -20,7 +20,7 @@ namespace Tsavorite.core
                 out OperationStatus internalStatus)
         {
             pendingContext.flushEvent = allocator.FlushEvent;
-            logicalAddress = allocator.TryAllocate(recordSize);
+            logicalAddress = allocator.TryAllocateRetryNow(recordSize);
             if (logicalAddress > 0)
             {
                 pendingContext.flushEvent = default;
@@ -28,17 +28,9 @@ namespace Tsavorite.core
                 return true;
             }
 
-            if (logicalAddress == 0)
-            {
-                // We expect flushEvent to be signaled.
-                internalStatus = OperationStatus.ALLOCATE_FAILED;
-                return false;
-            }
-
-            // logicalAddress is < 0 so we do not expect flushEvent to be signaled; return RETRY_LATER to refresh the epoch.
-            pendingContext.flushEvent = default;
-            allocator.TryComplete();
-            internalStatus = OperationStatus.RETRY_LATER;
+            Debug.Assert(logicalAddress == 0);
+            // We expect flushEvent to be signaled.
+            internalStatus = OperationStatus.ALLOCATE_FAILED;
             return false;
         }
 

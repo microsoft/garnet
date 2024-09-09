@@ -891,9 +891,7 @@ namespace Tsavorite.core
                 // Shift only after TailPageOffset is reset to a valid state
                 IssueShiftAddress(pageIndex);
 
-                // Re-check as the shifting may have allowed us to proceed
-                if (NeedToWait(pageIndex))
-                    return 0; // RETRY_LATER
+                return 0; // RETRY_LATER
             }
 
             // Allocate next page and set new tail
@@ -906,9 +904,7 @@ namespace Tsavorite.core
                 // Shift only after TailPageOffset is reset to a valid state
                 IssueShiftAddress(pageIndex);
 
-                // Re-check as the shifting may have allowed us to proceed
-                if (CannotAllocate(pageIndex))
-                    return -1; // RETRY_NOW
+                return -1; // RETRY_NOW
             }
 
             if (!_wrapper.IsAllocated(pageIndex % BufferSize) || !_wrapper.IsAllocated((pageIndex + 1) % BufferSize))
@@ -929,7 +925,7 @@ namespace Tsavorite.core
         /// <param name="numSlots">Number of slots to allocate</param>
         /// <returns>The allocated logical address, or 0 in case of inability to allocate</returns>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public long TryAllocate(int numSlots = 1)
+        long TryAllocate(int numSlots = 1)
         {
             if (numSlots > PageSize)
                 ThrowTsavoriteException("Entry does not fit on page");
@@ -968,7 +964,11 @@ namespace Tsavorite.core
         {
             long logicalAddress;
             while ((logicalAddress = TryAllocate(numSlots)) < 0)
+            {
+                _ = TryComplete();
                 epoch.ProtectAndDrain();
+                Thread.Yield();
+            }
             return logicalAddress;
         }
 

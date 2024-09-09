@@ -7,7 +7,6 @@ using System.Collections.Concurrent;
 using System.Collections.Generic;
 using System.Diagnostics;
 using System.IO;
-using System.Linq;
 using System.Runtime.CompilerServices;
 using System.Threading;
 using System.Threading.Tasks;
@@ -862,28 +861,20 @@ namespace Tsavorite.core
             while (true)
             {
                 var flushEvent = allocator.FlushEvent;
-                var logicalAddress = allocator.TryAllocate(recordSize);
+                var logicalAddress = allocator.TryAllocateRetryNow(recordSize);
                 if (logicalAddress > 0)
                     return logicalAddress;
-
-                if (logicalAddress == 0)
+                Debug.Assert(logicalAddress == 0);
+                epoch.Suspend();
+                if (cannedException != null) throw cannedException;
+                try
                 {
-                    epoch.Suspend();
-                    if (cannedException != null) throw cannedException;
-                    try
-                    {
-                        flushEvent.Wait();
-                    }
-                    finally
-                    {
-                        epoch.Resume();
-                    }
+                    flushEvent.Wait();
                 }
-
-                // logicalAddress is < 0 so we do not expect flushEvent to be signaled; refresh the epoch and retry now
-                allocator.TryComplete();
-                epoch.ProtectAndDrain();
-                Thread.Yield();
+                finally
+                {
+                    epoch.Resume();
+                }
             }
         }
 
