@@ -75,6 +75,7 @@ namespace Garnet.server
         /// </summary>
         public readonly ILoggerFactory loggerFactory;
 
+        internal readonly CollectionItemBroker itemBroker;
         internal readonly CustomCommandManager customCommandManager;
         internal readonly GarnetServerMonitor monitor;
         internal readonly WatchVersionMap versionMap;
@@ -140,6 +141,9 @@ namespace Garnet.server
             this.accessControlList = accessControlList;
             this.GarnetObjectSerializer = new GarnetObjectSerializer(this.customCommandManager);
             this.loggingFrequncy = TimeSpan.FromSeconds(serverOptions.LoggingFrequency);
+
+            if (!serverOptions.DisableObjects)
+                this.itemBroker = new CollectionItemBroker();
 
             // Initialize store scripting cache
             if (serverOptions.EnableLua)
@@ -604,6 +608,7 @@ namespace Garnet.server
             //Wait for checkpoints to complete and disable checkpointing
             _checkpointTaskLock.WriteLock();
 
+            itemBroker?.Dispose();
             monitor?.Dispose();
             ctsCommit?.Cancel();
 
