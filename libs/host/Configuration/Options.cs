@@ -194,6 +194,9 @@ namespace Garnet
         [Option("aof-size-limit", Required = false, HelpText = "Maximum size of AOF (rounds down to power of 2) after which unsafe truncation will be applied. Left empty AOF will grow without bound unless a checkpoint is taken")]
         public string AofSizeLimit { get; set; }
 
+        [Option("iteration-type", Required = false, HelpText = "Hybrid log iteration type. Value options: Lookup - Lookup records for liveness checking using hash chain (default), Scan - Scan records for liveness checking")]
+        public IterationType IterationType { get; set; }
+
         [IntRangeValidation(0, int.MaxValue)]
         [Option("compaction-freq", Required = false, HelpText = "Background hybrid log compaction frequency in seconds. 0 = disabled (compaction performed before checkpointing instead)")]
         public int CompactionFrequencySecs { get; set; }
@@ -591,6 +594,7 @@ namespace Garnet
                 CommitFrequencyMs = CommitFrequencyMs,
                 WaitForCommit = WaitForCommit.GetValueOrDefault(),
                 AofSizeLimit = AofSizeLimit,
+                IterationType = IterationType,
                 CompactionFrequencySecs = CompactionFrequencySecs,
                 CompactionType = CompactionType,
                 CompactionForceDelete = CompactionForceDelete.GetValueOrDefault(),

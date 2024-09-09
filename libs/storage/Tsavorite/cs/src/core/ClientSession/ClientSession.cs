@@ -461,20 +461,22 @@ namespace Tsavorite.core
         /// <summary>
         /// Pull iterator for all (distinct) live key-values stored in Tsavorite
         /// </summary>
+        /// <param name="iterationType">Iteration type (whether we lookup records or scan log for liveness checking)</param>
         /// <param name="untilAddress">Report records until this address (tail by default)</param>
         /// <returns>Tsavorite iterator</returns>
-        public ITsavoriteScanIterator<TKey, TValue> Iterate(long untilAddress = -1)
-            => store.Iterate<TInput, TOutput, TContext, TFunctions>(functions, untilAddress);
+        public ITsavoriteScanIterator<TKey, TValue> Iterate(IterationType iterationType, long untilAddress = -1)
+            => store.Iterate<TInput, TOutput, TContext, TFunctions>(functions, iterationType, untilAddress);
 
         /// <summary>
         /// Push iteration of all (distinct) live key-values stored in Tsavorite
         /// </summary>
         /// <param name="scanFunctions">Functions receiving pushed records</param>
+        /// <param name="iterationType">Iteration type (whether we lookup records or scan log for liveness checking)</param>
         /// <param name="untilAddress">Report records until this address (tail by default)</param>
         /// <returns>True if Iteration completed; false if Iteration ended early due to one of the TScanIterator reader functions returning false</returns>
-        public bool Iterate<TScanFunctions>(ref TScanFunctions scanFunctions, long untilAddress = -1)
+        public bool Iterate<TScanFunctions>(ref TScanFunctions scanFunctions, IterationType iterationType, long untilAddress = -1)
             where TScanFunctions : IScanIteratorFunctions<TKey, TValue>
-            => store.Iterate<TInput, TOutput, TContext, TFunctions, TScanFunctions>(functions, ref scanFunctions, untilAddress);
+            => store.Iterate<TInput, TOutput, TContext, TFunctions, TScanFunctions>(functions, ref scanFunctions, iterationType, untilAddress);
 
         /// <summary>
         /// Push-scan the log from <paramref name="cursor"/> (which should be a valid address) and push up to <paramref name="count"/> records

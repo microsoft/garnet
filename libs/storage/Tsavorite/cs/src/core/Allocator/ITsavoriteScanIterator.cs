@@ -81,4 +81,23 @@ namespace Tsavorite.core
         /// </summary>
         long EndAddress { get; }
     }
+
+    /// <summary>
+    /// Scan iterator with push interface for Tsavorite log
+    /// </summary>
+    /// <typeparam name="TKey"></typeparam>
+    /// <typeparam name="TValue"></typeparam>
+    internal interface ITsavoriteScanIteratorWithPush<TKey, TValue> : ITsavoriteScanIterator<TKey, TValue>
+    {
+        /// <summary>
+        /// Push next record
+        /// </summary>
+        /// <typeparam name="TScanFunctions"></typeparam>
+        /// <param name="scanFunctions"></param>
+        /// <param name="numRecords"></param>
+        /// <param name="stop"></param>
+        /// <returns></returns>
+        bool PushNext<TScanFunctions>(ref TScanFunctions scanFunctions, long numRecords, out bool stop)
+            where TScanFunctions : IScanIteratorFunctions<TKey, TValue>;
+    }
 }

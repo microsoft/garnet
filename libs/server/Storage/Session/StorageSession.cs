@@ -21,6 +21,7 @@ namespace Garnet.server
         int bitmapBufferSize = 1 << 15;
         SectorAlignedMemory sectorAlignedMemoryBitmap;
         readonly long HeadAddress;
+        readonly IterationType IterationType;
 
         /// <summary>
         /// Session Contexts for main store
@@ -80,6 +81,7 @@ namespace Garnet.server
 
             HeadAddress = storeWrapper.store.Log.HeadAddress;
             ObjectScanCountLimit = storeWrapper.serverOptions.ObjectScanCountLimit;
+            IterationType = storeWrapper.serverOptions.IterationType;
         }
 
         public void Dispose()

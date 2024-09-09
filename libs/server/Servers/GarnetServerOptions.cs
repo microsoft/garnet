@@ -121,6 +121,13 @@ namespace Garnet.server
         public string AofSizeLimit = "";
 
         /// <summary>
+        /// Hybrid log iteration type.
+        ///  Lookup - lookup records for liveness checking using hash chain
+        ///  Scan - Scan records for liveness checking
+        /// </summary>
+        public IterationType IterationType = IterationType.Lookup;
+
+        /// <summary>
         /// Hybrid log compaction frequency in seconds. 0 = disabled
         /// </summary>
         public int CompactionFrequencySecs = 0;

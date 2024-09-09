@@ -119,13 +119,13 @@ namespace Garnet.server
         /// <returns></returns>
         internal bool IterateMainStore<TScanFunctions>(ref TScanFunctions scanFunctions, long untilAddress = -1)
             where TScanFunctions : IScanIteratorFunctions<SpanByte, SpanByte>
-            => basicContext.Session.Iterate(ref scanFunctions, untilAddress);
+            => basicContext.Session.Iterate(ref scanFunctions, IterationType, untilAddress);
 
         /// <summary>
         /// Iterate the contents of the main store (pull based)
         /// </summary>
         internal ITsavoriteScanIterator<SpanByte, SpanByte> IterateMainStore()
-            => basicContext.Session.Iterate();
+            => basicContext.Session.Iterate(IterationType);
 
         /// <summary>
         /// Iterate the contents of the object store
@@ -136,13 +136,13 @@ namespace Garnet.server
         /// <returns></returns>
         internal bool IterateObjectStore<TScanFunctions>(ref TScanFunctions scanFunctions, long untilAddress = -1)
             where TScanFunctions : IScanIteratorFunctions<byte[], IGarnetObject>
-            => objectStoreBasicContext.Session.Iterate(ref scanFunctions, untilAddress);
+            => objectStoreBasicContext.Session.Iterate(ref scanFunctions, IterationType, untilAddress);
 
         /// <summary>
         /// Iterate the contents of the main store (pull based)
         /// </summary>
         internal ITsavoriteScanIterator<byte[], IGarnetObject> IterateObjectStore()
-            => objectStoreBasicContext.Session.Iterate();
+            => objectStoreBasicContext.Session.Iterate(IterationType);
 
         /// <summary>
         ///  Get a list of the keys in the store and object store
@@ -158,13 +158,13 @@ namespace Garnet.server
 
             mainStoreDbKeysFuncs ??= new();
             mainStoreDbKeysFuncs.Initialize(Keys, allKeys ? null : pattern.ptr, pattern.Length);
-            basicContext.Session.Iterate(ref mainStoreDbKeysFuncs);
+            basicContext.Session.Iterate(ref mainStoreDbKeysFuncs, IterationType);
 
             if (!objectStoreBasicContext.IsNull)
             {
                 objStoreDbKeysFuncs ??= new();
                 objStoreDbKeysFuncs.Initialize(Keys, allKeys ? null : pattern.ptr, pattern.Length, matchType: null);
-                objectStoreBasicContext.Session.Iterate(ref objStoreDbKeysFuncs);
+                objectStoreBasicContext.Session.Iterate(ref objStoreDbKeysFuncs, IterationType);
             }
 
             return Keys;
