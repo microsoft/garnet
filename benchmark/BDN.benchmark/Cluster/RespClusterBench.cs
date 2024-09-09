@@ -2,6 +2,7 @@
 // Licensed under the MIT license.
 
 using System.Runtime.CompilerServices;
+using System.Runtime.InteropServices;
 using System.Text;
 using BenchmarkDotNet.Attributes;
 using Embedded.perftest;
@@ -48,6 +49,7 @@ namespace BDN.benchmark.Cluster
                 EnableCluster = true,
                 Port = Port,
                 CleanClusterConfig = true,
+                CheckpointDir = RuntimeInformation.IsOSPlatform(OSPlatform.Linux) ? "/tmp" : null
             };
             server = new EmbeddedRespServer(opt);
             session = server.GetRespSession();

@@ -25,3 +25,47 @@ jobs:
             - 'website/**'
           bdnbenchmark:
             - '!((*.md)|(website/**))'
+  
+  # Job to build and run BDN.benchmark
+  build-run-bdnbenchmark:
+    name: BDNBenchmark
+    needs: [changes]
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ ubuntu-latest, windows-latest ]
+        framework: [ 'net8.0' ]
+        configuration: [ 'Release' ]
+        test: [ 'CI_BDN_Config_RespParseStress.json', 'CI_BDN_Config_RespTsavoriteStress.json', 'CI_BDN_Config_RespClusterBench.json', 'CI_BDN_Config_RespClusterMigrateBench.json', 'CI_BDN_Config_Lua.json' ]
+    steps:
+      - name: Check out code
+        uses: actions/checkout@v4
+      - name: Setup .NET
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: 8.0.x
+      - name: Install dependencies
+        run: dotnet restore
+      - name: Build Garnet
+        run: dotnet build --configuration ${{ matrix.configuration }}
+
+      - name: Run BDN.benchmark Perf Test
+        run: .\test\BDNPerfTests\run_bdnperftest.ps1 ${{ matrix.test }}
+        shell: pwsh
+   
+      - name: Upload test results to artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: ResultsDir-${{ matrix.os }}-${{ matrix.framework }}-${{ matrix.configuration }}-${{ matrix.test }}
+          path: |
+             ./test/BDNPerfTests/results
+        if: ${{ always() }}
+      - name: Upload Error Log to artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: ErrorLogDir-${{ matrix.os }}-${{ matrix.framework }}-${{ matrix.configuration }}-${{ matrix.test }}
+          path: |
+            ./test/BDNPerfTests/errorlog
+        if: ${{ always() }}
+   
