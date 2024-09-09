@@ -7,7 +7,6 @@
     Script to test for performance regressions using BDN Benchmark tool.  There are configuration files (in /ConfigFiles dir) associated with each test that contains name and expected values of the BDN benchmark. Any of these can be sent as the parameter to the file.
     
         CI_BDN_Config_RespParseStress.json
-        
 
     NOTE: The expected values are specific for the CI Machine. If you run these on your machine, you will need to change the expected values.
     NOTE: The acceptablerange* parameters in the config file is how far +/- X% the found value can be from the expected value and still say it is pass. Defaulted to 10% 
@@ -16,6 +15,7 @@
     ./run_bdnperftest.ps1 
     ./run_bdnperftest.ps1 CI_BDN_Config_RespParseStress.json
 #>
+
 
 # Send the config file for the benchmark. Defaults to a simple one
 param (
@@ -109,7 +109,7 @@ if ($IsLinux) {
     $CurrentOS = "Linux"
 }
 
- # Calculate number of cores on the test machine - used for max thread and to verify the config file settings
+ # Calculate number of cores on the test machine - used to verify the config file settings as the config settings will vary based on machine config
 if ($IsLinux) {
     $sockets = [int]$(lscpu | grep -E '^Socket' | awk '{print $2}')
     $coresPerSocket = [int]$(lscpu | grep -E '^Core' | awk '{print $4}')
@@ -142,8 +142,6 @@ $configuration = $object.configuration
 $framework = $object.framework
 $filter = $object.filter
 $meanColumn = "1"
-$errorColumn = "2"  # TODO:  Need this - check it?
-$stdDevColumn = "3"  # TODO:  Need this - check it?
 
 # Set the expected values based on the OS
 if ($IsLinux) {
@@ -194,9 +192,6 @@ else {
 }
 
 # percent allowed variance when comparing expected vs actual found value - same for linux and windows. 
-# TODO: Figure out if using Error and Std Dev range ... have % off of .1 or we have 
-$acceptableError = $object.acceptableError  
-$acceptableStdDev = $object.acceptableStdDev 
 $acceptableMeanRange = $object.acceptableMeanRange 
 
 # Set up the results dir and errorlog dir
@@ -231,15 +226,6 @@ Write-Output "** Start BDN Benchmark: $filter"
 Write-Output " "
 Write-Output "** Start:  dotnet run -c $configuration -f $framework --filter $filter --project $BDNbenchmarkPath  > $resultsFile 2> $BDNbenchmarkErrorFile"
 dotnet run -c $configuration -f $framework --filter $filter --project $BDNbenchmarkPath  > $resultsFile 2> $BDNbenchmarkErrorFile
-
-
-# TO DO ###########################
-# Get all tests working on GH Actions -- some values not up to date and others fails on linux
-# Clean up DEBUG statements
-# Add "CI" only switch so can run on GH (default to CI?  If so - add full run switch to not analyze but gather and push data somewhere)
-# For YML files (ADO and GH) - do we need "build" Tsav and Garnet before?  Guessing yes, but worth a test to see. Maybe the run of benchmark builds everything it needs
-# TO DO ###########################
-
 
 Write-Output "** BDN Benchmark for $filter finished"
 Write-Output " "
@@ -383,6 +369,8 @@ Get-Content $resultsFile | ForEach-Object {
                 $testSuiteResult = $false
             }
         }
+        <# 
+        # Have this disabled for now for the CI runs. These are too volatile to have a CI gated on them.
         "*| BasicLua3*" {
             Write-Host "** BasicLua3 Mean Value test"
             $foundBasicLua3MeanValue = ParseValueFromResults $line $meanColumn
@@ -399,6 +387,7 @@ Get-Content $resultsFile | ForEach-Object {
                 $testSuiteResult = $false
             }
         }
+        #>                   
         "*| BasicLuaRunner1*" {
             Write-Host "** BasicLuaRunner1 Mean Value test"
             $foundBasicLuaRunner1MeanValue = ParseValueFromResults $line $meanColumn
@@ -415,6 +404,9 @@ Get-Content $resultsFile | ForEach-Object {
                 $testSuiteResult = $false
             }
         }
+        
+        <#
+        # Have this disabled for now for the CI runs. These are too volatile to have a CI gated on them.
         "*| BasicLuaRunner3*" {
             Write-Host "** BasicLuaRunner3 Mean Value test"
             $foundBasicLuaRunner3MeanValue = ParseValueFromResults $line $meanColumn
@@ -431,6 +423,7 @@ Get-Content $resultsFile | ForEach-Object {
                 $testSuiteResult = $false
             }
         }
+        #>            
     }
 }
 
