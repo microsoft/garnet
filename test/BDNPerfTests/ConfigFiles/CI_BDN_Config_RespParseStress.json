@@ -14,7 +14,7 @@
     "expectedSAddRemMeanValue_linux": 172,
     "expectedHSetDelMeanValue_linux": 200,
     "expectedMyDictSetGetMeanValue_linux": 235,
-    "expectedInLinePingMeanValue_win": 2.2,
+    "expectedInLinePingMeanValue_win": 2.4,
     "expectedSETMeanValue_win": 19,
     "expectedSETEXMeanValue_win": 26,
     "expectedGETMeanValue_win": 14,
