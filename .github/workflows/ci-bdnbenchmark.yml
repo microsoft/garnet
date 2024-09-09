@@ -47,8 +47,6 @@ jobs:
           dotnet-version: 8.0.x
       - name: Install dependencies
         run: dotnet restore
-      - name: Build Garnet
-        run: dotnet build --configuration ${{ matrix.configuration }}
 
       - name: Run BDN.benchmark Perf Test
         run: .\test\BDNPerfTests\run_bdnperftest.ps1 ${{ matrix.test }}
