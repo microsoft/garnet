@@ -773,10 +773,19 @@ namespace Tsavorite.core
                     outNextAddress = currentAddress;
                 }
 
+                var _headAddress = allocator.HeadAddress;
+
+                // Fast forward to memory in case we are flushing to a null device
+                if (allocator.IsNullDevice && currentAddress < _headAddress)
+                {
+                    Utility.MonotonicUpdate(ref nextAddress, _headAddress, out _);
+                    currentAddress = nextAddress;
+                    outNextAddress = currentAddress;
+                }
+
                 var _currentPage = currentAddress >> allocator.LogPageSizeBits;
                 var _currentFrame = _currentPage % frameSize;
                 var _currentOffset = currentAddress & allocator.PageSizeMask;
-                var _headAddress = allocator.HeadAddress;
 
                 if (disposed)
                     return false;
@@ -879,15 +888,22 @@ namespace Tsavorite.core
                 // Check for boundary conditions
                 if (currentAddress < allocator.BeginAddress)
                 {
-                    Utility.MonotonicUpdate(ref nextAddress, allocator.BeginAddress, out _);
-                    currentAddress = nextAddress;
-                    outNextAddress = currentAddress;
+                    // Cannot expand, return false
+                    return false;
+                }
+
+                var _headAddress = allocator.HeadAddress;
+
+                // Fast forward to memory in case we are flushing to a null device
+                if (allocator.IsNullDevice && currentAddress < _headAddress)
+                {
+                    // Cannot expand, return false
+                    return false;
                 }
 
                 var _currentPage = currentAddress >> allocator.LogPageSizeBits;
                 var _currentFrame = _currentPage % frameSize;
                 var _currentOffset = currentAddress & allocator.PageSizeMask;
-                var _headAddress = allocator.HeadAddress;
 
                 if (disposed)
                     return false;

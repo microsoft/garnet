@@ -5,6 +5,7 @@ using System;
 using System.Text;
 using Garnet.common;
 using Garnet.server;
+using Microsoft.Extensions.Logging;
 
 namespace Garnet.cluster
 {
@@ -169,8 +170,7 @@ namespace Garnet.cluster
                 !parseState.TryGetLong(2, out var currentAddress) ||
                 !parseState.TryGetLong(3, out var nextAddress))
             {
-                while (!RespWriteUtils.WriteError(CmdStrings.RESP_ERR_GENERIC_VALUE_IS_NOT_INTEGER, ref dcurr, dend))
-                    SendAndReset();
+                logger?.LogError("{str}", Encoding.ASCII.GetString(CmdStrings.RESP_ERR_GENERIC_VALUE_IS_NOT_INTEGER));
                 return true;
             }
 
@@ -181,22 +181,16 @@ namespace Garnet.cluster
             var primaryId = currentConfig.LocalNodePrimaryId;
             if (localRole != NodeRole.REPLICA)
             {
-                // TODO: handle this
-                //while (!RespWriteUtils.WriteError("ERR aofsync node not a replica"u8, ref dcurr, dend))
-                //    SendAndReset();
+                throw new GarnetException("aofsync node not a replica", LogLevel.Error, clientResponse: false);
             }
             else if (!primaryId.Equals(nodeId))
             {
-                // TODO: handle this
-                //while (!RespWriteUtils.WriteError($"ERR aofsync node replicating {primaryId}", ref dcurr, dend))
-                //    SendAndReset();
+                throw new GarnetException($"aofsync node replicating {primaryId}", LogLevel.Error, clientResponse: false);
             }
             else
             {
                 clusterProvider.replicationManager.ProcessPrimaryStream(sbRecord.ToPointer(), sbRecord.Length,
                     previousAddress, currentAddress, nextAddress);
-                //while (!RespWriteUtils.WriteDirect(CmdStrings.RESP_OK, ref dcurr, dend))
-                //    SendAndReset();
             }
 
             return true;
