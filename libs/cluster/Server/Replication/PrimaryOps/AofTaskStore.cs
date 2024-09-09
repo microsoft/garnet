@@ -280,7 +280,7 @@ namespace Garnet.cluster
             {
                 if (clusterProvider.serverOptions.MainMemoryReplication)
                 {
-                    clusterProvider.storeWrapper.appendOnlyFile?.UnsafeShiftBeginAddress(TruncatedUntil, snapToPageStart: true, truncateLog: true, noFlush: true);
+                    clusterProvider.storeWrapper.appendOnlyFile?.UnsafeShiftBeginAddress(TruncatedUntil, snapToPageStart: true, truncateLog: true);
                 }
                 else
                 {
