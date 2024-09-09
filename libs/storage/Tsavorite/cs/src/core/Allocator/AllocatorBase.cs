@@ -879,7 +879,9 @@ namespace Tsavorite.core
                 return -1; // RETRY_NOW
             }
 
-            // The single thread that "owns" the page-increment proceeds below.
+            // The single thread that "owns" the page-increment proceeds below. This is the thread for which:
+            // 1. Old image of offset (pre-Interlocked.Increment) is <= PageSize, and
+            // 2. New image of offset (post-Interlocked.Increment) is > PageSize.
             if (NeedToWait(pageIndex))
             {
                 // Reset to previous tail so that next attempt can retry
@@ -894,7 +896,7 @@ namespace Tsavorite.core
                     return 0; // RETRY_LATER
             }
 
-            // The thread that "makes" the offset incorrect should allocate next page and set new tail
+            // Allocate next page and set new tail
             if (CannotAllocate(pageIndex))
             {
                 // Reset to previous tail so that next attempt can retry
