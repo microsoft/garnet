@@ -77,6 +77,8 @@ namespace Garnet.cluster
                 address,
                 port,
                 clusterProvider.serverOptions.TlsOptions?.TlsClientOptions,
+                sendPageSize: 1 << 17,
+                maxOutstandingTasks: 8,
                 authUsername: clusterProvider.ClusterUsername,
                 authPassword: clusterProvider.ClusterPassword, logger: logger);
 
