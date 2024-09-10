@@ -635,14 +635,12 @@ namespace Garnet.server
 
             var context = txnManager.LockableContext;
             var objectContext = txnManager.ObjectStoreLockableContext;
+            SpanByte oldKey = oldKeySlice.SpanByte;
 
             if (storeType == StoreType.Main || storeType == StoreType.All)
             {
                 try
                 {
-                    SpanByte oldKey = oldKeySlice.SpanByte;
-                    SpanByte newKey = newKeySlice.SpanByte;
-
                     SpanByte input = default;
                     var o = new SpanByteAndMemory();
                     var status = GET(ref oldKey, ref input, ref o, ref context);
@@ -654,48 +652,38 @@ namespace Garnet.server
                         var ptrVal = (byte*)memoryHandle.Pointer;
 
                         RespReadUtils.ReadUnsignedLengthHeader(out var headerLength, ref ptrVal, ptrVal + o.Length);
-                        var value = SpanByte.FromPinnedPointer(ptrVal, headerLength);
 
-                        // TODO: (Nirmal) Find the right way to get the inputPtr (pointer to input value). 
-                        byte* inputPtr = null;
-                        // Make space for RespCommand in input
-                        inputPtr -= RespInputHeader.Size;
-                        var expiryBytes = new SpanByteAndMemory();
-                        var expiryStatus = TTL(ref oldKey, storeType, ref expiryBytes, ref context, ref objectContext, true);
+                        // Find expiration time of the old key
+                        var expireSpan = new SpanByteAndMemory();
+                        var ttlStatus = TTL(ref oldKey, storeType, ref expireSpan, ref context, ref objectContext, true);
 
-                        if (expiry == 0) // no expiration provided
+                        if (ttlStatus == GarnetStatus.OK && !expireSpan.IsSpanByte)
                         {
-                            *(int*)inputPtr = RespInputHeader.Size + isize;
-                            ((RespInputHeader*)(inputPtr + sizeof(int)))->cmd = cmd;
-                            ((RespInputHeader*)(inputPtr + sizeof(int)))->flags = 0;
-                            if (getValue)
-                                ((RespInputHeader*)(inputPtr + sizeof(int)))->SetSetGetFlag();
+                            using var expireMemoryHandle = expireSpan.Memory.Memory.Pin();
+                            var expirePtrVal = (byte*)expireMemoryHandle.Pointer;
+                            RespReadUtils.TryRead64Int(out var expireTimeMs, ref expirePtrVal, expirePtrVal + expireSpan.Length, out var _);
+
+                            // If the key has an expiration, set the new key with the expiration
+                            if (expireTimeMs > 0)
+                            {
+                                SETEX(newKeySlice, new ArgSlice(ptrVal, headerLength), TimeSpan.FromMilliseconds(expireTimeMs), ref context);
+                            }
+                            else if (expireTimeMs == -1) // Its possible to have expireTimeMs as 0 (Key expired or will be expired now) or -2 (Key does not exist), in those cases we don't SET the new key
+                            {
+                                SpanByte newKey = newKeySlice.SpanByte;
+                                var value = SpanByte.FromPinnedPointer(ptrVal, headerLength);
+                                SET_Conditional(ref newKey, ref value, ref context);
+                            }
+
+                            expireSpan.Memory.Dispose();
+                            memoryHandle.Dispose();
+                            o.Memory.Dispose();
+
+                            // Delete the old key
+                            DELETE(ref oldKey, StoreType.Main, ref context, ref objectContext);
+
+                            returnStatus = GarnetStatus.OK;
                         }
-                        else
-                        {
-                            // Move payload forward to make space for metadata
-                            Buffer.MemoryCopy(inputPtr + sizeof(int) + RespInputHeader.Size,
-                                inputPtr + sizeof(int) + sizeof(long) + RespInputHeader.Size, isize, isize);
-                            *(int*)inputPtr = sizeof(long) + RespInputHeader.Size + isize;
-                            ((RespInputHeader*)(inputPtr + sizeof(int) + sizeof(long)))->cmd = cmd;
-                            ((RespInputHeader*)(inputPtr + sizeof(int) + sizeof(long)))->flags = 0;
-                            if (getValue)
-                                ((RespInputHeader*)(inputPtr + sizeof(int) + sizeof(long)))->SetSetGetFlag();
-                            SpanByte.Reinterpret(inputPtr).ExtraMetadata = DateTimeOffset.UtcNow.Ticks +
-                                                                           (highPrecision
-                                                                               ? TimeSpan.FromMilliseconds(expiry).Ticks
-                                                                               : TimeSpan.FromSeconds(expiry).Ticks);
-                        }
-
-                        SET_Conditional(ref newKey, ref Unsafe.AsRef<SpanByte>(inputPtr), ref context);
-
-                        memoryHandle.Dispose();
-                        o.Memory.Dispose();
-
-                        // Delete the old key
-                        DELETE(ref oldKey, StoreType.Main, ref context, ref objectContext);
-
-                        returnStatus = GarnetStatus.OK;
                     }
                 }
                 finally
@@ -718,23 +706,40 @@ namespace Garnet.server
 
                 try
                 {
-                    // TODO: (Nirmal) Use span if possible
                     byte[] oldKeyArray = oldKeySlice.ToArray();
-                    byte[] newKeyArray = newKeySlice.ToArray();
-
                     var status = GET(oldKeyArray, out var value, ref objectContext);
 
                     if (status == GarnetStatus.OK)
                     {
                         var valObj = value.garnetObject;
+                        byte[] newKeyArray = newKeySlice.ToArray();
 
-                        // TODO: (Nirmal) Change this to SETNX as well
-                        SET(newKeyArray, valObj, ref objectContext);
+                        var expireSpan = new SpanByteAndMemory();
+                        var ttlStatus = TTL(ref oldKey, StoreType.Object, ref expireSpan, ref context, ref objectContext, true);
 
-                        // Delete the old key
-                        DELETE(oldKeyArray, StoreType.Object, ref context, ref objectContext);
+                        if (ttlStatus == GarnetStatus.OK && !expireSpan.IsSpanByte)
+                        {
+                            using var expireMemoryHandle = expireSpan.Memory.Memory.Pin();
+                            var expirePtrVal = (byte*)expireMemoryHandle.Pointer;
+                            RespReadUtils.TryRead64Int(out var expireTimeMs, ref expirePtrVal, expirePtrVal + expireSpan.Length, out var _);
+                            expireSpan.Memory.Dispose();
 
-                        returnStatus = GarnetStatus.OK;
+                            if (expireTimeMs > 0)
+                            {
+                                SET(newKeyArray, valObj, ref objectContext);
+                                EXPIRE(newKeySlice, TimeSpan.FromMilliseconds(expireTimeMs), out _, StoreType.Object, ExpireOption.None, ref context, ref objectContext, true);
+                            }
+                            else if (expireTimeMs == -1) // Its possible to have expire as 0 or -2, in those cases we don't SET the new key
+                            {
+                                SET(newKeyArray, valObj, ref objectContext);
+                            }
+
+                            // Delete the old key
+                            DELETE(oldKeyArray, StoreType.Object, ref context, ref objectContext);
+
+                            returnStatus = GarnetStatus.OK;
+                        }
+
                     }
                 }
                 finally
