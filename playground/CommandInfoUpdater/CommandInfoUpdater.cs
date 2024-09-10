@@ -7,6 +7,7 @@ using System.Reflection;
 using System.Runtime.CompilerServices;
 using Garnet.common;
 using Garnet.server;
+using Garnet.server.Resp;
 using Microsoft.Extensions.Logging;
 
 namespace CommandInfoUpdater
@@ -342,6 +343,74 @@ namespace CommandInfoUpdater
             }
 
             commandsInfo = tmpCommandsInfo;
+            return true;
+        }
+
+        /// <summary>
+        /// Query RESP server to get missing commands' docs
+        /// </summary>
+        /// <param name="commandsToQuery">Command to query</param>
+        /// <param name="respServerPort">RESP server port to query</param>
+        /// <param name="respServerHost">RESP server host to query</param>
+        /// <param name="logger">Logger</param>
+        /// <param name="commandsDocs">Queried commands docs</param>
+        /// <returns>True if succeeded</returns>
+        public static unsafe bool TryGetCommandsDocs(string[] commandsToQuery, int respServerPort,
+            IPAddress respServerHost, ILogger logger, out IDictionary<string, RespCommandDocs> commandsDocs)
+        {
+            commandsDocs = default;
+
+            // If there are no commands to query, return
+            if (commandsToQuery.Length == 0) return true;
+
+            // Query the RESP server
+            byte[] response;
+            try
+            {
+                var lightClient = new LightClientRequest(respServerHost.ToString(), respServerPort, 0);
+                response = lightClient.SendCommand($"COMMAND DOCS {string.Join(' ', commandsToQuery)}");
+            }
+            catch (Exception e)
+            {
+                logger.LogError(e, "Encountered an error while querying local RESP server");
+                return false;
+            }
+
+            var tmpCommandsInfo = new Dictionary<string, RespCommandDocs>();
+
+            // Get a map of supported commands to Garnet's RespCommand & ArrayCommand for the parser
+            var supportedCommands = new ReadOnlyDictionary<string, RespCommand>(
+                SupportedCommand.SupportedCommandsMap.ToDictionary(kvp => kvp.Key,
+                    kvp => kvp.Value.RespCommand, StringComparer.OrdinalIgnoreCase));
+
+            // Parse the response
+            fixed (byte* respPtr = response)
+            {
+                var ptr = (byte*)Unsafe.AsPointer(ref respPtr[0]);
+                var end = ptr + response.Length;
+
+                // Read the array length (# of commands info returned)
+                if (!RespReadUtils.ReadUnsignedArrayLength(out var cmdCount, ref ptr, end))
+                {
+                    logger.LogError("Unable to read RESP command info count from server");
+                    return false;
+                }
+
+                // Parse each command's command info
+                for (var cmdIdx = 0; cmdIdx < cmdCount; cmdIdx++)
+                {
+                    if (!RespCommandDocsParser.TryReadFromResp(ref ptr, end, out var command) ||
+                        command == null)
+                    {
+                        logger.LogError("Unable to read RESP command info from server for command {command}", commandsToQuery[cmdIdx]);
+                        return false;
+                    }
+
+                    tmpCommandsInfo.Add(command.Command.ToString(), command);
+                }
+            }
+
+            commandsDocs = tmpCommandsInfo;
             return true;
         }
 
