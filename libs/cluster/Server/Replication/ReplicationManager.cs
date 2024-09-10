@@ -2,6 +2,7 @@
 // Licensed under the MIT license.
 
 using System;
+using System.Diagnostics;
 using System.Runtime.CompilerServices;
 using System.Text;
 using System.Threading;
@@ -22,7 +23,7 @@ namespace Garnet.cluster
 
         readonly CancellationTokenSource ctsRepManager = new();
 
-        readonly NetworkBuffers networkBuffers;
+        private NetworkBuffers networkBuffers;
 
         public NetworkBuffers GetNetworkBuffers => networkBuffers;
 
@@ -93,10 +94,11 @@ namespace Garnet.cluster
         public ReplicationManager(ClusterProvider clusterProvider, ILogger logger = null)
         {
             var opts = clusterProvider.serverOptions;
-
-            this.networkBuffers = new NetworkBuffers(1 << 22, 1 << 22).Allocate(logger: logger);
+            this.logger = logger;
             this.clusterProvider = clusterProvider;
             this.storeWrapper = clusterProvider.storeWrapper;
+
+            AllocatePool();
             aofProcessor = new AofProcessor(storeWrapper, recordToAof: false, logger: logger);
             replicaSyncSessionTaskStore = new ReplicaSyncSessionTaskStore(storeWrapper, clusterProvider, logger);
 
@@ -110,8 +112,6 @@ namespace Garnet.cluster
             // If this node starts as replica, it cannot serve requests until it is connected to primary
             if (clusterProvider.clusterManager.CurrentConfig.LocalNodeRole == NodeRole.REPLICA && !StartRecovery())
                 throw new Exception(Encoding.ASCII.GetString(CmdStrings.RESP_ERR_GENERIC_CANNOT_ACQUIRE_RECOVERY_LOCK));
-
-            this.logger = logger;
 
             checkpointStore = new CheckpointStore(storeWrapper, clusterProvider, true, logger);
             aofTaskStore = new(clusterProvider, 1, logger);
@@ -134,6 +134,12 @@ namespace Garnet.cluster
 
             // After initializing replication history propagate replicationId to ReplicationLogCheckpointManager
             SetPrimaryReplicationId();
+        }
+
+        private void AllocatePool()
+        {
+            Debug.Assert(this.networkBuffers.IsAllocated == false);
+            this.networkBuffers = new NetworkBuffers(1 << 22, 1 << 12).Allocate(logger: logger);
         }
 
         void CheckpointVersionShift(bool isMainStore, long oldVersion, long newVersion)
@@ -178,18 +184,12 @@ namespace Garnet.cluster
             pool.Free();
 
             checkpointStore.WaitForReplicas();
-            DisposeReplicaSyncSessionTasks();
-            DisposeConnections();
             replicaSyncSessionTaskStore.Dispose();
+            ctsRepManager.Cancel();
             ctsRepManager.Dispose();
+            aofTaskStore.Dispose();
             aofProcessor?.Dispose();
             networkBuffers.Dispose();
-        }
-
-        public void DisposeConnections()
-        {
-            ctsRepManager.Cancel();
-            aofTaskStore.Dispose();
         }
 
         /// <summary>
