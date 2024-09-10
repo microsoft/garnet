@@ -19,7 +19,12 @@ namespace Garnet.cluster
         /// <summary>
         /// Used to initialize buffers for client connected to target node for active migrate sessions
         /// </summary>
-        public NetworkBuffers networkBuffers;
+        private NetworkBuffers networkBuffers;
+
+        /// <summary>
+        /// Get NetworkBuffers object
+        /// </summary>
+        public NetworkBuffers GetNetworkBuffers => networkBuffers;
 
         public MigrationManager(ClusterProvider clusterProvider, ILogger logger = null)
         {
@@ -41,7 +46,7 @@ namespace Garnet.cluster
         /// <summary>
         /// Allocate shared network buffer pool
         /// </summary>
-        internal void AllocatePool()
+        private void AllocatePool()
         {
             var bufferSize = 1 << clusterProvider.serverOptions.PageSizeBits();
             this.networkBuffers = new NetworkBuffers(bufferSize, 1 << 12).Allocate(logger: logger);

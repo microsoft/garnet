@@ -72,7 +72,7 @@ namespace Garnet.cluster
         /// <summary>
         /// Get network buffer pools 
         /// </summary>
-        public NetworkBuffers GetNetworkBuffers => clusterProvider.migrationManager.networkBuffers;
+        public NetworkBuffers GetNetworkBuffers => clusterProvider.migrationManager.GetNetworkBuffers;
 
         readonly GarnetClientSession _gcs;
 
