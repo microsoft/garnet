@@ -390,14 +390,14 @@ namespace CommandInfoUpdater
                 var end = ptr + response.Length;
 
                 // Read the array length (# of commands info returned)
-                if (!RespReadUtils.ReadUnsignedArrayLength(out var cmdCount, ref ptr, end))
+                if (!RespReadUtils.ReadUnsignedArrayLength(out var elemCount, ref ptr, end))
                 {
                     logger.LogError("Unable to read RESP command info count from server");
                     return false;
                 }
 
                 // Parse each command's command info
-                for (var cmdIdx = 0; cmdIdx < cmdCount; cmdIdx++)
+                for (var cmdIdx = 0; cmdIdx < elemCount / 2; cmdIdx++)
                 {
                     if (!RespCommandDocsParser.TryReadFromResp(ref ptr, end, out var command) ||
                         command == null)

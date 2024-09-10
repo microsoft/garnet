@@ -171,20 +171,19 @@ namespace Garnet.server.Resp
                 {
                     if (argType == RespCommandArgumentType.None)
                         return false;
-                    if (argType == RespCommandArgumentType.OneOf || argType == RespCommandArgumentType.Block)
+                    if (!RespReadUtils.ReadStringWithLengthHeader(out strVal, ref ptr, end)) return false;
+                }
+                else if (string.Equals(argKey, "arguments", StringComparison.Ordinal))
+                {
+                    if (argType != RespCommandArgumentType.OneOf && argType != RespCommandArgumentType.Block)
+                        return false;
+                    if (!RespReadUtils.ReadUnsignedArrayLength(out var nestedArgsCount, ref ptr, end)) return false;
+                    nestedArgsVal = new RespCommandArgumentBase[nestedArgsCount];
+                    for (var i = 0; i < nestedArgsCount; i++)
                     {
-                        if (!RespReadUtils.ReadUnsignedArrayLength(out var nestedArgsCount, ref ptr, end)) return false;
-                        nestedArgsVal = new RespCommandArgumentBase[nestedArgsCount];
-                        for (var i = 0; i < nestedArgsCount; i++)
-                        {
-                            if (!TryReadFromResp(ref ptr, end, out var nestedArg))
-                                return false;
-                            nestedArgsVal[i] = nestedArg;
-                        }
-                    }
-                    else
-                    {
-                        if (!RespReadUtils.ReadStringWithLengthHeader(out strVal, ref ptr, end)) return false;
+                        if (!TryReadFromResp(ref ptr, end, out var nestedArg))
+                            return false;
+                        nestedArgsVal[i] = nestedArg;
                     }
                 }
                 else if (string.Equals(argKey, "since", StringComparison.Ordinal)

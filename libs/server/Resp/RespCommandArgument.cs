@@ -3,6 +3,8 @@
 
 using System;
 using System.ComponentModel;
+using System.Text.Json.Serialization;
+using System.Text.Json;
 
 namespace Garnet.server.Resp
 {
@@ -108,6 +110,169 @@ namespace Garnet.server.Resp
             string summary, RespCommandArgumentFlags flags, RespCommandArgumentBase[] value) : base(name, displayText,
             type, token, summary, flags, value)
         {
+        }
+    }
+
+    /// <summary>
+    /// JSON converter for objects implementing RespCommandArgumentBase
+    /// </summary>
+    public class RespCommandArgumentConverter : JsonConverter<RespCommandArgumentBase>
+    {
+        /// <inheritdoc />
+        public override bool CanConvert(Type typeToConvert) => typeof(RespCommandArgumentBase).IsAssignableFrom(typeToConvert);
+
+        /// <inheritdoc />
+        public override RespCommandArgumentBase Read(ref Utf8JsonReader reader, Type typeToConvert, JsonSerializerOptions options)
+        {
+            if (!typeof(RespCommandArgumentBase).IsAssignableFrom(typeToConvert)) return null;
+
+            if (reader.TokenType != JsonTokenType.StartObject)
+            {
+                throw new JsonException();
+            }
+
+            reader.Read();
+            if (reader.TokenType != JsonTokenType.PropertyName)
+            {
+                throw new JsonException();
+            }
+
+            var propertyName = reader.GetString();
+            if (propertyName != "TypeDiscriminator")
+            {
+                throw new JsonException();
+            }
+
+            reader.Read();
+            if (reader.TokenType != JsonTokenType.String)
+            {
+                throw new JsonException();
+            }
+
+            var typeDiscriminator = reader.GetString();
+
+            string name = null;
+            string displayText = null;
+            var type = RespCommandArgumentType.None;
+            string token = null;
+            string summary = null;
+            var flags = RespCommandArgumentFlags.None;
+            var keySpecIdx = -1;
+            string strVal = null;
+            RespCommandArgumentBase[] nestedArgs = null;
+
+            while (reader.Read())
+            {
+                if (reader.TokenType == JsonTokenType.EndObject)
+                {
+                    return typeDiscriminator switch
+                    {
+                        nameof(RespCommandKeyArgument) => new RespCommandKeyArgument(name, displayText, token, summary, flags, strVal, keySpecIdx),
+                        nameof(RespCommandContainerArgument) => new RespCommandContainerArgument(name, displayText, type, token, summary, flags, nestedArgs),
+                        nameof(RespCommandArgument) => new RespCommandArgument(name, displayText, type, token, summary, flags, strVal),
+                        _ => throw new JsonException()
+                    };
+                }
+
+                if (reader.TokenType == JsonTokenType.PropertyName)
+                {
+                    propertyName = reader.GetString();
+                    reader.Read();
+
+                    switch (propertyName)
+                    {
+                        case nameof(RespCommandArgumentBase.Name):
+                            name = reader.GetString();
+                            break;
+                        case nameof(RespCommandArgumentBase.DisplayText):
+                            displayText = reader.GetString();
+                            break;
+                        case nameof(RespCommandArgumentBase.Token):
+                            token = reader.GetString();
+                            break;
+                        case nameof(RespCommandArgumentBase.Summary):
+                            summary = reader.GetString();
+                            break;
+                        case nameof(RespCommandArgumentBase.ArgumentFlags):
+                            flags = Enum.Parse<RespCommandArgumentFlags>(reader.GetString(), true);
+                            break;
+                        default:
+                            switch (typeDiscriminator)
+                            {
+                                case (nameof(RespCommandKeyArgument)):
+                                    switch (propertyName)
+                                    {
+                                        case nameof(RespCommandKeyArgument.KeySpecIndex):
+                                            keySpecIdx = reader.GetInt32();
+                                            break;
+                                        case nameof(RespCommandKeyArgument.Value):
+                                            strVal = reader.GetString();
+                                            break;
+                                    }
+                                    break;
+                                case (nameof(RespCommandArgument)):
+                                    switch (propertyName)
+                                    {
+                                        case nameof(RespCommandArgument.Value):
+                                            strVal = reader.GetString();
+                                            break;
+                                    }
+                                    break;
+                                case (nameof(RespCommandContainerArgument)):
+                                    switch (propertyName)
+                                    {
+                                        case nameof(RespCommandContainerArgument.Value):
+                                            break;
+                                    }
+                                    break;
+                            }
+                            break;
+                    }
+                }
+            }
+
+            throw new JsonException();
+        }
+
+        /// <inheritdoc />
+        public override void Write(Utf8JsonWriter writer, RespCommandArgumentBase keySpecMethod, JsonSerializerOptions options)
+        {
+            writer.WriteStartObject();
+
+            switch (keySpecMethod)
+            {
+                case BeginSearchIndex beginSearchIndex:
+                    writer.WriteString("TypeDiscriminator", nameof(BeginSearchIndex));
+                    writer.WriteNumber(nameof(BeginSearchIndex.Index), beginSearchIndex.Index);
+                    break;
+                case BeginSearchKeyword beginSearchKeyword:
+                    writer.WriteString("TypeDiscriminator", nameof(BeginSearchKeyword));
+                    writer.WriteString(nameof(beginSearchKeyword.Keyword), beginSearchKeyword.Keyword);
+                    writer.WriteNumber(nameof(beginSearchKeyword.StartFrom), beginSearchKeyword.StartFrom);
+                    break;
+                case BeginSearchUnknown beginSearchUnknown:
+                    writer.WriteString("TypeDiscriminator", nameof(BeginSearchUnknown));
+                    break;
+                case FindKeysRange findKeysRange:
+                    writer.WriteString("TypeDiscriminator", nameof(FindKeysRange));
+                    writer.WriteNumber(nameof(FindKeysRange.LastKey), findKeysRange.LastKey);
+                    writer.WriteNumber(nameof(FindKeysRange.KeyStep), findKeysRange.KeyStep);
+                    writer.WriteNumber(nameof(FindKeysRange.Limit), findKeysRange.Limit);
+                    break;
+                case FindKeysKeyNum findKeysKeyNum:
+                    writer.WriteString("TypeDiscriminator", nameof(FindKeysKeyNum));
+                    writer.WriteNumber(nameof(FindKeysKeyNum.KeyNumIdx), findKeysKeyNum.KeyNumIdx);
+                    writer.WriteNumber(nameof(FindKeysKeyNum.FirstKey), findKeysKeyNum.FirstKey);
+                    writer.WriteNumber(nameof(FindKeysKeyNum.KeyStep), findKeysKeyNum.KeyStep);
+                    break;
+                case FindKeysUnknown findKeysUnknown:
+                    writer.WriteString("TypeDiscriminator", nameof(FindKeysUnknown));
+                    break;
+                default:
+                    throw new JsonException();
+            }
+
+            writer.WriteEndObject();
         }
     }
 
