@@ -670,9 +670,13 @@ namespace Garnet.server
                             }
                             else if (expireTimeMs == -1) // Its possible to have expireTimeMs as 0 (Key expired or will be expired now) or -2 (Key does not exist), in those cases we don't SET the new key
                             {
-                                SpanByte newKey = newKeySlice.SpanByte;
-                                var value = SpanByte.FromPinnedPointer(ptrVal, headerLength);
-                                SET_Conditional(ref newKey, ref value, ref context);
+                                var setValue = scratchBufferManager.FormatScratch(RespInputHeader.Size, new ArgSlice(ptrVal, headerLength));
+                                var setValuePtr = setValue.SpanByte.ToPointerWithMetadata();
+                                ((RespInputHeader*)setValuePtr)->cmd = RespCommand.SETEXNX;
+                                ((RespInputHeader*)setValuePtr)->flags = 0;
+                                var newKey = newKeySlice.SpanByte;
+                                var setValueSpan = setValue.SpanByte; // TODO: need to add length in the start and create a new span
+                                SET_Conditional(ref newKey, ref setValueSpan, ref context);
                             }
 
                             expireSpan.Memory.Dispose();
