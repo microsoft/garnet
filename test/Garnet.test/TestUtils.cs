@@ -112,9 +112,9 @@ namespace Garnet.test
             commandsInfo = default;
 
             var streamProvider = StreamProviderFactory.GetStreamProvider(FileLocationType.EmbeddedResource, null, Assembly.GetExecutingAssembly());
-            var commandsInfoProvider = RespCommandsInfoProviderFactory.GetRespCommandsInfoProvider();
+            var commandsInfoProvider = RespCommandsDataProviderFactory.GetRespCommandsDataProvider<RespCommandsInfo>();
 
-            var importSucceeded = commandsInfoProvider.TryImportRespCommandsInfo(resourcePath,
+            var importSucceeded = commandsInfoProvider.TryImportRespCommandsData(resourcePath,
                 streamProvider, out var tmpCommandsInfo, logger);
 
             if (!importSucceeded) return false;

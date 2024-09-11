@@ -216,9 +216,10 @@ namespace Garnet.server
                 }
 
                 var streamProvider = StreamProviderFactory.GetStreamProvider(FileLocationType.Local);
-                var commandsInfoProvider = RespCommandsInfoProviderFactory.GetRespCommandsInfoProvider();
+                var commandsInfoProvider =
+                    RespCommandsDataProviderFactory.GetRespCommandsDataProvider<RespCommandsInfo>();
 
-                var importSucceeded = commandsInfoProvider.TryImportRespCommandsInfo(cmdInfoPath,
+                var importSucceeded = commandsInfoProvider.TryImportRespCommandsData(cmdInfoPath,
                     streamProvider, out cmdNameToInfo, logger);
 
                 if (!importSucceeded)

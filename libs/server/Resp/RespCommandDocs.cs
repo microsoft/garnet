@@ -3,18 +3,20 @@
 
 using System;
 using System.ComponentModel;
+using System.Text.Json.Serialization;
 
 namespace Garnet.server.Resp
 {
     /// <summary>
     /// Represents a RESP command's docs
     /// </summary>
-    public class RespCommandDocs
+    public class RespCommandDocs : IRespCommandData<RespCommandDocs>
     {
-        /// <summary>
-        /// Garnet's RespCommand enum command representation
-        /// </summary>
+        /// <inheritdoc />
         public RespCommand Command { get; init; }
+
+        /// <inheritdoc />
+        public string Name { get; init; }
 
         /// <summary>
         /// Short command description
@@ -44,10 +46,19 @@ namespace Garnet.server.Resp
         /// <summary>
         /// The command's arguments
         /// </summary>
+        public RespCommandDocs[] SubCommands { get; init; }
+
+        /// <summary>
+        /// The command's arguments
+        /// </summary>
         public RespCommandArgumentBase[] Arguments { get; init; }
 
+        /// <inheritdoc />
+        [JsonIgnore]
+        public string RespCommandName => Command.ToString();
+
         public RespCommandDocs(RespCommand command, string summary, RespCommandGroup group, string complexity,
-            RespCommandDocFlags docFlags, RespCommand? replacedBy, RespCommandArgumentBase[] args)
+            RespCommandDocFlags docFlags, RespCommand? replacedBy, RespCommandArgumentBase[] args, RespCommandDocs[] subCommands)
         {
             Command = command;
             Summary = summary;
@@ -56,6 +67,7 @@ namespace Garnet.server.Resp
             DocFlags = docFlags;
             ReplacedBy = replacedBy;
             Arguments = args;
+            SubCommands = subCommands;
         }
     }
 

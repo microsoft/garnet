@@ -23,6 +23,7 @@ namespace Garnet.server.Resp
             string complexity = null;
             var docFlags = RespCommandDocFlags.None;
             RespCommand? replacedBy = null;
+            RespCommandDocs[] subCommands = null;
             RespCommandArgumentBase[] arguments = null;
 
             if (!RespReadUtils.ReadStringWithLengthHeader(out var cmdName, ref ptr, end) ||
@@ -77,6 +78,17 @@ namespace Garnet.server.Resp
                         arguments[i] = arg;
                     }
                 }
+                else if (string.Equals(argKey, "subcommands", StringComparison.Ordinal))
+                {
+                    if (!RespReadUtils.ReadUnsignedArrayLength(out var subCmdCount, ref ptr, end)) return false;
+                    subCommands = new RespCommandDocs[subCmdCount];
+                    for (var i = 0; i < subCmdCount; i++)
+                    {
+                        if (!TryReadFromResp(ref ptr, end, out var subCommand))
+                            return false;
+                        subCommands[i] = subCommand;
+                    }
+                }
                 else if (string.Equals(argKey, "since", StringComparison.Ordinal) 
                     || string.Equals(argKey, "deprecated_since", StringComparison.Ordinal))
                 {
@@ -94,7 +106,7 @@ namespace Garnet.server.Resp
                 }
             }
 
-            cmdDocs = new RespCommandDocs(cmd, summary, group, complexity, docFlags, replacedBy, arguments);
+            cmdDocs = new RespCommandDocs(cmd, summary, group, complexity, docFlags, replacedBy, arguments, subCommands);
 
             return true;
         }
@@ -177,6 +189,7 @@ namespace Garnet.server.Resp
                 {
                     if (argType != RespCommandArgumentType.OneOf && argType != RespCommandArgumentType.Block)
                         return false;
+
                     if (!RespReadUtils.ReadUnsignedArrayLength(out var nestedArgsCount, ref ptr, end)) return false;
                     nestedArgsVal = new RespCommandArgumentBase[nestedArgsCount];
                     for (var i = 0; i < nestedArgsCount; i++)

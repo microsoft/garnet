@@ -57,9 +57,6 @@ class Program
             return;
         }
 
-        CommandInfoUpdater.CommandInfoUpdater.TryGetCommandsDocs(new[] { "SET" }, config.RespServerPort, localRedisHost,
-            logger, out var docs);
-
         CommandInfoUpdater.CommandInfoUpdater.TryUpdateCommandInfo(config.OutputPath, config.RespServerPort,
             localRedisHost, config.IgnoreCommands, config.Force, logger);
     }
