@@ -54,6 +54,8 @@ namespace Garnet.cluster
             return true;
         }
 
+        public string GetBufferPoolStats() => networkBuffers.GetStats();
+
         /// <summary>
         /// Get number of active migrate sessions
         /// </summary>

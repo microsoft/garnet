@@ -145,6 +145,8 @@ namespace Garnet.cluster
             return true;
         }
 
+        public string GetBufferPoolStats() => networkBuffers.GetStats();
+
         void CheckpointVersionShift(bool isMainStore, long oldVersion, long newVersion)
         {
             if (clusterProvider.clusterManager.CurrentConfig.LocalNodeRole == NodeRole.REPLICA)

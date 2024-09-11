@@ -168,6 +168,10 @@ namespace Garnet.common
 
             return "";
         }
+
+        public static string MegaBytes(long size) => (((size - 1) >> 20) + 1).ToString();
+
+        public static string KiloBytes(long size) =>(((size - 1) >> 10) + 1).ToString();
     }
 #pragma warning restore format
 }

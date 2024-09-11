@@ -44,6 +44,12 @@ namespace Garnet.server
         MetricsItem[] GetReplicationInfo();
 
         /// <summary>
+        /// Get buffer poolt stats
+        /// </summary>
+        /// <returns></returns>
+        MetricsItem[] GetBufferPoolStats();
+
+        /// <summary>
         /// Is replica
         /// </summary>
         /// <returns></returns>

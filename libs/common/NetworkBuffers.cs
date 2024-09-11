@@ -61,10 +61,10 @@ namespace Garnet.common
             var minSize = Math.Min(sendMinAllocationSize, recvMinAllocationSize);
             var maxSize = Math.Max(sendMinAllocationSize, recvMinAllocationSize);
 
-            var levels = (maxSize / minSize) + 1;
-            Debug.Assert(levels > 0);
+            var levels = LimitedFixedBufferPool.GetLevel(recvMinAllocationSize, sendMinAllocationSize) + 1;
+            Debug.Assert(levels >= 0);
             levels = Math.Max(4, levels);
-            bufferPool = new LimitedFixedBufferPool(sendMinAllocationSize, maxEntriesPerLevel: maxEntriesPerLevel, numLevels: levels, logger: logger);
+            bufferPool = new LimitedFixedBufferPool(recvMinAllocationSize, maxEntriesPerLevel: maxEntriesPerLevel, numLevels: levels, logger: logger);
             return this;
         }
 
@@ -75,6 +75,15 @@ namespace Garnet.common
         public void Purge()
         {
             bufferPool?.Purge();
+        }
+
+        /// <summary>
+        /// Get buffer pool statistics
+        /// </summary>
+        /// <returns></returns>
+        public string GetStats()
+        {
+            return bufferPool.GetStats();
         }
 
         /// <summary>

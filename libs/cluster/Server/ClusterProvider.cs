@@ -272,6 +272,14 @@ namespace Garnet.cluster
                 ];
         }
 
+        public MetricsItem[] GetBufferPoolStats()
+        {
+            return [
+                new("migration_manager", migrationManager.GetBufferPoolStats()),
+                new("replication_manager", replicationManager.GetBufferPoolStats())
+                ];
+        }
+
         internal ReplicationLogCheckpointManager GetReplicationLogCheckpointManager(StoreType storeType)
         {
             Debug.Assert(serverOptions.EnableCluster);

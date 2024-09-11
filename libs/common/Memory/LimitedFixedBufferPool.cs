@@ -147,18 +147,40 @@ namespace Garnet.common
         }
 
         /// <summary>
-        /// Print pool contents
+        /// Get statistics for this buffer pool
         /// </summary>
-        public void Print()
+        /// <returns></returns>
+        public string GetStats()
         {
-            for (int i = 0; i < numLevels; i++)
+            var stats = $"totalAllocations = {totalAllocations}, " +
+                $"numLevels = {numLevels}, " +
+                $"maxEntriesPerLevel = {maxEntriesPerLevel}";
+
+            var bufferStats = "";
+            var totalBufferCount = 0;
+            for (var i = 0; i < numLevels; i++)
             {
                 if (pool[i] == null) continue;
-                foreach (var item in pool[i].items)
+
+                var count = pool[i].items.Count;
+
+                if (count == 0) continue;
+
+                totalBufferCount += count;
+                bufferStats += $"<{count},{Format.KiloBytes(minAllocationSize * (i + 1))}KB>";
+
+                // Keep trying Dequeuing until no items left to free
+                while (pool[i].items.TryDequeue(out var entry))
                 {
-                    Console.WriteLine("  " + item.entry.Length.ToString());
+                    entry = null;
+                    Interlocked.Decrement(ref pool[i].size);
                 }
             }
+
+            if (totalBufferCount > 0)
+                stats += $", totalBufferCount:{totalBufferCount}[" + bufferStats + "]";
+
+            return stats;
         }
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
@@ -166,15 +188,16 @@ namespace Garnet.common
         {
             if (v < minAllocationSize || !BitOperations.IsPow2(v))
                 return -1;
+            return GetLevel(minAllocationSize, v);
+        }
 
-            v /= minAllocationSize;
+        public static int GetLevel(int minAllocationSize, int requestedSize)
+        {
+            Debug.Assert(BitOperations.IsPow2(minAllocationSize));
+            Debug.Assert(BitOperations.IsPow2(requestedSize));
+            requestedSize /= minAllocationSize;
 
-            if (v == 1) return 0;
-
-            int level = BitOperations.Log2((uint)v - 1) + 1;
-            if (level >= numLevels)
-                return -1;
-            return level;
+            return requestedSize == 1 ? 0 : BitOperations.Log2((uint)requestedSize - 1) + 1;
         }
     }
 }
