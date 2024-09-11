@@ -1,0 +1,196 @@
+[
+  {
+    "Command": "CLUSTER",
+    "Name": "CLUSTER",
+    "SubCommands": [
+      {
+        "Command": "CLUSTER",
+        "Name": "CLUSTER|AOFSYNC",
+        "SubCommands": null
+      },
+      {
+        "Command": "CLUSTER",
+        "Name": "CLUSTER|APPENDLOG",
+        "SubCommands": null
+      },
+      {
+        "Command": "CLUSTER",
+        "Name": "CLUSTER|BANLIST",
+        "SubCommands": null
+      },
+      {
+        "Command": "CLUSTER",
+        "Name": "CLUSTER|BEGIN_REPLICA_RECOVER",
+        "SubCommands": null
+      },
+      {
+        "Command": "CLUSTER",
+        "Name": "CLUSTER|DELKEYSINSLOT",
+        "SubCommands": null
+      },
+      {
+        "Command": "CLUSTER",
+        "Name": "CLUSTER|DELKEYSINSLOTRANGE",
+        "SubCommands": null
+      },
+      {
+        "Command": "CLUSTER",
+        "Name": "CLUSTER|ENDPOINT",
+        "SubCommands": null
+      },
+      {
+        "Command": "CLUSTER",
+        "Name": "CLUSTER|FAILSTOPWRITES",
+        "SubCommands": null
+      },
+      {
+        "Command": "CLUSTER",
+        "Name": "CLUSTER|FAILREPLICATIONOFFSET",
+        "SubCommands": null
+      },
+      {
+        "Command": "CLUSTER",
+        "Name": "CLUSTER|GOSSIP",
+        "SubCommands": null
+      },
+      {
+        "Command": "CLUSTER",
+        "Name": "CLUSTER|HELP",
+        "SubCommands": null
+      },
+      {
+        "Command": "CLUSTER",
+        "Name": "CLUSTER|INITIATE_REPLICA_SYNC",
+        "SubCommands": null
+      },
+      {
+        "Command": "CLUSTER",
+        "Name": "CLUSTER|MIGRATE",
+        "SubCommands": null
+      },
+      {
+        "Command": "CLUSTER",
+        "Name": "CLUSTER|MTASKS",
+        "SubCommands": null
+      },
+      {
+        "Command": "CLUSTER",
+        "Name": "CLUSTER|MYPARENTID",
+        "SubCommands": null
+      },
+      {
+        "Command": "CLUSTER",
+        "Name": "CLUSTER|SEND_CKPT_FILE_SEGMENT",
+        "SubCommands": null
+      },
+      {
+        "Command": "CLUSTER",
+        "Name": "CLUSTER|SEND_CKPT_METADATA",
+        "SubCommands": null
+      },
+      {
+        "Command": "CLUSTER",
+        "Name": "CLUSTER|SETSLOTSRANGE",
+        "SubCommands": null
+      },
+      {
+        "Command": "CLUSTER",
+        "Name": "CLUSTER|SLOTSTATE",
+        "SubCommands": null
+      }
+    ]
+  },
+  {
+    "Command": "COMMITAOF",
+    "Name": "COMMITAOF",
+    "SubCommands": null
+  },
+  {
+    "Command": "COSCAN",
+    "Name": "COSCAN",
+    "SubCommands": null
+  },
+  {
+    "Command": "CustomRawStringCmd",
+    "Name": "CustomRawStringCmd",
+    "SubCommands": null
+  },
+  {
+    "Command": "CustomObjCmd",
+    "Name": "CustomObjCmd",
+    "SubCommands": null
+  },
+  {
+    "Command": "CustomTxn",
+    "Name": "CustomTxn",
+    "SubCommands": null
+  },
+  {
+    "Command": "CustomProcedure",
+    "Name": "CustomProcedure",
+    "SubCommands": null
+  },
+  {
+    "Command": "FORCEGC",
+    "Name": "FORCEGC",
+    "SubCommands": null
+  },
+  {
+    "Command": "LATENCY",
+    "Name": "LATENCY",
+    "SubCommands": [
+      {
+        "Command": "LATENCY",
+        "Name": "LATENCY|HELP",
+        "SubCommands": null
+      }
+    ]
+  },
+  {
+    "Command": "SECONDARYOF",
+    "Name": "SECONDARYOF",
+    "SubCommands": null
+  },
+  {
+    "Command": "REGISTERCS",
+    "Name": "REGISTERCS",
+    "SubCommands": null
+  },
+  {
+    "Command": "RUNTXP",
+    "Name": "RUNTXP",
+    "SubCommands": null
+  },
+  {
+    "Command": "WATCH",
+    "Name": "WATCH",
+    "SubCommands": [
+      {
+        "Command": "WATCH",
+        "Name": "WATCH|MS",
+        "SubCommands": null
+      },
+      {
+        "Command": "WATCH",
+        "Name": "WATCH|OS",
+        "SubCommands": null
+      }
+    ]
+  },
+  {
+    "Command": "ASYNC",
+    "Name": "ASYNC",
+    "SubCommands": null
+  },
+  {
+    "Command": "MODULE",
+    "Name": "MODULE",
+    "SubCommands": [
+      {
+        "Command": "MODULE",
+        "Name": "MODULE|LOADCS",
+        "SubCommands": null
+      }
+    ]
+  }
+]

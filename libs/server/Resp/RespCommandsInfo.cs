@@ -107,10 +107,6 @@ namespace Garnet.server
         [JsonIgnore]
         public RespCommand? SubCommand { get; set; }
 
-        /// <inheritdoc />
-        [JsonIgnore]
-        public string RespCommandName => Name;
-
         private const string RespCommandsEmbeddedFileName = @"RespCommandsInfo.json";
 
         private string respFormat;

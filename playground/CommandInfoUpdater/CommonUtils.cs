@@ -8,7 +8,7 @@ using Microsoft.Extensions.Logging;
 
 namespace CommandInfoUpdater
 {
-    public class DataUtils
+    public class CommonUtils
     {
         /// <summary>
         /// Try to parse JSON file containing commands data
@@ -148,6 +148,61 @@ namespace CommandInfoUpdater
             }
 
             return (commandsToAdd, commandsToRemove);
+        }
+
+        /// <summary>
+        /// Indicates to the user which commands and sub-commands are added / removed and get their confirmation to proceed
+        /// </summary>
+        /// <param name="commandsToAdd">Commands to add</param>
+        /// <param name="commandsToRemove">Commands to remove</param>
+        /// <param name="logger">Logger</param>
+        /// <returns>True if user wishes to continue, false otherwise</returns>
+        internal static bool GetUserConfirmation(IDictionary<SupportedCommand, bool> commandsToAdd, IDictionary<SupportedCommand, bool> commandsToRemove,
+            ILogger logger)
+        {
+            var logCommandsToAdd = commandsToAdd.Where(kvp => kvp.Value).Select(c => c.Key.Command).ToList();
+            var logSubCommandsToAdd = commandsToAdd.Where(c => c.Key.SubCommands != null)
+                .SelectMany(c => c.Key.SubCommands!).ToList();
+            var logCommandsToRemove = commandsToRemove.Where(kvp => kvp.Value).Select(c => c.Key.Command).ToList();
+            var logSubCommandsToRemove = commandsToRemove.Where(c => c.Key.SubCommands != null)
+                .SelectMany(c => c.Key.SubCommands!).ToList();
+
+            logger.LogInformation("Found {logCommandsToAddCount} commands to add and {logSubCommandsToAddCount} sub-commands to add.", logCommandsToAdd.Count, logSubCommandsToAdd.Count);
+            if (logCommandsToAdd.Count > 0)
+                logger.LogInformation("Commands to add: {commands}", string.Join(", ", logCommandsToAdd));
+            if (logSubCommandsToAdd.Count > 0)
+                logger.LogInformation("Sub-Commands to add: {commands}", string.Join(", ", logSubCommandsToAdd));
+            logger.LogInformation("Found {logCommandsToRemoveCount} commands to remove and {logSubCommandsToRemoveCount} sub-commands to commandsToRemove.", logCommandsToRemove.Count, logSubCommandsToRemove.Count);
+            if (logCommandsToRemove.Count > 0)
+                logger.LogInformation("Commands to remove: {commands}", string.Join(", ", logCommandsToRemove));
+            if (logSubCommandsToRemove.Count > 0)
+                logger.LogInformation("Sub-Commands to remove: {commands}", string.Join(", ", logSubCommandsToRemove));
+
+            if (logCommandsToAdd.Count == 0 && logSubCommandsToAdd.Count == 0 && logCommandsToRemove.Count == 0 &&
+                logSubCommandsToRemove.Count == 0)
+            {
+                logger.LogInformation("No commands to update.");
+                return false;
+            }
+
+            logger.LogCritical("Would you like to continue? (Y/N)");
+            var inputChar = Console.ReadKey();
+            while (true)
+            {
+                switch (inputChar.KeyChar)
+                {
+                    case 'Y':
+                    case 'y':
+                        return true;
+                    case 'N':
+                    case 'n':
+                        return false;
+                    default:
+                        logger.LogCritical("Illegal input. Would you like to continue? (Y/N)");
+                        inputChar = Console.ReadKey();
+                        break;
+                }
+            }
         }
     }
 }

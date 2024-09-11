@@ -2,9 +2,13 @@
 // Licensed under the MIT license.
 
 using System.Net;
+using System.Text.Json;
+using System.Text.Json.Serialization;
 using CommandInfoUpdater;
 using CommandLine;
 using CommandLine.Text;
+using Garnet.server.Resp;
+using Garnet.server;
 using Microsoft.Extensions.Logging;
 
 /// <summary>
@@ -57,7 +61,28 @@ class Program
             return;
         }
 
-        CommandInfoUpdater.CommandInfoUpdater.TryUpdateCommandInfo(config.OutputPath, config.RespServerPort,
+        var options = new JsonSerializerOptions()
+        {
+            DefaultIgnoreCondition = JsonIgnoreCondition.WhenWritingDefault,
+            WriteIndented = true,
+            Converters =
+            {
+                new JsonStringEnumConverter(), new KeySpecConverter(), new RespCommandArgumentConverter()
+            }
+        };
+        var docs = new RespCommandDocs(RespCommand.COMMAND, "COMMAND", null, RespCommandGroup.None, null,
+            RespCommandDocFlags.None, null, null,
+            new[]
+            {
+                new RespCommandDocs(RespCommand.COMMAND, "COMMAND|COUNT", null, RespCommandGroup.None, null,
+                    RespCommandDocFlags.None, null, null, null)
+            });
+        var s = JsonSerializer.Serialize(docs, options);
+
+        CommandDocsUpdater.TryUpdateCommandDocs(config.OutputDir, config.RespServerPort,
+            localRedisHost, config.IgnoreCommands, config.Force, logger);
+
+        CommandInfoUpdater.CommandInfoUpdater.TryUpdateCommandInfo(config.OutputDir, config.RespServerPort,
             localRedisHost, config.IgnoreCommands, config.Force, logger);
     }
 

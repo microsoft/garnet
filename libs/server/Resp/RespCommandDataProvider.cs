@@ -102,6 +102,7 @@ namespace Garnet.server
         private static readonly JsonSerializerOptions SerializerOptions = new()
         {
             WriteIndented = true,
+            DefaultIgnoreCondition = JsonIgnoreCondition.WhenWritingDefault,
             Converters = { new JsonStringEnumConverter(), new KeySpecConverter(), new RespCommandArgumentConverter() }
         };
 

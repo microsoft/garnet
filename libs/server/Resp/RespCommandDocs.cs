@@ -3,7 +3,6 @@
 
 using System;
 using System.ComponentModel;
-using System.Text.Json.Serialization;
 
 namespace Garnet.server.Resp
 {
@@ -41,7 +40,7 @@ namespace Garnet.server.Resp
         /// <summary>
         /// The alternative for a deprecated command
         /// </summary>
-        public RespCommand? ReplacedBy { get; init; }
+        public string ReplacedBy { get; init; }
 
         /// <summary>
         /// The command's arguments
@@ -53,14 +52,11 @@ namespace Garnet.server.Resp
         /// </summary>
         public RespCommandArgumentBase[] Arguments { get; init; }
 
-        /// <inheritdoc />
-        [JsonIgnore]
-        public string RespCommandName => Command.ToString();
-
-        public RespCommandDocs(RespCommand command, string summary, RespCommandGroup group, string complexity,
-            RespCommandDocFlags docFlags, RespCommand? replacedBy, RespCommandArgumentBase[] args, RespCommandDocs[] subCommands)
+        public RespCommandDocs(RespCommand command, string name, string summary, RespCommandGroup group, string complexity,
+            RespCommandDocFlags docFlags, string replacedBy, RespCommandArgumentBase[] args, RespCommandDocs[] subCommands) : this()
         {
             Command = command;
+            Name = name;
             Summary = summary;
             Group = group;
             Complexity = complexity;
@@ -68,6 +64,11 @@ namespace Garnet.server.Resp
             ReplacedBy = replacedBy;
             Arguments = args;
             SubCommands = subCommands;
+        }
+
+        public RespCommandDocs()
+        {
+            
         }
     }
 

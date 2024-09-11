@@ -44,7 +44,7 @@ namespace Garnet.server.Resp
         /// </summary>
         public RespCommandArgumentFlags ArgumentFlags { get; init; }
 
-        protected RespCommandArgumentBase(string name, string displayText, RespCommandArgumentType type, string token, string summary, RespCommandArgumentFlags flags)
+        protected RespCommandArgumentBase(string name, string displayText, RespCommandArgumentType type, string token, string summary, RespCommandArgumentFlags flags) : this()
         {
             Name = name;
             DisplayText = displayText;
@@ -52,6 +52,11 @@ namespace Garnet.server.Resp
             Token = token;
             Summary = summary;
             ArgumentFlags = flags;
+        }
+
+        protected RespCommandArgumentBase()
+        {
+            
         }
     }
 
@@ -69,6 +74,11 @@ namespace Garnet.server.Resp
         public RespCommandKeyArgument(string name, string displayText, string token,
             string summary, RespCommandArgumentFlags flags, string value, int keySpecIndex) : base(name, displayText,
             RespCommandArgumentType.Key, token, summary, flags, value) => KeySpecIndex = keySpecIndex;
+
+        public RespCommandKeyArgument()
+        {
+            
+        }
     }
 
     /// <summary>
@@ -84,6 +94,11 @@ namespace Garnet.server.Resp
         public RespCommandArgument(string name, string displayText, RespCommandArgumentType type, string token,
             string summary, RespCommandArgumentFlags flags, string value) : base(name, displayText, type, token,
             summary, flags) => this.Value = value;
+
+        public RespCommandArgument()
+        {
+            
+        }
     }
 
     /// <summary>
@@ -101,6 +116,11 @@ namespace Garnet.server.Resp
             displayText, type, token, summary, flags)
         {
             this.Arguments = arguments;
+        }
+
+        public RespCommandContainerArgument()
+        {
+            
         }
     }
 

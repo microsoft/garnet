@@ -13,8 +13,8 @@ namespace CommandInfoUpdater
         [Option('h', "host", Required = false, Default = "127.0.0.1", HelpText = "RESP server host to query")]
         public string RespServerHost { get; set; }
 
-        [Option('o', "output", Required = true, HelpText = "Output path for updated JSON file")]
-        public string OutputPath { get; set; }
+        [Option('o', "output", Required = false, HelpText = "Output directory for updated JSON files")]
+        public string OutputDir { get; set; }
 
         [Option('f', "force", Required = false, Default = false, HelpText = "Force overwrite existing commands info")]
         public bool Force { get; set; }

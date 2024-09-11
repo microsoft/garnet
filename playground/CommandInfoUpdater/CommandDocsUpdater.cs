@@ -1,31 +1,37 @@
 ﻿// Copyright (c) Microsoft Corporation.
 // Licensed under the MIT license.
 
+using System.Collections.ObjectModel;
 using System.Net;
+using System.Net.Sockets;
 using System.Runtime.CompilerServices;
+using System.Text;
+using Azure;
 using Garnet.common;
 using Garnet.server;
 using Garnet.server.Resp;
 using Microsoft.Extensions.Logging;
+using StackExchange.Redis;
 
 namespace CommandInfoUpdater
 {
     public class CommandDocsUpdater
     {
+        private static readonly string CommandDocsFileName = "RespCommandsDocs.json";
         private static readonly string GarnetCommandDocsJsonPath = "GarnetCommandsDocs.json";
 
         /// <summary>
         /// Tries to generate an updated JSON file containing Garnet's supported commands' docs
         /// </summary>
-        /// <param name="outputPath">Output path for the updated JSON file</param>
+        /// <param name="outputDir">Output directory for the updated JSON file</param>
         /// <param name="respServerPort">RESP server port to query commands docs</param>
         /// <param name="respServerHost">RESP server host to query commands docs</param>
-        /// <param name="commandsToRemove"></param>
+        /// <param name="ignoreCommands">Commands to ignore</param>
         /// <param name="force">Force update all commands</param>
         /// <param name="logger">Logger</param>
-        /// <param name="commandsToAdd"></param>
         /// <returns>True if file generated successfully</returns>
-        public static bool TryUpdateCommandDocs(string outputPath, int respServerPort, IPAddress respServerHost, IDictionary<SupportedCommand, bool> commandsToAdd, IDictionary<SupportedCommand, bool> commandsToRemove, bool force, ILogger logger)
+        public static bool TryUpdateCommandDocs(string outputDir, int respServerPort, IPAddress respServerHost,
+            IEnumerable<string> ignoreCommands, bool force, ILogger logger)
         {
             logger.LogInformation("Attempting to update RESP commands docs...");
 
@@ -37,10 +43,21 @@ namespace CommandInfoUpdater
                 return false;
             }
 
-            if (!DataUtils.TryGetRespCommandsData<RespCommandDocs>(GarnetCommandDocsJsonPath, logger, out var garnetCommandsDocs) ||
+            var (commandsToAdd, commandsToRemove) =
+                CommonUtils.GetCommandsToAddAndRemove(existingCommandsDocs, ignoreCommands);
+
+            if (!CommonUtils.GetUserConfirmation(commandsToAdd, commandsToRemove, logger))
+            {
+                logger.LogInformation("User cancelled update operation.");
+                return false;
+            }
+
+            if (!CommonUtils.TryGetRespCommandsData<RespCommandDocs>(GarnetCommandDocsJsonPath, logger,
+                    out var garnetCommandsDocs) ||
                 garnetCommandsDocs == null)
             {
-                logger.LogError("Unable to read Garnet RESP commands docs from {GarnetCommandInfoJsonPath}.", GarnetCommandDocsJsonPath);
+                logger.LogError("Unable to read Garnet RESP commands docs from {GarnetCommandInfoJsonPath}.",
+                    GarnetCommandDocsJsonPath);
                 return false;
             }
 
@@ -58,26 +75,31 @@ namespace CommandInfoUpdater
             {
                 if (!additionalCommandsDocs.ContainsKey(cmd))
                 {
-                    var baseCommandDocs = queriedCommandsDocs.TryGetValue(cmd, out var doc) ? doc : garnetCommandsDocs[cmd];
+                    var baseCommandDocs = queriedCommandsDocs.TryGetValue(cmd, out var doc)
+                        ? doc
+                        : garnetCommandsDocs[cmd];
                     additionalCommandsDocs.Add(cmd, new RespCommandDocs(
-                        baseCommandDocs.Command, baseCommandDocs.Summary, baseCommandDocs.Group, baseCommandDocs.Complexity,
+                        baseCommandDocs.Command, baseCommandDocs.Name, baseCommandDocs.Summary, baseCommandDocs.Group,
+                        baseCommandDocs.Complexity,
                         baseCommandDocs.DocFlags, baseCommandDocs.ReplacedBy, baseCommandDocs.Arguments,
-                        queriedCommandsDocs.ContainsKey(cmd) && garnetCommandsDocs.ContainsKey(cmd) ?
-                            queriedCommandsDocs[cmd].SubCommands.Union(garnetCommandsDocs[cmd].SubCommands).ToArray() :
-                            baseCommandDocs.SubCommands));
+                        queriedCommandsDocs.ContainsKey(cmd) && garnetCommandsDocs.ContainsKey(cmd)
+                            ? queriedCommandsDocs[cmd].SubCommands == null ? garnetCommandsDocs[cmd].SubCommands : queriedCommandsDocs[cmd].SubCommands.Union(garnetCommandsDocs[cmd].SubCommands).ToArray()
+                            : baseCommandDocs.SubCommands));
                 }
             }
 
             var updatedCommandsDocs = GetUpdatedCommandsDocs(existingCommandsDocs, commandsToAdd, commandsToRemove,
                 additionalCommandsDocs);
 
-            if (!DataUtils.TryWriteRespCommandsData(outputPath, updatedCommandsDocs, logger))
+            var outputPath = Path.Combine(outputDir ?? string.Empty, CommandDocsFileName);
+            if (!CommonUtils.TryWriteRespCommandsData(outputPath, updatedCommandsDocs, logger))
             {
                 logger.LogError("Unable to write RESP commands docs to path {outputPath}.", outputPath);
                 return false;
             }
 
-            logger.LogInformation("RESP commands docs updated successfully! Output file written to: {fullOutputPath}", Path.GetFullPath(outputPath));
+            logger.LogInformation("RESP commands docs updated successfully! Output file written to: {fullOutputPath}",
+                Path.GetFullPath(outputPath));
             return true;
         }
 
@@ -98,54 +120,37 @@ namespace CommandInfoUpdater
             // If there are no commands to query, return
             if (commandsToQuery.Length == 0) return true;
 
-            // Query the RESP server
-            byte[] response;
-            try
-            {
-                var lightClient = new LightClientRequest(respServerHost.ToString(), respServerPort, 0);
-                response = lightClient.SendCommand($"COMMAND DOCS {string.Join(' ', commandsToQuery)}");
-            }
-            catch (Exception e)
-            {
-                logger.LogError(e, "Encountered an error while querying local RESP server");
-                return false;
-            }
-
             var tmpCommandsDocs = new Dictionary<string, RespCommandDocs>();
 
-            // Parse the response
-            fixed (byte* respPtr = response)
-            {
-                var ptr = (byte*)Unsafe.AsPointer(ref respPtr[0]);
-                var end = ptr + response.Length;
+            // Get a map of supported commands to Garnet's RespCommand & ArrayCommand for the parser
+            var supportedCommands = new ReadOnlyDictionary<string, RespCommand>(
+                SupportedCommand.SupportedCommandsMap.ToDictionary(kvp => kvp.Key,
+                    kvp => kvp.Value.RespCommand, StringComparer.OrdinalIgnoreCase));
 
-                // Read the array length (# of commands docs returned)
-                if (!RespReadUtils.ReadUnsignedArrayLength(out var cmdCount, ref ptr, end))
+            var configOptions = new ConfigurationOptions()
+            {
+                EndPoints = new EndPointCollection(new List<EndPoint>
                 {
-                    logger.LogError("Unable to read RESP command docs count from server");
+                    new IPEndPoint(respServerHost, respServerPort)
+                })
+            };
+
+            using var redis = ConnectionMultiplexer.Connect(configOptions);
+            var db = redis.GetDatabase(0);
+
+            var cmdArgs = new List<object> { "DOCS" }.Union(commandsToQuery).ToArray();
+            var result = db.Execute("COMMAND", cmdArgs);
+            var elemCount = result.Length;
+            for (var i = 0; i < elemCount; i+=2)
+            {
+                if (!RespCommandDocsParser.TryReadFromResp(result, i, supportedCommands, out var cmdDocs, out var cmdName) || cmdDocs == null)
+                {
+                    logger.LogError("Unable to read RESP command docs from server for command {command}",
+                        cmdName);
                     return false;
                 }
 
-                // Parse each command's command docs
-                for (var cmdIdx = 0; cmdIdx < cmdCount; cmdIdx++)
-                {
-                    var currPtr = ptr;
-                    if (!RespReadUtils.ReadStringWithLengthHeader(out var cmdName, ref currPtr, end) ||
-                        !Enum.TryParse(cmdName, true, out RespCommand _))
-                    {
-                        logger.LogError("Unable to parse RESP command type for command {command}", cmdName);
-                        return false;
-                    }
-
-                    if (!RespCommandDocsParser.TryReadFromResp(ref ptr, end, out var cmdDocs) ||
-                        cmdDocs == null)
-                    {
-                        logger.LogError("Unable to read RESP command docs from server for command {command}", cmdName);
-                        return false;
-                    }
-
-                    tmpCommandsDocs.Add(cmdDocs.RespCommandName, cmdDocs);
-                }
+                tmpCommandsDocs.Add(cmdName, cmdDocs);
             }
 
             commandDocs = tmpCommandsDocs;
@@ -181,7 +186,7 @@ namespace CommandInfoUpdater
                 // Determine updated sub-commands by subtracting from existing sub-commands
                 var existingSubCommands = existingCommandsDocs[command.Command].SubCommands == null
                     ? null
-                    : existingCommandsDocs[command.Command].SubCommands.Select(sc => sc.RespCommandName).ToArray();
+                    : existingCommandsDocs[command.Command].SubCommands.Select(sc => sc.Name).ToArray();
                 var remainingSubCommands = existingSubCommands == null ? null :
                     command.SubCommands == null ? existingSubCommands :
                     existingSubCommands.Except(command.SubCommands).ToArray();
@@ -190,6 +195,7 @@ namespace CommandInfoUpdater
                 var existingCommandDoc = existingCommandsDocs[command.Command];
                 var updatedCommandDoc = new RespCommandDocs(
                     existingCommandDoc.Command,
+                    existingCommandDoc.Name,
                     existingCommandDoc.Summary,
                     existingCommandDoc.Group,
                     existingCommandDoc.Complexity,
@@ -198,9 +204,9 @@ namespace CommandInfoUpdater
                     existingCommandDoc.Arguments,
                     remainingSubCommands == null || remainingSubCommands.Length == 0
                         ? null
-                        : existingCommandDoc.SubCommands.Where(sc => remainingSubCommands.Contains(sc.RespCommandName)).ToArray());
+                        : existingCommandDoc.SubCommands.Where(sc => remainingSubCommands.Contains(sc.Name)).ToArray());
 
-                updatedCommandsDocs.Add(updatedCommandDoc.RespCommandName, updatedCommandDoc);
+                updatedCommandsDocs.Add(updatedCommandDoc.Name, updatedCommandDoc);
             }
 
             // Update commands docs with commands to add
@@ -219,7 +225,7 @@ namespace CommandInfoUpdater
                     foreach (var subCommandToAdd in command.SubCommands!)
                     {
                         updatedSubCommandsDocs.Add(queriedCommandsDocs[command.Command].SubCommands
-                            .First(sc => sc.RespCommandName == subCommandToAdd));
+                            .First(sc => sc.Name == subCommandToAdd));
                     }
 
                     // Set base command as existing sub-command
@@ -234,12 +240,13 @@ namespace CommandInfoUpdater
                     // Update sub-commands to contain supported sub-commands only
                     updatedSubCommandsDocs = command.SubCommands == null
                         ? null
-                        : baseCommandDocs.SubCommands.Where(sc => command.SubCommands.Contains(sc.RespCommandName)).ToList();
+                        : baseCommandDocs.SubCommands.Where(sc => command.SubCommands.Contains(sc.Name)).ToList();
                 }
 
                 // Create updated command docs based on base command & updated sub-commands
                 var updatedCommandDocs = new RespCommandDocs(
                     baseCommandDocs.Command,
+                    baseCommandDocs.Name,
                     baseCommandDocs.Summary,
                     baseCommandDocs.Group,
                     baseCommandDocs.Complexity,
@@ -248,7 +255,7 @@ namespace CommandInfoUpdater
                     baseCommandDocs.Arguments,
                     updatedSubCommandsDocs?.ToArray());
 
-                updatedCommandsDocs.Add(updatedCommandDocs.RespCommandName, updatedCommandDocs);
+                updatedCommandsDocs.Add(updatedCommandDocs.Name, updatedCommandDocs);
             }
 
             return updatedCommandsDocs;
