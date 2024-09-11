@@ -7,7 +7,6 @@ using System.Collections.Concurrent;
 using System.Collections.Generic;
 using System.Diagnostics;
 using System.IO;
-using System.Linq;
 using System.Runtime.CompilerServices;
 using System.Threading;
 using System.Threading.Tasks;
@@ -433,6 +432,17 @@ namespace Tsavorite.core
         /// <returns></returns>
         public int UnsafeGetLogPageSizeBits()
             => allocator.LogPageSizeBits;
+
+        /// <summary>
+        /// Get page number for given address
+        /// </summary>
+        /// <param name="logicalAddress"></param>
+        /// <returns></returns>
+        public long GetPage(long logicalAddress)
+            => allocator.GetPage(logicalAddress);
+
+        public void UnsafeSkipPage()
+            => allocator.SkipPage();
 
         /// <summary>
         /// Get read only lag address
@@ -1806,8 +1816,7 @@ namespace Tsavorite.core
         /// <param name="untilAddress"></param>
         /// <param name="snapToPageStart"></param>
         /// <param name="truncateLog"></param>
-        /// <param name="noFlush"></param>
-        public void UnsafeShiftBeginAddress(long untilAddress, bool snapToPageStart = false, bool truncateLog = false, bool noFlush = false)
+        public void UnsafeShiftBeginAddress(long untilAddress, bool snapToPageStart = false, bool truncateLog = false)
         {
             if (Utility.MonotonicUpdate(ref beginAddress, untilAddress, out _))
             {
@@ -1819,7 +1828,7 @@ namespace Tsavorite.core
                 {
                     if (!epochProtected)
                         epoch.Resume();
-                    allocator.ShiftBeginAddress(untilAddress, truncateLog, noFlush);
+                    allocator.ShiftBeginAddress(untilAddress, truncateLog, noFlush: true);
                 }
                 finally
                 {
