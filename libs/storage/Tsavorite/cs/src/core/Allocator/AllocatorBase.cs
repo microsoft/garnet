@@ -66,7 +66,7 @@ namespace Tsavorite.core
         /// <summary>How many pages do we leave empty in the in-memory buffer (between 0 and BufferSize-1)</summary>
         private int emptyPageCount;
 
-        /// <summary>HeadOFfset lag address</summary>
+        /// <summary>HeadOffset lag address</summary>
         internal long HeadOffsetLagAddress;
 
         /// <summary>
@@ -861,8 +861,17 @@ namespace Tsavorite.core
         {
             // Issue the shift of address
             var shiftAddress = pageIndex << LogPageSizeBits;
-            PageAlignedShiftReadOnlyAddress(shiftAddress);
-            PageAlignedShiftHeadAddress(shiftAddress);
+            var tailAddress = GetTailAddress();
+
+            long desiredReadOnlyAddress = shiftAddress - ReadOnlyLagAddress;
+            if (desiredReadOnlyAddress > tailAddress)
+                desiredReadOnlyAddress = tailAddress;
+            ShiftReadOnlyAddress(desiredReadOnlyAddress);
+
+            long desiredHeadAddress = shiftAddress - HeadOffsetLagAddress;
+            if (desiredHeadAddress > tailAddress)
+                desiredHeadAddress = tailAddress;
+            ShiftHeadAddress(desiredHeadAddress);
         }
 
         [MethodImpl(MethodImplOptions.NoInlining)]
