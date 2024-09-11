@@ -259,7 +259,6 @@ namespace Garnet.server
                         SendAndReset();
                 }
 
-                Debug.Assert(numActiveChannels == 0);
                 if (numActiveChannels == 0)
                     isSubscriptionSession = false;
 

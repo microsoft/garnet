@@ -49,7 +49,7 @@ namespace Garnet
         protected StoreWrapper storeWrapper;
 
         // IMPORTANT: Keep the version in sync with .azure\pipelines\azure-pipelines-external-release.yml line ~6.
-        readonly string version = "1.0.19";
+        readonly string version = "1.0.21";
 
         /// <summary>
         /// Resp protocol version
