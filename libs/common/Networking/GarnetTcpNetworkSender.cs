@@ -49,7 +49,7 @@ namespace Garnet.common
         readonly string remoteEndpoint;
         readonly string localEndpoint;
 
-        readonly LimitedFixedBufferPool networkPool;
+        readonly NetworkBuffers networkBuffers;
 
         /// <summary>
         /// NOTE: This variable should not be marked as readonly as it is a mutable struct
@@ -59,18 +59,18 @@ namespace Garnet.common
         private int closeRequested;
 
         /// <summary>
-        /// 
+        /// GarnetTcpNetworkSender Constructor
         /// </summary>
         /// <param name="socket"></param>
-        /// <param name="networkPool"></param>
+        /// <param name="networkBuffers"></param>
         /// <param name="throttleMax"></param>
         public GarnetTcpNetworkSender(
             Socket socket,
-            LimitedFixedBufferPool networkPool,
+            NetworkBuffers networkBuffers,
             int throttleMax = 8)
-            : base(networkPool.MinAllocationSize)
+            : base(networkBuffers.sendMinAllocationSize)
         {
-            this.networkPool = networkPool;
+            this.networkBuffers = networkBuffers;
             this.socket = socket;
             this.saeaStack = new(2 * ThrottleMax);
             this.responseObject = null;
@@ -108,7 +108,7 @@ namespace Garnet.common
             {
                 if (disposed)
                     ThrowDisposed();
-                responseObject = new GarnetSaeaBuffer(SeaaBuffer_Completed, networkPool);
+                responseObject = new GarnetSaeaBuffer(SeaaBuffer_Completed, networkBuffers);
             }
             head = responseObject.buffer.entryPtr;
             tail = responseObject.buffer.entryPtr + responseObject.buffer.entry.Length;
@@ -142,7 +142,7 @@ namespace Garnet.common
                 {
                     if (disposed)
                         ThrowDisposed();
-                    responseObject = new GarnetSaeaBuffer(SeaaBuffer_Completed, networkPool);
+                    responseObject = new GarnetSaeaBuffer(SeaaBuffer_Completed, networkBuffers);
                 }
             }
         }

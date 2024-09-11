@@ -22,10 +22,10 @@ namespace Garnet.client
         /// </summary>
         /// <param name="socket"></param>
         /// <param name="callback"></param>
-        /// <param name="networkPool"></param>
+        /// <param name="networkBuffers"></param>
         /// <param name="networkSendThrottleMax"></param>
-        public ClientTcpNetworkSender(Socket socket, Action<object> callback, LimitedFixedBufferPool networkPool, int networkSendThrottleMax)
-            : base(socket, networkPool, networkSendThrottleMax)
+        public ClientTcpNetworkSender(Socket socket, Action<object> callback, NetworkBuffers networkBuffers, int networkSendThrottleMax)
+            : base(socket, networkBuffers, networkSendThrottleMax)
         {
             this.callback = callback;
             this.reusableSaea = new SimpleObjectPool<SocketAsyncEventArgs>(() =>

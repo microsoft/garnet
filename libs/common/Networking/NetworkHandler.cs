@@ -127,7 +127,7 @@ namespace Garnet.networking
                 transportReceiveBuffer = transportReceiveBufferEntry.entry;
                 transportReceiveBufferPtr = transportReceiveBufferEntry.entryPtr;
 
-                transportSendBufferEntry = this.networkBuffers.bufferPool.Get(this.networkBuffers.bufferPool.MinAllocationSize);
+                transportSendBufferEntry = this.networkBuffers.bufferPool.Get(this.networkBuffers.sendMinAllocationSize);
                 transportSendBuffer = transportSendBufferEntry.entry;
                 transportSendBufferPtr = transportSendBufferEntry.entryPtr;
             }
