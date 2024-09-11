@@ -58,15 +58,23 @@ namespace Garnet.common
         public NetworkBuffers Allocate(int maxEntriesPerLevel = 16, ILogger logger = null)
         {
             Debug.Assert(bufferPool == null);
-
             var minSize = Math.Min(sendMinAllocationSize, recvMinAllocationSize);
             var maxSize = Math.Max(sendMinAllocationSize, recvMinAllocationSize);
 
-            var levels = maxSize / minSize;
+            var levels = (maxSize / minSize) + 1;
             Debug.Assert(levels > 0);
             levels = Math.Max(4, levels);
             bufferPool = new LimitedFixedBufferPool(sendMinAllocationSize, maxEntriesPerLevel: maxEntriesPerLevel, numLevels: levels, logger: logger);
             return this;
+        }
+
+        /// <summary>
+        /// Purge buffer pool
+        /// </summary>
+        /// <returns></returns>
+        public void Purge()
+        {
+            bufferPool?.Purge();
         }
 
         /// <summary>

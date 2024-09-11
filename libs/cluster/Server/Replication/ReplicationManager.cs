@@ -2,7 +2,6 @@
 // Licensed under the MIT license.
 
 using System;
-using System.Diagnostics;
 using System.Runtime.CompilerServices;
 using System.Text;
 using System.Threading;
@@ -98,7 +97,7 @@ namespace Garnet.cluster
             this.clusterProvider = clusterProvider;
             this.storeWrapper = clusterProvider.storeWrapper;
 
-            AllocatePool();
+            this.networkBuffers = new NetworkBuffers(1 << 22, 1 << 12).Allocate(logger: logger);
             aofProcessor = new AofProcessor(storeWrapper, recordToAof: false, logger: logger);
             replicaSyncSessionTaskStore = new ReplicaSyncSessionTaskStore(storeWrapper, clusterProvider, logger);
 
@@ -136,10 +135,14 @@ namespace Garnet.cluster
             SetPrimaryReplicationId();
         }
 
-        private void AllocatePool()
+        /// <summary>
+        /// Used to free up buffer pool
+        /// </summary>
+        public bool Purge()
         {
-            Debug.Assert(this.networkBuffers.IsAllocated == false);
-            this.networkBuffers = new NetworkBuffers(1 << 22, 1 << 12).Allocate(logger: logger);
+            networkBuffers.Purge();
+            GC.Collect(GC.MaxGeneration);
+            return true;
         }
 
         void CheckpointVersionShift(bool isMainStore, long oldVersion, long newVersion)

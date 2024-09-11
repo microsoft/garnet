@@ -99,6 +99,23 @@ namespace Garnet.common
         }
 
         /// <summary>
+        /// Purge pool entries from all levels
+        /// </summary>
+        public void Purge()
+        {
+            for (var i = 0; i < numLevels; i++)
+            {
+                if (pool[i] == null) continue;
+                // Keep trying Dequeuing until no items left to free
+                while (pool[i].items.TryDequeue(out var entry))
+                {
+                    entry = null;
+                    Interlocked.Decrement(ref pool[i].size);
+                }
+            }
+        }
+
+        /// <summary>
         /// Free buffer
         /// </summary>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
@@ -122,9 +139,7 @@ namespace Garnet.common
                 while (pool[i].size > 0)
                 {
                     while (pool[i].items.TryDequeue(out var result))
-                    {
                         Interlocked.Decrement(ref pool[i].size);
-                    }
                     Thread.Yield();
                 }
                 pool[i] = null;

@@ -31,7 +31,8 @@ namespace Garnet.cluster
             this.logger = logger;
             this.migrationTaskStore = new MigrateSessionTaskStore(logger);
             this.clusterProvider = clusterProvider;
-            AllocatePool();
+            var bufferSize = 1 << clusterProvider.serverOptions.PageSizeBits();
+            this.networkBuffers = new NetworkBuffers(bufferSize, 1 << 12).Allocate(logger: logger);
         }
 
         /// <summary>
@@ -44,22 +45,13 @@ namespace Garnet.cluster
         }
 
         /// <summary>
-        /// Allocate shared network buffer pool
-        /// </summary>
-        private void AllocatePool()
-        {
-            var bufferSize = 1 << clusterProvider.serverOptions.PageSizeBits();
-            this.networkBuffers = new NetworkBuffers(bufferSize, 1 << 12).Allocate(logger: logger);
-        }
-
-        /// <summary>
         /// Used to free up buffer pool
         /// </summary>
-        public void Purge()
+        public bool Purge()
         {
-            networkBuffers.Dispose();
+            networkBuffers.Purge();
             GC.Collect(GC.MaxGeneration);
-            AllocatePool();
+            return true;
         }
 
         /// <summary>

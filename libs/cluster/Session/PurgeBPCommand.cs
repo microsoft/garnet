@@ -52,25 +52,32 @@ namespace Garnet.cluster
 
             try
             {
-                switch (managerType)
+                var success = managerType switch
                 {
-                    case ManagerType.MM:
-                        clusterProvider.migrationManager.Purge();
-                        break;
-                    case ManagerType.RM:
-                        throw new NotImplementedException();
+                    ManagerType.MM => clusterProvider.migrationManager.Purge(),
+                    ManagerType.RM => clusterProvider.replicationManager.Purge(),
+                    _ => throw new GarnetException($"{managerType} not supported!")
+                };
+
+                if (success)
+                {
+                    while (!RespWriteUtils.WriteDirect(CmdStrings.RESP_OK, ref dcurr, dend))
+                        SendAndReset();
+                }
+                else
+                {
+                    while (!RespWriteUtils.WriteError($"ERR Could not purge {managerType.ToString()}({managerType}) buffer pool because it is in use.", ref dcurr, dend))
+                        SendAndReset();
                 }
             }
             catch (Exception ex)
             {
-                logger?.LogError(ex, "PURGEBP {managerType}", managerType.ToString());
+                logger?.LogError(ex, "PURGEBP {type}:{managerType}", managerType, managerType.ToString());
                 while (!RespWriteUtils.WriteError($"ERR {ex.Message}", ref dcurr, dend))
                     SendAndReset();
                 return true;
             }
 
-            while (!RespWriteUtils.WriteDirect(CmdStrings.RESP_OK, ref dcurr, dend))
-                SendAndReset();
             return true;
         }
     }
