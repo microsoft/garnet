@@ -197,7 +197,7 @@ namespace Garnet.server
         BGSAVE,
         COMMITAOF,
         FORCEGC,
-        MIGRATEGC,
+        PURGEBP,
         FAILOVER,
 
         // Custom commands
@@ -433,7 +433,6 @@ namespace Garnet.server
             {
                 // TODO: validate if these cases need to be excluded
                 RespCommand.MIGRATE => false,
-                RespCommand.MIGRATEGC => false,
                 RespCommand.DBSIZE => false,
                 RespCommand.MEMORY_USAGE => false,
                 RespCommand.FLUSHDB => false,
@@ -1807,9 +1806,9 @@ namespace Garnet.server
             {
                 return RespCommand.MIGRATE;
             }
-            else if (command.SequenceEqual(CmdStrings.MIGRATEGC))
+            else if (command.SequenceEqual(CmdStrings.PURGEBP))
             {
-                return RespCommand.MIGRATEGC;
+                return RespCommand.PURGEBP;
             }
             else if (command.SequenceEqual(CmdStrings.FAILOVER))
             {

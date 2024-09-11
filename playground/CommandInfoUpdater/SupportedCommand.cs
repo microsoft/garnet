@@ -170,7 +170,7 @@ namespace CommandInfoUpdater
             ]),
             new("MGET", RespCommand.MGET),
             new("MIGRATE", RespCommand.MIGRATE),
-            new("MIGRATEGC", RespCommand.MIGRATEGC),
+            new("BUFFERPOOL", RespCommand.PURGEBP),
             new("MODULE", RespCommand.MODULE,
             [
                  "MODULE|LOADCS",

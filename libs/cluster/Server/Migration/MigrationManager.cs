@@ -55,7 +55,7 @@ namespace Garnet.cluster
         /// <summary>
         /// Used to free up buffer pool
         /// </summary>
-        public void Collect()
+        public void Purge()
         {
             networkBuffers.Dispose();
             GC.Collect(GC.MaxGeneration);

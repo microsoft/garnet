@@ -3869,20 +3869,20 @@ namespace Garnet.test.Resp.ACL
         }
 
         [Test]
-        public async Task MigrateGCACLsAsync()
+        public async Task PurgeBPACLsAsync()
         {
             // Uses exceptions for control flow, as we're not setting up replicas here
 
             await CheckCommandsAsync(
-                "MIGRATEGC",
-                [DoMigrateGCAsync]
+                "PURGEBP",
+                [DoPurgeBPAsync]
             );
 
-            static async Task DoMigrateGCAsync(GarnetClient client)
+            static async Task DoPurgeBPAsync(GarnetClient client)
             {
                 try
                 {
-                    string val = await client.ExecuteForStringResultAsync("MIGRATEGC");
+                    await client.ExecuteForStringResultAsync("PURGEBP", ["MM"]);
                     Assert.Fail("Shouldn't be reachable, cluster isn't enabled");
                 }
                 catch (Exception e)
