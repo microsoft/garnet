@@ -5,6 +5,7 @@ using System;
 using System.Text;
 using Garnet.common;
 using Microsoft.Extensions.Logging;
+using NLua;
 using NLua.Exceptions;
 
 namespace Garnet.server
@@ -221,6 +222,30 @@ namespace Garnet.server
                         // Two objects one boolean value and the result from the Lua Call
                         while (!RespWriteUtils.WriteAsciiBulkString((scriptResult as Object[])[1].ToString().AsSpan(), ref dcurr, dend))
                             SendAndReset();
+                    }
+                    else if (scriptResult is LuaTable luaTable)
+                    {
+                        var retVal = luaTable["err"];
+                        if (retVal != null)
+                        {
+                            while (!RespWriteUtils.WriteError((string)retVal, ref dcurr, dend))
+                                SendAndReset();
+                        }
+
+                        retVal = luaTable["ok"];
+                        if (retVal != null)
+                        {
+                            while (!RespWriteUtils.WriteAsciiBulkString((string)retVal, ref dcurr, dend))
+                                SendAndReset();
+                        }
+                        else
+                        {
+                            throw new LuaScriptException("Unknown LuaTable return type", "");
+                        }
+                    }
+                    else
+                    {
+                        throw new LuaScriptException("Unknown return type", "");
                     }
                 }
                 else

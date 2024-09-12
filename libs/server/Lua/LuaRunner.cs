@@ -55,6 +55,12 @@ namespace Garnet.server
                 function redis.call(cmd, ...)
                     return garnet_call(cmd, ...)
                 end
+                function redis.status_reply(text)
+                    return text
+                end
+                function redis.error_reply(text)
+                    return { err = text }
+                end
                 sandbox_env = {
                     tostring = tostring;
                     next = next;
