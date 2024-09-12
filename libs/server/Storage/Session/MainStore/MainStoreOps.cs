@@ -653,6 +653,10 @@ namespace Garnet.server
                 }
             }
 
+            // TODO: (Nirmal)
+            // Integer reply: 1 if key was renamed to newkey.
+            // Integer reply: 0 if newkey already exists.
+
             return returnStatus;
         }
 
@@ -706,16 +710,27 @@ namespace Garnet.server
                             // If the key has an expiration, set the new key with the expiration
                             if (expireTimeMs > 0)
                             {
+                                // Move payload forward to make space for RespInputHeader and Metadata
+                                var setValue = scratchBufferManager.FormatScratch(RespInputHeader.Size + sizeof(long), new ArgSlice(ptrVal, headerLength));
+                                var setValueSpan = setValue.SpanByte;
+                                var setValuePtr = setValueSpan.ToPointerWithMetadata();
+                                setValueSpan.ExtraMetadata = DateTimeOffset.UtcNow.Ticks + TimeSpan.FromMilliseconds(expireTimeMs).Ticks;
+                                ((RespInputHeader*)setValuePtr)->cmd = RespCommand.SETEXNX;
+                                ((RespInputHeader*)setValuePtr)->flags = 0;
+                                var newKey = newKeySlice.SpanByte;
+                                GC.Collect(2, GCCollectionMode.Forced, true, true);
                                 SETEX(newKeySlice, new ArgSlice(ptrVal, headerLength), TimeSpan.FromMilliseconds(expireTimeMs), ref context);
                             }
                             else if (expireTimeMs == -1) // Its possible to have expireTimeMs as 0 (Key expired or will be expired now) or -2 (Key does not exist), in those cases we don't SET the new key
                             {
+                                // Move payload forward to make space for RespInputHeader
                                 var setValue = scratchBufferManager.FormatScratch(RespInputHeader.Size, new ArgSlice(ptrVal, headerLength));
-                                var setValuePtr = setValue.SpanByte.ToPointerWithMetadata();
+                                var setValueSpan = setValue.SpanByte;
+                                var setValuePtr = setValueSpan.ToPointerWithMetadata();
                                 ((RespInputHeader*)setValuePtr)->cmd = RespCommand.SETEXNX;
                                 ((RespInputHeader*)setValuePtr)->flags = 0;
                                 var newKey = newKeySlice.SpanByte;
-                                var setValueSpan = setValue.SpanByte; // TODO: need to add length in the start and create a new span
+                                GC.Collect(2, GCCollectionMode.Forced, true, true); // TODO: (Nirmal) Romove it, added to check if any memory need to be pinned
                                 SET_Conditional(ref newKey, ref setValueSpan, ref context);
                             }
 
