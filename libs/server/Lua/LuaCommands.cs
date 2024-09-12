@@ -231,16 +231,18 @@ namespace Garnet.server
                             while (!RespWriteUtils.WriteError((string)retVal, ref dcurr, dend))
                                 SendAndReset();
                         }
-
-                        retVal = luaTable["ok"];
-                        if (retVal != null)
-                        {
-                            while (!RespWriteUtils.WriteAsciiBulkString((string)retVal, ref dcurr, dend))
-                                SendAndReset();
-                        }
                         else
                         {
-                            throw new LuaScriptException("Unknown LuaTable return type", "");
+                            retVal = luaTable["ok"];
+                            if (retVal != null)
+                            {
+                                while (!RespWriteUtils.WriteAsciiBulkString((string)retVal, ref dcurr, dend))
+                                    SendAndReset();
+                            }
+                            else
+                            {
+                                throw new LuaScriptException("Unknown LuaTable return type", "");
+                            }
                         }
                     }
                     else
