@@ -5,6 +5,7 @@ using System;
 using System.Text;
 using Garnet.common;
 using Microsoft.Extensions.Logging;
+using NLua;
 using NLua.Exceptions;
 
 namespace Garnet.server
@@ -222,6 +223,32 @@ namespace Garnet.server
                         while (!RespWriteUtils.WriteAsciiBulkString((scriptResult as Object[])[1].ToString().AsSpan(), ref dcurr, dend))
                             SendAndReset();
                     }
+                    else if (scriptResult is LuaTable luaTable)
+                    {
+                        var retVal = luaTable["err"];
+                        if (retVal != null)
+                        {
+                            while (!RespWriteUtils.WriteError((string)retVal, ref dcurr, dend))
+                                SendAndReset();
+                        }
+                        else
+                        {
+                            retVal = luaTable["ok"];
+                            if (retVal != null)
+                            {
+                                while (!RespWriteUtils.WriteAsciiBulkString((string)retVal, ref dcurr, dend))
+                                    SendAndReset();
+                            }
+                            else
+                            {
+                                throw new LuaScriptException("Unknown LuaTable return type", "");
+                            }
+                        }
+                    }
+                    else
+                    {
+                        throw new LuaScriptException("Unknown return type", "");
+                    }
                 }
                 else
                 {
@@ -231,8 +258,8 @@ namespace Garnet.server
             }
             catch (LuaScriptException ex)
             {
-                logger?.LogError(ex.InnerException, "Error executing Lua script callback");
-                while (!RespWriteUtils.WriteError("ERR " + ex.InnerException.Message, ref dcurr, dend))
+                logger?.LogError(ex.InnerException ?? ex, "Error executing Lua script callback");
+                while (!RespWriteUtils.WriteError("ERR " + (ex.InnerException ?? ex).Message, ref dcurr, dend))
                     SendAndReset();
                 return true;
             }

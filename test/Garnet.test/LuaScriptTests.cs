@@ -309,5 +309,61 @@ namespace Garnet.test
                 ClassicAssert.IsTrue(strKeyValue == valueKey);
             }
         }
+
+        [Test]
+        public void SuccessfulStatusReturn()
+        {
+            using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
+            var db = redis.GetDatabase(0);
+            var statusReplyScript = "return redis.status_reply('Success')";
+            var result = db.ScriptEvaluate(statusReplyScript);
+            ClassicAssert.AreEqual((RedisValue)result, "Success");
+            var directReplyScript = "return { ok = 'Success' }";
+            result = db.ScriptEvaluate(directReplyScript);
+            ClassicAssert.AreEqual((RedisValue)result, "Success");
+        }
+
+        [Test]
+        public void FailureStatusReturn()
+        {
+            using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
+            var db = redis.GetDatabase(0);
+            var statusReplyScript = "return redis.error_reply('Failure')";
+            try
+            {
+                _ = db.ScriptEvaluate(statusReplyScript);
+            }
+            catch (RedisServerException ex)
+            {
+                ClassicAssert.AreEqual(ex.Message, "Failure");
+            }
+            var directReplyScript = "return { err = 'Failure' }";
+            try
+            {
+                _ = db.ScriptEvaluate(directReplyScript);
+            }
+            catch (RedisServerException ex)
+            {
+                ClassicAssert.AreEqual(ex.Message, "Failure");
+            }
+        }
+
+        [Test]
+        public void ComplexLuaTest()
+        {
+            var script = """
+local setArgs = {}
+for _, key in ipairs(KEYS) do
+    table.insert(setArgs, key)
+end
+
+return redis.status_reply(table.concat(setArgs))
+""";
+
+            using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
+            var db = redis.GetDatabase(0);
+            var response = db.ScriptEvaluate(script, ["key1", "key2"], ["value", 1, 12345]);
+            ClassicAssert.AreEqual("key1key2", (string)response);
+        }
     }
 }

@@ -120,6 +120,18 @@ namespace Garnet.cluster
             => clusterManager?.CurrentConfig.LocalNodeRole == NodeRole.REPLICA || replicationManager?.Recovering == true;
 
         /// <inheritdoc />
+        public bool IsReplica(string nodeId)
+        {
+            var config = clusterManager?.CurrentConfig;
+            if (config is null)
+            {
+                return false;
+            }
+
+            return config.GetNodeRoleFromNodeId(nodeId) == NodeRole.REPLICA;
+        }
+
+        /// <inheritdoc />
         public void ResetGossipStats()
             => clusterManager?.gossipStats.Reset();
 
@@ -166,7 +178,7 @@ namespace Garnet.cluster
             else
             {
                 if (serverOptions.MainMemoryReplication)
-                    storeWrapper.appendOnlyFile?.UnsafeShiftBeginAddress(CheckpointCoveredAofAddress, truncateLog: true, noFlush: true);
+                    storeWrapper.appendOnlyFile?.UnsafeShiftBeginAddress(CheckpointCoveredAofAddress, truncateLog: true);
                 else
                 {
                     storeWrapper.appendOnlyFile?.TruncateUntil(CheckpointCoveredAofAddress);
@@ -281,7 +293,7 @@ namespace Garnet.cluster
         /// <returns></returns>
         internal bool BumpAndWaitForEpochTransition()
         {
-            var server = storeWrapper.GetServer();
+            var server = storeWrapper.GetTcpServer();
             BumpCurrentEpoch();
             while (true)
             {

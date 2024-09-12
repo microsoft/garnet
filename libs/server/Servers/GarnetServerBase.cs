@@ -116,7 +116,7 @@ namespace Garnet.server
         /// <param name="logger"></param>
         public GarnetServerBase(string address, int port, int networkBufferSize, ILogger logger = null)
         {
-            this.logger = logger == null ? null : new SessionLogger(logger, $"[{address ?? StoreWrapper.GetIp()}:{port}] ");
+            this.logger = logger;
             this.address = address;
             this.port = port;
             this.networkBufferSize = networkBufferSize;
@@ -148,6 +148,14 @@ namespace Garnet.server
         public bool AddSession(WireFormat protocol, ref ISessionProvider provider, INetworkSender networkSender, out IMessageConsumer session)
         {
             session = provider.GetSession(protocol, networkSender);
+
+            // RESP sessions need to be able to enumerate other sessions.
+            // So stash a reference back to the GarnetServer if we created a RespServerSessions.
+            if (session is RespServerSession respSession)
+            {
+                respSession.Server = this;
+            }
+
             return true;
         }
 

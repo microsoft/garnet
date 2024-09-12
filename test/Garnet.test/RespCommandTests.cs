@@ -228,7 +228,6 @@ namespace Garnet.test
                 RespCommand.PING,
                 RespCommand.SELECT,
                 RespCommand.ECHO,
-                RespCommand.CLIENT,
                 RespCommand.MONITOR,
                 RespCommand.MODULE_LOADCS,
                 RespCommand.REGISTERCS,
@@ -244,6 +243,11 @@ namespace Garnet.test
                 RespCommand.ACL_SETUSER,
                 RespCommand.ACL_USERS,
                 RespCommand.ACL_WHOAMI,
+                // Client
+                RespCommand.CLIENT_ID,
+                RespCommand.CLIENT_INFO,
+                RespCommand.CLIENT_LIST,
+                RespCommand.CLIENT_KILL,
                 // Command
                 RespCommand.COMMAND,
                 RespCommand.COMMAND_COUNT,
