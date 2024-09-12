@@ -880,7 +880,9 @@ namespace Tsavorite.core
             int pageIndex = localTailPageOffset.Page + 1;
 
             // This thread is trying to allocate at an offset past where one or more previous threads
-            // already overflowed; exit and allow the first overflow thread to proceed.
+            // already overflowed; exit and allow the first overflow thread to proceed. Do not try to remove
+            // the update to TailPageOffset that was done by this thread; that will be overwritten when
+            // the first overflow thread finally completes and updates TailPageOffset.
             if (localTailPageOffset.Offset - numSlots > PageSize)
             {
                 if (NeedToWait(pageIndex))
@@ -951,7 +953,9 @@ namespace Tsavorite.core
                 return -1; // RETRY_NOW
             }
 
-            // Determine insertion index.
+            // Determine insertion index. Note that this forms a kind of "lock"; after the first thread does this, other threads that do
+            // it will see that another thread got there first because the subsequent "back up by numSlots" will still be past PageSize,
+            // so they will exit and RETRY in HandlePageOverflow; the first thread "owns" the overflow operation and must stabilize it.
             localTailPageOffset.PageAndOffset = Interlocked.Add(ref TailPageOffset.PageAndOffset, numSlots);
 
             // Slow path when we reach the end of a page.
@@ -965,7 +969,7 @@ namespace Tsavorite.core
             return (((long)localTailPageOffset.Page) << LogPageSizeBits) | ((long)(localTailPageOffset.Offset - numSlots));
         }
 
-        /// <summary>Try allocate, spin for RETRY_NOW case</summary>
+        /// <summary>Try allocate, spin for RETRY_NOW (logicalAddress < 0) case</summary>
         /// <param name="numSlots">Number of slots to allocate</param>
         /// <returns>The allocated logical address, or 0 in case of inability to allocate</returns>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]

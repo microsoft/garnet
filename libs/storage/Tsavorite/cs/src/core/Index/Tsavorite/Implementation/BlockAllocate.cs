@@ -34,10 +34,14 @@ namespace Tsavorite.core
             return false;
         }
 
+        /// <summary>Options for TryAllocateRecord.</summary>
         internal struct AllocateOptions
         {
+            /// <summary>If true, use the non-revivification recycling of records that failed to CAS and are carried in PendingContext through RETRY.</summary>
             internal bool Recycle;
-            internal bool IgnoreHeiAddress;
+
+            /// <summary>If true, the source record is elidable so we can try to elide from the tag chain (and transfer it to the FreeList if we're doing Revivification).</summary>
+            internal bool ElideSourceRecord;
         };
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
@@ -56,7 +60,7 @@ namespace Tsavorite.core
                 return true;
             if (RevivificationManager.UseFreeRecordPool)
             {
-                if (!options.IgnoreHeiAddress && stackCtx.hei.Address >= minMutableAddress)
+                if (!options.ElideSourceRecord && stackCtx.hei.Address >= minMutableAddress)
                     minRevivAddress = stackCtx.hei.Address;
                 if (sessionFunctions.Ctx.IsInV1)
                 {

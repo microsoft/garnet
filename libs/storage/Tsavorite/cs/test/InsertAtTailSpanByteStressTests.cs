@@ -17,6 +17,13 @@ namespace Tsavorite.test.InsertAtTailStressTests
 {
     using SpanByteStoreFunctions = StoreFunctions<SpanByte, SpanByte, SpanByteComparerModulo, SpanByteRecordDisposer>;
 
+    // Number of mutable pages for this test
+    public enum MutablePages
+    { 
+        Zero,
+        Eight
+    }
+
     class SpanByteInsertAtTailChainTests
     {
         private TsavoriteKV<SpanByte, SpanByte, SpanByteStoreFunctions, SpanByteAllocator<SpanByteStoreFunctions>> store;
@@ -25,6 +32,13 @@ namespace Tsavorite.test.InsertAtTailStressTests
 
         const long ValueAdd = 1_000_000_000;
         const long NumKeys = 2_000;
+
+        long GetMutablePageCount(MutablePages mp) => mp switch
+            {
+                MutablePages.Zero => 0,
+                MutablePages.Eight => 8,
+                _ => 8
+            };
 
         [SetUp]
         public void Setup()
@@ -35,6 +49,7 @@ namespace Tsavorite.test.InsertAtTailStressTests
             log = new NullDevice();
 
             HashModulo modRange = HashModulo.NoMod;
+            long mutablePages = GetMutablePageCount(MutablePages.Eight);
             foreach (var arg in TestContext.CurrentContext.Test.Arguments)
             {
                 if (arg is HashModulo cr)
@@ -42,17 +57,24 @@ namespace Tsavorite.test.InsertAtTailStressTests
                     modRange = cr;
                     continue;
                 }
+                if (arg is MutablePages mp)
+                {
+                    mutablePages = GetMutablePageCount(mp);
+                    continue;
+                }
             }
 
             // Make the main log mutable region small enough that we force the readonly region to stay close to tail, causing inserts.
             int pageBits = 15, memoryBits = 34;
-            store = new(new()
-                {
-                    LogDevice = log,
-                    PageSize = 1L << 15,
-                    MemorySize = 1L << 34,
-                    MutableFraction = 1.0 / (1 << memoryBits - pageBits + 2),
-                }, StoreFunctions<SpanByte, SpanByte>.Create(comparer, SpanByteRecordDisposer.Instance)
+            KVSettings<SpanByte, SpanByte> kvSettings = new()
+            {
+                LogDevice = log,
+                PageSize = 1L << pageBits,
+                MemorySize = 1L << memoryBits,
+                MutableFraction = 8.0 / (1 << (memoryBits - pageBits)),
+            };
+            store = new(kvSettings
+                , StoreFunctions<SpanByte, SpanByte>.Create(comparer, SpanByteRecordDisposer.Instance)
                 , (allocatorSettings, storeFunctions) => new(allocatorSettings, storeFunctions)
             );
 
@@ -135,7 +157,7 @@ namespace Tsavorite.test.InsertAtTailStressTests
         [Category(StressTestCategory)]
         //[Repeat(300)]
         public void SpanByteTailInsertMultiThreadTest([Values] HashModulo modRange, [Values(0, 1, 2, 8)] int numReadThreads, [Values(0, 1, 2, 8)] int numWriteThreads,
-                                                [Values(UpdateOp.Upsert, UpdateOp.RMW)] UpdateOp updateOp)
+                                                [Values(UpdateOp.Upsert, UpdateOp.RMW)] UpdateOp updateOp, [Values] MutablePages mutablePages)
         {
             if (numReadThreads == 0 && numWriteThreads == 0)
                 Assert.Ignore("Skipped due to 0 threads for both read and update");
