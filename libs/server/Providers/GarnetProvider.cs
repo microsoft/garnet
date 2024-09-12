@@ -1,6 +1,7 @@
 // Copyright (c) Microsoft Corporation.
 // Licensed under the MIT license.
 
+using System.Threading;
 using Garnet.common;
 using Garnet.networking;
 using Tsavorite.core;
@@ -18,12 +19,12 @@ namespace Garnet.server
     {
         readonly StoreWrapper storeWrapper;
 
+        long lastSessionId;
+
         /// <summary>
         /// StoreWrapper
         /// </summary>
         internal StoreWrapper StoreWrapper => storeWrapper;
-
-        internal CollectionItemBroker itemBroker;
 
         /// <summary>
         /// Create SpanByte TsavoriteKV backend for Garnet
@@ -33,12 +34,10 @@ namespace Garnet.server
         /// <param name="maxSizeSettings"></param>        
         public GarnetProvider(StoreWrapper storeWrapper,
             SubscribeBroker<SpanByte, SpanByte, IKeySerializer<SpanByte>> broker = null,
-            CollectionItemBroker itemBroker = null,
             MaxSizeSettings maxSizeSettings = default)
             : base(storeWrapper.store, new(), broker, false, maxSizeSettings)
         {
             this.storeWrapper = storeWrapper;
-            this.itemBroker = itemBroker;
         }
 
         /// <summary>
@@ -67,7 +66,7 @@ namespace Garnet.server
         /// <inheritdoc />
         public override IMessageConsumer GetSession(WireFormat wireFormat, INetworkSender networkSender)
             => (wireFormat == WireFormat.ASCII)
-                ? new RespServerSession(networkSender, storeWrapper, broker, itemBroker, null, true)
+                ? new RespServerSession(Interlocked.Increment(ref lastSessionId), networkSender, storeWrapper, broker, null, true)
                 : throw new GarnetException($"Unsupported wireFormat {wireFormat}");
     }
 }

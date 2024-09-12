@@ -483,7 +483,68 @@
     "AclCategories": "Slow",
     "Tips": null,
     "KeySpecifications": null,
-    "SubCommands": null
+    "SubCommands": [
+      {
+        "Command": "CLIENT",
+        "Name": "CLIENT|ID",
+        "IsInternal": false,
+        "Arity": 2,
+        "Flags": "Loading, NoScript, Stale",
+        "FirstKey": 0,
+        "LastKey": 0,
+        "Step": 0,
+        "AclCategories": "Connection, Slow",
+        "Tips": null,
+        "KeySpecifications": null,
+        "SubCommands": null
+      },
+      {
+        "Command": "CLIENT",
+        "Name": "CLIENT|LIST",
+        "IsInternal": false,
+        "Arity": -2,
+        "Flags": "Admin, Loading, NoScript, Stale",
+        "FirstKey": 0,
+        "LastKey": 0,
+        "Step": 0,
+        "AclCategories": "Admin, Connection, Dangerous, Slow",
+        "Tips": [
+          "nondeterministic_output"
+        ],
+        "KeySpecifications": null,
+        "SubCommands": null
+      },
+      {
+        "Command": "CLIENT",
+        "Name": "CLIENT|KILL",
+        "IsInternal": false,
+        "Arity": -3,
+        "Flags": "Admin, Loading, NoScript, Stale",
+        "FirstKey": 0,
+        "LastKey": 0,
+        "Step": 0,
+        "AclCategories": "Admin, Connection, Dangerous, Slow",
+        "Tips": null,
+        "KeySpecifications": null,
+        "SubCommands": null
+      },
+      {
+        "Command": "CLIENT",
+        "Name": "CLIENT|INFO",
+        "IsInternal": false,
+        "Arity": 2,
+        "Flags": "Loading, NoScript, Stale",
+        "FirstKey": 0,
+        "LastKey": 0,
+        "Step": 0,
+        "AclCategories": "Connection, Slow",
+        "Tips": [
+          "nondeterministic_output"
+        ],
+        "KeySpecifications": null,
+        "SubCommands": null
+      }
+    ]
   },
   {
     "Command": "CLUSTER",

@@ -3,10 +3,10 @@
 
 using System;
 using System.Buffers;
+using System.Buffers.Binary;
 using System.Diagnostics;
 using System.Runtime.CompilerServices;
 using System.Runtime.InteropServices;
-using System.Security.Cryptography;
 using System.Text;
 using Garnet.common;
 using Garnet.common.Parsing;
@@ -93,7 +93,6 @@ namespace Garnet.server
         public readonly StorageSession storageSession;
         internal BasicGarnetApi basicGarnetApi;
         internal LockableGarnetApi lockableGarnetApi;
-        internal CollectionItemBroker itemBroker;
 
         readonly IGarnetAuthenticator _authenticator;
 
@@ -108,6 +107,13 @@ namespace Garnet.server
         /// Clients must enable asking to make node respond to requests on slots that are being imported.
         /// </summary>
         public byte SessionAsking { get; set; }
+
+        /// <summary>
+        /// If set, commands can use this to enumerate details about the server or other sessions.
+        /// 
+        /// It is not guaranteed to be set.
+        /// </summary>
+        public IGarnetServer Server { get; set; }
 
         // Track whether the incoming network batch had some admin command
         bool hasAdminCommand;
@@ -160,11 +166,21 @@ namespace Garnet.server
         /// </summary>
         internal readonly SessionScriptCache sessionScriptCache;
 
+        /// <summary>
+        /// Identifier for session - used for CLIENT and related commands.
+        /// </summary>
+        public long Id { get; }
+
+        /// <summary>
+        /// <see cref="Environment.TickCount64"/> when this <see cref="RespServerSession"/> was created.
+        /// </summary>
+        public long CreationTicks { get; }
+
         public RespServerSession(
+            long id,
             INetworkSender networkSender,
             StoreWrapper storeWrapper,
             SubscribeBroker<SpanByte, SpanByte, IKeySerializer<SpanByte>> subscribeBroker,
-            CollectionItemBroker itemBroker,
             IGarnetAuthenticator authenticator,
             bool enableScripts)
             : base(networkSender)
@@ -172,22 +188,24 @@ namespace Garnet.server
             this.customCommandManagerSession = new CustomCommandManagerSession(storeWrapper.customCommandManager);
             this.sessionMetrics = storeWrapper.serverOptions.MetricsSamplingFrequency > 0 ? new GarnetSessionMetrics() : null;
             this.LatencyMetrics = storeWrapper.serverOptions.LatencyMonitor ? new GarnetLatencyMetricsSession(storeWrapper.monitor) : null;
-            logger = storeWrapper.sessionLogger != null ? new SessionLogger(storeWrapper.sessionLogger, $"[{storeWrapper.localEndpoint}] [{networkSender?.RemoteEndpointName}] [{GetHashCode():X8}] ") : null;
+            logger = storeWrapper.sessionLogger != null ? new SessionLogger(storeWrapper.sessionLogger, $"[{networkSender?.RemoteEndpointName}] [{GetHashCode():X8}] ") : null;
 
-            logger?.LogDebug("Starting RespServerSession");
+            this.Id = id;
+            this.CreationTicks = Environment.TickCount64;
+
+            logger?.LogDebug("Starting RespServerSession Id={0}", this.Id);
 
             // Initialize session-local scratch buffer of size 64 bytes, used for constructing arguments in GarnetApi
             this.scratchBufferManager = new ScratchBufferManager();
 
             // Create storage session and API
-            this.storageSession = new StorageSession(storeWrapper, scratchBufferManager, sessionMetrics, LatencyMetrics, itemBroker, logger);
+            this.storageSession = new StorageSession(storeWrapper, scratchBufferManager, sessionMetrics, LatencyMetrics, logger);
 
             this.basicGarnetApi = new BasicGarnetApi(storageSession, storageSession.basicContext, storageSession.objectStoreBasicContext);
             this.lockableGarnetApi = new LockableGarnetApi(storageSession, storageSession.lockableContext, storageSession.objectStoreLockableContext);
 
             this.storeWrapper = storeWrapper;
             this.subscribeBroker = subscribeBroker;
-            this.itemBroker = itemBroker;
             this._authenticator = authenticator ?? storeWrapper.serverOptions.AuthSettings?.CreateAuthenticator(this.storeWrapper) ?? new GarnetNoAuthAuthenticator();
 
             if (storeWrapper.serverOptions.EnableLua && enableScripts)
@@ -235,7 +253,7 @@ namespace Garnet.server
                 storeWrapper.monitor.AddMetricsHistorySessionDispose(sessionMetrics, latencyMetrics);
 
             subscribeBroker?.RemoveSubscription(this);
-            itemBroker?.HandleSessionDisposed(this);
+            storeWrapper.itemBroker?.HandleSessionDisposed(this);
             sessionScriptCache?.Dispose();
 
             // Cancel the async processor, if any
@@ -316,8 +334,11 @@ namespace Garnet.server
                 logger?.Log(ex.LogLevel, ex, "ProcessMessages threw a GarnetException:");
 
                 // Forward Garnet error as RESP error
-                while (!RespWriteUtils.WriteError($"ERR Garnet Exception: {ex.Message}", ref dcurr, dend))
-                    SendAndReset();
+                if (ex.ClientResponse)
+                {
+                    while (!RespWriteUtils.WriteError($"ERR Garnet Exception: {ex.Message}", ref dcurr, dend))
+                        SendAndReset();
+                }
 
                 // Send message and dispose the network sender to end the session
                 if (dcurr > networkSender.GetResponseObjectHead())
@@ -337,6 +358,7 @@ namespace Garnet.server
             {
                 networkSender.ExitAndReturnResponseObject();
                 clusterSession?.ReleaseCurrentEpoch();
+                scratchBufferManager.Reset();
             }
 
             if (txnManager.IsSkippingOperations())
@@ -666,10 +688,29 @@ namespace Garnet.server
         private bool ProcessOtherCommands<TGarnetApi>(RespCommand command, ref TGarnetApi storageApi)
             where TGarnetApi : IGarnetApi
         {
-            if (command == RespCommand.CLIENT)
+            if (command == RespCommand.CLIENT_ID)
             {
-                while (!RespWriteUtils.WriteDirect(CmdStrings.RESP_OK, ref dcurr, dend))
+                if (parseState.Count != 0)
+                {
+                    return AbortWithWrongNumberOfArguments("client|id");
+                }
+
+                while (!RespWriteUtils.WriteInteger(Id, ref dcurr, dend))
                     SendAndReset();
+
+                return true;
+            }
+            else if (command == RespCommand.CLIENT_INFO)
+            {
+                return NetworkCLIENTINFO();
+            }
+            else if (command == RespCommand.CLIENT_LIST)
+            {
+                return NetworkCLIENTLIST();
+            }
+            else if (command == RespCommand.CLIENT_KILL)
+            {
+                return NetworkCLIENTKILL();
             }
             else if (command == RespCommand.SUBSCRIBE)
             {
@@ -825,6 +866,16 @@ namespace Garnet.server
             success = true;
             return result;
         }
+
+        /// <summary>
+        /// Attempt to kill this session.
+        /// 
+        /// Returns true if this call actually kills the underlying network connection.
+        /// 
+        /// Subsequent calls will return false.
+        /// </summary>
+        public bool TryKill()
+        => networkSender.TryClose();
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         private unsafe bool Write(ref Status s, ref byte* dst, int length)

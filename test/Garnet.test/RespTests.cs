@@ -7,6 +7,7 @@ using System.Linq;
 using System.Text;
 using System.Threading;
 using System.Threading.Tasks;
+using Garnet.client;
 using Garnet.common;
 using Garnet.server;
 using NUnit.Framework;
@@ -26,7 +27,7 @@ namespace Garnet.test
         {
             r = new Random(674386);
             TestUtils.DeleteDirectory(TestUtils.MethodTestDir, wait: true);
-            server = TestUtils.CreateGarnetServer(TestUtils.MethodTestDir, disablePubSub: true);
+            server = TestUtils.CreateGarnetServer(TestUtils.MethodTestDir, disablePubSub: false);
             server.Start();
         }
 
@@ -1161,6 +1162,26 @@ namespace Garnet.test
         }
 
         [Test]
+        public void SingleRenameWithExpiry()
+        {
+            using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
+            var db = redis.GetDatabase(0);
+
+            var origValue = "test1";
+            db.StringSet("key1", origValue, TimeSpan.FromMinutes(1));
+
+            db.KeyRename("key1", "key2");
+            string retValue = db.StringGet("key2");
+
+            ClassicAssert.AreEqual(origValue, retValue);
+
+            var ttl = db.KeyTimeToLive("key2");
+            ClassicAssert.IsTrue(ttl.HasValue);
+            ClassicAssert.Greater(ttl.Value.TotalMilliseconds, 0);
+            ClassicAssert.Less(ttl.Value.TotalMilliseconds, TimeSpan.FromMinutes(1).TotalMilliseconds);
+        }
+
+        [Test]
         public void SingleRenameKeyEdgeCase([Values] bool withoutObjectStore)
         {
             if (withoutObjectStore)
@@ -1214,6 +1235,38 @@ namespace Garnet.test
 
             result = db.ListRange(key2);
             ClassicAssert.AreEqual(origList, result);
+        }
+
+        [Test]
+        public void SingleRenameObjectStoreWithExpiry()
+        {
+            using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
+            var db = redis.GetDatabase(0);
+
+            var origList = new RedisValue[] { "a", "b", "c", "d" };
+            var key1 = "lkey1";
+            var count = db.ListRightPush(key1, origList);
+            ClassicAssert.AreEqual(4, count);
+
+            var result = db.ListRange(key1);
+            ClassicAssert.AreEqual(origList, result);
+
+            var expirySet = db.KeyExpire("lkey1", TimeSpan.FromMinutes(1));
+            ClassicAssert.IsTrue(expirySet);
+
+            var key2 = "lkey2";
+            var rb = db.KeyRename(key1, key2);
+            ClassicAssert.IsTrue(rb);
+            result = db.ListRange(key1);
+            ClassicAssert.AreEqual(Array.Empty<RedisValue>(), result);
+
+            result = db.ListRange(key2);
+            ClassicAssert.AreEqual(origList, result);
+
+            var ttl = db.KeyTimeToLive("lkey2");
+            ClassicAssert.IsTrue(ttl.HasValue);
+            ClassicAssert.Greater(ttl.Value.TotalMilliseconds, 0);
+            ClassicAssert.Less(ttl.Value.TotalMilliseconds, TimeSpan.FromMinutes(1).TotalMilliseconds);
         }
 
         [Test]
@@ -1585,6 +1638,41 @@ namespace Garnet.test
                 ClassicAssert.IsTrue(time.Value.TotalSeconds <= (double)((int)args[1]) && time.Value.TotalSeconds > 0);
             else
                 ClassicAssert.IsTrue(time.Value.TotalMilliseconds <= (double)((int)args[1]) && time.Value.TotalMilliseconds > 0);
+        }
+
+        [Test]
+        [TestCase("EXPIRE")]
+        [TestCase("PEXPIRE")]
+        public void KeyExpireBadOptionTests(string command)
+        {
+            using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
+            var db = redis.GetDatabase(0);
+
+            ClassicAssert.IsTrue(db.StringSet("foo", "bar"));
+
+            // Invalid should be rejected
+            {
+                var exc = ClassicAssert.Throws<RedisServerException>(() => db.Execute(command, "foo", "100", "Q"));
+                ClassicAssert.AreEqual("ERR Unsupported option Q", exc.Message);
+            }
+
+            // None should be rejected
+            {
+                var exc = ClassicAssert.Throws<RedisServerException>(() => db.Execute(command, "foo", "100", "None"));
+                ClassicAssert.AreEqual("ERR Unsupported option None", exc.Message);
+            }
+
+            // Numeric equivalent should be rejected
+            {
+                var exc = ClassicAssert.Throws<RedisServerException>(() => db.Execute(command, "foo", "100", "1"));
+                ClassicAssert.AreEqual("ERR Unsupported option 1", exc.Message);
+            }
+
+            // Numeric out of bounds should be rejected
+            {
+                var exc = ClassicAssert.Throws<RedisServerException>(() => db.Execute(command, "foo", "100", "128"));
+                ClassicAssert.AreEqual("ERR Unsupported option 128", exc.Message);
+            }
         }
 
         [Test]
@@ -2191,6 +2279,441 @@ namespace Garnet.test
             expectedResponse = $"${firstValue.Length}\r\n{firstValue}\r\n";
             response = lightClientRequest.Execute($"GET {firstKey}", expectedResponse.Length);
             ClassicAssert.AreEqual(expectedResponse, response);
+        }
+
+        [Test]
+        public void ClientIdTest()
+        {
+            long id1;
+            {
+                using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
+                var db = redis.GetDatabase(0);
+
+                var result = db.Execute("CLIENT", "ID");
+
+                ClassicAssert.IsNotNull(result);
+                ClassicAssert.AreEqual(ResultType.Integer, result.Resp2Type);
+
+                id1 = (long)result;
+
+                ClassicAssert.IsTrue(id1 > 0, "Client ids must be > 0");
+            }
+
+            long id2;
+            {
+                using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
+                var db = redis.GetDatabase(0);
+
+                var result = db.Execute("CLIENT", "ID");
+
+                ClassicAssert.IsNotNull(result);
+                ClassicAssert.AreEqual(ResultType.Integer, result.Resp2Type);
+
+                id2 = (long)result;
+
+                ClassicAssert.IsTrue(id2 > 0, "Client ids must be > 0");
+            }
+
+            ClassicAssert.AreNotEqual(id1, id2, "CLIENT IDs must be unique");
+            ClassicAssert.IsTrue(id2 > id1, "CLIENT IDs should be monotonic");
+
+            {
+                using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
+                var db = redis.GetDatabase(0);
+
+                var exc = ClassicAssert.Throws<RedisServerException>(() => db.Execute("CLIENT", "ID", "foo"));
+                ClassicAssert.AreEqual("ERR wrong number of arguments for 'client|id' command", exc.Message);
+            }
+        }
+
+        [Test]
+        public void ClientInfoTest()
+        {
+            using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
+            var db = redis.GetDatabase(0);
+
+            var result = (string)db.Execute("CLIENT", "INFO");
+            AssertExpectedClientFields(result);
+
+            var exc = ClassicAssert.Throws<RedisServerException>(() => db.Execute("CLIENT", "INFO", "foo"));
+            ClassicAssert.AreEqual("ERR wrong number of arguments for 'client|info' command", exc.Message);
+        }
+
+        [Test]
+        public void ClientListTest()
+        {
+            using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
+            var db = redis.GetDatabase(0);
+
+            // List everything
+            {
+                var list = (string)db.Execute("CLIENT", "LIST");
+                AssertExpectedClientFields(list);
+            }
+
+            // List by id
+            {
+                var id = (long)db.Execute("CLIENT", "ID");
+
+                var list = (string)db.Execute("CLIENT", "LIST", "ID", id, 123);
+                AssertExpectedClientFields(list);
+            }
+
+            // List by type
+            {
+                var list = (string)db.Execute("CLIENT", "LIST", "TYPE", "NORMAL");
+                AssertExpectedClientFields(list);
+            }
+        }
+
+        [Test]
+        public void ClientListErrorTest()
+        {
+            using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
+            var db = redis.GetDatabase(0);
+
+            // Bad option
+            {
+                var exc = ClassicAssert.Throws<RedisServerException>(() => db.Execute("CLIENT", "LIST", "foo"));
+                ClassicAssert.AreEqual("ERR syntax error", exc.Message);
+            }
+
+            // Missing type
+            {
+                var exc = ClassicAssert.Throws<RedisServerException>(() => db.Execute("CLIENT", "LIST", "TYPE"));
+                ClassicAssert.AreEqual("ERR syntax error", exc.Message);
+            }
+
+            // Bad type
+            {
+                var exc = ClassicAssert.Throws<RedisServerException>(() => db.Execute("CLIENT", "LIST", "TYPE", "foo"));
+                ClassicAssert.AreEqual("ERR Unknown client type 'foo'", exc.Message);
+            }
+
+            // Invalid type
+            {
+                var exc = ClassicAssert.Throws<RedisServerException>(() => db.Execute("CLIENT", "LIST", "TYPE", "Invalid"));
+                ClassicAssert.AreEqual("ERR Unknown client type 'Invalid'", exc.Message);
+            }
+
+            // Numeric type
+            {
+                var exc = ClassicAssert.Throws<RedisServerException>(() => db.Execute("CLIENT", "LIST", "TYPE", "1"));
+                ClassicAssert.AreEqual("ERR Unknown client type '1'", exc.Message);
+            }
+
+            // Missing id
+            {
+                var exc = ClassicAssert.Throws<RedisServerException>(() => db.Execute("CLIENT", "LIST", "ID"));
+                ClassicAssert.AreEqual("ERR syntax error", exc.Message);
+            }
+
+            // Bad id
+            {
+                var exc = ClassicAssert.Throws<RedisServerException>(() => db.Execute("CLIENT", "LIST", "ID", "abc"));
+                ClassicAssert.AreEqual("ERR Invalid client ID", exc.Message);
+            }
+
+            // Combo - Redis docs sort of imply this is supported, but that is not the case in testing
+            {
+                var exc = ClassicAssert.Throws<RedisServerException>(() => db.Execute("CLIENT", "LIST", "TYPE", "NORMAL", "ID", "1"));
+                ClassicAssert.AreEqual("ERR syntax error", exc.Message);
+            }
+        }
+
+        [Test]
+        public async Task ClientKillTestAsync()
+        {
+            using var mainConnection = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
+            var mainDB = mainConnection.GetDatabase(0);
+            var mainId = (long)mainDB.Execute("CLIENT", "ID");
+
+            // Kill old style (by remote endpoint)
+            {
+                using var targetConnection = await ConnectAsync();
+
+                var targetId = await targetConnection.ExecuteForLongResultAsync("CLIENT", ["ID"]);
+
+                var remoteEndpoint = GetFlagForSessionId(targetId, "addr", mainDB);
+
+                // Kill acknowledged
+                var res = mainDB.Execute("CLIENT", "KILL", remoteEndpoint);
+                ClassicAssert.AreEqual("OK", (string)res);
+
+                AssertNotConnected(targetConnection);
+            }
+
+            // Kill by id
+            {
+                using var targetConnection = await ConnectAsync();
+
+                var targetId = await targetConnection.ExecuteForLongResultAsync("CLIENT", ["ID"]);
+
+                // Count of killed connections
+                var res = mainDB.Execute("CLIENT", "KILL", "ID", targetId);
+                ClassicAssert.AreEqual(1, (int)res);
+
+                AssertNotConnected(targetConnection);
+            }
+
+            // Kill by type = NORMAL
+            {
+                using var targetConnection = await ConnectAsync();
+
+                // Count of killed connections
+                var res = mainDB.Execute("CLIENT", "KILL", "TYPE", "NORMAL");
+
+                // SE.Redis spins up multiple connections, so we can kill more than 1 (but at least 1) connection
+                ClassicAssert.IsTrue((int)res >= 1);
+
+                AssertNotConnected(targetConnection);
+            }
+
+            // Kill by type = PUBSUB
+            {
+                using var targetConnection = await ConnectAsync();
+
+                _ = await targetConnection.ExecuteForStringResultAsync("SUBSCRIBE", ["foo"]);
+
+                // Count of killed connections
+                var res = mainDB.Execute("CLIENT", "KILL", "TYPE", "PUBSUB");
+
+                // SE.Redis spins up multiple connections, so we can kill more than 1 (but at least 1) connection
+                ClassicAssert.IsTrue((int)res >= 1);
+
+                AssertNotConnected(targetConnection);
+            }
+
+            // KILL by addr
+            {
+                using var targetConnection = await ConnectAsync();
+
+                var targetId = await targetConnection.ExecuteForLongResultAsync("CLIENT", ["ID"]);
+
+                var remoteEndpoint = GetFlagForSessionId(targetId, "addr", mainDB);
+
+                // Count of killed connections
+                var res = mainDB.Execute("CLIENT", "KILL", "ADDR", remoteEndpoint);
+                ClassicAssert.AreEqual(1, (int)res);
+
+                AssertNotConnected(targetConnection);
+            }
+
+            // KILL by laddr
+            {
+                using var targetConnection = await ConnectAsync();
+
+                var targetId = await targetConnection.ExecuteForLongResultAsync("CLIENT", ["ID"]);
+
+                var localEndpoint = GetFlagForSessionId(targetId, "laddr", mainDB);
+
+                // Count of killed connections
+                var res = mainDB.Execute("CLIENT", "KILL", "LADDR", localEndpoint);
+
+                // SE.Redis spins up multiple connections, so we can kill more than 1 (but at least 1) connection
+                ClassicAssert.IsTrue((int)res >= 1);
+
+                AssertNotConnected(targetConnection);
+            }
+
+            // KILL by maxage
+            {
+                using var targetConnection = await ConnectAsync();
+
+                var targetId = await targetConnection.ExecuteForLongResultAsync("CLIENT", ["ID"]);
+
+                while (true)
+                {
+                    var age = GetFlagForSessionId(targetId, "age", mainDB);
+                    if (long.Parse(age) >= 2)
+                    {
+                        break;
+                    }
+
+                    await Task.Delay(1_000);
+                }
+
+                // Count of killed connections
+                var res = mainDB.Execute("CLIENT", "KILL", "MAXAGE", 1);
+                ClassicAssert.IsTrue((int)res >= 1);
+
+                AssertNotConnected(targetConnection);
+            }
+
+            // KILL by multiple
+            {
+                using var targetConnection = await ConnectAsync();
+
+                var targetId = await targetConnection.ExecuteForLongResultAsync("CLIENT", ["ID"]);
+
+                var addr = GetFlagForSessionId(targetId, "addr", mainDB);
+
+                // Count of killed connections
+                var res = mainDB.Execute("CLIENT", "KILL", "ID", targetId, "MAXAGE", -1, "TYPE", "NORMAL", "SKIPME", "YES");
+                ClassicAssert.AreEqual(1, (int)res);
+
+                AssertNotConnected(targetConnection);
+            }
+
+            // KILL without SKIPME
+            {
+                using var targetConnection = await ConnectAsync();
+
+                var targetId = await targetConnection.ExecuteForLongResultAsync("CLIENT", ["ID"]);
+
+                try
+                {
+                    _ = mainDB.Execute("CLIENT", "KILL", "TYPE", "NORMAL", "SKIPME", "NO");
+                }
+                catch
+                {
+                    // This will kill the SE.Redis connection, so depending on ordering an exception may be observed
+                }
+
+                AssertNotConnected(targetConnection);
+            }
+
+            // Grab a flag=value out of CLIENT LIST
+            static string GetFlagForSessionId(long sessionId, string flag, IDatabase db)
+            {
+                var list = (string)db.Execute("CLIENT", "LIST");
+                var line = list.Split("\n").Single(l => l.Contains($"id={sessionId} "));
+
+                string flagValue = null;
+
+                foreach (var flagPair in line.Split(" "))
+                {
+                    if (flagPair.StartsWith($"{flag}="))
+                    {
+                        ClassicAssert.IsNull(flagValue, $"In {line}, found duplicate {flag}");
+
+                        flagValue = flagPair[$"{flag}=".Length..];
+                    }
+                }
+
+                ClassicAssert.NotNull(flagValue, $"In {line}, looking for {flag}");
+
+                return flagValue;
+            }
+
+            // Create a GarnetClient that we'll try to kill later
+            static async Task<GarnetClient> ConnectAsync()
+            {
+                var client = TestUtils.GetGarnetClient();
+                await client.ConnectAsync();
+
+                _ = await client.PingAsync();
+
+                ClassicAssert.IsTrue(client.IsConnected);
+
+                return client;
+            }
+
+            // Check that we really killed the connection backing a GarnetClient
+            static void AssertNotConnected(GarnetClient client)
+            {
+                // Force the issue by attempting a command
+                try
+                {
+                    client.Ping(static (_, __) => { });
+                }
+                catch { }
+
+                ClassicAssert.IsFalse(client.IsConnected);
+            }
+        }
+
+        [Test]
+        public void ClientKillErrors()
+        {
+            using var mainConnection = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
+            var mainDB = mainConnection.GetDatabase(0);
+
+            // Errors that match Redis behavior
+            {
+                // No args
+                {
+                    var exc = ClassicAssert.Throws<RedisServerException>(() => mainDB.Execute("CLIENT", "KILL"));
+                    ClassicAssert.AreEqual("ERR wrong number of arguments for 'CLIENT|KILL' command", exc.Message);
+                }
+
+                // Old style, not a known client
+                {
+                    var exc = ClassicAssert.Throws<RedisServerException>(() => mainDB.Execute("CLIENT", "KILL", "foo"));
+                    ClassicAssert.AreEqual("ERR No such client", exc.Message);
+                }
+
+                // New style, bad filter
+                {
+                    var exc = ClassicAssert.Throws<RedisServerException>(() => mainDB.Execute("CLIENT", "KILL", "FOO", "bar"));
+                    ClassicAssert.AreEqual("ERR syntax error", exc.Message);
+                }
+
+                // New style, ID not number
+                {
+                    var exc = ClassicAssert.Throws<RedisServerException>(() => mainDB.Execute("CLIENT", "KILL", "ID", "fizz"));
+                    ClassicAssert.AreEqual("ERR client-id should be greater than 0", exc.Message);
+                }
+
+                // New style, TYPE invalid
+                {
+                    var exc = ClassicAssert.Throws<RedisServerException>(() => mainDB.Execute("CLIENT", "KILL", "TYPE", "buzz"));
+                    ClassicAssert.AreEqual("ERR Unknown client type 'buzz'", exc.Message);
+                }
+
+                // New style, SKIPME invalid
+                {
+                    var exc = ClassicAssert.Throws<RedisServerException>(() => mainDB.Execute("CLIENT", "KILL", "SKIPME", "hello"));
+                    ClassicAssert.AreEqual("ERR syntax error", exc.Message);
+                }
+
+                // New style, MAXAGE invalid
+                {
+                    var exc = ClassicAssert.Throws<RedisServerException>(() => mainDB.Execute("CLIENT", "KILL", "MAXAGE", "world"));
+                    ClassicAssert.AreEqual("ERR syntax error", exc.Message);
+                }
+            }
+
+            // Because Redis behavior seems to diverge from its documentation, Garnet fails safe in these cases
+            {
+                AssertDuplicateDefinitionError("ID", () => mainDB.Execute("CLIENT", "KILL", "ID", "123", "ID", "456"));
+                AssertDuplicateDefinitionError("TYPE", () => mainDB.Execute("CLIENT", "KILL", "TYPE", "master", "TYPE", "normal"));
+                AssertDuplicateDefinitionError("USER", () => mainDB.Execute("CLIENT", "KILL", "USER", "foo", "USER", "bar"));
+                AssertDuplicateDefinitionError("ADDR", () => mainDB.Execute("CLIENT", "KILL", "ADDR", "123", "ADDR", "456"));
+                AssertDuplicateDefinitionError("LADDR", () => mainDB.Execute("CLIENT", "KILL", "LADDR", "123", "LADDR", "456"));
+                AssertDuplicateDefinitionError("SKIPME", () => mainDB.Execute("CLIENT", "KILL", "SKIPME", "YES", "SKIPME", "NO"));
+                AssertDuplicateDefinitionError("MAXAGE", () => mainDB.Execute("CLIENT", "KILL", "MAXAGE", "123", "MAXAGE", "456"));
+            }
+
+            static void AssertDuplicateDefinitionError(string filter, TestDelegate shouldThrow)
+            {
+                var exc = ClassicAssert.Throws<RedisServerException>(shouldThrow);
+                ClassicAssert.AreEqual($"ERR Filter '{filter}' defined multiple times", exc.Message);
+            }
+        }
+
+        /// <summary>
+        /// Check that list is non-empty, and has the minimum required fields.
+        /// </summary>
+        private static void AssertExpectedClientFields(string list)
+        {
+            var lines = list.Split("\n");
+            ClassicAssert.IsTrue(lines.Length >= 1);
+
+            foreach (var line in lines)
+            {
+                var flags = line.Split(" ");
+                AssertField(line, flags, "id");
+                AssertField(line, flags, "addr");
+                AssertField(line, flags, "laddr");
+                AssertField(line, flags, "age");
+                AssertField(line, flags, "flags");
+                AssertField(line, flags, "resp");
+            }
+
+            // Check that a given flag is set
+            static void AssertField(string line, string[] fields, string name)
+            => ClassicAssert.AreEqual(1, fields.Count(f => f.StartsWith($"{name}=")), $"In {line}, expected single field {name}");
         }
     }
 }

@@ -1,6 +1,7 @@
 ﻿// Copyright (c) Microsoft Corporation.
 // Licensed under the MIT license.
 using System.Diagnostics;
+using System.Net;
 using Garnet.client;
 using Microsoft.Extensions.Logging;
 
@@ -27,6 +28,12 @@ namespace MigrateBench
         GarnetClientSession sourceNode;
         GarnetClientSession targetNode;
 
+        string targetNodeId;
+        string sourceNodeId;
+
+        IPEndPoint sourceNodeEndpoint;
+        IPEndPoint targetNodeEndpoint;
+
         public MigrateRequest(Options opts, ILogger logger = null)
         {
             this.opts = opts;
@@ -49,6 +56,23 @@ namespace MigrateBench
             {
                 sourceNode.Connect();
                 targetNode.Connect();
+
+                sourceNodeId = sourceNode.ExecuteAsync(["CLUSTER", "MYID"]).GetAwaiter().GetResult();
+                targetNodeId = targetNode.ExecuteAsync(["CLUSTER", "MYID"]).GetAwaiter().GetResult();
+
+                var endpoint = sourceNode.ExecuteAsync(["CLUSTER", "ENDPOINT", sourceNodeId]).GetAwaiter().GetResult();
+                if (!IPEndPoint.TryParse(endpoint, out sourceNodeEndpoint))
+                {
+                    logger?.LogError("ERR Source Endpoint ({endpoint}) is not valid!", endpoint);
+                    return;
+                }
+                endpoint = targetNode.ExecuteAsync(["CLUSTER", "ENDPOINT", targetNodeId]).GetAwaiter().GetResult();
+                if (!IPEndPoint.TryParse(endpoint, out targetNodeEndpoint))
+                {
+                    logger?.LogError("ERR Target Endpoint ({endpoint}) is not valid!", endpoint);
+                    return;
+                }
+
                 var sourceNodeKeys = dbsize(ref sourceNode);
                 var targetNodeKeys = dbsize(ref targetNode);
                 logger?.LogInformation("SourceNode: {endpoint} KeyCount: {keys}", opts.SourceEndpoint, sourceNodeKeys);
@@ -101,8 +125,8 @@ namespace MigrateBench
                     return;
                 }
 
-                // migrate 192.168.1.20 7001 "" 0 5000 SLOTSRANGE 1000 7000            
-                ICollection<string> migrate = ["MIGRATE", targetAddress, targetPort.ToString(), "", "0", timeout.ToString(), "REPLACE", "SLOTSRANGE"];
+                // migrate 192.168.1.20 7001 "" 0 5000 SLOTSRANGE 1000 7000
+                ICollection<string> migrate = ["MIGRATE", targetNodeEndpoint.Address.ToString(), targetNodeEndpoint.Port.ToString(), "", "0", timeout.ToString(), "REPLACE", "SLOTSRANGE"];
                 foreach (var slot in slots)
                     migrate.Add(slot.ToString());
 
@@ -149,7 +173,7 @@ namespace MigrateBench
                         _slots.Add(j);
                 }
 
-                ICollection<string> migrate = ["MIGRATE", targetAddress, targetPort.ToString(), "", "0", timeout.ToString(), "REPLACE", "SLOTS"];
+                ICollection<string> migrate = ["MIGRATE", targetNodeEndpoint.Address.ToString(), targetNodeEndpoint.Port.ToString(), "", "0", timeout.ToString(), "REPLACE", "SLOTS"];
                 foreach (var slot in _slots)
                     migrate.Add(slot.ToString());
 
@@ -218,7 +242,7 @@ namespace MigrateBench
                     resp = sourceNode.ExecuteAsync(countkeysinslot).GetAwaiter().GetResult();
                     var keys = sourceNode.ExecuteForArrayAsync(getkeysinslot).GetAwaiter().GetResult();
 
-                    ICollection<string> migrate = ["MIGRATE", targetAddress, targetPort.ToString(), "", "0", timeout.ToString(), "REPLACE", "KEYS"];
+                    ICollection<string> migrate = ["MIGRATE", targetNodeEndpoint.Address.ToString(), targetNodeEndpoint.Port.ToString(), "", "0", timeout.ToString(), "REPLACE", "KEYS"];
                     foreach (var key in keys)
                         migrate.Add(key);
 

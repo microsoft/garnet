@@ -21,11 +21,15 @@ namespace Garnet.cluster
             var currTokenIdx = 0;
             while (currTokenIdx < parseState.Count)
             {
-                if (!parseState.TryGetEnum(currTokenIdx++, true, out FailoverOption failoverOption))
-                    failoverOption = FailoverOption.INVALID;
+                if (!parseState.TryGetEnum(currTokenIdx, true, out FailoverOption failoverOption) || !failoverOption.IsValid(parseState.GetArgSliceByRef(currTokenIdx).ReadOnlySpan))
+                {
+                    while (!RespWriteUtils.WriteError(CmdStrings.RESP_SYNTAX_ERROR, ref dcurr, dend))
+                        SendAndReset();
 
-                if (failoverOption == FailoverOption.INVALID)
-                    continue;
+                    return true;
+                }
+
+                currTokenIdx++;
 
                 switch (failoverOption)
                 {
