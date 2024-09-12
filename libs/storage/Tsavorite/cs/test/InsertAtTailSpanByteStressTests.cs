@@ -21,7 +21,8 @@ namespace Tsavorite.test.InsertAtTailStressTests
     public enum MutablePages
     { 
         Zero,
-        Eight
+        One,
+        Two
     }
 
     class SpanByteInsertAtTailChainTests
@@ -36,7 +37,8 @@ namespace Tsavorite.test.InsertAtTailStressTests
         long GetMutablePageCount(MutablePages mp) => mp switch
             {
                 MutablePages.Zero => 0,
-                MutablePages.Eight => 8,
+                MutablePages.One => 0,
+                MutablePages.Two => 2,
                 _ => 8
             };
 
@@ -49,7 +51,7 @@ namespace Tsavorite.test.InsertAtTailStressTests
             log = new NullDevice();
 
             HashModulo modRange = HashModulo.NoMod;
-            long mutablePages = GetMutablePageCount(MutablePages.Eight);
+            long mutablePages = GetMutablePageCount(MutablePages.Two);
             foreach (var arg in TestContext.CurrentContext.Test.Arguments)
             {
                 if (arg is HashModulo cr)
