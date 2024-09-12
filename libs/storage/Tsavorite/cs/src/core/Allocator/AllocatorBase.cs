@@ -577,8 +577,8 @@ namespace Tsavorite.core
             if (SegmentSize < PageSize)
                 throw new TsavoriteException($"Segment ({SegmentSize}) must be at least of page size ({PageSize})");
 
-            if ((LogTotalSizeBits != 0) && (LogTotalSizeBytes < PageSize))
-                throw new TsavoriteException($"Memory size ({LogTotalSizeBytes}) must be configured to be either 1 (i.e., 0 bits) or at least page size ({PageSize})");
+            if ((LogTotalSizeBits != 0) && (LogTotalSizeBytes < PageSize * 2))
+                throw new TsavoriteException($"Memory size ({LogTotalSizeBytes}) must be at least twice the page size ({PageSize})");
 
             // Readonlymode has MemorySizeBits 0 => skip the check
             if (settings.MemorySizeBits > 0 && settings.MinEmptyPageCount > MaxEmptyPageCount)
