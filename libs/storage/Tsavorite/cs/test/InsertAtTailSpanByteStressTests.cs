@@ -37,7 +37,7 @@ namespace Tsavorite.test.InsertAtTailStressTests
         long GetMutablePageCount(MutablePages mp) => mp switch
             {
                 MutablePages.Zero => 0,
-                MutablePages.One => 0,
+                MutablePages.One => 1,
                 MutablePages.Two => 2,
                 _ => 8
             };
