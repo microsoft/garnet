@@ -167,14 +167,7 @@ namespace Garnet.common
                 if (count == 0) continue;
 
                 totalBufferCount += count;
-                bufferStats += $"<{count},{Format.KiloBytes(minAllocationSize * (i + 1))}KB>";
-
-                // Keep trying Dequeuing until no items left to free
-                while (pool[i].items.TryDequeue(out var entry))
-                {
-                    entry = null;
-                    Interlocked.Decrement(ref pool[i].size);
-                }
+                bufferStats += $"<{count}:{Format.MemoryBytes(minAllocationSize << i)}>";
             }
 
             if (totalBufferCount > 0)
