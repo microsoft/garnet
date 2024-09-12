@@ -71,7 +71,7 @@ namespace Garnet.server
                     coroutine = coroutine;
                     type = type;
                     select = select;
-                    unpack = unpack;
+                    unpack = table.unpack;
                     gcinfo = gcinfo;
                     pairs = pairs;
                     loadstring = loadstring;
