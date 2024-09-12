@@ -19,7 +19,7 @@ namespace Tsavorite.test.InsertAtTailStressTests
 
     // Number of mutable pages for this test
     public enum MutablePages
-    { 
+    {
         Zero,
         One,
         Two
@@ -35,12 +35,12 @@ namespace Tsavorite.test.InsertAtTailStressTests
         const long NumKeys = 2_000;
 
         long GetMutablePageCount(MutablePages mp) => mp switch
-            {
-                MutablePages.Zero => 0,
-                MutablePages.One => 1,
-                MutablePages.Two => 2,
-                _ => 8
-            };
+        {
+            MutablePages.Zero => 0,
+            MutablePages.One => 1,
+            MutablePages.Two => 2,
+            _ => 8
+        };
 
         [SetUp]
         public void Setup()
