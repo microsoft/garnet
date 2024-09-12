@@ -40,43 +40,124 @@ namespace Garnet.server
             var end = curr + output.Length;
 
             ObjectOutputHeader outputHeader = default;
-            var added = 0;
+            var addedOrChanged = 0;
+            double incrResult = 0;
+
             try
             {
-                for (var currIdx = input.parseStateStartIdx; currIdx < input.parseState.Count; currIdx += 2)
+                var options = SortedSetAddOption.None;
+
+                var currTokenIdx = input.parseStateStartIdx;
+                while (currTokenIdx < input.parseState.Count)
                 {
-                    if (!input.parseState.TryGetDouble(currIdx, out var score))
+                    if (!input.parseState.TryGetEnum(currTokenIdx, true, out SortedSetAddOption currOption))
+                        break;
+
+                    options |= currOption;
+                    currTokenIdx++;
+                }
+
+                // Validate ZADD options combination
+                ReadOnlySpan<byte> optionsError = default;
+
+                // XX & NX are mutually exclusive
+                if (options.HasFlag(SortedSetAddOption.XX) && options.HasFlag(SortedSetAddOption.NX))
+                    optionsError = CmdStrings.RESP_ERR_XX_NX_NOT_COMPATIBLE;
+
+                // NX, GT & LT are mutually exclusive
+                if ((options.HasFlag(SortedSetAddOption.GT) && options.HasFlag(SortedSetAddOption.LT)) ||
+                   ((options.HasFlag(SortedSetAddOption.GT) || options.HasFlag(SortedSetAddOption.LT)) &&
+                    options.HasFlag(SortedSetAddOption.NX)))
+                    optionsError = CmdStrings.RESP_ERR_GT_LT_NX_NOT_COMPATIBLE;
+
+                // INCR supports only one score-element pair
+                if (options.HasFlag(SortedSetAddOption.INCR) && (input.parseState.Count - currTokenIdx > 2))
+                    optionsError = CmdStrings.RESP_ERR_INCR_SUPPORTS_ONLY_SINGLE_PAIR;
+
+                if (!optionsError.IsEmpty)
+                {
+                    while (!RespWriteUtils.WriteError(optionsError, ref curr, end))
+                        ObjectUtils.ReallocateOutput(ref output, ref isMemory, ref ptr, ref ptrHandle, ref curr, ref end);
+                    return;
+                }
+
+                // From here on we expect only score-element pairs
+                // Remaining token count should be positive and even
+                if (currTokenIdx == input.parseState.Count || (input.parseState.Count - currTokenIdx) % 2 != 0)
+                {
+                    while (!RespWriteUtils.WriteError(CmdStrings.RESP_SYNTAX_ERROR, ref curr, end))
+                        ObjectUtils.ReallocateOutput(ref output, ref isMemory, ref ptr, ref ptrHandle, ref curr, ref end);
+                    return;
+                }
+
+                while (currTokenIdx < input.parseState.Count)
+                {
+                    // Score
+                    if (!input.parseState.TryGetDouble(currTokenIdx++, out var score))
                     {
                         while (!RespWriteUtils.WriteError(CmdStrings.RESP_ERR_NOT_VALID_FLOAT, ref curr, end))
                             ObjectUtils.ReallocateOutput(ref output, ref isMemory, ref ptr, ref ptrHandle, ref curr, ref end);
                         return;
                     }
 
-                    var memberSpan = input.parseState.GetArgSliceByRef(currIdx + 1).ReadOnlySpan;
+                    // Member
+                    var memberSpan = input.parseState.GetArgSliceByRef(currTokenIdx++).ReadOnlySpan;
+                    var member = memberSpan.ToArray();
 
-                    var memberArray = memberSpan.ToArray();
-                    if (!sortedSetDict.TryGetValue(memberArray, out var scoreStored))
+                    // Add new member
+                    if (!sortedSetDict.TryGetValue(member, out var scoreStored))
                     {
-                        sortedSetDict.Add(memberArray, score);
-                        if (sortedSet.Add((score, memberArray)))
-                        {
-                            added++;
-                        }
+                        // Don't add new member if XX flag is set
+                        if (options.HasFlag(SortedSetAddOption.XX)) continue;
+
+                        sortedSetDict.Add(member, score);
+                        if (sortedSet.Add((score, member)))
+                            addedOrChanged++;
 
                         this.UpdateSize(memberSpan);
                     }
-                    else if (scoreStored != score)
+                    // Update existing member
+                    else
                     {
-                        sortedSetDict[memberArray] = score;
-                        var success = sortedSet.Remove((scoreStored, memberArray));
+                        // Update new score if INCR flag is set
+                        if (options.HasFlag(SortedSetAddOption.INCR))
+                        {
+                            score += scoreStored;
+                            incrResult = score;
+                        }
+
+                        // No need for update
+                        if (score == scoreStored)
+                            continue;
+
+                        // Don't update existing member if NX flag is set
+                        // or if GT/LT flag is set and existing score is higher/lower than new score, respectively
+                        if (options.HasFlag(SortedSetAddOption.NX) ||
+                            (options.HasFlag(SortedSetAddOption.GT) && scoreStored > score) ||
+                            (options.HasFlag(SortedSetAddOption.LT) && scoreStored < score)) continue;
+
+                        sortedSetDict[member] = score;
+                        var success = sortedSet.Remove((scoreStored, member));
                         Debug.Assert(success);
-                        success = sortedSet.Add((score, memberArray));
+                        success = sortedSet.Add((score, member));
                         Debug.Assert(success);
+
+                        // If CH flag is set, add changed member to final count
+                        if (options.HasFlag(SortedSetAddOption.CH))
+                            addedOrChanged++;
                     }
                 }
 
-                while (!RespWriteUtils.WriteInteger(added, ref curr, end))
-                    ObjectUtils.ReallocateOutput(ref output, ref isMemory, ref ptr, ref ptrHandle, ref curr, ref end);
+                if (options.HasFlag(SortedSetAddOption.INCR))
+                {
+                    while (!RespWriteUtils.TryWriteDoubleBulkString(incrResult, ref curr, end))
+                        ObjectUtils.ReallocateOutput(ref output, ref isMemory, ref ptr, ref ptrHandle, ref curr, ref end);
+                }
+                else
+                {
+                    while (!RespWriteUtils.WriteInteger(addedOrChanged, ref curr, end))
+                        ObjectUtils.ReallocateOutput(ref output, ref isMemory, ref ptr, ref ptrHandle, ref curr, ref end);
+                }
             }
             finally
             {
