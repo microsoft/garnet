@@ -80,6 +80,7 @@ namespace Garnet.server
                     redis = redis;
                     math = math;
                     table = table;
+                    string = string;
                 }
                 function load_sandboxed(source)
                     if (not source) then return nil end
@@ -251,7 +252,7 @@ namespace Garnet.server
             if (nKeys > 0)
             {
                 // Lua uses 1-based indexing, so we allocate an extra entry in the array
-                keys = new string[nKeys + 1];
+                keys = new string[nKeys + 2];
                 for (int i = 0; i < nKeys; i++)
                 {
                     if (txnMode)
@@ -263,6 +264,7 @@ namespace Garnet.server
                     }
                     keys[i + 1] = parseState.GetString(offset++);
                 }
+                keys[nKeys + 1] = null;
                 count -= nKeys;
 
                 //TODO: handle slot verification for Lua script keys
@@ -276,11 +278,12 @@ namespace Garnet.server
             if (count > 0)
             {
                 // Lua uses 1-based indexing, so we allocate an extra entry in the array
-                argv = new string[count + 1];
+                argv = new string[count + 2];
                 for (int i = 0; i < count; i++)
                 {
                     argv[i + 1] = parseState.GetString(offset++);
                 }
+                argv[count + 1] = null;
             }
 
             if (txnMode && nKeys > 0)

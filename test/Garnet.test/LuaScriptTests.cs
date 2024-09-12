@@ -352,20 +352,18 @@ namespace Garnet.test
         public void ComplexLuaTest()
         {
             var script = """
-a = {"one", "two", "three"}
 local setArgs = {}
-for _, key in ipairs(a) do
-    table.insert(setArgs, key)
+for _, key in ipairs(KEYS) do
     table.insert(setArgs, key)
 end
 
-return redis.status_reply("OK")
+return redis.status_reply(table.concat(setArgs))
 """;
 
             using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
             var db = redis.GetDatabase(0);
             var response = db.ScriptEvaluate(script, ["key1", "key2"], ["value", 1, 12345]);
-            ClassicAssert.AreEqual("OK", (string)response);
+            ClassicAssert.AreEqual("key1key2", (string)response);
         }
     }
 }
