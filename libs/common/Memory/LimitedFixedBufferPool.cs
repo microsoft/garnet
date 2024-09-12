@@ -152,9 +152,11 @@ namespace Garnet.common
         /// <returns></returns>
         public string GetStats()
         {
-            var stats = $"totalAllocations = {totalAllocations}, " +
-                $"numLevels = {numLevels}, " +
-                $"maxEntriesPerLevel = {maxEntriesPerLevel}";
+            var stats = $"totalAllocations={totalAllocations}," +
+                $"numLevels={numLevels}," +
+                $"maxEntriesPerLevel={maxEntriesPerLevel}," +
+                $"minAllocationSize={Format.MemoryBytes(minAllocationSize)}," +
+                $"maxAllocationSize={Format.MemoryBytes(minAllocationSize << (numLevels - 1))}";
 
             var bufferStats = "";
             var totalBufferCount = 0;
@@ -171,7 +173,7 @@ namespace Garnet.common
             }
 
             if (totalBufferCount > 0)
-                stats += $", totalBufferCount:{totalBufferCount}[" + bufferStats + "]";
+                stats += $",totalBufferCount={totalBufferCount},[" + bufferStats + "]";
 
             return stats;
         }
