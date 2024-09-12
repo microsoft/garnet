@@ -214,7 +214,9 @@ namespace Garnet.server
         public T GetEnum<T>(int i, bool ignoreCase) where T : struct, Enum
         {
             Debug.Assert(i < Count);
-            return Enum.Parse<T>(GetString(i), ignoreCase);
+            var strRep = GetString(i);
+            var value = Enum.Parse<T>(strRep, ignoreCase);
+            return !Enum.IsDefined(typeof(T), strRep) ? default : value;
         }
 
         /// <summary>
@@ -225,7 +227,11 @@ namespace Garnet.server
         public bool TryGetEnum<T>(int i, bool ignoreCase, out T value) where T : struct, Enum
         {
             Debug.Assert(i < Count);
-            return Enum.TryParse(GetString(i), ignoreCase, out value);
+            var strRep = GetString(i);
+            var successful = Enum.TryParse(strRep, ignoreCase, out value);
+            successful = successful && Enum.IsDefined(typeof(T), strRep);
+            if (!successful) value = default;
+            return successful;
         }
 
         /// <summary>

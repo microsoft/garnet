@@ -208,7 +208,7 @@ namespace Garnet.test.Resp.ACL
                 }
                 catch (Exception e)
                 {
-                    if (e.Message != "ERR Cannot find ACL configuration file ''")
+                    if (e.Message != "ERR This Garnet instance is not configured to use an ACL file. Please restart server with --acl-file option.")
                     {
                         throw;
                     }
@@ -234,7 +234,7 @@ namespace Garnet.test.Resp.ACL
                 }
                 catch (Exception e)
                 {
-                    if (e.Message != "ERR ACL configuration file not set.")
+                    if (e.Message != "ERR This Garnet instance is not configured to use an ACL file. Please restart server with --acl-file option.")
                     {
                         throw;
                     }
