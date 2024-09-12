@@ -7,7 +7,6 @@ using System.Runtime.CompilerServices;
 using Garnet.common;
 using Garnet.server;
 using Microsoft.Extensions.Logging;
-using StackExchange.Redis;
 
 namespace CommandInfoUpdater
 {

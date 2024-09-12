@@ -262,6 +262,8 @@ namespace Garnet.server.Resp
         {
             writer.WriteStartObject();
 
+            writer.WriteString("TypeDiscriminator", cmdArg.GetType().Name);
+
             writer.WriteString(nameof(RespCommandArgumentBase.Name), cmdArg.Name);
             if (cmdArg.DisplayText != null)
                 writer.WriteString(nameof(RespCommandArgumentBase.DisplayText), cmdArg.DisplayText);
@@ -276,7 +278,6 @@ namespace Garnet.server.Resp
             switch (cmdArg)
             {
                 case RespCommandKeyArgument keyArg:
-                    writer.WriteString("TypeDiscriminator", nameof(RespCommandKeyArgument));
                     writer.WriteNumber(nameof(RespCommandKeyArgument.KeySpecIndex), keyArg.KeySpecIndex);
                     if (keyArg.Value != null) 
                         writer.WriteString(nameof(RespCommandKeyArgument.Value), keyArg.Value);
@@ -284,7 +285,6 @@ namespace Garnet.server.Resp
                 case RespCommandContainerArgument containerArg:
                     if (containerArg.Arguments != null)
                     {
-                        writer.WriteString("TypeDiscriminator", nameof(RespCommandContainerArgument));
                         writer.WritePropertyName(nameof(RespCommandContainerArgument.Arguments));
                         writer.WriteStartArray();
                         foreach (var arg in containerArg.Arguments)
@@ -297,7 +297,6 @@ namespace Garnet.server.Resp
                 case RespCommandArgument respCmdArg:
                     if (respCmdArg.Value != null)
                     {
-                        writer.WriteString("TypeDiscriminator", nameof(RespCommandArgument));
                         writer.WriteString(nameof(RespCommandKeyArgument.Value), respCmdArg.Value);
                     }
                     break;

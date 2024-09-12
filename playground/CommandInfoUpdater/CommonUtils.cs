@@ -46,6 +46,9 @@ namespace CommandInfoUpdater
         internal static bool TryWriteRespCommandsData<TData>(string outputPath,
             IReadOnlyDictionary<string, TData> commandsData, ILogger logger) where TData : IRespCommandData
         {
+            if (File.Exists(outputPath))
+                File.Delete(outputPath);
+
             var streamProvider = StreamProviderFactory.GetStreamProvider(FileLocationType.Local);
             var commandsInfoProvider = RespCommandsDataProviderFactory.GetRespCommandsDataProvider<TData>();
 

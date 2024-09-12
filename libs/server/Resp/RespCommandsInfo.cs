@@ -107,7 +107,8 @@ namespace Garnet.server
         [JsonIgnore]
         public RespCommand? SubCommand { get; set; }
 
-        private const string RespCommandsEmbeddedFileName = @"RespCommandsInfo.json";
+        private const string RespCommandsInfoEmbeddedFileName = @"RespCommandsInfo.json";
+        private const string RespCommandsDocsEmbeddedFileName = @"RespCommandsDocs.json";
 
         private string respFormat;
 
@@ -136,7 +137,7 @@ namespace Garnet.server
             {
                 if (IsInitialized) return true;
 
-                IsInitialized = TryInitializeRespCommandsInfo(logger);
+                IsInitialized = TryInitializeRespCommandsInfo(logger) && TryInitializeRespCommandsDocs(logger);
                 return IsInitialized;
             }
         }
@@ -147,7 +148,7 @@ namespace Garnet.server
                 Assembly.GetExecutingAssembly());
             var commandsInfoProvider = RespCommandsDataProviderFactory.GetRespCommandsDataProvider<RespCommandsInfo>();
 
-            var importSucceeded = commandsInfoProvider.TryImportRespCommandsData(RespCommandsEmbeddedFileName,
+            var importSucceeded = commandsInfoProvider.TryImportRespCommandsData(RespCommandsInfoEmbeddedFileName,
                 streamProvider, out var scratchAllRespCommandsInfo, logger);
 
             if (!importSucceeded) return false;
@@ -255,6 +256,26 @@ namespace Garnet.server
                     yield return single;
                 }
             }
+        }
+
+        private static bool TryInitializeRespCommandsDocs(ILogger logger = null)
+        {
+            var streamProvider = StreamProviderFactory.GetStreamProvider(FileLocationType.EmbeddedResource, null,
+                Assembly.GetExecutingAssembly());
+            var commandsDocsProvider = RespCommandsDataProviderFactory.GetRespCommandsDataProvider<RespCommandDocs>();
+
+            var importSucceeded = commandsDocsProvider.TryImportRespCommandsData(RespCommandsDocsEmbeddedFileName,
+                streamProvider, out var tmpAllRespCommandsDocs, logger);
+
+            if (!importSucceeded) return false;
+
+            AllRespCommandsDocs =
+                new Dictionary<string, RespCommandDocs>(tmpAllRespCommandsDocs, StringComparer.OrdinalIgnoreCase);
+            ExternalRespCommandsDocs = new ReadOnlyDictionary<string, RespCommandDocs>(tmpAllRespCommandsDocs
+                .Where(ci => AllRespCommandsInfo.ContainsKey(ci.Key) && !AllRespCommandsInfo[ci.Key].IsInternal)
+                .ToDictionary(kvp => kvp.Key, kvp => kvp.Value, StringComparer.OrdinalIgnoreCase));
+
+            return true;
         }
 
         /// <summary>
