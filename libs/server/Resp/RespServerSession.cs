@@ -358,6 +358,7 @@ namespace Garnet.server
             {
                 networkSender.ExitAndReturnResponseObject();
                 clusterSession?.ReleaseCurrentEpoch();
+                scratchBufferManager.Reset();
             }
 
             if (txnManager.IsSkippingOperations())
