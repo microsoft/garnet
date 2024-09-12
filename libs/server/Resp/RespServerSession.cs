@@ -536,6 +536,7 @@ namespace Garnet.server
                 RespCommand.READWRITE => NetworkREADWRITE(),
                 RespCommand.COMMAND => NetworkCOMMAND(),
                 RespCommand.COMMAND_COUNT => NetworkCOMMAND_COUNT(),
+                RespCommand.COMMAND_DOCS => 
                 RespCommand.COMMAND_INFO => NetworkCOMMAND_INFO(),
                 RespCommand.ECHO => NetworkECHO(),
                 RespCommand.INFO => NetworkINFO(),

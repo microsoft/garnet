@@ -221,6 +221,7 @@ namespace Garnet.server
 
         COMMAND,
         COMMAND_COUNT,
+        COMMAND_DOCS,
         COMMAND_INFO,
 
         MEMORY,

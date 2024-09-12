@@ -89,6 +89,7 @@ namespace CommandInfoUpdater
             [
                 "COMMAND|INFO",
                 "COMMAND|COUNT",
+                "COMMAND|DOCS",
             ]),
             new("COMMITAOF", RespCommand.COMMITAOF),
             new("CONFIG", RespCommand.CONFIG,

@@ -2,12 +2,14 @@
 // Licensed under the MIT license.
 
 using System;
+using System.Collections.Generic;
 using System.Diagnostics;
 using System.Linq;
 using System.Runtime.CompilerServices;
 using System.Text;
 using System.Threading.Tasks;
 using Garnet.common;
+using Garnet.server.Resp;
 using Microsoft.Extensions.Logging;
 using Tsavorite.core;
 
@@ -1019,6 +1021,41 @@ namespace Garnet.server
                 var commandCount = storeWrapper.customCommandManager.CustomCommandsInfoCount + respCommandCount;
 
                 while (!RespWriteUtils.WriteInteger(commandCount, ref dcurr, dend))
+                    SendAndReset();
+            }
+
+            return true;
+        }
+
+        /// <summary>
+        /// Processes COMMAND INFO subcommand.
+        /// </summary>
+        /// <returns>true if parsing succeeded correctly, false if not all tokens could be consumed and further processing is necessary.</returns>
+        private bool NetworkCOMMAND_DOCS()
+        {
+            var count = parseState.Count;
+
+            // todo: custom command docs
+            if (!RespCommandsInfo.TryGetRespCommandsDocs(out var cmdsDocs, true, logger)) //||
+                return true;
+
+            var docsFound = new List<RespCommandDocs>();
+
+            for (var i = 0; i < count; i++)
+            {
+                var cmdName = parseState.GetString(i);
+                if (cmdsDocs.TryGetValue(cmdName, out var doc))
+                {
+                    docsFound.Add(doc);
+                }
+            }
+
+            while (!RespWriteUtils.WriteArrayLength(docsFound.Count, ref dcurr, dend))
+                SendAndReset();
+
+            for (var i = 0; i < docsFound.Count; i++)
+            {
+                while (!RespWriteUtils.WriteAsciiDirect(cmdsDocs.RespFormat, ref dcurr, dend))
                     SendAndReset();
             }
 
