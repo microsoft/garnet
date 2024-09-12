@@ -347,5 +347,25 @@ namespace Garnet.test
                 ClassicAssert.AreEqual(ex.Message, "Failure");
             }
         }
+
+        [Test]
+        public void ComplexLuaTest()
+        {
+            var script = """
+a = {"one", "two", "three"}
+local setArgs = {}
+for _, key in ipairs(a) do
+    table.insert(setArgs, key)
+    table.insert(setArgs, key)
+end
+
+return redis.status_reply("OK")
+""";
+
+            using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
+            var db = redis.GetDatabase(0);
+            var response = db.ScriptEvaluate(script, ["key1", "key2"], ["value", 1, 12345]);
+            ClassicAssert.AreEqual("OK", (string)response);
+        }
     }
 }

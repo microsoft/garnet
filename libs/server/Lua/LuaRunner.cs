@@ -79,6 +79,7 @@ namespace Garnet.server
                     error = error;
                     redis = redis;
                     math = math;
+                    table = table;
                 }
                 function load_sandboxed(source)
                     if (not source) then return nil end
