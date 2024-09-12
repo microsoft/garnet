@@ -38,9 +38,9 @@ namespace Garnet.cluster
 
                 if (clusterProvider.serverOptions.MainMemoryReplication)
                 {
-                    var firstRecordLength = GetFirstAofEntryLength(record);
-                    if (previousAddress > ReplicationOffset ||
-                        currentAddress >= previousAddress + firstRecordLength)
+                    // If the incoming AOF chunk fits in the space between previousAddress and currentAddress (ReplicationOffset),
+                    // an enqueue will result in an offset mismatch. So, we have to first reset the AOF to point to currentAddress.
+                    if (currentAddress >= previousAddress + recordLength)
                     {
                         logger?.LogWarning("MainMemoryReplication: Skipping from {ReplicaReplicationOffset} to {currentAddress}", ReplicationOffset, currentAddress);
                         storeWrapper.appendOnlyFile.Initialize(currentAddress, currentAddress);
@@ -54,15 +54,6 @@ namespace Garnet.cluster
                     logger?.LogInformation("Processing {recordLength} bytes; previousAddress {previousAddress}, currentAddress {currentAddress}, nextAddress {nextAddress}, current AOF tail {tail}", recordLength, previousAddress, currentAddress, nextAddress, storeWrapper.appendOnlyFile.TailAddress);
                     logger?.LogError("Before ProcessPrimaryStream: Replication offset mismatch: ReplicaReplicationOffset {ReplicaReplicationOffset}, aof.TailAddress {tailAddress}", ReplicationOffset, storeWrapper.appendOnlyFile.TailAddress);
                     throw new GarnetException($"Before ProcessPrimaryStream: Replication offset mismatch: ReplicaReplicationOffset {ReplicationOffset}, aof.TailAddress {storeWrapper.appendOnlyFile.TailAddress}", LogLevel.Warning, clientResponse: false);
-                }
-
-                // If there is a gap between the local tail and incoming currentAddress, try to skip local AOF to the next page
-                if (currentAddress >= storeWrapper.appendOnlyFile.TailAddress + recordLength
-                    && storeWrapper.appendOnlyFile.GetPage(currentAddress) == storeWrapper.appendOnlyFile.GetPage(storeWrapper.appendOnlyFile.TailAddress) + 1)
-                {
-                    logger?.LogWarning("SkipPage from {previousAddress} to {currentAddress}, tail is {tailAddress}", previousAddress, currentAddress, storeWrapper.appendOnlyFile.TailAddress);
-                    storeWrapper.appendOnlyFile.UnsafeSkipPage();
-                    logger?.LogWarning("New tail after SkipPage is {tailAddress}", storeWrapper.appendOnlyFile.TailAddress);
                 }
 
                 // Enqueue to AOF

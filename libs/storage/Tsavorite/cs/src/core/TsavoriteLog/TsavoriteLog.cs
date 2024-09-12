@@ -434,17 +434,6 @@ namespace Tsavorite.core
             => allocator.LogPageSizeBits;
 
         /// <summary>
-        /// Get page number for given address
-        /// </summary>
-        /// <param name="logicalAddress"></param>
-        /// <returns></returns>
-        public long GetPage(long logicalAddress)
-            => allocator.GetPage(logicalAddress);
-
-        public void UnsafeSkipPage()
-            => allocator.SkipPage();
-
-        /// <summary>
         /// Get read only lag address
         /// </summary>
         public long UnsafeGetReadOnlyLagAddress()
