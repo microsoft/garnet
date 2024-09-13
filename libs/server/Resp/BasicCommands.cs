@@ -2,6 +2,7 @@
 // Licensed under the MIT license.
 
 using System;
+using System.Collections;
 using System.Collections.Generic;
 using System.Diagnostics;
 using System.Linq;
@@ -1036,26 +1037,40 @@ namespace Garnet.server
             var count = parseState.Count;
 
             // todo: custom command docs
-            if (!RespCommandsInfo.TryGetRespCommandsDocs(out var cmdsDocs, true, logger)) //||
+            if (!RespCommandsInfo.TryGetRespCommandsDocs(out var cmdsDocs, true, logger))
                 return true;
 
-            var docsFound = new List<RespCommandDocs>();
+            IEnumerable<RespCommandDocs> docs;
+            int docsCount;
 
-            for (var i = 0; i < count; i++)
+            if (count == 0)
             {
-                var cmdName = parseState.GetString(i);
-                if (cmdsDocs.TryGetValue(cmdName, out var doc))
+                docs = cmdsDocs.Values;
+                docsCount = cmdsDocs.Count;
+            }
+            else
+            {
+                var docsFound = new List<RespCommandDocs>();
+                for (var i = 0; i < count; i++)
                 {
-                    docsFound.Add(doc);
+                    var cmdName = parseState.GetString(i);
+                    if (cmdsDocs.TryGetValue(cmdName, out var doc))
+                    {
+                        docsFound.Add(doc);
+                    }
                 }
+
+                docs = docsFound;
+                docsCount = docsFound.Count;
             }
 
-            while (!RespWriteUtils.WriteArrayLength(docsFound.Count, ref dcurr, dend))
+            while (!RespWriteUtils.WriteArrayLength(docsCount * 2, ref dcurr, dend))
                 SendAndReset();
 
-            for (var i = 0; i < docsFound.Count; i++)
+            foreach (var doc in docs)
             {
-                while (!RespWriteUtils.WriteAsciiDirect(cmdsDocs.RespFormat, ref dcurr, dend))
+                var docRespFormat = doc.RespFormat;
+                while (!RespWriteUtils.WriteAsciiDirect(docRespFormat, ref dcurr, dend))
                     SendAndReset();
             }
 

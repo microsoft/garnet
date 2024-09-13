@@ -189,9 +189,22 @@ namespace Garnet.test
         }
 
         /// <summary>
-        /// Test COMMAND INFO with custom commands
+        /// Test COMMAND DOCS command
         /// </summary>
         [Test]
+        public void CommandDocsTest()
+        {
+            using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
+            var db = redis.GetDatabase(0);
+
+            // Get all commands using COMMAND DOCS command
+            var results = (RedisResult[])db.Execute("COMMAND", "DOCS", "ACL");
+        }
+
+        /// <summary>
+            /// Test COMMAND INFO with custom commands
+            /// </summary>
+            [Test]
         [TestCase(["SETIFPM", "MYDICTSET", "MGETIFPM", "READWRITETX", "MYDICTGET"])]
         [TestCase(["setifpm", "mydictset", "mgetifpm", "readwritetx", "mydictget"])]
         public void CommandInfoWithCustomCommandNamesTest(params string[] commands)

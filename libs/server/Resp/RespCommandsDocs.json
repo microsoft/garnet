@@ -21,10 +21,10 @@
         "Complexity": "O(1) since the categories and commands are a fixed set.",
         "Arguments": [
           {
-            "TypeDiscriminator": "RespCommandArgument",
+            "TypeDiscriminator": "RespCommandBasicArgument",
             "Name": "CATEGORY",
             "DisplayText": "category",
-            "Type": "None",
+            "Type": "String",
             "ArgumentFlags": "Optional"
           }
         ]
@@ -44,10 +44,10 @@
         "Complexity": "O(1) amortized time considering the typical user.",
         "Arguments": [
           {
-            "TypeDiscriminator": "RespCommandArgument",
+            "TypeDiscriminator": "RespCommandBasicArgument",
             "Name": "USERNAME",
             "DisplayText": "username",
-            "Type": "None",
+            "Type": "String",
             "ArgumentFlags": "Multiple"
           }
         ]
@@ -67,16 +67,16 @@
         "Complexity": "O(N). Where N is the number of rules provided.",
         "Arguments": [
           {
-            "TypeDiscriminator": "RespCommandArgument",
+            "TypeDiscriminator": "RespCommandBasicArgument",
             "Name": "USERNAME",
             "DisplayText": "username",
-            "Type": "None"
+            "Type": "String"
           },
           {
-            "TypeDiscriminator": "RespCommandArgument",
+            "TypeDiscriminator": "RespCommandBasicArgument",
             "Name": "RULE",
             "DisplayText": "rule",
-            "Type": "None",
+            "Type": "String",
             "ArgumentFlags": "Optional, Multiple"
           }
         ]
@@ -112,10 +112,10 @@
         "KeySpecIndex": 0
       },
       {
-        "TypeDiscriminator": "RespCommandArgument",
+        "TypeDiscriminator": "RespCommandBasicArgument",
         "Name": "VALUE",
         "DisplayText": "value",
-        "Type": "None"
+        "Type": "String"
       }
     ]
   },
@@ -138,17 +138,17 @@
     "Complexity": "O(N) where N is the number of passwords defined for the user",
     "Arguments": [
       {
-        "TypeDiscriminator": "RespCommandArgument",
+        "TypeDiscriminator": "RespCommandBasicArgument",
         "Name": "USERNAME",
         "DisplayText": "username",
-        "Type": "None",
+        "Type": "String",
         "ArgumentFlags": "Optional"
       },
       {
-        "TypeDiscriminator": "RespCommandArgument",
+        "TypeDiscriminator": "RespCommandBasicArgument",
         "Name": "PASSWORD",
         "DisplayText": "password",
-        "Type": "None"
+        "Type": "String"
       }
     ]
   },
@@ -160,10 +160,10 @@
     "Complexity": "O(1)",
     "Arguments": [
       {
-        "TypeDiscriminator": "RespCommandArgument",
+        "TypeDiscriminator": "RespCommandBasicArgument",
         "Name": "SCHEDULE",
         "DisplayText": "schedule",
-        "Type": "None",
+        "Type": "PureToken",
         "Token": "SCHEDULE",
         "ArgumentFlags": "Optional"
       }
@@ -186,39 +186,39 @@
       {
         "TypeDiscriminator": "RespCommandContainerArgument",
         "Name": "RANGE",
-        "Type": "None",
+        "Type": "Block",
         "ArgumentFlags": "Optional",
         "Arguments": [
           {
-            "TypeDiscriminator": "RespCommandArgument",
+            "TypeDiscriminator": "RespCommandBasicArgument",
             "Name": "START",
             "DisplayText": "start",
-            "Type": "None"
+            "Type": "Integer"
           },
           {
-            "TypeDiscriminator": "RespCommandArgument",
+            "TypeDiscriminator": "RespCommandBasicArgument",
             "Name": "END",
             "DisplayText": "end",
-            "Type": "None"
+            "Type": "Integer"
           },
           {
             "TypeDiscriminator": "RespCommandContainerArgument",
             "Name": "UNIT",
-            "Type": "None",
+            "Type": "OneOf",
             "ArgumentFlags": "Optional",
             "Arguments": [
               {
-                "TypeDiscriminator": "RespCommandArgument",
+                "TypeDiscriminator": "RespCommandBasicArgument",
                 "Name": "BYTE",
                 "DisplayText": "byte",
-                "Type": "None",
+                "Type": "PureToken",
                 "Token": "BYTE"
               },
               {
-                "TypeDiscriminator": "RespCommandArgument",
+                "TypeDiscriminator": "RespCommandBasicArgument",
                 "Name": "BIT",
                 "DisplayText": "bit",
-                "Type": "None",
+                "Type": "PureToken",
                 "Token": "BIT"
               }
             ]
@@ -244,60 +244,60 @@
       {
         "TypeDiscriminator": "RespCommandContainerArgument",
         "Name": "OPERATION",
-        "Type": "None",
+        "Type": "OneOf",
         "ArgumentFlags": "Optional, Multiple",
         "Arguments": [
           {
             "TypeDiscriminator": "RespCommandContainerArgument",
             "Name": "GET-BLOCK",
-            "Type": "None",
+            "Type": "Block",
             "Token": "GET",
             "Arguments": [
               {
-                "TypeDiscriminator": "RespCommandArgument",
+                "TypeDiscriminator": "RespCommandBasicArgument",
                 "Name": "ENCODING",
                 "DisplayText": "encoding",
-                "Type": "None"
+                "Type": "String"
               },
               {
-                "TypeDiscriminator": "RespCommandArgument",
+                "TypeDiscriminator": "RespCommandBasicArgument",
                 "Name": "OFFSET",
                 "DisplayText": "offset",
-                "Type": "None"
+                "Type": "Integer"
               }
             ]
           },
           {
             "TypeDiscriminator": "RespCommandContainerArgument",
             "Name": "WRITE",
-            "Type": "None",
+            "Type": "Block",
             "Arguments": [
               {
                 "TypeDiscriminator": "RespCommandContainerArgument",
                 "Name": "OVERFLOW-BLOCK",
-                "Type": "None",
+                "Type": "OneOf",
                 "Token": "OVERFLOW",
                 "ArgumentFlags": "Optional",
                 "Arguments": [
                   {
-                    "TypeDiscriminator": "RespCommandArgument",
+                    "TypeDiscriminator": "RespCommandBasicArgument",
                     "Name": "WRAP",
                     "DisplayText": "wrap",
-                    "Type": "None",
+                    "Type": "PureToken",
                     "Token": "WRAP"
                   },
                   {
-                    "TypeDiscriminator": "RespCommandArgument",
+                    "TypeDiscriminator": "RespCommandBasicArgument",
                     "Name": "SAT",
                     "DisplayText": "sat",
-                    "Type": "None",
+                    "Type": "PureToken",
                     "Token": "SAT"
                   },
                   {
-                    "TypeDiscriminator": "RespCommandArgument",
+                    "TypeDiscriminator": "RespCommandBasicArgument",
                     "Name": "FAIL",
                     "DisplayText": "fail",
-                    "Type": "None",
+                    "Type": "PureToken",
                     "Token": "FAIL"
                   }
                 ]
@@ -305,57 +305,57 @@
               {
                 "TypeDiscriminator": "RespCommandContainerArgument",
                 "Name": "WRITE-OPERATION",
-                "Type": "None",
+                "Type": "OneOf",
                 "Arguments": [
                   {
                     "TypeDiscriminator": "RespCommandContainerArgument",
                     "Name": "SET-BLOCK",
-                    "Type": "None",
+                    "Type": "Block",
                     "Token": "SET",
                     "Arguments": [
                       {
-                        "TypeDiscriminator": "RespCommandArgument",
+                        "TypeDiscriminator": "RespCommandBasicArgument",
                         "Name": "ENCODING",
                         "DisplayText": "encoding",
-                        "Type": "None"
+                        "Type": "String"
                       },
                       {
-                        "TypeDiscriminator": "RespCommandArgument",
+                        "TypeDiscriminator": "RespCommandBasicArgument",
                         "Name": "OFFSET",
                         "DisplayText": "offset",
-                        "Type": "None"
+                        "Type": "Integer"
                       },
                       {
-                        "TypeDiscriminator": "RespCommandArgument",
+                        "TypeDiscriminator": "RespCommandBasicArgument",
                         "Name": "VALUE",
                         "DisplayText": "value",
-                        "Type": "None"
+                        "Type": "Integer"
                       }
                     ]
                   },
                   {
                     "TypeDiscriminator": "RespCommandContainerArgument",
                     "Name": "INCRBY-BLOCK",
-                    "Type": "None",
+                    "Type": "Block",
                     "Token": "INCRBY",
                     "Arguments": [
                       {
-                        "TypeDiscriminator": "RespCommandArgument",
+                        "TypeDiscriminator": "RespCommandBasicArgument",
                         "Name": "ENCODING",
                         "DisplayText": "encoding",
-                        "Type": "None"
+                        "Type": "String"
                       },
                       {
-                        "TypeDiscriminator": "RespCommandArgument",
+                        "TypeDiscriminator": "RespCommandBasicArgument",
                         "Name": "OFFSET",
                         "DisplayText": "offset",
-                        "Type": "None"
+                        "Type": "Integer"
                       },
                       {
-                        "TypeDiscriminator": "RespCommandArgument",
+                        "TypeDiscriminator": "RespCommandBasicArgument",
                         "Name": "INCREMENT",
                         "DisplayText": "increment",
-                        "Type": "None"
+                        "Type": "Integer"
                       }
                     ]
                   }
@@ -384,21 +384,21 @@
       {
         "TypeDiscriminator": "RespCommandContainerArgument",
         "Name": "GET-BLOCK",
-        "Type": "None",
+        "Type": "Block",
         "Token": "GET",
         "ArgumentFlags": "Optional, Multiple",
         "Arguments": [
           {
-            "TypeDiscriminator": "RespCommandArgument",
+            "TypeDiscriminator": "RespCommandBasicArgument",
             "Name": "ENCODING",
             "DisplayText": "encoding",
-            "Type": "None"
+            "Type": "String"
           },
           {
-            "TypeDiscriminator": "RespCommandArgument",
+            "TypeDiscriminator": "RespCommandBasicArgument",
             "Name": "OFFSET",
             "DisplayText": "offset",
-            "Type": "None"
+            "Type": "Integer"
           }
         ]
       }
@@ -414,34 +414,34 @@
       {
         "TypeDiscriminator": "RespCommandContainerArgument",
         "Name": "OPERATION",
-        "Type": "None",
+        "Type": "OneOf",
         "Arguments": [
           {
-            "TypeDiscriminator": "RespCommandArgument",
+            "TypeDiscriminator": "RespCommandBasicArgument",
             "Name": "AND",
             "DisplayText": "and",
-            "Type": "None",
+            "Type": "PureToken",
             "Token": "AND"
           },
           {
-            "TypeDiscriminator": "RespCommandArgument",
+            "TypeDiscriminator": "RespCommandBasicArgument",
             "Name": "OR",
             "DisplayText": "or",
-            "Type": "None",
+            "Type": "PureToken",
             "Token": "OR"
           },
           {
-            "TypeDiscriminator": "RespCommandArgument",
+            "TypeDiscriminator": "RespCommandBasicArgument",
             "Name": "XOR",
             "DisplayText": "xor",
-            "Type": "None",
+            "Type": "PureToken",
             "Token": "XOR"
           },
           {
-            "TypeDiscriminator": "RespCommandArgument",
+            "TypeDiscriminator": "RespCommandBasicArgument",
             "Name": "NOT",
             "DisplayText": "not",
-            "Type": "None",
+            "Type": "PureToken",
             "Token": "NOT"
           }
         ]
@@ -478,53 +478,53 @@
         "KeySpecIndex": 0
       },
       {
-        "TypeDiscriminator": "RespCommandArgument",
+        "TypeDiscriminator": "RespCommandBasicArgument",
         "Name": "BIT",
         "DisplayText": "bit",
-        "Type": "None"
+        "Type": "Integer"
       },
       {
         "TypeDiscriminator": "RespCommandContainerArgument",
         "Name": "RANGE",
-        "Type": "None",
+        "Type": "Block",
         "ArgumentFlags": "Optional",
         "Arguments": [
           {
-            "TypeDiscriminator": "RespCommandArgument",
+            "TypeDiscriminator": "RespCommandBasicArgument",
             "Name": "START",
             "DisplayText": "start",
-            "Type": "None"
+            "Type": "Integer"
           },
           {
             "TypeDiscriminator": "RespCommandContainerArgument",
             "Name": "END-UNIT-BLOCK",
-            "Type": "None",
+            "Type": "Block",
             "ArgumentFlags": "Optional",
             "Arguments": [
               {
-                "TypeDiscriminator": "RespCommandArgument",
+                "TypeDiscriminator": "RespCommandBasicArgument",
                 "Name": "END",
                 "DisplayText": "end",
-                "Type": "None"
+                "Type": "Integer"
               },
               {
                 "TypeDiscriminator": "RespCommandContainerArgument",
                 "Name": "UNIT",
-                "Type": "None",
+                "Type": "OneOf",
                 "ArgumentFlags": "Optional",
                 "Arguments": [
                   {
-                    "TypeDiscriminator": "RespCommandArgument",
+                    "TypeDiscriminator": "RespCommandBasicArgument",
                     "Name": "BYTE",
                     "DisplayText": "byte",
-                    "Type": "None",
+                    "Type": "PureToken",
                     "Token": "BYTE"
                   },
                   {
-                    "TypeDiscriminator": "RespCommandArgument",
+                    "TypeDiscriminator": "RespCommandBasicArgument",
                     "Name": "BIT",
                     "DisplayText": "bit",
-                    "Type": "None",
+                    "Type": "PureToken",
                     "Token": "BIT"
                   }
                 ]
@@ -559,20 +559,20 @@
       {
         "TypeDiscriminator": "RespCommandContainerArgument",
         "Name": "WHEREFROM",
-        "Type": "None",
+        "Type": "OneOf",
         "Arguments": [
           {
-            "TypeDiscriminator": "RespCommandArgument",
+            "TypeDiscriminator": "RespCommandBasicArgument",
             "Name": "LEFT",
             "DisplayText": "left",
-            "Type": "None",
+            "Type": "PureToken",
             "Token": "LEFT"
           },
           {
-            "TypeDiscriminator": "RespCommandArgument",
+            "TypeDiscriminator": "RespCommandBasicArgument",
             "Name": "RIGHT",
             "DisplayText": "right",
-            "Type": "None",
+            "Type": "PureToken",
             "Token": "RIGHT"
           }
         ]
@@ -580,29 +580,29 @@
       {
         "TypeDiscriminator": "RespCommandContainerArgument",
         "Name": "WHERETO",
-        "Type": "None",
+        "Type": "OneOf",
         "Arguments": [
           {
-            "TypeDiscriminator": "RespCommandArgument",
+            "TypeDiscriminator": "RespCommandBasicArgument",
             "Name": "LEFT",
             "DisplayText": "left",
-            "Type": "None",
+            "Type": "PureToken",
             "Token": "LEFT"
           },
           {
-            "TypeDiscriminator": "RespCommandArgument",
+            "TypeDiscriminator": "RespCommandBasicArgument",
             "Name": "RIGHT",
             "DisplayText": "right",
-            "Type": "None",
+            "Type": "PureToken",
             "Token": "RIGHT"
           }
         ]
       },
       {
-        "TypeDiscriminator": "RespCommandArgument",
+        "TypeDiscriminator": "RespCommandBasicArgument",
         "Name": "TIMEOUT",
         "DisplayText": "timeout",
-        "Type": "None"
+        "Type": "Double"
       }
     ]
   },
@@ -622,10 +622,10 @@
         "KeySpecIndex": 0
       },
       {
-        "TypeDiscriminator": "RespCommandArgument",
+        "TypeDiscriminator": "RespCommandBasicArgument",
         "Name": "TIMEOUT",
         "DisplayText": "timeout",
-        "Type": "None"
+        "Type": "Double"
       }
     ]
   },
@@ -645,10 +645,10 @@
         "KeySpecIndex": 0
       },
       {
-        "TypeDiscriminator": "RespCommandArgument",
+        "TypeDiscriminator": "RespCommandBasicArgument",
         "Name": "TIMEOUT",
         "DisplayText": "timeout",
-        "Type": "None"
+        "Type": "Double"
       }
     ]
   },
@@ -669,115 +669,115 @@
           {
             "TypeDiscriminator": "RespCommandContainerArgument",
             "Name": "FILTER",
-            "Type": "None",
+            "Type": "OneOf",
             "Arguments": [
               {
-                "TypeDiscriminator": "RespCommandArgument",
+                "TypeDiscriminator": "RespCommandBasicArgument",
                 "Name": "OLD-FORMAT",
                 "DisplayText": "ip:port",
-                "Type": "None"
+                "Type": "String"
               },
               {
                 "TypeDiscriminator": "RespCommandContainerArgument",
                 "Name": "NEW-FORMAT",
-                "Type": "None",
+                "Type": "OneOf",
                 "ArgumentFlags": "Multiple",
                 "Arguments": [
                   {
-                    "TypeDiscriminator": "RespCommandArgument",
+                    "TypeDiscriminator": "RespCommandBasicArgument",
                     "Name": "CLIENT-ID",
                     "DisplayText": "client-id",
-                    "Type": "None",
+                    "Type": "Integer",
                     "Token": "ID",
                     "ArgumentFlags": "Optional"
                   },
                   {
                     "TypeDiscriminator": "RespCommandContainerArgument",
                     "Name": "CLIENT-TYPE",
-                    "Type": "None",
+                    "Type": "OneOf",
                     "Token": "TYPE",
                     "ArgumentFlags": "Optional",
                     "Arguments": [
                       {
-                        "TypeDiscriminator": "RespCommandArgument",
+                        "TypeDiscriminator": "RespCommandBasicArgument",
                         "Name": "NORMAL",
                         "DisplayText": "normal",
-                        "Type": "None",
+                        "Type": "PureToken",
                         "Token": "NORMAL"
                       },
                       {
-                        "TypeDiscriminator": "RespCommandArgument",
+                        "TypeDiscriminator": "RespCommandBasicArgument",
                         "Name": "MASTER",
                         "DisplayText": "master",
-                        "Type": "None",
+                        "Type": "PureToken",
                         "Token": "MASTER"
                       },
                       {
-                        "TypeDiscriminator": "RespCommandArgument",
+                        "TypeDiscriminator": "RespCommandBasicArgument",
                         "Name": "SLAVE",
                         "DisplayText": "slave",
-                        "Type": "None",
+                        "Type": "PureToken",
                         "Token": "SLAVE"
                       },
                       {
-                        "TypeDiscriminator": "RespCommandArgument",
+                        "TypeDiscriminator": "RespCommandBasicArgument",
                         "Name": "REPLICA",
                         "DisplayText": "replica",
-                        "Type": "None",
+                        "Type": "PureToken",
                         "Token": "REPLICA"
                       },
                       {
-                        "TypeDiscriminator": "RespCommandArgument",
+                        "TypeDiscriminator": "RespCommandBasicArgument",
                         "Name": "PUBSUB",
                         "DisplayText": "pubsub",
-                        "Type": "None",
+                        "Type": "PureToken",
                         "Token": "PUBSUB"
                       }
                     ]
                   },
                   {
-                    "TypeDiscriminator": "RespCommandArgument",
+                    "TypeDiscriminator": "RespCommandBasicArgument",
                     "Name": "USERNAME",
                     "DisplayText": "username",
-                    "Type": "None",
+                    "Type": "String",
                     "Token": "USER",
                     "ArgumentFlags": "Optional"
                   },
                   {
-                    "TypeDiscriminator": "RespCommandArgument",
+                    "TypeDiscriminator": "RespCommandBasicArgument",
                     "Name": "ADDR",
                     "DisplayText": "ip:port",
-                    "Type": "None",
+                    "Type": "String",
                     "Token": "ADDR",
                     "ArgumentFlags": "Optional"
                   },
                   {
-                    "TypeDiscriminator": "RespCommandArgument",
+                    "TypeDiscriminator": "RespCommandBasicArgument",
                     "Name": "LADDR",
                     "DisplayText": "ip:port",
-                    "Type": "None",
+                    "Type": "String",
                     "Token": "LADDR",
                     "ArgumentFlags": "Optional"
                   },
                   {
                     "TypeDiscriminator": "RespCommandContainerArgument",
                     "Name": "SKIPME",
-                    "Type": "None",
+                    "Type": "OneOf",
                     "Token": "SKIPME",
                     "ArgumentFlags": "Optional",
                     "Arguments": [
                       {
-                        "TypeDiscriminator": "RespCommandArgument",
+                        "TypeDiscriminator": "RespCommandBasicArgument",
                         "Name": "YES",
                         "DisplayText": "yes",
-                        "Type": "None",
+                        "Type": "PureToken",
                         "Token": "YES"
                       },
                       {
-                        "TypeDiscriminator": "RespCommandArgument",
+                        "TypeDiscriminator": "RespCommandBasicArgument",
                         "Name": "NO",
                         "DisplayText": "no",
-                        "Type": "None",
+                        "Type": "PureToken",
                         "Token": "NO"
                       }
                     ]
@@ -805,45 +805,45 @@
           {
             "TypeDiscriminator": "RespCommandContainerArgument",
             "Name": "CLIENT-TYPE",
-            "Type": "None",
+            "Type": "OneOf",
             "Token": "TYPE",
             "ArgumentFlags": "Optional",
             "Arguments": [
               {
-                "TypeDiscriminator": "RespCommandArgument",
+                "TypeDiscriminator": "RespCommandBasicArgument",
                 "Name": "NORMAL",
                 "DisplayText": "normal",
-                "Type": "None",
+                "Type": "PureToken",
                 "Token": "NORMAL"
               },
               {
-                "TypeDiscriminator": "RespCommandArgument",
+                "TypeDiscriminator": "RespCommandBasicArgument",
                 "Name": "MASTER",
                 "DisplayText": "master",
-                "Type": "None",
+                "Type": "PureToken",
                 "Token": "MASTER"
               },
               {
-                "TypeDiscriminator": "RespCommandArgument",
+                "TypeDiscriminator": "RespCommandBasicArgument",
                 "Name": "REPLICA",
                 "DisplayText": "replica",
-                "Type": "None",
+                "Type": "PureToken",
                 "Token": "REPLICA"
               },
               {
-                "TypeDiscriminator": "RespCommandArgument",
+                "TypeDiscriminator": "RespCommandBasicArgument",
                 "Name": "PUBSUB",
                 "DisplayText": "pubsub",
-                "Type": "None",
+                "Type": "PureToken",
                 "Token": "PUBSUB"
               }
             ]
           },
           {
-            "TypeDiscriminator": "RespCommandArgument",
+            "TypeDiscriminator": "RespCommandBasicArgument",
             "Name": "CLIENT-ID",
             "DisplayText": "client-id",
-            "Type": "None",
+            "Type": "Integer",
             "Token": "ID",
             "ArgumentFlags": "Optional, Multiple"
           }
@@ -873,10 +873,10 @@
         "Complexity": "O(N) where N is the total number of hash slot arguments",
         "Arguments": [
           {
-            "TypeDiscriminator": "RespCommandArgument",
+            "TypeDiscriminator": "RespCommandBasicArgument",
             "Name": "SLOT",
             "DisplayText": "slot",
-            "Type": "None",
+            "Type": "Integer",
             "ArgumentFlags": "Multiple"
           }
         ]
@@ -889,10 +889,10 @@
         "Complexity": "O(N) where N is the number of bytes in the key",
         "Arguments": [
           {
-            "TypeDiscriminator": "RespCommandArgument",
+            "TypeDiscriminator": "RespCommandBasicArgument",
             "Name": "KEY",
             "DisplayText": "key",
-            "Type": "None"
+            "Type": "String"
           }
         ]
       },
@@ -904,42 +904,42 @@
         "Complexity": "O(1)",
         "Arguments": [
           {
-            "TypeDiscriminator": "RespCommandArgument",
+            "TypeDiscriminator": "RespCommandBasicArgument",
             "Name": "SLOT",
             "DisplayText": "slot",
-            "Type": "None"
+            "Type": "Integer"
           },
           {
             "TypeDiscriminator": "RespCommandContainerArgument",
             "Name": "SUBCOMMAND",
-            "Type": "None",
+            "Type": "OneOf",
             "Arguments": [
               {
-                "TypeDiscriminator": "RespCommandArgument",
+                "TypeDiscriminator": "RespCommandBasicArgument",
                 "Name": "IMPORTING",
                 "DisplayText": "node-id",
-                "Type": "None",
+                "Type": "String",
                 "Token": "IMPORTING"
               },
               {
-                "TypeDiscriminator": "RespCommandArgument",
+                "TypeDiscriminator": "RespCommandBasicArgument",
                 "Name": "MIGRATING",
                 "DisplayText": "node-id",
-                "Type": "None",
+                "Type": "String",
                 "Token": "MIGRATING"
               },
               {
-                "TypeDiscriminator": "RespCommandArgument",
+                "TypeDiscriminator": "RespCommandBasicArgument",
                 "Name": "NODE",
                 "DisplayText": "node-id",
-                "Type": "None",
+                "Type": "String",
                 "Token": "NODE"
               },
               {
-                "TypeDiscriminator": "RespCommandArgument",
+                "TypeDiscriminator": "RespCommandBasicArgument",
                 "Name": "STABLE",
                 "DisplayText": "stable",
-                "Type": "None",
+                "Type": "PureToken",
                 "Token": "STABLE"
               }
             ]
@@ -954,10 +954,10 @@
         "Complexity": "O(1)",
         "Arguments": [
           {
-            "TypeDiscriminator": "RespCommandArgument",
+            "TypeDiscriminator": "RespCommandBasicArgument",
             "Name": "NODE-ID",
             "DisplayText": "node-id",
-            "Type": "None"
+            "Type": "String"
           }
         ]
       },
@@ -990,10 +990,10 @@
         "Complexity": "O(1)",
         "Arguments": [
           {
-            "TypeDiscriminator": "RespCommandArgument",
+            "TypeDiscriminator": "RespCommandBasicArgument",
             "Name": "CONFIG-EPOCH",
             "DisplayText": "config-epoch",
-            "Type": "None"
+            "Type": "Integer"
           }
         ]
       },
@@ -1007,20 +1007,20 @@
           {
             "TypeDiscriminator": "RespCommandContainerArgument",
             "Name": "RANGE",
-            "Type": "None",
+            "Type": "Block",
             "ArgumentFlags": "Multiple",
             "Arguments": [
               {
-                "TypeDiscriminator": "RespCommandArgument",
+                "TypeDiscriminator": "RespCommandBasicArgument",
                 "Name": "START-SLOT",
                 "DisplayText": "start-slot",
-                "Type": "None"
+                "Type": "Integer"
               },
               {
-                "TypeDiscriminator": "RespCommandArgument",
+                "TypeDiscriminator": "RespCommandBasicArgument",
                 "Name": "END-SLOT",
                 "DisplayText": "end-slot",
-                "Type": "None"
+                "Type": "Integer"
               }
             ]
           }
@@ -1050,10 +1050,10 @@
         "Complexity": "O(N) where N is the number of replicas.",
         "Arguments": [
           {
-            "TypeDiscriminator": "RespCommandArgument",
+            "TypeDiscriminator": "RespCommandBasicArgument",
             "Name": "NODE-ID",
             "DisplayText": "node-id",
-            "Type": "None"
+            "Type": "String"
           }
         ]
       },
@@ -1067,21 +1067,21 @@
           {
             "TypeDiscriminator": "RespCommandContainerArgument",
             "Name": "OPTIONS",
-            "Type": "None",
+            "Type": "OneOf",
             "ArgumentFlags": "Optional",
             "Arguments": [
               {
-                "TypeDiscriminator": "RespCommandArgument",
+                "TypeDiscriminator": "RespCommandBasicArgument",
                 "Name": "FORCE",
                 "DisplayText": "force",
-                "Type": "None",
+                "Type": "PureToken",
                 "Token": "FORCE"
               },
               {
-                "TypeDiscriminator": "RespCommandArgument",
+                "TypeDiscriminator": "RespCommandBasicArgument",
                 "Name": "TAKEOVER",
                 "DisplayText": "takeover",
-                "Type": "None",
+                "Type": "PureToken",
                 "Token": "TAKEOVER"
               }
             ]
@@ -1098,20 +1098,20 @@
           {
             "TypeDiscriminator": "RespCommandContainerArgument",
             "Name": "RANGE",
-            "Type": "None",
+            "Type": "Block",
             "ArgumentFlags": "Multiple",
             "Arguments": [
               {
-                "TypeDiscriminator": "RespCommandArgument",
+                "TypeDiscriminator": "RespCommandBasicArgument",
                 "Name": "START-SLOT",
                 "DisplayText": "start-slot",
-                "Type": "None"
+                "Type": "Integer"
               },
               {
-                "TypeDiscriminator": "RespCommandArgument",
+                "TypeDiscriminator": "RespCommandBasicArgument",
                 "Name": "END-SLOT",
                 "DisplayText": "end-slot",
-                "Type": "None"
+                "Type": "Integer"
               }
             ]
           }
@@ -1125,10 +1125,10 @@
         "Complexity": "O(1)",
         "Arguments": [
           {
-            "TypeDiscriminator": "RespCommandArgument",
+            "TypeDiscriminator": "RespCommandBasicArgument",
             "Name": "SLOT",
             "DisplayText": "slot",
-            "Type": "None"
+            "Type": "Integer"
           }
         ]
       },
@@ -1142,21 +1142,21 @@
           {
             "TypeDiscriminator": "RespCommandContainerArgument",
             "Name": "RESET-TYPE",
-            "Type": "None",
+            "Type": "OneOf",
             "ArgumentFlags": "Optional",
             "Arguments": [
               {
-                "TypeDiscriminator": "RespCommandArgument",
+                "TypeDiscriminator": "RespCommandBasicArgument",
                 "Name": "HARD",
                 "DisplayText": "hard",
-                "Type": "None",
+                "Type": "PureToken",
                 "Token": "HARD"
               },
               {
-                "TypeDiscriminator": "RespCommandArgument",
+                "TypeDiscriminator": "RespCommandBasicArgument",
                 "Name": "SOFT",
                 "DisplayText": "soft",
-                "Type": "None",
+                "Type": "PureToken",
                 "Token": "SOFT"
               }
             ]
@@ -1171,22 +1171,22 @@
         "Complexity": "O(1)",
         "Arguments": [
           {
-            "TypeDiscriminator": "RespCommandArgument",
+            "TypeDiscriminator": "RespCommandBasicArgument",
             "Name": "IP",
             "DisplayText": "ip",
-            "Type": "None"
+            "Type": "String"
           },
           {
-            "TypeDiscriminator": "RespCommandArgument",
+            "TypeDiscriminator": "RespCommandBasicArgument",
             "Name": "PORT",
             "DisplayText": "port",
-            "Type": "None"
+            "Type": "Integer"
           },
           {
-            "TypeDiscriminator": "RespCommandArgument",
+            "TypeDiscriminator": "RespCommandBasicArgument",
             "Name": "CLUSTER-BUS-PORT",
             "DisplayText": "cluster-bus-port",
-            "Type": "None",
+            "Type": "Integer",
             "ArgumentFlags": "Optional"
           }
         ]
@@ -1199,10 +1199,10 @@
         "Complexity": "O(1)",
         "Arguments": [
           {
-            "TypeDiscriminator": "RespCommandArgument",
+            "TypeDiscriminator": "RespCommandBasicArgument",
             "Name": "NODE-ID",
             "DisplayText": "node-id",
-            "Type": "None"
+            "Type": "String"
           }
         ]
       },
@@ -1221,16 +1221,16 @@
         "Complexity": "O(N) where N is the number of requested keys",
         "Arguments": [
           {
-            "TypeDiscriminator": "RespCommandArgument",
+            "TypeDiscriminator": "RespCommandBasicArgument",
             "Name": "SLOT",
             "DisplayText": "slot",
-            "Type": "None"
+            "Type": "Integer"
           },
           {
-            "TypeDiscriminator": "RespCommandArgument",
+            "TypeDiscriminator": "RespCommandBasicArgument",
             "Name": "COUNT",
             "DisplayText": "count",
-            "Type": "None"
+            "Type": "Integer"
           }
         ]
       },
@@ -1242,10 +1242,10 @@
         "Complexity": "O(N) where N is the total number of hash slot arguments",
         "Arguments": [
           {
-            "TypeDiscriminator": "RespCommandArgument",
+            "TypeDiscriminator": "RespCommandBasicArgument",
             "Name": "SLOT",
             "DisplayText": "slot",
-            "Type": "None",
+            "Type": "Integer",
             "ArgumentFlags": "Multiple"
           }
         ]
@@ -1350,10 +1350,10 @@
         "Complexity": "O(N) where N is the number of commands to look up",
         "Arguments": [
           {
-            "TypeDiscriminator": "RespCommandArgument",
+            "TypeDiscriminator": "RespCommandBasicArgument",
             "Name": "COMMAND-NAME",
             "DisplayText": "command-name",
-            "Type": "None",
+            "Type": "String",
             "ArgumentFlags": "Optional, Multiple"
           }
         ]
@@ -1364,6 +1364,22 @@
         "Summary": "Returns a count of commands.",
         "Group": "Server",
         "Complexity": "O(1)"
+      },
+      {
+        "Command": "COMMAND",
+        "Name": "COMMAND|DOCS",
+        "Summary": "Returns documentary information about one, multiple or all commands.",
+        "Group": "Server",
+        "Complexity": "O(N) where N is the number of commands to look up",
+        "Arguments": [
+          {
+            "TypeDiscriminator": "RespCommandBasicArgument",
+            "Name": "COMMAND-NAME",
+            "DisplayText": "command-name",
+            "Type": "String",
+            "ArgumentFlags": "Optional, Multiple"
+          }
+        ]
       }
     ]
   },
@@ -1395,20 +1411,20 @@
           {
             "TypeDiscriminator": "RespCommandContainerArgument",
             "Name": "DATA",
-            "Type": "None",
+            "Type": "Block",
             "ArgumentFlags": "Multiple",
             "Arguments": [
               {
-                "TypeDiscriminator": "RespCommandArgument",
+                "TypeDiscriminator": "RespCommandBasicArgument",
                 "Name": "PARAMETER",
                 "DisplayText": "parameter",
-                "Type": "None"
+                "Type": "String"
               },
               {
-                "TypeDiscriminator": "RespCommandArgument",
+                "TypeDiscriminator": "RespCommandBasicArgument",
                 "Name": "VALUE",
                 "DisplayText": "value",
-                "Type": "None"
+                "Type": "String"
               }
             ]
           }
@@ -1422,10 +1438,10 @@
         "Complexity": "O(N) when N is the number of configuration parameters provided",
         "Arguments": [
           {
-            "TypeDiscriminator": "RespCommandArgument",
+            "TypeDiscriminator": "RespCommandBasicArgument",
             "Name": "PARAMETER",
             "DisplayText": "parameter",
-            "Type": "None",
+            "Type": "String",
             "ArgumentFlags": "Multiple"
           }
         ]
@@ -1490,10 +1506,10 @@
         "KeySpecIndex": 0
       },
       {
-        "TypeDiscriminator": "RespCommandArgument",
+        "TypeDiscriminator": "RespCommandBasicArgument",
         "Name": "DECREMENT",
         "DisplayText": "decrement",
-        "Type": "None"
+        "Type": "Integer"
       }
     ]
   },
@@ -1529,10 +1545,10 @@
     "Complexity": "O(1)",
     "Arguments": [
       {
-        "TypeDiscriminator": "RespCommandArgument",
+        "TypeDiscriminator": "RespCommandBasicArgument",
         "Name": "MESSAGE",
         "DisplayText": "message",
-        "Type": "None"
+        "Type": "String"
       }
     ]
   },
@@ -1544,16 +1560,16 @@
     "Complexity": "Depends on the script that is executed.",
     "Arguments": [
       {
-        "TypeDiscriminator": "RespCommandArgument",
+        "TypeDiscriminator": "RespCommandBasicArgument",
         "Name": "SCRIPT",
         "DisplayText": "script",
-        "Type": "None"
+        "Type": "String"
       },
       {
-        "TypeDiscriminator": "RespCommandArgument",
+        "TypeDiscriminator": "RespCommandBasicArgument",
         "Name": "NUMKEYS",
         "DisplayText": "numkeys",
-        "Type": "None"
+        "Type": "Integer"
       },
       {
         "TypeDiscriminator": "RespCommandKeyArgument",
@@ -1564,10 +1580,10 @@
         "KeySpecIndex": 0
       },
       {
-        "TypeDiscriminator": "RespCommandArgument",
+        "TypeDiscriminator": "RespCommandBasicArgument",
         "Name": "ARG",
         "DisplayText": "arg",
-        "Type": "None",
+        "Type": "String",
         "ArgumentFlags": "Optional, Multiple"
       }
     ]
@@ -1580,16 +1596,16 @@
     "Complexity": "Depends on the script that is executed.",
     "Arguments": [
       {
-        "TypeDiscriminator": "RespCommandArgument",
+        "TypeDiscriminator": "RespCommandBasicArgument",
         "Name": "SHA1",
         "DisplayText": "sha1",
-        "Type": "None"
+        "Type": "String"
       },
       {
-        "TypeDiscriminator": "RespCommandArgument",
+        "TypeDiscriminator": "RespCommandBasicArgument",
         "Name": "NUMKEYS",
         "DisplayText": "numkeys",
-        "Type": "None"
+        "Type": "Integer"
       },
       {
         "TypeDiscriminator": "RespCommandKeyArgument",
@@ -1600,10 +1616,10 @@
         "KeySpecIndex": 0
       },
       {
-        "TypeDiscriminator": "RespCommandArgument",
+        "TypeDiscriminator": "RespCommandBasicArgument",
         "Name": "ARG",
         "DisplayText": "arg",
-        "Type": "None",
+        "Type": "String",
         "ArgumentFlags": "Optional, Multiple"
       }
     ]
@@ -1647,43 +1663,43 @@
         "KeySpecIndex": 0
       },
       {
-        "TypeDiscriminator": "RespCommandArgument",
+        "TypeDiscriminator": "RespCommandBasicArgument",
         "Name": "SECONDS",
         "DisplayText": "seconds",
-        "Type": "None"
+        "Type": "Integer"
       },
       {
         "TypeDiscriminator": "RespCommandContainerArgument",
         "Name": "CONDITION",
-        "Type": "None",
+        "Type": "OneOf",
         "ArgumentFlags": "Optional",
         "Arguments": [
           {
-            "TypeDiscriminator": "RespCommandArgument",
+            "TypeDiscriminator": "RespCommandBasicArgument",
             "Name": "NX",
             "DisplayText": "nx",
-            "Type": "None",
+            "Type": "PureToken",
             "Token": "NX"
           },
           {
-            "TypeDiscriminator": "RespCommandArgument",
+            "TypeDiscriminator": "RespCommandBasicArgument",
             "Name": "XX",
             "DisplayText": "xx",
-            "Type": "None",
+            "Type": "PureToken",
             "Token": "XX"
           },
           {
-            "TypeDiscriminator": "RespCommandArgument",
+            "TypeDiscriminator": "RespCommandBasicArgument",
             "Name": "GT",
             "DisplayText": "gt",
-            "Type": "None",
+            "Type": "PureToken",
             "Token": "GT"
           },
           {
-            "TypeDiscriminator": "RespCommandArgument",
+            "TypeDiscriminator": "RespCommandBasicArgument",
             "Name": "LT",
             "DisplayText": "lt",
-            "Type": "None",
+            "Type": "PureToken",
             "Token": "LT"
           }
         ]
@@ -1700,45 +1716,45 @@
       {
         "TypeDiscriminator": "RespCommandContainerArgument",
         "Name": "TARGET",
-        "Type": "None",
+        "Type": "Block",
         "Token": "TO",
         "ArgumentFlags": "Optional",
         "Arguments": [
           {
-            "TypeDiscriminator": "RespCommandArgument",
+            "TypeDiscriminator": "RespCommandBasicArgument",
             "Name": "HOST",
             "DisplayText": "host",
-            "Type": "None"
+            "Type": "String"
           },
           {
-            "TypeDiscriminator": "RespCommandArgument",
+            "TypeDiscriminator": "RespCommandBasicArgument",
             "Name": "PORT",
             "DisplayText": "port",
-            "Type": "None"
+            "Type": "Integer"
           },
           {
-            "TypeDiscriminator": "RespCommandArgument",
+            "TypeDiscriminator": "RespCommandBasicArgument",
             "Name": "FORCE",
             "DisplayText": "force",
-            "Type": "None",
+            "Type": "PureToken",
             "Token": "FORCE",
             "ArgumentFlags": "Optional"
           }
         ]
       },
       {
-        "TypeDiscriminator": "RespCommandArgument",
+        "TypeDiscriminator": "RespCommandBasicArgument",
         "Name": "ABORT",
         "DisplayText": "abort",
-        "Type": "None",
+        "Type": "PureToken",
         "Token": "ABORT",
         "ArgumentFlags": "Optional"
       },
       {
-        "TypeDiscriminator": "RespCommandArgument",
+        "TypeDiscriminator": "RespCommandBasicArgument",
         "Name": "MILLISECONDS",
         "DisplayText": "milliseconds",
-        "Type": "None",
+        "Type": "Integer",
         "Token": "TIMEOUT",
         "ArgumentFlags": "Optional"
       }
@@ -1754,21 +1770,21 @@
       {
         "TypeDiscriminator": "RespCommandContainerArgument",
         "Name": "FLUSH-TYPE",
-        "Type": "None",
+        "Type": "OneOf",
         "ArgumentFlags": "Optional",
         "Arguments": [
           {
-            "TypeDiscriminator": "RespCommandArgument",
+            "TypeDiscriminator": "RespCommandBasicArgument",
             "Name": "ASYNC",
             "DisplayText": "async",
-            "Type": "None",
+            "Type": "PureToken",
             "Token": "ASYNC"
           },
           {
-            "TypeDiscriminator": "RespCommandArgument",
+            "TypeDiscriminator": "RespCommandBasicArgument",
             "Name": "SYNC",
             "DisplayText": "sync",
-            "Type": "None",
+            "Type": "PureToken",
             "Token": "SYNC"
           }
         ]
@@ -1785,21 +1801,21 @@
       {
         "TypeDiscriminator": "RespCommandContainerArgument",
         "Name": "FLUSH-TYPE",
-        "Type": "None",
+        "Type": "OneOf",
         "ArgumentFlags": "Optional",
         "Arguments": [
           {
-            "TypeDiscriminator": "RespCommandArgument",
+            "TypeDiscriminator": "RespCommandBasicArgument",
             "Name": "ASYNC",
             "DisplayText": "async",
-            "Type": "None",
+            "Type": "PureToken",
             "Token": "ASYNC"
           },
           {
-            "TypeDiscriminator": "RespCommandArgument",
+            "TypeDiscriminator": "RespCommandBasicArgument",
             "Name": "SYNC",
             "DisplayText": "sync",
-            "Type": "None",
+            "Type": "PureToken",
             "Token": "SYNC"
           }
         ]
@@ -1827,56 +1843,56 @@
       {
         "TypeDiscriminator": "RespCommandContainerArgument",
         "Name": "CONDITION",
-        "Type": "None",
+        "Type": "OneOf",
         "ArgumentFlags": "Optional",
         "Arguments": [
           {
-            "TypeDiscriminator": "RespCommandArgument",
+            "TypeDiscriminator": "RespCommandBasicArgument",
             "Name": "NX",
             "DisplayText": "nx",
-            "Type": "None",
+            "Type": "PureToken",
             "Token": "NX"
           },
           {
-            "TypeDiscriminator": "RespCommandArgument",
+            "TypeDiscriminator": "RespCommandBasicArgument",
             "Name": "XX",
             "DisplayText": "xx",
-            "Type": "None",
+            "Type": "PureToken",
             "Token": "XX"
           }
         ]
       },
       {
-        "TypeDiscriminator": "RespCommandArgument",
+        "TypeDiscriminator": "RespCommandBasicArgument",
         "Name": "CHANGE",
         "DisplayText": "change",
-        "Type": "None",
+        "Type": "PureToken",
         "Token": "CH",
         "ArgumentFlags": "Optional"
       },
       {
         "TypeDiscriminator": "RespCommandContainerArgument",
         "Name": "DATA",
-        "Type": "None",
+        "Type": "Block",
         "ArgumentFlags": "Multiple",
         "Arguments": [
           {
-            "TypeDiscriminator": "RespCommandArgument",
+            "TypeDiscriminator": "RespCommandBasicArgument",
             "Name": "LONGITUDE",
             "DisplayText": "longitude",
-            "Type": "None"
+            "Type": "Double"
           },
           {
-            "TypeDiscriminator": "RespCommandArgument",
+            "TypeDiscriminator": "RespCommandBasicArgument",
             "Name": "LATITUDE",
             "DisplayText": "latitude",
-            "Type": "None"
+            "Type": "Double"
           },
           {
-            "TypeDiscriminator": "RespCommandArgument",
+            "TypeDiscriminator": "RespCommandBasicArgument",
             "Name": "MEMBER",
             "DisplayText": "member",
-            "Type": "None"
+            "Type": "String"
           }
         ]
       }
@@ -1897,49 +1913,49 @@
         "KeySpecIndex": 0
       },
       {
-        "TypeDiscriminator": "RespCommandArgument",
+        "TypeDiscriminator": "RespCommandBasicArgument",
         "Name": "MEMBER1",
         "DisplayText": "member1",
-        "Type": "None"
+        "Type": "String"
       },
       {
-        "TypeDiscriminator": "RespCommandArgument",
+        "TypeDiscriminator": "RespCommandBasicArgument",
         "Name": "MEMBER2",
         "DisplayText": "member2",
-        "Type": "None"
+        "Type": "String"
       },
       {
         "TypeDiscriminator": "RespCommandContainerArgument",
         "Name": "UNIT",
-        "Type": "None",
+        "Type": "OneOf",
         "ArgumentFlags": "Optional",
         "Arguments": [
           {
-            "TypeDiscriminator": "RespCommandArgument",
+            "TypeDiscriminator": "RespCommandBasicArgument",
             "Name": "M",
             "DisplayText": "m",
-            "Type": "None",
+            "Type": "PureToken",
             "Token": "M"
           },
           {
-            "TypeDiscriminator": "RespCommandArgument",
+            "TypeDiscriminator": "RespCommandBasicArgument",
             "Name": "KM",
             "DisplayText": "km",
-            "Type": "None",
+            "Type": "PureToken",
             "Token": "KM"
           },
           {
-            "TypeDiscriminator": "RespCommandArgument",
+            "TypeDiscriminator": "RespCommandBasicArgument",
             "Name": "FT",
             "DisplayText": "ft",
-            "Type": "None",
+            "Type": "PureToken",
             "Token": "FT"
           },
           {
-            "TypeDiscriminator": "RespCommandArgument",
+            "TypeDiscriminator": "RespCommandBasicArgument",
             "Name": "MI",
             "DisplayText": "mi",
-            "Type": "None",
+            "Type": "PureToken",
             "Token": "MI"
           }
         ]
@@ -1961,10 +1977,10 @@
         "KeySpecIndex": 0
       },
       {
-        "TypeDiscriminator": "RespCommandArgument",
+        "TypeDiscriminator": "RespCommandBasicArgument",
         "Name": "MEMBER",
         "DisplayText": "member",
-        "Type": "None",
+        "Type": "String",
         "ArgumentFlags": "Optional, Multiple"
       }
     ]
@@ -1984,10 +2000,10 @@
         "KeySpecIndex": 0
       },
       {
-        "TypeDiscriminator": "RespCommandArgument",
+        "TypeDiscriminator": "RespCommandBasicArgument",
         "Name": "MEMBER",
         "DisplayText": "member",
-        "Type": "None",
+        "Type": "String",
         "ArgumentFlags": "Optional, Multiple"
       }
     ]
@@ -2009,32 +2025,32 @@
       {
         "TypeDiscriminator": "RespCommandContainerArgument",
         "Name": "FROM",
-        "Type": "None",
+        "Type": "OneOf",
         "Arguments": [
           {
-            "TypeDiscriminator": "RespCommandArgument",
+            "TypeDiscriminator": "RespCommandBasicArgument",
             "Name": "MEMBER",
             "DisplayText": "member",
-            "Type": "None",
+            "Type": "String",
             "Token": "FROMMEMBER"
           },
           {
             "TypeDiscriminator": "RespCommandContainerArgument",
             "Name": "FROMLONLAT",
-            "Type": "None",
+            "Type": "Block",
             "Token": "FROMLONLAT",
             "Arguments": [
               {
-                "TypeDiscriminator": "RespCommandArgument",
+                "TypeDiscriminator": "RespCommandBasicArgument",
                 "Name": "LONGITUDE",
                 "DisplayText": "longitude",
-                "Type": "None"
+                "Type": "Double"
               },
               {
-                "TypeDiscriminator": "RespCommandArgument",
+                "TypeDiscriminator": "RespCommandBasicArgument",
                 "Name": "LATITUDE",
                 "DisplayText": "latitude",
-                "Type": "None"
+                "Type": "Double"
               }
             ]
           }
@@ -2043,51 +2059,51 @@
       {
         "TypeDiscriminator": "RespCommandContainerArgument",
         "Name": "BY",
-        "Type": "None",
+        "Type": "OneOf",
         "Arguments": [
           {
             "TypeDiscriminator": "RespCommandContainerArgument",
             "Name": "CIRCLE",
-            "Type": "None",
+            "Type": "Block",
             "Arguments": [
               {
-                "TypeDiscriminator": "RespCommandArgument",
+                "TypeDiscriminator": "RespCommandBasicArgument",
                 "Name": "RADIUS",
                 "DisplayText": "radius",
-                "Type": "None",
+                "Type": "Double",
                 "Token": "BYRADIUS"
               },
               {
                 "TypeDiscriminator": "RespCommandContainerArgument",
                 "Name": "UNIT",
-                "Type": "None",
+                "Type": "OneOf",
                 "Arguments": [
                   {
-                    "TypeDiscriminator": "RespCommandArgument",
+                    "TypeDiscriminator": "RespCommandBasicArgument",
                     "Name": "M",
                     "DisplayText": "m",
-                    "Type": "None",
+                    "Type": "PureToken",
                     "Token": "M"
                   },
                   {
-                    "TypeDiscriminator": "RespCommandArgument",
+                    "TypeDiscriminator": "RespCommandBasicArgument",
                     "Name": "KM",
                     "DisplayText": "km",
-                    "Type": "None",
+                    "Type": "PureToken",
                     "Token": "KM"
                   },
                   {
-                    "TypeDiscriminator": "RespCommandArgument",
+                    "TypeDiscriminator": "RespCommandBasicArgument",
                     "Name": "FT",
                     "DisplayText": "ft",
-                    "Type": "None",
+                    "Type": "PureToken",
                     "Token": "FT"
                   },
                   {
-                    "TypeDiscriminator": "RespCommandArgument",
+                    "TypeDiscriminator": "RespCommandBasicArgument",
                     "Name": "MI",
                     "DisplayText": "mi",
-                    "Type": "None",
+                    "Type": "PureToken",
                     "Token": "MI"
                   }
                 ]
@@ -2097,52 +2113,52 @@
           {
             "TypeDiscriminator": "RespCommandContainerArgument",
             "Name": "BOX",
-            "Type": "None",
+            "Type": "Block",
             "Arguments": [
               {
-                "TypeDiscriminator": "RespCommandArgument",
+                "TypeDiscriminator": "RespCommandBasicArgument",
                 "Name": "WIDTH",
                 "DisplayText": "width",
-                "Type": "None",
+                "Type": "Double",
                 "Token": "BYBOX"
               },
               {
-                "TypeDiscriminator": "RespCommandArgument",
+                "TypeDiscriminator": "RespCommandBasicArgument",
                 "Name": "HEIGHT",
                 "DisplayText": "height",
-                "Type": "None"
+                "Type": "Double"
               },
               {
                 "TypeDiscriminator": "RespCommandContainerArgument",
                 "Name": "UNIT",
-                "Type": "None",
+                "Type": "OneOf",
                 "Arguments": [
                   {
-                    "TypeDiscriminator": "RespCommandArgument",
+                    "TypeDiscriminator": "RespCommandBasicArgument",
                     "Name": "M",
                     "DisplayText": "m",
-                    "Type": "None",
+                    "Type": "PureToken",
                     "Token": "M"
                   },
                   {
-                    "TypeDiscriminator": "RespCommandArgument",
+                    "TypeDiscriminator": "RespCommandBasicArgument",
                     "Name": "KM",
                     "DisplayText": "km",
-                    "Type": "None",
+                    "Type": "PureToken",
                     "Token": "KM"
                   },
                   {
-                    "TypeDiscriminator": "RespCommandArgument",
+                    "TypeDiscriminator": "RespCommandBasicArgument",
                     "Name": "FT",
                     "DisplayText": "ft",
-                    "Type": "None",
+                    "Type": "PureToken",
                     "Token": "FT"
                   },
                   {
-                    "TypeDiscriminator": "RespCommandArgument",
+                    "TypeDiscriminator": "RespCommandBasicArgument",
                     "Name": "MI",
                     "DisplayText": "mi",
-                    "Type": "None",
+                    "Type": "PureToken",
                     "Token": "MI"
                   }
                 ]
@@ -2154,21 +2170,21 @@
       {
         "TypeDiscriminator": "RespCommandContainerArgument",
         "Name": "ORDER",
-        "Type": "None",
+        "Type": "OneOf",
         "ArgumentFlags": "Optional",
         "Arguments": [
           {
-            "TypeDiscriminator": "RespCommandArgument",
+            "TypeDiscriminator": "RespCommandBasicArgument",
             "Name": "ASC",
             "DisplayText": "asc",
-            "Type": "None",
+            "Type": "PureToken",
             "Token": "ASC"
           },
           {
-            "TypeDiscriminator": "RespCommandArgument",
+            "TypeDiscriminator": "RespCommandBasicArgument",
             "Name": "DESC",
             "DisplayText": "desc",
-            "Type": "None",
+            "Type": "PureToken",
             "Token": "DESC"
           }
         ]
@@ -2176,47 +2192,47 @@
       {
         "TypeDiscriminator": "RespCommandContainerArgument",
         "Name": "COUNT-BLOCK",
-        "Type": "None",
+        "Type": "Block",
         "ArgumentFlags": "Optional",
         "Arguments": [
           {
-            "TypeDiscriminator": "RespCommandArgument",
+            "TypeDiscriminator": "RespCommandBasicArgument",
             "Name": "COUNT",
             "DisplayText": "count",
-            "Type": "None",
+            "Type": "Integer",
             "Token": "COUNT"
           },
           {
-            "TypeDiscriminator": "RespCommandArgument",
+            "TypeDiscriminator": "RespCommandBasicArgument",
             "Name": "ANY",
             "DisplayText": "any",
-            "Type": "None",
+            "Type": "PureToken",
             "Token": "ANY",
             "ArgumentFlags": "Optional"
           }
         ]
       },
       {
-        "TypeDiscriminator": "RespCommandArgument",
+        "TypeDiscriminator": "RespCommandBasicArgument",
         "Name": "WITHCOORD",
         "DisplayText": "withcoord",
-        "Type": "None",
+        "Type": "PureToken",
         "Token": "WITHCOORD",
         "ArgumentFlags": "Optional"
       },
       {
-        "TypeDiscriminator": "RespCommandArgument",
+        "TypeDiscriminator": "RespCommandBasicArgument",
         "Name": "WITHDIST",
         "DisplayText": "withdist",
-        "Type": "None",
+        "Type": "PureToken",
         "Token": "WITHDIST",
         "ArgumentFlags": "Optional"
       },
       {
-        "TypeDiscriminator": "RespCommandArgument",
+        "TypeDiscriminator": "RespCommandBasicArgument",
         "Name": "WITHHASH",
         "DisplayText": "withhash",
-        "Type": "None",
+        "Type": "PureToken",
         "Token": "WITHHASH",
         "ArgumentFlags": "Optional"
       }
@@ -2253,10 +2269,10 @@
         "KeySpecIndex": 0
       },
       {
-        "TypeDiscriminator": "RespCommandArgument",
+        "TypeDiscriminator": "RespCommandBasicArgument",
         "Name": "OFFSET",
         "DisplayText": "offset",
-        "Type": "None"
+        "Type": "Integer"
       }
     ]
   },
@@ -2291,16 +2307,16 @@
         "KeySpecIndex": 0
       },
       {
-        "TypeDiscriminator": "RespCommandArgument",
+        "TypeDiscriminator": "RespCommandBasicArgument",
         "Name": "START",
         "DisplayText": "start",
-        "Type": "None"
+        "Type": "Integer"
       },
       {
-        "TypeDiscriminator": "RespCommandArgument",
+        "TypeDiscriminator": "RespCommandBasicArgument",
         "Name": "END",
         "DisplayText": "end",
-        "Type": "None"
+        "Type": "Integer"
       }
     ]
   },
@@ -2319,10 +2335,10 @@
         "KeySpecIndex": 0
       },
       {
-        "TypeDiscriminator": "RespCommandArgument",
+        "TypeDiscriminator": "RespCommandBasicArgument",
         "Name": "FIELD",
         "DisplayText": "field",
-        "Type": "None",
+        "Type": "String",
         "ArgumentFlags": "Multiple"
       }
     ]
@@ -2337,41 +2353,41 @@
       {
         "TypeDiscriminator": "RespCommandContainerArgument",
         "Name": "ARGUMENTS",
-        "Type": "None",
+        "Type": "Block",
         "ArgumentFlags": "Optional",
         "Arguments": [
           {
-            "TypeDiscriminator": "RespCommandArgument",
+            "TypeDiscriminator": "RespCommandBasicArgument",
             "Name": "PROTOVER",
             "DisplayText": "protover",
-            "Type": "None"
+            "Type": "Integer"
           },
           {
             "TypeDiscriminator": "RespCommandContainerArgument",
             "Name": "AUTH",
-            "Type": "None",
+            "Type": "Block",
             "Token": "AUTH",
             "ArgumentFlags": "Optional",
             "Arguments": [
               {
-                "TypeDiscriminator": "RespCommandArgument",
+                "TypeDiscriminator": "RespCommandBasicArgument",
                 "Name": "USERNAME",
                 "DisplayText": "username",
-                "Type": "None"
+                "Type": "String"
               },
               {
-                "TypeDiscriminator": "RespCommandArgument",
+                "TypeDiscriminator": "RespCommandBasicArgument",
                 "Name": "PASSWORD",
                 "DisplayText": "password",
-                "Type": "None"
+                "Type": "String"
               }
             ]
           },
           {
-            "TypeDiscriminator": "RespCommandArgument",
+            "TypeDiscriminator": "RespCommandBasicArgument",
             "Name": "CLIENTNAME",
             "DisplayText": "clientname",
-            "Type": "None",
+            "Type": "String",
             "Token": "SETNAME",
             "ArgumentFlags": "Optional"
           }
@@ -2394,10 +2410,10 @@
         "KeySpecIndex": 0
       },
       {
-        "TypeDiscriminator": "RespCommandArgument",
+        "TypeDiscriminator": "RespCommandBasicArgument",
         "Name": "FIELD",
         "DisplayText": "field",
-        "Type": "None"
+        "Type": "String"
       }
     ]
   },
@@ -2416,10 +2432,10 @@
         "KeySpecIndex": 0
       },
       {
-        "TypeDiscriminator": "RespCommandArgument",
+        "TypeDiscriminator": "RespCommandBasicArgument",
         "Name": "FIELD",
         "DisplayText": "field",
-        "Type": "None"
+        "Type": "String"
       }
     ]
   },
@@ -2454,16 +2470,16 @@
         "KeySpecIndex": 0
       },
       {
-        "TypeDiscriminator": "RespCommandArgument",
+        "TypeDiscriminator": "RespCommandBasicArgument",
         "Name": "FIELD",
         "DisplayText": "field",
-        "Type": "None"
+        "Type": "String"
       },
       {
-        "TypeDiscriminator": "RespCommandArgument",
+        "TypeDiscriminator": "RespCommandBasicArgument",
         "Name": "INCREMENT",
         "DisplayText": "increment",
-        "Type": "None"
+        "Type": "Integer"
       }
     ]
   },
@@ -2482,16 +2498,16 @@
         "KeySpecIndex": 0
       },
       {
-        "TypeDiscriminator": "RespCommandArgument",
+        "TypeDiscriminator": "RespCommandBasicArgument",
         "Name": "FIELD",
         "DisplayText": "field",
-        "Type": "None"
+        "Type": "String"
       },
       {
-        "TypeDiscriminator": "RespCommandArgument",
+        "TypeDiscriminator": "RespCommandBasicArgument",
         "Name": "INCREMENT",
         "DisplayText": "increment",
-        "Type": "None"
+        "Type": "Double"
       }
     ]
   },
@@ -2542,10 +2558,10 @@
         "KeySpecIndex": 0
       },
       {
-        "TypeDiscriminator": "RespCommandArgument",
+        "TypeDiscriminator": "RespCommandBasicArgument",
         "Name": "FIELD",
         "DisplayText": "field",
-        "Type": "None",
+        "Type": "String",
         "ArgumentFlags": "Multiple"
       }
     ]
@@ -2569,20 +2585,20 @@
       {
         "TypeDiscriminator": "RespCommandContainerArgument",
         "Name": "DATA",
-        "Type": "None",
+        "Type": "Block",
         "ArgumentFlags": "Multiple",
         "Arguments": [
           {
-            "TypeDiscriminator": "RespCommandArgument",
+            "TypeDiscriminator": "RespCommandBasicArgument",
             "Name": "FIELD",
             "DisplayText": "field",
-            "Type": "None"
+            "Type": "String"
           },
           {
-            "TypeDiscriminator": "RespCommandArgument",
+            "TypeDiscriminator": "RespCommandBasicArgument",
             "Name": "VALUE",
             "DisplayText": "value",
-            "Type": "None"
+            "Type": "String"
           }
         ]
       }
@@ -2605,20 +2621,20 @@
       {
         "TypeDiscriminator": "RespCommandContainerArgument",
         "Name": "OPTIONS",
-        "Type": "None",
+        "Type": "Block",
         "ArgumentFlags": "Optional",
         "Arguments": [
           {
-            "TypeDiscriminator": "RespCommandArgument",
+            "TypeDiscriminator": "RespCommandBasicArgument",
             "Name": "COUNT",
             "DisplayText": "count",
-            "Type": "None"
+            "Type": "Integer"
           },
           {
-            "TypeDiscriminator": "RespCommandArgument",
+            "TypeDiscriminator": "RespCommandBasicArgument",
             "Name": "WITHVALUES",
             "DisplayText": "withvalues",
-            "Type": "None",
+            "Type": "PureToken",
             "Token": "WITHVALUES",
             "ArgumentFlags": "Optional"
           }
@@ -2641,24 +2657,24 @@
         "KeySpecIndex": 0
       },
       {
-        "TypeDiscriminator": "RespCommandArgument",
+        "TypeDiscriminator": "RespCommandBasicArgument",
         "Name": "CURSOR",
         "DisplayText": "cursor",
-        "Type": "None"
+        "Type": "Integer"
       },
       {
-        "TypeDiscriminator": "RespCommandArgument",
+        "TypeDiscriminator": "RespCommandBasicArgument",
         "Name": "PATTERN",
         "DisplayText": "pattern",
-        "Type": "None",
+        "Type": "Pattern",
         "Token": "MATCH",
         "ArgumentFlags": "Optional"
       },
       {
-        "TypeDiscriminator": "RespCommandArgument",
+        "TypeDiscriminator": "RespCommandBasicArgument",
         "Name": "COUNT",
         "DisplayText": "count",
-        "Type": "None",
+        "Type": "Integer",
         "Token": "COUNT",
         "ArgumentFlags": "Optional"
       }
@@ -2681,20 +2697,20 @@
       {
         "TypeDiscriminator": "RespCommandContainerArgument",
         "Name": "DATA",
-        "Type": "None",
+        "Type": "Block",
         "ArgumentFlags": "Multiple",
         "Arguments": [
           {
-            "TypeDiscriminator": "RespCommandArgument",
+            "TypeDiscriminator": "RespCommandBasicArgument",
             "Name": "FIELD",
             "DisplayText": "field",
-            "Type": "None"
+            "Type": "String"
           },
           {
-            "TypeDiscriminator": "RespCommandArgument",
+            "TypeDiscriminator": "RespCommandBasicArgument",
             "Name": "VALUE",
             "DisplayText": "value",
-            "Type": "None"
+            "Type": "String"
           }
         ]
       }
@@ -2715,16 +2731,16 @@
         "KeySpecIndex": 0
       },
       {
-        "TypeDiscriminator": "RespCommandArgument",
+        "TypeDiscriminator": "RespCommandBasicArgument",
         "Name": "FIELD",
         "DisplayText": "field",
-        "Type": "None"
+        "Type": "String"
       },
       {
-        "TypeDiscriminator": "RespCommandArgument",
+        "TypeDiscriminator": "RespCommandBasicArgument",
         "Name": "VALUE",
         "DisplayText": "value",
-        "Type": "None"
+        "Type": "String"
       }
     ]
   },
@@ -2743,10 +2759,10 @@
         "KeySpecIndex": 0
       },
       {
-        "TypeDiscriminator": "RespCommandArgument",
+        "TypeDiscriminator": "RespCommandBasicArgument",
         "Name": "FIELD",
         "DisplayText": "field",
-        "Type": "None"
+        "Type": "String"
       }
     ]
   },
@@ -2797,10 +2813,10 @@
         "KeySpecIndex": 0
       },
       {
-        "TypeDiscriminator": "RespCommandArgument",
+        "TypeDiscriminator": "RespCommandBasicArgument",
         "Name": "INCREMENT",
         "DisplayText": "increment",
-        "Type": "None"
+        "Type": "Integer"
       }
     ]
   },
@@ -2812,10 +2828,10 @@
     "Complexity": "O(1)",
     "Arguments": [
       {
-        "TypeDiscriminator": "RespCommandArgument",
+        "TypeDiscriminator": "RespCommandBasicArgument",
         "Name": "SECTION",
         "DisplayText": "section",
-        "Type": "None",
+        "Type": "String",
         "ArgumentFlags": "Optional, Multiple"
       }
     ]
@@ -2828,10 +2844,10 @@
     "Complexity": "O(N) with N being the number of keys in the database, under the assumption that the key names in the database and the given pattern have limited length.",
     "Arguments": [
       {
-        "TypeDiscriminator": "RespCommandArgument",
+        "TypeDiscriminator": "RespCommandBasicArgument",
         "Name": "PATTERN",
         "DisplayText": "pattern",
-        "Type": "None"
+        "Type": "Pattern"
       }
     ]
   },
@@ -2857,10 +2873,10 @@
         "Complexity": "O(N) where N is the number of commands with latency information being retrieved.",
         "Arguments": [
           {
-            "TypeDiscriminator": "RespCommandArgument",
+            "TypeDiscriminator": "RespCommandBasicArgument",
             "Name": "COMMAND",
             "DisplayText": "command",
-            "Type": "None",
+            "Type": "String",
             "ArgumentFlags": "Optional, Multiple"
           }
         ]
@@ -2880,10 +2896,10 @@
         "Complexity": "O(1)",
         "Arguments": [
           {
-            "TypeDiscriminator": "RespCommandArgument",
+            "TypeDiscriminator": "RespCommandBasicArgument",
             "Name": "EVENT",
             "DisplayText": "event",
-            "Type": "None",
+            "Type": "String",
             "ArgumentFlags": "Optional, Multiple"
           }
         ]
@@ -2909,10 +2925,10 @@
         "KeySpecIndex": 0
       },
       {
-        "TypeDiscriminator": "RespCommandArgument",
+        "TypeDiscriminator": "RespCommandBasicArgument",
         "Name": "INDEX",
         "DisplayText": "index",
-        "Type": "None"
+        "Type": "Integer"
       }
     ]
   },
@@ -2933,35 +2949,35 @@
       {
         "TypeDiscriminator": "RespCommandContainerArgument",
         "Name": "WHERE",
-        "Type": "None",
+        "Type": "OneOf",
         "Arguments": [
           {
-            "TypeDiscriminator": "RespCommandArgument",
+            "TypeDiscriminator": "RespCommandBasicArgument",
             "Name": "BEFORE",
             "DisplayText": "before",
-            "Type": "None",
+            "Type": "PureToken",
             "Token": "BEFORE"
           },
           {
-            "TypeDiscriminator": "RespCommandArgument",
+            "TypeDiscriminator": "RespCommandBasicArgument",
             "Name": "AFTER",
             "DisplayText": "after",
-            "Type": "None",
+            "Type": "PureToken",
             "Token": "AFTER"
           }
         ]
       },
       {
-        "TypeDiscriminator": "RespCommandArgument",
+        "TypeDiscriminator": "RespCommandBasicArgument",
         "Name": "PIVOT",
         "DisplayText": "pivot",
-        "Type": "None"
+        "Type": "String"
       },
       {
-        "TypeDiscriminator": "RespCommandArgument",
+        "TypeDiscriminator": "RespCommandBasicArgument",
         "Name": "ELEMENT",
         "DisplayText": "element",
-        "Type": "None"
+        "Type": "String"
       }
     ]
   },
@@ -3005,20 +3021,20 @@
       {
         "TypeDiscriminator": "RespCommandContainerArgument",
         "Name": "WHEREFROM",
-        "Type": "None",
+        "Type": "OneOf",
         "Arguments": [
           {
-            "TypeDiscriminator": "RespCommandArgument",
+            "TypeDiscriminator": "RespCommandBasicArgument",
             "Name": "LEFT",
             "DisplayText": "left",
-            "Type": "None",
+            "Type": "PureToken",
             "Token": "LEFT"
           },
           {
-            "TypeDiscriminator": "RespCommandArgument",
+            "TypeDiscriminator": "RespCommandBasicArgument",
             "Name": "RIGHT",
             "DisplayText": "right",
-            "Type": "None",
+            "Type": "PureToken",
             "Token": "RIGHT"
           }
         ]
@@ -3026,20 +3042,20 @@
       {
         "TypeDiscriminator": "RespCommandContainerArgument",
         "Name": "WHERETO",
-        "Type": "None",
+        "Type": "OneOf",
         "Arguments": [
           {
-            "TypeDiscriminator": "RespCommandArgument",
+            "TypeDiscriminator": "RespCommandBasicArgument",
             "Name": "LEFT",
             "DisplayText": "left",
-            "Type": "None",
+            "Type": "PureToken",
             "Token": "LEFT"
           },
           {
-            "TypeDiscriminator": "RespCommandArgument",
+            "TypeDiscriminator": "RespCommandBasicArgument",
             "Name": "RIGHT",
             "DisplayText": "right",
-            "Type": "None",
+            "Type": "PureToken",
             "Token": "RIGHT"
           }
         ]
@@ -3054,10 +3070,10 @@
     "Complexity": "O(N\u002BM) where N is the number of provided keys and M is the number of elements returned.",
     "Arguments": [
       {
-        "TypeDiscriminator": "RespCommandArgument",
+        "TypeDiscriminator": "RespCommandBasicArgument",
         "Name": "NUMKEYS",
         "DisplayText": "numkeys",
-        "Type": "None"
+        "Type": "Integer"
       },
       {
         "TypeDiscriminator": "RespCommandKeyArgument",
@@ -3070,29 +3086,29 @@
       {
         "TypeDiscriminator": "RespCommandContainerArgument",
         "Name": "WHERE",
-        "Type": "None",
+        "Type": "OneOf",
         "Arguments": [
           {
-            "TypeDiscriminator": "RespCommandArgument",
+            "TypeDiscriminator": "RespCommandBasicArgument",
             "Name": "LEFT",
             "DisplayText": "left",
-            "Type": "None",
+            "Type": "PureToken",
             "Token": "LEFT"
           },
           {
-            "TypeDiscriminator": "RespCommandArgument",
+            "TypeDiscriminator": "RespCommandBasicArgument",
             "Name": "RIGHT",
             "DisplayText": "right",
-            "Type": "None",
+            "Type": "PureToken",
             "Token": "RIGHT"
           }
         ]
       },
       {
-        "TypeDiscriminator": "RespCommandArgument",
+        "TypeDiscriminator": "RespCommandBasicArgument",
         "Name": "COUNT",
         "DisplayText": "count",
-        "Type": "None",
+        "Type": "Integer",
         "Token": "COUNT",
         "ArgumentFlags": "Optional"
       }
@@ -3113,10 +3129,10 @@
         "KeySpecIndex": 0
       },
       {
-        "TypeDiscriminator": "RespCommandArgument",
+        "TypeDiscriminator": "RespCommandBasicArgument",
         "Name": "COUNT",
         "DisplayText": "count",
-        "Type": "None",
+        "Type": "Integer",
         "ArgumentFlags": "Optional"
       }
     ]
@@ -3136,10 +3152,10 @@
         "KeySpecIndex": 0
       },
       {
-        "TypeDiscriminator": "RespCommandArgument",
+        "TypeDiscriminator": "RespCommandBasicArgument",
         "Name": "ELEMENT",
         "DisplayText": "element",
-        "Type": "None",
+        "Type": "String",
         "ArgumentFlags": "Multiple"
       }
     ]
@@ -3159,10 +3175,10 @@
         "KeySpecIndex": 0
       },
       {
-        "TypeDiscriminator": "RespCommandArgument",
+        "TypeDiscriminator": "RespCommandBasicArgument",
         "Name": "ELEMENT",
         "DisplayText": "element",
-        "Type": "None",
+        "Type": "String",
         "ArgumentFlags": "Multiple"
       }
     ]
@@ -3182,16 +3198,16 @@
         "KeySpecIndex": 0
       },
       {
-        "TypeDiscriminator": "RespCommandArgument",
+        "TypeDiscriminator": "RespCommandBasicArgument",
         "Name": "START",
         "DisplayText": "start",
-        "Type": "None"
+        "Type": "Integer"
       },
       {
-        "TypeDiscriminator": "RespCommandArgument",
+        "TypeDiscriminator": "RespCommandBasicArgument",
         "Name": "STOP",
         "DisplayText": "stop",
-        "Type": "None"
+        "Type": "Integer"
       }
     ]
   },
@@ -3210,16 +3226,16 @@
         "KeySpecIndex": 0
       },
       {
-        "TypeDiscriminator": "RespCommandArgument",
+        "TypeDiscriminator": "RespCommandBasicArgument",
         "Name": "COUNT",
         "DisplayText": "count",
-        "Type": "None"
+        "Type": "Integer"
       },
       {
-        "TypeDiscriminator": "RespCommandArgument",
+        "TypeDiscriminator": "RespCommandBasicArgument",
         "Name": "ELEMENT",
         "DisplayText": "element",
-        "Type": "None"
+        "Type": "String"
       }
     ]
   },
@@ -3238,16 +3254,16 @@
         "KeySpecIndex": 0
       },
       {
-        "TypeDiscriminator": "RespCommandArgument",
+        "TypeDiscriminator": "RespCommandBasicArgument",
         "Name": "INDEX",
         "DisplayText": "index",
-        "Type": "None"
+        "Type": "Integer"
       },
       {
-        "TypeDiscriminator": "RespCommandArgument",
+        "TypeDiscriminator": "RespCommandBasicArgument",
         "Name": "ELEMENT",
         "DisplayText": "element",
-        "Type": "None"
+        "Type": "String"
       }
     ]
   },
@@ -3266,16 +3282,16 @@
         "KeySpecIndex": 0
       },
       {
-        "TypeDiscriminator": "RespCommandArgument",
+        "TypeDiscriminator": "RespCommandBasicArgument",
         "Name": "START",
         "DisplayText": "start",
-        "Type": "None"
+        "Type": "Integer"
       },
       {
-        "TypeDiscriminator": "RespCommandArgument",
+        "TypeDiscriminator": "RespCommandBasicArgument",
         "Name": "STOP",
         "DisplayText": "stop",
-        "Type": "None"
+        "Type": "Integer"
       }
     ]
   },
@@ -3301,10 +3317,10 @@
             "KeySpecIndex": 0
           },
           {
-            "TypeDiscriminator": "RespCommandArgument",
+            "TypeDiscriminator": "RespCommandBasicArgument",
             "Name": "COUNT",
             "DisplayText": "count",
-            "Type": "None",
+            "Type": "Integer",
             "Token": "SAMPLES",
             "ArgumentFlags": "Optional"
           }
@@ -3337,21 +3353,21 @@
     "Complexity": "This command actually executes a DUMP\u002BDEL in the source instance, and a RESTORE in the target instance. See the pages of these commands for time complexity. Also an O(N) data transfer between the two instances is performed.",
     "Arguments": [
       {
-        "TypeDiscriminator": "RespCommandArgument",
+        "TypeDiscriminator": "RespCommandBasicArgument",
         "Name": "HOST",
         "DisplayText": "host",
-        "Type": "None"
+        "Type": "String"
       },
       {
-        "TypeDiscriminator": "RespCommandArgument",
+        "TypeDiscriminator": "RespCommandBasicArgument",
         "Name": "PORT",
         "DisplayText": "port",
-        "Type": "None"
+        "Type": "Integer"
       },
       {
         "TypeDiscriminator": "RespCommandContainerArgument",
         "Name": "KEY-SELECTOR",
-        "Type": "None",
+        "Type": "OneOf",
         "Arguments": [
           {
             "TypeDiscriminator": "RespCommandKeyArgument",
@@ -3361,72 +3377,72 @@
             "KeySpecIndex": 0
           },
           {
-            "TypeDiscriminator": "RespCommandArgument",
+            "TypeDiscriminator": "RespCommandBasicArgument",
             "Name": "EMPTY-STRING",
             "DisplayText": "empty-string",
-            "Type": "None",
+            "Type": "PureToken",
             "Token": ""
           }
         ]
       },
       {
-        "TypeDiscriminator": "RespCommandArgument",
+        "TypeDiscriminator": "RespCommandBasicArgument",
         "Name": "DESTINATION-DB",
         "DisplayText": "destination-db",
-        "Type": "None"
+        "Type": "Integer"
       },
       {
-        "TypeDiscriminator": "RespCommandArgument",
+        "TypeDiscriminator": "RespCommandBasicArgument",
         "Name": "TIMEOUT",
         "DisplayText": "timeout",
-        "Type": "None"
+        "Type": "Integer"
       },
       {
-        "TypeDiscriminator": "RespCommandArgument",
+        "TypeDiscriminator": "RespCommandBasicArgument",
         "Name": "COPY",
         "DisplayText": "copy",
-        "Type": "None",
+        "Type": "PureToken",
         "Token": "COPY",
         "ArgumentFlags": "Optional"
       },
       {
-        "TypeDiscriminator": "RespCommandArgument",
+        "TypeDiscriminator": "RespCommandBasicArgument",
         "Name": "REPLACE",
         "DisplayText": "replace",
-        "Type": "None",
+        "Type": "PureToken",
         "Token": "REPLACE",
         "ArgumentFlags": "Optional"
       },
       {
         "TypeDiscriminator": "RespCommandContainerArgument",
         "Name": "AUTHENTICATION",
-        "Type": "None",
+        "Type": "OneOf",
         "ArgumentFlags": "Optional",
         "Arguments": [
           {
-            "TypeDiscriminator": "RespCommandArgument",
+            "TypeDiscriminator": "RespCommandBasicArgument",
             "Name": "AUTH",
             "DisplayText": "password",
-            "Type": "None",
+            "Type": "String",
             "Token": "AUTH"
           },
           {
             "TypeDiscriminator": "RespCommandContainerArgument",
             "Name": "AUTH2",
-            "Type": "None",
+            "Type": "Block",
             "Token": "AUTH2",
             "Arguments": [
               {
-                "TypeDiscriminator": "RespCommandArgument",
+                "TypeDiscriminator": "RespCommandBasicArgument",
                 "Name": "USERNAME",
                 "DisplayText": "username",
-                "Type": "None"
+                "Type": "String"
               },
               {
-                "TypeDiscriminator": "RespCommandArgument",
+                "TypeDiscriminator": "RespCommandBasicArgument",
                 "Name": "PASSWORD",
                 "DisplayText": "password",
-                "Type": "None"
+                "Type": "String"
               }
             ]
           }
@@ -3472,7 +3488,7 @@
       {
         "TypeDiscriminator": "RespCommandContainerArgument",
         "Name": "DATA",
-        "Type": "None",
+        "Type": "Block",
         "ArgumentFlags": "Multiple",
         "Arguments": [
           {
@@ -3483,10 +3499,10 @@
             "KeySpecIndex": 0
           },
           {
-            "TypeDiscriminator": "RespCommandArgument",
+            "TypeDiscriminator": "RespCommandBasicArgument",
             "Name": "VALUE",
             "DisplayText": "value",
-            "Type": "None"
+            "Type": "String"
           }
         ]
       }
@@ -3502,7 +3518,7 @@
       {
         "TypeDiscriminator": "RespCommandContainerArgument",
         "Name": "DATA",
-        "Type": "None",
+        "Type": "Block",
         "ArgumentFlags": "Multiple",
         "Arguments": [
           {
@@ -3513,10 +3529,10 @@
             "KeySpecIndex": 0
           },
           {
-            "TypeDiscriminator": "RespCommandArgument",
+            "TypeDiscriminator": "RespCommandBasicArgument",
             "Name": "VALUE",
             "DisplayText": "value",
-            "Type": "None"
+            "Type": "String"
           }
         ]
       }
@@ -3560,43 +3576,43 @@
         "KeySpecIndex": 0
       },
       {
-        "TypeDiscriminator": "RespCommandArgument",
+        "TypeDiscriminator": "RespCommandBasicArgument",
         "Name": "MILLISECONDS",
         "DisplayText": "milliseconds",
-        "Type": "None"
+        "Type": "Integer"
       },
       {
         "TypeDiscriminator": "RespCommandContainerArgument",
         "Name": "CONDITION",
-        "Type": "None",
+        "Type": "OneOf",
         "ArgumentFlags": "Optional",
         "Arguments": [
           {
-            "TypeDiscriminator": "RespCommandArgument",
+            "TypeDiscriminator": "RespCommandBasicArgument",
             "Name": "NX",
             "DisplayText": "nx",
-            "Type": "None",
+            "Type": "PureToken",
             "Token": "NX"
           },
           {
-            "TypeDiscriminator": "RespCommandArgument",
+            "TypeDiscriminator": "RespCommandBasicArgument",
             "Name": "XX",
             "DisplayText": "xx",
-            "Type": "None",
+            "Type": "PureToken",
             "Token": "XX"
           },
           {
-            "TypeDiscriminator": "RespCommandArgument",
+            "TypeDiscriminator": "RespCommandBasicArgument",
             "Name": "GT",
             "DisplayText": "gt",
-            "Type": "None",
+            "Type": "PureToken",
             "Token": "GT"
           },
           {
-            "TypeDiscriminator": "RespCommandArgument",
+            "TypeDiscriminator": "RespCommandBasicArgument",
             "Name": "LT",
             "DisplayText": "lt",
-            "Type": "None",
+            "Type": "PureToken",
             "Token": "LT"
           }
         ]
@@ -3618,10 +3634,10 @@
         "KeySpecIndex": 0
       },
       {
-        "TypeDiscriminator": "RespCommandArgument",
+        "TypeDiscriminator": "RespCommandBasicArgument",
         "Name": "ELEMENT",
         "DisplayText": "element",
-        "Type": "None",
+        "Type": "String",
         "ArgumentFlags": "Optional, Multiple"
       }
     ]
@@ -3675,10 +3691,10 @@
     "Complexity": "O(1)",
     "Arguments": [
       {
-        "TypeDiscriminator": "RespCommandArgument",
+        "TypeDiscriminator": "RespCommandBasicArgument",
         "Name": "MESSAGE",
         "DisplayText": "message",
-        "Type": "None",
+        "Type": "String",
         "ArgumentFlags": "Optional"
       }
     ]
@@ -3700,16 +3716,16 @@
         "KeySpecIndex": 0
       },
       {
-        "TypeDiscriminator": "RespCommandArgument",
+        "TypeDiscriminator": "RespCommandBasicArgument",
         "Name": "MILLISECONDS",
         "DisplayText": "milliseconds",
-        "Type": "None"
+        "Type": "Integer"
       },
       {
-        "TypeDiscriminator": "RespCommandArgument",
+        "TypeDiscriminator": "RespCommandBasicArgument",
         "Name": "VALUE",
         "DisplayText": "value",
-        "Type": "None"
+        "Type": "String"
       }
     ]
   },
@@ -3721,10 +3737,10 @@
     "Complexity": "O(N) where N is the number of patterns to subscribe to.",
     "Arguments": [
       {
-        "TypeDiscriminator": "RespCommandArgument",
+        "TypeDiscriminator": "RespCommandBasicArgument",
         "Name": "PATTERN",
         "DisplayText": "pattern",
-        "Type": "None",
+        "Type": "Pattern",
         "ArgumentFlags": "Multiple"
       }
     ]
@@ -3753,16 +3769,16 @@
     "Complexity": "O(N\u002BM) where N is the number of clients subscribed to the receiving channel and M is the total number of subscribed patterns (by any client).",
     "Arguments": [
       {
-        "TypeDiscriminator": "RespCommandArgument",
+        "TypeDiscriminator": "RespCommandBasicArgument",
         "Name": "CHANNEL",
         "DisplayText": "channel",
-        "Type": "None"
+        "Type": "String"
       },
       {
-        "TypeDiscriminator": "RespCommandArgument",
+        "TypeDiscriminator": "RespCommandBasicArgument",
         "Name": "MESSAGE",
         "DisplayText": "message",
-        "Type": "None"
+        "Type": "String"
       }
     ]
   },
@@ -3774,10 +3790,10 @@
     "Complexity": "O(N) where N is the number of patterns to unsubscribe.",
     "Arguments": [
       {
-        "TypeDiscriminator": "RespCommandArgument",
+        "TypeDiscriminator": "RespCommandBasicArgument",
         "Name": "PATTERN",
         "DisplayText": "pattern",
-        "Type": "None",
+        "Type": "Pattern",
         "ArgumentFlags": "Optional, Multiple"
       }
     ]
@@ -3842,44 +3858,44 @@
       {
         "TypeDiscriminator": "RespCommandContainerArgument",
         "Name": "ARGS",
-        "Type": "None",
+        "Type": "OneOf",
         "Arguments": [
           {
             "TypeDiscriminator": "RespCommandContainerArgument",
             "Name": "HOST-PORT",
-            "Type": "None",
+            "Type": "Block",
             "Arguments": [
               {
-                "TypeDiscriminator": "RespCommandArgument",
+                "TypeDiscriminator": "RespCommandBasicArgument",
                 "Name": "HOST",
                 "DisplayText": "host",
-                "Type": "None"
+                "Type": "String"
               },
               {
-                "TypeDiscriminator": "RespCommandArgument",
+                "TypeDiscriminator": "RespCommandBasicArgument",
                 "Name": "PORT",
                 "DisplayText": "port",
-                "Type": "None"
+                "Type": "Integer"
               }
             ]
           },
           {
             "TypeDiscriminator": "RespCommandContainerArgument",
             "Name": "NO-ONE",
-            "Type": "None",
+            "Type": "Block",
             "Arguments": [
               {
-                "TypeDiscriminator": "RespCommandArgument",
+                "TypeDiscriminator": "RespCommandBasicArgument",
                 "Name": "NO",
                 "DisplayText": "no",
-                "Type": "None",
+                "Type": "PureToken",
                 "Token": "NO"
               },
               {
-                "TypeDiscriminator": "RespCommandArgument",
+                "TypeDiscriminator": "RespCommandBasicArgument",
                 "Name": "ONE",
                 "DisplayText": "one",
-                "Type": "None",
+                "Type": "PureToken",
                 "Token": "ONE"
               }
             ]
@@ -3903,10 +3919,10 @@
         "KeySpecIndex": 0
       },
       {
-        "TypeDiscriminator": "RespCommandArgument",
+        "TypeDiscriminator": "RespCommandBasicArgument",
         "Name": "COUNT",
         "DisplayText": "count",
-        "Type": "None",
+        "Type": "Integer",
         "ArgumentFlags": "Optional"
       }
     ]
@@ -3951,10 +3967,10 @@
         "KeySpecIndex": 0
       },
       {
-        "TypeDiscriminator": "RespCommandArgument",
+        "TypeDiscriminator": "RespCommandBasicArgument",
         "Name": "ELEMENT",
         "DisplayText": "element",
-        "Type": "None",
+        "Type": "String",
         "ArgumentFlags": "Multiple"
       }
     ]
@@ -3974,10 +3990,10 @@
         "KeySpecIndex": 0
       },
       {
-        "TypeDiscriminator": "RespCommandArgument",
+        "TypeDiscriminator": "RespCommandBasicArgument",
         "Name": "ELEMENT",
         "DisplayText": "element",
-        "Type": "None",
+        "Type": "String",
         "ArgumentFlags": "Multiple"
       }
     ]
@@ -4001,10 +4017,10 @@
         "KeySpecIndex": 0
       },
       {
-        "TypeDiscriminator": "RespCommandArgument",
+        "TypeDiscriminator": "RespCommandBasicArgument",
         "Name": "MEMBER",
         "DisplayText": "member",
-        "Type": "None",
+        "Type": "String",
         "ArgumentFlags": "Multiple"
       }
     ]
@@ -4024,32 +4040,32 @@
     "Complexity": "O(1) for every call. O(N) for a complete iteration, including enough command calls for the cursor to return back to 0. N is the number of elements inside the collection.",
     "Arguments": [
       {
-        "TypeDiscriminator": "RespCommandArgument",
+        "TypeDiscriminator": "RespCommandBasicArgument",
         "Name": "CURSOR",
         "DisplayText": "cursor",
-        "Type": "None"
+        "Type": "Integer"
       },
       {
-        "TypeDiscriminator": "RespCommandArgument",
+        "TypeDiscriminator": "RespCommandBasicArgument",
         "Name": "PATTERN",
         "DisplayText": "pattern",
-        "Type": "None",
+        "Type": "Pattern",
         "Token": "MATCH",
         "ArgumentFlags": "Optional"
       },
       {
-        "TypeDiscriminator": "RespCommandArgument",
+        "TypeDiscriminator": "RespCommandBasicArgument",
         "Name": "COUNT",
         "DisplayText": "count",
-        "Type": "None",
+        "Type": "Integer",
         "Token": "COUNT",
         "ArgumentFlags": "Optional"
       },
       {
-        "TypeDiscriminator": "RespCommandArgument",
+        "TypeDiscriminator": "RespCommandBasicArgument",
         "Name": "TYPE",
         "DisplayText": "type",
-        "Type": "None",
+        "Type": "String",
         "Token": "TYPE",
         "ArgumentFlags": "Optional"
       }
@@ -4131,10 +4147,10 @@
     "Complexity": "O(1)",
     "Arguments": [
       {
-        "TypeDiscriminator": "RespCommandArgument",
+        "TypeDiscriminator": "RespCommandBasicArgument",
         "Name": "INDEX",
         "DisplayText": "index",
-        "Type": "None"
+        "Type": "Integer"
       }
     ]
   },
@@ -4153,80 +4169,80 @@
         "KeySpecIndex": 0
       },
       {
-        "TypeDiscriminator": "RespCommandArgument",
+        "TypeDiscriminator": "RespCommandBasicArgument",
         "Name": "VALUE",
         "DisplayText": "value",
-        "Type": "None"
+        "Type": "String"
       },
       {
         "TypeDiscriminator": "RespCommandContainerArgument",
         "Name": "CONDITION",
-        "Type": "None",
+        "Type": "OneOf",
         "ArgumentFlags": "Optional",
         "Arguments": [
           {
-            "TypeDiscriminator": "RespCommandArgument",
+            "TypeDiscriminator": "RespCommandBasicArgument",
             "Name": "NX",
             "DisplayText": "nx",
-            "Type": "None",
+            "Type": "PureToken",
             "Token": "NX"
           },
           {
-            "TypeDiscriminator": "RespCommandArgument",
+            "TypeDiscriminator": "RespCommandBasicArgument",
             "Name": "XX",
             "DisplayText": "xx",
-            "Type": "None",
+            "Type": "PureToken",
             "Token": "XX"
           }
         ]
       },
       {
-        "TypeDiscriminator": "RespCommandArgument",
+        "TypeDiscriminator": "RespCommandBasicArgument",
         "Name": "GET",
         "DisplayText": "get",
-        "Type": "None",
+        "Type": "PureToken",
         "Token": "GET",
         "ArgumentFlags": "Optional"
       },
       {
         "TypeDiscriminator": "RespCommandContainerArgument",
         "Name": "EXPIRATION",
-        "Type": "None",
+        "Type": "OneOf",
         "ArgumentFlags": "Optional",
         "Arguments": [
           {
-            "TypeDiscriminator": "RespCommandArgument",
+            "TypeDiscriminator": "RespCommandBasicArgument",
             "Name": "SECONDS",
             "DisplayText": "seconds",
-            "Type": "None",
+            "Type": "Integer",
             "Token": "EX"
           },
           {
-            "TypeDiscriminator": "RespCommandArgument",
+            "TypeDiscriminator": "RespCommandBasicArgument",
             "Name": "MILLISECONDS",
             "DisplayText": "milliseconds",
-            "Type": "None",
+            "Type": "Integer",
             "Token": "PX"
           },
           {
-            "TypeDiscriminator": "RespCommandArgument",
+            "TypeDiscriminator": "RespCommandBasicArgument",
             "Name": "UNIX-TIME-SECONDS",
             "DisplayText": "unix-time-seconds",
-            "Type": "None",
+            "Type": "UnixTime",
             "Token": "EXAT"
           },
           {
-            "TypeDiscriminator": "RespCommandArgument",
+            "TypeDiscriminator": "RespCommandBasicArgument",
             "Name": "UNIX-TIME-MILLISECONDS",
             "DisplayText": "unix-time-milliseconds",
-            "Type": "None",
+            "Type": "UnixTime",
             "Token": "PXAT"
           },
           {
-            "TypeDiscriminator": "RespCommandArgument",
+            "TypeDiscriminator": "RespCommandBasicArgument",
             "Name": "KEEPTTL",
             "DisplayText": "keepttl",
-            "Type": "None",
+            "Type": "PureToken",
             "Token": "KEEPTTL"
           }
         ]
@@ -4248,16 +4264,16 @@
         "KeySpecIndex": 0
       },
       {
-        "TypeDiscriminator": "RespCommandArgument",
+        "TypeDiscriminator": "RespCommandBasicArgument",
         "Name": "OFFSET",
         "DisplayText": "offset",
-        "Type": "None"
+        "Type": "Integer"
       },
       {
-        "TypeDiscriminator": "RespCommandArgument",
+        "TypeDiscriminator": "RespCommandBasicArgument",
         "Name": "VALUE",
         "DisplayText": "value",
-        "Type": "None"
+        "Type": "Integer"
       }
     ]
   },
@@ -4278,16 +4294,16 @@
         "KeySpecIndex": 0
       },
       {
-        "TypeDiscriminator": "RespCommandArgument",
+        "TypeDiscriminator": "RespCommandBasicArgument",
         "Name": "SECONDS",
         "DisplayText": "seconds",
-        "Type": "None"
+        "Type": "Integer"
       },
       {
-        "TypeDiscriminator": "RespCommandArgument",
+        "TypeDiscriminator": "RespCommandBasicArgument",
         "Name": "VALUE",
         "DisplayText": "value",
-        "Type": "None"
+        "Type": "String"
       }
     ]
   },
@@ -4306,16 +4322,16 @@
         "KeySpecIndex": 0
       },
       {
-        "TypeDiscriminator": "RespCommandArgument",
+        "TypeDiscriminator": "RespCommandBasicArgument",
         "Name": "OFFSET",
         "DisplayText": "offset",
-        "Type": "None"
+        "Type": "Integer"
       },
       {
-        "TypeDiscriminator": "RespCommandArgument",
+        "TypeDiscriminator": "RespCommandBasicArgument",
         "Name": "VALUE",
         "DisplayText": "value",
-        "Type": "None"
+        "Type": "String"
       }
     ]
   },
@@ -4375,10 +4391,10 @@
         "KeySpecIndex": 0
       },
       {
-        "TypeDiscriminator": "RespCommandArgument",
+        "TypeDiscriminator": "RespCommandBasicArgument",
         "Name": "MEMBER",
         "DisplayText": "member",
-        "Type": "None"
+        "Type": "String"
       }
     ]
   },
@@ -4394,44 +4410,44 @@
       {
         "TypeDiscriminator": "RespCommandContainerArgument",
         "Name": "ARGS",
-        "Type": "None",
+        "Type": "OneOf",
         "Arguments": [
           {
             "TypeDiscriminator": "RespCommandContainerArgument",
             "Name": "HOST-PORT",
-            "Type": "None",
+            "Type": "Block",
             "Arguments": [
               {
-                "TypeDiscriminator": "RespCommandArgument",
+                "TypeDiscriminator": "RespCommandBasicArgument",
                 "Name": "HOST",
                 "DisplayText": "host",
-                "Type": "None"
+                "Type": "String"
               },
               {
-                "TypeDiscriminator": "RespCommandArgument",
+                "TypeDiscriminator": "RespCommandBasicArgument",
                 "Name": "PORT",
                 "DisplayText": "port",
-                "Type": "None"
+                "Type": "Integer"
               }
             ]
           },
           {
             "TypeDiscriminator": "RespCommandContainerArgument",
             "Name": "NO-ONE",
-            "Type": "None",
+            "Type": "Block",
             "Arguments": [
               {
-                "TypeDiscriminator": "RespCommandArgument",
+                "TypeDiscriminator": "RespCommandBasicArgument",
                 "Name": "NO",
                 "DisplayText": "no",
-                "Type": "None",
+                "Type": "PureToken",
                 "Token": "NO"
               },
               {
-                "TypeDiscriminator": "RespCommandArgument",
+                "TypeDiscriminator": "RespCommandBasicArgument",
                 "Name": "ONE",
                 "DisplayText": "one",
-                "Type": "None",
+                "Type": "PureToken",
                 "Token": "ONE"
               }
             ]
@@ -4478,10 +4494,10 @@
         "KeySpecIndex": 1
       },
       {
-        "TypeDiscriminator": "RespCommandArgument",
+        "TypeDiscriminator": "RespCommandBasicArgument",
         "Name": "MEMBER",
         "DisplayText": "member",
-        "Type": "None"
+        "Type": "String"
       }
     ]
   },
@@ -4500,10 +4516,10 @@
         "KeySpecIndex": 0
       },
       {
-        "TypeDiscriminator": "RespCommandArgument",
+        "TypeDiscriminator": "RespCommandBasicArgument",
         "Name": "COUNT",
         "DisplayText": "count",
-        "Type": "None",
+        "Type": "Integer",
         "ArgumentFlags": "Optional"
       }
     ]
@@ -4523,10 +4539,10 @@
         "KeySpecIndex": 0
       },
       {
-        "TypeDiscriminator": "RespCommandArgument",
+        "TypeDiscriminator": "RespCommandBasicArgument",
         "Name": "COUNT",
         "DisplayText": "count",
-        "Type": "None",
+        "Type": "Integer",
         "ArgumentFlags": "Optional"
       }
     ]
@@ -4546,10 +4562,10 @@
         "KeySpecIndex": 0
       },
       {
-        "TypeDiscriminator": "RespCommandArgument",
+        "TypeDiscriminator": "RespCommandBasicArgument",
         "Name": "MEMBER",
         "DisplayText": "member",
-        "Type": "None",
+        "Type": "String",
         "ArgumentFlags": "Multiple"
       }
     ]
@@ -4569,24 +4585,24 @@
         "KeySpecIndex": 0
       },
       {
-        "TypeDiscriminator": "RespCommandArgument",
+        "TypeDiscriminator": "RespCommandBasicArgument",
         "Name": "CURSOR",
         "DisplayText": "cursor",
-        "Type": "None"
+        "Type": "Integer"
       },
       {
-        "TypeDiscriminator": "RespCommandArgument",
+        "TypeDiscriminator": "RespCommandBasicArgument",
         "Name": "PATTERN",
         "DisplayText": "pattern",
-        "Type": "None",
+        "Type": "Pattern",
         "Token": "MATCH",
         "ArgumentFlags": "Optional"
       },
       {
-        "TypeDiscriminator": "RespCommandArgument",
+        "TypeDiscriminator": "RespCommandBasicArgument",
         "Name": "COUNT",
         "DisplayText": "count",
-        "Type": "None",
+        "Type": "Integer",
         "Token": "COUNT",
         "ArgumentFlags": "Optional"
       }
@@ -4616,10 +4632,10 @@
     "Complexity": "O(N) where N is the number of channels to subscribe to.",
     "Arguments": [
       {
-        "TypeDiscriminator": "RespCommandArgument",
+        "TypeDiscriminator": "RespCommandBasicArgument",
         "Name": "CHANNEL",
         "DisplayText": "channel",
-        "Type": "None",
+        "Type": "String",
         "ArgumentFlags": "Multiple"
       }
     ]
@@ -4729,10 +4745,10 @@
     "Complexity": "O(N) where N is the number of channels to unsubscribe.",
     "Arguments": [
       {
-        "TypeDiscriminator": "RespCommandArgument",
+        "TypeDiscriminator": "RespCommandBasicArgument",
         "Name": "CHANNEL",
         "DisplayText": "channel",
-        "Type": "None",
+        "Type": "String",
         "ArgumentFlags": "Optional, Multiple"
       }
     ]
@@ -4788,21 +4804,21 @@
       {
         "TypeDiscriminator": "RespCommandContainerArgument",
         "Name": "CONDITION",
-        "Type": "None",
+        "Type": "OneOf",
         "ArgumentFlags": "Optional",
         "Arguments": [
           {
-            "TypeDiscriminator": "RespCommandArgument",
+            "TypeDiscriminator": "RespCommandBasicArgument",
             "Name": "NX",
             "DisplayText": "nx",
-            "Type": "None",
+            "Type": "PureToken",
             "Token": "NX"
           },
           {
-            "TypeDiscriminator": "RespCommandArgument",
+            "TypeDiscriminator": "RespCommandBasicArgument",
             "Name": "XX",
             "DisplayText": "xx",
-            "Type": "None",
+            "Type": "PureToken",
             "Token": "XX"
           }
         ]
@@ -4810,58 +4826,58 @@
       {
         "TypeDiscriminator": "RespCommandContainerArgument",
         "Name": "COMPARISON",
-        "Type": "None",
+        "Type": "OneOf",
         "ArgumentFlags": "Optional",
         "Arguments": [
           {
-            "TypeDiscriminator": "RespCommandArgument",
+            "TypeDiscriminator": "RespCommandBasicArgument",
             "Name": "GT",
             "DisplayText": "gt",
-            "Type": "None",
+            "Type": "PureToken",
             "Token": "GT"
           },
           {
-            "TypeDiscriminator": "RespCommandArgument",
+            "TypeDiscriminator": "RespCommandBasicArgument",
             "Name": "LT",
             "DisplayText": "lt",
-            "Type": "None",
+            "Type": "PureToken",
             "Token": "LT"
           }
         ]
       },
       {
-        "TypeDiscriminator": "RespCommandArgument",
+        "TypeDiscriminator": "RespCommandBasicArgument",
         "Name": "CHANGE",
         "DisplayText": "change",
-        "Type": "None",
+        "Type": "PureToken",
         "Token": "CH",
         "ArgumentFlags": "Optional"
       },
       {
-        "TypeDiscriminator": "RespCommandArgument",
+        "TypeDiscriminator": "RespCommandBasicArgument",
         "Name": "INCREMENT",
         "DisplayText": "increment",
-        "Type": "None",
+        "Type": "PureToken",
         "Token": "INCR",
         "ArgumentFlags": "Optional"
       },
       {
         "TypeDiscriminator": "RespCommandContainerArgument",
         "Name": "DATA",
-        "Type": "None",
+        "Type": "Block",
         "ArgumentFlags": "Multiple",
         "Arguments": [
           {
-            "TypeDiscriminator": "RespCommandArgument",
+            "TypeDiscriminator": "RespCommandBasicArgument",
             "Name": "SCORE",
             "DisplayText": "score",
-            "Type": "None"
+            "Type": "Double"
           },
           {
-            "TypeDiscriminator": "RespCommandArgument",
+            "TypeDiscriminator": "RespCommandBasicArgument",
             "Name": "MEMBER",
             "DisplayText": "member",
-            "Type": "None"
+            "Type": "String"
           }
         ]
       }
@@ -4898,16 +4914,16 @@
         "KeySpecIndex": 0
       },
       {
-        "TypeDiscriminator": "RespCommandArgument",
+        "TypeDiscriminator": "RespCommandBasicArgument",
         "Name": "MIN",
         "DisplayText": "min",
-        "Type": "None"
+        "Type": "Double"
       },
       {
-        "TypeDiscriminator": "RespCommandArgument",
+        "TypeDiscriminator": "RespCommandBasicArgument",
         "Name": "MAX",
         "DisplayText": "max",
-        "Type": "None"
+        "Type": "Double"
       }
     ]
   },
@@ -4919,10 +4935,10 @@
     "Complexity": "O(L \u002B (N-K)log(N)) worst case where L is the total number of elements in all the sets, N is the size of the first set, and K is the size of the result set.",
     "Arguments": [
       {
-        "TypeDiscriminator": "RespCommandArgument",
+        "TypeDiscriminator": "RespCommandBasicArgument",
         "Name": "NUMKEYS",
         "DisplayText": "numkeys",
-        "Type": "None"
+        "Type": "Integer"
       },
       {
         "TypeDiscriminator": "RespCommandKeyArgument",
@@ -4933,10 +4949,10 @@
         "KeySpecIndex": 0
       },
       {
-        "TypeDiscriminator": "RespCommandArgument",
+        "TypeDiscriminator": "RespCommandBasicArgument",
         "Name": "WITHSCORES",
         "DisplayText": "withscores",
-        "Type": "None",
+        "Type": "PureToken",
         "Token": "WITHSCORES",
         "ArgumentFlags": "Optional"
       }
@@ -4957,16 +4973,16 @@
         "KeySpecIndex": 0
       },
       {
-        "TypeDiscriminator": "RespCommandArgument",
+        "TypeDiscriminator": "RespCommandBasicArgument",
         "Name": "INCREMENT",
         "DisplayText": "increment",
-        "Type": "None"
+        "Type": "Integer"
       },
       {
-        "TypeDiscriminator": "RespCommandArgument",
+        "TypeDiscriminator": "RespCommandBasicArgument",
         "Name": "MEMBER",
         "DisplayText": "member",
-        "Type": "None"
+        "Type": "String"
       }
     ]
   },
@@ -4985,16 +5001,16 @@
         "KeySpecIndex": 0
       },
       {
-        "TypeDiscriminator": "RespCommandArgument",
+        "TypeDiscriminator": "RespCommandBasicArgument",
         "Name": "MIN",
         "DisplayText": "min",
-        "Type": "None"
+        "Type": "String"
       },
       {
-        "TypeDiscriminator": "RespCommandArgument",
+        "TypeDiscriminator": "RespCommandBasicArgument",
         "Name": "MAX",
         "DisplayText": "max",
-        "Type": "None"
+        "Type": "String"
       }
     ]
   },
@@ -5013,10 +5029,10 @@
         "KeySpecIndex": 0
       },
       {
-        "TypeDiscriminator": "RespCommandArgument",
+        "TypeDiscriminator": "RespCommandBasicArgument",
         "Name": "MEMBER",
         "DisplayText": "member",
-        "Type": "None",
+        "Type": "String",
         "ArgumentFlags": "Multiple"
       }
     ]
@@ -5036,10 +5052,10 @@
         "KeySpecIndex": 0
       },
       {
-        "TypeDiscriminator": "RespCommandArgument",
+        "TypeDiscriminator": "RespCommandBasicArgument",
         "Name": "COUNT",
         "DisplayText": "count",
-        "Type": "None",
+        "Type": "Integer",
         "ArgumentFlags": "Optional"
       }
     ]
@@ -5059,10 +5075,10 @@
         "KeySpecIndex": 0
       },
       {
-        "TypeDiscriminator": "RespCommandArgument",
+        "TypeDiscriminator": "RespCommandBasicArgument",
         "Name": "COUNT",
         "DisplayText": "count",
-        "Type": "None",
+        "Type": "Integer",
         "ArgumentFlags": "Optional"
       }
     ]
@@ -5084,20 +5100,20 @@
       {
         "TypeDiscriminator": "RespCommandContainerArgument",
         "Name": "OPTIONS",
-        "Type": "None",
+        "Type": "Block",
         "ArgumentFlags": "Optional",
         "Arguments": [
           {
-            "TypeDiscriminator": "RespCommandArgument",
+            "TypeDiscriminator": "RespCommandBasicArgument",
             "Name": "COUNT",
             "DisplayText": "count",
-            "Type": "None"
+            "Type": "Integer"
           },
           {
-            "TypeDiscriminator": "RespCommandArgument",
+            "TypeDiscriminator": "RespCommandBasicArgument",
             "Name": "WITHSCORES",
             "DisplayText": "withscores",
-            "Type": "None",
+            "Type": "PureToken",
             "Token": "WITHSCORES",
             "ArgumentFlags": "Optional"
           }
@@ -5120,73 +5136,73 @@
         "KeySpecIndex": 0
       },
       {
-        "TypeDiscriminator": "RespCommandArgument",
+        "TypeDiscriminator": "RespCommandBasicArgument",
         "Name": "START",
         "DisplayText": "start",
-        "Type": "None"
+        "Type": "String"
       },
       {
-        "TypeDiscriminator": "RespCommandArgument",
+        "TypeDiscriminator": "RespCommandBasicArgument",
         "Name": "STOP",
         "DisplayText": "stop",
-        "Type": "None"
+        "Type": "String"
       },
       {
         "TypeDiscriminator": "RespCommandContainerArgument",
         "Name": "SORTBY",
-        "Type": "None",
+        "Type": "OneOf",
         "ArgumentFlags": "Optional",
         "Arguments": [
           {
-            "TypeDiscriminator": "RespCommandArgument",
+            "TypeDiscriminator": "RespCommandBasicArgument",
             "Name": "BYSCORE",
             "DisplayText": "byscore",
-            "Type": "None",
+            "Type": "PureToken",
             "Token": "BYSCORE"
           },
           {
-            "TypeDiscriminator": "RespCommandArgument",
+            "TypeDiscriminator": "RespCommandBasicArgument",
             "Name": "BYLEX",
             "DisplayText": "bylex",
-            "Type": "None",
+            "Type": "PureToken",
             "Token": "BYLEX"
           }
         ]
       },
       {
-        "TypeDiscriminator": "RespCommandArgument",
+        "TypeDiscriminator": "RespCommandBasicArgument",
         "Name": "REV",
         "DisplayText": "rev",
-        "Type": "None",
+        "Type": "PureToken",
         "Token": "REV",
         "ArgumentFlags": "Optional"
       },
       {
         "TypeDiscriminator": "RespCommandContainerArgument",
         "Name": "LIMIT",
-        "Type": "None",
+        "Type": "Block",
         "Token": "LIMIT",
         "ArgumentFlags": "Optional",
         "Arguments": [
           {
-            "TypeDiscriminator": "RespCommandArgument",
+            "TypeDiscriminator": "RespCommandBasicArgument",
             "Name": "OFFSET",
             "DisplayText": "offset",
-            "Type": "None"
+            "Type": "Integer"
           },
           {
-            "TypeDiscriminator": "RespCommandArgument",
+            "TypeDiscriminator": "RespCommandBasicArgument",
             "Name": "COUNT",
             "DisplayText": "count",
-            "Type": "None"
+            "Type": "Integer"
           }
         ]
       },
       {
-        "TypeDiscriminator": "RespCommandArgument",
+        "TypeDiscriminator": "RespCommandBasicArgument",
         "Name": "WITHSCORES",
         "DisplayText": "withscores",
-        "Type": "None",
+        "Type": "PureToken",
         "Token": "WITHSCORES",
         "ArgumentFlags": "Optional"
       }
@@ -5209,43 +5225,43 @@
         "KeySpecIndex": 0
       },
       {
-        "TypeDiscriminator": "RespCommandArgument",
+        "TypeDiscriminator": "RespCommandBasicArgument",
         "Name": "MIN",
         "DisplayText": "min",
-        "Type": "None"
+        "Type": "Double"
       },
       {
-        "TypeDiscriminator": "RespCommandArgument",
+        "TypeDiscriminator": "RespCommandBasicArgument",
         "Name": "MAX",
         "DisplayText": "max",
-        "Type": "None"
+        "Type": "Double"
       },
       {
-        "TypeDiscriminator": "RespCommandArgument",
+        "TypeDiscriminator": "RespCommandBasicArgument",
         "Name": "WITHSCORES",
         "DisplayText": "withscores",
-        "Type": "None",
+        "Type": "PureToken",
         "Token": "WITHSCORES",
         "ArgumentFlags": "Optional"
       },
       {
         "TypeDiscriminator": "RespCommandContainerArgument",
         "Name": "LIMIT",
-        "Type": "None",
+        "Type": "Block",
         "Token": "LIMIT",
         "ArgumentFlags": "Optional",
         "Arguments": [
           {
-            "TypeDiscriminator": "RespCommandArgument",
+            "TypeDiscriminator": "RespCommandBasicArgument",
             "Name": "OFFSET",
             "DisplayText": "offset",
-            "Type": "None"
+            "Type": "Integer"
           },
           {
-            "TypeDiscriminator": "RespCommandArgument",
+            "TypeDiscriminator": "RespCommandBasicArgument",
             "Name": "COUNT",
             "DisplayText": "count",
-            "Type": "None"
+            "Type": "Integer"
           }
         ]
       }
@@ -5266,16 +5282,16 @@
         "KeySpecIndex": 0
       },
       {
-        "TypeDiscriminator": "RespCommandArgument",
+        "TypeDiscriminator": "RespCommandBasicArgument",
         "Name": "MEMBER",
         "DisplayText": "member",
-        "Type": "None"
+        "Type": "String"
       },
       {
-        "TypeDiscriminator": "RespCommandArgument",
+        "TypeDiscriminator": "RespCommandBasicArgument",
         "Name": "WITHSCORE",
         "DisplayText": "withscore",
-        "Type": "None",
+        "Type": "PureToken",
         "Token": "WITHSCORE",
         "ArgumentFlags": "Optional"
       }
@@ -5296,10 +5312,10 @@
         "KeySpecIndex": 0
       },
       {
-        "TypeDiscriminator": "RespCommandArgument",
+        "TypeDiscriminator": "RespCommandBasicArgument",
         "Name": "MEMBER",
         "DisplayText": "member",
-        "Type": "None",
+        "Type": "String",
         "ArgumentFlags": "Multiple"
       }
     ]
@@ -5319,16 +5335,16 @@
         "KeySpecIndex": 0
       },
       {
-        "TypeDiscriminator": "RespCommandArgument",
+        "TypeDiscriminator": "RespCommandBasicArgument",
         "Name": "MIN",
         "DisplayText": "min",
-        "Type": "None"
+        "Type": "String"
       },
       {
-        "TypeDiscriminator": "RespCommandArgument",
+        "TypeDiscriminator": "RespCommandBasicArgument",
         "Name": "MAX",
         "DisplayText": "max",
-        "Type": "None"
+        "Type": "String"
       }
     ]
   },
@@ -5347,16 +5363,16 @@
         "KeySpecIndex": 0
       },
       {
-        "TypeDiscriminator": "RespCommandArgument",
+        "TypeDiscriminator": "RespCommandBasicArgument",
         "Name": "START",
         "DisplayText": "start",
-        "Type": "None"
+        "Type": "Integer"
       },
       {
-        "TypeDiscriminator": "RespCommandArgument",
+        "TypeDiscriminator": "RespCommandBasicArgument",
         "Name": "STOP",
         "DisplayText": "stop",
-        "Type": "None"
+        "Type": "Integer"
       }
     ]
   },
@@ -5375,16 +5391,16 @@
         "KeySpecIndex": 0
       },
       {
-        "TypeDiscriminator": "RespCommandArgument",
+        "TypeDiscriminator": "RespCommandBasicArgument",
         "Name": "MIN",
         "DisplayText": "min",
-        "Type": "None"
+        "Type": "Double"
       },
       {
-        "TypeDiscriminator": "RespCommandArgument",
+        "TypeDiscriminator": "RespCommandBasicArgument",
         "Name": "MAX",
         "DisplayText": "max",
-        "Type": "None"
+        "Type": "Double"
       }
     ]
   },
@@ -5405,22 +5421,22 @@
         "KeySpecIndex": 0
       },
       {
-        "TypeDiscriminator": "RespCommandArgument",
+        "TypeDiscriminator": "RespCommandBasicArgument",
         "Name": "START",
         "DisplayText": "start",
-        "Type": "None"
+        "Type": "Integer"
       },
       {
-        "TypeDiscriminator": "RespCommandArgument",
+        "TypeDiscriminator": "RespCommandBasicArgument",
         "Name": "STOP",
         "DisplayText": "stop",
-        "Type": "None"
+        "Type": "Integer"
       },
       {
-        "TypeDiscriminator": "RespCommandArgument",
+        "TypeDiscriminator": "RespCommandBasicArgument",
         "Name": "WITHSCORES",
         "DisplayText": "withscores",
-        "Type": "None",
+        "Type": "PureToken",
         "Token": "WITHSCORES",
         "ArgumentFlags": "Optional"
       }
@@ -5443,43 +5459,43 @@
         "KeySpecIndex": 0
       },
       {
-        "TypeDiscriminator": "RespCommandArgument",
+        "TypeDiscriminator": "RespCommandBasicArgument",
         "Name": "MAX",
         "DisplayText": "max",
-        "Type": "None"
+        "Type": "Double"
       },
       {
-        "TypeDiscriminator": "RespCommandArgument",
+        "TypeDiscriminator": "RespCommandBasicArgument",
         "Name": "MIN",
         "DisplayText": "min",
-        "Type": "None"
+        "Type": "Double"
       },
       {
-        "TypeDiscriminator": "RespCommandArgument",
+        "TypeDiscriminator": "RespCommandBasicArgument",
         "Name": "WITHSCORES",
         "DisplayText": "withscores",
-        "Type": "None",
+        "Type": "PureToken",
         "Token": "WITHSCORES",
         "ArgumentFlags": "Optional"
       },
       {
         "TypeDiscriminator": "RespCommandContainerArgument",
         "Name": "LIMIT",
-        "Type": "None",
+        "Type": "Block",
         "Token": "LIMIT",
         "ArgumentFlags": "Optional",
         "Arguments": [
           {
-            "TypeDiscriminator": "RespCommandArgument",
+            "TypeDiscriminator": "RespCommandBasicArgument",
             "Name": "OFFSET",
             "DisplayText": "offset",
-            "Type": "None"
+            "Type": "Integer"
           },
           {
-            "TypeDiscriminator": "RespCommandArgument",
+            "TypeDiscriminator": "RespCommandBasicArgument",
             "Name": "COUNT",
             "DisplayText": "count",
-            "Type": "None"
+            "Type": "Integer"
           }
         ]
       }
@@ -5500,16 +5516,16 @@
         "KeySpecIndex": 0
       },
       {
-        "TypeDiscriminator": "RespCommandArgument",
+        "TypeDiscriminator": "RespCommandBasicArgument",
         "Name": "MEMBER",
         "DisplayText": "member",
-        "Type": "None"
+        "Type": "String"
       },
       {
-        "TypeDiscriminator": "RespCommandArgument",
+        "TypeDiscriminator": "RespCommandBasicArgument",
         "Name": "WITHSCORE",
         "DisplayText": "withscore",
-        "Type": "None",
+        "Type": "PureToken",
         "Token": "WITHSCORE",
         "ArgumentFlags": "Optional"
       }
@@ -5530,24 +5546,24 @@
         "KeySpecIndex": 0
       },
       {
-        "TypeDiscriminator": "RespCommandArgument",
+        "TypeDiscriminator": "RespCommandBasicArgument",
         "Name": "CURSOR",
         "DisplayText": "cursor",
-        "Type": "None"
+        "Type": "Integer"
       },
       {
-        "TypeDiscriminator": "RespCommandArgument",
+        "TypeDiscriminator": "RespCommandBasicArgument",
         "Name": "PATTERN",
         "DisplayText": "pattern",
-        "Type": "None",
+        "Type": "Pattern",
         "Token": "MATCH",
         "ArgumentFlags": "Optional"
       },
       {
-        "TypeDiscriminator": "RespCommandArgument",
+        "TypeDiscriminator": "RespCommandBasicArgument",
         "Name": "COUNT",
         "DisplayText": "count",
-        "Type": "None",
+        "Type": "Integer",
         "Token": "COUNT",
         "ArgumentFlags": "Optional"
       }
@@ -5568,7 +5584,7 @@
         "KeySpecIndex": 0
       },
       {
-        "TypeDiscriminator": "RespCommandArgument",
+        "TypeDiscriminator": "RespCommandBasicArgument",
         "Name": "MEMBER",
         "DisplayText": "member",
         "Type": "String"

@@ -223,7 +223,7 @@ namespace CommandInfoUpdater
                 RespCommandArgumentType.Key => new RespCommandKeyArgument(name, displayText, token, summary, flags, strVal, keySpecIdx),
                 RespCommandArgumentType.OneOf or RespCommandArgumentType.Block => new RespCommandContainerArgument(name,
                     displayText, argType, token, summary, flags, nestedArgsVal),
-                _ => new RespCommandArgument(name, displayText, argType, token, summary, flags, strVal)
+                _ => new RespCommandBasicArgument(name, displayText, argType, token, summary, flags, strVal)
             };
 
             return true;
