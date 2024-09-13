@@ -55,7 +55,7 @@ jobs:
       - name: Upload test results to artifacts
         uses: actions/upload-artifact@v4
         with:
-          name: CI_BDN_Config_${{ matrix.test }}_${{ matrix.os }}.results
+          name: ResultsDir-${{ matrix.os }}-${{ matrix.framework }}-${{ matrix.configuration }}-${{ matrix.test }}
           path: |
              ./test/BDNPerfTests/results
         if: ${{ always() }}
@@ -80,7 +80,7 @@ jobs:
           # What benchmark tool the output.txt came from
           tool: 'benchmarkdotnet'
           # Where the output from the benchmark tool is stored
-          output-file-path: ./test/BDNPerfTests/results/CI_BDN_Config_${{ matrix.test }}_${{ matrix.os }}.results
+          output-file-path: ./test/BDNPerfTests/results/CI_BDN_Config_RespParseStress_Linux.results
           # Where the previous data file is stored
           external-data-json-path: ./cache/benchmark-data.json
           # Workflow will fail when an alert happens
