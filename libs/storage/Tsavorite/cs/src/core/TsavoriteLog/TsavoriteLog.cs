@@ -864,7 +864,10 @@ namespace Tsavorite.core
                 var logicalAddress = allocator.TryAllocateRetryNow(recordSize);
                 if (logicalAddress > 0)
                     return logicalAddress;
+
+                // logicalAddress less than 0 (RETRY_NOW) should already have been handled
                 Debug.Assert(logicalAddress == 0);
+
                 epoch.Suspend();
                 if (cannedException != null) throw cannedException;
                 try

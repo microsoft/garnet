@@ -28,6 +28,7 @@ namespace Tsavorite.core
                 return true;
             }
 
+            // logicalAddress less than 0 (RETRY_NOW) should already have been handled
             Debug.Assert(logicalAddress == 0);
             // We expect flushEvent to be signaled.
             internalStatus = OperationStatus.ALLOCATE_FAILED;
