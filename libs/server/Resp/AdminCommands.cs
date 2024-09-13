@@ -22,7 +22,7 @@ namespace Garnet.server
     {
         private bool ProcessAdminCommands(RespCommand command)
         {
-            hasAdminCommand = true;
+            containsSlowCommand = true;
 
             if (_authenticator.CanAuthenticate && !_authenticator.IsAuthenticated)
             {

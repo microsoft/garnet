@@ -114,8 +114,8 @@ namespace Garnet.server
         /// </summary>
         public IGarnetServer Server { get; set; }
 
-        // Track whether the incoming network batch had some admin command
-        bool hasAdminCommand;
+        // Track whether the incoming network batch contains slow commands that should not be counter in NET_RS histogram
+        bool containsSlowCommand;
 
         readonly CustomCommandManagerSession customCommandManagerSession;
 
@@ -368,10 +368,10 @@ namespace Garnet.server
             {
                 if (latencyMetrics != null)
                 {
-                    if (hasAdminCommand)
+                    if (containsSlowCommand)
                     {
                         latencyMetrics.StopAndSwitch(LatencyMetricsType.NET_RS_LAT, LatencyMetricsType.NET_RS_LAT_ADMIN);
-                        hasAdminCommand = false;
+                        containsSlowCommand = false;
                     }
                     else
                         latencyMetrics.Stop(LatencyMetricsType.NET_RS_LAT);
@@ -661,7 +661,7 @@ namespace Garnet.server
         private bool ProcessOtherCommands<TGarnetApi>(RespCommand command, ref TGarnetApi storageApi)
             where TGarnetApi : IGarnetApi
         {
-            hasAdminCommand = true;
+            containsSlowCommand = true;
 
             var success = command switch
             {

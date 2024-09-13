@@ -1993,6 +1993,10 @@ namespace Garnet.server
             }
             endReadHead = (int)(ptr - recvBufferPtr);
 
+            // Classify command as non data command
+            if (storeWrapper.serverOptions.LatencyMonitor)
+                containsSlowCommand |= !cmd.IsDataCommand();
+
             if (storeWrapper.appendOnlyFile != null && storeWrapper.serverOptions.WaitForCommit)
                 HandleAofCommitMode(cmd);
 
