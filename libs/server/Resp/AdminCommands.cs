@@ -20,7 +20,7 @@ namespace Garnet.server
     /// </summary>
     internal sealed unsafe partial class RespServerSession : ServerSessionBase
     {
-        private bool ProcessAdminCommands(RespCommand command)
+        private void ProcessAdminCommands(RespCommand command)
         {
             containsSlowCommand = true;
 
@@ -61,17 +61,16 @@ namespace Garnet.server
                 _ => cmdFound = false
             };
 
-            if (cmdFound) return true;
+            if (cmdFound) return;
 
             if (command.IsClusterSubCommand())
             {
                 NetworkProcessClusterCommand(command);
-                return true;
+                return;
             }
 
             while (!RespWriteUtils.WriteError(CmdStrings.RESP_ERR_GENERIC_UNK_CMD, ref dcurr, dend))
-                SendAndReset();
-            return true;
+                SendAndReset(); ;
         }
 
         /// <summary>

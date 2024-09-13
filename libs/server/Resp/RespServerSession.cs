@@ -697,7 +697,7 @@ namespace Garnet.server
                 RespCommand.SCRIPT => TrySCRIPT(),
                 RespCommand.EVAL => TryEVAL(),
                 RespCommand.EVALSHA => TryEVALSHA(),
-                _ => ProcessAdminCommands(command)
+                _ => Process(command)
             };
 
             bool NetworkCLIENTID()
@@ -739,6 +739,12 @@ namespace Garnet.server
                     currentCustomProcedure.CustomProcedureImpl);
 
                 currentCustomProcedure = null;
+                return true;
+            }
+
+            bool Process(RespCommand command)
+            {
+                ProcessAdminCommands(command);
                 return true;
             }
 
