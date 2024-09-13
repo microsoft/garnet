@@ -220,8 +220,8 @@ namespace Garnet.server
             var strRep = GetString(i);
             var value = Enum.Parse<T>(strRep, ignoreCase);
             // Extra check is to avoid numerical values being successfully parsed as enum value
-            return Enum.GetNames<T>().Any(name => string.Equals(strRep, name,
-                    ignoreCase ? StringComparison.OrdinalIgnoreCase : StringComparison.Ordinal)) ? default : value;
+            return string.Equals(Enum.GetName(value), strRep,
+                ignoreCase ? StringComparison.OrdinalIgnoreCase : StringComparison.Ordinal) ? default : value;
         }
 
         /// <summary>
@@ -237,8 +237,8 @@ namespace Garnet.server
             var strRep = GetString(i);
             var successful = Enum.TryParse(strRep, ignoreCase, out value) &&
                              // Extra check is to avoid numerical values being successfully parsed as enum value
-                             Enum.GetNames<T>().Any(name => string.Equals(strRep, name,
-                                 ignoreCase ? StringComparison.OrdinalIgnoreCase : StringComparison.Ordinal));
+                             string.Equals(Enum.GetName(value), strRep,
+                                 ignoreCase ? StringComparison.OrdinalIgnoreCase : StringComparison.Ordinal);
             if (!successful) value = default;
             return successful;
         }
