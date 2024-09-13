@@ -17,6 +17,7 @@ using Garnet.client;
 using Garnet.common;
 using Garnet.server;
 using Garnet.server.Auth.Settings;
+using Garnet.server.Resp;
 using Garnet.server.TLS;
 using Microsoft.CodeAnalysis;
 using Microsoft.CodeAnalysis.CSharp;
@@ -49,9 +50,12 @@ namespace Garnet.test
 
         private static int procId = Process.GetCurrentProcess().Id;
         internal static string CustomRespCommandInfoJsonPath = "CustomRespCommandsInfo.json";
+        internal static string CustomRespCommandDocsJsonPath = "CustomRespCommandsDocs.json";
 
         private static bool CustomCommandsInfoInitialized;
+        private static bool CustomCommandsDocsInitialized;
         private static IReadOnlyDictionary<string, RespCommandsInfo> RespCustomCommandsInfo;
+        private static IReadOnlyDictionary<string, RespCommandDocs> RespCustomCommandsDocs;
 
         internal static string AzureTestContainer
         {
@@ -94,6 +98,22 @@ namespace Garnet.test
             if (!CustomCommandsInfoInitialized && !TryInitializeCustomCommandsInfo(logger)) return false;
 
             customCommandsInfo = RespCustomCommandsInfo;
+            return true;
+        }
+
+        /// <summary>
+        /// Get command info for custom commands defined in custom commands json file
+        /// </summary>
+        /// <param name="customCommandsDocs">Mapping between command name and command info</param>
+        /// <param name="logger">Logger</param>
+        /// <returns></returns>
+        internal static bool TryGetCustomCommandsDocs(out IReadOnlyDictionary<string, RespCommandDocs> customCommandsDocs, ILogger logger = null)
+        {
+            customCommandsDocs = default;
+
+            if (!CustomCommandsDocsInitialized && !TryInitializeCustomCommandsDocs(logger)) return false;
+
+            customCommandsDocs = RespCustomCommandsInfo;
             return true;
         }
 

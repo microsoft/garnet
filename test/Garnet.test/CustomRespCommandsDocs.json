@@ -1,0 +1,30 @@
+[
+  {
+    "Command": "NONE",
+    "Name": "DELIFM"
+  },
+  {
+    "Command": "NONE",
+    "Name": "MGETIFPM"
+  },
+  {
+    "Command": "NONE",
+    "Name": "MYDICTGET"
+  },
+  {
+    "Command": "NONE",
+    "Name": "MYDICTSET"
+  },
+  {
+    "Command": "NONE",
+    "Name": "READWRITETX"
+  },
+  {
+    "Command": "NONE",
+    "Name": "SETIFPM"
+  },
+  {
+    "Command": "NONE",
+    "Name": "SETWPIFPGT"
+  }
+]
