@@ -66,8 +66,8 @@ namespace Tsavorite.core
         /// <summary>How many pages do we leave empty in the in-memory buffer (between 0 and BufferSize-1)</summary>
         private int emptyPageCount;
 
-        /// <summary>HeadOffset lag address</summary>
-        internal long HeadOffsetLagAddress;
+        /// <summary>HeadAddress offset from tail (currently page-aligned)</summary>
+        internal long HeadAddressLagOffset;
 
         /// <summary>
         /// Number of <see cref="LockableUnsafeContext{Key, Value, Input, Output, Context, Functions, StoreFunctions, Allocator}"/> or 
@@ -78,8 +78,8 @@ namespace Tsavorite.core
         /// <summary>Log mutable fraction</summary>
         protected readonly double LogMutableFraction;
 
-        /// <summary>ReadOnlyOffset lag (from tail)</summary>
-        protected long ReadOnlyLagAddress;
+        /// <summary>ReadOnlyAddress offset from tail (currently page-aligned)</summary>
+        protected long ReadOnlyAddressLagOffset;
 
         #endregion
 
@@ -502,7 +502,7 @@ namespace Tsavorite.core
             }
         }
 
-        internal long GetReadOnlyLagAddress() => ReadOnlyLagAddress;
+        internal long GetReadOnlyAddressLagOffset() => ReadOnlyAddressLagOffset;
 
         protected readonly ILogger logger;
 
@@ -733,9 +733,9 @@ namespace Tsavorite.core
                     emptyPageCount = value;
                     headOffsetLagSize -= emptyPageCount;
 
-                    // Lag addresses are the number of pages "behind" TailPageOffset (the tail in the circular buffer).
-                    ReadOnlyLagAddress = (long)(LogMutableFraction * headOffsetLagSize) << LogPageSizeBits;
-                    HeadOffsetLagAddress = (long)headOffsetLagSize << LogPageSizeBits;
+                    // Address lag offsets correspond to the number of pages "behind" TailPageOffset (the tail in the circular buffer).
+                    ReadOnlyAddressLagOffset = (long)(LogMutableFraction * headOffsetLagSize) << LogPageSizeBits;
+                    HeadAddressLagOffset = (long)headOffsetLagSize << LogPageSizeBits;
                 }
 
                 // Force eviction now if empty page count has increased
@@ -854,6 +854,38 @@ namespace Tsavorite.core
             => throw new TsavoriteException(message);
 
         /// <summary>
+        /// Whether we need to shift addresses when turning the page.
+        /// </summary>
+        /// <param name="pageIndex">The page we are turning to</param>
+        /// <param name="localTailPageOffset">Local copy of PageOffset (includes the addition of numSlots)</param>
+        /// <param name="numSlots">Size of new allocation</param>
+        /// <returns></returns>
+        bool NeedToShiftAddress(long pageIndex, PageOffset localTailPageOffset, int numSlots)
+        {
+            var tailAddress = (((long)localTailPageOffset.Page) << LogPageSizeBits) | ((long)(localTailPageOffset.Offset - numSlots));
+            var shiftAddress = pageIndex << LogPageSizeBits;
+
+            // Check whether we need to shift ROA
+            var desiredReadOnlyAddress = shiftAddress - ReadOnlyAddressLagOffset;
+            if (desiredReadOnlyAddress > tailAddress)
+                desiredReadOnlyAddress = tailAddress;
+            if (desiredReadOnlyAddress > ReadOnlyAddress)
+                return true;
+
+            // Check whether we need to shift HA
+            var desiredHeadAddress = shiftAddress - HeadAddressLagOffset;
+            var currentFlushedUntilAddress = FlushedUntilAddress;
+            if (desiredHeadAddress > currentFlushedUntilAddress)
+                desiredHeadAddress = currentFlushedUntilAddress;
+            if (desiredHeadAddress > tailAddress)
+                desiredHeadAddress = tailAddress;
+            if (desiredHeadAddress > HeadAddress)
+                return true;
+
+            return false;
+        }
+
+        /// <summary>
         /// Shift log addresses when turning the page.
         /// </summary>
         /// <param name="pageIndex">The page we are turning to</param>
@@ -863,12 +895,12 @@ namespace Tsavorite.core
             var shiftAddress = pageIndex << LogPageSizeBits;
             var tailAddress = GetTailAddress();
 
-            long desiredReadOnlyAddress = shiftAddress - ReadOnlyLagAddress;
+            long desiredReadOnlyAddress = shiftAddress - ReadOnlyAddressLagOffset;
             if (desiredReadOnlyAddress > tailAddress)
                 desiredReadOnlyAddress = tailAddress;
             ShiftReadOnlyAddress(desiredReadOnlyAddress);
 
-            long desiredHeadAddress = shiftAddress - HeadOffsetLagAddress;
+            long desiredHeadAddress = shiftAddress - HeadAddressLagOffset;
             if (desiredHeadAddress > tailAddress)
                 desiredHeadAddress = tailAddress;
             ShiftHeadAddress(desiredHeadAddress);
@@ -905,8 +937,12 @@ namespace Tsavorite.core
                 return 0; // RETRY_LATER
             }
 
-            // Allocate next page and set new tail
-            if (CannotAllocate(pageIndex))
+            // We next verify that:
+            // 1. The next page (pageIndex) is ready to use (i.e., closed)
+            // 2. We have issued any necessary address shifting at the page-turn boundary.
+            // If either cannot be verified, we can ask the caller to retry now (immediately), because it is
+            // an ephemeral state.
+            if (CannotAllocate(pageIndex) || NeedToShiftAddress(pageIndex, localTailPageOffset, numSlots))
             {
                 // Reset to previous tail so that next attempt can retry
                 localTailPageOffset.PageAndOffset -= numSlots;
@@ -918,6 +954,7 @@ namespace Tsavorite.core
                 return -1; // RETRY_NOW
             }
 
+            // Allocate next page and set new tail
             if (!_wrapper.IsAllocated(pageIndex % BufferSize) || !_wrapper.IsAllocated((pageIndex + 1) % BufferSize))
                 AllocatePagesWithException(pageIndex, localTailPageOffset, numSlots);
 
@@ -925,8 +962,7 @@ namespace Tsavorite.core
             localTailPageOffset.Offset = numSlots;
             TailPageOffset = localTailPageOffset;
 
-            // Shift only after TailPageOffset is reset to a valid state
-            IssueShiftAddress(pageIndex);
+            // At this point, the slot is allocated and we are not allowed to refresh epochs any longer.
 
             // Offset is zero, for the first allocation on the new page
             return ((long)localTailPageOffset.Page) << LogPageSizeBits;
@@ -1214,7 +1250,7 @@ namespace Tsavorite.core
         private void PageAlignedShiftReadOnlyAddress(long currentTailAddress)
         {
             long pageAlignedTailAddress = currentTailAddress & ~PageSizeMask;
-            long desiredReadOnlyAddress = pageAlignedTailAddress - ReadOnlyLagAddress;
+            long desiredReadOnlyAddress = pageAlignedTailAddress - ReadOnlyAddressLagOffset;
             if (Utility.MonotonicUpdate(ref ReadOnlyAddress, desiredReadOnlyAddress, out _))
             {
                 // Debug.WriteLine("Allocate: Moving read-only offset from {0:X} to {1:X}", oldReadOnlyAddress, desiredReadOnlyAddress);
@@ -1229,7 +1265,7 @@ namespace Tsavorite.core
         /// <param name="currentTailAddress"></param>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         private void PageAlignedShiftHeadAddress(long currentTailAddress)
-            => ShiftHeadAddress((currentTailAddress & ~PageSizeMask) - HeadOffsetLagAddress);
+            => ShiftHeadAddress((currentTailAddress & ~PageSizeMask) - HeadAddressLagOffset);
 
         /// <summary>
         /// Tries to shift head address to specified value
@@ -1237,11 +1273,11 @@ namespace Tsavorite.core
         /// <param name="desiredHeadAddress"></param>
         public long ShiftHeadAddress(long desiredHeadAddress)
         {
-            //obtain local values of variables that can change
+            // Obtain local values of variables that can change
             long currentFlushedUntilAddress = FlushedUntilAddress;
 
             long newHeadAddress = desiredHeadAddress;
-            if (currentFlushedUntilAddress < newHeadAddress)
+            if (newHeadAddress > currentFlushedUntilAddress)
                 newHeadAddress = currentFlushedUntilAddress;
 
             if (Utility.MonotonicUpdate(ref HeadAddress, newHeadAddress, out _))

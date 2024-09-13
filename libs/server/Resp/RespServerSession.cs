@@ -3,7 +3,6 @@
 
 using System;
 using System.Buffers;
-using System.Buffers.Binary;
 using System.Diagnostics;
 using System.Runtime.CompilerServices;
 using System.Runtime.InteropServices;
@@ -433,7 +432,7 @@ namespace Garnet.server
                         }
                         else
                         {
-                            if (CanServeSlot(cmd))
+                            if (clusterSession == null || CanServeSlot(cmd))
                                 _ = ProcessBasicCommands(cmd, ref basicGarnetApi);
                         }
                     }

@@ -436,8 +436,8 @@ namespace Tsavorite.core
         /// <summary>
         /// Get read only lag address
         /// </summary>
-        public long UnsafeGetReadOnlyLagAddress()
-            => allocator.GetReadOnlyLagAddress();
+        public long UnsafeGetReadOnlyAddressLagOffset()
+            => allocator.GetReadOnlyAddressLagOffset();
 
         /// <summary>
         /// Enqueue batch of entries to log (in memory) - no guarantee of flush/commit
