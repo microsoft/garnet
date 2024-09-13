@@ -3,7 +3,6 @@
 
 using System;
 using System.Buffers;
-using System.Buffers.Binary;
 using System.Diagnostics;
 using System.Runtime.CompilerServices;
 using System.Runtime.InteropServices;
@@ -538,7 +537,6 @@ namespace Garnet.server
                 RespCommand.COMMAND_COUNT => NetworkCOMMAND_COUNT(),
                 RespCommand.COMMAND_INFO => NetworkCOMMAND_INFO(),
                 RespCommand.ECHO => NetworkECHO(),
-                RespCommand.INFO => NetworkINFO(),
                 RespCommand.HELLO => NetworkHELLO(),
                 RespCommand.TIME => NetworkTIME(),
                 RespCommand.FLUSHALL => NetworkFLUSHALL(),
@@ -688,6 +686,7 @@ namespace Garnet.server
         private bool ProcessOtherCommands<TGarnetApi>(RespCommand command, ref TGarnetApi storageApi)
             where TGarnetApi : IGarnetApi
         {
+            hasAdminCommand = true;
             if (command == RespCommand.CLIENT_ID)
             {
                 if (parseState.Count != 0)
@@ -720,6 +719,10 @@ namespace Garnet.server
             else if (command == RespCommand.RUNTXP)
             {
                 return NetworkRUNTXP();
+            }
+            else if (command == RespCommand.INFO)
+            {
+                return NetworkINFO();
             }
             else if (command == RespCommand.CustomTxn)
             {
