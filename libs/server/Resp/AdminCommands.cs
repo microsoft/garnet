@@ -70,7 +70,7 @@ namespace Garnet.server
             }
 
             while (!RespWriteUtils.WriteError(CmdStrings.RESP_ERR_GENERIC_UNK_CMD, ref dcurr, dend))
-                SendAndReset(); ;
+                SendAndReset();
         }
 
         /// <summary>
