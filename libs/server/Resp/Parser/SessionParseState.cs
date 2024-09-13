@@ -3,6 +3,7 @@
 
 using System;
 using System.Diagnostics;
+using System.Linq;
 using System.Runtime.CompilerServices;
 using System.Runtime.InteropServices;
 using Garnet.common;
@@ -230,8 +231,8 @@ namespace Garnet.server
             var strRep = GetString(i);
             var successful = Enum.TryParse(strRep, ignoreCase, out value) &&
                              // Extra check is to avoid numerical values being successfully parsed as enum value
-                             string.Equals(strRep, value.ToString(),
-                                 ignoreCase ? StringComparison.OrdinalIgnoreCase : StringComparison.Ordinal);
+                             Enum.GetNames<T>().Any(name => string.Equals(strRep, name,
+                                 ignoreCase ? StringComparison.OrdinalIgnoreCase : StringComparison.Ordinal));
             if (!successful) value = default;
             return successful;
         }
