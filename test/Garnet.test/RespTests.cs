@@ -1577,9 +1577,7 @@ namespace Garnet.test
         }
 
         [Test]
-        [TestCase("EXPIRE")]
-        [TestCase("PEXPIRE")]
-        public void KeyExpireOptionsTest(string command)
+        public void KeyExpireOptionsTest([Values("EXPIRE", "PEXPIRE")]string command, [Values(false, true)]bool testCaseSensitivity)
         {
             using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
             var db = redis.GetDatabase(0);
@@ -1588,32 +1586,32 @@ namespace Garnet.test
             object[] args = [key, 1000, ""];
             db.StringSet(key, key);
 
-            args[2] = "XX";// XX -- Set expiry only when the key has an existing expiry
+            args[2] = testCaseSensitivity ? "Xx" : "XX";// XX -- Set expiry only when the key has an existing expiry
             bool resp = (bool)db.Execute($"{command}", args);
             ClassicAssert.IsFalse(resp);//XX return false no existing expiry
 
-            args[2] = "NX";// NX -- Set expiry only when the key has no expiry
+            args[2] = testCaseSensitivity ? "nX" : "NX";// NX -- Set expiry only when the key has no expiry
             resp = (bool)db.Execute($"{command}", args);
             ClassicAssert.IsTrue(resp);// NX return true no existing expiry
 
-            args[2] = "NX";// NX -- Set expiry only when the key has no expiry
+            args[2] = testCaseSensitivity ? "nx" : "NX";// NX -- Set expiry only when the key has no expiry
             resp = (bool)db.Execute($"{command}", args);
             ClassicAssert.IsFalse(resp);// NX return false existing expiry
 
             args[1] = 50;
-            args[2] = "XX";// XX -- Set expiry only when the key has an existing expiry
+            args[2] = testCaseSensitivity ? "xx" : "XX";// XX -- Set expiry only when the key has an existing expiry
             resp = (bool)db.Execute($"{command}", args);
             ClassicAssert.IsTrue(resp);// XX return true existing expiry
             var time = db.KeyTimeToLive(key);
             ClassicAssert.IsTrue(time.Value.TotalSeconds <= (double)((int)args[1]) && time.Value.TotalSeconds > 0);
 
             args[1] = 1;
-            args[2] = "GT";// GT -- Set expiry only when the new expiry is greater than current one
+            args[2] = testCaseSensitivity ? "Gt" : "GT";// GT -- Set expiry only when the new expiry is greater than current one
             resp = (bool)db.Execute($"{command}", args);
             ClassicAssert.IsFalse(resp); // GT return false new expiry < current expiry
 
             args[1] = 1000;
-            args[2] = "GT";// GT -- Set expiry only when the new expiry is greater than current one
+            args[2] = testCaseSensitivity ? "gT" : "GT";// GT -- Set expiry only when the new expiry is greater than current one
             resp = (bool)db.Execute($"{command}", args);
             ClassicAssert.IsTrue(resp); // GT return true new expiry > current expiry
             time = db.KeyTimeToLive(key);
@@ -1624,12 +1622,12 @@ namespace Garnet.test
                 ClassicAssert.IsTrue(time.Value.TotalMilliseconds > 500);
 
             args[1] = 2000;
-            args[2] = "LT";// LT -- Set expiry only when the new expiry is less than current one
+            args[2] = testCaseSensitivity ? "lt" : "LT";// LT -- Set expiry only when the new expiry is less than current one
             resp = (bool)db.Execute($"{command}", args);
             ClassicAssert.IsFalse(resp); // LT return false new expiry > current expiry
 
             args[1] = 15;
-            args[2] = "LT";// LT -- Set expiry only when the new expiry is less than current one
+            args[2] = testCaseSensitivity ? "lT" : "LT";// LT -- Set expiry only when the new expiry is less than current one
             resp = (bool)db.Execute($"{command}", args);
             ClassicAssert.IsTrue(resp); // LT return true new expiry < current expiry
             time = db.KeyTimeToLive(key);

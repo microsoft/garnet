@@ -228,8 +228,9 @@ namespace Garnet.server
         {
             Debug.Assert(i < Count);
             var strRep = GetString(i);
-            var successful = Enum.TryParse(strRep, ignoreCase, out value);
-            successful = successful && Enum.IsDefined(typeof(T), strRep);
+            var successful = Enum.TryParse(strRep, ignoreCase, out value) &&
+                             string.Equals(strRep, value.ToString(),
+                                 ignoreCase ? StringComparison.OrdinalIgnoreCase : StringComparison.Ordinal);
             if (!successful) value = default;
             return successful;
         }
