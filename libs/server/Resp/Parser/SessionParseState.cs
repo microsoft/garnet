@@ -209,6 +209,8 @@ namespace Garnet.server
 
         /// <summary>
         /// Get enum argument at the given index
+        /// Note: this method exists for compatibility with existing code.
+        /// For best performance use: ReadOnlySpan.EqualsUpperCaseSpanIgnoringCase(""VALUE""u8) to figure out the current enum value
         /// </summary>
         /// <returns>True if enum parsed successfully</returns>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
@@ -217,11 +219,15 @@ namespace Garnet.server
             Debug.Assert(i < Count);
             var strRep = GetString(i);
             var value = Enum.Parse<T>(strRep, ignoreCase);
-            return !Enum.IsDefined(typeof(T), strRep) ? default : value;
+            // Extra check is to avoid numerical values being successfully parsed as enum value
+            return Enum.GetNames<T>().Any(name => string.Equals(strRep, name,
+                    ignoreCase ? StringComparison.OrdinalIgnoreCase : StringComparison.Ordinal)) ? default : value;
         }
 
         /// <summary>
         /// Try to get enum argument at the given index
+        /// Note: this method exists for compatibility with existing code.
+        /// For best performance use: ReadOnlySpan.EqualsUpperCaseSpanIgnoringCase(""VALUE""u8) to figure out the current enum value
         /// </summary>
         /// <returns>True if integer parsed successfully</returns>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
