@@ -42,7 +42,7 @@ namespace Garnet.cluster
                     // an enqueue will result in an offset mismatch. So, we have to first reset the AOF to point to currentAddress.
                     if (currentAddress >= previousAddress + recordLength)
                     {
-                        //logger?.LogWarning("MainMemoryReplication: Skipping from {ReplicaReplicationOffset} to {currentAddress}", ReplicationOffset, currentAddress);
+                        logger?.LogWarning("MainMemoryReplication: Skipping from {ReplicaReplicationOffset} to {currentAddress}", ReplicationOffset, currentAddress);
                         storeWrapper.appendOnlyFile.Initialize(currentAddress, currentAddress);
                         ReplicationOffset = currentAddress;
                     }
