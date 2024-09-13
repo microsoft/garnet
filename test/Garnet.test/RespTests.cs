@@ -1162,6 +1162,26 @@ namespace Garnet.test
         }
 
         [Test]
+        public void SingleRenameWithExpiry()
+        {
+            using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
+            var db = redis.GetDatabase(0);
+
+            var origValue = "test1";
+            db.StringSet("key1", origValue, TimeSpan.FromMinutes(1));
+
+            db.KeyRename("key1", "key2");
+            string retValue = db.StringGet("key2");
+
+            ClassicAssert.AreEqual(origValue, retValue);
+
+            var ttl = db.KeyTimeToLive("key2");
+            ClassicAssert.IsTrue(ttl.HasValue);
+            ClassicAssert.Greater(ttl.Value.TotalMilliseconds, 0);
+            ClassicAssert.Less(ttl.Value.TotalMilliseconds, TimeSpan.FromMinutes(1).TotalMilliseconds);
+        }
+
+        [Test]
         public void SingleRenameKeyEdgeCase([Values] bool withoutObjectStore)
         {
             if (withoutObjectStore)
@@ -1215,6 +1235,38 @@ namespace Garnet.test
 
             result = db.ListRange(key2);
             ClassicAssert.AreEqual(origList, result);
+        }
+
+        [Test]
+        public void SingleRenameObjectStoreWithExpiry()
+        {
+            using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
+            var db = redis.GetDatabase(0);
+
+            var origList = new RedisValue[] { "a", "b", "c", "d" };
+            var key1 = "lkey1";
+            var count = db.ListRightPush(key1, origList);
+            ClassicAssert.AreEqual(4, count);
+
+            var result = db.ListRange(key1);
+            ClassicAssert.AreEqual(origList, result);
+
+            var expirySet = db.KeyExpire("lkey1", TimeSpan.FromMinutes(1));
+            ClassicAssert.IsTrue(expirySet);
+
+            var key2 = "lkey2";
+            var rb = db.KeyRename(key1, key2);
+            ClassicAssert.IsTrue(rb);
+            result = db.ListRange(key1);
+            ClassicAssert.AreEqual(Array.Empty<RedisValue>(), result);
+
+            result = db.ListRange(key2);
+            ClassicAssert.AreEqual(origList, result);
+
+            var ttl = db.KeyTimeToLive("lkey2");
+            ClassicAssert.IsTrue(ttl.HasValue);
+            ClassicAssert.Greater(ttl.Value.TotalMilliseconds, 0);
+            ClassicAssert.Less(ttl.Value.TotalMilliseconds, TimeSpan.FromMinutes(1).TotalMilliseconds);
         }
 
         [Test]
