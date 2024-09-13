@@ -229,6 +229,7 @@ namespace Garnet.server
             Debug.Assert(i < Count);
             var strRep = GetString(i);
             var successful = Enum.TryParse(strRep, ignoreCase, out value) &&
+                             // Extra check is to avoid numerical values being successfully parsed as enum value
                              string.Equals(strRep, value.ToString(),
                                  ignoreCase ? StringComparison.OrdinalIgnoreCase : StringComparison.Ordinal);
             if (!successful) value = default;
