@@ -77,7 +77,7 @@ namespace Garnet
         /// </summary>
         /// <param name="commandLineArgs">Command line arguments</param>
         /// <param name="loggerFactory">Logger factory</param>
-        public GarnetServer(string[] commandLineArgs, IAuthenticationSettings authenticationSettings = null, ILoggerFactory loggerFactory = null, bool cleanupDir = false)
+        public GarnetServer(string[] commandLineArgs, IAuthenticationSettings authenticationSettingsOverride = null, ILoggerFactory loggerFactory = null, bool cleanupDir = false)
         {
             Trace.Listeners.Add(new ConsoleTraceListener());
 
@@ -125,7 +125,8 @@ namespace Garnet
             });
 
             // Assign values to GarnetServerOptions
-            this.opts = serverSettings.GetServerOptions(authenticationSettings, this.loggerFactory.CreateLogger("Options"));
+            this.opts = serverSettings.GetServerOptions(this.loggerFactory.CreateLogger("Options"));
+            this.opts.AuthSettings = authenticationSettingsOverride ?? this.opts.AuthSettings;
             this.cleanupDir = cleanupDir;
             this.InitializeServer();
         }

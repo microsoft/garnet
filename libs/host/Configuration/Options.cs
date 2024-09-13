@@ -493,7 +493,7 @@ namespace Garnet
             return isValid;
         }
 
-        public GarnetServerOptions GetServerOptions(IAuthenticationSettings authenticationSettings = null, ILogger logger = null)
+        public GarnetServerOptions GetServerOptions(ILogger logger = null)
         {
             var useAzureStorage = UseAzureStorage.GetValueOrDefault();
             var enableStorageTier = EnableStorageTier.GetValueOrDefault();
@@ -582,7 +582,7 @@ namespace Garnet
                 DisableObjects = DisableObjects.GetValueOrDefault(),
                 EnableCluster = EnableCluster.GetValueOrDefault(),
                 CleanClusterConfig = CleanClusterConfig.GetValueOrDefault(),
-                AuthSettings = GetAuthenticationSettings(authenticationSettings, logger),
+                AuthSettings = GetAuthenticationSettings(logger),
                 EnableAOF = EnableAOF.GetValueOrDefault(),
                 EnableLua = EnableLua.GetValueOrDefault(),
                 LuaTransactionMode = LuaTransactionMode.GetValueOrDefault(),
@@ -648,7 +648,7 @@ namespace Garnet
             };
         }
 
-        private IAuthenticationSettings GetAuthenticationSettings(IAuthenticationSettings authenticationSettings = null, ILogger logger = null)
+        private IAuthenticationSettings GetAuthenticationSettings(ILogger logger = null)
         {
             switch (AuthenticationMode)
             {
@@ -663,17 +663,9 @@ namespace Garnet
                 case GarnetAuthenticationMode.AclWithAad:
                     var aadAuthSettings = new AadAuthenticationSettings(AuthorizedAadApplicationIds?.Split(','), AadAudiences?.Split(','), AadIssuers?.Split(','), IssuerSigningTokenProvider.Create(AadAuthority, logger), AadValidateUsername.GetValueOrDefault());
                     return new AclAuthenticationAadSettings(AclFile, Password, aadAuthSettings);
-                case GarnetAuthenticationMode.Custom:
-                    if (authenticationSettings == null)
-                    {
-                        logger?.LogError("Custom authentication mode requires an instance of IAuthenticationSettings to be provided.");
-                        throw new Exception("Custom authentication mode requires an instance of IAuthenticationSettings to be provided.");
-                    }
-
-                    return authenticationSettings;
                 default:
-                    logger?.LogError("Unsupported authentication mode: {mode}", AuthenticationMode);
-                    throw new Exception($"Authentication mode {AuthenticationMode} is not supported.");
+                    logger?.LogWarning("Defaulting to NoAuth if authenticationSettingsOverride is not provided.");
+                    return new NoAuthSettings();
             }
         }
     }
