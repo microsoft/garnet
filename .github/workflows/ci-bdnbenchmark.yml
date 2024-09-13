@@ -80,7 +80,7 @@ jobs:
           # What benchmark tool the output.txt came from
           tool: 'benchmarkdotnet'
           # Where the output from the benchmark tool is stored
-          output-file-path: ./test/BDNPerfTests/results/ResultsDir-${{ matrix.os }}-${{ matrix.framework }}-${{ matrix.configuration }}-${{ matrix.test }}
+          output-file-path: ./test/BDNPerfTests/results/CI_BDN_Config_${{ matrix.test }}_${{ matrix.os }}.results
           # Where the previous data file is stored
           external-data-json-path: ./cache/benchmark-data.json
           # Workflow will fail when an alert happens
