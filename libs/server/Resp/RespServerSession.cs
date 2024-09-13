@@ -687,7 +687,23 @@ namespace Garnet.server
             where TGarnetApi : IGarnetApi
         {
             hasAdminCommand = true;
-            if (command == RespCommand.CLIENT_ID)
+
+            var success = command switch
+            {
+                RespCommand.CLIENT_ID => NetworkCLIENTID(),
+                RespCommand.CLIENT_INFO => NetworkCLIENTINFO(),
+                RespCommand.CLIENT_LIST => NetworkCLIENTLIST(),
+                RespCommand.CLIENT_KILL => NetworkCLIENTKILL(),
+                RespCommand.RUNTXP => NetworkRUNTXP(),
+                RespCommand.INFO => NetworkINFO(),
+                RespCommand.CustomTxn => NetworkCustomTxn(),
+                RespCommand.CustomRawStringCmd => NetworkCustomRawStringCmd(ref storageApi),
+                RespCommand.CustomObjCmd => NetworkCustomObjCmd(ref storageApi),
+                RespCommand.CustomProcedure => NetworkCustomProcedure(),
+                _ => ProcessAdminCommands(command)
+            };
+
+            bool NetworkCLIENTID()
             {
                 if (parseState.Count != 0)
                 {
@@ -699,32 +715,8 @@ namespace Garnet.server
 
                 return true;
             }
-            else if (command == RespCommand.CLIENT_INFO)
-            {
-                return NetworkCLIENTINFO();
-            }
-            else if (command == RespCommand.CLIENT_LIST)
-            {
-                return NetworkCLIENTLIST();
-            }
-            else if (command == RespCommand.CLIENT_KILL)
-            {
-                return NetworkCLIENTKILL();
-            }
-            else if (command == RespCommand.SUBSCRIBE)
-            {
-                while (!RespWriteUtils.WriteInteger(1, ref dcurr, dend))
-                    SendAndReset();
-            }
-            else if (command == RespCommand.RUNTXP)
-            {
-                return NetworkRUNTXP();
-            }
-            else if (command == RespCommand.INFO)
-            {
-                return NetworkINFO();
-            }
-            else if (command == RespCommand.CustomTxn)
+
+            bool NetworkCustomTxn()
             {
                 if (!IsCommandArityValid(currentCustomTransaction.NameStr, parseState.Count))
                 {
@@ -735,32 +727,10 @@ namespace Garnet.server
                 // Perform the operation
                 TryTransactionProc(currentCustomTransaction.id, recvBufferPtr + readHead, recvBufferPtr + endReadHead, customCommandManagerSession.GetCustomTransactionProcedure(currentCustomTransaction.id, txnManager, scratchBufferManager).Item1);
                 currentCustomTransaction = null;
+                return true;
             }
-            else if (command == RespCommand.CustomRawStringCmd)
-            {
-                if (!IsCommandArityValid(currentCustomRawStringCommand.NameStr, parseState.Count))
-                {
-                    currentCustomRawStringCommand = null;
-                    return true;
-                }
 
-                // Perform the operation
-                TryCustomRawStringCommand(recvBufferPtr + readHead, recvBufferPtr + endReadHead, currentCustomRawStringCommand.GetRespCommand(), currentCustomRawStringCommand.expirationTicks, currentCustomRawStringCommand.type, ref storageApi);
-                currentCustomRawStringCommand = null;
-            }
-            else if (command == RespCommand.CustomObjCmd)
-            {
-                if (!IsCommandArityValid(currentCustomObjectCommand.NameStr, parseState.Count))
-                {
-                    currentCustomObjectCommand = null;
-                    return true;
-                }
-
-                // Perform the operation
-                TryCustomObjectCommand(recvBufferPtr + readHead, recvBufferPtr + endReadHead, currentCustomObjectCommand.GetRespCommand(), currentCustomObjectCommand.subid, currentCustomObjectCommand.type, ref storageApi);
-                currentCustomObjectCommand = null;
-            }
-            else if (command == RespCommand.CustomProcedure)
+            bool NetworkCustomProcedure()
             {
                 if (!IsCommandArityValid(currentCustomProcedure.NameStr, parseState.Count))
                 {
@@ -772,12 +742,39 @@ namespace Garnet.server
                     currentCustomProcedure.CustomProcedureImpl);
 
                 currentCustomProcedure = null;
-            }
-            else
-            {
-                ProcessAdminCommands(command);
                 return true;
             }
+
+            return success;
+        }
+
+        private bool NetworkCustomRawStringCmd<TGarnetApi>(ref TGarnetApi storageApi)
+            where TGarnetApi : IGarnetApi
+        {
+            if (!IsCommandArityValid(currentCustomRawStringCommand.NameStr, parseState.Count))
+            {
+                currentCustomRawStringCommand = null;
+                return true;
+            }
+
+            // Perform the operation
+            TryCustomRawStringCommand(recvBufferPtr + readHead, recvBufferPtr + endReadHead, currentCustomRawStringCommand.GetRespCommand(), currentCustomRawStringCommand.expirationTicks, currentCustomRawStringCommand.type, ref storageApi);
+            currentCustomRawStringCommand = null;
+            return true;
+        }
+
+        bool NetworkCustomObjCmd<TGarnetApi>(ref TGarnetApi storageApi)
+            where TGarnetApi : IGarnetApi
+        {
+            if (!IsCommandArityValid(currentCustomObjectCommand.NameStr, parseState.Count))
+            {
+                currentCustomObjectCommand = null;
+                return true;
+            }
+
+            // Perform the operation
+            TryCustomObjectCommand(recvBufferPtr + readHead, recvBufferPtr + endReadHead, currentCustomObjectCommand.GetRespCommand(), currentCustomObjectCommand.subid, currentCustomObjectCommand.type, ref storageApi);
+            currentCustomObjectCommand = null;
             return true;
         }
 
