@@ -55,7 +55,7 @@ jobs:
       - name: Upload test results to artifacts
         uses: actions/upload-artifact@v4
         with:
-          name: ResultsDir-${{ matrix.os }}-${{ matrix.framework }}-${{ matrix.configuration }}-${{ matrix.test }}
+          name: CI_BDN_Config_${{ matrix.test }}_${{ matrix.os }}.results
           path: |
              ./test/BDNPerfTests/results
         if: ${{ always() }}
