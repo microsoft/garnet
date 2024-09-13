@@ -514,6 +514,7 @@ namespace Garnet.server
                 RespCommand.SETRANGE => NetworkSetRange(ref storageApi),
                 RespCommand.GETDEL => NetworkGETDEL(ref storageApi),
                 RespCommand.APPEND => NetworkAppend(ref storageApi),
+                RespCommand.STRLEN => NetworkSTRLEN(ref storageApi),
                 RespCommand.INCR => NetworkIncrement(RespCommand.INCR, ref storageApi),
                 RespCommand.INCRBY => NetworkIncrement(RespCommand.INCRBY, ref storageApi),
                 RespCommand.DECR => NetworkIncrement(RespCommand.DECR, ref storageApi),
@@ -523,7 +524,7 @@ namespace Garnet.server
                 RespCommand.BITCOUNT => NetworkStringBitCount(ref storageApi),
                 RespCommand.BITPOS => NetworkStringBitPosition(ref storageApi),
                 RespCommand.PUBLISH => NetworkPUBLISH(),
-                RespCommand.PING => parseState.Count == 0 ? NetworkPING() : ProcessArrayCommands(cmd, ref storageApi),
+                RespCommand.PING => parseState.Count == 0 ? NetworkPING() : NetworkArrayPING(),
                 RespCommand.ASKING => NetworkASKING(),
                 RespCommand.MULTI => NetworkMULTI(),
                 RespCommand.EXEC => NetworkEXEC(),
@@ -533,21 +534,6 @@ namespace Garnet.server
                 RespCommand.RUNTXP => NetworkRUNTXP(),
                 RespCommand.READONLY => NetworkREADONLY(),
                 RespCommand.READWRITE => NetworkREADWRITE(),
-                RespCommand.COMMAND => NetworkCOMMAND(),
-                RespCommand.COMMAND_COUNT => NetworkCOMMAND_COUNT(),
-                RespCommand.COMMAND_INFO => NetworkCOMMAND_INFO(),
-                RespCommand.ECHO => NetworkECHO(),
-                RespCommand.HELLO => NetworkHELLO(),
-                RespCommand.TIME => NetworkTIME(),
-                RespCommand.FLUSHALL => NetworkFLUSHALL(),
-                RespCommand.FLUSHDB => NetworkFLUSHDB(),
-                RespCommand.AUTH => NetworkAUTH(),
-                RespCommand.MEMORY_USAGE => NetworkMemoryUsage(ref storageApi),
-                RespCommand.ACL_CAT => NetworkAclCat(),
-                RespCommand.ACL_WHOAMI => NetworkAclWhoAmI(),
-                RespCommand.ASYNC => NetworkASYNC(),
-                RespCommand.MIGRATE => NetworkProcessClusterCommand(cmd),
-
                 _ => ProcessArrayCommands(cmd, ref storageApi)
             };
 
@@ -567,13 +553,6 @@ namespace Garnet.server
                 RespCommand.WATCH => NetworkWATCH(),
                 RespCommand.WATCH_MS => NetworkWATCH_MS(),
                 RespCommand.WATCH_OS => NetworkWATCH_OS(),
-                RespCommand.STRLEN => NetworkSTRLEN(ref storageApi),
-                RespCommand.PING => NetworkArrayPING(),
-                //General key commands
-                RespCommand.DBSIZE => NetworkDBSIZE(ref storageApi),
-                RespCommand.KEYS => NetworkKEYS(ref storageApi),
-                RespCommand.SCAN => NetworkSCAN(ref storageApi),
-                RespCommand.TYPE => NetworkTYPE(ref storageApi),
                 // Pub/sub commands
                 RespCommand.SUBSCRIBE => NetworkSUBSCRIBE(),
                 RespCommand.PSUBSCRIBE => NetworkPSUBSCRIBE(),
@@ -674,10 +653,6 @@ namespace Garnet.server
                 RespCommand.SUNIONSTORE => SetUnionStore(ref storageApi),
                 RespCommand.SDIFF => SetDiff(ref storageApi),
                 RespCommand.SDIFFSTORE => SetDiffStore(ref storageApi),
-                // Script Commands
-                RespCommand.SCRIPT => TrySCRIPT(),
-                RespCommand.EVAL => TryEVAL(),
-                RespCommand.EVALSHA => TryEVALSHA(),
                 _ => ProcessOtherCommands(cmd, ref storageApi)
             };
             return success;
@@ -690,16 +665,38 @@ namespace Garnet.server
 
             var success = command switch
             {
+                RespCommand.AUTH => NetworkAUTH(),
+                RespCommand.MEMORY_USAGE => NetworkMemoryUsage(ref storageApi),
                 RespCommand.CLIENT_ID => NetworkCLIENTID(),
                 RespCommand.CLIENT_INFO => NetworkCLIENTINFO(),
                 RespCommand.CLIENT_LIST => NetworkCLIENTLIST(),
                 RespCommand.CLIENT_KILL => NetworkCLIENTKILL(),
+                RespCommand.COMMAND => NetworkCOMMAND(),
+                RespCommand.COMMAND_COUNT => NetworkCOMMAND_COUNT(),
+                RespCommand.COMMAND_INFO => NetworkCOMMAND_INFO(),
+                RespCommand.ECHO => NetworkECHO(),
+                RespCommand.HELLO => NetworkHELLO(),
+                RespCommand.TIME => NetworkTIME(),
+                RespCommand.FLUSHALL => NetworkFLUSHALL(),
+                RespCommand.FLUSHDB => NetworkFLUSHDB(),
+                RespCommand.ACL_CAT => NetworkAclCat(),
+                RespCommand.ACL_WHOAMI => NetworkAclWhoAmI(),
+                RespCommand.ASYNC => NetworkASYNC(),
                 RespCommand.RUNTXP => NetworkRUNTXP(),
                 RespCommand.INFO => NetworkINFO(),
                 RespCommand.CustomTxn => NetworkCustomTxn(),
                 RespCommand.CustomRawStringCmd => NetworkCustomRawStringCmd(ref storageApi),
                 RespCommand.CustomObjCmd => NetworkCustomObjCmd(ref storageApi),
                 RespCommand.CustomProcedure => NetworkCustomProcedure(),
+                //General key commands
+                RespCommand.DBSIZE => NetworkDBSIZE(ref storageApi),
+                RespCommand.KEYS => NetworkKEYS(ref storageApi),
+                RespCommand.SCAN => NetworkSCAN(ref storageApi),
+                RespCommand.TYPE => NetworkTYPE(ref storageApi),
+                // Script Commands
+                RespCommand.SCRIPT => TrySCRIPT(),
+                RespCommand.EVAL => TryEVAL(),
+                RespCommand.EVALSHA => TryEVALSHA(),
                 _ => ProcessAdminCommands(command)
             };
 

@@ -39,6 +39,7 @@ namespace Garnet.server
                 RespCommand.CONFIG_SET => NetworkCONFIG_SET(),
                 RespCommand.FAILOVER or
                 RespCommand.REPLICAOF or
+                RespCommand.MIGRATE or
                 RespCommand.SECONDARYOF => NetworkProcessClusterCommand(command),
                 RespCommand.LATENCY_HELP => NetworkLatencyHelp(),
                 RespCommand.LATENCY_HISTOGRAM => NetworkLatencyHistogram(),
