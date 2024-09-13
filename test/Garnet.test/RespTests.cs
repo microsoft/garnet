@@ -1577,7 +1577,7 @@ namespace Garnet.test
         }
 
         [Test]
-        public void KeyExpireOptionsTest([Values("EXPIRE", "PEXPIRE")]string command, [Values(false, true)]bool testCaseSensitivity)
+        public void KeyExpireOptionsTest([Values("EXPIRE", "PEXPIRE")] string command, [Values(false, true)] bool testCaseSensitivity)
         {
             using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
             var db = redis.GetDatabase(0);
