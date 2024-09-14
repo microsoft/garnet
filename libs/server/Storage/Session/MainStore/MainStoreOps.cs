@@ -638,7 +638,7 @@ namespace Garnet.server
         }
 
         /// <summary>
-        /// Renames a key if the new key does not already exist.
+        /// Renames key to newkey if newkey does not yet exist. It returns an error when key does not exist.
         /// </summary>
         /// <param name="oldKeySlice">The old key to be renamed.</param>
         /// <param name="newKeySlice">The new key name.</param>
