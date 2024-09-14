@@ -40,11 +40,17 @@ namespace Garnet.cluster
                 {
                     // If the incoming AOF chunk fits in the space between previousAddress and currentAddress (ReplicationOffset),
                     // an enqueue will result in an offset mismatch. So, we have to first reset the AOF to point to currentAddress.
-                    if (currentAddress >= previousAddress + recordLength)
+                    if (currentAddress > previousAddress)
                     {
-                        logger?.LogWarning("MainMemoryReplication: Skipping from {ReplicaReplicationOffset} to {currentAddress}", ReplicationOffset, currentAddress);
-                        storeWrapper.appendOnlyFile.Initialize(currentAddress, currentAddress);
-                        ReplicationOffset = currentAddress;
+                        if (
+                            (currentAddress % (1 << storeWrapper.appendOnlyFile.UnsafeGetLogPageSizeBits()) != 0) || // the skip was to a non-page-boundary
+                            (currentAddress >= previousAddress + recordLength) // the skip will not be auto-handled by the AOF enqueue
+                            )
+                        {
+                            logger?.LogWarning("MainMemoryReplication: Skipping from {ReplicaReplicationOffset} to {currentAddress}", ReplicationOffset, currentAddress);
+                            storeWrapper.appendOnlyFile.Initialize(currentAddress, currentAddress);
+                            ReplicationOffset = currentAddress;
+                        }
                     }
                 }
 
