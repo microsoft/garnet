@@ -51,7 +51,7 @@ namespace Garnet.server
                 return AbortWithWrongNumberOfArguments(nameof(RespCommand.RENAMENX));
             }
 
-            var oldKeySlice = parseState.GetArgSliceByRef(0); 
+            var oldKeySlice = parseState.GetArgSliceByRef(0);
             var newKeySlice = parseState.GetArgSliceByRef(1);
             var status = storageApi.RENAMENX(oldKeySlice, newKeySlice);
 
