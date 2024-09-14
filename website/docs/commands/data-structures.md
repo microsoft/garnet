@@ -487,7 +487,6 @@ Returns the set cardinality (number of elements) of the set stored at **key**.
 
 Returns all the members of the set value stored at **key**.
 
-
 ---
 
 ### SPOP

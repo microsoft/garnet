@@ -225,3 +225,19 @@ The TIME command returns the current server time as a two items lists: a Unix ti
 Array reply: specifically, a two-element array consisting of the Unix timestamp in seconds and the microseconds' count.
 
 ---
+
+### LOLWUT
+
+#### Syntax
+
+```bash
+LOLWUT [VERSION version]
+```
+
+The LOLWUT command displays the Redis version
+
+#### Resp Reply
+
+Verbatim string reply: a string containing generative computer art and the Redis version.
+
+---
