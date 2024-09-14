@@ -46,7 +46,6 @@ namespace Garnet.server
         private bool NetworkRENAMENX<TGarnetApi>(ref TGarnetApi storageApi)
             where TGarnetApi : IGarnetApi
         {
-            // TODO: (Nirmal) If need combine the RENAME and RENAMENX commands by passing RespCommand command. Refer: HashSet, HashCommands.cs
             if (parseState.Count != 2)
             {
                 return AbortWithWrongNumberOfArguments(nameof(RespCommand.RENAMENX));
@@ -54,12 +53,29 @@ namespace Garnet.server
 
             var oldKeySlice = parseState.GetArgSliceByRef(0); 
             var newKeySlice = parseState.GetArgSliceByRef(1);
-            // TODO: (Nirmal) If need combine the RENAME and RENAMENX commands by using out param. Refer: HashSet, HashCommands.cs
             var status = storageApi.RENAMENX(oldKeySlice, newKeySlice);
 
-            // TODO: (Nirmal) Add int response for the RENAMENX command by adding first param
-            while (!RespWriteUtils.WriteInteger(1, ref dcurr, dend))
-                SendAndReset();
+            // Integer reply: 1 if key was renamed to newkey.
+            // Integer reply: 0 if newkey already exists.
+            switch (status)
+            {
+                // GarnetStatus OK means new key already exists
+                case GarnetStatus.OK:
+                    while (!RespWriteUtils.WriteDirect(CmdStrings.RESP_RETURN_VAL_1, ref dcurr, dend))
+                        SendAndReset();
+                    break;
+
+                // GarnetStatus NOTFOUND means remane operation is successful
+                case GarnetStatus.NOTFOUND:
+                    while (!RespWriteUtils.WriteError(CmdStrings.RESP_ERR_GENERIC_NOSUCHKEY, ref dcurr, dend))
+                        SendAndReset();
+                    break;
+
+                case GarnetStatus.MOVED:
+                    while (!RespWriteUtils.WriteDirect(CmdStrings.RESP_RETURN_VAL_0, ref dcurr, dend))
+                        SendAndReset();
+                    break;
+            }
 
             return true;
         }
