@@ -1265,7 +1265,20 @@ namespace Tsavorite.core
         /// <param name="currentTailAddress"></param>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         private void PageAlignedShiftHeadAddress(long currentTailAddress)
-            => ShiftHeadAddress((currentTailAddress & ~PageSizeMask) - HeadAddressLagOffset);
+        {
+            var desiredHeadAddress = (currentTailAddress & ~PageSizeMask) - HeadAddressLagOffset;
+
+            // Obtain local values of variables that can change
+            var currentFlushedUntilAddress = FlushedUntilAddress;
+            if (desiredHeadAddress > currentFlushedUntilAddress)
+                desiredHeadAddress = currentFlushedUntilAddress & ~PageSizeMask;
+
+            if (Utility.MonotonicUpdate(ref HeadAddress, desiredHeadAddress, out _))
+            {
+                // Debug.WriteLine("Allocate: Moving head offset from {0:X} to {1:X}", oldHeadAddress, newHeadAddress);
+                epoch.BumpCurrentEpoch(() => OnPagesClosed(desiredHeadAddress));
+            }
+        }
 
         /// <summary>
         /// Tries to shift head address to specified value
@@ -1280,6 +1293,10 @@ namespace Tsavorite.core
             if (newHeadAddress > currentFlushedUntilAddress)
                 newHeadAddress = currentFlushedUntilAddress;
 
+            if (newHeadAddress % (1 << LogPageSizeBits) != 0)
+            {
+
+            }
             if (Utility.MonotonicUpdate(ref HeadAddress, newHeadAddress, out _))
             {
                 // Debug.WriteLine("Allocate: Moving head offset from {0:X} to {1:X}", oldHeadAddress, newHeadAddress);
