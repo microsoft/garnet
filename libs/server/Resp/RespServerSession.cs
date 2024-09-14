@@ -442,6 +442,10 @@ namespace Garnet.server
                             SendAndReset();
                     }
                 }
+                else
+                {
+                    containsSlowCommand = true;
+                }
 
                 // Advance read head variables to process the next command
                 _origReadHead = readHead = endReadHead;

@@ -1993,14 +1993,6 @@ namespace Garnet.server
             }
             endReadHead = (int)(ptr - recvBufferPtr);
 
-            // Classify command as slow to avoid accounting for its latency in NET_RS
-            if (storeWrapper.serverOptions.LatencyMonitor)
-            {
-                var normCmd = cmd.NormalizeForACLs();
-                _ = RespCommandsInfo.TryFastGetRespCommandInfo(normCmd, out var commandInfo);
-                containsSlowCommand |= commandInfo == null || !commandInfo.Flags.HasFlag(RespCommandFlags.Fast);
-            }
-
             if (storeWrapper.appendOnlyFile != null && storeWrapper.serverOptions.WaitForCommit)
                 HandleAofCommitMode(cmd);
 
