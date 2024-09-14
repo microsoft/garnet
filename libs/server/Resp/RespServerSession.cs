@@ -742,6 +742,7 @@ namespace Garnet.server
                 return true;
             }
 
+            [MethodImpl(MethodImplOptions.AggressiveInlining)]
             bool Process(RespCommand command)
             {
                 ProcessAdminCommands(command);
