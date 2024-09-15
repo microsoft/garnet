@@ -93,6 +93,18 @@ namespace Garnet.server
 
         #endregion
 
+        #region EXPIRETIME
+
+        /// <inheritdoc />
+        public GarnetStatus EXPIRETIME(ref SpanByte key, StoreType storeType, ref SpanByteAndMemory output)
+            => storageSession.EXPIRETIME(ref key, storeType, ref output, ref context, ref objectContext);
+
+        /// <inheritdoc />
+        public GarnetStatus PEXPIRETIME(ref SpanByte key, StoreType storeType, ref SpanByteAndMemory output)
+            => storageSession.EXPIRETIME(ref key, storeType, ref output, ref context, ref objectContext, milliseconds: true);
+
+        #endregion
+
         #region SET
         /// <inheritdoc />
         public GarnetStatus SET(ref SpanByte key, ref SpanByte value)

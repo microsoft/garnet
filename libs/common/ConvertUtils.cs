@@ -12,6 +12,11 @@ namespace Garnet.common
     public static class ConvertUtils
     {
         /// <summary>
+        /// Contains the number of ticks representing 1970/1/1. Value is equal to new DateTime(1970, 1, 1).Ticks
+        /// </summary>
+        private const long _unixTillStartTimeTicks = 621355968000000000;
+
+        /// <summary>
         /// Convert diff ticks - utcNow.ticks to seconds.
         /// </summary>
         /// <param name="ticks"></param>
@@ -42,6 +47,26 @@ namespace Garnet.common
                 milliseconds = ticks > 0 ? (long)TimeSpan.FromTicks(ticks).TotalMilliseconds : -1;
             }
             return milliseconds;
+        }
+
+        /// <summary>
+        /// Convert ticks to Unix time in seconds.
+        /// </summary>
+        /// <param name="ticks">The ticks to convert.</param>
+        /// <returns>The Unix time in seconds.</returns>
+        public static long UnixTimeInSecondsFromTicks(long ticks)
+        {
+            return ticks > 0 ? (ticks - _unixTillStartTimeTicks) / TimeSpan.TicksPerSecond : -1;
+        }
+
+        /// <summary>
+        /// Convert ticks to Unix time in milliseconds.
+        /// </summary>
+        /// <param name="ticks">The ticks to convert.</param>
+        /// <returns>The Unix time in milliseconds.</returns>
+        public static long UnixTimeInMillisecondsFromTicks(long ticks)
+        {
+            return ticks > 0 ? (ticks - _unixTillStartTimeTicks) / TimeSpan.TicksPerMillisecond : -1;
         }
     }
 }

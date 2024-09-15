@@ -37,6 +37,15 @@ namespace Garnet.server
                 if ((byte)input.header.type < CustomCommandManager.StartOffset)
                     return value.Operate(ref input, ref dst.spanByteAndMemory, out _, out _);
 
+                if (input.header.type == GarnetObjectType.Expiretime || input.header.type == GarnetObjectType.PExpiretime)
+                {
+                    var expireTime = input.header.type == GarnetObjectType.Expiretime ?
+                                    ConvertUtils.UnixTimeInSecondsFromTicks(value.Expiration > 0 ? value.Expiration : -1) :
+                                    ConvertUtils.UnixTimeInMillisecondsFromTicks(value.Expiration > 0 ? value.Expiration : -1);
+                    CopyRespNumber(expireTime, ref dst.spanByteAndMemory);
+                    return true;
+                }
+
                 if (IncorrectObjectType(ref input, value, ref dst.spanByteAndMemory))
                     return true;
 

@@ -25,6 +25,7 @@ namespace Garnet.server
         COSCAN,
         DBSIZE,
         EXISTS,
+        EXPIRETIME,
         GEODIST,
         GEOHASH,
         GEOPOS,
@@ -48,6 +49,7 @@ namespace Garnet.server
         LRANGE,
         MEMORY_USAGE,
         MGET,
+        PEXPIRETIME,
         PFCOUNT,
         PTTL,
         SCAN,
@@ -1311,6 +1313,10 @@ namespace Garnet.server
                                 {
                                     return RespCommand.SDIFFSTORE;
                                 }
+                                else if (*(ulong*)(ptr + 1) == MemoryMarshal.Read<ulong>("10\r\nEXPI"u8) && *(uint*)(ptr + 9) == MemoryMarshal.Read<uint>("RETIME\r\n"u8))
+                                {
+                                    return RespCommand.EXPIRETIME;
+                                }
                                 break;
 
                             case 11:
@@ -1337,6 +1343,10 @@ namespace Garnet.server
                                 else if (*(ulong*)(ptr + 2) == MemoryMarshal.Read<ulong>("1\r\nSINTE"u8) && *(ulong*)(ptr + 10) == MemoryMarshal.Read<ulong>("RSTORE\r\n"u8))
                                 {
                                     return RespCommand.SINTERSTORE;
+                                }
+                                else if (*(ulong*)(ptr + 2) == MemoryMarshal.Read<ulong>("1\r\nPEXPI"u8) && *(uint*)(ptr + 10) == MemoryMarshal.Read<uint>("RETIME\r\n"u8))
+                                {
+                                    return RespCommand.PEXPIRETIME;
                                 }
                                 break;
 
