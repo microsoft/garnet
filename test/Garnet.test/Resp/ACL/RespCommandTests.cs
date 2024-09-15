@@ -4278,10 +4278,10 @@ namespace Garnet.test.Resp.ACL
         {
             await CheckCommandsAsync(
                 "RENAME",
-                [DoPTTLAsync]
+                [DoRENAMEAsync]
             );
 
-            static async Task DoPTTLAsync(GarnetClient client)
+            static async Task DoRENAMEAsync(GarnetClient client)
             {
                 try
                 {
@@ -4305,10 +4305,10 @@ namespace Garnet.test.Resp.ACL
         {
             await CheckCommandsAsync(
                 "RENAMENX",
-                [DoPTTLAsync]
+                [DoRENAMENXAsync]
             );
 
-            static async Task DoPTTLAsync(GarnetClient client)
+            static async Task DoRENAMENXAsync(GarnetClient client)
             {
                 try
                 {
