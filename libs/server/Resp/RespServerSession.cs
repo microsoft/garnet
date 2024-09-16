@@ -499,6 +499,10 @@ namespace Garnet.server
         private bool ProcessBasicCommands<TGarnetApi>(RespCommand cmd, ref TGarnetApi storageApi)
             where TGarnetApi : IGarnetApi
         {
+            /*
+             * WARNING: Do not add any command here classified as @slow!
+             * Only @fast commands otherwise latency tracking will break for NET_RS (check how containsSlowCommand is used).
+             */
             _ = cmd switch
             {
                 RespCommand.GET => NetworkGET(ref storageApi),
@@ -547,6 +551,10 @@ namespace Garnet.server
         private bool ProcessArrayCommands<TGarnetApi>(RespCommand cmd, ref TGarnetApi storageApi)
            where TGarnetApi : IGarnetApi
         {
+            /*
+             * WARNING: Do not add any command here classified as @slow!
+             * Only @fast commands otherwise latency tracking will break for NET_RS (check how containsSlowCommand is used).
+             */
             var success = cmd switch
             {
                 RespCommand.MGET => NetworkMGET(ref storageApi),
@@ -665,8 +673,10 @@ namespace Garnet.server
         private bool ProcessOtherCommands<TGarnetApi>(RespCommand command, ref TGarnetApi storageApi)
             where TGarnetApi : IGarnetApi
         {
+            /*
+             * WARNING: Here is safe to add @slow commands (check how containsSlowCommand is used).
+             */
             containsSlowCommand = true;
-
             var success = command switch
             {
                 RespCommand.AUTH => NetworkAUTH(),

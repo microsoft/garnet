@@ -22,8 +22,10 @@ namespace Garnet.server
     {
         private void ProcessAdminCommands(RespCommand command)
         {
+            /*
+             * WARNING: Here is safe to add @slow commands (check how containsSlowCommand is used).
+             */
             containsSlowCommand = true;
-
             if (_authenticator.CanAuthenticate && !_authenticator.IsAuthenticated)
             {
                 // If the current session is unauthenticated, we stop parsing, because no other commands are allowed
