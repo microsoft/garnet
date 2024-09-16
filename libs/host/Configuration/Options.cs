@@ -664,8 +664,8 @@ namespace Garnet
                     var aadAuthSettings = new AadAuthenticationSettings(AuthorizedAadApplicationIds?.Split(','), AadAudiences?.Split(','), AadIssuers?.Split(','), IssuerSigningTokenProvider.Create(AadAuthority, logger), AadValidateUsername.GetValueOrDefault());
                     return new AclAuthenticationAadSettings(AclFile, Password, aadAuthSettings);
                 default:
-                    logger?.LogWarning("Defaulting to NoAuth if authenticationSettingsOverride is not provided.");
-                    return new NoAuthSettings();
+                    logger?.LogError("Unsupported authentication mode: {mode}", AuthenticationMode);
+                    throw new Exception($"Authentication mode {AuthenticationMode} is not supported.");
             }
         }
     }
