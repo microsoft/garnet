@@ -150,12 +150,41 @@ The EXPIRE command supports a set of options:
 * `GT` -- Set expiry only when the new expiry is greater than current one
 * `LT` -- Set expiry only when the new expiry is less than current one
 
+The GT, LT and NX options are mutually exclusive.
+
 #### Resp Reply
 
 One of the following:
 
 * Integer reply: 0 if the timeout was not set; for example, the key doesn't exist, or the operation was skipped because of the provided arguments.
+* Integer reply: 1 if the timeout was set.
 
+---
+
+### EXPIREAT
+
+#### Syntax
+
+```bash
+    EXPIREAT key seconds [NX | XX | GT | LT]
+```
+
+Set a timeout on key using absolute Unix timestamp (seconds since January 1, 1970) in seconds. After the timestamp, the key will automatically be deleted.
+
+The EXPIREAT command supports a set of options:
+
+* `NX` -- Set expiry only when the key has no expiry
+* `XX` -- Set expiry only when the key has an existing expiry
+* `GT` -- Set expiry only when the new expiry is greater than current one
+* `LT` -- Set expiry only when the new expiry is less than current one
+
+The GT, LT and NX options are mutually exclusive.
+
+#### Resp Reply
+
+One of the following:
+
+* Integer reply: 0 if the timeout was not set; for example, the key doesn't exist, or the operation was skipped because of the provided arguments.
 * Integer reply: 1 if the timeout was set.
 
 ---
@@ -226,8 +255,36 @@ One of the following:
 * Integer reply: 0 if key does not exist or does not have an associated timeout.
 * Integer reply: 1 if the timeout has been removed.
 
+---
+
+### PEXPIREAT
+
+#### Syntax
+
+```bash
+    PEXPIREAT key seconds [NX | XX | GT | LT]
+```
+
+Set a timeout on key using absolute Unix timestamp (seconds since January 1, 1970) in milliseconds. After the timestamp, the key will automatically be deleted.
+
+The PEXPIREAT command supports a set of options:
+
+* `NX` -- Set expiry only when the key has no expiry
+* `XX` -- Set expiry only when the key has an existing expiry
+* `GT` -- Set expiry only when the new expiry is greater than current one
+* `LT` -- Set expiry only when the new expiry is less than current one
+
+The GT, LT and NX options are mutually exclusive.
+
+#### Resp Reply
+
+One of the following:
+
+* Integer reply: 0 if the timeout was not set; for example, the key doesn't exist, or the operation was skipped because of the provided arguments.
+* Integer reply: 1 if the timeout was set.
 
 ---
+
 ### PTTL
 
 #### Syntax

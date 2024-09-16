@@ -94,7 +94,7 @@ Note that this list is subject to change as we continue to expand our API comman
 | <span id="generic">**GENERIC**</span> | OBJECT | ➖ |  |
 |  | [PERSIST](generic-commands.md#persist) | ➕ |  |
 |  | [PEXPIRE](generic-commands.md#pexpire) | ➕ |  |
-|  | PEXPIREAT | ➖ |  |
+|  | [PEXPIREAT](generic-commands.md#pexpireat) | ➕ |  |
 |  | PEXPIRETIME | ➖ |  |
 |  | [PTTL](generic-commands.md#pttl) | ➕ |  |
 |  | RANDOMKEY | ➖ |  |
@@ -144,7 +144,7 @@ Note that this list is subject to change as we continue to expand our API comman
 |  | DUMP | ➖ |  |
 |  | [EXISTS](generic-commands.md#exists) | ➕ |  |
 |  | [EXPIRE](generic-commands.md#expire) | ➕ |  |
-|  | EXPIREAT | ➖ |  |
+|  | [EXPIREAT](generic-commands.md#expireat) | ➕ |  |
 |  | EXPIRETIME | ➖ |  |
 |  | [KEYS](generic-commands.md#keys) | ➕ |  |
 |  | [MIGRATE](generic-commands.md#migrate) | ➕ |  |

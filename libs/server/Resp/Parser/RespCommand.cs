@@ -84,6 +84,7 @@ namespace Garnet.server
         DECRBY,
         DEL,
         EXPIRE,
+        EXPIREAT,
         FLUSHALL,
         FLUSHDB,
         GEOADD,
@@ -113,6 +114,7 @@ namespace Garnet.server
         MSETNX,
         PERSIST,
         PEXPIRE,
+        PEXPIREAT,
         PFADD,
         PFMERGE,
         PSETEX,
@@ -639,6 +641,7 @@ namespace Garnet.server
                             >= ((6 << 4) | 2) and <= ((6 << 4) | 5) when lastWord == MemoryMarshal.Read<ulong>("BITPOS\r\n"u8) => RespCommand.BITPOS,
                             >= ((7 << 4) | 2) and <= ((7 << 4) | 3) when lastWord == MemoryMarshal.Read<ulong>("EXPIRE\r\n"u8) && ptr[8] == 'P' => RespCommand.PEXPIRE,
                             >= ((8 << 4) | 1) and <= ((8 << 4) | 4) when lastWord == MemoryMarshal.Read<ulong>("TCOUNT\r\n"u8) && *(ushort*)(ptr + 8) == MemoryMarshal.Read<ushort>("BI"u8) => RespCommand.BITCOUNT,
+                            >= ((8 << 4) | 2) and <= ((8 << 4) | 4) when lastWord == MemoryMarshal.Read<ulong>("PIREAT\r\n"u8) && *(ushort*)(ptr + 8) == MemoryMarshal.Read<ushort>("EX"u8) => RespCommand.EXPIREAT,
 
                             _ => MatchedNone(this, oldReadHead)
                         }
@@ -1269,6 +1272,10 @@ namespace Garnet.server
                                 else if (*(ulong*)(ptr + 4) == MemoryMarshal.Read<ulong>("RPOPLPUS"u8) && *(uint*)(ptr + 11) == MemoryMarshal.Read<uint>("SH\r\n"u8))
                                 {
                                     return RespCommand.RPOPLPUSH;
+                                }
+                                else if (*(ulong*)(ptr + 4) == MemoryMarshal.Read<ulong>("PEXPIREA"u8) && *(uint*)(ptr + 11) == MemoryMarshal.Read<uint>("AT\r\n"u8))
+                                {
+                                    return RespCommand.PEXPIREAT;
                                 }
                                 break;
                         }

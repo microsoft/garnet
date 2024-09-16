@@ -549,6 +549,8 @@ namespace Garnet.server
                 RespCommand.ACL_WHOAMI => NetworkAclWhoAmI(),
                 RespCommand.ASYNC => NetworkASYNC(),
                 RespCommand.MIGRATE => NetworkProcessClusterCommand(cmd),
+                RespCommand.EXPIREAT => NetworkEXPIREAT(RespCommand.EXPIREAT, ref storageApi),
+                RespCommand.PEXPIREAT => NetworkEXPIREAT(RespCommand.PEXPIREAT, ref storageApi),
 
                 _ => ProcessArrayCommands(cmd, ref storageApi)
             };

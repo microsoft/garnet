@@ -726,20 +726,63 @@ namespace Garnet.server
         /// <param name="context">Basic context for the main store</param>
         /// <param name="objectStoreContext">Object context for the object store</param>
         /// <param name="milliseconds">When true the command executed is PEXPIRE, expire by default.</param>
-        /// <returns></returns>
+        /// <returns>Return GarnetStatus.OK when key found, else GarnetStatus.NOTFOUND</returns>
         public unsafe GarnetStatus EXPIRE<TContext, TObjectContext>(ArgSlice key, TimeSpan expiry, out bool timeoutSet, StoreType storeType, ExpireOption expireOption, ref TContext context, ref TObjectContext objectStoreContext, bool milliseconds = false)
+            where TContext : ITsavoriteContext<SpanByte, SpanByte, SpanByte, SpanByteAndMemory, long, MainSessionFunctions, MainStoreFunctions, MainStoreAllocator>
+            where TObjectContext : ITsavoriteContext<byte[], IGarnetObject, ObjectInput, GarnetObjectStoreOutput, long, ObjectSessionFunctions, ObjectStoreFunctions, ObjectStoreAllocator>
+        {
+            return EXPIRE(key, DateTimeOffset.UtcNow.Ticks + expiry.Ticks, out timeoutSet, storeType, expireOption, ref context, ref objectStoreContext, milliseconds ? RespCommand.PEXPIRE : RespCommand.EXPIRE);
+        }
+
+        /// <summary>
+        /// Set a timeout on key using absolute Unix timestamp (seconds since January 1, 1970).
+        /// </summary>
+        /// <typeparam name="TContext"></typeparam>
+        /// <typeparam name="TObjectContext"></typeparam>
+        /// <param name="key">The key to set the timeout on.</param>
+        /// <param name="expiryTimestamp">Absolute Unix timestamp</param>
+        /// <param name="timeoutSet">True when the timeout was properly set.</param>
+        /// <param name="storeType">The store to operate on.</param>
+        /// <param name="expireOption">Flags to use for the operation.</param>
+        /// <param name="context">Basic context for the main store</param>
+        /// <param name="objectStoreContext">Object context for the object store</param>
+        /// <param name="milliseconds">When true, <paramref name="expiryTimestamp"/> is treated as milliseconds else seconds</param>
+        /// <returns>Return GarnetStatus.OK when key found, else GarnetStatus.NOTFOUND</returns>
+        public unsafe GarnetStatus EXPIREAT<TContext, TObjectContext>(ArgSlice key, long expiryTimestamp, out bool timeoutSet, StoreType storeType, ExpireOption expireOption, ref TContext context, ref TObjectContext objectStoreContext, bool milliseconds = false)
+            where TContext : ITsavoriteContext<SpanByte, SpanByte, SpanByte, SpanByteAndMemory, long, MainSessionFunctions, MainStoreFunctions, MainStoreAllocator>
+            where TObjectContext : ITsavoriteContext<byte[], IGarnetObject, ObjectInput, GarnetObjectStoreOutput, long, ObjectSessionFunctions, ObjectStoreFunctions, ObjectStoreAllocator>
+        {
+            var expiryTimestampTicks = milliseconds ? ConvertUtils.UnixTimestampInMillisecondsToTicks(expiryTimestamp) : ConvertUtils.UnixTimestampInSecondsToTicks(expiryTimestamp);
+            return EXPIRE(key, expiryTimestampTicks, out timeoutSet, storeType, expireOption, ref context, ref objectStoreContext, milliseconds ? RespCommand.PEXPIREAT : RespCommand.EXPIREAT);
+        }
+
+        /// <summary>
+        /// Set a timeout on key using ticks.
+        /// </summary>
+        /// <typeparam name="TContext"></typeparam>
+        /// <typeparam name="TObjectContext"></typeparam>
+        /// <param name="key">The key to set the timeout on.</param>
+        /// <param name="expiryInTicks">The timestamp in ticks</param>
+        /// <param name="timeoutSet">True when the timeout was properly set.</param>
+        /// <param name="storeType">The store to operate on.</param>
+        /// <param name="expireOption">Flags to use for the operation.</param>
+        /// <param name="context">Basic context for the main store</param>
+        /// <param name="objectStoreContext">Object context for the object store</param>
+        /// <param name="respCommand">Resp Command to be executed.</param>
+        /// <returns>Return GarnetStatus.OK when key found, else GarnetStatus.NOTFOUND</returns>
+        private unsafe GarnetStatus EXPIRE<TContext, TObjectContext>(ArgSlice key, long expiryInTicks, out bool timeoutSet, StoreType storeType, ExpireOption expireOption, ref TContext context, ref TObjectContext objectStoreContext, RespCommand respCommand)
             where TContext : ITsavoriteContext<SpanByte, SpanByte, SpanByte, SpanByteAndMemory, long, MainSessionFunctions, MainStoreFunctions, MainStoreAllocator>
             where TObjectContext : ITsavoriteContext<byte[], IGarnetObject, ObjectInput, GarnetObjectStoreOutput, long, ObjectSessionFunctions, ObjectStoreFunctions, ObjectStoreAllocator>
         {
             byte* pbCmdInput = stackalloc byte[sizeof(int) + sizeof(long) + RespInputHeader.Size + sizeof(byte)];
             *(int*)pbCmdInput = sizeof(long) + RespInputHeader.Size;
-            ((RespInputHeader*)(pbCmdInput + sizeof(int) + sizeof(long)))->cmd = milliseconds ? RespCommand.PEXPIRE : RespCommand.EXPIRE;
+            ((RespInputHeader*)(pbCmdInput + sizeof(int) + sizeof(long)))->cmd = respCommand;
             ((RespInputHeader*)(pbCmdInput + sizeof(int) + sizeof(long)))->flags = 0;
 
             *(pbCmdInput + sizeof(int) + sizeof(long) + RespInputHeader.Size) = (byte)expireOption;
             ref var input = ref SpanByte.Reinterpret(pbCmdInput);
 
-            input.ExtraMetadata = DateTimeOffset.UtcNow.Ticks + expiry.Ticks;
+            input.ExtraMetadata = expiryInTicks;
 
             var rmwOutput = stackalloc byte[ObjectOutputHeader.Size];
             var output = new SpanByteAndMemory(SpanByte.FromPinnedPointer(rmwOutput, ObjectOutputHeader.Size));
@@ -781,7 +824,7 @@ namespace Garnet.server
                 {
                     header = new RespInputHeader
                     {
-                        cmd = milliseconds ? RespCommand.PEXPIRE : RespCommand.EXPIRE,
+                        cmd = respCommand,
                         type = GarnetObjectType.Expire,
                     },
                     parseState = parseState,

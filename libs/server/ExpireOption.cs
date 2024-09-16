@@ -13,23 +13,33 @@ namespace Garnet.server
         /// <summary>
         /// None
         /// </summary>
-        None,
+        None  = 0,
         /// <summary>
         /// Set expiry only when the key has no expiry
         /// </summary>
-        NX,
+        NX    = 1 << 0,
         /// <summary>
         /// Set expiry only when the key has an existing expiry 
         /// </summary>
-        XX,
+        XX    = 1 << 1,
         /// <summary>
         /// Set expiry only when the new expiry is greater than current one
         /// </summary>
-        GT,
+        GT   = 1 << 2,
         /// <summary>
         /// Set expiry only when the new expiry is less than current one
         /// </summary>
-        LT
+        LT   = 1 << 3,
+
+        /// <summary>
+        /// Set expiry only when the key has an existing expiry and the new expiry is greater than current one
+        /// </summary>
+        XXGT = XX | GT,
+
+        /// <summary>
+        /// Set expiry only when the key has an existing expiry and the new expiry is less than current one
+        /// </summary>
+        XXLT = XX | LT,
     }
 
     /// <summary>
