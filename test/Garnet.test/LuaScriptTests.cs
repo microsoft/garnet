@@ -356,7 +356,7 @@ local setArgs = {}
 for _, key in ipairs(KEYS) do
     table.insert(setArgs, key)
 end
-
+unpack(KEYS)
 return redis.status_reply(table.concat(setArgs))
 """;
 

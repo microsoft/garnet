@@ -26,6 +26,9 @@ namespace Garnet.server
         readonly TxnKeyEntries txnKeyEntries;
         readonly bool txnMode;
 
+        LuaTable keyTable, argvTable;
+        int keyLength, argvLength;
+
         /// <summary>
         /// Creates a new runner with the source of the script
         /// </summary>
@@ -61,6 +64,8 @@ namespace Garnet.server
                 function redis.error_reply(text)
                     return { err = text }
                 end
+                KEYS = {}
+                ARGV = {}
                 sandbox_env = {
                     tostring = tostring;
                     next = next;
@@ -81,6 +86,8 @@ namespace Garnet.server
                     math = math;
                     table = table;
                     string = string;
+                    KEYS = KEYS;
+                    ARGV = ARGV;
                 }
                 function load_sandboxed(source)
                     if (not source) then return nil end
@@ -88,6 +95,8 @@ namespace Garnet.server
                 end
             ");
             sandbox_env = (LuaTable)state["sandbox_env"];
+            keyTable = (LuaTable)state["KEYS"];
+            argvTable = (LuaTable)state["ARGV"];
         }
 
         /// <summary>
@@ -252,7 +261,7 @@ namespace Garnet.server
             if (nKeys > 0)
             {
                 // Lua uses 1-based indexing, so we allocate an extra entry in the array
-                keys = new string[nKeys + 2];
+                keys = new string[nKeys];
                 for (int i = 0; i < nKeys; i++)
                 {
                     if (txnMode)
@@ -262,9 +271,8 @@ namespace Garnet.server
                         if (!respServerSession.storageSession.objectStoreLockableContext.IsNull)
                             txnKeyEntries.AddKey(key, true, Tsavorite.core.LockType.Exclusive);
                     }
-                    keys[i + 1] = parseState.GetString(offset++);
+                    keys[i] = parseState.GetString(offset++);
                 }
-                keys[nKeys + 1] = null;
                 count -= nKeys;
 
                 //TODO: handle slot verification for Lua script keys
@@ -278,12 +286,11 @@ namespace Garnet.server
             if (count > 0)
             {
                 // Lua uses 1-based indexing, so we allocate an extra entry in the array
-                argv = new string[count + 2];
+                argv = new string[count];
                 for (int i = 0; i < count; i++)
                 {
-                    argv[i + 1] = parseState.GetString(offset++);
+                    argv[i] = parseState.GetString(offset++);
                 }
-                argv[count + 1] = null;
             }
 
             if (txnMode && nKeys > 0)
@@ -344,40 +351,52 @@ namespace Garnet.server
 
         object RunInternal(string[] keys, string[] argv)
         {
-            if (keys != this.keys)
+            if (keys != null)
             {
-                if (keys == null)
+                if (keyLength != keys.Length)
                 {
-                    this.keys = null;
-                    sandbox_env["KEYS"] = this.keys;
-                }
-                else
-                {
-                    if (this.keys != null && keys.Length == this.keys.Length)
-                        Array.Copy(keys, this.keys, keys.Length);
-                    else
+                    if (keyLength > 0)
                     {
-                        this.keys = keys;
-                        sandbox_env["KEYS"] = this.keys;
+                        keyTable.Dispose();
+                        keyTable = (LuaTable)state.DoString("return {}")[0];
+                        sandbox_env["KEYS"] = keyTable;
                     }
+                    keyLength = keys.Length;
+                }
+                for (int i = 0; i < keys.Length; i++)
+                    keyTable[i + 1] = keys[i];
+            }
+            else
+            {
+                if (keyLength > 0)
+                {
+                    keyTable = (LuaTable)state.DoString("return {}")[0];
+                    sandbox_env["KEYS"] = keyTable;
+                    keyLength = 0;
                 }
             }
-            if (argv != this.argv)
+            if (argv != null)
             {
-                if (argv == null)
+                if (argvLength != argv.Length)
                 {
-                    this.argv = null;
-                    sandbox_env["ARGV"] = this.argv;
-                }
-                else
-                {
-                    if (this.argv != null && argv.Length == this.argv.Length)
-                        Array.Copy(argv, this.argv, argv.Length);
-                    else
+                    if (argvLength > 0)
                     {
-                        this.argv = argv;
-                        sandbox_env["ARGV"] = this.argv;
+                        argvTable.Dispose();
+                        argvTable = (LuaTable)state.DoString("return {}")[0];
+                        sandbox_env["ARGV"] = argvTable;
                     }
+                    argvLength = argv.Length;
+                }
+                for (int i = 0; i < argv.Length; i++)
+                    argvTable[i + 1] = argv[i];
+            }
+            else
+            {
+                if (argvLength > 0)
+                {
+                    argvTable = (LuaTable)state.DoString("return {}")[0];
+                    sandbox_env["ARGV"] = argvTable;
+                    argvLength = 0;
                 }
             }
 
