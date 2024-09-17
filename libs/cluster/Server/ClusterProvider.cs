@@ -277,8 +277,8 @@ namespace Garnet.cluster
             return [
                 new("migration_manager", migrationManager.GetBufferPoolStats()),
                 new("replication_manager", replicationManager.GetBufferPoolStats()),
-                new("server_socket", storeWrapper.GetTcpServer().GetBufferPoolStats()),
-                ];
+                new("server_socket", storeWrapper.GetTcpServer().GetBufferPoolStats())
+];
         }
 
         public void PurgeBufferPool(ManagerType managerType)
