@@ -3481,6 +3481,21 @@ namespace Garnet.test.Resp.ACL
         }
 
         [Test]
+        public async Task LPosACLsAsync()
+        {
+            await CheckCommandsAsync(
+                "LPOS",
+                [DoLPosAsync]
+            );
+
+            static async Task DoLPosAsync(GarnetClient client)
+            {
+                string val = await client.ExecuteForStringResultAsync("LPOS", ["foo", "a"]);
+                ClassicAssert.IsNull(val);
+            }
+        }
+
+        [Test]
         public async Task LPushACLsAsync()
         {
             int count = 0;
