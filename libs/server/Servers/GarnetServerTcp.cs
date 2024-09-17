@@ -206,5 +206,13 @@ namespace Garnet.server
                 }
             }
         }
+
+        public bool Purge()
+        {
+            networkBuffers.Purge();
+            return true;
+        }
+
+        public string GetBufferPoolStats() => networkBuffers.GetStats();
     }
 }

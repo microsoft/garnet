@@ -1,7 +1,6 @@
 ﻿// Copyright (c) Microsoft Corporation.
 // Licensed under the MIT license.
 
-using System;
 using System.Collections.Generic;
 using System.Runtime.CompilerServices;
 using Garnet.common;
@@ -50,7 +49,6 @@ namespace Garnet.cluster
         public bool Purge()
         {
             networkBuffers.Purge();
-            GC.Collect(GC.MaxGeneration);
             return true;
         }
 

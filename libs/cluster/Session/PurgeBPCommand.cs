@@ -12,6 +12,7 @@ namespace Garnet.cluster
     {
         MM, // MigrationManager
         RM, // ReplicationManager
+        SS, // ServerSocket
     }
 
     /// <summary>
@@ -56,11 +57,13 @@ namespace Garnet.cluster
                 {
                     ManagerType.MM => clusterProvider.migrationManager.Purge(),
                     ManagerType.RM => clusterProvider.replicationManager.Purge(),
+                    ManagerType.SS => clusterProvider.storeWrapper.GetTcpServer().Purge(),
                     _ => throw new GarnetException($"{managerType} not supported!")
                 };
 
                 if (success)
                 {
+                    GC.Collect(GC.MaxGeneration, GCCollectionMode.Forced, true);
                     while (!RespWriteUtils.WriteDirect(CmdStrings.RESP_OK, ref dcurr, dend))
                         SendAndReset();
                 }

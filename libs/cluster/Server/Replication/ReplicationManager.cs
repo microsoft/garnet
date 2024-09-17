@@ -141,7 +141,6 @@ namespace Garnet.cluster
         public bool Purge()
         {
             networkBuffers.Purge();
-            GC.Collect(GC.MaxGeneration);
             return true;
         }
 
