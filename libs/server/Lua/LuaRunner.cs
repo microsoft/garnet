@@ -26,7 +26,7 @@ namespace Garnet.server
         readonly TxnKeyEntries txnKeyEntries;
         readonly bool txnMode;
 
-        LuaTable keyTable, argvTable;
+        readonly LuaTable keyTable, argvTable;
         int keyLength, argvLength;
 
         /// <summary>
