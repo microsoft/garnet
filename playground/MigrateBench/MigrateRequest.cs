@@ -224,23 +224,30 @@ namespace MigrateBench
                 var sourceNodeId = sourceNode.ExecuteAsync("cluster", "myid").GetAwaiter().GetResult();
                 var targetNodeId = targetNode.ExecuteAsync("cluster", "myid").GetAwaiter().GetResult();
 
+                string[] stable = ["cluster", "setslot", "<slot>", "stable"];
                 string[] migrating = ["cluster", "setslot", "<slot>", "migrating", targetNodeId];
                 string[] importing = ["cluster", "setslot", "<slot>", "importing", sourceNodeId];
                 string[] node = ["cluster", "setslot", "<slot>", "node", targetNodeId];
                 string[] countkeysinslot = ["cluster", "countkeysinslot", "<slot>"];
-                string[] getkeysinslot = ["cluster", "getkeysinslot", "<slot>"];
+                string[] getkeysinslot = ["cluster", "getkeysinslot", "<slot>", "<count>"];
                 foreach (var slot in _slots)
                 {
                     var slotStr = slot.ToString();
+                    stable[2] = slotStr;
                     migrating[2] = slotStr;
                     importing[2] = slotStr;
                     node[2] = slotStr;
                     countkeysinslot[2] = slotStr;
                     getkeysinslot[2] = slotStr;
 
-                    var resp = sourceNode.ExecuteAsync(migrating).GetAwaiter().GetResult();
+                    var resp = sourceNode.ExecuteAsync(stable).GetAwaiter().GetResult();
+                    resp = sourceNode.ExecuteAsync(migrating).GetAwaiter().GetResult();
+
+                    resp = targetNode.ExecuteAsync(stable).GetAwaiter().GetResult();
                     resp = targetNode.ExecuteAsync(importing).GetAwaiter().GetResult();
+
                     resp = sourceNode.ExecuteAsync(countkeysinslot).GetAwaiter().GetResult();
+                    getkeysinslot[3] = resp;
                     var keys = sourceNode.ExecuteForArrayAsync(getkeysinslot).GetAwaiter().GetResult();
 
                     ICollection<string> migrate = ["MIGRATE", targetNodeEndpoint.Address.ToString(), targetNodeEndpoint.Port.ToString(), "", "0", timeout.ToString(), "REPLACE", "KEYS"];
@@ -248,7 +255,7 @@ namespace MigrateBench
                         migrate.Add(key);
 
                     var request = migrate.ToArray();
-                    logger?.LogInformation("KeyCount: {keys}", keys.Length);
+                    logger?.LogInformation("Slot: {slot}, KeyCount: {keys}", slot, keys.Length);
                     resp = sourceNode.ExecuteAsync(request).GetAwaiter().GetResult();
 
                     resp = targetNode.ExecuteAsync(node).GetAwaiter().GetResult();
