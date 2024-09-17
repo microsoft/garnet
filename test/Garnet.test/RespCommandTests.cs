@@ -35,7 +35,7 @@ namespace Garnet.test
             TestUtils.DeleteDirectory(TestUtils.MethodTestDir, wait: true);
             extTestDir = Path.Combine(TestUtils.MethodTestDir, "test");
             ClassicAssert.IsTrue(RespCommandsInfo.TryGetRespCommandsInfo(out respCommandsInfo, externalOnly: true));
-            ClassicAssert.IsTrue(RespCommandsInfo.TryGetRespCommandsDocs(out respCommandsDocs, externalOnly: true));
+            ClassicAssert.IsTrue(RespCommandDocs.TryGetRespCommandsDocs(out respCommandsDocs, externalOnly: true));
             ClassicAssert.IsTrue(TestUtils.TryGetCustomCommandsInfo(out respCustomCommandsInfo));
             ClassicAssert.IsTrue(TestUtils.TryGetCustomCommandsDocs(out respCustomCommandsDocs));
             ClassicAssert.IsNotNull(respCommandsInfo);
@@ -122,6 +122,48 @@ namespace Garnet.test
         }
 
         /// <summary>
+        /// Test COMMAND DOCS command
+        /// </summary>
+        [Test]
+        public void CommandDocsTest()
+        {
+            using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
+            var db = redis.GetDatabase(0);
+
+            // Get all commands using COMMAND DOCS command
+            var results = (RedisResult[])db.Execute("COMMAND", "DOCS");
+
+            ClassicAssert.IsNotNull(results);
+            ClassicAssert.AreEqual(respCommandsDocs.Count, results.Length / 2);
+
+            // Register custom commands
+            var customCommandsRegistered = RegisterCustomCommands();
+
+            // Dynamically register custom commands
+            var customCommandsRegisteredDyn = DynamicallyRegisterCustomCommands(db);
+
+            // Get all commands (including custom commands) using COMMAND DOCS command
+            results = (RedisResult[])db.Execute("COMMAND", "DOCS");
+
+            ClassicAssert.IsNotNull(results);
+            ClassicAssert.AreEqual(
+                respCommandsInfo.Count + customCommandsRegistered.Length + customCommandsRegisteredDyn.Length,
+                results.Length / 2);
+
+            var cmdNameToResult = new Dictionary<string, RedisResult>();
+            for (var i = 0; i < results.Length; i += 2)
+            {
+                cmdNameToResult.Add(results[i].ToString(), results[i + 1]);
+            }
+
+            foreach (var cmdName in respCommandsDocs.Keys.Union(customCommandsRegistered).Union(customCommandsRegisteredDyn))
+            {
+                ClassicAssert.Contains(cmdName, cmdNameToResult.Keys);
+                VerifyCommandDocs(cmdName, cmdNameToResult[cmdName]);
+            }
+        }
+
+        /// <summary>
         /// Test COMMAND COUNT command
         /// </summary>
         [Test]
@@ -197,44 +239,29 @@ namespace Garnet.test
         }
 
         /// <summary>
-        /// Test COMMAND DOCS command
+        /// Test COMMAND DOCS [command-name [command-name ...]]
         /// </summary>
         [Test]
-        public void CommandDocsTest()
+        [TestCase(["GET", "SET", "COSCAN"])]
+        [TestCase(["get", "set", "coscan"])]
+        public void CommandDocsWithCommandNamesTest(params string[] commands)
         {
             using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
             var db = redis.GetDatabase(0);
 
-            // Get all commands using COMMAND DOCS command
-            var results = (RedisResult[])db.Execute("COMMAND", "DOCS");
+            var args = new object[] { "DOCS" }.Union(commands).ToArray();
+
+            // Get basic commands using COMMAND INFO command
+            var results = (RedisResult[])db.Execute("COMMAND", args);
 
             ClassicAssert.IsNotNull(results);
-            ClassicAssert.AreEqual(respCommandsDocs.Count, results.Length / 2);
+            ClassicAssert.AreEqual(commands.Length, results.Length / 2);
 
-            // Register custom commands
-            var customCommandsRegistered = RegisterCustomCommands();
-
-            // Dynamically register custom commands
-            var customCommandsRegisteredDyn = DynamicallyRegisterCustomCommands(db);
-
-            // Get all commands (including custom commands) using COMMAND DOCS command
-            results = (RedisResult[])db.Execute("COMMAND", "DOCS");
-
-            ClassicAssert.IsNotNull(results);
-            ClassicAssert.AreEqual(
-                respCommandsInfo.Count + customCommandsRegistered.Length + customCommandsRegisteredDyn.Length,
-                results.Length / 2);
-            
-            var cmdNameToResult = new Dictionary<string, RedisResult>();
-            for (var i = 0; i < results.Length; i += 2)
+            for (var i = 0; i < commands.Length; i++)
             {
-                cmdNameToResult.Add(results[i].ToString(), results[i + 1]);
-            }
-
-            foreach (var cmdName in respCommandsDocs.Keys.Union(customCommandsRegistered).Union(customCommandsRegisteredDyn))
-            {
-                ClassicAssert.Contains(cmdName, cmdNameToResult.Keys);
-                VerifyCommandDocs(cmdName, cmdNameToResult[cmdName]);
+                ClassicAssert.AreEqual(commands[i].ToUpper(), results[2 * i].ToString());
+                var info = results[(2 * i) + 1];
+                VerifyCommandDocs(commands[i], info);
             }
         }
 
@@ -270,6 +297,39 @@ namespace Garnet.test
             }
         }
 
+        /// <summary>
+        /// Test COMMAND INFO with custom commands
+        /// </summary>
+        [Test]
+        [TestCase(["SETIFPM", "MYDICTSET", "MGETIFPM", "READWRITETX", "MYDICTGET"])]
+        [TestCase(["setifpm", "mydictset", "mgetifpm", "readwritetx", "mydictget"])]
+        public void CommandDocsWithCustomCommandNamesTest(params string[] commands)
+        {
+            using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
+            var db = redis.GetDatabase(0);
+
+            // Register custom commands
+            RegisterCustomCommands();
+
+            // Dynamically register custom commands
+            DynamicallyRegisterCustomCommands(db);
+
+            var args = new object[] { "DOCS" }.Union(commands).ToArray();
+
+            // Get basic commands using COMMAND DOCS command
+            var results = (RedisResult[])db.Execute("COMMAND", args);
+
+            ClassicAssert.IsNotNull(results);
+            ClassicAssert.AreEqual(commands.Length, results.Length / 2);
+
+            for (var i = 0; i < commands.Length; i++)
+            {
+                ClassicAssert.AreEqual(commands[i].ToUpper(), results[2 * i].ToString());
+                var info = results[(2 * i) + 1];
+                VerifyCommandDocs(commands[i], info);
+            }
+        }
+
         [Test]
         public void AofIndependentCommandsTest()
         {
@@ -301,6 +361,7 @@ namespace Garnet.test
                 // Command
                 RespCommand.COMMAND,
                 RespCommand.COMMAND_COUNT,
+                RespCommand.COMMAND_DOCS,
                 RespCommand.COMMAND_INFO,
                 RespCommand.MEMORY_USAGE,
                 // Config

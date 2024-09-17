@@ -3,11 +3,6 @@
 
 using System.Collections.ObjectModel;
 using System.Net;
-using System.Net.Sockets;
-using System.Runtime.CompilerServices;
-using System.Text;
-using Azure;
-using Garnet.common;
 using Garnet.server;
 using Garnet.server.Resp;
 using Microsoft.Extensions.Logging;
@@ -37,7 +32,7 @@ namespace CommandInfoUpdater
 
             IReadOnlyDictionary<string, RespCommandDocs> existingCommandsDocs =
                 new Dictionary<string, RespCommandDocs>();
-            if (!force && !RespCommandsInfo.TryGetRespCommandsDocs(out existingCommandsDocs, false, logger))
+            if (!force && !RespCommandDocs.TryGetRespCommandsDocs(out existingCommandsDocs, false, logger))
             {
                 logger.LogError("Unable to get existing RESP commands docs.");
                 return false;

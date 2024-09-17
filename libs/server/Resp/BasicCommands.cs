@@ -1041,7 +1041,7 @@ namespace Garnet.server
 
             if (count == 0)
             {
-                if (!RespCommandsInfo.TryGetRespCommandsDocs(out var cmdsDocs, true, logger))
+                if (!RespCommandDocs.TryGetRespCommandsDocs(out var cmdsDocs, true, logger))
                     return true;
                 
                 foreach (var cmdDocs in cmdsDocs.Values)
@@ -1061,7 +1061,7 @@ namespace Garnet.server
                 for (var i = 0; i < count; i++)
                 {
                     var cmdName = parseState.GetString(i);
-                    if (RespCommandsInfo.TryGetRespCommandDocs(cmdName, out var cmdDocs, true, logger) ||
+                    if (RespCommandDocs.TryGetRespCommandDocs(cmdName, out var cmdDocs, true, logger) ||
                         storeWrapper.customCommandManager.TryGetCustomCommandDocs(cmdName, out cmdDocs))
                     {
                         docsCount++;

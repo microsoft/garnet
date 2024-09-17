@@ -12,7 +12,6 @@ using System.Text;
 using System.Text.Json.Serialization;
 using Garnet.common;
 using Garnet.server.ACL;
-using Garnet.server.Resp;
 using Microsoft.Extensions.Logging;
 
 namespace Garnet.server
@@ -108,16 +107,13 @@ namespace Garnet.server
         public RespCommand? SubCommand { get; set; }
 
         private const string RespCommandsInfoEmbeddedFileName = @"RespCommandsInfo.json";
-        private const string RespCommandsDocsEmbeddedFileName = @"RespCommandsDocs.json";
 
         private string respFormat;
 
         private static bool IsInitialized = false;
         private static readonly object IsInitializedLock = new();
         private static IReadOnlyDictionary<string, RespCommandsInfo> AllRespCommandsInfo = null;
-        private static IReadOnlyDictionary<string, RespCommandDocs> AllRespCommandsDocs = null;
         private static IReadOnlyDictionary<string, RespCommandsInfo> ExternalRespCommandsInfo = null;
-        private static IReadOnlyDictionary<string, RespCommandDocs> ExternalRespCommandsDocs = null;
         private static IReadOnlyDictionary<RespCommand, RespCommandsInfo> BasicRespCommandsInfo = null;
         private static IReadOnlySet<string> AllRespCommandNames = null;
         private static IReadOnlySet<string> ExternalRespCommandNames = null;
@@ -137,7 +133,7 @@ namespace Garnet.server
             {
                 if (IsInitialized) return true;
 
-                IsInitialized = TryInitializeRespCommandsInfo(logger) && TryInitializeRespCommandsDocs(logger);
+                IsInitialized = TryInitializeRespCommandsInfo(logger);
                 return IsInitialized;
             }
         }
@@ -258,26 +254,6 @@ namespace Garnet.server
             }
         }
 
-        private static bool TryInitializeRespCommandsDocs(ILogger logger = null)
-        {
-            var streamProvider = StreamProviderFactory.GetStreamProvider(FileLocationType.EmbeddedResource, null,
-                Assembly.GetExecutingAssembly());
-            var commandsDocsProvider = RespCommandsDataProviderFactory.GetRespCommandsDataProvider<RespCommandDocs>();
-
-            var importSucceeded = commandsDocsProvider.TryImportRespCommandsData(RespCommandsDocsEmbeddedFileName,
-                streamProvider, out var tmpAllRespCommandsDocs, logger);
-
-            if (!importSucceeded) return false;
-
-            AllRespCommandsDocs =
-                new Dictionary<string, RespCommandDocs>(tmpAllRespCommandsDocs, StringComparer.OrdinalIgnoreCase);
-            ExternalRespCommandsDocs = new ReadOnlyDictionary<string, RespCommandDocs>(tmpAllRespCommandsDocs
-                .Where(ci => AllRespCommandsInfo.ContainsKey(ci.Key) && !AllRespCommandsInfo[ci.Key].IsInternal)
-                .ToDictionary(kvp => kvp.Key, kvp => kvp.Value, StringComparer.OrdinalIgnoreCase));
-
-            return true;
-        }
-
         /// <summary>
         /// Gets commands which are covered by the given ACL category.
         /// </summary>
@@ -325,22 +301,6 @@ namespace Garnet.server
         }
 
         /// <summary>
-        /// Gets all the command docs objects of commands supported by Garnet
-        /// </summary>
-        /// <param name="respCommandsDocs">Mapping between command name to command docs</param>
-        /// <param name="externalOnly">Return only commands that are visible externally</param>
-        /// <param name="logger">Logger</param>
-        /// <returns>True if initialization was successful and data was retrieved successfully</returns>
-        public static bool TryGetRespCommandsDocs(out IReadOnlyDictionary<string, RespCommandDocs> respCommandsDocs, bool externalOnly = false, ILogger logger = null)
-        {
-            respCommandsDocs = default;
-            if (!IsInitialized && !TryInitialize(logger)) return false;
-
-            respCommandsDocs = externalOnly ? ExternalRespCommandsDocs : AllRespCommandsDocs;
-            return true;
-        }
-
-        /// <summary>
         /// Gets all the command names of commands supported by Garnet
         /// </summary>
         /// <param name="respCommandNames">The command names</param>
@@ -367,32 +327,9 @@ namespace Garnet.server
         internal static bool TryGetRespCommandInfo(string cmdName, out RespCommandsInfo respCommandsInfo, bool externalOnly = false, ILogger logger = null)
         {
             respCommandsInfo = default;
-            if ((!IsInitialized && !TryInitialize(logger)) ||
-                !AllRespCommandsInfo.ContainsKey(cmdName) || 
-                (externalOnly && AllRespCommandsInfo[cmdName].IsInternal)) return false;
 
-            respCommandsInfo = AllRespCommandsInfo[cmdName];
-            return true;
-        }
-
-        /// <summary>
-        /// Gets command docs by command name
-        /// </summary>
-        /// <param name="cmdName">The command name</param>
-        /// <param name="respCommandsDocs">The command docs</param>
-        /// <param name="externalOnly">Return command docs only if command is visible externally</param>
-        /// <param name="logger">Logger</param>
-        /// <returns>True if initialization was successful and command docs was found</returns>
-        internal static bool TryGetRespCommandDocs(string cmdName, out RespCommandDocs respCommandsDocs, bool externalOnly = false, ILogger logger = null)
-        {
-            respCommandsDocs = default;
-            if ((!IsInitialized && !TryInitialize(logger)) ||
-                !AllRespCommandsDocs.ContainsKey(cmdName) ||
-                !AllRespCommandsInfo.ContainsKey(cmdName) ||
-                (externalOnly && AllRespCommandsInfo[cmdName].IsInternal)) return false;
-
-            respCommandsDocs = AllRespCommandsDocs[cmdName];
-            return true;
+            return TryGetRespCommandsInfo(out var cmdsInfo, externalOnly, logger)
+                   && cmdsInfo.TryGetValue(cmdName, out respCommandsInfo);
         }
 
         /// <summary>
