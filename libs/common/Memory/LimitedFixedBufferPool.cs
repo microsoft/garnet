@@ -27,7 +27,7 @@ namespace Garnet.common
         /// </summary>
         public int MinAllocationSize => minAllocationSize;
 
-        int totalAllocations;
+        int totalReferences;
 
         /// <summary>
         /// Constructor
@@ -47,7 +47,7 @@ namespace Garnet.common
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public void Return(PoolEntry buffer)
         {
-            int level = Position(buffer.entry.Length);
+            var level = Position(buffer.entry.Length);
             if (level >= 0)
             {
                 if (pool[level] != null)
@@ -61,8 +61,8 @@ namespace Garnet.common
                         Interlocked.Decrement(ref pool[level].size);
                 }
             }
-            Debug.Assert(totalAllocations > 0, $"Return with {totalAllocations}");
-            Interlocked.Decrement(ref totalAllocations);
+            Debug.Assert(totalReferences > 0, $"Return with {totalReferences}");
+            Interlocked.Decrement(ref totalReferences);
         }
 
         /// <summary>
@@ -73,14 +73,14 @@ namespace Garnet.common
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public unsafe PoolEntry Get(int size)
         {
-            if (Interlocked.Increment(ref totalAllocations) < 0)
+            if (Interlocked.Increment(ref totalReferences) < 0)
             {
-                Interlocked.Decrement(ref totalAllocations);
+                Interlocked.Decrement(ref totalReferences);
                 logger?.LogError("Invalid Get on disposed pool");
                 return null;
             }
 
-            int level = Position(size);
+            var level = Position(size);
             if (level >= 0)
             {
                 if (pool[level] == null)
@@ -124,8 +124,8 @@ namespace Garnet.common
 #if HANGDETECT
             int count = 0;
 #endif
-            while (totalAllocations > int.MinValue &&
-                Interlocked.CompareExchange(ref totalAllocations, int.MinValue, 0) != 0)
+            while (totalReferences > int.MinValue &&
+                Interlocked.CompareExchange(ref totalReferences, int.MinValue, 0) != 0)
             {
 #if HANGDETECT
                     if (++count % 10000 == 0)
@@ -152,7 +152,7 @@ namespace Garnet.common
         /// <returns></returns>
         public string GetStats()
         {
-            var stats = $"totalAllocations={totalAllocations}," +
+            var stats = $"totalReferences={totalReferences}," +
                 $"numLevels={numLevels}," +
                 $"maxEntriesPerLevel={maxEntriesPerLevel}," +
                 $"minAllocationSize={Format.MemoryBytes(minAllocationSize)}," +
@@ -162,14 +162,9 @@ namespace Garnet.common
             var totalBufferCount = 0;
             for (var i = 0; i < numLevels; i++)
             {
-                if (pool[i] == null) continue;
-
-                var count = pool[i].items.Count;
-
-                if (count == 0) continue;
-
-                totalBufferCount += count;
-                bufferStats += $"<{count}:{Format.MemoryBytes(minAllocationSize << i)}>";
+                if (pool[i] == null || pool[i].items.Count == 0) continue;
+                totalBufferCount += pool[i].items.Count;
+                bufferStats += $"<{pool[i].items.Count}:{Format.MemoryBytes(minAllocationSize << i)}>";
             }
 
             if (totalBufferCount > 0)
@@ -183,16 +178,23 @@ namespace Garnet.common
         {
             if (v < minAllocationSize || !BitOperations.IsPow2(v))
                 return -1;
-            return GetLevel(minAllocationSize, v);
+            var level = GetLevel(minAllocationSize, v);
+            return level >= numLevels ? -1 : level;
         }
 
+        /// <summary>
+        /// Calculate level from minAllocationSize and requestedSize
+        /// </summary>
+        /// <param name="minAllocationSize"></param>
+        /// <param name="requestedSize"></param>
+        /// <returns></returns>
         public static int GetLevel(int minAllocationSize, int requestedSize)
         {
             Debug.Assert(BitOperations.IsPow2(minAllocationSize));
             Debug.Assert(BitOperations.IsPow2(requestedSize));
-            requestedSize /= minAllocationSize;
+            var level = requestedSize / minAllocationSize;
 
-            return requestedSize == 1 ? 0 : BitOperations.Log2((uint)requestedSize - 1) + 1;
+            return level == 1 ? 0 : BitOperations.Log2((uint)level - 1) + 1;
         }
     }
 }
