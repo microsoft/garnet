@@ -160,7 +160,7 @@ Note that this list is subject to change as we continue to expand our API comman
 |  | [LMOVE](data-structures.md#lmove) | ➕ |  |
 |  | LMPOP | ➖ |  |
 |  | [LPOP](data-structures.md#lpop) | ➕ |  |
-|  | LPOS | ➖ |  |
+|  | [LPOS](data-structures.md#lpos) | ➕ |  |
 |  | [LPUSH](data-structures.md#lpush) | ➕ |  |
 |  | [LPUSHX](data-structures.md#lpushx) | ➕ |  |
 |  | [LRANGE](data-structures.md#lrange) | ➕ |  |

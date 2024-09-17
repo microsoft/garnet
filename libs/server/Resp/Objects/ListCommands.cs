@@ -156,6 +156,65 @@ namespace Garnet.server
             return true;
         }
 
+        /// <summary>
+        /// The command returns the index of matching elements inside a Redis list.
+        /// By default, when no options are given, it will scan the list from head to tail, looking for the first match of "element".
+        /// </summary>
+        /// <typeparam name="TGarnetApi"></typeparam>
+        /// <param name="storageApi"></param>
+        /// <returns></returns>
+        private unsafe bool ListPosition<TGarnetApi>(ref TGarnetApi storageApi)
+                            where TGarnetApi : IGarnetApi
+        {
+            if (parseState.Count < 2)
+            {
+                return AbortWithWrongNumberOfArguments(nameof(RespCommand.LPOS));
+            }
+
+            // Get the key for List
+            var sbKey = parseState.GetArgSliceByRef(0).SpanByte;
+            var element = parseState.GetArgSliceByRef(1).SpanByte;
+            var keyBytes = sbKey.ToByteArray();
+
+            if (NetworkSingleKeySlotVerify(keyBytes, false))
+            {
+                return true;
+            }
+
+            // Prepare input
+            var input = new ObjectInput
+            {
+                header = new RespInputHeader
+                {
+                    type = GarnetObjectType.List,
+                    ListOp = ListOperation.LPOS,
+                },
+                parseState = parseState,
+                parseStateStartIdx = 1,
+            };
+
+            // Prepare GarnetObjectStore output
+            var outputFooter = new GarnetObjectStoreOutput { spanByteAndMemory = new SpanByteAndMemory(dcurr, (int)(dend - dcurr)) };
+
+            var statusOp = storageApi.ListPosition(keyBytes, ref input, ref outputFooter);
+
+            switch (statusOp)
+            {
+                case GarnetStatus.OK:
+                    ProcessOutputWithHeader(outputFooter.spanByteAndMemory);
+                    break;
+                case GarnetStatus.NOTFOUND:
+                    while (!RespWriteUtils.WriteDirect(CmdStrings.RESP_ERRNOTFOUND, ref dcurr, dend))
+                        SendAndReset();
+                    break;
+                case GarnetStatus.WRONGTYPE:
+                    while (!RespWriteUtils.WriteError(CmdStrings.RESP_ERR_WRONG_TYPE, ref dcurr, dend))
+                        SendAndReset();
+                    break;
+            }
+
+            return true;
+        }
 
         /// <summary>
         /// LMPOP numkeys key [key ...] LEFT | RIGHT [COUNT count]

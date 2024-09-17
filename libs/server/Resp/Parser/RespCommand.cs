@@ -45,6 +45,7 @@ namespace Garnet.server
         KEYS,
         LINDEX,
         LLEN,
+        LPOS,
         LRANGE,
         MEMORY_USAGE,
         MGET,
@@ -766,6 +767,10 @@ namespace Garnet.server
                                         else if (*(ulong*)(ptr + 2) == MemoryMarshal.Read<ulong>("\r\nLSET\r\n"u8))
                                         {
                                             return RespCommand.LSET;
+                                        }
+                                        else if (*(ulong*)(ptr + 2) == MemoryMarshal.Read<ulong>("\r\nLPOS\r\n"u8))
+                                        {
+                                            return RespCommand.LPOS;
                                         }
                                         break;
 

@@ -319,6 +319,26 @@ By default, the command pops a single element from the beginning of the list. Wh
 
 ---
 
+### LPOP
+
+#### Syntax
+
+```bash
+    LPOP key [count]
+```
+
+The command returns the index of matching elements inside a Redis list. By default, when no options are given, it will scan the list from head to tail, looking for the first match of "element". If the element is found, its index (the zero-based position in the list) is returned. Otherwise, if no match is found, nil is returned.
+
+#### Resp Reply
+
+Any of the following:
+
+* Null reply: if there is no matching element.
+* Integer reply: an integer representing the matching element.
+* Array reply: If the COUNT option is given, an array of integers representing the matching elements (or an empty array if there are no matches).
+
+---
+
 ### LPUSH
 
 #### Syntax
