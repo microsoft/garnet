@@ -319,12 +319,12 @@ By default, the command pops a single element from the beginning of the list. Wh
 
 ---
 
-### LPOP
+### LPOS
 
 #### Syntax
 
 ```bash
-    LPOP key [count]
+    LPOS key element [RANK rank] [COUNT num-matches] [MAXLEN len]
 ```
 
 The command returns the index of matching elements inside a Redis list. By default, when no options are given, it will scan the list from head to tail, looking for the first match of "element". If the element is found, its index (the zero-based position in the list) is returned. Otherwise, if no match is found, nil is returned.
