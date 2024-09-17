@@ -256,12 +256,10 @@ namespace Garnet.server
             int offset = 1;
             int nKeys = parseState.GetInt(offset++);
             count--;
+            ResetParameters(nKeys, count - nKeys);
 
-            string[] keys = null;
             if (nKeys > 0)
             {
-                // Lua uses 1-based indexing, so we allocate an extra entry in the array
-                keys = new string[nKeys];
                 for (int i = 0; i < nKeys; i++)
                 {
                     if (txnMode)
@@ -271,7 +269,7 @@ namespace Garnet.server
                         if (!respServerSession.storageSession.objectStoreLockableContext.IsNull)
                             txnKeyEntries.AddKey(key, true, Tsavorite.core.LockType.Exclusive);
                     }
-                    keys[i] = parseState.GetString(offset++);
+                    keyTable[i + 1] = parseState.GetString(offset++);
                 }
                 count -= nKeys;
 
@@ -282,34 +280,31 @@ namespace Garnet.server
                 //}
             }
 
-            string[] argv = null;
             if (count > 0)
             {
-                // Lua uses 1-based indexing, so we allocate an extra entry in the array
-                argv = new string[count];
                 for (int i = 0; i < count; i++)
                 {
-                    argv[i] = parseState.GetString(offset++);
+                    argvTable[i + 1] = parseState.GetString(offset++);
                 }
             }
 
             if (txnMode && nKeys > 0)
             {
-                return RunTransactionInternal(keys, argv);
+                return RunTransaction();
             }
             else
             {
-                return RunInternal(keys, argv);
+                return Run();
             }
         }
 
         /// <summary>
         /// Runs the precompiled Lua function with specified (keys, argv) state
         /// </summary>
-        public object Run(string[] keys, string[] argv)
+        public object Run(string[] keys = null, string[] argv = null)
         {
             scratchBufferManager?.Reset();
-
+            LoadParameters(keys, argv);
             if (txnMode && keys?.Length > 0)
             {
                 // Add keys to the transaction
@@ -320,15 +315,15 @@ namespace Garnet.server
                     if (!respServerSession.storageSession.objectStoreLockableContext.IsNull)
                         txnKeyEntries.AddKey(_key, true, Tsavorite.core.LockType.Exclusive);
                 }
-                return RunTransactionInternal(keys, argv);
+                return RunTransaction();
             }
             else
             {
-                return RunInternal(keys, argv);
+                return Run();
             }
         }
 
-        object RunTransactionInternal(string[] keys, string[] argv)
+        object RunTransaction()
         {
             try
             {
@@ -337,7 +332,7 @@ namespace Garnet.server
                     respServerSession.storageSession.objectStoreLockableContext.BeginLockable();
                 respServerSession.SetTransactionMode(true);
                 txnKeyEntries.LockAllKeys();
-                return RunInternal(keys, argv);
+                return Run();
             }
             finally
             {
@@ -349,66 +344,40 @@ namespace Garnet.server
             }
         }
 
-        object RunInternal(string[] keys, string[] argv)
+        void ResetParameters(int nKeys, int nArgs)
         {
+            if (keyLength > nKeys)
+            {
+                _ = state.DoString($"count = #KEYS for i={nKeys+1}, {keyLength} do KEYS[i]=nil end");
+            }
+            keyLength = nKeys;
+            if (argvLength > nArgs)
+            {
+                _ = state.DoString($"count = #ARGV for i={nArgs + 1}, {argvLength} do ARGV[i]=nil end");
+            }
+            argvLength = nArgs;
+        }
+
+        void LoadParameters(string[] keys, string[] argv)
+        {
+            ResetParameters(keys?.Length ?? 0, argv?.Length ?? 0);
             if (keys != null)
             {
-                if (keyLength != keys.Length)
-                {
-                    if (keyLength > 0)
-                    {
-                        keyTable.Dispose();
-                        keyTable = (LuaTable)state.DoString("return {}")[0];
-                        sandbox_env["KEYS"] = keyTable;
-                    }
-                    keyLength = keys.Length;
-                }
                 for (int i = 0; i < keys.Length; i++)
                     keyTable[i + 1] = keys[i];
             }
-            else
-            {
-                if (keyLength > 0)
-                {
-                    keyTable = (LuaTable)state.DoString("return {}")[0];
-                    sandbox_env["KEYS"] = keyTable;
-                    keyLength = 0;
-                }
-            }
             if (argv != null)
             {
-                if (argvLength != argv.Length)
-                {
-                    if (argvLength > 0)
-                    {
-                        argvTable.Dispose();
-                        argvTable = (LuaTable)state.DoString("return {}")[0];
-                        sandbox_env["ARGV"] = argvTable;
-                    }
-                    argvLength = argv.Length;
-                }
                 for (int i = 0; i < argv.Length; i++)
                     argvTable[i + 1] = argv[i];
             }
-            else
-            {
-                if (argvLength > 0)
-                {
-                    argvTable = (LuaTable)state.DoString("return {}")[0];
-                    sandbox_env["ARGV"] = argvTable;
-                    argvLength = 0;
-                }
-            }
-
-            var result = function.Call();
-            return result.Length > 0 ? result[0] : null;
         }
 
         /// <summary>
         /// Runs the precompiled Lua function
         /// </summary>
         /// <returns></returns>
-        public object Run()
+        object Run()
         {
             var result = function.Call();
             return result.Length > 0 ? result[0] : null;

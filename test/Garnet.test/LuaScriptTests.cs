@@ -364,6 +364,16 @@ return redis.status_reply(table.concat(setArgs))
             var db = redis.GetDatabase(0);
             var response = db.ScriptEvaluate(script, ["key1", "key2"], ["value", 1, 12345]);
             ClassicAssert.AreEqual("key1key2", (string)response);
+            response = db.ScriptEvaluate(script, ["key1", "key2"], ["value", 1, 12345]);
+            ClassicAssert.AreEqual("key1key2", (string)response);
+            response = db.ScriptEvaluate(script, ["key1"], ["value", 1, 12345]);
+            ClassicAssert.AreEqual("key1", (string)response);
+            response = db.ScriptEvaluate(script, ["key1", "key2"], ["value", 1, 12345]);
+            ClassicAssert.AreEqual("key1key2", (string)response);
+            response = db.ScriptEvaluate(script, ["key1", "key2", "key3", "key4"], ["value", 1, 12345]);
+            ClassicAssert.AreEqual("key1key2key3key4", (string)response);
+            response = db.ScriptEvaluate(script, [], ["value", 1, 12345]);
+            ClassicAssert.AreEqual("", (string)response);
         }
     }
 }
