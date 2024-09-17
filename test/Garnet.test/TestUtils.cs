@@ -113,13 +113,13 @@ namespace Garnet.test
 
             if (!CustomCommandsDocsInitialized && !TryInitializeCustomCommandsDocs(logger)) return false;
 
-            customCommandsDocs = RespCustomCommandsInfo;
+            customCommandsDocs = RespCustomCommandsDocs;
             return true;
         }
 
         private static bool TryInitializeCustomCommandsInfo(ILogger logger)
         {
-            if (!TryGetRespCommandsInfo(CustomRespCommandInfoJsonPath, logger, out var tmpCustomCommandsInfo))
+            if (!TryGetRespCommandData<RespCommandsInfo>(CustomRespCommandInfoJsonPath, logger, out var tmpCustomCommandsInfo))
                 return false;
 
             RespCustomCommandsInfo = tmpCustomCommandsInfo;
@@ -127,20 +127,24 @@ namespace Garnet.test
             return true;
         }
 
-        private static bool TryGetRespCommandsInfo(string resourcePath, ILogger logger, out IReadOnlyDictionary<string, RespCommandsInfo> commandsInfo)
+        private static bool TryInitializeCustomCommandsDocs(ILogger logger)
         {
-            commandsInfo = default;
+            if (!TryGetRespCommandData<RespCommandDocs>(CustomRespCommandDocsJsonPath, logger, out var tmpCustomCommandsDocs))
+                return false;
 
-            var streamProvider = StreamProviderFactory.GetStreamProvider(FileLocationType.EmbeddedResource, null, Assembly.GetExecutingAssembly());
-            var commandsInfoProvider = RespCommandsDataProviderFactory.GetRespCommandsDataProvider<RespCommandsInfo>();
-
-            var importSucceeded = commandsInfoProvider.TryImportRespCommandsData(resourcePath,
-                streamProvider, out var tmpCommandsInfo, logger);
-
-            if (!importSucceeded) return false;
-
-            commandsInfo = tmpCommandsInfo;
+            RespCustomCommandsDocs = tmpCustomCommandsDocs;
+            CustomCommandsDocsInitialized = true;
             return true;
+        }
+
+        private static bool TryGetRespCommandData<TData>(string resourcePath, ILogger logger, out IReadOnlyDictionary<string, TData> commandData)
+        where TData : IRespCommandData
+        {
+            var streamProvider = StreamProviderFactory.GetStreamProvider(FileLocationType.Local);
+            var commandsInfoProvider = RespCommandsDataProviderFactory.GetRespCommandsDataProvider<TData>();
+
+            return commandsInfoProvider.TryImportRespCommandsData(resourcePath,
+                streamProvider, out commandData, logger);
         }
 
         static bool IsAzuriteRunning()

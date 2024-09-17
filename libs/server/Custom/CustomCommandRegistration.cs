@@ -4,6 +4,7 @@
 using System;
 using System.Collections.Generic;
 using System.Linq;
+using Garnet.server.Resp;
 
 namespace Garnet.server.Custom
 {
@@ -26,6 +27,11 @@ namespace Garnet.server.Custom
         /// RESP command info
         /// </summary>
         public RespCommandsInfo CommandInfo { get; set; }
+
+        /// <summary>
+        /// RESP command docs
+        /// </summary>
+        public RespCommandDocs CommandDocs { get; set; }
     }
 
 
@@ -185,6 +191,7 @@ namespace Garnet.server.Custom
                 this.RegisterArgs.CommandType,
                 this.Instance,
                 this.RegisterArgs.CommandInfo,
+                this.RegisterArgs.CommandDocs,
                 this.RegisterArgs.ExpirationTicks);
         }
     }
@@ -200,7 +207,12 @@ namespace Garnet.server.Custom
 
         public override void Register(CustomCommandManager customCommandManager)
         {
-            customCommandManager.Register(this.RegisterArgs.Name, this.RegisterArgs.CommandType, this.Instance, this.RegisterArgs.CommandInfo);
+            customCommandManager.Register(
+                this.RegisterArgs.Name, 
+                this.RegisterArgs.CommandType, 
+                this.Instance,
+                this.RegisterArgs.CommandInfo, 
+                this.RegisterArgs.CommandDocs);
         }
     }
 
@@ -218,7 +230,13 @@ namespace Garnet.server.Custom
 
         public override void Register(CustomCommandManager customCommandManager)
         {
-            customCommandManager.Register(RegisterArgs.Name, RegisterArgs.CommandType, factory, RegisterArgs.ObjectCommand, RegisterArgs.CommandInfo);
+            customCommandManager.Register(
+                RegisterArgs.Name, 
+                RegisterArgs.CommandType, 
+                factory,
+                RegisterArgs.ObjectCommand, 
+                RegisterArgs.CommandInfo, 
+                RegisterArgs.CommandDocs);
         }
     }
 
@@ -233,7 +251,7 @@ namespace Garnet.server.Custom
 
         public override void Register(CustomCommandManager customCommandManager)
         {
-            customCommandManager.Register(this.RegisterArgs.Name, () => this.Instance, this.RegisterArgs.CommandInfo);
+            customCommandManager.Register(this.RegisterArgs.Name, () => this.Instance, this.RegisterArgs.CommandInfo, this.RegisterArgs.CommandDocs);
         }
     }
 }

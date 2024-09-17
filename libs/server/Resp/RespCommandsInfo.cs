@@ -361,15 +361,37 @@ namespace Garnet.server
         /// </summary>
         /// <param name="cmdName">The command name</param>
         /// <param name="respCommandsInfo">The command info</param>
+        /// <param name="externalOnly">Return command info only if command is visible externally</param>
         /// <param name="logger">Logger</param>
         /// <returns>True if initialization was successful and command info was found</returns>
-        internal static bool TryGetRespCommandInfo(string cmdName, out RespCommandsInfo respCommandsInfo, ILogger logger = null)
+        internal static bool TryGetRespCommandInfo(string cmdName, out RespCommandsInfo respCommandsInfo, bool externalOnly = false, ILogger logger = null)
         {
             respCommandsInfo = default;
             if ((!IsInitialized && !TryInitialize(logger)) ||
-                !AllRespCommandsInfo.ContainsKey(cmdName)) return false;
+                !AllRespCommandsInfo.ContainsKey(cmdName) || 
+                (externalOnly && AllRespCommandsInfo[cmdName].IsInternal)) return false;
 
             respCommandsInfo = AllRespCommandsInfo[cmdName];
+            return true;
+        }
+
+        /// <summary>
+        /// Gets command docs by command name
+        /// </summary>
+        /// <param name="cmdName">The command name</param>
+        /// <param name="respCommandsDocs">The command docs</param>
+        /// <param name="externalOnly">Return command docs only if command is visible externally</param>
+        /// <param name="logger">Logger</param>
+        /// <returns>True if initialization was successful and command docs was found</returns>
+        internal static bool TryGetRespCommandDocs(string cmdName, out RespCommandDocs respCommandsDocs, bool externalOnly = false, ILogger logger = null)
+        {
+            respCommandsDocs = default;
+            if ((!IsInitialized && !TryInitialize(logger)) ||
+                !AllRespCommandsDocs.ContainsKey(cmdName) ||
+                !AllRespCommandsInfo.ContainsKey(cmdName) ||
+                (externalOnly && AllRespCommandsInfo[cmdName].IsInternal)) return false;
+
+            respCommandsDocs = AllRespCommandsDocs[cmdName];
             return true;
         }
 

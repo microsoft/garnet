@@ -2,6 +2,7 @@
 // Licensed under the MIT license.
 
 using System;
+using Garnet.server.Resp;
 
 namespace Garnet.server
 {
@@ -27,6 +28,7 @@ namespace Garnet.server
         /// <param name="type">Type of command (e.g., read)</param>
         /// <param name="customFunctions">Custom functions for command logic</param>
         /// <param name="commandInfo">RESP command info</param>
+        /// <param name="commandDocs">RESP command docs</param>
         /// <param name="expirationTicks">
         /// Expiration for value, in ticks.
         /// -1 => remove existing expiration metadata;
@@ -34,8 +36,8 @@ namespace Garnet.server
         /// >0 => set expiration to given value.
         /// </param>
         /// <returns>ID of the registered command</returns>
-        public int NewCommand(string name, CommandType type, CustomRawStringFunctions customFunctions, RespCommandsInfo commandInfo = null, long expirationTicks = 0)
-            => provider.StoreWrapper.customCommandManager.Register(name, type, customFunctions, commandInfo, expirationTicks);
+        public int NewCommand(string name, CommandType type, CustomRawStringFunctions customFunctions, RespCommandsInfo commandInfo = null, RespCommandDocs commandDocs = null, long expirationTicks = 0)
+            => provider.StoreWrapper.customCommandManager.Register(name, type, customFunctions, commandInfo, commandDocs, expirationTicks);
 
         /// <summary>
         /// Register transaction procedure with Garnet
@@ -43,9 +45,10 @@ namespace Garnet.server
         /// <param name="name">Name of command</param>
         /// <param name="proc">Custom stored procedure</param>
         /// <param name="commandInfo">RESP command info</param>
+        /// <param name="commandDocs">RESP command docs</param>
         /// <returns>ID of the registered command</returns>
-        public int NewTransactionProc(string name, Func<CustomTransactionProcedure> proc, RespCommandsInfo commandInfo = null)
-            => provider.StoreWrapper.customCommandManager.Register(name, proc, commandInfo);
+        public int NewTransactionProc(string name, Func<CustomTransactionProcedure> proc, RespCommandsInfo commandInfo = null, RespCommandDocs commandDocs = null)
+            => provider.StoreWrapper.customCommandManager.Register(name, proc, commandInfo, commandDocs);
 
         /// <summary>
         /// Register object type with server
@@ -71,9 +74,10 @@ namespace Garnet.server
         /// <param name="factory">Custom factory for object</param>
         /// <param name="customObjectFunctions">Custom object command implementation</param>
         /// <param name="commandInfo">RESP command info</param>
+        /// <param name="commandDocs">RESP command docs</param>
         /// <returns>ID of the registered command</returns>
-        public (int objectTypeId, int subCommandId) NewCommand(string name, CommandType commandType, CustomObjectFactory factory, CustomObjectFunctions customObjectFunctions, RespCommandsInfo commandInfo = null)
-            => provider.StoreWrapper.customCommandManager.Register(name, commandType, factory, customObjectFunctions, commandInfo);
+        public (int objectTypeId, int subCommandId) NewCommand(string name, CommandType commandType, CustomObjectFactory factory, CustomObjectFunctions customObjectFunctions, RespCommandsInfo commandInfo = null, RespCommandDocs commandDocs = null)
+            => provider.StoreWrapper.customCommandManager.Register(name, commandType, factory, customObjectFunctions, commandInfo, commandDocs);
 
         /// <summary>
         /// Register custom procedure with Garnet
@@ -81,8 +85,9 @@ namespace Garnet.server
         /// <param name="name"></param>
         /// <param name="customProcedure"></param>
         /// <param name="commandInfo"></param>
+        /// <param name="commandDocs"></param>
         /// <returns></returns>
-        public int NewProcedure(string name, CustomProcedure customProcedure, RespCommandsInfo commandInfo = null)
-            => provider.StoreWrapper.customCommandManager.Register(name, customProcedure, commandInfo);
+        public int NewProcedure(string name, CustomProcedure customProcedure, RespCommandsInfo commandInfo = null, RespCommandDocs commandDocs = null)
+            => provider.StoreWrapper.customCommandManager.Register(name, customProcedure, commandInfo, commandDocs);
     }
 }

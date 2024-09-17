@@ -4,6 +4,7 @@
 using System;
 using System.Collections.Generic;
 using System.Threading;
+using Garnet.server.Resp;
 
 namespace Garnet.server
 {
@@ -26,6 +27,7 @@ namespace Garnet.server
 
         internal int CustomCommandsInfoCount => CustomCommandsInfo.Count;
         internal readonly Dictionary<string, RespCommandsInfo> CustomCommandsInfo = new(StringComparer.OrdinalIgnoreCase);
+        internal readonly Dictionary<string, RespCommandDocs> CustomCommandsDocs = new(StringComparer.OrdinalIgnoreCase);
 
         /// <summary>
         /// Create new custom command manager
@@ -38,7 +40,7 @@ namespace Garnet.server
             customProcedureMap = new CustomProcedureWrapper[MaxRegistrations];
         }
 
-        internal int Register(string name, CommandType type, CustomRawStringFunctions customFunctions, RespCommandsInfo commandInfo, long expirationTicks)
+        internal int Register(string name, CommandType type, CustomRawStringFunctions customFunctions, RespCommandsInfo commandInfo, RespCommandDocs commandDocs, long expirationTicks)
         {
             int id = Interlocked.Increment(ref RawStringCommandId) - 1;
             if (id >= MaxRegistrations)
@@ -46,10 +48,11 @@ namespace Garnet.server
 
             rawStringCommandMap[id] = new CustomRawStringCommand(name, (byte)id, type, customFunctions, expirationTicks);
             if (commandInfo != null) CustomCommandsInfo.Add(name, commandInfo);
+            if (commandDocs != null) CustomCommandsDocs.Add(name, commandDocs);
             return id;
         }
 
-        internal int Register(string name, Func<CustomTransactionProcedure> proc, RespCommandsInfo commandInfo = null)
+        internal int Register(string name, Func<CustomTransactionProcedure> proc, RespCommandsInfo commandInfo = null, RespCommandDocs commandDocs = null)
         {
             int id = Interlocked.Increment(ref TransactionProcId) - 1;
             if (id >= MaxRegistrations)
@@ -57,6 +60,7 @@ namespace Garnet.server
 
             transactionProcMap[id] = new CustomTransaction(name, (byte)id, proc);
             if (commandInfo != null) CustomCommandsInfo.Add(name, commandInfo);
+            if (commandDocs != null) CustomCommandsDocs.Add(name, commandDocs);
             return id;
         }
 
@@ -92,7 +96,7 @@ namespace Garnet.server
             objectCommandMap[objectTypeId] = new CustomObjectCommandWrapper((byte)objectTypeId, factory);
         }
 
-        internal (int objectTypeId, int subCommand) Register(string name, CommandType commandType, CustomObjectFactory factory, RespCommandsInfo commandInfo)
+        internal (int objectTypeId, int subCommand) Register(string name, CommandType commandType, CustomObjectFactory factory, RespCommandsInfo commandInfo, RespCommandDocs commandDocs)
         {
             int objectTypeId = -1;
             for (int i = 0; i < ObjectTypeId; i++)
@@ -116,11 +120,12 @@ namespace Garnet.server
             wrapper.commandMap[subCommand] = new CustomObjectCommand(name, (byte)objectTypeId, (byte)subCommand, commandType, wrapper.factory);
 
             if (commandInfo != null) CustomCommandsInfo.Add(name, commandInfo);
+            if (commandDocs != null) CustomCommandsDocs.Add(name, commandDocs);
 
             return (objectTypeId, subCommand);
         }
 
-        internal (int objectTypeId, int subCommand) Register(string name, CommandType commandType, CustomObjectFactory factory, CustomObjectFunctions customObjectFunctions, RespCommandsInfo commandInfo)
+        internal (int objectTypeId, int subCommand) Register(string name, CommandType commandType, CustomObjectFactory factory, CustomObjectFunctions customObjectFunctions, RespCommandsInfo commandInfo, RespCommandDocs commandDocs)
         {
             var objectTypeId = -1;
             for (var i = 0; i < ObjectTypeId; i++)
@@ -144,6 +149,7 @@ namespace Garnet.server
             wrapper.commandMap[subCommand] = new CustomObjectCommand(name, (byte)objectTypeId, (byte)subCommand, commandType, wrapper.factory, customObjectFunctions);
 
             if (commandInfo != null) CustomCommandsInfo.Add(name, commandInfo);
+            if (commandDocs != null) CustomCommandsDocs.Add(name, commandDocs);
 
             return (objectTypeId, subCommand);
         }
@@ -154,9 +160,10 @@ namespace Garnet.server
         /// <param name="name"></param>
         /// <param name="customProcedure"></param>
         /// <param name="commandInfo"></param>
+        /// <param name="commandDocs"></param>
         /// <returns></returns>
         /// <exception cref="Exception"></exception>
-        internal int Register(string name, CustomProcedure customProcedure, RespCommandsInfo commandInfo = null)
+        internal int Register(string name, CustomProcedure customProcedure, RespCommandsInfo commandInfo = null, RespCommandDocs commandDocs = null)
         {
             int id = Interlocked.Increment(ref CustomProcedureId) - 1;
             if (id >= MaxRegistrations)
@@ -164,6 +171,7 @@ namespace Garnet.server
 
             customProcedureMap[id] = new CustomProcedureWrapper(name, (byte)id, customProcedure);
             if (commandInfo != null) CustomCommandsInfo.Add(name, commandInfo);
+            if (commandDocs != null) CustomCommandsDocs.Add(name, commandDocs);
             return id;
         }
 
@@ -225,11 +233,12 @@ namespace Garnet.server
 
         internal bool TryGetCustomCommandInfo(string cmdName, out RespCommandsInfo respCommandsInfo)
         {
-            respCommandsInfo = default;
-            if (!this.CustomCommandsInfo.ContainsKey(cmdName)) return false;
+            return this.CustomCommandsInfo.TryGetValue(cmdName, out respCommandsInfo);
+        }
 
-            respCommandsInfo = this.CustomCommandsInfo[cmdName];
-            return true;
+        internal bool TryGetCustomCommandDocs(string cmdName, out RespCommandDocs respCommandsDocs)
+        {
+            return this.CustomCommandsDocs.TryGetValue(cmdName, out respCommandsDocs);
         }
     }
 }

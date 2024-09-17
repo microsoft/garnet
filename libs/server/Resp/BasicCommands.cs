@@ -1036,43 +1036,45 @@ namespace Garnet.server
         {
             var count = parseState.Count;
 
-            // todo: custom command docs
-            if (!RespCommandsInfo.TryGetRespCommandsDocs(out var cmdsDocs, true, logger))
-                return true;
-
-            IEnumerable<RespCommandDocs> docs;
-            int docsCount;
+            var resultSb = new StringBuilder();
+            var docsCount = 0;
 
             if (count == 0)
             {
-                docs = cmdsDocs.Values;
-                docsCount = cmdsDocs.Count;
+                if (!RespCommandsInfo.TryGetRespCommandsDocs(out var cmdsDocs, true, logger))
+                    return true;
+                
+                foreach (var cmdDocs in cmdsDocs.Values)
+                {
+                    docsCount++;
+                    resultSb.Append(cmdDocs.RespFormat);
+                }
+
+                foreach (var customCmd in storeWrapper.customCommandManager.CustomCommandsDocs.Values)
+                {
+                    docsCount++;
+                    resultSb.Append(customCmd.RespFormat);
+                }
             }
             else
             {
-                var docsFound = new List<RespCommandDocs>();
                 for (var i = 0; i < count; i++)
                 {
                     var cmdName = parseState.GetString(i);
-                    if (cmdsDocs.TryGetValue(cmdName, out var doc))
+                    if (RespCommandsInfo.TryGetRespCommandDocs(cmdName, out var cmdDocs, true, logger) ||
+                        storeWrapper.customCommandManager.TryGetCustomCommandDocs(cmdName, out cmdDocs))
                     {
-                        docsFound.Add(doc);
+                        docsCount++;
+                        resultSb.Append(cmdDocs.RespFormat);
                     }
                 }
-
-                docs = docsFound;
-                docsCount = docsFound.Count;
             }
 
             while (!RespWriteUtils.WriteArrayLength(docsCount * 2, ref dcurr, dend))
                 SendAndReset();
 
-            foreach (var doc in docs)
-            {
-                var docRespFormat = doc.RespFormat;
-                while (!RespWriteUtils.WriteAsciiDirect(docRespFormat, ref dcurr, dend))
-                    SendAndReset();
-            }
+            while (!RespWriteUtils.WriteAsciiDirect(resultSb.ToString(), ref dcurr, dend))
+                SendAndReset();
 
             return true;
         }
@@ -1098,7 +1100,7 @@ namespace Garnet.server
                 {
                     var cmdName = parseState.GetString(i);
 
-                    if (RespCommandsInfo.TryGetRespCommandInfo(cmdName, out var cmdInfo, logger) ||
+                    if (RespCommandsInfo.TryGetRespCommandInfo(cmdName, out var cmdInfo, true, logger) ||
                         storeWrapper.customCommandManager.TryGetCustomCommandInfo(cmdName, out cmdInfo))
                     {
                         while (!RespWriteUtils.WriteAsciiDirect(cmdInfo.RespFormat, ref dcurr, dend))
