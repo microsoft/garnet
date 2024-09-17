@@ -3875,10 +3875,10 @@ namespace Garnet.test.Resp.ACL
 
             await CheckCommandsAsync(
                 "PURGEBP",
-                [DoPurgeBPAsync]
+                [DoPurgeBPClusterAsync, DoPurgeBPAsync]
             );
 
-            static async Task DoPurgeBPAsync(GarnetClient client)
+            static async Task DoPurgeBPClusterAsync(GarnetClient client)
             {
                 try
                 {
@@ -3894,6 +3894,12 @@ namespace Garnet.test.Resp.ACL
 
                     throw;
                 }
+            }
+
+            static async Task DoPurgeBPAsync(GarnetClient client)
+            {
+                string val = await client.ExecuteForStringResultAsync("PURGEBP", ["SS"]);
+                ClassicAssert.AreEqual("GC completed for ServerSocket", val);
             }
         }
 

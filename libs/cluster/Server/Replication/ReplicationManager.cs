@@ -138,11 +138,7 @@ namespace Garnet.cluster
         /// <summary>
         /// Used to free up buffer pool
         /// </summary>
-        public bool Purge()
-        {
-            networkBuffers.Purge();
-            return true;
-        }
+        public void Purge() => networkBuffers.Purge();
 
         public string GetBufferPoolStats() => networkBuffers.GetStats();
 

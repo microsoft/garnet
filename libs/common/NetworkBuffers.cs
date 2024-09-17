@@ -72,19 +72,13 @@ namespace Garnet.common
         /// Purge buffer pool
         /// </summary>
         /// <returns></returns>
-        public void Purge()
-        {
-            bufferPool?.Purge();
-        }
+        public void Purge() => bufferPool?.Purge();
 
         /// <summary>
         /// Get buffer pool statistics
         /// </summary>
         /// <returns></returns>
-        public string GetStats()
-        {
-            return bufferPool.GetStats();
-        }
+        public string GetStats() => bufferPool.GetStats();
 
         /// <summary>
         /// Dispose associated network buffer pool

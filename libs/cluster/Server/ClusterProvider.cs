@@ -281,6 +281,16 @@ namespace Garnet.cluster
                 ];
         }
 
+        public void PurgeBufferPool(ManagerType managerType)
+        {
+            if (managerType == ManagerType.MM)
+                migrationManager.Purge();
+            else if (managerType == ManagerType.RM)
+                replicationManager.Purge();
+            else
+                throw new GarnetException();
+        }
+
         internal ReplicationLogCheckpointManager GetReplicationLogCheckpointManager(StoreType storeType)
         {
             Debug.Assert(serverOptions.EnableCluster);

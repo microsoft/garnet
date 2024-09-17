@@ -88,7 +88,6 @@ namespace Garnet.cluster
                 {
                     _ = command switch
                     {
-                        RespCommand.PURGEBP => TryPurgeBP(out invalidParameters),
                         RespCommand.MIGRATE => TryMIGRATE(out invalidParameters),
                         RespCommand.FAILOVER => TryFAILOVER(),
                         RespCommand.SECONDARYOF or RespCommand.REPLICAOF => TryREPLICAOF(out invalidParameters),

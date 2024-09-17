@@ -207,11 +207,7 @@ namespace Garnet.server
             }
         }
 
-        public bool Purge()
-        {
-            networkBuffers.Purge();
-            return true;
-        }
+        public void Purge() => networkBuffers.Purge();
 
         public string GetBufferPoolStats() => networkBuffers.GetStats();
     }
