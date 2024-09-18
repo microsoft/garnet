@@ -502,19 +502,13 @@ namespace Garnet.server
                     return;
                 }
 
-                var expiryTime = DateTimeOffset.UtcNow.AddSeconds(expirationValue);
-                switch (hop)
-                {
-                    case HashOperation.HPEXPIRE:
-                        expiryTime = DateTimeOffset.UtcNow.AddMilliseconds(expirationValue);
-                        break;
-                    case HashOperation.HEXPIREAT:
-                        expiryTime = DateTimeOffset.FromUnixTimeSeconds(expirationValue);
-                        break;
-                    case HashOperation.HPEXPIREAT:
-                        expiryTime = DateTimeOffset.FromUnixTimeMilliseconds(expirationValue);
-                        break;
-                }
+                var expiryTime = hop switch {
+                    HashOperation.HEXPIRE => DateTimeOffset.UtcNow.AddSeconds(expirationValue),
+                    HashOperation.HEXPIREAT => DateTimeOffset.FromUnixTimeSeconds(expirationValue),
+                    HashOperation.HPEXPIRE => DateTimeOffset.UtcNow.AddMilliseconds(expirationValue),
+                    HashOperation.HPEXPIREAT => DateTimeOffset.FromUnixTimeMilliseconds(expirationValue),
+                    _ => DateTimeOffset.UtcNow.AddSeconds(expirationValue)
+                };
 
                 currIdx++;
                 if (fieldCount != parseState.Count - currIdx)

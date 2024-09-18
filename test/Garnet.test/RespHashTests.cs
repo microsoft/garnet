@@ -5,7 +5,6 @@ using System;
 using System.Linq;
 using System.Text;
 using System.Threading.Tasks;
-using Azure;
 using Garnet.server;
 using NUnit.Framework;
 using NUnit.Framework.Legacy;
@@ -1175,30 +1174,111 @@ namespace Garnet.test
         #region HashExpireTests
 
         [Test]
-        public void HExpireCommandParameters()
+        [TestCase("HEXPIRE")]
+        [TestCase("HEXPIREAT")]
+        [TestCase("HPEXPIRE")]
+        [TestCase("HPEXPIREAT")]
+        public void HExpireCommandParameters(string command)
         {
             string key = "expirehash";
             var lightClientRequest = TestUtils.CreateRequest();
+            var middleTtl = command switch
+            {
+                "HEXPIRE" => 20,
+                "HPEXPIRE" => 20000,
+                "HEXPIREAT" => DateTimeOffset.UtcNow.AddSeconds(20).ToUnixTimeSeconds(),
+                "HPEXPIREAT" => DateTimeOffset.UtcNow.AddSeconds(20).ToUnixTimeMilliseconds(),
+                _ => 10
+            };
+            var largerTtl = command switch
+            {
+                "HEXPIRE" => 30,
+                "HPEXPIRE" => 30000,
+                "HEXPIREAT" => DateTimeOffset.UtcNow.AddSeconds(30).ToUnixTimeSeconds(),
+                "HPEXPIREAT" => DateTimeOffset.UtcNow.AddSeconds(30).ToUnixTimeMilliseconds(),
+                _ => 10
+            };
+            var smallerTtl = command switch
+            {
+                "HEXPIRE" => 10,
+                "HPEXPIRE" => 10000,
+                "HEXPIREAT" => DateTimeOffset.UtcNow.AddSeconds(10).ToUnixTimeSeconds(),
+                "HPEXPIREAT" => DateTimeOffset.UtcNow.AddSeconds(10).ToUnixTimeMilliseconds(),
+                _ => 10
+            };
+            // This value should ensure the key is deleted
+            var zeroTtl = command switch
+            {
+                "HEXPIRE" => 0,
+                "HPEXPIRE" => 0,
+                "HEXPIREAT" => DateTimeOffset.UtcNow.ToUnixTimeSeconds(),
+                "HPEXPIREAT" => DateTimeOffset.UtcNow.ToUnixTimeMilliseconds(),
+                _ => 0
+            };
 
-            var res = lightClientRequest.SendCommand($"HSET {key} field1 1");
-            var expectedResponse = ":1\r\n";
+            // Invalid syntax tests
+
+            // Non-numeric value for TTL
+            var res = lightClientRequest.SendCommand($"{command} {key} hello FIELDS 1 field1");
+            var expectedResponse = "-ERR value is not an integer or out of range.\r\n";
             var actualResponse = Encoding.ASCII.GetString(res).Substring(0, expectedResponse.Length);
             ClassicAssert.AreEqual(expectedResponse, actualResponse);
 
+            // Invalid option
+            res = lightClientRequest.SendCommand($"{command} {key} 10 BB FIELDS 1 field1");
+            expectedResponse = "-ERR Mandatory argument FIELDS is missing or not at the right position\r\n";
+            actualResponse = Encoding.ASCII.GetString(res).Substring(0, expectedResponse.Length);
+            ClassicAssert.AreEqual(expectedResponse, actualResponse);
+
+            // Missing FIELDS keyword (same error as above)
+            res = lightClientRequest.SendCommand($"{command} {key} 10 2 field1 field2");
+            expectedResponse = "-ERR Mandatory argument FIELDS is missing or not at the right position\r\n";
+            actualResponse = Encoding.ASCII.GetString(res).Substring(0, expectedResponse.Length);
+            ClassicAssert.AreEqual(expectedResponse, actualResponse);
+
+            // Missing FIELDS keyword with valid option (same error as above)
+            res = lightClientRequest.SendCommand($"{command} {key} 10 NX 1 field1");
+            expectedResponse = "-ERR Mandatory argument FIELDS is missing or not at the right position\r\n";
+            actualResponse = Encoding.ASCII.GetString(res).Substring(0, expectedResponse.Length);
+            ClassicAssert.AreEqual(expectedResponse, actualResponse);
+
+            // Too many fields listed
+            res = lightClientRequest.SendCommand($"{command} {key} 10 FIELDS 1 field1 field2");
+            expectedResponse = "-ERR The `numfields` parameter must match the number of arguments\r\n";
+            actualResponse = Encoding.ASCII.GetString(res).Substring(0, expectedResponse.Length);
+            ClassicAssert.AreEqual(expectedResponse, actualResponse);
+
+            // Too few fields listed
+            res = lightClientRequest.SendCommand($"{command} {key} 10 FIELDS 2 field1");
+            expectedResponse = "-ERR The `numfields` parameter must match the number of arguments\r\n";
+            actualResponse = Encoding.ASCII.GetString(res).Substring(0, expectedResponse.Length);
+            ClassicAssert.AreEqual(expectedResponse, actualResponse);
+
+            // Insufficient arguments
+            res = lightClientRequest.SendCommand($"{command} {key} 10 FIELDS 1");
+            expectedResponse = $"-ERR wrong number of arguments for '{command}' command\r\n";
+            actualResponse = Encoding.ASCII.GetString(res).Substring(0, expectedResponse.Length);
+            ClassicAssert.AreEqual(expectedResponse, actualResponse);
+
+            res = lightClientRequest.SendCommand($"HSET {key} field1 1");
+            expectedResponse = ":1\r\n";
+            actualResponse = Encoding.ASCII.GetString(res).Substring(0, expectedResponse.Length);
+            ClassicAssert.AreEqual(expectedResponse, actualResponse);
+
             // Invalid field
-            res = lightClientRequest.SendCommand($"HEXPIRE {key} 10 FIELDS 1 field2");
+            res = lightClientRequest.SendCommand($"{command} {key} {middleTtl} FIELDS 1 field2", 2);
             expectedResponse = "*1\r\n:-2\r\n";
             actualResponse = Encoding.ASCII.GetString(res).Substring(0, expectedResponse.Length);
             ClassicAssert.AreEqual(expectedResponse, actualResponse);
 
             // Successfully set
-            res = lightClientRequest.SendCommand($"HEXPIRE {key} 10 FIELDS 1 field1");
+            res = lightClientRequest.SendCommand($"{command} {key} {middleTtl} FIELDS 1 field1", 2);
             expectedResponse = "*1\r\n:1\r\n";
             actualResponse = Encoding.ASCII.GetString(res).Substring(0, expectedResponse.Length);
             ClassicAssert.AreEqual(expectedResponse, actualResponse);
 
             // Unset (key deleted)
-            res = lightClientRequest.SendCommand($"HEXPIRE {key} 0 FIELDS 1 field1");
+            res = lightClientRequest.SendCommand($"{command} {key} {zeroTtl} FIELDS 1 field1", 2);
             expectedResponse = "*1\r\n:2\r\n";
             actualResponse = Encoding.ASCII.GetString(res).Substring(0, expectedResponse.Length);
             ClassicAssert.AreEqual(expectedResponse, actualResponse);
