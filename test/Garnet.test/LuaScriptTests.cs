@@ -446,11 +446,14 @@ return redis.call("mget", unpack(KEYS))
 
             using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
             var db = redis.GetDatabase(0);
-            var response1 = (string[])db.ScriptEvaluate(script1, ["key1", "key2"]);
-            ClassicAssert.AreEqual(2, response1.Length);
-            foreach (var item in response1)
+            for (int i = 0; i < 10; i++)
             {
-                ClassicAssert.AreEqual(null, item);
+                var response1 = (string[])db.ScriptEvaluate(script1, ["key1", "key2"]);
+                ClassicAssert.AreEqual(2, response1.Length);
+                foreach (var item in response1)
+                {
+                    ClassicAssert.AreEqual(null, item);
+                }
             }
         }
     }

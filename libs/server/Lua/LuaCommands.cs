@@ -259,30 +259,37 @@ namespace Garnet.server
                 }
                 else if (scriptResult is LuaTable luaTable)
                 {
-                    var retVal = luaTable["err"];
-                    if (retVal != null)
+                    try
                     {
-                        while (!RespWriteUtils.WriteError((string)retVal, ref dcurr, dend))
-                            SendAndReset();
-                    }
-                    else
-                    {
-                        retVal = luaTable["ok"];
+                        var retVal = luaTable["err"];
                         if (retVal != null)
                         {
-                            while (!RespWriteUtils.WriteAsciiBulkString((string)retVal, ref dcurr, dend))
+                            while (!RespWriteUtils.WriteError((string)retVal, ref dcurr, dend))
                                 SendAndReset();
                         }
                         else
                         {
-                            int count = luaTable.Values.Count;
-                            while (!RespWriteUtils.WriteArrayLength(count, ref dcurr, dend))
-                                SendAndReset();
-                            foreach (var value in luaTable.Values)
+                            retVal = luaTable["ok"];
+                            if (retVal != null)
                             {
-                                WriteObject(value);
+                                while (!RespWriteUtils.WriteAsciiBulkString((string)retVal, ref dcurr, dend))
+                                    SendAndReset();
+                            }
+                            else
+                            {
+                                int count = luaTable.Values.Count;
+                                while (!RespWriteUtils.WriteArrayLength(count, ref dcurr, dend))
+                                    SendAndReset();
+                                foreach (var value in luaTable.Values)
+                                {
+                                    WriteObject(value);
+                                }
                             }
                         }
+                    }
+                    finally
+                    {
+                        luaTable.Dispose();
                     }
                 }
                 else

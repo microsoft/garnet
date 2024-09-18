@@ -2,6 +2,7 @@
 // Licensed under the MIT license.
 
 using System;
+using System.Collections.Generic;
 using System.Text;
 using Garnet.common;
 using Microsoft.Extensions.Logging;
@@ -22,12 +23,12 @@ namespace Garnet.server
         readonly Lua state;
         readonly LuaTable sandbox_env;
         LuaFunction function;
-        string[] keys, argv;
         readonly TxnKeyEntries txnKeyEntries;
         readonly bool txnMode;
-
+        readonly LuaFunction garnetCall;
         readonly LuaTable keyTable, argvTable;
         int keyLength, argvLength;
+        Queue<IDisposable> disposeQueue;
 
         /// <summary>
         /// Creates a new runner with the source of the script
@@ -46,13 +47,13 @@ namespace Garnet.server
             if (txnMode)
             {
                 this.txnKeyEntries = new TxnKeyEntries(16, respServerSession.storageSession.lockableContext, respServerSession.storageSession.objectStoreLockableContext);
-                state.RegisterFunction("garnet_call", this, this.GetType().GetMethod(nameof(garnet_call_txn)));
+                garnetCall = state.RegisterFunction("garnet_call", this, this.GetType().GetMethod(nameof(garnet_call_txn)));
             }
             else
             {
-                state.RegisterFunction("garnet_call", this, this.GetType().GetMethod("garnet_call"));
+                garnetCall = state.RegisterFunction("garnet_call", this, this.GetType().GetMethod("garnet_call"));
             }
-            state.DoString(@"
+            _ = state.DoString(@"
                 import = function () end
                 redis = {}
                 function redis.call(cmd, ...)
@@ -143,6 +144,7 @@ namespace Garnet.server
         /// </summary>
         public void Dispose()
         {
+            garnetCall?.Dispose();
             keyTable?.Dispose();
             argvTable?.Dispose();
             sandbox_env?.Dispose();
@@ -240,7 +242,14 @@ namespace Garnet.server
                 case (byte)'*':
                     if (RespReadUtils.ReadStringArrayResponseWithLengthHeader(out var resultArray, ref ptr, ptr + length))
                     {
+                        // Create return table
                         var returnValue = (LuaTable)state.DoString("return { }")[0];
+
+                        // Queue up for disposal at the end of the script call
+                        disposeQueue ??= new();
+                        disposeQueue.Enqueue(returnValue);
+
+                        // Populate the table
                         var i = 1;
                         foreach (var item in resultArray)
                             returnValue[i++] = item == null ? false : item;
@@ -388,14 +397,20 @@ namespace Garnet.server
         object Run()
         {
             var result = function.Call();
-            return result.Length > 0 ? result[0] : null;
+            Cleanup();
+            return result?.Length > 0 ? result[0] : null;
         }
 
-        /// <summary>
-        /// Runs the precompiled Lua function
-        /// </summary>
-        /// <returns></returns>
-        public void RunVoid()
-            => function.Call();
+        void Cleanup()
+        {
+            if (disposeQueue != null)
+            {
+                while (disposeQueue.Count > 0)
+                {
+                    var table = disposeQueue.Dequeue();
+                    table.Dispose();
+                }
+            }
+        }
     }
 }
