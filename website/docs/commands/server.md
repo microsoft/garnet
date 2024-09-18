@@ -226,18 +226,18 @@ Array reply: specifically, a two-element array consisting of the Unix timestamp 
 
 ---
 
-### LOLWUT
+### MONITOR
 
 #### Syntax
 
 ```bash
-LOLWUT [VERSION version]
+MONITOR
 ```
 
-The LOLWUT command displays the Redis version
+MONITOR is a debugging command that streams back every command processed by the Redis server. It can help in understanding what is happening to the database.
 
 #### Resp Reply
 
-Verbatim string reply: a string containing generative computer art and the Redis version.
+Non-standard return value. Dumps the received commands in an infinite flow.
 
 ---

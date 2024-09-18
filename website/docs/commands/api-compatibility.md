@@ -281,8 +281,8 @@ Note that this list is subject to change as we continue to expand our API comman
 |  | [FLUSHALL](server.md#flushall) | ➕ |  |
 |  | [FLUSHDB](server.md#flushdb) | ➕ |  |
 |  | [LASTSAVE](checkpoint.md#lastsave) | ➕ |  |
-|  | [LOLWUT](server.md#lolwut) | ➕ |  |
-|  | MONITOR | ➖ |  |
+|  | LOLWUT | ➖ |  |
+|  | [MONITOR](server.md#monitor) | ➕ |  |
 |  | PSYNC | ➖ |  |
 |  | REPLCONF | ➖ |  |
 |  | [REPLICAOF](server.md#replicaof) | ➕ |  |
