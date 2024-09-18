@@ -8,7 +8,7 @@ using Microsoft.Extensions.Logging;
 
 namespace Garnet.server.Auth
 {
-    abstract class GarnetACLAuthenticator : IGarnetAuthenticator
+    abstract class GarnetACLAuthenticator : IGarnetAclAuthenticator
     {
         /// <summary>
         /// The Access Control List to authenticate users against

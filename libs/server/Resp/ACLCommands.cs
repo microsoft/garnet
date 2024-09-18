@@ -18,7 +18,7 @@ namespace Garnet.server
     {
         private bool ValidateACLAuthenticator()
         {
-            if (_authenticator is null or not GarnetACLAuthenticator)
+            if (_authenticator is null or not IGarnetAclAuthenticator)
             {
                 while (!RespWriteUtils.WriteError(CmdStrings.RESP_ERR_ACL_AUTH_DISABLED, ref dcurr, dend))
                     SendAndReset();
@@ -64,7 +64,7 @@ namespace Garnet.server
                 if (!ValidateACLAuthenticator())
                     return true;
 
-                var aclAuthenticator = (GarnetACLAuthenticator)_authenticator;
+                var aclAuthenticator = (IGarnetAclAuthenticator)_authenticator;
                 var users = aclAuthenticator.GetAccessControlList().GetUsers();
                 while (!RespWriteUtils.WriteArrayLength(users.Count, ref dcurr, dend))
                     SendAndReset();
@@ -96,7 +96,7 @@ namespace Garnet.server
                 if (!ValidateACLAuthenticator())
                     return true;
 
-                var aclAuthenticator = (GarnetACLAuthenticator)_authenticator;
+                var aclAuthenticator = (IGarnetAclAuthenticator)_authenticator;
                 var users = aclAuthenticator.GetAccessControlList().GetUsers();
                 while (!RespWriteUtils.WriteArrayLength(users.Count, ref dcurr, dend))
                     SendAndReset();
@@ -158,7 +158,7 @@ namespace Garnet.server
                 if (!ValidateACLAuthenticator())
                     return true;
 
-                var aclAuthenticator = (GarnetACLAuthenticator)_authenticator;
+                var aclAuthenticator = (IGarnetAclAuthenticator)_authenticator;
 
                 // REQUIRED: username
                 var username = parseState.GetString(0);
@@ -216,7 +216,7 @@ namespace Garnet.server
                 if (!ValidateACLAuthenticator())
                     return true;
 
-                var aclAuthenticator = (GarnetACLAuthenticator)_authenticator;
+                var aclAuthenticator = (IGarnetAclAuthenticator)_authenticator;
                 var successfulDeletes = 0;
 
                 try
@@ -268,7 +268,7 @@ namespace Garnet.server
                 if (!ValidateACLAuthenticator())
                     return true;
 
-                var aclAuthenticator = (GarnetACLAuthenticator)_authenticator;
+                var aclAuthenticator = (IGarnetAclAuthenticator)_authenticator;
 
                 // Return the name of the currently authenticated user.
                 Debug.Assert(aclAuthenticator.GetUser() != null);
