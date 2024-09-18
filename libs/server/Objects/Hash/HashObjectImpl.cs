@@ -502,7 +502,8 @@ namespace Garnet.server
                     return;
                 }
 
-                var expiryTime = hop switch {
+                var expiryTime = hop switch
+                {
                     HashOperation.HEXPIRE => DateTimeOffset.UtcNow.AddSeconds(expirationValue),
                     HashOperation.HEXPIREAT => DateTimeOffset.FromUnixTimeSeconds(expirationValue),
                     HashOperation.HPEXPIRE => DateTimeOffset.UtcNow.AddMilliseconds(expirationValue),
