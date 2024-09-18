@@ -143,9 +143,11 @@ namespace Garnet.server
         /// </summary>
         public void Dispose()
         {
+            keyTable?.Dispose();
+            argvTable?.Dispose();
+            sandbox_env?.Dispose();
             function?.Dispose();
             state?.Dispose();
-            sandbox_env?.Dispose();
         }
 
         /// <summary>
@@ -237,7 +239,13 @@ namespace Garnet.server
 
                 case (byte)'*':
                     if (RespReadUtils.ReadStringArrayResponseWithLengthHeader(out var resultArray, ref ptr, ptr + length))
-                        return resultArray;
+                    {
+                        var returnValue = (LuaTable)state.DoString("return { }")[0];
+                        var i = 1;
+                        foreach (var item in resultArray)
+                            returnValue[i++] = item == null ? false : item;
+                        return returnValue;
+                    }
                     break;
 
                 default:
