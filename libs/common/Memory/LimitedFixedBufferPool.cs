@@ -27,7 +27,15 @@ namespace Garnet.common
         /// </summary>
         public int MinAllocationSize => minAllocationSize;
 
+        /// <summary>
+        /// Total outstanding allocation references
+        /// </summary>
         int totalReferences;
+
+        /// <summary>
+        /// Total out of bound allocation requests
+        /// </summary>
+        int totalOutOfBoundAllocations;
 
         /// <summary>
         /// Constructor
@@ -81,6 +89,8 @@ namespace Garnet.common
             }
 
             var level = Position(size);
+            if (level == -1) Interlocked.Increment(ref totalOutOfBoundAllocations);
+
             if (level >= 0)
             {
                 if (pool[level] == null)
@@ -156,7 +166,8 @@ namespace Garnet.common
                 $"numLevels={numLevels}," +
                 $"maxEntriesPerLevel={maxEntriesPerLevel}," +
                 $"minAllocationSize={Format.MemoryBytes(minAllocationSize)}," +
-                $"maxAllocationSize={Format.MemoryBytes(minAllocationSize << (numLevels - 1))}";
+                $"maxAllocationSize={Format.MemoryBytes(minAllocationSize << (numLevels - 1))}," +
+                $"totalOutOfBoundAllocations={totalOutOfBoundAllocations}";
 
             var bufferStats = "";
             var totalBufferCount = 0;
