@@ -51,6 +51,9 @@ namespace Garnet.server
         public GarnetStatus GET(ref SpanByte key, ref SpanByte input, ref SpanByteAndMemory output)
             => storageSession.GET(ref key, ref input, ref output, ref context);
 
+        public GarnetStatus GETForETagCmd(ref SpanByte key, ref SpanByte input, ref SpanByteAndMemory output)
+            => storageSession.GETForETagCmd(ref key, ref input, ref output, ref context);
+
         /// <inheritdoc />
         public GarnetStatus GET_WithPending(ref SpanByte key, ref SpanByte input, ref SpanByteAndMemory output, long ctx, out bool pending)
             => storageSession.GET_WithPending(ref key, ref input, ref output, ctx, out pending, ref context);
@@ -103,8 +106,8 @@ namespace Garnet.server
             => storageSession.SET_Conditional(ref key, ref input, ref context);
 
         /// <inheritdoc />
-        public GarnetStatus SET_Conditional(ref SpanByte key, ref SpanByte input, ref SpanByteAndMemory output)
-            => storageSession.SET_Conditional(ref key, ref input, ref output, ref context);
+        public GarnetStatus SET_Conditional(ref SpanByte key, ref SpanByte input, ref SpanByteAndMemory output, RespCommand cmd)
+            => storageSession.SET_Conditional(ref key, ref input, ref output, ref context, cmd);
 
         /// <inheritdoc />
         public GarnetStatus SET(ArgSlice key, Memory<byte> value)

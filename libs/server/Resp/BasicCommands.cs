@@ -269,6 +269,164 @@ namespace Garnet.server
         }
 
         /// <summary>
+        /// GETWITHETAG key 
+        /// Given a key get the value and ETag
+        /// </summary>
+        private bool NetworkGETWITHETAG<TGarnetApi>(ref TGarnetApi storageApi)
+            where TGarnetApi : IGarnetApi
+        {
+            Debug.Assert(parseState.Count == 1);
+
+            var key = parseState.GetArgSliceByRef(0).SpanByte;
+            var output = new SpanByteAndMemory(dcurr, (int)(dend - dcurr));
+
+            // Setup input buffer
+            SpanByte input = SpanByte.Reinterpret(stackalloc byte[NumUtils.MaximumFormatInt64Length]);
+            byte* inputPtr = input.ToPointer();
+            ((RespInputHeader*)inputPtr)->cmd = RespCommand.GETWITHETAG;
+            ((RespInputHeader*)inputPtr)->flags = 0;
+
+            var status = storageApi.GETForETagCmd(ref key, ref input, ref output);
+
+            // Get the ETAG and Value and start typing
+            switch (status)
+            {
+                case GarnetStatus.NOTFOUND:
+                    Debug.Assert(output.IsSpanByte);
+                    while (!RespWriteUtils.WriteDirect(CmdStrings.RESP_ERRNOTFOUND, ref dcurr, dend))
+                        SendAndReset();
+                    break;
+                case GarnetStatus.WRONGTYPE:
+                    while (!RespWriteUtils.WriteError(CmdStrings.RESP_ERR_WRONG_TYPE, ref dcurr, dend))
+                        SendAndReset();
+                        break;
+                default:
+                    if (!output.IsSpanByte)
+                        SendAndReset(output.Memory, output.Length);
+                    else
+                        dcurr += output.Length;
+                    break;
+            } 
+
+            return true;
+        }
+
+        /// <summary>
+        /// GETIFNOTMATCH key etag
+        /// Given a key and an etag, return the value and it's etag only if the sent ETag does not match the existing ETag
+        /// If the ETag matches then we just send back a string indicating the value has not changed.
+        /// </summary>
+        private bool NetworkGETIFNOTMATCH<TGarnetApi>(ref TGarnetApi storageApi)
+            where TGarnetApi : IGarnetApi
+        {
+            Debug.Assert(parseState.Count == 2);
+
+            var key = parseState.GetArgSliceByRef(0).SpanByte;
+            var etagToCheckWith = parseState.GetLong(1);
+
+            var output = new SpanByteAndMemory(dcurr, (int)(dend - dcurr));
+
+            // Setup input buffer to pass command info, and the ETag to check with.
+            SpanByte input = SpanByte.Reinterpret(stackalloc byte[NumUtils.MaximumFormatInt64Length]);
+            byte* inputPtr = input.ToPointer();
+            ((RespInputHeader*)inputPtr)->cmd = RespCommand.GETIFNOTMATCH;
+            ((RespInputHeader*)inputPtr)->flags = 0;
+            *(long*)(inputPtr + RespInputHeader.Size) = etagToCheckWith;
+
+            var status = storageApi.GETForETagCmd(ref key, ref input, ref output);
+
+            switch (status)
+            {
+                case GarnetStatus.NOTFOUND:
+                    Debug.Assert(output.IsSpanByte);
+                    while (!RespWriteUtils.WriteDirect(CmdStrings.RESP_ERRNOTFOUND, ref dcurr, dend))
+                        SendAndReset();
+                        break;
+                case GarnetStatus.WRONGTYPE:
+                    while (!RespWriteUtils.WriteError(CmdStrings.RESP_ERR_WRONG_TYPE, ref dcurr, dend))
+                        SendAndReset();
+                        break;
+                default:
+                    if (!output.IsSpanByte)
+                        SendAndReset(output.Memory, output.Length);
+                    else
+                        dcurr += output.Length;
+                    break;
+            }
+
+            return true;
+        }
+
+        /// <summary>
+        /// SETIFNOTMATCH key val etag
+        /// Sets a key value pair only if an already existing etag does not match the etag sent as a part of the request
+        /// </summary>
+        /// <typeparam name="TGarnetApi"></typeparam>
+        /// <param name="storageApi"></param>
+        /// <returns></returns>
+        private bool NetworkSETIFMATCH<TGarnetApi>(ref TGarnetApi storageApi)
+            where TGarnetApi : IGarnetApi
+        {
+            Debug.Assert(parseState.Count == 3);
+
+            var key = parseState.GetArgSliceByRef(0).SpanByte;
+            var value = parseState.GetArgSliceByRef(1).SpanByte;
+            var etagToCheckWith = parseState.GetLong(2);
+
+            // Move value forward to make space for ETAG in Value itself
+            var initialValueSize = value.Length;
+            value.Length += sizeof(long);
+            var valPtr = value.ToPointer();
+            Buffer.MemoryCopy(valPtr, sizeof(long) + valPtr, initialValueSize, initialValueSize); 
+            // now insert the ETag at the start of the valPtr
+            *(long*)valPtr = etagToCheckWith;
+
+            // Make space for key header
+            var keyPtr = key.ToPointer() - sizeof(int);
+            // Set key length
+            *(int*)keyPtr = key.Length;
+
+            NetworkSET_Conditional(RespCommand.SETIFMATCH, 0, keyPtr, valPtr - sizeof(int), value.Length, true, false, ref storageApi);
+
+            return true;
+        }
+
+        /// <summary>
+        /// SETWITHETAG key val
+        /// Sets a key value pair with an ETAG associated with the value internally
+        /// Calling this on a key that already exists is an error case
+        /// </summary>
+        private bool NetworkSETWITHETAG<TGarnetApi>(ref TGarnetApi storageApi)
+            where TGarnetApi : IGarnetApi
+        {
+            Debug.Assert(parseState.Count == 2);
+
+            var key = parseState.GetArgSliceByRef(0).SpanByte;
+            var value = parseState.GetArgSliceByRef(1).SpanByte;
+
+            // Move value forward to make space for ETAG in Value
+            var initialValueSize = value.Length;
+            value.Length += sizeof(long);
+            var valPtr = value.ToPointer();
+            Buffer.MemoryCopy(valPtr, sizeof(long) + valPtr, initialValueSize, initialValueSize); 
+            // now insert the ETag at the start of the valPtr
+            long initialEtag = 0;
+            *(long*)valPtr = initialEtag;
+
+            // Make space for key header
+            var keyPtr = key.ToPointer() - sizeof(int);
+            // Set key length
+            *(int*)keyPtr = key.Length;
+
+            NetworkSET_Conditional(RespCommand.SETWITHETAG, 0, keyPtr, valPtr - sizeof(int), value.Length, false, false, ref storageApi);
+
+            while (!RespWriteUtils.WriteInteger(initialEtag, ref dcurr, dend))
+                SendAndReset();
+
+            return true;
+        }
+
+        /// <summary>
         /// SETRANGE
         /// </summary>
         private bool NetworkSetRange<TGarnetApi>(ref TGarnetApi storageApi)
@@ -672,21 +830,30 @@ namespace Garnet.server
             {
                 var o = new SpanByteAndMemory(dcurr, (int)(dend - dcurr));
                 var status = storageApi.SET_Conditional(ref Unsafe.AsRef<SpanByte>(keyPtr),
-                    ref Unsafe.AsRef<SpanByte>(inputPtr), ref o);
-
+                    ref Unsafe.AsRef<SpanByte>(inputPtr), ref o, cmd);
+                
                 // Status tells us whether an old image was found during RMW or not
-                if (status == GarnetStatus.NOTFOUND)
+                switch (status)
                 {
-                    Debug.Assert(o.IsSpanByte);
-                    while (!RespWriteUtils.WriteDirect(CmdStrings.RESP_ERRNOTFOUND, ref dcurr, dend))
-                        SendAndReset();
-                }
-                else
-                {
-                    if (!o.IsSpanByte)
-                        SendAndReset(o.Memory, o.Length);
-                    else
-                        dcurr += o.Length;
+                    case GarnetStatus.NOTFOUND:
+                        Debug.Assert(o.IsSpanByte);
+                        while (!RespWriteUtils.WriteDirect(CmdStrings.RESP_ERRNOTFOUND, ref dcurr, dend))
+                            SendAndReset();
+                        break;
+                    case GarnetStatus.ETAGMISMATCH:
+                        while (!RespWriteUtils.WriteError(CmdStrings.RESP_ETAGMISMTACH, ref dcurr, dend))
+                            SendAndReset();
+                        break;
+                    case GarnetStatus.WRONGTYPE:
+                        while (!RespWriteUtils.WriteError(CmdStrings.RESP_ERR_WRONG_TYPE, ref dcurr, dend))
+                            SendAndReset();
+                        break;
+                    default:
+                        if (!o.IsSpanByte)
+                            SendAndReset(o.Memory, o.Length);
+                        else
+                            dcurr += o.Length;
+                        break;
                 }
             }
             else
@@ -697,16 +864,17 @@ namespace Garnet.server
                 bool ok = status != GarnetStatus.NOTFOUND;
 
                 // Status tells us whether an old image was found during RMW or not
-                // For a "set if not exists", NOTFOUND means the operation succeeded
+                // For a "set if not exists" or "set with etag", NOTFOUND means the operation succeeded
                 // So we invert the ok flag
-                if (cmd == RespCommand.SETEXNX)
+                if (cmd == RespCommand.SETEXNX || cmd == RespCommand.SETWITHETAG)
                     ok = !ok;
                 if (!ok)
                 {
                     while (!RespWriteUtils.WriteDirect(CmdStrings.RESP_ERRNOTFOUND, ref dcurr, dend))
                         SendAndReset();
                 }
-                else
+                // SETWITHETAG writes back the initial ETAG set back to client outside of this method
+                else if (cmd != RespCommand.SETWITHETAG)
                 {
                     while (!RespWriteUtils.WriteDirect(CmdStrings.RESP_OK, ref dcurr, dend))
                         SendAndReset();

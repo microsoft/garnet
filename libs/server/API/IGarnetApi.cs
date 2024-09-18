@@ -27,7 +27,7 @@ namespace Garnet.server
         /// <summary>
         /// SET Conditional
         /// </summary>
-        GarnetStatus SET_Conditional(ref SpanByte key, ref SpanByte input, ref SpanByteAndMemory output);
+        GarnetStatus SET_Conditional(ref SpanByte key, ref SpanByte input, ref SpanByteAndMemory output, RespCommand cmd);
 
         /// <summary>
         /// SET
@@ -999,6 +999,11 @@ namespace Garnet.server
         /// GET
         /// </summary>
         GarnetStatus GET(ref SpanByte key, ref SpanByte input, ref SpanByteAndMemory output);
+
+        /// <summary>
+        /// GET
+        /// </summary>
+        GarnetStatus GETForETagCmd(ref SpanByte key, ref SpanByte input, ref SpanByteAndMemory output);
 
         /// <summary>
         /// GET

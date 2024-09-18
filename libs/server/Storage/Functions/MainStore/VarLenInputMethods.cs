@@ -164,6 +164,7 @@ namespace Garnet.server
                     case RespCommand.SETKEEPTTL:
                         return sizeof(int) + t.MetadataSize + input.Length - RespInputHeader.Size;
 
+                    case RespCommand.SETIFMATCH:
                     case RespCommand.SET:
                     case RespCommand.SETEXXX:
                     case RespCommand.PERSIST:

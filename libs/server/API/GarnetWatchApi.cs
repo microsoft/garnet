@@ -29,6 +29,13 @@ namespace Garnet.server
             return garnetApi.GET(ref key, ref input, ref output);
         }
 
+        public GarnetStatus GETForETagCmd(ref SpanByte key, ref SpanByte input, ref SpanByteAndMemory output)
+        {
+            garnetApi.WATCH(new ArgSlice(ref key), StoreType.Main);
+            return garnetApi.GETForETagCmd(ref key, ref input, ref output);
+        }
+
+
         /// <inheritdoc />
         public GarnetStatus GETForMemoryResult(ArgSlice key, out MemoryResult<byte> value)
         {

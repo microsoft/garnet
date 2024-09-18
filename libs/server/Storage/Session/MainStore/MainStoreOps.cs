@@ -2,6 +2,7 @@
 // Licensed under the MIT license.
 
 using System;
+using System.Collections;
 using System.Diagnostics;
 using System.Runtime.CompilerServices;
 using Garnet.common;
@@ -28,6 +29,40 @@ namespace Garnet.server
                 StartPendingMetrics();
                 CompletePendingForSession(ref status, ref output, ref context);
                 StopPendingMetrics();
+            }
+
+            if (status.Found)
+            {
+                incr_session_found();
+                return GarnetStatus.OK;
+            }
+            else
+            {
+                incr_session_notfound();
+                return GarnetStatus.NOTFOUND;
+            }
+        }
+
+        // We separate this function altogether for being able to filter out WONGTYPE so no overhead is incurred in the common path from branching
+        // that this method call would have added in the instructions. This let's GET method calls function without overhead as they did before ETags
+        // were added
+        public GarnetStatus GETForETagCmd<TContext>(ref SpanByte key, ref SpanByte input, ref SpanByteAndMemory output, ref TContext context)
+            where TContext : ITsavoriteContext<SpanByte, SpanByte, SpanByte, SpanByteAndMemory, long, MainSessionFunctions, MainStoreFunctions, MainStoreAllocator>
+        {
+            long ctx = default;
+            var status = context.Read(ref key, ref input, ref output, ctx);
+
+            if (status.IsPending)
+            {
+                StartPendingMetrics();
+                CompletePendingForSession(ref status, ref output, ref context);
+                StopPendingMetrics();
+            }
+
+            if (status.IsCanceled)
+            {
+                // Cancelled Read operation on a Get call for any ETag based APIs inidcates that the cmd was applied to a non-etag record
+                return GarnetStatus.WRONGTYPE;
             }
 
             if (status.Found)
@@ -352,6 +387,36 @@ namespace Garnet.server
             {
                 incr_session_notfound();
                 return GarnetStatus.NOTFOUND;
+            }
+            else
+            {
+                incr_session_found();
+                return GarnetStatus.OK;
+            }
+        }
+
+        public unsafe GarnetStatus SET_Conditional<TContext>(ref SpanByte key, ref SpanByte input, ref SpanByteAndMemory output, ref TContext context, RespCommand cmd)
+            where TContext : ITsavoriteContext<SpanByte, SpanByte, SpanByte, SpanByteAndMemory, long, MainSessionFunctions, MainStoreFunctions, MainStoreAllocator>
+        {
+            var status = context.RMW(ref key, ref input, ref output);
+
+            if (status.IsPending)
+            {
+                StartPendingMetrics();
+                CompletePendingForSession(ref status, ref output, ref context);
+                StopPendingMetrics();
+            }
+
+            if (status.NotFound)
+            {
+                incr_session_notfound();
+                return GarnetStatus.NOTFOUND;
+            }
+            else if (cmd == RespCommand.SETIFMATCH && !status.IsUpdated)
+            {
+                // The RMW operation for SETIFMATCH upon not finding the etags match between the existing record and sent etag returns Cancelled Operation
+                incr_session_found();
+                return status.IsCanceled ? GarnetStatus.ETAGMISMATCH : GarnetStatus.WRONGTYPE;
             }
             else
             {

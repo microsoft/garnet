@@ -259,6 +259,27 @@ namespace Garnet.test
         }
 
         [Test]
+        public void LargeSetGetForEtagSetData()
+        {
+            using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
+            var db = redis.GetDatabase(0);
+
+            const int length = (1 << 19) + 100;
+            var value = new byte[length];
+
+            for (int i = 0; i < length; i++)
+                value[i] = (byte)((byte)'a' + ((byte)i % 26));
+
+            long initalEtag = long.Parse(db.Execute("SETWITHETAG", ["mykey", value]).ToString());
+            ClassicAssert.AreEqual(0, initalEtag);
+
+            // Backwards compatability of data set with etag and plain GET call
+            var retvalue = (byte[])db.StringGet("mykey");
+
+            ClassicAssert.IsTrue(new ReadOnlySpan<byte>(value).SequenceEqual(new ReadOnlySpan<byte>(retvalue)));
+        }
+
+        [Test]
         public void SetExpiry()
         {
             using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
@@ -281,6 +302,51 @@ namespace Garnet.test
 
             // Sleep to wait for expiration
             Thread.Sleep(2000);
+
+            retValue = db.StringGet("mykey");
+            ClassicAssert.AreEqual(null, retValue, "Get() after expiration");
+
+            actualDbSize = db.Execute("DBSIZE");
+            ClassicAssert.AreEqual(0, (ulong)actualDbSize, "DBSIZE after expiration");
+
+            actualKeys = db.Execute("KEYS", ["*"]);
+            ClassicAssert.AreEqual(0, ((RedisResult[])actualKeys).Length, "KEYS after expiration");
+
+            actualScan = db.Execute("SCAN", "0");
+            ClassicAssert.AreEqual(0, ((RedisValue[])((RedisResult[])actualScan!)[1]).Length, "SCAN after expiration");
+        }
+
+
+        [Test]
+        public void SetExpiryForEtagSetData()
+        {
+            using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
+            var db = redis.GetDatabase(0);
+
+            string origValue = "abcdefghij";
+
+            // set with etag
+            long initalEtag = long.Parse(db.Execute("SETWITHETAG", ["mykey", origValue]).ToString());
+            ClassicAssert.AreEqual(0, initalEtag);
+
+            // Expire the key in few seconds from now
+            ClassicAssert.IsTrue(
+                db.KeyExpire("mykey", TimeSpan.FromSeconds(2))
+            );
+
+            string retValue = db.StringGet("mykey");
+            ClassicAssert.AreEqual(origValue, retValue, "Get() before expiration");
+
+            var actualDbSize = db.Execute("DBSIZE");
+            ClassicAssert.AreEqual(1, (ulong)actualDbSize, "DBSIZE before expiration");
+
+            var actualKeys = db.Execute("KEYS", ["*"]);
+            ClassicAssert.AreEqual(1, ((RedisResult[])actualKeys).Length, "KEYS before expiration");
+
+            var actualScan = db.Execute("SCAN", "0");
+            ClassicAssert.AreEqual(1, ((RedisValue[])((RedisResult[])actualScan!)[1]).Length, "SCAN before expiration");
+
+            Thread.Sleep(2500);
 
             retValue = db.StringGet("mykey");
             ClassicAssert.AreEqual(null, retValue, "Get() after expiration");
@@ -384,6 +450,75 @@ namespace Garnet.test
             ClassicAssert.AreEqual(origValue, retValue);
             retValue = db.StringGet(key);
             ClassicAssert.AreEqual(newValue1, retValue);
+
+            // Smaller new value with KeepTtl
+            string newValue2 = "abcdefghijklmnopqr";
+            retValue = db.StringSetAndGet(key, newValue2, null, true, When.Always, CommandFlags.None);
+            ClassicAssert.AreEqual(newValue1, retValue);
+            retValue = db.StringGet(key);
+            ClassicAssert.AreEqual(newValue2, retValue);
+            var expiry = db.KeyTimeToLive(key);
+            ClassicAssert.IsNull(expiry);
+
+            // Smaller new value with expiration
+            string newValue3 = "01234";
+            retValue = db.StringSetAndGet(key, newValue3, TimeSpan.FromSeconds(10), When.Exists, CommandFlags.None);
+            ClassicAssert.AreEqual(newValue2, retValue);
+            retValue = db.StringGet(key);
+            ClassicAssert.AreEqual(newValue3, retValue);
+            expiry = db.KeyTimeToLive(key);
+            ClassicAssert.IsTrue(expiry.Value.TotalSeconds > 0);
+
+            // Larger new value with expiration
+            string newValue4 = "abcdefghijklmnopqrstabcdefghijklmnopqrst";
+            retValue = db.StringSetAndGet(key, newValue4, TimeSpan.FromSeconds(100), When.Exists, CommandFlags.None);
+            ClassicAssert.AreEqual(newValue3, retValue);
+            retValue = db.StringGet(key);
+            ClassicAssert.AreEqual(newValue4, retValue);
+            expiry = db.KeyTimeToLive(key);
+            ClassicAssert.IsTrue(expiry.Value.TotalSeconds > 0);
+
+            // Smaller new value without expiration
+            string newValue5 = "0123401234";
+            retValue = db.StringSetAndGet(key, newValue5, null, When.Exists, CommandFlags.None);
+            ClassicAssert.AreEqual(newValue4, retValue);
+            retValue = db.StringGet(key);
+            ClassicAssert.AreEqual(newValue5, retValue);
+            expiry = db.KeyTimeToLive(key);
+            ClassicAssert.IsNull(expiry);
+
+            // Larger new value without expiration
+            string newValue6 = "abcdefghijklmnopqrstabcdefghijklmnopqrst";
+            retValue = db.StringSetAndGet(key, newValue6, null, When.Always, CommandFlags.None);
+            ClassicAssert.AreEqual(newValue5, retValue);
+            retValue = db.StringGet(key);
+            ClassicAssert.AreEqual(newValue6, retValue);
+            expiry = db.KeyTimeToLive(key);
+            ClassicAssert.IsNull(expiry);
+        }
+
+        [Test]
+        public void SetGetForEtagSetData()
+        {
+            using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
+            var db = redis.GetDatabase(0);
+
+            string key = "mykey";
+            string origValue = "abcdefghijklmnopqrst";
+
+            // Initial set
+            var _ = db.Execute("SETWITHETAG", [key, origValue]);
+            string retValue = db.StringGet(key);
+            ClassicAssert.AreEqual(origValue, retValue);
+
+            // Smaller new value without expiration
+            string newValue1 = "abcdefghijklmnopqrs";
+            retValue = db.StringSetAndGet(key, newValue1, null, When.Always, CommandFlags.None);
+            ClassicAssert.AreEqual(origValue, retValue);
+            retValue = db.StringGet(key);
+            ClassicAssert.AreEqual(newValue1, retValue);
+
+            // HK TODO: This should increase the ETAG internally so add a check for that here
 
             // Smaller new value with KeepTtl
             string newValue2 = "abcdefghijklmnopqr";

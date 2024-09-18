@@ -133,6 +133,11 @@ namespace Tsavorite.core
         /// </summary>
         public byte Value => (byte)statusCode;
 
+        /// <summary>
+        /// Whther the operation performed an update on the record or not
+        /// </summary>
+        public bool IsUpdated => Record.InPlaceUpdated || Record.CopyUpdated;
+
         /// <inheritdoc />
         /// <remarks>"Found" is zero, so does not appear in the output by default; this handles that explicitly</remarks>
         public override string ToString() => (Found ? "Found, " : string.Empty) + statusCode.ToString();
