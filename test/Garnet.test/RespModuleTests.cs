@@ -65,7 +65,6 @@ namespace Garnet.test
                     using System.Collections.Generic; 
                     using Garnet; 
                     using Garnet.server; 
-                    using Garnet.server.Module; 
                     using Tsavorite.core; 
                     namespace TestGarnetModule  
                     {  
