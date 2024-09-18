@@ -280,7 +280,7 @@ namespace Garnet.server
             {
                 // Set authenticated user or fall back to default user, if separate users are not supported
                 // NOTE: Currently only GarnetACLAuthenticator supports multiple users
-                if (_authenticator is IGarnetAclAuthenticator aclAuthenticator)
+                if (_authenticator is GarnetACLAuthenticator aclAuthenticator)
                 {
                     this._user = aclAuthenticator.GetUser();
                 }
