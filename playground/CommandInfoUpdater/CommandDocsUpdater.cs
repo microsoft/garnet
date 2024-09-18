@@ -73,13 +73,38 @@ namespace CommandInfoUpdater
                     var baseCommandDocs = queriedCommandsDocs.TryGetValue(cmd, out var doc)
                         ? doc
                         : garnetCommandsDocs[cmd];
+
+                    RespCommandDocs[] subCommandsDocs;
+                    if (garnetCommandsDocs.ContainsKey(cmd) && queriedCommandsDocs.ContainsKey(cmd))
+                    {
+                        var subCommandsInfoMap = new Dictionary<string, RespCommandDocs>();
+
+                        if (garnetCommandsDocs.TryGetValue(cmd, out var garnetCmdDocs) && garnetCmdDocs.SubCommands != null)
+                        {
+                            foreach (var sc in garnetCmdDocs.SubCommands)
+                                subCommandsInfoMap.Add(sc.Name, sc);
+                        }
+
+                        if (queriedCommandsDocs.TryGetValue(cmd, out var queriedCmdDocs) && queriedCmdDocs.SubCommands != null)
+                        {
+                            foreach (var sc in queriedCmdDocs.SubCommands)
+                            {
+                                subCommandsInfoMap.TryAdd(sc.Name, sc);
+                            }
+                        }
+
+                        subCommandsDocs = subCommandsInfoMap.Values.ToArray();
+                    }
+                    else
+                    {
+                        subCommandsDocs = baseCommandDocs.SubCommands;
+                    }
+
                     additionalCommandsDocs.Add(cmd, new RespCommandDocs(
                         baseCommandDocs.Command, baseCommandDocs.Name, baseCommandDocs.Summary, baseCommandDocs.Group,
                         baseCommandDocs.Complexity,
                         baseCommandDocs.DocFlags, baseCommandDocs.ReplacedBy, baseCommandDocs.Arguments,
-                        queriedCommandsDocs.ContainsKey(cmd) && garnetCommandsDocs.ContainsKey(cmd)
-                            ? queriedCommandsDocs[cmd].SubCommands == null ? garnetCommandsDocs[cmd].SubCommands : queriedCommandsDocs[cmd].SubCommands.Union(garnetCommandsDocs[cmd].SubCommands).ToArray()
-                            : baseCommandDocs.SubCommands));
+                        subCommandsDocs));
                 }
             }
 
@@ -119,7 +144,7 @@ namespace CommandInfoUpdater
 
             // Get a map of supported commands to Garnet's RespCommand & ArrayCommand for the parser
             var supportedCommands = new ReadOnlyDictionary<string, RespCommand>(
-                SupportedCommand.SupportedCommandsMap.ToDictionary(kvp => kvp.Key,
+                SupportedCommand.SupportedCommandsFlattenedMap.ToDictionary(kvp => kvp.Key,
                     kvp => kvp.Value.RespCommand, StringComparer.OrdinalIgnoreCase));
 
             var configOptions = new ConfigurationOptions()
@@ -184,7 +209,7 @@ namespace CommandInfoUpdater
                     : existingCommandsDocs[command.Command].SubCommands.Select(sc => sc.Name).ToArray();
                 var remainingSubCommands = existingSubCommands == null ? null :
                     command.SubCommands == null ? existingSubCommands :
-                    existingSubCommands.Except(command.SubCommands).ToArray();
+                    existingSubCommands.Except(command.SubCommands.Keys).ToArray();
 
                 // Create updated command docs based on existing command
                 var existingCommandDoc = existingCommandsDocs[command.Command];
@@ -220,7 +245,7 @@ namespace CommandInfoUpdater
                     foreach (var subCommandToAdd in command.SubCommands!)
                     {
                         updatedSubCommandsDocs.Add(queriedCommandsDocs[command.Command].SubCommands
-                            .First(sc => sc.Name == subCommandToAdd));
+                            .First(sc => sc.Name == subCommandToAdd.Key));
                     }
 
                     // Set base command as existing sub-command
@@ -235,7 +260,7 @@ namespace CommandInfoUpdater
                     // Update sub-commands to contain supported sub-commands only
                     updatedSubCommandsDocs = command.SubCommands == null
                         ? null
-                        : baseCommandDocs.SubCommands.Where(sc => command.SubCommands.Contains(sc.Name)).ToList();
+                        : baseCommandDocs.SubCommands.Where(sc => command.SubCommands.Keys.Contains(sc.Name)).ToList();
                 }
 
                 // Create updated command docs based on base command & updated sub-commands

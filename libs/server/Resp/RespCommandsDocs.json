@@ -7,14 +7,7 @@
     "Complexity": "Depends on subcommand.",
     "SubCommands": [
       {
-        "Command": "ACL",
-        "Name": "ACL|LIST",
-        "Summary": "Dumps the effective rules in ACL file format.",
-        "Group": "Server",
-        "Complexity": "O(N). Where N is the number of configured users."
-      },
-      {
-        "Command": "ACL",
+        "Command": "ACL_CAT",
         "Name": "ACL|CAT",
         "Summary": "Lists the ACL categories, or the commands inside a category.",
         "Group": "Server",
@@ -30,14 +23,14 @@
         ]
       },
       {
-        "Command": "ACL",
+        "Command": "ACL_LOAD",
         "Name": "ACL|LOAD",
         "Summary": "Reloads the rules from the configured ACL file.",
         "Group": "Server",
         "Complexity": "O(N). Where N is the number of configured users."
       },
       {
-        "Command": "ACL",
+        "Command": "ACL_DELUSER",
         "Name": "ACL|DELUSER",
         "Summary": "Deletes ACL users, and terminates their connections.",
         "Group": "Server",
@@ -53,14 +46,21 @@
         ]
       },
       {
-        "Command": "ACL",
+        "Command": "ACL_USERS",
         "Name": "ACL|USERS",
         "Summary": "Lists all ACL users.",
         "Group": "Server",
         "Complexity": "O(N). Where N is the number of configured users."
       },
       {
-        "Command": "ACL",
+        "Command": "ACL_LIST",
+        "Name": "ACL|LIST",
+        "Summary": "Dumps the effective rules in ACL file format.",
+        "Group": "Server",
+        "Complexity": "O(N). Where N is the number of configured users."
+      },
+      {
+        "Command": "ACL_SETUSER",
         "Name": "ACL|SETUSER",
         "Summary": "Creates and modifies an ACL user and its rules.",
         "Group": "Server",
@@ -82,14 +82,14 @@
         ]
       },
       {
-        "Command": "ACL",
+        "Command": "ACL_WHOAMI",
         "Name": "ACL|WHOAMI",
         "Summary": "Returns the authenticated username of the current connection.",
         "Group": "Server",
         "Complexity": "O(1)"
       },
       {
-        "Command": "ACL",
+        "Command": "ACL_SAVE",
         "Name": "ACL|SAVE",
         "Summary": "Saves the effective ACL rules in the configured ACL file.",
         "Group": "Server",
@@ -660,7 +660,7 @@
     "Complexity": "Depends on subcommand.",
     "SubCommands": [
       {
-        "Command": "CLIENT",
+        "Command": "CLIENT_KILL",
         "Name": "CLIENT|KILL",
         "Summary": "Terminates open connections.",
         "Group": "Connection",
@@ -789,14 +789,14 @@
         ]
       },
       {
-        "Command": "CLIENT",
+        "Command": "CLIENT_INFO",
         "Name": "CLIENT|INFO",
         "Summary": "Returns information about the connection.",
         "Group": "Connection",
         "Complexity": "O(1)"
       },
       {
-        "Command": "CLIENT",
+        "Command": "CLIENT_LIST",
         "Name": "CLIENT|LIST",
         "Summary": "Lists open connections.",
         "Group": "Connection",
@@ -850,7 +850,7 @@
         ]
       },
       {
-        "Command": "CLIENT",
+        "Command": "CLIENT_ID",
         "Name": "CLIENT|ID",
         "Summary": "Returns the unique client ID of the connection.",
         "Group": "Connection",
@@ -866,7 +866,83 @@
     "Complexity": "Depends on subcommand.",
     "SubCommands": [
       {
-        "Command": "CLUSTER",
+        "Command": "CLUSTER_AOFSYNC",
+        "Name": "CLUSTER|AOFSYNC"
+      },
+      {
+        "Command": "CLUSTER_APPENDLOG",
+        "Name": "CLUSTER|APPENDLOG"
+      },
+      {
+        "Command": "CLUSTER_BANLIST",
+        "Name": "CLUSTER|BANLIST"
+      },
+      {
+        "Command": "CLUSTER_BEGIN_REPLICA_RECOVER",
+        "Name": "CLUSTER|BEGIN_REPLICA_RECOVER"
+      },
+      {
+        "Command": "CLUSTER_DELKEYSINSLOT",
+        "Name": "CLUSTER|DELKEYSINSLOT"
+      },
+      {
+        "Command": "CLUSTER_DELKEYSINSLOTRANGE",
+        "Name": "CLUSTER|DELKEYSINSLOTRANGE"
+      },
+      {
+        "Command": "CLUSTER_ENDPOINT",
+        "Name": "CLUSTER|ENDPOINT"
+      },
+      {
+        "Command": "CLUSTER_FAILSTOPWRITES",
+        "Name": "CLUSTER|FAILSTOPWRITES"
+      },
+      {
+        "Command": "CLUSTER_FAILREPLICATIONOFFSET",
+        "Name": "CLUSTER|FAILREPLICATIONOFFSET"
+      },
+      {
+        "Command": "CLUSTER_GOSSIP",
+        "Name": "CLUSTER|GOSSIP"
+      },
+      {
+        "Command": "CLUSTER_HELP",
+        "Name": "CLUSTER|HELP"
+      },
+      {
+        "Command": "CLUSTER_INITIATE_REPLICA_SYNC",
+        "Name": "CLUSTER|INITIATE_REPLICA_SYNC"
+      },
+      {
+        "Command": "CLUSTER_MIGRATE",
+        "Name": "CLUSTER|MIGRATE"
+      },
+      {
+        "Command": "CLUSTER_MTASKS",
+        "Name": "CLUSTER|MTASKS"
+      },
+      {
+        "Command": "CLUSTER_MYPARENTID",
+        "Name": "CLUSTER|MYPARENTID"
+      },
+      {
+        "Command": "CLUSTER_SEND_CKPT_FILE_SEGMENT",
+        "Name": "CLUSTER|SEND_CKPT_FILE_SEGMENT"
+      },
+      {
+        "Command": "CLUSTER_SEND_CKPT_METADATA",
+        "Name": "CLUSTER|SEND_CKPT_METADATA"
+      },
+      {
+        "Command": "CLUSTER_SETSLOTSRANGE",
+        "Name": "CLUSTER|SETSLOTSRANGE"
+      },
+      {
+        "Command": "CLUSTER_SLOTSTATE",
+        "Name": "CLUSTER|SLOTSTATE"
+      },
+      {
+        "Command": "CLUSTER_ADDSLOTS",
         "Name": "CLUSTER|ADDSLOTS",
         "Summary": "Assigns new hash slots to a node.",
         "Group": "Cluster",
@@ -882,7 +958,7 @@
         ]
       },
       {
-        "Command": "CLUSTER",
+        "Command": "CLUSTER_KEYSLOT",
         "Name": "CLUSTER|KEYSLOT",
         "Summary": "Returns the hash slot for a key.",
         "Group": "Cluster",
@@ -897,7 +973,7 @@
         ]
       },
       {
-        "Command": "CLUSTER",
+        "Command": "CLUSTER_SETSLOT",
         "Name": "CLUSTER|SETSLOT",
         "Summary": "Binds a hash slot to a node.",
         "Group": "Cluster",
@@ -947,7 +1023,7 @@
         ]
       },
       {
-        "Command": "CLUSTER",
+        "Command": "CLUSTER_FORGET",
         "Name": "CLUSTER|FORGET",
         "Summary": "Removes a node from the nodes table.",
         "Group": "Cluster",
@@ -962,28 +1038,21 @@
         ]
       },
       {
-        "Command": "CLUSTER",
+        "Command": "CLUSTER_SHARDS",
         "Name": "CLUSTER|SHARDS",
         "Summary": "Returns the mapping of cluster slots to shards.",
         "Group": "Cluster",
         "Complexity": "O(N) where N is the total number of cluster nodes"
       },
       {
-        "Command": "CLUSTER",
+        "Command": "CLUSTER_INFO",
         "Name": "CLUSTER|INFO",
         "Summary": "Returns information about the state of a node.",
         "Group": "Cluster",
         "Complexity": "O(1)"
       },
       {
-        "Command": "CLUSTER",
-        "Name": "CLUSTER|HELP",
-        "Summary": "Returns helpful text about the different subcommands.",
-        "Group": "Cluster",
-        "Complexity": "O(1)"
-      },
-      {
-        "Command": "CLUSTER",
+        "Command": "CLUSTER_SETCONFIGEPOCH",
         "Name": "CLUSTER|SET-CONFIG-EPOCH",
         "Summary": "Sets the configuration epoch for a new node.",
         "Group": "Cluster",
@@ -998,7 +1067,7 @@
         ]
       },
       {
-        "Command": "CLUSTER",
+        "Command": "CLUSTER_ADDSLOTSRANGE",
         "Name": "CLUSTER|ADDSLOTSRANGE",
         "Summary": "Assigns new hash slot ranges to a node.",
         "Group": "Cluster",
@@ -1027,7 +1096,7 @@
         ]
       },
       {
-        "Command": "CLUSTER",
+        "Command": "CLUSTER_SLOTS",
         "Name": "CLUSTER|SLOTS",
         "Summary": "Returns the mapping of cluster slots to nodes.",
         "Group": "Cluster",
@@ -1036,14 +1105,14 @@
         "ReplacedBy": "\u0060CLUSTER SHARDS\u0060"
       },
       {
-        "Command": "CLUSTER",
+        "Command": "CLUSTER_BUMPEPOCH",
         "Name": "CLUSTER|BUMPEPOCH",
         "Summary": "Advances the cluster config epoch.",
         "Group": "Cluster",
         "Complexity": "O(1)"
       },
       {
-        "Command": "CLUSTER",
+        "Command": "CLUSTER_REPLICAS",
         "Name": "CLUSTER|REPLICAS",
         "Summary": "Lists the replica nodes of a master node.",
         "Group": "Cluster",
@@ -1058,7 +1127,7 @@
         ]
       },
       {
-        "Command": "CLUSTER",
+        "Command": "CLUSTER_FAILOVER",
         "Name": "CLUSTER|FAILOVER",
         "Summary": "Forces a replica to perform a manual failover of its master.",
         "Group": "Cluster",
@@ -1089,7 +1158,7 @@
         ]
       },
       {
-        "Command": "CLUSTER",
+        "Command": "CLUSTER_DELSLOTSRANGE",
         "Name": "CLUSTER|DELSLOTSRANGE",
         "Summary": "Sets hash slot ranges as unbound for a node.",
         "Group": "Cluster",
@@ -1118,7 +1187,7 @@
         ]
       },
       {
-        "Command": "CLUSTER",
+        "Command": "CLUSTER_COUNTKEYSINSLOT",
         "Name": "CLUSTER|COUNTKEYSINSLOT",
         "Summary": "Returns the number of keys in a hash slot.",
         "Group": "Cluster",
@@ -1133,7 +1202,7 @@
         ]
       },
       {
-        "Command": "CLUSTER",
+        "Command": "CLUSTER_RESET",
         "Name": "CLUSTER|RESET",
         "Summary": "Resets a node.",
         "Group": "Cluster",
@@ -1164,7 +1233,7 @@
         ]
       },
       {
-        "Command": "CLUSTER",
+        "Command": "CLUSTER_MEET",
         "Name": "CLUSTER|MEET",
         "Summary": "Forces a node to handshake with another node.",
         "Group": "Cluster",
@@ -1192,7 +1261,7 @@
         ]
       },
       {
-        "Command": "CLUSTER",
+        "Command": "CLUSTER_REPLICATE",
         "Name": "CLUSTER|REPLICATE",
         "Summary": "Configure a node as replica of a master node.",
         "Group": "Cluster",
@@ -1207,14 +1276,14 @@
         ]
       },
       {
-        "Command": "CLUSTER",
+        "Command": "CLUSTER_NODES",
         "Name": "CLUSTER|NODES",
         "Summary": "Returns the cluster configuration for a node.",
         "Group": "Cluster",
         "Complexity": "O(N) where N is the total number of Cluster nodes"
       },
       {
-        "Command": "CLUSTER",
+        "Command": "CLUSTER_GETKEYSINSLOT",
         "Name": "CLUSTER|GETKEYSINSLOT",
         "Summary": "Returns the key names in a hash slot.",
         "Group": "Cluster",
@@ -1235,7 +1304,7 @@
         ]
       },
       {
-        "Command": "CLUSTER",
+        "Command": "CLUSTER_DELSLOTS",
         "Name": "CLUSTER|DELSLOTS",
         "Summary": "Sets hash slots as unbound for a node.",
         "Group": "Cluster",
@@ -1251,87 +1320,11 @@
         ]
       },
       {
-        "Command": "CLUSTER",
+        "Command": "CLUSTER_MYID",
         "Name": "CLUSTER|MYID",
         "Summary": "Returns the ID of a node.",
         "Group": "Cluster",
         "Complexity": "O(1)"
-      },
-      {
-        "Command": "CLUSTER",
-        "Name": "CLUSTER|AOFSYNC"
-      },
-      {
-        "Command": "CLUSTER",
-        "Name": "CLUSTER|APPENDLOG"
-      },
-      {
-        "Command": "CLUSTER",
-        "Name": "CLUSTER|BANLIST"
-      },
-      {
-        "Command": "CLUSTER",
-        "Name": "CLUSTER|BEGIN_REPLICA_RECOVER"
-      },
-      {
-        "Command": "CLUSTER",
-        "Name": "CLUSTER|DELKEYSINSLOT"
-      },
-      {
-        "Command": "CLUSTER",
-        "Name": "CLUSTER|DELKEYSINSLOTRANGE"
-      },
-      {
-        "Command": "CLUSTER",
-        "Name": "CLUSTER|ENDPOINT"
-      },
-      {
-        "Command": "CLUSTER",
-        "Name": "CLUSTER|FAILSTOPWRITES"
-      },
-      {
-        "Command": "CLUSTER",
-        "Name": "CLUSTER|FAILREPLICATIONOFFSET"
-      },
-      {
-        "Command": "CLUSTER",
-        "Name": "CLUSTER|GOSSIP"
-      },
-      {
-        "Command": "CLUSTER",
-        "Name": "CLUSTER|HELP"
-      },
-      {
-        "Command": "CLUSTER",
-        "Name": "CLUSTER|INITIATE_REPLICA_SYNC"
-      },
-      {
-        "Command": "CLUSTER",
-        "Name": "CLUSTER|MIGRATE"
-      },
-      {
-        "Command": "CLUSTER",
-        "Name": "CLUSTER|MTASKS"
-      },
-      {
-        "Command": "CLUSTER",
-        "Name": "CLUSTER|MYPARENTID"
-      },
-      {
-        "Command": "CLUSTER",
-        "Name": "CLUSTER|SEND_CKPT_FILE_SEGMENT"
-      },
-      {
-        "Command": "CLUSTER",
-        "Name": "CLUSTER|SEND_CKPT_METADATA"
-      },
-      {
-        "Command": "CLUSTER",
-        "Name": "CLUSTER|SETSLOTSRANGE"
-      },
-      {
-        "Command": "CLUSTER",
-        "Name": "CLUSTER|SLOTSTATE"
       }
     ]
   },
@@ -1343,7 +1336,7 @@
     "Complexity": "O(N) where N is the total number of Redis commands",
     "SubCommands": [
       {
-        "Command": "COMMAND",
+        "Command": "COMMAND_INFO",
         "Name": "COMMAND|INFO",
         "Summary": "Returns information about one, multiple or all commands.",
         "Group": "Server",
@@ -1359,14 +1352,14 @@
         ]
       },
       {
-        "Command": "COMMAND",
+        "Command": "COMMAND_COUNT",
         "Name": "COMMAND|COUNT",
         "Summary": "Returns a count of commands.",
         "Group": "Server",
         "Complexity": "O(1)"
       },
       {
-        "Command": "COMMAND",
+        "Command": "COMMAND_DOCS",
         "Name": "COMMAND|DOCS",
         "Summary": "Returns documentary information about one, multiple or all commands.",
         "Group": "Server",
@@ -1395,14 +1388,14 @@
     "Complexity": "Depends on subcommand.",
     "SubCommands": [
       {
-        "Command": "CONFIG",
+        "Command": "CONFIG_REWRITE",
         "Name": "CONFIG|REWRITE",
         "Summary": "Persists the effective configuration to file.",
         "Group": "Server",
         "Complexity": "O(1)"
       },
       {
-        "Command": "CONFIG",
+        "Command": "CONFIG_SET",
         "Name": "CONFIG|SET",
         "Summary": "Sets configuration parameters in-flight.",
         "Group": "Server",
@@ -1431,7 +1424,7 @@
         ]
       },
       {
-        "Command": "CONFIG",
+        "Command": "CONFIG_GET",
         "Name": "CONFIG|GET",
         "Summary": "Returns the effective values of configuration parameters.",
         "Group": "Server",
@@ -2866,7 +2859,11 @@
     "Complexity": "Depends on subcommand.",
     "SubCommands": [
       {
-        "Command": "LATENCY",
+        "Command": "LATENCY_HELP",
+        "Name": "LATENCY|HELP"
+      },
+      {
+        "Command": "LATENCY_HISTOGRAM",
         "Name": "LATENCY|HISTOGRAM",
         "Summary": "Returns the cumulative distribution of latencies of a subset or all commands.",
         "Group": "Server",
@@ -2882,14 +2879,7 @@
         ]
       },
       {
-        "Command": "LATENCY",
-        "Name": "LATENCY|HELP",
-        "Summary": "Returns helpful text about the different subcommands.",
-        "Group": "Server",
-        "Complexity": "O(1)"
-      },
-      {
-        "Command": "LATENCY",
+        "Command": "LATENCY_RESET",
         "Name": "LATENCY|RESET",
         "Summary": "Resets the latency data for one or more events.",
         "Group": "Server",
@@ -2903,10 +2893,6 @@
             "ArgumentFlags": "Optional, Multiple"
           }
         ]
-      },
-      {
-        "Command": "LATENCY",
-        "Name": "LATENCY|HELP"
       }
     ]
   },
@@ -3303,7 +3289,7 @@
     "Complexity": "Depends on subcommand.",
     "SubCommands": [
       {
-        "Command": "MEMORY",
+        "Command": "MEMORY_USAGE",
         "Name": "MEMORY|USAGE",
         "Summary": "Estimates the memory usage of a key.",
         "Group": "Server",
@@ -3467,7 +3453,7 @@
     "Complexity": "Depends on subcommand.",
     "SubCommands": [
       {
-        "Command": "MODULE",
+        "Command": "MODULE_LOADCS",
         "Name": "MODULE|LOADCS"
       }
     ]
@@ -4768,11 +4754,11 @@
     "Complexity": "O(1) for every key.",
     "SubCommands": [
       {
-        "Command": "WATCH",
+        "Command": "WATCH_MS",
         "Name": "WATCH|MS"
       },
       {
-        "Command": "WATCH",
+        "Command": "WATCH_OS",
         "Name": "WATCH|OS"
       }
     ],

@@ -63,6 +63,10 @@ namespace Garnet.server.Resp
         /// </summary>
         public RespCommandDocs[] SubCommands { get; init; }
 
+        /// <inheritdoc />
+        [JsonIgnore]
+        public RespCommandDocs Parent { get; set; }
+
         /// <summary>
         /// The command's arguments
         /// </summary>
@@ -84,7 +88,9 @@ namespace Garnet.server.Resp
         private static bool IsInitialized = false;
         private static readonly object IsInitializedLock = new();
         private static IReadOnlyDictionary<string, RespCommandDocs> AllRespCommandsDocs = null;
+        private static IReadOnlyDictionary<string, RespCommandDocs> AllRespSubCommandsDocs = null;
         private static IReadOnlyDictionary<string, RespCommandDocs> ExternalRespCommandsDocs = null;
+        private static IReadOnlyDictionary<string, RespCommandDocs> ExternalRespSubCommandsDocs = null;
 
         public RespCommandDocs(RespCommand command, string name, string summary, RespCommandGroup group, string complexity,
             RespCommandDocFlags docFlags, string replacedBy, RespCommandArgumentBase[] args, RespCommandDocs[] subCommands) : this()
@@ -133,11 +139,33 @@ namespace Garnet.server.Resp
             if (!RespCommandsInfo.TryGetRespCommandNames(out var allExternalCommands, true, logger))
                 return false;
 
+            var tmpAllSubCommandsDocs = new Dictionary<string, RespCommandDocs>(StringComparer.OrdinalIgnoreCase);
+            var tmpExternalSubCommandsDocs = new Dictionary<string, RespCommandDocs>(StringComparer.OrdinalIgnoreCase);
+            foreach (var kvp in tmpAllRespCommandsDocs)
+            {
+                if (kvp.Value.SubCommands == null) continue;
+
+                foreach (var sc in kvp.Value.SubCommands)
+                {
+                    tmpAllSubCommandsDocs.Add(sc.Name, sc);
+
+                    // If parent command or sub-subcommand info mark the command as internal,
+                    // don't add it to the external sub-command map
+                    if (!RespCommandsInfo.TryGetRespCommandInfo(sc.Command, out var subCmdInfo) ||
+                        subCmdInfo.IsInternal || subCmdInfo.Parent.IsInternal)
+                        continue;
+                    
+                    tmpExternalSubCommandsDocs.Add(sc.Name, sc);
+                }
+            }
+
             AllRespCommandsDocs =
                 new Dictionary<string, RespCommandDocs>(tmpAllRespCommandsDocs, StringComparer.OrdinalIgnoreCase);
+            AllRespSubCommandsDocs = new ReadOnlyDictionary<string, RespCommandDocs>(tmpAllSubCommandsDocs);
             ExternalRespCommandsDocs = new ReadOnlyDictionary<string, RespCommandDocs>(tmpAllRespCommandsDocs
                 .Where(ci => allExternalCommands.Contains(ci.Key))
                 .ToDictionary(kvp => kvp.Key, kvp => kvp.Value, StringComparer.OrdinalIgnoreCase));
+            ExternalRespSubCommandsDocs = new ReadOnlyDictionary<string, RespCommandDocs>(tmpExternalSubCommandsDocs);
 
             return true;
         }
@@ -164,14 +192,33 @@ namespace Garnet.server.Resp
         /// <param name="cmdName">The command name</param>
         /// <param name="respCommandsDocs">The command docs</param>
         /// <param name="externalOnly">Return command docs only if command is visible externally</param>
+        /// <param name="includeSubCommands">Include sub-commands in command name search</param>
         /// <param name="logger">Logger</param>
         /// <returns>True if initialization was successful and command docs was found</returns>
-        internal static bool TryGetRespCommandDocs(string cmdName, out RespCommandDocs respCommandsDocs, bool externalOnly = false, ILogger logger = null)
+        internal static bool TryGetRespCommandDocs(string cmdName, out RespCommandDocs respCommandsDocs, bool externalOnly = false, bool includeSubCommands = false, ILogger logger = null)
         {
             respCommandsDocs = default;
 
-            return TryGetRespCommandsDocs(out var cmdsDocs, externalOnly, logger)
-                   && cmdsDocs.TryGetValue(cmdName, out respCommandsDocs);
+            return (TryGetRespCommandsDocs(out var cmdsDocs, externalOnly, logger)
+                    && cmdsDocs.TryGetValue(cmdName, out respCommandsDocs))
+                   || (includeSubCommands && TryGetRespSubCommandsDocs(out var subCmdsDocs, externalOnly, logger)
+                       && subCmdsDocs.TryGetValue(cmdName, out respCommandsDocs));
+        }
+
+        /// <summary>
+        /// Gets all the command docs of sub-commands supported by Garnet
+        /// </summary>
+        /// <param name="respSubCommandsDocs">Mapping between sub-command name to command docs</param>
+        /// <param name="externalOnly">Return only sub-commands that are visible externally</param>
+        /// <param name="logger">Logger</param>
+        /// <returns>True if initialization was successful and data was retrieved successfully</returns>
+        public static bool TryGetRespSubCommandsDocs(out IReadOnlyDictionary<string, RespCommandDocs> respSubCommandsDocs, bool externalOnly = false, ILogger logger = null)
+        {
+            respSubCommandsDocs = default;
+            if (!IsInitialized && !TryInitialize(logger)) return false;
+
+            respSubCommandsDocs = externalOnly ? ExternalRespSubCommandsDocs : AllRespSubCommandsDocs;
+            return true;
         }
 
         /// <inheritdoc />

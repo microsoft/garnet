@@ -35,12 +35,17 @@ namespace Garnet.server
     /// <summary>
     /// An interface for different RESP command data (e.g. RespCommandInfo, RespCommandDocs)
     /// </summary>
-    public interface IRespCommandData<TSubCommandData> : IRespCommandData where TSubCommandData : IRespCommandData
+    public interface IRespCommandData<TCommandData> : IRespCommandData where TCommandData : class, IRespCommandData
     {
         /// <summary>
-        /// All the command's sub-commands, if any
+        /// All the command's sub-commands data, if any
         /// </summary>
-        TSubCommandData[] SubCommands { get; }
+        TCommandData[] SubCommands { get; }
+
+        /// <summary>
+        /// The parent data of the command
+        /// </summary>
+        TCommandData Parent { get; set; }
     }
 
     /// <summary>
@@ -78,7 +83,7 @@ namespace Garnet.server
         /// <returns>IRespCommandsDataProvider instance</returns>
         /// <exception cref="NotImplementedException"></exception>
         public static IRespCommandsDataProvider<TData> GetRespCommandsDataProvider<TData>(
-            RespCommandsDataFileType fileType = RespCommandsDataFileType.Default) where TData : IRespCommandData
+            RespCommandsDataFileType fileType = RespCommandsDataFileType.Default) where TData : class, IRespCommandData<TData>
         {
             switch (fileType)
             {
@@ -93,7 +98,7 @@ namespace Garnet.server
     /// <summary>
     /// Default commands data provider (JSON serialized array of data objects)
     /// </summary>
-    internal class DefaultRespCommandsDataProvider<TData> : IRespCommandsDataProvider<TData> where TData : IRespCommandData
+    internal class DefaultRespCommandsDataProvider<TData> : IRespCommandsDataProvider<TData> where TData : class, IRespCommandData<TData>
     {
         private static readonly Lazy<IRespCommandsDataProvider<TData>> LazyInstance;
 
@@ -131,6 +136,13 @@ namespace Garnet.server
                 foreach (var data in respCommandsData)
                 {
                     tmpRespCommandsData.Add(data.Name, data);
+                    if (data.SubCommands != null)
+                    {
+                        foreach (var subCommand in data.SubCommands)
+                        {
+                            subCommand.Parent = data;
+                        }
+                    }
                 }
 
                 commandsData = new ReadOnlyDictionary<string, TData>(tmpRespCommandsData);

@@ -19,7 +19,7 @@ namespace CommandInfoUpdater
         /// <returns>True if deserialization was successful</returns>
         internal static bool TryGetRespCommandsData<TData>(string resourcePath, ILogger logger,
             out IReadOnlyDictionary<string, TData> commandsData)
-            where TData : IRespCommandData
+            where TData : class, IRespCommandData<TData>
         {
             commandsData = default;
 
@@ -44,7 +44,7 @@ namespace CommandInfoUpdater
         /// <param name="logger">Logger</param>
         /// <returns>True if file written successfully</returns>
         internal static bool TryWriteRespCommandsData<TData>(string outputPath,
-            IReadOnlyDictionary<string, TData> commandsData, ILogger logger) where TData : IRespCommandData
+            IReadOnlyDictionary<string, TData> commandsData, ILogger logger) where TData : class, IRespCommandData<TData>
         {
             if (File.Exists(outputPath))
                 File.Delete(outputPath);
@@ -68,7 +68,7 @@ namespace CommandInfoUpdater
         /// <returns>Commands to add and commands to remove mapped to a boolean determining if parent command should be added / removed</returns>
         internal static (IDictionary<SupportedCommand, bool>, IDictionary<SupportedCommand, bool>)
             GetCommandsToAddAndRemove<TData>(IReadOnlyDictionary<string, TData> existingCommandsInfo,
-                IEnumerable<string> ignoreCommands) where TData : IRespCommandData, IRespCommandData<TData>
+                IEnumerable<string> ignoreCommands) where TData : class, IRespCommandData<TData>
         {
             var commandsToAdd = new Dictionary<SupportedCommand, bool>();
             var commandsToRemove = new Dictionary<SupportedCommand, bool>();
@@ -93,11 +93,11 @@ namespace CommandInfoUpdater
                 // If existing commands contain parent command and no sub-commands are indicated in supported commands, no sub-commands to add
                 if (supportedCommand.SubCommands == null) continue;
 
-                string[] subCommandsToAdd;
+                SupportedCommand[] subCommandsToAdd;
                 // If existing commands contain parent command and have no sub-commands, set sub-commands to add as supported command's sub-commands
                 if (existingCommandsInfo[supportedCommand.Command].SubCommands == null)
                 {
-                    subCommandsToAdd = [.. supportedCommand.SubCommands];
+                    subCommandsToAdd = [.. supportedCommand.SubCommands.Values];
                 }
                 // Set sub-commands to add as the difference between existing sub-commands and supported command's sub-commands
                 else
@@ -106,7 +106,7 @@ namespace CommandInfoUpdater
                         .SubCommands
                         .Select(sc => sc.Name));
                     subCommandsToAdd = supportedCommand.SubCommands
-                        .Where(subCommand => !existingSubCommands.Contains(subCommand)).Select(sc => sc).ToArray();
+                        .Where(subCommand => !existingSubCommands.Contains(subCommand.Key)).Select(sc => sc.Value).ToArray();
                 }
 
                 // If there are sub-commands to add, add a new supported command with the sub-commands to add
@@ -137,8 +137,8 @@ namespace CommandInfoUpdater
                 var subCommandsToRemove = (supportedCommands[existingCommand.Key].SubCommands == null
                         ? existingSubCommands
                         : existingSubCommands.Where(sc =>
-                            !supportedCommands[existingCommand.Key].SubCommands!.Contains(sc.Name)))
-                    .Select(sc => sc.Name)
+                            !supportedCommands[existingCommand.Key].SubCommands!.ContainsKey(sc.Name)))
+                    .Select(sc => new SupportedCommand(sc.Name))
                     .ToArray();
 
                 // If there are sub-commands to remove, add a new supported command with the sub-commands to remove
@@ -165,10 +165,10 @@ namespace CommandInfoUpdater
         {
             var logCommandsToAdd = commandsToAdd.Where(kvp => kvp.Value).Select(c => c.Key.Command).ToList();
             var logSubCommandsToAdd = commandsToAdd.Where(c => c.Key.SubCommands != null)
-                .SelectMany(c => c.Key.SubCommands!).ToList();
+                .SelectMany(c => c.Key.SubCommands!).Select(c => c.Key).ToList();
             var logCommandsToRemove = commandsToRemove.Where(kvp => kvp.Value).Select(c => c.Key.Command).ToList();
             var logSubCommandsToRemove = commandsToRemove.Where(c => c.Key.SubCommands != null)
-                .SelectMany(c => c.Key.SubCommands!).ToList();
+                .SelectMany(c => c.Key.SubCommands!).Select(c => c.Key).ToList();
 
             logger.LogInformation("Found {logCommandsToAddCount} commands to add and {logSubCommandsToAddCount} sub-commands to add.", logCommandsToAdd.Count, logSubCommandsToAdd.Count);
             if (logCommandsToAdd.Count > 0)

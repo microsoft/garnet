@@ -25,7 +25,9 @@ namespace Garnet.test
         GarnetServer server;
         private string extTestDir;
         private IReadOnlyDictionary<string, RespCommandsInfo> respCommandsInfo;
+        private IReadOnlyDictionary<string, RespCommandsInfo> respSubCommandsInfo;
         private IReadOnlyDictionary<string, RespCommandDocs> respCommandsDocs;
+        private IReadOnlyDictionary<string, RespCommandDocs> respSubCommandsDocs;
         private IReadOnlyDictionary<string, RespCommandsInfo> respCustomCommandsInfo;
         private IReadOnlyDictionary<string, RespCommandDocs> respCustomCommandsDocs;
 
@@ -34,8 +36,10 @@ namespace Garnet.test
         {
             TestUtils.DeleteDirectory(TestUtils.MethodTestDir, wait: true);
             extTestDir = Path.Combine(TestUtils.MethodTestDir, "test");
-            ClassicAssert.IsTrue(RespCommandsInfo.TryGetRespCommandsInfo(out respCommandsInfo, externalOnly: true));
-            ClassicAssert.IsTrue(RespCommandDocs.TryGetRespCommandsDocs(out respCommandsDocs, externalOnly: true));
+            ClassicAssert.IsTrue(RespCommandsInfo.TryGetRespCommandsInfo(out respCommandsInfo, externalOnly: false));
+            ClassicAssert.IsTrue(RespCommandsInfo.TryGetRespSubCommandsInfo(out respSubCommandsInfo, externalOnly: false));
+            ClassicAssert.IsTrue(RespCommandDocs.TryGetRespCommandsDocs(out respCommandsDocs, externalOnly: false));
+            ClassicAssert.IsTrue(RespCommandDocs.TryGetRespSubCommandsDocs(out respSubCommandsDocs, externalOnly: false));
             ClassicAssert.IsTrue(TestUtils.TryGetCustomCommandsInfo(out respCustomCommandsInfo));
             ClassicAssert.IsTrue(TestUtils.TryGetCustomCommandsDocs(out respCustomCommandsDocs));
             ClassicAssert.IsNotNull(respCommandsInfo);
@@ -216,8 +220,8 @@ namespace Garnet.test
         /// Test COMMAND INFO [command-name [command-name ...]]
         /// </summary>
         [Test]
-        [TestCase(["GET", "SET", "COSCAN"])]
-        [TestCase(["get", "set", "coscan"])]
+        [TestCase(["GET", "SET", "COSCAN", "ACL|LOAD", "WATCH|MS"])]
+        [TestCase(["get", "set", "coscan", "acl|load", "watch|ms"])]
         public void CommandInfoWithCommandNamesTest(params string[] commands)
         {
             using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
@@ -242,8 +246,8 @@ namespace Garnet.test
         /// Test COMMAND DOCS [command-name [command-name ...]]
         /// </summary>
         [Test]
-        [TestCase(["GET", "SET", "COSCAN"])]
-        [TestCase(["get", "set", "coscan"])]
+        [TestCase(["GET", "SET", "COSCAN", "ACL|LOAD", "WATCH|MS"])]
+        [TestCase(["get", "set", "coscan", "acl|load", "watch|ms"])]
         public void CommandDocsWithCommandNamesTest(params string[] commands)
         {
             using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
@@ -481,16 +485,10 @@ namespace Garnet.test
 
         private void VerifyCommandInfo(string cmdName, RedisResult result)
         {
-            RespCommandsInfo cmdInfo = default;
-            if (respCommandsInfo.ContainsKey(cmdName))
-            {
-                cmdInfo = respCommandsInfo[cmdName];
-            }
-            else if (respCustomCommandsInfo.ContainsKey(cmdName))
-            {
-                cmdInfo = respCustomCommandsInfo[cmdName];
-            }
-            else Assert.Fail();
+            if (!respCommandsInfo.TryGetValue(cmdName, out var cmdInfo) &&
+                !respSubCommandsInfo.TryGetValue(cmdName, out cmdInfo) &&
+                !respCustomCommandsInfo.TryGetValue(cmdName, out cmdInfo))
+                Assert.Fail();
 
             ClassicAssert.IsNotNull(result);
             ClassicAssert.AreEqual(10, result.Length);
@@ -503,7 +501,8 @@ namespace Garnet.test
             ClassicAssert.IsNotNull(result);
 
             if (!respCommandsDocs.TryGetValue(cmdName, out var cmdDoc) &&
-                !respCustomCommandsDocs.TryGetValue(cmdName, out cmdDoc)) 
+                !respSubCommandsDocs.TryGetValue(cmdName, out cmdDoc) &&
+                !respCustomCommandsDocs.TryGetValue(cmdName, out cmdDoc))
                 Assert.Fail();
 
             for (var i = 0; i < result.Length; i+=2)

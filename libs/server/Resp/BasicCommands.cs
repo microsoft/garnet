@@ -2,10 +2,7 @@
 // Licensed under the MIT license.
 
 using System;
-using System.Collections;
-using System.Collections.Generic;
 using System.Diagnostics;
-using System.Linq;
 using System.Runtime.CompilerServices;
 using System.Text;
 using System.Threading.Tasks;
@@ -1061,7 +1058,7 @@ namespace Garnet.server
                 for (var i = 0; i < count; i++)
                 {
                     var cmdName = parseState.GetString(i);
-                    if (RespCommandDocs.TryGetRespCommandDocs(cmdName, out var cmdDocs, true, logger) ||
+                    if (RespCommandDocs.TryGetRespCommandDocs(cmdName, out var cmdDocs, true, true, logger) ||
                         storeWrapper.customCommandManager.TryGetCustomCommandDocs(cmdName, out cmdDocs))
                     {
                         docsCount++;
@@ -1100,7 +1097,7 @@ namespace Garnet.server
                 {
                     var cmdName = parseState.GetString(i);
 
-                    if (RespCommandsInfo.TryGetRespCommandInfo(cmdName, out var cmdInfo, true, logger) ||
+                    if (RespCommandsInfo.TryGetRespCommandInfo(cmdName, out var cmdInfo, true, true, logger) ||
                         storeWrapper.customCommandManager.TryGetCustomCommandInfo(cmdName, out cmdInfo))
                     {
                         while (!RespWriteUtils.WriteAsciiDirect(cmdInfo.RespFormat, ref dcurr, dend))

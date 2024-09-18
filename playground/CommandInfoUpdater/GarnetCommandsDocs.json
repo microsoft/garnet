@@ -4,97 +4,97 @@
     "Name": "CLUSTER",
     "SubCommands": [
       {
-        "Command": "CLUSTER",
+        "Command": "CLUSTER_AOFSYNC",
         "Name": "CLUSTER|AOFSYNC",
         "SubCommands": null
       },
       {
-        "Command": "CLUSTER",
+        "Command": "CLUSTER_APPENDLOG",
         "Name": "CLUSTER|APPENDLOG",
         "SubCommands": null
       },
       {
-        "Command": "CLUSTER",
+        "Command": "CLUSTER_BANLIST",
         "Name": "CLUSTER|BANLIST",
         "SubCommands": null
       },
       {
-        "Command": "CLUSTER",
+        "Command": "CLUSTER_BEGIN_REPLICA_RECOVER",
         "Name": "CLUSTER|BEGIN_REPLICA_RECOVER",
         "SubCommands": null
       },
       {
-        "Command": "CLUSTER",
+        "Command": "CLUSTER_DELKEYSINSLOT",
         "Name": "CLUSTER|DELKEYSINSLOT",
         "SubCommands": null
       },
       {
-        "Command": "CLUSTER",
+        "Command": "CLUSTER_DELKEYSINSLOTRANGE",
         "Name": "CLUSTER|DELKEYSINSLOTRANGE",
         "SubCommands": null
       },
       {
-        "Command": "CLUSTER",
+        "Command": "CLUSTER_ENDPOINT",
         "Name": "CLUSTER|ENDPOINT",
         "SubCommands": null
       },
       {
-        "Command": "CLUSTER",
+        "Command": "CLUSTER_FAILSTOPWRITES",
         "Name": "CLUSTER|FAILSTOPWRITES",
         "SubCommands": null
       },
       {
-        "Command": "CLUSTER",
+        "Command": "CLUSTER_FAILREPLICATIONOFFSET",
         "Name": "CLUSTER|FAILREPLICATIONOFFSET",
         "SubCommands": null
       },
       {
-        "Command": "CLUSTER",
+        "Command": "CLUSTER_GOSSIP",
         "Name": "CLUSTER|GOSSIP",
         "SubCommands": null
       },
       {
-        "Command": "CLUSTER",
+        "Command": "CLUSTER_HELP",
         "Name": "CLUSTER|HELP",
         "SubCommands": null
       },
       {
-        "Command": "CLUSTER",
+        "Command": "CLUSTER_INITIATE_REPLICA_SYNC",
         "Name": "CLUSTER|INITIATE_REPLICA_SYNC",
         "SubCommands": null
       },
       {
-        "Command": "CLUSTER",
+        "Command": "CLUSTER_MIGRATE",
         "Name": "CLUSTER|MIGRATE",
         "SubCommands": null
       },
       {
-        "Command": "CLUSTER",
+        "Command": "CLUSTER_MTASKS",
         "Name": "CLUSTER|MTASKS",
         "SubCommands": null
       },
       {
-        "Command": "CLUSTER",
+        "Command": "CLUSTER_MYPARENTID",
         "Name": "CLUSTER|MYPARENTID",
         "SubCommands": null
       },
       {
-        "Command": "CLUSTER",
+        "Command": "CLUSTER_SEND_CKPT_FILE_SEGMENT",
         "Name": "CLUSTER|SEND_CKPT_FILE_SEGMENT",
         "SubCommands": null
       },
       {
-        "Command": "CLUSTER",
+        "Command": "CLUSTER_SEND_CKPT_METADATA",
         "Name": "CLUSTER|SEND_CKPT_METADATA",
         "SubCommands": null
       },
       {
-        "Command": "CLUSTER",
+        "Command": "CLUSTER_SETSLOTSRANGE",
         "Name": "CLUSTER|SETSLOTSRANGE",
         "SubCommands": null
       },
       {
-        "Command": "CLUSTER",
+        "Command": "CLUSTER_SLOTSTATE",
         "Name": "CLUSTER|SLOTSTATE",
         "SubCommands": null
       }
@@ -140,7 +140,7 @@
     "Name": "LATENCY",
     "SubCommands": [
       {
-        "Command": "LATENCY",
+        "Command": "LATENCY_HELP",
         "Name": "LATENCY|HELP",
         "SubCommands": null
       }
@@ -166,12 +166,12 @@
     "Name": "WATCH",
     "SubCommands": [
       {
-        "Command": "WATCH",
+        "Command": "WATCH_MS",
         "Name": "WATCH|MS",
         "SubCommands": null
       },
       {
-        "Command": "WATCH",
+        "Command": "WATCH_OS",
         "Name": "WATCH|OS",
         "SubCommands": null
       }
@@ -187,7 +187,7 @@
     "Name": "MODULE",
     "SubCommands": [
       {
-        "Command": "MODULE",
+        "Command": "MODULE_LOADCS",
         "Name": "MODULE|LOADCS",
         "SubCommands": null
       }

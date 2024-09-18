@@ -1,6 +1,7 @@
 ﻿// Copyright (c) Microsoft Corporation.
 // Licensed under the MIT license.
 
+using System.Collections.ObjectModel;
 using Garnet.server;
 
 namespace CommandInfoUpdater
@@ -13,14 +14,14 @@ namespace CommandInfoUpdater
         private static readonly SupportedCommand[] AllSupportedCommands = [
             new("ACL", RespCommand.ACL,
             [
-                "ACL|CAT",
-                "ACL|DELUSER",
-                "ACL|LIST",
-                "ACL|LOAD",
-                "ACL|SAVE",
-                "ACL|SETUSER",
-                "ACL|USERS",
-                "ACL|WHOAMI",
+                new("ACL|CAT", RespCommand.ACL_CAT),
+                new("ACL|DELUSER", RespCommand.ACL_DELUSER),
+                new("ACL|LIST", RespCommand.ACL_LIST),
+                new("ACL|LOAD", RespCommand.ACL_LOAD),
+                new("ACL|SAVE", RespCommand.ACL_SAVE),
+                new("ACL|SETUSER", RespCommand.ACL_SETUSER),
+                new("ACL|USERS", RespCommand.ACL_USERS),
+                new("ACL|WHOAMI", RespCommand.ACL_WHOAMI),
             ]),
             new("APPEND", RespCommand.APPEND),
             new("ASKING", RespCommand.ASKING),
@@ -36,67 +37,67 @@ namespace CommandInfoUpdater
             new("BRPOP", RespCommand.BRPOP),
             new("BLMOVE", RespCommand.BLMOVE),
             new("CLIENT", RespCommand.CLIENT,
-                [
-                    "CLIENT|ID",
-                    "CLIENT|INFO",
-                    "CLIENT|LIST",
-                    "CLIENT|KILL",
-                ]),
+            [
+                new("CLIENT|ID", RespCommand.CLIENT_ID),
+                new("CLIENT|INFO", RespCommand.CLIENT_INFO),
+                new("CLIENT|LIST", RespCommand.CLIENT_LIST),
+                new("CLIENT|KILL", RespCommand.CLIENT_KILL),
+            ]),
             new("CLUSTER", RespCommand.CLUSTER,
             [
-                "CLUSTER|ADDSLOTS",
-                "CLUSTER|ADDSLOTSRANGE",
-                "CLUSTER|AOFSYNC",
-                "CLUSTER|APPENDLOG",
-                "CLUSTER|BANLIST",
-                "CLUSTER|BEGIN_REPLICA_RECOVER",
-                "CLUSTER|BUMPEPOCH",
-                "CLUSTER|COUNTKEYSINSLOT",
-                "CLUSTER|DELKEYSINSLOT",
-                "CLUSTER|DELKEYSINSLOTRANGE",
-                "CLUSTER|DELSLOTS",
-                "CLUSTER|DELSLOTSRANGE",
-                "CLUSTER|ENDPOINT",
-                "CLUSTER|FAILOVER",
-                "CLUSTER|FAILREPLICATIONOFFSET",
-                "CLUSTER|FAILSTOPWRITES",
-                "CLUSTER|FORGET",
-                "CLUSTER|GETKEYSINSLOT",
-                "CLUSTER|GOSSIP",
-                "CLUSTER|HELP",
-                "CLUSTER|INFO",
-                "CLUSTER|INITIATE_REPLICA_SYNC",
-                "CLUSTER|KEYSLOT",
-                "CLUSTER|MEET",
-                "CLUSTER|MIGRATE",
-                "CLUSTER|MTASKS",
-                "CLUSTER|MYID",
-                "CLUSTER|MYPARENTID",
-                "CLUSTER|NODES",
-                "CLUSTER|REPLICAS",
-                "CLUSTER|REPLICATE",
-                "CLUSTER|RESET",
-                "CLUSTER|SEND_CKPT_FILE_SEGMENT",
-                "CLUSTER|SEND_CKPT_METADATA",
-                "CLUSTER|SET-CONFIG-EPOCH",
-                "CLUSTER|SETSLOT",
-                "CLUSTER|SETSLOTSRANGE",
-                "CLUSTER|SHARDS",
-                "CLUSTER|SLOTS",
-                "CLUSTER|SLOTSTATE",
+                new("CLUSTER|ADDSLOTS", RespCommand.CLUSTER_ADDSLOTS),
+                new("CLUSTER|ADDSLOTSRANGE", RespCommand.CLUSTER_ADDSLOTSRANGE),
+                new("CLUSTER|AOFSYNC", RespCommand.CLUSTER_AOFSYNC),
+                new("CLUSTER|APPENDLOG", RespCommand.CLUSTER_APPENDLOG),
+                new("CLUSTER|BANLIST", RespCommand.CLUSTER_BANLIST),
+                new("CLUSTER|BEGIN_REPLICA_RECOVER", RespCommand.CLUSTER_BEGIN_REPLICA_RECOVER),
+                new("CLUSTER|BUMPEPOCH", RespCommand.CLUSTER_BUMPEPOCH),
+                new("CLUSTER|COUNTKEYSINSLOT", RespCommand.CLUSTER_COUNTKEYSINSLOT),
+                new("CLUSTER|DELKEYSINSLOT", RespCommand.CLUSTER_DELKEYSINSLOT),
+                new("CLUSTER|DELKEYSINSLOTRANGE", RespCommand.CLUSTER_DELKEYSINSLOTRANGE),
+                new("CLUSTER|DELSLOTS", RespCommand.CLUSTER_DELSLOTS),
+                new("CLUSTER|DELSLOTSRANGE", RespCommand.CLUSTER_DELSLOTSRANGE),
+                new("CLUSTER|ENDPOINT", RespCommand.CLUSTER_ENDPOINT),
+                new("CLUSTER|FAILOVER", RespCommand.CLUSTER_FAILOVER),
+                new("CLUSTER|FAILREPLICATIONOFFSET", RespCommand.CLUSTER_FAILREPLICATIONOFFSET),
+                new("CLUSTER|FAILSTOPWRITES", RespCommand.CLUSTER_FAILSTOPWRITES),
+                new("CLUSTER|FORGET", RespCommand.CLUSTER_FORGET),
+                new("CLUSTER|GETKEYSINSLOT", RespCommand.CLUSTER_GETKEYSINSLOT),
+                new("CLUSTER|GOSSIP", RespCommand.CLUSTER_GOSSIP),
+                new("CLUSTER|HELP", RespCommand.CLUSTER_HELP),
+                new("CLUSTER|INFO", RespCommand.CLUSTER_INFO),
+                new("CLUSTER|INITIATE_REPLICA_SYNC", RespCommand.CLUSTER_INITIATE_REPLICA_SYNC),
+                new("CLUSTER|KEYSLOT", RespCommand.CLUSTER_KEYSLOT),
+                new("CLUSTER|MEET", RespCommand.CLUSTER_MEET),
+                new("CLUSTER|MIGRATE", RespCommand.CLUSTER_MIGRATE),
+                new("CLUSTER|MTASKS", RespCommand.CLUSTER_MTASKS),
+                new("CLUSTER|MYID", RespCommand.CLUSTER_MYID),
+                new("CLUSTER|MYPARENTID", RespCommand.CLUSTER_MYPARENTID),
+                new("CLUSTER|NODES", RespCommand.CLUSTER_NODES),
+                new("CLUSTER|REPLICAS", RespCommand.CLUSTER_REPLICAS),
+                new("CLUSTER|REPLICATE", RespCommand.CLUSTER_REPLICATE),
+                new("CLUSTER|RESET", RespCommand.CLUSTER_RESET),
+                new("CLUSTER|SEND_CKPT_FILE_SEGMENT", RespCommand.CLUSTER_SEND_CKPT_FILE_SEGMENT),
+                new("CLUSTER|SEND_CKPT_METADATA", RespCommand.CLUSTER_SEND_CKPT_METADATA),
+                new("CLUSTER|SET-CONFIG-EPOCH", RespCommand.CLUSTER_SETCONFIGEPOCH),
+                new("CLUSTER|SETSLOT", RespCommand.CLUSTER_SETSLOT),
+                new("CLUSTER|SETSLOTSRANGE", RespCommand.CLUSTER_SETSLOTSRANGE),
+                new("CLUSTER|SHARDS", RespCommand.CLUSTER_SHARDS),
+                new("CLUSTER|SLOTS", RespCommand.CLUSTER_SLOTS),
+                new("CLUSTER|SLOTSTATE", RespCommand.CLUSTER_SLOTSTATE),
             ]),
             new("COMMAND", RespCommand.COMMAND,
             [
-                "COMMAND|INFO",
-                "COMMAND|COUNT",
-                "COMMAND|DOCS",
+                new("COMMAND|INFO", RespCommand.COMMAND_INFO),
+                new("COMMAND|COUNT", RespCommand.COMMAND_COUNT),
+                new("COMMAND|DOCS", RespCommand.COMMAND_DOCS),
             ]),
             new("COMMITAOF", RespCommand.COMMITAOF),
             new("CONFIG", RespCommand.CONFIG,
             [
-                "CONFIG|GET",
-                "CONFIG|SET",
-                "CONFIG|REWRITE"
+                new("CONFIG|GET", RespCommand.CONFIG_GET),
+                new("CONFIG|SET", RespCommand.CONFIG_SET),
+                new("CONFIG|REWRITE", RespCommand.CONFIG_REWRITE),
             ]),
             new("COSCAN", RespCommand.COSCAN),
             new("CustomRawStringCmd", RespCommand.CustomRawStringCmd),
@@ -149,9 +150,9 @@ namespace CommandInfoUpdater
             new("LASTSAVE", RespCommand.LASTSAVE),
             new("LATENCY", RespCommand.LATENCY,
             [
-                "LATENCY|HELP",
-                "LATENCY|HISTOGRAM",
-                "LATENCY|RESET"
+                new("LATENCY|HELP", RespCommand.LATENCY_HELP),
+                new("LATENCY|HISTOGRAM", RespCommand.LATENCY_HISTOGRAM),
+                new("LATENCY|RESET", RespCommand.LATENCY_RESET),
             ]),
             new("LINDEX", RespCommand.LINDEX),
             new("LINSERT", RespCommand.LINSERT),
@@ -167,13 +168,13 @@ namespace CommandInfoUpdater
             new("LTRIM", RespCommand.LTRIM),
             new("MEMORY", RespCommand.MEMORY,
             [
-                "MEMORY|USAGE"
+                new("MEMORY|USAGE", RespCommand.MEMORY_USAGE),
             ]),
             new("MGET", RespCommand.MGET),
             new("MIGRATE", RespCommand.MIGRATE),
             new("MODULE", RespCommand.MODULE,
             [
-                 "MODULE|LOADCS",
+                new("MODULE|LOADCS", RespCommand.MODULE_LOADCS),
             ]),
             new("MONITOR", RespCommand.MONITOR),
             new("MSET", RespCommand.MSET),
@@ -235,8 +236,8 @@ namespace CommandInfoUpdater
             new("UNWATCH", RespCommand.UNWATCH),
             new("WATCH", RespCommand.WATCH,
             [
-                "WATCH|MS",
-                "WATCH|OS",
+                new("WATCH|MS", RespCommand.WATCH_MS),
+                new("WATCH|OS", RespCommand.WATCH_OS),
             ]),
             new("ZADD", RespCommand.ZADD),
             new("ZCARD", RespCommand.ZCARD),
@@ -265,16 +266,45 @@ namespace CommandInfoUpdater
             new("SCRIPT", RespCommand.SCRIPT),
         ];
 
-        private static readonly Lazy<IReadOnlyDictionary<string, SupportedCommand>> LazySupportedCommandsMap =
+        static readonly Lazy<IReadOnlyDictionary<string, SupportedCommand>> LazySupportedCommandsMap =
             new(() =>
             {
-                return AllSupportedCommands.ToDictionary(sc => sc.Command, sc => sc);
+                var map = new Dictionary<string, SupportedCommand>(StringComparer.OrdinalIgnoreCase);
+                foreach (var supportedCommand in AllSupportedCommands)
+                {
+                    map.Add(supportedCommand.Command, supportedCommand);
+                }
+
+                return new ReadOnlyDictionary<string, SupportedCommand>(map);
+            });
+
+        static readonly Lazy<IReadOnlyDictionary<string, SupportedCommand>> LazySupportedCommandsFlattenedMap =
+            new(() =>
+            {
+                var map = new Dictionary<string, SupportedCommand>(SupportedCommandsMap, StringComparer.OrdinalIgnoreCase);
+                foreach (var supportedCommand in SupportedCommandsMap.Values)
+                {
+                    if (supportedCommand.SubCommands != null)
+                    {
+                        foreach (var subCommand in supportedCommand.SubCommands)
+                        {
+                            map.Add(subCommand.Key, subCommand.Value);
+                        }
+                    }
+                }
+
+                return new ReadOnlyDictionary<string, SupportedCommand>(map);
             });
 
         /// <summary>
         /// Map between a supported command's name and its SupportedCommand object
         /// </summary>
         public static IReadOnlyDictionary<string, SupportedCommand> SupportedCommandsMap => LazySupportedCommandsMap.Value;
+
+        /// <summary>
+        /// Map between a supported command's and supported sub-command's name and its SupportedCommand object
+        /// </summary>
+        public static IReadOnlyDictionary<string, SupportedCommand> SupportedCommandsFlattenedMap => LazySupportedCommandsFlattenedMap.Value;
 
         /// <summary>
         /// Supported command's name
@@ -284,7 +314,7 @@ namespace CommandInfoUpdater
         /// <summary>
         /// Supported command's sub-commands' names
         /// </summary>
-        public HashSet<string> SubCommands { get; set; }
+        public IReadOnlyDictionary<string, SupportedCommand> SubCommands { get; set; }
 
         /// <summary>
         /// Garnet RespCommand
@@ -305,10 +335,10 @@ namespace CommandInfoUpdater
         /// <param name="command">Supported command name</param>
         /// <param name="respCommand">RESP Command enum</param>
         /// <param name="subCommands">List of supported sub-command names (optional)</param>
-        public SupportedCommand(string command, RespCommand respCommand = RespCommand.NONE, IEnumerable<string> subCommands = null) : this()
+        public SupportedCommand(string command, RespCommand respCommand = RespCommand.NONE, IEnumerable<SupportedCommand> subCommands = null) : this()
         {
             Command = command;
-            SubCommands = subCommands == null ? null : new HashSet<string>(subCommands);
+            SubCommands = subCommands?.ToDictionary(sc => sc.Command, sc => sc);
             RespCommand = respCommand;
         }
     }

@@ -138,7 +138,7 @@ namespace Garnet.test
         }
 
         private static bool TryGetRespCommandData<TData>(string resourcePath, ILogger logger, out IReadOnlyDictionary<string, TData> commandData)
-        where TData : IRespCommandData
+        where TData : class, IRespCommandData<TData>
         {
             var streamProvider = StreamProviderFactory.GetStreamProvider(FileLocationType.Local);
             var commandsInfoProvider = RespCommandsDataProviderFactory.GetRespCommandsDataProvider<TData>();

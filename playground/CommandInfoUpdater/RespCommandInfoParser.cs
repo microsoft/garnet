@@ -103,7 +103,7 @@ namespace Garnet.server
 
             commandInfo = new RespCommandsInfo()
             {
-                Command = supportedCommands[parentCommand ?? name],
+                Command = supportedCommands.GetValueOrDefault(name, RespCommand.NONE),
                 Name = name.ToUpper(),
                 Arity = arity,
                 Flags = flags,

@@ -73,9 +73,35 @@ namespace CommandInfoUpdater
             {
                 if (!additionalCommandsInfo.ContainsKey(cmd))
                 {
-                    var baseCommandInfo = queriedCommandsInfo.ContainsKey(cmd)
-                        ? queriedCommandsInfo[cmd]
-                        : garnetCommandsInfo[cmd];
+                    var baseCommandInfo = queriedCommandsInfo.TryGetValue(cmd, out var cmdInfo)
+                        ? cmdInfo : garnetCommandsInfo[cmd];
+
+                    RespCommandsInfo[] subCommandsInfo;
+                    if (garnetCommandsInfo.ContainsKey(cmd) && queriedCommandsInfo.ContainsKey(cmd))
+                    {
+                        var subCommandsInfoMap = new Dictionary<string, RespCommandsInfo>();
+
+                        if (garnetCommandsInfo.TryGetValue(cmd, out var garnetCmdInfo) && garnetCmdInfo.SubCommands != null)
+                        {
+                            foreach (var sc in garnetCmdInfo.SubCommands)
+                                subCommandsInfoMap.Add(sc.Name, sc);
+                        }
+
+                        if (queriedCommandsInfo.TryGetValue(cmd, out var queriedCmdInfo) && queriedCmdInfo.SubCommands != null)
+                        {
+                            foreach (var sc in queriedCmdInfo.SubCommands)
+                            {
+                                subCommandsInfoMap.TryAdd(sc.Name, sc);
+                            }
+                        }
+
+                        subCommandsInfo = subCommandsInfoMap.Values.ToArray();
+                    }
+                    else
+                    {
+                        subCommandsInfo = baseCommandInfo.SubCommands;
+                    }
+
                     additionalCommandsInfo.Add(cmd, new RespCommandsInfo()
                     {
                         Command = baseCommandInfo.Command,
@@ -88,9 +114,7 @@ namespace CommandInfoUpdater
                         AclCategories = baseCommandInfo.AclCategories,
                         Tips = baseCommandInfo.Tips,
                         KeySpecifications = baseCommandInfo.KeySpecifications,
-                        SubCommands = queriedCommandsInfo.ContainsKey(cmd) && garnetCommandsInfo.ContainsKey(cmd) ?
-                            queriedCommandsInfo[cmd].SubCommands == null ? garnetCommandsInfo[cmd].SubCommands : queriedCommandsInfo[cmd].SubCommands.Union(garnetCommandsInfo[cmd].SubCommands).ToArray() :
-                            baseCommandInfo.SubCommands
+                        SubCommands = subCommandsInfo
                     });
                 }
             }
@@ -144,7 +168,7 @@ namespace CommandInfoUpdater
 
             // Get a map of supported commands to Garnet's RespCommand & ArrayCommand for the parser
             var supportedCommands = new ReadOnlyDictionary<string, RespCommand>(
-                SupportedCommand.SupportedCommandsMap.ToDictionary(kvp => kvp.Key,
+                SupportedCommand.SupportedCommandsFlattenedMap.ToDictionary(kvp => kvp.Key,
                     kvp => kvp.Value.RespCommand, StringComparer.OrdinalIgnoreCase));
 
             // Parse the response
@@ -211,7 +235,7 @@ namespace CommandInfoUpdater
                     : existingCommandsInfo[command.Command].SubCommands.Select(sc => sc.Name).ToArray();
                 var remainingSubCommands = existingSubCommands == null ? null :
                     command.SubCommands == null ? existingSubCommands :
-                    existingSubCommands.Except(command.SubCommands).ToArray();
+                    existingSubCommands.Except(command.SubCommands.Keys).ToArray();
 
                 // Create updated command info based on existing command
                 var existingCommand = existingCommandsInfo[command.Command];
@@ -251,7 +275,7 @@ namespace CommandInfoUpdater
                     foreach (var subCommandToAdd in command.SubCommands!)
                     {
                         updatedSubCommands.Add(queriedCommandsInfo[command.Command].SubCommands
-                            .First(sc => sc.Name == subCommandToAdd));
+                            .First(sc => sc.Name == subCommandToAdd.Key));
                     }
 
                     // Set base command as existing sub-command
@@ -266,7 +290,7 @@ namespace CommandInfoUpdater
                     // Update sub-commands to contain supported sub-commands only
                     updatedSubCommands = command.SubCommands == null
                         ? null
-                        : baseCommand.SubCommands.Where(sc => command.SubCommands.Contains(sc.Name)).ToList();
+                        : baseCommand.SubCommands.Where(sc => command.SubCommands.ContainsKey(sc.Name)).ToList();
                 }
 
                 // Create updated command info based on base command & updated sub-commands

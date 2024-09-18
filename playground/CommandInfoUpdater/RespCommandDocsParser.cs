@@ -108,7 +108,7 @@ namespace CommandInfoUpdater
                 }
             }
 
-            cmdDocs = new RespCommandDocs(supportedCommands[parentCommand ?? cmdName], cmdName, summary, group, complexity,
+            cmdDocs = new RespCommandDocs(supportedCommands.GetValueOrDefault(cmdName, RespCommand.NONE), cmdName, summary, group, complexity,
                 docFlags, replacedBy, arguments, subCommands);
 
             return true;
