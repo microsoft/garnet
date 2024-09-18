@@ -531,7 +531,6 @@ namespace Garnet.server
                     }
                     else
                     {
-                        Debug.Print($"HashExpire: old: {hashValue.Expiration} new: {expiryTime.Ticks}");
                         switch (expireOption)
                         {
                             case ExpireOption.NX:   // Only set if not already set
@@ -563,13 +562,11 @@ namespace Garnet.server
                                     this.UpdateSize(key, hashValue.Value, false);
                                 }
                                 result = 2;
-                                Debug.Print($"Deleted value");
                             }
                             else
                             {
                                 hashValue.Expiration = expiryTime.Ticks;    // Update the expiration time
                                 hash[key] = hashValue;
-                                Debug.Print($"Set expiration to {expiryTime.Ticks}");
                             }
 
                         }
