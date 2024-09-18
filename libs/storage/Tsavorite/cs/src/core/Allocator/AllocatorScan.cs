@@ -8,22 +8,6 @@ using System.Threading;
 
 namespace Tsavorite.core
 {
-    internal sealed class ScanCursorState<TKey, TValue>
-    {
-        internal IScanIteratorFunctions<TKey, TValue> functions;
-        internal long acceptedCount;    // Number of records pushed to and accepted by the caller
-        internal bool endBatch;         // End the batch (but return a valid cursor for the next batch, as of "count" records had been returned)
-        internal bool stop;             // Stop the operation (as if all records in the db had been returned)
-
-        internal void Initialize(IScanIteratorFunctions<TKey, TValue> scanIteratorFunctions)
-        {
-            functions = scanIteratorFunctions;
-            acceptedCount = 0;
-            endBatch = false;
-            stop = false;
-        }
-    }
-
     public abstract partial class AllocatorBase<TKey, TValue, TStoreFunctions, TAllocator> : IDisposable
         where TStoreFunctions : IStoreFunctions<TKey, TValue>
         where TAllocator : IAllocator<TKey, TValue, TStoreFunctions>
@@ -205,7 +189,8 @@ namespace Tsavorite.core
         internal abstract bool ScanCursor<TScanFunctions>(TsavoriteKV<TKey, TValue, TStoreFunctions, TAllocator> store, ScanCursorState<TKey, TValue> scanCursorState, ref long cursor, long count, TScanFunctions scanFunctions, long endAddress, bool validateCursor)
             where TScanFunctions : IScanIteratorFunctions<TKey, TValue>;
 
-        private protected bool ScanLookup<TInput, TOutput, TScanFunctions, TScanIterator>(TsavoriteKV<TKey, TValue, TStoreFunctions, TAllocator> store, ScanCursorState<TKey, TValue> scanCursorState, ref long cursor, long count, TScanFunctions scanFunctions, TScanIterator iter, bool validateCursor)
+        private protected bool ScanLookup<TInput, TOutput, TScanFunctions, TScanIterator>(TsavoriteKV<TKey, TValue, TStoreFunctions, TAllocator> store,
+                ScanCursorState<TKey, TValue> scanCursorState, ref long cursor, long count, TScanFunctions scanFunctions, TScanIterator iter, bool validateCursor)
             where TScanFunctions : IScanIteratorFunctions<TKey, TValue>
             where TScanIterator : ITsavoriteScanIterator<TKey, TValue>, IPushScanIterator<TKey>
         {
