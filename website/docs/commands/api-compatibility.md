@@ -348,7 +348,7 @@ Note that this list is subject to change as we continue to expand our API comman
 |  | [ZREMRANGEBYSCORE](data-structures.md#zremrangebyscore) | ➕ |  |
 |  | [ZREVRANGE](data-structures.md#zrevrange) | ➕ |  |
 |  | ZREVRANGEBYLEX | ➖ |  |
-|  | ZREVRANGEBYSCORE | ➖ |  |
+|  | [ZREVRANGEBYSCORE](data-structures.md#zrevrangebyscore) | ➕ |  |
 |  | [ZREVRANK](data-structures.md#zrevrank) | ➕ |  |
 |  | [ZSCAN](data-structures.md#zscan) | ➕ |  |
 |  | [ZSCORE](data-structures.md#zscore) | ➕ |  |

@@ -932,6 +932,18 @@ Apart from the reversed ordering, **ZREVRANGE** is similar to [ZRANGE](#zrange).
 
 ---
 
+### ZREVRANGEBYSCORE
+
+#### Syntax
+
+```bash
+    ZREVRANGEBYSCORE key max min [WITHSCORES] [LIMIT offset count]
+```
+
+Returns all the elements in the sorted set at key with a score between max and min (including elements with score equal to max or min). 
+
+---
+
 ### ZREVRANK {#zrevrank}
 
 #### Syntax
