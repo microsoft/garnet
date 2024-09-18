@@ -519,7 +519,8 @@ namespace Garnet.server
                 }
                 while (!RespWriteUtils.WriteArrayLength(fieldCount, ref curr, end))
                     ObjectUtils.ReallocateOutput(ref output, ref isMemory, ref ptr, ref ptrHandle, ref curr, ref end);
-                for (var fieldIdx = 0; fieldIdx < fieldCount; fieldIdx++)
+
+                for (var fieldIdx = 0; fieldIdx < fieldCount; fieldIdx++, currIdx++)
                 {
                     var key = parseState.GetArgSliceByRef(currIdx).SpanByte.ToByteArray();
 
@@ -528,17 +529,9 @@ namespace Garnet.server
                     {
                         result = -2;
                     }
-                    else if (DateTimeOffset.UtcNow >= expiryTime)
-                    {
-                        // If provided expiration time is before or equal to now, delete key
-                        if (hash.Remove(key))
-                        {
-                            this.UpdateSize(key, hashValue.Value, false);
-                        }
-                        result = 2;
-                    }
                     else
                     {
+                        Debug.Print($"HashExpire: old: {hashValue.Expiration} new: {expiryTime.Ticks}");
                         switch (expireOption)
                         {
                             case ExpireOption.NX:   // Only set if not already set
@@ -562,7 +555,23 @@ namespace Garnet.server
                         }
                         if (result != 0)    // Option did not reject the operation
                         {
-                            hashValue.Expiration = expiryTime.Ticks;    // Update the expiration time
+                            if (DateTimeOffset.UtcNow >= expiryTime)
+                            {
+                                // If provided expiration time is before or equal to now, delete key
+                                if (hash.Remove(key))
+                                {
+                                    this.UpdateSize(key, hashValue.Value, false);
+                                }
+                                result = 2;
+                                Debug.Print($"Deleted value");
+                            }
+                            else
+                            {
+                                hashValue.Expiration = expiryTime.Ticks;    // Update the expiration time
+                                hash[key] = hashValue;
+                                Debug.Print($"Set expiration to {expiryTime.Ticks}");
+                            }
+
                         }
                     }
                     while (!RespWriteUtils.WriteInteger(result, ref curr, end))

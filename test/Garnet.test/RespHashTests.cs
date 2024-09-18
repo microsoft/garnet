@@ -1184,26 +1184,26 @@ namespace Garnet.test
             var lightClientRequest = TestUtils.CreateRequest();
             var middleTtl = command switch
             {
-                "HEXPIRE" => 20,
-                "HPEXPIRE" => 20000,
-                "HEXPIREAT" => DateTimeOffset.UtcNow.AddSeconds(20).ToUnixTimeSeconds(),
-                "HPEXPIREAT" => DateTimeOffset.UtcNow.AddSeconds(20).ToUnixTimeMilliseconds(),
+                "HEXPIRE" => 120,
+                "HPEXPIRE" => 120000,
+                "HEXPIREAT" => DateTimeOffset.UtcNow.AddSeconds(120).ToUnixTimeSeconds(),
+                "HPEXPIREAT" => DateTimeOffset.UtcNow.AddSeconds(120).ToUnixTimeMilliseconds(),
                 _ => 10
             };
             var largerTtl = command switch
             {
-                "HEXPIRE" => 30,
-                "HPEXPIRE" => 30000,
-                "HEXPIREAT" => DateTimeOffset.UtcNow.AddSeconds(30).ToUnixTimeSeconds(),
-                "HPEXPIREAT" => DateTimeOffset.UtcNow.AddSeconds(30).ToUnixTimeMilliseconds(),
+                "HEXPIRE" => 240,
+                "HPEXPIRE" => 240000,
+                "HEXPIREAT" => DateTimeOffset.UtcNow.AddSeconds(240).ToUnixTimeSeconds(),
+                "HPEXPIREAT" => DateTimeOffset.UtcNow.AddSeconds(240).ToUnixTimeMilliseconds(),
                 _ => 10
             };
             var smallerTtl = command switch
             {
-                "HEXPIRE" => 10,
-                "HPEXPIRE" => 10000,
-                "HEXPIREAT" => DateTimeOffset.UtcNow.AddSeconds(10).ToUnixTimeSeconds(),
-                "HPEXPIREAT" => DateTimeOffset.UtcNow.AddSeconds(10).ToUnixTimeMilliseconds(),
+                "HEXPIRE" => 60,
+                "HPEXPIRE" => 60000,
+                "HEXPIREAT" => DateTimeOffset.UtcNow.AddSeconds(60).ToUnixTimeSeconds(),
+                "HPEXPIREAT" => DateTimeOffset.UtcNow.AddSeconds(60).ToUnixTimeMilliseconds(),
                 _ => 10
             };
             // This value should ensure the key is deleted
@@ -1286,6 +1286,72 @@ namespace Garnet.test
             // Ensure key was actually deleted
             res = lightClientRequest.SendCommand($"HGET {key} field1");
             expectedResponse = "$-1\r\n";
+            actualResponse = Encoding.ASCII.GetString(res).Substring(0, expectedResponse.Length);
+            ClassicAssert.AreEqual(expectedResponse, actualResponse);
+
+            // Add three fields (this also clears their TTLs)
+            res = lightClientRequest.SendCommand($"HSET {key} field1 1 field2 1 field3 1");
+            expectedResponse = ":3\r\n";
+            actualResponse = Encoding.ASCII.GetString(res).Substring(0, expectedResponse.Length);
+            ClassicAssert.AreEqual(expectedResponse, actualResponse);
+
+            // Set TTL on the first two fields
+            res = lightClientRequest.SendCommand($"{command} {key} {middleTtl} FIELDS 2 field1 field2", 3);
+            expectedResponse = "*2\r\n:1\r\n:1\r\n";
+            actualResponse = Encoding.ASCII.GetString(res).Substring(0, expectedResponse.Length);
+            ClassicAssert.AreEqual(expectedResponse, actualResponse);
+
+            // XX on a field with no TTL will fail
+            res = lightClientRequest.SendCommand($"{command} {key} {middleTtl} XX FIELDS 1 field3", 2);
+            expectedResponse = "*1\r\n:0\r\n";
+            actualResponse = Encoding.ASCII.GetString(res).Substring(0, expectedResponse.Length);
+            ClassicAssert.AreEqual(expectedResponse, actualResponse);
+
+            // XX on a field with TTL will succeed
+            res = lightClientRequest.SendCommand($"{command} {key} {middleTtl} XX FIELDS 1 field1", 2);
+            expectedResponse = "*1\r\n:1\r\n";
+            actualResponse = Encoding.ASCII.GetString(res).Substring(0, expectedResponse.Length);
+            ClassicAssert.AreEqual(expectedResponse, actualResponse);
+
+            // NX on a field with TTL will fail
+            res = lightClientRequest.SendCommand($"{command} {key} {middleTtl} NX FIELDS 1 field1", 2);
+            expectedResponse = "*1\r\n:0\r\n";
+            actualResponse = Encoding.ASCII.GetString(res).Substring(0, expectedResponse.Length);
+            ClassicAssert.AreEqual(expectedResponse, actualResponse);
+
+            // NX on a field with no TTL will succeed
+            res = lightClientRequest.SendCommand($"{command} {key} {middleTtl} NX FIELDS 1 field3", 2);
+            expectedResponse = "*1\r\n:1\r\n";
+            actualResponse = Encoding.ASCII.GetString(res).Substring(0, expectedResponse.Length);
+            ClassicAssert.AreEqual(expectedResponse, actualResponse);
+
+            // Set TTL on both fields again
+            res = lightClientRequest.SendCommand($"{command} {key} {middleTtl} FIELDS 2 field1 field2", 3);
+            expectedResponse = "*2\r\n:1\r\n:1\r\n";
+            actualResponse = Encoding.ASCII.GetString(res).Substring(0, expectedResponse.Length);
+            ClassicAssert.AreEqual(expectedResponse, actualResponse);
+
+            // LT when new TTL is larger will fail
+            res = lightClientRequest.SendCommand($"{command} {key} {largerTtl} LT FIELDS 1 field1", 2);
+            expectedResponse = "*1\r\n:0\r\n";
+            actualResponse = Encoding.ASCII.GetString(res).Substring(0, expectedResponse.Length);
+            ClassicAssert.AreEqual(expectedResponse, actualResponse);
+
+            // LT when new TTL is smaller will succeed
+            res = lightClientRequest.SendCommand($"{command} {key} {smallerTtl} LT FIELDS 1 field1", 2);
+            expectedResponse = "*1\r\n:1\r\n";
+            actualResponse = Encoding.ASCII.GetString(res).Substring(0, expectedResponse.Length);
+            ClassicAssert.AreEqual(expectedResponse, actualResponse);
+
+            // GT when new TTL is smaller will fail
+            res = lightClientRequest.SendCommand($"{command} {key} {smallerTtl} GT FIELDS 1 field2", 2);
+            expectedResponse = "*1\r\n:0\r\n";
+            actualResponse = Encoding.ASCII.GetString(res).Substring(0, expectedResponse.Length);
+            ClassicAssert.AreEqual(expectedResponse, actualResponse);
+
+            // GT when new TTL is larger will succeed
+            res = lightClientRequest.SendCommand($"{command} {key} {largerTtl} GT FIELDS 1 field2", 2);
+            expectedResponse = "*1\r\n:1\r\n";
             actualResponse = Encoding.ASCII.GetString(res).Substring(0, expectedResponse.Length);
             ClassicAssert.AreEqual(expectedResponse, actualResponse);
         }
