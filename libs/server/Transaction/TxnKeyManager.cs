@@ -105,6 +105,8 @@ namespace Garnet.server
                 RespCommand.RPUSHX => ListObjectKeys((byte)ListOperation.RPUSHX),
                 RespCommand.HDEL => HashObjectKeys((byte)HashOperation.HDEL),
                 RespCommand.HEXISTS => HashObjectKeys((byte)HashOperation.HEXISTS),
+                RespCommand.HEXPIRE => HashObjectKeys((byte)HashOperation.HEXPIRE),
+                RespCommand.HEXPIREAT => HashObjectKeys((byte)HashOperation.HEXPIREAT),
                 RespCommand.HGET => HashObjectKeys((byte)HashOperation.HGET),
                 RespCommand.HGETALL => HashObjectKeys((byte)HashOperation.HGETALL),
                 RespCommand.HINCRBY => HashObjectKeys((byte)HashOperation.HINCRBY),
@@ -113,6 +115,8 @@ namespace Garnet.server
                 RespCommand.HLEN => HashObjectKeys((byte)HashOperation.HLEN),
                 RespCommand.HMGET => HashObjectKeys((byte)HashOperation.HMGET),
                 RespCommand.HMSET => HashObjectKeys((byte)HashOperation.HMSET),
+                RespCommand.HPEXPIRE => HashObjectKeys((byte)HashOperation.HPEXPIRE),
+                RespCommand.HPEXPIREAT => HashObjectKeys((byte)HashOperation.HPEXPIREAT),
                 RespCommand.HRANDFIELD => HashObjectKeys((byte)HashOperation.HRANDFIELD),
                 RespCommand.HSCAN => HashObjectKeys((byte)HashOperation.HSCAN),
                 RespCommand.HSET => HashObjectKeys((byte)HashOperation.HSET),
@@ -242,6 +246,10 @@ namespace Garnet.server
                 (byte)HashOperation.HSETNX => SingleKey(1, true, LockType.Exclusive),
                 (byte)HashOperation.HRANDFIELD => SingleKey(1, true, LockType.Shared),
                 (byte)HashOperation.HSTRLEN => SingleKey(1, true, LockType.Shared),
+                (byte)HashOperation.HEXPIRE => SingleKey(1, true, LockType.Shared),
+                (byte)HashOperation.HEXPIREAT => SingleKey(1, true, LockType.Shared),
+                (byte)HashOperation.HPEXPIRE => SingleKey(1, true, LockType.Shared),
+                (byte)HashOperation.HPEXPIREAT => SingleKey(1, true, LockType.Shared),
                 _ => -1
             };
         }

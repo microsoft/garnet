@@ -37,7 +37,7 @@ namespace Garnet.server
 
                 if (hash.TryGetValue(key, out var hashValue))
                 {
-                    while (!RespWriteUtils.WriteBulkString(hashValue, ref curr, end))
+                    while (!RespWriteUtils.WriteBulkString(hashValue.Value, ref curr, end))
                         ObjectUtils.ReallocateOutput(ref output, ref isMemory, ref ptr, ref ptrHandle, ref curr, ref end);
                 }
                 else
@@ -83,7 +83,7 @@ namespace Garnet.server
 
                     if (hash.TryGetValue(key, out var hashValue))
                     {
-                        while (!RespWriteUtils.WriteBulkString(hashValue, ref curr, end))
+                        while (!RespWriteUtils.WriteBulkString(hashValue.Value, ref curr, end))
                             ObjectUtils.ReallocateOutput(ref output, ref isMemory, ref ptr, ref ptrHandle, ref curr, ref end);
                     }
                     else
@@ -134,7 +134,7 @@ namespace Garnet.server
                 {
                     while (!RespWriteUtils.WriteBulkString(item.Key, ref curr, end))
                         ObjectUtils.ReallocateOutput(ref output, ref isMemory, ref ptr, ref ptrHandle, ref curr, ref end);
-                    while (!RespWriteUtils.WriteBulkString(item.Value, ref curr, end))
+                    while (!RespWriteUtils.WriteBulkString(item.Value.Value, ref curr, end))
                         ObjectUtils.ReallocateOutput(ref output, ref isMemory, ref ptr, ref ptrHandle, ref curr, ref end);
                 }
             }
@@ -160,7 +160,7 @@ namespace Garnet.server
                 if (hash.Remove(key, out var hashValue))
                 {
                     _output->result1++;
-                    this.UpdateSize(key, hashValue, false);
+                    this.UpdateSize(key, hashValue.Value, false);
                 }
             }
         }
@@ -176,7 +176,7 @@ namespace Garnet.server
             *_output = default;
 
             var key = input.parseState.GetArgSliceByRef(input.parseStateStartIdx).SpanByte.ToByteArray();
-            _output->result1 = hash.TryGetValue(key, out var hashValue) ? hashValue.Length : 0;
+            _output->result1 = hash.TryGetValue(key, out var hashValue) ? hashValue.Value.Length : 0;
         }
 
         private void HashExists(ref ObjectInput input, byte* output)
@@ -228,7 +228,7 @@ namespace Garnet.server
 
                         if (withValues)
                         {
-                            while (!RespWriteUtils.WriteBulkString(pair.Value, ref curr, end))
+                            while (!RespWriteUtils.WriteBulkString(pair.Value.Value, ref curr, end))
                                 ObjectUtils.ReallocateOutput(ref output, ref isMemory, ref ptr, ref ptrHandle, ref curr, ref end);
                         }
 
@@ -270,17 +270,17 @@ namespace Garnet.server
 
                 if (!hash.TryGetValue(key, out var hashValue))
                 {
-                    hash.Add(key, value);
+                    hash.Add(key, new HashValue(value));
                     this.UpdateSize(key, value);
                     _output->result1++;
                 }
                 else if ((hop == HashOperation.HSET || hop == HashOperation.HMSET) && hashValue != default &&
-                         !hashValue.AsSpan().SequenceEqual(value))
+                         !hashValue.Value.AsSpan().SequenceEqual(value))
                 {
-                    hash[key] = value;
+                    hash[key] = new HashValue(value);
                     // Skip overhead as existing item is getting replaced.
                     this.Size += Utility.RoundUp(value.Length, IntPtr.Size) -
-                                 Utility.RoundUp(hashValue.Length, IntPtr.Size);
+                                 Utility.RoundUp(hashValue.Value.Length, IntPtr.Size);
                 }
             }
         }
@@ -312,7 +312,7 @@ namespace Garnet.server
                     }
                     else
                     {
-                        while (!RespWriteUtils.WriteBulkString(item.Value, ref curr, end))
+                        while (!RespWriteUtils.WriteBulkString(item.Value.Value, ref curr, end))
                             ObjectUtils.ReallocateOutput(ref output, ref isMemory, ref ptr, ref ptrHandle, ref curr, ref end);
                     }
                     _output.result1++;
@@ -365,7 +365,7 @@ namespace Garnet.server
 
                     if (valueExists)
                     {
-                        if (!NumUtils.TryParse(value, out int result))
+                        if (!NumUtils.TryParse(value.Value, out int result))
                         {
                             while (!RespWriteUtils.WriteError(CmdStrings.RESP_ERR_HASH_VALUE_IS_NOT_INTEGER, ref curr,
                                        end))
@@ -384,14 +384,14 @@ namespace Garnet.server
                         resultSpan = resultSpan.Slice(0, bytesWritten);
 
                         resultBytes = resultSpan.ToArray();
-                        hash[key] = resultBytes;
+                        hash[key] = new HashValue(resultBytes);
                         Size += Utility.RoundUp(resultBytes.Length, IntPtr.Size) -
-                                Utility.RoundUp(value.Length, IntPtr.Size);
+                                Utility.RoundUp(value.Value.Length, IntPtr.Size);
                     }
                     else
                     {
                         resultBytes = incrSlice.SpanByte.ToByteArray();
-                        hash.Add(key, resultBytes);
+                        hash.Add(key, new HashValue(resultBytes));
                         UpdateSize(key, resultBytes);
                     }
 
@@ -413,7 +413,7 @@ namespace Garnet.server
 
                     if (valueExists)
                     {
-                        if (!NumUtils.TryParse(value, out float result))
+                        if (!NumUtils.TryParse(value.Value, out float result))
                         {
                             while (!RespWriteUtils.WriteError(CmdStrings.RESP_ERR_HASH_VALUE_IS_NOT_FLOAT, ref curr,
                                        end))
@@ -425,14 +425,14 @@ namespace Garnet.server
                         result += incr;
 
                         resultBytes = Encoding.ASCII.GetBytes(result.ToString(CultureInfo.InvariantCulture));
-                        hash[key] = resultBytes;
+                        hash[key] = new HashValue(resultBytes);
                         Size += Utility.RoundUp(resultBytes.Length, IntPtr.Size) -
-                                Utility.RoundUp(value.Length, IntPtr.Size);
+                                Utility.RoundUp(value.Value.Length, IntPtr.Size);
                     }
                     else
                     {
                         resultBytes = incrSlice.SpanByte.ToByteArray();
-                        hash.Add(key, resultBytes);
+                        hash.Add(key, new HashValue(resultBytes));
                         UpdateSize(key, resultBytes);
                     }
 
@@ -442,6 +442,140 @@ namespace Garnet.server
                 }
 
                 _output.result1 = 1;
+            }
+            finally
+            {
+                while (!RespWriteUtils.WriteDirect(ref _output, ref curr, end))
+                    ObjectUtils.ReallocateOutput(ref output, ref isMemory, ref ptr, ref ptrHandle, ref curr, ref end);
+
+                if (isMemory) ptrHandle.Dispose();
+                output.Length = (int)(curr - ptr);
+            }
+        }
+
+        private void HashExpire(ref ObjectInput input, ref SpanByteAndMemory output)
+        {
+            var hop = input.header.HashOp;
+
+            var isMemory = false;
+            MemoryHandle ptrHandle = default;
+            var ptr = output.SpanByte.ToPointer();
+
+            var curr = ptr;
+            var end = curr + output.Length;
+
+            ObjectOutputHeader _output = default;
+
+            _output.result1 = int.MinValue;
+            try
+            {
+                var parseState = input.parseState;
+                var currIdx = input.parseStateStartIdx;
+                var expireOption = ExpireOption.None;
+
+                if (!parseState.TryGetLong(currIdx, out var expirationValue))
+                {
+                    while (!RespWriteUtils.WriteError(CmdStrings.RESP_ERR_GENERIC_VALUE_IS_NOT_INTEGER, ref curr, end))
+                        ObjectUtils.ReallocateOutput(ref output, ref isMemory, ref ptr, ref ptrHandle, ref curr, ref end);
+                    return;
+                }
+                if (parseState.TryGetEnum(++currIdx, true, out expireOption) && expireOption.IsValid(ref parseState.GetArgSliceByRef(currIdx)))
+                {
+                    currIdx++;
+                }
+                else
+                {
+                    expireOption = ExpireOption.None;
+                }
+                var fieldsKeyword = parseState.GetString(currIdx);
+                if (fieldsKeyword != "FIELDS")
+                {
+                    while (!RespWriteUtils.WriteError(CmdStrings.RESP_ERR_MISSING_ARGUMENT_FIELDS, ref curr, end))
+                        ObjectUtils.ReallocateOutput(ref output, ref isMemory, ref ptr, ref ptrHandle, ref curr, ref end);
+                    return;
+                }
+                currIdx++;
+                if (!parseState.TryGetInt(currIdx, out var fieldCount))
+                {
+                    while (!RespWriteUtils.WriteError(CmdStrings.RESP_ERR_GENERIC_VALUE_IS_NOT_INTEGER, ref curr, end))
+                        ObjectUtils.ReallocateOutput(ref output, ref isMemory, ref ptr, ref ptrHandle, ref curr, ref end);
+                    return;
+                }
+
+                var expiryTime = DateTimeOffset.UtcNow.AddSeconds(expirationValue);
+                switch (hop)
+                {
+                    case HashOperation.HPEXPIRE:
+                        expiryTime = DateTimeOffset.UtcNow.AddMilliseconds(expirationValue);
+                        break;
+                    case HashOperation.HEXPIREAT:
+                        expiryTime = DateTimeOffset.FromUnixTimeSeconds(expirationValue);
+                        break;
+                    case HashOperation.HPEXPIREAT:
+                        expiryTime = DateTimeOffset.FromUnixTimeMilliseconds(expirationValue);
+                        break;
+                }
+
+                currIdx++;
+                if (fieldCount != parseState.Count - currIdx)
+                {
+                    while (!RespWriteUtils.WriteError(CmdStrings.RESP_ERR_MISMATCH_NUMFIELDS, ref curr, end))
+                        ObjectUtils.ReallocateOutput(ref output, ref isMemory, ref ptr, ref ptrHandle, ref curr, ref end);
+                    return;
+                }
+                while (!RespWriteUtils.WriteArrayLength(fieldCount, ref curr, end))
+                    ObjectUtils.ReallocateOutput(ref output, ref isMemory, ref ptr, ref ptrHandle, ref curr, ref end);
+                for (var fieldIdx = 0; fieldIdx < fieldCount; fieldIdx++)
+                {
+                    var key = parseState.GetArgSliceByRef(currIdx).SpanByte.ToByteArray();
+
+                    var result = 1; // Assume success
+                    if (!hash.TryGetValue(key, out var hashValue) /* || hashValue.IsExpired() */)
+                    {
+                        result = -2;
+                    }
+                    else if (DateTimeOffset.UtcNow >= expiryTime)
+                    {
+                        // If provided expiration time is before or equal to now, delete key
+                        if (hash.Remove(key))
+                        {
+                            this.UpdateSize(key, hashValue.Value, false);
+                        }
+                        result = 2;
+                    }
+                    else
+                    {
+                        switch (expireOption)
+                        {
+                            case ExpireOption.NX:   // Only set if not already set
+                                if (hashValue.Expiration > 0)
+                                    result = 0;
+                                break;
+                            case ExpireOption.XX:   // Only set if already set
+                                if (hashValue.Expiration <= 0)
+                                    result = 0;
+                                break;
+                            case ExpireOption.GT:   // Only set if greater
+                                // Unset TTL is interpreted as infinite
+                                if (hashValue.Expiration <= 0 || hashValue.Expiration >= expiryTime.Ticks)
+                                    result = 0;
+                                break;
+                            case ExpireOption.LT:   // Only set if smaller
+                                // Unset TTL is interpreted as infinite
+                                if (hashValue.Expiration > 0 && hashValue.Expiration <= expiryTime.Ticks)
+                                    result = 0;
+                                break;
+                        }
+                        if (result != 0)    // Option did not reject the operation
+                        {
+                            hashValue.Expiration = expiryTime.Ticks;    // Update the expiration time
+                        }
+                    }
+                    while (!RespWriteUtils.WriteInteger(result, ref curr, end))
+                        ObjectUtils.ReallocateOutput(ref output, ref isMemory, ref ptr, ref ptrHandle, ref curr,
+                            ref end);
+                    _output.result1 = (_output.result1 < 0) ? 1 : _output.result1 + 1;
+                }
             }
             finally
             {

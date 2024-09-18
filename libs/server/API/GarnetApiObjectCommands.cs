@@ -452,6 +452,10 @@ namespace Garnet.server
         public GarnetStatus HashScan(ArgSlice key, long cursor, string match, int count, out ArgSlice[] items)
             => storageSession.ObjectScan(GarnetObjectType.Hash, key, cursor, match, count, out items, ref objectContext);
 
+        /// <inheritdoc />
+        public GarnetStatus HashExpire(byte[] key, ref ObjectInput input, ref GarnetObjectStoreOutput outputFooter)
+            => storageSession.HashExpire(key, ref input, ref outputFooter, ref objectContext);
+
         #endregion
     }
 

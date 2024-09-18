@@ -89,9 +89,13 @@ namespace Garnet.server
         GEOADD,
         GETDEL,
         HDEL,
+        HEXPIRE,
+        HEXPIREAT,
         HINCRBY,
         HINCRBYFLOAT,
         HMSET,
+        HPEXPIRE,
+        HPEXPIREAT,
         HSET,
         HSETNX,
         INCR,
@@ -1184,6 +1188,10 @@ namespace Garnet.server
                                         {
                                             return RespCommand.HSTRLEN;
                                         }
+                                        else if (*(ulong*)(ptr + 4) == MemoryMarshal.Read<ulong>("HEXPIRE\r"u8) && *(byte*)(ptr + 12) == '\n')
+                                        {
+                                            return RespCommand.HEXPIRE;
+                                        }
                                         break;
 
                                     case 'L':
@@ -1244,6 +1252,10 @@ namespace Garnet.server
                                 {
                                     return RespCommand.BITFIELD;
                                 }
+                                else if (*(ulong*)(ptr + 4) == MemoryMarshal.Read<ulong>("HPEXPIRE"u8) && *(ushort*)(ptr + 12) == MemoryMarshal.Read<ushort>("\r\n"u8))
+                                {
+                                    return RespCommand.HPEXPIRE;
+                                }
                                 break;
                             case 9:
                                 if (*(ulong*)(ptr + 4) == MemoryMarshal.Read<ulong>("SUBSCRIB"u8) && *(uint*)(ptr + 11) == MemoryMarshal.Read<uint>("BE\r\n"u8))
@@ -1269,6 +1281,10 @@ namespace Garnet.server
                                 else if (*(ulong*)(ptr + 4) == MemoryMarshal.Read<ulong>("RPOPLPUS"u8) && *(uint*)(ptr + 11) == MemoryMarshal.Read<uint>("SH\r\n"u8))
                                 {
                                     return RespCommand.RPOPLPUSH;
+                                }
+                                else if (*(ulong*)(ptr + 4) == MemoryMarshal.Read<ulong>("HEXPIREA"u8) && *(uint*)(ptr + 11) == MemoryMarshal.Read<uint>("AT\r\n"u8))
+                                {
+                                    return RespCommand.HEXPIREAT;
                                 }
                                 break;
                         }
@@ -1310,6 +1326,10 @@ namespace Garnet.server
                                 else if (*(ulong*)(ptr + 1) == MemoryMarshal.Read<ulong>("10\r\nSDIF"u8) && *(ulong*)(ptr + 9) == MemoryMarshal.Read<ulong>("FSTORE\r\n"u8))
                                 {
                                     return RespCommand.SDIFFSTORE;
+                                }
+                                else if (*(ulong*)(ptr + 1) == MemoryMarshal.Read<ulong>("10\r\nHPEX"u8) && *(ulong*)(ptr + 9) == MemoryMarshal.Read<ulong>("PIREAT\r\n"u8))
+                                {
+                                    return RespCommand.HPEXPIREAT;
                                 }
                                 break;
 

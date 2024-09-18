@@ -5,6 +5,7 @@ using System;
 using System.Linq;
 using System.Text;
 using System.Threading.Tasks;
+using Azure;
 using Garnet.server;
 using NUnit.Framework;
 using NUnit.Framework.Legacy;
@@ -1167,6 +1168,46 @@ namespace Garnet.test
             var expectedResponse = $"{FormatWrongNumOfArgsError("HINCRBYFLOAT")}$5\r\nHELLO\r\n";
             var actualValue = Encoding.ASCII.GetString(response).Substring(0, expectedResponse.Length);
             ClassicAssert.AreEqual(expectedResponse, actualValue);
+        }
+
+        #endregion
+
+        #region HashExpireTests
+
+        [Test]
+        public void HExpireCommandParameters()
+        {
+            string key = "expirehash";
+            var lightClientRequest = TestUtils.CreateRequest();
+
+            var res = lightClientRequest.SendCommand($"HSET {key} field1 1");
+            var expectedResponse = ":1\r\n";
+            var actualResponse = Encoding.ASCII.GetString(res).Substring(0, expectedResponse.Length);
+            ClassicAssert.AreEqual(expectedResponse, actualResponse);
+
+            // Invalid field
+            res = lightClientRequest.SendCommand($"HEXPIRE {key} 10 FIELDS 1 field2");
+            expectedResponse = "*1\r\n:-2\r\n";
+            actualResponse = Encoding.ASCII.GetString(res).Substring(0, expectedResponse.Length);
+            ClassicAssert.AreEqual(expectedResponse, actualResponse);
+
+            // Successfully set
+            res = lightClientRequest.SendCommand($"HEXPIRE {key} 10 FIELDS 1 field1");
+            expectedResponse = "*1\r\n:1\r\n";
+            actualResponse = Encoding.ASCII.GetString(res).Substring(0, expectedResponse.Length);
+            ClassicAssert.AreEqual(expectedResponse, actualResponse);
+
+            // Unset (key deleted)
+            res = lightClientRequest.SendCommand($"HEXPIRE {key} 0 FIELDS 1 field1");
+            expectedResponse = "*1\r\n:2\r\n";
+            actualResponse = Encoding.ASCII.GetString(res).Substring(0, expectedResponse.Length);
+            ClassicAssert.AreEqual(expectedResponse, actualResponse);
+
+            // Ensure key was actually deleted
+            res = lightClientRequest.SendCommand($"HGET {key} field1");
+            expectedResponse = "$-1\r\n";
+            actualResponse = Encoding.ASCII.GetString(res).Substring(0, expectedResponse.Length);
+            ClassicAssert.AreEqual(expectedResponse, actualResponse);
         }
 
         #endregion

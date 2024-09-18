@@ -1,4 +1,4 @@
-﻿// Copyright (c) Microsoft Corporation.
+// Copyright (c) Microsoft Corporation.
 // Licensed under the MIT license.
 
 using System;
@@ -181,6 +181,8 @@ namespace Garnet.server
         public static ReadOnlySpan<byte> RESP_ERR_XX_NX_NOT_COMPATIBLE => "ERR XX and NX options at the same time are not compatible"u8;
         public static ReadOnlySpan<byte> RESP_ERR_GT_LT_NX_NOT_COMPATIBLE => "ERR GT, LT, and/or NX options at the same time are not compatible"u8;
         public static ReadOnlySpan<byte> RESP_ERR_INCR_SUPPORTS_ONLY_SINGLE_PAIR => "ERR INCR option supports a single increment-element pair"u8;
+        public static ReadOnlySpan<byte> RESP_ERR_MISSING_ARGUMENT_FIELDS => "ERR Mandatory argument FIELDS is missing or not at the right position"u8;
+        public static ReadOnlySpan<byte> RESP_ERR_MISMATCH_NUMFIELDS => "ERR The `numfields` parameter must match the number of arguments"u8;
 
         /// <summary>
         /// Response string templates

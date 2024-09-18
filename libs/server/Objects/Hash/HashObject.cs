@@ -32,7 +32,11 @@ namespace Garnet.server
         HINCRBYFLOAT,
         HRANDFIELD,
         HSCAN,
-        HSTRLEN
+        HSTRLEN,
+        HEXPIRE,
+        HPEXPIRE,
+        HEXPIREAT,
+        HPEXPIREAT
     }
 
 
@@ -41,7 +45,22 @@ namespace Garnet.server
     /// </summary>
     public unsafe partial class HashObject : GarnetObjectBase
     {
-        readonly Dictionary<byte[], byte[]> hash;
+        public class HashValue
+        {
+            public byte[] Value { get; set; }
+            public long Expiration { get; set; }
+            public HashValue(byte[] value, long expiration)
+            {
+                this.Value = value;
+                this.Expiration = expiration;
+            }
+
+            public HashValue(byte[] value) : this(value, 0) { }
+
+            public bool IsExpired() { return Expiration > 0 && DateTimeOffset.UtcNow.Ticks > Expiration; }
+        }
+
+        readonly Dictionary<byte[], HashValue> hash;
 
         /// <summary>
         ///  Constructor
@@ -49,7 +68,7 @@ namespace Garnet.server
         public HashObject(long expiration = 0)
             : base(expiration, MemoryUtils.DictionaryOverhead)
         {
-            hash = new Dictionary<byte[], byte[]>(ByteArrayComparer.Instance);
+            hash = new Dictionary<byte[], HashValue>(ByteArrayComparer.Instance);
         }
 
         /// <summary>
@@ -58,14 +77,14 @@ namespace Garnet.server
         public HashObject(BinaryReader reader)
             : base(reader, MemoryUtils.DictionaryOverhead)
         {
-            hash = new Dictionary<byte[], byte[]>(ByteArrayComparer.Instance);
+            hash = new Dictionary<byte[], HashValue>(ByteArrayComparer.Instance);
 
             int count = reader.ReadInt32();
             for (int i = 0; i < count; i++)
             {
                 var item = reader.ReadBytes(reader.ReadInt32());
                 var value = reader.ReadBytes(reader.ReadInt32());
-                hash.Add(item, value);
+                hash.Add(item, new HashValue(value));
 
                 this.UpdateSize(item, value);
             }
@@ -74,7 +93,7 @@ namespace Garnet.server
         /// <summary>
         /// Copy constructor
         /// </summary>
-        public HashObject(Dictionary<byte[], byte[]> hash, long expiration, long size)
+        public HashObject(Dictionary<byte[], HashValue> hash, long expiration, long size)
             : base(expiration, size)
         {
             this.hash = hash;
@@ -94,8 +113,8 @@ namespace Garnet.server
             {
                 writer.Write(kvp.Key.Length);
                 writer.Write(kvp.Key);
-                writer.Write(kvp.Value.Length);
-                writer.Write(kvp.Value);
+                writer.Write(kvp.Value.Value.Length);
+                writer.Write(kvp.Value.Value);
                 count--;
             }
             Debug.Assert(count == 0);
@@ -183,6 +202,12 @@ namespace Garnet.server
                             ObjectUtils.WriteScanError(error, ref output);
                         }
                         break;
+                    case HashOperation.HEXPIRE:
+                    case HashOperation.HPEXPIRE:
+                    case HashOperation.HEXPIREAT:
+                    case HashOperation.HPEXPIREAT:
+                        HashExpire(ref input, ref output);
+                        break;
                     default:
                         throw new GarnetException($"Unsupported operation {input.header.HashOp} in HashObject.Operate");
                 }
@@ -228,7 +253,7 @@ namespace Garnet.server
                 if (patternLength == 0)
                 {
                     items.Add(item.Key);
-                    items.Add(item.Value);
+                    items.Add(item.Value.Value);
                 }
                 else
                 {
@@ -237,7 +262,7 @@ namespace Garnet.server
                         if (GlobUtils.Match(pattern, patternLength, keyPtr, item.Key.Length))
                         {
                             items.Add(item.Key);
-                            items.Add(item.Value);
+                            items.Add(item.Value.Value);
                         }
                     }
                 }
