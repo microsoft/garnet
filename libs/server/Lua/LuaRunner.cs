@@ -348,7 +348,7 @@ namespace Garnet.server
         {
             if (keyLength > nKeys)
             {
-                _ = state.DoString($"count = #KEYS for i={nKeys+1}, {keyLength} do KEYS[i]=nil end");
+                _ = state.DoString($"count = #KEYS for i={nKeys + 1}, {keyLength} do KEYS[i]=nil end");
             }
             keyLength = nKeys;
             if (argvLength > nArgs)
