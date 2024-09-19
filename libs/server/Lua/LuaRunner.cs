@@ -226,8 +226,8 @@ namespace Garnet.server
                         return resultStr;
                     break;
                 case (byte)':':
-                    if (RespReadUtils.ReadIntegerAsString(out var resultInt, ref ptr, ptr + length))
-                        return resultInt;
+                    if (RespReadUtils.Read64Int(out var number, ref ptr, ptr + length))
+                        return number;
                     break;
                 case (byte)'-':
                     if (RespReadUtils.ReadErrorAsString(out resultStr, ref ptr, ptr + length))
