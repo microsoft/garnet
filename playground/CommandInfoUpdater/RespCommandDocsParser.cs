@@ -1,10 +1,8 @@
 ﻿// Copyright (c) Microsoft Corporation.
 // Licensed under the MIT license.
 
-using System.Runtime.InteropServices.ComTypes;
 using Garnet.common;
 using Garnet.server;
-using Garnet.server.Resp;
 using StackExchange.Redis;
 
 namespace CommandInfoUpdater
@@ -138,7 +136,7 @@ namespace CommandInfoUpdater
 
             if (result.Resp3Type != ResultType.Array) return false;
             var elemCount = result.Length;
-            
+
             for (var i = 0; i < elemCount; i += 2)
             {
                 var elemKey = result[i];
@@ -215,7 +213,7 @@ namespace CommandInfoUpdater
                 }
             }
 
-            if (name == string.Empty || argType == RespCommandArgumentType.None || 
+            if (name == string.Empty || argType == RespCommandArgumentType.None ||
                 (argType == RespCommandArgumentType.Key && keySpecIdx == -1)) return false;
 
             cmdArg = argType switch

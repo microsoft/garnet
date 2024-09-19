@@ -12,7 +12,6 @@ using System.Text;
 using Garnet.common;
 using Garnet.server.Custom;
 using Garnet.server.Module;
-using Garnet.server.Resp;
 
 namespace Garnet.server
 {

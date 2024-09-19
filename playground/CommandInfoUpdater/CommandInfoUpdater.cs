@@ -97,7 +97,7 @@ namespace CommandInfoUpdater
                             }
                         }
 
-                        subCommandsInfo = subCommandsInfoMap.Values.ToArray();
+                        subCommandsInfo = [.. subCommandsInfoMap.Values];
                     }
                     else
                     {

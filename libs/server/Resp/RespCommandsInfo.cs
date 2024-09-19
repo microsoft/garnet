@@ -8,11 +8,9 @@ using System.Collections.ObjectModel;
 using System.Linq;
 using System.Numerics;
 using System.Reflection;
-using System.Security.Cryptography;
 using System.Text;
 using System.Text.Json.Serialization;
 using Garnet.common;
-using Garnet.server.ACL;
 using Microsoft.Extensions.Logging;
 
 namespace Garnet.server

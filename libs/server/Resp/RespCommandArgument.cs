@@ -4,12 +4,12 @@
 using System;
 using System.Collections.Generic;
 using System.ComponentModel;
-using System.Text.Json.Serialization;
-using System.Text.Json;
-using Garnet.common;
 using System.Text;
+using System.Text.Json;
+using System.Text.Json.Serialization;
+using Garnet.common;
 
-namespace Garnet.server.Resp
+namespace Garnet.server
 {
     /// <summary>
     /// A base class that represents a RESP command's argument
@@ -41,7 +41,7 @@ namespace Garnet.server.Resp
         /// </summary>
         public string Summary { get; init; }
 
-        protected int ArgCount { get; set;}
+        protected int ArgCount { get; set; }
 
         /// <summary>
         /// Argument flags
@@ -169,7 +169,7 @@ namespace Garnet.server.Resp
         /// <inheritdoc />
         public RespCommandKeyArgument()
         {
-            
+
         }
 
         /// <inheritdoc />
@@ -203,7 +203,7 @@ namespace Garnet.server.Resp
 
         protected RespCommandArgument()
         {
-            
+
         }
 
         /// <inheritdoc />
@@ -271,7 +271,7 @@ namespace Garnet.server.Resp
         /// <inheritdoc />
         public RespCommandContainerArgument()
         {
-            
+
         }
 
         /// <inheritdoc />
@@ -289,10 +289,10 @@ namespace Garnet.server.Resp
                 {
                     sb.Append(argument.RespFormat);
                 }
-                
+
                 ArgCount += 2;
             }
-            
+
             sb.Insert(0, $"*{ArgCount}\r\n");
             return sb.ToString();
         }
@@ -420,7 +420,7 @@ namespace Garnet.server.Resp
                                                     args.Add(item);
                                                 }
 
-                                                nestedArgs = args.ToArray();
+                                                nestedArgs = [.. args];
                                             }
                                             break;
                                     }
@@ -456,7 +456,7 @@ namespace Garnet.server.Resp
             {
                 case RespCommandKeyArgument keyArg:
                     writer.WriteNumber(nameof(RespCommandKeyArgument.KeySpecIndex), keyArg.KeySpecIndex);
-                    if (keyArg.Value != null) 
+                    if (keyArg.Value != null)
                         writer.WriteString(nameof(RespCommandKeyArgument.Value), keyArg.Value);
                     break;
                 case RespCommandContainerArgument containerArg:

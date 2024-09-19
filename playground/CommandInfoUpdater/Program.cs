@@ -2,13 +2,9 @@
 // Licensed under the MIT license.
 
 using System.Net;
-using System.Text.Json;
-using System.Text.Json.Serialization;
 using CommandInfoUpdater;
 using CommandLine;
 using CommandLine.Text;
-using Garnet.server.Resp;
-using Garnet.server;
 using Microsoft.Extensions.Logging;
 
 /// <summary>

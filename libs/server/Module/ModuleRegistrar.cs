@@ -6,7 +6,6 @@ using System.Collections.Concurrent;
 using System.Diagnostics;
 using System.Linq;
 using System.Reflection;
-using Garnet.server.Resp;
 using Microsoft.Extensions.Logging;
 
 namespace Garnet.server.Module

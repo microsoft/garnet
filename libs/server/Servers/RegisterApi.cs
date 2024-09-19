@@ -2,7 +2,6 @@
 // Licensed under the MIT license.
 
 using System;
-using Garnet.server.Resp;
 
 namespace Garnet.server
 {

@@ -10,7 +10,6 @@ using System.Text;
 using System.Text.Json;
 using System.Text.Json.Serialization;
 using Garnet.common;
-using Garnet.server.Resp;
 using Microsoft.Extensions.Logging;
 using JsonSerializer = System.Text.Json.JsonSerializer;
 

@@ -12,7 +12,7 @@ using System.Text.Json.Serialization;
 using Garnet.common;
 using Microsoft.Extensions.Logging;
 
-namespace Garnet.server.Resp
+namespace Garnet.server
 {
     /// <summary>
     /// Represents a RESP command's docs
@@ -111,7 +111,7 @@ namespace Garnet.server.Resp
         /// </summary>
         public RespCommandDocs()
         {
-            
+
         }
 
         private static bool TryInitialize(ILogger logger)
@@ -154,7 +154,7 @@ namespace Garnet.server.Resp
                     if (!RespCommandsInfo.TryGetRespCommandInfo(sc.Command, out var subCmdInfo) ||
                         subCmdInfo.IsInternal || subCmdInfo.Parent.IsInternal)
                         continue;
-                    
+
                     tmpExternalSubCommandsDocs.Add(sc.Name, sc);
                 }
             }

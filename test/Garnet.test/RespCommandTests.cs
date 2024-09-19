@@ -9,7 +9,6 @@ using System.Reflection;
 using System.Runtime.InteropServices;
 using Garnet.common;
 using Garnet.server;
-using Garnet.server.Resp;
 using NUnit.Framework;
 using NUnit.Framework.Legacy;
 using StackExchange.Redis;
@@ -150,15 +149,19 @@ namespace Garnet.test
             results = (RedisResult[])db.Execute("COMMAND", "DOCS");
 
             ClassicAssert.IsNotNull(results);
-            ClassicAssert.AreEqual(
-                respCommandsInfo.Count + customCommandsRegistered.Length + customCommandsRegisteredDyn.Length,
-                results.Length / 2);
+            var expectedCommands =
+                respCommandsDocs.Keys
+                    .Union(customCommandsRegistered)
+                    .Union(customCommandsRegisteredDyn).OrderBy(c => c);
 
             var cmdNameToResult = new Dictionary<string, RedisResult>();
             for (var i = 0; i < results.Length; i += 2)
             {
                 cmdNameToResult.Add(results[i].ToString(), results[i + 1]);
             }
+
+            var actualCommands = cmdNameToResult.Keys.OrderBy(c => c);
+            CollectionAssert.AreEqual(expectedCommands, actualCommands);
 
             foreach (var cmdName in respCommandsDocs.Keys.Union(customCommandsRegistered).Union(customCommandsRegisteredDyn))
             {
@@ -505,7 +508,7 @@ namespace Garnet.test
                 !respCustomCommandsDocs.TryGetValue(cmdName, out cmdDoc))
                 Assert.Fail();
 
-            for (var i = 0; i < result.Length; i+=2)
+            for (var i = 0; i < result.Length; i += 2)
             {
                 var key = result[i].ToString();
                 var value = result[i + 1];

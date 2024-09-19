@@ -7,7 +7,6 @@ using System.Runtime.CompilerServices;
 using System.Text;
 using System.Threading.Tasks;
 using Garnet.common;
-using Garnet.server.Resp;
 using Microsoft.Extensions.Logging;
 using Tsavorite.core;
 
@@ -1040,7 +1039,7 @@ namespace Garnet.server
             {
                 if (!RespCommandDocs.TryGetRespCommandsDocs(out var cmdsDocs, true, logger))
                     return true;
-                
+
                 foreach (var cmdDocs in cmdsDocs.Values)
                 {
                     docsCount++;

@@ -4,7 +4,6 @@
 using System.Collections.ObjectModel;
 using System.Net;
 using Garnet.server;
-using Garnet.server.Resp;
 using Microsoft.Extensions.Logging;
 using StackExchange.Redis;
 
@@ -95,7 +94,7 @@ namespace CommandInfoUpdater
                             }
                         }
 
-                        subCommandsDocs = subCommandsInfoMap.Values.ToArray();
+                        subCommandsDocs = [.. subCommandsInfoMap.Values];
                     }
                     else
                     {
@@ -163,7 +162,7 @@ namespace CommandInfoUpdater
             var cmdArgs = new List<object> { "DOCS" }.Union(commandsToQuery).ToArray();
             var result = db.Execute("COMMAND", cmdArgs);
             var elemCount = result.Length;
-            for (var i = 0; i < elemCount; i+=2)
+            for (var i = 0; i < elemCount; i += 2)
             {
                 if (!RespCommandDocsParser.TryReadFromResp(result, i, supportedCommands, out var cmdDocs, out var cmdName) || cmdDocs == null)
                 {
