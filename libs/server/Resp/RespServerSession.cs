@@ -653,6 +653,8 @@ namespace Garnet.server
                 RespCommand.HSETNX => HashSet(cmd, ref storageApi),
                 RespCommand.HRANDFIELD => HashRandomField(cmd, ref storageApi),
                 RespCommand.HSCAN => ObjectScan(GarnetObjectType.Hash, ref storageApi),
+                RespCommand.HTTL => HashTtl(cmd, ref storageApi),
+                RespCommand.HPTTL => HashTtl(cmd, ref storageApi),
                 // Set Commands
                 RespCommand.SADD => SetAdd(ref storageApi),
                 RespCommand.SMEMBERS => SetMembers(ref storageApi),

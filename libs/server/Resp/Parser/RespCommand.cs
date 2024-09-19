@@ -96,8 +96,10 @@ namespace Garnet.server
         HMSET,
         HPEXPIRE,
         HPEXPIREAT,
+        HPTTL,
         HSET,
         HSETNX,
+        HTTL,
         INCR,
         INCRBY,
         LINSERT,
@@ -745,6 +747,10 @@ namespace Garnet.server
                                         {
                                             return RespCommand.HLEN;
                                         }
+                                        else if (*(ulong*)(ptr + 2) == MemoryMarshal.Read<ulong>("\r\nHTTL\r\n"u8))
+                                        {
+                                            return RespCommand.HTTL;
+                                        }
                                         break;
 
                                     case 'K':
@@ -914,6 +920,10 @@ namespace Garnet.server
                                         else if (*(ulong*)(ptr + 3) == MemoryMarshal.Read<ulong>("\nHSCAN\r\n"u8))
                                         {
                                             return RespCommand.HSCAN;
+                                        }
+                                        else if (*(ulong*)(ptr + 3) == MemoryMarshal.Read<ulong>("\nHPTTL\r\n"u8))
+                                        {
+                                            return RespCommand.HPTTL;
                                         }
                                         break;
 

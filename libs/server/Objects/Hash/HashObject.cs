@@ -36,7 +36,9 @@ namespace Garnet.server
         HEXPIRE,
         HPEXPIRE,
         HEXPIREAT,
-        HPEXPIREAT
+        HPEXPIREAT,
+        HTTL,
+        HPTTL
     }
 
 
@@ -207,6 +209,10 @@ namespace Garnet.server
                     case HashOperation.HEXPIREAT:
                     case HashOperation.HPEXPIREAT:
                         HashExpire(ref input, ref output);
+                        break;
+                    case HashOperation.HTTL:
+                    case HashOperation.HPTTL:
+                        HashTtl(ref input, ref output);
                         break;
                     default:
                         throw new GarnetException($"Unsupported operation {input.header.HashOp} in HashObject.Operate");

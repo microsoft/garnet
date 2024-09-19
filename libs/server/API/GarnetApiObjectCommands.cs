@@ -456,6 +456,10 @@ namespace Garnet.server
         public GarnetStatus HashExpire(byte[] key, ref ObjectInput input, ref GarnetObjectStoreOutput outputFooter)
             => storageSession.HashExpire(key, ref input, ref outputFooter, ref objectContext);
 
+        /// <inheritdoc />
+        public GarnetStatus HashTtl(byte[] key, ref ObjectInput input, ref GarnetObjectStoreOutput outputFooter)
+            => storageSession.HashTtl(key, ref input, ref outputFooter, ref objectContext);
+
         #endregion
     }
 

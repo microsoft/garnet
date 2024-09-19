@@ -587,5 +587,80 @@ namespace Garnet.server
                 output.Length = (int)(curr - ptr);
             }
         }
+
+        private void HashTtl(ref ObjectInput input, ref SpanByteAndMemory output)
+        {
+            var hop = input.header.HashOp;
+
+            var isMemory = false;
+            MemoryHandle ptrHandle = default;
+            var ptr = output.SpanByte.ToPointer();
+
+            var curr = ptr;
+            var end = curr + output.Length;
+
+            ObjectOutputHeader _output = default;
+
+            _output.result1 = int.MinValue;
+            try
+            {
+                var parseState = input.parseState;
+                var currIdx = input.parseStateStartIdx;
+                var expireOption = ExpireOption.None;
+
+                var fieldsKeyword = parseState.GetString(currIdx);
+                if (fieldsKeyword != "FIELDS")
+                {
+                    while (!RespWriteUtils.WriteError(CmdStrings.RESP_ERR_MISSING_ARGUMENT_FIELDS, ref curr, end))
+                        ObjectUtils.ReallocateOutput(ref output, ref isMemory, ref ptr, ref ptrHandle, ref curr, ref end);
+                    return;
+                }
+                currIdx++;
+                if (!parseState.TryGetInt(currIdx, out var fieldCount))
+                {
+                    while (!RespWriteUtils.WriteError(CmdStrings.RESP_ERR_GENERIC_VALUE_IS_NOT_INTEGER, ref curr, end))
+                        ObjectUtils.ReallocateOutput(ref output, ref isMemory, ref ptr, ref ptrHandle, ref curr, ref end);
+                    return;
+                }
+                currIdx++;
+                if (fieldCount != parseState.Count - currIdx)
+                {
+                    while (!RespWriteUtils.WriteError(CmdStrings.RESP_ERR_MISMATCH_NUMFIELDS, ref curr, end))
+                        ObjectUtils.ReallocateOutput(ref output, ref isMemory, ref ptr, ref ptrHandle, ref curr, ref end);
+                    return;
+                }
+                while (!RespWriteUtils.WriteArrayLength(fieldCount, ref curr, end))
+                    ObjectUtils.ReallocateOutput(ref output, ref isMemory, ref ptr, ref ptrHandle, ref curr, ref end);
+
+                for (var fieldIdx = 0; fieldIdx < fieldCount; fieldIdx++, currIdx++)
+                {
+                    var key = parseState.GetArgSliceByRef(currIdx).SpanByte.ToByteArray();
+
+                    var result = 1L; // Assume success
+                    if (!hash.TryGetValue(key, out var hashValue) /* || hashValue.IsExpired() */)
+                    {
+                        result = -2L;
+                    }
+                    else if (hashValue.Expiration <= 0)
+                    {
+                        result = (hop == HashOperation.HTTL) ?
+                            ConvertUtils.SecondsFromDiffUtcNowTicks(hashValue.Expiration > 0 ? hashValue.Expiration : -1) :
+                            ConvertUtils.MillisecondsFromDiffUtcNowTicks(hashValue.Expiration > 0 ? hashValue.Expiration : -1);
+                    }
+                    while (!RespWriteUtils.WriteInteger(result, ref curr, end))
+                        ObjectUtils.ReallocateOutput(ref output, ref isMemory, ref ptr, ref ptrHandle, ref curr,
+                            ref end);
+                    _output.result1 = (_output.result1 < 0) ? 1 : _output.result1 + 1;
+                }
+            }
+            finally
+            {
+                while (!RespWriteUtils.WriteDirect(ref _output, ref curr, end))
+                    ObjectUtils.ReallocateOutput(ref output, ref isMemory, ref ptr, ref ptrHandle, ref curr, ref end);
+
+                if (isMemory) ptrHandle.Dispose();
+                output.Length = (int)(curr - ptr);
+            }
+        }
     }
 }

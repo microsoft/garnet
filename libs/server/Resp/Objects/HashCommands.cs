@@ -768,5 +768,66 @@ namespace Garnet.server
             }
             return true;
         }
+
+        /// <summary>
+        /// HashExpire: Sets the expiration time for the hash field in seconds
+        /// </summary>
+        /// <typeparam name="TGarnetApi"></typeparam>
+        /// <param name="command"></param>
+        /// <param name="storageApi"></param>
+        /// <returns></returns>
+        private unsafe bool HashTtl<TGarnetApi>(RespCommand command, ref TGarnetApi storageApi)
+           where TGarnetApi : IGarnetApi
+        {
+            if (parseState.Count < 4)
+            {
+                return AbortWithWrongNumberOfArguments(command.ToString());
+            }
+
+            var sbKey = parseState.GetArgSliceByRef(0).SpanByte;
+            var keyBytes = sbKey.ToByteArray();
+
+            if (NetworkSingleKeySlotVerify(keyBytes, false))
+            {
+                return true;
+            }
+
+            var hop =
+                command switch
+                {
+                    RespCommand.HTTL => HashOperation.HTTL,
+                    RespCommand.HPTTL => HashOperation.HPTTL,
+                    _ => throw new Exception($"Unexpected {nameof(HashOperation)}: {command}")
+                };
+
+            // Prepare input
+            var input = new ObjectInput
+            {
+                header = new RespInputHeader
+                {
+                    type = GarnetObjectType.Hash,
+                    HashOp = hop,
+                },
+                parseState = parseState,
+                parseStateStartIdx = 1,
+            };
+
+            // Prepare GarnetObjectStore output
+            var outputFooter = new GarnetObjectStoreOutput { spanByteAndMemory = new SpanByteAndMemory(dcurr, (int)(dend - dcurr)) };
+
+            var status = storageApi.HashTtl(keyBytes, ref input, ref outputFooter);
+
+            switch (status)
+            {
+                case GarnetStatus.WRONGTYPE:
+                    while (!RespWriteUtils.WriteError(CmdStrings.RESP_ERR_WRONG_TYPE, ref dcurr, dend))
+                        SendAndReset();
+                    break;
+                default:
+                    ProcessOutputWithHeader(outputFooter.spanByteAndMemory);
+                    break;
+            }
+            return true;
+        }
     }
 }

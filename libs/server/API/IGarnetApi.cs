@@ -885,6 +885,14 @@ namespace Garnet.server
         /// <returns></returns>
         GarnetStatus HashExpire(byte[] key, ref ObjectInput input, ref GarnetObjectStoreOutput outputFooter);
 
+        /// <summary>
+        /// Gets the time to live for a hash field
+        /// </summary>
+        /// <param name="key"></param>
+        /// <param name="input"></param>
+        /// <param name="outputFooter"></param>
+        /// <returns></returns>
+        GarnetStatus HashTtl(byte[] key, ref ObjectInput input, ref GarnetObjectStoreOutput outputFooter);
         #endregion
 
         #region BitMaps Methods

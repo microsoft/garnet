@@ -638,5 +638,18 @@ namespace Garnet.server
         public GarnetStatus HashExpire<TObjectContext>(byte[] key, ref ObjectInput input, ref GarnetObjectStoreOutput outputFooter, ref TObjectContext objectContext)
             where TObjectContext : ITsavoriteContext<byte[], IGarnetObject, ObjectInput, GarnetObjectStoreOutput, long, ObjectSessionFunctions, ObjectStoreFunctions, ObjectStoreAllocator>
             => RMWObjectStoreOperationWithOutput(key, ref input, ref objectContext, ref outputFooter);
+
+        /// <summary>
+        /// Gets the expiration time for a hash field
+        /// </summary>
+        /// <typeparam name="TObjectContext"></typeparam>
+        /// <param name="key"></param>
+        /// <param name="input"></param>
+        /// <param name="outputFooter"></param>
+        /// <param name="objectContext"></param>
+        /// <returns></returns>
+        public GarnetStatus HashTtl<TObjectContext>(byte[] key, ref ObjectInput input, ref GarnetObjectStoreOutput outputFooter, ref TObjectContext objectContext)
+            where TObjectContext : ITsavoriteContext<byte[], IGarnetObject, ObjectInput, GarnetObjectStoreOutput, long, ObjectSessionFunctions, ObjectStoreFunctions, ObjectStoreAllocator>
+            => ReadObjectStoreOperationWithOutput(key, ref input, ref objectContext, ref outputFooter);
     }
 }
