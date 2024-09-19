@@ -5,6 +5,7 @@ using System;
 using System.Linq;
 using System.Text;
 using System.Threading.Tasks;
+using Garnet.common;
 using Garnet.server;
 using NUnit.Framework;
 using NUnit.Framework.Legacy;
@@ -1356,6 +1357,34 @@ namespace Garnet.test
             ClassicAssert.AreEqual(expectedResponse, actualResponse);
         }
 
+        [Test]
+        [TestCase("HTTL")]
+        [TestCase("HPTTL")]
+        public void HTtlCommandParameters(string command)
+        {
+            string key = "expirehash";
+            var lightClientRequest = TestUtils.CreateRequest();
+
+            // Invalid syntax tests
+
+            // Missing FIELDS keyword
+            var res = lightClientRequest.SendCommand($"{command} {key} 2 field1 field2");
+            var expectedResponse = "-ERR Mandatory argument FIELDS is missing or not at the right position\r\n";
+            var actualResponse = Encoding.ASCII.GetString(res).Substring(0, expectedResponse.Length);
+            ClassicAssert.AreEqual(expectedResponse, actualResponse);
+
+            // Too many fields listed
+            res = lightClientRequest.SendCommand($"{command} {key} FIELDS 1 field1 field2");
+            expectedResponse = "-ERR The `numfields` parameter must match the number of arguments\r\n";
+            actualResponse = Encoding.ASCII.GetString(res).Substring(0, expectedResponse.Length);
+            ClassicAssert.AreEqual(expectedResponse, actualResponse);
+
+            // Insufficient arguments
+            res = lightClientRequest.SendCommand($"{command} {key} FIELDS 1");
+            expectedResponse = $"-ERR wrong number of arguments for '{command}' command\r\n";
+            actualResponse = Encoding.ASCII.GetString(res).Substring(0, expectedResponse.Length);
+            ClassicAssert.AreEqual(expectedResponse, actualResponse);
+        }
         #endregion
 
         private static string FormatWrongNumOfArgsError(string commandName) => $"-{string.Format(CmdStrings.GenericErrWrongNumArgs, commandName)}\r\n";
