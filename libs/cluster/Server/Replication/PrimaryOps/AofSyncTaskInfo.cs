@@ -53,7 +53,6 @@ namespace Garnet.cluster
 
             // Finally, dispose the cts
             cts?.Dispose();
-            iter?.Dispose();
             garnetClient?.Dispose();
         }
 
