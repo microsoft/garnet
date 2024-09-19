@@ -526,7 +526,7 @@ namespace Garnet.server
                     var key = parseState.GetArgSliceByRef(currIdx).SpanByte.ToByteArray();
 
                     var result = 1; // Assume success
-                    if (!hash.TryGetValue(key, out var hashValue) /* || hashValue.IsExpired() */)
+                    if (!hash.TryGetValue(key, out var hashValue) || hashValue.IsExpired())
                     {
                         result = -2;
                     }
@@ -637,11 +637,15 @@ namespace Garnet.server
                     var key = parseState.GetArgSliceByRef(currIdx).SpanByte.ToByteArray();
 
                     var result = 1L; // Assume success
-                    if (!hash.TryGetValue(key, out var hashValue) /* || hashValue.IsExpired() */)
+                    if (!hash.TryGetValue(key, out var hashValue) || hashValue.IsExpired())
                     {
                         result = -2L;
                     }
                     else if (hashValue.Expiration <= 0)
+                    {
+                        result = -1L;
+                    }
+                    else
                     {
                         result = (hop == HashOperation.HTTL) ?
                             ConvertUtils.SecondsFromDiffUtcNowTicks(hashValue.Expiration > 0 ? hashValue.Expiration : -1) :

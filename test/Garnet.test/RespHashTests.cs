@@ -1225,6 +1225,12 @@ namespace Garnet.test
             var actualResponse = Encoding.ASCII.GetString(res).Substring(0, expectedResponse.Length);
             ClassicAssert.AreEqual(expectedResponse, actualResponse);
 
+            // Non-numeric value for field count
+            res = lightClientRequest.SendCommand($"{command} {key} 10 FIELDS hello field1");
+            expectedResponse = "-ERR value is not an integer or out of range.\r\n";
+            actualResponse = Encoding.ASCII.GetString(res).Substring(0, expectedResponse.Length);
+            ClassicAssert.AreEqual(expectedResponse, actualResponse);
+
             // Invalid option
             res = lightClientRequest.SendCommand($"{command} {key} 10 BB FIELDS 1 field1");
             expectedResponse = "-ERR Mandatory argument FIELDS is missing or not at the right position\r\n";
@@ -1373,6 +1379,12 @@ namespace Garnet.test
             var actualResponse = Encoding.ASCII.GetString(res).Substring(0, expectedResponse.Length);
             ClassicAssert.AreEqual(expectedResponse, actualResponse);
 
+            // Non-numeric value for field count
+            res = lightClientRequest.SendCommand($"{command} {key} FIELDS hello field1");
+            expectedResponse = "-ERR value is not an integer or out of range.\r\n";
+            actualResponse = Encoding.ASCII.GetString(res).Substring(0, expectedResponse.Length);
+            ClassicAssert.AreEqual(expectedResponse, actualResponse);
+
             // Too many fields listed
             res = lightClientRequest.SendCommand($"{command} {key} FIELDS 1 field1 field2");
             expectedResponse = "-ERR The `numfields` parameter must match the number of arguments\r\n";
@@ -1384,6 +1396,36 @@ namespace Garnet.test
             expectedResponse = $"-ERR wrong number of arguments for '{command}' command\r\n";
             actualResponse = Encoding.ASCII.GetString(res).Substring(0, expectedResponse.Length);
             ClassicAssert.AreEqual(expectedResponse, actualResponse);
+
+            // Set up a field
+            res = lightClientRequest.SendCommand($"HSET {key} field1 1");
+            expectedResponse = ":1\r\n";
+            actualResponse = Encoding.ASCII.GetString(res).Substring(0, expectedResponse.Length);
+            ClassicAssert.AreEqual(expectedResponse, actualResponse);
+
+            // Set a TTL
+            res = lightClientRequest.SendCommand($"HEXPIRE {key} 300 FIELDS 1 field1");
+            expectedResponse = "*1\r\n:1\r\n";
+            actualResponse = Encoding.ASCII.GetString(res).Substring(0, expectedResponse.Length);
+            ClassicAssert.AreEqual(expectedResponse, actualResponse);
+
+            // Get the TTL in seconds
+            res = lightClientRequest.SendCommand($"{command} {key} FIELDS 1 field1", 2);
+            expectedResponse = "*1\r\n";    // Should return a one element array
+            actualResponse = Encoding.ASCII.GetString(res).Substring(0, expectedResponse.Length);
+            ClassicAssert.AreEqual(expectedResponse, actualResponse);
+            if (command == "HTTL")
+            {
+                // Should be less or equal to 300 and within 5 seconds of it
+                var ttlValue = long.Parse(Encoding.ASCII.GetString(res).Substring(5, 3));
+                ClassicAssert.IsTrue(ttlValue <= 300 && ttlValue >= 295);
+            }
+            else
+            {
+                // Should be less or equal to 300000 and within 5 seconds of it
+                var ttlValue = long.Parse(Encoding.ASCII.GetString(res).Substring(5, 6));
+                ClassicAssert.IsTrue(ttlValue <= 300000 && ttlValue >= 295000);
+            }
         }
         #endregion
 

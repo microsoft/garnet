@@ -784,6 +784,28 @@ namespace Garnet.server
                 return AbortWithWrongNumberOfArguments(command.ToString());
             }
 
+            // Redis parses syntax before seeing if hash exists, so we need to check for some
+            // bad syntax here to return the right errors if the hash does not exist - otherwise
+            // we'll get back an empty array instead of the correct error message.
+            if (parseState.GetString(1) != "FIELDS")
+            {
+                while (!RespWriteUtils.WriteError(CmdStrings.RESP_ERR_MISSING_ARGUMENT_FIELDS, ref dcurr, dend))
+                    SendAndReset();
+                return true;
+            }
+            if (!parseState.TryGetInt(2, out var fieldCount))
+            {
+                while (!RespWriteUtils.WriteError(CmdStrings.RESP_ERR_GENERIC_VALUE_IS_NOT_INTEGER, ref dcurr, dend))
+                   SendAndReset();
+                return true;
+            }
+            if (fieldCount != parseState.Count - 3)
+            {
+                while (!RespWriteUtils.WriteError(CmdStrings.RESP_ERR_MISMATCH_NUMFIELDS, ref dcurr, dend))
+                    SendAndReset();
+                return true;
+            }
+
             var sbKey = parseState.GetArgSliceByRef(0).SpanByte;
             var keyBytes = sbKey.ToByteArray();
 
