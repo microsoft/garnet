@@ -72,7 +72,7 @@ namespace Garnet.cluster
         /// <summary>
         /// Get network buffer specs
         /// </summary>
-        public NetworkBufferSpecs GetNetworkBuffers => clusterProvider.migrationManager.GetNetworkBuffers;
+        public NetworkBufferSettings GetNetworkBufferSettings => clusterProvider.migrationManager.GetNetworkBufferSettings;
 
         /// <summary>
         /// Get network pool
@@ -152,7 +152,7 @@ namespace Garnet.cluster
             _gcs = new(
                 _targetAddress,
                 _targetPort,
-                networkBufferSpecs: GetNetworkBuffers,
+                networkBufferSettings: GetNetworkBufferSettings,
                 networkPool: GetNetworkPool,
                 clusterProvider?.serverOptions.TlsOptions?.TlsClientOptions,
                 authUsername: _username,

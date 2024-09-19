@@ -25,12 +25,12 @@ namespace Garnet.common
         /// Construct new instance
         /// </summary>
         /// <param name="eventHandler">Event handler</param>
-        /// <param name="networkBufferSpecs"></param>
-        public GarnetSaeaBuffer(EventHandler<SocketAsyncEventArgs> eventHandler, NetworkBufferSpecs networkBufferSpecs, LimitedFixedBufferPool networkPool)
+        /// <param name="networkBufferSettings"></param>
+        public GarnetSaeaBuffer(EventHandler<SocketAsyncEventArgs> eventHandler, NetworkBufferSettings networkBufferSettings, LimitedFixedBufferPool networkPool)
         {
             socketEventAsyncArgs = new SocketAsyncEventArgs();
 
-            buffer = networkPool.Get(networkBufferSpecs.sendBufferSize);
+            buffer = networkPool.Get(networkBufferSettings.sendBufferSize);
             socketEventAsyncArgs.SetBuffer(buffer.entry, 0, buffer.entry.Length);
             socketEventAsyncArgs.Completed += eventHandler;
         }

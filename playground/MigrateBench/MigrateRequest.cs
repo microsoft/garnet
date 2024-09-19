@@ -57,8 +57,8 @@ namespace MigrateBench
             targetAddress = targetEndpoint[0];
             targetPort = int.Parse(targetEndpoint[1]);
 
-            sourceNode = new(sourceAddress, sourcePort, new NetworkBufferSpecs(1 << 22), logger: logger);
-            targetNode = new(targetAddress, targetPort, new NetworkBufferSpecs(1 << 22), logger: logger);
+            sourceNode = new(sourceAddress, sourcePort, new NetworkBufferSettings(1 << 22), logger: logger);
+            targetNode = new(targetAddress, targetPort, new NetworkBufferSettings(1 << 22), logger: logger);
             this.timeout = (int)TimeSpan.FromSeconds(opts.Timeout).TotalMilliseconds;
             this.logger = logger;
         }

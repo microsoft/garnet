@@ -22,7 +22,7 @@ namespace Garnet.server
         readonly Socket servSocket;
         readonly IGarnetTlsOptions tlsOptions;
         readonly int networkSendThrottleMax;
-        readonly NetworkBufferSpecs networkBufferSpecs;
+        readonly NetworkBufferSettings networkBufferSettings;
         readonly LimitedFixedBufferPool networkPool;
 
         public IPEndPoint GetEndPoint
@@ -75,8 +75,8 @@ namespace Garnet.server
             this.tlsOptions = tlsOptions;
             this.networkSendThrottleMax = networkSendThrottleMax;
             var serverBufferSize = BufferSizeUtils.ServerBufferSize(new MaxSizeSettings());
-            this.networkBufferSpecs = new NetworkBufferSpecs(serverBufferSize, serverBufferSize);
-            this.networkPool = networkBufferSpecs.Create(logger: logger);
+            this.networkBufferSettings = new NetworkBufferSettings(serverBufferSize, serverBufferSize);
+            this.networkPool = networkBufferSettings.Create(logger: logger);
             servSocket = new Socket(GetEndPoint.AddressFamily, SocketType.Stream, ProtocolType.Tcp);
             acceptEventArg = new SocketAsyncEventArgs();
             acceptEventArg.Completed += AcceptEventArg_Completed;
@@ -142,7 +142,7 @@ namespace Garnet.server
                 {
                     try
                     {
-                        handler = new ServerTcpNetworkHandler(this, e.AcceptSocket, networkBufferSpecs, networkPool, tlsOptions != null, networkSendThrottleMax: networkSendThrottleMax, logger: logger);
+                        handler = new ServerTcpNetworkHandler(this, e.AcceptSocket, networkBufferSettings, networkPool, tlsOptions != null, networkSendThrottleMax: networkSendThrottleMax, logger: logger);
                         if (!activeHandlers.TryAdd(handler, default))
                             throw new Exception("Unable to add handler to dictionary");
 

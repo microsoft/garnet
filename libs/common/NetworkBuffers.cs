@@ -8,9 +8,9 @@ using Microsoft.Extensions.Logging;
 namespace Garnet.common
 {
     /// <summary>
-    /// Create a NetworkBufferSpecs instance
+    /// Definition of NetworkBufferSettings object
     /// </summary>
-    public struct NetworkBufferSpecs
+    public struct NetworkBufferSettings
     {
         /// <summary>
         /// Send buffer size.
@@ -27,14 +27,14 @@ namespace Garnet.common
         /// <summary>
         /// Default constructor
         /// </summary>
-        public NetworkBufferSpecs() : this(1 << 17, 1 << 17) { }
+        public NetworkBufferSettings() : this(1 << 17, 1 << 17) { }
 
         /// <summary>
         /// Set network buffer sizes without allocating them
         /// </summary>
         /// <param name="sendBufferSize"></param>
         /// <param name="initialBufferSize"></param>
-        public NetworkBufferSpecs(int sendBufferSize = 1 << 17, int initialBufferSize = 1 << 17)
+        public NetworkBufferSettings(int sendBufferSize = 1 << 17, int initialBufferSize = 1 << 17)
         {
             this.sendBufferSize = sendBufferSize;
             this.initialReceiveBufferSize = initialBufferSize;

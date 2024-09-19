@@ -16,9 +16,9 @@ namespace Garnet.cluster
         readonly MigrateSessionTaskStore migrationTaskStore;
 
         /// <summary>
-        /// NetworkBufferSpecs for MigrateSession instances
+        /// NetworkBufferSettings for MigrateSession instances
         /// </summary>
-        readonly NetworkBufferSpecs networkBufferSpecs;
+        readonly NetworkBufferSettings networkBufferSettings;
 
         /// <summary>
         /// NetworkPool instance created according to spec
@@ -28,7 +28,7 @@ namespace Garnet.cluster
         /// <summary>
         /// Get NetworkBuffers object
         /// </summary>
-        public NetworkBufferSpecs GetNetworkBuffers => networkBufferSpecs;
+        public NetworkBufferSettings GetNetworkBufferSettings => networkBufferSettings;
 
         /// <summary>
         /// Get NetworkPool instance
@@ -41,8 +41,8 @@ namespace Garnet.cluster
             this.migrationTaskStore = new MigrateSessionTaskStore(logger);
             this.clusterProvider = clusterProvider;
             var bufferSize = 1 << clusterProvider.serverOptions.PageSizeBits();
-            this.networkBufferSpecs = new NetworkBufferSpecs(bufferSize, 1 << 12);
-            this.networkPool = networkBufferSpecs.Create(logger: logger);
+            this.networkBufferSettings = new NetworkBufferSettings(bufferSize, 1 << 12);
+            this.networkPool = networkBufferSettings.Create(logger: logger);
         }
 
         /// <summary>
