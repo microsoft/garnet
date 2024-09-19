@@ -115,7 +115,7 @@
         "TypeDiscriminator": "RespCommandContainerArgument",
         "Name": "CMD",
         "Type": "Block",
-        "Flags": "Multiple",
+        "ArgumentFlags": "Multiple",
         "Arguments": [
           {
             "TypeDiscriminator": "RespCommandContainerArgument",

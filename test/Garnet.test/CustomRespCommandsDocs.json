@@ -1,30 +1,150 @@
 [
   {
     "Command": "NONE",
-    "Name": "DELIFM"
+    "Name": "DELIFM",
+    "Arguments": [
+      {
+        "TypeDiscriminator": "RespCommandKeyArgument",
+        "Name": "KEY",
+        "DisplayText": "key",
+        "Type": "Key",
+        "KeySpecIndex": 0
+      },
+      {
+        "TypeDiscriminator": "RespCommandBasicArgument",
+        "Name": "VALUE",
+        "DisplayText": "value",
+        "Type": "String"
+      }
+    ]
   },
   {
     "Command": "NONE",
-    "Name": "MGETIFPM"
+    "Name": "MGETIFPM",
+    "Arguments": [
+      {
+        "TypeDiscriminator": "RespCommandBasicArgument",
+        "Name": "PREFIX",
+        "DisplayText": "prefix",
+        "Type": "String"
+      },
+      {
+        "TypeDiscriminator": "RespCommandKeyArgument",
+        "Name": "KEY",
+        "DisplayText": "key",
+        "Type": "Key",
+        "KeySpecIndex": 0,
+        "ArgumentFlags": "Multiple"
+      }
+    ]
   },
   {
     "Command": "NONE",
-    "Name": "MYDICTGET"
+    "Name": "MYDICTGET",
+    "Arguments": [
+      {
+        "TypeDiscriminator": "RespCommandKeyArgument",
+        "Name": "KEY",
+        "DisplayText": "key",
+        "Type": "Key",
+        "KeySpecIndex": 0
+      }
+    ]
   },
   {
     "Command": "NONE",
-    "Name": "MYDICTSET"
+    "Name": "MYDICTSET",
+    "Arguments": [
+      {
+        "TypeDiscriminator": "RespCommandKeyArgument",
+        "Name": "KEY",
+        "DisplayText": "key",
+        "Type": "Key",
+        "KeySpecIndex": 0
+      },
+      {
+        "TypeDiscriminator": "RespCommandBasicArgument",
+        "Name": "VALUE",
+        "DisplayText": "value",
+        "Type": "String"
+      }
+    ]
   },
   {
     "Command": "NONE",
-    "Name": "READWRITETX"
+    "Name": "READWRITETX",
+    "Arguments": [
+      {
+        "TypeDiscriminator": "RespCommandKeyArgument",
+        "Name": "READKEY",
+        "DisplayText": "readkey",
+        "Type": "Key",
+        "KeySpecIndex": 0
+      },
+      {
+        "TypeDiscriminator": "RespCommandKeyArgument",
+        "Name": "WRITEKEY1",
+        "DisplayText": "writeKey1",
+        "Type": "Key",
+        "KeySpecIndex": 1
+      },
+      {
+        "TypeDiscriminator": "RespCommandKeyArgument",
+        "Name": "WRITEKEY2",
+        "DisplayText": "writeKey2",
+        "Type": "Key",
+        "KeySpecIndex": 2
+      }
+    ]
   },
   {
     "Command": "NONE",
-    "Name": "SETIFPM"
+    "Name": "SETIFPM",
+    "Arguments": [
+      {
+        "TypeDiscriminator": "RespCommandKeyArgument",
+        "Name": "KEY",
+        "DisplayText": "key",
+        "Type": "Key",
+        "KeySpecIndex": 0
+      },
+      {
+        "TypeDiscriminator": "RespCommandBasicArgument",
+        "Name": "VALUE",
+        "DisplayText": "value",
+        "Type": "String"
+      },
+      {
+        "TypeDiscriminator": "RespCommandBasicArgument",
+        "Name": "PREFIX",
+        "DisplayText": "prefix",
+        "Type": "String"
+      }
+    ]
   },
   {
     "Command": "NONE",
-    "Name": "SETWPIFPGT"
+    "Name": "SETWPIFPGT",
+    "Arguments": [
+      {
+        "TypeDiscriminator": "RespCommandKeyArgument",
+        "Name": "KEY",
+        "DisplayText": "key",
+        "Type": "Key",
+        "KeySpecIndex": 0
+      },
+      {
+        "TypeDiscriminator": "RespCommandBasicArgument",
+        "Name": "VALUE",
+        "DisplayText": "value",
+        "Type": "String"
+      },
+      {
+        "TypeDiscriminator": "RespCommandBasicArgument",
+        "Name": "PREFIX",
+        "DisplayText": "prefix",
+        "Type": "String"
+      }
+    ]
   }
 ]
