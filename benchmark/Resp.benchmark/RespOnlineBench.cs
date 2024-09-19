@@ -157,7 +157,7 @@ namespace Resp.benchmark
             {
                 gcsPool = new AsyncPool<GarnetClientSession>(opts.NumThreads.First(), () =>
                 {
-                    var c = new GarnetClientSession(address, port, new(), opts.EnableTLS ? BenchUtils.GetTlsOptions(opts.TlsHost, opts.CertFileName, opts.CertPassword) : null);
+                    var c = new GarnetClientSession(address, port, new(), tlsOptions: opts.EnableTLS ? BenchUtils.GetTlsOptions(opts.TlsHost, opts.CertFileName, opts.CertPassword) : null);
                     c.Connect();
                     if (auth != null)
                     {
@@ -574,7 +574,7 @@ namespace Resp.benchmark
                     address,
                     port,
                     new(Math.Max(bufferSizeValue, opts.ValueLength * opts.IntraThreadParallelism)),
-                    opts.EnableTLS ? BenchUtils.GetTlsOptions(opts.TlsHost, opts.CertFileName, opts.CertPassword) : null);
+                    tlsOptions: opts.EnableTLS ? BenchUtils.GetTlsOptions(opts.TlsHost, opts.CertFileName, opts.CertPassword) : null);
                 client.Connect();
                 if (auth != null)
                 {
@@ -669,7 +669,11 @@ namespace Resp.benchmark
             GarnetClientSession client = null;
             if (!opts.Pool)
             {
-                client = new GarnetClientSession(address, port, new(Math.Max(131072, opts.IntraThreadParallelism * opts.ValueLength)), opts.EnableTLS ? BenchUtils.GetTlsOptions(opts.TlsHost, opts.CertFileName, opts.CertPassword) : null, null, null);
+                client = new GarnetClientSession(
+                    address,
+                    port,
+                    new(Math.Max(131072, opts.IntraThreadParallelism * opts.ValueLength)),
+                    tlsOptions: opts.EnableTLS ? BenchUtils.GetTlsOptions(opts.TlsHost, opts.CertFileName, opts.CertPassword) : null);
                 client.Connect();
                 if (auth != null)
                 {

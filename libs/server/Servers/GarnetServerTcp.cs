@@ -22,7 +22,8 @@ namespace Garnet.server
         readonly Socket servSocket;
         readonly IGarnetTlsOptions tlsOptions;
         readonly int networkSendThrottleMax;
-        readonly NetworkBuffers networkBuffers;
+        readonly NetworkBufferSpecs networkBufferSpecs;
+        readonly LimitedFixedBufferPool networkPool;
 
         public IPEndPoint GetEndPoint
         {
@@ -74,7 +75,8 @@ namespace Garnet.server
             this.tlsOptions = tlsOptions;
             this.networkSendThrottleMax = networkSendThrottleMax;
             var serverBufferSize = BufferSizeUtils.ServerBufferSize(new MaxSizeSettings());
-            this.networkBuffers = new NetworkBuffers(serverBufferSize, serverBufferSize).Allocate(logger: logger);
+            this.networkBufferSpecs = new NetworkBufferSpecs(serverBufferSize, serverBufferSize);
+            this.networkPool = networkBufferSpecs.Create(logger: logger);
             servSocket = new Socket(GetEndPoint.AddressFamily, SocketType.Stream, ProtocolType.Tcp);
             acceptEventArg = new SocketAsyncEventArgs();
             acceptEventArg.Completed += AcceptEventArg_Completed;
@@ -89,7 +91,7 @@ namespace Garnet.server
             servSocket.Dispose();
             acceptEventArg.UserToken = null;
             acceptEventArg.Dispose();
-            networkBuffers.Dispose();
+            networkPool?.Dispose();
         }
 
         /// <summary>
@@ -140,7 +142,7 @@ namespace Garnet.server
                 {
                     try
                     {
-                        handler = new ServerTcpNetworkHandler(this, e.AcceptSocket, networkBuffers, tlsOptions != null, networkSendThrottleMax: networkSendThrottleMax, logger: logger);
+                        handler = new ServerTcpNetworkHandler(this, e.AcceptSocket, networkBufferSpecs, networkPool, tlsOptions != null, networkSendThrottleMax: networkSendThrottleMax, logger: logger);
                         if (!activeHandlers.TryAdd(handler, default))
                             throw new Exception("Unable to add handler to dictionary");
 
@@ -207,8 +209,8 @@ namespace Garnet.server
             }
         }
 
-        public void Purge() => networkBuffers.Purge();
+        public void Purge() => networkPool.Purge();
 
-        public string GetBufferPoolStats() => networkBuffers.GetStats();
+        public string GetBufferPoolStats() => networkPool.GetStats();
     }
 }

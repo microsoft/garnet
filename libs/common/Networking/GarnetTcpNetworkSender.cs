@@ -49,7 +49,8 @@ namespace Garnet.common
         readonly string remoteEndpoint;
         readonly string localEndpoint;
 
-        readonly NetworkBuffers networkBuffers;
+        readonly NetworkBufferSpecs networkBufferSpecs;
+        readonly LimitedFixedBufferPool networkPool;
 
         /// <summary>
         /// NOTE: This variable should not be marked as readonly as it is a mutable struct
@@ -62,15 +63,17 @@ namespace Garnet.common
         /// GarnetTcpNetworkSender Constructor
         /// </summary>
         /// <param name="socket"></param>
-        /// <param name="networkBuffers"></param>
+        /// <param name="networkBufferSpecs"></param>
         /// <param name="throttleMax"></param>
         public GarnetTcpNetworkSender(
             Socket socket,
-            NetworkBuffers networkBuffers,
+            NetworkBufferSpecs networkBufferSpecs,
+            LimitedFixedBufferPool networkPool,
             int throttleMax = 8)
-            : base(networkBuffers.sendMinAllocationSize)
+            : base(networkBufferSpecs.sendBufferSize)
         {
-            this.networkBuffers = networkBuffers;
+            this.networkBufferSpecs = networkBufferSpecs;
+            this.networkPool = networkPool;
             this.socket = socket;
             this.saeaStack = new(2 * ThrottleMax);
             this.responseObject = null;
@@ -108,7 +111,7 @@ namespace Garnet.common
             {
                 if (disposed)
                     ThrowDisposed();
-                responseObject = new GarnetSaeaBuffer(SeaaBuffer_Completed, networkBuffers);
+                responseObject = new GarnetSaeaBuffer(SeaaBuffer_Completed, networkBufferSpecs, networkPool);
             }
             head = responseObject.buffer.entryPtr;
             tail = responseObject.buffer.entryPtr + responseObject.buffer.entry.Length;
@@ -142,7 +145,7 @@ namespace Garnet.common
                 {
                     if (disposed)
                         ThrowDisposed();
-                    responseObject = new GarnetSaeaBuffer(SeaaBuffer_Completed, networkBuffers);
+                    responseObject = new GarnetSaeaBuffer(SeaaBuffer_Completed, networkBufferSpecs, networkPool);
                 }
             }
         }

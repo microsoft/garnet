@@ -26,9 +26,14 @@ namespace Garnet.networking
         protected readonly TServerHook serverHook;
 
         /// <summary>
-        /// Network buffer pools used for send and receive
+        /// NetworkBufferSpecs
         /// </summary>
-        protected readonly NetworkBuffers networkBuffers;
+        protected readonly NetworkBufferSpecs networkBufferSpecs;
+
+        /// <summary>
+        /// NetworkPool
+        /// </summary>
+        protected readonly LimitedFixedBufferPool networkPool;
 
         /// <summary>
         /// Pool entry
@@ -96,15 +101,16 @@ namespace Garnet.networking
         /// <summary>
         /// Constructor
         /// </summary>
-        public unsafe NetworkHandler(TServerHook serverHook, TNetworkSender networkSender, NetworkBuffers networkBuffers, bool useTLS, IMessageConsumer messageConsumer = null, ILogger logger = null)
-            : base(networkBuffers.bufferPool.MinAllocationSize)
+        public unsafe NetworkHandler(TServerHook serverHook, TNetworkSender networkSender, NetworkBufferSpecs networkBufferSpecs, LimitedFixedBufferPool networkPool, bool useTLS, IMessageConsumer messageConsumer = null, ILogger logger = null)
+            : base(networkPool.MinAllocationSize)
         {
             this.logger = logger;
             this.serverHook = serverHook;
             this.networkSender = networkSender;
             this.session = messageConsumer;
             this.readerStatus = TlsReaderStatus.Rest;
-            this.networkBuffers = networkBuffers;
+            this.networkBufferSpecs = networkBufferSpecs;
+            this.networkPool = networkPool;
 
             if (!useTLS)
             {
@@ -123,11 +129,11 @@ namespace Garnet.networking
                 expectingData = new SemaphoreSlim(0);
                 cancellationTokenSource = new();
 
-                transportReceiveBufferEntry = this.networkBuffers.bufferPool.Get(this.networkBuffers.recvMinAllocationSize);
+                transportReceiveBufferEntry = this.networkPool.Get(this.networkBufferSpecs.initialReceiveBufferSize);
                 transportReceiveBuffer = transportReceiveBufferEntry.entry;
                 transportReceiveBufferPtr = transportReceiveBufferEntry.entryPtr;
 
-                transportSendBufferEntry = this.networkBuffers.bufferPool.Get(this.networkBuffers.sendMinAllocationSize);
+                transportSendBufferEntry = this.networkPool.Get(this.networkBufferSpecs.sendBufferSize);
                 transportSendBuffer = transportSendBufferEntry.entry;
                 transportSendBufferPtr = transportSendBufferEntry.entryPtr;
             }
@@ -489,7 +495,7 @@ namespace Garnet.networking
 
         unsafe void DoubleNetworkReceiveBuffer()
         {
-            var tmp = networkBuffers.bufferPool.Get(networkReceiveBuffer.Length * 2);
+            var tmp = networkPool.Get(networkReceiveBuffer.Length * 2);
             Array.Copy(networkReceiveBuffer, tmp.entry, networkReceiveBuffer.Length);
             networkReceiveBufferEntry.Dispose();
             networkReceiveBufferEntry = tmp;
@@ -513,7 +519,7 @@ namespace Garnet.networking
         {
             if (sslStream != null)
             {
-                var tmp = networkBuffers.bufferPool.Get(transportReceiveBuffer.Length * 2);
+                var tmp = networkPool.Get(transportReceiveBuffer.Length * 2);
                 Array.Copy(transportReceiveBuffer, tmp.entry, transportReceiveBuffer.Length);
                 transportReceiveBufferEntry.Dispose();
                 transportReceiveBufferEntry = tmp;

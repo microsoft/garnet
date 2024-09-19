@@ -70,9 +70,14 @@ namespace Garnet.cluster
         public HashSet<int> GetSlots => _sslots;
 
         /// <summary>
-        /// Get network buffer pools 
+        /// Get network buffer specs
         /// </summary>
-        public NetworkBuffers GetNetworkBuffers => clusterProvider.migrationManager.GetNetworkBuffers;
+        public NetworkBufferSpecs GetNetworkBuffers => clusterProvider.migrationManager.GetNetworkBuffers;
+
+        /// <summary>
+        /// Get network pool
+        /// </summary>
+        public LimitedFixedBufferPool GetNetworkPool => clusterProvider.migrationManager.GetNetworkPool;
 
         readonly GarnetClientSession _gcs;
 
@@ -147,7 +152,8 @@ namespace Garnet.cluster
             _gcs = new(
                 _targetAddress,
                 _targetPort,
-                networkBuffers: GetNetworkBuffers,
+                networkBufferSpecs: GetNetworkBuffers,
+                networkPool: GetNetworkPool,
                 clusterProvider?.serverOptions.TlsOptions?.TlsClientOptions,
                 authUsername: _username,
                 authPassword: _passwd,

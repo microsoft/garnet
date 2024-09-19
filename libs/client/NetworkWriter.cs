@@ -72,7 +72,8 @@ namespace Garnet.client
         /// </summary>
         CompletionEvent FlushEvent;
 
-        readonly NetworkBuffers networkBuffers;
+        readonly NetworkBufferSpecs networkBufferSpecs;
+        readonly LimitedFixedBufferPool networkPool;
         readonly GarnetClientTcpNetworkHandler networkHandler;
 
         /// <summary>
@@ -80,10 +81,11 @@ namespace Garnet.client
         /// </summary>
         public NetworkWriter(GarnetClient serverHook, Socket socket, int messageBufferSize, SslClientAuthenticationOptions sslOptions, out GarnetClientTcpNetworkHandler networkHandler, int sendPageSize, int networkSendThrottleMax, ILogger logger = null)
         {
-            this.networkBuffers = new NetworkBuffers(messageBufferSize, messageBufferSize).Allocate(logger: logger);
+            this.networkBufferSpecs = new NetworkBufferSpecs(messageBufferSize, messageBufferSize);
+            this.networkPool = networkBufferSpecs.Create(logger: logger);
 
             if (BufferSize > PageOffset.kPageMask) throw new Exception();
-            this.networkHandler = networkHandler = new GarnetClientTcpNetworkHandler(serverHook, AsyncFlushPageCallback, socket, networkBuffers, sslOptions != null, serverHook, networkSendThrottleMax: networkSendThrottleMax, logger: logger);
+            this.networkHandler = networkHandler = new GarnetClientTcpNetworkHandler(serverHook, AsyncFlushPageCallback, socket, networkBufferSpecs, networkPool, sslOptions != null, serverHook, networkSendThrottleMax: networkSendThrottleMax, logger: logger);
             networkSender = networkHandler.GetNetworkSender();
 
             FlushEvent.Initialize();
@@ -109,7 +111,7 @@ namespace Garnet.client
             FlushEvent.Dispose();
             epoch.Dispose();
             networkHandler.Dispose();
-            networkBuffers.Dispose();
+            networkPool?.Dispose();
         }
 
         /// <summary>

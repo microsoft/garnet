@@ -8,45 +8,36 @@ using Microsoft.Extensions.Logging;
 namespace Garnet.common
 {
     /// <summary>
-    /// Create a NetworkBuffers instance
+    /// Create a NetworkBufferSpecs instance
     /// </summary>
-    public struct NetworkBuffers
+    public struct NetworkBufferSpecs
     {
         /// <summary>
-        /// Buffer pool
+        /// Send buffer size.
+        /// (NOTE: Send buffers are fixed and cannot grow automatically. Caller responsible for allocating correct amount and handling larger payloads.)
         /// </summary>
-        public LimitedFixedBufferPool bufferPool;
+        public int sendBufferSize;
 
         /// <summary>
-        /// Min allocation size for send network buffer
+        /// Initial allocation size for receive network buffer.
+        /// (NOTE: Receive buffers can automatically grow to accomodate larger payloads.)
         /// </summary>
-        public int sendMinAllocationSize;
-
-        /// <summary>
-        /// Min allocation size for recv network buffer
-        /// </summary>
-        public int recvMinAllocationSize;
-
-        /// <summary>
-        /// Indicates if underlying buffer pools have been allocated
-        /// </summary>
-        public readonly bool IsAllocated => bufferPool != null;
+        public int initialReceiveBufferSize;
 
         /// <summary>
         /// Default constructor
         /// </summary>
-        public NetworkBuffers() : this(1 << 17, 1 << 17) { }
+        public NetworkBufferSpecs() : this(1 << 17, 1 << 17) { }
 
         /// <summary>
         /// Set network buffer sizes without allocating them
         /// </summary>
-        /// <param name="sendBufferPoolSize"></param>
-        /// <param name="recvBufferPoolSize"></param>
-        public NetworkBuffers(int sendBufferPoolSize = 1 << 17, int recvBufferPoolSize = 1 << 17)
+        /// <param name="sendBufferSize"></param>
+        /// <param name="initialBufferSize"></param>
+        public NetworkBufferSpecs(int sendBufferSize = 1 << 17, int initialBufferSize = 1 << 17)
         {
-            this.sendMinAllocationSize = sendBufferPoolSize;
-            this.recvMinAllocationSize = recvBufferPoolSize;
-            this.bufferPool = null;
+            this.sendBufferSize = sendBufferSize;
+            this.initialReceiveBufferSize = initialBufferSize;
         }
 
         /// <summary>
@@ -55,37 +46,16 @@ namespace Garnet.common
         /// <param name="maxEntriesPerLevel"></param>
         /// <param name="logger"></param>
         /// <returns></returns>
-        public NetworkBuffers Allocate(int maxEntriesPerLevel = 16, ILogger logger = null)
+        public LimitedFixedBufferPool Create(int maxEntriesPerLevel = 16, ILogger logger = null)
         {
-            Debug.Assert(bufferPool == null);
-            var minSize = Math.Min(sendMinAllocationSize, recvMinAllocationSize);
-            var maxSize = Math.Max(sendMinAllocationSize, recvMinAllocationSize);
 
-            var levels = LimitedFixedBufferPool.GetLevel(recvMinAllocationSize, sendMinAllocationSize) + 1;
+            var minSize = Math.Min(sendBufferSize, initialReceiveBufferSize);
+            var maxSize = Math.Max(sendBufferSize, initialReceiveBufferSize);
+
+            var levels = LimitedFixedBufferPool.GetLevel(initialReceiveBufferSize, sendBufferSize) + 1;
             Debug.Assert(levels >= 0);
             levels = Math.Max(4, levels);
-            bufferPool = new LimitedFixedBufferPool(recvMinAllocationSize, maxEntriesPerLevel: maxEntriesPerLevel, numLevels: levels, logger: logger);
-            return this;
-        }
-
-        /// <summary>
-        /// Purge buffer pool
-        /// </summary>
-        /// <returns></returns>
-        public void Purge() => bufferPool?.Purge();
-
-        /// <summary>
-        /// Get buffer pool statistics
-        /// </summary>
-        /// <returns></returns>
-        public string GetStats() => bufferPool.GetStats();
-
-        /// <summary>
-        /// Dispose associated network buffer pool
-        /// </summary>
-        public void Dispose()
-        {
-            bufferPool?.Dispose();
+            return new LimitedFixedBufferPool(initialReceiveBufferSize, maxEntriesPerLevel: maxEntriesPerLevel, numLevels: levels, logger: logger);
         }
     }
 }

@@ -37,7 +37,8 @@ namespace Garnet.common
         public int opType;
 
         LightClientTcpNetworkHandler networkHandler;
-        readonly NetworkBuffers networkBuffers;
+        readonly NetworkBufferSpecs networkBufferSpecs;
+        readonly LimitedFixedBufferPool networkPool;
 
         /// <summary>
         /// Create client instance to connect to specfied destination
@@ -57,7 +58,8 @@ namespace Garnet.common
             SslClientAuthenticationOptions sslOptions = null)
             : base(address, port, BufferSize)
         {
-            this.networkBuffers = new NetworkBuffers(BufferSize, BufferSize).Allocate();
+            this.networkBufferSpecs = new NetworkBufferSpecs(BufferSize, BufferSize);
+            this.networkPool = networkBufferSpecs.Create();
             this.onResponseDelegateUnsafe = onResponseDelegateUnsafe ?? new OnResponseDelegateUnsafe(DefaultLightReceiveUnsafe);
             this.opType = opType;
             this.BufferSize = BufferSize;
@@ -108,7 +110,7 @@ namespace Garnet.common
         public override void Connect()
         {
             socket = GetSendSocket(address, port);
-            networkHandler = new LightClientTcpNetworkHandler(this, socket, networkBuffers, sslOptions != null, this);
+            networkHandler = new LightClientTcpNetworkHandler(this, socket, networkBufferSpecs, networkPool, sslOptions != null, this);
             networkHandler.StartAsync(sslOptions, $"{address}:{port}").ConfigureAwait(false).GetAwaiter().GetResult();
             networkSender = networkHandler.GetNetworkSender();
             networkSender.GetResponseObject();
@@ -211,7 +213,7 @@ namespace Garnet.common
         {
             networkSender.ReturnResponseObject();
             networkHandler?.Dispose();
-            networkBuffers.Dispose();
+            networkPool?.Dispose();
         }
 
         /// <inheritdoc />

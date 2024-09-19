@@ -16,14 +16,24 @@ namespace Garnet.cluster
         readonly MigrateSessionTaskStore migrationTaskStore;
 
         /// <summary>
-        /// Used to initialize buffers for client connected to target node for active migrate sessions
+        /// NetworkBufferSpecs for MigrateSession instances
         /// </summary>
-        private NetworkBuffers networkBuffers;
+        readonly NetworkBufferSpecs networkBufferSpecs;
+
+        /// <summary>
+        /// NetworkPool instance created according to spec
+        /// </summary>
+        readonly LimitedFixedBufferPool networkPool;
 
         /// <summary>
         /// Get NetworkBuffers object
         /// </summary>
-        public NetworkBuffers GetNetworkBuffers => networkBuffers;
+        public NetworkBufferSpecs GetNetworkBuffers => networkBufferSpecs;
+
+        /// <summary>
+        /// Get NetworkPool instance
+        /// </summary>
+        public LimitedFixedBufferPool GetNetworkPool => networkPool;
 
         public MigrationManager(ClusterProvider clusterProvider, ILogger logger = null)
         {
@@ -31,7 +41,8 @@ namespace Garnet.cluster
             this.migrationTaskStore = new MigrateSessionTaskStore(logger);
             this.clusterProvider = clusterProvider;
             var bufferSize = 1 << clusterProvider.serverOptions.PageSizeBits();
-            this.networkBuffers = new NetworkBuffers(bufferSize, 1 << 12).Allocate(logger: logger);
+            this.networkBufferSpecs = new NetworkBufferSpecs(bufferSize, 1 << 12);
+            this.networkPool = networkBufferSpecs.Create(logger: logger);
         }
 
         /// <summary>
@@ -40,15 +51,15 @@ namespace Garnet.cluster
         public void Dispose()
         {
             migrationTaskStore?.Dispose();
-            networkBuffers.Dispose();
+            networkPool?.Dispose();
         }
 
         /// <summary>
         /// Used to free up buffer pool
         /// </summary>
-        public void Purge() => networkBuffers.Purge();
+        public void Purge() => networkPool.Purge();
 
-        public string GetBufferPoolStats() => networkBuffers.GetStats();
+        public string GetBufferPoolStats() => networkPool.GetStats();
 
         /// <summary>
         /// Get number of active migrate sessions

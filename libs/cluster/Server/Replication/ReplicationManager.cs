@@ -22,9 +22,13 @@ namespace Garnet.cluster
 
         readonly CancellationTokenSource ctsRepManager = new();
 
-        private NetworkBuffers networkBuffers;
+        readonly NetworkBufferSpecs networkBufferSpecs;
 
-        public NetworkBuffers GetNetworkBuffers => networkBuffers;
+        readonly LimitedFixedBufferPool networkPool;
+
+        public NetworkBufferSpecs GetNetworkBuffers => networkBufferSpecs;
+
+        public LimitedFixedBufferPool GetNetworkPool => networkPool;
 
         readonly ILogger logger;
         bool _disposed;
@@ -97,7 +101,8 @@ namespace Garnet.cluster
             this.clusterProvider = clusterProvider;
             this.storeWrapper = clusterProvider.storeWrapper;
 
-            this.networkBuffers = new NetworkBuffers(1 << 22, 1 << 12).Allocate(logger: logger);
+            this.networkBufferSpecs = new NetworkBufferSpecs(1 << 22, 1 << 12);
+            this.networkPool = networkBufferSpecs.Create(logger: logger);
             aofProcessor = new AofProcessor(storeWrapper, recordToAof: false, logger: logger);
             replicaSyncSessionTaskStore = new ReplicaSyncSessionTaskStore(storeWrapper, clusterProvider, logger);
 
@@ -138,9 +143,9 @@ namespace Garnet.cluster
         /// <summary>
         /// Used to free up buffer pool
         /// </summary>
-        public void Purge() => networkBuffers.Purge();
+        public void Purge() => networkPool.Purge();
 
-        public string GetBufferPoolStats() => networkBuffers.GetStats();
+        public string GetBufferPoolStats() => networkPool.GetStats();
 
         void CheckpointVersionShift(bool isMainStore, long oldVersion, long newVersion)
         {
@@ -189,7 +194,7 @@ namespace Garnet.cluster
             ctsRepManager.Dispose();
             aofTaskStore.Dispose();
             aofProcessor?.Dispose();
-            networkBuffers.Dispose();
+            networkPool?.Dispose();
         }
 
         /// <summary>

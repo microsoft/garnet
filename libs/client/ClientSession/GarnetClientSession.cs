@@ -71,14 +71,19 @@ namespace Garnet.client
         readonly string authPassword = null;
 
         /// <summary>
-        /// Indicating whether this instance is using its own buffer pool or one that was provided
+        /// Indicating whether this instance is using its own network pool or one that was provided
         /// </summary>
-        readonly bool usingManagedNetworkBuffers = false;
+        readonly bool usingManagedNetworkPool = false;
 
         /// <summary>
-        /// NetworkBuffers wrappers
+        /// NetworkBufferSpecs describing the send and receive buffer sizes
         /// </summary>
-        readonly NetworkBuffers networkBuffers;
+        readonly NetworkBufferSpecs networkBufferSpecs;
+
+        /// <summary>
+        /// NetworkPool used to allocate send and receive buffers
+        /// </summary>
+        readonly LimitedFixedBufferPool networkPool;
 
         /// <summary>
         /// Create client instance
@@ -88,13 +93,14 @@ namespace Garnet.client
         /// <param name="tlsOptions">TLS options</param>
         /// <param name="authUsername">Username to authenticate with</param>
         /// <param name="authPassword">Password to authenticate with</param>
-        /// <param name="networkBuffers">Send and receive network buffer sizes</param>
+        /// <param name="networkBufferSpecs">Send and receive network buffer sizes</param>
         /// <param name="networkSendThrottleMax">Max outstanding network sends allowed</param>
         /// <param name="logger">Logger</param>
         public GarnetClientSession(
             string address,
             int port,
-            NetworkBuffers networkBuffers,
+            NetworkBufferSpecs networkBufferSpecs,
+            LimitedFixedBufferPool networkPool = null,
             SslClientAuthenticationOptions tlsOptions = null,
             string authUsername = null,
             string authPassword = null,
@@ -104,9 +110,10 @@ namespace Garnet.client
             this.address = address;
             this.port = port;
 
-            this.usingManagedNetworkBuffers = networkBuffers.IsAllocated;
-            this.networkBuffers = usingManagedNetworkBuffers ? networkBuffers : networkBuffers.Allocate(logger: logger);
-            this.bufferSizeDigits = NumUtils.NumDigits(this.networkBuffers.sendMinAllocationSize);
+            this.usingManagedNetworkPool = networkPool != null;
+            this.networkBufferSpecs = networkBufferSpecs;
+            this.networkPool = networkPool ?? networkBufferSpecs.Create();
+            this.bufferSizeDigits = NumUtils.NumDigits(this.networkBufferSpecs.sendBufferSize);
 
             this.logger = logger;
             this.sslOptions = tlsOptions;
@@ -127,7 +134,8 @@ namespace Garnet.client
             networkHandler = new GarnetClientSessionTcpNetworkHandler(
                 this,
                 socket,
-                networkBuffers,
+                networkBufferSpecs,
+                networkPool,
                 sslOptions != null,
                 messageConsumer: this,
                 networkSendThrottleMax: networkSendThrottleMax,
@@ -183,8 +191,7 @@ namespace Garnet.client
             networkSender?.ReturnResponseObject();
             socket?.Dispose();
             networkHandler?.Dispose();
-            if (!usingManagedNetworkBuffers)
-                networkBuffers.Dispose();
+            if (!usingManagedNetworkPool) networkPool.Dispose();
         }
 
         /// <summary>
@@ -284,8 +291,8 @@ namespace Garnet.client
             }
             offset = curr;
 
-            if (payloadLength > networkBuffers.sendMinAllocationSize)
-                throw new Exception($"Payload length {payloadLength} is larger than bufferSize {networkBuffers.sendMinAllocationSize} bytes");
+            if (payloadLength > networkBufferSpecs.sendBufferSize)
+                throw new Exception($"Payload length {payloadLength} is larger than bufferSize {networkBufferSpecs.sendBufferSize} bytes");
 
             while (!RespWriteUtils.WriteBulkString(new Span<byte>((void*)payloadPtr, payloadLength), ref curr, end))
             {
