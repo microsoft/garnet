@@ -131,11 +131,18 @@ namespace Garnet.common
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public void Dispose()
         {
-            System.Threading.Tasks.Task.Run(() =>
+#if HANGDETECT
+            int count = 0;
+#endif
+            while (totalReferences > int.MinValue &&
+                Interlocked.CompareExchange(ref totalReferences, int.MinValue, 0) != 0)
             {
-                while (totalReferences > int.MinValue && Interlocked.CompareExchange(ref totalReferences, int.MinValue, 0) != 0)
-                    Thread.Yield();
-            }).WaitAsync(TimeSpan.FromSeconds(15)).GetAwaiter().GetResult();
+#if HANGDETECT
+                    if (++count % 10000 == 0)
+                        logger?.LogTrace("Dispose iteration {count}, {activeHandlerCount}", count, activeHandlerCount);
+#endif
+                Thread.Yield();
+            }
 
             for (var i = 0; i < numLevels; i++)
             {
