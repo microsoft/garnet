@@ -179,8 +179,8 @@ namespace Garnet.server
             switch (cmd)
             {
                 // We special-case a few performance-sensitive operations to directly invoke via the storage API
-                case "SET":
-                case "set":
+                case "SET" when args.Length == 2:
+                case "set" when args.Length == 2:
                     {
                         if (!respServerSession.CheckACLPermissions(RespCommand.SET))
                             return Encoding.ASCII.GetString(CmdStrings.RESP_ERR_NOAUTH);
