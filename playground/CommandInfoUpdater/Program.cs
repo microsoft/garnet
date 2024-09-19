@@ -61,29 +61,12 @@ class Program
             return;
         }
 
-        var options = new JsonSerializerOptions()
-        {
-            DefaultIgnoreCondition = JsonIgnoreCondition.WhenWritingDefault,
-            WriteIndented = true,
-            Converters =
-            {
-                new JsonStringEnumConverter(), new KeySpecConverter(), new RespCommandArgumentConverter()
-            }
-        };
-        var docs = new RespCommandDocs(RespCommand.COMMAND, "COMMAND", null, RespCommandGroup.None, null,
-            RespCommandDocFlags.None, null, null,
-            new[]
-            {
-                new RespCommandDocs(RespCommand.COMMAND, "COMMAND|COUNT", null, RespCommandGroup.None, null,
-                    RespCommandDocFlags.None, null, null, null)
-            });
-        var s = JsonSerializer.Serialize(docs, options);
+        if (!CommandInfoUpdater.CommandInfoUpdater.TryUpdateCommandInfo(config.OutputDir, config.RespServerPort,
+                localRedisHost, config.IgnoreCommands, config.Force, logger, out var updatedCommandsInfo))
+            return;
 
         CommandDocsUpdater.TryUpdateCommandDocs(config.OutputDir, config.RespServerPort,
-            localRedisHost, config.IgnoreCommands, config.Force, logger);
-
-        CommandInfoUpdater.CommandInfoUpdater.TryUpdateCommandInfo(config.OutputDir, config.RespServerPort,
-            localRedisHost, config.IgnoreCommands, config.Force, logger);
+            localRedisHost, config.IgnoreCommands, updatedCommandsInfo, config.Force, logger);
     }
 
     static void DisplayHelp<T>(ParserResult<T> result, IEnumerable<Error> errs)

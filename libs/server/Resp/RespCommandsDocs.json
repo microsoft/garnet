@@ -7,6 +7,27 @@
     "Complexity": "Depends on subcommand.",
     "SubCommands": [
       {
+        "Command": "ACL_USERS",
+        "Name": "ACL|USERS",
+        "Summary": "Lists all ACL users.",
+        "Group": "Server",
+        "Complexity": "O(N). Where N is the number of configured users."
+      },
+      {
+        "Command": "ACL_SAVE",
+        "Name": "ACL|SAVE",
+        "Summary": "Saves the effective ACL rules in the configured ACL file.",
+        "Group": "Server",
+        "Complexity": "O(N). Where N is the number of configured users."
+      },
+      {
+        "Command": "ACL_LIST",
+        "Name": "ACL|LIST",
+        "Summary": "Dumps the effective rules in ACL file format.",
+        "Group": "Server",
+        "Complexity": "O(N). Where N is the number of configured users."
+      },
+      {
         "Command": "ACL_CAT",
         "Name": "ACL|CAT",
         "Summary": "Lists the ACL categories, or the commands inside a category.",
@@ -30,6 +51,13 @@
         "Complexity": "O(N). Where N is the number of configured users."
       },
       {
+        "Command": "ACL_WHOAMI",
+        "Name": "ACL|WHOAMI",
+        "Summary": "Returns the authenticated username of the current connection.",
+        "Group": "Server",
+        "Complexity": "O(1)"
+      },
+      {
         "Command": "ACL_DELUSER",
         "Name": "ACL|DELUSER",
         "Summary": "Deletes ACL users, and terminates their connections.",
@@ -44,20 +72,6 @@
             "ArgumentFlags": "Multiple"
           }
         ]
-      },
-      {
-        "Command": "ACL_USERS",
-        "Name": "ACL|USERS",
-        "Summary": "Lists all ACL users.",
-        "Group": "Server",
-        "Complexity": "O(N). Where N is the number of configured users."
-      },
-      {
-        "Command": "ACL_LIST",
-        "Name": "ACL|LIST",
-        "Summary": "Dumps the effective rules in ACL file format.",
-        "Group": "Server",
-        "Complexity": "O(N). Where N is the number of configured users."
       },
       {
         "Command": "ACL_SETUSER",
@@ -80,20 +94,6 @@
             "ArgumentFlags": "Optional, Multiple"
           }
         ]
-      },
-      {
-        "Command": "ACL_WHOAMI",
-        "Name": "ACL|WHOAMI",
-        "Summary": "Returns the authenticated username of the current connection.",
-        "Group": "Server",
-        "Complexity": "O(1)"
-      },
-      {
-        "Command": "ACL_SAVE",
-        "Name": "ACL|SAVE",
-        "Summary": "Saves the effective ACL rules in the configured ACL file.",
-        "Group": "Server",
-        "Complexity": "O(N). Where N is the number of configured users."
       }
     ]
   },
@@ -128,7 +128,39 @@
   },
   {
     "Command": "ASYNC",
-    "Name": "ASYNC"
+    "Name": "ASYNC",
+    "Summary": "Start, stop or issue a barrier command for a series of async operations.",
+    "Group": "Generic",
+    "Arguments": [
+      {
+        "TypeDiscriminator": "RespCommandContainerArgument",
+        "Name": "ARGS",
+        "Type": "OneOf",
+        "Arguments": [
+          {
+            "TypeDiscriminator": "RespCommandBasicArgument",
+            "Name": "ON",
+            "DisplayText": "on",
+            "Type": "PureToken",
+            "Token": "ON"
+          },
+          {
+            "TypeDiscriminator": "RespCommandBasicArgument",
+            "Name": "OFF",
+            "DisplayText": "off",
+            "Type": "PureToken",
+            "Token": "OFF"
+          },
+          {
+            "TypeDiscriminator": "RespCommandBasicArgument",
+            "Name": "BARRIER",
+            "DisplayText": "barrier",
+            "Type": "PureToken",
+            "Token": "BARRIER"
+          }
+        ]
+      }
+    ]
   },
   {
     "Command": "AUTH",
@@ -660,6 +692,13 @@
     "Complexity": "Depends on subcommand.",
     "SubCommands": [
       {
+        "Command": "CLIENT_INFO",
+        "Name": "CLIENT|INFO",
+        "Summary": "Returns information about the connection.",
+        "Group": "Connection",
+        "Complexity": "O(1)"
+      },
+      {
         "Command": "CLIENT_KILL",
         "Name": "CLIENT|KILL",
         "Summary": "Terminates open connections.",
@@ -789,9 +828,9 @@
         ]
       },
       {
-        "Command": "CLIENT_INFO",
-        "Name": "CLIENT|INFO",
-        "Summary": "Returns information about the connection.",
+        "Command": "CLIENT_ID",
+        "Name": "CLIENT|ID",
+        "Summary": "Returns the unique client ID of the connection.",
         "Group": "Connection",
         "Complexity": "O(1)"
       },
@@ -848,13 +887,6 @@
             "ArgumentFlags": "Optional, Multiple"
           }
         ]
-      },
-      {
-        "Command": "CLIENT_ID",
-        "Name": "CLIENT|ID",
-        "Summary": "Returns the unique client ID of the connection.",
-        "Group": "Connection",
-        "Complexity": "O(1)"
       }
     ]
   },
@@ -866,80 +898,79 @@
     "Complexity": "Depends on subcommand.",
     "SubCommands": [
       {
-        "Command": "CLUSTER_AOFSYNC",
-        "Name": "CLUSTER|AOFSYNC"
+        "Command": "CLUSTER_NODES",
+        "Name": "CLUSTER|NODES",
+        "Summary": "Returns the cluster configuration for a node.",
+        "Group": "Cluster",
+        "Complexity": "O(N) where N is the total number of Cluster nodes"
       },
       {
-        "Command": "CLUSTER_APPENDLOG",
-        "Name": "CLUSTER|APPENDLOG"
+        "Command": "CLUSTER_SETCONFIGEPOCH",
+        "Name": "CLUSTER|SET-CONFIG-EPOCH",
+        "Summary": "Sets the configuration epoch for a new node.",
+        "Group": "Cluster",
+        "Complexity": "O(1)",
+        "Arguments": [
+          {
+            "TypeDiscriminator": "RespCommandBasicArgument",
+            "Name": "CONFIG-EPOCH",
+            "DisplayText": "config-epoch",
+            "Type": "Integer"
+          }
+        ]
       },
       {
-        "Command": "CLUSTER_BANLIST",
-        "Name": "CLUSTER|BANLIST"
+        "Command": "CLUSTER_KEYSLOT",
+        "Name": "CLUSTER|KEYSLOT",
+        "Summary": "Returns the hash slot for a key.",
+        "Group": "Cluster",
+        "Complexity": "O(N) where N is the number of bytes in the key",
+        "Arguments": [
+          {
+            "TypeDiscriminator": "RespCommandBasicArgument",
+            "Name": "KEY",
+            "DisplayText": "key",
+            "Type": "String"
+          }
+        ]
       },
       {
-        "Command": "CLUSTER_BEGIN_REPLICA_RECOVER",
-        "Name": "CLUSTER|BEGIN_REPLICA_RECOVER"
+        "Command": "CLUSTER_SLOTS",
+        "Name": "CLUSTER|SLOTS",
+        "Summary": "Returns the mapping of cluster slots to nodes.",
+        "Group": "Cluster",
+        "Complexity": "O(N) where N is the total number of Cluster nodes",
+        "DocFlags": "Deprecated",
+        "ReplacedBy": "\u0060CLUSTER SHARDS\u0060"
       },
       {
-        "Command": "CLUSTER_DELKEYSINSLOT",
-        "Name": "CLUSTER|DELKEYSINSLOT"
-      },
-      {
-        "Command": "CLUSTER_DELKEYSINSLOTRANGE",
-        "Name": "CLUSTER|DELKEYSINSLOTRANGE"
-      },
-      {
-        "Command": "CLUSTER_ENDPOINT",
-        "Name": "CLUSTER|ENDPOINT"
-      },
-      {
-        "Command": "CLUSTER_FAILSTOPWRITES",
-        "Name": "CLUSTER|FAILSTOPWRITES"
-      },
-      {
-        "Command": "CLUSTER_FAILREPLICATIONOFFSET",
-        "Name": "CLUSTER|FAILREPLICATIONOFFSET"
-      },
-      {
-        "Command": "CLUSTER_GOSSIP",
-        "Name": "CLUSTER|GOSSIP"
-      },
-      {
-        "Command": "CLUSTER_HELP",
-        "Name": "CLUSTER|HELP"
-      },
-      {
-        "Command": "CLUSTER_INITIATE_REPLICA_SYNC",
-        "Name": "CLUSTER|INITIATE_REPLICA_SYNC"
-      },
-      {
-        "Command": "CLUSTER_MIGRATE",
-        "Name": "CLUSTER|MIGRATE"
-      },
-      {
-        "Command": "CLUSTER_MTASKS",
-        "Name": "CLUSTER|MTASKS"
-      },
-      {
-        "Command": "CLUSTER_MYPARENTID",
-        "Name": "CLUSTER|MYPARENTID"
-      },
-      {
-        "Command": "CLUSTER_SEND_CKPT_FILE_SEGMENT",
-        "Name": "CLUSTER|SEND_CKPT_FILE_SEGMENT"
-      },
-      {
-        "Command": "CLUSTER_SEND_CKPT_METADATA",
-        "Name": "CLUSTER|SEND_CKPT_METADATA"
-      },
-      {
-        "Command": "CLUSTER_SETSLOTSRANGE",
-        "Name": "CLUSTER|SETSLOTSRANGE"
-      },
-      {
-        "Command": "CLUSTER_SLOTSTATE",
-        "Name": "CLUSTER|SLOTSTATE"
+        "Command": "CLUSTER_DELSLOTSRANGE",
+        "Name": "CLUSTER|DELSLOTSRANGE",
+        "Summary": "Sets hash slot ranges as unbound for a node.",
+        "Group": "Cluster",
+        "Complexity": "O(N) where N is the total number of the slots between the start slot and end slot arguments.",
+        "Arguments": [
+          {
+            "TypeDiscriminator": "RespCommandContainerArgument",
+            "Name": "RANGE",
+            "Type": "Block",
+            "ArgumentFlags": "Multiple",
+            "Arguments": [
+              {
+                "TypeDiscriminator": "RespCommandBasicArgument",
+                "Name": "START-SLOT",
+                "DisplayText": "start-slot",
+                "Type": "Integer"
+              },
+              {
+                "TypeDiscriminator": "RespCommandBasicArgument",
+                "Name": "END-SLOT",
+                "DisplayText": "end-slot",
+                "Type": "Integer"
+              }
+            ]
+          }
+        ]
       },
       {
         "Command": "CLUSTER_ADDSLOTS",
@@ -958,17 +989,200 @@
         ]
       },
       {
-        "Command": "CLUSTER_KEYSLOT",
-        "Name": "CLUSTER|KEYSLOT",
-        "Summary": "Returns the hash slot for a key.",
+        "Command": "CLUSTER_REPLICATE",
+        "Name": "CLUSTER|REPLICATE",
+        "Summary": "Configure a node as replica of a master node.",
         "Group": "Cluster",
-        "Complexity": "O(N) where N is the number of bytes in the key",
+        "Complexity": "O(1)",
         "Arguments": [
           {
             "TypeDiscriminator": "RespCommandBasicArgument",
-            "Name": "KEY",
-            "DisplayText": "key",
+            "Name": "NODE-ID",
+            "DisplayText": "node-id",
             "Type": "String"
+          }
+        ]
+      },
+      {
+        "Command": "CLUSTER_INFO",
+        "Name": "CLUSTER|INFO",
+        "Summary": "Returns information about the state of a node.",
+        "Group": "Cluster",
+        "Complexity": "O(1)"
+      },
+      {
+        "Command": "CLUSTER_DELSLOTS",
+        "Name": "CLUSTER|DELSLOTS",
+        "Summary": "Sets hash slots as unbound for a node.",
+        "Group": "Cluster",
+        "Complexity": "O(N) where N is the total number of hash slot arguments",
+        "Arguments": [
+          {
+            "TypeDiscriminator": "RespCommandBasicArgument",
+            "Name": "SLOT",
+            "DisplayText": "slot",
+            "Type": "Integer",
+            "ArgumentFlags": "Multiple"
+          }
+        ]
+      },
+      {
+        "Command": "CLUSTER_ADDSLOTSRANGE",
+        "Name": "CLUSTER|ADDSLOTSRANGE",
+        "Summary": "Assigns new hash slot ranges to a node.",
+        "Group": "Cluster",
+        "Complexity": "O(N) where N is the total number of the slots between the start slot and end slot arguments.",
+        "Arguments": [
+          {
+            "TypeDiscriminator": "RespCommandContainerArgument",
+            "Name": "RANGE",
+            "Type": "Block",
+            "ArgumentFlags": "Multiple",
+            "Arguments": [
+              {
+                "TypeDiscriminator": "RespCommandBasicArgument",
+                "Name": "START-SLOT",
+                "DisplayText": "start-slot",
+                "Type": "Integer"
+              },
+              {
+                "TypeDiscriminator": "RespCommandBasicArgument",
+                "Name": "END-SLOT",
+                "DisplayText": "end-slot",
+                "Type": "Integer"
+              }
+            ]
+          }
+        ]
+      },
+      {
+        "Command": "CLUSTER_SHARDS",
+        "Name": "CLUSTER|SHARDS",
+        "Summary": "Returns the mapping of cluster slots to shards.",
+        "Group": "Cluster",
+        "Complexity": "O(N) where N is the total number of cluster nodes"
+      },
+      {
+        "Command": "CLUSTER_FORGET",
+        "Name": "CLUSTER|FORGET",
+        "Summary": "Removes a node from the nodes table.",
+        "Group": "Cluster",
+        "Complexity": "O(1)",
+        "Arguments": [
+          {
+            "TypeDiscriminator": "RespCommandBasicArgument",
+            "Name": "NODE-ID",
+            "DisplayText": "node-id",
+            "Type": "String"
+          }
+        ]
+      },
+      {
+        "Command": "CLUSTER_BUMPEPOCH",
+        "Name": "CLUSTER|BUMPEPOCH",
+        "Summary": "Advances the cluster config epoch.",
+        "Group": "Cluster",
+        "Complexity": "O(1)"
+      },
+      {
+        "Command": "CLUSTER_MYID",
+        "Name": "CLUSTER|MYID",
+        "Summary": "Returns the ID of a node.",
+        "Group": "Cluster",
+        "Complexity": "O(1)"
+      },
+      {
+        "Command": "CLUSTER_COUNTKEYSINSLOT",
+        "Name": "CLUSTER|COUNTKEYSINSLOT",
+        "Summary": "Returns the number of keys in a hash slot.",
+        "Group": "Cluster",
+        "Complexity": "O(1)",
+        "Arguments": [
+          {
+            "TypeDiscriminator": "RespCommandBasicArgument",
+            "Name": "SLOT",
+            "DisplayText": "slot",
+            "Type": "Integer"
+          }
+        ]
+      },
+      {
+        "Command": "CLUSTER_MEET",
+        "Name": "CLUSTER|MEET",
+        "Summary": "Forces a node to handshake with another node.",
+        "Group": "Cluster",
+        "Complexity": "O(1)",
+        "Arguments": [
+          {
+            "TypeDiscriminator": "RespCommandBasicArgument",
+            "Name": "IP",
+            "DisplayText": "ip",
+            "Type": "String"
+          },
+          {
+            "TypeDiscriminator": "RespCommandBasicArgument",
+            "Name": "PORT",
+            "DisplayText": "port",
+            "Type": "Integer"
+          },
+          {
+            "TypeDiscriminator": "RespCommandBasicArgument",
+            "Name": "CLUSTER-BUS-PORT",
+            "DisplayText": "cluster-bus-port",
+            "Type": "Integer",
+            "ArgumentFlags": "Optional"
+          }
+        ]
+      },
+      {
+        "Command": "CLUSTER_RESET",
+        "Name": "CLUSTER|RESET",
+        "Summary": "Resets a node.",
+        "Group": "Cluster",
+        "Complexity": "O(N) where N is the number of known nodes. The command may execute a FLUSHALL as a side effect.",
+        "Arguments": [
+          {
+            "TypeDiscriminator": "RespCommandContainerArgument",
+            "Name": "RESET-TYPE",
+            "Type": "OneOf",
+            "ArgumentFlags": "Optional",
+            "Arguments": [
+              {
+                "TypeDiscriminator": "RespCommandBasicArgument",
+                "Name": "HARD",
+                "DisplayText": "hard",
+                "Type": "PureToken",
+                "Token": "HARD"
+              },
+              {
+                "TypeDiscriminator": "RespCommandBasicArgument",
+                "Name": "SOFT",
+                "DisplayText": "soft",
+                "Type": "PureToken",
+                "Token": "SOFT"
+              }
+            ]
+          }
+        ]
+      },
+      {
+        "Command": "CLUSTER_GETKEYSINSLOT",
+        "Name": "CLUSTER|GETKEYSINSLOT",
+        "Summary": "Returns the key names in a hash slot.",
+        "Group": "Cluster",
+        "Complexity": "O(N) where N is the number of requested keys",
+        "Arguments": [
+          {
+            "TypeDiscriminator": "RespCommandBasicArgument",
+            "Name": "SLOT",
+            "DisplayText": "slot",
+            "Type": "Integer"
+          },
+          {
+            "TypeDiscriminator": "RespCommandBasicArgument",
+            "Name": "COUNT",
+            "DisplayText": "count",
+            "Type": "Integer"
           }
         ]
       },
@@ -1023,91 +1237,9 @@
         ]
       },
       {
-        "Command": "CLUSTER_FORGET",
-        "Name": "CLUSTER|FORGET",
-        "Summary": "Removes a node from the nodes table.",
-        "Group": "Cluster",
-        "Complexity": "O(1)",
-        "Arguments": [
-          {
-            "TypeDiscriminator": "RespCommandBasicArgument",
-            "Name": "NODE-ID",
-            "DisplayText": "node-id",
-            "Type": "String"
-          }
-        ]
-      },
-      {
-        "Command": "CLUSTER_SHARDS",
-        "Name": "CLUSTER|SHARDS",
-        "Summary": "Returns the mapping of cluster slots to shards.",
-        "Group": "Cluster",
-        "Complexity": "O(N) where N is the total number of cluster nodes"
-      },
-      {
-        "Command": "CLUSTER_INFO",
-        "Name": "CLUSTER|INFO",
-        "Summary": "Returns information about the state of a node.",
-        "Group": "Cluster",
-        "Complexity": "O(1)"
-      },
-      {
-        "Command": "CLUSTER_SETCONFIGEPOCH",
-        "Name": "CLUSTER|SET-CONFIG-EPOCH",
-        "Summary": "Sets the configuration epoch for a new node.",
-        "Group": "Cluster",
-        "Complexity": "O(1)",
-        "Arguments": [
-          {
-            "TypeDiscriminator": "RespCommandBasicArgument",
-            "Name": "CONFIG-EPOCH",
-            "DisplayText": "config-epoch",
-            "Type": "Integer"
-          }
-        ]
-      },
-      {
-        "Command": "CLUSTER_ADDSLOTSRANGE",
-        "Name": "CLUSTER|ADDSLOTSRANGE",
-        "Summary": "Assigns new hash slot ranges to a node.",
-        "Group": "Cluster",
-        "Complexity": "O(N) where N is the total number of the slots between the start slot and end slot arguments.",
-        "Arguments": [
-          {
-            "TypeDiscriminator": "RespCommandContainerArgument",
-            "Name": "RANGE",
-            "Type": "Block",
-            "ArgumentFlags": "Multiple",
-            "Arguments": [
-              {
-                "TypeDiscriminator": "RespCommandBasicArgument",
-                "Name": "START-SLOT",
-                "DisplayText": "start-slot",
-                "Type": "Integer"
-              },
-              {
-                "TypeDiscriminator": "RespCommandBasicArgument",
-                "Name": "END-SLOT",
-                "DisplayText": "end-slot",
-                "Type": "Integer"
-              }
-            ]
-          }
-        ]
-      },
-      {
-        "Command": "CLUSTER_SLOTS",
-        "Name": "CLUSTER|SLOTS",
-        "Summary": "Returns the mapping of cluster slots to nodes.",
-        "Group": "Cluster",
-        "Complexity": "O(N) where N is the total number of Cluster nodes",
-        "DocFlags": "Deprecated",
-        "ReplacedBy": "\u0060CLUSTER SHARDS\u0060"
-      },
-      {
-        "Command": "CLUSTER_BUMPEPOCH",
-        "Name": "CLUSTER|BUMPEPOCH",
-        "Summary": "Advances the cluster config epoch.",
+        "Command": "CLUSTER_HELP",
+        "Name": "CLUSTER|HELP",
+        "Summary": "Returns helpful text about the different subcommands.",
         "Group": "Cluster",
         "Complexity": "O(1)"
       },
@@ -1156,175 +1288,6 @@
             ]
           }
         ]
-      },
-      {
-        "Command": "CLUSTER_DELSLOTSRANGE",
-        "Name": "CLUSTER|DELSLOTSRANGE",
-        "Summary": "Sets hash slot ranges as unbound for a node.",
-        "Group": "Cluster",
-        "Complexity": "O(N) where N is the total number of the slots between the start slot and end slot arguments.",
-        "Arguments": [
-          {
-            "TypeDiscriminator": "RespCommandContainerArgument",
-            "Name": "RANGE",
-            "Type": "Block",
-            "ArgumentFlags": "Multiple",
-            "Arguments": [
-              {
-                "TypeDiscriminator": "RespCommandBasicArgument",
-                "Name": "START-SLOT",
-                "DisplayText": "start-slot",
-                "Type": "Integer"
-              },
-              {
-                "TypeDiscriminator": "RespCommandBasicArgument",
-                "Name": "END-SLOT",
-                "DisplayText": "end-slot",
-                "Type": "Integer"
-              }
-            ]
-          }
-        ]
-      },
-      {
-        "Command": "CLUSTER_COUNTKEYSINSLOT",
-        "Name": "CLUSTER|COUNTKEYSINSLOT",
-        "Summary": "Returns the number of keys in a hash slot.",
-        "Group": "Cluster",
-        "Complexity": "O(1)",
-        "Arguments": [
-          {
-            "TypeDiscriminator": "RespCommandBasicArgument",
-            "Name": "SLOT",
-            "DisplayText": "slot",
-            "Type": "Integer"
-          }
-        ]
-      },
-      {
-        "Command": "CLUSTER_RESET",
-        "Name": "CLUSTER|RESET",
-        "Summary": "Resets a node.",
-        "Group": "Cluster",
-        "Complexity": "O(N) where N is the number of known nodes. The command may execute a FLUSHALL as a side effect.",
-        "Arguments": [
-          {
-            "TypeDiscriminator": "RespCommandContainerArgument",
-            "Name": "RESET-TYPE",
-            "Type": "OneOf",
-            "ArgumentFlags": "Optional",
-            "Arguments": [
-              {
-                "TypeDiscriminator": "RespCommandBasicArgument",
-                "Name": "HARD",
-                "DisplayText": "hard",
-                "Type": "PureToken",
-                "Token": "HARD"
-              },
-              {
-                "TypeDiscriminator": "RespCommandBasicArgument",
-                "Name": "SOFT",
-                "DisplayText": "soft",
-                "Type": "PureToken",
-                "Token": "SOFT"
-              }
-            ]
-          }
-        ]
-      },
-      {
-        "Command": "CLUSTER_MEET",
-        "Name": "CLUSTER|MEET",
-        "Summary": "Forces a node to handshake with another node.",
-        "Group": "Cluster",
-        "Complexity": "O(1)",
-        "Arguments": [
-          {
-            "TypeDiscriminator": "RespCommandBasicArgument",
-            "Name": "IP",
-            "DisplayText": "ip",
-            "Type": "String"
-          },
-          {
-            "TypeDiscriminator": "RespCommandBasicArgument",
-            "Name": "PORT",
-            "DisplayText": "port",
-            "Type": "Integer"
-          },
-          {
-            "TypeDiscriminator": "RespCommandBasicArgument",
-            "Name": "CLUSTER-BUS-PORT",
-            "DisplayText": "cluster-bus-port",
-            "Type": "Integer",
-            "ArgumentFlags": "Optional"
-          }
-        ]
-      },
-      {
-        "Command": "CLUSTER_REPLICATE",
-        "Name": "CLUSTER|REPLICATE",
-        "Summary": "Configure a node as replica of a master node.",
-        "Group": "Cluster",
-        "Complexity": "O(1)",
-        "Arguments": [
-          {
-            "TypeDiscriminator": "RespCommandBasicArgument",
-            "Name": "NODE-ID",
-            "DisplayText": "node-id",
-            "Type": "String"
-          }
-        ]
-      },
-      {
-        "Command": "CLUSTER_NODES",
-        "Name": "CLUSTER|NODES",
-        "Summary": "Returns the cluster configuration for a node.",
-        "Group": "Cluster",
-        "Complexity": "O(N) where N is the total number of Cluster nodes"
-      },
-      {
-        "Command": "CLUSTER_GETKEYSINSLOT",
-        "Name": "CLUSTER|GETKEYSINSLOT",
-        "Summary": "Returns the key names in a hash slot.",
-        "Group": "Cluster",
-        "Complexity": "O(N) where N is the number of requested keys",
-        "Arguments": [
-          {
-            "TypeDiscriminator": "RespCommandBasicArgument",
-            "Name": "SLOT",
-            "DisplayText": "slot",
-            "Type": "Integer"
-          },
-          {
-            "TypeDiscriminator": "RespCommandBasicArgument",
-            "Name": "COUNT",
-            "DisplayText": "count",
-            "Type": "Integer"
-          }
-        ]
-      },
-      {
-        "Command": "CLUSTER_DELSLOTS",
-        "Name": "CLUSTER|DELSLOTS",
-        "Summary": "Sets hash slots as unbound for a node.",
-        "Group": "Cluster",
-        "Complexity": "O(N) where N is the total number of hash slot arguments",
-        "Arguments": [
-          {
-            "TypeDiscriminator": "RespCommandBasicArgument",
-            "Name": "SLOT",
-            "DisplayText": "slot",
-            "Type": "Integer",
-            "ArgumentFlags": "Multiple"
-          }
-        ]
-      },
-      {
-        "Command": "CLUSTER_MYID",
-        "Name": "CLUSTER|MYID",
-        "Summary": "Returns the ID of a node.",
-        "Group": "Cluster",
-        "Complexity": "O(1)"
       }
     ]
   },
@@ -1335,22 +1298,6 @@
     "Group": "Server",
     "Complexity": "O(N) where N is the total number of Redis commands",
     "SubCommands": [
-      {
-        "Command": "COMMAND_INFO",
-        "Name": "COMMAND|INFO",
-        "Summary": "Returns information about one, multiple or all commands.",
-        "Group": "Server",
-        "Complexity": "O(N) where N is the number of commands to look up",
-        "Arguments": [
-          {
-            "TypeDiscriminator": "RespCommandBasicArgument",
-            "Name": "COMMAND-NAME",
-            "DisplayText": "command-name",
-            "Type": "String",
-            "ArgumentFlags": "Optional, Multiple"
-          }
-        ]
-      },
       {
         "Command": "COMMAND_COUNT",
         "Name": "COMMAND|COUNT",
@@ -1373,12 +1320,30 @@
             "ArgumentFlags": "Optional, Multiple"
           }
         ]
+      },
+      {
+        "Command": "COMMAND_INFO",
+        "Name": "COMMAND|INFO",
+        "Summary": "Returns information about one, multiple or all commands.",
+        "Group": "Server",
+        "Complexity": "O(N) where N is the number of commands to look up",
+        "Arguments": [
+          {
+            "TypeDiscriminator": "RespCommandBasicArgument",
+            "Name": "COMMAND-NAME",
+            "DisplayText": "command-name",
+            "Type": "String",
+            "ArgumentFlags": "Optional, Multiple"
+          }
+        ]
       }
     ]
   },
   {
     "Command": "COMMITAOF",
-    "Name": "COMMITAOF"
+    "Name": "COMMITAOF",
+    "Summary": "Commit to append-only file.",
+    "Group": "Server"
   },
   {
     "Command": "CONFIG",
@@ -1387,6 +1352,22 @@
     "Group": "Server",
     "Complexity": "Depends on subcommand.",
     "SubCommands": [
+      {
+        "Command": "CONFIG_GET",
+        "Name": "CONFIG|GET",
+        "Summary": "Returns the effective values of configuration parameters.",
+        "Group": "Server",
+        "Complexity": "O(N) when N is the number of configuration parameters provided",
+        "Arguments": [
+          {
+            "TypeDiscriminator": "RespCommandBasicArgument",
+            "Name": "PARAMETER",
+            "DisplayText": "parameter",
+            "Type": "String",
+            "ArgumentFlags": "Multiple"
+          }
+        ]
+      },
       {
         "Command": "CONFIG_REWRITE",
         "Name": "CONFIG|REWRITE",
@@ -1422,44 +1403,46 @@
             ]
           }
         ]
-      },
-      {
-        "Command": "CONFIG_GET",
-        "Name": "CONFIG|GET",
-        "Summary": "Returns the effective values of configuration parameters.",
-        "Group": "Server",
-        "Complexity": "O(N) when N is the number of configuration parameters provided",
-        "Arguments": [
-          {
-            "TypeDiscriminator": "RespCommandBasicArgument",
-            "Name": "PARAMETER",
-            "DisplayText": "parameter",
-            "Type": "String",
-            "ArgumentFlags": "Multiple"
-          }
-        ]
       }
     ]
   },
   {
     "Command": "COSCAN",
-    "Name": "COSCAN"
-  },
-  {
-    "Command": "CustomObjCmd",
-    "Name": "CustomObjCmd"
-  },
-  {
-    "Command": "CustomProcedure",
-    "Name": "CustomProcedure"
-  },
-  {
-    "Command": "CustomRawStringCmd",
-    "Name": "CustomRawStringCmd"
-  },
-  {
-    "Command": "CustomTxn",
-    "Name": "CustomTxn"
+    "Name": "COSCAN",
+    "Summary": "Iterates over members of a collection object.",
+    "Group": "Generic",
+    "Complexity": "O(1) for every call. O(N) for a complete iteration, including enough command calls for the cursor to return back to 0. N is the number of elements inside the collection.",
+    "Arguments": [
+      {
+        "TypeDiscriminator": "RespCommandKeyArgument",
+        "Name": "KEY",
+        "DisplayText": "key",
+        "Type": "Key",
+        "KeySpecIndex": 0
+      },
+      {
+        "TypeDiscriminator": "RespCommandBasicArgument",
+        "Name": "CURSOR",
+        "DisplayText": "cursor",
+        "Type": "Integer"
+      },
+      {
+        "TypeDiscriminator": "RespCommandBasicArgument",
+        "Name": "PATTERN",
+        "DisplayText": "pattern",
+        "Type": "Pattern",
+        "Token": "MATCH",
+        "ArgumentFlags": "Optional"
+      },
+      {
+        "TypeDiscriminator": "RespCommandBasicArgument",
+        "Name": "COUNT",
+        "DisplayText": "count",
+        "Type": "Integer",
+        "Token": "COUNT",
+        "ArgumentFlags": "Optional"
+      }
+    ]
   },
   {
     "Command": "DBSIZE",
@@ -1817,7 +1800,9 @@
   },
   {
     "Command": "FORCEGC",
-    "Name": "FORCEGC"
+    "Name": "FORCEGC",
+    "Summary": "Forces garbage collection.",
+    "Group": "Server"
   },
   {
     "Command": "GEOADD",
@@ -2860,7 +2845,10 @@
     "SubCommands": [
       {
         "Command": "LATENCY_HELP",
-        "Name": "LATENCY|HELP"
+        "Name": "LATENCY|HELP",
+        "Summary": "Returns helpful text about the different subcommands.",
+        "Group": "Server",
+        "Complexity": "O(1)"
       },
       {
         "Command": "LATENCY_HISTOGRAM",
@@ -3454,7 +3442,26 @@
     "SubCommands": [
       {
         "Command": "MODULE_LOADCS",
-        "Name": "MODULE|LOADCS"
+        "Name": "MODULE|LOADCS",
+        "Summary": "Load a C# module in Garnet.",
+        "Group": "Server",
+        "Arguments": [
+          {
+            "TypeDiscriminator": "RespCommandBasicArgument",
+            "Name": "SRCPATH",
+            "DisplayText": "srcPath",
+            "Type": "String",
+            "Summary": "Source path to module definition"
+          },
+          {
+            "TypeDiscriminator": "RespCommandBasicArgument",
+            "Name": "MODULEARG",
+            "DisplayText": "arg",
+            "Type": "String",
+            "Summary": "Module argument",
+            "ArgumentFlags": "Multiple"
+          }
+        ]
       }
     ]
   },
@@ -3809,7 +3816,110 @@
   },
   {
     "Command": "REGISTERCS",
-    "Name": "REGISTERCS"
+    "Name": "REGISTERCS",
+    "Summary": "Registers custom C# commands in Garnet.",
+    "Group": "Server",
+    "Arguments": [
+      {
+        "TypeDiscriminator": "RespCommandContainerArgument",
+        "Name": "CMD",
+        "Type": "Block",
+        "Arguments": [
+          {
+            "TypeDiscriminator": "RespCommandContainerArgument",
+            "Name": "CMDTYPE",
+            "Type": "OneOf",
+            "Arguments": [
+              {
+                "TypeDiscriminator": "RespCommandBasicArgument",
+                "Name": "READ",
+                "DisplayText": "read",
+                "Type": "PureToken",
+                "Token": "READ"
+              },
+              {
+                "TypeDiscriminator": "RespCommandBasicArgument",
+                "Name": "RMW",
+                "DisplayText": "rmw",
+                "Type": "PureToken",
+                "Token": "RMW"
+              },
+              {
+                "TypeDiscriminator": "RespCommandBasicArgument",
+                "Name": "TXN",
+                "DisplayText": "txn",
+                "Type": "PureToken",
+                "Token": "TXN"
+              }
+            ]
+          },
+          {
+            "TypeDiscriminator": "RespCommandBasicArgument",
+            "Name": "NAME",
+            "DisplayText": "cmdName",
+            "Type": "String",
+            "Summary": "Name of the command to register"
+          },
+          {
+            "TypeDiscriminator": "RespCommandBasicArgument",
+            "Name": "NUMPARAMS",
+            "DisplayText": "numParams",
+            "Type": "Integer",
+            "Summary": "Numer of parameters of the command to register"
+          },
+          {
+            "TypeDiscriminator": "RespCommandBasicArgument",
+            "Name": "CLASSNAME",
+            "DisplayText": "className",
+            "Type": "String",
+            "Summary": "Name of class defining the command to register"
+          },
+          {
+            "TypeDiscriminator": "RespCommandBasicArgument",
+            "Name": "EXPTICKS",
+            "DisplayText": "expTicks",
+            "Type": "Integer",
+            "Summary": "Expiry of the command to register (in ticks)",
+            "ArgumentFlags": "Optional"
+          },
+          {
+            "TypeDiscriminator": "RespCommandBasicArgument",
+            "Name": "OBJCMDNAME",
+            "DisplayText": "objCmdName",
+            "Type": "String",
+            "Summary": "The object command name, if applicable",
+            "ArgumentFlags": "Optional"
+          }
+        ]
+      },
+      {
+        "TypeDiscriminator": "RespCommandBasicArgument",
+        "Name": "INFO",
+        "DisplayText": "infoPath",
+        "Type": "String",
+        "Token": "INFO",
+        "Summary": "Path to JSON-serialized command info for registered commands",
+        "ArgumentFlags": "Optional"
+      },
+      {
+        "TypeDiscriminator": "RespCommandBasicArgument",
+        "Name": "DOCS",
+        "DisplayText": "docsPath",
+        "Type": "String",
+        "Token": "DOCS",
+        "Summary": "Path to JSON-serialized command docs for registered commands",
+        "ArgumentFlags": "Optional"
+      },
+      {
+        "TypeDiscriminator": "RespCommandBasicArgument",
+        "Name": "SRC",
+        "DisplayText": "srcPath",
+        "Type": "String",
+        "Token": "SRC",
+        "Summary": "Source paths containing classes defining command to register",
+        "ArgumentFlags": "Multiple"
+      }
+    ]
   },
   {
     "Command": "RENAME",
@@ -3986,7 +4096,26 @@
   },
   {
     "Command": "RUNTXP",
-    "Name": "RUNTXP"
+    "Name": "RUNTXP",
+    "Summary": "Run registered transaction in Garnet.",
+    "Group": "Transactions",
+    "Arguments": [
+      {
+        "TypeDiscriminator": "RespCommandBasicArgument",
+        "Name": "TXNID",
+        "DisplayText": "txnId",
+        "Type": "Integer",
+        "Summary": "Registered transaction ID"
+      },
+      {
+        "TypeDiscriminator": "RespCommandBasicArgument",
+        "Name": "TXNPARAM",
+        "DisplayText": "param",
+        "Type": "String",
+        "Summary": "Transaction parameter",
+        "ArgumentFlags": "Multiple"
+      }
+    ]
   },
   {
     "Command": "SADD",
@@ -4123,7 +4252,59 @@
   },
   {
     "Command": "SECONDARYOF",
-    "Name": "SECONDARYOF"
+    "Name": "SECONDARYOF",
+    "Summary": "Configures a server as secondary of another, or promotes it to a primary.",
+    "Group": "Server",
+    "Complexity": "O(1)",
+    "Arguments": [
+      {
+        "TypeDiscriminator": "RespCommandContainerArgument",
+        "Name": "ARGS",
+        "Type": "OneOf",
+        "Arguments": [
+          {
+            "TypeDiscriminator": "RespCommandContainerArgument",
+            "Name": "HOST-PORT",
+            "Type": "Block",
+            "Arguments": [
+              {
+                "TypeDiscriminator": "RespCommandBasicArgument",
+                "Name": "HOST",
+                "DisplayText": "host",
+                "Type": "String"
+              },
+              {
+                "TypeDiscriminator": "RespCommandBasicArgument",
+                "Name": "PORT",
+                "DisplayText": "port",
+                "Type": "Integer"
+              }
+            ]
+          },
+          {
+            "TypeDiscriminator": "RespCommandContainerArgument",
+            "Name": "NO-ONE",
+            "Type": "Block",
+            "Arguments": [
+              {
+                "TypeDiscriminator": "RespCommandBasicArgument",
+                "Name": "NO",
+                "DisplayText": "no",
+                "Type": "PureToken",
+                "Token": "NO"
+              },
+              {
+                "TypeDiscriminator": "RespCommandBasicArgument",
+                "Name": "ONE",
+                "DisplayText": "one",
+                "Type": "PureToken",
+                "Token": "ONE"
+              }
+            ]
+          }
+        ]
+      }
+    ]
   },
   {
     "Command": "SELECT",
@@ -4755,11 +4936,37 @@
     "SubCommands": [
       {
         "Command": "WATCH_MS",
-        "Name": "WATCH|MS"
+        "Name": "WATCH|MS",
+        "Summary": "Monitors changes to keys in main store to determine the execution of a transaction.",
+        "Group": "Transactions",
+        "Complexity": "O(1) for every key.",
+        "Arguments": [
+          {
+            "TypeDiscriminator": "RespCommandKeyArgument",
+            "Name": "KEY",
+            "DisplayText": "key",
+            "Type": "Key",
+            "ArgumentFlags": "Multiple",
+            "KeySpecIndex": 0
+          }
+        ]
       },
       {
         "Command": "WATCH_OS",
-        "Name": "WATCH|OS"
+        "Name": "WATCH|OS",
+        "Summary": "Monitors changes to keys in object store to determine the execution of a transaction.",
+        "Group": "Transactions",
+        "Complexity": "O(1) for every key.",
+        "Arguments": [
+          {
+            "TypeDiscriminator": "RespCommandKeyArgument",
+            "Name": "KEY",
+            "DisplayText": "key",
+            "Type": "Key",
+            "ArgumentFlags": "Multiple",
+            "KeySpecIndex": 0
+          }
+        ]
       }
     ],
     "Arguments": [

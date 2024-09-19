@@ -105,6 +105,7 @@ namespace Garnet.server
             {
                 Command = supportedCommands.GetValueOrDefault(name, RespCommand.NONE),
                 Name = name.ToUpper(),
+                IsInternal = false,
                 Arity = arity,
                 Flags = flags,
                 FirstKey = firstKey,

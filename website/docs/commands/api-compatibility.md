@@ -193,7 +193,7 @@ Note that this list is subject to change as we continue to expand our API comman
 |  | [BGSAVE](checkpoint.md#bgsave) | ➕ |  |
 |  | [COMMAND](server.md#command) | ➕ |  |
 |  | [COMMAND COUNT](server.md#command-count) | ➕ |  |
-|  | COMMAND DOCS | ➖ |  |
+|  | [COMMAND DOCS](server.md#command-docs) | ➕ |  |
 |  | COMMAND GETKEYS | ➖ |  |
 |  | COMMAND GETKEYSANDFLAGS | ➖ |  | 
 |  | [COMMAND INFO](server.md#command-info) | ➕ |  | 

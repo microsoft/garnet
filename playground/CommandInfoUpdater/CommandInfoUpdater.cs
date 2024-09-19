@@ -27,11 +27,13 @@ namespace CommandInfoUpdater
         /// <param name="ignoreCommands">Commands to ignore</param>
         /// <param name="force">Force update all commands</param>
         /// <param name="logger">Logger</param>
+        /// <param name="updatedCommandsInfo">Updated command info data</param>
         /// <returns>True if file generated successfully</returns>
         public static bool TryUpdateCommandInfo(string outputDir, int respServerPort, IPAddress respServerHost,
-            IEnumerable<string> ignoreCommands, bool force, ILogger logger)
+            IEnumerable<string> ignoreCommands, bool force, ILogger logger, out IReadOnlyDictionary<string, RespCommandsInfo> updatedCommandsInfo)
         {
             logger.LogInformation("Attempting to update RESP commands info...");
+            updatedCommandsInfo = default;
 
             IReadOnlyDictionary<string, RespCommandsInfo> existingCommandsInfo =
                 new Dictionary<string, RespCommandsInfo>();
@@ -106,6 +108,7 @@ namespace CommandInfoUpdater
                     {
                         Command = baseCommandInfo.Command,
                         Name = baseCommandInfo.Name,
+                        IsInternal = baseCommandInfo.IsInternal,
                         Arity = baseCommandInfo.Arity,
                         Flags = baseCommandInfo.Flags,
                         FirstKey = baseCommandInfo.FirstKey,
@@ -119,7 +122,7 @@ namespace CommandInfoUpdater
                 }
             }
 
-            var updatedCommandsInfo = GetUpdatedCommandsInfo(existingCommandsInfo, commandsToAdd, commandsToRemove,
+            updatedCommandsInfo = GetUpdatedCommandsInfo(existingCommandsInfo, commandsToAdd, commandsToRemove,
                 additionalCommandsInfo);
 
             var outputPath = Path.Combine(outputDir ?? string.Empty, CommandInfoFileName);
@@ -243,6 +246,7 @@ namespace CommandInfoUpdater
                 {
                     Command = existingCommand.Command,
                     Name = existingCommand.Name,
+                    IsInternal = existingCommand.IsInternal,
                     Arity = existingCommand.Arity,
                     Flags = existingCommand.Flags,
                     FirstKey = existingCommand.FirstKey,
@@ -298,6 +302,7 @@ namespace CommandInfoUpdater
                 {
                     Command = baseCommand.Command,
                     Name = baseCommand.Name,
+                    IsInternal = baseCommand.IsInternal,
                     Arity = baseCommand.Arity,
                     Flags = baseCommand.Flags,
                     FirstKey = baseCommand.FirstKey,

@@ -22,11 +22,12 @@ namespace CommandInfoUpdater
         /// <param name="respServerPort">RESP server port to query commands docs</param>
         /// <param name="respServerHost">RESP server host to query commands docs</param>
         /// <param name="ignoreCommands">Commands to ignore</param>
+        /// <param name="updatedCommandsInfo">Updated command info data</param>
         /// <param name="force">Force update all commands</param>
         /// <param name="logger">Logger</param>
         /// <returns>True if file generated successfully</returns>
         public static bool TryUpdateCommandDocs(string outputDir, int respServerPort, IPAddress respServerHost,
-            IEnumerable<string> ignoreCommands, bool force, ILogger logger)
+            IEnumerable<string> ignoreCommands, IReadOnlyDictionary<string, RespCommandsInfo> updatedCommandsInfo, bool force, ILogger logger)
         {
             logger.LogInformation("Attempting to update RESP commands docs...");
 
@@ -57,7 +58,8 @@ namespace CommandInfoUpdater
             }
 
             IDictionary<string, RespCommandDocs> queriedCommandsDocs = new Dictionary<string, RespCommandDocs>();
-            var commandsToQuery = commandsToAdd.Keys.Select(k => k.Command).ToArray();
+            var commandsToQuery = commandsToAdd.Keys.Select(k => k.Command)
+                .Where(c => updatedCommandsInfo.ContainsKey(c) && !updatedCommandsInfo[c].IsInternal).ToArray();
             if (commandsToQuery.Length > 0 && !TryGetCommandsDocs(commandsToQuery, respServerPort, respServerHost,
                     logger, out queriedCommandsDocs))
             {
@@ -109,7 +111,7 @@ namespace CommandInfoUpdater
             }
 
             var updatedCommandsDocs = GetUpdatedCommandsDocs(existingCommandsDocs, commandsToAdd, commandsToRemove,
-                additionalCommandsDocs);
+                additionalCommandsDocs, updatedCommandsInfo);
 
             var outputPath = Path.Combine(outputDir ?? string.Empty, CommandDocsFileName);
             if (!CommonUtils.TryWriteRespCommandsData(outputPath, updatedCommandsDocs, logger))
@@ -184,12 +186,14 @@ namespace CommandInfoUpdater
         /// <param name="commandsToAdd">Commands to add</param>
         /// <param name="commandsToRemove">Commands to remove</param>
         /// <param name="queriedCommandsDocs">Queried commands docs</param>
+        /// <param name="updatedCommandsInfo">Updated commands info</param>
         /// <returns></returns>
         private static IReadOnlyDictionary<string, RespCommandDocs> GetUpdatedCommandsDocs(
             IReadOnlyDictionary<string, RespCommandDocs> existingCommandsDocs,
             IDictionary<SupportedCommand, bool> commandsToAdd,
             IDictionary<SupportedCommand, bool> commandsToRemove,
-            IDictionary<string, RespCommandDocs> queriedCommandsDocs)
+            IDictionary<string, RespCommandDocs> queriedCommandsDocs,
+            IReadOnlyDictionary<string, RespCommandsInfo> updatedCommandsInfo)
         {
             // Define updated commands as commands to add unified with commands to remove
             var updatedCommands =
@@ -254,6 +258,10 @@ namespace CommandInfoUpdater
                 // If parent command does not exist
                 else
                 {
+                    if (!queriedCommandsDocs.ContainsKey(command.Command) &&
+                        updatedCommandsInfo.ContainsKey(command.Command) &&
+                        updatedCommandsInfo[command.Command].IsInternal) continue;
+
                     // Set base command as queried command
                     baseCommandDocs = queriedCommandsDocs[command.Command];
 
