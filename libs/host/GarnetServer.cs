@@ -5,6 +5,7 @@ using System;
 using System.Diagnostics;
 using System.IO;
 using System.Linq;
+using System.Text;
 using System.Threading;
 using Garnet.cluster;
 using Garnet.common;
@@ -220,10 +221,13 @@ namespace Garnet
 
                     var modulePath = moduleCSData[0];
                     var moduleArgs = moduleCSData.Length > 1 ? moduleCSData.Skip(1).ToArray() : [];
-                    if (ModuleUtils.LoadAssemblies([modulePath], null,
-                        opts.ExtensionAllowUnsignedAssemblies, out var loadedAssemblies, out var errorMsg))
+                    if (ModuleUtils.LoadAssemblies([modulePath], null, true, out var loadedAssemblies, out var errorMsg))
                     {
                         ModuleRegistrar.Instance.LoadModule(customCommandManager, loadedAssemblies.ToList()[0], moduleArgs, logger, out errorMsg);
+                    }
+                    else
+                    {
+                        logger?.LogError("Module {0} failed to load with error {1}", modulePath, Encoding.UTF8.GetString(errorMsg));
                     }
                 }
             }

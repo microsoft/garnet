@@ -437,7 +437,7 @@ namespace Garnet
         [Option("extension-bin-paths", Separator = ',', Required = false, HelpText = "List of directories on server from which custom command binaries can be loaded by admin users")]
         public IEnumerable<string> ExtensionBinPaths { get; set; }
 
-        [FilePathValidation(true, true, false)]
+        [ModuleFilePathValidation(true, true, false)]
         [Option("loadmodulecs", Separator = ',', Required = false, HelpText = "List of modules to be loaded")]
         public IEnumerable<string> LoadModuleCS { get; set; }
 

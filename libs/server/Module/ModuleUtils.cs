@@ -31,11 +31,14 @@ namespace Garnet.server
 
             // Check that all binary files are contained in allowed binary paths
             var binaryFiles = files.ToArray();
-            if (binaryFiles.Any(f =>
-                    allowedExtensionPaths.All(p => !FileUtils.IsFileInDirectory(f, p))))
+            if (allowedExtensionPaths != null)
             {
-                errorMessage = CmdStrings.RESP_ERR_GENERIC_BINARY_FILES_NOT_IN_ALLOWED_PATHS;
-                return false;
+                if (binaryFiles.Any(f =>
+                        allowedExtensionPaths.All(p => !FileUtils.IsFileInDirectory(f, p))))
+                {
+                    errorMessage = CmdStrings.RESP_ERR_GENERIC_BINARY_FILES_NOT_IN_ALLOWED_PATHS;
+                    return false;
+                }
             }
 
             // Get all assemblies from binary files
