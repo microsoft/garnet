@@ -111,7 +111,7 @@ namespace Garnet.server
         }
 
         /// <summary>
-        /// Iterate the contents of the main store
+        /// Iterate the contents of the main store (push-based)
         /// </summary>
         /// <typeparam name="TScanFunctions"></typeparam>
         /// <param name="scanFunctions"></param>
@@ -119,7 +119,7 @@ namespace Garnet.server
         /// <returns></returns>
         internal bool IterateMainStore<TScanFunctions>(ref TScanFunctions scanFunctions, long untilAddress = -1)
             where TScanFunctions : IScanIteratorFunctions<SpanByte, SpanByte>
-            => basicContext.Session.Iterate(ref scanFunctions, untilAddress);
+            => basicContext.Session.IterateLookup(ref scanFunctions, untilAddress);
 
         /// <summary>
         /// Iterate the contents of the main store (pull based)
@@ -128,7 +128,7 @@ namespace Garnet.server
             => basicContext.Session.Iterate();
 
         /// <summary>
-        /// Iterate the contents of the object store
+        /// Iterate the contents of the object store (push-based)
         /// </summary>
         /// <typeparam name="TScanFunctions"></typeparam>
         /// <param name="scanFunctions"></param>
@@ -136,7 +136,7 @@ namespace Garnet.server
         /// <returns></returns>
         internal bool IterateObjectStore<TScanFunctions>(ref TScanFunctions scanFunctions, long untilAddress = -1)
             where TScanFunctions : IScanIteratorFunctions<byte[], IGarnetObject>
-            => objectStoreBasicContext.Session.Iterate(ref scanFunctions, untilAddress);
+            => objectStoreBasicContext.Session.IterateLookup(ref scanFunctions, untilAddress);
 
         /// <summary>
         /// Iterate the contents of the main store (pull based)

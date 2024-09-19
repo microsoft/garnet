@@ -13,8 +13,9 @@ namespace Garnet.cluster
     {
         internal static class ClusterKeyIterationFunctions
         {
-            internal struct MainStoreCountKeys : IScanIteratorFunctions<SpanByte, SpanByte>
+            internal sealed class MainStoreCountKeys : IScanIteratorFunctions<SpanByte, SpanByte>
             {
+                // This must be a class as it is passed through pending IO operations
                 internal int keyCount;
                 readonly int slot;
 
@@ -34,8 +35,9 @@ namespace Garnet.cluster
                 public void OnException(Exception exception, long numberOfRecords) { }
             }
 
-            internal struct ObjectStoreCountKeys : IScanIteratorFunctions<byte[], IGarnetObject>
+            internal sealed class ObjectStoreCountKeys : IScanIteratorFunctions<byte[], IGarnetObject>
             {
+                // This must be a class as it is passed through pending IO operations
                 internal int keyCount;
                 readonly int slot;
 
