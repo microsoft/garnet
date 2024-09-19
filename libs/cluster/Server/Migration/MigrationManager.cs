@@ -11,6 +11,7 @@ namespace Garnet.cluster
 {
     internal sealed class MigrationManager
     {
+        const int initialReceiveBufferSize = 1 << 12;
         readonly ILogger logger;
         readonly ClusterProvider clusterProvider;
         readonly MigrateSessionTaskStore migrationTaskStore;
@@ -40,8 +41,8 @@ namespace Garnet.cluster
             this.logger = logger;
             this.migrationTaskStore = new MigrateSessionTaskStore(logger);
             this.clusterProvider = clusterProvider;
-            var bufferSize = 1 << clusterProvider.serverOptions.PageSizeBits();
-            this.networkBufferSettings = new NetworkBufferSettings(bufferSize, 1 << 12);
+            var sendBufferSize = 1 << clusterProvider.serverOptions.PageSizeBits();
+            this.networkBufferSettings = new NetworkBufferSettings(sendBufferSize, initialReceiveBufferSize);
             this.networkPool = networkBufferSettings.Create(logger: logger);
         }
 

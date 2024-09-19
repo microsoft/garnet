@@ -42,7 +42,7 @@ namespace Garnet.server
 
     internal sealed unsafe partial class RespServerSession : ServerSessionBase
     {
-        private bool NetworkBurgeBP()
+        private bool NetworkPurgeBP()
         {
             // Expecting exactly 1 argument
             if (parseState.Count != 1)

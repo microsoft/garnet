@@ -53,7 +53,6 @@ namespace Garnet.cluster
 
             // Finally, dispose the cts
             cts?.Dispose();
-            garnetClient?.Dispose();
         }
 
         public unsafe void Consume(byte* payloadPtr, int payloadLength, long currentAddress, long nextAddress)

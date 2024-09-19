@@ -672,7 +672,7 @@ namespace Resp.benchmark
                 client = new GarnetClientSession(
                     address,
                     port,
-                    new(Math.Max(131072, opts.IntraThreadParallelism * opts.ValueLength)),
+                    new NetworkBufferSettings(Math.Max(131072, opts.IntraThreadParallelism * opts.ValueLength)),
                     tlsOptions: opts.EnableTLS ? BenchUtils.GetTlsOptions(opts.TlsHost, opts.CertFileName, opts.CertPassword) : null);
                 client.Connect();
                 if (auth != null)

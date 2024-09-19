@@ -26,6 +26,11 @@ namespace Garnet.cluster
         bool useGossipConnections = false;
 
         /// <summary>
+        /// Send page size for GarnetClient
+        /// </summary>
+        const int sendPageSize = 1 << 17;
+
+        /// <summary>
         /// Helper method to re-use gossip connection to perform the failover
         /// </summary>
         /// <param name="nodeId">Node-id to use for search the connection array</param>
@@ -77,7 +82,7 @@ namespace Garnet.cluster
                 address,
                 port,
                 clusterProvider.serverOptions.TlsOptions?.TlsClientOptions,
-                sendPageSize: 1 << 17,
+                sendPageSize: sendPageSize,
                 maxOutstandingTasks: 8,
                 authUsername: clusterProvider.ClusterUsername,
                 authPassword: clusterProvider.ClusterPassword, logger: logger);

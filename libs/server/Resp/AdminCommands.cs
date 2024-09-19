@@ -58,7 +58,7 @@ namespace Garnet.server
                 RespCommand.ACL_SAVE => NetworkAclSave(),
                 RespCommand.REGISTERCS => NetworkRegisterCs(storeWrapper.customCommandManager),
                 RespCommand.MODULE_LOADCS => NetworkModuleLoad(storeWrapper.customCommandManager),
-                RespCommand.PURGEBP => NetworkBurgeBP(),
+                RespCommand.PURGEBP => NetworkPurgeBP(),
                 _ => cmdFound = false
             };
 
