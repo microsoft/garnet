@@ -51,26 +51,6 @@ namespace Tsavorite.core
             scanFunctions.OnStop(!stop, numRecords);
             return !stop;
         }
-
-        /// <summary>
-        /// Iterator for all (distinct) live key-values stored in Tsavorite
-        /// </summary>
-        /// <param name="untilAddress">Report records until this address (tail by default)</param>
-        /// <returns>Tsavorite iterator</returns>
-        [Obsolete("Invoke Iterate() on a client session (ClientSession), or use store.Iterate overload with Functions provided as parameter")]
-        public ITsavoriteScanIterator<TKey, TValue> Iterate(long untilAddress = -1)
-            => throw new TsavoriteException("Invoke Iterate() on a client session (ClientSession), or use store.Iterate overload with Functions provided as parameter");
-
-        /// <summary>
-        /// Iterator for all (distinct) live key-values stored in Tsavorite
-        /// </summary>
-        /// <param name="compactionFunctions">User provided compaction functions (see <see cref="ICompactionFunctions{Key, Value}"/>).</param>
-        /// <param name="untilAddress">Report records until this address (tail by default)</param>
-        /// <returns>Tsavorite iterator</returns>
-        [Obsolete("Invoke Iterate() on a client session (ClientSession), or use store.Iterate overload with Functions provided as parameter")]
-        public ITsavoriteScanIterator<TKey, TValue> Iterate<CompactionFunctions>(CompactionFunctions compactionFunctions, long untilAddress = -1)
-            where CompactionFunctions : ICompactionFunctions<TKey, TValue>
-            => throw new TsavoriteException("Invoke Iterate() on a client session (ClientSession), or use store.Iterate overload with Functions provided as parameter");
     }
 
     internal sealed class TsavoriteKVIterator<TKey, TValue, TInput, TOutput, TContext, TFunctions, TStoreFunctions, TAllocator> : ITsavoriteScanIterator<TKey, TValue>
