@@ -47,6 +47,37 @@ namespace Garnet.server
         ZMSCORE
     }
 
+    [Flags]
+    public enum SortedSetAddOption
+    {
+        None = 0,
+        /// <summary>
+        /// Only update elements that already exist. Don't add new elements.
+        /// </summary>
+        XX = 1,
+        /// <summary>
+        /// Only add new elements. Don't update already existing elements.
+        /// </summary>
+        NX = 1 << 1,
+        /// <summary>
+        /// Only update existing elements if the new score is less than the current score.
+        /// </summary>
+        LT = 1 << 2,
+        /// <summary>
+        /// Only update existing elements if the new score is greater than the current score.
+        /// </summary>
+        GT = 1 << 3,
+        /// <summary>
+        /// Modify the return value from the number of new elements added, to the total number of elements changed.
+        /// Changed elements are new elements added and elements already existing for which the score was updated.
+        /// </summary>
+        CH = 1 << 4,
+        /// <summary>
+        /// When this option is specified ZADD acts like ZINCRBY. Only one score-element pair can be specified in this mode.
+        /// </summary>
+        INCR = 1 << 5,
+    }
+
     /// <summary>
     /// Order variations for sorted set commands
     /// </summary>
