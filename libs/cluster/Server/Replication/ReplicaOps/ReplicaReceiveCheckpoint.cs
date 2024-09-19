@@ -147,7 +147,7 @@ namespace Garnet.cluster
 
             try
             {
-                gcs = new(address, port, new(1 << 12, 1 << 12), tlsOptions: clusterProvider.serverOptions.TlsOptions?.TlsClientOptions, authUsername: clusterProvider.ClusterUsername, authPassword: clusterProvider.ClusterPassword);
+                gcs = new(address, port, new(1 << 21, 1 << 21), tlsOptions: clusterProvider.serverOptions.TlsOptions?.TlsClientOptions, authUsername: clusterProvider.ClusterUsername, authPassword: clusterProvider.ClusterPassword);
                 recvCheckpointHandler = new ReceiveCheckpointHandler(clusterProvider, logger);
                 gcs.Connect();
 

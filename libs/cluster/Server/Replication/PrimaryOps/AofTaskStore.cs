@@ -133,7 +133,7 @@ namespace Garnet.cluster
                     new GarnetClientSession(
                         address,
                         port,
-                        clusterProvider.replicationManager.GetNetworkBufferSettings,
+                        new NetworkBufferSettings(1 << 22, 1 << 22),
                         tlsOptions: clusterProvider.serverOptions.TlsOptions?.TlsClientOptions,
                         authUsername: clusterProvider.ClusterUsername,
                         authPassword: clusterProvider.ClusterPassword,
