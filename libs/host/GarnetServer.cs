@@ -11,6 +11,7 @@ using Garnet.cluster;
 using Garnet.common;
 using Garnet.networking;
 using Garnet.server;
+using Garnet.server.Auth.Settings;
 using Microsoft.Extensions.Logging;
 using Tsavorite.core;
 
@@ -51,7 +52,7 @@ namespace Garnet
         protected StoreWrapper storeWrapper;
 
         // IMPORTANT: Keep the version in sync with .azure\pipelines\azure-pipelines-external-release.yml line ~6.
-        readonly string version = "1.0.24";
+        readonly string version = "1.0.26";
 
         /// <summary>
         /// Resp protocol version
@@ -78,7 +79,9 @@ namespace Garnet
         /// </summary>
         /// <param name="commandLineArgs">Command line arguments</param>
         /// <param name="loggerFactory">Logger factory</param>
-        public GarnetServer(string[] commandLineArgs, ILoggerFactory loggerFactory = null, bool cleanupDir = false)
+        /// <param name="cleanupDir">Clean up directory.</param>
+        /// <param name="authenticationSettingsOverride">Override for custom authentication settings.</param>
+        public GarnetServer(string[] commandLineArgs, ILoggerFactory loggerFactory = null, bool cleanupDir = false, IAuthenticationSettings authenticationSettingsOverride = null)
         {
             Trace.Listeners.Add(new ConsoleTraceListener());
 
@@ -127,6 +130,7 @@ namespace Garnet
 
             // Assign values to GarnetServerOptions
             this.opts = serverSettings.GetServerOptions(this.loggerFactory.CreateLogger("Options"));
+            this.opts.AuthSettings = authenticationSettingsOverride ?? this.opts.AuthSettings;
             this.cleanupDir = cleanupDir;
             this.InitializeServer();
         }

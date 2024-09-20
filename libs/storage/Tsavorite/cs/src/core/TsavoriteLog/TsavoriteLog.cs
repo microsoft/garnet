@@ -434,21 +434,10 @@ namespace Tsavorite.core
             => allocator.LogPageSizeBits;
 
         /// <summary>
-        /// Get page number for given address
-        /// </summary>
-        /// <param name="logicalAddress"></param>
-        /// <returns></returns>
-        public long GetPage(long logicalAddress)
-            => allocator.GetPage(logicalAddress);
-
-        public void UnsafeSkipPage()
-            => allocator.SkipPage();
-
-        /// <summary>
         /// Get read only lag address
         /// </summary>
-        public long UnsafeGetReadOnlyLagAddress()
-            => allocator.GetReadOnlyLagAddress();
+        public long UnsafeGetReadOnlyAddressLagOffset()
+            => allocator.GetReadOnlyAddressLagOffset();
 
         /// <summary>
         /// Enqueue batch of entries to log (in memory) - no guarantee of flush/commit
@@ -872,28 +861,23 @@ namespace Tsavorite.core
             while (true)
             {
                 var flushEvent = allocator.FlushEvent;
-                var logicalAddress = allocator.TryAllocate(recordSize);
+                var logicalAddress = allocator.TryAllocateRetryNow(recordSize);
                 if (logicalAddress > 0)
                     return logicalAddress;
 
-                if (logicalAddress == 0)
-                {
-                    epoch.Suspend();
-                    if (cannedException != null) throw cannedException;
-                    try
-                    {
-                        flushEvent.Wait();
-                    }
-                    finally
-                    {
-                        epoch.Resume();
-                    }
-                }
+                // logicalAddress less than 0 (RETRY_NOW) should already have been handled
+                Debug.Assert(logicalAddress == 0);
 
-                // logicalAddress is < 0 so we do not expect flushEvent to be signaled; refresh the epoch and retry now
-                allocator.TryComplete();
-                epoch.ProtectAndDrain();
-                Thread.Yield();
+                epoch.Suspend();
+                if (cannedException != null) throw cannedException;
+                try
+                {
+                    flushEvent.Wait();
+                }
+                finally
+                {
+                    epoch.Resume();
+                }
             }
         }
 
