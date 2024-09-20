@@ -187,7 +187,7 @@ namespace Tsavorite.test
                 IndexSize = 1L << 13,
                 LogDevice = log,
                 MutableFraction = 0.1,
-                MemorySize = 1L << PageSizeBits,
+                MemorySize = 1L << (PageSizeBits + 1),
                 PageSize = 1L << PageSizeBits
             }, StoreFunctions<long, long>.Create(LongKeyComparer.Instance)
                 , (allocatorSettings, storeFunctions) => new(allocatorSettings, storeFunctions)
