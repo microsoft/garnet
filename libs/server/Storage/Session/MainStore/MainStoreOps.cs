@@ -499,12 +499,12 @@ namespace Garnet.server
 
             var context = txnManager.LockableContext;
             var objectContext = txnManager.ObjectStoreLockableContext;
+            var oldKey = oldKeySlice.SpanByte;
 
             if (storeType == StoreType.Main || storeType == StoreType.All)
             {
                 try
                 {
-                    var oldKey = oldKeySlice.SpanByte;
                     var newKey = newKeySlice.SpanByte;
 
                     var o = new SpanByteAndMemory();
@@ -517,16 +517,37 @@ namespace Garnet.server
                         var ptrVal = (byte*)memoryHandle.Pointer;
 
                         RespReadUtils.ReadUnsignedLengthHeader(out var headerLength, ref ptrVal, ptrVal + o.Length);
-                        var value = SpanByte.FromPinnedPointer(ptrVal, headerLength);
-                        SET(ref newKey, ref value, ref context);
 
-                        memoryHandle.Dispose();
-                        o.Memory.Dispose();
+                        // Find expiration time of the old key
+                        var expireSpan = new SpanByteAndMemory();
+                        var ttlStatus = TTL(ref oldKey, storeType, ref expireSpan, ref context, ref objectContext, true);
 
-                        // Delete the old key
-                        DELETE(ref oldKey, StoreType.Main, ref context, ref objectContext);
+                        if (ttlStatus == GarnetStatus.OK && !expireSpan.IsSpanByte)
+                        {
+                            using var expireMemoryHandle = expireSpan.Memory.Memory.Pin();
+                            var expirePtrVal = (byte*)expireMemoryHandle.Pointer;
+                            RespReadUtils.TryRead64Int(out var expireTimeMs, ref expirePtrVal, expirePtrVal + expireSpan.Length, out var _);
 
-                        returnStatus = GarnetStatus.OK;
+                            // If the key has an expiration, set the new key with the expiration
+                            if (expireTimeMs > 0)
+                            {
+                                SETEX(newKeySlice, new ArgSlice(ptrVal, headerLength), TimeSpan.FromMilliseconds(expireTimeMs), ref context);
+                            }
+                            else if (expireTimeMs == -1) // Its possible to have expireTimeMs as 0 (Key expired or will be expired now) or -2 (Key does not exist), in those cases we don't SET the new key
+                            {
+                                var value = SpanByte.FromPinnedPointer(ptrVal, headerLength);
+                                SET(ref newKey, ref value, ref context);
+                            }
+
+                            expireSpan.Memory.Dispose();
+                            memoryHandle.Dispose();
+                            o.Memory.Dispose();
+
+                            // Delete the old key
+                            DELETE(ref oldKey, StoreType.Main, ref context, ref objectContext);
+
+                            returnStatus = GarnetStatus.OK;
+                        }
                     }
                 }
                 finally
@@ -550,19 +571,39 @@ namespace Garnet.server
                 try
                 {
                     byte[] oldKeyArray = oldKeySlice.ToArray();
-                    byte[] newKeyArray = newKeySlice.ToArray();
-
                     var status = GET(oldKeyArray, out var value, ref objectContext);
 
                     if (status == GarnetStatus.OK)
                     {
                         var valObj = value.garnetObject;
-                        SET(newKeyArray, valObj, ref objectContext);
+                        byte[] newKeyArray = newKeySlice.ToArray();
 
-                        // Delete the old key
-                        DELETE(oldKeyArray, StoreType.Object, ref context, ref objectContext);
+                        var expireSpan = new SpanByteAndMemory();
+                        var ttlStatus = TTL(ref oldKey, StoreType.Object, ref expireSpan, ref context, ref objectContext, true);
 
-                        returnStatus = GarnetStatus.OK;
+                        if (ttlStatus == GarnetStatus.OK && !expireSpan.IsSpanByte)
+                        {
+                            using var expireMemoryHandle = expireSpan.Memory.Memory.Pin();
+                            var expirePtrVal = (byte*)expireMemoryHandle.Pointer;
+                            RespReadUtils.TryRead64Int(out var expireTimeMs, ref expirePtrVal, expirePtrVal + expireSpan.Length, out var _);
+                            expireSpan.Memory.Dispose();
+
+                            if (expireTimeMs > 0)
+                            {
+                                SET(newKeyArray, valObj, ref objectContext);
+                                EXPIRE(newKeySlice, TimeSpan.FromMilliseconds(expireTimeMs), out _, StoreType.Object, ExpireOption.None, ref context, ref objectContext, true);
+                            }
+                            else if (expireTimeMs == -1) // Its possible to have expire as 0 or -2, in those cases we don't SET the new key
+                            {
+                                SET(newKeyArray, valObj, ref objectContext);
+                            }
+
+                            // Delete the old key
+                            DELETE(oldKeyArray, StoreType.Object, ref context, ref objectContext);
+
+                            returnStatus = GarnetStatus.OK;
+                        }
+
                     }
                 }
                 finally

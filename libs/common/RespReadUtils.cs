@@ -939,7 +939,7 @@ namespace Garnet.common
             {
                 if (*ptr == '$')
                 {
-                    if (!ReadStringWithLengthHeader(out result[i], ref ptr, end))
+                    if (!ReadStringResponseWithLengthHeader(out result[i], ref ptr, end))
                         return false;
                 }
                 else if (*ptr == '+')

@@ -10,7 +10,7 @@ namespace BDN.benchmark.Resp
     public unsafe class RespLuaRunnerStress
     {
         LuaRunner r1, r2, r3, r4;
-        readonly string[] keys = ["key1", "key2"];
+        readonly string[] keys = ["key1"];
 
         [GlobalSetup]
         public void GlobalSetup()
@@ -36,7 +36,7 @@ namespace BDN.benchmark.Resp
 
         [Benchmark]
         public void BasicLua1()
-            => r1.RunVoid();
+            => r1.Run();
 
         [Benchmark]
         public void BasicLua2()

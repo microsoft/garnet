@@ -580,13 +580,13 @@ namespace Garnet.test
             if (seqSize < 128)
                 server = TestUtils.CreateGarnetServer(TestUtils.MethodTestDir,
                     lowMemory: true,
-                    MemorySize: "512",
+                    MemorySize: "1024",
                     PageSize: "512");
             else
                 server = TestUtils.CreateGarnetServer(TestUtils.MethodTestDir,
                     lowMemory: true,
-                    MemorySize: "16384",
-                    PageSize: "16384");
+                    MemorySize: "32k",
+                    PageSize: "16k");
             server.Start();
 
             using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
@@ -698,7 +698,7 @@ namespace Garnet.test
             server.Dispose();
             server = TestUtils.CreateGarnetServer(TestUtils.MethodTestDir,
                 lowMemory: true,
-                MemorySize: "512",
+                MemorySize: "1024",
                 PageSize: "512");
             server.Start();
 
@@ -807,8 +807,8 @@ namespace Garnet.test
         {
             server.Dispose();
             server = TestUtils.CreateGarnetServer(TestUtils.MethodTestDir,
-                MemorySize: "16384",
-                PageSize: "16384");
+                MemorySize: "32k",
+                PageSize: "16k");
             server.Start();
 
             using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
@@ -917,8 +917,8 @@ namespace Garnet.test
             server.Dispose();
             server = TestUtils.CreateGarnetServer(TestUtils.MethodTestDir,
                 lowMemory: true,
-                MemorySize: "16384",
-                PageSize: "16384");
+                MemorySize: "32k",
+                PageSize: "16k");
             server.Start();
 
             using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());

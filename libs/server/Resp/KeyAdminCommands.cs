@@ -123,22 +123,16 @@ namespace Garnet.server
             }
 
             var key = parseState.GetArgSliceByRef(0);
-            if (!parseState.TryGetInt(1, out var expiryValue))
+            if (!parseState.TryGetInt(1, out _))
             {
                 while (!RespWriteUtils.WriteError(CmdStrings.RESP_ERR_GENERIC_VALUE_IS_NOT_INTEGER, ref dcurr, dend))
                     SendAndReset();
                 return true;
             }
 
-            var expiryMs = command == RespCommand.EXPIRE
-                ? TimeSpan.FromSeconds(expiryValue)
-                : TimeSpan.FromMilliseconds(expiryValue);
-
-            var expireOption = ExpireOption.None;
-
             if (parseState.Count > 2)
             {
-                if (!parseState.TryGetEnum(2, true, out expireOption) || !expireOption.IsValid(ref parseState.GetArgSliceByRef(2)))
+                if (!parseState.TryGetEnum(2, true, out ExpireOption expireOption) || !expireOption.IsValid(ref parseState.GetArgSliceByRef(2)))
                 {
                     var optionStr = parseState.GetString(2);
 

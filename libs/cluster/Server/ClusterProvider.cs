@@ -178,7 +178,7 @@ namespace Garnet.cluster
             else
             {
                 if (serverOptions.MainMemoryReplication)
-                    storeWrapper.appendOnlyFile?.UnsafeShiftBeginAddress(CheckpointCoveredAofAddress, truncateLog: true, noFlush: true);
+                    storeWrapper.appendOnlyFile?.UnsafeShiftBeginAddress(CheckpointCoveredAofAddress, truncateLog: true);
                 else
                 {
                     storeWrapper.appendOnlyFile?.TruncateUntil(CheckpointCoveredAofAddress);

@@ -107,7 +107,7 @@ namespace Garnet.server
                 case GarnetObjectType.Expire:
                     var currTokenIdx = input.parseStateStartIdx;
                     var expiryValue = input.parseState.GetInt(currTokenIdx++);
-                    var tsExpiry = input.header.type == GarnetObjectType.Expire
+                    var tsExpiry = input.header.cmd == RespCommand.EXPIRE
                         ? TimeSpan.FromSeconds(expiryValue)
                         : TimeSpan.FromMilliseconds(expiryValue);
                     var expiryTicks = DateTimeOffset.UtcNow.Ticks + tsExpiry.Ticks;
@@ -188,7 +188,7 @@ namespace Garnet.server
                 case GarnetObjectType.Expire:
                     var currTokenIdx = input.parseStateStartIdx;
                     var expiryValue = input.parseState.GetInt(currTokenIdx++);
-                    var tsExpiry = input.header.type == GarnetObjectType.Expire
+                    var tsExpiry = input.header.cmd == RespCommand.EXPIRE
                         ? TimeSpan.FromSeconds(expiryValue)
                         : TimeSpan.FromMilliseconds(expiryValue);
                     var expiryTicks = DateTimeOffset.UtcNow.Ticks + tsExpiry.Ticks;

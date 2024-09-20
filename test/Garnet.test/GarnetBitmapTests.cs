@@ -168,7 +168,7 @@ namespace Garnet.test
             server.Dispose();
             server = TestUtils.CreateGarnetServer(TestUtils.MethodTestDir,
                 lowMemory: true,
-                MemorySize: (bitmapBytes << 1).ToString(),
+                MemorySize: (bitmapBytes << 2).ToString(),
                 PageSize: (bitmapBytes << 1).ToString());
             server.Start();
             using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
@@ -450,7 +450,7 @@ namespace Garnet.test
             server.Dispose();
             server = TestUtils.CreateGarnetServer(TestUtils.MethodTestDir,
                 lowMemory: true,
-                MemorySize: (bitmapBytes << 1).ToString(),
+                MemorySize: (bitmapBytes << 2).ToString(),
                 PageSize: (bitmapBytes << 1).ToString());
             server.Start();
             using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
@@ -647,7 +647,7 @@ namespace Garnet.test
             server.Dispose();
             server = TestUtils.CreateGarnetServer(TestUtils.MethodTestDir,
                 lowMemory: true,
-                MemorySize: (bitmapBytes << 1).ToString(),
+                MemorySize: (bitmapBytes << 2).ToString(),
                 PageSize: (bitmapBytes << 1).ToString());
             server.Start();
             using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
@@ -1270,7 +1270,7 @@ namespace Garnet.test
             server.Dispose();
             server = TestUtils.CreateGarnetServer(TestUtils.MethodTestDir,
                 lowMemory: true,
-                MemorySize: (bitmapBytes << 1).ToString(),
+                MemorySize: (bitmapBytes << 2).ToString(),
                 PageSize: (bitmapBytes << 1).ToString());
             //MemorySize: "16g",
             //PageSize: "32m");
@@ -1471,7 +1471,7 @@ namespace Garnet.test
             server.Dispose();
             server = TestUtils.CreateGarnetServer(TestUtils.MethodTestDir,
                 lowMemory: true,
-                MemorySize: (bitmapBytes << 1).ToString(),
+                MemorySize: (bitmapBytes << 2).ToString(),
                 PageSize: (bitmapBytes << 1).ToString());
             //MemorySize: "16g",
             //PageSize: "32m");
@@ -1937,7 +1937,7 @@ namespace Garnet.test
             server.Dispose();
             server = TestUtils.CreateGarnetServer(TestUtils.MethodTestDir,
                 lowMemory: true,
-                MemorySize: (bitmapBytes << 1).ToString(),
+                MemorySize: (bitmapBytes << 2).ToString(),
                 PageSize: (bitmapBytes << 1).ToString());
             //MemorySize: "16g",
             //PageSize: "32m");

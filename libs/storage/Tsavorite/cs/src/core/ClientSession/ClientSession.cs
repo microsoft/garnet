@@ -467,7 +467,7 @@ namespace Tsavorite.core
             => store.Iterate<TInput, TOutput, TContext, TFunctions>(functions, untilAddress);
 
         /// <summary>
-        /// Push iteration of all (distinct) live key-values stored in Tsavorite
+        /// Push iteration of all (distinct) live key-values stored in Tsavorite, using a temporary TsavoriteKV to ensure uniqueness
         /// </summary>
         /// <param name="scanFunctions">Functions receiving pushed records</param>
         /// <param name="untilAddress">Report records until this address (tail by default)</param>
@@ -475,6 +475,21 @@ namespace Tsavorite.core
         public bool Iterate<TScanFunctions>(ref TScanFunctions scanFunctions, long untilAddress = -1)
             where TScanFunctions : IScanIteratorFunctions<TKey, TValue>
             => store.Iterate<TInput, TOutput, TContext, TFunctions, TScanFunctions>(functions, ref scanFunctions, untilAddress);
+
+        /// <summary>
+        /// Push iteration of all (distinct) live key-values stored in Tsavorite, using a lookup strategy to ensure uniqueness
+        /// </summary>
+        /// <param name="scanFunctions">Functions receiving pushed records</param>
+        /// <param name="untilAddress">Report records until this address (tail by default)</param>
+        /// <returns>True if Iteration completed; false if Iteration ended early due to one of the TScanIterator reader functions returning false</returns>
+        public bool IterateLookup<TScanFunctions>(ref TScanFunctions scanFunctions, long untilAddress = -1)
+            where TScanFunctions : IScanIteratorFunctions<TKey, TValue>
+        {
+            if (untilAddress == -1)
+                untilAddress = store.Log.TailAddress;
+            var cursor = 0L;
+            return ScanCursor(ref cursor, count: long.MaxValue, scanFunctions, endAddress: untilAddress);
+        }
 
         /// <summary>
         /// Push-scan the log from <paramref name="cursor"/> (which should be a valid address) and push up to <paramref name="count"/> records

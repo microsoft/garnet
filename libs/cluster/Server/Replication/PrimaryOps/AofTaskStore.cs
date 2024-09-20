@@ -41,7 +41,7 @@ namespace Garnet.cluster
                 logPageSizeMask = logPageSize - 1;
                 if (clusterProvider.serverOptions.MainMemoryReplication)
                     clusterProvider.storeWrapper.appendOnlyFile.SafeTailShiftCallback = SafeTailShiftCallback;
-                TruncateLagAddress = clusterProvider.storeWrapper.appendOnlyFile.UnsafeGetReadOnlyLagAddress() - 2 * logPageSize;
+                TruncateLagAddress = clusterProvider.storeWrapper.appendOnlyFile.UnsafeGetReadOnlyAddressLagOffset() - 2 * logPageSize;
             }
             TruncatedUntil = 0;
         }
@@ -280,7 +280,7 @@ namespace Garnet.cluster
             {
                 if (clusterProvider.serverOptions.MainMemoryReplication)
                 {
-                    clusterProvider.storeWrapper.appendOnlyFile?.UnsafeShiftBeginAddress(TruncatedUntil, snapToPageStart: true, truncateLog: true, noFlush: true);
+                    clusterProvider.storeWrapper.appendOnlyFile?.UnsafeShiftBeginAddress(TruncatedUntil, snapToPageStart: true, truncateLog: true);
                 }
                 else
                 {

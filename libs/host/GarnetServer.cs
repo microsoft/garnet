@@ -9,6 +9,7 @@ using Garnet.cluster;
 using Garnet.common;
 using Garnet.networking;
 using Garnet.server;
+using Garnet.server.Auth.Settings;
 using Microsoft.Extensions.Logging;
 using Tsavorite.core;
 
@@ -34,7 +35,6 @@ namespace Garnet
         private IDevice aofDevice;
         private TsavoriteLog appendOnlyFile;
         private SubscribeBroker<SpanByte, SpanByte, IKeySerializer<SpanByte>> subscribeBroker;
-        private CollectionItemBroker itemBroker;
         private KVSettings<SpanByte, SpanByte> kvSettings;
         private KVSettings<byte[], IGarnetObject> objKvSettings;
         private INamedDeviceFactory logFactory;
@@ -50,7 +50,7 @@ namespace Garnet
         protected StoreWrapper storeWrapper;
 
         // IMPORTANT: Keep the version in sync with .azure\pipelines\azure-pipelines-external-release.yml line ~6.
-        readonly string version = "1.0.19";
+        readonly string version = "1.0.25";
 
         /// <summary>
         /// Resp protocol version
@@ -77,7 +77,9 @@ namespace Garnet
         /// </summary>
         /// <param name="commandLineArgs">Command line arguments</param>
         /// <param name="loggerFactory">Logger factory</param>
-        public GarnetServer(string[] commandLineArgs, ILoggerFactory loggerFactory = null, bool cleanupDir = false)
+        /// <param name="cleanupDir">Clean up directory.</param>
+        /// <param name="authenticationSettingsOverride">Override for custom authentication settings.</param>
+        public GarnetServer(string[] commandLineArgs, ILoggerFactory loggerFactory = null, bool cleanupDir = false, IAuthenticationSettings authenticationSettingsOverride = null)
         {
             Trace.Listeners.Add(new ConsoleTraceListener());
 
@@ -126,6 +128,7 @@ namespace Garnet
 
             // Assign values to GarnetServerOptions
             this.opts = serverSettings.GetServerOptions(this.loggerFactory.CreateLogger("Options"));
+            this.opts.AuthSettings = authenticationSettingsOverride ?? this.opts.AuthSettings;
             this.cleanupDir = cleanupDir;
             this.InitializeServer();
         }
@@ -184,7 +187,7 @@ namespace Garnet
                 throw new Exception($"Unable to call ThreadPool.SetMaxThreads with {opts.ThreadPoolMaxThreads}");
 
             CreateMainStore(clusterFactory, out var checkpointDir);
-            CreateObjectStore(clusterFactory, customCommandManager, checkpointDir, out var objectStoreSizeTracker, out itemBroker);
+            CreateObjectStore(clusterFactory, customCommandManager, checkpointDir, out var objectStoreSizeTracker);
 
             if (!opts.DisablePubSub)
                 subscribeBroker = new SubscribeBroker<SpanByte, SpanByte, IKeySerializer<SpanByte>>(new SpanByteKeySerializer(), null, opts.PubSubPageSizeBytes(), true);
@@ -200,7 +203,7 @@ namespace Garnet
                     customCommandManager, appendOnlyFile, opts, clusterFactory: clusterFactory, loggerFactory: loggerFactory);
 
             // Create session provider for Garnet
-            Provider = new GarnetProvider(storeWrapper, subscribeBroker, itemBroker);
+            Provider = new GarnetProvider(storeWrapper, subscribeBroker);
 
             // Create user facing API endpoints
             Metrics = new MetricsApi(Provider);
@@ -237,33 +240,37 @@ namespace Garnet
                 , (allocatorSettings, storeFunctions) => new(allocatorSettings, storeFunctions));
         }
 
-        private void CreateObjectStore(IClusterFactory clusterFactory, CustomCommandManager customCommandManager, string CheckpointDir, out CacheSizeTracker objectStoreSizeTracker, out CollectionItemBroker itemBroker)
+        private void CreateObjectStore(IClusterFactory clusterFactory, CustomCommandManager customCommandManager, string CheckpointDir, out CacheSizeTracker objectStoreSizeTracker)
         {
             objectStoreSizeTracker = null;
-            itemBroker = null;
             if (!opts.DisableObjects)
             {
-                objKvSettings = opts.GetObjectStoreSettings(this.loggerFactory?.CreateLogger("TsavoriteKV  [obj]"), out var objTotalMemorySize);
+                objKvSettings = opts.GetObjectStoreSettings(this.loggerFactory?.CreateLogger("TsavoriteKV  [obj]"),
+                    out var objTotalMemorySize);
 
                 // Run checkpoint on its own thread to control p99
                 objKvSettings.ThrottleCheckpointFlushDelayMs = opts.CheckpointThrottleFlushDelayMs;
                 objKvSettings.CheckpointVersionSwitchBarrier = opts.EnableCluster;
 
                 if (opts.EnableCluster)
-                    objKvSettings.CheckpointManager = clusterFactory.CreateCheckpointManager(opts.DeviceFactoryCreator(),
-                        new DefaultCheckpointNamingScheme(CheckpointDir + "/ObjectStore/checkpoints"), isMainStore: false, logger);
+                    objKvSettings.CheckpointManager = clusterFactory.CreateCheckpointManager(
+                        opts.DeviceFactoryCreator(),
+                        new DefaultCheckpointNamingScheme(CheckpointDir + "/ObjectStore/checkpoints"),
+                        isMainStore: false, logger);
                 else
                     objKvSettings.CheckpointManager = new DeviceLogCommitCheckpointManager(opts.DeviceFactoryCreator(),
-                        new DefaultCheckpointNamingScheme(CheckpointDir + "/ObjectStore/checkpoints"), removeOutdated: true);
+                        new DefaultCheckpointNamingScheme(CheckpointDir + "/ObjectStore/checkpoints"),
+                        removeOutdated: true);
 
                 objectStore = new(objKvSettings
-                    , StoreFunctions<byte[], IGarnetObject>.Create(new ByteArrayKeyComparer(), () => new ByteArrayBinaryObjectSerializer(), () => new GarnetObjectSerializer(customCommandManager))
+                    , StoreFunctions<byte[], IGarnetObject>.Create(new ByteArrayKeyComparer(),
+                        () => new ByteArrayBinaryObjectSerializer(),
+                        () => new GarnetObjectSerializer(customCommandManager))
                     , (allocatorSettings, storeFunctions) => new(allocatorSettings, storeFunctions));
 
                 if (objTotalMemorySize > 0)
-                    objectStoreSizeTracker = new CacheSizeTracker(objectStore, objKvSettings, objTotalMemorySize, this.loggerFactory);
-
-                itemBroker = new CollectionItemBroker();
+                    objectStoreSizeTracker = new CacheSizeTracker(objectStore, objKvSettings, objTotalMemorySize,
+                        this.loggerFactory);
             }
         }
 
@@ -331,7 +338,6 @@ namespace Garnet
             Provider?.Dispose();
             server.Dispose();
             subscribeBroker?.Dispose();
-            itemBroker?.Dispose();
             store.Dispose();
             appendOnlyFile?.Dispose();
             aofDevice?.Dispose();
