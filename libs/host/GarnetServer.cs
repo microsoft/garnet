@@ -214,25 +214,29 @@ namespace Garnet
 
             server.Register(WireFormat.ASCII, Provider);
 
-            // Load modules
-            if (opts.LoadModuleCS != null)
-            {
-                foreach (var moduleCS in opts.LoadModuleCS)
-                {
-                    var moduleCSData = moduleCS.Split(' ', StringSplitOptions.RemoveEmptyEntries);
-                    if (moduleCSData.Length < 1)
-                        continue;
+            LoadModules(customCommandManager);
+        }
 
-                    var modulePath = moduleCSData[0];
-                    var moduleArgs = moduleCSData.Length > 1 ? moduleCSData.Skip(1).ToArray() : [];
-                    if (ModuleUtils.LoadAssemblies([modulePath], null, true, out var loadedAssemblies, out var errorMsg))
-                    {
-                        ModuleRegistrar.Instance.LoadModule(customCommandManager, loadedAssemblies.ToList()[0], moduleArgs, logger, out errorMsg);
-                    }
-                    else
-                    {
-                        logger?.LogError("Module {0} failed to load with error {1}", modulePath, Encoding.UTF8.GetString(errorMsg));
-                    }
+        private void LoadModules(CustomCommandManager customCommandManager)
+        {
+            if (opts.LoadModuleCS == null)
+                return;
+
+            foreach (var moduleCS in opts.LoadModuleCS)
+            {
+                var moduleCSData = moduleCS.Split(' ', StringSplitOptions.RemoveEmptyEntries);
+                if (moduleCSData.Length < 1)
+                    continue;
+
+                var modulePath = moduleCSData[0];
+                var moduleArgs = moduleCSData.Length > 1 ? moduleCSData.Skip(1).ToArray() : [];
+                if (ModuleUtils.LoadAssemblies([modulePath], null, true, out var loadedAssemblies, out var errorMsg))
+                {
+                    ModuleRegistrar.Instance.LoadModule(customCommandManager, loadedAssemblies.ToList()[0], moduleArgs, logger, out errorMsg);
+                }
+                else
+                {
+                    logger?.LogError("Module {0} failed to load with error {1}", modulePath, Encoding.UTF8.GetString(errorMsg));
                 }
             }
         }
