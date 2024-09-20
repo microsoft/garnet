@@ -406,9 +406,7 @@ namespace Tsavorite.core
             AllocateOptions allocOptions = new()
             {
                 Recycle = true,
-
-                // If the source record is elidable we can try to elide from the chain and transfer it to the FreeList if we're doing Revivification
-                IgnoreHeiAddress = stackCtx.recSrc.HasMainLogSrc && CanElide<TInput, TOutput, TContext, TSessionFunctionsWrapper>(sessionFunctions, ref stackCtx, ref srcRecordInfo)
+                ElideSourceRecord = stackCtx.recSrc.HasMainLogSrc && CanElide<TInput, TOutput, TContext, TSessionFunctionsWrapper>(sessionFunctions, ref stackCtx, ref srcRecordInfo)
             };
 
             if (!TryAllocateRecord(sessionFunctions, ref pendingContext, ref stackCtx, actualSize, ref allocatedSize, keySize, allocOptions,
@@ -416,7 +414,7 @@ namespace Tsavorite.core
                 return status;
 
             ref RecordInfo newRecordInfo = ref WriteNewRecordInfo(ref key, hlogBase, newPhysicalAddress, inNewVersion: sessionFunctions.Ctx.InNewVersion, stackCtx.recSrc.LatestLogicalAddress);
-            if (allocOptions.IgnoreHeiAddress)
+            if (allocOptions.ElideSourceRecord)
                 newRecordInfo.PreviousAddress = srcRecordInfo.PreviousAddress;
             stackCtx.SetNewRecord(newLogicalAddress);
 
@@ -453,7 +451,7 @@ namespace Tsavorite.core
                     // Do not elide (restore newRecordInfo.PreviousAddress to its original WriteNewRecordInfo state) if requested to preserve the source record.
                     if (rmwInfo.PreserveCopyUpdaterSourceRecord)
                     {
-                        allocOptions.IgnoreHeiAddress = false;
+                        allocOptions.ElideSourceRecord = false;
                         newRecordInfo.PreviousAddress = stackCtx.recSrc.LatestLogicalAddress;
                     }
                     goto DoCAS;
@@ -528,9 +526,9 @@ namespace Tsavorite.core
                         }
                     }
 
-                    // IgnoreHeiAddress means we have verified that the old source record is elidable and now that CAS has replaced it in the HashBucketEntry with
+                    // ElideSourceRecord means we have verified that the old source record is elidable and now that CAS has replaced it in the HashBucketEntry with
                     // the new source record that does not point to the old source record, we have elided it, so try to transfer to freelist.
-                    if (allocOptions.IgnoreHeiAddress)
+                    if (allocOptions.ElideSourceRecord)
                     {
                         // Success should always Seal the old record. This may be readcache, readonly, or the temporary recordInfo, which is OK and saves the cost of an "if".
                         srcRecordInfo.SealAndInvalidate();    // The record was elided, so Invalidate
