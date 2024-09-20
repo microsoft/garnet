@@ -114,7 +114,7 @@ namespace Garnet.server
                     var expiryTicks = DateTimeOffset.UtcNow.Ticks + tsExpiry.Ticks;
 
                     var optionType = ExpireOption.None;
-                    if (input.parseState.Count - input.parseStateStartIdx > 1)
+                    if (currTokenIdx < input.parseState.Count)
                     {
                         optionType = input.parseState.GetEnum<ExpireOption>(currTokenIdx, true);
                     }
@@ -189,8 +189,13 @@ namespace Garnet.server
                 case GarnetObjectType.Expire:
                     var currTokenIdx = input.parseStateStartIdx;
                     var expiryValue = input.parseState.GetInt(currTokenIdx++);
-                    var expireInMs = input.parseState.GetInt(currTokenIdx) == 1;
-                    var expireOption = input.parseState.GetEnum<ExpireOption>(currTokenIdx, true);
+                    var expireInMs = input.parseState.GetInt(currTokenIdx++) == 1;
+
+                    var expireOption = ExpireOption.None;
+                    if (currTokenIdx < input.parseState.Count)
+                    {
+                        expireOption = input.parseState.GetEnum<ExpireOption>(currTokenIdx, true);
+                    }
 
                     var tsExpiry = expireInMs
                         ? TimeSpan.FromMilliseconds(expiryValue)

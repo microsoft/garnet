@@ -708,15 +708,35 @@ namespace Garnet.server
             if (!found && (storeType == StoreType.Object || storeType == StoreType.All) &&
                 !objectStoreBasicContext.IsNull)
             {
+                // Build parse state
+                ArgSlice[] tmpParseStateBuffer = default;
+                var tmpParseState = new SessionParseState();
+
+                var expirySlice = input.parseState.GetArgSliceByRef(input.parseStateStartIdx);
+
+                var expiryInMsBytes = stackalloc byte[1];
+                expiryInMsBytes[0] = (byte)(input.header.cmd == RespCommand.EXPIRE ? '0' : '1');
+                var expiryInMsSlice = new ArgSlice(expiryInMsBytes, 1);
+
+                var paramCount = input.parseState.Count - input.parseStateStartIdx > 1 ? 3 : 2;
+                tmpParseState.Initialize(ref tmpParseStateBuffer, paramCount);
+                tmpParseStateBuffer[0] = expirySlice;
+                tmpParseStateBuffer[1] = expiryInMsSlice;
+
+                if (paramCount == 3)
+                {
+                    var expiryOptionSlice = input.parseState.GetArgSliceByRef(input.parseStateStartIdx + 1);
+                    tmpParseStateBuffer[2] = expiryOptionSlice;
+                }
+
                 var objInput = new ObjectInput
                 {
                     header = new RespInputHeader
                     {
-                        cmd = input.header.cmd,
                         type = GarnetObjectType.Expire,
                     },
-                    parseState = input.parseState,
-                    parseStateStartIdx = input.parseStateStartIdx,
+                    parseState = tmpParseState,
+                    parseStateStartIdx = 0,
                 };
 
                 // Retry on object store
@@ -769,21 +789,17 @@ namespace Garnet.server
             expiryBytes -= expiryLength;
             var expirySlice = new ArgSlice(expiryBytes, expiryLength);
 
-            var expiryInMsBytes = stackalloc byte[1];
-            expiryInMsBytes[0] = (byte)(milliseconds ? '1' : '0');
-            var expiryInMsSlice = new ArgSlice(expiryInMsBytes, 1);
-
             var expiryOptionBytes = stackalloc byte[1];
             expiryOptionBytes[0] = (byte)((byte)expireOption + '0');
             var expiryOptionSlice = new ArgSlice(expiryOptionBytes, 1);
 
-            // Build parse state
-            ArgSlice[] tmpParseStateBuffer = default;
-            var tmpParseState = new SessionParseState();
-            tmpParseState.InitializeWithArguments(ref tmpParseStateBuffer, expirySlice, expiryInMsSlice, expiryOptionSlice);
-
             if (storeType == StoreType.Main || storeType == StoreType.All)
             {
+                // Build parse state
+                ArgSlice[] tmpParseStateBuffer = default;
+                var tmpParseState = new SessionParseState();
+                tmpParseState.InitializeWithArguments(ref tmpParseStateBuffer, expirySlice, expiryOptionSlice);
+
                 var input = new RawStringInput
                 {
                     header = new RespInputHeader { cmd = milliseconds ? RespCommand.PEXPIRE : RespCommand.EXPIRE },
@@ -802,11 +818,19 @@ namespace Garnet.server
             if (!found && (storeType == StoreType.Object || storeType == StoreType.All) &&
                 !objectStoreBasicContext.IsNull)
             {
+                var expiryInMsBytes = stackalloc byte[1];
+                expiryInMsBytes[0] = (byte)(milliseconds ? '1' : '0');
+                var expiryInMsSlice = new ArgSlice(expiryInMsBytes, 1);
+
+                // Build parse state
+                ArgSlice[] tmpParseStateBuffer = default;
+                var tmpParseState = new SessionParseState();
+                tmpParseState.InitializeWithArguments(ref tmpParseStateBuffer, expirySlice, expiryInMsSlice, expiryOptionSlice);
+
                 var objInput = new ObjectInput
                 {
                     header = new RespInputHeader
                     {
-                        cmd = milliseconds ? RespCommand.PEXPIRE : RespCommand.EXPIRE,
                         type = GarnetObjectType.Expire,
                     },
                     parseState = tmpParseState,
