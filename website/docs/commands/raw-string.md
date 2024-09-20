@@ -244,3 +244,21 @@ Returns the length of the string value stored at **key**.
 #### Resp Reply
 
 * Integer reply: the length of the string stored at key, or 0 when the key does not exist.
+
+---
+
+### SETRANGE
+
+#### Syntax
+
+```bash
+    SETRANGE key offset value
+```
+
+Overwrites part of the string stored at key, starting at the specified offset, for the entire length of value. 
+
+#### Resp Reply
+
+* Integer reply: the length of the string after it was modified by the command.
+
+---
