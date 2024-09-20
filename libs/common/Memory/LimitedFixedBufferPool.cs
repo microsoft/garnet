@@ -20,6 +20,10 @@ namespace Garnet.common
     {
         readonly PoolLevel[] pool;
         readonly int numLevels, minAllocationSize, maxEntriesPerLevel;
+        /// <summary>
+        /// This is the maximum allocated buffer size that the instance can support based on the number of pool levels.
+        /// </summary>
+        readonly int maxAllocationSize;
         readonly ILogger logger;
 
         /// <summary>
@@ -43,10 +47,36 @@ namespace Garnet.common
         public LimitedFixedBufferPool(int minAllocationSize, int maxEntriesPerLevel = 16, int numLevels = 4, ILogger logger = null)
         {
             this.minAllocationSize = minAllocationSize;
+            this.maxAllocationSize = minAllocationSize << (numLevels - 1);
             this.maxEntriesPerLevel = maxEntriesPerLevel;
             this.numLevels = numLevels;
             this.logger = logger;
             pool = new PoolLevel[numLevels];
+        }
+
+        /// <summary>
+        /// Validate if provided settings against the provided pool instance
+        /// </summary>
+        /// <param name="settings"></param>
+        /// <returns></returns>
+        public bool Validate(NetworkBufferSettings settings)
+        {
+            var sendBufferSize = settings.sendBufferSize;
+            // Send buffer size should be inclusive of the max and min allocation sizes of this instance
+            if (sendBufferSize > maxAllocationSize || sendBufferSize < minAllocationSize)
+                return false;
+
+            var initialReceiveSize = settings.initialReceiveBufferSize;
+            // Initial received buffer size should be inclusive of the max and min allocation sizes of this instance
+            if (initialReceiveSize > maxAllocationSize || initialReceiveSize < minAllocationSize)
+                return false;
+
+            var maxReceiveBufferSize = settings.maxReceiveBufferSize;
+            // Maximum receive size should be inclusive of the max and min allocation sizes of this instance
+            if (maxReceiveBufferSize > maxAllocationSize || maxReceiveBufferSize < minAllocationSize)
+                return false;
+
+            return true;
         }
 
         /// <summary>
@@ -117,11 +147,8 @@ namespace Garnet.common
             {
                 if (pool[i] == null) continue;
                 // Keep trying Dequeuing until no items left to free
-                while (pool[i].items.TryDequeue(out var entry))
-                {
-                    entry = null;
+                while (pool[i].items.TryDequeue(out var _))
                     Interlocked.Decrement(ref pool[i].size);
-                }
             }
         }
 
@@ -167,7 +194,7 @@ namespace Garnet.common
                 $"numLevels={numLevels}," +
                 $"maxEntriesPerLevel={maxEntriesPerLevel}," +
                 $"minAllocationSize={Format.MemoryBytes(minAllocationSize)}," +
-                $"maxAllocationSize={Format.MemoryBytes(minAllocationSize << (numLevels - 1))}," +
+                $"maxAllocationSize={Format.MemoryBytes(maxAllocationSize)}," +
                 $"totalOutOfBoundAllocations={totalOutOfBoundAllocations}";
 
             var bufferStats = "";

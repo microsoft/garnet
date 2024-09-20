@@ -22,17 +22,6 @@ namespace Garnet.cluster
 
         readonly CancellationTokenSource ctsRepManager = new();
 
-        readonly NetworkBufferSettings networkBufferSettings;
-
-        readonly LimitedFixedBufferPool networkPool;
-
-        public NetworkBufferSettings GetNetworkBufferSettings => networkBufferSettings;
-
-        public LimitedFixedBufferPool GetNetworkPool => networkPool;
-
-        const int sendBufferSize = 1 << 22;
-        const int initialReceiveBufferSize = 1 << 12;
-
         readonly ILogger logger;
         bool _disposed;
 
@@ -104,8 +93,9 @@ namespace Garnet.cluster
             this.clusterProvider = clusterProvider;
             this.storeWrapper = clusterProvider.storeWrapper;
 
-            this.networkBufferSettings = new NetworkBufferSettings(sendBufferSize, initialReceiveBufferSize);
             this.networkPool = networkBufferSettings.Create(logger: logger);
+            ValidateNetworkBufferSettings();
+
             aofProcessor = new AofProcessor(storeWrapper, recordToAof: false, logger: logger);
             replicaSyncSessionTaskStore = new ReplicaSyncSessionTaskStore(storeWrapper, clusterProvider, logger);
 

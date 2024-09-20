@@ -94,6 +94,7 @@ namespace Garnet.client
         /// <param name="authUsername">Username to authenticate with</param>
         /// <param name="authPassword">Password to authenticate with</param>
         /// <param name="networkBufferSettings">Settings for send and receive network buffers</param>
+        /// <param name="networkPool">Buffer pool to use for allocating send and receive buffers</param>
         /// <param name="networkSendThrottleMax">Max outstanding network sends allowed</param>
         /// <param name="logger">Logger</param>
         public GarnetClientSession(
