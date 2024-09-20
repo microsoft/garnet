@@ -10,6 +10,7 @@ using NUnit.Framework;
 using NUnit.Framework.Legacy;
 using Tsavorite.core;
 using Tsavorite.devices;
+using static Tsavorite.test.TestUtils;
 
 namespace Tsavorite.test
 {
@@ -266,6 +267,33 @@ namespace Tsavorite.test
             var success = store.FindTag(ref hei);
             entry = hei.entry;
             return success;
+        }
+    }
+
+    internal class LongComparerModulo : IKeyComparer<long>
+    {
+        readonly long mod;
+
+        internal LongComparerModulo(long mod) => this.mod = mod;
+
+        public bool Equals(ref long k1, ref long k2) => k1 == k2;
+
+        public long GetHashCode64(ref long k) => mod == 0 ? k : k % mod;
+    }
+
+    internal struct SpanByteComparerModulo : IKeyComparer<SpanByte>
+    {
+        readonly HashModulo modRange;
+
+        internal SpanByteComparerModulo(HashModulo mod) => modRange = mod;
+
+        public readonly bool Equals(ref SpanByte k1, ref SpanByte k2) => SpanByteComparer.StaticEquals(ref k1, ref k2);
+
+        // Force collisions to create a chain
+        public readonly long GetHashCode64(ref SpanByte k)
+        {
+            var value = SpanByteComparer.StaticGetHashCode64(ref k);
+            return modRange != HashModulo.NoMod ? value % (long)modRange : value;
         }
     }
 
