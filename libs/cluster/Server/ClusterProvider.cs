@@ -277,9 +277,9 @@ namespace Garnet.cluster
 
         public void PurgeBufferPool(ManagerType managerType)
         {
-            if (managerType == ManagerType.MM)
+            if (managerType == ManagerType.MigrationManager)
                 migrationManager.Purge();
-            else if (managerType == ManagerType.RM)
+            else if (managerType == ManagerType.ReplicationManager)
                 replicationManager.Purge();
             else
                 throw new GarnetException();

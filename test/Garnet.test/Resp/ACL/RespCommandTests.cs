@@ -3882,7 +3882,7 @@ namespace Garnet.test.Resp.ACL
             {
                 try
                 {
-                    await client.ExecuteForStringResultAsync("PURGEBP", ["MM"]);
+                    await client.ExecuteForStringResultAsync("PURGEBP", ["MigrationManager"]);
                     Assert.Fail("Shouldn't be reachable, cluster isn't enabled");
                 }
                 catch (Exception e)
@@ -3898,8 +3898,8 @@ namespace Garnet.test.Resp.ACL
 
             static async Task DoPurgeBPAsync(GarnetClient client)
             {
-                string val = await client.ExecuteForStringResultAsync("PURGEBP", ["SS"]);
-                ClassicAssert.AreEqual("GC completed for ServerSocket", val);
+                string val = await client.ExecuteForStringResultAsync("PURGEBP", ["ServerListener"]);
+                ClassicAssert.AreEqual("GC completed for ServerListener", val);
             }
         }
 

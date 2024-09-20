@@ -12,15 +12,15 @@ namespace Garnet.server
         /// <summary>
         /// MigrationManager Buffer Pool
         /// </summary>
-        MM,
+        MigrationManager,
         /// <summary>
         /// ReplicationManager BufferPool
         /// </summary>
-        RM,
+        ReplicationManager,
         /// <summary>
-        /// ServerSocket BufferPool
+        /// ServerListener BufferPool
         /// </summary>
-        SS,
+        ServerListener,
     }
 
     /// <summary>
@@ -32,9 +32,9 @@ namespace Garnet.server
         {
             return managerType switch
             {
-                ManagerType.MM => "GC completed for MigrationManager"u8,
-                ManagerType.RM => "GC completed for ReplicationManager"u8,
-                ManagerType.SS => "GC completed for ServerSocket"u8,
+                ManagerType.MigrationManager => "GC completed for MigrationManager"u8,
+                ManagerType.ReplicationManager => "GC completed for ReplicationManager"u8,
+                ManagerType.ServerListener => "GC completed for ServerListener"u8,
                 _ => throw new GarnetException()
             };
         }
@@ -62,11 +62,11 @@ namespace Garnet.server
                 var success = true;
                 switch (managerType)
                 {
-                    case ManagerType.MM:
-                    case ManagerType.RM:
+                    case ManagerType.MigrationManager:
+                    case ManagerType.ReplicationManager:
                         success = ClusterPurgeBufferPool(managerType);
                         break;
-                    case ManagerType.SS:
+                    case ManagerType.ServerListener:
                         storeWrapper.GetTcpServer().Purge();
                         break;
                     default:
