@@ -2339,36 +2339,36 @@
         "Flags": "RW, Access, Update, Delete"
       }
     ],
-    "SubCommands": null,
-    {
-      "Command": "HPTTL",
-      "Name": "HPTTL",
-      "IsInternal": false,
-      "Arity": 2,
-      "Flags": "Fast, ReadOnly",
-      "FirstKey": 1,
-      "LastKey": 1,
-      "Step": 1,
-      "AclCategories": "Hash, Fast, Read",
-      "Tips": null,
-      "KeySpecifications": [
-        {
-          "BeginSearch": {
-            "TypeDiscriminator": "BeginSearchIndex",
-            "Index": 1
-          },
-          "FindKeys": {
-            "TypeDiscriminator": "FindKeysRange",
-            "LastKey": 0,
-            "KeyStep": 1,
-            "Limit": 0
-          },
-          "Notes": null,
-          "Flags": "RO"
-        }
-      ],
-      "SubCommands": null
-    }
+    "SubCommands": null
+  },
+  {
+    "Command": "HPTTL",
+    "Name": "HPTTL",
+    "IsInternal": false,
+    "Arity": 2,
+    "Flags": "Fast, ReadOnly",
+    "FirstKey": 1,
+    "LastKey": 1,
+    "Step": 1,
+    "AclCategories": "Hash, Fast, Read",
+    "Tips": null,
+    "KeySpecifications": [
+      {
+        "BeginSearch": {
+          "TypeDiscriminator": "BeginSearchIndex",
+          "Index": 1
+        },
+        "FindKeys": {
+          "TypeDiscriminator": "FindKeysRange",
+          "LastKey": 0,
+          "KeyStep": 1,
+          "Limit": 0
+        },
+        "Notes": null,
+        "Flags": "RO"
+      }
+    ],
+    "SubCommands": null
   },
   {
     "Command": "HRANDFIELD",
