@@ -243,7 +243,6 @@ namespace Garnet.server
                 {
                     header = new RespInputHeader
                     {
-                        cmd = cmd,
                         type = milliseconds ? GarnetObjectType.PTtl : GarnetObjectType.Ttl,
                     },
                 };
@@ -886,7 +885,6 @@ namespace Garnet.server
                 {
                     header = new RespInputHeader
                     {
-                        cmd = RespCommand.PERSIST,
                         type = GarnetObjectType.Persist,
                     },
                 };
