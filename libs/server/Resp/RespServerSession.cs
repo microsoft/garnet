@@ -432,7 +432,7 @@ namespace Garnet.server
                         }
                         else
                         {
-                            if (CanServeSlot(cmd))
+                            if (clusterSession == null || CanServeSlot(cmd))
                                 _ = ProcessBasicCommands(cmd, ref basicGarnetApi);
                         }
                     }
