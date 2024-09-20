@@ -108,7 +108,7 @@ namespace BenchmarkDotNetTests
 
             internal readonly int Count => counter.count;
 
-            public ScanFunctions() => counter = new ();
+            public ScanFunctions() => counter = new();
 
             /// <inheritdoc/>
             public bool OnStart(long beginAddress, long endAddress) => true;
@@ -122,7 +122,7 @@ namespace BenchmarkDotNetTests
             }
 
             /// <inheritdoc/>
-            public bool ConcurrentReader(ref SpanByte key, ref SpanByte value, RecordMetadata recordMetadata, long numberOfRecords, out CursorRecordResult cursorRecordResult) 
+            public bool ConcurrentReader(ref SpanByte key, ref SpanByte value, RecordMetadata recordMetadata, long numberOfRecords, out CursorRecordResult cursorRecordResult)
                 => SingleReader(ref key, ref value, recordMetadata, numberOfRecords, out cursorRecordResult);
 
             /// <inheritdoc/>

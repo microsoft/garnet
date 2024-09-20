@@ -12,10 +12,12 @@ namespace BenchmarkDotNetTests
         public static void Main(string[] args)
         {
             // Check for debugging a test
-            if (args[0].ToLower() == "cursor") 
+            if (args[0].ToLower() == "cursor")
             {
-                var test = new IterationTests();
-                test.FlushAndEvict = true;
+                var test = new IterationTests
+                {
+                    FlushAndEvict = true
+                };
                 test.SetupPopulatedStore();
                 test.Cursor();
                 test.TearDown();
