@@ -20,7 +20,7 @@ namespace BenchmarkDotNetTests
     {
         const int NumRecords = 1_000_000;
 
-        [Params]
+        [Params(true, false)]
         public bool FlushAndEvict;
 
         TsavoriteKV<SpanByte, SpanByte, SpanByteStoreFunctions, SpanByteAllocator<SpanByteStoreFunctions>> store;
@@ -92,19 +92,19 @@ namespace BenchmarkDotNetTests
 
             var scanFunctions = new ScanFunctions();
             var cursor = 0L;
-            var ok = session.ScanCursor(ref cursor, long.MaxValue, scanFunctions);
-            if (!ok)
-                throw new ApplicationException("Failed to ScanCursor()");
+            session.ScanCursor(ref cursor, long.MaxValue, scanFunctions);
+            if (scanFunctions.Count < NumRecords)
+                throw new ApplicationException($"Incomplete iteration; {scanFunctions.Count} of {NumRecords} records returned");
         }
 
-        class Counter
+        class ScanCounter
         {
             internal int count;
         }
 
         internal struct ScanFunctions : IScanIteratorFunctions<SpanByte, SpanByte>
         {
-            private readonly Counter counter;
+            private readonly ScanCounter counter;
 
             internal readonly int Count => counter.count;
 

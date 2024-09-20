@@ -11,6 +11,18 @@ namespace BenchmarkDotNetTests
 
         public static void Main(string[] args)
         {
+            // Check for debugging a test
+            if (args[0].ToLower() == "cursor") 
+            {
+                var test = new IterationTests();
+                test.FlushAndEvict = true;
+                test.SetupPopulatedStore();
+                test.Cursor();
+                test.TearDown();
+                return;
+            }
+
+            // Do regular invocation.
             BenchmarkSwitcher.FromAssembly(typeof(BenchmarkDotNetTestsApp).Assembly).Run(args);
         }
     }
