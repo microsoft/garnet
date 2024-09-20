@@ -304,7 +304,7 @@ namespace Garnet.server
                     var optionType = ExpireOption.None;
                     if (input.parseState.Count - input.parseStateStartIdx > 1)
                     {
-                        optionType = input.parseState.GetEnum<ExpireOption>(input.parseStateStartIdx + 1, true);
+                        optionType = input.parseState.GetEnum<ExpireOption>(input.parseStateStartIdx + 2, true);
                     }
 
                     return EvaluateExpireInPlace(optionType, expiryExists, expiryTicks, ref value, ref output);
@@ -595,7 +595,7 @@ namespace Garnet.server
                     var optionType = ExpireOption.None;
                     if (input.parseState.Count - input.parseStateStartIdx > 1)
                     {
-                        optionType = input.parseState.GetEnum<ExpireOption>(input.parseStateStartIdx + 1, true);
+                        optionType = input.parseState.GetEnum<ExpireOption>(input.parseStateStartIdx + 2, true);
                     }
 
                     EvaluateExpireCopyUpdate(optionType, expiryExists, expiryTicks, ref oldValue, ref newValue, ref output);

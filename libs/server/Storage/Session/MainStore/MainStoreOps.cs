@@ -769,6 +769,10 @@ namespace Garnet.server
             expiryBytes -= expiryLength;
             var expirySlice = new ArgSlice(expiryBytes, expiryLength);
 
+            var expiryInMsBytes = stackalloc byte[1];
+            expiryInMsBytes[0] = (byte)(milliseconds ? '1' : '0');
+            var expiryInMsSlice = new ArgSlice(expiryInMsBytes, 1);
+
             var expiryOptionBytes = stackalloc byte[1];
             expiryOptionBytes[0] = (byte)((byte)expireOption + '0');
             var expiryOptionSlice = new ArgSlice(expiryOptionBytes, 1);
@@ -776,7 +780,7 @@ namespace Garnet.server
             // Build parse state
             ArgSlice[] tmpParseStateBuffer = default;
             var tmpParseState = new SessionParseState();
-            tmpParseState.InitializeWithArguments(ref tmpParseStateBuffer, expirySlice, expiryOptionSlice);
+            tmpParseState.InitializeWithArguments(ref tmpParseStateBuffer, expirySlice, expiryInMsSlice, expiryOptionSlice);
 
             if (storeType == StoreType.Main || storeType == StoreType.All)
             {
