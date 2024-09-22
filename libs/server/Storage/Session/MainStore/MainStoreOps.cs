@@ -753,7 +753,7 @@ namespace Garnet.server
             where TObjectContext : ITsavoriteContext<byte[], IGarnetObject, ObjectInput, GarnetObjectStoreOutput, long, ObjectSessionFunctions, ObjectStoreFunctions, ObjectStoreAllocator>
         {
             var expiryTimestampTicks = milliseconds ? ConvertUtils.UnixTimestampInMillisecondsToTicks(expiryTimestamp) : ConvertUtils.UnixTimestampInSecondsToTicks(expiryTimestamp);
-            return EXPIRE(key, expiryTimestampTicks, out timeoutSet, storeType, expireOption, ref context, ref objectStoreContext, milliseconds ? RespCommand.PEXPIREAT : RespCommand.EXPIREAT);
+            return EXPIRE(key, expiryTimestampTicks, out timeoutSet, storeType, expireOption, ref context, ref objectStoreContext, milliseconds ? RespCommand.PEXPIRE : RespCommand.EXPIRE);
         }
 
         /// <summary>

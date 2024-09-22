@@ -169,8 +169,6 @@ namespace Garnet.server
                     case RespCommand.PERSIST:
                         break;
 
-                    case RespCommand.EXPIREAT:
-                    case RespCommand.PEXPIREAT:
                     case RespCommand.EXPIRE:
                     case RespCommand.PEXPIRE:
                         return sizeof(int) + t.Length + input.MetadataSize;

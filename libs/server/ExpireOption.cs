@@ -8,6 +8,7 @@ namespace Garnet.server
     /// <summary>
     /// Expire option
     /// </summary>
+    [Flags]
     public enum ExpireOption : byte
     {
         /// <summary>

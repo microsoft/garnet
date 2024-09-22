@@ -23,8 +23,6 @@ namespace Garnet.server
                 case RespCommand.SETKEEPTTLXX:
                 case RespCommand.SETEXXX:
                 case RespCommand.PERSIST:
-                case RespCommand.EXPIREAT:
-                case RespCommand.PEXPIREAT:
                 case RespCommand.EXPIRE:
                 case RespCommand.PEXPIRE:
                 case RespCommand.GETDEL:
@@ -89,8 +87,6 @@ namespace Garnet.server
 
                 case RespCommand.SETKEEPTTLXX:
                 case RespCommand.SETEXXX:
-                case RespCommand.EXPIREAT:
-                case RespCommand.PEXPIREAT:
                 case RespCommand.EXPIRE:
                 case RespCommand.PEXPIRE:
                 case RespCommand.PERSIST:
@@ -287,8 +283,6 @@ namespace Garnet.server
                     rmwInfo.SetUsedValueLength(ref recordInfo, ref value, value.TotalSize);
                     return true;
 
-                case RespCommand.EXPIREAT:
-                case RespCommand.PEXPIREAT:
                 case RespCommand.PEXPIRE:
                 case RespCommand.EXPIRE:
                     ExpireOption optionType = (ExpireOption)(*(inputPtr + RespInputHeader.Size));
@@ -563,8 +557,6 @@ namespace Garnet.server
                     input.AsReadOnlySpan().Slice(RespInputHeader.Size).CopyTo(newValue.AsSpan());
                     break;
 
-                case RespCommand.EXPIREAT:
-                case RespCommand.PEXPIREAT:
                 case RespCommand.EXPIRE:
                 case RespCommand.PEXPIRE:
                     Debug.Assert(newValue.Length == oldValue.Length + input.MetadataSize);
