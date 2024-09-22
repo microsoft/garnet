@@ -646,7 +646,7 @@ namespace Garnet.server
                             {
                                 DELETE(ref oldKey, StoreType.Main, ref context, ref objectContext);
                             }
-                            else if(!isNX)
+                            else if (!isNX)
                             {
                                 // Delete the old key
                                 DELETE(ref oldKey, StoreType.Main, ref context, ref objectContext);
