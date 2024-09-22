@@ -4,6 +4,7 @@
 using System;
 using System.Buffers;
 using System.Collections.Generic;
+using System.Diagnostics;
 using System.Linq;
 using Garnet.common;
 using Tsavorite.core;
@@ -455,111 +456,116 @@ namespace Garnet.server
                     return;
                 }
 
-                int[] foundItemsArray = null;
+                if (rank == 0)
+                {
+                    while (!RespWriteUtils.WriteError(CmdStrings.RESP_ERR_GENERIC_VALUE_IS_NOT_INTEGER, ref output_currptr, output_end))
+                        ObjectUtils.ReallocateOutput(ref output, ref isMemory, ref output_startptr, ref ptrHandle, ref output_currptr, ref output_end);
+                    return;
+                }
+
                 count = count == 0 ? list.Count : count;
-                // TODO: (Nirmal) When count is greater then 32, directly write it in output and use buffer copy to move the data forward and add the lenght of the array at the start
-                Span<int> foundItems = count <= 32 ? stackalloc int[32] : foundItemsArray = ArrayPool<int>.Shared.Rent(count);
-                try
-                {
-                    var noOfFoundItem = 0;
-                    if (rank > 0)
-                    {
-                        var currentNode = list.First;
-                        var currentIndex = 0;
-                        var maxlenIndex = maxlen == 0 ? list.Count : maxlen;
-                        do
-                        {
-                            var nextNode = currentNode.Next;
-                            if (currentNode.Value.AsSpan().SequenceEqual(element))
-                            {
-                                if (rank == 1)
-                                {
-                                    foundItems[noOfFoundItem] = currentIndex;
-                                    noOfFoundItem++;
+                var totalArrayHeaderLen = 0;
+                var lastFoundItemIndex = -1;
 
-                                    if (noOfFoundItem == count)
-                                    {
-                                        break;
-                                    }
-                                }
-                                else
+                if (count != 1)
+                {
+                    while (!RespWriteUtils.WriteArrayLength(count, ref output_currptr, output_end, out var _, out totalArrayHeaderLen))
+                        ObjectUtils.ReallocateOutput(ref output, ref isMemory, ref output_startptr, ref ptrHandle, ref output_currptr, ref output_end);
+                }
+
+                var noOfFoundItem = 0;
+                if (rank > 0)
+                {
+                    var currentNode = list.First;
+                    var currentIndex = 0;
+                    var maxlenIndex = maxlen == 0 ? list.Count : maxlen;
+                    do
+                    {
+                        var nextNode = currentNode.Next;
+                        if (currentNode.Value.AsSpan().SequenceEqual(element))
+                        {
+                            if (rank == 1)
+                            {
+                                lastFoundItemIndex = currentIndex;
+                                while (!RespWriteUtils.WriteInteger(currentIndex, ref output_currptr, output_end))
+                                    ObjectUtils.ReallocateOutput(ref output, ref isMemory, ref output_startptr, ref ptrHandle, ref output_currptr, ref output_end);
+
+                                noOfFoundItem++;
+                                if (noOfFoundItem == count)
                                 {
-                                    rank--;
+                                    break;
                                 }
                             }
-                            currentNode = nextNode;
-                            currentIndex++;
-                        }
-                        while (currentNode != null && currentIndex < maxlenIndex);
-                    }
-                    else if (rank < 0)
-                    {
-                        var currentNode = list.Last;
-                        var currentIndex = list.Count -1;
-                        var maxlenIndex = maxlen == 0 ? 0 : list.Count - maxlen;
-                        do
-                        {
-                            var nextNode = currentNode.Previous;
-                            if (currentNode.Value.AsSpan().SequenceEqual(element))
+                            else
                             {
-                                if (rank == -1)
-                                {
-                                    foundItems[noOfFoundItem] = currentIndex;
-                                    noOfFoundItem++;
+                                rank--;
+                            }
+                        }
+                        currentNode = nextNode;
+                        currentIndex++;
+                    }
+                    while (currentNode != null && currentIndex < maxlenIndex);
+                }
+                else // (rank < 0)
+                {
+                    var currentNode = list.Last;
+                    var currentIndex = list.Count - 1;
+                    var maxlenIndex = maxlen == 0 ? 0 : list.Count - maxlen;
+                    do
+                    {
+                        var nextNode = currentNode.Previous;
+                        if (currentNode.Value.AsSpan().SequenceEqual(element))
+                        {
+                            if (rank == -1)
+                            {
+                                lastFoundItemIndex = currentIndex;
+                                while (!RespWriteUtils.WriteInteger(currentIndex, ref output_currptr, output_end))
+                                    ObjectUtils.ReallocateOutput(ref output, ref isMemory, ref output_startptr, ref ptrHandle, ref output_currptr, ref output_end);
 
-                                    if (noOfFoundItem == count)
-                                    {
-                                        break;
-                                    }
-                                }
-                                else
+                                noOfFoundItem++;
+                                if (noOfFoundItem == count)
                                 {
-                                    rank++;
+                                    break;
                                 }
                             }
-                            currentNode = nextNode;
-                            currentIndex--;
+                            else
+                            {
+                                rank++;
+                            }
                         }
-                        while (currentNode != null && currentIndex >= maxlenIndex);
+                        currentNode = nextNode;
+                        currentIndex--;
                     }
-                    else
-                    {
-                        while (!RespWriteUtils.WriteError(CmdStrings.RESP_ERR_GENERIC_VALUE_IS_NOT_INTEGER, ref output_currptr, output_end))
-                            ObjectUtils.ReallocateOutput(ref output, ref isMemory, ref output_startptr, ref ptrHandle, ref output_currptr, ref output_end);
-                        return;
-                    }
-
-                    if (noOfFoundItem == 0)
-                    {
-                        while (!RespWriteUtils.WriteNull(ref output_currptr, output_end))
-                            ObjectUtils.ReallocateOutput(ref output, ref isMemory, ref output_startptr, ref ptrHandle, ref output_currptr, ref output_end);
-                    }
-                    else if (noOfFoundItem == 1)
-                    {
-                        while (!RespWriteUtils.WriteInteger(foundItems[0], ref output_currptr, output_end))
-                            ObjectUtils.ReallocateOutput(ref output, ref isMemory, ref output_startptr, ref ptrHandle, ref output_currptr, ref output_end);
-                    }
-                    else
-                    {
-                        while (!RespWriteUtils.WriteArrayLength(noOfFoundItem, ref output_currptr, output_end))
-                            ObjectUtils.ReallocateOutput(ref output, ref isMemory, ref output_startptr, ref ptrHandle, ref output_currptr, ref output_end);
-
-                        foreach (var item in foundItems.Slice(0, noOfFoundItem))
-                        {
-                            while (!RespWriteUtils.WriteInteger(item, ref output_currptr, output_end))
-                                ObjectUtils.ReallocateOutput(ref output, ref isMemory, ref output_startptr, ref ptrHandle, ref output_currptr, ref output_end);
-                        }
-                    }
-
-                    outputHeader.result1 = noOfFoundItem;
+                    while (currentNode != null && currentIndex >= maxlenIndex);
                 }
-                finally
+
+                if (noOfFoundItem == 0)
                 {
-                    if (foundItemsArray is not null)
+                    output_currptr = output_startptr;
+                    while (!RespWriteUtils.WriteNull(ref output_currptr, output_end))
+                        ObjectUtils.ReallocateOutput(ref output, ref isMemory, ref output_startptr, ref ptrHandle, ref output_currptr, ref output_end);
+                }
+                else if (count > 1 && noOfFoundItem == 1)
+                {
+                    output_currptr = output_startptr;
+                    while (!RespWriteUtils.WriteInteger(lastFoundItemIndex, ref output_currptr, output_end))
+                        ObjectUtils.ReallocateOutput(ref output, ref isMemory, ref output_startptr, ref ptrHandle, ref output_currptr, ref output_end);
+                }
+                else if(noOfFoundItem > 1)
+                {
+                    var newTotalArrayHeaderLen = 0;
+                    var startOutputStartptr = output_startptr;
+                    RespWriteUtils.WriteArrayLength(noOfFoundItem, ref startOutputStartptr, output_end, out var _, out newTotalArrayHeaderLen);  // ReallocateOutput is not needed here as there should be always be available space in the output buffer as we have already written the max array length
+                    Debug.Assert(totalArrayHeaderLen >= newTotalArrayHeaderLen, "newTotalArrayHeaderLen can't be bigger than totalArrayHeaderLen as we have already written max array lenght in the buffer");
+
+                    if (totalArrayHeaderLen != newTotalArrayHeaderLen)
                     {
-                        ArrayPool<int>.Shared.Return(foundItemsArray);
+                        Buffer.MemoryCopy(output_startptr + totalArrayHeaderLen, output_startptr + newTotalArrayHeaderLen, output.Length, output.Length);
+                        output_currptr = output_currptr - (totalArrayHeaderLen - newTotalArrayHeaderLen);
                     }
                 }
+
+                outputHeader.result1 = noOfFoundItem;
             }
             finally
             {
