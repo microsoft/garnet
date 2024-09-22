@@ -551,7 +551,7 @@ namespace Garnet.server
                     while (!RespWriteUtils.WriteInteger(lastFoundItemIndex, ref output_currptr, output_end))
                         ObjectUtils.ReallocateOutput(ref output, ref isMemory, ref output_startptr, ref ptrHandle, ref output_currptr, ref output_end);
                 }
-                else if(noOfFoundItem > 1)
+                else if (noOfFoundItem > 1)
                 {
                     var newTotalArrayHeaderLen = 0;
                     var startOutputStartptr = output_startptr;

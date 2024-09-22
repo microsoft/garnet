@@ -1453,7 +1453,7 @@ namespace Garnet.test
             using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
             var db = redis.GetDatabase(0);
             var key = "KeyA";
-            string[] arguments = [key, ..items.Split(",")];
+            string[] arguments = [key, .. items.Split(",")];
 
             db.Execute("RPUSH", arguments);
 
