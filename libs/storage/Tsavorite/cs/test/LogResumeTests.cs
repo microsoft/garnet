@@ -44,7 +44,7 @@ namespace Tsavorite.test
             var input3 = new byte[] { 11, 12 };
             string readerName = "abc";
 
-            using (var l = new TsavoriteLog(new TsavoriteLogSettings { LogDevice = device, PageSizeBits = 16, MemorySizeBits = 16, LogChecksum = logChecksum }))
+            using (var l = new TsavoriteLog(new TsavoriteLogSettings { LogDevice = device, PageSizeBits = 16, MemorySizeBits = 17, LogChecksum = logChecksum }))
             {
                 await l.EnqueueAsync(input1, cancellationToken);
                 await l.EnqueueAsync(input2);
@@ -58,7 +58,7 @@ namespace Tsavorite.test
                 await l.CommitAsync();
             }
 
-            using (var l = new TsavoriteLog(new TsavoriteLogSettings { LogDevice = device, PageSizeBits = 16, MemorySizeBits = 16, LogChecksum = logChecksum }))
+            using (var l = new TsavoriteLog(new TsavoriteLogSettings { LogDevice = device, PageSizeBits = 16, MemorySizeBits = 17, LogChecksum = logChecksum }))
             {
                 using var recoveredIterator = l.Scan(0, long.MaxValue, readerName);
                 ClassicAssert.IsTrue(recoveredIterator.GetNext(out byte[] outBuf, out _, out _, out _));
@@ -77,7 +77,7 @@ namespace Tsavorite.test
             var input3 = new byte[] { 11, 12 };
             string readerName = "abc";
 
-            using (var l = new TsavoriteLog(new TsavoriteLogSettings { LogDevice = device, PageSizeBits = 16, MemorySizeBits = 16, LogChecksum = logChecksum }))
+            using (var l = new TsavoriteLog(new TsavoriteLogSettings { LogDevice = device, PageSizeBits = 16, MemorySizeBits = 17, LogChecksum = logChecksum }))
             {
                 await l.EnqueueAsync(input1, cancellationToken);
                 await l.EnqueueAsync(input2);
@@ -91,7 +91,7 @@ namespace Tsavorite.test
                 await l.CommitAsync();
             }
 
-            using (var l = new TsavoriteLog(new TsavoriteLogSettings { LogDevice = device, PageSizeBits = 16, MemorySizeBits = 16, LogChecksum = logChecksum }))
+            using (var l = new TsavoriteLog(new TsavoriteLogSettings { LogDevice = device, PageSizeBits = 16, MemorySizeBits = 17, LogChecksum = logChecksum }))
             {
                 using var recoveredIterator = l.Scan(0, long.MaxValue, readerName);
                 ClassicAssert.IsTrue(recoveredIterator.GetNext(out byte[] outBuf, out _, out _, out _));
@@ -112,7 +112,7 @@ namespace Tsavorite.test
             {
                 long originalCompleted;
 
-                using (var l = new TsavoriteLog(new TsavoriteLogSettings { LogDevice = device, PageSizeBits = 16, MemorySizeBits = 16, LogChecksum = logChecksum, LogCommitManager = logCommitManager }))
+                using (var l = new TsavoriteLog(new TsavoriteLogSettings { LogDevice = device, PageSizeBits = 16, MemorySizeBits = 17, LogChecksum = logChecksum, LogCommitManager = logCommitManager }))
                 {
                     await l.EnqueueAsync(input1);
                     await l.CommitAsync();
@@ -129,7 +129,7 @@ namespace Tsavorite.test
                     originalCompleted = originalIterator.CompletedUntilAddress;
                 }
 
-                using (var l = new TsavoriteLog(new TsavoriteLogSettings { LogDevice = device, PageSizeBits = 16, MemorySizeBits = 16, LogChecksum = logChecksum, LogCommitManager = logCommitManager }))
+                using (var l = new TsavoriteLog(new TsavoriteLogSettings { LogDevice = device, PageSizeBits = 16, MemorySizeBits = 17, LogChecksum = logChecksum, LogCommitManager = logCommitManager }))
                 {
                     using var recoveredIterator = l.Scan(0, long.MaxValue, readerName);
                     ClassicAssert.IsTrue(recoveredIterator.GetNext(out byte[] outBuf, out _, out _, out _));
@@ -155,7 +155,7 @@ namespace Tsavorite.test
             {
                 long originalCompleted;
 
-                using (var l = new TsavoriteLog(new TsavoriteLogSettings { LogDevice = device, PageSizeBits = 16, MemorySizeBits = 16, LogChecksum = logChecksum, LogCommitManager = logCommitManager }))
+                using (var l = new TsavoriteLog(new TsavoriteLogSettings { LogDevice = device, PageSizeBits = 16, MemorySizeBits = 17, LogChecksum = logChecksum, LogCommitManager = logCommitManager }))
                 {
                     await l.EnqueueAsync(input1);
                     await l.CommitAsync();
@@ -180,7 +180,7 @@ namespace Tsavorite.test
                     originalCompleted = originalIterator.CompletedUntilAddress;
                 }
 
-                using (var l = new TsavoriteLog(new TsavoriteLogSettings { LogDevice = device, PageSizeBits = 16, MemorySizeBits = 16, LogChecksum = logChecksum, LogCommitManager = logCommitManager }))
+                using (var l = new TsavoriteLog(new TsavoriteLogSettings { LogDevice = device, PageSizeBits = 16, MemorySizeBits = 17, LogChecksum = logChecksum, LogCommitManager = logCommitManager }))
                 {
                     using var recoveredIterator = l.Scan(0, l.TailAddress, readerName);
 

@@ -618,7 +618,7 @@ namespace Tsavorite.test
             {
                 LogDevice = device,
                 PageSizeBits = 16,
-                MemorySizeBits = 16,
+                MemorySizeBits = 17,
                 LogChecksum = logChecksum,
                 LogCommitManager = manager,
                 SegmentSizeBits = 22
