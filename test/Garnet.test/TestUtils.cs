@@ -264,7 +264,7 @@ namespace Garnet.test
 
             if (lowMemory)
             {
-                opts.MemorySize = opts.ObjectStoreLogMemorySize = MemorySize == default ? "512" : MemorySize;
+                opts.MemorySize = opts.ObjectStoreLogMemorySize = MemorySize == default ? "1024" : MemorySize;
                 opts.PageSize = opts.ObjectStorePageSize = PageSize == default ? "512" : PageSize;
             }
 
@@ -504,7 +504,7 @@ namespace Garnet.test
 
             if (lowMemory)
             {
-                opts.MemorySize = opts.ObjectStoreLogMemorySize = MemorySize == default ? "512" : MemorySize;
+                opts.MemorySize = opts.ObjectStoreLogMemorySize = MemorySize == default ? "1024" : MemorySize;
                 opts.PageSize = opts.ObjectStorePageSize = PageSize == default ? "512" : PageSize;
             }
 

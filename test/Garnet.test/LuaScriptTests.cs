@@ -349,21 +349,112 @@ namespace Garnet.test
         }
 
         [Test]
-        public void ComplexLuaTest()
+        public void ComplexLuaTest1()
         {
             var script = """
 local setArgs = {}
 for _, key in ipairs(KEYS) do
     table.insert(setArgs, key)
 end
-
+unpack(KEYS)
 return redis.status_reply(table.concat(setArgs))
 """;
 
             using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
             var db = redis.GetDatabase(0);
-            var response = db.ScriptEvaluate(script, ["key1", "key2"], ["value", 1, 12345]);
+            var response = db.ScriptEvaluate(script, ["key1", "key2"], ["value", 1, 60_000]);
             ClassicAssert.AreEqual("key1key2", (string)response);
+            response = db.ScriptEvaluate(script, ["key1", "key2"], ["value"]);
+            ClassicAssert.AreEqual("key1key2", (string)response);
+            response = db.ScriptEvaluate(script, ["key1"], ["value", 1, 60_000]);
+            ClassicAssert.AreEqual("key1", (string)response);
+            response = db.ScriptEvaluate(script, ["key1", "key2"]);
+            ClassicAssert.AreEqual("key1key2", (string)response);
+            response = db.ScriptEvaluate(script, ["key1", "key2", "key3", "key4"], ["value", 1]);
+            ClassicAssert.AreEqual("key1key2key3key4", (string)response);
+            response = db.ScriptEvaluate(script, [], ["value", 1, 60_000]);
+            ClassicAssert.AreEqual("", (string)response);
+        }
+
+        [Test]
+        public void ComplexLuaTest2()
+        {
+            var script1 = """
+local function callpexpire(ttl)
+	for _, key in ipairs(KEYS) do
+		redis.call("pexpire", key, ttl)
+	end
+end
+
+local function callgetrange() 
+	local offset = tonumber(ARGV[2])
+
+	for _, key in ipairs(KEYS) do
+		if redis.call("getrange", key, 0, offset-1) ~= string.sub(ARGV[1], 1, offset) then
+			return false
+		end
+	end
+	return true
+end
+
+local setArgs = {}
+for _, key in ipairs(KEYS) do
+	table.insert(setArgs, key)
+	table.insert(setArgs, ARGV[1])
+end
+
+if redis.call("msetnx", unpack(setArgs)) ~= 1 then
+	if callgetrange() == false then
+		return false
+	end
+	redis.call("mset", unpack(setArgs))
+end
+
+callpexpire(ARGV[3])
+return redis.status_reply("OK")
+""";
+
+            var script2 = """
+local values = redis.call("mget", unpack(KEYS))
+for i, _ in ipairs(KEYS) do
+	if values[i] ~= ARGV[1] then
+		return false
+	end
+end
+
+redis.call("del", unpack(KEYS))
+
+return redis.status_reply("OK")
+""";
+
+            using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
+            var db = redis.GetDatabase(0);
+            var response1 = db.ScriptEvaluate(script1, ["key1", "key2"], ["foo", 3, 60_000]);
+            ClassicAssert.AreEqual("OK", (string)response1);
+            var response2 = db.ScriptEvaluate(script2, ["key3"], ["foo"]);
+            ClassicAssert.AreEqual(false, (bool)response2);
+            var response3 = db.ScriptEvaluate(script2, ["key1", "key2"], ["foo"]);
+            ClassicAssert.AreEqual("OK", (string)response3);
+        }
+
+        [Test]
+        public void ComplexLuaTest3()
+        {
+            var script1 = """
+return redis.call("mget", unpack(KEYS))
+""";
+
+            using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
+            var db = redis.GetDatabase(0);
+            for (int i = 0; i < 10; i++)
+            {
+                var response1 = (string[])db.ScriptEvaluate(script1, ["key1", "key2"]);
+                ClassicAssert.AreEqual(2, response1.Length);
+                foreach (var item in response1)
+                {
+                    ClassicAssert.AreEqual(null, item);
+                }
+            }
         }
     }
 }

@@ -99,6 +99,22 @@ Simple string reply: OK.
 
 ---
 
+### SELECT
+
+#### Syntax
+
+```bash
+    SELECT
+```
+
+Select the Redis logical database having the specified zero-based numeric index. New connections always use the database 0.
+
+#### Resp Reply
+
+Simple string reply: OK.
+
+---
+
 ## Generic Commands
 
 ### DEL
