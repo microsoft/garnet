@@ -53,28 +53,19 @@ namespace Garnet.server
 
             var oldKeySlice = parseState.GetArgSliceByRef(0);
             var newKeySlice = parseState.GetArgSliceByRef(1);
-            var status = storageApi.RENAMENX(oldKeySlice, newKeySlice);
+            var status = storageApi.RENAMENX(oldKeySlice, newKeySlice, out var result);
 
-            // Integer reply: 1 if key was renamed to newkey.
-            // Integer reply: 0 if newkey already exists.
-            switch (status)
+            if (status == GarnetStatus.OK)
             {
-                // GarnetStatus OK means new key already exists
-                case GarnetStatus.OK:
-                    while (!RespWriteUtils.WriteDirect(CmdStrings.RESP_RETURN_VAL_1, ref dcurr, dend))
-                        SendAndReset();
-                    break;
-
-                // GarnetStatus NOTFOUND means remane operation is successful
-                case GarnetStatus.NOTFOUND:
-                    while (!RespWriteUtils.WriteError(CmdStrings.RESP_ERR_GENERIC_NOSUCHKEY, ref dcurr, dend))
-                        SendAndReset();
-                    break;
-
-                case GarnetStatus.MOVED:
-                    while (!RespWriteUtils.WriteDirect(CmdStrings.RESP_RETURN_VAL_0, ref dcurr, dend))
-                        SendAndReset();
-                    break;
+                // Integer reply: 1 if key was renamed to newkey.
+                // Integer reply: 0 if newkey already exists.
+                while (!RespWriteUtils.WriteInteger(result, ref dcurr, dend))
+                    SendAndReset();
+            }
+            else
+            {
+                while (!RespWriteUtils.WriteError(CmdStrings.RESP_ERR_GENERIC_NOSUCHKEY, ref dcurr, dend))
+                    SendAndReset();
             }
 
             return true;

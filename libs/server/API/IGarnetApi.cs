@@ -124,13 +124,10 @@ namespace Garnet.server
         /// </summary>
         /// <param name="oldKey">The old key to be renamed.</param>
         /// <param name="newKey">The new key name.</param>
+        /// <param name="result">The result of the operation.</param>
         /// <param name="storeType">The type of store to perform the operation on.</param>
-        /// <returns>
-        ///     GarnetStatus OK means rename operation is successful
-        ///     GarnetStatus NOTFOUND means old key does not exists
-        ///     GarnetStatus MOVED means new key already exists
-        /// </returns>
-        GarnetStatus RENAMENX(ArgSlice oldKey, ArgSlice newKey, StoreType storeType = StoreType.All);
+        /// <returns></returns>
+        GarnetStatus RENAMENX(ArgSlice oldKey, ArgSlice newKey, out int result, StoreType storeType = StoreType.All);
         #endregion
 
         #region EXISTS

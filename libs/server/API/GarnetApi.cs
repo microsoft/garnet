@@ -156,8 +156,8 @@ namespace Garnet.server
             => storageSession.RENAME(oldKey, newKey, storeType);
 
         /// <inheritdoc />
-        public GarnetStatus RENAMENX(ArgSlice oldKey, ArgSlice newKey, StoreType storeType = StoreType.All)
-            => storageSession.RENAMENX(oldKey, newKey, storeType);
+        public GarnetStatus RENAMENX(ArgSlice oldKey, ArgSlice newKey, out int result, StoreType storeType = StoreType.All)
+            => storageSession.RENAMENX(oldKey, newKey, storeType, out result);
         #endregion
 
         #region EXISTS
