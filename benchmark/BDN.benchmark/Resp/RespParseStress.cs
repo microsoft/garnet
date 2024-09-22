@@ -62,6 +62,8 @@ namespace BDN.benchmark.Resp
             {
                 QuietMode = true,
                 AuthSettings = authSettings,
+                MetricsSamplingFrequency = 5,
+                LatencyMonitor = true,
             };
             server = new EmbeddedRespServer(opt);
 

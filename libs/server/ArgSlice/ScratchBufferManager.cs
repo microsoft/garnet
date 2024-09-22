@@ -253,6 +253,7 @@ namespace Garnet.server
                         }
                         scratchBufferOffset = (int)(ptr - scratchBufferHead);
                     }
+                    t.Dispose();
                 }
                 else if (item is long i)
                 {
