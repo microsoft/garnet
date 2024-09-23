@@ -195,6 +195,9 @@ namespace Garnet.test.cluster
             context.clusterTestUtils.Meet(0, 1, context.logger);
 
             context.clusterTestUtils.WaitUntilNodeIsKnownByAllNodes(0, context.logger);
+            context.clusterTestUtils.WaitUntilNodeIsKnownByAllNodes(1, context.logger);
+            context.clusterTestUtils.WaitUntilNodeIsKnownByAllNodes(2, context.logger);
+            context.clusterTestUtils.WaitUntilNodeIsKnownByAllNodes(3, context.logger);
         }
 
         [Test, Order(5)]

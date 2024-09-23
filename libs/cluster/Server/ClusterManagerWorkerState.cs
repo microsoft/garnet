@@ -110,8 +110,12 @@ namespace Garnet.cluster
 
                     var configEpoch = soft ? current.LocalNodeConfigEpoch : 0;
                     var expiry = DateTimeOffset.UtcNow.Ticks + TimeSpan.FromSeconds(expirySeconds).Ticks;
-                    foreach (var nodeId in current.GetRemoteNodeIds())
-                        _ = workerBanList.AddOrUpdate(nodeId, expiry, (key, oldValue) => expiry);
+
+                    if (soft)
+                    {
+                        foreach (var nodeId in current.GetRemoteNodeIds())
+                            _ = workerBanList.AddOrUpdate(nodeId, expiry, (key, oldValue) => expiry);
+                    }
 
                     var newConfig = new ClusterConfig().InitializeLocalWorker(
                         newNodeId,
