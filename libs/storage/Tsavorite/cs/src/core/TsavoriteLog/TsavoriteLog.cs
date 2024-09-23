@@ -1945,8 +1945,8 @@ namespace Tsavorite.core
                     throw new TsavoriteException("Cannot use scanUncommitted with read-only TsavoriteLog");
             }
 
-            if (scanUncommitted && !AutoRefreshSafeTailAddress)
-                throw new TsavoriteException("Cannot use scanUncommitted without setting AutoRefreshSafeTailAddress to true in TsavoriteLog settings");
+            if (scanUncommitted && !AutoRefreshSafeTailAddress && PeriodicSafeTailRefreshFrequencyMs == 0)
+                throw new TsavoriteException("Cannot use scanUncommitted without setting AutoRefreshSafeTailAddress to true or PeriodicSafeTailRefreshFrequencyMs to a non-zero value in TsavoriteLog settings");
 
             TsavoriteLogScanIterator iter;
             if (recover && name != null && RecoveredIterators != null && RecoveredIterators.ContainsKey(name))
