@@ -93,6 +93,11 @@ namespace Garnet.server
         public string AofPageSize = "4m";
 
         /// <summary>
+        /// Safe tail refresh frequency in milliseconds. 0 = auto refresh after every enqueue.
+        /// </summary>
+        public int SafeTailRefreshFreqMs = 10;
+
+        /// <summary>
         /// Write ahead logging (append-only file) commit issue frequency in milliseconds.
         /// 0 = issue an immediate commit per operation
         /// -1 = manually issue commits using COMMITAOF command (no auto-commit)
@@ -617,6 +622,7 @@ namespace Garnet.server
                 LogDevice = GetAofDevice(),
                 TryRecoverLatest = false,
                 AutoRefreshSafeTailAddress = true,
+                PeriodicSafeTailRefreshFrequencyMs = SafeTailRefreshFreqMs,
                 FastCommitMode = EnableFastCommit,
                 AutoCommit = CommitFrequencyMs == 0,
                 MutableFraction = 0.9,

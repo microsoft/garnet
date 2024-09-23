@@ -136,6 +136,11 @@ namespace Tsavorite.core
         public bool AutoRefreshSafeTailAddress = false;
 
         /// <summary>
+        /// Periodic SafeTailAddress refresh frequency in milliseconds. If 0, then disable periodic refresh.
+        /// </summary>
+        public int PeriodicSafeTailRefreshFrequencyMs = 0;
+
+        /// <summary>
         /// Whether we automatically commit the log as records are inserted
         /// </summary>
         public bool AutoCommit = false;

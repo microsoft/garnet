@@ -40,12 +40,12 @@ namespace Garnet.server
         /// <param name="logDir">Directory where the log will be stored</param>
         /// <param name="pageSize">Page size of log used for pub/sub</param>
         /// <param name="startFresh">start the log from scratch, do not continue</param>
-        public SubscribeBroker(IKeySerializer<TKey> keySerializer, string logDir, long pageSize, bool startFresh = true)
+        public SubscribeBroker(IKeySerializer<TKey> keySerializer, string logDir, long pageSize, int safeTailRefreshFreqMs, bool startFresh = true)
         {
             this.keySerializer = keySerializer;
             device = logDir == null ? new NullDevice() : Devices.CreateLogDevice(logDir + "/pubsubkv", preallocateFile: false);
             device.Initialize((long)(1 << 30) * 64);
-            log = new TsavoriteLog(new TsavoriteLogSettings { LogDevice = device, PageSize = pageSize, MemorySize = pageSize * 4, AutoRefreshSafeTailAddress = true });
+            log = new TsavoriteLog(new TsavoriteLogSettings { LogDevice = device, PageSize = pageSize, MemorySize = pageSize * 4, AutoRefreshSafeTailAddress = true, PeriodicSafeTailRefreshFrequencyMs = safeTailRefreshFreqMs });
             if (startFresh)
                 log.TruncateUntil(log.CommittedUntilAddress);
         }

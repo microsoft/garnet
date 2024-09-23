@@ -123,7 +123,7 @@ namespace Tsavorite.core
         internal Dictionary<string, long> LastPersistedIterators;
 
         /// <summary>
-        /// Numer of references to log, including itself
+        /// Number of references to log, including itself
         /// Used to determine disposability of log
         /// </summary>
         internal int logRefCount = 1;
@@ -134,6 +134,19 @@ namespace Tsavorite.core
         /// Whether we refresh safe tail as records are inserted
         /// </summary>
         readonly bool AutoRefreshSafeTailAddress;
+
+        /// <summary>
+        /// Periodic SafeTailAddress refresh frequency in milliseconds. If 0, then disable periodic refresh.
+        /// </summary>
+        readonly int PeriodicSafeTailRefreshFrequencyMs;
+
+        /// <summary>
+        /// CTS to allow cancellation of the periodic safe tail refresh background task, called during Dispose
+        /// </summary>
+        readonly CancellationTokenSource periodicSafeTailRefreshTaskCts;
+
+        long periodicRefreshLastTailAddress = 0;
+        readonly SemaphoreSlim periodicRefreshCallbackCompleted;
 
         /// <summary>
         /// Callback when safe tail shifts
@@ -169,6 +182,7 @@ namespace Tsavorite.core
         {
             this.logger = logger;
             AutoRefreshSafeTailAddress = logSettings.AutoRefreshSafeTailAddress;
+            PeriodicSafeTailRefreshFrequencyMs = logSettings.PeriodicSafeTailRefreshFrequencyMs;
             AutoCommit = logSettings.AutoCommit;
             logCommitManager = logSettings.LogCommitManager ??
                 new DeviceLogCommitCheckpointManager
@@ -219,6 +233,80 @@ namespace Tsavorite.core
                     Recover(-1);
                 }
                 catch { }
+            }
+
+            if (PeriodicSafeTailRefreshFrequencyMs > 0)
+            {
+                periodicRefreshCallbackCompleted = new(0);
+                AutoRefreshSafeTailAddress = false;
+                _ongoingAutoRefreshSafeTailAddress = 1;
+                periodicSafeTailRefreshTaskCts = new();
+                _ = Task.Run(PeriodicSafeTailRefreshRunner);
+            }
+        }
+
+        async Task PeriodicSafeTailRefreshRunner()
+        {
+            try
+            {
+                var token = periodicSafeTailRefreshTaskCts.Token;
+                while (!token.IsCancellationRequested)
+                {
+                    while (true)
+                    {
+                        try
+                        {
+                            epoch.Resume();
+                            periodicRefreshLastTailAddress = TailAddress;
+                            if (periodicRefreshLastTailAddress <= SafeTailAddress)
+                                break;
+                            epoch.BumpCurrentEpoch(PeriodicRefreshSafeTailAddressBumpCallback);
+                        }
+                        finally
+                        {
+                            epoch.Suspend();
+                        }
+                        await periodicRefreshCallbackCompleted.WaitAsync(token).ConfigureAwait(false);
+                    }
+                    await Task.Delay(PeriodicSafeTailRefreshFrequencyMs, token).ConfigureAwait(false);
+                }
+            }
+            catch { }
+            finally
+            {
+                periodicRefreshCallbackCompleted.Dispose();
+            }
+        }
+
+        void PeriodicRefreshSafeTailAddressBumpCallback()
+        {
+            try
+            {
+                if (Utility.MonotonicUpdate(ref SafeTailAddress, periodicRefreshLastTailAddress, out long oldSafeTailAddress))
+                {
+                    var tcs = refreshUncommittedTcs;
+                    if (tcs != null && Interlocked.CompareExchange(ref refreshUncommittedTcs, null, tcs) == tcs)
+                        tcs.SetResult(Empty.Default);
+                    var _callback = SafeTailShiftCallback;
+                    if (_callback != null)
+                    {
+                        // We invoke callback outside epoch protection
+                        bool isProtected = epoch.ThisInstanceProtected();
+                        if (isProtected) epoch.Suspend();
+                        try
+                        {
+                            _callback.Invoke(oldSafeTailAddress, periodicRefreshLastTailAddress);
+                        }
+                        finally
+                        {
+                            if (isProtected) epoch.Resume();
+                        }
+                    }
+                }
+            }
+            finally
+            {
+                periodicRefreshCallbackCompleted.Release();
             }
         }
 
@@ -354,6 +442,7 @@ namespace Tsavorite.core
 
         internal void TrueDispose()
         {
+            periodicSafeTailRefreshTaskCts.Cancel();
             commitQueue.Dispose();
             commitTcs.TrySetException(new ObjectDisposedException("Log has been disposed"));
             allocator.Dispose();

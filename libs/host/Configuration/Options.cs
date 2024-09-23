@@ -195,6 +195,10 @@ namespace Garnet
         public string AofSizeLimit { get; set; }
 
         [IntRangeValidation(0, int.MaxValue)]
+        [Option("safe-tail-refresh-freq", Required = false, HelpText = "Safe tail refresh frequency in milliseconds. 0 = auto refresh after every enqueue.")]
+        public int SafeTailRefreshFreqMs { get; set; }
+
+        [IntRangeValidation(0, int.MaxValue)]
         [Option("compaction-freq", Required = false, HelpText = "Background hybrid log compaction frequency in seconds. 0 = disabled (compaction performed before checkpointing instead)")]
         public int CompactionFrequencySecs { get; set; }
 
@@ -588,6 +592,7 @@ namespace Garnet
                 LuaTransactionMode = LuaTransactionMode.GetValueOrDefault(),
                 AofMemorySize = AofMemorySize,
                 AofPageSize = AofPageSize,
+                SafeTailRefreshFreqMs = SafeTailRefreshFreqMs,
                 CommitFrequencyMs = CommitFrequencyMs,
                 WaitForCommit = WaitForCommit.GetValueOrDefault(),
                 AofSizeLimit = AofSizeLimit,
