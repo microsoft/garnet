@@ -37,6 +37,8 @@ namespace BDN.benchmark.Resp
                 UseAofNullDevice = true,
                 MainMemoryReplication = true,
                 CommitFrequencyMs = -1,
+                AofPageSize = "128m",
+                AofMemorySize = "256m",
             };
             server = new EmbeddedRespServer(opt);
 
@@ -46,6 +48,8 @@ namespace BDN.benchmark.Resp
             setRequestBufferPointer = (byte*)Unsafe.AsPointer(ref setRequestBuffer[0]);
             for (int i = 0; i < batchSize; i++)
                 SET.CopyTo(new Span<byte>(setRequestBuffer).Slice(i * SET.Length));
+
+            _ = session.TryConsumeMessages(setRequestBufferPointer, setRequestBuffer.Length);
 
             incrRequestBuffer = GC.AllocateArray<byte>(INCR.Length * batchSize, pinned: true);
             incrRequestBufferPointer = (byte*)Unsafe.AsPointer(ref incrRequestBuffer[0]);
