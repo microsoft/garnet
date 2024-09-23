@@ -56,6 +56,8 @@ namespace BDN.benchmark.Resp
             for (int i = 0; i < batchSize; i++)
                 INCR.CopyTo(new Span<byte>(incrRequestBuffer).Slice(i * INCR.Length));
 
+            _ = session.TryConsumeMessages(incrRequestBufferPointer, incrRequestBuffer.Length);
+
             lPushPopRequestBuffer = GC.AllocateArray<byte>(LPUSHPOP.Length * batchSize, pinned: true);
             lPushPopRequestBufferPointer = (byte*)Unsafe.AsPointer(ref lPushPopRequestBuffer[0]);
             for (int i = 0; i < batchSize; i++)
