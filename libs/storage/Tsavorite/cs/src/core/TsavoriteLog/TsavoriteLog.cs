@@ -442,7 +442,7 @@ namespace Tsavorite.core
 
         internal void TrueDispose()
         {
-            periodicSafeTailRefreshTaskCts.Cancel();
+            periodicSafeTailRefreshTaskCts?.Cancel();
             commitQueue.Dispose();
             commitTcs.TrySetException(new ObjectDisposedException("Log has been disposed"));
             allocator.Dispose();
