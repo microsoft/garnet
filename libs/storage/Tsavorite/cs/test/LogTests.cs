@@ -690,6 +690,10 @@ namespace Tsavorite.test
                 log.Enqueue(data1);
             }
 
+            // Wait for safe tail to catch up
+            while (log.SafeTailAddress < log.TailAddress)
+                await Task.Yield();
+
             ClassicAssert.AreEqual(log.TailAddress, log.SafeTailAddress);
 
             ClassicAssert.Less(log.CommittedUntilAddress, log.SafeTailAddress);
@@ -735,6 +739,10 @@ namespace Tsavorite.test
             // Enqueue data, becomes auto-visible
             log.Enqueue(data1);
 
+            // Wait for safe tail to catch up
+            while (log.SafeTailAddress < log.TailAddress)
+                await Task.Yield();
+
             await AssertGetNext(asyncByteVectorIter, asyncMemoryOwnerIter, iter, data1, verifyAtEnd: true);
 
             log.Dispose();
@@ -763,8 +771,11 @@ namespace Tsavorite.test
                 log.Enqueue(data1);
             }
 
-            ClassicAssert.AreEqual(log.TailAddress, log.SafeTailAddress);
+            // Wait for safe tail to catch up
+            while (log.SafeTailAddress < log.TailAddress)
+                await Task.Yield();
 
+            ClassicAssert.AreEqual(log.TailAddress, log.SafeTailAddress);
             ClassicAssert.Less(log.CommittedUntilAddress, log.SafeTailAddress);
 
             using (var iter = log.Scan(0, long.MaxValue, scanUncommitted: true))
@@ -808,6 +819,11 @@ namespace Tsavorite.test
 
                 // Enqueue data, becomes auto-visible
                 log.Enqueue(data1);
+
+                // Wait for safe tail to catch up
+                while (log.SafeTailAddress < log.TailAddress)
+                    await Task.Yield();
+
 
                 await AssertGetNext(asyncByteVectorIter, asyncMemoryOwnerIter, iter, data1, verifyAtEnd: true);
             }
@@ -964,6 +980,10 @@ namespace Tsavorite.test
                 log.Enqueue(data1);
             }
 
+            // Wait for safe tail to catch up
+            while (log.SafeTailAddress < log.TailAddress)
+                await Task.Yield();
+
             ClassicAssert.AreEqual(log.TailAddress, log.SafeTailAddress);
             ClassicAssert.Less(log.CommittedUntilAddress, log.SafeTailAddress);
 
@@ -1008,6 +1028,10 @@ namespace Tsavorite.test
 
                 // Enqueue additional data item, becomes auto-visible
                 log.Enqueue(data1);
+
+                // Wait for safe tail to catch up
+                while (log.SafeTailAddress < log.TailAddress)
+                    await Task.Yield();
 
                 await AssertGetNext(asyncByteVectorIter, asyncMemoryOwnerIter, iter, data1, verifyAtEnd: true);
             }
