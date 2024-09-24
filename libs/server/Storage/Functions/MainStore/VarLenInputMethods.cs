@@ -173,7 +173,9 @@ namespace Garnet.server
                     case RespCommand.SETIFMATCH:
                     case RespCommand.PERSIST:
                         break;
-
+                    case RespCommand.SETWITHETAG:
+                        // same space as SET but with 8 additional bytes for etag at the front of the payload
+                        return sizeof(int) + input.Length - RespInputHeader.Size + sizeof(long);
                     case RespCommand.EXPIRE:
                     case RespCommand.PEXPIRE:
                         return sizeof(int) + t.Length + input.MetadataSize;

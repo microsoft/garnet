@@ -137,6 +137,53 @@ namespace Garnet.test
 
         #endregion
 
+        # region Edgecases
+
+        [Test]
+        public void SetWithEtagOnAlreadyExistingDataOverridesIt()
+        {
+            using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
+            IDatabase db = redis.GetDatabase(0);
+
+            ClassicAssert.IsTrue(db.StringSet("rizz", "used"));
+
+            // inplace update
+            RedisResult res = db.Execute("SETWITHETAG", ["rizz", "buzz"]);
+            long etag = long.Parse(res.ToString());
+            ClassicAssert.AreEqual(0, etag);
+
+            db.KeyDelete("rizz");
+
+            ClassicAssert.IsTrue(db.StringSet("rizz", "my"));
+
+            // Copy update
+            res = db.Execute("SETWITHETAG", ["rizz", "some"]);
+            etag = long.Parse(res.ToString());
+            ClassicAssert.AreEqual(0, etag);
+        }
+        
+        [Test]
+        public void SetWithEtagOnAlreadyExistingSetWithEtagDataOverridesIt()
+        {
+            using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
+            IDatabase db = redis.GetDatabase(0);
+            RedisResult res = db.Execute("SETWITHETAG", ["rizz", "buzz"]);
+            long etag = long.Parse(res.ToString());
+            ClassicAssert.AreEqual(0, etag);
+            
+            // inplace update
+            res = db.Execute("SETWITHETAG", ["rizz", "meow"]);
+            etag = long.Parse(res.ToString());
+            ClassicAssert.AreEqual(0, etag);
+
+            // Copy update
+            res = db.Execute("SETWITHETAG", ["rizz", "oneofus"]);
+            etag = long.Parse(res.ToString());
+            ClassicAssert.AreEqual(0, etag);
+        }
+
+        #endregion
+
         #region ETAG Apis with non-etag data
 
         // ETAG Apis with non-Etag data just tests that in all scenarios we always return wrong data type response

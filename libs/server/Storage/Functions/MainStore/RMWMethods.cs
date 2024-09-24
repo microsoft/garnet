@@ -493,6 +493,24 @@ namespace Garnet.server
                     rmwInfo.Action = RMWAction.ExpireAndStop;
                     return false;
 
+                case RespCommand.SETWITHETAG:
+                    if (input.Length - RespInputHeader.Size + sizeof(long) > value.Length)
+                        return false;
+
+                    recordInfo.SetHasETag();
+
+                    // Copy input to value
+                    value.ShrinkSerializedLength(input.Length - RespInputHeader.Size + sizeof(long));
+                    value.ExtraMetadata = input.ExtraMetadata;
+
+                    // initial etag set to 0, this is a counter based etag that is incremented on change
+                    *(long*)value.ToPointer() = 0;
+                    input.AsReadOnlySpan()[RespInputHeader.Size..].CopyTo(value.AsSpan(sizeof(long)));
+
+                    // Copy initial etag to output
+                    CopyRespNumber(0, ref output);
+                    // early return since initial etag setting does not need to be incremented
+                    return true;;
 
                 case RespCommand.APPEND:
                     // If nothing to append, can avoid copy update.
@@ -652,6 +670,19 @@ namespace Garnet.server
 
             switch (cmd)
             {
+                case RespCommand.SETWITHETAG:
+                    Debug.Assert(input.Length - RespInputHeader.Size + sizeof(long) == newValue.Length);
+                    // initial etag setting so does not need to be incremented
+                    shouldUpdateEtag = false;
+                    recordInfo.SetHasETag();
+                    // Copy input to value
+                    newValue.ExtraMetadata = input.ExtraMetadata;
+                    input.AsReadOnlySpan()[RespInputHeader.Size..].CopyTo(newValue.AsSpan(sizeof(long)));
+                    // initial Etag
+                    *(long*)newValue.ToPointer() = 0;
+                    // Copy initial etag to output
+                    CopyRespNumber(0, ref output);
+                    break;
                 case RespCommand.SETIFMATCH:
                     Debug.Assert(recordInfo.ETag, "We should never be able to CU for ETag command on non-etag data.");
 
