@@ -6,6 +6,8 @@ using System.Collections.Generic;
 using System.IO;
 using System.Linq;
 using System.Reflection;
+using System.Reflection.Metadata;
+using System.Reflection.PortableExecutable;
 using Garnet.common;
 
 namespace Garnet.server
@@ -41,25 +43,37 @@ namespace Garnet.server
                 }
             }
 
-            // Get all assemblies from binary files
-            if (!FileUtils.TryLoadAssemblies(binaryFiles, out loadedAssemblies, out _))
-            {
-                errorMessage = CmdStrings.RESP_ERR_GENERIC_LOADING_ASSEMBLIES;
-                return false;
-            }
-
             // If necessary, check that all assemblies are digitally signed
             if (!allowUnsignedAssemblies)
             {
-                foreach (var loadedAssembly in loadedAssemblies)
+                foreach (var filePath in files)
                 {
-                    var publicKey = loadedAssembly.GetName().GetPublicKey();
-                    if (publicKey == null || publicKey.Length == 0)
+                    using var fs = File.OpenRead(filePath);
+                    using var peReader = new PEReader(fs);
+
+                    var metadataReader = peReader.GetMetadataReader();
+                    var assemblyPublicKeyHandle = metadataReader.GetAssemblyDefinition().PublicKey;
+
+                    if (assemblyPublicKeyHandle.IsNil)
+                    {
+                        errorMessage = CmdStrings.RESP_ERR_GENERIC_ASSEMBLY_NOT_SIGNED;
+                        return false;
+                    }
+
+                    var publicKeyBytes = metadataReader.GetBlobBytes(assemblyPublicKeyHandle);
+                    if (publicKeyBytes == null || publicKeyBytes.Length == 0)
                     {
                         errorMessage = CmdStrings.RESP_ERR_GENERIC_ASSEMBLY_NOT_SIGNED;
                         return false;
                     }
                 }
+            }
+
+            // Get all assemblies from binary files
+            if (!FileUtils.TryLoadAssemblies(binaryFiles, out loadedAssemblies, out _))
+            {
+                errorMessage = CmdStrings.RESP_ERR_GENERIC_LOADING_ASSEMBLIES;
+                return false;
             }
 
             return true;
