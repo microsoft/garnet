@@ -95,6 +95,11 @@ namespace Tsavorite.test
                 // Add to TsavoriteLog
                 logUncommitted.Enqueue(entry);
             }
+
+            // Wait for safe tail to catch up
+            while (logUncommitted.SafeTailAddress < logUncommitted.TailAddress)
+                Thread.Yield();
+
         }
 
         [Test]
