@@ -146,7 +146,7 @@ namespace Tsavorite.core
         readonly CancellationTokenSource periodicSafeTailRefreshTaskCts;
 
         long periodicRefreshLastTailAddress = 0;
-        readonly SemaphoreSlim periodicRefreshCallbackCompleted;
+        readonly SingleWaiterAutoResetEvent periodicRefreshCallbackCompleted;
 
         /// <summary>
         /// Callback when safe tail shifts
@@ -237,7 +237,8 @@ namespace Tsavorite.core
 
             if (PeriodicSafeTailRefreshFrequencyMs > 0)
             {
-                periodicRefreshCallbackCompleted = new(0);
+                periodicRefreshCallbackCompleted = new();
+                periodicRefreshCallbackCompleted.RunContinuationsAsynchronously = true;
                 AutoRefreshSafeTailAddress = false;
                 _ongoingAutoRefreshSafeTailAddress = 1;
                 periodicSafeTailRefreshTaskCts = new();
@@ -252,7 +253,7 @@ namespace Tsavorite.core
                 var token = periodicSafeTailRefreshTaskCts.Token;
                 while (!token.IsCancellationRequested)
                 {
-                    while (true)
+                    while (!token.IsCancellationRequested)
                     {
                         try
                         {
@@ -266,16 +267,12 @@ namespace Tsavorite.core
                         {
                             epoch.Suspend();
                         }
-                        await periodicRefreshCallbackCompleted.WaitAsync(token).ConfigureAwait(false);
+                        await periodicRefreshCallbackCompleted.WaitAsync().ConfigureAwait(false);
                     }
                     await Task.Delay(PeriodicSafeTailRefreshFrequencyMs, token).ConfigureAwait(false);
                 }
             }
             catch { }
-            finally
-            {
-                periodicRefreshCallbackCompleted.Dispose();
-            }
         }
 
         void PeriodicRefreshSafeTailAddressBumpCallback()
@@ -306,7 +303,7 @@ namespace Tsavorite.core
             }
             finally
             {
-                periodicRefreshCallbackCompleted.Release();
+                periodicRefreshCallbackCompleted.Signal();
             }
         }
 
@@ -443,6 +440,7 @@ namespace Tsavorite.core
         internal void TrueDispose()
         {
             periodicSafeTailRefreshTaskCts?.Cancel();
+            periodicRefreshCallbackCompleted?.Signal();
             commitQueue.Dispose();
             commitTcs.TrySetException(new ObjectDisposedException("Log has been disposed"));
             allocator.Dispose();
