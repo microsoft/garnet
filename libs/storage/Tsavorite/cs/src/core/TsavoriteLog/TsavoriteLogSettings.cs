@@ -131,14 +131,9 @@ namespace Tsavorite.core
         public bool TryRecoverLatest = true;
 
         /// <summary>
-        /// Whether we refresh safe tail address as records are inserted
+        /// SafeTailAddress refresh frequency in milliseconds. -1 => disabled; 0 => immediate refresh after every enqueue, >1 => refresh period in milliseconds.
         /// </summary>
-        public bool AutoRefreshSafeTailAddress = false;
-
-        /// <summary>
-        /// Periodic SafeTailAddress refresh frequency in milliseconds. If 0, then disable periodic refresh.
-        /// </summary>
-        public int PeriodicSafeTailRefreshFrequencyMs = 0;
+        public int SafeTailRefreshFrequencyMs = -1;
 
         /// <summary>
         /// Whether we automatically commit the log as records are inserted
