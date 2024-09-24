@@ -80,11 +80,13 @@ jobs:
           # What benchmark tool the output.txt came from
           tool: 'benchmarkdotnet'
           # Where the output from the benchmark tool is stored
-          output-file-path: ./test/BDNPerfTests/results/Results-${{ matrix.os }}-${{ matrix.framework }}-${{ matrix.configuration }}-${{ matrix.test }}.results
+          #output-file-path: ./test/BDNPerfTests/results/Results-${{ matrix.os }}-${{ matrix.framework }}-${{ matrix.configuration }}-${{ matrix.test }}.results
+          output-file-path: ./test/BDNPerfTests/results/CI_BDN_Config_RespParseStress_Windows.results
           #output-file-path: ./test/BDNPerfTests/BenchmarkDotNet.Artifacts/results/BDN.benchmark.Resp.RespParseStress-report-full-compressed.json
           # Where the previous data file is stored
           external-data-json-path: ./cache/benchmark-data.json
           # Workflow will fail when an alert happens
           fail-on-alert: true
       # Upload the updated cache file for the next job by actions/cache
+
 
