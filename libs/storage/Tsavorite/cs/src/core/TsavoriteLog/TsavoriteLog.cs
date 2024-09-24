@@ -304,14 +304,24 @@ namespace Tsavorite.core
                     if (tcs != null && Interlocked.CompareExchange(ref refreshUncommittedTcs, null, tcs) == tcs)
                         tcs.SetResult(Empty.Default);
                     var _callback = SafeTailShiftCallback;
-                    if (_callback != null)
+                    if (_callback != null || activeSingleIterators != null)
                     {
                         // We invoke callback outside epoch protection
                         bool isProtected = epoch.ThisInstanceProtected();
                         if (isProtected) epoch.Suspend();
                         try
                         {
-                            _callback.Invoke(oldSafeTailAddress, safeTailRefreshLastTailAddress);
+                            // Notify waiting single iterators, if any
+                            var _asi = activeSingleIterators;
+                            if (_asi != null)
+                            {
+                                foreach (var iter in _asi)
+                                {
+                                    iter.Signal();
+                                }
+                            }
+                            // Invoke callback, if any
+                            _callback?.Invoke(oldSafeTailAddress, safeTailRefreshLastTailAddress);
                         }
                         finally
                         {
@@ -1971,6 +1981,69 @@ namespace Tsavorite.core
                 iter = new TsavoriteLogScanIterator(this, allocator, RecoveredIterators[name], endAddress, getMemory, scanBufferingMode, epoch, headerSize, name, scanUncommitted, logger: logger);
             else
                 iter = new TsavoriteLogScanIterator(this, allocator, beginAddress, endAddress, getMemory, scanBufferingMode, epoch, headerSize, name, scanUncommitted, logger: logger);
+
+            if (name != null)
+            {
+                if (name.Length > 20)
+                    throw new TsavoriteException("Max length of iterator name is 20 characters");
+                if (PersistedIterators.ContainsKey(name))
+                    logger?.LogDebug("Iterator name exists, overwriting");
+                PersistedIterators[name] = iter;
+            }
+
+            if (Interlocked.Increment(ref logRefCount) == 1)
+                throw new TsavoriteException("Cannot scan disposed log instance");
+            return iter;
+        }
+
+        List<TsavoriteLogScanSingleIterator> activeSingleIterators;
+
+        public void RemoveIterator(TsavoriteLogScanSingleIterator iterator)
+        {
+            lock (this)
+            {
+                if (activeSingleIterators != null)
+                {
+                    List<TsavoriteLogScanSingleIterator> newList = null;
+                    foreach (var it in activeSingleIterators)
+                    {
+                        if (it != iterator)
+                        {
+                            newList ??= [];
+                            newList.Add(it);
+                        }
+                    }
+                    activeSingleIterators = newList;
+                }
+            }
+        }
+
+        public TsavoriteLogScanSingleIterator ScanSingle(long beginAddress, long endAddress, string name = null, bool recover = true, ScanBufferingMode scanBufferingMode = ScanBufferingMode.DoublePageBuffering, bool scanUncommitted = false, ILogger logger = null)
+        {
+            if (readOnlyMode)
+            {
+                scanBufferingMode = ScanBufferingMode.SinglePageBuffering;
+
+                if (name != null)
+                    throw new TsavoriteException("Cannot use named iterators with read-only TsavoriteLog");
+                if (scanUncommitted)
+                    throw new TsavoriteException("Cannot use scanUncommitted with read-only TsavoriteLog");
+            }
+
+            if (scanUncommitted && SafeTailRefreshFrequencyMs < 0)
+                throw new TsavoriteException("Cannot use scanUncommitted without setting SafeTailRefreshFrequencyMs to a non-negative value in TsavoriteLog settings");
+
+            TsavoriteLogScanSingleIterator iter;
+            if (recover && name != null && RecoveredIterators != null && RecoveredIterators.ContainsKey(name))
+                iter = new TsavoriteLogScanSingleIterator(this, allocator, RecoveredIterators[name], endAddress, getMemory, scanBufferingMode, epoch, headerSize, name, scanUncommitted, logger: logger);
+            else
+                iter = new TsavoriteLogScanSingleIterator(this, allocator, beginAddress, endAddress, getMemory, scanBufferingMode, epoch, headerSize, name, scanUncommitted, logger: logger);
+
+            lock (this)
+            {
+                List<TsavoriteLogScanSingleIterator> newList = activeSingleIterators == null ? new() { iter } : new(activeSingleIterators) { iter };
+                activeSingleIterators = newList;
+            }
 
             if (name != null)
             {

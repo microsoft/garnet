@@ -19,7 +19,7 @@ namespace Garnet.cluster
         readonly ILogger logger;
         public readonly GarnetClientSession garnetClient;
         readonly CancellationTokenSource cts;
-        TsavoriteLogScanIterator iter;
+        TsavoriteLogScanSingleIterator iter;
         readonly long startAddress;
         public long previousAddress;
 
@@ -29,7 +29,6 @@ namespace Garnet.cluster
             string localNodeId,
             string remoteNodeId,
             GarnetClientSession garnetClient,
-            CancellationTokenSource cts,
             long startAddress,
             ILogger logger)
         {
@@ -39,14 +38,20 @@ namespace Garnet.cluster
             this.remoteNodeId = remoteNodeId;
             this.logger = logger;
             this.garnetClient = garnetClient;
-            this.cts = cts;
             this.startAddress = startAddress;
             previousAddress = startAddress;
+            this.cts = new CancellationTokenSource();
         }
 
         public void Dispose()
         {
+            // First cancel the token
+            cts?.Cancel();
+
+            // Then, dispose the iterator. This will also signal the iterator so that it can observe the canceled token
             iter?.Dispose();
+
+            // Finally, dispose the cts
             cts?.Dispose();
         }
 
@@ -86,7 +91,7 @@ namespace Garnet.cluster
             {
                 garnetClient.Connect();
 
-                iter = clusterProvider.storeWrapper.appendOnlyFile.Scan(startAddress, long.MaxValue, name: remoteNodeId[..20], scanUncommitted: true, recover: false, logger: logger);
+                iter = clusterProvider.storeWrapper.appendOnlyFile.ScanSingle(startAddress, long.MaxValue, name: remoteNodeId[..20], scanUncommitted: true, recover: false, logger: logger);
 
                 while (true)
                 {

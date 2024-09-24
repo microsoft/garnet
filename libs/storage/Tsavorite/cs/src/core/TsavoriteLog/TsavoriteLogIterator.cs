@@ -17,16 +17,16 @@ namespace Tsavorite.core
     /// <summary>
     /// Scan iterator for hybrid log
     /// </summary>
-    public sealed class TsavoriteLogScanIterator : ScanIteratorBase, IDisposable
+    public class TsavoriteLogScanIterator : ScanIteratorBase, IDisposable
     {
         private readonly string name;
-        private readonly TsavoriteLog tsavoriteLog;
+        protected readonly TsavoriteLog tsavoriteLog;
         private readonly BlittableAllocatorImpl<Empty, byte, EmptyStoreFunctions> allocator;
         private readonly BlittableFrame frame;
         private readonly GetMemory getMemory;
         private readonly int headerSize;
-        private readonly bool scanUncommitted;
-        private bool disposed = false;
+        protected readonly bool scanUncommitted;
+        protected bool disposed = false;
         internal long requestedCompletedUntilAddress;
 
         /// <summary>
@@ -174,7 +174,7 @@ namespace Tsavorite.core
 
             if (NextAddress < tsavoriteLog.SafeTailAddress)
                 return new ValueTask<bool>(true);
-            return SlowWaitUncommittedAsync(this, token);
+            return SlowWaitUncommittedAsync(token);
         }
 
         private static async ValueTask<bool> SlowWaitAsync(TsavoriteLogScanIterator @this, CancellationToken token)
@@ -197,23 +197,23 @@ namespace Tsavorite.core
             }
         }
 
-        private static async ValueTask<bool> SlowWaitUncommittedAsync(TsavoriteLogScanIterator @this, CancellationToken token)
+        protected virtual async ValueTask<bool> SlowWaitUncommittedAsync(CancellationToken token)
         {
             while (true)
             {
-                if (@this.disposed)
+                if (this.disposed)
                     return false;
-                if (@this.Ended) return false;
+                if (this.Ended) return false;
 
-                var tcs = @this.tsavoriteLog.refreshUncommittedTcs;
+                var tcs = this.tsavoriteLog.refreshUncommittedTcs;
                 if (tcs == null)
                 {
                     var newTcs = new TaskCompletionSource<Empty>(TaskCreationOptions.RunContinuationsAsynchronously);
-                    tcs = Interlocked.CompareExchange(ref @this.tsavoriteLog.refreshUncommittedTcs, newTcs, null);
+                    tcs = Interlocked.CompareExchange(ref this.tsavoriteLog.refreshUncommittedTcs, newTcs, null);
                     tcs ??= newTcs; // successful CAS so update the local var
                 }
 
-                if (@this.NextAddress < @this.tsavoriteLog.SafeTailAddress)
+                if (this.NextAddress < this.tsavoriteLog.SafeTailAddress)
                     return true;
 
                 // Ignore refresh-uncommitted exceptions, except when the token is signaled
