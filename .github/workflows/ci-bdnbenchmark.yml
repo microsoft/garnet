@@ -37,7 +37,7 @@ jobs:
         os: [ ubuntu-latest, windows-latest ]
         framework: [ 'net8.0' ]
         configuration: [ 'Release' ]
-        test: [ 'CI_BDN_Config_RespParseStress.json', 'CI_BDN_Config_RespTsavoriteStress.json', 'CI_BDN_Config_RespClusterBench.json', 'CI_BDN_Config_RespClusterMigrateBench.json', 'CI_BDN_Config_Lua.json' ]
+        test: [ 'CI_BDN_Config_RespParseStress', 'CI_BDN_Config_RespTsavoriteStress', 'CI_BDN_Config_RespClusterBench', 'CI_BDN_Config_RespClusterMigrateBench', 'CI_BDN_Config_Lua' ]
     steps:
       - name: Check out code
         uses: actions/checkout@v4
@@ -80,7 +80,7 @@ jobs:
           # What benchmark tool the output.txt came from
           tool: 'benchmarkdotnet'
           # Where the output from the benchmark tool is stored
-          output-file-path: ./test/BDNPerfTests/results/CI_BDN_Config_RespParseStress_Linux.results
+          output-file-path: ./test/BDNPerfTests/results/${{ matrix.test }}_${{ matrix.os }}.json
           # Where the previous data file is stored
           external-data-json-path: ./cache/benchmark-data.json
           # Workflow will fail when an alert happens

@@ -94,6 +94,11 @@ if ($pathstring.Contains("test")) {
     Set-Location .\test\BDNPerfTests\
 }
 
+# Add .json to end if not already there
+if ($configFile -notlike "*.json") {
+    $configFile += ".json"
+}
+
 # Read the test config file and convert the JSON to a PowerShell object
 $fullConfiFileAndPath = "ConfigFiles/$configFile"
 if (-not (Test-Path -Path $fullConfiFileAndPath)) {
@@ -210,7 +215,7 @@ $BDNbenchmarkErrorFile = "$errorLogDir/$justResultsFileNameNoExt" + "_StandardEr
 
 Write-Output "** Start BDN Benchmark: $filter"
 Write-Output " "
-Write-Output "** Start:  dotnet run -c $configuration -f $framework --filter $filter --project $BDNbenchmarkPath  > $resultsFile 2> $BDNbenchmarkErrorFile"
+Write-Output "** Start:  dotnet run -c $configuration -f $framework --filter $filter --project $BDNbenchmarkPath --exporters json > $resultsFile 2> $BDNbenchmarkErrorFile"
 dotnet run -c $configuration -f $framework --filter $filter --project $BDNbenchmarkPath --exporters json  > $resultsFile 2> $BDNbenchmarkErrorFile
 
 Write-Output "** BDN Benchmark for $filter finished"
