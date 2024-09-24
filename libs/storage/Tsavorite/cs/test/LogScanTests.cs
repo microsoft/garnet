@@ -385,7 +385,7 @@ namespace Tsavorite.test
             // Create log and device here (not in setup) because using DeviceType Enum which can't be used in Setup
             string filename = Path.Join(TestUtils.MethodTestDir, "LogScan" + deviceType.ToString() + ".log");
             device = TestUtils.CreateTestDevice(deviceType, filename);
-            log = new TsavoriteLog(new TsavoriteLogSettings { LogDevice = device, SegmentSizeBits = 22, LogCommitDir = TestUtils.MethodTestDir, AutoRefreshSafeTailAddress = true });
+            log = new TsavoriteLog(new TsavoriteLogSettings { LogDevice = device, SegmentSizeBits = 22, LogCommitDir = TestUtils.MethodTestDir, SafeTailRefreshFrequencyMs = 0 });
             PopulateUncommittedLog(log);
 
             // Setting scanUnCommitted to true is actual test here.

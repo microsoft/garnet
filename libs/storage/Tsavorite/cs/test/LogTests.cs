@@ -678,7 +678,7 @@ namespace Tsavorite.test
                 LogChecksum = logChecksum,
                 LogCommitManager = manager,
                 TryRecoverLatest = false,
-                AutoRefreshSafeTailAddress = true
+                SafeTailRefreshFrequencyMs = 0
             };
             log = IsAsync(iteratorType) ? await TsavoriteLog.CreateAsync(logSettings) : new TsavoriteLog(logSettings);
 
@@ -753,7 +753,7 @@ namespace Tsavorite.test
                 PageSizeBits = 14,
                 LogChecksum = logChecksum,
                 LogCommitManager = manager,
-                AutoRefreshSafeTailAddress = true
+                SafeTailRefreshFrequencyMs = 0
             });
             byte[] data1 = new byte[1000];
             for (int i = 0; i < 100; i++) data1[i] = (byte)i;
@@ -954,7 +954,7 @@ namespace Tsavorite.test
                 PageSizeBits = 14,
                 LogCommitManager = manager,
                 SegmentSizeBits = 22,
-                AutoRefreshSafeTailAddress = true
+                SafeTailRefreshFrequencyMs = 0
             });
             byte[] data1 = new byte[1000];
             for (int i = 0; i < 100; i++) data1[i] = (byte)i;
