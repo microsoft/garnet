@@ -54,7 +54,7 @@ namespace Tsavorite.core
         public virtual void RMWCompletionCallback(ref TKey key, ref TInput input, ref TOutput output, TContext ctx, Status status, RecordMetadata recordMetadata) { }
 
         /// <inheritdoc/>
-        public virtual int GetRMWModifiedValueLength(ref TValue value, ref TInput input) => throw new TsavoriteException("GetRMWModifiedValueLength is only available for SpanByte Functions");
+        public virtual int GetRMWModifiedValueLength(ref TValue value, ref TInput input, bool hasEtag) => throw new TsavoriteException("GetRMWModifiedValueLength is only available for SpanByte Functions");
         /// <inheritdoc/>
         public virtual int GetRMWInitialValueLength(ref TInput input) => throw new TsavoriteException("GetRMWInitialValueLength is only available for SpanByte Functions");
 

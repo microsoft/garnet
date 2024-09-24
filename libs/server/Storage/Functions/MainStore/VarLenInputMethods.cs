@@ -84,7 +84,9 @@ namespace Garnet.server
                     ndigits = NumUtils.NumDigitsInLong(next, ref fNeg);
 
                     return sizeof(int) + ndigits + (fNeg ? 1 : 0);
-
+                case RespCommand.SETWITHETAG:
+                    // same space as SET but with 8 additional bytes for etag at the front of the payload
+                    return sizeof(int) + input.Length - RespInputHeader.Size + sizeof(long);
                 default:
                     if (cmd >= 200)
                     {
@@ -103,13 +105,14 @@ namespace Garnet.server
         }
 
         /// <inheritdoc/>
-        public int GetRMWModifiedValueLength(ref SpanByte t, ref SpanByte input)
+        public int GetRMWModifiedValueLength(ref SpanByte t, ref SpanByte input, bool hasEtag)
         {
             if (input.Length > 0)
             {
                 var inputspan = input.AsSpan();
                 var inputPtr = input.ToPointer();
                 var cmd = inputspan[0];
+                int etagOffset = hasEtag ? 8 : 0;
                 switch ((RespCommand)cmd)
                 {
                     case RespCommand.INCR:
@@ -118,14 +121,14 @@ namespace Garnet.server
                         var slicedInputData = inputspan.Slice(RespInputHeader.Size, datalen);
 
                         // We don't need to TryParse here because InPlaceUpdater will raise an error before we reach this point
-                        var curr = NumUtils.BytesToLong(t.AsSpan());
+                        var curr = NumUtils.BytesToLong(t.AsSpan(etagOffset));
                         var next = curr + NumUtils.BytesToLong(slicedInputData);
 
                         var fNeg = false;
                         var ndigits = NumUtils.NumDigitsInLong(next, ref fNeg);
                         ndigits += fNeg ? 1 : 0;
 
-                        return sizeof(int) + ndigits + t.MetadataSize;
+                        return sizeof(int) + ndigits + t.MetadataSize + etagOffset;
 
                     case RespCommand.DECR:
                     case RespCommand.DECRBY:
@@ -133,7 +136,7 @@ namespace Garnet.server
                         slicedInputData = inputspan.Slice(RespInputHeader.Size, datalen);
 
                         // We don't need to TryParse here because InPlaceUpdater will raise an error before we reach this point
-                        curr = NumUtils.BytesToLong(t.AsSpan());
+                        curr = NumUtils.BytesToLong(t.AsSpan(etagOffset));
                         var decrBy = NumUtils.BytesToLong(slicedInputData);
                         next = curr + (cmd == (byte)RespCommand.DECR ? decrBy : -decrBy);
 
@@ -141,7 +144,7 @@ namespace Garnet.server
                         ndigits = NumUtils.NumDigitsInLong(next, ref fNeg);
                         ndigits += fNeg ? 1 : 0;
 
-                        return sizeof(int) + ndigits + t.MetadataSize;
+                        return sizeof(int) + ndigits + t.MetadataSize + etagOffset;
                     case RespCommand.SETBIT:
                         return sizeof(int) + BitmapManager.NewBlockAllocLength(inputPtr + RespInputHeader.Size, t.Length);
                     case RespCommand.BITFIELD:
@@ -162,11 +165,12 @@ namespace Garnet.server
 
                     case RespCommand.SETKEEPTTLXX:
                     case RespCommand.SETKEEPTTL:
-                        return sizeof(int) + t.MetadataSize + input.Length - RespInputHeader.Size;
+                        return sizeof(int) + t.MetadataSize + input.Length - RespInputHeader.Size + etagOffset;
 
-                    case RespCommand.SETIFMATCH:
                     case RespCommand.SET:
                     case RespCommand.SETEXXX:
+                        return sizeof(int) + input.Length - RespInputHeader.Size + etagOffset;
+                    case RespCommand.SETIFMATCH:
                     case RespCommand.PERSIST:
                         break;
 
@@ -178,8 +182,8 @@ namespace Garnet.server
                         var offset = *((int*)(inputPtr + RespInputHeader.Size));
                         var newValueSize = *((int*)(inputPtr + RespInputHeader.Size + sizeof(int)));
 
-                        if (newValueSize + offset > t.LengthWithoutMetadata)
-                            return sizeof(int) + newValueSize + offset + t.MetadataSize;
+                        if (newValueSize + offset > t.LengthWithoutMetadata - etagOffset)
+                            return sizeof(int) + newValueSize + offset + t.MetadataSize + etagOffset;
                         return sizeof(int) + t.Length;
 
                     case RespCommand.GETDEL:

@@ -281,7 +281,9 @@ namespace Garnet.server
             var output = new SpanByteAndMemory(dcurr, (int)(dend - dcurr));
 
             // Setup input buffer
-            SpanByte input = SpanByte.Reinterpret(stackalloc byte[NumUtils.MaximumFormatInt64Length]);
+            // (len of spanbyte + input header size) is our input buffer size
+            var inputSize = sizeof(int) + RespInputHeader.Size;
+            SpanByte input = SpanByte.Reinterpret(stackalloc byte[inputSize]);
             byte* inputPtr = input.ToPointer();
             ((RespInputHeader*)inputPtr)->cmd = RespCommand.GETWITHETAG;
             ((RespInputHeader*)inputPtr)->flags = 0;
@@ -327,7 +329,9 @@ namespace Garnet.server
             var output = new SpanByteAndMemory(dcurr, (int)(dend - dcurr));
 
             // Setup input buffer to pass command info, and the ETag to check with.
-            SpanByte input = SpanByte.Reinterpret(stackalloc byte[NumUtils.MaximumFormatInt64Length]);
+            // len + header + etag's data type size 
+            var inputSize = RespInputHeader.Size + sizeof(long) + sizeof(int);
+            SpanByte input = SpanByte.Reinterpret(stackalloc byte[inputSize]);
             byte* inputPtr = input.ToPointer();
             ((RespInputHeader*)inputPtr)->cmd = RespCommand.GETIFNOTMATCH;
             ((RespInputHeader*)inputPtr)->flags = 0;
@@ -371,22 +375,35 @@ namespace Garnet.server
 
             var key = parseState.GetArgSliceByRef(0).SpanByte;
             var value = parseState.GetArgSliceByRef(1).SpanByte;
-            var etagToCheckWith = parseState.GetLong(2);
+            // since the etag is a long, we now have a copy of it on the stack, and the underlying memory can be used as an extension for value's spanbyte later
+            long etagToCheckWith = parseState.GetLong(2);
 
-            // Move value forward to make space for ETAG in Value itself
-            var initialValueSize = value.Length;
-            value.Length += sizeof(long);
-            var valPtr = value.ToPointer();
-            Buffer.MemoryCopy(valPtr, sizeof(long) + valPtr, initialValueSize, initialValueSize); 
-            // now insert the ETag at the start of the valPtr
-            *(long*)valPtr = etagToCheckWith;
+            /* 
+                Here we make space for etag to be added infront of value. We borrow 8 bytes from infront of the value, we will later restore the memory for the location we borrow.
+                P.s. This is NOT GOING TO create a buffer overflow becuase of the following reason.
+                Value spanbyte points to the network buffer, the network buffer is already holding key, value, and etag in a contiguous chunk of memory, in order, along with padding
+                for separators in Resp. This means there has to be ENOUGH OR MORE space for len(value) + sizeof(long).
+                So once we read the etag from the network buffer onto the stack, we can borrow 8 bytes of memory infront of value spanbyte safely, hence not creating a buffer overflow
+                when borrowing 8 bytes to shove the etag into the expanded spanbyte for value, which we then use as our input buffer.
+            */
+            byte* borrowedMemLocation = value.ToPointer() + sizeof(long);
+            long saved8Bytes = *(long*)borrowedMemLocation;
+            int initialSizeOfValueSpan = value.Length;
+            value.Length = initialSizeOfValueSpan + sizeof(long);
+            // move contents of value 8 bytes forward
+            Buffer.MemoryCopy(value.ToPointer(), value.ToPointer() + sizeof(long), initialSizeOfValueSpan, initialSizeOfValueSpan);
+            // add the etag at first 8 bytes
+            *(long*)value.ToPointer() = etagToCheckWith;
 
             // Make space for key header
             var keyPtr = key.ToPointer() - sizeof(int);
             // Set key length
             *(int*)keyPtr = key.Length;
 
-            NetworkSET_Conditional(RespCommand.SETIFMATCH, 0, keyPtr, valPtr - sizeof(int), value.Length, true, false, ref storageApi);
+            NetworkSET_Conditional(RespCommand.SETIFMATCH, 0, keyPtr, value.ToPointer() - sizeof(int), value.Length, true, false, ref storageApi);
+
+            // restore the 8 bytes we had messed with on the network buffer
+            *(long*)borrowedMemLocation = saved8Bytes;
 
             return true;
         }
@@ -404,24 +421,12 @@ namespace Garnet.server
             var key = parseState.GetArgSliceByRef(0).SpanByte;
             var value = parseState.GetArgSliceByRef(1).SpanByte;
 
-            // Move value forward to make space for ETAG in Value
-            var initialValueSize = value.Length;
-            value.Length += sizeof(long);
-            var valPtr = value.ToPointer();
-            Buffer.MemoryCopy(valPtr, sizeof(long) + valPtr, initialValueSize, initialValueSize); 
-            // now insert the ETag at the start of the valPtr
-            long initialEtag = 0;
-            *(long*)valPtr = initialEtag;
-
             // Make space for key header
             var keyPtr = key.ToPointer() - sizeof(int);
             // Set key length
             *(int*)keyPtr = key.Length;
 
-            NetworkSET_Conditional(RespCommand.SETWITHETAG, 0, keyPtr, valPtr - sizeof(int), value.Length, false, false, ref storageApi);
-
-            while (!RespWriteUtils.WriteInteger(initialEtag, ref dcurr, dend))
-                SendAndReset();
+            NetworkSET_Conditional(RespCommand.SETWITHETAG, 0, keyPtr, value.ToPointer() - sizeof(int), value.Length, true, false, ref storageApi);
 
             return true;
         }
@@ -831,7 +836,13 @@ namespace Garnet.server
                 var o = new SpanByteAndMemory(dcurr, (int)(dend - dcurr));
                 var status = storageApi.SET_Conditional(ref Unsafe.AsRef<SpanByte>(keyPtr),
                     ref Unsafe.AsRef<SpanByte>(inputPtr), ref o, cmd);
-                
+
+                // not found for a setwithetag is okay, and so we invert it
+                if (cmd == RespCommand.SETWITHETAG && status == GarnetStatus.NOTFOUND)
+                {
+                    status = GarnetStatus.OK;
+                }
+
                 // Status tells us whether an old image was found during RMW or not
                 switch (status)
                 {
@@ -864,17 +875,15 @@ namespace Garnet.server
                 bool ok = status != GarnetStatus.NOTFOUND;
 
                 // Status tells us whether an old image was found during RMW or not
-                // For a "set if not exists" or "set with etag", NOTFOUND means the operation succeeded
+                // For a "set if not exists" NOTFOUND means the operation succeeded
                 // So we invert the ok flag
-                if (cmd == RespCommand.SETEXNX || cmd == RespCommand.SETWITHETAG)
+                if (cmd == RespCommand.SETEXNX)
                     ok = !ok;
                 if (!ok)
                 {
                     while (!RespWriteUtils.WriteDirect(CmdStrings.RESP_ERRNOTFOUND, ref dcurr, dend))
                         SendAndReset();
-                }
-                // SETWITHETAG writes back the initial ETAG set back to client outside of this method
-                else if (cmd != RespCommand.SETWITHETAG)
+                } else
                 {
                     while (!RespWriteUtils.WriteDirect(CmdStrings.RESP_OK, ref dcurr, dend))
                         SendAndReset();

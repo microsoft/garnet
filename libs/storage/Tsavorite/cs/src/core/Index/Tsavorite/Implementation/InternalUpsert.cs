@@ -74,6 +74,8 @@ namespace Tsavorite.core
                 if (stackCtx.recSrc.HasReadCacheSrc)
                 {
                     srcRecordInfo = ref stackCtx.recSrc.GetInfo();
+                    // we are about to do an upsert so even if the prev data had etag we need to reset it at upsert
+                    srcRecordInfo.ETag = false;
                     goto CreateNewRecord;
                 }
 
@@ -96,6 +98,7 @@ namespace Tsavorite.core
                 if (stackCtx.recSrc.LogicalAddress >= hlogBase.ReadOnlyAddress)
                 {
                     srcRecordInfo = ref stackCtx.recSrc.GetInfo();
+                    srcRecordInfo.ETag = false;
 
                     // Mutable Region: Update the record in-place. We perform mutable updates only if we are in normal processing phase of checkpointing
                     UpsertInfo upsertInfo = new()

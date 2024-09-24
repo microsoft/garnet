@@ -123,13 +123,13 @@ namespace Garnet.server
                     // Get value without RESP header; exclude expiration
                     if (value.LengthWithoutMetadata <= dst.Length)
                     {
-                        dst.Length = value.LengthWithoutMetadata;
+                        dst.Length = value.LengthWithoutMetadata - payloadEtagEnd;
                         value.AsReadOnlySpan(payloadEtagEnd).CopyTo(dst.SpanByte.AsSpan());
                         return;
                     }
 
                     dst.ConvertToHeap();
-                    dst.Length = value.LengthWithoutMetadata;
+                    dst.Length = value.LengthWithoutMetadata - payloadEtagEnd;
                     dst.Memory = functionsState.memoryPool.Rent(value.LengthWithoutMetadata);
                     value.AsReadOnlySpan(payloadEtagEnd).CopyTo(dst.Memory.Memory.Span);
                     break;
@@ -247,8 +247,8 @@ namespace Garnet.server
                 return;
             }
 
-            dst.Length = desiredLength;
             dst.ConvertToHeap();
+            dst.Length = desiredLength;
             dst.Memory = functionsState.memoryPool.Rent(desiredLength);
             fixed (byte* ptr = dst.Memory.Memory.Span)
             {
@@ -321,7 +321,7 @@ namespace Garnet.server
             }
         }
 
-        void EvaluateExpireCopyUpdate(ExpireOption optionType, bool expiryExists, ref SpanByte input, ref SpanByte oldValue, ref SpanByte newValue, ref SpanByteAndMemory output, int etagIgnoredOffset)
+        void EvaluateExpireCopyUpdate(ExpireOption optionType, bool expiryExists, ref SpanByte input, ref SpanByte oldValue, ref SpanByte newValue, ref SpanByteAndMemory output)
         {
             ObjectOutputHeader* o = (ObjectOutputHeader*)output.SpanByte.ToPointer();
             if (expiryExists)
@@ -329,16 +329,16 @@ namespace Garnet.server
                 switch (optionType)
                 {
                     case ExpireOption.NX:
-                        oldValue.AsReadOnlySpan(etagIgnoredOffset).CopyTo(newValue.AsSpan(etagIgnoredOffset));
+                        oldValue.AsReadOnlySpan().CopyTo(newValue.AsSpan());
                         break;
                     case ExpireOption.XX:
                     case ExpireOption.None:
                         newValue.ExtraMetadata = input.ExtraMetadata;
-                        oldValue.AsReadOnlySpan(etagIgnoredOffset).CopyTo(newValue.AsSpan(etagIgnoredOffset));
+                        oldValue.AsReadOnlySpan().CopyTo(newValue.AsSpan());
                         o->result1 = 1;
                         break;
                     case ExpireOption.GT:
-                        oldValue.AsReadOnlySpan(etagIgnoredOffset).CopyTo(newValue.AsSpan(etagIgnoredOffset));
+                        oldValue.AsReadOnlySpan().CopyTo(newValue.AsSpan());
                         bool replace = input.ExtraMetadata < oldValue.ExtraMetadata;
                         newValue.ExtraMetadata = replace ? oldValue.ExtraMetadata : input.ExtraMetadata;
                         if (replace)
@@ -347,7 +347,7 @@ namespace Garnet.server
                             o->result1 = 1;
                         break;
                     case ExpireOption.LT:
-                        oldValue.AsReadOnlySpan(etagIgnoredOffset).CopyTo(newValue.AsSpan(etagIgnoredOffset));
+                        oldValue.AsReadOnlySpan().CopyTo(newValue.AsSpan());
                         replace = input.ExtraMetadata > oldValue.ExtraMetadata;
                         newValue.ExtraMetadata = replace ? oldValue.ExtraMetadata : input.ExtraMetadata;
                         if (replace)
@@ -364,13 +364,13 @@ namespace Garnet.server
                     case ExpireOption.NX:
                     case ExpireOption.None:
                         newValue.ExtraMetadata = input.ExtraMetadata;
-                        oldValue.AsReadOnlySpan(etagIgnoredOffset).CopyTo(newValue.AsSpan(etagIgnoredOffset));
+                        oldValue.AsReadOnlySpan().CopyTo(newValue.AsSpan());
                         o->result1 = 1;
                         break;
                     case ExpireOption.XX:
                     case ExpireOption.GT:
                     case ExpireOption.LT:
-                        oldValue.AsReadOnlySpan(etagIgnoredOffset).CopyTo(newValue.AsSpan(etagIgnoredOffset));
+                        oldValue.AsReadOnlySpan().CopyTo(newValue.AsSpan());
                         o->result1 = 0;
                         break;
                 }
@@ -424,9 +424,10 @@ namespace Garnet.server
 
         static bool TryInPlaceUpdateNumber(ref SpanByte value, ref SpanByteAndMemory output, ref RMWInfo rmwInfo, ref RecordInfo recordInfo, long input, int valueOffset)
         {
-            var debuggerCheck = value.ToPointer();
             // Check if value contains a valid number
-            if (!IsValidNumber(value.LengthWithoutMetadata - valueOffset, value.ToPointer() + valueOffset, output.SpanByte.AsSpan(), out var val))
+            int valLen = value.LengthWithoutMetadata - valueOffset;
+            byte* valPtr = value.ToPointer() + valueOffset; 
+            if (!IsValidNumber(valLen, valPtr, output.SpanByte.AsSpan(), out var val))
                 return true;
 
             try

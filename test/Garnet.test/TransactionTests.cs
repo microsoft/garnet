@@ -304,8 +304,6 @@ namespace Garnet.test
             ClassicAssert.AreEqual(res.AsSpan().Slice(0, expectedResponse.Length).ToArray(), expectedResponse);
         }
 
-        // HK TODO: Add test here for running etag cmds in a transaction
-
         private static void updateKey(string key, string value)
         {
             using var lightClientRequest = TestUtils.CreateRequest();

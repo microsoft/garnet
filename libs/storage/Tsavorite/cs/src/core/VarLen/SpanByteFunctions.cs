@@ -120,7 +120,7 @@ namespace Tsavorite.core
         /// Length of resulting object when doing RMW with given value and input. Here we set the length
         /// to the max of input and old value lengths. You can provide a custom implementation for other cases.
         /// </summary>
-        public override int GetRMWModifiedValueLength(ref SpanByte t, ref SpanByte input)
+        public override int GetRMWModifiedValueLength(ref SpanByte t, ref SpanByte input, bool hasEtag)
             => sizeof(int) + (t.Length > input.Length ? t.Length : input.Length);
 
         /// <inheritdoc/>

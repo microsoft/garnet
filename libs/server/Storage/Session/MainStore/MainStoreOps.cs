@@ -2,7 +2,6 @@
 // Licensed under the MIT license.
 
 using System;
-using System.Collections;
 using System.Diagnostics;
 using System.Runtime.CompilerServices;
 using Garnet.common;
@@ -647,6 +646,15 @@ namespace Garnet.server
                         var expireSpan = new SpanByteAndMemory();
                         var ttlStatus = TTL(ref oldKey, storeType, ref expireSpan, ref context, ref objectContext, true);
 
+                        // Find if this is ETag based key
+                        SpanByte getWithEtagInput = SpanByte.Reinterpret(stackalloc byte[NumUtils.MaximumFormatInt64Length]);
+                        byte* inputPtr = getWithEtagInput.ToPointer();
+                        ((RespInputHeader*)inputPtr)->cmd = RespCommand.GETWITHETAG;
+                        ((RespInputHeader*)inputPtr)->flags = 0;
+
+                        var etagAndDataOutput = new SpanByteAndMemory();
+                        var getWithEtagStatus = GETForETagCmd(ref oldKey, ref getWithEtagInput, ref etagAndDataOutput, ref context);
+
                         if (ttlStatus == GarnetStatus.OK && !expireSpan.IsSpanByte)
                         {
                             using var expireMemoryHandle = expireSpan.Memory.Memory.Pin();
@@ -654,7 +662,7 @@ namespace Garnet.server
                             RespReadUtils.TryRead64Int(out var expireTimeMs, ref expirePtrVal, expirePtrVal + expireSpan.Length, out var _);
 
                             // If the key has an expiration, set the new key with the expiration
-                            if (expireTimeMs > 0)
+                            if (expireTimeMs > 0 && getWithEtagStatus == GarnetStatus.WRONGTYPE)
                             {
                                 if (isNX)
                                 {
@@ -677,7 +685,7 @@ namespace Garnet.server
                                     SETEX(newKeySlice, new ArgSlice(ptrVal, headerLength), TimeSpan.FromMilliseconds(expireTimeMs), ref context);
                                 }
                             }
-                            else if (expireTimeMs == -1) // Its possible to have expireTimeMs as 0 (Key expired or will be expired now) or -2 (Key does not exist), in those cases we don't SET the new key
+                            else if (expireTimeMs == -1 && getWithEtagStatus == GarnetStatus.WRONGTYPE) // Its possible to have expireTimeMs as 0 (Key expired or will be expired now) or -2 (Key does not exist), in those cases we don't SET the new key
                             {
                                 if (isNX)
                                 {
@@ -700,6 +708,47 @@ namespace Garnet.server
                                     var value = SpanByte.FromPinnedPointer(ptrVal, headerLength);
                                     SET(ref newKey, ref value, ref context);
                                 }
+                            }
+                            else if (
+                                (expireTimeMs == -1 || expireTimeMs > 0) &&
+                                    getWithEtagStatus == GarnetStatus.OK)
+                            {
+                                SpanByte newKey = newKeySlice.SpanByte;
+
+                                var value = SpanByte.FromPinnedPointer(ptrVal, headerLength);
+                                var initialValueSize = value.Length;
+
+                                var valPtr = value.ToPointer();
+
+                                SpanByte key = newKeySlice.SpanByte;
+
+                                // Make space for key header
+                                var keyPtr = key.ToPointer() - sizeof(int);
+                                // Set key length
+                                *(int*)keyPtr = key.Length;
+
+                                // Make space for resp input header
+                                valPtr -= (RespInputHeader.Size + sizeof(int));
+                                if (expireTimeMs == -1) // no expiration provided
+                                {
+                                    *(int*)valPtr = RespInputHeader.Size + value.Length;
+                                    ((RespInputHeader*)(valPtr + sizeof(int)))->cmd = RespCommand.SETWITHETAG;
+                                    ((RespInputHeader*)(valPtr + sizeof(int)))->flags = 0;
+                                }
+                                else
+                                {
+                                    // Move payload forward to make space for metadata
+                                    Buffer.MemoryCopy(valPtr + sizeof(int) + RespInputHeader.Size,
+                                        valPtr + sizeof(int) + sizeof(long) + RespInputHeader.Size, value.Length, value.Length);
+                                    *(int*)valPtr = sizeof(long) + RespInputHeader.Size + value.Length;
+                                    ((RespInputHeader*)(valPtr + sizeof(int) + sizeof(long)))->cmd = RespCommand.SETWITHETAG;
+                                    ((RespInputHeader*)(valPtr + sizeof(int) + sizeof(long)))->flags = 0;
+
+                                    SpanByte.Reinterpret(inputPtr).ExtraMetadata = DateTimeOffset.UtcNow.Ticks + TimeSpan.FromMilliseconds(expireTimeMs).Ticks;
+                                }
+
+                                SET_Conditional(ref Unsafe.AsRef<SpanByte>(keyPtr),
+                                    ref Unsafe.AsRef<SpanByte>(valPtr), ref context);
                             }
 
                             expireSpan.Memory.Dispose();

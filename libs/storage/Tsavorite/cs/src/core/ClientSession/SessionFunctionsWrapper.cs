@@ -195,7 +195,7 @@ namespace Tsavorite.core
         public int GetRMWInitialValueLength(ref TInput input) => _clientSession.functions.GetRMWInitialValueLength(ref input);
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public int GetRMWModifiedValueLength(ref TValue t, ref TInput input) => _clientSession.functions.GetRMWModifiedValueLength(ref t, ref input);
+        public int GetRMWModifiedValueLength(ref TValue t, ref TInput input, bool hasEtag) => _clientSession.functions.GetRMWModifiedValueLength(ref t, ref input, hasEtag);
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public IHeapContainer<TInput> GetHeapContainer(ref TInput input)
