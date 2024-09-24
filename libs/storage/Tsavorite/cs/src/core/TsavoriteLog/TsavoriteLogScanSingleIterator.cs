@@ -11,6 +11,8 @@ namespace Tsavorite.core
 
     /// <summary>
     /// Scan iterator for hybrid log - only a single scan is supported per instance
+    /// This modification allows us to use a SingleWaiterAutoResetEvent per iterator
+    /// so we can avoid TCS allocations per tail bump.
     /// </summary>
     public sealed class TsavoriteLogScanSingleIterator : TsavoriteLogScanIterator
     {
@@ -30,6 +32,7 @@ namespace Tsavorite.core
         {
             tsavoriteLog.RemoveIterator(this);
             base.Dispose();
+            // Any awaiting iterator should be woken up during dispose
             onEnqueue.Signal();
         }
 
