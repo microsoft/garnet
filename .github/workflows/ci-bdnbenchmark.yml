@@ -55,14 +55,14 @@ jobs:
       - name: Upload test results to artifacts
         uses: actions/upload-artifact@v4
         with:
-          name: ResultsDir-${{ matrix.os }}-${{ matrix.framework }}-${{ matrix.configuration }}-${{ matrix.test }}
+          name: Results-${{ matrix.os }}-${{ matrix.framework }}-${{ matrix.configuration }}-${{ matrix.test }}
           path: |
              ./test/BDNPerfTests/results
         if: ${{ always() }}
       - name: Upload Error Log to artifacts
         uses: actions/upload-artifact@v4
         with:
-          name: ErrorLogDir-${{ matrix.os }}-${{ matrix.framework }}-${{ matrix.configuration }}-${{ matrix.test }}
+          name: ErrorLog-${{ matrix.os }}-${{ matrix.framework }}-${{ matrix.configuration }}-${{ matrix.test }}
           path: |
             ./test/BDNPerfTests/errorlog
         if: ${{ always() }}
@@ -80,8 +80,8 @@ jobs:
           # What benchmark tool the output.txt came from
           tool: 'benchmarkdotnet'
           # Where the output from the benchmark tool is stored
-# DEBUG          output-file-path: ./test/BDNPerfTests/results/${{ matrix.test }}_${{ matrix.os }}.json
-          output-file-path: ./test/BDNPerfTests/BenchmarkDotNet.Artifacts/results/BDN.benchmark.Resp.RespParseStress-report-full-compressed.json
+          output-file-path: ./test/BDNPerfTests/results/Results-${{ matrix.os }}-${{ matrix.framework }}-${{ matrix.configuration }}-${{ matrix.test }}.results
+          #output-file-path: ./test/BDNPerfTests/BenchmarkDotNet.Artifacts/results/BDN.benchmark.Resp.RespParseStress-report-full-compressed.json
           # Where the previous data file is stored
           external-data-json-path: ./cache/benchmark-data.json
           # Workflow will fail when an alert happens
