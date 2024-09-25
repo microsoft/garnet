@@ -260,24 +260,40 @@ namespace Tsavorite.core
             try
             {
                 var token = safeTailRefreshTaskCts.Token;
+
+                // Outer loop makes the worker wake up every so often (either delay or enqueue-signal)
+                // and tried to move SafeTailAddress towards TailAddress
                 while (!token.IsCancellationRequested)
                 {
+                    // Inner loop keeps moving SafeTailAddress towards TailAddress until we have
+                    // caught up and there is no more movement necessary.
                     while (!token.IsCancellationRequested)
                     {
                         try
                         {
+                            // Resume epoch protection
                             epoch.Resume();
+
+                            // Capture the tail address before epoch refresh, so that the bump action
+                            // knows what the new SafeTailAddress should be set to.
                             safeTailRefreshLastTailAddress = TailAddress;
+
+                            // Break out of inner loop if there is no more work to do
                             if (safeTailRefreshLastTailAddress <= SafeTailAddress)
                                 break;
+
+                            // Bump epoch with an action to update SafeTailAddress to the captured safeTailRefreshLastTailAddress
                             epoch.BumpCurrentEpoch(PeriodicRefreshSafeTailAddressBumpCallback);
                         }
                         finally
                         {
+                            // Suspend epoch protection
                             epoch.Suspend();
                         }
+                        // Wait for the bump epoch action to finish executing, so we can re-check
                         await safeTailRefreshCallbackCompleted.WaitAsync().ConfigureAwait(false);
                     }
+                    // Work is done, wait for the next iteration of the worker loop
                     if (SafeTailRefreshFrequencyMs > 0)
                     {
                         await Task.Delay(SafeTailRefreshFrequencyMs, token).ConfigureAwait(false);
