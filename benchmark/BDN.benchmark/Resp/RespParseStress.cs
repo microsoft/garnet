@@ -35,6 +35,10 @@ namespace BDN.benchmark.Resp
         byte[] getRequestBuffer;
         byte* getRequestBufferPointer;
 
+        static ReadOnlySpan<byte> INCR => "*2\r\n$4\r\nINCR\r\n$1\r\ni\r\n"u8;
+        byte[] incrRequestBuffer;
+        byte* incrRequestBufferPointer;
+
         static ReadOnlySpan<byte> ZADDREM => "*4\r\n$4\r\nZADD\r\n$1\r\nc\r\n$1\r\n1\r\n$1\r\nc\r\n*3\r\n$4\r\nZREM\r\n$1\r\nc\r\n$1\r\nc\r\n"u8;
         byte[] zAddRemRequestBuffer;
         byte* zAddRemRequestBufferPointer;
@@ -62,8 +66,6 @@ namespace BDN.benchmark.Resp
             {
                 QuietMode = true,
                 AuthSettings = authSettings,
-                MetricsSamplingFrequency = 5,
-                LatencyMonitor = true,
             };
             server = new EmbeddedRespServer(opt);
 
@@ -94,6 +96,11 @@ namespace BDN.benchmark.Resp
             for (int i = 0; i < batchSize; i++)
                 GET.CopyTo(new Span<byte>(getRequestBuffer).Slice(i * GET.Length));
 
+            incrRequestBuffer = GC.AllocateArray<byte>(INCR.Length * batchSize, pinned: true);
+            incrRequestBufferPointer = (byte*)Unsafe.AsPointer(ref incrRequestBuffer[0]);
+            for (int i = 0; i < batchSize; i++)
+                INCR.CopyTo(new Span<byte>(incrRequestBuffer).Slice(i * INCR.Length));
+
             zAddRemRequestBuffer = GC.AllocateArray<byte>(ZADDREM.Length * batchSize, pinned: true);
             zAddRemRequestBufferPointer = (byte*)Unsafe.AsPointer(ref zAddRemRequestBuffer[0]);
             for (int i = 0; i < batchSize; i++)
@@ -118,7 +125,7 @@ namespace BDN.benchmark.Resp
             SlowConsumeMessage("*4\r\n$4\r\nZADD\r\n$1\r\nc\r\n$1\r\n1\r\n$1\r\nd\r\n"u8);
 
             // Pre-populate list with a single element to avoid repeatedly emptying it during the benchmark
-            SlowConsumeMessage("*3\r\n$4\r\nLPUSH\r\n$1\r\nd\r\n$1\r\nf\r\n"u8);
+            SlowConsumeMessage("*3\r\n$5\r\nLPUSH\r\n$1\r\nd\r\n$1\r\nf\r\n"u8);
 
             // Pre-populate set with a single element to avoid repeatedly emptying it during the benchmark
             SlowConsumeMessage("*3\r\n$4\r\nSADD\r\n$1\r\ne\r\n$1\r\nb\r\n"u8);
@@ -164,6 +171,12 @@ namespace BDN.benchmark.Resp
         public void Get()
         {
             _ = session.TryConsumeMessages(getRequestBufferPointer, getRequestBuffer.Length);
+        }
+
+        [Benchmark]
+        public void Increment()
+        {
+            _ = session.TryConsumeMessages(incrRequestBufferPointer, incrRequestBuffer.Length);
         }
 
         [Benchmark]
