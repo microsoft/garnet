@@ -76,7 +76,7 @@ namespace Garnet.server
             this.networkSendThrottleMax = networkSendThrottleMax;
             var serverBufferSize = BufferSizeUtils.ServerBufferSize(new MaxSizeSettings());
             this.networkBufferSettings = new NetworkBufferSettings(serverBufferSize, serverBufferSize);
-            this.networkPool = networkBufferSettings.Create(logger: logger);
+            this.networkPool = networkBufferSettings.CreateBufferPool(logger: logger);
             servSocket = new Socket(GetEndPoint.AddressFamily, SocketType.Stream, ProtocolType.Tcp);
             acceptEventArg = new SocketAsyncEventArgs();
             acceptEventArg.Completed += AcceptEventArg_Completed;

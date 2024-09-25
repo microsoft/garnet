@@ -53,7 +53,7 @@ namespace Garnet.common
         /// <param name="maxEntriesPerLevel"></param>
         /// <param name="logger"></param>
         /// <returns></returns>
-        public LimitedFixedBufferPool Create(int maxEntriesPerLevel = 16, ILogger logger = null)
+        public LimitedFixedBufferPool CreateBufferPool(int maxEntriesPerLevel = 16, ILogger logger = null)
         {
             var minSize = Math.Min(Math.Min(sendBufferSize, initialReceiveBufferSize), maxReceiveBufferSize);
             var maxSize = Math.Max(Math.Max(sendBufferSize, initialReceiveBufferSize), maxReceiveBufferSize);

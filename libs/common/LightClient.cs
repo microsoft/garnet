@@ -59,7 +59,7 @@ namespace Garnet.common
             : base(address, port, BufferSize)
         {
             this.networkBufferSettings = new NetworkBufferSettings(BufferSize, BufferSize);
-            this.networkPool = networkBufferSettings.Create();
+            this.networkPool = networkBufferSettings.CreateBufferPool();
             this.onResponseDelegateUnsafe = onResponseDelegateUnsafe ?? new OnResponseDelegateUnsafe(DefaultLightReceiveUnsafe);
             this.opType = opType;
             this.BufferSize = BufferSize;

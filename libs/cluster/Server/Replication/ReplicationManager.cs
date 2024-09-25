@@ -93,7 +93,7 @@ namespace Garnet.cluster
             this.clusterProvider = clusterProvider;
             this.storeWrapper = clusterProvider.storeWrapper;
 
-            this.networkPool = networkBufferSettings.Create(logger: logger);
+            this.networkPool = networkBufferSettings.CreateBufferPool(logger: logger);
             ValidateNetworkBufferSettings();
 
             aofProcessor = new AofProcessor(storeWrapper, recordToAof: false, logger: logger);
