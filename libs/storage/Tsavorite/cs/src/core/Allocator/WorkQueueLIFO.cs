@@ -13,7 +13,7 @@ namespace Tsavorite.core
     /// <typeparam name="T"></typeparam>
     internal sealed class WorkQueueLIFO<T> : IDisposable
     {
-        readonly ConcurrentStack<T> queue;
+        readonly ConcurrentStack<T> stack;
         readonly Action<T> work;
         readonly SingleWaiterAutoResetEvent onWork;
         readonly Task processQueue;
@@ -21,9 +21,8 @@ namespace Tsavorite.core
 
         public WorkQueueLIFO(Action<T> work)
         {
-            queue = new ConcurrentStack<T>();
+            stack = new ConcurrentStack<T>();
             this.work = work;
-            disposed = false;
             onWork = new()
             {
                 RunContinuationsAsynchronously = true
@@ -38,15 +37,16 @@ namespace Tsavorite.core
         }
 
         /// <summary>
-        /// Enqueue work item
+        /// Add work item
         /// </summary>
-        /// <param name="workItem">Work to enqueue</param>
-        /// <returns>Whether the enqueue is successful</returns>>
-        public bool Enqueue(T workItem)
+        /// <param name="workItem">Work item</param>
+        /// <returns>Whether the add is successful</returns>>
+        public void AddWorkItem(T workItem)
         {
-            queue.Push(workItem);
+            // Add the work item
+            stack.Push(workItem);
+            // Signal the processing logic to check for work
             onWork.Signal();
-            return true;
         }
 
         private async Task ProcessQueue()
@@ -54,7 +54,7 @@ namespace Tsavorite.core
             // Process items in work queue
             while (!disposed)
             {
-                while (queue.TryPop(out var workItem))
+                while (stack.TryPop(out var workItem))
                 {
                     try
                     {

@@ -2145,7 +2145,7 @@ namespace Tsavorite.core
         {
             // Using count is safe as a fast filtering mechanism to reduce number of invocations despite concurrency
             if (ongoingCommitRequests.Count == 0 && commitInfo.ErrorCode == 0) return;
-            commitQueue.Enqueue(commitInfo);
+            commitQueue.AddWorkItem(commitInfo);
         }
 
         private unsafe bool TryEnqueueCommitRecord(ref TsavoriteLogRecoveryInfo info)
