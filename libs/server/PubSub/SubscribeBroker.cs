@@ -142,6 +142,8 @@ namespace Garnet.server
                         break;
 
                     using var iter = log.ScanSingle(log.BeginAddress, long.MaxValue, scanUncommitted: true);
+                    var signal = iter.Signal;
+                    using var registration = cts.Token.Register(signal);
                     await iter.WaitAsync(cancellationToken).ConfigureAwait(false);
                     while (iter.GetNext(out byte[] subscriptionKeyValueAscii, out _, out long currentAddress, out long nextAddress))
                     {
