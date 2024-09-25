@@ -289,26 +289,6 @@ namespace Garnet.cluster
         }
 
         /// <summary>
-        /// Retrieve a list of slots served by this node.
-        /// </summary>
-        /// <returns>List of slots.</returns>
-        public List<int> GetLocalSlots()
-        {
-            var primaryId = this.LocalNodeId;
-            List<int> slots = [];
-
-            if (primaryId != null)
-            {
-                for (var i = 0; i < MAX_HASH_SLOT_VALUE; i++)
-                {
-                    if (slotMap[i].workerId > 0 && workers[slotMap[i].workerId].Nodeid.Equals(primaryId, StringComparison.OrdinalIgnoreCase))
-                        slots.Add(i);
-                }
-            }
-            return slots;
-        }
-
-        /// <summary>
         /// Find maximum config epoch from local config
         /// </summary>
         /// <returns>Integer representing max config epoch value.</returns>
@@ -753,7 +733,11 @@ namespace Garnet.cluster
             return result;
         }
 
-        private List<int> GetSlotList(ushort workerId)
+        /// <summary>
+        /// Retrieve a list of slots served by this node.
+        /// </summary>
+        /// <returns>List of slots.</returns>
+        public List<int> GetSlotList(ushort workerId)
         {
             List<int> result = [];
             for (var i = 0; i < MAX_HASH_SLOT_VALUE; i++)

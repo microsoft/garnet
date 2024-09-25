@@ -103,7 +103,7 @@ namespace Garnet.cluster
                 while (true)
                 {
                     var current = currentConfig;
-                    var localSlots = current.GetLocalSlots();
+                    var localSlots = current.GetSlotList(1);
                     if (clusterProvider.storeWrapper.HasKeysInSlots(localSlots))
                     {
                         return CmdStrings.RESP_ERR_RESET_WITH_KEYS_ASSIGNED;
