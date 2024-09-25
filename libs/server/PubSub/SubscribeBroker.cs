@@ -141,7 +141,7 @@ namespace Garnet.server
                     if (disposed)
                         break;
 
-                    using var iter = log.Scan(log.BeginAddress, long.MaxValue, scanUncommitted: true);
+                    using var iter = log.ScanSingle(log.BeginAddress, long.MaxValue, scanUncommitted: true);
                     await iter.WaitAsync(cancellationToken).ConfigureAwait(false);
                     while (iter.GetNext(out byte[] subscriptionKeyValueAscii, out _, out long currentAddress, out long nextAddress))
                     {
