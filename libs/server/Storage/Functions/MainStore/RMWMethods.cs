@@ -167,7 +167,7 @@ namespace Garnet.server
                     break;
                 default:
                     value.UnmarkExtraMetadata();
-                    recordInfo.ETag = false;
+                    recordInfo.ClearHasETag();
                     if (*inputPtr >= CustomCommandManager.StartOffset)
                     {
                         var functions = functionsState.customCommands[*inputPtr - CustomCommandManager.StartOffset].functions;

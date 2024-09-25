@@ -283,7 +283,7 @@ namespace Tsavorite.core
         }
 
         public void SetHasETag() => word |= kETagBitMask;
-        internal void ClearHasETag() => word &= ~kETagBitMask;
+        public void ClearHasETag() => word &= ~kETagBitMask;
 
         public override readonly string ToString()
         {
