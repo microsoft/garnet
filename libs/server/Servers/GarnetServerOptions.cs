@@ -626,7 +626,7 @@ namespace Garnet.server
                 PageSizeBits = AofPageSizeBits(),
                 LogDevice = GetAofDevice(),
                 TryRecoverLatest = false,
-                SafeTailRefreshFrequencyMs = AofReplicationRefreshFrequencyMs,
+                SafeTailRefreshFrequencyMs = EnableCluster ? AofReplicationRefreshFrequencyMs : -1,
                 FastCommitMode = EnableFastCommit,
                 AutoCommit = CommitFrequencyMs == 0,
                 MutableFraction = 0.9,
