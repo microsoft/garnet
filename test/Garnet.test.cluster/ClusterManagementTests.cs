@@ -305,19 +305,18 @@ namespace Garnet.test.cluster
                 context.clusterTestUtils.WaitUntilNodeIsKnownByAllNodes(i);
             }
 
-            context.clusterTestUtils.ClusterReset(0, soft: true);
             await Task.Delay(1000);
 
-            // Let's compare and make sure there are no gossip messages coming in to the node that got reset.
             var server = context.clusterTestUtils.GetServer(0);
-            var gossipsAfterReset = GetStat(server, "Stats", gossip);
+            var gossipConnections = GetStat(server, "Stats", "gossip_open_connections");
+            ClassicAssert.AreEqual(node_count - 1, int.Parse(gossipConnections), "Expected one gossip connection per node.");
 
-            await Task.Delay(3000);
-            var lateMeetAfterReset = GetStat(server, "Stats", meetRecv);
-            var lateGossipsAfterReset = GetStat(server, "Stats", gossip);
+            context.clusterTestUtils.ClusterReset(0, soft: true);
 
-            ClassicAssert.AreEqual(gossipsAfterReset, lateGossipsAfterReset, "Expected no new gossip messages after a reset.");
+            await Task.Delay(1000);
 
+            gossipConnections = GetStat(server, "Stats", "gossip_open_connections");
+            ClassicAssert.AreEqual("0", gossipConnections, "All gossip connections should be closed after a reset.");
             ClassicAssert.AreEqual(1, context.clusterTestUtils.ClusterNodes(0).Nodes.Count(), "Expected the node to only know about itself after a reset.");
         }
 
