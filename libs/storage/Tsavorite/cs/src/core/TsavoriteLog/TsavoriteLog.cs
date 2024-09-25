@@ -262,7 +262,7 @@ namespace Tsavorite.core
                 var token = safeTailRefreshTaskCts.Token;
 
                 // Outer loop makes the worker wake up every so often (either delay or enqueue-signal)
-                // and tried to move SafeTailAddress towards TailAddress
+                // and try to move SafeTailAddress towards TailAddress
                 while (!token.IsCancellationRequested)
                 {
                     // Inner loop keeps moving SafeTailAddress towards TailAddress until we have
