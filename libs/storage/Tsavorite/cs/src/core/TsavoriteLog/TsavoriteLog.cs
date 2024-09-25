@@ -143,6 +143,11 @@ namespace Tsavorite.core
         readonly Task safeTailRefreshTask;
 
         /// <summary>
+        /// Action for bump epoch to refresh safe tail
+        /// </summary>
+        readonly Action periodicRefreshSafeTailAddressBumpCallbackAction;
+
+        /// <summary>
         /// Callback when safe tail shifts
         /// </summary>
         public Action<long, long> SafeTailShiftCallback;
@@ -238,6 +243,7 @@ namespace Tsavorite.core
                     };
                 }
                 safeTailRefreshTaskCts = new();
+                periodicRefreshSafeTailAddressBumpCallbackAction = PeriodicRefreshSafeTailAddressBumpCallback;
                 safeTailRefreshTask = Task.Run(SafeTailRefreshWorker);
             }
         }
@@ -270,7 +276,7 @@ namespace Tsavorite.core
                                 break;
 
                             // Bump epoch with an action to update SafeTailAddress to the captured safeTailRefreshLastTailAddress
-                            epoch.BumpCurrentEpoch(PeriodicRefreshSafeTailAddressBumpCallback);
+                            epoch.BumpCurrentEpoch(periodicRefreshSafeTailAddressBumpCallbackAction);
                         }
                         finally
                         {
