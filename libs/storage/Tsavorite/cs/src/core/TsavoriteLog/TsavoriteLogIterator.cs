@@ -19,7 +19,6 @@ namespace Tsavorite.core
     /// </summary>
     public class TsavoriteLogScanIterator : ScanIteratorBase, IDisposable
     {
-        private readonly string name;
         protected readonly TsavoriteLog tsavoriteLog;
         private readonly BlittableAllocatorImpl<Empty, byte, EmptyStoreFunctions> allocator;
         private readonly BlittableFrame frame;
@@ -27,12 +26,6 @@ namespace Tsavorite.core
         private readonly int headerSize;
         protected readonly bool scanUncommitted;
         protected bool disposed = false;
-        internal long requestedCompletedUntilAddress;
-
-        /// <summary>
-        /// Iteration completed until (as part of commit)
-        /// </summary>
-        public long CompletedUntilAddress;
 
         /// <summary>
         /// Whether iteration has ended, either because we reached the end address of iteration, or because
@@ -50,12 +43,11 @@ namespace Tsavorite.core
         /// <param name="scanBufferingMode"></param>
         /// <param name="epoch"></param>
         /// <param name="headerSize"></param>
-        /// <param name="name"></param>
         /// <param name="getMemory"></param>
         /// <param name="scanUncommitted"></param>
         /// <param name="logger"></param>
         internal unsafe TsavoriteLogScanIterator(TsavoriteLog tsavoriteLog, BlittableAllocatorImpl<Empty, byte, EmptyStoreFunctions> hlog, long beginAddress, long endAddress,
-                GetMemory getMemory, ScanBufferingMode scanBufferingMode, LightEpoch epoch, int headerSize, string name, bool scanUncommitted = false, ILogger logger = null)
+                GetMemory getMemory, ScanBufferingMode scanBufferingMode, LightEpoch epoch, int headerSize, bool scanUncommitted = false, ILogger logger = null)
             : base(beginAddress == 0 ? hlog.GetFirstValidLogicalAddress(0) : beginAddress, endAddress, scanBufferingMode, false, epoch, hlog.LogPageSizeBits, logger: logger)
         {
             this.tsavoriteLog = tsavoriteLog;
@@ -63,10 +55,6 @@ namespace Tsavorite.core
             this.getMemory = getMemory;
             this.headerSize = headerSize;
             this.scanUncommitted = scanUncommitted;
-
-            this.name = name;
-            CompletedUntilAddress = beginAddress;
-
             if (frameSize > 0)
                 frame = new BlittableFrame(frameSize, hlog.PageSize, hlog.GetDeviceSectorSize());
         }
@@ -613,38 +601,6 @@ namespace Tsavorite.core
         public void UnsafeRelease() => epoch.Suspend();
 
         /// <summary>
-        /// Mark iterator complete until specified address. Info is not
-        /// persisted until a subsequent commit operation on the log.
-        /// </summary>
-        /// <param name="address"></param>
-        public void CompleteUntil(long address)
-        {
-            Utility.MonotonicUpdate(ref requestedCompletedUntilAddress, address, out _);
-        }
-
-        /// <summary>
-        /// Mark iterator complete until the end of the record at specified
-        /// address. Info is not persisted until a subsequent commit operation
-        /// on the log. Note: this is slower than CompleteUntil() because the
-        /// record's length needs to be looked up first.
-        /// </summary>
-        /// <param name="recordStartAddress"></param>
-        /// <param name="token"></param>
-        /// <returns>The actual completion address (end address of the record)</returns>
-        public async ValueTask<long> CompleteUntilRecordAtAsync(long recordStartAddress, CancellationToken token = default)
-        {
-            int len = await tsavoriteLog.ReadRecordLengthAsync(recordStartAddress, token: token);
-            long endAddress = recordStartAddress + headerSize + Align(len);
-            CompleteUntil(endAddress);
-            return endAddress;
-        }
-
-        internal void UpdateCompletedUntilAddress(long address)
-        {
-            Utility.MonotonicUpdate(ref CompletedUntilAddress, address, out _);
-        }
-
-        /// <summary>
         /// Dispose the iterator
         /// </summary>
         public override void Dispose()
@@ -655,9 +611,6 @@ namespace Tsavorite.core
 
                 // Dispose/unpin the frame from memory
                 frame?.Dispose();
-
-                if (name != null)
-                    tsavoriteLog.PersistedIterators.TryRemove(name, out _);
 
                 if (Interlocked.Decrement(ref tsavoriteLog.logRefCount) == 0)
                     tsavoriteLog.TrueDispose();

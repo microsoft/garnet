@@ -3,7 +3,6 @@
 
 using System;
 using System.Buffers;
-using System.Collections.Concurrent;
 using System.Collections.Generic;
 using System.Diagnostics;
 using System.IO;
@@ -76,11 +75,6 @@ namespace Tsavorite.core
         public long SafeTailAddress;
 
         /// <summary>
-        /// Dictionary of recovered iterators and their committed until addresses
-        /// </summary>
-        public Dictionary<string, long> RecoveredIterators { get; private set; }
-
-        /// <summary>
         /// Log committed until address
         /// </summary>
         public long CommittedUntilAddress;
@@ -111,16 +105,9 @@ namespace Tsavorite.core
         internal CompletionEvent FlushEvent => allocator.FlushEvent;
 
         /// <summary>
-        /// Table of persisted iterators
-        /// </summary>
-        internal readonly ConcurrentDictionary<string, TsavoriteLogScanIterator> PersistedIterators = new();
-
-        /// <summary>
         /// Committed view of commitMetadataVersion
         /// </summary>
         private long persistedCommitNum;
-
-        internal Dictionary<string, long> LastPersistedIterators;
 
         /// <summary>
         /// Number of references to log, including itself
@@ -413,12 +400,10 @@ namespace Tsavorite.core
             if (CommittedUntilAddress > BeginAddress)
                 throw new TsavoriteException($"Already recovered until address {CommittedUntilAddress}");
 
-            Dictionary<string, long> it;
             if (requestedCommitNum == -1)
-                RestoreLatest(out it, out RecoveredCookie);
+                RestoreLatest(out RecoveredCookie);
             else
-                RestoreSpecificCommit(requestedCommitNum, out it, out RecoveredCookie);
-            RecoveredIterators = it;
+                RestoreSpecificCommit(requestedCommitNum, out RecoveredCookie);
         }
 
         /// <summary>
@@ -431,8 +416,7 @@ namespace Tsavorite.core
             var log = new TsavoriteLog(logSettings, false);
             if (logSettings.TryRecoverLatest)
             {
-                var (it, cookie) = await log.RestoreLatestAsync(cancellationToken).ConfigureAwait(false);
-                log.RecoveredIterators = it;
+                var cookie = await log.RestoreLatestAsync(cancellationToken).ConfigureAwait(false);
                 log.RecoveredCookie = cookie;
             }
             return log;
@@ -1413,13 +1397,13 @@ namespace Tsavorite.core
         /// <param name="spinWait">If true, spin-wait until commit completes. Otherwise, issue commit and return immediately.</param>
         /// <returns> whether there is anything to commit. </returns>
 
-        public void Commit(bool spinWait = false)
+        public void Commit(bool spinWait = false, byte[] cookie = null)
         {
             // Take a lower-bound of the content of this commit in case our request is filtered but we need to spin
             var tail = TailAddress;
             var lastCommit = commitNum;
 
-            var success = CommitInternal(out var actualTail, out var actualCommitNum, true, null, -1, null);
+            var success = CommitInternal(out var actualTail, out var actualCommitNum, cookie == null, cookie, -1, null);
             if (!spinWait) return;
             if (success)
                 WaitForCommit(actualTail, actualCommitNum);
@@ -1463,7 +1447,7 @@ namespace Tsavorite.core
         /// ongoing commit fails.
         /// </summary>
         /// <returns></returns>
-        public async ValueTask CommitAsync(CancellationToken token = default)
+        public async ValueTask CommitAsync(byte[] cookie = null, CancellationToken token = default)
         {
             token.ThrowIfCancellationRequested();
 
@@ -1472,7 +1456,7 @@ namespace Tsavorite.core
             var lastCommit = commitNum;
 
             var task = CommitTask;
-            var success = CommitInternal(out var actualTail, out var actualCommitNum, true, null, -1, null);
+            var success = CommitInternal(out var actualTail, out var actualCommitNum, cookie == null, cookie, -1, null);
 
             if (success)
             {
@@ -1498,7 +1482,7 @@ namespace Tsavorite.core
         /// from prevCommitTask to current fails.
         /// </summary>
         /// <returns></returns>
-        public async ValueTask<Task<LinkedCommitInfo>> CommitAsync(Task<LinkedCommitInfo> prevCommitTask, CancellationToken token = default)
+        public async ValueTask<Task<LinkedCommitInfo>> CommitAsync(Task<LinkedCommitInfo> prevCommitTask, byte[] cookie = null, CancellationToken token = default)
         {
             token.ThrowIfCancellationRequested();
 
@@ -1508,7 +1492,7 @@ namespace Tsavorite.core
 
             if (prevCommitTask == null) prevCommitTask = CommitTask;
 
-            var success = CommitInternal(out var actualTail, out var actualCommitNum, true, null, -1, null);
+            var success = CommitInternal(out var actualTail, out var actualCommitNum, cookie == null, null, -1, null);
 
 
             if (success)
@@ -1971,20 +1955,17 @@ namespace Tsavorite.core
         /// </summary>
         /// <param name="beginAddress">Begin address for scan.</param>
         /// <param name="endAddress">End address for scan (or long.MaxValue for tailing).</param>
-        /// <param name="name">Name of iterator, if we need to persist/recover it (default null - do not persist).</param>
         /// <param name="recover">Whether to recover named iterator from latest commit (if exists). If false, iterator starts from beginAddress.</param>
         /// <param name="scanBufferingMode">Use single or double buffering</param>
         /// <param name="scanUncommitted">Whether we scan uncommitted data</param>
         /// <param name="logger"></param>
         /// <returns></returns>
-        public TsavoriteLogScanIterator Scan(long beginAddress, long endAddress, string name = null, bool recover = true, ScanBufferingMode scanBufferingMode = ScanBufferingMode.DoublePageBuffering, bool scanUncommitted = false, ILogger logger = null)
+        public TsavoriteLogScanIterator Scan(long beginAddress, long endAddress, bool recover = true, ScanBufferingMode scanBufferingMode = ScanBufferingMode.DoublePageBuffering, bool scanUncommitted = false, ILogger logger = null)
         {
             if (readOnlyMode)
             {
                 scanBufferingMode = ScanBufferingMode.SinglePageBuffering;
 
-                if (name != null)
-                    throw new TsavoriteException("Cannot use named iterators with read-only TsavoriteLog");
                 if (scanUncommitted)
                     throw new TsavoriteException("Cannot use scanUncommitted with read-only TsavoriteLog");
             }
@@ -1992,20 +1973,7 @@ namespace Tsavorite.core
             if (scanUncommitted && SafeTailRefreshFrequencyMs < 0)
                 throw new TsavoriteException("Cannot use scanUncommitted without setting SafeTailRefreshFrequencyMs to a non-negative value in TsavoriteLog settings");
 
-            TsavoriteLogScanIterator iter;
-            if (recover && name != null && RecoveredIterators != null && RecoveredIterators.ContainsKey(name))
-                iter = new TsavoriteLogScanIterator(this, allocator, RecoveredIterators[name], endAddress, getMemory, scanBufferingMode, epoch, headerSize, name, scanUncommitted, logger: logger);
-            else
-                iter = new TsavoriteLogScanIterator(this, allocator, beginAddress, endAddress, getMemory, scanBufferingMode, epoch, headerSize, name, scanUncommitted, logger: logger);
-
-            if (name != null)
-            {
-                if (name.Length > 20)
-                    throw new TsavoriteException("Max length of iterator name is 20 characters");
-                if (PersistedIterators.ContainsKey(name))
-                    logger?.LogDebug("Iterator name exists, overwriting");
-                PersistedIterators[name] = iter;
-            }
+            var iter = new TsavoriteLogScanIterator(this, allocator, beginAddress, endAddress, getMemory, scanBufferingMode, epoch, headerSize, scanUncommitted, logger: logger);
 
             if (Interlocked.Increment(ref logRefCount) == 1)
                 throw new TsavoriteException("Cannot scan disposed log instance");
@@ -2034,14 +2002,12 @@ namespace Tsavorite.core
             }
         }
 
-        public TsavoriteLogScanSingleIterator ScanSingle(long beginAddress, long endAddress, string name = null, bool recover = true, ScanBufferingMode scanBufferingMode = ScanBufferingMode.DoublePageBuffering, bool scanUncommitted = false, ILogger logger = null)
+        public TsavoriteLogScanSingleIterator ScanSingle(long beginAddress, long endAddress, bool recover = true, ScanBufferingMode scanBufferingMode = ScanBufferingMode.DoublePageBuffering, bool scanUncommitted = false, ILogger logger = null)
         {
             if (readOnlyMode)
             {
                 scanBufferingMode = ScanBufferingMode.SinglePageBuffering;
 
-                if (name != null)
-                    throw new TsavoriteException("Cannot use named iterators with read-only TsavoriteLog");
                 if (scanUncommitted)
                     throw new TsavoriteException("Cannot use scanUncommitted with read-only TsavoriteLog");
             }
@@ -2049,25 +2015,12 @@ namespace Tsavorite.core
             if (scanUncommitted && SafeTailRefreshFrequencyMs < 0)
                 throw new TsavoriteException("Cannot use scanUncommitted without setting SafeTailRefreshFrequencyMs to a non-negative value in TsavoriteLog settings");
 
-            TsavoriteLogScanSingleIterator iter;
-            if (recover && name != null && RecoveredIterators != null && RecoveredIterators.ContainsKey(name))
-                iter = new TsavoriteLogScanSingleIterator(this, allocator, RecoveredIterators[name], endAddress, getMemory, scanBufferingMode, epoch, headerSize, name, scanUncommitted, logger: logger);
-            else
-                iter = new TsavoriteLogScanSingleIterator(this, allocator, beginAddress, endAddress, getMemory, scanBufferingMode, epoch, headerSize, name, scanUncommitted, logger: logger);
+            var iter = new TsavoriteLogScanSingleIterator(this, allocator, beginAddress, endAddress, getMemory, scanBufferingMode, epoch, headerSize, scanUncommitted, logger: logger);
 
             lock (this)
             {
                 List<TsavoriteLogScanSingleIterator> newList = activeSingleIterators == null ? new() { iter } : new(activeSingleIterators) { iter };
                 activeSingleIterators = newList;
-            }
-
-            if (name != null)
-            {
-                if (name.Length > 20)
-                    throw new TsavoriteException("Max length of iterator name is 20 characters");
-                if (PersistedIterators.ContainsKey(name))
-                    logger?.LogDebug("Iterator name exists, overwriting");
-                PersistedIterators[name] = iter;
             }
 
             if (Interlocked.Increment(ref logRefCount) == 1)
@@ -2222,7 +2175,7 @@ namespace Tsavorite.core
 
         private bool ShouldCommmitMetadata(ref TsavoriteLogRecoveryInfo info)
         {
-            return beginAddress > CommittedBeginAddress || IteratorsChanged(ref info) || info.Cookie != null;
+            return beginAddress > CommittedBeginAddress || info.Cookie != null;
         }
 
         private void CommitMetadataOnly(ref TsavoriteLogRecoveryInfo info)
@@ -2240,10 +2193,8 @@ namespace Tsavorite.core
 
         private void UpdateCommittedState(TsavoriteLogRecoveryInfo recoveryInfo)
         {
-            LastPersistedIterators = recoveryInfo.Iterators;
             CommittedBeginAddress = recoveryInfo.BeginAddress;
             CommittedUntilAddress = recoveryInfo.UntilAddress;
-            recoveryInfo.CommitIterators(PersistedIterators);
             Utility.MonotonicUpdate(ref persistedCommitNum, recoveryInfo.CommitNum, out _);
         }
 
@@ -2352,27 +2303,6 @@ namespace Tsavorite.core
             _commitTcs?.TrySetResult(lci);
         }
 
-        private bool IteratorsChanged(ref TsavoriteLogRecoveryInfo info)
-        {
-            var _lastPersistedIterators = LastPersistedIterators;
-            if (_lastPersistedIterators == null)
-            {
-                return info.Iterators != null && info.Iterators.Count != 0;
-            }
-            if (info.Iterators == null || _lastPersistedIterators.Count != info.Iterators.Count)
-                return true;
-            foreach (var item in _lastPersistedIterators)
-            {
-                if (info.Iterators.TryGetValue(item.Key, out var other))
-                {
-                    if (item.Value != other) return true;
-                }
-                else
-                    return true;
-            }
-            return false;
-        }
-
         /// <summary>
         /// Synchronously recover instance to TsavoriteLog's latest valid commit, when being used as a readonly log iterator
         /// </summary>
@@ -2381,7 +2311,7 @@ namespace Tsavorite.core
             if (!readOnlyMode)
                 throw new TsavoriteException("This method can only be used with a read-only TsavoriteLog instance used for iteration. Set TsavoriteLogSettings.ReadOnlyMode to true during creation to indicate this.");
 
-            RestoreLatest(out _, out _);
+            RestoreLatest(out _);
             SignalWaitingROIterators();
         }
 
@@ -2435,9 +2365,8 @@ namespace Tsavorite.core
             return true;
         }
 
-        private void RestoreLatest(out Dictionary<string, long> iterators, out byte[] cookie)
+        private void RestoreLatest(out byte[] cookie)
         {
-            iterators = null;
             cookie = null;
             TsavoriteLogRecoveryInfo info = new();
 
@@ -2504,10 +2433,10 @@ namespace Tsavorite.core
                 }
             }
 
-            iterators = CompleteRestoreFromCommit(info);
+            CompleteRestoreFromCommit(info);
             cookie = info.Cookie;
             commitNum = info.CommitNum;
-            // After recovery  persisted commitnum remians 0 so we need to set it to latest commit number
+            // After recovery, persisted commitnum remains 0 so we need to set it to latest commit number
             persistedCommitNum = info.CommitNum;
             beginAddress = allocator.BeginAddress;
             if (readOnlyMode)
@@ -2516,9 +2445,8 @@ namespace Tsavorite.core
             if (scanStart > 0) logCommitManager.OnRecovery(scanStart);
         }
 
-        private void RestoreSpecificCommit(long requestedCommitNum, out Dictionary<string, long> iterators, out byte[] cookie)
+        private void RestoreSpecificCommit(long requestedCommitNum, out byte[] cookie)
         {
-            iterators = null;
             cookie = null;
             TsavoriteLogRecoveryInfo info = new();
 
@@ -2580,7 +2508,7 @@ namespace Tsavorite.core
                 }
             }
 
-            iterators = CompleteRestoreFromCommit(info);
+            CompleteRestoreFromCommit(info);
             cookie = info.Cookie;
             commitNum = persistedCommitNum = info.CommitNum;
             beginAddress = allocator.BeginAddress;
@@ -2593,7 +2521,7 @@ namespace Tsavorite.core
         /// <summary>
         /// Restore log asynchronously
         /// </summary>
-        private async ValueTask<(Dictionary<string, long>, byte[])> RestoreLatestAsync(CancellationToken cancellationToken)
+        private async ValueTask<byte[]> RestoreLatestAsync(CancellationToken cancellationToken)
         {
             TsavoriteLogRecoveryInfo info = new();
 
@@ -2637,7 +2565,7 @@ namespace Tsavorite.core
                 beginAddress = allocator.BeginAddress;
                 if (readOnlyMode)
                     allocator.HeadAddress = long.MaxValue;
-                return (new Dictionary<string, long>(), null);
+                return null;
             }
 
             if (!readOnlyMode)
@@ -2651,7 +2579,7 @@ namespace Tsavorite.core
                 await allocator.RestoreHybridLogAsync(info.BeginAddress, headAddress, info.UntilAddress, info.UntilAddress, cancellationToken: cancellationToken).ConfigureAwait(false);
             }
 
-            var iterators = CompleteRestoreFromCommit(info);
+            CompleteRestoreFromCommit(info);
             var cookie = info.Cookie;
             commitNum = info.CommitNum;
             beginAddress = allocator.BeginAddress;
@@ -2660,25 +2588,14 @@ namespace Tsavorite.core
 
             if (scanStart > 0) logCommitManager.OnRecovery(scanStart);
 
-            return (iterators, cookie);
+            return cookie;
         }
 
-        private Dictionary<string, long> CompleteRestoreFromCommit(TsavoriteLogRecoveryInfo info)
+        private void CompleteRestoreFromCommit(TsavoriteLogRecoveryInfo info)
         {
             CommittedUntilAddress = info.UntilAddress;
             CommittedBeginAddress = info.BeginAddress;
             SafeTailAddress = info.UntilAddress;
-
-            // Fix uncommitted addresses in iterators
-            var recoveredIterators = info.Iterators;
-            if (recoveredIterators != null)
-            {
-                List<string> keys = [.. recoveredIterators.Keys];
-                foreach (var key in keys)
-                    if (recoveredIterators[key] > SafeTailAddress)
-                        recoveredIterators[key] = SafeTailAddress;
-            }
-            return recoveredIterators;
         }
 
         /// <summary>
@@ -2883,7 +2800,6 @@ namespace Tsavorite.core
                 Cookie = cookie,
                 Callback = callback,
             };
-            info.SnapshotIterators(PersistedIterators);
             var commitRequired = ShouldCommmitMetadata(ref info) || (commitCoveredAddress < TailAddress);
             // Only apply commit policy if not a strong commit
             if (fastForwardAllowed && !commitPolicy.AdmitCommit(TailAddress, commitRequired))

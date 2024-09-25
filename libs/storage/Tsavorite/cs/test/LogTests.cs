@@ -180,9 +180,9 @@ namespace Tsavorite.test
             // Enter in some entries then wait on this separate thread
             await log.EnqueueAsync(entry);
             await log.EnqueueAsync(entry);
-            var commitTask = await log.CommitAsync(null, token: token);
+            var commitTask = await log.CommitAsync(null, null, token);
             await log.EnqueueAsync(entry);
-            await log.CommitAsync(commitTask, token: token);
+            await log.CommitAsync(commitTask, null, token);
         }
     }
 
@@ -1185,7 +1185,7 @@ namespace Tsavorite.test
 
 
             var nextAddress = 0L;
-            using (var iter = log.Scan(0, long.MaxValue, "TEST"))
+            using (var iter = log.Scan(0, long.MaxValue))
             {
                 var count = 0;
                 while (iter.GetNext(out _, out _, out _, out nextAddress)) count++;
@@ -1205,7 +1205,7 @@ namespace Tsavorite.test
             log.Commit(true);
             log.CompleteLog(true);
 
-            using (var iter = log.Scan(nextAddress, long.MaxValue, "TEST"))
+            using (var iter = log.Scan(nextAddress, long.MaxValue))
             {
                 var counter = new Counter(log);
                 var consumer = new TsavoriteLogGeneralTests.TestConsumer(counter, entry);

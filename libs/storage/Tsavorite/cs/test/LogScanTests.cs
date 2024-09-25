@@ -239,7 +239,7 @@ namespace Tsavorite.test
 
             // Read the log - Look for the flag so know each entry is unique
             int currentEntry = 0;
-            using (var iter = log.Scan(0, 100_000_000, name: null, recover: true, scanBufferingMode: ScanBufferingMode.DoublePageBuffering, scanUncommitted: false))
+            using (var iter = log.Scan(0, 100_000_000, recover: true, scanBufferingMode: ScanBufferingMode.DoublePageBuffering, scanUncommitted: false))
             {
                 while (iter.GetNext(out byte[] result, out _, out _))
                 {
@@ -271,7 +271,7 @@ namespace Tsavorite.test
 
             // Read the log - Look for the flag so know each entry is unique
             int currentEntry = 0;
-            using (var iter = log.Scan(0, 100_000_000, name: "TestScan", recover: true))
+            using (var iter = log.Scan(0, 100_000_000, recover: true))
             {
                 while (iter.GetNext(out byte[] result, out _, out _))
                 {

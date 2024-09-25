@@ -91,7 +91,7 @@ namespace Garnet.cluster
             {
                 garnetClient.Connect();
 
-                iter = clusterProvider.storeWrapper.appendOnlyFile.ScanSingle(startAddress, long.MaxValue, name: remoteNodeId[..20], scanUncommitted: true, recover: false, logger: logger);
+                iter = clusterProvider.storeWrapper.appendOnlyFile.ScanSingle(startAddress, long.MaxValue, scanUncommitted: true, recover: false, logger: logger);
 
                 while (true)
                 {
