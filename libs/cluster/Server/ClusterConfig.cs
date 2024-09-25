@@ -289,7 +289,7 @@ namespace Garnet.cluster
         }
 
         /// <summary>
-        /// Retrieve a list of slots served by this node's primary.
+        /// Retrieve a list of slots served by this node.
         /// </summary>
         /// <returns>List of slots.</returns>
         public List<int> GetLocalSlots()

@@ -106,17 +106,10 @@ namespace Garnet.cluster
                     var localSlots = current.GetLocalSlots();
                     if (clusterProvider.storeWrapper.HasKeysInSlots(localSlots))
                     {
-                        resp = CmdStrings.RESP_ERR_RESET_WITH_KEYS_ASSIGNED;
-                        break;
+                        return CmdStrings.RESP_ERR_RESET_WITH_KEYS_ASSIGNED;
                     }
 
-                    while (this.clusterConnectionStore.Count > 0)
-                    {
-                        if (this.clusterConnectionStore.GetRandomConnection(out var conn))
-                        {
-                            _ = this.clusterConnectionStore.TryRemove(conn.NodeId);
-                        }
-                    }
+                    this.clusterConnectionStore.CloseAll();
 
                     var newNodeId = soft ? current.LocalNodeId : Generator.CreateHexId();
                     var address = current.LocalNodeIp;
