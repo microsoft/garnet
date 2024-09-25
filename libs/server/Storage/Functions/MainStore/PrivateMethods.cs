@@ -426,7 +426,7 @@ namespace Garnet.server
         {
             // Check if value contains a valid number
             int valLen = value.LengthWithoutMetadata - valueOffset;
-            byte* valPtr = value.ToPointer() + valueOffset; 
+            byte* valPtr = value.ToPointer() + valueOffset;
             if (!IsValidNumber(valLen, valPtr, output.SpanByte.AsSpan(), out var val))
                 return true;
 

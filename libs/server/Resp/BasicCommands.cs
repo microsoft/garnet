@@ -301,14 +301,14 @@ namespace Garnet.server
                 case GarnetStatus.WRONGTYPE:
                     while (!RespWriteUtils.WriteError(CmdStrings.RESP_ERR_WRONG_TYPE, ref dcurr, dend))
                         SendAndReset();
-                        break;
+                    break;
                 default:
                     if (!output.IsSpanByte)
                         SendAndReset(output.Memory, output.Length);
                     else
                         dcurr += output.Length;
                     break;
-            } 
+            }
 
             return true;
         }
@@ -345,11 +345,11 @@ namespace Garnet.server
                     Debug.Assert(output.IsSpanByte);
                     while (!RespWriteUtils.WriteDirect(CmdStrings.RESP_ERRNOTFOUND, ref dcurr, dend))
                         SendAndReset();
-                        break;
+                    break;
                 case GarnetStatus.WRONGTYPE:
                     while (!RespWriteUtils.WriteError(CmdStrings.RESP_ERR_WRONG_TYPE, ref dcurr, dend))
                         SendAndReset();
-                        break;
+                    break;
                 default:
                     if (!output.IsSpanByte)
                         SendAndReset(output.Memory, output.Length);
@@ -883,7 +883,8 @@ namespace Garnet.server
                 {
                     while (!RespWriteUtils.WriteDirect(CmdStrings.RESP_ERRNOTFOUND, ref dcurr, dend))
                         SendAndReset();
-                } else
+                }
+                else
                 {
                     while (!RespWriteUtils.WriteDirect(CmdStrings.RESP_OK, ref dcurr, dend))
                         SendAndReset();

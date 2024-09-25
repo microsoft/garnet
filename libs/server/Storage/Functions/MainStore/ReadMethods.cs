@@ -26,7 +26,7 @@ namespace Garnet.server
             if (isEtagCmd && !readInfo.RecordInfo.ETag)
             {
                 // Used to indicate wrong type operation
-                readInfo.Action = ReadAction.CancelOperation; 
+                readInfo.Action = ReadAction.CancelOperation;
                 return false;
             }
 
@@ -52,7 +52,7 @@ namespace Garnet.server
                     return true;
                 }
             }
-            
+
             // Unless the command explicitly asks for the ETag in response, we do not write back the ETag 
             var start = 0;
             var end = -1;
@@ -81,14 +81,14 @@ namespace Garnet.server
             }
 
             var cmd = ((RespInputHeader*)input.ToPointer())->cmd;
-            
+
             var isEtagCmd = cmd is RespCommand.GETWITHETAG or RespCommand.GETIFNOTMATCH;
 
             // ETAG Read command on non-ETag data should early exit but indicate the wrong type
             if (isEtagCmd && !recordInfo.ETag)
             {
                 // Used to indicate wrong type operation
-                readInfo.Action = ReadAction.CancelOperation; 
+                readInfo.Action = ReadAction.CancelOperation;
                 return false;
             }
 

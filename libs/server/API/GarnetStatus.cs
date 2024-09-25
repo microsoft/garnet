@@ -23,7 +23,7 @@ namespace Garnet.server
         /// <summary>
         /// Wrong type
         /// </summary>
-        WRONGTYPE, 
+        WRONGTYPE,
         /// <summary>
         /// ETAG mismatch result for an etag based command 
         /// </summary>

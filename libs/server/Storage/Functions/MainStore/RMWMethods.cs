@@ -510,7 +510,7 @@ namespace Garnet.server
                     // Copy initial etag to output
                     CopyRespNumber(0, ref output);
                     // early return since initial etag setting does not need to be incremented
-                    return true;;
+                    return true;
 
                 case RespCommand.APPEND:
                     // If nothing to append, can avoid copy update.
@@ -568,7 +568,7 @@ namespace Garnet.server
                         output.Length = outp.Length;
                         if (!ret)
                             return false;
-                        
+
                         break;
                     }
                     throw new GarnetException("Unsupported operation on input");
@@ -701,7 +701,7 @@ namespace Garnet.server
                 case RespCommand.SET:
                 case RespCommand.SETEXXX:
                     // new value when allocated should have 8 bytes more if the previous record had etag and the cmd was not SETEXXX
-                    Debug.Assert(input.Length - RespInputHeader.Size == newValue.Length -etagIgnoredOffset);
+                    Debug.Assert(input.Length - RespInputHeader.Size == newValue.Length - etagIgnoredOffset);
 
                     // Check if SetGet flag is set
                     if (((RespInputHeader*)inputPtr)->CheckSetGetFlag())
@@ -719,7 +719,7 @@ namespace Garnet.server
                 case RespCommand.SETKEEPTTLXX:
                 case RespCommand.SETKEEPTTL:
                     Debug.Assert(oldValue.MetadataSize + input.Length - RespInputHeader.Size == newValue.Length);
-                    
+
                     // Check if SetGet flag is set
                     if (((RespInputHeader*)inputPtr)->CheckSetGetFlag())
                     {
