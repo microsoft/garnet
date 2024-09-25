@@ -3574,6 +3574,49 @@
     "SubCommands": null
   },
   {
+    "Command": "RENAMENX",
+    "Name": "RENAMENX",
+    "IsInternal": false,
+    "Arity": 3,
+    "Flags": "Fast, Write",
+    "FirstKey": 1,
+    "LastKey": 2,
+    "Step": 1,
+    "AclCategories": "Fast, KeySpace, Write",
+    "Tips": null,
+    "KeySpecifications": [
+      {
+        "BeginSearch": {
+          "TypeDiscriminator": "BeginSearchIndex",
+          "Index": 1
+        },
+        "FindKeys": {
+          "TypeDiscriminator": "FindKeysRange",
+          "LastKey": 0,
+          "KeyStep": 1,
+          "Limit": 0
+        },
+        "Notes": null,
+        "Flags": "RW, Access, Delete"
+      },
+      {
+        "BeginSearch": {
+          "TypeDiscriminator": "BeginSearchIndex",
+          "Index": 2
+        },
+        "FindKeys": {
+          "TypeDiscriminator": "FindKeysRange",
+          "LastKey": 0,
+          "KeyStep": 1,
+          "Limit": 0
+        },
+        "Notes": null,
+        "Flags": "OW, Insert"
+      }
+    ],
+    "SubCommands": null
+  },
+  {
     "Command": "REPLICAOF",
     "Name": "REPLICAOF",
     "IsInternal": false,
