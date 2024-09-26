@@ -726,9 +726,9 @@ namespace Garnet.server
         /// <returns></returns>
         IDevice GetAofDevice()
         {
-            if (!MainMemoryReplication && UseAofNullDevice)
-                throw new Exception("Cannot use null device for AOF when not using main memory replication");
-            if (MainMemoryReplication && UseAofNullDevice) return new NullDevice();
+            if (UseAofNullDevice && EnableCluster && !MainMemoryReplication)
+                throw new Exception("Cannot use null device for AOF when cluster is enabled and you are not using main memory replication");
+            if (UseAofNullDevice) return new NullDevice();
             else return GetInitializedDeviceFactory(CheckpointDir).Get(new FileDescriptor("AOF", "aof.log"));
         }
 
