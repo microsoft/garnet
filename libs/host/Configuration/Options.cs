@@ -445,6 +445,10 @@ namespace Garnet
         [Option("extension-bin-paths", Separator = ',', Required = false, HelpText = "List of directories on server from which custom command binaries can be loaded by admin users")]
         public IEnumerable<string> ExtensionBinPaths { get; set; }
 
+        [ModuleFilePathValidation(true, true, false)]
+        [Option("loadmodulecs", Separator = ',', Required = false, HelpText = "List of modules to be loaded")]
+        public IEnumerable<string> LoadModuleCS { get; set; }
+
         [Option("extension-allow-unsigned", Required = false, HelpText = "Allow loading custom commands from digitally unsigned assemblies (not recommended)")]
         public bool? ExtensionAllowUnsignedAssemblies { get; set; }
 
@@ -653,7 +657,8 @@ namespace Garnet
                 ExtensionBinPaths = ExtensionBinPaths?.ToArray(),
                 ExtensionAllowUnsignedAssemblies = ExtensionAllowUnsignedAssemblies.GetValueOrDefault(),
                 IndexResizeFrequencySecs = IndexResizeFrequencySecs,
-                IndexResizeThreshold = IndexResizeThreshold
+                IndexResizeThreshold = IndexResizeThreshold,
+                LoadModuleCS = LoadModuleCS
             };
         }
 
