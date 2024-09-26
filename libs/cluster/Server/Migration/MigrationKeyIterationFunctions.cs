@@ -14,7 +14,7 @@ namespace Garnet.cluster
     {
         internal sealed class MigrationKeyIterationFunctions
         {
-            internal unsafe struct MainStoreGetKeysInSlots : IScanIteratorFunctions<SpanByte, SpanByte>
+            internal sealed unsafe class MainStoreGetKeysInSlots : IScanIteratorFunctions<SpanByte, SpanByte>
             {
                 MigrationScanIterator iterator;
 
@@ -90,7 +90,7 @@ namespace Garnet.cluster
                 public void OnException(Exception exception, long numberOfRecords) { }
             }
 
-            internal struct MigrationScanIterator
+            internal sealed class MigrationScanIterator
             {
                 readonly MigrateSession session;
                 readonly HashSet<int> slots;

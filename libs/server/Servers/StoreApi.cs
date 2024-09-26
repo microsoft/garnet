@@ -41,7 +41,7 @@ namespace Garnet.server
         /// <summary>
         /// Commit AOF
         /// </summary>
-        public ValueTask CommitAOFAsync(CancellationToken token) => storeWrapper.appendOnlyFile != null ? storeWrapper.appendOnlyFile.CommitAsync(token) : ValueTask.CompletedTask;
+        public ValueTask CommitAOFAsync(CancellationToken token) => storeWrapper.appendOnlyFile != null ? storeWrapper.appendOnlyFile.CommitAsync(null, token) : ValueTask.CompletedTask;
 
         /// <summary>
         /// Flush DB (delete all keys)

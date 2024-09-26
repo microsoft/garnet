@@ -418,15 +418,16 @@ namespace Tsavorite.core
         /// <param name="input"></param>
         /// <param name="output"></param>
         /// <param name="value"></param>
+        /// <param name="currentAddress">LogicalAddress of the record to be copied</param>
         /// <param name="untilAddress">Lower-bound address (addresses are searched from tail (high) to head (low); do not search for "future records" earlier than this)</param>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        internal Status CompactionCopyToTail(ref TKey key, ref TInput input, ref TValue value, ref TOutput output, long untilAddress)
+        internal Status CompactionCopyToTail(ref TKey key, ref TInput input, ref TValue value, ref TOutput output, long currentAddress, long untilAddress)
         {
             kernelSession.BeginUnsafe();
             try
             {
                 return store.CompactionConditionalCopyToTail<TInput, TOutput, TContext, SessionFunctionsWrapper<TKey, TValue, TInput, TOutput, TContext, TSessionFunctions, TransientSessionLocker, TStoreFunctions, TAllocator>>(
-                        sessionFunctions, ref key, ref input, ref value, ref output, untilAddress);
+                        sessionFunctions, ref key, ref input, ref value, ref output, currentAddress, untilAddress);
             }
             finally
             {
@@ -441,15 +442,16 @@ namespace Tsavorite.core
         /// <param name="recordInfo"></param>
         /// <param name="key"></param>
         /// <param name="value"></param>
+        /// <param name="currentAddress">LogicalAddress of the record to be copied</param>
         /// <param name="untilAddress">Lower-bound address (addresses are searched from tail (high) to head (low); do not search for "future records" earlier than this)</param>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        internal Status ConditionalScanPush(ScanCursorState<TKey, TValue> scanCursorState, RecordInfo recordInfo, ref TKey key, ref TValue value, long untilAddress)
+        internal Status ConditionalScanPush(ScanCursorState<TKey, TValue> scanCursorState, RecordInfo recordInfo, ref TKey key, ref TValue value, long currentAddress, long untilAddress)
         {
             kernelSession.BeginUnsafe();
             try
             {
                 return store.hlogBase.ConditionalScanPush<TInput, TOutput, TContext, SessionFunctionsWrapper<TKey, TValue, TInput, TOutput, TContext, TSessionFunctions, TransientSessionLocker, TStoreFunctions, TAllocator>>(
-                        sessionFunctions, scanCursorState, recordInfo, ref key, ref value, untilAddress);
+                        sessionFunctions, scanCursorState, recordInfo, ref key, ref value, currentAddress, untilAddress);
             }
             finally
             {

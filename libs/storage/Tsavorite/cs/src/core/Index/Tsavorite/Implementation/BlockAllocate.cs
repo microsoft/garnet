@@ -20,7 +20,7 @@ namespace Tsavorite.core
                 out OperationStatus internalStatus)
         {
             pendingContext.flushEvent = allocator.FlushEvent;
-            logicalAddress = allocator.TryAllocate(recordSize);
+            logicalAddress = allocator.TryAllocateRetryNow(recordSize);
             if (logicalAddress > 0)
             {
                 pendingContext.flushEvent = default;
@@ -28,24 +28,21 @@ namespace Tsavorite.core
                 return true;
             }
 
-            if (logicalAddress == 0)
-            {
-                // We expect flushEvent to be signaled.
-                internalStatus = OperationStatus.ALLOCATE_FAILED;
-                return false;
-            }
-
-            // logicalAddress is < 0 so we do not expect flushEvent to be signaled; return RETRY_LATER to refresh the epoch.
-            pendingContext.flushEvent = default;
-            allocator.TryComplete();
-            internalStatus = OperationStatus.RETRY_LATER;
+            // logicalAddress less than 0 (RETRY_NOW) should already have been handled
+            Debug.Assert(logicalAddress == 0);
+            // We expect flushEvent to be signaled.
+            internalStatus = OperationStatus.ALLOCATE_FAILED;
             return false;
         }
 
+        /// <summary>Options for TryAllocateRecord.</summary>
         internal struct AllocateOptions
         {
+            /// <summary>If true, use the non-revivification recycling of records that failed to CAS and are carried in PendingContext through RETRY.</summary>
             internal bool Recycle;
-            internal bool IgnoreHeiAddress;
+
+            /// <summary>If true, the source record is elidable so we can try to elide from the tag chain (and transfer it to the FreeList if we're doing Revivification).</summary>
+            internal bool ElideSourceRecord;
         };
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
@@ -64,7 +61,7 @@ namespace Tsavorite.core
                 return true;
             if (RevivificationManager.UseFreeRecordPool)
             {
-                if (!options.IgnoreHeiAddress && stackCtx.hei.Address >= minMutableAddress)
+                if (!options.ElideSourceRecord && stackCtx.hei.Address >= minMutableAddress)
                     minRevivAddress = stackCtx.hei.Address;
                 if (sessionFunctions.ExecutionCtx.IsInV1)
                 {

@@ -2,6 +2,7 @@
 // Licensed under the MIT license.
 
 using System;
+using System.Collections.Generic;
 using System.Text;
 using Garnet.common;
 using Microsoft.Extensions.Logging;
@@ -22,9 +23,12 @@ namespace Garnet.server
         readonly Lua state;
         readonly LuaTable sandbox_env;
         LuaFunction function;
-        string[] keys, argv;
         readonly TxnKeyEntries txnKeyEntries;
         readonly bool txnMode;
+        readonly LuaFunction garnetCall;
+        readonly LuaTable keyTable, argvTable;
+        int keyLength, argvLength;
+        Queue<IDisposable> disposeQueue;
 
         /// <summary>
         /// Creates a new runner with the source of the script
@@ -43,18 +47,26 @@ namespace Garnet.server
             if (txnMode)
             {
                 this.txnKeyEntries = new TxnKeyEntries(respServerSession.TsavoriteKernel, 16);
-                state.RegisterFunction("garnet_call", this, this.GetType().GetMethod(nameof(garnet_call_txn)));
+                garnetCall = state.RegisterFunction("garnet_call", this, this.GetType().GetMethod(nameof(garnet_call_txn)));
             }
             else
             {
-                state.RegisterFunction("garnet_call", this, this.GetType().GetMethod("garnet_call"));
+                garnetCall = state.RegisterFunction("garnet_call", this, this.GetType().GetMethod("garnet_call"));
             }
-            state.DoString(@"
+            _ = state.DoString(@"
                 import = function () end
                 redis = {}
                 function redis.call(cmd, ...)
                     return garnet_call(cmd, ...)
                 end
+                function redis.status_reply(text)
+                    return text
+                end
+                function redis.error_reply(text)
+                    return { err = text }
+                end
+                KEYS = {}
+                ARGV = {}
                 sandbox_env = {
                     tostring = tostring;
                     next = next;
@@ -65,7 +77,7 @@ namespace Garnet.server
                     coroutine = coroutine;
                     type = type;
                     select = select;
-                    unpack = unpack;
+                    unpack = table.unpack;
                     gcinfo = gcinfo;
                     pairs = pairs;
                     loadstring = loadstring;
@@ -73,6 +85,10 @@ namespace Garnet.server
                     error = error;
                     redis = redis;
                     math = math;
+                    table = table;
+                    string = string;
+                    KEYS = KEYS;
+                    ARGV = ARGV;
                 }
                 function load_sandboxed(source)
                     if (not source) then return nil end
@@ -80,6 +96,8 @@ namespace Garnet.server
                 end
             ");
             sandbox_env = (LuaTable)state["sandbox_env"];
+            keyTable = (LuaTable)state["KEYS"];
+            argvTable = (LuaTable)state["ARGV"];
         }
 
         /// <summary>
@@ -126,9 +144,12 @@ namespace Garnet.server
         /// </summary>
         public void Dispose()
         {
+            garnetCall?.Dispose();
+            keyTable?.Dispose();
+            argvTable?.Dispose();
+            sandbox_env?.Dispose();
             function?.Dispose();
             state?.Dispose();
-            sandbox_env?.Dispose();
         }
 
         /// <summary>
@@ -158,8 +179,8 @@ namespace Garnet.server
             switch (cmd)
             {
                 // We special-case a few performance-sensitive operations to directly invoke via the storage API
-                case "SET":
-                case "set":
+                case "SET" when args.Length == 2:
+                case "set" when args.Length == 2:
                     {
                         if (!respServerSession.CheckACLPermissions(RespCommand.SET))
                             return Encoding.ASCII.GetString(CmdStrings.RESP_ERR_NOAUTH);
@@ -205,8 +226,8 @@ namespace Garnet.server
                         return resultStr;
                     break;
                 case (byte)':':
-                    if (RespReadUtils.ReadIntegerAsString(out var resultInt, ref ptr, ptr + length))
-                        return resultInt;
+                    if (RespReadUtils.Read64Int(out var number, ref ptr, ptr + length))
+                        return number;
                     break;
                 case (byte)'-':
                     if (RespReadUtils.ReadErrorAsString(out resultStr, ref ptr, ptr + length))
@@ -220,7 +241,20 @@ namespace Garnet.server
 
                 case (byte)'*':
                     if (RespReadUtils.ReadStringArrayResponseWithLengthHeader(out var resultArray, ref ptr, ptr + length))
-                        return resultArray;
+                    {
+                        // Create return table
+                        var returnValue = (LuaTable)state.DoString("return { }")[0];
+
+                        // Queue up for disposal at the end of the script call
+                        disposeQueue ??= new();
+                        disposeQueue.Enqueue(returnValue);
+
+                        // Populate the table
+                        var i = 1;
+                        foreach (var item in resultArray)
+                            returnValue[i++] = item == null ? false : item;
+                        return returnValue;
+                    }
                     break;
 
                 default:
@@ -239,12 +273,10 @@ namespace Garnet.server
             int offset = 1;
             int nKeys = parseState.GetInt(offset++);
             count--;
+            ResetParameters(nKeys, count - nKeys);
 
-            string[] keys = null;
             if (nKeys > 0)
             {
-                // Lua uses 1-based indexing, so we allocate an extra entry in the array
-                keys = new string[nKeys + 1];
                 for (int i = 0; i < nKeys; i++)
                 {
                     if (txnMode)
@@ -254,7 +286,7 @@ namespace Garnet.server
                         if (!respServerSession.StorageSession.objectStoreLockableContext.IsNull)
                             txnKeyEntries.AddKey(respServerSession.storeWrapper, key, true, Tsavorite.core.LockType.Exclusive);
                     }
-                    keys[i + 1] = parseState.GetString(offset++);
+                    keyTable[i + 1] = parseState.GetString(offset++);
                 }
                 count -= nKeys;
 
@@ -265,34 +297,31 @@ namespace Garnet.server
                 //}
             }
 
-            string[] argv = null;
             if (count > 0)
             {
-                // Lua uses 1-based indexing, so we allocate an extra entry in the array
-                argv = new string[count + 1];
                 for (int i = 0; i < count; i++)
                 {
-                    argv[i + 1] = parseState.GetString(offset++);
+                    argvTable[i + 1] = parseState.GetString(offset++);
                 }
             }
 
             if (txnMode && nKeys > 0)
             {
-                return RunTransactionInternal(keys, argv);
+                return RunTransaction();
             }
             else
             {
-                return RunInternal(keys, argv);
+                return Run();
             }
         }
 
         /// <summary>
         /// Runs the precompiled Lua function with specified (keys, argv) state
         /// </summary>
-        public object Run(string[] keys, string[] argv)
+        public object Run(string[] keys = null, string[] argv = null)
         {
             scratchBufferManager?.Reset();
-
+            LoadParameters(keys, argv);
             if (txnMode && keys?.Length > 0)
             {
                 // Add keys to the transaction
@@ -303,15 +332,15 @@ namespace Garnet.server
                     if (!respServerSession.StorageSession.objectStoreLockableContext.IsNull)
                         txnKeyEntries.AddKey(respServerSession.storeWrapper, _key, true, Tsavorite.core.LockType.Exclusive);
                 }
-                return RunTransactionInternal(keys, argv);
+                return RunTransaction();
             }
             else
             {
-                return RunInternal(keys, argv);
+                return Run();
             }
         }
 
-        object RunTransactionInternal(string[] keys, string[] argv)
+        object RunTransaction()
         {
             try
             {
@@ -320,7 +349,7 @@ namespace Garnet.server
                     respServerSession.StorageSession.objectStoreLockableContext.EndTransaction();
                 respServerSession.SetTransactionMode(true);
                 txnKeyEntries.LockAllKeys(ref respServerSession.kernelSession);
-                return RunInternal(keys, argv);
+                return Run();
             }
             finally
             {
@@ -332,64 +361,56 @@ namespace Garnet.server
             }
         }
 
-        object RunInternal(string[] keys, string[] argv)
+        void ResetParameters(int nKeys, int nArgs)
         {
-            if (keys != this.keys)
+            if (keyLength > nKeys)
             {
-                if (keys == null)
-                {
-                    this.keys = null;
-                    sandbox_env["KEYS"] = this.keys;
-                }
-                else
-                {
-                    if (this.keys != null && keys.Length == this.keys.Length)
-                        Array.Copy(keys, this.keys, keys.Length);
-                    else
-                    {
-                        this.keys = keys;
-                        sandbox_env["KEYS"] = this.keys;
-                    }
-                }
+                _ = state.DoString($"count = #KEYS for i={nKeys + 1}, {keyLength} do KEYS[i]=nil end");
             }
-            if (argv != this.argv)
+            keyLength = nKeys;
+            if (argvLength > nArgs)
             {
-                if (argv == null)
-                {
-                    this.argv = null;
-                    sandbox_env["ARGV"] = this.argv;
-                }
-                else
-                {
-                    if (this.argv != null && argv.Length == this.argv.Length)
-                        Array.Copy(argv, this.argv, argv.Length);
-                    else
-                    {
-                        this.argv = argv;
-                        sandbox_env["ARGV"] = this.argv;
-                    }
-                }
+                _ = state.DoString($"count = #ARGV for i={nArgs + 1}, {argvLength} do ARGV[i]=nil end");
             }
+            argvLength = nArgs;
+        }
 
-            var result = function.Call();
-            return result.Length > 0 ? result[0] : null;
+        void LoadParameters(string[] keys, string[] argv)
+        {
+            ResetParameters(keys?.Length ?? 0, argv?.Length ?? 0);
+            if (keys != null)
+            {
+                for (int i = 0; i < keys.Length; i++)
+                    keyTable[i + 1] = keys[i];
+            }
+            if (argv != null)
+            {
+                for (int i = 0; i < argv.Length; i++)
+                    argvTable[i + 1] = argv[i];
+            }
         }
 
         /// <summary>
         /// Runs the precompiled Lua function
         /// </summary>
         /// <returns></returns>
-        public object Run()
+        object Run()
         {
             var result = function.Call();
-            return result.Length > 0 ? result[0] : null;
+            Cleanup();
+            return result?.Length > 0 ? result[0] : null;
         }
 
-        /// <summary>
-        /// Runs the precompiled Lua function
-        /// </summary>
-        /// <returns></returns>
-        public void RunVoid()
-            => function.Call();
+        void Cleanup()
+        {
+            if (disposeQueue != null)
+            {
+                while (disposeQueue.Count > 0)
+                {
+                    var table = disposeQueue.Dequeue();
+                    table.Dispose();
+                }
+            }
+        }
     }
 }

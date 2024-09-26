@@ -92,7 +92,7 @@ namespace Tsavorite.core
             allocatorBase.EmptyPageCount = pageCount;
             if (wait)
             {
-                long newHeadAddress = (allocatorBase.GetTailAddress() & ~allocatorBase.PageSizeMask) - allocatorBase.HeadOffsetLagAddress;
+                long newHeadAddress = (allocatorBase.GetTailAddress() & ~allocatorBase.PageSizeMask) - allocatorBase.HeadAddressLagOffset;
                 ShiftHeadAddress(newHeadAddress, wait);
             }
         }

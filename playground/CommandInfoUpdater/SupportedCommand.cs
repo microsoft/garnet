@@ -35,7 +35,13 @@ namespace CommandInfoUpdater
             new("BLPOP", RespCommand.BLPOP),
             new("BRPOP", RespCommand.BRPOP),
             new("BLMOVE", RespCommand.BLMOVE),
-            new("CLIENT", RespCommand.CLIENT),
+            new("CLIENT", RespCommand.CLIENT,
+                [
+                    "CLIENT|ID",
+                    "CLIENT|INFO",
+                    "CLIENT|LIST",
+                    "CLIENT|KILL",
+                ]),
             new("CLUSTER", RespCommand.CLUSTER,
             [
                 "CLUSTER|ADDSLOTS",
@@ -188,6 +194,7 @@ namespace CommandInfoUpdater
             new("READONLY", RespCommand.READONLY),
             new("READWRITE", RespCommand.READWRITE),
             new("RENAME", RespCommand.RENAME),
+            new("RENAMENX", RespCommand.RENAMENX),
             new("REPLICAOF", RespCommand.REPLICAOF),
             new("RPOP", RespCommand.RPOP),
             new("RPOPLPUSH", RespCommand.RPOPLPUSH),

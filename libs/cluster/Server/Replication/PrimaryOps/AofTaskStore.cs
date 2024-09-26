@@ -4,7 +4,6 @@
 using System;
 using System.Collections.Generic;
 using System.Diagnostics;
-using System.Threading;
 using Garnet.client;
 using Garnet.common;
 using Microsoft.Extensions.Logging;
@@ -41,7 +40,7 @@ namespace Garnet.cluster
                 logPageSizeMask = logPageSize - 1;
                 if (clusterProvider.serverOptions.MainMemoryReplication)
                     clusterProvider.storeWrapper.appendOnlyFile.SafeTailShiftCallback = SafeTailShiftCallback;
-                TruncateLagAddress = clusterProvider.storeWrapper.appendOnlyFile.UnsafeGetReadOnlyLagAddress() - 2 * logPageSize;
+                TruncateLagAddress = clusterProvider.storeWrapper.appendOnlyFile.UnsafeGetReadOnlyAddressLagOffset() - 2 * logPageSize;
             }
             TruncatedUntil = 0;
         }
@@ -132,7 +131,6 @@ namespace Garnet.cluster
                     current.LocalNodeId,
                     remoteNodeId,
                     new GarnetClientSession(address, port, clusterProvider.serverOptions.TlsOptions?.TlsClientOptions, authUsername: clusterProvider.ClusterUsername, authPassword: clusterProvider.ClusterPassword, 1 << 22, logger: logger),
-                    new CancellationTokenSource(),
                     startAddress,
                     logger);
             }
@@ -280,7 +278,7 @@ namespace Garnet.cluster
             {
                 if (clusterProvider.serverOptions.MainMemoryReplication)
                 {
-                    clusterProvider.storeWrapper.appendOnlyFile?.UnsafeShiftBeginAddress(TruncatedUntil, snapToPageStart: true, truncateLog: true, noFlush: true);
+                    clusterProvider.storeWrapper.appendOnlyFile?.UnsafeShiftBeginAddress(TruncatedUntil, snapToPageStart: true, truncateLog: true);
                 }
                 else
                 {

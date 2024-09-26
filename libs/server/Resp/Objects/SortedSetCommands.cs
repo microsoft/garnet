@@ -27,11 +27,6 @@ namespace Garnet.server
                 return AbortWithWrongNumberOfArguments("ZADD");
             }
 
-            if (parseState.Count % 2 != 1)
-            {
-                return AbortWithErrorMessage(CmdStrings.RESP_ERR_GENERIC_SYNTAX_ERROR);
-            }
-
             // Get the key for SortedSet
             var sbKey = parseState.GetArgSliceByRef(0).SpanByte;
             var keyBytes = sbKey.ToByteArray();

@@ -29,7 +29,7 @@ namespace Garnet.server
         {
             this.scratchBufferNetworkSender = new ScratchBufferNetworkSender();
             this.storeWrapper = storeWrapper;
-            this.processor = new RespServerSession(scratchBufferNetworkSender, storeWrapper, null, null, authenticator, false);
+            this.processor = new RespServerSession(0, scratchBufferNetworkSender, storeWrapper, null, authenticator, false);
             this.logger = logger;
         }
 

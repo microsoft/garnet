@@ -49,41 +49,46 @@ namespace Tsavorite.core
         }
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        // Return true if the record is found in the log, else false and an indication of whether we need to do IO to continue the search
         internal bool TryFindRecordInMainLogForConditionalOperation<TInput, TOutput, TContext, TSessionFunctionsWrapper>(TSessionFunctionsWrapper sessionFunctions,
-                ref TKey key, ref OperationStackContext<TKey, TValue, TStoreFunctions, TAllocator> stackCtx, long minAddress, out OperationStatus internalStatus, out bool needIO)
+                ref TKey key, ref OperationStackContext<TKey, TValue, TStoreFunctions, TAllocator> stackCtx, long currentAddress, long minAddress, out OperationStatus internalStatus, out bool needIO)
             where TSessionFunctionsWrapper : ISessionFunctionsWrapper<TKey, TValue, TInput, TOutput, TContext, TStoreFunctions, TAllocator>
         {
+            if (!Kernel.hashTable.FindTag(ref stackCtx.hei))
+            {
+                internalStatus = OperationStatus.NOTFOUND;
+                return needIO = false;
+            }
+
             internalStatus = OperationStatus.SUCCESS;
+            if (!stackCtx.hei.IsReadCache)
+            {
+                // If the address in the HashBucketEntry is the current address, there'll be no record above it, so return false (not found).
+                // If there are no valid records in the HashBucketEntry (minAddress is inclusive), return false (not found).
+                if (stackCtx.hei.Address == currentAddress || stackCtx.hei.Address < minAddress || stackCtx.hei.Address < hlogBase.BeginAddress)
+                {
+                    stackCtx.SetRecordSourceToHashEntry(hlogBase);
+                    return needIO = false;
+                }
+                if (stackCtx.hei.Address < hlogBase.HeadAddress)
+                {
+                    stackCtx.SetRecordSourceToHashEntry(hlogBase);
+                    needIO = true;
+                    return false;
+                }
+            }
+
             if (RevivificationManager.UseFreeRecordPool)
             {
                 // The TransientSLock here is necessary only for the tag chain to avoid record elision/revivification during traceback.
-                if (!FindTagAndTryTransientSLock<TInput, TOutput, TContext, TSessionFunctionsWrapper>(sessionFunctions, ref key, ref stackCtx, out internalStatus))
+                if (!TryTransientSLock<TInput, TOutput, TContext, TSessionFunctionsWrapper>(sessionFunctions, ref stackCtx, out internalStatus))
                     return needIO = false;
             }
             else
-            {
-                if (!Kernel.hashTable.FindTag(ref stackCtx.hei))
-                {
-                    internalStatus = OperationStatus.NOTFOUND;
-                    return needIO = false;
-                }
                 stackCtx.SetRecordSourceToHashEntry(hlogBase);
-            }
 
             try
             {
-                // minAddress is inclusive
-                if (!stackCtx.hei.IsReadCache)
-                {
-                    if (stackCtx.hei.Address < minAddress)
-                        return needIO = false;
-                    if (stackCtx.hei.Address < hlogBase.HeadAddress)
-                    {
-                        needIO = stackCtx.hei.Address >= hlogBase.BeginAddress;
-                        return false;
-                    }
-                }
-
                 if (UseReadCache)
                     SkipReadCache(ref stackCtx, out _); // Where this is called, we have no dependency on source addresses so we don't care if it Refreshed
 

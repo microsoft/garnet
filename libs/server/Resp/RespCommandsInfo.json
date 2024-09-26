@@ -483,7 +483,68 @@
     "AclCategories": "Slow",
     "Tips": null,
     "KeySpecifications": null,
-    "SubCommands": null
+    "SubCommands": [
+      {
+        "Command": "CLIENT",
+        "Name": "CLIENT|ID",
+        "IsInternal": false,
+        "Arity": 2,
+        "Flags": "Loading, NoScript, Stale",
+        "FirstKey": 0,
+        "LastKey": 0,
+        "Step": 0,
+        "AclCategories": "Connection, Slow",
+        "Tips": null,
+        "KeySpecifications": null,
+        "SubCommands": null
+      },
+      {
+        "Command": "CLIENT",
+        "Name": "CLIENT|LIST",
+        "IsInternal": false,
+        "Arity": -2,
+        "Flags": "Admin, Loading, NoScript, Stale",
+        "FirstKey": 0,
+        "LastKey": 0,
+        "Step": 0,
+        "AclCategories": "Admin, Connection, Dangerous, Slow",
+        "Tips": [
+          "nondeterministic_output"
+        ],
+        "KeySpecifications": null,
+        "SubCommands": null
+      },
+      {
+        "Command": "CLIENT",
+        "Name": "CLIENT|KILL",
+        "IsInternal": false,
+        "Arity": -3,
+        "Flags": "Admin, Loading, NoScript, Stale",
+        "FirstKey": 0,
+        "LastKey": 0,
+        "Step": 0,
+        "AclCategories": "Admin, Connection, Dangerous, Slow",
+        "Tips": null,
+        "KeySpecifications": null,
+        "SubCommands": null
+      },
+      {
+        "Command": "CLIENT",
+        "Name": "CLIENT|INFO",
+        "IsInternal": false,
+        "Arity": 2,
+        "Flags": "Loading, NoScript, Stale",
+        "FirstKey": 0,
+        "LastKey": 0,
+        "Step": 0,
+        "AclCategories": "Connection, Slow",
+        "Tips": [
+          "nondeterministic_output"
+        ],
+        "KeySpecifications": null,
+        "SubCommands": null
+      }
+    ]
   },
   {
     "Command": "CLUSTER",
@@ -3508,6 +3569,49 @@
         },
         "Notes": null,
         "Flags": "OW, Update"
+      }
+    ],
+    "SubCommands": null
+  },
+  {
+    "Command": "RENAMENX",
+    "Name": "RENAMENX",
+    "IsInternal": false,
+    "Arity": 3,
+    "Flags": "Fast, Write",
+    "FirstKey": 1,
+    "LastKey": 2,
+    "Step": 1,
+    "AclCategories": "Fast, KeySpace, Write",
+    "Tips": null,
+    "KeySpecifications": [
+      {
+        "BeginSearch": {
+          "TypeDiscriminator": "BeginSearchIndex",
+          "Index": 1
+        },
+        "FindKeys": {
+          "TypeDiscriminator": "FindKeysRange",
+          "LastKey": 0,
+          "KeyStep": 1,
+          "Limit": 0
+        },
+        "Notes": null,
+        "Flags": "RW, Access, Delete"
+      },
+      {
+        "BeginSearch": {
+          "TypeDiscriminator": "BeginSearchIndex",
+          "Index": 2
+        },
+        "FindKeys": {
+          "TypeDiscriminator": "FindKeysRange",
+          "LastKey": 0,
+          "KeyStep": 1,
+          "Limit": 0
+        },
+        "Notes": null,
+        "Flags": "OW, Insert"
       }
     ],
     "SubCommands": null

@@ -58,14 +58,13 @@ namespace Garnet.server
             ScratchBufferManager scratchBufferManager,
             GarnetSessionMetrics sessionMetrics,
             GarnetLatencyMetricsSession LatencyMetrics,
-            CollectionItemBroker itemBroker,
             ILogger logger = null)
         {
             this.sessionMetrics = sessionMetrics;
             this.LatencyMetrics = LatencyMetrics;
             this.scratchBufferManager = scratchBufferManager;
             this.logger = logger;
-            this.itemBroker = itemBroker;
+            this.itemBroker = storeWrapper.itemBroker;
 
             functionsState = storeWrapper.CreateFunctionsState();
 
