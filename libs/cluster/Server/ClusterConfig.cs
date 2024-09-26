@@ -1221,15 +1221,15 @@ namespace Garnet.cluster
         /// <returns>ClusterConfig object with updates.</returns>
         public ClusterConfig HandleConfigEpochCollision(ClusterConfig other)
         {
-            //if incoming config epoch different than local don't need to do anything
-            if (LocalNodeConfigEpoch != other.LocalNodeConfigEpoch)
+            // If incoming config epoch different than local don't need to do anything
+            if (LocalNodeConfigEpoch != other.LocalNodeConfigEpoch || !IsPrimary || !other.IsPrimary)
                 return this;
 
             var remoteNodeId = other.LocalNodeId;
             var localNodeId = LocalNodeId;
 
-            //if localNodeId is smaller then do nothing
-            if (localNodeId.CompareTo(remoteNodeId) <= 0) return this;
+            // If remoteNodeId is lesser than localNodeId do nothing
+            if (remoteNodeId.CompareTo(localNodeId) <= 0) return this;
 
             var newWorkers = new Worker[workers.Length];
             Array.Copy(workers, newWorkers, workers.Length);
