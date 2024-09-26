@@ -39,7 +39,7 @@ namespace Tsavorite.core
                     // Because version is 0 or 1, indexing by [1 - resizeInfo.version] references to the "new version".
                     // Once growth initialization is complete, the state versions are swapped by setting resizeInfo.version = 1 - resizeInfo.version.
                     // Initialize the new version to twice the size of the old version.
-                    store.Kernel.hashTable.Reinitialize(1 - store.Kernel.hashTable.spine.resizeInfo.version, store.Kernel.hashTable.spine.state[store.Kernel.hashTable.spine.resizeInfo.version].size * 2, store.sectorSize);
+                    store.Kernel.hashTable.Reinitialize(1 - store.Kernel.hashTable.spine.resizeInfo.version, store.Kernel.hashTable.spine.state[store.Kernel.hashTable.spine.resizeInfo.version].size * 2, store.sectorSize, store.Kernel.Logger);
 
                     store.Kernel.hashTable.spine.resizeInfo.version = 1 - store.Kernel.hashTable.spine.resizeInfo.version;
                     break;

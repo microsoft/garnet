@@ -144,7 +144,7 @@ namespace Garnet.server
         {
             if (isRunning)
             {
-                respSession.kernelSession.BeginUnsafe();
+                var acquiredEpoch = respSession.kernelSession.EnsureBeginUnsafe();
                 try
                 {
                     keyEntries.UnlockAllKeys(ref respSession.kernelSession);
@@ -152,7 +152,8 @@ namespace Garnet.server
                 }
                 finally
                 {
-                    respSession.kernelSession.EndUnsafe();
+                    if (acquiredEpoch)
+                        respSession.kernelSession.EndUnsafe();
                 }
             }
             this.txnStartHead = 0;

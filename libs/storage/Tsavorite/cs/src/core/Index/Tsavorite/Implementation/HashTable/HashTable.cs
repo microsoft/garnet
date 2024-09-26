@@ -6,6 +6,7 @@ using System;
 using System.Runtime.InteropServices;
 using Microsoft.Extensions.Logging;
 using System.Threading;
+using System.Drawing;
 
 namespace Tsavorite.core
 {
@@ -42,15 +43,17 @@ namespace Tsavorite.core
             spine.resizeInfo = default;
             spine.resizeInfo.status = ResizeOperationStatus.DONE;
             spine.resizeInfo.version = 0;
-            Reinitialize(spine.resizeInfo.version, numBuckets, sector_size);
+            Reinitialize(spine.resizeInfo.version, numBuckets, sector_size, logger);
         }
 
         // This is used by both the ctor and by index resizing.
-        internal unsafe void Reinitialize(int version, long size, int sector_size)
+        internal unsafe void Reinitialize(int version, long size, int sector_size, ILogger logger)
         {
             long size_bytes = size * sizeof(HashBucket);
             long aligned_size_bytes = sector_size +
                 ((size_bytes + (sector_size - 1)) & ~(sector_size - 1));
+
+            logger?.LogTrace("HashTable Initial size:{size}, sizeBytes:{sizeBytes} sectorSize:{sectorSize} alignedSizeBytes:{alignedSizeBytes}", size, size_bytes, sector_size, aligned_size_bytes);
 
             //Over-allocate and align the table to the cacheline
             spine.state[version].size = size;

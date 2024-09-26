@@ -21,7 +21,7 @@ namespace Tsavorite.core
         /// <param name="readCopyOptions"><see cref="ReadCopyOptions"/> for this session; override those specified at TsavoriteKV level, and may be overridden on individual Read operations</param>
         /// <returns>Session instance</returns>
         public ClientSession<TKey, TValue, TInput, TOutput, TContext, TSessionFunctions, TStoreFunctions, TAllocator> NewSession<TInput, TOutput, TContext, TSessionFunctions>(TSessionFunctions functions, string sessionName = null,
-                ReadCopyOptions readCopyOptions = default)
+                ReadCopyOptions readCopyOptions = default, DualRole dualRole = DualRole.None)
             where TSessionFunctions : ISessionFunctions<TKey, TValue, TInput, TOutput, TContext>
         {
             if (functions == null)
@@ -43,7 +43,7 @@ namespace Tsavorite.core
             if (_activeSessions == null)
                 _ = Interlocked.CompareExchange(ref _activeSessions, new Dictionary<int, SessionInfo>(), null);
 
-            var session = new ClientSession<TKey, TValue, TInput, TOutput, TContext, TSessionFunctions, TStoreFunctions, TAllocator>(this, ctx, functions);
+            var session = new ClientSession<TKey, TValue, TInput, TOutput, TContext, TSessionFunctions, TStoreFunctions, TAllocator>(this, ctx, functions, dualRole);
             lock (_activeSessions)
                 _activeSessions.Add(sessionID, new SessionInfo { sessionName = sessionName, session = session, isActive = true });
             return session;

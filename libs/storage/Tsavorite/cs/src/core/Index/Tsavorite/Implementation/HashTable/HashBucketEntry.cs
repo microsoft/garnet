@@ -96,7 +96,7 @@ namespace Tsavorite.core
         {
             var addrRC = ReadCache ? "(rc)" : string.Empty;
             static string bstr(bool value) => value ? "T" : "F";
-            return $"addr {AbsoluteAddress}{addrRC}, tag {Tag}, tent {bstr(Tentative)}";
+            return $"addr {AbsoluteAddress}{addrRC}, tag {Tag}, partId {PartitionId}, tent {bstr(Tentative)}";
         }
     }
 }

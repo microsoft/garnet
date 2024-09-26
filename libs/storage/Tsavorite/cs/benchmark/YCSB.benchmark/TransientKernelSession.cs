@@ -12,9 +12,9 @@ namespace Tsavorite.benchmark
         where TStoreFunctions : IStoreFunctions<TKey, TValue>
         where TAllocator : IAllocator<TKey, TValue, TStoreFunctions>
     {
-        ClientSession<TKey, TValue, TInput, TOutput, TContext, TSessionFunctions, TStoreFunctions, TAllocator> clientSession;
+        ClientSession<TKey, TValue, TInput, TOutput, TContext, TSessionFunctions, TStoreFunctions, TAllocator> _clientSession;
 
-        internal TransientKernelSession(ClientSession<TKey, TValue, TInput, TOutput, TContext, TSessionFunctions, TStoreFunctions, TAllocator> clientSession) => this.clientSession = clientSession;
+        internal TransientKernelSession(ClientSession<TKey, TValue, TInput, TOutput, TContext, TSessionFunctions, TStoreFunctions, TAllocator> clientSession) => _clientSession = clientSession;
 
         /// <inheritdoc/>
         public ulong SharedTxnLockCount { get; set; }
@@ -44,27 +44,37 @@ namespace Tsavorite.benchmark
 
         /// <inheritdoc/>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public void Refresh() => clientSession.Refresh();
+        public void Refresh() => _clientSession.Refresh();
 
         /// <inheritdoc/>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public void HandleImmediateNonPendingRetryStatus(bool refresh) => clientSession.HandleImmediateNonPendingRetryStatus(refresh);
+        public void HandleImmediateNonPendingRetryStatus(bool refresh) => _clientSession.HandleImmediateNonPendingRetryStatus(refresh);
 
         /// <inheritdoc/>
         public void BeginUnsafe()
         {
-            clientSession.Store.Kernel.Epoch.Resume();
-            clientSession.DoThreadStateMachineStep();
+            _clientSession.Store.Kernel.Epoch.Resume();
+            _clientSession.DoThreadStateMachineStep();
+        }
+
+        /// <inheritdoc/>
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        public bool EnsureBeginUnsafe()
+        {
+            if (IsEpochAcquired)
+                return false;
+            BeginUnsafe();
+            return true;
         }
 
         /// <inheritdoc/>
         public void EndUnsafe()
         {
-            Debug.Assert(clientSession.Store.Kernel.Epoch.ThisInstanceProtected());
-            clientSession.Store.Kernel.Epoch.Suspend();
+            Debug.Assert(_clientSession.Store.Kernel.Epoch.ThisInstanceProtected());
+            _clientSession.Store.Kernel.Epoch.Suspend();
         }
 
         /// <inheritdoc/>
-        public bool IsEpochAcquired() => clientSession.Store.Kernel.Epoch.ThisInstanceProtected();
+        public bool IsEpochAcquired => _clientSession.Store.Kernel.Epoch.ThisInstanceProtected();
     }
 }

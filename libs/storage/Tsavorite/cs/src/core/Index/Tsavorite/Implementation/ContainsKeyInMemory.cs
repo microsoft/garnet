@@ -16,7 +16,7 @@ namespace Tsavorite.core
         {
             OperationStackContext<TKey, TValue, TStoreFunctions, TAllocator> stackCtx = new(storeFunctions.GetKeyHashCode64(ref key), partitionId);
 
-            if (sessionFunctions.ExecutionCtx.phase == Phase.IN_PROGRESS_GROW)
+            if (sessionFunctions.ExecutionCtx.phase == Phase.IN_PROGRESS_GROW && !sessionFunctions.IsDual)
                 SplitBuckets(stackCtx.hei.hash);
 
             if (Kernel.hashTable.FindTag(ref stackCtx.hei))

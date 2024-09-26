@@ -105,7 +105,8 @@ namespace Tsavorite.core
                 IndexSize = KVSettings<TKey, TValue>.SetIndexSizeFromCacheLines(store.IndexSize),
                 LogDevice = new NullDevice(),
                 ObjectLogDevice = new NullDevice(),
-                MutableFraction = 1
+                MutableFraction = 1,
+                loggerFactory = loggerFactory
             };
 
             tempKv = new TsavoriteKV<TKey, TValue, TStoreFunctions, TAllocator>(tempKVSettings, store.storeFunctions, store.allocatorFactory);

@@ -30,6 +30,7 @@ namespace Tsavorite.core
         readonly LockableUnsafeContext<TKey, TValue, TInput, TOutput, TContext, TSessionFunctions, TStoreFunctions, TAllocator> luContext;
         readonly LockableContext<TKey, TValue, TInput, TOutput, TContext, TSessionFunctions, TStoreFunctions, TAllocator> lContext;
         readonly BasicContext<TKey, TValue, TInput, TOutput, TContext, TSessionFunctions, TStoreFunctions, TAllocator> bContext;
+        readonly DualContext<TKey, TValue, TInput, TOutput, TContext, TSessionFunctions, TStoreFunctions, TAllocator> dualContext;
 
         readonly ILoggerFactory loggerFactory;
         readonly ILogger logger;
@@ -68,12 +69,14 @@ namespace Tsavorite.core
             TsavoriteKV<TKey, TValue, TStoreFunctions, TAllocator> store,
             TsavoriteKV<TKey, TValue, TStoreFunctions, TAllocator>.ExecutionContext<TInput, TOutput, TContext> ctx,
             TSessionFunctions functions,
+            DualRole dualRole,
             ILoggerFactory loggerFactory = null)
         {
             bContext = new(this);
             uContext = new(this);
             lContext = new(this);
             luContext = new(this);
+            dualContext = new(this, dualRole);
 
             this.loggerFactory = loggerFactory;
             logger = loggerFactory?.CreateLogger($"ClientSession-{GetHashCode():X8}");
@@ -120,9 +123,14 @@ namespace Tsavorite.core
         public LockableContext<TKey, TValue, TInput, TOutput, TContext, TSessionFunctions, TStoreFunctions, TAllocator> LockableContext => lContext;
 
         /// <summary>
-        /// Return a session wrapper struct that passes through to client session
+        /// Return a session wrapper struct that does transient locking and epoch safety
         /// </summary>
         public BasicContext<TKey, TValue, TInput, TOutput, TContext, TSessionFunctions, TStoreFunctions, TAllocator> BasicContext => bContext;
+
+        /// <summary>
+        /// Return a session wrapper struct that does handles a Dual Tsavorite configuration in the caller
+        /// </summary>
+        public DualContext<TKey, TValue, TInput, TOutput, TContext, TSessionFunctions, TStoreFunctions, TAllocator> DualContext => dualContext;
 
         #region ITsavoriteContext
 

@@ -74,51 +74,80 @@ namespace Tsavorite.core
                 IsLockedExclusive = HashBucket.IsLatchedExclusive(hei.firstBucket)
             };
 
-        private static int KeyHashComparer<TLockableKey>(TLockableKey key1, TLockableKey key2, long size_mask)
+        private static int KeyHashComparerImpl<TLockableKey>(TLockableKey key1, TLockableKey key2, long size_mask)
             where TLockableKey : ILockableKey
         {
+            // First comparison must be to hash bucket, because that ensures the non-deadlock ordering.
             var idx1 = GetBucketIndex(key1.KeyHash, size_mask);
             var idx2 = GetBucketIndex(key2.KeyHash, size_mask);
-            return (idx1 != idx2) ? idx1.CompareTo(idx2) : ((byte)key1.LockType).CompareTo((byte)key2.LockType);
+            if (idx1 != idx2)
+                return idx1.CompareTo(idx2);
+
+            // The partition does not figure in hash ordering because all partitions in the bucket must be part of the same non-deadlock ordering.
+            // Therefore we compare only hashbucket and lock type. Note that LockType.Exclusive sorts before LockType.Shared.
+            return ((byte)key1.LockType).CompareTo((byte)key2.LockType);
         }
 
         /// <inheritdoc/>
         internal int CompareKeyHashes<TLockableKey>(TLockableKey key1, TLockableKey key2)
             where TLockableKey : ILockableKey
-            => KeyHashComparer(key1, key2, spine.state[spine.resizeInfo.version].size_mask);
+            => KeyHashComparerImpl(key1, key2, spine.state[spine.resizeInfo.version].size_mask);
 
         /// <inheritdoc/>
         internal int CompareKeyHashes<TLockableKey>(ref TLockableKey key1, ref TLockableKey key2)
             where TLockableKey : ILockableKey
-            => KeyHashComparer(key1, key2, spine.state[spine.resizeInfo.version].size_mask);
+            => KeyHashComparerImpl(key1, key2, spine.state[spine.resizeInfo.version].size_mask);
 
         /// <inheritdoc/>
         internal void SortKeyHashes<TLockableKey>(TLockableKey[] keys)
             where TLockableKey : ILockableKey
-            => Array.Sort(keys, new KeyComparer<TLockableKey>(spine.state[spine.resizeInfo.version].size_mask));
+            => Array.Sort(keys, new KeyHashComparer<TLockableKey>(spine.state[spine.resizeInfo.version].size_mask));
 
         /// <inheritdoc/>
         internal void SortKeyHashes<TLockableKey>(TLockableKey[] keys, int start, int count)
             where TLockableKey : ILockableKey
-            => Array.Sort(keys, start, count, new KeyComparer<TLockableKey>(spine.state[spine.resizeInfo.version].size_mask));
+            => Array.Sort(keys, start, count, new KeyHashComparer<TLockableKey>(spine.state[spine.resizeInfo.version].size_mask));
 
         /// <summary>
-        /// Need this struct because the Comparison{T} form of Array.Sort is not available with start and length arguments.
+        /// Compares keys in the bucket, without considering partitionId to ensure non-deadlock ordering.
         /// </summary>
-        struct KeyComparer<TLockableKey> : IComparer<TLockableKey>
+        /// <remarks>
+        /// Need this struct because the Comparison{T} form of Array.Sort is not available with start and length arguments.
+        /// </remarks>
+        struct KeyHashComparer<TLockableKey> : IComparer<TLockableKey>
             where TLockableKey : ILockableKey
         {
             readonly long size_mask;
 
-            internal KeyComparer(long s) => size_mask = s;
+            internal KeyHashComparer(long s) => size_mask = s;
 
-            public int Compare(TLockableKey key1, TLockableKey key2)
+            public readonly int Compare(TLockableKey key1, TLockableKey key2)
+            {
+                // This ignores partitionId, per comments in KeyHashComparer
+                return KeyHashComparerImpl(key1, key2, size_mask);
+            }
+        }
+
+        /// <summary>
+        /// Compares keys within the same partition.
+        /// </summary>
+        /// <remarks>
+        /// Need this struct because the Comparison{T} form of Array.Sort is not available with start and length arguments.
+        /// </remarks>
+        struct KeyPartitionAndHashComparer<TLockableKey> : IComparer<TLockableKey>
+            where TLockableKey : ILockableKey
+        {
+            readonly long size_mask;
+
+            internal KeyPartitionAndHashComparer(long s) => size_mask = s;
+
+            public readonly int Compare(TLockableKey key1, TLockableKey key2)
             {
                 // This sorts by partitionId, then calls Tsavorite to sort by lock code and then by lockType.
                 var cmp = key1.PartitionId.CompareTo(key2.PartitionId);
                 if (cmp != 0)
                     return cmp;
-                return KeyHashComparer(key1, key2, size_mask);
+                return KeyHashComparerImpl(key1, key2, size_mask);
             }
         }
 

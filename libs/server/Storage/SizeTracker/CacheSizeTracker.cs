@@ -90,7 +90,7 @@ namespace Garnet.server
 
         /// <summary>
         /// Calculates target size for both the main cache and read cache.
-        /// Target size will be checked against the total size of the log pages and heap memory size.
+        /// Target size will be checked against the total size of the log pages and heap memory size. Index is now separated out to Kernel so is not included.
         /// For now, main cache and read cache are allocated equal size. If needed, this could be driven by a configurable setting.
         /// </summary>
         /// <param name="newTargetSize">Target size</param>

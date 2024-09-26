@@ -55,7 +55,9 @@ namespace Tsavorite.core
             tag = (ushort)((ulong)this.hash >> HashBucketEntry.kHashTagShift);
         }
 
-        internal void Reset()
+        internal void Reset() => Reset(partitionId);
+
+        internal void Reset(ushort partitionId)
         {
             var lockState = transientLockState;
             this = new(hash, partitionId);
@@ -178,7 +180,7 @@ namespace Tsavorite.core
             var currAddrRC = IsCurrentReadCache ? isRC : string.Empty;
             var isNotCurr = Address == CurrentAddress ? string.Empty : "*";
 
-            var result = $"addr {AbsoluteAddress}{addrRC}, currAddr {AbsoluteCurrentAddress}{currAddrRC}{isNotCurr}, hash {hashStr}, tag {tag}, slot {slot}, transientLocks {TransientLockStateString()},";
+            var result = $"addr {AbsoluteAddress}{addrRC}, currAddr {AbsoluteCurrentAddress}{currAddrRC}{isNotCurr}, hash {hashStr}, tag {tag}, slot {slot}, partId {partitionId}, transientLocks {TransientLockStateString()},";
             result += $" Bkt1 [index {bucketIndex}, {HashBucket.ToString(firstBucket)}]";
             return result;
         }

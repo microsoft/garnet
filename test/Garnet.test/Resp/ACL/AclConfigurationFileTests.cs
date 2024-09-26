@@ -289,12 +289,42 @@ namespace Garnet.test.Resp.ACL
         [Test]
         public void BadInputMalformedStatement()
         {
-            // Create an empty input file
-            var configurationFile = Path.Join(TestUtils.MethodTestDir, "users.acl");
-            File.WriteAllText(configurationFile, "user test on >password123 +@admin\r\nuser testB badinput on >passw0rd >password +@admin ");
+            // Test badinput
+            {
+                var configurationFile = Path.Join(TestUtils.MethodTestDir, "users.acl");
+                File.WriteAllText(configurationFile, "user test on >password123 +@admin\r\nuser testB badinput on >passw0rd >password +@admin ");
 
-            // Ensure Garnet starts up and just ignores the malformed statement
-            Assert.Throws<ACLException>(() => TestUtils.CreateGarnetServer(TestUtils.MethodTestDir, useAcl: true, aclFile: configurationFile));
+                // Ensure Garnet starts up and just ignores the malformed statement
+                Assert.Throws<ACLException>(() => TestUtils.CreateGarnetServer(TestUtils.MethodTestDir, useAcl: true, aclFile: configurationFile));
+            }
+
+            // Test numeric RespCommand rejected
+            //{
+            //    var configurationFile = Path.Join(TestUtils.MethodTestDir, "users2.acl");
+            //    File.WriteAllText(configurationFile, "user test on >password123 +1");
+
+            //    // Ensure Garnet starts up and just ignores the malformed statement
+            //    Assert.Throws<ACLException>(() => TestUtils.CreateGarnetServer(TestUtils.MethodTestDir, useAcl: true, aclFile: configurationFile));
+            //}
+
+            // Test None rejected
+            {
+                var configurationFile = Path.Join(TestUtils.MethodTestDir, "users3.acl");
+                File.WriteAllText(configurationFile, "user test on >password123 +none");
+
+                // Ensure Garnet starts up and just ignores the malformed statement
+                Assert.Throws<ACLException>(() => TestUtils.CreateGarnetServer(TestUtils.MethodTestDir, useAcl: true, aclFile: configurationFile));
+            }
+
+
+            // Test Invalid rejected
+            {
+                var configurationFile = Path.Join(TestUtils.MethodTestDir, "users4.acl");
+                File.WriteAllText(configurationFile, "user test on >password123 +invalid");
+
+                // Ensure Garnet starts up and just ignores the malformed statement
+                Assert.Throws<ACLException>(() => TestUtils.CreateGarnetServer(TestUtils.MethodTestDir, useAcl: true, aclFile: configurationFile));
+            }
         }
 
         [Test]

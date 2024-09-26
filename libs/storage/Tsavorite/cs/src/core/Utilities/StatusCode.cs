@@ -60,16 +60,18 @@ namespace Tsavorite.core
         Canceled = 0x02,
 
         /// <summary>
+        /// An attempt to lock was not successful
+        /// </summary>
+        LockFailed = 0x03,
+
+        // Anything added above here mustg be added to StatusCode above MAX_MAP_TO_COMPLETED_STATUSCODE
+
+        /// <summary>
         /// The Read or RMW operation went pending for I/O. This is not combined with advanced enum values; however, the application should
         /// use this to issue CompletePending operations, and then can apply knowledge of this to the advanced enum values to know whether,
         /// for example, a <see cref="CopyUpdatedRecord"/> was a copy of a record from the ReadOnly in-memory region or from Storage.
         /// </summary>
-        Pending = 0x03,
-
-        /// <summary>
-        /// An attempt to lock was not successful
-        /// </summary>
-        LockFailed = 0x04,
+        Pending = 0x04,
 
         /// <summary>
         /// An error occurred. This is not combined with advanced enum values.

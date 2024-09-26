@@ -12,10 +12,9 @@ namespace Tsavorite.test
         where TStoreFunctions : IStoreFunctions<TKey, TValue>
         where TAllocator : IAllocator<TKey, TValue, TStoreFunctions>
     {
-        readonly ClientSession<TKey, TValue, TInput, TOutput, TContext, TSessionFunctions, TStoreFunctions, TAllocator> clientSession;
+        readonly ClientSession<TKey, TValue, TInput, TOutput, TContext, TSessionFunctions, TStoreFunctions, TAllocator> _clientSession;
 
-        internal TestTransactionalKernelSession(ClientSession<TKey, TValue, TInput, TOutput, TContext, TSessionFunctions, TStoreFunctions, TAllocator> clientSession) 
-            => this.clientSession = clientSession;
+        internal TestTransactionalKernelSession(ClientSession<TKey, TValue, TInput, TOutput, TContext, TSessionFunctions, TStoreFunctions, TAllocator> clientSession) => _clientSession = clientSession;
 
         /// <inheritdoc/>
         public ulong SharedTxnLockCount { get; set; }
@@ -36,7 +35,7 @@ namespace Tsavorite.test
             isTxnStarted = true;
 
             // These must use session to be aware of per-session SystemState.
-            clientSession.BeginTransaction();
+            _clientSession.BeginTransaction();
         }
 
         /// <inheritdoc/>
@@ -48,7 +47,7 @@ namespace Tsavorite.test
             if (TotalTxnLockCount > 0)
                 throw new TsavoriteException($"EndTransaction called with locks held: {SharedTxnLockCount} shared locks, {ExclusiveTxnLockCount} exclusive locks");
 
-            clientSession.EndTransaction();
+            _clientSession.EndTransaction();
             isTxnStarted = false;
         }
 
@@ -77,27 +76,37 @@ namespace Tsavorite.test
 
         /// <inheritdoc/>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public void Refresh() => clientSession.Refresh();
+        public void Refresh() => _clientSession.Refresh();
 
         /// <inheritdoc/>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public void HandleImmediateNonPendingRetryStatus(bool refresh) => clientSession.HandleImmediateNonPendingRetryStatus(refresh);
+        public void HandleImmediateNonPendingRetryStatus(bool refresh) => _clientSession.HandleImmediateNonPendingRetryStatus(refresh);
 
         /// <inheritdoc/>
         public void BeginUnsafe()
         {
-            clientSession.Store.Kernel.Epoch.Resume();
-            clientSession.DoThreadStateMachineStep();
+            _clientSession.Store.Kernel.Epoch.Resume();
+            _clientSession.DoThreadStateMachineStep();
+        }
+
+        /// <inheritdoc/>
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        public bool EnsureBeginUnsafe()
+        {
+            if (IsEpochAcquired)
+                return false;
+            BeginUnsafe();
+            return true;
         }
 
         /// <inheritdoc/>
         public void EndUnsafe()
         {
-            Debug.Assert(clientSession.Store.Kernel.Epoch.ThisInstanceProtected());
-            clientSession.Store.Kernel.Epoch.Suspend();
+            Debug.Assert(_clientSession.Store.Kernel.Epoch.ThisInstanceProtected());
+            _clientSession.Store.Kernel.Epoch.Suspend();
         }
 
         /// <inheritdoc/>
-        public bool IsEpochAcquired() => clientSession.Store.Kernel.Epoch.ThisInstanceProtected();
+        public bool IsEpochAcquired => _clientSession.Store.Kernel.Epoch.ThisInstanceProtected();
     }
 }

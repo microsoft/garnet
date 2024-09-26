@@ -16,91 +16,91 @@ namespace Tsavorite.core
         where TStoreFunctions : IStoreFunctions<TKey, TValue>
         where TAllocator : IAllocator<TKey, TValue, TStoreFunctions>
     {
-        readonly ClientSession<TKey, TValue, TInput, TOutput, TContext, TSessionFunctions, TStoreFunctions, TAllocator> clientSession;
+        readonly BasicKernelSession<TKey, TValue, TInput, TOutput, TContext, TSessionFunctions, TStoreFunctions, TAllocator> kernelSession;
         readonly SessionFunctionsWrapper<TKey, TValue, TInput, TOutput, TContext, TSessionFunctions, TransactionalSessionLocker, TStoreFunctions, TAllocator> sessionFunctions;
 
         /// <inheritdoc/>
-        public bool IsNull => clientSession is null;
+        public bool IsNull => kernelSession.ClientSession is null;
 
         internal LockableContext(ClientSession<TKey, TValue, TInput, TOutput, TContext, TSessionFunctions, TStoreFunctions, TAllocator> clientSession)
         {
-            this.clientSession = clientSession;
-            sessionFunctions = new(clientSession);
+            kernelSession = new(clientSession);
+            sessionFunctions = new(clientSession, new TransactionalSessionLocker());
         }
 
         /// <inheritdoc/>
-        public void BeginTransaction() => clientSession.BeginTransaction();
+        public void BeginTransaction() => kernelSession.ClientSession.BeginTransaction();
 
         /// <inheritdoc/>
-        public void EndTransaction() => clientSession.EndTransaction();
+        public void EndTransaction() => kernelSession.ClientSession.EndTransaction();
 
         /// <summary>
         /// The id of the current Tsavorite Session
         /// </summary>
-        public int SessionID { get { return clientSession.ExecutionCtx.sessionID; } }
+        public int SessionID { get { return kernelSession.ClientSession.ExecutionCtx.sessionID; } }
 
         #region ITsavoriteContext
 
         /// <inheritdoc/>
-        public ClientSession<TKey, TValue, TInput, TOutput, TContext, TSessionFunctions, TStoreFunctions, TAllocator> Session => clientSession;
+        public ClientSession<TKey, TValue, TInput, TOutput, TContext, TSessionFunctions, TStoreFunctions, TAllocator> Session => kernelSession.ClientSession;
 
         /// <inheritdoc/>
-        public long GetKeyHash(TKey key) => clientSession.Store.GetKeyHash(ref key);
+        public long GetKeyHash(TKey key) => kernelSession.ClientSession.Store.GetKeyHash(ref key);
 
         /// <inheritdoc/>
-        public long GetKeyHash(ref TKey key) => clientSession.Store.GetKeyHash(ref key);
+        public long GetKeyHash(ref TKey key) => kernelSession.ClientSession.Store.GetKeyHash(ref key);
 
         /// <inheritdoc/>
         public bool CompletePending(bool wait = false, bool spinWaitForCommit = false)
         {
-            Debug.Assert(!clientSession.Store.Kernel.Epoch.ThisInstanceProtected());
-            clientSession.UnsafeResumeThread();
+            Debug.Assert(!kernelSession.ClientSession.Store.Kernel.Epoch.ThisInstanceProtected());
+            kernelSession.ClientSession.UnsafeResumeThread();
             try
             {
-                return clientSession.UnsafeCompletePending(sessionFunctions, false, wait, spinWaitForCommit);
+                return kernelSession.ClientSession.UnsafeCompletePending(sessionFunctions, false, wait, spinWaitForCommit);
             }
             finally
             {
-                clientSession.UnsafeSuspendThread();
+                kernelSession.ClientSession.UnsafeSuspendThread();
             }
         }
 
         /// <inheritdoc/>
         public bool CompletePendingWithOutputs(out CompletedOutputIterator<TKey, TValue, TInput, TOutput, TContext> completedOutputs, bool wait = false, bool spinWaitForCommit = false)
         {
-            Debug.Assert(!clientSession.Store.Kernel.Epoch.ThisInstanceProtected());
-            clientSession.UnsafeResumeThread();
+            Debug.Assert(!kernelSession.ClientSession.Store.Kernel.Epoch.ThisInstanceProtected());
+            kernelSession.ClientSession.UnsafeResumeThread();
             try
             {
-                return clientSession.UnsafeCompletePendingWithOutputs(sessionFunctions, out completedOutputs, wait, spinWaitForCommit);
+                return kernelSession.ClientSession.UnsafeCompletePendingWithOutputs(sessionFunctions, out completedOutputs, wait, spinWaitForCommit);
             }
             finally
             {
-                clientSession.UnsafeSuspendThread();
+                kernelSession.ClientSession.UnsafeSuspendThread();
             }
         }
 
         /// <inheritdoc/>
         public ValueTask CompletePendingAsync(bool waitForCommit = false, CancellationToken token = default)
-            => clientSession.CompletePendingAsync(sessionFunctions, waitForCommit, token);
+            => kernelSession.ClientSession.CompletePendingAsync(sessionFunctions, waitForCommit, token);
 
         /// <inheritdoc/>
         public ValueTask<CompletedOutputIterator<TKey, TValue, TInput, TOutput, TContext>> CompletePendingWithOutputsAsync(bool waitForCommit = false, CancellationToken token = default)
-            => clientSession.CompletePendingWithOutputsAsync(sessionFunctions, waitForCommit, token);
+            => kernelSession.ClientSession.CompletePendingWithOutputsAsync(sessionFunctions, waitForCommit, token);
 
         /// <inheritdoc/>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public Status Read(ref TKey key, ref TInput input, ref TOutput output, TContext userContext = default)
         {
-            Debug.Assert(!clientSession.Store.Kernel.Epoch.ThisInstanceProtected());
-            clientSession.UnsafeResumeThread();
+            Debug.Assert(!kernelSession.ClientSession.Store.Kernel.Epoch.ThisInstanceProtected());
+            kernelSession.ClientSession.UnsafeResumeThread();
             try
             {
-                return clientSession.Store.ContextRead(ref key, ref input, ref output, userContext, sessionFunctions);
+                return kernelSession.ClientSession.Store.ContextRead(ref key, ref input, ref output, userContext, sessionFunctions);
             }
             finally
             {
-                clientSession.UnsafeSuspendThread();
+                kernelSession.ClientSession.UnsafeSuspendThread();
             }
         }
 
@@ -181,15 +181,15 @@ namespace Tsavorite.core
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public Status Read(ref TKey key, ref TInput input, ref TOutput output, ref ReadOptions readOptions, out RecordMetadata recordMetadata, TContext userContext = default)
         {
-            Debug.Assert(!clientSession.Store.Kernel.Epoch.ThisInstanceProtected());
-            clientSession.UnsafeResumeThread();
+            Debug.Assert(!kernelSession.ClientSession.Store.Kernel.Epoch.ThisInstanceProtected());
+            kernelSession.ClientSession.UnsafeResumeThread();
             try
             {
-                return clientSession.Store.ContextRead(ref key, ref input, ref output, ref readOptions, out recordMetadata, userContext, sessionFunctions);
+                return kernelSession.ClientSession.Store.ContextRead(ref key, ref input, ref output, ref readOptions, out recordMetadata, userContext, sessionFunctions);
             }
             finally
             {
-                clientSession.UnsafeSuspendThread();
+                kernelSession.ClientSession.UnsafeSuspendThread();
             }
         }
 
@@ -197,15 +197,15 @@ namespace Tsavorite.core
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public Status ReadAtAddress(long address, ref TInput input, ref TOutput output, ref ReadOptions readOptions, out RecordMetadata recordMetadata, TContext userContext = default)
         {
-            Debug.Assert(!clientSession.Store.Kernel.Epoch.ThisInstanceProtected());
-            clientSession.UnsafeResumeThread();
+            Debug.Assert(!kernelSession.ClientSession.Store.Kernel.Epoch.ThisInstanceProtected());
+            kernelSession.ClientSession.UnsafeResumeThread();
             try
             {
-                return clientSession.Store.ContextReadAtAddress(address, ref input, ref output, ref readOptions, out recordMetadata, userContext, sessionFunctions);
+                return kernelSession.ClientSession.Store.ContextReadAtAddress(address, ref input, ref output, ref readOptions, out recordMetadata, userContext, sessionFunctions);
             }
             finally
             {
-                clientSession.UnsafeSuspendThread();
+                kernelSession.ClientSession.UnsafeSuspendThread();
             }
         }
 
@@ -213,15 +213,15 @@ namespace Tsavorite.core
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public Status ReadAtAddress(long address, ref TKey key, ref TInput input, ref TOutput output, ref ReadOptions readOptions, out RecordMetadata recordMetadata, TContext userContext = default)
         {
-            Debug.Assert(!clientSession.Store.Kernel.Epoch.ThisInstanceProtected());
-            clientSession.UnsafeResumeThread();
+            Debug.Assert(!kernelSession.ClientSession.Store.Kernel.Epoch.ThisInstanceProtected());
+            kernelSession.ClientSession.UnsafeResumeThread();
             try
             {
-                return clientSession.Store.ContextReadAtAddress(address, ref key, ref input, ref output, ref readOptions, out recordMetadata, userContext, sessionFunctions);
+                return kernelSession.ClientSession.Store.ContextReadAtAddress(address, ref key, ref input, ref output, ref readOptions, out recordMetadata, userContext, sessionFunctions);
             }
             finally
             {
-                clientSession.UnsafeSuspendThread();
+                kernelSession.ClientSession.UnsafeSuspendThread();
             }
         }
 
@@ -231,7 +231,7 @@ namespace Tsavorite.core
         {
             TInput input = default;
             TOutput output = default;
-            return Upsert(ref key, clientSession.Store.storeFunctions.GetKeyHashCode64(ref key), ref input, ref desiredValue, ref output, userContext);
+            return Upsert(ref key, kernelSession.ClientSession.Store.storeFunctions.GetKeyHashCode64(ref key), ref input, ref desiredValue, ref output, userContext);
         }
 
         /// <inheritdoc/>
@@ -240,58 +240,58 @@ namespace Tsavorite.core
         {
             TInput input = default;
             TOutput output = default;
-            return Upsert(ref key, upsertOptions.KeyHash ?? clientSession.Store.storeFunctions.GetKeyHashCode64(ref key), ref input, ref desiredValue, ref output, userContext);
+            return Upsert(ref key, upsertOptions.KeyHash ?? kernelSession.ClientSession.Store.storeFunctions.GetKeyHashCode64(ref key), ref input, ref desiredValue, ref output, userContext);
         }
 
         /// <inheritdoc/>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public Status Upsert(ref TKey key, ref TInput input, ref TValue desiredValue, ref TOutput output, TContext userContext = default)
-            => Upsert(ref key, clientSession.Store.storeFunctions.GetKeyHashCode64(ref key), ref input, ref desiredValue, ref output, userContext);
+            => Upsert(ref key, kernelSession.ClientSession.Store.storeFunctions.GetKeyHashCode64(ref key), ref input, ref desiredValue, ref output, userContext);
 
         /// <inheritdoc/>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public Status Upsert(ref TKey key, ref TInput input, ref TValue desiredValue, ref TOutput output, ref UpsertOptions upsertOptions, TContext userContext = default)
-            => Upsert(ref key, upsertOptions.KeyHash ?? clientSession.Store.storeFunctions.GetKeyHashCode64(ref key), ref input, ref desiredValue, ref output, userContext);
+            => Upsert(ref key, upsertOptions.KeyHash ?? kernelSession.ClientSession.Store.storeFunctions.GetKeyHashCode64(ref key), ref input, ref desiredValue, ref output, userContext);
 
         /// <inheritdoc/>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         private Status Upsert(ref TKey key, long keyHash, ref TInput input, ref TValue desiredValue, ref TOutput output, TContext userContext = default)
         {
-            Debug.Assert(!clientSession.Store.Kernel.Epoch.ThisInstanceProtected());
-            clientSession.UnsafeResumeThread();
+            Debug.Assert(!kernelSession.ClientSession.Store.Kernel.Epoch.ThisInstanceProtected());
+            kernelSession.ClientSession.UnsafeResumeThread();
             try
             {
-                return clientSession.Store.ContextUpsert(ref key, keyHash, ref input, ref desiredValue, ref output, userContext, sessionFunctions);
+                return kernelSession.ClientSession.Store.ContextUpsert(ref key, keyHash, ref input, ref desiredValue, ref output, userContext, sessionFunctions);
             }
             finally
             {
-                clientSession.UnsafeSuspendThread();
+                kernelSession.ClientSession.UnsafeSuspendThread();
             }
         }
 
         /// <inheritdoc/>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public Status Upsert(ref TKey key, ref TInput input, ref TValue desiredValue, ref TOutput output, out RecordMetadata recordMetadata, TContext userContext = default)
-            => Upsert(ref key, clientSession.Store.storeFunctions.GetKeyHashCode64(ref key), ref input, ref desiredValue, ref output, out recordMetadata, userContext);
+            => Upsert(ref key, kernelSession.ClientSession.Store.storeFunctions.GetKeyHashCode64(ref key), ref input, ref desiredValue, ref output, out recordMetadata, userContext);
 
         /// <inheritdoc/>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public Status Upsert(ref TKey key, ref TInput input, ref TValue desiredValue, ref TOutput output, ref UpsertOptions upsertOptions, out RecordMetadata recordMetadata, TContext userContext = default)
-            => Upsert(ref key, upsertOptions.KeyHash ?? clientSession.Store.storeFunctions.GetKeyHashCode64(ref key), ref input, ref desiredValue, ref output, out recordMetadata, userContext);
+            => Upsert(ref key, upsertOptions.KeyHash ?? kernelSession.ClientSession.Store.storeFunctions.GetKeyHashCode64(ref key), ref input, ref desiredValue, ref output, out recordMetadata, userContext);
 
         /// <inheritdoc/>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         private Status Upsert(ref TKey key, long keyHash, ref TInput input, ref TValue desiredValue, ref TOutput output, out RecordMetadata recordMetadata, TContext userContext = default)
         {
-            Debug.Assert(!clientSession.Store.Kernel.Epoch.ThisInstanceProtected());
-            clientSession.UnsafeResumeThread();
+            Debug.Assert(!kernelSession.ClientSession.Store.Kernel.Epoch.ThisInstanceProtected());
+            kernelSession.ClientSession.UnsafeResumeThread();
             try
             {
-                return clientSession.Store.ContextUpsert(ref key, keyHash, ref input, ref desiredValue, ref output, out recordMetadata, userContext, sessionFunctions);
+                return kernelSession.ClientSession.Store.ContextUpsert(ref key, keyHash, ref input, ref desiredValue, ref output, out recordMetadata, userContext, sessionFunctions);
             }
             finally
             {
-                clientSession.UnsafeSuspendThread();
+                kernelSession.ClientSession.UnsafeSuspendThread();
             }
         }
 
@@ -323,31 +323,31 @@ namespace Tsavorite.core
         /// <inheritdoc/>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public Status RMW(ref TKey key, ref TInput input, ref TOutput output, ref RMWOptions rmwOptions, TContext userContext = default)
-            => RMW(ref key, rmwOptions.KeyHash ?? clientSession.Store.storeFunctions.GetKeyHashCode64(ref key), ref input, ref output, out _, userContext);
+            => RMW(ref key, rmwOptions.KeyHash ?? kernelSession.ClientSession.Store.storeFunctions.GetKeyHashCode64(ref key), ref input, ref output, out _, userContext);
 
         /// <inheritdoc/>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public Status RMW(ref TKey key, ref TInput input, ref TOutput output, out RecordMetadata recordMetadata, TContext userContext = default)
-            => RMW(ref key, clientSession.Store.storeFunctions.GetKeyHashCode64(ref key), ref input, ref output, out recordMetadata, userContext);
+            => RMW(ref key, kernelSession.ClientSession.Store.storeFunctions.GetKeyHashCode64(ref key), ref input, ref output, out recordMetadata, userContext);
 
         /// <inheritdoc/>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public Status RMW(ref TKey key, ref TInput input, ref TOutput output, ref RMWOptions rmwOptions, out RecordMetadata recordMetadata, TContext userContext = default)
-            => RMW(ref key, rmwOptions.KeyHash ?? clientSession.Store.storeFunctions.GetKeyHashCode64(ref key), ref input, ref output, out recordMetadata, userContext);
+            => RMW(ref key, rmwOptions.KeyHash ?? kernelSession.ClientSession.Store.storeFunctions.GetKeyHashCode64(ref key), ref input, ref output, out recordMetadata, userContext);
 
         /// <inheritdoc/>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         private Status RMW(ref TKey key, long keyHash, ref TInput input, ref TOutput output, out RecordMetadata recordMetadata, TContext userContext = default)
         {
-            Debug.Assert(!clientSession.Store.Kernel.Epoch.ThisInstanceProtected());
-            clientSession.UnsafeResumeThread();
+            Debug.Assert(!kernelSession.ClientSession.Store.Kernel.Epoch.ThisInstanceProtected());
+            kernelSession.ClientSession.UnsafeResumeThread();
             try
             {
-                return clientSession.Store.ContextRMW(ref key, keyHash, ref input, ref output, out recordMetadata, userContext, sessionFunctions);
+                return kernelSession.ClientSession.Store.ContextRMW(ref key, keyHash, ref input, ref output, out recordMetadata, userContext, sessionFunctions);
             }
             finally
             {
-                clientSession.UnsafeSuspendThread();
+                kernelSession.ClientSession.UnsafeSuspendThread();
             }
         }
 
@@ -402,27 +402,27 @@ namespace Tsavorite.core
         /// <inheritdoc/>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public Status Delete(ref TKey key, TContext userContext = default)
-            => Delete(ref key, clientSession.Store.storeFunctions.GetKeyHashCode64(ref key), userContext);
+            => Delete(ref key, kernelSession.ClientSession.Store.storeFunctions.GetKeyHashCode64(ref key), userContext);
 
         /// <inheritdoc/>
         /// <inheritdoc/>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public Status Delete(ref TKey key, ref DeleteOptions deleteOptions, TContext userContext = default)
-            => Delete(ref key, deleteOptions.KeyHash ?? clientSession.Store.storeFunctions.GetKeyHashCode64(ref key), userContext);
+            => Delete(ref key, deleteOptions.KeyHash ?? kernelSession.ClientSession.Store.storeFunctions.GetKeyHashCode64(ref key), userContext);
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         private Status Delete(ref TKey key, long keyHash, TContext userContext = default)
         {
-            Debug.Assert(!clientSession.Store.Kernel.Epoch.ThisInstanceProtected());
-            clientSession.UnsafeResumeThread();
+            Debug.Assert(!kernelSession.ClientSession.Store.Kernel.Epoch.ThisInstanceProtected());
+            kernelSession.ClientSession.UnsafeResumeThread();
             try
             {
-                return clientSession.Store.ContextDelete<TInput, TOutput, TContext, SessionFunctionsWrapper<TKey, TValue, TInput, TOutput, TContext, TSessionFunctions, TransactionalSessionLocker, TStoreFunctions, TAllocator>>(
+                return kernelSession.ClientSession.Store.ContextDelete<TInput, TOutput, TContext, SessionFunctionsWrapper<TKey, TValue, TInput, TOutput, TContext, TSessionFunctions, TransactionalSessionLocker, TStoreFunctions, TAllocator>>(
                     ref key, keyHash, userContext, sessionFunctions);
             }
             finally
             {
-                clientSession.UnsafeSuspendThread();
+                kernelSession.ClientSession.UnsafeSuspendThread();
             }
         }
 
@@ -439,15 +439,15 @@ namespace Tsavorite.core
         /// <inheritdoc/>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public void ResetModified(ref TKey key)
-            => clientSession.ResetModified(sessionFunctions, ref key);
+            => kernelSession.ClientSession.ResetModified(sessionFunctions, ref key);
 
         /// <inheritdoc/>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         internal bool IsModified(TKey key)
-            => clientSession.IsModified(sessionFunctions, ref key);
+            => kernelSession.ClientSession.IsModified(sessionFunctions, ref key);
 
         /// <inheritdoc/>
-        public void Refresh() => clientSession.Refresh();
+        public void Refresh() => kernelSession.ClientSession.Refresh();
 
         #endregion ITsavoriteContext
     }

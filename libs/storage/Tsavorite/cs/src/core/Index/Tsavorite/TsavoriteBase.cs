@@ -44,7 +44,7 @@ namespace Tsavorite.core
         /// </summary>
         public void Initialize(long numBuckets, int sectorSize)
         {
-            Kernel = new(numBuckets, sectorSize, logger ?? loggerFactory?.CreateLogger("TsavoriteKV Index Overflow buckets"));
+            Kernel = new(numBuckets, sectorSize, logger ?? loggerFactory?.CreateLogger("TsavoriteKernel"));
         }
     }
 }

@@ -24,10 +24,13 @@ namespace Tsavorite.core
         /// <summary>Register the current thread with the epoch, and step the stores' state machines.</summary>
         void BeginUnsafe();
 
+        /// <summary>If the current thread is not already registered with the epoch, register it, and step the stores' state machines, and return true.</summary>
+        bool EnsureBeginUnsafe();
+
         /// <summary>Unregister the current thread from the epoch.</summary>
         void EndUnsafe();
 
         /// <summary>Whether the current thread is registered with the epoch.</summary>
-        bool IsEpochAcquired();
+        bool IsEpochAcquired { get; }
     }
 }

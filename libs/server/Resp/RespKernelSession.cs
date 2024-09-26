@@ -89,6 +89,7 @@ namespace Garnet.server
         }
 
         /// <inheritdoc/>
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public void BeginUnsafe()
         {
             // We do not track any "acquired" state here; if someone mixes calls between safe and unsafe contexts, they will 
@@ -100,6 +101,7 @@ namespace Garnet.server
         }
 
         // Overload for single-context operation
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public static void BeginUnsafe<TKey, TValue, TInput, TOutput, TContext, TFunctions, TStoreFunctions, TAllocator, TSessionContext>(StorageSession storageSession, TSessionContext context)
             where TSessionContext : ITsavoriteContext<TKey, TValue, TInput, TOutput, TContext, TFunctions, TStoreFunctions, TAllocator>
             where TFunctions : ISessionFunctions<TKey, TValue, TInput, TOutput, TContext>
@@ -114,9 +116,21 @@ namespace Garnet.server
         }
 
         /// <inheritdoc/>
-        public void EndUnsafe() => EndUnsafe(storageSession);
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        public bool EnsureBeginUnsafe()
+        {
+            if (IsEpochAcquired)
+                return false;
+            BeginUnsafe();
+            return true;
+        }
 
         /// <inheritdoc/>
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        public readonly void EndUnsafe() => EndUnsafe(storageSession);
+
+        /// <inheritdoc/>
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public static void EndUnsafe(StorageSession storageSession)
         {
             Debug.Assert(storageSession.TsavoriteKernel.Epoch.ThisInstanceProtected());
@@ -124,6 +138,10 @@ namespace Garnet.server
         }
 
         /// <inheritdoc/>
-        public bool IsEpochAcquired() => storageSession.TsavoriteKernel.Epoch.ThisInstanceProtected();
+        public bool IsEpochAcquired
+        {
+            [MethodImpl(MethodImplOptions.AggressiveInlining)]
+            get { return storageSession.TsavoriteKernel.Epoch.ThisInstanceProtected(); }
+        }
     }
 }

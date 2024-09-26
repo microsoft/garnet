@@ -129,7 +129,7 @@ namespace Tsavorite.core
 
                     // If the entry points to an address that has been truncated, it's free; try to reclaim it by setting its word to 0.
                     hei.entry.word = target_entry_word;
-                    if (hei.entry.Address < BeginAddress && hei.entry.Address != Constants.kTempInvalidAddress)
+                    if (hei.entry.Address < BeginAddress && hei.entry.Address != Constants.kTempInvalidAddress && hei.partitionId == hei.entry.PartitionId)
                     {
                         if (hei.entry.word == Interlocked.CompareExchange(ref hei.bucket->bucket_entries[index], Constants.kInvalidAddress, target_entry_word))
                         {

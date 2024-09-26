@@ -225,7 +225,7 @@ namespace Tsavorite.core
                         break;
                     }
 
-                    // Here, the input data for 'doingCU' is the from the request, so populate the RecordSource copy from that, preserving LowestReadCache*.
+                    // Here, the input data for 'doingCU' is from the request, so populate the RecordSource copy from that, preserving LowestReadCache*.
                     stackCtx.recSrc.LogicalAddress = request.logicalAddress;
                     stackCtx.recSrc.PhysicalAddress = (long)recordPointer;
 

@@ -66,13 +66,28 @@ namespace Tsavorite.test
         }
 
         /// <inheritdoc/>
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        public bool EnsureBeginUnsafe()
+        {
+            if (IsEpochAcquired)
+                return false;
+            BeginUnsafe();
+            return true;
+        }
+
+        /// <inheritdoc/>
         public void EndUnsafe()
         {
             Debug.Assert(clientSession.Store.Kernel.Epoch.ThisInstanceProtected());
             clientSession.Store.Kernel.Epoch.Suspend();
         }
 
+
         /// <inheritdoc/>
-        public bool IsEpochAcquired() => clientSession.Store.Kernel.Epoch.ThisInstanceProtected();
+        public bool IsEpochAcquired
+        {
+            [MethodImpl(MethodImplOptions.AggressiveInlining)]
+            get { return clientSession.Store.Kernel.Epoch.ThisInstanceProtected(); }
+        }
     }
 }

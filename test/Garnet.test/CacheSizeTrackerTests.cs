@@ -25,7 +25,9 @@ namespace Garnet.test
         public void Setup()
         {
             TestUtils.DeleteDirectory(TestUtils.MethodTestDir, wait: true);
-            server = TestUtils.CreateGarnetServer(TestUtils.MethodTestDir, MemorySize: "2k", PageSize: "512", lowMemory: true, objectStoreIndexSize: "1k", objectStoreTotalMemorySize: "8k");
+
+            // ObjectStoreIndexSize is no longer considered as the indexes have been combined into Kernel
+            server = TestUtils.CreateGarnetServer(TestUtils.MethodTestDir, MemorySize: "2k", PageSize: "512", lowMemory: true, objectStoreIndexSize: "1k", objectStoreTotalMemorySize: "6k");
             server.Start();
             objStore = server.Provider.StoreWrapper.objectStore;
             cacheSizeTracker = server.Provider.StoreWrapper.objectStoreSizeTracker;

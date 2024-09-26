@@ -208,7 +208,7 @@ namespace Tsavorite.core
             where TLockableKey : ILockableKey
         {
             kernelSession.CheckTransactionIsStarted();
-            Debug.Assert(kernelSession.IsEpochAcquired(), "Expected Epoch to be acquired for Lock");
+            Debug.Assert(kernelSession.IsEpochAcquired, "Expected Epoch to be acquired for Lock");
 
             while (!DoManualLock(ref kernelSession, keys, start, count))
             {
@@ -253,7 +253,7 @@ namespace Tsavorite.core
             where TLockableKey : ILockableKey
         {
             kernelSession.CheckTransactionIsStarted();
-            Debug.Assert(kernelSession.IsEpochAcquired(), "Expected Epoch to be acquired for TryLock");
+            Debug.Assert(kernelSession.IsEpochAcquired, "Expected Epoch to be acquired for TryLock");
             return DoManualTryLock(ref kernelSession, keys, start, count, timeout, cancellationToken);
         }
 
@@ -277,7 +277,7 @@ namespace Tsavorite.core
             where TLockableKey : ILockableKey
         {
             kernelSession.CheckTransactionIsStarted();
-            Debug.Assert(kernelSession.IsEpochAcquired(), "Expected Epoch to be acquired for TryPromoteLock");
+            Debug.Assert(kernelSession.IsEpochAcquired, "Expected Epoch to be acquired for TryPromoteLock");
             return DoManualTryPromoteLock(ref kernelSession, key, timeout, cancellationToken);
         }
 
@@ -291,7 +291,7 @@ namespace Tsavorite.core
             where TLockableKey : ILockableKey
         {
             kernelSession.CheckTransactionIsStarted();
-            Debug.Assert(kernelSession.IsEpochAcquired(), "Expected Epoch to be acquired for Unlock");
+            Debug.Assert(kernelSession.IsEpochAcquired, "Expected Epoch to be acquired for Unlock");
 
             DoManualUnlock(ref kernelSession, keys, start, start + count - 1);
         }

@@ -13,13 +13,15 @@ namespace Tsavorite.core
         where TAllocator : IAllocator<TKey, TValue, TStoreFunctions>
     {
         private readonly ClientSession<TKey, TValue, TInput, TOutput, TContext, TSessionFunctions, TStoreFunctions, TAllocator> _clientSession;
-        private readonly TSessionLocker _sessionLocker;  // Has no data members
+        internal readonly TSessionLocker _sessionLocker;  // Has no mutable data members
 
-        public SessionFunctionsWrapper(ClientSession<TKey, TValue, TInput, TOutput, TContext, TSessionFunctions, TStoreFunctions, TAllocator> clientSession)
+        public SessionFunctionsWrapper(ClientSession<TKey, TValue, TInput, TOutput, TContext, TSessionFunctions, TStoreFunctions, TAllocator> clientSession, TSessionLocker sessionLocker)
         {
             _clientSession = clientSession;
-            _sessionLocker = new TSessionLocker();
+            _sessionLocker = sessionLocker;
         }
+
+        public bool IsDual => _sessionLocker.DualRole != DualRole.None;
 
         public TsavoriteKV<TKey, TValue, TStoreFunctions, TAllocator> Store => _clientSession.Store;
         public HashBucketLockTable LockTable => _clientSession.Store.LockTable;

@@ -224,7 +224,7 @@ namespace Garnet
 
         private void CreateMainStore(ref TsavoriteKernel kernel, IClusterFactory clusterFactory, string checkpointDir)
         {
-            kvSettings = opts.GetSettings(this.loggerFactory?.CreateLogger("TsavoriteKV [main]"), out logFactory);
+            kvSettings = opts.GetSettings(loggerFactory, out logFactory);
 
             // Run checkpoint on its own thread to control p99
             kvSettings.ThrottleCheckpointFlushDelayMs = opts.CheckpointThrottleFlushDelayMs;

@@ -14,6 +14,8 @@ namespace Tsavorite.core
         bool IsManualLocking { get; }
         TsavoriteKV<TKey, TValue, TStoreFunctions, TAllocator> Store { get; }
 
+        bool IsDual { get; }
+
         #region Reads
         bool SingleReader(ref TKey key, ref TInput input, ref TValue value, ref TOutput dst, ref ReadInfo readInfo);
         bool ConcurrentReader(ref TKey key, ref TInput input, ref TValue value, ref TOutput dst, ref ReadInfo readInfo, ref RecordInfo recordInfo);
