@@ -941,7 +941,8 @@ namespace Garnet.cluster
             newWorkers[workerId].ReplicaOfNodeId = replicaOfNodeId;
             newWorkers[workerId].hostname = hostname;
 
-            var newSlotMap = slotMap;
+            var newSlotMap = new HashSlot[MAX_HASH_SLOT_VALUE];
+            Array.Copy(slotMap, newSlotMap, slotMap.Length);
             if (slots != null)
             {
                 foreach (int slot in slots)
