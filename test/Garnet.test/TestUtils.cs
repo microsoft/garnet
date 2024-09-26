@@ -178,7 +178,8 @@ namespace Garnet.test
             int indexResizeFrequencySecs = 60,
             IAuthenticationSettings authenticationSettings = null,
             bool enableLua = false,
-            ILogger logger = null)
+            ILogger logger = null,
+            IEnumerable<string> loadModulePaths = null)
         {
             if (UseAzureStorage)
                 IgnoreIfNotRunningAzureTests();
@@ -254,6 +255,7 @@ namespace Garnet.test
                 EnableScatterGatherGet = getSG,
                 IndexResizeFrequencySecs = indexResizeFrequencySecs,
                 ThreadPoolMinThreads = threadPoolMinThreads,
+                LoadModuleCS = loadModulePaths
             };
 
             if (!string.IsNullOrEmpty(objectStoreTotalMemorySize))
