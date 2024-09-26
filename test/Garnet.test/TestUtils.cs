@@ -335,7 +335,8 @@ namespace Garnet.test
             string aclFile = null,
             X509CertificateCollection certificates = null,
             ILoggerFactory loggerFactory = null,
-            AadAuthenticationSettings authenticationSettings = null)
+            AadAuthenticationSettings authenticationSettings = null,
+            int metricsSamplingFrequency = 0)
         {
             if (UseAzureStorage)
                 IgnoreIfNotRunningAzureTests();
@@ -374,7 +375,8 @@ namespace Garnet.test
                     aclFile: aclFile,
                     certificates: certificates,
                     logger: loggerFactory?.CreateLogger("GarnetServer"),
-                    aadAuthenticationSettings: authenticationSettings);
+                    aadAuthenticationSettings: authenticationSettings,
+                    metricsSamplingFrequency: metricsSamplingFrequency);
 
                 ClassicAssert.IsNotNull(opts);
                 int iter = 0;
@@ -419,6 +421,7 @@ namespace Garnet.test
             string aclFile = null,
             X509CertificateCollection certificates = null,
             AadAuthenticationSettings aadAuthenticationSettings = null,
+            int metricsSamplingFrequency = 0,
             ILogger logger = null)
         {
             if (UseAzureStorage)
@@ -470,6 +473,7 @@ namespace Garnet.test
                 MemorySize = "1g",
                 GossipDelay = gossipDelay,
                 EnableFastCommit = FastCommit,
+                MetricsSamplingFrequency = metricsSamplingFrequency,
                 TlsOptions = UseTLS ? new GarnetTlsOptions(
                     certFileName: certFile,
                     certPassword: certPassword,
