@@ -7,7 +7,6 @@ using System.Text;
 using System.Threading;
 using System.Threading.Tasks;
 using NUnit.Framework;
-using NUnit.Framework.Legacy;
 using Tsavorite.core;
 
 //** Note - this test is based on TsavoriteLogPubSub sample found in the samples directory.
@@ -115,7 +114,6 @@ namespace Tsavorite.test
             using var iter = logReadOnly.Scan(logReadOnly.BeginAddress, long.MaxValue);
             await foreach (var (result, length, currentAddress, nextAddress) in iter.GetAsyncEnumerable(cancellationToken))
             {
-                iter.CompleteUntil(nextAddress);
             }
         }
 

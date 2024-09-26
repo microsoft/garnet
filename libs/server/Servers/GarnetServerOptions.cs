@@ -94,6 +94,16 @@ namespace Garnet.server
         public string AofPageSize = "4m";
 
         /// <summary>
+        /// AOF replication (safe tail address) refresh frequency in milliseconds. 0 = auto refresh after every enqueue.
+        /// </summary>
+        public int AofReplicationRefreshFrequencyMs = 10;
+
+        /// <summary>
+        /// Subscriber (safe tail address) refresh frequency in milliseconds (for pub-sub). 0 = auto refresh after every enqueue.
+        /// </summary>
+        public int SubscriberRefreshFrequencyMs = 0;
+
+        /// <summary>
         /// Write ahead logging (append-only file) commit issue frequency in milliseconds.
         /// 0 = issue an immediate commit per operation
         /// -1 = manually issue commits using COMMITAOF command (no auto-commit)
@@ -619,7 +629,7 @@ namespace Garnet.server
                 PageSizeBits = AofPageSizeBits(),
                 LogDevice = GetAofDevice(),
                 TryRecoverLatest = false,
-                AutoRefreshSafeTailAddress = true,
+                SafeTailRefreshFrequencyMs = EnableCluster ? AofReplicationRefreshFrequencyMs : -1,
                 FastCommitMode = EnableFastCommit,
                 AutoCommit = CommitFrequencyMs == 0,
                 MutableFraction = 0.9,
@@ -719,9 +729,9 @@ namespace Garnet.server
         /// <returns></returns>
         IDevice GetAofDevice()
         {
-            if (!MainMemoryReplication && UseAofNullDevice)
-                throw new Exception("Cannot use null device for AOF when not using main memory replication");
-            if (MainMemoryReplication && UseAofNullDevice) return new NullDevice();
+            if (UseAofNullDevice && EnableCluster && !MainMemoryReplication)
+                throw new Exception("Cannot use null device for AOF when cluster is enabled and you are not using main memory replication");
+            if (UseAofNullDevice) return new NullDevice();
             else return GetInitializedDeviceFactory(CheckpointDir).Get(new FileDescriptor("AOF", "aof.log"));
         }
 
