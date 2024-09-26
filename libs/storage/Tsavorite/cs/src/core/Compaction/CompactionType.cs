@@ -4,17 +4,17 @@
 namespace Tsavorite.core
 {
     /// <summary>
-    /// Type of log compaction
+    /// Type of lookup to use for record uniqueness checks in log compaction and kv iteration
     /// </summary>
     public enum CompactionType
     {
         /// <summary>
-        /// Scan from untilAddress to read-only address to check for record liveness checking
+        /// Use temporary instance of TsavoriteKV for record liveness checking
         /// </summary>
         Scan,
 
         /// <summary>
-        /// Lookup each record in compaction range, for record liveness checking using hash chain
+        /// Lookup individual records directly in the main TsavoriteKV for liveness checking
         /// </summary>
         Lookup,
     }

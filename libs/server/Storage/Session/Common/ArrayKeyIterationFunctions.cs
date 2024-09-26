@@ -122,12 +122,6 @@ namespace Garnet.server
             => basicContext.Session.Iterate(ref scanFunctions, untilAddress);
 
         /// <summary>
-        /// Iterate the contents of the main store (pull based)
-        /// </summary>
-        internal ITsavoriteScanIterator<SpanByte, SpanByte> IterateMainStore()
-            => basicContext.Session.Iterate();
-
-        /// <summary>
         /// Iterate the contents of the object store
         /// </summary>
         /// <typeparam name="TScanFunctions"></typeparam>
@@ -137,12 +131,6 @@ namespace Garnet.server
         internal bool IterateObjectStore<TScanFunctions>(ref TScanFunctions scanFunctions, long untilAddress = -1)
             where TScanFunctions : IScanIteratorFunctions<byte[], IGarnetObject>
             => objectStoreBasicContext.Session.Iterate(ref scanFunctions, untilAddress);
-
-        /// <summary>
-        /// Iterate the contents of the main store (pull based)
-        /// </summary>
-        internal ITsavoriteScanIterator<byte[], IGarnetObject> IterateObjectStore()
-            => objectStoreBasicContext.Session.Iterate();
 
         /// <summary>
         ///  Get a list of the keys in the store and object store
@@ -209,9 +197,6 @@ namespace Garnet.server
                 }
 
                 public bool SingleReader(ref SpanByte key, ref SpanByte value, RecordMetadata recordMetadata, long numberOfRecords, out CursorRecordResult cursorRecordResult)
-                        => ConcurrentReader(ref key, ref value, recordMetadata, numberOfRecords, out cursorRecordResult);
-
-                public bool ConcurrentReader(ref SpanByte key, ref SpanByte value, RecordMetadata recordMetadata, long numberOfRecords, out CursorRecordResult cursorRecordResult)
                 {
                     if ((patternB != null && !GlobUtils.Match(patternB, patternLength, key.ToPointer(), key.Length, true))
                         || (value.MetadataSize != 0 && MainSessionFunctions.CheckExpiry(ref value)))
@@ -225,10 +210,6 @@ namespace Garnet.server
                     }
                     return true;
                 }
-
-                public bool OnStart(long beginAddress, long endAddress) => true;
-                public void OnStop(bool completed, long numberOfRecords) { }
-                public void OnException(Exception exception, long numberOfRecords) { }
             }
 
             internal sealed class ObjectStoreGetDBKeys : IScanIteratorFunctions<byte[], IGarnetObject>
@@ -247,9 +228,6 @@ namespace Garnet.server
                 }
 
                 public bool SingleReader(ref byte[] key, ref IGarnetObject value, RecordMetadata recordMetadata, long numberOfRecords, out CursorRecordResult cursorRecordResult)
-                    => ConcurrentReader(ref key, ref value, recordMetadata, numberOfRecords, out cursorRecordResult);
-
-                public bool ConcurrentReader(ref byte[] key, ref IGarnetObject value, RecordMetadata recordMetadata, long numberOfRecords, out CursorRecordResult cursorRecordResult)
                 {
                     if (value.Expiration > 0 && ObjectSessionFunctions.CheckExpiry(value))
                     {
@@ -279,10 +257,6 @@ namespace Garnet.server
                     cursorRecordResult = CursorRecordResult.Accept;
                     return true;
                 }
-
-                public bool OnStart(long beginAddress, long endAddress) => true;
-                public void OnStop(bool completed, long numberOfRecords) { }
-                public void OnException(Exception exception, long numberOfRecords) { }
             }
 
             internal sealed class MainStoreGetDBSize : IScanIteratorFunctions<SpanByte, SpanByte>
@@ -303,11 +277,6 @@ namespace Garnet.server
                     }
                     return true;
                 }
-                public bool ConcurrentReader(ref SpanByte key, ref SpanByte value, RecordMetadata recordMetadata, long numberOfRecords, out CursorRecordResult cursorRecordResult)
-                    => SingleReader(ref key, ref value, recordMetadata, numberOfRecords, out cursorRecordResult);
-                public bool OnStart(long beginAddress, long endAddress) => true;
-                public void OnStop(bool completed, long numberOfRecords) { }
-                public void OnException(Exception exception, long numberOfRecords) { }
             }
 
             internal sealed class ObjectStoreGetDBSize : IScanIteratorFunctions<byte[], IGarnetObject>
@@ -328,11 +297,6 @@ namespace Garnet.server
                     }
                     return true;
                 }
-                public bool ConcurrentReader(ref byte[] key, ref IGarnetObject value, RecordMetadata recordMetadata, long numberOfRecords, out CursorRecordResult cursorRecordResult)
-                    => SingleReader(ref key, ref value, recordMetadata, numberOfRecords, out cursorRecordResult);
-                public bool OnStart(long beginAddress, long endAddress) => true;
-                public void OnStop(bool completed, long numberOfRecords) { }
-                public void OnException(Exception exception, long numberOfRecords) { }
             }
         }
     }

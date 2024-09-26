@@ -18,6 +18,9 @@ namespace Tsavorite.core
         CopyToReadCache,
 
         /// <summary>The user called Compact()</summary>
-        Compaction
+        Compaction,
+
+        /// <summary>The user called Iterate()</summary>
+        Iteration
     }
 }

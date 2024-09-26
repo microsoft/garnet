@@ -12,7 +12,7 @@ namespace Tsavorite.core
     /// <summary>
     /// Scan iterator for hybrid log
     /// </summary>
-    public sealed class SpanByteScanIterator<TStoreFunctions> : ScanIteratorBase, ITsavoriteScanIterator<SpanByte, SpanByte>, IPushScanIterator<SpanByte>
+    public sealed class SpanByteScanIterator<TStoreFunctions> : ScanIteratorBase, IRecordScanner<SpanByte, SpanByte>, IPushScanIterator<SpanByte>
         where TStoreFunctions : IStoreFunctions<SpanByte, SpanByte>
     {
         private readonly TsavoriteKV<SpanByte, SpanByte, TStoreFunctions, SpanByteAllocator<TStoreFunctions>> store;

@@ -349,17 +349,9 @@ namespace Garnet.server
             => storageSession.IterateMainStore(ref scanFunctions, untilAddress);
 
         /// <inheritdoc />
-        public ITsavoriteScanIterator<SpanByte, SpanByte> IterateMainStore()
-            => storageSession.IterateMainStore();
-
-        /// <inheritdoc />
         public bool IterateObjectStore<TScanFunctions>(ref TScanFunctions scanFunctions, long untilAddress = -1)
             where TScanFunctions : IScanIteratorFunctions<byte[], IGarnetObject>
             => storageSession.IterateObjectStore(ref scanFunctions, untilAddress);
-
-        /// <inheritdoc />
-        public ITsavoriteScanIterator<byte[], IGarnetObject> IterateObjectStore()
-            => storageSession.IterateObjectStore();
 
         #endregion
 

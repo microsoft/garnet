@@ -78,7 +78,7 @@ namespace Tsavorite.core
                                 // now below HeadAddress and there is at least one record below HeadAddress but above InitialLatestLogicalAddress. Reissue the Read(),
                                 // using the LogicalAddress we just found as minAddress. We will either find an in-memory version of the key that was added after the
                                 // TryFindRecordInMemory we just did, or do IO and find the record we just found or one above it. Read() updates InitialLatestLogicalAddress,
-                                // so if we do IO, the next time we come to CompletePendingRead we will only search for a newer version of the key in any records added
+                                // so if we do IO, the next time we come to ContinuePendingRead we will only search for a newer version of the key in any records added
                                 // after our just-completed TryFindRecordInMemory.
                                 if (stackCtx.recSrc.LogicalAddress > pendingContext.InitialLatestLogicalAddress
                                     && (!pendingContext.HasMinAddress || stackCtx.recSrc.LogicalAddress >= pendingContext.minAddress))
@@ -342,9 +342,52 @@ namespace Tsavorite.core
 
             // Prepare to push to caller's iterator functions. Use data from pendingContext, not request; we're only made it to this line if the key was not found,
             // and thus the request was not populated. The new minAddress should be the highest logicalAddress we previously saw, because we need to make sure the
-            // record was not added to the log after we initialized the pending IO.
-            hlogBase.ConditionalScanPush<TInput, TOutput, TContext, TSessionFunctionsWrapper>(sessionFunctions, pendingContext.scanCursorState, pendingContext.recordInfo, ref pendingContext.key.Get(), ref pendingContext.value.Get(),
-                minAddress: pendingContext.InitialLatestLogicalAddress + 1);
+            // record was not added to the log after we initialized the pending IO. Note we cannot use TScanFunctions here because we can't pass it through Pending.
+            hlogBase.ConditionalScanPush<TInput, TOutput, TContext, TSessionFunctionsWrapper, IScanIteratorFunctions<TKey, TValue>>(sessionFunctions, pendingContext.scanCursorState, 
+                    pendingContext.scanFunctions, pendingContext.recordInfo, ref pendingContext.key.Get(), ref pendingContext.value.Get(),
+                    minAddress: pendingContext.InitialLatestLogicalAddress + 1);
+
+            // ConditionalScanPush has already called HandleOperationStatus, so return SUCCESS here.
+            return OperationStatus.SUCCESS;
+        }
+
+        /// <summary>
+        /// Continue a pending ITERATION_LIVENESS_CHECK operation with the record retrieved from disk, checking whether a record for this key was
+        /// added since we went pending; in that case this operation "fails" as it finds the record.
+        /// </summary>
+        /// <param name="request">record read from the disk.</param>
+        /// <param name="pendingContext">internal context for the pending RMW operation</param>
+        /// <param name="sessionFunctions">Callback functions.</param>
+        /// <returns>
+        /// <list type="table">
+        ///     <listheader>
+        ///     <term>Value</term>
+        ///     <term>Description</term>
+        ///     </listheader>
+        ///     <item>
+        ///     <term>SUCCESS</term>
+        ///     <term>The value has been successfully inserted, or was found above the specified address.</term>
+        ///     </item>
+        ///     <item>
+        ///     <term>RECORD_ON_DISK</term>
+        ///     <term>We need to issue an IO to continue.</term>
+        ///     </item>
+        /// </list>
+        /// </returns>
+        internal OperationStatus ContinuePendingIterationLivenessCheck<TInput, TOutput, TContext, TSessionFunctionsWrapper>(AsyncIOContext<TKey, TValue> request,
+                                                ref PendingContext<TInput, TOutput, TContext> pendingContext, TSessionFunctionsWrapper sessionFunctions)
+            where TSessionFunctionsWrapper : ISessionFunctionsWrapper<TKey, TValue, TInput, TOutput, TContext, TStoreFunctions, TAllocator>
+        {
+            // If the key was found at or above minAddress, do nothing; we'll push it when we get to it. If we flagged the iteration to stop, do nothing.
+            if (request.logicalAddress >= pendingContext.minAddress || pendingContext.scanCursorState.stop)
+                return OperationStatus.SUCCESS;
+
+            // Prepare to push to caller's iterator functions. Use data from pendingContext, not request; we're only made it to this line if the key was not found,
+            // and thus the request was not populated. The new minAddress should be the highest logicalAddress we previously saw, because we need to make sure the
+            // record was not added to the log after we initialized the pending IO. Note we cannot use TScanFunctions here because we can't pass it through Pending.
+            hlogBase.ConditionalScanPush<TInput, TOutput, TContext, TSessionFunctionsWrapper, IScanIteratorFunctions<TKey, TValue>>(sessionFunctions, pendingContext.scanCursorState, 
+                    pendingContext.scanFunctions, pendingContext.recordInfo, ref pendingContext.key.Get(), ref pendingContext.value.Get(),
+                    minAddress: pendingContext.InitialLatestLogicalAddress + 1);
 
             // ConditionalScanPush has already called HandleOperationStatus, so return SUCCESS here.
             return OperationStatus.SUCCESS;

@@ -158,6 +158,7 @@ namespace Tsavorite.core
                 OperationType.RMW => ContinuePendingRMW(request, ref pendingContext, sessionFunctions),
                 OperationType.CONDITIONAL_INSERT => ContinuePendingConditionalCopyToTail(request, ref pendingContext, sessionFunctions),
                 OperationType.CONDITIONAL_SCAN_PUSH => ContinuePendingConditionalScanPush(request, ref pendingContext, sessionFunctions),
+                OperationType.ITERATION_LIVENESS_CHECK => ContinuePendingIterationLivenessCheck(request, ref pendingContext, sessionFunctions),
                 _ => throw new TsavoriteException("Unexpected OperationType")
             };
 

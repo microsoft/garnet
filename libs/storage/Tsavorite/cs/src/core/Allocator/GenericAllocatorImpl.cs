@@ -992,7 +992,7 @@ namespace Tsavorite.core
         /// Iterator interface for scanning Tsavorite log
         /// </summary>
         /// <returns></returns>
-        public override ITsavoriteScanIterator<TKey, TValue> Scan(TsavoriteKV<TKey, TValue, TStoreFunctions, GenericAllocator<TKey, TValue, TStoreFunctions>> store,
+        public override IRecordScanner<TKey, TValue> Scan(TsavoriteKV<TKey, TValue, TStoreFunctions, GenericAllocator<TKey, TValue, TStoreFunctions>> store,
                 long beginAddress, long endAddress, ScanBufferingMode scanBufferingMode, bool includeSealedRecords)
             => new GenericScanIterator<TKey, TValue, TStoreFunctions>(store, this, beginAddress, endAddress, scanBufferingMode, includeSealedRecords, epoch);
 
@@ -1009,11 +1009,11 @@ namespace Tsavorite.core
         /// <summary>
         /// Implementation for push-scanning Tsavorite log with a cursor, called from LogAccessor
         /// </summary>
-        internal override bool ScanCursor<TScanFunctions>(TsavoriteKV<TKey, TValue, TStoreFunctions, GenericAllocator<TKey, TValue, TStoreFunctions>> store,
+        internal override bool IterateCursor<TScanFunctions>(TsavoriteKV<TKey, TValue, TStoreFunctions, GenericAllocator<TKey, TValue, TStoreFunctions>> store,
                 ScanCursorState<TKey, TValue> scanCursorState, ref long cursor, long count, TScanFunctions scanFunctions, long endAddress, bool validateCursor)
         {
-            using GenericScanIterator<TKey, TValue, TStoreFunctions> iter = new(store, this, cursor, endAddress, ScanBufferingMode.SinglePageBuffering, false, epoch, logger: logger);
-            return ScanLookup<long, long, TScanFunctions, GenericScanIterator<TKey, TValue, TStoreFunctions>>(store, scanCursorState, ref cursor, count, scanFunctions, iter, validateCursor);
+            using GenericScanIterator<TKey, TValue, TStoreFunctions, TScanFunctions> scanner = new(store, this, cursor, endAddress, ScanBufferingMode.SinglePageBuffering, false, epoch, logger: logger);
+            return IterateCursor<long, long, GenericScanIterator<TKey, TValue, TStoreFunctions, TScanFunctions>>(store, scanCursorState, scanFunctions, ref cursor, count, scanFunctions, scanner, validateCursor);
         }
 
         /// <summary>
@@ -1028,7 +1028,7 @@ namespace Tsavorite.core
 
         private void ComputeScanBoundaries(long beginAddress, long endAddress, out long pageStartAddress, out int start, out int end)
         {
-            pageStartAddress = beginAddress & ~PageSizeMask;
+             pageStartAddress = beginAddress & ~PageSizeMask;
             start = (int)(beginAddress & PageSizeMask) / RecordSize;
             var count = (int)(endAddress - beginAddress) / RecordSize;
             end = start + count;
@@ -1050,7 +1050,7 @@ namespace Tsavorite.core
         }
 
         /// <inheritdoc />
-        internal override void MemoryPageScan(long beginAddress, long endAddress, IObserver<ITsavoriteScanIterator<TKey, TValue>> observer)
+        internal override void MemoryPageScan(long beginAddress, long endAddress, IObserver<IRecordScanner<TKey, TValue>> observer)
         {
             var page = (beginAddress >> LogPageSizeBits) % BufferSize;
             ComputeScanBoundaries(beginAddress, endAddress, out var pageStartAddress, out var start, out var end);

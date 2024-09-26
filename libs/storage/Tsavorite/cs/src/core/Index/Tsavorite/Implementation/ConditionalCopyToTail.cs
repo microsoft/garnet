@@ -122,6 +122,22 @@ namespace Tsavorite.core
                                         OperationType opType = OperationType.CONDITIONAL_INSERT)
             where TSessionFunctionsWrapper : ISessionFunctionsWrapper<TKey, TValue, TInput, TOutput, TContext, TStoreFunctions, TAllocator>
         {
+            if (pendingContext.input == default)
+                pendingContext.input = sessionFunctions.GetHeapContainer(ref input);
+
+            pendingContext.output = output;
+            sessionFunctions.ConvertOutputToHeap(ref input, ref pendingContext.output);
+
+            pendingContext.userContext = userContext;
+            return PrepareIOForConditionalOperation(ref pendingContext, ref key, ref value, ref stackCtx, minAddress, writeReason, opType);
+        }
+
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        internal OperationStatus PrepareIOForConditionalOperation<TInput, TOutput, TContext>(
+                                        ref PendingContext<TInput, TOutput, TContext> pendingContext, ref TKey key, ref TValue value,
+                                        ref OperationStackContext<TKey, TValue, TStoreFunctions, TAllocator> stackCtx, long minAddress, WriteReason writeReason,
+                                        OperationType opType = OperationType.CONDITIONAL_INSERT)
+        {
             pendingContext.type = opType;
             pendingContext.minAddress = minAddress;
             pendingContext.writeReason = writeReason;
@@ -130,15 +146,9 @@ namespace Tsavorite.core
 
             if (!pendingContext.NoKey && pendingContext.key == default)    // If this is true, we don't have a valid key
                 pendingContext.key = hlog.GetKeyContainer(ref key);
-            if (pendingContext.input == default)
-                pendingContext.input = sessionFunctions.GetHeapContainer(ref input);
             if (pendingContext.value == default)
                 pendingContext.value = hlog.GetValueContainer(ref value);
 
-            pendingContext.output = output;
-            sessionFunctions.ConvertOutputToHeap(ref input, ref pendingContext.output);
-
-            pendingContext.userContext = userContext;
             pendingContext.logicalAddress = stackCtx.recSrc.LogicalAddress;
 
             return OperationStatus.RECORD_ON_DISK;

@@ -1598,12 +1598,6 @@ namespace Garnet.server
             where TScanFunctions : IScanIteratorFunctions<SpanByte, SpanByte>;
 
         /// <summary>
-        /// Iterate the contents of the main store (pull based)
-        /// </summary>
-        /// <returns></returns>
-        public ITsavoriteScanIterator<SpanByte, SpanByte> IterateMainStore();
-
-        /// <summary>
         /// Iterate the contents of the object store
         /// </summary>
         /// <typeparam name="TScanFunctions"></typeparam>
@@ -1612,12 +1606,6 @@ namespace Garnet.server
         /// <returns></returns>
         public bool IterateObjectStore<TScanFunctions>(ref TScanFunctions scanFunctions, long untilAddress = -1)
             where TScanFunctions : IScanIteratorFunctions<byte[], IGarnetObject>;
-
-        /// <summary>
-        /// Iterate the contents of the object store (pull based)
-        /// </summary>
-        /// <returns></returns>
-        public ITsavoriteScanIterator<byte[], IGarnetObject> IterateObjectStore();
 
         #endregion
 

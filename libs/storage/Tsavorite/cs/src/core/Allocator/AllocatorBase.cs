@@ -173,13 +173,13 @@ namespace Tsavorite.core
         private readonly ErrorList errorList = new();
 
         /// <summary>Observer for records entering read-only region</summary>
-        internal IObserver<ITsavoriteScanIterator<TKey, TValue>> OnReadOnlyObserver;
+        internal IObserver<IRecordScanner<TKey, TValue>> OnReadOnlyObserver;
 
         /// <summary>Observer for records getting evicted from memory (page closed)</summary>
-        internal IObserver<ITsavoriteScanIterator<TKey, TValue>> OnEvictionObserver;
+        internal IObserver<IRecordScanner<TKey, TValue>> OnEvictionObserver;
 
         /// <summary>Observer for records brought into memory by deserializing pages</summary>
-        internal IObserver<ITsavoriteScanIterator<TKey, TValue>> OnDeserializationObserver;
+        internal IObserver<IRecordScanner<TKey, TValue>> OnDeserializationObserver;
 
         /// <summary>The "event" to be waited on for flush completion by the initiator of an operation</summary>
         internal CompletionEvent FlushEvent;

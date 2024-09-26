@@ -27,7 +27,7 @@ namespace Tsavorite.core
         Deserialize
     }
 
-    public class LogOperationObserver<TKey, TValue, TStoreFunctions, TAllocator, TLogSizeCalculator> : IObserver<ITsavoriteScanIterator<TKey, TValue>>
+    public class LogOperationObserver<TKey, TValue, TStoreFunctions, TAllocator, TLogSizeCalculator> : IObserver<IRecordScanner<TKey, TValue>>
         where TStoreFunctions : IStoreFunctions<TKey, TValue>
         where TAllocator : IAllocator<TKey, TValue, TStoreFunctions>
         where TLogSizeCalculator : ILogSizeCalculator<TKey, TValue>
@@ -45,7 +45,7 @@ namespace Tsavorite.core
 
         public void OnError(Exception error) { }
 
-        public void OnNext(ITsavoriteScanIterator<TKey, TValue> records)
+        public void OnNext(IRecordScanner<TKey, TValue> records)
         {
             long size = 0;
             while (records.GetNext(out RecordInfo info, out TKey key, out TValue value))
@@ -72,7 +72,7 @@ namespace Tsavorite.core
     /// <typeparam name="TStoreFunctions"></typeparam>
     /// <typeparam name="TAllocator"></typeparam>
     /// <typeparam name="TLogSizeCalculator">Type of the log size calculator</typeparam>
-    public class LogSizeTracker<TKey, TValue, TStoreFunctions, TAllocator, TLogSizeCalculator> : IObserver<ITsavoriteScanIterator<TKey, TValue>>
+    public class LogSizeTracker<TKey, TValue, TStoreFunctions, TAllocator, TLogSizeCalculator> : IObserver<IRecordScanner<TKey, TValue>>
         where TLogSizeCalculator : ILogSizeCalculator<TKey, TValue>
         where TStoreFunctions : IStoreFunctions<TKey, TValue>
         where TAllocator : IAllocator<TKey, TValue, TStoreFunctions>
@@ -141,7 +141,7 @@ namespace Tsavorite.core
         public void OnError(Exception error) { }
 
         /// <summary>Callback on allocator evicting a page to disk</summary>
-        public void OnNext(ITsavoriteScanIterator<TKey, TValue> records)
+        public void OnNext(IRecordScanner<TKey, TValue> records)
         {
             long size = 0;
             while (records.GetNext(out RecordInfo info, out TKey key, out TValue value))

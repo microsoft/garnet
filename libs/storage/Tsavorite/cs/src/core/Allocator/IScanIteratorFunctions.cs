@@ -36,7 +36,7 @@ namespace Tsavorite.core
         /// <param name="beginAddress">Start address of the scan</param>
         /// <param name="endAddress">End address of the scan; if iterating key versions, this is <see cref="Constants.kInvalidAddress"/></param>
         /// <returns>True to continue iteration, else false</returns>
-        bool OnStart(long beginAddress, long endAddress);
+        bool OnStart(long beginAddress, long endAddress) => true;
 
         /// <summary>Next record in iteration for a record not in mutable log memory.</summary>
         /// <param name="key">Reference to the current record's key</param>
@@ -56,27 +56,17 @@ namespace Tsavorite.core
         /// <param name="cursorRecordResult">Indicates whether the current record was accepted, or whether to end the current ScanCursor call.
         ///     Ignored for non-cursor Scans; set to <see cref="CursorRecordResult.Accept"/>.</param>
         /// <returns>True to continue iteration, else false</returns>
-        bool ConcurrentReader(ref TKey key, ref TValue value, RecordMetadata recordMetadata, long numberOfRecords, out CursorRecordResult cursorRecordResult);
+        bool ConcurrentReader(ref TKey key, ref TValue value, RecordMetadata recordMetadata, long numberOfRecords, out CursorRecordResult cursorRecordResult)
+            => SingleReader(ref key, ref value, recordMetadata, numberOfRecords, out cursorRecordResult);
 
         /// <summary>Iteration is complete.</summary>
         /// <param name="completed">If true, the iteration completed; else scanFunctions.*Reader() returned false to stop the iteration.</param>
-        /// <param name="numberOfRecords">The number of records returned before the iteration stopped.</param>
-        void OnStop(bool completed, long numberOfRecords);
+        /// <param name="numberOfRecords">The number of records pushed to and accepted by the caller before the iteration stopped.</param>
+        void OnStop(bool completed, long numberOfRecords) { }
 
         /// <summary>An exception was thrown on iteration (likely during <see name="SingleReader"/> or <see name="ConcurrentReader"/>.</summary>
         /// <param name="exception">The exception that was thrown.</param>
-        /// <param name="numberOfRecords">The number of records returned, including the current one, before the exception.</param>
-        void OnException(Exception exception, long numberOfRecords);
-    }
-
-    internal interface IPushScanIterator<TKey>
-    {
-        bool BeginGetPrevInMemory(ref TKey key, out RecordInfo recordInfo, out bool continueOnDisk);
-        bool EndGetPrevInMemory();
-
-        /// <summary>
-        /// When beginning a cursor scan, if it is not the last cursor returned, snap it to the preceding logical address boundary.
-        /// </summary>
-        bool SnapCursorToLogicalAddress(ref long cursor);
+        /// <param name="numberOfRecords">The number of records returned, including the current one, pushed to and accepted by the caller before the exception.</param>
+        void OnException(Exception exception, long numberOfRecords) { }
     }
 }

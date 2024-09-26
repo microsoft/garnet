@@ -249,30 +249,37 @@ namespace Tsavorite.core
             => throw new TsavoriteException("BlittableAllocator memory pages are sector aligned - use direct copy");
 
         /// <summary>
-        /// Iterator interface for pull-scanning Tsavorite log
-        /// </summary>
-        public override ITsavoriteScanIterator<TKey, TValue> Scan(TsavoriteKV<TKey, TValue, TStoreFunctions, BlittableAllocator<TKey, TValue, TStoreFunctions>> store,
-                long beginAddress, long endAddress, ScanBufferingMode scanBufferingMode, bool includeSealedRecords)
-            => new BlittableScanIterator<TKey, TValue, TStoreFunctions>(store, this, beginAddress, endAddress, scanBufferingMode, includeSealedRecords, epoch, logger: logger);
-
-        /// <summary>
         /// Implementation for push-scanning Tsavorite log, called from LogAccessor
         /// </summary>
         internal override bool Scan<TScanFunctions>(TsavoriteKV<TKey, TValue, TStoreFunctions, BlittableAllocator<TKey, TValue, TStoreFunctions>> store,
-                long beginAddress, long endAddress, ref TScanFunctions scanFunctions, ScanBufferingMode scanBufferingMode)
+                UnsafeContext<TKey, TValue, Empty, Empty, Empty, LivenessCheckingSessionFunctions<TKey, TValue>, TStoreFunctions, BlittableAllocator<TKey, TValue, TStoreFunctions>> uContext,
+                TScanFunctions scanFunctions, long beginAddress, long endAddress, ScanCursorState<TKey, TValue> scanCursorState,
+                ScanBufferingMode scanBufferingMode = ScanBufferingMode.DoublePageBuffering, bool includeSealedRecords = false)
         {
-            using BlittableScanIterator<TKey, TValue, TStoreFunctions> iter = new(store, this, beginAddress, endAddress, scanBufferingMode, false, epoch, logger: logger);
-            return PushScanImpl(beginAddress, endAddress, ref scanFunctions, iter);
+            using BlittableScanIterator<TKey, TValue, TStoreFunctions> iter = new(store, uContext, scanCursorState, this, beginAddress, endAddress, scanBufferingMode, includeSealedRecords, epoch, logger: logger);
+            return store.Scan(uContext, scanFunctions, scanCursorState, iter);
+        }
+
+        /// <summary>
+        /// Implementation for push-scanning Tsavorite log
+        /// </summary>
+        internal override bool Iterate<TScanFunctions>(TsavoriteKV<TKey, TValue, TStoreFunctions, BlittableAllocator<TKey, TValue, TStoreFunctions>> store,
+                UnsafeContext<TKey, TValue, Empty, Empty, Empty, LivenessCheckingSessionFunctions<TKey, TValue>, TStoreFunctions, BlittableAllocator<TKey, TValue, TStoreFunctions>> uContext,
+                TScanFunctions scanFunctions, long endAddress, ScanCursorState<TKey, TValue> scanCursorState)
+        {
+            var beginAddress = BeginAddress;
+            using BlittableScanIterator<TKey, TValue, TStoreFunctions> iter = new(store, uContext, scanCursorState, this, beginAddress, endAddress, ScanBufferingMode.DoublePageBuffering, includeSealedRecords: false, epoch, logger: logger);
+            return store.Iterate(uContext, scanFunctions, scanCursorState, iter);
         }
 
         /// <summary>
         /// Implementation for push-scanning Tsavorite log with a cursor, called from LogAccessor
         /// </summary>
-        internal override bool ScanCursor<TScanFunctions>(TsavoriteKV<TKey, TValue, TStoreFunctions, BlittableAllocator<TKey, TValue, TStoreFunctions>> store,
+        internal override bool IterateCursor<TScanFunctions>(TsavoriteKV<TKey, TValue, TStoreFunctions, BlittableAllocator<TKey, TValue, TStoreFunctions>> store,
                 ScanCursorState<TKey, TValue> scanCursorState, ref long cursor, long count, TScanFunctions scanFunctions, long endAddress, bool validateCursor)
         {
-            using BlittableScanIterator<TKey, TValue, TStoreFunctions> iter = new(store, this, cursor, endAddress, ScanBufferingMode.SinglePageBuffering, false, epoch, logger: logger);
-            return ScanLookup<long, long, TScanFunctions, BlittableScanIterator<TKey, TValue, TStoreFunctions>>(store, scanCursorState, ref cursor, count, scanFunctions, iter, validateCursor);
+            using BlittableScanIterator<TKey, TValue, TStoreFunctions, TScanFunctions> scanner = new(store, this, cursor, endAddress, ScanBufferingMode.SinglePageBuffering, false, epoch, logger: logger);
+            return IterateCursor<long, long, BlittableScanIterator<TKey, TValue, TStoreFunctions, TScanFunctions>>(store, scanCursorState, scanFunctions, ref cursor, count, scanner, validateCursor);
         }
 
         /// <summary>
@@ -285,7 +292,7 @@ namespace Tsavorite.core
         }
 
         /// <inheritdoc />
-        internal override void MemoryPageScan(long beginAddress, long endAddress, IObserver<ITsavoriteScanIterator<TKey, TValue>> observer)
+        internal override void MemoryPageScan(long beginAddress, long endAddress, IObserver<IRecordScanner<TKey, TValue>> observer)
         {
             using var iter = new BlittableScanIterator<TKey, TValue, TStoreFunctions>(store: null, this, beginAddress, endAddress, ScanBufferingMode.NoBuffering, false, epoch, true, logger: logger);
             observer?.OnNext(iter);

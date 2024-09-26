@@ -10,7 +10,7 @@ namespace Tsavorite.core
     /// <summary>
     /// Wrapper to process log-related commands
     /// </summary>
-    public sealed class LogAccessor<TKey, TValue, TStoreFunctions, TAllocator> : IObservable<ITsavoriteScanIterator<TKey, TValue>>
+    public sealed class LogAccessor<TKey, TValue, TStoreFunctions, TAllocator> : IObservable<IRecordScanner<TKey, TValue, TStoreFunctions, TAllocator>>
         where TStoreFunctions : IStoreFunctions<TKey, TValue>
         where TAllocator : IAllocator<TKey, TValue, TStoreFunctions>
     {
@@ -194,7 +194,7 @@ namespace Tsavorite.core
         /// To scan the historical part of the log, use the Scan(...) method
         /// </summary>
         /// <param name="readOnlyObserver">Observer to which scan iterator is pushed</param>
-        public IDisposable Subscribe(IObserver<ITsavoriteScanIterator<TKey, TValue>> readOnlyObserver)
+        public IDisposable Subscribe(IObserver<IRecordScanner<TKey, TValue>> readOnlyObserver)
         {
             allocatorBase.OnReadOnlyObserver = readOnlyObserver;
             return new LogSubscribeDisposable(allocatorBase, isReadOnly: true);
@@ -207,13 +207,13 @@ namespace Tsavorite.core
         /// To scan the historical part of the log, use the Scan(...) method
         /// </summary>
         /// <param name="evictionObserver">Observer to which scan iterator is pushed</param>
-        public IDisposable SubscribeEvictions(IObserver<ITsavoriteScanIterator<TKey, TValue>> evictionObserver)
+        public IDisposable SubscribeEvictions(IObserver<IRecordScanner<TKey, TValue>> evictionObserver)
         {
             allocatorBase.OnEvictionObserver = evictionObserver;
             return new LogSubscribeDisposable(allocatorBase, isReadOnly: false);
         }
 
-        public IDisposable SubscribeDeserializations(IObserver<ITsavoriteScanIterator<TKey, TValue>> deserializationObserver)
+        public IDisposable SubscribeDeserializations(IObserver<IRecordScanner<TKey, TValue>> deserializationObserver)
         {
             allocatorBase.OnDeserializationObserver = deserializationObserver;
             return new LogSubscribeDisposable(allocatorBase, isReadOnly: false);
@@ -276,20 +276,42 @@ namespace Tsavorite.core
         }
 
         /// <summary>
-        /// Pull-scan the log given address range; returns all records with address less than endAddress
-        /// </summary>
-        /// <returns>Scan iterator instance</returns>
-        [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public ITsavoriteScanIterator<TKey, TValue> Scan(long beginAddress, long endAddress, ScanBufferingMode scanBufferingMode = ScanBufferingMode.DoublePageBuffering, bool includeSealedRecords = false)
-            => allocatorBase.Scan(store: null, beginAddress, endAddress, scanBufferingMode, includeSealedRecords);
-
-        /// <summary>
         /// Push-scan the log given address range; returns all records with address less than endAddress
         /// </summary>
         /// <returns>True if Scan completed; false if Scan ended early due to one of the TScanIterator reader functions returning false</returns>
-        public bool Scan<TScanFunctions>(ref TScanFunctions scanFunctions, long beginAddress, long endAddress, ScanBufferingMode scanBufferingMode = ScanBufferingMode.DoublePageBuffering)
+        public bool Scan<TScanFunctions>(TScanFunctions scanFunctions, long beginAddress, long endAddress, ScanBufferingMode scanBufferingMode = ScanBufferingMode.DoublePageBuffering, bool includeSealedRecords = false)
             where TScanFunctions : IScanIteratorFunctions<TKey, TValue>
-            => allocatorBase.Scan(store, beginAddress, endAddress, ref scanFunctions, scanBufferingMode);
+        {
+            var tailAddress = TailAddress;
+            if (endAddress < 0 || endAddress > tailAddress)
+                endAddress = TailAddress;
+
+            using var session = store.NewSession<Empty, Empty, Empty, LivenessCheckingSessionFunctions<TKey, TValue>>(new LivenessCheckingSessionFunctions<TKey, TValue>());
+            ScanCursorState<TKey, TValue> scanCursorState = new(scanFunctions);
+
+            // Pass UnsafeContext because the scanner does epoch management
+            return allocatorBase.Scan(store, session.UnsafeContext, scanFunctions, beginAddress, endAddress, scanCursorState, scanBufferingMode, includeSealedRecords);
+        }
+
+        /// <summary>
+        /// Push iteration of all (distinct) live key-values stored in Tsavorite
+        /// </summary>
+        /// <param name="scanFunctions">Functions receiving pushed records</param>
+        /// <param name="untilAddress">Report records until this address (tail by default)</param>
+        /// <returns>Tsavorite iterator</returns>
+        public bool Iterate<TScanFunctions>(TScanFunctions scanFunctions, long untilAddress = -1)
+            where TScanFunctions : IScanIteratorFunctions<TKey, TValue>
+        {
+            var tailAddress = TailAddress;
+            if (untilAddress < 0 || untilAddress > tailAddress)
+                untilAddress = TailAddress;
+
+            using var session = store.NewSession<Empty, Empty, Empty, LivenessCheckingSessionFunctions<TKey, TValue>>(new LivenessCheckingSessionFunctions<TKey, TValue>());
+            ScanCursorState<TKey, TValue> scanCursorState = new(scanFunctions);
+            
+            // Pass UnsafeContext because the scanner does epoch management
+            return allocatorBase.Iterate(store, session.UnsafeContext, scanFunctions, untilAddress, scanCursorState);
+        }
 
         /// <summary>
         /// Iterate versions of the specified key, starting with most recent

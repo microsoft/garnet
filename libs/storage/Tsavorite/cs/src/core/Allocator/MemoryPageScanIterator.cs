@@ -11,7 +11,7 @@ namespace Tsavorite.core
     /// </summary>
     /// <typeparam name="TKey"></typeparam>
     /// <typeparam name="TValue"></typeparam>
-    internal sealed class MemoryPageScanIterator<TKey, TValue> : ITsavoriteScanIterator<TKey, TValue>
+    internal sealed class MemoryPageScanIterator<TKey, TValue> : IRecordScanner<TKey, TValue>
     {
         readonly AllocatorRecord<TKey, TValue>[] page;
         readonly long pageStartAddress;

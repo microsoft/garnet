@@ -459,14 +459,6 @@ namespace Tsavorite.core
         }
 
         /// <summary>
-        /// Pull iterator for all (distinct) live key-values stored in Tsavorite
-        /// </summary>
-        /// <param name="untilAddress">Report records until this address (tail by default)</param>
-        /// <returns>Tsavorite iterator</returns>
-        public ITsavoriteScanIterator<TKey, TValue> Iterate(long untilAddress = -1)
-            => store.Iterate<TInput, TOutput, TContext, TFunctions>(functions, untilAddress);
-
-        /// <summary>
         /// Push iteration of all (distinct) live key-values stored in Tsavorite
         /// </summary>
         /// <param name="scanFunctions">Functions receiving pushed records</param>
@@ -494,7 +486,7 @@ namespace Tsavorite.core
         /// or one of the TScanIterator reader functions returning false</returns>
         public bool ScanCursor<TScanFunctions>(ref long cursor, long count, TScanFunctions scanFunctions, long endAddress = long.MaxValue, bool validateCursor = false)
             where TScanFunctions : IScanIteratorFunctions<TKey, TValue>
-            => store.hlogBase.ScanCursor(store, scanCursorState ??= new(), ref cursor, count, scanFunctions, endAddress, validateCursor);
+            => store.hlogBase.IterateCursor(store, scanCursorState ??= new(), ref cursor, count, scanFunctions, endAddress, validateCursor);
 
         /// <summary>
         /// Resume session on current thread. IMPORTANT: Call SuspendThread before any async op.

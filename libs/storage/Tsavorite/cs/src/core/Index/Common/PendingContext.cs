@@ -45,6 +45,7 @@ namespace Tsavorite.core
             internal long retryNewLogicalAddress;
 
             internal ScanCursorState<TKey, TValue> scanCursorState;
+            internal IScanIteratorFunctions<TKey, TValue> scanFunctions;
 
             [MethodImpl(MethodImplOptions.AggressiveInlining)]
             internal PendingContext(long keyHash) => this.keyHash = keyHash;

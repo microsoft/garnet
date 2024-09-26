@@ -8,38 +8,23 @@ using System.Threading;
 
 namespace Tsavorite.core
 {
-    internal sealed class ScanCursorState<TKey, TValue>
-    {
-        internal IScanIteratorFunctions<TKey, TValue> functions;
-        internal long acceptedCount;    // Number of records pushed to and accepted by the caller
-        internal bool endBatch;         // End the batch (but return a valid cursor for the next batch, as of "count" records had been returned)
-        internal bool stop;             // Stop the operation (as if all records in the db had been returned)
-
-        internal void Initialize(IScanIteratorFunctions<TKey, TValue> scanIteratorFunctions)
-        {
-            functions = scanIteratorFunctions;
-            acceptedCount = 0;
-            endBatch = false;
-            stop = false;
-        }
-    }
-
     public abstract partial class AllocatorBase<TKey, TValue, TStoreFunctions, TAllocator> : IDisposable
         where TStoreFunctions : IStoreFunctions<TKey, TValue>
         where TAllocator : IAllocator<TKey, TValue, TStoreFunctions>
     {
         /// <summary>
-        /// Pull-based scan interface for HLOG; user calls GetNext() which advances through the address range.
-        /// </summary>
-        /// <returns>Pull Scan iterator instance</returns>
-        public abstract ITsavoriteScanIterator<TKey, TValue> Scan(TsavoriteKV<TKey, TValue, TStoreFunctions, TAllocator> store, long beginAddress, long endAddress, ScanBufferingMode scanBufferingMode = ScanBufferingMode.DoublePageBuffering, bool includeSealedRecords = false);
-
-        /// <summary>
         /// Push-based scan interface for HLOG, called from LogAccessor; scan the log given address range, calling <paramref name="scanFunctions"/> for each record.
         /// </summary>
         /// <returns>True if Scan completed; false if Scan ended early due to one of the TScanIterator reader functions returning false</returns>
-        internal abstract bool Scan<TScanFunctions>(TsavoriteKV<TKey, TValue, TStoreFunctions, TAllocator> store, long beginAddress, long endAddress, ref TScanFunctions scanFunctions,
-                ScanBufferingMode scanBufferingMode = ScanBufferingMode.DoublePageBuffering)
+        internal abstract bool Scan<TScanFunctions>(TsavoriteKV<TKey, TValue, TStoreFunctions, TAllocator> store,
+                UnsafeContext<TKey, TValue, Empty, Empty, Empty, LivenessCheckingSessionFunctions<TKey, TValue>, TStoreFunctions, TAllocator> uContext,
+                TScanFunctions scanFunctions, long beginAddress, long endAddress, ScanCursorState<TKey, TValue> scanCursorState,
+                ScanBufferingMode scanBufferingMode = ScanBufferingMode.DoublePageBuffering, bool includeSealedRecords = false)
+            where TScanFunctions : IScanIteratorFunctions<TKey, TValue>;
+ 
+        internal abstract bool Iterate<TScanFunctions>(TsavoriteKV<TKey, TValue, TStoreFunctions, TAllocator> store,
+                UnsafeContext<TKey, TValue, Empty, Empty, Empty, LivenessCheckingSessionFunctions<TKey, TValue>, TStoreFunctions, TAllocator> uContext,
+                TScanFunctions scanFunctions, long untilAddress, ScanCursorState<TKey, TValue> scanCursorState)
             where TScanFunctions : IScanIteratorFunctions<TKey, TValue>;
 
         /// <summary>
@@ -68,88 +53,28 @@ namespace Tsavorite.core
             where TScanFunctions : IScanIteratorFunctions<TKey, TValue>;
 
         /// <summary>
-        /// Implementation for push-scanning Tsavorite log
-        /// </summary>
-        internal bool PushScanImpl<TScanFunctions, TScanIterator>(long beginAddress, long endAddress, ref TScanFunctions scanFunctions, TScanIterator iter)
-            where TScanFunctions : IScanIteratorFunctions<TKey, TValue>
-            where TScanIterator : ITsavoriteScanIterator<TKey, TValue>, IPushScanIterator<TKey>
-        {
-            if (!scanFunctions.OnStart(beginAddress, endAddress))
-                return false;
-            var headAddress = HeadAddress;
-
-            long numRecords = 1;
-            var stop = false;
-            for (; !stop && iter.GetNext(out var recordInfo); ++numRecords)
-            {
-                try
-                {
-                    // Pull Iter records are in temp storage so do not need locks, but we'll call ConcurrentReader because, for example, GenericAllocator
-                    // may need to know the object is in that region.
-                    if (recordInfo.IsClosed)    // Iterator checks this but it may have changed since
-                        continue;
-                    if (iter.CurrentAddress >= headAddress)
-                        stop = !scanFunctions.ConcurrentReader(ref iter.GetKey(), ref iter.GetValue(), new RecordMetadata(recordInfo, iter.CurrentAddress), numRecords, out _);
-                    else
-                        stop = !scanFunctions.SingleReader(ref iter.GetKey(), ref iter.GetValue(), new RecordMetadata(recordInfo, iter.CurrentAddress), numRecords, out _);
-                }
-                catch (Exception ex)
-                {
-                    scanFunctions.OnException(ex, numRecords);
-                    throw;
-                }
-            }
-
-            scanFunctions.OnStop(!stop, numRecords);
-            return !stop;
-        }
-
-        /// <summary>
         /// Implementation for push-iterating key versions
         /// </summary>
-        internal bool IterateKeyVersionsImpl<TScanFunctions, TScanIterator>(TsavoriteKV<TKey, TValue, TStoreFunctions, TAllocator> store, ref TKey key, long beginAddress, ref TScanFunctions scanFunctions, TScanIterator iter)
+        /// <returns>true if scan completed, else false if scanFunctions terminated early</returns>
+        internal bool IterateKeyVersionsImpl<TScanFunctions, TRecordScanner>(TsavoriteKV<TKey, TValue, TStoreFunctions, TAllocator> store, TScanFunctions scanFunctions, ref TKey key, long beginAddress, TRecordScanner scanner)
             where TScanFunctions : IScanIteratorFunctions<TKey, TValue>
-            where TScanIterator : ITsavoriteScanIterator<TKey, TValue>, IPushScanIterator<TKey>
+            where TRecordScanner : IRecordScanner<TKey, TValue>
         {
             if (!scanFunctions.OnStart(beginAddress, Constants.kInvalidAddress))
                 return false;
             var headAddress = HeadAddress;
 
-            long numRecords = 1;
-            bool stop = false, continueOnDisk = false;
-            for (; !stop && iter.BeginGetPrevInMemory(ref key, out var recordInfo, out continueOnDisk); ++numRecords)
-            {
-                OperationStackContext<TKey, TValue, TStoreFunctions, TAllocator> stackCtx = default;
-                try
-                {
-                    // Iter records above headAddress will be in log memory and must be locked.
-                    if (iter.CurrentAddress >= headAddress && !recordInfo.IsClosed)
-                    {
-                        store.LockForScan(ref stackCtx, ref key);
-                        stop = !scanFunctions.ConcurrentReader(ref key, ref iter.GetValue(), new RecordMetadata(recordInfo, iter.CurrentAddress), numRecords, out _);
-                    }
-                    else
-                        stop = !scanFunctions.SingleReader(ref key, ref iter.GetValue(), new RecordMetadata(recordInfo, iter.CurrentAddress), numRecords, out _);
-                }
-                catch (Exception ex)
-                {
-                    scanFunctions.OnException(ex, numRecords);
-                    throw;
-                }
-                finally
-                {
-                    if (stackCtx.recSrc.HasLock)
-                        store.UnlockForScan(ref stackCtx);
-                    iter.EndGetPrevInMemory();
-                }
-            }
+            long numRecords = 0;
+            bool continueOnDisk = false, stop = false;
+            while (scanner.GetPrevInMemory(ref key, scanFunctions, ref numRecords, out continueOnDisk, out stop))
+                ;
 
-            if (continueOnDisk)
+            if (!stop && continueOnDisk)
             {
                 AsyncIOContextCompletionEvent<TKey, TValue> completionEvent = new();
                 try
                 {
-                    var logicalAddress = iter.CurrentAddress;
+                    var logicalAddress = scanner.CurrentAddress;
                     while (!stop && GetFromDiskAndPushToReader(ref key, ref logicalAddress, ref scanFunctions, numRecords, completionEvent, out stop))
                         ++numRecords;
                 }
@@ -202,14 +127,15 @@ namespace Tsavorite.core
         /// <remarks>Currently we load an entire page, which while inefficient in performance, allows us to make the cursor safe (by ensuring we align to a valid record) if it is not
         /// the last one returned. We could optimize this to load only the subset of a page that is pointed to by the cursor and do GetRequiredRecordSize/RetrievedFullRecord as in
         /// AsyncGetFromDiskCallback. However, this would not validate the cursor and would therefore require maintaining a cursor history.</remarks>
-        internal abstract bool ScanCursor<TScanFunctions>(TsavoriteKV<TKey, TValue, TStoreFunctions, TAllocator> store, ScanCursorState<TKey, TValue> scanCursorState, ref long cursor, long count, TScanFunctions scanFunctions, long endAddress, bool validateCursor)
+        internal abstract bool IterateCursor<TScanFunctions>(TsavoriteKV<TKey, TValue, TStoreFunctions, TAllocator> store, ScanCursorState<TKey, TValue> scanCursorState, TScanFunctions scanFunctions,
+                ref long cursor, long count, long endAddress, bool validateCursor)
             where TScanFunctions : IScanIteratorFunctions<TKey, TValue>;
 
-        private protected bool ScanLookup<TInput, TOutput, TScanFunctions, TScanIterator>(TsavoriteKV<TKey, TValue, TStoreFunctions, TAllocator> store, ScanCursorState<TKey, TValue> scanCursorState, ref long cursor, long count, TScanFunctions scanFunctions, TScanIterator iter, bool validateCursor)
-            where TScanFunctions : IScanIteratorFunctions<TKey, TValue>
-            where TScanIterator : ITsavoriteScanIterator<TKey, TValue>, IPushScanIterator<TKey>
+        private protected bool IterateCursor<TInput, TOutput, TRecordScanner>(TsavoriteKV<TKey, TValue, TStoreFunctions, TAllocator> store,
+                ScanCursorState<TKey, TValue> scanCursorState, ref long cursor, long count, TRecordScanner scanner, bool validateCursor)
+            where TRecordScanner : IRecordScanner<TKey, TValue>
         {
-            using var session = store.NewSession<TInput, TOutput, Empty, LogScanCursorFunctions<TInput, TOutput>>(new LogScanCursorFunctions<TInput, TOutput>());
+            using var session = store.NewSession<Empty, Empty, Empty, LivenessCheckingSessionFunctions<TKey, TValue>>(new LivenessCheckingSessionFunctions<TKey, TValue>());
             var bContext = session.BasicContext;
 
             if (cursor >= GetTailAddress())
@@ -218,31 +144,25 @@ namespace Tsavorite.core
             if (cursor < BeginAddress) // This includes 0, which means to start the Scan
                 cursor = BeginAddress;
             else if (validateCursor)
-                iter.SnapCursorToLogicalAddress(ref cursor);
+                _ = scanner.SnapCursorToLogicalAddress(ref cursor);
 
-            scanCursorState.Initialize(scanFunctions);
+            scanCursorState.Initialize();
 
-            long numPending = 0;
-            while (iter.GetNext(out var recordInfo))
+            var numPending = 0;
+            while (scanner.IterateNext(out var status))
             {
-                if (!recordInfo.Tombstone)
+                if (status.IsPending)
                 {
-                    ref var key = ref iter.GetKey();
-                    ref var value = ref iter.GetValue();
-                    var status = bContext.ConditionalScanPush(scanCursorState, recordInfo, ref key, ref value, iter.NextAddress);
-                    if (status.IsPending)
+                    ++numPending;
+                    if (numPending == count - scanCursorState.acceptedCount || numPending == 256)
                     {
-                        ++numPending;
-                        if (numPending == count - scanCursorState.acceptedCount || numPending > 256)
-                        {
-                            bContext.CompletePending(wait: true);
-                            numPending = 0;
-                        }
+                        _ = bContext.CompletePending(wait: true);
+                        numPending = 0;
                     }
                 }
 
                 // Update the cursor to point to the next record.
-                cursor = iter.NextAddress;
+                cursor = scanner.NextAddress;
 
                 // Now see if we completed the enumeration.
                 if (scanCursorState.stop)
@@ -253,7 +173,7 @@ namespace Tsavorite.core
 
             // Drain any pending pushes. We have ended the iteration; there are no more records, so drop through to end it.
             if (numPending > 0)
-                bContext.CompletePending(wait: true);
+                _ = bContext.CompletePending(wait: true);
 
             IterationComplete:
             cursor = 0;
@@ -261,30 +181,22 @@ namespace Tsavorite.core
         }
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        internal Status ConditionalScanPush<TInput, TOutput, TContext, TSessionFunctionsWrapper>(TSessionFunctionsWrapper sessionFunctions, ScanCursorState<TKey, TValue> scanCursorState, RecordInfo recordInfo, ref TKey key, ref TValue value, long minAddress)
+        internal Status ConditionalScanPush<TInput, TOutput, TContext, TSessionFunctionsWrapper, TScanFunctions>(TSessionFunctionsWrapper sessionFunctions, ScanCursorState<TKey, TValue> scanCursorState, 
+                TScanFunctions scanFunctions, RecordInfo recordInfo, ref TKey key, ref TValue value, long minAddress)
+            where TScanFunctions : IScanIteratorFunctions<TKey, TValue>
             where TSessionFunctionsWrapper : ISessionFunctionsWrapper<TKey, TValue, TInput, TOutput, TContext, TStoreFunctions, TAllocator>
         {
-            Debug.Assert(epoch.ThisInstanceProtected(), "This is called only from ScanLookup so the epoch should be protected");
             TsavoriteKV<TKey, TValue, TStoreFunctions, TAllocator>.PendingContext<TInput, TOutput, TContext> pendingContext = new(_storeFunctions.GetKeyHashCode64(ref key));
-
-            OperationStatus internalStatus;
             OperationStackContext<TKey, TValue, TStoreFunctions, TAllocator> stackCtx = new(pendingContext.keyHash);
-            bool needIO;
-            do
-            {
-                // If a more recent version of the record exists, do not push this one. Start by searching in-memory.
-                if (sessionFunctions.Store.TryFindRecordInMainLogForConditionalOperation<TInput, TOutput, TContext, TSessionFunctionsWrapper>(sessionFunctions, ref key, ref stackCtx, minAddress, out internalStatus, out needIO))
-                    return Status.CreateFound();
-            }
-            while (sessionFunctions.Store.HandleImmediateNonPendingRetryStatus<TInput, TOutput, TContext, TSessionFunctionsWrapper>(internalStatus, sessionFunctions));
-
-            TInput input = default;
-            TOutput output = default;
-            if (needIO)
+            OperationStatus internalStatus;
+            if (RecordLivenessLookupInLog<TInput, TOutput, TContext, TSessionFunctionsWrapper>(sessionFunctions, ref stackCtx, ref key, minAddress, out var needIO))
+                internalStatus = OperationStatus.SUCCESS;
+            else if (needIO)
             {
                 // A more recent version of the key was not (yet) found and we need another IO to continue searching.
-                internalStatus = PrepareIOForConditionalScan(sessionFunctions, ref pendingContext, ref key, ref input, ref value, ref output, default,
-                                ref stackCtx, minAddress, scanCursorState);
+                pendingContext.scanCursorState = scanCursorState;
+                internalStatus = sessionFunctions.Store.PrepareIOForConditionalOperation(ref pendingContext, ref key, ref value,
+                        ref stackCtx, minAddress, WriteReason.Iteration, OperationType.CONDITIONAL_SCAN_PUSH);
             }
             else
             {
@@ -292,14 +204,14 @@ namespace Tsavorite.core
                 // and this is the previous record in the tag chain. Push this record to the user.
                 RecordMetadata recordMetadata = new(recordInfo, stackCtx.recSrc.LogicalAddress);
                 var stop = (stackCtx.recSrc.LogicalAddress >= HeadAddress)
-                    ? !scanCursorState.functions.ConcurrentReader(ref key, ref value, recordMetadata, scanCursorState.acceptedCount, out var cursorRecordResult)
-                    : !scanCursorState.functions.SingleReader(ref key, ref value, recordMetadata, scanCursorState.acceptedCount, out cursorRecordResult);
+                    ? !scanFunctions.ConcurrentReader(ref key, ref value, recordMetadata, scanCursorState.acceptedCount, out var cursorRecordResult)
+                    : !scanFunctions.SingleReader(ref key, ref value, recordMetadata, scanCursorState.acceptedCount, out cursorRecordResult);
                 if (stop)
                     scanCursorState.stop = true;
                 else
                 {
                     if ((cursorRecordResult & CursorRecordResult.Accept) != 0)
-                        Interlocked.Increment(ref scanCursorState.acceptedCount);
+                        _ = Interlocked.Increment(ref scanCursorState.acceptedCount);
                     if ((cursorRecordResult & CursorRecordResult.EndBatch) != 0)
                         scanCursorState.endBatch = true;
                 }
@@ -309,57 +221,50 @@ namespace Tsavorite.core
         }
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        internal static OperationStatus PrepareIOForConditionalScan<TInput, TOutput, TContext, TSessionFunctionsWrapper>(TSessionFunctionsWrapper sessionFunctions,
-                                        ref TsavoriteKV<TKey, TValue, TStoreFunctions, TAllocator>.PendingContext<TInput, TOutput, TContext> pendingContext,
-                                        ref TKey key, ref TInput input, ref TValue value, ref TOutput output, TContext userContext,
-                                        ref OperationStackContext<TKey, TValue, TStoreFunctions, TAllocator> stackCtx, long minAddress, ScanCursorState<TKey, TValue> scanCursorState)
+        internal Status IterationRecordLivenessCheck<TInput, TOutput, TContext, TSessionFunctionsWrapper, TScanFunctions>(TSessionFunctionsWrapper sessionFunctions,
+                ref TKey key, ref TValue value, long minAddress)
             where TSessionFunctionsWrapper : ISessionFunctionsWrapper<TKey, TValue, TInput, TOutput, TContext, TStoreFunctions, TAllocator>
         {
-            // WriteReason is not surfaced for this operation, so pick anything.
-            var status = sessionFunctions.Store.PrepareIOForConditionalOperation(sessionFunctions, ref pendingContext, ref key, ref input, ref value, ref output,
-                    userContext, ref stackCtx, minAddress, WriteReason.Compaction, OperationType.CONDITIONAL_SCAN_PUSH);
-            pendingContext.scanCursorState = scanCursorState;
-            return status;
+            TsavoriteKV<TKey, TValue, TStoreFunctions, TAllocator>.PendingContext<TInput, TOutput, TContext> pendingContext = new(_storeFunctions.GetKeyHashCode64(ref key));
+            OperationStackContext<TKey, TValue, TStoreFunctions, TAllocator> stackCtx = new(pendingContext.keyHash);
+            OperationStatus internalStatus;
+            if (RecordLivenessLookupInLog<TInput, TOutput, TContext, TSessionFunctionsWrapper>(sessionFunctions, ref stackCtx, ref key, minAddress, out var needIO))
+                internalStatus = OperationStatus.SUCCESS;
+            else if (needIO)
+            {
+                // A more recent version of the key was not (yet) found and we need another IO to continue searching.
+                internalStatus = sessionFunctions.Store.PrepareIOForConditionalOperation(ref pendingContext, ref key, ref value,
+                        ref stackCtx, minAddress, WriteReason.Iteration, OperationType.ITERATION_LIVENESS_CHECK);
+            }
+            else
+                internalStatus = OperationStatus.NOTFOUND;
+            return sessionFunctions.Store.HandleOperationStatus(sessionFunctions.Ctx, ref pendingContext, internalStatus, out _);
         }
 
-        internal struct LogScanCursorFunctions<TInput, TOutput> : ISessionFunctions<TKey, TValue, TInput, TOutput, Empty>
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        internal bool RecordLivenessLookupInLog<TInput, TOutput, TContext, TSessionFunctionsWrapper>(TSessionFunctionsWrapper sessionFunctions,
+                ref OperationStackContext<TKey, TValue, TStoreFunctions, TAllocator> stackCtx,
+                ref TKey key, long minAddress, out bool needIO)
+            where TSessionFunctionsWrapper : ISessionFunctionsWrapper<TKey, TValue, TInput, TOutput, TContext, TStoreFunctions, TAllocator>
         {
-            public bool SingleReader(ref TKey key, ref TInput input, ref TValue value, ref TOutput dst, ref ReadInfo readInfo) => true;
-            public bool ConcurrentReader(ref TKey key, ref TInput input, ref TValue value, ref TOutput dst, ref ReadInfo readInfo, ref RecordInfo recordInfo) => true;
-            public void ReadCompletionCallback(ref TKey key, ref TInput input, ref TOutput output, Empty ctx, Status status, RecordMetadata recordMetadata) { }
-
-            public bool SingleDeleter(ref TKey key, ref TValue value, ref DeleteInfo deleteInfo, ref RecordInfo recordInfo) => true;
-            public void PostSingleDeleter(ref TKey key, ref DeleteInfo deleteInfo) { }
-            public bool ConcurrentDeleter(ref TKey key, ref TValue value, ref DeleteInfo deleteInfo, ref RecordInfo recordInfo) => true;
-
-            public bool SingleWriter(ref TKey key, ref TInput input, ref TValue src, ref TValue dst, ref TOutput output, ref UpsertInfo upsertInfo, WriteReason reason, ref RecordInfo recordInfo) => true;
-            public void PostSingleWriter(ref TKey key, ref TInput input, ref TValue src, ref TValue dst, ref TOutput output, ref UpsertInfo upsertInfo, WriteReason reason) { }
-            public bool ConcurrentWriter(ref TKey key, ref TInput input, ref TValue src, ref TValue dst, ref TOutput output, ref UpsertInfo upsertInfo, ref RecordInfo recordInfo) => true;
-
-            public bool InPlaceUpdater(ref TKey key, ref TInput input, ref TValue value, ref TOutput output, ref RMWInfo rmwInfo, ref RecordInfo recordInfo) => true;
-
-            public bool NeedCopyUpdate(ref TKey key, ref TInput input, ref TValue oldValue, ref TOutput output, ref RMWInfo rmwInfo) => true;
-            public bool CopyUpdater(ref TKey key, ref TInput input, ref TValue oldValue, ref TValue newValue, ref TOutput output, ref RMWInfo rmwInfo, ref RecordInfo recordInfo) => true;
-            public bool PostCopyUpdater(ref TKey key, ref TInput input, ref TValue oldValue, ref TValue newValue, ref TOutput output, ref RMWInfo rmwInfo) => true;
-
-            public bool NeedInitialUpdate(ref TKey key, ref TInput input, ref TOutput output, ref RMWInfo rmwInfo) => true;
-            public bool InitialUpdater(ref TKey key, ref TInput input, ref TValue value, ref TOutput output, ref RMWInfo rmwInfo, ref RecordInfo recordInfo) => true;
-            public void PostInitialUpdater(ref TKey key, ref TInput input, ref TValue value, ref TOutput output, ref RMWInfo rmwInfo) { }
-
-            public void RMWCompletionCallback(ref TKey key, ref TInput input, ref TOutput output, Empty ctx, Status status, RecordMetadata recordMetadata) { }
-
-            public int GetRMWModifiedValueLength(ref TValue value, ref TInput input) => 0;
-            public int GetRMWInitialValueLength(ref TInput input) => 0;
-
-            public void ConvertOutputToHeap(ref TInput input, ref TOutput output) { }
+            Debug.Assert(epoch.ThisInstanceProtected(), "This is called only from ScanLookup variants, so the epoch should be protected");
+            OperationStatus internalStatus;
+            do
+            {
+                // If a more recent version of the record exists, do not push this one. Start by searching in-memory.
+                if (sessionFunctions.Store.TryFindRecordInMainLogForConditionalOperation<TInput, TOutput, TContext, TSessionFunctionsWrapper>(sessionFunctions, ref key, ref stackCtx, minAddress, out internalStatus, out needIO))
+                    return true;
+            }
+            while (sessionFunctions.Store.HandleImmediateNonPendingRetryStatus<TInput, TOutput, TContext, TSessionFunctionsWrapper>(internalStatus, sessionFunctions));
+            return false;
         }
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         internal long SnapToFixedLengthLogicalAddressBoundary(ref long logicalAddress, int recordSize)
         {
             // Get the initial offset on the page
-            int offset = (int)(logicalAddress & PageSizeMask);
-            long pageStart = logicalAddress - offset;
+            var offset = (int)(logicalAddress & PageSizeMask);
+            var pageStart = logicalAddress - offset;
 
             int recordStartOffset;
             if (logicalAddress < PageSize)
@@ -389,6 +294,45 @@ namespace Tsavorite.core
         /// <param name="beginAddress">Begin address</param>
         /// <param name="endAddress">End address</param>
         /// <param name="observer">Observer of scan</param>
-        internal abstract void MemoryPageScan(long beginAddress, long endAddress, IObserver<ITsavoriteScanIterator<TKey, TValue>> observer);
+        internal abstract void MemoryPageScan(long beginAddress, long endAddress, IObserver<IRecordScanner<TKey, TValue>> observer);
+    }
+
+    // No-op ISessionFunctions implementation for use in log scanning (they don't do anything because we are only reading for liveness; we have the data in PendingContext).
+    internal struct LivenessCheckingSessionFunctions<TKey, TValue> : ISessionFunctions<TKey, TValue, Empty, Empty, Empty>
+    {
+        public readonly bool SingleReader(ref TKey key, ref Empty input, ref TValue value, ref Empty dst, ref ReadInfo readInfo) => true;
+        public readonly bool ConcurrentReader(ref TKey key, ref Empty input, ref TValue value, ref Empty dst, ref ReadInfo readInfo, ref RecordInfo recordInfo) => true;
+        public readonly void ReadCompletionCallback(ref TKey key, ref Empty input, ref Empty output, Empty ctx, Status status, RecordMetadata recordMetadata) { }
+
+        public readonly bool SingleDeleter(ref TKey key, ref TValue value, ref DeleteInfo deleteInfo, ref RecordInfo recordInfo) => true;
+        public readonly void PostSingleDeleter(ref TKey key, ref DeleteInfo deleteInfo) { }
+        public readonly bool ConcurrentDeleter(ref TKey key, ref TValue value, ref DeleteInfo deleteInfo, ref RecordInfo recordInfo) => true;
+
+        public readonly bool SingleWriter(ref TKey key, ref Empty input, ref TValue src, ref TValue dst, ref Empty output, ref UpsertInfo upsertInfo, WriteReason reason, ref RecordInfo recordInfo) => true;
+        public readonly void PostSingleWriter(ref TKey key, ref Empty input, ref TValue src, ref TValue dst, ref Empty output, ref UpsertInfo upsertInfo, WriteReason reason) { }
+        public readonly bool ConcurrentWriter(ref TKey key, ref Empty input, ref TValue src, ref TValue dst, ref Empty output, ref UpsertInfo upsertInfo, ref RecordInfo recordInfo) => true;
+
+        public readonly bool InPlaceUpdater(ref TKey key, ref Empty input, ref TValue value, ref Empty output, ref RMWInfo rmwInfo, ref RecordInfo recordInfo) => true;
+
+        public readonly bool NeedCopyUpdate(ref TKey key, ref Empty input, ref TValue oldValue, ref Empty output, ref RMWInfo rmwInfo) => true;
+        public readonly bool CopyUpdater(ref TKey key, ref Empty input, ref TValue oldValue, ref TValue newValue, ref Empty output, ref RMWInfo rmwInfo, ref RecordInfo recordInfo) => true;
+        public readonly bool PostCopyUpdater(ref TKey key, ref Empty input, ref TValue oldValue, ref TValue newValue, ref Empty output, ref RMWInfo rmwInfo) => true;
+
+        public readonly bool NeedInitialUpdate(ref TKey key, ref Empty input, ref Empty output, ref RMWInfo rmwInfo) => true;
+        public readonly bool InitialUpdater(ref TKey key, ref Empty input, ref TValue value, ref Empty output, ref RMWInfo rmwInfo, ref RecordInfo recordInfo) => true;
+        public readonly void PostInitialUpdater(ref TKey key, ref Empty input, ref TValue value, ref Empty output, ref RMWInfo rmwInfo) { }
+
+        public readonly void RMWCompletionCallback(ref TKey key, ref Empty input, ref Empty output, Empty ctx, Status status, RecordMetadata recordMetadata) { }
+
+        public readonly int GetRMWModifiedValueLength(ref TValue value, ref Empty input) => 0;
+        public readonly int GetRMWInitialValueLength(ref Empty input) => 0;
+
+        public readonly void ConvertOutputToHeap(ref Empty input, ref Empty output) { }
+    }
+
+    class DummyScanFunctions<TKey, TValue> : IScanIteratorFunctions<TKey, TValue>
+    {
+        public bool SingleReader(ref TKey key, ref TValue value, RecordMetadata recordMetadata, long numberOfRecords, out CursorRecordResult cursorRecordResult) 
+            => throw new NotImplementedException("Methods on this class should not be called");
     }
 }

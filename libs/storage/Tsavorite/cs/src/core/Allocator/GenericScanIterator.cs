@@ -10,7 +10,7 @@ namespace Tsavorite.core
     /// <summary>
     /// Scan iterator for hybrid log
     /// </summary>
-    internal sealed class GenericScanIterator<TKey, TValue, TStoreFunctions> : ScanIteratorBase, ITsavoriteScanIterator<TKey, TValue>, IPushScanIterator<TKey>
+    internal sealed class GenericScanIterator<TKey, TValue, TStoreFunctions> : ScanIteratorBase, IRecordScanner<TKey, TValue>, IPushScanIterator<TKey>
         where TStoreFunctions : IStoreFunctions<TKey, TValue>
     {
         private readonly TsavoriteKV<TKey, TValue, TStoreFunctions, GenericAllocator<TKey, TValue, TStoreFunctions>> store;

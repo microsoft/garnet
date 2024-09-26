@@ -15,6 +15,7 @@ namespace Tsavorite.core
         DELETE,
         CONDITIONAL_INSERT,
         CONDITIONAL_SCAN_PUSH,
+        ITERATION_LIVENESS_CHECK
     }
 
     [Flags]
