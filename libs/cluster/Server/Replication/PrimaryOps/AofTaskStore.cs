@@ -4,7 +4,6 @@
 using System;
 using System.Collections.Generic;
 using System.Diagnostics;
-using System.Threading;
 using Garnet.client;
 using Garnet.common;
 using Microsoft.Extensions.Logging;
@@ -132,7 +131,6 @@ namespace Garnet.cluster
                     current.LocalNodeId,
                     remoteNodeId,
                     new GarnetClientSession(address, port, clusterProvider.serverOptions.TlsOptions?.TlsClientOptions, authUsername: clusterProvider.ClusterUsername, authPassword: clusterProvider.ClusterPassword, 1 << 22, logger: logger),
-                    new CancellationTokenSource(),
                     startAddress,
                     logger);
             }

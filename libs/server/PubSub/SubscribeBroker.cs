@@ -136,13 +136,14 @@ namespace Garnet.server
                 var uniqueKeys = new Dictionary<byte[], (byte[], byte[])>(ByteArrayComparer.Instance);
                 long truncateUntilAddress = log.BeginAddress;
 
-                while (true)
-                {
-                    if (disposed)
-                        break;
+                using var iter = log.ScanSingle(log.BeginAddress, long.MaxValue, scanUncommitted: true);
+                var signal = iter.Signal;
+                using var registration = cts.Token.Register(signal);
 
-                    using var iter = log.Scan(log.BeginAddress, long.MaxValue, scanUncommitted: true);
+                while (!disposed)
+                {
                     await iter.WaitAsync(cancellationToken).ConfigureAwait(false);
+                    if (cancellationToken.IsCancellationRequested) break;
                     while (iter.GetNext(out byte[] subscriptionKeyValueAscii, out _, out long currentAddress, out long nextAddress))
                     {
                         if (currentAddress >= long.MaxValue) return;
