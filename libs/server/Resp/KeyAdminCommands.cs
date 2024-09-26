@@ -41,6 +41,37 @@ namespace Garnet.server
         }
 
         /// <summary>
+        /// TryRENAMENX
+        /// </summary>
+        private bool NetworkRENAMENX<TGarnetApi>(ref TGarnetApi storageApi)
+            where TGarnetApi : IGarnetApi
+        {
+            if (parseState.Count != 2)
+            {
+                return AbortWithWrongNumberOfArguments(nameof(RespCommand.RENAMENX));
+            }
+
+            var oldKeySlice = parseState.GetArgSliceByRef(0);
+            var newKeySlice = parseState.GetArgSliceByRef(1);
+            var status = storageApi.RENAMENX(oldKeySlice, newKeySlice, out var result);
+
+            if (status == GarnetStatus.OK)
+            {
+                // Integer reply: 1 if key was renamed to newkey.
+                // Integer reply: 0 if newkey already exists.
+                while (!RespWriteUtils.WriteInteger(result, ref dcurr, dend))
+                    SendAndReset();
+            }
+            else
+            {
+                while (!RespWriteUtils.WriteError(CmdStrings.RESP_ERR_GENERIC_NOSUCHKEY, ref dcurr, dend))
+                    SendAndReset();
+            }
+
+            return true;
+        }
+
+        /// <summary>
         /// GETDEL command processor
         /// </summary>
         /// <typeparam name="TGarnetApi"> Garnet API type </typeparam>
