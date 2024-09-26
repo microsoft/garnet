@@ -2,6 +2,7 @@
 // Licensed under the MIT license.
 
 using System;
+using System.Collections.Generic;
 using System.IO;
 using Garnet.server.Auth.Settings;
 using Garnet.server.TLS;
@@ -367,6 +368,8 @@ namespace Garnet.server
         /// Allow loading custom commands from digitally unsigned assemblies
         /// </summary>
         public bool ExtensionAllowUnsignedAssemblies;
+
+        public IEnumerable<string> LoadModuleCS;
 
         /// <summary>
         /// Constructor
