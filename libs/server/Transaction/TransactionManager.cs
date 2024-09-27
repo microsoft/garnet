@@ -66,8 +66,6 @@ namespace Garnet.server
         // Not readonly to avoid defensive copy
         BasicGarnetApi garnetTxFinalizeApi;
 
-        internal IKernelSession kernelSession;
-
         private readonly RespServerSession respSession;
         readonly FunctionsState functionsState;
         internal readonly ScratchBufferManager scratchBufferManager;

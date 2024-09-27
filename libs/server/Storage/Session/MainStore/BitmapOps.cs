@@ -134,8 +134,7 @@ namespace Garnet.server
 
             try
             {
-                RespKernelSession.BeginUnsafe<SpanByte, SpanByte, SpanByte, SpanByteAndMemory, long, MainSessionFunctions, MainStoreFunctions, MainStoreAllocator,
-                    LockableUnsafeContext<SpanByte, SpanByte, SpanByte, SpanByteAndMemory, long, MainSessionFunctions, MainStoreFunctions, MainStoreAllocator>>(this, uc);
+                RespKernelSession.BeginUnsafe(this, uc.Session);
             readFromScratch:
                 var localHeadAddress = HeadAddress;
                 var keysFound = 0;

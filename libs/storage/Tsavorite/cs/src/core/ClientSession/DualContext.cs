@@ -9,7 +9,8 @@ using System.Threading.Tasks;
 namespace Tsavorite.core
 {
     /// <summary>
-    /// Tsavorite Operations implementation that allows manual control of record epoch management. For advanced use only.
+    /// Tsavorite Operations implementation for dual-store configuration. Taken from <see cref="UnsafeContext{TKey, TValue, TInput, TOutput, TContext, TSessionFunctions, TStoreFunctions, TAllocator}"/>
+    /// with <see cref="DualRole"/>-specific locking considerations. Requires manual control of epoch management.
     /// </summary>
     public readonly struct DualContext<TKey, TValue, TInput, TOutput, TContext, TSessionFunctions, TStoreFunctions, TAllocator>
         : ITsavoriteContext<TKey, TValue, TInput, TOutput, TContext, TSessionFunctions, TStoreFunctions, TAllocator>

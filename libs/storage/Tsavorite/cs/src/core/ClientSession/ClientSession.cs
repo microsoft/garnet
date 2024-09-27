@@ -128,7 +128,7 @@ namespace Tsavorite.core
         public BasicContext<TKey, TValue, TInput, TOutput, TContext, TSessionFunctions, TStoreFunctions, TAllocator> BasicContext => bContext;
 
         /// <summary>
-        /// Return a session wrapper struct that does handles a Dual Tsavorite configuration in the caller
+        /// Return a session wrapper struct that handles a Dual Tsavorite configuration in the caller
         /// </summary>
         public DualContext<TKey, TValue, TInput, TOutput, TContext, TSessionFunctions, TStoreFunctions, TAllocator> DualContext => dualContext;
 

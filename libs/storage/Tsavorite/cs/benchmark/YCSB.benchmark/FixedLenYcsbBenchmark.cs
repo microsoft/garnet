@@ -135,7 +135,7 @@ namespace Tsavorite.benchmark
 
             using var session = store.NewSession<Input, Output, Empty, SessionFunctions>(functions);
             var uContext = session.UnsafeContext;
-            TransientKernelSession<Key, Value, Input, Output, Empty, SessionFunctions, StructStoreFunctions, BlittableAllocator<Key, Value, StructStoreFunctions>> kernelSession = new(session);
+            YcsbKernelSession<Key, Value, Input, Output, Empty, SessionFunctions, StructStoreFunctions, BlittableAllocator<Key, Value, StructStoreFunctions>> kernelSession = new(session);
             kernelSession.BeginUnsafe();
 
             try
@@ -392,7 +392,7 @@ namespace Tsavorite.benchmark
 
             var session = store.NewSession<Input, Output, Empty, SessionFunctions>(functions);
             var uContext = session.UnsafeContext;
-            TransientKernelSession<Key, Value, Input, Output, Empty, SessionFunctions, StructStoreFunctions, BlittableAllocator<Key, Value, StructStoreFunctions>> kernelSession = new(session);
+            YcsbKernelSession<Key, Value, Input, Output, Empty, SessionFunctions, StructStoreFunctions, BlittableAllocator<Key, Value, StructStoreFunctions>> kernelSession = new(session);
             kernelSession.BeginUnsafe();
 
             Value value = default;

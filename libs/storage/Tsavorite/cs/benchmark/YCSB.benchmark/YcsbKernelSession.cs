@@ -7,14 +7,14 @@ using Tsavorite.core;
 
 namespace Tsavorite.benchmark
 {
-    internal struct TransientKernelSession<TKey, TValue, TInput, TOutput, TContext, TSessionFunctions, TStoreFunctions, TAllocator> : IKernelSession
+    internal struct YcsbKernelSession<TKey, TValue, TInput, TOutput, TContext, TSessionFunctions, TStoreFunctions, TAllocator> : IKernelSession
         where TSessionFunctions : ISessionFunctions<TKey, TValue, TInput, TOutput, TContext>
         where TStoreFunctions : IStoreFunctions<TKey, TValue>
         where TAllocator : IAllocator<TKey, TValue, TStoreFunctions>
     {
         ClientSession<TKey, TValue, TInput, TOutput, TContext, TSessionFunctions, TStoreFunctions, TAllocator> _clientSession;
 
-        internal TransientKernelSession(ClientSession<TKey, TValue, TInput, TOutput, TContext, TSessionFunctions, TStoreFunctions, TAllocator> clientSession) => _clientSession = clientSession;
+        internal YcsbKernelSession(ClientSession<TKey, TValue, TInput, TOutput, TContext, TSessionFunctions, TStoreFunctions, TAllocator> clientSession) => _clientSession = clientSession;
 
         /// <inheritdoc/>
         public ulong SharedTxnLockCount { get; set; }
@@ -24,23 +24,19 @@ namespace Tsavorite.benchmark
 
         /// <inheritdoc/>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        internal void BeginTransaction()
-            => Debug.Fail($"Should not be doing transactional operations in {this.GetType().Name}");
+        internal void BeginTransaction() => Debug.Fail($"Should not be doing transactional operations in {this.GetType().Name}");
 
         /// <inheritdoc/>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        internal void EndTransaction()
-            => Debug.Fail($"Should not be doing transactional operations in {this.GetType().Name}");
+        internal void EndTransaction() => Debug.Fail($"Should not be doing transactional operations in {this.GetType().Name}");
 
         /// <inheritdoc/>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public readonly void CheckTransactionIsStarted()
-            => Debug.Fail($"Should not be doing transactional operations in {this.GetType().Name}");
+        public readonly void CheckTransactionIsStarted() => Debug.Fail($"Should not be doing transactional operations in {this.GetType().Name}");
 
         /// <inheritdoc/>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public readonly void CheckTransactionIsNotStarted()
-            => Debug.Fail($"Should not be doing transactional operations in {this.GetType().Name}");
+        public readonly void CheckTransactionIsNotStarted() => Debug.Fail($"Should not be doing transactional operations in {this.GetType().Name}");
 
         /// <inheritdoc/>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]

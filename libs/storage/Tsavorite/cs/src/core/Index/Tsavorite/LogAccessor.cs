@@ -125,7 +125,7 @@ namespace Tsavorite.core
             if (snapToPageStart)
                 untilAddress &= ~allocatorBase.PageSizeMask;
 
-            var epochTaken = store.Kernel.Epoch.AcquireIfNotProtected();
+            var epochTaken = store.Kernel.Epoch.EnsureAcquired();
             try
             {
                 allocatorBase.ShiftBeginAddress(untilAddress, truncateLog);

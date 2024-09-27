@@ -203,12 +203,12 @@ namespace Tsavorite.core
         }
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public bool AcquireIfNotProtected()
+        public bool EnsureAcquired()
         {
-            var wasProtected = ThisInstanceProtected();
-            if (!wasProtected)
-                Resume();
-            return !wasProtected;
+            if (ThisInstanceProtected())
+                return false;
+            Resume();
+            return true;
         }
 
         /// <summary>

@@ -58,7 +58,7 @@ namespace Garnet.server
                 StartPendingMetrics();
                 CompletePendingForSession(ref status, ref output, ref context);
                 StopPendingMetrics();
-                RespKernelSession.BeginUnsafe<SpanByte, SpanByte, SpanByte, SpanByteAndMemory, long, MainSessionFunctions, MainStoreFunctions, MainStoreAllocator, TContext>(this, context);
+                RespKernelSession.BeginUnsafe(this, context.Session);
                 // Start read of pointers from beginning if epoch changed
                 if (HeadAddress == localHeadAddress)
                 {

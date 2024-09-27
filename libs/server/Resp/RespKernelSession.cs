@@ -102,8 +102,7 @@ namespace Garnet.server
 
         // Overload for single-context operation
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public static void BeginUnsafe<TKey, TValue, TInput, TOutput, TContext, TFunctions, TStoreFunctions, TAllocator, TSessionContext>(StorageSession storageSession, TSessionContext context)
-            where TSessionContext : ITsavoriteContext<TKey, TValue, TInput, TOutput, TContext, TFunctions, TStoreFunctions, TAllocator>
+        public static void BeginUnsafe<TKey, TValue, TInput, TOutput, TContext, TFunctions, TStoreFunctions, TAllocator>(StorageSession storageSession, ClientSession<TKey, TValue, TInput, TOutput, TContext, TFunctions, TStoreFunctions, TAllocator> clientSession)
             where TFunctions : ISessionFunctions<TKey, TValue, TInput, TOutput, TContext>
             where TStoreFunctions : IStoreFunctions<TKey, TValue>
             where TAllocator : IAllocator<TKey, TValue, TStoreFunctions>
@@ -112,7 +111,7 @@ namespace Garnet.server
             // get the "trying to acquire already-acquired epoch" error.
             storageSession.TsavoriteKernel.Epoch.Resume();
 
-            context.Session.DoThreadStateMachineStep();
+            clientSession.DoThreadStateMachineStep();
         }
 
         /// <inheritdoc/>
