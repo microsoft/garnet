@@ -431,11 +431,12 @@ namespace Garnet.server
             var output_currptr = output_startptr;
             var output_end = output_currptr + output.Length;
             var count = 0;
+            var isDefaultCount = true;
             ObjectOutputHeader outputHeader = default;
 
             try
             {
-                if (!ReadListPositionInput(ref input, out var rank, out count, out var maxlen, out var error))
+                if (!ReadListPositionInput(ref input, out var rank, out count, out isDefaultCount, out var maxlen, out var error))
                 {
                     while (!RespWriteUtils.WriteError(error, ref output_currptr, output_end))
                         ObjectUtils.ReallocateOutput(ref output, ref isMemory, ref output_startptr, ref ptrHandle, ref output_currptr, ref output_end);
@@ -467,7 +468,7 @@ namespace Garnet.server
                 var totalArrayHeaderLen = 0;
                 var lastFoundItemIndex = -1;
 
-                if (count != 1)
+                if (!isDefaultCount)
                 {
                     while (!RespWriteUtils.WriteArrayLength(count, ref output_currptr, output_end, out var _, out totalArrayHeaderLen))
                         ObjectUtils.ReallocateOutput(ref output, ref isMemory, ref output_startptr, ref ptrHandle, ref output_currptr, ref output_end);
@@ -539,19 +540,19 @@ namespace Garnet.server
                     while (currentNode != null && currentIndex >= maxlenIndex);
                 }
 
-                if (noOfFoundItem == 0)
+                if (isDefaultCount && noOfFoundItem == 0)
                 {
                     output_currptr = output_startptr;
                     while (!RespWriteUtils.WriteNull(ref output_currptr, output_end))
                         ObjectUtils.ReallocateOutput(ref output, ref isMemory, ref output_startptr, ref ptrHandle, ref output_currptr, ref output_end);
                 }
-                else if (count > 1 && noOfFoundItem == 1)
+                else if (!isDefaultCount && noOfFoundItem == 0)
                 {
                     output_currptr = output_startptr;
-                    while (!RespWriteUtils.WriteInteger(lastFoundItemIndex, ref output_currptr, output_end))
+                    while (!RespWriteUtils.WriteNullArray(ref output_currptr, output_end))
                         ObjectUtils.ReallocateOutput(ref output, ref isMemory, ref output_startptr, ref ptrHandle, ref output_currptr, ref output_end);
                 }
-                else if (noOfFoundItem > 1)
+                else if (!isDefaultCount && noOfFoundItem != count)
                 {
                     var newTotalArrayHeaderLen = 0;
                     var startOutputStartptr = output_startptr;
@@ -578,12 +579,13 @@ namespace Garnet.server
             }
         }
 
-        private static unsafe bool ReadListPositionInput(ref ObjectInput input, out int rank, out int count, out int maxlen, out ReadOnlySpan<byte> error)
+        private static unsafe bool ReadListPositionInput(ref ObjectInput input, out int rank, out int count, out bool isDefaultCount, out int maxlen, out ReadOnlySpan<byte> error)
         {
             var currTokenIdx = input.parseStateStartIdx;
 
             rank = 1; // By default, LPOS takes first match element
             count = 1; // By default, LPOS return 1 element
+            isDefaultCount = true;
             maxlen = 0; // By default, iterate to all the item
 
             error = default;
@@ -607,6 +609,8 @@ namespace Garnet.server
                         error = CmdStrings.RESP_ERR_GENERIC_VALUE_IS_NOT_INTEGER;
                         return false;
                     }
+
+                    isDefaultCount = false;
                 }
                 else if (sbParam.SequenceEqual(CmdStrings.MAXLEN) || sbParam.SequenceEqual(CmdStrings.maxlen))
                 {
