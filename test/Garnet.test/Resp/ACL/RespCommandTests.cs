@@ -4293,14 +4293,41 @@ namespace Garnet.test.Resp.ACL
         {
             await CheckCommandsAsync(
                 "RENAME",
-                [DoPTTLAsync]
+                [DoRENAMEAsync]
             );
 
-            static async Task DoPTTLAsync(GarnetClient client)
+            static async Task DoRENAMEAsync(GarnetClient client)
             {
                 try
                 {
                     await client.ExecuteForStringResultAsync("RENAME", ["foo", "bar"]);
+                    Assert.Fail("Shouldn't succeed, key doesn't exist");
+                }
+                catch (Exception e)
+                {
+                    if (e.Message == "ERR no such key")
+                    {
+                        return;
+                    }
+
+                    throw;
+                }
+            }
+        }
+
+        [Test]
+        public async Task RenameNxACLsAsync()
+        {
+            await CheckCommandsAsync(
+                "RENAMENX",
+                [DoRENAMENXAsync]
+            );
+
+            static async Task DoRENAMENXAsync(GarnetClient client)
+            {
+                try
+                {
+                    await client.ExecuteForStringResultAsync("RENAMENX", ["foo", "bar"]);
                     Assert.Fail("Shouldn't succeed, key doesn't exist");
                 }
                 catch (Exception e)

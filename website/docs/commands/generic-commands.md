@@ -279,6 +279,26 @@ Renames key to newkey. It returns an error when key does not exist. If newkey al
 Simple string reply: OK.
 
 ---
+
+### RENAMENX
+
+#### Syntax
+
+```bash
+    RENAME key newkey
+```
+
+Renames key to newkey if newkey does not yet exist. It returns an error when key does not exist.
+
+#### Resp Reply
+
+One of the following:
+
+* Integer reply: 1 if key was renamed to newkey.
+* Integer reply: 0 if newkey already exists.
+
+---
+
 ### SCAN
 
 #### Syntax

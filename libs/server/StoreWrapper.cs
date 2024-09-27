@@ -347,7 +347,7 @@ namespace Garnet.server
                     }
                     else
                     {
-                        await appendOnlyFile.CommitAsync(token);
+                        await appendOnlyFile.CommitAsync(null, token);
                         await Task.Delay(commitFrequencyMs, token);
                     }
                 }
