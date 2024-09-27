@@ -197,6 +197,7 @@ namespace Garnet.server
         BGSAVE,
         COMMITAOF,
         FORCEGC,
+        PURGEBP,
         FAILOVER,
 
         // Custom commands
@@ -1804,6 +1805,10 @@ namespace Garnet.server
             else if (command.SequenceEqual(CmdStrings.MIGRATE))
             {
                 return RespCommand.MIGRATE;
+            }
+            else if (command.SequenceEqual(CmdStrings.PURGEBP))
+            {
+                return RespCommand.PURGEBP;
             }
             else if (command.SequenceEqual(CmdStrings.FAILOVER))
             {

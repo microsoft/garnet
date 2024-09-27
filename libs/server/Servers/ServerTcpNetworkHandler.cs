@@ -9,8 +9,8 @@ namespace Garnet.server
 {
     internal sealed class ServerTcpNetworkHandler : TcpNetworkHandler<GarnetServerTcp>
     {
-        public ServerTcpNetworkHandler(GarnetServerTcp serverHook, Socket socket, LimitedFixedBufferPool networkPool, bool useTLS, int networkSendThrottleMax, ILogger logger = null)
-            : base(serverHook, socket, networkPool, useTLS, null, networkSendThrottleMax, logger)
+        public ServerTcpNetworkHandler(GarnetServerTcp serverHook, Socket socket, NetworkBufferSettings networkBufferSettings, LimitedFixedBufferPool networkPool, bool useTLS, int networkSendThrottleMax = 8, ILogger logger = null)
+            : base(serverHook, socket, networkBufferSettings, networkPool, useTLS, null, networkSendThrottleMax: networkSendThrottleMax, logger: logger)
         {
         }
     }

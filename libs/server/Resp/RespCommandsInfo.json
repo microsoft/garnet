@@ -472,6 +472,20 @@
     "SubCommands": null
   },
   {
+    "Command": "PURGEBP",
+    "Name": "PURGEBP",
+    "IsInternal": false,
+    "Arity": 2,
+    "Flags": "Admin, NoMulti, NoScript, ReadOnly",
+    "FirstKey": 1,
+    "LastKey": 1,
+    "Step": 1,
+    "AclCategories": "Admin, Garnet",
+    "Tips": null,
+    "KeySpecifications": null,
+    "SubCommands": null
+  },
+  {
     "Command": "CLIENT",
     "Name": "CLIENT",
     "IsInternal": false,
