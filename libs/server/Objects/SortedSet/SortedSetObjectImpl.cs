@@ -30,6 +30,42 @@ namespace Garnet.server
             public bool WithScores { get; set; }
         };
 
+        bool TryGetSortedSetAddOption(ReadOnlySpan<byte> item, out SortedSetAddOption options)
+        {
+            if (item.EqualsUpperCaseSpanIgnoringCase("XX"u8))
+            {
+                options = SortedSetAddOption.XX;
+                return true;
+            }
+            if (item.EqualsUpperCaseSpanIgnoringCase("NX"u8))
+            {
+                options = SortedSetAddOption.NX;
+                return true;
+            }
+            if (item.EqualsUpperCaseSpanIgnoringCase("LT"u8))
+            {
+                options = SortedSetAddOption.LT;
+                return true;
+            }
+            if (item.EqualsUpperCaseSpanIgnoringCase("GT"u8))
+            {
+                options = SortedSetAddOption.GT;
+                return true;
+            }
+            if (item.EqualsUpperCaseSpanIgnoringCase("CH"u8))
+            {
+                options = SortedSetAddOption.CH;
+                return true;
+            }
+            if (item.EqualsUpperCaseSpanIgnoringCase("INCR"u8))
+            {
+                options = SortedSetAddOption.INCR;
+                return true;
+            }
+            options = SortedSetAddOption.None;
+            return false;
+        }
+
         private void SortedSetAdd(ref ObjectInput input, ref SpanByteAndMemory output)
         {
             var isMemory = false;
@@ -50,7 +86,7 @@ namespace Garnet.server
                 var currTokenIdx = input.parseStateStartIdx;
                 while (currTokenIdx < input.parseState.Count)
                 {
-                    if (!input.parseState.TryGetEnum(currTokenIdx, true, out SortedSetAddOption currOption))
+                    if (!TryGetSortedSetAddOption(input.parseState.GetArgSliceByRef(currTokenIdx).ReadOnlySpan, out var currOption))
                         break;
 
                     options |= currOption;
