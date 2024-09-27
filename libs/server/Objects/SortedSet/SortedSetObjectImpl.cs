@@ -66,6 +66,55 @@ namespace Garnet.server
             return false;
         }
 
+        bool GetOptions(ref ObjectInput input, ref int currTokenIdx, out SortedSetAddOption options, ref byte* curr, byte* end, ref SpanByteAndMemory output, ref bool isMemory, ref byte* ptr, ref MemoryHandle ptrHandle)
+        {
+            options = SortedSetAddOption.None;
+
+            while (currTokenIdx < input.parseState.Count)
+            {
+                if (!TryGetSortedSetAddOption(input.parseState.GetArgSliceByRef(currTokenIdx).ReadOnlySpan, out var currOption))
+                    break;
+
+                options |= currOption;
+                currTokenIdx++;
+            }
+
+            // Validate ZADD options combination
+            ReadOnlySpan<byte> optionsError = default;
+
+            // XX & NX are mutually exclusive
+            if (options.HasFlag(SortedSetAddOption.XX) && options.HasFlag(SortedSetAddOption.NX))
+                optionsError = CmdStrings.RESP_ERR_XX_NX_NOT_COMPATIBLE;
+
+            // NX, GT & LT are mutually exclusive
+            if ((options.HasFlag(SortedSetAddOption.GT) && options.HasFlag(SortedSetAddOption.LT)) ||
+               ((options.HasFlag(SortedSetAddOption.GT) || options.HasFlag(SortedSetAddOption.LT)) &&
+                options.HasFlag(SortedSetAddOption.NX)))
+                optionsError = CmdStrings.RESP_ERR_GT_LT_NX_NOT_COMPATIBLE;
+
+            // INCR supports only one score-element pair
+            if (options.HasFlag(SortedSetAddOption.INCR) && (input.parseState.Count - currTokenIdx > 2))
+                optionsError = CmdStrings.RESP_ERR_INCR_SUPPORTS_ONLY_SINGLE_PAIR;
+
+            if (!optionsError.IsEmpty)
+            {
+                while (!RespWriteUtils.WriteError(optionsError, ref curr, end))
+                    ObjectUtils.ReallocateOutput(ref output, ref isMemory, ref ptr, ref ptrHandle, ref curr, ref end);
+                return false;
+            }
+
+            // From here on we expect only score-element pairs
+            // Remaining token count should be positive and even
+            if (currTokenIdx == input.parseState.Count || (input.parseState.Count - currTokenIdx) % 2 != 0)
+            {
+                while (!RespWriteUtils.WriteError(CmdStrings.RESP_SYNTAX_ERROR, ref curr, end))
+                    ObjectUtils.ReallocateOutput(ref output, ref isMemory, ref ptr, ref ptrHandle, ref curr, ref end);
+                return false;
+            }
+
+            return true;
+        }
+
         private void SortedSetAdd(ref ObjectInput input, ref SpanByteAndMemory output)
         {
             var isMemory = false;
@@ -82,59 +131,32 @@ namespace Garnet.server
             try
             {
                 var options = SortedSetAddOption.None;
-
                 var currTokenIdx = input.parseStateStartIdx;
-                while (currTokenIdx < input.parseState.Count)
-                {
-                    if (!TryGetSortedSetAddOption(input.parseState.GetArgSliceByRef(currTokenIdx).ReadOnlySpan, out var currOption))
-                        break;
-
-                    options |= currOption;
-                    currTokenIdx++;
-                }
-
-                // Validate ZADD options combination
-                ReadOnlySpan<byte> optionsError = default;
-
-                // XX & NX are mutually exclusive
-                if (options.HasFlag(SortedSetAddOption.XX) && options.HasFlag(SortedSetAddOption.NX))
-                    optionsError = CmdStrings.RESP_ERR_XX_NX_NOT_COMPATIBLE;
-
-                // NX, GT & LT are mutually exclusive
-                if ((options.HasFlag(SortedSetAddOption.GT) && options.HasFlag(SortedSetAddOption.LT)) ||
-                   ((options.HasFlag(SortedSetAddOption.GT) || options.HasFlag(SortedSetAddOption.LT)) &&
-                    options.HasFlag(SortedSetAddOption.NX)))
-                    optionsError = CmdStrings.RESP_ERR_GT_LT_NX_NOT_COMPATIBLE;
-
-                // INCR supports only one score-element pair
-                if (options.HasFlag(SortedSetAddOption.INCR) && (input.parseState.Count - currTokenIdx > 2))
-                    optionsError = CmdStrings.RESP_ERR_INCR_SUPPORTS_ONLY_SINGLE_PAIR;
-
-                if (!optionsError.IsEmpty)
-                {
-                    while (!RespWriteUtils.WriteError(optionsError, ref curr, end))
-                        ObjectUtils.ReallocateOutput(ref output, ref isMemory, ref ptr, ref ptrHandle, ref curr, ref end);
-                    return;
-                }
-
-                // From here on we expect only score-element pairs
-                // Remaining token count should be positive and even
-                if (currTokenIdx == input.parseState.Count || (input.parseState.Count - currTokenIdx) % 2 != 0)
-                {
-                    while (!RespWriteUtils.WriteError(CmdStrings.RESP_SYNTAX_ERROR, ref curr, end))
-                        ObjectUtils.ReallocateOutput(ref output, ref isMemory, ref ptr, ref ptrHandle, ref curr, ref end);
-                    return;
-                }
+                var parsedOptions = false;
 
                 while (currTokenIdx < input.parseState.Count)
                 {
-                    // Score
-                    if (!input.parseState.TryGetDouble(currTokenIdx++, out var score))
+                    // Try to parse a Score field
+                    if (!input.parseState.TryGetDouble(currTokenIdx, out var score))
                     {
-                        while (!RespWriteUtils.WriteError(CmdStrings.RESP_ERR_NOT_VALID_FLOAT, ref curr, end))
-                            ObjectUtils.ReallocateOutput(ref output, ref isMemory, ref ptr, ref ptrHandle, ref curr, ref end);
-                        return;
+                        // Try to get and validate options before the Score field, if any
+                        if (!parsedOptions)
+                        {
+                            parsedOptions = true;
+                            if (!GetOptions(ref input, ref currTokenIdx, out options, ref curr, end, ref output, ref isMemory, ref ptr, ref ptrHandle))
+                                return;
+                            continue; // retry after parsing options
+                        }
+                        else
+                        {
+                            // Invalid Score encountered
+                            while (!RespWriteUtils.WriteError(CmdStrings.RESP_ERR_NOT_VALID_FLOAT, ref curr, end))
+                                ObjectUtils.ReallocateOutput(ref output, ref isMemory, ref ptr, ref ptrHandle, ref curr, ref end);
+                            return;
+                        }
                     }
+
+                    currTokenIdx++;
 
                     // Member
                     var memberSpan = input.parseState.GetArgSliceByRef(currTokenIdx++).ReadOnlySpan;
