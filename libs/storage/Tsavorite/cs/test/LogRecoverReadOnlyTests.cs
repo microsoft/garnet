@@ -105,7 +105,6 @@ namespace Tsavorite.test.recovery
                     var value = long.Parse(Encoding.UTF8.GetString(result));
                     ClassicAssert.AreEqual(prevValue + 1, value);
                     prevValue = value;
-                    iter.CompleteUntil(nextAddress);
                     if (prevValue == NumElements - 1)
                         done.Release();
                 }

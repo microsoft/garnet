@@ -194,6 +194,7 @@ namespace CommandInfoUpdater
             new("READONLY", RespCommand.READONLY),
             new("READWRITE", RespCommand.READWRITE),
             new("RENAME", RespCommand.RENAME),
+            new("RENAMENX", RespCommand.RENAMENX),
             new("REPLICAOF", RespCommand.REPLICAOF),
             new("RPOP", RespCommand.RPOP),
             new("RPOPLPUSH", RespCommand.RPOPLPUSH),

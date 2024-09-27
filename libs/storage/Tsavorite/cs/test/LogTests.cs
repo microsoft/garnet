@@ -180,9 +180,9 @@ namespace Tsavorite.test
             // Enter in some entries then wait on this separate thread
             await log.EnqueueAsync(entry);
             await log.EnqueueAsync(entry);
-            var commitTask = await log.CommitAsync(null, token: token);
+            var commitTask = await log.CommitAsync(null, null, token);
             await log.EnqueueAsync(entry);
-            await log.CommitAsync(commitTask, token: token);
+            await log.CommitAsync(commitTask, null, token);
         }
     }
 
@@ -678,7 +678,7 @@ namespace Tsavorite.test
                 LogChecksum = logChecksum,
                 LogCommitManager = manager,
                 TryRecoverLatest = false,
-                AutoRefreshSafeTailAddress = true
+                SafeTailRefreshFrequencyMs = 0
             };
             log = IsAsync(iteratorType) ? await TsavoriteLog.CreateAsync(logSettings) : new TsavoriteLog(logSettings);
 
@@ -689,6 +689,10 @@ namespace Tsavorite.test
             {
                 log.Enqueue(data1);
             }
+
+            // Wait for safe tail to catch up
+            while (log.SafeTailAddress < log.TailAddress)
+                await Task.Yield();
 
             ClassicAssert.AreEqual(log.TailAddress, log.SafeTailAddress);
 
@@ -735,6 +739,10 @@ namespace Tsavorite.test
             // Enqueue data, becomes auto-visible
             log.Enqueue(data1);
 
+            // Wait for safe tail to catch up
+            while (log.SafeTailAddress < log.TailAddress)
+                await Task.Yield();
+
             await AssertGetNext(asyncByteVectorIter, asyncMemoryOwnerIter, iter, data1, verifyAtEnd: true);
 
             log.Dispose();
@@ -753,7 +761,7 @@ namespace Tsavorite.test
                 PageSizeBits = 14,
                 LogChecksum = logChecksum,
                 LogCommitManager = manager,
-                AutoRefreshSafeTailAddress = true
+                SafeTailRefreshFrequencyMs = 0
             });
             byte[] data1 = new byte[1000];
             for (int i = 0; i < 100; i++) data1[i] = (byte)i;
@@ -763,8 +771,11 @@ namespace Tsavorite.test
                 log.Enqueue(data1);
             }
 
-            ClassicAssert.AreEqual(log.TailAddress, log.SafeTailAddress);
+            // Wait for safe tail to catch up
+            while (log.SafeTailAddress < log.TailAddress)
+                await Task.Yield();
 
+            ClassicAssert.AreEqual(log.TailAddress, log.SafeTailAddress);
             ClassicAssert.Less(log.CommittedUntilAddress, log.SafeTailAddress);
 
             using (var iter = log.Scan(0, long.MaxValue, scanUncommitted: true))
@@ -808,6 +819,11 @@ namespace Tsavorite.test
 
                 // Enqueue data, becomes auto-visible
                 log.Enqueue(data1);
+
+                // Wait for safe tail to catch up
+                while (log.SafeTailAddress < log.TailAddress)
+                    await Task.Yield();
+
 
                 await AssertGetNext(asyncByteVectorIter, asyncMemoryOwnerIter, iter, data1, verifyAtEnd: true);
             }
@@ -954,7 +970,7 @@ namespace Tsavorite.test
                 PageSizeBits = 14,
                 LogCommitManager = manager,
                 SegmentSizeBits = 22,
-                AutoRefreshSafeTailAddress = true
+                SafeTailRefreshFrequencyMs = 0
             });
             byte[] data1 = new byte[1000];
             for (int i = 0; i < 100; i++) data1[i] = (byte)i;
@@ -963,6 +979,10 @@ namespace Tsavorite.test
             {
                 log.Enqueue(data1);
             }
+
+            // Wait for safe tail to catch up
+            while (log.SafeTailAddress < log.TailAddress)
+                await Task.Yield();
 
             ClassicAssert.AreEqual(log.TailAddress, log.SafeTailAddress);
             ClassicAssert.Less(log.CommittedUntilAddress, log.SafeTailAddress);
@@ -1008,6 +1028,10 @@ namespace Tsavorite.test
 
                 // Enqueue additional data item, becomes auto-visible
                 log.Enqueue(data1);
+
+                // Wait for safe tail to catch up
+                while (log.SafeTailAddress < log.TailAddress)
+                    await Task.Yield();
 
                 await AssertGetNext(asyncByteVectorIter, asyncMemoryOwnerIter, iter, data1, verifyAtEnd: true);
             }
@@ -1161,7 +1185,7 @@ namespace Tsavorite.test
 
 
             var nextAddress = 0L;
-            using (var iter = log.Scan(0, long.MaxValue, "TEST"))
+            using (var iter = log.Scan(0, long.MaxValue))
             {
                 var count = 0;
                 while (iter.GetNext(out _, out _, out _, out nextAddress)) count++;
@@ -1181,7 +1205,7 @@ namespace Tsavorite.test
             log.Commit(true);
             log.CompleteLog(true);
 
-            using (var iter = log.Scan(nextAddress, long.MaxValue, "TEST"))
+            using (var iter = log.Scan(nextAddress, long.MaxValue))
             {
                 var counter = new Counter(log);
                 var consumer = new TsavoriteLogGeneralTests.TestConsumer(counter, entry);

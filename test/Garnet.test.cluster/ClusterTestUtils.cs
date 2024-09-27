@@ -1994,6 +1994,23 @@ namespace Garnet.test.cluster
             }
         }
 
+        public void FlushAll(int nodeIndex, ILogger logger = null)
+            => FlushAll((IPEndPoint)endpoints[nodeIndex], logger);
+
+        public void FlushAll(IPEndPoint endPoint, ILogger logger = null)
+        {
+            try
+            {
+                var server = redis.GetServer(endPoint);
+                server.FlushAllDatabases();
+            }
+            catch (Exception ex)
+            {
+                logger?.LogError(ex, "An error has occured; FlushAllDatabases");
+                Assert.Fail();
+            }
+        }
+
         public ClusterConfiguration ClusterNodes(int nodeIndex, ILogger logger = null)
             => ClusterNodes((IPEndPoint)endpoints[nodeIndex], logger);
 
