@@ -140,6 +140,10 @@ namespace Garnet.common
 
         /// <summary>
         /// Purge pool entries from all levels
+        /// NOTE:
+        ///     This is used to reclaim any unused buffer pool entries that were previously allocated.
+        ///     It does not wait for all referenced buffers to be returned.
+        ///     Use Dispose of you want to destroy this instance.
         /// </summary>
         public void Purge()
         {
@@ -153,7 +157,10 @@ namespace Garnet.common
         }
 
         /// <summary>
-        /// Free buffer
+        /// Dipose pool entries from all levels
+        /// NOTE:
+        ///     This is used to destroy the instance and reclaim all allocated buffer pool entries.
+        ///     As a consequence it spin waits until totalReferences goes back down to 0 and blocks any future allocations.
         /// </summary>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public void Dispose()
