@@ -156,6 +156,7 @@ namespace Garnet.server
                         }
                     }
 
+                    parsedOptions = true;
                     currTokenIdx++;
 
                     // Member
