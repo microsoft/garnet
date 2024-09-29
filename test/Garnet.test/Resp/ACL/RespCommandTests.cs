@@ -3869,7 +3869,7 @@ namespace Garnet.test.Resp.ACL
                 try
                 {
                     await client.ExecuteForStringResultAsync("MIGRATE", ["127.0.0.1", "9999", "KEY", "0", "1000"]);
-                    Assert.Fail("Shouldn't succeed, no replicas are attached");
+                    Assert.Fail("Shouldn't be reachable, cluster isn't enabled");
                 }
                 catch (Exception e)
                 {
@@ -3880,6 +3880,41 @@ namespace Garnet.test.Resp.ACL
 
                     throw;
                 }
+            }
+        }
+
+        [Test]
+        public async Task PurgeBPACLsAsync()
+        {
+            // Uses exceptions for control flow, as we're not setting up replicas here
+
+            await CheckCommandsAsync(
+                "PURGEBP",
+                [DoPurgeBPClusterAsync, DoPurgeBPAsync]
+            );
+
+            static async Task DoPurgeBPClusterAsync(GarnetClient client)
+            {
+                try
+                {
+                    await client.ExecuteForStringResultAsync("PURGEBP", ["MigrationManager"]);
+                    Assert.Fail("Shouldn't be reachable, cluster isn't enabled");
+                }
+                catch (Exception e)
+                {
+                    if (e.Message == "ERR This instance has cluster support disabled")
+                    {
+                        return;
+                    }
+
+                    throw;
+                }
+            }
+
+            static async Task DoPurgeBPAsync(GarnetClient client)
+            {
+                string val = await client.ExecuteForStringResultAsync("PURGEBP", ["ServerListener"]);
+                ClassicAssert.AreEqual("GC completed for ServerListener", val);
             }
         }
 

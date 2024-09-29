@@ -49,6 +49,7 @@ namespace Garnet.common
         readonly string remoteEndpoint;
         readonly string localEndpoint;
 
+        readonly NetworkBufferSettings networkBufferSettings;
         readonly LimitedFixedBufferPool networkPool;
 
         /// <summary>
@@ -59,17 +60,19 @@ namespace Garnet.common
         private int closeRequested;
 
         /// <summary>
-        /// 
+        /// GarnetTcpNetworkSender Constructor
         /// </summary>
         /// <param name="socket"></param>
-        /// <param name="networkPool"></param>
+        /// <param name="networkBufferSettings"></param>
         /// <param name="throttleMax"></param>
         public GarnetTcpNetworkSender(
             Socket socket,
+            NetworkBufferSettings networkBufferSettings,
             LimitedFixedBufferPool networkPool,
             int throttleMax = 8)
-            : base(networkPool.MinAllocationSize)
+            : base(networkBufferSettings.sendBufferSize)
         {
+            this.networkBufferSettings = networkBufferSettings;
             this.networkPool = networkPool;
             this.socket = socket;
             this.saeaStack = new(2 * ThrottleMax);
@@ -108,7 +111,7 @@ namespace Garnet.common
             {
                 if (disposed)
                     ThrowDisposed();
-                responseObject = new GarnetSaeaBuffer(SeaaBuffer_Completed, networkPool);
+                responseObject = new GarnetSaeaBuffer(SeaaBuffer_Completed, networkBufferSettings, networkPool);
             }
             head = responseObject.buffer.entryPtr;
             tail = responseObject.buffer.entryPtr + responseObject.buffer.entry.Length;
@@ -142,7 +145,7 @@ namespace Garnet.common
                 {
                     if (disposed)
                         ThrowDisposed();
-                    responseObject = new GarnetSaeaBuffer(SeaaBuffer_Completed, networkPool);
+                    responseObject = new GarnetSaeaBuffer(SeaaBuffer_Completed, networkBufferSettings, networkPool);
                 }
             }
         }

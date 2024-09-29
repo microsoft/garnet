@@ -670,7 +670,7 @@ namespace Garnet.test.cluster
             if (gcsConnections[nodeIndex] == null)
             {
                 var endpoint = GetEndPoint(nodeIndex).ToIPEndPoint();
-                gcsConnections[nodeIndex] = new GarnetClientSession(endpoint.Address.ToString(), endpoint.Port);
+                gcsConnections[nodeIndex] = new GarnetClientSession(endpoint.Address.ToString(), endpoint.Port, new());
                 gcsConnections[nodeIndex].Connect();
             }
             return gcsConnections[nodeIndex];
