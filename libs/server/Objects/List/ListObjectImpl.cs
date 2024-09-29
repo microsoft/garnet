@@ -561,7 +561,8 @@ namespace Garnet.server
 
                     if (totalArrayHeaderLen != newTotalArrayHeaderLen)
                     {
-                        Buffer.MemoryCopy(output_startptr + totalArrayHeaderLen, output_startptr + newTotalArrayHeaderLen, output.Length, output.Length);
+                        var remainingLength = (output_currptr - output_startptr) - totalArrayHeaderLen;
+                        Buffer.MemoryCopy(output_startptr + totalArrayHeaderLen, output_startptr + newTotalArrayHeaderLen, remainingLength, remainingLength);
                         output_currptr = output_currptr - (totalArrayHeaderLen - newTotalArrayHeaderLen);
                     }
                 }

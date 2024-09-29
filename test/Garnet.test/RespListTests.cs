@@ -1500,7 +1500,7 @@ namespace Garnet.test
         [TestCase("a,c,b,c,d", "c", "3", "rank,-1,maxlen,0,count,1")]
         [TestCase("a,c,b,c,d", "c", "1,3", "rank,1,maxlen,0,count,0")]
         [TestCase("a,c,b,c,d", "c", "1", "rank,1,maxlen,0,count,1")]
-        [TestCase("a,b,z,d,e,a,b,c,d,e,a,b,c,d,e,a,b,c,d,e,a,b,c,z,e", "z", "2,23", "count,0")]  // Test for buffer copy
+        [TestCase("z,b,z,d,e,a,b,c,d,e,a,b,c,d,e,a,b,c,d,e,a,b,c,z,z", "z", "0,2,23,24", "count,0")]  // Test for buffer copy
         public void LPOSWithOptions(string items, string find, string expectedIndexs, string options)
         {
             using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
