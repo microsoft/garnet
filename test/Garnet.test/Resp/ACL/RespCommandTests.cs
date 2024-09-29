@@ -2868,6 +2868,21 @@ namespace Garnet.test.Resp.ACL
         }
 
         [Test]
+        public async Task GetEXACLsAsync()
+        {
+            await CheckCommandsAsync(
+                "GETEX",
+                [DoGetEXAsync]
+            );
+
+            static async Task DoGetEXAsync(GarnetClient client)
+            {
+                string val = await client.ExecuteForStringResultAsync("GETEX", ["foo"]);
+                ClassicAssert.IsNull(val);
+            }
+        }
+
+        [Test]
         public async Task GetBitACLsAsync()
         {
             await CheckCommandsAsync(

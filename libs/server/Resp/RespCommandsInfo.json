@@ -1903,6 +1903,35 @@
     "SubCommands": null
   },
   {
+    "Command": "GETEX",
+    "Name": "GETEX",
+    "IsInternal": false,
+    "Arity": -2,
+    "Flags": "Fast, Write",
+    "FirstKey": 1,
+    "LastKey": 1,
+    "Step": 1,
+    "AclCategories": "Fast, String, Write",
+    "Tips": null,
+    "KeySpecifications": [
+      {
+        "BeginSearch": {
+          "TypeDiscriminator": "BeginSearchIndex",
+          "Index": 1
+        },
+        "FindKeys": {
+          "TypeDiscriminator": "FindKeysRange",
+          "LastKey": 0,
+          "KeyStep": 1,
+          "Limit": 0
+        },
+        "Notes": "RW and UPDATE because it changes the TTL",
+        "Flags": "RW, Access, Update"
+      }
+    ],
+    "SubCommands": null
+  },
+  {
     "Command": "GETRANGE",
     "Name": "GETRANGE",
     "IsInternal": false,

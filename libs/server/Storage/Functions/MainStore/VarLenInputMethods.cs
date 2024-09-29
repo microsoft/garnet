@@ -185,6 +185,13 @@ namespace Garnet.server
                         // No additional allocation needed.
                         break;
 
+                    case RespCommand.GETEX:
+                        if (input.ExtraMetadata > 0)
+                        {
+                            return sizeof(int) + t.Length + input.MetadataSize;
+                        }
+                        break;
+
                     case RespCommand.APPEND:
                         var valueLength = *((int*)(inputPtr + RespInputHeader.Size));
                         return sizeof(int) + t.Length + valueLength;
