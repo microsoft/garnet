@@ -424,7 +424,7 @@ namespace Garnet.server
                         var _ = new SpanByteAndMemory(SpanByte.FromPinnedPointer(pbOutput, ObjectOutputHeader.Size));
                         return EvaluateExpireInPlace(ExpireOption.None, expiryExists: value.MetadataSize > 0, ref input, ref value, ref _);
                     }
-                    
+
                     var isPersist = *(bool*)(inputPtr + RespInputHeader.Size);
                     if (isPersist && value.MetadataSize != 0) // Persist the key
                     {

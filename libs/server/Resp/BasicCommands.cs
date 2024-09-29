@@ -145,8 +145,6 @@ namespace Garnet.server
             }
 
             return true;
-
-            
         }
 
         /// <summary>
