@@ -14,7 +14,7 @@ namespace Garnet.common
         /// <summary>
         /// Contains the number of ticks representing 1970/1/1. Value is equal to new DateTime(1970, 1, 1).Ticks
         /// </summary>
-        private const long _unixTillStartTimeTicks = 621355968000000000;
+        private static readonly long _unixEpochTicks = DateTimeOffset.UnixEpoch.Ticks;
 
         /// <summary>
         /// Convert diff ticks - utcNow.ticks to seconds.
@@ -56,7 +56,7 @@ namespace Garnet.common
         /// <returns>The Unix time in seconds.</returns>
         public static long UnixTimeInSecondsFromTicks(long ticks)
         {
-            return ticks > 0 ? (ticks - _unixTillStartTimeTicks) / TimeSpan.TicksPerSecond : -1;
+            return ticks > 0 ? (ticks - _unixEpochTicks) / TimeSpan.TicksPerSecond : -1;
         }
 
         /// <summary>
@@ -66,7 +66,7 @@ namespace Garnet.common
         /// <returns>The Unix time in milliseconds.</returns>
         public static long UnixTimeInMillisecondsFromTicks(long ticks)
         {
-            return ticks > 0 ? (ticks - _unixTillStartTimeTicks) / TimeSpan.TicksPerMillisecond : -1;
+            return ticks > 0 ? (ticks - _unixEpochTicks) / TimeSpan.TicksPerMillisecond : -1;
         }
     }
 }

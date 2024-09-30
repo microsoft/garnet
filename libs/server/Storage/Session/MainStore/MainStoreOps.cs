@@ -347,7 +347,6 @@ namespace Garnet.server
                 {
                     header = new RespInputHeader
                     {
-                        cmd = milliseconds ? RespCommand.PEXPIRETIME : RespCommand.EXPIRETIME,
                         type = milliseconds ? GarnetObjectType.PExpiretime : GarnetObjectType.Expiretime,
                     },
                 };
