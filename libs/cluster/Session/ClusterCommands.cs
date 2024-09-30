@@ -20,7 +20,7 @@ namespace Garnet.cluster
         {
             ClusterKeyIterationFunctions.MainStoreCountKeys iterFuncs = new(slot);
             _ = basicGarnetApi.IterateMainStore(ref iterFuncs);
-            return iterFuncs.keyCount;
+            return iterFuncs.KeyCount;
         }
 
         private int CountKeysInObjectStore(int slot)
@@ -29,7 +29,7 @@ namespace Garnet.cluster
             {
                 ClusterKeyIterationFunctions.ObjectStoreCountKeys iterFuncs = new(slot);
                 _ = basicGarnetApi.IterateObjectStore(ref iterFuncs);
-                return iterFuncs.keyCount;
+                return iterFuncs.KeyCount;
             }
             return 0;
         }

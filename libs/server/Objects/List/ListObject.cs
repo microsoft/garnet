@@ -34,6 +34,7 @@ namespace Garnet.server
         LSET,
         BRPOP,
         BLPOP,
+        LPOS,
     }
 
     /// <summary>
@@ -178,6 +179,9 @@ namespace Garnet.server
                         break;
                     case ListOperation.LSET:
                         ListSet(ref input, ref output);
+                        break;
+                    case ListOperation.LPOS:
+                        ListPosition(ref input, ref output);
                         break;
 
                     default:

@@ -10,7 +10,7 @@ namespace Garnet.server
 {
     sealed partial class StorageSession : IDisposable
     {
-        // These are classes so instantiate once and re-initialize
+        // These contain classes so instantiate once and re-initialize
         private ArrayKeyIterationFunctions.MainStoreGetDBSize mainStoreDbSizeFuncs;
         private ArrayKeyIterationFunctions.ObjectStoreGetDBSize objectStoreDbSizeFuncs;
 
@@ -180,14 +180,14 @@ namespace Garnet.server
             mainStoreDbSizeFuncs.Initialize();
             long cursor = 0;
             basicContext.Session.ScanCursor(ref cursor, long.MaxValue, mainStoreDbSizeFuncs);
-            int count = mainStoreDbSizeFuncs.count;
+            int count = mainStoreDbSizeFuncs.Count;
             if (objectStoreBasicContext.Session != null)
             {
                 objectStoreDbSizeFuncs ??= new();
                 objectStoreDbSizeFuncs.Initialize();
                 cursor = 0;
                 objectStoreBasicContext.Session.ScanCursor(ref cursor, long.MaxValue, objectStoreDbSizeFuncs);
-                count += objectStoreDbSizeFuncs.count;
+                count += objectStoreDbSizeFuncs.Count;
             }
 
             return count;
@@ -195,25 +195,38 @@ namespace Garnet.server
 
         internal static unsafe class ArrayKeyIterationFunctions
         {
-            internal sealed class MainStoreGetDBKeys : IScanIteratorFunctions<SpanByte, SpanByte>
+            internal class GetDBKeysInfo
             {
-                List<byte[]> keys;
-                byte* patternB;
-                int patternLength;
+                // This must be a class as it is passed through pending IO operations, so it is wrapped by higher structures for inlining as a generic type arg.
+                internal List<byte[]> keys;
+                internal byte* patternB;
+                internal int patternLength;
+                internal Type matchType;
 
-                internal void Initialize(List<byte[]> keys, byte* patternB, int length)
+                internal void Initialize(List<byte[]> keys, byte* patternB, int length, Type matchType = null)
                 {
                     this.keys = keys;
                     this.patternB = patternB;
                     this.patternLength = length;
+                    this.matchType = matchType;
                 }
+            }
+
+            internal sealed class MainStoreGetDBKeys : IScanIteratorFunctions<SpanByte, SpanByte>
+            {
+                private readonly GetDBKeysInfo info;
+
+                internal MainStoreGetDBKeys() => info = new();
+
+                internal void Initialize(List<byte[]> keys, byte* patternB, int length)
+                    => info.Initialize(keys, patternB, length);
 
                 public bool SingleReader(ref SpanByte key, ref SpanByte value, RecordMetadata recordMetadata, long numberOfRecords, out CursorRecordResult cursorRecordResult)
                         => ConcurrentReader(ref key, ref value, recordMetadata, numberOfRecords, out cursorRecordResult);
 
                 public bool ConcurrentReader(ref SpanByte key, ref SpanByte value, RecordMetadata recordMetadata, long numberOfRecords, out CursorRecordResult cursorRecordResult)
                 {
-                    if ((patternB != null && !GlobUtils.Match(patternB, patternLength, key.ToPointer(), key.Length, true))
+                    if ((info.patternB != null && !GlobUtils.Match(info.patternB, info.patternLength, key.ToPointer(), key.Length, true))
                         || (value.MetadataSize != 0 && MainSessionFunctions.CheckExpiry(ref value)))
                     {
                         cursorRecordResult = CursorRecordResult.Skip;
@@ -221,7 +234,7 @@ namespace Garnet.server
                     else
                     {
                         cursorRecordResult = CursorRecordResult.Accept;
-                        keys.Add(key.ToByteArray());
+                        info.keys.Add(key.ToByteArray());
                     }
                     return true;
                 }
@@ -233,18 +246,12 @@ namespace Garnet.server
 
             internal sealed class ObjectStoreGetDBKeys : IScanIteratorFunctions<byte[], IGarnetObject>
             {
-                List<byte[]> keys;
-                byte* patternB;
-                int patternLength;
-                private Type matchType;
+                private readonly GetDBKeysInfo info;
+
+                internal ObjectStoreGetDBKeys() => info = new();
 
                 internal void Initialize(List<byte[]> keys, byte* patternB, int length, Type matchType = null)
-                {
-                    this.keys = keys;
-                    this.patternB = patternB;
-                    this.patternLength = length;
-                    this.matchType = matchType;
-                }
+                    => info.Initialize(keys, patternB, length, matchType);
 
                 public bool SingleReader(ref byte[] key, ref IGarnetObject value, RecordMetadata recordMetadata, long numberOfRecords, out CursorRecordResult cursorRecordResult)
                     => ConcurrentReader(ref key, ref value, recordMetadata, numberOfRecords, out cursorRecordResult);
@@ -257,11 +264,11 @@ namespace Garnet.server
                         return true;
                     }
 
-                    if (patternB != null)
+                    if (info.patternB != null)
                     {
                         fixed (byte* keyPtr = key)
                         {
-                            if (!GlobUtils.Match(patternB, patternLength, keyPtr, key.Length, true))
+                            if (!GlobUtils.Match(info.patternB, info.patternLength, keyPtr, key.Length, true))
                             {
                                 cursorRecordResult = CursorRecordResult.Skip;
                                 return true;
@@ -269,13 +276,13 @@ namespace Garnet.server
                         }
                     }
 
-                    if (matchType != null && value.GetType() != matchType)
+                    if (info.matchType != null && value.GetType() != info.matchType)
                     {
                         cursorRecordResult = CursorRecordResult.Skip;
                         return true;
                     }
 
-                    keys.Add(key);
+                    info.keys.Add(key);
                     cursorRecordResult = CursorRecordResult.Accept;
                     return true;
                 }
@@ -285,12 +292,23 @@ namespace Garnet.server
                 public void OnException(Exception exception, long numberOfRecords) { }
             }
 
-            internal sealed class MainStoreGetDBSize : IScanIteratorFunctions<SpanByte, SpanByte>
+            internal class GetDBSizeInfo
             {
-                // This must be a class as it is passed through pending IO operations
+                // This must be a class as it is passed through pending IO operations, so it is wrapped by higher structures for inlining as a generic type arg.
                 internal int count;
 
                 internal void Initialize() => count = 0;
+            }
+
+            internal sealed class MainStoreGetDBSize : IScanIteratorFunctions<SpanByte, SpanByte>
+            {
+                private readonly GetDBSizeInfo info;
+
+                internal int Count => info.count;
+
+                internal MainStoreGetDBSize() => info = new();
+
+                internal void Initialize() => info.Initialize();
 
                 public bool SingleReader(ref SpanByte key, ref SpanByte value, RecordMetadata recordMetadata, long numberOfRecords, out CursorRecordResult cursorRecordResult)
                 {
@@ -299,7 +317,7 @@ namespace Garnet.server
                     else
                     {
                         cursorRecordResult = CursorRecordResult.Accept;
-                        ++count;
+                        ++info.count;
                     }
                     return true;
                 }
@@ -312,10 +330,13 @@ namespace Garnet.server
 
             internal sealed class ObjectStoreGetDBSize : IScanIteratorFunctions<byte[], IGarnetObject>
             {
-                // This must be a class as it is passed through pending IO operations
-                internal int count;
+                private readonly GetDBSizeInfo info;
 
-                internal void Initialize() => count = 0;
+                internal int Count => info.count;
+
+                internal ObjectStoreGetDBSize() => info = new();
+
+                internal void Initialize() => info.Initialize();
 
                 public bool SingleReader(ref byte[] key, ref IGarnetObject value, RecordMetadata recordMetadata, long numberOfRecords, out CursorRecordResult cursorRecordResult)
                 {
@@ -324,7 +345,7 @@ namespace Garnet.server
                     else
                     {
                         cursorRecordResult = CursorRecordResult.Accept;
-                        ++count;
+                        ++info.count;
                     }
                     return true;
                 }

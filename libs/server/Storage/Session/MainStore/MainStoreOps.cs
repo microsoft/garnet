@@ -479,13 +479,33 @@ namespace Garnet.server
 
         public unsafe GarnetStatus RENAME(ArgSlice oldKeySlice, ArgSlice newKeySlice, StoreType storeType)
         {
-            RawStringInput input = default;
+            return RENAME(oldKeySlice, newKeySlice, storeType, false, out _);
+        }
 
+        /// <summary>
+        /// Renames key to newkey if newkey does not yet exist. It returns an error when key does not exist.
+        /// </summary>
+        /// <param name="oldKeySlice">The old key to be renamed.</param>
+        /// <param name="newKeySlice">The new key name.</param>
+        /// <param name="storeType">The type of store to perform the operation on.</param>
+        /// <returns></returns>
+        public unsafe GarnetStatus RENAMENX(ArgSlice oldKeySlice, ArgSlice newKeySlice, StoreType storeType, out int result)
+        {
+            return RENAME(oldKeySlice, newKeySlice, storeType, true, out result);
+        }
+
+        private unsafe GarnetStatus RENAME(ArgSlice oldKeySlice, ArgSlice newKeySlice, StoreType storeType, bool isNX, out int result)
+        {
+            RawStringInput input = default;
             var returnStatus = GarnetStatus.NOTFOUND;
+            result = -1;
 
             // If same name check return early.
             if (oldKeySlice.ReadOnlySpan.SequenceEqual(newKeySlice.ReadOnlySpan))
+            {
+                result = 1;
                 return GarnetStatus.OK;
+            }
 
             var createTransaction = false;
             if (txnManager.state != TxnState.Running)
@@ -523,29 +543,79 @@ namespace Garnet.server
 
                         if (ttlStatus == GarnetStatus.OK && !expireSpan.IsSpanByte)
                         {
+                            var newValSlice = new ArgSlice(ptrVal, headerLength);
+
                             using var expireMemoryHandle = expireSpan.Memory.Memory.Pin();
                             var expirePtrVal = (byte*)expireMemoryHandle.Pointer;
                             RespReadUtils.TryRead64Int(out var expireTimeMs, ref expirePtrVal, expirePtrVal + expireSpan.Length, out var _);
 
+                            ArgSlice[] tmpParseStateBuffer = default;
+                            var tmpParseState = new SessionParseState();
+
+                            input = new RawStringInput
+                            {
+                                header = new RespInputHeader { cmd = RespCommand.SETEXNX, },
+                                parseStateStartIdx = 0,
+                            };
+
                             // If the key has an expiration, set the new key with the expiration
                             if (expireTimeMs > 0)
                             {
-                                SETEX(newKeySlice, new ArgSlice(ptrVal, headerLength), TimeSpan.FromMilliseconds(expireTimeMs), ref context);
+                                if (isNX)
+                                {
+                                    // Move payload forward to make space for RespInputHeader and Metadata
+                                    tmpParseState.InitializeWithArguments(ref tmpParseStateBuffer, newValSlice);
+                                    input.parseState = tmpParseState;
+                                    input.arg1 = DateTimeOffset.UtcNow.Ticks + TimeSpan.FromMilliseconds(expireTimeMs).Ticks;
+
+                                    var setStatus = SET_Conditional(ref newKey, ref input, ref context);
+
+                                    // For SET NX `NOTFOUND` means the operation succeeded
+                                    result = setStatus == GarnetStatus.NOTFOUND ? 1 : 0;
+                                    returnStatus = GarnetStatus.OK;
+                                }
+                                else
+                                {
+                                    SETEX(newKeySlice, newValSlice, TimeSpan.FromMilliseconds(expireTimeMs), ref context);
+                                }
                             }
                             else if (expireTimeMs == -1) // Its possible to have expireTimeMs as 0 (Key expired or will be expired now) or -2 (Key does not exist), in those cases we don't SET the new key
                             {
-                                var value = SpanByte.FromPinnedPointer(ptrVal, headerLength);
-                                SET(ref newKey, ref value, ref context);
+                                if (isNX)
+                                {
+                                    // Build parse state
+                                    tmpParseState.InitializeWithArguments(ref tmpParseStateBuffer, newValSlice);
+                                    input.parseState = tmpParseState;
+
+                                    var setStatus = SET_Conditional(ref newKey, ref input, ref context);
+
+                                    // For SET NX `NOTFOUND` means the operation succeeded
+                                    result = setStatus == GarnetStatus.NOTFOUND ? 1 : 0;
+                                    returnStatus = GarnetStatus.OK;
+                                }
+                                else
+                                {
+                                    var value = SpanByte.FromPinnedPointer(ptrVal, headerLength);
+                                    SET(ref newKey, ref value, ref context);
+                                }
                             }
 
                             expireSpan.Memory.Dispose();
                             memoryHandle.Dispose();
                             o.Memory.Dispose();
 
-                            // Delete the old key
-                            DELETE(ref oldKey, StoreType.Main, ref context, ref objectContext);
+                            // Delete the old key only when SET NX succeeded
+                            if (isNX && result == 1)
+                            {
+                                DELETE(ref oldKey, StoreType.Main, ref context, ref objectContext);
+                            }
+                            else if (!isNX)
+                            {
+                                // Delete the old key
+                                DELETE(ref oldKey, StoreType.Main, ref context, ref objectContext);
 
-                            returnStatus = GarnetStatus.OK;
+                                returnStatus = GarnetStatus.OK;
+                            }
                         }
                     }
                 }
@@ -577,32 +647,29 @@ namespace Garnet.server
                         var valObj = value.garnetObject;
                         byte[] newKeyArray = newKeySlice.ToArray();
 
-                        var expireSpan = new SpanByteAndMemory();
-                        var ttlStatus = TTL(ref oldKey, StoreType.Object, ref expireSpan, ref context, ref objectContext, true);
-
-                        if (ttlStatus == GarnetStatus.OK && !expireSpan.IsSpanByte)
+                        returnStatus = GarnetStatus.OK;
+                        var canSetAndDelete = true;
+                        if (isNX)
                         {
-                            using var expireMemoryHandle = expireSpan.Memory.Memory.Pin();
-                            var expirePtrVal = (byte*)expireMemoryHandle.Pointer;
-                            RespReadUtils.TryRead64Int(out var expireTimeMs, ref expirePtrVal, expirePtrVal + expireSpan.Length, out var _);
-                            expireSpan.Memory.Dispose();
+                            // Not using EXISTS method to avoid new allocation of Array for key
+                            var getNewStatus = GET(newKeyArray, out _, ref objectContext);
+                            canSetAndDelete = getNewStatus == GarnetStatus.NOTFOUND;
+                        }
 
-                            if (expireTimeMs > 0)
-                            {
-                                SET(newKeyArray, valObj, ref objectContext);
-                                EXPIRE(newKeySlice, TimeSpan.FromMilliseconds(expireTimeMs), out _, StoreType.Object, ExpireOption.None, ref context, ref objectContext, true);
-                            }
-                            else if (expireTimeMs == -1) // Its possible to have expire as 0 or -2, in those cases we don't SET the new key
-                            {
-                                SET(newKeyArray, valObj, ref objectContext);
-                            }
+                        if (canSetAndDelete)
+                        {
+                            // valObj already has expiration time, so no need to write expiration logic here
+                            SET(newKeyArray, valObj, ref objectContext);
 
                             // Delete the old key
                             DELETE(oldKeyArray, StoreType.Object, ref context, ref objectContext);
 
-                            returnStatus = GarnetStatus.OK;
+                            result = 1;
                         }
-
+                        else
+                        {
+                            result = 0;
+                        }
                     }
                 }
                 finally
@@ -611,7 +678,6 @@ namespace Garnet.server
                         txnManager.Commit(true);
                 }
             }
-
             return returnStatus;
         }
 

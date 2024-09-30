@@ -6,6 +6,22 @@ title: Raw String
 
 # Raw String Commands
 
+### APPEND
+
+#### Syntax
+
+```bash
+    APPEND key value
+```
+
+If key already exists and is a string, this command appends the value at the end of the string. If key does not exist it is created and set as an empty string. 
+
+#### RESP Reply
+
+Integer reply: the length of the string after the append operation.
+
+---
+
 ### DECR
 
 #### Syntax

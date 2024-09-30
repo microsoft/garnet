@@ -44,6 +44,18 @@ namespace Garnet.server
         MetricsItem[] GetReplicationInfo();
 
         /// <summary>
+        /// Get buffer poolt stats
+        /// </summary>
+        /// <returns></returns>
+        MetricsItem[] GetBufferPoolStats();
+
+        /// <summary>
+        /// Purger buffer pool for provided manager
+        /// </summary>
+        /// <param name="managerType"></param>
+        void PurgeBufferPool(ManagerType managerType);
+
+        /// <summary>
         /// Is replica
         /// </summary>
         /// <returns></returns>

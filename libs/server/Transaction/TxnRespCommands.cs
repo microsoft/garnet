@@ -79,7 +79,7 @@ namespace Garnet.server
                 else
                 {
                     endReadHead = _origReadHead;
-                    while (!RespWriteUtils.WriteNull(ref dcurr, dend))
+                    while (!RespWriteUtils.WriteNullArray(ref dcurr, dend))
                         SendAndReset();
                 }
 

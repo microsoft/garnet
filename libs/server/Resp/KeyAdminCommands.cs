@@ -41,6 +41,37 @@ namespace Garnet.server
         }
 
         /// <summary>
+        /// TryRENAMENX
+        /// </summary>
+        private bool NetworkRENAMENX<TGarnetApi>(ref TGarnetApi storageApi)
+            where TGarnetApi : IGarnetApi
+        {
+            if (parseState.Count != 2)
+            {
+                return AbortWithWrongNumberOfArguments(nameof(RespCommand.RENAMENX));
+            }
+
+            var oldKeySlice = parseState.GetArgSliceByRef(0);
+            var newKeySlice = parseState.GetArgSliceByRef(1);
+            var status = storageApi.RENAMENX(oldKeySlice, newKeySlice, out var result);
+
+            if (status == GarnetStatus.OK)
+            {
+                // Integer reply: 1 if key was renamed to newkey.
+                // Integer reply: 0 if newkey already exists.
+                while (!RespWriteUtils.WriteInteger(result, ref dcurr, dend))
+                    SendAndReset();
+            }
+            else
+            {
+                while (!RespWriteUtils.WriteError(CmdStrings.RESP_ERR_GENERIC_NOSUCHKEY, ref dcurr, dend))
+                    SendAndReset();
+            }
+
+            return true;
+        }
+
+        /// <summary>
         /// GETDEL command processor
         /// </summary>
         /// <typeparam name="TGarnetApi"> Garnet API type </typeparam>
@@ -106,6 +137,32 @@ namespace Garnet.server
             return true;
         }
 
+        bool TryGetExpireOption(ReadOnlySpan<byte> item, out ExpireOption option)
+        {
+            if (item.EqualsUpperCaseSpanIgnoringCase("NX"u8))
+            {
+                option = ExpireOption.NX;
+                return true;
+            }
+            if (item.EqualsUpperCaseSpanIgnoringCase("XX"u8))
+            {
+                option = ExpireOption.XX;
+                return true;
+            }
+            if (item.EqualsUpperCaseSpanIgnoringCase("GT"u8))
+            {
+                option = ExpireOption.GT;
+                return true;
+            }
+            if (item.EqualsUpperCaseSpanIgnoringCase("LT"u8))
+            {
+                option = ExpireOption.LT;
+                return true;
+            }
+            option = ExpireOption.None;
+            return false;
+        }
+
         /// <summary>
         /// Set a timeout on a key.
         /// </summary>
@@ -132,7 +189,7 @@ namespace Garnet.server
 
             if (parseState.Count > 2)
             {
-                if (!parseState.TryGetEnum(2, true, out ExpireOption expireOption) || !expireOption.IsValid(ref parseState.GetArgSliceByRef(2)))
+                if (!TryGetExpireOption(parseState.GetArgSliceByRef(2).ReadOnlySpan, out _))
                 {
                     var optionStr = parseState.GetString(2);
 

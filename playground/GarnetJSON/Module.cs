@@ -2,7 +2,6 @@
 // Licensed under the MIT license.
 
 using Garnet.server;
-using Garnet.server.Module;
 using Microsoft.Extensions.Logging;
 
 namespace GarnetJSON
