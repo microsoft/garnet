@@ -1,7 +1,6 @@
 ﻿// Copyright (c) Microsoft Corporation.
 // Licensed under the MIT license.
 
-using System.Collections.Generic;
 using System.Diagnostics;
 using System.Runtime.CompilerServices;
 using System.Threading;
@@ -97,7 +96,7 @@ namespace Tsavorite.core
 
                 if (sessionFunctions.ExecutionCtx.HasNoPendingRequests) return true;
 
-                InternalRefresh<TInput, TOutput, TContext>(sessionFunctions.ExecutionCtx);
+                InternalRefresh(sessionFunctions.ExecutionCtx);
 
                 if (!wait) return false;
                 Thread.Yield();

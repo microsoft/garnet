@@ -288,9 +288,6 @@ namespace Garnet.test.cluster
         [Test, Order(4)]
         public async Task ClusterResetDisposesGossipConnections()
         {
-            //const string meetRecv = "meet_requests_recv";
-            //const string gossip = "gossip_success_count";
-
             var node_count = 3;
             context.CreateInstances(node_count, metricsSamplingFrequency: 1);
             context.CreateConnection();

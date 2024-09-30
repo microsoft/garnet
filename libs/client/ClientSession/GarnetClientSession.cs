@@ -23,7 +23,6 @@ namespace Garnet.client
     {
         readonly string address;
         readonly int port;
-        readonly int bufferSize;
         readonly int bufferSizeDigits;
         INetworkSender networkSender;
         readonly ElasticCircularBuffer<TaskType> tasksTypes = new();
@@ -61,8 +60,6 @@ namespace Garnet.client
         /// </summary>
         public bool IsConnected => socket != null && socket.Connected && !Disposed;
 
-        readonly LimitedFixedBufferPool networkPool;
-
         /// <summary>
         /// Username to authenticate the session on the server.
         /// </summary>
@@ -74,6 +71,21 @@ namespace Garnet.client
         readonly string authPassword = null;
 
         /// <summary>
+        /// Indicating whether this instance is using its own network pool or one that was provided
+        /// </summary>
+        readonly bool usingManagedNetworkPool = false;
+
+        /// <summary>
+        /// Instance of network buffer settings describing the send and receive buffer sizes
+        /// </summary>
+        readonly NetworkBufferSettings networkBufferSettings;
+
+        /// <summary>
+        /// NetworkPool used to allocate send and receive buffers
+        /// </summary>
+        readonly LimitedFixedBufferPool networkPool;
+
+        /// <summary>
         /// Create client instance
         /// </summary>
         /// <param name="address">IP address of server</param>
@@ -81,16 +93,29 @@ namespace Garnet.client
         /// <param name="tlsOptions">TLS options</param>
         /// <param name="authUsername">Username to authenticate with</param>
         /// <param name="authPassword">Password to authenticate with</param>
-        /// <param name="bufferSize">Network buffer size</param>
+        /// <param name="networkBufferSettings">Settings for send and receive network buffers</param>
+        /// <param name="networkPool">Buffer pool to use for allocating send and receive buffers</param>
         /// <param name="networkSendThrottleMax">Max outstanding network sends allowed</param>
         /// <param name="logger">Logger</param>
-        public GarnetClientSession(string address, int port, SslClientAuthenticationOptions tlsOptions = null, string authUsername = null, string authPassword = null, int bufferSize = 1 << 17, int networkSendThrottleMax = 8, ILogger logger = null)
+        public GarnetClientSession(
+            string address,
+            int port,
+            NetworkBufferSettings networkBufferSettings,
+            LimitedFixedBufferPool networkPool = null,
+            SslClientAuthenticationOptions tlsOptions = null,
+            string authUsername = null,
+            string authPassword = null,
+            int networkSendThrottleMax = 8,
+            ILogger logger = null)
         {
-            this.networkPool = new LimitedFixedBufferPool(bufferSize, logger: logger);
             this.address = address;
             this.port = port;
-            this.bufferSize = bufferSize;
-            this.bufferSizeDigits = NumUtils.NumDigits(bufferSize);
+
+            this.usingManagedNetworkPool = networkPool != null;
+            this.networkBufferSettings = networkBufferSettings;
+            this.networkPool = networkPool ?? networkBufferSettings.CreateBufferPool();
+            this.bufferSizeDigits = NumUtils.NumDigits(this.networkBufferSettings.sendBufferSize);
+
             this.logger = logger;
             this.sslOptions = tlsOptions;
             this.networkSendThrottleMax = networkSendThrottleMax;
@@ -107,7 +132,15 @@ namespace Garnet.client
         public void Connect(int timeoutMs = 0, CancellationToken token = default)
         {
             socket = GetSendSocket(address, port, timeoutMs);
-            networkHandler = new GarnetClientSessionTcpNetworkHandler(this, socket, networkPool, sslOptions != null, this, networkSendThrottleMax, logger);
+            networkHandler = new GarnetClientSessionTcpNetworkHandler(
+                this,
+                socket,
+                networkBufferSettings,
+                networkPool,
+                sslOptions != null,
+                messageConsumer: this,
+                networkSendThrottleMax: networkSendThrottleMax,
+                logger: logger);
             networkHandler.StartAsync(sslOptions, $"{address}:{port}", token).ConfigureAwait(false).GetAwaiter().GetResult();
             networkSender = networkHandler.GetNetworkSender();
             networkSender.GetResponseObject();
@@ -159,7 +192,7 @@ namespace Garnet.client
             networkSender?.ReturnResponseObject();
             socket?.Dispose();
             networkHandler?.Dispose();
-            networkPool.Dispose();
+            if (!usingManagedNetworkPool) networkPool.Dispose();
         }
 
         /// <summary>
@@ -259,8 +292,8 @@ namespace Garnet.client
             }
             offset = curr;
 
-            if (payloadLength > bufferSize)
-                throw new Exception($"Payload length {payloadLength} is larger than bufferSize {bufferSize} bytes");
+            if (payloadLength > networkBufferSettings.sendBufferSize)
+                throw new Exception($"Payload length {payloadLength} is larger than bufferSize {networkBufferSettings.sendBufferSize} bytes");
 
             while (!RespWriteUtils.WriteBulkString(new Span<byte>((void*)payloadPtr, payloadLength), ref curr, end))
             {

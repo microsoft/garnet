@@ -2273,7 +2273,7 @@ namespace Garnet.test
             await Task.Run(() => UpdateSortedSetKey(key));
 
             res = lightClientRequest.SendCommand("EXEC");
-            expectedResponse = "$-1";
+            expectedResponse = "*-1";
             ClassicAssert.AreEqual(res.AsSpan().Slice(0, expectedResponse.Length).ToArray(), expectedResponse);
 
             // This sequence should work

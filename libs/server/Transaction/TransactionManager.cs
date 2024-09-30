@@ -250,6 +250,10 @@ namespace Garnet.server
 
         internal void Watch(ArgSlice key, StoreType type)
         {
+            // Update watch type if object store is disabled
+            if (type == StoreType.All && objectStoreBasicContext.IsNull)
+                type = StoreType.Main;
+
             UpdateTransactionStoreType(type);
             watchContainer.AddWatch(key, type);
 

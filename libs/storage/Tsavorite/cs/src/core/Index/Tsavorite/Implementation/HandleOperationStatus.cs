@@ -26,7 +26,7 @@ namespace Tsavorite.core
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         internal bool HandleImmediateNonPendingRetryStatus<TInput, TOutput, TContext>(OperationStatus internalStatus, ExecutionContext<TInput, TOutput, TContext> executionCtx)
         {
-            Debug.Assert(Kernel.Epoch.ThisInstanceProtected());
+            Debug.Assert(Kernel.Epoch.ThisInstanceProtected(), "Epoch should be protected in HandleImmediateNonPendingRetryStatus");
             switch (internalStatus)
             {
                 case OperationStatus.RETRY_NOW:

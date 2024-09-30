@@ -72,6 +72,10 @@ namespace Garnet.common
         /// Modules info
         /// </summary>
         MODULES,
+        /// <summary>
+        /// Shared buffer pool stats
+        /// </summary>
+        BPSTATS,
     }
 
     /// <summary>
