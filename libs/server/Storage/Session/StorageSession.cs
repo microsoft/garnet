@@ -28,6 +28,7 @@ namespace Garnet.server
         internal ClientSession<SpanByte, SpanByte, SpanByte, SpanByteAndMemory, long, MainSessionFunctions, MainStoreFunctions, MainStoreAllocator> session;
         public BasicContext<SpanByte, SpanByte, SpanByte, SpanByteAndMemory, long, MainSessionFunctions, MainStoreFunctions, MainStoreAllocator> basicContext;
         public LockableContext<SpanByte, SpanByte, SpanByte, SpanByteAndMemory, long, MainSessionFunctions, MainStoreFunctions, MainStoreAllocator> lockableContext;
+        public DualContext<SpanByte, SpanByte, SpanByte, SpanByteAndMemory, long, MainSessionFunctions, MainStoreFunctions, MainStoreAllocator> dualContext;
 
         SectorAlignedMemory sectorAlignedMemoryHll;
         readonly int hllBufferSize = HyperLogLog.DefaultHLL.DenseBytes;
@@ -39,6 +40,7 @@ namespace Garnet.server
         internal ClientSession<byte[], IGarnetObject, ObjectInput, GarnetObjectStoreOutput, long, ObjectSessionFunctions, ObjectStoreFunctions, ObjectStoreAllocator> objectStoreSession;
         public BasicContext<byte[], IGarnetObject, ObjectInput, GarnetObjectStoreOutput, long, ObjectSessionFunctions, ObjectStoreFunctions, ObjectStoreAllocator> objectStoreBasicContext;
         public LockableContext<byte[], IGarnetObject, ObjectInput, GarnetObjectStoreOutput, long, ObjectSessionFunctions, ObjectStoreFunctions, ObjectStoreAllocator> objectStoreLockableContext;
+        public DualContext<byte[], IGarnetObject, ObjectInput, GarnetObjectStoreOutput, long, ObjectSessionFunctions, ObjectStoreFunctions, ObjectStoreAllocator> objectStoreDualContext;
 
         public readonly ScratchBufferManager scratchBufferManager;
         public readonly FunctionsState functionsState;
@@ -76,10 +78,12 @@ namespace Garnet.server
 
             basicContext = session.BasicContext;
             lockableContext = session.LockableContext;
+            dualContext = session.DualContext;
             if (objectStoreSession != null)
             {
                 objectStoreBasicContext = objectStoreSession.BasicContext;
                 objectStoreLockableContext = objectStoreSession.LockableContext;
+                objectStoreDualContext = objectStoreSession.DualContext;
             }
 
             HeadAddress = storeWrapper.store.Log.HeadAddress;

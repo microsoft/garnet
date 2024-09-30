@@ -29,6 +29,12 @@ namespace Garnet.server
         LockableContext<byte[], IGarnetObject, ObjectInput, GarnetObjectStoreOutput, long, ObjectSessionFunctions,
             /* ObjectStoreFunctions */ StoreFunctions<byte[], IGarnetObject, ByteArrayKeyComparer, DefaultRecordDisposer<byte[], IGarnetObject>>,
             GenericAllocator<byte[], IGarnetObject, StoreFunctions<byte[], IGarnetObject, ByteArrayKeyComparer, DefaultRecordDisposer<byte[], IGarnetObject>>>>>;
+    using DualGarnetApi = GarnetApi<DualContext<SpanByte, SpanByte, SpanByte, SpanByteAndMemory, long, MainSessionFunctions,
+            /* MainStoreFunctions */ StoreFunctions<SpanByte, SpanByte, SpanByteComparer, SpanByteRecordDisposer>,
+            SpanByteAllocator<StoreFunctions<SpanByte, SpanByte, SpanByteComparer, SpanByteRecordDisposer>>>,
+        DualContext<byte[], IGarnetObject, ObjectInput, GarnetObjectStoreOutput, long, ObjectSessionFunctions,
+            /* ObjectStoreFunctions */ StoreFunctions<byte[], IGarnetObject, ByteArrayKeyComparer, DefaultRecordDisposer<byte[], IGarnetObject>>,
+            GenericAllocator<byte[], IGarnetObject, StoreFunctions<byte[], IGarnetObject, ByteArrayKeyComparer, DefaultRecordDisposer<byte[], IGarnetObject>>>>>;
 
     /// <summary>
     /// RESP server session
@@ -94,6 +100,7 @@ namespace Garnet.server
         int opCount;
         internal BasicGarnetApi basicGarnetApi;
         internal LockableGarnetApi lockableGarnetApi;
+        internal DualGarnetApi dualGarnetApi;
 
         readonly IGarnetAuthenticator _authenticator;
 
@@ -206,6 +213,7 @@ namespace Garnet.server
 
             this.basicGarnetApi = new BasicGarnetApi(StorageSession, StorageSession.basicContext, StorageSession.objectStoreBasicContext);
             this.lockableGarnetApi = new LockableGarnetApi(StorageSession, StorageSession.lockableContext, StorageSession.objectStoreLockableContext);
+            this.dualGarnetApi = new DualGarnetApi(StorageSession, StorageSession.dualContext, StorageSession.objectStoreDualContext);
 
             this.storeWrapper = storeWrapper;
             this.subscribeBroker = subscribeBroker;
@@ -419,25 +427,28 @@ namespace Garnet.server
                 {
                     if (CheckACLPermissions(cmd))
                     {
-                        if (txnManager.state != TxnState.None)
-                        {
-                            if (txnManager.state == TxnState.Running)
+                        if (!ProcessBasicCommands(cmd, ref dualGarnetApi))
+                        { 
+                            if (txnManager.state != TxnState.None)
                             {
-                                _ = ProcessBasicCommands(cmd, ref lockableGarnetApi);
+                                if (txnManager.state == TxnState.Running)
+                                {
+                                    _ = ProcessBasicCommands(cmd, ref lockableGarnetApi);
+                                }
+                                else _ = cmd switch
+                                {
+                                    RespCommand.EXEC => NetworkEXEC(),
+                                    RespCommand.MULTI => NetworkMULTI(),
+                                    RespCommand.DISCARD => NetworkDISCARD(),
+                                    RespCommand.QUIT => NetworkQUIT(),
+                                    _ => NetworkSKIP(cmd),
+                                };
                             }
-                            else _ = cmd switch
+                            else
                             {
-                                RespCommand.EXEC => NetworkEXEC(),
-                                RespCommand.MULTI => NetworkMULTI(),
-                                RespCommand.DISCARD => NetworkDISCARD(),
-                                RespCommand.QUIT => NetworkQUIT(),
-                                _ => NetworkSKIP(cmd),
-                            };
-                        }
-                        else
-                        {
-                            if (clusterSession == null || CanServeSlot(cmd))
-                                _ = ProcessBasicCommands(cmd, ref basicGarnetApi);
+                                if (clusterSession == null || CanServeSlot(cmd))
+                                    _ = ProcessBasicCommands(cmd, ref basicGarnetApi);
+                            }
                         }
                     }
                     else
@@ -500,6 +511,33 @@ namespace Garnet.server
         }
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        private bool ProcessDualCommands<TGarnetApi>(RespCommand cmd, ref TGarnetApi storageApi)
+            where TGarnetApi : IGarnetApi
+        {
+            /*
+             * WARNING: Do not add any command here classified as @slow!
+             * Only @fast commands otherwise latency tracking will break for NET_RS (check how containsSlowCommand is used).
+             */
+            _ = cmd switch
+            {
+                RespCommand.DEL => NetworkDEL(ref storageApi),
+                RespCommand.RENAME => NetworkRENAME(ref storageApi),
+                RespCommand.RENAMENX => NetworkRENAMENX(ref storageApi),
+                RespCommand.EXISTS => NetworkEXISTS(ref storageApi),
+                RespCommand.EXPIRE => NetworkEXPIRE(RespCommand.EXPIRE, ref storageApi),
+                RespCommand.PEXPIRE => NetworkEXPIRE(RespCommand.PEXPIRE, ref storageApi),
+                RespCommand.PERSIST => NetworkPERSIST(ref storageApi),
+                RespCommand.TTL => NetworkTTL(RespCommand.TTL, ref storageApi),
+                RespCommand.PTTL => NetworkTTL(RespCommand.PTTL, ref storageApi),
+                RespCommand.MEMORY_USAGE => NetworkMemoryUsage(ref storageApi),
+                RespCommand.TYPE => NetworkTYPE(ref storageApi),
+                _ => false  // Not a dual command; fall through to ProcessBasicCommands
+            };
+
+            return true;
+        }
+
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
         private bool ProcessBasicCommands<TGarnetApi>(RespCommand cmd, ref TGarnetApi storageApi)
             where TGarnetApi : IGarnetApi
         {
@@ -514,16 +552,7 @@ namespace Garnet.server
                 RespCommand.SETEX => NetworkSETEX(false, ref storageApi),
                 RespCommand.PSETEX => NetworkSETEX(true, ref storageApi),
                 RespCommand.SETEXNX => NetworkSETEXNX(ref storageApi),
-                RespCommand.DEL => NetworkDEL(ref storageApi),
-                RespCommand.RENAME => NetworkRENAME(ref storageApi),
-                RespCommand.RENAMENX => NetworkRENAMENX(ref storageApi),
-                RespCommand.EXISTS => NetworkEXISTS(ref storageApi),
-                RespCommand.EXPIRE => NetworkEXPIRE(RespCommand.EXPIRE, ref storageApi),
-                RespCommand.PEXPIRE => NetworkEXPIRE(RespCommand.PEXPIRE, ref storageApi),
-                RespCommand.PERSIST => NetworkPERSIST(ref storageApi),
                 RespCommand.GETRANGE => NetworkGetRange(ref storageApi),
-                RespCommand.TTL => NetworkTTL(RespCommand.TTL, ref storageApi),
-                RespCommand.PTTL => NetworkTTL(RespCommand.PTTL, ref storageApi),
                 RespCommand.SETRANGE => NetworkSetRange(ref storageApi),
                 RespCommand.GETDEL => NetworkGETDEL(ref storageApi),
                 RespCommand.APPEND => NetworkAppend(ref storageApi),
@@ -685,7 +714,6 @@ namespace Garnet.server
             var success = command switch
             {
                 RespCommand.AUTH => NetworkAUTH(),
-                RespCommand.MEMORY_USAGE => NetworkMemoryUsage(ref storageApi),
                 RespCommand.CLIENT_ID => NetworkCLIENTID(),
                 RespCommand.CLIENT_INFO => NetworkCLIENTINFO(),
                 RespCommand.CLIENT_LIST => NetworkCLIENTLIST(),
@@ -711,7 +739,6 @@ namespace Garnet.server
                 RespCommand.DBSIZE => NetworkDBSIZE(ref storageApi),
                 RespCommand.KEYS => NetworkKEYS(ref storageApi),
                 RespCommand.SCAN => NetworkSCAN(ref storageApi),
-                RespCommand.TYPE => NetworkTYPE(ref storageApi),
                 // Script Commands
                 RespCommand.SCRIPT => TrySCRIPT(),
                 RespCommand.EVAL => TryEVAL(),
