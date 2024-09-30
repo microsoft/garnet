@@ -377,7 +377,7 @@ Note that this list is subject to change as we continue to expand our API comman
 |  | XREVRANGE | ➖ |  |
 |  | XSETID | ➖ |  |
 |  | XTRIM | ➖ |  |
-| <span id="string">**STRING**</span> | APPEND | ➕ |  |
+| <span id="string">**STRING**</span> | [APPEND](raw-string.md#append) | ➕ |  |
 |  | [DECR](raw-string.md#decr) | ➕ |  |
 |  | [DECRBY](raw-string.md#decrby) | ➕ |  |
 |  | [GET](raw-string.md#get) | ➕ |  |
