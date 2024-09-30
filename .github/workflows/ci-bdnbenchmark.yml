@@ -34,10 +34,11 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        os: [ ubuntu-latest, windows-latest ]
+        #ORIGINALos: [ ubuntu-latest, windows-latest ]
+        os: [ windows-latest ]
         framework: [ 'net8.0' ]
         configuration: [ 'Release' ]
-        #test: [ 'CI_BDN_Config_RespParseStress', 'CI_BDN_Config_RespTsavoriteStress', 'CI_BDN_Config_RespClusterBench', 'CI_BDN_Config_RespClusterMigrateBench', 'CI_BDN_Config_Lua' ]
+        #ORIGINAL test: [ 'CI_BDN_Config_RespParseStress', 'CI_BDN_Config_RespTsavoriteStress', 'CI_BDN_Config_RespClusterBench', 'CI_BDN_Config_RespClusterMigrateBench', 'CI_BDN_Config_Lua' ]
         test: [ 'CI_BDN_Config_RespParseStress' ]
     steps:
       - name: Check out code
@@ -74,11 +75,12 @@ jobs:
         with:
           path: ./cache
           key: ${{ runner.os }}-benchmark
+      
       # Run `github-action-benchmark` action
       - name: Store benchmark result
         uses: benchmark-action/github-action-benchmark@v1
         with:
-          # What benchmark tool the output.txt came from
+          # What benchmark tool created output file
           tool: 'benchmarkdotnet'
           # Where the output from the benchmark tool is stored
           # This can't find the file
@@ -95,4 +97,7 @@ jobs:
           # Workflow will fail when an alert happens
           fail-on-alert: true
 
-
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          auto-push: false
+          skip-fetch-gh-pages: true
+          summary-always: true
