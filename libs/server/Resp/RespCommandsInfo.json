@@ -2795,6 +2795,35 @@
     "SubCommands": null
   },
   {
+    "Command": "LPOS",
+    "Name": "LPOS",
+    "IsInternal": false,
+    "Arity": -3,
+    "Flags": "ReadOnly",
+    "FirstKey": 1,
+    "LastKey": 1,
+    "Step": 1,
+    "AclCategories": "List, Read, Slow",
+    "Tips": null,
+    "KeySpecifications": [
+      {
+        "BeginSearch": {
+          "TypeDiscriminator": "BeginSearchIndex",
+          "Index": 1
+        },
+        "FindKeys": {
+          "TypeDiscriminator": "FindKeysRange",
+          "LastKey": 0,
+          "KeyStep": 1,
+          "Limit": 0
+        },
+        "Notes": null,
+        "Flags": "RO, Access"
+      }
+    ],
+    "SubCommands": null
+  },
+  {
     "Command": "LPUSH",
     "Name": "LPUSH",
     "IsInternal": false,

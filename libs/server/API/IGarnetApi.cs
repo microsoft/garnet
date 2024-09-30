@@ -600,6 +600,16 @@ namespace Garnet.server
         #region ListPush Methods
 
         /// <summary>
+        /// The command returns the index of matching elements inside a Redis list.
+        /// By default, when no options are given, it will scan the list from head to tail, looking for the first match of "element".
+        /// </summary>
+        /// <param name="key"></param>
+        /// <param name="input"></param>
+        /// <param name="outputFooter"></param>
+        /// <returns></returns>
+        GarnetStatus ListPosition(byte[] key, ref ObjectInput input, ref GarnetObjectStoreOutput outputFooter);
+
+        /// <summary>
         /// ListLeftPush ArgSlice version with ObjectOutputHeader output
         /// </summary>
         /// <param name="key"></param>

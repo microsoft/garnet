@@ -617,6 +617,7 @@ namespace Garnet.server
                 RespCommand.LPUSH => ListPush(cmd, ref storageApi),
                 RespCommand.LPUSHX => ListPush(cmd, ref storageApi),
                 RespCommand.LPOP => ListPop(cmd, ref storageApi),
+                RespCommand.LPOS => ListPosition(ref storageApi),
                 RespCommand.RPUSH => ListPush(cmd, ref storageApi),
                 RespCommand.RPUSHX => ListPush(cmd, ref storageApi),
                 RespCommand.RPOP => ListPop(cmd, ref storageApi),
