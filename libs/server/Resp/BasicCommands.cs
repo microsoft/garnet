@@ -290,7 +290,6 @@ namespace Garnet.server
 
             var status = storageApi.GETForETagCmd(ref key, ref input, ref output);
 
-            // Get the ETAG and Value and start typing
             switch (status)
             {
                 case GarnetStatus.NOTFOUND:
@@ -400,7 +399,8 @@ namespace Garnet.server
             // Set key length
             *(int*)keyPtr = key.Length;
 
-            NetworkSET_Conditional(RespCommand.SETIFMATCH, 0, keyPtr, value.ToPointer() - sizeof(int), value.Length, true, false, ref storageApi);
+            // Here Etag retain argument does not really matter because setifmatch may or may not update etag based on the "if match" condition
+            NetworkSET_Conditional(RespCommand.SETIFMATCH, 0, keyPtr, value.ToPointer() - sizeof(int), value.Length, true, false, true, ref storageApi);
 
             // restore the 8 bytes we had messed with on the network buffer
             *(long*)borrowedMemLocation = saved8Bytes;
@@ -409,24 +409,52 @@ namespace Garnet.server
         }
 
         /// <summary>
-        /// SETWITHETAG key val
+        /// SETWITHETAG key val [RETAINETAG]
         /// Sets a key value pair with an ETAG associated with the value internally
         /// Calling this on a key that already exists is an error case
         /// </summary>
         private bool NetworkSETWITHETAG<TGarnetApi>(ref TGarnetApi storageApi)
             where TGarnetApi : IGarnetApi
         {
-            Debug.Assert(parseState.Count == 2);
+            Debug.Assert(parseState.Count == 2 || parseState.Count == 3);
 
             var key = parseState.GetArgSliceByRef(0).SpanByte;
             var value = parseState.GetArgSliceByRef(1).SpanByte;
+
+            bool retainEtag = false;
+            if (parseState.Count == 3)
+            {
+                Span<byte> opt = parseState.GetArgSliceByRef(2).Span;
+                if (opt.SequenceEqual(CmdStrings.RETAINETAG))
+                {
+                    retainEtag = true;
+                }
+                else
+                {
+                    AsciiUtils.ToUpperInPlace(opt);
+                    if (opt.SequenceEqual(CmdStrings.RETAINETAG))
+                    {
+                        retainEtag = true;
+                    }
+                    else
+                    {
+                        // Unknown option
+                        while (!RespWriteUtils.WriteError(CmdStrings.RESP_ERR_GENERIC_UNK_CMD, ref dcurr, dend))
+                            SendAndReset();
+                        return true;
+                    }
+
+                }
+            }
+
 
             // Make space for key header
             var keyPtr = key.ToPointer() - sizeof(int);
             // Set key length
             *(int*)keyPtr = key.Length;
 
-            NetworkSET_Conditional(RespCommand.SETWITHETAG, 0, keyPtr, value.ToPointer() - sizeof(int), value.Length, true, false, ref storageApi);
+            // calling set with etag on an exisitng key will update the etag of the existing key
+            NetworkSET_Conditional(RespCommand.SETWITHETAG, 0, keyPtr, value.ToPointer() - sizeof(int), value.Length, true, false, retainEtag, ref storageApi);
 
             return true;
         }
@@ -554,6 +582,12 @@ namespace Garnet.server
             return true;
         }
 
+        enum EtagRetentionOption : byte
+        {
+            None,
+            RETAIN,
+        }
+
         enum ExpirationOption : byte
         {
             None,
@@ -587,6 +621,7 @@ namespace Garnet.server
             ReadOnlySpan<byte> errorMessage = default;
             var existOptions = ExistOptions.None;
             var expOption = ExpirationOption.None;
+            var retainEtagOption = EtagRetentionOption.None;
             var getValue = false;
 
             var tokenIdx = 2;
@@ -673,8 +708,17 @@ namespace Garnet.server
                 }
                 else if (nextOpt.SequenceEqual(CmdStrings.GET))
                 {
-                    tokenIdx++;
+                    // tokenIdx++; // HK TODO: WHY TAL WHYYYY!?????
                     getValue = true;
+                }
+                else if (nextOpt.SequenceEqual(CmdStrings.RETAINETAG))
+                {
+                    if (retainEtagOption != EtagRetentionOption.None)
+                    {
+                        errorMessage = CmdStrings.RESP_ERR_GENERIC_SYNTAX_ERROR;
+                        break;
+                    }
+                    retainEtagOption = EtagRetentionOption.RETAIN;
                 }
                 else
                 {
@@ -709,6 +753,8 @@ namespace Garnet.server
             var valPtr = sbVal.ToPointer() - sizeof(int);
             var vSize = sbVal.Length;
 
+            bool isEtagRetained = retainEtagOption == EtagRetentionOption.RETAIN;
+
             switch (expOption)
             {
                 case ExpirationOption.None:
@@ -716,17 +762,26 @@ namespace Garnet.server
                     switch (existOptions)
                     {
                         case ExistOptions.None:
-                            return getValue
-                                ? NetworkSET_Conditional(RespCommand.SET, expiry, keyPtr, valPtr, vSize, true,
-                                    false, ref storageApi)
-                                : NetworkSET_EX(RespCommand.SET, expiry, keyPtr, valPtr, vSize, false,
-                                    ref storageApi); // Can perform a blind update
+                            if (isEtagRetained)
+                            {
+                                // cannot do blind upsert if isEtagRetained
+                                return NetworkSET_Conditional(RespCommand.SET, expiry, keyPtr, valPtr, vSize, getValue,
+                                        false, true, ref storageApi);
+                            }
+                            else
+                            {
+                                return getValue
+                                    ? NetworkSET_Conditional(RespCommand.SET, expiry, keyPtr, valPtr, vSize, true,
+                                        false, false, ref storageApi)
+                                    : NetworkSET_EX(RespCommand.SET, expiry, keyPtr, valPtr, vSize, false,
+                                        ref storageApi); // Can perform a blind update
+                            }
                         case ExistOptions.XX:
                             return NetworkSET_Conditional(RespCommand.SETEXXX, expiry, keyPtr, valPtr, vSize,
-                                getValue, false, ref storageApi);
+                                getValue, isEtagRetained, false, ref storageApi);
                         case ExistOptions.NX:
                             return NetworkSET_Conditional(RespCommand.SETEXNX, expiry, keyPtr, valPtr, vSize,
-                                getValue, false, ref storageApi);
+                                getValue, false, isEtagRetained, ref storageApi);
                     }
 
                     break;
@@ -734,17 +789,26 @@ namespace Garnet.server
                     switch (existOptions)
                     {
                         case ExistOptions.None:
-                            return getValue
-                                ? NetworkSET_Conditional(RespCommand.SET, expiry, keyPtr, valPtr, vSize, true,
-                                    true, ref storageApi)
-                                : NetworkSET_EX(RespCommand.SET, expiry, keyPtr, valPtr, vSize, true,
-                                    ref storageApi); // Can perform a blind update
+                            if (isEtagRetained)
+                            {
+                                // cannot do a blind update
+                                return NetworkSET_Conditional(RespCommand.SET, expiry, keyPtr, valPtr, vSize, getValue,
+                                    true, true, ref storageApi);
+                            }
+                            else
+                            {
+                                return getValue
+                                    ? NetworkSET_Conditional(RespCommand.SET, expiry, keyPtr, valPtr, vSize, true,
+                                        true, false, ref storageApi)
+                                    : NetworkSET_EX(RespCommand.SET, expiry, keyPtr, valPtr, vSize, true,
+                                        ref storageApi); // Can perform a blind update
+                            }
                         case ExistOptions.XX:
                             return NetworkSET_Conditional(RespCommand.SETEXXX, expiry, keyPtr, valPtr, vSize,
-                                getValue, true, ref storageApi);
+                                getValue, true, isEtagRetained, ref storageApi);
                         case ExistOptions.NX:
                             return NetworkSET_Conditional(RespCommand.SETEXNX, expiry, keyPtr, valPtr, vSize,
-                                getValue, true, ref storageApi);
+                                getValue, true, isEtagRetained, ref storageApi);
                     }
 
                     break;
@@ -756,13 +820,13 @@ namespace Garnet.server
                         case ExistOptions.None:
                             // We can never perform a blind update due to KEEPTTL
                             return NetworkSET_Conditional(RespCommand.SETKEEPTTL, expiry, keyPtr, valPtr, vSize,
-                                getValue, false, ref storageApi);
+                                getValue, false, isEtagRetained, ref storageApi);
                         case ExistOptions.XX:
                             return NetworkSET_Conditional(RespCommand.SETKEEPTTLXX, expiry, keyPtr, valPtr, vSize,
-                                getValue, false, ref storageApi);
+                                getValue, false, isEtagRetained, ref storageApi);
                         case ExistOptions.NX:
                             return NetworkSET_Conditional(RespCommand.SETEXNX, expiry, keyPtr, valPtr, vSize,
-                                getValue, false, ref storageApi);
+                                getValue, false, isEtagRetained, ref storageApi);
                     }
 
                     break;
@@ -801,7 +865,7 @@ namespace Garnet.server
         }
 
         private bool NetworkSET_Conditional<TGarnetApi>(RespCommand cmd, int expiry, byte* keyPtr,
-            byte* inputPtr, int isize, bool getValue, bool highPrecision, ref TGarnetApi storageApi)
+            byte* inputPtr, int isize, bool getValue, bool highPrecision, bool retainEtag, ref TGarnetApi storageApi)
             where TGarnetApi : IGarnetApi
         {
             // Make space for RespCommand in input
@@ -814,6 +878,8 @@ namespace Garnet.server
                 ((RespInputHeader*)(inputPtr + sizeof(int)))->flags = 0;
                 if (getValue)
                     ((RespInputHeader*)(inputPtr + sizeof(int)))->SetSetGetFlag();
+                if (retainEtag)
+                    ((RespInputHeader*)(inputPtr + sizeof(int)))->SetRetainEtagFlag();
             }
             else
             {
@@ -825,6 +891,9 @@ namespace Garnet.server
                 ((RespInputHeader*)(inputPtr + sizeof(int) + sizeof(long)))->flags = 0;
                 if (getValue)
                     ((RespInputHeader*)(inputPtr + sizeof(int) + sizeof(long)))->SetSetGetFlag();
+                if (retainEtag)
+                    ((RespInputHeader*)(inputPtr + sizeof(int) + sizeof(long)))->SetRetainEtagFlag();
+
                 SpanByte.Reinterpret(inputPtr).ExtraMetadata = DateTimeOffset.UtcNow.Ticks +
                                                                (highPrecision
                                                                    ? TimeSpan.FromMilliseconds(expiry).Ticks
@@ -852,7 +921,7 @@ namespace Garnet.server
                             SendAndReset();
                         break;
                     case GarnetStatus.ETAGMISMATCH:
-                        while (!RespWriteUtils.WriteError(CmdStrings.RESP_ETAGMISMTACH, ref dcurr, dend))
+                        while (!RespWriteUtils.WriteDirect(CmdStrings.RESP_ETAGMISMTACH, ref dcurr, dend))
                             SendAndReset();
                         break;
                     case GarnetStatus.WRONGTYPE:

@@ -113,6 +113,8 @@ namespace Garnet.server
                 var inputPtr = input.ToPointer();
                 var cmd = inputspan[0];
                 int etagOffset = hasEtag ? 8 : 0;
+                bool retainEtag = ((RespInputHeader*)inputPtr)->CheckRetainEtagFlag();
+
                 switch ((RespCommand)cmd)
                 {
                     case RespCommand.INCR:
@@ -165,10 +167,14 @@ namespace Garnet.server
 
                     case RespCommand.SETKEEPTTLXX:
                     case RespCommand.SETKEEPTTL:
+                        if (!retainEtag)
+                            etagOffset = 0;
                         return sizeof(int) + t.MetadataSize + input.Length - RespInputHeader.Size + etagOffset;
 
                     case RespCommand.SET:
                     case RespCommand.SETEXXX:
+                        if (!retainEtag)
+                            etagOffset = 0;
                         return sizeof(int) + input.Length - RespInputHeader.Size + etagOffset;
                     case RespCommand.SETIFMATCH:
                     case RespCommand.PERSIST:

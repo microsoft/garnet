@@ -207,7 +207,7 @@ Simple string reply: OK.
 #### Syntax
 
 ```bash
-    SET key value [NX | XX] [GET] [EX seconds | PX milliseconds |
+    SET key value [NX | XX] [GET] [EX seconds | PX milliseconds] [KEEPTTL] [RETAINETAG]
 ```
 
 Set **key** to hold the string value. If key already holds a value, it is overwritten, regardless of its type. Any previous time to live associated with the **key** is discarded on successful SET operation.
@@ -219,6 +219,7 @@ Set **key** to hold the string value. If key already holds a value, it is overwr
 * NX -- Only set the key if it does not already exist.
 * XX -- Only set the key if it already exists.
 * KEEPTTL -- Retain the time to live associated with the key.
+* RETAINETAG -- Update the Etag associated with the previous key-value pair, while setting the new value for the key. If no etag existed on the previous key-value pair this initialize one. 
 
 #### Resp Reply
 

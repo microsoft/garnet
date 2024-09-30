@@ -82,7 +82,7 @@ namespace Garnet.server
             }
         }
 
-        void CopyRespToWithInput(ref SpanByte input, ref SpanByte value, ref SpanByteAndMemory dst, bool isFromPending, int payloadEtagEnd, int etagIgnoredDataEnd)
+        void CopyRespToWithInput(ref SpanByte input, ref SpanByte value, ref SpanByteAndMemory dst, bool isFromPending, int payloadEtagEnd, int etagIgnoredDataEnd, bool hasEtagInVal)
         {
             var inputPtr = input.ToPointer();
             switch ((RespCommand)(*inputPtr))
@@ -217,10 +217,7 @@ namespace Garnet.server
                     (start, end) = NormalizeRange(start, end, len);
                     CopyRespTo(ref value, ref dst, start + payloadEtagEnd, end + payloadEtagEnd);
                     return;
-                case RespCommand.GETIFNOTMATCH:
                 case RespCommand.SETIFMATCH:
-                case RespCommand.GETWITHETAG:
-                    // Get value without RESP header; exclude expiration
                     // extract ETAG, write as long into dst, and then value
                     long etag = *(long*)value.ToPointer();
                     // remove the length of the ETAG
@@ -229,6 +226,35 @@ namespace Garnet.server
                     ReadOnlySpan<byte> etagTruncatedVal = value.AsReadOnlySpan(sizeof(long));
                     // *2\r\n :(etag digits)\r\n $(val Len digits)\r\n (value len)\r\n
                     int desiredLength = 4 + 1 + NumUtils.NumDigitsInLong(etag) + 2 + 1 + NumUtils.NumDigits(valueLength) + 2 + valueLength + 2;
+                    WriteValAndEtagToDst(desiredLength, ref etagTruncatedVal, etag, ref dst);
+                    return;
+
+                case RespCommand.GETIFNOTMATCH:
+                case RespCommand.GETWITHETAG:
+                    // If this has an etag then we want to use it other wise null
+                    // we know somethgin doesnt have an etag if
+                    etag = -1;
+                    valueLength = value.LengthWithoutMetadata;
+            
+                    if (hasEtagInVal)
+                    {
+                        // Get value without RESP header; exclude expiration
+                        // extract ETAG, write as long into dst, and then value
+                        etag = *(long*)value.ToPointer();
+                        // remove the length of the ETAG
+                        valueLength -= sizeof(long);
+                        // here we know the value span has first bytes set to etag so we hardcode skipping past the bytes for the etag below
+                        etagTruncatedVal = value.AsReadOnlySpan(sizeof(long));
+                        // *2\r\n :(etag digits)\r\n $(val Len digits)\r\n (value len)\r\n
+                        desiredLength = 4 + 1 + NumUtils.NumDigitsInLong(etag) + 2 + 1 + NumUtils.NumDigits(valueLength) + 2 + valueLength + 2;
+                    }
+                    else
+                    {
+                        etagTruncatedVal = value.AsReadOnlySpan(); 
+                        // instead of :(etagdigits) we will have nil after array len
+                        desiredLength = 4 + 3 + 2 + 1 + NumUtils.NumDigits(valueLength) + 2 + valueLength + 2;
+                    }
+
                     WriteValAndEtagToDst(desiredLength, ref etagTruncatedVal, etag, ref dst);
                     return;
                 default:
@@ -263,7 +289,14 @@ namespace Garnet.server
             // Writes a Resp encoded Array of Integer for ETAG as first element, and bulk string for value as second element
             var initPtr = curr;
             RespWriteUtils.WriteArrayLength(2, ref curr, end);
-            RespWriteUtils.WriteInteger(etag, ref curr, end);
+            if (etag == -1)
+            {
+                RespWriteUtils.WriteNull(ref curr, end);
+            }
+            else
+            {
+                RespWriteUtils.WriteInteger(etag, ref curr, end);
+            }
             RespWriteUtils.WriteBulkString(value, ref curr, end);
         }
 

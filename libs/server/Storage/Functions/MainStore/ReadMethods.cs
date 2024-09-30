@@ -22,15 +22,18 @@ namespace Garnet.server
 
             var isEtagCmd = cmd is RespCommand.GETWITHETAG or RespCommand.GETIFNOTMATCH;
 
-            // ETAG Read command on non-ETag data should early exit but indicate the wrong type
-            if (isEtagCmd && !readInfo.RecordInfo.ETag)
+            if (isEtagCmd && cmd == RespCommand.GETIFNOTMATCH)
             {
-                // Used to indicate wrong type operation
-                readInfo.Action = ReadAction.CancelOperation;
-                return false;
+                    long existingEtag = *(long*)value.ToPointer();
+                    long etagToMatchAgainst = *(long*)(input.ToPointer() + RespInputHeader.Size);
+                    if (existingEtag == etagToMatchAgainst)
+                    {
+                        // write the value not changed message to dst, and early return
+                        CopyDefaultResp(CmdStrings.RESP_VALNOTCHANGED, ref dst);
+                        return true;
+                    }
             }
-
-            if ((byte)cmd >= CustomCommandManager.StartOffset)
+            else if ((byte)cmd >= CustomCommandManager.StartOffset)
             {
                 int valueLength = value.LengthWithoutMetadata;
                 (IMemoryOwner<byte> Memory, int Length) outp = (dst.Memory, 0);
@@ -39,18 +42,6 @@ namespace Garnet.server
                 dst.Memory = outp.Memory;
                 dst.Length = outp.Length;
                 return ret;
-            }
-
-            if (cmd == RespCommand.GETIFNOTMATCH)
-            {
-                long existingEtag = *(long*)value.ToPointer();
-                long etagToMatchAgainst = *(long*)(input.ToPointer() + RespInputHeader.Size);
-                if (existingEtag == etagToMatchAgainst)
-                {
-                    // write the value not changed message to dst, and early return
-                    CopyDefaultResp(CmdStrings.RESP_VALNOTCHANGED, ref dst);
-                    return true;
-                }
             }
 
             // Unless the command explicitly asks for the ETag in response, we do not write back the ETag 
@@ -65,7 +56,7 @@ namespace Garnet.server
             if (input.Length == 0)
                 CopyRespTo(ref value, ref dst, start, end);
             else
-                CopyRespToWithInput(ref input, ref value, ref dst, readInfo.IsFromPending, start, end);
+                CopyRespToWithInput(ref input, ref value, ref dst, readInfo.IsFromPending, start, end, readInfo.RecordInfo.ETag);
 
             return true;
         }
@@ -84,15 +75,18 @@ namespace Garnet.server
 
             var isEtagCmd = cmd is RespCommand.GETWITHETAG or RespCommand.GETIFNOTMATCH;
 
-            // ETAG Read command on non-ETag data should early exit but indicate the wrong type
-            if (isEtagCmd && !recordInfo.ETag)
+            if (isEtagCmd && cmd == RespCommand.GETIFNOTMATCH)
             {
-                // Used to indicate wrong type operation
-                readInfo.Action = ReadAction.CancelOperation;
-                return false;
+                    long existingEtag = *(long*)value.ToPointer();
+                    long etagToMatchAgainst = *(long*)(input.ToPointer() + RespInputHeader.Size);
+                    if (existingEtag == etagToMatchAgainst)
+                    {
+                        // write the value not changed message to dst, and early return
+                        CopyDefaultResp(CmdStrings.RESP_VALNOTCHANGED, ref dst);
+                        return true;
+                    }
             }
-
-            if ((byte)cmd >= CustomCommandManager.StartOffset)
+            else if ((byte)cmd >= CustomCommandManager.StartOffset)
             {
                 int valueLength = value.LengthWithoutMetadata;
                 (IMemoryOwner<byte> Memory, int Length) outp = (dst.Memory, 0);
@@ -101,18 +95,6 @@ namespace Garnet.server
                 dst.Memory = outp.Memory;
                 dst.Length = outp.Length;
                 return ret;
-            }
-
-            if (cmd == RespCommand.GETIFNOTMATCH)
-            {
-                long existingEtag = *(long*)value.ToPointer();
-                long etagToMatchAgainst = *(long*)(input.ToPointer() + RespInputHeader.Size);
-                if (existingEtag == etagToMatchAgainst)
-                {
-                    // write the value not changed message to dst, and early return
-                    CopyDefaultResp(CmdStrings.RESP_VALNOTCHANGED, ref dst);
-                    return true;
-                }
             }
 
             // Unless the command explicitly asks for the ETag in response, we do not write back the ETag 
@@ -128,7 +110,7 @@ namespace Garnet.server
                 CopyRespTo(ref value, ref dst, start, end);
             else
             {
-                CopyRespToWithInput(ref input, ref value, ref dst, readInfo.IsFromPending, start, end);
+                CopyRespToWithInput(ref input, ref value, ref dst, readInfo.IsFromPending, start, end, recordInfo.ETag);
             }
 
             return true;

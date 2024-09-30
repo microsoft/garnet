@@ -57,6 +57,11 @@ namespace Garnet.test
             long initalEtag = long.Parse(res.ToString());
             ClassicAssert.AreEqual(0, initalEtag);
 
+            // ETAGMISMATCH test
+            var incorrectEtag = 1738;
+            RedisResult etagMismatchMsg = db.Execute("SETIFMATCH", [key, "nextone", incorrectEtag]);
+            ClassicAssert.AreEqual("ETAGMISMATCH", etagMismatchMsg.ToString());
+
             // set a bigger val
             RedisResult[] setIfMatchRes = (RedisResult[])db.Execute("SETIFMATCH", [key, "nextone", initalEtag]);
 
@@ -73,6 +78,10 @@ namespace Garnet.test
 
             ClassicAssert.AreEqual(2, nextEtag);
             ClassicAssert.AreEqual(value, "nextnextone");
+
+            // ETAGMISMATCH again
+            etagMismatchMsg = db.Execute("SETIFMATCH", [key, "lastOne", incorrectEtag]);
+            ClassicAssert.AreEqual("ETAGMISMATCH", etagMismatchMsg.ToString());
 
             // set a smaller val
             setIfMatchRes = (RedisResult[])db.Execute("SETIFMATCH", [key, "lastOne", nextEtag]);
@@ -99,7 +108,8 @@ namespace Garnet.test
             ClassicAssert.IsTrue(nonExistingData.IsNull);
 
             // insert data
-            var _ = db.Execute("SETWITHETAG", [key, "hkhalid"]);
+            var initEtag = db.Execute("SETWITHETAG", [key, "hkhalid"]);
+            ClassicAssert.AreEqual(0, long.Parse(initEtag.ToString()));
 
             RedisResult[] res = (RedisResult[])db.Execute("GETWITHETAG", [key]);
             long etag = long.Parse(res[0].ToString());
@@ -140,7 +150,100 @@ namespace Garnet.test
         # region Edgecases
 
         [Test]
-        public void SetWithEtagOnAlreadyExistingDataOverridesIt()
+        public void SetWithEtagOnAlreadyExistingSetWithEtagDataOverridesItWithInitialEtag()
+        {
+            using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
+            IDatabase db = redis.GetDatabase(0);
+
+            RedisResult res = db.Execute("SETWITHETAG", ["rizz", "buzz"]);
+            long etag = (long)res;
+            ClassicAssert.AreEqual(0, etag);
+
+            // update to value to update the etag
+            RedisResult[] updateRes = (RedisResult[]) db.Execute("SETIFMATCH", ["rizz", "fixx", etag.ToString()]);
+            etag = (long)updateRes[0];
+            ClassicAssert.AreEqual(1, etag);
+            ClassicAssert.AreEqual("fixx", updateRes[1].ToString());
+
+            // inplace update
+            res = db.Execute("SETWITHETAG", ["rizz", "meow"]);
+            etag = (long)res;
+            ClassicAssert.AreEqual(0, etag);
+
+            // update to value to update the etag
+            updateRes = (RedisResult[]) db.Execute("SETIFMATCH", ["rizz", "fooo", etag.ToString()]);
+            etag = (long)updateRes[0];
+            ClassicAssert.AreEqual(1, etag);
+            ClassicAssert.AreEqual("fooo", updateRes[1].ToString());
+
+            // Copy update
+            res = db.Execute("SETWITHETAG", ["rizz", "oneofus"]);
+            etag = (long)res;
+            ClassicAssert.AreEqual(0, etag);
+        }
+
+        [Test]
+        public void SetWithEtagWithRetainEtagOnAlreadyExistingSetWithEtagDataOverridesItButUpdatesEtag()
+        {
+            using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
+            IDatabase db = redis.GetDatabase(0);
+
+            RedisResult res = db.Execute("SETWITHETAG", ["rizz", "buzz", "RETAINETAG"]);
+            long etag = (long)res;
+            ClassicAssert.AreEqual(0, etag);
+
+            // update to value to update the etag
+            RedisResult[] updateRes = (RedisResult[]) db.Execute("SETIFMATCH", ["rizz", "fixx", etag.ToString()]);
+            etag = (long)updateRes[0];
+            ClassicAssert.AreEqual(1, etag);
+            ClassicAssert.AreEqual("fixx", updateRes[1].ToString());
+
+            // inplace update
+            res = db.Execute("SETWITHETAG", ["rizz", "meow", "RETAINETAG"]);
+            etag = (long)res;
+            ClassicAssert.AreEqual(2, etag);
+
+            // update to value to update the etag
+            updateRes = (RedisResult[]) db.Execute("SETIFMATCH", ["rizz", "fooo", etag.ToString()]);
+            etag = (long)updateRes[0];
+            ClassicAssert.AreEqual(3, etag);
+            ClassicAssert.AreEqual("fooo", updateRes[1].ToString());
+
+            // Copy update
+            res = db.Execute("SETWITHETAG", ["rizz", "oneofus", "RETAINETAG"]);
+            etag = (long)res;
+            ClassicAssert.AreEqual(4, etag);
+        }
+
+        [Test]
+        public void SetWithEtagWithRetainEtagOnAlreadyExistingNonEtagDataOverridesItToInitialEtag()
+        {
+            using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
+            IDatabase db = redis.GetDatabase(0);
+
+            ClassicAssert.IsTrue(db.StringSet("rizz", "used"));
+
+            // inplace update
+            RedisResult res = db.Execute("SETWITHETAG", ["rizz", "buzz", "RETAINETAG"]);
+            long etag = long.Parse(res.ToString());
+            ClassicAssert.AreEqual(0, etag);
+
+            db.KeyDelete("rizz");
+
+            ClassicAssert.IsTrue(db.StringSet("rizz", "my"));
+
+            // Copy update
+            res = db.Execute("SETWITHETAG", ["rizz", "some", "RETAINETAG"]);
+            etag = long.Parse(res.ToString());
+            ClassicAssert.AreEqual(0, etag);
+        }
+
+        #endregion
+
+        #region ETAG Apis with non-etag data
+
+        [Test]
+        public void SetWithEtagOnAlreadyExistingNonEtagDataOverridesIt()
         {
             using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
             IDatabase db = redis.GetDatabase(0);
@@ -163,80 +266,66 @@ namespace Garnet.test
         }
 
         [Test]
-        public void SetWithEtagOnAlreadyExistingSetWithEtagDataOverridesIt()
+        public void SetWithEtagWithRetainEtagOnAlreadyExistingNonEtagDataOverridesIt()
         {
             using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
             IDatabase db = redis.GetDatabase(0);
+
+            ClassicAssert.IsTrue(db.StringSet("rizz", "used"));
+
+            // inplace update
             RedisResult res = db.Execute("SETWITHETAG", ["rizz", "buzz"]);
             long etag = long.Parse(res.ToString());
             ClassicAssert.AreEqual(0, etag);
 
-            // inplace update
-            res = db.Execute("SETWITHETAG", ["rizz", "meow"]);
-            etag = long.Parse(res.ToString());
-            ClassicAssert.AreEqual(0, etag);
+            db.KeyDelete("rizz");
+
+            ClassicAssert.IsTrue(db.StringSet("rizz", "my"));
 
             // Copy update
-            res = db.Execute("SETWITHETAG", ["rizz", "oneofus"]);
+            res = db.Execute("SETWITHETAG", ["rizz", "some"]);
             etag = long.Parse(res.ToString());
             ClassicAssert.AreEqual(0, etag);
         }
 
-        #endregion
 
-        #region ETAG Apis with non-etag data
-
-        // ETAG Apis with non-Etag data just tests that in all scenarios we always return wrong data type response
         [Test]
-        public void SetIfMatchOnNonEtagDataReturnsWrongType()
+        public void SetIfMatchOnNonEtagDataReturnsEtagMismatch()
         {
             using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
             IDatabase db = redis.GetDatabase(0);
 
             var _ = db.StringSet("h", "k");
 
-            RedisServerException ex = Assert.Throws<RedisServerException>(() => db.Execute("SETIFMATCH", ["h", "t", "0"]));
-
-            ClassicAssert.IsNotNull(ex);
-            ClassicAssert.AreEqual(Encoding.ASCII.GetString(CmdStrings.RESP_ERR_WRONG_TYPE), ex.Message);
-
-            ex = Assert.Throws<RedisServerException>(() => db.Execute("SETIFMATCH", ["h", "t", "1"]));
-
-            ClassicAssert.IsNotNull(ex);
-            ClassicAssert.AreEqual(Encoding.ASCII.GetString(CmdStrings.RESP_ERR_WRONG_TYPE), ex.Message);
+            var res = db.Execute("SETIFMATCH", ["h", "t", "0"]);
+            ClassicAssert.AreEqual("ETAGMISMATCH", res.ToString());
         }
 
         [Test]
-        public void GetIfNotMatchOnNonEtagDataReturnsWrongType()
+        public void GetIfNotMatchOnNonEtagDataReturnsNilForEtagAndCorrectData()
         {
             using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
             IDatabase db = redis.GetDatabase(0);
 
             var _ = db.StringSet("h", "k");
 
-            RedisServerException ex = Assert.Throws<RedisServerException>(() => db.Execute("GETIFNOTMATCH", ["h", "0"]));
+            var res = (RedisResult[])db.Execute("GETIFNOTMATCH", ["h", "1"]);
 
-            ClassicAssert.IsNotNull(ex);
-            ClassicAssert.AreEqual(Encoding.ASCII.GetString(CmdStrings.RESP_ERR_WRONG_TYPE), ex.Message);
-
-            ex = Assert.Throws<RedisServerException>(() => db.Execute("GETIFNOTMATCH", ["h", "1"]));
-
-            ClassicAssert.IsNotNull(ex);
-            ClassicAssert.AreEqual(Encoding.ASCII.GetString(CmdStrings.RESP_ERR_WRONG_TYPE), ex.Message);
+            ClassicAssert.IsTrue(res[0].IsNull);
+            ClassicAssert.AreEqual("k", res[1].ToString());
         }
 
         [Test]
-        public void GetWithEtagOnNonEtagDataReturnsWrongType()
+        public void GetWithEtagOnNonEtagDataReturnsNilForEtagAndCorrectData()
         {
             using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
             IDatabase db = redis.GetDatabase(0);
 
             var _ = db.StringSet("h", "k");
 
-            RedisServerException ex = Assert.Throws<RedisServerException>(() => db.Execute("GETWITHETAG", ["h"]));
-
-            ClassicAssert.IsNotNull(ex);
-            ClassicAssert.AreEqual(Encoding.ASCII.GetString(CmdStrings.RESP_ERR_WRONG_TYPE), ex.Message);
+            var res = (RedisResult[])db.Execute("GETWITHETAG", ["h"]);
+            ClassicAssert.IsTrue(res[0].IsNull);
+            ClassicAssert.AreEqual("k", res[1].ToString());
         }
 
         #endregion
@@ -364,7 +453,7 @@ namespace Garnet.test
         }
 
         [Test]
-        public void SetGetForEtagSetData()
+        public void SetGetWithRetainEtagForEtagSetData()
         {
             using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
             var db = redis.GetDatabase(0);
@@ -379,8 +468,11 @@ namespace Garnet.test
 
             // Smaller new value without expiration
             string newValue1 = "abcdefghijklmnopqrs";
-            retValue = db.StringSetAndGet(key, newValue1, null, When.Always, CommandFlags.None);
+
+            retValue = db.Execute("SET", [key, newValue1, "GET", "RETAINETAG"]).ToString();
+
             ClassicAssert.AreEqual(origValue, retValue);
+
             retValue = db.StringGet(key);
             ClassicAssert.AreEqual(newValue1, retValue);
 
@@ -390,7 +482,7 @@ namespace Garnet.test
 
             // Smaller new value with KeepTtl
             string newValue2 = "abcdefghijklmnopqr";
-            retValue = db.StringSetAndGet(key, newValue2, null, true, When.Always, CommandFlags.None);
+            retValue = db.Execute("SET", [key, newValue2, "GET", "RETAINETAG"]).ToString();
 
             // This should increase the ETAG internally so we have a check for that here
             checkEtag = long.Parse(db.Execute("GETWITHETAG", [key])[0].ToString());
@@ -404,7 +496,7 @@ namespace Garnet.test
 
             // Smaller new value with expiration
             string newValue3 = "01234";
-            retValue = db.StringSetAndGet(key, newValue3, TimeSpan.FromSeconds(10), When.Exists, CommandFlags.None);
+            retValue = db.Execute("SET", [key, newValue3, "EX", "10", "GET", "RETAINETAG"]).ToString();
             ClassicAssert.AreEqual(newValue2, retValue);
 
             // This should increase the ETAG internally so we have a check for that here
@@ -418,7 +510,7 @@ namespace Garnet.test
 
             // Larger new value with expiration
             string newValue4 = "abcdefghijklmnopqrstabcdefghijklmnopqrst";
-            retValue = db.StringSetAndGet(key, newValue4, TimeSpan.FromSeconds(100), When.Exists, CommandFlags.None);
+            retValue = db.Execute("SET", [key, newValue4, "EX", "100", "GET", "RETAINETAG"]).ToString();
             ClassicAssert.AreEqual(newValue3, retValue);
 
             // This should increase the ETAG internally so we have a check for that here
@@ -432,7 +524,7 @@ namespace Garnet.test
 
             // Smaller new value without expiration
             string newValue5 = "0123401234";
-            retValue = db.StringSetAndGet(key, newValue5, null, When.Exists, CommandFlags.None);
+            retValue = db.Execute("SET", [key, newValue5, "GET", "RETAINETAG"]).ToString();
             ClassicAssert.AreEqual(newValue4, retValue);
             retValue = db.StringGet(key);
             ClassicAssert.AreEqual(newValue5, retValue);
@@ -445,7 +537,7 @@ namespace Garnet.test
 
             // Larger new value without expiration
             string newValue6 = "abcdefghijklmnopqrstabcdefghijklmnopqrst";
-            retValue = db.StringSetAndGet(key, newValue6, null, When.Always, CommandFlags.None);
+            retValue = db.Execute("SET", [key, newValue6, "GET", "RETAINETAG"]).ToString();
             ClassicAssert.AreEqual(newValue5, retValue);
             retValue = db.StringGet(key);
             ClassicAssert.AreEqual(newValue6, retValue);
@@ -492,6 +584,8 @@ namespace Garnet.test
             ClassicAssert.AreEqual(n, nRetVal);
             ClassicAssert.AreEqual(-99998, nRetVal);
 
+            var res69 = db.KeyTimeToLive(strKey);
+
             Thread.Sleep(5000);
 
             // Expired key, restart increment,after exp this is treated as new record
@@ -503,9 +597,9 @@ namespace Garnet.test
             ClassicAssert.AreEqual(n, nRetVal);
             ClassicAssert.AreEqual(1, nRetVal);
 
-            RedisServerException ex = Assert.Throws<RedisServerException>(() => db.Execute("GETWITHETAG", [strKey]));
-            ClassicAssert.IsNotNull(ex);
-            ClassicAssert.AreEqual(Encoding.ASCII.GetString(CmdStrings.RESP_ERR_WRONG_TYPE), ex.Message);
+            var etagGet = (RedisResult[])db.Execute("GETWITHETAG", [strKey]);
+            ClassicAssert.IsTrue(etagGet[0].IsNull);
+            ClassicAssert.AreEqual(1, Convert.ToInt64(etagGet[1]));
         }
 
         [Test]
@@ -557,19 +651,52 @@ namespace Garnet.test
             long checkEtag = long.Parse(db.Execute("GETWITHETAG", [strKey])[0].ToString());
             ClassicAssert.AreEqual(0, checkEtag);
 
-            // override the setwithetag to a new value altogether, this will make it lose it's etag capability
-            // This is a limitation for Etags because plain sets are upserts (blind updates), and currently we
-            // cannot increase the latency in the common path for set to check beyong Readonly address for the
-            // existence of a record with ETag. This means that sets are complete upserts and clients need to use
-            // setifmatch if they want each consequent set to maintain the key value pair's etag property
+            // Unless the SET was called with RETAINETAG a call to set will override the setwithetag to a new
+            // value altogether, this will make it lose it's etag capability. This is a limitation for Etags
+            // because plain sets are upserts (blind updates), and currently we cannot increase the latency in
+            // the common path for set to check beyong Readonly address for the existence of a record with ETag.
+            // This means that sets are complete upserts and clients need to use setifmatch, or set with RETAINETAG
+            // if they want each consequent set to maintain the key value pair's etag property.
             ClassicAssert.IsTrue(db.StringSet(strKey, "ciaociao"));
 
             string retVal = db.StringGet(strKey).ToString();
             ClassicAssert.AreEqual("ciaociao", retVal);
+            
+            var res = (RedisResult[])db.Execute("GETWITHETAG", [strKey]);
+            ClassicAssert.IsTrue(res[0].IsNull);
+            ClassicAssert.AreEqual("ciaociao", res[1].ToString());
+        }
 
-            RedisServerException ex = Assert.Throws<RedisServerException>(() => db.Execute("GETWITHETAG", [strKey]));
-            ClassicAssert.IsNotNull(ex);
-            ClassicAssert.AreEqual(Encoding.ASCII.GetString(CmdStrings.RESP_ERR_WRONG_TYPE), ex.Message);
+        [Test]
+        public void StringSetOnAnExistingEtagDataUpdatesEtagIfEtagRetain()
+        {
+            using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
+            var db = redis.GetDatabase(0);
+
+            var strKey = "mykey";
+            db.Execute("SETWITHETAG", [strKey, 9]);
+
+            long checkEtag = (long)db.Execute("GETWITHETAG", [strKey])[0];
+            ClassicAssert.AreEqual(0, checkEtag);
+
+            // Unless you explicitly call SET with RETAINETAG option you will lose the etag on the previous key-value pair
+            db.Execute("SET", [strKey, "ciaociao", "RETAINETAG"]);
+
+            string retVal = db.StringGet(strKey).ToString();
+            ClassicAssert.AreEqual("ciaociao", retVal);
+
+            var res = (RedisResult[]) db.Execute("GETWITHETAG", strKey);
+            ClassicAssert.AreEqual(1, (long)res[0]);
+
+            // on subsequent upserts we are still increasing the etag transparently
+            db.Execute("SET", [strKey, "ciaociaociao", "RETAINETAG"]);
+
+            retVal = db.StringGet(strKey).ToString();
+            ClassicAssert.AreEqual("ciaociaociao", retVal);
+
+            res = (RedisResult[]) db.Execute("GETWITHETAG", strKey);
+            ClassicAssert.AreEqual(2, (long)res[0]);
+            ClassicAssert.AreEqual("ciaociaociao", res[1].ToString());
         }
 
         [Test]

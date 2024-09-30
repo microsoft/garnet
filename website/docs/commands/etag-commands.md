@@ -20,17 +20,20 @@ Compatibility with non-ETag commands and the behavior of data inserted with ETag
 #### **Syntax**
 
 ```bash
-SETWITHETAG key value
+SETWITHETAG key value [RETAINETAG]
 ```
 
 Inserts a key-value string pair into Garnet, associating an ETag that will be updated upon changes to the value.
+
+**Options:**
+
+* RETAINETAG -- Update the Etag associated with the previous key-value pair, while setting the new value for the key. If not etag existed for the previous key this will initialize one.
 
 #### **Response**
 
 One of the following:
 
 - **Integer reply**: A response integer indicating the initial ETag value on success.
-- **Error reply**: Returns an error if the key already exists.
 
 ---
 
@@ -48,9 +51,8 @@ Retrieves the value and the ETag associated with the given key.
 
 One of the following:
 
-- **Array reply**: An array of two items returned on success. The first item is an integer representing the ETag, and the second is the bulk string value of the key.
+- **Array reply**: An array of two items returned on success. The first item is an integer representing the ETag, and the second is the bulk string value of the key. If called on a key-value pair without ETag, the first item will be nil.
 - **Nil reply**: If the key does not exist.
-- **Error reply**: Returns an error if `GETWITHETAG` is called on a key that was not set with `SETWITHETAG`.
 
 ---
 
@@ -70,8 +72,7 @@ One of the following:
 
 - **Integer reply**: The updated ETag if the value was successfully updated.
 - **Nil reply**: If the key does not exist.
-- **Error reply (ETag mismatch)**: If the provided ETag does not match the current ETag.
-- **Error reply**: Returns an error if `SETIFMATCH` is called on a key not set with `SETWITHETAG`.
+- **Error reply (ETag mismatch)**: If the provided ETag does not match the current ETag. If the command is called on a record without an ETag we will return ETag mismatch as well.
 
 ---
 
@@ -89,10 +90,9 @@ Retrieves the value if the ETag associated with the key has changed; otherwise, 
 
 One of the following:
 
-- **Array reply**: If the ETag does not match, an array of two items is returned. The first item is the updated ETag, and the second item is the value associated with the key.
+- **Array reply**: If the ETag does not match, an array of two items is returned. The first item is the updated ETag, and the second item is the value associated with the key. If called on a record without an ETag the first item in the array will be nil.
 - **Nil reply**: If the key does not exist.
 - **Simple string reply**: Returns a string indicating the value is unchanged if the provided ETag matches the current ETag.
-- **Error reply**: Returns an error if `GETIFNOTMATCH` is called on a key not set with `SETWITHETAG`.
 
 ---
 
@@ -102,7 +102,8 @@ ETag commands executed on keys that were not set with `SETWITHETAG` will return 
 
 Below is the expected behavior of ETag-associated key-value pairs when non-ETag commands are used.
 
-- **SET, MSET, BITOP**: These commands will replace an existing ETag-associated key-value pair with a non-ETag key-value pair, effectively removing the ETag.
+- **MSET, BITOP**: These commands will replace an existing ETag-associated key-value pair with a non-ETag key-value pair, effectively removing the ETag.
+- **SET**: If only if used with additional option "RETAINETAG" will update the etag while inserting the key-value pair over the existing key-value pair.
 - **RENAME**: Renaming an ETag-associated key-value pair will reset the ETag to 0 for the renamed key.
 
 ---
