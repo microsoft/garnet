@@ -207,7 +207,7 @@ namespace Garnet.server
 
             if (parseState.Count > 3)
             {
-                if (!parseState.TryGetEnum(3, true, out ExpireOption additionExpireOption) || !additionExpireOption.IsValid(ref parseState.GetArgSliceByRef(3)))
+                if (!TryGetExpireOption(parseState.GetArgSliceByRef(3).ReadOnlySpan, out var additionExpireOption))
                 {
                     var optionStr = parseState.GetString(3);
 
@@ -281,7 +281,7 @@ namespace Garnet.server
 
             if (parseState.Count > 2)
             {
-                if (!parseState.TryGetEnum(2, true, out expireOption) || !expireOption.IsValid(ref parseState.GetArgSliceByRef(2)))
+                if (!TryGetExpireOption(parseState.GetArgSliceByRef(2).ReadOnlySpan, out expireOption))
                 {
                     var optionStr = parseState.GetString(2);
 
@@ -293,7 +293,7 @@ namespace Garnet.server
 
             if (parseState.Count > 3)
             {
-                if (!parseState.TryGetEnum(3, true, out ExpireOption additionExpireOption) || !additionExpireOption.IsValid(ref parseState.GetArgSliceByRef(3)))
+                if (!TryGetExpireOption(parseState.GetArgSliceByRef(3).ReadOnlySpan, out var additionExpireOption))
                 {
                     var optionStr = parseState.GetString(3);
 

@@ -645,7 +645,6 @@ namespace Garnet.server
                             >= ((6 << 4) | 2) and <= ((6 << 4) | 5) when lastWord == MemoryMarshal.Read<ulong>("BITPOS\r\n"u8) => RespCommand.BITPOS,
                             >= ((7 << 4) | 2) and <= ((7 << 4) | 3) when lastWord == MemoryMarshal.Read<ulong>("EXPIRE\r\n"u8) && ptr[8] == 'P' => RespCommand.PEXPIRE,
                             >= ((8 << 4) | 1) and <= ((8 << 4) | 4) when lastWord == MemoryMarshal.Read<ulong>("TCOUNT\r\n"u8) && *(ushort*)(ptr + 8) == MemoryMarshal.Read<ushort>("BI"u8) => RespCommand.BITCOUNT,
-                            >= ((8 << 4) | 2) and <= ((8 << 4) | 4) when lastWord == MemoryMarshal.Read<ulong>("PIREAT\r\n"u8) && *(ushort*)(ptr + 8) == MemoryMarshal.Read<ushort>("EX"u8) => RespCommand.EXPIREAT,
 
                             _ => MatchedNone(this, oldReadHead)
                         }
@@ -1254,6 +1253,10 @@ namespace Garnet.server
                                 else if (*(ulong*)(ptr + 4) == MemoryMarshal.Read<ulong>("BITFIELD"u8) && *(ushort*)(ptr + 12) == MemoryMarshal.Read<ushort>("\r\n"u8))
                                 {
                                     return RespCommand.BITFIELD;
+                                }
+                                else if (*(ulong*)(ptr + 4) == MemoryMarshal.Read<ulong>("EXPIREAT"u8) && *(ushort*)(ptr + 12) == MemoryMarshal.Read<ushort>("\r\n"u8))
+                                {
+                                    return RespCommand.EXPIREAT;
                                 }
                                 break;
                             case 9:
