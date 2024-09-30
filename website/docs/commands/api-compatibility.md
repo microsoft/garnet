@@ -140,7 +140,7 @@ Note that this list is subject to change as we continue to expand our API comman
 |  | [PTTL](generic-commands.md#pttl) | ➕ |  |
 |  | RANDOMKEY | ➖ |  |
 |  | [RENAME](generic-commands.md#rename) | ➕ |  |
-|  | RENAMENX | ➖ |  |
+|  | [RENAMENX](generic-commands.md#renamenx) | ➕ |  |
 |  | RESTORE | ➖ |  |
 |  | [SCAN](generic-commands.md#scan) | ➕ |  |
 |  | SORT | ➖ |  |
@@ -219,7 +219,7 @@ Note that this list is subject to change as we continue to expand our API comman
 |  | [LMOVE](data-structures.md#lmove) | ➕ |  |
 |  | LMPOP | ➖ |  |
 |  | [LPOP](data-structures.md#lpop) | ➕ |  |
-|  | LPOS | ➖ |  |
+|  | [LPOS](data-structures.md#lpos) | ➕ |  |
 |  | [LPUSH](data-structures.md#lpush) | ➕ |  |
 |  | [LPUSHX](data-structures.md#lpushx) | ➕ |  |
 |  | [LRANGE](data-structures.md#lrange) | ➕ |  |

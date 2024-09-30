@@ -241,7 +241,7 @@ namespace Garnet.server
 
         public override void Dispose()
         {
-            logger?.LogDebug("Disposing RespServerSession");
+            logger?.LogDebug("Disposing RespServerSession Id={0}", this.Id);
 
             if (recvBufferPtr != null)
             {
@@ -512,6 +512,7 @@ namespace Garnet.server
                 RespCommand.SETEXNX => NetworkSETEXNX(ref storageApi),
                 RespCommand.DEL => NetworkDEL(ref storageApi),
                 RespCommand.RENAME => NetworkRENAME(ref storageApi),
+                RespCommand.RENAMENX => NetworkRENAMENX(ref storageApi),
                 RespCommand.EXISTS => NetworkEXISTS(ref storageApi),
                 RespCommand.EXPIRE => NetworkEXPIRE(RespCommand.EXPIRE, ref storageApi),
                 RespCommand.PEXPIRE => NetworkEXPIRE(RespCommand.PEXPIRE, ref storageApi),
@@ -619,6 +620,7 @@ namespace Garnet.server
                 RespCommand.LPUSH => ListPush(cmd, ref storageApi),
                 RespCommand.LPUSHX => ListPush(cmd, ref storageApi),
                 RespCommand.LPOP => ListPop(cmd, ref storageApi),
+                RespCommand.LPOS => ListPosition(ref storageApi),
                 RespCommand.RPUSH => ListPush(cmd, ref storageApi),
                 RespCommand.RPUSHX => ListPush(cmd, ref storageApi),
                 RespCommand.RPOP => ListPop(cmd, ref storageApi),

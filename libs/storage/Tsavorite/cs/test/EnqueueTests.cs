@@ -185,7 +185,6 @@ namespace Tsavorite.test
             var input1 = new byte[] { 0, 1, 2, 3 };
             var input2 = new byte[] { 4, 5, 6, 7, 8, 9, 10 };
             var input3 = new byte[] { 11, 12 };
-            string readerName = "abc";
 
             await log.EnqueueAsync(input1, cancellationToken);
             await log.EnqueueAsync(input2);
@@ -197,7 +196,7 @@ namespace Tsavorite.test
 
             // Read the log to make sure all entries are put in
             int currentEntry = 1;
-            using (var iter = log.Scan(0, long.MaxValue, readerName))
+            using (var iter = log.Scan(0, long.MaxValue))
             {
                 while (iter.GetNext(out byte[] result, out _, out _))
                 {
@@ -232,9 +231,7 @@ namespace Tsavorite.test
 
                 // Make sure expected length is same as current - also makes sure that data verification was not skipped
                 ClassicAssert.AreEqual(expectedEntryCount, currentEntry);
-
             }
-
         }
     }
 }
