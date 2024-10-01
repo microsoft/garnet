@@ -94,7 +94,7 @@ jobs:
           output-file-path: ./test/BDNPerfTests/BenchmarkDotNet.Artifacts/results/BDN.benchmark.Resp.RespParseStress-report-full-compressed.json
 
           # Where the previous data file is stored
-          external-data-json-path: ./cache/benchmark-data.json
+          # #*#*#* DEBUG - can't set if auto-push is set external-data-json-path: ./cache/benchmark-data.json
           # Workflow will fail when an alert happens
           fail-on-alert: true
 
