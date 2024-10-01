@@ -22,6 +22,12 @@ namespace Garnet.server
         LockableContext<byte[], IGarnetObject, ObjectInput, GarnetObjectStoreOutput, long, ObjectSessionFunctions,
             /* ObjectStoreFunctions */ StoreFunctions<byte[], IGarnetObject, ByteArrayKeyComparer, DefaultRecordDisposer<byte[], IGarnetObject>>,
             GenericAllocator<byte[], IGarnetObject, StoreFunctions<byte[], IGarnetObject, ByteArrayKeyComparer, DefaultRecordDisposer<byte[], IGarnetObject>>>>>;
+    using DualGarnetApi = GarnetApi<DualContext<SpanByte, SpanByte, SpanByte, SpanByteAndMemory, long, MainSessionFunctions,
+            /* MainStoreFunctions */ StoreFunctions<SpanByte, SpanByte, SpanByteComparer, SpanByteRecordDisposer>,
+            SpanByteAllocator<StoreFunctions<SpanByte, SpanByte, SpanByteComparer, SpanByteRecordDisposer>>>,
+        DualContext<byte[], IGarnetObject, ObjectInput, GarnetObjectStoreOutput, long, ObjectSessionFunctions,
+            /* ObjectStoreFunctions */ StoreFunctions<byte[], IGarnetObject, ByteArrayKeyComparer, DefaultRecordDisposer<byte[], IGarnetObject>>,
+            GenericAllocator<byte[], IGarnetObject, StoreFunctions<byte[], IGarnetObject, ByteArrayKeyComparer, DefaultRecordDisposer<byte[], IGarnetObject>>>>>;
 
     using MainStoreAllocator = SpanByteAllocator<StoreFunctions<SpanByte, SpanByte, SpanByteComparer, SpanByteRecordDisposer>>;
     using MainStoreFunctions = StoreFunctions<SpanByte, SpanByte, SpanByteComparer, SpanByteRecordDisposer>;
@@ -45,6 +51,11 @@ namespace Garnet.server
         readonly LockableContext<SpanByte, SpanByte, SpanByte, SpanByteAndMemory, long, MainSessionFunctions, MainStoreFunctions, MainStoreAllocator> lockableContext;
 
         /// <summary>
+        /// Dual context for main store
+        /// </summary>
+        readonly DualContext<SpanByte, SpanByte, SpanByte, SpanByteAndMemory, long, MainSessionFunctions, MainStoreFunctions, MainStoreAllocator> dualContext;
+
+        /// <summary>
         /// Basic context for object store
         /// </summary>
         readonly BasicContext<byte[], IGarnetObject, ObjectInput, GarnetObjectStoreOutput, long, ObjectSessionFunctions, ObjectStoreFunctions, ObjectStoreAllocator> objectStoreBasicContext;
@@ -53,6 +64,11 @@ namespace Garnet.server
         /// Lockable context for object store
         /// </summary>
         readonly LockableContext<byte[], IGarnetObject, ObjectInput, GarnetObjectStoreOutput, long, ObjectSessionFunctions, ObjectStoreFunctions, ObjectStoreAllocator> objectStoreLockableContext;
+
+        /// <summary>
+        /// Dual context for object store
+        /// </summary>
+        readonly DualContext<byte[], IGarnetObject, ObjectInput, GarnetObjectStoreOutput, long, ObjectSessionFunctions, ObjectStoreFunctions, ObjectStoreAllocator> objectStoreDualContext;
 
         // Not readonly to avoid defensive copy
         GarnetWatchApi<BasicGarnetApi> garnetTxPrepareApi;
@@ -108,12 +124,14 @@ namespace Garnet.server
             var session = storageSession.basicContext.Session;
             basicContext = session.BasicContext;
             lockableContext = session.LockableContext;
+            dualContext = session.DualContext;
 
             var objectStoreSession = storageSession.objectStoreBasicContext.Session;
             if (objectStoreSession != null)
             {
                 objectStoreBasicContext = objectStoreSession.BasicContext;
                 objectStoreLockableContext = objectStoreSession.LockableContext;
+                objectStoreDualContext = objectStoreSession.DualContext;
             }
 
             this.functionsState = storageSession.functionsState;
@@ -257,10 +275,7 @@ namespace Garnet.server
             UpdateTransactionStoreType(type);
             watchContainer.AddWatch(key, type);
 
-            if (type == StoreType.Main || type == StoreType.All)
-                basicContext.ResetModified(key.SpanByte);
-            if ((type == StoreType.Object || type == StoreType.All) && !objectStoreBasicContext.IsNull)
-                objectStoreBasicContext.ResetModified(key.ToArray());
+            _ = respSession.StorageSession.Watch(key, type, in dualContext, in objectStoreDualContext);
         }
 
         void UpdateTransactionStoreType(StoreType type)

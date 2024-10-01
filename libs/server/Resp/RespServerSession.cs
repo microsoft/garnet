@@ -427,7 +427,7 @@ namespace Garnet.server
                 {
                     if (CheckACLPermissions(cmd))
                     {
-                        if (!ProcessBasicCommands(cmd, ref dualGarnetApi))
+                        if (!ProcessDualCommands(cmd, ref dualGarnetApi))
                         { 
                             if (txnManager.state != TxnState.None)
                             {
@@ -514,11 +514,15 @@ namespace Garnet.server
         private bool ProcessDualCommands<TGarnetApi>(RespCommand cmd, ref TGarnetApi storageApi)
             where TGarnetApi : IGarnetApi
         {
+            // We only use dual when using both stores
+            if (StorageSession.objectStoreBasicContext.IsNull)
+                return false;
+
             /*
              * WARNING: Do not add any command here classified as @slow!
              * Only @fast commands otherwise latency tracking will break for NET_RS (check how containsSlowCommand is used).
              */
-            _ = cmd switch
+            return cmd switch
             {
                 RespCommand.DEL => NetworkDEL(ref storageApi),
                 RespCommand.RENAME => NetworkRENAME(ref storageApi),
@@ -533,8 +537,6 @@ namespace Garnet.server
                 RespCommand.TYPE => NetworkTYPE(ref storageApi),
                 _ => false  // Not a dual command; fall through to ProcessBasicCommands
             };
-
-            return true;
         }
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]

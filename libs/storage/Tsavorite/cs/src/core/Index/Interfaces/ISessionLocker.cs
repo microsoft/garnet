@@ -175,7 +175,7 @@ namespace Tsavorite.core
         {
             Debug.Assert(!hei.HasTransientSLock, "Cannot XUnlock a session SLock");
 
-            // Do no unlock if this is the first of a dual Tsavorite and we are not retrying; we want the lock to persist then.
+            // Do not unlock if this is the first of a dual Tsavorite and we are not retrying; we want the lock to persist then.
             if (hei.HasTransientXLock && (isRetry || DualRole != DualRole.First))
             {
                 kernel.lockTable.UnlockExclusive(ref hei);
@@ -188,7 +188,7 @@ namespace Tsavorite.core
         {
             Debug.Assert(!hei.HasTransientXLock, "Cannot SUnlock a session XLock");
 
-            // Do no unlock if this is the first of a dual Tsavorite and we are not retrying; we want the lock to persist then.
+            // Do not unlock if this is the first of a dual Tsavorite and we are not retrying; we want the lock to persist then.
             if (hei.HasTransientSLock && (isRetry || DualRole != DualRole.First))
             {
                 kernel.lockTable.UnlockShared(ref hei);

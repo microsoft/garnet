@@ -15,7 +15,7 @@ namespace Tsavorite.core
         #region Basic status codes
         /// <summary>
         /// General success indicator. By itself it means they key for the operation was found; it may have been updated in place or copied to the log tail.
-        /// </summary>
+         /// </summary>
         /// <remarks>
         /// <list type="bullet">
         /// <item>Upsert ConcurrentWriter: <see cref="Found"/> | <see cref="InPlaceUpdatedRecord"/></item>

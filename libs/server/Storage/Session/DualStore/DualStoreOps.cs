@@ -563,22 +563,14 @@ namespace Garnet.server
                 status = GET(key.ToArray(), out GarnetObjectStoreOutput output, ref objectContext);
                 if (status == GarnetStatus.OK)
                 {
-                    if ((output.garnetObject as SortedSetObject) != null)
+                    keyType = output.garnetObject switch
                     {
-                        keyType = "zset";
-                    }
-                    else if ((output.garnetObject as ListObject) != null)
-                    {
-                        keyType = "list";
-                    }
-                    else if ((output.garnetObject as SetObject) != null)
-                    {
-                        keyType = "set";
-                    }
-                    else if ((output.garnetObject as HashObject) != null)
-                    {
-                        keyType = "hash";
-                    }
+                        SortedSetObject => "zset",
+                        ListObject => "list",
+                        SetObject => "set",
+                        HashObject => "hash",
+                        _ => throw new GarnetException("Unexpected garnetObject type")
+                    };
                 }
                 else
                 {
@@ -614,6 +606,17 @@ namespace Garnet.server
             }
 
             return status;
+        }
+
+        public GarnetStatus Watch<TContext, TObjectContext>(ArgSlice key, StoreType storeType, in TContext context, in TObjectContext objectContext)
+             where TContext : ITsavoriteContext<SpanByte, SpanByte, SpanByte, SpanByteAndMemory, long, MainSessionFunctions, MainStoreFunctions, MainStoreAllocator>
+             where TObjectContext : ITsavoriteContext<byte[], IGarnetObject, ObjectInput, GarnetObjectStoreOutput, long, ObjectSessionFunctions, ObjectStoreFunctions, ObjectStoreAllocator>
+        {
+            if (storeType == StoreType.Main || storeType == StoreType.All)
+                basicContext.ResetModified(key.SpanByte);
+            if ((storeType == StoreType.Object || storeType == StoreType.All) && !objectStoreBasicContext.IsNull)
+                objectStoreBasicContext.ResetModified(key.ToArray());
+            return GarnetStatus.OK;
         }
     }
 }
