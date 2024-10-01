@@ -22,7 +22,7 @@ namespace Garnet.server
     {
         internal readonly LogSizeTracker<byte[], IGarnetObject, ObjectStoreFunctions, ObjectStoreAllocator, LogSizeCalculator> mainLogTracker;
         internal readonly LogSizeTracker<byte[], IGarnetObject, ObjectStoreFunctions, ObjectStoreAllocator, LogSizeCalculator> readCacheTracker;
-        internal long targetSize;
+        public long TargetSize;
 
         private const int deltaFraction = 10; // 10% of target size
         private TsavoriteKV<byte[], IGarnetObject, ObjectStoreFunctions, ObjectStoreAllocator> store;
@@ -62,6 +62,7 @@ namespace Garnet.server
             Debug.Assert(targetSize > 0);
 
             this.store = store;
+            this.TargetSize = targetSize;
             var logSizeCalculator = new LogSizeCalculator();
 
             var (mainLogTargetSizeBytes, readCacheTargetSizeBytes) = CalculateLogTargetSizeBytes(targetSize);

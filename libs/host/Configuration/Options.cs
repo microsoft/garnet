@@ -64,11 +64,11 @@ namespace Garnet
         public int MutablePercent { get; set; }
 
         [MemorySizeValidation(false)]
-        [Option("obj-heap-memory", Required = false, HelpText = "Object store heap memory size in bytes")]
+        [Option("obj-heap-memory", Required = false, HelpText = "Object store heap memory size in bytes (Sum of size taken up by all object instances in the heap)")]
         public string ObjectStoreHeapMemorySize { get; set; }
 
         [MemorySizeValidation]
-        [Option("obj-log-memory", Required = false, HelpText = "Object store log memory used in bytes excluding heap memory")]
+        [Option("obj-log-memory", Required = false, HelpText = "Object store log memory used in bytes (Size of only the log with references to heap objects, excludes size of heap memory consumed by the objects themselves referred to from the log")]
         public string ObjectStoreLogMemorySize { get; set; }
 
         [MemorySizeValidation]
