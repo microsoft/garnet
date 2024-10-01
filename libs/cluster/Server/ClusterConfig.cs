@@ -19,12 +19,12 @@ namespace Garnet.cluster
         /// <summary>
         /// Minimum hash slot value.
         /// </summary>
-        public static readonly int MIN_HASH_SLOT_VALUE = 0;
+        public const int MIN_HASH_SLOT_VALUE = 0;
 
         /// <summary>
         /// Maximum hash slot value.
         /// </summary>
-        public static readonly int MAX_HASH_SLOT_VALUE = 16384;
+        public const int MAX_HASH_SLOT_VALUE = 16384;
 
         /// <summary>
         /// 

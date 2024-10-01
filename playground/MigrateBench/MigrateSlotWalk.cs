@@ -2,6 +2,7 @@
 // Licensed under the MIT license.
 
 using Garnet.client;
+using Garnet.common;
 using Microsoft.Extensions.Logging;
 
 namespace MigrateBench
@@ -25,11 +26,11 @@ namespace MigrateBench
                 throw new Exception("Exactly 3 nodes are needed for this scenario");
 
             var endpoint = endpoints[0].Split(':');
-            n0 = new GarnetClientSession(endpoint[0], int.Parse(endpoint[1]), bufferSize: 1 << 22);
+            n0 = new GarnetClientSession(endpoint[0], int.Parse(endpoint[1]), new NetworkBufferSettings(1 << 22));
             endpoint = endpoints[1].Split(':');
-            n1 = new GarnetClientSession(endpoint[0], int.Parse(endpoint[1]), bufferSize: 1 << 22);
+            n1 = new GarnetClientSession(endpoint[0], int.Parse(endpoint[1]), new NetworkBufferSettings(1 << 22));
             endpoint = endpoints[2].Split(':');
-            n2 = new GarnetClientSession(endpoint[0], int.Parse(endpoint[1]), bufferSize: 1 << 22);
+            n2 = new GarnetClientSession(endpoint[0], int.Parse(endpoint[1]), new NetworkBufferSettings(1 << 22));
 
             this.logger = logger;
         }
