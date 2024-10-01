@@ -77,8 +77,8 @@ For all available command line settings, run `GarnetServer.exe -h` or `GarnetSer
 | **IndexSize** | ```-i```<br/>```--index``` | ```string``` | Memory size | Size of hash index in bytes (rounds down to power of 2) |
 | **IndexMaxSize** | ```--index-max-size``` | ```string``` | Memory size | Max size of hash index in bytes (rounds down to power of 2) |
 | **MutablePercent** | ```--mutable-percent``` | ```int``` |  | Percentage of log memory that is kept mutable |
-| **ObjectStoreTotalMemorySize** | ```--obj-total-memory``` | ```string``` | Memory size | Total object store log memory used including heap memory in bytes |
-| **ObjectStoreLogMemorySize** | ```--obj-memory``` | ```string``` | Memory size | Object store log memory used in bytes excluding heap memory |
+| **ObjectStoreHeapMemorySize** | ```--obj-heap-memory``` | ```string``` | Memory size | Object store heap memory size in bytes |
+| **ObjectStoreLogMemorySize** | ```--obj-log-memory``` | ```string``` | Memory size | Object store log memory used in bytes excluding heap memory |
 | **ObjectStorePageSize** | ```--obj-page``` | ```string``` | Memory size | Size of each object store page in bytes (rounds down to power of 2) |
 | **ObjectStoreSegmentSize** | ```--obj-segment``` | ```string``` | Memory size | Size of each object store log segment in bytes on disk (rounds down to power of 2) |
 | **ObjectStoreIndexSize** | ```--obj-index``` | ```string``` | Memory size | Size of object store hash index in bytes (rounds down to power of 2) |
