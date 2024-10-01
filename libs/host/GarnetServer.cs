@@ -4,11 +4,14 @@
 using System;
 using System.Diagnostics;
 using System.IO;
+using System.Linq;
+using System.Text;
 using System.Threading;
 using Garnet.cluster;
 using Garnet.common;
 using Garnet.networking;
 using Garnet.server;
+using Garnet.server.Auth.Settings;
 using Microsoft.Extensions.Logging;
 using Tsavorite.core;
 
@@ -49,7 +52,7 @@ namespace Garnet
         protected StoreWrapper storeWrapper;
 
         // IMPORTANT: Keep the version in sync with .azure\pipelines\azure-pipelines-external-release.yml line ~6.
-        readonly string version = "1.0.24";
+        readonly string version = "1.0.29";
 
         /// <summary>
         /// Resp protocol version
@@ -76,7 +79,9 @@ namespace Garnet
         /// </summary>
         /// <param name="commandLineArgs">Command line arguments</param>
         /// <param name="loggerFactory">Logger factory</param>
-        public GarnetServer(string[] commandLineArgs, ILoggerFactory loggerFactory = null, bool cleanupDir = false)
+        /// <param name="cleanupDir">Clean up directory.</param>
+        /// <param name="authenticationSettingsOverride">Override for custom authentication settings.</param>
+        public GarnetServer(string[] commandLineArgs, ILoggerFactory loggerFactory = null, bool cleanupDir = false, IAuthenticationSettings authenticationSettingsOverride = null)
         {
             Trace.Listeners.Add(new ConsoleTraceListener());
 
@@ -125,6 +130,7 @@ namespace Garnet
 
             // Assign values to GarnetServerOptions
             this.opts = serverSettings.GetServerOptions(this.loggerFactory.CreateLogger("Options"));
+            this.opts.AuthSettings = authenticationSettingsOverride ?? this.opts.AuthSettings;
             this.cleanupDir = cleanupDir;
             this.InitializeServer();
         }
@@ -186,7 +192,7 @@ namespace Garnet
             CreateObjectStore(clusterFactory, customCommandManager, checkpointDir, out var objectStoreSizeTracker);
 
             if (!opts.DisablePubSub)
-                subscribeBroker = new SubscribeBroker<SpanByte, SpanByte, IKeySerializer<SpanByte>>(new SpanByteKeySerializer(), null, opts.PubSubPageSizeBytes(), true);
+                subscribeBroker = new SubscribeBroker<SpanByte, SpanByte, IKeySerializer<SpanByte>>(new SpanByteKeySerializer(), null, opts.PubSubPageSizeBytes(), opts.SubscriberRefreshFrequencyMs, true);
 
             CreateAOF();
 
@@ -207,6 +213,32 @@ namespace Garnet
             Store = new StoreApi(storeWrapper);
 
             server.Register(WireFormat.ASCII, Provider);
+
+            LoadModules(customCommandManager);
+        }
+
+        private void LoadModules(CustomCommandManager customCommandManager)
+        {
+            if (opts.LoadModuleCS == null)
+                return;
+
+            foreach (var moduleCS in opts.LoadModuleCS)
+            {
+                var moduleCSData = moduleCS.Split(' ', StringSplitOptions.RemoveEmptyEntries);
+                if (moduleCSData.Length < 1)
+                    continue;
+
+                var modulePath = moduleCSData[0];
+                var moduleArgs = moduleCSData.Length > 1 ? moduleCSData.Skip(1).ToArray() : [];
+                if (ModuleUtils.LoadAssemblies([modulePath], null, true, out var loadedAssemblies, out var errorMsg))
+                {
+                    ModuleRegistrar.Instance.LoadModule(customCommandManager, loadedAssemblies.ToList()[0], moduleArgs, logger, out errorMsg);
+                }
+                else
+                {
+                    logger?.LogError("Module {0} failed to load with error {1}", modulePath, Encoding.UTF8.GetString(errorMsg));
+                }
+            }
         }
 
         private void CreateMainStore(IClusterFactory clusterFactory, out string checkpointDir)

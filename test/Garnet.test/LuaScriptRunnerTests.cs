@@ -92,7 +92,7 @@ namespace Garnet.test
             {
                 runner.Compile();
                 var res = runner.Run(keys, args);
-                ClassicAssert.AreEqual("arg2", res);
+                ClassicAssert.AreEqual("arg1", res);
             }
 
             // Run code with errors

@@ -3,6 +3,7 @@
 
 using System.Collections.Generic;
 using System.Runtime.CompilerServices;
+using Garnet.common;
 using Garnet.server;
 using Microsoft.Extensions.Logging;
 
@@ -10,20 +11,61 @@ namespace Garnet.cluster
 {
     internal sealed class MigrationManager
     {
+        const int initialReceiveBufferSize = 1 << 12;
+        readonly ILogger logger;
         readonly ClusterProvider clusterProvider;
         readonly MigrateSessionTaskStore migrationTaskStore;
 
+        /// <summary>
+        /// NetworkBufferSettings for MigrateSession instances
+        /// </summary>
+        readonly NetworkBufferSettings networkBufferSettings;
+
+        /// <summary>
+        /// NetworkPool instance created according to spec
+        /// </summary>
+        readonly LimitedFixedBufferPool networkPool;
+
+        /// <summary>
+        /// Get NetworkBuffers object
+        /// </summary>
+        public NetworkBufferSettings GetNetworkBufferSettings => networkBufferSettings;
+
+        /// <summary>
+        /// Get NetworkPool instance
+        /// </summary>
+        public LimitedFixedBufferPool GetNetworkPool => networkPool;
+
         public MigrationManager(ClusterProvider clusterProvider, ILogger logger = null)
         {
-            migrationTaskStore = new MigrateSessionTaskStore(logger);
+            this.logger = logger;
+            this.migrationTaskStore = new MigrateSessionTaskStore(logger);
             this.clusterProvider = clusterProvider;
+            var sendBufferSize = 1 << clusterProvider.serverOptions.PageSizeBits();
+            this.networkBufferSettings = new NetworkBufferSettings(sendBufferSize, initialReceiveBufferSize);
+            this.networkPool = networkBufferSettings.CreateBufferPool(logger: logger);
         }
 
+        /// <summary>
+        /// Dispose
+        /// </summary>
         public void Dispose()
         {
-            migrationTaskStore.Dispose();
+            migrationTaskStore?.Dispose();
+            networkPool?.Dispose();
         }
 
+        /// <summary>
+        /// Used to free up buffer pool
+        /// </summary>
+        public void Purge() => networkPool.Purge();
+
+        public string GetBufferPoolStats() => networkPool.GetStats();
+
+        /// <summary>
+        /// Get number of active migrate sessions
+        /// </summary>
+        /// <returns></returns>
         public int GetMigrationTaskCount()
             => migrationTaskStore.GetNumSessions();
 

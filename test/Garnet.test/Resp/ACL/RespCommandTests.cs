@@ -3509,6 +3509,21 @@ namespace Garnet.test.Resp.ACL
         }
 
         [Test]
+        public async Task LPosACLsAsync()
+        {
+            await CheckCommandsAsync(
+                "LPOS",
+                [DoLPosAsync]
+            );
+
+            static async Task DoLPosAsync(GarnetClient client)
+            {
+                string val = await client.ExecuteForStringResultAsync("LPOS", ["foo", "a"]);
+                ClassicAssert.IsNull(val);
+            }
+        }
+
+        [Test]
         public async Task LPushACLsAsync()
         {
             int count = 0;
@@ -3882,7 +3897,7 @@ namespace Garnet.test.Resp.ACL
                 try
                 {
                     await client.ExecuteForStringResultAsync("MIGRATE", ["127.0.0.1", "9999", "KEY", "0", "1000"]);
-                    Assert.Fail("Shouldn't succeed, no replicas are attached");
+                    Assert.Fail("Shouldn't be reachable, cluster isn't enabled");
                 }
                 catch (Exception e)
                 {
@@ -3893,6 +3908,41 @@ namespace Garnet.test.Resp.ACL
 
                     throw;
                 }
+            }
+        }
+
+        [Test]
+        public async Task PurgeBPACLsAsync()
+        {
+            // Uses exceptions for control flow, as we're not setting up replicas here
+
+            await CheckCommandsAsync(
+                "PURGEBP",
+                [DoPurgeBPClusterAsync, DoPurgeBPAsync]
+            );
+
+            static async Task DoPurgeBPClusterAsync(GarnetClient client)
+            {
+                try
+                {
+                    await client.ExecuteForStringResultAsync("PURGEBP", ["MigrationManager"]);
+                    Assert.Fail("Shouldn't be reachable, cluster isn't enabled");
+                }
+                catch (Exception e)
+                {
+                    if (e.Message == "ERR This instance has cluster support disabled")
+                    {
+                        return;
+                    }
+
+                    throw;
+                }
+            }
+
+            static async Task DoPurgeBPAsync(GarnetClient client)
+            {
+                string val = await client.ExecuteForStringResultAsync("PURGEBP", ["ServerListener"]);
+                ClassicAssert.AreEqual("GC completed for ServerListener", val);
             }
         }
 
@@ -4306,14 +4356,41 @@ namespace Garnet.test.Resp.ACL
         {
             await CheckCommandsAsync(
                 "RENAME",
-                [DoPTTLAsync]
+                [DoRENAMEAsync]
             );
 
-            static async Task DoPTTLAsync(GarnetClient client)
+            static async Task DoRENAMEAsync(GarnetClient client)
             {
                 try
                 {
                     await client.ExecuteForStringResultAsync("RENAME", ["foo", "bar"]);
+                    Assert.Fail("Shouldn't succeed, key doesn't exist");
+                }
+                catch (Exception e)
+                {
+                    if (e.Message == "ERR no such key")
+                    {
+                        return;
+                    }
+
+                    throw;
+                }
+            }
+        }
+
+        [Test]
+        public async Task RenameNxACLsAsync()
+        {
+            await CheckCommandsAsync(
+                "RENAMENX",
+                [DoRENAMENXAsync]
+            );
+
+            static async Task DoRENAMENXAsync(GarnetClient client)
+            {
+                try
+                {
+                    await client.ExecuteForStringResultAsync("RENAMENX", ["foo", "bar"]);
                     Assert.Fail("Shouldn't succeed, key doesn't exist");
                 }
                 catch (Exception e)

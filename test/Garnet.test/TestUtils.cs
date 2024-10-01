@@ -200,7 +200,8 @@ namespace Garnet.test
             int indexResizeFrequencySecs = 60,
             IAuthenticationSettings authenticationSettings = null,
             bool enableLua = false,
-            ILogger logger = null)
+            ILogger logger = null,
+            IEnumerable<string> loadModulePaths = null)
         {
             if (UseAzureStorage)
                 IgnoreIfNotRunningAzureTests();
@@ -276,6 +277,7 @@ namespace Garnet.test
                 EnableScatterGatherGet = getSG,
                 IndexResizeFrequencySecs = indexResizeFrequencySecs,
                 ThreadPoolMinThreads = threadPoolMinThreads,
+                LoadModuleCS = loadModulePaths
             };
 
             if (!string.IsNullOrEmpty(objectStoreTotalMemorySize))
@@ -286,7 +288,7 @@ namespace Garnet.test
 
             if (lowMemory)
             {
-                opts.MemorySize = opts.ObjectStoreLogMemorySize = MemorySize == default ? "512" : MemorySize;
+                opts.MemorySize = opts.ObjectStoreLogMemorySize = MemorySize == default ? "1024" : MemorySize;
                 opts.PageSize = opts.ObjectStorePageSize = PageSize == default ? "512" : PageSize;
             }
 
@@ -355,7 +357,8 @@ namespace Garnet.test
             string aclFile = null,
             X509CertificateCollection certificates = null,
             ILoggerFactory loggerFactory = null,
-            AadAuthenticationSettings authenticationSettings = null)
+            AadAuthenticationSettings authenticationSettings = null,
+            int metricsSamplingFrequency = 0)
         {
             if (UseAzureStorage)
                 IgnoreIfNotRunningAzureTests();
@@ -394,7 +397,8 @@ namespace Garnet.test
                     aclFile: aclFile,
                     certificates: certificates,
                     logger: loggerFactory?.CreateLogger("GarnetServer"),
-                    aadAuthenticationSettings: authenticationSettings);
+                    aadAuthenticationSettings: authenticationSettings,
+                    metricsSamplingFrequency: metricsSamplingFrequency);
 
                 ClassicAssert.IsNotNull(opts);
                 int iter = 0;
@@ -439,6 +443,7 @@ namespace Garnet.test
             string aclFile = null,
             X509CertificateCollection certificates = null,
             AadAuthenticationSettings aadAuthenticationSettings = null,
+            int metricsSamplingFrequency = 0,
             ILogger logger = null)
         {
             if (UseAzureStorage)
@@ -490,6 +495,7 @@ namespace Garnet.test
                 MemorySize = "1g",
                 GossipDelay = gossipDelay,
                 EnableFastCommit = FastCommit,
+                MetricsSamplingFrequency = metricsSamplingFrequency,
                 TlsOptions = UseTLS ? new GarnetTlsOptions(
                     certFileName: certFile,
                     certPassword: certPassword,
@@ -526,7 +532,7 @@ namespace Garnet.test
 
             if (lowMemory)
             {
-                opts.MemorySize = opts.ObjectStoreLogMemorySize = MemorySize == default ? "512" : MemorySize;
+                opts.MemorySize = opts.ObjectStoreLogMemorySize = MemorySize == default ? "1024" : MemorySize;
                 opts.PageSize = opts.ObjectStorePageSize = PageSize == default ? "512" : PageSize;
             }
 
@@ -646,7 +652,7 @@ namespace Garnet.test
                     RemoteCertificateValidationCallback = ValidateServerCertificate,
                 };
             }
-            return new GarnetClientSession(Address, Port, sslOptions);
+            return new GarnetClientSession(Address, Port, new(), tlsOptions: sslOptions);
         }
 
         public static LightClientRequest CreateRequest(LightClient.OnResponseDelegateUnsafe onReceive = null, bool useTLS = false, CountResponseType countResponseType = CountResponseType.Tokens)

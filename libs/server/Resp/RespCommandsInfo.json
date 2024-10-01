@@ -2021,6 +2021,35 @@
     ]
   },
   {
+    "Command": "LPOS",
+    "Name": "LPOS",
+    "IsInternal": false,
+    "Arity": -3,
+    "Flags": "ReadOnly",
+    "FirstKey": 1,
+    "LastKey": 1,
+    "Step": 1,
+    "AclCategories": "List, Read, Slow",
+    "Tips": null,
+    "KeySpecifications": [
+      {
+        "BeginSearch": {
+          "TypeDiscriminator": "BeginSearchIndex",
+          "Index": 1
+        },
+        "FindKeys": {
+          "TypeDiscriminator": "FindKeysRange",
+          "LastKey": 0,
+          "KeyStep": 1,
+          "Limit": 0
+        },
+        "Notes": null,
+        "Flags": "RO, Access"
+      }
+    ],
+    "SubCommands": null
+  },
+  {
     "Command": "LPUSH",
     "Name": "LPUSH",
     "Arity": -3,
@@ -2581,6 +2610,20 @@
     "AclCategories": "PubSub, Slow"
   },
   {
+    "Command": "PURGEBP",
+    "Name": "PURGEBP",
+    "IsInternal": false,
+    "Arity": 2,
+    "Flags": "Admin, NoMulti, NoScript, ReadOnly",
+    "FirstKey": 1,
+    "LastKey": 1,
+    "Step": 1,
+    "AclCategories": "Admin, Garnet",
+    "Tips": null,
+    "KeySpecifications": null,
+    "SubCommands": null
+  },
+  {
     "Command": "QUIT",
     "Name": "QUIT",
     "Arity": -1,
@@ -2648,6 +2691,49 @@
         "Flags": "OW, Update"
       }
     ]
+  },
+  {
+    "Command": "RENAMENX",
+    "Name": "RENAMENX",
+    "IsInternal": false,
+    "Arity": 3,
+    "Flags": "Fast, Write",
+    "FirstKey": 1,
+    "LastKey": 2,
+    "Step": 1,
+    "AclCategories": "Fast, KeySpace, Write",
+    "Tips": null,
+    "KeySpecifications": [
+      {
+        "BeginSearch": {
+          "TypeDiscriminator": "BeginSearchIndex",
+          "Index": 1
+        },
+        "FindKeys": {
+          "TypeDiscriminator": "FindKeysRange",
+          "LastKey": 0,
+          "KeyStep": 1,
+          "Limit": 0
+        },
+        "Notes": null,
+        "Flags": "RW, Access, Delete"
+      },
+      {
+        "BeginSearch": {
+          "TypeDiscriminator": "BeginSearchIndex",
+          "Index": 2
+        },
+        "FindKeys": {
+          "TypeDiscriminator": "FindKeysRange",
+          "LastKey": 0,
+          "KeyStep": 1,
+          "Limit": 0
+        },
+        "Notes": null,
+        "Flags": "OW, Insert"
+      }
+    ],
+    "SubCommands": null
   },
   {
     "Command": "REPLICAOF",

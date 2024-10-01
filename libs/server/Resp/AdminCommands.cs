@@ -6,12 +6,10 @@ using System.Collections.Generic;
 using System.Diagnostics;
 using System.IO;
 using System.Linq;
-using System.Reflection;
 using System.Runtime.CompilerServices;
 using System.Text;
 using Garnet.common;
 using Garnet.server.Custom;
-using Garnet.server.Module;
 
 namespace Garnet.server
 {
@@ -60,6 +58,7 @@ namespace Garnet.server
                 RespCommand.ACL_SAVE => NetworkAclSave(),
                 RespCommand.REGISTERCS => NetworkRegisterCs(storeWrapper.customCommandManager),
                 RespCommand.MODULE_LOADCS => NetworkModuleLoad(storeWrapper.customCommandManager),
+                RespCommand.PURGEBP => NetworkPurgeBP(),
                 _ => cmdFound = false
             };
 
@@ -135,53 +134,7 @@ namespace Garnet.server
 
             return true;
         }
-
-        private bool LoadAssemblies(IEnumerable<string> binaryPaths, out IEnumerable<Assembly> loadedAssemblies, out ReadOnlySpan<byte> errorMessage)
-        {
-            loadedAssemblies = null;
-            errorMessage = default;
-
-            // Get all binary file paths from inputs binary paths
-            if (!FileUtils.TryGetFiles(binaryPaths, out var files, out _, [".dll", ".exe"],
-                    SearchOption.AllDirectories))
-            {
-                errorMessage = CmdStrings.RESP_ERR_GENERIC_GETTING_BINARY_FILES;
-                return false;
-            }
-
-            // Check that all binary files are contained in allowed binary paths
-            var binaryFiles = files.ToArray();
-            if (binaryFiles.Any(f =>
-                    storeWrapper.serverOptions.ExtensionBinPaths.All(p => !FileUtils.IsFileInDirectory(f, p))))
-            {
-                errorMessage = CmdStrings.RESP_ERR_GENERIC_BINARY_FILES_NOT_IN_ALLOWED_PATHS;
-                return false;
-            }
-
-            // Get all assemblies from binary files
-            if (!FileUtils.TryLoadAssemblies(binaryFiles, out loadedAssemblies, out _))
-            {
-                errorMessage = CmdStrings.RESP_ERR_GENERIC_LOADING_ASSEMBLIES;
-                return false;
-            }
-
-            // If necessary, check that all assemblies are digitally signed
-            if (!storeWrapper.serverOptions.ExtensionAllowUnsignedAssemblies)
-            {
-                foreach (var loadedAssembly in loadedAssemblies)
-                {
-                    var publicKey = loadedAssembly.GetName().GetPublicKey();
-                    if (publicKey == null || publicKey.Length == 0)
-                    {
-                        errorMessage = CmdStrings.RESP_ERR_GENERIC_ASSEMBLY_NOT_SIGNED;
-                        return false;
-                    }
-                }
-            }
-
-            return true;
-        }
-
+        
         private bool TryImportCommandsData<TData>(string cmdDataPath, out IReadOnlyDictionary<string, TData> cmdNameToData, out ReadOnlySpan<byte> errorMessage) where TData : class, IRespCommandData<TData>
         {
             cmdNameToData = default;
@@ -253,7 +206,8 @@ namespace Garnet.server
                     return false;
             }
 
-            if (!LoadAssemblies(binaryPaths, out var loadedAssemblies, out errorMessage))
+            if (!ModuleUtils.LoadAssemblies(binaryPaths, storeWrapper.serverOptions.ExtensionBinPaths,
+                storeWrapper.serverOptions.ExtensionAllowUnsignedAssemblies, out var loadedAssemblies, out errorMessage))
                 return false;
 
             foreach (var c in classNameToRegisterArgs.Keys)
@@ -530,7 +484,8 @@ namespace Garnet.server
             for (var i = 0; i < moduleArgs.Length; i++)
                 moduleArgs[i] = parseState.GetArgSliceByRef(i + 1).ToString();
 
-            if (LoadAssemblies([modulePath], out var loadedAssemblies, out var errorMsg))
+            if (ModuleUtils.LoadAssemblies([modulePath], storeWrapper.serverOptions.ExtensionBinPaths,
+                storeWrapper.serverOptions.ExtensionAllowUnsignedAssemblies, out var loadedAssemblies, out var errorMsg))
             {
                 Debug.Assert(loadedAssemblies != null);
                 var assembliesList = loadedAssemblies.ToList();

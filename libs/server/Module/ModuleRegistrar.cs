@@ -8,7 +8,7 @@ using System.Linq;
 using System.Reflection;
 using Microsoft.Extensions.Logging;
 
-namespace Garnet.server.Module
+namespace Garnet.server
 {
     /// <summary>
     /// Abstract base class that all Garnet modules must inherit from.
@@ -175,11 +175,11 @@ namespace Garnet.server.Module
         }
     }
 
-    internal sealed class ModuleRegistrar
+    public sealed class ModuleRegistrar
     {
         private static readonly Lazy<ModuleRegistrar> lazy = new Lazy<ModuleRegistrar>(() => new ModuleRegistrar());
 
-        internal static ModuleRegistrar Instance { get { return lazy.Value; } }
+        public static ModuleRegistrar Instance { get { return lazy.Value; } }
 
         private ModuleRegistrar()
         {
@@ -188,7 +188,7 @@ namespace Garnet.server.Module
 
         private readonly ConcurrentDictionary<string, ModuleLoadContext> modules;
 
-        internal bool LoadModule(CustomCommandManager customCommandManager, Assembly loadedAssembly, string[] moduleArgs, ILogger logger, out ReadOnlySpan<byte> errorMessage)
+        public bool LoadModule(CustomCommandManager customCommandManager, Assembly loadedAssembly, string[] moduleArgs, ILogger logger, out ReadOnlySpan<byte> errorMessage)
         {
             errorMessage = default;
 

@@ -3,7 +3,6 @@
 
 using System;
 using System.Collections.Generic;
-using System.Linq;
 using Garnet.common;
 
 namespace Garnet.server
@@ -70,11 +69,19 @@ namespace Garnet.server
             }
             else
             {
-                InfoMetricsType[] sectionsArr = sections == null ? GarnetInfoMetrics.defaultInfo : [.. sections];
-                GarnetInfoMetrics garnetInfo = new();
-                string info = garnetInfo.GetRespInfo(sectionsArr, storeWrapper);
-                while (!RespWriteUtils.WriteAsciiBulkString(info, ref dcurr, dend))
-                    SendAndReset();
+                var sectionsArr = sections == null ? GarnetInfoMetrics.defaultInfo : [.. sections];
+                var garnetInfo = new GarnetInfoMetrics();
+                var info = garnetInfo.GetRespInfo(sectionsArr, storeWrapper);
+                if (!string.IsNullOrEmpty(info))
+                {
+                    while (!RespWriteUtils.WriteAsciiBulkString(info, ref dcurr, dend))
+                        SendAndReset();
+                }
+                else
+                {
+                    while (!RespWriteUtils.WriteDirect(CmdStrings.RESP_ERRNOTFOUND, ref dcurr, dend))
+                        SendAndReset();
+                }
             }
             return true;
 

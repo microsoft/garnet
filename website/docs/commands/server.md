@@ -241,3 +241,19 @@ The TIME command returns the current server time as a two items lists: a Unix ti
 Array reply: specifically, a two-element array consisting of the Unix timestamp in seconds and the microseconds' count.
 
 ---
+
+### MONITOR
+
+#### Syntax
+
+```bash
+MONITOR
+```
+
+MONITOR is a debugging command that streams back every command processed by the Redis server. It can help in understanding what is happening to the database.
+
+#### Resp Reply
+
+Non-standard return value. Dumps the received commands in an infinite flow.
+
+---
