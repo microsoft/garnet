@@ -295,10 +295,10 @@ namespace Garnet.test.Resp
         /// </summary>
         [TestCase("", false, null)] // Too short
         [TestCase("S$-1\r\n", false, "S")] // Long enough but not nil leading
-        [TestCase("$-1\n1738\r\n", false, "1")] // Long enough but not nil
+        [TestCase("$-1\n1738\r\n", false, "\n")] // Long enough but not nil
         [TestCase("$-1\r\n", true, null)] // exact nil
         [TestCase("$-1\r\nxyzextra", true, null)] // leading nil but with extra bytes after
-        public static unsafe void ReadBoolWithLengthHeaderTest(string testSequence, bool expected, string firstMismatch)
+        public static unsafe void ReadNilTest(string testSequence, bool expected, string firstMismatch)
         {
             ReadOnlySpan<byte> testSeq = new ReadOnlySpan<byte>(Encoding.ASCII.GetBytes(testSequence));
 

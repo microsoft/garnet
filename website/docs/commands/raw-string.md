@@ -219,7 +219,7 @@ Set **key** to hold the string value. If key already holds a value, it is overwr
 * NX -- Only set the key if it does not already exist.
 * XX -- Only set the key if it already exists.
 * KEEPTTL -- Retain the time to live associated with the key.
-* RETAINETAG -- Update the Etag associated with the previous key-value pair, while setting the new value for the key. If no etag existed on the previous key-value pair this initialize one. 
+* RETAINETAG -- Update the Etag associated with the previous key-value pair, while setting the new value for the key. If no etag existed on the previous key-value pair this will create the new key-value pair without any etag as well.
 
 #### Resp Reply
 

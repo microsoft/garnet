@@ -112,7 +112,7 @@ namespace Garnet.server
                 var inputspan = input.AsSpan();
                 var inputPtr = input.ToPointer();
                 var cmd = inputspan[0];
-                int etagOffset = hasEtag ? 8 : 0;
+                int etagOffset = hasEtag ? sizeof(long) : 0;
                 bool retainEtag = ((RespInputHeader*)inputPtr)->CheckRetainEtagFlag();
 
                 switch ((RespCommand)cmd)

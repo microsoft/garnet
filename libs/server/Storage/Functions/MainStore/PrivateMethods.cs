@@ -36,7 +36,8 @@ namespace Garnet.server
 
         void CopyRespTo(ref SpanByte src, ref SpanByteAndMemory dst, int start = 0, int end = -1)
         {
-            int srcLength = end == -1 ? src.LengthWithoutMetadata : Math.Max(end - start, 0);
+            // src length of the value indicating no end is supplied defaults to lengthWithoutMetadata, else it chooses the bigger of 0 or (end - start)
+            int srcLength = end == -1 ? src.LengthWithoutMetadata : ((start < end) ? (end - start) : 0);
             if (srcLength == 0)
             {
                 CopyDefaultResp(CmdStrings.RESP_EMPTY, ref dst);
@@ -82,7 +83,7 @@ namespace Garnet.server
             }
         }
 
-        void CopyRespToWithInput(ref SpanByte input, ref SpanByte value, ref SpanByteAndMemory dst, bool isFromPending, int payloadEtagEnd, int etagIgnoredDataEnd, bool hasEtagInVal)
+        void CopyRespToWithInput(ref SpanByte input, ref SpanByte value, ref SpanByteAndMemory dst, bool isFromPending, int payloadEtagAccountedEndOffset, int etagAccountedEnd, bool hasEtagInVal)
         {
             var inputPtr = input.ToPointer();
             switch ((RespCommand)(*inputPtr))
@@ -93,7 +94,7 @@ namespace Garnet.server
                     // This is accomplished by calling ConvertToHeap on the destination SpanByteAndMemory
                     if (isFromPending)
                         dst.ConvertToHeap();
-                    CopyRespTo(ref value, ref dst, payloadEtagEnd, etagIgnoredDataEnd);
+                    CopyRespTo(ref value, ref dst, payloadEtagAccountedEndOffset, etagAccountedEnd);
                     break;
 
                 case RespCommand.MIGRATE:
@@ -123,19 +124,19 @@ namespace Garnet.server
                     // Get value without RESP header; exclude expiration
                     if (value.LengthWithoutMetadata <= dst.Length)
                     {
-                        dst.Length = value.LengthWithoutMetadata - payloadEtagEnd;
-                        value.AsReadOnlySpan(payloadEtagEnd).CopyTo(dst.SpanByte.AsSpan());
+                        dst.Length = value.LengthWithoutMetadata - payloadEtagAccountedEndOffset;
+                        value.AsReadOnlySpan(payloadEtagAccountedEndOffset).CopyTo(dst.SpanByte.AsSpan());
                         return;
                     }
 
                     dst.ConvertToHeap();
-                    dst.Length = value.LengthWithoutMetadata - payloadEtagEnd;
+                    dst.Length = value.LengthWithoutMetadata - payloadEtagAccountedEndOffset;
                     dst.Memory = functionsState.memoryPool.Rent(value.LengthWithoutMetadata);
-                    value.AsReadOnlySpan(payloadEtagEnd).CopyTo(dst.Memory.Memory.Span);
+                    value.AsReadOnlySpan(payloadEtagAccountedEndOffset).CopyTo(dst.Memory.Memory.Span);
                     break;
 
                 case RespCommand.GETBIT:
-                    byte oldValSet = BitmapManager.GetBit(inputPtr + RespInputHeader.Size, value.ToPointer() + payloadEtagEnd, value.Length - payloadEtagEnd);
+                    byte oldValSet = BitmapManager.GetBit(inputPtr + RespInputHeader.Size, value.ToPointer() + payloadEtagAccountedEndOffset, value.Length - payloadEtagAccountedEndOffset);
                     if (oldValSet == 0)
                         CopyDefaultResp(CmdStrings.RESP_RETURN_VAL_0, ref dst);
                     else
@@ -143,18 +144,18 @@ namespace Garnet.server
                     break;
 
                 case RespCommand.BITCOUNT:
-                    long count = BitmapManager.BitCountDriver(inputPtr + RespInputHeader.Size, value.ToPointer() + payloadEtagEnd, value.Length - payloadEtagEnd);
+                    long count = BitmapManager.BitCountDriver(inputPtr + RespInputHeader.Size, value.ToPointer() + payloadEtagAccountedEndOffset, value.Length - payloadEtagAccountedEndOffset);
                     CopyRespNumber(count, ref dst);
                     break;
 
                 case RespCommand.BITPOS:
-                    long pos = BitmapManager.BitPosDriver(inputPtr + RespInputHeader.Size, value.ToPointer() + payloadEtagEnd, value.Length - payloadEtagEnd);
+                    long pos = BitmapManager.BitPosDriver(inputPtr + RespInputHeader.Size, value.ToPointer() + payloadEtagAccountedEndOffset, value.Length - payloadEtagAccountedEndOffset);
                     *(long*)dst.SpanByte.ToPointer() = pos;
                     CopyRespNumber(pos, ref dst);
                     break;
 
                 case RespCommand.BITOP:
-                    IntPtr bitmap = (IntPtr)value.ToPointer() + payloadEtagEnd;
+                    IntPtr bitmap = (IntPtr)value.ToPointer() + payloadEtagAccountedEndOffset;
                     byte* output = dst.SpanByte.ToPointer();
 
                     *(long*)output = (long)bitmap.ToInt64();
@@ -165,7 +166,7 @@ namespace Garnet.server
                 case RespCommand.BITFIELD:
                     long retValue = 0;
                     bool overflow;
-                    (retValue, overflow) = BitmapManager.BitFieldExecute(inputPtr + RespInputHeader.Size, value.ToPointer() + payloadEtagEnd, value.Length - payloadEtagEnd);
+                    (retValue, overflow) = BitmapManager.BitFieldExecute(inputPtr + RespInputHeader.Size, value.ToPointer() + payloadEtagAccountedEndOffset, value.Length - payloadEtagAccountedEndOffset);
                     if (!overflow)
                         CopyRespNumber(retValue, ref dst);
                     else
@@ -173,28 +174,28 @@ namespace Garnet.server
                     return;
 
                 case RespCommand.PFCOUNT:
-                    if (!HyperLogLog.DefaultHLL.IsValidHYLL(value.ToPointer() + payloadEtagEnd, value.Length - payloadEtagEnd))
+                    if (!HyperLogLog.DefaultHLL.IsValidHYLL(value.ToPointer() + payloadEtagAccountedEndOffset, value.Length - payloadEtagAccountedEndOffset))
                     {
                         *(long*)dst.SpanByte.ToPointer() = -1;
                         return;
                     }
 
                     long E = 13;
-                    E = HyperLogLog.DefaultHLL.Count(value.ToPointer() + payloadEtagEnd);
+                    E = HyperLogLog.DefaultHLL.Count(value.ToPointer() + payloadEtagAccountedEndOffset);
                     *(long*)dst.SpanByte.ToPointer() = E;
                     return;
 
                 case RespCommand.PFMERGE:
-                    if (!HyperLogLog.DefaultHLL.IsValidHYLL(value.ToPointer() + payloadEtagEnd, value.Length - payloadEtagEnd))
+                    if (!HyperLogLog.DefaultHLL.IsValidHYLL(value.ToPointer() + payloadEtagAccountedEndOffset, value.Length - payloadEtagAccountedEndOffset))
                     {
                         *(long*)dst.SpanByte.ToPointer() = -1;
                         return;
                     }
 
-                    if (value.Length - payloadEtagEnd <= dst.Length)
+                    if (value.Length - payloadEtagAccountedEndOffset <= dst.Length)
                     {
-                        Buffer.MemoryCopy(value.ToPointer() + payloadEtagEnd, dst.SpanByte.ToPointer(), value.Length - payloadEtagEnd, value.Length - payloadEtagEnd);
-                        dst.SpanByte.Length = value.Length - payloadEtagEnd;
+                        Buffer.MemoryCopy(value.ToPointer() + payloadEtagAccountedEndOffset, dst.SpanByte.ToPointer(), value.Length - payloadEtagAccountedEndOffset, value.Length - payloadEtagAccountedEndOffset);
+                        dst.SpanByte.Length = value.Length - payloadEtagAccountedEndOffset;
                         return;
                     }
                     throw new GarnetException("Not enough space in PFMERGE buffer");
@@ -210,12 +211,12 @@ namespace Garnet.server
                     return;
 
                 case RespCommand.GETRANGE:
-                    int len = value.LengthWithoutMetadata - payloadEtagEnd;
+                    int len = value.LengthWithoutMetadata - payloadEtagAccountedEndOffset;
                     int start = *(int*)(inputPtr + RespInputHeader.Size);
                     int end = *(int*)(inputPtr + RespInputHeader.Size + 4);
 
                     (start, end) = NormalizeRange(start, end, len);
-                    CopyRespTo(ref value, ref dst, start + payloadEtagEnd, end + payloadEtagEnd);
+                    CopyRespTo(ref value, ref dst, start + payloadEtagAccountedEndOffset, end + payloadEtagAccountedEndOffset);
                     return;
                 case RespCommand.SETIFMATCH:
                     // extract ETAG, write as long into dst, and then value

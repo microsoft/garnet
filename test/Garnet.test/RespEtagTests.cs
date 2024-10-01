@@ -1911,6 +1911,37 @@ namespace Garnet.test
             ClassicAssert.AreEqual(Encoding.ASCII.GetString(CmdStrings.RESP_ERR_WRONG_TYPE_HLL), ex.Message);
         }
 
+        [Test]
+        public void SetWithRetainEtagOnANewUpsertWillCreateKeyValueWithoutEtag()
+        {
+            using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
+            var db = redis.GetDatabase(0);
+
+            string key = "mickey";
+            string val = "mouse";
+
+            // a new upsert on a non-existing key will retain the "nil" etag
+            db.Execute("SET", [key, val, "RETAINETAG"]).ToString();
+
+            RedisResult[] res = (RedisResult[])db.Execute("GETWITHETAG", [key]);
+            RedisResult etag = res[0];
+            string value = res[1].ToString();
+
+            ClassicAssert.IsTrue(etag.IsNull);
+            ClassicAssert.AreEqual(val, value);
+
+            string newval = "clubhouse";
+
+            // a new upsert on an existing key will retain the "nil" etag from the prev
+            db.Execute("SET", [key, newval, "RETAINETAG"]).ToString();
+            res = (RedisResult[])db.Execute("GETWITHETAG", [key]);
+            etag = res[0];
+            value = res[1].ToString();
+
+            ClassicAssert.IsTrue(etag.IsNull);
+            ClassicAssert.AreEqual(newval, value);
+        }
+
         #endregion
     }
 }
