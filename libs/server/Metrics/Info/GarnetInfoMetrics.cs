@@ -82,6 +82,9 @@ namespace Garnet.server
                 total_object_store_size = object_store_index_size + object_store_log_memory_references_size + object_store_read_cache_size;
             }
 
+            var gcMemoryInfo = GC.GetGCMemoryInfo();
+            var gcAvailableMemory = gcMemoryInfo.TotalCommittedBytes - gcMemoryInfo.HeapSizeBytes;
+
             memoryInfo =
             [
                 new("system_page_size", Environment.SystemPageSize.ToString()),
@@ -105,6 +108,9 @@ namespace Garnet.server
                 new("proc_physical_memory_size(MB)", SystemMetrics.GetPhysicalMemoryUsage(1 << 20).ToString()),
                 new("proc_peak_physical_memory_size", SystemMetrics.GetPeakPhysicalMemoryUsage().ToString()),
                 new("proc_peak_physical_memory_size(MB)", SystemMetrics.GetPeakPhysicalMemoryUsage(1 << 20).ToString()),
+                new("gc_heap_bytes", gcMemoryInfo.HeapSizeBytes.ToString()),
+                new("gc_managed_memory_bytes_excluding_heap", gcAvailableMemory.ToString()),
+                new("gc_fragmented_bytes", gcMemoryInfo.FragmentedBytes.ToString()),
                 new("main_store_index_size", main_store_index_size.ToString()),
                 new("main_store_log_memory_size", main_store_log_memory_size.ToString()),
                 new("main_store_read_cache_size", main_store_read_cache_size.ToString()),
@@ -112,7 +118,7 @@ namespace Garnet.server
                 new("object_store_index_size", object_store_index_size.ToString()),
                 new("object_store_log_memory_references_size", object_store_log_memory_references_size.ToString()),
                 new("object_store_read_cache_size", object_store_read_cache_size.ToString()),
-                new("total_object_store_size", total_object_store_size.ToString())
+                new("total_object_store_size", total_object_store_size.ToString()),
             ];
         }
 

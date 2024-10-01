@@ -64,11 +64,11 @@ namespace Garnet
         public int MutablePercent { get; set; }
 
         [MemorySizeValidation(false)]
-        [Option("obj-total-memory", Required = false, HelpText = "Total object store log memory used including heap memory in bytes")]
-        public string ObjectStoreTotalMemorySize { get; set; }
+        [Option("obj-heap-memory", Required = false, HelpText = "Object store heap memory size in bytes")]
+        public string ObjectStoreHeapMemorySize { get; set; }
 
         [MemorySizeValidation]
-        [Option("obj-memory", Required = false, HelpText = "Object store log memory used in bytes excluding heap memory")]
+        [Option("obj-log-memory", Required = false, HelpText = "Object store log memory used in bytes excluding heap memory")]
         public string ObjectStoreLogMemorySize { get; set; }
 
         [MemorySizeValidation]
@@ -575,7 +575,7 @@ namespace Garnet
                 IndexSize = IndexSize,
                 IndexMaxSize = IndexMaxSize,
                 MutablePercent = MutablePercent,
-                ObjectStoreTotalMemorySize = ObjectStoreTotalMemorySize,
+                ObjectStoreHeapMemorySize = ObjectStoreHeapMemorySize,
                 ObjectStoreLogMemorySize = ObjectStoreLogMemorySize,
                 ObjectStorePageSize = ObjectStorePageSize,
                 ObjectStoreSegmentSize = ObjectStoreSegmentSize,
