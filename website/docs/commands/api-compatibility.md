@@ -192,7 +192,7 @@ Note that this list is subject to change as we continue to expand our API comman
 |  | [PFMERGE](analytics.md#pfmerge) | ➕ |  |
 |  | PFSELFTEST | ➖ |  |
 | <span id="keys">**KEYS**</span> | COPY | ➖ |  |
-|  | [DEL](generic-commands.md#del)  | ➕ |  |
+|  | [DEL](generic-commands.md#del) | ➕ |  |
 |  | DUMP | ➖ |  |
 |  | [EXISTS](generic-commands.md#exists) | ➕ |  |
 |  | [EXPIRE](generic-commands.md#expire) | ➕ |  |
@@ -377,7 +377,7 @@ Note that this list is subject to change as we continue to expand our API comman
 |  | XREVRANGE | ➖ |  |
 |  | XSETID | ➖ |  |
 |  | XTRIM | ➖ |  |
-| <span id="string">**STRING**</span> | APPEND | ➕ |  |
+| <span id="string">**STRING**</span> | [APPEND](raw-string.md#append) | ➕ |  |
 |  | [DECR](raw-string.md#decr) | ➕ |  |
 |  | [DECRBY](raw-string.md#decrby) | ➕ |  |
 |  | [GET](raw-string.md#get) | ➕ |  |
