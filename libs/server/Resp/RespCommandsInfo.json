@@ -1990,6 +1990,64 @@
     "SubCommands": null
   },
   {
+    "Command": "HEXPIRE",
+    "Name": "HEXPIRE",
+    "IsInternal": false,
+    "Arity": -6,
+    "Flags": "DenyOom, Fast, Write",
+    "FirstKey": 1,
+    "LastKey": 1,
+    "Step": 1,
+    "AclCategories": "Hash, Fast, Write",
+    "Tips": null,
+    "KeySpecifications": [
+      {
+        "BeginSearch": {
+          "TypeDiscriminator": "BeginSearchIndex",
+          "Index": 1
+        },
+        "FindKeys": {
+          "TypeDiscriminator": "FindKeysRange",
+          "LastKey": 0,
+          "KeyStep": 1,
+          "Limit": 0
+        },
+        "Notes": null,
+        "Flags": "RW, Access, Update, Delete"
+      }
+    ],
+    "SubCommands": null
+  },
+  {
+    "Command": "HEXPIREAT",
+    "Name": "HEXPIREAT",
+    "IsInternal": false,
+    "Arity": -6,
+    "Flags": "DenyOom, Fast, Write",
+    "FirstKey": 1,
+    "LastKey": 1,
+    "Step": 1,
+    "AclCategories": "Hash, Fast, Write",
+    "Tips": null,
+    "KeySpecifications": [
+      {
+        "BeginSearch": {
+          "TypeDiscriminator": "BeginSearchIndex",
+          "Index": 1
+        },
+        "FindKeys": {
+          "TypeDiscriminator": "FindKeysRange",
+          "LastKey": 0,
+          "KeyStep": 1,
+          "Limit": 0
+        },
+        "Notes": null,
+        "Flags": "RW, Access, Update, Delete"
+      }
+    ],
+    "SubCommands": null
+  },
+  {
     "Command": "HGET",
     "Name": "HGET",
     "IsInternal": false,
@@ -2226,6 +2284,93 @@
     "SubCommands": null
   },
   {
+    "Command": "HPEXPIRE",
+    "Name": "HPEXPIRE",
+    "IsInternal": false,
+    "Arity": -6,
+    "Flags": "DenyOom, Fast, Write",
+    "FirstKey": 1,
+    "LastKey": 1,
+    "Step": 1,
+    "AclCategories": "Hash, Fast, Write",
+    "Tips": null,
+    "KeySpecifications": [
+      {
+        "BeginSearch": {
+          "TypeDiscriminator": "BeginSearchIndex",
+          "Index": 1
+        },
+        "FindKeys": {
+          "TypeDiscriminator": "FindKeysRange",
+          "LastKey": 0,
+          "KeyStep": 1,
+          "Limit": 0
+        },
+        "Notes": null,
+        "Flags": "RW, Access, Update, Delete"
+      }
+    ],
+    "SubCommands": null
+  },
+  {
+    "Command": "HPEXPIREAT",
+    "Name": "HPEXPIREAT",
+    "IsInternal": false,
+    "Arity": -6,
+    "Flags": "DenyOom, Fast, Write",
+    "FirstKey": 1,
+    "LastKey": 1,
+    "Step": 1,
+    "AclCategories": "Hash, Fast, Write",
+    "Tips": null,
+    "KeySpecifications": [
+      {
+        "BeginSearch": {
+          "TypeDiscriminator": "BeginSearchIndex",
+          "Index": 1
+        },
+        "FindKeys": {
+          "TypeDiscriminator": "FindKeysRange",
+          "LastKey": 0,
+          "KeyStep": 1,
+          "Limit": 0
+        },
+        "Notes": null,
+        "Flags": "RW, Access, Update, Delete"
+      }
+    ],
+    "SubCommands": null
+  },
+  {
+    "Command": "HPTTL",
+    "Name": "HPTTL",
+    "IsInternal": false,
+    "Arity": 2,
+    "Flags": "Fast, ReadOnly",
+    "FirstKey": 1,
+    "LastKey": 1,
+    "Step": 1,
+    "AclCategories": "Hash, Fast, Read",
+    "Tips": null,
+    "KeySpecifications": [
+      {
+        "BeginSearch": {
+          "TypeDiscriminator": "BeginSearchIndex",
+          "Index": 1
+        },
+        "FindKeys": {
+          "TypeDiscriminator": "FindKeysRange",
+          "LastKey": 0,
+          "KeyStep": 1,
+          "Limit": 0
+        },
+        "Notes": null,
+        "Flags": "RO"
+      }
+    ],
+    "SubCommands": null
+  },
+  {
     "Command": "HRANDFIELD",
     "Name": "HRANDFIELD",
     "IsInternal": false,
@@ -2350,6 +2495,35 @@
     "Name": "HSTRLEN",
     "IsInternal": false,
     "Arity": 3,
+    "Flags": "Fast, ReadOnly",
+    "FirstKey": 1,
+    "LastKey": 1,
+    "Step": 1,
+    "AclCategories": "Hash, Fast, Read",
+    "Tips": null,
+    "KeySpecifications": [
+      {
+        "BeginSearch": {
+          "TypeDiscriminator": "BeginSearchIndex",
+          "Index": 1
+        },
+        "FindKeys": {
+          "TypeDiscriminator": "FindKeysRange",
+          "LastKey": 0,
+          "KeyStep": 1,
+          "Limit": 0
+        },
+        "Notes": null,
+        "Flags": "RO"
+      }
+    ],
+    "SubCommands": null
+  },
+  {
+    "Command": "HTTL",
+    "Name": "HTTL",
+    "IsInternal": false,
+    "Arity": 2,
     "Flags": "Fast, ReadOnly",
     "FirstKey": 1,
     "LastKey": 1,

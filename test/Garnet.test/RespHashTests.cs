@@ -5,6 +5,7 @@ using System;
 using System.Linq;
 using System.Text;
 using System.Threading.Tasks;
+using Garnet.common;
 using Garnet.server;
 using NUnit.Framework;
 using NUnit.Framework.Legacy;
@@ -1169,6 +1170,263 @@ namespace Garnet.test
             ClassicAssert.AreEqual(expectedResponse, actualValue);
         }
 
+        #endregion
+
+        #region HashExpireTests
+
+        [Test]
+        [TestCase("HEXPIRE")]
+        [TestCase("HEXPIREAT")]
+        [TestCase("HPEXPIRE")]
+        [TestCase("HPEXPIREAT")]
+        public void HExpireCommandParameters(string command)
+        {
+            string key = "expirehash";
+            var lightClientRequest = TestUtils.CreateRequest();
+            var middleTtl = command switch
+            {
+                "HEXPIRE" => 120,
+                "HPEXPIRE" => 120000,
+                "HEXPIREAT" => DateTimeOffset.UtcNow.AddSeconds(120).ToUnixTimeSeconds(),
+                "HPEXPIREAT" => DateTimeOffset.UtcNow.AddSeconds(120).ToUnixTimeMilliseconds(),
+                _ => 10
+            };
+            var largerTtl = command switch
+            {
+                "HEXPIRE" => 240,
+                "HPEXPIRE" => 240000,
+                "HEXPIREAT" => DateTimeOffset.UtcNow.AddSeconds(240).ToUnixTimeSeconds(),
+                "HPEXPIREAT" => DateTimeOffset.UtcNow.AddSeconds(240).ToUnixTimeMilliseconds(),
+                _ => 10
+            };
+            var smallerTtl = command switch
+            {
+                "HEXPIRE" => 60,
+                "HPEXPIRE" => 60000,
+                "HEXPIREAT" => DateTimeOffset.UtcNow.AddSeconds(60).ToUnixTimeSeconds(),
+                "HPEXPIREAT" => DateTimeOffset.UtcNow.AddSeconds(60).ToUnixTimeMilliseconds(),
+                _ => 10
+            };
+            // This value should ensure the key is deleted
+            var zeroTtl = command switch
+            {
+                "HEXPIRE" => 0,
+                "HPEXPIRE" => 0,
+                "HEXPIREAT" => DateTimeOffset.UtcNow.ToUnixTimeSeconds(),
+                "HPEXPIREAT" => DateTimeOffset.UtcNow.ToUnixTimeMilliseconds(),
+                _ => 0
+            };
+
+            // Invalid syntax tests
+
+            // Non-numeric value for TTL
+            var res = lightClientRequest.SendCommand($"{command} {key} hello FIELDS 1 field1");
+            var expectedResponse = "-ERR value is not an integer or out of range.\r\n";
+            var actualResponse = Encoding.ASCII.GetString(res).Substring(0, expectedResponse.Length);
+            ClassicAssert.AreEqual(expectedResponse, actualResponse);
+
+            // Non-numeric value for field count
+            res = lightClientRequest.SendCommand($"{command} {key} 10 FIELDS hello field1");
+            expectedResponse = "-ERR value is not an integer or out of range.\r\n";
+            actualResponse = Encoding.ASCII.GetString(res).Substring(0, expectedResponse.Length);
+            ClassicAssert.AreEqual(expectedResponse, actualResponse);
+
+            // Invalid option
+            res = lightClientRequest.SendCommand($"{command} {key} 10 BB FIELDS 1 field1");
+            expectedResponse = "-ERR Mandatory argument FIELDS is missing or not at the right position\r\n";
+            actualResponse = Encoding.ASCII.GetString(res).Substring(0, expectedResponse.Length);
+            ClassicAssert.AreEqual(expectedResponse, actualResponse);
+
+            // Missing FIELDS keyword (same error as above)
+            res = lightClientRequest.SendCommand($"{command} {key} 10 2 field1 field2");
+            expectedResponse = "-ERR Mandatory argument FIELDS is missing or not at the right position\r\n";
+            actualResponse = Encoding.ASCII.GetString(res).Substring(0, expectedResponse.Length);
+            ClassicAssert.AreEqual(expectedResponse, actualResponse);
+
+            // Missing FIELDS keyword with valid option (same error as above)
+            res = lightClientRequest.SendCommand($"{command} {key} 10 NX 1 field1");
+            expectedResponse = "-ERR Mandatory argument FIELDS is missing or not at the right position\r\n";
+            actualResponse = Encoding.ASCII.GetString(res).Substring(0, expectedResponse.Length);
+            ClassicAssert.AreEqual(expectedResponse, actualResponse);
+
+            // Too many fields listed
+            res = lightClientRequest.SendCommand($"{command} {key} 10 FIELDS 1 field1 field2");
+            expectedResponse = "-ERR The `numfields` parameter must match the number of arguments\r\n";
+            actualResponse = Encoding.ASCII.GetString(res).Substring(0, expectedResponse.Length);
+            ClassicAssert.AreEqual(expectedResponse, actualResponse);
+
+            // Too few fields listed
+            res = lightClientRequest.SendCommand($"{command} {key} 10 FIELDS 2 field1");
+            expectedResponse = "-ERR The `numfields` parameter must match the number of arguments\r\n";
+            actualResponse = Encoding.ASCII.GetString(res).Substring(0, expectedResponse.Length);
+            ClassicAssert.AreEqual(expectedResponse, actualResponse);
+
+            // Insufficient arguments
+            res = lightClientRequest.SendCommand($"{command} {key} 10 FIELDS 1");
+            expectedResponse = $"-ERR wrong number of arguments for '{command}' command\r\n";
+            actualResponse = Encoding.ASCII.GetString(res).Substring(0, expectedResponse.Length);
+            ClassicAssert.AreEqual(expectedResponse, actualResponse);
+
+            res = lightClientRequest.SendCommand($"HSET {key} field1 1");
+            expectedResponse = ":1\r\n";
+            actualResponse = Encoding.ASCII.GetString(res).Substring(0, expectedResponse.Length);
+            ClassicAssert.AreEqual(expectedResponse, actualResponse);
+
+            // Invalid field
+            res = lightClientRequest.SendCommand($"{command} {key} {middleTtl} FIELDS 1 field2", 2);
+            expectedResponse = "*1\r\n:-2\r\n";
+            actualResponse = Encoding.ASCII.GetString(res).Substring(0, expectedResponse.Length);
+            ClassicAssert.AreEqual(expectedResponse, actualResponse);
+
+            // Successfully set
+            res = lightClientRequest.SendCommand($"{command} {key} {middleTtl} FIELDS 1 field1", 2);
+            expectedResponse = "*1\r\n:1\r\n";
+            actualResponse = Encoding.ASCII.GetString(res).Substring(0, expectedResponse.Length);
+            ClassicAssert.AreEqual(expectedResponse, actualResponse);
+
+            // Unset (key deleted)
+            res = lightClientRequest.SendCommand($"{command} {key} {zeroTtl} FIELDS 1 field1", 2);
+            expectedResponse = "*1\r\n:2\r\n";
+            actualResponse = Encoding.ASCII.GetString(res).Substring(0, expectedResponse.Length);
+            ClassicAssert.AreEqual(expectedResponse, actualResponse);
+
+            // Ensure key was actually deleted
+            res = lightClientRequest.SendCommand($"HGET {key} field1");
+            expectedResponse = "$-1\r\n";
+            actualResponse = Encoding.ASCII.GetString(res).Substring(0, expectedResponse.Length);
+            ClassicAssert.AreEqual(expectedResponse, actualResponse);
+
+            // Add three fields (this also clears their TTLs)
+            res = lightClientRequest.SendCommand($"HSET {key} field1 1 field2 1 field3 1");
+            expectedResponse = ":3\r\n";
+            actualResponse = Encoding.ASCII.GetString(res).Substring(0, expectedResponse.Length);
+            ClassicAssert.AreEqual(expectedResponse, actualResponse);
+
+            // Set TTL on the first two fields
+            res = lightClientRequest.SendCommand($"{command} {key} {middleTtl} FIELDS 2 field1 field2", 3);
+            expectedResponse = "*2\r\n:1\r\n:1\r\n";
+            actualResponse = Encoding.ASCII.GetString(res).Substring(0, expectedResponse.Length);
+            ClassicAssert.AreEqual(expectedResponse, actualResponse);
+
+            // XX on a field with no TTL will fail
+            res = lightClientRequest.SendCommand($"{command} {key} {middleTtl} XX FIELDS 1 field3", 2);
+            expectedResponse = "*1\r\n:0\r\n";
+            actualResponse = Encoding.ASCII.GetString(res).Substring(0, expectedResponse.Length);
+            ClassicAssert.AreEqual(expectedResponse, actualResponse);
+
+            // XX on a field with TTL will succeed
+            res = lightClientRequest.SendCommand($"{command} {key} {middleTtl} XX FIELDS 1 field1", 2);
+            expectedResponse = "*1\r\n:1\r\n";
+            actualResponse = Encoding.ASCII.GetString(res).Substring(0, expectedResponse.Length);
+            ClassicAssert.AreEqual(expectedResponse, actualResponse);
+
+            // NX on a field with TTL will fail
+            res = lightClientRequest.SendCommand($"{command} {key} {middleTtl} NX FIELDS 1 field1", 2);
+            expectedResponse = "*1\r\n:0\r\n";
+            actualResponse = Encoding.ASCII.GetString(res).Substring(0, expectedResponse.Length);
+            ClassicAssert.AreEqual(expectedResponse, actualResponse);
+
+            // NX on a field with no TTL will succeed
+            res = lightClientRequest.SendCommand($"{command} {key} {middleTtl} NX FIELDS 1 field3", 2);
+            expectedResponse = "*1\r\n:1\r\n";
+            actualResponse = Encoding.ASCII.GetString(res).Substring(0, expectedResponse.Length);
+            ClassicAssert.AreEqual(expectedResponse, actualResponse);
+
+            // Set TTL on both fields again
+            res = lightClientRequest.SendCommand($"{command} {key} {middleTtl} FIELDS 2 field1 field2", 3);
+            expectedResponse = "*2\r\n:1\r\n:1\r\n";
+            actualResponse = Encoding.ASCII.GetString(res).Substring(0, expectedResponse.Length);
+            ClassicAssert.AreEqual(expectedResponse, actualResponse);
+
+            // LT when new TTL is larger will fail
+            res = lightClientRequest.SendCommand($"{command} {key} {largerTtl} LT FIELDS 1 field1", 2);
+            expectedResponse = "*1\r\n:0\r\n";
+            actualResponse = Encoding.ASCII.GetString(res).Substring(0, expectedResponse.Length);
+            ClassicAssert.AreEqual(expectedResponse, actualResponse);
+
+            // LT when new TTL is smaller will succeed
+            res = lightClientRequest.SendCommand($"{command} {key} {smallerTtl} LT FIELDS 1 field1", 2);
+            expectedResponse = "*1\r\n:1\r\n";
+            actualResponse = Encoding.ASCII.GetString(res).Substring(0, expectedResponse.Length);
+            ClassicAssert.AreEqual(expectedResponse, actualResponse);
+
+            // GT when new TTL is smaller will fail
+            res = lightClientRequest.SendCommand($"{command} {key} {smallerTtl} GT FIELDS 1 field2", 2);
+            expectedResponse = "*1\r\n:0\r\n";
+            actualResponse = Encoding.ASCII.GetString(res).Substring(0, expectedResponse.Length);
+            ClassicAssert.AreEqual(expectedResponse, actualResponse);
+
+            // GT when new TTL is larger will succeed
+            res = lightClientRequest.SendCommand($"{command} {key} {largerTtl} GT FIELDS 1 field2", 2);
+            expectedResponse = "*1\r\n:1\r\n";
+            actualResponse = Encoding.ASCII.GetString(res).Substring(0, expectedResponse.Length);
+            ClassicAssert.AreEqual(expectedResponse, actualResponse);
+        }
+
+        [Test]
+        [TestCase("HTTL")]
+        [TestCase("HPTTL")]
+        public void HTtlCommandParameters(string command)
+        {
+            string key = "expirehash";
+            var lightClientRequest = TestUtils.CreateRequest();
+
+            // Invalid syntax tests
+
+            // Missing FIELDS keyword
+            var res = lightClientRequest.SendCommand($"{command} {key} 2 field1 field2");
+            var expectedResponse = "-ERR Mandatory argument FIELDS is missing or not at the right position\r\n";
+            var actualResponse = Encoding.ASCII.GetString(res).Substring(0, expectedResponse.Length);
+            ClassicAssert.AreEqual(expectedResponse, actualResponse);
+
+            // Non-numeric value for field count
+            res = lightClientRequest.SendCommand($"{command} {key} FIELDS hello field1");
+            expectedResponse = "-ERR value is not an integer or out of range.\r\n";
+            actualResponse = Encoding.ASCII.GetString(res).Substring(0, expectedResponse.Length);
+            ClassicAssert.AreEqual(expectedResponse, actualResponse);
+
+            // Too many fields listed
+            res = lightClientRequest.SendCommand($"{command} {key} FIELDS 1 field1 field2");
+            expectedResponse = "-ERR The `numfields` parameter must match the number of arguments\r\n";
+            actualResponse = Encoding.ASCII.GetString(res).Substring(0, expectedResponse.Length);
+            ClassicAssert.AreEqual(expectedResponse, actualResponse);
+
+            // Insufficient arguments
+            res = lightClientRequest.SendCommand($"{command} {key} FIELDS 1");
+            expectedResponse = $"-ERR wrong number of arguments for '{command}' command\r\n";
+            actualResponse = Encoding.ASCII.GetString(res).Substring(0, expectedResponse.Length);
+            ClassicAssert.AreEqual(expectedResponse, actualResponse);
+
+            // Set up a field
+            res = lightClientRequest.SendCommand($"HSET {key} field1 1");
+            expectedResponse = ":1\r\n";
+            actualResponse = Encoding.ASCII.GetString(res).Substring(0, expectedResponse.Length);
+            ClassicAssert.AreEqual(expectedResponse, actualResponse);
+
+            // Set a TTL
+            res = lightClientRequest.SendCommand($"HEXPIRE {key} 300 FIELDS 1 field1");
+            expectedResponse = "*1\r\n:1\r\n";
+            actualResponse = Encoding.ASCII.GetString(res).Substring(0, expectedResponse.Length);
+            ClassicAssert.AreEqual(expectedResponse, actualResponse);
+
+            // Get the TTL in seconds
+            res = lightClientRequest.SendCommand($"{command} {key} FIELDS 1 field1", 2);
+            expectedResponse = "*1\r\n";    // Should return a one element array
+            actualResponse = Encoding.ASCII.GetString(res).Substring(0, expectedResponse.Length);
+            ClassicAssert.AreEqual(expectedResponse, actualResponse);
+            if (command == "HTTL")
+            {
+                // Should be less or equal to 300 and within 5 seconds of it
+                var ttlValue = long.Parse(Encoding.ASCII.GetString(res).Substring(5, 3));
+                ClassicAssert.IsTrue(ttlValue <= 300 && ttlValue >= 295);
+            }
+            else
+            {
+                // Should be less or equal to 300000 and within 5 seconds of it
+                var ttlValue = long.Parse(Encoding.ASCII.GetString(res).Substring(5, 6));
+                ClassicAssert.IsTrue(ttlValue <= 300000 && ttlValue >= 295000);
+            }
+        }
         #endregion
 
         private static string FormatWrongNumOfArgsError(string commandName) => $"-{string.Format(CmdStrings.GenericErrWrongNumArgs, commandName)}\r\n";

@@ -705,5 +705,155 @@ namespace Garnet.server
             }
             return true;
         }
+
+        /// <summary>
+        /// HashExpire: Sets the expiration time for the hash field in seconds
+        /// </summary>
+        /// <typeparam name="TGarnetApi"></typeparam>
+        /// <param name="command"></param>
+        /// <param name="storageApi"></param>
+        /// <returns></returns>
+        private unsafe bool HashExpire<TGarnetApi>(RespCommand command, ref TGarnetApi storageApi)
+           where TGarnetApi : IGarnetApi
+        {
+            if (parseState.Count < 5)
+            {
+                return AbortWithWrongNumberOfArguments(command.ToString());
+            }
+
+            var sbKey = parseState.GetArgSliceByRef(0).SpanByte;
+            var keyBytes = sbKey.ToByteArray();
+
+            if (NetworkSingleKeySlotVerify(keyBytes, false))
+            {
+                return true;
+            }
+
+            var hop =
+                command switch
+                {
+                    RespCommand.HEXPIRE => HashOperation.HEXPIRE,
+                    RespCommand.HPEXPIRE => HashOperation.HPEXPIRE,
+                    RespCommand.HEXPIREAT => HashOperation.HEXPIREAT,
+                    RespCommand.HPEXPIREAT => HashOperation.HPEXPIREAT,
+                    _ => throw new Exception($"Unexpected {nameof(HashOperation)}: {command}")
+                };
+
+            // Prepare input
+            var input = new ObjectInput
+            {
+                header = new RespInputHeader
+                {
+                    type = GarnetObjectType.Hash,
+                    HashOp = hop,
+                },
+                parseState = parseState,
+                parseStateStartIdx = 1,
+            };
+
+            // Prepare GarnetObjectStore output
+            var outputFooter = new GarnetObjectStoreOutput { spanByteAndMemory = new SpanByteAndMemory(dcurr, (int)(dend - dcurr)) };
+
+            var status = storageApi.HashExpire(keyBytes, ref input, ref outputFooter);
+
+            switch (status)
+            {
+                case GarnetStatus.WRONGTYPE:
+                    while (!RespWriteUtils.WriteError(CmdStrings.RESP_ERR_WRONG_TYPE, ref dcurr, dend))
+                        SendAndReset();
+                    break;
+                default:
+                    ProcessOutputWithHeader(outputFooter.spanByteAndMemory);
+                    break;
+            }
+            return true;
+        }
+
+        /// <summary>
+        /// HashExpire: Sets the expiration time for the hash field in seconds
+        /// </summary>
+        /// <typeparam name="TGarnetApi"></typeparam>
+        /// <param name="command"></param>
+        /// <param name="storageApi"></param>
+        /// <returns></returns>
+        private unsafe bool HashTtl<TGarnetApi>(RespCommand command, ref TGarnetApi storageApi)
+           where TGarnetApi : IGarnetApi
+        {
+            if (parseState.Count < 4)
+            {
+                return AbortWithWrongNumberOfArguments(command.ToString());
+            }
+
+            // Redis parses syntax before seeing if hash exists, so we need to check for some
+            // bad syntax here to return the right errors if the hash does not exist - otherwise
+            // we'll get back an empty array instead of the correct error message.
+            if (parseState.GetString(1) != "FIELDS")
+            {
+                while (!RespWriteUtils.WriteError(CmdStrings.RESP_ERR_MISSING_ARGUMENT_FIELDS, ref dcurr, dend))
+                    SendAndReset();
+                return true;
+            }
+            if (!parseState.TryGetInt(2, out var fieldCount))
+            {
+                while (!RespWriteUtils.WriteError(CmdStrings.RESP_ERR_GENERIC_VALUE_IS_NOT_INTEGER, ref dcurr, dend))
+                   SendAndReset();
+                return true;
+            }
+            if (fieldCount != parseState.Count - 3)
+            {
+                while (!RespWriteUtils.WriteError(CmdStrings.RESP_ERR_MISMATCH_NUMFIELDS, ref dcurr, dend))
+                    SendAndReset();
+                return true;
+            }
+
+            var sbKey = parseState.GetArgSliceByRef(0).SpanByte;
+            var keyBytes = sbKey.ToByteArray();
+
+            if (NetworkSingleKeySlotVerify(keyBytes, false))
+            {
+                return true;
+            }
+
+            var hop =
+                command switch
+                {
+                    RespCommand.HTTL => HashOperation.HTTL,
+                    RespCommand.HPTTL => HashOperation.HPTTL,
+                    _ => throw new Exception($"Unexpected {nameof(HashOperation)}: {command}")
+                };
+
+            // Prepare input
+            var input = new ObjectInput
+            {
+                header = new RespInputHeader
+                {
+                    type = GarnetObjectType.Hash,
+                    HashOp = hop,
+                },
+                parseState = parseState,
+                parseStateStartIdx = 1,
+            };
+
+            // Prepare GarnetObjectStore output
+            var outputFooter = new GarnetObjectStoreOutput { spanByteAndMemory = new SpanByteAndMemory(dcurr, (int)(dend - dcurr)) };
+
+            var status = storageApi.HashTtl(keyBytes, ref input, ref outputFooter);
+
+            switch (status)
+            {
+                case GarnetStatus.WRONGTYPE:
+                    while (!RespWriteUtils.WriteError(CmdStrings.RESP_ERR_WRONG_TYPE, ref dcurr, dend))
+                        SendAndReset();
+                    break;
+                case GarnetStatus.NOTFOUND:
+                    while (!RespWriteUtils.WriteEmptyArray(ref dcurr, dend))
+                        SendAndReset();
+                    break;
+                default:
+                    ProcessOutputWithHeader(outputFooter.spanByteAndMemory);
+                    break;
+            }
+            return true;
+        }
     }
 }
