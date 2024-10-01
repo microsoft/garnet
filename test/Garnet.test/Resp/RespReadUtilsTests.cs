@@ -1,6 +1,7 @@
 ﻿// Copyright (c) Microsoft Corporation.
 // Licensed under the MIT license.
 
+using System;
 using System.Text;
 using Garnet.common;
 using Garnet.common.Parsing;
@@ -286,6 +287,29 @@ namespace Garnet.test.Resp
                 ClassicAssert.IsTrue(success);
                 ClassicAssert.AreEqual(expected, result);
                 ClassicAssert.IsTrue(start == end);
+            }
+        }
+
+        /// <summary>
+        /// Tests that Readnil successfully parses valid inputs.
+        /// </summary>
+        [TestCase("", false, null)] // Too short
+        [TestCase("S$-1\r\n", false, "S")] // Long enough but not nil leading
+        [TestCase("$-1\n1738\r\n", false, "1")] // Long enough but not nil
+        [TestCase("$-1\r\n", true, null)] // exact nil
+        [TestCase("$-1\r\nxyzextra", true, null)] // leading nil but with extra bytes after
+        public static unsafe void ReadBoolWithLengthHeaderTest(string testSequence, bool expected, string firstMismatch)
+        {
+            ReadOnlySpan<byte> testSeq = new ReadOnlySpan<byte>(Encoding.ASCII.GetBytes(testSequence));
+
+            fixed (byte* ptr = testSeq)
+            {
+                byte* start = ptr;
+                byte* end = ptr + testSeq.Length;
+                var isNil = RespReadUtils.ReadNil(ref start, end, out byte? unexpectedToken);
+
+                ClassicAssert.AreEqual(expected, isNil);
+                ClassicAssert.AreEqual((byte?)firstMismatch?[0], unexpectedToken);
             }
         }
     }

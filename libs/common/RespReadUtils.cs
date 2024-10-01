@@ -400,8 +400,11 @@ namespace Garnet.common
             {
                 for (int i = 0; i < 5; i++)
                 {
+                    // first place where the sequence differs we have found the unexpected token
                     if (expectedNilRepr[i] != ptrNext5Bytes[i])
                     {
+                        // move the pointer to the unexpected token
+                        ptr += i;
                         unexpectedToken = ptrNext5Bytes[i];
                         return false;
                     }
@@ -410,6 +413,7 @@ namespace Garnet.common
                 Debug.Assert(false);
                 return false;
             }
+
             ptr += 5;
             return true;
         }
