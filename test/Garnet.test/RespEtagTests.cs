@@ -1191,6 +1191,35 @@ namespace Garnet.test
         }
 
         [Test]
+        public void SingleRenameShouldAddEtagIfOldKeyHadEtagButNotExistingNewkey()
+        {
+            using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
+            var db = redis.GetDatabase(0);
+
+            string existingNewKey = "key2";
+            string existingVal = "foo";
+
+            ClassicAssert.IsTrue(db.StringSet(existingNewKey, existingVal));
+
+            string origValue = "test1";
+            long etag = (long)db.Execute("SETWITHETAG", ["key1", origValue]);
+            ClassicAssert.AreEqual(0, etag);
+
+            db.KeyRename("key1", existingNewKey);
+            string retValue = db.StringGet(existingNewKey);
+            ClassicAssert.AreEqual(origValue, retValue);
+
+            // new Key value pair created with older value, the etag is reusing the existingnewkey etag
+            var res = (RedisResult[])db.Execute("GETWITHETAG", [existingNewKey]);
+            ClassicAssert.AreEqual(0, (long)res[0]);
+            ClassicAssert.AreEqual(origValue, res[1].ToString());
+
+            origValue = db.StringGet("key1");
+            ClassicAssert.AreEqual(null, origValue);
+        }
+
+
+        [Test]
         public void PersistTTLTestForEtagSetData()
         {
             using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
