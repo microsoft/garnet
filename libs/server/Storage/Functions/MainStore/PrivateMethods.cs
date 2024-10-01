@@ -235,7 +235,7 @@ namespace Garnet.server
                     // we know somethgin doesnt have an etag if
                     etag = -1;
                     valueLength = value.LengthWithoutMetadata;
-            
+
                     if (hasEtagInVal)
                     {
                         // Get value without RESP header; exclude expiration
@@ -250,7 +250,7 @@ namespace Garnet.server
                     }
                     else
                     {
-                        etagTruncatedVal = value.AsReadOnlySpan(); 
+                        etagTruncatedVal = value.AsReadOnlySpan();
                         // instead of :(etagdigits) we will have nil after array len
                         desiredLength = 4 + 3 + 2 + 1 + NumUtils.NumDigits(valueLength) + 2 + valueLength + 2;
                     }

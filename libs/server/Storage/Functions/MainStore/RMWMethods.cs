@@ -735,7 +735,7 @@ namespace Garnet.server
                         nextUpdateEtagIgnoredEnd = -1;
                         recordInfo.ClearHasETag();
                     }
-                
+
                     // new value when allocated should have 8 bytes more if the previous record had etag and the cmd was not SETEXXX
                     Debug.Assert(input.Length - RespInputHeader.Size == newValue.Length - etagIgnoredOffset);
 

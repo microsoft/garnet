@@ -160,7 +160,7 @@ namespace Garnet.test
             ClassicAssert.AreEqual(0, etag);
 
             // update to value to update the etag
-            RedisResult[] updateRes = (RedisResult[]) db.Execute("SETIFMATCH", ["rizz", "fixx", etag.ToString()]);
+            RedisResult[] updateRes = (RedisResult[])db.Execute("SETIFMATCH", ["rizz", "fixx", etag.ToString()]);
             etag = (long)updateRes[0];
             ClassicAssert.AreEqual(1, etag);
             ClassicAssert.AreEqual("fixx", updateRes[1].ToString());
@@ -171,7 +171,7 @@ namespace Garnet.test
             ClassicAssert.AreEqual(0, etag);
 
             // update to value to update the etag
-            updateRes = (RedisResult[]) db.Execute("SETIFMATCH", ["rizz", "fooo", etag.ToString()]);
+            updateRes = (RedisResult[])db.Execute("SETIFMATCH", ["rizz", "fooo", etag.ToString()]);
             etag = (long)updateRes[0];
             ClassicAssert.AreEqual(1, etag);
             ClassicAssert.AreEqual("fooo", updateRes[1].ToString());
@@ -193,7 +193,7 @@ namespace Garnet.test
             ClassicAssert.AreEqual(0, etag);
 
             // update to value to update the etag
-            RedisResult[] updateRes = (RedisResult[]) db.Execute("SETIFMATCH", ["rizz", "fixx", etag.ToString()]);
+            RedisResult[] updateRes = (RedisResult[])db.Execute("SETIFMATCH", ["rizz", "fixx", etag.ToString()]);
             etag = (long)updateRes[0];
             ClassicAssert.AreEqual(1, etag);
             ClassicAssert.AreEqual("fixx", updateRes[1].ToString());
@@ -204,7 +204,7 @@ namespace Garnet.test
             ClassicAssert.AreEqual(2, etag);
 
             // update to value to update the etag
-            updateRes = (RedisResult[]) db.Execute("SETIFMATCH", ["rizz", "fooo", etag.ToString()]);
+            updateRes = (RedisResult[])db.Execute("SETIFMATCH", ["rizz", "fooo", etag.ToString()]);
             etag = (long)updateRes[0];
             ClassicAssert.AreEqual(3, etag);
             ClassicAssert.AreEqual("fooo", updateRes[1].ToString());
@@ -661,7 +661,7 @@ namespace Garnet.test
 
             string retVal = db.StringGet(strKey).ToString();
             ClassicAssert.AreEqual("ciaociao", retVal);
-            
+
             var res = (RedisResult[])db.Execute("GETWITHETAG", [strKey]);
             ClassicAssert.IsTrue(res[0].IsNull);
             ClassicAssert.AreEqual("ciaociao", res[1].ToString());
@@ -685,7 +685,7 @@ namespace Garnet.test
             string retVal = db.StringGet(strKey).ToString();
             ClassicAssert.AreEqual("ciaociao", retVal);
 
-            var res = (RedisResult[]) db.Execute("GETWITHETAG", strKey);
+            var res = (RedisResult[])db.Execute("GETWITHETAG", strKey);
             ClassicAssert.AreEqual(1, (long)res[0]);
 
             // on subsequent upserts we are still increasing the etag transparently
@@ -694,7 +694,7 @@ namespace Garnet.test
             retVal = db.StringGet(strKey).ToString();
             ClassicAssert.AreEqual("ciaociaociao", retVal);
 
-            res = (RedisResult[]) db.Execute("GETWITHETAG", strKey);
+            res = (RedisResult[])db.Execute("GETWITHETAG", strKey);
             ClassicAssert.AreEqual(2, (long)res[0]);
             ClassicAssert.AreEqual("ciaociaociao", res[1].ToString());
         }

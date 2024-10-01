@@ -24,14 +24,14 @@ namespace Garnet.server
 
             if (isEtagCmd && cmd == RespCommand.GETIFNOTMATCH)
             {
-                    long existingEtag = *(long*)value.ToPointer();
-                    long etagToMatchAgainst = *(long*)(input.ToPointer() + RespInputHeader.Size);
-                    if (existingEtag == etagToMatchAgainst)
-                    {
-                        // write the value not changed message to dst, and early return
-                        CopyDefaultResp(CmdStrings.RESP_VALNOTCHANGED, ref dst);
-                        return true;
-                    }
+                long existingEtag = *(long*)value.ToPointer();
+                long etagToMatchAgainst = *(long*)(input.ToPointer() + RespInputHeader.Size);
+                if (existingEtag == etagToMatchAgainst)
+                {
+                    // write the value not changed message to dst, and early return
+                    CopyDefaultResp(CmdStrings.RESP_VALNOTCHANGED, ref dst);
+                    return true;
+                }
             }
             else if ((byte)cmd >= CustomCommandManager.StartOffset)
             {
@@ -77,14 +77,14 @@ namespace Garnet.server
 
             if (isEtagCmd && cmd == RespCommand.GETIFNOTMATCH)
             {
-                    long existingEtag = *(long*)value.ToPointer();
-                    long etagToMatchAgainst = *(long*)(input.ToPointer() + RespInputHeader.Size);
-                    if (existingEtag == etagToMatchAgainst)
-                    {
-                        // write the value not changed message to dst, and early return
-                        CopyDefaultResp(CmdStrings.RESP_VALNOTCHANGED, ref dst);
-                        return true;
-                    }
+                long existingEtag = *(long*)value.ToPointer();
+                long etagToMatchAgainst = *(long*)(input.ToPointer() + RespInputHeader.Size);
+                if (existingEtag == etagToMatchAgainst)
+                {
+                    // write the value not changed message to dst, and early return
+                    CopyDefaultResp(CmdStrings.RESP_VALNOTCHANGED, ref dst);
+                    return true;
+                }
             }
             else if ((byte)cmd >= CustomCommandManager.StartOffset)
             {
