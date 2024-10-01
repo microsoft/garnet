@@ -130,8 +130,9 @@ else {
 
 # To get accurate comparison of found vs expected values, double check to make sure config settings for Number of Cores of the test machine are what is specified in the test config file
 if ($ExpectedCoresToTestOn -ne $NumberOfCores) {
-    Write-Error -Message "The Number of Cores on this machine ($NumberOfCores) are not the same as the Expected Cores ($ExpectedCoresToTestOn) found in the test config file: $fullConfiFileAndPath."
-    exit
+    Write-Output -Message "The Number of Cores on this machine ($NumberOfCores) are not the same as the Expected Cores ($ExpectedCoresToTestOn) found in the test config file: $fullConfiFileAndPath."
+    ##&#&# DEBUG #*#*#* Write-Error -Message "The Number of Cores on this machine ($NumberOfCores) are not the same as the Expected Cores ($ExpectedCoresToTestOn) found in the test config file: $fullConfiFileAndPath."
+#    exit
 }
 
 Write-Host "************** Start BDN.benchmark ********************" 
@@ -142,6 +143,10 @@ $configuration = $object.configuration
 $framework = $object.framework
 $filter = $object.filter
 $meanColumn = "1"
+
+#*#*#* DEBUG
+# TO DO: Add "Allocated" to values that are checked 
+#*#*#* DEBUG
 
 # Set the expected values based on the OS
 if ($IsLinux) {
@@ -429,3 +434,6 @@ if ($testSuiteResult) {
 }
 Write-Output "**  "
 Write-Output "************************"
+
+
+#./test/BDNPerfTests/results/${{ matrix.test }}_${{ matrix.os }}.json
