@@ -21,20 +21,16 @@ namespace Garnet.server
         {
             updated = false;
 
-            var countBytes = stackalloc byte[1];
-            countBytes[0] = (byte)'1';
-            var countSlice = new ArgSlice(countBytes, 1);
-
             ArgSlice[] currParseStateBuffer = default;
             var currParseState = new SessionParseState();
-            currParseState.Initialize(ref currParseStateBuffer, 2);
-            currParseStateBuffer[0] = countSlice;
+            currParseState.Initialize(ref currParseStateBuffer, 1);
 
             var input = new RawStringInput
             {
                 header = new RespInputHeader { cmd = RespCommand.PFADD },
                 parseState = currParseState,
-                parseStateStartIdx = 0
+                parseStateStartIdx = 0,
+                arg1 = 1,
             };
 
             var output = stackalloc byte[1];
@@ -46,7 +42,7 @@ namespace Garnet.server
                 fixed (byte* elementPtr = elementBytes)
                 {
                     var elementSlice = new ArgSlice(elementPtr, elementBytes.Length);
-                    currParseStateBuffer[1] = elementSlice;
+                    currParseStateBuffer[0] = elementSlice;
 
                     var o = new SpanByteAndMemory(output, 1);
                     var sbKey = key.SpanByte;
@@ -188,7 +184,11 @@ namespace Garnet.server
                     }
 
                     HyperLogLog.DefaultHLL.TryMerge(srcHLL, dstHLL, sbDstHLL.Length);
-                    count = HyperLogLog.DefaultHLL.Count(dstHLL);
+
+                    if (currTokenIdx == input.parseState.Count)
+                    {
+                        count = HyperLogLog.DefaultHLL.Count(dstHLL);
+                    }
                 }
             }
             finally

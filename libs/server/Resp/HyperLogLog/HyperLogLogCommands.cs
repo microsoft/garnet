@@ -24,20 +24,11 @@ namespace Garnet.server
                 return AbortWithWrongNumberOfArguments(nameof(RespCommand.PFADD));
             }
 
-            var countBytes = stackalloc byte[1];
-            countBytes[0] = (byte)'1';
-            var countSlice = new ArgSlice(countBytes, 1);
-
-            ArgSlice[] currParseStateBuffer = default;
-            var currParseState = new SessionParseState();
-            currParseState.Initialize(ref currParseStateBuffer, 2);
-            currParseStateBuffer[0] = countSlice;
-
             var input = new RawStringInput
             {
                 header = new RespInputHeader { cmd = RespCommand.PFADD },
-                parseState = currParseState,
-                parseStateStartIdx = 0
+                parseState = parseState,
+                arg1 = 1, // # of elements to add from parseState
             };
 
             var output = stackalloc byte[1];
@@ -46,13 +37,11 @@ namespace Garnet.server
 
             for (var i = 1; i < parseState.Count; i++)
             {
-                var currElementSlice = parseState.GetArgSliceByRef(i);
-                currParseStateBuffer[1] = currElementSlice;
-
+                input.parseStateStartIdx = i;
                 var o = new SpanByteAndMemory(output, 1);
                 storageApi.HyperLogLogAdd(ref key, ref input, ref o);
 
-                //Invalid HLL Type
+                // Invalid HLL Type
                 if (*output == 0xFF)
                 {
                     while (!RespWriteUtils.WriteError(CmdStrings.RESP_ERR_WRONG_TYPE_HLL, ref dcurr, dend))

@@ -325,15 +325,15 @@ namespace Garnet.server
         /// <returns></returns>
         public int SparseInitialLength(ref RawStringInput input)
         {
-            var count = input.parseState.GetInt(input.parseStateStartIdx);
+            var count = (int)input.arg1;
             return SparseInitialLength(count);
         }
 
         private int SparseInitialLength(int count)
         {
-            int requiredBytes = SparseRequiredBytes(count);// get bytes for elements
-            //if total bytes required greater than max cap switch to dense
-            //else calculate additional spase neede apart from default.
+            var requiredBytes = SparseRequiredBytes(count); // Get bytes for elements
+            // If total bytes required greater than max cap switch to dense
+            // else calculate additional spase needed apart from default.
             return (SparseHeaderSize + requiredBytes) > SparseSizeMaxCap ? this.DenseBytes :
                 ((requiredBytes < SparseZeroRanges + SparseMemorySectorSize) ?
                     SparseBytes :
@@ -371,7 +371,7 @@ namespace Garnet.server
         /// </summary>        
         public int UpdateGrow(ref RawStringInput input, byte* value)
         {
-            var count = input.parseState.GetInt(input.parseStateStartIdx);
+            var count = (int)input.arg1;
 
             if (IsSparse(value))
             {
@@ -529,7 +529,7 @@ namespace Garnet.server
         /// <returns></returns>           
         public bool Update(ref RawStringInput input, byte* value, int valueLen, ref bool updated)
         {
-            var count = input.parseState.GetInt(input.parseStateStartIdx);
+            var count = (int)input.arg1;
 
             if (IsDense(value)) // If blob layout is dense
             {
@@ -603,7 +603,7 @@ namespace Garnet.server
         {
             var updated = false;
             var currTokenIdx = input.parseStateStartIdx;
-            var elementCount = input.parseState.GetInt(currTokenIdx++);
+            var elementCount = (int)input.arg1;
             while (currTokenIdx < input.parseState.Count && elementCount > 0)
             {
                 var currElement = input.parseState.GetArgSliceByRef(currTokenIdx++);
