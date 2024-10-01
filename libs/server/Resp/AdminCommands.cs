@@ -134,7 +134,7 @@ namespace Garnet.server
 
             return true;
         }
-        
+
         private bool TryImportCommandsData<TData>(string cmdDataPath, out IReadOnlyDictionary<string, TData> cmdNameToData, out ReadOnlySpan<byte> errorMessage) where TData : class, IRespCommandData<TData>
         {
             cmdNameToData = default;
