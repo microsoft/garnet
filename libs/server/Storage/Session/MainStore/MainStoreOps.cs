@@ -2,6 +2,7 @@
 // Licensed under the MIT license.
 
 using System;
+using System.Buffers;
 using System.Diagnostics;
 using System.Runtime.CompilerServices;
 using Garnet.common;
@@ -28,40 +29,6 @@ namespace Garnet.server
                 StartPendingMetrics();
                 CompletePendingForSession(ref status, ref output, ref context);
                 StopPendingMetrics();
-            }
-
-            if (status.Found)
-            {
-                incr_session_found();
-                return GarnetStatus.OK;
-            }
-            else
-            {
-                incr_session_notfound();
-                return GarnetStatus.NOTFOUND;
-            }
-        }
-
-        // We separate this function altogether for being able to filter out WONGTYPE so no overhead is incurred in the common path from branching
-        // that this method call would have added in the instructions. This let's GET method calls function without overhead as they did before ETags
-        // were added
-        public GarnetStatus GETForETagCmd<TContext>(ref SpanByte key, ref SpanByte input, ref SpanByteAndMemory output, ref TContext context)
-            where TContext : ITsavoriteContext<SpanByte, SpanByte, SpanByte, SpanByteAndMemory, long, MainSessionFunctions, MainStoreFunctions, MainStoreAllocator>
-        {
-            long ctx = default;
-            var status = context.Read(ref key, ref input, ref output, ctx);
-
-            if (status.IsPending)
-            {
-                StartPendingMetrics();
-                CompletePendingForSession(ref status, ref output, ref context);
-                StopPendingMetrics();
-            }
-
-            if (status.IsCanceled)
-            {
-                // Cancelled Read operation on a Get call for any ETag based APIs inidcates that the cmd was applied to a non-etag record
-                return GarnetStatus.WRONGTYPE;
             }
 
             if (status.Found)
@@ -636,6 +603,7 @@ namespace Garnet.server
 
                     if (status == GarnetStatus.OK)
                     {
+                        // since we didn't give the output span any memory when creating it, the backend would necessarily have had to allocate heap memory if item is not NOTFOUND
                         Debug.Assert(!o.IsSpanByte);
                         var memoryHandle = o.Memory.Memory.Pin();
                         var ptrVal = (byte*)memoryHandle.Pointer;
@@ -652,8 +620,20 @@ namespace Garnet.server
                         ((RespInputHeader*)inputPtr)->cmd = RespCommand.GETWITHETAG;
                         ((RespInputHeader*)inputPtr)->flags = 0;
 
-                        var etagAndDataOutput = new SpanByteAndMemory();
-                        var getWithEtagStatus = GETForETagCmd(ref oldKey, ref getWithEtagInput, ref etagAndDataOutput, ref context);
+                        // Check if etag is nil for getWithEtagStatus, this tells us if the key already had an etag associated with it
+                        bool hasEtag = false;
+                        SpanByteAndMemory etagAndDataOutput = new SpanByteAndMemory();
+                        GarnetStatus getWithEtagStatus = GET(ref oldKey, ref getWithEtagInput, ref etagAndDataOutput, ref context);
+                        // we know this key exists, so there is no reason for the status to not be OK
+                        Debug.Assert(getWithEtagStatus == GarnetStatus.OK);
+                        // since we didn't give the etagAndDataOutput span any memory when creating it, the backend would necessarily have had to allocate heap memory if item is not NOTFOUND
+                        Debug.Assert(!etagAndDataOutput.IsSpanByte);
+                        MemoryHandle outputMemHandle = etagAndDataOutput.Memory.Memory.Pin();
+                        byte* outputBufCurr = (byte*)outputMemHandle.Pointer;
+                        byte* end = outputBufCurr + etagAndDataOutput.Length;
+                        RespReadUtils.ReadUnsignedArrayLength(out int numItemInArr, ref outputBufCurr, end);
+                        Debug.Assert(numItemInArr == 2);
+                        hasEtag = !RespReadUtils.ReadNil(ref outputBufCurr, end, out byte? _);
 
                         if (ttlStatus == GarnetStatus.OK && !expireSpan.IsSpanByte)
                         {
@@ -662,7 +642,7 @@ namespace Garnet.server
                             RespReadUtils.TryRead64Int(out var expireTimeMs, ref expirePtrVal, expirePtrVal + expireSpan.Length, out var _);
 
                             // If the key has an expiration, set the new key with the expiration
-                            if (expireTimeMs > 0 && getWithEtagStatus == GarnetStatus.WRONGTYPE)
+                            if (expireTimeMs > 0 && !hasEtag)
                             {
                                 if (isNX)
                                 {
@@ -685,7 +665,7 @@ namespace Garnet.server
                                     SETEX(newKeySlice, new ArgSlice(ptrVal, headerLength), TimeSpan.FromMilliseconds(expireTimeMs), ref context);
                                 }
                             }
-                            else if (expireTimeMs == -1 && getWithEtagStatus == GarnetStatus.WRONGTYPE) // Its possible to have expireTimeMs as 0 (Key expired or will be expired now) or -2 (Key does not exist), in those cases we don't SET the new key
+                            else if (expireTimeMs == -1 && !hasEtag) // Its possible to have expireTimeMs as 0 (Key expired or will be expired now) or -2 (Key does not exist), in those cases we don't SET the new key
                             {
                                 if (isNX)
                                 {
@@ -711,7 +691,7 @@ namespace Garnet.server
                             }
                             else if (
                                 (expireTimeMs == -1 || expireTimeMs > 0) &&
-                                    getWithEtagStatus == GarnetStatus.OK)
+                                    hasEtag)
                             {
                                 SpanByte newKey = newKeySlice.SpanByte;
 
@@ -734,6 +714,10 @@ namespace Garnet.server
                                     *(int*)valPtr = RespInputHeader.Size + value.Length;
                                     ((RespInputHeader*)(valPtr + sizeof(int)))->cmd = RespCommand.SETWITHETAG;
                                     ((RespInputHeader*)(valPtr + sizeof(int)))->flags = 0;
+                                    ((RespInputHeader*)(valPtr + sizeof(int)))->flags = 0;
+                                    // This handles the edge case where we are renaming to a key that already exists and has an etag we want to retain its existing etag
+                                    // if there wasn't already an existing key same as the "rename to" key or without an etag, this will initialize the etag to 0 on the renamed key
+                                    ((RespInputHeader*)(valPtr + sizeof(int)))->SetRetainEtagFlag();
                                 }
                                 else
                                 {
@@ -743,6 +727,9 @@ namespace Garnet.server
                                     *(int*)valPtr = sizeof(long) + RespInputHeader.Size + value.Length;
                                     ((RespInputHeader*)(valPtr + sizeof(int) + sizeof(long)))->cmd = RespCommand.SETWITHETAG;
                                     ((RespInputHeader*)(valPtr + sizeof(int) + sizeof(long)))->flags = 0;
+                                    // This handles the edge case where we are renaming to a key that already exists and has an etag we want to retain its existing etag
+                                    // if there wasn't already an existing key same as the "rename to" key or without an etag, this will initialize the etag to 0 on the renamed key
+                                    ((RespInputHeader*)(valPtr + sizeof(int) + sizeof(long)))->SetRetainEtagFlag();
 
                                     SpanByte.Reinterpret(inputPtr).ExtraMetadata = DateTimeOffset.UtcNow.Ticks + TimeSpan.FromMilliseconds(expireTimeMs).Ticks;
                                 }
@@ -751,6 +738,7 @@ namespace Garnet.server
                                     ref Unsafe.AsRef<SpanByte>(valPtr), ref context);
                             }
 
+                            outputMemHandle.Dispose();
                             expireSpan.Memory.Dispose();
                             memoryHandle.Dispose();
                             o.Memory.Dispose();

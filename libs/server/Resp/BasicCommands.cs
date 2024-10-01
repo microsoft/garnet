@@ -288,7 +288,7 @@ namespace Garnet.server
             ((RespInputHeader*)inputPtr)->cmd = RespCommand.GETWITHETAG;
             ((RespInputHeader*)inputPtr)->flags = 0;
 
-            var status = storageApi.GETForETagCmd(ref key, ref input, ref output);
+            var status = storageApi.GET(ref key, ref input, ref output);
 
             switch (status)
             {
@@ -336,7 +336,7 @@ namespace Garnet.server
             ((RespInputHeader*)inputPtr)->flags = 0;
             *(long*)(inputPtr + RespInputHeader.Size) = etagToCheckWith;
 
-            var status = storageApi.GETForETagCmd(ref key, ref input, ref output);
+            var status = storageApi.GET(ref key, ref input, ref output);
 
             switch (status)
             {
@@ -708,7 +708,6 @@ namespace Garnet.server
                 }
                 else if (nextOpt.SequenceEqual(CmdStrings.GET))
                 {
-                    // tokenIdx++; // HK TODO: WHY TAL WHYYYY!?????
                     getValue = true;
                 }
                 else if (nextOpt.SequenceEqual(CmdStrings.RETAINETAG))

@@ -1003,11 +1003,6 @@ namespace Garnet.server
         /// <summary>
         /// GET
         /// </summary>
-        GarnetStatus GETForETagCmd(ref SpanByte key, ref SpanByte input, ref SpanByteAndMemory output);
-
-        /// <summary>
-        /// GET
-        /// </summary>
         /// <param name="key"></param>
         /// <param name="value"></param>
         /// <returns></returns>
