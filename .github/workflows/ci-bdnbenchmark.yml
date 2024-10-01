@@ -12,7 +12,8 @@ jobs:
     runs-on: ubuntu-latest # don't need matrix to test where the changes were made in code
     permissions:
       pull-requests: read
-      contents: read
+      deployments: write  #permission to deploy GitHub pages website
+      contents: write  # permission to update benchmark contents in gh-pages branch
     steps:
     - name: Check out code
       uses: actions/checkout@v4
@@ -98,6 +99,6 @@ jobs:
           fail-on-alert: true
 
           github-token: ${{ secrets.GITHUB_TOKEN }}
-          auto-push: false
+          auto-push: true
           skip-fetch-gh-pages: true
           summary-always: true
