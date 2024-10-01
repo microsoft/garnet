@@ -1099,6 +1099,36 @@ namespace Garnet.test
         }
 
         [Test]
+        public void SingleRenameEtagShouldRetainEtagOfNewKeyIfExistsWithEtag()
+        {
+            using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
+            var db = redis.GetDatabase(0);
+
+            string existingNewKey = "key2";
+            string existingVal = "foo";
+            long etag = (long)db.Execute("SETWITHETAG", [existingNewKey, existingVal]);
+            ClassicAssert.AreEqual(0, etag);
+            RedisResult[] updateRes = (RedisResult[])db.Execute("SETIFMATCH", [existingNewKey, "updated", etag.ToString()]);
+            long updatedEtag = (long)updateRes[0];
+
+            string origValue = "test1";
+            etag = long.Parse(db.Execute("SETWITHETAG", ["key1", origValue]).ToString());
+            ClassicAssert.AreEqual(0, etag);
+
+            db.KeyRename("key1", existingNewKey);
+            string retValue = db.StringGet(existingNewKey);
+            ClassicAssert.AreEqual(origValue, retValue);
+
+            // new Key value pair created with older value, the etag is reusing the existingnewkey etag
+            var res = (RedisResult[])db.Execute("GETWITHETAG", [existingNewKey]);
+            ClassicAssert.AreEqual(updatedEtag + 1, (long)res[0]);
+            ClassicAssert.AreEqual(origValue, res[1].ToString());
+
+            origValue = db.StringGet("key1");
+            ClassicAssert.AreEqual(null, origValue);
+        }
+
+        [Test]
         public void SingleRenameKeyEdgeCaseEtagSetData([Values] bool withoutObjectStore)
         {
             if (withoutObjectStore)
@@ -1129,6 +1159,35 @@ namespace Garnet.test
             ClassicAssert.IsTrue(renameRes);
             string retValue = db.StringGet("key1");
             ClassicAssert.AreEqual(origValue, retValue);
+        }
+
+        [Test]
+        public void SingleRenameShouldNotAddEtagEvenIfExistingKeyHadEtagButNotTheOriginal()
+        {
+            using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
+            var db = redis.GetDatabase(0);
+
+            string existingNewKey = "key2";
+            string existingVal = "foo";
+            long etag = (long)db.Execute("SETWITHETAG", [existingNewKey, existingVal]);
+            ClassicAssert.AreEqual(0, etag);
+            RedisResult[] updateRes = (RedisResult[])db.Execute("SETIFMATCH", [existingNewKey, "updated", etag.ToString()]);
+            long updatedEtag = (long)updateRes[0];
+
+            string origValue = "test1";
+            ClassicAssert.IsTrue(db.StringSet("key1", origValue));
+
+            db.KeyRename("key1", existingNewKey);
+            string retValue = db.StringGet(existingNewKey);
+            ClassicAssert.AreEqual(origValue, retValue);
+
+            // new Key value pair created with older value, the etag is reusing the existingnewkey etag
+            var res = (RedisResult[])db.Execute("GETWITHETAG", [existingNewKey]);
+            ClassicAssert.IsTrue(res[0].IsNull);
+            ClassicAssert.AreEqual(origValue, res[1].ToString());
+
+            origValue = db.StringGet("key1");
+            ClassicAssert.AreEqual(null, origValue);
         }
 
         [Test]

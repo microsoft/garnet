@@ -693,6 +693,19 @@ namespace Garnet.server
                                 (expireTimeMs == -1 || expireTimeMs > 0) &&
                                     hasEtag)
                             {
+                                // IsNX means if the newKey Exists do not set it
+                                // We can't use SET with not exist here so instead we will do an Exists and skip the seeting if exists 
+                                if (isNX && EXISTS(newKeySlice, storeType, ref context, ref objectContext) == GarnetStatus.OK)
+                                {
+                                    result = 0;
+                                    returnStatus = GarnetStatus.OK;
+                                    // Skip setting the new key and go to calling the part after that
+                                    goto AFTERNEWKEYSET;
+                                }
+
+                                if (isNX)
+                                    result = 1;
+
                                 SpanByte newKey = newKeySlice.SpanByte;
 
                                 var value = SpanByte.FromPinnedPointer(ptrVal, headerLength);
@@ -713,7 +726,6 @@ namespace Garnet.server
                                 {
                                     *(int*)valPtr = RespInputHeader.Size + value.Length;
                                     ((RespInputHeader*)(valPtr + sizeof(int)))->cmd = RespCommand.SETWITHETAG;
-                                    ((RespInputHeader*)(valPtr + sizeof(int)))->flags = 0;
                                     ((RespInputHeader*)(valPtr + sizeof(int)))->flags = 0;
                                     // This handles the edge case where we are renaming to a key that already exists and has an etag we want to retain its existing etag
                                     // if there wasn't already an existing key same as the "rename to" key or without an etag, this will initialize the etag to 0 on the renamed key
@@ -736,7 +748,10 @@ namespace Garnet.server
 
                                 SET_Conditional(ref Unsafe.AsRef<SpanByte>(keyPtr),
                                     ref Unsafe.AsRef<SpanByte>(valPtr), ref context);
+                                returnStatus = GarnetStatus.OK;
                             }
+
+                        AFTERNEWKEYSET:
 
                             outputMemHandle.Dispose();
                             expireSpan.Memory.Dispose();
