@@ -25,7 +25,7 @@ namespace MigrateBench
 
             var loggerFactory = CreateLoggerFactory(opts);
 
-            if (opts.Endpoints == null)
+            if (opts.Endpoints.Count() == 0)
             {
                 MigrateRequest mreq = new(opts, logger: loggerFactory.CreateLogger("MigrateBench"));
                 mreq.Run();
