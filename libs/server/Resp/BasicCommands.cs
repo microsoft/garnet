@@ -325,7 +325,7 @@ namespace Garnet.server
 
             // Setup input buffer to pass command info, and the ETag to check with.
             // len + header + etag's data type size 
-            var inputSize = RespInputHeader.Size + sizeof(long) + sizeof(int);
+            var inputSize = RespInputHeader.Size + Constants.EtagSize + sizeof(int);
             SpanByte input = SpanByte.Reinterpret(stackalloc byte[inputSize]);
             byte* inputPtr = input.ToPointer();
             ((RespInputHeader*)inputPtr)->cmd = RespCommand.GETIFNOTMATCH;
@@ -377,7 +377,7 @@ namespace Garnet.server
             */
             
             int initialSizeOfValueSpan = value.Length;
-            value.Length = initialSizeOfValueSpan + sizeof(long);
+            value.Length = initialSizeOfValueSpan + Constants.EtagSize;
             *(long*)(value.ToPointer() + initialSizeOfValueSpan) = etagToCheckWith;
 
             // Make space for key header

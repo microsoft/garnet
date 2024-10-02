@@ -155,12 +155,12 @@ namespace Garnet.server
                     recordInfo.SetHasETag();
 
                     // Copy input to value
-                    value.ShrinkSerializedLength(input.Length - RespInputHeader.Size + sizeof(long));
+                    value.ShrinkSerializedLength(input.Length - RespInputHeader.Size + Constants.EtagSize);
                     value.ExtraMetadata = input.ExtraMetadata;
 
                     // initial etag set to 0, this is a counter based etag that is incremented on change
                     *(long*)value.ToPointer() = 0;
-                    input.AsReadOnlySpan()[RespInputHeader.Size..].CopyTo(value.AsSpan(sizeof(long)));
+                    input.AsReadOnlySpan()[RespInputHeader.Size..].CopyTo(value.AsSpan(Constants.EtagSize));
 
                     // Copy initial etag to output
                     CopyRespNumber(0, ref output);
@@ -250,7 +250,7 @@ namespace Garnet.server
             long oldEtag = -1;
             if (recordInfo.ETag)
             {
-                etagIgnoredOffset = sizeof(long);
+                etagIgnoredOffset = Constants.EtagSize;
                 etagIgnoredEnd = value.LengthWithoutMetadata;
                 oldEtag = *(long*)value.ToPointer();
             }
@@ -277,7 +277,7 @@ namespace Garnet.server
 
                     long prevEtag = *(long*)value.ToPointer();
 
-                    byte* locationOfEtagInInputPtr = inputPtr + input.LengthWithoutMetadata - sizeof (long);
+                    byte* locationOfEtagInInputPtr = inputPtr + input.LengthWithoutMetadata - Constants.EtagSize;
                     long etagFromClient= *(long*)locationOfEtagInInputPtr;
 
                     if (prevEtag != etagFromClient)
@@ -302,9 +302,7 @@ namespace Garnet.server
                     value.ExtraMetadata = input.ExtraMetadata;
 
                     *(long*)value.ToPointer() = newEtag;
-                    input.AsReadOnlySpan().Slice(0, input.LengthWithoutMetadata - sizeof(long))[RespInputHeader.Size..].CopyTo(value.AsSpan(sizeof(long)));
-
-                    var debugCheck = value.ToPointer();
+                    input.AsReadOnlySpan().Slice(0, input.LengthWithoutMetadata - Constants.EtagSize)[RespInputHeader.Size..].CopyTo(value.AsSpan(Constants.EtagSize));
 
                     rmwInfo.SetUsedValueLength(ref recordInfo, ref value, value.TotalSize);
 
@@ -524,7 +522,7 @@ namespace Garnet.server
                     return false;
 
                 case RespCommand.SETWITHETAG:
-                    if (input.Length - RespInputHeader.Size + sizeof(long) > value.Length)
+                    if (input.Length - RespInputHeader.Size + Constants.EtagSize > value.Length)
                         return false;
 
                     // retain the older etag (and increment it to account for this update) if requested and if it also exists otherwise set etag to initial etag of 0
@@ -533,11 +531,11 @@ namespace Garnet.server
                     recordInfo.SetHasETag();
 
                     // Copy input to value
-                    value.ShrinkSerializedLength(input.Length - RespInputHeader.Size + sizeof(long));
+                    value.ShrinkSerializedLength(input.Length - RespInputHeader.Size + Constants.EtagSize);
                     value.ExtraMetadata = input.ExtraMetadata;
 
                     *(long*)value.ToPointer() = etagVal;
-                    input.AsReadOnlySpan()[RespInputHeader.Size..].CopyTo(value.AsSpan(sizeof(long)));
+                    input.AsReadOnlySpan()[RespInputHeader.Size..].CopyTo(value.AsSpan(Constants.EtagSize));
 
                     // Copy initial etag to output
                     CopyRespNumber(etagVal, ref output);
@@ -623,7 +621,7 @@ namespace Garnet.server
             int etagIgnoredEnd = -1;
             if (rmwInfo.RecordInfo.ETag)
             {
-                etagIgnoredOffset = sizeof(long);
+                etagIgnoredOffset = Constants.EtagSize;
                 etagIgnoredEnd = oldValue.LengthWithoutMetadata;
             }
 
@@ -635,7 +633,7 @@ namespace Garnet.server
 
                     long existingEtag = *(long*)oldValue.ToPointer();
 
-                    byte* locationOfEtagInInputPtr = inputPtr + input.LengthWithoutMetadata - sizeof (long);
+                    byte* locationOfEtagInInputPtr = inputPtr + input.LengthWithoutMetadata - Constants.EtagSize;
                     long etagToCheckWith = *(long*)locationOfEtagInInputPtr;
 
                     if (existingEtag != etagToCheckWith)
@@ -696,7 +694,7 @@ namespace Garnet.server
             long oldEtag = -1;
             if (recordInfo.ETag)
             {
-                etagIgnoredOffset = sizeof(long);
+                etagIgnoredOffset = Constants.EtagSize;
                 etagIgnoredEnd = oldValue.LengthWithoutMetadata;
                 oldEtag = *(long*)oldValue.ToPointer();
             }
@@ -704,7 +702,7 @@ namespace Garnet.server
             switch (cmd)
             {
                 case RespCommand.SETWITHETAG:
-                    Debug.Assert(input.Length - RespInputHeader.Size + sizeof(long) == newValue.Length);
+                    Debug.Assert(input.Length - RespInputHeader.Size + Constants.EtagSize == newValue.Length);
 
                     // etag setting will be done here so does not need to be incremented outside switch
                     shouldUpdateEtag = false;
@@ -713,7 +711,7 @@ namespace Garnet.server
                     recordInfo.SetHasETag();
                     // Copy input to value
                     newValue.ExtraMetadata = input.ExtraMetadata;
-                    input.AsReadOnlySpan()[RespInputHeader.Size..].CopyTo(newValue.AsSpan(sizeof(long)));
+                    input.AsReadOnlySpan()[RespInputHeader.Size..].CopyTo(newValue.AsSpan(Constants.EtagSize));
                     // set the etag
                     *(long*)newValue.ToPointer() = etagVal;
                     // Copy initial etag to output
@@ -725,14 +723,14 @@ namespace Garnet.server
 
                     // this update is so the early call to send the resp command works, outside of the switch
                     // we are doing a double op of setting the etag to normalize etag update for other operations
-                    byte* locationOfEtagInInputPtr = inputPtr + input.LengthWithoutMetadata - sizeof (long);
+                    byte* locationOfEtagInInputPtr = inputPtr + input.LengthWithoutMetadata - Constants.EtagSize;
                     long etagToCheckWith = *(long*)locationOfEtagInInputPtr;
 
                     // Copy input to value
                     newValue.ExtraMetadata = input.ExtraMetadata;
 
                     *(long*)newValue.ToPointer() = etagToCheckWith + 1;
-                    input.AsReadOnlySpan().Slice(0, input.LengthWithoutMetadata - sizeof(long))[RespInputHeader.Size..].CopyTo(newValue.AsSpan(sizeof(long)));
+                    input.AsReadOnlySpan().Slice(0, input.LengthWithoutMetadata - Constants.EtagSize)[RespInputHeader.Size..].CopyTo(newValue.AsSpan(Constants.EtagSize));
 
 
                     // Write Etag and Val back to Client

@@ -86,7 +86,7 @@ namespace Garnet.server
                     return sizeof(int) + ndigits + (fNeg ? 1 : 0);
                 case RespCommand.SETWITHETAG:
                     // same space as SET but with 8 additional bytes for etag at the front of the payload
-                    return sizeof(int) + input.Length - RespInputHeader.Size + sizeof(long);
+                    return sizeof(int) + input.Length - RespInputHeader.Size + Constants.EtagSize;
                 default:
                     if (cmd >= 200)
                     {
@@ -112,7 +112,7 @@ namespace Garnet.server
                 var inputspan = input.AsSpan();
                 var inputPtr = input.ToPointer();
                 var cmd = inputspan[0];
-                int etagOffset = hasEtag ? sizeof(long) : 0;
+                int etagOffset = hasEtag ? Constants.EtagSize : 0;
                 bool retainEtag = ((RespInputHeader*)inputPtr)->CheckRetainEtagFlag();
 
                 switch ((RespCommand)cmd)
@@ -181,7 +181,7 @@ namespace Garnet.server
                         break;
                     case RespCommand.SETWITHETAG:
                         // same space as SET but with 8 additional bytes for etag at the front of the payload
-                        return sizeof(int) + input.Length - RespInputHeader.Size + sizeof(long);
+                        return sizeof(int) + input.Length - RespInputHeader.Size + Constants.EtagSize;
                     case RespCommand.EXPIRE:
                     case RespCommand.PEXPIRE:
                         return sizeof(int) + t.Length + input.MetadataSize;

@@ -49,7 +49,7 @@ namespace Garnet.server
             var end = -1;
             if (!isEtagCmd && readInfo.RecordInfo.ETag)
             {
-                start = sizeof(long);
+                start = Constants.EtagSize;
                 end = value.LengthWithoutMetadata;
             }
 
@@ -102,7 +102,7 @@ namespace Garnet.server
             var end = -1;
             if (!isEtagCmd && recordInfo.ETag)
             {
-                start = sizeof(long);
+                start = Constants.EtagSize;
                 end = value.LengthWithoutMetadata;
             }
 
