@@ -386,7 +386,7 @@ namespace Garnet.server
             *(int*)keyPtr = key.Length;
 
             // Here Etag retain argument does not really matter because setifmatch may or may not update etag based on the "if match" condition
-            NetworkSET_Conditional(RespCommand.SETIFMATCH, 0, keyPtr, value.ToPointer() - sizeof(int), value.Length, true, false, true, ref storageApi);
+            NetworkSET_Conditional(RespCommand.SETIFMATCH, 0, keyPtr, value.ToPointer() - sizeof(int), value.Length, getValue: true, highPrecision: false, retainEtag: true, ref storageApi);
 
             return true;
         }
@@ -437,7 +437,7 @@ namespace Garnet.server
             *(int*)keyPtr = key.Length;
 
             // calling set with etag on an exisitng key will update the etag of the existing key
-            NetworkSET_Conditional(RespCommand.SETWITHETAG, 0, keyPtr, value.ToPointer() - sizeof(int), value.Length, true, false, retainEtag, ref storageApi);
+            NetworkSET_Conditional(RespCommand.SETWITHETAG, 0, keyPtr, value.ToPointer() - sizeof(int), value.Length, getValue: true, highPrecision: false, retainEtag, ref storageApi);
 
             return true;
         }
@@ -748,22 +748,22 @@ namespace Garnet.server
                             {
                                 // cannot do blind upsert if isEtagRetained
                                 return NetworkSET_Conditional(RespCommand.SET, expiry, keyPtr, valPtr, vSize, getValue,
-                                        false, true, ref storageApi);
+                                        highPrecision: false, retainEtag: true, ref storageApi);
                             }
                             else
                             {
                                 return getValue
-                                    ? NetworkSET_Conditional(RespCommand.SET, expiry, keyPtr, valPtr, vSize, true,
-                                        false, false, ref storageApi)
-                                    : NetworkSET_EX(RespCommand.SET, expiry, keyPtr, valPtr, vSize, false,
+                                    ? NetworkSET_Conditional(RespCommand.SET, expiry, keyPtr, valPtr, vSize, getValue: true,
+                                        highPrecision: false, retainEtag: false, ref storageApi)
+                                    : NetworkSET_EX(RespCommand.SET, expiry, keyPtr, valPtr, vSize, highPrecision: false,
                                         ref storageApi); // Can perform a blind update
                             }
                         case ExistOptions.XX:
                             return NetworkSET_Conditional(RespCommand.SETEXXX, expiry, keyPtr, valPtr, vSize,
-                                getValue, isEtagRetained, false, ref storageApi);
+                                getValue, highPrecision: false, isEtagRetained, ref storageApi);
                         case ExistOptions.NX:
                             return NetworkSET_Conditional(RespCommand.SETEXNX, expiry, keyPtr, valPtr, vSize,
-                                getValue, false, isEtagRetained, ref storageApi);
+                                getValue, highPrecision: false, isEtagRetained, ref storageApi);
                     }
 
                     break;
@@ -775,22 +775,22 @@ namespace Garnet.server
                             {
                                 // cannot do a blind update
                                 return NetworkSET_Conditional(RespCommand.SET, expiry, keyPtr, valPtr, vSize, getValue,
-                                    true, true, ref storageApi);
+                                    highPrecision: true, retainEtag: true, ref storageApi);
                             }
                             else
                             {
                                 return getValue
-                                    ? NetworkSET_Conditional(RespCommand.SET, expiry, keyPtr, valPtr, vSize, true,
-                                        true, false, ref storageApi)
-                                    : NetworkSET_EX(RespCommand.SET, expiry, keyPtr, valPtr, vSize, true,
+                                    ? NetworkSET_Conditional(RespCommand.SET, expiry, keyPtr, valPtr, vSize, getValue: true,
+                                        highPrecision: true, retainEtag: false, ref storageApi)
+                                    : NetworkSET_EX(RespCommand.SET, expiry, keyPtr, valPtr, vSize, highPrecision: true,
                                         ref storageApi); // Can perform a blind update
                             }
                         case ExistOptions.XX:
                             return NetworkSET_Conditional(RespCommand.SETEXXX, expiry, keyPtr, valPtr, vSize,
-                                getValue, true, isEtagRetained, ref storageApi);
+                                getValue, highPrecision: true, isEtagRetained, ref storageApi);
                         case ExistOptions.NX:
                             return NetworkSET_Conditional(RespCommand.SETEXNX, expiry, keyPtr, valPtr, vSize,
-                                getValue, true, isEtagRetained, ref storageApi);
+                                getValue, highPrecision: true, isEtagRetained, ref storageApi);
                     }
 
                     break;
@@ -802,13 +802,13 @@ namespace Garnet.server
                         case ExistOptions.None:
                             // We can never perform a blind update due to KEEPTTL
                             return NetworkSET_Conditional(RespCommand.SETKEEPTTL, expiry, keyPtr, valPtr, vSize,
-                                getValue, false, isEtagRetained, ref storageApi);
+                                getValue, highPrecision: false, isEtagRetained, ref storageApi);
                         case ExistOptions.XX:
                             return NetworkSET_Conditional(RespCommand.SETKEEPTTLXX, expiry, keyPtr, valPtr, vSize,
-                                getValue, false, isEtagRetained, ref storageApi);
+                                getValue, highPrecision: false, isEtagRetained, ref storageApi);
                         case ExistOptions.NX:
                             return NetworkSET_Conditional(RespCommand.SETEXNX, expiry, keyPtr, valPtr, vSize,
-                                getValue, false, isEtagRetained, ref storageApi);
+                                getValue, highPrecision: false, isEtagRetained, ref storageApi);
                     }
 
                     break;
