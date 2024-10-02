@@ -84,7 +84,7 @@ namespace Garnet.cluster
             }
             finally
             {
-                UnpauseConfigMerge();
+                ResumeConfigMerge();
             }
         }
 
@@ -133,7 +133,7 @@ namespace Garnet.cluster
             }
             finally
             {
-                UnpauseConfigMerge();
+                ResumeConfigMerge();
             }
         }
 

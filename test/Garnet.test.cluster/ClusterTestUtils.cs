@@ -1938,7 +1938,7 @@ namespace Garnet.test.cluster
             }
             catch (Exception ex)
             {
-                logger?.LogError(ex, "An error has occured; ClusterForget");
+                logger?.LogError(ex, "An error has occurred; ClusterForget");
                 Assert.Fail(ex.Message);
                 return ex.Message;
             }
@@ -1964,7 +1964,7 @@ namespace Garnet.test.cluster
             }
             catch (Exception ex)
             {
-                logger?.LogError(ex, "An error has occured; ClusterReset");
+                logger?.LogError(ex, "An error has occurred; ClusterReset");
                 Assert.Fail(ex.Message);
                 return ex.Message;
             }
@@ -1988,7 +1988,7 @@ namespace Garnet.test.cluster
             }
             catch (Exception ex)
             {
-                logger?.LogError(ex, "An error has occured; ClusterKeySlot");
+                logger?.LogError(ex, "An error has occurred; ClusterKeySlot");
                 Assert.Fail();
                 return -1;
             }
@@ -2006,7 +2006,7 @@ namespace Garnet.test.cluster
             }
             catch (Exception ex)
             {
-                logger?.LogError(ex, "An error has occured; FlushAllDatabases");
+                logger?.LogError(ex, "An error has occurred; FlushAllDatabases");
                 Assert.Fail();
             }
         }
@@ -2023,7 +2023,7 @@ namespace Garnet.test.cluster
             }
             catch (Exception ex)
             {
-                logger?.LogError(ex, "An error has occured; ClusterNodes");
+                logger?.LogError(ex, "An error has occurred; ClusterNodes");
                 Assert.Fail();
                 return null;
             }
