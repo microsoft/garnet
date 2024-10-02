@@ -99,6 +99,7 @@ namespace Garnet.cluster
 
     internal sealed partial class ClusterManager : IDisposable
     {
+        const int maxRandomNodesToPoll = 3;
         public readonly TimeSpan gossipDelay;
         public readonly TimeSpan clusterTimeout;
         private volatile int numActiveTasks = 0;
@@ -381,12 +382,12 @@ namespace Garnet.cluster
                     }
 
                     gossipStats.gossip_timeout_count++;
-                    logger?.LogWarning("GOSSIP to remote node [{nodeId} {address}:{port}] timeout!", currNode.NodeId, currNode.address, currNode.port);
+                    logger?.LogWarning("GOSSIP to remote node [{nodeId} {address}:{port}] timeout!", currNode.NodeId, currNode.Address, currNode.Port);
                     _ = clusterConnectionStore.TryRemove(currNode.NodeId);
                 }
                 catch (Exception ex)
                 {
-                    logger?.LogWarning(ex, "GOSSIP to remote node [{nodeId} {address} {port}] failed!", currNode.NodeId, currNode.address, currNode.port);
+                    logger?.LogWarning(ex, "GOSSIP to remote node [{nodeId} {address} {port}] failed!", currNode.NodeId, currNode.Address, currNode.Port);
                     _ = clusterConnectionStore.TryRemove(currNode.NodeId);
                     gossipStats.gossip_failed_count++;
                 }
@@ -408,7 +409,7 @@ namespace Garnet.cluster
                 var minSend = startTime;
                 GarnetServerNode currNode = null;
 
-                for (var i = 0; i < 3; i++)
+                for (var i = 0; i < maxRandomNodesToPoll; i++)
                 {
                     // Pick the node with earliest send timestamp
                     if (clusterConnectionStore.GetRandomConnection(out var c) && c.GossipSend < minSend)
@@ -432,12 +433,12 @@ namespace Garnet.cluster
                     }
 
                     gossipStats.gossip_timeout_count++;
-                    logger?.LogWarning("GOSSIP to remote node [{nodeId} {address}:{port}] timeout!", currNode.NodeId, currNode.address, currNode.port);
+                    logger?.LogWarning("GOSSIP to remote node [{nodeId} {address}:{port}] timeout!", currNode.NodeId, currNode.Address, currNode.Port);
                     _ = clusterConnectionStore.TryRemove(currNode.NodeId);
                 }
                 catch (Exception ex)
                 {
-                    logger?.LogError(ex, "GOSSIP to remote node [{nodeId} {address} {port}] failed!", currNode.NodeId, currNode.address, currNode.port);
+                    logger?.LogError(ex, "GOSSIP to remote node [{nodeId} {address} {port}] failed!", currNode.NodeId, currNode.Address, currNode.Port);
                     _ = clusterConnectionStore.TryRemove(currNode.NodeId);
                     gossipStats.gossip_failed_count++;
                 }
