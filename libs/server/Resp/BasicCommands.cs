@@ -366,25 +366,19 @@ namespace Garnet.server
 
             var key = parseState.GetArgSliceByRef(0).SpanByte;
             var value = parseState.GetArgSliceByRef(1).SpanByte;
-            // since the etag is a long, we now have a copy of it on the stack, and the underlying memory can be used as an extension for value's spanbyte later
             long etagToCheckWith = parseState.GetLong(2);
 
             /* 
-                Here we make space for etag to be added infront of value. We borrow 8 bytes from infront of the value, we will later restore the memory for the location we borrow.
                 P.s. This is NOT GOING TO create a buffer overflow becuase of the following reason.
                 Value spanbyte points to the network buffer, the network buffer is already holding key, value, and etag in a contiguous chunk of memory, in order, along with padding
                 for separators in Resp. This means there has to be ENOUGH OR MORE space for len(value) + sizeof(long).
-                So once we read the etag from the network buffer onto the stack, we can borrow 8 bytes of memory infront of value spanbyte safely, hence not creating a buffer overflow
-                when borrowing 8 bytes to shove the etag into the expanded spanbyte for value, which we then use as our input buffer.
+                All we are doing is borrowing the 8 bytes of memory infront of the value span and making it a part of the same spanbyte so we can essentially do the following transformation.
+                [<value><padding><etag>] -> [<value><etag>]
             */
-            byte* borrowedMemLocation = value.ToPointer() + sizeof(long);
-            long saved8Bytes = *(long*)borrowedMemLocation;
+            
             int initialSizeOfValueSpan = value.Length;
             value.Length = initialSizeOfValueSpan + sizeof(long);
-            // move contents of value 8 bytes forward
-            Buffer.MemoryCopy(value.ToPointer(), value.ToPointer() + sizeof(long), initialSizeOfValueSpan, initialSizeOfValueSpan);
-            // add the etag at first 8 bytes
-            *(long*)value.ToPointer() = etagToCheckWith;
+            *(long*)(value.ToPointer() + initialSizeOfValueSpan) = etagToCheckWith;
 
             // Make space for key header
             var keyPtr = key.ToPointer() - sizeof(int);
@@ -393,9 +387,6 @@ namespace Garnet.server
 
             // Here Etag retain argument does not really matter because setifmatch may or may not update etag based on the "if match" condition
             NetworkSET_Conditional(RespCommand.SETIFMATCH, 0, keyPtr, value.ToPointer() - sizeof(int), value.Length, true, false, true, ref storageApi);
-
-            // restore the 8 bytes we had messed with on the network buffer
-            *(long*)borrowedMemLocation = saved8Bytes;
 
             return true;
         }

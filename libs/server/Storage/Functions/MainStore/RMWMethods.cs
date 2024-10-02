@@ -276,7 +276,10 @@ namespace Garnet.server
                     }
 
                     long prevEtag = *(long*)value.ToPointer();
-                    long etagFromClient = *(long*)(inputPtr + RespInputHeader.Size);
+
+                    byte* locationOfEtagInInputPtr = inputPtr + input.LengthWithoutMetadata - sizeof (long);
+                    long etagFromClient= *(long*)locationOfEtagInInputPtr;
+
                     if (prevEtag != etagFromClient)
                     {
                         // Cancelling the operation and returning false is used to indicate no RMW because of ETAGMISMATCH
@@ -288,7 +291,7 @@ namespace Garnet.server
                     if (input.Length - RespInputHeader.Size > value.Length) return false;
 
                     // Increment the ETag
-                    *(long*)(input.ToPointer() + RespInputHeader.Size) += 1;
+                    long newEtag = prevEtag + 1;
 
                     // Adjust value length
                     rmwInfo.ClearExtraValueLength(ref recordInfo, ref value, value.TotalSize);
@@ -297,7 +300,12 @@ namespace Garnet.server
 
                     // Copy input to value
                     value.ExtraMetadata = input.ExtraMetadata;
-                    input.AsReadOnlySpan()[RespInputHeader.Size..].CopyTo(value.AsSpan());
+
+                    *(long*)value.ToPointer() = newEtag;
+                    input.AsReadOnlySpan().Slice(0, input.LengthWithoutMetadata - sizeof(long))[RespInputHeader.Size..].CopyTo(value.AsSpan(sizeof(long)));
+
+                    var debugCheck = value.ToPointer();
+
                     rmwInfo.SetUsedValueLength(ref recordInfo, ref value, value.TotalSize);
 
                     CopyRespToWithInput(ref input, ref value, ref output, false, 0, -1, true);
@@ -626,7 +634,10 @@ namespace Garnet.server
                         return false;
 
                     long existingEtag = *(long*)oldValue.ToPointer();
-                    long etagToCheckWith = *(long*)(input.ToPointer() + RespInputHeader.Size);
+
+                    byte* locationOfEtagInInputPtr = inputPtr + input.LengthWithoutMetadata - sizeof (long);
+                    long etagToCheckWith = *(long*)locationOfEtagInInputPtr;
+
                     if (existingEtag != etagToCheckWith)
                     {
                         // cancellation and return false indicates ETag mismatch
@@ -714,11 +725,15 @@ namespace Garnet.server
 
                     // this update is so the early call to send the resp command works, outside of the switch
                     // we are doing a double op of setting the etag to normalize etag update for other operations
-                    *(long*)(input.ToPointer() + RespInputHeader.Size) += 1;
+                    byte* locationOfEtagInInputPtr = inputPtr + input.LengthWithoutMetadata - sizeof (long);
+                    long etagToCheckWith = *(long*)locationOfEtagInInputPtr;
 
                     // Copy input to value
                     newValue.ExtraMetadata = input.ExtraMetadata;
-                    input.AsReadOnlySpan()[RespInputHeader.Size..].CopyTo(newValue.AsSpan());
+
+                    *(long*)newValue.ToPointer() = etagToCheckWith + 1;
+                    input.AsReadOnlySpan().Slice(0, input.LengthWithoutMetadata - sizeof(long))[RespInputHeader.Size..].CopyTo(newValue.AsSpan(sizeof(long)));
+
 
                     // Write Etag and Val back to Client
                     CopyRespToWithInput(ref input, ref newValue, ref output, false, 0, -1, true);
