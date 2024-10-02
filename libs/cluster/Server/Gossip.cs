@@ -167,7 +167,7 @@ namespace Garnet.cluster
                 gsn.Initialize();
 
                 // Send full config in Gossip
-                resp = gsn.Meet(conf.ToByteArray());
+                resp = gsn.TryMeet(conf.ToByteArray());
                 if (resp.Length > 0)
                 {
                     var other = ClusterConfig.FromByteArray(resp.Span.ToArray());
