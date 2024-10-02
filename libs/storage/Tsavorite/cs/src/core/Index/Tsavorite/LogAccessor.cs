@@ -107,7 +107,10 @@ namespace Tsavorite.core
         /// </summary>
         public long MemorySizeBytes => ((long)(allocatorBase.AllocatedPageCount + allocator.OverflowPageCount)) << allocatorBase.LogPageSizeBits;
 
-        public long MaxMemorySizeBytes => (BufferSize - MinEmptyPageCount) * allocatorBase.PageSize;
+        /// <summary>
+        /// Maximum memory size in bytes
+        /// </summary>
+        public long MaxMemorySizeBytes => allocatorBase.MaxMemorySizeBytes;
 
         /// <summary>
         /// Number of pages allocated

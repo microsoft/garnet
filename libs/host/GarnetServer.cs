@@ -200,10 +200,10 @@ namespace Garnet
 
             if (logger != null)
             {
-                var configMemoryLimit = (store.IndexSize * 64) + store.Log.MaxMemorySizeBytes + (store.ReadCache?.MaxMemorySizeBytes ?? 0);
+                var configMemoryLimit = (store.IndexSize * 64) + store.Log.MaxMemorySizeBytes + (store.ReadCache?.MaxMemorySizeBytes ?? 0) + (appendOnlyFile?.MaxMemorySizeBytes ?? 0);
                 if (objectStore != null)
                     configMemoryLimit += objectStore.IndexSize * 64 + objectStore.Log.MaxMemorySizeBytes + (objectStore.ReadCache?.MaxMemorySizeBytes ?? 0) + (objectStoreSizeTracker?.TargetSize ?? 0);
-                logger?.LogInformation("Total configured memory limit: {configMemoryLimit}", configMemoryLimit);
+                logger.LogInformation("Total configured memory limit: {configMemoryLimit}", configMemoryLimit);
             }
 
             // Create Garnet TCP server if none was provided.

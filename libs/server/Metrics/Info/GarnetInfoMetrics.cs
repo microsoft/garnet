@@ -75,6 +75,8 @@ namespace Garnet.server
             var total_object_store_size = -1L;
             var disableObj = storeWrapper.serverOptions.DisableObjects;
 
+            var aof_log_memory_size = storeWrapper.appendOnlyFile?.MemorySizeBytes ?? -1;
+
             if (!disableObj)
             {
                 object_store_index_size = storeWrapper.objectStore.IndexSize * 64;
@@ -123,6 +125,7 @@ namespace Garnet.server
                 new("object_store_read_cache_size", object_store_read_cache_size.ToString()),
                 new("object_store_heap_memory_size", object_store_heap_memory_size.ToString()),
                 new("total_object_store_size", total_object_store_size.ToString()),
+                new("aof_memory_size", aof_log_memory_size.ToString())
             ];
         }
 
