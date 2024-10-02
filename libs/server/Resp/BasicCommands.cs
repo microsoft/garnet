@@ -375,7 +375,7 @@ namespace Garnet.server
                 All we are doing is borrowing the 8 bytes of memory infront of the value span and making it a part of the same spanbyte so we can essentially do the following transformation.
                 [<value><padding><etag>] -> [<value><etag>]
             */
-            
+
             int initialSizeOfValueSpan = value.Length;
             value.Length = initialSizeOfValueSpan + Constants.EtagSize;
             *(long*)(value.ToPointer() + initialSizeOfValueSpan) = etagToCheckWith;

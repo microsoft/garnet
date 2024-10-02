@@ -278,7 +278,7 @@ namespace Garnet.server
                     long prevEtag = *(long*)value.ToPointer();
 
                     byte* locationOfEtagInInputPtr = inputPtr + input.LengthWithoutMetadata - Constants.EtagSize;
-                    long etagFromClient= *(long*)locationOfEtagInInputPtr;
+                    long etagFromClient = *(long*)locationOfEtagInInputPtr;
 
                     if (prevEtag != etagFromClient)
                     {
