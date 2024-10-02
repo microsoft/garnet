@@ -152,38 +152,24 @@ namespace Garnet.cluster
             return primaryLinkStatus;
         }
 
-        private static bool Expired(long expiry)
-            => expiry < DateTimeOffset.UtcNow.Ticks;
+        static bool Expired(long expiry) => expiry < DateTimeOffset.UtcNow.Ticks;
 
         /// <summary>
         /// Pause merge config ops by setting numActiveMerge to MinValue.
         /// Called when FORGET op executes and waits until ongoing merge operations complete before executing FORGET
         /// Multiple FORGET ops can execute at the same time.
         /// </summary>
-        private void PauseConfigMerge()
-            => activeMergeLock.WriteLock();
+        void PauseConfigMerge() => activeMergeLock.WriteLock();
 
         /// <summary>
-        /// Unpause config merge
+        /// Resume config merge
         /// </summary>
-        private void UnpauseConfigMerge()
-            => activeMergeLock.WriteUnlock();
-
-        /// <summary>
-        /// Increment only when numActiveMerge tasks are >= 0 else wait.
-        /// numActiveMerge less than 0 when ongoing FORGET op. Ensures that FORGET is atomic and visible to all Merg ops
-        /// before returning ack to the caller.
-        /// </summary>
-        private void IncrementConfigMerge()
-            => activeMergeLock.ReadLock();
-
-        private void DecrementConfigMerge()
-            => activeMergeLock.ReadUnlock();
+        void ResumeConfigMerge() => activeMergeLock.WriteUnlock();
 
         /// <summary>
         /// Initiate meet and main gossip tasks
         /// </summary>
-        private void TryStartGossipTasks()
+        void TryStartGossipTasks()
         {
             // Start background task for gossip protocol
             for (var i = 2; i <= CurrentConfig.NumWorkers; i++)
@@ -203,7 +189,7 @@ namespace Garnet.cluster
         {
             try
             {
-                IncrementConfigMerge();
+                activeMergeLock.ReadLock();
                 if (workerBanList.ContainsKey(other.LocalNodeId))
                 {
                     logger?.LogTrace("Cannot merge node <{nodeid}> because still in ban list", other.LocalNodeId);
@@ -224,7 +210,7 @@ namespace Garnet.cluster
             }
             finally
             {
-                DecrementConfigMerge();
+                activeMergeLock.ReadUnlock();
             }
         }
 
@@ -234,7 +220,7 @@ namespace Garnet.cluster
         /// <param name="address"></param>
         /// <param name="port"></param>
         public void RunMeetTask(string address, int port)
-            => Task.Run(() => Meet(address, port));
+            => Task.Run(() => TryMeet(address, port));
 
         /// <summary>
         /// Meet will immediately communicate with the new node and try to merge the retrieve configuration to its own.
@@ -242,7 +228,7 @@ namespace Garnet.cluster
         /// </summary>
         /// <param name="address"></param>
         /// <param name="port"></param>
-        public void Meet(string address, int port)
+        void TryMeet(string address, int port)
         {
             GarnetServerNode gsn = null;
             var conf = CurrentConfig;
@@ -267,7 +253,7 @@ namespace Garnet.cluster
                 gsn.Initialize();
 
                 // Send full config in Gossip
-                resp = gsn.TryMeet(conf.ToByteArray());
+                resp = gsn.Meet(conf.ToByteArray());
                 if (resp.Length > 0)
                 {
                     var other = ClusterConfig.FromByteArray(resp.Span.ToArray());
@@ -302,7 +288,7 @@ namespace Garnet.cluster
         /// <summary>
         /// Dispose connections for workers in the ban list
         /// </summary>
-        private void DisposeBannedWorkerConnections()
+        void DisposeBannedWorkerConnections()
         {
             foreach (var w in workerBanList)
             {
@@ -324,7 +310,7 @@ namespace Garnet.cluster
         /// <summary>
         /// Initialize connections for nodes that have either been dispose due to banlist (after expiry) or timeout
         /// </summary>
-        private void InitConnections()
+        void InitConnections()
         {
             DisposeBannedWorkerConnections();
 
@@ -363,7 +349,7 @@ namespace Garnet.cluster
         /// <summary>
         /// Initiate a full broadcast gossip transmission
         /// </summary>
-        public void BroadcastGossipSend()
+        void BroadcastGossipSend()
         {
             // Issue async gossip tasks to all nodes
             uint offset = 0;
@@ -397,7 +383,7 @@ namespace Garnet.cluster
         /// <summary>
         /// Initiate sampling gossip transmission
         /// </summary>
-        public void GossipSampleSend()
+        void GossipSampleSend()
         {
             var nodeCount = clusterConnectionStore.Count;
             var fraction = (int)(Math.Ceiling(nodeCount * (GossipSamplePercent / 100.0f)));
@@ -449,21 +435,9 @@ namespace Garnet.cluster
         }
 
         /// <summary>
-        /// Main method responsible initiating gossip messages
-        /// </summary>
-        public void TransmitGossip()
-        {
-            // Choose between full broadcast or sample gossip to few nodes
-            if (GossipSamplePercent == 100)
-                BroadcastGossipSend();
-            else
-                GossipSampleSend();
-        }
-
-        /// <summary>
         /// Main gossip async task
         /// </summary>
-        private async void GossipMain()
+        async void GossipMain()
         {
             try
             {
@@ -471,7 +445,12 @@ namespace Garnet.cluster
                 {
                     if (ctsGossip.Token.IsCancellationRequested) return;
                     InitConnections();
-                    TransmitGossip();
+
+                    // Choose between full broadcast or sample gossip to few nodes
+                    if (GossipSamplePercent == 100)
+                        BroadcastGossipSend();
+                    else
+                        GossipSampleSend();
 
                     await Task.Delay(gossipDelay, ctsGossip.Token);
                 }

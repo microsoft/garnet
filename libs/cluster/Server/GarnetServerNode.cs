@@ -200,7 +200,7 @@ namespace Garnet.cluster
         /// </summary>
         /// <param name="configByteArray"></param>
         /// <returns></returns>
-        public MemoryResult<byte> TryMeet(byte[] configByteArray)
+        public MemoryResult<byte> Meet(byte[] configByteArray)
         {
             try
             {
