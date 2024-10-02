@@ -3289,6 +3289,24 @@ namespace Garnet.test.Resp.ACL
         }
 
         [Test]
+        public async Task IncrByFloatACLsAsync()
+        {
+            int count = 0;
+
+            await CheckCommandsAsync(
+                "INCRBYFLOAT",
+                [DoIncrByFloatAsync]
+            );
+
+            async Task DoIncrByFloatAsync(GarnetClient client)
+            {
+                var val = await client.ExecuteForStringResultAsync("INCRBYFLOAT", [$"foo-{count}", "2"]);
+                count++;
+                ClassicAssert.AreEqual("2", val);
+            }
+        }
+
+        [Test]
         public async Task InfoACLsAsync()
         {
             await CheckCommandsAsync(
