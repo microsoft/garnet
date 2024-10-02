@@ -3,6 +3,7 @@
 
 using System;
 using System.Collections.Generic;
+using System.Globalization;
 using System.Linq;
 using System.Text;
 using System.Threading;
@@ -860,6 +861,76 @@ namespace Garnet.test
                 ClassicAssert.AreEqual("ERR value is not an integer or out of range.", msg);
             }
             ClassicAssert.IsTrue(exception);
+        }
+
+        [Test]
+        public void SimpleIncrementByFloatWithNoKey()
+        {
+            using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
+            var db = redis.GetDatabase(0);
+            var key = "key1";
+            var incrByValue = 10.5;
+            var expectedResult = incrByValue;
+
+            var actualResultStr = (string)db.Execute("INCRBYFLOAT", [key, incrByValue]);
+            var actualResultRawStr = db.StringGet(key);
+
+            var actualResult = double.Parse(actualResultStr, CultureInfo.InvariantCulture);
+            var actualResultRaw = double.Parse(actualResultRawStr, CultureInfo.InvariantCulture);
+
+            Assert.That(actualResult, Is.EqualTo(expectedResult).Within(1.0 / Math.Pow(10, 15)));
+            Assert.That(actualResult, Is.EqualTo(actualResultRaw).Within(1.0 / Math.Pow(10, 15)));
+        }
+
+        [Test]
+        [TestCase(0, 12.6)]
+        [TestCase(12.6, 0)]
+        [TestCase(10, 10)]
+        [TestCase(910151, 0.23659)]
+        [TestCase(663.12336412, 12342.3)]
+        [TestCase(10, -110)]
+        [TestCase(110, -110.234)]
+        [TestCase(-2110.95255555, -110.234)]
+        [TestCase(-2110.95255555, 100000.526654512219412)]
+        [TestCase(double.MaxValue, double.MinValue)]
+        public void SimpleIncrementByFloat(double initialValue, double incrByValue)
+        {
+            using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
+            var db = redis.GetDatabase(0);
+            var key = "key1";
+            db.StringSet(key, initialValue);
+            var expectedResult = initialValue + incrByValue;
+
+            var actualResultStr = (string)db.Execute("INCRBYFLOAT", [key, incrByValue]);
+            var actualResultRawStr = db.StringGet(key);
+
+            var actualResult = double.Parse(actualResultStr, CultureInfo.InvariantCulture);
+            var actualResultRaw = double.Parse(actualResultRawStr, CultureInfo.InvariantCulture);
+
+            Assert.That(actualResult, Is.EqualTo(expectedResult).Within(1.0 / Math.Pow(10, 15)));
+            Assert.That(actualResult, Is.EqualTo(actualResultRaw).Within(1.0 / Math.Pow(10, 15)));
+        }
+
+        [Test]
+        [TestCase(double.MinValue, double.MinValue)]
+        [TestCase(double.MaxValue, double.MaxValue)]
+        [TestCase("abc", 10)]
+        [TestCase(10, "xyz")]
+        public void SimpleIncrementByFloatWithInvalidFloat(object initialValue, object incrByValue)
+        {
+            using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
+            var db = redis.GetDatabase(0);
+            var key = "key1";
+            if (initialValue is double)
+            {
+                db.StringSet(key, (double)initialValue);
+            }
+            else if (initialValue is string)
+            {
+                db.StringSet(key, (string)initialValue);
+            }
+
+            Assert.Throws<RedisServerException>(() => db.Execute("INCRBYFLOAT", key, incrByValue));
         }
 
         [Test]

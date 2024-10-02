@@ -723,13 +723,14 @@ namespace Garnet.server
             where TGarnetApi : IGarnetApi
         {
             Debug.Assert(cmd == RespCommand.INCRBY || cmd == RespCommand.DECRBY || cmd == RespCommand.INCR ||
-                         cmd == RespCommand.DECR);
+                         cmd == RespCommand.DECR || cmd == RespCommand.INCRBYFLOAT);
 
             var key = parseState.GetArgSliceByRef(0);
             var sbKey = key.SpanByte;
 
             ArgSlice input = default;
-            if (cmd == RespCommand.INCRBY || cmd == RespCommand.DECRBY)
+            var isFloat = cmd == RespCommand.INCRBYFLOAT;
+            if (cmd == RespCommand.INCRBY || cmd == RespCommand.DECRBY || isFloat)
             {
                 // Parse value argument
                 // NOTE: Parse empty strings for better error messages through storageApi.Increment
@@ -760,24 +761,43 @@ namespace Garnet.server
                 input = new ArgSlice(valPtr, vSize);
             }
 
-            Span<byte> outputBuffer = stackalloc byte[NumUtils.MaximumFormatInt64Length + 1];
+            Span<byte> outputBuffer = isFloat ? stackalloc byte[NumUtils.MaximumFormatDoubleLength + 1] : stackalloc byte[NumUtils.MaximumFormatInt64Length + 1];
             var output = ArgSlice.FromPinnedSpan(outputBuffer);
 
             storageApi.Increment(key, input, ref output);
-            var errorFlag = output.Length == NumUtils.MaximumFormatInt64Length + 1
+
+            var errorFlag = OperationError.SUCCESS;
+            errorFlag = output.Length == (isFloat ? NumUtils.MaximumFormatDoubleLength : NumUtils.MaximumFormatInt64Length) + 1
                 ? (OperationError)output.Span[0]
                 : OperationError.SUCCESS;
 
             switch (errorFlag)
             {
                 case OperationError.SUCCESS:
-                    while (!RespWriteUtils.WriteIntegerFromBytes(outputBuffer.Slice(0, output.Length), ref dcurr, dend))
-                        SendAndReset();
+                    if (isFloat)
+                    {
+                        while (!RespWriteUtils.WriteBulkString(outputBuffer.Slice(0, output.Length), ref dcurr, dend))
+                            SendAndReset();
+                    }
+                    else
+                    {
+                        while (!RespWriteUtils.WriteIntegerFromBytes(outputBuffer.Slice(0, output.Length), ref dcurr, dend))
+                            SendAndReset();
+                    }
                     break;
                 case OperationError.INVALID_TYPE:
-                    while (!RespWriteUtils.WriteError(CmdStrings.RESP_ERR_GENERIC_VALUE_IS_NOT_INTEGER, ref dcurr,
-                               dend))
-                        SendAndReset();
+                    if (isFloat)
+                    {
+                        while (!RespWriteUtils.WriteError(CmdStrings.RESP_ERR_NOT_VALID_FLOAT, ref dcurr,
+                                   dend))
+                            SendAndReset();
+                    }
+                    else
+                    {
+                        while (!RespWriteUtils.WriteError(CmdStrings.RESP_ERR_GENERIC_VALUE_IS_NOT_INTEGER, ref dcurr,
+                                   dend))
+                            SendAndReset();
+                    }
                     break;
                 default:
                     throw new GarnetException($"Invalid OperationError {errorFlag}");

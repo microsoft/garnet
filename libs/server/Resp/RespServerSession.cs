@@ -526,6 +526,7 @@ namespace Garnet.server
                 RespCommand.STRLEN => NetworkSTRLEN(ref storageApi),
                 RespCommand.INCR => NetworkIncrement(RespCommand.INCR, ref storageApi),
                 RespCommand.INCRBY => NetworkIncrement(RespCommand.INCRBY, ref storageApi),
+                RespCommand.INCRBYFLOAT => NetworkIncrement(RespCommand.INCRBYFLOAT, ref storageApi),
                 RespCommand.DECR => NetworkIncrement(RespCommand.DECR, ref storageApi),
                 RespCommand.DECRBY => NetworkIncrement(RespCommand.DECRBY, ref storageApi),
                 RespCommand.SETBIT => NetworkStringSetBit(ref storageApi),

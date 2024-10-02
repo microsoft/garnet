@@ -377,6 +377,24 @@ namespace Garnet.server
             return true;
         }
 
+        static bool InPlaceUpdateNumber(double val, ref SpanByte value, ref SpanByteAndMemory output, ref RMWInfo rmwInfo, ref RecordInfo recordInfo)
+        {
+            var ndigits = NumUtils.NumOfCharInDouble(val, out var _, out var _, out var _);
+
+            if (ndigits > value.LengthWithoutMetadata)
+                return false;
+
+            rmwInfo.ClearExtraValueLength(ref recordInfo, ref value, value.TotalSize);
+            value.ShrinkSerializedLength(ndigits + value.MetadataSize);
+            _ = NumUtils.DoubleToSpanByte(val, value.AsSpan());
+            rmwInfo.SetUsedValueLength(ref recordInfo, ref value, value.TotalSize);
+
+            Debug.Assert(output.IsSpanByte, "This code assumes it is called in-place and did not go pending");
+            value.AsReadOnlySpan().CopyTo(output.SpanByte.AsSpan());
+            output.SpanByte.Length = value.LengthWithoutMetadata;
+            return true;
+        }
+
         static bool TryInPlaceUpdateNumber(ref SpanByte value, ref SpanByteAndMemory output, ref RMWInfo rmwInfo, ref RecordInfo recordInfo, long input)
         {
             // Check if value contains a valid number
@@ -396,9 +414,33 @@ namespace Garnet.server
             return InPlaceUpdateNumber(val, ref value, ref output, ref rmwInfo, ref recordInfo);
         }
 
+        static bool TryInPlaceUpdateNumber(ref SpanByte value, ref SpanByteAndMemory output, ref RMWInfo rmwInfo, ref RecordInfo recordInfo, double input)
+        {
+            // Check if value contains a valid number
+            if (!IsValidDouble(value.LengthWithoutMetadata, value.ToPointer(), output.SpanByte.AsSpan(), out var val))
+                return true;
+
+            val += input;
+
+            if (!double.IsFinite(val))
+            {
+                output.SpanByte.AsSpan()[0] = (byte)OperationError.INVALID_TYPE;
+                return true;
+            }
+
+            return InPlaceUpdateNumber(val, ref value, ref output, ref rmwInfo, ref recordInfo);
+        }
+
         static void CopyUpdateNumber(long next, ref SpanByte newValue, ref SpanByteAndMemory output)
         {
             NumUtils.LongToSpanByte(next, newValue.AsSpan());
+            newValue.AsReadOnlySpan().CopyTo(output.SpanByte.AsSpan());
+            output.SpanByte.Length = newValue.LengthWithoutMetadata;
+        }
+
+        static void CopyUpdateNumber(double next, ref SpanByte newValue, ref SpanByteAndMemory output)
+        {
+            NumUtils.DoubleToSpanByte(next, newValue.AsSpan());
             newValue.AsReadOnlySpan().CopyTo(output.SpanByte.AsSpan());
             output.SpanByte.Length = newValue.LengthWithoutMetadata;
         }
@@ -439,6 +481,37 @@ namespace Garnet.server
         }
 
         /// <summary>
+        /// Copy update from old value to new value while also validating whether oldValue is a numerical value.
+        /// </summary>
+        /// <param name="oldValue">Old value copying from</param>
+        /// <param name="newValue">New value copying to</param>
+        /// <param name="output">Output value</param>
+        /// <param name="input">Parsed input value</param>
+        static void TryCopyUpdateNumber(ref SpanByte oldValue, ref SpanByte newValue, ref SpanByteAndMemory output, double input)
+        {
+            newValue.ExtraMetadata = oldValue.ExtraMetadata;
+
+            // Check if value contains a valid number
+            if (!IsValidDouble(oldValue.LengthWithoutMetadata, oldValue.ToPointer(), output.SpanByte.AsSpan(), out var val))
+            {
+                // Move to tail of the log even when oldValue is alphanumeric
+                // We have already paid the cost of bringing from disk so we are treating as a regular access and bring it into memory
+                oldValue.CopyTo(ref newValue);
+                return;
+            }
+
+            val += input;
+            if (!double.IsFinite(val))
+            {
+                output.SpanByte.AsSpan()[0] = (byte)OperationError.INVALID_TYPE;
+                return;
+            }
+
+            // Move to tail of the log and update
+            CopyUpdateNumber(val, ref newValue, ref output);
+        }
+
+        /// <summary>
         /// Parse ASCII byte array into long and validate that only contains ASCII decimal characters
         /// </summary>
         /// <param name="length">Length of byte array</param>
@@ -453,6 +526,28 @@ namespace Garnet.server
             {
                 // Check for valid number
                 if (!NumUtils.TryBytesToLong(length, source, out val))
+                {
+                    // Signal value is not a valid number
+                    output[0] = (byte)OperationError.INVALID_TYPE;
+                    return false;
+                }
+            }
+            catch
+            {
+                // Signal value is not a valid number
+                output[0] = (byte)OperationError.INVALID_TYPE;
+                return false;
+            }
+            return true;
+        }
+
+        static bool IsValidDouble(int length, byte* source, Span<byte> output, out double val)
+        {
+            val = 0;
+            try
+            {
+                // Check for valid number
+                if (!NumUtils.TryBytesToDouble(length, source, out val) || !double.IsFinite(val))
                 {
                     // Signal value is not a valid number
                     output[0] = (byte)OperationError.INVALID_TYPE;

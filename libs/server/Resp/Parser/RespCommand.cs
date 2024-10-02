@@ -97,6 +97,7 @@ namespace Garnet.server
         HSETNX,
         INCR,
         INCRBY,
+        INCRBYFLOAT,
         LINSERT,
         LMOVE,
         LMPOP,
@@ -1345,6 +1346,10 @@ namespace Garnet.server
                                 else if (*(ulong*)(ptr + 2) == MemoryMarshal.Read<ulong>("1\r\nSINTE"u8) && *(ulong*)(ptr + 10) == MemoryMarshal.Read<ulong>("RSTORE\r\n"u8))
                                 {
                                     return RespCommand.SINTERSTORE;
+                                }
+                                else if (*(ulong*)(ptr + 2) == MemoryMarshal.Read<ulong>("1\r\nINCRB"u8) && *(ulong*)(ptr + 10) == MemoryMarshal.Read<ulong>("YFLOAT\r\n"u8))
+                                {
+                                    return RespCommand.INCRBYFLOAT;
                                 }
                                 break;
 

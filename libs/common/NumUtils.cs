@@ -13,6 +13,7 @@ namespace Garnet.common
     public static unsafe class NumUtils
     {
         public const int MaximumFormatInt64Length = 20;   // 19 + sign (i.e. -9223372036854775808)
+        public const int MaximumFormatDoubleLength = 310;   // (i.e. -1.7976931348623157E+308)
 
         /// <summary>
         /// Convert long number into sequence of ASCII bytes
@@ -76,6 +77,80 @@ namespace Garnet.common
         }
 
         /// <summary>
+        /// Convert double number into sequence of ASCII bytes
+        /// </summary>
+        /// <param name="value">Value to convert</param>
+        /// <param name="dest">Span Byte</param>
+        /// <returns>Length of number in result</returns>
+        public static int DoubleToSpanByte(double value, Span<byte> dest)
+        {
+            int totalLen = NumOfCharInDouble(value, out var integerDigits, out var signSize, out var fractionalDigits);
+            bool isNegative = value < 0;
+            if (totalLen > dest.Length)
+                return 0;
+            fixed (byte* ptr = dest)
+            {
+                byte* curr = ptr;
+                DoubleToBytes(value, integerDigits, fractionalDigits, ref curr);
+            }
+
+            return totalLen;
+        }
+
+        /// <summary>
+        /// Convert double into sequence of ASCII bytes
+        /// </summary>
+        /// <param name="value">Double value to convert</param>
+        /// <param name="length">Number of digits in value</param>
+        /// <param name="result">Byte pointer, will be updated to point after the written number</param>
+        public static unsafe void DoubleToBytes(double value, int integerDigits, int fractionalDigits, ref byte* result)
+        {
+            Debug.Assert(!double.IsNaN(value) && !double.IsInfinity(value), "Cannot convert NaN or Infinity to bytes.");
+
+            if (value == 0)
+            {
+                *result++ = (byte)'0';
+                return;
+            }
+
+            bool isNegative = value < 0;
+            if (isNegative)
+            {
+                *result++ = (byte)'-';
+                value = -value;
+            }
+
+            result += integerDigits;
+            var integerPart = Math.Truncate(value);
+            double fractionalPart = fractionalDigits > 0 ? Math.Round(value - integerPart, fractionalDigits) : 0;
+
+            // Convert integer part
+            do
+            {
+                *--result = (byte)((byte)'0' + (integerPart % 10));
+                integerPart /= 10;
+            } while (integerPart >= 1);
+            result += integerDigits;
+
+            if (fractionalDigits > 0)
+            {
+                // Add decimal point
+                *result++ = (byte)'.';
+
+                // Convert fractional part
+                for (int i = 0; i < fractionalDigits; i++)
+                {
+                    fractionalPart *= 10;
+                    int digit = (int)fractionalPart;
+                    *result++ = (byte)((byte)'0' + digit);
+                    fractionalPart = Math.Round(fractionalPart - digit, fractionalDigits - i - 1);
+                }
+
+                result--; // Move back to the last digit
+            }
+        }
+
+        /// <summary>
         /// Convert sequence of ASCII bytes into long number
         /// </summary>
         /// <param name="source">Source bytes</param>
@@ -131,6 +206,45 @@ namespace Garnet.common
 
             // Do not allow leading zeros
             if (len > 1 && *beg == '0')
+                return false;
+
+            // Parse number and check consumed bytes to avoid alphanumeric strings
+            if (!TryParse(new ReadOnlySpan<byte>(beg, len), out result))
+                return false;
+
+            // Negate if parsed value has a leading negative sign
+            result = fNeg ? -result : result;
+            return true;
+        }
+
+        /// <summary>
+        /// Convert sequence of ASCII bytes into double number
+        /// </summary>
+        /// <param name="source">Source bytes</param>
+        /// <param name="result">Double value extracted from sequence</param>
+        /// <returns>True if sequence contains only numeric digits, otherwise false</returns>
+        public static bool TryBytesToDouble(ReadOnlySpan<byte> source, out double result)
+        {
+            fixed (byte* ptr = source)
+                return TryBytesToDouble(source.Length, ptr, out result);
+        }
+
+        /// <summary>
+        /// Convert sequence of ASCII bytes into double number
+        /// </summary>
+        /// <param name="length">Length of number</param>
+        /// <param name="source">Source bytes</param>
+        /// <param name="result">Double value extracted from sequence</param>
+        /// <returns>True if sequence contains only numeric digits, otherwise false</returns>
+        public static bool TryBytesToDouble(int length, byte* source, out double result)
+        {
+            var fNeg = *source == '-';
+            var beg = fNeg ? source + 1 : source;
+            var len = fNeg ? length - 1 : length;
+            result = 0;
+
+            // Do not allow leading zeros
+            if (len > 1 && *beg == '0' && *(beg + 1) != '.')
                 return false;
 
             // Parse number and check consumed bytes to avoid alphanumeric strings
@@ -368,6 +482,38 @@ namespace Garnet.common
             if (v < 100000000000000000L) return 17;
             if (v < 1000000000000000000L) return 18;
             return 19;
+        }
+
+        /// <summary>
+        /// Return number of digits in given double number incluing the decimal part and `.` character
+        /// </summary>
+        /// <param name="v">Double value</param>
+        /// <returns>Number of digits in the integer part of the double value</returns>
+        public static int NumOfCharInDouble(double v, out int integerDigits, out byte signSize, out int fractionalDigits)
+        {
+            if (v == 0)
+            {
+                integerDigits = 1;
+                signSize = 0;
+                fractionalDigits = 0;
+                return 1;
+            }
+
+            Debug.Assert(!double.IsNaN(v) && !double.IsInfinity(v)); 
+
+            signSize = (byte)(v < 0 ? 1 : 0); // Add sign if the number is negative
+            v = Math.Abs(v);
+            integerDigits = (int)Math.Log10(v) + 1;
+
+            fractionalDigits = 0; // Max of 15 significant digits
+            while (fractionalDigits <= 14 && Math.Abs(v - Math.Round(v, fractionalDigits)) > 2 * Double.Epsilon) // 2 * Double.Epsilon is used to handle floating point errors
+            {
+                fractionalDigits++;
+            }
+
+            var dotSize = fractionalDigits != 0 ? 1 : 0; // Add decimal point if there are significant digits
+
+            return signSize + integerDigits + dotSize + fractionalDigits;
         }
 
         /// <inheritdoc cref="Utf8Parser.TryParse(ReadOnlySpan{byte}, out int, out int, char)"/>
