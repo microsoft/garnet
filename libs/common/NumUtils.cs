@@ -499,7 +499,7 @@ namespace Garnet.common
                 return 1;
             }
 
-            Debug.Assert(!double.IsNaN(v) && !double.IsInfinity(v)); 
+            Debug.Assert(!double.IsNaN(v) && !double.IsInfinity(v));
 
             signSize = (byte)(v < 0 ? 1 : 0); // Add sign if the number is negative
             v = Math.Abs(v);
