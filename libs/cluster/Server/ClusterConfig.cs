@@ -897,34 +897,38 @@ namespace Garnet.cluster
                     other.workers[i].Role,
                     other.workers[i].ReplicaOfNodeId,
                     other.workers[i].hostname,
-                    other.GetSlotList(i));
+                    other.slotMap,
+                    i);
             }
             return newConfig;
         }
 
         private ClusterConfig InPlaceUpdateWorker(
-            string nodeid,
+            string nodeId,
             string address,
             int port,
             long configEpoch,
             NodeRole role,
             string replicaOfNodeId,
             string hostname,
-            List<int> slots)
+            HashSlot[] inSlotMap,
+            ushort inWorkerId)
         {
             ushort workerId = 0;
+            // Find workerId offset from my local configuration
             for (var i = 1; i < workers.Length; i++)
             {
-                if (workers[i].Nodeid.Equals(nodeid, StringComparison.OrdinalIgnoreCase))
+                if (workers[i].Nodeid.Equals(nodeId, StringComparison.OrdinalIgnoreCase))
                 {
-                    //Skip update if received config is smaller or equal than local worker epoch
-                    //Update only if received config epoch is strictly greater
+                    // Skip update if received config is smaller or equal than local worker epoch
+                    // Update only if received config epoch is strictly greater
                     if (configEpoch <= workers[i].ConfigEpoch) return this;
                     workerId = (ushort)i;
                     break;
                 }
             }
 
+            // If we reached this point we can update the worker metadata
             var newWorkers = workers;
             if (workerId == 0)
             {
@@ -932,23 +936,27 @@ namespace Garnet.cluster
                 workerId = (ushort)workers.Length;
                 Array.Copy(workers, newWorkers, workers.Length);
             }
-
             newWorkers[workerId].Address = address;
             newWorkers[workerId].Port = port;
-            newWorkers[workerId].Nodeid = nodeid;
+            newWorkers[workerId].Nodeid = nodeId;
             newWorkers[workerId].ConfigEpoch = configEpoch;
             newWorkers[workerId].Role = role;
             newWorkers[workerId].ReplicaOfNodeId = replicaOfNodeId;
             newWorkers[workerId].hostname = hostname;
 
+            // Create a copy of the local slotMap
             var newSlotMap = new HashSlot[MAX_HASH_SLOT_VALUE];
-            Array.Copy(slotMap, newSlotMap, slotMap.Length);
-            if (slots != null)
+            Array.Copy(slotMap, newSlotMap, inSlotMap.Length);
+            for (var i = 0; i < MAX_HASH_SLOT_VALUE; i++)
             {
-                foreach (int slot in slots)
+                var ownerId = newSlotMap[i].workerId;
+                // Update slot ownership if all of the below hold
+                // 1. Slot owned by the inWorker and is in stable state
+                // 2. ConfigEpoch of current owner is less than ConfigEpoch of node claiming ownership
+                if (inSlotMap[i].workerId == inWorkerId && inSlotMap[i]._state == SlotState.STABLE && newWorkers[ownerId].ConfigEpoch < configEpoch)
                 {
-                    newSlotMap[slot]._workerId = workerId;
-                    newSlotMap[slot]._state = SlotState.STABLE;
+                    newSlotMap[i]._workerId = workerId;
+                    newSlotMap[i]._state = SlotState.STABLE;
                 }
             }
 
