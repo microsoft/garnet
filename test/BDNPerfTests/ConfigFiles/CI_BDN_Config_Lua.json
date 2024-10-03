@@ -9,16 +9,16 @@
     "expectedBasicLuaRunner1MeanValue_win": 111,
     "expectedBasicLuaRunner2MeanValue_win": 173,
     "expectedBasicLuaRunner3MeanValue_win": 686,
-    "expectedBasicLua4RunnerMeanValue_win": 2711,
+    "expectedBasicLuaRunner4MeanValue_win": 2711,
 
     "expectedBasicLuaRunner1AllocatedValue_linux": 24,
     "expectedBasicLuaRunner2AllocatedValue_linux": 144,
     "expectedBasicLuaRunner3AllocatedValue_linux": 328,
-    "expectedBasicLua4RunnerAllocatedValue_linux": 864,
+    "expectedBasicLuaRunner4AllocatedValue_linux": 864,
     "expectedBasicLuaRunner1AllocatedValue_win": 24,
     "expectedBasicLuaRunner2AllocatedValue_win": 144,
     "expectedBasicLuaRunner3AllocatedValue_win": 328,
-    "expectedBasicLua4RunnerAllocatedValue_win": 864,
+    "expectedBasicLuaRunner4AllocatedValue_win": 864,
 
 
     "expectedBasicLua1MeanValue_linux": 169,

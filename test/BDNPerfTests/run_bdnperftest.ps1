@@ -39,7 +39,7 @@ function AnalyzeResult {
     [double] $LowerBound = $expectedResultValue * (1 - $Tolerance)
     [double] $UpperBound = $expectedResultValue * (1 + $Tolerance)
     [double] $dblfoundResultValue = $foundResultValue
-    
+
     # Check if the actual value is within the bounds
     if ($dblfoundResultValue -ge $LowerBound -and $dblfoundResultValue -le $UpperBound) {
         Write-Host "**   ** PASS! **  Test Value result ($dblfoundResultValue) is in the acceptable range +/-$acceptablePercentRange% ($LowerBound -> $UpperBound) of expected value: $expectedResultValue " 
@@ -131,6 +131,7 @@ if ($IsLinux) {
     $expectedSetMeanValue = $object.expectedSETMeanValue_linux
     $expectedSetEXMeanValue = $object.expectedSETEXMeanValue_linux
     $expectedGetMeanValue = $object.expectedGETMeanValue_linux
+
     $expectedZAddRemMeanValue = $object.expectedZAddRemMeanValue_linux
     $expectedLPushPopMeanValue = $object.expectedLPushPopMeanValue_linux
     $expectedSAddRemMeanValue = $object.expectedSAddRemMeanValue_linux
@@ -141,22 +142,24 @@ if ($IsLinux) {
     $expectedSAddRemAllocatedValue = $object.expectedSAddRemAllocatedValue_linux
     $expectedHSetDelAllocatedValue = $object.expectedHSetDelAllocatedValue_linux
     $expectedMyDictSetGetAllocatedValue = $object.expectedMyDictSetGetAllocatedValue_linux
-
+    
     $expectedMGetMeanValue = $object.expectedMGETMeanValue_linux
     $expectedMSetMeanValue = $object.expectedMSETMeanValue_linux
     $expectedIncrMeanValue = $object.expectedIncrMeanValue_linux
+
     $expectedBasicLua1MeanValue = $object.expectedBasicLua1MeanValue_linux
     $expectedBasicLua2MeanValue = $object.expectedBasicLua2MeanValue_linux
     $expectedBasicLua3MeanValue = $object.expectedBasicLua3MeanValue_linux
     $expectedBasicLua4MeanValue = $object.expectedBasicLua4MeanValue_linux
+    $expectedBasicLua1AllocatedValue = $object.expectedBasicLua1AllocatedValue_linux
+    $expectedBasicLua2AllocatedValue = $object.expectedBasicLua2AllocatedValue_linux
+    $expectedBasicLua3AllocatedValue = $object.expectedBasicLua3AllocatedValue_linux
+    $expectedBasicLua4AllocatedValue = $object.expectedBasicLua4AllocatedValue_linux
+
     $expectedBasicLuaRunner1MeanValue = $object.expectedBasicLuaRunner1MeanValue_linux
     $expectedBasicLuaRunner2MeanValue = $object.expectedBasicLuaRunner2MeanValue_linux
     $expectedBasicLuaRunner3MeanValue = $object.expectedBasicLuaRunner3MeanValue_linux
     $expectedBasicLuaRunner4MeanValue = $object.expectedBasicLuaRunner4MeanValue_linux
-    $expectedBasicLua1MeanValue = $object.expectedBasicLua1MeanValue_linux
-    $expectedBasicLua2MeanValue = $object.expectedBasicLua2MeanValue_linux
-    $expectedBasicLua3MeanValue = $object.expectedBasicLua3MeanValue_linux
-    $expectedBasicLua4MeanValue = $object.expectedBasicLua3MeanValue_linux
     $expectedBasicLuaRunner1AllocatedValue = $object.expectedBasicLuaRunner1AllocatedValue_linux
     $expectedBasicLuaRunner2AllocatedValue = $object.expectedBasicLuaRunner2AllocatedValue_linux
     $expectedBasicLuaRunner3AllocatedValue = $object.expectedBasicLuaRunner3AllocatedValue_linux
@@ -169,6 +172,7 @@ else {
     $expectedSetMeanValue = $object.expectedSETMeanValue_win
     $expectedSetEXMeanValue = $object.expectedSETEXMeanValue_win
     $expectedGetMeanValue = $object.expectedGETMeanValue_win
+
     $expectedZAddRemMeanValue = $object.expectedZAddRemMeanValue_win
     $expectedLPushPopMeanValue = $object.expectedLPushPopMeanValue_win
     $expectedSAddRemMeanValue = $object.expectedSAddRemMeanValue_win
@@ -183,19 +187,24 @@ else {
     $expectedMGetMeanValue = $object.expectedMGETMeanValue_win
     $expectedMSetMeanValue = $object.expectedMSETMeanValue_win
     $expectedIncrMeanValue = $object.expectedIncrMeanValue_win
+
     $expectedBasicLua1MeanValue = $object.expectedBasicLua1MeanValue_win
     $expectedBasicLua2MeanValue = $object.expectedBasicLua2MeanValue_win
     $expectedBasicLua3MeanValue = $object.expectedBasicLua3MeanValue_win
-    $expectedBasicLua4MeanValue = $object.expectedBasicLua3MeanValue_win
+    $expectedBasicLua4MeanValue = $object.expectedBasicLua4MeanValue_win
+    $expectedBasicLua1AllocatedValue = $object.expectedBasicLua1AllocatedValue_win
+    $expectedBasicLua2AllocatedValue = $object.expectedBasicLua2AllocatedValue_win
+    $expectedBasicLua3AllocatedValue = $object.expectedBasicLua3AllocatedValue_win
+    $expectedBasicLua4AllocatedValue = $object.expectedBasicLua4AllocatedValue_win
+
     $expectedBasicLuaRunner1MeanValue = $object.expectedBasicLuaRunner1MeanValue_win
     $expectedBasicLuaRunner2MeanValue = $object.expectedBasicLuaRunner2MeanValue_win
     $expectedBasicLuaRunner3MeanValue = $object.expectedBasicLuaRunner3MeanValue_win
-    $expectedBasicLuaRunner4MeanValue = $object.expectedBasicLuaRunner3MeanValue_win
+    $expectedBasicLuaRunner4MeanValue = $object.expectedBasicLuaRunner4MeanValue_win
     $expectedBasicLuaRunner1AllocatedValue = $object.expectedBasicLuaRunner1AllocatedValue_win
     $expectedBasicLuaRunner2AllocatedValue = $object.expectedBasicLuaRunner2AllocatedValue_win
     $expectedBasicLuaRunner3AllocatedValue = $object.expectedBasicLuaRunner3AllocatedValue_win
     $expectedBasicLuaRunner4AllocatedValue = $object.expectedBasicLuaRunner4AllocatedValue_win
-
 }
 
 # percent allowed variance when comparing expected vs actual found value - same for linux and windows. 
@@ -528,7 +537,6 @@ Get-Content $resultsFile | ForEach-Object {
                 $testSuiteResult = $false
             }
         }
-
     }
 }
 
