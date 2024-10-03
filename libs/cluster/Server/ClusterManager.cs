@@ -215,7 +215,7 @@ namespace Garnet.cluster
                     return false;
                 }
 
-                var newConfig = currentConfig.SetLocalWorkerConfigEpoch(configEpoch);
+                var newConfig = current.SetLocalWorkerConfigEpoch(configEpoch);
                 if (newConfig == null)
                 {
                     errorMessage = CmdStrings.RESP_ERR_GENERIC_CONFIG_EPOCH_NOT_SET;
@@ -238,7 +238,7 @@ namespace Garnet.cluster
             while (true)
             {
                 var current = currentConfig;
-                var newConfig = currentConfig.BumpLocalNodeConfigEpoch();
+                var newConfig = current.BumpLocalNodeConfigEpoch();
                 if (Interlocked.CompareExchange(ref currentConfig, newConfig, current) == current)
                     break;
             }
