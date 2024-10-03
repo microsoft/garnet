@@ -74,7 +74,16 @@ param ($ResultsLine, $columnNum)
     # Remove the leading and trailing pipes and split the string by '|'
     $columns = $ResultsLine.Trim('|').Split('|') 
     $column = $columns | ForEach-Object { $_.Trim() }
-    $foundValue = $column[$columnNum].Trim(' us') 
+    $foundValue = $column[$columnNum] 
+
+    # Have case where put column before the 5th one - differs from Linux to Windows
+    if ($foundValue -eq "-") {
+        $columnNum = [int]$columnNum
+        $columnNum+=1
+        $foundValue = $column[$columnNum]
+    }
+
+    $foundValue = $foundValue.Trim(' us')  
     $foundValue = $foundValue.Trim(' ns')  
     $foundValue = $foundValue.Trim(' B')  
 
