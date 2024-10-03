@@ -295,7 +295,7 @@ namespace Garnet.cluster
         public long GetMaxConfigEpoch()
         {
             long mx = 0;
-            for (int i = 1; i <= NumWorkers; i++)
+            for (var i = 1; i <= NumWorkers; i++)
                 mx = Math.Max(workers[i].ConfigEpoch, mx);
             return mx;
         }
