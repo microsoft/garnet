@@ -130,8 +130,6 @@ if ($IsLinux) {
     $allocatedLuaColumn = "4"
 }
 
-
-
 # Set the expected values based on the OS
 if ($IsLinux) {
     # Linux expected values
@@ -275,276 +273,174 @@ Get-Content $resultsFile | ForEach-Object {
         "*| InlinePing*" {
             Write-Output "** InlinePing Mean Value test"
             $foundInLinePingMeanValue = ParseValueFromResults $line $meanColumn
-            $currentResults = AnalyzeResult $foundInLinePingMeanValue $expectedInLinePingMeanValue $acceptableMeanRange $true
-            if ($currentResults -eq $false) {
-                $testSuiteResult = $false
-            }
+            $testSuiteResult = $testSuiteResult -and (AnalyzeResult $foundInLinePingMeanValue $expectedInLinePingMeanValue $acceptableMeanRange $true)
         }
         # This one a bit different as need extra space in the check so doesn't pick up other Set* calls
         "*| Set *" {
             Write-Host "** Set Mean Value test"
             $foundSetMeanValue = ParseValueFromResults $line $meanColumn
-            $currentResults = AnalyzeResult $foundSetMeanValue $expectedSetMeanValue $acceptableMeanRange $true
-            if ($currentResults -eq $false) {
-                $testSuiteResult = $false
-            }
+            $testSuiteResult = $testSuiteResult -and (AnalyzeResult $foundSetMeanValue $expectedSetMeanValue $acceptableMeanRange $true)
         }
         "*| SetEx*" {
             Write-Host "** SetEx Mean Value test"
             $foundSetExMeanValue = ParseValueFromResults $line $meanColumn
-            $currentResults = AnalyzeResult $foundSetExMeanValue $expectedSETEXMeanValue $acceptableMeanRange $true
-            if ($currentResults -eq $false) {
-                $testSuiteResult = $false
-            }
+            $testSuiteResult = $testSuiteResult -and (AnalyzeResult $foundSetExMeanValue $expectedSETEXMeanValue $acceptableMeanRange $true)
         }
         "*| Get*" {
             Write-Host "** Get Mean Value test"
             $foundGetMeanValue = ParseValueFromResults $line $meanColumn
-            $currentResults = AnalyzeResult $foundGetMeanValue $expectedGetMeanValue $acceptableMeanRange $true
-            if ($currentResults -eq $false) {
-                $testSuiteResult = $false
-            }
+            $testSuiteResult = $testSuiteResult -and (AnalyzeResult $foundGetMeanValue $expectedGetMeanValue $acceptableMeanRange $true)
         }
         "*| ZAddRem*" {
             Write-Host "** ZAddRem Mean Value test"
             $foundZAddRemMeanValue = ParseValueFromResults $line $meanColumn
-            $currentResults = AnalyzeResult $foundZAddRemMeanValue $expectedZAddRemMeanValue $acceptableMeanRange $true
-            if ($currentResults -eq $false) {
-                $testSuiteResult = $false
-            }
+            $testSuiteResult = $testSuiteResult -and (AnalyzeResult $foundZAddRemMeanValue $expectedZAddRemMeanValue $acceptableMeanRange $true)
         }
         "*| LPushPop*" {
             Write-Host "** LPushPop Mean Value test"
             $foundLPushPopMeanValue = ParseValueFromResults $line $meanColumn
-            $currentResults = AnalyzeResult $foundLPushPopMeanValue $expectedLPushPopMeanValue $acceptableMeanRange $true
-            if ($currentResults -eq $false) {
-                $testSuiteResult = $false
-            }
+            $testSuiteResult = $testSuiteResult -and (AnalyzeResult $foundLPushPopMeanValue $expectedLPushPopMeanValue $acceptableMeanRange $true)
         }
         "*| SAddRem*" {
             Write-Host "** SAddRem Mean Value test"
             $foundSAddRemMeanValue = ParseValueFromResults $line $meanColumn
-            $currentResults = AnalyzeResult $foundSAddRemMeanValue $expectedSAddRemMeanValue $acceptableMeanRange $true
-            if ($currentResults -eq $false) {
-                $testSuiteResult = $false
-            }
+            $testSuiteResult = $testSuiteResult -and (AnalyzeResult $foundSAddRemMeanValue $expectedSAddRemMeanValue $acceptableMeanRange $true)
         }
         "*| HSetDel*" {
             Write-Host "** HSetDel Mean Value test"
             $foundHSetDelMeanValue = ParseValueFromResults $line $meanColumn
-            $currentResults = AnalyzeResult $foundHSetDelMeanValue $expectedHSetDelMeanValue $acceptableMeanRange $true
-            if ($currentResults -eq $false) {
-                $testSuiteResult = $false
-            }
+            $testSuiteResult = $testSuiteResult -and (AnalyzeResult $foundHSetDelMeanValue $expectedHSetDelMeanValue $acceptableMeanRange $true)
         }
         "*| MyDictSetGet*" {
             Write-Host "** MyDictSetGet Mean Value test"
             $foundMyDictSetGetMeanValue = ParseValueFromResults $line $meanColumn
-            $currentResults = AnalyzeResult $foundMyDictSetGetMeanValue $expectedMyDictSetGetMeanValue $acceptableMeanRange $true
-            if ($currentResults -eq $false) {
-                $testSuiteResult = $false
-            }
+            $testSuiteResult = $testSuiteResult -and (AnalyzeResult $foundMyDictSetGetMeanValue $expectedMyDictSetGetMeanValue $acceptableMeanRange $true)
         }
         "*| ZAddRem*" {
             Write-Host "** ZAddRem Allocated Value test"
             $foundZAddRemAllocatedValue = ParseValueFromResults $line $allocatedRespParseColumn
-            $currentResults = AnalyzeResult $foundZAddRemAllocatedValue $expectedZAddRemAllocatedValue $acceptableAllocatedRange $true
-            if ($currentResults -eq $false) {
-                $testSuiteResult = $false
-            }
+            $testSuiteResult = $testSuiteResult -and (AnalyzeResult $foundZAddRemAllocatedValue $expectedZAddRemAllocatedValue $acceptableAllocatedRange $true)
         }
         "*| LPushPop*" {
             Write-Host "** LPushPop Allocated Value test"
             $foundLPushPopAllocatedValue = ParseValueFromResults $line $allocatedRespParseColumn
-            $currentResults = AnalyzeResult $foundLPushPopAllocatedValue $expectedLPushPopAllocatedValue $acceptableAllocatedRange $true
-            if ($currentResults -eq $false) {
-                $testSuiteResult = $false
-            }
+            $testSuiteResult = $testSuiteResult -and (AnalyzeResult $foundLPushPopAllocatedValue $expectedLPushPopAllocatedValue $acceptableAllocatedRange $true)
         }
         "*| SAddRem*" {
             Write-Host "** SAddRem Allocated Value test"
             $foundSAddRemAllocatedValue = ParseValueFromResults $line $allocatedRespParseColumn
-            $currentResults = AnalyzeResult $foundSAddRemAllocatedValue $expectedSAddRemAllocatedValue $acceptableAllocatedRange $true
-            if ($currentResults -eq $false) {
-                $testSuiteResult = $false
-            }
+            $testSuiteResult = $testSuiteResult -and (AnalyzeResult $foundSAddRemAllocatedValue $expectedSAddRemAllocatedValue $acceptableAllocatedRange $true)
         }
         "*| HSetDel*" {
             Write-Host "** HSetDel Allocated Value test"
             $foundHSetDelAllocatedValue = ParseValueFromResults $line $allocatedRespParseColumn
-            $currentResults = AnalyzeResult $foundHSetDelAllocatedValue $expectedHSetDelAllocatedValue $acceptableAllocatedRange $true
-            if ($currentResults -eq $false) {
-                $testSuiteResult = $false
-            }
+            $testSuiteResult = $testSuiteResult -and (AnalyzeResult $foundHSetDelAllocatedValue $expectedHSetDelAllocatedValue $acceptableAllocatedRange $true)
         }
         "*| MyDictSetGet*" {
             Write-Host "** MyDictSetGet Allocated Value test"
             $foundMyDictSetGetAllocatedValue = ParseValueFromResults $line $allocatedRespParseColumn
-            $currentResults = AnalyzeResult $foundMyDictSetGetAllocatedValue $expectedMyDictSetGetAllocatedValue $acceptableAllocatedRange $true
-            if ($currentResults -eq $false) {
-                $testSuiteResult = $false
-            }
+            $testSuiteResult = $testSuiteResult -and (AnalyzeResult $foundMyDictSetGetAllocatedValue $expectedMyDictSetGetAllocatedValue $acceptableAllocatedRange $true)
         }
         "*| Incr*" {
             Write-Host "** Incr Mean Value test"
             $foundIncrMeanValue = ParseValueFromResults $line $meanColumn
-            $currentResults = AnalyzeResult $foundIncrMeanValue $expectedIncrMeanValue $acceptableMeanRange $true
-            if ($currentResults -eq $false) {
-                $testSuiteResult = $false
-            }
+            $testSuiteResult = $testSuiteResult -and (AnalyzeResult $foundIncrMeanValue $expectedIncrMeanValue $acceptableMeanRange $true)
         }
         "*| MGet*" {
             Write-Host "** MGet Mean Value test"
             $foundMGetMeanValue = ParseValueFromResults $line $meanColumn
-            $currentResults = AnalyzeResult $foundMGetMeanValue $expectedMGetMeanValue $acceptableMeanRange $true
-            if ($currentResults -eq $false) {
-                $testSuiteResult = $false
-            }
+            $testSuiteResult = $testSuiteResult -and (AnalyzeResult $foundMGetMeanValue $expectedMGetMeanValue $acceptableMeanRange $true)
         }
         "*| MSet*" {
             Write-Host "** MSet Mean Value test"
             $foundMSetMeanValue = ParseValueFromResults $line $meanColumn
-            $currentResults = AnalyzeResult $foundMSetMeanValue $expectedMSetMeanValue $acceptableMeanRange $true
-            if ($currentResults -eq $false) {
-                $testSuiteResult = $false
-            }
+            $testSuiteResult = $testSuiteResult -and (AnalyzeResult $foundMSetMeanValue $expectedMSetMeanValue $acceptableMeanRange $true)
         }
         "*| BasicLua1*" {
             Write-Host "** BasicLua1 Mean Value test"
             $foundBasicLua1MeanValue = ParseValueFromResults $line $meanColumn
-            $currentResults = AnalyzeResult $foundBasicLua1MeanValue $expectedBasicLua1MeanValue $acceptableMeanRange $true
-            if ($currentResults -eq $false) {
-                $testSuiteResult = $false
-            }
+            $testSuiteResult = $testSuiteResult -and (AnalyzeResult $foundBasicLua1MeanValue $expectedBasicLua1MeanValue $acceptableMeanRange $true)
         }
         "*| BasicLua2*" {
             Write-Host "** BasicLua2 Mean Value test"
             $foundBasicLua2MeanValue = ParseValueFromResults $line $meanColumn
-            $currentResults = AnalyzeResult $foundBasicLua2MeanValue $expectedBasicLua2MeanValue $acceptableMeanRange $true
-            if ($currentResults -eq $false) {
-                $testSuiteResult = $false
-            }
+            $testSuiteResult = $testSuiteResult -and (AnalyzeResult $foundBasicLua2MeanValue $expectedBasicLua2MeanValue $acceptableMeanRange $true)
         }
         <# 
         # Have this disabled for now for the CI runs. These are too volatile to have a CI gated on them.
         "*| BasicLua3*" {
             Write-Host "** BasicLua3 Mean Value test"
             $foundBasicLua3MeanValue = ParseValueFromResults $line $meanColumn
-            $currentResults = AnalyzeResult $foundBasicLua3MeanValue $expectedBasicLua3MeanValue $acceptableMeanRange $true
-            if ($currentResults -eq $false) {
-                $testSuiteResult = $false
-            }
+            $testSuiteResult = $testSuiteResult -and (AnalyzeResult $foundBasicLua3MeanValue $expectedBasicLua3MeanValue $acceptableMeanRange $true)
         }
         "*| BasicLua4*" {
             Write-Host "** BasicLua4 Mean Value test"
             $foundBasicLua4MeanValue = ParseValueFromResults $line $meanColumn
-            $currentResults = AnalyzeResult $foundBasicLua4MeanValue $expectedBasicLua4MeanValue $acceptableMeanRange $true
-            if ($currentResults -eq $false) {
-                $testSuiteResult = $false
-            }
+            $testSuiteResult = $testSuiteResult -and (AnalyzeResult $foundBasicLua4MeanValue $expectedBasicLua4MeanValue $acceptableMeanRange $true)
         }
         #>                   
         "*| BasicLuaRunner1*" {
             Write-Host "** BasicLuaRunner1 Mean Value test"
             $foundBasicLuaRunner1MeanValue = ParseValueFromResults $line $meanColumn
-            $currentResults = AnalyzeResult $foundBasicLuaRunner1MeanValue $expectedBasicLuaRunner1MeanValue $acceptableMeanRange $true
-            if ($currentResults -eq $false) {
-                $testSuiteResult = $false
-            }
+            $testSuiteResult = $testSuiteResult -and (AnalyzeResult $foundBasicLuaRunner1MeanValue $expectedBasicLuaRunner1MeanValue $acceptableMeanRange $true)
         }
         "*| BasicLuaRunner2*" {
             Write-Host "** BasicLuaRunner2 Mean Value test"
             $foundBasicLuaRunner2MeanValue = ParseValueFromResults $line $meanColumn
-            $currentResults = AnalyzeResult $foundBasicLuaRunner2MeanValue $expectedBasicLuaRunner2MeanValue $acceptableMeanRange $true
-            if ($currentResults -eq $false) {
-                $testSuiteResult = $false
-            }
+            $testSuiteResult = $testSuiteResult -and (AnalyzeResult $foundBasicLuaRunner2MeanValue $expectedBasicLuaRunner2MeanValue $acceptableMeanRange $true)
         }
-        
         <#
         # Have this disabled for now for the CI runs. These are too volatile to have a CI gated on them.
         "*| BasicLuaRunner3*" {
             Write-Host "** BasicLuaRunner3 Mean Value test"
             $foundBasicLuaRunner3MeanValue = ParseValueFromResults $line $meanColumn
-            $currentResults = AnalyzeResult $foundBasicLuaRunner3MeanValue $expectedBasicLuaRunner3MeanValue $acceptableMeanRange $true
-            if ($currentResults -eq $false) {
-                $testSuiteResult = $false
-            }
+            $testSuiteResult = $testSuiteResult -and (AnalyzeResult $foundBasicLuaRunner3MeanValue $expectedBasicLuaRunner3MeanValue $acceptableMeanRange $true)
         }
         "*| BasicLuaRunner4*" {
             Write-Host "** BasicLuaRunner4 Mean Value test"
             $foundBasicLuaRunner4MeanValue = ParseValueFromResults $line $meanColumn
-            $currentResults = AnalyzeResult $foundBasicLuaRunner4MeanValue $expectedBasicLuaRunner4MeanValue $acceptableMeanRange $true
-            if ($currentResults -eq $false) {
-                $testSuiteResult = $false
-            }
+            $testSuiteResult = $testSuiteResult -and (AnalyzeResult $foundBasicLuaRunner4MeanValue $expectedBasicLuaRunner4MeanValue $acceptableMeanRange $true)
         }
         #>            
-
         "*| BasicLua1*" {
             Write-Host "** BasicLua1 Allocated Value test"
             $foundBasicLua1AllocatedValue = ParseValueFromResults $line $allocatedLuaColumn
-            $currentResults = AnalyzeResult $foundBasicLua1AllocatedValue $expectedBasicLua1AllocatedValue $acceptableAllocatedRange $true
-            if ($currentResults -eq $false) {
-                $testSuiteResult = $false
-            }
+            $testSuiteResult = $testSuiteResult -and (AnalyzeResult $foundBasicLua1AllocatedValue $expectedBasicLua1AllocatedValue $acceptableAllocatedRange $true)
         }
         "*| BasicLua2*" {
             Write-Host "** BasicLua2 Allocated Value test"
             $foundBasicLua2AllocatedValue = ParseValueFromResults $line $allocatedLuaColumn
-            $currentResults = AnalyzeResult $foundBasicLua2AllocatedValue $expectedBasicLua2AllocatedValue $acceptableAllocatedRange $true
-            if ($currentResults -eq $false) {
-                $testSuiteResult = $false
-            }
+            $testSuiteResult = $testSuiteResult -and (AnalyzeResult $foundBasicLua2AllocatedValue $expectedBasicLua2AllocatedValue $acceptableAllocatedRange $true)
         }
         "*| BasicLua3*" {
             Write-Host "** BasicLua3 Allocated Value test"
             $foundBasicLua3AllocatedValue = ParseValueFromResults $line $allocatedLuaColumn
-            $currentResults = AnalyzeResult $foundBasicLua3AllocatedValue $expectedBasicLua3AllocatedValue $acceptableAllocatedRange $true
-            if ($currentResults -eq $false) {
-                $testSuiteResult = $false
-            }
+            $testSuiteResult = $testSuiteResult -and (AnalyzeResult $foundBasicLua3AllocatedValue $expectedBasicLua3AllocatedValue $acceptableAllocatedRange $true)
         }
         "*| BasicLua4*" {
             Write-Host "** BasicLua4 Allocated Value test"
             $foundBasicLua4AllocatedValue = ParseValueFromResults $line $allocatedLuaColumn
-            $currentResults = AnalyzeResult $foundBasicLua4AllocatedValue $expectedBasicLua4AllocatedValue $acceptableAllocatedRange $true
-            if ($currentResults -eq $false) {
-                $testSuiteResult = $false
-            }
+            $testSuiteResult = $testSuiteResult -and (AnalyzeResult $foundBasicLua4AllocatedValue $expectedBasicLua4AllocatedValue $acceptableAllocatedRange $true)
         }
         "*| BasicLuaRunner1*" {
             Write-Host "** BasicLuaRunner1 Allocated Value test"
             $foundBasicLuaRunner1AllocatedValue = ParseValueFromResults $line $allocatedLuaColumn
-            $currentResults = AnalyzeResult $foundBasicLuaRunner1AllocatedValue $expectedBasicLuaRunner1AllocatedValue $acceptableAllocatedRange $true
-            if ($currentResults -eq $false) {
-                $testSuiteResult = $false
-            }
+            $testSuiteResult = $testSuiteResult -and (AnalyzeResult $foundBasicLuaRunner1AllocatedValue $expectedBasicLuaRunner1AllocatedValue $acceptableAllocatedRange $true)
         }
         "*| BasicLuaRunner2*" {
             Write-Host "** BasicLuaRunner2 Allocated Value test"
             $foundBasicLuaRunner2AllocatedValue = ParseValueFromResults $line $allocatedLuaColumn
-            $currentResults = AnalyzeResult $foundBasicLuaRunner2AllocatedValue $expectedBasicLuaRunner2AllocatedValue $acceptableAllocatedRange $true
-            if ($currentResults -eq $false) {
-                $testSuiteResult = $false
-            }
+            $testSuiteResult = $testSuiteResult -and (AnalyzeResult $foundBasicLuaRunner2AllocatedValue $expectedBasicLuaRunner2AllocatedValue $acceptableAllocatedRange $true)
         }
-        
         "*| BasicLuaRunner3*" {
             Write-Host "** BasicLuaRunner3 Allocated Value test"
             $foundBasicLuaRunner3AllocatedValue = ParseValueFromResults $line $allocatedLuaColumn
-            $currentResults = AnalyzeResult $foundBasicLuaRunner3AllocatedValue $expectedBasicLuaRunner3AllocatedValue $acceptableAllocatedRange $true
-            if ($currentResults -eq $false) {
-                $testSuiteResult = $false
-            }
+            $testSuiteResult = $testSuiteResult -and (AnalyzeResult $foundBasicLuaRunner3AllocatedValue $expectedBasicLuaRunner3AllocatedValue $acceptableAllocatedRange $true)
         }
         "*| BasicLuaRunner4*" {
             Write-Host "** BasicLuaRunner4 Allocated Value test"
             $foundBasicLuaRunner4AllocatedValue = ParseValueFromResults $line $allocatedLuaColumn
-            $currentResults = AnalyzeResult $foundBasicLuaRunner4AllocatedValue $expectedBasicLuaRunner4AllocatedValue $acceptableAllocatedRange $true
-            if ($currentResults -eq $false) {
-                $testSuiteResult = $false
-            }
+            $testSuiteResult = $testSuiteResult -and (AnalyzeResult $foundBasicLuaRunner4AllocatedValue $expectedBasicLuaRunner4AllocatedValue $acceptableAllocatedRange $true)
         }
     }
 }
