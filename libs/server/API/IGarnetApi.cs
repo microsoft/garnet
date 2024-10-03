@@ -1700,7 +1700,7 @@ namespace Garnet.server
         /// <param name="outputFooter"></param>
         GarnetStatus ObjectScan(byte[] key, ref ObjectInput input, ref GarnetObjectStoreOutput outputFooter);
 
-        bool ClearBuffer(ref ArgSlice arg);
+        bool FreeBuffer(ref ArgSlice arg);
 
         #endregion
 
