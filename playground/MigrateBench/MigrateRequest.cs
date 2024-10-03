@@ -243,8 +243,11 @@ namespace MigrateBench
                     foreach (var key in keys)
                         migrate.Add(key);
 
-                    var request = migrate.ToArray();
-                    resp = MeasureElapsed(Stopwatch.GetTimestamp(), sourceNode.ExecuteAsync(request).GetAwaiter(), $"MIGRATE ({slot}, {keys.Length})", ref migrateKeysElapsed, opts.Verbose, logger);
+                    if (keys.Length > 0)
+                    {
+                        var request = migrate.ToArray();
+                        resp = MeasureElapsed(Stopwatch.GetTimestamp(), sourceNode.ExecuteAsync(request).GetAwaiter(), $"MIGRATE ({slot}, {keys.Length})", ref migrateKeysElapsed, opts.Verbose, logger);
+                    }
 
                     resp = MeasureElapsed(Stopwatch.GetTimestamp(), targetNode.ExecuteAsync(node).GetAwaiter(), "NODE_TARGET", ref setSlotElapsed, opts.Verbose, logger);
                     resp = MeasureElapsed(Stopwatch.GetTimestamp(), sourceNode.ExecuteAsync(node).GetAwaiter(), "NODE_SOURCE", ref setSlotElapsed, opts.Verbose, logger);
