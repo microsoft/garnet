@@ -21,14 +21,12 @@ namespace Garnet.server
         {
             updated = false;
 
-            ArgSlice[] currParseStateBuffer = default;
-            var currParseState = new SessionParseState();
-            currParseState.Initialize(ref currParseStateBuffer, 1);
+            parseState.Initialize(ref parseStateBuffer, 1);
 
             var input = new RawStringInput
             {
                 header = new RespInputHeader { cmd = RespCommand.PFADD },
-                parseState = currParseState,
+                parseState = parseState,
                 parseStateStartIdx = 0,
                 arg1 = 1,
             };
@@ -42,7 +40,7 @@ namespace Garnet.server
                 fixed (byte* elementPtr = elementBytes)
                 {
                     var elementSlice = new ArgSlice(elementPtr, elementBytes.Length);
-                    currParseStateBuffer[0] = elementSlice;
+                    parseStateBuffer[0] = elementSlice;
 
                     var o = new SpanByteAndMemory(output, 1);
                     var sbKey = key.SpanByte;
@@ -78,8 +76,6 @@ namespace Garnet.server
         public unsafe GarnetStatus HyperLogLogLength<TContext>(Span<ArgSlice> keys, out long count, ref TContext context)
             where TContext : ITsavoriteContext<SpanByte, SpanByte, RawStringInput, SpanByteAndMemory, long, MainSessionFunctions, MainStoreFunctions, MainStoreAllocator>
         {
-            ArgSlice[] parseStateBuffer = default;
-            var parseState = new SessionParseState();
             parseState.Initialize(ref parseStateBuffer, keys.Length);
             for (var i = 0; i < keys.Length; i++)
             {
@@ -268,11 +264,9 @@ namespace Garnet.server
 
                     var mergeSlice = new ArgSlice(ref mergeBuffer.SpanByte);
 
-                    ArgSlice[] tmpParseStateBuffer = default;
-                    var tmpParseState = new SessionParseState();
-                    tmpParseState.InitializeWithArguments(ref tmpParseStateBuffer, mergeSlice);
+                    parseState.InitializeWithArguments(ref parseStateBuffer, mergeSlice);
 
-                    currInput.parseState = tmpParseState;
+                    currInput.parseState = parseState;
                     SET_Conditional(ref dstKey, ref currInput, ref mergeBuffer, ref currLockableContext);
 
                     #endregion

@@ -35,8 +35,6 @@ namespace Garnet.server
                 return GarnetStatus.OK;
 
             // Prepare the parse state
-            var parseState = new SessionParseState();
-            ArgSlice[] parseStateBuffer = default;
             parseState.InitializeWithArguments(ref parseStateBuffer, score, member);
 
             // Prepare the input
@@ -81,8 +79,6 @@ namespace Garnet.server
             if (inputs.Length == 0 || key.Length == 0)
                 return GarnetStatus.OK;
 
-            var parseState = new SessionParseState();
-            ArgSlice[] parseStateBuffer = default;
             parseState.Initialize(ref parseStateBuffer, inputs.Length * 2);
 
             for (var i = 0; i < inputs.Length; i++)
@@ -136,9 +132,6 @@ namespace Garnet.server
                 return GarnetStatus.OK;
 
             // Prepare the parse state
-            var parseState = new SessionParseState();
-            ArgSlice[] parseStateBuffer = default;
-
             parseState.InitializeWithArguments(ref parseStateBuffer, member);
 
             // Prepare the input
@@ -177,8 +170,6 @@ namespace Garnet.server
             if (key.Length == 0 || members.Length == 0)
                 return GarnetStatus.OK;
 
-            var parseState = new SessionParseState();
-            ArgSlice[] parseStateBuffer = default;
             parseState.Initialize(ref parseStateBuffer, members.Length);
 
             for (var i = 0; i < members.Length; i++)
@@ -234,8 +225,6 @@ namespace Garnet.server
                     var minArgSlice = new ArgSlice(ptr, minBytes.Length);
                     var maxArgSlice = new ArgSlice(ptr2, maxBytes.Length);
 
-                    var parseState = new SessionParseState();
-                    ArgSlice[] parseStateBuffer = default;
                     parseState.InitializeWithArguments(ref parseStateBuffer, minArgSlice, maxArgSlice);
 
                     // Prepare the input
@@ -288,8 +277,6 @@ namespace Garnet.server
                     var minArgSlice = new ArgSlice(ptr, minBytes.Length);
                     var maxArgSlice = new ArgSlice(ptr2, maxBytes.Length);
 
-                    var parseState = new SessionParseState();
-                    ArgSlice[] parseStateBuffer = default;
                     parseState.InitializeWithArguments(ref parseStateBuffer, minArgSlice, maxArgSlice);
 
                     // Prepare the input
@@ -348,8 +335,6 @@ namespace Garnet.server
                     var startArgSlice = new ArgSlice(ptr, startBytes.Length);
                     var stopArgSlice = new ArgSlice(ptr2, stopBytes.Length);
 
-                    var parseState = new SessionParseState();
-                    ArgSlice[] parseStateBuffer = default;
                     parseState.InitializeWithArguments(ref parseStateBuffer, startArgSlice, stopArgSlice);
 
                     // Prepare the input
@@ -445,8 +430,6 @@ namespace Garnet.server
                 // Prepare the parse state
                 var incrementArgSlice = new ArgSlice(ptr, incrementBytes.Length);
 
-                var parseState = new SessionParseState();
-                ArgSlice[] parseStateBuffer = default;
                 parseState.InitializeWithArguments(ref parseStateBuffer, incrementArgSlice, member);
 
                 // Prepare the input
@@ -560,10 +543,6 @@ namespace Garnet.server
                     operation = default;
                     break;
             }
-
-            // Prepare the parse state
-            var parseState = new SessionParseState();
-            ArgSlice[] parseStateBuffer = default;
 
             var arguments = new List<ArgSlice> { min, max };
 
@@ -718,8 +697,6 @@ namespace Garnet.server
                 return GarnetStatus.OK;
 
             // Prepare the parse state
-            var parseState = new SessionParseState();
-            ArgSlice[] parseStateBuffer = default;
             parseState.InitializeWithArguments(ref parseStateBuffer, member);
 
             // Prepare the input

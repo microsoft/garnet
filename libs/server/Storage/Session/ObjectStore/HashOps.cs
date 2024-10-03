@@ -38,8 +38,6 @@ namespace Garnet.server
                 return GarnetStatus.OK;
 
             // Prepare the parse state
-            var parseState = new SessionParseState();
-            ArgSlice[] parseStateBuffer = default;
             parseState.InitializeWithArguments(ref parseStateBuffer, field, value);
 
             // Prepare the input
@@ -80,8 +78,6 @@ namespace Garnet.server
                 return GarnetStatus.OK;
 
             // Prepare the parse state
-            var parseState = new SessionParseState();
-            ArgSlice[] parseStateBuffer = default;
             parseState.Initialize(ref parseStateBuffer, elements.Length * 2);
 
             for (var i = 0; i < elements.Length; i++)
@@ -140,8 +136,6 @@ namespace Garnet.server
                 return GarnetStatus.OK;
 
             // Prepare the parse state
-            var parseState = new SessionParseState();
-            ArgSlice[] parseStateBuffer = default;
             parseState.InitializeWithArguments(ref parseStateBuffer, fields);
 
             // Prepare the input
@@ -180,8 +174,6 @@ namespace Garnet.server
                 return GarnetStatus.OK;
 
             // Prepare the parse state
-            var parseState = new SessionParseState();
-            ArgSlice[] parseStateBuffer = default;
             parseState.InitializeWithArguments(ref parseStateBuffer, field, value);
 
             // Prepare the input
@@ -225,8 +217,6 @@ namespace Garnet.server
                 return GarnetStatus.OK;
 
             // Prepare the parse state
-            var parseState = new SessionParseState();
-            ArgSlice[] parseStateBuffer = default;
             parseState.InitializeWithArguments(ref parseStateBuffer, fields);
 
             // Prepare the input
@@ -341,8 +331,6 @@ namespace Garnet.server
                 return GarnetStatus.OK;
 
             // Prepare the parse state
-            var parseState = new SessionParseState();
-            ArgSlice[] parseStateBuffer = default;
             parseState.InitializeWithArguments(ref parseStateBuffer, field);
 
             // Prepare the input

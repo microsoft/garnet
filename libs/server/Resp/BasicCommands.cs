@@ -688,12 +688,9 @@ namespace Garnet.server
                 {
                     // Prepare the parse state
                     var valueSlice = new ArgSlice(ptr, valueBytes.Length);
+                    parseStateBuffer[0] = valueSlice;
 
-                    var tmpParseState = new SessionParseState();
-                    ArgSlice[] tmpParseStateBuffer = default;
-                    tmpParseState.InitializeWithArguments(ref tmpParseStateBuffer, valueSlice);
-
-                    input.parseState = tmpParseState;
+                    input.parseState = parseState;
                     input.parseStateStartIdx = 0;
                     storageApi.Increment(key, ref input, ref output);
                 }

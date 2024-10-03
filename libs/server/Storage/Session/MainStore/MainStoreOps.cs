@@ -378,9 +378,7 @@ namespace Garnet.server
             var _key = key.SpanByte;
             var _output = new SpanByteAndMemory(output.SpanByte);
 
-            var parseState = new SessionParseState();
-            ArgSlice[] tmpParseStateBuffer = default;
-            parseState.InitializeWithArguments(ref tmpParseStateBuffer, value);
+            parseState.InitializeWithArguments(ref parseStateBuffer, value);
 
             var input = new RawStringInput
             {
@@ -549,9 +547,6 @@ namespace Garnet.server
                             var expirePtrVal = (byte*)expireMemoryHandle.Pointer;
                             RespReadUtils.TryRead64Int(out var expireTimeMs, ref expirePtrVal, expirePtrVal + expireSpan.Length, out var _);
 
-                            ArgSlice[] tmpParseStateBuffer = default;
-                            var tmpParseState = new SessionParseState();
-
                             input = new RawStringInput
                             {
                                 header = new RespInputHeader { cmd = RespCommand.SETEXNX, },
@@ -564,8 +559,8 @@ namespace Garnet.server
                                 if (isNX)
                                 {
                                     // Move payload forward to make space for RespInputHeader and Metadata
-                                    tmpParseState.InitializeWithArguments(ref tmpParseStateBuffer, newValSlice);
-                                    input.parseState = tmpParseState;
+                                    parseState.InitializeWithArguments(ref parseStateBuffer, newValSlice);
+                                    input.parseState = parseState;
                                     input.arg1 = DateTimeOffset.UtcNow.Ticks + TimeSpan.FromMilliseconds(expireTimeMs).Ticks;
 
                                     var setStatus = SET_Conditional(ref newKey, ref input, ref context);
@@ -584,8 +579,8 @@ namespace Garnet.server
                                 if (isNX)
                                 {
                                     // Build parse state
-                                    tmpParseState.InitializeWithArguments(ref tmpParseStateBuffer, newValSlice);
-                                    input.parseState = tmpParseState;
+                                    parseState.InitializeWithArguments(ref parseStateBuffer, newValSlice);
+                                    input.parseState = parseState;
 
                                     var setStatus = SET_Conditional(ref newKey, ref input, ref context);
 
@@ -773,10 +768,6 @@ namespace Garnet.server
             if (!found && (storeType == StoreType.Object || storeType == StoreType.All) &&
                 !objectStoreBasicContext.IsNull)
             {
-                // Build parse state
-                ArgSlice[] tmpParseStateBuffer = default;
-                var tmpParseState = new SessionParseState();
-
                 var expirySlice = input.parseState.GetArgSliceByRef(input.parseStateStartIdx);
 
                 var expiryInMsBytes = stackalloc byte[1];
@@ -784,14 +775,14 @@ namespace Garnet.server
                 var expiryInMsSlice = new ArgSlice(expiryInMsBytes, 1);
 
                 var paramCount = input.parseState.Count - input.parseStateStartIdx > 1 ? 3 : 2;
-                tmpParseState.Initialize(ref tmpParseStateBuffer, paramCount);
-                tmpParseStateBuffer[0] = expirySlice;
-                tmpParseStateBuffer[1] = expiryInMsSlice;
+                parseState.Initialize(ref parseStateBuffer, paramCount);
+                parseStateBuffer[0] = expirySlice;
+                parseStateBuffer[1] = expiryInMsSlice;
 
                 if (paramCount == 3)
                 {
                     var expiryOptionSlice = input.parseState.GetArgSliceByRef(input.parseStateStartIdx + 1);
-                    tmpParseStateBuffer[2] = expiryOptionSlice;
+                    parseStateBuffer[2] = expiryOptionSlice;
                 }
 
                 var objInput = new ObjectInput
@@ -800,7 +791,7 @@ namespace Garnet.server
                     {
                         type = GarnetObjectType.Expire,
                     },
-                    parseState = tmpParseState,
+                    parseState = parseState,
                     parseStateStartIdx = 0,
                 };
 
@@ -861,14 +852,12 @@ namespace Garnet.server
             if (storeType == StoreType.Main || storeType == StoreType.All)
             {
                 // Build parse state
-                ArgSlice[] tmpParseStateBuffer = default;
-                var tmpParseState = new SessionParseState();
-                tmpParseState.InitializeWithArguments(ref tmpParseStateBuffer, expirySlice, expiryOptionSlice);
+                parseState.InitializeWithArguments(ref parseStateBuffer, expirySlice, expiryOptionSlice);
 
                 var input = new RawStringInput
                 {
                     header = new RespInputHeader { cmd = milliseconds ? RespCommand.PEXPIRE : RespCommand.EXPIRE },
-                    parseState = tmpParseState,
+                    parseState = parseState,
                     parseStateStartIdx = 0,
                 };
 
@@ -888,9 +877,7 @@ namespace Garnet.server
                 var expiryInMsSlice = new ArgSlice(expiryInMsBytes, 1);
 
                 // Build parse state
-                ArgSlice[] tmpParseStateBuffer = default;
-                var tmpParseState = new SessionParseState();
-                tmpParseState.InitializeWithArguments(ref tmpParseStateBuffer, expirySlice, expiryInMsSlice, expiryOptionSlice);
+                parseState.InitializeWithArguments(ref parseStateBuffer, expirySlice, expiryInMsSlice, expiryOptionSlice);
 
                 var objInput = new ObjectInput
                 {
@@ -898,7 +885,7 @@ namespace Garnet.server
                     {
                         type = GarnetObjectType.Expire,
                     },
-                    parseState = tmpParseState,
+                    parseState = parseState,
                     parseStateStartIdx = 0,
                 };
 
@@ -1026,8 +1013,6 @@ namespace Garnet.server
             NumUtils.LongToBytes(increment, incrementNumDigits, ref incrementBytes);
             var incrementSlice = new ArgSlice(incrementBytes, incrementNumDigits);
 
-            var parseState = new SessionParseState();
-            ArgSlice[] parseStateBuffer = default;
             parseState.InitializeWithArguments(ref parseStateBuffer, incrementSlice);
 
             var input = new RawStringInput

@@ -29,8 +29,6 @@ namespace Garnet.server
             setValBytes[0] = (byte)(bit ? '1' : '0');
             var setValSlice = new ArgSlice(setValBytes, 1);
 
-            ArgSlice[] parseStateBuffer = default;
-            var parseState = new SessionParseState();
             parseState.InitializeWithArguments(ref parseStateBuffer, offset, setValSlice);
 
             var input = new RawStringInput
@@ -55,8 +53,6 @@ namespace Garnet.server
             if (key.Length == 0)
                 return GarnetStatus.OK;
 
-            ArgSlice[] parseStateBuffer = default;
-            var parseState = new SessionParseState();
             parseState.InitializeWithArguments(ref parseStateBuffer, offset);
 
             var input = new RawStringInput
@@ -206,9 +202,6 @@ namespace Garnet.server
             if (destinationKey.Length == 0)
                 return GarnetStatus.OK;
 
-            ArgSlice[] parseStateBuffer = default;
-            var parseState = new SessionParseState();
-
             var args = new ArgSlice[keys.Length + 1];
             args[0] = destinationKey;
             keys.CopyTo(args, 1);
@@ -250,8 +243,6 @@ namespace Garnet.server
                     var startSlice = new ArgSlice(startPtr, startBytes.Length);
                     var endSlice = new ArgSlice(endPtr, endBytes.Length);
 
-                    ArgSlice[] parseStateBuffer = default;
-                    var parseState = new SessionParseState();
                     parseState.InitializeWithArguments(ref parseStateBuffer, startSlice, endSlice, useBitIntervalSlice);
 
                     var input = new RawStringInput
@@ -319,8 +310,6 @@ namespace Garnet.server
                     var valueSlice = new ArgSlice(valuePtr, valueBytes.Length);
                     var overflowTypeSlice = new ArgSlice(overflowTypePtr, overflowTypeBytes.Length);
 
-                    ArgSlice[] parseStateBuffer = default;
-                    var parseState = new SessionParseState();
                     parseState.InitializeWithArguments(ref parseStateBuffer, opSlice, encodingSlice, offsetSlice,
                         valueSlice, overflowTypeSlice);
 

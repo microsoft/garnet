@@ -33,6 +33,9 @@ namespace Garnet.server
         readonly int hllBufferSize = HyperLogLog.DefaultHLL.DenseBytes;
         readonly int sectorAlignedMemoryPoolAlignment = 32;
 
+        internal SessionParseState parseState;
+        internal ArgSlice[] parseStateBuffer;
+
         /// <summary>
         /// Session Contexts for object store
         /// </summary>
@@ -62,6 +65,8 @@ namespace Garnet.server
             this.scratchBufferManager = scratchBufferManager;
             this.logger = logger;
             this.itemBroker = storeWrapper.itemBroker;
+
+            parseState.Initialize(ref parseStateBuffer);
 
             functionsState = storeWrapper.CreateFunctionsState();
 

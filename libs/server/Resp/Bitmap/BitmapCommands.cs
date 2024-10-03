@@ -519,22 +519,20 @@ namespace Garnet.server
             {
                 var opCode = (byte)secondaryCommandArgs[i].Item1;
                 var opArgs = secondaryCommandArgs[i].Item2;
-                ArgSlice[] secParseStateBuffer = default;
-                var secParseState = new SessionParseState();
-                secParseState.Initialize(ref secParseStateBuffer,
+                parseState.Initialize(ref parseStateBuffer,
                     opArgs.Length + (isOverflowTypeSet ? 1 : 0));
 
                 for (var j = 0; j < opArgs.Length; j++)
                 {
-                    secParseStateBuffer[j] = opArgs[j];
+                    parseStateBuffer[j] = opArgs[j];
                 }
 
                 if (isOverflowTypeSet)
                 {
-                    secParseStateBuffer[^1] = overflowTypeSlice;
+                    parseStateBuffer[opArgs.Length] = overflowTypeSlice;
                 }
 
-                input.parseState = secParseState;
+                input.parseState = parseState;
 
                 var output = new SpanByteAndMemory(dcurr, (int)(dend - dcurr));
                 var status = storageApi.StringBitField(ref sbKey, ref input, opCode,

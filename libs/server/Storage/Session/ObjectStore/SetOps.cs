@@ -33,8 +33,6 @@ namespace Garnet.server
             saddCount = 0;
 
             // Prepare the parse state
-            var parseState = new SessionParseState();
-            ArgSlice[] parseStateBuffer = default;
             parseState.InitializeWithArguments(ref parseStateBuffer, member);
 
             // Prepare the input
@@ -75,8 +73,6 @@ namespace Garnet.server
                 return GarnetStatus.OK;
 
             // Prepare the parse state
-            var parseState = new SessionParseState();
-            ArgSlice[] parseStateBuffer = default;
             parseState.InitializeWithArguments(ref parseStateBuffer, members);
 
             // Prepare the input
@@ -116,8 +112,6 @@ namespace Garnet.server
             sremCount = 0;
 
             // Prepare the parse state
-            var parseState = new SessionParseState();
-            ArgSlice[] parseStateBuffer = default;
             parseState.InitializeWithArguments(ref parseStateBuffer, member);
 
             // Prepare the input
@@ -159,8 +153,6 @@ namespace Garnet.server
                 return GarnetStatus.OK;
 
             // Prepare the parse state
-            var parseState = new SessionParseState();
-            ArgSlice[] parseStateBuffer = default;
             parseState.InitializeWithArguments(ref parseStateBuffer, members);
 
             // Prepare the input
