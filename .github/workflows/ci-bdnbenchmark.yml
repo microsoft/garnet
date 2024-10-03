@@ -70,18 +70,18 @@ jobs:
         if: ${{ always() }}
 
       # Download previous benchmark result from cache (if exists)
-      - name: Download previous benchmark data
-        uses: actions/cache@v4
-        with:
-          path: ./cache
-          key: ${{ runner.os }}-benchmark
+#      - name: Download previous benchmark data
+#        uses: actions/cache@v4
+#        with:
+#          path: ./cache
+#          key: ${{ runner.os }}-benchmark
       
       # Run `github-action-benchmark` action
-      - name: Store benchmark result
-        uses: benchmark-action/github-action-benchmark@v1
-        with:
+#      - name: Store benchmark result
+#        uses: benchmark-action/github-action-benchmark@v1
+#        with:
           # What benchmark tool created output file
-          tool: 'benchmarkdotnet'
+#          tool: 'benchmarkdotnet'
           # Where the output from the benchmark tool is stored
           # This can't find the file
           #output-file-path: ./test/BDNPerfTests/results/Results-${{ matrix.os }}-${{ matrix.framework }}-${{ matrix.configuration }}-${{ matrix.test }}.results
@@ -90,14 +90,14 @@ jobs:
           #output-file-path: ./test/BDNPerfTests/results/CI_BDN_Config_RespParseStress_Windows.results
 
           #This one gives error: Error: No commit information is found in payload: {
-          output-file-path: ./test/BDNPerfTests/BenchmarkDotNet.Artifacts/results/BDN.benchmark.Resp.RespParseStress-report-full-compressed.json
+#          output-file-path: ./test/BDNPerfTests/BenchmarkDotNet.Artifacts/results/BDN.benchmark.Resp.RespParseStress-report-full-compressed.json
 
           # Where the previous data file is stored
           # #*#*#* DEBUG - can't set if auto-push is set external-data-json-path: ./cache/benchmark-data.json
           # Workflow will fail when an alert happens
-          fail-on-alert: true
+#          fail-on-alert: true
 
-          github-token: ${{ secrets.GITHUB_TOKEN }}
-          auto-push: true
-          skip-fetch-gh-pages: true
-          summary-always: true
+#          github-token: ${{ secrets.GITHUB_TOKEN }}
+#          auto-push: true
+#          skip-fetch-gh-pages: true
+#          summary-always: true
