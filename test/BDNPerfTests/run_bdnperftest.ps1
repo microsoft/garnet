@@ -76,13 +76,6 @@ param ($ResultsLine, $columnNum)
     $column = $columns | ForEach-Object { $_.Trim() }
     $foundValue = $column[$columnNum] 
 
-    # Have case where put column before the 5th one - differs from Linux to Windows
-    if ($foundValue -eq "-") {
-        $columnNum = [int]$columnNum
-        $columnNum+=1
-        $foundValue = $column[$columnNum]
-    }
-
     $foundValue = $foundValue.Trim(' us')  
     $foundValue = $foundValue.Trim(' ns')  
     $foundValue = $foundValue.Trim(' B')  
@@ -130,7 +123,11 @@ $configuration = $object.configuration
 $framework = $object.framework
 $filter = $object.filter
 $meanColumn = "1"
-$allocatedRespParseColumn = "4"
+$allocatedRespParseColumn = "5"  # Windows adds an additional column before the allocated column
+if ($IsLinux) {
+    $allocatedRespParseColumn = "4"
+}
+
 $allocatedLuaColumn = "5"
 
 # Set the expected values based on the OS
