@@ -172,10 +172,10 @@ namespace Garnet.server
                         break;
                     case HashOperation.HSCAN:
                         if (ObjectUtils.ReadScanInput(ref input, ref output, out var cursorInput, out var pattern,
-                                out var patternLength, out var limitCount, out var error))
+                                out var patternLength, out var limitCount, out bool isNoValue, out var error))
                         {
                             Scan(cursorInput, out var items, out var cursorOutput, count: limitCount, pattern: pattern,
-                                patternLength: patternLength);
+                                patternLength: patternLength, isNoValue);
                             ObjectUtils.WriteScanOutput(items, cursorOutput, ref output);
                         }
                         else
@@ -203,7 +203,7 @@ namespace Garnet.server
         }
 
         /// <inheritdoc />
-        public override unsafe void Scan(long start, out List<byte[]> items, out long cursor, int count = 10, byte* pattern = default, int patternLength = 0)
+        public override unsafe void Scan(long start, out List<byte[]> items, out long cursor, int count = 10, byte* pattern = default, int patternLength = 0, bool isNoValue = false)
         {
             cursor = start;
             items = new List<byte[]>();
@@ -228,7 +228,10 @@ namespace Garnet.server
                 if (patternLength == 0)
                 {
                     items.Add(item.Key);
-                    items.Add(item.Value);
+                    if (!isNoValue)
+                    {
+                        items.Add(item.Value);
+                    }
                 }
                 else
                 {
@@ -237,7 +240,10 @@ namespace Garnet.server
                         if (GlobUtils.Match(pattern, patternLength, keyPtr, item.Key.Length))
                         {
                             items.Add(item.Key);
-                            items.Add(item.Value);
+                            if (!isNoValue)
+                            {
+                                items.Add(item.Value);
+                            }
                         }
                     }
                 }
