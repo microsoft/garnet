@@ -124,11 +124,13 @@ $framework = $object.framework
 $filter = $object.filter
 $meanColumn = "1"
 $allocatedRespParseColumn = "5"  # Windows adds an additional column before the allocated column
+$allocatedLuaColumn = "5"
 if ($IsLinux) {
     $allocatedRespParseColumn = "4"
+    $allocatedLuaColumn = "4"
 }
 
-$allocatedLuaColumn = "5"
+
 
 # Set the expected values based on the OS
 if ($IsLinux) {
