@@ -209,6 +209,7 @@ else {
 
 # percent allowed variance when comparing expected vs actual found value - same for linux and windows. 
 $acceptableMeanRange = $object.acceptableMeanRange 
+$acceptableAllocatedRange = $object.acceptableAllocatedRange 
 
 # Set up the results dir and errorlog dir
 $resultsDir = "$basePath/test/BDNPerfTests/results" 

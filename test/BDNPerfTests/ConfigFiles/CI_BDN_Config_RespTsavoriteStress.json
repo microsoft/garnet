@@ -8,6 +8,7 @@
     "expectedGETMeanValue_win": 20,
     "expectedSETMeanValue_win": 17,
     "expectedIncrMeanValue_win": 26,
+
     "acceptableMeanRange": 10,
     "acceptableError": ".1",
     "acceptableStdDev": ".1"

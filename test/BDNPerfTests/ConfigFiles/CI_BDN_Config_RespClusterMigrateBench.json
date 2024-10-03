@@ -10,6 +10,7 @@
     "expectedSETMeanValue_win": 47,
     "expectedMGETMeanValue_win": 40,
     "expectedMSETMeanValue_win": 37,
+
     "acceptableMeanRange": 10,
     "acceptableError": ".1",
     "acceptableStdDev": ".1"

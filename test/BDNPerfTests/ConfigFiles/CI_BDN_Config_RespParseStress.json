@@ -36,6 +36,7 @@
     "expectedMyDictSetGetAllocatedValue_win": 30720,
 
     "acceptableMeanRange": 10,
+    "acceptableAllocatedRange": 10,    
     "acceptableError": ".1",
     "acceptableStdDev": ".1"
 }

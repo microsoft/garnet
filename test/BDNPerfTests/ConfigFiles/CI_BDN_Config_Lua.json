@@ -38,9 +38,9 @@
     "expectedBasicLua2AllocatedValue_win": 144,
     "expectedBasicLua3AllocatedValue_win": 328,
     "expectedBasicLua4AllocatedValue_win": 832,
-
     
     "acceptableMeanRange": 10,
+    "acceptableAllocatedRange": 10,    
     "acceptableError": ".1",
     "acceptableStdDev": ".1"
 }
