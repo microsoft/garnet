@@ -102,4 +102,4 @@ jobs:
           comment-on-alert: true
           # auto-push: false
           # skip-fetch-gh-pages: true
-          # summary-always: true
+          summary-always: true
