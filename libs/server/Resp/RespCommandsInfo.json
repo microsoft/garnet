@@ -472,20 +472,6 @@
     "SubCommands": null
   },
   {
-    "Command": "PURGEBP",
-    "Name": "PURGEBP",
-    "IsInternal": false,
-    "Arity": 2,
-    "Flags": "Admin, NoMulti, NoScript, ReadOnly",
-    "FirstKey": 1,
-    "LastKey": 1,
-    "Step": 1,
-    "AclCategories": "Admin, Garnet",
-    "Tips": null,
-    "KeySpecifications": null,
-    "SubCommands": null
-  },
-  {
     "Command": "CLIENT",
     "Name": "CLIENT",
     "IsInternal": false,
@@ -1582,6 +1568,35 @@
   {
     "Command": "EXPIRE",
     "Name": "EXPIRE",
+    "IsInternal": false,
+    "Arity": -3,
+    "Flags": "Fast, Write",
+    "FirstKey": 1,
+    "LastKey": 1,
+    "Step": 1,
+    "AclCategories": "Fast, KeySpace, Write",
+    "Tips": null,
+    "KeySpecifications": [
+      {
+        "BeginSearch": {
+          "TypeDiscriminator": "BeginSearchIndex",
+          "Index": 1
+        },
+        "FindKeys": {
+          "TypeDiscriminator": "FindKeysRange",
+          "LastKey": 0,
+          "KeyStep": 1,
+          "Limit": 0
+        },
+        "Notes": null,
+        "Flags": "RW, Update"
+      }
+    ],
+    "SubCommands": null
+  },
+  {
+    "Command": "EXPIREAT",
+    "Name": "EXPIREAT",
     "IsInternal": false,
     "Arity": -3,
     "Flags": "Fast, Write",
@@ -2824,6 +2839,35 @@
     "SubCommands": null
   },
   {
+    "Command": "LPOS",
+    "Name": "LPOS",
+    "IsInternal": false,
+    "Arity": -3,
+    "Flags": "ReadOnly",
+    "FirstKey": 1,
+    "LastKey": 1,
+    "Step": 1,
+    "AclCategories": "List, Read, Slow",
+    "Tips": null,
+    "KeySpecifications": [
+      {
+        "BeginSearch": {
+          "TypeDiscriminator": "BeginSearchIndex",
+          "Index": 1
+        },
+        "FindKeys": {
+          "TypeDiscriminator": "FindKeysRange",
+          "LastKey": 0,
+          "KeyStep": 1,
+          "Limit": 0
+        },
+        "Notes": null,
+        "Flags": "RO, Access"
+      }
+    ],
+    "SubCommands": null
+  },
+  {
     "Command": "LPUSH",
     "Name": "LPUSH",
     "IsInternal": false,
@@ -3298,6 +3342,35 @@
     "SubCommands": null
   },
   {
+    "Command": "PEXPIREAT",
+    "Name": "PEXPIREAT",
+    "IsInternal": false,
+    "Arity": -3,
+    "Flags": "Fast, Write",
+    "FirstKey": 1,
+    "LastKey": 1,
+    "Step": 1,
+    "AclCategories": "Fast, KeySpace, Write",
+    "Tips": null,
+    "KeySpecifications": [
+      {
+        "BeginSearch": {
+          "TypeDiscriminator": "BeginSearchIndex",
+          "Index": 1
+        },
+        "FindKeys": {
+          "TypeDiscriminator": "FindKeysRange",
+          "LastKey": 0,
+          "KeyStep": 1,
+          "Limit": 0
+        },
+        "Notes": null,
+        "Flags": "RW, Update"
+      }
+    ],
+    "SubCommands": null
+  },
+  {
     "Command": "PFADD",
     "Name": "PFADD",
     "IsInternal": false,
@@ -3513,6 +3586,20 @@
     "LastKey": 0,
     "Step": 0,
     "AclCategories": "PubSub, Slow",
+    "Tips": null,
+    "KeySpecifications": null,
+    "SubCommands": null
+  },
+  {
+    "Command": "PURGEBP",
+    "Name": "PURGEBP",
+    "IsInternal": false,
+    "Arity": 2,
+    "Flags": "Admin, NoMulti, NoScript, ReadOnly",
+    "FirstKey": 1,
+    "LastKey": 1,
+    "Step": 1,
+    "AclCategories": "Admin, Garnet",
     "Tips": null,
     "KeySpecifications": null,
     "SubCommands": null

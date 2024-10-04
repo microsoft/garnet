@@ -185,6 +185,32 @@ namespace Garnet.server
 
         #endregion
 
+        #region EXPIREAT
+
+        /// <summary>
+        /// Set a timeout on key using absolute Unix timestamp (seconds since January 1, 1970) in seconds
+        /// </summary>
+        /// <param name="key">Key</param>
+        /// <param name="expiryTimestamp">Absolute Unix timestamp in seconds</param>
+        /// <param name="timeoutSet">Whether timeout was set by the call</param>
+        /// <param name="storeType">Store type: main, object, or both</param>
+        /// <param name="expireOption">Expire option</param>
+        /// <returns></returns>
+        GarnetStatus EXPIREAT(ArgSlice key, long expiryTimestamp, out bool timeoutSet, StoreType storeType = StoreType.All, ExpireOption expireOption = ExpireOption.None);
+
+        /// <summary>
+        /// Set a timeout on key using absolute Unix timestamp (seconds since January 1, 1970) in milliseconds
+        /// </summary>
+        /// <param name="key">Key</param>
+        /// <param name="expiryTimestamp">Absolute Unix timestamp in milliseconds</param>
+        /// <param name="timeoutSet">Whether timeout was set by the call</param>
+        /// <param name="storeType">Store type: main, object, or both</param>
+        /// <param name="expireOption">Expire option</param>
+        /// <returns></returns>
+        GarnetStatus PEXPIREAT(ArgSlice key, long expiryTimestamp, out bool timeoutSet, StoreType storeType = StoreType.All, ExpireOption expireOption = ExpireOption.None);
+
+        #endregion
+
         #region PERSIST
         /// <summary>
         /// PERSIST
@@ -607,6 +633,16 @@ namespace Garnet.server
         #region List Methods
 
         #region ListPush Methods
+
+        /// <summary>
+        /// The command returns the index of matching elements inside a Redis list.
+        /// By default, when no options are given, it will scan the list from head to tail, looking for the first match of "element".
+        /// </summary>
+        /// <param name="key"></param>
+        /// <param name="input"></param>
+        /// <param name="outputFooter"></param>
+        /// <returns></returns>
+        GarnetStatus ListPosition(byte[] key, ref ObjectInput input, ref GarnetObjectStoreOutput outputFooter);
 
         /// <summary>
         /// ListLeftPush ArgSlice version with ObjectOutputHeader output

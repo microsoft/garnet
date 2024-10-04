@@ -150,6 +150,7 @@ namespace Garnet.server
                         o->result1 = 1;
                         break;
                     case ExpireOption.GT:
+                    case ExpireOption.XXGT:
                         bool replace = expiration < value.Expiration;
                         value.Expiration = replace ? value.Expiration : expiration;
                         if (replace)
@@ -158,6 +159,7 @@ namespace Garnet.server
                             o->result1 = 1;
                         break;
                     case ExpireOption.LT:
+                    case ExpireOption.XXLT:
                         replace = expiration > value.Expiration;
                         value.Expiration = replace ? value.Expiration : expiration;
                         if (replace)
@@ -175,12 +177,14 @@ namespace Garnet.server
                 {
                     case ExpireOption.NX:
                     case ExpireOption.None:
+                    case ExpireOption.LT:  // If expiry doesn't exist, LT should treat the current expiration as infinite
                         value.Expiration = expiration;
                         o->result1 = 1;
                         break;
                     case ExpireOption.XX:
                     case ExpireOption.GT:
-                    case ExpireOption.LT:
+                    case ExpireOption.XXGT:
+                    case ExpireOption.XXLT:
                         o->result1 = 0;
                         break;
                     default:

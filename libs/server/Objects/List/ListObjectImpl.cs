@@ -4,6 +4,7 @@
 using System;
 using System.Buffers;
 using System.Collections.Generic;
+using System.Diagnostics;
 using System.Linq;
 using Garnet.common;
 using Tsavorite.core;
@@ -417,6 +418,217 @@ namespace Garnet.server
                 if (isMemory) ptrHandle.Dispose();
                 output.Length = (int)(output_currptr - output_startptr);
             }
+        }
+
+        private void ListPosition(ref ObjectInput input, ref SpanByteAndMemory output)
+        {
+            var element = input.parseState.GetArgSliceByRef(input.parseStateStartIdx).ReadOnlySpan;
+            input.parseStateStartIdx++;
+
+            var isMemory = false;
+            MemoryHandle ptrHandle = default;
+            var output_startptr = output.SpanByte.ToPointer();
+            var output_currptr = output_startptr;
+            var output_end = output_currptr + output.Length;
+            var count = 0;
+            var isDefaultCount = true;
+            ObjectOutputHeader outputHeader = default;
+
+            try
+            {
+                if (!ReadListPositionInput(ref input, out var rank, out count, out isDefaultCount, out var maxlen, out var error))
+                {
+                    while (!RespWriteUtils.WriteError(error, ref output_currptr, output_end))
+                        ObjectUtils.ReallocateOutput(ref output, ref isMemory, ref output_startptr, ref ptrHandle, ref output_currptr, ref output_end);
+                    return;
+                }
+
+                if (count < 0)
+                {
+                    while (!RespWriteUtils.WriteError(CmdStrings.RESP_ERR_GENERIC_VALUE_IS_NOT_INTEGER, ref output_currptr, output_end))
+                        ObjectUtils.ReallocateOutput(ref output, ref isMemory, ref output_startptr, ref ptrHandle, ref output_currptr, ref output_end);
+                    return;
+                }
+
+                if (maxlen < 0)
+                {
+                    while (!RespWriteUtils.WriteError(CmdStrings.RESP_ERR_GENERIC_VALUE_IS_NOT_INTEGER, ref output_currptr, output_end))
+                        ObjectUtils.ReallocateOutput(ref output, ref isMemory, ref output_startptr, ref ptrHandle, ref output_currptr, ref output_end);
+                    return;
+                }
+
+                if (rank == 0)
+                {
+                    while (!RespWriteUtils.WriteError(CmdStrings.RESP_ERR_GENERIC_VALUE_IS_NOT_INTEGER, ref output_currptr, output_end))
+                        ObjectUtils.ReallocateOutput(ref output, ref isMemory, ref output_startptr, ref ptrHandle, ref output_currptr, ref output_end);
+                    return;
+                }
+
+                count = count == 0 ? list.Count : count;
+                var totalArrayHeaderLen = 0;
+                var lastFoundItemIndex = -1;
+
+                if (!isDefaultCount)
+                {
+                    while (!RespWriteUtils.WriteArrayLength(count, ref output_currptr, output_end, out var _, out totalArrayHeaderLen))
+                        ObjectUtils.ReallocateOutput(ref output, ref isMemory, ref output_startptr, ref ptrHandle, ref output_currptr, ref output_end);
+                }
+
+                var noOfFoundItem = 0;
+                if (rank > 0)
+                {
+                    var currentNode = list.First;
+                    var currentIndex = 0;
+                    var maxlenIndex = maxlen == 0 ? list.Count : maxlen;
+                    do
+                    {
+                        var nextNode = currentNode.Next;
+                        if (currentNode.Value.AsSpan().SequenceEqual(element))
+                        {
+                            if (rank == 1)
+                            {
+                                lastFoundItemIndex = currentIndex;
+                                while (!RespWriteUtils.WriteInteger(currentIndex, ref output_currptr, output_end))
+                                    ObjectUtils.ReallocateOutput(ref output, ref isMemory, ref output_startptr, ref ptrHandle, ref output_currptr, ref output_end);
+
+                                noOfFoundItem++;
+                                if (noOfFoundItem == count)
+                                {
+                                    break;
+                                }
+                            }
+                            else
+                            {
+                                rank--;
+                            }
+                        }
+                        currentNode = nextNode;
+                        currentIndex++;
+                    }
+                    while (currentNode != null && currentIndex < maxlenIndex);
+                }
+                else // (rank < 0)
+                {
+                    var currentNode = list.Last;
+                    var currentIndex = list.Count - 1;
+                    var maxlenIndex = maxlen == 0 ? 0 : list.Count - maxlen;
+                    do
+                    {
+                        var nextNode = currentNode.Previous;
+                        if (currentNode.Value.AsSpan().SequenceEqual(element))
+                        {
+                            if (rank == -1)
+                            {
+                                lastFoundItemIndex = currentIndex;
+                                while (!RespWriteUtils.WriteInteger(currentIndex, ref output_currptr, output_end))
+                                    ObjectUtils.ReallocateOutput(ref output, ref isMemory, ref output_startptr, ref ptrHandle, ref output_currptr, ref output_end);
+
+                                noOfFoundItem++;
+                                if (noOfFoundItem == count)
+                                {
+                                    break;
+                                }
+                            }
+                            else
+                            {
+                                rank++;
+                            }
+                        }
+                        currentNode = nextNode;
+                        currentIndex--;
+                    }
+                    while (currentNode != null && currentIndex >= maxlenIndex);
+                }
+
+                if (isDefaultCount && noOfFoundItem == 0)
+                {
+                    output_currptr = output_startptr;
+                    while (!RespWriteUtils.WriteNull(ref output_currptr, output_end))
+                        ObjectUtils.ReallocateOutput(ref output, ref isMemory, ref output_startptr, ref ptrHandle, ref output_currptr, ref output_end);
+                }
+                else if (!isDefaultCount && noOfFoundItem == 0)
+                {
+                    output_currptr = output_startptr;
+                    while (!RespWriteUtils.WriteNullArray(ref output_currptr, output_end))
+                        ObjectUtils.ReallocateOutput(ref output, ref isMemory, ref output_startptr, ref ptrHandle, ref output_currptr, ref output_end);
+                }
+                else if (!isDefaultCount && noOfFoundItem != count)
+                {
+                    var newTotalArrayHeaderLen = 0;
+                    var startOutputStartptr = output_startptr;
+                    RespWriteUtils.WriteArrayLength(noOfFoundItem, ref startOutputStartptr, output_end, out var _, out newTotalArrayHeaderLen);  // ReallocateOutput is not needed here as there should be always be available space in the output buffer as we have already written the max array length
+                    Debug.Assert(totalArrayHeaderLen >= newTotalArrayHeaderLen, "newTotalArrayHeaderLen can't be bigger than totalArrayHeaderLen as we have already written max array lenght in the buffer");
+
+                    if (totalArrayHeaderLen != newTotalArrayHeaderLen)
+                    {
+                        var remainingLength = (output_currptr - output_startptr) - totalArrayHeaderLen;
+                        Buffer.MemoryCopy(output_startptr + totalArrayHeaderLen, output_startptr + newTotalArrayHeaderLen, remainingLength, remainingLength);
+                        output_currptr = output_currptr - (totalArrayHeaderLen - newTotalArrayHeaderLen);
+                    }
+                }
+
+                outputHeader.result1 = noOfFoundItem;
+            }
+            finally
+            {
+                while (!RespWriteUtils.WriteDirect(ref outputHeader, ref output_currptr, output_end))
+                    ObjectUtils.ReallocateOutput(ref output, ref isMemory, ref output_startptr, ref ptrHandle, ref output_currptr, ref output_end);
+
+                if (isMemory)
+                    ptrHandle.Dispose();
+                output.Length = (int)(output_currptr - output_startptr);
+            }
+        }
+
+        private static unsafe bool ReadListPositionInput(ref ObjectInput input, out int rank, out int count, out bool isDefaultCount, out int maxlen, out ReadOnlySpan<byte> error)
+        {
+            var currTokenIdx = input.parseStateStartIdx;
+
+            rank = 1; // By default, LPOS takes first match element
+            count = 1; // By default, LPOS return 1 element
+            isDefaultCount = true;
+            maxlen = 0; // By default, iterate to all the item
+
+            error = default;
+
+            while (currTokenIdx < input.parseState.Count)
+            {
+                var sbParam = input.parseState.GetArgSliceByRef(currTokenIdx++).ReadOnlySpan;
+
+                if (sbParam.SequenceEqual(CmdStrings.RANK) || sbParam.SequenceEqual(CmdStrings.rank))
+                {
+                    if (!input.parseState.TryGetInt(currTokenIdx++, out rank))
+                    {
+                        error = CmdStrings.RESP_ERR_GENERIC_VALUE_IS_NOT_INTEGER;
+                        return false;
+                    }
+                }
+                else if (sbParam.SequenceEqual(CmdStrings.COUNT) || sbParam.SequenceEqual(CmdStrings.count))
+                {
+                    if (!input.parseState.TryGetInt(currTokenIdx++, out count))
+                    {
+                        error = CmdStrings.RESP_ERR_GENERIC_VALUE_IS_NOT_INTEGER;
+                        return false;
+                    }
+
+                    isDefaultCount = false;
+                }
+                else if (sbParam.SequenceEqual(CmdStrings.MAXLEN) || sbParam.SequenceEqual(CmdStrings.maxlen))
+                {
+                    if (!input.parseState.TryGetInt(currTokenIdx++, out maxlen))
+                    {
+                        error = CmdStrings.RESP_ERR_GENERIC_VALUE_IS_NOT_INTEGER;
+                        return false;
+                    }
+                }
+                else
+                {
+                    error = CmdStrings.RESP_SYNTAX_ERROR;
+                    return false;
+                }
+            }
+
+            return true;
         }
     }
 }

@@ -1440,5 +1440,156 @@ namespace Garnet.test
             // LMPOP RIGHT
             RespTestsUtils.CheckCommandOnWrongTypeObjectSE(() => db.ListRightPop(keys, 3));
         }
+
+        #region LPOS
+
+        [Test]
+        [TestCase("a,c,b,c,d", "a", 0)]
+        [TestCase("a,c,b,c,adc", "adc", 4)]
+        [TestCase("a,c,b,c,d", "c", 1)]
+        [TestCase("av,123,bs,c,d", "e", null)]
+        public void LPOSWithoutOptions(string items, string find, int? expectedIndex)
+        {
+            using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
+            var db = redis.GetDatabase(0);
+            var key = "KeyA";
+            string[] arguments = [key, .. items.Split(",")];
+
+            db.Execute("RPUSH", arguments);
+
+            var actualIndex = (int?)db.Execute("LPOS", key, find);
+
+            ClassicAssert.AreEqual(expectedIndex, actualIndex);
+        }
+
+        [Test]
+        public void LPOSWithInvalidKey()
+        {
+            using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
+            var db = redis.GetDatabase(0);
+            var key = "KeyA";
+
+            var result = (int?)db.Execute("LPOS", key, "e");
+
+            ClassicAssert.IsNull(result);
+        }
+
+        [Test]
+        [TestCase("a,c,b,c,d", "c", "1", "rank,1")]
+        [TestCase("a,c,b,c,d", "c", "3", "RANK,2")]
+        [TestCase("a,c,b,c,d", "c", "null", "rank,3")]
+        [TestCase("a,c,b,c,d", "c", "3", "RANK,-1")]
+        [TestCase("a,c,b,c,d", "c", "1", "rank,-2")]
+        [TestCase("a,c,b,c,d", "c", "null", "RANK,-3")]
+        [TestCase("a,c,b,c,d", "a", "null", "rank,2")]
+        [TestCase("a,c,b,c,d", "b", "2", "count,2")]
+        [TestCase("a,c,b,c,d", "c", "1", "count,1")]
+        [TestCase("a,c,b,c,d", "c", "1,3", "COUNT,2")]
+        [TestCase("a,c,b,c,d", "c", "1,3", "count,3")]
+        [TestCase("a,c,b,c,d", "c", "1,3", "count,0")]
+        [TestCase("a,c,b,c,d", "c", "1", "maxlen,0")]
+        [TestCase("a,c,b,c,d", "c", "null", "MAXLEN,1")]
+        [TestCase("a,c,b,c,d", "c", "1", "maxlen,2")]
+        [TestCase("a,c,b,c,d", "c", "null", "rank,-1,maxlen,1")]
+        [TestCase("a,c,b,c,d", "c", "3", "rank,-1,maxlen,2")]
+        [TestCase("a,c,b,c,d", "c", "null", "rank,-2,maxlen,2")]
+        [TestCase("a,c,b,c,d", "c", "null", "rank,1,maxlen,1")]
+        [TestCase("a,c,b,c,d", "c", "1", "rank,1,maxlen,2")]
+        [TestCase("a,c,b,c,d", "c", "null", "rank,2,maxlen,2")]
+        [TestCase("a,c,b,c,d", "c", "3,1", "rank,-1,maxlen,0,count,0")]
+        [TestCase("a,c,b,c,d", "c", "3", "rank,-1,maxlen,0,count,1")]
+        [TestCase("a,c,b,c,d", "c", "1,3", "rank,1,maxlen,0,count,0")]
+        [TestCase("a,c,b,c,d", "c", "1", "rank,1,maxlen,0,count,1")]
+        [TestCase("z,b,z,d,e,a,b,c,d,e,a,b,c,d,e,a,b,c,d,e,a,b,c,z,z", "z", "0,2,23,24", "count,0")]  // Test for buffer copy
+        public void LPOSWithOptions(string items, string find, string expectedIndexs, string options)
+        {
+            using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
+            var db = redis.GetDatabase(0);
+            var key = "KeyA";
+            string[] pushArguments = [key, .. items.Split(",")];
+            string[] lopsArguments = [key, find, .. options.Split(",")];
+            var expectedIndexInts = expectedIndexs.Split(",").Select(ToNullableInt).ToList();
+
+            db.Execute("RPUSH", pushArguments);
+
+            if (!options.Contains("count", StringComparison.InvariantCultureIgnoreCase))
+            {
+                var actualIndex = (int?)db.Execute("LPOS", lopsArguments);
+
+                ClassicAssert.AreEqual(expectedIndexInts[0], actualIndex);
+            }
+            else
+            {
+                var actualIndex = (int[])db.Execute("LPOS", lopsArguments);
+
+                ClassicAssert.AreEqual(expectedIndexInts.Count, actualIndex.Length);
+                foreach (var index in expectedIndexInts.Zip(actualIndex))
+                {
+                    ClassicAssert.AreEqual(index.First, index.Second);
+                }
+            }
+        }
+
+        [Test]
+        [TestCase("a,c,b,c,d", "c", "1", null, 1, 0)]
+        [TestCase("a,c,b,c,d", "c", "3", null, -1, 0)]
+        [TestCase("a,c,b,c,d", "c", "1,3", 2, 1, 0)]
+        [TestCase("a,c,b,c,d", "c", "3,1", 2, -1, 0)]
+        [TestCase("a,c,b,c,d", "c", "1", 2, 1, 3)]
+        public void LPOSWithListPosition(string items, string find, string expectedIndexs, int? count, int rank, int maxLength)
+        {
+            using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
+            var db = redis.GetDatabase(0);
+            var key = "KeyA";
+            string[] pushArguments = [key, .. items.Split(",")];
+            var expectedIndexInts = expectedIndexs.Split(",").Select(ToNullableInt).ToList();
+
+            db.Execute("RPUSH", pushArguments);
+
+            if (!count.HasValue)
+            {
+                var actualIndex = db.ListPosition(key, find, rank, maxLength);
+
+                ClassicAssert.AreEqual(expectedIndexInts[0], actualIndex);
+            }
+            else
+            {
+                var actualIndexs = db.ListPositions(key, find, count.Value, rank, maxLength);
+
+                ClassicAssert.AreEqual(expectedIndexInts.Count, actualIndexs.Length);
+                foreach (var index in expectedIndexInts.Zip(actualIndexs))
+                {
+                    ClassicAssert.AreEqual(index.First, index.Second);
+                }
+            }
+        }
+
+        [Test]
+        [TestCase("a,c,b,c,d", "c", "1", "rank,0")]
+        [TestCase("a,c,b,c,d", "c", "3", "count,-1")]
+        [TestCase("a,c,b,c,d", "c", "null", "MAXLEN,-5")]
+        [TestCase("a,c,b,c,d", "c", "null", "rand,2")]
+        [TestCase("a,c,b,c,d", "c", "null", "rank,1,count,-1")]
+        public void LPOSWithInvalidOptions(string items, string find, string expectedIndexs, string options)
+        {
+            using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
+            var db = redis.GetDatabase(0);
+            var key = "KeyA";
+            string[] pushArguments = [key, .. items.Split(",")];
+            string[] lopsArguments = [key, find, .. options.Split(",")];
+            var expectedIndexInts = expectedIndexs.Split(",").Select(ToNullableInt).ToList();
+            db.Execute("RPUSH", pushArguments);
+
+            Assert.Throws<RedisServerException>(() => db.Execute("LPOS", lopsArguments));
+        }
+
+        private int? ToNullableInt(string s)
+        {
+            int i;
+            if (int.TryParse(s, out i)) return i;
+            return null;
+        }
+
+        #endregion
     }
 }
