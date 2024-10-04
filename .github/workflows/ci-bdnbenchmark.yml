@@ -98,7 +98,7 @@ jobs:
           fail-on-alert: true
 
           # Take these out as not part of minimal
-           github-token: ${{ secrets.GITHUB_TOKEN }}
+          github-token: ${{ secrets.GITHUB_TOKEN }}
           # auto-push: false
           # skip-fetch-gh-pages: true
           # summary-always: true
