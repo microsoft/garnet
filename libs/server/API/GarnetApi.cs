@@ -181,6 +181,18 @@ namespace Garnet.server
 
         #endregion
 
+        #region EXPIREAT
+
+        /// <inheritdoc />
+        public GarnetStatus EXPIREAT(ArgSlice key, long expiryTimestamp, out bool timeoutSet, StoreType storeType = StoreType.All, ExpireOption expireOption = ExpireOption.None)
+            => storageSession.EXPIREAT(key, expiryTimestamp, out timeoutSet, storeType, expireOption, ref context, ref objectContext);
+
+        /// <inheritdoc />
+        public GarnetStatus PEXPIREAT(ArgSlice key, long expiryTimestamp, out bool timeoutSet, StoreType storeType = StoreType.All, ExpireOption expireOption = ExpireOption.None)
+             => storageSession.EXPIREAT(key, expiryTimestamp, out timeoutSet, storeType, expireOption, ref context, ref objectContext, milliseconds: true);
+
+        #endregion
+
         #region PERSIST
         /// <inheritdoc />
         public unsafe GarnetStatus PERSIST(ArgSlice key, StoreType storeType = StoreType.All)
