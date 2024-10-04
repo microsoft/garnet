@@ -128,136 +128,205 @@ namespace Garnet.server
         /// </summary>
         internal unsafe bool CheckSetGetFlag()
             => (flags & RespInputFlags.SetGet) != 0;
+
+        /// <summary>
+        /// Gets a pointer to the top of the header
+        /// </summary>
+        /// <returns>Pointer</returns>
+        public unsafe byte* ToPointer()
+            => (byte*)Unsafe.AsPointer(ref cmd);
+
+        /// <summary>
+        /// Get header as Span
+        /// </summary>
+        /// <returns>Span</returns>
+        public unsafe Span<byte> AsSpan() => new(ToPointer(), Size);
+
+        /// <summary>
+        /// Get header as SpanByte
+        /// </summary>
+        public unsafe SpanByte SpanByte => new(Length, (nint)ToPointer());
+
+        /// <summary>
+        /// Get header length
+        /// </summary>
+        public int Length => AsSpan().Length;
     }
 
     /// <summary>
     /// Header for Garnet Object Store inputs
     /// </summary>
-    [StructLayout(LayoutKind.Explicit, Size = Size)]
-    public struct ObjectInput
+    public struct ObjectInput : IStoreInput
     {
-        /// <summary>
-        /// Size of header
-        /// </summary>
-        public const int Size = RespInputHeader.Size + (3 * sizeof(int)) + SessionParseState.Size;
-
         /// <summary>
         /// Common input header for Garnet
         /// </summary>
-        [FieldOffset(0)]
         public RespInputHeader header;
 
         /// <summary>
         /// Argument for generic usage by command implementation
         /// </summary>
-        [FieldOffset(RespInputHeader.Size)]
         public int arg1;
 
         /// <summary>
         /// Argument for generic usage by command implementation
         /// </summary>
-        [FieldOffset(RespInputHeader.Size + sizeof(int))]
         public int arg2;
 
         /// <summary>
         /// First index to start reading the parse state for command execution
         /// </summary>
-        [FieldOffset(RespInputHeader.Size + (2 * sizeof(int)))]
         public int parseStateStartIdx;
 
         /// <summary>
         /// Session parse state
         /// </summary>
-        [FieldOffset(RespInputHeader.Size + (3 * sizeof(int)))]
         public SessionParseState parseState;
 
-        /// <summary>
-        /// Gets a pointer to the top of the header
-        /// </summary>
-        /// <returns>Pointer</returns>
-        public unsafe byte* ToPointer()
-            => (byte*)Unsafe.AsPointer(ref header);
+        /// <inheritdoc />
+        public int SerializedLength
+        {
+            get
+            {
+                var serializedLength = header.SpanByte.TotalSize
+                                       + (3 * sizeof(int)) // Length + arg1 + arg2
+                                       + parseState.GetSerializedLength(parseStateStartIdx);
 
-        /// <summary>
-        /// Get header as Span
-        /// </summary>
-        /// <returns>Span</returns>
-        public unsafe Span<byte> AsSpan() => new(ToPointer(), Size);
+                return serializedLength;
+            }
+        }
 
-        /// <summary>
-        /// Get header as SpanByte
-        /// </summary>
-        public unsafe SpanByte SpanByte => new(Length, (nint)ToPointer());
+        /// <inheritdoc />
+        public unsafe void CopyTo(byte* dest)
+        {
+            // Leave space for length
+            var curr = dest + sizeof(int);
 
-        /// <summary>
-        /// Get header length
-        /// </summary>
-        public int Length => AsSpan().Length;
+            // Serialize header
+            header.SpanByte.CopyTo(curr);
+            curr += header.SpanByte.TotalSize;
+
+            // Serialize arg1
+            *(int*)curr = arg1;
+            curr += sizeof(int);
+
+            // Serialize arg2
+            *(int*)curr = arg2;
+            curr += sizeof(int);
+
+            // Serialize parse state
+            // Only serialize arguments starting from parseStateStartIdx
+            var len = parseState.CopyTo(curr, parseStateStartIdx);
+            curr += len;
+
+            // Serialize length
+            *(int*)dest = (int)(curr - dest - sizeof(int));
+        }
+
+        /// <inheritdoc />
+        public unsafe void DeserializeFrom(byte* src)
+        {
+            var curr = src;
+
+            // Deserialize header
+            ref var sbHeader = ref Unsafe.AsRef<SpanByte>(curr);
+            ref var h = ref Unsafe.AsRef<RespInputHeader>(sbHeader.ToPointer());
+            curr += sbHeader.TotalSize;
+            header = h;
+
+            // Deserialize arg1
+            arg1 = *(int*)curr;
+            curr += sizeof(int);
+
+            // Deserialize arg2
+            arg2 = *(int*)curr;
+            curr += sizeof(int);
+
+            // Deserialize parse state
+            parseState.DeserializeFrom(curr);
+        }
     }
 
     /// <summary>
     /// Header for Garnet Main Store inputs
     /// </summary>
-    [StructLayout(LayoutKind.Explicit, Size = Size)]
-    public struct RawStringInput
+    public struct RawStringInput : IStoreInput
     {
-        /// <summary>
-        /// Size of header
-        /// </summary>
-        public const int Size = RespInputHeader.Size + sizeof(long) + sizeof(int) + SessionParseState.Size;
-
         /// <summary>
         /// Common input header for Garnet
         /// </summary>
-        [FieldOffset(0)]
         public RespInputHeader header;
 
         /// <summary>
         /// Argument for generic usage by command implementation
         /// </summary>
-        [FieldOffset(RespInputHeader.Size)]
         public long arg1;
 
         /// <summary>
         /// First index to start reading the parse state for command execution
         /// </summary>
-        [FieldOffset(RespInputHeader.Size + sizeof(long))]
         public int parseStateStartIdx;
 
         /// <summary>
         /// Session parse state
         /// </summary>
-        [FieldOffset(RespInputHeader.Size + sizeof(long) + sizeof(int))]
         public SessionParseState parseState;
 
-        /// <summary>
-        /// Gets a pointer to the top of the header
-        /// </summary>
-        /// <returns>Pointer</returns>
-        public unsafe byte* ToPointer()
-            => (byte*)Unsafe.AsPointer(ref header);
+        /// <inheritdoc />
+        public int SerializedLength
+        {
+            get
+            {
+                var serializedLength = sizeof(int) // Length
+                                       + header.SpanByte.TotalSize 
+                                       + sizeof(long) // arg1
+                                       + parseState.GetSerializedLength(parseStateStartIdx);
 
-        /// <summary>
-        /// Get header as Span
-        /// </summary>
-        /// <returns>Span</returns>
-        public unsafe Span<byte> AsSpan() => new(ToPointer(), Size);
+                return serializedLength;
+            }
+        }
 
-        /// <summary>
-        /// Get header as ReadOnlySpan
-        /// </summary>
-        /// <returns>ReadOnlySpan</returns>
-        public unsafe ReadOnlySpan<byte> AsReadOnlySpan() => new(ToPointer(), Size);
+        /// <inheritdoc />
+        public unsafe void CopyTo(byte* dest)
+        {
+            // Leave space for length
+            var curr = dest + sizeof(int);
 
-        /// <summary>
-        /// Get header as SpanByte
-        /// </summary>
-        public unsafe SpanByte SpanByte => new(Length, (nint)ToPointer());
+            // Serialize header
+            header.SpanByte.CopyTo(curr);
+            curr += header.SpanByte.TotalSize;
 
-        /// <summary>
-        /// Get header length
-        /// </summary>
-        public int Length => AsSpan().Length;
+            // Serialize arg1
+            *(long*)curr = arg1;
+            curr += sizeof(long);
+
+            // Serialize parse state
+            // Only serialize arguments starting from parseStateStartIdx
+            var len = parseState.CopyTo(curr, parseStateStartIdx);
+            curr += len;
+
+            // Serialize length
+            *(int*)dest = (int)(curr - dest - sizeof(int)); 
+        }
+        
+        /// <inheritdoc />
+        public unsafe void DeserializeFrom(byte* src)
+        {
+            var curr = src;
+
+            // Deserialize header
+            ref var sbHeader = ref Unsafe.AsRef<SpanByte>(curr);
+            ref var h = ref Unsafe.AsRef<RespInputHeader>(sbHeader.ToPointer());
+            curr += sbHeader.TotalSize;
+            header = h;
+
+            // Deserialize arg1
+            arg1 = *(long*)curr;
+            curr += sizeof(long);
+
+            // Deserialize parse state
+            parseState.DeserializeFrom(curr);
+        }
     }
 
     /// <summary>

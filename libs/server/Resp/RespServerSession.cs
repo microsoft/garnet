@@ -65,7 +65,6 @@ namespace Garnet.server
         internal readonly ScratchBufferManager scratchBufferManager;
 
         internal SessionParseState parseState;
-        internal ArgSlice[] parseStateBuffer;
         ClusterSlotVerificationInput csvi;
         GCHandle recvHandle;
 
@@ -220,7 +219,7 @@ namespace Garnet.server
             clusterSession?.SetUser(this._user);
             sessionScriptCache?.SetUser(this._user);
 
-            parseState.Initialize(ref parseStateBuffer);
+            parseState.Initialize();
             readHead = 0;
             toDispose = false;
             SessionAsking = 0;

@@ -557,30 +557,15 @@ namespace Garnet.server
         {
             if (functionsState.StoredProcMode) return;
 
-            //We need this check because when we ingest records from the primary
-            //if the input is zero then input overlaps with value so any update to RespInputHeader->flags
-            //will incorrectly modify the total length of value.
-            if (input.Length > 0)
+            // We need this check because when we ingest records from the primary
+            // if the input is zero then input overlaps with value so any update to RespInputHeader->flags
+            // will incorrectly modify the total length of value.
+            if (input.SerializedLength > 0)
                 input.header.flags |= RespInputFlags.Deterministic;
-
-            // Serializing key, RawStringInput & value to RMW log
-            var parseStateArgCount = input.parseState.Count - input.parseStateStartIdx;
-
-            var sbToSerialize = new SpanByte[3 + parseStateArgCount];
-            sbToSerialize[0] = key;
-            for (var i = 0; i < parseStateArgCount; i++)
-            {
-                sbToSerialize[i + 2] = input.parseState.GetArgSliceByRef(input.parseStateStartIdx + i).SpanByte;
-            }
-
-            input.parseStateStartIdx = 0;
-            input.parseState.Count = parseStateArgCount;
-            sbToSerialize[1] = input.SpanByte;
-            sbToSerialize[^1] = value;
 
             functionsState.appendOnlyFile.Enqueue(
                 new AofHeader { opType = AofEntryType.StoreUpsert, version = version, sessionID = sessionId },
-                ref sbToSerialize, out _);
+                ref key, ref value, ref input, out _);
         }
 
         /// <summary>
@@ -589,28 +574,14 @@ namespace Garnet.server
         /// b. InPlaceUpdater
         /// c. PostCopyUpdater
         /// </summary>
-        void WriteLogRMW(ref SpanByte key, ref RawStringInput input, ref SpanByte value, long version, int sessionId)
+        void WriteLogRMW(ref SpanByte key, ref RawStringInput input, long version, int sessionId)
         {
             if (functionsState.StoredProcMode) return;
             input.header.flags |= RespInputFlags.Deterministic;
 
-            // Serializing key & RawStringInput to RMW log
-            var parseStateArgCount = input.parseState.Count - input.parseStateStartIdx;
-
-            var sbToSerialize = new SpanByte[2 + parseStateArgCount];
-            sbToSerialize[0] = key;
-            for (var i = 0; i < parseStateArgCount; i++)
-            {
-                sbToSerialize[i + 2] = input.parseState.GetArgSliceByRef(input.parseStateStartIdx + i).SpanByte;
-            }
-
-            input.parseStateStartIdx = 0;
-            input.parseState.Count = parseStateArgCount;
-            sbToSerialize[1] = input.SpanByte;
-
             functionsState.appendOnlyFile.Enqueue(
                 new AofHeader { opType = AofEntryType.StoreRMW, version = version, sessionID = sessionId },
-                ref sbToSerialize, out _);
+                ref key, ref input, out _);
         }
 
         /// <summary>

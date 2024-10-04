@@ -3,17 +3,18 @@
 
 using System;
 using System.Diagnostics;
+using System.Reflection.PortableExecutable;
 using System.Runtime.CompilerServices;
 using System.Runtime.InteropServices;
 using Garnet.common;
 using Garnet.common.Parsing;
+using Tsavorite.core;
 
 namespace Garnet.server
 {
     /// <summary>
     /// Wrapper to hold parse state for a RESP session.
     /// </summary>
-    [StructLayout(LayoutKind.Explicit, Size = Size)]
     public unsafe struct SessionParseState
     {
         /// <summary>
@@ -29,14 +30,17 @@ namespace Garnet.server
         /// <summary>
         /// Count of arguments for the command
         /// </summary>
-        [FieldOffset(0)]
         public int Count;
 
         /// <summary>
         /// Pointer to buffer
         /// </summary>
-        [FieldOffset(sizeof(int))]
         ArgSlice* bufferPtr;
+
+        /// <summary>
+        /// Arguments buffer
+        /// </summary>
+        ArgSlice[] buffer;
 
         /// <summary>
         /// Get a Span of the parsed parameters in the form an ArgSlice
@@ -46,8 +50,7 @@ namespace Garnet.server
         /// <summary>
         /// Initialize the parse state at the start of a session
         /// </summary>
-        /// <param name="buffer"></param>
-        public void Initialize(ref ArgSlice[] buffer)
+        public void Initialize()
         {
             Count = 0;
             buffer = GC.AllocateArray<ArgSlice>(MinParams, true);
@@ -57,10 +60,9 @@ namespace Garnet.server
         /// <summary>
         /// Initialize the parse state with a given count of arguments
         /// </summary>
-        /// <param name="buffer">Reference to arguments buffer (necessary for keeping buffer object rooted)</param>
         /// <param name="count">Size of argument array to allocate</param>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public void Initialize(ref ArgSlice[] buffer, int count)
+        public void Initialize(int count)
         {
             this.Count = count;
 
@@ -74,16 +76,120 @@ namespace Garnet.server
         /// <summary>
         /// Initialize the parse state with a given set of arguments
         /// </summary>
-        /// <param name="buffer">Reference to arguments buffer (necessary for keeping buffer object rooted)</param>
         /// <param name="args">Set of arguments to initialize buffer with</param>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public void InitializeWithArguments(ref ArgSlice[] buffer, params ArgSlice[] args)
+        public void InitializeWithArguments(params ArgSlice[] args)
         {
-            Initialize(ref buffer, args.Length);
+            Initialize(args.Length);
 
             for (var i = 0; i < args.Length; i++)
             {
                 buffer[i] = args[i];
+            }
+        }
+
+        /// <summary>
+        /// Set argument at a specific index
+        /// </summary>
+        /// <param name="i">Index of buffer at which to set argument</param>
+        /// <param name="arg">Argument to set</param>
+        public void SetArgument(int i, ArgSlice arg)
+        {
+            Debug.Assert(i < Count);
+            buffer[i] = arg;
+        }
+
+        /// <summary>
+        /// Set arguments starting at a specific index
+        /// </summary>
+        /// <param name="i">Index of buffer at which to start setting arguments</param>
+        /// <param name="args">Arguments to set</param>
+        public void SetArguments(int i, params ArgSlice[] args)
+        {
+            Debug.Assert(i + args.Length - 1 < Count);
+            for (var j = 0; j < args.Length; j++)
+            {
+                buffer[i + j] = args[j];
+            }
+        }
+
+        /// <summary>
+        /// Get serialized length of parse state when arguments are only
+        /// serialized starting at a specified index
+        /// </summary>
+        /// <param name="startIdx">Index from which arguments are serialized</param>
+        /// <returns>The serialized length</returns>
+        public int GetSerializedLength(int startIdx)
+        {
+            var serializedLength = sizeof(int);
+            var argCount = Count - startIdx;
+
+            if (argCount > 0)
+            {
+                Debug.Assert(startIdx < Count);
+
+                for (var i = 0; i < argCount; i++)
+                {
+                    serializedLength += buffer[startIdx + i].SpanByte.TotalSize;
+                }
+            }
+
+            return serializedLength;
+        }
+
+        /// <summary>
+        /// Serialize parse state to memory buffer
+        /// when arguments are only serialized starting at a specified index
+        /// </summary>
+        /// <param name="dest">The memory buffer to serialize into (of size at least SerializedLength(startIdx) bytes)</param>
+        /// <param name="startIdx">Index from which arguments are serialized</param>
+        /// <returns>Total serialized bytes</returns>
+        public int CopyTo(byte* dest, int startIdx)
+        {
+            var curr = dest;
+
+            // Serialize argument count
+            var argCount = Count - startIdx;
+            *(int*)curr = argCount;
+            curr += sizeof(int);
+
+            // Serialize arguments
+            if (argCount > 0)
+            {
+                Debug.Assert(startIdx < Count);
+
+                for (var i = 0; i < argCount; i++)
+                {
+                    var sbParam = buffer[startIdx + i].SpanByte;
+                    sbParam.CopyTo(curr);
+                    curr += sbParam.TotalSize;
+                }
+            }
+
+            return (int)(dest - curr);
+        }
+
+        /// <summary>
+        /// Deserialize parse state from memory buffer into current struct
+        /// </summary>
+        /// <param name="src">Memory buffer to deserialize from</param>
+        public unsafe void DeserializeFrom(byte* src)
+        {
+            var curr = src;
+
+            var argCount = *(int*)curr;
+            curr += sizeof(int);
+
+            if (argCount > 0)
+            {
+                Initialize(argCount);
+
+                for (var i = 0; i < argCount; i++)
+                {
+                    ref var sbArgument = ref Unsafe.AsRef<SpanByte>(curr);
+                    buffer[i] = new ArgSlice(ref sbArgument);
+                    curr += sbArgument.TotalSize;
+                }
             }
         }
 

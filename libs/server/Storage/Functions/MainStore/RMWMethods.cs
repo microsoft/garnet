@@ -202,7 +202,7 @@ namespace Garnet.server
             if (functionsState.appendOnlyFile != null)
             {
                 input.header.SetExpiredFlag();
-                WriteLogRMW(ref key, ref input, ref value, rmwInfo.Version, rmwInfo.SessionID);
+                WriteLogRMW(ref key, ref input, rmwInfo.Version, rmwInfo.SessionID);
             }
         }
 
@@ -215,7 +215,7 @@ namespace Garnet.server
                 if (!rmwInfo.RecordInfo.Modified)
                     functionsState.watchVersionMap.IncrementVersion(rmwInfo.KeyHash);
                 if (functionsState.appendOnlyFile != null)
-                    WriteLogRMW(ref key, ref input, ref value, rmwInfo.Version, rmwInfo.SessionID);
+                    WriteLogRMW(ref key, ref input, rmwInfo.Version, rmwInfo.SessionID);
                 return true;
             }
             return false;
@@ -754,7 +754,7 @@ namespace Garnet.server
         {
             functionsState.watchVersionMap.IncrementVersion(rmwInfo.KeyHash);
             if (functionsState.appendOnlyFile != null)
-                WriteLogRMW(ref key, ref input, ref oldValue, rmwInfo.Version, rmwInfo.SessionID);
+                WriteLogRMW(ref key, ref input, rmwInfo.Version, rmwInfo.SessionID);
             return true;
         }
     }

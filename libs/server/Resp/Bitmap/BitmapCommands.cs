@@ -519,17 +519,16 @@ namespace Garnet.server
             {
                 var opCode = (byte)secondaryCommandArgs[i].Item1;
                 var opArgs = secondaryCommandArgs[i].Item2;
-                parseState.Initialize(ref parseStateBuffer,
-                    opArgs.Length + (isOverflowTypeSet ? 1 : 0));
+                parseState.Initialize(opArgs.Length + (isOverflowTypeSet ? 1 : 0));
 
                 for (var j = 0; j < opArgs.Length; j++)
                 {
-                    parseStateBuffer[j] = opArgs[j];
+                    parseState.SetArgument(j, opArgs[j]);
                 }
 
                 if (isOverflowTypeSet)
                 {
-                    parseStateBuffer[opArgs.Length] = overflowTypeSlice;
+                    parseState.SetArgument(opArgs.Length, overflowTypeSlice);
                 }
 
                 input.parseState = parseState;

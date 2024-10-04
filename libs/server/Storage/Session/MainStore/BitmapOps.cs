@@ -29,7 +29,7 @@ namespace Garnet.server
             setValBytes[0] = (byte)(bit ? '1' : '0');
             var setValSlice = new ArgSlice(setValBytes, 1);
 
-            parseState.InitializeWithArguments(ref parseStateBuffer, offset, setValSlice);
+            parseState.InitializeWithArguments(offset, setValSlice);
 
             var input = new RawStringInput
             {
@@ -53,7 +53,7 @@ namespace Garnet.server
             if (key.Length == 0)
                 return GarnetStatus.OK;
 
-            parseState.InitializeWithArguments(ref parseStateBuffer, offset);
+            parseState.InitializeWithArguments(offset);
 
             var input = new RawStringInput
             {
@@ -206,7 +206,7 @@ namespace Garnet.server
             args[0] = destinationKey;
             keys.CopyTo(args, 1);
 
-            parseState.InitializeWithArguments(ref parseStateBuffer, args);
+            parseState.InitializeWithArguments(args);
 
             var input = new RawStringInput
             {
@@ -243,7 +243,7 @@ namespace Garnet.server
                     var startSlice = new ArgSlice(startPtr, startBytes.Length);
                     var endSlice = new ArgSlice(endPtr, endBytes.Length);
 
-                    parseState.InitializeWithArguments(ref parseStateBuffer, startSlice, endSlice, useBitIntervalSlice);
+                    parseState.InitializeWithArguments(startSlice, endSlice, useBitIntervalSlice);
 
                     var input = new RawStringInput
                     {
@@ -310,7 +310,7 @@ namespace Garnet.server
                     var valueSlice = new ArgSlice(valuePtr, valueBytes.Length);
                     var overflowTypeSlice = new ArgSlice(overflowTypePtr, overflowTypeBytes.Length);
 
-                    parseState.InitializeWithArguments(ref parseStateBuffer, opSlice, encodingSlice, offsetSlice,
+                    parseState.InitializeWithArguments(opSlice, encodingSlice, offsetSlice,
                         valueSlice, overflowTypeSlice);
 
                     input.parseState = parseState;

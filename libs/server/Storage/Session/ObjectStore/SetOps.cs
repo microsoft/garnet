@@ -33,7 +33,7 @@ namespace Garnet.server
             saddCount = 0;
 
             // Prepare the parse state
-            parseState.InitializeWithArguments(ref parseStateBuffer, member);
+            parseState.InitializeWithArguments(member);
 
             // Prepare the input
             var input = new ObjectInput
@@ -73,7 +73,7 @@ namespace Garnet.server
                 return GarnetStatus.OK;
 
             // Prepare the parse state
-            parseState.InitializeWithArguments(ref parseStateBuffer, members);
+            parseState.InitializeWithArguments(members);
 
             // Prepare the input
             var input = new ObjectInput
@@ -112,7 +112,7 @@ namespace Garnet.server
             sremCount = 0;
 
             // Prepare the parse state
-            parseState.InitializeWithArguments(ref parseStateBuffer, member);
+            parseState.InitializeWithArguments(member);
 
             // Prepare the input
             var input = new ObjectInput
@@ -153,7 +153,7 @@ namespace Garnet.server
                 return GarnetStatus.OK;
 
             // Prepare the parse state
-            parseState.InitializeWithArguments(ref parseStateBuffer, members);
+            parseState.InitializeWithArguments(members);
 
             // Prepare the input
             var input = new ObjectInput

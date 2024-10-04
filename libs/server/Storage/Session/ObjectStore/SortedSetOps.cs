@@ -35,7 +35,7 @@ namespace Garnet.server
                 return GarnetStatus.OK;
 
             // Prepare the parse state
-            parseState.InitializeWithArguments(ref parseStateBuffer, score, member);
+            parseState.InitializeWithArguments(score, member);
 
             // Prepare the input
             var input = new ObjectInput
@@ -79,12 +79,11 @@ namespace Garnet.server
             if (inputs.Length == 0 || key.Length == 0)
                 return GarnetStatus.OK;
 
-            parseState.Initialize(ref parseStateBuffer, inputs.Length * 2);
+            parseState.Initialize(inputs.Length * 2);
 
             for (var i = 0; i < inputs.Length; i++)
             {
-                parseStateBuffer[2 * i] = inputs[i].score;
-                parseStateBuffer[(2 * i) + 1] = inputs[i].member;
+                parseState.SetArguments(2 * i, inputs[i].score, inputs[i].member);
             }
 
             // Prepare the input
@@ -132,7 +131,7 @@ namespace Garnet.server
                 return GarnetStatus.OK;
 
             // Prepare the parse state
-            parseState.InitializeWithArguments(ref parseStateBuffer, member);
+            parseState.InitializeWithArguments(member);
 
             // Prepare the input
             var input = new ObjectInput
@@ -170,12 +169,7 @@ namespace Garnet.server
             if (key.Length == 0 || members.Length == 0)
                 return GarnetStatus.OK;
 
-            parseState.Initialize(ref parseStateBuffer, members.Length);
-
-            for (var i = 0; i < members.Length; i++)
-            {
-                parseStateBuffer[i] = members[i];
-            }
+            parseState.InitializeWithArguments(members);
 
             // Prepare the input
             var input = new ObjectInput
@@ -225,7 +219,7 @@ namespace Garnet.server
                     var minArgSlice = new ArgSlice(ptr, minBytes.Length);
                     var maxArgSlice = new ArgSlice(ptr2, maxBytes.Length);
 
-                    parseState.InitializeWithArguments(ref parseStateBuffer, minArgSlice, maxArgSlice);
+                    parseState.InitializeWithArguments(minArgSlice, maxArgSlice);
 
                     // Prepare the input
                     var input = new ObjectInput
@@ -277,7 +271,7 @@ namespace Garnet.server
                     var minArgSlice = new ArgSlice(ptr, minBytes.Length);
                     var maxArgSlice = new ArgSlice(ptr2, maxBytes.Length);
 
-                    parseState.InitializeWithArguments(ref parseStateBuffer, minArgSlice, maxArgSlice);
+                    parseState.InitializeWithArguments(minArgSlice, maxArgSlice);
 
                     // Prepare the input
                     var input = new ObjectInput
@@ -335,7 +329,7 @@ namespace Garnet.server
                     var startArgSlice = new ArgSlice(ptr, startBytes.Length);
                     var stopArgSlice = new ArgSlice(ptr2, stopBytes.Length);
 
-                    parseState.InitializeWithArguments(ref parseStateBuffer, startArgSlice, stopArgSlice);
+                    parseState.InitializeWithArguments(startArgSlice, stopArgSlice);
 
                     // Prepare the input
                     var input = new ObjectInput
@@ -430,7 +424,7 @@ namespace Garnet.server
                 // Prepare the parse state
                 var incrementArgSlice = new ArgSlice(ptr, incrementBytes.Length);
 
-                parseState.InitializeWithArguments(ref parseStateBuffer, incrementArgSlice, member);
+                parseState.InitializeWithArguments(incrementArgSlice, member);
 
                 // Prepare the input
                 var input = new ObjectInput
@@ -592,7 +586,7 @@ namespace Garnet.server
                 }
             }
 
-            parseState.InitializeWithArguments(ref parseStateBuffer, [.. arguments]);
+            parseState.InitializeWithArguments([.. arguments]);
 
             // Prepare the input
             var input = new ObjectInput
@@ -697,7 +691,7 @@ namespace Garnet.server
                 return GarnetStatus.OK;
 
             // Prepare the parse state
-            parseState.InitializeWithArguments(ref parseStateBuffer, member);
+            parseState.InitializeWithArguments(member);
 
             // Prepare the input
             var input = new ObjectInput

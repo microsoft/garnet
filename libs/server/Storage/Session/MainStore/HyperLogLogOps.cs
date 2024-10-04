@@ -21,7 +21,7 @@ namespace Garnet.server
         {
             updated = false;
 
-            parseState.Initialize(ref parseStateBuffer, 1);
+            parseState.Initialize(1);
 
             var input = new RawStringInput
             {
@@ -40,7 +40,7 @@ namespace Garnet.server
                 fixed (byte* elementPtr = elementBytes)
                 {
                     var elementSlice = new ArgSlice(elementPtr, elementBytes.Length);
-                    parseStateBuffer[0] = elementSlice;
+                    parseState.SetArgument(0, elementSlice);
 
                     var o = new SpanByteAndMemory(output, 1);
                     var sbKey = key.SpanByte;
@@ -76,10 +76,10 @@ namespace Garnet.server
         public unsafe GarnetStatus HyperLogLogLength<TContext>(Span<ArgSlice> keys, out long count, ref TContext context)
             where TContext : ITsavoriteContext<SpanByte, SpanByte, RawStringInput, SpanByteAndMemory, long, MainSessionFunctions, MainStoreFunctions, MainStoreAllocator>
         {
-            parseState.Initialize(ref parseStateBuffer, keys.Length);
+            parseState.Initialize(keys.Length);
             for (var i = 0; i < keys.Length; i++)
             {
-                parseStateBuffer[i] = keys[i];
+                parseState.SetArgument(i, keys[i]);
             }
 
             var inputHeader = new RawStringInput
@@ -264,7 +264,7 @@ namespace Garnet.server
 
                     var mergeSlice = new ArgSlice(ref mergeBuffer.SpanByte);
 
-                    parseState.InitializeWithArguments(ref parseStateBuffer, mergeSlice);
+                    parseState.InitializeWithArguments(mergeSlice);
 
                     currInput.parseState = parseState;
                     SET_Conditional(ref dstKey, ref currInput, ref mergeBuffer, ref currLockableContext);

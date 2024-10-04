@@ -34,7 +34,7 @@ namespace Garnet.server
                 return GarnetStatus.OK;
 
             // Prepare the parse state
-            parseState.InitializeWithArguments(ref parseStateBuffer, elements);
+            parseState.InitializeWithArguments(elements);
 
             // Prepare the input
             var input = new ObjectInput
@@ -75,7 +75,7 @@ namespace Garnet.server
             itemsDoneCount = 0;
 
             // Prepare the parse state
-            parseState.InitializeWithArguments(ref parseStateBuffer, element);
+            parseState.InitializeWithArguments(element);
 
             // Prepare the input
             var input = new ObjectInput

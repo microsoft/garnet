@@ -29,6 +29,10 @@ namespace Garnet.server
         readonly CustomObjectCommandWrapper[] customObjectCommands;
         readonly RespServerSession respServerSession;
 
+        static RawStringInput storeInput;
+        static ObjectInput objectStoreInput; 
+        static SessionParseState parseState;
+
         /// <summary>
         /// Replication offset
         /// </summary>
@@ -87,6 +91,10 @@ namespace Garnet.server
             var objectStoreSession = respServerSession.storageSession.objectStoreBasicContext.Session;
             if (objectStoreSession is not null)
                 objectStoreBasicContext = objectStoreSession.BasicContext;
+
+            parseState.Initialize();
+            storeInput.parseState = parseState;
+            objectStoreInput.parseState = parseState;
 
             inflightTxns = new Dictionary<int, List<byte[]>>();
             buffer = new byte[BufferSizeUtils.ServerBufferSize(new MaxSizeSettings())];
@@ -273,16 +281,14 @@ namespace Garnet.server
             var parseStateCount = *(int*)curr;
             curr += sizeof(int);
 
-            var parseState = new SessionParseState();
             if (parseStateCount > 0)
             {
-                ArgSlice[] parseStateBuffer = default;
-                parseState.Initialize(ref parseStateBuffer, parseStateCount);
+                parseState.Initialize(parseStateCount);
 
                 for (var i = 0; i < parseStateCount; i++)
                 {
                     ref var sbArgument = ref Unsafe.AsRef<SpanByte>(curr);
-                    parseStateBuffer[i] = new ArgSlice(ref sbArgument);
+                    parseState.SetArgument(i, new ArgSlice(ref sbArgument));
                     curr += sbArgument.TotalSize;
                 }
             }
@@ -296,33 +302,19 @@ namespace Garnet.server
             ref var key = ref Unsafe.AsRef<SpanByte>(curr);
             curr += key.TotalSize;
 
+            ref var value = ref Unsafe.AsRef<SpanByte>(curr);
+            curr += value.TotalSize;
+
             // Reconstructing RawStringInput
 
             // input
-            ref var sbInput = ref Unsafe.AsRef<SpanByte>(curr);
-            ref var input = ref Unsafe.AsRef<RawStringInput>(sbInput.ToPointer());
-            curr += sbInput.TotalSize;
+            var length = *(int*)curr;
+            curr += sizeof(int);
 
-            // Reconstructing parse state
-            var parseStateCount = input.parseState.Count;
-
-            if (parseStateCount > 0)
-            {
-                ArgSlice[] parseStateBuffer = default;
-                input.parseState.Initialize(ref parseStateBuffer, parseStateCount);
-
-                for (var i = 0; i < parseStateCount; i++)
-                {
-                    ref var sbArgument = ref Unsafe.AsRef<SpanByte>(curr);
-                    parseStateBuffer[i] = new ArgSlice(ref sbArgument);
-                    curr += sbArgument.TotalSize;
-                }
-            }
-
-            ref var value = ref Unsafe.AsRef<SpanByte>(curr);
+            storeInput.DeserializeFrom(curr);
 
             SpanByteAndMemory output = default;
-            basicContext.Upsert(ref key, ref input, ref value, ref output);
+            basicContext.Upsert(ref key, ref storeInput, ref value, ref output);
             if (!output.IsSpanByte)
                 output.Memory.Dispose();
         }
@@ -336,30 +328,15 @@ namespace Garnet.server
             // Reconstructing RawStringInput
 
             // input
-            ref var sbInput = ref Unsafe.AsRef<SpanByte>(curr);
-            ref var input = ref Unsafe.AsRef<RawStringInput>(sbInput.ToPointer());
-            curr += sbInput.TotalSize;
+            var length = *(int*)curr;
+            curr += sizeof(int);
 
-            // Reconstructing parse state
-            var parseStateCount = input.parseState.Count;
-
-            if (parseStateCount > 0)
-            {
-                ArgSlice[] parseStateBuffer = default;
-                input.parseState.Initialize(ref parseStateBuffer, parseStateCount);
-
-                for (var i = 0; i < parseStateCount; i++)
-                {
-                    ref var sbArgument = ref Unsafe.AsRef<SpanByte>(curr);
-                    parseStateBuffer[i] = new ArgSlice(ref sbArgument);
-                    curr += sbArgument.TotalSize;
-                }
-            }
+            storeInput.DeserializeFrom(curr);
 
             var pbOutput = stackalloc byte[32];
             var output = new SpanByteAndMemory(pbOutput, 32);
 
-            if (basicContext.RMW(ref key, ref input, ref output).IsPending)
+            if (basicContext.RMW(ref key, ref storeInput, ref output).IsPending)
                 basicContext.CompletePending(true);
             if (!output.IsSpanByte)
                 output.Memory.Dispose();
@@ -397,29 +374,14 @@ namespace Garnet.server
             // Reconstructing ObjectInput
 
             // input
-            ref var sbInput = ref Unsafe.AsRef<SpanByte>(curr);
-            ref var input = ref Unsafe.AsRef<ObjectInput>(sbInput.ToPointer());
-            curr += sbInput.TotalSize;
+            var length = *(int*)curr;
+            curr += sizeof(int);
 
-            // Reconstructing parse state
-            var parseStateCount = input.parseState.Count;
-
-            if (parseStateCount > 0)
-            {
-                ArgSlice[] parseStateBuffer = default;
-                input.parseState.Initialize(ref parseStateBuffer, parseStateCount);
-
-                for (var i = 0; i < parseStateCount; i++)
-                {
-                    ref var sbArgument = ref Unsafe.AsRef<SpanByte>(curr);
-                    parseStateBuffer[i] = new ArgSlice(ref sbArgument);
-                    curr += sbArgument.TotalSize;
-                }
-            }
+            objectStoreInput.DeserializeFrom(curr);
 
             // Call RMW with the reconstructed key & ObjectInput
             var output = new GarnetObjectStoreOutput { spanByteAndMemory = new(outputPtr, outputLength) };
-            if (basicContext.RMW(ref keyB, ref input, ref output).IsPending)
+            if (basicContext.RMW(ref keyB, ref objectStoreInput, ref output).IsPending)
                 basicContext.CompletePending(true);
             if (!output.spanByteAndMemory.IsSpanByte)
                 output.spanByteAndMemory.Memory.Dispose();

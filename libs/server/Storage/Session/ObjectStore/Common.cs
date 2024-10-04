@@ -156,7 +156,7 @@ namespace Garnet.server
                     var countKeywordSlice = new ArgSlice(countPtr, CmdStrings.COUNT.Length);
                     var countValueSlice = new ArgSlice(countValuePtr, countBytes.Length);
 
-                    parseState.InitializeWithArguments(ref parseStateBuffer, matchKeywordSlice, matchPatternSlice,
+                    parseState.InitializeWithArguments(matchKeywordSlice, matchPatternSlice,
                         countKeywordSlice, countValueSlice);
                 }
             }

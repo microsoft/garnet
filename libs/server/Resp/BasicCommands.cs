@@ -688,7 +688,7 @@ namespace Garnet.server
                 {
                     // Prepare the parse state
                     var valueSlice = new ArgSlice(ptr, valueBytes.Length);
-                    parseStateBuffer[0] = valueSlice;
+                    parseState.InitializeWithArguments(valueSlice);
 
                     input.parseState = parseState;
                     input.parseStateStartIdx = 0;
