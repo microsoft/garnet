@@ -99,6 +99,7 @@ jobs:
 
           # Take these out as not part of minimal
           github-token: ${{ secrets.GITHUB_TOKEN }}
+          comment-on-alert: true
           # auto-push: false
           # skip-fetch-gh-pages: true
           # summary-always: true
