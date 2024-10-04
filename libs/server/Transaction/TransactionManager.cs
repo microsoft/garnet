@@ -57,9 +57,6 @@ namespace Garnet.server
         // Not readonly to avoid defensive copy
         GarnetWatchApi<BasicGarnetApi> garnetTxPrepareApi;
 
-        // Cluster session
-        IClusterSession clusterSession;
-
         // Not readonly to avoid defensive copy
         LockableGarnetApi garnetTxMainApi;
 
@@ -118,7 +115,6 @@ namespace Garnet.server
             this.logger = logger;
 
             this.respSession = respSession;
-            this.clusterSession = respSession.clusterSession;
 
             watchContainer = new WatchedKeysContainer(initialSliceBufferSize, functionsState.watchVersionMap);
             keyEntries = new TxnKeyEntries(initialSliceBufferSize, lockableContext, objectStoreLockableContext);
