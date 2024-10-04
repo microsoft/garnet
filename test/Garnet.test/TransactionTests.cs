@@ -202,7 +202,7 @@ namespace Garnet.test
             await Task.Run(() => updateKey("key1", "value1_updated"));
 
             res = lightClientRequest.SendCommand("EXEC");
-            expectedResponse = "$-1";
+            expectedResponse = "*-1";
             ClassicAssert.AreEqual(res.AsSpan().Slice(0, expectedResponse.Length).ToArray(), expectedResponse);
 
             // This one should Commit
@@ -243,7 +243,7 @@ namespace Garnet.test
             await Task.Run(() => updateKey("key1", "value1"));
 
             res = lightClientRequest.SendCommand("EXEC");
-            expectedResponse = "$-1";
+            expectedResponse = "*-1";
             ClassicAssert.AreEqual(res.AsSpan().Slice(0, expectedResponse.Length).ToArray(), expectedResponse);
 
             // This one should Commit
@@ -289,7 +289,7 @@ namespace Garnet.test
             await Task.Run(() => updateKey("key1", "value1_updated"));
 
             res = lightClientRequest.SendCommand("EXEC");
-            expectedResponse = "$-1";
+            expectedResponse = "*-1";
             ClassicAssert.AreEqual(res.AsSpan().Slice(0, expectedResponse.Length).ToArray(), expectedResponse);
 
             // This one should Commit

@@ -398,6 +398,22 @@ namespace Garnet.server
         }
 
         /// <summary>
+        /// The command returns the index of matching elements inside a Redis list.
+        /// By default, when no options are given, it will scan the list from head to tail, looking for the first match of "element".
+        /// </summary>
+        /// <typeparam name="TObjectContext"></typeparam>
+        /// <param name="key"></param>
+        /// <param name="input"></param>
+        /// <param name="outputFooter"></param>
+        /// <param name="objectStoreContext"></param>
+        /// <returns></returns>
+        public GarnetStatus ListPosition<TObjectContext>(byte[] key, ref ObjectInput input, ref GarnetObjectStoreOutput outputFooter, ref TObjectContext objectStoreContext)
+            where TObjectContext : ITsavoriteContext<byte[], IGarnetObject, ObjectInput, GarnetObjectStoreOutput, long, ObjectSessionFunctions, ObjectStoreFunctions, ObjectStoreAllocator>
+        {
+            return ReadObjectStoreOperationWithOutput(key, ref input, ref objectStoreContext, ref outputFooter);
+        }
+
+        /// <summary>
         /// Trim an existing list so it only contains the specified range of elements.
         /// </summary>
         /// <typeparam name="TObjectContext"></typeparam>

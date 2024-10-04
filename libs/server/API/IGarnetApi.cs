@@ -118,6 +118,16 @@ namespace Garnet.server
         /// <param name="storeType"></param>
         /// <returns></returns>
         GarnetStatus RENAME(ArgSlice oldKey, ArgSlice newKey, StoreType storeType = StoreType.All);
+
+        /// <summary>
+        /// Renames key to newkey if newkey does not yet exist. It returns an error when key does not exist.
+        /// </summary>
+        /// <param name="oldKey">The old key to be renamed.</param>
+        /// <param name="newKey">The new key name.</param>
+        /// <param name="result">The result of the operation.</param>
+        /// <param name="storeType">The type of store to perform the operation on.</param>
+        /// <returns></returns>
+        GarnetStatus RENAMENX(ArgSlice oldKey, ArgSlice newKey, out int result, StoreType storeType = StoreType.All);
         #endregion
 
         #region EXISTS
@@ -163,6 +173,32 @@ namespace Garnet.server
         /// <param name="expireOption">Expire option</param>
         /// <returns></returns>
         GarnetStatus PEXPIRE(ArgSlice key, TimeSpan expiry, out bool timeoutSet, StoreType storeType = StoreType.All, ExpireOption expireOption = ExpireOption.None);
+
+        #endregion
+
+        #region EXPIREAT
+
+        /// <summary>
+        /// Set a timeout on key using absolute Unix timestamp (seconds since January 1, 1970) in seconds
+        /// </summary>
+        /// <param name="key">Key</param>
+        /// <param name="expiryTimestamp">Absolute Unix timestamp in seconds</param>
+        /// <param name="timeoutSet">Whether timeout was set by the call</param>
+        /// <param name="storeType">Store type: main, object, or both</param>
+        /// <param name="expireOption">Expire option</param>
+        /// <returns></returns>
+        GarnetStatus EXPIREAT(ArgSlice key, long expiryTimestamp, out bool timeoutSet, StoreType storeType = StoreType.All, ExpireOption expireOption = ExpireOption.None);
+
+        /// <summary>
+        /// Set a timeout on key using absolute Unix timestamp (seconds since January 1, 1970) in milliseconds
+        /// </summary>
+        /// <param name="key">Key</param>
+        /// <param name="expiryTimestamp">Absolute Unix timestamp in milliseconds</param>
+        /// <param name="timeoutSet">Whether timeout was set by the call</param>
+        /// <param name="storeType">Store type: main, object, or both</param>
+        /// <param name="expireOption">Expire option</param>
+        /// <returns></returns>
+        GarnetStatus PEXPIREAT(ArgSlice key, long expiryTimestamp, out bool timeoutSet, StoreType storeType = StoreType.All, ExpireOption expireOption = ExpireOption.None);
 
         #endregion
 
@@ -588,6 +624,16 @@ namespace Garnet.server
         #region List Methods
 
         #region ListPush Methods
+
+        /// <summary>
+        /// The command returns the index of matching elements inside a Redis list.
+        /// By default, when no options are given, it will scan the list from head to tail, looking for the first match of "element".
+        /// </summary>
+        /// <param name="key"></param>
+        /// <param name="input"></param>
+        /// <param name="outputFooter"></param>
+        /// <returns></returns>
+        GarnetStatus ListPosition(byte[] key, ref ObjectInput input, ref GarnetObjectStoreOutput outputFooter);
 
         /// <summary>
         /// ListLeftPush ArgSlice version with ObjectOutputHeader output

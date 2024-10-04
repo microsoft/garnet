@@ -14,12 +14,13 @@ namespace Garnet.cluster
         /// <returns></returns>
         public bool MigrateSlotsDriver()
         {
-            {
-                logger?.LogTrace("Initializing MainStore Iterator");
-                var storeTailAddress = clusterProvider.storeWrapper.store.Log.TailAddress;
-                var bufferSize = 1 << clusterProvider.serverOptions.PageSizeBits();
-                MigrationKeyIterationFunctions.MainStoreGetKeysInSlots mainStoreGetKeysInSlots = new(this, _sslots, bufferSize: bufferSize);
+            logger?.LogTrace("Initializing MainStore Iterator");
+            var storeTailAddress = clusterProvider.storeWrapper.store.Log.TailAddress;
+            var bufferSize = 1 << clusterProvider.serverOptions.PageSizeBits();
+            MigrationKeyIterationFunctions.MainStoreGetKeysInSlots mainStoreGetKeysInSlots = new(this, _sslots, bufferSize: bufferSize);
 
+            try
+            {
                 logger?.LogTrace("Begin MainStore Iteration");
                 while (true)
                 {
@@ -46,6 +47,10 @@ namespace Garnet.cluster
                 if (!HandleMigrateTaskResponse(_gcs.CompleteMigrate(_sourceNodeId, _replaceOption, isMainStore: true)))
                     return false;
             }
+            finally
+            {
+                mainStoreGetKeysInSlots.Dispose();
+            }
 
             if (!clusterProvider.serverOptions.DisableObjects)
             {
@@ -54,31 +59,38 @@ namespace Garnet.cluster
                 var objectBufferSize = 1 << clusterProvider.serverOptions.ObjectStorePageSizeBits();
                 MigrationKeyIterationFunctions.ObjectStoreGetKeysInSlots objectStoreGetKeysInSlots = new(this, _sslots, bufferSize: objectBufferSize);
 
-                logger?.LogTrace("Begin ObjectStore Iteration");
-                while (true)
+                try
                 {
-                    // Iterate object store
-                    _ = localServerSession.BasicGarnetApi.IterateObjectStore(ref objectStoreGetKeysInSlots, objectStoreTailAddress);
-
-                    // If did not acquire any keys stop scanning
-                    if (_keys.IsNullOrEmpty())
-                        break;
-
-                    // Safely migrate keys to target node
-                    if (!MigrateKeys())
+                    logger?.LogTrace("Begin ObjectStore Iteration");
+                    while (true)
                     {
-                        logger?.LogError("IOERR Migrate keys failed.");
-                        Status = MigrateState.FAIL;
-                        return false;
+                        // Iterate object store
+                        _ = localServerSession.BasicGarnetApi.IterateObjectStore(ref objectStoreGetKeysInSlots, objectStoreTailAddress);
+
+                        // If did not acquire any keys stop scanning
+                        if (_keys.IsNullOrEmpty())
+                            break;
+
+                        // Safely migrate keys to target node
+                        if (!MigrateKeys())
+                        {
+                            logger?.LogError("IOERR Migrate keys failed.");
+                            Status = MigrateState.FAIL;
+                            return false;
+                        }
+
+                        objectStoreGetKeysInSlots.AdvanceIterator();
+                        ClearKeys();
                     }
 
-                    objectStoreGetKeysInSlots.AdvanceIterator();
-                    ClearKeys();
+                    // Signal target transmission completed and log stats for object store after migration completes
+                    if (!HandleMigrateTaskResponse(_gcs.CompleteMigrate(_sourceNodeId, _replaceOption, isMainStore: false)))
+                        return false;
                 }
-
-                // Signal target transmission completed and log stats for object store after migration completes
-                if (!HandleMigrateTaskResponse(_gcs.CompleteMigrate(_sourceNodeId, _replaceOption, isMainStore: false)))
-                    return false;
+                finally
+                {
+                    objectStoreGetKeysInSlots.Dispose();
+                }
             }
 
             return true;

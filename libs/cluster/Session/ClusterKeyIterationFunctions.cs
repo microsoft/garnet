@@ -13,18 +13,30 @@ namespace Garnet.cluster
     {
         internal static class ClusterKeyIterationFunctions
         {
-            internal struct MainStoreCountKeys : IScanIteratorFunctions<SpanByte, SpanByte>
+            internal class KeyIterationInfo
             {
+                // This must be a class as it is passed through pending IO operations, so it is wrapped by higher structures for inlining as a generic type arg.
                 internal int keyCount;
-                readonly int slot;
+                internal readonly int slot;
 
-                internal MainStoreCountKeys(int slot) => this.slot = slot;
+                internal KeyIterationInfo(int slot) => this.slot = slot;
+            }
+
+            internal sealed class MainStoreCountKeys : IScanIteratorFunctions<SpanByte, SpanByte>
+            {
+                private readonly KeyIterationInfo info;
+                // This must be a class as it is passed through pending IO operations
+
+                internal int KeyCount { get => info.keyCount; set => info.keyCount = value; }
+                internal int Slot => info.slot;
+
+                internal MainStoreCountKeys(int slot) => info = new(slot);
 
                 public bool SingleReader(ref SpanByte key, ref SpanByte value, RecordMetadata recordMetadata, long numberOfRecords, out CursorRecordResult cursorRecordResult)
                 {
                     cursorRecordResult = CursorRecordResult.Accept; // default; not used here
-                    if (HashSlotUtils.HashSlot(ref key) == slot && !Expired(ref value))
-                        keyCount++;
+                    if (HashSlotUtils.HashSlot(ref key) == Slot && !Expired(ref value))
+                        KeyCount++;
                     return true;
                 }
                 public bool ConcurrentReader(ref SpanByte key, ref SpanByte value, RecordMetadata recordMetadata, long numberOfRecords, out CursorRecordResult cursorRecordResult)
@@ -34,20 +46,23 @@ namespace Garnet.cluster
                 public void OnException(Exception exception, long numberOfRecords) { }
             }
 
-            internal struct ObjectStoreCountKeys : IScanIteratorFunctions<byte[], IGarnetObject>
+            internal sealed class ObjectStoreCountKeys : IScanIteratorFunctions<byte[], IGarnetObject>
             {
-                internal int keyCount;
-                readonly int slot;
+                private readonly KeyIterationInfo info;
+                // This must be a class as it is passed through pending IO operations
 
-                internal ObjectStoreCountKeys(int slot) => this.slot = slot;
+                internal int KeyCount { get => info.keyCount; set => info.keyCount = value; }
+                internal int Slot => info.slot;
+
+                internal ObjectStoreCountKeys(int slot) => info = new(slot);
 
                 public bool SingleReader(ref byte[] key, ref IGarnetObject value, RecordMetadata recordMetadata, long numberOfRecords, out CursorRecordResult cursorRecordResult)
                 {
                     cursorRecordResult = CursorRecordResult.Accept; // default; not used here , out CursorRecordResult cursorRecordResult
                     fixed (byte* keyPtr = key)
                     {
-                        if (HashSlotUtils.HashSlot(keyPtr, key.Length) == slot && !Expired(ref value))
-                            keyCount++;
+                        if (HashSlotUtils.HashSlot(keyPtr, key.Length) == Slot && !Expired(ref value))
+                            KeyCount++;
                     }
                     return true;
                 }

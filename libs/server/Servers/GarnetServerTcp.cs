@@ -22,6 +22,7 @@ namespace Garnet.server
         readonly Socket servSocket;
         readonly IGarnetTlsOptions tlsOptions;
         readonly int networkSendThrottleMax;
+        readonly NetworkBufferSettings networkBufferSettings;
         readonly LimitedFixedBufferPool networkPool;
 
         public IPEndPoint GetEndPoint
@@ -73,7 +74,9 @@ namespace Garnet.server
         {
             this.tlsOptions = tlsOptions;
             this.networkSendThrottleMax = networkSendThrottleMax;
-            this.networkPool = new LimitedFixedBufferPool(BufferSizeUtils.ServerBufferSize(new MaxSizeSettings()), logger: logger);
+            var serverBufferSize = BufferSizeUtils.ServerBufferSize(new MaxSizeSettings());
+            this.networkBufferSettings = new NetworkBufferSettings(serverBufferSize, serverBufferSize);
+            this.networkPool = networkBufferSettings.CreateBufferPool(logger: logger);
             servSocket = new Socket(GetEndPoint.AddressFamily, SocketType.Stream, ProtocolType.Tcp);
             acceptEventArg = new SocketAsyncEventArgs();
             acceptEventArg.Completed += AcceptEventArg_Completed;
@@ -88,7 +91,7 @@ namespace Garnet.server
             servSocket.Dispose();
             acceptEventArg.UserToken = null;
             acceptEventArg.Dispose();
-            networkPool.Dispose();
+            networkPool?.Dispose();
         }
 
         /// <summary>
@@ -139,7 +142,7 @@ namespace Garnet.server
                 {
                     try
                     {
-                        handler = new ServerTcpNetworkHandler(this, e.AcceptSocket, networkPool, tlsOptions != null, networkSendThrottleMax, logger);
+                        handler = new ServerTcpNetworkHandler(this, e.AcceptSocket, networkBufferSettings, networkPool, tlsOptions != null, networkSendThrottleMax: networkSendThrottleMax, logger: logger);
                         if (!activeHandlers.TryAdd(handler, default))
                             throw new Exception("Unable to add handler to dictionary");
 
@@ -205,5 +208,9 @@ namespace Garnet.server
                 }
             }
         }
+
+        public void Purge() => networkPool.Purge();
+
+        public string GetBufferPoolStats() => networkPool.GetStats();
     }
 }

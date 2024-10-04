@@ -52,6 +52,7 @@ namespace Garnet.cluster
         public static ReadOnlySpan<byte> RESP_ERR_INVALID_SLOT => "ERR Invalid or out of range slot"u8;
         public static ReadOnlySpan<byte> RESP_ERR_GENERIC_VALUE_IS_NOT_INTEGER => "ERR value is not an integer or out of range."u8;
         public static ReadOnlySpan<byte> RESP_ERR_GENERIC_VALUE_IS_NOT_BOOLEAN => "ERR value is not a boolean."u8;
+        public static ReadOnlySpan<byte> RESP_ERR_RESET_WITH_KEYS_ASSIGNED => "-ERR CLUSTER RESET can't be called with master nodes containing keys\r\n"u8;
         public static ReadOnlySpan<byte> RESP_SYNTAX_ERROR => "ERR syntax error"u8;
 
         /// <summary>

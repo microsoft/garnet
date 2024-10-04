@@ -277,6 +277,41 @@ namespace Garnet
         }
     }
 
+    [AttributeUsage(AttributeTargets.Property)]
+    internal class ModuleFilePathValidationAttribute : FilePathValidationAttribute
+    {
+        internal ModuleFilePathValidationAttribute(bool fileMustExist, bool directoryMustExist, bool isRequired, string[] acceptedFileExtensions = null) : base(fileMustExist, directoryMustExist, isRequired, acceptedFileExtensions)
+        {
+        }
+
+        protected override ValidationResult IsValid(object value, ValidationContext validationContext)
+        {
+            if (TryInitialValidation<IEnumerable<string>>(value, validationContext, out var initValidationResult, out var filePaths))
+                return initValidationResult;
+
+            var errorSb = new StringBuilder();
+            var isValid = true;
+            foreach (var filePathArg in filePaths)
+            {
+                var filePath = filePathArg.Split(' ')[0];
+                var result = base.IsValid(filePath, validationContext);
+                if (result != null && result != ValidationResult.Success)
+                {
+                    isValid = false;
+                    errorSb.AppendLine(result.ErrorMessage);
+                }
+            }
+
+            if (!isValid)
+            {
+                var errorMessage = $"Error(s) validating one or more file paths:{Environment.NewLine}{errorSb}";
+                return new ValidationResult(errorMessage, [validationContext.MemberName]);
+            }
+
+            return ValidationResult.Success;
+        }
+    }
+
     /// <summary>
     /// Validation logic for a string representing an IP address (either IPv4 or IPv6)
     /// </summary>

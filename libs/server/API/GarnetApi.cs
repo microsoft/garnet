@@ -166,6 +166,10 @@ namespace Garnet.server
         /// <inheritdoc />
         public GarnetStatus RENAME(ArgSlice oldKey, ArgSlice newKey, StoreType storeType = StoreType.All)
             => storageSession.RENAME(oldKey, newKey, storeType);
+
+        /// <inheritdoc />
+        public GarnetStatus RENAMENX(ArgSlice oldKey, ArgSlice newKey, out int result, StoreType storeType = StoreType.All)
+            => storageSession.RENAMENX(oldKey, newKey, storeType, out result);
         #endregion
 
         #region EXISTS
@@ -186,6 +190,18 @@ namespace Garnet.server
         /// <inheritdoc />
         public GarnetStatus PEXPIRE(ArgSlice key, TimeSpan expiry, out bool timeoutSet, StoreType storeType = StoreType.All, ExpireOption expireOption = ExpireOption.None)
              => storageSession.EXPIRE(key, expiry, out timeoutSet, storeType, expireOption, ref context, ref objectContext, milliseconds: true);
+
+        #endregion
+
+        #region EXPIREAT
+
+        /// <inheritdoc />
+        public GarnetStatus EXPIREAT(ArgSlice key, long expiryTimestamp, out bool timeoutSet, StoreType storeType = StoreType.All, ExpireOption expireOption = ExpireOption.None)
+            => storageSession.EXPIREAT(key, expiryTimestamp, out timeoutSet, storeType, expireOption, ref context, ref objectContext);
+
+        /// <inheritdoc />
+        public GarnetStatus PEXPIREAT(ArgSlice key, long expiryTimestamp, out bool timeoutSet, StoreType storeType = StoreType.All, ExpireOption expireOption = ExpireOption.None)
+             => storageSession.EXPIREAT(key, expiryTimestamp, out timeoutSet, storeType, expireOption, ref context, ref objectContext, milliseconds: true);
 
         #endregion
 

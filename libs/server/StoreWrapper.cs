@@ -3,6 +3,7 @@
 
 using System;
 using System.Collections.Concurrent;
+using System.Collections.Generic;
 using System.Diagnostics;
 using System.Net;
 using System.Net.Sockets;
@@ -347,7 +348,7 @@ namespace Garnet.server
                     }
                     else
                     {
-                        await appendOnlyFile.CommitAsync(token);
+                        await appendOnlyFile.CommitAsync(null, token);
                         await Task.Delay(commitFrequencyMs, token);
                     }
                 }
@@ -774,6 +775,47 @@ namespace Garnet.server
             }
 
             logger?.LogInformation("Completed checkpoint");
+        }
+
+        public bool HasKeysInSlots(List<int> slots)
+        {
+            if (slots.Count > 0)
+            {
+                bool hasKeyInSlots = false;
+                {
+                    using var iter = store.Iterate<SpanByte, SpanByte, Empty, SimpleSessionFunctions<SpanByte, SpanByte, Empty>>(new SimpleSessionFunctions<SpanByte, SpanByte, Empty>());
+                    while (!hasKeyInSlots && iter.GetNext(out RecordInfo record))
+                    {
+                        ref var key = ref iter.GetKey();
+                        ushort hashSlotForKey = HashSlotUtils.HashSlot(ref key);
+                        if (slots.Contains(hashSlotForKey))
+                        {
+                            hasKeyInSlots = true;
+                        }
+                    }
+                }
+
+                if (!hasKeyInSlots && objectStore != null)
+                {
+                    var functionsState = CreateFunctionsState();
+                    var objstorefunctions = new ObjectSessionFunctions(functionsState);
+                    var objectStoreSession = objectStore?.NewSession<ObjectInput, GarnetObjectStoreOutput, long, ObjectSessionFunctions>(objstorefunctions);
+                    var iter = objectStoreSession.Iterate();
+                    while (!hasKeyInSlots && iter.GetNext(out RecordInfo record))
+                    {
+                        ref var key = ref iter.GetKey();
+                        ushort hashSlotForKey = HashSlotUtils.HashSlot(key.AsSpan());
+                        if (slots.Contains(hashSlotForKey))
+                        {
+                            hasKeyInSlots = true;
+                        }
+                    }
+                }
+
+                return hasKeyInSlots;
+            }
+
+            return false;
         }
     }
 }

@@ -249,6 +249,7 @@ namespace Garnet.server
                         o->result1 = 1;
                         break;
                     case ExpireOption.GT:
+                    case ExpireOption.XXGT:
                         bool replace = input.ExtraMetadata < value.ExtraMetadata;
                         value.ExtraMetadata = replace ? value.ExtraMetadata : input.ExtraMetadata;
                         if (replace)
@@ -257,6 +258,7 @@ namespace Garnet.server
                             o->result1 = 1;
                         break;
                     case ExpireOption.LT:
+                    case ExpireOption.XXLT:
                         replace = input.ExtraMetadata > value.ExtraMetadata;
                         value.ExtraMetadata = replace ? value.ExtraMetadata : input.ExtraMetadata;
                         if (replace)
@@ -275,10 +277,12 @@ namespace Garnet.server
                 {
                     case ExpireOption.NX:
                     case ExpireOption.None:
+                    case ExpireOption.LT:  // If expiry doesn't exist, LT should treat the current expiration as infinite
                         return false;
                     case ExpireOption.XX:
                     case ExpireOption.GT:
-                    case ExpireOption.LT:
+                    case ExpireOption.XXGT:
+                    case ExpireOption.XXLT:
                         o->result1 = 0;
                         return true;
                     default:
@@ -304,6 +308,7 @@ namespace Garnet.server
                         o->result1 = 1;
                         break;
                     case ExpireOption.GT:
+                    case ExpireOption.XXGT:
                         oldValue.AsReadOnlySpan().CopyTo(newValue.AsSpan());
                         bool replace = input.ExtraMetadata < oldValue.ExtraMetadata;
                         newValue.ExtraMetadata = replace ? oldValue.ExtraMetadata : input.ExtraMetadata;
@@ -313,6 +318,7 @@ namespace Garnet.server
                             o->result1 = 1;
                         break;
                     case ExpireOption.LT:
+                    case ExpireOption.XXLT:
                         oldValue.AsReadOnlySpan().CopyTo(newValue.AsSpan());
                         replace = input.ExtraMetadata > oldValue.ExtraMetadata;
                         newValue.ExtraMetadata = replace ? oldValue.ExtraMetadata : input.ExtraMetadata;
@@ -329,13 +335,15 @@ namespace Garnet.server
                 {
                     case ExpireOption.NX:
                     case ExpireOption.None:
+                    case ExpireOption.LT:   // If expiry doesn't exist, LT should treat the current expiration as infinite
                         newValue.ExtraMetadata = input.ExtraMetadata;
                         oldValue.AsReadOnlySpan().CopyTo(newValue.AsSpan());
                         o->result1 = 1;
                         break;
                     case ExpireOption.XX:
                     case ExpireOption.GT:
-                    case ExpireOption.LT:
+                    case ExpireOption.XXGT:
+                    case ExpireOption.XXLT:
                         oldValue.AsReadOnlySpan().CopyTo(newValue.AsSpan());
                         o->result1 = 0;
                         break;

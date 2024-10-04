@@ -99,6 +99,22 @@ Simple string reply: OK.
 
 ---
 
+### SELECT
+
+#### Syntax
+
+```bash
+    SELECT
+```
+
+Select the Redis logical database having the specified zero-based numeric index. New connections always use the database 0.
+
+#### Resp Reply
+
+Simple string reply: OK.
+
+---
+
 ## Generic Commands
 
 ### DEL
@@ -150,12 +166,41 @@ The EXPIRE command supports a set of options:
 * `GT` -- Set expiry only when the new expiry is greater than current one
 * `LT` -- Set expiry only when the new expiry is less than current one
 
+The GT, LT and NX options are mutually exclusive.
+
 #### Resp Reply
 
 One of the following:
 
 * Integer reply: 0 if the timeout was not set; for example, the key doesn't exist, or the operation was skipped because of the provided arguments.
+* Integer reply: 1 if the timeout was set.
 
+---
+
+### EXPIREAT
+
+#### Syntax
+
+```bash
+    EXPIREAT key seconds [NX | XX | GT | LT]
+```
+
+Set a timeout on key using absolute Unix timestamp (seconds since January 1, 1970) in seconds. After the timestamp, the key will automatically be deleted.
+
+The EXPIREAT command supports a set of options:
+
+* `NX` -- Set expiry only when the key has no expiry
+* `XX` -- Set expiry only when the key has an existing expiry
+* `GT` -- Set expiry only when the new expiry is greater than current one
+* `LT` -- Set expiry only when the new expiry is less than current one
+
+The GT, LT and NX options are mutually exclusive.
+
+#### Resp Reply
+
+One of the following:
+
+* Integer reply: 0 if the timeout was not set; for example, the key doesn't exist, or the operation was skipped because of the provided arguments.
 * Integer reply: 1 if the timeout was set.
 
 ---
@@ -268,6 +313,34 @@ One of the following:
 
 ---
 
+### PEXPIREAT
+
+#### Syntax
+
+```bash
+    PEXPIREAT key seconds [NX | XX | GT | LT]
+```
+
+Set a timeout on key using absolute Unix timestamp (seconds since January 1, 1970) in milliseconds. After the timestamp, the key will automatically be deleted.
+
+The PEXPIREAT command supports a set of options:
+
+* `NX` -- Set expiry only when the key has no expiry
+* `XX` -- Set expiry only when the key has an existing expiry
+* `GT` -- Set expiry only when the new expiry is greater than current one
+* `LT` -- Set expiry only when the new expiry is less than current one
+
+The GT, LT and NX options are mutually exclusive.
+
+#### Resp Reply
+
+One of the following:
+
+* Integer reply: 0 if the timeout was not set; for example, the key doesn't exist, or the operation was skipped because of the provided arguments.
+* Integer reply: 1 if the timeout was set.
+
+---
+
 ### PTTL
 
 #### Syntax
@@ -303,6 +376,26 @@ Renames key to newkey. It returns an error when key does not exist. If newkey al
 Simple string reply: OK.
 
 ---
+
+### RENAMENX
+
+#### Syntax
+
+```bash
+    RENAME key newkey
+```
+
+Renames key to newkey if newkey does not yet exist. It returns an error when key does not exist.
+
+#### Resp Reply
+
+One of the following:
+
+* Integer reply: 1 if key was renamed to newkey.
+* Integer reply: 0 if newkey already exists.
+
+---
+
 ### SCAN
 
 #### Syntax
