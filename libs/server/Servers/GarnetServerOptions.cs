@@ -22,9 +22,9 @@ namespace Garnet.server
         public bool DisableObjects = false;
 
         /// <summary>
-        /// Total memory size limit of object store including heap memory of objects.
+        /// Heap memory size limit of object store.
         /// </summary>
-        public string ObjectStoreTotalMemorySize = "";
+        public string ObjectStoreHeapMemorySize = "";
 
         /// <summary>
         /// Object store log memory used in bytes excluding heap memory.
@@ -528,7 +528,7 @@ namespace Garnet.server
         /// <summary>
         /// Get KVSettings for the object store log
         /// </summary>
-        public KVSettings<byte[], IGarnetObject> GetObjectStoreSettings(ILogger logger, out long objTotalMemorySize)
+        public KVSettings<byte[], IGarnetObject> GetObjectStoreSettings(ILogger logger, out long objHeapMemorySize)
         {
             if (ObjectStoreMutablePercent is < 10 or > 95)
                 throw new Exception("ObjectStoreMutablePercent must be between 10 and 95");
@@ -576,8 +576,8 @@ namespace Garnet.server
             }
             logger?.LogInformation("[Object Store] Using log mutable percentage of {ObjectStoreMutablePercent}%", ObjectStoreMutablePercent);
 
-            objTotalMemorySize = ParseSize(ObjectStoreTotalMemorySize);
-            logger?.LogInformation("[Object Store] Total memory size including heap objects is {totalMemorySize}", (objTotalMemorySize > 0 ? PrettySize(objTotalMemorySize) : "unlimited"));
+            objHeapMemorySize = ParseSize(ObjectStoreHeapMemorySize);
+            logger?.LogInformation("[Object Store] Total memory size including heap objects is {totalMemorySize}", (objHeapMemorySize > 0 ? PrettySize(objHeapMemorySize) : "unlimited"));
 
             if (EnableStorageTier)
             {
