@@ -278,7 +278,7 @@ namespace Garnet.server
             get
             {
                 var serializedLength = sizeof(int) // Length
-                                       + header.SpanByte.TotalSize 
+                                       + header.SpanByte.TotalSize
                                        + sizeof(long) // arg1
                                        + parseState.GetSerializedLength(parseStateStartIdx);
 
@@ -306,9 +306,9 @@ namespace Garnet.server
             curr += len;
 
             // Serialize length
-            *(int*)dest = (int)(curr - dest - sizeof(int)); 
+            *(int*)dest = (int)(curr - dest - sizeof(int));
         }
-        
+
         /// <inheritdoc />
         public unsafe void DeserializeFrom(byte* src)
         {

@@ -30,7 +30,7 @@ namespace Garnet.server
         readonly RespServerSession respServerSession;
 
         static RawStringInput storeInput;
-        static ObjectInput objectStoreInput; 
+        static ObjectInput objectStoreInput;
         static SessionParseState parseState;
 
         /// <summary>
