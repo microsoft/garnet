@@ -69,60 +69,43 @@ namespace Garnet.server
             TimeSpan? expiry = null;
             if (parseState.Count > 1)
             {
-                var option = parseState.GetArgSliceByRef(1).SpanByte.AsSpan();
-                if (option.SequenceEqual(CmdStrings.EX))
-                {
-                    if (!parseState.TryGetLong(2, out var expireTime) || expireTime <= 0)
-                    {
-                        while (!RespWriteUtils.WriteError(CmdStrings.RESP_ERR_GENERIC_VALUE_IS_OUT_OF_RANGE, ref dcurr, dend))
-                            SendAndReset();
-                        return true;
-                    }
-
-                    expiry = TimeSpan.FromSeconds(expireTime);
-                }
-                else if (option.SequenceEqual(CmdStrings.PX))
-                {
-                    if (!parseState.TryGetLong(2, out var expireTime) || expireTime <= 0)
-                    {
-                        while (!RespWriteUtils.WriteError(CmdStrings.RESP_ERR_GENERIC_VALUE_IS_OUT_OF_RANGE, ref dcurr, dend))
-                            SendAndReset();
-                        return true;
-                    }
-
-                    expiry = TimeSpan.FromMilliseconds(expireTime);
-                }
-                else if (option.SequenceEqual(CmdStrings.EXAT))
-                {
-                    if (!parseState.TryGetLong(2, out var expireTimestamp) || expireTimestamp <= 0)
-                    {
-                        while (!RespWriteUtils.WriteError(CmdStrings.RESP_ERR_GENERIC_VALUE_IS_OUT_OF_RANGE, ref dcurr, dend))
-                            SendAndReset();
-                        return true;
-                    }
-
-                    expiry = DateTimeOffset.FromUnixTimeSeconds(expireTimestamp) - DateTimeOffset.UtcNow;
-                }
-                else if (option.SequenceEqual(CmdStrings.PXAT))
-                {
-                    if (!parseState.TryGetLong(2, out var expireTimestamp) || expireTimestamp <= 0)
-                    {
-                        while (!RespWriteUtils.WriteError(CmdStrings.RESP_ERR_GENERIC_VALUE_IS_OUT_OF_RANGE, ref dcurr, dend))
-                            SendAndReset();
-                        return true;
-                    }
-
-                    expiry = DateTimeOffset.FromUnixTimeMilliseconds(expireTimestamp) - DateTimeOffset.UtcNow;
-                }
-                else if (option.SequenceEqual(CmdStrings.PERSIST))
+                var option = parseState.GetArgSliceByRef(1).ReadOnlySpan;
+                if (option.EqualsUpperCaseSpanIgnoringCase(CmdStrings.PERSIST))
                 {
                     expiry = TimeSpan.Zero;
                 }
                 else
                 {
-                    while (!RespWriteUtils.WriteError($"ERR Unsupported option {parseState.GetString(1)}", ref dcurr, dend))
-                        SendAndReset();
-                    return true;
+                    if (parseState.Count < 3 || !parseState.TryGetLong(2, out var expireTime) || expireTime <= 0)
+                    {
+                        while (!RespWriteUtils.WriteError(CmdStrings.RESP_ERR_GENERIC_VALUE_IS_OUT_OF_RANGE, ref dcurr, dend))
+                            SendAndReset();
+                        return true;
+                    }
+
+                    switch (option)
+                    {
+                        case var _ when option.EqualsUpperCaseSpanIgnoringCase(CmdStrings.EX):
+                            expiry = TimeSpan.FromSeconds(expireTime);
+                            break;
+
+                        case var _ when option.EqualsUpperCaseSpanIgnoringCase(CmdStrings.PX):
+                            expiry = TimeSpan.FromMilliseconds(expireTime);
+                            break;
+
+                        case var _ when option.EqualsUpperCaseSpanIgnoringCase(CmdStrings.EXAT):
+                            expiry = DateTimeOffset.FromUnixTimeSeconds(expireTime) - DateTimeOffset.UtcNow;
+                            break;
+
+                        case var _ when option.EqualsUpperCaseSpanIgnoringCase(CmdStrings.PXAT):
+                            expiry = DateTimeOffset.FromUnixTimeMilliseconds(expireTime) - DateTimeOffset.UtcNow;
+                            break;
+
+                        default:
+                            while (!RespWriteUtils.WriteError($"ERR Unsupported option {parseState.GetString(1)}", ref dcurr, dend))
+                                SendAndReset();
+                            return true;
+                    }
                 }
             }
 

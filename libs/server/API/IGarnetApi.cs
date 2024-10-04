@@ -18,7 +18,7 @@ namespace Garnet.server
         /// <summary>
         /// GETEX
         /// </summary>
-        GarnetStatus GETEX(ref SpanByte key, TimeSpan? expreTime, ref SpanByteAndMemory output);
+        GarnetStatus GETEX(ref SpanByte key, TimeSpan? expireTime, ref SpanByteAndMemory output);
 
         #endregion
 

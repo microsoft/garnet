@@ -78,8 +78,8 @@ namespace Garnet.server
         #region GETEX
 
         /// <inheritdoc />
-        public GarnetStatus GETEX(ref SpanByte key, TimeSpan? expreTime, ref SpanByteAndMemory output)
-            => storageSession.GETEX(ref key, expreTime, ref output, ref context);
+        public GarnetStatus GETEX(ref SpanByte key, TimeSpan? expireTime, ref SpanByteAndMemory output)
+            => storageSession.GETEX(ref key, expireTime, ref output, ref context);
 
         #endregion
 
