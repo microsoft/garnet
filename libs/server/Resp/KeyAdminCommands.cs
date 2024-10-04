@@ -180,22 +180,16 @@ namespace Garnet.server
             }
 
             var key = parseState.GetArgSliceByRef(0);
-            if (!parseState.TryGetInt(1, out var expiryValue))
+            if (!parseState.TryGetInt(1, out _))
             {
                 while (!RespWriteUtils.WriteError(CmdStrings.RESP_ERR_GENERIC_VALUE_IS_NOT_INTEGER, ref dcurr, dend))
                     SendAndReset();
                 return true;
             }
 
-            var expiryMs = command == RespCommand.EXPIRE
-                ? TimeSpan.FromSeconds(expiryValue)
-                : TimeSpan.FromMilliseconds(expiryValue);
-
-            var expireOption = ExpireOption.None;
-
             if (parseState.Count > 2)
             {
-                if (!TryGetExpireOption(parseState.GetArgSliceByRef(2).ReadOnlySpan, out expireOption))
+                if (!TryGetExpireOption(parseState.GetArgSliceByRef(2).ReadOnlySpan, out _))
                 {
                     var optionStr = parseState.GetString(2);
 
@@ -205,9 +199,14 @@ namespace Garnet.server
                 }
             }
 
-            var status = command == RespCommand.EXPIRE ?
-                        storageApi.EXPIRE(key, expiryMs, out var timeoutSet, StoreType.All, expireOption) :
-                        storageApi.PEXPIRE(key, expiryMs, out timeoutSet, StoreType.All, expireOption);
+            var input = new RawStringInput
+            {
+                header = new RespInputHeader { cmd = command },
+                parseState = parseState,
+                parseStateStartIdx = 1,
+            };
+
+            var status = storageApi.EXPIRE(key, ref input, out var timeoutSet);
 
             if (status == GarnetStatus.OK && timeoutSet)
             {

@@ -6,6 +6,7 @@ using System.Buffers;
 using System.Collections.Generic;
 using System.Diagnostics;
 using System.IO;
+using System.Net.NetworkInformation;
 using System.Runtime.CompilerServices;
 using System.Threading;
 using System.Threading.Tasks;
@@ -906,6 +907,64 @@ namespace Tsavorite.core
             item1.CopyTo(physicalAddress + headerSize + sizeof(THeader));
             item2.CopyTo(physicalAddress + headerSize + sizeof(THeader) + item1.TotalSize);
             item3.CopyTo(physicalAddress + headerSize + sizeof(THeader) + item1.TotalSize + item2.TotalSize);
+            SetHeader(length, physicalAddress);
+            safeTailRefreshEntryEnqueued?.Signal();
+            epoch.Suspend();
+            if (AutoCommit) Commit();
+        }
+
+        /// <summary>
+        /// Append a user-defined blittable struct header and three <see cref="SpanByte"/> entries entries atomically to the log.
+        /// </summary>
+        /// <param name="userHeader"></param>
+        /// <param name="item1"></param>
+        /// <param name="input"></param>
+        /// <param name="logicalAddress">Logical address of added entry</param>
+        public unsafe void Enqueue<THeader, TInput>(THeader userHeader, ref SpanByte item1, ref TInput input, out long logicalAddress)
+            where THeader : unmanaged where TInput : IStoreInput
+        {
+            logicalAddress = 0;
+            var length = sizeof(THeader) + item1.TotalSize + input.SerializedLength;
+            var allocatedLength = headerSize + Align(length);
+            ValidateAllocatedLength(allocatedLength);
+
+            epoch.Resume();
+
+            logicalAddress = AllocateBlock(allocatedLength);
+            var physicalAddress = (byte*)allocator.GetPhysicalAddress(logicalAddress);
+            *(THeader*)(physicalAddress + headerSize) = userHeader;
+            item1.CopyTo(physicalAddress + headerSize + sizeof(THeader));
+            input.CopyTo(physicalAddress + headerSize + sizeof(THeader) + item1.TotalSize);
+            SetHeader(length, physicalAddress);
+            safeTailRefreshEntryEnqueued?.Signal();
+            epoch.Suspend();
+            if (AutoCommit) Commit();
+        }
+
+        /// <summary>
+        /// Append a user-defined blittable struct header and three <see cref="SpanByte"/> entries entries atomically to the log.
+        /// </summary>
+        /// <param name="userHeader"></param>
+        /// <param name="item1"></param>
+        /// <param name="item2"></param>
+        /// <param name="input"></param>
+        /// <param name="logicalAddress">Logical address of added entry</param>
+        public unsafe void Enqueue<THeader, TInput>(THeader userHeader, ref SpanByte item1, ref SpanByte item2, ref TInput input, out long logicalAddress)
+            where THeader : unmanaged where TInput : IStoreInput
+        {
+            logicalAddress = 0;
+            var length = sizeof(THeader) + item1.TotalSize + item2.TotalSize + input.SerializedLength;
+            var allocatedLength = headerSize + Align(length);
+            ValidateAllocatedLength(allocatedLength);
+
+            epoch.Resume();
+
+            logicalAddress = AllocateBlock(allocatedLength);
+            var physicalAddress = (byte*)allocator.GetPhysicalAddress(logicalAddress);
+            *(THeader*)(physicalAddress + headerSize) = userHeader;
+            item1.CopyTo(physicalAddress + headerSize + sizeof(THeader));
+            item2.CopyTo(physicalAddress + headerSize + sizeof(THeader) + item1.TotalSize);
+            input.CopyTo(physicalAddress + headerSize + sizeof(THeader) + item1.TotalSize + item2.TotalSize);
             SetHeader(length, physicalAddress);
             safeTailRefreshEntryEnqueued?.Signal();
             epoch.Suspend();

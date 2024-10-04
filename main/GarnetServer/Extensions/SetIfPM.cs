@@ -21,24 +21,24 @@ namespace Garnet
     sealed class SetIfPMCustomCommand : CustomRawStringFunctions
     {
         /// <inheritdoc />
-        public override bool Reader(ReadOnlySpan<byte> key, ReadOnlySpan<byte> input, ReadOnlySpan<byte> value, ref (IMemoryOwner<byte>, int) output, ref ReadInfo readInfo)
+        public override bool Reader(ReadOnlySpan<byte> key, ref RawStringInput input, ReadOnlySpan<byte> value, ref (IMemoryOwner<byte>, int) output, ref ReadInfo readInfo)
             => throw new InvalidOperationException();
         /// <inheritdoc />
-        public override bool NeedInitialUpdate(ReadOnlySpan<byte> key, ReadOnlySpan<byte> input, ref (IMemoryOwner<byte>, int) output)
+        public override bool NeedInitialUpdate(ReadOnlySpan<byte> key, ref RawStringInput input, ref (IMemoryOwner<byte>, int) output)
             => false;
         /// <inheritdoc />
-        public override int GetInitialLength(ReadOnlySpan<byte> input)
+        public override int GetInitialLength(ref RawStringInput input)
             => throw new InvalidOperationException();
         /// <inheritdoc />
-        public override bool InitialUpdater(ReadOnlySpan<byte> key, ReadOnlySpan<byte> input, Span<byte> value, ref (IMemoryOwner<byte>, int) output, ref RMWInfo rmwInfo)
+        public override bool InitialUpdater(ReadOnlySpan<byte> key, ref RawStringInput input, Span<byte> value, ref (IMemoryOwner<byte>, int) output, ref RMWInfo rmwInfo)
             => throw new InvalidOperationException();
 
         /// <inheritdoc />
-        public override bool InPlaceUpdater(ReadOnlySpan<byte> key, ReadOnlySpan<byte> input, Span<byte> value, ref int valueLength, ref (IMemoryOwner<byte>, int) output, ref RMWInfo rmwInfo)
+        public override bool InPlaceUpdater(ReadOnlySpan<byte> key, ref RawStringInput input, Span<byte> value, ref int valueLength, ref (IMemoryOwner<byte>, int) output, ref RMWInfo rmwInfo)
         {
-            int offset = 0;
-            var newVal = GetNextArg(input, ref offset);
-            var prefix = GetNextArg(input, ref offset);
+            var offset = 0;
+            var newVal = GetNextArg(ref input, ref offset);
+            var prefix = GetNextArg(ref input, ref offset);
             if (prefix.SequenceEqual(newVal.Slice(0, prefix.Length)))
             {
                 if (newVal.Length > value.Length) return false;
@@ -50,22 +50,22 @@ namespace Garnet
         }
 
         /// <inheritdoc />
-        public override bool NeedCopyUpdate(ReadOnlySpan<byte> key, ReadOnlySpan<byte> input, ReadOnlySpan<byte> oldValue, ref (IMemoryOwner<byte>, int) output)
+        public override bool NeedCopyUpdate(ReadOnlySpan<byte> key, ref RawStringInput input, ReadOnlySpan<byte> oldValue, ref (IMemoryOwner<byte>, int) output)
         {
-            int offset = 0;
-            var newVal = GetNextArg(input, ref offset);
-            var prefix = GetNextArg(input, ref offset);
+            var offset = 0;
+            var newVal = GetNextArg(ref input, ref offset);
+            var prefix = GetNextArg(ref input, ref offset);
             return prefix.SequenceEqual(newVal.Slice(0, prefix.Length));
         }
 
         /// <inheritdoc />
-        public override int GetLength(ReadOnlySpan<byte> value, ReadOnlySpan<byte> input)
-            => GetFirstArg(input).Length;
+        public override int GetLength(ReadOnlySpan<byte> value, ref RawStringInput input)
+            => GetFirstArg(ref input).Length;
 
         /// <inheritdoc />
-        public override bool CopyUpdater(ReadOnlySpan<byte> key, ReadOnlySpan<byte> input, ReadOnlySpan<byte> oldValue, Span<byte> newValue, ref (IMemoryOwner<byte>, int) output, ref RMWInfo rmwInfo)
+        public override bool CopyUpdater(ReadOnlySpan<byte> key, ref RawStringInput input, ReadOnlySpan<byte> oldValue, Span<byte> newValue, ref (IMemoryOwner<byte>, int) output, ref RMWInfo rmwInfo)
         {
-            var newVal = GetFirstArg(input);
+            var newVal = GetFirstArg(ref input);
             Debug.Assert(newVal.Length == newValue.Length);
             newVal.CopyTo(newValue);
 

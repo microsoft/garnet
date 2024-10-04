@@ -38,9 +38,7 @@ namespace Garnet.server
                 return GarnetStatus.OK;
 
             // Prepare the parse state
-            var parseState = new SessionParseState();
-            ArgSlice[] parseStateBuffer = default;
-            parseState.InitializeWithArguments(ref parseStateBuffer, field, value);
+            parseState.InitializeWithArguments(field, value);
 
             // Prepare the input
             var input = new ObjectInput
@@ -80,14 +78,11 @@ namespace Garnet.server
                 return GarnetStatus.OK;
 
             // Prepare the parse state
-            var parseState = new SessionParseState();
-            ArgSlice[] parseStateBuffer = default;
-            parseState.Initialize(ref parseStateBuffer, elements.Length * 2);
+            parseState.Initialize(elements.Length * 2);
 
             for (var i = 0; i < elements.Length; i++)
             {
-                parseStateBuffer[2 * i] = elements[i].field;
-                parseStateBuffer[(2 * i) + 1] = elements[i].value;
+                parseState.SetArguments(2 * i, elements[i].field, elements[i].value);
             }
 
             // Prepare the input
@@ -140,9 +135,7 @@ namespace Garnet.server
                 return GarnetStatus.OK;
 
             // Prepare the parse state
-            var parseState = new SessionParseState();
-            ArgSlice[] parseStateBuffer = default;
-            parseState.InitializeWithArguments(ref parseStateBuffer, fields);
+            parseState.InitializeWithArguments(fields);
 
             // Prepare the input
             var input = new ObjectInput
@@ -180,9 +173,7 @@ namespace Garnet.server
                 return GarnetStatus.OK;
 
             // Prepare the parse state
-            var parseState = new SessionParseState();
-            ArgSlice[] parseStateBuffer = default;
-            parseState.InitializeWithArguments(ref parseStateBuffer, field, value);
+            parseState.InitializeWithArguments(field, value);
 
             // Prepare the input
             var input = new ObjectInput
@@ -225,9 +216,7 @@ namespace Garnet.server
                 return GarnetStatus.OK;
 
             // Prepare the parse state
-            var parseState = new SessionParseState();
-            ArgSlice[] parseStateBuffer = default;
-            parseState.InitializeWithArguments(ref parseStateBuffer, fields);
+            parseState.InitializeWithArguments(fields);
 
             // Prepare the input
             var input = new ObjectInput
@@ -341,9 +330,7 @@ namespace Garnet.server
                 return GarnetStatus.OK;
 
             // Prepare the parse state
-            var parseState = new SessionParseState();
-            ArgSlice[] parseStateBuffer = default;
-            parseState.InitializeWithArguments(ref parseStateBuffer, field);
+            parseState.InitializeWithArguments(field);
 
             // Prepare the input
             var input = new ObjectInput

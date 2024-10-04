@@ -138,9 +138,6 @@ namespace Garnet.server
                 match = "*";
 
             // Prepare the parse state 
-            var parseState = new SessionParseState();
-            ArgSlice[] parseStateBuffer = default;
-
             var matchPatternValue = Encoding.ASCII.GetBytes(match.Trim());
 
             var lengthCountNumber = NumUtils.NumDigits(count);
@@ -159,7 +156,7 @@ namespace Garnet.server
                     var countKeywordSlice = new ArgSlice(countPtr, CmdStrings.COUNT.Length);
                     var countValueSlice = new ArgSlice(countValuePtr, countBytes.Length);
 
-                    parseState.InitializeWithArguments(ref parseStateBuffer, matchKeywordSlice, matchPatternSlice,
+                    parseState.InitializeWithArguments(matchKeywordSlice, matchPatternSlice,
                         countKeywordSlice, countValueSlice);
                 }
             }

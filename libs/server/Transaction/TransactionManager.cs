@@ -10,13 +10,13 @@ using Tsavorite.core;
 
 namespace Garnet.server
 {
-    using BasicGarnetApi = GarnetApi<BasicContext<SpanByte, SpanByte, SpanByte, SpanByteAndMemory, long, MainSessionFunctions,
+    using BasicGarnetApi = GarnetApi<BasicContext<SpanByte, SpanByte, RawStringInput, SpanByteAndMemory, long, MainSessionFunctions,
             /* MainStoreFunctions */ StoreFunctions<SpanByte, SpanByte, SpanByteComparer, SpanByteRecordDisposer>,
             SpanByteAllocator<StoreFunctions<SpanByte, SpanByte, SpanByteComparer, SpanByteRecordDisposer>>>,
         BasicContext<byte[], IGarnetObject, ObjectInput, GarnetObjectStoreOutput, long, ObjectSessionFunctions,
             /* ObjectStoreFunctions */ StoreFunctions<byte[], IGarnetObject, ByteArrayKeyComparer, DefaultRecordDisposer<byte[], IGarnetObject>>,
             GenericAllocator<byte[], IGarnetObject, StoreFunctions<byte[], IGarnetObject, ByteArrayKeyComparer, DefaultRecordDisposer<byte[], IGarnetObject>>>>>;
-    using LockableGarnetApi = GarnetApi<LockableContext<SpanByte, SpanByte, SpanByte, SpanByteAndMemory, long, MainSessionFunctions,
+    using LockableGarnetApi = GarnetApi<LockableContext<SpanByte, SpanByte, RawStringInput, SpanByteAndMemory, long, MainSessionFunctions,
             /* MainStoreFunctions */ StoreFunctions<SpanByte, SpanByte, SpanByteComparer, SpanByteRecordDisposer>,
             SpanByteAllocator<StoreFunctions<SpanByte, SpanByte, SpanByteComparer, SpanByteRecordDisposer>>>,
         LockableContext<byte[], IGarnetObject, ObjectInput, GarnetObjectStoreOutput, long, ObjectSessionFunctions,
@@ -37,12 +37,12 @@ namespace Garnet.server
         /// <summary>
         /// Basic context for main store
         /// </summary>
-        readonly BasicContext<SpanByte, SpanByte, SpanByte, SpanByteAndMemory, long, MainSessionFunctions, MainStoreFunctions, MainStoreAllocator> basicContext;
+        readonly BasicContext<SpanByte, SpanByte, RawStringInput, SpanByteAndMemory, long, MainSessionFunctions, MainStoreFunctions, MainStoreAllocator> basicContext;
 
         /// <summary>
         /// Lockable context for main store
         /// </summary>
-        readonly LockableContext<SpanByte, SpanByte, SpanByte, SpanByteAndMemory, long, MainSessionFunctions, MainStoreFunctions, MainStoreAllocator> lockableContext;
+        readonly LockableContext<SpanByte, SpanByte, RawStringInput, SpanByteAndMemory, long, MainSessionFunctions, MainStoreFunctions, MainStoreAllocator> lockableContext;
 
         /// <summary>
         /// Basic context for object store
@@ -83,9 +83,9 @@ namespace Garnet.server
         StoreType transactionStoreType;
         readonly ILogger logger;
 
-        internal LockableContext<SpanByte, SpanByte, SpanByte, SpanByteAndMemory, long, MainSessionFunctions, MainStoreFunctions, MainStoreAllocator> LockableContext
+        internal LockableContext<SpanByte, SpanByte, RawStringInput, SpanByteAndMemory, long, MainSessionFunctions, MainStoreFunctions, MainStoreAllocator> LockableContext
             => lockableContext;
-        internal LockableUnsafeContext<SpanByte, SpanByte, SpanByte, SpanByteAndMemory, long, MainSessionFunctions, MainStoreFunctions, MainStoreAllocator> LockableUnsafeContext
+        internal LockableUnsafeContext<SpanByte, SpanByte, RawStringInput, SpanByteAndMemory, long, MainSessionFunctions, MainStoreFunctions, MainStoreAllocator> LockableUnsafeContext
             => basicContext.Session.LockableUnsafeContext;
         internal LockableContext<byte[], IGarnetObject, ObjectInput, GarnetObjectStoreOutput, long, ObjectSessionFunctions, ObjectStoreFunctions, ObjectStoreAllocator> ObjectStoreLockableContext
             => objectStoreLockableContext;
@@ -162,7 +162,7 @@ namespace Garnet.server
             this.keyCount = 0;
         }
 
-        internal bool RunTransactionProc(byte id, ArgSlice input, CustomTransactionProcedure proc, ref MemoryResult<byte> output)
+        internal bool RunTransactionProc(byte id, ref SessionParseState parseState, int parseStateStartIdx, CustomTransactionProcedure proc, ref MemoryResult<byte> output)
         {
             bool running = false;
             scratchBufferManager.Reset();
@@ -170,7 +170,7 @@ namespace Garnet.server
             {
                 functionsState.StoredProcMode = true;
                 // Prepare phase
-                if (!proc.Prepare(garnetTxPrepareApi, input))
+                if (!proc.Prepare(garnetTxPrepareApi, ref parseState, parseStateStartIdx))
                 {
                     Reset(running);
                     return false;
@@ -186,10 +186,10 @@ namespace Garnet.server
                 running = true;
 
                 // Run main procedure on locked data
-                proc.Main(garnetTxMainApi, input, ref output);
+                proc.Main(garnetTxMainApi, ref parseState, parseStateStartIdx, ref output);
 
                 // Log the transaction to AOF
-                Log(id, input);
+                Log(id, ref parseState, parseStateStartIdx);
 
                 // Commit
                 Commit();
@@ -204,7 +204,7 @@ namespace Garnet.server
                 try
                 {
                     // Run finalize procedure at the end
-                    proc.Finalize(garnetTxFinalizeApi, input, ref output);
+                    proc.Finalize(garnetTxFinalizeApi, ref parseState, parseStateStartIdx, ref output);
                 }
                 catch { }
 
@@ -227,11 +227,22 @@ namespace Garnet.server
             state = TxnState.Aborted;
         }
 
-        internal void Log(byte id, ArgSlice input)
+        internal void Log(byte id, ref SessionParseState parseState, int parseStateStartIdx)
         {
             Debug.Assert(functionsState.StoredProcMode);
-            SpanByte sb = new SpanByte(input.Length, (nint)input.ptr);
-            appendOnlyFile?.Enqueue(new AofHeader { opType = AofEntryType.StoredProcedure, type = id, version = basicContext.Session.Version, sessionID = basicContext.Session.ID }, ref sb, out _);
+            var sbToSerialize = new SpanByte[1 + parseState.Count];
+
+            var countBytes = stackalloc byte[sizeof(int)];
+            *(int*)countBytes = parseState.Count;
+
+            sbToSerialize[0] = new SpanByte(sizeof(int), (nint)countBytes);
+
+            for (var i = 0; i < parseState.Count; i++)
+            {
+                sbToSerialize[i + 1] = parseState.GetArgSliceByRef(i).SpanByte;
+            }
+
+            appendOnlyFile?.Enqueue(new AofHeader { opType = AofEntryType.StoredProcedure, type = id, version = basicContext.Session.Version, sessionID = basicContext.Session.ID }, ref sbToSerialize, out _);
         }
 
         internal void Commit(bool internal_txn = false)

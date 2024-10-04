@@ -21,25 +21,25 @@ namespace Garnet
         public const string PrefixError = "Invalid prefix length, should be 8 bytes";
 
         /// <inheritdoc />
-        public override int GetInitialLength(ReadOnlySpan<byte> input)
+        public override int GetInitialLength(ref RawStringInput input)
         {
-            var newVal = GetFirstArg(input);
+            var newVal = GetFirstArg(ref input);
             return newVal.Length + 8;
         }
 
         /// <inheritdoc />
-        public override int GetLength(ReadOnlySpan<byte> value, ReadOnlySpan<byte> input)
+        public override int GetLength(ReadOnlySpan<byte> value, ref RawStringInput input)
         {
-            var newVal = GetFirstArg(input);
+            var newVal = GetFirstArg(ref input);
             return newVal.Length + 8;
         }
 
         /// <inheritdoc />
-        public override bool NeedInitialUpdate(ReadOnlySpan<byte> key, ReadOnlySpan<byte> input, ref (IMemoryOwner<byte>, int) output)
+        public override bool NeedInitialUpdate(ReadOnlySpan<byte> key, ref RawStringInput input, ref (IMemoryOwner<byte>, int) output)
         {
             int offset = 0;
-            var newVal = GetNextArg(input, ref offset);
-            var prefix = GetNextArg(input, ref offset);
+            var newVal = GetNextArg(ref input, ref offset);
+            var prefix = GetNextArg(ref input, ref offset);
             if (prefix.Length != 8)
             {
                 WriteError(ref output, PrefixError);
@@ -49,11 +49,11 @@ namespace Garnet
         }
 
         /// <inheritdoc />
-        public override bool NeedCopyUpdate(ReadOnlySpan<byte> key, ReadOnlySpan<byte> input, ReadOnlySpan<byte> oldValue, ref (IMemoryOwner<byte>, int) output)
+        public override bool NeedCopyUpdate(ReadOnlySpan<byte> key, ref RawStringInput input, ReadOnlySpan<byte> oldValue, ref (IMemoryOwner<byte>, int) output)
         {
             int offset = 0;
-            var newVal = GetNextArg(input, ref offset);
-            var prefix = GetNextArg(input, ref offset);
+            var newVal = GetNextArg(ref input, ref offset);
+            var prefix = GetNextArg(ref input, ref offset);
             if (prefix.Length != 8)
             {
                 WriteError(ref output, PrefixError);
@@ -63,11 +63,11 @@ namespace Garnet
         }
 
         /// <inheritdoc />
-        public override bool InitialUpdater(ReadOnlySpan<byte> key, ReadOnlySpan<byte> input, Span<byte> value, ref (IMemoryOwner<byte>, int) output, ref RMWInfo rmwInfo)
+        public override bool InitialUpdater(ReadOnlySpan<byte> key, ref RawStringInput input, Span<byte> value, ref (IMemoryOwner<byte>, int) output, ref RMWInfo rmwInfo)
         {
             int offset = 0;
-            var newVal = GetNextArg(input, ref offset);
-            var prefix = GetNextArg(input, ref offset);
+            var newVal = GetNextArg(ref input, ref offset);
+            var prefix = GetNextArg(ref input, ref offset);
 
             prefix.CopyTo(value);
             newVal.CopyTo(value.Slice(8));
@@ -76,11 +76,11 @@ namespace Garnet
         }
 
         /// <inheritdoc />
-        public override bool InPlaceUpdater(ReadOnlySpan<byte> key, ReadOnlySpan<byte> input, Span<byte> value, ref int valueLength, ref (IMemoryOwner<byte>, int) output, ref RMWInfo rmwInfo)
+        public override bool InPlaceUpdater(ReadOnlySpan<byte> key, ref RawStringInput input, Span<byte> value, ref int valueLength, ref (IMemoryOwner<byte>, int) output, ref RMWInfo rmwInfo)
         {
             int offset = 0;
-            var newVal = GetNextArg(input, ref offset);
-            var prefix = GetNextArg(input, ref offset);
+            var newVal = GetNextArg(ref input, ref offset);
+            var prefix = GetNextArg(ref input, ref offset);
 
             if (prefix.Length != 8)
             {
@@ -106,11 +106,11 @@ namespace Garnet
         }
 
         /// <inheritdoc />
-        public override bool CopyUpdater(ReadOnlySpan<byte> key, ReadOnlySpan<byte> input, ReadOnlySpan<byte> oldValue, Span<byte> newValue, ref (IMemoryOwner<byte>, int) output, ref RMWInfo rmwInfo)
+        public override bool CopyUpdater(ReadOnlySpan<byte> key, ref RawStringInput input, ReadOnlySpan<byte> oldValue, Span<byte> newValue, ref (IMemoryOwner<byte>, int) output, ref RMWInfo rmwInfo)
         {
             int offset = 0;
-            var newVal = GetNextArg(input, ref offset);
-            var prefix = GetNextArg(input, ref offset);
+            var newVal = GetNextArg(ref input, ref offset);
+            var prefix = GetNextArg(ref input, ref offset);
 
             prefix.CopyTo(newValue);
             newVal.CopyTo(newValue.Slice(8));
@@ -119,7 +119,7 @@ namespace Garnet
         }
 
         /// <inheritdoc />
-        public override bool Reader(ReadOnlySpan<byte> key, ReadOnlySpan<byte> input, ReadOnlySpan<byte> value, ref (IMemoryOwner<byte>, int) output, ref ReadInfo readInfo)
+        public override bool Reader(ReadOnlySpan<byte> key, ref RawStringInput input, ReadOnlySpan<byte> value, ref (IMemoryOwner<byte>, int) output, ref ReadInfo readInfo)
             => throw new InvalidOperationException();
     }
 }

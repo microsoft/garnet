@@ -174,22 +174,17 @@ namespace Garnet.server
         /// <summary>
         /// Get argument from input, at specified offset (starting from 0)
         /// </summary>
-        /// <param name="input">Input as ArgSlice</param>
-        /// <param name="offset">Current offset into input</param>
+        /// <param name="parseState">Current parse state</param>
+        /// <param name="parseStateStartIdx"></param>
+        /// <param name="offset">Current offset into parse state</param>
         /// <returns>Argument as a span</returns>
-        protected static unsafe ArgSlice GetNextArg(ArgSlice input, ref int offset)
+        protected static unsafe ArgSlice GetNextArg(ref SessionParseState parseState, int parseStateStartIdx, ref int offset)
         {
-            byte* result = null;
-            int len = 0;
-
-            byte* ptr = input.ptr + offset;
-            byte* end = input.ptr + input.Length;
-            if (ptr < end && RespReadUtils.ReadPtrWithLengthHeader(ref result, ref len, ref ptr, end))
-            {
-                offset = (int)(ptr - input.ptr);
-                return new ArgSlice(result, len);
-            }
-            return default;
+            var arg = parseStateStartIdx + offset < parseState.Count
+                ? parseState.GetArgSliceByRef(parseStateStartIdx + offset)
+                : default;
+            offset++;
+            return arg;
         }
     }
 }

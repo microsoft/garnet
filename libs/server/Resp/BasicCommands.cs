@@ -30,9 +30,10 @@ namespace Garnet.server
             if (useAsync)
                 return NetworkGETAsync(ref storageApi);
 
+            RawStringInput input = default;
+
             var key = parseState.GetArgSliceByRef(0).SpanByte;
             var o = new SpanByteAndMemory(dcurr, (int)(dend - dcurr));
-            SpanByte input = default;
             var status = storageApi.GET(ref key, ref input, ref o);
 
             switch (status)
@@ -65,9 +66,15 @@ namespace Garnet.server
 
             // Set up input to instruct storage to write output to IMemory rather than
             // network buffer, if the operation goes pending.
-            var h = new RespInputHeader { cmd = RespCommand.ASYNC };
-            var input = SpanByte.FromPinnedStruct(&h);
-            var status = storageApi.GET_WithPending(ref key, ref input, ref o, asyncStarted, out bool pending);
+            var input = new RawStringInput
+            {
+                header = new RespInputHeader
+                {
+                    cmd = RespCommand.ASYNC
+                }
+            };
+
+            var status = storageApi.GET_WithPending(ref key, ref input, ref o, asyncStarted, out var pending);
 
             if (pending)
             {
@@ -100,12 +107,11 @@ namespace Garnet.server
             where TGarnetApi : IGarnetAdvancedApi
         {
             var key = parseState.GetArgSliceByRef(0).SpanByte;
-            SpanByte input = default;
-            long ctx = default;
-            int firstPending = -1;
+            RawStringInput input = default;
+            var firstPending = -1;
             (GarnetStatus, SpanByteAndMemory)[] outputArr = null;
             SpanByteAndMemory o = new(dcurr, (int)(dend - dcurr));
-            int c = 0;
+            var c = 0;
 
             for (; ; c++)
             {
@@ -113,10 +119,10 @@ namespace Garnet.server
                     break;
 
                 // Store index in context, since completions are not in order
-                ctx = firstPending == -1 ? 0 : c - firstPending;
+                long ctx = firstPending == -1 ? 0 : c - firstPending;
 
                 var status = storageApi.GET_WithPending(ref key, ref input, ref o, ctx,
-                    out bool isPending);
+                    out var isPending);
 
                 if (isPending)
                 {
@@ -166,7 +172,7 @@ namespace Garnet.server
                 storageApi.GET_CompletePending(outputArr, true);
 
                 // Write the outputs to network buffer
-                for (int i = 0; i < c - firstPending; i++)
+                for (var i = 0; i < c - firstPending; i++)
                 {
                     var status = outputArr[i].Item1;
                     var output = outputArr[i].Item2;
@@ -199,57 +205,6 @@ namespace Garnet.server
             return true;
         }
 
-        bool ParseGETAndKey(ref SpanByte key)
-        {
-            var oldEndReadHead = readHead = endReadHead;
-            var cmd = ParseCommand(out bool success);
-            if (!success || cmd != RespCommand.GET)
-            {
-                // If we either find no command or a different command, we back off
-                endReadHead = readHead = oldEndReadHead;
-                return false;
-            }
-            key = parseState.GetArgSliceByRef(0).SpanByte;
-            return true;
-        }
-
-        static void SetResult(int c, ref int firstPending, ref (GarnetStatus, SpanByteAndMemory)[] outputArr,
-            GarnetStatus status, SpanByteAndMemory output)
-        {
-            const int initialBatchSize = 8; // number of items in initial batch
-            if (firstPending == -1)
-            {
-                outputArr = new (GarnetStatus, SpanByteAndMemory)[initialBatchSize];
-                firstPending = c;
-            }
-
-            Debug.Assert(firstPending >= 0);
-            Debug.Assert(c >= firstPending);
-            Debug.Assert(outputArr != null);
-
-            if (c - firstPending >= outputArr.Length)
-            {
-                int newCount = (int)NextPowerOf2(c - firstPending + 1);
-                var outputArr2 = new (GarnetStatus, SpanByteAndMemory)[newCount];
-                Array.Copy(outputArr, outputArr2, outputArr.Length);
-                outputArr = outputArr2;
-            }
-
-            outputArr[c - firstPending] = (status, output);
-        }
-
-        static long NextPowerOf2(long v)
-        {
-            v--;
-            v |= v >> 1;
-            v |= v >> 2;
-            v |= v >> 4;
-            v |= v >> 8;
-            v |= v >> 16;
-            v |= v >> 32;
-            return v + 1;
-        }
-
         /// <summary>
         /// SET
         /// </summary>
@@ -260,7 +215,7 @@ namespace Garnet.server
             var key = parseState.GetArgSliceByRef(0).SpanByte;
             var value = parseState.GetArgSliceByRef(1).SpanByte;
 
-            var status = storageApi.SET(ref key, ref value);
+            storageApi.SET(ref key, ref value);
 
             while (!RespWriteUtils.WriteDirect(CmdStrings.RESP_OK, ref dcurr, dend))
                 SendAndReset();
@@ -276,6 +231,7 @@ namespace Garnet.server
         {
             var key = parseState.GetArgSliceByRef(0);
 
+            // Validate offset
             if (!parseState.TryGetInt(1, out var offset))
             {
                 while (!RespWriteUtils.WriteError(CmdStrings.RESP_ERR_GENERIC_VALUE_IS_NOT_INTEGER, ref dcurr, dend))
@@ -290,12 +246,17 @@ namespace Garnet.server
                 return true;
             }
 
-            var value = parseState.GetArgSliceByRef(2);
+            var input = new RawStringInput
+            {
+                header = new RespInputHeader { cmd = RespCommand.SETRANGE },
+                parseState = parseState,
+                parseStateStartIdx = 1,
+            };
 
             Span<byte> outputBuffer = stackalloc byte[NumUtils.MaximumFormatInt64Length];
             var output = ArgSlice.FromPinnedSpan(outputBuffer);
 
-            storageApi.SETRANGE(key, value, offset, ref output);
+            storageApi.SETRANGE(key, ref input, ref output);
 
             while (!RespWriteUtils.WriteIntegerFromBytes(outputBuffer.Slice(0, output.Length), ref dcurr, dend))
                 SendAndReset();
@@ -309,20 +270,24 @@ namespace Garnet.server
             var key = parseState.GetArgSliceByRef(0);
             var sbKey = key.SpanByte;
 
-
-            if (!parseState.TryGetInt(1, out var sliceStart) || !parseState.TryGetInt(2, out var sliceLength))
+            // Validate range
+            if (!parseState.TryGetInt(1, out _) || !parseState.TryGetInt(2, out _))
             {
                 while (!RespWriteUtils.WriteError(CmdStrings.RESP_ERR_GENERIC_VALUE_IS_NOT_INTEGER, ref dcurr, dend))
                     SendAndReset();
                 return true;
             }
 
-            var keyPtr = sbKey.ToPointer() - sizeof(int); // length header
-            *(int*)keyPtr = sbKey.Length;
+            var input = new RawStringInput
+            {
+                header = new RespInputHeader { cmd = RespCommand.GETRANGE },
+                parseState = parseState,
+                parseStateStartIdx = 1,
+            };
 
             var o = new SpanByteAndMemory(dcurr, (int)(dend - dcurr));
 
-            var status = storageApi.GETRANGE(ref Unsafe.AsRef<SpanByte>(keyPtr), sliceStart, sliceLength, ref o);
+            var status = storageApi.GETRANGE(ref sbKey, ref input, ref o);
 
             if (status == GarnetStatus.OK)
             {
@@ -351,6 +316,7 @@ namespace Garnet.server
         {
             var key = parseState.GetArgSliceByRef(0).SpanByte;
 
+            // Validate expiry
             if (!parseState.TryGetInt(1, out var expiry))
             {
                 while (!RespWriteUtils.WriteError(CmdStrings.RESP_ERR_GENERIC_VALUE_IS_NOT_INTEGER, ref dcurr, dend))
@@ -366,24 +332,18 @@ namespace Garnet.server
             }
 
             var val = parseState.GetArgSliceByRef(2).SpanByte;
-            var valPtr = val.ToPointer() - (sizeof(int) + sizeof(long));
-            var vSize = val.Length;
 
-            // Save prior state on network buffer
-            var save1 = *(int*)valPtr;
-            var save2 = *(long*)(valPtr + sizeof(int));
+            var newValLen = val.Length + sizeof(long);
+            var newVal = stackalloc byte[newValLen];
 
-            *(int*)valPtr = vSize + sizeof(long); // expiry info
-            SpanByte.Reinterpret(valPtr).ExtraMetadata = DateTimeOffset.UtcNow.Ticks +
-                                                         (highPrecision
-                                                             ? TimeSpan.FromMilliseconds(expiry).Ticks
-                                                             : TimeSpan.FromSeconds(expiry).Ticks);
+            var sbNewVal = SpanByte.FromPinnedPointer(newVal, newValLen);
+            sbNewVal.ExtraMetadata = DateTimeOffset.UtcNow.Ticks +
+                                     (highPrecision
+                                         ? TimeSpan.FromMilliseconds(expiry).Ticks
+                                         : TimeSpan.FromSeconds(expiry).Ticks);
+            val.AsReadOnlySpan().CopyTo(sbNewVal.AsSpan());
 
-            _ = storageApi.SET(ref key, ref Unsafe.AsRef<SpanByte>(valPtr));
-
-            // Restore prior state on network buffer
-            *(int*)valPtr = save1;
-            *(long*)(valPtr + sizeof(int)) = save2;
+            _ = storageApi.SET(ref key, ref sbNewVal);
 
             while (!RespWriteUtils.WriteDirect(CmdStrings.RESP_OK, ref dcurr, dend))
                 SendAndReset();
@@ -438,6 +398,7 @@ namespace Garnet.server
 
                 if (nextOpt.SequenceEqual(CmdStrings.EX))
                 {
+                    // Validate expiry
                     if (!parseState.TryGetInt(tokenIdx++, out expiry))
                     {
                         errorMessage = CmdStrings.RESP_ERR_GENERIC_VALUE_IS_NOT_INTEGER;
@@ -459,6 +420,7 @@ namespace Garnet.server
                 }
                 else if (nextOpt.SequenceEqual(CmdStrings.PX))
                 {
+                    // Validate expiry
                     if (!parseState.TryGetInt(tokenIdx++, out expiry))
                     {
                         errorMessage = CmdStrings.RESP_ERR_GENERIC_VALUE_IS_NOT_INTEGER;
@@ -536,16 +498,6 @@ namespace Garnet.server
                 return true;
             }
 
-            // Make space for key header
-            var keyPtr = sbKey.ToPointer() - sizeof(int);
-
-            // Set key length
-            *(int*)keyPtr = sbKey.Length;
-
-            // Make space for value header
-            var valPtr = sbVal.ToPointer() - sizeof(int);
-            var vSize = sbVal.Length;
-
             switch (expOption)
             {
                 case ExpirationOption.None:
@@ -554,16 +506,16 @@ namespace Garnet.server
                     {
                         case ExistOptions.None:
                             return getValue
-                                ? NetworkSET_Conditional(RespCommand.SET, expiry, keyPtr, valPtr, vSize, true,
+                                ? NetworkSET_Conditional(RespCommand.SET, expiry, ref sbKey, true,
                                     false, ref storageApi)
-                                : NetworkSET_EX(RespCommand.SET, expiry, keyPtr, valPtr, vSize, false,
+                                : NetworkSET_EX(RespCommand.SET, expiry, ref sbKey, ref sbVal, false,
                                     ref storageApi); // Can perform a blind update
                         case ExistOptions.XX:
-                            return NetworkSET_Conditional(RespCommand.SETEXXX, expiry, keyPtr, valPtr, vSize,
-                                getValue, false, ref storageApi);
+                            return NetworkSET_Conditional(RespCommand.SETEXXX, expiry, ref sbKey, getValue, false,
+                                ref storageApi);
                         case ExistOptions.NX:
-                            return NetworkSET_Conditional(RespCommand.SETEXNX, expiry, keyPtr, valPtr, vSize,
-                                getValue, false, ref storageApi);
+                            return NetworkSET_Conditional(RespCommand.SETEXNX, expiry, ref sbKey, getValue, false,
+                                ref storageApi);
                     }
 
                     break;
@@ -572,16 +524,16 @@ namespace Garnet.server
                     {
                         case ExistOptions.None:
                             return getValue
-                                ? NetworkSET_Conditional(RespCommand.SET, expiry, keyPtr, valPtr, vSize, true,
+                                ? NetworkSET_Conditional(RespCommand.SET, expiry, ref sbKey, true,
                                     true, ref storageApi)
-                                : NetworkSET_EX(RespCommand.SET, expiry, keyPtr, valPtr, vSize, true,
+                                : NetworkSET_EX(RespCommand.SET, expiry, ref sbKey, ref sbVal, true,
                                     ref storageApi); // Can perform a blind update
                         case ExistOptions.XX:
-                            return NetworkSET_Conditional(RespCommand.SETEXXX, expiry, keyPtr, valPtr, vSize,
-                                getValue, true, ref storageApi);
+                            return NetworkSET_Conditional(RespCommand.SETEXXX, expiry, ref sbKey, getValue, true,
+                                ref storageApi);
                         case ExistOptions.NX:
-                            return NetworkSET_Conditional(RespCommand.SETEXNX, expiry, keyPtr, valPtr, vSize,
-                                getValue, true, ref storageApi);
+                            return NetworkSET_Conditional(RespCommand.SETEXNX, expiry, ref sbKey, getValue, true,
+                                ref storageApi);
                     }
 
                     break;
@@ -592,14 +544,14 @@ namespace Garnet.server
                     {
                         case ExistOptions.None:
                             // We can never perform a blind update due to KEEPTTL
-                            return NetworkSET_Conditional(RespCommand.SETKEEPTTL, expiry, keyPtr, valPtr, vSize,
-                                getValue, false, ref storageApi);
+                            return NetworkSET_Conditional(RespCommand.SETKEEPTTL, expiry, ref sbKey, getValue, false,
+                                ref storageApi);
                         case ExistOptions.XX:
-                            return NetworkSET_Conditional(RespCommand.SETKEEPTTLXX, expiry, keyPtr, valPtr, vSize,
-                                getValue, false, ref storageApi);
+                            return NetworkSET_Conditional(RespCommand.SETKEEPTTLXX, expiry, ref sbKey, getValue, false,
+                                ref storageApi);
                         case ExistOptions.NX:
-                            return NetworkSET_Conditional(RespCommand.SETEXNX, expiry, keyPtr, valPtr, vSize,
-                                getValue, false, ref storageApi);
+                            return NetworkSET_Conditional(RespCommand.SETEXNX, expiry, ref sbKey, getValue, false,
+                                ref storageApi);
                     }
 
                     break;
@@ -610,69 +562,56 @@ namespace Garnet.server
             return true;
         }
 
-        private bool NetworkSET_EX<TGarnetApi>(RespCommand cmd, int expiry, byte* keyPtr, byte* valPtr,
-            int vsize, bool highPrecision, ref TGarnetApi storageApi)
+        private unsafe bool NetworkSET_EX<TGarnetApi>(RespCommand cmd, int expiry, ref SpanByte key, ref SpanByte val,
+            bool highPrecision, ref TGarnetApi storageApi)
             where TGarnetApi : IGarnetApi
         {
             Debug.Assert(cmd == RespCommand.SET);
 
-            if (expiry == 0) // no expiration provided - this code path will not be currently hit as TrySET is used
+            if (expiry != 0)
             {
-                *(int*)valPtr = vsize;
-            }
-            else
-            {
-                // Move payload forward to make space for metadata
-                Buffer.MemoryCopy(valPtr + sizeof(int), valPtr + sizeof(int) + sizeof(long), vsize, vsize);
-                *(int*)valPtr = vsize + sizeof(long);
-                SpanByte.Reinterpret(valPtr).ExtraMetadata = DateTimeOffset.UtcNow.Ticks +
-                                                             (highPrecision
-                                                                 ? TimeSpan.FromMilliseconds(expiry).Ticks
-                                                                 : TimeSpan.FromSeconds(expiry).Ticks);
+                var newValLen = val.Length + sizeof(long);
+                var newVal = stackalloc byte[newValLen];
+
+                var sbNewVal = SpanByte.FromPinnedPointer(newVal, newValLen);
+                sbNewVal.ExtraMetadata = DateTimeOffset.UtcNow.Ticks +
+                                         (highPrecision
+                                             ? TimeSpan.FromMilliseconds(expiry).Ticks
+                                             : TimeSpan.FromSeconds(expiry).Ticks);
+                val.AsReadOnlySpan().CopyTo(sbNewVal.AsSpan());
+                val = sbNewVal;
             }
 
-            storageApi.SET(ref Unsafe.AsRef<SpanByte>(keyPtr), ref Unsafe.AsRef<SpanByte>(valPtr));
+            storageApi.SET(ref key, ref val);
             while (!RespWriteUtils.WriteDirect(CmdStrings.RESP_OK, ref dcurr, dend))
                 SendAndReset();
             return true;
         }
 
-        private bool NetworkSET_Conditional<TGarnetApi>(RespCommand cmd, int expiry, byte* keyPtr,
-            byte* inputPtr, int isize, bool getValue, bool highPrecision, ref TGarnetApi storageApi)
+        private bool NetworkSET_Conditional<TGarnetApi>(RespCommand cmd, int expiry, ref SpanByte key, bool getValue, bool highPrecision, ref TGarnetApi storageApi)
             where TGarnetApi : IGarnetApi
         {
-            // Make space for RespCommand in input
-            inputPtr -= RespInputHeader.Size;
+            var input = new RawStringInput
+            {
+                header = new RespInputHeader { cmd = cmd, },
+                parseState = parseState,
+                parseStateStartIdx = 1,
+                arg1 = expiry == 0
+                    ? 0
+                    : DateTimeOffset.UtcNow.Ticks +
+                      (highPrecision
+                          ? TimeSpan.FromMilliseconds(expiry).Ticks
+                          : TimeSpan.FromSeconds(expiry).Ticks)
+            };
 
-            if (expiry == 0) // no expiration provided
-            {
-                *(int*)inputPtr = RespInputHeader.Size + isize;
-                ((RespInputHeader*)(inputPtr + sizeof(int)))->cmd = cmd;
-                ((RespInputHeader*)(inputPtr + sizeof(int)))->flags = 0;
-                if (getValue)
-                    ((RespInputHeader*)(inputPtr + sizeof(int)))->SetSetGetFlag();
-            }
-            else
-            {
-                // Move payload forward to make space for metadata
-                Buffer.MemoryCopy(inputPtr + sizeof(int) + RespInputHeader.Size,
-                    inputPtr + sizeof(int) + sizeof(long) + RespInputHeader.Size, isize, isize);
-                *(int*)inputPtr = sizeof(long) + RespInputHeader.Size + isize;
-                ((RespInputHeader*)(inputPtr + sizeof(int) + sizeof(long)))->cmd = cmd;
-                ((RespInputHeader*)(inputPtr + sizeof(int) + sizeof(long)))->flags = 0;
-                if (getValue)
-                    ((RespInputHeader*)(inputPtr + sizeof(int) + sizeof(long)))->SetSetGetFlag();
-                SpanByte.Reinterpret(inputPtr).ExtraMetadata = DateTimeOffset.UtcNow.Ticks +
-                                                               (highPrecision
-                                                                   ? TimeSpan.FromMilliseconds(expiry).Ticks
-                                                                   : TimeSpan.FromSeconds(expiry).Ticks);
-            }
+            if (getValue)
+                input.header.SetSetGetFlag();
 
             if (getValue)
             {
                 var o = new SpanByteAndMemory(dcurr, (int)(dend - dcurr));
-                var status = storageApi.SET_Conditional(ref Unsafe.AsRef<SpanByte>(keyPtr),
-                    ref Unsafe.AsRef<SpanByte>(inputPtr), ref o);
+                var status = storageApi.SET_Conditional(ref key,
+                    ref input, ref o);
 
                 // Status tells us whether an old image was found during RMW or not
                 if (status == GarnetStatus.NOTFOUND)
@@ -691,10 +630,9 @@ namespace Garnet.server
             }
             else
             {
-                var status = storageApi.SET_Conditional(ref Unsafe.AsRef<SpanByte>(keyPtr),
-                    ref Unsafe.AsRef<SpanByte>(inputPtr));
+                var status = storageApi.SET_Conditional(ref key, ref input);
 
-                bool ok = status != GarnetStatus.NOTFOUND;
+                var ok = status != GarnetStatus.NOTFOUND;
 
                 // Status tells us whether an old image was found during RMW or not
                 // For a "set if not exists", NOTFOUND means the operation succeeded
@@ -726,44 +664,38 @@ namespace Garnet.server
                          cmd == RespCommand.DECR);
 
             var key = parseState.GetArgSliceByRef(0);
-            var sbKey = key.SpanByte;
 
-            ArgSlice input = default;
-            if (cmd == RespCommand.INCRBY || cmd == RespCommand.DECRBY)
+            var input = new RawStringInput
             {
-                // Parse value argument
-                // NOTE: Parse empty strings for better error messages through storageApi.Increment
-                var sbVal = parseState.GetArgSliceByRef(1).SpanByte;
-                var valPtr = sbVal.ToPointer() - RespInputHeader.Size;
-                var vSize = sbVal.Length + RespInputHeader.Size;
-                ((RespInputHeader*)valPtr)->cmd = cmd;
-                ((RespInputHeader*)valPtr)->flags = 0;
-                input = new ArgSlice(valPtr, vSize);
-            }
-            else if (cmd == RespCommand.INCR)
-            {
-                var vSize = RespInputHeader.Size + 1;
-                var valPtr = stackalloc byte[vSize];
-                ((RespInputHeader*)valPtr)->cmd = cmd;
-                ((RespInputHeader*)valPtr)->flags = 0;
-                *(valPtr + RespInputHeader.Size) = (byte)'1';
-                input = new ArgSlice(valPtr, vSize);
-            }
-            else if (cmd == RespCommand.DECR)
-            {
-                var vSize = RespInputHeader.Size + 2;
-                var valPtr = stackalloc byte[vSize];
-                ((RespInputHeader*)valPtr)->cmd = cmd;
-                ((RespInputHeader*)valPtr)->flags = 0;
-                *(valPtr + RespInputHeader.Size) = (byte)'-';
-                *(valPtr + RespInputHeader.Size + 1) = (byte)'1';
-                input = new ArgSlice(valPtr, vSize);
-            }
+                header = new RespInputHeader { cmd = cmd }
+            };
 
             Span<byte> outputBuffer = stackalloc byte[NumUtils.MaximumFormatInt64Length + 1];
             var output = ArgSlice.FromPinnedSpan(outputBuffer);
 
-            storageApi.Increment(key, input, ref output);
+            if (cmd == RespCommand.INCRBY || cmd == RespCommand.DECRBY)
+            {
+                input.parseState = parseState;
+                input.parseStateStartIdx = 1;
+                storageApi.Increment(key, ref input, ref output);
+            }
+            else if (cmd == RespCommand.INCR || cmd == RespCommand.DECR)
+            {
+                var value = cmd == RespCommand.INCR ? "1" : "-1";
+                var valueBytes = Encoding.ASCII.GetBytes(value);
+
+                fixed (byte* ptr = valueBytes)
+                {
+                    // Prepare the parse state
+                    var valueSlice = new ArgSlice(ptr, valueBytes.Length);
+                    parseState.InitializeWithArguments(valueSlice);
+
+                    input.parseState = parseState;
+                    input.parseStateStartIdx = 0;
+                    storageApi.Increment(key, ref input, ref output);
+                }
+            }
+
             var errorFlag = output.Length == NumUtils.MaximumFormatInt64Length + 1
                 ? (OperationError)output.Span[0]
                 : OperationError.SUCCESS;
@@ -793,18 +725,18 @@ namespace Garnet.server
             where TGarnetApi : IGarnetApi
         {
             var sbKey = parseState.GetArgSliceByRef(0).SpanByte;
-            var sbVal = parseState.GetArgSliceByRef(1).SpanByte;
 
-            var keyPtr = sbKey.ToPointer() - sizeof(int);
-            var valPtr = sbVal.ToPointer() - sizeof(int);
-            *(int*)keyPtr = sbKey.Length;
-            *(int*)valPtr = sbVal.Length;
+            var input = new RawStringInput
+            {
+                header = new RespInputHeader { cmd = RespCommand.APPEND },
+                parseState = parseState,
+                parseStateStartIdx = 1,
+            };
 
             Span<byte> outputBuffer = stackalloc byte[NumUtils.MaximumFormatInt64Length];
             var output = SpanByteAndMemory.FromPinnedSpan(outputBuffer);
 
-            storageApi.APPEND(ref Unsafe.AsRef<SpanByte>(keyPtr), ref Unsafe.AsRef<SpanByte>(valPtr),
-                ref output);
+            storageApi.APPEND(ref sbKey, ref input, ref output);
 
             while (!RespWriteUtils.WriteIntegerFromBytes(outputBuffer.Slice(0, output.Length), ref dcurr, dend))
                 SendAndReset();
@@ -1091,6 +1023,7 @@ namespace Garnet.server
             if (count > 0)
             {
                 var tokenIdx = 0;
+                // Validate protocol version
                 if (!parseState.TryGetInt(tokenIdx++, out var localRespProtocolVersion))
                 {
                     while (!RespWriteUtils.WriteError(CmdStrings.RESP_ERR_PROTOCOL_VALUE_IS_NOT_INTEGER, ref dcurr, dend))
@@ -1242,6 +1175,7 @@ namespace Garnet.server
                     return true;
                 }
 
+                // Validate samples count
                 if (!parseState.TryGetInt(2, out _))
                 {
                     while (!RespWriteUtils.WriteError(CmdStrings.RESP_ERR_GENERIC_VALUE_IS_NOT_INTEGER, ref dcurr, dend))
@@ -1542,6 +1476,57 @@ namespace Garnet.server
             }
 
             into.Append($" resp={resp}");
+        }
+
+        bool ParseGETAndKey(ref SpanByte key)
+        {
+            var oldEndReadHead = readHead = endReadHead;
+            var cmd = ParseCommand(out var success);
+            if (!success || cmd != RespCommand.GET)
+            {
+                // If we either find no command or a different command, we back off
+                endReadHead = readHead = oldEndReadHead;
+                return false;
+            }
+            key = parseState.GetArgSliceByRef(0).SpanByte;
+            return true;
+        }
+
+        static void SetResult(int c, ref int firstPending, ref (GarnetStatus, SpanByteAndMemory)[] outputArr,
+            GarnetStatus status, SpanByteAndMemory output)
+        {
+            const int initialBatchSize = 8; // number of items in initial batch
+            if (firstPending == -1)
+            {
+                outputArr = new (GarnetStatus, SpanByteAndMemory)[initialBatchSize];
+                firstPending = c;
+            }
+
+            Debug.Assert(firstPending >= 0);
+            Debug.Assert(c >= firstPending);
+            Debug.Assert(outputArr != null);
+
+            if (c - firstPending >= outputArr.Length)
+            {
+                int newCount = (int)NextPowerOf2(c - firstPending + 1);
+                var outputArr2 = new (GarnetStatus, SpanByteAndMemory)[newCount];
+                Array.Copy(outputArr, outputArr2, outputArr.Length);
+                outputArr = outputArr2;
+            }
+
+            outputArr[c - firstPending] = (status, output);
+        }
+
+        static long NextPowerOf2(long v)
+        {
+            v--;
+            v |= v >> 1;
+            v |= v >> 2;
+            v |= v >> 4;
+            v |= v >> 8;
+            v |= v >> 16;
+            v |= v >> 32;
+            return v + 1;
         }
     }
 }
