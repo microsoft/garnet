@@ -52,7 +52,7 @@ namespace Garnet
         public string SegmentSize { get; set; }
 
         [MemorySizeValidation]
-        [Option('i', "index", Required = false, HelpText = "Size of hash index in bytes (rounds down to power of 2)")]
+        [Option('i', "index", Required = false, HelpText = "Start size of hash index in bytes (rounds down to power of 2)")]
         public string IndexSize { get; set; }
 
         [MemorySizeValidation(false)]
@@ -80,7 +80,7 @@ namespace Garnet
         public string ObjectStoreSegmentSize { get; set; }
 
         [MemorySizeValidation]
-        [Option("obj-index", Required = false, HelpText = "Size of object store hash index in bytes (rounds down to power of 2)")]
+        [Option("obj-index", Required = false, HelpText = "Start size of object store hash index in bytes (rounds down to power of 2)")]
         public string ObjectStoreIndexSize { get; set; }
 
         [MemorySizeValidation(false)]
