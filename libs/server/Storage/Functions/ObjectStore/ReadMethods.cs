@@ -25,27 +25,40 @@ namespace Garnet.server
 
             if (input.header.type != 0)
             {
-                if (input.header.type == GarnetObjectType.Ttl || input.header.type == GarnetObjectType.PTtl) // TTL command
+                switch (input.header.type)
                 {
-                    var ttlValue = input.header.type == GarnetObjectType.Ttl ?
-                                    ConvertUtils.SecondsFromDiffUtcNowTicks(value.Expiration > 0 ? value.Expiration : -1) :
-                                    ConvertUtils.MillisecondsFromDiffUtcNowTicks(value.Expiration > 0 ? value.Expiration : -1);
-                    CopyRespNumber(ttlValue, ref dst.spanByteAndMemory);
-                    return true;
+                    case GarnetObjectType.Ttl:
+                        var ttlValue = ConvertUtils.SecondsFromDiffUtcNowTicks(value.Expiration > 0 ? value.Expiration : -1);
+                        CopyRespNumber(ttlValue, ref dst.spanByteAndMemory);
+                        return true;
+                    case GarnetObjectType.PTtl:
+                        ttlValue = ConvertUtils.MillisecondsFromDiffUtcNowTicks(value.Expiration > 0 ? value.Expiration : -1);
+                        CopyRespNumber(ttlValue, ref dst.spanByteAndMemory);
+                        return true;
+
+                    case GarnetObjectType.Expiretime:
+                        var expireTime = ConvertUtils.UnixTimeInSecondsFromTicks(value.Expiration > 0 ? value.Expiration : -1);
+                        CopyRespNumber(expireTime, ref dst.spanByteAndMemory);
+                        return true;
+                    case GarnetObjectType.PExpiretime:
+                        expireTime = ConvertUtils.UnixTimeInMillisecondsFromTicks(value.Expiration > 0 ? value.Expiration : -1);
+                        CopyRespNumber(expireTime, ref dst.spanByteAndMemory);
+                        return true;
+
+                    default:
+                        if ((byte)input.header.type < CustomCommandManager.StartOffset)
+                            return value.Operate(ref input, ref dst.spanByteAndMemory, out _, out _);
+
+                        if (IncorrectObjectType(ref input, value, ref dst.spanByteAndMemory))
+                            return true;
+
+                        (IMemoryOwner<byte> Memory, int Length) outp = (dst.spanByteAndMemory.Memory, 0);
+                        var customObjectCommand = GetCustomObjectCommand(ref input, input.header.type);
+                        var result = customObjectCommand.Reader(key, ref input, value, ref outp, ref readInfo);
+                        dst.spanByteAndMemory.Memory = outp.Memory;
+                        dst.spanByteAndMemory.Length = outp.Length;
+                        return result;
                 }
-
-                if ((byte)input.header.type < CustomCommandManager.StartOffset)
-                    return value.Operate(ref input, ref dst.spanByteAndMemory, out _, out _);
-
-                if (IncorrectObjectType(ref input, value, ref dst.spanByteAndMemory))
-                    return true;
-
-                (IMemoryOwner<byte> Memory, int Length) outp = (dst.spanByteAndMemory.Memory, 0);
-                var customObjectCommand = GetCustomObjectCommand(ref input, input.header.type);
-                var result = customObjectCommand.Reader(key, ref input, value, ref outp, ref readInfo);
-                dst.spanByteAndMemory.Memory = outp.Memory;
-                dst.spanByteAndMemory.Length = outp.Length;
-                return result;
             }
 
             dst.garnetObject = value;
