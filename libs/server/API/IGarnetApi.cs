@@ -1085,6 +1085,28 @@ namespace Garnet.server
 
         #endregion
 
+        #region EXPIRETIME
+
+        /// <summary>
+        /// Returns the absolute Unix timestamp (since January 1, 1970) in seconds at which the given key will expire.
+        /// </summary>
+        /// <param name="key">The key to get the expiration time for.</param>
+        /// <param name="storeType">The type of store to retrieve the key from.</param>
+        /// <param name="output">The output containing the expiration time.</param>
+        /// <returns>The status of the operation.</returns>
+        GarnetStatus EXPIRETIME(ref SpanByte key, StoreType storeType, ref SpanByteAndMemory output);
+
+        /// <summary>
+        /// Returns the absolute Unix timestamp (since January 1, 1970) in milliseconds at which the given key will expire.
+        /// </summary>
+        /// <param name="key">The key to get the expiration time for.</param>
+        /// <param name="storeType">The type of store to retrieve the key from.</param>
+        /// <param name="output">The output containing the expiration time.</param>
+        /// <returns>The status of the operation.</returns>
+        GarnetStatus PEXPIRETIME(ref SpanByte key, StoreType storeType, ref SpanByteAndMemory output);
+
+        #endregion
+
         #region SortedSet Methods
 
         /// <summary>

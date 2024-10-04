@@ -302,6 +302,71 @@ namespace Garnet.server
             return GarnetStatus.NOTFOUND;
         }
 
+        /// <summary>
+        /// Get the absolute Unix timestamp at which the given key will expire.
+        /// </summary>
+        /// <typeparam name="TContext"></typeparam>
+        /// <typeparam name="TObjectContext"></typeparam>
+        /// <param name="key">The key to get the Unix timestamp.</param>
+        /// <param name="storeType">The store to operate on</param>
+        /// <param name="output">Span to allocate the output of the operation</param>
+        /// <param name="context">Basic Context of the store</param>
+        /// <param name="objectContext">Object Context of the store</param>
+        /// <param name="milliseconds">when true the command to execute is PEXPIRETIME.</param>
+        /// <returns>Returns the absolute Unix timestamp (since January 1, 1970) in seconds or milliseconds at which the given key will expire.</returns>
+        public unsafe GarnetStatus EXPIRETIME<TContext, TObjectContext>(ref SpanByte key, StoreType storeType, ref SpanByteAndMemory output, ref TContext context, ref TObjectContext objectContext, bool milliseconds = false)
+            where TContext : ITsavoriteContext<SpanByte, SpanByte, SpanByte, SpanByteAndMemory, long, MainSessionFunctions, MainStoreFunctions, MainStoreAllocator>
+            where TObjectContext : ITsavoriteContext<byte[], IGarnetObject, ObjectInput, GarnetObjectStoreOutput, long, ObjectSessionFunctions, ObjectStoreFunctions, ObjectStoreAllocator>
+        {
+            int inputSize = sizeof(int) + RespInputHeader.Size;
+            byte* pbCmdInput = stackalloc byte[inputSize];
+
+            byte* pcurr = pbCmdInput;
+            *(int*)pcurr = inputSize - sizeof(int);
+            pcurr += sizeof(int);
+            (*(RespInputHeader*)pcurr).cmd = milliseconds ? RespCommand.PEXPIRETIME : RespCommand.EXPIRETIME;
+            (*(RespInputHeader*)pcurr).flags = 0;
+
+            if (storeType == StoreType.Main || storeType == StoreType.All)
+            {
+                var status = context.Read(ref key, ref Unsafe.AsRef<SpanByte>(pbCmdInput), ref output);
+
+                if (status.IsPending)
+                {
+                    StartPendingMetrics();
+                    CompletePendingForSession(ref status, ref output, ref context);
+                    StopPendingMetrics();
+                }
+
+                if (status.Found) return GarnetStatus.OK;
+            }
+
+            if ((storeType == StoreType.Object || storeType == StoreType.All) && !objectStoreBasicContext.IsNull)
+            {
+                var objInput = new ObjectInput
+                {
+                    header = new RespInputHeader
+                    {
+                        type = milliseconds ? GarnetObjectType.PExpiretime : GarnetObjectType.Expiretime,
+                    },
+                };
+
+                var keyBA = key.ToByteArray();
+                var objO = new GarnetObjectStoreOutput { spanByteAndMemory = output };
+                var status = objectContext.Read(ref keyBA, ref objInput, ref objO);
+
+                if (status.IsPending)
+                    CompletePendingForObjectStoreSession(ref status, ref objO, ref objectContext);
+
+                if (status.Found)
+                {
+                    output = objO.spanByteAndMemory;
+                    return GarnetStatus.OK;
+                }
+            }
+            return GarnetStatus.NOTFOUND;
+        }
+
         public GarnetStatus SET<TContext>(ref SpanByte key, ref SpanByte value, ref TContext context)
             where TContext : ITsavoriteContext<SpanByte, SpanByte, SpanByte, SpanByteAndMemory, long, MainSessionFunctions, MainStoreFunctions, MainStoreAllocator>
         {

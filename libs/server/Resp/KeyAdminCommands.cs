@@ -404,5 +404,41 @@ namespace Garnet.server
             }
             return true;
         }
+
+        /// <summary>
+        /// Get the absolute Unix timestamp at which the given key will expire.
+        /// </summary>
+        /// <typeparam name="TGarnetApi"></typeparam>
+        /// <param name="command">either if the call is for EXPIRETIME or PEXPIRETIME command</param>
+        /// <param name="storageApi"></param>
+        /// <returns>Returns the absolute Unix timestamp (since January 1, 1970) in seconds or milliseconds at which the given key will expire.</returns>
+        private bool NetworkEXPIRETIME<TGarnetApi>(RespCommand command, ref TGarnetApi storageApi)
+            where TGarnetApi : IGarnetApi
+        {
+            if (parseState.Count != 1)
+            {
+                return AbortWithWrongNumberOfArguments(nameof(RespCommand.EXPIRETIME));
+            }
+
+            var sbKey = parseState.GetArgSliceByRef(0).SpanByte;
+            var o = new SpanByteAndMemory(dcurr, (int)(dend - dcurr));
+            var status = command == RespCommand.EXPIRETIME ?
+                        storageApi.EXPIRETIME(ref sbKey, StoreType.All, ref o) :
+                        storageApi.PEXPIRETIME(ref sbKey, StoreType.All, ref o);
+
+            if (status == GarnetStatus.OK)
+            {
+                if (!o.IsSpanByte)
+                    SendAndReset(o.Memory, o.Length);
+                else
+                    dcurr += o.Length;
+            }
+            else
+            {
+                while (!RespWriteUtils.WriteDirect(CmdStrings.RESP_RETURN_VAL_N2, ref dcurr, dend))
+                    SendAndReset();
+            }
+            return true;
+        }
     }
 }

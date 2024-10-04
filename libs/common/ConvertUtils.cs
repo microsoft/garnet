@@ -70,5 +70,25 @@ namespace Garnet.common
         {
             return unixTimestamp * TimeSpan.TicksPerMillisecond + _unixEpochTicks;
         }
+
+        /// <summary>
+        /// Convert ticks to Unix time in seconds.
+        /// </summary>
+        /// <param name="ticks">The ticks to convert.</param>
+        /// <returns>The Unix time in seconds.</returns>
+        public static long UnixTimeInSecondsFromTicks(long ticks)
+        {
+            return ticks > 0 ? (ticks - _unixEpochTicks) / TimeSpan.TicksPerSecond : -1;
+        }
+
+        /// <summary>
+        /// Convert ticks to Unix time in milliseconds.
+        /// </summary>
+        /// <param name="ticks">The ticks to convert.</param>
+        /// <returns>The Unix time in milliseconds.</returns>
+        public static long UnixTimeInMillisecondsFromTicks(long ticks)
+        {
+            return ticks > 0 ? (ticks - _unixEpochTicks) / TimeSpan.TicksPerMillisecond : -1;
+        }
     }
 }
