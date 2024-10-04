@@ -127,8 +127,7 @@ namespace Garnet.server
 
         private static bool TryInitializeRespCommandsDocs(ILogger logger = null)
         {
-            var streamProvider = StreamProviderFactory.GetStreamProvider(FileLocationType.EmbeddedResource, null,
-                Assembly.GetExecutingAssembly());
+            var streamProvider = StreamProviderFactory.GetStreamProvider(FileLocationType.EmbeddedResource);
             var commandsDocsProvider = RespCommandsDataProviderFactory.GetRespCommandsDataProvider<RespCommandDocs>();
 
             var importSucceeded = commandsDocsProvider.TryImportRespCommandsData(RespCommandsDocsEmbeddedFileName,

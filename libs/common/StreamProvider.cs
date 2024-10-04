@@ -119,7 +119,8 @@ namespace Garnet.common
         /// </summary>
         /// <param name="locationType">Type of location of files the stream provider reads from / writes to</param>
         /// <param name="connectionString">Connection string to Azure Storage, if applicable</param>
-        /// <param name="resourceAssembly">Assembly from which to load the embedded resource, if applicable</param>
+        /// <param name="resourceAssembly">Assembly from which to load the embedded resource, if applicable.
+        /// By default, loads from the Garnet.resources library</param>
         /// <returns>StreamProvider instance</returns>
         public static IStreamProvider GetStreamProvider(FileLocationType locationType, string connectionString = null, Assembly resourceAssembly = null)
         {
@@ -204,7 +205,15 @@ namespace Garnet.common
 
         public EmbeddedResourceStreamProvider(Assembly assembly)
         {
-            this.assembly = assembly;
+            if (assembly == null)
+            {
+                var resourcesDllPath = Path.Combine(AppContext.BaseDirectory, @"Garnet.resources.dll");
+                this.assembly = Assembly.LoadFrom(resourcesDllPath);
+            }
+            else
+            {
+                this.assembly = assembly;
+            }
         }
 
         public Stream Read(string path)
