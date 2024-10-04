@@ -158,6 +158,7 @@ namespace CommandInfoUpdater
             new("LMOVE", RespCommand.LMOVE),
             new("LMPOP", RespCommand.LMPOP),
             new("LPOP", RespCommand.LPOP),
+            new("LPOS", RespCommand.LPOS),
             new("LPUSH", RespCommand.LPUSH),
             new("LPUSHX", RespCommand.LPUSHX),
             new("LRANGE", RespCommand.LRANGE),
@@ -170,6 +171,7 @@ namespace CommandInfoUpdater
             ]),
             new("MGET", RespCommand.MGET),
             new("MIGRATE", RespCommand.MIGRATE),
+            new("PURGEBP", RespCommand.PURGEBP),
             new("MODULE", RespCommand.MODULE,
             [
                  "MODULE|LOADCS",
@@ -194,6 +196,7 @@ namespace CommandInfoUpdater
             new("READONLY", RespCommand.READONLY),
             new("READWRITE", RespCommand.READWRITE),
             new("RENAME", RespCommand.RENAME),
+            new("RENAMENX", RespCommand.RENAMENX),
             new("REPLICAOF", RespCommand.REPLICAOF),
             new("RPOP", RespCommand.RPOP),
             new("RPOPLPUSH", RespCommand.RPOPLPUSH),

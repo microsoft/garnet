@@ -54,7 +54,7 @@ namespace Tsavorite.core
 
                     if (!recordInfo.Tombstone && !cf.IsDeleted(ref key, ref value))
                     {
-                        var status = storebContext.CompactionCopyToTail(ref key, ref input, ref value, ref output, iter1.NextAddress);
+                        var status = storebContext.CompactionCopyToTail(ref key, ref input, ref value, ref output, iter1.CurrentAddress, iter1.NextAddress);
                         if (status.IsPending && ++numPending > 256)
                         {
                             storebContext.CompletePending(wait: true);
@@ -135,7 +135,7 @@ namespace Tsavorite.core
 
                     // As long as there's no record of the same key whose address is >= untilAddress (scan boundary), we are safe to copy the old record
                     // to the tail. We don't know the actualAddress of the key in the main kv, but we it will not be below untilAddress.
-                    var status = storebContext.CompactionCopyToTail(ref iter3.GetKey(), ref input, ref iter3.GetValue(), ref output, untilAddress - 1);
+                    var status = storebContext.CompactionCopyToTail(ref iter3.GetKey(), ref input, ref iter3.GetValue(), ref output, iter3.CurrentAddress, untilAddress - 1);
                     if (status.IsPending && ++numPending > 256)
                     {
                         storebContext.CompletePending(wait: true);

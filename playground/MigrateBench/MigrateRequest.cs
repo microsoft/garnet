@@ -2,7 +2,9 @@
 // Licensed under the MIT license.
 using System.Diagnostics;
 using System.Net;
+using System.Runtime.CompilerServices;
 using Garnet.client;
+using Garnet.common;
 using Microsoft.Extensions.Logging;
 
 namespace MigrateBench
@@ -34,6 +36,17 @@ namespace MigrateBench
         IPEndPoint sourceNodeEndpoint;
         IPEndPoint targetNodeEndpoint;
 
+        public static T MeasureElapsed<T>(long startTimestamp, TaskAwaiter<T> awaiter, string msg, ref long totalElapsed, bool verbose = false, ILogger logger = null)
+        {
+            var result = awaiter.GetResult();
+            var elapsed = Stopwatch.GetTimestamp() - startTimestamp;
+            totalElapsed += elapsed;
+            var t = TimeSpan.FromTicks(elapsed);
+            if (verbose)
+                logger?.LogInformation("[{msg}] ElapsedTime = {elapsed} seconds", msg, t.TotalSeconds);
+            return result;
+        }
+
         public MigrateRequest(Options opts, ILogger logger = null)
         {
             this.opts = opts;
@@ -44,8 +57,8 @@ namespace MigrateBench
             targetAddress = targetEndpoint[0];
             targetPort = int.Parse(targetEndpoint[1]);
 
-            sourceNode = new(sourceAddress, sourcePort, bufferSize: 1 << 22);
-            targetNode = new(targetAddress, targetPort, bufferSize: 1 << 22);
+            sourceNode = new(sourceAddress, sourcePort, new NetworkBufferSettings(1 << 22), logger: logger);
+            targetNode = new(targetAddress, targetPort, new NetworkBufferSettings(1 << 22), logger: logger);
             this.timeout = (int)TimeSpan.FromSeconds(opts.Timeout).TotalMilliseconds;
             this.logger = logger;
         }
@@ -57,16 +70,17 @@ namespace MigrateBench
                 sourceNode.Connect();
                 targetNode.Connect();
 
-                sourceNodeId = sourceNode.ExecuteAsync(["CLUSTER", "MYID"]).GetAwaiter().GetResult();
-                targetNodeId = targetNode.ExecuteAsync(["CLUSTER", "MYID"]).GetAwaiter().GetResult();
+                long myIdElapsed = 0;
+                sourceNodeId = MeasureElapsed(Stopwatch.GetTimestamp(), sourceNode.ExecuteAsync(["CLUSTER", "MYID"]).GetAwaiter(), "CLUSTER_MYID", ref myIdElapsed, opts.Verbose, logger);
+                targetNodeId = MeasureElapsed(Stopwatch.GetTimestamp(), targetNode.ExecuteAsync(["CLUSTER", "MYID"]).GetAwaiter(), "CLUSTER_MYID", ref myIdElapsed, opts.Verbose, logger);
 
-                var endpoint = sourceNode.ExecuteAsync(["CLUSTER", "ENDPOINT", sourceNodeId]).GetAwaiter().GetResult();
+                var endpoint = MeasureElapsed(Stopwatch.GetTimestamp(), sourceNode.ExecuteAsync(["CLUSTER", "ENDPOINT", sourceNodeId]).GetAwaiter(), "CLUSTER_ENDPOINT", ref myIdElapsed, opts.Verbose, logger);
                 if (!IPEndPoint.TryParse(endpoint, out sourceNodeEndpoint))
                 {
                     logger?.LogError("ERR Source Endpoint ({endpoint}) is not valid!", endpoint);
                     return;
                 }
-                endpoint = targetNode.ExecuteAsync(["CLUSTER", "ENDPOINT", targetNodeId]).GetAwaiter().GetResult();
+                endpoint = MeasureElapsed(Stopwatch.GetTimestamp(), targetNode.ExecuteAsync(["CLUSTER", "ENDPOINT", targetNodeId]).GetAwaiter(), "CLUSTER_ENDPOINT", ref myIdElapsed, opts.Verbose, logger);
                 if (!IPEndPoint.TryParse(endpoint, out targetNodeEndpoint))
                 {
                     logger?.LogError("ERR Target Endpoint ({endpoint}) is not valid!", endpoint);
@@ -103,7 +117,7 @@ namespace MigrateBench
                 int dbsize(ref GarnetClientSession c)
                 {
                     if (!opts.Dbsize) return 0;
-                    var resp = c.ExecuteAsync("dbsize").GetAwaiter().GetResult();
+                    var resp = MeasureElapsed(Stopwatch.GetTimestamp(), c.ExecuteAsync("dbsize").GetAwaiter(), "DBSIZE", ref myIdElapsed, opts.Verbose, logger);
                     return int.Parse(resp);
                 }
             }
@@ -145,7 +159,7 @@ namespace MigrateBench
 
                 var elapsed = Stopwatch.GetTimestamp() - startTimestamp;
                 var t = TimeSpan.FromTicks(elapsed);
-                logger?.LogInformation("SlotsRange Elapsed Time: {elapsed} seconds", t.TotalSeconds);
+                logger?.LogInformation("SLOTSRANGE Elapsed Time: {elapsed} seconds", t.TotalSeconds);
             }
             catch (Exception ex)
             {
@@ -192,7 +206,7 @@ namespace MigrateBench
 
                 var elapsed = Stopwatch.GetTimestamp() - startTimestamp;
                 var t = TimeSpan.FromTicks(elapsed);
-                logger?.LogInformation("SlotsRange Elapsed Time: {elapsed} seconds", t.TotalSeconds);
+                logger?.LogInformation("SLOTS Elapsed Time: {elapsed} seconds", t.TotalSeconds);
             }
             catch (Exception ex)
             {
@@ -220,39 +234,58 @@ namespace MigrateBench
                         _slots.Add(j);
                 }
 
-                var sourceNodeId = sourceNode.ExecuteAsync("cluster", "myid").GetAwaiter().GetResult();
-                var targetNodeId = targetNode.ExecuteAsync("cluster", "myid").GetAwaiter().GetResult();
+                long myIdElapsed = 0;
+                long setSlotElapsed = 0;
+                long countKeysElapsed = 0;
+                long getKeysElapsed = 0;
+                long migrateKeysElapsed = 0;
+                var sourceNodeId = MeasureElapsed(Stopwatch.GetTimestamp(), sourceNode.ExecuteAsync("cluster", "myid").GetAwaiter(), "CLUSTER_MYID", ref myIdElapsed, opts.Verbose, logger);
+                var targetNodeId = MeasureElapsed(Stopwatch.GetTimestamp(), targetNode.ExecuteAsync("cluster", "myid").GetAwaiter(), "CLUSTER_MYID", ref myIdElapsed, opts.Verbose, logger);
 
+                string[] stable = ["cluster", "setslot", "<slot>", "stable"];
                 string[] migrating = ["cluster", "setslot", "<slot>", "migrating", targetNodeId];
                 string[] importing = ["cluster", "setslot", "<slot>", "importing", sourceNodeId];
                 string[] node = ["cluster", "setslot", "<slot>", "node", targetNodeId];
                 string[] countkeysinslot = ["cluster", "countkeysinslot", "<slot>"];
-                string[] getkeysinslot = ["cluster", "getkeysinslot", "<slot>"];
+                string[] getkeysinslot = ["cluster", "getkeysinslot", "<slot>", "<count>"];
+                var startTimestamp = Stopwatch.GetTimestamp();
                 foreach (var slot in _slots)
                 {
                     var slotStr = slot.ToString();
+                    stable[2] = slotStr;
                     migrating[2] = slotStr;
                     importing[2] = slotStr;
                     node[2] = slotStr;
                     countkeysinslot[2] = slotStr;
                     getkeysinslot[2] = slotStr;
 
-                    var resp = sourceNode.ExecuteAsync(migrating).GetAwaiter().GetResult();
-                    resp = targetNode.ExecuteAsync(importing).GetAwaiter().GetResult();
-                    resp = sourceNode.ExecuteAsync(countkeysinslot).GetAwaiter().GetResult();
-                    var keys = sourceNode.ExecuteForArrayAsync(getkeysinslot).GetAwaiter().GetResult();
+                    var resp = MeasureElapsed(Stopwatch.GetTimestamp(), sourceNode.ExecuteAsync(stable).GetAwaiter(), "SETSLOT_STABLE", ref setSlotElapsed, opts.Verbose, logger);
+                    resp = MeasureElapsed(Stopwatch.GetTimestamp(), sourceNode.ExecuteAsync(migrating).GetAwaiter(), "SETSLOT_MIGRATING", ref setSlotElapsed, opts.Verbose, logger);
+
+                    resp = MeasureElapsed(Stopwatch.GetTimestamp(), targetNode.ExecuteAsync(stable).GetAwaiter(), "SETSLOT_STABLE", ref setSlotElapsed, opts.Verbose, logger);
+                    resp = MeasureElapsed(Stopwatch.GetTimestamp(), targetNode.ExecuteAsync(importing).GetAwaiter(), "SETSLOT_IMPORTING", ref setSlotElapsed, opts.Verbose, logger);
+
+                    getkeysinslot[3] = MeasureElapsed(Stopwatch.GetTimestamp(), sourceNode.ExecuteAsync(countkeysinslot).GetAwaiter(), "COUNTKEYSINSLOT", ref countKeysElapsed, opts.Verbose, logger);
+                    var keys = MeasureElapsed(Stopwatch.GetTimestamp(), sourceNode.ExecuteForArrayAsync(getkeysinslot).GetAwaiter(), "GETKEYSINSLOT", ref getKeysElapsed, opts.Verbose, logger);
 
                     ICollection<string> migrate = ["MIGRATE", targetNodeEndpoint.Address.ToString(), targetNodeEndpoint.Port.ToString(), "", "0", timeout.ToString(), "REPLACE", "KEYS"];
                     foreach (var key in keys)
                         migrate.Add(key);
 
                     var request = migrate.ToArray();
-                    logger?.LogInformation("KeyCount: {keys}", keys.Length);
-                    resp = sourceNode.ExecuteAsync(request).GetAwaiter().GetResult();
+                    resp = MeasureElapsed(Stopwatch.GetTimestamp(), sourceNode.ExecuteAsync(request).GetAwaiter(), $"MIGRATE ({slot}, {keys.Length})", ref migrateKeysElapsed, opts.Verbose, logger);
 
-                    resp = targetNode.ExecuteAsync(node).GetAwaiter().GetResult();
-                    resp = sourceNode.ExecuteAsync(node).GetAwaiter().GetResult();
+                    resp = MeasureElapsed(Stopwatch.GetTimestamp(), targetNode.ExecuteAsync(node).GetAwaiter(), "NODE_TARGET", ref setSlotElapsed, opts.Verbose, logger);
+                    resp = MeasureElapsed(Stopwatch.GetTimestamp(), sourceNode.ExecuteAsync(node).GetAwaiter(), "NODE_SOURCE", ref setSlotElapsed, opts.Verbose, logger);
                 }
+
+                var elapsed = Stopwatch.GetTimestamp() - startTimestamp;
+                var t = TimeSpan.FromTicks(elapsed);
+                logger?.LogInformation("KEYS Elapsed Time: {elapsed} seconds", t.TotalSeconds);
+                logger?.LogInformation("SetSlot Elapsed Time: {elapsed} seconds", TimeSpan.FromTicks(setSlotElapsed).TotalSeconds);
+                logger?.LogInformation("CountKeys Elapsed Time: {elapsed} seconds", TimeSpan.FromTicks(countKeysElapsed).TotalSeconds);
+                logger?.LogInformation("GetKeys Elapsed Time: {elapsed} seconds", TimeSpan.FromTicks(getKeysElapsed).TotalSeconds);
+                logger?.LogInformation("MigrateKeys Elapsed Time: {elapsed} seconds", TimeSpan.FromTicks(migrateKeysElapsed).TotalSeconds);
             }
             catch (Exception ex)
             {

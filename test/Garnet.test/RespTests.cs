@@ -1178,7 +1178,7 @@ namespace Garnet.test
             var ttl = db.KeyTimeToLive("key2");
             ClassicAssert.IsTrue(ttl.HasValue);
             ClassicAssert.Greater(ttl.Value.TotalMilliseconds, 0);
-            ClassicAssert.Less(ttl.Value.TotalMilliseconds, TimeSpan.FromMinutes(1).TotalMilliseconds);
+            ClassicAssert.LessOrEqual(ttl.Value.TotalMilliseconds, TimeSpan.FromMinutes(1).TotalMilliseconds);
         }
 
         [Test]
@@ -1266,8 +1266,247 @@ namespace Garnet.test
             var ttl = db.KeyTimeToLive("lkey2");
             ClassicAssert.IsTrue(ttl.HasValue);
             ClassicAssert.Greater(ttl.Value.TotalMilliseconds, 0);
-            ClassicAssert.Less(ttl.Value.TotalMilliseconds, TimeSpan.FromMinutes(1).TotalMilliseconds);
+            ClassicAssert.LessOrEqual(ttl.Value.TotalMilliseconds, TimeSpan.FromMinutes(1).TotalMilliseconds);
         }
+
+        [Test]
+        public void SingleRenameWithOldKeyAndNewKeyAsSame()
+        {
+            using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
+            var db = redis.GetDatabase(0);
+            var origValue = "test1";
+            var key = "key1";
+            db.StringSet(key, origValue);
+
+            var result = db.KeyRename(key, key);
+
+            ClassicAssert.IsTrue(result);
+            string retValue = db.StringGet(key);
+            ClassicAssert.AreEqual(origValue, retValue);
+        }
+
+        #region RENAMENX
+
+        [Test]
+        public void SingleRenameNx()
+        {
+            using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
+            var db = redis.GetDatabase(0);
+
+            string origValue = "test1";
+            db.StringSet("key1", origValue);
+
+            var result = db.KeyRename("key1", "key2", When.NotExists);
+            ClassicAssert.IsTrue(result);
+
+            string retValue = db.StringGet("key2");
+            ClassicAssert.AreEqual(origValue, retValue);
+
+            origValue = db.StringGet("key1");
+            ClassicAssert.AreEqual(null, origValue);
+        }
+
+        [Test]
+        public void SingleRenameNxWithNewKeyAlreadyExist()
+        {
+            using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
+            var db = redis.GetDatabase(0);
+
+            string origValue = "test1";
+            string origValue2 = "test2";
+            db.StringSet("key1", origValue);
+            db.StringSet("key2", origValue2);
+
+            var result = db.KeyRename("key1", "key2", When.NotExists);
+            ClassicAssert.IsFalse(result);
+
+            string retValue2 = db.StringGet("key2");
+            ClassicAssert.AreEqual(origValue2, retValue2);
+
+            string retValue1 = db.StringGet("key1");
+            ClassicAssert.AreEqual(origValue, retValue1);
+        }
+
+        [Test]
+        public void SingleRenameNxWithExpiry()
+        {
+            using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
+            var db = redis.GetDatabase(0);
+
+            var origValue = "test1";
+            db.StringSet("key1", origValue, TimeSpan.FromMinutes(1));
+
+            var result = db.KeyRename("key1", "key2", When.NotExists);
+            ClassicAssert.IsTrue(result);
+
+            string retValue = db.StringGet("key2");
+            ClassicAssert.AreEqual(origValue, retValue);
+
+            var ttl = db.KeyTimeToLive("key2");
+            ClassicAssert.IsTrue(ttl.HasValue);
+            ClassicAssert.Greater(ttl.Value.TotalMilliseconds, 0);
+            ClassicAssert.LessOrEqual(ttl.Value.TotalMilliseconds, TimeSpan.FromMinutes(1).TotalMilliseconds);
+        }
+
+        [Test]
+        public void SingleRenameNxWithExpiryAndNewKeyAlreadyExist()
+        {
+            using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
+            var db = redis.GetDatabase(0);
+
+            var origValue = "test1";
+            string origValue2 = "test2";
+            db.StringSet("key1", origValue, TimeSpan.FromMinutes(1));
+            db.StringSet("key2", origValue2, TimeSpan.FromMinutes(1));
+
+            var result = db.KeyRename("key1", "key2", When.NotExists);
+            ClassicAssert.IsFalse(result);
+
+            string retValue = db.StringGet("key2");
+            ClassicAssert.AreEqual(origValue2, retValue);
+
+            var ttl = db.KeyTimeToLive("key2");
+            ClassicAssert.IsTrue(ttl.HasValue);
+            ClassicAssert.Greater(ttl.Value.TotalMilliseconds, 0);
+            ClassicAssert.LessOrEqual(ttl.Value.TotalMilliseconds, TimeSpan.FromMinutes(1).TotalMilliseconds);
+
+            string retValue1 = db.StringGet("key1");
+            CollectionAssert.AreEqual(origValue, retValue1);
+        }
+
+        [Test]
+        public void SingleRenameNxObjectStore()
+        {
+            using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
+            var db = redis.GetDatabase(0);
+
+            var origList = new RedisValue[] { "a", "b", "c", "d" };
+            var key1 = "lkey1";
+            var count = db.ListRightPush(key1, origList);
+            var result = db.ListRange(key1);
+            var key2 = "lkey2";
+
+            var rb = db.KeyRename(key1, key2, When.NotExists);
+            ClassicAssert.IsTrue(rb);
+
+            result = db.ListRange(key1);
+            CollectionAssert.AreEqual(Array.Empty<RedisValue>(), result);
+
+            result = db.ListRange(key2);
+            CollectionAssert.AreEqual(origList, result);
+        }
+
+        [Test]
+        public void SingleRenameNxObjectStoreWithNewKeyAlreadyExist()
+        {
+            using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
+            var db = redis.GetDatabase(0);
+
+            var origList = new RedisValue[] { "a", "b", "c", "d" };
+            var origList2 = new RedisValue[] { "z", "y", "z" };
+            var key1 = "lkey1";
+            var key2 = "lkey2";
+            db.ListRightPush(key1, origList);
+            db.ListRightPush(key2, origList2);
+
+            var rb = db.KeyRename(key1, key2, When.NotExists);
+            ClassicAssert.IsFalse(rb);
+
+            var result = db.ListRange(key1);
+            ClassicAssert.AreEqual(origList, result);
+
+            result = db.ListRange(key2);
+            ClassicAssert.AreEqual(origList2, result);
+        }
+
+        [Test]
+        public void SingleRenameNxObjectStoreWithExpiry()
+        {
+            using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
+            var db = redis.GetDatabase(0);
+
+            var origList = new RedisValue[] { "a", "b", "c", "d" };
+            var key1 = "lkey1";
+            var count = db.ListRightPush(key1, origList);
+            var result = db.ListRange(key1);
+            var expirySet = db.KeyExpire("lkey1", TimeSpan.FromMinutes(1));
+            var key2 = "lkey2";
+
+            var rb = db.KeyRename(key1, key2, When.NotExists);
+            ClassicAssert.IsTrue(rb);
+
+            result = db.ListRange(key1);
+            ClassicAssert.AreEqual(Array.Empty<RedisValue>(), result);
+
+            result = db.ListRange(key2);
+            ClassicAssert.AreEqual(origList, result);
+
+            var ttl = db.KeyTimeToLive(key2);
+            ClassicAssert.IsTrue(ttl.HasValue);
+            ClassicAssert.Greater(ttl.Value.TotalMilliseconds, 0);
+            ClassicAssert.LessOrEqual(ttl.Value.TotalMilliseconds, TimeSpan.FromMinutes(1).TotalMilliseconds);
+        }
+
+        [Test]
+        public void SingleRenameNxObjectStoreWithExpiryAndNewKeyAlreadyExist()
+        {
+            using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
+            var db = redis.GetDatabase(0);
+
+            var origList = new RedisValue[] { "a", "b", "c", "d" };
+            var origList2 = new RedisValue[] { "x", "y", "z" };
+            var key1 = "lkey1";
+            var key2 = "lkey2";
+            db.ListRightPush(key1, origList);
+            db.ListRightPush(key2, origList2);
+            var result = db.ListRange(key1);
+            var expirySet = db.KeyExpire(key1, TimeSpan.FromMinutes(1));
+
+            var rb = db.KeyRename(key1, key2, When.NotExists);
+            ClassicAssert.IsFalse(rb);
+
+            result = db.ListRange(key1);
+            ClassicAssert.AreEqual(origList, result);
+
+            result = db.ListRange(key2);
+            ClassicAssert.AreEqual(origList2, result);
+
+            var ttl = db.KeyTimeToLive(key1);
+            ClassicAssert.IsTrue(ttl.HasValue);
+            ClassicAssert.Greater(ttl.Value.TotalMilliseconds, 0);
+            ClassicAssert.LessOrEqual(ttl.Value.TotalMilliseconds, TimeSpan.FromMinutes(1).TotalMilliseconds);
+
+            var ttl2 = db.KeyTimeToLive(key2);
+            ClassicAssert.IsFalse(ttl2.HasValue);
+        }
+
+        [Test]
+        public void SingleRenameNxWithKeyNotExist()
+        {
+            using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
+            var db = redis.GetDatabase(0);
+
+            var exception = Assert.Throws<RedisServerException>(() => db.KeyRename("key1", "key2", When.NotExists));
+            ClassicAssert.AreEqual("ERR no such key", exception.Message);
+        }
+
+        [Test]
+        public void SingleRenameNxWithOldKeyAndNewKeyAsSame()
+        {
+            using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
+            var db = redis.GetDatabase(0);
+            var origValue = "test1";
+            var key = "key1";
+            db.StringSet(key, origValue);
+
+            var result = db.KeyRename(key, key, When.NotExists);
+
+            ClassicAssert.IsTrue(result);
+            string retValue = db.StringGet(key);
+            ClassicAssert.AreEqual(origValue, retValue);
+        }
+
+        #endregion
 
         [Test]
         public void CanSelectCommand()

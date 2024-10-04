@@ -47,6 +47,7 @@ namespace Garnet.client
         readonly string address;
         readonly int port;
         readonly int sendPageSize;
+        readonly int bufferSize;
         readonly int maxOutstandingTasks;
         NetworkWriter networkWriter;
         INetworkSender networkSender;
@@ -133,6 +134,7 @@ namespace Garnet.client
             string authUsername = null,
             string authPassword = null,
             int sendPageSize = 1 << 21,
+            int bufferSize = 1 << 17,
             int maxOutstandingTasks = 1 << 19,
             int timeoutMilliseconds = 0,
             MemoryPool<byte> memoryPool = null,
@@ -144,6 +146,7 @@ namespace Garnet.client
             this.address = address;
             this.port = port;
             this.sendPageSize = (int)Utility.PreviousPowerOf2(sendPageSize);
+            this.bufferSize = bufferSize;
             this.authUsername = authUsername;
             this.authPassword = authPassword;
 
@@ -186,7 +189,7 @@ namespace Garnet.client
         public void Connect(CancellationToken token = default)
         {
             socket = GetSendSocket(timeoutMilliseconds);
-            networkWriter = new NetworkWriter(this, socket, 1 << 17, sslOptions, out networkHandler, sendPageSize, networkSendThrottleMax, logger);
+            networkWriter = new NetworkWriter(this, socket, bufferSize, sslOptions, out networkHandler, sendPageSize, networkSendThrottleMax, logger);
             networkHandler.StartAsync(sslOptions, $"{address}:{port}", token).ConfigureAwait(false).GetAwaiter().GetResult();
             networkSender = networkHandler.GetNetworkSender();
 
@@ -219,7 +222,7 @@ namespace Garnet.client
         public async Task ConnectAsync(CancellationToken token = default)
         {
             socket = GetSendSocket(timeoutMilliseconds);
-            networkWriter = new NetworkWriter(this, socket, 1 << 17, sslOptions, out networkHandler, sendPageSize, networkSendThrottleMax, logger);
+            networkWriter = new NetworkWriter(this, socket, bufferSize, sslOptions, out networkHandler, sendPageSize, networkSendThrottleMax, logger);
             await networkHandler.StartAsync(sslOptions, $"{address}:{port}", token).ConfigureAwait(false);
             networkSender = networkHandler.GetNetworkSender();
 

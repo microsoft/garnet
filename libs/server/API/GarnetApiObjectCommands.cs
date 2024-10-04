@@ -176,6 +176,10 @@ namespace Garnet.server
             => storageSession.ListPush(key, ref input, out output, ref objectContext);
 
         /// <inheritdoc />
+        public GarnetStatus ListPosition(byte[] key, ref ObjectInput input, ref GarnetObjectStoreOutput outputFooter)
+            => storageSession.ListPosition(key, ref input, ref outputFooter, ref objectContext);
+
+        /// <inheritdoc />
         public GarnetStatus ListLeftPop(byte[] key, ref ObjectInput input, ref GarnetObjectStoreOutput outputFooter)
             => storageSession.ListPop(key, ref input, ref outputFooter, ref objectContext);
 

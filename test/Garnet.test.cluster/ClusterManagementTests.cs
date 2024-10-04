@@ -6,6 +6,7 @@ using System.Collections.Generic;
 using System.Linq;
 using System.Net;
 using System.Threading;
+using System.Threading.Tasks;
 using Microsoft.Extensions.Logging;
 using NUnit.Framework;
 using NUnit.Framework.Legacy;
@@ -145,20 +146,6 @@ namespace Garnet.test.cluster
             for (var i = 1; i < node_count; i++)
                 _ = context.clusterTestUtils.ClusterForget(i, nodeIds[0], 10, context.logger);
 
-            try
-            {
-                // Add data to server
-                var resp = context.clusterTestUtils.GetServer(0).Execute("SET", "wxz", "1234");
-                ClassicAssert.AreEqual("OK", (string)resp);
-
-                resp = context.clusterTestUtils.GetServer(0).Execute("GET", "wxz");
-                ClassicAssert.AreEqual("1234", (string)resp);
-            }
-            catch (Exception ex)
-            {
-                context.logger?.LogError(ex, "An error occured at ClusterResetTest");
-            }
-
             // Hard reset node state. clean db data and cluster config
             _ = context.clusterTestUtils.ClusterReset(0, soft: false, 10, context.logger);
             config = context.clusterTestUtils.ClusterNodes(0, context.logger);
@@ -172,29 +159,167 @@ namespace Garnet.test.cluster
 
             //Add slotRange for clean node
             context.clusterTestUtils.AddSlotsRange(0, slotRanges, context.logger);
-            try
-            {
-                // Check DB was flushed due to hard reset
-                var resp = context.clusterTestUtils.GetServer(0).Execute("GET", "wxz");
-                ClassicAssert.IsTrue(resp.IsNull, "DB not flushed after HARD reset");
-
-                // Add data to server
-                resp = context.clusterTestUtils.GetServer(0).Execute("SET", "wxz", "1234");
-                ClassicAssert.AreEqual("OK", (string)resp);
-
-                resp = context.clusterTestUtils.GetServer(0).Execute("GET", "wxz");
-                ClassicAssert.AreEqual("1234", (string)resp);
-            }
-            catch (Exception ex)
-            {
-                context.logger?.LogError(ex, "An error occured at ClusterResetTest");
-            }
 
             // Add node back to the cluster
             context.clusterTestUtils.SetConfigEpoch(0, 1, context.logger);
             context.clusterTestUtils.Meet(0, 1, context.logger);
-
             context.clusterTestUtils.WaitUntilNodeIsKnownByAllNodes(0, context.logger);
+            for (int i = 0; i < node_count; i++)
+            {
+                Console.WriteLine(i);
+                context.clusterTestUtils.WaitUntilNodeIsKnownByAllNodes(i, context.logger);
+            }
+        }
+
+        [Test, Order(4)]
+        public void ClusterResetFailsForMasterWithKeysInSlotsTest()
+        {
+            var node_count = 4;
+            context.CreateInstances(node_count);
+            context.CreateConnection();
+            var (_, _) = context.clusterTestUtils.SimpleSetupCluster(node_count, 0, logger: context.logger);
+
+            var expectedSlotRange = new SlotRange(0, 4095);
+            var config = context.clusterTestUtils.ClusterNodes(0, context.logger);
+            var node = config.Nodes.First();
+            ClassicAssert.AreEqual(expectedSlotRange, node.Slots[0]);
+            byte[] key = new byte[16];
+            context.clusterTestUtils.RandomBytesRestrictedToSlot(ref key, node.Slots.First().From);
+
+            context.clusterTestUtils.GetServer(0).Execute("SET", key, "1234");
+            string res = context.clusterTestUtils.GetServer(0).Execute("GET", key).ToString();
+            ClassicAssert.AreEqual("1234", res);
+
+            VerifyClusterResetFails(true);
+            VerifyClusterResetFails(false);
+
+            // soft reset node state. clean db data and cluster config
+            var nodeIds = context.clusterTestUtils.GetNodeIds(logger: context.logger);
+            ClassicAssert.AreEqual(4, config.Nodes.Count);
+            ClassicAssert.AreEqual(nodeIds[0], node.NodeId);
+            ClassicAssert.AreEqual(expectedSlotRange, node.Slots[0]);
+            ClassicAssert.IsFalse(node.IsReplica);
+        }
+
+        [Test, Order(4)]
+        public void ClusterResetFailsForMasterWithKeysInSlotsObjectStoreTest()
+        {
+            var node_count = 4;
+            context.CreateInstances(node_count);
+            context.CreateConnection();
+            var (_, _) = context.clusterTestUtils.SimpleSetupCluster(node_count, 0, logger: context.logger);
+            context.kvPairsObj = new Dictionary<string, List<int>>();
+            context.PopulatePrimaryWithObjects(ref context.kvPairsObj, 16, 10, 0);
+
+            var expectedSlotRange = new SlotRange(0, 4095);
+            var config = context.clusterTestUtils.ClusterNodes(0, context.logger);
+            var node = config.Nodes.First();
+            ClassicAssert.AreEqual(expectedSlotRange, node.Slots[0]);
+            byte[] key = new byte[16];
+            context.clusterTestUtils.RandomBytesRestrictedToSlot(ref key, node.Slots.First().From);
+
+            VerifyClusterResetFails(true);
+            VerifyClusterResetFails(false);
+
+            var nodeIds = context.clusterTestUtils.GetNodeIds(logger: context.logger);
+            ClassicAssert.AreEqual(4, config.Nodes.Count);
+            ClassicAssert.AreEqual(nodeIds[0], node.NodeId);
+            ClassicAssert.AreEqual(expectedSlotRange, node.Slots[0]);
+            ClassicAssert.IsFalse(node.IsReplica);
+        }
+
+        [Test, Order(4)]
+        public void ClusterResetAfterFLushAllTest()
+        {
+            var node_count = 4;
+            context.CreateInstances(node_count);
+            context.CreateConnection();
+            var (_, _) = context.clusterTestUtils.SimpleSetupCluster(node_count, 0, logger: context.logger);
+            context.kvPairsObj = new Dictionary<string, List<int>>();
+            context.PopulatePrimaryWithObjects(ref context.kvPairsObj, 16, 10, 0);
+
+            var expectedSlotRange = new SlotRange(0, 4095);
+            var config = context.clusterTestUtils.ClusterNodes(0, context.logger);
+            var node = config.Nodes.First();
+            ClassicAssert.AreEqual(expectedSlotRange, node.Slots[0]);
+            byte[] key = new byte[16];
+            context.clusterTestUtils.RandomBytesRestrictedToSlot(ref key, node.Slots.First().From);
+
+            VerifyClusterResetFails(true);
+            VerifyClusterResetFails(false);
+
+            var nodeIds = context.clusterTestUtils.GetNodeIds(logger: context.logger);
+            ClassicAssert.AreEqual(4, config.Nodes.Count);
+            ClassicAssert.AreEqual(nodeIds[0], node.NodeId);
+            ClassicAssert.AreEqual(expectedSlotRange, node.Slots[0]);
+            ClassicAssert.IsFalse(node.IsReplica);
+
+            context.clusterTestUtils.FlushAll(0, context.logger);
+            _ = context.clusterTestUtils.ClusterReset(0, soft: false, 10, context.logger);
+
+            config = context.clusterTestUtils.ClusterNodes(0, context.logger);
+            node = config.Nodes.First();
+            // Assert node 0 does not know anything about the cluster
+            ClassicAssert.AreEqual(1, config.Nodes.Count);
+            ClassicAssert.AreNotEqual(nodeIds[0], node.NodeId);
+            ClassicAssert.AreEqual(0, node.Slots.Count);
+            ClassicAssert.IsFalse(node.IsReplica);
+        }
+
+        private void VerifyClusterResetFails(bool softReset = true)
+        {
+            var server = context.clusterTestUtils.GetServer(0);
+            var args = new List<object>() {
+                "reset",
+                softReset ? "soft" : "hard",
+                "60"
+            };
+
+            try
+            {
+                _ = (string)server.Execute("cluster", args);
+            }
+            catch (RedisServerException ex)
+            {
+                ClassicAssert.AreEqual("ERR CLUSTER RESET can't be called with master nodes containing keys", ex.Message);
+            }
+        }
+
+        [Test, Order(4)]
+        public async Task ClusterResetDisposesGossipConnections()
+        {
+            var node_count = 3;
+            context.CreateInstances(node_count, metricsSamplingFrequency: 1);
+            context.CreateConnection();
+            var endpoints = context.clusterTestUtils.GetEndpoints();
+            for (int i = 0; i < endpoints.Length - 1; i++)
+            {
+                context.clusterTestUtils.Meet(i, i + 1, context.logger);
+            }
+
+            for (int i = 0; i < node_count; i++)
+            {
+                context.clusterTestUtils.WaitUntilNodeIsKnownByAllNodes(i);
+            }
+
+            await Task.Delay(1000);
+
+            var server = context.clusterTestUtils.GetServer(0);
+            var gossipConnections = GetStat(server, "Stats", "gossip_open_connections");
+            ClassicAssert.AreEqual(node_count - 1, int.Parse(gossipConnections), "Expected one gossip connection per node.");
+
+            context.clusterTestUtils.ClusterReset(0, soft: true);
+
+            await Task.Delay(1000);
+
+            gossipConnections = GetStat(server, "Stats", "gossip_open_connections");
+            ClassicAssert.AreEqual("0", gossipConnections, "All gossip connections should be closed after a reset.");
+            ClassicAssert.AreEqual(1, context.clusterTestUtils.ClusterNodes(0).Nodes.Count(), "Expected the node to only know about itself after a reset.");
+        }
+
+        private string GetStat(IServer server, string section, string statName)
+        {
+            return server.Info(section).FirstOrDefault(x => x.Key == section)?.FirstOrDefault(x => x.Key == statName).Value;
         }
 
         [Test, Order(5)]

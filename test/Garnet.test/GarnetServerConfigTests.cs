@@ -82,7 +82,7 @@ namespace Garnet.test
             // No import path, include command line args, export to file
             // Check values from command line override values from defaults.conf
             static string GetFullExtensionBinPath(string testProjectName) => Path.GetFullPath(testProjectName, TestUtils.RootTestsProjectPath);
-            var args = new string[] { "--config-export-path", configPath, "-p", "4m", "-m", "128m", "-s", "2g", "--recover", "--port", "53", "--reviv-obj-bin-record-count", "2", "--reviv-fraction", "0.5", "--extension-bin-paths", $"{GetFullExtensionBinPath("Garnet.test")},{GetFullExtensionBinPath("Garnet.test.cluster")}" };
+            var args = new string[] { "--config-export-path", configPath, "-p", "4m", "-m", "128m", "-s", "2g", "--recover", "--port", "53", "--reviv-obj-bin-record-count", "2", "--reviv-fraction", "0.5", "--extension-bin-paths", $"{GetFullExtensionBinPath("Garnet.test")},{GetFullExtensionBinPath("Garnet.test.cluster")}", "--loadmodulecs", $"{Assembly.GetExecutingAssembly().Location}" };
             parseSuccessful = ServerSettingsManager.TryParseCommandLineArguments(args, out options, out invalidOptions);
             ClassicAssert.IsTrue(parseSuccessful);
             ClassicAssert.AreEqual(invalidOptions.Count, 0);
@@ -95,6 +95,8 @@ namespace Garnet.test
             ClassicAssert.IsTrue(options.Recover);
             ClassicAssert.IsTrue(File.Exists(configPath));
             ClassicAssert.AreEqual(2, options.ExtensionBinPaths.Count());
+            ClassicAssert.AreEqual(1, options.LoadModuleCS.Count());
+            ClassicAssert.AreEqual(Assembly.GetExecutingAssembly().Location, options.LoadModuleCS.First());
 
             // Import from previous export command, no command line args
             // Check values from import path override values from default.conf

@@ -118,6 +118,16 @@ namespace Garnet.server
         /// <param name="storeType"></param>
         /// <returns></returns>
         GarnetStatus RENAME(ArgSlice oldKey, ArgSlice newKey, StoreType storeType = StoreType.All);
+
+        /// <summary>
+        /// Renames key to newkey if newkey does not yet exist. It returns an error when key does not exist.
+        /// </summary>
+        /// <param name="oldKey">The old key to be renamed.</param>
+        /// <param name="newKey">The new key name.</param>
+        /// <param name="result">The result of the operation.</param>
+        /// <param name="storeType">The type of store to perform the operation on.</param>
+        /// <returns></returns>
+        GarnetStatus RENAMENX(ArgSlice oldKey, ArgSlice newKey, out int result, StoreType storeType = StoreType.All);
         #endregion
 
         #region EXISTS
@@ -588,6 +598,16 @@ namespace Garnet.server
         #region List Methods
 
         #region ListPush Methods
+
+        /// <summary>
+        /// The command returns the index of matching elements inside a Redis list.
+        /// By default, when no options are given, it will scan the list from head to tail, looking for the first match of "element".
+        /// </summary>
+        /// <param name="key"></param>
+        /// <param name="input"></param>
+        /// <param name="outputFooter"></param>
+        /// <returns></returns>
+        GarnetStatus ListPosition(byte[] key, ref ObjectInput input, ref GarnetObjectStoreOutput outputFooter);
 
         /// <summary>
         /// ListLeftPush ArgSlice version with ObjectOutputHeader output
