@@ -3,7 +3,6 @@
 
 using System;
 using System.Buffers;
-using System.Collections.Concurrent;
 using System.Collections.Generic;
 using System.Diagnostics;
 using System.IO;
@@ -76,11 +75,6 @@ namespace Tsavorite.core
         public long SafeTailAddress;
 
         /// <summary>
-        /// Dictionary of recovered iterators and their committed until addresses
-        /// </summary>
-        public Dictionary<string, long> RecoveredIterators { get; private set; }
-
-        /// <summary>
         /// Log committed until address
         /// </summary>
         public long CommittedUntilAddress;
@@ -111,19 +105,12 @@ namespace Tsavorite.core
         internal CompletionEvent FlushEvent => allocator.FlushEvent;
 
         /// <summary>
-        /// Table of persisted iterators
-        /// </summary>
-        internal readonly ConcurrentDictionary<string, TsavoriteLogScanIterator> PersistedIterators = new();
-
-        /// <summary>
         /// Committed view of commitMetadataVersion
         /// </summary>
         private long persistedCommitNum;
 
-        internal Dictionary<string, long> LastPersistedIterators;
-
         /// <summary>
-        /// Numer of references to log, including itself
+        /// Number of references to log, including itself
         /// Used to determine disposability of log
         /// </summary>
         internal int logRefCount = 1;
@@ -131,9 +118,34 @@ namespace Tsavorite.core
         readonly ILogger logger;
 
         /// <summary>
-        /// Whether we refresh safe tail as records are inserted
+        /// SafeTailAddress refresh frequency in milliseconds. -1 => disabled; 0 => immediate refresh after every enqueue, >1 => refresh period in milliseconds.
         /// </summary>
-        readonly bool AutoRefreshSafeTailAddress;
+        readonly int SafeTailRefreshFrequencyMs;
+
+        /// <summary>
+        /// CTS to allow cancellation of the safe tail refresh background task, called during Dispose
+        /// </summary>
+        readonly CancellationTokenSource safeTailRefreshTaskCts;
+
+        /// <summary>
+        /// Last captured safe tail address before epoch bump
+        /// </summary>
+        long safeTailRefreshLastTailAddress = 0;
+
+        /// <summary>
+        /// Events to control callback execution
+        /// </summary>
+        readonly SingleWaiterAutoResetEvent safeTailRefreshCallbackCompleted, safeTailRefreshEntryEnqueued;
+
+        /// <summary>
+        /// Task corresponding to safe tail refresh
+        /// </summary>
+        readonly Task safeTailRefreshTask;
+
+        /// <summary>
+        /// Action for bump epoch to refresh safe tail
+        /// </summary>
+        readonly Action periodicRefreshSafeTailAddressBumpCallbackAction;
 
         /// <summary>
         /// Callback when safe tail shifts
@@ -144,11 +156,6 @@ namespace Tsavorite.core
         /// Whether we automatically commit as records are inserted
         /// </summary>
         readonly bool AutoCommit;
-
-        /// <summary>
-        /// Whether there is an ongoing auto refresh safe tail
-        /// </summary>
-        int _ongoingAutoRefreshSafeTailAddress = 0;
 
         /// <summary>
         /// Create new log instance
@@ -168,7 +175,6 @@ namespace Tsavorite.core
         private TsavoriteLog(TsavoriteLogSettings logSettings, bool syncRecover, ILogger logger = null)
         {
             this.logger = logger;
-            AutoRefreshSafeTailAddress = logSettings.AutoRefreshSafeTailAddress;
             AutoCommit = logSettings.AutoCommit;
             logCommitManager = logSettings.LogCommitManager ??
                 new DeviceLogCommitCheckpointManager
@@ -219,6 +225,123 @@ namespace Tsavorite.core
                     Recover(-1);
                 }
                 catch { }
+            }
+
+            // Set up safe tail refresh
+            SafeTailRefreshFrequencyMs = logSettings.SafeTailRefreshFrequencyMs;
+            if (SafeTailRefreshFrequencyMs >= 0)
+            {
+                safeTailRefreshCallbackCompleted = new()
+                {
+                    RunContinuationsAsynchronously = true
+                };
+                if (SafeTailRefreshFrequencyMs == 0)
+                {
+                    safeTailRefreshEntryEnqueued = new()
+                    {
+                        RunContinuationsAsynchronously = true
+                    };
+                }
+                safeTailRefreshTaskCts = new();
+                periodicRefreshSafeTailAddressBumpCallbackAction = PeriodicRefreshSafeTailAddressBumpCallback;
+                safeTailRefreshTask = Task.Run(SafeTailRefreshWorker);
+            }
+        }
+
+        async Task SafeTailRefreshWorker()
+        {
+            try
+            {
+                var token = safeTailRefreshTaskCts.Token;
+
+                // Outer loop makes the worker wake up every so often (either delay or enqueue-signal)
+                // and try to move SafeTailAddress towards TailAddress
+                while (!token.IsCancellationRequested)
+                {
+                    // Inner loop keeps moving SafeTailAddress towards TailAddress until we have
+                    // caught up and there is no more movement necessary.
+                    while (!token.IsCancellationRequested)
+                    {
+                        try
+                        {
+                            // Resume epoch protection
+                            epoch.Resume();
+
+                            // Capture the tail address before epoch refresh, so that the bump action
+                            // knows what the new SafeTailAddress should be set to.
+                            safeTailRefreshLastTailAddress = TailAddress;
+
+                            // Break out of inner loop if there is no more work to do
+                            if (safeTailRefreshLastTailAddress <= SafeTailAddress)
+                                break;
+
+                            // Bump epoch with an action to update SafeTailAddress to the captured safeTailRefreshLastTailAddress
+                            epoch.BumpCurrentEpoch(periodicRefreshSafeTailAddressBumpCallbackAction);
+                        }
+                        finally
+                        {
+                            // Suspend epoch protection
+                            epoch.Suspend();
+                        }
+                        // Wait for the bump epoch action to finish executing, so we can re-check
+                        await safeTailRefreshCallbackCompleted.WaitAsync().ConfigureAwait(false);
+                    }
+                    // Work is done, wait for the next iteration of the worker loop
+                    if (SafeTailRefreshFrequencyMs > 0)
+                    {
+                        await Task.Delay(SafeTailRefreshFrequencyMs, token).ConfigureAwait(false);
+                    }
+                    else
+                    {
+                        await safeTailRefreshEntryEnqueued.WaitAsync().ConfigureAwait(false);
+                    }
+                }
+            }
+            catch (Exception e)
+            {
+                logger?.LogError(e, "Exception encountered during PeriodicSafeTailRefreshRunner");
+            }
+        }
+
+        void PeriodicRefreshSafeTailAddressBumpCallback()
+        {
+            try
+            {
+                if (Utility.MonotonicUpdate(ref SafeTailAddress, safeTailRefreshLastTailAddress, out long oldSafeTailAddress))
+                {
+                    var tcs = refreshUncommittedTcs;
+                    if (tcs != null && Interlocked.CompareExchange(ref refreshUncommittedTcs, null, tcs) == tcs)
+                        tcs.SetResult(Empty.Default);
+                    var _callback = SafeTailShiftCallback;
+                    if (_callback != null || activeSingleIterators != null)
+                    {
+                        // We invoke callback outside epoch protection
+                        bool isProtected = epoch.ThisInstanceProtected();
+                        if (isProtected) epoch.Suspend();
+                        try
+                        {
+                            // Notify waiting single iterators, if any
+                            var _asi = activeSingleIterators;
+                            if (_asi != null)
+                            {
+                                foreach (var iter in _asi)
+                                {
+                                    iter.Signal();
+                                }
+                            }
+                            // Invoke callback, if any
+                            _callback?.Invoke(oldSafeTailAddress, safeTailRefreshLastTailAddress);
+                        }
+                        finally
+                        {
+                            if (isProtected) epoch.Resume();
+                        }
+                    }
+                }
+            }
+            finally
+            {
+                safeTailRefreshCallbackCompleted.Signal();
             }
         }
 
@@ -283,12 +406,10 @@ namespace Tsavorite.core
             if (CommittedUntilAddress > BeginAddress)
                 throw new TsavoriteException($"Already recovered until address {CommittedUntilAddress}");
 
-            Dictionary<string, long> it;
             if (requestedCommitNum == -1)
-                RestoreLatest(out it, out RecoveredCookie);
+                RestoreLatest(out RecoveredCookie);
             else
-                RestoreSpecificCommit(requestedCommitNum, out it, out RecoveredCookie);
-            RecoveredIterators = it;
+                RestoreSpecificCommit(requestedCommitNum, out RecoveredCookie);
         }
 
         /// <summary>
@@ -301,8 +422,7 @@ namespace Tsavorite.core
             var log = new TsavoriteLog(logSettings, false);
             if (logSettings.TryRecoverLatest)
             {
-                var (it, cookie) = await log.RestoreLatestAsync(cancellationToken).ConfigureAwait(false);
-                log.RecoveredIterators = it;
+                var cookie = await log.RestoreLatestAsync(cancellationToken).ConfigureAwait(false);
                 log.RecoveredCookie = cookie;
             }
             return log;
@@ -354,6 +474,9 @@ namespace Tsavorite.core
 
         internal void TrueDispose()
         {
+            safeTailRefreshTaskCts?.Cancel();
+            safeTailRefreshCallbackCompleted?.Signal();
+            safeTailRefreshEntryEnqueued?.Signal();
             commitQueue.Dispose();
             commitTcs.TrySetException(new ObjectDisposedException("Log has been disposed"));
             allocator.Dispose();
@@ -434,21 +557,10 @@ namespace Tsavorite.core
             => allocator.LogPageSizeBits;
 
         /// <summary>
-        /// Get page number for given address
-        /// </summary>
-        /// <param name="logicalAddress"></param>
-        /// <returns></returns>
-        public long GetPage(long logicalAddress)
-            => allocator.GetPage(logicalAddress);
-
-        public void UnsafeSkipPage()
-            => allocator.SkipPage();
-
-        /// <summary>
         /// Get read only lag address
         /// </summary>
-        public long UnsafeGetReadOnlyLagAddress()
-            => allocator.GetReadOnlyLagAddress();
+        public long UnsafeGetReadOnlyAddressLagOffset()
+            => allocator.GetReadOnlyAddressLagOffset();
 
         /// <summary>
         /// Enqueue batch of entries to log (in memory) - no guarantee of flush/commit
@@ -524,7 +636,7 @@ namespace Tsavorite.core
             var physicalAddress = allocator.GetPhysicalAddress(logicalAddress);
             entry.SerializeTo(new Span<byte>((void*)(headerSize + physicalAddress), length));
             SetHeader(length, (byte*)physicalAddress);
-            if (AutoRefreshSafeTailAddress) DoAutoRefreshSafeTailAddress();
+            safeTailRefreshEntryEnqueued?.Signal();
             epoch.Suspend();
             if (AutoCommit) Commit();
             return true;
@@ -570,7 +682,7 @@ namespace Tsavorite.core
                 SetHeader(length, (byte*)physicalAddress);
                 physicalAddress += Align(length) + headerSize;
             }
-            if (AutoRefreshSafeTailAddress) DoAutoRefreshSafeTailAddress();
+            safeTailRefreshEntryEnqueued?.Signal();
             epoch.Suspend();
             if (AutoCommit) Commit();
             return true;
@@ -607,7 +719,7 @@ namespace Tsavorite.core
             fixed (byte* bp = entry)
                 Buffer.MemoryCopy(bp, (void*)(headerSize + physicalAddress), length, length);
             SetHeader(length, (byte*)physicalAddress);
-            if (AutoRefreshSafeTailAddress) DoAutoRefreshSafeTailAddress();
+            safeTailRefreshEntryEnqueued?.Signal();
             epoch.Suspend();
             if (AutoCommit) Commit();
             return true;
@@ -646,7 +758,7 @@ namespace Tsavorite.core
 
             var physicalAddress = allocator.GetPhysicalAddress(logicalAddress);
             entryBytes.CopyTo(new Span<byte>((byte*)physicalAddress, length));
-            if (AutoRefreshSafeTailAddress) DoAutoRefreshSafeTailAddress();
+            safeTailRefreshEntryEnqueued?.Signal();
             epoch.Suspend();
             if (AutoCommit && !noCommit) Commit();
             return true;
@@ -682,7 +794,7 @@ namespace Tsavorite.core
             fixed (byte* bp = &entry.GetPinnableReference())
                 Buffer.MemoryCopy(bp, (void*)(headerSize + physicalAddress), length, length);
             SetHeader(length, (byte*)physicalAddress);
-            if (AutoRefreshSafeTailAddress) DoAutoRefreshSafeTailAddress();
+            safeTailRefreshEntryEnqueued?.Signal();
             epoch.Suspend();
             if (AutoCommit) Commit();
             return true;
@@ -708,7 +820,7 @@ namespace Tsavorite.core
             var physicalAddress = (byte*)allocator.GetPhysicalAddress(logicalAddress);
             *(THeader*)(physicalAddress + headerSize) = userHeader;
             SetHeader(length, physicalAddress);
-            if (AutoRefreshSafeTailAddress) DoAutoRefreshSafeTailAddress();
+            safeTailRefreshEntryEnqueued?.Signal();
             epoch.Suspend();
             if (AutoCommit) Commit();
         }
@@ -735,7 +847,7 @@ namespace Tsavorite.core
             *(THeader*)(physicalAddress + headerSize) = userHeader;
             item.CopyTo(physicalAddress + headerSize + sizeof(THeader));
             SetHeader(length, physicalAddress);
-            if (AutoRefreshSafeTailAddress) DoAutoRefreshSafeTailAddress();
+            safeTailRefreshEntryEnqueued?.Signal();
             epoch.Suspend();
             if (AutoCommit) Commit();
         }
@@ -764,7 +876,7 @@ namespace Tsavorite.core
             item1.CopyTo(physicalAddress + headerSize + sizeof(THeader));
             item2.CopyTo(physicalAddress + headerSize + sizeof(THeader) + item1.TotalSize);
             SetHeader(length, physicalAddress);
-            if (AutoRefreshSafeTailAddress) DoAutoRefreshSafeTailAddress();
+            safeTailRefreshEntryEnqueued?.Signal();
             epoch.Suspend();
             if (AutoCommit) Commit();
         }
@@ -795,7 +907,7 @@ namespace Tsavorite.core
             item2.CopyTo(physicalAddress + headerSize + sizeof(THeader) + item1.TotalSize);
             item3.CopyTo(physicalAddress + headerSize + sizeof(THeader) + item1.TotalSize + item2.TotalSize);
             SetHeader(length, physicalAddress);
-            if (AutoRefreshSafeTailAddress) DoAutoRefreshSafeTailAddress();
+            safeTailRefreshEntryEnqueued?.Signal();
             epoch.Suspend();
             if (AutoCommit) Commit();
         }
@@ -835,7 +947,7 @@ namespace Tsavorite.core
             }
 
             SetHeader(length, physicalAddress);
-            if (AutoRefreshSafeTailAddress) DoAutoRefreshSafeTailAddress();
+            safeTailRefreshEntryEnqueued?.Signal();
             epoch.Suspend();
             if (AutoCommit) Commit();
         }
@@ -861,7 +973,7 @@ namespace Tsavorite.core
             *physicalAddress = userHeader;
             item.CopyTo(physicalAddress + sizeof(byte));
             SetHeader(length, physicalAddress);
-            if (AutoRefreshSafeTailAddress) DoAutoRefreshSafeTailAddress();
+            safeTailRefreshEntryEnqueued?.Signal();
             epoch.Suspend();
             if (AutoCommit) Commit();
         }
@@ -872,28 +984,23 @@ namespace Tsavorite.core
             while (true)
             {
                 var flushEvent = allocator.FlushEvent;
-                var logicalAddress = allocator.TryAllocate(recordSize);
+                var logicalAddress = allocator.TryAllocateRetryNow(recordSize);
                 if (logicalAddress > 0)
                     return logicalAddress;
 
-                if (logicalAddress == 0)
-                {
-                    epoch.Suspend();
-                    if (cannedException != null) throw cannedException;
-                    try
-                    {
-                        flushEvent.Wait();
-                    }
-                    finally
-                    {
-                        epoch.Resume();
-                    }
-                }
+                // logicalAddress less than 0 (RETRY_NOW) should already have been handled
+                Debug.Assert(logicalAddress == 0);
 
-                // logicalAddress is < 0 so we do not expect flushEvent to be signaled; refresh the epoch and retry now
-                allocator.TryComplete();
-                epoch.ProtectAndDrain();
-                Thread.Yield();
+                epoch.Suspend();
+                if (cannedException != null) throw cannedException;
+                try
+                {
+                    flushEvent.Wait();
+                }
+                finally
+                {
+                    epoch.Resume();
+                }
             }
         }
 
@@ -929,7 +1036,7 @@ namespace Tsavorite.core
             item1.CopyTo(physicalAddress + headerSize + sizeof(THeader));
             item2.CopyTo(physicalAddress + headerSize + sizeof(THeader) + item1.TotalSize);
             SetHeader(length, physicalAddress);
-            if (AutoRefreshSafeTailAddress) DoAutoRefreshSafeTailAddress();
+            safeTailRefreshEntryEnqueued?.Signal();
             epoch.Suspend();
             if (AutoCommit) Commit();
             return true;
@@ -969,7 +1076,7 @@ namespace Tsavorite.core
             item2.CopyTo(physicalAddress + headerSize + sizeof(THeader) + item1.TotalSize);
             item3.CopyTo(physicalAddress + headerSize + sizeof(THeader) + item1.TotalSize + item2.TotalSize);
             SetHeader(length, physicalAddress);
-            if (AutoRefreshSafeTailAddress) DoAutoRefreshSafeTailAddress();
+            safeTailRefreshEntryEnqueued?.Signal();
             epoch.Suspend();
             if (AutoCommit) Commit();
             return true;
@@ -1004,7 +1111,7 @@ namespace Tsavorite.core
             *physicalAddress = userHeader;
             item.CopyTo(physicalAddress + sizeof(byte));
             SetHeader(length, physicalAddress);
-            if (AutoRefreshSafeTailAddress) DoAutoRefreshSafeTailAddress();
+            safeTailRefreshEntryEnqueued?.Signal();
             epoch.Suspend();
             if (AutoCommit) Commit();
             return true;
@@ -1256,7 +1363,7 @@ namespace Tsavorite.core
         /// <returns>true if there's more data available to be read; false if there will never be more data (log has been shutdown)</returns>
         public async ValueTask<bool> WaitUncommittedAsync(long nextAddress, CancellationToken token = default)
         {
-            Debug.Assert(AutoRefreshSafeTailAddress);
+            Debug.Assert(SafeTailRefreshFrequencyMs >= 0);
             if (nextAddress < SafeTailAddress)
                 return true;
 
@@ -1296,13 +1403,13 @@ namespace Tsavorite.core
         /// <param name="spinWait">If true, spin-wait until commit completes. Otherwise, issue commit and return immediately.</param>
         /// <returns> whether there is anything to commit. </returns>
 
-        public void Commit(bool spinWait = false)
+        public void Commit(bool spinWait = false, byte[] cookie = null)
         {
             // Take a lower-bound of the content of this commit in case our request is filtered but we need to spin
             var tail = TailAddress;
             var lastCommit = commitNum;
 
-            var success = CommitInternal(out var actualTail, out var actualCommitNum, true, null, -1, null);
+            var success = CommitInternal(out var actualTail, out var actualCommitNum, cookie == null, cookie, -1, null);
             if (!spinWait) return;
             if (success)
                 WaitForCommit(actualTail, actualCommitNum);
@@ -1346,7 +1453,7 @@ namespace Tsavorite.core
         /// ongoing commit fails.
         /// </summary>
         /// <returns></returns>
-        public async ValueTask CommitAsync(CancellationToken token = default)
+        public async ValueTask CommitAsync(byte[] cookie = null, CancellationToken token = default)
         {
             token.ThrowIfCancellationRequested();
 
@@ -1355,7 +1462,7 @@ namespace Tsavorite.core
             var lastCommit = commitNum;
 
             var task = CommitTask;
-            var success = CommitInternal(out var actualTail, out var actualCommitNum, true, null, -1, null);
+            var success = CommitInternal(out var actualTail, out var actualCommitNum, cookie == null, cookie, -1, null);
 
             if (success)
             {
@@ -1381,7 +1488,7 @@ namespace Tsavorite.core
         /// from prevCommitTask to current fails.
         /// </summary>
         /// <returns></returns>
-        public async ValueTask<Task<LinkedCommitInfo>> CommitAsync(Task<LinkedCommitInfo> prevCommitTask, CancellationToken token = default)
+        public async ValueTask<Task<LinkedCommitInfo>> CommitAsync(Task<LinkedCommitInfo> prevCommitTask, byte[] cookie = null, CancellationToken token = default)
         {
             token.ThrowIfCancellationRequested();
 
@@ -1391,7 +1498,7 @@ namespace Tsavorite.core
 
             if (prevCommitTask == null) prevCommitTask = CommitTask;
 
-            var success = CommitInternal(out var actualTail, out var actualCommitNum, true, null, -1, null);
+            var success = CommitInternal(out var actualTail, out var actualCommitNum, cookie == null, null, -1, null);
 
 
             if (success)
@@ -1854,40 +1961,72 @@ namespace Tsavorite.core
         /// </summary>
         /// <param name="beginAddress">Begin address for scan.</param>
         /// <param name="endAddress">End address for scan (or long.MaxValue for tailing).</param>
-        /// <param name="name">Name of iterator, if we need to persist/recover it (default null - do not persist).</param>
         /// <param name="recover">Whether to recover named iterator from latest commit (if exists). If false, iterator starts from beginAddress.</param>
         /// <param name="scanBufferingMode">Use single or double buffering</param>
         /// <param name="scanUncommitted">Whether we scan uncommitted data</param>
         /// <param name="logger"></param>
         /// <returns></returns>
-        public TsavoriteLogScanIterator Scan(long beginAddress, long endAddress, string name = null, bool recover = true, ScanBufferingMode scanBufferingMode = ScanBufferingMode.DoublePageBuffering, bool scanUncommitted = false, ILogger logger = null)
+        public TsavoriteLogScanIterator Scan(long beginAddress, long endAddress, bool recover = true, ScanBufferingMode scanBufferingMode = ScanBufferingMode.DoublePageBuffering, bool scanUncommitted = false, ILogger logger = null)
         {
             if (readOnlyMode)
             {
                 scanBufferingMode = ScanBufferingMode.SinglePageBuffering;
 
-                if (name != null)
-                    throw new TsavoriteException("Cannot use named iterators with read-only TsavoriteLog");
                 if (scanUncommitted)
                     throw new TsavoriteException("Cannot use scanUncommitted with read-only TsavoriteLog");
             }
 
-            if (scanUncommitted && !AutoRefreshSafeTailAddress)
-                throw new TsavoriteException("Cannot use scanUncommitted without setting AutoRefreshSafeTailAddress to true in TsavoriteLog settings");
+            if (scanUncommitted && SafeTailRefreshFrequencyMs < 0)
+                throw new TsavoriteException("Cannot use scanUncommitted without setting SafeTailRefreshFrequencyMs to a non-negative value in TsavoriteLog settings");
 
-            TsavoriteLogScanIterator iter;
-            if (recover && name != null && RecoveredIterators != null && RecoveredIterators.ContainsKey(name))
-                iter = new TsavoriteLogScanIterator(this, allocator, RecoveredIterators[name], endAddress, getMemory, scanBufferingMode, epoch, headerSize, name, scanUncommitted, logger: logger);
-            else
-                iter = new TsavoriteLogScanIterator(this, allocator, beginAddress, endAddress, getMemory, scanBufferingMode, epoch, headerSize, name, scanUncommitted, logger: logger);
+            var iter = new TsavoriteLogScanIterator(this, allocator, beginAddress, endAddress, getMemory, scanBufferingMode, epoch, headerSize, scanUncommitted, logger: logger);
 
-            if (name != null)
+            if (Interlocked.Increment(ref logRefCount) == 1)
+                throw new TsavoriteException("Cannot scan disposed log instance");
+            return iter;
+        }
+
+        List<TsavoriteLogScanSingleIterator> activeSingleIterators;
+
+        public void RemoveIterator(TsavoriteLogScanSingleIterator iterator)
+        {
+            lock (this)
             {
-                if (name.Length > 20)
-                    throw new TsavoriteException("Max length of iterator name is 20 characters");
-                if (PersistedIterators.ContainsKey(name))
-                    logger?.LogDebug("Iterator name exists, overwriting");
-                PersistedIterators[name] = iter;
+                if (activeSingleIterators != null)
+                {
+                    List<TsavoriteLogScanSingleIterator> newList = null;
+                    foreach (var it in activeSingleIterators)
+                    {
+                        if (it != iterator)
+                        {
+                            newList ??= [];
+                            newList.Add(it);
+                        }
+                    }
+                    activeSingleIterators = newList;
+                }
+            }
+        }
+
+        public TsavoriteLogScanSingleIterator ScanSingle(long beginAddress, long endAddress, bool recover = true, ScanBufferingMode scanBufferingMode = ScanBufferingMode.DoublePageBuffering, bool scanUncommitted = false, ILogger logger = null)
+        {
+            if (readOnlyMode)
+            {
+                scanBufferingMode = ScanBufferingMode.SinglePageBuffering;
+
+                if (scanUncommitted)
+                    throw new TsavoriteException("Cannot use scanUncommitted with read-only TsavoriteLog");
+            }
+
+            if (scanUncommitted && SafeTailRefreshFrequencyMs < 0)
+                throw new TsavoriteException("Cannot use scanUncommitted without setting SafeTailRefreshFrequencyMs to a non-negative value in TsavoriteLog settings");
+
+            var iter = new TsavoriteLogScanSingleIterator(this, allocator, beginAddress, endAddress, getMemory, scanBufferingMode, epoch, headerSize, scanUncommitted, logger: logger);
+
+            lock (this)
+            {
+                List<TsavoriteLogScanSingleIterator> newList = activeSingleIterators == null ? new() { iter } : new(activeSingleIterators) { iter };
+                activeSingleIterators = newList;
             }
 
             if (Interlocked.Increment(ref logRefCount) == 1)
@@ -1986,71 +2125,12 @@ namespace Tsavorite.core
         }
 
         /// <summary>
-        /// Initiate auto refresh safe tail address, called with epoch protection
+        /// Trigger refresh of safe tail address
         /// </summary>
         private void DoAutoRefreshSafeTailAddress()
         {
-            if (_ongoingAutoRefreshSafeTailAddress == 0 && Interlocked.CompareExchange(ref _ongoingAutoRefreshSafeTailAddress, 1, 0) == 0)
-                AutoRefreshSafeTailAddressRunner(false);
+            safeTailRefreshEntryEnqueued?.Signal();
         }
-
-        private void EpochProtectAutoRefreshSafeTailAddressRunner()
-        {
-            try
-            {
-                epoch.Resume();
-                AutoRefreshSafeTailAddressRunner(false);
-            }
-            finally
-            {
-                epoch.Suspend();
-            }
-        }
-
-        private void AutoRefreshSafeTailAddressRunner(bool recurse)
-        {
-            long tail = 0;
-            do
-            {
-                tail = TailAddress;
-                if (tail > SafeTailAddress)
-                {
-                    if (recurse)
-                        Task.Run(EpochProtectAutoRefreshSafeTailAddressRunner);
-                    else
-                        epoch.BumpCurrentEpoch(() => AutoRefreshSafeTailAddressBumpCallback(tail));
-                    return;
-                }
-                _ongoingAutoRefreshSafeTailAddress = 0;
-            } while (tail > SafeTailAddress && _ongoingAutoRefreshSafeTailAddress == 0 && Interlocked.CompareExchange(ref _ongoingAutoRefreshSafeTailAddress, 1, 0) == 0);
-        }
-
-        private void AutoRefreshSafeTailAddressBumpCallback(long tailAddress)
-        {
-            if (Utility.MonotonicUpdate(ref SafeTailAddress, tailAddress, out long oldSafeTailAddress))
-            {
-                var tcs = refreshUncommittedTcs;
-                if (tcs != null && Interlocked.CompareExchange(ref refreshUncommittedTcs, null, tcs) == tcs)
-                    tcs.SetResult(Empty.Default);
-                var _callback = SafeTailShiftCallback;
-                if (_callback != null)
-                {
-                    // We invoke callback outside epoch protection
-                    bool isProtected = epoch.ThisInstanceProtected();
-                    if (isProtected) epoch.Suspend();
-                    try
-                    {
-                        _callback.Invoke(oldSafeTailAddress, tailAddress);
-                    }
-                    finally
-                    {
-                        if (isProtected) epoch.Resume();
-                    }
-                }
-            }
-            AutoRefreshSafeTailAddressRunner(true);
-        }
-
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         private static int Align(int length)
@@ -2065,7 +2145,7 @@ namespace Tsavorite.core
         {
             // Using count is safe as a fast filtering mechanism to reduce number of invocations despite concurrency
             if (ongoingCommitRequests.Count == 0 && commitInfo.ErrorCode == 0) return;
-            commitQueue.EnqueueAndTryWork(commitInfo, asTask: true);
+            commitQueue.AddWorkItem(commitInfo);
         }
 
         private unsafe bool TryEnqueueCommitRecord(ref TsavoriteLogRecoveryInfo info)
@@ -2093,7 +2173,7 @@ namespace Tsavorite.core
             fixed (byte* bp = entryBody)
                 Buffer.MemoryCopy(bp, (void*)(headerSize + physicalAddress), entryBody.Length, entryBody.Length);
             SetCommitRecordHeader(entryBody.Length, (byte*)physicalAddress);
-            if (AutoRefreshSafeTailAddress) DoAutoRefreshSafeTailAddress();
+            safeTailRefreshEntryEnqueued?.Signal();
             epoch.Suspend();
             // Return the commit tail
             return true;
@@ -2101,7 +2181,7 @@ namespace Tsavorite.core
 
         private bool ShouldCommmitMetadata(ref TsavoriteLogRecoveryInfo info)
         {
-            return beginAddress > CommittedBeginAddress || IteratorsChanged(ref info) || info.Cookie != null;
+            return beginAddress > CommittedBeginAddress || info.Cookie != null;
         }
 
         private void CommitMetadataOnly(ref TsavoriteLogRecoveryInfo info)
@@ -2119,10 +2199,8 @@ namespace Tsavorite.core
 
         private void UpdateCommittedState(TsavoriteLogRecoveryInfo recoveryInfo)
         {
-            LastPersistedIterators = recoveryInfo.Iterators;
             CommittedBeginAddress = recoveryInfo.BeginAddress;
             CommittedUntilAddress = recoveryInfo.UntilAddress;
-            recoveryInfo.CommitIterators(PersistedIterators);
             Utility.MonotonicUpdate(ref persistedCommitNum, recoveryInfo.CommitNum, out _);
         }
 
@@ -2231,27 +2309,6 @@ namespace Tsavorite.core
             _commitTcs?.TrySetResult(lci);
         }
 
-        private bool IteratorsChanged(ref TsavoriteLogRecoveryInfo info)
-        {
-            var _lastPersistedIterators = LastPersistedIterators;
-            if (_lastPersistedIterators == null)
-            {
-                return info.Iterators != null && info.Iterators.Count != 0;
-            }
-            if (info.Iterators == null || _lastPersistedIterators.Count != info.Iterators.Count)
-                return true;
-            foreach (var item in _lastPersistedIterators)
-            {
-                if (info.Iterators.TryGetValue(item.Key, out var other))
-                {
-                    if (item.Value != other) return true;
-                }
-                else
-                    return true;
-            }
-            return false;
-        }
-
         /// <summary>
         /// Synchronously recover instance to TsavoriteLog's latest valid commit, when being used as a readonly log iterator
         /// </summary>
@@ -2260,7 +2317,7 @@ namespace Tsavorite.core
             if (!readOnlyMode)
                 throw new TsavoriteException("This method can only be used with a read-only TsavoriteLog instance used for iteration. Set TsavoriteLogSettings.ReadOnlyMode to true during creation to indicate this.");
 
-            RestoreLatest(out _, out _);
+            RestoreLatest(out _);
             SignalWaitingROIterators();
         }
 
@@ -2314,9 +2371,8 @@ namespace Tsavorite.core
             return true;
         }
 
-        private void RestoreLatest(out Dictionary<string, long> iterators, out byte[] cookie)
+        private void RestoreLatest(out byte[] cookie)
         {
-            iterators = null;
             cookie = null;
             TsavoriteLogRecoveryInfo info = new();
 
@@ -2383,10 +2439,10 @@ namespace Tsavorite.core
                 }
             }
 
-            iterators = CompleteRestoreFromCommit(info);
+            CompleteRestoreFromCommit(info);
             cookie = info.Cookie;
             commitNum = info.CommitNum;
-            // After recovery  persisted commitnum remians 0 so we need to set it to latest commit number
+            // After recovery, persisted commitnum remains 0 so we need to set it to latest commit number
             persistedCommitNum = info.CommitNum;
             beginAddress = allocator.BeginAddress;
             if (readOnlyMode)
@@ -2395,9 +2451,8 @@ namespace Tsavorite.core
             if (scanStart > 0) logCommitManager.OnRecovery(scanStart);
         }
 
-        private void RestoreSpecificCommit(long requestedCommitNum, out Dictionary<string, long> iterators, out byte[] cookie)
+        private void RestoreSpecificCommit(long requestedCommitNum, out byte[] cookie)
         {
-            iterators = null;
             cookie = null;
             TsavoriteLogRecoveryInfo info = new();
 
@@ -2459,7 +2514,7 @@ namespace Tsavorite.core
                 }
             }
 
-            iterators = CompleteRestoreFromCommit(info);
+            CompleteRestoreFromCommit(info);
             cookie = info.Cookie;
             commitNum = persistedCommitNum = info.CommitNum;
             beginAddress = allocator.BeginAddress;
@@ -2472,7 +2527,7 @@ namespace Tsavorite.core
         /// <summary>
         /// Restore log asynchronously
         /// </summary>
-        private async ValueTask<(Dictionary<string, long>, byte[])> RestoreLatestAsync(CancellationToken cancellationToken)
+        private async ValueTask<byte[]> RestoreLatestAsync(CancellationToken cancellationToken)
         {
             TsavoriteLogRecoveryInfo info = new();
 
@@ -2516,7 +2571,7 @@ namespace Tsavorite.core
                 beginAddress = allocator.BeginAddress;
                 if (readOnlyMode)
                     allocator.HeadAddress = long.MaxValue;
-                return (new Dictionary<string, long>(), null);
+                return null;
             }
 
             if (!readOnlyMode)
@@ -2530,7 +2585,7 @@ namespace Tsavorite.core
                 await allocator.RestoreHybridLogAsync(info.BeginAddress, headAddress, info.UntilAddress, info.UntilAddress, cancellationToken: cancellationToken).ConfigureAwait(false);
             }
 
-            var iterators = CompleteRestoreFromCommit(info);
+            CompleteRestoreFromCommit(info);
             var cookie = info.Cookie;
             commitNum = info.CommitNum;
             beginAddress = allocator.BeginAddress;
@@ -2539,25 +2594,14 @@ namespace Tsavorite.core
 
             if (scanStart > 0) logCommitManager.OnRecovery(scanStart);
 
-            return (iterators, cookie);
+            return cookie;
         }
 
-        private Dictionary<string, long> CompleteRestoreFromCommit(TsavoriteLogRecoveryInfo info)
+        private void CompleteRestoreFromCommit(TsavoriteLogRecoveryInfo info)
         {
             CommittedUntilAddress = info.UntilAddress;
             CommittedBeginAddress = info.BeginAddress;
             SafeTailAddress = info.UntilAddress;
-
-            // Fix uncommitted addresses in iterators
-            var recoveredIterators = info.Iterators;
-            if (recoveredIterators != null)
-            {
-                List<string> keys = [.. recoveredIterators.Keys];
-                foreach (var key in keys)
-                    if (recoveredIterators[key] > SafeTailAddress)
-                        recoveredIterators[key] = SafeTailAddress;
-            }
-            return recoveredIterators;
         }
 
         /// <summary>
@@ -2603,7 +2647,7 @@ namespace Tsavorite.core
                 SetHeader(entryLength, (byte*)physicalAddress);
                 physicalAddress += Align(entryLength) + headerSize;
             }
-            if (AutoRefreshSafeTailAddress) DoAutoRefreshSafeTailAddress();
+            safeTailRefreshEntryEnqueued?.Signal();
             epoch.Suspend();
             if (AutoCommit) Commit();
             return true;
@@ -2762,7 +2806,6 @@ namespace Tsavorite.core
                 Cookie = cookie,
                 Callback = callback,
             };
-            info.SnapshotIterators(PersistedIterators);
             var commitRequired = ShouldCommmitMetadata(ref info) || (commitCoveredAddress < TailAddress);
             // Only apply commit policy if not a strong commit
             if (fastForwardAllowed && !commitPolicy.AdmitCommit(TailAddress, commitRequired))

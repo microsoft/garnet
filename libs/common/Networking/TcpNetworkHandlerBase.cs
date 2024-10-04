@@ -30,8 +30,8 @@ namespace Garnet.common
         /// <summary>
         /// Constructor
         /// </summary>
-        public TcpNetworkHandlerBase(TServerHook serverHook, TNetworkSender networkSender, Socket socket, LimitedFixedBufferPool networkPool, bool useTLS, IMessageConsumer messageConsumer = null, ILogger logger = null)
-            : base(serverHook, networkSender, networkPool, useTLS, messageConsumer, logger)
+        public TcpNetworkHandlerBase(TServerHook serverHook, TNetworkSender networkSender, Socket socket, NetworkBufferSettings networkBufferSettings, LimitedFixedBufferPool networkPool, bool useTLS, IMessageConsumer messageConsumer = null, ILogger logger = null)
+            : base(serverHook, networkSender, networkBufferSettings, networkPool, useTLS, messageConsumer: messageConsumer, logger: logger)
         {
             this.logger = logger;
             this.socket = socket;
@@ -121,7 +121,6 @@ namespace Garnet.common
             }
         }
 
-
         /// <inheritdoc />
         public override void Dispose()
         {
@@ -163,7 +162,7 @@ namespace Garnet.common
 
         unsafe void AllocateNetworkReceiveBuffer()
         {
-            networkReceiveBufferEntry = networkPool.Get(networkPool.MinAllocationSize);
+            networkReceiveBufferEntry = networkPool.Get(networkBufferSettings.initialReceiveBufferSize);
             networkReceiveBuffer = networkReceiveBufferEntry.entry;
             networkReceiveBufferPtr = networkReceiveBufferEntry.entryPtr;
         }

@@ -4,7 +4,6 @@
 using System;
 using System.Collections.Generic;
 using System.Diagnostics;
-using System.Threading;
 using Garnet.client;
 using Garnet.common;
 using Microsoft.Extensions.Logging;
@@ -41,7 +40,7 @@ namespace Garnet.cluster
                 logPageSizeMask = logPageSize - 1;
                 if (clusterProvider.serverOptions.MainMemoryReplication)
                     clusterProvider.storeWrapper.appendOnlyFile.SafeTailShiftCallback = SafeTailShiftCallback;
-                TruncateLagAddress = clusterProvider.storeWrapper.appendOnlyFile.UnsafeGetReadOnlyLagAddress() - 2 * logPageSize;
+                TruncateLagAddress = clusterProvider.storeWrapper.appendOnlyFile.UnsafeGetReadOnlyAddressLagOffset() - 2 * logPageSize;
             }
             TruncatedUntil = 0;
         }
@@ -96,11 +95,11 @@ namespace Garnet.cluster
 
         public void Dispose()
         {
-            _lock.WriteLock();
             try
             {
+                _lock.WriteLock();
                 _disposed = true;
-                for (int i = 0; i < numTasks; i++)
+                for (var i = 0; i < numTasks; i++)
                 {
                     var task = tasks[i];
                     task.Dispose();
@@ -119,7 +118,7 @@ namespace Garnet.cluster
             aofSyncTaskInfo = null;
 
             if (startAddress == 0) startAddress = ReplicationManager.kFirstValidAofAddress;
-            bool success = false;
+            var success = false;
             var current = clusterProvider.clusterManager.CurrentConfig;
             var (address, port) = current.GetWorkerAddressFromNodeId(remoteNodeId);
 
@@ -131,8 +130,15 @@ namespace Garnet.cluster
                     this,
                     current.LocalNodeId,
                     remoteNodeId,
-                    new GarnetClientSession(address, port, clusterProvider.serverOptions.TlsOptions?.TlsClientOptions, authUsername: clusterProvider.ClusterUsername, authPassword: clusterProvider.ClusterPassword, 1 << 22, logger: logger),
-                    new CancellationTokenSource(),
+                    new GarnetClientSession(
+                        address,
+                        port,
+                        clusterProvider.replicationManager.GetAofSyncNetworkBufferSettings,
+                        clusterProvider.replicationManager.GetNetworkPool,
+                        tlsOptions: clusterProvider.serverOptions.TlsOptions?.TlsClientOptions,
+                        authUsername: clusterProvider.ClusterUsername,
+                        authPassword: clusterProvider.ClusterPassword,
+                        logger: logger),
                     startAddress,
                     logger);
             }

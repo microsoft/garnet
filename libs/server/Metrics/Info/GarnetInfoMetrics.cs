@@ -37,6 +37,7 @@ namespace Garnet.server
         MetricsItem[] persistenceInfo = null;
         MetricsItem[] clientsInfo = null;
         MetricsItem[] keyspaceInfo = null;
+        MetricsItem[] bufferPoolStats = null;
 
         public GarnetInfoMetrics() { }
 
@@ -224,15 +225,15 @@ namespace Garnet.server
                 ];
         }
 
-        public void PopulateStoreHashDistribution(StoreWrapper storeWrapper) => storeHashDistrInfo = [new("", storeWrapper.store.DumpDistribution())];
+        private void PopulateStoreHashDistribution(StoreWrapper storeWrapper) => storeHashDistrInfo = [new("", storeWrapper.store.DumpDistribution())];
 
-        public void PopulateObjectStoreHashDistribution(StoreWrapper storeWrapper) => objectStoreHashDistrInfo = [new("", storeWrapper.objectStore.DumpDistribution())];
+        private void PopulateObjectStoreHashDistribution(StoreWrapper storeWrapper) => objectStoreHashDistrInfo = [new("", storeWrapper.objectStore.DumpDistribution())];
 
-        public void PopulateStoreRevivInfo(StoreWrapper storeWrapper) => storeRevivInfo = [new("", storeWrapper.store.DumpRevivificationStats())];
+        private void PopulateStoreRevivInfo(StoreWrapper storeWrapper) => storeRevivInfo = [new("", storeWrapper.store.DumpRevivificationStats())];
 
-        public void PopulateObjectStoreRevivInfo(StoreWrapper storeWrapper) => objectStoreRevivInfo = [new("", storeWrapper.objectStore.DumpRevivificationStats())];
+        private void PopulateObjectStoreRevivInfo(StoreWrapper storeWrapper) => objectStoreRevivInfo = [new("", storeWrapper.objectStore.DumpRevivificationStats())];
 
-        public void PopulatePersistenceInfo(StoreWrapper storeWrapper)
+        private void PopulatePersistenceInfo(StoreWrapper storeWrapper)
         {
             bool aofEnabled = storeWrapper.serverOptions.EnableAOF;
             persistenceInfo =
@@ -258,6 +259,13 @@ namespace Garnet.server
             keyspaceInfo = null;
         }
 
+        private void PopulateClusterBufferPoolStats(StoreWrapper storeWrapper)
+        {
+            bufferPoolStats = [new("server_socket", storeWrapper.GetTcpServer().GetBufferPoolStats())];
+            if (storeWrapper.clusterProvider != null)
+                bufferPoolStats = [.. bufferPoolStats, .. storeWrapper.clusterProvider.GetBufferPoolStats()];
+        }
+
         public static string GetSectionHeader(InfoMetricsType infoType)
         {
             return infoType switch
@@ -277,6 +285,7 @@ namespace Garnet.server
                 InfoMetricsType.CLIENTS => "Clients",
                 InfoMetricsType.KEYSPACE => "Keyspace",
                 InfoMetricsType.MODULES => "Modules",
+                InfoMetricsType.BPSTATS => "BufferPool Stats",
                 _ => "Default",
             };
         }
@@ -353,6 +362,9 @@ namespace Garnet.server
                     return GetSectionRespInfo(InfoMetricsType.KEYSPACE, keyspaceInfo);
                 case InfoMetricsType.MODULES:
                     return GetSectionRespInfo(section, null);
+                case InfoMetricsType.BPSTATS:
+                    PopulateClusterBufferPoolStats(storeWrapper);
+                    return GetSectionRespInfo(InfoMetricsType.BPSTATS, bufferPoolStats);
                 default:
                     return "";
             }
@@ -364,7 +376,9 @@ namespace Garnet.server
             for (var i = 0; i < sections.Length; i++)
             {
                 var section = sections[i];
-                response += GetRespInfo(section, storeWrapper);
+                var resp = GetRespInfo(section, storeWrapper);
+                if (string.IsNullOrEmpty(resp)) continue;
+                response += resp;
                 response += sections.Length - 1 == i ? "" : "\r\n";
             }
             return response;

@@ -95,8 +95,8 @@ namespace Garnet.cluster
         {
             if (errorCode != 0)
             {
-                string errorMessage = new Win32Exception((int)errorCode).Message;
-                logger.LogError("OverlappedStream GetQueuedCompletionStatus error: {errorCode} msg: {errorMessage}", errorCode, errorMessage);
+                var errorMessage = new Win32Exception((int)errorCode).Message;
+                logger.LogError("[ClusterUtils] OverlappedStream GetQueuedCompletionStatus error: {errorCode} msg: {errorMessage}", errorCode, errorMessage);
             }
             ((SemaphoreSlim)context).Release();
         }
