@@ -2,7 +2,7 @@
 // Licensed under the MIT license.
 
 using System;
-using System.Diagnostics;
+using System.Runtime.CompilerServices;
 
 namespace Garnet.common
 {
@@ -11,6 +11,11 @@ namespace Garnet.common
     /// </summary>
     public static class ConvertUtils
     {
+        /// <summary>
+        /// Contains the number of ticks representing 1970/1/1. Value is equal to new DateTime(1970, 1, 1).Ticks
+        /// </summary>
+        private static readonly long _unixEpochTicks = DateTimeOffset.UnixEpoch.Ticks;
+
         /// <summary>
         /// Convert diff ticks - utcNow.ticks to seconds.
         /// </summary>
@@ -42,6 +47,28 @@ namespace Garnet.common
                 milliseconds = ticks > 0 ? (long)TimeSpan.FromTicks(ticks).TotalMilliseconds : -1;
             }
             return milliseconds;
+        }
+
+        /// <summary>
+        /// Converts a Unix timestamp in seconds to ticks.
+        /// </summary>
+        /// <param name="unixTimestamp">The Unix timestamp in seconds.</param>
+        /// <returns>The equivalent number of ticks.</returns>
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        public static long UnixTimestampInSecondsToTicks(long unixTimestamp)
+        {
+            return unixTimestamp * TimeSpan.TicksPerSecond + _unixEpochTicks;
+        }
+
+        /// <summary>
+        /// Converts a Unix timestamp in milliseconds to ticks.
+        /// </summary>
+        /// <param name="unixTimestamp">The Unix timestamp in milliseconds.</param>
+        /// <returns>The equivalent number of ticks.</returns>
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        public static long UnixTimestampInMillisecondsToTicks(long unixTimestamp)
+        {
+            return unixTimestamp * TimeSpan.TicksPerMillisecond + _unixEpochTicks;
         }
     }
 }

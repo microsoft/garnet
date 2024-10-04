@@ -2604,8 +2604,6 @@ namespace Garnet.test.Resp.ACL
         [Test]
         public async Task ExpireACLsAsync()
         {
-            // TODO: expire doesn't support combinations of flags (XX GT, XX LT are legal) so those will need to be tested when implemented
-
             await CheckCommandsAsync(
                 "EXPIRE",
                 [DoExpireAsync, DoExpireNXAsync, DoExpireXXAsync, DoExpireGTAsync, DoExpireLTAsync]
@@ -2638,6 +2636,96 @@ namespace Garnet.test.Resp.ACL
             static async Task DoExpireLTAsync(GarnetClient client)
             {
                 long val = await client.ExecuteForLongResultAsync("EXPIRE", ["foo", "10", "LT"]);
+                ClassicAssert.AreEqual(0, val);
+            }
+        }
+
+        [Test]
+        public async Task ExpireAtACLsAsync()
+        {
+            await CheckCommandsAsync(
+                "EXPIREAT",
+                [DoExpireAsync, DoExpireNXAsync, DoExpireXXAsync, DoExpireGTAsync, DoExpireLTAsync]
+            );
+
+
+            static async Task DoExpireAsync(GarnetClient client)
+            {
+                var expireTimestamp = DateTimeOffset.UtcNow.AddMinutes(1).ToUnixTimeSeconds().ToString();
+                long val = await client.ExecuteForLongResultAsync("EXPIREAT", ["foo", expireTimestamp]);
+                ClassicAssert.AreEqual(0, val);
+            }
+
+            static async Task DoExpireNXAsync(GarnetClient client)
+            {
+                var expireTimestamp = DateTimeOffset.UtcNow.AddMinutes(1).ToUnixTimeSeconds().ToString();
+                long val = await client.ExecuteForLongResultAsync("EXPIREAT", ["foo", "10", "NX"]);
+                ClassicAssert.AreEqual(0, val);
+            }
+
+            static async Task DoExpireXXAsync(GarnetClient client)
+            {
+                var expireTimestamp = DateTimeOffset.UtcNow.AddMinutes(1).ToUnixTimeSeconds().ToString();
+                long val = await client.ExecuteForLongResultAsync("EXPIREAT", ["foo", "10", "XX"]);
+                ClassicAssert.AreEqual(0, val);
+            }
+
+            static async Task DoExpireGTAsync(GarnetClient client)
+            {
+                var expireTimestamp = DateTimeOffset.UtcNow.AddMinutes(1).ToUnixTimeSeconds().ToString();
+                long val = await client.ExecuteForLongResultAsync("EXPIREAT", ["foo", "10", "GT"]);
+                ClassicAssert.AreEqual(0, val);
+            }
+
+            static async Task DoExpireLTAsync(GarnetClient client)
+            {
+                var expireTimestamp = DateTimeOffset.UtcNow.AddMinutes(1).ToUnixTimeSeconds().ToString();
+                long val = await client.ExecuteForLongResultAsync("EXPIREAT", ["foo", "10", "LT"]);
+                ClassicAssert.AreEqual(0, val);
+            }
+        }
+
+        [Test]
+        public async Task PExpireAtACLsAsync()
+        {
+            await CheckCommandsAsync(
+                "PEXPIREAT",
+                [DoExpireAsync, DoExpireNXAsync, DoExpireXXAsync, DoExpireGTAsync, DoExpireLTAsync]
+            );
+
+
+            static async Task DoExpireAsync(GarnetClient client)
+            {
+                var expireTimestamp = DateTimeOffset.UtcNow.AddMinutes(1).ToUnixTimeMilliseconds().ToString();
+                long val = await client.ExecuteForLongResultAsync("PEXPIREAT", ["foo", expireTimestamp]);
+                ClassicAssert.AreEqual(0, val);
+            }
+
+            static async Task DoExpireNXAsync(GarnetClient client)
+            {
+                var expireTimestamp = DateTimeOffset.UtcNow.AddMinutes(1).ToUnixTimeSeconds().ToString();
+                long val = await client.ExecuteForLongResultAsync("PEXPIREAT", ["foo", "10", "NX"]);
+                ClassicAssert.AreEqual(0, val);
+            }
+
+            static async Task DoExpireXXAsync(GarnetClient client)
+            {
+                var expireTimestamp = DateTimeOffset.UtcNow.AddMinutes(1).ToUnixTimeSeconds().ToString();
+                long val = await client.ExecuteForLongResultAsync("PEXPIREAT", ["foo", "10", "XX"]);
+                ClassicAssert.AreEqual(0, val);
+            }
+
+            static async Task DoExpireGTAsync(GarnetClient client)
+            {
+                var expireTimestamp = DateTimeOffset.UtcNow.AddMinutes(1).ToUnixTimeSeconds().ToString();
+                long val = await client.ExecuteForLongResultAsync("PEXPIREAT", ["foo", "10", "GT"]);
+                ClassicAssert.AreEqual(0, val);
+            }
+
+            static async Task DoExpireLTAsync(GarnetClient client)
+            {
+                var expireTimestamp = DateTimeOffset.UtcNow.AddMinutes(1).ToUnixTimeSeconds().ToString();
+                long val = await client.ExecuteForLongResultAsync("PEXPIREAT", ["foo", "10", "LT"]);
                 ClassicAssert.AreEqual(0, val);
             }
         }
