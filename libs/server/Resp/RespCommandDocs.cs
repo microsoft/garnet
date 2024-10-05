@@ -6,10 +6,10 @@ using System.Collections.Generic;
 using System.Collections.ObjectModel;
 using System.ComponentModel;
 using System.Linq;
-using System.Reflection;
 using System.Text;
 using System.Text.Json.Serialization;
 using Garnet.common;
+using Garnet.server.Resp;
 using Microsoft.Extensions.Logging;
 
 namespace Garnet.server
@@ -127,11 +127,9 @@ namespace Garnet.server
 
         private static bool TryInitializeRespCommandsDocs(ILogger logger = null)
         {
-            var streamProvider = StreamProviderFactory.GetStreamProvider(FileLocationType.EmbeddedResource);
-            var commandsDocsProvider = RespCommandsDataProviderFactory.GetRespCommandsDataProvider<RespCommandDocs>();
-
-            var importSucceeded = commandsDocsProvider.TryImportRespCommandsData(RespCommandsDocsEmbeddedFileName,
-                streamProvider, out var tmpAllRespCommandsDocs, logger);
+            var importSucceeded = RespCommandDataCommon.TryImportRespCommandsData<RespCommandDocs>(
+                RespCommandsDocsEmbeddedFileName,
+                out var tmpAllRespCommandsDocs, logger);
 
             if (!importSucceeded) return false;
 
