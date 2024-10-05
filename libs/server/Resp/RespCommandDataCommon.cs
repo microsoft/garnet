@@ -37,7 +37,7 @@ namespace Garnet.server.Resp
             {
                 // Create a new unloadable assembly load context
                 var assemblyLoadContext = new AssemblyLoadContext(null, true);
-                
+
                 try
                 {
                     // Load the assembly within the context and import the data
