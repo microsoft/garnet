@@ -3706,5 +3706,108 @@ namespace Garnet.test
             static void AssertField(string line, string[] fields, string name)
             => ClassicAssert.AreEqual(1, fields.Count(f => f.StartsWith($"{name}=")), $"In {line}, expected single field {name}");
         }
+
+        #region GETSET
+
+        [Test]
+        public void GetSetWithExistingKey()
+        {
+            using var mainConnection = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
+            var mainDB = mainConnection.GetDatabase(0);
+
+            var key = "myKey";
+            var val = "myKeyValue";
+            var newValue = "myNewValue";
+
+            mainDB.StringSet(key, val);
+
+            string result = (string)mainDB.Execute("GETSET", key, newValue);  // Don't use StringGetSet as SE.Redis can chnage the underlying command to nondeprecated one anytime
+
+            ClassicAssert.AreEqual(val, result);
+
+            // Check the new value
+            result = mainDB.StringGet(key);
+            ClassicAssert.AreEqual(newValue, result);
+        }
+
+        [Test]
+        public void GetSetWithNewKey()
+        {
+            using var mainConnection = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
+            var mainDB = mainConnection.GetDatabase(0);
+
+            var key = "myKey";
+            var newValue = "myNewValue";
+
+            string result = (string)mainDB.Execute("GETSET", key, newValue);  // Don't use StringGetSet as SE.Redis can chnage the underlying command to nondeprecated one anytime
+
+            ClassicAssert.IsNull(result);
+
+            // Check the new value
+            result = mainDB.StringGet(key);
+            ClassicAssert.AreEqual(newValue, result);
+        }
+
+        #endregion
+
+        #region SETNX
+
+        [Test]
+        public void SetIfNotExistWithExistingKey()
+        {
+            using var mainConnection = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
+            var mainDB = mainConnection.GetDatabase(0);
+
+            var key = "myKey";
+            var val = "myKeyValue";
+            var newValue = "myNewValue";
+
+            mainDB.StringSet(key, val);
+
+            mainDB.Execute("SETNX", key, newValue);
+
+            string result = mainDB.StringGet(key);
+            ClassicAssert.AreEqual(val, result);
+        }
+
+        [Test]
+        public void SetIfNotExistWithNewKey()
+        {
+            using var mainConnection = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
+            var mainDB = mainConnection.GetDatabase(0);
+
+            var key = "myKey";
+            var newValue = "myNewValue";
+
+            mainDB.Execute("SETNX", key, newValue);
+
+            string result = mainDB.StringGet(key);
+            ClassicAssert.AreEqual(newValue, result);
+        }
+
+        #endregion
+
+        #region SUBSTR
+
+        [Test]
+        [TestCase("my Key Value", 0, -1, "my Key Value")]
+        [TestCase("my Key Value", 0, 4, "my Ke")]
+        [TestCase("my Key Value", -3, -1, "lue")]
+        [TestCase("abc", 0, 10, "abc")]
+        public void SubStringWithOptions(string input, int start, int end, string expectedResult)
+        {
+            using var mainConnection = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
+            var mainDB = mainConnection.GetDatabase(0);
+
+            var key = "myKey";
+
+            mainDB.StringSet(key, input);
+
+            var actualResult = (string)mainDB.Execute("SUBSTR", key, start, end);
+
+            ClassicAssert.AreEqual(expectedResult, actualResult);
+        }
+
+        #endregion
     }
 }

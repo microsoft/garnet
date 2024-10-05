@@ -2986,6 +2986,38 @@ namespace Garnet.test.Resp.ACL
         }
 
         [Test]
+        public async Task GetSetACLsAsync()
+        {
+            int keyIx = 0;
+
+            await CheckCommandsAsync(
+                "GETSET",
+                [DoGetAndSetAsync]
+            );
+
+            async Task DoGetAndSetAsync(GarnetClient client)
+            {
+                string val = await client.ExecuteForStringResultAsync("GETSET", [$"foo-{keyIx++}", "bar"]);
+                ClassicAssert.IsNull(val);
+            }
+        }
+
+        [Test]
+        public async Task SubStrACLsAsync()
+        {
+            await CheckCommandsAsync(
+                "SUBSTR",
+                [DoSubStringAsync]
+            );
+
+            static async Task DoSubStringAsync(GarnetClient client)
+            {
+                string val = await client.ExecuteForStringResultAsync("SUBSTR", ["foo", "10", "15"]);
+                ClassicAssert.AreEqual("", val);
+            }
+        }
+
+        [Test]
         public async Task GetRangeACLsAsync()
         {
             await CheckCommandsAsync(
@@ -2996,6 +3028,21 @@ namespace Garnet.test.Resp.ACL
             static async Task DoGetRangeAsync(GarnetClient client)
             {
                 string val = await client.ExecuteForStringResultAsync("GETRANGE", ["foo", "10", "15"]);
+                ClassicAssert.AreEqual("", val);
+            }
+        }
+
+        [Test]
+        public async Task SubStringACLsAsync()
+        {
+            await CheckCommandsAsync(
+                "SUBSTR",
+                [DoSubStringAsync]
+            );
+
+            static async Task DoSubStringAsync(GarnetClient client)
+            {
+                string val = await client.ExecuteForStringResultAsync("SUBSTR", ["foo", "10", "15"]);
                 ClassicAssert.AreEqual("", val);
             }
         }
@@ -4779,6 +4826,23 @@ namespace Garnet.test.Resp.ACL
             {
                 string val = await client.ExecuteForStringResultAsync("SETEX", ["foo", "10", "bar"]);
                 ClassicAssert.AreEqual("OK", val);
+            }
+        }
+
+        [Test]
+        public async Task SetNXACLsAsync()
+        {
+            int keyIx = 0;
+
+            await CheckCommandsAsync(
+                "SETNX",
+                [DoSetIfNotExistAsync]
+            );
+
+            async Task DoSetIfNotExistAsync(GarnetClient client)
+            {
+                string val = await client.ExecuteForStringResultAsync("SETNX", [$"foo-{keyIx++}", "bar"]);
+                ClassicAssert.AreEqual(val, "OK");
             }
         }
 
