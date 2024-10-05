@@ -53,7 +53,7 @@ namespace Garnet
 
         // IMPORTANT: Keep the version in sync with .azure\pipelines\azure-pipelines-external-release.yml line ~6,
         // charts\garnet\Chart.yaml line ~6 and increment line ~5 and generate charts\garnet\README.md with helm-docs.
-        readonly string version = "1.0.29";
+        readonly string version = "1.0.30";
 
         /// <summary>
         /// Resp protocol version
@@ -199,6 +199,14 @@ namespace Garnet
 
             logger?.LogTrace("TLS is {tlsEnabled}", opts.TlsOptions == null ? "disabled" : "enabled");
 
+            if (logger != null)
+            {
+                var configMemoryLimit = (store.IndexSize * 64) + store.Log.MaxMemorySizeBytes + (store.ReadCache?.MaxMemorySizeBytes ?? 0) + (appendOnlyFile?.MaxMemorySizeBytes ?? 0);
+                if (objectStore != null)
+                    configMemoryLimit += objectStore.IndexSize * 64 + objectStore.Log.MaxMemorySizeBytes + (objectStore.ReadCache?.MaxMemorySizeBytes ?? 0) + (objectStoreSizeTracker?.TargetSize ?? 0);
+                logger.LogInformation("Total configured memory limit: {configMemoryLimit}", configMemoryLimit);
+            }
+
             // Create Garnet TCP server if none was provided.
             this.server ??= new GarnetServerTcp(opts.Address, opts.Port, 0, opts.TlsOptions, opts.NetworkSendThrottleMax, logger);
 
@@ -275,7 +283,7 @@ namespace Garnet
             if (!opts.DisableObjects)
             {
                 objKvSettings = opts.GetObjectStoreSettings(this.loggerFactory?.CreateLogger("TsavoriteKV  [obj]"),
-                    out var objTotalMemorySize);
+                    out var objHeapMemorySize);
 
                 // Run checkpoint on its own thread to control p99
                 objKvSettings.ThrottleCheckpointFlushDelayMs = opts.CheckpointThrottleFlushDelayMs;
@@ -297,8 +305,8 @@ namespace Garnet
                         () => new GarnetObjectSerializer(customCommandManager))
                     , (allocatorSettings, storeFunctions) => new(allocatorSettings, storeFunctions));
 
-                if (objTotalMemorySize > 0)
-                    objectStoreSizeTracker = new CacheSizeTracker(objectStore, objKvSettings, objTotalMemorySize,
+                if (objHeapMemorySize > 0)
+                    objectStoreSizeTracker = new CacheSizeTracker(objectStore, objKvSettings, objHeapMemorySize,
                         this.loggerFactory);
             }
         }

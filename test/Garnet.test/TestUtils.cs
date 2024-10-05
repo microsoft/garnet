@@ -167,7 +167,7 @@ namespace Garnet.test
             string defaultPassword = null,
             bool useAcl = false, // NOTE: Temporary until ACL is enforced as default
             string aclFile = null,
-            string objectStoreTotalMemorySize = default,
+            string objectStoreHeapMemorySize = default,
             string objectStoreIndexSize = "16k",
             string objectStoreIndexMaxSize = default,
             string indexSize = "1m",
@@ -258,8 +258,8 @@ namespace Garnet.test
                 LoadModuleCS = loadModulePaths
             };
 
-            if (!string.IsNullOrEmpty(objectStoreTotalMemorySize))
-                opts.ObjectStoreTotalMemorySize = objectStoreTotalMemorySize;
+            if (!string.IsNullOrEmpty(objectStoreHeapMemorySize))
+                opts.ObjectStoreHeapMemorySize = objectStoreHeapMemorySize;
 
             if (indexMaxSize != default) opts.IndexMaxSize = indexMaxSize;
             if (objectStoreIndexMaxSize != default) opts.ObjectStoreIndexMaxSize = objectStoreIndexMaxSize;

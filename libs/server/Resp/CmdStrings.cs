@@ -95,6 +95,10 @@ namespace Garnet.server
         public static ReadOnlySpan<byte> XX => "XX"u8;
         public static ReadOnlySpan<byte> UNSAFETRUNCATELOG => "UNSAFETRUNCATELOG"u8;
         public static ReadOnlySpan<byte> SAMPLES => "SAMPLES"u8;
+        public static ReadOnlySpan<byte> RANK => "RANK"u8;
+        public static ReadOnlySpan<byte> rank => "rank"u8;
+        public static ReadOnlySpan<byte> MAXLEN => "MAXLEN"u8;
+        public static ReadOnlySpan<byte> maxlen => "maxlen"u8;
 
         /// <summary>
         /// Response strings

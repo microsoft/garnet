@@ -135,8 +135,8 @@ Note that this list is subject to change as we continue to expand our API comman
 |  | STATS | ➖ |
 | <span id="generic">**GENERIC**</span> | [PERSIST](generic-commands.md#persist) | ➕ |  |
 |  | [PEXPIRE](generic-commands.md#pexpire) | ➕ |  |
-|  | PEXPIREAT | ➖ |  |
-|  | PEXPIRETIME | ➖ |  |
+|  | [PEXPIREAT](generic-commands.md#pexpireat) | ➕ |  |
+|  | [PEXPIRETIME](generic-commands.md#pexpiretime) | ➕ |  |
 |  | [PTTL](generic-commands.md#pttl) | ➕ |  |
 |  | RANDOMKEY | ➖ |  |
 |  | [RENAME](generic-commands.md#rename) | ➕ |  |
@@ -192,12 +192,12 @@ Note that this list is subject to change as we continue to expand our API comman
 |  | [PFMERGE](analytics.md#pfmerge) | ➕ |  |
 |  | PFSELFTEST | ➖ |  |
 | <span id="keys">**KEYS**</span> | COPY | ➖ |  |
-|  | [DEL](generic-commands.md#del)  | ➕ |  |
+|  | [DEL](generic-commands.md#del) | ➕ |  |
 |  | DUMP | ➖ |  |
 |  | [EXISTS](generic-commands.md#exists) | ➕ |  |
 |  | [EXPIRE](generic-commands.md#expire) | ➕ |  |
-|  | EXPIREAT | ➖ |  |
-|  | EXPIRETIME | ➖ |  |
+|  | [EXPIREAT](generic-commands.md#expireat) | ➕ |  |
+|  | [EXPIRETIME](generic-commands.md#expiretime) | ➕ |  |
 |  | [KEYS](generic-commands.md#keys) | ➕ |  |
 |  | [MIGRATE](generic-commands.md#migrate) | ➕ |  |
 |  | MOVE | ➖ |  |
@@ -219,7 +219,7 @@ Note that this list is subject to change as we continue to expand our API comman
 |  | [LMOVE](data-structures.md#lmove) | ➕ |  |
 |  | LMPOP | ➖ |  |
 |  | [LPOP](data-structures.md#lpop) | ➕ |  |
-|  | LPOS | ➖ |  |
+|  | [LPOS](data-structures.md#lpos) | ➕ |  |
 |  | [LPUSH](data-structures.md#lpush) | ➕ |  |
 |  | [LPUSHX](data-structures.md#lpushx) | ➕ |  |
 |  | [LRANGE](data-structures.md#lrange) | ➕ |  |
@@ -377,7 +377,7 @@ Note that this list is subject to change as we continue to expand our API comman
 |  | XREVRANGE | ➖ |  |
 |  | XSETID | ➖ |  |
 |  | XTRIM | ➖ |  |
-| <span id="string">**STRING**</span> | APPEND | ➕ |  |
+| <span id="string">**STRING**</span> | [APPEND](raw-string.md#append) | ➕ |  |
 |  | [DECR](raw-string.md#decr) | ➕ |  |
 |  | [DECRBY](raw-string.md#decrby) | ➕ |  |
 |  | [GET](raw-string.md#get) | ➕ |  |
