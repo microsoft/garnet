@@ -269,6 +269,22 @@ namespace Garnet.server
         }
 
         /// <summary>
+        /// GETSET
+        /// </summary>
+        private bool NetworkGETSET<TGarnetApi>(ref TGarnetApi storageApi)
+            where TGarnetApi : IGarnetApi
+        {
+            Debug.Assert(parseState.Count == 2);
+            Debug.Assert(parseStateBuffer.Length >= 3);
+            var key = parseState.GetArgSliceByRef(0);
+            var value = parseState.GetArgSliceByRef(1);
+            var getOption = ArgSlice.FromPinnedSpan([(byte)'G', (byte)'E', (byte)'T']);
+            parseState.InitializeWithArguments(ref parseStateBuffer, key, value, getOption);
+
+            return NetworkSETEXNX(ref storageApi);
+        }
+
+        /// <summary>
         /// SETRANGE
         /// </summary>
         private bool NetworkSetRange<TGarnetApi>(ref TGarnetApi storageApi)
@@ -389,6 +405,22 @@ namespace Garnet.server
                 SendAndReset();
 
             return true;
+        }
+
+        /// <summary>
+        /// SETNX
+        /// </summary>
+        private bool NetworkSETNX<TGarnetApi>(bool highPrecision, ref TGarnetApi storageApi)
+            where TGarnetApi : IGarnetApi
+        {
+            Debug.Assert(parseState.Count == 2);
+            Debug.Assert(parseStateBuffer.Length >= 3);
+            var key = parseState.GetArgSliceByRef(0);
+            var value = parseState.GetArgSliceByRef(1);
+            var getOption = ArgSlice.FromPinnedSpan([(byte)'N', (byte)'X']);
+            parseState.InitializeWithArguments(ref parseStateBuffer, key, value, getOption);
+
+            return NetworkSETEXNX(ref storageApi);
         }
 
         enum ExpirationOption : byte

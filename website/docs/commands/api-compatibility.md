@@ -106,7 +106,7 @@ Note that this list is subject to change as we continue to expand our API comman
 |  | [SET-CONFIG-EPOCH](cluster.md#cluster-set-config-epoch) | ➕ |  |
 |  | [SETSLOT](cluster.md#cluster-setslot) | ➕ |  |
 |  | SHARDS | ➖ |  |
-|  | [SLAVES](cluster.md#slaves) | ➕ |  |
+|  | [SLAVES](cluster.md#slaves) | ➕ | (Deprecated) |
 |  | [SLOTS](cluster.md#cluster-slots) | ➕ | (deprecated) |
 | <span id="command">**COMMAND**</span> | [COMMAND](server.md#command) | ➕ |  |
 |  | [COUNT](server.md#command-count) | ➕ |  |
@@ -120,7 +120,7 @@ Note that this list is subject to change as we continue to expand our API comman
 |  | [ECHO](generic-commands.md#echo) | ➕ |  |
 |  | [HELLO](generic-commands.md#hello) | ➕ |  |
 |  | [PING](generic-commands.md#ping) | ➕ |  |
-|  | [QUIT](generic-commands.md#quit) | ➕ |  |
+|  | [QUIT](generic-commands.md#quit) | ➕ | (Deprecated) |
 |  | [SELECT](generic-commands.md#select) | ➕ |  |
 | <span id="functions">**FUNCTIONS**</span> | FCALL | ➖ |  |
 |  | FCALL_RO | ➖ |  |
@@ -155,10 +155,10 @@ Note that this list is subject to change as we continue to expand our API comman
 |  | [GEODIST](data-structures.md#geodist) | ➕ |  |
 |  | [GEOHASH](data-structures.md#geohash) | ➕ |  |
 |  | [GEOPOS](data-structures.md#geopos) | ➕ |  |
-|  | GEORADIUS | ➖ |  |
-|  | GEORADIUS_RO | ➖ |  |
-|  | GEORADIUSBYMEMBER | ➖ |  |
-|  | GEORADIUSBYMEMBER_RO | ➖ |  |
+|  | GEORADIUS | ➖ | (Deprecated) |
+|  | GEORADIUS_RO | ➖ | (Deprecated) |
+|  | GEORADIUSBYMEMBER | ➖ | (Deprecated) |
+|  | GEORADIUSBYMEMBER_RO | ➖ | (Deprecated) |
 |  | [GEOSEARCH](data-structures.md#geosearch) | ➕ | Partially Implemented |
 |  | GEOSEARCHSTORE | ➖ |  |
 | <span id="hash">**HASH**</span> | [HDEL](data-structures.md#hdel) | ➕ |  |
@@ -173,7 +173,7 @@ Note that this list is subject to change as we continue to expand our API comman
 |  | [HKEYS](data-structures.md#hkeys) | ➕ |  |
 |  | [HLEN](data-structures.md#hlen) | ➕ |  |
 |  | [HMGET](data-structures.md#hmget) | ➕ |  |
-|  | [HMSET](data-structures.md#hmset) | ➕ |  |
+|  | [HMSET](data-structures.md#hmset) | ➕ | (Deprecated) |
 |  | HPERSIST | ➖ |  |
 |  | HPEXPIRE | ➖ |  |
 |  | HPEXPIREAT | ➖ |  |
@@ -212,7 +212,7 @@ Note that this list is subject to change as we continue to expand our API comman
 |  | BLMPOP | ➖ |  |
 |  | [BLPOP](data-structures.md#blpop) | ➕ |  |
 |  | [BRPOP](data-structures.md#brpop) | ➕ |  |
-|  | BRPOPLPUSH | ➖ |  |
+|  | BRPOPLPUSH | ➖ | (Deprecated) |
 |  | [LINDEX](data-structures.md#lindex) | ➕ |  |
 |  | [LINSERT](data-structures.md#linsert) | ➕ |  |
 |  | [LLEN](data-structures.md#llen) | ➕ |  |
@@ -227,7 +227,7 @@ Note that this list is subject to change as we continue to expand our API comman
 |  | [LSET](data-structures.md#lset) | ➕ |  |
 |  | [LTRIM](data-structures.md#ltrim) | ➕ |  |
 |  | [RPOP](data-structures.md#rpop) | ➕ |  |
-|  | [RPOPLPUSH](data-structures.md#rpoplpush) | ➕ |  |
+|  | [RPOPLPUSH](data-structures.md#rpoplpush) | ➕ | (Deprecated) |
 |  | [RPUSH](data-structures.md#rpush) | ➕ |  |
 |  | [RPUSHX](data-structures.md#rpushx) | ➕ |  |
 | <span id="memory">**MEMORY**</span> | DOCTOR | ➖ |  |
@@ -290,7 +290,7 @@ Note that this list is subject to change as we continue to expand our API comman
 |  | ROLE | ➖ |  |
 |  | [SAVE](checkpoint.md#save) | ➕ |  |
 |  | SHUTDOWN | ➖ |  |
-|  | SLAVEOF | ➖ |  |
+|  | SLAVEOF | ➖ | (Deprecated) |
 |  | SWAPDB | ➖ |  |
 |  | SYNC | ➖ |  |
 |  | [TIME](server.md#time) | ➕ |  |
@@ -338,17 +338,17 @@ Note that this list is subject to change as we continue to expand our API comman
 |  | [ZPOPMIN](data-structures.md#zpopmin) | ➕ |  |
 |  | [ZRANDMEMBER](data-structures.md#zrandmember) | ➕ |  |
 |  | [ZRANGE](data-structures.md#zrange) | ➕ |  |
-|  | [ZRANGEBYLEX](data-structures.md#zrangebylex) | ➕ |  |
-|  | [ZRANGEBYSCORE](data-structures.md#zrangebyscore) | ➕ |  |
+|  | [ZRANGEBYLEX](data-structures.md#zrangebylex) | ➕ | (Deprecated) |
+|  | [ZRANGEBYSCORE](data-structures.md#zrangebyscore) | ➕ | (Deprecated) |
 |  | ZRANGESTORE | ➖ |  |
 |  | [ZRANK](data-structures.md#zrank) | ➕ |  |
 |  | [ZREM](data-structures.md#zrem) | ➕ |  |
 |  | [ZREMRANGEBYLEX](data-structures.md#zremrangebylex) | ➕ |  |
 |  | [ZREMRANGEBYRANK](data-structures.md#zremrangebyrank) | ➕ |  |
 |  | [ZREMRANGEBYSCORE](data-structures.md#zremrangebyscore) | ➕ |  |
-|  | [ZREVRANGE](data-structures.md#zrevrange) | ➕ |  |
-|  | ZREVRANGEBYLEX | ➖ |  |
-|  | [ZREVRANGEBYSCORE](data-structures.md#zrevrangebyscore) | ➕ |  |
+|  | [ZREVRANGE](data-structures.md#zrevrange) | ➕ | (Deprecated) |
+|  | ZREVRANGEBYLEX | ➖ | (Deprecated) |
+|  | [ZREVRANGEBYSCORE](data-structures.md#zrevrangebyscore) | ➕ | (Deprecated) |
 |  | [ZREVRANK](data-structures.md#zrevrank) | ➕ |  |
 |  | [ZSCAN](data-structures.md#zscan) | ➕ |  |
 |  | [ZSCORE](data-structures.md#zscore) | ➕ |  |
@@ -384,7 +384,7 @@ Note that this list is subject to change as we continue to expand our API comman
 |  | [GETDEL](raw-string.md#getdel) | ➕ |  |
 |  | GETEX | ➖ |  |
 |  | [GETRANGE](raw-string.md#getrange) | ➕ |  |
-|  | GETSET | ➖ |  |
+|  | [GETSET](raw-string.md#getset) | ➖ |  |
 |  | [INCR](raw-string.md#incr) | ➕ |  |
 |  | [INCRBY](raw-string.md#incrby) | ➕ |  |
 |  | INCRBYFLOAT | ➖ |  |
@@ -392,14 +392,13 @@ Note that this list is subject to change as we continue to expand our API comman
 |  | [MGET](raw-string.md#mget) | ➕ |  |
 |  | [MSET](raw-string.md#mset) | ➕ |  |
 |  | [MSETNX](raw-string.md#msetnx) | ➕ |  |
-|  | [PSETEX](raw-string.md#psetex) | ➕ |  |
+|  | [PSETEX](raw-string.md#psetex) | ➕ | (Deprecated) |
 |  | [SET](raw-string.md#set) | ➕ |  |
-|  | [SET ... NX](raw-string.md#set) | ➕ |  |
-|  | [SETEX](raw-string.md#setex) | ➕ |  |
-|  | SETNX | ➖ |  |
+|  | [SETEX](raw-string.md#setex) | ➕ | (Deprecated) |
+|  | [SETNX](raw-string.md#setnx) | ➖ |  |
 |  | [SETRANGE](raw-string.md#setrange) | ➕ |  |
 |  | [STRLEN](raw-string.md#strlen) | ➕ |  |
-|  | SUBSTR | ➖ |  |
+|  | SUBSTR | ➖ | (Deprecated) |
 | <span id="transactions">**TRANSACTIONS**</span> | [DISCARD](transactions.md#discard) | ➕ |  |
 |  | [EXEC](transactions.md#exec) | ➕ |  |
 |  | [MULTI](transactions.md#multi) | ➕ |  |

@@ -1976,6 +1976,35 @@
     "SubCommands": null
   },
   {
+    "Command": "GETSET",
+    "Name": "GETSET",
+    "IsInternal": false,
+    "Arity": 3,
+    "Flags": "DenyOom, Fast, Write",
+    "FirstKey": 1,
+    "LastKey": 1,
+    "Step": 1,
+    "AclCategories": "Fast, String, Write",
+    "Tips": null,
+    "KeySpecifications": [
+      {
+        "BeginSearch": {
+          "TypeDiscriminator": "BeginSearchIndex",
+          "Index": 1
+        },
+        "FindKeys": {
+          "TypeDiscriminator": "FindKeysRange",
+          "LastKey": 0,
+          "KeyStep": 1,
+          "Limit": 0
+        },
+        "Notes": null,
+        "Flags": "RW, Access, Update"
+      }
+    ],
+    "SubCommands": null
+  },
+  {
     "Command": "HDEL",
     "Name": "HDEL",
     "IsInternal": false,
@@ -4226,6 +4255,35 @@
     "SubCommands": null
   },
   {
+    "Command": "SETNX",
+    "Name": "SETNX",
+    "IsInternal": false,
+    "Arity": 3,
+    "Flags": "DenyOom, Fast, Write",
+    "FirstKey": 1,
+    "LastKey": 1,
+    "Step": 1,
+    "AclCategories": "Fast, String, Write",
+    "Tips": null,
+    "KeySpecifications": [
+      {
+        "BeginSearch": {
+          "TypeDiscriminator": "BeginSearchIndex",
+          "Index": 1
+        },
+        "FindKeys": {
+          "TypeDiscriminator": "FindKeysRange",
+          "LastKey": 0,
+          "KeyStep": 1,
+          "Limit": 0
+        },
+        "Notes": null,
+        "Flags": "OW, Insert"
+      }
+    ],
+    "SubCommands": null
+  },
+  {
     "Command": "SETRANGE",
     "Name": "SETRANGE",
     "IsInternal": false,
@@ -4608,6 +4666,35 @@
     "AclCategories": "PubSub, Slow",
     "Tips": null,
     "KeySpecifications": null,
+    "SubCommands": null
+  },
+  {
+    "Command": "SUBSTR",
+    "Name": "SUBSTR",
+    "IsInternal": false,
+    "Arity": 4,
+    "Flags": "ReadOnly",
+    "FirstKey": 1,
+    "LastKey": 1,
+    "Step": 1,
+    "AclCategories": "Read, Slow, String",
+    "Tips": null,
+    "KeySpecifications": [
+      {
+        "BeginSearch": {
+          "TypeDiscriminator": "BeginSearchIndex",
+          "Index": 1
+        },
+        "FindKeys": {
+          "TypeDiscriminator": "FindKeysRange",
+          "LastKey": 0,
+          "KeyStep": 1,
+          "Limit": 0
+        },
+        "Notes": null,
+        "Flags": "RO, Access"
+      }
+    ],
     "SubCommands": null
   },
   {
