@@ -714,6 +714,9 @@ namespace Tsavorite.core
         /// <summary>Minimum number of empty pages in circular buffer to be maintained to account for non-power-of-two size</summary>
         public int MinEmptyPageCount;
 
+        /// <summary>Maximum memory size in bytes</summary>
+        public long MaxMemorySizeBytes => (BufferSize - MinEmptyPageCount) * (long)PageSize;
+
         /// <summary>How many pages do we leave empty in the in-memory buffer (between 0 and BufferSize-1)</summary>
         public int EmptyPageCount
         {

@@ -1595,6 +1595,64 @@
     "SubCommands": null
   },
   {
+    "Command": "EXPIREAT",
+    "Name": "EXPIREAT",
+    "IsInternal": false,
+    "Arity": -3,
+    "Flags": "Fast, Write",
+    "FirstKey": 1,
+    "LastKey": 1,
+    "Step": 1,
+    "AclCategories": "Fast, KeySpace, Write",
+    "Tips": null,
+    "KeySpecifications": [
+      {
+        "BeginSearch": {
+          "TypeDiscriminator": "BeginSearchIndex",
+          "Index": 1
+        },
+        "FindKeys": {
+          "TypeDiscriminator": "FindKeysRange",
+          "LastKey": 0,
+          "KeyStep": 1,
+          "Limit": 0
+        },
+        "Notes": null,
+        "Flags": "RW, Update"
+      }
+    ],
+    "SubCommands": null
+  },
+  {
+    "Command": "EXPIRETIME",
+    "Name": "EXPIRETIME",
+    "IsInternal": false,
+    "Arity": 2,
+    "Flags": "Fast, ReadOnly",
+    "FirstKey": 1,
+    "LastKey": 1,
+    "Step": 1,
+    "AclCategories": "Fast, KeySpace, Read",
+    "Tips": null,
+    "KeySpecifications": [
+      {
+        "BeginSearch": {
+          "TypeDiscriminator": "BeginSearchIndex",
+          "Index": 1
+        },
+        "FindKeys": {
+          "TypeDiscriminator": "FindKeysRange",
+          "LastKey": 0,
+          "KeyStep": 1,
+          "Limit": 0
+        },
+        "Notes": null,
+        "Flags": "RO, Access"
+      }
+    ],
+    "SubCommands": null
+  },
+  {
     "Command": "FAILOVER",
     "Name": "FAILOVER",
     "IsInternal": false,
@@ -3279,6 +3337,64 @@
         },
         "Notes": null,
         "Flags": "RW, Update"
+      }
+    ],
+    "SubCommands": null
+  },
+  {
+    "Command": "PEXPIREAT",
+    "Name": "PEXPIREAT",
+    "IsInternal": false,
+    "Arity": -3,
+    "Flags": "Fast, Write",
+    "FirstKey": 1,
+    "LastKey": 1,
+    "Step": 1,
+    "AclCategories": "Fast, KeySpace, Write",
+    "Tips": null,
+    "KeySpecifications": [
+      {
+        "BeginSearch": {
+          "TypeDiscriminator": "BeginSearchIndex",
+          "Index": 1
+        },
+        "FindKeys": {
+          "TypeDiscriminator": "FindKeysRange",
+          "LastKey": 0,
+          "KeyStep": 1,
+          "Limit": 0
+        },
+        "Notes": null,
+        "Flags": "RW, Update"
+      }
+    ],
+    "SubCommands": null
+  },
+  {
+    "Command": "PEXPIRETIME",
+    "Name": "PEXPIRETIME",
+    "IsInternal": false,
+    "Arity": 2,
+    "Flags": "Fast, ReadOnly",
+    "FirstKey": 1,
+    "LastKey": 1,
+    "Step": 1,
+    "AclCategories": "Fast, KeySpace, Read",
+    "Tips": null,
+    "KeySpecifications": [
+      {
+        "BeginSearch": {
+          "TypeDiscriminator": "BeginSearchIndex",
+          "Index": 1
+        },
+        "FindKeys": {
+          "TypeDiscriminator": "FindKeysRange",
+          "LastKey": 0,
+          "KeyStep": 1,
+          "Limit": 0
+        },
+        "Notes": null,
+        "Flags": "RO, Access"
       }
     ],
     "SubCommands": null
