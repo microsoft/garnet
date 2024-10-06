@@ -13,6 +13,15 @@ namespace Garnet.server
     /// </summary>
     public interface IGarnetApi : IGarnetReadApi, IGarnetAdvancedApi
     {
+        #region GETEX
+
+        /// <summary>
+        /// GETEX
+        /// </summary>
+        GarnetStatus GETEX(ref SpanByte key, TimeSpan? expireTime, ref SpanByteAndMemory output);
+
+        #endregion
+
         #region SET
         /// <summary>
         /// SET

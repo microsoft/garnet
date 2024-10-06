@@ -75,6 +75,14 @@ namespace Garnet.server
             => storageSession.GET(key, out value, ref objectContext);
         #endregion
 
+        #region GETEX
+
+        /// <inheritdoc />
+        public GarnetStatus GETEX(ref SpanByte key, TimeSpan? expireTime, ref SpanByteAndMemory output)
+            => storageSession.GETEX(ref key, expireTime, ref output, ref context);
+
+        #endregion
+
         #region GETRANGE
         /// <inheritdoc />
         public GarnetStatus GETRANGE(ref SpanByte key, int sliceStart, int sliceLength, ref SpanByteAndMemory output)
