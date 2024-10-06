@@ -46,7 +46,7 @@ namespace Garnet.server
             for (var flagIdx = 0; flagIdx < flagCount; flagIdx++)
             {
                 if (!RespReadUtils.ReadSimpleString(out var strFlag, ref ptr, end)
-                    || !EnumUtils.TryParseEnumFromDescription<RespCommandFlags>(strFlag, out var flag))
+                    || !EnumUtils.TryParseRespCommandFlagsFromDescription(strFlag, out var flag))
                     return false;
                 flags |= flag;
             }
@@ -69,7 +69,7 @@ namespace Garnet.server
             for (var aclCatIdx = 0; aclCatIdx < aclCatCount; aclCatIdx++)
             {
                 if (!RespReadUtils.ReadSimpleString(out var strAclCat, ref ptr, end)
-                    || !EnumUtils.TryParseEnumFromDescription<RespAclCategories>(strAclCat.TrimStart('@'), out var aclCat))
+                    || !EnumUtils.TryParseRespAclCategoriesFromDescription(strAclCat.TrimStart('@'), out var aclCat))
                     return false;
                 aclCategories |= aclCat;
             }
@@ -153,7 +153,7 @@ namespace Garnet.server
                     for (var flagIdx = 0; flagIdx < flagsCount; flagIdx++)
                     {
                         if (!RespReadUtils.ReadSimpleString(out var strFlag, ref ptr, end)
-                            || !EnumUtils.TryParseEnumFromDescription<KeySpecificationFlags>(strFlag, out var flag))
+                            || !EnumUtils.TryParseKeySpecificationFlagsFromDescription(strFlag, out var flag))
                             return false;
                         flags |= flag;
                     }
