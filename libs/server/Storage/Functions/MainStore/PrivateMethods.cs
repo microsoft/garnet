@@ -217,6 +217,17 @@ namespace Garnet.server
                     (start, end) = NormalizeRange(start, end, len);
                     CopyRespTo(ref value, ref dst, start, end);
                     return;
+
+                case RespCommand.EXPIRETIME:
+                    var expireTime = ConvertUtils.UnixTimeInSecondsFromTicks(value.MetadataSize > 0 ? value.ExtraMetadata : -1);
+                    CopyRespNumber(expireTime, ref dst);
+                    return;
+
+                case RespCommand.PEXPIRETIME:
+                    var pexpireTime = ConvertUtils.UnixTimeInMillisecondsFromTicks(value.MetadataSize > 0 ? value.ExtraMetadata : -1);
+                    CopyRespNumber(pexpireTime, ref dst);
+                    return;
+
                 default:
                     throw new GarnetException("Unsupported operation on input");
             }

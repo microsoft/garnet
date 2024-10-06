@@ -136,7 +136,7 @@ Note that this list is subject to change as we continue to expand our API comman
 | <span id="generic">**GENERIC**</span> | [PERSIST](generic-commands.md#persist) | ➕ |  |
 |  | [PEXPIRE](generic-commands.md#pexpire) | ➕ |  |
 |  | [PEXPIREAT](generic-commands.md#pexpireat) | ➕ |  |
-|  | PEXPIRETIME | ➖ |  |
+|  | [PEXPIRETIME](generic-commands.md#pexpiretime) | ➕ |  |
 |  | [PTTL](generic-commands.md#pttl) | ➕ |  |
 |  | RANDOMKEY | ➖ |  |
 |  | [RENAME](generic-commands.md#rename) | ➕ |  |
@@ -197,7 +197,7 @@ Note that this list is subject to change as we continue to expand our API comman
 |  | [EXISTS](generic-commands.md#exists) | ➕ |  |
 |  | [EXPIRE](generic-commands.md#expire) | ➕ |  |
 |  | [EXPIREAT](generic-commands.md#expireat) | ➕ |  |
-|  | EXPIRETIME | ➖ |  |
+|  | [EXPIRETIME](generic-commands.md#expiretime) | ➕ |  |
 |  | [KEYS](generic-commands.md#keys) | ➕ |  |
 |  | [MIGRATE](generic-commands.md#migrate) | ➕ |  |
 |  | MOVE | ➖ |  |

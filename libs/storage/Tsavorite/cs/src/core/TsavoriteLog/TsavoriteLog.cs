@@ -158,6 +158,16 @@ namespace Tsavorite.core
         readonly bool AutoCommit;
 
         /// <summary>
+        /// Maximum memory size in bytes
+        /// </summary>
+        public long MaxMemorySizeBytes => allocator.MaxMemorySizeBytes;
+
+        /// <summary>
+        /// Actual memory used by log
+        /// </summary>
+        public long MemorySizeBytes => ((long)(allocator.AllocatedPageCount + allocator.OverflowPageCount)) << allocator.LogPageSizeBits;
+
+        /// <summary>
         /// Create new log instance
         /// </summary>
         /// <param name="logSettings">Log settings</param>

@@ -4427,6 +4427,36 @@ namespace Garnet.test.Resp.ACL
         }
 
         [Test]
+        public async Task ExpireTimeACLsAsync()
+        {
+            await CheckCommandsAsync(
+                "EXPIRETIME",
+                [DoExpireTimeAsync]
+            );
+
+            static async Task DoExpireTimeAsync(GarnetClient client)
+            {
+                var val = await client.ExecuteForLongResultAsync("EXPIRETIME", ["foo"]);
+                ClassicAssert.AreEqual(-2, val);
+            }
+        }
+
+        [Test]
+        public async Task PExpireTimeACLsAsync()
+        {
+            await CheckCommandsAsync(
+                "PEXPIRETIME",
+                [DoPExpireTimeAsync]
+            );
+
+            static async Task DoPExpireTimeAsync(GarnetClient client)
+            {
+                var val = await client.ExecuteForLongResultAsync("PEXPIRETIME", ["foo"]);
+                ClassicAssert.AreEqual(-2, val);
+            }
+        }
+
+        [Test]
         public async Task RenameACLsAsync()
         {
             await CheckCommandsAsync(

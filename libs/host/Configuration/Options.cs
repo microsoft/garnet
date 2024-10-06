@@ -52,7 +52,7 @@ namespace Garnet
         public string SegmentSize { get; set; }
 
         [MemorySizeValidation]
-        [Option('i', "index", Required = false, HelpText = "Size of hash index in bytes (rounds down to power of 2)")]
+        [Option('i', "index", Required = false, HelpText = "Start size of hash index in bytes (rounds down to power of 2)")]
         public string IndexSize { get; set; }
 
         [MemorySizeValidation(false)]
@@ -64,11 +64,11 @@ namespace Garnet
         public int MutablePercent { get; set; }
 
         [MemorySizeValidation(false)]
-        [Option("obj-total-memory", Required = false, HelpText = "Total object store log memory used including heap memory in bytes")]
-        public string ObjectStoreTotalMemorySize { get; set; }
+        [Option("obj-heap-memory", Required = false, HelpText = "Object store heap memory size in bytes (Sum of size taken up by all object instances in the heap)")]
+        public string ObjectStoreHeapMemorySize { get; set; }
 
         [MemorySizeValidation]
-        [Option("obj-memory", Required = false, HelpText = "Object store log memory used in bytes excluding heap memory")]
+        [Option("obj-log-memory", Required = false, HelpText = "Object store log memory used in bytes (Size of only the log with references to heap objects, excludes size of heap memory consumed by the objects themselves referred to from the log)")]
         public string ObjectStoreLogMemorySize { get; set; }
 
         [MemorySizeValidation]
@@ -80,7 +80,7 @@ namespace Garnet
         public string ObjectStoreSegmentSize { get; set; }
 
         [MemorySizeValidation]
-        [Option("obj-index", Required = false, HelpText = "Size of object store hash index in bytes (rounds down to power of 2)")]
+        [Option("obj-index", Required = false, HelpText = "Start size of object store hash index in bytes (rounds down to power of 2)")]
         public string ObjectStoreIndexSize { get; set; }
 
         [MemorySizeValidation(false)]
@@ -575,7 +575,7 @@ namespace Garnet
                 IndexSize = IndexSize,
                 IndexMaxSize = IndexMaxSize,
                 MutablePercent = MutablePercent,
-                ObjectStoreTotalMemorySize = ObjectStoreTotalMemorySize,
+                ObjectStoreHeapMemorySize = ObjectStoreHeapMemorySize,
                 ObjectStoreLogMemorySize = ObjectStoreLogMemorySize,
                 ObjectStorePageSize = ObjectStorePageSize,
                 ObjectStoreSegmentSize = ObjectStoreSegmentSize,
