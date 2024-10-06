@@ -98,10 +98,11 @@ namespace Garnet.common
         }
 
         /// <summary>
-        /// Convert double into sequence of ASCII bytes
+        /// Convert double number into sequence of ASCII bytes
         /// </summary>
-        /// <param name="value">Double value to convert</param>
-        /// <param name="length">Number of digits in value</param>
+        /// <param name="value">Value to convert</param>
+        /// <param name="integerDigits">Number of digits in the integer part of the double value</param>
+        /// <param name="fractionalDigits">Number of digits in the fractional part of the double value</param>
         /// <param name="result">Byte pointer, will be updated to point after the written number</param>
         public static unsafe void DoubleToBytes(double value, int integerDigits, int fractionalDigits, ref byte* result)
         {
