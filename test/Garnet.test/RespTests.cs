@@ -3543,7 +3543,7 @@ namespace Garnet.test
         #region GETEX
 
         [Test]
-        public void GetEXBasicTestWithSERedisApi()
+        public void GetExpiryBasicTestWithSERedisApi()
         {
             using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
             var db = redis.GetDatabase(0);
@@ -3567,7 +3567,7 @@ namespace Garnet.test
         [Test]
         [TestCase(null, null)]
         [TestCase(1, 1)]
-        public void GetEXWithoutOptions(int? initialTimespanMins, int? expectedTimespanMins)
+        public void GetExpiryWithoutOptions(int? initialTimespanMins, int? expectedTimespanMins)
         {
             using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
             var db = redis.GetDatabase(0);
@@ -3617,7 +3617,7 @@ namespace Garnet.test
         [TestCase(1, 2, true, true)]
         [TestCase(2, 1, false, true)]
         [TestCase(2, 1, true, true)]
-        public void GetEXWithExpireOptions(int? initialTimespanMins, int newTimespanMins, bool isMilliseconds, bool isUnixTimestamp)
+        public void GetExpiryWithExpireOptions(int? initialTimespanMins, int newTimespanMins, bool isMilliseconds, bool isUnixTimestamp)
         {
             using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
             var db = redis.GetDatabase(0);
@@ -3668,7 +3668,7 @@ namespace Garnet.test
         [Test]
         [TestCase(null)]
         [TestCase(1)]
-        public void GetEXWithPersistOptions(int? initialTimespanMins)
+        public void GetExpiryWithPersistOptions(int? initialTimespanMins)
         {
             using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
             var db = redis.GetDatabase(0);
@@ -3694,7 +3694,7 @@ namespace Garnet.test
         }
 
         [Test]
-        public void GetEXWithUnknownKey()
+        public void GetExpiryWithUnknownKey()
         {
             using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
             var db = redis.GetDatabase(0);
@@ -3712,7 +3712,7 @@ namespace Garnet.test
         [TestCase("EX,-1")]
         [TestCase("PXAT,0")]
         [TestCase("UNKNOWN")]
-        public void GetEXWitInvalidOptions(string optionsInput)
+        public void GetExpiryWitInvalidOptions(string optionsInput)
         {
             using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
             var db = redis.GetDatabase(0);

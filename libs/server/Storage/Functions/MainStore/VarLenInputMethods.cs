@@ -1,6 +1,7 @@
 ﻿// Copyright (c) Microsoft Corporation.
 // Licensed under the MIT license.
 
+using System.Diagnostics;
 using Garnet.common;
 using Tsavorite.core;
 
@@ -186,11 +187,8 @@ namespace Garnet.server
                         break;
 
                     case RespCommand.GETEX:
-                        if (input.ExtraMetadata > 0)
-                        {
-                            return sizeof(int) + t.Length + input.MetadataSize;
-                        }
-                        break;
+                        Debug.Assert(input.ExtraMetadata > 0);
+                        return sizeof(int) + t.Length + input.MetadataSize;
 
                     case RespCommand.APPEND:
                         var valueLength = *((int*)(inputPtr + RespInputHeader.Size));
