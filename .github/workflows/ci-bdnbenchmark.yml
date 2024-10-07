@@ -83,16 +83,15 @@ jobs:
           # What benchmark tool created output file
           tool: 'benchmarkdotnet'
 
-          # This is minimal setup & Commit comment & Job Summary (all works)
-#          output-file-path: ./test/BDNPerfTests/BenchmarkDotNet.Artifacts/results/BDN.benchmark.Resp.RespParseStress-report-full-compressed.json
+          # Need for both commit comment and charts
+          output-file-path: ./test/BDNPerfTests/BenchmarkDotNet.Artifacts/results/BDN.benchmark.Resp.RespParseStress-report-full-compressed.json
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+
+          # This is for commit comment & Job Summary
           external-data-json-path: ./cache/benchmark-data.json
           fail-on-alert: true
-#          github-token: ${{ secrets.GITHUB_TOKEN }}
           comment-on-alert: true
           summary-always: true
 
-
-          # This is Charts on GitHub pages
-          output-file-path: ./test/BDNPerfTests/BenchmarkDotNet.Artifacts/results/BDN.benchmark.Resp.RespParseStress-report-full-compressed.json
-          github-token: ${{ secrets.GITHUB_TOKEN }}
+          # This is for Charts on GitHub pages
           auto-push: false
