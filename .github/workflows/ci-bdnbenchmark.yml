@@ -85,11 +85,11 @@ jobs:
 
           # This is minimal setup & Commit comment & Job Summary (all works)
 #          output-file-path: ./test/BDNPerfTests/BenchmarkDotNet.Artifacts/results/BDN.benchmark.Resp.RespParseStress-report-full-compressed.json
-#          external-data-json-path: ./cache/benchmark-data.json
-#          fail-on-alert: true
+          external-data-json-path: ./cache/benchmark-data.json
+          fail-on-alert: true
 #          github-token: ${{ secrets.GITHUB_TOKEN }}
-#          comment-on-alert: true
-#          summary-always: true
+          comment-on-alert: true
+          summary-always: true
 
 
           # This is Charts on GitHub pages
