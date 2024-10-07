@@ -228,6 +228,7 @@ namespace Garnet.server
 
         COMMAND,
         COMMAND_COUNT,
+        COMMAND_DOCS,
         COMMAND_INFO,
 
         MEMORY,
@@ -334,6 +335,7 @@ namespace Garnet.server
             // Command
             RespCommand.COMMAND,
             RespCommand.COMMAND_COUNT,
+            RespCommand.COMMAND_DOCS,
             RespCommand.COMMAND_INFO,
             RespCommand.MEMORY_USAGE,
             // Config
@@ -1572,9 +1574,15 @@ namespace Garnet.server
                 {
                     return RespCommand.COMMAND_COUNT;
                 }
-                else if (subCommand.SequenceEqual(CmdStrings.INFO))
+
+                if (subCommand.SequenceEqual(CmdStrings.INFO))
                 {
                     return RespCommand.COMMAND_INFO;
+                }
+
+                if (subCommand.SequenceEqual(CmdStrings.DOCS))
+                {
+                    return RespCommand.COMMAND_DOCS;
                 }
             }
             else if (command.SequenceEqual(CmdStrings.PING))
