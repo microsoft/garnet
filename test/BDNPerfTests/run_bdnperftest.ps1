@@ -100,6 +100,11 @@ if ($configFile -notlike "*.json") {
     $configFile += ".json"
 }
 
+# This is special case that allows passing test without specifying CI_BDN_Confi_ at the beginning - need for perf test
+if ($configFile -notlike "CI_BDN_Config_*") {
+    $configFile = "CI_BDN_Config_" + $configFile  
+}
+
 # Read the test config file and convert the JSON to a PowerShell object
 $fullConfiFileAndPath = "ConfigFiles/$configFile"
 if (-not (Test-Path -Path $fullConfiFileAndPath)) {

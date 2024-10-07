@@ -38,7 +38,8 @@ jobs:
         os: [ ubuntu-latest, windows-latest ]
         framework: [ 'net8.0' ]
         configuration: [ 'Release' ]
-        test: [ 'CI_BDN_Config_RespParseStress', 'CI_BDN_Config_RespTsavoriteStress', 'CI_BDN_Config_RespClusterBench', 'CI_BDN_Config_RespClusterMigrateBench', 'CI_BDN_Config_Lua' ]
+        # ORIGINAL test: [ 'CI_BDN_Config_RespParseStress', 'CI_BDN_Config_RespTsavoriteStress', 'CI_BDN_Config_RespClusterBench', 'CI_BDN_Config_RespClusterMigrateBench', 'CI_BDN_Config_Lua' ]
+        test: [ 'RespParseStress', 'RespTsavoriteStress', 'RespClusterBench', 'RespClusterMigrateBench', 'Lua' ]
     steps:
       - name: Check out code
         uses: actions/checkout@v4
@@ -83,7 +84,7 @@ jobs:
           tool: 'benchmarkdotnet'
 
           # Need for both commit comment and charts
-          output-file-path: ./test/BDNPerfTests/BenchmarkDotNet.Artifacts/results/BDN.benchmark.Resp.RespParseStress-report-full-compressed.json
+          output-file-path: ./test/BDNPerfTests/BenchmarkDotNet.Artifacts/results/BDN.benchmark.Resp.${{ matrix.test }}-report-full-compressed.json
           github-token: ${{ secrets.GITHUB_TOKEN }}
 
           # This is for commit comment & Job Summary
