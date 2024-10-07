@@ -83,9 +83,9 @@ namespace Garnet.server
 
             this.respServerSession = new RespServerSession(0, networkSender: null, storeWrapper: replayAofStoreWrapper, subscribeBroker: null, authenticator: null, enableScripts: false);
 
-            var session = respServerSession.StorageSession.basicContext.Session;
+            var session = respServerSession.storageSession.basicContext.Session;
             basicContext = session.BasicContext;
-            var objectStoreSession = respServerSession.StorageSession.objectStoreBasicContext.Session;
+            var objectStoreSession = respServerSession.storageSession.objectStoreBasicContext.Session;
             if (objectStoreSession is not null)
                 objectStoreBasicContext = objectStoreSession.BasicContext;
 

@@ -15,8 +15,18 @@ namespace Garnet.server
     using ObjectStoreAllocator = GenericAllocator<byte[], IGarnetObject, StoreFunctions<byte[], IGarnetObject, ByteArrayKeyComparer, DefaultRecordDisposer<byte[], IGarnetObject>>>;
     using ObjectStoreFunctions = StoreFunctions<byte[], IGarnetObject, ByteArrayKeyComparer, DefaultRecordDisposer<byte[], IGarnetObject>>;
 
+    using MainStoreDualContext = DualContext<SpanByte, SpanByte, SpanByte, SpanByteAndMemory, long, MainSessionFunctions,
+        /* MainStoreFunctions */ StoreFunctions<SpanByte, SpanByte, SpanByteComparer, SpanByteRecordDisposer>,
+        /* MainStoreAllocator */ SpanByteAllocator<StoreFunctions<SpanByte, SpanByte, SpanByteComparer, SpanByteRecordDisposer>>>;
+    using ObjectStoreDualContext = DualContext<byte[], IGarnetObject, ObjectInput, GarnetObjectStoreOutput, long, ObjectSessionFunctions,
+        /* ObjectStoreFunctions */ StoreFunctions<byte[], IGarnetObject, ByteArrayKeyComparer, DefaultRecordDisposer<byte[], IGarnetObject>>,
+        /* ObjectStoreAllocator */ GenericAllocator<byte[], IGarnetObject, StoreFunctions<byte[], IGarnetObject, ByteArrayKeyComparer, DefaultRecordDisposer<byte[], IGarnetObject>>>>;
+
     sealed partial class StorageSession : IDisposable
     {
+        private ushort MainStorePartitionId = 0;
+        private ushort ObjectStorePartitionId = 1;
+
         /// <summary>
         /// Returns the remaining time to live of a key that has a timeout.
         /// </summary>
@@ -33,6 +43,8 @@ namespace Garnet.server
             where TContext : ITsavoriteContext<SpanByte, SpanByte, SpanByte, SpanByteAndMemory, long, MainSessionFunctions, MainStoreFunctions, MainStoreAllocator>
             where TObjectContext : ITsavoriteContext<byte[], IGarnetObject, ObjectInput, GarnetObjectStoreOutput, long, ObjectSessionFunctions, ObjectStoreFunctions, ObjectStoreAllocator>
         {
+            Debug.Assert(typeof(TContext) == typeof(MainStoreDualContext), "Expected Dual Context");
+            Debug.Assert(typeof(TObjectContext) == typeof(ObjectStoreDualContext), "Expected Dual ObjectContext");
             int inputSize = sizeof(int) + RespInputHeader.Size;
             byte* pbCmdInput = stackalloc byte[inputSize];
 
@@ -42,43 +54,73 @@ namespace Garnet.server
             (*(RespInputHeader*)pcurr).cmd = milliseconds ? RespCommand.PTTL : RespCommand.TTL;
             (*(RespInputHeader*)pcurr).flags = 0;
 
-            if (storeType == StoreType.Main || storeType == StoreType.All)
+            var locker = new DualClientLocker();
+            var epochThread = new SafeEpochThread<KernelSession>();
+            HashEntryInfo hei = default;
+
+            try
             {
-                var status = context.Read(ref key, ref Unsafe.AsRef<SpanByte>(pbCmdInput), ref output);
+                // TODO: Lock or unlock based on IsInTransaction; propagate to retry loop
+                Status status = Kernel.EnterForRead(ref kernelSession, locker, epochThread, GetMainStoreKeyHashCode64(ref key), MainStorePartitionId, out hei);
+                if (!status.IsCompletedSuccessfully)
+                    return GarnetStatus.NOTFOUND;
 
-                if (status.IsPending)
+                if (storeType == StoreType.Main || storeType == StoreType.All)
                 {
-                    StartPendingMetrics();
-                    CompletePendingForSession(ref status, ref output, ref context);
-                    StopPendingMetrics();
-                }
+                    status = context.Read(ref key, ref Unsafe.AsRef<SpanByte>(pbCmdInput), ref output);
 
-                if (status.Found) return GarnetStatus.OK;
-            }
-
-            if ((storeType == StoreType.Object || storeType == StoreType.All) && !objectStoreBasicContext.IsNull)
-            {
-                var objInput = new ObjectInput
-                {
-                    header = new RespInputHeader
+                    if (status.IsPending)
                     {
-                        cmd = milliseconds ? RespCommand.PTTL : RespCommand.TTL,
-                        type = milliseconds ? GarnetObjectType.PTtl : GarnetObjectType.Ttl,
-                    },
-                };
+                        // TODO: Propagate epochThread to retry loop
+                        epochThread.EndUnsafe(ref kernelSession);
+                        StartPendingMetrics();
+                        CompletePendingForSession(ref status, ref output, ref context);
+                        StopPendingMetrics();
+                        epochThread.BeginUnsafe(ref kernelSession);
+                    }
 
-                var keyBA = key.ToByteArray();
-                var objO = new GarnetObjectStoreOutput { spanByteAndMemory = output };
-                var status = objectContext.Read(ref keyBA, ref objInput, ref objO);
-
-                if (status.IsPending)
-                    CompletePendingForObjectStoreSession(ref status, ref objO, ref objectContext);
-
-                if (status.Found)
-                {
-                    output = objO.spanByteAndMemory;
-                    return GarnetStatus.OK;
+                    if (status.Found)
+                        return GarnetStatus.OK;
                 }
+
+                if ((storeType == StoreType.Object || storeType == StoreType.All) && !objectStoreBasicContext.IsNull)
+                {
+                    var objInput = new ObjectInput
+                    {
+                        header = new RespInputHeader
+                        {
+                            cmd = milliseconds ? RespCommand.PTTL : RespCommand.TTL,
+                            type = milliseconds ? GarnetObjectType.PTtl : GarnetObjectType.Ttl,
+                        },
+                    };
+
+                    var keyBA = key.ToByteArray();
+
+                    Debug.Assert(hei.HashCodeEquals(GetObjectStoreKeyHashCode64(ref keyBA)), "Main and Object hash codes are not the same");
+                    status = Kernel.EnterForReadDual2(ObjectStorePartitionId, ref hei);
+                    if (!status.IsCompletedSuccessfully)
+                        return GarnetStatus.NOTFOUND;
+
+                    var objO = new GarnetObjectStoreOutput { spanByteAndMemory = output };
+                    status = objectContext.Read(ref keyBA, ref objInput, ref objO);
+
+                    if (status.IsPending)
+                    { 
+                        epochThread.EndUnsafe(ref kernelSession);
+                        CompletePendingForObjectStoreSession(ref status, ref objO, ref objectContext);
+                        epochThread.BeginUnsafe(ref kernelSession);
+                    }
+
+                    if (status.Found)
+                    {
+                        output = objO.spanByteAndMemory;
+                        return GarnetStatus.OK;
+                    }
+                }
+            }
+            finally
+            {
+                Kernel.ExitForRead(ref kernelSession, locker, epochThread, ref hei);
             }
             return GarnetStatus.NOTFOUND;
         }

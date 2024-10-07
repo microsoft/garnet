@@ -223,7 +223,7 @@ namespace Garnet.server
                     // If the key already has a non-empty observer queue, it does not have an item to retrieve
                     // Otherwise, try to retrieve next available item
                     if ((KeysToObservers.ContainsKey(key) && KeysToObservers[key].Count > 0) ||
-                        !TryGetNextItem(key, observer.Session.StorageSession, observer.Command, observer.CommandArgs,
+                        !TryGetNextItem(key, observer.Session.storageSession, observer.Command, observer.CommandArgs,
                             out _, out var nextItem)) continue;
 
                     // An item was found - set the observer result and return
@@ -279,7 +279,7 @@ namespace Garnet.server
                     }
 
                     // Try to get next available item from object stored in key
-                    if (!TryGetNextItem(key, observer.Session.StorageSession, observer.Command, observer.CommandArgs,
+                    if (!TryGetNextItem(key, observer.Session.storageSession, observer.Command, observer.CommandArgs,
                             out var currCount, out var nextItem))
                     {
                         // If unsuccessful getting next item but there is at least one item in the collection,

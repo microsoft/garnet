@@ -139,8 +139,10 @@ namespace Tsavorite.core
         /// <inheritdoc />
         public bool Equals(ref byte[] key1, ref byte[] key2) => key1.AsSpan().SequenceEqual(key2);
 
+        public unsafe long GetHashCode64(ref byte[] key) => StaticGetHashCode64(ref key);
+
         /// <inheritdoc />
-        public unsafe long GetHashCode64(ref byte[] key)
+        public static unsafe long StaticGetHashCode64(ref byte[] key)
         {
             // Use locals in case the record space is cleared.
             byte[] k = key;

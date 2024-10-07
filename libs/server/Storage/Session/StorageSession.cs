@@ -49,7 +49,9 @@ namespace Garnet.server
         readonly ILogger logger;
         private readonly CollectionItemBroker itemBroker;
 
-        internal TsavoriteKernel TsavoriteKernel => txnManager.TsavoriteKernel;
+        internal TsavoriteKernel Kernel => txnManager.TsavoriteKernel;
+        private KernelSession kernelSession;
+        internal ref KernelSession KernelSession => ref kernelSession;
 
         public int SessionID => basicContext.Session.ID;
         public int ObjectStoreSessionID => objectStoreBasicContext.Session.ID;
@@ -70,6 +72,8 @@ namespace Garnet.server
 
             functionsState = storeWrapper.CreateFunctionsState();
 
+            kernelSession = new(this);
+
             var functions = new MainSessionFunctions(functionsState);
             session = storeWrapper.store.NewSession<SpanByte, SpanByteAndMemory, long, MainSessionFunctions>(functions);
 
@@ -89,6 +93,9 @@ namespace Garnet.server
             HeadAddress = storeWrapper.store.Log.HeadAddress;
             ObjectScanCountLimit = storeWrapper.serverOptions.ObjectScanCountLimit;
         }
+
+        internal long GetMainStoreKeyHashCode64(ref SpanByte key) => SpanByteComparer.StaticGetHashCode64(ref key);
+        internal long GetObjectStoreKeyHashCode64(ref byte[] key) => ByteArrayKeyComparer.StaticGetHashCode64(ref key);
 
         public void Dispose()
         {

@@ -94,8 +94,8 @@ namespace Garnet.server
         byte* dcurr, dend;
         bool toDispose;
 
-        internal RespKernelSession kernelSession;
-        public StorageSession StorageSession => kernelSession.storageSession;
+        internal ref KernelSession KernelSession => ref storageSession.KernelSession;
+        internal StorageSession storageSession;
 
         int opCount;
         internal BasicGarnetApi basicGarnetApi;
@@ -209,11 +209,11 @@ namespace Garnet.server
             this.scratchBufferManager = new ScratchBufferManager();
 
             // Create storage session and API
-            this.kernelSession = new(new StorageSession(storeWrapper, scratchBufferManager, sessionMetrics, LatencyMetrics, logger));
+            this.storageSession = new StorageSession(storeWrapper, scratchBufferManager, sessionMetrics, LatencyMetrics, logger);
 
-            this.basicGarnetApi = new BasicGarnetApi(StorageSession, StorageSession.basicContext, StorageSession.objectStoreBasicContext);
-            this.lockableGarnetApi = new LockableGarnetApi(StorageSession, StorageSession.lockableContext, StorageSession.objectStoreLockableContext);
-            this.dualGarnetApi = new DualGarnetApi(StorageSession, StorageSession.dualContext, StorageSession.objectStoreDualContext);
+            this.basicGarnetApi = new BasicGarnetApi(storageSession, storageSession.basicContext, storageSession.objectStoreBasicContext);
+            this.lockableGarnetApi = new LockableGarnetApi(storageSession, storageSession.lockableContext, storageSession.objectStoreLockableContext);
+            this.dualGarnetApi = new DualGarnetApi(storageSession, storageSession.dualContext, storageSession.objectStoreDualContext);
 
             this.storeWrapper = storeWrapper;
             this.subscribeBroker = subscribeBroker;
@@ -225,8 +225,8 @@ namespace Garnet.server
             // Associate new session with default user and automatically authenticate, if possible
             this.AuthenticateUser(Encoding.ASCII.GetBytes(this.storeWrapper.accessControlList.GetDefaultUser().Name));
 
-            txnManager = new TransactionManager(storeWrapper.TsavoriteKernel, this, StorageSession, scratchBufferManager, storeWrapper.serverOptions.EnableCluster, logger);
-            StorageSession.txnManager = txnManager;
+            txnManager = new TransactionManager(storeWrapper.TsavoriteKernel, this, storageSession, scratchBufferManager, storeWrapper.serverOptions.EnableCluster, logger);
+            storageSession.txnManager = txnManager;
 
             clusterSession = storeWrapper.clusterProvider?.CreateClusterSession(txnManager, this._authenticator, this._user, sessionMetrics, basicGarnetApi, networkSender, logger);
             clusterSession?.SetUser(this._user);
@@ -271,11 +271,11 @@ namespace Garnet.server
             asyncWaiterCancel?.Cancel();
             asyncWaiter?.Signal();
 
-            StorageSession.Dispose();
+            storageSession.Dispose();
         }
 
-        public int StoreSessionID => StorageSession.SessionID;
-        public int ObjectStoreSessionID => StorageSession.ObjectStoreSessionID;
+        public int StoreSessionID => storageSession.SessionID;
+        public int ObjectStoreSessionID => storageSession.ObjectStoreSessionID;
 
         /// <summary>
         /// Tries to authenticate the given username/password and updates the user associated with this server session.
@@ -515,7 +515,7 @@ namespace Garnet.server
             where TGarnetApi : IGarnetApi
         {
             // We only use dual when using both stores
-            if (StorageSession.objectStoreBasicContext.IsNull)
+            if (storageSession.objectStoreBasicContext.IsNull)
                 return false;
 
             /*

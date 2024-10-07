@@ -160,16 +160,16 @@ namespace Garnet.server
         {
             if (isRunning)
             {
-                var acquiredEpoch = respSession.kernelSession.EnsureBeginUnsafe();
+                var acquiredEpoch = respSession.KernelSession.EnsureBeginUnsafe();
                 try
                 {
-                    keyEntries.UnlockAllKeys(ref respSession.kernelSession);
-                    respSession.kernelSession.EndTransaction();
+                    keyEntries.UnlockAllKeys(ref respSession.KernelSession);
+                    respSession.KernelSession.EndTransaction();
                 }
                 finally
                 {
                     if (acquiredEpoch)
-                        respSession.kernelSession.EndUnsafe();
+                        respSession.KernelSession.EndUnsafe();
                 }
             }
             this.txnStartHead = 0;
@@ -275,7 +275,7 @@ namespace Garnet.server
             UpdateTransactionStoreType(type);
             watchContainer.AddWatch(key, type);
 
-            _ = respSession.StorageSession.Watch(key, type, in dualContext, in objectStoreDualContext);
+            _ = respSession.storageSession.Watch(key, type, in dualContext, in objectStoreDualContext);
         }
 
         void UpdateTransactionStoreType(StoreType type)
@@ -309,20 +309,20 @@ namespace Garnet.server
             if (!internal_txn)
                 watchContainer.SaveKeysToLock(this);
 
-            respSession.kernelSession.BeginUnsafe();
+            respSession.KernelSession.BeginUnsafe();
             try
             {
-                respSession.kernelSession.BeginTransaction();
+                respSession.KernelSession.BeginTransaction();
 
                 bool lockSuccess = true;
                 if (fail_fast_on_lock)
                 { 
-                    lockSuccess = keyEntries.TryLockAllKeys(ref respSession.kernelSession, lock_timeout);
+                    lockSuccess = keyEntries.TryLockAllKeys(ref respSession.KernelSession, lock_timeout);
                     if (!lockSuccess)
                         this.logger?.LogError("Transaction failed to acquire all the locks on keys to proceed.");
                 }
                 else
-                    keyEntries.LockAllKeys(ref respSession.kernelSession);
+                    keyEntries.LockAllKeys(ref respSession.KernelSession);
 
                 if (!lockSuccess || (!internal_txn && !watchContainer.ValidateWatchVersion()))
                 {
@@ -334,7 +334,7 @@ namespace Garnet.server
             }
             finally
             {
-                respSession.kernelSession.EndUnsafe();
+                respSession.KernelSession.EndUnsafe();
             }
 
             if (appendOnlyFile != null && !functionsState.StoredProcMode)

@@ -1162,6 +1162,20 @@ namespace Garnet.test
         }
 
         [Test]
+        public void SingleExpiry()
+        {
+            using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
+            var db = redis.GetDatabase(0);
+
+            db.StringSet("key1", "test1", TimeSpan.FromMinutes(1));
+
+            var ttl = db.KeyTimeToLive("key1");
+            ClassicAssert.IsTrue(ttl.HasValue);
+            ClassicAssert.Greater(ttl.Value.TotalMilliseconds, 0);
+            ClassicAssert.LessOrEqual(ttl.Value.TotalMilliseconds, TimeSpan.FromMinutes(1).TotalMilliseconds);
+        }
+
+        [Test]
         public void SingleRenameWithExpiry()
         {
             using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());

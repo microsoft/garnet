@@ -89,7 +89,8 @@ namespace Tsavorite.core
             hei.Reset(partitionId);
             if (!hashTable.FindTag(ref hei))
                 return new(StatusCode.NotFound);
-            Debug.Assert(hei.HasTransientSLock, "Expected transient SLock after Reset and FindTag");
+            Debug.Assert(hei.HasTransientSLock, "Expected transient HEI SLock after Reset and FindTag");
+            Debug.Assert(lockTable.GetLockState(ref hei).IsLockedShared, "Expected bucket SLock after Reset and FindTag");
             return new(StatusCode.Found);
         }
 
@@ -105,7 +106,8 @@ namespace Tsavorite.core
             where TEpochThread : IEpochThread<TKernelSession>
         {
             keyLocker.UnlockTransientShared(this, ref hei, isRetry:false);
-            epochThread.EndUnsafe(ref kernelSession);
+            if (Epoch.ThisInstanceProtected())
+                epochThread.EndUnsafe(ref kernelSession);
         }
 
         /// <summary>

@@ -104,7 +104,7 @@ namespace Garnet.server
             ++keyCount;
         }
 
-        internal void LockAllKeys(ref RespKernelSession kernelSession)
+        internal void LockAllKeys(ref KernelSession kernelSession)
         {
             lockPhase = LockPhase.Locking;
 
@@ -117,7 +117,7 @@ namespace Garnet.server
             lockPhase = LockPhase.Rest;
         }
 
-        internal bool TryLockAllKeys(ref RespKernelSession kernelSession, TimeSpan lock_timeout)
+        internal bool TryLockAllKeys(ref KernelSession kernelSession, TimeSpan lock_timeout)
         {
             lockPhase = LockPhase.Locking;
 
@@ -131,7 +131,7 @@ namespace Garnet.server
             return success;
         }
 
-        internal void UnlockAllKeys(ref RespKernelSession kernelSession)
+        internal void UnlockAllKeys(ref KernelSession kernelSession)
         {
             lockPhase = LockPhase.Unlocking;
             kernel.Unlock(ref kernelSession, keys, 0, keyCount);

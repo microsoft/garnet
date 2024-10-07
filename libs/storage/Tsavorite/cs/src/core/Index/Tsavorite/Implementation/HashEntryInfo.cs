@@ -168,6 +168,8 @@ namespace Tsavorite.core
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         internal readonly string TransientLockStateString() => transientLockState.ToString();
 
+        public bool HashCodeEquals(long otherHashCode) => this.hash == otherHashCode;
+
         public override string ToString()
         {
             var hashStr = GetHashString(hash);

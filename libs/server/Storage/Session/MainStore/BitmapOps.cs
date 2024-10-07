@@ -134,7 +134,7 @@ namespace Garnet.server
 
             try
             {
-                RespKernelSession.BeginUnsafe(this, uc.Session);
+                KernelSession.BeginUnsafe(this, uc.Session);
             readFromScratch:
                 var localHeadAddress = HeadAddress;
                 var keysFound = 0;
@@ -209,7 +209,7 @@ namespace Garnet.server
             finally
             {
                 // Suspend Thread
-                RespKernelSession.EndUnsafe(this);
+                KernelSession.EndUnsafe(this);
                 if (createTransaction)
                     txnManager.Commit(true);
             }

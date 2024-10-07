@@ -8,7 +8,7 @@ using Tsavorite.core;
 
 namespace Garnet.server
 {
-    internal struct RespKernelSession(StorageSession session) : IKernelSession
+    internal struct KernelSession(StorageSession session) : IKernelSession
     {
         internal readonly StorageSession storageSession = session;
 
@@ -72,7 +72,7 @@ namespace Garnet.server
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public void Refresh()
         {
-            storageSession.TsavoriteKernel.Epoch.ProtectAndDrain();
+            storageSession.Kernel.Epoch.ProtectAndDrain();
 
             // These must use session to be aware of per-session SystemState.
             storageSession.session.Refresh();
@@ -94,7 +94,7 @@ namespace Garnet.server
         {
             // We do not track any "acquired" state here; if someone mixes calls between safe and unsafe contexts, they will 
             // get the "trying to acquire already-acquired epoch" error.
-            storageSession.TsavoriteKernel.Epoch.Resume();
+            storageSession.Kernel.Epoch.Resume();
 
             storageSession.session.DoThreadStateMachineStep();
             storageSession.objectStoreSession?.DoThreadStateMachineStep();
@@ -109,7 +109,7 @@ namespace Garnet.server
         {
             // We do not track any "acquired" state here; if someone mixes calls between safe and unsafe contexts, they will 
             // get the "trying to acquire already-acquired epoch" error.
-            storageSession.TsavoriteKernel.Epoch.Resume();
+            storageSession.Kernel.Epoch.Resume();
 
             clientSession.DoThreadStateMachineStep();
         }
@@ -132,15 +132,15 @@ namespace Garnet.server
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public static void EndUnsafe(StorageSession storageSession)
         {
-            Debug.Assert(storageSession.TsavoriteKernel.Epoch.ThisInstanceProtected());
-            storageSession.TsavoriteKernel.Epoch.Suspend();
+            Debug.Assert(storageSession.Kernel.Epoch.ThisInstanceProtected());
+            storageSession.Kernel.Epoch.Suspend();
         }
 
         /// <inheritdoc/>
         public bool IsEpochAcquired
         {
             [MethodImpl(MethodImplOptions.AggressiveInlining)]
-            get { return storageSession.TsavoriteKernel.Epoch.ThisInstanceProtected(); }
+            get { return storageSession.Kernel.Epoch.ThisInstanceProtected(); }
         }
     }
 }

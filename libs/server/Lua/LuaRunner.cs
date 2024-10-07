@@ -283,7 +283,7 @@ namespace Garnet.server
                     {
                         var key = parseState.GetArgSliceByRef(offset);
                         txnKeyEntries.AddKey(respServerSession.storeWrapper, key, false, Tsavorite.core.LockType.Exclusive);
-                        if (!respServerSession.StorageSession.objectStoreLockableContext.IsNull)
+                        if (!respServerSession.storageSession.objectStoreLockableContext.IsNull)
                             txnKeyEntries.AddKey(respServerSession.storeWrapper, key, true, Tsavorite.core.LockType.Exclusive);
                     }
                     keyTable[i + 1] = parseState.GetString(offset++);
@@ -329,7 +329,7 @@ namespace Garnet.server
                 {
                     var _key = scratchBufferManager.CreateArgSlice(key);
                     txnKeyEntries.AddKey(respServerSession.storeWrapper, _key, false, Tsavorite.core.LockType.Exclusive);
-                    if (!respServerSession.StorageSession.objectStoreLockableContext.IsNull)
+                    if (!respServerSession.storageSession.objectStoreLockableContext.IsNull)
                         txnKeyEntries.AddKey(respServerSession.storeWrapper, _key, true, Tsavorite.core.LockType.Exclusive);
                 }
                 return RunTransaction();
@@ -344,20 +344,20 @@ namespace Garnet.server
         {
             try
             {
-                respServerSession.StorageSession.lockableContext.BeginTransaction();
-                if (!respServerSession.StorageSession.objectStoreLockableContext.IsNull)
-                    respServerSession.StorageSession.objectStoreLockableContext.EndTransaction();
+                respServerSession.storageSession.lockableContext.BeginTransaction();
+                if (!respServerSession.storageSession.objectStoreLockableContext.IsNull)
+                    respServerSession.storageSession.objectStoreLockableContext.EndTransaction();
                 respServerSession.SetTransactionMode(true);
-                txnKeyEntries.LockAllKeys(ref respServerSession.kernelSession);
+                txnKeyEntries.LockAllKeys(ref respServerSession.KernelSession);
                 return Run();
             }
             finally
             {
-                txnKeyEntries.UnlockAllKeys(ref respServerSession.kernelSession);
+                txnKeyEntries.UnlockAllKeys(ref respServerSession.KernelSession);
                 respServerSession.SetTransactionMode(false);
-                respServerSession.StorageSession.lockableContext.EndTransaction();
-                if (!respServerSession.StorageSession.objectStoreLockableContext.IsNull)
-                    respServerSession.StorageSession.objectStoreLockableContext.EndTransaction();
+                respServerSession.storageSession.lockableContext.EndTransaction();
+                if (!respServerSession.storageSession.objectStoreLockableContext.IsNull)
+                    respServerSession.storageSession.objectStoreLockableContext.EndTransaction();
             }
         }
 

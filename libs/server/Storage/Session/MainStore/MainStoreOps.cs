@@ -51,15 +51,15 @@ namespace Garnet.server
 
             if (status.IsPending)
             {
-                RespKernelSession.EndUnsafe(this);
+                KernelSession.EndUnsafe(this);
                 StartPendingMetrics();
                 CompletePendingForSession(ref status, ref output, ref context);
                 StopPendingMetrics();
-                RespKernelSession.BeginUnsafe(this, context.Session);
+                KernelSession.BeginUnsafe(this, context.Session);
                 // Start read of pointers from beginning if epoch changed
                 if (HeadAddress == localHeadAddress)
                 {
-                    RespKernelSession.EndUnsafe(this);
+                    KernelSession.EndUnsafe(this);
                     epochChanged = true;
                 }
             }

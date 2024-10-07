@@ -175,8 +175,8 @@ namespace Tsavorite.core
         {
             Debug.Assert(!hei.HasTransientSLock, "Cannot XUnlock a session SLock");
 
-            // Do not unlock if this is the first of a dual Tsavorite and we are not retrying; we want the lock to persist then.
-            if (hei.HasTransientXLock && (isRetry || DualRole != DualRole.First))
+            // Do not unlock if this is part of a dual Tsavorite and we are not retrying; we want the lock to persist then.
+            if (hei.HasTransientXLock && isRetry)
             {
                 kernel.lockTable.UnlockExclusive(ref hei);
                 hei.ClearHasTransientXLock();
@@ -188,8 +188,61 @@ namespace Tsavorite.core
         {
             Debug.Assert(!hei.HasTransientXLock, "Cannot SUnlock a session XLock");
 
-            // Do not unlock if this is the first of a dual Tsavorite and we are not retrying; we want the lock to persist then.
-            if (hei.HasTransientSLock && (isRetry || DualRole != DualRole.First))
+            // Do not unlock if this is part of a dual Tsavorite and we are not retrying; we want the lock to persist then.
+            if (hei.HasTransientSLock && isRetry)
+            {
+                kernel.lockTable.UnlockShared(ref hei);
+                hei.ClearHasTransientSLock();
+            }
+        }
+    }
+
+    /// <summary>
+    /// Called by the client of a dual-Tsavorite configuration to do external locking.
+    /// </summary>
+    public struct DualClientLocker : ISessionLocker
+    {
+        public readonly bool IsTransactionalLocking => false;
+        public readonly DualRole DualRole => DualRole.None;
+
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        public bool TryLockTransientExclusive(TsavoriteKernel kernel, ref HashEntryInfo hei)
+        {
+            // Check for existing lock due to RETRY and Dual
+            Debug.Assert(!hei.HasTransientXLock, "Dual client HEI should not be XLocked already");
+            if (!kernel.lockTable.TryLockExclusive(ref hei))
+                return false;
+            hei.SetHasTransientXLock();
+            return true;
+        }
+
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        public bool TryLockTransientShared(TsavoriteKernel kernel, ref HashEntryInfo hei)
+        {
+            // Check for existing lock due to RETRY and Dual
+            Debug.Assert(!hei.HasTransientSLock, "Dual client HEI should not be SLocked already");
+            if (!kernel.lockTable.TryLockShared(ref hei))
+                return false;
+            hei.SetHasTransientSLock();
+            return true;
+        }
+
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        public void UnlockTransientExclusive(TsavoriteKernel kernel, ref HashEntryInfo hei, bool isRetry)
+        {
+            Debug.Assert(!hei.HasTransientSLock, "Cannot XUnlock a dual client SLock");
+            if (hei.HasTransientXLock)
+            {
+                kernel.lockTable.UnlockExclusive(ref hei);
+                hei.ClearHasTransientXLock();
+            }
+        }
+
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        public void UnlockTransientShared(TsavoriteKernel kernel, ref HashEntryInfo hei, bool isRetry)
+        {
+            Debug.Assert(!hei.HasTransientXLock, "Cannot SUnlock a dual client XLock");
+            if (hei.HasTransientSLock)
             {
                 kernel.lockTable.UnlockShared(ref hei);
                 hei.ClearHasTransientSLock();
