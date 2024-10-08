@@ -19,7 +19,7 @@
 
 # Send the config file for the benchmark. Defaults to a simple one
 param (
-  [string]$configFile = "CI_BDN_Config_RespParseStress.json"
+  [string]$configFile = "CI_BDN_Config_Resp.RespParseStress.json"
 )
 
 $OFS = "`r`n"
