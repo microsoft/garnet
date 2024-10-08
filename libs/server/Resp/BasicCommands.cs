@@ -3,7 +3,6 @@
 
 using System;
 using System.Diagnostics;
-using System.Linq;
 using System.Runtime.CompilerServices;
 using System.Text;
 using System.Threading.Tasks;
@@ -1257,6 +1256,57 @@ namespace Garnet.server
         /// Processes COMMAND INFO subcommand.
         /// </summary>
         /// <returns>true if parsing succeeded correctly, false if not all tokens could be consumed and further processing is necessary.</returns>
+        private bool NetworkCOMMAND_DOCS()
+        {
+            var count = parseState.Count;
+
+            var resultSb = new StringBuilder();
+            var docsCount = 0;
+
+            if (count == 0)
+            {
+                if (!RespCommandDocs.TryGetRespCommandsDocs(out var cmdsDocs, true, logger))
+                    return true;
+
+                foreach (var cmdDocs in cmdsDocs.Values)
+                {
+                    docsCount++;
+                    resultSb.Append(cmdDocs.RespFormat);
+                }
+
+                foreach (var customCmd in storeWrapper.customCommandManager.CustomCommandsDocs.Values)
+                {
+                    docsCount++;
+                    resultSb.Append(customCmd.RespFormat);
+                }
+            }
+            else
+            {
+                for (var i = 0; i < count; i++)
+                {
+                    var cmdName = parseState.GetString(i);
+                    if (RespCommandDocs.TryGetRespCommandDocs(cmdName, out var cmdDocs, true, true, logger) ||
+                        storeWrapper.customCommandManager.TryGetCustomCommandDocs(cmdName, out cmdDocs))
+                    {
+                        docsCount++;
+                        resultSb.Append(cmdDocs.RespFormat);
+                    }
+                }
+            }
+
+            while (!RespWriteUtils.WriteArrayLength(docsCount * 2, ref dcurr, dend))
+                SendAndReset();
+
+            while (!RespWriteUtils.WriteAsciiDirect(resultSb.ToString(), ref dcurr, dend))
+                SendAndReset();
+
+            return true;
+        }
+
+        /// <summary>
+        /// Processes COMMAND INFO subcommand.
+        /// </summary>
+        /// <returns>true if parsing succeeded correctly, false if not all tokens could be consumed and further processing is necessary.</returns>
         private bool NetworkCOMMAND_INFO()
         {
             var count = parseState.Count;
@@ -1274,7 +1324,7 @@ namespace Garnet.server
                 {
                     var cmdName = parseState.GetString(i);
 
-                    if (RespCommandsInfo.TryGetRespCommandInfo(cmdName, out var cmdInfo, logger) ||
+                    if (RespCommandsInfo.TryGetRespCommandInfo(cmdName, out var cmdInfo, true, true, logger) ||
                         storeWrapper.customCommandManager.TryGetCustomCommandInfo(cmdName, out cmdInfo))
                     {
                         while (!RespWriteUtils.WriteAsciiDirect(cmdInfo.RespFormat, ref dcurr, dend))

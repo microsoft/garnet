@@ -110,7 +110,7 @@ Note that this list is subject to change as we continue to expand our API comman
 |  | [SLOTS](cluster.md#cluster-slots) | ➕ | (deprecated) |
 | <span id="command">**COMMAND**</span> | [COMMAND](server.md#command) | ➕ |  |
 |  | [COUNT](server.md#command-count) | ➕ |  |
-|  | DOCS | ➖ |  |
+|  | [DOCS](server.md#command-docs) | ➕ |  |
 |  | GETKEYS | ➖ |  |
 |  | GETKEYSANDFLAGS | ➖ |  | 
 |  | HELP | ➖ |  | 
@@ -135,8 +135,8 @@ Note that this list is subject to change as we continue to expand our API comman
 |  | STATS | ➖ |
 | <span id="generic">**GENERIC**</span> | [PERSIST](generic-commands.md#persist) | ➕ |  |
 |  | [PEXPIRE](generic-commands.md#pexpire) | ➕ |  |
-|  | PEXPIREAT | ➖ |  |
-|  | PEXPIRETIME | ➖ |  |
+|  | [PEXPIREAT](generic-commands.md#pexpireat) | ➕ |  |
+|  | [PEXPIRETIME](generic-commands.md#pexpiretime) | ➕ |  |
 |  | [PTTL](generic-commands.md#pttl) | ➕ |  |
 |  | RANDOMKEY | ➖ |  |
 |  | [RENAME](generic-commands.md#rename) | ➕ |  |
@@ -196,8 +196,8 @@ Note that this list is subject to change as we continue to expand our API comman
 |  | DUMP | ➖ |  |
 |  | [EXISTS](generic-commands.md#exists) | ➕ |  |
 |  | [EXPIRE](generic-commands.md#expire) | ➕ |  |
-|  | EXPIREAT | ➖ |  |
-|  | EXPIRETIME | ➖ |  |
+|  | [EXPIREAT](generic-commands.md#expireat) | ➕ |  |
+|  | [EXPIRETIME](generic-commands.md#expiretime) | ➕ |  |
 |  | [KEYS](generic-commands.md#keys) | ➕ |  |
 |  | [MIGRATE](generic-commands.md#migrate) | ➕ |  |
 |  | MOVE | ➖ |  |

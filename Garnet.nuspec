@@ -37,6 +37,9 @@
     <file src="libs\server\bin\Release\net8.0\Garnet.server.dll" target="lib\net8.0" />
     <file src="libs\server\bin\Release\net8.0\Garnet.server.pdb" target="lib\net8.0" />
     <file src="libs\server\bin\Release\net8.0\Garnet.server.xml" target="lib\net8.0" />
+    <file src="libs\resources\bin\Release\net8.0\Garnet.resources.dll" target="lib\net8.0" />
+    <file src="libs\resources\bin\Release\net8.0\Garnet.resources.pdb" target="lib\net8.0" />
+    <file src="libs\resources\bin\Release\net8.0\Garnet.resources.xml" target="lib\net8.0" />
     <file src="libs\common\bin\Release\net8.0\Garnet.common.dll" target="lib\net8.0" />
     <file src="libs\common\bin\Release\net8.0\Garnet.common.pdb" target="lib\net8.0" />
     <file src="libs\common\bin\Release\net8.0\Garnet.common.xml" target="lib\net8.0" />
