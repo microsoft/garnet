@@ -54,7 +54,6 @@ namespace Garnet.test.cluster
             GetCrossSlotKeys = crossSlotKeys();
         }
 
-
         /// <summary>
         /// Get slot value for keys from <see cref="GetSingleSlotKeys"/>
         /// </summary>
@@ -958,6 +957,295 @@ namespace Garnet.test.cluster
             return setup;
         }
     }
+
+    internal class LPUSH : BaseCommand
+    {
+        public override bool IsArrayCommand => false;
+        public override bool ArrayResponse => false;
+        public override string Command => nameof(LPUSH);
+
+        public override string[] GetSingleSlotRequest()
+        {
+            var ssk = GetSingleSlotKeys;
+            return [ssk[0], "a", "b", "c"];
+        }
+
+        public override string[] GetCrossSlotRequest() => throw new NotImplementedException();
+
+        public override ArraySegment<string>[] SetupSingleSlotRequest() => throw new NotImplementedException();
+    }
+
+    internal class LPOP : BaseCommand
+    {
+        public override bool IsArrayCommand => false;
+        public override bool ArrayResponse => false;
+        public override string Command => nameof(LPOP);
+
+        public override string[] GetSingleSlotRequest()
+        {
+            var ssk = GetSingleSlotKeys;
+            return [ssk[0]];
+        }
+
+        public override string[] GetCrossSlotRequest() => throw new NotImplementedException();
+
+        public override ArraySegment<string>[] SetupSingleSlotRequest() => throw new NotImplementedException();
+    }
+
+    internal class LPOS : BaseCommand
+    {
+        public override bool IsArrayCommand => false;
+        public override bool ArrayResponse => false;
+        public override string Command => nameof(LPOS);
+
+        public override string[] GetSingleSlotRequest()
+        {
+            var ssk = GetSingleSlotKeys;
+            return [ssk[0], "0"];
+        }
+
+        public override string[] GetCrossSlotRequest() => throw new NotImplementedException();
+
+        public override ArraySegment<string>[] SetupSingleSlotRequest() => throw new NotImplementedException();
+    }
+
+    internal class LMPOP : BaseCommand
+    {
+        public override bool IsArrayCommand => true;
+        public override bool ArrayResponse => true;
+        public override string Command => nameof(LMPOP);
+
+        public override string[] GetSingleSlotRequest()
+        {
+            var ssk = GetSingleSlotKeys;
+            return ["3", ssk[0], ssk[1], ssk[2], "LEFT"];
+        }
+
+        public override string[] GetCrossSlotRequest()
+        {
+            var csk = GetCrossSlotKeys;
+            return ["3", csk[0], csk[1], csk[2], "LEFT"];
+        }
+
+        public override ArraySegment<string>[] SetupSingleSlotRequest()
+        {
+            var ssk = GetSingleSlotKeys;
+            var setup = new ArraySegment<string>[3];
+            setup[0] = new ArraySegment<string>(["LPUSH", ssk[1], "value1", "value2", "value3"]);
+            setup[1] = new ArraySegment<string>(["LPUSH", ssk[2], "value4", "value5", "value6"]);
+            setup[2] = new ArraySegment<string>(["LPUSH", ssk[3], "value7", "value8", "value9"]);
+            return setup;
+        }
+    }
+
+    internal class BLPOP : BaseCommand
+    {
+        public override bool IsArrayCommand => true;
+        public override bool ArrayResponse => true;
+        public override string Command => nameof(BLPOP);
+
+        public override string[] GetSingleSlotRequest()
+        {
+            var ssk = GetSingleSlotKeys;
+            return [ssk[0], ssk[1], ssk[2], "1"];
+        }
+
+        public override string[] GetCrossSlotRequest()
+        {
+            var csk = GetCrossSlotKeys;
+            return [csk[0], csk[1], csk[2], "1"];
+        }
+
+        public override ArraySegment<string>[] SetupSingleSlotRequest()
+        {
+            var ssk = GetSingleSlotKeys;
+            var setup = new ArraySegment<string>[3];
+            setup[0] = new ArraySegment<string>(["LPUSH", ssk[1], "value1", "value2", "value3"]);
+            setup[1] = new ArraySegment<string>(["LPUSH", ssk[2], "value4", "value5", "value6"]);
+            setup[2] = new ArraySegment<string>(["LPUSH", ssk[3], "value7", "value8", "value9"]);
+            return setup;
+        }
+    }
+
+    internal class BLMOVE : BaseCommand
+    {
+        public override bool IsArrayCommand => true;
+        public override bool ArrayResponse => false;
+        public override string Command => nameof(BLMOVE);
+
+        public override string[] GetSingleSlotRequest()
+        {
+            var ssk = GetSingleSlotKeys;
+            return [ssk[0], ssk[1], "LEFT", "LEFT", "1"];
+        }
+
+        public override string[] GetCrossSlotRequest()
+        {
+            var csk = GetCrossSlotKeys;
+            return [csk[0], csk[1], "LEFT", "LEFT", "1"];
+        }
+
+        public override ArraySegment<string>[] SetupSingleSlotRequest()
+        {
+            var ssk = GetSingleSlotKeys;
+            var setup = new ArraySegment<string>[3];
+            setup[0] = new ArraySegment<string>(["LPUSH", ssk[1], "value1", "value2", "value3"]);
+            setup[1] = new ArraySegment<string>(["LPUSH", ssk[2], "value4", "value5", "value6"]);
+            setup[2] = new ArraySegment<string>(["LPUSH", ssk[3], "value7", "value8", "value9"]);
+            return setup;
+        }
+    }
+
+    internal class LLEN : BaseCommand
+    {
+        public override bool IsArrayCommand => false;
+        public override bool ArrayResponse => false;
+        public override string Command => nameof(LLEN);
+
+        public override string[] GetSingleSlotRequest()
+        {
+            var ssk = GetSingleSlotKeys;
+            return [ssk[0]];
+        }
+
+        public override string[] GetCrossSlotRequest() => throw new NotImplementedException();
+
+        public override ArraySegment<string>[] SetupSingleSlotRequest() => throw new NotImplementedException();
+    }
+
+    internal class LTRIM : BaseCommand
+    {
+        public override bool IsArrayCommand => false;
+        public override bool ArrayResponse => false;
+        public override string Command => nameof(LTRIM);
+
+        public override string[] GetSingleSlotRequest()
+        {
+            var ssk = GetSingleSlotKeys;
+            return [ssk[0], "0", "100"];
+        }
+
+        public override string[] GetCrossSlotRequest() => throw new NotImplementedException();
+
+        public override ArraySegment<string>[] SetupSingleSlotRequest() => throw new NotImplementedException();
+    }
+
+    internal class LRANGE : BaseCommand
+    {
+        public override bool IsArrayCommand => false;
+        public override bool ArrayResponse => true;
+        public override string Command => nameof(LRANGE);
+
+        public override string[] GetSingleSlotRequest()
+        {
+            var ssk = GetSingleSlotKeys;
+            return [ssk[0], "0", "100"];
+        }
+
+        public override string[] GetCrossSlotRequest() => throw new NotImplementedException();
+
+        public override ArraySegment<string>[] SetupSingleSlotRequest() => throw new NotImplementedException();
+    }
+
+    internal class LINDEX : BaseCommand
+    {
+        public override bool IsArrayCommand => false;
+        public override bool ArrayResponse => false;
+        public override string Command => nameof(LINDEX);
+
+        public override string[] GetSingleSlotRequest()
+        {
+            var ssk = GetSingleSlotKeys;
+            return [ssk[0], "0"];
+        }
+
+        public override string[] GetCrossSlotRequest() => throw new NotImplementedException();
+
+        public override ArraySegment<string>[] SetupSingleSlotRequest() => throw new NotImplementedException();
+    }
+
+    internal class LINSERT : BaseCommand
+    {
+        public override bool IsArrayCommand => false;
+        public override bool ArrayResponse => false;
+        public override string Command => nameof(LINSERT);
+
+        public override string[] GetSingleSlotRequest()
+        {
+            var ssk = GetSingleSlotKeys;
+            return [ssk[0], "BEFORE", "aaa", "bbb"];
+        }
+
+        public override string[] GetCrossSlotRequest() => throw new NotImplementedException();
+
+        public override ArraySegment<string>[] SetupSingleSlotRequest() => throw new NotImplementedException();
+    }
+
+    internal class LREM : BaseCommand
+    {
+        public override bool IsArrayCommand => false;
+        public override bool ArrayResponse => false;
+        public override string Command => nameof(LREM);
+
+        public override string[] GetSingleSlotRequest()
+        {
+            var ssk = GetSingleSlotKeys;
+            return [ssk[0], "0", "10"];
+        }
+
+        public override string[] GetCrossSlotRequest() => throw new NotImplementedException();
+
+        public override ArraySegment<string>[] SetupSingleSlotRequest() => throw new NotImplementedException();
+    }
+
+    internal class RPOPLPUSH : BaseCommand
+    {
+        public override bool IsArrayCommand => true;
+        public override bool ArrayResponse => false;
+        public override string Command => nameof(RPOPLPUSH);
+
+        public override string[] GetSingleSlotRequest()
+        {
+            var ssk = GetSingleSlotKeys;
+            return [ssk[0], ssk[1]];
+        }
+
+        public override string[] GetCrossSlotRequest()
+        {
+            var csk = GetCrossSlotKeys;
+            return [csk[0], csk[1]];
+        }
+
+        public override ArraySegment<string>[] SetupSingleSlotRequest()
+        {
+            var ssk = GetSingleSlotKeys;
+            var setup = new ArraySegment<string>[3];
+            setup[0] = new ArraySegment<string>(["LPUSH", ssk[1], "a", "b", "c"]);
+            setup[1] = new ArraySegment<string>(["LPUSH", ssk[2], "d", "e", "f"]);
+            setup[2] = new ArraySegment<string>(["LPUSH", ssk[3], "g", "h", "i"]);
+            return setup;
+        }
+    }
+
+    internal class LSET : BaseCommand
+    {
+        public override bool IsArrayCommand => false;
+        public override bool ArrayResponse => false;
+        public override string Command => nameof(LSET);
+
+        public override bool RequiresExistingKey => true;
+
+        public override string[] GetSingleSlotRequest()
+        {
+            var ssk = GetSingleSlotKeys;
+            return [ssk[0], "0", "d"];
+        }
+
+        public override string[] GetCrossSlotRequest() => throw new NotImplementedException();
+
+        public override ArraySegment<string>[] SetupSingleSlotRequest() => throw new NotImplementedException();
+    }
+
     #endregion
 
     #region LuaCommands

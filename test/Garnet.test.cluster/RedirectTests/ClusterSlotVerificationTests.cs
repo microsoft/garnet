@@ -61,8 +61,20 @@ namespace Garnet.test.cluster
                 new SINTER(),
                 new LMOVE(),
                 new EVAL(),
+                new LPUSH(),
+                new LPOP(),
+                new LMPOP(),
+                new BLPOP(),
+                new BLMOVE(),
+                new LLEN(),
+                new LTRIM(),
+                new LRANGE(),
+                new LINDEX(),
+                new LINSERT(),
+                new LREM(),
+                new RPOPLPUSH(),
+                new LSET(),
             };
-
 
         ClusterTestContext context;
         readonly int sourceIndex = 0;
@@ -170,6 +182,19 @@ namespace Garnet.test.cluster
         [TestCase("SINTERSTORE")]
         [TestCase("SINTER")]
         [TestCase("LMOVE")]
+        [TestCase("LPUSH")]
+        [TestCase("LPOP")]
+        [TestCase("LMPOP")]
+        [TestCase("BLPOP")]
+        [TestCase("BLMOVE")]
+        [TestCase("LLEN")]
+        [TestCase("LTRIM")]
+        [TestCase("LRANGE")]
+        [TestCase("LINDEX")]
+        [TestCase("LINSERT")]
+        [TestCase("LREM")]
+        [TestCase("RPOPLPUSH")]
+        [TestCase("LSET")]
         public void ClusterCLUSTERDOWNTest(string commandName)
         {
             var requestNodeIndex = otherIndex;
@@ -249,6 +274,19 @@ namespace Garnet.test.cluster
         [TestCase("SINTER")]
         [TestCase("LMOVE")]
         [TestCase("EVAL")]
+        [TestCase("LPUSH")]
+        [TestCase("LPOP")]
+        [TestCase("LMPOP")]
+        [TestCase("BLPOP")]
+        [TestCase("BLMOVE")]
+        [TestCase("LLEN")]
+        [TestCase("LTRIM")]
+        [TestCase("LRANGE")]
+        [TestCase("LINDEX")]
+        [TestCase("LINSERT")]
+        [TestCase("LREM")]
+        [TestCase("RPOPLPUSH")]
+        [TestCase("LSET")]
         public void ClusterOKTest(string commandName)
         {
             var requestNodeIndex = sourceIndex;
@@ -339,6 +377,19 @@ namespace Garnet.test.cluster
         [TestCase("SINTER")]
         [TestCase("LMOVE")]
         [TestCase("EVAL")]
+        [TestCase("LPUSH")]
+        [TestCase("LPOP")]
+        [TestCase("LMPOP")]
+        [TestCase("BLPOP")]
+        [TestCase("BLMOVE")]
+        [TestCase("LLEN")]
+        [TestCase("LTRIM")]
+        [TestCase("LRANGE")]
+        [TestCase("LINDEX")]
+        [TestCase("LINSERT")]
+        [TestCase("LREM")]
+        [TestCase("RPOPLPUSH")]
+        [TestCase("LSET")]
         public void ClusterCROSSSLOTTest(string commandName)
         {
             var requestNodeIndex = sourceIndex;
@@ -421,6 +472,19 @@ namespace Garnet.test.cluster
         [TestCase("SINTERSTORE")]
         [TestCase("SINTER")]
         [TestCase("LMOVE")]
+        [TestCase("LPUSH")]
+        [TestCase("LPOP")]
+        [TestCase("LMPOP")]
+        [TestCase("BLPOP")]
+        [TestCase("BLMOVE")]
+        [TestCase("LLEN")]
+        [TestCase("LTRIM")]
+        [TestCase("LRANGE")]
+        [TestCase("LINDEX")]
+        [TestCase("LINSERT")]
+        [TestCase("LREM")]
+        [TestCase("RPOPLPUSH")]
+        [TestCase("LSET")]
         public void ClusterMOVEDTest(string commandName)
         {
             var requestNodeIndex = targetIndex;
@@ -510,6 +574,19 @@ namespace Garnet.test.cluster
         [TestCase("SINTERSTORE")]
         [TestCase("SINTER")]
         [TestCase("LMOVE")]
+        [TestCase("LPUSH")]
+        [TestCase("LPOP")]
+        [TestCase("LMPOP")]
+        [TestCase("BLPOP")]
+        [TestCase("BLMOVE")]
+        [TestCase("LLEN")]
+        [TestCase("LTRIM")]
+        [TestCase("LRANGE")]
+        [TestCase("LINDEX")]
+        [TestCase("LINSERT")]
+        [TestCase("LREM")]
+        [TestCase("RPOPLPUSH")]
+        [TestCase("LSET")]
         public void ClusterASKTest(string commandName)
         {
             var requestNodeIndex = sourceIndex;
@@ -551,7 +628,7 @@ namespace Garnet.test.cluster
                 catch (Exception ex)
                 {
                     var tokens = ex.Message.Split(' ');
-                    ClassicAssert.IsTrue(tokens.Length > 10 && tokens[0].Equals("Endpoint"), command.Command);
+                    ClassicAssert.IsTrue(tokens.Length > 10 && tokens[0].Equals("Endpoint"), command.Command + " => " + ex.Message);
 
                     var _address = tokens[1].Split(':')[0];
                     var _port = int.Parse(tokens[1].Split(':')[1]);
@@ -616,6 +693,19 @@ namespace Garnet.test.cluster
         [TestCase("SINTERSTORE")]
         [TestCase("SINTER")]
         [TestCase("LMOVE")]
+        [TestCase("LPUSH")]
+        [TestCase("LPOP")]
+        [TestCase("LMPOP")]
+        [TestCase("BLPOP")]
+        [TestCase("BLMOVE")]
+        [TestCase("LLEN")]
+        [TestCase("LTRIM")]
+        [TestCase("LRANGE")]
+        [TestCase("LINDEX")]
+        [TestCase("LINSERT")]
+        [TestCase("LREM")]
+        [TestCase("RPOPLPUSH")]
+        [TestCase("LSET")]
         public void ClusterTRYAGAINTest(string commandName)
         {
             var requestNodeIndex = sourceIndex;
