@@ -74,6 +74,13 @@ namespace Garnet.test.cluster
                 new LREM(),
                 new RPOPLPUSH(),
                 new LSET(),
+                new SADD(),
+                new SREM(),
+                new SCARD(),
+                new SMEMBERS(),
+                new SISMEMBER(),
+                new SPOP(),
+                new SRANDMEMBER(),
             };
 
         ClusterTestContext context;
@@ -195,6 +202,13 @@ namespace Garnet.test.cluster
         [TestCase("LREM")]
         [TestCase("RPOPLPUSH")]
         [TestCase("LSET")]
+        [TestCase("SADD")]
+        [TestCase("SREM")]
+        [TestCase("SCARD")]
+        [TestCase("SMEMBERS")]
+        [TestCase("SISMEMBER")]
+        [TestCase("SPOP")]
+        [TestCase("SRANDMEMBER")]
         public void ClusterCLUSTERDOWNTest(string commandName)
         {
             var requestNodeIndex = otherIndex;
@@ -287,6 +301,13 @@ namespace Garnet.test.cluster
         [TestCase("LREM")]
         [TestCase("RPOPLPUSH")]
         [TestCase("LSET")]
+        [TestCase("SADD")]
+        [TestCase("SREM")]
+        [TestCase("SCARD")]
+        [TestCase("SMEMBERS")]
+        [TestCase("SISMEMBER")]
+        [TestCase("SPOP")]
+        [TestCase("SRANDMEMBER")]
         public void ClusterOKTest(string commandName)
         {
             var requestNodeIndex = sourceIndex;
@@ -390,6 +411,13 @@ namespace Garnet.test.cluster
         [TestCase("LREM")]
         [TestCase("RPOPLPUSH")]
         [TestCase("LSET")]
+        [TestCase("SADD")]
+        [TestCase("SREM")]
+        [TestCase("SCARD")]
+        [TestCase("SMEMBERS")]
+        [TestCase("SISMEMBER")]
+        [TestCase("SPOP")]
+        [TestCase("SRANDMEMBER")]
         public void ClusterCROSSSLOTTest(string commandName)
         {
             var requestNodeIndex = sourceIndex;
@@ -485,6 +513,13 @@ namespace Garnet.test.cluster
         [TestCase("LREM")]
         [TestCase("RPOPLPUSH")]
         [TestCase("LSET")]
+        [TestCase("SADD")]
+        [TestCase("SREM")]
+        [TestCase("SCARD")]
+        [TestCase("SMEMBERS")]
+        [TestCase("SISMEMBER")]
+        [TestCase("SPOP")]
+        [TestCase("SRANDMEMBER")]
         public void ClusterMOVEDTest(string commandName)
         {
             var requestNodeIndex = targetIndex;
@@ -587,6 +622,13 @@ namespace Garnet.test.cluster
         [TestCase("LREM")]
         [TestCase("RPOPLPUSH")]
         [TestCase("LSET")]
+        [TestCase("SADD")]
+        [TestCase("SREM")]
+        [TestCase("SCARD")]
+        [TestCase("SMEMBERS")]
+        [TestCase("SISMEMBER")]
+        [TestCase("SPOP")]
+        [TestCase("SRANDMEMBER")]
         public void ClusterASKTest(string commandName)
         {
             var requestNodeIndex = sourceIndex;
@@ -706,6 +748,13 @@ namespace Garnet.test.cluster
         [TestCase("LREM")]
         [TestCase("RPOPLPUSH")]
         [TestCase("LSET")]
+        [TestCase("SADD")]
+        [TestCase("SREM")]
+        [TestCase("SCARD")]
+        [TestCase("SMEMBERS")]
+        [TestCase("SISMEMBER")]
+        [TestCase("SPOP")]
+        [TestCase("SRANDMEMBER")]
         public void ClusterTRYAGAINTest(string commandName)
         {
             var requestNodeIndex = sourceIndex;
