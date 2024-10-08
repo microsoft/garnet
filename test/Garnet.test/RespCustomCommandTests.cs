@@ -10,13 +10,62 @@ using System.Runtime.InteropServices;
 using System.Text;
 using System.Threading;
 using System.Threading.Tasks;
+using Garnet.common;
 using Garnet.server;
 using NUnit.Framework;
 using NUnit.Framework.Legacy;
 using StackExchange.Redis;
+using Tsavorite.core;
 
 namespace Garnet.test
 {
+    public class LargeGet : CustomProcedure
+    {
+        public override bool Execute(IGarnetApi garnetApi, ArgSlice input, ref MemoryResult<byte> output)
+        {
+            int offset = 0;
+            var key = GetNextArg(input, ref offset);
+            for (int i = 0; i < 120_000; i++)
+            {
+                garnetApi.GET(key, out var outval);
+                garnetApi.FreeBuffer(ref outval);
+            }
+
+            garnetApi.GET(key, out var outval1);
+            garnetApi.GET(key, out var outval2);
+            garnetApi.FreeBuffer(ref outval2);
+            garnetApi.FreeBuffer(ref outval1); // Ensure graceful handling of earlier allocated buffer
+
+            var hashKey = GetNextArg(input, ref offset);
+            var field = GetNextArg(input, ref offset);
+            garnetApi.HashGet(hashKey, field, out var value);
+            garnetApi.FreeBuffer(ref value);
+
+            return true;
+        }
+    }
+
+    public class LargeGetTxn : CustomTransactionProcedure
+    {
+        public override bool Prepare<TGarnetReadApi>(TGarnetReadApi api, ArgSlice input)
+        {
+            int offset = 0;
+            AddKey(GetNextArg(input, ref offset), LockType.Shared, false);
+            return true;
+        }
+
+        public override void Main<TGarnetApi>(TGarnetApi garnetApi, ArgSlice input, ref MemoryResult<byte> output)
+        {
+            int offset = 0;
+            var key = GetNextArg(input, ref offset);
+            for (int i = 0; i < 120_000; i++)
+            {
+                garnetApi.GET(key, out var outval);
+                garnetApi.FreeBuffer(ref outval);
+            }
+        }
+    }
+
     [TestFixture]
     public class RespCustomCommandTests
     {
@@ -545,6 +594,40 @@ namespace Garnet.test
             // Include non-existent and string keys as well
             var retValue = db.Execute("SUM", "key1", "key2", "key3", "key4");
             ClassicAssert.AreEqual("30", retValue.ToString());
+        }
+
+        [Test]
+        public void CustomProcedureFreeBufferTest()
+        {
+            server.Register.NewProcedure("LARGEGET", new LargeGet());
+            var key = "key";
+            var hashKey = "hashKey";
+            var hashField = "field";
+            using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
+            var db = redis.GetDatabase(0);
+            byte[] value = new byte[10_000];
+            db.StringSet(key, value);
+            db.HashSet(hashKey, [new HashEntry(hashField, value)]);
+
+            db.Execute("LARGEGET", key, hashKey, hashField);
+            ClassicAssert.Pass();
+        }
+
+        [Test]
+        public void CustomTxnFreeBufferTest()
+        {
+            server.Register.NewTransactionProc("LARGEGETTXN", () => new LargeGetTxn());
+            var key = "key";
+            var hashKey = "hashKey";
+            var hashField = "field";
+            using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
+            var db = redis.GetDatabase(0);
+            byte[] value = new byte[10_000];
+            db.StringSet(key, value);
+            db.HashSet(hashKey, [new HashEntry(hashField, value)]);
+
+            db.Execute("LARGEGETTXN", key);
+            ClassicAssert.Pass();
         }
 
         private string[] CreateTestLibraries()

@@ -1700,6 +1700,15 @@ namespace Garnet.server
         /// <param name="outputFooter"></param>
         GarnetStatus ObjectScan(byte[] key, ref ObjectInput input, ref GarnetObjectStoreOutput outputFooter);
 
+        /// <summary>
+        /// Frees the last allocation in the scratch buffer. This is useful to avoid overflowing the scratch buffer
+        /// in case of repeated large allocations.
+        /// Note that only the last allocation could be freed this way as the next call could end up reallocating the
+        /// scratch buffer due to lack of sufficient length which would make the pointers in ArgSlice invalid. The API will
+        /// gracefully handle this case, but the buffer will not be freed for reuse.
+        /// </summary>
+        /// <param name="arg"></param>
+        /// <returns></returns>
         bool FreeBuffer(ref ArgSlice arg);
 
         #endregion

@@ -397,6 +397,7 @@ namespace Garnet.server
         public GarnetStatus ObjectScan(byte[] key, ref ObjectInput input, ref GarnetObjectStoreOutput outputFooter)
          => storageSession.ObjectScan(key, ref input, ref outputFooter, ref objectContext);
 
+        /// <inheritdoc />
         public bool FreeBuffer(ref ArgSlice arg)
          => storageSession.scratchBufferManager.RewindScratchBuffer(ref arg);
 
