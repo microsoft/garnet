@@ -681,19 +681,14 @@ namespace Garnet.server
             }
             else if (cmd == RespCommand.INCR || cmd == RespCommand.DECR)
             {
-                var value = cmd == RespCommand.INCR ? "1" : "-1";
-                var valueBytes = Encoding.ASCII.GetBytes(value);
+                var valueSlice = scratchBufferManager.CreateArgSlice(cmd == RespCommand.INCR ? "1"u8 : "-1"u8);
 
-                fixed (byte* ptr = valueBytes)
-                {
-                    // Prepare the parse state
-                    var valueSlice = new ArgSlice(ptr, valueBytes.Length);
-                    parseState.InitializeWithArguments(valueSlice);
+                // Prepare the parse state
+                parseState.InitializeWithArguments(valueSlice);
 
-                    input.parseState = parseState;
-                    input.parseStateStartIdx = 0;
-                    storageApi.Increment(key, ref input, ref output);
-                }
+                input.parseState = parseState;
+                input.parseStateStartIdx = 0;
+                storageApi.Increment(key, ref input, ref output);
             }
 
             var errorFlag = output.Length == NumUtils.MaximumFormatInt64Length + 1
