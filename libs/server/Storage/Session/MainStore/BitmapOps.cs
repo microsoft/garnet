@@ -52,7 +52,7 @@ namespace Garnet.server
             if (key.Length == 0)
                 return GarnetStatus.OK;
 
-            parseState.InitializeWithArguments(offset);
+            parseState.InitializeWithArgument(offset);
 
             var input = new RawStringInput
             {

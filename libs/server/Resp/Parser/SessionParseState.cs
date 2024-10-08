@@ -74,11 +74,91 @@ namespace Garnet.server
         }
 
         /// <summary>
+        /// Initialize the parse state with one argument
+        /// </summary>
+        /// <param name="arg">Argument to initialize buffer with</param>
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        public void InitializeWithArgument(ArgSlice arg)
+        {
+            Initialize(1);
+
+            buffer[0] = arg;
+        }
+
+        /// <summary>
+        /// Initialize the parse state with two arguments
+        /// </summary>
+        /// <param name="arg1">First argument</param>
+        /// <param name="arg2">Second argument</param>
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        public void InitializeWithArguments(ArgSlice arg1, ArgSlice arg2)
+        {
+            Initialize(2);
+
+            buffer[0] = arg1;
+            buffer[1] = arg2;
+        }
+
+        /// <summary>
+        /// Initialize the parse state with three arguments
+        /// </summary>
+        /// <param name="arg1">First argument</param>
+        /// <param name="arg2">Second argument</param>
+        /// <param name="arg3">Third argument</param>
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        public void InitializeWithArguments(ArgSlice arg1, ArgSlice arg2, ArgSlice arg3)
+        {
+            Initialize(3);
+
+            buffer[0] = arg1;
+            buffer[1] = arg2;
+            buffer[2] = arg3;
+        }
+
+        /// <summary>
+        /// Initialize the parse state with four arguments
+        /// </summary>
+        /// <param name="arg1">First argument</param>
+        /// <param name="arg2">Second argument</param>
+        /// <param name="arg3">Third argument</param>
+        /// <param name="arg4">Fourth argument</param>
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        public void InitializeWithArguments(ArgSlice arg1, ArgSlice arg2, ArgSlice arg3, ArgSlice arg4)
+        {
+            Initialize(4);
+
+            buffer[0] = arg1;
+            buffer[1] = arg2;
+            buffer[2] = arg3;
+            buffer[3] = arg4;
+        }
+
+        /// <summary>
+        /// Initialize the parse state with four arguments
+        /// </summary>
+        /// <param name="arg1">First argument</param>
+        /// <param name="arg2">Second argument</param>
+        /// <param name="arg3">Third argument</param>
+        /// <param name="arg4">Fourth argument</param>
+        /// <param name="arg5">Fifth argument</param>
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        public void InitializeWithArguments(ArgSlice arg1, ArgSlice arg2, ArgSlice arg3, ArgSlice arg4, ArgSlice arg5)
+        {
+            Initialize(5);
+
+            buffer[0] = arg1;
+            buffer[1] = arg2;
+            buffer[2] = arg3;
+            buffer[3] = arg4;
+            buffer[4] = arg5;
+        }
+
+        /// <summary>
         /// Initialize the parse state with a given set of arguments
         /// </summary>
         /// <param name="args">Set of arguments to initialize buffer with</param>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public void InitializeWithArguments(params ArgSlice[] args)
+        public void InitializeWithArguments(ArgSlice[] args)
         {
             Initialize(args.Length);
 

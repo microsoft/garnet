@@ -330,7 +330,7 @@ namespace Garnet.server
                 return GarnetStatus.OK;
 
             // Prepare the parse state
-            parseState.InitializeWithArguments(field);
+            parseState.InitializeWithArgument(field);
 
             // Prepare the input
             var input = new ObjectInput

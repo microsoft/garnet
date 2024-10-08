@@ -378,7 +378,7 @@ namespace Garnet.server
             var _key = key.SpanByte;
             var _output = new SpanByteAndMemory(output.SpanByte);
 
-            parseState.InitializeWithArguments(value);
+            parseState.InitializeWithArgument(value);
 
             var input = new RawStringInput
             {
@@ -559,7 +559,7 @@ namespace Garnet.server
                                 if (isNX)
                                 {
                                     // Move payload forward to make space for RespInputHeader and Metadata
-                                    parseState.InitializeWithArguments(newValSlice);
+                                    parseState.InitializeWithArgument(newValSlice);
                                     input.parseState = parseState;
                                     input.arg1 = DateTimeOffset.UtcNow.Ticks + TimeSpan.FromMilliseconds(expireTimeMs).Ticks;
 
@@ -579,7 +579,7 @@ namespace Garnet.server
                                 if (isNX)
                                 {
                                     // Build parse state
-                                    parseState.InitializeWithArguments(newValSlice);
+                                    parseState.InitializeWithArgument(newValSlice);
                                     input.parseState = parseState;
 
                                     var setStatus = SET_Conditional(ref newKey, ref input, ref context);
@@ -1012,7 +1012,7 @@ namespace Garnet.server
             NumUtils.LongToBytes(increment, incrementNumDigits, ref incrementBytes);
             var incrementSlice = new ArgSlice(incrementBytes, incrementNumDigits);
 
-            parseState.InitializeWithArguments(incrementSlice);
+            parseState.InitializeWithArgument(incrementSlice);
 
             var input = new RawStringInput
             {

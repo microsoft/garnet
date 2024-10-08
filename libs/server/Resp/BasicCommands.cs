@@ -684,7 +684,7 @@ namespace Garnet.server
                 var valueSlice = scratchBufferManager.CreateArgSlice(cmd == RespCommand.INCR ? "1"u8 : "-1"u8);
 
                 // Prepare the parse state
-                parseState.InitializeWithArguments(valueSlice);
+                parseState.InitializeWithArgument(valueSlice);
 
                 input.parseState = parseState;
                 input.parseStateStartIdx = 0;

@@ -131,7 +131,7 @@ namespace Garnet.server
                 return GarnetStatus.OK;
 
             // Prepare the parse state
-            parseState.InitializeWithArguments(member);
+            parseState.InitializeWithArgument(member);
 
             // Prepare the input
             var input = new ObjectInput
@@ -697,7 +697,7 @@ namespace Garnet.server
                 return GarnetStatus.OK;
 
             // Prepare the parse state
-            parseState.InitializeWithArguments(member);
+            parseState.InitializeWithArgument(member);
 
             // Prepare the input
             var input = new ObjectInput

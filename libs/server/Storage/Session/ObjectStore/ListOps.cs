@@ -75,7 +75,7 @@ namespace Garnet.server
             itemsDoneCount = 0;
 
             // Prepare the parse state
-            parseState.InitializeWithArguments(element);
+            parseState.InitializeWithArgument(element);
 
             // Prepare the input
             var input = new ObjectInput

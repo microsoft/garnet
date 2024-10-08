@@ -262,7 +262,7 @@ namespace Garnet.server
 
                     var mergeSlice = new ArgSlice(ref mergeBuffer.SpanByte);
 
-                    parseState.InitializeWithArguments(mergeSlice);
+                    parseState.InitializeWithArgument(mergeSlice);
 
                     currInput.parseState = parseState;
                     SET_Conditional(ref dstKey, ref currInput, ref mergeBuffer, ref currLockableContext);
