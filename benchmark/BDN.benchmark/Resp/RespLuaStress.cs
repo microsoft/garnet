@@ -70,7 +70,7 @@ namespace BDN.benchmark.Resp
             => f3.Call();
 
         [Benchmark]
-        public void BasicLuaStress4()  
+        public void BasicLuaStress4()
             => f4.Call();
     }
 }
