@@ -25,6 +25,7 @@ namespace Garnet.server
         COSCAN,
         DBSIZE,
         EXISTS,
+        EXPIRETIME,
         GEODIST,
         GEOHASH,
         GEOPOS,
@@ -45,9 +46,11 @@ namespace Garnet.server
         KEYS,
         LINDEX,
         LLEN,
+        LPOS,
         LRANGE,
         MEMORY_USAGE,
         MGET,
+        PEXPIRETIME,
         PFCOUNT,
         PTTL,
         SCAN,
@@ -84,6 +87,7 @@ namespace Garnet.server
         DECRBY,
         DEL,
         EXPIRE,
+        EXPIREAT,
         FLUSHALL,
         FLUSHDB,
         GEOADD,
@@ -113,10 +117,12 @@ namespace Garnet.server
         MSETNX,
         PERSIST,
         PEXPIRE,
+        PEXPIREAT,
         PFADD,
         PFMERGE,
         PSETEX,
         RENAME,
+        RENAMENX,
         RPOP,
         RPOPLPUSH,
         RPUSH,
@@ -196,6 +202,7 @@ namespace Garnet.server
         BGSAVE,
         COMMITAOF,
         FORCEGC,
+        PURGEBP,
         FAILOVER,
 
         // Custom commands
@@ -221,6 +228,7 @@ namespace Garnet.server
 
         COMMAND,
         COMMAND_COUNT,
+        COMMAND_DOCS,
         COMMAND_INFO,
 
         MEMORY,
@@ -327,6 +335,7 @@ namespace Garnet.server
             // Command
             RespCommand.COMMAND,
             RespCommand.COMMAND_COUNT,
+            RespCommand.COMMAND_DOCS,
             RespCommand.COMMAND_INFO,
             RespCommand.MEMORY_USAGE,
             // Config
@@ -620,6 +629,7 @@ namespace Garnet.server
                         (2 << 4) | 6 when lastWord == MemoryMarshal.Read<ulong>("INCRBY\r\n"u8) => RespCommand.INCRBY,
                         (2 << 4) | 6 when lastWord == MemoryMarshal.Read<ulong>("DECRBY\r\n"u8) => RespCommand.DECRBY,
                         (2 << 4) | 6 when lastWord == MemoryMarshal.Read<ulong>("RENAME\r\n"u8) => RespCommand.RENAME,
+                        (2 << 4) | 8 when lastWord == MemoryMarshal.Read<ulong>("NAMENX\r\n"u8) && *(ushort*)(ptr + 8) == MemoryMarshal.Read<ushort>("RE"u8) => RespCommand.RENAMENX,
                         (2 << 4) | 6 when lastWord == MemoryMarshal.Read<ulong>("GETBIT\r\n"u8) => RespCommand.GETBIT,
                         (2 << 4) | 6 when lastWord == MemoryMarshal.Read<ulong>("APPEND\r\n"u8) => RespCommand.APPEND,
                         (2 << 4) | 7 when lastWord == MemoryMarshal.Read<ulong>("UBLISH\r\n"u8) && ptr[8] == 'P' => RespCommand.PUBLISH,
@@ -766,6 +776,10 @@ namespace Garnet.server
                                         else if (*(ulong*)(ptr + 2) == MemoryMarshal.Read<ulong>("\r\nLSET\r\n"u8))
                                         {
                                             return RespCommand.LSET;
+                                        }
+                                        else if (*(ulong*)(ptr + 2) == MemoryMarshal.Read<ulong>("\r\nLPOS\r\n"u8))
+                                        {
+                                            return RespCommand.LPOS;
                                         }
                                         break;
 
@@ -1244,6 +1258,10 @@ namespace Garnet.server
                                 {
                                     return RespCommand.BITFIELD;
                                 }
+                                else if (*(ulong*)(ptr + 4) == MemoryMarshal.Read<ulong>("EXPIREAT"u8) && *(ushort*)(ptr + 12) == MemoryMarshal.Read<ushort>("\r\n"u8))
+                                {
+                                    return RespCommand.EXPIREAT;
+                                }
                                 break;
                             case 9:
                                 if (*(ulong*)(ptr + 4) == MemoryMarshal.Read<ulong>("SUBSCRIB"u8) && *(uint*)(ptr + 11) == MemoryMarshal.Read<uint>("BE\r\n"u8))
@@ -1269,6 +1287,10 @@ namespace Garnet.server
                                 else if (*(ulong*)(ptr + 4) == MemoryMarshal.Read<ulong>("RPOPLPUS"u8) && *(uint*)(ptr + 11) == MemoryMarshal.Read<uint>("SH\r\n"u8))
                                 {
                                     return RespCommand.RPOPLPUSH;
+                                }
+                                else if (*(ulong*)(ptr + 4) == MemoryMarshal.Read<ulong>("PEXPIREA"u8) && *(uint*)(ptr + 11) == MemoryMarshal.Read<uint>("AT\r\n"u8))
+                                {
+                                    return RespCommand.PEXPIREAT;
                                 }
                                 break;
                         }
@@ -1311,6 +1333,10 @@ namespace Garnet.server
                                 {
                                     return RespCommand.SDIFFSTORE;
                                 }
+                                else if (*(ulong*)(ptr + 1) == MemoryMarshal.Read<ulong>("10\r\nEXPI"u8) && *(uint*)(ptr + 9) == MemoryMarshal.Read<uint>("RETIME\r\n"u8))
+                                {
+                                    return RespCommand.EXPIRETIME;
+                                }
                                 break;
 
                             case 11:
@@ -1337,6 +1363,10 @@ namespace Garnet.server
                                 else if (*(ulong*)(ptr + 2) == MemoryMarshal.Read<ulong>("1\r\nSINTE"u8) && *(ulong*)(ptr + 10) == MemoryMarshal.Read<ulong>("RSTORE\r\n"u8))
                                 {
                                     return RespCommand.SINTERSTORE;
+                                }
+                                else if (*(ulong*)(ptr + 2) == MemoryMarshal.Read<ulong>("1\r\nPEXPI"u8) && *(uint*)(ptr + 10) == MemoryMarshal.Read<uint>("RETIME\r\n"u8))
+                                {
+                                    return RespCommand.PEXPIRETIME;
                                 }
                                 break;
 
@@ -1544,9 +1574,15 @@ namespace Garnet.server
                 {
                     return RespCommand.COMMAND_COUNT;
                 }
-                else if (subCommand.SequenceEqual(CmdStrings.INFO))
+
+                if (subCommand.SequenceEqual(CmdStrings.INFO))
                 {
                     return RespCommand.COMMAND_INFO;
+                }
+
+                if (subCommand.SequenceEqual(CmdStrings.DOCS))
+                {
+                    return RespCommand.COMMAND_DOCS;
                 }
             }
             else if (command.SequenceEqual(CmdStrings.PING))
@@ -1802,6 +1838,10 @@ namespace Garnet.server
             else if (command.SequenceEqual(CmdStrings.MIGRATE))
             {
                 return RespCommand.MIGRATE;
+            }
+            else if (command.SequenceEqual(CmdStrings.PURGEBP))
+            {
+                return RespCommand.PURGEBP;
             }
             else if (command.SequenceEqual(CmdStrings.FAILOVER))
             {

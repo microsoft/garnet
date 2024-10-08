@@ -104,7 +104,7 @@ namespace Garnet.cluster
         {
             if (errorCode != 0)
             {
-                string errorMessage = new Win32Exception((int)errorCode).Message;
+                var errorMessage = new Win32Exception((int)errorCode).Message;
                 logger?.LogError("[Replica] OverlappedStream GetQueuedCompletionStatus error: {errorCode} msg: {errorMessage}", errorCode, errorMessage);
             }
             writeCheckpointSemaphore.Release();

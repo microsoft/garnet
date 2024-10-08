@@ -40,6 +40,7 @@ namespace Garnet.server
         public static ReadOnlySpan<byte> LATENCY => "LATENCY"u8;
         public static ReadOnlySpan<byte> CLUSTER => "CLUSTER"u8;
         public static ReadOnlySpan<byte> MIGRATE => "MIGRATE"u8;
+        public static ReadOnlySpan<byte> PURGEBP => "PURGEBP"u8;
         public static ReadOnlySpan<byte> FAILOVER => "FAILOVER"u8;
         public static ReadOnlySpan<byte> HISTOGRAM => "HISTOGRAM"u8;
         public static ReadOnlySpan<byte> histogram => "histogram"u8;
@@ -94,6 +95,10 @@ namespace Garnet.server
         public static ReadOnlySpan<byte> XX => "XX"u8;
         public static ReadOnlySpan<byte> UNSAFETRUNCATELOG => "UNSAFETRUNCATELOG"u8;
         public static ReadOnlySpan<byte> SAMPLES => "SAMPLES"u8;
+        public static ReadOnlySpan<byte> RANK => "RANK"u8;
+        public static ReadOnlySpan<byte> rank => "rank"u8;
+        public static ReadOnlySpan<byte> MAXLEN => "MAXLEN"u8;
+        public static ReadOnlySpan<byte> maxlen => "maxlen"u8;
 
         /// <summary>
         /// Response strings
@@ -178,6 +183,9 @@ namespace Garnet.server
         public static ReadOnlySpan<byte> RESP_ERR_INVALID_CLIENT_ID => "ERR Invalid client ID"u8;
         public static ReadOnlySpan<byte> RESP_ERR_ACL_AUTH_DISABLED => "ERR ACL Authenticator is disabled."u8;
         public static ReadOnlySpan<byte> RESP_ERR_ACL_AUTH_FILE_DISABLED => "ERR This Garnet instance is not configured to use an ACL file. Please restart server with --acl-file option."u8;
+        public static ReadOnlySpan<byte> RESP_ERR_XX_NX_NOT_COMPATIBLE => "ERR XX and NX options at the same time are not compatible"u8;
+        public static ReadOnlySpan<byte> RESP_ERR_GT_LT_NX_NOT_COMPATIBLE => "ERR GT, LT, and/or NX options at the same time are not compatible"u8;
+        public static ReadOnlySpan<byte> RESP_ERR_INCR_SUPPORTS_ONLY_SINGLE_PAIR => "ERR INCR option supports a single increment-element pair"u8;
 
         /// <summary>
         /// Response string templates

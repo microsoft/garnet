@@ -302,6 +302,71 @@ namespace Garnet.server
             return GarnetStatus.NOTFOUND;
         }
 
+        /// <summary>
+        /// Get the absolute Unix timestamp at which the given key will expire.
+        /// </summary>
+        /// <typeparam name="TContext"></typeparam>
+        /// <typeparam name="TObjectContext"></typeparam>
+        /// <param name="key">The key to get the Unix timestamp.</param>
+        /// <param name="storeType">The store to operate on</param>
+        /// <param name="output">Span to allocate the output of the operation</param>
+        /// <param name="context">Basic Context of the store</param>
+        /// <param name="objectContext">Object Context of the store</param>
+        /// <param name="milliseconds">when true the command to execute is PEXPIRETIME.</param>
+        /// <returns>Returns the absolute Unix timestamp (since January 1, 1970) in seconds or milliseconds at which the given key will expire.</returns>
+        public unsafe GarnetStatus EXPIRETIME<TContext, TObjectContext>(ref SpanByte key, StoreType storeType, ref SpanByteAndMemory output, ref TContext context, ref TObjectContext objectContext, bool milliseconds = false)
+            where TContext : ITsavoriteContext<SpanByte, SpanByte, SpanByte, SpanByteAndMemory, long, MainSessionFunctions, MainStoreFunctions, MainStoreAllocator>
+            where TObjectContext : ITsavoriteContext<byte[], IGarnetObject, ObjectInput, GarnetObjectStoreOutput, long, ObjectSessionFunctions, ObjectStoreFunctions, ObjectStoreAllocator>
+        {
+            int inputSize = sizeof(int) + RespInputHeader.Size;
+            byte* pbCmdInput = stackalloc byte[inputSize];
+
+            byte* pcurr = pbCmdInput;
+            *(int*)pcurr = inputSize - sizeof(int);
+            pcurr += sizeof(int);
+            (*(RespInputHeader*)pcurr).cmd = milliseconds ? RespCommand.PEXPIRETIME : RespCommand.EXPIRETIME;
+            (*(RespInputHeader*)pcurr).flags = 0;
+
+            if (storeType == StoreType.Main || storeType == StoreType.All)
+            {
+                var status = context.Read(ref key, ref Unsafe.AsRef<SpanByte>(pbCmdInput), ref output);
+
+                if (status.IsPending)
+                {
+                    StartPendingMetrics();
+                    CompletePendingForSession(ref status, ref output, ref context);
+                    StopPendingMetrics();
+                }
+
+                if (status.Found) return GarnetStatus.OK;
+            }
+
+            if ((storeType == StoreType.Object || storeType == StoreType.All) && !objectStoreBasicContext.IsNull)
+            {
+                var objInput = new ObjectInput
+                {
+                    header = new RespInputHeader
+                    {
+                        type = milliseconds ? GarnetObjectType.PExpiretime : GarnetObjectType.Expiretime,
+                    },
+                };
+
+                var keyBA = key.ToByteArray();
+                var objO = new GarnetObjectStoreOutput { spanByteAndMemory = output };
+                var status = objectContext.Read(ref keyBA, ref objInput, ref objO);
+
+                if (status.IsPending)
+                    CompletePendingForObjectStoreSession(ref status, ref objO, ref objectContext);
+
+                if (status.Found)
+                {
+                    output = objO.spanByteAndMemory;
+                    return GarnetStatus.OK;
+                }
+            }
+            return GarnetStatus.NOTFOUND;
+        }
+
         public GarnetStatus SET<TContext>(ref SpanByte key, ref SpanByte value, ref TContext context)
             where TContext : ITsavoriteContext<SpanByte, SpanByte, SpanByte, SpanByteAndMemory, long, MainSessionFunctions, MainStoreFunctions, MainStoreAllocator>
         {
@@ -522,11 +587,32 @@ namespace Garnet.server
 
         public unsafe GarnetStatus RENAME(ArgSlice oldKeySlice, ArgSlice newKeySlice, StoreType storeType)
         {
+            return RENAME(oldKeySlice, newKeySlice, storeType, false, out _);
+        }
+
+        /// <summary>
+        /// Renames key to newkey if newkey does not yet exist. It returns an error when key does not exist.
+        /// </summary>
+        /// <param name="oldKeySlice">The old key to be renamed.</param>
+        /// <param name="newKeySlice">The new key name.</param>
+        /// <param name="storeType">The type of store to perform the operation on.</param>
+        /// <returns></returns>
+        public unsafe GarnetStatus RENAMENX(ArgSlice oldKeySlice, ArgSlice newKeySlice, StoreType storeType, out int result)
+        {
+            return RENAME(oldKeySlice, newKeySlice, storeType, true, out result);
+        }
+
+        private unsafe GarnetStatus RENAME(ArgSlice oldKeySlice, ArgSlice newKeySlice, StoreType storeType, bool isNX, out int result)
+        {
             GarnetStatus returnStatus = GarnetStatus.NOTFOUND;
+            result = -1;
 
             // If same name check return early.
             if (oldKeySlice.ReadOnlySpan.SequenceEqual(newKeySlice.ReadOnlySpan))
+            {
+                result = 1;
                 return GarnetStatus.OK;
+            }
 
             bool createTransaction = false;
             if (txnManager.state != TxnState.Running)
@@ -539,14 +625,12 @@ namespace Garnet.server
 
             var context = txnManager.LockableContext;
             var objectContext = txnManager.ObjectStoreLockableContext;
+            SpanByte oldKey = oldKeySlice.SpanByte;
 
             if (storeType == StoreType.Main || storeType == StoreType.All)
             {
                 try
                 {
-                    SpanByte oldKey = oldKeySlice.SpanByte;
-                    SpanByte newKey = newKeySlice.SpanByte;
-
                     SpanByte input = default;
                     var o = new SpanByteAndMemory();
                     var status = GET(ref oldKey, ref input, ref o, ref context);
@@ -558,16 +642,83 @@ namespace Garnet.server
                         var ptrVal = (byte*)memoryHandle.Pointer;
 
                         RespReadUtils.ReadUnsignedLengthHeader(out var headerLength, ref ptrVal, ptrVal + o.Length);
-                        var value = SpanByte.FromPinnedPointer(ptrVal, headerLength);
-                        SET(ref newKey, ref value, ref context);
 
-                        memoryHandle.Dispose();
-                        o.Memory.Dispose();
+                        // Find expiration time of the old key
+                        var expireSpan = new SpanByteAndMemory();
+                        var ttlStatus = TTL(ref oldKey, storeType, ref expireSpan, ref context, ref objectContext, true);
 
-                        // Delete the old key
-                        DELETE(ref oldKey, StoreType.Main, ref context, ref objectContext);
+                        if (ttlStatus == GarnetStatus.OK && !expireSpan.IsSpanByte)
+                        {
+                            using var expireMemoryHandle = expireSpan.Memory.Memory.Pin();
+                            var expirePtrVal = (byte*)expireMemoryHandle.Pointer;
+                            RespReadUtils.TryRead64Int(out var expireTimeMs, ref expirePtrVal, expirePtrVal + expireSpan.Length, out var _);
 
-                        returnStatus = GarnetStatus.OK;
+                            // If the key has an expiration, set the new key with the expiration
+                            if (expireTimeMs > 0)
+                            {
+                                if (isNX)
+                                {
+                                    // Move payload forward to make space for RespInputHeader and Metadata
+                                    var setValue = scratchBufferManager.FormatScratch(RespInputHeader.Size + sizeof(long), new ArgSlice(ptrVal, headerLength));
+                                    var setValueSpan = setValue.SpanByte;
+                                    var setValuePtr = setValueSpan.ToPointerWithMetadata();
+                                    setValueSpan.ExtraMetadata = DateTimeOffset.UtcNow.Ticks + TimeSpan.FromMilliseconds(expireTimeMs).Ticks;
+                                    ((RespInputHeader*)(setValuePtr + sizeof(long)))->cmd = RespCommand.SETEXNX;
+                                    ((RespInputHeader*)(setValuePtr + sizeof(long)))->flags = 0;
+                                    var newKey = newKeySlice.SpanByte;
+                                    var setStatus = SET_Conditional(ref newKey, ref setValueSpan, ref context);
+
+                                    // For SET NX `NOTFOUND` means the operation succeeded
+                                    result = setStatus == GarnetStatus.NOTFOUND ? 1 : 0;
+                                    returnStatus = GarnetStatus.OK;
+                                }
+                                else
+                                {
+                                    SETEX(newKeySlice, new ArgSlice(ptrVal, headerLength), TimeSpan.FromMilliseconds(expireTimeMs), ref context);
+                                }
+                            }
+                            else if (expireTimeMs == -1) // Its possible to have expireTimeMs as 0 (Key expired or will be expired now) or -2 (Key does not exist), in those cases we don't SET the new key
+                            {
+                                if (isNX)
+                                {
+                                    // Move payload forward to make space for RespInputHeader
+                                    var setValue = scratchBufferManager.FormatScratch(RespInputHeader.Size, new ArgSlice(ptrVal, headerLength));
+                                    var setValueSpan = setValue.SpanByte;
+                                    var setValuePtr = setValueSpan.ToPointerWithMetadata();
+                                    ((RespInputHeader*)setValuePtr)->cmd = RespCommand.SETEXNX;
+                                    ((RespInputHeader*)setValuePtr)->flags = 0;
+                                    var newKey = newKeySlice.SpanByte;
+                                    var setStatus = SET_Conditional(ref newKey, ref setValueSpan, ref context);
+
+                                    // For SET NX `NOTFOUND` means the operation succeeded
+                                    result = setStatus == GarnetStatus.NOTFOUND ? 1 : 0;
+                                    returnStatus = GarnetStatus.OK;
+                                }
+                                else
+                                {
+                                    SpanByte newKey = newKeySlice.SpanByte;
+                                    var value = SpanByte.FromPinnedPointer(ptrVal, headerLength);
+                                    SET(ref newKey, ref value, ref context);
+                                }
+                            }
+
+                            expireSpan.Memory.Dispose();
+                            memoryHandle.Dispose();
+                            o.Memory.Dispose();
+
+                            // Delete the old key only when SET NX succeeded
+                            if (isNX && result == 1)
+                            {
+                                DELETE(ref oldKey, StoreType.Main, ref context, ref objectContext);
+                            }
+                            else if (!isNX)
+                            {
+                                // Delete the old key
+                                DELETE(ref oldKey, StoreType.Main, ref context, ref objectContext);
+
+                                returnStatus = GarnetStatus.OK;
+                            }
+                        }
                     }
                 }
                 finally
@@ -591,19 +742,36 @@ namespace Garnet.server
                 try
                 {
                     byte[] oldKeyArray = oldKeySlice.ToArray();
-                    byte[] newKeyArray = newKeySlice.ToArray();
-
                     var status = GET(oldKeyArray, out var value, ref objectContext);
 
                     if (status == GarnetStatus.OK)
                     {
                         var valObj = value.garnetObject;
-                        SET(newKeyArray, valObj, ref objectContext);
-
-                        // Delete the old key
-                        DELETE(oldKeyArray, StoreType.Object, ref context, ref objectContext);
+                        byte[] newKeyArray = newKeySlice.ToArray();
 
                         returnStatus = GarnetStatus.OK;
+                        var canSetAndDelete = true;
+                        if (isNX)
+                        {
+                            // Not using EXISTS method to avoid new allocation of Array for key
+                            var getNewStatus = GET(newKeyArray, out _, ref objectContext);
+                            canSetAndDelete = getNewStatus == GarnetStatus.NOTFOUND;
+                        }
+
+                        if (canSetAndDelete)
+                        {
+                            // valObj already has expiration time, so no need to write expiration logic here
+                            SET(newKeyArray, valObj, ref objectContext);
+
+                            // Delete the old key
+                            DELETE(oldKeyArray, StoreType.Object, ref context, ref objectContext);
+
+                            result = 1;
+                        }
+                        else
+                        {
+                            result = 0;
+                        }
                     }
                 }
                 finally
@@ -612,7 +780,6 @@ namespace Garnet.server
                         txnManager.Commit(true);
                 }
             }
-
             return returnStatus;
         }
 
@@ -686,20 +853,63 @@ namespace Garnet.server
         /// <param name="context">Basic context for the main store</param>
         /// <param name="objectStoreContext">Object context for the object store</param>
         /// <param name="milliseconds">When true the command executed is PEXPIRE, expire by default.</param>
-        /// <returns></returns>
+        /// <returns>Return GarnetStatus.OK when key found, else GarnetStatus.NOTFOUND</returns>
         public unsafe GarnetStatus EXPIRE<TContext, TObjectContext>(ArgSlice key, TimeSpan expiry, out bool timeoutSet, StoreType storeType, ExpireOption expireOption, ref TContext context, ref TObjectContext objectStoreContext, bool milliseconds = false)
+            where TContext : ITsavoriteContext<SpanByte, SpanByte, SpanByte, SpanByteAndMemory, long, MainSessionFunctions, MainStoreFunctions, MainStoreAllocator>
+            where TObjectContext : ITsavoriteContext<byte[], IGarnetObject, ObjectInput, GarnetObjectStoreOutput, long, ObjectSessionFunctions, ObjectStoreFunctions, ObjectStoreAllocator>
+        {
+            return EXPIRE(key, DateTimeOffset.UtcNow.Ticks + expiry.Ticks, out timeoutSet, storeType, expireOption, ref context, ref objectStoreContext, milliseconds ? RespCommand.PEXPIRE : RespCommand.EXPIRE);
+        }
+
+        /// <summary>
+        /// Set a timeout on key using absolute Unix timestamp (seconds since January 1, 1970).
+        /// </summary>
+        /// <typeparam name="TContext"></typeparam>
+        /// <typeparam name="TObjectContext"></typeparam>
+        /// <param name="key">The key to set the timeout on.</param>
+        /// <param name="expiryTimestamp">Absolute Unix timestamp</param>
+        /// <param name="timeoutSet">True when the timeout was properly set.</param>
+        /// <param name="storeType">The store to operate on.</param>
+        /// <param name="expireOption">Flags to use for the operation.</param>
+        /// <param name="context">Basic context for the main store</param>
+        /// <param name="objectStoreContext">Object context for the object store</param>
+        /// <param name="milliseconds">When true, <paramref name="expiryTimestamp"/> is treated as milliseconds else seconds</param>
+        /// <returns>Return GarnetStatus.OK when key found, else GarnetStatus.NOTFOUND</returns>
+        public unsafe GarnetStatus EXPIREAT<TContext, TObjectContext>(ArgSlice key, long expiryTimestamp, out bool timeoutSet, StoreType storeType, ExpireOption expireOption, ref TContext context, ref TObjectContext objectStoreContext, bool milliseconds = false)
+            where TContext : ITsavoriteContext<SpanByte, SpanByte, SpanByte, SpanByteAndMemory, long, MainSessionFunctions, MainStoreFunctions, MainStoreAllocator>
+            where TObjectContext : ITsavoriteContext<byte[], IGarnetObject, ObjectInput, GarnetObjectStoreOutput, long, ObjectSessionFunctions, ObjectStoreFunctions, ObjectStoreAllocator>
+        {
+            var expiryTimestampTicks = milliseconds ? ConvertUtils.UnixTimestampInMillisecondsToTicks(expiryTimestamp) : ConvertUtils.UnixTimestampInSecondsToTicks(expiryTimestamp);
+            return EXPIRE(key, expiryTimestampTicks, out timeoutSet, storeType, expireOption, ref context, ref objectStoreContext, milliseconds ? RespCommand.PEXPIRE : RespCommand.EXPIRE);
+        }
+
+        /// <summary>
+        /// Set a timeout on key using ticks.
+        /// </summary>
+        /// <typeparam name="TContext"></typeparam>
+        /// <typeparam name="TObjectContext"></typeparam>
+        /// <param name="key">The key to set the timeout on.</param>
+        /// <param name="expiryInTicks">The timestamp in ticks</param>
+        /// <param name="timeoutSet">True when the timeout was properly set.</param>
+        /// <param name="storeType">The store to operate on.</param>
+        /// <param name="expireOption">Flags to use for the operation.</param>
+        /// <param name="context">Basic context for the main store</param>
+        /// <param name="objectStoreContext">Object context for the object store</param>
+        /// <param name="respCommand">Resp Command to be executed.</param>
+        /// <returns>Return GarnetStatus.OK when key found, else GarnetStatus.NOTFOUND</returns>
+        private unsafe GarnetStatus EXPIRE<TContext, TObjectContext>(ArgSlice key, long expiryInTicks, out bool timeoutSet, StoreType storeType, ExpireOption expireOption, ref TContext context, ref TObjectContext objectStoreContext, RespCommand respCommand)
             where TContext : ITsavoriteContext<SpanByte, SpanByte, SpanByte, SpanByteAndMemory, long, MainSessionFunctions, MainStoreFunctions, MainStoreAllocator>
             where TObjectContext : ITsavoriteContext<byte[], IGarnetObject, ObjectInput, GarnetObjectStoreOutput, long, ObjectSessionFunctions, ObjectStoreFunctions, ObjectStoreAllocator>
         {
             byte* pbCmdInput = stackalloc byte[sizeof(int) + sizeof(long) + RespInputHeader.Size + sizeof(byte)];
             *(int*)pbCmdInput = sizeof(long) + RespInputHeader.Size;
-            ((RespInputHeader*)(pbCmdInput + sizeof(int) + sizeof(long)))->cmd = milliseconds ? RespCommand.PEXPIRE : RespCommand.EXPIRE;
+            ((RespInputHeader*)(pbCmdInput + sizeof(int) + sizeof(long)))->cmd = respCommand;
             ((RespInputHeader*)(pbCmdInput + sizeof(int) + sizeof(long)))->flags = 0;
 
             *(pbCmdInput + sizeof(int) + sizeof(long) + RespInputHeader.Size) = (byte)expireOption;
             ref var input = ref SpanByte.Reinterpret(pbCmdInput);
 
-            input.ExtraMetadata = DateTimeOffset.UtcNow.Ticks + expiry.Ticks;
+            input.ExtraMetadata = expiryInTicks;
 
             var rmwOutput = stackalloc byte[ObjectOutputHeader.Size];
             var output = new SpanByteAndMemory(SpanByte.FromPinnedPointer(rmwOutput, ObjectOutputHeader.Size));
@@ -741,7 +951,7 @@ namespace Garnet.server
                 {
                     header = new RespInputHeader
                     {
-                        cmd = milliseconds ? RespCommand.PEXPIRE : RespCommand.EXPIRE,
+                        cmd = respCommand,
                         type = GarnetObjectType.Expire,
                     },
                     parseState = parseState,

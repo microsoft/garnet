@@ -3,8 +3,6 @@
 
 using System;
 using System.Buffers.Binary;
-using System.Collections.Concurrent;
-using System.Collections.Generic;
 using System.Diagnostics;
 using System.IO;
 using System.Text;
@@ -30,11 +28,6 @@ namespace Tsavorite.core
         /// Flushed logical address
         /// </summary>
         public long UntilAddress;
-
-        /// <summary>
-        /// Persisted iterators
-        /// </summary>
-        public Dictionary<string, long> Iterators;
 
         /// <summary>
         /// User-specified commit cookie
@@ -63,7 +56,6 @@ namespace Tsavorite.core
         {
             BeginAddress = 0;
             UntilAddress = 0;
-            Iterators = null;
             Cookie = null;
         }
 
@@ -104,7 +96,6 @@ namespace Tsavorite.core
 
             if (iteratorCount > 0)
             {
-                Iterators = new Dictionary<string, long>(iteratorCount);
                 for (var i = 0; i < iteratorCount; i++)
                 {
                     var keyLength = BinaryPrimitives.ReadInt32LittleEndian(input);
@@ -115,8 +106,6 @@ namespace Tsavorite.core
 
                     var iteratorValue = BinaryPrimitives.ReadInt64LittleEndian(input);
                     input = input.Slice(sizeof(long));
-
-                    Iterators.Add(iteratorKey, iteratorValue);
                 }
             }
 
@@ -169,8 +158,6 @@ namespace Tsavorite.core
                 writer.Write(TsavoriteLogRecoveryVersion); // version
 
                 int iteratorCount = 0;
-                if (Iterators != null) iteratorCount = Iterators.Count;
-
                 int cookieLength = -1;
                 long cookieChecksum = 0;
                 if (Cookie != null)
@@ -188,19 +175,7 @@ namespace Tsavorite.core
                 writer.Write(BeginAddress);
                 writer.Write(UntilAddress);
                 writer.Write(CommitNum);
-
-                writer.Write(iteratorCount);
-                if (iteratorCount > 0)
-                {
-                    foreach (var kvp in Iterators)
-                    {
-                        var bytes = Encoding.UTF8.GetBytes(kvp.Key);
-                        writer.Write(bytes.Length);
-                        writer.Write(bytes);
-                        writer.Write(kvp.Value);
-                    }
-                }
-
+                writer.Write(iteratorCount); // leaving this field for backwards compatibility
                 writer.Write(cookieLength);
                 if (cookieLength > 0)
                     writer.Write(Cookie);
@@ -213,47 +188,7 @@ namespace Tsavorite.core
         /// <returns> size of this recovery info serialized </returns>
         public int SerializedSize()
         {
-            var iteratorSize = sizeof(int);
-            if (Iterators != null)
-            {
-                foreach (var kvp in Iterators)
-                    iteratorSize += sizeof(int) + Encoding.UTF8.GetByteCount(kvp.Key) + sizeof(long);
-            }
-
-            return sizeof(int) + 4 * sizeof(long) + iteratorSize + sizeof(int) + (Cookie?.Length ?? 0);
-        }
-
-        /// <summary>
-        /// Take snapshot of persisted iterators
-        /// </summary>
-        /// <param name="persistedIterators">Persisted iterators</param>
-        public void SnapshotIterators(ConcurrentDictionary<string, TsavoriteLogScanIterator> persistedIterators)
-        {
-            Iterators = new Dictionary<string, long>();
-
-            if (!persistedIterators.IsEmpty)
-            {
-                foreach (var kvp in persistedIterators)
-                {
-                    Iterators.Add(kvp.Key, kvp.Value.requestedCompletedUntilAddress);
-                }
-            }
-        }
-
-        /// <summary>
-        /// Update iterators after persistence
-        /// </summary>
-        /// <param name="persistedIterators">Persisted iterators</param>
-        public void CommitIterators(ConcurrentDictionary<string, TsavoriteLogScanIterator> persistedIterators)
-        {
-            if (Iterators?.Count > 0)
-            {
-                foreach (var kvp in Iterators)
-                {
-                    if (persistedIterators.TryGetValue(kvp.Key, out TsavoriteLogScanIterator iterator))
-                        iterator.UpdateCompletedUntilAddress(kvp.Value);
-                }
-            }
+            return sizeof(int) + 4 * sizeof(long) + sizeof(int) + sizeof(int) + (Cookie?.Length ?? 0);
         }
 
         /// <summary>

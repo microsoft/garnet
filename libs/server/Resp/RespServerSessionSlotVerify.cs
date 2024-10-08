@@ -2,6 +2,7 @@
 // Licensed under the MIT license.
 
 using System;
+using System.Diagnostics;
 using Garnet.common;
 
 namespace Garnet.server
@@ -33,9 +34,7 @@ namespace Garnet.server
 
         bool CanServeSlot(RespCommand cmd)
         {
-            // If cluster is disable all commands
-            if (clusterSession == null)
-                return true;
+            Debug.Assert(clusterSession != null);
 
             // Verify slot for command if it falls into data command category
             if (!cmd.IsDataCommand())

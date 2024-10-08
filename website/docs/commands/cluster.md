@@ -248,6 +248,21 @@ An array of keys or empty.
 
 ----
 
+## CLUSTER INFO
+
+#### Syntax
+
+```bash
+	CLUSTER INFO
+```
+
+CLUSTER INFO provides INFO style information about Redis Cluster vital parameters.
+
+#### RESP Reply
+Bulk string reply: A map between named fields and values in the form of : lines separated by newlines composed by the two bytes CRLF.
+
+----
+
 ## CLUSTER KEYSLOT
 
 #### Syntax
@@ -611,6 +626,77 @@ Array reply: a nested list of hash ranges and node information grouped by shard.
 
 ----
 
+## CLUSTER SLOTS
 
+#### Syntax
 
+```bash
+	CLUSTER SLOTS
+```
 
+CLUSTER SLOTS returns details about which cluster slots map to which Redis instances. 
+
+#### RESP Reply
+Array reply: nested list of slot ranges with networking information.
+
+----
+
+## ASKING
+
+#### Syntax
+
+```bash
+	ASKING
+```
+
+When a cluster client receives an -ASK redirect, the ASKING command is sent to the target node followed by the command which was redirected. This is normally done automatically by cluster clients.
+
+#### RESP Reply
+Simple string reply: OK.
+
+----
+
+## READONLY
+
+#### Syntax
+
+```bash
+	READONLY
+```
+
+Enables read queries for a connection to a Redis Cluster replica node.
+
+#### RESP Reply
+Simple string reply: OK.
+
+----
+
+## READWRITE
+
+#### Syntax
+
+```bash
+	READWRITE
+```
+
+Disables read queries for a connection to a Redis Cluster replica node.
+
+#### RESP Reply
+Simple string reply: OK.
+
+----
+
+## RESET
+
+#### Syntax
+
+```bash
+	RESET
+```
+
+This command performs a full reset of the connection's server-side context, mimicking the effect of disconnecting and reconnecting again.
+
+#### RESP Reply
+Simple string reply: RESET.
+
+----

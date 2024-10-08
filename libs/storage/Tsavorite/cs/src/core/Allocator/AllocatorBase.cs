@@ -66,8 +66,8 @@ namespace Tsavorite.core
         /// <summary>How many pages do we leave empty in the in-memory buffer (between 0 and BufferSize-1)</summary>
         private int emptyPageCount;
 
-        /// <summary>HeadOFfset lag address</summary>
-        internal long HeadOffsetLagAddress;
+        /// <summary>HeadAddress offset from tail (currently page-aligned)</summary>
+        internal long HeadAddressLagOffset;
 
         /// <summary>
         /// Number of <see cref="LockableUnsafeContext{Key, Value, Input, Output, Context, Functions, StoreFunctions, Allocator}"/> or 
@@ -78,8 +78,8 @@ namespace Tsavorite.core
         /// <summary>Log mutable fraction</summary>
         protected readonly double LogMutableFraction;
 
-        /// <summary>ReadOnlyOffset lag (from tail)</summary>
-        protected long ReadOnlyLagAddress;
+        /// <summary>ReadOnlyAddress offset from tail (currently page-aligned)</summary>
+        protected long ReadOnlyAddressLagOffset;
 
         #endregion
 
@@ -502,7 +502,7 @@ namespace Tsavorite.core
             }
         }
 
-        internal long GetReadOnlyLagAddress() => ReadOnlyLagAddress;
+        internal long GetReadOnlyAddressLagOffset() => ReadOnlyAddressLagOffset;
 
         protected readonly ILogger logger;
 
@@ -577,8 +577,8 @@ namespace Tsavorite.core
             if (SegmentSize < PageSize)
                 throw new TsavoriteException($"Segment ({SegmentSize}) must be at least of page size ({PageSize})");
 
-            if ((LogTotalSizeBits != 0) && (LogTotalSizeBytes < PageSize))
-                throw new TsavoriteException($"Memory size ({LogTotalSizeBytes}) must be configured to be either 1 (i.e., 0 bits) or at least page size ({PageSize})");
+            if ((LogTotalSizeBits != 0) && (LogTotalSizeBytes < PageSize * 2))
+                throw new TsavoriteException($"Memory size ({LogTotalSizeBytes}) must be at least twice the page size ({PageSize})");
 
             // Readonlymode has MemorySizeBits 0 => skip the check
             if (settings.MemorySizeBits > 0 && settings.MinEmptyPageCount > MaxEmptyPageCount)
@@ -714,6 +714,9 @@ namespace Tsavorite.core
         /// <summary>Minimum number of empty pages in circular buffer to be maintained to account for non-power-of-two size</summary>
         public int MinEmptyPageCount;
 
+        /// <summary>Maximum memory size in bytes</summary>
+        public long MaxMemorySizeBytes => (BufferSize - MinEmptyPageCount) * (long)PageSize;
+
         /// <summary>How many pages do we leave empty in the in-memory buffer (between 0 and BufferSize-1)</summary>
         public int EmptyPageCount
         {
@@ -733,9 +736,9 @@ namespace Tsavorite.core
                     emptyPageCount = value;
                     headOffsetLagSize -= emptyPageCount;
 
-                    // Lag addresses are the number of pages "behind" TailPageOffset (the tail in the circular buffer).
-                    ReadOnlyLagAddress = (long)(LogMutableFraction * headOffsetLagSize) << LogPageSizeBits;
-                    HeadOffsetLagAddress = (long)headOffsetLagSize << LogPageSizeBits;
+                    // Address lag offsets correspond to the number of pages "behind" TailPageOffset (the tail in the circular buffer).
+                    ReadOnlyAddressLagOffset = (long)(LogMutableFraction * headOffsetLagSize) << LogPageSizeBits;
+                    HeadAddressLagOffset = (long)headOffsetLagSize << LogPageSizeBits;
                 }
 
                 // Force eviction now if empty page count has increased
@@ -781,10 +784,21 @@ namespace Tsavorite.core
         public long GetTailAddress()
         {
             var local = TailPageOffset;
-            if (local.Offset >= PageSize)
+
+            // Handle corner cases during page overflow
+            // The while loop is guaranteed to terminate because HandlePageOverflow
+            // ensures that it fixes the unstable TailPageOffset immediately.
+            while (local.Offset >= PageSize)
             {
-                local.Page++;
-                local.Offset = 0;
+                if (local.Offset == PageSize)
+                {
+                    local.Page++;
+                    local.Offset = 0;
+                    break;
+                }
+                // Offset is being adjusted by overflow thread, spin-wait
+                Thread.Yield();
+                local = TailPageOffset;
             }
             return ((long)local.Page << LogPageSizeBits) | (uint)local.Offset;
         }
@@ -810,7 +824,8 @@ namespace Tsavorite.core
         /// <summary>Get sector size for main hlog device</summary>
         public int GetDeviceSectorSize() => sectorSize;
 
-        void AllocatePagesWithException(int pageIndex, PageOffset localTailPageOffset)
+        [MethodImpl(MethodImplOptions.NoInlining)]
+        void AllocatePagesWithException(int pageIndex, PageOffset localTailPageOffset, int numSlots)
         {
             try
             {
@@ -824,26 +839,152 @@ namespace Tsavorite.core
             }
             catch
             {
-                localTailPageOffset.Offset = PageSize;
+                // Reset to previous tail
+                localTailPageOffset.PageAndOffset -= numSlots;
                 Interlocked.Exchange(ref TailPageOffset.PageAndOffset, localTailPageOffset.PageAndOffset);
                 throw;
             }
+        }
+
+        /// <summary>
+        /// Throw Tsavorite exception with message. We use a method wrapper so that
+        /// the caller method can execute inlined.
+        /// </summary>
+        /// <param name="message"></param>
+        /// <exception cref="TsavoriteException"></exception>
+        [MethodImpl(MethodImplOptions.NoInlining)]
+        static void ThrowTsavoriteException(string message)
+            => throw new TsavoriteException(message);
+
+        /// <summary>
+        /// Whether we need to shift addresses when turning the page.
+        /// </summary>
+        /// <param name="pageIndex">The page we are turning to</param>
+        /// <param name="localTailPageOffset">Local copy of PageOffset (includes the addition of numSlots)</param>
+        /// <param name="numSlots">Size of new allocation</param>
+        /// <returns></returns>
+        bool NeedToShiftAddress(long pageIndex, PageOffset localTailPageOffset, int numSlots)
+        {
+            var tailAddress = (((long)localTailPageOffset.Page) << LogPageSizeBits) | ((long)(localTailPageOffset.Offset - numSlots));
+            var shiftAddress = pageIndex << LogPageSizeBits;
+
+            // Check whether we need to shift ROA
+            var desiredReadOnlyAddress = shiftAddress - ReadOnlyAddressLagOffset;
+            if (desiredReadOnlyAddress > tailAddress)
+                desiredReadOnlyAddress = tailAddress;
+            if (desiredReadOnlyAddress > ReadOnlyAddress)
+                return true;
+
+            // Check whether we need to shift HA
+            var desiredHeadAddress = shiftAddress - HeadAddressLagOffset;
+            var currentFlushedUntilAddress = FlushedUntilAddress;
+            if (desiredHeadAddress > currentFlushedUntilAddress)
+                desiredHeadAddress = currentFlushedUntilAddress;
+            if (desiredHeadAddress > tailAddress)
+                desiredHeadAddress = tailAddress;
+            if (desiredHeadAddress > HeadAddress)
+                return true;
+
+            return false;
+        }
+
+        /// <summary>
+        /// Shift log addresses when turning the page.
+        /// </summary>
+        /// <param name="pageIndex">The page we are turning to</param>
+        void IssueShiftAddress(long pageIndex)
+        {
+            // Issue the shift of address
+            var shiftAddress = pageIndex << LogPageSizeBits;
+            var tailAddress = GetTailAddress();
+
+            long desiredReadOnlyAddress = shiftAddress - ReadOnlyAddressLagOffset;
+            if (desiredReadOnlyAddress > tailAddress)
+                desiredReadOnlyAddress = tailAddress;
+            ShiftReadOnlyAddress(desiredReadOnlyAddress);
+
+            long desiredHeadAddress = shiftAddress - HeadAddressLagOffset;
+            if (desiredHeadAddress > tailAddress)
+                desiredHeadAddress = tailAddress;
+            ShiftHeadAddress(desiredHeadAddress);
+        }
+
+        [MethodImpl(MethodImplOptions.NoInlining)]
+        long HandlePageOverflow(ref PageOffset localTailPageOffset, int numSlots)
+        {
+            int pageIndex = localTailPageOffset.Page + 1;
+
+            // This thread is trying to allocate at an offset past where one or more previous threads
+            // already overflowed; exit and allow the first overflow thread to proceed. Do not try to remove
+            // the update to TailPageOffset that was done by this thread; that will be overwritten when
+            // the first overflow thread finally completes and updates TailPageOffset.
+            if (localTailPageOffset.Offset - numSlots > PageSize)
+            {
+                if (NeedToWait(pageIndex))
+                    return 0; // RETRY_LATER
+                return -1; // RETRY_NOW
+            }
+
+            // The single thread that "owns" the page-increment proceeds below. This is the thread for which:
+            // 1. Old image of offset (pre-Interlocked.Increment) is <= PageSize, and
+            // 2. New image of offset (post-Interlocked.Increment) is > PageSize.
+            if (NeedToWait(pageIndex))
+            {
+                // Reset to previous tail so that next attempt can retry
+                localTailPageOffset.PageAndOffset -= numSlots;
+                Interlocked.Exchange(ref TailPageOffset.PageAndOffset, localTailPageOffset.PageAndOffset);
+
+                // Shift only after TailPageOffset is reset to a valid state
+                IssueShiftAddress(pageIndex);
+
+                return 0; // RETRY_LATER
+            }
+
+            // We next verify that:
+            // 1. The next page (pageIndex) is ready to use (i.e., closed)
+            // 2. We have issued any necessary address shifting at the page-turn boundary.
+            // If either cannot be verified, we can ask the caller to retry now (immediately), because it is
+            // an ephemeral state.
+            if (CannotAllocate(pageIndex) || NeedToShiftAddress(pageIndex, localTailPageOffset, numSlots))
+            {
+                // Reset to previous tail so that next attempt can retry
+                localTailPageOffset.PageAndOffset -= numSlots;
+                Interlocked.Exchange(ref TailPageOffset.PageAndOffset, localTailPageOffset.PageAndOffset);
+
+                // Shift only after TailPageOffset is reset to a valid state
+                IssueShiftAddress(pageIndex);
+
+                return -1; // RETRY_NOW
+            }
+
+            // Allocate next page and set new tail
+            if (!_wrapper.IsAllocated(pageIndex % BufferSize) || !_wrapper.IsAllocated((pageIndex + 1) % BufferSize))
+                AllocatePagesWithException(pageIndex, localTailPageOffset, numSlots);
+
+            localTailPageOffset.Page++;
+            localTailPageOffset.Offset = numSlots;
+            TailPageOffset = localTailPageOffset;
+
+            // At this point, the slot is allocated and we are not allowed to refresh epochs any longer.
+
+            // Offset is zero, for the first allocation on the new page
+            return ((long)localTailPageOffset.Page) << LogPageSizeBits;
         }
 
         /// <summary>Try allocate, no thread spinning allowed</summary>
         /// <param name="numSlots">Number of slots to allocate</param>
         /// <returns>The allocated logical address, or 0 in case of inability to allocate</returns>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public long TryAllocate(int numSlots = 1)
+        long TryAllocate(int numSlots = 1)
         {
             if (numSlots > PageSize)
-                throw new TsavoriteException("Entry does not fit on page");
+                ThrowTsavoriteException("Entry does not fit on page");
 
             PageOffset localTailPageOffset = default;
             localTailPageOffset.PageAndOffset = TailPageOffset.PageAndOffset;
 
             // Necessary to check because threads keep retrying and we do not
-            // want to overflow offset more than once per thread
+            // want to overflow the offset more than once per thread
             if (localTailPageOffset.Offset > PageSize)
             {
                 if (NeedToWait(localTailPageOffset.Page + 1))
@@ -851,63 +992,23 @@ namespace Tsavorite.core
                 return -1; // RETRY_NOW
             }
 
-            // Determine insertion index.
+            // Determine insertion index. Note that this forms a kind of "lock"; after the first thread does this, other threads that do
+            // it will see that another thread got there first because the subsequent "back up by numSlots" will still be past PageSize,
+            // so they will exit and RETRY in HandlePageOverflow; the first thread "owns" the overflow operation and must stabilize it.
             localTailPageOffset.PageAndOffset = Interlocked.Add(ref TailPageOffset.PageAndOffset, numSlots);
 
-            int page = localTailPageOffset.Page;
-            int offset = localTailPageOffset.Offset - numSlots;
-
-            #region HANDLE PAGE OVERFLOW
+            // Slow path when we reach the end of a page.
             if (localTailPageOffset.Offset > PageSize)
             {
-                int pageIndex = localTailPageOffset.Page + 1;
-
-                // All overflow threads try to shift addresses
-                long shiftAddress = ((long)pageIndex) << LogPageSizeBits;
-                PageAlignedShiftReadOnlyAddress(shiftAddress);
-                PageAlignedShiftHeadAddress(shiftAddress);
-
-                // This thread is trying to allocate at an offset past where one or more previous threads
-                // already overflowed; exit and allow the first overflow thread to proceed
-                if (offset > PageSize)
-                {
-                    if (NeedToWait(pageIndex))
-                        return 0; // RETRY_LATER
-                    return -1; // RETRY_NOW
-                }
-
-                if (NeedToWait(pageIndex))
-                {
-                    // Reset to end of page so that next attempt can retry
-                    localTailPageOffset.Offset = PageSize;
-                    Interlocked.Exchange(ref TailPageOffset.PageAndOffset, localTailPageOffset.PageAndOffset);
-                    return 0; // RETRY_LATER
-                }
-
-                // The thread that "makes" the offset incorrect should allocate next page and set new tail
-                if (CannotAllocate(pageIndex))
-                {
-                    // Reset to end of page so that next attempt can retry
-                    localTailPageOffset.Offset = PageSize;
-                    Interlocked.Exchange(ref TailPageOffset.PageAndOffset, localTailPageOffset.PageAndOffset);
-                    return -1; // RETRY_NOW
-                }
-
-                if (!_wrapper.IsAllocated(pageIndex % BufferSize) || !_wrapper.IsAllocated((pageIndex + 1) % BufferSize))
-                    AllocatePagesWithException(pageIndex, localTailPageOffset);
-
-                localTailPageOffset.Page++;
-                localTailPageOffset.Offset = numSlots;
-                TailPageOffset = localTailPageOffset;
-                page++;
-                offset = 0;
+                // Note that TailPageOffset is now unstable -- there may be a GetTailAddress call spinning for
+                // it to stabilize. Therefore, HandlePageOverflow needs to stabilize TailPageOffset immediately,
+                // before performing any epoch bumps or system calls.
+                return HandlePageOverflow(ref localTailPageOffset, numSlots);
             }
-            #endregion
-
-            return (((long)page) << LogPageSizeBits) | ((long)offset);
+            return (((long)localTailPageOffset.Page) << LogPageSizeBits) | ((long)(localTailPageOffset.Offset - numSlots));
         }
 
-        /// <summary>Try allocate, spin for RETRY_NOW case</summary>
+        /// <summary>Try allocate, spin for RETRY_NOW (logicalAddress is less than 0) case</summary>
         /// <param name="numSlots">Number of slots to allocate</param>
         /// <returns>The allocated logical address, or 0 in case of inability to allocate</returns>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
@@ -915,69 +1016,12 @@ namespace Tsavorite.core
         {
             long logicalAddress;
             while ((logicalAddress = TryAllocate(numSlots)) < 0)
-                epoch.ProtectAndDrain();
-            return logicalAddress;
-        }
-
-        /// <summary>Skip the rest of the current page</summary>
-        public void SkipPage()
-        {
-            PageOffset localTailPageOffset = default;
-            localTailPageOffset.PageAndOffset = TailPageOffset.PageAndOffset;
-
-            // Force page overflow
-            int numSlots = PageSize + 1;
-
-            // Determine insertion index.
-            localTailPageOffset.PageAndOffset = Interlocked.Add(ref TailPageOffset.PageAndOffset, numSlots);
-
-            int page = localTailPageOffset.Page;
-            int offset = localTailPageOffset.Offset - numSlots;
-
-            #region HANDLE PAGE OVERFLOW
-            if (localTailPageOffset.Offset > PageSize)
             {
-                int pageIndex = localTailPageOffset.Page + 1;
-
-                // All overflow threads try to shift addresses
-                long shiftAddress = ((long)pageIndex) << LogPageSizeBits;
-                PageAlignedShiftReadOnlyAddress(shiftAddress);
-                PageAlignedShiftHeadAddress(shiftAddress);
-
-                // This thread is trying to allocate at an offset past where one or more previous threads
-                // already overflowed; exit and allow the first overflow thread to proceed
-                if (offset > PageSize)
-                {
-                    if (NeedToWait(pageIndex))
-                        return; // RETRY_LATER
-                    return; // RETRY_NOW
-                }
-
-                if (NeedToWait(pageIndex))
-                {
-                    // Reset to end of page so that next attempt can retry
-                    localTailPageOffset.Offset = PageSize;
-                    Interlocked.Exchange(ref TailPageOffset.PageAndOffset, localTailPageOffset.PageAndOffset);
-                    return; // RETRY_LATER
-                }
-
-                // The thread that "makes" the offset incorrect should allocate next page and set new tail
-                if (CannotAllocate(pageIndex))
-                {
-                    // Reset to end of page so that next attempt can retry
-                    localTailPageOffset.Offset = PageSize;
-                    Interlocked.Exchange(ref TailPageOffset.PageAndOffset, localTailPageOffset.PageAndOffset);
-                    return; // RETRY_NOW
-                }
-
-                if (!_wrapper.IsAllocated(pageIndex % BufferSize) || !_wrapper.IsAllocated((pageIndex + 1) % BufferSize))
-                    AllocatePagesWithException(pageIndex, localTailPageOffset);
-
-                localTailPageOffset.Page++;
-                localTailPageOffset.Offset = 0;
-                TailPageOffset = localTailPageOffset;
+                _ = TryComplete();
+                epoch.ProtectAndDrain();
+                Thread.Yield();
             }
-            #endregion
+            return logicalAddress;
         }
 
         /// <summary>
@@ -1209,7 +1253,7 @@ namespace Tsavorite.core
         private void PageAlignedShiftReadOnlyAddress(long currentTailAddress)
         {
             long pageAlignedTailAddress = currentTailAddress & ~PageSizeMask;
-            long desiredReadOnlyAddress = pageAlignedTailAddress - ReadOnlyLagAddress;
+            long desiredReadOnlyAddress = pageAlignedTailAddress - ReadOnlyAddressLagOffset;
             if (Utility.MonotonicUpdate(ref ReadOnlyAddress, desiredReadOnlyAddress, out _))
             {
                 // Debug.WriteLine("Allocate: Moving read-only offset from {0:X} to {1:X}", oldReadOnlyAddress, desiredReadOnlyAddress);
@@ -1224,7 +1268,20 @@ namespace Tsavorite.core
         /// <param name="currentTailAddress"></param>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         private void PageAlignedShiftHeadAddress(long currentTailAddress)
-            => ShiftHeadAddress((currentTailAddress & ~PageSizeMask) - HeadOffsetLagAddress);
+        {
+            var desiredHeadAddress = (currentTailAddress & ~PageSizeMask) - HeadAddressLagOffset;
+
+            // Obtain local values of variables that can change
+            var currentFlushedUntilAddress = FlushedUntilAddress;
+            if (desiredHeadAddress > currentFlushedUntilAddress)
+                desiredHeadAddress = currentFlushedUntilAddress & ~PageSizeMask;
+
+            if (Utility.MonotonicUpdate(ref HeadAddress, desiredHeadAddress, out _))
+            {
+                // Debug.WriteLine("Allocate: Moving head offset from {0:X} to {1:X}", oldHeadAddress, newHeadAddress);
+                epoch.BumpCurrentEpoch(() => OnPagesClosed(desiredHeadAddress));
+            }
+        }
 
         /// <summary>
         /// Tries to shift head address to specified value
@@ -1232,13 +1289,17 @@ namespace Tsavorite.core
         /// <param name="desiredHeadAddress"></param>
         public long ShiftHeadAddress(long desiredHeadAddress)
         {
-            //obtain local values of variables that can change
+            // Obtain local values of variables that can change
             long currentFlushedUntilAddress = FlushedUntilAddress;
 
             long newHeadAddress = desiredHeadAddress;
-            if (currentFlushedUntilAddress < newHeadAddress)
+            if (newHeadAddress > currentFlushedUntilAddress)
                 newHeadAddress = currentFlushedUntilAddress;
 
+            if (newHeadAddress % (1 << LogPageSizeBits) != 0)
+            {
+
+            }
             if (Utility.MonotonicUpdate(ref HeadAddress, newHeadAddress, out _))
             {
                 // Debug.WriteLine("Allocate: Moving head offset from {0:X} to {1:X}", oldHeadAddress, newHeadAddress);

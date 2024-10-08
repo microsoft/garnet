@@ -78,6 +78,18 @@ namespace Garnet.common
             return true;
         }
 
+        public static bool WriteArrayLength(int len, ref byte* curr, byte* end, out int numDigits, out int totalLen)
+        {
+            numDigits = NumUtils.NumDigits(len);
+            totalLen = 1 + numDigits + 2;
+            if (totalLen > (int)(end - curr))
+                return false;
+            *curr++ = (byte)'*';
+            NumUtils.IntToBytes(len, numDigits, ref curr);
+            WriteNewline(ref curr);
+            return true;
+        }
+
         /// <summary>
         /// Write array item
         /// </summary>

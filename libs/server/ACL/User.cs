@@ -425,13 +425,11 @@ namespace Garnet.server.ACL
         /// </summary>
         internal static IEnumerable<RespCommand> DetermineCommandDetails(IReadOnlyList<RespCommandsInfo> infos)
         {
-            for (int i = 0; i < infos.Count; i++)
+            foreach (var info in infos)
             {
-                RespCommandsInfo info = infos[i];
-
                 if (info.Parent != null)
                 {
-                    yield return info.SubCommand.Value;
+                    yield return info.Command;
                 }
                 else
                 {
@@ -439,9 +437,9 @@ namespace Garnet.server.ACL
 
                     if (info.SubCommands != null)
                     {
-                        foreach (RespCommandsInfo subCommand in info.SubCommands)
+                        foreach (var subCommand in info.SubCommands)
                         {
-                            yield return subCommand.SubCommand.Value;
+                            yield return subCommand.Command;
                         }
                     }
                 }

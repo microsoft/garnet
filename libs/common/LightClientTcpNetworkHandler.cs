@@ -10,8 +10,8 @@ namespace Garnet.server
 {
     internal sealed class LightClientTcpNetworkHandler : TcpNetworkHandler<LightClient>
     {
-        public LightClientTcpNetworkHandler(LightClient serverHook, Socket socket, LimitedFixedBufferPool networkPool, bool useTLS, IMessageConsumer messageConsumer, int networkSendThrottleMax = 8, ILogger logger = null)
-            : base(serverHook, socket, networkPool, useTLS, messageConsumer, networkSendThrottleMax, logger)
+        public LightClientTcpNetworkHandler(LightClient serverHook, Socket socket, NetworkBufferSettings networkBufferSettings, LimitedFixedBufferPool networkPool, bool useTLS, IMessageConsumer messageConsumer, int networkSendThrottleMax = 8, ILogger logger = null)
+            : base(serverHook, socket, networkBufferSettings, networkPool, useTLS, messageConsumer, networkSendThrottleMax: networkSendThrottleMax, logger: logger)
         {
         }
 

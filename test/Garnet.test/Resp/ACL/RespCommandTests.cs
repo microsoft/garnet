@@ -2187,6 +2187,34 @@ namespace Garnet.test.Resp.ACL
         }
 
         [Test]
+        public async Task CommandDocsACLsAsync()
+        {
+            await CheckCommandsAsync(
+                "COMMAND DOCS",
+                [DoCommandDocsAsync, DoCommandDocsOneAsync, DoCommandDocsMultiAsync],
+                skipPermitted: true
+            );
+
+            static async Task DoCommandDocsAsync(GarnetClient client)
+            {
+                // COMMAND|DOCS returns an array of arrays, which GarnetClient doesn't deal with
+                await client.ExecuteForStringResultAsync("COMMAND", ["DOCS"]);
+            }
+
+            static async Task DoCommandDocsOneAsync(GarnetClient client)
+            {
+                // COMMAND|DOCS returns an array of arrays, which GarnetClient doesn't deal with
+                await client.ExecuteForStringResultAsync("COMMAND", ["DOCS", "GET"]);
+            }
+
+            static async Task DoCommandDocsMultiAsync(GarnetClient client)
+            {
+                // COMMAND|DOCS returns an array of arrays, which GarnetClient doesn't deal with
+                await client.ExecuteForStringResultAsync("COMMAND", ["DOCS", "GET", "SET", "APPEND"]);
+            }
+        }
+
+        [Test]
         public async Task CommitAOFACLsAsync()
         {
             await CheckCommandsAsync(
@@ -2604,8 +2632,6 @@ namespace Garnet.test.Resp.ACL
         [Test]
         public async Task ExpireACLsAsync()
         {
-            // TODO: expire doesn't support combinations of flags (XX GT, XX LT are legal) so those will need to be tested when implemented
-
             await CheckCommandsAsync(
                 "EXPIRE",
                 [DoExpireAsync, DoExpireNXAsync, DoExpireXXAsync, DoExpireGTAsync, DoExpireLTAsync]
@@ -2638,6 +2664,96 @@ namespace Garnet.test.Resp.ACL
             static async Task DoExpireLTAsync(GarnetClient client)
             {
                 long val = await client.ExecuteForLongResultAsync("EXPIRE", ["foo", "10", "LT"]);
+                ClassicAssert.AreEqual(0, val);
+            }
+        }
+
+        [Test]
+        public async Task ExpireAtACLsAsync()
+        {
+            await CheckCommandsAsync(
+                "EXPIREAT",
+                [DoExpireAsync, DoExpireNXAsync, DoExpireXXAsync, DoExpireGTAsync, DoExpireLTAsync]
+            );
+
+
+            static async Task DoExpireAsync(GarnetClient client)
+            {
+                var expireTimestamp = DateTimeOffset.UtcNow.AddMinutes(1).ToUnixTimeSeconds().ToString();
+                long val = await client.ExecuteForLongResultAsync("EXPIREAT", ["foo", expireTimestamp]);
+                ClassicAssert.AreEqual(0, val);
+            }
+
+            static async Task DoExpireNXAsync(GarnetClient client)
+            {
+                var expireTimestamp = DateTimeOffset.UtcNow.AddMinutes(1).ToUnixTimeSeconds().ToString();
+                long val = await client.ExecuteForLongResultAsync("EXPIREAT", ["foo", "10", "NX"]);
+                ClassicAssert.AreEqual(0, val);
+            }
+
+            static async Task DoExpireXXAsync(GarnetClient client)
+            {
+                var expireTimestamp = DateTimeOffset.UtcNow.AddMinutes(1).ToUnixTimeSeconds().ToString();
+                long val = await client.ExecuteForLongResultAsync("EXPIREAT", ["foo", "10", "XX"]);
+                ClassicAssert.AreEqual(0, val);
+            }
+
+            static async Task DoExpireGTAsync(GarnetClient client)
+            {
+                var expireTimestamp = DateTimeOffset.UtcNow.AddMinutes(1).ToUnixTimeSeconds().ToString();
+                long val = await client.ExecuteForLongResultAsync("EXPIREAT", ["foo", "10", "GT"]);
+                ClassicAssert.AreEqual(0, val);
+            }
+
+            static async Task DoExpireLTAsync(GarnetClient client)
+            {
+                var expireTimestamp = DateTimeOffset.UtcNow.AddMinutes(1).ToUnixTimeSeconds().ToString();
+                long val = await client.ExecuteForLongResultAsync("EXPIREAT", ["foo", "10", "LT"]);
+                ClassicAssert.AreEqual(0, val);
+            }
+        }
+
+        [Test]
+        public async Task PExpireAtACLsAsync()
+        {
+            await CheckCommandsAsync(
+                "PEXPIREAT",
+                [DoExpireAsync, DoExpireNXAsync, DoExpireXXAsync, DoExpireGTAsync, DoExpireLTAsync]
+            );
+
+
+            static async Task DoExpireAsync(GarnetClient client)
+            {
+                var expireTimestamp = DateTimeOffset.UtcNow.AddMinutes(1).ToUnixTimeMilliseconds().ToString();
+                long val = await client.ExecuteForLongResultAsync("PEXPIREAT", ["foo", expireTimestamp]);
+                ClassicAssert.AreEqual(0, val);
+            }
+
+            static async Task DoExpireNXAsync(GarnetClient client)
+            {
+                var expireTimestamp = DateTimeOffset.UtcNow.AddMinutes(1).ToUnixTimeSeconds().ToString();
+                long val = await client.ExecuteForLongResultAsync("PEXPIREAT", ["foo", "10", "NX"]);
+                ClassicAssert.AreEqual(0, val);
+            }
+
+            static async Task DoExpireXXAsync(GarnetClient client)
+            {
+                var expireTimestamp = DateTimeOffset.UtcNow.AddMinutes(1).ToUnixTimeSeconds().ToString();
+                long val = await client.ExecuteForLongResultAsync("PEXPIREAT", ["foo", "10", "XX"]);
+                ClassicAssert.AreEqual(0, val);
+            }
+
+            static async Task DoExpireGTAsync(GarnetClient client)
+            {
+                var expireTimestamp = DateTimeOffset.UtcNow.AddMinutes(1).ToUnixTimeSeconds().ToString();
+                long val = await client.ExecuteForLongResultAsync("PEXPIREAT", ["foo", "10", "GT"]);
+                ClassicAssert.AreEqual(0, val);
+            }
+
+            static async Task DoExpireLTAsync(GarnetClient client)
+            {
+                var expireTimestamp = DateTimeOffset.UtcNow.AddMinutes(1).ToUnixTimeSeconds().ToString();
+                long val = await client.ExecuteForLongResultAsync("PEXPIREAT", ["foo", "10", "LT"]);
                 ClassicAssert.AreEqual(0, val);
             }
         }
@@ -3481,6 +3597,21 @@ namespace Garnet.test.Resp.ACL
         }
 
         [Test]
+        public async Task LPosACLsAsync()
+        {
+            await CheckCommandsAsync(
+                "LPOS",
+                [DoLPosAsync]
+            );
+
+            static async Task DoLPosAsync(GarnetClient client)
+            {
+                string val = await client.ExecuteForStringResultAsync("LPOS", ["foo", "a"]);
+                ClassicAssert.IsNull(val);
+            }
+        }
+
+        [Test]
         public async Task LPushACLsAsync()
         {
             int count = 0;
@@ -3854,7 +3985,7 @@ namespace Garnet.test.Resp.ACL
                 try
                 {
                     await client.ExecuteForStringResultAsync("MIGRATE", ["127.0.0.1", "9999", "KEY", "0", "1000"]);
-                    Assert.Fail("Shouldn't succeed, no replicas are attached");
+                    Assert.Fail("Shouldn't be reachable, cluster isn't enabled");
                 }
                 catch (Exception e)
                 {
@@ -3865,6 +3996,41 @@ namespace Garnet.test.Resp.ACL
 
                     throw;
                 }
+            }
+        }
+
+        [Test]
+        public async Task PurgeBPACLsAsync()
+        {
+            // Uses exceptions for control flow, as we're not setting up replicas here
+
+            await CheckCommandsAsync(
+                "PURGEBP",
+                [DoPurgeBPClusterAsync, DoPurgeBPAsync]
+            );
+
+            static async Task DoPurgeBPClusterAsync(GarnetClient client)
+            {
+                try
+                {
+                    await client.ExecuteForStringResultAsync("PURGEBP", ["MigrationManager"]);
+                    Assert.Fail("Shouldn't be reachable, cluster isn't enabled");
+                }
+                catch (Exception e)
+                {
+                    if (e.Message == "ERR This instance has cluster support disabled")
+                    {
+                        return;
+                    }
+
+                    throw;
+                }
+            }
+
+            static async Task DoPurgeBPAsync(GarnetClient client)
+            {
+                string val = await client.ExecuteForStringResultAsync("PURGEBP", ["ServerListener"]);
+                ClassicAssert.AreEqual("GC completed for ServerListener", val);
             }
         }
 
@@ -4274,18 +4440,75 @@ namespace Garnet.test.Resp.ACL
         }
 
         [Test]
+        public async Task ExpireTimeACLsAsync()
+        {
+            await CheckCommandsAsync(
+                "EXPIRETIME",
+                [DoExpireTimeAsync]
+            );
+
+            static async Task DoExpireTimeAsync(GarnetClient client)
+            {
+                var val = await client.ExecuteForLongResultAsync("EXPIRETIME", ["foo"]);
+                ClassicAssert.AreEqual(-2, val);
+            }
+        }
+
+        [Test]
+        public async Task PExpireTimeACLsAsync()
+        {
+            await CheckCommandsAsync(
+                "PEXPIRETIME",
+                [DoPExpireTimeAsync]
+            );
+
+            static async Task DoPExpireTimeAsync(GarnetClient client)
+            {
+                var val = await client.ExecuteForLongResultAsync("PEXPIRETIME", ["foo"]);
+                ClassicAssert.AreEqual(-2, val);
+            }
+        }
+
+        [Test]
         public async Task RenameACLsAsync()
         {
             await CheckCommandsAsync(
                 "RENAME",
-                [DoPTTLAsync]
+                [DoRENAMEAsync]
             );
 
-            static async Task DoPTTLAsync(GarnetClient client)
+            static async Task DoRENAMEAsync(GarnetClient client)
             {
                 try
                 {
                     await client.ExecuteForStringResultAsync("RENAME", ["foo", "bar"]);
+                    Assert.Fail("Shouldn't succeed, key doesn't exist");
+                }
+                catch (Exception e)
+                {
+                    if (e.Message == "ERR no such key")
+                    {
+                        return;
+                    }
+
+                    throw;
+                }
+            }
+        }
+
+        [Test]
+        public async Task RenameNxACLsAsync()
+        {
+            await CheckCommandsAsync(
+                "RENAMENX",
+                [DoRENAMENXAsync]
+            );
+
+            static async Task DoRENAMENXAsync(GarnetClient client)
+            {
+                try
+                {
+                    await client.ExecuteForStringResultAsync("RENAMENX", ["foo", "bar"]);
                     Assert.Fail("Shouldn't succeed, key doesn't exist");
                 }
                 catch (Exception e)

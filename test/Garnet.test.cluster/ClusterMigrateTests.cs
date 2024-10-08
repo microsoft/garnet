@@ -266,12 +266,12 @@ namespace Garnet.test.cluster
 
             var sourceIndex = context.clusterTestUtils.GetSourceNodeIndexFromSlot((ushort)slot, context.logger);
             var expectedKeyCount = context.clusterTestUtils.CountKeysInSlot(slot, context.logger);
-            ClassicAssert.AreEqual(expectedKeyCount, keyCount);
+            ClassicAssert.AreEqual(keyCount, expectedKeyCount);
             _ = context.clusterTestUtils.CountKeysInSlot(-1, context.logger);
             _ = context.clusterTestUtils.CountKeysInSlot(ushort.MaxValue, context.logger);
 
             var result = context.clusterTestUtils.GetKeysInSlot(sourceIndex, slot, expectedKeyCount, context.logger);
-            ClassicAssert.AreEqual(result.Count, keyCount);
+            ClassicAssert.AreEqual(keyCount, result.Count);
             _ = context.clusterTestUtils.GetKeysInSlot(-1, expectedKeyCount);
             _ = context.clusterTestUtils.GetKeysInSlot(ushort.MaxValue, expectedKeyCount);
 

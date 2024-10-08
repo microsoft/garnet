@@ -2,6 +2,7 @@
 // Licensed under the MIT license.
 
 using System;
+using System.Collections.Generic;
 using System.IO;
 using Garnet.server.Auth.Settings;
 using Garnet.server.TLS;
@@ -21,9 +22,9 @@ namespace Garnet.server
         public bool DisableObjects = false;
 
         /// <summary>
-        /// Total memory size limit of object store including heap memory of objects.
+        /// Heap memory size limit of object store.
         /// </summary>
-        public string ObjectStoreTotalMemorySize = "";
+        public string ObjectStoreHeapMemorySize = "";
 
         /// <summary>
         /// Object store log memory used in bytes excluding heap memory.
@@ -91,6 +92,16 @@ namespace Garnet.server
         /// Aof page size in bytes (rounds down to power of 2).
         /// </summary>
         public string AofPageSize = "4m";
+
+        /// <summary>
+        /// AOF replication (safe tail address) refresh frequency in milliseconds. 0 = auto refresh after every enqueue.
+        /// </summary>
+        public int AofReplicationRefreshFrequencyMs = 10;
+
+        /// <summary>
+        /// Subscriber (safe tail address) refresh frequency in milliseconds (for pub-sub). 0 = auto refresh after every enqueue.
+        /// </summary>
+        public int SubscriberRefreshFrequencyMs = 0;
 
         /// <summary>
         /// Write ahead logging (append-only file) commit issue frequency in milliseconds.
@@ -358,6 +369,8 @@ namespace Garnet.server
         /// </summary>
         public bool ExtensionAllowUnsignedAssemblies;
 
+        public IEnumerable<string> LoadModuleCS;
+
         /// <summary>
         /// Constructor
         /// </summary>
@@ -515,7 +528,7 @@ namespace Garnet.server
         /// <summary>
         /// Get KVSettings for the object store log
         /// </summary>
-        public KVSettings<byte[], IGarnetObject> GetObjectStoreSettings(ILogger logger, out long objTotalMemorySize)
+        public KVSettings<byte[], IGarnetObject> GetObjectStoreSettings(ILogger logger, out long objHeapMemorySize)
         {
             if (ObjectStoreMutablePercent is < 10 or > 95)
                 throw new Exception("ObjectStoreMutablePercent must be between 10 and 95");
@@ -563,8 +576,8 @@ namespace Garnet.server
             }
             logger?.LogInformation("[Object Store] Using log mutable percentage of {ObjectStoreMutablePercent}%", ObjectStoreMutablePercent);
 
-            objTotalMemorySize = ParseSize(ObjectStoreTotalMemorySize);
-            logger?.LogInformation("[Object Store] Total memory size including heap objects is {totalMemorySize}", (objTotalMemorySize > 0 ? PrettySize(objTotalMemorySize) : "unlimited"));
+            objHeapMemorySize = ParseSize(ObjectStoreHeapMemorySize);
+            logger?.LogInformation("[Object Store] Total memory size including heap objects is {totalMemorySize}", (objHeapMemorySize > 0 ? PrettySize(objHeapMemorySize) : "unlimited"));
 
             if (EnableStorageTier)
             {
@@ -616,7 +629,7 @@ namespace Garnet.server
                 PageSizeBits = AofPageSizeBits(),
                 LogDevice = GetAofDevice(),
                 TryRecoverLatest = false,
-                AutoRefreshSafeTailAddress = true,
+                SafeTailRefreshFrequencyMs = EnableCluster ? AofReplicationRefreshFrequencyMs : -1,
                 FastCommitMode = EnableFastCommit,
                 AutoCommit = CommitFrequencyMs == 0,
                 MutableFraction = 0.9,
@@ -716,9 +729,9 @@ namespace Garnet.server
         /// <returns></returns>
         IDevice GetAofDevice()
         {
-            if (!MainMemoryReplication && UseAofNullDevice)
-                throw new Exception("Cannot use null device for AOF when not using main memory replication");
-            if (MainMemoryReplication && UseAofNullDevice) return new NullDevice();
+            if (UseAofNullDevice && EnableCluster && !MainMemoryReplication)
+                throw new Exception("Cannot use null device for AOF when cluster is enabled and you are not using main memory replication");
+            if (UseAofNullDevice) return new NullDevice();
             else return GetInitializedDeviceFactory(CheckpointDir).Get(new FileDescriptor("AOF", "aof.log"));
         }
 
