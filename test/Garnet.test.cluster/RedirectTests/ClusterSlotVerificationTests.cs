@@ -81,6 +81,8 @@ namespace Garnet.test.cluster
                 new SISMEMBER(),
                 new SPOP(),
                 new SRANDMEMBER(),
+                new GEOADD(),
+                new GEOHASH(),
             };
 
         ClusterTestContext context;
@@ -209,6 +211,8 @@ namespace Garnet.test.cluster
         [TestCase("SISMEMBER")]
         [TestCase("SPOP")]
         [TestCase("SRANDMEMBER")]
+        [TestCase("GEOADD")]
+        [TestCase("GEOHASH")]
         public void ClusterCLUSTERDOWNTest(string commandName)
         {
             var requestNodeIndex = otherIndex;
@@ -308,6 +312,8 @@ namespace Garnet.test.cluster
         [TestCase("SISMEMBER")]
         [TestCase("SPOP")]
         [TestCase("SRANDMEMBER")]
+        [TestCase("GEOADD")]
+        [TestCase("GEOHASH")]
         public void ClusterOKTest(string commandName)
         {
             var requestNodeIndex = sourceIndex;
@@ -418,6 +424,8 @@ namespace Garnet.test.cluster
         [TestCase("SISMEMBER")]
         [TestCase("SPOP")]
         [TestCase("SRANDMEMBER")]
+        [TestCase("GEOADD")]
+        [TestCase("GEOHASH")]
         public void ClusterCROSSSLOTTest(string commandName)
         {
             var requestNodeIndex = sourceIndex;
@@ -520,6 +528,8 @@ namespace Garnet.test.cluster
         [TestCase("SISMEMBER")]
         [TestCase("SPOP")]
         [TestCase("SRANDMEMBER")]
+        [TestCase("GEOADD")]
+        [TestCase("GEOHASH")]
         public void ClusterMOVEDTest(string commandName)
         {
             var requestNodeIndex = targetIndex;
@@ -629,6 +639,8 @@ namespace Garnet.test.cluster
         [TestCase("SISMEMBER")]
         [TestCase("SPOP")]
         [TestCase("SRANDMEMBER")]
+        [TestCase("GEOADD")]
+        [TestCase("GEOHASH")]
         public void ClusterASKTest(string commandName)
         {
             var requestNodeIndex = sourceIndex;
@@ -755,6 +767,8 @@ namespace Garnet.test.cluster
         [TestCase("SISMEMBER")]
         [TestCase("SPOP")]
         [TestCase("SRANDMEMBER")]
+        [TestCase("GEOADD")]
+        [TestCase("GEOHASH")]
         public void ClusterTRYAGAINTest(string commandName)
         {
             var requestNodeIndex = sourceIndex;
