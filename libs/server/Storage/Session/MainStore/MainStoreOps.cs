@@ -443,11 +443,10 @@ namespace Garnet.server
                 incr_session_notfound();
                 return GarnetStatus.NOTFOUND;
             }
-            else if (cmd == RespCommand.SETIFMATCH && !status.IsUpdated)
+            else if (cmd == RespCommand.SETIFMATCH && status.IsCanceled)
             {
                 // The RMW operation for SETIFMATCH upon not finding the etags match between the existing record and sent etag returns Cancelled Operation
-                incr_session_found();
-                return status.IsCanceled ? GarnetStatus.ETAGMISMATCH : GarnetStatus.WRONGTYPE;
+                return GarnetStatus.ETAGMISMATCH;
             }
             else
             {
