@@ -65,9 +65,10 @@ namespace Garnet.server
                             csvi.step = findRange.KeyStep;
                             break;
                         case FindKeysKeyNum:
+                            var beginSearch = (BeginSearchIndex)specs[0].BeginSearch;
                             var findKeysKeyNum = (FindKeysKeyNum)specs[0].FindKeys;
                             csvi.firstKey = searchIndex.Index + findKeysKeyNum.FirstKey - 1;
-                            csvi.lastKey = csvi.firstKey + parseState.GetInt(searchIndex.Index + findKeysKeyNum.KeyNumIdx - 1);
+                            csvi.lastKey = searchIndex.Index + parseState.GetInt(beginSearch.Index + findKeysKeyNum.KeyNumIdx - 1);
                             csvi.step = findKeysKeyNum.KeyStep;
                             break;
                         case FindKeysUnknown:
