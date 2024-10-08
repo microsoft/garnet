@@ -70,6 +70,9 @@ namespace Garnet.test.cluster
         readonly int otherIndex = 2;
         readonly int iterations = 3;
 
+        /// <summary>
+        /// Issue SetSlot commands to configure slot for migration
+        /// </summary>
         private void ConfigureSlotForMigration()
         {
             var srcEndpoint = context.clusterTestUtils.GetEndPoint(sourceIndex).ToIPEndPoint();
@@ -87,6 +90,9 @@ namespace Garnet.test.cluster
             ClassicAssert.AreEqual("OK", resp);
         }
 
+        /// <summary>
+        /// Reset slot to stable state
+        /// </summary>
         private void ResetSlot()
         {
             var srcEndpoint = context.clusterTestUtils.GetEndPoint(sourceIndex).ToIPEndPoint();

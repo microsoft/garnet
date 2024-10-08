@@ -26,9 +26,26 @@ namespace Garnet.test.cluster
     {
         public static ReadOnlySpan<byte> HashTag => "{1234}"u8;
 
+        /// <summary>
+        /// Indicates if command is a multi-key operation
+        /// </summary>
         public abstract bool IsArrayCommand { get; }
+
+        /// <summary>
+        /// Indicates if command response is a single value or an array of values.
+        /// NOTE: used only for GarnetClientSession that requires to differentiate between string and string[]
+        /// </summary>
         public abstract bool ArrayResponse { get; }
+
+        /// <summary>
+        /// Command requires an existing key to be inserted before the command executes
+        /// Example: RENAME
+        /// </summary>
         public virtual bool RequiresExistingKey => false;
+
+        /// <summary>
+        /// Command name
+        /// </summary>
         public abstract string Command { get; }
 
         public BaseCommand()
@@ -37,15 +54,49 @@ namespace Garnet.test.cluster
             GetCrossSlotKeys = crossSlotKeys();
         }
 
+
+        /// <summary>
+        /// Get slot value for keys from <see cref="GetSingleSlotKeys"/>
+        /// </summary>
         public int GetSlot => HashSlotUtils.HashSlot(Encoding.ASCII.GetBytes(GetSingleSlotKeys[0]));
 
+        /// <summary>
+        /// Get a list of keys that are guaranteed to hash to same slot
+        /// </summary>
         public List<string> GetSingleSlotKeys { get; }
+
+        /// <summary>
+        /// Get a list of keys where at least one hashes to the same slot
+        /// </summary>
         public List<string> GetCrossSlotKeys { get; }
 
+        /// <summary>
+        /// Generate a request for this command that references a single slot.
+        /// NOTE: available for both single and multi-key operations
+        /// </summary>
+        /// <returns></returns>
         public abstract string[] GetSingleSlotRequest();
+
+        /// <summary>
+        /// Generate a request for this command that references at least two slots
+        /// NOTE: available only for multi-key operations
+        /// </summary>
+        /// <returns></returns>
         public abstract string[] GetCrossSlotRequest();
+
+        /// <summary>
+        /// Setup for a given command that references a single slot
+        /// </summary>
+        /// <returns></returns>
         public abstract ArraySegment<string>[] SetupSingleSlotRequest();
 
+        /// <summary>
+        /// Generate a list of keys that hash to a single slot
+        /// </summary>
+        /// <param name="klen"></param>
+        /// <param name="kcount"></param>
+        /// <param name="kEndTag"></param>
+        /// <returns></returns>
         private List<string> singleSlotKeys(int klen = 16, int kcount = 32, int kEndTag = 4)
         {
             var ssk = new List<string>();
@@ -62,6 +113,12 @@ namespace Garnet.test.cluster
             return ssk;
         }
 
+        /// <summary>
+        /// Generate a list of keys that hash to multi slots
+        /// </summary>
+        /// <param name="klen"></param>
+        /// <param name="kcount"></param>
+        /// <returns></returns>
         private List<string> crossSlotKeys(int klen = 16, int kcount = 32)
         {
             var csk = new List<string>();
@@ -74,6 +131,9 @@ namespace Garnet.test.cluster
             return csk;
         }
 
+        /// <summary>
+        /// Get command with parameters containing keys that hash to a single slot
+        /// </summary>
         public string[] GetSingleSlotRequestWithCommand
         {
             get
@@ -87,6 +147,10 @@ namespace Garnet.test.cluster
                 return args;
             }
         }
+
+        /// <summary>
+        /// Get command with parameters containing keys that hash to at least two slots
+        /// </summary>
         public string[] GetCrossslotRequestWithCommand
         {
             get
@@ -104,8 +168,11 @@ namespace Garnet.test.cluster
 
     public class DummyCommand : BaseCommand
     {
+        /// <inheritdoc />
         public override bool IsArrayCommand => false;
+        /// <inheritdoc />
         public override bool ArrayResponse => false;
+        /// <inheritdoc />
         public override string Command => commandName;
 
         readonly string commandName;
@@ -114,10 +181,13 @@ namespace Garnet.test.cluster
             this.commandName = commandName;
         }
 
+        /// <inheritdoc />
         public override string[] GetSingleSlotRequest() => throw new NotImplementedException();
 
+        /// <inheritdoc />
         public override string[] GetCrossSlotRequest() => throw new NotImplementedException();
 
+        /// <inheritdoc />
         public override ArraySegment<string>[] SetupSingleSlotRequest() => throw new NotImplementedException();
     }
 
