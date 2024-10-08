@@ -58,7 +58,7 @@ namespace Garnet.common
                 }
 
                 var nextDigit = (uint)(*readHead - '0');
-                if (nextDigit > 9)
+                if (nextDigit > 9 || readHead == end)
                 {
                     goto Done;
                 }
@@ -77,7 +77,7 @@ namespace Garnet.common
                 }
 
                 var nextDigit = (uint)(*readHead - '0');
-                if (nextDigit > 9)
+                if (nextDigit > 9 || readHead == end)
                 {
                     goto Done;
                 }

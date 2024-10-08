@@ -36,16 +36,14 @@ namespace Garnet.server
 
             foreach (var element in elements)
             {
-                var elementBytes = Encoding.ASCII.GetBytes(element);
-                fixed (byte* elementPtr = elementBytes)
-                {
-                    var elementSlice = new ArgSlice(elementPtr, elementBytes.Length);
-                    parseState.SetArgument(0, elementSlice);
+                var elementSlice = scratchBufferManager.CreateArgSlice(element);
+                parseState.SetArgument(0, elementSlice);
 
-                    var o = new SpanByteAndMemory(output, 1);
-                    var sbKey = key.SpanByte;
-                    RMW_MainStore(ref sbKey, ref input, ref o, ref context);
-                }
+                var o = new SpanByteAndMemory(output, 1);
+                var sbKey = key.SpanByte;
+                RMW_MainStore(ref sbKey, ref input, ref o, ref context);
+
+                scratchBufferManager.RewindScratchBuffer(ref elementSlice);
 
                 //Invalid HLL Type
                 if (*output == (byte)0xFF)

@@ -4,7 +4,6 @@
 using System;
 using System.Collections.Generic;
 using System.Diagnostics;
-using System.Globalization;
 using System.Runtime.CompilerServices;
 using System.Text;
 using Garnet.common;
@@ -226,37 +225,53 @@ namespace Garnet.server
             if (key.Length == 0)
                 return GarnetStatus.OK;
 
-            var useBitIntervalBytes = stackalloc byte[1];
-            useBitIntervalBytes[0] = (byte)(useBitInterval ? '1' : '0');
-            var useBitIntervalSlice = new ArgSlice(useBitIntervalBytes, 1);
+            // Get parameter lengths
+            var startLength = NumUtils.NumDigitsInLong(start);
+            var endLength = NumUtils.NumDigitsInLong(end);
 
-            var startBytes = Encoding.ASCII.GetBytes(start.ToString(CultureInfo.InvariantCulture));
-            var endBytes = Encoding.ASCII.GetBytes(end.ToString(CultureInfo.InvariantCulture));
+            // Calculate # of bytes to store parameters
+            var sliceBytes = 1 + startLength + endLength;
+
+            // Get buffer from scratch buffer manager
+            var paramsSlice = scratchBufferManager.CreateArgSlice(sliceBytes);
+            var paramsSpan = paramsSlice.Span;
+            var paramsSpanOffset = 0;
+
+            // Store parameters in buffer
+
+            // Use bit interval
+            var useBitIntervalSpan = paramsSpan.Slice(paramsSpanOffset, 1);
+            (useBitInterval ? "1"u8 : "0"u8).CopyTo(useBitIntervalSpan);
+            var useBitIntervalSlice = ArgSlice.FromPinnedSpan(useBitIntervalSpan);
+            paramsSpanOffset += 1;
+
+            // Start
+            var startSpan = paramsSpan.Slice(paramsSpanOffset, startLength);
+            NumUtils.LongToSpanByte(start, startSpan);
+            var startSlice = ArgSlice.FromPinnedSpan(startSpan);
+            paramsSpanOffset += startLength;
+
+            // End
+            var endSpan = paramsSpan.Slice(paramsSpanOffset, endLength);
+            NumUtils.LongToSpanByte(end, endSpan);
+            var endSlice = ArgSlice.FromPinnedSpan(endSpan);
 
             SpanByteAndMemory output = new(null);
-            GarnetStatus status;
 
-            fixed (byte* startPtr = startBytes)
+            parseState.InitializeWithArguments(startSlice, endSlice, useBitIntervalSlice);
+
+            var input = new RawStringInput
             {
-                fixed (byte* endPtr = endBytes)
-                {
-                    var startSlice = new ArgSlice(startPtr, startBytes.Length);
-                    var endSlice = new ArgSlice(endPtr, endBytes.Length);
+                header = new RespInputHeader { cmd = RespCommand.BITCOUNT },
+                parseState = parseState,
+                parseStateStartIdx = 0
+            };
 
-                    parseState.InitializeWithArguments(startSlice, endSlice, useBitIntervalSlice);
+            scratchBufferManager.RewindScratchBuffer(ref paramsSlice);
 
-                    var input = new RawStringInput
-                    {
-                        header = new RespInputHeader { cmd = RespCommand.BITCOUNT },
-                        parseState = parseState,
-                        parseStateStartIdx = 0
-                    };
+            var keySp = key.SpanByte;
 
-                    var keySp = key.SpanByte;
-
-                    status = Read_MainStore(ref keySp, ref input, ref output, ref context);
-                }
-            }
+            var status = Read_MainStore(ref keySp, ref input, ref output, ref context);
 
             if (status == GarnetStatus.OK)
             {
@@ -288,36 +303,71 @@ namespace Garnet.server
 
             for (var i = 0; i < commandArguments.Count; i++)
             {
-                var op = (RespCommand)commandArguments[i].secondaryOpCode;
-                var opBytes = Encoding.ASCII.GetBytes(op.ToString());
-                var encodingPrefix = (commandArguments[i].typeInfo & (byte)BitFieldSign.SIGNED) > 0 ? "i" : "u";
-                var encodingBytes = Encoding.ASCII.GetBytes($"{encodingPrefix}{(byte)(commandArguments[i].typeInfo & 0x7F)}");
-                var offsetBytes = Encoding.ASCII.GetBytes(commandArguments[i].offset.ToString());
-                var valueBytes = Encoding.ASCII.GetBytes(commandArguments[i].value.ToString());
-                var overflowTypeBytes = Encoding.ASCII.GetBytes(((BitFieldOverflow)commandArguments[i].overflowType).ToString());
+                // Get parameter lengths
+                var op = ((RespCommand)commandArguments[i].secondaryOpCode).ToString();
+                var encodingPrefix = (commandArguments[i].typeInfo & (byte)BitFieldSign.SIGNED) > 0 ? "i"u8 : "u"u8;
+                var encodingSuffix = commandArguments[i].typeInfo & 0x7F;
+                var encodingSuffixLength = NumUtils.NumDigits(encodingSuffix);
+                var offsetLength = NumUtils.NumDigitsInLong(commandArguments[i].offset);
+                var valueLength = NumUtils.NumDigitsInLong(commandArguments[i].value);
+                var overflowType = ((BitFieldOverflow)commandArguments[i].overflowType).ToString();
+
+                // Calculate # of bytes to store parameters
+                var sliceBytes = op.Length +
+                                 1 + encodingSuffixLength +
+                                 offsetLength +
+                                 valueLength +
+                                 overflowType.Length;
+                
+                // Get buffer from scratch buffer manager
+                var paramsSlice = scratchBufferManager.CreateArgSlice(sliceBytes);
+                var paramsSpan = paramsSlice.Span;
+                var paramsSpanOffset = 0;
+
+                // Store parameters in buffer
+
+                // Secondary op code
+                var opSpan = paramsSpan.Slice(paramsSpanOffset, op.Length);
+                Encoding.UTF8.GetBytes(op, opSpan);
+                var opSlice = ArgSlice.FromPinnedSpan(opSpan);
+                paramsSpanOffset += opSpan.Length;
+
+                // Encoding
+                var encodingSpan = paramsSpan.Slice(paramsSpanOffset, 1 + encodingSuffixLength);
+                encodingSpan[0] = encodingPrefix[0];
+                var encodingSuffixSpan = encodingSpan.Slice(1);
+                NumUtils.LongToSpanByte(encodingSuffix, encodingSuffixSpan);
+                var encodingSlice = ArgSlice.FromPinnedSpan(encodingSpan);
+                paramsSpanOffset += 1 + encodingSuffixLength;
+
+                // Offset
+                var offsetSpan = paramsSpan.Slice(paramsSpanOffset, offsetLength);
+                NumUtils.LongToSpanByte(commandArguments[i].offset, offsetSpan);
+                var offsetSlice = ArgSlice.FromPinnedSpan(offsetSpan);
+                paramsSpanOffset += offsetLength;
+
+                // Value
+                var valueSpan = paramsSpan.Slice(paramsSpanOffset, valueLength);
+                NumUtils.LongToSpanByte(commandArguments[i].value, valueSpan);
+                var valueSlice = ArgSlice.FromPinnedSpan(valueSpan);
+                paramsSpanOffset += valueLength;
+
+                // Overflow Type
+                var overflowTypeSpan = paramsSpan.Slice(paramsSpanOffset, overflowType.Length);
+                Encoding.UTF8.GetBytes(overflowType, overflowTypeSpan);
+                var overflowTypeSlice = ArgSlice.FromPinnedSpan(overflowTypeSpan);
 
                 var output = new SpanByteAndMemory(null);
-                GarnetStatus status;
-                fixed (byte* opPtr = opBytes)
-                fixed (byte* encodingPtr = encodingBytes)
-                fixed (byte* offsetPtr = offsetBytes)
-                fixed (byte* valuePtr = valueBytes)
-                fixed (byte* overflowTypePtr = overflowTypeBytes)
-                {
-                    var opSlice = new ArgSlice(opPtr, opBytes.Length);
-                    var encodingSlice = new ArgSlice(encodingPtr, encodingBytes.Length);
-                    var offsetSlice = new ArgSlice(offsetPtr, offsetBytes.Length);
-                    var valueSlice = new ArgSlice(valuePtr, valueBytes.Length);
-                    var overflowTypeSlice = new ArgSlice(overflowTypePtr, overflowTypeBytes.Length);
 
-                    parseState.InitializeWithArguments(opSlice, encodingSlice, offsetSlice,
+                parseState.InitializeWithArguments(opSlice, encodingSlice, offsetSlice,
                         valueSlice, overflowTypeSlice);
 
-                    input.parseState = parseState;
-                    status = commandArguments[i].secondaryOpCode == (byte)RespCommand.GET ?
-                        Read_MainStore(ref keySp, ref input, ref output, ref context) :
-                        RMW_MainStore(ref keySp, ref input, ref output, ref context);
-                }
+                input.parseState = parseState;
+                var status = commandArguments[i].secondaryOpCode == (byte)RespCommand.GET ?
+                    Read_MainStore(ref keySp, ref input, ref output, ref context) :
+                    RMW_MainStore(ref keySp, ref input, ref output, ref context);
+
+                scratchBufferManager.RewindScratchBuffer(ref paramsSlice);
 
                 if (status == GarnetStatus.NOTFOUND && commandArguments[i].secondaryOpCode == (byte)RespCommand.GET)
                 {

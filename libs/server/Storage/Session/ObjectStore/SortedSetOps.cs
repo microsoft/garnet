@@ -199,44 +199,47 @@ namespace Garnet.server
         /// <param name="countRemoved"></param>
         /// <param name="objectStoreContext"></param>
         /// <returns></returns>
-        public unsafe GarnetStatus SortedSetRemoveRangeByLex<TObjectContext>(ArgSlice key, string min, string max, out int countRemoved, ref TObjectContext objectStoreContext)
-            where TObjectContext : ITsavoriteContext<byte[], IGarnetObject, ObjectInput, GarnetObjectStoreOutput, long, ObjectSessionFunctions, ObjectStoreFunctions, ObjectStoreAllocator>
+        public unsafe GarnetStatus SortedSetRemoveRangeByLex<TObjectContext>(ArgSlice key, string min, string max,
+            out int countRemoved, ref TObjectContext objectStoreContext)
+            where TObjectContext : ITsavoriteContext<byte[], IGarnetObject, ObjectInput, GarnetObjectStoreOutput, long,
+                ObjectSessionFunctions, ObjectStoreFunctions, ObjectStoreAllocator>
         {
             countRemoved = 0;
 
             if (key.Length == 0)
                 return GarnetStatus.OK;
 
-            var minBytes = Encoding.ASCII.GetBytes(min);
-            var maxBytes = Encoding.ASCII.GetBytes(max);
+            // Get buffer from scratch buffer manager
+            var paramsSlice = scratchBufferManager.CreateArgSlice(min.Length + max.Length);
+            var paramsSpan = paramsSlice.Span;
 
-            GarnetStatus status;
-            fixed (byte* ptr = minBytes)
+            // Store parameters to buffer
+            var minSpan = paramsSpan.Slice(0, min.Length);
+            Encoding.UTF8.GetBytes(min, minSpan);
+            var minSlice = ArgSlice.FromPinnedSpan(minSpan);
+
+            var maxSpan = paramsSpan.Slice(0, max.Length);
+            Encoding.UTF8.GetBytes(max, maxSpan);
+            var maxSlice = ArgSlice.FromPinnedSpan(maxSpan);
+
+            // Prepare the parse state
+            parseState.InitializeWithArguments(minSlice, maxSlice);
+
+            // Prepare the input
+            var input = new ObjectInput
             {
-                fixed (byte* ptr2 = maxBytes)
+                header = new RespInputHeader
                 {
-                    // Prepare the parse state
-                    var minArgSlice = new ArgSlice(ptr, minBytes.Length);
-                    var maxArgSlice = new ArgSlice(ptr2, maxBytes.Length);
+                    type = GarnetObjectType.SortedSet, SortedSetOp = SortedSetOperation.ZREMRANGEBYLEX,
+                },
+                parseState = parseState,
+                parseStateStartIdx = 0,
+            };
 
-                    parseState.InitializeWithArguments(minArgSlice, maxArgSlice);
+            var status = RMWObjectStoreOperation(key.ToArray(), ref input, out var output, ref objectStoreContext);
+            countRemoved = output.result1;
 
-                    // Prepare the input
-                    var input = new ObjectInput
-                    {
-                        header = new RespInputHeader
-                        {
-                            type = GarnetObjectType.SortedSet,
-                            SortedSetOp = SortedSetOperation.ZREMRANGEBYLEX,
-                        },
-                        parseState = parseState,
-                        parseStateStartIdx = 0,
-                    };
-
-                    status = RMWObjectStoreOperation(key.ToArray(), ref input, out var output, ref objectStoreContext);
-                    countRemoved = output.result1;
-                }
-            }
+            scratchBufferManager.RewindScratchBuffer(ref paramsSlice);
 
             return status;
         }
@@ -251,49 +254,55 @@ namespace Garnet.server
         /// <param name="countRemoved"></param>
         /// <param name="objectStoreContext"></param>
         /// <returns></returns>
-        public unsafe GarnetStatus SortedSetRemoveRangeByScore<TObjectContext>(ArgSlice key, string min, string max, out int countRemoved, ref TObjectContext objectStoreContext)
-            where TObjectContext : ITsavoriteContext<byte[], IGarnetObject, ObjectInput, GarnetObjectStoreOutput, long, ObjectSessionFunctions, ObjectStoreFunctions, ObjectStoreAllocator>
+        public unsafe GarnetStatus SortedSetRemoveRangeByScore<TObjectContext>(ArgSlice key, string min, string max,
+            out int countRemoved, ref TObjectContext objectStoreContext)
+            where TObjectContext : ITsavoriteContext<byte[], IGarnetObject, ObjectInput, GarnetObjectStoreOutput, long,
+                ObjectSessionFunctions, ObjectStoreFunctions, ObjectStoreAllocator>
         {
             countRemoved = 0;
 
             if (key.Length == 0)
                 return GarnetStatus.OK;
 
-            var minBytes = Encoding.ASCII.GetBytes(min);
-            var maxBytes = Encoding.ASCII.GetBytes(max);
+            // Get buffer from scratch buffer manager
+            var paramsSlice = scratchBufferManager.CreateArgSlice(min.Length + max.Length);
+            var paramsSpan = paramsSlice.Span;
 
-            GarnetStatus status;
-            fixed (byte* ptr = minBytes)
+            // Store parameters to buffer
+            var minSpan = paramsSpan.Slice(0, min.Length);
+            Encoding.UTF8.GetBytes(min, minSpan);
+            var minSlice = ArgSlice.FromPinnedSpan(minSpan);
+
+            var maxSpan = paramsSpan.Slice(0, max.Length);
+            Encoding.UTF8.GetBytes(max, maxSpan);
+            var maxSlice = ArgSlice.FromPinnedSpan(maxSpan);
+
+            // Prepare the parse state
+            parseState.InitializeWithArguments(minSlice, maxSlice);
+
+            // Prepare the input
+            var input = new ObjectInput
             {
-                fixed (byte* ptr2 = maxBytes)
+                header = new RespInputHeader
                 {
-                    // Prepare the parse state
-                    var minArgSlice = new ArgSlice(ptr, minBytes.Length);
-                    var maxArgSlice = new ArgSlice(ptr2, maxBytes.Length);
+                    type = GarnetObjectType.SortedSet, SortedSetOp = SortedSetOperation.ZREMRANGEBYSCORE,
+                },
+                parseState = parseState,
+                parseStateStartIdx = 0,
+            };
 
-                    parseState.InitializeWithArguments(minArgSlice, maxArgSlice);
+            var outputFooter = new GarnetObjectStoreOutput { spanByteAndMemory = new SpanByteAndMemory(null) };
 
-                    // Prepare the input
-                    var input = new ObjectInput
-                    {
-                        header = new RespInputHeader
-                        {
-                            type = GarnetObjectType.SortedSet,
-                            SortedSetOp = SortedSetOperation.ZREMRANGEBYSCORE,
-                        },
-                        parseState = parseState,
-                        parseStateStartIdx = 0,
-                    };
+            var status = RMWObjectStoreOperationWithOutput(key.ToArray(), ref input, ref objectStoreContext,
+                ref outputFooter);
 
-                    var outputFooter = new GarnetObjectStoreOutput { spanByteAndMemory = new SpanByteAndMemory(null) };
+            scratchBufferManager.RewindScratchBuffer(ref paramsSlice);
 
-                    status = RMWObjectStoreOperationWithOutput(key.ToArray(), ref input, ref objectStoreContext, ref outputFooter);
-
-                    if (status == GarnetStatus.OK)
-                    {
-                        countRemoved = TryProcessRespSimple64IntOutput(outputFooter, out var value) ? (int)value : default;
-                    }
-                }
+            if (status == GarnetStatus.OK)
+            {
+                countRemoved = TryProcessRespSimple64IntOutput(outputFooter, out var value)
+                    ? (int)value
+                    : default;
             }
 
             return status;
@@ -309,49 +318,57 @@ namespace Garnet.server
         /// <param name="countRemoved"></param>
         /// <param name="objectStoreContext"></param>
         /// <returns></returns>
-        public unsafe GarnetStatus SortedSetRemoveRangeByRank<TObjectContext>(ArgSlice key, int start, int stop, out int countRemoved, ref TObjectContext objectStoreContext)
-            where TObjectContext : ITsavoriteContext<byte[], IGarnetObject, ObjectInput, GarnetObjectStoreOutput, long, ObjectSessionFunctions, ObjectStoreFunctions, ObjectStoreAllocator>
+        public unsafe GarnetStatus SortedSetRemoveRangeByRank<TObjectContext>(ArgSlice key, int start, int stop,
+            out int countRemoved, ref TObjectContext objectStoreContext)
+            where TObjectContext : ITsavoriteContext<byte[], IGarnetObject, ObjectInput, GarnetObjectStoreOutput, long,
+                ObjectSessionFunctions, ObjectStoreFunctions, ObjectStoreAllocator>
         {
             countRemoved = 0;
 
             if (key.Length == 0)
                 return GarnetStatus.OK;
 
-            var startBytes = Encoding.ASCII.GetBytes(start.ToString());
-            var stopBytes = Encoding.ASCII.GetBytes(stop.ToString());
-
             GarnetStatus status;
-            fixed (byte* ptr = startBytes)
+            // Get parameter lengths
+            var startLen = NumUtils.NumDigits(start);
+            var stopLen = NumUtils.NumDigits(stop);
+
+            // Get buffer from scratch buffer manager
+            var paramsSlice = scratchBufferManager.CreateArgSlice(startLen + stopLen);
+            var paramsSpan = paramsSlice.Span;
+
+            // Store parameters to buffer
+            var startSpan = paramsSpan.Slice(0, startLen);
+            NumUtils.LongToSpanByte(start, startSpan);
+            var startSlice = ArgSlice.FromPinnedSpan(startSpan);
+
+            var stopSpan = paramsSpan.Slice(startLen, stopLen);
+            NumUtils.LongToSpanByte(stop, stopSpan);
+            var stopSlice = ArgSlice.FromPinnedSpan(stopSpan);
+
+            parseState.InitializeWithArguments(startSlice, stopSlice);
+
+            // Prepare the input
+            var input = new ObjectInput
             {
-                fixed (byte* ptr2 = stopBytes)
+                header = new RespInputHeader
                 {
-                    // Prepare the parse state
-                    var startArgSlice = new ArgSlice(ptr, startBytes.Length);
-                    var stopArgSlice = new ArgSlice(ptr2, stopBytes.Length);
+                    type = GarnetObjectType.SortedSet, SortedSetOp = SortedSetOperation.ZREMRANGEBYRANK,
+                },
+                parseState = parseState,
+                parseStateStartIdx = 0,
+            };
 
-                    parseState.InitializeWithArguments(startArgSlice, stopArgSlice);
+            var outputFooter = new GarnetObjectStoreOutput { spanByteAndMemory = new SpanByteAndMemory(null) };
 
-                    // Prepare the input
-                    var input = new ObjectInput
-                    {
-                        header = new RespInputHeader
-                        {
-                            type = GarnetObjectType.SortedSet,
-                            SortedSetOp = SortedSetOperation.ZREMRANGEBYRANK,
-                        },
-                        parseState = parseState,
-                        parseStateStartIdx = 0,
-                    };
+            status = RMWObjectStoreOperationWithOutput(key.ToArray(), ref input, ref objectStoreContext,
+                ref outputFooter);
 
-                    var outputFooter = new GarnetObjectStoreOutput { spanByteAndMemory = new SpanByteAndMemory(null) };
+            scratchBufferManager.RewindScratchBuffer(ref paramsSlice);
 
-                    status = RMWObjectStoreOperationWithOutput(key.ToArray(), ref input, ref objectStoreContext, ref outputFooter);
-
-                    if (status == GarnetStatus.OK)
-                    {
-                        countRemoved = TryProcessRespSimple64IntOutput(outputFooter, out var value) ? (int)value : default;
-                    }
-                }
+            if (status == GarnetStatus.OK)
+            {
+                countRemoved = TryProcessRespSimple64IntOutput(outputFooter, out var value) ? (int)value : default;
             }
 
             return status;
