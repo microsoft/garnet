@@ -38,7 +38,6 @@ jobs:
         os: [ ubuntu-latest, windows-latest ]
         framework: [ 'net8.0' ]
         configuration: [ 'Release' ]
-        # ORIGINAL test: [ 'CI_BDN_Config_RespParseStress', 'CI_BDN_Config_RespTsavoriteStress', 'CI_BDN_Config_RespClusterBench', 'CI_BDN_Config_RespClusterMigrateBench', 'CI_BDN_Config_LuaStress', 'CI_BDN_Config_LuaRunner' ]
         test: [ 'Resp.RespParseStress', 'Resp.RespTsavoriteStress', 'Cluster.RespClusterMigrateBench', 'Cluster.RespClusterBench', 'Resp.RespLuaStress', 'Resp.RespLuaRunnerStress' ]   
     steps:
       - name: Check out code
