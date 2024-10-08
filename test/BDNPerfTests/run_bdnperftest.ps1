@@ -6,14 +6,14 @@
 
     Script to test for performance regressions using BDN Benchmark tool.  There are configuration files (in /ConfigFiles dir) associated with each test that contains name and expected values of the BDN benchmark. Any of these can be sent as the parameter to the file.
     
-        CI_BDN_Config_RespParseStress.json
+        CI_BDN_Config_Resp.RespParseStress.json
 
     NOTE: The expected values are specific for the CI Machine. If you run these on your machine, you will need to change the expected values.
     NOTE: The acceptablerange* parameters in the config file is how far +/- X% the found value can be from the expected value and still say it is pass. Defaulted to 10% 
     
 .EXAMPLE
     ./run_bdnperftest.ps1 
-    ./run_bdnperftest.ps1 CI_BDN_Config_RespParseStress.json
+    ./run_bdnperftest.ps1 CI_BDN_Config_Resp.RespParseStress.json
 #>
 
 
@@ -175,7 +175,6 @@ if ($IsLinux) {
     $expectedBasicLuaRunner2AllocatedValue = $object.expectedBasicLuaRunner2AllocatedValue_linux
     $expectedBasicLuaRunner3AllocatedValue = $object.expectedBasicLuaRunner3AllocatedValue_linux
     $expectedBasicLuaRunner4AllocatedValue = $object.expectedBasicLuaRunner4AllocatedValue_linux
-
 }
 else {
     # Windows expected values
@@ -447,6 +446,7 @@ Get-Content $resultsFile | ForEach-Object {
             }
         }
         #>                   
+
         "*| BasicLuaRunner1*" {
             Write-Host "** BasicLuaRunner1 Mean Value test"
             $foundBasicLuaRunner1MeanValue = ParseValueFromResults $line $meanColumn
