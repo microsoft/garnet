@@ -7,7 +7,7 @@ namespace Garnet.server
 {
     sealed unsafe partial class TransactionManager
     {
-        //Keys involved in the current transaction
+        // Keys involved in the current transaction
         ArgSlice[] keys;
         int keyCount;
 
