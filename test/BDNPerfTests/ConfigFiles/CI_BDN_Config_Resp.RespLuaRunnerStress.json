@@ -1,0 +1,28 @@
+{
+    "configuration": "Release",
+    "framework": "net8.0",
+    "filter": "*LuaRunner*",
+    "expectedBasicLuaRunner1MeanValue_linux": 186,
+    "expectedBasicLuaRunner2MeanValue_linux": 305,
+    "expectedBasicLuaRunner3MeanValue_linux": 1473,
+    "expectedBasicLuaRunner4MeanValue_linux": 3754,
+    "expectedBasicLuaRunner1MeanValue_win": 111,
+    "expectedBasicLuaRunner2MeanValue_win": 173,
+    "expectedBasicLuaRunner3MeanValue_win": 686,
+    "expectedBasicLuaRunner4MeanValue_win": 2711,
+
+    "expectedBasicLuaRunner1AllocatedValue_linux": 24,
+    "expectedBasicLuaRunner2AllocatedValue_linux": 144,
+    "expectedBasicLuaRunner3AllocatedValue_linux": 328,
+    "expectedBasicLuaRunner4AllocatedValue_linux": 864,
+    "expectedBasicLuaRunner1AllocatedValue_win": 24,
+    "expectedBasicLuaRunner2AllocatedValue_win": 144,
+    "expectedBasicLuaRunner3AllocatedValue_win": 328,
+    "expectedBasicLuaRunner4AllocatedValue_win": 864,
+
+    
+    "acceptableMeanRange": 10,
+    "acceptableAllocatedRange": 10,    
+    "acceptableError": ".1",
+    "acceptableStdDev": ".1"
+}

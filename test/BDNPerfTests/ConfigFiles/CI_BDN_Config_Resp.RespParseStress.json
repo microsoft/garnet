@@ -1,7 +1,4 @@
 {
-    "_comment": "To get proper expected results, the ExpectedCoresToTestOn needs to match the number of cores on test machine. NOT SURE IF CHECKING CORES",
-    "ExpectedCoresToTestOn_win": 2,
-    "ExpectedCoresToTestOn_linux": 2,
     "configuration": "Release",
     "framework": "net8.0",
     "filter": "*RespParseStress*",
@@ -14,6 +11,14 @@
     "expectedSAddRemMeanValue_linux": 172,
     "expectedHSetDelMeanValue_linux": 200,
     "expectedMyDictSetGetMeanValue_linux": 235,
+
+    "expectedZAddRemAllocatedValue_linux": 23552,
+    "expectedLPushPopAllocatedValue_linux": 30721,
+    "expectedSAddRemAllocatedValue_linux": 16384,
+    "expectedHSetDelAllocatedValue_linux": 55297,
+    "expectedMyDictSetGetAllocatedValue_linux": 30720,
+
+
     "expectedInLinePingMeanValue_win": 2.4,
     "expectedSETMeanValue_win": 19,
     "expectedSETEXMeanValue_win": 26,
@@ -23,7 +28,15 @@
     "expectedSAddRemMeanValue_win": 130,
     "expectedHSetDelMeanValue_win": 160,
     "expectedMyDictSetGetMeanValue_win": 242,
+
+    "expectedZAddRemAllocatedValue_win": 23552,
+    "expectedLPushPopAllocatedValue_win": 30721,
+    "expectedSAddRemAllocatedValue_win": 16384,
+    "expectedHSetDelAllocatedValue_win": 55297,
+    "expectedMyDictSetGetAllocatedValue_win": 30720,
+
     "acceptableMeanRange": 10,
+    "acceptableAllocatedRange": 10,    
     "acceptableError": ".1",
     "acceptableStdDev": ".1"
 }

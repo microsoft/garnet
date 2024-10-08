@@ -1,7 +1,4 @@
 {
-    "_comment": "To get proper expected results, the ExpectedCoresToTestOn needs to match the number of cores on test machine. NOT SURE IF CHECKING CORES",
-    "ExpectedCoresToTestOn_win": 2,
-    "ExpectedCoresToTestOn_linux": 2,
     "configuration": "Release",
     "framework": "net8.0",
     "filter": "*RespClusterMigrateBench*",
@@ -13,6 +10,7 @@
     "expectedSETMeanValue_win": 47,
     "expectedMGETMeanValue_win": 40,
     "expectedMSETMeanValue_win": 37,
+
     "acceptableMeanRange": 10,
     "acceptableError": ".1",
     "acceptableStdDev": ".1"

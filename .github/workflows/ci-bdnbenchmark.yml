@@ -12,7 +12,8 @@ jobs:
     runs-on: ubuntu-latest # don't need matrix to test where the changes were made in code
     permissions:
       pull-requests: read
-      contents: read
+      deployments: write  #permission to deploy GitHub pages website
+      contents: write  # permission to update benchmark contents in gh-pages branch
     steps:
     - name: Check out code
       uses: actions/checkout@v4
@@ -37,7 +38,7 @@ jobs:
         os: [ ubuntu-latest, windows-latest ]
         framework: [ 'net8.0' ]
         configuration: [ 'Release' ]
-        test: [ 'CI_BDN_Config_RespParseStress.json', 'CI_BDN_Config_RespTsavoriteStress.json', 'CI_BDN_Config_RespClusterBench.json', 'CI_BDN_Config_RespClusterMigrateBench.json', 'CI_BDN_Config_Lua.json' ]
+        test: [ 'Resp.RespParseStress', 'Resp.RespTsavoriteStress', 'Cluster.RespClusterMigrateBench', 'Cluster.RespClusterBench', 'Resp.RespLuaStress', 'Resp.RespLuaRunnerStress' ]   
     steps:
       - name: Check out code
         uses: actions/checkout@v4
@@ -55,15 +56,41 @@ jobs:
       - name: Upload test results to artifacts
         uses: actions/upload-artifact@v4
         with:
-          name: ResultsDir-${{ matrix.os }}-${{ matrix.framework }}-${{ matrix.configuration }}-${{ matrix.test }}
+          name: Results-${{ matrix.os }}-${{ matrix.framework }}-${{ matrix.configuration }}-${{ matrix.test }}
           path: |
              ./test/BDNPerfTests/results
         if: ${{ always() }}
       - name: Upload Error Log to artifacts
         uses: actions/upload-artifact@v4
         with:
-          name: ErrorLogDir-${{ matrix.os }}-${{ matrix.framework }}-${{ matrix.configuration }}-${{ matrix.test }}
+          name: ErrorLog-${{ matrix.os }}-${{ matrix.framework }}-${{ matrix.configuration }}-${{ matrix.test }}
           path: |
             ./test/BDNPerfTests/errorlog
         if: ${{ always() }}
-   
+
+      # Download previous benchmark result from cache (if exists)
+      - name: Download previous benchmark data
+        uses: actions/cache@v4
+        with:
+          path: ./cache
+          key: ${{ runner.os }}-benchmark
+      
+      # Run `github-action-benchmark` action
+      - name: Store benchmark result
+        uses: benchmark-action/github-action-benchmark@v1
+        with:
+          # What benchmark tool created output file
+          tool: 'benchmarkdotnet'
+
+          # Need for both commit comment and charts
+          output-file-path: ./test/BDNPerfTests/BenchmarkDotNet.Artifacts/results/BDN.benchmark.${{ matrix.test }}-report-full-compressed.json
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+
+          # This is for commit comment & Job Summary
+          external-data-json-path: ./cache/benchmark-data.json
+          fail-on-alert: true
+          comment-on-alert: true
+          summary-always: true
+
+          # This is for Charts on GitHub pages
+          auto-push: false

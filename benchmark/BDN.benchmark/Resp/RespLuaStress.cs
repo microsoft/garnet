@@ -58,19 +58,19 @@ namespace BDN.benchmark.Resp
         }
 
         [Benchmark]
-        public void BasicLua1()
+        public void BasicLuaStress1()
             => f1.Call();
 
         [Benchmark]
-        public void BasicLua2()
+        public void BasicLuaStress2()
             => f2.Call();
 
         [Benchmark]
-        public void BasicLua3()
+        public void BasicLuaStress3()
             => f3.Call();
 
         [Benchmark]
-        public void BasicLua4()
+        public void BasicLuaStress4()  
             => f4.Call();
     }
 }

@@ -6,20 +6,20 @@
 
     Script to test for performance regressions using BDN Benchmark tool.  There are configuration files (in /ConfigFiles dir) associated with each test that contains name and expected values of the BDN benchmark. Any of these can be sent as the parameter to the file.
     
-        CI_BDN_Config_RespParseStress.json
+        CI_BDN_Config_Resp.RespParseStress.json
 
     NOTE: The expected values are specific for the CI Machine. If you run these on your machine, you will need to change the expected values.
     NOTE: The acceptablerange* parameters in the config file is how far +/- X% the found value can be from the expected value and still say it is pass. Defaulted to 10% 
     
 .EXAMPLE
     ./run_bdnperftest.ps1 
-    ./run_bdnperftest.ps1 CI_BDN_Config_RespParseStress.json
+    ./run_bdnperftest.ps1 CI_BDN_Config_Resp.RespParseStress.json
 #>
 
 
 # Send the config file for the benchmark. Defaults to a simple one
 param (
-  [string]$configFile = "CI_BDN_Config_RespParseStress.json"
+  [string]$configFile = "CI_BDN_Config_Resp.RespParseStress.json"
 )
 
 $OFS = "`r`n"
@@ -39,20 +39,20 @@ function AnalyzeResult {
     [double] $LowerBound = $expectedResultValue * (1 - $Tolerance)
     [double] $UpperBound = $expectedResultValue * (1 + $Tolerance)
     [double] $dblfoundResultValue = $foundResultValue
-    
+
     # Check if the actual value is within the bounds
     if ($dblfoundResultValue -ge $LowerBound -and $dblfoundResultValue -le $UpperBound) {
-        Write-Host "**   ** PASS! **  Mean Value result ($dblfoundResultValue) is in the acceptable range +/-$acceptablePercentRange% ($LowerBound -> $UpperBound) of expected value: $expectedResultValue " 
+        Write-Host "**   ** PASS! **  Test Value result ($dblfoundResultValue) is in the acceptable range +/-$acceptablePercentRange% ($LowerBound -> $UpperBound) of expected value: $expectedResultValue " 
         Write-Host "** "
         return $true # the values are close enough
     }
     else {
         if ($warnonly) {
-            Write-Host "**   << PERF REGRESSION WARNING! >>  The BDN benchmark Mean Value result ($dblfoundResultValue) is OUT OF RANGE +/-$acceptablePercentRange% ($LowerBound -> $UpperBound) of expected value: $expectedResultValue" 
+            Write-Host "**   << PERF REGRESSION WARNING! >>  The BDN benchmark Value result ($dblfoundResultValue) is OUT OF RANGE +/-$acceptablePercentRange% ($LowerBound -> $UpperBound) of expected value: $expectedResultValue" 
             Write-Host "** "
         }
         else {
-            Write-Host "**   << PERF REGRESSION FAIL! >>  The  BDN benchmark Mean Value ($dblfoundResultValue) is OUT OF ACCEPTABLE RANGE +/-$acceptablePercentRange% ($LowerBound -> $UpperBound) of expected value: $expectedResultValue"
+            Write-Host "**   << PERF REGRESSION FAIL! >>  The  BDN benchmark Value ($dblfoundResultValue) is OUT OF ACCEPTABLE RANGE +/-$acceptablePercentRange% ($LowerBound -> $UpperBound) of expected value: $expectedResultValue"
             Write-Host "** "
         }
         return $false # the values are too different
@@ -74,13 +74,14 @@ param ($ResultsLine, $columnNum)
     # Remove the leading and trailing pipes and split the string by '|'
     $columns = $ResultsLine.Trim('|').Split('|') 
     $column = $columns | ForEach-Object { $_.Trim() }
-    $foundValue = $column[$columnNum].Trim(' us') 
+    $foundValue = $column[$columnNum] 
+
+    $foundValue = $foundValue.Trim(' us')  
     $foundValue = $foundValue.Trim(' ns')  
+    $foundValue = $foundValue.Trim(' B')  
 
     return $foundValue
 }
-
-
 
 
 # ******** BEGIN MAIN  *********
@@ -92,6 +93,16 @@ if ($pathstring.Contains("test")) {
 } else {
     $basePath = $pathstring  # already in base as not in test
     Set-Location .\test\BDNPerfTests\
+}
+
+# Add .json to end if not already there
+if ($configFile -notlike "*.json") {
+    $configFile += ".json"
+}
+
+# This is special case that allows passing test without specifying CI_BDN_Confi_ at the beginning - need for perf test
+if ($configFile -notlike "CI_BDN_Config_*") {
+    $configFile = "CI_BDN_Config_" + $configFile  
 }
 
 # Read the test config file and convert the JSON to a PowerShell object
@@ -109,27 +120,6 @@ if ($IsLinux) {
     $CurrentOS = "Linux"
 }
 
- # Calculate number of cores on the test machine - used to verify the config file settings as the config settings will vary based on machine config
-if ($IsLinux) {
-    $sockets = [int]$(lscpu | grep -E '^Socket' | awk '{print $2}')
-    $coresPerSocket = [int]$(lscpu | grep -E '^Core' | awk '{print $4}')
-    $NumberOfCores = ($sockets * $coresPerSocket)
-
-    $ExpectedCoresToTestOn = $object.ExpectedCoresToTestOn_linux
-}
-else {
-    $NumberOfCores = (Get-CimInstance -ClassName Win32_Processor).NumberOfCores | Measure-Object -Sum | Select-Object -ExpandProperty Sum
-
-    $ExpectedCoresToTestOn = $object.ExpectedCoresToTestOn_win
-}
-
-# To get accurate comparison of found vs expected values, double check to make sure config settings for Number of Cores of the test machine are what is specified in the test config file
-if ($ExpectedCoresToTestOn -ne $NumberOfCores) {
- # DEBUG ----   Write-Error -Message "The Number of Cores on this machine ($NumberOfCores) are not the same as the Expected Cores ($ExpectedCoresToTestOn) found in the test config file: $fullConfiFileAndPath."
- # DEBUG ----  exit
-    Write-Host "The Number of Cores on this machine ($NumberOfCores) are not the same as the Expected Cores ($ExpectedCoresToTestOn) found in the test config file: $fullConfiFileAndPath."
-}
-
 Write-Host "************** Start BDN.benchmark ********************" 
 Write-Host " "
 
@@ -138,6 +128,12 @@ $configuration = $object.configuration
 $framework = $object.framework
 $filter = $object.filter
 $meanColumn = "1"
+$allocatedRespParseColumn = "5"  # Windows adds an additional column before the allocated column
+$allocatedLuaColumn = "5"
+if ($IsLinux) {
+    $allocatedRespParseColumn = "4"
+    $allocatedLuaColumn = "4"
+}
 
 # Set the expected values based on the OS
 if ($IsLinux) {
@@ -146,22 +142,39 @@ if ($IsLinux) {
     $expectedSetMeanValue = $object.expectedSETMeanValue_linux
     $expectedSetEXMeanValue = $object.expectedSETEXMeanValue_linux
     $expectedGetMeanValue = $object.expectedGETMeanValue_linux
+
     $expectedZAddRemMeanValue = $object.expectedZAddRemMeanValue_linux
     $expectedLPushPopMeanValue = $object.expectedLPushPopMeanValue_linux
     $expectedSAddRemMeanValue = $object.expectedSAddRemMeanValue_linux
     $expectedHSetDelMeanValue = $object.expectedHSetDelMeanValue_linux
     $expectedMyDictSetGetMeanValue = $object.expectedMyDictSetGetMeanValue_linux
+    $expectedZAddRemAllocatedValue = $object.expectedZAddRemAllocatedValue_linux
+    $expectedLPushPopAllocatedValue = $object.expectedLPushPopAllocatedValue_linux
+    $expectedSAddRemAllocatedValue = $object.expectedSAddRemAllocatedValue_linux
+    $expectedHSetDelAllocatedValue = $object.expectedHSetDelAllocatedValue_linux
+    $expectedMyDictSetGetAllocatedValue = $object.expectedMyDictSetGetAllocatedValue_linux
+    
     $expectedMGetMeanValue = $object.expectedMGETMeanValue_linux
     $expectedMSetMeanValue = $object.expectedMSETMeanValue_linux
     $expectedIncrMeanValue = $object.expectedIncrMeanValue_linux
-    $expectedBasicLua1MeanValue = $object.expectedBasicLua1MeanValue_linux
-    $expectedBasicLua2MeanValue = $object.expectedBasicLua2MeanValue_linux
-    $expectedBasicLua3MeanValue = $object.expectedBasicLua3MeanValue_linux
-    $expectedBasicLua4MeanValue = $object.expectedBasicLua3MeanValue_linux
+
+    $expectedBasicLuaStress1MeanValue = $object.expectedBasicLuaStress1MeanValue_linux
+    $expectedBasicLuaStress2MeanValue = $object.expectedBasicLuaStress2MeanValue_linux
+    $expectedBasicLuaStress3MeanValue = $object.expectedBasicLuaStress3MeanValue_linux
+    $expectedBasicLuaStress4MeanValue = $object.expectedBasicLuaStress4MeanValue_linux
+    $expectedBasicLuaStress1AllocatedValue = $object.expectedBasicLuaStress1AllocatedValue_linux
+    $expectedBasicLuaStress2AllocatedValue = $object.expectedBasicLuaStress2AllocatedValue_linux
+    $expectedBasicLuaStress3AllocatedValue = $object.expectedBasicLuaStress3AllocatedValue_linux
+    $expectedBasicLuaStress4AllocatedValue = $object.expectedBasicLuaStress4AllocatedValue_linux
+
     $expectedBasicLuaRunner1MeanValue = $object.expectedBasicLuaRunner1MeanValue_linux
     $expectedBasicLuaRunner2MeanValue = $object.expectedBasicLuaRunner2MeanValue_linux
     $expectedBasicLuaRunner3MeanValue = $object.expectedBasicLuaRunner3MeanValue_linux
-    $expectedBasicLuaRunner4MeanValue = $object.expectedBasicLuaRunner3MeanValue_linux
+    $expectedBasicLuaRunner4MeanValue = $object.expectedBasicLuaRunner4MeanValue_linux
+    $expectedBasicLuaRunner1AllocatedValue = $object.expectedBasicLuaRunner1AllocatedValue_linux
+    $expectedBasicLuaRunner2AllocatedValue = $object.expectedBasicLuaRunner2AllocatedValue_linux
+    $expectedBasicLuaRunner3AllocatedValue = $object.expectedBasicLuaRunner3AllocatedValue_linux
+    $expectedBasicLuaRunner4AllocatedValue = $object.expectedBasicLuaRunner4AllocatedValue_linux
 }
 else {
     # Windows expected values
@@ -169,26 +182,44 @@ else {
     $expectedSetMeanValue = $object.expectedSETMeanValue_win
     $expectedSetEXMeanValue = $object.expectedSETEXMeanValue_win
     $expectedGetMeanValue = $object.expectedGETMeanValue_win
+
     $expectedZAddRemMeanValue = $object.expectedZAddRemMeanValue_win
     $expectedLPushPopMeanValue = $object.expectedLPushPopMeanValue_win
     $expectedSAddRemMeanValue = $object.expectedSAddRemMeanValue_win
     $expectedHSetDelMeanValue = $object.expectedHSetDelMeanValue_win
     $expectedMyDictSetGetMeanValue = $object.expectedMyDictSetGetMeanValue_win
+    $expectedZAddRemAllocatedValue = $object.expectedZAddRemAllocatedValue_win
+    $expectedLPushPopAllocatedValue = $object.expectedLPushPopAllocatedValue_win
+    $expectedSAddRemAllocatedValue = $object.expectedSAddRemAllocatedValue_win
+    $expectedHSetDelAllocatedValue = $object.expectedHSetDelAllocatedValue_win
+    $expectedMyDictSetGetAllocatedValue = $object.expectedMyDictSetGetAllocatedValue_win
+
     $expectedMGetMeanValue = $object.expectedMGETMeanValue_win
     $expectedMSetMeanValue = $object.expectedMSETMeanValue_win
     $expectedIncrMeanValue = $object.expectedIncrMeanValue_win
-    $expectedBasicLua1MeanValue = $object.expectedBasicLua1MeanValue_win
-    $expectedBasicLua2MeanValue = $object.expectedBasicLua2MeanValue_win
-    $expectedBasicLua3MeanValue = $object.expectedBasicLua3MeanValue_win
-    $expectedBasicLua4MeanValue = $object.expectedBasicLua3MeanValue_win
+
+    $expectedBasicLuaStress1MeanValue = $object.expectedBasicLuaStress1MeanValue_win
+    $expectedBasicLuaStress2MeanValue = $object.expectedBasicLuaStress2MeanValue_win
+    $expectedBasicLuaStress3MeanValue = $object.expectedBasicLuaStress3MeanValue_win
+    $expectedBasicLuaStress4MeanValue = $object.expectedBasicLuaStress4MeanValue_win
+    $expectedBasicLuaStress1AllocatedValue = $object.expectedBasicLuaStress1AllocatedValue_win
+    $expectedBasicLuaStress2AllocatedValue = $object.expectedBasicLuaStress2AllocatedValue_win
+    $expectedBasicLuaStress3AllocatedValue = $object.expectedBasicLuaStress3AllocatedValue_win
+    $expectedBasicLuaStress4AllocatedValue = $object.expectedBasicLuaStress4AllocatedValue_win
+
     $expectedBasicLuaRunner1MeanValue = $object.expectedBasicLuaRunner1MeanValue_win
     $expectedBasicLuaRunner2MeanValue = $object.expectedBasicLuaRunner2MeanValue_win
     $expectedBasicLuaRunner3MeanValue = $object.expectedBasicLuaRunner3MeanValue_win
-    $expectedBasicLuaRunner4MeanValue = $object.expectedBasicLuaRunner3MeanValue_win
+    $expectedBasicLuaRunner4MeanValue = $object.expectedBasicLuaRunner4MeanValue_win
+    $expectedBasicLuaRunner1AllocatedValue = $object.expectedBasicLuaRunner1AllocatedValue_win
+    $expectedBasicLuaRunner2AllocatedValue = $object.expectedBasicLuaRunner2AllocatedValue_win
+    $expectedBasicLuaRunner3AllocatedValue = $object.expectedBasicLuaRunner3AllocatedValue_win
+    $expectedBasicLuaRunner4AllocatedValue = $object.expectedBasicLuaRunner4AllocatedValue_win
 }
 
 # percent allowed variance when comparing expected vs actual found value - same for linux and windows. 
 $acceptableMeanRange = $object.acceptableMeanRange 
+$acceptableAllocatedRange = $object.acceptableAllocatedRange 
 
 # Set up the results dir and errorlog dir
 $resultsDir = "$basePath/test/BDNPerfTests/results" 
@@ -211,8 +242,8 @@ $BDNbenchmarkErrorFile = "$errorLogDir/$justResultsFileNameNoExt" + "_StandardEr
 
 Write-Output "** Start BDN Benchmark: $filter"
 Write-Output " "
-Write-Output "** Start:  dotnet run -c $configuration -f $framework --filter $filter --project $BDNbenchmarkPath  > $resultsFile 2> $BDNbenchmarkErrorFile"
-dotnet run -c $configuration -f $framework --filter $filter --project $BDNbenchmarkPath  > $resultsFile 2> $BDNbenchmarkErrorFile
+Write-Output "** Start:  dotnet run -c $configuration -f $framework --filter $filter --project $BDNbenchmarkPath --exporters json > $resultsFile 2> $BDNbenchmarkErrorFile"
+dotnet run -c $configuration -f $framework --filter $filter --project $BDNbenchmarkPath --exporters json  > $resultsFile 2> $BDNbenchmarkErrorFile
 
 Write-Output "** BDN Benchmark for $filter finished"
 Write-Output " "
@@ -316,6 +347,46 @@ Get-Content $resultsFile | ForEach-Object {
                 $testSuiteResult = $false
             }
         }
+        "*| ZAddRem*" {
+            Write-Host "** ZAddRem Allocated Value test"
+            $foundZAddRemAllocatedValue = ParseValueFromResults $line $allocatedRespParseColumn
+            $currentResults = AnalyzeResult $foundZAddRemAllocatedValue $expectedZAddRemAllocatedValue $acceptableAllocatedRange $true
+            if ($currentResults -eq $false) {
+                $testSuiteResult = $false
+            }
+        }
+        "*| LPushPop*" {
+            Write-Host "** LPushPop Allocated Value test"
+            $foundLPushPopAllocatedValue = ParseValueFromResults $line $allocatedRespParseColumn
+            $currentResults = AnalyzeResult $foundLPushPopAllocatedValue $expectedLPushPopAllocatedValue $acceptableAllocatedRange $true
+            if ($currentResults -eq $false) {
+                $testSuiteResult = $false
+            }
+        }
+        "*| SAddRem*" {
+            Write-Host "** SAddRem Allocated Value test"
+            $foundSAddRemAllocatedValue = ParseValueFromResults $line $allocatedRespParseColumn
+            $currentResults = AnalyzeResult $foundSAddRemAllocatedValue $expectedSAddRemAllocatedValue $acceptableAllocatedRange $true
+            if ($currentResults -eq $false) {
+                $testSuiteResult = $false
+            }
+        }
+        "*| HSetDel*" {
+            Write-Host "** HSetDel Allocated Value test"
+            $foundHSetDelAllocatedValue = ParseValueFromResults $line $allocatedRespParseColumn
+            $currentResults = AnalyzeResult $foundHSetDelAllocatedValue $expectedHSetDelAllocatedValue $acceptableAllocatedRange $true
+            if ($currentResults -eq $false) {
+                $testSuiteResult = $false
+            }
+        }
+        "*| MyDictSetGet*" {
+            Write-Host "** MyDictSetGet Allocated Value test"
+            $foundMyDictSetGetAllocatedValue = ParseValueFromResults $line $allocatedRespParseColumn
+            $currentResults = AnalyzeResult $foundMyDictSetGetAllocatedValue $expectedMyDictSetGetAllocatedValue $acceptableAllocatedRange $true
+            if ($currentResults -eq $false) {
+                $testSuiteResult = $false
+            }
+        }
         "*| Incr*" {
             Write-Host "** Incr Mean Value test"
             $foundIncrMeanValue = ParseValueFromResults $line $meanColumn
@@ -340,41 +411,42 @@ Get-Content $resultsFile | ForEach-Object {
                 $testSuiteResult = $false
             }
         }
-        "*| BasicLua1*" {
-            Write-Host "** BasicLua1 Mean Value test"
-            $foundBasicLua1MeanValue = ParseValueFromResults $line $meanColumn
-            $currentResults = AnalyzeResult $foundBasicLua1MeanValue $expectedBasicLua1MeanValue $acceptableMeanRange $true
+        "*| BasicLuaStress1*" {
+            Write-Host "** BasicLuaStress1 Mean Value test"
+            $foundBasicLuaStress1MeanValue = ParseValueFromResults $line $meanColumn
+            $currentResults = AnalyzeResult $foundBasicLuaStress1MeanValue $expectedBasicLuaStress1MeanValue $acceptableMeanRange $true
             if ($currentResults -eq $false) {
                 $testSuiteResult = $false
             }
         }
-        "*| BasicLua2*" {
-            Write-Host "** BasicLua2 Mean Value test"
-            $foundBasicLua2MeanValue = ParseValueFromResults $line $meanColumn
-            $currentResults = AnalyzeResult $foundBasicLua2MeanValue $expectedBasicLua2MeanValue $acceptableMeanRange $true
+        "*| BasicLuaStress2*" {
+            Write-Host "** BasicLuaStress2 Mean Value test"
+            $foundBasicLuaStress2MeanValue = ParseValueFromResults $line $meanColumn
+            $currentResults = AnalyzeResult $foundBasicLuaStress2MeanValue $expectedBasicLuaStress2MeanValue $acceptableMeanRange $true
             if ($currentResults -eq $false) {
                 $testSuiteResult = $false
             }
         }
         <# 
         # Have this disabled for now for the CI runs. These are too volatile to have a CI gated on them.
-        "*| BasicLua3*" {
-            Write-Host "** BasicLua3 Mean Value test"
-            $foundBasicLua3MeanValue = ParseValueFromResults $line $meanColumn
-            $currentResults = AnalyzeResult $foundBasicLua3MeanValue $expectedBasicLua3MeanValue $acceptableMeanRange $true
+        "*| BasicLuaStress3*" {
+            Write-Host "** BasicLuaStress3 Mean Value test"
+            $foundBasicLuaStress3MeanValue = ParseValueFromResults $line $meanColumn
+            $currentResults = AnalyzeResult $foundBasicLuaStress3MeanValue $expectedBasicLuaStress3MeanValue $acceptableMeanRange $true
             if ($currentResults -eq $false) {
                 $testSuiteResult = $false
             }
         }
-        "*| BasicLua4*" {
-            Write-Host "** BasicLua4 Mean Value test"
-            $foundBasicLua4MeanValue = ParseValueFromResults $line $meanColumn
-            $currentResults = AnalyzeResult $foundBasicLua4MeanValue $expectedBasicLua4MeanValue $acceptableMeanRange $true
+        "*| BasicLuaStress4*" {
+            Write-Host "** BasicLuaStress4 Mean Value test"
+            $foundBasicLuaStress4MeanValue = ParseValueFromResults $line $meanColumn
+            $currentResults = AnalyzeResult $foundBasicLuaStress4MeanValue $expectedBasicLuaStress4MeanValue $acceptableMeanRange $true
             if ($currentResults -eq $false) {
                 $testSuiteResult = $false
             }
         }
         #>                   
+
         "*| BasicLuaRunner1*" {
             Write-Host "** BasicLuaRunner1 Mean Value test"
             $foundBasicLuaRunner1MeanValue = ParseValueFromResults $line $meanColumn
@@ -411,6 +483,72 @@ Get-Content $resultsFile | ForEach-Object {
             }
         }
         #>            
+
+        "*| BasicLuaStress1*" {
+            Write-Host "** BasicLuaStress1 Allocated Value test"
+            $foundBasicLuaStress1AllocatedValue = ParseValueFromResults $line $allocatedLuaColumn
+            $currentResults = AnalyzeResult $foundBasicLuaStress1AllocatedValue $expectedBasicLuaStress1AllocatedValue $acceptableAllocatedRange $true
+            if ($currentResults -eq $false) {
+                $testSuiteResult = $false
+            }
+        }
+        "*| BasicLuaStress2*" {
+            Write-Host "** BasicLuaStress2 Allocated Value test"
+            $foundBasicLuaStress2AllocatedValue = ParseValueFromResults $line $allocatedLuaColumn
+            $currentResults = AnalyzeResult $foundBasicLuaStress2AllocatedValue $expectedBasicLuaStress2AllocatedValue $acceptableAllocatedRange $true
+            if ($currentResults -eq $false) {
+                $testSuiteResult = $false
+            }
+        }
+        "*| BasicLuaStress3*" {
+            Write-Host "** BasicLuaStress3 Allocated Value test"
+            $foundBasicLuaStress3AllocatedValue = ParseValueFromResults $line $allocatedLuaColumn
+            $currentResults = AnalyzeResult $foundBasicLuaStress3AllocatedValue $expectedBasicLuaStress3AllocatedValue $acceptableAllocatedRange $true
+            if ($currentResults -eq $false) {
+                $testSuiteResult = $false
+            }
+        }
+        "*| BasicLuaStress4*" {
+            Write-Host "** BasicLuaStress4 Allocated Value test"
+            $foundBasicLuaStress4AllocatedValue = ParseValueFromResults $line $allocatedLuaColumn
+            $currentResults = AnalyzeResult $foundBasicLuaStress4AllocatedValue $expectedBasicLuaStress4AllocatedValue $acceptableAllocatedRange $true
+            if ($currentResults -eq $false) {
+                $testSuiteResult = $false
+            }
+        }
+        "*| BasicLuaRunner1*" {
+            Write-Host "** BasicLuaRunner1 Allocated Value test"
+            $foundBasicLuaRunner1AllocatedValue = ParseValueFromResults $line $allocatedLuaColumn
+            $currentResults = AnalyzeResult $foundBasicLuaRunner1AllocatedValue $expectedBasicLuaRunner1AllocatedValue $acceptableAllocatedRange $true
+            if ($currentResults -eq $false) {
+                $testSuiteResult = $false
+            }
+        }
+        "*| BasicLuaRunner2*" {
+            Write-Host "** BasicLuaRunner2 Allocated Value test"
+            $foundBasicLuaRunner2AllocatedValue = ParseValueFromResults $line $allocatedLuaColumn
+            $currentResults = AnalyzeResult $foundBasicLuaRunner2AllocatedValue $expectedBasicLuaRunner2AllocatedValue $acceptableAllocatedRange $true
+            if ($currentResults -eq $false) {
+                $testSuiteResult = $false
+            }
+        }
+        
+        "*| BasicLuaRunner3*" {
+            Write-Host "** BasicLuaRunner3 Allocated Value test"
+            $foundBasicLuaRunner3AllocatedValue = ParseValueFromResults $line $allocatedLuaColumn
+            $currentResults = AnalyzeResult $foundBasicLuaRunner3AllocatedValue $expectedBasicLuaRunner3AllocatedValue $acceptableAllocatedRange $true
+            if ($currentResults -eq $false) {
+                $testSuiteResult = $false
+            }
+        }
+        "*| BasicLuaRunner4*" {
+            Write-Host "** BasicLuaRunner4 Allocated Value test"
+            $foundBasicLuaRunner4AllocatedValue = ParseValueFromResults $line $allocatedLuaColumn
+            $currentResults = AnalyzeResult $foundBasicLuaRunner4AllocatedValue $expectedBasicLuaRunner4AllocatedValue $acceptableAllocatedRange $true
+            if ($currentResults -eq $false) {
+                $testSuiteResult = $false
+            }
+        }
     }
 }
 

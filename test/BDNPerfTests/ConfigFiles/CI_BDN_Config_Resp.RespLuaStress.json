@@ -1,0 +1,28 @@
+{
+    "configuration": "Release",
+    "framework": "net8.0",
+    "filter": "*LuaStress*",
+
+    "expectedBasicLuaStress1MeanValue_linux": 169,
+    "expectedBasicLuaStress2MeanValue_linux": 284,
+    "expectedBasicLuaStress3MeanValue_linux": 1407,
+    "expectedBasicLuaStress4MeanValue_linux": 2733,
+    "expectedBasicLuaStress1AllocatedValue_linux": 24,
+    "expectedBasicLuaStress2AllocatedValue_linux": 144,
+    "expectedBasicLuaStress3AllocatedValue_linux": 328,
+    "expectedBasicLuaStress4AllocatedValue_linux": 832,
+
+    "expectedBasicLuaStress1MeanValue_win": 107,
+    "expectedBasicLuaStress2MeanValue_win": 180,
+    "expectedBasicLuaStress3MeanValue_win": 660,
+    "expectedBasicLuaStress4MeanValue_win": 1805,
+    "expectedBasicLuaStress1AllocatedValue_win": 24,
+    "expectedBasicLuaStress2AllocatedValue_win": 144,
+    "expectedBasicLuaStress3AllocatedValue_win": 328,
+    "expectedBasicLuaStress4AllocatedValue_win": 832,
+    
+    "acceptableMeanRange": 10,
+    "acceptableAllocatedRange": 10,    
+    "acceptableError": ".1",
+    "acceptableStdDev": ".1"
+}
