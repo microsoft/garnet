@@ -1209,12 +1209,44 @@ namespace Garnet.test
             string retValue = db.StringGet(existingNewKey);
             ClassicAssert.AreEqual(origValue, retValue);
 
-            // new Key value pair created with older value, the etag is reusing the existingnewkey etag
+            // new Key value pair created with older value
             var res = (RedisResult[])db.Execute("GETWITHETAG", [existingNewKey]);
             ClassicAssert.AreEqual(0, (long)res[0]);
             ClassicAssert.AreEqual(origValue, res[1].ToString());
 
             origValue = db.StringGet("key1");
+            ClassicAssert.AreEqual(null, origValue);
+        }
+
+        [Test]
+        public void SingleRenameShouldAddEtagAndMetadataIfOldKeyHadEtagAndMetadata()
+        {
+            using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
+            var db = redis.GetDatabase(0);
+
+            string origKey = "key1";
+            string origValue = "test1";
+            long etag = (long)db.Execute("SETWITHETAG", ["key1", origValue]);
+            ClassicAssert.AreEqual(0, etag);
+
+            ClassicAssert.IsTrue(db.KeyExpire(origKey, TimeSpan.FromSeconds(10)));
+
+            string newKey = "key2";
+            db.KeyRename(origKey, newKey);
+
+            string retValue = db.StringGet(newKey);
+            ClassicAssert.AreEqual(origValue, retValue);
+
+            // new Key value pair created with older value
+            var res = (RedisResult[])db.Execute("GETWITHETAG", [newKey]);
+            ClassicAssert.AreEqual(0, (long)res[0]);
+            ClassicAssert.AreEqual(origValue, res[1].ToString());
+
+            // check that the ttl is not empty on new key because it inherited it from prev key
+            TimeSpan? ttl = db.KeyTimeToLive(newKey);
+            ClassicAssert.IsNotNull(ttl);
+
+            origValue = db.StringGet(origKey);
             ClassicAssert.AreEqual(null, origValue);
         }
 

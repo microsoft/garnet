@@ -369,11 +369,9 @@ namespace Garnet.server
             long etagToCheckWith = parseState.GetLong(2);
 
             /* 
-                P.s. This is NOT GOING TO create a buffer overflow becuase of the following reason.
-                Value spanbyte points to the network buffer, the network buffer is already holding key, value, and etag in a contiguous chunk of memory, in order, along with padding
-                for separators in Resp. This means there has to be ENOUGH OR MORE space for len(value) + sizeof(long).
-                All we are doing is borrowing the 8 bytes of memory infront of the value span and making it a part of the same spanbyte so we can essentially do the following transformation.
-                [<value><padding><etag>] -> [<value><etag>]
+                The network buffer holds key, value, and etag in a contiguous chunk of memory, in order, along with padding for separators in RESP.
+                Shift the etag down over the post-value padding to immediately follow the value:
+                    [<value><padding><etag>] -> [<value><etag>]
             */
 
             int initialSizeOfValueSpan = value.Length;
@@ -832,6 +830,8 @@ namespace Garnet.server
             else
             {
                 // Move payload forward to make space for metadata
+                // We can move the payload safely forward since for these commands value is followed by "$2\r\nEX\r\n"
+                // where we instead of EX we couldnt have XX|NX so we have 8 bytes we can borrow from
                 Buffer.MemoryCopy(valPtr + sizeof(int), valPtr + sizeof(int) + sizeof(long), vsize, vsize);
                 *(int*)valPtr = vsize + sizeof(long);
                 SpanByte.Reinterpret(valPtr).ExtraMetadata = DateTimeOffset.UtcNow.Ticks +
@@ -865,7 +865,9 @@ namespace Garnet.server
             }
             else
             {
-                // Move payload forward to make space for metadata
+                // Move payload forward to make space for metadata.
+                // We can move the payload safely forward since for these commands value is followed by "$2\r\nEX\r\n"
+                // where we instead of EX we couldnt have XX|NX so we have 8 bytes we can borrow from
                 Buffer.MemoryCopy(inputPtr + sizeof(int) + RespInputHeader.Size,
                     inputPtr + sizeof(int) + sizeof(long) + RespInputHeader.Size, isize, isize);
                 *(int*)inputPtr = sizeof(long) + RespInputHeader.Size + isize;

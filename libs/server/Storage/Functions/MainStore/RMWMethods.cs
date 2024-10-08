@@ -288,7 +288,8 @@ namespace Garnet.server
                     }
 
                     // Need CU if no space for new value
-                    if (input.Length - RespInputHeader.Size > value.Length) return false;
+                    if (input.Length - RespInputHeader.Size > value.Length)
+                        return false;
 
                     // Increment the ETag
                     long newEtag = prevEtag + 1;

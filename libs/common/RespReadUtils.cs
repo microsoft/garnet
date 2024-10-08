@@ -394,11 +394,11 @@ namespace Garnet.common
                 return false;
             }
 
+            ReadOnlySpan<byte> expectedNilRepr = "$-1\r\n"u8;
 
-            if (*(uint*)(ptr) != MemoryMarshal.Read<uint>("$-1\r"u8) || *(byte*)(ptr + 4) != (byte)'\n')
+            if (*(uint*)ptr != MemoryMarshal.Read<uint>(expectedNilRepr.Slice(0, 4)) || *(ptr + 4) != expectedNilRepr[4])
             {
                 ReadOnlySpan<byte> ptrNext5Bytes = new ReadOnlySpan<byte>(ptr, 5);
-                ReadOnlySpan<byte> expectedNilRepr = "$-1\r\n"u8;
                 for (int i = 0; i < 5; i++)
                 {
                     // first place where the sequence differs we have found the unexpected token
