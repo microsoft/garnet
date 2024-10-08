@@ -84,7 +84,7 @@ jobs:
           tool: 'benchmarkdotnet'
 
           # Need for both commit comment and charts
-          output-file-path: ./test/BDNPerfTests/BenchmarkDotNet.Artifacts/results/BDN.benchmark.Resp.${{ matrix.test }}-report-full-compressed.json
+          output-file-path: ./test/BDNPerfTests/BenchmarkDotNet.Artifacts/results/BDN.benchmark.${{ matrix.test }}-report-full-compressed.json
           github-token: ${{ secrets.GITHUB_TOKEN }}
 
           # This is for commit comment & Job Summary
