@@ -8,7 +8,7 @@
     "expectedBasicLuaRunner4MeanValue_linux": 3754,
 
     "expectedBasicLuaRunner1MeanValue_win": 115,
-    "expectedBasicLuaRunner2MeanValue_win": 219,
+    "expectedBasicLuaRunner2MeanValue_win": 180,
     "expectedBasicLuaRunner3MeanValue_win": 686,
     "expectedBasicLuaRunner4MeanValue_win": 2711,
 
