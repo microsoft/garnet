@@ -694,6 +694,7 @@ namespace Garnet.server
                 RespCommand.CLIENT_KILL => NetworkCLIENTKILL(),
                 RespCommand.COMMAND => NetworkCOMMAND(),
                 RespCommand.COMMAND_COUNT => NetworkCOMMAND_COUNT(),
+                RespCommand.COMMAND_DOCS => NetworkCOMMAND_DOCS(),
                 RespCommand.COMMAND_INFO => NetworkCOMMAND_INFO(),
                 RespCommand.ECHO => NetworkECHO(),
                 RespCommand.HELLO => NetworkHELLO(),

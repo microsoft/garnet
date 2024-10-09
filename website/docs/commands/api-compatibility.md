@@ -110,7 +110,7 @@ Note that this list is subject to change as we continue to expand our API comman
 |  | [SLOTS](cluster.md#cluster-slots) | ➕ | (deprecated) |
 | <span id="command">**COMMAND**</span> | [COMMAND](server.md#command) | ➕ |  |
 |  | [COUNT](server.md#command-count) | ➕ |  |
-|  | DOCS | ➖ |  |
+|  | [DOCS](server.md#command-docs) | ➕ |  |
 |  | GETKEYS | ➖ |  |
 |  | GETKEYSANDFLAGS | ➖ |  | 
 |  | HELP | ➖ |  | 

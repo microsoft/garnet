@@ -1,0 +1,19 @@
+﻿<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <TargetFramework>net8.0</TargetFramework>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <None Remove="RespCommandsDocs.json" />
+    <None Remove="RespCommandsInfo.json" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <EmbeddedResource Include="RespCommandsDocs.json" />
+    <EmbeddedResource Include="RespCommandsInfo.json" />
+  </ItemGroup>
+
+</Project>

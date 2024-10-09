@@ -2187,6 +2187,34 @@ namespace Garnet.test.Resp.ACL
         }
 
         [Test]
+        public async Task CommandDocsACLsAsync()
+        {
+            await CheckCommandsAsync(
+                "COMMAND DOCS",
+                [DoCommandDocsAsync, DoCommandDocsOneAsync, DoCommandDocsMultiAsync],
+                skipPermitted: true
+            );
+
+            static async Task DoCommandDocsAsync(GarnetClient client)
+            {
+                // COMMAND|DOCS returns an array of arrays, which GarnetClient doesn't deal with
+                await client.ExecuteForStringResultAsync("COMMAND", ["DOCS"]);
+            }
+
+            static async Task DoCommandDocsOneAsync(GarnetClient client)
+            {
+                // COMMAND|DOCS returns an array of arrays, which GarnetClient doesn't deal with
+                await client.ExecuteForStringResultAsync("COMMAND", ["DOCS", "GET"]);
+            }
+
+            static async Task DoCommandDocsMultiAsync(GarnetClient client)
+            {
+                // COMMAND|DOCS returns an array of arrays, which GarnetClient doesn't deal with
+                await client.ExecuteForStringResultAsync("COMMAND", ["DOCS", "GET", "SET", "APPEND"]);
+            }
+        }
+
+        [Test]
         public async Task CommitAOFACLsAsync()
         {
             await CheckCommandsAsync(

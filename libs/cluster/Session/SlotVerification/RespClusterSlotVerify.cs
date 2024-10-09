@@ -66,33 +66,6 @@ namespace Garnet.cluster
         }
 
         /// <summary>
-        /// Check if read or read/write is permitted on a single key and generate the appropriate response
-        ///         LOCAL   |   ~LOCAL  | MIGRATING EXISTS  |   MIGRATING ~EXISTS   |   IMPORTING ASKING    |   IMPORTING ~ASKING
-        /// R       OK      |   -MOVED  |   OK              |   -ASK                |   OK                  |   -MOVED
-        /// R/W     OK      |   -MOVED  |   -MIGRATING      |   -ASK                |   OK                  |   -MOVED
-        /// </summary>
-        /// <returns>True if redirect, False if can serve</returns>
-        [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public bool NetworkSingleKeySlotVerify(ReadOnlySpan<byte> key, bool readOnly, byte SessionAsking, ref byte* dcurr, ref byte* dend)
-        {
-            fixed (byte* keyPtr = key)
-            {
-                var keySlice = new ArgSlice(keyPtr, key.Length);
-                // If cluster is not enabled or a transaction is running skip slot check
-                if (!clusterProvider.serverOptions.EnableCluster || txnManager.state == TxnState.Running) return false;
-
-                var config = clusterProvider.clusterManager.CurrentConfig;
-                var vres = SingleKeySlotVerify(ref config, ref keySlice, readOnly, SessionAsking);
-
-                if (vres.state == SlotVerifiedState.OK)
-                    return false;
-                else
-                    WriteClusterSlotVerificationMessage(config, vres, ref dcurr, ref dend);
-                return true;
-            }
-        }
-
-        /// <summary>
         /// Check if read/write is permitted on an array of keys and generate appropriate resp response.
         /// </summary>
         /// <param name="keys"></param>

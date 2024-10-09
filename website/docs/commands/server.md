@@ -34,6 +34,22 @@ Returns Integer reply of number of total commands in this Garnet server.
 Integer reply: the number of commands returned by COMMAND.
 
 ---
+### COMMAND DOCS
+#### Syntax
+
+```bash
+COMMAND DOCS [command-name [command-name ...]]
+```
+
+Return documentary information about commands.
+
+By default, the reply includes all of the server's commands. You can use the optional command-name argument to specify the names of one or more commands.
+
+#### Resp Reply
+
+Array reply: a map, as a flattened array, where each key is a command name, and each value is the documentary information.
+
+---
 ### COMMAND INFO
 #### Syntax
 

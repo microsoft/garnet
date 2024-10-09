@@ -3,7 +3,9 @@
 
 using System;
 using System.Collections.Generic;
+using System.IO;
 using System.Linq;
+using System.Reflection;
 using System.Text;
 using System.Threading;
 using System.Threading.Tasks;
@@ -125,7 +127,7 @@ namespace Garnet.test
             ClassicAssert.True(RespCommandsInfo.TryGetRespCommandInfo("CLUSTER", out var clusterCommand), "Couldn't load CLUSTER command details");
             ClassicAssert.IsNotNull(clusterCommand.SubCommands, "CLUSTER didn't have any subcommands");
 
-            IEnumerable<RespCommand> clusterSubCommands = clusterCommand.SubCommands.Select(static s => s.SubCommand.Value);
+            IEnumerable<RespCommand> clusterSubCommands = clusterCommand.SubCommands.Select(static s => s.Command);
             foreach (var cmd in Enum.GetValues<RespCommand>())
             {
                 var expectedRes = clusterSubCommands.Contains(cmd);

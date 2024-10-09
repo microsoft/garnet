@@ -1,0 +1,5788 @@
+[
+  {
+    "Command": "ACL",
+    "Name": "ACL",
+    "Summary": "A container for Access List Control commands.",
+    "Group": "Server",
+    "Complexity": "Depends on subcommand.",
+    "SubCommands": [
+      {
+        "Command": "ACL_USERS",
+        "Name": "ACL|USERS",
+        "Summary": "Lists all ACL users.",
+        "Group": "Server",
+        "Complexity": "O(N). Where N is the number of configured users."
+      },
+      {
+        "Command": "ACL_SAVE",
+        "Name": "ACL|SAVE",
+        "Summary": "Saves the effective ACL rules in the configured ACL file.",
+        "Group": "Server",
+        "Complexity": "O(N). Where N is the number of configured users."
+      },
+      {
+        "Command": "ACL_LIST",
+        "Name": "ACL|LIST",
+        "Summary": "Dumps the effective rules in ACL file format.",
+        "Group": "Server",
+        "Complexity": "O(N). Where N is the number of configured users."
+      },
+      {
+        "Command": "ACL_CAT",
+        "Name": "ACL|CAT",
+        "Summary": "Lists the ACL categories, or the commands inside a category.",
+        "Group": "Server",
+        "Complexity": "O(1) since the categories and commands are a fixed set.",
+        "Arguments": [
+          {
+            "TypeDiscriminator": "RespCommandBasicArgument",
+            "Name": "CATEGORY",
+            "DisplayText": "category",
+            "Type": "String",
+            "ArgumentFlags": "Optional"
+          }
+        ]
+      },
+      {
+        "Command": "ACL_LOAD",
+        "Name": "ACL|LOAD",
+        "Summary": "Reloads the rules from the configured ACL file.",
+        "Group": "Server",
+        "Complexity": "O(N). Where N is the number of configured users."
+      },
+      {
+        "Command": "ACL_WHOAMI",
+        "Name": "ACL|WHOAMI",
+        "Summary": "Returns the authenticated username of the current connection.",
+        "Group": "Server",
+        "Complexity": "O(1)"
+      },
+      {
+        "Command": "ACL_DELUSER",
+        "Name": "ACL|DELUSER",
+        "Summary": "Deletes ACL users, and terminates their connections.",
+        "Group": "Server",
+        "Complexity": "O(1) amortized time considering the typical user.",
+        "Arguments": [
+          {
+            "TypeDiscriminator": "RespCommandBasicArgument",
+            "Name": "USERNAME",
+            "DisplayText": "username",
+            "Type": "String",
+            "ArgumentFlags": "Multiple"
+          }
+        ]
+      },
+      {
+        "Command": "ACL_SETUSER",
+        "Name": "ACL|SETUSER",
+        "Summary": "Creates and modifies an ACL user and its rules.",
+        "Group": "Server",
+        "Complexity": "O(N). Where N is the number of rules provided.",
+        "Arguments": [
+          {
+            "TypeDiscriminator": "RespCommandBasicArgument",
+            "Name": "USERNAME",
+            "DisplayText": "username",
+            "Type": "String"
+          },
+          {
+            "TypeDiscriminator": "RespCommandBasicArgument",
+            "Name": "RULE",
+            "DisplayText": "rule",
+            "Type": "String",
+            "ArgumentFlags": "Optional, Multiple"
+          }
+        ]
+      }
+    ]
+  },
+  {
+    "Command": "APPEND",
+    "Name": "APPEND",
+    "Summary": "Appends a string to the value of a key. Creates the key if it doesn\u0027t exist.",
+    "Group": "String",
+    "Complexity": "O(1). The amortized time complexity is O(1) assuming the appended value is small and the already present value is of any size, since the dynamic string library used by Redis will double the free space available on every reallocation.",
+    "Arguments": [
+      {
+        "TypeDiscriminator": "RespCommandKeyArgument",
+        "Name": "KEY",
+        "DisplayText": "key",
+        "Type": "Key",
+        "KeySpecIndex": 0
+      },
+      {
+        "TypeDiscriminator": "RespCommandBasicArgument",
+        "Name": "VALUE",
+        "DisplayText": "value",
+        "Type": "String"
+      }
+    ]
+  },
+  {
+    "Command": "ASKING",
+    "Name": "ASKING",
+    "Summary": "Signals that a cluster client is following an -ASK redirect.",
+    "Group": "Cluster",
+    "Complexity": "O(1)"
+  },
+  {
+    "Command": "ASYNC",
+    "Name": "ASYNC",
+    "Summary": "Start, stop or issue a barrier command for a series of async operations.",
+    "Group": "Generic",
+    "Arguments": [
+      {
+        "TypeDiscriminator": "RespCommandContainerArgument",
+        "Name": "ARGS",
+        "Type": "OneOf",
+        "Arguments": [
+          {
+            "TypeDiscriminator": "RespCommandBasicArgument",
+            "Name": "ON",
+            "DisplayText": "on",
+            "Type": "PureToken",
+            "Token": "ON"
+          },
+          {
+            "TypeDiscriminator": "RespCommandBasicArgument",
+            "Name": "OFF",
+            "DisplayText": "off",
+            "Type": "PureToken",
+            "Token": "OFF"
+          },
+          {
+            "TypeDiscriminator": "RespCommandBasicArgument",
+            "Name": "BARRIER",
+            "DisplayText": "barrier",
+            "Type": "PureToken",
+            "Token": "BARRIER"
+          }
+        ]
+      }
+    ]
+  },
+  {
+    "Command": "AUTH",
+    "Name": "AUTH",
+    "Summary": "Authenticates the connection.",
+    "Group": "Connection",
+    "Complexity": "O(N) where N is the number of passwords defined for the user",
+    "Arguments": [
+      {
+        "TypeDiscriminator": "RespCommandBasicArgument",
+        "Name": "USERNAME",
+        "DisplayText": "username",
+        "Type": "String",
+        "ArgumentFlags": "Optional"
+      },
+      {
+        "TypeDiscriminator": "RespCommandBasicArgument",
+        "Name": "PASSWORD",
+        "DisplayText": "password",
+        "Type": "String"
+      }
+    ]
+  },
+  {
+    "Command": "BGSAVE",
+    "Name": "BGSAVE",
+    "Summary": "Asynchronously saves the database(s) to disk.",
+    "Group": "Server",
+    "Complexity": "O(1)",
+    "Arguments": [
+      {
+        "TypeDiscriminator": "RespCommandBasicArgument",
+        "Name": "SCHEDULE",
+        "DisplayText": "schedule",
+        "Type": "PureToken",
+        "Token": "SCHEDULE",
+        "ArgumentFlags": "Optional"
+      }
+    ]
+  },
+  {
+    "Command": "BITCOUNT",
+    "Name": "BITCOUNT",
+    "Summary": "Counts the number of set bits (population counting) in a string.",
+    "Group": "Bitmap",
+    "Complexity": "O(N)",
+    "Arguments": [
+      {
+        "TypeDiscriminator": "RespCommandKeyArgument",
+        "Name": "KEY",
+        "DisplayText": "key",
+        "Type": "Key",
+        "KeySpecIndex": 0
+      },
+      {
+        "TypeDiscriminator": "RespCommandContainerArgument",
+        "Name": "RANGE",
+        "Type": "Block",
+        "ArgumentFlags": "Optional",
+        "Arguments": [
+          {
+            "TypeDiscriminator": "RespCommandBasicArgument",
+            "Name": "START",
+            "DisplayText": "start",
+            "Type": "Integer"
+          },
+          {
+            "TypeDiscriminator": "RespCommandBasicArgument",
+            "Name": "END",
+            "DisplayText": "end",
+            "Type": "Integer"
+          },
+          {
+            "TypeDiscriminator": "RespCommandContainerArgument",
+            "Name": "UNIT",
+            "Type": "OneOf",
+            "ArgumentFlags": "Optional",
+            "Arguments": [
+              {
+                "TypeDiscriminator": "RespCommandBasicArgument",
+                "Name": "BYTE",
+                "DisplayText": "byte",
+                "Type": "PureToken",
+                "Token": "BYTE"
+              },
+              {
+                "TypeDiscriminator": "RespCommandBasicArgument",
+                "Name": "BIT",
+                "DisplayText": "bit",
+                "Type": "PureToken",
+                "Token": "BIT"
+              }
+            ]
+          }
+        ]
+      }
+    ]
+  },
+  {
+    "Command": "BITFIELD",
+    "Name": "BITFIELD",
+    "Summary": "Performs arbitrary bitfield integer operations on strings.",
+    "Group": "Bitmap",
+    "Complexity": "O(1) for each subcommand specified",
+    "Arguments": [
+      {
+        "TypeDiscriminator": "RespCommandKeyArgument",
+        "Name": "KEY",
+        "DisplayText": "key",
+        "Type": "Key",
+        "KeySpecIndex": 0
+      },
+      {
+        "TypeDiscriminator": "RespCommandContainerArgument",
+        "Name": "OPERATION",
+        "Type": "OneOf",
+        "ArgumentFlags": "Optional, Multiple",
+        "Arguments": [
+          {
+            "TypeDiscriminator": "RespCommandContainerArgument",
+            "Name": "GET-BLOCK",
+            "Type": "Block",
+            "Token": "GET",
+            "Arguments": [
+              {
+                "TypeDiscriminator": "RespCommandBasicArgument",
+                "Name": "ENCODING",
+                "DisplayText": "encoding",
+                "Type": "String"
+              },
+              {
+                "TypeDiscriminator": "RespCommandBasicArgument",
+                "Name": "OFFSET",
+                "DisplayText": "offset",
+                "Type": "Integer"
+              }
+            ]
+          },
+          {
+            "TypeDiscriminator": "RespCommandContainerArgument",
+            "Name": "WRITE",
+            "Type": "Block",
+            "Arguments": [
+              {
+                "TypeDiscriminator": "RespCommandContainerArgument",
+                "Name": "OVERFLOW-BLOCK",
+                "Type": "OneOf",
+                "Token": "OVERFLOW",
+                "ArgumentFlags": "Optional",
+                "Arguments": [
+                  {
+                    "TypeDiscriminator": "RespCommandBasicArgument",
+                    "Name": "WRAP",
+                    "DisplayText": "wrap",
+                    "Type": "PureToken",
+                    "Token": "WRAP"
+                  },
+                  {
+                    "TypeDiscriminator": "RespCommandBasicArgument",
+                    "Name": "SAT",
+                    "DisplayText": "sat",
+                    "Type": "PureToken",
+                    "Token": "SAT"
+                  },
+                  {
+                    "TypeDiscriminator": "RespCommandBasicArgument",
+                    "Name": "FAIL",
+                    "DisplayText": "fail",
+                    "Type": "PureToken",
+                    "Token": "FAIL"
+                  }
+                ]
+              },
+              {
+                "TypeDiscriminator": "RespCommandContainerArgument",
+                "Name": "WRITE-OPERATION",
+                "Type": "OneOf",
+                "Arguments": [
+                  {
+                    "TypeDiscriminator": "RespCommandContainerArgument",
+                    "Name": "SET-BLOCK",
+                    "Type": "Block",
+                    "Token": "SET",
+                    "Arguments": [
+                      {
+                        "TypeDiscriminator": "RespCommandBasicArgument",
+                        "Name": "ENCODING",
+                        "DisplayText": "encoding",
+                        "Type": "String"
+                      },
+                      {
+                        "TypeDiscriminator": "RespCommandBasicArgument",
+                        "Name": "OFFSET",
+                        "DisplayText": "offset",
+                        "Type": "Integer"
+                      },
+                      {
+                        "TypeDiscriminator": "RespCommandBasicArgument",
+                        "Name": "VALUE",
+                        "DisplayText": "value",
+                        "Type": "Integer"
+                      }
+                    ]
+                  },
+                  {
+                    "TypeDiscriminator": "RespCommandContainerArgument",
+                    "Name": "INCRBY-BLOCK",
+                    "Type": "Block",
+                    "Token": "INCRBY",
+                    "Arguments": [
+                      {
+                        "TypeDiscriminator": "RespCommandBasicArgument",
+                        "Name": "ENCODING",
+                        "DisplayText": "encoding",
+                        "Type": "String"
+                      },
+                      {
+                        "TypeDiscriminator": "RespCommandBasicArgument",
+                        "Name": "OFFSET",
+                        "DisplayText": "offset",
+                        "Type": "Integer"
+                      },
+                      {
+                        "TypeDiscriminator": "RespCommandBasicArgument",
+                        "Name": "INCREMENT",
+                        "DisplayText": "increment",
+                        "Type": "Integer"
+                      }
+                    ]
+                  }
+                ]
+              }
+            ]
+          }
+        ]
+      }
+    ]
+  },
+  {
+    "Command": "BITFIELD_RO",
+    "Name": "BITFIELD_RO",
+    "Summary": "Performs arbitrary read-only bitfield integer operations on strings.",
+    "Group": "Bitmap",
+    "Complexity": "O(1) for each subcommand specified",
+    "Arguments": [
+      {
+        "TypeDiscriminator": "RespCommandKeyArgument",
+        "Name": "KEY",
+        "DisplayText": "key",
+        "Type": "Key",
+        "KeySpecIndex": 0
+      },
+      {
+        "TypeDiscriminator": "RespCommandContainerArgument",
+        "Name": "GET-BLOCK",
+        "Type": "Block",
+        "Token": "GET",
+        "ArgumentFlags": "Optional, Multiple",
+        "Arguments": [
+          {
+            "TypeDiscriminator": "RespCommandBasicArgument",
+            "Name": "ENCODING",
+            "DisplayText": "encoding",
+            "Type": "String"
+          },
+          {
+            "TypeDiscriminator": "RespCommandBasicArgument",
+            "Name": "OFFSET",
+            "DisplayText": "offset",
+            "Type": "Integer"
+          }
+        ]
+      }
+    ]
+  },
+  {
+    "Command": "BITOP",
+    "Name": "BITOP",
+    "Summary": "Performs bitwise operations on multiple strings, and stores the result.",
+    "Group": "Bitmap",
+    "Complexity": "O(N)",
+    "Arguments": [
+      {
+        "TypeDiscriminator": "RespCommandContainerArgument",
+        "Name": "OPERATION",
+        "Type": "OneOf",
+        "Arguments": [
+          {
+            "TypeDiscriminator": "RespCommandBasicArgument",
+            "Name": "AND",
+            "DisplayText": "and",
+            "Type": "PureToken",
+            "Token": "AND"
+          },
+          {
+            "TypeDiscriminator": "RespCommandBasicArgument",
+            "Name": "OR",
+            "DisplayText": "or",
+            "Type": "PureToken",
+            "Token": "OR"
+          },
+          {
+            "TypeDiscriminator": "RespCommandBasicArgument",
+            "Name": "XOR",
+            "DisplayText": "xor",
+            "Type": "PureToken",
+            "Token": "XOR"
+          },
+          {
+            "TypeDiscriminator": "RespCommandBasicArgument",
+            "Name": "NOT",
+            "DisplayText": "not",
+            "Type": "PureToken",
+            "Token": "NOT"
+          }
+        ]
+      },
+      {
+        "TypeDiscriminator": "RespCommandKeyArgument",
+        "Name": "DESTKEY",
+        "DisplayText": "destkey",
+        "Type": "Key",
+        "KeySpecIndex": 0
+      },
+      {
+        "TypeDiscriminator": "RespCommandKeyArgument",
+        "Name": "KEY",
+        "DisplayText": "key",
+        "Type": "Key",
+        "ArgumentFlags": "Multiple",
+        "KeySpecIndex": 1
+      }
+    ]
+  },
+  {
+    "Command": "BITPOS",
+    "Name": "BITPOS",
+    "Summary": "Finds the first set (1) or clear (0) bit in a string.",
+    "Group": "Bitmap",
+    "Complexity": "O(N)",
+    "Arguments": [
+      {
+        "TypeDiscriminator": "RespCommandKeyArgument",
+        "Name": "KEY",
+        "DisplayText": "key",
+        "Type": "Key",
+        "KeySpecIndex": 0
+      },
+      {
+        "TypeDiscriminator": "RespCommandBasicArgument",
+        "Name": "BIT",
+        "DisplayText": "bit",
+        "Type": "Integer"
+      },
+      {
+        "TypeDiscriminator": "RespCommandContainerArgument",
+        "Name": "RANGE",
+        "Type": "Block",
+        "ArgumentFlags": "Optional",
+        "Arguments": [
+          {
+            "TypeDiscriminator": "RespCommandBasicArgument",
+            "Name": "START",
+            "DisplayText": "start",
+            "Type": "Integer"
+          },
+          {
+            "TypeDiscriminator": "RespCommandContainerArgument",
+            "Name": "END-UNIT-BLOCK",
+            "Type": "Block",
+            "ArgumentFlags": "Optional",
+            "Arguments": [
+              {
+                "TypeDiscriminator": "RespCommandBasicArgument",
+                "Name": "END",
+                "DisplayText": "end",
+                "Type": "Integer"
+              },
+              {
+                "TypeDiscriminator": "RespCommandContainerArgument",
+                "Name": "UNIT",
+                "Type": "OneOf",
+                "ArgumentFlags": "Optional",
+                "Arguments": [
+                  {
+                    "TypeDiscriminator": "RespCommandBasicArgument",
+                    "Name": "BYTE",
+                    "DisplayText": "byte",
+                    "Type": "PureToken",
+                    "Token": "BYTE"
+                  },
+                  {
+                    "TypeDiscriminator": "RespCommandBasicArgument",
+                    "Name": "BIT",
+                    "DisplayText": "bit",
+                    "Type": "PureToken",
+                    "Token": "BIT"
+                  }
+                ]
+              }
+            ]
+          }
+        ]
+      }
+    ]
+  },
+  {
+    "Command": "BLMOVE",
+    "Name": "BLMOVE",
+    "Summary": "Pops an element from a list, pushes it to another list and returns it. Blocks until an element is available otherwise. Deletes the list if the last element was moved.",
+    "Group": "List",
+    "Complexity": "O(1)",
+    "Arguments": [
+      {
+        "TypeDiscriminator": "RespCommandKeyArgument",
+        "Name": "SOURCE",
+        "DisplayText": "source",
+        "Type": "Key",
+        "KeySpecIndex": 0
+      },
+      {
+        "TypeDiscriminator": "RespCommandKeyArgument",
+        "Name": "DESTINATION",
+        "DisplayText": "destination",
+        "Type": "Key",
+        "KeySpecIndex": 1
+      },
+      {
+        "TypeDiscriminator": "RespCommandContainerArgument",
+        "Name": "WHEREFROM",
+        "Type": "OneOf",
+        "Arguments": [
+          {
+            "TypeDiscriminator": "RespCommandBasicArgument",
+            "Name": "LEFT",
+            "DisplayText": "left",
+            "Type": "PureToken",
+            "Token": "LEFT"
+          },
+          {
+            "TypeDiscriminator": "RespCommandBasicArgument",
+            "Name": "RIGHT",
+            "DisplayText": "right",
+            "Type": "PureToken",
+            "Token": "RIGHT"
+          }
+        ]
+      },
+      {
+        "TypeDiscriminator": "RespCommandContainerArgument",
+        "Name": "WHERETO",
+        "Type": "OneOf",
+        "Arguments": [
+          {
+            "TypeDiscriminator": "RespCommandBasicArgument",
+            "Name": "LEFT",
+            "DisplayText": "left",
+            "Type": "PureToken",
+            "Token": "LEFT"
+          },
+          {
+            "TypeDiscriminator": "RespCommandBasicArgument",
+            "Name": "RIGHT",
+            "DisplayText": "right",
+            "Type": "PureToken",
+            "Token": "RIGHT"
+          }
+        ]
+      },
+      {
+        "TypeDiscriminator": "RespCommandBasicArgument",
+        "Name": "TIMEOUT",
+        "DisplayText": "timeout",
+        "Type": "Double"
+      }
+    ]
+  },
+  {
+    "Command": "BLPOP",
+    "Name": "BLPOP",
+    "Summary": "Removes and returns the first element in a list. Blocks until an element is available otherwise. Deletes the list if the last element was popped.",
+    "Group": "List",
+    "Complexity": "O(N) where N is the number of provided keys.",
+    "Arguments": [
+      {
+        "TypeDiscriminator": "RespCommandKeyArgument",
+        "Name": "KEY",
+        "DisplayText": "key",
+        "Type": "Key",
+        "ArgumentFlags": "Multiple",
+        "KeySpecIndex": 0
+      },
+      {
+        "TypeDiscriminator": "RespCommandBasicArgument",
+        "Name": "TIMEOUT",
+        "DisplayText": "timeout",
+        "Type": "Double"
+      }
+    ]
+  },
+  {
+    "Command": "BRPOP",
+    "Name": "BRPOP",
+    "Summary": "Removes and returns the last element in a list. Blocks until an element is available otherwise. Deletes the list if the last element was popped.",
+    "Group": "List",
+    "Complexity": "O(N) where N is the number of provided keys.",
+    "Arguments": [
+      {
+        "TypeDiscriminator": "RespCommandKeyArgument",
+        "Name": "KEY",
+        "DisplayText": "key",
+        "Type": "Key",
+        "ArgumentFlags": "Multiple",
+        "KeySpecIndex": 0
+      },
+      {
+        "TypeDiscriminator": "RespCommandBasicArgument",
+        "Name": "TIMEOUT",
+        "DisplayText": "timeout",
+        "Type": "Double"
+      }
+    ]
+  },
+  {
+    "Command": "CLIENT",
+    "Name": "CLIENT",
+    "Summary": "A container for client connection commands.",
+    "Group": "Connection",
+    "Complexity": "Depends on subcommand.",
+    "SubCommands": [
+      {
+        "Command": "CLIENT_INFO",
+        "Name": "CLIENT|INFO",
+        "Summary": "Returns information about the connection.",
+        "Group": "Connection",
+        "Complexity": "O(1)"
+      },
+      {
+        "Command": "CLIENT_KILL",
+        "Name": "CLIENT|KILL",
+        "Summary": "Terminates open connections.",
+        "Group": "Connection",
+        "Complexity": "O(N) where N is the number of client connections",
+        "Arguments": [
+          {
+            "TypeDiscriminator": "RespCommandContainerArgument",
+            "Name": "FILTER",
+            "Type": "OneOf",
+            "Arguments": [
+              {
+                "TypeDiscriminator": "RespCommandBasicArgument",
+                "Name": "OLD-FORMAT",
+                "DisplayText": "ip:port",
+                "Type": "String"
+              },
+              {
+                "TypeDiscriminator": "RespCommandContainerArgument",
+                "Name": "NEW-FORMAT",
+                "Type": "OneOf",
+                "ArgumentFlags": "Multiple",
+                "Arguments": [
+                  {
+                    "TypeDiscriminator": "RespCommandBasicArgument",
+                    "Name": "CLIENT-ID",
+                    "DisplayText": "client-id",
+                    "Type": "Integer",
+                    "Token": "ID",
+                    "ArgumentFlags": "Optional"
+                  },
+                  {
+                    "TypeDiscriminator": "RespCommandContainerArgument",
+                    "Name": "CLIENT-TYPE",
+                    "Type": "OneOf",
+                    "Token": "TYPE",
+                    "ArgumentFlags": "Optional",
+                    "Arguments": [
+                      {
+                        "TypeDiscriminator": "RespCommandBasicArgument",
+                        "Name": "NORMAL",
+                        "DisplayText": "normal",
+                        "Type": "PureToken",
+                        "Token": "NORMAL"
+                      },
+                      {
+                        "TypeDiscriminator": "RespCommandBasicArgument",
+                        "Name": "MASTER",
+                        "DisplayText": "master",
+                        "Type": "PureToken",
+                        "Token": "MASTER"
+                      },
+                      {
+                        "TypeDiscriminator": "RespCommandBasicArgument",
+                        "Name": "SLAVE",
+                        "DisplayText": "slave",
+                        "Type": "PureToken",
+                        "Token": "SLAVE"
+                      },
+                      {
+                        "TypeDiscriminator": "RespCommandBasicArgument",
+                        "Name": "REPLICA",
+                        "DisplayText": "replica",
+                        "Type": "PureToken",
+                        "Token": "REPLICA"
+                      },
+                      {
+                        "TypeDiscriminator": "RespCommandBasicArgument",
+                        "Name": "PUBSUB",
+                        "DisplayText": "pubsub",
+                        "Type": "PureToken",
+                        "Token": "PUBSUB"
+                      }
+                    ]
+                  },
+                  {
+                    "TypeDiscriminator": "RespCommandBasicArgument",
+                    "Name": "USERNAME",
+                    "DisplayText": "username",
+                    "Type": "String",
+                    "Token": "USER",
+                    "ArgumentFlags": "Optional"
+                  },
+                  {
+                    "TypeDiscriminator": "RespCommandBasicArgument",
+                    "Name": "ADDR",
+                    "DisplayText": "ip:port",
+                    "Type": "String",
+                    "Token": "ADDR",
+                    "ArgumentFlags": "Optional"
+                  },
+                  {
+                    "TypeDiscriminator": "RespCommandBasicArgument",
+                    "Name": "LADDR",
+                    "DisplayText": "ip:port",
+                    "Type": "String",
+                    "Token": "LADDR",
+                    "ArgumentFlags": "Optional"
+                  },
+                  {
+                    "TypeDiscriminator": "RespCommandContainerArgument",
+                    "Name": "SKIPME",
+                    "Type": "OneOf",
+                    "Token": "SKIPME",
+                    "ArgumentFlags": "Optional",
+                    "Arguments": [
+                      {
+                        "TypeDiscriminator": "RespCommandBasicArgument",
+                        "Name": "YES",
+                        "DisplayText": "yes",
+                        "Type": "PureToken",
+                        "Token": "YES"
+                      },
+                      {
+                        "TypeDiscriminator": "RespCommandBasicArgument",
+                        "Name": "NO",
+                        "DisplayText": "no",
+                        "Type": "PureToken",
+                        "Token": "NO"
+                      }
+                    ]
+                  }
+                ]
+              }
+            ]
+          }
+        ]
+      },
+      {
+        "Command": "CLIENT_ID",
+        "Name": "CLIENT|ID",
+        "Summary": "Returns the unique client ID of the connection.",
+        "Group": "Connection",
+        "Complexity": "O(1)"
+      },
+      {
+        "Command": "CLIENT_LIST",
+        "Name": "CLIENT|LIST",
+        "Summary": "Lists open connections.",
+        "Group": "Connection",
+        "Complexity": "O(N) where N is the number of client connections",
+        "Arguments": [
+          {
+            "TypeDiscriminator": "RespCommandContainerArgument",
+            "Name": "CLIENT-TYPE",
+            "Type": "OneOf",
+            "Token": "TYPE",
+            "ArgumentFlags": "Optional",
+            "Arguments": [
+              {
+                "TypeDiscriminator": "RespCommandBasicArgument",
+                "Name": "NORMAL",
+                "DisplayText": "normal",
+                "Type": "PureToken",
+                "Token": "NORMAL"
+              },
+              {
+                "TypeDiscriminator": "RespCommandBasicArgument",
+                "Name": "MASTER",
+                "DisplayText": "master",
+                "Type": "PureToken",
+                "Token": "MASTER"
+              },
+              {
+                "TypeDiscriminator": "RespCommandBasicArgument",
+                "Name": "REPLICA",
+                "DisplayText": "replica",
+                "Type": "PureToken",
+                "Token": "REPLICA"
+              },
+              {
+                "TypeDiscriminator": "RespCommandBasicArgument",
+                "Name": "PUBSUB",
+                "DisplayText": "pubsub",
+                "Type": "PureToken",
+                "Token": "PUBSUB"
+              }
+            ]
+          },
+          {
+            "TypeDiscriminator": "RespCommandBasicArgument",
+            "Name": "CLIENT-ID",
+            "DisplayText": "client-id",
+            "Type": "Integer",
+            "Token": "ID",
+            "ArgumentFlags": "Optional, Multiple"
+          }
+        ]
+      }
+    ]
+  },
+  {
+    "Command": "CLUSTER",
+    "Name": "CLUSTER",
+    "Summary": "A container for Redis Cluster commands.",
+    "Group": "Cluster",
+    "Complexity": "Depends on subcommand.",
+    "SubCommands": [
+      {
+        "Command": "CLUSTER_NODES",
+        "Name": "CLUSTER|NODES",
+        "Summary": "Returns the cluster configuration for a node.",
+        "Group": "Cluster",
+        "Complexity": "O(N) where N is the total number of Cluster nodes"
+      },
+      {
+        "Command": "CLUSTER_SETCONFIGEPOCH",
+        "Name": "CLUSTER|SET-CONFIG-EPOCH",
+        "Summary": "Sets the configuration epoch for a new node.",
+        "Group": "Cluster",
+        "Complexity": "O(1)",
+        "Arguments": [
+          {
+            "TypeDiscriminator": "RespCommandBasicArgument",
+            "Name": "CONFIG-EPOCH",
+            "DisplayText": "config-epoch",
+            "Type": "Integer"
+          }
+        ]
+      },
+      {
+        "Command": "CLUSTER_KEYSLOT",
+        "Name": "CLUSTER|KEYSLOT",
+        "Summary": "Returns the hash slot for a key.",
+        "Group": "Cluster",
+        "Complexity": "O(N) where N is the number of bytes in the key",
+        "Arguments": [
+          {
+            "TypeDiscriminator": "RespCommandBasicArgument",
+            "Name": "KEY",
+            "DisplayText": "key",
+            "Type": "String"
+          }
+        ]
+      },
+      {
+        "Command": "CLUSTER_SLOTS",
+        "Name": "CLUSTER|SLOTS",
+        "Summary": "Returns the mapping of cluster slots to nodes.",
+        "Group": "Cluster",
+        "Complexity": "O(N) where N is the total number of Cluster nodes",
+        "DocFlags": "Deprecated",
+        "ReplacedBy": "\u0060CLUSTER SHARDS\u0060"
+      },
+      {
+        "Command": "CLUSTER_DELSLOTSRANGE",
+        "Name": "CLUSTER|DELSLOTSRANGE",
+        "Summary": "Sets hash slot ranges as unbound for a node.",
+        "Group": "Cluster",
+        "Complexity": "O(N) where N is the total number of the slots between the start slot and end slot arguments.",
+        "Arguments": [
+          {
+            "TypeDiscriminator": "RespCommandContainerArgument",
+            "Name": "RANGE",
+            "Type": "Block",
+            "ArgumentFlags": "Multiple",
+            "Arguments": [
+              {
+                "TypeDiscriminator": "RespCommandBasicArgument",
+                "Name": "START-SLOT",
+                "DisplayText": "start-slot",
+                "Type": "Integer"
+              },
+              {
+                "TypeDiscriminator": "RespCommandBasicArgument",
+                "Name": "END-SLOT",
+                "DisplayText": "end-slot",
+                "Type": "Integer"
+              }
+            ]
+          }
+        ]
+      },
+      {
+        "Command": "CLUSTER_ADDSLOTS",
+        "Name": "CLUSTER|ADDSLOTS",
+        "Summary": "Assigns new hash slots to a node.",
+        "Group": "Cluster",
+        "Complexity": "O(N) where N is the total number of hash slot arguments",
+        "Arguments": [
+          {
+            "TypeDiscriminator": "RespCommandBasicArgument",
+            "Name": "SLOT",
+            "DisplayText": "slot",
+            "Type": "Integer",
+            "ArgumentFlags": "Multiple"
+          }
+        ]
+      },
+      {
+        "Command": "CLUSTER_REPLICATE",
+        "Name": "CLUSTER|REPLICATE",
+        "Summary": "Configure a node as replica of a master node.",
+        "Group": "Cluster",
+        "Complexity": "O(1)",
+        "Arguments": [
+          {
+            "TypeDiscriminator": "RespCommandBasicArgument",
+            "Name": "NODE-ID",
+            "DisplayText": "node-id",
+            "Type": "String"
+          }
+        ]
+      },
+      {
+        "Command": "CLUSTER_INFO",
+        "Name": "CLUSTER|INFO",
+        "Summary": "Returns information about the state of a node.",
+        "Group": "Cluster",
+        "Complexity": "O(1)"
+      },
+      {
+        "Command": "CLUSTER_DELSLOTS",
+        "Name": "CLUSTER|DELSLOTS",
+        "Summary": "Sets hash slots as unbound for a node.",
+        "Group": "Cluster",
+        "Complexity": "O(N) where N is the total number of hash slot arguments",
+        "Arguments": [
+          {
+            "TypeDiscriminator": "RespCommandBasicArgument",
+            "Name": "SLOT",
+            "DisplayText": "slot",
+            "Type": "Integer",
+            "ArgumentFlags": "Multiple"
+          }
+        ]
+      },
+      {
+        "Command": "CLUSTER_ADDSLOTSRANGE",
+        "Name": "CLUSTER|ADDSLOTSRANGE",
+        "Summary": "Assigns new hash slot ranges to a node.",
+        "Group": "Cluster",
+        "Complexity": "O(N) where N is the total number of the slots between the start slot and end slot arguments.",
+        "Arguments": [
+          {
+            "TypeDiscriminator": "RespCommandContainerArgument",
+            "Name": "RANGE",
+            "Type": "Block",
+            "ArgumentFlags": "Multiple",
+            "Arguments": [
+              {
+                "TypeDiscriminator": "RespCommandBasicArgument",
+                "Name": "START-SLOT",
+                "DisplayText": "start-slot",
+                "Type": "Integer"
+              },
+              {
+                "TypeDiscriminator": "RespCommandBasicArgument",
+                "Name": "END-SLOT",
+                "DisplayText": "end-slot",
+                "Type": "Integer"
+              }
+            ]
+          }
+        ]
+      },
+      {
+        "Command": "CLUSTER_SHARDS",
+        "Name": "CLUSTER|SHARDS",
+        "Summary": "Returns the mapping of cluster slots to shards.",
+        "Group": "Cluster",
+        "Complexity": "O(N) where N is the total number of cluster nodes"
+      },
+      {
+        "Command": "CLUSTER_FORGET",
+        "Name": "CLUSTER|FORGET",
+        "Summary": "Removes a node from the nodes table.",
+        "Group": "Cluster",
+        "Complexity": "O(1)",
+        "Arguments": [
+          {
+            "TypeDiscriminator": "RespCommandBasicArgument",
+            "Name": "NODE-ID",
+            "DisplayText": "node-id",
+            "Type": "String"
+          }
+        ]
+      },
+      {
+        "Command": "CLUSTER_BUMPEPOCH",
+        "Name": "CLUSTER|BUMPEPOCH",
+        "Summary": "Advances the cluster config epoch.",
+        "Group": "Cluster",
+        "Complexity": "O(1)"
+      },
+      {
+        "Command": "CLUSTER_MYID",
+        "Name": "CLUSTER|MYID",
+        "Summary": "Returns the ID of a node.",
+        "Group": "Cluster",
+        "Complexity": "O(1)"
+      },
+      {
+        "Command": "CLUSTER_COUNTKEYSINSLOT",
+        "Name": "CLUSTER|COUNTKEYSINSLOT",
+        "Summary": "Returns the number of keys in a hash slot.",
+        "Group": "Cluster",
+        "Complexity": "O(1)",
+        "Arguments": [
+          {
+            "TypeDiscriminator": "RespCommandBasicArgument",
+            "Name": "SLOT",
+            "DisplayText": "slot",
+            "Type": "Integer"
+          }
+        ]
+      },
+      {
+        "Command": "CLUSTER_MEET",
+        "Name": "CLUSTER|MEET",
+        "Summary": "Forces a node to handshake with another node.",
+        "Group": "Cluster",
+        "Complexity": "O(1)",
+        "Arguments": [
+          {
+            "TypeDiscriminator": "RespCommandBasicArgument",
+            "Name": "IP",
+            "DisplayText": "ip",
+            "Type": "String"
+          },
+          {
+            "TypeDiscriminator": "RespCommandBasicArgument",
+            "Name": "PORT",
+            "DisplayText": "port",
+            "Type": "Integer"
+          },
+          {
+            "TypeDiscriminator": "RespCommandBasicArgument",
+            "Name": "CLUSTER-BUS-PORT",
+            "DisplayText": "cluster-bus-port",
+            "Type": "Integer",
+            "ArgumentFlags": "Optional"
+          }
+        ]
+      },
+      {
+        "Command": "CLUSTER_RESET",
+        "Name": "CLUSTER|RESET",
+        "Summary": "Resets a node.",
+        "Group": "Cluster",
+        "Complexity": "O(N) where N is the number of known nodes. The command may execute a FLUSHALL as a side effect.",
+        "Arguments": [
+          {
+            "TypeDiscriminator": "RespCommandContainerArgument",
+            "Name": "RESET-TYPE",
+            "Type": "OneOf",
+            "ArgumentFlags": "Optional",
+            "Arguments": [
+              {
+                "TypeDiscriminator": "RespCommandBasicArgument",
+                "Name": "HARD",
+                "DisplayText": "hard",
+                "Type": "PureToken",
+                "Token": "HARD"
+              },
+              {
+                "TypeDiscriminator": "RespCommandBasicArgument",
+                "Name": "SOFT",
+                "DisplayText": "soft",
+                "Type": "PureToken",
+                "Token": "SOFT"
+              }
+            ]
+          }
+        ]
+      },
+      {
+        "Command": "CLUSTER_GETKEYSINSLOT",
+        "Name": "CLUSTER|GETKEYSINSLOT",
+        "Summary": "Returns the key names in a hash slot.",
+        "Group": "Cluster",
+        "Complexity": "O(N) where N is the number of requested keys",
+        "Arguments": [
+          {
+            "TypeDiscriminator": "RespCommandBasicArgument",
+            "Name": "SLOT",
+            "DisplayText": "slot",
+            "Type": "Integer"
+          },
+          {
+            "TypeDiscriminator": "RespCommandBasicArgument",
+            "Name": "COUNT",
+            "DisplayText": "count",
+            "Type": "Integer"
+          }
+        ]
+      },
+      {
+        "Command": "CLUSTER_SETSLOT",
+        "Name": "CLUSTER|SETSLOT",
+        "Summary": "Binds a hash slot to a node.",
+        "Group": "Cluster",
+        "Complexity": "O(1)",
+        "Arguments": [
+          {
+            "TypeDiscriminator": "RespCommandBasicArgument",
+            "Name": "SLOT",
+            "DisplayText": "slot",
+            "Type": "Integer"
+          },
+          {
+            "TypeDiscriminator": "RespCommandContainerArgument",
+            "Name": "SUBCOMMAND",
+            "Type": "OneOf",
+            "Arguments": [
+              {
+                "TypeDiscriminator": "RespCommandBasicArgument",
+                "Name": "IMPORTING",
+                "DisplayText": "node-id",
+                "Type": "String",
+                "Token": "IMPORTING"
+              },
+              {
+                "TypeDiscriminator": "RespCommandBasicArgument",
+                "Name": "MIGRATING",
+                "DisplayText": "node-id",
+                "Type": "String",
+                "Token": "MIGRATING"
+              },
+              {
+                "TypeDiscriminator": "RespCommandBasicArgument",
+                "Name": "NODE",
+                "DisplayText": "node-id",
+                "Type": "String",
+                "Token": "NODE"
+              },
+              {
+                "TypeDiscriminator": "RespCommandBasicArgument",
+                "Name": "STABLE",
+                "DisplayText": "stable",
+                "Type": "PureToken",
+                "Token": "STABLE"
+              }
+            ]
+          }
+        ]
+      },
+      {
+        "Command": "CLUSTER_HELP",
+        "Name": "CLUSTER|HELP",
+        "Summary": "Returns helpful text about the different subcommands.",
+        "Group": "Cluster",
+        "Complexity": "O(1)"
+      },
+      {
+        "Command": "CLUSTER_REPLICAS",
+        "Name": "CLUSTER|REPLICAS",
+        "Summary": "Lists the replica nodes of a master node.",
+        "Group": "Cluster",
+        "Complexity": "O(N) where N is the number of replicas.",
+        "Arguments": [
+          {
+            "TypeDiscriminator": "RespCommandBasicArgument",
+            "Name": "NODE-ID",
+            "DisplayText": "node-id",
+            "Type": "String"
+          }
+        ]
+      },
+      {
+        "Command": "CLUSTER_FAILOVER",
+        "Name": "CLUSTER|FAILOVER",
+        "Summary": "Forces a replica to perform a manual failover of its master.",
+        "Group": "Cluster",
+        "Complexity": "O(1)",
+        "Arguments": [
+          {
+            "TypeDiscriminator": "RespCommandContainerArgument",
+            "Name": "OPTIONS",
+            "Type": "OneOf",
+            "ArgumentFlags": "Optional",
+            "Arguments": [
+              {
+                "TypeDiscriminator": "RespCommandBasicArgument",
+                "Name": "FORCE",
+                "DisplayText": "force",
+                "Type": "PureToken",
+                "Token": "FORCE"
+              },
+              {
+                "TypeDiscriminator": "RespCommandBasicArgument",
+                "Name": "TAKEOVER",
+                "DisplayText": "takeover",
+                "Type": "PureToken",
+                "Token": "TAKEOVER"
+              }
+            ]
+          }
+        ]
+      }
+    ]
+  },
+  {
+    "Command": "COMMAND",
+    "Name": "COMMAND",
+    "Summary": "Returns detailed information about all commands.",
+    "Group": "Server",
+    "Complexity": "O(N) where N is the total number of Redis commands",
+    "SubCommands": [
+      {
+        "Command": "COMMAND_COUNT",
+        "Name": "COMMAND|COUNT",
+        "Summary": "Returns a count of commands.",
+        "Group": "Server",
+        "Complexity": "O(1)"
+      },
+      {
+        "Command": "COMMAND_DOCS",
+        "Name": "COMMAND|DOCS",
+        "Summary": "Returns documentary information about one, multiple or all commands.",
+        "Group": "Server",
+        "Complexity": "O(N) where N is the number of commands to look up",
+        "Arguments": [
+          {
+            "TypeDiscriminator": "RespCommandBasicArgument",
+            "Name": "COMMAND-NAME",
+            "DisplayText": "command-name",
+            "Type": "String",
+            "ArgumentFlags": "Optional, Multiple"
+          }
+        ]
+      },
+      {
+        "Command": "COMMAND_INFO",
+        "Name": "COMMAND|INFO",
+        "Summary": "Returns information about one, multiple or all commands.",
+        "Group": "Server",
+        "Complexity": "O(N) where N is the number of commands to look up",
+        "Arguments": [
+          {
+            "TypeDiscriminator": "RespCommandBasicArgument",
+            "Name": "COMMAND-NAME",
+            "DisplayText": "command-name",
+            "Type": "String",
+            "ArgumentFlags": "Optional, Multiple"
+          }
+        ]
+      }
+    ]
+  },
+  {
+    "Command": "COMMITAOF",
+    "Name": "COMMITAOF",
+    "Summary": "Commit to append-only file.",
+    "Group": "Server"
+  },
+  {
+    "Command": "CONFIG",
+    "Name": "CONFIG",
+    "Summary": "A container for server configuration commands.",
+    "Group": "Server",
+    "Complexity": "Depends on subcommand.",
+    "SubCommands": [
+      {
+        "Command": "CONFIG_GET",
+        "Name": "CONFIG|GET",
+        "Summary": "Returns the effective values of configuration parameters.",
+        "Group": "Server",
+        "Complexity": "O(N) when N is the number of configuration parameters provided",
+        "Arguments": [
+          {
+            "TypeDiscriminator": "RespCommandBasicArgument",
+            "Name": "PARAMETER",
+            "DisplayText": "parameter",
+            "Type": "String",
+            "ArgumentFlags": "Multiple"
+          }
+        ]
+      },
+      {
+        "Command": "CONFIG_REWRITE",
+        "Name": "CONFIG|REWRITE",
+        "Summary": "Persists the effective configuration to file.",
+        "Group": "Server",
+        "Complexity": "O(1)"
+      },
+      {
+        "Command": "CONFIG_SET",
+        "Name": "CONFIG|SET",
+        "Summary": "Sets configuration parameters in-flight.",
+        "Group": "Server",
+        "Complexity": "O(N) when N is the number of configuration parameters provided",
+        "Arguments": [
+          {
+            "TypeDiscriminator": "RespCommandContainerArgument",
+            "Name": "DATA",
+            "Type": "Block",
+            "ArgumentFlags": "Multiple",
+            "Arguments": [
+              {
+                "TypeDiscriminator": "RespCommandBasicArgument",
+                "Name": "PARAMETER",
+                "DisplayText": "parameter",
+                "Type": "String"
+              },
+              {
+                "TypeDiscriminator": "RespCommandBasicArgument",
+                "Name": "VALUE",
+                "DisplayText": "value",
+                "Type": "String"
+              }
+            ]
+          }
+        ]
+      }
+    ]
+  },
+  {
+    "Command": "COSCAN",
+    "Name": "COSCAN",
+    "Summary": "Iterates over members of a collection object.",
+    "Group": "Generic",
+    "Complexity": "O(1) for every call. O(N) for a complete iteration, including enough command calls for the cursor to return back to 0. N is the number of elements inside the collection.",
+    "Arguments": [
+      {
+        "TypeDiscriminator": "RespCommandKeyArgument",
+        "Name": "KEY",
+        "DisplayText": "key",
+        "Type": "Key",
+        "KeySpecIndex": 0
+      },
+      {
+        "TypeDiscriminator": "RespCommandBasicArgument",
+        "Name": "CURSOR",
+        "DisplayText": "cursor",
+        "Type": "Integer"
+      },
+      {
+        "TypeDiscriminator": "RespCommandBasicArgument",
+        "Name": "PATTERN",
+        "DisplayText": "pattern",
+        "Type": "Pattern",
+        "Token": "MATCH",
+        "ArgumentFlags": "Optional"
+      },
+      {
+        "TypeDiscriminator": "RespCommandBasicArgument",
+        "Name": "COUNT",
+        "DisplayText": "count",
+        "Type": "Integer",
+        "Token": "COUNT",
+        "ArgumentFlags": "Optional"
+      }
+    ]
+  },
+  {
+    "Command": "DBSIZE",
+    "Name": "DBSIZE",
+    "Summary": "Returns the number of keys in the database.",
+    "Group": "Server",
+    "Complexity": "O(1)"
+  },
+  {
+    "Command": "DECR",
+    "Name": "DECR",
+    "Summary": "Decrements the integer value of a key by one. Uses 0 as initial value if the key doesn\u0027t exist.",
+    "Group": "String",
+    "Complexity": "O(1)",
+    "Arguments": [
+      {
+        "TypeDiscriminator": "RespCommandKeyArgument",
+        "Name": "KEY",
+        "DisplayText": "key",
+        "Type": "Key",
+        "KeySpecIndex": 0
+      }
+    ]
+  },
+  {
+    "Command": "DECRBY",
+    "Name": "DECRBY",
+    "Summary": "Decrements a number from the integer value of a key. Uses 0 as initial value if the key doesn\u0027t exist.",
+    "Group": "String",
+    "Complexity": "O(1)",
+    "Arguments": [
+      {
+        "TypeDiscriminator": "RespCommandKeyArgument",
+        "Name": "KEY",
+        "DisplayText": "key",
+        "Type": "Key",
+        "KeySpecIndex": 0
+      },
+      {
+        "TypeDiscriminator": "RespCommandBasicArgument",
+        "Name": "DECREMENT",
+        "DisplayText": "decrement",
+        "Type": "Integer"
+      }
+    ]
+  },
+  {
+    "Command": "DEL",
+    "Name": "DEL",
+    "Summary": "Deletes one or more keys.",
+    "Group": "Generic",
+    "Complexity": "O(N) where N is the number of keys that will be removed. When a key to remove holds a value other than a string, the individual complexity for this key is O(M) where M is the number of elements in the list, set, sorted set or hash. Removing a single key that holds a string value is O(1).",
+    "Arguments": [
+      {
+        "TypeDiscriminator": "RespCommandKeyArgument",
+        "Name": "KEY",
+        "DisplayText": "key",
+        "Type": "Key",
+        "ArgumentFlags": "Multiple",
+        "KeySpecIndex": 0
+      }
+    ]
+  },
+  {
+    "Command": "DISCARD",
+    "Name": "DISCARD",
+    "Summary": "Discards a transaction.",
+    "Group": "Transactions",
+    "Complexity": "O(N), when N is the number of queued commands"
+  },
+  {
+    "Command": "ECHO",
+    "Name": "ECHO",
+    "Summary": "Returns the given string.",
+    "Group": "Connection",
+    "Complexity": "O(1)",
+    "Arguments": [
+      {
+        "TypeDiscriminator": "RespCommandBasicArgument",
+        "Name": "MESSAGE",
+        "DisplayText": "message",
+        "Type": "String"
+      }
+    ]
+  },
+  {
+    "Command": "EVAL",
+    "Name": "EVAL",
+    "Summary": "Executes a server-side Lua script.",
+    "Group": "Scripting",
+    "Complexity": "Depends on the script that is executed.",
+    "Arguments": [
+      {
+        "TypeDiscriminator": "RespCommandBasicArgument",
+        "Name": "SCRIPT",
+        "DisplayText": "script",
+        "Type": "String"
+      },
+      {
+        "TypeDiscriminator": "RespCommandBasicArgument",
+        "Name": "NUMKEYS",
+        "DisplayText": "numkeys",
+        "Type": "Integer"
+      },
+      {
+        "TypeDiscriminator": "RespCommandKeyArgument",
+        "Name": "KEY",
+        "DisplayText": "key",
+        "Type": "Key",
+        "ArgumentFlags": "Optional, Multiple",
+        "KeySpecIndex": 0
+      },
+      {
+        "TypeDiscriminator": "RespCommandBasicArgument",
+        "Name": "ARG",
+        "DisplayText": "arg",
+        "Type": "String",
+        "ArgumentFlags": "Optional, Multiple"
+      }
+    ]
+  },
+  {
+    "Command": "EVALSHA",
+    "Name": "EVALSHA",
+    "Summary": "Executes a server-side Lua script by SHA1 digest.",
+    "Group": "Scripting",
+    "Complexity": "Depends on the script that is executed.",
+    "Arguments": [
+      {
+        "TypeDiscriminator": "RespCommandBasicArgument",
+        "Name": "SHA1",
+        "DisplayText": "sha1",
+        "Type": "String"
+      },
+      {
+        "TypeDiscriminator": "RespCommandBasicArgument",
+        "Name": "NUMKEYS",
+        "DisplayText": "numkeys",
+        "Type": "Integer"
+      },
+      {
+        "TypeDiscriminator": "RespCommandKeyArgument",
+        "Name": "KEY",
+        "DisplayText": "key",
+        "Type": "Key",
+        "ArgumentFlags": "Optional, Multiple",
+        "KeySpecIndex": 0
+      },
+      {
+        "TypeDiscriminator": "RespCommandBasicArgument",
+        "Name": "ARG",
+        "DisplayText": "arg",
+        "Type": "String",
+        "ArgumentFlags": "Optional, Multiple"
+      }
+    ]
+  },
+  {
+    "Command": "EXEC",
+    "Name": "EXEC",
+    "Summary": "Executes all commands in a transaction.",
+    "Group": "Transactions",
+    "Complexity": "Depends on commands in the transaction"
+  },
+  {
+    "Command": "EXISTS",
+    "Name": "EXISTS",
+    "Summary": "Determines whether one or more keys exist.",
+    "Group": "Generic",
+    "Complexity": "O(N) where N is the number of keys to check.",
+    "Arguments": [
+      {
+        "TypeDiscriminator": "RespCommandKeyArgument",
+        "Name": "KEY",
+        "DisplayText": "key",
+        "Type": "Key",
+        "ArgumentFlags": "Multiple",
+        "KeySpecIndex": 0
+      }
+    ]
+  },
+  {
+    "Command": "EXPIRE",
+    "Name": "EXPIRE",
+    "Summary": "Sets the expiration time of a key in seconds.",
+    "Group": "Generic",
+    "Complexity": "O(1)",
+    "Arguments": [
+      {
+        "TypeDiscriminator": "RespCommandKeyArgument",
+        "Name": "KEY",
+        "DisplayText": "key",
+        "Type": "Key",
+        "KeySpecIndex": 0
+      },
+      {
+        "TypeDiscriminator": "RespCommandBasicArgument",
+        "Name": "SECONDS",
+        "DisplayText": "seconds",
+        "Type": "Integer"
+      },
+      {
+        "TypeDiscriminator": "RespCommandContainerArgument",
+        "Name": "CONDITION",
+        "Type": "OneOf",
+        "ArgumentFlags": "Optional",
+        "Arguments": [
+          {
+            "TypeDiscriminator": "RespCommandBasicArgument",
+            "Name": "NX",
+            "DisplayText": "nx",
+            "Type": "PureToken",
+            "Token": "NX"
+          },
+          {
+            "TypeDiscriminator": "RespCommandBasicArgument",
+            "Name": "XX",
+            "DisplayText": "xx",
+            "Type": "PureToken",
+            "Token": "XX"
+          },
+          {
+            "TypeDiscriminator": "RespCommandBasicArgument",
+            "Name": "GT",
+            "DisplayText": "gt",
+            "Type": "PureToken",
+            "Token": "GT"
+          },
+          {
+            "TypeDiscriminator": "RespCommandBasicArgument",
+            "Name": "LT",
+            "DisplayText": "lt",
+            "Type": "PureToken",
+            "Token": "LT"
+          }
+        ]
+      }
+    ]
+  },
+  {
+    "Command": "FAILOVER",
+    "Name": "FAILOVER",
+    "Summary": "Starts a coordinated failover from a server to one of its replicas.",
+    "Group": "Server",
+    "Complexity": "O(1)",
+    "Arguments": [
+      {
+        "TypeDiscriminator": "RespCommandContainerArgument",
+        "Name": "TARGET",
+        "Type": "Block",
+        "Token": "TO",
+        "ArgumentFlags": "Optional",
+        "Arguments": [
+          {
+            "TypeDiscriminator": "RespCommandBasicArgument",
+            "Name": "HOST",
+            "DisplayText": "host",
+            "Type": "String"
+          },
+          {
+            "TypeDiscriminator": "RespCommandBasicArgument",
+            "Name": "PORT",
+            "DisplayText": "port",
+            "Type": "Integer"
+          },
+          {
+            "TypeDiscriminator": "RespCommandBasicArgument",
+            "Name": "FORCE",
+            "DisplayText": "force",
+            "Type": "PureToken",
+            "Token": "FORCE",
+            "ArgumentFlags": "Optional"
+          }
+        ]
+      },
+      {
+        "TypeDiscriminator": "RespCommandBasicArgument",
+        "Name": "ABORT",
+        "DisplayText": "abort",
+        "Type": "PureToken",
+        "Token": "ABORT",
+        "ArgumentFlags": "Optional"
+      },
+      {
+        "TypeDiscriminator": "RespCommandBasicArgument",
+        "Name": "MILLISECONDS",
+        "DisplayText": "milliseconds",
+        "Type": "Integer",
+        "Token": "TIMEOUT",
+        "ArgumentFlags": "Optional"
+      }
+    ]
+  },
+  {
+    "Command": "FLUSHALL",
+    "Name": "FLUSHALL",
+    "Summary": "Removes all keys from all databases.",
+    "Group": "Server",
+    "Complexity": "O(N) where N is the total number of keys in all databases",
+    "Arguments": [
+      {
+        "TypeDiscriminator": "RespCommandContainerArgument",
+        "Name": "FLUSH-TYPE",
+        "Type": "OneOf",
+        "ArgumentFlags": "Optional",
+        "Arguments": [
+          {
+            "TypeDiscriminator": "RespCommandBasicArgument",
+            "Name": "ASYNC",
+            "DisplayText": "async",
+            "Type": "PureToken",
+            "Token": "ASYNC"
+          },
+          {
+            "TypeDiscriminator": "RespCommandBasicArgument",
+            "Name": "SYNC",
+            "DisplayText": "sync",
+            "Type": "PureToken",
+            "Token": "SYNC"
+          }
+        ]
+      }
+    ]
+  },
+  {
+    "Command": "FLUSHDB",
+    "Name": "FLUSHDB",
+    "Summary": "Remove all keys from the current database.",
+    "Group": "Server",
+    "Complexity": "O(N) where N is the number of keys in the selected database",
+    "Arguments": [
+      {
+        "TypeDiscriminator": "RespCommandContainerArgument",
+        "Name": "FLUSH-TYPE",
+        "Type": "OneOf",
+        "ArgumentFlags": "Optional",
+        "Arguments": [
+          {
+            "TypeDiscriminator": "RespCommandBasicArgument",
+            "Name": "ASYNC",
+            "DisplayText": "async",
+            "Type": "PureToken",
+            "Token": "ASYNC"
+          },
+          {
+            "TypeDiscriminator": "RespCommandBasicArgument",
+            "Name": "SYNC",
+            "DisplayText": "sync",
+            "Type": "PureToken",
+            "Token": "SYNC"
+          }
+        ]
+      }
+    ]
+  },
+  {
+    "Command": "FORCEGC",
+    "Name": "FORCEGC",
+    "Summary": "Forces garbage collection.",
+    "Group": "Server"
+  },
+  {
+    "Command": "GEOADD",
+    "Name": "GEOADD",
+    "Summary": "Adds one or more members to a geospatial index. The key is created if it doesn\u0027t exist.",
+    "Group": "Geo",
+    "Complexity": "O(log(N)) for each item added, where N is the number of elements in the sorted set.",
+    "Arguments": [
+      {
+        "TypeDiscriminator": "RespCommandKeyArgument",
+        "Name": "KEY",
+        "DisplayText": "key",
+        "Type": "Key",
+        "KeySpecIndex": 0
+      },
+      {
+        "TypeDiscriminator": "RespCommandContainerArgument",
+        "Name": "CONDITION",
+        "Type": "OneOf",
+        "ArgumentFlags": "Optional",
+        "Arguments": [
+          {
+            "TypeDiscriminator": "RespCommandBasicArgument",
+            "Name": "NX",
+            "DisplayText": "nx",
+            "Type": "PureToken",
+            "Token": "NX"
+          },
+          {
+            "TypeDiscriminator": "RespCommandBasicArgument",
+            "Name": "XX",
+            "DisplayText": "xx",
+            "Type": "PureToken",
+            "Token": "XX"
+          }
+        ]
+      },
+      {
+        "TypeDiscriminator": "RespCommandBasicArgument",
+        "Name": "CHANGE",
+        "DisplayText": "change",
+        "Type": "PureToken",
+        "Token": "CH",
+        "ArgumentFlags": "Optional"
+      },
+      {
+        "TypeDiscriminator": "RespCommandContainerArgument",
+        "Name": "DATA",
+        "Type": "Block",
+        "ArgumentFlags": "Multiple",
+        "Arguments": [
+          {
+            "TypeDiscriminator": "RespCommandBasicArgument",
+            "Name": "LONGITUDE",
+            "DisplayText": "longitude",
+            "Type": "Double"
+          },
+          {
+            "TypeDiscriminator": "RespCommandBasicArgument",
+            "Name": "LATITUDE",
+            "DisplayText": "latitude",
+            "Type": "Double"
+          },
+          {
+            "TypeDiscriminator": "RespCommandBasicArgument",
+            "Name": "MEMBER",
+            "DisplayText": "member",
+            "Type": "String"
+          }
+        ]
+      }
+    ]
+  },
+  {
+    "Command": "GEODIST",
+    "Name": "GEODIST",
+    "Summary": "Returns the distance between two members of a geospatial index.",
+    "Group": "Geo",
+    "Complexity": "O(1)",
+    "Arguments": [
+      {
+        "TypeDiscriminator": "RespCommandKeyArgument",
+        "Name": "KEY",
+        "DisplayText": "key",
+        "Type": "Key",
+        "KeySpecIndex": 0
+      },
+      {
+        "TypeDiscriminator": "RespCommandBasicArgument",
+        "Name": "MEMBER1",
+        "DisplayText": "member1",
+        "Type": "String"
+      },
+      {
+        "TypeDiscriminator": "RespCommandBasicArgument",
+        "Name": "MEMBER2",
+        "DisplayText": "member2",
+        "Type": "String"
+      },
+      {
+        "TypeDiscriminator": "RespCommandContainerArgument",
+        "Name": "UNIT",
+        "Type": "OneOf",
+        "ArgumentFlags": "Optional",
+        "Arguments": [
+          {
+            "TypeDiscriminator": "RespCommandBasicArgument",
+            "Name": "M",
+            "DisplayText": "m",
+            "Type": "PureToken",
+            "Token": "M"
+          },
+          {
+            "TypeDiscriminator": "RespCommandBasicArgument",
+            "Name": "KM",
+            "DisplayText": "km",
+            "Type": "PureToken",
+            "Token": "KM"
+          },
+          {
+            "TypeDiscriminator": "RespCommandBasicArgument",
+            "Name": "FT",
+            "DisplayText": "ft",
+            "Type": "PureToken",
+            "Token": "FT"
+          },
+          {
+            "TypeDiscriminator": "RespCommandBasicArgument",
+            "Name": "MI",
+            "DisplayText": "mi",
+            "Type": "PureToken",
+            "Token": "MI"
+          }
+        ]
+      }
+    ]
+  },
+  {
+    "Command": "GEOHASH",
+    "Name": "GEOHASH",
+    "Summary": "Returns members from a geospatial index as geohash strings.",
+    "Group": "Geo",
+    "Complexity": "O(1) for each member requested.",
+    "Arguments": [
+      {
+        "TypeDiscriminator": "RespCommandKeyArgument",
+        "Name": "KEY",
+        "DisplayText": "key",
+        "Type": "Key",
+        "KeySpecIndex": 0
+      },
+      {
+        "TypeDiscriminator": "RespCommandBasicArgument",
+        "Name": "MEMBER",
+        "DisplayText": "member",
+        "Type": "String",
+        "ArgumentFlags": "Optional, Multiple"
+      }
+    ]
+  },
+  {
+    "Command": "GEOPOS",
+    "Name": "GEOPOS",
+    "Summary": "Returns the longitude and latitude of members from a geospatial index.",
+    "Group": "Geo",
+    "Complexity": "O(1) for each member requested.",
+    "Arguments": [
+      {
+        "TypeDiscriminator": "RespCommandKeyArgument",
+        "Name": "KEY",
+        "DisplayText": "key",
+        "Type": "Key",
+        "KeySpecIndex": 0
+      },
+      {
+        "TypeDiscriminator": "RespCommandBasicArgument",
+        "Name": "MEMBER",
+        "DisplayText": "member",
+        "Type": "String",
+        "ArgumentFlags": "Optional, Multiple"
+      }
+    ]
+  },
+  {
+    "Command": "GEOSEARCH",
+    "Name": "GEOSEARCH",
+    "Summary": "Queries a geospatial index for members inside an area of a box or a circle.",
+    "Group": "Geo",
+    "Complexity": "O(N\u002Blog(M)) where N is the number of elements in the grid-aligned bounding box area around the shape provided as the filter and M is the number of items inside the shape",
+    "Arguments": [
+      {
+        "TypeDiscriminator": "RespCommandKeyArgument",
+        "Name": "KEY",
+        "DisplayText": "key",
+        "Type": "Key",
+        "KeySpecIndex": 0
+      },
+      {
+        "TypeDiscriminator": "RespCommandContainerArgument",
+        "Name": "FROM",
+        "Type": "OneOf",
+        "Arguments": [
+          {
+            "TypeDiscriminator": "RespCommandBasicArgument",
+            "Name": "MEMBER",
+            "DisplayText": "member",
+            "Type": "String",
+            "Token": "FROMMEMBER"
+          },
+          {
+            "TypeDiscriminator": "RespCommandContainerArgument",
+            "Name": "FROMLONLAT",
+            "Type": "Block",
+            "Token": "FROMLONLAT",
+            "Arguments": [
+              {
+                "TypeDiscriminator": "RespCommandBasicArgument",
+                "Name": "LONGITUDE",
+                "DisplayText": "longitude",
+                "Type": "Double"
+              },
+              {
+                "TypeDiscriminator": "RespCommandBasicArgument",
+                "Name": "LATITUDE",
+                "DisplayText": "latitude",
+                "Type": "Double"
+              }
+            ]
+          }
+        ]
+      },
+      {
+        "TypeDiscriminator": "RespCommandContainerArgument",
+        "Name": "BY",
+        "Type": "OneOf",
+        "Arguments": [
+          {
+            "TypeDiscriminator": "RespCommandContainerArgument",
+            "Name": "CIRCLE",
+            "Type": "Block",
+            "Arguments": [
+              {
+                "TypeDiscriminator": "RespCommandBasicArgument",
+                "Name": "RADIUS",
+                "DisplayText": "radius",
+                "Type": "Double",
+                "Token": "BYRADIUS"
+              },
+              {
+                "TypeDiscriminator": "RespCommandContainerArgument",
+                "Name": "UNIT",
+                "Type": "OneOf",
+                "Arguments": [
+                  {
+                    "TypeDiscriminator": "RespCommandBasicArgument",
+                    "Name": "M",
+                    "DisplayText": "m",
+                    "Type": "PureToken",
+                    "Token": "M"
+                  },
+                  {
+                    "TypeDiscriminator": "RespCommandBasicArgument",
+                    "Name": "KM",
+                    "DisplayText": "km",
+                    "Type": "PureToken",
+                    "Token": "KM"
+                  },
+                  {
+                    "TypeDiscriminator": "RespCommandBasicArgument",
+                    "Name": "FT",
+                    "DisplayText": "ft",
+                    "Type": "PureToken",
+                    "Token": "FT"
+                  },
+                  {
+                    "TypeDiscriminator": "RespCommandBasicArgument",
+                    "Name": "MI",
+                    "DisplayText": "mi",
+                    "Type": "PureToken",
+                    "Token": "MI"
+                  }
+                ]
+              }
+            ]
+          },
+          {
+            "TypeDiscriminator": "RespCommandContainerArgument",
+            "Name": "BOX",
+            "Type": "Block",
+            "Arguments": [
+              {
+                "TypeDiscriminator": "RespCommandBasicArgument",
+                "Name": "WIDTH",
+                "DisplayText": "width",
+                "Type": "Double",
+                "Token": "BYBOX"
+              },
+              {
+                "TypeDiscriminator": "RespCommandBasicArgument",
+                "Name": "HEIGHT",
+                "DisplayText": "height",
+                "Type": "Double"
+              },
+              {
+                "TypeDiscriminator": "RespCommandContainerArgument",
+                "Name": "UNIT",
+                "Type": "OneOf",
+                "Arguments": [
+                  {
+                    "TypeDiscriminator": "RespCommandBasicArgument",
+                    "Name": "M",
+                    "DisplayText": "m",
+                    "Type": "PureToken",
+                    "Token": "M"
+                  },
+                  {
+                    "TypeDiscriminator": "RespCommandBasicArgument",
+                    "Name": "KM",
+                    "DisplayText": "km",
+                    "Type": "PureToken",
+                    "Token": "KM"
+                  },
+                  {
+                    "TypeDiscriminator": "RespCommandBasicArgument",
+                    "Name": "FT",
+                    "DisplayText": "ft",
+                    "Type": "PureToken",
+                    "Token": "FT"
+                  },
+                  {
+                    "TypeDiscriminator": "RespCommandBasicArgument",
+                    "Name": "MI",
+                    "DisplayText": "mi",
+                    "Type": "PureToken",
+                    "Token": "MI"
+                  }
+                ]
+              }
+            ]
+          }
+        ]
+      },
+      {
+        "TypeDiscriminator": "RespCommandContainerArgument",
+        "Name": "ORDER",
+        "Type": "OneOf",
+        "ArgumentFlags": "Optional",
+        "Arguments": [
+          {
+            "TypeDiscriminator": "RespCommandBasicArgument",
+            "Name": "ASC",
+            "DisplayText": "asc",
+            "Type": "PureToken",
+            "Token": "ASC"
+          },
+          {
+            "TypeDiscriminator": "RespCommandBasicArgument",
+            "Name": "DESC",
+            "DisplayText": "desc",
+            "Type": "PureToken",
+            "Token": "DESC"
+          }
+        ]
+      },
+      {
+        "TypeDiscriminator": "RespCommandContainerArgument",
+        "Name": "COUNT-BLOCK",
+        "Type": "Block",
+        "ArgumentFlags": "Optional",
+        "Arguments": [
+          {
+            "TypeDiscriminator": "RespCommandBasicArgument",
+            "Name": "COUNT",
+            "DisplayText": "count",
+            "Type": "Integer",
+            "Token": "COUNT"
+          },
+          {
+            "TypeDiscriminator": "RespCommandBasicArgument",
+            "Name": "ANY",
+            "DisplayText": "any",
+            "Type": "PureToken",
+            "Token": "ANY",
+            "ArgumentFlags": "Optional"
+          }
+        ]
+      },
+      {
+        "TypeDiscriminator": "RespCommandBasicArgument",
+        "Name": "WITHCOORD",
+        "DisplayText": "withcoord",
+        "Type": "PureToken",
+        "Token": "WITHCOORD",
+        "ArgumentFlags": "Optional"
+      },
+      {
+        "TypeDiscriminator": "RespCommandBasicArgument",
+        "Name": "WITHDIST",
+        "DisplayText": "withdist",
+        "Type": "PureToken",
+        "Token": "WITHDIST",
+        "ArgumentFlags": "Optional"
+      },
+      {
+        "TypeDiscriminator": "RespCommandBasicArgument",
+        "Name": "WITHHASH",
+        "DisplayText": "withhash",
+        "Type": "PureToken",
+        "Token": "WITHHASH",
+        "ArgumentFlags": "Optional"
+      }
+    ]
+  },
+  {
+    "Command": "GET",
+    "Name": "GET",
+    "Summary": "Returns the string value of a key.",
+    "Group": "String",
+    "Complexity": "O(1)",
+    "Arguments": [
+      {
+        "TypeDiscriminator": "RespCommandKeyArgument",
+        "Name": "KEY",
+        "DisplayText": "key",
+        "Type": "Key",
+        "KeySpecIndex": 0
+      }
+    ]
+  },
+  {
+    "Command": "GETBIT",
+    "Name": "GETBIT",
+    "Summary": "Returns a bit value by offset.",
+    "Group": "Bitmap",
+    "Complexity": "O(1)",
+    "Arguments": [
+      {
+        "TypeDiscriminator": "RespCommandKeyArgument",
+        "Name": "KEY",
+        "DisplayText": "key",
+        "Type": "Key",
+        "KeySpecIndex": 0
+      },
+      {
+        "TypeDiscriminator": "RespCommandBasicArgument",
+        "Name": "OFFSET",
+        "DisplayText": "offset",
+        "Type": "Integer"
+      }
+    ]
+  },
+  {
+    "Command": "GETDEL",
+    "Name": "GETDEL",
+    "Summary": "Returns the string value of a key after deleting the key.",
+    "Group": "String",
+    "Complexity": "O(1)",
+    "Arguments": [
+      {
+        "TypeDiscriminator": "RespCommandKeyArgument",
+        "Name": "KEY",
+        "DisplayText": "key",
+        "Type": "Key",
+        "KeySpecIndex": 0
+      }
+    ]
+  },
+  {
+    "Command": "GETRANGE",
+    "Name": "GETRANGE",
+    "Summary": "Returns a substring of the string stored at a key.",
+    "Group": "String",
+    "Complexity": "O(N) where N is the length of the returned string. The complexity is ultimately determined by the returned length, but because creating a substring from an existing string is very cheap, it can be considered O(1) for small strings.",
+    "Arguments": [
+      {
+        "TypeDiscriminator": "RespCommandKeyArgument",
+        "Name": "KEY",
+        "DisplayText": "key",
+        "Type": "Key",
+        "KeySpecIndex": 0
+      },
+      {
+        "TypeDiscriminator": "RespCommandBasicArgument",
+        "Name": "START",
+        "DisplayText": "start",
+        "Type": "Integer"
+      },
+      {
+        "TypeDiscriminator": "RespCommandBasicArgument",
+        "Name": "END",
+        "DisplayText": "end",
+        "Type": "Integer"
+      }
+    ]
+  },
+  {
+    "Command": "HDEL",
+    "Name": "HDEL",
+    "Summary": "Deletes one or more fields and their values from a hash. Deletes the hash if no fields remain.",
+    "Group": "Hash",
+    "Complexity": "O(N) where N is the number of fields to be removed.",
+    "Arguments": [
+      {
+        "TypeDiscriminator": "RespCommandKeyArgument",
+        "Name": "KEY",
+        "DisplayText": "key",
+        "Type": "Key",
+        "KeySpecIndex": 0
+      },
+      {
+        "TypeDiscriminator": "RespCommandBasicArgument",
+        "Name": "FIELD",
+        "DisplayText": "field",
+        "Type": "String",
+        "ArgumentFlags": "Multiple"
+      }
+    ]
+  },
+  {
+    "Command": "HELLO",
+    "Name": "HELLO",
+    "Summary": "Handshakes with the Redis server.",
+    "Group": "Connection",
+    "Complexity": "O(1)",
+    "Arguments": [
+      {
+        "TypeDiscriminator": "RespCommandContainerArgument",
+        "Name": "ARGUMENTS",
+        "Type": "Block",
+        "ArgumentFlags": "Optional",
+        "Arguments": [
+          {
+            "TypeDiscriminator": "RespCommandBasicArgument",
+            "Name": "PROTOVER",
+            "DisplayText": "protover",
+            "Type": "Integer"
+          },
+          {
+            "TypeDiscriminator": "RespCommandContainerArgument",
+            "Name": "AUTH",
+            "Type": "Block",
+            "Token": "AUTH",
+            "ArgumentFlags": "Optional",
+            "Arguments": [
+              {
+                "TypeDiscriminator": "RespCommandBasicArgument",
+                "Name": "USERNAME",
+                "DisplayText": "username",
+                "Type": "String"
+              },
+              {
+                "TypeDiscriminator": "RespCommandBasicArgument",
+                "Name": "PASSWORD",
+                "DisplayText": "password",
+                "Type": "String"
+              }
+            ]
+          },
+          {
+            "TypeDiscriminator": "RespCommandBasicArgument",
+            "Name": "CLIENTNAME",
+            "DisplayText": "clientname",
+            "Type": "String",
+            "Token": "SETNAME",
+            "ArgumentFlags": "Optional"
+          }
+        ]
+      }
+    ]
+  },
+  {
+    "Command": "HEXISTS",
+    "Name": "HEXISTS",
+    "Summary": "Determines whether a field exists in a hash.",
+    "Group": "Hash",
+    "Complexity": "O(1)",
+    "Arguments": [
+      {
+        "TypeDiscriminator": "RespCommandKeyArgument",
+        "Name": "KEY",
+        "DisplayText": "key",
+        "Type": "Key",
+        "KeySpecIndex": 0
+      },
+      {
+        "TypeDiscriminator": "RespCommandBasicArgument",
+        "Name": "FIELD",
+        "DisplayText": "field",
+        "Type": "String"
+      }
+    ]
+  },
+  {
+    "Command": "HGET",
+    "Name": "HGET",
+    "Summary": "Returns the value of a field in a hash.",
+    "Group": "Hash",
+    "Complexity": "O(1)",
+    "Arguments": [
+      {
+        "TypeDiscriminator": "RespCommandKeyArgument",
+        "Name": "KEY",
+        "DisplayText": "key",
+        "Type": "Key",
+        "KeySpecIndex": 0
+      },
+      {
+        "TypeDiscriminator": "RespCommandBasicArgument",
+        "Name": "FIELD",
+        "DisplayText": "field",
+        "Type": "String"
+      }
+    ]
+  },
+  {
+    "Command": "HGETALL",
+    "Name": "HGETALL",
+    "Summary": "Returns all fields and values in a hash.",
+    "Group": "Hash",
+    "Complexity": "O(N) where N is the size of the hash.",
+    "Arguments": [
+      {
+        "TypeDiscriminator": "RespCommandKeyArgument",
+        "Name": "KEY",
+        "DisplayText": "key",
+        "Type": "Key",
+        "KeySpecIndex": 0
+      }
+    ]
+  },
+  {
+    "Command": "HINCRBY",
+    "Name": "HINCRBY",
+    "Summary": "Increments the integer value of a field in a hash by a number. Uses 0 as initial value if the field doesn\u0027t exist.",
+    "Group": "Hash",
+    "Complexity": "O(1)",
+    "Arguments": [
+      {
+        "TypeDiscriminator": "RespCommandKeyArgument",
+        "Name": "KEY",
+        "DisplayText": "key",
+        "Type": "Key",
+        "KeySpecIndex": 0
+      },
+      {
+        "TypeDiscriminator": "RespCommandBasicArgument",
+        "Name": "FIELD",
+        "DisplayText": "field",
+        "Type": "String"
+      },
+      {
+        "TypeDiscriminator": "RespCommandBasicArgument",
+        "Name": "INCREMENT",
+        "DisplayText": "increment",
+        "Type": "Integer"
+      }
+    ]
+  },
+  {
+    "Command": "HINCRBYFLOAT",
+    "Name": "HINCRBYFLOAT",
+    "Summary": "Increments the floating point value of a field by a number. Uses 0 as initial value if the field doesn\u0027t exist.",
+    "Group": "Hash",
+    "Complexity": "O(1)",
+    "Arguments": [
+      {
+        "TypeDiscriminator": "RespCommandKeyArgument",
+        "Name": "KEY",
+        "DisplayText": "key",
+        "Type": "Key",
+        "KeySpecIndex": 0
+      },
+      {
+        "TypeDiscriminator": "RespCommandBasicArgument",
+        "Name": "FIELD",
+        "DisplayText": "field",
+        "Type": "String"
+      },
+      {
+        "TypeDiscriminator": "RespCommandBasicArgument",
+        "Name": "INCREMENT",
+        "DisplayText": "increment",
+        "Type": "Double"
+      }
+    ]
+  },
+  {
+    "Command": "HKEYS",
+    "Name": "HKEYS",
+    "Summary": "Returns all fields in a hash.",
+    "Group": "Hash",
+    "Complexity": "O(N) where N is the size of the hash.",
+    "Arguments": [
+      {
+        "TypeDiscriminator": "RespCommandKeyArgument",
+        "Name": "KEY",
+        "DisplayText": "key",
+        "Type": "Key",
+        "KeySpecIndex": 0
+      }
+    ]
+  },
+  {
+    "Command": "HLEN",
+    "Name": "HLEN",
+    "Summary": "Returns the number of fields in a hash.",
+    "Group": "Hash",
+    "Complexity": "O(1)",
+    "Arguments": [
+      {
+        "TypeDiscriminator": "RespCommandKeyArgument",
+        "Name": "KEY",
+        "DisplayText": "key",
+        "Type": "Key",
+        "KeySpecIndex": 0
+      }
+    ]
+  },
+  {
+    "Command": "HMGET",
+    "Name": "HMGET",
+    "Summary": "Returns the values of all fields in a hash.",
+    "Group": "Hash",
+    "Complexity": "O(N) where N is the number of fields being requested.",
+    "Arguments": [
+      {
+        "TypeDiscriminator": "RespCommandKeyArgument",
+        "Name": "KEY",
+        "DisplayText": "key",
+        "Type": "Key",
+        "KeySpecIndex": 0
+      },
+      {
+        "TypeDiscriminator": "RespCommandBasicArgument",
+        "Name": "FIELD",
+        "DisplayText": "field",
+        "Type": "String",
+        "ArgumentFlags": "Multiple"
+      }
+    ]
+  },
+  {
+    "Command": "HMSET",
+    "Name": "HMSET",
+    "Summary": "Sets the values of multiple fields.",
+    "Group": "Hash",
+    "Complexity": "O(N) where N is the number of fields being set.",
+    "DocFlags": "Deprecated",
+    "ReplacedBy": "\u0060HSET\u0060 with multiple field-value pairs",
+    "Arguments": [
+      {
+        "TypeDiscriminator": "RespCommandKeyArgument",
+        "Name": "KEY",
+        "DisplayText": "key",
+        "Type": "Key",
+        "KeySpecIndex": 0
+      },
+      {
+        "TypeDiscriminator": "RespCommandContainerArgument",
+        "Name": "DATA",
+        "Type": "Block",
+        "ArgumentFlags": "Multiple",
+        "Arguments": [
+          {
+            "TypeDiscriminator": "RespCommandBasicArgument",
+            "Name": "FIELD",
+            "DisplayText": "field",
+            "Type": "String"
+          },
+          {
+            "TypeDiscriminator": "RespCommandBasicArgument",
+            "Name": "VALUE",
+            "DisplayText": "value",
+            "Type": "String"
+          }
+        ]
+      }
+    ]
+  },
+  {
+    "Command": "HRANDFIELD",
+    "Name": "HRANDFIELD",
+    "Summary": "Returns one or more random fields from a hash.",
+    "Group": "Hash",
+    "Complexity": "O(N) where N is the number of fields returned",
+    "Arguments": [
+      {
+        "TypeDiscriminator": "RespCommandKeyArgument",
+        "Name": "KEY",
+        "DisplayText": "key",
+        "Type": "Key",
+        "KeySpecIndex": 0
+      },
+      {
+        "TypeDiscriminator": "RespCommandContainerArgument",
+        "Name": "OPTIONS",
+        "Type": "Block",
+        "ArgumentFlags": "Optional",
+        "Arguments": [
+          {
+            "TypeDiscriminator": "RespCommandBasicArgument",
+            "Name": "COUNT",
+            "DisplayText": "count",
+            "Type": "Integer"
+          },
+          {
+            "TypeDiscriminator": "RespCommandBasicArgument",
+            "Name": "WITHVALUES",
+            "DisplayText": "withvalues",
+            "Type": "PureToken",
+            "Token": "WITHVALUES",
+            "ArgumentFlags": "Optional"
+          }
+        ]
+      }
+    ]
+  },
+  {
+    "Command": "HSCAN",
+    "Name": "HSCAN",
+    "Summary": "Iterates over fields and values of a hash.",
+    "Group": "Hash",
+    "Complexity": "O(1) for every call. O(N) for a complete iteration, including enough command calls for the cursor to return back to 0. N is the number of elements inside the collection.",
+    "Arguments": [
+      {
+        "TypeDiscriminator": "RespCommandKeyArgument",
+        "Name": "KEY",
+        "DisplayText": "key",
+        "Type": "Key",
+        "KeySpecIndex": 0
+      },
+      {
+        "TypeDiscriminator": "RespCommandBasicArgument",
+        "Name": "CURSOR",
+        "DisplayText": "cursor",
+        "Type": "Integer"
+      },
+      {
+        "TypeDiscriminator": "RespCommandBasicArgument",
+        "Name": "PATTERN",
+        "DisplayText": "pattern",
+        "Type": "Pattern",
+        "Token": "MATCH",
+        "ArgumentFlags": "Optional"
+      },
+      {
+        "TypeDiscriminator": "RespCommandBasicArgument",
+        "Name": "COUNT",
+        "DisplayText": "count",
+        "Type": "Integer",
+        "Token": "COUNT",
+        "ArgumentFlags": "Optional"
+      }
+    ]
+  },
+  {
+    "Command": "HSET",
+    "Name": "HSET",
+    "Summary": "Creates or modifies the value of a field in a hash.",
+    "Group": "Hash",
+    "Complexity": "O(1) for each field/value pair added, so O(N) to add N field/value pairs when the command is called with multiple field/value pairs.",
+    "Arguments": [
+      {
+        "TypeDiscriminator": "RespCommandKeyArgument",
+        "Name": "KEY",
+        "DisplayText": "key",
+        "Type": "Key",
+        "KeySpecIndex": 0
+      },
+      {
+        "TypeDiscriminator": "RespCommandContainerArgument",
+        "Name": "DATA",
+        "Type": "Block",
+        "ArgumentFlags": "Multiple",
+        "Arguments": [
+          {
+            "TypeDiscriminator": "RespCommandBasicArgument",
+            "Name": "FIELD",
+            "DisplayText": "field",
+            "Type": "String"
+          },
+          {
+            "TypeDiscriminator": "RespCommandBasicArgument",
+            "Name": "VALUE",
+            "DisplayText": "value",
+            "Type": "String"
+          }
+        ]
+      }
+    ]
+  },
+  {
+    "Command": "HSETNX",
+    "Name": "HSETNX",
+    "Summary": "Sets the value of a field in a hash only when the field doesn\u0027t exist.",
+    "Group": "Hash",
+    "Complexity": "O(1)",
+    "Arguments": [
+      {
+        "TypeDiscriminator": "RespCommandKeyArgument",
+        "Name": "KEY",
+        "DisplayText": "key",
+        "Type": "Key",
+        "KeySpecIndex": 0
+      },
+      {
+        "TypeDiscriminator": "RespCommandBasicArgument",
+        "Name": "FIELD",
+        "DisplayText": "field",
+        "Type": "String"
+      },
+      {
+        "TypeDiscriminator": "RespCommandBasicArgument",
+        "Name": "VALUE",
+        "DisplayText": "value",
+        "Type": "String"
+      }
+    ]
+  },
+  {
+    "Command": "HSTRLEN",
+    "Name": "HSTRLEN",
+    "Summary": "Returns the length of the value of a field.",
+    "Group": "Hash",
+    "Complexity": "O(1)",
+    "Arguments": [
+      {
+        "TypeDiscriminator": "RespCommandKeyArgument",
+        "Name": "KEY",
+        "DisplayText": "key",
+        "Type": "Key",
+        "KeySpecIndex": 0
+      },
+      {
+        "TypeDiscriminator": "RespCommandBasicArgument",
+        "Name": "FIELD",
+        "DisplayText": "field",
+        "Type": "String"
+      }
+    ]
+  },
+  {
+    "Command": "HVALS",
+    "Name": "HVALS",
+    "Summary": "Returns all values in a hash.",
+    "Group": "Hash",
+    "Complexity": "O(N) where N is the size of the hash.",
+    "Arguments": [
+      {
+        "TypeDiscriminator": "RespCommandKeyArgument",
+        "Name": "KEY",
+        "DisplayText": "key",
+        "Type": "Key",
+        "KeySpecIndex": 0
+      }
+    ]
+  },
+  {
+    "Command": "INCR",
+    "Name": "INCR",
+    "Summary": "Increments the integer value of a key by one. Uses 0 as initial value if the key doesn\u0027t exist.",
+    "Group": "String",
+    "Complexity": "O(1)",
+    "Arguments": [
+      {
+        "TypeDiscriminator": "RespCommandKeyArgument",
+        "Name": "KEY",
+        "DisplayText": "key",
+        "Type": "Key",
+        "KeySpecIndex": 0
+      }
+    ]
+  },
+  {
+    "Command": "INCRBY",
+    "Name": "INCRBY",
+    "Summary": "Increments the integer value of a key by a number. Uses 0 as initial value if the key doesn\u0027t exist.",
+    "Group": "String",
+    "Complexity": "O(1)",
+    "Arguments": [
+      {
+        "TypeDiscriminator": "RespCommandKeyArgument",
+        "Name": "KEY",
+        "DisplayText": "key",
+        "Type": "Key",
+        "KeySpecIndex": 0
+      },
+      {
+        "TypeDiscriminator": "RespCommandBasicArgument",
+        "Name": "INCREMENT",
+        "DisplayText": "increment",
+        "Type": "Integer"
+      }
+    ]
+  },
+  {
+    "Command": "INFO",
+    "Name": "INFO",
+    "Summary": "Returns information and statistics about the server.",
+    "Group": "Server",
+    "Complexity": "O(1)",
+    "Arguments": [
+      {
+        "TypeDiscriminator": "RespCommandBasicArgument",
+        "Name": "SECTION",
+        "DisplayText": "section",
+        "Type": "String",
+        "ArgumentFlags": "Optional, Multiple"
+      }
+    ]
+  },
+  {
+    "Command": "KEYS",
+    "Name": "KEYS",
+    "Summary": "Returns all key names that match a pattern.",
+    "Group": "Generic",
+    "Complexity": "O(N) with N being the number of keys in the database, under the assumption that the key names in the database and the given pattern have limited length.",
+    "Arguments": [
+      {
+        "TypeDiscriminator": "RespCommandBasicArgument",
+        "Name": "PATTERN",
+        "DisplayText": "pattern",
+        "Type": "Pattern"
+      }
+    ]
+  },
+  {
+    "Command": "LASTSAVE",
+    "Name": "LASTSAVE",
+    "Summary": "Returns the Unix timestamp of the last successful save to disk.",
+    "Group": "Server",
+    "Complexity": "O(1)"
+  },
+  {
+    "Command": "LATENCY",
+    "Name": "LATENCY",
+    "Summary": "A container for latency diagnostics commands.",
+    "Group": "Server",
+    "Complexity": "Depends on subcommand.",
+    "SubCommands": [
+      {
+        "Command": "LATENCY_HELP",
+        "Name": "LATENCY|HELP",
+        "Summary": "Returns helpful text about the different subcommands.",
+        "Group": "Server",
+        "Complexity": "O(1)"
+      },
+      {
+        "Command": "LATENCY_HISTOGRAM",
+        "Name": "LATENCY|HISTOGRAM",
+        "Summary": "Returns the cumulative distribution of latencies of a subset or all commands.",
+        "Group": "Server",
+        "Complexity": "O(N) where N is the number of commands with latency information being retrieved.",
+        "Arguments": [
+          {
+            "TypeDiscriminator": "RespCommandBasicArgument",
+            "Name": "COMMAND",
+            "DisplayText": "command",
+            "Type": "String",
+            "ArgumentFlags": "Optional, Multiple"
+          }
+        ]
+      },
+      {
+        "Command": "LATENCY_RESET",
+        "Name": "LATENCY|RESET",
+        "Summary": "Resets the latency data for one or more events.",
+        "Group": "Server",
+        "Complexity": "O(1)",
+        "Arguments": [
+          {
+            "TypeDiscriminator": "RespCommandBasicArgument",
+            "Name": "EVENT",
+            "DisplayText": "event",
+            "Type": "String",
+            "ArgumentFlags": "Optional, Multiple"
+          }
+        ]
+      }
+    ]
+  },
+  {
+    "Command": "LINDEX",
+    "Name": "LINDEX",
+    "Summary": "Returns an element from a list by its index.",
+    "Group": "List",
+    "Complexity": "O(N) where N is the number of elements to traverse to get to the element at index. This makes asking for the first or the last element of the list O(1).",
+    "Arguments": [
+      {
+        "TypeDiscriminator": "RespCommandKeyArgument",
+        "Name": "KEY",
+        "DisplayText": "key",
+        "Type": "Key",
+        "KeySpecIndex": 0
+      },
+      {
+        "TypeDiscriminator": "RespCommandBasicArgument",
+        "Name": "INDEX",
+        "DisplayText": "index",
+        "Type": "Integer"
+      }
+    ]
+  },
+  {
+    "Command": "LINSERT",
+    "Name": "LINSERT",
+    "Summary": "Inserts an element before or after another element in a list.",
+    "Group": "List",
+    "Complexity": "O(N) where N is the number of elements to traverse before seeing the value pivot. This means that inserting somewhere on the left end on the list (head) can be considered O(1) and inserting somewhere on the right end (tail) is O(N).",
+    "Arguments": [
+      {
+        "TypeDiscriminator": "RespCommandKeyArgument",
+        "Name": "KEY",
+        "DisplayText": "key",
+        "Type": "Key",
+        "KeySpecIndex": 0
+      },
+      {
+        "TypeDiscriminator": "RespCommandContainerArgument",
+        "Name": "WHERE",
+        "Type": "OneOf",
+        "Arguments": [
+          {
+            "TypeDiscriminator": "RespCommandBasicArgument",
+            "Name": "BEFORE",
+            "DisplayText": "before",
+            "Type": "PureToken",
+            "Token": "BEFORE"
+          },
+          {
+            "TypeDiscriminator": "RespCommandBasicArgument",
+            "Name": "AFTER",
+            "DisplayText": "after",
+            "Type": "PureToken",
+            "Token": "AFTER"
+          }
+        ]
+      },
+      {
+        "TypeDiscriminator": "RespCommandBasicArgument",
+        "Name": "PIVOT",
+        "DisplayText": "pivot",
+        "Type": "String"
+      },
+      {
+        "TypeDiscriminator": "RespCommandBasicArgument",
+        "Name": "ELEMENT",
+        "DisplayText": "element",
+        "Type": "String"
+      }
+    ]
+  },
+  {
+    "Command": "LLEN",
+    "Name": "LLEN",
+    "Summary": "Returns the length of a list.",
+    "Group": "List",
+    "Complexity": "O(1)",
+    "Arguments": [
+      {
+        "TypeDiscriminator": "RespCommandKeyArgument",
+        "Name": "KEY",
+        "DisplayText": "key",
+        "Type": "Key",
+        "KeySpecIndex": 0
+      }
+    ]
+  },
+  {
+    "Command": "LMOVE",
+    "Name": "LMOVE",
+    "Summary": "Returns an element after popping it from one list and pushing it to another. Deletes the list if the last element was moved.",
+    "Group": "List",
+    "Complexity": "O(1)",
+    "Arguments": [
+      {
+        "TypeDiscriminator": "RespCommandKeyArgument",
+        "Name": "SOURCE",
+        "DisplayText": "source",
+        "Type": "Key",
+        "KeySpecIndex": 0
+      },
+      {
+        "TypeDiscriminator": "RespCommandKeyArgument",
+        "Name": "DESTINATION",
+        "DisplayText": "destination",
+        "Type": "Key",
+        "KeySpecIndex": 1
+      },
+      {
+        "TypeDiscriminator": "RespCommandContainerArgument",
+        "Name": "WHEREFROM",
+        "Type": "OneOf",
+        "Arguments": [
+          {
+            "TypeDiscriminator": "RespCommandBasicArgument",
+            "Name": "LEFT",
+            "DisplayText": "left",
+            "Type": "PureToken",
+            "Token": "LEFT"
+          },
+          {
+            "TypeDiscriminator": "RespCommandBasicArgument",
+            "Name": "RIGHT",
+            "DisplayText": "right",
+            "Type": "PureToken",
+            "Token": "RIGHT"
+          }
+        ]
+      },
+      {
+        "TypeDiscriminator": "RespCommandContainerArgument",
+        "Name": "WHERETO",
+        "Type": "OneOf",
+        "Arguments": [
+          {
+            "TypeDiscriminator": "RespCommandBasicArgument",
+            "Name": "LEFT",
+            "DisplayText": "left",
+            "Type": "PureToken",
+            "Token": "LEFT"
+          },
+          {
+            "TypeDiscriminator": "RespCommandBasicArgument",
+            "Name": "RIGHT",
+            "DisplayText": "right",
+            "Type": "PureToken",
+            "Token": "RIGHT"
+          }
+        ]
+      }
+    ]
+  },
+  {
+    "Command": "LMPOP",
+    "Name": "LMPOP",
+    "Summary": "Returns multiple elements from a list after removing them. Deletes the list if the last element was popped.",
+    "Group": "List",
+    "Complexity": "O(N\u002BM) where N is the number of provided keys and M is the number of elements returned.",
+    "Arguments": [
+      {
+        "TypeDiscriminator": "RespCommandBasicArgument",
+        "Name": "NUMKEYS",
+        "DisplayText": "numkeys",
+        "Type": "Integer"
+      },
+      {
+        "TypeDiscriminator": "RespCommandKeyArgument",
+        "Name": "KEY",
+        "DisplayText": "key",
+        "Type": "Key",
+        "ArgumentFlags": "Multiple",
+        "KeySpecIndex": 0
+      },
+      {
+        "TypeDiscriminator": "RespCommandContainerArgument",
+        "Name": "WHERE",
+        "Type": "OneOf",
+        "Arguments": [
+          {
+            "TypeDiscriminator": "RespCommandBasicArgument",
+            "Name": "LEFT",
+            "DisplayText": "left",
+            "Type": "PureToken",
+            "Token": "LEFT"
+          },
+          {
+            "TypeDiscriminator": "RespCommandBasicArgument",
+            "Name": "RIGHT",
+            "DisplayText": "right",
+            "Type": "PureToken",
+            "Token": "RIGHT"
+          }
+        ]
+      },
+      {
+        "TypeDiscriminator": "RespCommandBasicArgument",
+        "Name": "COUNT",
+        "DisplayText": "count",
+        "Type": "Integer",
+        "Token": "COUNT",
+        "ArgumentFlags": "Optional"
+      }
+    ]
+  },
+  {
+    "Command": "LPOP",
+    "Name": "LPOP",
+    "Summary": "Returns the first elements in a list after removing it. Deletes the list if the last element was popped.",
+    "Group": "List",
+    "Complexity": "O(N) where N is the number of elements returned",
+    "Arguments": [
+      {
+        "TypeDiscriminator": "RespCommandKeyArgument",
+        "Name": "KEY",
+        "DisplayText": "key",
+        "Type": "Key",
+        "KeySpecIndex": 0
+      },
+      {
+        "TypeDiscriminator": "RespCommandBasicArgument",
+        "Name": "COUNT",
+        "DisplayText": "count",
+        "Type": "Integer",
+        "ArgumentFlags": "Optional"
+      }
+    ]
+  },
+  {
+    "Command": "LPUSH",
+    "Name": "LPUSH",
+    "Summary": "Prepends one or more elements to a list. Creates the key if it doesn\u0027t exist.",
+    "Group": "List",
+    "Complexity": "O(1) for each element added, so O(N) to add N elements when the command is called with multiple arguments.",
+    "Arguments": [
+      {
+        "TypeDiscriminator": "RespCommandKeyArgument",
+        "Name": "KEY",
+        "DisplayText": "key",
+        "Type": "Key",
+        "KeySpecIndex": 0
+      },
+      {
+        "TypeDiscriminator": "RespCommandBasicArgument",
+        "Name": "ELEMENT",
+        "DisplayText": "element",
+        "Type": "String",
+        "ArgumentFlags": "Multiple"
+      }
+    ]
+  },
+  {
+    "Command": "LPUSHX",
+    "Name": "LPUSHX",
+    "Summary": "Prepends one or more elements to a list only when the list exists.",
+    "Group": "List",
+    "Complexity": "O(1) for each element added, so O(N) to add N elements when the command is called with multiple arguments.",
+    "Arguments": [
+      {
+        "TypeDiscriminator": "RespCommandKeyArgument",
+        "Name": "KEY",
+        "DisplayText": "key",
+        "Type": "Key",
+        "KeySpecIndex": 0
+      },
+      {
+        "TypeDiscriminator": "RespCommandBasicArgument",
+        "Name": "ELEMENT",
+        "DisplayText": "element",
+        "Type": "String",
+        "ArgumentFlags": "Multiple"
+      }
+    ]
+  },
+  {
+    "Command": "LRANGE",
+    "Name": "LRANGE",
+    "Summary": "Returns a range of elements from a list.",
+    "Group": "List",
+    "Complexity": "O(S\u002BN) where S is the distance of start offset from HEAD for small lists, from nearest end (HEAD or TAIL) for large lists; and N is the number of elements in the specified range.",
+    "Arguments": [
+      {
+        "TypeDiscriminator": "RespCommandKeyArgument",
+        "Name": "KEY",
+        "DisplayText": "key",
+        "Type": "Key",
+        "KeySpecIndex": 0
+      },
+      {
+        "TypeDiscriminator": "RespCommandBasicArgument",
+        "Name": "START",
+        "DisplayText": "start",
+        "Type": "Integer"
+      },
+      {
+        "TypeDiscriminator": "RespCommandBasicArgument",
+        "Name": "STOP",
+        "DisplayText": "stop",
+        "Type": "Integer"
+      }
+    ]
+  },
+  {
+    "Command": "LREM",
+    "Name": "LREM",
+    "Summary": "Removes elements from a list. Deletes the list if the last element was removed.",
+    "Group": "List",
+    "Complexity": "O(N\u002BM) where N is the length of the list and M is the number of elements removed.",
+    "Arguments": [
+      {
+        "TypeDiscriminator": "RespCommandKeyArgument",
+        "Name": "KEY",
+        "DisplayText": "key",
+        "Type": "Key",
+        "KeySpecIndex": 0
+      },
+      {
+        "TypeDiscriminator": "RespCommandBasicArgument",
+        "Name": "COUNT",
+        "DisplayText": "count",
+        "Type": "Integer"
+      },
+      {
+        "TypeDiscriminator": "RespCommandBasicArgument",
+        "Name": "ELEMENT",
+        "DisplayText": "element",
+        "Type": "String"
+      }
+    ]
+  },
+  {
+    "Command": "LSET",
+    "Name": "LSET",
+    "Summary": "Sets the value of an element in a list by its index.",
+    "Group": "List",
+    "Complexity": "O(N) where N is the length of the list. Setting either the first or the last element of the list is O(1).",
+    "Arguments": [
+      {
+        "TypeDiscriminator": "RespCommandKeyArgument",
+        "Name": "KEY",
+        "DisplayText": "key",
+        "Type": "Key",
+        "KeySpecIndex": 0
+      },
+      {
+        "TypeDiscriminator": "RespCommandBasicArgument",
+        "Name": "INDEX",
+        "DisplayText": "index",
+        "Type": "Integer"
+      },
+      {
+        "TypeDiscriminator": "RespCommandBasicArgument",
+        "Name": "ELEMENT",
+        "DisplayText": "element",
+        "Type": "String"
+      }
+    ]
+  },
+  {
+    "Command": "LTRIM",
+    "Name": "LTRIM",
+    "Summary": "Removes elements from both ends a list. Deletes the list if all elements were trimmed.",
+    "Group": "List",
+    "Complexity": "O(N) where N is the number of elements to be removed by the operation.",
+    "Arguments": [
+      {
+        "TypeDiscriminator": "RespCommandKeyArgument",
+        "Name": "KEY",
+        "DisplayText": "key",
+        "Type": "Key",
+        "KeySpecIndex": 0
+      },
+      {
+        "TypeDiscriminator": "RespCommandBasicArgument",
+        "Name": "START",
+        "DisplayText": "start",
+        "Type": "Integer"
+      },
+      {
+        "TypeDiscriminator": "RespCommandBasicArgument",
+        "Name": "STOP",
+        "DisplayText": "stop",
+        "Type": "Integer"
+      }
+    ]
+  },
+  {
+    "Command": "MEMORY",
+    "Name": "MEMORY",
+    "Summary": "A container for memory diagnostics commands.",
+    "Group": "Server",
+    "Complexity": "Depends on subcommand.",
+    "SubCommands": [
+      {
+        "Command": "MEMORY_USAGE",
+        "Name": "MEMORY|USAGE",
+        "Summary": "Estimates the memory usage of a key.",
+        "Group": "Server",
+        "Complexity": "O(N) where N is the number of samples.",
+        "Arguments": [
+          {
+            "TypeDiscriminator": "RespCommandKeyArgument",
+            "Name": "KEY",
+            "DisplayText": "key",
+            "Type": "Key",
+            "KeySpecIndex": 0
+          },
+          {
+            "TypeDiscriminator": "RespCommandBasicArgument",
+            "Name": "COUNT",
+            "DisplayText": "count",
+            "Type": "Integer",
+            "Token": "SAMPLES",
+            "ArgumentFlags": "Optional"
+          }
+        ]
+      }
+    ]
+  },
+  {
+    "Command": "MGET",
+    "Name": "MGET",
+    "Summary": "Atomically returns the string values of one or more keys.",
+    "Group": "String",
+    "Complexity": "O(N) where N is the number of keys to retrieve.",
+    "Arguments": [
+      {
+        "TypeDiscriminator": "RespCommandKeyArgument",
+        "Name": "KEY",
+        "DisplayText": "key",
+        "Type": "Key",
+        "ArgumentFlags": "Multiple",
+        "KeySpecIndex": 0
+      }
+    ]
+  },
+  {
+    "Command": "MIGRATE",
+    "Name": "MIGRATE",
+    "Summary": "Atomically transfers a key from one Redis instance to another.",
+    "Group": "Generic",
+    "Complexity": "This command actually executes a DUMP\u002BDEL in the source instance, and a RESTORE in the target instance. See the pages of these commands for time complexity. Also an O(N) data transfer between the two instances is performed.",
+    "Arguments": [
+      {
+        "TypeDiscriminator": "RespCommandBasicArgument",
+        "Name": "HOST",
+        "DisplayText": "host",
+        "Type": "String"
+      },
+      {
+        "TypeDiscriminator": "RespCommandBasicArgument",
+        "Name": "PORT",
+        "DisplayText": "port",
+        "Type": "Integer"
+      },
+      {
+        "TypeDiscriminator": "RespCommandContainerArgument",
+        "Name": "KEY-SELECTOR",
+        "Type": "OneOf",
+        "Arguments": [
+          {
+            "TypeDiscriminator": "RespCommandKeyArgument",
+            "Name": "KEY",
+            "DisplayText": "key",
+            "Type": "Key",
+            "KeySpecIndex": 0
+          },
+          {
+            "TypeDiscriminator": "RespCommandBasicArgument",
+            "Name": "EMPTY-STRING",
+            "DisplayText": "empty-string",
+            "Type": "PureToken",
+            "Token": ""
+          }
+        ]
+      },
+      {
+        "TypeDiscriminator": "RespCommandBasicArgument",
+        "Name": "DESTINATION-DB",
+        "DisplayText": "destination-db",
+        "Type": "Integer"
+      },
+      {
+        "TypeDiscriminator": "RespCommandBasicArgument",
+        "Name": "TIMEOUT",
+        "DisplayText": "timeout",
+        "Type": "Integer"
+      },
+      {
+        "TypeDiscriminator": "RespCommandBasicArgument",
+        "Name": "COPY",
+        "DisplayText": "copy",
+        "Type": "PureToken",
+        "Token": "COPY",
+        "ArgumentFlags": "Optional"
+      },
+      {
+        "TypeDiscriminator": "RespCommandBasicArgument",
+        "Name": "REPLACE",
+        "DisplayText": "replace",
+        "Type": "PureToken",
+        "Token": "REPLACE",
+        "ArgumentFlags": "Optional"
+      },
+      {
+        "TypeDiscriminator": "RespCommandContainerArgument",
+        "Name": "AUTHENTICATION",
+        "Type": "OneOf",
+        "ArgumentFlags": "Optional",
+        "Arguments": [
+          {
+            "TypeDiscriminator": "RespCommandBasicArgument",
+            "Name": "AUTH",
+            "DisplayText": "password",
+            "Type": "String",
+            "Token": "AUTH"
+          },
+          {
+            "TypeDiscriminator": "RespCommandContainerArgument",
+            "Name": "AUTH2",
+            "Type": "Block",
+            "Token": "AUTH2",
+            "Arguments": [
+              {
+                "TypeDiscriminator": "RespCommandBasicArgument",
+                "Name": "USERNAME",
+                "DisplayText": "username",
+                "Type": "String"
+              },
+              {
+                "TypeDiscriminator": "RespCommandBasicArgument",
+                "Name": "PASSWORD",
+                "DisplayText": "password",
+                "Type": "String"
+              }
+            ]
+          }
+        ]
+      },
+      {
+        "TypeDiscriminator": "RespCommandKeyArgument",
+        "Name": "KEYS",
+        "DisplayText": "key",
+        "Type": "Key",
+        "Token": "KEYS",
+        "ArgumentFlags": "Optional, Multiple",
+        "KeySpecIndex": 1
+      }
+    ]
+  },
+  {
+    "Command": "MODULE",
+    "Name": "MODULE",
+    "Summary": "A container for module commands.",
+    "Group": "Server",
+    "Complexity": "Depends on subcommand.",
+    "SubCommands": [
+      {
+        "Command": "MODULE_LOADCS",
+        "Name": "MODULE|LOADCS",
+        "Summary": "Load a C# module in Garnet.",
+        "Group": "Server",
+        "Arguments": [
+          {
+            "TypeDiscriminator": "RespCommandBasicArgument",
+            "Name": "SRCPATH",
+            "DisplayText": "srcPath",
+            "Type": "String",
+            "Summary": "Source path to module definition"
+          },
+          {
+            "TypeDiscriminator": "RespCommandBasicArgument",
+            "Name": "MODULEARG",
+            "DisplayText": "arg",
+            "Type": "String",
+            "Summary": "Module argument",
+            "ArgumentFlags": "Multiple"
+          }
+        ]
+      }
+    ]
+  },
+  {
+    "Command": "MONITOR",
+    "Name": "MONITOR",
+    "Summary": "Listens for all requests received by the server in real-time.",
+    "Group": "Server"
+  },
+  {
+    "Command": "MSET",
+    "Name": "MSET",
+    "Summary": "Atomically creates or modifies the string values of one or more keys.",
+    "Group": "String",
+    "Complexity": "O(N) where N is the number of keys to set.",
+    "Arguments": [
+      {
+        "TypeDiscriminator": "RespCommandContainerArgument",
+        "Name": "DATA",
+        "Type": "Block",
+        "ArgumentFlags": "Multiple",
+        "Arguments": [
+          {
+            "TypeDiscriminator": "RespCommandKeyArgument",
+            "Name": "KEY",
+            "DisplayText": "key",
+            "Type": "Key",
+            "KeySpecIndex": 0
+          },
+          {
+            "TypeDiscriminator": "RespCommandBasicArgument",
+            "Name": "VALUE",
+            "DisplayText": "value",
+            "Type": "String"
+          }
+        ]
+      }
+    ]
+  },
+  {
+    "Command": "MSETNX",
+    "Name": "MSETNX",
+    "Summary": "Atomically modifies the string values of one or more keys only when all keys don\u0027t exist.",
+    "Group": "String",
+    "Complexity": "O(N) where N is the number of keys to set.",
+    "Arguments": [
+      {
+        "TypeDiscriminator": "RespCommandContainerArgument",
+        "Name": "DATA",
+        "Type": "Block",
+        "ArgumentFlags": "Multiple",
+        "Arguments": [
+          {
+            "TypeDiscriminator": "RespCommandKeyArgument",
+            "Name": "KEY",
+            "DisplayText": "key",
+            "Type": "Key",
+            "KeySpecIndex": 0
+          },
+          {
+            "TypeDiscriminator": "RespCommandBasicArgument",
+            "Name": "VALUE",
+            "DisplayText": "value",
+            "Type": "String"
+          }
+        ]
+      }
+    ]
+  },
+  {
+    "Command": "MULTI",
+    "Name": "MULTI",
+    "Summary": "Starts a transaction.",
+    "Group": "Transactions",
+    "Complexity": "O(1)"
+  },
+  {
+    "Command": "PERSIST",
+    "Name": "PERSIST",
+    "Summary": "Removes the expiration time of a key.",
+    "Group": "Generic",
+    "Complexity": "O(1)",
+    "Arguments": [
+      {
+        "TypeDiscriminator": "RespCommandKeyArgument",
+        "Name": "KEY",
+        "DisplayText": "key",
+        "Type": "Key",
+        "KeySpecIndex": 0
+      }
+    ]
+  },
+  {
+    "Command": "PEXPIRE",
+    "Name": "PEXPIRE",
+    "Summary": "Sets the expiration time of a key in milliseconds.",
+    "Group": "Generic",
+    "Complexity": "O(1)",
+    "Arguments": [
+      {
+        "TypeDiscriminator": "RespCommandKeyArgument",
+        "Name": "KEY",
+        "DisplayText": "key",
+        "Type": "Key",
+        "KeySpecIndex": 0
+      },
+      {
+        "TypeDiscriminator": "RespCommandBasicArgument",
+        "Name": "MILLISECONDS",
+        "DisplayText": "milliseconds",
+        "Type": "Integer"
+      },
+      {
+        "TypeDiscriminator": "RespCommandContainerArgument",
+        "Name": "CONDITION",
+        "Type": "OneOf",
+        "ArgumentFlags": "Optional",
+        "Arguments": [
+          {
+            "TypeDiscriminator": "RespCommandBasicArgument",
+            "Name": "NX",
+            "DisplayText": "nx",
+            "Type": "PureToken",
+            "Token": "NX"
+          },
+          {
+            "TypeDiscriminator": "RespCommandBasicArgument",
+            "Name": "XX",
+            "DisplayText": "xx",
+            "Type": "PureToken",
+            "Token": "XX"
+          },
+          {
+            "TypeDiscriminator": "RespCommandBasicArgument",
+            "Name": "GT",
+            "DisplayText": "gt",
+            "Type": "PureToken",
+            "Token": "GT"
+          },
+          {
+            "TypeDiscriminator": "RespCommandBasicArgument",
+            "Name": "LT",
+            "DisplayText": "lt",
+            "Type": "PureToken",
+            "Token": "LT"
+          }
+        ]
+      }
+    ]
+  },
+  {
+    "Command": "PFADD",
+    "Name": "PFADD",
+    "Summary": "Adds elements to a HyperLogLog key. Creates the key if it doesn\u0027t exist.",
+    "Group": "HyperLogLog",
+    "Complexity": "O(1) to add every element.",
+    "Arguments": [
+      {
+        "TypeDiscriminator": "RespCommandKeyArgument",
+        "Name": "KEY",
+        "DisplayText": "key",
+        "Type": "Key",
+        "KeySpecIndex": 0
+      },
+      {
+        "TypeDiscriminator": "RespCommandBasicArgument",
+        "Name": "ELEMENT",
+        "DisplayText": "element",
+        "Type": "String",
+        "ArgumentFlags": "Optional, Multiple"
+      }
+    ]
+  },
+  {
+    "Command": "PFCOUNT",
+    "Name": "PFCOUNT",
+    "Summary": "Returns the approximated cardinality of the set(s) observed by the HyperLogLog key(s).",
+    "Group": "HyperLogLog",
+    "Complexity": "O(1) with a very small average constant time when called with a single key. O(N) with N being the number of keys, and much bigger constant times, when called with multiple keys.",
+    "Arguments": [
+      {
+        "TypeDiscriminator": "RespCommandKeyArgument",
+        "Name": "KEY",
+        "DisplayText": "key",
+        "Type": "Key",
+        "ArgumentFlags": "Multiple",
+        "KeySpecIndex": 0
+      }
+    ]
+  },
+  {
+    "Command": "PFMERGE",
+    "Name": "PFMERGE",
+    "Summary": "Merges one or more HyperLogLog values into a single key.",
+    "Group": "HyperLogLog",
+    "Complexity": "O(N) to merge N HyperLogLogs, but with high constant times.",
+    "Arguments": [
+      {
+        "TypeDiscriminator": "RespCommandKeyArgument",
+        "Name": "DESTKEY",
+        "DisplayText": "destkey",
+        "Type": "Key",
+        "KeySpecIndex": 0
+      },
+      {
+        "TypeDiscriminator": "RespCommandKeyArgument",
+        "Name": "SOURCEKEY",
+        "DisplayText": "sourcekey",
+        "Type": "Key",
+        "ArgumentFlags": "Optional, Multiple",
+        "KeySpecIndex": 1
+      }
+    ]
+  },
+  {
+    "Command": "PING",
+    "Name": "PING",
+    "Summary": "Returns the server\u0027s liveliness response.",
+    "Group": "Connection",
+    "Complexity": "O(1)",
+    "Arguments": [
+      {
+        "TypeDiscriminator": "RespCommandBasicArgument",
+        "Name": "MESSAGE",
+        "DisplayText": "message",
+        "Type": "String",
+        "ArgumentFlags": "Optional"
+      }
+    ]
+  },
+  {
+    "Command": "PSETEX",
+    "Name": "PSETEX",
+    "Summary": "Sets both string value and expiration time in milliseconds of a key. The key is created if it doesn\u0027t exist.",
+    "Group": "String",
+    "Complexity": "O(1)",
+    "DocFlags": "Deprecated",
+    "ReplacedBy": "\u0060SET\u0060 with the \u0060PX\u0060 argument",
+    "Arguments": [
+      {
+        "TypeDiscriminator": "RespCommandKeyArgument",
+        "Name": "KEY",
+        "DisplayText": "key",
+        "Type": "Key",
+        "KeySpecIndex": 0
+      },
+      {
+        "TypeDiscriminator": "RespCommandBasicArgument",
+        "Name": "MILLISECONDS",
+        "DisplayText": "milliseconds",
+        "Type": "Integer"
+      },
+      {
+        "TypeDiscriminator": "RespCommandBasicArgument",
+        "Name": "VALUE",
+        "DisplayText": "value",
+        "Type": "String"
+      }
+    ]
+  },
+  {
+    "Command": "PSUBSCRIBE",
+    "Name": "PSUBSCRIBE",
+    "Summary": "Listens for messages published to channels that match one or more patterns.",
+    "Group": "PubSub",
+    "Complexity": "O(N) where N is the number of patterns to subscribe to.",
+    "Arguments": [
+      {
+        "TypeDiscriminator": "RespCommandBasicArgument",
+        "Name": "PATTERN",
+        "DisplayText": "pattern",
+        "Type": "Pattern",
+        "ArgumentFlags": "Multiple"
+      }
+    ]
+  },
+  {
+    "Command": "PTTL",
+    "Name": "PTTL",
+    "Summary": "Returns the expiration time in milliseconds of a key.",
+    "Group": "Generic",
+    "Complexity": "O(1)",
+    "Arguments": [
+      {
+        "TypeDiscriminator": "RespCommandKeyArgument",
+        "Name": "KEY",
+        "DisplayText": "key",
+        "Type": "Key",
+        "KeySpecIndex": 0
+      }
+    ]
+  },
+  {
+    "Command": "PUBLISH",
+    "Name": "PUBLISH",
+    "Summary": "Posts a message to a channel.",
+    "Group": "PubSub",
+    "Complexity": "O(N\u002BM) where N is the number of clients subscribed to the receiving channel and M is the total number of subscribed patterns (by any client).",
+    "Arguments": [
+      {
+        "TypeDiscriminator": "RespCommandBasicArgument",
+        "Name": "CHANNEL",
+        "DisplayText": "channel",
+        "Type": "String"
+      },
+      {
+        "TypeDiscriminator": "RespCommandBasicArgument",
+        "Name": "MESSAGE",
+        "DisplayText": "message",
+        "Type": "String"
+      }
+    ]
+  },
+  {
+    "Command": "PUNSUBSCRIBE",
+    "Name": "PUNSUBSCRIBE",
+    "Summary": "Stops listening to messages published to channels that match one or more patterns.",
+    "Group": "PubSub",
+    "Complexity": "O(N) where N is the number of patterns to unsubscribe.",
+    "Arguments": [
+      {
+        "TypeDiscriminator": "RespCommandBasicArgument",
+        "Name": "PATTERN",
+        "DisplayText": "pattern",
+        "Type": "Pattern",
+        "ArgumentFlags": "Optional, Multiple"
+      }
+    ]
+  },
+  {
+    "Command": "QUIT",
+    "Name": "QUIT",
+    "Summary": "Closes the connection.",
+    "Group": "Connection",
+    "Complexity": "O(1)",
+    "DocFlags": "Deprecated",
+    "ReplacedBy": "just closing the connection"
+  },
+  {
+    "Command": "READONLY",
+    "Name": "READONLY",
+    "Summary": "Enables read-only queries for a connection to a Redis Cluster replica node.",
+    "Group": "Cluster",
+    "Complexity": "O(1)"
+  },
+  {
+    "Command": "READWRITE",
+    "Name": "READWRITE",
+    "Summary": "Enables read-write queries for a connection to a Reids Cluster replica node.",
+    "Group": "Cluster",
+    "Complexity": "O(1)"
+  },
+  {
+    "Command": "REGISTERCS",
+    "Name": "REGISTERCS",
+    "Summary": "Registers custom C# commands in Garnet.",
+    "Group": "Server",
+    "Arguments": [
+      {
+        "TypeDiscriminator": "RespCommandContainerArgument",
+        "Name": "CMD",
+        "Type": "Block",
+        "ArgumentFlags": "Multiple",
+        "Arguments": [
+          {
+            "TypeDiscriminator": "RespCommandContainerArgument",
+            "Name": "CMDTYPE",
+            "Type": "OneOf",
+            "Arguments": [
+              {
+                "TypeDiscriminator": "RespCommandBasicArgument",
+                "Name": "READ",
+                "DisplayText": "read",
+                "Type": "PureToken",
+                "Token": "READ"
+              },
+              {
+                "TypeDiscriminator": "RespCommandBasicArgument",
+                "Name": "RMW",
+                "DisplayText": "rmw",
+                "Type": "PureToken",
+                "Token": "RMW"
+              },
+              {
+                "TypeDiscriminator": "RespCommandBasicArgument",
+                "Name": "TXN",
+                "DisplayText": "txn",
+                "Type": "PureToken",
+                "Token": "TXN"
+              }
+            ]
+          },
+          {
+            "TypeDiscriminator": "RespCommandBasicArgument",
+            "Name": "NAME",
+            "DisplayText": "cmdName",
+            "Type": "String",
+            "Summary": "Name of the command to register"
+          },
+          {
+            "TypeDiscriminator": "RespCommandBasicArgument",
+            "Name": "NUMPARAMS",
+            "DisplayText": "numParams",
+            "Type": "Integer",
+            "Summary": "Numer of parameters of the command to register"
+          },
+          {
+            "TypeDiscriminator": "RespCommandBasicArgument",
+            "Name": "CLASSNAME",
+            "DisplayText": "className",
+            "Type": "String",
+            "Summary": "Name of class defining the command to register"
+          },
+          {
+            "TypeDiscriminator": "RespCommandBasicArgument",
+            "Name": "EXPTICKS",
+            "DisplayText": "expTicks",
+            "Type": "Integer",
+            "Summary": "Expiry of the command to register (in ticks)",
+            "ArgumentFlags": "Optional"
+          },
+          {
+            "TypeDiscriminator": "RespCommandBasicArgument",
+            "Name": "OBJCMDNAME",
+            "DisplayText": "objCmdName",
+            "Type": "String",
+            "Summary": "The object command name, if applicable",
+            "ArgumentFlags": "Optional"
+          }
+        ]
+      },
+      {
+        "TypeDiscriminator": "RespCommandBasicArgument",
+        "Name": "INFO",
+        "DisplayText": "infoPath",
+        "Type": "String",
+        "Token": "INFO",
+        "Summary": "Path to JSON-serialized command info for registered commands",
+        "ArgumentFlags": "Optional"
+      },
+      {
+        "TypeDiscriminator": "RespCommandBasicArgument",
+        "Name": "DOCS",
+        "DisplayText": "docsPath",
+        "Type": "String",
+        "Token": "DOCS",
+        "Summary": "Path to JSON-serialized command docs for registered commands",
+        "ArgumentFlags": "Optional"
+      },
+      {
+        "TypeDiscriminator": "RespCommandBasicArgument",
+        "Name": "SRC",
+        "DisplayText": "srcPath",
+        "Type": "String",
+        "Token": "SRC",
+        "Summary": "Source paths containing classes defining command to register",
+        "ArgumentFlags": "Multiple"
+      }
+    ]
+  },
+  {
+    "Command": "RENAME",
+    "Name": "RENAME",
+    "Summary": "Renames a key and overwrites the destination.",
+    "Group": "Generic",
+    "Complexity": "O(1)",
+    "Arguments": [
+      {
+        "TypeDiscriminator": "RespCommandKeyArgument",
+        "Name": "KEY",
+        "DisplayText": "key",
+        "Type": "Key",
+        "KeySpecIndex": 0
+      },
+      {
+        "TypeDiscriminator": "RespCommandKeyArgument",
+        "Name": "NEWKEY",
+        "DisplayText": "newkey",
+        "Type": "Key",
+        "KeySpecIndex": 1
+      }
+    ]
+  },
+  {
+    "Command": "REPLICAOF",
+    "Name": "REPLICAOF",
+    "Summary": "Configures a server as replica of another, or promotes it to a master.",
+    "Group": "Server",
+    "Complexity": "O(1)",
+    "Arguments": [
+      {
+        "TypeDiscriminator": "RespCommandContainerArgument",
+        "Name": "ARGS",
+        "Type": "OneOf",
+        "Arguments": [
+          {
+            "TypeDiscriminator": "RespCommandContainerArgument",
+            "Name": "HOST-PORT",
+            "Type": "Block",
+            "Arguments": [
+              {
+                "TypeDiscriminator": "RespCommandBasicArgument",
+                "Name": "HOST",
+                "DisplayText": "host",
+                "Type": "String"
+              },
+              {
+                "TypeDiscriminator": "RespCommandBasicArgument",
+                "Name": "PORT",
+                "DisplayText": "port",
+                "Type": "Integer"
+              }
+            ]
+          },
+          {
+            "TypeDiscriminator": "RespCommandContainerArgument",
+            "Name": "NO-ONE",
+            "Type": "Block",
+            "Arguments": [
+              {
+                "TypeDiscriminator": "RespCommandBasicArgument",
+                "Name": "NO",
+                "DisplayText": "no",
+                "Type": "PureToken",
+                "Token": "NO"
+              },
+              {
+                "TypeDiscriminator": "RespCommandBasicArgument",
+                "Name": "ONE",
+                "DisplayText": "one",
+                "Type": "PureToken",
+                "Token": "ONE"
+              }
+            ]
+          }
+        ]
+      }
+    ]
+  },
+  {
+    "Command": "RPOP",
+    "Name": "RPOP",
+    "Summary": "Returns and removes the last elements of a list. Deletes the list if the last element was popped.",
+    "Group": "List",
+    "Complexity": "O(N) where N is the number of elements returned",
+    "Arguments": [
+      {
+        "TypeDiscriminator": "RespCommandKeyArgument",
+        "Name": "KEY",
+        "DisplayText": "key",
+        "Type": "Key",
+        "KeySpecIndex": 0
+      },
+      {
+        "TypeDiscriminator": "RespCommandBasicArgument",
+        "Name": "COUNT",
+        "DisplayText": "count",
+        "Type": "Integer",
+        "ArgumentFlags": "Optional"
+      }
+    ]
+  },
+  {
+    "Command": "RPOPLPUSH",
+    "Name": "RPOPLPUSH",
+    "Summary": "Returns the last element of a list after removing and pushing it to another list. Deletes the list if the last element was popped.",
+    "Group": "List",
+    "Complexity": "O(1)",
+    "DocFlags": "Deprecated",
+    "ReplacedBy": "\u0060LMOVE\u0060 with the \u0060RIGHT\u0060 and \u0060LEFT\u0060 arguments",
+    "Arguments": [
+      {
+        "TypeDiscriminator": "RespCommandKeyArgument",
+        "Name": "SOURCE",
+        "DisplayText": "source",
+        "Type": "Key",
+        "KeySpecIndex": 0
+      },
+      {
+        "TypeDiscriminator": "RespCommandKeyArgument",
+        "Name": "DESTINATION",
+        "DisplayText": "destination",
+        "Type": "Key",
+        "KeySpecIndex": 1
+      }
+    ]
+  },
+  {
+    "Command": "RPUSH",
+    "Name": "RPUSH",
+    "Summary": "Appends one or more elements to a list. Creates the key if it doesn\u0027t exist.",
+    "Group": "List",
+    "Complexity": "O(1) for each element added, so O(N) to add N elements when the command is called with multiple arguments.",
+    "Arguments": [
+      {
+        "TypeDiscriminator": "RespCommandKeyArgument",
+        "Name": "KEY",
+        "DisplayText": "key",
+        "Type": "Key",
+        "KeySpecIndex": 0
+      },
+      {
+        "TypeDiscriminator": "RespCommandBasicArgument",
+        "Name": "ELEMENT",
+        "DisplayText": "element",
+        "Type": "String",
+        "ArgumentFlags": "Multiple"
+      }
+    ]
+  },
+  {
+    "Command": "RPUSHX",
+    "Name": "RPUSHX",
+    "Summary": "Appends an element to a list only when the list exists.",
+    "Group": "List",
+    "Complexity": "O(1) for each element added, so O(N) to add N elements when the command is called with multiple arguments.",
+    "Arguments": [
+      {
+        "TypeDiscriminator": "RespCommandKeyArgument",
+        "Name": "KEY",
+        "DisplayText": "key",
+        "Type": "Key",
+        "KeySpecIndex": 0
+      },
+      {
+        "TypeDiscriminator": "RespCommandBasicArgument",
+        "Name": "ELEMENT",
+        "DisplayText": "element",
+        "Type": "String",
+        "ArgumentFlags": "Multiple"
+      }
+    ]
+  },
+  {
+    "Command": "RUNTXP",
+    "Name": "RUNTXP",
+    "Summary": "Run registered transaction in Garnet.",
+    "Group": "Transactions",
+    "Arguments": [
+      {
+        "TypeDiscriminator": "RespCommandBasicArgument",
+        "Name": "TXNID",
+        "DisplayText": "txnId",
+        "Type": "Integer",
+        "Summary": "Registered transaction ID"
+      },
+      {
+        "TypeDiscriminator": "RespCommandBasicArgument",
+        "Name": "TXNPARAM",
+        "DisplayText": "param",
+        "Type": "String",
+        "Summary": "Transaction parameter",
+        "ArgumentFlags": "Multiple"
+      }
+    ]
+  },
+  {
+    "Command": "SADD",
+    "Name": "SADD",
+    "Summary": "Adds one or more members to a set. Creates the key if it doesn\u0027t exist.",
+    "Group": "Set",
+    "Complexity": "O(1) for each element added, so O(N) to add N elements when the command is called with multiple arguments.",
+    "Arguments": [
+      {
+        "TypeDiscriminator": "RespCommandKeyArgument",
+        "Name": "KEY",
+        "DisplayText": "key",
+        "Type": "Key",
+        "KeySpecIndex": 0
+      },
+      {
+        "TypeDiscriminator": "RespCommandBasicArgument",
+        "Name": "MEMBER",
+        "DisplayText": "member",
+        "Type": "String",
+        "ArgumentFlags": "Multiple"
+      }
+    ]
+  },
+  {
+    "Command": "SAVE",
+    "Name": "SAVE",
+    "Summary": "Synchronously saves the database(s) to disk.",
+    "Group": "Server",
+    "Complexity": "O(N) where N is the total number of keys in all databases"
+  },
+  {
+    "Command": "SCAN",
+    "Name": "SCAN",
+    "Summary": "Iterates over the key names in the database.",
+    "Group": "Generic",
+    "Complexity": "O(1) for every call. O(N) for a complete iteration, including enough command calls for the cursor to return back to 0. N is the number of elements inside the collection.",
+    "Arguments": [
+      {
+        "TypeDiscriminator": "RespCommandBasicArgument",
+        "Name": "CURSOR",
+        "DisplayText": "cursor",
+        "Type": "Integer"
+      },
+      {
+        "TypeDiscriminator": "RespCommandBasicArgument",
+        "Name": "PATTERN",
+        "DisplayText": "pattern",
+        "Type": "Pattern",
+        "Token": "MATCH",
+        "ArgumentFlags": "Optional"
+      },
+      {
+        "TypeDiscriminator": "RespCommandBasicArgument",
+        "Name": "COUNT",
+        "DisplayText": "count",
+        "Type": "Integer",
+        "Token": "COUNT",
+        "ArgumentFlags": "Optional"
+      },
+      {
+        "TypeDiscriminator": "RespCommandBasicArgument",
+        "Name": "TYPE",
+        "DisplayText": "type",
+        "Type": "String",
+        "Token": "TYPE",
+        "ArgumentFlags": "Optional"
+      }
+    ]
+  },
+  {
+    "Command": "SCARD",
+    "Name": "SCARD",
+    "Summary": "Returns the number of members in a set.",
+    "Group": "Set",
+    "Complexity": "O(1)",
+    "Arguments": [
+      {
+        "TypeDiscriminator": "RespCommandKeyArgument",
+        "Name": "KEY",
+        "DisplayText": "key",
+        "Type": "Key",
+        "KeySpecIndex": 0
+      }
+    ]
+  },
+  {
+    "Command": "SCRIPT",
+    "Name": "SCRIPT",
+    "Summary": "A container for Lua scripts management commands.",
+    "Group": "Scripting",
+    "Complexity": "Depends on subcommand."
+  },
+  {
+    "Command": "SDIFF",
+    "Name": "SDIFF",
+    "Summary": "Returns the difference of multiple sets.",
+    "Group": "Set",
+    "Complexity": "O(N) where N is the total number of elements in all given sets.",
+    "Arguments": [
+      {
+        "TypeDiscriminator": "RespCommandKeyArgument",
+        "Name": "KEY",
+        "DisplayText": "key",
+        "Type": "Key",
+        "ArgumentFlags": "Multiple",
+        "KeySpecIndex": 0
+      }
+    ]
+  },
+  {
+    "Command": "SDIFFSTORE",
+    "Name": "SDIFFSTORE",
+    "Summary": "Stores the difference of multiple sets in a key.",
+    "Group": "Set",
+    "Complexity": "O(N) where N is the total number of elements in all given sets.",
+    "Arguments": [
+      {
+        "TypeDiscriminator": "RespCommandKeyArgument",
+        "Name": "DESTINATION",
+        "DisplayText": "destination",
+        "Type": "Key",
+        "KeySpecIndex": 0
+      },
+      {
+        "TypeDiscriminator": "RespCommandKeyArgument",
+        "Name": "KEY",
+        "DisplayText": "key",
+        "Type": "Key",
+        "ArgumentFlags": "Multiple",
+        "KeySpecIndex": 1
+      }
+    ]
+  },
+  {
+    "Command": "SECONDARYOF",
+    "Name": "SECONDARYOF",
+    "Summary": "Configures a server as secondary of another, or promotes it to a primary.",
+    "Group": "Server",
+    "Complexity": "O(1)",
+    "Arguments": [
+      {
+        "TypeDiscriminator": "RespCommandContainerArgument",
+        "Name": "ARGS",
+        "Type": "OneOf",
+        "Arguments": [
+          {
+            "TypeDiscriminator": "RespCommandContainerArgument",
+            "Name": "HOST-PORT",
+            "Type": "Block",
+            "Arguments": [
+              {
+                "TypeDiscriminator": "RespCommandBasicArgument",
+                "Name": "HOST",
+                "DisplayText": "host",
+                "Type": "String"
+              },
+              {
+                "TypeDiscriminator": "RespCommandBasicArgument",
+                "Name": "PORT",
+                "DisplayText": "port",
+                "Type": "Integer"
+              }
+            ]
+          },
+          {
+            "TypeDiscriminator": "RespCommandContainerArgument",
+            "Name": "NO-ONE",
+            "Type": "Block",
+            "Arguments": [
+              {
+                "TypeDiscriminator": "RespCommandBasicArgument",
+                "Name": "NO",
+                "DisplayText": "no",
+                "Type": "PureToken",
+                "Token": "NO"
+              },
+              {
+                "TypeDiscriminator": "RespCommandBasicArgument",
+                "Name": "ONE",
+                "DisplayText": "one",
+                "Type": "PureToken",
+                "Token": "ONE"
+              }
+            ]
+          }
+        ]
+      }
+    ]
+  },
+  {
+    "Command": "SELECT",
+    "Name": "SELECT",
+    "Summary": "Changes the selected database.",
+    "Group": "Connection",
+    "Complexity": "O(1)",
+    "Arguments": [
+      {
+        "TypeDiscriminator": "RespCommandBasicArgument",
+        "Name": "INDEX",
+        "DisplayText": "index",
+        "Type": "Integer"
+      }
+    ]
+  },
+  {
+    "Command": "SET",
+    "Name": "SET",
+    "Summary": "Sets the string value of a key, ignoring its type. The key is created if it doesn\u0027t exist.",
+    "Group": "String",
+    "Complexity": "O(1)",
+    "Arguments": [
+      {
+        "TypeDiscriminator": "RespCommandKeyArgument",
+        "Name": "KEY",
+        "DisplayText": "key",
+        "Type": "Key",
+        "KeySpecIndex": 0
+      },
+      {
+        "TypeDiscriminator": "RespCommandBasicArgument",
+        "Name": "VALUE",
+        "DisplayText": "value",
+        "Type": "String"
+      },
+      {
+        "TypeDiscriminator": "RespCommandContainerArgument",
+        "Name": "CONDITION",
+        "Type": "OneOf",
+        "ArgumentFlags": "Optional",
+        "Arguments": [
+          {
+            "TypeDiscriminator": "RespCommandBasicArgument",
+            "Name": "NX",
+            "DisplayText": "nx",
+            "Type": "PureToken",
+            "Token": "NX"
+          },
+          {
+            "TypeDiscriminator": "RespCommandBasicArgument",
+            "Name": "XX",
+            "DisplayText": "xx",
+            "Type": "PureToken",
+            "Token": "XX"
+          }
+        ]
+      },
+      {
+        "TypeDiscriminator": "RespCommandBasicArgument",
+        "Name": "GET",
+        "DisplayText": "get",
+        "Type": "PureToken",
+        "Token": "GET",
+        "ArgumentFlags": "Optional"
+      },
+      {
+        "TypeDiscriminator": "RespCommandContainerArgument",
+        "Name": "EXPIRATION",
+        "Type": "OneOf",
+        "ArgumentFlags": "Optional",
+        "Arguments": [
+          {
+            "TypeDiscriminator": "RespCommandBasicArgument",
+            "Name": "SECONDS",
+            "DisplayText": "seconds",
+            "Type": "Integer",
+            "Token": "EX"
+          },
+          {
+            "TypeDiscriminator": "RespCommandBasicArgument",
+            "Name": "MILLISECONDS",
+            "DisplayText": "milliseconds",
+            "Type": "Integer",
+            "Token": "PX"
+          },
+          {
+            "TypeDiscriminator": "RespCommandBasicArgument",
+            "Name": "UNIX-TIME-SECONDS",
+            "DisplayText": "unix-time-seconds",
+            "Type": "UnixTime",
+            "Token": "EXAT"
+          },
+          {
+            "TypeDiscriminator": "RespCommandBasicArgument",
+            "Name": "UNIX-TIME-MILLISECONDS",
+            "DisplayText": "unix-time-milliseconds",
+            "Type": "UnixTime",
+            "Token": "PXAT"
+          },
+          {
+            "TypeDiscriminator": "RespCommandBasicArgument",
+            "Name": "KEEPTTL",
+            "DisplayText": "keepttl",
+            "Type": "PureToken",
+            "Token": "KEEPTTL"
+          }
+        ]
+      }
+    ]
+  },
+  {
+    "Command": "SETBIT",
+    "Name": "SETBIT",
+    "Summary": "Sets or clears the bit at offset of the string value. Creates the key if it doesn\u0027t exist.",
+    "Group": "Bitmap",
+    "Complexity": "O(1)",
+    "Arguments": [
+      {
+        "TypeDiscriminator": "RespCommandKeyArgument",
+        "Name": "KEY",
+        "DisplayText": "key",
+        "Type": "Key",
+        "KeySpecIndex": 0
+      },
+      {
+        "TypeDiscriminator": "RespCommandBasicArgument",
+        "Name": "OFFSET",
+        "DisplayText": "offset",
+        "Type": "Integer"
+      },
+      {
+        "TypeDiscriminator": "RespCommandBasicArgument",
+        "Name": "VALUE",
+        "DisplayText": "value",
+        "Type": "Integer"
+      }
+    ]
+  },
+  {
+    "Command": "SETEX",
+    "Name": "SETEX",
+    "Summary": "Sets the string value and expiration time of a key. Creates the key if it doesn\u0027t exist.",
+    "Group": "String",
+    "Complexity": "O(1)",
+    "DocFlags": "Deprecated",
+    "ReplacedBy": "\u0060SET\u0060 with the \u0060EX\u0060 argument",
+    "Arguments": [
+      {
+        "TypeDiscriminator": "RespCommandKeyArgument",
+        "Name": "KEY",
+        "DisplayText": "key",
+        "Type": "Key",
+        "KeySpecIndex": 0
+      },
+      {
+        "TypeDiscriminator": "RespCommandBasicArgument",
+        "Name": "SECONDS",
+        "DisplayText": "seconds",
+        "Type": "Integer"
+      },
+      {
+        "TypeDiscriminator": "RespCommandBasicArgument",
+        "Name": "VALUE",
+        "DisplayText": "value",
+        "Type": "String"
+      }
+    ]
+  },
+  {
+    "Command": "SETRANGE",
+    "Name": "SETRANGE",
+    "Summary": "Overwrites a part of a string value with another by an offset. Creates the key if it doesn\u0027t exist.",
+    "Group": "String",
+    "Complexity": "O(1), not counting the time taken to copy the new string in place. Usually, this string is very small so the amortized complexity is O(1). Otherwise, complexity is O(M) with M being the length of the value argument.",
+    "Arguments": [
+      {
+        "TypeDiscriminator": "RespCommandKeyArgument",
+        "Name": "KEY",
+        "DisplayText": "key",
+        "Type": "Key",
+        "KeySpecIndex": 0
+      },
+      {
+        "TypeDiscriminator": "RespCommandBasicArgument",
+        "Name": "OFFSET",
+        "DisplayText": "offset",
+        "Type": "Integer"
+      },
+      {
+        "TypeDiscriminator": "RespCommandBasicArgument",
+        "Name": "VALUE",
+        "DisplayText": "value",
+        "Type": "String"
+      }
+    ]
+  },
+  {
+    "Command": "SINTER",
+    "Name": "SINTER",
+    "Summary": "Returns the intersect of multiple sets.",
+    "Group": "Set",
+    "Complexity": "O(N*M) worst case where N is the cardinality of the smallest set and M is the number of sets.",
+    "Arguments": [
+      {
+        "TypeDiscriminator": "RespCommandKeyArgument",
+        "Name": "KEY",
+        "DisplayText": "key",
+        "Type": "Key",
+        "ArgumentFlags": "Multiple",
+        "KeySpecIndex": 0
+      }
+    ]
+  },
+  {
+    "Command": "SINTERSTORE",
+    "Name": "SINTERSTORE",
+    "Summary": "Stores the intersect of multiple sets in a key.",
+    "Group": "Set",
+    "Complexity": "O(N*M) worst case where N is the cardinality of the smallest set and M is the number of sets.",
+    "Arguments": [
+      {
+        "TypeDiscriminator": "RespCommandKeyArgument",
+        "Name": "DESTINATION",
+        "DisplayText": "destination",
+        "Type": "Key",
+        "KeySpecIndex": 0
+      },
+      {
+        "TypeDiscriminator": "RespCommandKeyArgument",
+        "Name": "KEY",
+        "DisplayText": "key",
+        "Type": "Key",
+        "ArgumentFlags": "Multiple",
+        "KeySpecIndex": 1
+      }
+    ]
+  },
+  {
+    "Command": "SISMEMBER",
+    "Name": "SISMEMBER",
+    "Summary": "Determines whether a member belongs to a set.",
+    "Group": "Set",
+    "Complexity": "O(1)",
+    "Arguments": [
+      {
+        "TypeDiscriminator": "RespCommandKeyArgument",
+        "Name": "KEY",
+        "DisplayText": "key",
+        "Type": "Key",
+        "KeySpecIndex": 0
+      },
+      {
+        "TypeDiscriminator": "RespCommandBasicArgument",
+        "Name": "MEMBER",
+        "DisplayText": "member",
+        "Type": "String"
+      }
+    ]
+  },
+  {
+    "Command": "SECONDARYOF",
+    "Name": "SLAVEOF",
+    "Summary": "Sets a Redis server as a replica of another, or promotes it to being a master.",
+    "Group": "Server",
+    "Complexity": "O(1)",
+    "DocFlags": "Deprecated",
+    "ReplacedBy": "\u0060REPLICAOF\u0060",
+    "Arguments": [
+      {
+        "TypeDiscriminator": "RespCommandContainerArgument",
+        "Name": "ARGS",
+        "Type": "OneOf",
+        "Arguments": [
+          {
+            "TypeDiscriminator": "RespCommandContainerArgument",
+            "Name": "HOST-PORT",
+            "Type": "Block",
+            "Arguments": [
+              {
+                "TypeDiscriminator": "RespCommandBasicArgument",
+                "Name": "HOST",
+                "DisplayText": "host",
+                "Type": "String"
+              },
+              {
+                "TypeDiscriminator": "RespCommandBasicArgument",
+                "Name": "PORT",
+                "DisplayText": "port",
+                "Type": "Integer"
+              }
+            ]
+          },
+          {
+            "TypeDiscriminator": "RespCommandContainerArgument",
+            "Name": "NO-ONE",
+            "Type": "Block",
+            "Arguments": [
+              {
+                "TypeDiscriminator": "RespCommandBasicArgument",
+                "Name": "NO",
+                "DisplayText": "no",
+                "Type": "PureToken",
+                "Token": "NO"
+              },
+              {
+                "TypeDiscriminator": "RespCommandBasicArgument",
+                "Name": "ONE",
+                "DisplayText": "one",
+                "Type": "PureToken",
+                "Token": "ONE"
+              }
+            ]
+          }
+        ]
+      }
+    ]
+  },
+  {
+    "Command": "SMEMBERS",
+    "Name": "SMEMBERS",
+    "Summary": "Returns all members of a set.",
+    "Group": "Set",
+    "Complexity": "O(N) where N is the set cardinality.",
+    "Arguments": [
+      {
+        "TypeDiscriminator": "RespCommandKeyArgument",
+        "Name": "KEY",
+        "DisplayText": "key",
+        "Type": "Key",
+        "KeySpecIndex": 0
+      }
+    ]
+  },
+  {
+    "Command": "SMOVE",
+    "Name": "SMOVE",
+    "Summary": "Moves a member from one set to another.",
+    "Group": "Set",
+    "Complexity": "O(1)",
+    "Arguments": [
+      {
+        "TypeDiscriminator": "RespCommandKeyArgument",
+        "Name": "SOURCE",
+        "DisplayText": "source",
+        "Type": "Key",
+        "KeySpecIndex": 0
+      },
+      {
+        "TypeDiscriminator": "RespCommandKeyArgument",
+        "Name": "DESTINATION",
+        "DisplayText": "destination",
+        "Type": "Key",
+        "KeySpecIndex": 1
+      },
+      {
+        "TypeDiscriminator": "RespCommandBasicArgument",
+        "Name": "MEMBER",
+        "DisplayText": "member",
+        "Type": "String"
+      }
+    ]
+  },
+  {
+    "Command": "SPOP",
+    "Name": "SPOP",
+    "Summary": "Returns one or more random members from a set after removing them. Deletes the set if the last member was popped.",
+    "Group": "Set",
+    "Complexity": "Without the count argument O(1), otherwise O(N) where N is the value of the passed count.",
+    "Arguments": [
+      {
+        "TypeDiscriminator": "RespCommandKeyArgument",
+        "Name": "KEY",
+        "DisplayText": "key",
+        "Type": "Key",
+        "KeySpecIndex": 0
+      },
+      {
+        "TypeDiscriminator": "RespCommandBasicArgument",
+        "Name": "COUNT",
+        "DisplayText": "count",
+        "Type": "Integer",
+        "ArgumentFlags": "Optional"
+      }
+    ]
+  },
+  {
+    "Command": "SRANDMEMBER",
+    "Name": "SRANDMEMBER",
+    "Summary": "Get one or multiple random members from a set",
+    "Group": "Set",
+    "Complexity": "Without the count argument O(1), otherwise O(N) where N is the absolute value of the passed count.",
+    "Arguments": [
+      {
+        "TypeDiscriminator": "RespCommandKeyArgument",
+        "Name": "KEY",
+        "DisplayText": "key",
+        "Type": "Key",
+        "KeySpecIndex": 0
+      },
+      {
+        "TypeDiscriminator": "RespCommandBasicArgument",
+        "Name": "COUNT",
+        "DisplayText": "count",
+        "Type": "Integer",
+        "ArgumentFlags": "Optional"
+      }
+    ]
+  },
+  {
+    "Command": "SREM",
+    "Name": "SREM",
+    "Summary": "Removes one or more members from a set. Deletes the set if the last member was removed.",
+    "Group": "Set",
+    "Complexity": "O(N) where N is the number of members to be removed.",
+    "Arguments": [
+      {
+        "TypeDiscriminator": "RespCommandKeyArgument",
+        "Name": "KEY",
+        "DisplayText": "key",
+        "Type": "Key",
+        "KeySpecIndex": 0
+      },
+      {
+        "TypeDiscriminator": "RespCommandBasicArgument",
+        "Name": "MEMBER",
+        "DisplayText": "member",
+        "Type": "String",
+        "ArgumentFlags": "Multiple"
+      }
+    ]
+  },
+  {
+    "Command": "SSCAN",
+    "Name": "SSCAN",
+    "Summary": "Iterates over members of a set.",
+    "Group": "Set",
+    "Complexity": "O(1) for every call. O(N) for a complete iteration, including enough command calls for the cursor to return back to 0. N is the number of elements inside the collection.",
+    "Arguments": [
+      {
+        "TypeDiscriminator": "RespCommandKeyArgument",
+        "Name": "KEY",
+        "DisplayText": "key",
+        "Type": "Key",
+        "KeySpecIndex": 0
+      },
+      {
+        "TypeDiscriminator": "RespCommandBasicArgument",
+        "Name": "CURSOR",
+        "DisplayText": "cursor",
+        "Type": "Integer"
+      },
+      {
+        "TypeDiscriminator": "RespCommandBasicArgument",
+        "Name": "PATTERN",
+        "DisplayText": "pattern",
+        "Type": "Pattern",
+        "Token": "MATCH",
+        "ArgumentFlags": "Optional"
+      },
+      {
+        "TypeDiscriminator": "RespCommandBasicArgument",
+        "Name": "COUNT",
+        "DisplayText": "count",
+        "Type": "Integer",
+        "Token": "COUNT",
+        "ArgumentFlags": "Optional"
+      }
+    ]
+  },
+  {
+    "Command": "STRLEN",
+    "Name": "STRLEN",
+    "Summary": "Returns the length of a string value.",
+    "Group": "String",
+    "Complexity": "O(1)",
+    "Arguments": [
+      {
+        "TypeDiscriminator": "RespCommandKeyArgument",
+        "Name": "KEY",
+        "DisplayText": "key",
+        "Type": "Key",
+        "KeySpecIndex": 0
+      }
+    ]
+  },
+  {
+    "Command": "SUBSCRIBE",
+    "Name": "SUBSCRIBE",
+    "Summary": "Listens for messages published to channels.",
+    "Group": "PubSub",
+    "Complexity": "O(N) where N is the number of channels to subscribe to.",
+    "Arguments": [
+      {
+        "TypeDiscriminator": "RespCommandBasicArgument",
+        "Name": "CHANNEL",
+        "DisplayText": "channel",
+        "Type": "String",
+        "ArgumentFlags": "Multiple"
+      }
+    ]
+  },
+  {
+    "Command": "SUNION",
+    "Name": "SUNION",
+    "Summary": "Returns the union of multiple sets.",
+    "Group": "Set",
+    "Complexity": "O(N) where N is the total number of elements in all given sets.",
+    "Arguments": [
+      {
+        "TypeDiscriminator": "RespCommandKeyArgument",
+        "Name": "KEY",
+        "DisplayText": "key",
+        "Type": "Key",
+        "ArgumentFlags": "Multiple",
+        "KeySpecIndex": 0
+      }
+    ]
+  },
+  {
+    "Command": "SUNIONSTORE",
+    "Name": "SUNIONSTORE",
+    "Summary": "Stores the union of multiple sets in a key.",
+    "Group": "Set",
+    "Complexity": "O(N) where N is the total number of elements in all given sets.",
+    "Arguments": [
+      {
+        "TypeDiscriminator": "RespCommandKeyArgument",
+        "Name": "DESTINATION",
+        "DisplayText": "destination",
+        "Type": "Key",
+        "KeySpecIndex": 0
+      },
+      {
+        "TypeDiscriminator": "RespCommandKeyArgument",
+        "Name": "KEY",
+        "DisplayText": "key",
+        "Type": "Key",
+        "ArgumentFlags": "Multiple",
+        "KeySpecIndex": 1
+      }
+    ]
+  },
+  {
+    "Command": "TIME",
+    "Name": "TIME",
+    "Summary": "Returns the server time.",
+    "Group": "Server",
+    "Complexity": "O(1)"
+  },
+  {
+    "Command": "TTL",
+    "Name": "TTL",
+    "Summary": "Returns the expiration time in seconds of a key.",
+    "Group": "Generic",
+    "Complexity": "O(1)",
+    "Arguments": [
+      {
+        "TypeDiscriminator": "RespCommandKeyArgument",
+        "Name": "KEY",
+        "DisplayText": "key",
+        "Type": "Key",
+        "KeySpecIndex": 0
+      }
+    ]
+  },
+  {
+    "Command": "TYPE",
+    "Name": "TYPE",
+    "Summary": "Determines the type of value stored at a key.",
+    "Group": "Generic",
+    "Complexity": "O(1)",
+    "Arguments": [
+      {
+        "TypeDiscriminator": "RespCommandKeyArgument",
+        "Name": "KEY",
+        "DisplayText": "key",
+        "Type": "Key",
+        "KeySpecIndex": 0
+      }
+    ]
+  },
+  {
+    "Command": "UNLINK",
+    "Name": "UNLINK",
+    "Summary": "Asynchronously deletes one or more keys.",
+    "Group": "Generic",
+    "Complexity": "O(1) for each key removed regardless of its size. Then the command does O(N) work in a different thread in order to reclaim memory, where N is the number of allocations the deleted objects where composed of.",
+    "Arguments": [
+      {
+        "TypeDiscriminator": "RespCommandKeyArgument",
+        "Name": "KEY",
+        "DisplayText": "key",
+        "Type": "Key",
+        "ArgumentFlags": "Multiple",
+        "KeySpecIndex": 0
+      }
+    ]
+  },
+  {
+    "Command": "UNSUBSCRIBE",
+    "Name": "UNSUBSCRIBE",
+    "Summary": "Stops listening to messages posted to channels.",
+    "Group": "PubSub",
+    "Complexity": "O(N) where N is the number of channels to unsubscribe.",
+    "Arguments": [
+      {
+        "TypeDiscriminator": "RespCommandBasicArgument",
+        "Name": "CHANNEL",
+        "DisplayText": "channel",
+        "Type": "String",
+        "ArgumentFlags": "Optional, Multiple"
+      }
+    ]
+  },
+  {
+    "Command": "UNWATCH",
+    "Name": "UNWATCH",
+    "Summary": "Forgets about watched keys of a transaction.",
+    "Group": "Transactions",
+    "Complexity": "O(1)"
+  },
+  {
+    "Command": "WATCH",
+    "Name": "WATCH",
+    "Summary": "Monitors changes to keys to determine the execution of a transaction.",
+    "Group": "Transactions",
+    "Complexity": "O(1) for every key.",
+    "SubCommands": [
+      {
+        "Command": "WATCH_MS",
+        "Name": "WATCH|MS",
+        "Summary": "Monitors changes to keys in main store to determine the execution of a transaction.",
+        "Group": "Transactions",
+        "Complexity": "O(1) for every key.",
+        "Arguments": [
+          {
+            "TypeDiscriminator": "RespCommandKeyArgument",
+            "Name": "KEY",
+            "DisplayText": "key",
+            "Type": "Key",
+            "ArgumentFlags": "Multiple",
+            "KeySpecIndex": 0
+          }
+        ]
+      },
+      {
+        "Command": "WATCH_OS",
+        "Name": "WATCH|OS",
+        "Summary": "Monitors changes to keys in object store to determine the execution of a transaction.",
+        "Group": "Transactions",
+        "Complexity": "O(1) for every key.",
+        "Arguments": [
+          {
+            "TypeDiscriminator": "RespCommandKeyArgument",
+            "Name": "KEY",
+            "DisplayText": "key",
+            "Type": "Key",
+            "ArgumentFlags": "Multiple",
+            "KeySpecIndex": 0
+          }
+        ]
+      }
+    ],
+    "Arguments": [
+      {
+        "TypeDiscriminator": "RespCommandKeyArgument",
+        "Name": "KEY",
+        "DisplayText": "key",
+        "Type": "Key",
+        "ArgumentFlags": "Multiple",
+        "KeySpecIndex": 0
+      }
+    ]
+  },
+  {
+    "Command": "ZADD",
+    "Name": "ZADD",
+    "Summary": "Adds one or more members to a sorted set, or updates their scores. Creates the key if it doesn\u0027t exist.",
+    "Group": "SortedSet",
+    "Complexity": "O(log(N)) for each item added, where N is the number of elements in the sorted set.",
+    "Arguments": [
+      {
+        "TypeDiscriminator": "RespCommandKeyArgument",
+        "Name": "KEY",
+        "DisplayText": "key",
+        "Type": "Key",
+        "KeySpecIndex": 0
+      },
+      {
+        "TypeDiscriminator": "RespCommandContainerArgument",
+        "Name": "CONDITION",
+        "Type": "OneOf",
+        "ArgumentFlags": "Optional",
+        "Arguments": [
+          {
+            "TypeDiscriminator": "RespCommandBasicArgument",
+            "Name": "NX",
+            "DisplayText": "nx",
+            "Type": "PureToken",
+            "Token": "NX"
+          },
+          {
+            "TypeDiscriminator": "RespCommandBasicArgument",
+            "Name": "XX",
+            "DisplayText": "xx",
+            "Type": "PureToken",
+            "Token": "XX"
+          }
+        ]
+      },
+      {
+        "TypeDiscriminator": "RespCommandContainerArgument",
+        "Name": "COMPARISON",
+        "Type": "OneOf",
+        "ArgumentFlags": "Optional",
+        "Arguments": [
+          {
+            "TypeDiscriminator": "RespCommandBasicArgument",
+            "Name": "GT",
+            "DisplayText": "gt",
+            "Type": "PureToken",
+            "Token": "GT"
+          },
+          {
+            "TypeDiscriminator": "RespCommandBasicArgument",
+            "Name": "LT",
+            "DisplayText": "lt",
+            "Type": "PureToken",
+            "Token": "LT"
+          }
+        ]
+      },
+      {
+        "TypeDiscriminator": "RespCommandBasicArgument",
+        "Name": "CHANGE",
+        "DisplayText": "change",
+        "Type": "PureToken",
+        "Token": "CH",
+        "ArgumentFlags": "Optional"
+      },
+      {
+        "TypeDiscriminator": "RespCommandBasicArgument",
+        "Name": "INCREMENT",
+        "DisplayText": "increment",
+        "Type": "PureToken",
+        "Token": "INCR",
+        "ArgumentFlags": "Optional"
+      },
+      {
+        "TypeDiscriminator": "RespCommandContainerArgument",
+        "Name": "DATA",
+        "Type": "Block",
+        "ArgumentFlags": "Multiple",
+        "Arguments": [
+          {
+            "TypeDiscriminator": "RespCommandBasicArgument",
+            "Name": "SCORE",
+            "DisplayText": "score",
+            "Type": "Double"
+          },
+          {
+            "TypeDiscriminator": "RespCommandBasicArgument",
+            "Name": "MEMBER",
+            "DisplayText": "member",
+            "Type": "String"
+          }
+        ]
+      }
+    ]
+  },
+  {
+    "Command": "ZCARD",
+    "Name": "ZCARD",
+    "Summary": "Returns the number of members in a sorted set.",
+    "Group": "SortedSet",
+    "Complexity": "O(1)",
+    "Arguments": [
+      {
+        "TypeDiscriminator": "RespCommandKeyArgument",
+        "Name": "KEY",
+        "DisplayText": "key",
+        "Type": "Key",
+        "KeySpecIndex": 0
+      }
+    ]
+  },
+  {
+    "Command": "ZCOUNT",
+    "Name": "ZCOUNT",
+    "Summary": "Returns the count of members in a sorted set that have scores within a range.",
+    "Group": "SortedSet",
+    "Complexity": "O(log(N)) with N being the number of elements in the sorted set.",
+    "Arguments": [
+      {
+        "TypeDiscriminator": "RespCommandKeyArgument",
+        "Name": "KEY",
+        "DisplayText": "key",
+        "Type": "Key",
+        "KeySpecIndex": 0
+      },
+      {
+        "TypeDiscriminator": "RespCommandBasicArgument",
+        "Name": "MIN",
+        "DisplayText": "min",
+        "Type": "Double"
+      },
+      {
+        "TypeDiscriminator": "RespCommandBasicArgument",
+        "Name": "MAX",
+        "DisplayText": "max",
+        "Type": "Double"
+      }
+    ]
+  },
+  {
+    "Command": "ZDIFF",
+    "Name": "ZDIFF",
+    "Summary": "Returns the difference between multiple sorted sets.",
+    "Group": "SortedSet",
+    "Complexity": "O(L \u002B (N-K)log(N)) worst case where L is the total number of elements in all the sets, N is the size of the first set, and K is the size of the result set.",
+    "Arguments": [
+      {
+        "TypeDiscriminator": "RespCommandBasicArgument",
+        "Name": "NUMKEYS",
+        "DisplayText": "numkeys",
+        "Type": "Integer"
+      },
+      {
+        "TypeDiscriminator": "RespCommandKeyArgument",
+        "Name": "KEY",
+        "DisplayText": "key",
+        "Type": "Key",
+        "ArgumentFlags": "Multiple",
+        "KeySpecIndex": 0
+      },
+      {
+        "TypeDiscriminator": "RespCommandBasicArgument",
+        "Name": "WITHSCORES",
+        "DisplayText": "withscores",
+        "Type": "PureToken",
+        "Token": "WITHSCORES",
+        "ArgumentFlags": "Optional"
+      }
+    ]
+  },
+  {
+    "Command": "ZINCRBY",
+    "Name": "ZINCRBY",
+    "Summary": "Increments the score of a member in a sorted set.",
+    "Group": "SortedSet",
+    "Complexity": "O(log(N)) where N is the number of elements in the sorted set.",
+    "Arguments": [
+      {
+        "TypeDiscriminator": "RespCommandKeyArgument",
+        "Name": "KEY",
+        "DisplayText": "key",
+        "Type": "Key",
+        "KeySpecIndex": 0
+      },
+      {
+        "TypeDiscriminator": "RespCommandBasicArgument",
+        "Name": "INCREMENT",
+        "DisplayText": "increment",
+        "Type": "Integer"
+      },
+      {
+        "TypeDiscriminator": "RespCommandBasicArgument",
+        "Name": "MEMBER",
+        "DisplayText": "member",
+        "Type": "String"
+      }
+    ]
+  },
+  {
+    "Command": "ZLEXCOUNT",
+    "Name": "ZLEXCOUNT",
+    "Summary": "Returns the number of members in a sorted set within a lexicographical range.",
+    "Group": "SortedSet",
+    "Complexity": "O(log(N)) with N being the number of elements in the sorted set.",
+    "Arguments": [
+      {
+        "TypeDiscriminator": "RespCommandKeyArgument",
+        "Name": "KEY",
+        "DisplayText": "key",
+        "Type": "Key",
+        "KeySpecIndex": 0
+      },
+      {
+        "TypeDiscriminator": "RespCommandBasicArgument",
+        "Name": "MIN",
+        "DisplayText": "min",
+        "Type": "String"
+      },
+      {
+        "TypeDiscriminator": "RespCommandBasicArgument",
+        "Name": "MAX",
+        "DisplayText": "max",
+        "Type": "String"
+      }
+    ]
+  },
+  {
+    "Command": "ZMSCORE",
+    "Name": "ZMSCORE",
+    "Summary": "Returns the score of one or more members in a sorted set.",
+    "Group": "SortedSet",
+    "Complexity": "O(N) where N is the number of members being requested.",
+    "Arguments": [
+      {
+        "TypeDiscriminator": "RespCommandKeyArgument",
+        "Name": "KEY",
+        "DisplayText": "key",
+        "Type": "Key",
+        "KeySpecIndex": 0
+      },
+      {
+        "TypeDiscriminator": "RespCommandBasicArgument",
+        "Name": "MEMBER",
+        "DisplayText": "member",
+        "Type": "String",
+        "ArgumentFlags": "Multiple"
+      }
+    ]
+  },
+  {
+    "Command": "ZPOPMAX",
+    "Name": "ZPOPMAX",
+    "Summary": "Returns the highest-scoring members from a sorted set after removing them. Deletes the sorted set if the last member was popped.",
+    "Group": "SortedSet",
+    "Complexity": "O(log(N)*M) with N being the number of elements in the sorted set, and M being the number of elements popped.",
+    "Arguments": [
+      {
+        "TypeDiscriminator": "RespCommandKeyArgument",
+        "Name": "KEY",
+        "DisplayText": "key",
+        "Type": "Key",
+        "KeySpecIndex": 0
+      },
+      {
+        "TypeDiscriminator": "RespCommandBasicArgument",
+        "Name": "COUNT",
+        "DisplayText": "count",
+        "Type": "Integer",
+        "ArgumentFlags": "Optional"
+      }
+    ]
+  },
+  {
+    "Command": "ZPOPMIN",
+    "Name": "ZPOPMIN",
+    "Summary": "Returns the lowest-scoring members from a sorted set after removing them. Deletes the sorted set if the last member was popped.",
+    "Group": "SortedSet",
+    "Complexity": "O(log(N)*M) with N being the number of elements in the sorted set, and M being the number of elements popped.",
+    "Arguments": [
+      {
+        "TypeDiscriminator": "RespCommandKeyArgument",
+        "Name": "KEY",
+        "DisplayText": "key",
+        "Type": "Key",
+        "KeySpecIndex": 0
+      },
+      {
+        "TypeDiscriminator": "RespCommandBasicArgument",
+        "Name": "COUNT",
+        "DisplayText": "count",
+        "Type": "Integer",
+        "ArgumentFlags": "Optional"
+      }
+    ]
+  },
+  {
+    "Command": "ZRANDMEMBER",
+    "Name": "ZRANDMEMBER",
+    "Summary": "Returns one or more random members from a sorted set.",
+    "Group": "SortedSet",
+    "Complexity": "O(N) where N is the number of members returned",
+    "Arguments": [
+      {
+        "TypeDiscriminator": "RespCommandKeyArgument",
+        "Name": "KEY",
+        "DisplayText": "key",
+        "Type": "Key",
+        "KeySpecIndex": 0
+      },
+      {
+        "TypeDiscriminator": "RespCommandContainerArgument",
+        "Name": "OPTIONS",
+        "Type": "Block",
+        "ArgumentFlags": "Optional",
+        "Arguments": [
+          {
+            "TypeDiscriminator": "RespCommandBasicArgument",
+            "Name": "COUNT",
+            "DisplayText": "count",
+            "Type": "Integer"
+          },
+          {
+            "TypeDiscriminator": "RespCommandBasicArgument",
+            "Name": "WITHSCORES",
+            "DisplayText": "withscores",
+            "Type": "PureToken",
+            "Token": "WITHSCORES",
+            "ArgumentFlags": "Optional"
+          }
+        ]
+      }
+    ]
+  },
+  {
+    "Command": "ZRANGE",
+    "Name": "ZRANGE",
+    "Summary": "Returns members in a sorted set within a range of indexes.",
+    "Group": "SortedSet",
+    "Complexity": "O(log(N)\u002BM) with N being the number of elements in the sorted set and M the number of elements returned.",
+    "Arguments": [
+      {
+        "TypeDiscriminator": "RespCommandKeyArgument",
+        "Name": "KEY",
+        "DisplayText": "key",
+        "Type": "Key",
+        "KeySpecIndex": 0
+      },
+      {
+        "TypeDiscriminator": "RespCommandBasicArgument",
+        "Name": "START",
+        "DisplayText": "start",
+        "Type": "String"
+      },
+      {
+        "TypeDiscriminator": "RespCommandBasicArgument",
+        "Name": "STOP",
+        "DisplayText": "stop",
+        "Type": "String"
+      },
+      {
+        "TypeDiscriminator": "RespCommandContainerArgument",
+        "Name": "SORTBY",
+        "Type": "OneOf",
+        "ArgumentFlags": "Optional",
+        "Arguments": [
+          {
+            "TypeDiscriminator": "RespCommandBasicArgument",
+            "Name": "BYSCORE",
+            "DisplayText": "byscore",
+            "Type": "PureToken",
+            "Token": "BYSCORE"
+          },
+          {
+            "TypeDiscriminator": "RespCommandBasicArgument",
+            "Name": "BYLEX",
+            "DisplayText": "bylex",
+            "Type": "PureToken",
+            "Token": "BYLEX"
+          }
+        ]
+      },
+      {
+        "TypeDiscriminator": "RespCommandBasicArgument",
+        "Name": "REV",
+        "DisplayText": "rev",
+        "Type": "PureToken",
+        "Token": "REV",
+        "ArgumentFlags": "Optional"
+      },
+      {
+        "TypeDiscriminator": "RespCommandContainerArgument",
+        "Name": "LIMIT",
+        "Type": "Block",
+        "Token": "LIMIT",
+        "ArgumentFlags": "Optional",
+        "Arguments": [
+          {
+            "TypeDiscriminator": "RespCommandBasicArgument",
+            "Name": "OFFSET",
+            "DisplayText": "offset",
+            "Type": "Integer"
+          },
+          {
+            "TypeDiscriminator": "RespCommandBasicArgument",
+            "Name": "COUNT",
+            "DisplayText": "count",
+            "Type": "Integer"
+          }
+        ]
+      },
+      {
+        "TypeDiscriminator": "RespCommandBasicArgument",
+        "Name": "WITHSCORES",
+        "DisplayText": "withscores",
+        "Type": "PureToken",
+        "Token": "WITHSCORES",
+        "ArgumentFlags": "Optional"
+      }
+    ]
+  },
+  {
+    "Command": "ZRANGEBYSCORE",
+    "Name": "ZRANGEBYSCORE",
+    "Summary": "Returns members in a sorted set within a range of scores.",
+    "Group": "SortedSet",
+    "Complexity": "O(log(N)\u002BM) with N being the number of elements in the sorted set and M the number of elements being returned. If M is constant (e.g. always asking for the first 10 elements with LIMIT), you can consider it O(log(N)).",
+    "DocFlags": "Deprecated",
+    "ReplacedBy": "\u0060ZRANGE\u0060 with the \u0060BYSCORE\u0060 argument",
+    "Arguments": [
+      {
+        "TypeDiscriminator": "RespCommandKeyArgument",
+        "Name": "KEY",
+        "DisplayText": "key",
+        "Type": "Key",
+        "KeySpecIndex": 0
+      },
+      {
+        "TypeDiscriminator": "RespCommandBasicArgument",
+        "Name": "MIN",
+        "DisplayText": "min",
+        "Type": "Double"
+      },
+      {
+        "TypeDiscriminator": "RespCommandBasicArgument",
+        "Name": "MAX",
+        "DisplayText": "max",
+        "Type": "Double"
+      },
+      {
+        "TypeDiscriminator": "RespCommandBasicArgument",
+        "Name": "WITHSCORES",
+        "DisplayText": "withscores",
+        "Type": "PureToken",
+        "Token": "WITHSCORES",
+        "ArgumentFlags": "Optional"
+      },
+      {
+        "TypeDiscriminator": "RespCommandContainerArgument",
+        "Name": "LIMIT",
+        "Type": "Block",
+        "Token": "LIMIT",
+        "ArgumentFlags": "Optional",
+        "Arguments": [
+          {
+            "TypeDiscriminator": "RespCommandBasicArgument",
+            "Name": "OFFSET",
+            "DisplayText": "offset",
+            "Type": "Integer"
+          },
+          {
+            "TypeDiscriminator": "RespCommandBasicArgument",
+            "Name": "COUNT",
+            "DisplayText": "count",
+            "Type": "Integer"
+          }
+        ]
+      }
+    ]
+  },
+  {
+    "Command": "ZRANK",
+    "Name": "ZRANK",
+    "Summary": "Returns the index of a member in a sorted set ordered by ascending scores.",
+    "Group": "SortedSet",
+    "Complexity": "O(log(N))",
+    "Arguments": [
+      {
+        "TypeDiscriminator": "RespCommandKeyArgument",
+        "Name": "KEY",
+        "DisplayText": "key",
+        "Type": "Key",
+        "KeySpecIndex": 0
+      },
+      {
+        "TypeDiscriminator": "RespCommandBasicArgument",
+        "Name": "MEMBER",
+        "DisplayText": "member",
+        "Type": "String"
+      },
+      {
+        "TypeDiscriminator": "RespCommandBasicArgument",
+        "Name": "WITHSCORE",
+        "DisplayText": "withscore",
+        "Type": "PureToken",
+        "Token": "WITHSCORE",
+        "ArgumentFlags": "Optional"
+      }
+    ]
+  },
+  {
+    "Command": "ZREM",
+    "Name": "ZREM",
+    "Summary": "Removes one or more members from a sorted set. Deletes the sorted set if all members were removed.",
+    "Group": "SortedSet",
+    "Complexity": "O(M*log(N)) with N being the number of elements in the sorted set and M the number of elements to be removed.",
+    "Arguments": [
+      {
+        "TypeDiscriminator": "RespCommandKeyArgument",
+        "Name": "KEY",
+        "DisplayText": "key",
+        "Type": "Key",
+        "KeySpecIndex": 0
+      },
+      {
+        "TypeDiscriminator": "RespCommandBasicArgument",
+        "Name": "MEMBER",
+        "DisplayText": "member",
+        "Type": "String",
+        "ArgumentFlags": "Multiple"
+      }
+    ]
+  },
+  {
+    "Command": "ZREMRANGEBYLEX",
+    "Name": "ZREMRANGEBYLEX",
+    "Summary": "Removes members in a sorted set within a lexicographical range. Deletes the sorted set if all members were removed.",
+    "Group": "SortedSet",
+    "Complexity": "O(log(N)\u002BM) with N being the number of elements in the sorted set and M the number of elements removed by the operation.",
+    "Arguments": [
+      {
+        "TypeDiscriminator": "RespCommandKeyArgument",
+        "Name": "KEY",
+        "DisplayText": "key",
+        "Type": "Key",
+        "KeySpecIndex": 0
+      },
+      {
+        "TypeDiscriminator": "RespCommandBasicArgument",
+        "Name": "MIN",
+        "DisplayText": "min",
+        "Type": "String"
+      },
+      {
+        "TypeDiscriminator": "RespCommandBasicArgument",
+        "Name": "MAX",
+        "DisplayText": "max",
+        "Type": "String"
+      }
+    ]
+  },
+  {
+    "Command": "ZREMRANGEBYRANK",
+    "Name": "ZREMRANGEBYRANK",
+    "Summary": "Removes members in a sorted set within a range of indexes. Deletes the sorted set if all members were removed.",
+    "Group": "SortedSet",
+    "Complexity": "O(log(N)\u002BM) with N being the number of elements in the sorted set and M the number of elements removed by the operation.",
+    "Arguments": [
+      {
+        "TypeDiscriminator": "RespCommandKeyArgument",
+        "Name": "KEY",
+        "DisplayText": "key",
+        "Type": "Key",
+        "KeySpecIndex": 0
+      },
+      {
+        "TypeDiscriminator": "RespCommandBasicArgument",
+        "Name": "START",
+        "DisplayText": "start",
+        "Type": "Integer"
+      },
+      {
+        "TypeDiscriminator": "RespCommandBasicArgument",
+        "Name": "STOP",
+        "DisplayText": "stop",
+        "Type": "Integer"
+      }
+    ]
+  },
+  {
+    "Command": "ZREMRANGEBYSCORE",
+    "Name": "ZREMRANGEBYSCORE",
+    "Summary": "Removes members in a sorted set within a range of scores. Deletes the sorted set if all members were removed.",
+    "Group": "SortedSet",
+    "Complexity": "O(log(N)\u002BM) with N being the number of elements in the sorted set and M the number of elements removed by the operation.",
+    "Arguments": [
+      {
+        "TypeDiscriminator": "RespCommandKeyArgument",
+        "Name": "KEY",
+        "DisplayText": "key",
+        "Type": "Key",
+        "KeySpecIndex": 0
+      },
+      {
+        "TypeDiscriminator": "RespCommandBasicArgument",
+        "Name": "MIN",
+        "DisplayText": "min",
+        "Type": "Double"
+      },
+      {
+        "TypeDiscriminator": "RespCommandBasicArgument",
+        "Name": "MAX",
+        "DisplayText": "max",
+        "Type": "Double"
+      }
+    ]
+  },
+  {
+    "Command": "ZREVRANGE",
+    "Name": "ZREVRANGE",
+    "Summary": "Returns members in a sorted set within a range of indexes in reverse order.",
+    "Group": "SortedSet",
+    "Complexity": "O(log(N)\u002BM) with N being the number of elements in the sorted set and M the number of elements returned.",
+    "DocFlags": "Deprecated",
+    "ReplacedBy": "\u0060ZRANGE\u0060 with the \u0060REV\u0060 argument",
+    "Arguments": [
+      {
+        "TypeDiscriminator": "RespCommandKeyArgument",
+        "Name": "KEY",
+        "DisplayText": "key",
+        "Type": "Key",
+        "KeySpecIndex": 0
+      },
+      {
+        "TypeDiscriminator": "RespCommandBasicArgument",
+        "Name": "START",
+        "DisplayText": "start",
+        "Type": "Integer"
+      },
+      {
+        "TypeDiscriminator": "RespCommandBasicArgument",
+        "Name": "STOP",
+        "DisplayText": "stop",
+        "Type": "Integer"
+      },
+      {
+        "TypeDiscriminator": "RespCommandBasicArgument",
+        "Name": "WITHSCORES",
+        "DisplayText": "withscores",
+        "Type": "PureToken",
+        "Token": "WITHSCORES",
+        "ArgumentFlags": "Optional"
+      }
+    ]
+  },
+  {
+    "Command": "ZREVRANGEBYSCORE",
+    "Name": "ZREVRANGEBYSCORE",
+    "Summary": "Returns members in a sorted set within a range of scores in reverse order.",
+    "Group": "SortedSet",
+    "Complexity": "O(log(N)\u002BM) with N being the number of elements in the sorted set and M the number of elements being returned. If M is constant (e.g. always asking for the first 10 elements with LIMIT), you can consider it O(log(N)).",
+    "DocFlags": "Deprecated",
+    "ReplacedBy": "\u0060ZRANGE\u0060 with the \u0060REV\u0060 and \u0060BYSCORE\u0060 arguments",
+    "Arguments": [
+      {
+        "TypeDiscriminator": "RespCommandKeyArgument",
+        "Name": "KEY",
+        "DisplayText": "key",
+        "Type": "Key",
+        "KeySpecIndex": 0
+      },
+      {
+        "TypeDiscriminator": "RespCommandBasicArgument",
+        "Name": "MAX",
+        "DisplayText": "max",
+        "Type": "Double"
+      },
+      {
+        "TypeDiscriminator": "RespCommandBasicArgument",
+        "Name": "MIN",
+        "DisplayText": "min",
+        "Type": "Double"
+      },
+      {
+        "TypeDiscriminator": "RespCommandBasicArgument",
+        "Name": "WITHSCORES",
+        "DisplayText": "withscores",
+        "Type": "PureToken",
+        "Token": "WITHSCORES",
+        "ArgumentFlags": "Optional"
+      },
+      {
+        "TypeDiscriminator": "RespCommandContainerArgument",
+        "Name": "LIMIT",
+        "Type": "Block",
+        "Token": "LIMIT",
+        "ArgumentFlags": "Optional",
+        "Arguments": [
+          {
+            "TypeDiscriminator": "RespCommandBasicArgument",
+            "Name": "OFFSET",
+            "DisplayText": "offset",
+            "Type": "Integer"
+          },
+          {
+            "TypeDiscriminator": "RespCommandBasicArgument",
+            "Name": "COUNT",
+            "DisplayText": "count",
+            "Type": "Integer"
+          }
+        ]
+      }
+    ]
+  },
+  {
+    "Command": "ZREVRANK",
+    "Name": "ZREVRANK",
+    "Summary": "Returns the index of a member in a sorted set ordered by descending scores.",
+    "Group": "SortedSet",
+    "Complexity": "O(log(N))",
+    "Arguments": [
+      {
+        "TypeDiscriminator": "RespCommandKeyArgument",
+        "Name": "KEY",
+        "DisplayText": "key",
+        "Type": "Key",
+        "KeySpecIndex": 0
+      },
+      {
+        "TypeDiscriminator": "RespCommandBasicArgument",
+        "Name": "MEMBER",
+        "DisplayText": "member",
+        "Type": "String"
+      },
+      {
+        "TypeDiscriminator": "RespCommandBasicArgument",
+        "Name": "WITHSCORE",
+        "DisplayText": "withscore",
+        "Type": "PureToken",
+        "Token": "WITHSCORE",
+        "ArgumentFlags": "Optional"
+      }
+    ]
+  },
+  {
+    "Command": "ZSCAN",
+    "Name": "ZSCAN",
+    "Summary": "Iterates over members and scores of a sorted set.",
+    "Group": "SortedSet",
+    "Complexity": "O(1) for every call. O(N) for a complete iteration, including enough command calls for the cursor to return back to 0. N is the number of elements inside the collection.",
+    "Arguments": [
+      {
+        "TypeDiscriminator": "RespCommandKeyArgument",
+        "Name": "KEY",
+        "DisplayText": "key",
+        "Type": "Key",
+        "KeySpecIndex": 0
+      },
+      {
+        "TypeDiscriminator": "RespCommandBasicArgument",
+        "Name": "CURSOR",
+        "DisplayText": "cursor",
+        "Type": "Integer"
+      },
+      {
+        "TypeDiscriminator": "RespCommandBasicArgument",
+        "Name": "PATTERN",
+        "DisplayText": "pattern",
+        "Type": "Pattern",
+        "Token": "MATCH",
+        "ArgumentFlags": "Optional"
+      },
+      {
+        "TypeDiscriminator": "RespCommandBasicArgument",
+        "Name": "COUNT",
+        "DisplayText": "count",
+        "Type": "Integer",
+        "Token": "COUNT",
+        "ArgumentFlags": "Optional"
+      }
+    ]
+  },
+  {
+    "Command": "ZSCORE",
+    "Name": "ZSCORE",
+    "Summary": "Returns the score of a member in a sorted set.",
+    "Group": "SortedSet",
+    "Complexity": "O(1)",
+    "Arguments": [
+      {
+        "TypeDiscriminator": "RespCommandKeyArgument",
+        "Name": "KEY",
+        "DisplayText": "key",
+        "Type": "Key",
+        "KeySpecIndex": 0
+      },
+      {
+        "TypeDiscriminator": "RespCommandBasicArgument",
+        "Name": "MEMBER",
+        "DisplayText": "member",
+        "Type": "String"
+      }
+    ]
+  }
+]
