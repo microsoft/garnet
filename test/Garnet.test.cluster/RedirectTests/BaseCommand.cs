@@ -86,6 +86,7 @@ namespace Garnet.test.cluster
 
         /// <summary>
         /// Setup for a given command that references a single slot
+        /// NOTE: Used for TRYAGAIN test to simulate a key MOVED to another node
         /// </summary>
         /// <returns></returns>
         public abstract ArraySegment<string>[] SetupSingleSlotRequest();
@@ -680,7 +681,6 @@ namespace Garnet.test.cluster
     #endregion
 
     #region HLLCommands
-
     internal class PFADD : BaseCommand
     {
         public override bool IsArrayCommand => false;
