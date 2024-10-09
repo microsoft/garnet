@@ -46,11 +46,6 @@ namespace Garnet.server
                 return true;
             }
 
-            if (NetworkSingleKeySlotVerify(keyBytes, false))
-            {
-                return true;
-            }
-
             var input = new ObjectInput
             {
                 header = new RespInputHeader

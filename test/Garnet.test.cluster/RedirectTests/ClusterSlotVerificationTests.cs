@@ -97,6 +97,17 @@ namespace Garnet.test.cluster
                 new ZREMRANGEBYRANK(),
                 new ZRANDMEMBER(),
                 new ZDIFF(),
+                new HSET(),
+                new HGET(),
+                new HGETALL(),
+                new HMGET(),
+                new HRANDFIELD(),
+                new HLEN(),
+                new HSTRLEN(),
+                new HDEL(),
+                new HEXISTS(),
+                new HKEYS(),
+                new HINCRBY(),
             };
 
         ClusterTestContext context;
@@ -241,6 +252,17 @@ namespace Garnet.test.cluster
         [TestCase("ZREMRANGEBYRANK")]
         [TestCase("ZRANDMEMBER")]
         [TestCase("ZDIFF")]
+        [TestCase("HSET")]
+        [TestCase("HGET")]
+        [TestCase("HGETALL")]
+        [TestCase("HMGET")]
+        [TestCase("HRANDFIELD")]
+        [TestCase("HLEN")]
+        [TestCase("HSTRLEN")]
+        [TestCase("HDEL")]
+        [TestCase("HEXISTS")]
+        [TestCase("HKEYS")]
+        [TestCase("HINCRBY")]
         public void ClusterCLUSTERDOWNTest(string commandName)
         {
             var requestNodeIndex = otherIndex;
@@ -356,6 +378,17 @@ namespace Garnet.test.cluster
         [TestCase("ZREMRANGEBYRANK")]
         [TestCase("ZRANDMEMBER")]
         [TestCase("ZDIFF")]
+        [TestCase("HSET")]
+        [TestCase("HGET")]
+        [TestCase("HGETALL")]
+        [TestCase("HMGET")]
+        [TestCase("HRANDFIELD")]
+        [TestCase("HLEN")]
+        [TestCase("HSTRLEN")]
+        [TestCase("HDEL")]
+        [TestCase("HEXISTS")]
+        [TestCase("HKEYS")]
+        [TestCase("HINCRBY")]
         public void ClusterOKTest(string commandName)
         {
             var requestNodeIndex = sourceIndex;
@@ -482,6 +515,17 @@ namespace Garnet.test.cluster
         [TestCase("ZREMRANGEBYRANK")]
         [TestCase("ZRANDMEMBER")]
         [TestCase("ZDIFF")]
+        [TestCase("HSET")]
+        [TestCase("HGET")]
+        [TestCase("HGETALL")]
+        [TestCase("HMGET")]
+        [TestCase("HRANDFIELD")]
+        [TestCase("HLEN")]
+        [TestCase("HSTRLEN")]
+        [TestCase("HDEL")]
+        [TestCase("HEXISTS")]
+        [TestCase("HKEYS")]
+        [TestCase("HINCRBY")]
         public void ClusterCROSSSLOTTest(string commandName)
         {
             var requestNodeIndex = sourceIndex;
@@ -600,6 +644,17 @@ namespace Garnet.test.cluster
         [TestCase("ZREMRANGEBYRANK")]
         [TestCase("ZRANDMEMBER")]
         [TestCase("ZDIFF")]
+        [TestCase("HSET")]
+        [TestCase("HGET")]
+        [TestCase("HGETALL")]
+        [TestCase("HMGET")]
+        [TestCase("HRANDFIELD")]
+        [TestCase("HLEN")]
+        [TestCase("HSTRLEN")]
+        [TestCase("HDEL")]
+        [TestCase("HEXISTS")]
+        [TestCase("HKEYS")]
+        [TestCase("HINCRBY")]
         public void ClusterMOVEDTest(string commandName)
         {
             var requestNodeIndex = targetIndex;
@@ -725,6 +780,17 @@ namespace Garnet.test.cluster
         [TestCase("ZREMRANGEBYRANK")]
         [TestCase("ZRANDMEMBER")]
         [TestCase("ZDIFF")]
+        [TestCase("HSET")]
+        [TestCase("HGET")]
+        [TestCase("HGETALL")]
+        [TestCase("HMGET")]
+        [TestCase("HRANDFIELD")]
+        [TestCase("HLEN")]
+        [TestCase("HSTRLEN")]
+        [TestCase("HDEL")]
+        [TestCase("HEXISTS")]
+        [TestCase("HKEYS")]
+        [TestCase("HINCRBY")]
         public void ClusterASKTest(string commandName)
         {
             var requestNodeIndex = sourceIndex;
@@ -867,6 +933,17 @@ namespace Garnet.test.cluster
         [TestCase("ZREMRANGEBYRANK")]
         [TestCase("ZRANDMEMBER")]
         [TestCase("ZDIFF")]
+        [TestCase("HSET")]
+        [TestCase("HGET")]
+        [TestCase("HGETALL")]
+        [TestCase("HMGET")]
+        [TestCase("HRANDFIELD")]
+        [TestCase("HLEN")]
+        [TestCase("HSTRLEN")]
+        [TestCase("HDEL")]
+        [TestCase("HEXISTS")]
+        [TestCase("HKEYS")]
+        [TestCase("HINCRBY")]
         public void ClusterTRYAGAINTest(string commandName)
         {
             var requestNodeIndex = sourceIndex;
