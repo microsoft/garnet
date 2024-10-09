@@ -1907,6 +1907,10 @@ namespace Garnet.test
                 setbits = db.StringBitCount(key);
                 ClassicAssert.AreEqual(expectedBitCount, setbits);
 
+                // Use BitPosition to find the first set bit
+                long firstSetBitPosition = db.StringBitPosition(key, true);
+                ClassicAssert.AreEqual(0, firstSetBitPosition); // As we are setting bits in order, first set bit should be 0
+
                 // with each bit set that we do, we are increasing the etag as well by 1
                 etagToCheck = long.Parse(((RedisResult[])db.Execute("GETWITHETAG", [key]))[0].ToString());
                 ClassicAssert.AreEqual(expectedBitCount, etagToCheck);
@@ -1927,6 +1931,10 @@ namespace Garnet.test
 
                 setbits = db.StringBitCount(key);
                 ClassicAssert.AreEqual(expectedBitCount, setbits);
+
+                // Use BitPosition to find the first unset bit
+                long firstUnsetBitPosition = db.StringBitPosition(key, false);
+                ClassicAssert.AreEqual(i, firstUnsetBitPosition); // After unsetting, the first unset bit should be i
 
                 etagToCheck = long.Parse(((RedisResult[])db.Execute("GETWITHETAG", [key]))[0].ToString());
                 ClassicAssert.AreEqual(expectedEtag, etagToCheck);

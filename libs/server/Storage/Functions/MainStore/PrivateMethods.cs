@@ -299,7 +299,6 @@ namespace Garnet.server
         static void RespWriteEtagValArray(long etag, ref ReadOnlySpan<byte> value, ref byte* curr, byte* end)
         {
             // Writes a Resp encoded Array of Integer for ETAG as first element, and bulk string for value as second element
-            var initPtr = curr;
             RespWriteUtils.WriteArrayLength(2, ref curr, end);
             if (etag == -1)
             {
