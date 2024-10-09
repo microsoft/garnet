@@ -215,7 +215,7 @@ namespace Garnet.server
             }
 
             // Hashset has key and value, so count is multiplied by 2
-            count *= 2;
+            count = isNoValue ? count : count * 2;
             int index = 0;
             foreach (var item in hash)
             {

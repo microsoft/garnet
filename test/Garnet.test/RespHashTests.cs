@@ -417,6 +417,10 @@ namespace Garnet.test
             var fields = db.HashScanNoValues("user:user789", "*");
             ClassicAssert.IsTrue(fields.Count() == 5, "HSCAN with MATCH failed.");
             CollectionAssert.AreEquivalent(new[] { "email", "email1", "email2", "email3", "age" }, fields.Select(f => f.ToString()));
+
+            fields = db.HashScanNoValues("user:user789", "*", pageSize: 2);
+            ClassicAssert.IsTrue(fields.Count() == 2, "HSCAN with MATCH failed.");
+            CollectionAssert.AreEquivalent(new[] { "email", "email1" }, fields.Select(f => f.ToString()));
         }
 
 
