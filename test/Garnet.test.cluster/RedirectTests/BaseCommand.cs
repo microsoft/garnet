@@ -39,7 +39,8 @@ namespace Garnet.test.cluster
 
         /// <summary>
         /// Command requires an existing key to be inserted before the command executes
-        /// Example: RENAME
+        /// Example: RENAME,LSET
+        /// NOTE: The example command throw an error if key is not set which is not relevant when testing OK operation.
         /// </summary>
         public virtual bool RequiresExistingKey => false;
 
@@ -1581,7 +1582,6 @@ namespace Garnet.test.cluster
         public override bool IsArrayCommand => false;
         public override bool ArrayResponse => false;
         public override string Command => nameof(ZLEXCOUNT);
-        public override bool RequiresExistingKey => true;
 
         public override string[] GetSingleSlotRequest()
         {
@@ -1600,7 +1600,6 @@ namespace Garnet.test.cluster
         public override bool IsArrayCommand => false;
         public override bool ArrayResponse => false;
         public override string Command => nameof(ZINCRBY);
-        public override bool RequiresExistingKey => true;
 
         public override string[] GetSingleSlotRequest()
         {
@@ -1619,7 +1618,6 @@ namespace Garnet.test.cluster
         public override bool IsArrayCommand => false;
         public override bool ArrayResponse => false;
         public override string Command => nameof(ZRANK);
-        public override bool RequiresExistingKey => true;
 
         public override string[] GetSingleSlotRequest()
         {
@@ -1638,7 +1636,6 @@ namespace Garnet.test.cluster
         public override bool IsArrayCommand => false;
         public override bool ArrayResponse => false;
         public override string Command => nameof(ZREMRANGEBYRANK);
-        public override bool RequiresExistingKey => true;
 
         public override string[] GetSingleSlotRequest()
         {
@@ -1657,7 +1654,6 @@ namespace Garnet.test.cluster
         public override bool IsArrayCommand => false;
         public override bool ArrayResponse => false;
         public override string Command => nameof(ZRANDMEMBER);
-        public override bool RequiresExistingKey => true;
 
         public override string[] GetSingleSlotRequest()
         {
@@ -1676,7 +1672,6 @@ namespace Garnet.test.cluster
         public override bool IsArrayCommand => false;
         public override bool ArrayResponse => true;
         public override string Command => nameof(ZDIFF);
-        public override bool RequiresExistingKey => true;
 
         public override string[] GetSingleSlotRequest()
         {
