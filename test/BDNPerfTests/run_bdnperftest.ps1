@@ -128,12 +128,7 @@ $configuration = $object.configuration
 $framework = $object.framework
 $filter = $object.filter
 $meanColumn = "1"
-$allocatedRespParseColumn = "5"  # Windows adds an additional column before the allocated column
-$allocatedLuaColumn = "5"
-if ($IsLinux) {
-    $allocatedRespParseColumn = "4"
-    $allocatedLuaColumn = "4"
-}
+$allocatedColumn = "-1"  # Number of columns can differ a bit, but know the allocated one is always the last one
 
 # Set the expected values based on the OS
 if ($IsLinux) {
@@ -156,7 +151,7 @@ if ($IsLinux) {
     
     $expectedMGetMeanValue = $object.expectedMGETMeanValue_linux
     $expectedMSetMeanValue = $object.expectedMSETMeanValue_linux
-    $expectedIncrMeanValue = $object.expectedIncrMeanValue_linux
+    $expectedIncrMeanValue = $object.expectedIncrementMeanValue_linux
 
     $expectedBasicLuaStress1MeanValue = $object.expectedBasicLuaStress1MeanValue_linux
     $expectedBasicLuaStress2MeanValue = $object.expectedBasicLuaStress2MeanValue_linux
@@ -196,7 +191,7 @@ else {
 
     $expectedMGetMeanValue = $object.expectedMGETMeanValue_win
     $expectedMSetMeanValue = $object.expectedMSETMeanValue_win
-    $expectedIncrMeanValue = $object.expectedIncrMeanValue_win
+    $expectedIncrMeanValue = $object.expectedIncrementMeanValue_win
 
     $expectedBasicLuaStress1MeanValue = $object.expectedBasicLuaStress1MeanValue_win
     $expectedBasicLuaStress2MeanValue = $object.expectedBasicLuaStress2MeanValue_win
@@ -349,7 +344,7 @@ Get-Content $resultsFile | ForEach-Object {
         }
         "*| ZAddRem*" {
             Write-Host "** ZAddRem Allocated Value test"
-            $foundZAddRemAllocatedValue = ParseValueFromResults $line $allocatedRespParseColumn
+            $foundZAddRemAllocatedValue = ParseValueFromResults $line $allocatedColumn
             $currentResults = AnalyzeResult $foundZAddRemAllocatedValue $expectedZAddRemAllocatedValue $acceptableAllocatedRange $true
             if ($currentResults -eq $false) {
                 $testSuiteResult = $false
@@ -357,7 +352,7 @@ Get-Content $resultsFile | ForEach-Object {
         }
         "*| LPushPop*" {
             Write-Host "** LPushPop Allocated Value test"
-            $foundLPushPopAllocatedValue = ParseValueFromResults $line $allocatedRespParseColumn
+            $foundLPushPopAllocatedValue = ParseValueFromResults $line $allocatedColumn
             $currentResults = AnalyzeResult $foundLPushPopAllocatedValue $expectedLPushPopAllocatedValue $acceptableAllocatedRange $true
             if ($currentResults -eq $false) {
                 $testSuiteResult = $false
@@ -365,7 +360,7 @@ Get-Content $resultsFile | ForEach-Object {
         }
         "*| SAddRem*" {
             Write-Host "** SAddRem Allocated Value test"
-            $foundSAddRemAllocatedValue = ParseValueFromResults $line $allocatedRespParseColumn
+            $foundSAddRemAllocatedValue = ParseValueFromResults $line $allocatedColumn
             $currentResults = AnalyzeResult $foundSAddRemAllocatedValue $expectedSAddRemAllocatedValue $acceptableAllocatedRange $true
             if ($currentResults -eq $false) {
                 $testSuiteResult = $false
@@ -373,7 +368,7 @@ Get-Content $resultsFile | ForEach-Object {
         }
         "*| HSetDel*" {
             Write-Host "** HSetDel Allocated Value test"
-            $foundHSetDelAllocatedValue = ParseValueFromResults $line $allocatedRespParseColumn
+            $foundHSetDelAllocatedValue = ParseValueFromResults $line $allocatedColumn
             $currentResults = AnalyzeResult $foundHSetDelAllocatedValue $expectedHSetDelAllocatedValue $acceptableAllocatedRange $true
             if ($currentResults -eq $false) {
                 $testSuiteResult = $false
@@ -381,7 +376,7 @@ Get-Content $resultsFile | ForEach-Object {
         }
         "*| MyDictSetGet*" {
             Write-Host "** MyDictSetGet Allocated Value test"
-            $foundMyDictSetGetAllocatedValue = ParseValueFromResults $line $allocatedRespParseColumn
+            $foundMyDictSetGetAllocatedValue = ParseValueFromResults $line $allocatedColumn
             $currentResults = AnalyzeResult $foundMyDictSetGetAllocatedValue $expectedMyDictSetGetAllocatedValue $acceptableAllocatedRange $true
             if ($currentResults -eq $false) {
                 $testSuiteResult = $false
@@ -486,7 +481,7 @@ Get-Content $resultsFile | ForEach-Object {
 
         "*| BasicLuaStress1*" {
             Write-Host "** BasicLuaStress1 Allocated Value test"
-            $foundBasicLuaStress1AllocatedValue = ParseValueFromResults $line $allocatedLuaColumn
+            $foundBasicLuaStress1AllocatedValue = ParseValueFromResults $line $allocatedColumn
             $currentResults = AnalyzeResult $foundBasicLuaStress1AllocatedValue $expectedBasicLuaStress1AllocatedValue $acceptableAllocatedRange $true
             if ($currentResults -eq $false) {
                 $testSuiteResult = $false
@@ -494,7 +489,7 @@ Get-Content $resultsFile | ForEach-Object {
         }
         "*| BasicLuaStress2*" {
             Write-Host "** BasicLuaStress2 Allocated Value test"
-            $foundBasicLuaStress2AllocatedValue = ParseValueFromResults $line $allocatedLuaColumn
+            $foundBasicLuaStress2AllocatedValue = ParseValueFromResults $line $allocatedColumn
             $currentResults = AnalyzeResult $foundBasicLuaStress2AllocatedValue $expectedBasicLuaStress2AllocatedValue $acceptableAllocatedRange $true
             if ($currentResults -eq $false) {
                 $testSuiteResult = $false
@@ -502,7 +497,7 @@ Get-Content $resultsFile | ForEach-Object {
         }
         "*| BasicLuaStress3*" {
             Write-Host "** BasicLuaStress3 Allocated Value test"
-            $foundBasicLuaStress3AllocatedValue = ParseValueFromResults $line $allocatedLuaColumn
+            $foundBasicLuaStress3AllocatedValue = ParseValueFromResults $line $allocatedColumn
             $currentResults = AnalyzeResult $foundBasicLuaStress3AllocatedValue $expectedBasicLuaStress3AllocatedValue $acceptableAllocatedRange $true
             if ($currentResults -eq $false) {
                 $testSuiteResult = $false
@@ -510,7 +505,7 @@ Get-Content $resultsFile | ForEach-Object {
         }
         "*| BasicLuaStress4*" {
             Write-Host "** BasicLuaStress4 Allocated Value test"
-            $foundBasicLuaStress4AllocatedValue = ParseValueFromResults $line $allocatedLuaColumn
+            $foundBasicLuaStress4AllocatedValue = ParseValueFromResults $line $allocatedColumn
             $currentResults = AnalyzeResult $foundBasicLuaStress4AllocatedValue $expectedBasicLuaStress4AllocatedValue $acceptableAllocatedRange $true
             if ($currentResults -eq $false) {
                 $testSuiteResult = $false
@@ -518,7 +513,7 @@ Get-Content $resultsFile | ForEach-Object {
         }
         "*| BasicLuaRunner1*" {
             Write-Host "** BasicLuaRunner1 Allocated Value test"
-            $foundBasicLuaRunner1AllocatedValue = ParseValueFromResults $line $allocatedLuaColumn
+            $foundBasicLuaRunner1AllocatedValue = ParseValueFromResults $line $allocatedColumn
             $currentResults = AnalyzeResult $foundBasicLuaRunner1AllocatedValue $expectedBasicLuaRunner1AllocatedValue $acceptableAllocatedRange $true
             if ($currentResults -eq $false) {
                 $testSuiteResult = $false
@@ -526,7 +521,7 @@ Get-Content $resultsFile | ForEach-Object {
         }
         "*| BasicLuaRunner2*" {
             Write-Host "** BasicLuaRunner2 Allocated Value test"
-            $foundBasicLuaRunner2AllocatedValue = ParseValueFromResults $line $allocatedLuaColumn
+            $foundBasicLuaRunner2AllocatedValue = ParseValueFromResults $line $allocatedColumn
             $currentResults = AnalyzeResult $foundBasicLuaRunner2AllocatedValue $expectedBasicLuaRunner2AllocatedValue $acceptableAllocatedRange $true
             if ($currentResults -eq $false) {
                 $testSuiteResult = $false
@@ -535,7 +530,7 @@ Get-Content $resultsFile | ForEach-Object {
         
         "*| BasicLuaRunner3*" {
             Write-Host "** BasicLuaRunner3 Allocated Value test"
-            $foundBasicLuaRunner3AllocatedValue = ParseValueFromResults $line $allocatedLuaColumn
+            $foundBasicLuaRunner3AllocatedValue = ParseValueFromResults $line $allocatedColumn
             $currentResults = AnalyzeResult $foundBasicLuaRunner3AllocatedValue $expectedBasicLuaRunner3AllocatedValue $acceptableAllocatedRange $true
             if ($currentResults -eq $false) {
                 $testSuiteResult = $false
@@ -543,7 +538,7 @@ Get-Content $resultsFile | ForEach-Object {
         }
         "*| BasicLuaRunner4*" {
             Write-Host "** BasicLuaRunner4 Allocated Value test"
-            $foundBasicLuaRunner4AllocatedValue = ParseValueFromResults $line $allocatedLuaColumn
+            $foundBasicLuaRunner4AllocatedValue = ParseValueFromResults $line $allocatedColumn
             $currentResults = AnalyzeResult $foundBasicLuaRunner4AllocatedValue $expectedBasicLuaRunner4AllocatedValue $acceptableAllocatedRange $true
             if ($currentResults -eq $false) {
                 $testSuiteResult = $false
