@@ -61,8 +61,54 @@ namespace Garnet.test.cluster
                 new SINTER(),
                 new LMOVE(),
                 new EVAL(),
+                new LPUSH(),
+                new LPOP(),
+                new LMPOP(),
+                new BLPOP(),
+                new BLMOVE(),
+                new LLEN(),
+                new LTRIM(),
+                new LRANGE(),
+                new LINDEX(),
+                new LINSERT(),
+                new LREM(),
+                new RPOPLPUSH(),
+                new LSET(),
+                new SADD(),
+                new SREM(),
+                new SCARD(),
+                new SMEMBERS(),
+                new SISMEMBER(),
+                new SPOP(),
+                new SRANDMEMBER(),
+                new GEOADD(),
+                new GEOHASH(),
+                new ZADD(),
+                new ZREM(),
+                new ZCARD(),
+                new ZRANGE(),
+                new ZSCORE(),
+                new ZMSCORE(),
+                new ZPOPMAX(),
+                new ZCOUNT(),
+                new ZLEXCOUNT(),
+                new ZINCRBY(),
+                new ZRANK(),
+                new ZREMRANGEBYRANK(),
+                new ZRANDMEMBER(),
+                new ZDIFF(),
+                new HSET(),
+                new HGET(),
+                new HGETALL(),
+                new HMGET(),
+                new HRANDFIELD(),
+                new HLEN(),
+                new HSTRLEN(),
+                new HDEL(),
+                new HEXISTS(),
+                new HKEYS(),
+                new HINCRBY(),
             };
-
 
         ClusterTestContext context;
         readonly int sourceIndex = 0;
@@ -70,6 +116,9 @@ namespace Garnet.test.cluster
         readonly int otherIndex = 2;
         readonly int iterations = 3;
 
+        /// <summary>
+        /// Issue SetSlot commands to configure slot for migration
+        /// </summary>
         private void ConfigureSlotForMigration()
         {
             var srcEndpoint = context.clusterTestUtils.GetEndPoint(sourceIndex).ToIPEndPoint();
@@ -87,6 +136,9 @@ namespace Garnet.test.cluster
             ClassicAssert.AreEqual("OK", resp);
         }
 
+        /// <summary>
+        /// Reset slot to stable state
+        /// </summary>
         private void ResetSlot()
         {
             var srcEndpoint = context.clusterTestUtils.GetEndPoint(sourceIndex).ToIPEndPoint();
@@ -164,6 +216,53 @@ namespace Garnet.test.cluster
         [TestCase("SINTERSTORE")]
         [TestCase("SINTER")]
         [TestCase("LMOVE")]
+        [TestCase("LPUSH")]
+        [TestCase("LPOP")]
+        [TestCase("LMPOP")]
+        [TestCase("BLPOP")]
+        [TestCase("BLMOVE")]
+        [TestCase("LLEN")]
+        [TestCase("LTRIM")]
+        [TestCase("LRANGE")]
+        [TestCase("LINDEX")]
+        [TestCase("LINSERT")]
+        [TestCase("LREM")]
+        [TestCase("RPOPLPUSH")]
+        [TestCase("LSET")]
+        [TestCase("SADD")]
+        [TestCase("SREM")]
+        [TestCase("SCARD")]
+        [TestCase("SMEMBERS")]
+        [TestCase("SISMEMBER")]
+        [TestCase("SPOP")]
+        [TestCase("SRANDMEMBER")]
+        [TestCase("GEOADD")]
+        [TestCase("GEOHASH")]
+        [TestCase("ZADD")]
+        [TestCase("ZREM")]
+        [TestCase("ZCARD")]
+        [TestCase("ZRANGE")]
+        [TestCase("ZSCORE")]
+        [TestCase("ZMSCORE")]
+        [TestCase("ZPOPMAX")]
+        [TestCase("ZCOUNT")]
+        [TestCase("ZLEXCOUNT")]
+        [TestCase("ZINCRBY")]
+        [TestCase("ZRANK")]
+        [TestCase("ZREMRANGEBYRANK")]
+        [TestCase("ZRANDMEMBER")]
+        [TestCase("ZDIFF")]
+        [TestCase("HSET")]
+        [TestCase("HGET")]
+        [TestCase("HGETALL")]
+        [TestCase("HMGET")]
+        [TestCase("HRANDFIELD")]
+        [TestCase("HLEN")]
+        [TestCase("HSTRLEN")]
+        [TestCase("HDEL")]
+        [TestCase("HEXISTS")]
+        [TestCase("HKEYS")]
+        [TestCase("HINCRBY")]
         public void ClusterCLUSTERDOWNTest(string commandName)
         {
             var requestNodeIndex = otherIndex;
@@ -243,6 +342,53 @@ namespace Garnet.test.cluster
         [TestCase("SINTER")]
         [TestCase("LMOVE")]
         [TestCase("EVAL")]
+        [TestCase("LPUSH")]
+        [TestCase("LPOP")]
+        [TestCase("LMPOP")]
+        [TestCase("BLPOP")]
+        [TestCase("BLMOVE")]
+        [TestCase("LLEN")]
+        [TestCase("LTRIM")]
+        [TestCase("LRANGE")]
+        [TestCase("LINDEX")]
+        [TestCase("LINSERT")]
+        [TestCase("LREM")]
+        [TestCase("RPOPLPUSH")]
+        [TestCase("LSET")]
+        [TestCase("SADD")]
+        [TestCase("SREM")]
+        [TestCase("SCARD")]
+        [TestCase("SMEMBERS")]
+        [TestCase("SISMEMBER")]
+        [TestCase("SPOP")]
+        [TestCase("SRANDMEMBER")]
+        [TestCase("GEOADD")]
+        [TestCase("GEOHASH")]
+        [TestCase("ZADD")]
+        [TestCase("ZREM")]
+        [TestCase("ZCARD")]
+        [TestCase("ZRANGE")]
+        [TestCase("ZSCORE")]
+        [TestCase("ZMSCORE")]
+        [TestCase("ZPOPMAX")]
+        [TestCase("ZCOUNT")]
+        [TestCase("ZLEXCOUNT")]
+        [TestCase("ZINCRBY")]
+        [TestCase("ZRANK")]
+        [TestCase("ZREMRANGEBYRANK")]
+        [TestCase("ZRANDMEMBER")]
+        [TestCase("ZDIFF")]
+        [TestCase("HSET")]
+        [TestCase("HGET")]
+        [TestCase("HGETALL")]
+        [TestCase("HMGET")]
+        [TestCase("HRANDFIELD")]
+        [TestCase("HLEN")]
+        [TestCase("HSTRLEN")]
+        [TestCase("HDEL")]
+        [TestCase("HEXISTS")]
+        [TestCase("HKEYS")]
+        [TestCase("HINCRBY")]
         public void ClusterOKTest(string commandName)
         {
             var requestNodeIndex = sourceIndex;
@@ -333,6 +479,53 @@ namespace Garnet.test.cluster
         [TestCase("SINTER")]
         [TestCase("LMOVE")]
         [TestCase("EVAL")]
+        [TestCase("LPUSH")]
+        [TestCase("LPOP")]
+        [TestCase("LMPOP")]
+        [TestCase("BLPOP")]
+        [TestCase("BLMOVE")]
+        [TestCase("LLEN")]
+        [TestCase("LTRIM")]
+        [TestCase("LRANGE")]
+        [TestCase("LINDEX")]
+        [TestCase("LINSERT")]
+        [TestCase("LREM")]
+        [TestCase("RPOPLPUSH")]
+        [TestCase("LSET")]
+        [TestCase("SADD")]
+        [TestCase("SREM")]
+        [TestCase("SCARD")]
+        [TestCase("SMEMBERS")]
+        [TestCase("SISMEMBER")]
+        [TestCase("SPOP")]
+        [TestCase("SRANDMEMBER")]
+        [TestCase("GEOADD")]
+        [TestCase("GEOHASH")]
+        [TestCase("ZADD")]
+        [TestCase("ZREM")]
+        [TestCase("ZCARD")]
+        [TestCase("ZRANGE")]
+        [TestCase("ZSCORE")]
+        [TestCase("ZMSCORE")]
+        [TestCase("ZPOPMAX")]
+        [TestCase("ZCOUNT")]
+        [TestCase("ZLEXCOUNT")]
+        [TestCase("ZINCRBY")]
+        [TestCase("ZRANK")]
+        [TestCase("ZREMRANGEBYRANK")]
+        [TestCase("ZRANDMEMBER")]
+        [TestCase("ZDIFF")]
+        [TestCase("HSET")]
+        [TestCase("HGET")]
+        [TestCase("HGETALL")]
+        [TestCase("HMGET")]
+        [TestCase("HRANDFIELD")]
+        [TestCase("HLEN")]
+        [TestCase("HSTRLEN")]
+        [TestCase("HDEL")]
+        [TestCase("HEXISTS")]
+        [TestCase("HKEYS")]
+        [TestCase("HINCRBY")]
         public void ClusterCROSSSLOTTest(string commandName)
         {
             var requestNodeIndex = sourceIndex;
@@ -415,6 +608,53 @@ namespace Garnet.test.cluster
         [TestCase("SINTERSTORE")]
         [TestCase("SINTER")]
         [TestCase("LMOVE")]
+        [TestCase("LPUSH")]
+        [TestCase("LPOP")]
+        [TestCase("LMPOP")]
+        [TestCase("BLPOP")]
+        [TestCase("BLMOVE")]
+        [TestCase("LLEN")]
+        [TestCase("LTRIM")]
+        [TestCase("LRANGE")]
+        [TestCase("LINDEX")]
+        [TestCase("LINSERT")]
+        [TestCase("LREM")]
+        [TestCase("RPOPLPUSH")]
+        [TestCase("LSET")]
+        [TestCase("SADD")]
+        [TestCase("SREM")]
+        [TestCase("SCARD")]
+        [TestCase("SMEMBERS")]
+        [TestCase("SISMEMBER")]
+        [TestCase("SPOP")]
+        [TestCase("SRANDMEMBER")]
+        [TestCase("GEOADD")]
+        [TestCase("GEOHASH")]
+        [TestCase("ZADD")]
+        [TestCase("ZREM")]
+        [TestCase("ZCARD")]
+        [TestCase("ZRANGE")]
+        [TestCase("ZSCORE")]
+        [TestCase("ZMSCORE")]
+        [TestCase("ZPOPMAX")]
+        [TestCase("ZCOUNT")]
+        [TestCase("ZLEXCOUNT")]
+        [TestCase("ZINCRBY")]
+        [TestCase("ZRANK")]
+        [TestCase("ZREMRANGEBYRANK")]
+        [TestCase("ZRANDMEMBER")]
+        [TestCase("ZDIFF")]
+        [TestCase("HSET")]
+        [TestCase("HGET")]
+        [TestCase("HGETALL")]
+        [TestCase("HMGET")]
+        [TestCase("HRANDFIELD")]
+        [TestCase("HLEN")]
+        [TestCase("HSTRLEN")]
+        [TestCase("HDEL")]
+        [TestCase("HEXISTS")]
+        [TestCase("HKEYS")]
+        [TestCase("HINCRBY")]
         public void ClusterMOVEDTest(string commandName)
         {
             var requestNodeIndex = targetIndex;
@@ -504,6 +744,53 @@ namespace Garnet.test.cluster
         [TestCase("SINTERSTORE")]
         [TestCase("SINTER")]
         [TestCase("LMOVE")]
+        [TestCase("LPUSH")]
+        [TestCase("LPOP")]
+        [TestCase("LMPOP")]
+        [TestCase("BLPOP")]
+        [TestCase("BLMOVE")]
+        [TestCase("LLEN")]
+        [TestCase("LTRIM")]
+        [TestCase("LRANGE")]
+        [TestCase("LINDEX")]
+        [TestCase("LINSERT")]
+        [TestCase("LREM")]
+        [TestCase("RPOPLPUSH")]
+        [TestCase("LSET")]
+        [TestCase("SADD")]
+        [TestCase("SREM")]
+        [TestCase("SCARD")]
+        [TestCase("SMEMBERS")]
+        [TestCase("SISMEMBER")]
+        [TestCase("SPOP")]
+        [TestCase("SRANDMEMBER")]
+        [TestCase("GEOADD")]
+        [TestCase("GEOHASH")]
+        [TestCase("ZADD")]
+        [TestCase("ZREM")]
+        [TestCase("ZCARD")]
+        [TestCase("ZRANGE")]
+        [TestCase("ZSCORE")]
+        [TestCase("ZMSCORE")]
+        [TestCase("ZPOPMAX")]
+        [TestCase("ZCOUNT")]
+        [TestCase("ZLEXCOUNT")]
+        [TestCase("ZINCRBY")]
+        [TestCase("ZRANK")]
+        [TestCase("ZREMRANGEBYRANK")]
+        [TestCase("ZRANDMEMBER")]
+        [TestCase("ZDIFF")]
+        [TestCase("HSET")]
+        [TestCase("HGET")]
+        [TestCase("HGETALL")]
+        [TestCase("HMGET")]
+        [TestCase("HRANDFIELD")]
+        [TestCase("HLEN")]
+        [TestCase("HSTRLEN")]
+        [TestCase("HDEL")]
+        [TestCase("HEXISTS")]
+        [TestCase("HKEYS")]
+        [TestCase("HINCRBY")]
         public void ClusterASKTest(string commandName)
         {
             var requestNodeIndex = sourceIndex;
@@ -545,7 +832,7 @@ namespace Garnet.test.cluster
                 catch (Exception ex)
                 {
                     var tokens = ex.Message.Split(' ');
-                    ClassicAssert.IsTrue(tokens.Length > 10 && tokens[0].Equals("Endpoint"), command.Command);
+                    ClassicAssert.IsTrue(tokens.Length > 10 && tokens[0].Equals("Endpoint"), command.Command + " => " + ex.Message);
 
                     var _address = tokens[1].Split(':')[0];
                     var _port = int.Parse(tokens[1].Split(':')[1]);
@@ -610,6 +897,53 @@ namespace Garnet.test.cluster
         [TestCase("SINTERSTORE")]
         [TestCase("SINTER")]
         [TestCase("LMOVE")]
+        [TestCase("LPUSH")]
+        [TestCase("LPOP")]
+        [TestCase("LMPOP")]
+        [TestCase("BLPOP")]
+        [TestCase("BLMOVE")]
+        [TestCase("LLEN")]
+        [TestCase("LTRIM")]
+        [TestCase("LRANGE")]
+        [TestCase("LINDEX")]
+        [TestCase("LINSERT")]
+        [TestCase("LREM")]
+        [TestCase("RPOPLPUSH")]
+        [TestCase("LSET")]
+        [TestCase("SADD")]
+        [TestCase("SREM")]
+        [TestCase("SCARD")]
+        [TestCase("SMEMBERS")]
+        [TestCase("SISMEMBER")]
+        [TestCase("SPOP")]
+        [TestCase("SRANDMEMBER")]
+        [TestCase("GEOADD")]
+        [TestCase("GEOHASH")]
+        [TestCase("ZADD")]
+        [TestCase("ZREM")]
+        [TestCase("ZCARD")]
+        [TestCase("ZRANGE")]
+        [TestCase("ZSCORE")]
+        [TestCase("ZMSCORE")]
+        [TestCase("ZPOPMAX")]
+        [TestCase("ZCOUNT")]
+        [TestCase("ZLEXCOUNT")]
+        [TestCase("ZINCRBY")]
+        [TestCase("ZRANK")]
+        [TestCase("ZREMRANGEBYRANK")]
+        [TestCase("ZRANDMEMBER")]
+        [TestCase("ZDIFF")]
+        [TestCase("HSET")]
+        [TestCase("HGET")]
+        [TestCase("HGETALL")]
+        [TestCase("HMGET")]
+        [TestCase("HRANDFIELD")]
+        [TestCase("HLEN")]
+        [TestCase("HSTRLEN")]
+        [TestCase("HDEL")]
+        [TestCase("HEXISTS")]
+        [TestCase("HKEYS")]
+        [TestCase("HINCRBY")]
         public void ClusterTRYAGAINTest(string commandName)
         {
             var requestNodeIndex = sourceIndex;
