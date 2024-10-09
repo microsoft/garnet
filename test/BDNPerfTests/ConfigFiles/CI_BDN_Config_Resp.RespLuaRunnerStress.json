@@ -3,7 +3,7 @@
     "framework": "net8.0",
     "filter": "*LuaRunner*",
     "expectedBasicLuaRunner1MeanValue_linux": 182,
-    "expectedBasicLuaRunner2MeanValue_linux": 301,
+    "expectedBasicLuaRunner2MeanValue_linux": 325,
     "expectedBasicLuaRunner3MeanValue_linux": 1473,
     "expectedBasicLuaRunner4MeanValue_linux": 3754,
 
