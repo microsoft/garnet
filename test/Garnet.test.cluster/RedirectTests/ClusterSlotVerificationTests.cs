@@ -5,6 +5,7 @@ using System;
 using System.Collections.Generic;
 using System.Diagnostics.CodeAnalysis;
 using Garnet.common;
+using Garnet.server;
 using Microsoft.Extensions.Logging;
 using NUnit.Framework;
 using NUnit.Framework.Legacy;
@@ -108,6 +109,8 @@ namespace Garnet.test.cluster
                 new HEXISTS(),
                 new HKEYS(),
                 new HINCRBY(),
+                new CLUSTERGETPROC(),
+                new CLUSTERSETPROC(),
             };
 
         ClusterTestContext context;
@@ -163,6 +166,17 @@ namespace Garnet.test.cluster
             context.Setup([]);
 
             context.CreateInstances(3, enableLua: true);
+
+            context.RegisterCustomTxn(
+                "CLUSTERGETPROC",
+                () => new TestClusterReadOnlyCustomTxn(),
+                new RespCommandsInfo { Arity = TestClusterReadOnlyCustomTxn.Arity });
+
+            context.RegisterCustomTxn(
+                "CLUSTERSETPROC",
+                () => new TestClusterReadWriteCustomTxn(),
+                new RespCommandsInfo { Arity = TestClusterReadWriteCustomTxn.Arity });
+
             context.CreateConnection();
 
             // Assign all slots to node 0
@@ -263,6 +277,8 @@ namespace Garnet.test.cluster
         [TestCase("HEXISTS")]
         [TestCase("HKEYS")]
         [TestCase("HINCRBY")]
+        [TestCase("CLUSTERGETPROC")]
+        [TestCase("CLUSTERSETPROC")]
         public void ClusterCLUSTERDOWNTest(string commandName)
         {
             var requestNodeIndex = otherIndex;
@@ -389,6 +405,8 @@ namespace Garnet.test.cluster
         [TestCase("HEXISTS")]
         [TestCase("HKEYS")]
         [TestCase("HINCRBY")]
+        [TestCase("CLUSTERGETPROC")]
+        [TestCase("CLUSTERSETPROC")]
         public void ClusterOKTest(string commandName)
         {
             var requestNodeIndex = sourceIndex;
@@ -526,6 +544,8 @@ namespace Garnet.test.cluster
         [TestCase("HEXISTS")]
         [TestCase("HKEYS")]
         [TestCase("HINCRBY")]
+        [TestCase("CLUSTERGETPROC")]
+        [TestCase("CLUSTERSETPROC")]
         public void ClusterCROSSSLOTTest(string commandName)
         {
             var requestNodeIndex = sourceIndex;
@@ -655,6 +675,8 @@ namespace Garnet.test.cluster
         [TestCase("HEXISTS")]
         [TestCase("HKEYS")]
         [TestCase("HINCRBY")]
+        [TestCase("CLUSTERGETPROC")]
+        [TestCase("CLUSTERSETPROC")]
         public void ClusterMOVEDTest(string commandName)
         {
             var requestNodeIndex = targetIndex;
@@ -791,6 +813,8 @@ namespace Garnet.test.cluster
         [TestCase("HEXISTS")]
         [TestCase("HKEYS")]
         [TestCase("HINCRBY")]
+        [TestCase("CLUSTERGETPROC")]
+        [TestCase("CLUSTERSETPROC")]
         public void ClusterASKTest(string commandName)
         {
             var requestNodeIndex = sourceIndex;
@@ -944,6 +968,8 @@ namespace Garnet.test.cluster
         [TestCase("HEXISTS")]
         [TestCase("HKEYS")]
         [TestCase("HINCRBY")]
+        [TestCase("CLUSTERGETPROC")]
+        [TestCase("CLUSTERSETPROC")]
         public void ClusterTRYAGAINTest(string commandName)
         {
             var requestNodeIndex = sourceIndex;
