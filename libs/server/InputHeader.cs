@@ -2,6 +2,7 @@
 // Licensed under the MIT license.
 
 using System;
+using System.Diagnostics;
 using System.Runtime.CompilerServices;
 using System.Runtime.InteropServices;
 using Tsavorite.core;
@@ -12,7 +13,7 @@ namespace Garnet.server
     /// Flags used by append-only file (AOF/WAL)
     /// </summary>
     [Flags]
-    enum RespInputFlags : byte
+    public enum RespInputFlags : byte
     {
         /// <summary>
         /// Flag indicating a SET operation that returns the previous value
@@ -48,6 +49,28 @@ namespace Garnet.server
 
         [FieldOffset(1)]
         internal RespInputFlags flags;
+
+        /// <summary>
+        /// Create a new instance of RespInputHeader
+        /// </summary>
+        /// <param name="cmd">Command</param>
+        /// <param name="flags">Flags</param>
+        public RespInputHeader(RespCommand cmd, RespInputFlags flags = 0)
+        {
+            this.cmd = cmd;
+            this.flags = flags;
+        }
+
+        /// <summary>
+        /// Create a new instance of RespInputHeader
+        /// </summary>
+        /// <param name="type">Object type</param>
+        /// <param name="flags">Flags</param>
+        public RespInputHeader(GarnetObjectType type, RespInputFlags flags = 0)
+        {
+            this.type = type;
+            this.flags = flags;
+        }
 
         /// <summary>
         /// Set RESP input header
@@ -137,12 +160,6 @@ namespace Garnet.server
             => (byte*)Unsafe.AsPointer(ref cmd);
 
         /// <summary>
-        /// Get header as Span
-        /// </summary>
-        /// <returns>Span</returns>
-        public unsafe Span<byte> AsSpan() => new(ToPointer(), Size);
-
-        /// <summary>
         /// Get header as SpanByte
         /// </summary>
         public unsafe SpanByte SpanByte => new(Length, (nint)ToPointer());
@@ -150,7 +167,7 @@ namespace Garnet.server
         /// <summary>
         /// Get header length
         /// </summary>
-        public int Length => AsSpan().Length;
+        public int Length => Size;
     }
 
     /// <summary>
@@ -183,22 +200,44 @@ namespace Garnet.server
         /// </summary>
         public SessionParseState parseState;
 
-        /// <inheritdoc />
-        public int SerializedLength
+        /// <summary>
+        /// Create a new instance of ObjectInput
+        /// </summary>
+        /// <param name="header">Input header</param>
+        /// <param name="arg1">First general-purpose argument</param>
+        /// <param name="arg2">Second general-purpose argument</param>
+        public ObjectInput(RespInputHeader header, int arg1 = 0, int arg2 = 0)
         {
-            get
-            {
-                var serializedLength = header.SpanByte.TotalSize
-                                       + (3 * sizeof(int)) // Length + arg1 + arg2
-                                       + parseState.GetSerializedLength(parseStateStartIdx);
+            this.header = header;
+            this.arg1 = arg1;
+            this.arg2 = arg2;
+        }
 
-                return serializedLength;
-            }
+        /// <summary>
+        /// Create a new instance of ObjectInput
+        /// </summary>
+        /// <param name="header">Input header</param>
+        /// <param name="parseState">Parse state</param>
+        /// <param name="parseStateStartIdx">Index at which to start reading parse state</param>
+        /// <param name="arg1">First general-purpose argument</param>
+        /// <param name="arg2">Second general-purpose argument</param>
+        public ObjectInput(RespInputHeader header, SessionParseState parseState, int parseStateStartIdx = 0, int arg1 = 0, int arg2 = 0)
+        : this(header, arg1, arg2)
+        {
+            this.parseState = parseState;
+            this.parseStateStartIdx = parseStateStartIdx;
         }
 
         /// <inheritdoc />
-        public unsafe void CopyTo(byte* dest)
+        public int SerializedLength => header.SpanByte.TotalSize
+                                       + (3 * sizeof(int)) // Length + arg1 + arg2
+                                       + parseState.GetSerializedLength(parseStateStartIdx);
+
+        /// <inheritdoc />
+        public unsafe void CopyTo(byte* dest, int length)
         {
+            Debug.Assert(length >= this.SerializedLength);
+
             // Leave space for length
             var curr = dest + sizeof(int);
 
@@ -272,23 +311,56 @@ namespace Garnet.server
         /// </summary>
         public SessionParseState parseState;
 
-        /// <inheritdoc />
-        public int SerializedLength
+        /// <summary>
+        /// Create a new instance of RawStringInput
+        /// </summary>
+        /// <param name="cmd">Command</param>
+        /// <param name="flags">Flags</param>
+        /// <param name="arg1">General-purpose argument</param>
+        public RawStringInput(RespCommand cmd, RespInputFlags flags = 0, long arg1 = 0)
         {
-            get
-            {
-                var serializedLength = sizeof(int) // Length
+            this.header = new RespInputHeader(cmd, flags);
+            this.arg1 = arg1;
+        }
+
+        /// <summary>
+        /// Create a new instance of RawStringInput
+        /// </summary>
+        /// <param name="cmd">Command</param>
+        /// <param name="flags">Flags</param>
+        /// <param name="arg1">General-purpose argument</param>
+        public RawStringInput(byte cmd, byte flags = 0, long arg1 = 0) :
+            this((RespCommand)cmd, (RespInputFlags)flags, arg1)
+
+        {
+        }
+
+        /// <summary>
+        /// Create a new instance of RawStringInput
+        /// </summary>
+        /// <param name="cmd">Command</param>
+        /// <param name="parseState">Parse state</param>
+        /// <param name="parseStateStartIdx">Index at which to start reading parse state</param>
+        /// <param name="arg1">General-purpose argument</param>
+        /// <param name="flags">Flags</param>
+        public RawStringInput(RespCommand cmd, SessionParseState parseState, int parseStateStartIdx = 0,
+            long arg1 = 0, RespInputFlags flags = 0) : this(cmd, flags, arg1)
+        {
+            this.parseState = parseState;
+            this.parseStateStartIdx = parseStateStartIdx;
+        }
+
+        /// <inheritdoc />
+        public int SerializedLength => sizeof(int) // Length
                                        + header.SpanByte.TotalSize
                                        + sizeof(long) // arg1
                                        + parseState.GetSerializedLength(parseStateStartIdx);
 
-                return serializedLength;
-            }
-        }
-
         /// <inheritdoc />
-        public unsafe void CopyTo(byte* dest)
+        public unsafe void CopyTo(byte* dest, int length)
         {
+            Debug.Assert(length >= this.SerializedLength);
+
             // Leave space for length
             var curr = dest + sizeof(int);
 

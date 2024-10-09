@@ -86,13 +86,8 @@ namespace Garnet.server
         {
             var sbKey = parseState.GetArgSliceByRef(0).SpanByte;
 
-            var input = new RawStringInput
-            {
-                header = new RespInputHeader { cmd = cmd },
-                parseState = parseState,
-                parseStateStartIdx = 1,
-                arg1 = expirationTicks > 0 ? DateTimeOffset.UtcNow.Ticks + expirationTicks : expirationTicks
-            };
+            var inputArg = expirationTicks > 0 ? DateTimeOffset.UtcNow.Ticks + expirationTicks : expirationTicks;
+            var input = new RawStringInput(cmd, parseState, 1, inputArg);
 
             var output = new SpanByteAndMemory(null);
             GarnetStatus status;
@@ -140,16 +135,9 @@ namespace Garnet.server
             var keyBytes = parseState.GetArgSliceByRef(0).SpanByte.ToByteArray();
 
             // Prepare input
-            var input = new ObjectInput
-            {
-                header = new RespInputHeader
-                {
-                    cmd = cmd,
-                    SubId = subid
-                },
-                parseState = parseState,
-                parseStateStartIdx = 1
-            };
+
+            var header = new RespInputHeader(cmd) { SubId = subid };
+            var input = new ObjectInput(header, parseState, 1);
 
             var output = new GarnetObjectStoreOutput { spanByteAndMemory = new SpanByteAndMemory(null) };
 

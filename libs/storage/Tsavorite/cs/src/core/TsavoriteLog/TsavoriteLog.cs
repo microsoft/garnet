@@ -934,7 +934,7 @@ namespace Tsavorite.core
             var physicalAddress = (byte*)allocator.GetPhysicalAddress(logicalAddress);
             *(THeader*)(physicalAddress + headerSize) = userHeader;
             item1.CopyTo(physicalAddress + headerSize + sizeof(THeader));
-            input.CopyTo(physicalAddress + headerSize + sizeof(THeader) + item1.TotalSize);
+            input.CopyTo(physicalAddress + headerSize + sizeof(THeader) + item1.TotalSize, input.SerializedLength);
             SetHeader(length, physicalAddress);
             safeTailRefreshEntryEnqueued?.Signal();
             epoch.Suspend();
@@ -964,7 +964,8 @@ namespace Tsavorite.core
             *(THeader*)(physicalAddress + headerSize) = userHeader;
             item1.CopyTo(physicalAddress + headerSize + sizeof(THeader));
             item2.CopyTo(physicalAddress + headerSize + sizeof(THeader) + item1.TotalSize);
-            input.CopyTo(physicalAddress + headerSize + sizeof(THeader) + item1.TotalSize + item2.TotalSize);
+            input.CopyTo(physicalAddress + headerSize + sizeof(THeader) + item1.TotalSize + item2.TotalSize,
+                input.SerializedLength);
             SetHeader(length, physicalAddress);
             safeTailRefreshEntryEnqueued?.Signal();
             epoch.Suspend();

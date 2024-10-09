@@ -37,16 +37,8 @@ namespace Garnet.server
             parseState.InitializeWithArguments(elements);
 
             // Prepare the input
-            var input = new ObjectInput
-            {
-                header = new RespInputHeader
-                {
-                    type = GarnetObjectType.List,
-                    ListOp = lop,
-                },
-                parseState = parseState,
-                parseStateStartIdx = 0,
-            };
+            var header = new RespInputHeader(GarnetObjectType.List) { ListOp = lop };
+            var input = new ObjectInput(header, parseState);
 
             var arrKey = key.ToArray();
             var status = RMWObjectStoreOperation(arrKey, ref input, out var output, ref objectStoreContext);
@@ -78,16 +70,8 @@ namespace Garnet.server
             parseState.InitializeWithArgument(element);
 
             // Prepare the input
-            var input = new ObjectInput
-            {
-                header = new RespInputHeader
-                {
-                    type = GarnetObjectType.List,
-                    ListOp = lop,
-                },
-                parseState = parseState,
-                parseStateStartIdx = 0,
-            };
+            var header = new RespInputHeader(GarnetObjectType.List) { ListOp = lop };
+            var input = new ObjectInput(header, parseState);
 
             var status = RMWObjectStoreOperation(key.ToArray(), ref input, out var output, ref objectStoreContext);
             itemsDoneCount = output.result1;
@@ -129,15 +113,8 @@ namespace Garnet.server
                  where TObjectContext : ITsavoriteContext<byte[], IGarnetObject, ObjectInput, GarnetObjectStoreOutput, long, ObjectSessionFunctions, ObjectStoreFunctions, ObjectStoreAllocator>
         {
             // Prepare the input
-            var input = new ObjectInput
-            {
-                header = new RespInputHeader
-                {
-                    type = GarnetObjectType.List,
-                    ListOp = lop,
-                },
-                arg1 = count,
-            };
+            var header = new RespInputHeader(GarnetObjectType.List) { ListOp = lop };
+            var input = new ObjectInput(header, count);
 
             var outputFooter = new GarnetObjectStoreOutput { spanByteAndMemory = new SpanByteAndMemory(null) };
 
@@ -207,14 +184,8 @@ namespace Garnet.server
                 return GarnetStatus.OK;
 
             // Prepare the input
-            var input = new ObjectInput
-            {
-                header = new RespInputHeader
-                {
-                    type = GarnetObjectType.List,
-                    ListOp = ListOperation.LLEN,
-                },
-            };
+            var header = new RespInputHeader(GarnetObjectType.List) { ListOp = ListOperation.LLEN };
+            var input = new ObjectInput(header);
 
             var status = ReadObjectStoreOperation(key.ToArray(), ref input, out var output, ref objectStoreContext);
 
@@ -360,16 +331,8 @@ namespace Garnet.server
             where TObjectContext : ITsavoriteContext<byte[], IGarnetObject, ObjectInput, GarnetObjectStoreOutput, long, ObjectSessionFunctions, ObjectStoreFunctions, ObjectStoreAllocator>
         {
             // Prepare the input
-            var input = new ObjectInput
-            {
-                header = new RespInputHeader
-                {
-                    type = GarnetObjectType.List,
-                    ListOp = ListOperation.LTRIM,
-                },
-                arg1 = start,
-                arg2 = stop,
-            };
+            var header = new RespInputHeader(GarnetObjectType.List) { ListOp = ListOperation.LTRIM };
+            var input = new ObjectInput(header, start, stop);
 
             var status = RMWObjectStoreOperation(key.ToArray(), ref input, out _, ref objectStoreContext);
 

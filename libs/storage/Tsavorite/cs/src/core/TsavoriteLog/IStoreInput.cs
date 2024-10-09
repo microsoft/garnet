@@ -17,7 +17,8 @@ namespace Tsavorite.core
         /// Serialize the IStoreInput object into memory buffer
         /// </summary>
         /// <param name="dest">Memory buffer to serialize into. Guaranteed to have at least SerializedLength many bytes</param>
-        public unsafe void CopyTo(byte* dest);
+        /// <param name="length">Length of buffer to serialize into.</param>
+        public unsafe void CopyTo(byte* dest, int length);
 
         /// <summary>
         /// Deserializes the IStoreInput object from memory buffer.

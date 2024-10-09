@@ -23,13 +23,7 @@ namespace Garnet.server
 
             parseState.Initialize(1);
 
-            var input = new RawStringInput
-            {
-                header = new RespInputHeader { cmd = RespCommand.PFADD },
-                parseState = parseState,
-                parseStateStartIdx = 0,
-                arg1 = 1,
-            };
+            var input = new RawStringInput(RespCommand.PFADD, parseState, 0, 1);
 
             var output = stackalloc byte[1];
             byte pfaddUpdated = 0;
@@ -80,14 +74,9 @@ namespace Garnet.server
                 parseState.SetArgument(i, keys[i]);
             }
 
-            var inputHeader = new RawStringInput
-            {
-                header = new RespInputHeader { cmd = RespCommand.PFCOUNT },
-                parseState = parseState,
-                parseStateStartIdx = 0,
-            };
+            var input = new RawStringInput(RespCommand.PFCOUNT, parseState);
 
-            return HyperLogLogLength(ref inputHeader, out count, out _, ref context);
+            return HyperLogLogLength(ref input, out count, out _, ref context);
         }
 
         /// <summary>
@@ -143,10 +132,7 @@ namespace Garnet.server
 
                 while (currTokenIdx < input.parseState.Count)
                 {
-                    var currInput = new RawStringInput
-                    {
-                        header = new RespInputHeader { cmd = RespCommand.PFCOUNT },
-                    };
+                    var currInput = new RawStringInput(RespCommand.PFCOUNT);
 
                     var srcKey = input.parseState.GetArgSliceByRef(currTokenIdx++).SpanByte;
 
@@ -238,10 +224,7 @@ namespace Garnet.server
                 {
                     #region readSrcHLL
 
-                    var currInput = new RawStringInput
-                    {
-                        header = new RespInputHeader { cmd = RespCommand.PFMERGE },
-                    };
+                    var currInput = new RawStringInput(RespCommand.PFMERGE);
 
                     var mergeBuffer = new SpanByteAndMemory(readBuffer, hllBufferSize);
                     var srcKey = input.parseState.GetArgSliceByRef(currTokenIdx++).SpanByte;

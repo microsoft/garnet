@@ -81,7 +81,7 @@ namespace Garnet.server
         public unsafe GarnetStatus GET<TContext>(ArgSlice key, out ArgSlice value, ref TContext context)
             where TContext : ITsavoriteContext<SpanByte, SpanByte, RawStringInput, SpanByteAndMemory, long, MainSessionFunctions, MainStoreFunctions, MainStoreAllocator>
         {
-            var input = new RawStringInput { header = new RespInputHeader { cmd = RespCommand.GET } };
+            var input = new RawStringInput(RespCommand.GET);
             value = default;
 
             var _key = key.SpanByte;
@@ -106,7 +106,7 @@ namespace Garnet.server
         public unsafe GarnetStatus GET<TContext>(ArgSlice key, out MemoryResult<byte> value, ref TContext context)
             where TContext : ITsavoriteContext<SpanByte, SpanByte, RawStringInput, SpanByteAndMemory, long, MainSessionFunctions, MainStoreFunctions, MainStoreAllocator>
         {
-            var input = new RawStringInput { header = new RespInputHeader { cmd = RespCommand.GET } };
+            var input = new RawStringInput(RespCommand.GET);
 
             var _key = key.SpanByte;
             var _output = new SpanByteAndMemory();
@@ -165,7 +165,7 @@ namespace Garnet.server
         public unsafe GarnetStatus GETDEL<TContext>(ref SpanByte key, ref SpanByteAndMemory output, ref TContext context)
             where TContext : ITsavoriteContext<SpanByte, SpanByte, RawStringInput, SpanByteAndMemory, long, MainSessionFunctions, MainStoreFunctions, MainStoreAllocator>
         {
-            var input = new RawStringInput { header = new RespInputHeader { cmd = RespCommand.GETDEL } };
+            var input = new RawStringInput(RespCommand.GETDEL);
 
             var status = context.RMW(ref key, ref input, ref output);
             Debug.Assert(output.IsSpanByte);
@@ -218,10 +218,7 @@ namespace Garnet.server
             where TObjectContext : ITsavoriteContext<byte[], IGarnetObject, ObjectInput, GarnetObjectStoreOutput, long, ObjectSessionFunctions, ObjectStoreFunctions, ObjectStoreAllocator>
         {
             var cmd = milliseconds ? RespCommand.PTTL : RespCommand.TTL;
-            var input = new RawStringInput
-            {
-                header = new RespInputHeader { cmd = cmd }
-            };
+            var input = new RawStringInput(cmd);
 
             if (storeType == StoreType.Main || storeType == StoreType.All)
             {
@@ -239,13 +236,8 @@ namespace Garnet.server
 
             if ((storeType == StoreType.Object || storeType == StoreType.All) && !objectStoreBasicContext.IsNull)
             {
-                var objInput = new ObjectInput
-                {
-                    header = new RespInputHeader
-                    {
-                        type = milliseconds ? GarnetObjectType.PTtl : GarnetObjectType.Ttl,
-                    },
-                };
+                var header = new RespInputHeader(milliseconds ? GarnetObjectType.PTtl : GarnetObjectType.Ttl);
+                var objInput = new ObjectInput(header);
 
                 var keyBA = key.ToByteArray();
                 var objO = new GarnetObjectStoreOutput { spanByteAndMemory = output };
@@ -380,12 +372,7 @@ namespace Garnet.server
 
             parseState.InitializeWithArgument(value);
 
-            var input = new RawStringInput
-            {
-                header = new RespInputHeader { cmd = RespCommand.APPEND },
-                parseState = parseState,
-                parseStateStartIdx = 0
-            };
+            var input = new RawStringInput(RespCommand.APPEND, parseState);
 
             return APPEND(ref _key, ref input, ref _output, ref context);
         }
@@ -547,11 +534,7 @@ namespace Garnet.server
                             var expirePtrVal = (byte*)expireMemoryHandle.Pointer;
                             RespReadUtils.TryRead64Int(out var expireTimeMs, ref expirePtrVal, expirePtrVal + expireSpan.Length, out var _);
 
-                            input = new RawStringInput
-                            {
-                                header = new RespInputHeader { cmd = RespCommand.SETEXNX, },
-                                parseStateStartIdx = 0,
-                            };
+                            input = new RawStringInput(RespCommand.SETEXNX);
 
                             // If the key has an expiration, set the new key with the expiration
                             if (expireTimeMs > 0)
@@ -784,15 +767,8 @@ namespace Garnet.server
                     parseState.SetArgument(2, expiryOptionSlice);
                 }
 
-                var objInput = new ObjectInput
-                {
-                    header = new RespInputHeader
-                    {
-                        type = GarnetObjectType.Expire,
-                    },
-                    parseState = parseState,
-                    parseStateStartIdx = 0,
-                };
+                var header = new RespInputHeader(GarnetObjectType.Expire);
+                var objInput = new ObjectInput(header, parseState);
 
                 // Retry on object store
                 var objOutput = new GarnetObjectStoreOutput { spanByteAndMemory = output };
@@ -853,12 +829,8 @@ namespace Garnet.server
                 // Build parse state
                 parseState.InitializeWithArguments(expirySlice, expiryOptionSlice);
 
-                var input = new RawStringInput
-                {
-                    header = new RespInputHeader { cmd = milliseconds ? RespCommand.PEXPIRE : RespCommand.EXPIRE },
-                    parseState = parseState,
-                    parseStateStartIdx = 0,
-                };
+                var cmd = milliseconds ? RespCommand.PEXPIRE : RespCommand.EXPIRE;
+                var input = new RawStringInput(cmd, parseState);
 
                 var _key = key.SpanByte;
                 var status = context.RMW(ref _key, ref input, ref output);
@@ -878,15 +850,8 @@ namespace Garnet.server
                 // Build parse state
                 parseState.InitializeWithArguments(expirySlice, expiryInMsSlice, expiryOptionSlice);
 
-                var objInput = new ObjectInput
-                {
-                    header = new RespInputHeader
-                    {
-                        type = GarnetObjectType.Expire,
-                    },
-                    parseState = parseState,
-                    parseStateStartIdx = 0,
-                };
+                var header = new RespInputHeader(GarnetObjectType.Expire);
+                var objInput = new ObjectInput(header, parseState);
 
                 // Retry on object store
                 var objOutput = new GarnetObjectStoreOutput { spanByteAndMemory = output };
@@ -912,7 +877,7 @@ namespace Garnet.server
         {
             GarnetStatus status = GarnetStatus.NOTFOUND;
 
-            var inputHeader = new RawStringInput { header = new RespInputHeader { cmd = RespCommand.PERSIST }, };
+            var inputHeader = new RawStringInput(RespCommand.PERSIST);
 
             var pbOutput = stackalloc byte[8];
             var o = new SpanByteAndMemory(pbOutput, 8);
@@ -933,13 +898,8 @@ namespace Garnet.server
             if (status == GarnetStatus.NOTFOUND && (storeType == StoreType.Object || storeType == StoreType.All) && !objectStoreBasicContext.IsNull)
             {
                 // Retry on object store
-                var objInput = new ObjectInput
-                {
-                    header = new RespInputHeader
-                    {
-                        type = GarnetObjectType.Persist,
-                    },
-                };
+                var header = new RespInputHeader(GarnetObjectType.Persist);
+                var objInput = new ObjectInput(header);
 
                 var objO = new GarnetObjectStoreOutput { spanByteAndMemory = o };
                 var _key = key.ToArray();
@@ -1014,12 +974,7 @@ namespace Garnet.server
 
             parseState.InitializeWithArgument(incrementSlice);
 
-            var input = new RawStringInput
-            {
-                header = new RespInputHeader { cmd = cmd },
-                parseState = parseState,
-                parseStateStartIdx = 0,
-            };
+            var input = new RawStringInput(cmd, parseState);
 
             const int outputBufferLength = NumUtils.MaximumFormatInt64Length + 1;
             var outputBuffer = stackalloc byte[outputBufferLength];

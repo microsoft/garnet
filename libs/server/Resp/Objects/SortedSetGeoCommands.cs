@@ -35,16 +35,8 @@ namespace Garnet.server
             }
 
             // Prepare input
-            var input = new ObjectInput
-            {
-                header = new RespInputHeader
-                {
-                    type = GarnetObjectType.SortedSet,
-                    SortedSetOp = SortedSetOperation.GEOADD,
-                },
-                parseState = parseState,
-                parseStateStartIdx = 1,
-            };
+            var header = new RespInputHeader(GarnetObjectType.SortedSet) { SortedSetOp = SortedSetOperation.GEOADD };
+            var input = new ObjectInput(header, parseState, 1);
 
             var outputFooter = new GarnetObjectStoreOutput { spanByteAndMemory = new SpanByteAndMemory(dcurr, (int)(dend - dcurr)) };
 
@@ -121,16 +113,8 @@ namespace Garnet.server
                 };
 
             // Prepare input
-            var input = new ObjectInput
-            {
-                header = new RespInputHeader
-                {
-                    type = GarnetObjectType.SortedSet,
-                    SortedSetOp = op,
-                },
-                parseState = parseState,
-                parseStateStartIdx = 1,
-            };
+            var header = new RespInputHeader(GarnetObjectType.SortedSet) { SortedSetOp = op };
+            var input = new ObjectInput(header, parseState, 1);
 
             var outputFooter = new GarnetObjectStoreOutput { spanByteAndMemory = new SpanByteAndMemory(dcurr, (int)(dend - dcurr)) };
 

@@ -30,12 +30,7 @@ namespace Garnet.server
 
             parseState.InitializeWithArguments(offset, setValSlice);
 
-            var input = new RawStringInput
-            {
-                header = new RespInputHeader { cmd = RespCommand.SETBIT },
-                parseState = parseState,
-                parseStateStartIdx = 0,
-            };
+            var input = new RawStringInput(RespCommand.SETBIT, parseState);
 
             SpanByteAndMemory output = new(null);
             var keySp = key.SpanByte;
@@ -54,12 +49,7 @@ namespace Garnet.server
 
             parseState.InitializeWithArgument(offset);
 
-            var input = new RawStringInput
-            {
-                header = new RespInputHeader { cmd = RespCommand.GETBIT },
-                parseState = parseState,
-                parseStateStartIdx = 0,
-            };
+            var input = new RawStringInput(RespCommand.GETBIT, parseState);
 
             SpanByteAndMemory output = new(null);
             var keySp = key.SpanByte;
@@ -207,12 +197,7 @@ namespace Garnet.server
 
             parseState.InitializeWithArguments(args);
 
-            var input = new RawStringInput
-            {
-                header = new RespInputHeader { cmd = RespCommand.BITOP },
-                parseState = parseState,
-                parseStateStartIdx = 0
-            };
+            var input = new RawStringInput(RespCommand.BITOP, parseState);
 
             return StringBitOperation(ref input, bitOp, out result);
         }
@@ -260,12 +245,7 @@ namespace Garnet.server
 
             parseState.InitializeWithArguments(startSlice, endSlice, useBitIntervalSlice);
 
-            var input = new RawStringInput
-            {
-                header = new RespInputHeader { cmd = RespCommand.BITCOUNT },
-                parseState = parseState,
-                parseStateStartIdx = 0
-            };
+            var input = new RawStringInput(RespCommand.BITCOUNT, parseState);
 
             scratchBufferManager.RewindScratchBuffer(ref paramsSlice);
 
@@ -292,11 +272,7 @@ namespace Garnet.server
         public unsafe GarnetStatus StringBitField<TContext>(ArgSlice key, List<BitFieldCmdArgs> commandArguments, out List<long?> result, ref TContext context)
              where TContext : ITsavoriteContext<SpanByte, SpanByte, RawStringInput, SpanByteAndMemory, long, MainSessionFunctions, MainStoreFunctions, MainStoreAllocator>
         {
-            var input = new RawStringInput
-            {
-                header = new RespInputHeader { cmd = RespCommand.BITFIELD },
-                parseStateStartIdx = 0
-            };
+            var input = new RawStringInput(RespCommand.BITFIELD);
 
             result = new();
             var keySp = key.SpanByte;
