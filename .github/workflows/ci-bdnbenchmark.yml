@@ -101,4 +101,8 @@ jobs:
           # Need for both commit comment and charts
           output-file-path: ./test/BDNPerfTests/BenchmarkDotNet.Artifacts/results/BDN.benchmark.${{ matrix.test }}-report-full-compressed.json
           github-token: ${{ secrets.GITHUB_TOKEN }}
-          auto-push: true
+          auto-push: false
+
+      # Run `github-action-benchmark` action
+      - name: Push benchmark results
+        run: git push 'https://darrenge:${{ secrets.GITHUB_TOKEN }}@github.com/microsoft/garnet.git' gh-pages:gh-pages
