@@ -4,6 +4,7 @@
 using System.Buffers.Text;
 using System.Runtime.CompilerServices;
 using System.Text;
+using System.Threading;
 using Garnet.common;
 using Garnet.common.Parsing;
 
@@ -49,7 +50,7 @@ namespace Garnet.server
             var ptr = slice.ptr;
             return slice.length != 0 &&
                    RespReadUtils.TryReadIntSafe(ref ptr, slice.ptr + slice.length, out number, out var bytesRead, out _,
-                       out _, false) &&
+                       out _, allowLeadingZeros: false) &&
                    (int)bytesRead == slice.length;
         }
 
@@ -88,7 +89,7 @@ namespace Garnet.server
             var ptr = slice.ptr;
             return slice.length != 0 &&
                    RespReadUtils.TryReadLongSafe(ref ptr, slice.ptr + slice.length, out number, out var bytesRead,
-                       out _, out _, false) &&
+                       out _, out _, allowLeadingZeros: false) &&
                    (int)bytesRead == slice.length;
         }
 

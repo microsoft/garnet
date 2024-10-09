@@ -115,10 +115,9 @@ namespace Garnet.common
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public static bool TryReadLong(ref byte* ptr, byte* end, out long value, out ulong bytesRead, bool allowLeadingZeros = true)
         {
-            var parseSuccessful = TryReadLongSafe(ref ptr, end, out value, out bytesRead, out var signRead,
-                out var overflow, allowLeadingZeros);
-
-            if (parseSuccessful) return true;
+            if (TryReadLongSafe(ref ptr, end, out value, out bytesRead, out var signRead,
+                    out var overflow, allowLeadingZeros))
+                return true;
 
             if (overflow)
             {
@@ -214,10 +213,9 @@ namespace Garnet.common
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public static bool TryReadInt(ref byte* ptr, byte* end, out int value, out ulong bytesRead, bool allowLeadingZeros = true)
         {
-            var parseSuccessful = TryReadIntSafe(ref ptr, end, out value, out bytesRead, out var signRead,
-                out var overflow, allowLeadingZeros);
-
-            if (parseSuccessful) return true;
+            if (TryReadIntSafe(ref ptr, end, out value, out bytesRead, out var signRead,
+                    out var overflow, allowLeadingZeros))
+                return true;
 
             if (overflow)
             {
