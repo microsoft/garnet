@@ -95,6 +95,11 @@ namespace Tsavorite.test
                 // Add to TsavoriteLog
                 logUncommitted.Enqueue(entry);
             }
+
+            // Wait for safe tail to catch up
+            while (logUncommitted.SafeTailAddress < logUncommitted.TailAddress)
+                Thread.Yield();
+
         }
 
         [Test]
@@ -234,7 +239,7 @@ namespace Tsavorite.test
 
             // Read the log - Look for the flag so know each entry is unique
             int currentEntry = 0;
-            using (var iter = log.Scan(0, 100_000_000, name: null, recover: true, scanBufferingMode: ScanBufferingMode.DoublePageBuffering, scanUncommitted: false))
+            using (var iter = log.Scan(0, 100_000_000, recover: true, scanBufferingMode: ScanBufferingMode.DoublePageBuffering, scanUncommitted: false))
             {
                 while (iter.GetNext(out byte[] result, out _, out _))
                 {
@@ -266,7 +271,7 @@ namespace Tsavorite.test
 
             // Read the log - Look for the flag so know each entry is unique
             int currentEntry = 0;
-            using (var iter = log.Scan(0, 100_000_000, name: "TestScan", recover: true))
+            using (var iter = log.Scan(0, 100_000_000, recover: true))
             {
                 while (iter.GetNext(out byte[] result, out _, out _))
                 {
@@ -385,7 +390,7 @@ namespace Tsavorite.test
             // Create log and device here (not in setup) because using DeviceType Enum which can't be used in Setup
             string filename = Path.Join(TestUtils.MethodTestDir, "LogScan" + deviceType.ToString() + ".log");
             device = TestUtils.CreateTestDevice(deviceType, filename);
-            log = new TsavoriteLog(new TsavoriteLogSettings { LogDevice = device, SegmentSizeBits = 22, LogCommitDir = TestUtils.MethodTestDir, AutoRefreshSafeTailAddress = true });
+            log = new TsavoriteLog(new TsavoriteLogSettings { LogDevice = device, SegmentSizeBits = 22, LogCommitDir = TestUtils.MethodTestDir, SafeTailRefreshFrequencyMs = 0 });
             PopulateUncommittedLog(log);
 
             // Setting scanUnCommitted to true is actual test here.

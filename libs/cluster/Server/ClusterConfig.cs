@@ -319,7 +319,7 @@ namespace Garnet.cluster
         /// </summary>
         /// <param name="nodeId"></param>
         /// <returns>Integer representing offset of worker in worker list.</returns>
-        public int GetWorkerIdFromNodeId(string nodeId)
+        public ushort GetWorkerIdFromNodeId(string nodeId)
         {
             for (ushort i = 1; i <= NumWorkers; i++)
             {
@@ -733,7 +733,11 @@ namespace Garnet.cluster
             return result;
         }
 
-        private List<int> GetSlotList(ushort workerId)
+        /// <summary>
+        /// Retrieve a list of slots served by this node.
+        /// </summary>
+        /// <returns>List of slots.</returns>
+        public List<int> GetSlotList(ushort workerId)
         {
             List<int> result = [];
             for (var i = 0; i < MAX_HASH_SLOT_VALUE; i++)

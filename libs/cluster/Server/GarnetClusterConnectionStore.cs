@@ -92,6 +92,29 @@ namespace Garnet.cluster
             return true;
         }
 
+        public void CloseAll()
+        {
+            try
+            {
+                _lock.WriteLock();
+
+                if (_disposed) return;
+
+                for (int i = 0; i < numConnection; i++)
+                    connections[i].Dispose();
+                numConnection = 0;
+                Array.Clear(connections);
+            }
+            catch (Exception ex)
+            {
+                logger?.LogError(ex, "GarnetConnectionStore.CloseAll");
+            }
+            finally
+            {
+                _lock.WriteUnlock();
+            }
+        }
+
         /// <summary>
         /// Remove GarnetServerNode connection object from store.
         /// </summary>

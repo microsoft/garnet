@@ -41,6 +41,37 @@ namespace Garnet.server
         }
 
         /// <summary>
+        /// TryRENAMENX
+        /// </summary>
+        private bool NetworkRENAMENX<TGarnetApi>(ref TGarnetApi storageApi)
+            where TGarnetApi : IGarnetApi
+        {
+            if (parseState.Count != 2)
+            {
+                return AbortWithWrongNumberOfArguments(nameof(RespCommand.RENAMENX));
+            }
+
+            var oldKeySlice = parseState.GetArgSliceByRef(0);
+            var newKeySlice = parseState.GetArgSliceByRef(1);
+            var status = storageApi.RENAMENX(oldKeySlice, newKeySlice, out var result);
+
+            if (status == GarnetStatus.OK)
+            {
+                // Integer reply: 1 if key was renamed to newkey.
+                // Integer reply: 0 if newkey already exists.
+                while (!RespWriteUtils.WriteInteger(result, ref dcurr, dend))
+                    SendAndReset();
+            }
+            else
+            {
+                while (!RespWriteUtils.WriteError(CmdStrings.RESP_ERR_GENERIC_NOSUCHKEY, ref dcurr, dend))
+                    SendAndReset();
+            }
+
+            return true;
+        }
+
+        /// <summary>
         /// GETDEL command processor
         /// </summary>
         /// <typeparam name="TGarnetApi"> Garnet API type </typeparam>
@@ -106,6 +137,32 @@ namespace Garnet.server
             return true;
         }
 
+        bool TryGetExpireOption(ReadOnlySpan<byte> item, out ExpireOption option)
+        {
+            if (item.EqualsUpperCaseSpanIgnoringCase("NX"u8))
+            {
+                option = ExpireOption.NX;
+                return true;
+            }
+            if (item.EqualsUpperCaseSpanIgnoringCase("XX"u8))
+            {
+                option = ExpireOption.XX;
+                return true;
+            }
+            if (item.EqualsUpperCaseSpanIgnoringCase("GT"u8))
+            {
+                option = ExpireOption.GT;
+                return true;
+            }
+            if (item.EqualsUpperCaseSpanIgnoringCase("LT"u8))
+            {
+                option = ExpireOption.LT;
+                return true;
+            }
+            option = ExpireOption.None;
+            return false;
+        }
+
         /// <summary>
         /// Set a timeout on a key.
         /// </summary>
@@ -117,7 +174,7 @@ namespace Garnet.server
             where TGarnetApi : IGarnetApi
         {
             var count = parseState.Count;
-            if (count < 2 || count > 3)
+            if (count < 2 || count > 4)
             {
                 return AbortWithWrongNumberOfArguments(nameof(RespCommand.EXPIRE));
             }
@@ -138,7 +195,7 @@ namespace Garnet.server
 
             if (parseState.Count > 2)
             {
-                if (!parseState.TryGetEnum(2, true, out expireOption) || !expireOption.IsValid(ref parseState.GetArgSliceByRef(2)))
+                if (!TryGetExpireOption(parseState.GetArgSliceByRef(2).ReadOnlySpan, out expireOption))
                 {
                     var optionStr = parseState.GetString(2);
 
@@ -148,9 +205,125 @@ namespace Garnet.server
                 }
             }
 
+            if (parseState.Count > 3)
+            {
+                if (!TryGetExpireOption(parseState.GetArgSliceByRef(3).ReadOnlySpan, out var additionExpireOption))
+                {
+                    var optionStr = parseState.GetString(3);
+
+                    while (!RespWriteUtils.WriteError($"ERR Unsupported option {optionStr}", ref dcurr, dend))
+                        SendAndReset();
+                    return true;
+                }
+
+                if (expireOption == ExpireOption.XX && (additionExpireOption == ExpireOption.GT || additionExpireOption == ExpireOption.LT))
+                {
+                    expireOption = ExpireOption.XX | additionExpireOption;
+                }
+                else if (expireOption == ExpireOption.GT && additionExpireOption == ExpireOption.XX)
+                {
+                    expireOption = ExpireOption.XXGT;
+                }
+                else if (expireOption == ExpireOption.LT && additionExpireOption == ExpireOption.XX)
+                {
+                    expireOption = ExpireOption.XXLT;
+                }
+                else
+                {
+                    while (!RespWriteUtils.WriteError("ERR NX and XX, GT or LT options at the same time are not compatible", ref dcurr, dend))
+                        SendAndReset();
+                }
+            }
+
             var status = command == RespCommand.EXPIRE ?
                         storageApi.EXPIRE(key, expiryMs, out var timeoutSet, StoreType.All, expireOption) :
                         storageApi.PEXPIRE(key, expiryMs, out timeoutSet, StoreType.All, expireOption);
+
+            if (status == GarnetStatus.OK && timeoutSet)
+            {
+                while (!RespWriteUtils.WriteDirect(CmdStrings.RESP_RETURN_VAL_1, ref dcurr, dend))
+                    SendAndReset();
+            }
+            else
+            {
+                while (!RespWriteUtils.WriteDirect(CmdStrings.RESP_RETURN_VAL_0, ref dcurr, dend))
+                    SendAndReset();
+            }
+
+            return true;
+        }
+
+        /// <summary>
+        /// Set a timeout on a key based on unix timestamp
+        /// </summary>
+        /// <typeparam name="TGarnetApi"></typeparam>
+        /// <param name="command">Indicates which command to use, expire or pexpire.</param>
+        /// <param name="storageApi"></param>
+        /// <returns></returns>
+        private bool NetworkEXPIREAT<TGarnetApi>(RespCommand command, ref TGarnetApi storageApi)
+            where TGarnetApi : IGarnetApi
+        {
+            var count = parseState.Count;
+            if (count < 2 || count > 4)
+            {
+                return AbortWithWrongNumberOfArguments(nameof(RespCommand.EXPIREAT));
+            }
+
+            var key = parseState.GetArgSliceByRef(0);
+            if (!parseState.TryGetLong(1, out var expiryTimestamp))
+            {
+                while (!RespWriteUtils.WriteError(CmdStrings.RESP_ERR_GENERIC_VALUE_IS_NOT_INTEGER, ref dcurr, dend))
+                    SendAndReset();
+                return true;
+            }
+
+            var expireOption = ExpireOption.None;
+
+            if (parseState.Count > 2)
+            {
+                if (!TryGetExpireOption(parseState.GetArgSliceByRef(2).ReadOnlySpan, out expireOption))
+                {
+                    var optionStr = parseState.GetString(2);
+
+                    while (!RespWriteUtils.WriteError($"ERR Unsupported option {optionStr}", ref dcurr, dend))
+                        SendAndReset();
+                    return true;
+                }
+            }
+
+            if (parseState.Count > 3)
+            {
+                if (!TryGetExpireOption(parseState.GetArgSliceByRef(3).ReadOnlySpan, out var additionExpireOption))
+                {
+                    var optionStr = parseState.GetString(3);
+
+                    while (!RespWriteUtils.WriteError($"ERR Unsupported option {optionStr}", ref dcurr, dend))
+                        SendAndReset();
+                    return true;
+                }
+
+                if (expireOption == ExpireOption.XX && (additionExpireOption == ExpireOption.GT || additionExpireOption == ExpireOption.LT))
+                {
+                    expireOption = ExpireOption.XX | additionExpireOption;
+                }
+                else if (expireOption == ExpireOption.GT && additionExpireOption == ExpireOption.XX)
+                {
+                    expireOption = ExpireOption.XXGT;
+                }
+                else if (expireOption == ExpireOption.LT && additionExpireOption == ExpireOption.XX)
+                {
+                    expireOption = ExpireOption.XXLT;
+                }
+                else
+                {
+                    while (!RespWriteUtils.WriteError("ERR NX and XX, GT or LT options at the same time are not compatible", ref dcurr, dend))
+                        SendAndReset();
+                }
+            }
+
+            var status = command == RespCommand.EXPIREAT ?
+                        storageApi.EXPIREAT(key, expiryTimestamp, out var timeoutSet, StoreType.All, expireOption) :
+                        storageApi.PEXPIREAT(key, expiryTimestamp, out timeoutSet, StoreType.All, expireOption);
 
             if (status == GarnetStatus.OK && timeoutSet)
             {
@@ -216,6 +389,42 @@ namespace Garnet.server
             var status = command == RespCommand.TTL ?
                         storageApi.TTL(ref sbKey, StoreType.All, ref o) :
                         storageApi.PTTL(ref sbKey, StoreType.All, ref o);
+
+            if (status == GarnetStatus.OK)
+            {
+                if (!o.IsSpanByte)
+                    SendAndReset(o.Memory, o.Length);
+                else
+                    dcurr += o.Length;
+            }
+            else
+            {
+                while (!RespWriteUtils.WriteDirect(CmdStrings.RESP_RETURN_VAL_N2, ref dcurr, dend))
+                    SendAndReset();
+            }
+            return true;
+        }
+
+        /// <summary>
+        /// Get the absolute Unix timestamp at which the given key will expire.
+        /// </summary>
+        /// <typeparam name="TGarnetApi"></typeparam>
+        /// <param name="command">either if the call is for EXPIRETIME or PEXPIRETIME command</param>
+        /// <param name="storageApi"></param>
+        /// <returns>Returns the absolute Unix timestamp (since January 1, 1970) in seconds or milliseconds at which the given key will expire.</returns>
+        private bool NetworkEXPIRETIME<TGarnetApi>(RespCommand command, ref TGarnetApi storageApi)
+            where TGarnetApi : IGarnetApi
+        {
+            if (parseState.Count != 1)
+            {
+                return AbortWithWrongNumberOfArguments(nameof(RespCommand.EXPIRETIME));
+            }
+
+            var sbKey = parseState.GetArgSliceByRef(0).SpanByte;
+            var o = new SpanByteAndMemory(dcurr, (int)(dend - dcurr));
+            var status = command == RespCommand.EXPIRETIME ?
+                        storageApi.EXPIRETIME(ref sbKey, StoreType.All, ref o) :
+                        storageApi.PEXPIRETIME(ref sbKey, StoreType.All, ref o);
 
             if (status == GarnetStatus.OK)
             {

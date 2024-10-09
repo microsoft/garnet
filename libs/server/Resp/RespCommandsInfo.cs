@@ -7,11 +7,10 @@ using System.Collections.Immutable;
 using System.Collections.ObjectModel;
 using System.Linq;
 using System.Numerics;
-using System.Reflection;
 using System.Text;
 using System.Text.Json.Serialization;
 using Garnet.common;
-using Garnet.server.ACL;
+using Garnet.server.Resp;
 using Microsoft.Extensions.Logging;
 
 namespace Garnet.server
@@ -19,16 +18,12 @@ namespace Garnet.server
     /// <summary>
     /// Represents a RESP command's information
     /// </summary>
-    public class RespCommandsInfo : IRespSerializable
+    public class RespCommandsInfo : IRespSerializable, IRespCommandData<RespCommandsInfo>
     {
-        /// <summary>
-        /// Garnet's RespCommand enum command representation
-        /// </summary>
+        /// <inheritdoc />
         public RespCommand Command { get; init; }
 
-        /// <summary>
-        /// The command's name
-        /// </summary>
+        /// <inheritdoc />
         public string Name { get; init; }
 
         /// <summary>
@@ -94,9 +89,7 @@ namespace Garnet.server
         /// </summary>
         public RespCommandKeySpecification[] KeySpecifications { get; init; }
 
-        /// <summary>
-        /// All the command's sub-commands, if any
-        /// </summary>
+        /// <inheritdoc />
         public RespCommandsInfo[] SubCommands { get; init; }
 
         /// <summary>
@@ -106,21 +99,21 @@ namespace Garnet.server
         [JsonIgnore]
         public string RespFormat => respFormat ??= ToRespFormat();
 
+        /// <inheritdoc />
         [JsonIgnore]
         public RespCommandsInfo Parent { get; set; }
 
-        [JsonIgnore]
-        public RespCommand? SubCommand { get; set; }
-
-        private const string RespCommandsEmbeddedFileName = @"RespCommandsInfo.json";
+        private const string RespCommandsInfoEmbeddedFileName = @"RespCommandsInfo.json";
 
         private string respFormat;
 
         private static bool IsInitialized = false;
         private static readonly object IsInitializedLock = new();
         private static IReadOnlyDictionary<string, RespCommandsInfo> AllRespCommandsInfo = null;
+        private static IReadOnlyDictionary<string, RespCommandsInfo> AllRespSubCommandsInfo = null;
         private static IReadOnlyDictionary<string, RespCommandsInfo> ExternalRespCommandsInfo = null;
-        private static IReadOnlyDictionary<RespCommand, RespCommandsInfo> BasicRespCommandsInfo = null;
+        private static IReadOnlyDictionary<string, RespCommandsInfo> ExternalRespSubCommandsInfo = null;
+        private static IReadOnlyDictionary<RespCommand, RespCommandsInfo> FlattenedRespCommandsInfo = null;
         private static IReadOnlySet<string> AllRespCommandNames = null;
         private static IReadOnlySet<string> ExternalRespCommandNames = null;
         private static IReadOnlyDictionary<RespAclCategories, IReadOnlyList<RespCommandsInfo>> AclCommandInfo = null;
@@ -146,55 +139,12 @@ namespace Garnet.server
 
         private static bool TryInitializeRespCommandsInfo(ILogger logger = null)
         {
-            var streamProvider = StreamProviderFactory.GetStreamProvider(FileLocationType.EmbeddedResource, null,
-                Assembly.GetExecutingAssembly());
-            var commandsInfoProvider = RespCommandsInfoProviderFactory.GetRespCommandsInfoProvider();
-
-            var importSucceeded = commandsInfoProvider.TryImportRespCommandsInfo(RespCommandsEmbeddedFileName,
-                streamProvider, out var scratchAllRespCommandsInfo, logger);
+            var importSucceeded = RespCommandDataCommon.TryImportRespCommandsData<RespCommandsInfo>(RespCommandsInfoEmbeddedFileName,
+                out var tmpAllRespCommandsInfo, logger);
 
             if (!importSucceeded) return false;
 
-            // force sub commands into a well known order so we can quickly validate them against ACL lists
-            // setup parent refs so we can navigate from child -> parent
-
-            // todo: remove all of this once sub command ids is dead
-
-            var tmpAllRespCommandsInfo =
-                scratchAllRespCommandsInfo.ToDictionary(
-                    static kv => kv.Key,
-                    static kv =>
-                    {
-                        if (kv.Value.SubCommands != null)
-                        {
-                            SetupSubCommands(kv.Value);
-                        }
-
-                        return kv.Value;
-
-                        static void SetupSubCommands(RespCommandsInfo cmd)
-                        {
-                            foreach (var subCommand in cmd.SubCommands)
-                            {
-                                subCommand.Parent = cmd;
-
-                                if (!Enum.TryParse(subCommand.Name.Replace("|", "_").Replace("-", ""), out RespCommand parsed))
-                                {
-                                    throw new ACLException($"Couldn't map '{subCommand.Name}' to a member of {nameof(RespCommand)} this will break ACLs");
-                                }
-
-                                subCommand.SubCommand = parsed;
-
-                                if (subCommand.SubCommands != null)
-                                {
-                                    SetupSubCommands(subCommand);
-                                }
-                            }
-                        }
-                    }
-                );
-
-            var tmpBasicRespCommandsInfo = new Dictionary<RespCommand, RespCommandsInfo>();
+            var tmpFlattenedRespCommandsInfo = new Dictionary<RespCommand, RespCommandsInfo>();
             foreach (var respCommandInfo in tmpAllRespCommandsInfo.Values)
             {
                 if (respCommandInfo.Command == RespCommand.NONE) continue;
@@ -203,25 +153,40 @@ namespace Garnet.server
                 // So let's prefer the SECONDARYOF or REPLICAOF alternatives
                 if (respCommandInfo.Name == "SLAVEOF") continue;
 
-                tmpBasicRespCommandsInfo.Add(respCommandInfo.Command, respCommandInfo);
+                tmpFlattenedRespCommandsInfo.Add(respCommandInfo.Command, respCommandInfo);
 
                 if (respCommandInfo.SubCommands != null)
                 {
                     foreach (var subRespCommandInfo in respCommandInfo.SubCommands)
                     {
-                        tmpBasicRespCommandsInfo.Add(subRespCommandInfo.SubCommand.Value, subRespCommandInfo);
+                        tmpFlattenedRespCommandsInfo.Add(subRespCommandInfo.Command, subRespCommandInfo);
                     }
                 }
             }
 
-            AllRespCommandsInfo =
-                new Dictionary<string, RespCommandsInfo>(tmpAllRespCommandsInfo, StringComparer.OrdinalIgnoreCase);
+            var tmpAllSubCommandsInfo = new Dictionary<string, RespCommandsInfo>(StringComparer.OrdinalIgnoreCase);
+            var tmpExternalSubCommandsInfo = new Dictionary<string, RespCommandsInfo>(StringComparer.OrdinalIgnoreCase);
+            foreach (var kvp in tmpAllRespCommandsInfo)
+            {
+                if (kvp.Value.SubCommands == null) continue;
+
+                foreach (var sc in kvp.Value.SubCommands)
+                {
+                    tmpAllSubCommandsInfo.Add(sc.Name, sc);
+                    if (!kvp.Value.IsInternal && !sc.IsInternal)
+                        tmpExternalSubCommandsInfo.Add(sc.Name, sc);
+                }
+            }
+
+            AllRespCommandsInfo = tmpAllRespCommandsInfo;
+            AllRespSubCommandsInfo = new ReadOnlyDictionary<string, RespCommandsInfo>(tmpAllSubCommandsInfo);
             ExternalRespCommandsInfo = new ReadOnlyDictionary<string, RespCommandsInfo>(tmpAllRespCommandsInfo
                 .Where(ci => !ci.Value.IsInternal)
                 .ToDictionary(kvp => kvp.Key, kvp => kvp.Value, StringComparer.OrdinalIgnoreCase));
+            ExternalRespSubCommandsInfo = new ReadOnlyDictionary<string, RespCommandsInfo>(tmpExternalSubCommandsInfo);
             AllRespCommandNames = ImmutableHashSet.Create(StringComparer.OrdinalIgnoreCase, AllRespCommandsInfo.Keys.ToArray());
             ExternalRespCommandNames = ImmutableHashSet.Create(StringComparer.OrdinalIgnoreCase, ExternalRespCommandsInfo.Keys.ToArray());
-            BasicRespCommandsInfo = new ReadOnlyDictionary<RespCommand, RespCommandsInfo>(tmpBasicRespCommandsInfo);
+            FlattenedRespCommandsInfo = new ReadOnlyDictionary<RespCommand, RespCommandsInfo>(tmpFlattenedRespCommandsInfo);
 
             AclCommandInfo =
                 new ReadOnlyDictionary<RespAclCategories, IReadOnlyList<RespCommandsInfo>>(
@@ -238,7 +203,7 @@ namespace Garnet.server
             FastBasicRespCommandsInfo = new RespCommandsInfo[(int)RespCommandExtensions.LastWriteCommand() - (int)RespCommandExtensions.FirstReadCommand()];
             for (var i = (int)RespCommandExtensions.FirstReadCommand(); i < (int)RespCommandExtensions.LastWriteCommand(); i++)
             {
-                BasicRespCommandsInfo.TryGetValue((RespCommand)i, out var commandInfo);
+                FlattenedRespCommandsInfo.TryGetValue((RespCommand)i, out var commandInfo);
                 FastBasicRespCommandsInfo[i - 1] = commandInfo;
             }
 
@@ -327,16 +292,19 @@ namespace Garnet.server
         /// </summary>
         /// <param name="cmdName">The command name</param>
         /// <param name="respCommandsInfo">The command info</param>
+        /// <param name="externalOnly">Return command info only if command is visible externally</param>
+        /// <param name="includeSubCommands">Include sub-commands in command name search</param>
         /// <param name="logger">Logger</param>
         /// <returns>True if initialization was successful and command info was found</returns>
-        internal static bool TryGetRespCommandInfo(string cmdName, out RespCommandsInfo respCommandsInfo, ILogger logger = null)
+        internal static bool TryGetRespCommandInfo(string cmdName, out RespCommandsInfo respCommandsInfo,
+            bool externalOnly = false, bool includeSubCommands = false, ILogger logger = null)
         {
             respCommandsInfo = default;
-            if ((!IsInitialized && !TryInitialize(logger)) ||
-                !AllRespCommandsInfo.ContainsKey(cmdName)) return false;
 
-            respCommandsInfo = AllRespCommandsInfo[cmdName];
-            return true;
+            return ((TryGetRespCommandsInfo(out var cmdsInfo, externalOnly, logger)
+                     && cmdsInfo.TryGetValue(cmdName, out respCommandsInfo)) ||
+                    ((includeSubCommands && TryGetRespSubCommandsInfo(out var subCmdsInfo, externalOnly, logger))
+                     && subCmdsInfo.TryGetValue(cmdName, out respCommandsInfo)));
         }
 
         /// <summary>
@@ -354,8 +322,8 @@ namespace Garnet.server
             if (!IsInitialized && !TryInitialize(logger)) return false;
 
             RespCommandsInfo tmpRespCommandInfo = default;
-            if (BasicRespCommandsInfo.ContainsKey(cmd))
-                tmpRespCommandInfo = BasicRespCommandsInfo[cmd];
+            if (FlattenedRespCommandsInfo.ContainsKey(cmd))
+                tmpRespCommandInfo = FlattenedRespCommandsInfo[cmd];
 
             if (tmpRespCommandInfo == default ||
                 (txnOnly && tmpRespCommandInfo.Flags.HasFlag(RespCommandFlags.NoMulti))) return false;
@@ -378,9 +346,25 @@ namespace Garnet.server
 
             var offset = (int)cmd - 1;
             if (offset < 0 || offset >= FastBasicRespCommandsInfo.Length)
-                return true;
+                return false;
 
             respCommandsInfo = FastBasicRespCommandsInfo[offset];
+            return true;
+        }
+
+        /// <summary>
+        /// Gets all the command info objects of sub-commands supported by Garnet
+        /// </summary>
+        /// <param name="respSubCommandsInfo">Mapping between sub-command name to command info</param>
+        /// <param name="externalOnly">Return only sub-commands that are visible externally</param>
+        /// <param name="logger">Logger</param>
+        /// <returns>True if initialization was successful and data was retrieved successfully</returns>
+        public static bool TryGetRespSubCommandsInfo(out IReadOnlyDictionary<string, RespCommandsInfo> respSubCommandsInfo, bool externalOnly = false, ILogger logger = null)
+        {
+            respSubCommandsInfo = default;
+            if (!IsInitialized && !TryInitialize(logger)) return false;
+
+            respSubCommandsInfo = externalOnly ? ExternalRespSubCommandsInfo : AllRespSubCommandsInfo;
             return true;
         }
 

@@ -100,19 +100,23 @@ namespace Garnet.cluster
             {
                 PauseConfigMerge();
                 var resp = CmdStrings.RESP_OK;
-
                 while (true)
                 {
                     var current = currentConfig;
+                    var localSlots = current.GetSlotList(1);
+                    if (clusterProvider.storeWrapper.HasKeysInSlots(localSlots))
+                    {
+                        return CmdStrings.RESP_ERR_RESET_WITH_KEYS_ASSIGNED;
+                    }
+
+                    this.clusterConnectionStore.CloseAll();
+
                     var newNodeId = soft ? current.LocalNodeId : Generator.CreateHexId();
                     var address = current.LocalNodeIp;
                     var port = current.LocalNodePort;
 
                     var configEpoch = soft ? current.LocalNodeConfigEpoch : 0;
                     var expiry = DateTimeOffset.UtcNow.Ticks + TimeSpan.FromSeconds(expirySeconds).Ticks;
-                    foreach (var nodeId in current.GetRemoteNodeIds())
-                        _ = workerBanList.AddOrUpdate(nodeId, expiry, (key, oldValue) => expiry);
-
                     var newConfig = new ClusterConfig().InitializeLocalWorker(
                         newNodeId,
                         address,

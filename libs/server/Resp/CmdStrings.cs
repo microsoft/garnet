@@ -40,6 +40,7 @@ namespace Garnet.server
         public static ReadOnlySpan<byte> LATENCY => "LATENCY"u8;
         public static ReadOnlySpan<byte> CLUSTER => "CLUSTER"u8;
         public static ReadOnlySpan<byte> MIGRATE => "MIGRATE"u8;
+        public static ReadOnlySpan<byte> PURGEBP => "PURGEBP"u8;
         public static ReadOnlySpan<byte> FAILOVER => "FAILOVER"u8;
         public static ReadOnlySpan<byte> HISTOGRAM => "HISTOGRAM"u8;
         public static ReadOnlySpan<byte> histogram => "histogram"u8;
@@ -94,6 +95,10 @@ namespace Garnet.server
         public static ReadOnlySpan<byte> XX => "XX"u8;
         public static ReadOnlySpan<byte> UNSAFETRUNCATELOG => "UNSAFETRUNCATELOG"u8;
         public static ReadOnlySpan<byte> SAMPLES => "SAMPLES"u8;
+        public static ReadOnlySpan<byte> RANK => "RANK"u8;
+        public static ReadOnlySpan<byte> rank => "rank"u8;
+        public static ReadOnlySpan<byte> MAXLEN => "MAXLEN"u8;
+        public static ReadOnlySpan<byte> maxlen => "maxlen"u8;
 
         /// <summary>
         /// Response strings
@@ -173,6 +178,14 @@ namespace Garnet.server
         public static ReadOnlySpan<byte> RESP_ERR_MODULE_ONLOAD => "ERR Error during module OnLoad"u8;
         public static ReadOnlySpan<byte> RESP_ERR_LIMIT_NOT_SUPPORTED => "ERR syntax error, LIMIT is only supported in combination with either BYSCORE or BYLEX"u8;
         public static ReadOnlySpan<byte> RESP_ERR_NO_SCRIPT => "NOSCRIPT No matching script. Please use EVAL."u8;
+        public static ReadOnlySpan<byte> RESP_ERR_CANNOT_LIST_CLIENTS => "ERR Clients cannot be listed."u8;
+        public static ReadOnlySpan<byte> RESP_ERR_NO_SUCH_CLIENT => "ERR No such client"u8;
+        public static ReadOnlySpan<byte> RESP_ERR_INVALID_CLIENT_ID => "ERR Invalid client ID"u8;
+        public static ReadOnlySpan<byte> RESP_ERR_ACL_AUTH_DISABLED => "ERR ACL Authenticator is disabled."u8;
+        public static ReadOnlySpan<byte> RESP_ERR_ACL_AUTH_FILE_DISABLED => "ERR This Garnet instance is not configured to use an ACL file. Please restart server with --acl-file option."u8;
+        public static ReadOnlySpan<byte> RESP_ERR_XX_NX_NOT_COMPATIBLE => "ERR XX and NX options at the same time are not compatible"u8;
+        public static ReadOnlySpan<byte> RESP_ERR_GT_LT_NX_NOT_COMPATIBLE => "ERR GT, LT, and/or NX options at the same time are not compatible"u8;
+        public static ReadOnlySpan<byte> RESP_ERR_INCR_SUPPORTS_ONLY_SINGLE_PAIR => "ERR INCR option supports a single increment-element pair"u8;
 
         /// <summary>
         /// Response string templates
@@ -185,6 +198,8 @@ namespace Garnet.server
             "ERR Invalid number of parameters to stored proc {0}, expected {1}, actual {2}";
         public const string GenericSyntaxErrorOption = "ERR Syntax error in {0} option '{1}'";
         public const string GenericParamShouldBeGreaterThanZero = "ERR {0} should be greater than 0";
+        public const string GenericUnknownClientType = "ERR Unknown client type '{0}'";
+        public const string GenericErrDuplicateFilter = "ERR Filter '{0}' defined multiple times";
 
         /// <summary>
         /// Response errors while scripting
@@ -256,6 +271,15 @@ namespace Garnet.server
         public static ReadOnlySpan<byte> SLOTS => "SLOTS"u8;
         public static ReadOnlySpan<byte> REPLICAS => "REPLICAS"u8;
         public static ReadOnlySpan<byte> REPLICATE => "REPLICATE"u8;
+        public static ReadOnlySpan<byte> ID => "ID"u8;
+        public static ReadOnlySpan<byte> KILL => "KILL"u8;
+        public static ReadOnlySpan<byte> USER => "USER"u8;
+        public static ReadOnlySpan<byte> ADDR => "ADDR"u8;
+        public static ReadOnlySpan<byte> LADDR => "LADDR"u8;
+        public static ReadOnlySpan<byte> SKIPME => "SKIPME"u8;
+        public static ReadOnlySpan<byte> MAXAGE => "MAXAGE"u8;
+        public static ReadOnlySpan<byte> YES => "YES"u8;
+        public static ReadOnlySpan<byte> NO => "NO"u8;
 
         // Cluster subcommands which are internal and thus undocumented
         // 

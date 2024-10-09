@@ -266,12 +266,12 @@ namespace Garnet.test.cluster
 
             var sourceIndex = context.clusterTestUtils.GetSourceNodeIndexFromSlot((ushort)slot, context.logger);
             var expectedKeyCount = context.clusterTestUtils.CountKeysInSlot(slot, context.logger);
-            ClassicAssert.AreEqual(expectedKeyCount, keyCount);
+            ClassicAssert.AreEqual(keyCount, expectedKeyCount);
             _ = context.clusterTestUtils.CountKeysInSlot(-1, context.logger);
             _ = context.clusterTestUtils.CountKeysInSlot(ushort.MaxValue, context.logger);
 
             var result = context.clusterTestUtils.GetKeysInSlot(sourceIndex, slot, expectedKeyCount, context.logger);
-            ClassicAssert.AreEqual(result.Count, keyCount);
+            ClassicAssert.AreEqual(keyCount, result.Count);
             _ = context.clusterTestUtils.GetKeysInSlot(-1, expectedKeyCount);
             _ = context.clusterTestUtils.GetKeysInSlot(ushort.MaxValue, expectedKeyCount);
 
@@ -1717,12 +1717,16 @@ namespace Garnet.test.cluster
             context.clusterTestUtils.SetConfigEpoch(dstNodeIndex, dstNodeIndex + 2, logger: context.logger);
             context.clusterTestUtils.Meet(srcNodeIndex, dstNodeIndex, logger: context.logger);
             context.clusterTestUtils.WaitUntilNodeIsKnown(dstNodeIndex, srcNodeIndex, logger: context.logger);
+            context.clusterTestUtils.WaitUntilNodeIsKnown(srcNodeIndex, dstNodeIndex, logger: context.logger);
             var config1 = context.clusterTestUtils.ClusterNodes(srcNodeIndex, logger: context.logger);
             var config2 = context.clusterTestUtils.ClusterNodes(dstNodeIndex, logger: context.logger);
             ClassicAssert.AreEqual(config1.GetBySlot(0).NodeId, config2.GetBySlot(0).NodeId);
+            ClassicAssert.AreEqual(Shards, config1.Nodes.Count);
+            ClassicAssert.AreEqual(Shards, config2.Nodes.Count);
+            ClassicAssert.AreEqual(config1.Nodes.Last().NodeId, config2.Nodes.First().NodeId);
+            ClassicAssert.AreEqual(config2.Nodes.Last().NodeId, config1.Nodes.First().NodeId);
 
             var db = context.clusterTestUtils.GetDatabase();
-
             foreach (var pair in data)
                 ClassicAssert.IsTrue(db.StringSet(pair.Item1, pair.Item2));
 

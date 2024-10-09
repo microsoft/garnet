@@ -11,6 +11,8 @@ namespace Garnet.cluster
 {
     internal sealed unsafe partial class ClusterSession : IClusterSession
     {
+        public string RemoteNodeId { get; private set; }
+
         /// <summary>
         /// Implements CLUSTER BUMPEPOCH command
         /// </summary>
@@ -378,6 +380,10 @@ namespace Garnet.cluster
                 if (gossipWithMeet || current.IsKnown(other.LocalNodeId))
                 {
                     _ = clusterProvider.clusterManager.TryMerge(other);
+
+                    // Remember that this connection is being used for another cluster node to talk to us
+                    Debug.Assert(RemoteNodeId is null || RemoteNodeId == other.LocalNodeId, "Node Id shouldn't change once set for a connection");
+                    RemoteNodeId = other.LocalNodeId;
                 }
                 else
                     logger?.LogWarning("Received gossip from unknown node: {node-id}", other.LocalNodeId);

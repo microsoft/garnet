@@ -57,8 +57,10 @@ namespace Garnet.test.cluster
             waiter?.Dispose();
             clusterTestUtils?.Dispose();
             loggerFactory?.Dispose();
-            DisposeCluster();
-            TestUtils.DeleteDirectory(TestFolder, true);
+            if (!Task.Run(() => DisposeCluster()).Wait(TimeSpan.FromSeconds(15)))
+                logger?.LogError("Timed out waiting for DisposeCluster");
+            if (!Task.Run(() => TestUtils.DeleteDirectory(TestFolder, true)).Wait(TimeSpan.FromSeconds(15)))
+                logger?.LogError("Timed out waiting for DisposeCluster");
         }
 
         /// <summary>
@@ -108,7 +110,8 @@ namespace Garnet.test.cluster
             X509CertificateCollection certificates = null,
             ServerCredential clusterCreds = new ServerCredential(),
             AadAuthenticationSettings authenticationSettings = null,
-            bool disablePubSub = true)
+            bool disablePubSub = true,
+            int metricsSamplingFrequency = 0)
         {
             endpoints = TestUtils.GetEndPoints(shards, 7000);
             nodes = TestUtils.CreateGarnetCluster(
@@ -138,7 +141,8 @@ namespace Garnet.test.cluster
                 authUsername: clusterCreds.user,
                 authPassword: clusterCreds.password,
                 certificates: certificates,
-                authenticationSettings: authenticationSettings);
+                authenticationSettings: authenticationSettings,
+                metricsSamplingFrequency: metricsSamplingFrequency);
 
             foreach (var node in nodes)
                 node.Start();

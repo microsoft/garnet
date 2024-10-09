@@ -8,22 +8,6 @@ using System.Threading;
 
 namespace Tsavorite.core
 {
-    internal sealed class ScanCursorState<TKey, TValue>
-    {
-        internal IScanIteratorFunctions<TKey, TValue> functions;
-        internal long acceptedCount;    // Number of records pushed to and accepted by the caller
-        internal bool endBatch;         // End the batch (but return a valid cursor for the next batch, as of "count" records had been returned)
-        internal bool stop;             // Stop the operation (as if all records in the db had been returned)
-
-        internal void Initialize(IScanIteratorFunctions<TKey, TValue> scanIteratorFunctions)
-        {
-            functions = scanIteratorFunctions;
-            acceptedCount = 0;
-            endBatch = false;
-            stop = false;
-        }
-    }
-
     public abstract partial class AllocatorBase<TKey, TValue, TStoreFunctions, TAllocator> : IDisposable
         where TStoreFunctions : IStoreFunctions<TKey, TValue>
         where TAllocator : IAllocator<TKey, TValue, TStoreFunctions>
@@ -205,7 +189,8 @@ namespace Tsavorite.core
         internal abstract bool ScanCursor<TScanFunctions>(TsavoriteKV<TKey, TValue, TStoreFunctions, TAllocator> store, ScanCursorState<TKey, TValue> scanCursorState, ref long cursor, long count, TScanFunctions scanFunctions, long endAddress, bool validateCursor)
             where TScanFunctions : IScanIteratorFunctions<TKey, TValue>;
 
-        private protected bool ScanLookup<TInput, TOutput, TScanFunctions, TScanIterator>(TsavoriteKV<TKey, TValue, TStoreFunctions, TAllocator> store, ScanCursorState<TKey, TValue> scanCursorState, ref long cursor, long count, TScanFunctions scanFunctions, TScanIterator iter, bool validateCursor)
+        private protected bool ScanLookup<TInput, TOutput, TScanFunctions, TScanIterator>(TsavoriteKV<TKey, TValue, TStoreFunctions, TAllocator> store,
+                ScanCursorState<TKey, TValue> scanCursorState, ref long cursor, long count, TScanFunctions scanFunctions, TScanIterator iter, bool validateCursor)
             where TScanFunctions : IScanIteratorFunctions<TKey, TValue>
             where TScanIterator : ITsavoriteScanIterator<TKey, TValue>, IPushScanIterator<TKey>
         {
@@ -229,7 +214,7 @@ namespace Tsavorite.core
                 {
                     ref var key = ref iter.GetKey();
                     ref var value = ref iter.GetValue();
-                    var status = bContext.ConditionalScanPush(scanCursorState, recordInfo, ref key, ref value, iter.NextAddress);
+                    var status = bContext.ConditionalScanPush(scanCursorState, recordInfo, ref key, ref value, iter.CurrentAddress, iter.NextAddress);
                     if (status.IsPending)
                     {
                         ++numPending;
@@ -261,7 +246,8 @@ namespace Tsavorite.core
         }
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        internal Status ConditionalScanPush<TInput, TOutput, TContext, TSessionFunctionsWrapper>(TSessionFunctionsWrapper sessionFunctions, ScanCursorState<TKey, TValue> scanCursorState, RecordInfo recordInfo, ref TKey key, ref TValue value, long minAddress)
+        internal Status ConditionalScanPush<TInput, TOutput, TContext, TSessionFunctionsWrapper>(TSessionFunctionsWrapper sessionFunctions, ScanCursorState<TKey, TValue> scanCursorState, RecordInfo recordInfo,
+                ref TKey key, ref TValue value, long currentAddress, long minAddress)
             where TSessionFunctionsWrapper : ISessionFunctionsWrapper<TKey, TValue, TInput, TOutput, TContext, TStoreFunctions, TAllocator>
         {
             Debug.Assert(epoch.ThisInstanceProtected(), "This is called only from ScanLookup so the epoch should be protected");
@@ -273,7 +259,7 @@ namespace Tsavorite.core
             do
             {
                 // If a more recent version of the record exists, do not push this one. Start by searching in-memory.
-                if (sessionFunctions.Store.TryFindRecordInMainLogForConditionalOperation<TInput, TOutput, TContext, TSessionFunctionsWrapper>(sessionFunctions, ref key, ref stackCtx, minAddress, out internalStatus, out needIO))
+                if (sessionFunctions.Store.TryFindRecordInMainLogForConditionalOperation<TInput, TOutput, TContext, TSessionFunctionsWrapper>(sessionFunctions, ref key, ref stackCtx, currentAddress, minAddress, out internalStatus, out needIO))
                     return Status.CreateFound();
             }
             while (sessionFunctions.Store.HandleImmediateNonPendingRetryStatus<TInput, TOutput, TContext, TSessionFunctionsWrapper>(internalStatus, sessionFunctions));

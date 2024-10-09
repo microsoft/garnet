@@ -22,6 +22,11 @@ namespace Garnet.networking
         string RemoteEndpointName { get; }
 
         /// <summary>
+        /// Local endpoint name
+        /// </summary>
+        string LocalEndpointName { get; }
+
+        /// <summary>
         /// Enter exclusive use of network sender.
         /// </summary>
         void Enter();
@@ -92,5 +97,12 @@ namespace Garnet.networking
         /// Throttle mechanism for preventing too many sends outstanding (blocking)
         /// </summary>
         void Throttle();
+
+        /// <summary>
+        /// Forcibly close the underlying network connection.
+        /// 
+        /// Returns true if the caller is the first to successfully call this method.
+        /// </summary>
+        bool TryClose();
     }
 }

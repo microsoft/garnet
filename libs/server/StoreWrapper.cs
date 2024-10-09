@@ -3,6 +3,7 @@
 
 using System;
 using System.Collections.Concurrent;
+using System.Collections.Generic;
 using System.Diagnostics;
 using System.Net;
 using System.Net.Sockets;
@@ -51,7 +52,7 @@ namespace Garnet.server
         /// <summary>
         /// Get server
         /// </summary>
-        public GarnetServerTcp GetServer() => (GarnetServerTcp)server;
+        public GarnetServerTcp GetTcpServer() => (GarnetServerTcp)server;
 
         /// <summary>
         /// Access control list governing all commands
@@ -75,8 +76,7 @@ namespace Garnet.server
         /// </summary>
         public readonly ILoggerFactory loggerFactory;
 
-        internal readonly string localEndpoint;
-
+        internal readonly CollectionItemBroker itemBroker;
         internal readonly CustomCommandManager customCommandManager;
         internal readonly GarnetServerMonitor monitor;
         internal readonly WatchVersionMap versionMap;
@@ -143,6 +143,9 @@ namespace Garnet.server
             this.GarnetObjectSerializer = new GarnetObjectSerializer(this.customCommandManager);
             this.loggingFrequncy = TimeSpan.FromSeconds(serverOptions.LoggingFrequency);
 
+            if (!serverOptions.DisableObjects)
+                this.itemBroker = new CollectionItemBroker();
+
             // Initialize store scripting cache
             if (serverOptions.EnableLua)
                 this.storeScriptCache = new ConcurrentDictionary<byte[], byte[]>(new ByteArrayComparer());
@@ -176,13 +179,6 @@ namespace Garnet.server
 
             if (clusterFactory != null)
                 clusterProvider = clusterFactory.CreateClusterProvider(this);
-
-            string address = serverOptions.Address ?? GetIp();
-            int port = serverOptions.Port;
-            localEndpoint = address + ":" + port;
-
-            logger?.LogInformation("Local endpoint: {localEndpoint}", localEndpoint);
-
             ctsCommit = new();
             run_id = Generator.CreateHexId();
         }
@@ -191,16 +187,28 @@ namespace Garnet.server
         /// Get IP
         /// </summary>
         /// <returns></returns>
-        public static string GetIp()
+        public string GetIp()
         {
-            string localIP;
-            using (Socket socket = new(AddressFamily.InterNetwork, SocketType.Dgram, 0))
+            var localEndpoint = GetTcpServer().GetEndPoint;
+            if (localEndpoint.Address.Equals(IPAddress.Any))
             {
-                socket.Connect("8.8.8.8", 65530);
-                IPEndPoint endPoint = socket.LocalEndPoint as IPEndPoint;
-                localIP = endPoint.Address.ToString();
+                using (Socket socket = new(AddressFamily.InterNetwork, SocketType.Dgram, 0))
+                {
+                    socket.Connect("8.8.8.8", 65530);
+                    var endPoint = socket.LocalEndPoint as IPEndPoint;
+                    return endPoint.Address.ToString();
+                }
             }
-            return localIP;
+            else if (localEndpoint.Address.Equals(IPAddress.IPv6Any))
+            {
+                using (Socket socket = new(AddressFamily.InterNetworkV6, SocketType.Dgram, 0))
+                {
+                    socket.Connect("2001:4860:4860::8888", 65530);
+                    var endPoint = socket.LocalEndPoint as IPEndPoint;
+                    return endPoint.Address.ToString();
+                }
+            }
+            return localEndpoint.Address.ToString();
         }
 
         internal FunctionsState CreateFunctionsState()
@@ -340,7 +348,7 @@ namespace Garnet.server
                     }
                     else
                     {
-                        await appendOnlyFile.CommitAsync(token);
+                        await appendOnlyFile.CommitAsync(null, token);
                         await Task.Delay(commitFrequencyMs, token);
                     }
                 }
@@ -601,6 +609,7 @@ namespace Garnet.server
             //Wait for checkpoints to complete and disable checkpointing
             _checkpointTaskLock.WriteLock();
 
+            itemBroker?.Dispose();
             monitor?.Dispose();
             ctsCommit?.Cancel();
 
@@ -766,6 +775,47 @@ namespace Garnet.server
             }
 
             logger?.LogInformation("Completed checkpoint");
+        }
+
+        public bool HasKeysInSlots(List<int> slots)
+        {
+            if (slots.Count > 0)
+            {
+                bool hasKeyInSlots = false;
+                {
+                    using var iter = store.Iterate<SpanByte, SpanByte, Empty, SimpleSessionFunctions<SpanByte, SpanByte, Empty>>(new SimpleSessionFunctions<SpanByte, SpanByte, Empty>());
+                    while (!hasKeyInSlots && iter.GetNext(out RecordInfo record))
+                    {
+                        ref var key = ref iter.GetKey();
+                        ushort hashSlotForKey = HashSlotUtils.HashSlot(ref key);
+                        if (slots.Contains(hashSlotForKey))
+                        {
+                            hasKeyInSlots = true;
+                        }
+                    }
+                }
+
+                if (!hasKeyInSlots && objectStore != null)
+                {
+                    var functionsState = CreateFunctionsState();
+                    var objstorefunctions = new ObjectSessionFunctions(functionsState);
+                    var objectStoreSession = objectStore?.NewSession<ObjectInput, GarnetObjectStoreOutput, long, ObjectSessionFunctions>(objstorefunctions);
+                    var iter = objectStoreSession.Iterate();
+                    while (!hasKeyInSlots && iter.GetNext(out RecordInfo record))
+                    {
+                        ref var key = ref iter.GetKey();
+                        ushort hashSlotForKey = HashSlotUtils.HashSlot(key.AsSpan());
+                        if (slots.Contains(hashSlotForKey))
+                        {
+                            hasKeyInSlots = true;
+                        }
+                    }
+                }
+
+                return hasKeyInSlots;
+            }
+
+            return false;
         }
     }
 }

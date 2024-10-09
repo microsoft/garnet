@@ -89,8 +89,13 @@ namespace Garnet.cluster
         public ReplicationManager(ClusterProvider clusterProvider, ILogger logger = null)
         {
             var opts = clusterProvider.serverOptions;
+            this.logger = logger;
             this.clusterProvider = clusterProvider;
             this.storeWrapper = clusterProvider.storeWrapper;
+
+            this.networkPool = networkBufferSettings.CreateBufferPool(logger: logger);
+            ValidateNetworkBufferSettings();
+
             aofProcessor = new AofProcessor(storeWrapper, recordToAof: false, logger: logger);
             replicaSyncSessionTaskStore = new ReplicaSyncSessionTaskStore(storeWrapper, clusterProvider, logger);
 
@@ -104,8 +109,6 @@ namespace Garnet.cluster
             // If this node starts as replica, it cannot serve requests until it is connected to primary
             if (clusterProvider.clusterManager.CurrentConfig.LocalNodeRole == NodeRole.REPLICA && !StartRecovery())
                 throw new Exception(Encoding.ASCII.GetString(CmdStrings.RESP_ERR_GENERIC_CANNOT_ACQUIRE_RECOVERY_LOCK));
-
-            this.logger = logger;
 
             checkpointStore = new CheckpointStore(storeWrapper, clusterProvider, true, logger);
             aofTaskStore = new(clusterProvider, 1, logger);
@@ -129,6 +132,13 @@ namespace Garnet.cluster
             // After initializing replication history propagate replicationId to ReplicationLogCheckpointManager
             SetPrimaryReplicationId();
         }
+
+        /// <summary>
+        /// Used to free up buffer pool
+        /// </summary>
+        public void Purge() => networkPool.Purge();
+
+        public string GetBufferPoolStats() => networkPool.GetStats();
 
         void CheckpointVersionShift(bool isMainStore, long oldVersion, long newVersion)
         {
@@ -172,17 +182,12 @@ namespace Garnet.cluster
             pool.Free();
 
             checkpointStore.WaitForReplicas();
-            DisposeReplicaSyncSessionTasks();
-            DisposeConnections();
             replicaSyncSessionTaskStore.Dispose();
-            ctsRepManager.Dispose();
-            aofProcessor?.Dispose();
-        }
-
-        public void DisposeConnections()
-        {
             ctsRepManager.Cancel();
+            ctsRepManager.Dispose();
             aofTaskStore.Dispose();
+            aofProcessor?.Dispose();
+            networkPool?.Dispose();
         }
 
         /// <summary>

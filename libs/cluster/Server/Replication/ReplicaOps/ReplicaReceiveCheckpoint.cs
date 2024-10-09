@@ -69,7 +69,6 @@ namespace Garnet.cluster
             }
         }
 
-
         /// <summary>
         /// Try to initiate the attach to primary sequence to recover checkpoint, replay AOF and start AOF stream.
         /// NOTE:
@@ -147,7 +146,14 @@ namespace Garnet.cluster
 
             try
             {
-                gcs = new(address, port, clusterProvider.serverOptions.TlsOptions?.TlsClientOptions, authUsername: clusterProvider.ClusterUsername, authPassword: clusterProvider.ClusterPassword, bufferSize: 1 << 21);
+                gcs = new(
+                    address,
+                    port,
+                    clusterProvider.replicationManager.GetIRSNetworkBufferSettings,
+                    clusterProvider.replicationManager.GetNetworkPool,
+                    tlsOptions: clusterProvider.serverOptions.TlsOptions?.TlsClientOptions,
+                    authUsername: clusterProvider.ClusterUsername,
+                    authPassword: clusterProvider.ClusterPassword);
                 recvCheckpointHandler = new ReceiveCheckpointHandler(clusterProvider, logger);
                 gcs.Connect();
 

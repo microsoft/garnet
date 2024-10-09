@@ -3,10 +3,13 @@
 
 using System;
 using System.Collections.Generic;
+using System.IO;
 using System.Linq;
+using System.Reflection;
 using System.Text;
 using System.Threading;
 using System.Threading.Tasks;
+using Garnet.client;
 using Garnet.common;
 using Garnet.server;
 using NUnit.Framework;
@@ -26,7 +29,7 @@ namespace Garnet.test
         {
             r = new Random(674386);
             TestUtils.DeleteDirectory(TestUtils.MethodTestDir, wait: true);
-            server = TestUtils.CreateGarnetServer(TestUtils.MethodTestDir, disablePubSub: true);
+            server = TestUtils.CreateGarnetServer(TestUtils.MethodTestDir, disablePubSub: false);
             server.Start();
         }
 
@@ -124,7 +127,7 @@ namespace Garnet.test
             ClassicAssert.True(RespCommandsInfo.TryGetRespCommandInfo("CLUSTER", out var clusterCommand), "Couldn't load CLUSTER command details");
             ClassicAssert.IsNotNull(clusterCommand.SubCommands, "CLUSTER didn't have any subcommands");
 
-            IEnumerable<RespCommand> clusterSubCommands = clusterCommand.SubCommands.Select(static s => s.SubCommand.Value);
+            IEnumerable<RespCommand> clusterSubCommands = clusterCommand.SubCommands.Select(static s => s.Command);
             foreach (var cmd in Enum.GetValues<RespCommand>())
             {
                 var expectedRes = clusterSubCommands.Contains(cmd);
@@ -1141,6 +1144,173 @@ namespace Garnet.test
             ClassicAssert.AreEqual(3, exists);
         }
 
+        #region Expiretime
+
+        [Test]
+        public void ExpiretimeWithStingValue()
+        {
+            using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
+            var db = redis.GetDatabase(0);
+            string key = "key1";
+            var expireTimeSpan = TimeSpan.FromMinutes(1);
+            db.StringSet(key, "test1", expireTimeSpan);
+
+            var actualExpireTime = (long)db.Execute("EXPIRETIME", key);
+
+            ClassicAssert.GreaterOrEqual(actualExpireTime, DateTimeOffset.UtcNow.ToUnixTimeSeconds());
+            var expireExpireTime = DateTimeOffset.UtcNow.Add(expireTimeSpan).ToUnixTimeSeconds();
+            ClassicAssert.LessOrEqual(actualExpireTime, expireExpireTime);
+        }
+
+        [Test]
+        public void ExpiretimeWithUnknownKey()
+        {
+            using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
+            var db = redis.GetDatabase(0);
+
+            var expireTime = (long)db.Execute("EXPIRETIME", "keyZ");
+
+            ClassicAssert.AreEqual(-2, expireTime);
+        }
+
+        [Test]
+        public void ExpiretimeWithNoKeyExpiration()
+        {
+            using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
+            var db = redis.GetDatabase(0);
+            string key = "key1";
+            db.StringSet(key, "test1");
+
+            var expireTime = (long)db.Execute("EXPIRETIME", key);
+
+            ClassicAssert.AreEqual(-1, expireTime);
+        }
+
+        [Test]
+        public void ExpiretimeWithInvalidNumberOfArgs()
+        {
+            using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
+            var db = redis.GetDatabase(0);
+
+            var exception = Assert.Throws<RedisServerException>(() => db.Execute("EXPIRETIME"));
+            Assert.That(exception.Message, Does.StartWith("ERR wrong number of arguments"));
+        }
+
+        [Test]
+        public void ExpiretimeWithObjectValue()
+        {
+            using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
+            var db = redis.GetDatabase(0);
+            var key = "key1";
+            var expireTimeSpan = TimeSpan.FromMinutes(1);
+            var origList = new RedisValue[] { "a", "b", "c", "d" };
+            var count = db.ListRightPush(key, origList);
+            var expirySet = db.KeyExpire(key, expireTimeSpan);
+
+            var actualExpireTime = (long)db.Execute("EXPIRETIME", key);
+
+            ClassicAssert.GreaterOrEqual(actualExpireTime, DateTimeOffset.UtcNow.ToUnixTimeSeconds());
+            var expireExpireTime = DateTimeOffset.UtcNow.Add(expireTimeSpan).ToUnixTimeSeconds();
+            ClassicAssert.LessOrEqual(actualExpireTime, expireExpireTime);
+        }
+
+        [Test]
+        public void ExpiretimeWithNoKeyExpirationForObjectValue()
+        {
+            using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
+            var db = redis.GetDatabase(0);
+            var key = "key1";
+            var origList = new RedisValue[] { "a", "b", "c", "d" };
+            var count = db.ListRightPush(key, origList);
+
+            var expireTime = (long)db.Execute("EXPIRETIME", key);
+
+            ClassicAssert.AreEqual(-1, expireTime);
+        }
+
+        [Test]
+        public void PExpiretimeWithStingValue()
+        {
+            using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
+            var db = redis.GetDatabase(0);
+            string key = "key1";
+            var expireTimeSpan = TimeSpan.FromMinutes(1);
+            db.StringSet(key, "test1", expireTimeSpan);
+
+            var actualExpireTime = (long)db.Execute("PEXPIRETIME", key);
+
+            ClassicAssert.GreaterOrEqual(actualExpireTime, DateTimeOffset.UtcNow.ToUnixTimeMilliseconds());
+            var expireExpireTime = DateTimeOffset.UtcNow.Add(expireTimeSpan).ToUnixTimeMilliseconds();
+            ClassicAssert.LessOrEqual(actualExpireTime, expireExpireTime);
+        }
+
+        [Test]
+        public void PExpiretimeWithUnknownKey()
+        {
+            using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
+            var db = redis.GetDatabase(0);
+
+            var expireTime = (long)db.Execute("PEXPIRETIME", "keyZ");
+
+            ClassicAssert.AreEqual(-2, expireTime);
+        }
+
+        [Test]
+        public void PExpiretimeWithNoKeyExpiration()
+        {
+            using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
+            var db = redis.GetDatabase(0);
+            string key = "key1";
+            db.StringSet(key, "test1");
+
+            var expireTime = (long)db.Execute("PEXPIRETIME", key);
+
+            ClassicAssert.AreEqual(-1, expireTime);
+        }
+
+        [Test]
+        public void PExpiretimeWithInvalidNumberOfArgs()
+        {
+            using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
+            var db = redis.GetDatabase(0);
+
+            var exception = Assert.Throws<RedisServerException>(() => db.Execute("PEXPIRETIME"));
+            Assert.That(exception.Message, Does.StartWith("ERR wrong number of arguments"));
+        }
+
+        [Test]
+        public void PExpiretimeWithObjectValue()
+        {
+            using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
+            var db = redis.GetDatabase(0);
+            var key = "key1";
+            var expireTimeSpan = TimeSpan.FromMinutes(1);
+            var origList = new RedisValue[] { "a", "b", "c", "d" };
+            var count = db.ListRightPush(key, origList);
+            var expirySet = db.KeyExpire(key, expireTimeSpan);
+
+            var actualExpireTime = (long)db.Execute("PEXPIRETIME", key);
+
+            ClassicAssert.GreaterOrEqual(actualExpireTime, DateTimeOffset.UtcNow.ToUnixTimeMilliseconds());
+            var expireExpireTime = DateTimeOffset.UtcNow.Add(expireTimeSpan).ToUnixTimeMilliseconds();
+            ClassicAssert.LessOrEqual(actualExpireTime, expireExpireTime);
+        }
+
+        [Test]
+        public void PExpiretimeWithNoKeyExpirationForObjectValue()
+        {
+            using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
+            var db = redis.GetDatabase(0);
+            var key = "key1";
+            var origList = new RedisValue[] { "a", "b", "c", "d" };
+            var count = db.ListRightPush(key, origList);
+
+            var expireTime = (long)db.Execute("PEXPIRETIME", key);
+
+            ClassicAssert.AreEqual(-1, expireTime);
+        }
+
+        #endregion
 
         [Test]
         public void SingleRename()
@@ -1158,6 +1328,26 @@ namespace Garnet.test
 
             origValue = db.StringGet("key1");
             ClassicAssert.AreEqual(null, origValue);
+        }
+
+        [Test]
+        public void SingleRenameWithExpiry()
+        {
+            using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
+            var db = redis.GetDatabase(0);
+
+            var origValue = "test1";
+            db.StringSet("key1", origValue, TimeSpan.FromMinutes(1));
+
+            db.KeyRename("key1", "key2");
+            string retValue = db.StringGet("key2");
+
+            ClassicAssert.AreEqual(origValue, retValue);
+
+            var ttl = db.KeyTimeToLive("key2");
+            ClassicAssert.IsTrue(ttl.HasValue);
+            ClassicAssert.Greater(ttl.Value.TotalMilliseconds, 0);
+            ClassicAssert.LessOrEqual(ttl.Value.TotalMilliseconds, TimeSpan.FromMinutes(1).TotalMilliseconds);
         }
 
         [Test]
@@ -1215,6 +1405,277 @@ namespace Garnet.test
             result = db.ListRange(key2);
             ClassicAssert.AreEqual(origList, result);
         }
+
+        [Test]
+        public void SingleRenameObjectStoreWithExpiry()
+        {
+            using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
+            var db = redis.GetDatabase(0);
+
+            var origList = new RedisValue[] { "a", "b", "c", "d" };
+            var key1 = "lkey1";
+            var count = db.ListRightPush(key1, origList);
+            ClassicAssert.AreEqual(4, count);
+
+            var result = db.ListRange(key1);
+            ClassicAssert.AreEqual(origList, result);
+
+            var expirySet = db.KeyExpire("lkey1", TimeSpan.FromMinutes(1));
+            ClassicAssert.IsTrue(expirySet);
+
+            var key2 = "lkey2";
+            var rb = db.KeyRename(key1, key2);
+            ClassicAssert.IsTrue(rb);
+            result = db.ListRange(key1);
+            ClassicAssert.AreEqual(Array.Empty<RedisValue>(), result);
+
+            result = db.ListRange(key2);
+            ClassicAssert.AreEqual(origList, result);
+
+            var ttl = db.KeyTimeToLive("lkey2");
+            ClassicAssert.IsTrue(ttl.HasValue);
+            ClassicAssert.Greater(ttl.Value.TotalMilliseconds, 0);
+            ClassicAssert.LessOrEqual(ttl.Value.TotalMilliseconds, TimeSpan.FromMinutes(1).TotalMilliseconds);
+        }
+
+        [Test]
+        public void SingleRenameWithOldKeyAndNewKeyAsSame()
+        {
+            using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
+            var db = redis.GetDatabase(0);
+            var origValue = "test1";
+            var key = "key1";
+            db.StringSet(key, origValue);
+
+            var result = db.KeyRename(key, key);
+
+            ClassicAssert.IsTrue(result);
+            string retValue = db.StringGet(key);
+            ClassicAssert.AreEqual(origValue, retValue);
+        }
+
+        #region RENAMENX
+
+        [Test]
+        public void SingleRenameNx()
+        {
+            using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
+            var db = redis.GetDatabase(0);
+
+            string origValue = "test1";
+            db.StringSet("key1", origValue);
+
+            var result = db.KeyRename("key1", "key2", When.NotExists);
+            ClassicAssert.IsTrue(result);
+
+            string retValue = db.StringGet("key2");
+            ClassicAssert.AreEqual(origValue, retValue);
+
+            origValue = db.StringGet("key1");
+            ClassicAssert.AreEqual(null, origValue);
+        }
+
+        [Test]
+        public void SingleRenameNxWithNewKeyAlreadyExist()
+        {
+            using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
+            var db = redis.GetDatabase(0);
+
+            string origValue = "test1";
+            string origValue2 = "test2";
+            db.StringSet("key1", origValue);
+            db.StringSet("key2", origValue2);
+
+            var result = db.KeyRename("key1", "key2", When.NotExists);
+            ClassicAssert.IsFalse(result);
+
+            string retValue2 = db.StringGet("key2");
+            ClassicAssert.AreEqual(origValue2, retValue2);
+
+            string retValue1 = db.StringGet("key1");
+            ClassicAssert.AreEqual(origValue, retValue1);
+        }
+
+        [Test]
+        public void SingleRenameNxWithExpiry()
+        {
+            using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
+            var db = redis.GetDatabase(0);
+
+            var origValue = "test1";
+            db.StringSet("key1", origValue, TimeSpan.FromMinutes(1));
+
+            var result = db.KeyRename("key1", "key2", When.NotExists);
+            ClassicAssert.IsTrue(result);
+
+            string retValue = db.StringGet("key2");
+            ClassicAssert.AreEqual(origValue, retValue);
+
+            var ttl = db.KeyTimeToLive("key2");
+            ClassicAssert.IsTrue(ttl.HasValue);
+            ClassicAssert.Greater(ttl.Value.TotalMilliseconds, 0);
+            ClassicAssert.LessOrEqual(ttl.Value.TotalMilliseconds, TimeSpan.FromMinutes(1).TotalMilliseconds);
+        }
+
+        [Test]
+        public void SingleRenameNxWithExpiryAndNewKeyAlreadyExist()
+        {
+            using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
+            var db = redis.GetDatabase(0);
+
+            var origValue = "test1";
+            string origValue2 = "test2";
+            db.StringSet("key1", origValue, TimeSpan.FromMinutes(1));
+            db.StringSet("key2", origValue2, TimeSpan.FromMinutes(1));
+
+            var result = db.KeyRename("key1", "key2", When.NotExists);
+            ClassicAssert.IsFalse(result);
+
+            string retValue = db.StringGet("key2");
+            ClassicAssert.AreEqual(origValue2, retValue);
+
+            var ttl = db.KeyTimeToLive("key2");
+            ClassicAssert.IsTrue(ttl.HasValue);
+            ClassicAssert.Greater(ttl.Value.TotalMilliseconds, 0);
+            ClassicAssert.LessOrEqual(ttl.Value.TotalMilliseconds, TimeSpan.FromMinutes(1).TotalMilliseconds);
+
+            string retValue1 = db.StringGet("key1");
+            CollectionAssert.AreEqual(origValue, retValue1);
+        }
+
+        [Test]
+        public void SingleRenameNxObjectStore()
+        {
+            using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
+            var db = redis.GetDatabase(0);
+
+            var origList = new RedisValue[] { "a", "b", "c", "d" };
+            var key1 = "lkey1";
+            var count = db.ListRightPush(key1, origList);
+            var result = db.ListRange(key1);
+            var key2 = "lkey2";
+
+            var rb = db.KeyRename(key1, key2, When.NotExists);
+            ClassicAssert.IsTrue(rb);
+
+            result = db.ListRange(key1);
+            CollectionAssert.AreEqual(Array.Empty<RedisValue>(), result);
+
+            result = db.ListRange(key2);
+            CollectionAssert.AreEqual(origList, result);
+        }
+
+        [Test]
+        public void SingleRenameNxObjectStoreWithNewKeyAlreadyExist()
+        {
+            using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
+            var db = redis.GetDatabase(0);
+
+            var origList = new RedisValue[] { "a", "b", "c", "d" };
+            var origList2 = new RedisValue[] { "z", "y", "z" };
+            var key1 = "lkey1";
+            var key2 = "lkey2";
+            db.ListRightPush(key1, origList);
+            db.ListRightPush(key2, origList2);
+
+            var rb = db.KeyRename(key1, key2, When.NotExists);
+            ClassicAssert.IsFalse(rb);
+
+            var result = db.ListRange(key1);
+            ClassicAssert.AreEqual(origList, result);
+
+            result = db.ListRange(key2);
+            ClassicAssert.AreEqual(origList2, result);
+        }
+
+        [Test]
+        public void SingleRenameNxObjectStoreWithExpiry()
+        {
+            using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
+            var db = redis.GetDatabase(0);
+
+            var origList = new RedisValue[] { "a", "b", "c", "d" };
+            var key1 = "lkey1";
+            var count = db.ListRightPush(key1, origList);
+            var result = db.ListRange(key1);
+            var expirySet = db.KeyExpire("lkey1", TimeSpan.FromMinutes(1));
+            var key2 = "lkey2";
+
+            var rb = db.KeyRename(key1, key2, When.NotExists);
+            ClassicAssert.IsTrue(rb);
+
+            result = db.ListRange(key1);
+            ClassicAssert.AreEqual(Array.Empty<RedisValue>(), result);
+
+            result = db.ListRange(key2);
+            ClassicAssert.AreEqual(origList, result);
+
+            var ttl = db.KeyTimeToLive(key2);
+            ClassicAssert.IsTrue(ttl.HasValue);
+            ClassicAssert.Greater(ttl.Value.TotalMilliseconds, 0);
+            ClassicAssert.LessOrEqual(ttl.Value.TotalMilliseconds, TimeSpan.FromMinutes(1).TotalMilliseconds);
+        }
+
+        [Test]
+        public void SingleRenameNxObjectStoreWithExpiryAndNewKeyAlreadyExist()
+        {
+            using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
+            var db = redis.GetDatabase(0);
+
+            var origList = new RedisValue[] { "a", "b", "c", "d" };
+            var origList2 = new RedisValue[] { "x", "y", "z" };
+            var key1 = "lkey1";
+            var key2 = "lkey2";
+            db.ListRightPush(key1, origList);
+            db.ListRightPush(key2, origList2);
+            var result = db.ListRange(key1);
+            var expirySet = db.KeyExpire(key1, TimeSpan.FromMinutes(1));
+
+            var rb = db.KeyRename(key1, key2, When.NotExists);
+            ClassicAssert.IsFalse(rb);
+
+            result = db.ListRange(key1);
+            ClassicAssert.AreEqual(origList, result);
+
+            result = db.ListRange(key2);
+            ClassicAssert.AreEqual(origList2, result);
+
+            var ttl = db.KeyTimeToLive(key1);
+            ClassicAssert.IsTrue(ttl.HasValue);
+            ClassicAssert.Greater(ttl.Value.TotalMilliseconds, 0);
+            ClassicAssert.LessOrEqual(ttl.Value.TotalMilliseconds, TimeSpan.FromMinutes(1).TotalMilliseconds);
+
+            var ttl2 = db.KeyTimeToLive(key2);
+            ClassicAssert.IsFalse(ttl2.HasValue);
+        }
+
+        [Test]
+        public void SingleRenameNxWithKeyNotExist()
+        {
+            using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
+            var db = redis.GetDatabase(0);
+
+            var exception = Assert.Throws<RedisServerException>(() => db.KeyRename("key1", "key2", When.NotExists));
+            ClassicAssert.AreEqual("ERR no such key", exception.Message);
+        }
+
+        [Test]
+        public void SingleRenameNxWithOldKeyAndNewKeyAsSame()
+        {
+            using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
+            var db = redis.GetDatabase(0);
+            var origValue = "test1";
+            var key = "key1";
+            db.StringSet(key, origValue);
+
+            var result = db.KeyRename(key, key, When.NotExists);
+
+            ClassicAssert.IsTrue(result);
+            string retValue = db.StringGet(key);
+            ClassicAssert.AreEqual(origValue, retValue);
+        }
+
+        #endregion
 
         [Test]
         public void CanSelectCommand()
@@ -1524,9 +1985,7 @@ namespace Garnet.test
         }
 
         [Test]
-        [TestCase("EXPIRE")]
-        [TestCase("PEXPIRE")]
-        public void KeyExpireOptionsTest(string command)
+        public void KeyExpireOptionsTest([Values("EXPIRE", "PEXPIRE")] string command, [Values(false, true)] bool testCaseSensitivity)
         {
             using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
             var db = redis.GetDatabase(0);
@@ -1535,32 +1994,32 @@ namespace Garnet.test
             object[] args = [key, 1000, ""];
             db.StringSet(key, key);
 
-            args[2] = "XX";// XX -- Set expiry only when the key has an existing expiry
+            args[2] = testCaseSensitivity ? "Xx" : "XX";// XX -- Set expiry only when the key has an existing expiry
             bool resp = (bool)db.Execute($"{command}", args);
             ClassicAssert.IsFalse(resp);//XX return false no existing expiry
 
-            args[2] = "NX";// NX -- Set expiry only when the key has no expiry
+            args[2] = testCaseSensitivity ? "nX" : "NX";// NX -- Set expiry only when the key has no expiry
             resp = (bool)db.Execute($"{command}", args);
             ClassicAssert.IsTrue(resp);// NX return true no existing expiry
 
-            args[2] = "NX";// NX -- Set expiry only when the key has no expiry
+            args[2] = testCaseSensitivity ? "nx" : "NX";// NX -- Set expiry only when the key has no expiry
             resp = (bool)db.Execute($"{command}", args);
             ClassicAssert.IsFalse(resp);// NX return false existing expiry
 
             args[1] = 50;
-            args[2] = "XX";// XX -- Set expiry only when the key has an existing expiry
+            args[2] = testCaseSensitivity ? "xx" : "XX";// XX -- Set expiry only when the key has an existing expiry
             resp = (bool)db.Execute($"{command}", args);
             ClassicAssert.IsTrue(resp);// XX return true existing expiry
             var time = db.KeyTimeToLive(key);
             ClassicAssert.IsTrue(time.Value.TotalSeconds <= (double)((int)args[1]) && time.Value.TotalSeconds > 0);
 
             args[1] = 1;
-            args[2] = "GT";// GT -- Set expiry only when the new expiry is greater than current one
+            args[2] = testCaseSensitivity ? "Gt" : "GT";// GT -- Set expiry only when the new expiry is greater than current one
             resp = (bool)db.Execute($"{command}", args);
             ClassicAssert.IsFalse(resp); // GT return false new expiry < current expiry
 
             args[1] = 1000;
-            args[2] = "GT";// GT -- Set expiry only when the new expiry is greater than current one
+            args[2] = testCaseSensitivity ? "gT" : "GT";// GT -- Set expiry only when the new expiry is greater than current one
             resp = (bool)db.Execute($"{command}", args);
             ClassicAssert.IsTrue(resp); // GT return true new expiry > current expiry
             time = db.KeyTimeToLive(key);
@@ -1571,12 +2030,12 @@ namespace Garnet.test
                 ClassicAssert.IsTrue(time.Value.TotalMilliseconds > 500);
 
             args[1] = 2000;
-            args[2] = "LT";// LT -- Set expiry only when the new expiry is less than current one
+            args[2] = testCaseSensitivity ? "lt" : "LT";// LT -- Set expiry only when the new expiry is less than current one
             resp = (bool)db.Execute($"{command}", args);
             ClassicAssert.IsFalse(resp); // LT return false new expiry > current expiry
 
             args[1] = 15;
-            args[2] = "LT";// LT -- Set expiry only when the new expiry is less than current one
+            args[2] = testCaseSensitivity ? "lT" : "LT";// LT -- Set expiry only when the new expiry is less than current one
             resp = (bool)db.Execute($"{command}", args);
             ClassicAssert.IsTrue(resp); // LT return true new expiry < current expiry
             time = db.KeyTimeToLive(key);
@@ -1621,6 +2080,593 @@ namespace Garnet.test
                 ClassicAssert.AreEqual("ERR Unsupported option 128", exc.Message);
             }
         }
+
+        #region ExpireAt
+
+        [Test]
+        [TestCase("EXPIREAT", false)]
+        [TestCase("EXPIREAT", true)]
+        [TestCase("PEXPIREAT", false)]
+        [TestCase("PEXPIREAT", true)]
+        public void KeyExpireAtWithStringAndObject(string command, bool isObject)
+        {
+            using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
+            var db = redis.GetDatabase(0);
+            var key = "key";
+            var expireTimeSpan = TimeSpan.FromMinutes(1);
+            var expireTimeUnix = command == "EXPIREAT" ? DateTimeOffset.UtcNow.Add(expireTimeSpan).ToUnixTimeSeconds() : DateTimeOffset.UtcNow.Add(expireTimeSpan).ToUnixTimeMilliseconds();
+            if (isObject)
+            {
+                db.SortedSetAdd(key, [new SortedSetEntry("element", 1.0)]);
+            }
+            else
+            {
+                db.StringSet(key, "valueA");
+            }
+
+            var actualResult = (int)db.Execute(command, "key", expireTimeUnix);
+            ClassicAssert.AreEqual(actualResult, 1);
+
+            var actualTtl = db.KeyTimeToLive(key);
+            ClassicAssert.IsTrue(actualTtl.HasValue);
+            ClassicAssert.Greater(actualTtl.Value.TotalMilliseconds, 0);
+            ClassicAssert.LessOrEqual(actualTtl.Value.TotalMilliseconds, expireTimeSpan.TotalMilliseconds);
+        }
+
+        [Test]
+        [TestCase("EXPIREAT")]
+        [TestCase("PEXPIREAT")]
+        public void KeyExpireAtWithUnknownKey(string command)
+        {
+            using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
+            var db = redis.GetDatabase(0);
+            var key = "key";
+            var expireTimeSpan = TimeSpan.FromMinutes(1);
+            var expireTimeUnix = command == "EXPIREAT" ? DateTimeOffset.UtcNow.Add(expireTimeSpan).ToUnixTimeSeconds() : DateTimeOffset.UtcNow.Add(expireTimeSpan).ToUnixTimeMilliseconds();
+
+            var actualResult = (int)db.Execute(command, key, expireTimeUnix);
+            ClassicAssert.AreEqual(actualResult, 0);
+        }
+
+        [Test]
+        [TestCase("EXPIREAT")]
+        [TestCase("PEXPIREAT")]
+        public void KeyExpireAtWithoutArgs(string command)
+        {
+            using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
+            var db = redis.GetDatabase(0);
+            var key = "key";
+
+            Assert.Throws<RedisServerException>(() => db.Execute(command, key));
+        }
+
+        [Test]
+        [TestCase("EXPIREAT")]
+        [TestCase("PEXPIREAT")]
+        public void KeyExpireAtWithUnknownArgs(string command)
+        {
+            using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
+            var db = redis.GetDatabase(0);
+            var key = "key";
+            var expireTimeSpan = TimeSpan.FromMinutes(1);
+            var expireTimeUnix = command == "EXPIREAT" ? DateTimeOffset.UtcNow.Add(expireTimeSpan).ToUnixTimeSeconds() : DateTimeOffset.UtcNow.Add(expireTimeSpan).ToUnixTimeMilliseconds();
+
+            Assert.Throws<RedisServerException>(() => db.Execute(command, key, expireTimeUnix, "YY"));
+        }
+
+        [Test]
+        [TestCase("EXPIREAT", false)]
+        [TestCase("EXPIREAT", true)]
+        [TestCase("PEXPIREAT", false)]
+        [TestCase("PEXPIREAT", true)]
+        public void KeyExpireAtWithNxOptionAndKeyHasExpire(string command, bool isObject)
+        {
+            using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
+            var db = redis.GetDatabase(0);
+            var key = "key";
+            var existingExpireTimeSpan = TimeSpan.FromMinutes(1);
+            if (isObject)
+            {
+                db.SortedSetAdd(key, [new SortedSetEntry("element", 1.0)]);
+                db.KeyExpire(key, existingExpireTimeSpan);
+            }
+            else
+            {
+                db.StringSet(key, "valueA", existingExpireTimeSpan);
+            }
+            var expireTimeSpan = TimeSpan.FromMinutes(10);
+            var expireTimeUnix = command == "EXPIREAT" ? DateTimeOffset.UtcNow.Add(expireTimeSpan).ToUnixTimeSeconds() : DateTimeOffset.UtcNow.Add(expireTimeSpan).ToUnixTimeMilliseconds();
+
+            var actualResult = (int)db.Execute(command, key, expireTimeUnix, "Nx");
+            ClassicAssert.AreEqual(actualResult, 0);
+
+            // Test if the existing expiry time is still the same
+            var actualTtl = db.KeyTimeToLive(key);
+            ClassicAssert.IsTrue(actualTtl.HasValue);
+            ClassicAssert.Greater(actualTtl.Value.TotalMilliseconds, 0);
+            ClassicAssert.LessOrEqual(actualTtl.Value.TotalMilliseconds, existingExpireTimeSpan.TotalMilliseconds);
+        }
+
+        [Test]
+        [TestCase("EXPIREAT", false)]
+        [TestCase("EXPIREAT", true)]
+        [TestCase("PEXPIREAT", false)]
+        [TestCase("PEXPIREAT", true)]
+        public void KeyExpireAtWithNxOptionAndKeyHasNoExpire(string command, bool isObject)
+        {
+            using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
+            var db = redis.GetDatabase(0);
+            var key = "key";
+            var expireTimeSpan = TimeSpan.FromMinutes(10);
+            if (isObject)
+            {
+                db.SortedSetAdd(key, [new SortedSetEntry("element", 1.0)]);
+            }
+            else
+            {
+                db.StringSet(key, "valueA");
+            }
+            var expireTimeUnix = command == "EXPIREAT" ? DateTimeOffset.UtcNow.Add(expireTimeSpan).ToUnixTimeSeconds() : DateTimeOffset.UtcNow.Add(expireTimeSpan).ToUnixTimeMilliseconds();
+
+            var actualResult = (int)db.Execute(command, key, expireTimeUnix, "nX");
+            ClassicAssert.AreEqual(actualResult, 1);
+
+            var actualTtl = db.KeyTimeToLive(key);
+            ClassicAssert.IsTrue(actualTtl.HasValue);
+            ClassicAssert.Greater(actualTtl.Value.TotalMilliseconds, 0);
+            ClassicAssert.LessOrEqual(actualTtl.Value.TotalMilliseconds, expireTimeSpan.TotalMilliseconds);
+        }
+
+        [Test]
+        [TestCase("EXPIREAT", false)]
+        [TestCase("EXPIREAT", true)]
+        [TestCase("PEXPIREAT", false)]
+        [TestCase("PEXPIREAT", true)]
+        public void KeyExpireAtWithXxOptionAndKeyHasExpire(string command, bool isObject)
+        {
+            using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
+            var db = redis.GetDatabase(0);
+            var key = "key";
+            var existingExpireTimeSpan = TimeSpan.FromMinutes(1);
+            if (isObject)
+            {
+                db.SortedSetAdd(key, [new SortedSetEntry("element", 1.0)]);
+                db.KeyExpire(key, existingExpireTimeSpan);
+            }
+            else
+            {
+                db.StringSet(key, "valueA", existingExpireTimeSpan);
+            }
+            var expireTimeSpan = TimeSpan.FromMinutes(10);
+            var expireTimeUnix = command == "EXPIREAT" ? DateTimeOffset.UtcNow.Add(expireTimeSpan).ToUnixTimeSeconds() : DateTimeOffset.UtcNow.Add(expireTimeSpan).ToUnixTimeMilliseconds();
+
+            var actualResult = (int)db.Execute(command, key, expireTimeUnix, "Xx");
+            ClassicAssert.AreEqual(actualResult, 1);
+
+            var actualTtl = db.KeyTimeToLive(key);
+            ClassicAssert.IsTrue(actualTtl.HasValue);
+            ClassicAssert.Greater(actualTtl.Value.TotalMilliseconds, existingExpireTimeSpan.TotalMilliseconds);
+            ClassicAssert.LessOrEqual(actualTtl.Value.TotalMilliseconds, expireTimeSpan.TotalMilliseconds);
+        }
+
+        [Test]
+        [TestCase("EXPIREAT", false)]
+        [TestCase("EXPIREAT", true)]
+        [TestCase("PEXPIREAT", false)]
+        [TestCase("PEXPIREAT", true)]
+        public void KeyExpireAtWithXxOptionAndKeyHasNoExpire(string command, bool isObject)
+        {
+            using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
+            var db = redis.GetDatabase(0);
+            var key = "key";
+            var expireTimeSpan = TimeSpan.FromMinutes(10);
+            if (isObject)
+            {
+                db.SortedSetAdd(key, [new SortedSetEntry("element", 1.0)]);
+            }
+            else
+            {
+                db.StringSet(key, "valueA");
+            }
+            var expireTimeUnix = command == "EXPIREAT" ? DateTimeOffset.UtcNow.Add(expireTimeSpan).ToUnixTimeSeconds() : DateTimeOffset.UtcNow.Add(expireTimeSpan).ToUnixTimeMilliseconds();
+
+            var actualResult = (int)db.Execute(command, key, expireTimeUnix, "xX");
+            ClassicAssert.AreEqual(actualResult, 0);
+
+            var actualTtl = db.KeyTimeToLive(key);
+            ClassicAssert.IsFalse(actualTtl.HasValue);
+        }
+
+        [Test]
+        [TestCase("EXPIREAT", false)]
+        [TestCase("EXPIREAT", true)]
+        [TestCase("PEXPIREAT", false)]
+        [TestCase("PEXPIREAT", true)]
+        public void KeyExpireAtWithGtOptionAndExistingKeyHasSmallerExpire(string command, bool isObject)
+        {
+            using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
+            var db = redis.GetDatabase(0);
+            var key = "key";
+            var existingExpireTimeSpan = TimeSpan.FromMinutes(1);
+            if (isObject)
+            {
+                db.SortedSetAdd(key, [new SortedSetEntry("element", 1.0)]);
+                db.KeyExpire(key, existingExpireTimeSpan);
+            }
+            else
+            {
+                db.StringSet(key, "valueA", existingExpireTimeSpan);
+            }
+            var expireTimeSpan = TimeSpan.FromMinutes(10);
+            var expireTimeUnix = command == "EXPIREAT" ? DateTimeOffset.UtcNow.Add(expireTimeSpan).ToUnixTimeSeconds() : DateTimeOffset.UtcNow.Add(expireTimeSpan).ToUnixTimeMilliseconds();
+
+            var actualResult = (int)db.Execute(command, key, expireTimeUnix, "gT");
+            ClassicAssert.AreEqual(actualResult, 1);
+
+            var actualTtl = db.KeyTimeToLive(key);
+            ClassicAssert.IsTrue(actualTtl.HasValue);
+            ClassicAssert.Greater(actualTtl.Value.TotalMilliseconds, existingExpireTimeSpan.TotalMilliseconds);
+            ClassicAssert.LessOrEqual(actualTtl.Value.TotalMilliseconds, expireTimeSpan.TotalMilliseconds);
+        }
+
+        [Test]
+        [TestCase("EXPIREAT", false)]
+        [TestCase("EXPIREAT", true)]
+        [TestCase("PEXPIREAT", false)]
+        [TestCase("PEXPIREAT", true)]
+        public void KeyExpireAtWithGtOptionAndExistingKeyHasLargerExpire(string command, bool isObject)
+        {
+            using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
+            var db = redis.GetDatabase(0);
+            var key = "key";
+            var existingExpireTimeSpan = TimeSpan.FromMinutes(10);
+            if (isObject)
+            {
+                db.SortedSetAdd(key, [new SortedSetEntry("element", 1.0)]);
+                db.KeyExpire(key, existingExpireTimeSpan);
+            }
+            else
+            {
+                db.StringSet(key, "valueA", existingExpireTimeSpan);
+            }
+            var expireTimeSpan = TimeSpan.FromMinutes(1);
+            var expireTimeUnix = command == "EXPIREAT" ? DateTimeOffset.UtcNow.Add(expireTimeSpan).ToUnixTimeSeconds() : DateTimeOffset.UtcNow.Add(expireTimeSpan).ToUnixTimeMilliseconds();
+
+            var actualResult = (int)db.Execute(command, key, expireTimeUnix, "Gt");
+            ClassicAssert.AreEqual(actualResult, 0);
+
+            var actualTtl = db.KeyTimeToLive(key);
+            ClassicAssert.IsTrue(actualTtl.HasValue);
+            ClassicAssert.Greater(actualTtl.Value.TotalMilliseconds, expireTimeSpan.TotalMilliseconds);
+            ClassicAssert.LessOrEqual(actualTtl.Value.TotalMilliseconds, existingExpireTimeSpan.TotalMilliseconds);
+        }
+
+        [Test]
+        [TestCase("EXPIREAT", false)]
+        [TestCase("EXPIREAT", true)]
+        [TestCase("PEXPIREAT", false)]
+        [TestCase("PEXPIREAT", true)]
+        public void KeyExpireAtWithGtOptionAndExistingKeyNoExpire(string command, bool isObject)
+        {
+            using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
+            var db = redis.GetDatabase(0);
+            var key = "key";
+            if (isObject)
+            {
+                db.SortedSetAdd(key, [new SortedSetEntry("element", 1.0)]);
+            }
+            else
+            {
+                db.StringSet(key, "valueA");
+            }
+            var expireTimeSpan = TimeSpan.FromMinutes(1);
+            var expireTimeUnix = command == "EXPIREAT" ? DateTimeOffset.UtcNow.Add(expireTimeSpan).ToUnixTimeSeconds() : DateTimeOffset.UtcNow.Add(expireTimeSpan).ToUnixTimeMilliseconds();
+
+            var actualResult = (int)db.Execute(command, key, expireTimeUnix, "GT");
+            ClassicAssert.AreEqual(actualResult, 0);
+
+            var actualTtl = db.KeyTimeToLive(key);
+            ClassicAssert.IsFalse(actualTtl.HasValue);
+        }
+
+        [Test]
+        [TestCase("EXPIREAT", false)]
+        [TestCase("EXPIREAT", true)]
+        [TestCase("PEXPIREAT", false)]
+        [TestCase("PEXPIREAT", true)]
+        public void KeyExpireAtWithXxAndGtOptionAndExistingKeyHasSmallerExpire(string command, bool isObject)
+        {
+            using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
+            var db = redis.GetDatabase(0);
+            var key = "key";
+            var existingExpireTimeSpan = TimeSpan.FromMinutes(1);
+            if (isObject)
+            {
+                db.SortedSetAdd(key, [new SortedSetEntry("element", 1.0)]);
+                db.KeyExpire(key, existingExpireTimeSpan);
+            }
+            else
+            {
+                db.StringSet(key, "valueA", existingExpireTimeSpan);
+            }
+            var expireTimeSpan = TimeSpan.FromMinutes(10);
+            var expireTimeUnix = command == "EXPIREAT" ? DateTimeOffset.UtcNow.Add(expireTimeSpan).ToUnixTimeSeconds() : DateTimeOffset.UtcNow.Add(expireTimeSpan).ToUnixTimeMilliseconds();
+
+            var actualResult = (int)db.Execute(command, key, expireTimeUnix, "xx", "GT");
+            ClassicAssert.AreEqual(actualResult, 1);
+
+            var actualTtl = db.KeyTimeToLive(key);
+            ClassicAssert.IsTrue(actualTtl.HasValue);
+            ClassicAssert.Greater(actualTtl.Value.TotalMilliseconds, existingExpireTimeSpan.TotalMilliseconds);
+            ClassicAssert.LessOrEqual(actualTtl.Value.TotalMilliseconds, expireTimeSpan.TotalMilliseconds);
+        }
+
+        [Test]
+        [TestCase("EXPIREAT", false)]
+        [TestCase("EXPIREAT", true)]
+        [TestCase("PEXPIREAT", false)]
+        [TestCase("PEXPIREAT", true)]
+        public void KeyExpireAtWithXxAndGtOptionAndExistingKeyHasLargerExpire(string command, bool isObject)
+        {
+            using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
+            var db = redis.GetDatabase(0);
+            var key = "key";
+            var existingExpireTimeSpan = TimeSpan.FromMinutes(10);
+            if (isObject)
+            {
+                db.SortedSetAdd(key, [new SortedSetEntry("element", 1.0)]);
+                db.KeyExpire(key, existingExpireTimeSpan);
+            }
+            else
+            {
+                db.StringSet(key, "valueA", existingExpireTimeSpan);
+            }
+            var expireTimeSpan = TimeSpan.FromMinutes(1);
+            var expireTimeUnix = command == "EXPIREAT" ? DateTimeOffset.UtcNow.Add(expireTimeSpan).ToUnixTimeSeconds() : DateTimeOffset.UtcNow.Add(expireTimeSpan).ToUnixTimeMilliseconds();
+
+            var actualResult = (int)db.Execute(command, key, expireTimeUnix, "gt", "XX");
+            ClassicAssert.AreEqual(actualResult, 0);
+
+            var actualTtl = db.KeyTimeToLive(key);
+            ClassicAssert.IsTrue(actualTtl.HasValue);
+            ClassicAssert.Greater(actualTtl.Value.TotalMilliseconds, expireTimeSpan.TotalMilliseconds);
+            ClassicAssert.LessOrEqual(actualTtl.Value.TotalMilliseconds, existingExpireTimeSpan.TotalMilliseconds);
+        }
+
+        [Test]
+        [TestCase("EXPIREAT", false)]
+        [TestCase("EXPIREAT", true)]
+        [TestCase("PEXPIREAT", false)]
+        [TestCase("PEXPIREAT", true)]
+        public void KeyExpireAtWithXxAndGtOptionAndExistingKeyNoExpire(string command, bool isObject)
+        {
+            using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
+            var db = redis.GetDatabase(0);
+            var key = "key";
+            if (isObject)
+            {
+                db.SortedSetAdd(key, [new SortedSetEntry("element", 1.0)]);
+            }
+            else
+            {
+                db.StringSet(key, "valueA");
+            }
+            var expireTimeSpan = TimeSpan.FromMinutes(1);
+            var expireTimeUnix = command == "EXPIREAT" ? DateTimeOffset.UtcNow.Add(expireTimeSpan).ToUnixTimeSeconds() : DateTimeOffset.UtcNow.Add(expireTimeSpan).ToUnixTimeMilliseconds();
+
+            var actualResult = (int)db.Execute(command, key, expireTimeUnix, "Gt", "xX");
+            ClassicAssert.AreEqual(actualResult, 0);
+
+            var actualTtl = db.KeyTimeToLive(key);
+            ClassicAssert.IsFalse(actualTtl.HasValue);
+        }
+
+        [Test]
+        [TestCase("EXPIREAT", false)]
+        [TestCase("EXPIREAT", true)]
+        [TestCase("PEXPIREAT", false)]
+        [TestCase("PEXPIREAT", true)]
+        public void KeyExpireAtWithLtOptionAndExistingKeyHasSmallerExpire(string command, bool isObject)
+        {
+            using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
+            var db = redis.GetDatabase(0);
+            var key = "key";
+            var existingExpireTimeSpan = TimeSpan.FromMinutes(1);
+            if (isObject)
+            {
+                db.SortedSetAdd(key, [new SortedSetEntry("element", 1.0)]);
+                db.KeyExpire(key, existingExpireTimeSpan);
+            }
+            else
+            {
+                db.StringSet(key, "valueA", existingExpireTimeSpan);
+            }
+            var expireTimeSpan = TimeSpan.FromMinutes(10);
+            var expireTimeUnix = command == "EXPIREAT" ? DateTimeOffset.UtcNow.Add(expireTimeSpan).ToUnixTimeSeconds() : DateTimeOffset.UtcNow.Add(expireTimeSpan).ToUnixTimeMilliseconds();
+
+            var actualResult = (int)db.Execute(command, key, expireTimeUnix, "lT");
+            ClassicAssert.AreEqual(actualResult, 0);
+
+            var actualTtl = db.KeyTimeToLive(key);
+            ClassicAssert.IsTrue(actualTtl.HasValue);
+            ClassicAssert.Greater(actualTtl.Value.TotalMilliseconds, 0);
+            ClassicAssert.LessOrEqual(actualTtl.Value.TotalMilliseconds, existingExpireTimeSpan.TotalMilliseconds);
+        }
+
+        [Test]
+        [TestCase("EXPIREAT", false)]
+        [TestCase("EXPIREAT", true)]
+        [TestCase("PEXPIREAT", false)]
+        [TestCase("PEXPIREAT", true)]
+        public void KeyExpireAtWithLtOptionAndExistingKeyHasLargerExpire(string command, bool isObject)
+        {
+            using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
+            var db = redis.GetDatabase(0);
+            var key = "key";
+            var existingExpireTimeSpan = TimeSpan.FromMinutes(10);
+            if (isObject)
+            {
+                db.SortedSetAdd(key, [new SortedSetEntry("element", 1.0)]);
+                db.KeyExpire(key, existingExpireTimeSpan);
+            }
+            else
+            {
+                db.StringSet(key, "valueA", existingExpireTimeSpan);
+            }
+            var expireTimeSpan = TimeSpan.FromMinutes(1);
+            var expireTimeUnix = command == "EXPIREAT" ? DateTimeOffset.UtcNow.Add(expireTimeSpan).ToUnixTimeSeconds() : DateTimeOffset.UtcNow.Add(expireTimeSpan).ToUnixTimeMilliseconds();
+
+            var actualResult = (int)db.Execute(command, key, expireTimeUnix, "LT");
+            ClassicAssert.AreEqual(actualResult, 1);
+
+            var actualTtl = db.KeyTimeToLive(key);
+            ClassicAssert.IsTrue(actualTtl.HasValue);
+            ClassicAssert.Greater(actualTtl.Value.TotalMilliseconds, 0);
+            ClassicAssert.LessOrEqual(actualTtl.Value.TotalMilliseconds, expireTimeSpan.TotalMilliseconds);
+        }
+
+        [Test]
+        [TestCase("EXPIREAT", false)]
+        [TestCase("EXPIREAT", true)]
+        [TestCase("PEXPIREAT", false)]
+        [TestCase("PEXPIREAT", true)]
+        public void KeyExpireAtWithLtOptionAndExistingKeyNoExpire(string command, bool isObject)
+        {
+            using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
+            var db = redis.GetDatabase(0);
+            var key = "key";
+            if (isObject)
+            {
+                db.SortedSetAdd(key, [new SortedSetEntry("element", 1.0)]);
+            }
+            else
+            {
+                db.StringSet(key, "valueA");
+            }
+            var expireTimeSpan = TimeSpan.FromMinutes(1);
+            var expireTimeUnix = command == "EXPIREAT" ? DateTimeOffset.UtcNow.Add(expireTimeSpan).ToUnixTimeSeconds() : DateTimeOffset.UtcNow.Add(expireTimeSpan).ToUnixTimeMilliseconds();
+
+            var actualResult = (int)db.Execute(command, key, expireTimeUnix, "LT");
+            ClassicAssert.AreEqual(actualResult, 1);
+
+            var actualTtl = db.KeyTimeToLive(key);
+            ClassicAssert.IsTrue(actualTtl.HasValue);
+            ClassicAssert.Greater(actualTtl.Value.TotalMilliseconds, 0);
+            ClassicAssert.LessOrEqual(actualTtl.Value.TotalMilliseconds, expireTimeSpan.TotalMilliseconds);
+        }
+
+        [Test]
+        [TestCase("EXPIREAT", false)]
+        [TestCase("EXPIREAT", true)]
+        [TestCase("PEXPIREAT", false)]
+        [TestCase("PEXPIREAT", true)]
+        public void KeyExpireAtWithXxAndLtOptionAndExistingKeyHasSmallerExpire(string command, bool isObject)
+        {
+            using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
+            var db = redis.GetDatabase(0);
+            var key = "key";
+            var existingExpireTimeSpan = TimeSpan.FromMinutes(1);
+            if (isObject)
+            {
+                db.SortedSetAdd(key, [new SortedSetEntry("element", 1.0)]);
+                db.KeyExpire(key, existingExpireTimeSpan);
+            }
+            else
+            {
+                db.StringSet(key, "valueA", existingExpireTimeSpan);
+            }
+            var expireTimeSpan = TimeSpan.FromMinutes(10);
+            var expireTimeUnix = command == "EXPIREAT" ? DateTimeOffset.UtcNow.Add(expireTimeSpan).ToUnixTimeSeconds() : DateTimeOffset.UtcNow.Add(expireTimeSpan).ToUnixTimeMilliseconds();
+
+            var actualResult = (int)db.Execute(command, key, expireTimeUnix, "LT", "XX");
+            ClassicAssert.AreEqual(actualResult, 0);
+
+            var actualTtl = db.KeyTimeToLive(key);
+            ClassicAssert.IsTrue(actualTtl.HasValue);
+            ClassicAssert.Greater(actualTtl.Value.TotalMilliseconds, 0);
+            ClassicAssert.LessOrEqual(actualTtl.Value.TotalMilliseconds, existingExpireTimeSpan.TotalMilliseconds);
+        }
+
+        [Test]
+        [TestCase("EXPIREAT", false)]
+        [TestCase("EXPIREAT", true)]
+        [TestCase("PEXPIREAT", false)]
+        [TestCase("PEXPIREAT", true)]
+        public void KeyExpireAtWithXxAndLtOptionAndExistingKeyHasLargerExpire(string command, bool isObject)
+        {
+            using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
+            var db = redis.GetDatabase(0);
+            var key = "key";
+            var existingExpireTimeSpan = TimeSpan.FromMinutes(10);
+            if (isObject)
+            {
+                db.SortedSetAdd(key, [new SortedSetEntry("element", 1.0)]);
+                db.KeyExpire(key, existingExpireTimeSpan);
+            }
+            else
+            {
+                db.StringSet(key, "valueA", existingExpireTimeSpan);
+            }
+            var expireTimeSpan = TimeSpan.FromMinutes(1);
+            var expireTimeUnix = command == "EXPIREAT" ? DateTimeOffset.UtcNow.Add(expireTimeSpan).ToUnixTimeSeconds() : DateTimeOffset.UtcNow.Add(expireTimeSpan).ToUnixTimeMilliseconds();
+
+            var actualResult = (int)db.Execute(command, key, expireTimeUnix, "xX", "Lt");
+            ClassicAssert.AreEqual(actualResult, 1);
+
+            var actualTtl = db.KeyTimeToLive(key);
+            ClassicAssert.IsTrue(actualTtl.HasValue);
+            ClassicAssert.Greater(actualTtl.Value.TotalMilliseconds, 0);
+            ClassicAssert.LessOrEqual(actualTtl.Value.TotalMilliseconds, expireTimeSpan.TotalMilliseconds);
+        }
+
+        [Test]
+        [TestCase("EXPIREAT", false)]
+        [TestCase("EXPIREAT", true)]
+        [TestCase("PEXPIREAT", false)]
+        [TestCase("PEXPIREAT", true)]
+        public void KeyExpireAtWithXxAndLtOptionAndExistingKeyNoExpire(string command, bool isObject)
+        {
+            using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
+            var db = redis.GetDatabase(0);
+            var key = "key";
+            if (isObject)
+            {
+                db.SortedSetAdd(key, [new SortedSetEntry("element", 1.0)]);
+            }
+            else
+            {
+                db.StringSet(key, "valueA");
+            }
+            var expireTimeSpan = TimeSpan.FromMinutes(1);
+            var expireTimeUnix = command == "EXPIREAT" ? DateTimeOffset.UtcNow.Add(expireTimeSpan).ToUnixTimeSeconds() : DateTimeOffset.UtcNow.Add(expireTimeSpan).ToUnixTimeMilliseconds();
+
+            var actualResult = (int)db.Execute(command, key, expireTimeUnix, "XX", "LT");
+            ClassicAssert.AreEqual(actualResult, 0);
+
+            var actualTtl = db.KeyTimeToLive(key);
+            ClassicAssert.IsFalse(actualTtl.HasValue);
+        }
+
+        [Test]
+        [TestCase("EXPIREAT", "XX", "NX")]
+        [TestCase("EXPIREAT", "NX", "GT")]
+        [TestCase("EXPIREAT", "LT", "NX")]
+        [TestCase("PEXPIREAT", "XX", "NX")]
+        [TestCase("PEXPIREAT", "NX", "GT")]
+        [TestCase("PEXPIREAT", "LT", "NX")]
+        public void KeyExpireAtWithInvalidOptionCombination(string command, string optionA, string optionB)
+        {
+            using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
+            var db = redis.GetDatabase(0);
+            var key = "key";
+            db.StringSet(key, "valueA");
+            var expireTimeSpan = TimeSpan.FromMinutes(1);
+            var expireTimeUnix = command == "EXPIREAT" ? DateTimeOffset.UtcNow.Add(expireTimeSpan).ToUnixTimeSeconds() : DateTimeOffset.UtcNow.Add(expireTimeSpan).ToUnixTimeMilliseconds();
+
+            Assert.Throws<RedisServerException>(() => db.Execute(command, key, expireTimeUnix, optionA, optionA));
+        }
+
+        #endregion
 
         [Test]
         public async Task ReAddExpiredKey()
@@ -2226,6 +3272,441 @@ namespace Garnet.test
             expectedResponse = $"${firstValue.Length}\r\n{firstValue}\r\n";
             response = lightClientRequest.Execute($"GET {firstKey}", expectedResponse.Length);
             ClassicAssert.AreEqual(expectedResponse, response);
+        }
+
+        [Test]
+        public void ClientIdTest()
+        {
+            long id1;
+            {
+                using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
+                var db = redis.GetDatabase(0);
+
+                var result = db.Execute("CLIENT", "ID");
+
+                ClassicAssert.IsNotNull(result);
+                ClassicAssert.AreEqual(ResultType.Integer, result.Resp2Type);
+
+                id1 = (long)result;
+
+                ClassicAssert.IsTrue(id1 > 0, "Client ids must be > 0");
+            }
+
+            long id2;
+            {
+                using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
+                var db = redis.GetDatabase(0);
+
+                var result = db.Execute("CLIENT", "ID");
+
+                ClassicAssert.IsNotNull(result);
+                ClassicAssert.AreEqual(ResultType.Integer, result.Resp2Type);
+
+                id2 = (long)result;
+
+                ClassicAssert.IsTrue(id2 > 0, "Client ids must be > 0");
+            }
+
+            ClassicAssert.AreNotEqual(id1, id2, "CLIENT IDs must be unique");
+            ClassicAssert.IsTrue(id2 > id1, "CLIENT IDs should be monotonic");
+
+            {
+                using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
+                var db = redis.GetDatabase(0);
+
+                var exc = ClassicAssert.Throws<RedisServerException>(() => db.Execute("CLIENT", "ID", "foo"));
+                ClassicAssert.AreEqual("ERR wrong number of arguments for 'client|id' command", exc.Message);
+            }
+        }
+
+        [Test]
+        public void ClientInfoTest()
+        {
+            using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
+            var db = redis.GetDatabase(0);
+
+            var result = (string)db.Execute("CLIENT", "INFO");
+            AssertExpectedClientFields(result);
+
+            var exc = ClassicAssert.Throws<RedisServerException>(() => db.Execute("CLIENT", "INFO", "foo"));
+            ClassicAssert.AreEqual("ERR wrong number of arguments for 'client|info' command", exc.Message);
+        }
+
+        [Test]
+        public void ClientListTest()
+        {
+            using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
+            var db = redis.GetDatabase(0);
+
+            // List everything
+            {
+                var list = (string)db.Execute("CLIENT", "LIST");
+                AssertExpectedClientFields(list);
+            }
+
+            // List by id
+            {
+                var id = (long)db.Execute("CLIENT", "ID");
+
+                var list = (string)db.Execute("CLIENT", "LIST", "ID", id, 123);
+                AssertExpectedClientFields(list);
+            }
+
+            // List by type
+            {
+                var list = (string)db.Execute("CLIENT", "LIST", "TYPE", "NORMAL");
+                AssertExpectedClientFields(list);
+            }
+        }
+
+        [Test]
+        public void ClientListErrorTest()
+        {
+            using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
+            var db = redis.GetDatabase(0);
+
+            // Bad option
+            {
+                var exc = ClassicAssert.Throws<RedisServerException>(() => db.Execute("CLIENT", "LIST", "foo"));
+                ClassicAssert.AreEqual("ERR syntax error", exc.Message);
+            }
+
+            // Missing type
+            {
+                var exc = ClassicAssert.Throws<RedisServerException>(() => db.Execute("CLIENT", "LIST", "TYPE"));
+                ClassicAssert.AreEqual("ERR syntax error", exc.Message);
+            }
+
+            // Bad type
+            {
+                var exc = ClassicAssert.Throws<RedisServerException>(() => db.Execute("CLIENT", "LIST", "TYPE", "foo"));
+                ClassicAssert.AreEqual("ERR Unknown client type 'foo'", exc.Message);
+            }
+
+            // Invalid type
+            {
+                var exc = ClassicAssert.Throws<RedisServerException>(() => db.Execute("CLIENT", "LIST", "TYPE", "Invalid"));
+                ClassicAssert.AreEqual("ERR Unknown client type 'Invalid'", exc.Message);
+            }
+
+            // Numeric type
+            {
+                var exc = ClassicAssert.Throws<RedisServerException>(() => db.Execute("CLIENT", "LIST", "TYPE", "1"));
+                ClassicAssert.AreEqual("ERR Unknown client type '1'", exc.Message);
+            }
+
+            // Missing id
+            {
+                var exc = ClassicAssert.Throws<RedisServerException>(() => db.Execute("CLIENT", "LIST", "ID"));
+                ClassicAssert.AreEqual("ERR syntax error", exc.Message);
+            }
+
+            // Bad id
+            {
+                var exc = ClassicAssert.Throws<RedisServerException>(() => db.Execute("CLIENT", "LIST", "ID", "abc"));
+                ClassicAssert.AreEqual("ERR Invalid client ID", exc.Message);
+            }
+
+            // Combo - Redis docs sort of imply this is supported, but that is not the case in testing
+            {
+                var exc = ClassicAssert.Throws<RedisServerException>(() => db.Execute("CLIENT", "LIST", "TYPE", "NORMAL", "ID", "1"));
+                ClassicAssert.AreEqual("ERR syntax error", exc.Message);
+            }
+        }
+
+        [Test]
+        public async Task ClientKillTestAsync()
+        {
+            using var mainConnection = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
+            var mainDB = mainConnection.GetDatabase(0);
+            var mainId = (long)mainDB.Execute("CLIENT", "ID");
+
+            // Kill old style (by remote endpoint)
+            {
+                using var targetConnection = await ConnectAsync();
+
+                var targetId = await targetConnection.ExecuteForLongResultAsync("CLIENT", ["ID"]);
+
+                var remoteEndpoint = GetFlagForSessionId(targetId, "addr", mainDB);
+
+                // Kill acknowledged
+                var res = mainDB.Execute("CLIENT", "KILL", remoteEndpoint);
+                ClassicAssert.AreEqual("OK", (string)res);
+
+                AssertNotConnected(targetConnection);
+            }
+
+            // Kill by id
+            {
+                using var targetConnection = await ConnectAsync();
+
+                var targetId = await targetConnection.ExecuteForLongResultAsync("CLIENT", ["ID"]);
+
+                // Count of killed connections
+                var res = mainDB.Execute("CLIENT", "KILL", "ID", targetId);
+                ClassicAssert.AreEqual(1, (int)res);
+
+                AssertNotConnected(targetConnection);
+            }
+
+            // Kill by type = NORMAL
+            {
+                using var targetConnection = await ConnectAsync();
+
+                // Count of killed connections
+                var res = mainDB.Execute("CLIENT", "KILL", "TYPE", "NORMAL");
+
+                // SE.Redis spins up multiple connections, so we can kill more than 1 (but at least 1) connection
+                ClassicAssert.IsTrue((int)res >= 1);
+
+                AssertNotConnected(targetConnection);
+            }
+
+            // Kill by type = PUBSUB
+            {
+                using var targetConnection = await ConnectAsync();
+
+                _ = await targetConnection.ExecuteForStringResultAsync("SUBSCRIBE", ["foo"]);
+
+                // Count of killed connections
+                var res = mainDB.Execute("CLIENT", "KILL", "TYPE", "PUBSUB");
+
+                // SE.Redis spins up multiple connections, so we can kill more than 1 (but at least 1) connection
+                ClassicAssert.IsTrue((int)res >= 1);
+
+                AssertNotConnected(targetConnection);
+            }
+
+            // KILL by addr
+            {
+                using var targetConnection = await ConnectAsync();
+
+                var targetId = await targetConnection.ExecuteForLongResultAsync("CLIENT", ["ID"]);
+
+                var remoteEndpoint = GetFlagForSessionId(targetId, "addr", mainDB);
+
+                // Count of killed connections
+                var res = mainDB.Execute("CLIENT", "KILL", "ADDR", remoteEndpoint);
+                ClassicAssert.AreEqual(1, (int)res);
+
+                AssertNotConnected(targetConnection);
+            }
+
+            // KILL by laddr
+            {
+                using var targetConnection = await ConnectAsync();
+
+                var targetId = await targetConnection.ExecuteForLongResultAsync("CLIENT", ["ID"]);
+
+                var localEndpoint = GetFlagForSessionId(targetId, "laddr", mainDB);
+
+                // Count of killed connections
+                var res = mainDB.Execute("CLIENT", "KILL", "LADDR", localEndpoint);
+
+                // SE.Redis spins up multiple connections, so we can kill more than 1 (but at least 1) connection
+                ClassicAssert.IsTrue((int)res >= 1);
+
+                AssertNotConnected(targetConnection);
+            }
+
+            // KILL by maxage
+            {
+                using var targetConnection = await ConnectAsync();
+
+                var targetId = await targetConnection.ExecuteForLongResultAsync("CLIENT", ["ID"]);
+
+                while (true)
+                {
+                    var age = GetFlagForSessionId(targetId, "age", mainDB);
+                    if (long.Parse(age) >= 2)
+                    {
+                        break;
+                    }
+
+                    await Task.Delay(1_000);
+                }
+
+                // Count of killed connections
+                var res = mainDB.Execute("CLIENT", "KILL", "MAXAGE", 1);
+                ClassicAssert.IsTrue((int)res >= 1);
+
+                AssertNotConnected(targetConnection);
+            }
+
+            // KILL by multiple
+            {
+                using var targetConnection = await ConnectAsync();
+
+                var targetId = await targetConnection.ExecuteForLongResultAsync("CLIENT", ["ID"]);
+
+                var addr = GetFlagForSessionId(targetId, "addr", mainDB);
+
+                // Count of killed connections
+                var res = mainDB.Execute("CLIENT", "KILL", "ID", targetId, "MAXAGE", -1, "TYPE", "NORMAL", "SKIPME", "YES");
+                ClassicAssert.AreEqual(1, (int)res);
+
+                AssertNotConnected(targetConnection);
+            }
+
+            // KILL without SKIPME
+            {
+                using var targetConnection = await ConnectAsync();
+
+                var targetId = await targetConnection.ExecuteForLongResultAsync("CLIENT", ["ID"]);
+
+                try
+                {
+                    _ = mainDB.Execute("CLIENT", "KILL", "TYPE", "NORMAL", "SKIPME", "NO");
+                }
+                catch
+                {
+                    // This will kill the SE.Redis connection, so depending on ordering an exception may be observed
+                }
+
+                AssertNotConnected(targetConnection);
+            }
+
+            // Grab a flag=value out of CLIENT LIST
+            static string GetFlagForSessionId(long sessionId, string flag, IDatabase db)
+            {
+                var list = (string)db.Execute("CLIENT", "LIST");
+                var line = list.Split("\n").Single(l => l.Contains($"id={sessionId} "));
+
+                string flagValue = null;
+
+                foreach (var flagPair in line.Split(" "))
+                {
+                    if (flagPair.StartsWith($"{flag}="))
+                    {
+                        ClassicAssert.IsNull(flagValue, $"In {line}, found duplicate {flag}");
+
+                        flagValue = flagPair[$"{flag}=".Length..];
+                    }
+                }
+
+                ClassicAssert.NotNull(flagValue, $"In {line}, looking for {flag}");
+
+                return flagValue;
+            }
+
+            // Create a GarnetClient that we'll try to kill later
+            static async Task<GarnetClient> ConnectAsync()
+            {
+                var client = TestUtils.GetGarnetClient();
+                await client.ConnectAsync();
+
+                _ = await client.PingAsync();
+
+                ClassicAssert.IsTrue(client.IsConnected);
+
+                return client;
+            }
+
+            // Check that we really killed the connection backing a GarnetClient
+            static void AssertNotConnected(GarnetClient client)
+            {
+                // Force the issue by attempting a command
+                try
+                {
+                    client.Ping(static (_, __) => { });
+                }
+                catch { }
+
+                ClassicAssert.IsFalse(client.IsConnected);
+            }
+        }
+
+        [Test]
+        public void ClientKillErrors()
+        {
+            using var mainConnection = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
+            var mainDB = mainConnection.GetDatabase(0);
+
+            // Errors that match Redis behavior
+            {
+                // No args
+                {
+                    var exc = ClassicAssert.Throws<RedisServerException>(() => mainDB.Execute("CLIENT", "KILL"));
+                    ClassicAssert.AreEqual("ERR wrong number of arguments for 'CLIENT|KILL' command", exc.Message);
+                }
+
+                // Old style, not a known client
+                {
+                    var exc = ClassicAssert.Throws<RedisServerException>(() => mainDB.Execute("CLIENT", "KILL", "foo"));
+                    ClassicAssert.AreEqual("ERR No such client", exc.Message);
+                }
+
+                // New style, bad filter
+                {
+                    var exc = ClassicAssert.Throws<RedisServerException>(() => mainDB.Execute("CLIENT", "KILL", "FOO", "bar"));
+                    ClassicAssert.AreEqual("ERR syntax error", exc.Message);
+                }
+
+                // New style, ID not number
+                {
+                    var exc = ClassicAssert.Throws<RedisServerException>(() => mainDB.Execute("CLIENT", "KILL", "ID", "fizz"));
+                    ClassicAssert.AreEqual("ERR client-id should be greater than 0", exc.Message);
+                }
+
+                // New style, TYPE invalid
+                {
+                    var exc = ClassicAssert.Throws<RedisServerException>(() => mainDB.Execute("CLIENT", "KILL", "TYPE", "buzz"));
+                    ClassicAssert.AreEqual("ERR Unknown client type 'buzz'", exc.Message);
+                }
+
+                // New style, SKIPME invalid
+                {
+                    var exc = ClassicAssert.Throws<RedisServerException>(() => mainDB.Execute("CLIENT", "KILL", "SKIPME", "hello"));
+                    ClassicAssert.AreEqual("ERR syntax error", exc.Message);
+                }
+
+                // New style, MAXAGE invalid
+                {
+                    var exc = ClassicAssert.Throws<RedisServerException>(() => mainDB.Execute("CLIENT", "KILL", "MAXAGE", "world"));
+                    ClassicAssert.AreEqual("ERR syntax error", exc.Message);
+                }
+            }
+
+            // Because Redis behavior seems to diverge from its documentation, Garnet fails safe in these cases
+            {
+                AssertDuplicateDefinitionError("ID", () => mainDB.Execute("CLIENT", "KILL", "ID", "123", "ID", "456"));
+                AssertDuplicateDefinitionError("TYPE", () => mainDB.Execute("CLIENT", "KILL", "TYPE", "master", "TYPE", "normal"));
+                AssertDuplicateDefinitionError("USER", () => mainDB.Execute("CLIENT", "KILL", "USER", "foo", "USER", "bar"));
+                AssertDuplicateDefinitionError("ADDR", () => mainDB.Execute("CLIENT", "KILL", "ADDR", "123", "ADDR", "456"));
+                AssertDuplicateDefinitionError("LADDR", () => mainDB.Execute("CLIENT", "KILL", "LADDR", "123", "LADDR", "456"));
+                AssertDuplicateDefinitionError("SKIPME", () => mainDB.Execute("CLIENT", "KILL", "SKIPME", "YES", "SKIPME", "NO"));
+                AssertDuplicateDefinitionError("MAXAGE", () => mainDB.Execute("CLIENT", "KILL", "MAXAGE", "123", "MAXAGE", "456"));
+            }
+
+            static void AssertDuplicateDefinitionError(string filter, TestDelegate shouldThrow)
+            {
+                var exc = ClassicAssert.Throws<RedisServerException>(shouldThrow);
+                ClassicAssert.AreEqual($"ERR Filter '{filter}' defined multiple times", exc.Message);
+            }
+        }
+
+        /// <summary>
+        /// Check that list is non-empty, and has the minimum required fields.
+        /// </summary>
+        private static void AssertExpectedClientFields(string list)
+        {
+            var lines = list.Split("\n");
+            ClassicAssert.IsTrue(lines.Length >= 1);
+
+            foreach (var line in lines)
+            {
+                var flags = line.Split(" ");
+                AssertField(line, flags, "id");
+                AssertField(line, flags, "addr");
+                AssertField(line, flags, "laddr");
+                AssertField(line, flags, "age");
+                AssertField(line, flags, "flags");
+                AssertField(line, flags, "resp");
+            }
+
+            // Check that a given flag is set
+            static void AssertField(string line, string[] fields, string name)
+            => ClassicAssert.AreEqual(1, fields.Count(f => f.StartsWith($"{name}=")), $"In {line}, expected single field {name}");
         }
     }
 }

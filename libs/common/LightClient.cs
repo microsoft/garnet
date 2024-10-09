@@ -37,7 +37,7 @@ namespace Garnet.common
         public int opType;
 
         LightClientTcpNetworkHandler networkHandler;
-
+        readonly NetworkBufferSettings networkBufferSettings;
         readonly LimitedFixedBufferPool networkPool;
 
         /// <summary>
@@ -58,7 +58,8 @@ namespace Garnet.common
             SslClientAuthenticationOptions sslOptions = null)
             : base(address, port, BufferSize)
         {
-            this.networkPool = new LimitedFixedBufferPool(BufferSize);
+            this.networkBufferSettings = new NetworkBufferSettings(BufferSize, BufferSize);
+            this.networkPool = networkBufferSettings.CreateBufferPool();
             this.onResponseDelegateUnsafe = onResponseDelegateUnsafe ?? new OnResponseDelegateUnsafe(DefaultLightReceiveUnsafe);
             this.opType = opType;
             this.BufferSize = BufferSize;
@@ -109,7 +110,7 @@ namespace Garnet.common
         public override void Connect()
         {
             socket = GetSendSocket(address, port);
-            networkHandler = new LightClientTcpNetworkHandler(this, socket, networkPool, sslOptions != null, this);
+            networkHandler = new LightClientTcpNetworkHandler(this, socket, networkBufferSettings, networkPool, sslOptions != null, this);
             networkHandler.StartAsync(sslOptions, $"{address}:{port}").ConfigureAwait(false).GetAwaiter().GetResult();
             networkSender = networkHandler.GetNetworkSender();
             networkSender.GetResponseObject();
@@ -212,7 +213,7 @@ namespace Garnet.common
         {
             networkSender.ReturnResponseObject();
             networkHandler?.Dispose();
-            networkPool.Dispose();
+            networkPool?.Dispose();
         }
 
         /// <inheritdoc />

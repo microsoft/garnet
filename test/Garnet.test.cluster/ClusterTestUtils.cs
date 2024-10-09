@@ -670,7 +670,7 @@ namespace Garnet.test.cluster
             if (gcsConnections[nodeIndex] == null)
             {
                 var endpoint = GetEndPoint(nodeIndex).ToIPEndPoint();
-                gcsConnections[nodeIndex] = new GarnetClientSession(endpoint.Address.ToString(), endpoint.Port);
+                gcsConnections[nodeIndex] = new GarnetClientSession(endpoint.Address.ToString(), endpoint.Port, new());
                 gcsConnections[nodeIndex].Connect();
             }
             return gcsConnections[nodeIndex];
@@ -1991,6 +1991,23 @@ namespace Garnet.test.cluster
                 logger?.LogError(ex, "An error has occured; ClusterKeySlot");
                 Assert.Fail();
                 return -1;
+            }
+        }
+
+        public void FlushAll(int nodeIndex, ILogger logger = null)
+            => FlushAll((IPEndPoint)endpoints[nodeIndex], logger);
+
+        public void FlushAll(IPEndPoint endPoint, ILogger logger = null)
+        {
+            try
+            {
+                var server = redis.GetServer(endPoint);
+                server.FlushAllDatabases();
+            }
+            catch (Exception ex)
+            {
+                logger?.LogError(ex, "An error has occured; FlushAllDatabases");
+                Assert.Fail();
             }
         }
 

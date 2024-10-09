@@ -1028,6 +1028,57 @@ namespace Garnet.server
         /// Processes COMMAND INFO subcommand.
         /// </summary>
         /// <returns>true if parsing succeeded correctly, false if not all tokens could be consumed and further processing is necessary.</returns>
+        private bool NetworkCOMMAND_DOCS()
+        {
+            var count = parseState.Count;
+
+            var resultSb = new StringBuilder();
+            var docsCount = 0;
+
+            if (count == 0)
+            {
+                if (!RespCommandDocs.TryGetRespCommandsDocs(out var cmdsDocs, true, logger))
+                    return true;
+
+                foreach (var cmdDocs in cmdsDocs.Values)
+                {
+                    docsCount++;
+                    resultSb.Append(cmdDocs.RespFormat);
+                }
+
+                foreach (var customCmd in storeWrapper.customCommandManager.CustomCommandsDocs.Values)
+                {
+                    docsCount++;
+                    resultSb.Append(customCmd.RespFormat);
+                }
+            }
+            else
+            {
+                for (var i = 0; i < count; i++)
+                {
+                    var cmdName = parseState.GetString(i);
+                    if (RespCommandDocs.TryGetRespCommandDocs(cmdName, out var cmdDocs, true, true, logger) ||
+                        storeWrapper.customCommandManager.TryGetCustomCommandDocs(cmdName, out cmdDocs))
+                    {
+                        docsCount++;
+                        resultSb.Append(cmdDocs.RespFormat);
+                    }
+                }
+            }
+
+            while (!RespWriteUtils.WriteArrayLength(docsCount * 2, ref dcurr, dend))
+                SendAndReset();
+
+            while (!RespWriteUtils.WriteAsciiDirect(resultSb.ToString(), ref dcurr, dend))
+                SendAndReset();
+
+            return true;
+        }
+
+        /// <summary>
+        /// Processes COMMAND INFO subcommand.
+        /// </summary>
+        /// <returns>true if parsing succeeded correctly, false if not all tokens could be consumed and further processing is necessary.</returns>
         private bool NetworkCOMMAND_INFO()
         {
             var count = parseState.Count;
@@ -1045,7 +1096,7 @@ namespace Garnet.server
                 {
                     var cmdName = parseState.GetString(i);
 
-                    if (RespCommandsInfo.TryGetRespCommandInfo(cmdName, out var cmdInfo, logger) ||
+                    if (RespCommandsInfo.TryGetRespCommandInfo(cmdName, out var cmdInfo, true, true, logger) ||
                         storeWrapper.customCommandManager.TryGetCustomCommandInfo(cmdName, out cmdInfo))
                     {
                         while (!RespWriteUtils.WriteAsciiDirect(cmdInfo.RespFormat, ref dcurr, dend))
@@ -1482,6 +1533,65 @@ namespace Garnet.server
         {
             storeWrapper.store.Log.ShiftBeginAddress(storeWrapper.store.Log.TailAddress, truncateLog: unsafeTruncateLog);
             storeWrapper.objectStore?.Log.ShiftBeginAddress(storeWrapper.objectStore.Log.TailAddress, truncateLog: unsafeTruncateLog);
+        }
+
+        /// <summary>
+        /// Writes a string describing the given session into the string builder.
+        /// Does not append a new line.
+        ///
+        /// Not all Redis fields are written as they do not all have Garnet equivalents.
+        /// </summary>
+        private static void WriteClientInfo(IClusterProvider provider, StringBuilder into, RespServerSession targetSession, long nowMilliseconds)
+        {
+            var id = targetSession.Id;
+            var remoteEndpoint = targetSession.networkSender.RemoteEndpointName;
+            var localEndpoint = targetSession.networkSender.LocalEndpointName;
+            var clientName = targetSession.clientName;
+            var user = targetSession._user;
+            var resp = targetSession.respProtocolVersion;
+            var nodeId = targetSession?.clusterSession?.RemoteNodeId;
+
+            into.Append($"id={id}");
+            into.Append($" addr={remoteEndpoint}");
+            into.Append($" laddr={localEndpoint}");
+            if (clientName is not null)
+            {
+                into.Append($" name={clientName}");
+            }
+
+            var ageSec = (nowMilliseconds - targetSession.CreationTicks) / 1_000;
+
+            into.Append($" age={ageSec}");
+
+            if (user is not null)
+            {
+                into.Append($" user={user.Name}");
+            }
+
+            if (provider is not null && nodeId is not null)
+            {
+                if (provider.IsReplica(nodeId))
+                {
+                    into.Append($" flags=S");
+                }
+                else
+                {
+                    into.Append($" flags=M");
+                }
+            }
+            else
+            {
+                if (targetSession.isSubscriptionSession)
+                {
+                    into.Append($" flags=P");
+                }
+                else
+                {
+                    into.Append($" flags=N");
+                }
+            }
+
+            into.Append($" resp={resp}");
         }
     }
 }

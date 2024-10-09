@@ -78,7 +78,7 @@ However, the log memory is handled differently, as described below.
 
 In case of the object store, the hybrid log holds _references_ to keys and values (which are objects), rather 
 than the actual keys and values themselves. The memory occupied by the object store log is configured using 
-`ObjectStoreLogMemorySize` (`--obj-memory`). However, this parameter only controls the number of records
+`ObjectStoreLogMemorySize` (`--obj-log-memory`). However, this parameter only controls the number of records
 in the object store, where each record consists of:
 * An 8-byte header, called `RecordInfo`, which holds metadata and the logical address of the previous entry in a record chain.
 * An 8-byte reference to the key object, which is a byte array on heap (byte[])
@@ -90,13 +90,12 @@ setting `ObjectStoreLogMemorySize` to S merely implies that you can hold at most
 memory.
 
 This means, of course, that we need to track the total memory using a different mechanism. For this, Garnet
-exposes a configuration called `ObjectStoreTotalMemorySize` (`--obj-total-memory`) which represents total object 
-store log memory used, including the hybrid log and the heap memory in bytes. You can use this parameter
+exposes a configuration called `ObjectStoreHeapMemorySize` (`--obj-heap-memory`) which represents the heap memory 
+used by key byte arrays and the `IGarnetObject` instances in bytes. You can use this parameter in combination with the `--obj-log-memory` 
 to control the total memory used by the object store.
 
 To summarize, the total space occupied by the object store is the sum of:
 * Object store index size (and overflow buckets), as before
-* `ObjectStoreTotalMemorySize`
-
-with `ObjectStoreLogMemorySize` used to control the maximum _number_ of records in memory.
+* `ObjectStoreLogMemorySize` (`--obj-log-memory`) which controls the maximum _number_ of records in memory.
+* `ObjectStoreHeapMemorySize` (`--obj-heap-memory`) which controls the total heap size occupied by the objects.
 

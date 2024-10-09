@@ -5,6 +5,7 @@ using System;
 using System.Text;
 using Garnet.common;
 using Microsoft.Extensions.Logging;
+using NLua;
 using NLua.Exceptions;
 
 namespace Garnet.server
@@ -193,46 +194,13 @@ namespace Garnet.server
         {
             try
             {
-                object scriptResult = scriptRunner.Run(count, parseState);
-                if (scriptResult != null)
-                {
-                    if (scriptResult is string s)
-                    {
-                        while (!RespWriteUtils.WriteAsciiBulkString(s, ref dcurr, dend))
-                            SendAndReset();
-                    }
-                    else if ((scriptResult as byte?) != null && (byte)scriptResult == 36) //equals to $
-                    {
-                        while (!RespWriteUtils.WriteDirect((byte[])scriptResult, ref dcurr, dend))
-                            SendAndReset();
-                    }
-                    else if (scriptResult as Int64? != null)
-                    {
-                        while (!RespWriteUtils.WriteInteger((Int64)scriptResult, ref dcurr, dend))
-                            SendAndReset();
-                    }
-                    else if (scriptResult as ArgSlice? != null)
-                    {
-                        while (!RespWriteUtils.WriteBulkString(((ArgSlice)scriptResult).ToArray(), ref dcurr, dend))
-                            SendAndReset();
-                    }
-                    else if (scriptResult as Object[] != null)
-                    {
-                        // Two objects one boolean value and the result from the Lua Call
-                        while (!RespWriteUtils.WriteAsciiBulkString((scriptResult as Object[])[1].ToString().AsSpan(), ref dcurr, dend))
-                            SendAndReset();
-                    }
-                }
-                else
-                {
-                    while (!RespWriteUtils.WriteDirect(CmdStrings.RESP_ERRNOTFOUND, ref dcurr, dend))
-                        SendAndReset();
-                }
+                var scriptResult = scriptRunner.Run(count, parseState);
+                WriteObject(scriptResult);
             }
             catch (LuaScriptException ex)
             {
-                logger?.LogError(ex.InnerException, "Error executing Lua script callback");
-                while (!RespWriteUtils.WriteError("ERR " + ex.InnerException.Message, ref dcurr, dend))
+                logger?.LogError(ex.InnerException ?? ex, "Error executing Lua script callback");
+                while (!RespWriteUtils.WriteError("ERR " + (ex.InnerException ?? ex).Message, ref dcurr, dend))
                     SendAndReset();
                 return true;
             }
@@ -244,6 +212,96 @@ namespace Garnet.server
                 return true;
             }
             return true;
+        }
+
+        void WriteObject(object scriptResult)
+        {
+            if (scriptResult != null)
+            {
+                if (scriptResult is string s)
+                {
+                    while (!RespWriteUtils.WriteAsciiBulkString(s, ref dcurr, dend))
+                        SendAndReset();
+                }
+                else if ((scriptResult as byte?) != null && (byte)scriptResult == 36) //equals to $
+                {
+                    while (!RespWriteUtils.WriteDirect((byte[])scriptResult, ref dcurr, dend))
+                        SendAndReset();
+                }
+                else if (scriptResult is bool b)
+                {
+                    if (b)
+                    {
+                        while (!RespWriteUtils.WriteInteger(1, ref dcurr, dend))
+                            SendAndReset();
+                    }
+                    else
+                    {
+                        while (!RespWriteUtils.WriteDirect(CmdStrings.RESP_ERRNOTFOUND, ref dcurr, dend))
+                            SendAndReset();
+                    }
+                }
+                else if (scriptResult is long l)
+                {
+                    while (!RespWriteUtils.WriteInteger(l, ref dcurr, dend))
+                        SendAndReset();
+                }
+                else if (scriptResult is ArgSlice a)
+                {
+                    while (!RespWriteUtils.WriteBulkString(a.ReadOnlySpan, ref dcurr, dend))
+                        SendAndReset();
+                }
+                else if (scriptResult is object[] o)
+                {
+                    // Two objects one boolean value and the result from the Lua Call
+                    while (!RespWriteUtils.WriteAsciiBulkString(o[1].ToString().AsSpan(), ref dcurr, dend))
+                        SendAndReset();
+                }
+                else if (scriptResult is LuaTable luaTable)
+                {
+                    try
+                    {
+                        var retVal = luaTable["err"];
+                        if (retVal != null)
+                        {
+                            while (!RespWriteUtils.WriteError((string)retVal, ref dcurr, dend))
+                                SendAndReset();
+                        }
+                        else
+                        {
+                            retVal = luaTable["ok"];
+                            if (retVal != null)
+                            {
+                                while (!RespWriteUtils.WriteAsciiBulkString((string)retVal, ref dcurr, dend))
+                                    SendAndReset();
+                            }
+                            else
+                            {
+                                int count = luaTable.Values.Count;
+                                while (!RespWriteUtils.WriteArrayLength(count, ref dcurr, dend))
+                                    SendAndReset();
+                                foreach (var value in luaTable.Values)
+                                {
+                                    WriteObject(value);
+                                }
+                            }
+                        }
+                    }
+                    finally
+                    {
+                        luaTable.Dispose();
+                    }
+                }
+                else
+                {
+                    throw new LuaScriptException("Unknown return type", "");
+                }
+            }
+            else
+            {
+                while (!RespWriteUtils.WriteDirect(CmdStrings.RESP_ERRNOTFOUND, ref dcurr, dend))
+                    SendAndReset();
+            }
         }
     }
 }

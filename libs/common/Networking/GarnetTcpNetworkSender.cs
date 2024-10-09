@@ -47,7 +47,9 @@ namespace Garnet.common
         protected readonly int ThrottleMax = 8;
 
         readonly string remoteEndpoint;
+        readonly string localEndpoint;
 
+        readonly NetworkBufferSettings networkBufferSettings;
         readonly LimitedFixedBufferPool networkPool;
 
         /// <summary>
@@ -55,35 +57,40 @@ namespace Garnet.common
         /// </summary>
         SpinLock spinLock;
 
+        private int closeRequested;
+
         /// <summary>
-        /// 
+        /// GarnetTcpNetworkSender Constructor
         /// </summary>
         /// <param name="socket"></param>
-        /// <param name="networkPool"></param>
+        /// <param name="networkBufferSettings"></param>
         /// <param name="throttleMax"></param>
         public GarnetTcpNetworkSender(
             Socket socket,
+            NetworkBufferSettings networkBufferSettings,
             LimitedFixedBufferPool networkPool,
             int throttleMax = 8)
-            : base(networkPool.MinAllocationSize)
+            : base(networkBufferSettings.sendBufferSize)
         {
+            this.networkBufferSettings = networkBufferSettings;
             this.networkPool = networkPool;
             this.socket = socket;
             this.saeaStack = new(2 * ThrottleMax);
             this.responseObject = null;
             this.ThrottleMax = throttleMax;
             this.spinLock = new();
+            this.closeRequested = 0;
 
-            var endpoint = socket.RemoteEndPoint as IPEndPoint;
-            if (endpoint != null)
-                remoteEndpoint = $"{endpoint.Address}:{endpoint.Port}";
-            else
-                remoteEndpoint = "";
+            remoteEndpoint = socket.RemoteEndPoint is IPEndPoint remote ? $"{remote.Address}:{remote.Port}" : "";
+            localEndpoint = socket.LocalEndPoint is IPEndPoint local ? $"{local.Address}:{local.Port}" : "";
         }
 
 
         /// <inheritdoc />
         public override string RemoteEndpointName => remoteEndpoint;
+
+        /// <inheritdoc />
+        public override string LocalEndpointName => localEndpoint;
 
         /// <inheritdoc />
         public override void Enter()
@@ -104,7 +111,7 @@ namespace Garnet.common
             {
                 if (disposed)
                     ThrowDisposed();
-                responseObject = new GarnetSaeaBuffer(SeaaBuffer_Completed, networkPool);
+                responseObject = new GarnetSaeaBuffer(SeaaBuffer_Completed, networkBufferSettings, networkPool);
             }
             head = responseObject.buffer.entryPtr;
             tail = responseObject.buffer.entryPtr + responseObject.buffer.entry.Length;
@@ -138,7 +145,7 @@ namespace Garnet.common
                 {
                     if (disposed)
                         ThrowDisposed();
-                    responseObject = new GarnetSaeaBuffer(SeaaBuffer_Completed, networkPool);
+                    responseObject = new GarnetSaeaBuffer(SeaaBuffer_Completed, networkBufferSettings, networkPool);
                 }
             }
         }
@@ -255,6 +262,31 @@ namespace Garnet.common
             // Release throttle, since we used up one slot
             if (Interlocked.Decrement(ref throttleCount) >= ThrottleMax)
                 throttle.Release();
+        }
+
+        /// <inheritdoc />
+        public override bool TryClose()
+        {
+            // Only one caller gets to invoke Close, as we'd expect subsequent ones to fail and throw
+            if (Interlocked.CompareExchange(ref closeRequested, 1, 0) != 0)
+            {
+                return false;
+            }
+
+            try
+            {
+                // This close should cause all outstanding requests to fail.
+                // 
+                // We don't distinguish between clients closing their end of the Socket
+                // and us forcing it closed on request.
+                socket.Close();
+            }
+            catch
+            {
+                // Best effort, just swallow any exceptions
+            }
+
+            return true;
         }
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]

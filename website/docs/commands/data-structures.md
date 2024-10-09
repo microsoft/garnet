@@ -319,6 +319,26 @@ By default, the command pops a single element from the beginning of the list. Wh
 
 ---
 
+### LPOS
+
+#### Syntax
+
+```bash
+    LPOS key element [RANK rank] [COUNT num-matches] [MAXLEN len]
+```
+
+The command returns the index of matching elements inside a Redis list. By default, when no options are given, it will scan the list from head to tail, looking for the first match of "element". If the element is found, its index (the zero-based position in the list) is returned. Otherwise, if no match is found, nil is returned.
+
+#### Resp Reply
+
+Any of the following:
+
+* Null reply: if there is no matching element.
+* Integer reply: an integer representing the matching element.
+* Array reply: If the COUNT option is given, an array of integers representing the matching elements (or an empty array if there are no matches).
+
+---
+
 ### LPUSH
 
 #### Syntax
@@ -486,7 +506,6 @@ Returns the set cardinality (number of elements) of the set stored at **key**.
 ```
 
 Returns all the members of the set value stored at **key**.
-
 
 ---
 
@@ -930,6 +949,18 @@ Removes all elements in the sorted set stored at **key** with a score between mi
 Returns the specified range of elements in the sorted set stored at **key**. The elements are considered to be ordered from the highest to the lowest score. Descending lexicographical order is used for elements with equal score.
 
 Apart from the reversed ordering, **ZREVRANGE** is similar to [ZRANGE](#zrange).
+
+---
+
+### ZREVRANGEBYSCORE
+
+#### Syntax
+
+```bash
+    ZREVRANGEBYSCORE key max min [WITHSCORES] [LIMIT offset count]
+```
+
+Returns all the elements in the sorted set at key with a score between max and min (including elements with score equal to max or min). 
 
 ---
 
