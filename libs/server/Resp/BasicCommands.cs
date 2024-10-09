@@ -535,12 +535,6 @@ namespace Garnet.server
                 return true;
             }
 
-            // Make space for key header
-            var keyPtr = sbKey.ToPointer() - sizeof(int);
-
-            // Set key length
-            *(int*)keyPtr = sbKey.Length;
-
             // Make space for value header
             var valPtr = sbVal.ToPointer() - sizeof(int);
             var vSize = sbVal.Length;
@@ -553,15 +547,15 @@ namespace Garnet.server
                     {
                         case ExistOptions.None:
                             return getValue
-                                ? NetworkSET_Conditional(RespCommand.SET, expiry, keyPtr, valPtr, vSize, true,
+                                ? NetworkSET_Conditional(RespCommand.SET, expiry, ref sbKey, valPtr, vSize, true,
                                     false, ref storageApi)
-                                : NetworkSET_EX(RespCommand.SET, expiry, keyPtr, valPtr, vSize, false,
+                                : NetworkSET_EX(RespCommand.SET, expiry, ref sbKey, valPtr, vSize, false,
                                     ref storageApi); // Can perform a blind update
                         case ExistOptions.XX:
-                            return NetworkSET_Conditional(RespCommand.SETEXXX, expiry, keyPtr, valPtr, vSize,
+                            return NetworkSET_Conditional(RespCommand.SETEXXX, expiry, ref sbKey, valPtr, vSize,
                                 getValue, false, ref storageApi);
                         case ExistOptions.NX:
-                            return NetworkSET_Conditional(RespCommand.SETEXNX, expiry, keyPtr, valPtr, vSize,
+                            return NetworkSET_Conditional(RespCommand.SETEXNX, expiry, ref sbKey, valPtr, vSize,
                                 getValue, false, ref storageApi);
                     }
 
@@ -571,15 +565,15 @@ namespace Garnet.server
                     {
                         case ExistOptions.None:
                             return getValue
-                                ? NetworkSET_Conditional(RespCommand.SET, expiry, keyPtr, valPtr, vSize, true,
+                                ? NetworkSET_Conditional(RespCommand.SET, expiry, ref sbKey, valPtr, vSize, true,
                                     true, ref storageApi)
-                                : NetworkSET_EX(RespCommand.SET, expiry, keyPtr, valPtr, vSize, true,
+                                : NetworkSET_EX(RespCommand.SET, expiry, ref sbKey, valPtr, vSize, true,
                                     ref storageApi); // Can perform a blind update
                         case ExistOptions.XX:
-                            return NetworkSET_Conditional(RespCommand.SETEXXX, expiry, keyPtr, valPtr, vSize,
+                            return NetworkSET_Conditional(RespCommand.SETEXXX, expiry, ref sbKey, valPtr, vSize,
                                 getValue, true, ref storageApi);
                         case ExistOptions.NX:
-                            return NetworkSET_Conditional(RespCommand.SETEXNX, expiry, keyPtr, valPtr, vSize,
+                            return NetworkSET_Conditional(RespCommand.SETEXNX, expiry, ref sbKey, valPtr, vSize,
                                 getValue, true, ref storageApi);
                     }
 
@@ -591,13 +585,13 @@ namespace Garnet.server
                     {
                         case ExistOptions.None:
                             // We can never perform a blind update due to KEEPTTL
-                            return NetworkSET_Conditional(RespCommand.SETKEEPTTL, expiry, keyPtr, valPtr, vSize,
+                            return NetworkSET_Conditional(RespCommand.SETKEEPTTL, expiry, ref sbKey, valPtr, vSize,
                                 getValue, false, ref storageApi);
                         case ExistOptions.XX:
-                            return NetworkSET_Conditional(RespCommand.SETKEEPTTLXX, expiry, keyPtr, valPtr, vSize,
+                            return NetworkSET_Conditional(RespCommand.SETKEEPTTLXX, expiry, ref sbKey, valPtr, vSize,
                                 getValue, false, ref storageApi);
                         case ExistOptions.NX:
-                            return NetworkSET_Conditional(RespCommand.SETEXNX, expiry, keyPtr, valPtr, vSize,
+                            return NetworkSET_Conditional(RespCommand.SETEXNX, expiry, ref sbKey, valPtr, vSize,
                                 getValue, false, ref storageApi);
                     }
 
@@ -609,7 +603,7 @@ namespace Garnet.server
             return true;
         }
 
-        private bool NetworkSET_EX<TGarnetApi>(RespCommand cmd, int expiry, byte* keyPtr, byte* valPtr,
+        private bool NetworkSET_EX<TGarnetApi>(RespCommand cmd, int expiry, ref SpanByte key, byte* valPtr,
             int vsize, bool highPrecision, ref TGarnetApi storageApi)
             where TGarnetApi : IGarnetApi
         {
@@ -630,19 +624,20 @@ namespace Garnet.server
                                                                  : TimeSpan.FromSeconds(expiry).Ticks);
             }
 
-            storageApi.SET(ref Unsafe.AsRef<SpanByte>(keyPtr), ref Unsafe.AsRef<SpanByte>(valPtr));
+            storageApi.SET(ref key, ref Unsafe.AsRef<SpanByte>(valPtr));
             while (!RespWriteUtils.WriteDirect(CmdStrings.RESP_OK, ref dcurr, dend))
                 SendAndReset();
             return true;
         }
 
-        private bool NetworkSET_Conditional<TGarnetApi>(RespCommand cmd, int expiry, byte* keyPtr,
+        private bool NetworkSET_Conditional<TGarnetApi>(RespCommand cmd, int expiry, ref SpanByte key,
             byte* inputPtr, int isize, bool getValue, bool highPrecision, ref TGarnetApi storageApi)
             where TGarnetApi : IGarnetApi
         {
             // Make space for RespCommand in input
             inputPtr -= RespInputHeader.Size;
 
+            var save = *(long*)inputPtr;
             if (expiry == 0) // no expiration provided
             {
                 *(int*)inputPtr = RespInputHeader.Size + isize;
@@ -670,7 +665,7 @@ namespace Garnet.server
             if (getValue)
             {
                 var o = new SpanByteAndMemory(dcurr, (int)(dend - dcurr));
-                var status = storageApi.SET_Conditional(ref Unsafe.AsRef<SpanByte>(keyPtr),
+                var status = storageApi.SET_Conditional(ref key,
                     ref Unsafe.AsRef<SpanByte>(inputPtr), ref o);
 
                 // Status tells us whether an old image was found during RMW or not
@@ -690,7 +685,7 @@ namespace Garnet.server
             }
             else
             {
-                var status = storageApi.SET_Conditional(ref Unsafe.AsRef<SpanByte>(keyPtr),
+                var status = storageApi.SET_Conditional(ref key,
                     ref Unsafe.AsRef<SpanByte>(inputPtr));
 
                 bool ok = status != GarnetStatus.NOTFOUND;
@@ -711,7 +706,7 @@ namespace Garnet.server
                         SendAndReset();
                 }
             }
-
+            *(long*)inputPtr = save;
             return true;
         }
 
