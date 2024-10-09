@@ -18,7 +18,7 @@ namespace Garnet.server
     {
         NONE = 0x00,
 
-        // Read-only commands
+        // Read-only commands. NOTE: Should immediately follow NONE.
         BITCOUNT,
         BITFIELD_RO,
         BITPOS,
@@ -78,10 +78,10 @@ namespace Garnet.server
         ZREVRANGEBYSCORE,
         ZREVRANK,
         ZSCAN,
-        ZSCORE, // Note: Update OneIfRead if adding new read commands after this
+        ZSCORE, // Note: Last read command should immediately precede FirstWriteCommand
 
         // Write commands
-        APPEND, // Note: Update OneIfWrite if adding new write commands before this
+        APPEND, // Note: Update FirstWriteCommand if adding new write commands before this
         BITFIELD,
         DECR,
         DECRBY,
@@ -157,7 +157,11 @@ namespace Garnet.server
         BITOP_AND,
         BITOP_OR,
         BITOP_XOR,
-        BITOP_NOT, // Note: Update OneIfWrite if adding new write commands after this
+        BITOP_NOT, // Note: Update LastWriteCommand if adding new write commands after this
+
+        // Script execution commands
+        EVAL,
+        EVALSHA, // Note: Update LastDataCommand if adding new data commands after this
 
         // Neither read nor write key commands
         ASYNC,
@@ -211,9 +215,7 @@ namespace Garnet.server
         CustomObjCmd,
         CustomProcedure,
 
-        // Scripting commands
-        EVAL,
-        EVALSHA,
+        // Script commands
         SCRIPT,
 
         ACL,
@@ -418,21 +420,19 @@ namespace Garnet.server
                 };
         }
 
-        public static RespCommand FirstReadCommand()
-            => RespCommand.NONE + 1;
+        internal const RespCommand FirstReadCommand = RespCommand.NONE + 1;
 
-        public static RespCommand LastReadCommand()
-            => RespCommand.APPEND - 1;
+        internal const RespCommand LastReadCommand = RespCommand.APPEND - 1;
 
-        public static RespCommand FirstWriteCommand()
-            => RespCommand.APPEND;
+        internal const RespCommand FirstWriteCommand = RespCommand.APPEND;
 
-        public static RespCommand LastWriteCommand()
-            => RespCommand.BITOP_NOT;
+        internal const RespCommand LastWriteCommand = RespCommand.BITOP_NOT;
+
+        internal const RespCommand LastDataCommand = RespCommand.EVALSHA;
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public static bool IsReadOnly(this RespCommand cmd)
-            => cmd <= LastReadCommand();
+            => cmd <= LastReadCommand;
 
         public static bool IsDataCommand(this RespCommand cmd)
         {
@@ -446,7 +446,7 @@ namespace Garnet.server
                 RespCommand.FLUSHALL => false,
                 RespCommand.KEYS => false,
                 RespCommand.SCAN => false,
-                _ => cmd >= FirstReadCommand() && cmd <= LastWriteCommand()
+                _ => cmd >= FirstReadCommand && cmd <= LastDataCommand
             };
         }
 
@@ -454,10 +454,10 @@ namespace Garnet.server
         public static bool IsWriteOnly(this RespCommand cmd)
         {
             // If cmd < RespCommand.Append - underflows, setting high bits
-            var test = (uint)((int)cmd - (int)FirstWriteCommand());
+            var test = (uint)((int)cmd - (int)FirstWriteCommand);
 
             // Force to be branchless for same reasons as OneIfRead
-            return test <= (LastWriteCommand() - FirstWriteCommand());
+            return test <= (LastWriteCommand - FirstWriteCommand);
         }
 
         /// <summary>

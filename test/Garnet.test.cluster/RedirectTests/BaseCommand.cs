@@ -889,4 +889,32 @@ namespace Garnet.test.cluster
         }
     }
     #endregion
+
+    #region LuaCommands
+    internal class EVAL : BaseCommand
+    {
+        public override bool IsArrayCommand => true;
+        public override bool ArrayResponse => false;
+        public override string Command => nameof(EVAL);
+
+        public override string[] GetSingleSlotRequest()
+        {
+            var ssk = GetSingleSlotKeys;
+            return ["return 'OK'", "3", ssk[0], ssk[1], ssk[2]];
+        }
+
+        public override string[] GetCrossSlotRequest()
+        {
+            var csk = GetCrossSlotKeys;
+            return ["return 'OK'", "3", csk[0], csk[1], csk[2]];
+        }
+
+        public override ArraySegment<string>[] SetupSingleSlotRequest()
+        {
+            var ssk = GetSingleSlotKeys;
+            var setup = new ArraySegment<string>[] { new ArraySegment<string>(["EVAL", "return 'OK'", "3", ssk[1], ssk[2], ssk[3]]) };
+            return setup;
+        }
+    }
+    #endregion
 }
