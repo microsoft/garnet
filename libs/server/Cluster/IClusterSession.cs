@@ -2,6 +2,7 @@
 // Licensed under the MIT license.
 
 using System;
+using Garnet.common;
 using Garnet.server.ACL;
 
 namespace Garnet.server
@@ -52,9 +53,25 @@ namespace Garnet.server
         unsafe void ProcessClusterCommands(RespCommand command, ref SessionParseState parseState, ref byte* dcurr, ref byte* dend);
 
         /// <summary>
-        /// Single key slot verify (check only, do not write result to network)
+        /// Reset cached slot verification result
         /// </summary>
-        unsafe bool CheckSingleKeySlotVerify(ArgSlice keySlice, bool readOnly, byte SessionAsking);
+        void ResetCachedSlotVerificationResult();
+
+        /// <summary>
+        /// Verification method that works iteratively by caching the verification result between calls.
+        /// NOTE: Caller must call ResetCachedSlotVerificationResult appropriately
+        /// </summary>
+        /// <param name="keySlice"></param>
+        /// <param name="readOnly"></param>
+        /// <param name="SessionAsking"></param>
+        /// <returns></returns>
+        bool NetworkIterativeSlotVerify(ArgSlice keySlice, bool readOnly, byte SessionAsking);
+
+        /// <summary>
+        /// Write cached slot verification message to output
+        /// </summary>
+        /// <param name="output"></param>
+        public void WriteCachedSlotVerificationMessage(ref MemoryResult<byte> output);
 
         /// <summary>
         /// Key array slot verify (write result to network)
