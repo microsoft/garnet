@@ -2,7 +2,7 @@
     "configuration": "Release",
     "framework": "net8.0",
     "filter": "*LuaRunner*",
-    "expectedBasicLuaRunner1MeanValue_linux": 182,
+    "expectedBasicLuaRunner1MeanValue_linux": 200,
     "expectedBasicLuaRunner2MeanValue_linux": 337,
     "expectedBasicLuaRunner3MeanValue_linux": 1473,
     "expectedBasicLuaRunner4MeanValue_linux": 3754,

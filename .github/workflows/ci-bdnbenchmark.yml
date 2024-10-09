@@ -93,4 +93,4 @@ jobs:
           summary-always: true
 
           # This is for Charts on GitHub pages
-          auto-push: false
+          auto-push: true
