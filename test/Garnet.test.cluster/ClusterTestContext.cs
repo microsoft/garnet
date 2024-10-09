@@ -111,7 +111,8 @@ namespace Garnet.test.cluster
             ServerCredential clusterCreds = new ServerCredential(),
             AadAuthenticationSettings authenticationSettings = null,
             bool disablePubSub = true,
-            int metricsSamplingFrequency = 0)
+            int metricsSamplingFrequency = 0,
+            bool enableLua = false)
         {
             endpoints = TestUtils.GetEndPoints(shards, 7000);
             nodes = TestUtils.CreateGarnetCluster(
@@ -142,7 +143,8 @@ namespace Garnet.test.cluster
                 authPassword: clusterCreds.password,
                 certificates: certificates,
                 authenticationSettings: authenticationSettings,
-                metricsSamplingFrequency: metricsSamplingFrequency);
+                metricsSamplingFrequency: metricsSamplingFrequency,
+                enableLua: enableLua);
 
             foreach (var node in nodes)
                 node.Start();

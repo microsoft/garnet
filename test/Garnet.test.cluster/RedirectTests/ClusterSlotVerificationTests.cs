@@ -60,6 +60,7 @@ namespace Garnet.test.cluster
                 new SINTERSTORE(),
                 new SINTER(),
                 new LMOVE(),
+                new EVAL(),
             };
 
 
@@ -109,7 +110,7 @@ namespace Garnet.test.cluster
             context = new ClusterTestContext();
             context.Setup([]);
 
-            context.CreateInstances(3);
+            context.CreateInstances(3, enableLua: true);
             context.CreateConnection();
 
             // Assign all slots to node 0
@@ -241,6 +242,7 @@ namespace Garnet.test.cluster
         [TestCase("SINTERSTORE")]
         [TestCase("SINTER")]
         [TestCase("LMOVE")]
+        [TestCase("EVAL")]
         public void ClusterOKTest(string commandName)
         {
             var requestNodeIndex = sourceIndex;
@@ -330,6 +332,7 @@ namespace Garnet.test.cluster
         [TestCase("SINTERSTORE")]
         [TestCase("SINTER")]
         [TestCase("LMOVE")]
+        [TestCase("EVAL")]
         public void ClusterCROSSSLOTTest(string commandName)
         {
             var requestNodeIndex = sourceIndex;
