@@ -43,6 +43,7 @@ namespace Garnet.test.cluster
                 new SETRANGE(),
                 new GETRANGE(),
                 new INCR(),
+                new INCRBYFLOAT(),
                 new APPEND(),
                 new STRLEN(),
                 new RENAME(),
@@ -147,6 +148,7 @@ namespace Garnet.test.cluster
         [TestCase("SETRANGE")]
         [TestCase("GETRANGE")]
         [TestCase("INCR")]
+        [TestCase("INCRBYFLOAT")]
         [TestCase("APPEND")]
         [TestCase("STRLEN")]
         [TestCase("RENAME")]
@@ -225,6 +227,7 @@ namespace Garnet.test.cluster
         [TestCase("SETRANGE")]
         [TestCase("GETRANGE")]
         [TestCase("INCR")]
+        [TestCase("INCRBYFLOAT")]
         [TestCase("APPEND")]
         [TestCase("STRLEN")]
         [TestCase("RENAME")]
@@ -315,6 +318,7 @@ namespace Garnet.test.cluster
         [TestCase("SETRANGE")]
         [TestCase("GETRANGE")]
         [TestCase("INCR")]
+        [TestCase("INCRBYFLOAT")]
         [TestCase("APPEND")]
         [TestCase("STRLEN")]
         [TestCase("RENAME")]
@@ -398,6 +402,7 @@ namespace Garnet.test.cluster
         [TestCase("SETRANGE")]
         [TestCase("GETRANGE")]
         [TestCase("INCR")]
+        [TestCase("INCRBYFLOAT")]
         [TestCase("APPEND")]
         [TestCase("STRLEN")]
         [TestCase("RENAME")]
@@ -487,6 +492,7 @@ namespace Garnet.test.cluster
         [TestCase("SETRANGE")]
         [TestCase("GETRANGE")]
         [TestCase("INCR")]
+        [TestCase("INCRBYFLOAT")]
         [TestCase("APPEND")]
         [TestCase("STRLEN")]
         [TestCase("RENAME")]
@@ -593,6 +599,7 @@ namespace Garnet.test.cluster
         [TestCase("SETRANGE")]
         [TestCase("GETRANGE")]
         [TestCase("INCR")]
+        [TestCase("INCRBYFLOAT")]
         [TestCase("APPEND")]
         [TestCase("STRLEN")]
         [TestCase("RENAME")]
