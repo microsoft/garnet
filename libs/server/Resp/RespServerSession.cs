@@ -506,10 +506,14 @@ namespace Garnet.server
             _ = cmd switch
             {
                 RespCommand.GET => NetworkGET(ref storageApi),
+                RespCommand.GETWITHETAG => NetworkGETWITHETAG(ref storageApi),
+                RespCommand.GETIFNOTMATCH => NetworkGETIFNOTMATCH(ref storageApi),
                 RespCommand.SET => NetworkSET(ref storageApi),
                 RespCommand.SETEX => NetworkSETEX(false, ref storageApi),
                 RespCommand.PSETEX => NetworkSETEX(true, ref storageApi),
                 RespCommand.SETEXNX => NetworkSETEXNX(ref storageApi),
+                RespCommand.SETWITHETAG => NetworkSETWITHETAG(ref storageApi),
+                RespCommand.SETIFMATCH => NetworkSETIFMATCH(ref storageApi),
                 RespCommand.DEL => NetworkDEL(ref storageApi),
                 RespCommand.RENAME => NetworkRENAME(ref storageApi),
                 RespCommand.RENAMENX => NetworkRENAMENX(ref storageApi),

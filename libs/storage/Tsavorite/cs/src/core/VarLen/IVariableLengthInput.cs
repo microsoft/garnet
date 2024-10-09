@@ -11,7 +11,7 @@ namespace Tsavorite.core
         /// <summary>
         /// Length of resulting value object when performing RMW modification of value using given input
         /// </summary>
-        int GetRMWModifiedValueLength(ref TValue value, ref TInput input);
+        int GetRMWModifiedValueLength(ref TValue value, ref TInput input, bool hasEtag);
 
         /// <summary>
         /// Initial expected length of value object when populated by RMW using given input
