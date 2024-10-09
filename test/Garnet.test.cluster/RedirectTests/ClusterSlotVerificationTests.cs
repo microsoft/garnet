@@ -83,6 +83,20 @@ namespace Garnet.test.cluster
                 new SRANDMEMBER(),
                 new GEOADD(),
                 new GEOHASH(),
+                new ZADD(),
+                new ZREM(),
+                new ZCARD(),
+                new ZRANGE(),
+                new ZSCORE(),
+                new ZMSCORE(),
+                new ZPOPMAX(),
+                new ZCOUNT(),
+                new ZLEXCOUNT(),
+                new ZINCRBY(),
+                new ZRANK(),
+                new ZREMRANGEBYRANK(),
+                new ZRANDMEMBER(),
+                new ZDIFF(),
             };
 
         ClusterTestContext context;
@@ -213,6 +227,20 @@ namespace Garnet.test.cluster
         [TestCase("SRANDMEMBER")]
         [TestCase("GEOADD")]
         [TestCase("GEOHASH")]
+        [TestCase("ZADD")]
+        [TestCase("ZREM")]
+        [TestCase("ZCARD")]
+        [TestCase("ZRANGE")]
+        [TestCase("ZSCORE")]
+        [TestCase("ZMSCORE")]
+        [TestCase("ZPOPMAX")]
+        [TestCase("ZCOUNT")]
+        [TestCase("ZLEXCOUNT")]
+        [TestCase("ZINCRBY")]
+        [TestCase("ZRANK")]
+        [TestCase("ZREMRANGEBYRANK")]
+        [TestCase("ZRANDMEMBER")]
+        [TestCase("ZDIFF")]
         public void ClusterCLUSTERDOWNTest(string commandName)
         {
             var requestNodeIndex = otherIndex;
@@ -314,6 +342,20 @@ namespace Garnet.test.cluster
         [TestCase("SRANDMEMBER")]
         [TestCase("GEOADD")]
         [TestCase("GEOHASH")]
+        [TestCase("ZADD")]
+        [TestCase("ZREM")]
+        [TestCase("ZCARD")]
+        [TestCase("ZRANGE")]
+        [TestCase("ZSCORE")]
+        [TestCase("ZMSCORE")]
+        [TestCase("ZPOPMAX")]
+        [TestCase("ZCOUNT")]
+        [TestCase("ZLEXCOUNT")]
+        [TestCase("ZINCRBY")]
+        [TestCase("ZRANK")]
+        [TestCase("ZREMRANGEBYRANK")]
+        [TestCase("ZRANDMEMBER")]
+        [TestCase("ZDIFF")]
         public void ClusterOKTest(string commandName)
         {
             var requestNodeIndex = sourceIndex;
@@ -426,6 +468,20 @@ namespace Garnet.test.cluster
         [TestCase("SRANDMEMBER")]
         [TestCase("GEOADD")]
         [TestCase("GEOHASH")]
+        [TestCase("ZADD")]
+        [TestCase("ZREM")]
+        [TestCase("ZCARD")]
+        [TestCase("ZRANGE")]
+        [TestCase("ZSCORE")]
+        [TestCase("ZMSCORE")]
+        [TestCase("ZPOPMAX")]
+        [TestCase("ZCOUNT")]
+        [TestCase("ZLEXCOUNT")]
+        [TestCase("ZINCRBY")]
+        [TestCase("ZRANK")]
+        [TestCase("ZREMRANGEBYRANK")]
+        [TestCase("ZRANDMEMBER")]
+        [TestCase("ZDIFF")]
         public void ClusterCROSSSLOTTest(string commandName)
         {
             var requestNodeIndex = sourceIndex;
@@ -530,6 +586,20 @@ namespace Garnet.test.cluster
         [TestCase("SRANDMEMBER")]
         [TestCase("GEOADD")]
         [TestCase("GEOHASH")]
+        [TestCase("ZADD")]
+        [TestCase("ZREM")]
+        [TestCase("ZCARD")]
+        [TestCase("ZRANGE")]
+        [TestCase("ZSCORE")]
+        [TestCase("ZMSCORE")]
+        [TestCase("ZPOPMAX")]
+        [TestCase("ZCOUNT")]
+        [TestCase("ZLEXCOUNT")]
+        [TestCase("ZINCRBY")]
+        [TestCase("ZRANK")]
+        [TestCase("ZREMRANGEBYRANK")]
+        [TestCase("ZRANDMEMBER")]
+        [TestCase("ZDIFF")]
         public void ClusterMOVEDTest(string commandName)
         {
             var requestNodeIndex = targetIndex;
@@ -641,6 +711,20 @@ namespace Garnet.test.cluster
         [TestCase("SRANDMEMBER")]
         [TestCase("GEOADD")]
         [TestCase("GEOHASH")]
+        [TestCase("ZADD")]
+        [TestCase("ZREM")]
+        [TestCase("ZCARD")]
+        [TestCase("ZRANGE")]
+        [TestCase("ZSCORE")]
+        [TestCase("ZMSCORE")]
+        [TestCase("ZPOPMAX")]
+        [TestCase("ZCOUNT")]
+        [TestCase("ZLEXCOUNT")]
+        [TestCase("ZINCRBY")]
+        [TestCase("ZRANK")]
+        [TestCase("ZREMRANGEBYRANK")]
+        [TestCase("ZRANDMEMBER")]
+        [TestCase("ZDIFF")]
         public void ClusterASKTest(string commandName)
         {
             var requestNodeIndex = sourceIndex;
@@ -769,6 +853,20 @@ namespace Garnet.test.cluster
         [TestCase("SRANDMEMBER")]
         [TestCase("GEOADD")]
         [TestCase("GEOHASH")]
+        [TestCase("ZADD")]
+        [TestCase("ZREM")]
+        [TestCase("ZCARD")]
+        [TestCase("ZRANGE")]
+        [TestCase("ZSCORE")]
+        [TestCase("ZMSCORE")]
+        [TestCase("ZPOPMAX")]
+        [TestCase("ZCOUNT")]
+        [TestCase("ZLEXCOUNT")]
+        [TestCase("ZINCRBY")]
+        [TestCase("ZRANK")]
+        [TestCase("ZREMRANGEBYRANK")]
+        [TestCase("ZRANDMEMBER")]
+        [TestCase("ZDIFF")]
         public void ClusterTRYAGAINTest(string commandName)
         {
             var requestNodeIndex = sourceIndex;
