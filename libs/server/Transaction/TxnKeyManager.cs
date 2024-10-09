@@ -304,7 +304,7 @@ namespace Garnet.server
 
             if (!NumUtils.TryParse(numKeysArg.ReadOnlySpan, out int numKeys)) return -2;
 
-            for (int i = 0; i < numKeys; i++)
+            for (var i = 0; i < numKeys; i++)
             {
                 var key = respSession.GetCommandAsArgSlice(out success);
                 if (!success) return -2;

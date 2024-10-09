@@ -13,16 +13,6 @@ namespace Garnet.server
     internal sealed unsafe partial class RespServerSession : ServerSessionBase
     {
         /// <summary>
-        /// This method is used to verify slot ownership for provided key.
-        /// On error this method writes to response buffer but does not drain recv buffer (caller is responsible for draining).
-        /// </summary>
-        /// <param name="key">Key bytes</param>
-        /// <param name="readOnly">Whether caller is going to perform a readonly or read/write operation.</param>
-        /// <returns>True when ownership is verified, false otherwise</returns>
-        bool NetworkSingleKeySlotVerify(ReadOnlySpan<byte> key, bool readOnly)
-            => clusterSession != null && clusterSession.NetworkSingleKeySlotVerify(key, readOnly, SessionAsking, ref dcurr, ref dend);
-
-        /// <summary>
         /// This method is used to verify slot ownership for provided array of key argslices.
         /// </summary>
         /// <param name="keys">Array of key ArgSlice</param>
