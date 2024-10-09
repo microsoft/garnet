@@ -197,11 +197,11 @@ namespace Tsavorite.core
         /// </summary>
         private void ResizeIfNeeded(CancellationToken token)
         {
-            // Include memory size from the log (logAccessor.MemorySizeBytes) + heap size (logSize.Total) to check utilization
-            if (logSize.Total + logAccessor.MemorySizeBytes > highTargetSize)
+            // Monitor the heap size
+            if (logSize.Total > highTargetSize)
             {
-                logger?.LogDebug("Heap size {totalLogSize} + log {MemorySizeBytes} > target {highTargetSize}. Alloc: {AllocatedPageCount} EPC: {EmptyPageCount}", logSize.Total, logAccessor.MemorySizeBytes, highTargetSize, logAccessor.AllocatedPageCount, logAccessor.EmptyPageCount);
-                while (logSize.Total + logAccessor.MemorySizeBytes > highTargetSize &&
+                logger?.LogDebug("Heap size {totalLogSize} > target {highTargetSize}. Alloc: {AllocatedPageCount} EPC: {EmptyPageCount}", logSize.Total, highTargetSize, logAccessor.AllocatedPageCount, logAccessor.EmptyPageCount);
+                while (logSize.Total > highTargetSize &&
                     logAccessor.EmptyPageCount < logAccessor.MaxEmptyPageCount)
                 {
                     token.ThrowIfCancellationRequested();
@@ -216,10 +216,10 @@ namespace Tsavorite.core
                     logger?.LogDebug("Increasing empty page count to {EmptyPageCount}", logAccessor.EmptyPageCount);
                 }
             }
-            else if (logSize.Total + logAccessor.MemorySizeBytes < lowTargetSize)
+            else if (logSize.Total < lowTargetSize)
             {
-                logger?.LogDebug("Heap size {totalLogSize} + log {MemorySizeBytes} < target {lowTargetSize}. Alloc: {AllocatedPageCount} EPC: {EmptyPageCount}", logSize.Total, logAccessor.MemorySizeBytes, lowTargetSize, logAccessor.AllocatedPageCount, logAccessor.EmptyPageCount);
-                while (logSize.Total + logAccessor.MemorySizeBytes < lowTargetSize &&
+                logger?.LogDebug("Heap size {totalLogSize} < target {lowTargetSize}. Alloc: {AllocatedPageCount} EPC: {EmptyPageCount}", logSize.Total, lowTargetSize, logAccessor.AllocatedPageCount, logAccessor.EmptyPageCount);
+                while (logSize.Total < lowTargetSize &&
                     logAccessor.EmptyPageCount > logAccessor.MinEmptyPageCount)
                 {
                     token.ThrowIfCancellationRequested();

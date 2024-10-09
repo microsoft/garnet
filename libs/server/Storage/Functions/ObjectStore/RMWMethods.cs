@@ -171,6 +171,7 @@ namespace Garnet.server
         {
             // We're performing the object update here (and not in CopyUpdater) so that we are guaranteed that 
             // the record was CASed into the hash chain before it gets modified
+            var oldValueSize = oldValue.Size;
             oldValue.CopyUpdate(ref oldValue, ref value, rmwInfo.RecordInfo.IsInNewVersion);
 
             functionsState.watchVersionMap.IncrementVersion(rmwInfo.KeyHash);
@@ -220,7 +221,9 @@ namespace Garnet.server
                     }
             }
 
-            functionsState.objectStoreSizeTracker?.AddTrackedSize(MemoryUtils.CalculateKeyValueSize(key, value));
+            // If oldValue has been set to null, subtract it's size from the tracked heap size
+            var sizeAdjustment = oldValue == null ? value.Size - oldValueSize : value.Size;
+            functionsState.objectStoreSizeTracker?.AddTrackedSize(sizeAdjustment);
 
             if (functionsState.appendOnlyFile != null)
                 WriteLogRMW(ref key, ref input, rmwInfo.Version, rmwInfo.SessionID);

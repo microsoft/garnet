@@ -31,7 +31,7 @@ namespace Garnet.server
             if (!clusterEnabled) return;
 
             bool readOnly = type == LockType.Shared;
-            if (!clusterSession.CheckSingleKeySlotVerify(key, readOnly, respSession.SessionAsking))
+            if (!respSession.clusterSession.CheckSingleKeySlotVerify(key, readOnly, respSession.SessionAsking))
             {
                 this.state = TxnState.Aborted;
                 return;

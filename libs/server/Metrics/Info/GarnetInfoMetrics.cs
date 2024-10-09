@@ -69,18 +69,27 @@ namespace Garnet.server
             var total_main_store_size = main_store_index_size + main_store_log_memory_size + main_store_read_cache_size;
 
             var object_store_index_size = -1L;
-            var object_store_log_memory_references_size = -1L;
-            var object_store_read_cache_size = -1L;
+            var object_store_log_memory_size = -1L;
+            var object_store_read_cache_log_memory_size = -1L;
+            var object_store_heap_memory_size = -1L;
+            var object_store_read_cache_heap_memory_size = -1L;
             var total_object_store_size = -1L;
             var disableObj = storeWrapper.serverOptions.DisableObjects;
+
+            var aof_log_memory_size = storeWrapper.appendOnlyFile?.MemorySizeBytes ?? -1;
 
             if (!disableObj)
             {
                 object_store_index_size = storeWrapper.objectStore.IndexSize * 64;
-                object_store_log_memory_references_size = storeWrapper.objectStore.Log.MemorySizeBytes;
-                object_store_read_cache_size = (storeWrapper.objectStore.ReadCache != null ? storeWrapper.objectStore.ReadCache.MemorySizeBytes : 0);
-                total_object_store_size = object_store_index_size + object_store_log_memory_references_size + object_store_read_cache_size;
+                object_store_log_memory_size = storeWrapper.objectStore.Log.MemorySizeBytes;
+                object_store_read_cache_log_memory_size = storeWrapper.objectStore.ReadCache?.MemorySizeBytes ?? 0;
+                object_store_heap_memory_size = storeWrapper.objectStoreSizeTracker?.mainLogTracker.LogHeapSizeBytes ?? 0;
+                object_store_read_cache_heap_memory_size = storeWrapper.objectStoreSizeTracker?.readCacheTracker?.LogHeapSizeBytes ?? 0;
+                total_object_store_size = object_store_index_size + object_store_log_memory_size + object_store_read_cache_log_memory_size + object_store_heap_memory_size + object_store_read_cache_heap_memory_size;
             }
+
+            var gcMemoryInfo = GC.GetGCMemoryInfo();
+            var gcAvailableMemory = gcMemoryInfo.TotalCommittedBytes - gcMemoryInfo.HeapSizeBytes;
 
             memoryInfo =
             [
@@ -105,14 +114,21 @@ namespace Garnet.server
                 new("proc_physical_memory_size(MB)", SystemMetrics.GetPhysicalMemoryUsage(1 << 20).ToString()),
                 new("proc_peak_physical_memory_size", SystemMetrics.GetPeakPhysicalMemoryUsage().ToString()),
                 new("proc_peak_physical_memory_size(MB)", SystemMetrics.GetPeakPhysicalMemoryUsage(1 << 20).ToString()),
+                new("gc_committed_bytes", gcMemoryInfo.TotalCommittedBytes.ToString()),
+                new("gc_heap_bytes", gcMemoryInfo.HeapSizeBytes.ToString()),
+                new("gc_managed_memory_bytes_excluding_heap", gcAvailableMemory.ToString()),
+                new("gc_fragmented_bytes", gcMemoryInfo.FragmentedBytes.ToString()),
                 new("main_store_index_size", main_store_index_size.ToString()),
                 new("main_store_log_memory_size", main_store_log_memory_size.ToString()),
                 new("main_store_read_cache_size", main_store_read_cache_size.ToString()),
                 new("total_main_store_size", total_main_store_size.ToString()),
                 new("object_store_index_size", object_store_index_size.ToString()),
-                new("object_store_log_memory_references_size", object_store_log_memory_references_size.ToString()),
-                new("object_store_read_cache_size", object_store_read_cache_size.ToString()),
-                new("total_object_store_size", total_object_store_size.ToString())
+                new("object_store_log_memory_size", object_store_log_memory_size.ToString()),
+                new("object_store_read_cache_log_memory_size", object_store_read_cache_log_memory_size.ToString()),
+                new("object_store_heap_memory_size", object_store_heap_memory_size.ToString()),
+                new("object_store_read_cache_heap_memory_size", object_store_read_cache_heap_memory_size.ToString()),
+                new("total_object_store_size", total_object_store_size.ToString()),
+                new("aof_memory_size", aof_log_memory_size.ToString())
             ];
         }
 
