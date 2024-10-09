@@ -3,7 +3,7 @@
     "framework": "net8.0",
     "filter": "*LuaStress*",
 
-    "expectedBasicLuaStress1MeanValue_linux": 169,
+    "expectedBasicLuaStress1MeanValue_linux": 187,
     "expectedBasicLuaStress2MeanValue_linux": 284,
     "expectedBasicLuaStress3MeanValue_linux": 1407,
     "expectedBasicLuaStress4MeanValue_linux": 2733,

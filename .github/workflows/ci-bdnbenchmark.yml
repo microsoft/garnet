@@ -76,7 +76,7 @@ jobs:
           key: ${{ runner.os }}-benchmark
       
       # Run `github-action-benchmark` action
-      - name: Store benchmark result
+      - name: Store benchmark result for commit comment
         uses: benchmark-action/github-action-benchmark@v1
         with:
           # What benchmark tool created output file
@@ -86,11 +86,22 @@ jobs:
           output-file-path: ./test/BDNPerfTests/BenchmarkDotNet.Artifacts/results/BDN.benchmark.${{ matrix.test }}-report-full-compressed.json
           github-token: ${{ secrets.GITHUB_TOKEN }}
 
-          # This is for commit comment & Job Summary
           external-data-json-path: ./cache/benchmark-data.json
           fail-on-alert: true
           comment-on-alert: true
           summary-always: true
+          auto-push: false
+
+      # Run `github-action-benchmark` action
+      - name: Store benchmark result for charts
+        uses: benchmark-action/github-action-benchmark@v1
+        with:
+          # What benchmark tool created output file
+          tool: 'benchmarkdotnet'
+
+          # Need for both commit comment and charts
+          output-file-path: ./test/BDNPerfTests/BenchmarkDotNet.Artifacts/results/BDN.benchmark.${{ matrix.test }}-report-full-compressed.json
+          github-token: ${{ secrets.GITHUB_TOKEN }}
 
           # This is for Charts on GitHub pages
-          auto-push: false
+          auto-push: true

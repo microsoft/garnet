@@ -4,10 +4,10 @@
     "filter": "*RespTsavoriteStress*",
     "expectedGETMeanValue_linux": 21,
     "expectedSETMeanValue_linux": 19,
-    "expectedIncrMeanValue_linux": 27,
+    "expectedIncrementMeanValue_linux": 27,
     "expectedGETMeanValue_win": 20,
     "expectedSETMeanValue_win": 17,
-    "expectedIncrMeanValue_win": 26,
+    "expectedIncrementMeanValue_win": 26,
 
     "acceptableMeanRange": 10,
     "acceptableError": ".1",
