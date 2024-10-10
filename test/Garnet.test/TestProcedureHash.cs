@@ -19,10 +19,10 @@ namespace Garnet
 
     sealed class TestProcedureHash : CustomTransactionProcedure
     {
-        public override bool Prepare<TGarnetReadApi>(TGarnetReadApi api, ref SessionParseState parseState, int parseStateStartIdx)
+        public override bool Prepare<TGarnetReadApi>(TGarnetReadApi api, ref SessionParseState parseState, int parseStateFirstArgIdx)
         {
             var offset = 0;
-            var setA = GetNextArg(ref parseState, parseStateStartIdx, ref offset);
+            var setA = GetNextArg(ref parseState, parseStateFirstArgIdx, ref offset);
 
             if (setA.Length == 0)
                 return false;
@@ -31,27 +31,27 @@ namespace Garnet
             return true;
         }
 
-        public override void Main<TGarnetApi>(TGarnetApi api, ref SessionParseState parseState, int parseStateStartIdx, ref MemoryResult<byte> output)
+        public override void Main<TGarnetApi>(TGarnetApi api, ref SessionParseState parseState, int parseStateFirstArgIdx, ref MemoryResult<byte> output)
         {
-            var result = TestAPI(api, ref parseState, parseStateStartIdx);
+            var result = TestAPI(api, ref parseState, parseStateFirstArgIdx);
             WriteSimpleString(ref output, result ? "SUCCESS" : "ERROR");
         }
 
-        private static bool TestAPI<TGarnetApi>(TGarnetApi api, ref SessionParseState parseState, int parseStateStartIdx) where TGarnetApi : IGarnetApi
+        private static bool TestAPI<TGarnetApi>(TGarnetApi api, ref SessionParseState parseState, int parseStateFirstArgIdx) where TGarnetApi : IGarnetApi
         {
             var offset = 0;
             var pairs = new (ArgSlice field, ArgSlice value)[6];
             var fields = new ArgSlice[pairs.Length];
 
-            var myHash = GetNextArg(ref parseState, parseStateStartIdx, ref offset);
+            var myHash = GetNextArg(ref parseState, parseStateFirstArgIdx, ref offset);
 
             if (myHash.Length == 0)
                 return false;
 
             for (var i = 0; i < pairs.Length; i++)
             {
-                pairs[i].field = GetNextArg(ref parseState, parseStateStartIdx, ref offset);
-                pairs[i].value = GetNextArg(ref parseState, parseStateStartIdx, ref offset);
+                pairs[i].field = GetNextArg(ref parseState, parseStateFirstArgIdx, ref offset);
+                pairs[i].value = GetNextArg(ref parseState, parseStateFirstArgIdx, ref offset);
                 fields[i] = pairs[i].field;
             }
 
@@ -111,7 +111,7 @@ namespace Garnet
                 return false;
 
             // HDEL
-            var elementRemove = GetNextArg(ref parseState, parseStateStartIdx, ref offset);
+            var elementRemove = GetNextArg(ref parseState, parseStateFirstArgIdx, ref offset);
             status = api.HashDelete(myHash, elementRemove, out count);
             if (status != GarnetStatus.OK || count != 1)
                 return false;

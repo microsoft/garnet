@@ -602,7 +602,7 @@ namespace Garnet.server
         private bool IterateUpdate(ref RawStringInput input, byte* value, bool dense)
         {
             var updated = false;
-            var currTokenIdx = input.parseStateStartIdx;
+            var currTokenIdx = input.parseStateFirstArgIdx;
             var elementCount = (int)input.arg1;
             while (currTokenIdx < input.parseState.Count && elementCount > 0)
             {

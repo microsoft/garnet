@@ -16,19 +16,19 @@ namespace Garnet
     /// </summary>
     sealed class WriteWithExpiryTxn : CustomTransactionProcedure
     {
-        public override bool Prepare<TGarnetReadApi>(TGarnetReadApi api, ref SessionParseState parseState, int parseStateStartIdx)
+        public override bool Prepare<TGarnetReadApi>(TGarnetReadApi api, ref SessionParseState parseState, int parseStateFirstArgIdx)
         {
             int offset = 0;
-            AddKey(GetNextArg(ref parseState, parseStateStartIdx, ref offset), LockType.Exclusive, false);
+            AddKey(GetNextArg(ref parseState, parseStateFirstArgIdx, ref offset), LockType.Exclusive, false);
             return true;
         }
 
-        public override void Main<TGarnetApi>(TGarnetApi api, ref SessionParseState parseState, int parseStateStartIdx, ref MemoryResult<byte> output)
+        public override void Main<TGarnetApi>(TGarnetApi api, ref SessionParseState parseState, int parseStateFirstArgIdx, ref MemoryResult<byte> output)
         {
             int offset = 0;
-            var key = GetNextArg(ref parseState, parseStateStartIdx, ref offset);
-            var value = GetNextArg(ref parseState, parseStateStartIdx, ref offset);
-            var expiryMs = GetNextArg(ref parseState, parseStateStartIdx, ref offset);
+            var key = GetNextArg(ref parseState, parseStateFirstArgIdx, ref offset);
+            var value = GetNextArg(ref parseState, parseStateFirstArgIdx, ref offset);
+            var expiryMs = GetNextArg(ref parseState, parseStateFirstArgIdx, ref offset);
 
             api.SETEX(key, value, expiryMs);
             WriteSimpleString(ref output, "SUCCESS");

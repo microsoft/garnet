@@ -653,7 +653,7 @@ namespace Garnet.server
             if (cmd == RespCommand.INCRBY || cmd == RespCommand.DECRBY)
             {
                 input.parseState = parseState;
-                input.parseStateStartIdx = 1;
+                input.parseStateFirstArgIdx = 1;
                 storageApi.Increment(key, ref input, ref output);
             }
             else if (cmd == RespCommand.INCR || cmd == RespCommand.DECR)
@@ -664,7 +664,7 @@ namespace Garnet.server
                 parseState.InitializeWithArgument(valueSlice);
 
                 input.parseState = parseState;
-                input.parseStateStartIdx = 0;
+                input.parseStateFirstArgIdx = 0;
                 storageApi.Increment(key, ref input, ref output);
             }
 

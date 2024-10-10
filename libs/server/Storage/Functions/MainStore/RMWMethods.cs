@@ -58,7 +58,7 @@ namespace Garnet.server
 
                 case RespCommand.PFMERGE:
                     //srcHLL offset: [hll allocated size = 4 byte] + [hll data structure] //memcpy + 4 (skip len size)
-                    var sbSrcHLL = input.parseState.GetArgSliceByRef(input.parseStateStartIdx).SpanByte;
+                    var sbSrcHLL = input.parseState.GetArgSliceByRef(input.parseStateFirstArgIdx).SpanByte;
                     var length = sbSrcHLL.Length;
                     var srcHLL = sbSrcHLL.ToPointer();
                     var dstHLL = value.ToPointer();
@@ -71,7 +71,7 @@ namespace Garnet.server
                 case RespCommand.SET:
                 case RespCommand.SETEXNX:
                     // Copy input to value
-                    var newInputValue = input.parseState.GetArgSliceByRef(input.parseStateStartIdx).ReadOnlySpan;
+                    var newInputValue = input.parseState.GetArgSliceByRef(input.parseStateFirstArgIdx).ReadOnlySpan;
                     var metadataSize = input.arg1 == 0 ? 0 : sizeof(long);
                     value.UnmarkExtraMetadata();
                     value.ShrinkSerializedLength(newInputValue.Length + metadataSize);
@@ -81,7 +81,7 @@ namespace Garnet.server
 
                 case RespCommand.SETKEEPTTL:
                     // Copy input to value, retain metadata in value
-                    var setValue = input.parseState.GetArgSliceByRef(input.parseStateStartIdx).ReadOnlySpan;
+                    var setValue = input.parseState.GetArgSliceByRef(input.parseStateFirstArgIdx).ReadOnlySpan;
                     value.ShrinkSerializedLength(value.MetadataSize + setValue.Length);
                     setValue.CopyTo(value.AsSpan());
                     break;
@@ -95,7 +95,7 @@ namespace Garnet.server
                     throw new Exception();
 
                 case RespCommand.SETBIT:
-                    var currTokenIdx = input.parseStateStartIdx;
+                    var currTokenIdx = input.parseStateFirstArgIdx;
                     var bOffset = input.parseState.GetLong(currTokenIdx++);
                     var bSetVal = (byte)(input.parseState.GetArgSliceByRef(currTokenIdx).ReadOnlySpan[0] - '0');
 
@@ -119,15 +119,15 @@ namespace Garnet.server
                     break;
 
                 case RespCommand.SETRANGE:
-                    var offset = input.parseState.GetInt(input.parseStateStartIdx);
-                    var newValue = input.parseState.GetArgSliceByRef(input.parseStateStartIdx + 1).ReadOnlySpan;
+                    var offset = input.parseState.GetInt(input.parseStateFirstArgIdx);
+                    var newValue = input.parseState.GetArgSliceByRef(input.parseStateFirstArgIdx + 1).ReadOnlySpan;
                     newValue.CopyTo(value.AsSpan().Slice(offset));
 
                     CopyValueLengthToOutput(ref value, ref output);
                     break;
 
                 case RespCommand.APPEND:
-                    var appendValue = input.parseState.GetArgSliceByRef(input.parseStateStartIdx);
+                    var appendValue = input.parseState.GetArgSliceByRef(input.parseStateFirstArgIdx);
 
                     // Copy value to be appended to the newly allocated value buffer
                     appendValue.ReadOnlySpan.CopyTo(value.AsSpan());
@@ -137,7 +137,7 @@ namespace Garnet.server
                 case RespCommand.INCRBY:
                     value.UnmarkExtraMetadata();
                     // Check if input contains a valid number
-                    if (!input.parseState.TryGetLong(input.parseStateStartIdx, out var incrBy))
+                    if (!input.parseState.TryGetLong(input.parseStateFirstArgIdx, out var incrBy))
                     {
                         output.SpanByte.AsSpan()[0] = (byte)OperationError.INVALID_TYPE;
                         return true;
@@ -147,7 +147,7 @@ namespace Garnet.server
                 case RespCommand.DECRBY:
                     value.UnmarkExtraMetadata();
                     // Check if input contains a valid number
-                    if (!input.parseState.TryGetLong(input.parseStateStartIdx, out var decrBy))
+                    if (!input.parseState.TryGetLong(input.parseStateFirstArgIdx, out var decrBy))
                     {
                         output.SpanByte.AsSpan()[0] = (byte)OperationError.INVALID_TYPE;
                         return true;
@@ -181,7 +181,7 @@ namespace Garnet.server
                     }
 
                     // Copy input to value
-                    var inputValue = input.parseState.GetArgSliceByRef(input.parseStateStartIdx);
+                    var inputValue = input.parseState.GetArgSliceByRef(input.parseStateFirstArgIdx);
                     value.ShrinkSerializedLength(inputValue.Length);
                     value.ExtraMetadata = input.arg1;
                     inputValue.ReadOnlySpan.CopyTo(value.AsSpan());
@@ -244,7 +244,7 @@ namespace Garnet.server
 
                 case RespCommand.SET:
                 case RespCommand.SETEXXX:
-                    var setValue = input.parseState.GetArgSliceByRef(input.parseStateStartIdx);
+                    var setValue = input.parseState.GetArgSliceByRef(input.parseStateFirstArgIdx);
 
                     // Need CU if no space for new value
                     var metadataSize = input.arg1 == 0 ? 0 : sizeof(long);
@@ -271,7 +271,7 @@ namespace Garnet.server
 
                 case RespCommand.SETKEEPTTLXX:
                 case RespCommand.SETKEEPTTL:
-                    setValue = input.parseState.GetArgSliceByRef(input.parseStateStartIdx);
+                    setValue = input.parseState.GetArgSliceByRef(input.parseStateFirstArgIdx);
                     // Need CU if no space for new value
                     if (setValue.Length + value.MetadataSize > value.Length) return false;
 
@@ -295,16 +295,16 @@ namespace Garnet.server
                 case RespCommand.EXPIRE:
                     var expiryExists = value.MetadataSize > 0;
 
-                    var expiryValue = input.parseState.GetInt(input.parseStateStartIdx);
+                    var expiryValue = input.parseState.GetInt(input.parseStateFirstArgIdx);
                     var tsExpiry = input.header.cmd == RespCommand.EXPIRE
                         ? TimeSpan.FromSeconds(expiryValue)
                         : TimeSpan.FromMilliseconds(expiryValue);
                     var expiryTicks = DateTimeOffset.UtcNow.Ticks + tsExpiry.Ticks;
 
                     var optionType = ExpireOption.None;
-                    if (input.parseState.Count - input.parseStateStartIdx > 1)
+                    if (input.parseState.Count - input.parseStateFirstArgIdx > 1)
                     {
-                        optionType = input.parseState.GetEnum<ExpireOption>(input.parseStateStartIdx + 1, true);
+                        optionType = input.parseState.GetEnum<ExpireOption>(input.parseStateFirstArgIdx + 1, true);
                     }
 
                     return EvaluateExpireInPlace(optionType, expiryExists, expiryTicks, ref value, ref output);
@@ -329,7 +329,7 @@ namespace Garnet.server
 
                 case RespCommand.INCRBY:
                     // Check if input contains a valid number
-                    if (!input.parseState.TryGetLong(input.parseStateStartIdx, out var incrBy))
+                    if (!input.parseState.TryGetLong(input.parseStateFirstArgIdx, out var incrBy))
                     {
                         output.SpanByte.AsSpan()[0] = (byte)OperationError.INVALID_TYPE;
                         return true;
@@ -338,7 +338,7 @@ namespace Garnet.server
 
                 case RespCommand.DECRBY:
                     // Check if input contains a valid number
-                    if (!input.parseState.TryGetLong(input.parseStateStartIdx, out var decrBy))
+                    if (!input.parseState.TryGetLong(input.parseStateFirstArgIdx, out var decrBy))
                     {
                         output.SpanByte.AsSpan()[0] = (byte)OperationError.INVALID_TYPE;
                         return true;
@@ -347,7 +347,7 @@ namespace Garnet.server
 
                 case RespCommand.SETBIT:
                     var v = value.ToPointer();
-                    var currTokenIdx = input.parseStateStartIdx;
+                    var currTokenIdx = input.parseStateFirstArgIdx;
                     var bOffset = input.parseState.GetLong(currTokenIdx++);
                     var bSetVal = (byte)(input.parseState.GetArgSliceByRef(currTokenIdx).ReadOnlySpan[0] - '0');
 
@@ -403,7 +403,7 @@ namespace Garnet.server
 
                 case RespCommand.PFMERGE:
                     //srcHLL offset: [hll allocated size = 4 byte] + [hll data structure] //memcpy +4 (skip len size)
-                    var srcHLL = input.parseState.GetArgSliceByRef(input.parseStateStartIdx).SpanByte.ToPointer();
+                    var srcHLL = input.parseState.GetArgSliceByRef(input.parseStateFirstArgIdx).SpanByte.ToPointer();
                     var dstHLL = value.ToPointer();
 
                     if (!HyperLogLog.DefaultHLL.IsValidHYLL(dstHLL, value.Length))
@@ -417,8 +417,8 @@ namespace Garnet.server
                     rmwInfo.SetUsedValueLength(ref recordInfo, ref value, value.TotalSize);
                     return HyperLogLog.DefaultHLL.TryMerge(srcHLL, dstHLL, value.Length);
                 case RespCommand.SETRANGE:
-                    var offset = input.parseState.GetInt(input.parseStateStartIdx);
-                    var newValue = input.parseState.GetArgSliceByRef(input.parseStateStartIdx + 1).ReadOnlySpan;
+                    var offset = input.parseState.GetInt(input.parseStateFirstArgIdx);
+                    var newValue = input.parseState.GetArgSliceByRef(input.parseStateFirstArgIdx + 1).ReadOnlySpan;
 
                     if (newValue.Length + offset > value.LengthWithoutMetadata)
                         return false;
@@ -438,7 +438,7 @@ namespace Garnet.server
 
                 case RespCommand.APPEND:
                     // If nothing to append, can avoid copy update.
-                    var appendSize = input.parseState.GetArgSliceByRef(input.parseStateStartIdx).Length;
+                    var appendSize = input.parseState.GetArgSliceByRef(input.parseStateFirstArgIdx).Length;
 
                     if (appendSize == 0)
                     {
@@ -556,7 +556,7 @@ namespace Garnet.server
                     }
 
                     // Copy input to value
-                    var newInputValue = input.parseState.GetArgSliceByRef(input.parseStateStartIdx).ReadOnlySpan;
+                    var newInputValue = input.parseState.GetArgSliceByRef(input.parseStateFirstArgIdx).ReadOnlySpan;
                     var metadataSize = input.arg1 == 0 ? 0 : sizeof(long);
 
                     Debug.Assert(newInputValue.Length + metadataSize == newValue.Length);
@@ -567,7 +567,7 @@ namespace Garnet.server
 
                 case RespCommand.SETKEEPTTLXX:
                 case RespCommand.SETKEEPTTL:
-                    var setValue = input.parseState.GetArgSliceByRef(input.parseStateStartIdx).ReadOnlySpan;
+                    var setValue = input.parseState.GetArgSliceByRef(input.parseStateFirstArgIdx).ReadOnlySpan;
                     Debug.Assert(oldValue.MetadataSize + setValue.Length == newValue.Length);
 
                     // Check if SetGet flag is set
@@ -586,16 +586,16 @@ namespace Garnet.server
                 case RespCommand.PEXPIRE:
                     var expiryExists = oldValue.MetadataSize > 0;
 
-                    var expiryValue = input.parseState.GetInt(input.parseStateStartIdx);
+                    var expiryValue = input.parseState.GetInt(input.parseStateFirstArgIdx);
                     var tsExpiry = input.header.cmd == RespCommand.EXPIRE
                         ? TimeSpan.FromSeconds(expiryValue)
                         : TimeSpan.FromMilliseconds(expiryValue);
                     var expiryTicks = DateTimeOffset.UtcNow.Ticks + tsExpiry.Ticks;
 
                     var optionType = ExpireOption.None;
-                    if (input.parseState.Count - input.parseStateStartIdx > 1)
+                    if (input.parseState.Count - input.parseStateFirstArgIdx > 1)
                     {
-                        optionType = input.parseState.GetEnum<ExpireOption>(input.parseStateStartIdx + 1, true);
+                        optionType = input.parseState.GetEnum<ExpireOption>(input.parseStateFirstArgIdx + 1, true);
                     }
 
                     EvaluateExpireCopyUpdate(optionType, expiryExists, expiryTicks, ref oldValue, ref newValue, ref output);
@@ -622,7 +622,7 @@ namespace Garnet.server
 
                 case RespCommand.INCRBY:
                     // Check if input contains a valid number
-                    if (!input.parseState.TryGetLong(input.parseStateStartIdx, out var incrBy))
+                    if (!input.parseState.TryGetLong(input.parseStateFirstArgIdx, out var incrBy))
                     {
                         // Move to tail of the log
                         oldValue.CopyTo(ref newValue);
@@ -633,7 +633,7 @@ namespace Garnet.server
 
                 case RespCommand.DECRBY:
                     // Check if input contains a valid number
-                    if (!input.parseState.TryGetLong(input.parseStateStartIdx, out var decrBy))
+                    if (!input.parseState.TryGetLong(input.parseStateFirstArgIdx, out var decrBy))
                     {
                         // Move to tail of the log
                         oldValue.CopyTo(ref newValue);
@@ -643,7 +643,7 @@ namespace Garnet.server
                     break;
 
                 case RespCommand.SETBIT:
-                    var currTokenIdx = input.parseStateStartIdx;
+                    var currTokenIdx = input.parseStateFirstArgIdx;
                     var bOffset = input.parseState.GetLong(currTokenIdx++);
                     var bSetVal = (byte)(input.parseState.GetArgSliceByRef(currTokenIdx).ReadOnlySpan[0] - '0');
                     Buffer.MemoryCopy(oldValue.ToPointer(), newValue.ToPointer(), newValue.Length, oldValue.Length);
@@ -682,7 +682,7 @@ namespace Garnet.server
 
                 case RespCommand.PFMERGE:
                     //srcA offset: [hll allocated size = 4 byte] + [hll data structure] //memcpy +4 (skip len size)
-                    var srcHLLPtr = input.parseState.GetArgSliceByRef(input.parseStateStartIdx).SpanByte.ToPointer(); // HLL merging from
+                    var srcHLLPtr = input.parseState.GetArgSliceByRef(input.parseStateFirstArgIdx).SpanByte.ToPointer(); // HLL merging from
                     var oldDstHLLPtr = oldValue.ToPointer(); // original HLL merging to (too small to hold its data plus srcA)
                     var newDstHLLPtr = newValue.ToPointer(); // new HLL merging to (large enough to hold srcA and srcB
 
@@ -690,10 +690,10 @@ namespace Garnet.server
                     break;
 
                 case RespCommand.SETRANGE:
-                    var offset = input.parseState.GetInt(input.parseStateStartIdx);
+                    var offset = input.parseState.GetInt(input.parseStateFirstArgIdx);
                     oldValue.CopyTo(ref newValue);
 
-                    newInputValue = input.parseState.GetArgSliceByRef(input.parseStateStartIdx + 1).ReadOnlySpan;
+                    newInputValue = input.parseState.GetArgSliceByRef(input.parseStateFirstArgIdx + 1).ReadOnlySpan;
                     newInputValue.CopyTo(newValue.AsSpan().Slice(offset));
 
                     CopyValueLengthToOutput(ref newValue, ref output);
@@ -710,7 +710,7 @@ namespace Garnet.server
                     // Copy any existing value with metadata to thew new value
                     oldValue.CopyTo(ref newValue);
 
-                    var appendValue = input.parseState.GetArgSliceByRef(input.parseStateStartIdx);
+                    var appendValue = input.parseState.GetArgSliceByRef(input.parseStateFirstArgIdx);
 
                     // Append the new value with the client input at the end of the old data
                     appendValue.ReadOnlySpan.CopyTo(newValue.AsSpan().Slice(oldValue.LengthWithoutMetadata));

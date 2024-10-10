@@ -134,7 +134,7 @@ namespace Garnet.server
                     break;
 
                 case RespCommand.GETBIT:
-                    var offset = input.parseState.GetLong(input.parseStateStartIdx);
+                    var offset = input.parseState.GetLong(input.parseStateFirstArgIdx);
                     var oldValSet = BitmapManager.GetBit(offset, value.ToPointer(), value.Length);
                     if (oldValSet == 0)
                         CopyDefaultResp(CmdStrings.RESP_RETURN_VAL_0, ref dst);
@@ -143,7 +143,7 @@ namespace Garnet.server
                     break;
 
                 case RespCommand.BITCOUNT:
-                    var currTokenIdx = input.parseStateStartIdx;
+                    var currTokenIdx = input.parseStateFirstArgIdx;
                     var bcStartOffset = 0;
                     var bcEndOffset = -1;
                     byte bcOffsetType = 0x0;
@@ -165,7 +165,7 @@ namespace Garnet.server
                     break;
 
                 case RespCommand.BITPOS:
-                    currTokenIdx = input.parseStateStartIdx;
+                    currTokenIdx = input.parseStateFirstArgIdx;
                     var bpSetVal = (byte)(input.parseState.GetArgSliceByRef(currTokenIdx++).ReadOnlySpan[0] - '0');
                     var bpStartOffset = 0;
                     var bpEndOffset = -1;
@@ -239,8 +239,8 @@ namespace Garnet.server
 
                 case RespCommand.GETRANGE:
                     var len = value.LengthWithoutMetadata;
-                    var start = input.parseState.GetInt(input.parseStateStartIdx);
-                    var end = input.parseState.GetInt(input.parseStateStartIdx + 1);
+                    var start = input.parseState.GetInt(input.parseStateFirstArgIdx);
+                    var end = input.parseState.GetInt(input.parseStateFirstArgIdx + 1);
 
                     (start, end) = NormalizeRange(start, end, len);
                     CopyRespTo(ref value, ref dst, start, end);
@@ -598,7 +598,7 @@ namespace Garnet.server
 
         BitFieldCmdArgs GetBitFieldArguments(ref RawStringInput input)
         {
-            var currTokenIdx = input.parseStateStartIdx;
+            var currTokenIdx = input.parseStateFirstArgIdx;
             var opCode = (byte)input.parseState.GetEnum<RespCommand>(currTokenIdx++, true);
             var encodingArg = input.parseState.GetString(currTokenIdx++);
             var offsetArg = input.parseState.GetString(currTokenIdx++);

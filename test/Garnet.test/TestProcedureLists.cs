@@ -19,11 +19,11 @@ namespace Garnet
 
     sealed class TestProcedureLists : CustomTransactionProcedure
     {
-        public override bool Prepare<TGarnetReadApi>(TGarnetReadApi api, ref SessionParseState parseState, int parseStateStartIdx)
+        public override bool Prepare<TGarnetReadApi>(TGarnetReadApi api, ref SessionParseState parseState, int parseStateFirstArgIdx)
         {
             var offset = 0;
-            var lstKey = GetNextArg(ref parseState, parseStateStartIdx, ref offset);
-            var lstKeyB = GetNextArg(ref parseState, parseStateStartIdx, ref offset);
+            var lstKey = GetNextArg(ref parseState, parseStateFirstArgIdx, ref offset);
+            var lstKeyB = GetNextArg(ref parseState, parseStateFirstArgIdx, ref offset);
 
             if (lstKey.Length == 0 || lstKeyB.Length == 0)
                 return false;
@@ -34,26 +34,26 @@ namespace Garnet
             return true;
         }
 
-        public override void Main<TGarnetApi>(TGarnetApi api, ref SessionParseState parseState, int parseStateStartIdx, ref MemoryResult<byte> output)
+        public override void Main<TGarnetApi>(TGarnetApi api, ref SessionParseState parseState, int parseStateFirstArgIdx, ref MemoryResult<byte> output)
         {
-            var result = TestAPI(api, ref parseState, parseStateStartIdx);
+            var result = TestAPI(api, ref parseState, parseStateFirstArgIdx);
             WriteSimpleString(ref output, result ? "SUCCESS" : "ERROR");
         }
 
-        private static bool TestAPI<TGarnetApi>(TGarnetApi api, ref SessionParseState parseState, int parseStateStartIdx) where TGarnetApi : IGarnetApi
+        private static bool TestAPI<TGarnetApi>(TGarnetApi api, ref SessionParseState parseState, int parseStateFirstArgIdx) where TGarnetApi : IGarnetApi
         {
             var offset = 0;
             var elements = new ArgSlice[10];
 
-            var lstKeyA = GetNextArg(ref parseState, parseStateStartIdx, ref offset);
-            var lstKeyB = GetNextArg(ref parseState, parseStateStartIdx, ref offset);
+            var lstKeyA = GetNextArg(ref parseState, parseStateFirstArgIdx, ref offset);
+            var lstKeyB = GetNextArg(ref parseState, parseStateFirstArgIdx, ref offset);
 
             if (lstKeyA.Length == 0 || lstKeyB.Length == 0)
                 return false;
 
             for (var i = 0; i < elements.Length; i++)
             {
-                elements[i] = GetNextArg(ref parseState, parseStateStartIdx, ref offset);
+                elements[i] = GetNextArg(ref parseState, parseStateFirstArgIdx, ref offset);
             }
 
             var status = api.ListLeftPush(lstKeyA, elements, out var count);

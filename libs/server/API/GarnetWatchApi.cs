@@ -461,7 +461,7 @@ namespace Garnet.server
         /// <inheritdoc />
         public GarnetStatus HyperLogLogLength(ref RawStringInput input, out long count, out bool error)
         {
-            var currTokenIdx = input.parseStateStartIdx;
+            var currTokenIdx = input.parseStateFirstArgIdx;
             while (currTokenIdx < input.parseState.Count)
             {
                 var key = input.parseState.GetArgSliceByRef(currTokenIdx++);

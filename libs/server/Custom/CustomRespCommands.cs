@@ -14,7 +14,7 @@ namespace Garnet.server
     /// </summary>
     internal sealed unsafe partial class RespServerSession : ServerSessionBase
     {
-        private bool TryTransactionProc(byte id, CustomTransactionProcedure proc, int parseStateStartIdx = 0)
+        private bool TryTransactionProc(byte id, CustomTransactionProcedure proc, int parseStateFirstArgIdx = 0)
         {
             // Define output
             var output = new MemoryResult<byte>(null, 0);
@@ -24,7 +24,7 @@ namespace Garnet.server
 
             latencyMetrics?.Start(LatencyMetricsType.TX_PROC_LAT);
 
-            if (txnManager.RunTransactionProc(id, ref parseState, parseStateStartIdx, proc, ref output))
+            if (txnManager.RunTransactionProc(id, ref parseState, parseStateFirstArgIdx, proc, ref output))
             {
                 // Write output to wire
                 if (output.MemoryOwner != null)
@@ -47,20 +47,20 @@ namespace Garnet.server
             return true;
         }
 
-        public bool RunTransactionProc(byte id, ref SessionParseState currParseState, ref MemoryResult<byte> output, int parseStateStartIdx = 0)
+        public bool RunTransactionProc(byte id, ref SessionParseState currParseState, ref MemoryResult<byte> output, int parseStateFirstArgIdx = 0)
         {
             var proc = customCommandManagerSession
                 .GetCustomTransactionProcedure(id, txnManager, scratchBufferManager).Item1;
-            return txnManager.RunTransactionProc(id, ref currParseState, parseStateStartIdx, proc, ref output);
+            return txnManager.RunTransactionProc(id, ref currParseState, parseStateFirstArgIdx, proc, ref output);
 
         }
 
-        private void TryCustomProcedure(CustomProcedure proc, int parseStateStartIdx = 0)
+        private void TryCustomProcedure(CustomProcedure proc, int parseStateFirstArgIdx = 0)
         {
             Debug.Assert(proc != null);
 
             var output = new MemoryResult<byte>(null, 0);
-            if (proc.Execute(basicGarnetApi, ref parseState, parseStateStartIdx, ref output))
+            if (proc.Execute(basicGarnetApi, ref parseState, parseStateFirstArgIdx, ref output))
             {
                 if (output.MemoryOwner != null)
                     SendAndReset(output.MemoryOwner, output.Length);

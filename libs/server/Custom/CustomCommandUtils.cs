@@ -47,8 +47,8 @@ namespace Garnet.server
         /// <returns>Argument as a span</returns>
         public static ReadOnlySpan<byte> GetNextArg(ref ObjectInput input, scoped ref int offset)
         {
-            var arg = input.parseStateStartIdx + offset < input.parseState.Count
-                ? input.parseState.GetArgSliceByRef(input.parseStateStartIdx + offset).ReadOnlySpan
+            var arg = input.parseStateFirstArgIdx + offset < input.parseState.Count
+                ? input.parseState.GetArgSliceByRef(input.parseStateFirstArgIdx + offset).ReadOnlySpan
                 : default;
             offset++;
             return arg;
@@ -62,8 +62,8 @@ namespace Garnet.server
         /// <returns>Argument as a span</returns>
         public static ReadOnlySpan<byte> GetNextArg(ref RawStringInput input, scoped ref int offset)
         {
-            var arg = input.parseStateStartIdx + offset < input.parseState.Count
-                ? input.parseState.GetArgSliceByRef(input.parseStateStartIdx + offset).ReadOnlySpan
+            var arg = input.parseStateFirstArgIdx + offset < input.parseState.Count
+                ? input.parseState.GetArgSliceByRef(input.parseStateFirstArgIdx + offset).ReadOnlySpan
                 : default;
             offset++;
             return arg;

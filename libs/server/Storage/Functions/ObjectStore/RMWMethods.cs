@@ -105,7 +105,7 @@ namespace Garnet.server
             switch (input.header.type)
             {
                 case GarnetObjectType.Expire:
-                    var currTokenIdx = input.parseStateStartIdx;
+                    var currTokenIdx = input.parseStateFirstArgIdx;
                     var expiryValue = input.parseState.GetInt(currTokenIdx++);
                     var expireInMs = input.parseState.GetInt(currTokenIdx++) == 1;
                     var tsExpiry = expireInMs
@@ -187,7 +187,7 @@ namespace Garnet.server
             switch (input.header.type)
             {
                 case GarnetObjectType.Expire:
-                    var currTokenIdx = input.parseStateStartIdx;
+                    var currTokenIdx = input.parseStateFirstArgIdx;
                     var expiryValue = input.parseState.GetInt(currTokenIdx++);
                     var expireInMs = input.parseState.GetInt(currTokenIdx++) == 1;
 

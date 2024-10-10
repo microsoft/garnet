@@ -20,23 +20,23 @@ namespace Garnet
         /// <summary>
         /// No transactional phase, skip Prepare
         /// </summary>
-        public override bool Prepare<TGarnetReadApi>(TGarnetReadApi api, ref SessionParseState parseState, int parseStateStartIdx)
+        public override bool Prepare<TGarnetReadApi>(TGarnetReadApi api, ref SessionParseState parseState, int parseStateFirstArgIdx)
             => false;
 
         /// <summary>
         /// Main will not be called because Prepare returns false
         /// </summary>
-        public override void Main<TGarnetApi>(TGarnetApi api, ref SessionParseState parseState, int parseStateStartIdx, ref MemoryResult<byte> output)
+        public override void Main<TGarnetApi>(TGarnetApi api, ref SessionParseState parseState, int parseStateFirstArgIdx, ref MemoryResult<byte> output)
             => throw new InvalidOperationException();
 
         /// <summary>
         /// Finalize reads two keys (non-transactionally) and return their values as an array of bulk strings
         /// </summary>
-        public override void Finalize<TGarnetApi>(TGarnetApi api, ref SessionParseState parseState, int parseStateStartIdx, ref MemoryResult<byte> output)
+        public override void Finalize<TGarnetApi>(TGarnetApi api, ref SessionParseState parseState, int parseStateFirstArgIdx, ref MemoryResult<byte> output)
         {
             var offset = 0;
-            var key1 = GetNextArg(ref parseState, parseStateStartIdx, ref offset);
-            var key2 = GetNextArg(ref parseState, parseStateStartIdx, ref offset);
+            var key1 = GetNextArg(ref parseState, parseStateFirstArgIdx, ref offset);
+            var key2 = GetNextArg(ref parseState, parseStateFirstArgIdx, ref offset);
 
             api.GET(key1, out var value1);
             api.GET(key2, out var value2);

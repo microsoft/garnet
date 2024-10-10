@@ -751,19 +751,19 @@ namespace Garnet.server
             if (!found && (storeType == StoreType.Object || storeType == StoreType.All) &&
                 !objectStoreBasicContext.IsNull)
             {
-                var expirySlice = input.parseState.GetArgSliceByRef(input.parseStateStartIdx);
+                var expirySlice = input.parseState.GetArgSliceByRef(input.parseStateFirstArgIdx);
 
                 var expiryInMsBytes = stackalloc byte[1];
                 expiryInMsBytes[0] = (byte)(input.header.cmd == RespCommand.EXPIRE ? '0' : '1');
                 var expiryInMsSlice = new ArgSlice(expiryInMsBytes, 1);
 
-                var paramCount = input.parseState.Count - input.parseStateStartIdx > 1 ? 3 : 2;
+                var paramCount = input.parseState.Count - input.parseStateFirstArgIdx > 1 ? 3 : 2;
                 parseState.Initialize(paramCount);
                 parseState.SetArguments(0, expirySlice, expiryInMsSlice);
 
                 if (paramCount == 3)
                 {
-                    var expiryOptionSlice = input.parseState.GetArgSliceByRef(input.parseStateStartIdx + 1);
+                    var expiryOptionSlice = input.parseState.GetArgSliceByRef(input.parseStateFirstArgIdx + 1);
                     parseState.SetArgument(2, expiryOptionSlice);
                 }
 

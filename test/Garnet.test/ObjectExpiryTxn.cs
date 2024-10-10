@@ -16,18 +16,18 @@ namespace Garnet
     /// </summary>
     sealed class ObjectExpiryTxn : CustomTransactionProcedure
     {
-        public override bool Prepare<TGarnetReadApi>(TGarnetReadApi api, ref SessionParseState parseState, int parseStateStartIdx)
+        public override bool Prepare<TGarnetReadApi>(TGarnetReadApi api, ref SessionParseState parseState, int parseStateFirstArgIdx)
         {
             var offset = 0;
-            AddKey(GetNextArg(ref parseState, parseStateStartIdx, ref offset), LockType.Exclusive, true);
+            AddKey(GetNextArg(ref parseState, parseStateFirstArgIdx, ref offset), LockType.Exclusive, true);
             return true;
         }
 
-        public override void Main<TGarnetApi>(TGarnetApi api, ref SessionParseState parseState, int parseStateStartIdx, ref MemoryResult<byte> output)
+        public override void Main<TGarnetApi>(TGarnetApi api, ref SessionParseState parseState, int parseStateFirstArgIdx, ref MemoryResult<byte> output)
         {
             var offset = 0;
-            var key = GetNextArg(ref parseState, parseStateStartIdx, ref offset);
-            var expiryMs = GetNextArg(ref parseState, parseStateStartIdx, ref offset);
+            var key = GetNextArg(ref parseState, parseStateFirstArgIdx, ref offset);
+            var expiryMs = GetNextArg(ref parseState, parseStateFirstArgIdx, ref offset);
 
             api.EXPIRE(key, expiryMs, out _, StoreType.Object);
             WriteSimpleString(ref output, "SUCCESS");

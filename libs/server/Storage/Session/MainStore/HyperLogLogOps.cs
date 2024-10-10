@@ -94,7 +94,7 @@ namespace Garnet.server
             error = false;
             count = default;
 
-            if (input.parseState.Count - input.parseStateStartIdx == 0)
+            if (input.parseState.Count - input.parseStateFirstArgIdx == 0)
                 return GarnetStatus.OK;
 
             var createTransaction = false;
@@ -103,7 +103,7 @@ namespace Garnet.server
             {
                 Debug.Assert(txnManager.state == TxnState.None);
                 createTransaction = true;
-                var currTokenIdx = input.parseStateStartIdx;
+                var currTokenIdx = input.parseStateFirstArgIdx;
                 var dstKey = input.parseState.GetArgSliceByRef(currTokenIdx++);
                 txnManager.SaveKeyEntryToLock(dstKey, false, LockType.Exclusive);
                 while (currTokenIdx < input.parseState.Count)
@@ -128,7 +128,7 @@ namespace Garnet.server
                 var srcMergeBuffer = new SpanByteAndMemory(dstReadBuffer, hllBufferSize);
                 var isFirst = false;
 
-                var currTokenIdx = input.parseStateStartIdx;
+                var currTokenIdx = input.parseStateFirstArgIdx;
 
                 while (currTokenIdx < input.parseState.Count)
                 {
@@ -190,7 +190,7 @@ namespace Garnet.server
         {
             error = false;
 
-            if (input.parseState.Count - input.parseStateStartIdx == 0)
+            if (input.parseState.Count - input.parseStateFirstArgIdx == 0)
                 return GarnetStatus.OK;
 
             var createTransaction = false;
@@ -199,7 +199,7 @@ namespace Garnet.server
             {
                 Debug.Assert(txnManager.state == TxnState.None);
                 createTransaction = true;
-                var currTokenIdx = input.parseStateStartIdx;
+                var currTokenIdx = input.parseStateFirstArgIdx;
                 var dstKey = input.parseState.GetArgSliceByRef(currTokenIdx++);
                 txnManager.SaveKeyEntryToLock(dstKey, false, LockType.Exclusive);
                 while (currTokenIdx < input.parseState.Count)
@@ -217,7 +217,7 @@ namespace Garnet.server
                 sectorAlignedMemoryHll1 ??= new SectorAlignedMemory(hllBufferSize + sectorAlignedMemoryPoolAlignment, sectorAlignedMemoryPoolAlignment);
                 var readBuffer = sectorAlignedMemoryHll1.GetValidPointer();
 
-                var currTokenIdx = input.parseStateStartIdx;
+                var currTokenIdx = input.parseStateFirstArgIdx;
                 var dstKey = input.parseState.GetArgSliceByRef(currTokenIdx++).SpanByte;
 
                 while (currTokenIdx < input.parseState.Count)

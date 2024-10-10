@@ -33,7 +33,7 @@ namespace Garnet.server
 
             for (var i = 1; i < parseState.Count; i++)
             {
-                input.parseStateStartIdx = i;
+                input.parseStateFirstArgIdx = i;
                 var o = new SpanByteAndMemory(output, 1);
                 storageApi.HyperLogLogAdd(ref key, ref input, ref o);
 
