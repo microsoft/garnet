@@ -329,6 +329,23 @@ namespace Garnet.test.cluster
         public override ArraySegment<string>[] SetupSingleSlotRequest() => throw new NotImplementedException();
     }
 
+    internal class INCRBYFLOAT : BaseCommand
+    {
+        public override bool IsArrayCommand => false;
+        public override bool ArrayResponse => false;
+        public override string Command => nameof(INCRBYFLOAT);
+
+        public override string[] GetSingleSlotRequest()
+        {
+            var ssk = GetSingleSlotKeys;
+            return [ssk[0], "1.5"];
+        }
+
+        public override string[] GetCrossSlotRequest() => throw new NotImplementedException();
+
+        public override ArraySegment<string>[] SetupSingleSlotRequest() => throw new NotImplementedException();
+    }
+
     internal class APPEND : BaseCommand
     {
         public override bool IsArrayCommand => false;

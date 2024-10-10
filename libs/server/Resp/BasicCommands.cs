@@ -758,7 +758,9 @@ namespace Garnet.server
             var output = ArgSlice.FromPinnedSpan(outputBuffer);
 
             storageApi.Increment(key, input, ref output);
-            var errorFlag = output.Length == NumUtils.MaximumFormatInt64Length + 1
+
+            var errorFlag = OperationError.SUCCESS;
+            errorFlag = output.Length == NumUtils.MaximumFormatInt64Length + 1
                 ? (OperationError)output.Span[0]
                 : OperationError.SUCCESS;
 
@@ -769,8 +771,52 @@ namespace Garnet.server
                         SendAndReset();
                     break;
                 case OperationError.INVALID_TYPE:
-                    while (!RespWriteUtils.WriteError(CmdStrings.RESP_ERR_GENERIC_VALUE_IS_NOT_INTEGER, ref dcurr,
-                               dend))
+                    while (!RespWriteUtils.WriteError(CmdStrings.RESP_ERR_GENERIC_VALUE_IS_NOT_INTEGER, ref dcurr, dend))
+                        SendAndReset();
+                    break;
+                default:
+                    throw new GarnetException($"Invalid OperationError {errorFlag}");
+            }
+
+            return true;
+        }
+
+        /// <summary>
+        /// Increment by float (INCRBYFLOAT)
+        /// </summary>
+        private bool NetworkIncrementByFloat<TGarnetApi>(ref TGarnetApi storageApi)
+            where TGarnetApi : IGarnetApi
+        {
+            var key = parseState.GetArgSliceByRef(0);
+            var sbKey = key.SpanByte;
+
+            ArgSlice input = default;
+            var sbVal = parseState.GetArgSliceByRef(1).SpanByte;
+            var valPtr = sbVal.ToPointer() - RespInputHeader.Size;
+            var vSize = sbVal.Length + RespInputHeader.Size;
+            ((RespInputHeader*)valPtr)->cmd = RespCommand.INCRBYFLOAT;
+            ((RespInputHeader*)valPtr)->flags = 0;
+            input = new ArgSlice(valPtr, vSize);
+
+            Span<byte> outputBuffer = stackalloc byte[NumUtils.MaximumFormatDoubleLength + 1];
+            var output = ArgSlice.FromPinnedSpan(outputBuffer);
+
+            storageApi.Increment(key, input, ref output);
+
+            var errorFlag = OperationError.SUCCESS;
+            errorFlag = output.Length == NumUtils.MaximumFormatDoubleLength + 1
+                ? (OperationError)output.Span[0]
+                : OperationError.SUCCESS;
+
+            switch (errorFlag)
+            {
+                case OperationError.SUCCESS:
+                    while (!RespWriteUtils.WriteBulkString(outputBuffer.Slice(0, output.Length), ref dcurr, dend))
+                        SendAndReset();
+                    break;
+                case OperationError.INVALID_TYPE:
+                    while (!RespWriteUtils.WriteError(CmdStrings.RESP_ERR_NOT_VALID_FLOAT, ref dcurr,
+                                   dend))
                         SendAndReset();
                     break;
                 default:
