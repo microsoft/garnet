@@ -203,7 +203,7 @@ namespace Garnet.server
 
             // Move value forward to make space for metadata
             Buffer.MemoryCopy(valPtr + sizeof(int), valPtr + sizeof(int) + sizeof(long), valSize, valSize);
-            
+
             // Set new value length
             var newValSize = valSize + sizeof(long);
             *(int*)valPtr = newValSize;
