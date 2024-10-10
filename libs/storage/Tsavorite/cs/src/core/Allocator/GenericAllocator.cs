@@ -99,6 +99,12 @@ namespace Tsavorite.core
 
         /// <inheritdoc/>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        public readonly (int actualSize, int allocatedSize, int keySize) GetUpsertRecordSize<TInput, TSessionFunctionsWrapper>(ref TKey key, ref TValue value, ref TInput input, TSessionFunctionsWrapper sessionFunctions)
+            where TSessionFunctionsWrapper : IVariableLengthInput<TValue, TInput>
+            => _this.GetUpsertRecordSize(ref key, ref value, ref input, sessionFunctions);
+
+        /// <inheritdoc/>
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public readonly (int actualSize, int allocatedSize, int keySize) GetRecordSize(ref TKey key, ref TValue value) => _this.GetRecordSize(ref key, ref value);
 
         /// <inheritdoc/>

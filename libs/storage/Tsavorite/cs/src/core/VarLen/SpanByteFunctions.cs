@@ -3,7 +3,6 @@
 
 using System.Buffers;
 using System.Runtime.CompilerServices;
-using static Tsavorite.core.Utility;
 
 namespace Tsavorite.core
 {
@@ -125,5 +124,12 @@ namespace Tsavorite.core
 
         /// <inheritdoc/>
         public override int GetRMWInitialValueLength(ref SpanByte input) => input.TotalSize;
+
+        /// <summary>
+        /// Length of resulting object when doing Upsert with given value and input. Here we set the length to the
+        /// length of the provided value, ignoring input. You can provide a custom implementation for other cases.
+        /// </summary>
+        public override int GetUpsertValueLength(ref SpanByte t, ref SpanByte input)
+            => t.TotalSize;
     }
 }

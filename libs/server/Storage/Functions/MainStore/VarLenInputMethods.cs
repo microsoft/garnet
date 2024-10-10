@@ -255,5 +255,8 @@ namespace Garnet.server
 
             return sizeof(int) + input.Length - RespInputHeader.Size;
         }
+
+        public int GetUpsertValueLength(ref SpanByte t, ref SpanByte input)
+            => t.TotalSize;
     }
 }

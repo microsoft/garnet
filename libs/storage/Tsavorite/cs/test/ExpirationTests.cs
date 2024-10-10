@@ -475,6 +475,9 @@ namespace Tsavorite.test.Expiration
             /// <inheritdoc/>
             public override int GetRMWInitialValueLength(ref ExpirationInput input) => MinValueLen;
 
+            /// <inheritdoc/>
+            public override int GetUpsertValueLength(ref SpanByte value, ref ExpirationInput input) => value.TotalSize;
+
             // Read functions
             public override unsafe bool SingleReader(ref SpanByte key, ref ExpirationInput input, ref SpanByte value, ref ExpirationOutput output, ref ReadInfo readInfo)
             {

@@ -22,5 +22,10 @@ namespace Garnet.server
         {
             throw new GarnetException("GetRMWInitialValueLength is not available on the object store");
         }
+
+        public int GetUpsertValueLength(ref IGarnetObject value, ref ObjectInput input)
+        {
+            throw new GarnetException("GetUpsertInitialValueLength is not available on the object store");
+        }
     }
 }
