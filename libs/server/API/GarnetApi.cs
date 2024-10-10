@@ -398,5 +398,8 @@ namespace Garnet.server
          => storageSession.ObjectScan(key, ref input, ref outputFooter, ref objectContext);
 
         #endregion
+
+        public unsafe GarnetStatus CustomCommand(byte id, ArgSlice key, ArgSlice input, ref SpanByteAndMemory output)
+            => storageSession.CustomCommand(id, key, input, ref output, ref context);
     }
 }
