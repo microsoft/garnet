@@ -303,7 +303,7 @@ Note that this list is subject to change as we continue to expand our API comman
 |  | SINTERCARD | ➖ |  |
 |  | [SISMEMBER](data-structures.md#sismember) | ➕ |  |
 |  | [SMEMBERS](data-structures.md#smembers) | ➕ |  |
-|  | SMISMEMBER | ➖ |  |
+|  | [SMISMEMBER](data-structures.md#smismember) | ➕ |  |
 |  | SMOVE | ➖ |  |
 |  | [SPOP](data-structures.md#spop) | ➕ |  |
 |  | SPUBLISH | ➖ |  |
