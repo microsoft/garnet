@@ -4,7 +4,6 @@
 using System;
 using System.Collections.Concurrent;
 using System.Collections.Generic;
-using System.Runtime.CompilerServices;
 using System.Threading;
 using System.Threading.Tasks;
 using Garnet.common;
@@ -12,93 +11,9 @@ using Microsoft.Extensions.Logging;
 
 namespace Garnet.cluster
 {
-    internal struct GossipStats
-    {
-        /// <summary>
-        /// number of requests for received for processing
-        /// </summary>
-        public long meet_requests_recv;
-        /// <summary>
-        /// number of succeeded meet requests
-        /// </summary>
-        public long meet_requests_succeed;
-        /// <summary>
-        /// number of failed meet requests
-        /// </summary>
-        public long meet_requests_failed;
-
-        /// <summary>
-        /// number of gossip requests send successfully
-        /// </summary>
-        public long gossip_success_count;
-
-        /// <summary>
-        /// number of gossip requests failed to send
-        /// </summary>
-        public long gossip_failed_count;
-
-        /// <summary>
-        /// number of gossip requests that timed out
-        /// </summary>
-        public long gossip_timeout_count;
-
-        /// <summary>
-        /// number of gossip requests that contained full config array
-        /// </summary>
-        public long gossip_full_send;
-
-        /// <summary>
-        /// number of gossip requests send with empty array (i.e. ping)
-        /// </summary>
-        public long gossip_empty_send;
-
-        /// <summary>
-        /// Aggregate bytes gossip has send
-        /// </summary>
-        public long gossip_bytes_send;
-
-        /// <summary>
-        /// Aggregate bytes gossip has received
-        /// </summary>
-        public long gossip_bytes_recv;
-
-        [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public void UpdateMeetRequestsRecv()
-            => Interlocked.Increment(ref meet_requests_recv);
-
-        [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public void UpdateMeetRequestsSucceed()
-            => Interlocked.Increment(ref meet_requests_succeed);
-
-        [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public void UpdateMeetRequestsFailed()
-            => Interlocked.Increment(ref meet_requests_failed);
-
-        [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public void UpdateGossipBytesSend(int byteCount)
-            => Interlocked.Add(ref gossip_bytes_send, byteCount);
-
-        [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public void UpdateGossipBytesRecv(int byteCount)
-            => Interlocked.Add(ref gossip_bytes_recv, byteCount);
-
-        public void Reset()
-        {
-            meet_requests_recv = 0;
-            meet_requests_succeed = 0;
-            meet_requests_failed = 0;
-            gossip_success_count = 0;
-            gossip_failed_count = 0;
-            gossip_timeout_count = 0;
-            gossip_full_send = 0;
-            gossip_empty_send = 0;
-            gossip_bytes_send = 0;
-            gossip_bytes_recv = 0;
-        }
-    }
-
     internal sealed partial class ClusterManager : IDisposable
     {
+        const int maxRandomNodesToPoll = 3;
         public readonly TimeSpan gossipDelay;
         public readonly TimeSpan clusterTimeout;
         private volatile int numActiveTasks = 0;
@@ -151,38 +66,24 @@ namespace Garnet.cluster
             return primaryLinkStatus;
         }
 
-        private static bool Expired(long expiry)
-            => expiry < DateTimeOffset.UtcNow.Ticks;
+        static bool Expired(long expiry) => expiry < DateTimeOffset.UtcNow.Ticks;
 
         /// <summary>
         /// Pause merge config ops by setting numActiveMerge to MinValue.
         /// Called when FORGET op executes and waits until ongoing merge operations complete before executing FORGET
         /// Multiple FORGET ops can execute at the same time.
         /// </summary>
-        private void PauseConfigMerge()
-            => activeMergeLock.WriteLock();
+        void PauseConfigMerge() => activeMergeLock.WriteLock();
 
         /// <summary>
-        /// Unpause config merge
+        /// Resume config merge
         /// </summary>
-        private void UnpauseConfigMerge()
-            => activeMergeLock.WriteUnlock();
-
-        /// <summary>
-        /// Increment only when numActiveMerge tasks are >= 0 else wait.
-        /// numActiveMerge less than 0 when ongoing FORGET op. Ensures that FORGET is atomic and visible to all Merg ops
-        /// before returning ack to the caller.
-        /// </summary>
-        private void IncrementConfigMerge()
-            => activeMergeLock.ReadLock();
-
-        private void DecrementConfigMerge()
-            => activeMergeLock.ReadUnlock();
+        void ResumeConfigMerge() => activeMergeLock.WriteUnlock();
 
         /// <summary>
         /// Initiate meet and main gossip tasks
         /// </summary>
-        private void TryStartGossipTasks()
+        void TryStartGossipTasks()
         {
             // Start background task for gossip protocol
             for (var i = 2; i <= CurrentConfig.NumWorkers; i++)
@@ -202,7 +103,7 @@ namespace Garnet.cluster
         {
             try
             {
-                IncrementConfigMerge();
+                activeMergeLock.ReadLock();
                 if (workerBanList.ContainsKey(other.LocalNodeId))
                 {
                     logger?.LogTrace("Cannot merge node <{nodeid}> because still in ban list", other.LocalNodeId);
@@ -223,7 +124,7 @@ namespace Garnet.cluster
             }
             finally
             {
-                DecrementConfigMerge();
+                activeMergeLock.ReadUnlock();
             }
         }
 
@@ -233,7 +134,7 @@ namespace Garnet.cluster
         /// <param name="address"></param>
         /// <param name="port"></param>
         public void RunMeetTask(string address, int port)
-            => Task.Run(() => Meet(address, port));
+            => Task.Run(() => TryMeet(address, port));
 
         /// <summary>
         /// Meet will immediately communicate with the new node and try to merge the retrieve configuration to its own.
@@ -241,7 +142,7 @@ namespace Garnet.cluster
         /// </summary>
         /// <param name="address"></param>
         /// <param name="port"></param>
-        public void Meet(string address, int port)
+        void TryMeet(string address, int port)
         {
             GarnetServerNode gsn = null;
             var conf = CurrentConfig;
@@ -301,7 +202,7 @@ namespace Garnet.cluster
         /// <summary>
         /// Dispose connections for workers in the ban list
         /// </summary>
-        private void DisposeBannedWorkerConnections()
+        void DisposeBannedWorkerConnections()
         {
             foreach (var w in workerBanList)
             {
@@ -323,7 +224,7 @@ namespace Garnet.cluster
         /// <summary>
         /// Initialize connections for nodes that have either been dispose due to banlist (after expiry) or timeout
         /// </summary>
-        private void InitConnections()
+        void InitConnections()
         {
             DisposeBannedWorkerConnections();
 
@@ -362,7 +263,7 @@ namespace Garnet.cluster
         /// <summary>
         /// Initiate a full broadcast gossip transmission
         /// </summary>
-        public void BroadcastGossipSend()
+        void BroadcastGossipSend()
         {
             // Issue async gossip tasks to all nodes
             uint offset = 0;
@@ -381,12 +282,12 @@ namespace Garnet.cluster
                     }
 
                     gossipStats.gossip_timeout_count++;
-                    logger?.LogWarning("GOSSIP to remote node [{nodeId} {address}:{port}] timeout!", currNode.NodeId, currNode.address, currNode.port);
+                    logger?.LogWarning("GOSSIP to remote node [{nodeId} {address}:{port}] timeout!", currNode.NodeId, currNode.Address, currNode.Port);
                     _ = clusterConnectionStore.TryRemove(currNode.NodeId);
                 }
                 catch (Exception ex)
                 {
-                    logger?.LogWarning(ex, "GOSSIP to remote node [{nodeId} {address} {port}] failed!", currNode.NodeId, currNode.address, currNode.port);
+                    logger?.LogWarning(ex, "GOSSIP to remote node [{nodeId} {address} {port}] failed!", currNode.NodeId, currNode.Address, currNode.Port);
                     _ = clusterConnectionStore.TryRemove(currNode.NodeId);
                     gossipStats.gossip_failed_count++;
                 }
@@ -396,7 +297,7 @@ namespace Garnet.cluster
         /// <summary>
         /// Initiate sampling gossip transmission
         /// </summary>
-        public void GossipSampleSend()
+        void GossipSampleSend()
         {
             var nodeCount = clusterConnectionStore.Count;
             var fraction = (int)(Math.Ceiling(nodeCount * (GossipSamplePercent / 100.0f)));
@@ -408,7 +309,7 @@ namespace Garnet.cluster
                 var minSend = startTime;
                 GarnetServerNode currNode = null;
 
-                for (var i = 0; i < 3; i++)
+                for (var i = 0; i < maxRandomNodesToPoll; i++)
                 {
                     // Pick the node with earliest send timestamp
                     if (clusterConnectionStore.GetRandomConnection(out var c) && c.GossipSend < minSend)
@@ -432,12 +333,12 @@ namespace Garnet.cluster
                     }
 
                     gossipStats.gossip_timeout_count++;
-                    logger?.LogWarning("GOSSIP to remote node [{nodeId} {address}:{port}] timeout!", currNode.NodeId, currNode.address, currNode.port);
+                    logger?.LogWarning("GOSSIP to remote node [{nodeId} {address}:{port}] timeout!", currNode.NodeId, currNode.Address, currNode.Port);
                     _ = clusterConnectionStore.TryRemove(currNode.NodeId);
                 }
                 catch (Exception ex)
                 {
-                    logger?.LogError(ex, "GOSSIP to remote node [{nodeId} {address} {port}] failed!", currNode.NodeId, currNode.address, currNode.port);
+                    logger?.LogError(ex, "GOSSIP to remote node [{nodeId} {address} {port}] failed!", currNode.NodeId, currNode.Address, currNode.Port);
                     _ = clusterConnectionStore.TryRemove(currNode.NodeId);
                     gossipStats.gossip_failed_count++;
                 }
@@ -448,21 +349,9 @@ namespace Garnet.cluster
         }
 
         /// <summary>
-        /// Main method responsible initiating gossip messages
-        /// </summary>
-        public void TransmitGossip()
-        {
-            // Choose between full broadcast or sample gossip to few nodes
-            if (GossipSamplePercent == 100)
-                BroadcastGossipSend();
-            else
-                GossipSampleSend();
-        }
-
-        /// <summary>
         /// Main gossip async task
         /// </summary>
-        private async void GossipMain()
+        async void GossipMain()
         {
             try
             {
@@ -470,7 +359,12 @@ namespace Garnet.cluster
                 {
                     if (ctsGossip.Token.IsCancellationRequested) return;
                     InitConnections();
-                    TransmitGossip();
+
+                    // Choose between full broadcast or sample gossip to few nodes
+                    if (GossipSamplePercent == 100)
+                        BroadcastGossipSend();
+                    else
+                        GossipSampleSend();
 
                     await Task.Delay(gossipDelay, ctsGossip.Token);
                 }
