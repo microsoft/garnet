@@ -6,13 +6,14 @@ env:
   DOTNET_SKIP_FIRST_TIME_EXPERIENCE: 1
   DOTNET_NOLOGO: true
 
+permissions:
+  deployments: write  #permission to deploy GitHub pages website
+  contents: write  # permission to update benchmark contents in gh-pages branch
+
 jobs:
   changes:
     name: Check for changes
     runs-on: ubuntu-latest # don't need matrix to test where the changes were made in code
-    permissions:
-      deployments: write  #permission to deploy GitHub pages website
-      contents: write  # permission to update benchmark contents in gh-pages branch
     steps:
     - name: Check out code
       uses: actions/checkout@v4
