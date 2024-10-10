@@ -546,6 +546,10 @@ namespace Garnet.server
             return garnetApi.ObjectScan(key, ref input, ref outputFooter);
         }
 
+        public bool FreeBuffer(ref ArgSlice arg)
+        {
+            return garnetApi.FreeBuffer(ref arg);
+        }
         #endregion
     }
 }
