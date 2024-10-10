@@ -5090,7 +5090,7 @@ namespace Garnet.test.Resp.ACL
         }
 
         [Test]
-        public async Task SMultiIsMemberACLsAsync()
+        public async Task SMIsMemberACLsAsync()
         {
             await CheckCommandsAsync(
                 "SMISMEMBER",
