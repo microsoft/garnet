@@ -554,8 +554,7 @@ Write-Output "**  "
 if ($testSuiteResult) {
     Write-Output "**   PASS!  All tests passed  "
 } else {
-# DEBUG DEBUG  -- if want to do ERRORS that will stop the pipeline run!   Write-Error -Message "**   BDN Benchmark PERFORMANCE REGRESSION FAIL!  At least one test had benchmark value outside of expected range. NOTE: Expected results are based on CI machine and may differ from the machine that this was ran on."
-    Write-Output "**   BDN Benchmark PERFORMANCE REGRESSION FAIL!  At least one test had benchmark value outside of expected range. NOTE: Expected results are based on CI machine and may differ from the machine that this was ran on."
+    Write-Error -Message "**   BDN Benchmark PERFORMANCE REGRESSION FAIL!  At least one test had benchmark value outside of expected range. NOTE: Expected results are based on CI machine and may differ from the machine that this was ran on."
 }
 Write-Output "**  "
 Write-Output "************************"
