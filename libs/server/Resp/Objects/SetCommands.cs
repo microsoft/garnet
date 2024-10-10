@@ -407,7 +407,7 @@ namespace Garnet.server
             where TGarnetApi : IGarnetApi
         {
             Debug.Assert(cmd == RespCommand.SISMEMBER || cmd == RespCommand.SMISMEMBER);
-            
+
             var isSingle = cmd == RespCommand.SISMEMBER;
             if (isSingle)
             {
