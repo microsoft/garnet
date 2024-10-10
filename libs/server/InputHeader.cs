@@ -196,6 +196,11 @@ namespace Garnet.server
         public int parseStateFirstArgIdx;
 
         /// <summary>
+        /// Last index to read in the parse state parameters array for command execution
+        /// </summary>
+        public int parseStateLastArgIdx;
+
+        /// <summary>
         /// Session parse state
         /// </summary>
         public SessionParseState parseState;
@@ -219,19 +224,22 @@ namespace Garnet.server
         /// <param name="header">Input header</param>
         /// <param name="parseState">Parse state</param>
         /// <param name="parseStateFirstArgIdx">Index at which to start reading parse state parameters array</param>
+        /// <param name="parseStateLastArgIdx">Last index to read in the parse state parameters array for command execution</param>
         /// <param name="arg1">First general-purpose argument</param>
         /// <param name="arg2">Second general-purpose argument</param>
-        public ObjectInput(RespInputHeader header, SessionParseState parseState, int parseStateFirstArgIdx = 0, int arg1 = 0, int arg2 = 0)
-        : this(header, arg1, arg2)
+        public ObjectInput(RespInputHeader header, ref SessionParseState parseState, int parseStateFirstArgIdx = 0,
+            int parseStateLastArgIdx = -1, int arg1 = 0, int arg2 = 0)
+            : this(header, arg1, arg2)
         {
             this.parseState = parseState;
             this.parseStateFirstArgIdx = parseStateFirstArgIdx;
+            this.parseStateLastArgIdx = parseStateLastArgIdx;
         }
 
         /// <inheritdoc />
         public int SerializedLength => header.SpanByte.TotalSize
                                        + (3 * sizeof(int)) // Length + arg1 + arg2
-                                       + parseState.GetSerializedLength(parseStateFirstArgIdx);
+                                       + parseState.GetSerializedLength(parseStateFirstArgIdx, parseStateLastArgIdx);
 
         /// <inheritdoc />
         public unsafe void CopyTo(byte* dest, int length)
@@ -255,7 +263,8 @@ namespace Garnet.server
 
             // Serialize parse state
             // Only serialize arguments starting from parseStateFirstArgIdx
-            var len = parseState.CopyTo(curr, parseStateFirstArgIdx);
+            var remainingLength = length - (int)(curr - dest - sizeof(int));
+            var len = parseState.CopyTo(curr, parseStateFirstArgIdx, parseStateLastArgIdx, remainingLength);
             curr += len;
 
             // Serialize length
@@ -304,7 +313,12 @@ namespace Garnet.server
         /// <summary>
         /// Index at which to start reading the parse state parameters array for command execution
         /// </summary>
-        public int parseStateFirstArgIdx;
+        public int parseStateFirstArgIdx = 0;
+
+        /// <summary>
+        /// Last index to read in the parse state parameters array for command execution
+        /// </summary>
+        public int parseStateLastArgIdx = -1;
 
         /// <summary>
         /// Session parse state
@@ -341,20 +355,22 @@ namespace Garnet.server
         /// <param name="cmd">Command</param>
         /// <param name="parseState">Parse state</param>
         /// <param name="parseStateFirstArgIdx">Index at which to start reading parse state parameters array</param>
+        /// <param name="parseStateLastArgIdx">Last index to read in the parse state parameters array for command execution</param>
         /// <param name="arg1">General-purpose argument</param>
         /// <param name="flags">Flags</param>
-        public RawStringInput(RespCommand cmd, SessionParseState parseState, int parseStateFirstArgIdx = 0,
-            long arg1 = 0, RespInputFlags flags = 0) : this(cmd, flags, arg1)
+        public RawStringInput(RespCommand cmd, ref SessionParseState parseState, int parseStateFirstArgIdx = 0,
+            int parseStateLastArgIdx = -1, long arg1 = 0, RespInputFlags flags = 0) : this(cmd, flags, arg1)
         {
             this.parseState = parseState;
             this.parseStateFirstArgIdx = parseStateFirstArgIdx;
+            this.parseStateLastArgIdx = parseStateLastArgIdx;
         }
 
         /// <inheritdoc />
         public int SerializedLength => sizeof(int) // Length
                                        + header.SpanByte.TotalSize
                                        + sizeof(long) // arg1
-                                       + parseState.GetSerializedLength(parseStateFirstArgIdx);
+                                       + parseState.GetSerializedLength(parseStateFirstArgIdx, parseStateLastArgIdx);
 
         /// <inheritdoc />
         public unsafe void CopyTo(byte* dest, int length)
@@ -374,7 +390,8 @@ namespace Garnet.server
 
             // Serialize parse state
             // Only serialize arguments starting from parseStateFirstArgIdx
-            var len = parseState.CopyTo(curr, parseStateFirstArgIdx);
+            var remainingLength = length - (int)(curr - dest - sizeof(int));
+            var len = parseState.CopyTo(curr, parseStateFirstArgIdx, parseStateLastArgIdx, remainingLength);
             curr += len;
 
             // Serialize length
@@ -398,6 +415,69 @@ namespace Garnet.server
 
             // Deserialize parse state
             parseState.DeserializeFrom(curr);
+        }
+    }
+
+    /// <summary>
+    /// Header for Garnet CustomProcedure inputs
+    /// </summary>
+    public struct CustomProcedureInput : IStoreInput
+    {
+        /// <summary>
+        /// Index at which to start reading the parse state parameters array for command execution
+        /// </summary>
+        public int parseStateFirstArgIdx;
+
+        /// <summary>
+        /// Last index to read in the parse state parameters array for command execution
+        /// </summary>
+        public int parseStateLastArgIdx;
+
+        /// <summary>
+        /// Session parse state
+        /// </summary>
+        public SessionParseState parseState;
+
+        /// <summary>
+        /// Create a new instance of RawStringInput
+        /// </summary>
+        /// <param name="parseState">Parse state</param>
+        /// <param name="parseStateFirstArgIdx">Index at which to start reading parse state parameters array</param>
+        /// <param name="parseStateLastArgIdx">Last index to read in the parse state parameters array</param>
+        public CustomProcedureInput(ref SessionParseState parseState, int parseStateFirstArgIdx = 0, int parseStateLastArgIdx = -1)
+        {
+            this.parseState = parseState;
+            this.parseStateFirstArgIdx = parseStateFirstArgIdx;
+            this.parseStateLastArgIdx = parseStateLastArgIdx;
+        }
+
+        /// <inheritdoc />
+        public int SerializedLength => sizeof(int) // Length
+                                       + parseState.GetSerializedLength(parseStateFirstArgIdx, parseStateLastArgIdx);
+
+        /// <inheritdoc />
+        public unsafe void CopyTo(byte* dest, int length)
+        {
+            Debug.Assert(length >= this.SerializedLength);
+
+            // Leave space for length
+            var curr = dest + sizeof(int);
+
+            // Serialize parse state
+            // Only serialize arguments starting from parseStateFirstArgIdx
+            var remainingLength = (int)(curr - dest - sizeof(int));
+            var len = parseState.CopyTo(curr, parseStateFirstArgIdx, parseStateLastArgIdx, remainingLength);
+            curr += len;
+
+            // Serialize length
+            *(int*)dest = (int)(curr - dest - sizeof(int));
+        }
+
+        /// <inheritdoc />
+        public unsafe void DeserializeFrom(byte* src)
+        {
+            // Deserialize parse state
+            parseState.DeserializeFrom(src);
         }
     }
 

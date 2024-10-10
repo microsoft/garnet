@@ -372,7 +372,7 @@ namespace Garnet.server
 
             parseState.InitializeWithArgument(value);
 
-            var input = new RawStringInput(RespCommand.APPEND, parseState);
+            var input = new RawStringInput(RespCommand.APPEND, ref parseState);
 
             return APPEND(ref _key, ref input, ref _output, ref context);
         }
@@ -768,7 +768,7 @@ namespace Garnet.server
                 }
 
                 var header = new RespInputHeader(GarnetObjectType.Expire);
-                var objInput = new ObjectInput(header, parseState);
+                var objInput = new ObjectInput(header, ref parseState);
 
                 // Retry on object store
                 var objOutput = new GarnetObjectStoreOutput { spanByteAndMemory = output };
@@ -830,7 +830,7 @@ namespace Garnet.server
                 parseState.InitializeWithArguments(expirySlice, expiryOptionSlice);
 
                 var cmd = milliseconds ? RespCommand.PEXPIRE : RespCommand.EXPIRE;
-                var input = new RawStringInput(cmd, parseState);
+                var input = new RawStringInput(cmd, ref parseState);
 
                 var _key = key.SpanByte;
                 var status = context.RMW(ref _key, ref input, ref output);
@@ -851,7 +851,7 @@ namespace Garnet.server
                 parseState.InitializeWithArguments(expirySlice, expiryInMsSlice, expiryOptionSlice);
 
                 var header = new RespInputHeader(GarnetObjectType.Expire);
-                var objInput = new ObjectInput(header, parseState);
+                var objInput = new ObjectInput(header, ref parseState);
 
                 // Retry on object store
                 var objOutput = new GarnetObjectStoreOutput { spanByteAndMemory = output };
@@ -968,13 +968,13 @@ namespace Garnet.server
             }
 
             var incrementNumDigits = NumUtils.NumDigitsInLong(increment);
-            var incrementBytes = stackalloc byte[incrementNumDigits];
-            NumUtils.LongToBytes(increment, incrementNumDigits, ref incrementBytes);
-            var incrementSlice = new ArgSlice(incrementBytes, incrementNumDigits);
+            var incrementSlice = scratchBufferManager.CreateArgSlice(incrementNumDigits);
+            var incrementSpan = incrementSlice.Span;
+            NumUtils.LongToSpanByte(increment, incrementSpan);
 
             parseState.InitializeWithArgument(incrementSlice);
 
-            var input = new RawStringInput(cmd, parseState);
+            var input = new RawStringInput(cmd, ref parseState);
 
             const int outputBufferLength = NumUtils.MaximumFormatInt64Length + 1;
             var outputBuffer = stackalloc byte[outputBufferLength];
@@ -985,6 +985,8 @@ namespace Garnet.server
             var status = context.RMW(ref _key, ref input, ref _output);
             if (status.IsPending)
                 CompletePendingForSession(ref status, ref _output, ref context);
+
+            scratchBufferManager.RewindScratchBuffer(ref incrementSlice);
 
             Debug.Assert(_output.IsSpanByte);
             Debug.Assert(_output.Length == outputBufferLength);

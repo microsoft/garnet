@@ -19,10 +19,10 @@ namespace Garnet
     /// </summary>
     sealed class TestProcedureSortedSets : CustomTransactionProcedure
     {
-        public override bool Prepare<TGarnetReadApi>(TGarnetReadApi api, ref SessionParseState parseState, int parseStateFirstArgIdx)
+        public override bool Prepare<TGarnetReadApi>(TGarnetReadApi api, ref CustomProcedureInput procInput)
         {
             var offset = 0;
-            var ssA = GetNextArg(ref parseState, parseStateFirstArgIdx, ref offset);
+            var ssA = GetNextArg(ref procInput, ref offset);
 
             if (ssA.Length == 0)
                 return false;
@@ -32,30 +32,30 @@ namespace Garnet
             return true;
         }
 
-        public override void Main<TGarnetApi>(TGarnetApi api, ref SessionParseState parseState, int parseStateFirstArgIdx, ref MemoryResult<byte> output)
+        public override void Main<TGarnetApi>(TGarnetApi api, ref CustomProcedureInput procInput, ref MemoryResult<byte> output)
         {
-            var result = TestAPI(api, ref parseState, parseStateFirstArgIdx);
+            var result = TestAPI(api, ref procInput);
             WriteSimpleString(ref output, result ? "SUCCESS" : "ERROR");
         }
 
-        private static bool TestAPI<TGarnetApi>(TGarnetApi api, ref SessionParseState parseState, int parseStateFirstArgIdx) where TGarnetApi : IGarnetApi
+        private static bool TestAPI<TGarnetApi>(TGarnetApi api, ref CustomProcedureInput procInput) where TGarnetApi : IGarnetApi
         {
             var offset = 0;
             var ssItems = new (ArgSlice score, ArgSlice member)[10];
             var ssMembers = new ArgSlice[10];
 
-            var ssA = GetNextArg(ref parseState, parseStateFirstArgIdx, ref offset);
+            var ssA = GetNextArg(ref procInput, ref offset);
 
             for (var i = 0; i < ssItems.Length; i++)
             {
-                ssItems[i].score = GetNextArg(ref parseState, parseStateFirstArgIdx, ref offset);
-                ssItems[i].member = GetNextArg(ref parseState, parseStateFirstArgIdx, ref offset);
+                ssItems[i].score = GetNextArg(ref procInput, ref offset);
+                ssItems[i].member = GetNextArg(ref procInput, ref offset);
                 ssMembers[i] = ssItems[i].member;
             }
 
-            var minRange = GetNextArg(ref parseState, parseStateFirstArgIdx, ref offset);
-            var maxRange = GetNextArg(ref parseState, parseStateFirstArgIdx, ref offset);
-            var match = GetNextArg(ref parseState, parseStateFirstArgIdx, ref offset);
+            var minRange = GetNextArg(ref procInput, ref offset);
+            var maxRange = GetNextArg(ref procInput, ref offset);
+            var match = GetNextArg(ref procInput, ref offset);
 
             var ssB = new ArgSlice();
             api.SortedSetAdd(ssB, ssItems[0].score, ssItems[0].member, out int count);

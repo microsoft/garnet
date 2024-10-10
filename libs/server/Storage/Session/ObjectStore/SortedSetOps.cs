@@ -39,7 +39,7 @@ namespace Garnet.server
 
             // Prepare the input
             var header = new RespInputHeader(GarnetObjectType.SortedSet) { SortedSetOp = SortedSetOperation.ZADD };
-            var input = new ObjectInput(header, parseState);
+            var input = new ObjectInput(header, ref parseState);
 
             var outputFooter = new GarnetObjectStoreOutput { spanByteAndMemory = new SpanByteAndMemory(null) };
 
@@ -80,7 +80,7 @@ namespace Garnet.server
 
             // Prepare the input
             var header = new RespInputHeader(GarnetObjectType.SortedSet) { SortedSetOp = SortedSetOperation.ZADD };
-            var input = new ObjectInput(header, parseState);
+            var input = new ObjectInput(header, ref parseState);
 
             var outputFooter = new GarnetObjectStoreOutput { spanByteAndMemory = new SpanByteAndMemory(null) };
 
@@ -119,7 +119,7 @@ namespace Garnet.server
 
             // Prepare the input
             var header = new RespInputHeader(GarnetObjectType.SortedSet) { SortedSetOp = SortedSetOperation.ZREM };
-            var input = new ObjectInput(header, parseState);
+            var input = new ObjectInput(header, ref parseState);
 
             var status = RMWObjectStoreOperation(key, ref input, out var output, ref objectStoreContext);
 
@@ -149,7 +149,7 @@ namespace Garnet.server
 
             // Prepare the input
             var header = new RespInputHeader(GarnetObjectType.SortedSet) { SortedSetOp = SortedSetOperation.ZREM };
-            var input = new ObjectInput(header, parseState);
+            var input = new ObjectInput(header, ref parseState);
 
             var status = RMWObjectStoreOperation(key, ref input, out var output, ref objectStoreContext);
 
@@ -195,7 +195,7 @@ namespace Garnet.server
 
             // Prepare the input
             var header = new RespInputHeader(GarnetObjectType.SortedSet) { SortedSetOp = SortedSetOperation.ZREMRANGEBYLEX };
-            var input = new ObjectInput(header, parseState);
+            var input = new ObjectInput(header, ref parseState);
 
             var status = RMWObjectStoreOperation(key.ToArray(), ref input, out var output, ref objectStoreContext);
             countRemoved = output.result1;
@@ -243,7 +243,7 @@ namespace Garnet.server
 
             // Prepare the input
             var header = new RespInputHeader(GarnetObjectType.SortedSet) { SortedSetOp = SortedSetOperation.ZREMRANGEBYSCORE };
-            var input = new ObjectInput(header, parseState);
+            var input = new ObjectInput(header, ref parseState);
 
             var outputFooter = new GarnetObjectStoreOutput { spanByteAndMemory = new SpanByteAndMemory(null) };
 
@@ -304,7 +304,7 @@ namespace Garnet.server
 
             // Prepare the input
             var header = new RespInputHeader(GarnetObjectType.SortedSet) { SortedSetOp = SortedSetOperation.ZREMRANGEBYRANK };
-            var input = new ObjectInput(header, parseState);
+            var input = new ObjectInput(header, ref parseState);
 
             var outputFooter = new GarnetObjectStoreOutput { spanByteAndMemory = new SpanByteAndMemory(null) };
 
@@ -385,7 +385,7 @@ namespace Garnet.server
 
             // Prepare the input
             var header = new RespInputHeader(GarnetObjectType.SortedSet) { SortedSetOp = SortedSetOperation.ZINCRBY };
-            var input = new ObjectInput(header, parseState);
+            var input = new ObjectInput(header, ref parseState);
 
             var outputFooter = new GarnetObjectStoreOutput { spanByteAndMemory = new SpanByteAndMemory(null) };
             var status = RMWObjectStoreOperationWithOutput(key.ToArray(), ref input, ref objectStoreContext,
@@ -515,7 +515,7 @@ namespace Garnet.server
             // Prepare the input
             var header = new RespInputHeader(GarnetObjectType.SortedSet) { SortedSetOp = sortedOperation };
             var inputArg = 2; // Default RESP server protocol version
-            var input = new ObjectInput(header, parseState, 0, inputArg);
+            var input = new ObjectInput(header, ref parseState, 0, -1, inputArg);
 
             var outputFooter = new GarnetObjectStoreOutput { spanByteAndMemory = new SpanByteAndMemory(null) };
             var status = ReadObjectStoreOperationWithOutput(key.ToArray(), ref input, ref objectContext, ref outputFooter);
@@ -618,7 +618,7 @@ namespace Garnet.server
             // Prepare the input
             var op = reverse ? SortedSetOperation.ZREVRANK : SortedSetOperation.ZRANK;
             var header = new RespInputHeader(GarnetObjectType.SortedSet) { SortedSetOp = op };
-            var input = new ObjectInput(header, parseState);
+            var input = new ObjectInput(header, ref parseState);
 
             const int outputContainerSize = 32; // 3 for HEADER + CRLF + 20 for ascii long
             var outputContainer = stackalloc byte[outputContainerSize];

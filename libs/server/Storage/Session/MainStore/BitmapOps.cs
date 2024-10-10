@@ -30,7 +30,7 @@ namespace Garnet.server
 
             parseState.InitializeWithArguments(offset, setValSlice);
 
-            var input = new RawStringInput(RespCommand.SETBIT, parseState);
+            var input = new RawStringInput(RespCommand.SETBIT, ref parseState);
 
             SpanByteAndMemory output = new(null);
             var keySp = key.SpanByte;
@@ -49,7 +49,7 @@ namespace Garnet.server
 
             parseState.InitializeWithArgument(offset);
 
-            var input = new RawStringInput(RespCommand.GETBIT, parseState);
+            var input = new RawStringInput(RespCommand.GETBIT, ref parseState);
 
             SpanByteAndMemory output = new(null);
             var keySp = key.SpanByte;
@@ -197,7 +197,7 @@ namespace Garnet.server
 
             parseState.InitializeWithArguments(args);
 
-            var input = new RawStringInput(RespCommand.BITOP, parseState);
+            var input = new RawStringInput(RespCommand.BITOP, ref parseState);
 
             return StringBitOperation(ref input, bitOp, out result);
         }
@@ -245,7 +245,7 @@ namespace Garnet.server
 
             parseState.InitializeWithArguments(startSlice, endSlice, useBitIntervalSlice);
 
-            var input = new RawStringInput(RespCommand.BITCOUNT, parseState);
+            var input = new RawStringInput(RespCommand.BITCOUNT, ref parseState);
 
             scratchBufferManager.RewindScratchBuffer(ref paramsSlice);
 

@@ -199,7 +199,7 @@ namespace Garnet.server
                 }
             }
 
-            var input = new RawStringInput(command, parseState, 1);
+            var input = new RawStringInput(command, ref parseState, 1);
 
             var status = storageApi.EXPIRE(key, ref input, out var timeoutSet);
 

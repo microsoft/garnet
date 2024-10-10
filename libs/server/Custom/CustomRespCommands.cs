@@ -14,7 +14,7 @@ namespace Garnet.server
     /// </summary>
     internal sealed unsafe partial class RespServerSession : ServerSessionBase
     {
-        private bool TryTransactionProc(byte id, CustomTransactionProcedure proc, int parseStateFirstArgIdx = 0)
+        private bool TryTransactionProc(byte id, CustomTransactionProcedure proc, int parseStateFirstArgIdx = 0, int parseStateLastArgIdx = -1)
         {
             // Define output
             var output = new MemoryResult<byte>(null, 0);
@@ -24,7 +24,8 @@ namespace Garnet.server
 
             latencyMetrics?.Start(LatencyMetricsType.TX_PROC_LAT);
 
-            if (txnManager.RunTransactionProc(id, ref parseState, parseStateFirstArgIdx, proc, ref output))
+            var procInput = new CustomProcedureInput(ref parseState, parseStateFirstArgIdx, parseStateLastArgIdx);
+            if (txnManager.RunTransactionProc(id, ref procInput, proc, ref output))
             {
                 // Write output to wire
                 if (output.MemoryOwner != null)
@@ -47,20 +48,22 @@ namespace Garnet.server
             return true;
         }
 
-        public bool RunTransactionProc(byte id, ref SessionParseState currParseState, ref MemoryResult<byte> output, int parseStateFirstArgIdx = 0)
+        public bool RunTransactionProc(byte id, ref CustomProcedureInput procInput, ref MemoryResult<byte> output)
         {
             var proc = customCommandManagerSession
                 .GetCustomTransactionProcedure(id, txnManager, scratchBufferManager).Item1;
-            return txnManager.RunTransactionProc(id, ref currParseState, parseStateFirstArgIdx, proc, ref output);
+            return txnManager.RunTransactionProc(id, ref procInput, proc, ref output);
 
         }
 
-        private void TryCustomProcedure(CustomProcedure proc, int parseStateFirstArgIdx = 0)
+        private void TryCustomProcedure(CustomProcedure proc, int parseStateFirstArgIdx = 0, int parseStateLastArgIdx = -1)
         {
             Debug.Assert(proc != null);
-
+            
             var output = new MemoryResult<byte>(null, 0);
-            if (proc.Execute(basicGarnetApi, ref parseState, parseStateFirstArgIdx, ref output))
+
+            var procInput = new CustomProcedureInput(ref parseState, parseStateFirstArgIdx, parseStateLastArgIdx);
+            if (proc.Execute(basicGarnetApi, ref procInput, ref output))
             {
                 if (output.MemoryOwner != null)
                     SendAndReset(output.MemoryOwner, output.Length);
@@ -87,7 +90,7 @@ namespace Garnet.server
             var sbKey = parseState.GetArgSliceByRef(0).SpanByte;
 
             var inputArg = expirationTicks > 0 ? DateTimeOffset.UtcNow.Ticks + expirationTicks : expirationTicks;
-            var input = new RawStringInput(cmd, parseState, 1, inputArg);
+            var input = new RawStringInput(cmd, ref parseState, 1, -1, inputArg);
 
             var output = new SpanByteAndMemory(null);
             GarnetStatus status;
@@ -137,7 +140,7 @@ namespace Garnet.server
             // Prepare input
 
             var header = new RespInputHeader(cmd) { SubId = subid };
-            var input = new ObjectInput(header, parseState, 1);
+            var input = new ObjectInput(header, ref parseState, 1);
 
             var output = new GarnetObjectStoreOutput { spanByteAndMemory = new SpanByteAndMemory(null) };
 

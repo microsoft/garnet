@@ -25,7 +25,7 @@ namespace Garnet.server
             }
 
             var inputArg = 1; // # of elements to add from parseState
-            var input = new RawStringInput(RespCommand.PFADD, parseState, 0, inputArg);
+            var input = new RawStringInput(RespCommand.PFADD, ref parseState, 0, -1, inputArg);
 
             var output = stackalloc byte[1];
             byte pfaddUpdated = 0;
@@ -34,6 +34,7 @@ namespace Garnet.server
             for (var i = 1; i < parseState.Count; i++)
             {
                 input.parseStateFirstArgIdx = i;
+                input.parseStateLastArgIdx = input.parseStateFirstArgIdx;
                 var o = new SpanByteAndMemory(output, 1);
                 storageApi.HyperLogLogAdd(ref key, ref input, ref o);
 
@@ -77,7 +78,7 @@ namespace Garnet.server
                 return AbortWithWrongNumberOfArguments(nameof(RespCommand.PFCOUNT));
             }
 
-            var input = new RawStringInput(RespCommand.PFCOUNT, parseState);
+            var input = new RawStringInput(RespCommand.PFCOUNT, ref parseState);
 
             storageApi.HyperLogLogLength(ref input, out var cardinality, out var error);
             if (error)
@@ -106,7 +107,7 @@ namespace Garnet.server
                 return AbortWithWrongNumberOfArguments(nameof(RespCommand.PFMERGE));
             }
 
-            var input = new RawStringInput(RespCommand.PFMERGE, parseState);
+            var input = new RawStringInput(RespCommand.PFMERGE, ref parseState);
 
             var status = storageApi.HyperLogLogMerge(ref input, out var error);
 

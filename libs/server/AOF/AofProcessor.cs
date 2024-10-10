@@ -31,6 +31,7 @@ namespace Garnet.server
 
         static RawStringInput storeInput;
         static ObjectInput objectStoreInput;
+        static CustomProcedureInput customProcInput;
         static SessionParseState parseState;
 
         /// <summary>
@@ -278,22 +279,16 @@ namespace Garnet.server
         unsafe void RunStoredProc(byte id, byte* ptr)
         {
             var curr = ptr;
-            var parseStateCount = *(int*)curr;
+
+            // Reconstructing CustomProcedureInput
+
+            // input
+            var length = *(int*)curr;
             curr += sizeof(int);
 
-            if (parseStateCount > 0)
-            {
-                parseState.Initialize(parseStateCount);
-
-                for (var i = 0; i < parseStateCount; i++)
-                {
-                    ref var sbArgument = ref Unsafe.AsRef<SpanByte>(curr);
-                    parseState.SetArgument(i, new ArgSlice(ref sbArgument));
-                    curr += sbArgument.TotalSize;
-                }
-            }
-
-            respServerSession.RunTransactionProc(id, ref parseState, ref output);
+            customProcInput.DeserializeFrom(curr);
+            
+            respServerSession.RunTransactionProc(id, ref customProcInput, ref output);
         }
 
         static unsafe void StoreUpsert(BasicContext<SpanByte, SpanByte, RawStringInput, SpanByteAndMemory, long, MainSessionFunctions, MainStoreFunctions, MainStoreAllocator> basicContext, byte* ptr)

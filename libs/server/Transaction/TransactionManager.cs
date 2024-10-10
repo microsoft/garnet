@@ -162,7 +162,7 @@ namespace Garnet.server
             this.keyCount = 0;
         }
 
-        internal bool RunTransactionProc(byte id, ref SessionParseState parseState, int parseStateFirstArgIdx, CustomTransactionProcedure proc, ref MemoryResult<byte> output)
+        internal bool RunTransactionProc(byte id, ref CustomProcedureInput procInput, CustomTransactionProcedure proc, ref MemoryResult<byte> output)
         {
             bool running = false;
             scratchBufferManager.Reset();
@@ -170,7 +170,7 @@ namespace Garnet.server
             {
                 functionsState.StoredProcMode = true;
                 // Prepare phase
-                if (!proc.Prepare(garnetTxPrepareApi, ref parseState, parseStateFirstArgIdx))
+                if (!proc.Prepare(garnetTxPrepareApi, ref procInput))
                 {
                     Reset(running);
                     return false;
@@ -186,10 +186,10 @@ namespace Garnet.server
                 running = true;
 
                 // Run main procedure on locked data
-                proc.Main(garnetTxMainApi, ref parseState, parseStateFirstArgIdx, ref output);
+                proc.Main(garnetTxMainApi, ref procInput, ref output);
 
                 // Log the transaction to AOF
-                Log(id, ref parseState, parseStateFirstArgIdx);
+                Log(id, ref procInput);
 
                 // Commit
                 Commit();
@@ -204,7 +204,7 @@ namespace Garnet.server
                 try
                 {
                     // Run finalize procedure at the end
-                    proc.Finalize(garnetTxFinalizeApi, ref parseState, parseStateFirstArgIdx, ref output);
+                    proc.Finalize(garnetTxFinalizeApi, ref procInput, ref output);
                 }
                 catch { }
 
@@ -227,22 +227,11 @@ namespace Garnet.server
             state = TxnState.Aborted;
         }
 
-        internal void Log(byte id, ref SessionParseState parseState, int parseStateFirstArgIdx)
+        internal void Log(byte id, ref CustomProcedureInput procInput)
         {
             Debug.Assert(functionsState.StoredProcMode);
-            var sbToSerialize = new SpanByte[1 + parseState.Count];
-
-            var countBytes = stackalloc byte[sizeof(int)];
-            *(int*)countBytes = parseState.Count;
-
-            sbToSerialize[0] = new SpanByte(sizeof(int), (nint)countBytes);
-
-            for (var i = 0; i < parseState.Count; i++)
-            {
-                sbToSerialize[i + 1] = parseState.GetArgSliceByRef(i).SpanByte;
-            }
-
-            appendOnlyFile?.Enqueue(new AofHeader { opType = AofEntryType.StoredProcedure, type = id, version = basicContext.Session.Version, sessionID = basicContext.Session.ID }, ref sbToSerialize, out _);
+            
+            appendOnlyFile?.Enqueue(new AofHeader { opType = AofEntryType.StoredProcedure, type = id, version = basicContext.Session.Version, sessionID = basicContext.Session.ID }, ref procInput, out _);
         }
 
         internal void Commit(bool internal_txn = false)

@@ -38,7 +38,7 @@ namespace Garnet.server
 
             // Prepare the input
             var header = new RespInputHeader(GarnetObjectType.List) { ListOp = lop };
-            var input = new ObjectInput(header, parseState);
+            var input = new ObjectInput(header, ref parseState);
 
             var arrKey = key.ToArray();
             var status = RMWObjectStoreOperation(arrKey, ref input, out var output, ref objectStoreContext);
@@ -71,7 +71,7 @@ namespace Garnet.server
 
             // Prepare the input
             var header = new RespInputHeader(GarnetObjectType.List) { ListOp = lop };
-            var input = new ObjectInput(header, parseState);
+            var input = new ObjectInput(header, ref parseState);
 
             var status = RMWObjectStoreOperation(key.ToArray(), ref input, out var output, ref objectStoreContext);
             itemsDoneCount = output.result1;

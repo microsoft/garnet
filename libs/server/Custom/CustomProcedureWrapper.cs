@@ -15,10 +15,9 @@ namespace Garnet.server
         /// Custom command implementation
         /// </summary>
         /// <param name="garnetApi"></param>
-        /// <param name="parseState"></param>
-        /// <param name="parseStateFirstArgIdx"></param>
+        /// <param name="procInput"></param>
         /// <param name="output"></param>
-        public abstract bool Execute(IGarnetApi garnetApi, ref SessionParseState parseState, int parseStateFirstArgIdx, ref MemoryResult<byte> output);
+        public abstract bool Execute(IGarnetApi garnetApi, ref CustomProcedureInput procInput, ref MemoryResult<byte> output);
     }
 
     class CustomProcedureWrapper

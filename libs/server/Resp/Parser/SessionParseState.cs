@@ -3,7 +3,6 @@
 
 using System;
 using System.Diagnostics;
-using System.Reflection.PortableExecutable;
 using System.Runtime.CompilerServices;
 using System.Runtime.InteropServices;
 using Garnet.common;
@@ -17,11 +16,6 @@ namespace Garnet.server
     /// </summary>
     public unsafe struct SessionParseState
     {
-        /// <summary>
-        /// Size of parse state
-        /// </summary>
-        public const int Size = 12;
-
         /// <summary>
         /// Initial number of arguments parsed for a command
         /// </summary>
@@ -197,20 +191,22 @@ namespace Garnet.server
         /// Get serialized length of parse state when arguments are only
         /// serialized starting at a specified index
         /// </summary>
-        /// <param name="startIdx">Index from which arguments are serialized</param>
+        /// <param name="firstIdx">First index from which arguments are serialized</param>
+        /// <param name="lastIdx">Last index of arguments to serialize</param>
         /// <returns>The serialized length</returns>
-        public int GetSerializedLength(int startIdx)
+        public int GetSerializedLength(int firstIdx, int lastIdx)
         {
             var serializedLength = sizeof(int);
-            var argCount = Count - startIdx;
+            
+            var argCount = Count == 0 ? 0 : (lastIdx == -1 ? Count : lastIdx + 1) - firstIdx;
 
             if (argCount > 0)
             {
-                Debug.Assert(startIdx < Count);
+                Debug.Assert(firstIdx + argCount <= Count);
 
                 for (var i = 0; i < argCount; i++)
                 {
-                    serializedLength += buffer[startIdx + i].SpanByte.TotalSize;
+                    serializedLength += buffer[firstIdx + i].SpanByte.TotalSize;
                 }
             }
 
@@ -221,26 +217,30 @@ namespace Garnet.server
         /// Serialize parse state to memory buffer
         /// when arguments are only serialized starting at a specified index
         /// </summary>
-        /// <param name="dest">The memory buffer to serialize into (of size at least SerializedLength(startIdx) bytes)</param>
-        /// <param name="startIdx">Index from which arguments are serialized</param>
+        /// <param name="dest">The memory buffer to serialize into (of size at least SerializedLength(firstIdx) bytes)</param>
+        /// <param name="firstIdx">First index from which arguments are serialized</param>
+        /// <param name="lastIdx">Last index of arguments to serialize</param>
+        /// <param name="length">Length of buffer to serialize into.</param>
         /// <returns>Total serialized bytes</returns>
-        public int CopyTo(byte* dest, int startIdx)
+        public int CopyTo(byte* dest, int firstIdx, int lastIdx, int length)
         {
+            Debug.Assert(length >= this.GetSerializedLength(firstIdx, lastIdx));
+
             var curr = dest;
 
             // Serialize argument count
-            var argCount = Count - startIdx;
+            var argCount = Count == 0 ? 0 : (lastIdx == -1 ? Count : lastIdx + 1) - firstIdx;
             *(int*)curr = argCount;
             curr += sizeof(int);
 
             // Serialize arguments
             if (argCount > 0)
             {
-                Debug.Assert(startIdx < Count);
+                Debug.Assert(firstIdx + argCount <= Count);
 
                 for (var i = 0; i < argCount; i++)
                 {
-                    var sbParam = buffer[startIdx + i].SpanByte;
+                    var sbParam = buffer[firstIdx + i].SpanByte;
                     sbParam.CopyTo(curr);
                     curr += sbParam.TotalSize;
                 }

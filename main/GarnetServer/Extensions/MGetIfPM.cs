@@ -21,29 +21,29 @@ namespace Garnet
         /// <summary>
         /// No transactional phase, skip Prepare
         /// </summary>
-        public override bool Prepare<TGarnetReadApi>(TGarnetReadApi api, ref SessionParseState parseState, int parseStateFirstArgIdx)
+        public override bool Prepare<TGarnetReadApi>(TGarnetReadApi api, ref CustomProcedureInput procInput)
             => false;
 
         /// <summary>
         /// Main will not be called because Prepare returns false
         /// </summary>
-        public override void Main<TGarnetApi>(TGarnetApi api, ref SessionParseState parseState, int parseStateFirstArgIdx, ref MemoryResult<byte> output)
+        public override void Main<TGarnetApi>(TGarnetApi api, ref CustomProcedureInput procInput, ref MemoryResult<byte> output)
             => throw new InvalidOperationException();
 
         /// <summary>
         /// Perform the MGETIFPM operation
         /// </summary>
-        public override void Finalize<TGarnetApi>(TGarnetApi api, ref SessionParseState parseState, int parseStateFirstArgIdx, ref MemoryResult<byte> output)
+        public override void Finalize<TGarnetApi>(TGarnetApi api, ref CustomProcedureInput procInput, ref MemoryResult<byte> output)
         {
             var offset = 0;
 
             // Read prefix
-            var prefix = GetNextArg(ref parseState, parseStateFirstArgIdx, ref offset);
+            var prefix = GetNextArg(ref procInput, ref offset);
 
             // Read key, check condition, add to output
             ArgSlice key;
             List<ArgSlice> values = [];
-            while ((key = GetNextArg(ref parseState, parseStateFirstArgIdx, ref offset)).Length > 0)
+            while ((key = GetNextArg(ref procInput, ref offset)).Length > 0)
             {
                 if (api.GET(key, out var value) == GarnetStatus.OK)
                 {

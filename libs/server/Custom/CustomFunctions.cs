@@ -186,5 +186,16 @@ namespace Garnet.server
             offset++;
             return arg;
         }
+
+        /// <summary>
+        /// Get argument from input, at specified offset (starting from 0)
+        /// </summary>
+        /// <param name="procInput">Procedure input</param>
+        /// <param name="offset">Current offset into parse state</param>
+        /// <returns>Argument as a span</returns>
+        protected static unsafe ArgSlice GetNextArg(ref CustomProcedureInput procInput, ref int offset)
+        {
+            return GetNextArg(ref procInput.parseState, procInput.parseStateFirstArgIdx, ref offset);
+        }
     }
 }

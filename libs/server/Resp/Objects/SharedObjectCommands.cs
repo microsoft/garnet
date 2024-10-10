@@ -53,7 +53,7 @@ namespace Garnet.server
             }
 
             var header = new RespInputHeader(objectType);
-            var input = new ObjectInput(header, parseState, 2, cursorValue,
+            var input = new ObjectInput(header, ref parseState, 2, -1, cursorValue,
                 storeWrapper.serverOptions.ObjectScanCountLimit);
 
             switch (objectType)

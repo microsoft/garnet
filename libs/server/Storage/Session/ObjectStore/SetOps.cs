@@ -37,7 +37,7 @@ namespace Garnet.server
 
             // Prepare the input
             var header = new RespInputHeader(GarnetObjectType.Set) { SetOp = SetOperation.SADD };
-            var input = new ObjectInput(header, parseState);
+            var input = new ObjectInput(header, ref parseState);
 
             var status = RMWObjectStoreOperation(key.ToArray(), ref input, out var output, ref objectStoreContext);
 
@@ -69,7 +69,7 @@ namespace Garnet.server
 
             // Prepare the input
             var header = new RespInputHeader(GarnetObjectType.Set) { SetOp = SetOperation.SADD };
-            var input = new ObjectInput(header, parseState);
+            var input = new ObjectInput(header, ref parseState);
 
             // Iterate through all inputs and add them to the scratch buffer in RESP format
 
@@ -100,7 +100,7 @@ namespace Garnet.server
 
             // Prepare the input
             var header = new RespInputHeader(GarnetObjectType.Set) { SetOp = SetOperation.SREM };
-            var input = new ObjectInput(header, parseState);
+            var input = new ObjectInput(header, ref parseState);
 
             var status = RMWObjectStoreOperation(key.ToArray(), ref input, out var output, ref objectStoreContext);
             sremCount = output.result1;
@@ -133,7 +133,7 @@ namespace Garnet.server
 
             // Prepare the input
             var header = new RespInputHeader(GarnetObjectType.Set) { SetOp = SetOperation.SREM };
-            var input = new ObjectInput(header, parseState);
+            var input = new ObjectInput(header, ref parseState);
 
             var status = RMWObjectStoreOperation(key.ToArray(), ref input, out var output, ref objectStoreContext);
 

@@ -148,7 +148,7 @@ namespace Garnet.server
                 return true;
             }
 
-            var input = new RawStringInput(RespCommand.SETBIT, parseState, 1);
+            var input = new RawStringInput(RespCommand.SETBIT, ref parseState, 1);
 
             var o = new SpanByteAndMemory(dcurr, (int)(dend - dcurr));
             var status = storageApi.StringSetBit(
@@ -184,7 +184,7 @@ namespace Garnet.server
                 return true;
             }
 
-            var input = new RawStringInput(RespCommand.GETBIT, parseState, 1);
+            var input = new RawStringInput(RespCommand.GETBIT, ref parseState, 1);
 
             var o = new SpanByteAndMemory(dcurr, (int)(dend - dcurr));
             var status = storageApi.StringGetBit(ref sbKey, ref input, ref o);
@@ -226,7 +226,7 @@ namespace Garnet.server
                 }
             }
 
-            var input = new RawStringInput(RespCommand.BITCOUNT, parseState, 1);
+            var input = new RawStringInput(RespCommand.BITCOUNT, ref parseState, 1);
 
             var o = new SpanByteAndMemory(dcurr, (int)(dend - dcurr));
 
@@ -300,7 +300,7 @@ namespace Garnet.server
                 }
             }
 
-            var input = new RawStringInput(RespCommand.BITPOS, parseState, 1);
+            var input = new RawStringInput(RespCommand.BITPOS, ref parseState, 1);
 
             var o = new SpanByteAndMemory(dcurr, (int)(dend - dcurr));
 
@@ -345,7 +345,7 @@ namespace Garnet.server
                 return true;
             }
 
-            var input = new RawStringInput(RespCommand.BITOP, parseState);
+            var input = new RawStringInput(RespCommand.BITOP, ref parseState);
 
             _ = storageApi.StringBitOperation(ref input, bitOp, out var result);
             while (!RespWriteUtils.WriteInteger(result, ref dcurr, dend))

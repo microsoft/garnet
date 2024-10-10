@@ -179,11 +179,13 @@ namespace Garnet.server
             where TGarnetApi : IGarnetApi
         {
             var anyValuesSet = false;
+            var input = new RawStringInput(RespCommand.SETEXNX, ref parseState);
+
             for (var c = 0; c < parseState.Count; c += 2)
             {
                 var key = parseState.GetArgSliceByRef(c).SpanByte;
-
-                var input = new RawStringInput(RespCommand.SETEXNX, parseState, c + 1);
+                input.parseStateFirstArgIdx = c + 1;
+                input.parseStateLastArgIdx = input.parseStateFirstArgIdx;
 
                 var status = storageApi.SET_Conditional(ref key, ref input);
 
