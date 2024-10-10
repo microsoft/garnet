@@ -225,6 +225,7 @@ namespace CommandInfoUpdater
             new("SISMEMBER", RespCommand.SISMEMBER),
             new("SLAVEOF", RespCommand.SECONDARYOF),
             new("SMEMBERS", RespCommand.SMEMBERS),
+            new("SMISMEMBER", RespCommand.SMISMEMBER),
             new("SMOVE", RespCommand.SMOVE),
             new("SPOP", RespCommand.SPOP),
             new("SRANDMEMBER", RespCommand.SRANDMEMBER),

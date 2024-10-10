@@ -4641,6 +4641,29 @@
     ]
   },
   {
+    "Command": "SMISMEMBER",
+    "Name": "SMISMEMBER",
+    "Summary": "Determines whether multiple members belong to a set.",
+    "Group": "Set",
+    "Complexity": "O(N) where N is the number of elements being checked for membership",
+    "Arguments": [
+      {
+        "TypeDiscriminator": "RespCommandKeyArgument",
+        "Name": "KEY",
+        "DisplayText": "key",
+        "Type": "Key",
+        "KeySpecIndex": 0
+      },
+      {
+        "TypeDiscriminator": "RespCommandBasicArgument",
+        "Name": "MEMBER",
+        "DisplayText": "member",
+        "Type": "String",
+        "ArgumentFlags": "Multiple"
+      }
+    ]
+  },
+  {
     "Command": "SMOVE",
     "Name": "SMOVE",
     "Summary": "Moves a member from one set to another.",

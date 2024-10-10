@@ -2,6 +2,7 @@
 // Licensed under the MIT license.
 
 using System;
+using System.Diagnostics;
 using Garnet.common;
 using Tsavorite.core;
 
@@ -402,12 +403,25 @@ namespace Garnet.server
             return true;
         }
 
-        private unsafe bool SetIsMember<TGarnetApi>(ref TGarnetApi storageApi)
+        private unsafe bool SetIsMember<TGarnetApi>(RespCommand cmd, ref TGarnetApi storageApi)
             where TGarnetApi : IGarnetApi
         {
-            if (parseState.Count != 2)
+            Debug.Assert(cmd == RespCommand.SISMEMBER || cmd == RespCommand.SMISMEMBER);
+            
+            var isSingle = cmd == RespCommand.SISMEMBER;
+            if (isSingle)
             {
-                return AbortWithWrongNumberOfArguments("SISMEMBER");
+                if (parseState.Count != 2)
+                {
+                    return AbortWithWrongNumberOfArguments("SISMEMBER");
+                }
+            }
+            else
+            {
+                if (parseState.Count < 2)
+                {
+                    return AbortWithWrongNumberOfArguments("SMISMEMBER");
+                }
             }
 
             // Get the key
@@ -420,7 +434,7 @@ namespace Garnet.server
                 header = new RespInputHeader
                 {
                     type = GarnetObjectType.Set,
-                    SetOp = SetOperation.SISMEMBER,
+                    SetOp = isSingle ? SetOperation.SISMEMBER : SetOperation.SMISMEMBER,
                 },
                 parseState = parseState,
                 parseStateStartIdx = 1,
@@ -438,8 +452,24 @@ namespace Garnet.server
                     ProcessOutputWithHeader(outputFooter.spanByteAndMemory);
                     break;
                 case GarnetStatus.NOTFOUND:
-                    while (!RespWriteUtils.WriteDirect(CmdStrings.RESP_RETURN_VAL_0, ref dcurr, dend))
-                        SendAndReset();
+                    if (isSingle)
+                    {
+                        while (!RespWriteUtils.WriteDirect(CmdStrings.RESP_RETURN_VAL_0, ref dcurr, dend))
+                            SendAndReset();
+                    }
+                    else
+                    {
+                        var count = parseState.Count - 1; // Remove key
+                        while (!RespWriteUtils.WriteArrayLength(count, ref dcurr, dend))
+                            SendAndReset();
+
+                        for (var i = 0; i < count; i++)
+                        {
+                            while (!RespWriteUtils.WriteDirect(CmdStrings.RESP_RETURN_VAL_0, ref dcurr, dend))
+                                SendAndReset();
+                        }
+                    }
+
                     break;
                 case GarnetStatus.WRONGTYPE:
                     while (!RespWriteUtils.WriteError(CmdStrings.RESP_ERR_WRONG_TYPE, ref dcurr, dend))
