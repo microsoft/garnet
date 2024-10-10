@@ -571,8 +571,8 @@ namespace Garnet.server
                 RespCommand.UNLINK => NetworkDEL(ref storageApi),
                 RespCommand.SELECT => NetworkSELECT(),
                 RespCommand.WATCH => NetworkWATCH(),
-                RespCommand.WATCH_MS => NetworkWATCH_MS(),
-                RespCommand.WATCH_OS => NetworkWATCH_OS(),
+                RespCommand.WATCHMS => NetworkWATCH_MS(),
+                RespCommand.WATCHOS => NetworkWATCH_OS(),
                 // Pub/sub commands
                 RespCommand.SUBSCRIBE => NetworkSUBSCRIBE(),
                 RespCommand.PSUBSCRIBE => NetworkPSUBSCRIBE(),
