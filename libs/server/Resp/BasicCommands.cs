@@ -315,19 +315,15 @@ namespace Garnet.server
                 return true;
             }
 
-            var val = parseState.GetArgSliceByRef(2).SpanByte;
+            var valMetadata = DateTimeOffset.UtcNow.Ticks +
+                              (highPrecision
+                                  ? TimeSpan.FromMilliseconds(expiry).Ticks
+                                  : TimeSpan.FromSeconds(expiry).Ticks);
 
-            var newValSlice = scratchBufferManager.CreateArgSlice(val.Length + sizeof(long));
-            var sbNewVal = newValSlice.SpanByte;
-            sbNewVal.ExtraMetadata = DateTimeOffset.UtcNow.Ticks +
-                                     (highPrecision
-                                         ? TimeSpan.FromMilliseconds(expiry).Ticks
-                                         : TimeSpan.FromSeconds(expiry).Ticks);
-            val.AsReadOnlySpan().CopyTo(sbNewVal.AsSpan());
+            parseState.UnsafeInsertMetadata(2, valMetadata);
+            ref var sbVal = ref Unsafe.AsRef<SpanByte>(parseState.GetArgSliceByRef(2).ptr);
 
-            _ = storageApi.SET(ref key, ref sbNewVal);
-
-            scratchBufferManager.RewindScratchBuffer(ref newValSlice);
+            _ = storageApi.SET(ref key, ref sbVal);
 
             while (!RespWriteUtils.WriteDirect(CmdStrings.RESP_OK, ref dcurr, dend))
                 SendAndReset();
@@ -482,6 +478,18 @@ namespace Garnet.server
                 return true;
             }
 
+            if (expiry != 0 && !getValue && existOptions == ExistOptions.None)
+            {
+                var highPrecision = expOption == ExpirationOption.PX;
+                var valMetadata = DateTimeOffset.UtcNow.Ticks +
+                               (highPrecision
+                                   ? TimeSpan.FromMilliseconds(expiry).Ticks
+                                   : TimeSpan.FromSeconds(expiry).Ticks);
+
+                parseState.UnsafeInsertMetadata(1, valMetadata);
+                sbVal = Unsafe.AsRef<SpanByte>(parseState.GetArgSliceByRef(1).ptr);
+            }
+
             switch (expOption)
             {
                 case ExpirationOption.None:
@@ -492,8 +500,7 @@ namespace Garnet.server
                             return getValue
                                 ? NetworkSET_Conditional(RespCommand.SET, expiry, ref sbKey, true,
                                     false, ref storageApi)
-                                : NetworkSET_EX(RespCommand.SET, expiry, ref sbKey, ref sbVal, false,
-                                    ref storageApi); // Can perform a blind update
+                                : NetworkSET_EX(RespCommand.SET, ref sbKey, ref sbVal, ref storageApi); // Can perform a blind update
                         case ExistOptions.XX:
                             return NetworkSET_Conditional(RespCommand.SETEXXX, expiry, ref sbKey, getValue, false,
                                 ref storageApi);
@@ -510,8 +517,7 @@ namespace Garnet.server
                             return getValue
                                 ? NetworkSET_Conditional(RespCommand.SET, expiry, ref sbKey, true,
                                     true, ref storageApi)
-                                : NetworkSET_EX(RespCommand.SET, expiry, ref sbKey, ref sbVal, true,
-                                    ref storageApi); // Can perform a blind update
+                                : NetworkSET_EX(RespCommand.SET, ref sbKey, ref sbVal, ref storageApi); // Can perform a blind update
                         case ExistOptions.XX:
                             return NetworkSET_Conditional(RespCommand.SETEXXX, expiry, ref sbKey, getValue, true,
                                 ref storageApi);
@@ -546,38 +552,17 @@ namespace Garnet.server
             return true;
         }
 
-        private unsafe bool NetworkSET_EX<TGarnetApi>(RespCommand cmd, int expiry, ref SpanByte key, ref SpanByte val,
-            bool highPrecision, ref TGarnetApi storageApi)
+        private unsafe bool NetworkSET_EX<TGarnetApi>(RespCommand cmd, ref SpanByte key, ref SpanByte val, ref TGarnetApi storageApi)
             where TGarnetApi : IGarnetApi
         {
             Debug.Assert(cmd == RespCommand.SET);
 
-            if (expiry != 0)
-            {
-                var newValSlice = scratchBufferManager.CreateArgSlice(val.Length + sizeof(long));
-                var sbNewVal = newValSlice.SpanByte;
-                sbNewVal.ExtraMetadata = DateTimeOffset.UtcNow.Ticks +
-                                         (highPrecision
-                                             ? TimeSpan.FromMilliseconds(expiry).Ticks
-                                             : TimeSpan.FromSeconds(expiry).Ticks);
-                val.AsReadOnlySpan().CopyTo(sbNewVal.AsSpan());
-                val = sbNewVal;
-
-                storageApi.SET(ref key, ref val);
-
-                scratchBufferManager.RewindScratchBuffer(ref newValSlice);
-            }
-            else
-            {
-                storageApi.SET(ref key, ref val);
-            }
-
+            storageApi.SET(ref key, ref val);
 
             while (!RespWriteUtils.WriteDirect(CmdStrings.RESP_OK, ref dcurr, dend))
                 SendAndReset();
             return true;
         }
-
         private bool NetworkSET_Conditional<TGarnetApi>(RespCommand cmd, int expiry, ref SpanByte key, bool getValue, bool highPrecision, ref TGarnetApi storageApi)
             where TGarnetApi : IGarnetApi
         {

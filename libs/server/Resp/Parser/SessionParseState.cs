@@ -2,6 +2,7 @@
 // Licensed under the MIT license.
 
 using System;
+using System.ComponentModel.DataAnnotations;
 using System.Diagnostics;
 using System.Runtime.CompilerServices;
 using System.Runtime.InteropServices;
@@ -185,6 +186,31 @@ namespace Garnet.server
             {
                 buffer[i + j] = args[j];
             }
+        }
+
+        /// <summary>
+        /// Add metadata to parameter at a specific index, assuming that the underlying buffer has space for it.
+        /// This method should only be called in a specific context, and should be removed once Upsert supports RawStringInput / ObjectInput
+        /// </summary>
+        /// <param name="i">Index of argument to set the metadata for.</param>
+        /// <param name="metadata">Metadata to add for specified parameter</param>
+        public void UnsafeInsertMetadata(int i, long metadata)
+        {
+            var sbParam = GetArgSliceByRef(i).SpanByte;
+
+            var valPtr = sbParam.ToPointer() - sizeof(int);
+            var valSize = sbParam.Length;
+
+            // Move value forward to make space for metadata
+            Buffer.MemoryCopy(valPtr + sizeof(int), valPtr + sizeof(int) + sizeof(long), valSize, valSize);
+            
+            // Set new value length
+            var newValSize = valSize + sizeof(long);
+            *(int*)valPtr = newValSize;
+
+            // Create new SpanByte that points to the new parameter with metadata
+            SpanByte.Reinterpret(valPtr).ExtraMetadata = metadata;
+            buffer[i] = new ArgSlice(valPtr, newValSize);
         }
 
         /// <summary>
