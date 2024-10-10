@@ -146,6 +146,6 @@ namespace Garnet.server
         /// <param name="pattern">A patter used to match the members of the collection</param>
         /// <param name="patternLength">The number of characters in the pattern</param>
         /// <returns></returns>
-        public abstract unsafe void Scan(long start, out List<byte[]> items, out long cursor, int count = 10, byte* pattern = default, int patternLength = 0);
+        public abstract unsafe void Scan(long start, out List<byte[]> items, out long cursor, int count = 10, byte* pattern = default, int patternLength = 0, bool isNoValue = false);
     }
 }

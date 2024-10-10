@@ -159,12 +159,14 @@ The optional WITHVALUES modifier changes the reply so it includes the respective
 #### Syntax
 
 ```bash
-    HSCAN key cursor [MATCH pattern] [COUNT count]
+    HSCAN key cursor [MATCH pattern] [COUNT count] [NOVALUES]
 ```
 
 Iterates over the fields and values of a hash stored at a given **key**. Same as [SSCAN](#sscan) and [ZSCAN](#zscan) commands, **HSCAN** is used in order to incrementally iterate over the elements of the hash set*.
 
 The **match** parameter allows to apply a filter to elements after they have been retrieved from the collection. The **count** option sets a limit to the maximum number of items returned from the server to this command. This limit is also set in conjunction with the object-scan-count-limit of the global server settings.
+
+You can use the **NOVALUES** option to make Redis return only the keys in the hash table without their corresponding values
 
 ---
 

@@ -180,7 +180,7 @@ Note that this list is subject to change as we continue to expand our API comman
 |  | HPEXPIRETIME | ➖ |  |
 |  | HPTTL | ➖ |  |
 |  | [HRANDFIELD](data-structures.md#hrandfield) | ➕ |  |
-|  | [HSCAN](data-structures.md#hscan) | ➕ | `NOVALUES` flag not yet implemented |
+|  | [HSCAN](data-structures.md#hscan) | ➕ |  |
 |  | [HSET](data-structures.md#hset) | ➕ |  |
 |  | [HSETNX](data-structures.md#hsetnx) | ➕ |  |
 |  | [HSTRLEN](data-structures.md#hstrlen) | ➕ |  |
