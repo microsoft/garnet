@@ -1033,7 +1033,7 @@ namespace Garnet.test.cluster
     internal class SMISMEMBER : BaseCommand
     {
         public override bool IsArrayCommand => false;
-        public override bool ArrayResponse => false;
+        public override bool ArrayResponse => true;
         public override string Command => nameof(SMISMEMBER);
 
         public override string[] GetSingleSlotRequest()
