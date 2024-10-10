@@ -197,7 +197,7 @@ namespace Garnet.server
         public int GetSerializedLength(int firstIdx, int lastIdx)
         {
             var serializedLength = sizeof(int);
-            
+
             var argCount = Count == 0 ? 0 : (lastIdx == -1 ? Count : lastIdx + 1) - firstIdx;
 
             if (argCount > 0)

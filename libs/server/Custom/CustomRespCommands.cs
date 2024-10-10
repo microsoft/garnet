@@ -59,7 +59,7 @@ namespace Garnet.server
         private void TryCustomProcedure(CustomProcedure proc, int parseStateFirstArgIdx = 0, int parseStateLastArgIdx = -1)
         {
             Debug.Assert(proc != null);
-            
+
             var output = new MemoryResult<byte>(null, 0);
 
             var procInput = new CustomProcedureInput(ref parseState, parseStateFirstArgIdx, parseStateLastArgIdx);

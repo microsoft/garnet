@@ -230,7 +230,7 @@ namespace Garnet.server
         internal void Log(byte id, ref CustomProcedureInput procInput)
         {
             Debug.Assert(functionsState.StoredProcMode);
-            
+
             appendOnlyFile?.Enqueue(new AofHeader { opType = AofEntryType.StoredProcedure, type = id, version = basicContext.Session.Version, sessionID = basicContext.Session.ID }, ref procInput, out _);
         }
 

@@ -562,7 +562,7 @@ namespace Garnet.server
                                              : TimeSpan.FromSeconds(expiry).Ticks);
                 val.AsReadOnlySpan().CopyTo(sbNewVal.AsSpan());
                 val = sbNewVal;
-                
+
                 storageApi.SET(ref key, ref val);
 
                 scratchBufferManager.RewindScratchBuffer(ref newValSlice);
@@ -572,7 +572,7 @@ namespace Garnet.server
                 storageApi.SET(ref key, ref val);
             }
 
-            
+
             while (!RespWriteUtils.WriteDirect(CmdStrings.RESP_OK, ref dcurr, dend))
                 SendAndReset();
             return true;
