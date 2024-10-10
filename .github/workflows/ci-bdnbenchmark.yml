@@ -91,7 +91,7 @@ jobs:
           external-data-json-path: ./cache/benchmark-data.json
           fail-on-alert: true
           comment-on-alert: true
-          summary-always: false
+          summary-always: true
           auto-push: false
 
       # Run `github-action-benchmark` action
