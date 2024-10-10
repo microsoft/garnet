@@ -7,7 +7,7 @@ env:
   DOTNET_NOLOGO: true
 
 permissions:
-  deployments: write  #permission to deploy GitHub pages website
+  deployments: write  # permission to deploy GitHub pages website
   contents: write  # permission to update benchmark contents in gh-pages branch
 
 jobs:
