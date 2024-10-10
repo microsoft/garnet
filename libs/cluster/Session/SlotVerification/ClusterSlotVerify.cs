@@ -23,19 +23,6 @@ namespace Garnet.cluster
             }
         }
 
-        /// <summary>
-        /// Checks if the given key maps to a slot owned by this node.
-        /// </summary>
-        /// <param name="keySlice"></param>
-        /// <param name="readOnly"></param>
-        /// <param name="SessionAsking"></param>
-        /// <returns>True if key maps to slot not owned by current node otherwise false.</returns>
-        public bool CheckSingleKeySlotVerify(ArgSlice keySlice, bool readOnly, byte SessionAsking)
-        {
-            var config = clusterProvider.clusterManager.CurrentConfig;
-            return SingleKeySlotVerify(ref config, ref keySlice, readOnly, SessionAsking).state == SlotVerifiedState.OK;
-        }
-
         private ClusterSlotVerificationResult SingleKeySlotVerify(ref ClusterConfig config, ref ArgSlice keySlice, bool readOnly, byte SessionAsking, int slot = -1)
         {
             return readOnly ? SingleKeyReadSlotVerify(ref config, ref keySlice) : SingleKeyReadWriteSlotVerify(ref config, ref keySlice);
@@ -178,7 +165,7 @@ namespace Garnet.cluster
                 if (_slot != slot)
                     return new(SlotVerifiedState.CROSSSLOT, slot);
 
-                // Check if state of key changes
+                // Check if any key might have moved
                 if (_verifyResult.state != verifyResult.state)
                     return new(SlotVerifiedState.TRYAGAIN, slot);
             }

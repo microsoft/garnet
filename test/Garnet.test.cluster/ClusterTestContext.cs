@@ -9,6 +9,7 @@ using System.Security.Cryptography.X509Certificates;
 using System.Text;
 using System.Threading;
 using System.Threading.Tasks;
+using Garnet.server;
 using Garnet.server.Auth.Settings;
 using Microsoft.Extensions.Logging;
 using NUnit.Framework;
@@ -61,6 +62,12 @@ namespace Garnet.test.cluster
                 logger?.LogError("Timed out waiting for DisposeCluster");
             if (!Task.Run(() => TestUtils.DeleteDirectory(TestFolder, true)).Wait(TimeSpan.FromSeconds(15)))
                 logger?.LogError("Timed out waiting for DisposeCluster");
+        }
+
+        public void RegisterCustomTxn(string name, Func<CustomTransactionProcedure> proc, RespCommandsInfo commandInfo = null, RespCommandDocs commandDocs = null)
+        {
+            foreach (var node in nodes)
+                node.Register.NewTransactionProc(name, proc, commandInfo, commandDocs);
         }
 
         /// <summary>
