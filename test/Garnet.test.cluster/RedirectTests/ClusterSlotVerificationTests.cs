@@ -80,6 +80,7 @@ namespace Garnet.test.cluster
                 new SCARD(),
                 new SMEMBERS(),
                 new SISMEMBER(),
+                new SMISMEMBER(),
                 new SPOP(),
                 new SRANDMEMBER(),
                 new GEOADD(),
@@ -236,6 +237,7 @@ namespace Garnet.test.cluster
         [TestCase("SCARD")]
         [TestCase("SMEMBERS")]
         [TestCase("SISMEMBER")]
+        [TestCase("SMISMEMBER")]
         [TestCase("SPOP")]
         [TestCase("SRANDMEMBER")]
         [TestCase("GEOADD")]
@@ -363,6 +365,7 @@ namespace Garnet.test.cluster
         [TestCase("SCARD")]
         [TestCase("SMEMBERS")]
         [TestCase("SISMEMBER")]
+        [TestCase("SMISMEMBER")]
         [TestCase("SPOP")]
         [TestCase("SRANDMEMBER")]
         [TestCase("GEOADD")]
@@ -501,6 +504,7 @@ namespace Garnet.test.cluster
         [TestCase("SCARD")]
         [TestCase("SMEMBERS")]
         [TestCase("SISMEMBER")]
+        [TestCase("SMISMEMBER")]
         [TestCase("SPOP")]
         [TestCase("SRANDMEMBER")]
         [TestCase("GEOADD")]
@@ -631,6 +635,7 @@ namespace Garnet.test.cluster
         [TestCase("SCARD")]
         [TestCase("SMEMBERS")]
         [TestCase("SISMEMBER")]
+        [TestCase("SMISMEMBER")]
         [TestCase("SPOP")]
         [TestCase("SRANDMEMBER")]
         [TestCase("GEOADD")]
@@ -768,6 +773,7 @@ namespace Garnet.test.cluster
         [TestCase("SCARD")]
         [TestCase("SMEMBERS")]
         [TestCase("SISMEMBER")]
+        [TestCase("SMISMEMBER")]
         [TestCase("SPOP")]
         [TestCase("SRANDMEMBER")]
         [TestCase("GEOADD")]
@@ -922,6 +928,7 @@ namespace Garnet.test.cluster
         [TestCase("SCARD")]
         [TestCase("SMEMBERS")]
         [TestCase("SISMEMBER")]
+        [TestCase("SMISMEMBER")]
         [TestCase("SPOP")]
         [TestCase("SRANDMEMBER")]
         [TestCase("GEOADD")]

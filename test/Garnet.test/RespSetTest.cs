@@ -1467,5 +1467,57 @@ namespace Garnet.test
             response = lightClientRequest.SendCommand("SADD myset five", 1);
         }
         #endregion
+
+        #region SMISMEMBER
+
+        [Test]
+        [TestCase("Value1,Value2,Value3,Value4,Value5", "Value3,Value6", "true,false")]
+        [TestCase("Value1,Value2,Value5", "InvalidA,Value1,Value5,InvalidB", "false,true,true,false")]
+        [TestCase("Value1", "Value1", "true")]
+        [TestCase("Value1", "Value2", "false")]
+        public void CheckIfMemberExistsInSetLC(string valuesInput, string findInput, string expectedInput)
+        {
+            using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
+            var db = redis.GetDatabase(0);
+            var key = "KeyA";
+            var values = valuesInput.Split(",");
+            var find = findInput.Split(",");
+            var expectedResult = expectedInput.Split(",").Select(x => bool.Parse(x)).ToArray();
+
+            foreach (var value in values)
+            {
+                db.SetAdd(key, value);
+            }
+
+            var actualResult = db.SetContains(key, find.Select(x => (RedisValue)x).ToArray());
+
+            CollectionAssert.AreEqual(expectedResult, actualResult);
+        }
+
+        [Test]
+        public void CheckIfMemberExistsWithNoExistKey()
+        {
+            using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
+            var db = redis.GetDatabase(0);
+            var key = "KeyA";
+            RedisValue[] find = ["Value1", "Value2"];
+            bool[] expectedResult = [false, false];
+
+            var actualResult = db.SetContains(key, find);
+
+            CollectionAssert.AreEqual(expectedResult, actualResult);
+        }
+
+        [Test]
+        public void CheckIfMemberExistsWithInvalidParam()
+        {
+            using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
+            var db = redis.GetDatabase(0);
+            var key = "KeyA";
+
+            Assert.Throws<RedisServerException>(() => db.Execute("SMISMEMBER", key));
+        }
+
+        #endregion
     }
 }

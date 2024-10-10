@@ -26,6 +26,7 @@ namespace Garnet.server
         SMOVE,
         SRANDMEMBER,
         SISMEMBER,
+        SMISMEMBER,
         SUNION,
         SUNIONSTORE,
         SDIFF,
@@ -128,6 +129,9 @@ namespace Garnet.server
                         break;
                     case SetOperation.SISMEMBER:
                         SetIsMember(ref input, ref output);
+                        break;
+                    case SetOperation.SMISMEMBER:
+                        SetMultiIsMember(ref input, ref output);
                         break;
                     case SetOperation.SREM:
                         SetRemove(ref input, _output);

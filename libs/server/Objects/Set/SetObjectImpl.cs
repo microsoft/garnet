@@ -93,6 +93,45 @@ namespace Garnet.server
             }
         }
 
+        private void SetMultiIsMember(ref ObjectInput input, ref SpanByteAndMemory output)
+        {
+            var isMemory = false;
+            MemoryHandle ptrHandle = default;
+            var ptr = output.SpanByte.ToPointer();
+
+            var curr = ptr;
+            var end = curr + output.Length;
+
+            ObjectOutputHeader _output = default;
+            try
+            {
+                var totalCount = input.parseState.Count - input.parseStateStartIdx;
+                while (!RespWriteUtils.WriteArrayLength(totalCount, ref curr, end))
+                    ObjectUtils.ReallocateOutput(ref output, ref isMemory, ref ptr, ref ptrHandle, ref curr, ref end);
+
+                var argCurr = input.parseStateStartIdx;
+                while (argCurr < input.parseState.Count)
+                {
+                    var member = input.parseState.GetArgSliceByRef(argCurr).SpanByte.ToByteArray();
+                    var isMember = set.Contains(member);
+
+                    while (!RespWriteUtils.WriteInteger(isMember ? 1 : 0, ref curr, end))
+                        ObjectUtils.ReallocateOutput(ref output, ref isMemory, ref ptr, ref ptrHandle, ref curr, ref end);
+
+                    argCurr++;
+                }
+                _output.result1 = totalCount;
+            }
+            finally
+            {
+                while (!RespWriteUtils.WriteDirect(ref _output, ref curr, end))
+                    ObjectUtils.ReallocateOutput(ref output, ref isMemory, ref ptr, ref ptrHandle, ref curr, ref end);
+
+                if (isMemory) ptrHandle.Dispose();
+                output.Length = (int)(curr - ptr);
+            }
+        }
+
         private void SetRemove(ref ObjectInput input, byte* output)
         {
             var _output = (ObjectOutputHeader*)output;
