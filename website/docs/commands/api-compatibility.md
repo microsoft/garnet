@@ -110,7 +110,7 @@ Note that this list is subject to change as we continue to expand our API comman
 |  | [SLOTS](cluster.md#cluster-slots) | ➕ | (deprecated) |
 | <span id="command">**COMMAND**</span> | [COMMAND](server.md#command) | ➕ |  |
 |  | [COUNT](server.md#command-count) | ➕ |  |
-|  | DOCS | ➖ |  |
+|  | [DOCS](server.md#command-docs) | ➕ |  |
 |  | GETKEYS | ➖ |  |
 |  | GETKEYSANDFLAGS | ➖ |  | 
 |  | HELP | ➖ |  | 
@@ -387,7 +387,7 @@ Note that this list is subject to change as we continue to expand our API comman
 |  | [GETSET](raw-string.md#getset) | ➖ |  |
 |  | [INCR](raw-string.md#incr) | ➕ |  |
 |  | [INCRBY](raw-string.md#incrby) | ➕ |  |
-|  | INCRBYFLOAT | ➖ |  |
+|  | [INCRBYFLOAT](raw-string.md#incrbyfloat) | ➖ |  |
 |  | LCS | ➖ |  |
 |  | [MGET](raw-string.md#mget) | ➕ |  |
 |  | [MSET](raw-string.md#mset) | ➕ |  |
