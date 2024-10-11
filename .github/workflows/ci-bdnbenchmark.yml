@@ -92,7 +92,7 @@ jobs:
           fail-on-alert: true
           alert-comment-cc-users: '@darrenge'
           summary-always: true
-          auto-push: true
+          auto-push: false  # needs to be false if using external-data-json-path
 
       # Run `github-action-benchmark` action
       - name: Store benchmark result for charts
