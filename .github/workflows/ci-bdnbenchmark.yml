@@ -92,7 +92,7 @@ jobs:
           fail-on-alert: true
           alert-comment-cc-users: '@darrenge'
           summary-always: true
-          auto-push: false
+          auto-push: true
 
       # Run `github-action-benchmark` action
       - name: Store benchmark result for charts
