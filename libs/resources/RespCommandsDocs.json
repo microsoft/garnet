@@ -2299,6 +2299,30 @@
     ]
   },
   {
+    "Command": "GETSET",
+    "Name": "GETSET",
+    "Summary": "Returns the previous string value of a key after setting it to a new value.",
+    "Group": "String",
+    "Complexity": "O(1)",
+    "DocFlags": "Deprecated",
+    "ReplacedBy": "\u0060SET\u0060 with the \u0060!GET\u0060 argument",
+    "Arguments": [
+      {
+        "TypeDiscriminator": "RespCommandKeyArgument",
+        "Name": "KEY",
+        "DisplayText": "key",
+        "Type": "Key",
+        "KeySpecIndex": 0
+      },
+      {
+        "TypeDiscriminator": "RespCommandBasicArgument",
+        "Name": "VALUE",
+        "DisplayText": "value",
+        "Type": "String"
+      }
+    ]
+  },
+  {
     "Command": "HDEL",
     "Name": "HDEL",
     "Summary": "Deletes one or more fields and their values from a hash. Deletes the hash if no fields remain.",
@@ -4476,6 +4500,30 @@
     ]
   },
   {
+    "Command": "SETNX",
+    "Name": "SETNX",
+    "Summary": "Set the string value of a key only when the key doesn\u0027t exist.",
+    "Group": "String",
+    "Complexity": "O(1)",
+    "DocFlags": "Deprecated",
+    "ReplacedBy": "\u0060SET\u0060 with the \u0060NX\u0060 argument",
+    "Arguments": [
+      {
+        "TypeDiscriminator": "RespCommandKeyArgument",
+        "Name": "KEY",
+        "DisplayText": "key",
+        "Type": "Key",
+        "KeySpecIndex": 0
+      },
+      {
+        "TypeDiscriminator": "RespCommandBasicArgument",
+        "Name": "VALUE",
+        "DisplayText": "value",
+        "Type": "String"
+      }
+    ]
+  },
+  {
     "Command": "SETRANGE",
     "Name": "SETRANGE",
     "Summary": "Overwrites a part of a string value with another by an offset. Creates the key if it doesn\u0027t exist.",
@@ -4805,6 +4853,36 @@
         "DisplayText": "channel",
         "Type": "String",
         "ArgumentFlags": "Multiple"
+      }
+    ]
+  },
+  {
+    "Command": "SUBSTR",
+    "Name": "SUBSTR",
+    "Summary": "Returns a substring from a string value.",
+    "Group": "String",
+    "Complexity": "O(N) where N is the length of the returned string. The complexity is ultimately determined by the returned length, but because creating a substring from an existing string is very cheap, it can be considered O(1) for small strings.",
+    "DocFlags": "Deprecated",
+    "ReplacedBy": "\u0060GETRANGE\u0060",
+    "Arguments": [
+      {
+        "TypeDiscriminator": "RespCommandKeyArgument",
+        "Name": "KEY",
+        "DisplayText": "key",
+        "Type": "Key",
+        "KeySpecIndex": 0
+      },
+      {
+        "TypeDiscriminator": "RespCommandBasicArgument",
+        "Name": "START",
+        "DisplayText": "start",
+        "Type": "Integer"
+      },
+      {
+        "TypeDiscriminator": "RespCommandBasicArgument",
+        "Name": "END",
+        "DisplayText": "end",
+        "Type": "Integer"
       }
     ]
   },
