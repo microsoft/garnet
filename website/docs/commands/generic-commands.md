@@ -205,6 +205,26 @@ One of the following:
 
 ---
 
+### EXPIRETIME
+
+#### Syntax
+
+```bash
+    EXPIRETIME key
+```
+
+Returns the absolute Unix timestamp (since January 1, 1970) in seconds at which the given key will expire.
+
+#### Resp Reply
+
+One of the following:
+
+* Integer reply: Expiration Unix timestamp in milliseconds.
+* Integer reply: -1 if the key exists but has no associated expiration time.
+* Integer reply: -2 if the key does not exist.
+
+---
+
 ### KEYS
 
 #### Syntax
@@ -270,6 +290,26 @@ One of the following:
 
 * Integer reply: 0 if key does not exist or does not have an associated timeout.
 * Integer reply: 1 if the timeout has been removed.
+
+---
+
+### PEXPIRETIME
+
+#### Syntax
+
+```bash
+    PEXPIRETIME key
+```
+
+Returns the absolute Unix timestamp (since January 1, 1970) in milliseconds at which the given key will expire.
+
+#### Resp Reply
+
+One of the following:
+
+* Integer reply: Expiration Unix timestamp in milliseconds.
+* Integer reply: -1 if the key exists but has no associated expiration time.
+* Integer reply: -2 if the key does not exist.
 
 ---
 

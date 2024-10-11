@@ -1142,6 +1142,173 @@ namespace Garnet.test
             ClassicAssert.AreEqual(3, exists);
         }
 
+        #region Expiretime
+
+        [Test]
+        public void ExpiretimeWithStingValue()
+        {
+            using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
+            var db = redis.GetDatabase(0);
+            string key = "key1";
+            var expireTimeSpan = TimeSpan.FromMinutes(1);
+            db.StringSet(key, "test1", expireTimeSpan);
+
+            var actualExpireTime = (long)db.Execute("EXPIRETIME", key);
+
+            ClassicAssert.GreaterOrEqual(actualExpireTime, DateTimeOffset.UtcNow.ToUnixTimeSeconds());
+            var expireExpireTime = DateTimeOffset.UtcNow.Add(expireTimeSpan).ToUnixTimeSeconds();
+            ClassicAssert.LessOrEqual(actualExpireTime, expireExpireTime);
+        }
+
+        [Test]
+        public void ExpiretimeWithUnknownKey()
+        {
+            using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
+            var db = redis.GetDatabase(0);
+
+            var expireTime = (long)db.Execute("EXPIRETIME", "keyZ");
+
+            ClassicAssert.AreEqual(-2, expireTime);
+        }
+
+        [Test]
+        public void ExpiretimeWithNoKeyExpiration()
+        {
+            using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
+            var db = redis.GetDatabase(0);
+            string key = "key1";
+            db.StringSet(key, "test1");
+
+            var expireTime = (long)db.Execute("EXPIRETIME", key);
+
+            ClassicAssert.AreEqual(-1, expireTime);
+        }
+
+        [Test]
+        public void ExpiretimeWithInvalidNumberOfArgs()
+        {
+            using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
+            var db = redis.GetDatabase(0);
+
+            var exception = Assert.Throws<RedisServerException>(() => db.Execute("EXPIRETIME"));
+            Assert.That(exception.Message, Does.StartWith("ERR wrong number of arguments"));
+        }
+
+        [Test]
+        public void ExpiretimeWithObjectValue()
+        {
+            using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
+            var db = redis.GetDatabase(0);
+            var key = "key1";
+            var expireTimeSpan = TimeSpan.FromMinutes(1);
+            var origList = new RedisValue[] { "a", "b", "c", "d" };
+            var count = db.ListRightPush(key, origList);
+            var expirySet = db.KeyExpire(key, expireTimeSpan);
+
+            var actualExpireTime = (long)db.Execute("EXPIRETIME", key);
+
+            ClassicAssert.GreaterOrEqual(actualExpireTime, DateTimeOffset.UtcNow.ToUnixTimeSeconds());
+            var expireExpireTime = DateTimeOffset.UtcNow.Add(expireTimeSpan).ToUnixTimeSeconds();
+            ClassicAssert.LessOrEqual(actualExpireTime, expireExpireTime);
+        }
+
+        [Test]
+        public void ExpiretimeWithNoKeyExpirationForObjectValue()
+        {
+            using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
+            var db = redis.GetDatabase(0);
+            var key = "key1";
+            var origList = new RedisValue[] { "a", "b", "c", "d" };
+            var count = db.ListRightPush(key, origList);
+
+            var expireTime = (long)db.Execute("EXPIRETIME", key);
+
+            ClassicAssert.AreEqual(-1, expireTime);
+        }
+
+        [Test]
+        public void PExpiretimeWithStingValue()
+        {
+            using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
+            var db = redis.GetDatabase(0);
+            string key = "key1";
+            var expireTimeSpan = TimeSpan.FromMinutes(1);
+            db.StringSet(key, "test1", expireTimeSpan);
+
+            var actualExpireTime = (long)db.Execute("PEXPIRETIME", key);
+
+            ClassicAssert.GreaterOrEqual(actualExpireTime, DateTimeOffset.UtcNow.ToUnixTimeMilliseconds());
+            var expireExpireTime = DateTimeOffset.UtcNow.Add(expireTimeSpan).ToUnixTimeMilliseconds();
+            ClassicAssert.LessOrEqual(actualExpireTime, expireExpireTime);
+        }
+
+        [Test]
+        public void PExpiretimeWithUnknownKey()
+        {
+            using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
+            var db = redis.GetDatabase(0);
+
+            var expireTime = (long)db.Execute("PEXPIRETIME", "keyZ");
+
+            ClassicAssert.AreEqual(-2, expireTime);
+        }
+
+        [Test]
+        public void PExpiretimeWithNoKeyExpiration()
+        {
+            using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
+            var db = redis.GetDatabase(0);
+            string key = "key1";
+            db.StringSet(key, "test1");
+
+            var expireTime = (long)db.Execute("PEXPIRETIME", key);
+
+            ClassicAssert.AreEqual(-1, expireTime);
+        }
+
+        [Test]
+        public void PExpiretimeWithInvalidNumberOfArgs()
+        {
+            using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
+            var db = redis.GetDatabase(0);
+
+            var exception = Assert.Throws<RedisServerException>(() => db.Execute("PEXPIRETIME"));
+            Assert.That(exception.Message, Does.StartWith("ERR wrong number of arguments"));
+        }
+
+        [Test]
+        public void PExpiretimeWithObjectValue()
+        {
+            using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
+            var db = redis.GetDatabase(0);
+            var key = "key1";
+            var expireTimeSpan = TimeSpan.FromMinutes(1);
+            var origList = new RedisValue[] { "a", "b", "c", "d" };
+            var count = db.ListRightPush(key, origList);
+            var expirySet = db.KeyExpire(key, expireTimeSpan);
+
+            var actualExpireTime = (long)db.Execute("PEXPIRETIME", key);
+
+            ClassicAssert.GreaterOrEqual(actualExpireTime, DateTimeOffset.UtcNow.ToUnixTimeMilliseconds());
+            var expireExpireTime = DateTimeOffset.UtcNow.Add(expireTimeSpan).ToUnixTimeMilliseconds();
+            ClassicAssert.LessOrEqual(actualExpireTime, expireExpireTime);
+        }
+
+        [Test]
+        public void PExpiretimeWithNoKeyExpirationForObjectValue()
+        {
+            using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
+            var db = redis.GetDatabase(0);
+            var key = "key1";
+            var origList = new RedisValue[] { "a", "b", "c", "d" };
+            var count = db.ListRightPush(key, origList);
+
+            var expireTime = (long)db.Execute("PEXPIRETIME", key);
+
+            ClassicAssert.AreEqual(-1, expireTime);
+        }
+
+        #endregion
 
         [Test]
         public void SingleRename()
