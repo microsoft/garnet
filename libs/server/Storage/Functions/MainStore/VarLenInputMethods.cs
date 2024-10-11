@@ -254,5 +254,8 @@ namespace Garnet.server
             return sizeof(int) + input.parseState.GetArgSliceByRef(input.parseStateFirstArgIdx).ReadOnlySpan.Length +
                 (input.arg1 == 0 ? 0 : sizeof(long));
         }
+
+        public int GetUpsertValueLength(ref SpanByte t, ref SpanByte input)
+            => t.TotalSize;
     }
 }
