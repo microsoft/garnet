@@ -11,6 +11,60 @@ namespace Garnet.server
     /// </summary>
     public readonly unsafe partial struct MainSessionFunctions : ISessionFunctions<SpanByte, SpanByte, RawStringInput, SpanByteAndMemory, long>
     {
+        /// <summary>
+        /// Parse ASCII byte array into long and validate that only contains ASCII decimal characters
+        /// </summary>
+        /// <param name="length">Length of byte array</param>
+        /// <param name="source">Pointer to byte array</param>
+        /// <param name="val">Parsed long value</param>
+        /// <returns>True if input contained only ASCII decimal characters, otherwise false</returns>
+        static bool IsValidNumber(int length, byte* source, out long val)
+        {
+            val = 0;
+            try
+            {
+                // Check for valid number
+                if (!NumUtils.TryBytesToLong(length, source, out val))
+                {
+                    // Signal value is not a valid number
+                    return false;
+                }
+            }
+            catch
+            {
+                // Signal value is not a valid number
+                return false;
+            }
+            return true;
+        }
+
+        /// <summary>
+        /// Parse ASCII byte array into double and validate that only contains ASCII decimal characters
+        /// </summary>
+        /// <param name="length">Length of byte array</param>
+        /// <param name="source">Pointer to byte array</param>
+        /// <param name="val">Parsed long value</param>
+        /// <returns>True if input contained only ASCII decimal characters, otherwise false</returns>
+        static bool IsValidDouble(int length, byte* source, out double val)
+        {
+            val = 0;
+            try
+            {
+                // Check for valid number
+                if (!NumUtils.TryBytesToDouble(length, source, out val) || !double.IsFinite(val))
+                {
+                    // Signal value is not a valid number
+                    return false;
+                }
+            }
+            catch
+            {
+                // Signal value is not a valid number
+                return false;
+            }
+            return true;
+        }
+
         /// <inheritdoc/>
         public int GetRMWInitialValueLength(ref RawStringInput input)
         {
@@ -56,6 +110,14 @@ namespace Garnet.server
                     ndigits = NumUtils.NumDigitsInLong(next, ref fNeg);
 
                     return sizeof(int) + ndigits + (fNeg ? 1 : 0);
+
+                case RespCommand.INCRBYFLOAT:
+                    if (!input.parseState.TryGetDouble(input.parseStateFirstArgIdx, out var incrByFloat))
+                        return sizeof(int);
+
+                    ndigits = NumUtils.NumOfCharInDouble(incrByFloat, out var _, out var _, out var _);
+
+                    return sizeof(int) + ndigits;
 
                 default:
                     if ((byte)cmd >= CustomCommandManager.StartOffset)
@@ -111,6 +173,16 @@ namespace Garnet.server
                         ndigits += fNeg ? 1 : 0;
 
                         return sizeof(int) + ndigits + t.MetadataSize;
+                    case RespCommand.INCRBYFLOAT:
+                        // We don't need to TryGetDouble here because InPlaceUpdater will raise an error before we reach this point
+                        var incrByFloat = input.parseState.GetDouble(input.parseStateFirstArgIdx);
+
+                        NumUtils.TryBytesToDouble(t.AsSpan(), out var currVal);
+                        var nextVal = currVal + incrByFloat;
+
+                        ndigits = NumUtils.NumOfCharInDouble(nextVal, out _, out _, out _);
+
+                        return sizeof(int) + ndigits + t.MetadataSize;
                     case RespCommand.SETBIT:
                         var bOffset = input.parseState.GetLong(input.parseStateFirstArgIdx);
                         return sizeof(int) + BitmapManager.NewBlockAllocLength(t.Length, bOffset);
@@ -142,6 +214,8 @@ namespace Garnet.server
 
                     case RespCommand.EXPIRE:
                     case RespCommand.PEXPIRE:
+                    case RespCommand.EXPIREAT:
+                    case RespCommand.PEXPIREAT:
                         return sizeof(int) + t.Length + sizeof(long);
 
                     case RespCommand.SETRANGE:

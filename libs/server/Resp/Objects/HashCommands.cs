@@ -34,11 +34,6 @@ namespace Garnet.server
             var sbKey = parseState.GetArgSliceByRef(0).SpanByte;
             var keyBytes = sbKey.ToByteArray();
 
-            if (NetworkSingleKeySlotVerify(keyBytes, false))
-            {
-                return true;
-            }
-
             var hop =
                 command switch
                 {
@@ -93,11 +88,6 @@ namespace Garnet.server
             var sbKey = parseState.GetArgSliceByRef(0).SpanByte;
             var keyBytes = sbKey.ToByteArray();
 
-            if (NetworkSingleKeySlotVerify(keyBytes, true))
-            {
-                return true;
-            }
-
             // Prepare input
             var header = new RespInputHeader(GarnetObjectType.Hash) { HashOp = HashOperation.HGET };
             var input = new ObjectInput(header, ref parseState, 1);
@@ -142,11 +132,6 @@ namespace Garnet.server
             var sbKey = parseState.GetArgSliceByRef(0).SpanByte;
             var keyBytes = sbKey.ToByteArray();
 
-            if (NetworkSingleKeySlotVerify(keyBytes, true))
-            {
-                return true;
-            }
-
             // Prepare input
             var header = new RespInputHeader(GarnetObjectType.Hash) { HashOp = HashOperation.HGETALL };
             var input = new ObjectInput(header, respProtocolVersion);
@@ -189,11 +174,6 @@ namespace Garnet.server
 
             var sbKey = parseState.GetArgSliceByRef(0).SpanByte;
             var keyBytes = sbKey.ToByteArray();
-
-            if (NetworkSingleKeySlotVerify(keyBytes, true))
-            {
-                return true;
-            }
 
             // Prepare input
             var header = new RespInputHeader(GarnetObjectType.Hash) { HashOp = HashOperation.HMGET };
@@ -238,11 +218,6 @@ namespace Garnet.server
 
             var sbKey = parseState.GetArgSliceByRef(0).SpanByte;
             var keyBytes = sbKey.ToByteArray();
-
-            if (NetworkSingleKeySlotVerify(keyBytes, true))
-            {
-                return true;
-            }
 
             var paramCount = 1;
             var withValues = false;
@@ -334,11 +309,6 @@ namespace Garnet.server
             var sbKey = parseState.GetArgSliceByRef(0).SpanByte;
             var keyBytes = sbKey.ToByteArray();
 
-            if (NetworkSingleKeySlotVerify(keyBytes, true))
-            {
-                return true;
-            }
-
             // Prepare input
             var header = new RespInputHeader(GarnetObjectType.Hash) { HashOp = HashOperation.HLEN };
             var input = new ObjectInput(header);
@@ -381,11 +351,6 @@ namespace Garnet.server
 
             var sbKey = parseState.GetArgSliceByRef(0).SpanByte;
             var keyBytes = sbKey.ToByteArray();
-
-            if (NetworkSingleKeySlotVerify(keyBytes, true))
-            {
-                return true;
-            }
 
             // Prepare input
             var header = new RespInputHeader(GarnetObjectType.Hash) { HashOp = HashOperation.HSTRLEN };
@@ -430,11 +395,6 @@ namespace Garnet.server
             var sbKey = parseState.GetArgSliceByRef(0).SpanByte;
             var keyBytes = sbKey.ToByteArray();
 
-            if (NetworkSingleKeySlotVerify(keyBytes, false))
-            {
-                return true;
-            }
-
             // Prepare input
             var header = new RespInputHeader(GarnetObjectType.Hash) { HashOp = HashOperation.HDEL };
             var input = new ObjectInput(header, ref parseState, 1);
@@ -475,11 +435,6 @@ namespace Garnet.server
 
             var sbKey = parseState.GetArgSliceByRef(0).SpanByte;
             var keyBytes = sbKey.ToByteArray();
-
-            if (NetworkSingleKeySlotVerify(keyBytes, true))
-            {
-                return true;
-            }
 
             // Prepare input
             var header = new RespInputHeader(GarnetObjectType.Hash) { HashOp = HashOperation.HEXISTS };
@@ -524,11 +479,6 @@ namespace Garnet.server
             // Get the key for Hash
             var sbKey = parseState.GetArgSliceByRef(0).SpanByte;
             var keyBytes = sbKey.ToByteArray();
-
-            if (NetworkSingleKeySlotVerify(keyBytes, true))
-            {
-                return true;
-            }
 
             var op =
                 command switch
@@ -587,11 +537,6 @@ namespace Garnet.server
             // Get the key for Hash
             var sbKey = parseState.GetArgSliceByRef(0).SpanByte;
             var keyBytes = sbKey.ToByteArray();
-
-            if (NetworkSingleKeySlotVerify(keyBytes, false))
-            {
-                return true;
-            }
 
             var op =
                 command switch

@@ -77,6 +77,24 @@ namespace Garnet.server
 
         #endregion
 
+        #region EXPIRETIME
+
+        /// <inheritdoc />
+        public GarnetStatus EXPIRETIME(ref SpanByte key, StoreType storeType, ref SpanByteAndMemory output)
+        {
+            garnetApi.WATCH(new ArgSlice(ref key), storeType);
+            return garnetApi.EXPIRETIME(ref key, storeType, ref output);
+        }
+
+        /// <inheritdoc />
+        public GarnetStatus PEXPIRETIME(ref SpanByte key, StoreType storeType, ref SpanByteAndMemory output)
+        {
+            garnetApi.WATCH(new ArgSlice(ref key), storeType);
+            return garnetApi.PEXPIRETIME(ref key, storeType, ref output);
+        }
+
+        #endregion
+
         #region SortedSet Methods
 
         /// <inheritdoc />

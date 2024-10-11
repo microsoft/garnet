@@ -119,7 +119,7 @@ namespace Garnet.common
         /// </summary>
         /// <param name="locationType">Type of location of files the stream provider reads from / writes to</param>
         /// <param name="connectionString">Connection string to Azure Storage, if applicable</param>
-        /// <param name="resourceAssembly">Assembly from which to load the embedded resource, if applicable</param>
+        /// <param name="resourceAssembly">Assembly from which to load the embedded resource, if applicable.</param>
         /// <returns>StreamProvider instance</returns>
         public static IStreamProvider GetStreamProvider(FileLocationType locationType, string connectionString = null, Assembly resourceAssembly = null)
         {
@@ -127,11 +127,14 @@ namespace Garnet.common
             {
                 case FileLocationType.AzureStorage:
                     if (string.IsNullOrEmpty(connectionString))
-                        throw new ArgumentException("Azure Storage connection string is required to read/write settings to Azure Storage", nameof(connectionString));
+                        throw new ArgumentException("Azure Storage connection string is required to read/write to Azure Storage", nameof(connectionString));
                     return new AzureStreamProvider(connectionString);
                 case FileLocationType.Local:
                     return new LocalFileStreamProvider();
                 case FileLocationType.EmbeddedResource:
+                    if (resourceAssembly == null)
+                        throw new ArgumentException(
+                            "Assembly is required to read from embedded resource", nameof(resourceAssembly));
                     return new EmbeddedResourceStreamProvider(resourceAssembly);
                 default:
                     throw new NotImplementedException();

@@ -24,6 +24,8 @@ namespace Garnet.server
                 case RespCommand.PERSIST:
                 case RespCommand.EXPIRE:
                 case RespCommand.PEXPIRE:
+                case RespCommand.EXPIREAT:
+                case RespCommand.PEXPIREAT:
                 case RespCommand.GETDEL:
                     return false;
                 default:
@@ -90,6 +92,8 @@ namespace Garnet.server
                 case RespCommand.SETEXXX:
                 case RespCommand.EXPIRE:
                 case RespCommand.PEXPIRE:
+                case RespCommand.EXPIREAT:
+                case RespCommand.PEXPIREAT:
                 case RespCommand.PERSIST:
                 case RespCommand.GETDEL:
                     throw new Exception();
@@ -153,6 +157,16 @@ namespace Garnet.server
                         return true;
                     }
                     CopyUpdateNumber(-decrBy, ref value, ref output);
+                    break;
+                case RespCommand.INCRBYFLOAT:
+                    value.UnmarkExtraMetadata();
+                    // Check if input contains a valid number
+                    if (!input.parseState.TryGetDouble(input.parseStateFirstArgIdx, out var incrByFloat))
+                    {
+                        output.SpanByte.AsSpan()[0] = (byte)OperationError.INVALID_TYPE;
+                        return true;
+                    }
+                    CopyUpdateNumber(incrByFloat, ref value, ref output);
                     break;
                 default:
                     value.UnmarkExtraMetadata();
@@ -295,19 +309,26 @@ namespace Garnet.server
                 case RespCommand.EXPIRE:
                     var expiryExists = value.MetadataSize > 0;
 
-                    var expiryValue = input.parseState.GetInt(input.parseStateFirstArgIdx);
+                    var expiryValue = input.parseState.GetLong(input.parseStateFirstArgIdx);
                     var tsExpiry = input.header.cmd == RespCommand.EXPIRE
                         ? TimeSpan.FromSeconds(expiryValue)
                         : TimeSpan.FromMilliseconds(expiryValue);
                     var expiryTicks = DateTimeOffset.UtcNow.Ticks + tsExpiry.Ticks;
+                    var expireOption = (ExpireOption)input.arg1;
 
-                    var optionType = ExpireOption.None;
-                    if (input.parseState.Count - input.parseStateFirstArgIdx > 1)
-                    {
-                        optionType = input.parseState.GetEnum<ExpireOption>(input.parseStateFirstArgIdx + 1, true);
-                    }
+                    return EvaluateExpireInPlace(expireOption, expiryExists, expiryTicks, ref value, ref output);
 
-                    return EvaluateExpireInPlace(optionType, expiryExists, expiryTicks, ref value, ref output);
+                case RespCommand.PEXPIREAT:
+                case RespCommand.EXPIREAT:
+                    expiryExists = value.MetadataSize > 0;
+
+                    var expiryTimestamp = input.parseState.GetLong(input.parseStateFirstArgIdx);
+                    expiryTicks = input.header.cmd == RespCommand.PEXPIREAT
+                        ? ConvertUtils.UnixTimestampInMillisecondsToTicks(expiryTimestamp)
+                        : ConvertUtils.UnixTimestampInSecondsToTicks(expiryTimestamp);
+                    expireOption = (ExpireOption)input.arg1;
+
+                    return EvaluateExpireInPlace(expireOption, expiryExists, expiryTicks, ref value, ref output);
 
                 case RespCommand.PERSIST:
                     if (value.MetadataSize != 0)
@@ -344,6 +365,15 @@ namespace Garnet.server
                         return true;
                     }
                     return TryInPlaceUpdateNumber(ref value, ref output, ref rmwInfo, ref recordInfo, input: -decrBy);
+
+                case RespCommand.INCRBYFLOAT:
+                    // Check if input contains a valid number
+                    if (!input.parseState.TryGetDouble(input.parseStateFirstArgIdx, out var incrByFloat))
+                    {
+                        output.SpanByte.AsSpan()[0] = (byte)OperationError.INVALID_TYPE;
+                        return true;
+                    }
+                    return TryInPlaceUpdateNumber(ref value, ref output, ref rmwInfo, ref recordInfo, incrByFloat);
 
                 case RespCommand.SETBIT:
                     var v = value.ToPointer();
@@ -586,19 +616,27 @@ namespace Garnet.server
                 case RespCommand.PEXPIRE:
                     var expiryExists = oldValue.MetadataSize > 0;
 
-                    var expiryValue = input.parseState.GetInt(input.parseStateFirstArgIdx);
+                    var expiryValue = input.parseState.GetLong(input.parseStateFirstArgIdx);
                     var tsExpiry = input.header.cmd == RespCommand.EXPIRE
                         ? TimeSpan.FromSeconds(expiryValue)
                         : TimeSpan.FromMilliseconds(expiryValue);
                     var expiryTicks = DateTimeOffset.UtcNow.Ticks + tsExpiry.Ticks;
+                    var expireOption = (ExpireOption)input.arg1;
 
-                    var optionType = ExpireOption.None;
-                    if (input.parseState.Count - input.parseStateFirstArgIdx > 1)
-                    {
-                        optionType = input.parseState.GetEnum<ExpireOption>(input.parseStateFirstArgIdx + 1, true);
-                    }
+                    EvaluateExpireCopyUpdate(expireOption, expiryExists, expiryTicks, ref oldValue, ref newValue, ref output);
+                    break;
 
-                    EvaluateExpireCopyUpdate(optionType, expiryExists, expiryTicks, ref oldValue, ref newValue, ref output);
+                case RespCommand.PEXPIREAT:
+                case RespCommand.EXPIREAT:
+                    expiryExists = oldValue.MetadataSize > 0;
+
+                    var expiryTimestamp = input.parseState.GetLong(input.parseStateFirstArgIdx);
+                    expiryTicks = input.header.cmd == RespCommand.PEXPIREAT
+                        ? ConvertUtils.UnixTimestampInMillisecondsToTicks(expiryTimestamp)
+                        : ConvertUtils.UnixTimestampInSecondsToTicks(expiryTimestamp);
+                    expireOption = (ExpireOption)input.arg1;
+
+                    EvaluateExpireCopyUpdate(expireOption, expiryExists, expiryTicks, ref oldValue, ref newValue, ref output);
                     break;
 
                 case RespCommand.PERSIST:
@@ -640,6 +678,17 @@ namespace Garnet.server
                         break;
                     }
                     TryCopyUpdateNumber(ref oldValue, ref newValue, ref output, input: -decrBy);
+                    break;
+
+                case RespCommand.INCRBYFLOAT:
+                    // Check if input contains a valid number
+                    if (!input.parseState.TryGetDouble(input.parseStateFirstArgIdx, out var incrByFloat))
+                    {
+                        // Move to tail of the log
+                        oldValue.CopyTo(ref newValue);
+                        break;
+                    }
+                    TryCopyUpdateNumber(ref oldValue, ref newValue, ref output, input: incrByFloat);
                     break;
 
                 case RespCommand.SETBIT:

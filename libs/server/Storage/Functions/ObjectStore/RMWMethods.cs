@@ -4,6 +4,7 @@
 using System;
 using System.Buffers;
 using System.Diagnostics;
+using Garnet.common;
 using Tsavorite.core;
 
 namespace Garnet.server
@@ -21,6 +22,7 @@ namespace Garnet.server
             switch (type)
             {
                 case GarnetObjectType.Expire:
+                case GarnetObjectType.PExpire:
                 case GarnetObjectType.Persist:
                     return false;
                 default:
@@ -50,7 +52,7 @@ namespace Garnet.server
             }
             else
             {
-                Debug.Assert(type != GarnetObjectType.Expire && type != GarnetObjectType.Persist, "Expire and Persist commands should have been handled already by NeedInitialUpdate.");
+                Debug.Assert(type != GarnetObjectType.Expire && type != GarnetObjectType.PExpire && type != GarnetObjectType.Persist, "Expire and Persist commands should have been handled already by NeedInitialUpdate.");
 
                 var customObjectCommand = GetCustomObjectCommand(ref input, type);
                 var objectId = (byte)((byte)type - CustomCommandManager.StartOffset);
@@ -105,18 +107,25 @@ namespace Garnet.server
             switch (input.header.type)
             {
                 case GarnetObjectType.Expire:
-                    var currTokenIdx = input.parseStateFirstArgIdx;
-                    var expiryValue = input.parseState.GetInt(currTokenIdx++);
-                    var expireInMs = input.parseState.GetInt(currTokenIdx++) == 1;
-                    var tsExpiry = expireInMs
-                        ? TimeSpan.FromMilliseconds(expiryValue)
-                        : TimeSpan.FromSeconds(expiryValue);
-                    var expiryTicks = DateTimeOffset.UtcNow.Ticks + tsExpiry.Ticks;
+                case GarnetObjectType.PExpire:
+                    var expiryValue = input.parseState.GetLong(input.parseStateFirstArgIdx);
 
-                    var optionType = ExpireOption.None;
-                    if (currTokenIdx < input.parseState.Count)
+                    var optionType = (ExpireOption)input.arg1;
+                    var expireAt = input.arg2 == 1;
+
+                    long expiryTicks;
+                    if (expireAt)
                     {
-                        optionType = input.parseState.GetEnum<ExpireOption>(currTokenIdx, true);
+                        expiryTicks = input.header.type == GarnetObjectType.PExpire
+                            ? ConvertUtils.UnixTimestampInMillisecondsToTicks(expiryValue)
+                            : ConvertUtils.UnixTimestampInSecondsToTicks(expiryValue);
+                    }
+                    else
+                    {
+                        var tsExpiry = input.header.type == GarnetObjectType.PExpire
+                            ? TimeSpan.FromMilliseconds(expiryValue)
+                            : TimeSpan.FromSeconds(expiryValue);
+                        expiryTicks = DateTimeOffset.UtcNow.Ticks + tsExpiry.Ticks;
                     }
 
                     var expiryExists = value.Expiration > 0;
@@ -180,6 +189,7 @@ namespace Garnet.server
         {
             // We're performing the object update here (and not in CopyUpdater) so that we are guaranteed that 
             // the record was CASed into the hash chain before it gets modified
+            var oldValueSize = oldValue.Size;
             oldValue.CopyUpdate(ref oldValue, ref value, rmwInfo.RecordInfo.IsInNewVersion);
 
             functionsState.watchVersionMap.IncrementVersion(rmwInfo.KeyHash);
@@ -187,24 +197,30 @@ namespace Garnet.server
             switch (input.header.type)
             {
                 case GarnetObjectType.Expire:
-                    var currTokenIdx = input.parseStateFirstArgIdx;
-                    var expiryValue = input.parseState.GetInt(currTokenIdx++);
-                    var expireInMs = input.parseState.GetInt(currTokenIdx++) == 1;
+                case GarnetObjectType.PExpire:
+                    var expiryValue = input.parseState.GetLong(input.parseStateFirstArgIdx);
 
-                    var expireOption = ExpireOption.None;
-                    if (currTokenIdx < input.parseState.Count)
+                    var optionType = (ExpireOption)input.arg1;
+                    var expireAt = input.arg2 == 1;
+
+                    long expiryTicks;
+                    if (expireAt)
                     {
-                        expireOption = input.parseState.GetEnum<ExpireOption>(currTokenIdx, true);
+                        expiryTicks = input.header.type == GarnetObjectType.PExpire
+                            ? ConvertUtils.UnixTimestampInMillisecondsToTicks(expiryValue)
+                            : ConvertUtils.UnixTimestampInSecondsToTicks(expiryValue);
                     }
-
-                    var tsExpiry = expireInMs
-                        ? TimeSpan.FromMilliseconds(expiryValue)
-                        : TimeSpan.FromSeconds(expiryValue);
-                    var expiryTicks = DateTimeOffset.UtcNow.Ticks + tsExpiry.Ticks;
+                    else
+                    {
+                        var tsExpiry = input.header.type == GarnetObjectType.PExpire
+                            ? TimeSpan.FromMilliseconds(expiryValue)
+                            : TimeSpan.FromSeconds(expiryValue);
+                        expiryTicks = DateTimeOffset.UtcNow.Ticks + tsExpiry.Ticks;
+                    }
 
                     var expiryExists = value.Expiration > 0;
 
-                    EvaluateObjectExpireInPlace(expireOption, expiryExists, expiryTicks, ref value, ref output);
+                    EvaluateObjectExpireInPlace(optionType, expiryExists, expiryTicks, ref value, ref output);
                     break;
                 case GarnetObjectType.Persist:
                     if (value.Expiration > 0)
@@ -242,7 +258,9 @@ namespace Garnet.server
                     }
             }
 
-            functionsState.objectStoreSizeTracker?.AddTrackedSize(MemoryUtils.CalculateKeyValueSize(key, value));
+            // If oldValue has been set to null, subtract it's size from the tracked heap size
+            var sizeAdjustment = oldValue == null ? value.Size - oldValueSize : value.Size;
+            functionsState.objectStoreSizeTracker?.AddTrackedSize(sizeAdjustment);
 
             if (functionsState.appendOnlyFile != null)
                 WriteLogRMW(ref key, ref input, rmwInfo.Version, rmwInfo.SessionID);
