@@ -16,6 +16,8 @@ namespace GarnetClientSample
 
         static async Task Main()
         {
+
+            Writeline "DEBUG -- just adding something in here to change things"    
             await new GarnetClientSamples(address, port, useTLS).RunAll();
 
             // await new SERedisSamples(address, port).RunAll();

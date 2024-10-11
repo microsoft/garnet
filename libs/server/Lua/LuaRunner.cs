@@ -119,6 +119,7 @@ namespace Garnet.server
                 var result = loader.Call(source);
                 if (result?.Length == 1)
                 {
+                    Writeline "DEBUG -- just adding something in here to change things"    
                     function = result[0] as LuaFunction;
                     return;
                 }
