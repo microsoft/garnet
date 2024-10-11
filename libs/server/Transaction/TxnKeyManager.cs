@@ -134,6 +134,7 @@ namespace Garnet.server
                 RespCommand.RENAME => SingleKey(1, false, LockType.Exclusive),
                 RespCommand.INCR => SingleKey(1, false, LockType.Exclusive),
                 RespCommand.INCRBY => SingleKey(1, false, LockType.Exclusive),
+                RespCommand.INCRBYFLOAT => SingleKey(1, false, LockType.Exclusive),
                 RespCommand.DECR => SingleKey(1, false, LockType.Exclusive),
                 RespCommand.DECRBY => SingleKey(1, false, LockType.Exclusive),
                 RespCommand.SETBIT => SingleKey(1, false, LockType.Exclusive),

@@ -336,6 +336,7 @@ namespace Tsavorite.core
 
             public int GetRMWModifiedValueLength(ref TValue value, ref TInput input) => 0;
             public int GetRMWInitialValueLength(ref TInput input) => 0;
+            public int GetUpsertValueLength(ref TValue value, ref TInput input) => 0;
 
             public void ConvertOutputToHeap(ref TInput input, ref TOutput output) { }
         }

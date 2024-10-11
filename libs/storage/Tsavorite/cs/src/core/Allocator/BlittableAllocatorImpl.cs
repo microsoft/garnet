@@ -103,6 +103,10 @@ namespace Tsavorite.core
         public static (int actualSize, int allocatedSize, int keySize) GetRecordSize(ref TKey key, ref TValue value) => (RecordSize, RecordSize, KeySize);
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        public static (int actualSize, int allocatedSize, int keySize) GetUpsertRecordSize<TInput, TSessionFunctionsWrapper>(ref TKey key, ref TValue value, ref TInput input, TSessionFunctionsWrapper sessionFunctions)
+            => (RecordSize, RecordSize, KeySize);
+
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public static int GetValueLength(ref TValue value) => ValueSize;
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]

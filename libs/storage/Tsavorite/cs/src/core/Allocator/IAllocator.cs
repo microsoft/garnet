@@ -31,6 +31,10 @@ namespace Tsavorite.core
         (int actualSize, int allocatedSize, int keySize) GetRMWInitialRecordSize<TInput, TSessionFunctionsWrapper>(ref TKey key, ref TInput input, TSessionFunctionsWrapper sessionFunctions)
             where TSessionFunctionsWrapper : IVariableLengthInput<TValue, TInput>;
 
+        /// <summary>Get record size required for the given <paramref name="key"/>, <paramref name="value"/>, and <paramref name="input"/></summary>
+        (int actualSize, int allocatedSize, int keySize) GetUpsertRecordSize<TInput, TSessionFunctionsWrapper>(ref TKey key, ref TValue value, ref TInput input, TSessionFunctionsWrapper sessionFunctions)
+            where TSessionFunctionsWrapper : IVariableLengthInput<TValue, TInput>;
+
         /// <summary>Get record size required for the given <paramref name="key"/> and <paramref name="value"/></summary>
         (int actualSize, int allocatedSize, int keySize) GetRecordSize(ref TKey key, ref TValue value);
 

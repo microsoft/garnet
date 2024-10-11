@@ -151,6 +151,9 @@ namespace Tsavorite.core
 
         internal (int actualSize, int allocatedSize, int keySize) GetRecordSize(ref TKey key, ref TValue value) => (RecordSize, RecordSize, KeySize);
 
+        internal (int actualSize, int allocatedSize, int keySize) GetUpsertRecordSize<TInput, TSessionFunctionsWrapper>(ref TKey key, ref TValue value, ref TInput input, TSessionFunctionsWrapper sessionFunctions)
+            => (RecordSize, RecordSize, KeySize);
+
         internal override bool TryComplete()
         {
             var b1 = objectLogDevice.TryComplete();
