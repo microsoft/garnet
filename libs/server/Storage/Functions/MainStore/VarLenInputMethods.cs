@@ -255,7 +255,7 @@ namespace Garnet.server
                 (input.arg1 == 0 ? 0 : sizeof(long));
         }
 
-        public int GetUpsertValueLength(ref SpanByte t, ref SpanByte input)
+        public int GetUpsertValueLength(ref SpanByte t, ref RawStringInput input)
             => t.TotalSize;
     }
 }
