@@ -82,7 +82,6 @@ jobs:
       - name: Store benchmark result for commit comment
         uses: benchmark-action/github-action-benchmark@v1
         with:
-          name: BDNBenchmark - ${{matrix.test}} (os ${{matrix.os}}, framework ${{matrix.framework}}, configuration ${{matrix.configuration}})
           tool: 'benchmarkdotnet'
           output-file-path: ./test/BDNPerfTests/BenchmarkDotNet.Artifacts/results/BDN.benchmark.${{ matrix.test }}-report-full-compressed.json
           github-token: ${{ secrets.GITHUB_TOKEN }}
@@ -98,6 +97,7 @@ jobs:
       - name: Store benchmark result for charts
         uses: benchmark-action/github-action-benchmark@v1
         with:
+          name: BDNBenchmark - ${{matrix.test}} (os ${{matrix.os}}, framework ${{matrix.framework}}, configuration ${{matrix.configuration}})
           tool: 'benchmarkdotnet'
           output-file-path: ./test/BDNPerfTests/BenchmarkDotNet.Artifacts/results/BDN.benchmark.${{ matrix.test }}-report-full-compressed.json
           github-token: ${{ secrets.GITHUB_TOKEN }}
