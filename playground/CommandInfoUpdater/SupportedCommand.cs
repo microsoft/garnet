@@ -149,6 +149,7 @@ namespace CommandInfoUpdater
             new("HVALS", RespCommand.HVALS),
             new("INCR", RespCommand.INCR),
             new("INCRBY", RespCommand.INCRBY),
+            new("INCRBYFLOAT", RespCommand.INCRBYFLOAT),
             new("INFO", RespCommand.INFO),
             new("KEYS", RespCommand.KEYS),
             new("LASTSAVE", RespCommand.LASTSAVE),

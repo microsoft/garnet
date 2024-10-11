@@ -52,6 +52,7 @@ namespace Tsavorite.core
 
         public int GetRMWModifiedValueLength(ref TValue value, ref TInput input, bool hasEtag) => 0;
         public int GetRMWInitialValueLength(ref TInput input) => 0;
+        public int GetUpsertValueLength(ref TValue value, ref TInput input) => _functions.GetUpsertValueLength(ref value, ref input);
 
         /// <summary>
         /// No reads during compaction

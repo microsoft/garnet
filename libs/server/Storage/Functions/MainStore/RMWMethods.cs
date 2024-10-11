@@ -165,6 +165,14 @@ namespace Garnet.server
                     // Copy initial etag to output
                     CopyRespNumber(0, ref output);
                     break;
+                case RespCommand.INCRBYFLOAT:
+                    value.UnmarkExtraMetadata();
+                    length = input.LengthWithoutMetadata - RespInputHeader.Size;
+                    // Check if input contains a valid number
+                    if (!IsValidDouble(length, inputPtr + RespInputHeader.Size, output.SpanByte.AsSpan(), out double incrByFloat))
+                        return false;
+                    CopyUpdateNumber(incrByFloat, ref value, ref output);
+                    break;
                 default:
                     value.UnmarkExtraMetadata();
                     recordInfo.ClearHasETag();
@@ -421,6 +429,13 @@ namespace Garnet.server
                     if (!TryInPlaceUpdateNumber(ref value, ref output, ref rmwInfo, ref recordInfo, input: -decrBy, etagIgnoredOffset))
                         return false;
                     break;
+
+                case RespCommand.INCRBYFLOAT:
+                    length = input.LengthWithoutMetadata - RespInputHeader.Size;
+                    // Check if input contains a valid number
+                    if (!IsValidDouble(length, inputPtr + RespInputHeader.Size, output.SpanByte.AsSpan(), out var incrByFloat))
+                        return true;
+                    return TryInPlaceUpdateNumber(ref value, ref output, ref rmwInfo, ref recordInfo, incrByFloat);
 
                 case RespCommand.SETBIT:
                     byte* i = inputPtr + RespInputHeader.Size;
@@ -842,6 +857,18 @@ namespace Garnet.server
                         break;
                     }
                     TryCopyUpdateNumber(ref oldValue, ref newValue, ref output, input: -decrBy, etagIgnoredOffset);
+                    break;
+
+                case RespCommand.INCRBYFLOAT:
+                    length = input.LengthWithoutMetadata - RespInputHeader.Size;
+                    // Check if input contains a valid number
+                    if (!IsValidDouble(length, input.ToPointer() + RespInputHeader.Size, output.SpanByte.AsSpan(), out var incrByFloat))
+                    {
+                        // Move to tail of the log
+                        oldValue.CopyTo(ref newValue);
+                        break;
+                    }
+                    TryCopyUpdateNumber(ref oldValue, ref newValue, ref output, input: incrByFloat);
                     break;
 
                 case RespCommand.SETBIT:

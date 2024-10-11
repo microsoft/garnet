@@ -38,6 +38,33 @@ namespace Garnet.server
             return true;
         }
 
+        /// <summary>
+        /// Parse ASCII byte array into double and validate that only contains ASCII decimal characters
+        /// </summary>
+        /// <param name="length">Length of byte array</param>
+        /// <param name="source">Pointer to byte array</param>
+        /// <param name="val">Parsed long value</param>
+        /// <returns>True if input contained only ASCII decimal characters, otherwise false</returns>
+        static bool IsValidDouble(int length, byte* source, out double val)
+        {
+            val = 0;
+            try
+            {
+                // Check for valid number
+                if (!NumUtils.TryBytesToDouble(length, source, out val) || !double.IsFinite(val))
+                {
+                    // Signal value is not a valid number
+                    return false;
+                }
+            }
+            catch
+            {
+                // Signal value is not a valid number
+                return false;
+            }
+            return true;
+        }
+
         /// <inheritdoc/>
         public int GetRMWInitialValueLength(ref SpanByte input)
         {
@@ -87,6 +114,14 @@ namespace Garnet.server
                 case RespCommand.SETWITHETAG:
                     // same space as SET but with 8 additional bytes for etag at the front of the payload
                     return sizeof(int) + input.Length - RespInputHeader.Size + Constants.EtagSize;
+                case RespCommand.INCRBYFLOAT:
+                    if (!IsValidDouble(input.LengthWithoutMetadata - RespInputHeader.Size, inputPtr + RespInputHeader.Size, out var incrByFloat))
+                        return sizeof(int);
+
+                    ndigits = NumUtils.NumOfCharInDouble(incrByFloat, out var _, out var _, out var _);
+
+                    return sizeof(int) + ndigits;
+
                 default:
                     if (cmd >= 200)
                     {
@@ -145,6 +180,18 @@ namespace Garnet.server
                         fNeg = false;
                         ndigits = NumUtils.NumDigitsInLong(next, ref fNeg);
                         ndigits += fNeg ? 1 : 0;
+
+                        return sizeof(int) + ndigits + t.MetadataSize + etagOffset;
+                    case RespCommand.INCRBYFLOAT:
+                        datalen = inputspan.Length - RespInputHeader.Size;
+                        slicedInputData = inputspan.Slice(RespInputHeader.Size, datalen);
+
+                        NumUtils.TryBytesToDouble(t.AsSpan(etagOffset), out var currentValue);
+                        NumUtils.TryBytesToDouble(slicedInputData, out var incrByFloat);
+                        var newValue = currentValue + incrByFloat;
+
+                        fNeg = false;
+                        ndigits = NumUtils.NumOfCharInDouble(newValue, out var _, out var _, out var _);
 
                         return sizeof(int) + ndigits + t.MetadataSize + etagOffset;
                     case RespCommand.SETBIT:
@@ -221,5 +268,8 @@ namespace Garnet.server
 
             return sizeof(int) + input.Length - RespInputHeader.Size;
         }
+
+        public int GetUpsertValueLength(ref SpanByte t, ref SpanByte input)
+            => t.TotalSize;
     }
 }

@@ -358,7 +358,8 @@ namespace Garnet.test
             X509CertificateCollection certificates = null,
             ILoggerFactory loggerFactory = null,
             AadAuthenticationSettings authenticationSettings = null,
-            int metricsSamplingFrequency = 0)
+            int metricsSamplingFrequency = 0,
+            bool enableLua = false)
         {
             if (UseAzureStorage)
                 IgnoreIfNotRunningAzureTests();
@@ -398,7 +399,8 @@ namespace Garnet.test
                     certificates: certificates,
                     logger: loggerFactory?.CreateLogger("GarnetServer"),
                     aadAuthenticationSettings: authenticationSettings,
-                    metricsSamplingFrequency: metricsSamplingFrequency);
+                    metricsSamplingFrequency: metricsSamplingFrequency,
+                    enableLua: enableLua);
 
                 ClassicAssert.IsNotNull(opts);
                 int iter = 0;
@@ -444,6 +446,7 @@ namespace Garnet.test
             X509CertificateCollection certificates = null,
             AadAuthenticationSettings aadAuthenticationSettings = null,
             int metricsSamplingFrequency = 0,
+            bool enableLua = false,
             ILogger logger = null)
         {
             if (UseAzureStorage)
@@ -528,6 +531,7 @@ namespace Garnet.test
                 AuthSettings = useAcl ? authenticationSettings : (authPassword != null ? authenticationSettings : null),
                 ClusterUsername = authUsername,
                 ClusterPassword = authPassword,
+                EnableLua = enableLua,
             };
 
             if (lowMemory)

@@ -200,8 +200,8 @@ namespace Garnet.server
                         )
                 );
 
-            FastBasicRespCommandsInfo = new RespCommandsInfo[(int)RespCommandExtensions.LastWriteCommand() - (int)RespCommandExtensions.FirstReadCommand()];
-            for (var i = (int)RespCommandExtensions.FirstReadCommand(); i < (int)RespCommandExtensions.LastWriteCommand(); i++)
+            FastBasicRespCommandsInfo = new RespCommandsInfo[(int)RespCommandExtensions.LastDataCommand - (int)RespCommandExtensions.FirstReadCommand];
+            for (var i = (int)RespCommandExtensions.FirstReadCommand; i < (int)RespCommandExtensions.LastDataCommand; i++)
             {
                 FlattenedRespCommandsInfo.TryGetValue((RespCommand)i, out var commandInfo);
                 FastBasicRespCommandsInfo[i - 1] = commandInfo;

@@ -176,6 +176,14 @@ namespace Tsavorite.core
             return (actualSize, RoundUp(actualSize, Constants.kRecordAlignment), keySize);
         }
 
+        public (int actualSize, int allocatedSize, int keySize) GetUpsertRecordSize<TInput, TSessionFunctionsWrapper>(ref SpanByte key, ref SpanByte value, ref TInput input, TSessionFunctionsWrapper sessionFunctions)
+            where TSessionFunctionsWrapper : IVariableLengthInput<SpanByte, TInput>
+        {
+            int keySize = key.TotalSize;
+            var actualSize = RecordInfo.GetLength() + RoundUp(keySize, Constants.kRecordAlignment) + sessionFunctions.GetUpsertValueLength(ref value, ref input);
+            return (actualSize, RoundUp(actualSize, Constants.kRecordAlignment), keySize);
+        }
+
         public (int actualSize, int allocatedSize, int keySize) GetRecordSize(ref SpanByte key, ref SpanByte value)
         {
             int keySize = key.TotalSize;

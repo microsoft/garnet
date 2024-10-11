@@ -140,6 +140,22 @@ Integer reply: the value of the key after the increment.
 
 ---
 
+### INCRBYFLOAT
+
+#### Syntax
+
+```bash
+    INCRBYFLOAT key increment
+```
+
+Increment the string representing a floating point number stored at key by the specified increment. By using a negative increment value, the result is that the value stored at the key is decremented. If the key does not exist, it is set to 0 before performing the operation.
+
+#### Resp Reply
+
+Bulk string reply: the value of the key after the increment.
+
+---
+
 ### MGET
 
 #### Syntax
