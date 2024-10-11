@@ -18,12 +18,14 @@ namespace Tsavorite.core
         /// </summary>
         /// <param name="dest">Memory buffer to serialize into. Guaranteed to have at least SerializedLength many bytes</param>
         /// <param name="length">Length of buffer to serialize into.</param>
-        public unsafe void CopyTo(byte* dest, int length);
+        /// <returns>Number of serialized bytes</returns>
+        public unsafe int CopyTo(byte* dest, int length);
 
         /// <summary>
         /// Deserializes the IStoreInput object from memory buffer.
         /// </summary>
         /// <param name="src">Memory buffer to deserialize from. Guaranteed to have at least SerializedLength many bytes</param>
-        public unsafe void DeserializeFrom(byte* src);
+        /// <returns>Number of deserialized bytes</returns>
+        public unsafe int DeserializeFrom(byte* src);
     }
 }

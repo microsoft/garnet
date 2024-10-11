@@ -238,16 +238,15 @@ namespace Garnet.server
 
         /// <inheritdoc />
         public int SerializedLength => header.SpanByte.TotalSize
-                                       + (3 * sizeof(int)) // Length + arg1 + arg2
+                                       + (2 * sizeof(int)) // arg1 + arg2
                                        + parseState.GetSerializedLength(parseStateFirstArgIdx, parseStateLastArgIdx);
 
         /// <inheritdoc />
-        public unsafe void CopyTo(byte* dest, int length)
+        public unsafe int CopyTo(byte* dest, int length)
         {
             Debug.Assert(length >= this.SerializedLength);
 
-            // Leave space for length
-            var curr = dest + sizeof(int);
+            var curr = dest;
 
             // Serialize header
             header.SpanByte.CopyTo(curr);
@@ -263,16 +262,16 @@ namespace Garnet.server
 
             // Serialize parse state
             // Only serialize arguments starting from parseStateFirstArgIdx
-            var remainingLength = length - (int)(curr - dest - sizeof(int));
+            var remainingLength = length - (int)(curr - dest);
             var len = parseState.CopyTo(curr, parseStateFirstArgIdx, parseStateLastArgIdx, remainingLength);
             curr += len;
 
-            // Serialize length
-            *(int*)dest = (int)(curr - dest - sizeof(int));
+            // Number of serialized bytes
+            return (int)(curr - dest);
         }
 
         /// <inheritdoc />
-        public unsafe void DeserializeFrom(byte* src)
+        public unsafe int DeserializeFrom(byte* src)
         {
             var curr = src;
 
@@ -291,7 +290,12 @@ namespace Garnet.server
             curr += sizeof(int);
 
             // Deserialize parse state
-            parseState.DeserializeFrom(curr);
+            var len = parseState.DeserializeFrom(curr);
+            curr += len;
+
+            parseStateLastArgIdx = -1;
+
+            return (int)(src - curr);
         }
     }
 
@@ -367,18 +371,16 @@ namespace Garnet.server
         }
 
         /// <inheritdoc />
-        public int SerializedLength => sizeof(int) // Length
-                                       + header.SpanByte.TotalSize
+        public int SerializedLength => header.SpanByte.TotalSize
                                        + sizeof(long) // arg1
                                        + parseState.GetSerializedLength(parseStateFirstArgIdx, parseStateLastArgIdx);
 
         /// <inheritdoc />
-        public unsafe void CopyTo(byte* dest, int length)
+        public unsafe int CopyTo(byte* dest, int length)
         {
             Debug.Assert(length >= this.SerializedLength);
 
-            // Leave space for length
-            var curr = dest + sizeof(int);
+            var curr = dest;
 
             // Serialize header
             header.SpanByte.CopyTo(curr);
@@ -390,16 +392,16 @@ namespace Garnet.server
 
             // Serialize parse state
             // Only serialize arguments starting from parseStateFirstArgIdx
-            var remainingLength = length - (int)(curr - dest - sizeof(int));
+            var remainingLength = length - (int)(curr - dest);
             var len = parseState.CopyTo(curr, parseStateFirstArgIdx, parseStateLastArgIdx, remainingLength);
             curr += len;
 
             // Serialize length
-            *(int*)dest = (int)(curr - dest - sizeof(int));
+            return (int)(curr - dest);
         }
 
         /// <inheritdoc />
-        public unsafe void DeserializeFrom(byte* src)
+        public unsafe int DeserializeFrom(byte* src)
         {
             var curr = src;
 
@@ -414,7 +416,12 @@ namespace Garnet.server
             curr += sizeof(long);
 
             // Deserialize parse state
-            parseState.DeserializeFrom(curr);
+            var len = parseState.DeserializeFrom(curr);
+            curr += len;
+
+            parseStateLastArgIdx = -1;
+
+            return (int)(curr - src);
         }
     }
 
@@ -452,32 +459,33 @@ namespace Garnet.server
         }
 
         /// <inheritdoc />
-        public int SerializedLength => sizeof(int) // Length
-                                       + parseState.GetSerializedLength(parseStateFirstArgIdx, parseStateLastArgIdx);
+        public int SerializedLength => parseState.GetSerializedLength(parseStateFirstArgIdx, parseStateLastArgIdx);
 
         /// <inheritdoc />
-        public unsafe void CopyTo(byte* dest, int length)
+        public unsafe int CopyTo(byte* dest, int length)
         {
             Debug.Assert(length >= this.SerializedLength);
 
-            // Leave space for length
-            var curr = dest + sizeof(int);
+            var curr = dest;
 
             // Serialize parse state
             // Only serialize arguments starting from parseStateFirstArgIdx
-            var remainingLength = (int)(curr - dest - sizeof(int));
+            var remainingLength = (int)(curr - dest);
             var len = parseState.CopyTo(curr, parseStateFirstArgIdx, parseStateLastArgIdx, remainingLength);
             curr += len;
 
-            // Serialize length
-            *(int*)dest = (int)(curr - dest - sizeof(int));
+            return (int)(curr - dest);
         }
 
         /// <inheritdoc />
-        public unsafe void DeserializeFrom(byte* src)
+        public unsafe int DeserializeFrom(byte* src)
         {
             // Deserialize parse state
-            parseState.DeserializeFrom(src);
+            var len = parseState.DeserializeFrom(src);
+
+            parseStateLastArgIdx = -1;
+
+            return len;
         }
     }
 

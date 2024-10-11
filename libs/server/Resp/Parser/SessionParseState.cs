@@ -279,24 +279,24 @@ namespace Garnet.server
         /// Deserialize parse state from memory buffer into current struct
         /// </summary>
         /// <param name="src">Memory buffer to deserialize from</param>
-        public unsafe void DeserializeFrom(byte* src)
+        /// <returns>Number of deserialized bytes</returns>
+        public unsafe int DeserializeFrom(byte* src)
         {
             var curr = src;
 
             var argCount = *(int*)curr;
             curr += sizeof(int);
 
-            if (argCount > 0)
-            {
-                Initialize(argCount);
+            Initialize(argCount);
 
-                for (var i = 0; i < argCount; i++)
-                {
-                    ref var sbArgument = ref Unsafe.AsRef<SpanByte>(curr);
-                    buffer[i] = new ArgSlice(ref sbArgument);
-                    curr += sbArgument.TotalSize;
-                }
+            for (var i = 0; i < argCount; i++)
+            {
+                ref var sbArgument = ref Unsafe.AsRef<SpanByte>(curr);
+                buffer[i] = new ArgSlice(ref sbArgument);
+                curr += sbArgument.TotalSize;
             }
+
+            return (int)(src - curr);
         }
 
         /// <summary>
