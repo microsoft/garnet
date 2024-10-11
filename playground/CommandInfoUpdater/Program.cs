@@ -57,8 +57,12 @@ class Program
             return;
         }
 
-        CommandInfoUpdater.CommandInfoUpdater.TryUpdateCommandInfo(config.OutputPath, config.RespServerPort,
-            localRedisHost, config.IgnoreCommands, config.Force, logger);
+        if (!CommandInfoUpdater.CommandInfoUpdater.TryUpdateCommandInfo(config.OutputDir, config.RespServerPort,
+                localRedisHost, config.IgnoreCommands, config.Force, logger, out var updatedCommandsInfo))
+            return;
+
+        CommandDocsUpdater.TryUpdateCommandDocs(config.OutputDir, config.RespServerPort,
+            localRedisHost, config.IgnoreCommands, updatedCommandsInfo, config.Force, logger);
     }
 
     static void DisplayHelp<T>(ParserResult<T> result, IEnumerable<Error> errs)

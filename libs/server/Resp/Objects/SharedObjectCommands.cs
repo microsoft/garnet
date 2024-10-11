@@ -1,7 +1,6 @@
 ﻿// Copyright (c) Microsoft Corporation.
 // Licensed under the MIT license.
 
-using System;
 using Garnet.common;
 using Tsavorite.core;
 
@@ -44,11 +43,6 @@ namespace Garnet.server
             {
                 while (!RespWriteUtils.WriteError(CmdStrings.RESP_ERR_GENERIC_CURSORVALUE, ref dcurr, dend))
                     SendAndReset();
-                return true;
-            }
-
-            if (NetworkSingleKeySlotVerify(keyBytes, false))
-            {
                 return true;
             }
 

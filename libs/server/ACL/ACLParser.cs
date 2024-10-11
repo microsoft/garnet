@@ -276,7 +276,7 @@ namespace Garnet.server.ACL
                         throw new ACLException($"Couldn't load information for {command}, shouldn't be possible");
                     }
 
-                    if (info.SubCommand != command)
+                    if (info.Command != command)
                     {
                         return false;
                     }
