@@ -82,7 +82,6 @@ jobs:
       - name: Store benchmark result for commit comment
         uses: benchmark-action/github-action-benchmark@v1
         with:
-          name: BDNBenchmarkComment-${{matrix.test}} - (${{matrix.os}} - ${{matrix.framework}} - ${{matrix.configuration}}) 
           # What benchmark tool created output file
           tool: 'benchmarkdotnet'
 
@@ -101,7 +100,7 @@ jobs:
       - name: Store benchmark result for charts
         uses: benchmark-action/github-action-benchmark@v1
         with:
-          name: BDNBenchmarkChart-${{matrix.test}} - (${{matrix.os}} - ${{matrix.framework}} - ${{matrix.configuration}}) 
+          name: BDNBenchmark-${{matrix.test}} - (${{matrix.os}} - ${{matrix.framework}} - ${{matrix.configuration}}) 
 
           # What benchmark tool created output file
           tool: 'benchmarkdotnet'
