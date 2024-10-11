@@ -5099,8 +5099,8 @@ namespace Garnet.test.Resp.ACL
 
             static async Task DoSMultiIsMemberAsync(GarnetClient client)
             {
-                long val = await client.ExecuteForLongResultAsync("SMISMEMBER", ["foo", "bar"]);
-                ClassicAssert.AreEqual(0, val);
+                string[] val = await client.ExecuteForStringArrayResultAsync("SMISMEMBER", ["foo", "5"]);
+                ClassicAssert.IsNotNull(val);
             }
         }
 
