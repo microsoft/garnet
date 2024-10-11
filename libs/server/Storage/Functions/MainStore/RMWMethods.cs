@@ -707,13 +707,6 @@ namespace Garnet.server
                     }
 
                     oldValue.AsReadOnlySpan().CopyTo(newValue.AsSpan());
-                    var isPersist = *(bool*)(inputPtr + RespInputHeader.Size);
-                    if (isPersist && oldValue.MetadataSize != 0) // Persist the key
-                    {
-                        newValue.AsSpan().CopyTo(newValue.AsSpanWithMetadata());
-                        newValue.ShrinkSerializedLength(newValue.Length - newValue.MetadataSize);
-                        newValue.UnmarkExtraMetadata();
-                    }
                     break;
 
                 case RespCommand.APPEND:
