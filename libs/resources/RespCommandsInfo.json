@@ -3780,7 +3780,7 @@
     "FirstKey": 1,
     "LastKey": -1,
     "Step": 1,
-    "AclCategories": "Fast, Transaction",
+    "AclCategories": "Fast, Read, Transaction",
     "KeySpecifications": [
       {
         "BeginSearch": {
@@ -3805,7 +3805,7 @@
     "FirstKey": 1,
     "LastKey": -1,
     "Step": 1,
-    "AclCategories": "Fast, Transaction",
+    "AclCategories": "Fast, Read, Transaction",
     "KeySpecifications": [
       {
         "BeginSearch": {
@@ -3830,7 +3830,7 @@
     "FirstKey": 1,
     "LastKey": -1,
     "Step": 1,
-    "AclCategories": "Fast, Transaction",
+    "AclCategories": "Fast, Read, Transaction",
     "KeySpecifications": [
       {
         "BeginSearch": {

@@ -65,6 +65,9 @@ namespace Garnet.server
         SUNION,
         TTL,
         TYPE,
+        WATCH,
+        WATCHMS,
+        WATCHOS,
         ZCARD,
         ZCOUNT,
         ZDIFF,
@@ -237,10 +240,6 @@ namespace Garnet.server
 
         MEMORY,
         // MEMORY_USAGE is a read-only command, so moved up
-
-        WATCH,
-        WATCHMS,
-        WATCHOS,
 
         CONFIG,
         CONFIG_GET,

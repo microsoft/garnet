@@ -113,6 +113,9 @@ namespace Garnet.test.cluster
                 new HINCRBY(),
                 new CLUSTERGETPROC(),
                 new CLUSTERSETPROC(),
+                new WATCH(),
+                new WATCHMS(),
+                new WATCHOS(),
             };
 
         ClusterTestContext context;
@@ -283,6 +286,9 @@ namespace Garnet.test.cluster
         [TestCase("HINCRBY")]
         [TestCase("CLUSTERGETPROC")]
         [TestCase("CLUSTERSETPROC")]
+        [TestCase("WATCH")]
+        [TestCase("WATCHMS")]
+        [TestCase("WATCHOS")]
         public void ClusterCLUSTERDOWNTest(string commandName)
         {
             var requestNodeIndex = otherIndex;
@@ -413,6 +419,8 @@ namespace Garnet.test.cluster
         [TestCase("HINCRBY")]
         [TestCase("CLUSTERGETPROC")]
         [TestCase("CLUSTERSETPROC")]
+        [TestCase("WATCHMS")]
+        [TestCase("WATCHOS")]
         public void ClusterOKTest(string commandName)
         {
             var requestNodeIndex = sourceIndex;
@@ -554,6 +562,8 @@ namespace Garnet.test.cluster
         [TestCase("HINCRBY")]
         [TestCase("CLUSTERGETPROC")]
         [TestCase("CLUSTERSETPROC")]
+        [TestCase("WATCHMS")]
+        [TestCase("WATCHOS")]
         public void ClusterCROSSSLOTTest(string commandName)
         {
             var requestNodeIndex = sourceIndex;
@@ -687,6 +697,8 @@ namespace Garnet.test.cluster
         [TestCase("HINCRBY")]
         [TestCase("CLUSTERGETPROC")]
         [TestCase("CLUSTERSETPROC")]
+        [TestCase("WATCHMS")]
+        [TestCase("WATCHOS")]
         public void ClusterMOVEDTest(string commandName)
         {
             var requestNodeIndex = targetIndex;
@@ -827,6 +839,8 @@ namespace Garnet.test.cluster
         [TestCase("HINCRBY")]
         [TestCase("CLUSTERGETPROC")]
         [TestCase("CLUSTERSETPROC")]
+        [TestCase("WATCHMS")]
+        [TestCase("WATCHOS")]
         public void ClusterASKTest(string commandName)
         {
             var requestNodeIndex = sourceIndex;
@@ -984,6 +998,8 @@ namespace Garnet.test.cluster
         [TestCase("HINCRBY")]
         [TestCase("CLUSTERGETPROC")]
         [TestCase("CLUSTERSETPROC")]
+        [TestCase("WATCHMS")]
+        [TestCase("WATCHOS")]
         public void ClusterTRYAGAINTest(string commandName)
         {
             var requestNodeIndex = sourceIndex;

@@ -1171,7 +1171,6 @@ namespace Garnet.server
         public void WATCH(ArgSlice key, StoreType type)
         {
             txnManager.Watch(key, type);
-            txnManager.VerifyKeyOwnership(key, LockType.Shared);
         }
 
         public unsafe void WATCH(byte[] key, StoreType type)
