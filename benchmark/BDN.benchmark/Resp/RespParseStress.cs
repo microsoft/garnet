@@ -67,6 +67,10 @@ namespace BDN.benchmark.Resp
         byte[] myDictSetGetRequestBuffer;
         byte* myDictSetGetRequestBufferPointer;
 
+        static ReadOnlySpan<byte> CPBSET => "*9\r\n$6\r\nCPBSET\r\n$6\r\n{0}000\r\n$6\r\n{0}001\r\n$6\r\n{0}002\r\n$6\r\n{0}003\r\n$6\r\n{0}000\r\n$6\r\n{0}001\r\n$6\r\n{0}002\r\n$6\r\n{0}003\r\n"u8;
+        byte[] cpbsetBuffer;
+        byte* cpbsetBufferPointer;
+
         [GlobalSetup]
         public void GlobalSetup()
         {
@@ -81,6 +85,7 @@ namespace BDN.benchmark.Resp
             server.Register.NewType(factory);
             server.Register.NewCommand("MYDICTSET", CommandType.ReadModifyWrite, factory, new MyDictSet(), new RespCommandsInfo { Arity = 4 });
             server.Register.NewCommand("MYDICTGET", CommandType.Read, factory, new MyDictGet(), new RespCommandsInfo { Arity = 3 });
+            server.Register.NewTransactionProc(CustomProcSetBench.CommandName, () => new CustomProcSetBench(), new RespCommandsInfo { Arity = CustomProcSetBench.Arity });
 
             session = server.GetRespSession();
 
@@ -158,6 +163,14 @@ namespace BDN.benchmark.Resp
             myDictSetGetRequestBufferPointer = (byte*)Unsafe.AsPointer(ref myDictSetGetRequestBuffer[0]);
             for (int i = 0; i < batchSize; i++)
                 MYDICTSETGET.CopyTo(new Span<byte>(myDictSetGetRequestBuffer).Slice(i * MYDICTSETGET.Length));
+
+            // Pre-populate custom object
+            SlowConsumeMessage("*4\r\n$9\r\nMYDICTSET\r\n$2\r\nck\r\n$1\r\nf\r\n$1\r\nv\r\n"u8);
+
+            cpbsetBuffer = GC.AllocateArray<byte>(CPBSET.Length * batchSize, pinned: true);
+            cpbsetBufferPointer = (byte*)Unsafe.AsPointer(ref cpbsetBuffer[0]);
+            for (var i = 0; i < batchSize; i++)
+                CPBSET.CopyTo(new Span<byte>(cpbsetBuffer).Slice(i * CPBSET.Length));
 
             // Pre-populate custom object
             SlowConsumeMessage("*4\r\n$9\r\nMYDICTSET\r\n$2\r\nck\r\n$1\r\nf\r\n$1\r\nv\r\n"u8);
@@ -240,6 +253,12 @@ namespace BDN.benchmark.Resp
         public void MyDictSetGet()
         {
             _ = session.TryConsumeMessages(myDictSetGetRequestBufferPointer, myDictSetGetRequestBuffer.Length);
+        }
+
+        [Benchmark]
+        public void CustomProceSetBench()
+        {
+            _ = session.TryConsumeMessages(cpbsetBufferPointer, cpbsetBuffer.Length);
         }
 
         private void SlowConsumeMessage(ReadOnlySpan<byte> message)
