@@ -28,6 +28,9 @@ namespace Garnet
     /// </summary>
     public class GarnetServer : IDisposable
     {
+        // IMPORTANT: Keep the version in sync with .azure\pipelines\azure-pipelines-external-release.yml line ~6.
+        readonly string version = "1.0.32";
+
         internal GarnetProvider Provider;
 
         private readonly GarnetServerOptions opts;
@@ -53,7 +56,7 @@ namespace Garnet
 
         // IMPORTANT: Keep the version in sync with .azure\pipelines\azure-pipelines-external-release.yml line ~6,
         // charts\garnet\Chart.yaml line ~6 and increment line ~5 and generate charts\garnet\README.md with helm-docs.
-        readonly string version = "1.0.31";
+        readonly string version = "1.0.32";
 
         /// <summary>
         /// Resp protocol version
