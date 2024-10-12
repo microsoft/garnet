@@ -285,7 +285,7 @@ namespace Garnet.server
             respServerSession.RunTransactionProc(id, ref customProcInput, ref output);
         }
 
-        static unsafe void StoreUpsert(BasicContext<SpanByte, SpanByte, RawStringInput, SpanByteAndMemory, long, MainSessionFunctions, MainStoreFunctions, MainStoreAllocator> basicContext, 
+        static unsafe void StoreUpsert(BasicContext<SpanByte, SpanByte, RawStringInput, SpanByteAndMemory, long, MainSessionFunctions, MainStoreFunctions, MainStoreAllocator> basicContext,
             RawStringInput storeInput, byte* ptr)
         {
             var curr = ptr + sizeof(AofHeader);
@@ -316,7 +316,7 @@ namespace Garnet.server
 
             // input
             storeInput.DeserializeFrom(curr);
-            
+
             var pbOutput = stackalloc byte[32];
             var output = new SpanByteAndMemory(pbOutput, 32);
 
@@ -347,7 +347,7 @@ namespace Garnet.server
                 output.spanByteAndMemory.Memory.Dispose();
         }
 
-        static unsafe void ObjectStoreRMW(BasicContext<byte[], IGarnetObject, ObjectInput, GarnetObjectStoreOutput, long, ObjectSessionFunctions, ObjectStoreFunctions, ObjectStoreAllocator> basicContext, 
+        static unsafe void ObjectStoreRMW(BasicContext<byte[], IGarnetObject, ObjectInput, GarnetObjectStoreOutput, long, ObjectSessionFunctions, ObjectStoreFunctions, ObjectStoreAllocator> basicContext,
             ObjectInput objectStoreInput, byte* ptr, byte* outputPtr, int outputLength)
         {
             var curr = ptr + sizeof(AofHeader);
